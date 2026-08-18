@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/prompts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 )
 
 // Sentinel refusals, so a caller can map them to a machine-readable code

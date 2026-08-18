@@ -3,7 +3,7 @@ package stt
 import (
 	"context"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 // audioSource is the legacy untyped capture contract: Read returns the next

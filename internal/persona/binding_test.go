@@ -3,7 +3,7 @@ package persona
 import (
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func writeProfile(t *testing.T, id, name, promptRef string) {

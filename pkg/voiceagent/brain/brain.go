@@ -13,9 +13,9 @@ import (
 
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/prompts"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/textclean"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // claudeRunner is the slice of the claude client the interactive Brain needs:

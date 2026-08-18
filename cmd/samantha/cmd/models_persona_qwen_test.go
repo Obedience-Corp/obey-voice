@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/lancekrogers/samantha/internal/persona"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func writeQwenPersona(t *testing.T, id, tier string) {

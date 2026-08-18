@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/netapi"
-	"github.com/lancekrogers/samantha/internal/persona"
-	"github.com/lancekrogers/samantha/pkg/voiceagent"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/pipeline"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
 func findPersonaRow(t *testing.T, rows []netapi.PersonaSummary, id string) netapi.PersonaSummary {

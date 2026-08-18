@@ -7,11 +7,11 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/internal/persona"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 const (

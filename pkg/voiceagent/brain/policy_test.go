@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/skills"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
 func policyCfg() *config.Config {

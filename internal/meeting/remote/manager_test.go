@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // fakeClock drives the janitor without sleeping: every timeout in this file is

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/endpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 )
 
 // scriptedFrames is a finite test FrameSource: it emits the given chunks as

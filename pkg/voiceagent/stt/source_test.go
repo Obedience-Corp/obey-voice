@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 // liveOnly implements only the legacy audioSource (no Exhausted), like live capture.

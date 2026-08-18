@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // ProviderSpec describes a TTS provider compiled into this build.

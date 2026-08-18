@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/meeting/remote"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
 )
 
 func TestMeetingStartAcceptsWatchSource(t *testing.T) {

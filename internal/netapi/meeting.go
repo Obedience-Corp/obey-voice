@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	"github.com/lancekrogers/samantha/internal/meeting/remote"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
 )
 
 // Meeting endpoints (PROTOCOL_DELTAS D6) let a phone record a meeting through

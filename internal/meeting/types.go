@@ -11,7 +11,7 @@ import (
 	"context"
 	"time"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // Destination types supported in v1.

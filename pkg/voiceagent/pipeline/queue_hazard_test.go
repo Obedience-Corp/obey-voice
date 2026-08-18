@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // waitForCond polls cond until it is true or the deadline elapses.

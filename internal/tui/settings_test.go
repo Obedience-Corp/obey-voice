@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 // A preview completion that belongs to a superseded voice must not clear the

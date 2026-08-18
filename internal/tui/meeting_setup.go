@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	ansi "github.com/charmbracelet/x/ansi"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // Setup steps: title first (camp idea-add style), then quick route pick.

@@ -9,8 +9,8 @@ import (
 
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/prompts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 )
 
 // grokRunner is the slice of the grok client the brain needs: streaming for

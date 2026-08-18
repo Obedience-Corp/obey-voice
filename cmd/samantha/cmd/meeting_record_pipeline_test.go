@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	appTUI "github.com/lancekrogers/samantha/internal/tui"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	appTUI "github.com/Obedience-Corp/obey-voice/internal/tui"
 )
 
 func TestCLIAutoRouteDest(t *testing.T) {

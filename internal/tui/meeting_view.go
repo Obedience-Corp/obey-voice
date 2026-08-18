@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	ansi "github.com/charmbracelet/x/ansi"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	"github.com/lancekrogers/samantha/internal/tui/anim"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 )
 
 func (m *meetingModel) ensureVoiceTick() tea.Cmd {

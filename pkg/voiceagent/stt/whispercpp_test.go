@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func TestWhisperCPPTranscribeInvokesCLIAndNormalizesText(t *testing.T) {

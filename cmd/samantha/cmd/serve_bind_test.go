@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/internal/netapi"
 )
 
 func TestResolveServeBindHostsExplicit(t *testing.T) {

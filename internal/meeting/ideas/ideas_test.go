@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/listen"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	"github.com/lancekrogers/samantha/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/internal/listen"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/netapi"
 )
 
 // fixture is a real .meeting bundle with an open writer — everything goes

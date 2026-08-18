@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	"github.com/lancekrogers/samantha/internal/meeting/remote"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // meetingHarness is a live serve with the meeting surface enabled and a

@@ -8,7 +8,7 @@ import (
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 var _ RequestProvider = (*KokoroTTS)(nil)

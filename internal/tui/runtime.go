@@ -8,15 +8,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/internal/listen"
-	"github.com/lancekrogers/samantha/internal/meeting"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	"github.com/lancekrogers/samantha/internal/speaker"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/pipeline"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/internal/listen"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
 // ConversationRuntime is a live pipeline prepared for the conversation

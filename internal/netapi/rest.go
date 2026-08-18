@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/netapi/wire"
+	"github.com/Obedience-Corp/obey-voice/internal/netapi/wire"
 )
 
 // SessionSummary is one row of GET /v1/sessions. It aliases wire.SessionSummary

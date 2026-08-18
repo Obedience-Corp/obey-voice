@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // syllabicN is eSpeak's syllabic-n marker (U+0329). Kokoro's stock tokens.txt

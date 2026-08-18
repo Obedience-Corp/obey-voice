@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/speaker"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // TestOwnerVerifyFalseAcceptRate measures enrollment match quality on the

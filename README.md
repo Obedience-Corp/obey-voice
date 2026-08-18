@@ -24,7 +24,7 @@ Grant the terminal microphone access under System Settings → Privacy & Securit
 
 **Linux (x86_64 glibc)**
 
-Download `samantha-linux-amd64.tar.gz` from the [latest release](https://github.com/lancekrogers/samantha/releases/latest), then:
+Download `samantha-linux-amd64.tar.gz` from the [latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest), then:
 
 ```bash
 tar -xzf samantha-linux-amd64.tar.gz

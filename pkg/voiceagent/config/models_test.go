@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 func TestSanitizeKokoroLexiconsRemovesUnsupportedMarks(t *testing.T) {

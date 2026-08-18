@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 // Qwen Settings rows: tier, clone consent, native package, embedding cache.

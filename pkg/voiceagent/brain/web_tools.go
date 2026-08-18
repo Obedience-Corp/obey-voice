@@ -58,7 +58,7 @@ func toolWebSearchWithClient(ctx context.Context, args map[string]any, client *h
 		return fmt.Sprintf("error creating web search request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Samantha/1.0; +https://github.com/lancekrogers/samantha)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Samantha/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -124,7 +124,7 @@ func toolFetchURLWithClient(ctx context.Context, args map[string]any, client *ht
 	if err != nil {
 		return fmt.Sprintf("error creating fetch request: %v", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Samantha/1.0; +https://github.com/lancekrogers/samantha)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Samantha/1.0; +https://github.com/Obedience-Corp/obey-voice)")
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Sprintf("error fetching URL: %v", err)

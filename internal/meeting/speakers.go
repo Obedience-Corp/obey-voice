@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/lancekrogers/samantha/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 )
 
 // AnalysisStatus describes a post-capture speaker-analysis job.

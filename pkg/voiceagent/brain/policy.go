@@ -3,8 +3,8 @@ package brain
 import (
 	"strings"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/skills"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
 // PromptElement names one component of what a provider's model actually sees.

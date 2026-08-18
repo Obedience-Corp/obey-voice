@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // ErrSessionNotFound is returned by Store.Delete when no session with the

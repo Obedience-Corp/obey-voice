@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	"github.com/lancekrogers/samantha/internal/meeting/remote"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
 )
 
 // GET /v1/meetings is the history surface (PROTOCOL_DELTAS D7). It reads the

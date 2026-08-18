@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 func okLookPath(name string) (string, error)   { return "/usr/bin/" + name, nil }

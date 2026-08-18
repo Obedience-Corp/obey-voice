@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 )
 
 type fakeSpeakerAnalyzer struct {

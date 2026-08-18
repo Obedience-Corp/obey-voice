@@ -3,7 +3,7 @@ package config
 import (
 	"sort"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // Enum values are sourced from the package that owns the domain wherever the

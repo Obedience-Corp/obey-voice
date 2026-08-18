@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // Piped stdin must route to the plain app.Run loop, never the full-screen

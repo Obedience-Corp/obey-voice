@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/endpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 )
 
 // minSpeechSamples is the minimum number of audio samples for valid speech (0.3s at 16kHz).

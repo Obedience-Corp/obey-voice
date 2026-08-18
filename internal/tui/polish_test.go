@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // The input label shows the mic glyph only while a voice turn is actively

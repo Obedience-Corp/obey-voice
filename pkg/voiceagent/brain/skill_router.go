@@ -9,7 +9,7 @@ import (
 
 	"github.com/ollama/ollama/api"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/skills"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
 const (

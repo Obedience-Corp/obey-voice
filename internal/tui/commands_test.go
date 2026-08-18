@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 func TestSlashCommandRegistryMatchesCanonicalNamesAndAliases(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/lancekrogers/samantha/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
 )
 
 // HTML handling (conservative first pass, no parser dependency): comments and

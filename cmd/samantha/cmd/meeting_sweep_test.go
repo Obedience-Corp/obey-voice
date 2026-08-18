@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // sweepRouter files to a local directory, so a sweep test proves delivery

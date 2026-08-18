@@ -11,9 +11,9 @@ import (
 	"strings"
 	"sync"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	"github.com/lancekrogers/samantha/internal/speaker"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 const speakerCaptureQueue = 1024

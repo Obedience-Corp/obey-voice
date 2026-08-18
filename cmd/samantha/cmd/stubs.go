@@ -10,13 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	appTUI "github.com/lancekrogers/samantha/internal/tui"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/session"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/stt"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/tts"
+	appTUI "github.com/Obedience-Corp/obey-voice/internal/tui"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 var testCmd = &cobra.Command{

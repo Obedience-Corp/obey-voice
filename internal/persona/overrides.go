@@ -1,6 +1,6 @@
 package persona
 
-import "github.com/lancekrogers/samantha/pkg/voiceagent/config"
+import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 
 // overrideProbe is a value no profile field could produce. A key that still
 // holds it after Apply ran was not written; a key that lost it was.

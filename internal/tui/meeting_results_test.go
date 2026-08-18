@@ -10,8 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/internal/listen"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/listen"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 func TestDemoMeetingFinalizerUsesProductionResultsContract(t *testing.T) {

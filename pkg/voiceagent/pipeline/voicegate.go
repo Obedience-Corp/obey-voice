@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // toolRegionRE opens a suppressed region: transcript narration announcing a

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // writeBundle fabricates a bundle from an exact event stream. The index reads

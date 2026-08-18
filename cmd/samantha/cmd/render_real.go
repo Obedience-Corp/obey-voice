@@ -18,15 +18,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/lancekrogers/samantha/internal/narrate"
-	"github.com/lancekrogers/samantha/internal/render"
-	"github.com/lancekrogers/samantha/internal/render/encoder"
-	"github.com/lancekrogers/samantha/internal/render/epub"
-	"github.com/lancekrogers/samantha/internal/render/extractors"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/internal/narrate"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/render/encoder"
+	"github.com/Obedience-Corp/obey-voice/internal/render/epub"
+	"github.com/Obedience-Corp/obey-voice/internal/render/extractors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 // runRenderText is the real batch render runner: it constructs the TTS provider

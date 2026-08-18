@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/prompts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 )
 
 // promptReloader re-resolves a prompt document at the start of every turn so an

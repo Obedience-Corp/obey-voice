@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lancekrogers/samantha/internal/render"
-	"github.com/lancekrogers/samantha/internal/render/epub"
-	"github.com/lancekrogers/samantha/internal/render/extractors"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/render/epub"
+	"github.com/Obedience-Corp/obey-voice/internal/render/extractors"
 )
 
 // PlanOptions controls narrate plan generation.

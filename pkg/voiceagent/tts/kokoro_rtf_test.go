@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // TestKokoroRealtimeFactor measures how much faster than realtime Kokoro

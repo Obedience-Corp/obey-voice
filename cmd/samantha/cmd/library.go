@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/lancekrogers/samantha/internal/calibre"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/calibre"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // newLibraryCmd builds the `samantha library` command group (Calibre catalog).

@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/lancekrogers/samantha/internal/audiobook"
-	"github.com/lancekrogers/samantha/internal/calibre"
-	"github.com/lancekrogers/samantha/internal/render"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/audiobook"
+	"github.com/Obedience-Corp/obey-voice/internal/calibre"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // configLoader supplies the loaded samantha config. Commands take it injected

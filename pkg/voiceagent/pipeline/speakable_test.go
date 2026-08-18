@@ -3,7 +3,7 @@ package pipeline
 import (
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 )
 
 // TestSpeakableSegmentNeedsBothHalves is a guard, not a behaviour test. It

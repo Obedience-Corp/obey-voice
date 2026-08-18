@@ -17,9 +17,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/prompts"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // Schema identifies the persona profile document version.

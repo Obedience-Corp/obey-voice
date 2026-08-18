@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 // segmentsDirName holds the uploaded PCM inside the bundle's hidden internal

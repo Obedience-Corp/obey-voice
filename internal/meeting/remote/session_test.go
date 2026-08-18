@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 // pcm builds one segment of samples with a recognizable value per sequence so

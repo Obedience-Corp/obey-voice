@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // qwenTierIDPrefix is the id namespace of the per-tier rows. Shared by the row

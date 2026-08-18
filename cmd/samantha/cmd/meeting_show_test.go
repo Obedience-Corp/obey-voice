@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 func TestMeetingShowUnknownBundleFails(t *testing.T) {

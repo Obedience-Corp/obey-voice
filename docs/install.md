@@ -17,7 +17,7 @@ macOS users may need to grant microphone permission to the terminal app used to 
 ## Linux amd64 archive
 
 Tagged releases include a relocatable `samantha-linux-amd64.tar.gz` for
-x86_64 glibc Linux ([latest release](https://github.com/lancekrogers/samantha/releases/latest)).
+x86_64 glibc Linux ([latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest)).
 It contains the Samantha executable and its sherpa-onnx /
 onnxruntime shared libraries; keep the executable and `lib/` directory
 together.

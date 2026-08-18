@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/persona"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // personaEnv points the config/persona roots at a temp dir and seeds a

@@ -5,7 +5,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 )
 
 func TestOwnerVerifyGate(t *testing.T) {

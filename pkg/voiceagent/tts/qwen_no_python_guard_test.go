@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // TestProductPathNeverSelectsPythonWorker locks the cutover: empty binary/model

@@ -3,7 +3,7 @@ package ui
 import (
 	"fmt"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // UI handles terminal output for the voice assistant.

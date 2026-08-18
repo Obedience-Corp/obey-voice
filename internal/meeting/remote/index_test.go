@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 )
 
 // TestManagerRehydratesBundlesAfterRestart is G33: a second manager over the

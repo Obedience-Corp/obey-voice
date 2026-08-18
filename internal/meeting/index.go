@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // The meeting index is the history surface: one pass over a bundle's event

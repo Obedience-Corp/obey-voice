@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 func writeNativeTUITestInstall(t *testing.T, modelsDir string) {

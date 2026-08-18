@@ -1,6 +1,6 @@
 package stt
 
-import "github.com/lancekrogers/samantha/pkg/voiceagent/config"
+import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 
 // Spec describes the runtime capabilities of one normalized STT provider/mode
 // pair. It is a side table keyed by config.NormalizeSTT output; it does not

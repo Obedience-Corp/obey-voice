@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 // maxResolveSpansPerCluster bounds per-cluster embedding cost when mapping

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/render/encoder"
+	"github.com/Obedience-Corp/obey-voice/internal/render/encoder"
 )
 
 // Format identifies the input document format.

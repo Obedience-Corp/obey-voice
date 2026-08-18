@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/speaker"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func speakerTestConfig(dir string) func() (*config.Config, error) {

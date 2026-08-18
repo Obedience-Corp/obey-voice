@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {

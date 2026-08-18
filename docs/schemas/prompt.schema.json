@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/lancekrogers/samantha/main/docs/schemas/prompt.schema.json",
+  "$id": "https://raw.githubusercontent.com/Obedience-Corp/obey-voice/main/docs/schemas/prompt.schema.json",
   "title": "Samantha prompt document",
   "description": "Schema for samantha.prompt.v1 prompt documents. Editor tooling only; runtime validation lives in internal/prompts.",
   "type": "object",

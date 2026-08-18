@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 )
 
 // IntentSinkConfig routes POST /v1/intent (PROTOCOL_DELTAS D3).

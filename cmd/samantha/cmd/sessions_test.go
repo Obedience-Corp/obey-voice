@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/netapi/wire"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/brain"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/internal/netapi/wire"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
 func runSessionsCmd(t *testing.T, args ...string) (string, error) {

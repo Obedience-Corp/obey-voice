@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // LoadSummaryFromJSONL rebuilds a Summary from a meeting bundle's internal

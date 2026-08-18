@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/internal/tui/vim"
+	"github.com/Obedience-Corp/obey-voice/internal/tui/vim"
 )
 
 func promptKeys(t *testing.T, p promptEditor, keys ...string) (promptEditor, promptEvent) {

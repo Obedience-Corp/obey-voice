@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/textclean"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // downloadStallTimeout aborts a download whose body has gone completely quiet.

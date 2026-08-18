@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func init() {

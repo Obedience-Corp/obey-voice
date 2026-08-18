@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
 )
 
 func TestClassifyAudiobookSections(t *testing.T) {

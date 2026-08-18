@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/platforminfo"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/platforminfo"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // Severity classifies a diagnostic result.

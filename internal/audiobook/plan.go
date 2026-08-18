@@ -15,9 +15,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/lancekrogers/samantha/internal/narrate"
-	"github.com/lancekrogers/samantha/internal/render"
-	"github.com/lancekrogers/samantha/internal/render/epub"
+	"github.com/Obedience-Corp/obey-voice/internal/narrate"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/render/epub"
 	"gopkg.in/yaml.v3"
 )
 

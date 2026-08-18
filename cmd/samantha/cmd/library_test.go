@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/calibre"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/calibre"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func TestLibrarySearchDisabled(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/listen"
+	"github.com/Obedience-Corp/obey-voice/internal/listen"
 )
 
 func TestWriterLifecycle(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lancekrogers/samantha/internal/speaker"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // prepareLiveSpeaker builds the live speaker controller for a conversation.

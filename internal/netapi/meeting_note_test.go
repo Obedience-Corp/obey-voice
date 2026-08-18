@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/meeting/remote"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
 )
 
 // TestMeetingNoteControlOverTheWire pins the D7 note action: the error cases

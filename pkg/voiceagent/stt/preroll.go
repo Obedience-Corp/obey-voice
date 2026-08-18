@@ -1,6 +1,6 @@
 package stt
 
-import "github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 
 // preRollSamplesFromMS converts a pre-roll window in milliseconds to a sample
 // count at the capture rate. A non-positive duration disables pre-roll.

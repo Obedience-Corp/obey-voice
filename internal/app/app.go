@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 const (

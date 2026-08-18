@@ -5,7 +5,7 @@ module example.com/samantha-embed
 
 go 1.26.1
 
-require github.com/lancekrogers/samantha v0.0.0
+require github.com/Obedience-Corp/obey-voice v0.0.0
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -38,4 +38,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/lancekrogers/samantha => ../..
+replace github.com/Obedience-Corp/obey-voice => ../..

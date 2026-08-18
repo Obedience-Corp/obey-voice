@@ -30,7 +30,7 @@ publish version:
 formula-sha version:
     #!/usr/bin/env bash
     set -euo pipefail
-    url="https://github.com/lancekrogers/samantha/archive/refs/tags/{{version}}.tar.gz"
+    url="https://github.com/Obedience-Corp/obey-voice/archive/refs/tags/{{version}}.tar.gz"
     sha="$(curl -fsSL "$url" | shasum -a 256 | cut -d' ' -f1)"
     echo "lancekrogers/homebrew-tap → Formula/samantha.rb:"
     echo "  url \"$url\""

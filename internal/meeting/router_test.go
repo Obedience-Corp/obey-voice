@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // shellQuote wraps s for use inside a double-quoted sh -c fragment.

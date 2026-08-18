@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 const personaSchemaPath = "../../docs/schemas/persona.schema.json"

@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	ansi "github.com/charmbracelet/x/ansi"
 
-	"github.com/lancekrogers/samantha/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/internal/netapi"
 )
 
 const remoteLogLimit = 200

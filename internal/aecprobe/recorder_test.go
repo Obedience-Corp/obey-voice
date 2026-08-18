@@ -3,7 +3,7 @@ package aecprobe
 import (
 	"testing"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 // The decorator sits between the player and the real front-end on the live

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/lancekrogers/samantha/internal/render/encoder"
+	"github.com/Obedience-Corp/obey-voice/internal/render/encoder"
 )
 
 // ResolveEncoder selects the optional output encoder for opts and verifies it is

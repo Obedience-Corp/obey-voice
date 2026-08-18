@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lancekrogers/samantha/internal/netapi"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
 func TestSessionRefID(t *testing.T) {

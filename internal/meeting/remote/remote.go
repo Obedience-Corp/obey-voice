@@ -28,8 +28,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/meeting"
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // State is the lifecycle a client polls with GET /v1/meeting/{id}.

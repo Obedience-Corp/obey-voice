@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
 // Retry constants mirror the conversational loop's proven values

@@ -4,11 +4,11 @@ import (
 	"os"
 
 	// Seed lipgloss dark-background cache before bubbletea OSC queries.
-	_ "github.com/lancekrogers/samantha/internal/bginit"
+	_ "github.com/Obedience-Corp/obey-voice/internal/bginit"
 	// Register persona ensure/apply on config.Load.
-	_ "github.com/lancekrogers/samantha/internal/persona"
+	_ "github.com/Obedience-Corp/obey-voice/internal/persona"
 
-	"github.com/lancekrogers/samantha/cmd/samantha/cmd"
+	"github.com/Obedience-Corp/obey-voice/cmd/samantha/cmd"
 )
 
 func main() {

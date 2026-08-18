@@ -3,7 +3,7 @@ package remote
 import (
 	"context"
 
-	meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 )
 
 // The end of a meeting: close the bundle, commit the terminal state a client

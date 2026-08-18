@@ -1,4 +1,4 @@
-module github.com/lancekrogers/samantha
+module github.com/Obedience-Corp/obey-voice
 
 go 1.26.1
 

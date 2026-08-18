@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/lancekrogers/samantha/internal/narrate"
+	"github.com/Obedience-Corp/obey-voice/internal/narrate"
 )
 
 func runNarratePrepare(cmd *cobra.Command, opts narrate.PrepareOptions) error {

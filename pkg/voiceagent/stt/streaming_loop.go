@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/endpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 )
 
 // streamingRecognizer abstracts the cgo online recognizer so the streaming loop

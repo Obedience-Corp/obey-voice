@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 const managedQwenProtocol = "samantha-qwen/v1"

@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/lancekrogers/samantha/internal/tui/anim"
+	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 )
 
 // Brand palette. Hex values paint as truecolor on modern terminals; under

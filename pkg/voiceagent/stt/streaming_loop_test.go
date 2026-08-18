@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/endpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 )
 
 // fakeStreamingRec is a scriptable streamingRecognizer.

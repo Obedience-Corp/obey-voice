@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/lancekrogers/samantha/internal/narrate"
-	"github.com/lancekrogers/samantha/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/narrate"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
 )
 
 // newNarrateCmd builds the `samantha narrate` command group.

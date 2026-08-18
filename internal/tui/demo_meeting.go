@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/listen"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/internal/listen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
 // demoMeetingEnv scripts mic phases/levels for VHS without hardware.

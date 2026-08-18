@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/lancekrogers/samantha/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
 )
 
 // Markdown handling notes (conservative first pass, no parser dependency):

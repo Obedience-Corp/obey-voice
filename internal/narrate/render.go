@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lancekrogers/samantha/internal/render"
+	"github.com/Obedience-Corp/obey-voice/internal/render"
 )
 
 // RenderOptions controls narrate render.

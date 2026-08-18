@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	ansi "github.com/charmbracelet/x/ansi"
 
-	"github.com/lancekrogers/samantha/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
 )
 
 func (m personasModel) View() string {

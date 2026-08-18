@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // TestBargeInResponsiveUnderSynthAndQueueLoad proves barge-in interrupts a turn

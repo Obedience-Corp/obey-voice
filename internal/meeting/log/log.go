@@ -4,7 +4,7 @@
 //
 // Import as:
 //
-//	import meetinglog "github.com/lancekrogers/samantha/internal/meeting/log"
+//	import meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 //
 // JSONL event types: session_start, utterance, note, bookmark, error,
 // speaker_analysis, speaker_segment, speaker_utterance, session_end, routed.
@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lancekrogers/samantha/internal/listen"
+	"github.com/Obedience-Corp/obey-voice/internal/listen"
 )
 
 // Event kinds written to the JSONL sidecar.

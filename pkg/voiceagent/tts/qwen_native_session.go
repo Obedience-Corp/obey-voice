@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lancekrogers/samantha/pkg/voiceagent/audio"
-	managedqwen "github.com/lancekrogers/samantha/pkg/voiceagent/qwen"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // nativeWorkerProtocol is frozen in projects/qwen3-tts-native/docs/PROTOCOL.md.

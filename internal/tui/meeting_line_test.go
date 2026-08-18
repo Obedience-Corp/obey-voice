@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/lancekrogers/samantha/internal/listen"
+	"github.com/Obedience-Corp/obey-voice/internal/listen"
 )
 
 func TestFormatMeetingUtteranceLineMicWhenUnlabeled(t *testing.T) {

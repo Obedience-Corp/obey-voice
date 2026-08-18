@@ -3,8 +3,8 @@ package cmd
 import (
 	"strings"
 
-	"github.com/lancekrogers/samantha/internal/persona"
-	"github.com/lancekrogers/samantha/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // configPersonaPayload is the persona block of `config get --json`. It names
