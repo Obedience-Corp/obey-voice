@@ -11,6 +11,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -394,8 +395,8 @@ func TestSettingsSelectTTSProviderPersistsAndRefreshesVoices(t *testing.T) {
 	if cfg.TTSProvider != "qwen3-tts" {
 		t.Fatalf("config TTS provider = %q, want qwen3-tts", cfg.TTSProvider)
 	}
-	if len(m.voiceItems) != 9 {
-		t.Fatalf("Qwen voice items = %d, want 9 model presets", len(m.voiceItems))
+	if len(m.voiceItems) != len(managedqwen.SelectableVoices()) {
+		t.Fatalf("Qwen voice items = %d, want %d selectable voices", len(m.voiceItems), len(managedqwen.SelectableVoices()))
 	}
 	if !strings.Contains(m.message, "immediately") {
 		t.Fatalf("selection message = %q, want immediate-activation guidance", m.message)

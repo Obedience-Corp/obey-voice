@@ -78,7 +78,7 @@ func providerAt(list []string, idx int) string {
 func stackVoiceCatalog(provider string) []string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "qwen3-tts":
-		voices := managedqwen.CustomVoices()
+		voices := managedqwen.SelectableVoices()
 		out := make([]string, 0, len(voices))
 		for _, v := range voices {
 			out = append(out, v.Name)

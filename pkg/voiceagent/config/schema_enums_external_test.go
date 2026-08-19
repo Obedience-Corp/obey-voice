@@ -26,8 +26,8 @@ func TestSchemaEnumsMatchOwningPackages(t *testing.T) {
 	for _, spec := range tts.Providers() {
 		ttsProviders = append(ttsProviders, spec.Name)
 	}
-	qwenVoices := make([]string, 0, 9)
-	for _, voice := range qwen.CustomVoices() {
+	qwenVoices := make([]string, 0, 10)
+	for _, voice := range qwen.SelectableVoices() {
 		qwenVoices = append(qwenVoices, voice.Name)
 	}
 
@@ -40,7 +40,7 @@ func TestSchemaEnumsMatchOwningPackages(t *testing.T) {
 		{"voice_fallback_provider", "tts.Providers", ttsProviders},
 		{"tts_voice", "tts.VoiceNames", tts.VoiceNames()},
 		{"brain_provider", "brain.Providers", brainProviders},
-		{"qwen_tts_voice", "qwen.CustomVoices", qwenVoices},
+		{"qwen_tts_voice", "qwen.SelectableVoices", qwenVoices},
 		{"qwen_tts_language", "qwen.SupportedLanguages", qwen.SupportedLanguages()},
 		{"qwen_tts_model_tier", "qwen.ModelTiers", qwen.ModelTiers()},
 		{"qwen_tts_mode", "tts.VoiceMode constants", []string{

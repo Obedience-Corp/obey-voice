@@ -254,11 +254,14 @@ func (s *nativeQwenSession) SynthesizeToStream(ctx context.Context, req Synthesi
 		"id":   id,
 		"text": req.Text,
 	}
-	if preset := strings.TrimSpace(req.Voice); preset != "" && !strings.EqualFold(preset, "default") {
-		msg["preset"] = preset
-	}
 	if ref := strings.TrimSpace(req.ReferenceAudio); ref != "" {
 		msg["ref_wav"] = ref
+	}
+	// Shipped clones are not model presets. A ref_wav is the throat.
+	if _, shipped := managedqwen.LookupShipped(req.Voice); !shipped {
+		if preset := strings.TrimSpace(req.Voice); preset != "" && !strings.EqualFold(preset, "default") {
+			msg["preset"] = preset
+		}
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {

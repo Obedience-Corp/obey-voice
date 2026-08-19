@@ -80,9 +80,9 @@ func sttModeEnum() []string {
 	return out
 }
 
-// qwenVoiceEnum is sourced from the Qwen preset registry.
+// qwenVoiceEnum is sourced from selectable Qwen voices (presets + shipped clones).
 func qwenVoiceEnum() []string {
-	voices := qwen.CustomVoices()
+	voices := qwen.SelectableVoices()
 	out := make([]string, 0, len(voices))
 	for _, voice := range voices {
 		out = append(out, voice.Name)
