@@ -15,20 +15,29 @@ samantha serve --banner-json --no-voice --no-mdns --bind 127.0.0.1 --port 47262
 ```
 
 Providers for the capture: brain `ollama` (`llama3.2:latest`), STT `sherpa`
-(whisper-small), TTS `kokoro`. `audio_chunk` frames are omitted from the files —
-they are base64 PCM and add megabytes without adding contract.
+(whisper-small), TTS `kokoro`. All the files come from one serve process.
+`audio_chunk` frames are omitted — they are base64 PCM and add megabytes
+without adding contract.
 
 | File | Scenario |
 |---|---|
-| `text_turn.jsonl` | `audio_output{mode:stream}` → `text_input` → full turn → `interrupt` after the turn had finished (the idle-interrupt case: `audio_reset` alone) |
-| `voice_turn.jsonl` | `audio_output{mode:stream}` → `voice_start` → 2 s of `audio_input` at 16 kHz → `voice_end` |
-| `interrupt_speaking.jsonl` | `text_input` → `interrupt` sent the instant `speaking_started` arrived (`response_delta` frames omitted for size) |
-| `interrupt_idle.jsonl` | `interrupt` with nothing in flight — `audio_reset` and nothing else |
-| `ready_banner.json` | the `--banner-json` ready line, `token` and `fingerprint` replaced with `REDACTED` (a live token must not be committed; every other field is verbatim) |
-| `status.json` | `GET /v1/status` off the same serve, `fingerprint` replaced with `REDACTED` |
+| `text_turn.jsonl` | `audio_output{mode:stream}` → `text_input` → one complete text turn |
+| `voice_turn.jsonl` | `voice_start` → 3.1 s of **real speech** as `audio_input` at 16 kHz → `voice_end` → a complete voice turn: STT transcript, model reply, two TTS segments. The speech is macOS `say -o … --data-format=LEI16@16000`; a synthetic tone transcribes to nothing and would prove nothing |
+| `interrupt_speaking.jsonl` | `interrupt` sent the instant `speaking_started` arrived (`response_delta` frames omitted for size) |
+| `interrupt_after_delivery.jsonl` | `interrupt` 4 s **after** `turn_metrics`, while a stream client is still playing the reply. The host thinks the turn is finished; the barge-in is reported anyway |
+| `interrupt_idle.jsonl` | `interrupt` on a connection that never heard anything — `audio_reset` and nothing else |
+| `ready_banner.json` | the `--banner-json` ready line. `token` and `fingerprint` are `REDACTED` — a live bearer must never be committed, and a test enforces it. Every other field is verbatim |
+| `status.json` | `GET /v1/status` off the same serve, `fingerprint` redacted the same way |
 
 ## What they are for
 
 `response_delta` and `audio_level` used to reach clients as a bare
-`{"type":…}`. These captures are the proof they now carry their payloads, and
-the thing an app-side decoder can be tested against.
+`{"type":…}`, and a remote `interrupt` used to answer with `audio_reset` alone.
+These captures are the proof that neither is true any more, and the thing an
+app-side decoder can be tested against.
+
+`interrupt_after_delivery.jsonl` earns its place separately: with
+`audio_output` `stream` the host finishes a reply the moment it hands the chunks
+to the socket, so a barge-in ten seconds later looks idle from the server's own
+metrics. That is the case that made the feature useless in the deployment it
+was built for, and it is captured rather than argued about.
