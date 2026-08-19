@@ -102,6 +102,7 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 	deferred := s.dispatcher.Pending()
 	prepare := func() bool { return true }
 	if deferred {
+		conn.openStaging()
 		conn.voiceQueued.Store(true)
 		prepare = func() bool { return s.claimQueuedMic(conn) }
 	} else if err := s.hub.claimMic(conn); err != nil {
@@ -110,15 +111,27 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 
 	if err := s.dispatcher.SubmitVoice(prepare); err != nil {
 		conn.voiceQueued.Store(false)
+		conn.dropStaged()
 		if !deferred {
 			// Release only what this call claimed. A deferred voice_start
 			// claimed nothing, and this connection may still be speaking into
 			// a live claim from an earlier turn.
 			s.hub.releaseMic(conn)
 		}
-		return errors.New(dispatchErrText(err))
+		return err
 	}
 	return nil
+}
+
+// writeVoiceAudio routes one inbound PCM frame: into the shared ingress when
+// this connection owns the mic, into its own staging buffer while its turn is
+// still queued. A queued client keeps streaming exactly as it always has; the
+// frames simply wait with it.
+func (s *Server) writeVoiceAudio(conn *streamConn, samples []float32) error {
+	if conn.voiceQueued.Load() && conn.stage(samples) {
+		return nil
+	}
+	return s.hub.writeMic(conn, samples)
 }
 
 // claimQueuedMic runs on the dispatch goroutine when a queued voice turn
@@ -127,11 +140,32 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 // gave up, or lost the race for the mic to another client.
 func (s *Server) claimQueuedMic(conn *streamConn) bool {
 	if !conn.voiceQueued.Swap(false) {
+		conn.dropStaged()
 		return false
 	}
 	if err := s.hub.claimMic(conn); err != nil {
+		conn.dropStaged()
 		s.sendError(conn, err.Error())
 		return false
+	}
+
+	// claimMic just reset the ingress, so replay what the client streamed
+	// while it waited before any live frame can reach it. closeStaging is
+	// what makes that ordering safe: a frame either lands in this replay or
+	// is written live afterwards, never both and never neither.
+	staged, final := conn.closeStaging()
+	if len(staged) > 0 {
+		if err := s.hub.writeMic(conn, staged); err != nil {
+			s.sendError(conn, err.Error())
+		}
+	}
+	if final {
+		// The client finished speaking while it waited. Finalize and hand the
+		// mic straight back, exactly as a live voice_end would have.
+		if err := s.hub.endMicUtterance(conn); err != nil {
+			s.sendError(conn, err.Error())
+		}
+		s.hub.releaseMic(conn)
 	}
 	return true
 }
@@ -140,20 +174,24 @@ func (s *Server) claimQueuedMic(conn *streamConn) bool {
 // another client can talk while TTS plays (releaseMic finalizes again,
 // idempotently).
 //
-// A voice_end from a client whose turn is still queued abandons that turn
-// instead: it never held the mic, so no audio was accepted for it, and letting
-// it dequeue would claim the mic for a turn nobody is speaking into.
+// A voice_end for a turn that is still queued records the end of the utterance
+// against the staged audio instead; the turn finalizes itself the moment it is
+// dequeued. The client therefore sees the same result whether or not the
+// pipeline happened to be busy when it started talking.
 func (s *Server) endVoiceTurn(conn *streamConn) error {
+	if !s.hub.isClaimant(conn) && conn.voiceQueued.Load() && conn.markStagedFinal() {
+		return nil
+	}
+	// Re-checked, not repeated by accident: the claim can be granted between
+	// the two calls, and then this is an ordinary voice_end after all.
 	if !s.hub.isClaimant(conn) {
-		if conn.voiceQueued.Swap(false) {
-			return errors.New("voice turn was queued behind another turn and never claimed the mic; send voice_start again")
-		}
 		return errors.New("microphone not claimed by this client")
 	}
 	// Anything this connection queued behind its own live turn has no audio
-	// either; drop it rather than let it dequeue and take the mic. The
+	// of its own; drop it rather than let it dequeue and take the mic. The
 	// immediate-claim path never sets the flag, so a fast tap is unaffected.
 	conn.voiceQueued.Store(false)
+	conn.dropStaged()
 	if err := s.hub.endMicUtterance(conn); err != nil {
 		return err
 	}
@@ -179,7 +217,8 @@ func (s *Server) interrupt() {
 	// Read what is in flight before canceling; both flags fall the moment
 	// the turn unwinds.
 	speaking := s.hub.speaking.Load()
-	interrupted := s.dispatcher.TurnActive() || speaking
+	live := s.dispatcher.TurnActive() && !s.dispatcher.Interrupted()
+	interrupted := live || speaking
 
 	s.hub.resetAudio()
 	s.dispatcher.Interrupt()

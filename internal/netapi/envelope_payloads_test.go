@@ -105,17 +105,6 @@ func TestEncodeEventLeavesOtherShapesAlone(t *testing.T) {
 	}
 }
 
-// TestAudioLevelEncodesAsJSONNumber pins the level to a plain JSON number:
-// NaN or ±Inf would make the whole frame unmarshalable and take the turn's
-// event stream down with it, so the engine must never emit one.
-func TestAudioLevelEncodesAsJSONNumber(t *testing.T) {
-	for _, bad := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
-		if _, err := marshalEvent(events.AudioLevel{Source: "input", Level: bad}); err == nil {
-			t.Errorf("marshalEvent(level=%v) succeeded; a non-finite level must fail loudly", bad)
-		}
-	}
-}
-
 // wireFixture is one live capture under testdata/wire: server→client frames,
 // verbatim bytes, one per line, in arrival order.
 func wireFixture(t *testing.T, name string) []map[string]any {

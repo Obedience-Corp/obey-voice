@@ -202,7 +202,7 @@ that can and does refuse.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/v1/status` | yes | `turn_active`, `providers`, `uptime_seconds`, `fingerprint`, `capabilities` |
+| `GET` | `/v1/status` | yes | `protocol_version`, `turn_active`, `providers`, `uptime_seconds`, `fingerprint`, `meetings`, `capabilities` |
 | `GET` | `/v1/sessions` | yes | Session summaries |
 | `GET` | `/v1/personas` | yes | Persona list for `set_persona` (see below) |
 | `POST` | `/v1/sessions/{id}/resume` | yes | Load history into the live pipeline |
@@ -510,8 +510,8 @@ in `GET /v1/status`:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `response_delta` | `text` (string) | One incremental piece of the assistant's reply as the brain produces it. Advisory and droppable: `response_ready` always follows with the complete, canonical text, and concatenating the deltas of a completed turn reproduces it. |
-| `audio_level` | `source` (`input` \| `output`), `level` (number, `0`–`1`) | Throttled (~50 ms) energy sample. `level` is the normalised RMS the engine already computes for its own meters — not raw dBFS. Droppable by design: a client must not infer anything from a gap. |
+| `response_delta` | `text` (string) | One incremental piece of the assistant's reply as the brain produces it. Advisory and droppable: `response_ready` always follows with the complete, canonical text, and concatenating the deltas of an ordinary turn reproduces it. (Not on a *degraded* turn — a recovery reply after a hard brain or tool failure is appended to `response_ready` without ever being streamed. Render `response_ready`, and use the deltas only to fill in ahead of it.) |
+| `audio_level` | `source` (`input` \| `output`), `level` (number, `0`–`1`) | Throttled (~50 ms) energy sample. `level` is the normalised RMS the engine already computes for its own meters — not raw dBFS. Droppable by design: a client must not infer anything from a gap. **`source` is `input` in practice**: serve has no host mic loop and no output meter, so an output level is not currently emitted. A client that needs an output meter measures its own playback. |
 
 A client that needs sub-100 ms meter response should measure locally;
 `audio_level` crosses the network and is throttled at the source.
@@ -534,6 +534,15 @@ speaking" signals, not as a count. `turn_metrics` still follows and its
 `outcome` is whatever the turn state machine decided — a reply the model had
 already finished reports `completed` even though playback was cut, which is
 exactly why `turn_interrupted` exists.
+
+**These events can arrive after that turn's `turn_metrics`.** With
+`audio_output` `stream` the host hands a reply to the socket in one go, so the
+turn is "complete" on the server while the client still has tens of seconds of
+audio to play. An `interrupt` during that window is a real barge-in and is
+reported as one. The client that sent the `interrupt` receives the events too —
+they are broadcast, not addressed — so treat your own barge-in's
+`turn_interrupted` as the acknowledgement, and only an *unsolicited* one as
+another device speaking.
 
 **Audio** (only if `audio_output` mode is `stream`):
 
@@ -582,22 +591,27 @@ One client owns the remote mic at a time (`voice_start` → `voice_end`).
 | A turn is in flight | The turn is **queued** and claims **nothing** until it is dequeued |
 | Queue full (16 deep) | `error`: `server is busy — try again shortly`; no claim is taken |
 | Remote mic disabled on this serve | `error` beginning `remote mic is not enabled` (the claim path adds `on this serve instance`) |
+| The connection closed while its turn was queued | the turn is dropped; `error`: `connection is closed` may be emitted as the socket goes away |
 
 Deferring the claim is what stops one device's false trigger from locking every
 other device out: a queued `voice_start` holds nothing, so another client can
 still take the mic, and the queued turn is skipped when it is dequeued if the
 mic has gone elsewhere.
 
-Consequences a client must handle:
+**A queued turn keeps its audio.** Stream `audio_input` and send `voice_end`
+exactly as you would on an idle pipeline: the frames are held for your turn (up
+to 30 s of them) and replayed into the recogniser the moment it starts, and a
+`voice_end` that arrives while you are still queued finalizes the utterance
+then. A client that starts streaming the instant it has sent `voice_start`
+therefore behaves identically whether or not the pipeline happened to be busy.
 
-- While its `voice_start` is queued, `audio_input` is refused with
-  `microphone not claimed by this client`. Buffer locally or drop those frames;
-  it is not a fatal error.
-- `voice_end` while still queued **abandons** the queued turn and answers
-  `voice turn was queued behind another turn and never claimed the mic; send
-  voice_start again`. Nothing was recorded for it, so there is nothing to
-  transcribe.
-- Disconnecting releases everything: the claim, and any turn still queued.
+What can still go wrong, and what it looks like:
+
+- Another client took the mic while you waited. Your queued turn is dropped
+  when it is dequeued and you get `error`: `microphone claimed by another
+  client`. Return to idle, as you would for any refusal.
+- Disconnecting releases everything: the claim, the queued turn, and its
+  buffered audio.
 - `voice_end` on a live claim finalizes the utterance and releases the mic
   straight away, so another client can talk while the reply is still speaking.
 

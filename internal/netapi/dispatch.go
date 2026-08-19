@@ -77,6 +77,11 @@ type Dispatcher struct {
 	mu         sync.Mutex
 	cancelTurn context.CancelFunc
 	active     atomic.Bool
+	// canceled marks the in-flight turn as interrupted. It is separate from
+	// active so /v1/status keeps reporting the truth — a canceled turn is
+	// still running until it unwinds — while a voice_start arriving right
+	// behind an interrupt still sees a free pipeline.
+	canceled atomic.Bool
 }
 
 func NewDispatcher(runner TurnRunner, bus *events.Bus, clearHistory func(), resume func(id string) error) *Dispatcher {
@@ -107,6 +112,7 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 	case opText:
 		turnCtx, cancel := context.WithCancel(ctx)
 		d.setCancel(cancel)
+		d.canceled.Store(false)
 		d.active.Store(true)
 		err := d.runner.RunTurnTextMode(turnCtx, op.text)
 		d.active.Store(false)
@@ -127,6 +133,7 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 		}
 		turnCtx, cancel := context.WithCancel(ctx)
 		d.setCancel(cancel)
+		d.canceled.Store(false)
 		d.active.Store(true)
 		_, err := voice.RunTurn(turnCtx)
 		d.active.Store(false)
@@ -238,16 +245,14 @@ func (d *Dispatcher) SetPersona(ctx context.Context, id string, apply func(strin
 
 // Interrupt cancels the in-flight turn, if any. Unlike the other controls it
 // does not queue — an interrupt behind the turn it targets is useless.
-//
-// The turn stops counting as active the moment it is canceled rather than when
-// it finishes unwinding, so the client-driven barge-in sequence
-// (interrupt → voice_start) still finds an idle pipeline and takes the mic
-// immediately instead of queueing behind the turn it just killed.
 func (d *Dispatcher) Interrupt() {
 	d.mu.Lock()
 	cancel := d.cancelTurn
 	if cancel != nil {
-		d.active.Store(false)
+		// The turn is dead from here even though it has not unwound yet, so
+		// the barge-in sequence (interrupt → voice_start) finds a free
+		// pipeline instead of queueing behind the turn it just killed.
+		d.canceled.Store(true)
 	}
 	d.mu.Unlock()
 	if cancel != nil {
@@ -255,16 +260,24 @@ func (d *Dispatcher) Interrupt() {
 	}
 }
 
-// TurnActive reports whether a turn is running right now.
+// TurnActive reports whether a turn is running right now. A canceled turn is
+// still active until it unwinds — reporting otherwise would tell a client the
+// pipeline is free while a slow synthesis or tool call is still burning.
 func (d *Dispatcher) TurnActive() bool {
 	return d.active.Load()
 }
 
-// Pending reports whether a submission would have to wait: a turn is running,
-// or ops are already queued ahead of it. A voice_start that lands here is
-// queued without claiming the mic.
+// Interrupted reports whether the in-flight turn has been canceled and is only
+// unwinding.
+func (d *Dispatcher) Interrupted() bool {
+	return d.active.Load() && d.canceled.Load()
+}
+
+// Pending reports whether a submission would have to wait: a live turn that
+// has not been interrupted, or ops already queued ahead of it. A voice_start
+// that lands here is queued without claiming the mic.
 func (d *Dispatcher) Pending() bool {
-	return d.active.Load() || len(d.queue) > 0
+	return (d.active.Load() && !d.canceled.Load()) || len(d.queue) > 0
 }
 
 func (d *Dispatcher) enqueue(op dispatchOp) error {

@@ -214,7 +214,8 @@ func TestHubSpeakingTracksTurnBoundaries(t *testing.T) {
 	}{
 		{"nothing emitted", nil, false},
 		{"thinking only", []events.Event{events.ThinkingStarted{}}, false},
-		{"turn ended after speech", []events.Event{events.SpeakingStarted{}, events.TurnMetrics{Outcome: "completed"}}, false},
+		{"turn ended after speech, nobody streaming", []events.Event{events.SpeakingStarted{}, events.TurnMetrics{Outcome: "completed"}}, false},
+		{"turn failed before metrics", []events.Event{events.SpeakingStarted{}, events.Error{Stage: "turn", Message: "boom"}}, false},
 		{"interrupted speech", []events.Event{events.SpeakingStarted{}, events.SpeakingInterrupted{Reason: "x"}}, false},
 		{"next turn started", []events.Event{events.SpeakingStarted{}, events.ThinkingStarted{}}, false},
 		{"speaking", []events.Event{events.ThinkingStarted{}, events.SpeakingStarted{}}, true},
@@ -255,6 +256,12 @@ func TestInterruptFixturesMatchTheContract(t *testing.T) {
 			fixture: "interrupt_speaking.jsonl",
 			want:    []string{"audio_reset", "speaking_interrupted", "turn_interrupted"},
 		},
+		{
+			// The host called this turn complete before the interrupt landed;
+			// the client was still playing it. Captured live.
+			fixture: "interrupt_after_delivery.jsonl",
+			want:    []string{"turn_metrics", "audio_reset", "speaking_interrupted", "turn_interrupted"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -286,5 +293,93 @@ func TestInterruptFixturesMatchTheContract(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestHubSpeakingSurvivesHostPlaybackForStreamClients is the regression for
+// the case that made E2 useless where it matters. With a muted host and a
+// stream client, the fanout finishes as soon as the chunks are queued, so
+// speaking_complete and turn_metrics land about a millisecond after
+// speaking_started while the client still has ~20 s of audio to play. The
+// server must not conclude from that that nothing is being spoken.
+func TestHubSpeakingSurvivesHostPlaybackForStreamClients(t *testing.T) {
+	tests := []struct {
+		name     string
+		streamer bool
+		want     bool
+	}{
+		{"host player only — turn_metrics really is the end", false, false},
+		{"stream client still playing — turn_metrics is not", true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bus := events.NewBus()
+			h := newHub()
+			detach := h.attachBus(bus)
+			defer detach()
+
+			conn := newTestConn(4, 4)
+			h.add(conn)
+			h.setConnAudio(conn, tt.streamer)
+
+			bus.Emit(events.ThinkingStarted{})
+			bus.Emit(events.SpeakingStarted{Text: "a long reply"})
+			bus.Emit(events.SpeakingComplete{Elapsed: time.Millisecond})
+			bus.Emit(events.TurnMetrics{Outcome: "completed"})
+
+			if got := h.speaking.Load(); got != tt.want {
+				t.Errorf("speaking = %v, want %v", got, tt.want)
+			}
+			// Either way, the reset boundary ends it.
+			h.resetAudio()
+			if h.speaking.Load() {
+				t.Error("speaking survived an audio reset")
+			}
+		})
+	}
+}
+
+// TestInterruptAfterWireDeliveryReportsTheTurn drives the whole path: the turn
+// is over as far as the host is concerned, the client is still hearing it, and
+// the barge-in must still be announced. A repeated interrupt must not be.
+func TestInterruptAfterWireDeliveryReportsTheTurn(t *testing.T) {
+	bus := events.NewBus()
+	runner := &scriptedRunner{runs: make(chan struct{}, 1)}
+	_, addr, creds := startTestServer(t, runner, bus)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ws := dialStream(t, ctx, addr, creds)
+	frames := readFrames(t, ctx, ws)
+	writeControl(t, ctx, ws, controlMessage{Type: "audio_output", Mode: "stream"})
+	frames.await("audio_output_ack", 2*time.Second)
+
+	// A turn that completes on the host while the client still has audio.
+	writeControl(t, ctx, ws, controlMessage{Type: "text_input", Text: "say something long"})
+	<-runner.runs
+	bus.Emit(events.ThinkingStarted{})
+	bus.Emit(events.SpeakingStarted{Text: "a long reply"})
+	bus.Emit(events.SpeakingComplete{Elapsed: time.Millisecond})
+	bus.Emit(events.TurnMetrics{Outcome: "completed"})
+	frames.await("turn_metrics", 2*time.Second)
+
+	writeControl(t, ctx, ws, controlMessage{Type: "interrupt"})
+	got := frames.await("turn_interrupted", 2*time.Second)
+	for _, want := range []string{"audio_reset", "speaking_interrupted", "turn_interrupted"} {
+		if !contains(got, want) {
+			t.Errorf("missing %s after a barge-in over streamed audio; frames = %v", want, got)
+		}
+	}
+
+	// The second interrupt has nothing left to report.
+	writeControl(t, ctx, ws, controlMessage{Type: "interrupt"})
+	again := frames.await("turn_interrupted", 700*time.Millisecond)
+	if contains(again, "turn_interrupted") || contains(again, "speaking_interrupted") {
+		t.Errorf("a repeated interrupt announced a second cancellation; frames = %v", again)
+	}
+	if !contains(again, "audio_reset") {
+		t.Errorf("a repeated interrupt must still reset audio; frames = %v", again)
 	}
 }

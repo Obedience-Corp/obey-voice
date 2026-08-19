@@ -30,38 +30,6 @@ const audioQueueDepth = 128
 // single-user tool, not a service under load.
 const maxStreamClients = 8
 
-type streamConn struct {
-	out   chan []byte // event / control envelopes
-	audio chan []byte // TTS audio_chunk / audio_end / audio_reset only
-	kick  chan string
-	once  sync.Once
-
-	// token is the bearer that opened this stream (primary or D2 device).
-	// Used to evict only that device's sockets on DELETE /v1/devices/{id}.
-	token string
-
-	// audioStream is a per-connection preference set by the audio_output
-	// control message. atomic so the hub hot path never takes a second lock.
-	audioStream atomic.Bool
-	// audioBlocked is set for every stream client when the shared turn is
-	// interrupted. It stays set until the next turn starts, preventing tail
-	// chunks from the canceled turn from crossing the reset boundary.
-	audioBlocked atomic.Bool
-	// voiceQueued marks a voice turn this connection has queued behind
-	// another turn and that has not claimed the mic yet. Cleared when the
-	// turn is dequeued, when the client gives up (voice_end), or when the
-	// connection goes away — a cleared flag abandons the queued turn.
-	voiceQueued atomic.Bool
-}
-
-func (c *streamConn) evict(reason string) {
-	c.once.Do(func() { c.kick <- reason })
-}
-
-func (c *streamConn) wantsAudio() bool {
-	return c.audioStream.Load()
-}
-
 // hub owns the single bus subscription and fans events out to connections.
 // The bus has one detachable SubscribeAll handler for the server's lifetime;
 // connections attach and detach here, never on the bus itself.
@@ -218,6 +186,10 @@ var audioResetEnvelope = []byte(`{"type":"audio_reset"}`)
 // chunks are drained and audio_reset is enqueued. The browser suppresses audio
 // as soon as it sends interrupt, then resumes when it receives this marker.
 func (h *hub) resetAudio() {
+	// Whatever a client was still playing stops here, so the reply is no
+	// longer being spoken. Clearing it also makes a repeated interrupt idle:
+	// the second one has nothing left to report.
+	h.speaking.Store(false)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.audioBlocked = true
@@ -240,6 +212,24 @@ func (h *hub) resetAudio() {
 	}
 }
 
+// endOfHostPlayback clears the speaking flag at a turn boundary — but only
+// when nobody is receiving TTS over the wire.
+//
+// With audio_output "stream" (and a muted host, which is the default in
+// tailscale mode) the fanout finishes the moment the chunks are queued: a
+// twenty-second reply reports speaking_complete and turn_metrics about a
+// millisecond after it started. The client is still playing it. Trusting the
+// host's "playback complete" there would make every barge-in look like an
+// idle interrupt and emit no turn_interrupted at all — the one event the
+// barge-in exists to produce. For stream clients the flag is cleared by the
+// next thinking_started or by the interrupt itself (resetAudio), both of which
+// really do mean the client stopped hearing the reply.
+func (h *hub) endOfHostPlayback() {
+	if !h.hasStreamClients() {
+		h.speaking.Store(false)
+	}
+}
+
 // resumeAudio opens the next-turn side of the reset boundary. ThinkingStarted
 // is emitted before synthesis, so no new turn audio can race ahead of this.
 func (h *hub) resumeAudio() {
@@ -259,14 +249,16 @@ func (h *hub) attachBus(bus *events.Bus) (detach func()) {
 			h.resumeAudio()
 		case events.SpeakingStarted:
 			h.speaking.Store(true)
-		case events.SpeakingInterrupted, events.TurnMetrics:
+		case events.SpeakingInterrupted:
 			h.speaking.Store(false)
+		case events.TurnMetrics:
+			h.endOfHostPlayback()
 		case events.Error:
 			// A turn that dies before turn_metrics would otherwise leave the
 			// flag set, and the next idle interrupt would claim it cut off
 			// speech that had already stopped.
 			if e.Stage == "turn" {
-				h.speaking.Store(false)
+				h.endOfHostPlayback()
 			}
 		}
 		msg, err := marshalEvent(e)
@@ -295,11 +287,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() {
-		// Abandon anything this connection had queued before releasing: a
-		// turn dequeued after the socket is gone must not claim the mic.
+		// Order matters. remove() first, so claimMic can no longer grant this
+		// connection anything; releaseMic() second, so a claim granted just
+		// before the removal is still cleared. The other order leaves a window
+		// where a queued turn claims the mic after the release has run and
+		// nothing is left alive to give it back.
 		conn.voiceQueued.Store(false)
-		s.hub.releaseMic(conn)
+		conn.dropStaged()
 		s.hub.remove(conn)
+		s.hub.releaseMic(conn)
 	}()
 
 	ctx, cancel := context.WithCancel(r.Context())
@@ -378,7 +374,7 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			s.sendAudioOutputAck(conn, mode)
 		case "voice_start":
 			if err := s.startVoiceTurn(conn); err != nil {
-				s.sendError(conn, err.Error())
+				s.sendError(conn, dispatchErrText(err))
 			}
 		case "audio_input":
 			samples, err := decodePCMS16LE(msg.Data, msg.SampleRate)
@@ -386,7 +382,7 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 				s.sendError(conn, "audio_input: "+err.Error())
 				continue
 			}
-			if err := s.hub.writeMic(conn, samples); err != nil {
+			if err := s.writeVoiceAudio(conn, samples); err != nil {
 				s.sendError(conn, err.Error())
 			}
 		case "voice_end":

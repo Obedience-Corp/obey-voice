@@ -2,6 +2,7 @@ package netapi
 
 import (
 	"context"
+	"encoding/base64"
 	"sync"
 	"testing"
 	"time"
@@ -15,13 +16,18 @@ import (
 // voiceRunner is a TurnRunner that can also run voice turns, so a test can
 // drive the remote-mic path without STT.
 type voiceRunner struct {
-	mu     sync.Mutex
-	texts  []string
-	voices int
+	mu       sync.Mutex
+	texts    []string
+	voices   int
+	consumed int // samples read off the ingress by voice turns
+	finals   int // Final frames seen
 
 	block      bool // park every turn until ctx cancellation
+	drain      bool // read the ingress like a real STT loop would
+	ingress    *audio.Ingress
 	textStart  chan struct{}
 	voiceStart chan struct{}
+	voiceDone  chan struct{}
 }
 
 func (r *voiceRunner) RunTurnTextMode(ctx context.Context, input string) error {
@@ -45,11 +51,44 @@ func (r *voiceRunner) RunTurn(ctx context.Context) (string, error) {
 	if r.voiceStart != nil {
 		r.voiceStart <- struct{}{}
 	}
+	if r.drain {
+		err := r.drainIngress(ctx)
+		if r.voiceDone != nil {
+			r.voiceDone <- struct{}{}
+		}
+		return "", err
+	}
 	if r.block {
 		<-ctx.Done()
 		return "", ctx.Err()
 	}
 	return "", nil
+}
+
+// drainIngress reads until the utterance is finalized, the way the real STT
+// loop consumes remote PCM.
+func (r *voiceRunner) drainIngress(ctx context.Context) error {
+	for {
+		frame, err := r.ingress.ReadFrame(ctx)
+		if err != nil {
+			return err
+		}
+		r.mu.Lock()
+		r.consumed += len(frame.Samples)
+		if frame.Final {
+			r.finals++
+		}
+		r.mu.Unlock()
+		if frame.Final {
+			return nil
+		}
+	}
+}
+
+func (r *voiceRunner) samplesConsumed() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.consumed
 }
 
 func (r *voiceRunner) voiceTurns() int {
@@ -75,6 +114,7 @@ func startVoiceServer(t *testing.T, runner *voiceRunner) (*Server, *Dispatcher, 
 
 	ingress := audio.NewIngress()
 	t.Cleanup(func() { ingress.Close() })
+	runner.ingress = ingress
 
 	s := New(Options{
 		Bind:        "127.0.0.1:0",
@@ -236,11 +276,18 @@ func TestQueuedVoiceStartReleasesOnDisconnect(t *testing.T) {
 	}
 }
 
-// TestVoiceEndWhileQueuedAbandonsTheTurn: a client that gives up before its
-// turn is dequeued must not have the mic taken on its behalf, which would park
-// the pipeline on an ingress nobody is writing to.
-func TestVoiceEndWhileQueuedAbandonsTheTurn(t *testing.T) {
-	runner := &voiceRunner{block: true, textStart: make(chan struct{}, 1)}
+// TestQueuedVoiceTurnKeepsItsAudio is the backward-compatibility guarantee a
+// deferred claim would otherwise break. A client streams the moment it has
+// sent voice_start — the bundled web client does exactly this — so the frames
+// that arrive while the turn waits must reach the turn, not the floor.
+func TestQueuedVoiceTurnKeepsItsAudio(t *testing.T) {
+	runner := &voiceRunner{
+		block:      true,
+		drain:      true,
+		textStart:  make(chan struct{}, 1),
+		voiceStart: make(chan struct{}, 1),
+		voiceDone:  make(chan struct{}, 1),
+	}
 	s, _, addr, creds := startVoiceServer(t, runner)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -253,21 +300,33 @@ func TestVoiceEndWhileQueuedAbandonsTheTurn(t *testing.T) {
 	writeControl(t, ctx, a, controlMessage{Type: "text_input", Text: "hold the line"})
 	<-runner.textStart
 
+	// B talks straight through the queue: voice_start, PCM, voice_end.
 	writeControl(t, ctx, b, controlMessage{Type: "voice_start"})
 	consistently(t, "the mic unclaimed while queued", func() bool { return !micClaimed(s.hub) })
-
+	const frames, samplesPerFrame = 4, 1600
+	for i := 0; i < frames; i++ {
+		writeControl(t, ctx, b, controlMessage{
+			Type:       "audio_input",
+			Data:       pcmFrame(samplesPerFrame),
+			SampleRate: 16000,
+		})
+	}
 	writeControl(t, ctx, b, controlMessage{Type: "voice_end"})
-	if got := bFrames.await("error", 2*time.Second); !contains(got, "error") {
-		t.Errorf("voice_end while queued was silently accepted; frames = %v", got)
+	if got := bFrames.await("error", 700*time.Millisecond); contains(got, "error") {
+		t.Fatalf("streaming into a queued turn was refused; frames = %v", got)
 	}
 
+	// Free the pipeline; B's turn runs with everything it said.
 	writeControl(t, ctx, a, controlMessage{Type: "interrupt"})
-	consistently(t, "the mic unclaimed after the queued turn was abandoned", func() bool {
-		return !micClaimed(s.hub)
-	})
-	if runner.voiceTurns() != 0 {
-		t.Errorf("voice turns run = %d, want 0 — an abandoned turn still ran", runner.voiceTurns())
+	select {
+	case <-runner.voiceDone:
+	case <-ctx.Done():
+		t.Fatal("queued voice turn never finalized")
 	}
+	if got, want := runner.samplesConsumed(), frames*samplesPerFrame; got != want {
+		t.Errorf("samples reaching the turn = %d, want %d", got, want)
+	}
+	eventually(t, "the mic released after the staged utterance", func() bool { return !micClaimed(s.hub) })
 }
 
 // TestVoiceStartQueueFullLeavesNoClaim: ErrBusy must not leave a claim behind.
@@ -471,5 +530,61 @@ func TestVoiceEndDropsTheConnectionsOwnQueuedTurn(t *testing.T) {
 	consistently(t, "the mic unclaimed after the queue drained", func() bool { return !micClaimed(s.hub) })
 	if got := runner.voiceTurns(); got != 1 {
 		t.Errorf("voice turns run = %d, want 1 — the abandoned second turn ran", got)
+	}
+}
+
+// pcmFrame builds one base64 frame of silence-shaped PCM: content does not
+// matter here, only that the samples survive the queue.
+func pcmFrame(n int) string {
+	raw := make([]byte, n*2)
+	for i := range raw {
+		raw[i] = byte(i % 251)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+// TestDisconnectOrderingLeavesNoClaim pins the invariant that makes the
+// disconnect path safe now that a claim can be granted from the dispatch
+// goroutine: removing the connection first means a later claim is refused, and
+// releasing after means a claim granted just before the removal is still
+// cleared. Either interleaving must end with the mic free.
+func TestDisconnectOrderingLeavesNoClaim(t *testing.T) {
+	tests := []struct {
+		name  string
+		claim func(h *hub, c *streamConn)
+	}{
+		{
+			name: "claim granted just before the connection was removed",
+			claim: func(h *hub, c *streamConn) {
+				if err := h.claimMic(c); err != nil {
+					t.Fatalf("claimMic: %v", err)
+				}
+			},
+		},
+		{
+			name:  "claim never granted",
+			claim: func(h *hub, c *streamConn) {},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHub()
+			h.setIngress(audio.NewIngress())
+			c := newTestConn(1, 1)
+			h.add(c)
+			tt.claim(h, c)
+
+			// The order handleStream's defer uses.
+			h.remove(c)
+			h.releaseMic(c)
+
+			if micClaimed(h) {
+				t.Error("a claim survived the disconnect")
+			}
+			if err := h.claimMic(c); err == nil {
+				t.Error("a removed connection was granted the mic")
+			}
+		})
 	}
 }

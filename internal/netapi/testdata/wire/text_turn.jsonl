@@ -1,79 +1,36 @@
 {"mode":"stream","type":"audio_output_ack"}
 {"text":"Name three colours, one per sentence.","type":"user_input"}
 {"type":"thinking_started"}
-{"elapsed_ms":173,"type":"response_streaming_started"}
-{"text":"M","type":"response_delta"}
-{"text":"agenta","type":"response_delta"}
+{"elapsed_ms":171,"type":"response_streaming_started"}
+{"text":"Red","type":"response_delta"}
 {"text":" is","type":"response_delta"}
-{"text":" a","type":"response_delta"}
-{"text":" really","type":"response_delta"}
-{"text":" interesting","type":"response_delta"}
-{"text":" colour","type":"response_delta"}
-{"text":",","type":"response_delta"}
-{"text":" I","type":"response_delta"}
-{"text":"'ve","type":"response_delta"}
-{"text":" always","type":"response_delta"}
-{"text":" been","type":"response_delta"}
-{"text":" fascinated","type":"response_delta"}
-{"text":" by","type":"response_delta"}
-{"text":" its","type":"response_delta"}
-{"text":" unique","type":"response_delta"}
-{"text":" blend","type":"response_delta"}
-{"text":" of","type":"response_delta"}
-{"text":" red","type":"response_delta"}
-{"text":" and","type":"response_delta"}
-{"text":" blue","type":"response_delta"}
-{"text":" hues","type":"response_delta"}
-{"text":".","type":"response_delta"}
-{"text":" Tur","type":"response_delta"}
-{"text":"quoise","type":"response_delta"}
-{"text":" is","type":"response_delta"}
-{"text":" a","type":"response_delta"}
-{"text":" colour","type":"response_delta"}
-{"text":" that","type":"response_delta"}
-{"text":" ev","type":"response_delta"}
-{"text":"okes","type":"response_delta"}
-{"text":" a","type":"response_delta"}
-{"text":" sense","type":"response_delta"}
-{"text":" of","type":"response_delta"}
-{"text":" calm","type":"response_delta"}
-{"text":"ness","type":"response_delta"}
-{"text":" and","type":"response_delta"}
-{"text":" tranqu","type":"response_delta"}
-{"text":"ility","type":"response_delta"}
-{"text":",","type":"response_delta"}
-{"text":" don","type":"response_delta"}
-{"text":"'t","type":"response_delta"}
-{"text":" you","type":"response_delta"}
-{"text":" think","type":"response_delta"}
-{"text":"?","type":"response_delta"}
-{"text":" Scarlet","type":"response_delta"}
-{"text":" is","type":"response_delta"}
-{"text":" such","type":"response_delta"}
 {"text":" a","type":"response_delta"}
 {"text":" bold","type":"response_delta"}
 {"text":" and","type":"response_delta"}
 {"text":" vibrant","type":"response_delta"}
 {"text":" colour","type":"response_delta"}
-{"text":",","type":"response_delta"}
-{"text":" it","type":"response_delta"}
-{"text":"'s","type":"response_delta"}
-{"text":" like","type":"response_delta"}
-{"text":" it","type":"response_delta"}
-{"text":"'s","type":"response_delta"}
-{"text":" screaming","type":"response_delta"}
-{"text":" to","type":"response_delta"}
-{"text":" be","type":"response_delta"}
-{"text":" noticed","type":"response_delta"}
+{"text":".","type":"response_delta"}
+{"text":" Yellow","type":"response_delta"}
+{"text":" is","type":"response_delta"}
+{"text":" bright","type":"response_delta"}
+{"text":" and","type":"response_delta"}
+{"text":" cheerful","type":"response_delta"}
+{"text":".","type":"response_delta"}
+{"text":" Purple","type":"response_delta"}
+{"text":" is","type":"response_delta"}
+{"text":" a","type":"response_delta"}
+{"text":" rich","type":"response_delta"}
+{"text":" and","type":"response_delta"}
+{"text":" luxurious","type":"response_delta"}
+{"text":" shade","type":"response_delta"}
 {"text":".","type":"response_delta"}
 {"type":"token_usage"}
-{"elapsed_ms":566,"response":"Magenta is a really interesting colour, I've always been fascinated by its unique blend of red and blue hues. Turquoise is a colour that evokes a sense of calmness and tranquility, don't you think? Scarlet is such a bold and vibrant colour, it's like it's screaming to be noticed.","type":"thinking_complete"}
-{"text":"Magenta is a really interesting colour, I've always been fascinated by its unique blend of red and blue hues. Turquoise is a colour that evokes a sense of calmness and tranquility, don't you think? Scarlet is such a bold and vibrant colour, it's like it's screaming to be noticed.","type":"speech_segment_ready"}
-{"sentence":"Magenta is a really interesting colour, I've always been fascinated by its unique blend of red and blue hues. Turquoise is a colour that evokes a sense of calmness and tranquility, don't you think? Scarlet is such a bold and vibrant colour, it's like it's screaming to be noticed.","type":"generating_voice"}
-{"elapsed_ms":9600,"sentence":"Magenta is a really interesting colour, I've always been fascinated by its unique blend of red and blue hues. Turquoise is a colour that evokes a sense of calmness and tranquility, don't you think? Scarlet is such a bold and vibrant colour, it's like it's screaming to be noticed.","type":"voice_generated"}
-{"text":"Magenta is a really interesting colour, I've always been fascinated by its unique blend of red and blue hues. Turquoise is a colour that evokes a sense of calmness and tranquility, don't you think? Scarlet is such a bold and vibrant colour, it's like it's screaming to be noticed.","type":"speaking_started"}
-{"elapsed_ms":1,"interrupted":false,"type":"speaking_complete"}
-{"interrupted":false,"response":"Magenta is a really interesting colour, I've always been fascinated by its unique blend of red and blue hues. Turquoise is a colour that evokes a sense of calmness and tranquility, don't you think? Scarlet is such a bold and vibrant colour, it's like it's screaming to be noticed.","type":"response_ready"}
-{"barge_in_ms":0,"first_audio_ready_ms":10167,"first_model_chunk_ms":173,"first_segment_ms":566,"interrupted":false,"model_complete_ms":566,"outcome":"completed","playback_complete_ms":10169,"playback_start_ms":10167,"stt_final_ms":0,"type":"turn_metrics"}
-{"reason":"complete","segment_id":1,"type":"audio_end"}
-{"type":"audio_reset"}
+{"elapsed_ms":307,"response":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"thinking_complete"}
+{"text":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"speech_segment_ready"}
+{"sentence":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"generating_voice"}
+{"elapsed_ms":4238,"sentence":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"voice_generated"}
+{"text":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"speaking_started"}
+{"reason":"complete","segment_id":5,"type":"audio_end"}
+{"elapsed_ms":0,"interrupted":false,"type":"speaking_complete"}
+{"interrupted":false,"response":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"response_ready"}
+{"barge_in_ms":0,"first_audio_ready_ms":4546,"first_model_chunk_ms":171,"first_segment_ms":308,"interrupted":false,"model_complete_ms":308,"outcome":"completed","playback_complete_ms":4546,"playback_start_ms":4546,"stt_final_ms":0,"type":"turn_metrics"}
