@@ -752,6 +752,7 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 		PID:             os.Getpid(),
 		Binds:           allBinds,
 		ClientSetupURL:  serveClientSetupURL,
+		Capabilities:    netapi.Capabilities(),
 	})
 
 	if creds.Pairing != nil {

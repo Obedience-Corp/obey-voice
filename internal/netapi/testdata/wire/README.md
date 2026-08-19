@@ -22,8 +22,10 @@ they are base64 PCM and add megabytes without adding contract.
 |---|---|
 | `text_turn.jsonl` | `audio_output{mode:stream}` → `text_input` → full turn → `interrupt` after the turn had finished (the idle-interrupt case: `audio_reset` alone) |
 | `voice_turn.jsonl` | `audio_output{mode:stream}` → `voice_start` → 2 s of `audio_input` at 16 kHz → `voice_end` |
-| `interrupt_speaking.jsonl` | `text_input` → `interrupt` sent while TTS was still playing |
+| `interrupt_speaking.jsonl` | `text_input` → `interrupt` sent the instant `speaking_started` arrived (`response_delta` frames omitted for size) |
+| `interrupt_idle.jsonl` | `interrupt` with nothing in flight — `audio_reset` and nothing else |
 | `ready_banner.json` | the `--banner-json` ready line, `token` and `fingerprint` replaced with `REDACTED` (a live token must not be committed; every other field is verbatim) |
+| `status.json` | `GET /v1/status` off the same serve, `fingerprint` replaced with `REDACTED` |
 
 ## What they are for
 

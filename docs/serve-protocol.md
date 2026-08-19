@@ -70,7 +70,7 @@ output moves to stderr. The first line is `ready`, written once the listener is
 bound:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"client_setup_url":"https://login.tailscale.com/admin/dns"}
+{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"voice_claim_on_dequeue":true}}
 ```
 
 | Field | Meaning |
@@ -83,11 +83,12 @@ bound:
 | `pid` | Serve process id |
 | `binds` | Every bound `host:port`, **primary first**. Always present. Dial the loopback entry when one exists rather than resolving `url` |
 | `client_setup_url` | Present **only** in limited client access. Its presence means limited; its absence means full |
+| `capabilities` | Additive `/v1/stream` contract flags (see below). Absent on older serves — treat a missing key as `false` |
 
 LAN mode with a trusted or self-signed cert omits `client_setup_url` entirely:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"]}
+{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"voice_claim_on_dequeue":true}}
 ```
 
 A `pairing_code` line (`{"event":"pairing_code","code":"…","expires_at":"…"}`)
@@ -201,7 +202,7 @@ that can and does refuse.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/v1/status` | yes | `turn_active`, `providers`, `uptime_seconds`, `fingerprint` |
+| `GET` | `/v1/status` | yes | `turn_active`, `providers`, `uptime_seconds`, `fingerprint`, `capabilities` |
 | `GET` | `/v1/sessions` | yes | Session summaries |
 | `GET` | `/v1/personas` | yes | Persona list for `set_persona` (see below) |
 | `POST` | `/v1/sessions/{id}/resume` | yes | Load history into the live pipeline |
@@ -482,10 +483,10 @@ Connect: `wss://host:port/v1/stream?token=...` (or Bearer on non-browser clients
 | `type` | Fields | Meaning |
 |--------|--------|---------|
 | `text_input` | `text` | Enqueue a text turn |
-| `interrupt` | | Cancel in-flight turn; server also sends `audio_reset` |
+| `interrupt` | | Cancel in-flight turn; server sends `audio_reset`, plus `turn_interrupted` / `speaking_interrupted` when something was actually cancelled |
 | `clear_history` | | Wipe conversation history |
 | `audio_output` | `mode`: `stream` \| other | Opt into TTS `audio_chunk` delivery (`stream` on) |
-| `voice_start` | | Exclusive mic claim + start remote STT turn |
+| `voice_start` | | Exclusive mic claim + start remote STT turn. Queued (and **not** claimed) while another turn is in flight — see Barge-in and the mic claim |
 | `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz |
 | `voice_end` | | Finalize utterance; release mic claim |
 | `set_persona` | `name`: persona id | Switch persona for **subsequent** turns (see below) |
@@ -544,6 +545,75 @@ exactly why `turn_interrupted` exists.
 | `audio_output_ack` | `mode` applied |
 | `set_persona_ack` | `id`, `display_name`, `prompt_hash`, `applies_to` |
 
+## Barge-in and the mic claim
+
+Serve has no barge-in of its own: it runs with no host capture device, so the
+interrupt controller is inert. **Barge-in is client-driven.** A client that
+detects its user speaking over the reply does, in this order:
+
+1. stop local playback immediately (do not wait for the server),
+2. send `interrupt`,
+3. send `voice_start` and start streaming `audio_input`.
+
+The server answers `audio_reset` on the audio queue and, if a turn was in
+flight, `turn_interrupted` (plus `speaking_interrupted` if TTS had started) on
+the event queue. Those are **different queues**: do not depend on their
+relative order. `audio_reset` is the ordered boundary for audio — chunks
+queued before it are dropped, and streaming resumes at the next
+`thinking_started`.
+
+A `turn_interrupted` a client did not ask for means **another** device barged
+in. That is the signal to return to an idle/armed state rather than keep
+waiting for a reply that is no longer coming.
+
+### The exclusive claim
+
+One client owns the remote mic at a time (`voice_start` → `voice_end`).
+
+| Situation | What the server does |
+|---|---|
+| Pipeline idle | `voice_start` claims the mic immediately; stream `audio_input` right away |
+| Another client holds the claim | `error`: `microphone claimed by another client` — go back to idle and try later |
+| A turn is in flight | The turn is **queued** and claims **nothing** until it is dequeued |
+| Queue full (16 deep) | `error`: `server is busy — try again shortly`; no claim is taken |
+| Remote mic disabled on this serve | `error`: `remote mic is not enabled on this serve instance` |
+
+Deferring the claim is what stops one device's false trigger from locking every
+other device out: a queued `voice_start` holds nothing, so another client can
+still take the mic, and the queued turn is skipped when it is dequeued if the
+mic has gone elsewhere.
+
+Consequences a client must handle:
+
+- While its `voice_start` is queued, `audio_input` is refused with
+  `microphone not claimed by this client`. Buffer locally or drop those frames;
+  it is not a fatal error.
+- `voice_end` while still queued **abandons** the queued turn and answers
+  `voice turn was queued behind another turn and never claimed the mic; send
+  voice_start again`. Nothing was recorded for it, so there is nothing to
+  transcribe.
+- Disconnecting releases everything: the claim, and any turn still queued.
+- `voice_end` on a live claim finalizes the utterance and releases the mic
+  straight away, so another client can talk while the reply is still speaking.
+
+## Capabilities
+
+`GET /v1/status` and the ready banner both carry a `capabilities` object.
+These are properties of the **build** — read the flag you need and degrade when
+it is absent, which is what an older serve looks like:
+
+| Flag | Means |
+|---|---|
+| `response_delta_payload` | `response_delta` carries `text` (streaming replies are usable) |
+| `audio_level_payload` | `audio_level` carries `source` and `level` |
+| `interrupt_events` | A remote `interrupt` emits `turn_interrupted` / `speaking_interrupted` |
+| `voice_claim_on_dequeue` | A queued `voice_start` does not hold the mic |
+
+`protocol_version` is deliberately **not** bumped for these: this file's own
+rule is to feature-detect by status, because the version does not move for
+additive surfaces. `meetings` stays a separate status field because it depends
+on how serve was configured, not on what the binary can do.
+
 ## Audio formats
 
 | Direction | Format |
@@ -564,7 +634,9 @@ exactly why `turn_interrupted` exists.
 3. Open WebSocket with token.
 4. Send `audio_output` `{mode:stream}` for playback.
 5. Text: `text_input`. Voice: `voice_start` → stream `audio_input` → `voice_end`.
-6. On interrupt: stop local playback, send `interrupt`, wait for `audio_reset`.
+6. On interrupt: stop local playback, send `interrupt`, wait for `audio_reset`;
+   `turn_interrupted` tells you the turn really was cancelled (and one you did
+   not ask for means another device barged in).
 7. Reconnect with same token after backgrounding; optional `GET /v1/sessions` + resume.
 
 
