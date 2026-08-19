@@ -70,7 +70,7 @@ func advancedKeys() []KeySpec {
 func modelKeys() []KeySpec {
 	return []KeySpec{
 		{
-			Key: "stt_provider", Type: TypeEnum, Default: "sherpa", Enum: sttProviderEnum(),
+			Key: "stt_provider", Type: TypeEnum, Default: "sherpa-parakeet", Enum: sttProviderEnum(),
 			Group: GroupModels, Title: "Transcription engine",
 			Help: "Which engine turns your speech into text. Sherpa runs locally and fastest.",
 		},
@@ -88,6 +88,11 @@ func modelKeys() []KeySpec {
 			Key: "whisper_model", Type: TypeString, Default: "small",
 			Group: GroupModels, Title: "Whisper size",
 			Help: "Which Whisper model size sherpa loads. Bigger is more accurate and slower.",
+		},
+		{
+			Key: "parakeet_model", Type: TypeEnum, Default: DefaultParakeetModel, Enum: ParakeetModelNames(),
+			Group: GroupModels, Title: "Parakeet model",
+			Help: "Which NVIDIA Parakeet TDT model the sherpa-parakeet provider loads. tdt-0.6b-v2 is English and the most accurate; tdt-0.6b-v3 adds 25 languages; tdt-110m is small and fast.",
 		},
 		{
 			Key: "whisper_quantized", Type: TypeBool, Default: true,

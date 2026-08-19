@@ -19,7 +19,7 @@ import (
 
 func main() {
 	scenarioPath := flag.String("scenario", "", "scenario YAML (required)")
-	binPath := flag.String("bin", "bin/samantha", "obey-voice binary (just build)")
+	binPath := flag.String("bin", "bin/obey-voice", "obey-voice binary (just build)")
 	runsDir := flag.String("runs-dir", "runs", "artifact directory root")
 	keep := flag.Bool("keep", false, "keep the tmux session alive after the run")
 	flag.Parse()

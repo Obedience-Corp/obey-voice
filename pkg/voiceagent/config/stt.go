@@ -16,6 +16,7 @@ import (
 // stt_provider config value.
 const (
 	STTProviderSherpa     = "sherpa"
+	STTProviderParakeet   = "parakeet"
 	STTProviderWhisperCPP = "whispercpp"
 
 	STTModeOffline   = "offline"
@@ -51,19 +52,24 @@ type STTConfigMigrationResult struct {
 }
 
 // sttAliasTable maps every accepted stt_provider value to its normalized
-// provider/mode. The empty key is the default: the reliable utterance-final
-// sherpa path. sherpa-offline is a legacy alias for the same provider/mode.
+// provider/mode. The empty key is the default: utterance-final NVIDIA Parakeet
+// TDT, which out-transcribed and out-ran whisper-small on the STT A/B
+// (docs/benchmarks/L4-stt-ab-parakeet-2026-08-19.json). sherpa-offline is a
+// legacy alias for the whisper provider/mode.
 var sttAliasTable = map[string]NormalizedSTT{
-	"":                 {Provider: STTProviderSherpa, Mode: STTModeOffline},
+	"":                 {Provider: STTProviderParakeet, Mode: STTModeOffline},
 	"sherpa":           {Provider: STTProviderSherpa, Mode: STTModeOffline},
 	"sherpa-offline":   {Provider: STTProviderSherpa, Mode: STTModeOffline},
 	"sherpa-streaming": {Provider: STTProviderSherpa, Mode: STTModeStreaming},
+	"sherpa-parakeet":  {Provider: STTProviderParakeet, Mode: STTModeOffline},
+	"parakeet":         {Provider: STTProviderParakeet, Mode: STTModeOffline},
 	"whispercpp":       {Provider: STTProviderWhisperCPP, Mode: STTModeCLI},
 }
 
 // sttProviderModes lists the stt_mode values each normalized provider accepts.
 var sttProviderModes = map[string][]string{
 	STTProviderSherpa:     {STTModeOffline, STTModeStreaming},
+	STTProviderParakeet:   {STTModeOffline},
 	STTProviderWhisperCPP: {STTModeCLI},
 }
 
@@ -96,7 +102,7 @@ func NormalizeSTT(configured string) (norm NormalizedSTT, ok bool) {
 func NormalizeSTTWithMode(provider, mode string) (NormalizedSTT, error) {
 	norm, ok := NormalizeSTT(provider)
 	if !ok {
-		return NormalizedSTT{}, fmt.Errorf("unsupported stt_provider %q; set stt_provider to sherpa, sherpa-streaming, or whispercpp", provider)
+		return NormalizedSTT{}, fmt.Errorf("unsupported stt_provider %q; set stt_provider to sherpa, sherpa-parakeet, sherpa-streaming, or whispercpp", provider)
 	}
 
 	m := strings.ToLower(strings.TrimSpace(mode))
@@ -105,6 +111,16 @@ func NormalizeSTTWithMode(provider, mode string) (NormalizedSTT, error) {
 	}
 
 	modes := sttProviderModes[norm.Provider]
+	if norm.Alias == "" && !slices.Contains(modes, m) && slices.Contains(sttProviderModes[STTProviderSherpa], m) {
+		// A config that only sets stt_mode (pre-parakeet default was sherpa)
+		// keeps meaning the sherpa provider in that mode; a bare stt_mode must
+		// not start failing because the default provider moved.
+		norm = NormalizedSTT{Provider: STTProviderSherpa, Mode: m, Alias: STTProviderSherpa + "-" + m}
+		if m == STTModeOffline {
+			norm.Alias = STTProviderSherpa
+		}
+		return norm, nil
+	}
 	if !slices.Contains(modes, m) {
 		return NormalizedSTT{}, fmt.Errorf("stt_mode %q is not supported by stt_provider %q; set stt_mode to %s, or remove stt_mode", m, norm.Provider, strings.Join(modes, " or "))
 	}

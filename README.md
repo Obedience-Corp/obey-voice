@@ -74,7 +74,7 @@ obey-voice serve --tailscale
 | Layer | Default | Options |
 |-------|---------|---------|
 | Brain | Ollama | Claude CLI, Grok |
-| STT | sherpa-onnx Whisper | Zipformer streaming, whisper.cpp |
+| STT | NVIDIA Parakeet TDT (sherpa-onnx) | Whisper (`sherpa`), Zipformer streaming, whisper.cpp |
 | TTS | Kokoro (sherpa-onnx) | native Qwen3-TTS |
 | VAD | Silero | |
 | Audio | miniaudio / malgo | |

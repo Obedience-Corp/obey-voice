@@ -65,6 +65,7 @@ differs from the baseline's.
 |---|---|
 | `baseline.json` | The canonical reference. Overwritten only by a deliberate `just bench baseline`. |
 | `<item>-<date>.json` | Per-item delta artifacts, e.g. `L1-2026-08-12.json`. The item id joins back to the requirement it closes. |
+| `<item>-stt-ab-*.json` | STT A/B decision records (criteria fixed in advance, then the numbers). `L2` kept Whisper over streaming Zipformer; `L4-stt-ab-parakeet-2026-08-19.json` flipped the default to Parakeet TDT. |
 
 ## Verifying the gate still bites
 

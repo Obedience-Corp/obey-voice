@@ -223,7 +223,7 @@ func TestModelsStatusKokoroFixtureStillCarriesTierRows(t *testing.T) {
 	// row ids compared. Found by adversarial review.
 	cfg := &config.Config{
 		TTSProvider: "kokoro", ModelsDir: t.TempDir(),
-		VADEnabled: true, STTProvider: "sherpa",
+		VADEnabled: true, STTProvider: "sherpa-parakeet",
 		Speaker: config.SpeakerConfig{Enabled: true, Meeting: config.SpeakerMeetingConfig{Enabled: true}},
 	}
 	var live []config.AssetStatus

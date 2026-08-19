@@ -17,6 +17,7 @@ type ProviderSpec struct {
 var providerSpecs = []ProviderSpec{
 	{Name: "sherpa", Description: "Local sherpa-onnx Whisper (utterance-final)"},
 	{Name: "sherpa-streaming", Description: "Local sherpa-onnx streaming Zipformer"},
+	{Name: "sherpa-parakeet", Description: "Local sherpa-onnx NVIDIA Parakeet TDT (utterance-final, fast, no caption hallucinations)"},
 	{Name: "sherpa-offline", Description: "Local sherpa-onnx Whisper (legacy alias)"},
 	{Name: "whispercpp", Description: "Local whisper.cpp CLI"},
 }
@@ -61,6 +62,18 @@ func NewProvider(cfg *config.Config, capture audioSource, vad *audio.VAD) (Provi
 		}
 
 		provider, err := NewSherpaOfflineSTT(cfg, capture, vad)
+		if err != nil {
+			return nil, nil, err
+		}
+		return provider, provider.Delete, nil
+	case norm.Provider == config.STTProviderParakeet:
+		if capture == nil {
+			return nil, nil, fmt.Errorf("sherpa-parakeet STT requires audio capture")
+		}
+		if vad == nil {
+			return nil, nil, fmt.Errorf("sherpa-parakeet STT requires VAD; set vad_enabled=true or choose a different stt_provider")
+		}
+		provider, err := NewParakeetSTT(cfg, capture, vad)
 		if err != nil {
 			return nil, nil, err
 		}

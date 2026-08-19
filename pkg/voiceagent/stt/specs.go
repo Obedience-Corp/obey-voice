@@ -27,7 +27,7 @@ var specTable = []Spec{
 		UsesEndpoint:   false,
 		SupportsEOF:    true,
 		RequiresVAD:    true,
-		RecommendedUse: "default; reliable utterance-final transcription",
+		RecommendedUse: "reliable utterance-final Whisper transcription (previous default)",
 	},
 	{
 		Provider:       config.STTProviderSherpa,
@@ -37,6 +37,15 @@ var specTable = []Spec{
 		SupportsEOF:    true,
 		RequiresVAD:    true,
 		RecommendedUse: "live partial transcripts with recognizer endpointing",
+	},
+	{
+		Provider:       config.STTProviderParakeet,
+		Mode:           config.STTModeOffline,
+		EmitsPartial:   false,
+		UsesEndpoint:   false,
+		SupportsEOF:    true,
+		RequiresVAD:    true,
+		RecommendedUse: "default; fast, accurate utterance-final transcription (NVIDIA Parakeet TDT)",
 	},
 	{
 		Provider:       config.STTProviderWhisperCPP,

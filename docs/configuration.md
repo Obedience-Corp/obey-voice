@@ -93,11 +93,12 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `qwen_tts_reference_text` | empty | `QWEN_TTS_REFERENCE_TEXT` | Transcript required by the approved clone workflow |
 | `qwen_tts_consent` | `false` | `QWEN_TTS_CONSENT` | Explicit consent/authorization gate for reference voice use |
 | `output_device` | empty | `OUTPUT_DEVICE` | Playback device name; empty follows the system default |
-| `stt_provider` | `sherpa` | `STT_PROVIDER` | STT backend: `sherpa`, `sherpa-streaming`, `sherpa-offline`, or `whispercpp` |
+| `stt_provider` | `sherpa-parakeet` | `STT_PROVIDER` | STT backend: `sherpa-parakeet` (NVIDIA Parakeet TDT — default; fastest and most accurate local option), `sherpa` (Whisper), `sherpa-streaming`, `sherpa-offline`, or `whispercpp` |
 | `input_device` | empty | `INPUT_DEVICE` | Capture device name; empty follows the system default |
-| `stt_mode` | empty | `STT_MODE` | STT mode for the preferred provider+mode schema: `offline` or `streaming` for `sherpa`, `cli` for `whispercpp` |
+| `stt_mode` | empty | `STT_MODE` | STT mode for the preferred provider+mode schema: `offline` or `streaming` for `sherpa`, `offline` for `parakeet`, `cli` for `whispercpp` |
 | `sherpa_streaming_model` | `en-2023-06-26` | `SHERPA_STREAMING_MODEL` | sherpa-onnx streaming model |
 | `whisper_model` | `small` | `WHISPER_MODEL` | sherpa-onnx Whisper model size |
+| `parakeet_model` | `tdt-0.6b-v2` | `PARAKEET_MODEL` | Parakeet model for `sherpa-parakeet`: `tdt-0.6b-v2` (English), `tdt-0.6b-v3` (25 languages), `tdt-110m` (small, fast) |
 | `whisper_quantized` | `true` | | Prefer quantized Whisper models |
 | `whispercpp_binary` | `whisper-cli` | `WHISPERCPP_BINARY` | whisper.cpp CLI executable |
 | `whispercpp_model` | `base.en` | `WHISPERCPP_MODEL` | Downloadable whisper.cpp model name |
