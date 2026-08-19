@@ -571,10 +571,13 @@ relative order. `audio_reset` is the ordered boundary for audio — chunks
 queued before it are dropped, and streaming resumes at the next
 `thinking_started`.
 
-`GET /v1/status` reports `turn_active: false` as soon as the interrupt lands,
-while the cancelled turn is still unwinding — that is the point: the turn is
-dead, and the `voice_start` that follows finds an idle pipeline and takes the
-mic straight away.
+`GET /v1/status` keeps reporting `turn_active: true` until the cancelled turn
+has actually unwound — a turn stuck in a slow synthesis is still burning, and
+saying otherwise would invite a client to start another one. The `voice_start`
+that follows the `interrupt` does not wait for it: an interrupted turn no
+longer counts as pipeline work. If other operations are already queued the
+`voice_start` queues behind them, which costs it nothing — see *A queued turn
+keeps its audio* below.
 
 A `turn_interrupted` a client did not ask for means **another** device barged
 in. That is the signal to return to an idle/armed state rather than keep
