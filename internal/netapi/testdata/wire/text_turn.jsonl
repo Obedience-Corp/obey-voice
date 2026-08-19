@@ -1,0 +1,36 @@
+{"mode":"stream","type":"audio_output_ack"}
+{"text":"Name three colours, one per sentence.","type":"user_input"}
+{"type":"thinking_started"}
+{"elapsed_ms":171,"type":"response_streaming_started"}
+{"text":"Red","type":"response_delta"}
+{"text":" is","type":"response_delta"}
+{"text":" a","type":"response_delta"}
+{"text":" bold","type":"response_delta"}
+{"text":" and","type":"response_delta"}
+{"text":" vibrant","type":"response_delta"}
+{"text":" colour","type":"response_delta"}
+{"text":".","type":"response_delta"}
+{"text":" Yellow","type":"response_delta"}
+{"text":" is","type":"response_delta"}
+{"text":" bright","type":"response_delta"}
+{"text":" and","type":"response_delta"}
+{"text":" cheerful","type":"response_delta"}
+{"text":".","type":"response_delta"}
+{"text":" Purple","type":"response_delta"}
+{"text":" is","type":"response_delta"}
+{"text":" a","type":"response_delta"}
+{"text":" rich","type":"response_delta"}
+{"text":" and","type":"response_delta"}
+{"text":" luxurious","type":"response_delta"}
+{"text":" shade","type":"response_delta"}
+{"text":".","type":"response_delta"}
+{"type":"token_usage"}
+{"elapsed_ms":307,"response":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"thinking_complete"}
+{"text":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"speech_segment_ready"}
+{"sentence":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"generating_voice"}
+{"elapsed_ms":4238,"sentence":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"voice_generated"}
+{"text":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"speaking_started"}
+{"reason":"complete","segment_id":5,"type":"audio_end"}
+{"elapsed_ms":0,"interrupted":false,"type":"speaking_complete"}
+{"interrupted":false,"response":"Red is a bold and vibrant colour. Yellow is bright and cheerful. Purple is a rich and luxurious shade.","type":"response_ready"}
+{"barge_in_ms":0,"first_audio_ready_ms":4546,"first_model_chunk_ms":171,"first_segment_ms":308,"interrupted":false,"model_complete_ms":308,"outcome":"completed","playback_complete_ms":4546,"playback_start_ms":4546,"stt_final_ms":0,"type":"turn_metrics"}

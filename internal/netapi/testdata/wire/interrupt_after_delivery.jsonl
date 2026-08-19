@@ -1,0 +1,17 @@
+{"mode":"stream","type":"audio_output_ack"}
+{"text":"Name two colours.","type":"user_input"}
+{"type":"thinking_started"}
+{"elapsed_ms":165,"type":"response_streaming_started"}
+{"type":"token_usage"}
+{"elapsed_ms":188,"response":"Blue and green.","type":"thinking_complete"}
+{"text":"Blue and green.","type":"speech_segment_ready"}
+{"sentence":"Blue and green.","type":"generating_voice"}
+{"elapsed_ms":852,"sentence":"Blue and green.","type":"voice_generated"}
+{"text":"Blue and green.","type":"speaking_started"}
+{"elapsed_ms":0,"interrupted":false,"type":"speaking_complete"}
+{"interrupted":false,"response":"Blue and green.","type":"response_ready"}
+{"barge_in_ms":0,"first_audio_ready_ms":1041,"first_model_chunk_ms":165,"first_segment_ms":189,"interrupted":false,"model_complete_ms":189,"outcome":"completed","playback_complete_ms":1041,"playback_start_ms":1041,"stt_final_ms":0,"type":"turn_metrics"}
+{"reason":"complete","segment_id":4,"type":"audio_end"}
+{"type":"audio_reset"}
+{"reason":"remote_interrupt","type":"speaking_interrupted"}
+{"reason":"remote_interrupt","type":"turn_interrupted"}

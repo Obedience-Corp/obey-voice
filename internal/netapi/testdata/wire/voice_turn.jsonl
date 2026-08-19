@@ -1,0 +1,68 @@
+{"mode":"stream","type":"audio_output_ack"}
+{"elapsed_ms":0,"phase":"listening","type":"stt_phase"}
+{"level":0.8287357870193793,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":0.9033897919289504,"source":"input","type":"audio_level"}
+{"elapsed_ms":404,"phase":"hearing","type":"stt_phase"}
+{"level":0.1542931523579016,"source":"input","type":"audio_level"}
+{"level":0.0012357597813721182,"source":"input","type":"audio_level"}
+{"level":0.0013589403542662367,"source":"input","type":"audio_level"}
+{"level":0.03248947550200741,"source":"input","type":"audio_level"}
+{"level":0.9090841106058217,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":0.19917327046196678,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":0.7279934589368346,"source":"input","type":"audio_level"}
+{"level":0.9579241798468272,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":0.6793362389710594,"source":"input","type":"audio_level"}
+{"level":0.5871895112856538,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":0.6448669829923773,"source":"input","type":"audio_level"}
+{"level":0.4596264087648964,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":0.6706380484563429,"source":"input","type":"audio_level"}
+{"level":1,"source":"input","type":"audio_level"}
+{"level":0.942660402596757,"source":"input","type":"audio_level"}
+{"level":0.4177251941979936,"source":"input","type":"audio_level"}
+{"level":0.19173615350821943,"source":"input","type":"audio_level"}
+{"level":0.6933697380505399,"source":"input","type":"audio_level"}
+{"level":0.3671031972651574,"source":"input","type":"audio_level"}
+{"level":0.021846122111138483,"source":"input","type":"audio_level"}
+{"elapsed_ms":2828,"phase":"transcribing","type":"stt_phase"}
+{"text":"Hello there, please tell me a very short joke about the sea.","type":"user_input"}
+{"type":"thinking_started"}
+{"elapsed_ms":4091,"type":"response_streaming_started"}
+{"text":"Why","type":"response_delta"}
+{"text":" did","type":"response_delta"}
+{"text":" the","type":"response_delta"}
+{"text":" crab","type":"response_delta"}
+{"text":" never","type":"response_delta"}
+{"text":" share","type":"response_delta"}
+{"text":"?","type":"response_delta"}
+{"text":" Because","type":"response_delta"}
+{"text":"Why did the crab never share?","type":"speech_segment_ready"}
+{"sentence":"Why did the crab never share?","type":"generating_voice"}
+{"text":" he","type":"response_delta"}
+{"text":" was","type":"response_delta"}
+{"text":" shell","type":"response_delta"}
+{"text":"fish","type":"response_delta"}
+{"text":".","type":"response_delta"}
+{"type":"token_usage"}
+{"elapsed_ms":4172,"response":"","type":"thinking_complete"}
+{"text":"Because he was shellfish.","type":"speech_segment_ready"}
+{"sentence":"Because he was shellfish.","type":"generating_voice"}
+{"elapsed_ms":1150,"sentence":"Why did the crab never share?","type":"voice_generated"}
+{"text":"Why did the crab never share?","type":"speaking_started"}
+{"elapsed_ms":0,"interrupted":false,"type":"speaking_complete"}
+{"reason":"complete","segment_id":1,"type":"audio_end"}
+{"elapsed_ms":1000,"sentence":"Because he was shellfish.","type":"voice_generated"}
+{"text":"Because he was shellfish.","type":"speaking_started"}
+{"reason":"complete","segment_id":2,"type":"audio_end"}
+{"elapsed_ms":0,"interrupted":false,"type":"speaking_complete"}
+{"interrupted":false,"response":"Why did the crab never share? Because he was shellfish.","type":"response_ready"}
+{"barge_in_ms":0,"first_audio_ready_ms":5284,"first_model_chunk_ms":4091,"first_segment_ms":4133,"interrupted":false,"model_complete_ms":4172,"outcome":"completed","playback_complete_ms":6285,"playback_start_ms":5284,"stt_final_ms":3659,"type":"turn_metrics"}

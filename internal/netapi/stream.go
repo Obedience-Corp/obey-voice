@@ -2,8 +2,6 @@ package netapi
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -32,33 +30,6 @@ const audioQueueDepth = 128
 // single-user tool, not a service under load.
 const maxStreamClients = 8
 
-type streamConn struct {
-	out   chan []byte // event / control envelopes
-	audio chan []byte // TTS audio_chunk / audio_end / audio_reset only
-	kick  chan string
-	once  sync.Once
-
-	// token is the bearer that opened this stream (primary or D2 device).
-	// Used to evict only that device's sockets on DELETE /v1/devices/{id}.
-	token string
-
-	// audioStream is a per-connection preference set by the audio_output
-	// control message. atomic so the hub hot path never takes a second lock.
-	audioStream atomic.Bool
-	// audioBlocked is set for every stream client when the shared turn is
-	// interrupted. It stays set until the next turn starts, preventing tail
-	// chunks from the canceled turn from crossing the reset boundary.
-	audioBlocked atomic.Bool
-}
-
-func (c *streamConn) evict(reason string) {
-	c.once.Do(func() { c.kick <- reason })
-}
-
-func (c *streamConn) wantsAudio() bool {
-	return c.audioStream.Load()
-}
-
 // hub owns the single bus subscription and fans events out to connections.
 // The bus has one detachable SubscribeAll handler for the server's lifetime;
 // connections attach and detach here, never on the bus itself.
@@ -75,73 +46,17 @@ type hub struct {
 	micClaimant *streamConn
 	// ingress receives remote PCM when remote mic is enabled.
 	ingress *audio.Ingress
+
+	// speaking reports whether the shared turn is in its TTS phase, so a
+	// remote interrupt can say what it interrupted. Set on the first
+	// speaking_started and cleared at the turn boundary rather than on each
+	// segment's speaking_complete: a multi-sentence reply is still speaking
+	// between its segments. Written only from the bus subscription.
+	speaking atomic.Bool
 }
 
 func newHub() *hub {
 	return &hub{conns: make(map[*streamConn]struct{})}
-}
-
-// setIngress wires the remote audio ingress used by push-to-talk turns.
-func (h *hub) setIngress(ing *audio.Ingress) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.ingress = ing
-}
-
-func (h *hub) claimMic(c *streamConn) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.ingress == nil {
-		return errors.New("remote mic is not enabled on this serve instance")
-	}
-	if h.micClaimant != nil && h.micClaimant != c {
-		return errors.New("microphone claimed by another client")
-	}
-	h.micClaimant = c
-	h.ingress.Reset()
-	return nil
-}
-
-func (h *hub) releaseMic(c *streamConn) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.micClaimant == c {
-		h.micClaimant = nil
-		// If the client disconnects mid-utterance, finalize so STT is not
-		// left blocked waiting for more frames.
-		if h.ingress != nil {
-			h.ingress.Finalize()
-		}
-	}
-}
-
-func (h *hub) writeMic(c *streamConn, samples []float32) error {
-	h.mu.Lock()
-	ing := h.ingress
-	claim := h.micClaimant
-	h.mu.Unlock()
-	if ing == nil {
-		return errors.New("remote mic is not enabled")
-	}
-	if claim != c {
-		return errors.New("microphone not claimed by this client")
-	}
-	return ing.Write(samples)
-}
-
-func (h *hub) endMicUtterance(c *streamConn) error {
-	h.mu.Lock()
-	ing := h.ingress
-	claim := h.micClaimant
-	h.mu.Unlock()
-	if ing == nil {
-		return errors.New("remote mic is not enabled")
-	}
-	if claim != c {
-		return errors.New("microphone not claimed by this client")
-	}
-	ing.Finalize()
-	return nil
 }
 
 func (h *hub) add(c *streamConn) bool {
@@ -271,6 +186,10 @@ var audioResetEnvelope = []byte(`{"type":"audio_reset"}`)
 // chunks are drained and audio_reset is enqueued. The browser suppresses audio
 // as soon as it sends interrupt, then resumes when it receives this marker.
 func (h *hub) resetAudio() {
+	// Whatever a client was still playing stops here, so the reply is no
+	// longer being spoken. Clearing it also makes a repeated interrupt idle:
+	// the second one has nothing left to report.
+	h.speaking.Store(false)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.audioBlocked = true
@@ -293,6 +212,24 @@ func (h *hub) resetAudio() {
 	}
 }
 
+// endOfHostPlayback clears the speaking flag at a turn boundary — but only
+// when nobody is receiving TTS over the wire.
+//
+// With audio_output "stream" (and a muted host, which is the default in
+// tailscale mode) the fanout finishes the moment the chunks are queued: a
+// twenty-second reply reports speaking_complete and turn_metrics about a
+// millisecond after it started. The client is still playing it. Trusting the
+// host's "playback complete" there would make every barge-in look like an
+// idle interrupt and emit no turn_interrupted at all — the one event the
+// barge-in exists to produce. For stream clients the flag is cleared by the
+// next thinking_started or by the interrupt itself (resetAudio), both of which
+// really do mean the client stopped hearing the reply.
+func (h *hub) endOfHostPlayback() {
+	if !h.hasStreamClients() {
+		h.speaking.Store(false)
+	}
+}
+
 // resumeAudio opens the next-turn side of the reset boundary. ThinkingStarted
 // is emitted before synthesis, so no new turn audio can race ahead of this.
 func (h *hub) resumeAudio() {
@@ -306,8 +243,23 @@ func (h *hub) resumeAudio() {
 
 func (h *hub) attachBus(bus *events.Bus) (detach func()) {
 	return bus.SubscribeAll(func(e events.Event) {
-		if _, ok := e.(events.ThinkingStarted); ok {
+		switch e := e.(type) {
+		case events.ThinkingStarted:
+			h.speaking.Store(false)
 			h.resumeAudio()
+		case events.SpeakingStarted:
+			h.speaking.Store(true)
+		case events.SpeakingInterrupted:
+			h.speaking.Store(false)
+		case events.TurnMetrics:
+			h.endOfHostPlayback()
+		case events.Error:
+			// A turn that dies before turn_metrics would otherwise leave the
+			// flag set, and the next idle interrupt would claim it cut off
+			// speech that had already stopped.
+			if e.Stage == "turn" {
+				h.endOfHostPlayback()
+			}
 		}
 		msg, err := marshalEvent(e)
 		if err != nil {
@@ -335,8 +287,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() {
-		s.hub.releaseMic(conn)
+		// Order matters. remove() first, so claimMic can no longer grant this
+		// connection anything; releaseMic() second, so a claim granted just
+		// before the removal is still cleared. The other order leaves a window
+		// where a queued turn claims the mic after the release has run and
+		// nothing is left alive to give it back.
+		conn.voiceQueued.Store(false)
+		conn.dropStaged()
 		s.hub.remove(conn)
+		s.hub.releaseMic(conn)
 	}()
 
 	ctx, cancel := context.WithCancel(r.Context())
@@ -398,8 +357,7 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 				s.sendError(conn, dispatchErrText(err))
 			}
 		case "interrupt":
-			s.hub.resetAudio()
-			s.dispatcher.Interrupt()
+			s.interrupt()
 		case "clear_history":
 			if err := s.dispatcher.ClearHistory(); err != nil {
 				s.sendError(conn, dispatchErrText(err))
@@ -415,14 +373,7 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			s.hub.setConnAudio(conn, mode == "stream")
 			s.sendAudioOutputAck(conn, mode)
 		case "voice_start":
-			// Phase 4 / WI-62e19b: exclusive push-to-talk. Claim mic, reset
-			// ingress, and enqueue a voice turn that blocks on remote PCM.
-			if err := s.hub.claimMic(conn); err != nil {
-				s.sendError(conn, err.Error())
-				continue
-			}
-			if err := s.dispatcher.SubmitVoice(); err != nil {
-				s.hub.releaseMic(conn)
+			if err := s.startVoiceTurn(conn); err != nil {
 				s.sendError(conn, dispatchErrText(err))
 			}
 		case "audio_input":
@@ -431,48 +382,19 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 				s.sendError(conn, "audio_input: "+err.Error())
 				continue
 			}
-			if err := s.hub.writeMic(conn, samples); err != nil {
+			if err := s.writeVoiceAudio(conn, samples); err != nil {
 				s.sendError(conn, err.Error())
 			}
 		case "voice_end":
-			if err := s.hub.endMicUtterance(conn); err != nil {
+			if err := s.endVoiceTurn(conn); err != nil {
 				s.sendError(conn, err.Error())
-				continue
 			}
-			// Drop exclusive claim after finalizing so another client can talk
-			// while TTS plays. releaseMic finalizes again (idempotent).
-			s.hub.releaseMic(conn)
 		case "set_persona":
 			s.handleSetPersona(ctx, conn, msg.Name)
 		default:
 			s.sendError(conn, "unknown control message type: "+msg.Type)
 		}
 	}
-}
-
-// decodePCMS16LE decodes base64 little-endian mono PCM into float32 samples
-// at the capture sample rate. Non-16 kHz input is rejected (client resamples).
-func decodePCMS16LE(b64 string, sampleRate int) ([]float32, error) {
-	if b64 == "" {
-		return nil, errors.New("empty data")
-	}
-	if sampleRate != 0 && sampleRate != audio.SampleRate {
-		return nil, errors.New("sample_rate must be 16000 (resample on the client)")
-	}
-	raw, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil {
-		return nil, errors.New("invalid base64")
-	}
-	if len(raw)%2 != 0 {
-		return nil, errors.New("odd pcm byte length")
-	}
-	n := len(raw) / 2
-	out := make([]float32, n)
-	for i := 0; i < n; i++ {
-		s := int16(binary.LittleEndian.Uint16(raw[i*2:]))
-		out[i] = float32(s) / 32768
-	}
-	return out, nil
 }
 
 // sendAudioOutputAck confirms the applied stream preference on the event

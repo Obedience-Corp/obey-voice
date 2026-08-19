@@ -1,0 +1,1 @@
+{"event":"ready","protocol_version":3,"url":"https://127.0.0.1:47262","port":47262,"fingerprint":"REDACTED","token":"REDACTED","mdns":false,"tailscale":false,"pid":32653,"binds":["127.0.0.1:47262"],"capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"voice_claim_on_dequeue":true}}

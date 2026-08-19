@@ -12,6 +12,41 @@ package netapi
 // protocol_version >= 2, history needs protocol_version >= 3.
 const ProtocolVersion = 3
 
+// Capability flag names. They are additive facts about what this build's
+// /v1/stream contract carries, which is why they are flags and not a version
+// bump: docs/serve-protocol.md's own rule is to "feature-detect by status
+// rather than by protocol_version, which does not change for additive"
+// surfaces. A client reads the flag it needs and degrades on an older serve,
+// where the key is simply absent.
+const (
+	// CapResponseDeltaPayload: response_delta carries "text". Without it the
+	// event arrives as a bare {"type":"response_delta"} and a client cannot
+	// render a streaming reply.
+	CapResponseDeltaPayload = "response_delta_payload"
+	// CapAudioLevelPayload: audio_level carries "source" and "level".
+	CapAudioLevelPayload = "audio_level_payload"
+	// CapInterruptEvents: a remote interrupt that cancelled something emits
+	// turn_interrupted, and speaking_interrupted when TTS was in flight.
+	CapInterruptEvents = "interrupt_events"
+	// CapVoiceClaimOnDequeue: a voice_start queued behind a live turn claims
+	// the mic when it is dequeued, not on arrival, so a queued client cannot
+	// lock another one out.
+	CapVoiceClaimOnDequeue = "voice_claim_on_dequeue"
+)
+
+// Capabilities is the flag set this build advertises, in the ready banner and
+// in GET /v1/status. It is static: these are properties of the binary, not of
+// how it was configured — configuration-dependent surfaces (meetings, personas)
+// stay separate status fields.
+func Capabilities() map[string]bool {
+	return map[string]bool{
+		CapResponseDeltaPayload: true,
+		CapAudioLevelPayload:    true,
+		CapInterruptEvents:      true,
+		CapVoiceClaimOnDequeue:  true,
+	}
+}
+
 // ReadyBanner is the single JSON line `serve --banner-json` writes to stdout
 // once the listener is bound. A supervising process reads this line to learn
 // the URL, credentials, and fingerprint instead of scraping the human banner.
@@ -32,6 +67,11 @@ type ReadyBanner struct {
 	// client picks a reachable address instead of inferring one from URL
 	// (ADR-008). URL stays the address remote clients should open.
 	Binds []string `json:"binds,omitempty"`
+	// Capabilities are the additive /v1/stream contract flags this build
+	// carries, the same set GET /v1/status reports. Present so a supervising
+	// process that only reads this line can gate a feature without opening a
+	// socket first.
+	Capabilities map[string]bool `json:"capabilities,omitempty"`
 	// ClientSetupURL is present only in limited client-access mode (a Tailscale
 	// serve that could not mint a trusted cert). Its presence means "limited";
 	// its absence means full access.
