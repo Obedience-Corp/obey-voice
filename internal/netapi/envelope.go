@@ -25,6 +25,11 @@ func encodeEvent(e events.Event) map[string]any {
 		}
 	case events.TranscriptPartial:
 		env["text"] = e.Text
+	case events.AudioLevel:
+		// "level" is the normalised RMS energy in [0, 1] the engine already
+		// computes for its own meters; "source" is "input" (mic) or "output".
+		env["source"] = e.Source
+		env["level"] = e.Level
 	case events.ThinkingComplete:
 		env["response"] = e.Response
 		env["elapsed_ms"] = ms(e.Elapsed)
@@ -41,6 +46,11 @@ func encodeEvent(e events.Event) map[string]any {
 		env["barge_in_ms"] = ms(e.BargeInElapsed)
 	case events.ResponseStreamingStarted:
 		env["elapsed_ms"] = ms(e.Elapsed)
+	case events.ResponseDelta:
+		// One incremental piece of assistant text. Named "text" because that
+		// is the field every other text-bearing event on this wire uses, and
+		// what existing clients already decode.
+		env["text"] = e.Text
 	case events.SpeechSegmentReady:
 		env["text"] = e.Text
 	case events.GeneratingVoice:

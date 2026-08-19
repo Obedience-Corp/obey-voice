@@ -503,6 +503,18 @@ stable live label for the utterance (`speaker-1`, or the enrolled name once
 seeded). Absent for text turns and when live analysis produced no label; a
 client must not assume the key is present.
 
+**Streaming reply and level.** Two events carry payloads that older serves
+dropped, so both keys are also a feature probe — see the `capabilities` block
+in `GET /v1/status`:
+
+| `type` | Fields | Meaning |
+|--------|--------|---------|
+| `response_delta` | `text` (string) | One incremental piece of the assistant's reply as the brain produces it. Advisory and droppable: `response_ready` always follows with the complete, canonical text, and concatenating the deltas of a completed turn reproduces it. |
+| `audio_level` | `source` (`input` \| `output`), `level` (number, `0`–`1`) | Throttled (~50 ms) energy sample. `level` is the normalised RMS the engine already computes for its own meters — not raw dBFS. Droppable by design: a client must not infer anything from a gap. |
+
+A client that needs sub-100 ms meter response should measure locally;
+`audio_level` crosses the network and is throttled at the source.
+
 **Audio** (only if `audio_output` mode is `stream`):
 
 | `type` | Fields |
