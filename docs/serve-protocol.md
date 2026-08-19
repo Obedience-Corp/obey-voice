@@ -488,7 +488,7 @@ Connect: `wss://host:port/v1/stream?token=...` (or Bearer on non-browser clients
 | `audio_output` | `mode`: `stream` \| other | Opt into TTS `audio_chunk` delivery (`stream` on) |
 | `voice_start` | | Exclusive mic claim + start remote STT turn. Queued (and **not** claimed) while another turn is in flight — see Barge-in and the mic claim |
 | `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz |
-| `voice_end` | | Finalize utterance; release mic claim |
+| `voice_end` | | Finalize utterance; release mic claim. **Not optional** — a turn that goes quiet without one is ended by the server, see The turn deadline |
 | `set_persona` | `name`: persona id | Switch persona for **subsequent** turns (see below) |
 
 ### Server → client
@@ -522,6 +522,7 @@ also emits, to **every** connected client:
 | `type` | Fields | When |
 |--------|--------|------|
 | `turn_interrupted` | `reason` (`remote_interrupt`) | A turn was in flight when the `interrupt` arrived |
+| `turn_interrupted` | `reason` (`client_silent`) | Not an `interrupt` at all: a voice turn was ended by the server because its client stopped sending audio (see The turn deadline). Treat any `reason` you do not know as "that turn is over" |
 | `speaking_interrupted` | `reason` (`remote_interrupt`) | …and that turn was in its TTS phase |
 
 `reason` distinguishes these from the host mic's own barge-in, which uses the
@@ -617,6 +618,31 @@ What can still go wrong, and what it looks like:
   buffered audio.
 - `voice_end` on a live claim finalizes the utterance and releases the mic
   straight away, so another client can talk while the reply is still speaking.
+
+### The turn deadline
+
+`voice_start` opens a turn, and the server — not the client — closes it if
+nobody feeds it. A socket that dies mid-turn is not a disconnect the server can
+see: the claim used to stand for the life of the process, and every later turn
+queued behind it.
+
+- **No `audio_input` for `listen_timeout` (default 10 s)** ends the turn: the
+  mic is released, the utterance is finalized, and every client is sent
+  `turn_interrupted` with `reason: "client_silent"`.
+- **Every `audio_input` pushes that deadline out**, whether the turn is live or
+  still queued, so a client that is actually streaming is never cut off.
+- **A whole turn is capped** at `listen_timeout + phrase_time_limit`
+  (default 40 s), for the client that streams forever without ever sending
+  `voice_end`. Past it there is no utterance left to wait for: the recogniser's
+  own cap has already closed one.
+
+Both clocks come from serve's config (`listen_timeout`, `phrase_time_limit`) —
+the same ones the recogniser endpoints on — so `obey-voice config set
+listen_timeout 20` moves them together.
+
+A client that receives `client_silent` should return to idle and re-arm: its
+turn is gone, and the frames it sends afterwards are refused with
+`microphone not claimed by this client`.
 
 ## Capabilities
 

@@ -25,6 +25,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
@@ -324,21 +325,28 @@ func runServe(cfg *config.Config) error {
 	defer func() { _ = meetings.Close() }()
 	go meetings.RunJanitor(ctx)
 
+	// The remote turn is bounded by the clocks the recogniser already uses:
+	// listen_timeout for "no audio yet", and one utterance (phrase_time_limit)
+	// past it for a client that streams but never sends voice_end.
+	turnClocks := endpoint.FromConfig(cfg, false)
+
 	server := netapi.New(netapi.Options{
-		SetPersona:    serveSetPersona(cfg, p, liveTTS, ref),
-		ListPersonas:  servePersonaList(cfg),
-		Bind:          addr,
-		ExtraBinds:    extraBinds,
-		AllowPublic:   serveAllowPublic,
-		Credentials:   creds,
-		Bus:           bus,
-		Dispatcher:    dispatcher,
-		Audio:         fanout,
-		Ingress:       ingress,
-		Meetings:      meetings,
-		RouteMeeting:  newServeMeetingRouter(cfg),
-		ListSessions:  listSessionSummaries,
-		DeleteSession: serveDeleteSession(ref),
+		SetPersona:          serveSetPersona(cfg, p, liveTTS, ref),
+		ListPersonas:        servePersonaList(cfg),
+		Bind:                addr,
+		ExtraBinds:          extraBinds,
+		AllowPublic:         serveAllowPublic,
+		Credentials:         creds,
+		Bus:                 bus,
+		Dispatcher:          dispatcher,
+		Audio:               fanout,
+		Ingress:             ingress,
+		VoiceSilenceTimeout: turnClocks.StartTimeout,
+		VoiceTurnMax:        turnClocks.StartTimeout + turnClocks.MaxUtterance,
+		Meetings:            meetings,
+		RouteMeeting:        newServeMeetingRouter(cfg),
+		ListSessions:        listSessionSummaries,
+		DeleteSession:       serveDeleteSession(ref),
 		Providers: netapi.Providers{
 			Brain: cfg.BrainProvider,
 			STT:   sttName,

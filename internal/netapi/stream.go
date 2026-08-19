@@ -287,6 +287,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() {
+		// The deadline goes with the turn: a socket that really closed has
+		// already ended it, and a fire after this would report a turn that
+		// ended cleanly as interrupted.
+		conn.watch.disarm()
 		// Order matters. remove() first, so claimMic can no longer grant this
 		// connection anything; releaseMic() second, so a claim granted just
 		// before the removal is still cleared. The other order leaves a window
