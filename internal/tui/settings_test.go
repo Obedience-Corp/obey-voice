@@ -389,7 +389,7 @@ func TestSettingsSelectTTSProviderPersistsAndRefreshesVoices(t *testing.T) {
 
 	m.selectCurrent()
 
-	if saved["tts_provider"] != "qwen3-tts" || saved["qwen_tts_mode"] != "customvoice" || saved["qwen_tts_voice"] != "Vivian" {
+	if saved["tts_provider"] != "qwen3-tts" || saved["qwen_tts_mode"] != "customvoice" || saved["qwen_tts_voice"] != managedqwen.DefaultVoice {
 		t.Fatalf("saved Qwen config = %v", saved)
 	}
 	if cfg.TTSProvider != "qwen3-tts" {

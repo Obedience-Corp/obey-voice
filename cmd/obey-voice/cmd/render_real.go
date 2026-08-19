@@ -279,9 +279,9 @@ func newRenderSynth(ctx context.Context, opts *render.Options) (render.Synthesiz
 		if err := config.ValidateQwenTTSConfig(cfg); err != nil {
 			return nil, nil, fmt.Errorf("render: qwen3-tts configuration: %w", err)
 		}
-		if voice, ok := managedqwen.CanonicalVoice(cfg.QwenTTSVoice); ok {
-			cfg.QwenTTSVoice = voice
-			opts.Voice = voice
+		if name, _, ok := managedqwen.ResolveVoice(cfg.QwenTTSVoice); ok {
+			cfg.QwenTTSVoice = name
+			opts.Voice = name
 		}
 		if language, ok := managedqwen.CanonicalLanguage(cfg.QwenTTSLanguage); ok {
 			cfg.QwenTTSLanguage = language
@@ -336,7 +336,7 @@ func populateTTSMetadata(opts *render.Options, cfg *config.Config) {
 		}
 		opts.TTSVoice = strings.TrimSpace(cfg.QwenTTSVoice)
 		if opts.TTSVoice == "" {
-			opts.TTSVoice = "Vivian"
+			opts.TTSVoice = managedqwen.DefaultVoice
 		}
 		opts.TTSLanguage = strings.TrimSpace(cfg.QwenTTSLanguage)
 		if instruction := strings.TrimSpace(cfg.QwenTTSInstruction); instruction != "" {

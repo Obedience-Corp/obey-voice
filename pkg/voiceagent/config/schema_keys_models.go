@@ -142,7 +142,7 @@ func modelKeys() []KeySpec {
 		{
 			Key: "qwen_tts_voice", Type: TypeEnum, Default: "", Enum: qwenVoiceEnum(),
 			Group: GroupModels, Title: "Qwen voice",
-			Help:               "Which Qwen preset speaks. Empty uses Vivian.",
+			Help:               "Which Qwen voice speaks. Empty uses Veronica (shipped clone).",
 			PersonaOverridable: true,
 		},
 		{

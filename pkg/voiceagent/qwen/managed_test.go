@@ -39,6 +39,15 @@ func TestCanonicalVoice(t *testing.T) {
 	}
 }
 
+func TestDefaultVoiceIsShippedVeronica(t *testing.T) {
+	if DefaultVoice != "Veronica" {
+		t.Fatalf("DefaultVoice = %q, want Veronica", DefaultVoice)
+	}
+	if _, ok := LookupShipped(DefaultVoice); !ok {
+		t.Fatal("DefaultVoice must resolve as a shipped clone")
+	}
+}
+
 func TestInspectIgnoresStrayPythonWorkerFile(t *testing.T) {
 	// Solo installs: leftover files are not a product state machine.
 	dir := t.TempDir()
