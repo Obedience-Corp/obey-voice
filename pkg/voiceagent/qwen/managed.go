@@ -1,5 +1,5 @@
 // Package qwen holds product helpers for Qwen3-TTS: preset registry and managed
-// selection (empty binary/model → Samantha-owned native assets).
+// selection (empty binary/model → Obey Voice-owned native assets).
 //
 // Product inference is native-only (models_dir/qwen3-tts worker + GGUF).
 // There is no uv/Python ensure, embedded worker, or legacy-tree migrator.
@@ -81,7 +81,7 @@ func CanonicalLanguage(value string) (string, bool) {
 	return "", false
 }
 
-// UseManaged reports whether configuration selects Samantha-managed assets
+// UseManaged reports whether configuration selects Obey Voice-managed assets
 // (empty binary/model). Product resolution then uses the native package under
 // models_dir/qwen3-tts — never a Python runtime.
 //

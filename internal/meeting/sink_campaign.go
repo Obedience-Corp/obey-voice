@@ -140,7 +140,7 @@ func (s CampaignSink) routeImportMeeting(ctx context.Context, campBin, campaign 
 		summaryBody = summaryBody + "\n\n**Route tags:** " + strings.Join(tags, ", ") + "\n"
 	}
 
-	tmp, err := os.CreateTemp("", "samantha-meeting-summary-*.md")
+	tmp, err := os.CreateTemp("", "obey-voice-meeting-summary-*.md")
 	if err != nil {
 		return Receipt{}, fmt.Errorf("meeting: temp summary: %w", err)
 	}
@@ -189,7 +189,7 @@ func (s CampaignSink) routeImportMeeting(ctx context.Context, campBin, campaign 
 }
 
 func (s CampaignSink) routeIdeaAdd(ctx context.Context, campBin, campaign, capture string, note RenderedNote) (Receipt, error) {
-	tmp, err := os.CreateTemp("", "samantha-meeting-*.md")
+	tmp, err := os.CreateTemp("", "obey-voice-meeting-*.md")
 	if err != nil {
 		return Receipt{}, fmt.Errorf("meeting: temp body: %w", err)
 	}

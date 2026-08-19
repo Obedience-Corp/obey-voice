@@ -92,7 +92,7 @@ func validateCleanCandidatePath(modelsDir, candidatePath string) error {
 type ownership struct {
 	required map[string]bool
 	parents  map[string]bool
-	// requiredFold and parentsFold hold the same paths case-folded. samantha
+	// requiredFold and parentsFold hold the same paths case-folded. obey-voice
 	// runs on case-insensitive filesystems (APFS, NTFS) where a config key
 	// spelled speaker/nemo.onnx loads speaker/NeMo.onnx perfectly well; an
 	// exact-string claim would leave the real file unprotected.

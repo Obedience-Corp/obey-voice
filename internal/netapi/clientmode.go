@@ -1,6 +1,6 @@
 package netapi
 
-// Product-facing serve banner labels shared by `samantha serve` and the TUI.
+// Product-facing serve banner labels shared by `obey-voice serve` and the TUI.
 // The TUI scrapes these exact prefixes from child stdout — keep them stable.
 const (
 	// ClientSetupURL is the free Tailscale admin page that enables trusted

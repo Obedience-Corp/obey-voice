@@ -6,12 +6,12 @@ frame's shape changes, re-capture rather than edit.
 
 ## How they were captured
 
-A `samantha serve` built from this branch, run under a throwaway `HOME` on a
+A `obey-voice serve` built from this branch, run under a throwaway `HOME` on a
 non-default port, driven by a WebSocket client that recorded every inbound
 frame:
 
 ```
-samantha serve --banner-json --no-voice --no-mdns --bind 127.0.0.1 --port 47262
+obey-voice serve --banner-json --no-voice --no-mdns --bind 127.0.0.1 --port 47262
 ```
 
 Providers for the capture: brain `ollama` (`llama3.2:latest`), STT `sherpa`

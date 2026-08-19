@@ -12,7 +12,7 @@ import (
 
 const (
 	// SweepWindow bounds how far back the startup sweep looks for undelivered
-	// route plans. Older bundles stay recoverable via `samantha meeting route`.
+	// route plans. Older bundles stay recoverable via `obey-voice meeting route`.
 	SweepWindow = 14 * 24 * time.Hour
 	// SweepMaxAttempts caps automatic retries of a route_plan that keeps
 	// failing (counted as durable route_failed events on the bundle).

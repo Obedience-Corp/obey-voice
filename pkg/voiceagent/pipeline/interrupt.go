@@ -8,7 +8,7 @@ import (
 
 const (
 	// bargeInArmDelay holds off interrupt detection after the turn's first
-	// playback starts so the echo of Samantha's own first words doesn't trip
+	// playback starts so the echo of Obey Voice's own first words doesn't trip
 	// barge-in. Keep this short enough that "stop" / "wait" still interrupt
 	// promptly once armed; AEC reference timing (not a long speech threshold)
 	// is what suppresses self-echo.

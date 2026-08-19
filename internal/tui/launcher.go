@@ -140,7 +140,7 @@ func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved .
 			action: actionSettings,
 		},
 		launcherItem{
-			label: "Quit", hint: "Exit Samantha", glyph: "✕",
+			label: "Quit", hint: "Exit Obey Voice", glyph: "✕",
 			action: actionQuit,
 		},
 	)

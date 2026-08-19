@@ -12,7 +12,7 @@ type Skill struct {
 	// AllowedTools is optional frontmatter allowed-tools (Agent Skills
 	// experimental). It is enforced after read_skill activates the skill;
 	// before activation the model still needs the base tools to choose and load
-	// a relevant skill. Values map to Samantha tool names
+	// a relevant skill. Values map to Obey Voice tool names
 	// (list_files, read_file, write_file, run_command) with common aliases
 	// (Read → read_file, Bash → run_command). See agentskills.io specification.
 	AllowedTools []string

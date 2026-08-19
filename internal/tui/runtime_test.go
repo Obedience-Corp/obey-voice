@@ -157,7 +157,7 @@ func TestRuntimeReadyBindsAgentName(t *testing.T) {
 }
 
 // Session TTS chrome must follow the binding snapshot, not the live global
-// persona. Regression: starting uncle-fu while active is still samantha used
+// persona. Regression: starting uncle-fu while active is still obey-voice used
 // to show "tts kokoro · managed · mode static · voice af_heart".
 func TestRuntimeReadyBindsSessionTTSBadge(t *testing.T) {
 	rt := fakeRuntime()

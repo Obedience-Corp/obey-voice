@@ -150,7 +150,7 @@ func TestLoadSkillsCatalogGated(t *testing.T) {
 		t.Fatalf("missing dir: got %d skills, want 0", len(got))
 	}
 
-	// Enabled with fixture as configured Samantha skills_dir.
+	// Enabled with fixture as configured Obey Voice skills_dir.
 	fixture := "../skills/testdata/skills"
 	got, err = loadSkillsCatalog(context.Background(), &config.Config{
 		SkillsEnabled: true,

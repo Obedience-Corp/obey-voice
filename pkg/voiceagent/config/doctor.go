@@ -83,7 +83,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		} else if managed {
 			providerDetail = "qwen3-tts (product path; native package required)"
 			controlsDetail = "native CustomVoice speaker selection"
-			controlsRemediation = "run 'samantha models ensure --tts' to install the native package"
+			controlsRemediation = "run 'obey-voice models ensure --tts' to install the native package"
 		} else if isNativeWorkerBinary(binary) {
 			providerDetail = "qwen3-tts (explicit native worker)"
 			controlsDetail = "native CustomVoice speaker selection"
@@ -141,7 +141,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 					Name:        "qwen3-tts-runtime-libs",
 					Severity:    SeverityError,
 					Detail:      native.Detail,
-					Remediation: "run 'samantha models ensure --tts' with a portable qwen3-tts-native release that ships libggml* next to the worker (or set qwen_tts_native_url to that tarball)",
+					Remediation: "run 'obey-voice models ensure --tts' with a portable qwen3-tts-native release that ships libggml* next to the worker (or set qwen_tts_native_url to that tarball)",
 				})
 				diags = append(diags, Diagnostic{Name: "qwen3-tts-binary", Severity: SeverityWarn, Detail: native.Worker + " (worker present; runtime libs incomplete)"})
 				diags = append(diags, Diagnostic{Name: "qwen3-tts-model", Severity: SeverityOK, Detail: native.ModelDir + " (tier " + native.DefaultTier + ")"})
@@ -150,13 +150,13 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 					Name:        "qwen3-tts-binary",
 					Severity:    SeverityError,
 					Detail:      "native Qwen3-TTS package is not installed under models/qwen3-tts",
-					Remediation: "run 'samantha models ensure --tts' (downloads the published platform package; override with qwen_tts_native_url if needed)",
+					Remediation: "run 'obey-voice models ensure --tts' (downloads the published platform package; override with qwen_tts_native_url if needed)",
 				})
 				diags = append(diags, Diagnostic{
 					Name:        "qwen3-tts-model",
 					Severity:    SeverityError,
 					Detail:      "native Qwen GGUF models are not installed",
-					Remediation: "run 'samantha models ensure --tts'",
+					Remediation: "run 'obey-voice models ensure --tts'",
 				})
 			}
 		} else {
@@ -285,7 +285,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 					Name:        "asset:" + s.ID,
 					Severity:    SeverityWarn,
 					Detail:      s.Name + " missing",
-					Remediation: "run 'samantha models ensure'",
+					Remediation: "run 'obey-voice models ensure'",
 				})
 			}
 		}
@@ -323,7 +323,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		if cfg.CalibreEnabled {
 			detail = p + " (calibre_enabled=true)"
 		} else {
-			detail = p + " (found; enable with: samantha config calibre_enabled true — or press e in Library)"
+			detail = p + " (found; enable with: obey-voice config calibre_enabled true — or press e in Library)"
 		}
 		diags = append(diags, Diagnostic{Name: "calibre-binary", Severity: SeverityOK, Detail: detail})
 	}
@@ -360,7 +360,7 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 				Name:        "brain-provider",
 				Severity:    SeverityError,
 				Detail:      "ollama_model is not configured",
-				Remediation: "run: samantha config ollama_model <model>",
+				Remediation: "run: obey-voice config ollama_model <model>",
 			}
 		}
 		host := strings.TrimSpace(cfg.OllamaHost)

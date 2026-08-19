@@ -501,7 +501,7 @@ func generateSelfSignedCert(certPath, keyPath string, id CertIdentity) error {
 
 	tmpl := x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: "samantha-serve"},
+		Subject:      pkix.Name{CommonName: "obey-voice-serve"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().AddDate(10, 0, 0),
 		// ECDSA: digital signature only (KeyEncipherment is an RSA concept).

@@ -68,7 +68,7 @@ type Config struct {
 
 	// TUIMouseEnabled lets the TUI claim the mouse so the wheel and trackpad
 	// scroll the transcript. Claiming it means the terminal routes drags to
-	// Samantha instead of its own selection, so copying transcript text needs a
+	// Obey Voice instead of its own selection, so copying transcript text needs a
 	// modifier (option in iTerm2, fn in Terminal.app, shift in kitty). Turn this
 	// off to get unmodified click-drag selection back and scroll with PgUp/PgDn.
 	TUIMouseEnabled bool `mapstructure:"tui_mouse_enabled"`
@@ -93,7 +93,7 @@ type Config struct {
 	// OllamaThink controls Ollama chat thinking/reasoning for models that
 	// support it (qwen3.x, etc.). Voice defaults to "false": thinking models
 	// otherwise often fill message.thinking and leave message.content empty,
-	// which Samantha surfaces as the "lost my train of thought" fallback.
+	// which Obey Voice surfaces as the "lost my train of thought" fallback.
 	// Values: false|off|0, true|on|1, or low|medium|high|max.
 	OllamaThink string `mapstructure:"ollama_think"`
 	// ClaudeMaxSessionTokens caps the prompt the claude CLI replays on --resume.
@@ -112,7 +112,7 @@ type Config struct {
 	// The brain turn timeout remains the outer bound for a complete turn.
 	ToolCommandTimeout int `mapstructure:"tool_command_timeout"`
 	// RemoteToolsEnabled gates tool calls for turns triggered over the
-	// network (samantha serve). Deliberately separate from
+	// network (obey-voice serve). Deliberately separate from
 	// voice_tools_enabled: remote turns default-deny tools regardless of
 	// the local flag.
 	RemoteToolsEnabled bool `mapstructure:"remote_tools_enabled"`
@@ -131,7 +131,7 @@ type Config struct {
 	// Agent
 	AgentName string `mapstructure:"agent_name"`
 	// RuntimeEnv* is an embedder-only grounding override. These values are not
-	// loaded from or persisted to Samantha config; voiceagent.Options.Env writes
+	// loaded from or persisted to Obey Voice config; voiceagent.Options.Env writes
 	// them onto its private config copy before constructing the brain.
 	RuntimeEnvUser     string `mapstructure:"-"`
 	RuntimeEnvHostname string `mapstructure:"-"`
@@ -281,7 +281,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_fallback_provider", "kokoro")
 	v.SetDefault("tts_voice", "af_heart")
 	v.SetDefault("speech_speed", 0.95)
-	// Empty selects Samantha's managed Qwen runtime. Set an explicit binary and
+	// Empty selects Obey Voice's managed Qwen runtime. Set an explicit binary and
 	// model path only for the advanced external-worker compatibility path.
 	v.SetDefault("qwen_tts_binary", "")
 	v.SetDefault("qwen_tts_model", "")
@@ -460,7 +460,7 @@ func Load() (*Config, error) {
 
 // LoadRaw reads configuration from disk and environment without the
 // afterLoad persona overlay, so it never writes migration files and cannot
-// fail on persona state. Read-only discovery (`samantha paths`) uses it to
+// fail on persona state. Read-only discovery (`obey-voice paths`) uses it to
 // resolve effective directories on installs Load would refuse or mutate.
 func LoadRaw() (*Config, error) {
 	return loadLocked()

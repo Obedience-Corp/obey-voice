@@ -65,8 +65,8 @@ func TestPlanValidate(t *testing.T) {
 		wantErrContains string
 	}{
 		// Error cases first.
-		{name: "unknown schema string", mutate: func(p *Plan) { p.Schema = "samantha.narration-plan.v2" }, wantErrContains: `schema must be "samantha.narration-plan.v1"`},
-		{name: "empty schema", mutate: func(p *Plan) { p.Schema = "" }, wantErrContains: `schema must be "samantha.narration-plan.v1"`},
+		{name: "unknown schema string", mutate: func(p *Plan) { p.Schema = "samantha.narration-plan.v2" }, wantErrContains: `schema must be "obey-voice.narration-plan.v1"`},
+		{name: "empty schema", mutate: func(p *Plan) { p.Schema = "" }, wantErrContains: `schema must be "obey-voice.narration-plan.v1"`},
 		{name: "missing source path", mutate: func(p *Plan) { p.Source.Path = "" }, wantErrContains: "source.path is required"},
 		{name: "empty extract method", mutate: func(p *Plan) { p.Extract.Method = "" }, wantErrContains: "extract.method is required (valid: native, pdftotext)"},
 		{name: "unknown extract method", mutate: func(p *Plan) { p.Extract.Method = "ocr" }, wantErrContains: `unknown extract.method "ocr" (valid: native, pdftotext)`},
@@ -115,7 +115,7 @@ func TestPlanValidate(t *testing.T) {
 	}
 }
 
-const specExampleDoc = `schema: samantha.narration-plan.v1
+const specExampleDoc = `schema: obey-voice.narration-plan.v1
 source:
   path: source/book.pdf
   sha256: 3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b
@@ -149,7 +149,7 @@ func TestParse(t *testing.T) {
 		wantErrContains string
 	}{
 		// Error cases first.
-		{name: "unknown top-level key", doc: "schema: samantha.narration-plan.v1\nnarrator: bob\n", wantErrContains: "field narrator not found"},
+		{name: "unknown top-level key", doc: "schema: obey-voice.narration-plan.v1\nnarrator: bob\n", wantErrContains: "field narrator not found"},
 		{name: "unknown section key", doc: strings.Replace(specExampleDoc, "title: Preface", "bogus: 1", 1), wantErrContains: "field bogus not found"},
 		{name: "unknown extract option", doc: strings.Replace(specExampleDoc, "layout: false", "columns: 2", 1), wantErrContains: "field columns not found"},
 		{name: "empty document", doc: "", wantErrContains: "document is empty"},

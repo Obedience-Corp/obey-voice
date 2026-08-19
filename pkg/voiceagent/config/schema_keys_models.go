@@ -37,7 +37,7 @@ func advancedKeys() []KeySpec {
 		{
 			Key: "prompts_dir", Type: TypeString, Default: "",
 			Group: GroupAdvanced, Title: "Prompts folder",
-			Help: "Where prompt documents are read from. Empty uses the folder inside Samantha's install root.",
+			Help: "Where prompt documents are read from. Empty uses the folder inside Obey Voice's install root.",
 		},
 		{
 			Key: "calibre_enabled", Type: TypeBool, Default: false,
@@ -117,7 +117,7 @@ func modelKeys() []KeySpec {
 		{
 			Key: "qwen_tts_binary", Type: TypeString, Default: "",
 			Group: GroupModels, Title: "Qwen worker path",
-			Help: "An external Qwen worker to use instead of the installed one. Empty uses Samantha's own.",
+			Help: "An external Qwen worker to use instead of the installed one. Empty uses Obey Voice's own.",
 		},
 		{
 			Key: "qwen_tts_model", Type: TypeString, Default: "",
@@ -174,7 +174,7 @@ func modelKeys() []KeySpec {
 		{
 			Key: "qwen_tts_native_url", Type: TypeString, Default: "",
 			Group: GroupModels, Title: "Qwen package URL",
-			Help: "Where the Qwen package is fetched from. Empty uses the release Samantha pins.",
+			Help: "Where the Qwen package is fetched from. Empty uses the release Obey Voice pins.",
 		},
 		{
 			Key: "qwen_tts_native_sha256", Type: TypeString, Default: "",
@@ -211,7 +211,7 @@ func hiddenKeys() []KeySpec {
 		{
 			Key: "tui_mouse_enabled", Type: TypeBool, Default: false,
 			Group: GroupHidden, Title: "TUI mouse capture",
-			Help: "Set from the terminal app; it has no effect on this Mac app.", ManagedBy: "samantha TUI",
+			Help: "Set from the terminal app; it has no effect on this Mac app.", ManagedBy: "obey-voice TUI",
 		},
 	}
 }

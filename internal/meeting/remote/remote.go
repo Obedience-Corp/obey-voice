@@ -18,7 +18,7 @@
 // Bundles are closed on shutdown, so audio already delivered is preserved on
 // disk, and the Manager reads it back: a meeting stays listable, readable, and
 // routable by its bundle id, and finishes through the desktop tooling
-// (`samantha meeting route` / `meeting sweep` / reprocess).
+// (`obey-voice meeting route` / `meeting sweep` / reprocess).
 package remote
 
 import (

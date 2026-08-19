@@ -20,7 +20,7 @@ var debugAudioConfig struct {
 
 // SetDebugAudioDir enables playback capture for players created afterwards.
 // An empty path disables capture. The recorder creates one timestamped child
-// directory per Player so concurrent Samantha processes never overwrite data.
+// directory per Player so concurrent Obey Voice processes never overwrite data.
 func SetDebugAudioDir(dir string) error {
 	if dir != "" {
 		abs, err := filepath.Abs(dir)

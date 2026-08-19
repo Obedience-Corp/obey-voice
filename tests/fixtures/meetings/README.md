@@ -28,8 +28,8 @@ Overrides:
 
 | Env | Purpose |
 |-----|---------|
-| `SAMANTHA_FIXTURE_CACHE` | Directory for the shared WAV |
-| `SAMANTHA_MEETING_FIXTURE` | Exact path to a WAV file |
+| `OBEY_VOICE_FIXTURE_CACHE` | Directory for the shared WAV |
+| `OBEY_VOICE_MEETING_FIXTURE` | Exact path to a WAV file |
 | `FORCE_FETCH=1` | Re-download even if cached |
 
 A copy under this directory (gitignored) is still accepted as a fallback.

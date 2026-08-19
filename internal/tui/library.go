@@ -426,7 +426,7 @@ func (m libraryModel) handleQueryEdit(key string) (libraryModel, tea.Cmd) {
 
 func (m *libraryModel) runBrowse() tea.Cmd {
 	if !m.enabled() {
-		m.errText = "Calibre is off — enable with: samantha config calibre_enabled true"
+		m.errText = "Calibre is off — enable with: obey-voice config calibre_enabled true"
 		return nil
 	}
 	m.loading = true
@@ -449,7 +449,7 @@ func (m *libraryModel) runQuery() tea.Cmd {
 		return m.runBrowse()
 	}
 	if !m.enabled() {
-		m.errText = "Calibre is off — enable with: samantha config calibre_enabled true"
+		m.errText = "Calibre is off — enable with: obey-voice config calibre_enabled true"
 		return nil
 	}
 	m.loading = true
@@ -570,7 +570,7 @@ func (m libraryModel) onboardingView() string {
 	b.WriteString("\n")
 	for _, line := range wrapWords(
 		"Calibre is free software that organizes ebooks on your computer "+
-			"(EPUB, PDF, MOBI, and more) — a personal library app. Samantha can "+
+			"(EPUB, PDF, MOBI, and more) — a personal library app. Obey Voice can "+
 			"browse that catalog so you can pick a book for audiobook creation "+
 			"or ask about titles you own. You do not need Calibre for voice chat.",
 		max(width-4, 40),
@@ -609,13 +609,13 @@ func (m libraryModel) onboardingView() string {
 	b.WriteString("\n")
 	steps := []string{
 		"1. " + platforminfo.CalibreInstallRemediation(runtime.GOOS),
-		"2. Press e here to enable  (or: samantha config calibre_enabled true)",
+		"2. Press e here to enable  (or: obey-voice config calibre_enabled true)",
 	}
 	if m.binaryErr == nil && m.probed && !m.enabled() {
 		steps = []string{
 			"Calibre tools were found on this machine.",
 			"Press e to enable the library integration and start browsing.",
-			"CLI equivalent: samantha config calibre_enabled true",
+			"CLI equivalent: obey-voice config calibre_enabled true",
 		}
 	}
 	if m.enabled() && m.binaryErr != nil {
@@ -633,11 +633,11 @@ func (m libraryModel) onboardingView() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(ansi.Truncate(dimStyle.Render(
-		"  Non-default library?  samantha config calibre_library_path /path/to/library",
+		"  Non-default library?  obey-voice config calibre_library_path /path/to/library",
 	), width, "…"))
 	b.WriteString("\n")
 	b.WriteString(ansi.Truncate(dimStyle.Render(
-		"  Doctor check:         samantha doctor   (calibre-binary is Warn, never fatal)",
+		"  Doctor check:         obey-voice doctor   (calibre-binary is Warn, never fatal)",
 	), width, "…"))
 	b.WriteString("\n")
 

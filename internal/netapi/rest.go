@@ -12,7 +12,7 @@ import (
 )
 
 // SessionSummary is one row of GET /v1/sessions. It aliases wire.SessionSummary
-// so cmd/samantha/cmd can depend on the shape without pulling in netapi's
+// so cmd/obey-voice/cmd can depend on the shape without pulling in netapi's
 // cgo-heavy transitive imports under -tags integration.
 type SessionSummary = wire.SessionSummary
 

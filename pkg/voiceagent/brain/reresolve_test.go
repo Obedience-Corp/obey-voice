@@ -17,7 +17,7 @@ func writePersonaDoc(t *testing.T, dir, name, identity string) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	doc := "schema: samantha.prompt.v1\nprompt:\n  name: " + name +
+	doc := "schema: obey-voice.prompt.v1\nprompt:\n  name: " + name +
 		"\n  kind: persona\n  system_prompt: |\n    " + identity +
 		"\nmetadata:\n  id: " + name + "-test\n  version: 1\n  description: test\n"
 	if err := os.WriteFile(filepath.Join(sub, name+".yaml"), []byte(doc), 0o644); err != nil {
@@ -40,7 +40,7 @@ func TestReloaderKeepsLastGoodOnBrokenDocument(t *testing.T) {
 	r := newPromptReloader(prompts.KindPersona, "alpha", "You are Alpha.", nil)
 
 	// Corrupt the document the way a half-finished save would.
-	if err := os.WriteFile(filepath.Join(dir, "persona", "alpha.yaml"), []byte("schema: samantha.prompt.v1\nprompt:\n  name: alpha\n  kind: per"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "persona", "alpha.yaml"), []byte("schema: obey-voice.prompt.v1\nprompt:\n  name: alpha\n  kind: per"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -36,7 +36,7 @@ type remoteExitedMsg struct {
 	stopped bool
 }
 
-// remoteServer owns one `samantha serve` child (LAN or --tailscale).
+// remoteServer owns one `obey-voice serve` child (LAN or --tailscale).
 // Reusing the CLI entrypoint keeps TLS, pairing, auth, and remote-audio
 // behavior on the same code path instead of duplicating security-sensitive
 // setup in the TUI.
@@ -60,7 +60,7 @@ func defaultRemoteCommand(network remoteNetwork) remoteCommandFactory {
 	return func(ctx context.Context) (*exec.Cmd, error) {
 		executable, err := os.Executable()
 		if err != nil {
-			return nil, fmt.Errorf("locate Samantha executable: %w", err)
+			return nil, fmt.Errorf("locate Obey Voice executable: %w", err)
 		}
 		// Always mute host speaker for remote use — audio lives on the client.
 		args := []string{"serve", "--no-voice"}
@@ -92,7 +92,7 @@ func (s *remoteServer) start(ctx context.Context, factory remoteCommandFactory) 
 	s.cmd = cmd
 	s.mu.Unlock()
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start Samantha remote server: %w", err)
+		return fmt.Errorf("start Obey Voice remote server: %w", err)
 	}
 	if s.stopping.Load() {
 		// The user can leave the screen while exec.Start is still in flight.

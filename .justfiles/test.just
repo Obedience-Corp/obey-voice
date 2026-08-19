@@ -39,7 +39,7 @@ integration-verbose:
     set -euo pipefail
     echo "Building Linux binary for containers..."
     mkdir -p bin/linux
-    CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -tags=integration -o bin/linux/samantha ./cmd/samantha
+    CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -tags=integration -o bin/linux/obey-voice ./cmd/obey-voice
     echo "Running container-based integration tests..."
     go test -v -tags=integration ./tests/integration/... -timeout 5m 2>&1
 
@@ -76,4 +76,4 @@ kokoro-contractions:
 audio-hardware:
     #!/usr/bin/env bash
     set -euo pipefail
-    SAMANTHA_HARDWARE_AUDIO=1 go test -race ./pkg/voiceagent/audio/ -count=1 -run 'Hardware' -v -timeout 60s
+    OBEY_VOICE_HARDWARE_AUDIO=1 go test -race ./pkg/voiceagent/audio/ -count=1 -run 'Hardware' -v -timeout 60s

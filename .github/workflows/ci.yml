@@ -101,6 +101,6 @@ jobs:
         run: just release linux-artifact
       - uses: actions/upload-artifact@v4
         with:
-          name: samantha-linux-amd64
-          path: dist/samantha-linux-amd64.tar.gz
+          name: obey-voice-linux-amd64
+          path: dist/obey-voice-linux-amd64.tar.gz
           if-no-files-found: error

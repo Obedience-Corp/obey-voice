@@ -1,6 +1,6 @@
 // Package bginit seeds lipgloss's background-color cache before bubbletea can
 // issue OSC/DSR terminal queries that hang or mis-detect on bare PTYs (VHS,
-// CI, script). Import from cmd/samantha with a blank import before the tui
+// CI, script). Import from cmd/obey-voice with a blank import before the tui
 // package runs.
 //
 // Mirrors obey-installer/camp bginit.
@@ -20,7 +20,7 @@ func init() {
 
 func backgroundIsDark(colorFGBG string) bool {
 	if !strings.Contains(colorFGBG, ";") {
-		// Prefer dark — matches termcast/VHS theme and Samantha's palette.
+		// Prefer dark — matches termcast/VHS theme and Obey Voice's palette.
 		return true
 	}
 	fields := strings.Split(colorFGBG, ";")

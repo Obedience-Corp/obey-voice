@@ -78,7 +78,7 @@ func launchInstances(runDir, session, binPath string, s *Scenario) (map[string]*
 		if h == 0 {
 			h = 34
 		}
-		// The samantha command runs AS the window command — typing it into an
+		// The obey-voice command runs AS the window command — typing it into an
 		// interactive shell races login-shell init (instant prompts eat
 		// buffered keys and leave a half-pasted command at a PS2 prompt).
 		cmd := launchCommand(binPath, inst, s)
@@ -105,10 +105,10 @@ func launchInstances(runDir, session, binPath string, s *Scenario) (map[string]*
 // assets; everything identity-shaped lives under the disposable HOME.
 func launchCommand(binPath string, inst *Instance, s *Scenario) string {
 	env := map[string]string{
-		"HOME":                   inst.Home,
-		"SAMANTHA_COLOR_PROFILE": "ansi",
-		"CLICOLOR_FORCE":         "1",
-		"TERM":                   "xterm-256color",
+		"HOME":                     inst.Home,
+		"OBEY_VOICE_COLOR_PROFILE": "ansi",
+		"CLICOLOR_FORCE":           "1",
+		"TERM":                     "xterm-256color",
 	}
 	if cache := os.Getenv("XDG_CACHE_HOME"); cache != "" {
 		env["XDG_CACHE_HOME"] = cache

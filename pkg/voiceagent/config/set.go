@@ -55,7 +55,7 @@ var fileWriteMu sync.Mutex
 // coerced by the key's schema type (never by whatever type happens to be in the
 // file), and only that key's line changes — comments and key order survive.
 //
-// This is the string-valued, user-facing door: `samantha config set` and the
+// This is the string-valued, user-facing door: `obey-voice config set` and the
 // legacy two-argument form. It refuses a key the schema marks non-editable,
 // naming the verb that owns it, because a generic setter is exactly where a
 // user would otherwise corrupt state another command maintains.
@@ -121,18 +121,18 @@ func resolveSpec(key string, enforceEditable bool) (KeySpec, error) {
 }
 
 // managedByCommand renders a ManagedBy verb as the command a user would type.
-// The verbs are written as the user says them ("persona use", "samantha TUI"),
+// The verbs are written as the user says them ("persona use", "obey-voice TUI"),
 // so the samantha prefix is added only when it is not already there — without
-// this, tui_mouse_enabled reported "samantha samantha TUI".
+// this, tui_mouse_enabled reported "samantha obey-voice TUI".
 func managedByCommand(managedBy string) string {
 	managedBy = strings.TrimSpace(managedBy)
 	if managedBy == "" {
-		return "samantha"
+		return "obey-voice"
 	}
-	if strings.HasPrefix(strings.ToLower(managedBy), "samantha") {
+	if strings.HasPrefix(strings.ToLower(managedBy), "obey-voice") {
 		return managedBy
 	}
-	return "samantha " + managedBy
+	return "obey-voice " + managedBy
 }
 
 // SuggestKeys returns up to five known keys that share a prefix with, or

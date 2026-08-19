@@ -90,7 +90,7 @@ func seedInstance(home string, s *Scenario, id string, inst *InstanceSpec) error
 		return fmt.Errorf("instance %s: %w", id, err)
 	}
 	doc := map[string]any{
-		"schema": "samantha.prompt.v1",
+		"schema": "obey-voice.prompt.v1",
 		"prompt": map[string]any{
 			"name":          personaID,
 			"kind":          "persona",

@@ -187,7 +187,7 @@ func TestRemoteModelSwitchNetworkKeys(t *testing.T) {
 func TestRemoteManagedProcessStreamsBannerAndExit(t *testing.T) {
 	factory := func(ctx context.Context) (*exec.Cmd, error) {
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestRemoteHelperProcess", "--")
-		cmd.Env = append(os.Environ(), "SAMANTHA_REMOTE_HELPER=1")
+		cmd.Env = append(os.Environ(), "OBEY_VOICE_REMOTE_HELPER=1")
 		return cmd, nil
 	}
 	m := newRemote(context.Background(), factory)
@@ -214,7 +214,7 @@ func TestRemoteManagedProcessStopsGracefully(t *testing.T) {
 	}
 	factory := func(ctx context.Context) (*exec.Cmd, error) {
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestRemoteHelperProcess", "--")
-		cmd.Env = append(os.Environ(), "SAMANTHA_REMOTE_HELPER=block")
+		cmd.Env = append(os.Environ(), "OBEY_VOICE_REMOTE_HELPER=block")
 		return cmd, nil
 	}
 	server := newRemoteServer()
@@ -235,7 +235,7 @@ func TestRemoteStopRequestedBeforeProcessStartIsHonored(t *testing.T) {
 	}
 	factory := func(ctx context.Context) (*exec.Cmd, error) {
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestRemoteHelperProcess", "--")
-		cmd.Env = append(os.Environ(), "SAMANTHA_REMOTE_HELPER=block")
+		cmd.Env = append(os.Environ(), "OBEY_VOICE_REMOTE_HELPER=block")
 		return cmd, nil
 	}
 	server := newRemoteServer()
@@ -308,7 +308,7 @@ func runRemoteCmd(t *testing.T, cmd tea.Cmd) tea.Msg {
 }
 
 func TestRemoteHelperProcess(t *testing.T) {
-	mode := os.Getenv("SAMANTHA_REMOTE_HELPER")
+	mode := os.Getenv("OBEY_VOICE_REMOTE_HELPER")
 	if mode == "" {
 		return
 	}

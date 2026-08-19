@@ -10,7 +10,7 @@ metadata search over reading whole books. Excerpts must stay short.
 
 ## Prerequisites
 
-- `calibre_enabled=true` in Samantha config (`samantha config calibre_enabled true`).
+- `calibre_enabled=true` in Obey Voice config (`obey-voice config calibre_enabled true`).
 - Calibre installed (`calibredb` on PATH or in the macOS app bundle).
 - Optional: `calibre_library_path` if not using Calibre's default library.
 
@@ -20,16 +20,16 @@ Use the Samantha CLI (preferred) or `calibredb` with fixed arguments:
 
 ```bash
 # Browse catalog (no filter; title order)
-samantha library list --limit 50
+obey-voice library list --limit 50
 
 # Search catalog (Calibre search grammar: free text, author:"…", tag:…, series:…)
-samantha library search "QUERY" --limit 20
-samantha library search "QUERY" --json
+obey-voice library search "QUERY" --limit 20
+obey-voice library search "QUERY" --json
 
 # One book’s metadata (description, formats, tags)
-samantha library show ID
+obey-voice library show ID
 
-# Or call calibredb directly when samantha library is unavailable:
+# Or call calibredb directly when obey-voice library is unavailable:
 # calibredb list --for-machine --fields title,authors,tags,series,formats,pubdate \
 #   --search "QUERY" --limit 20
 ```
@@ -52,9 +52,9 @@ run `fts_index enable` unless the user explicitly asks.
 ## Answering guidelines
 
 1. **Catalog questions** ("what books on X", "do I have Norvig"): use
-   `samantha library search` (or `list` for unfiltered browse) and summarize
+   `obey-voice library search` (or `list` for unfiltered browse) and summarize
    title, author, id, available formats.
-2. **Detail on one book**: `samantha library show ID` (or search → pick id) for
+2. **Detail on one book**: `obey-voice library show ID` (or search → pick id) for
    title, authors, tags, series, pubdate, formats. Quote comments/description
    only if present and keep under ~500 characters.
 3. **Content / quote search**: try FTS; if it fails or is empty, explain and
@@ -73,4 +73,4 @@ run `fts_index enable` unless the user explicitly asks.
 - Do not modify the library (no add/remove/set_metadata) unless the user
   explicitly requests a write and you confirm.
 - The feature is optional: if Calibre is disabled or missing, tell the user how
-  to enable it (`samantha config calibre_enabled true` and install Calibre).
+  to enable it (`obey-voice config calibre_enabled true` and install Calibre).

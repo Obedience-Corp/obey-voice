@@ -98,7 +98,7 @@ type Client struct {
 // defaultSearchTimeout is applied when Search/Resolve contexts have no deadline.
 const defaultSearchTimeout = 30 * time.Second
 
-// NewClientFromConfig builds a Client from Samantha config fields.
+// NewClientFromConfig builds a Client from Obey Voice config fields.
 // Binary overrides (non-empty) skip LookPath for that binary.
 func NewClientFromConfig(calibreEnabled bool, libraryPath, calibredbBinary, convertBinary, prefer string) Client {
 	c := Client{
@@ -389,7 +389,7 @@ func (c Client) BestFormatPathContext(ctx context.Context, b Book) (path, format
 }
 
 // exportFormat resolves a bare format name returned by a Calibre server by
-// exporting that format into Samantha's cache. Local Calibre libraries usually
+// exporting that format into Obey Voice's cache. Local Calibre libraries usually
 // return absolute paths and do not need this fallback.
 //
 // Cache identity is the content digest of the exported file. Replacing a
@@ -524,7 +524,7 @@ func (c Client) convertToEPUB(ctx context.Context, source string) (string, error
 		return "", fmt.Errorf("%w: ebook-convert did not create %q", ErrConversionFailed, tmpOutput)
 	}
 	if err := os.Rename(tmpOutput, final); err != nil {
-		// Another Samantha process may have populated the same cache key while
+		// Another Obey Voice process may have populated the same cache key while
 		// this conversion was running. Reuse its complete result if so.
 		if cached, ok := usableFile(final); ok {
 			return cached, nil

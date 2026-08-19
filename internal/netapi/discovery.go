@@ -11,9 +11,9 @@ import (
 	"github.com/grandcat/zeroconf"
 )
 
-// ServiceType is the mDNS/Bonjour type advertised by samantha serve.
-// Clients browse for _samantha._tcp.local.
-const ServiceType = "_samantha._tcp"
+// ServiceType is the mDNS/Bonjour type advertised by obey-voice serve.
+// Clients browse for _obey-voice._tcp.local.
+const ServiceType = "_obey-voice._tcp"
 
 // Discovery advertises the serve endpoint on the local network via mDNS.
 // It never carries the bearer token or pairing code — only the port and a
@@ -112,7 +112,7 @@ func interfaceForIP(ip net.IP) (*net.Interface, error) {
 	return nil, fmt.Errorf("no interface for %s", ip)
 }
 
-// WaitDiscovery is a test helper: browse briefly for samantha instances.
+// WaitDiscovery is a test helper: browse briefly for obey-voice instances.
 // Production clients use platform Bonjour APIs; this is only for tests.
 func WaitDiscovery(ctx context.Context, timeout time.Duration) ([]*zeroconf.ServiceEntry, error) {
 	resolver, err := zeroconf.NewResolver(nil)

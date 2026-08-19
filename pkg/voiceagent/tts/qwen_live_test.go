@@ -23,8 +23,8 @@ import (
 // not collapse to identical output, then cancels one request and verifies the
 // provider starts a fresh worker for the next request.
 func TestLiveManagedQwenVoiceMatrix(t *testing.T) {
-	if os.Getenv("SAMANTHA_QWEN_REAL_MODEL") != "1" {
-		t.Skip("set SAMANTHA_QWEN_REAL_MODEL=1 after `samantha models ensure --tts`")
+	if os.Getenv("OBEY_VOICE_QWEN_REAL_MODEL") != "1" {
+		t.Skip("set OBEY_VOICE_QWEN_REAL_MODEL=1 after `obey-voice models ensure --tts`")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -41,11 +41,11 @@ func TestLiveManagedQwenVoiceMatrix(t *testing.T) {
 
 	provider, err := NewQwen3TTS(cfg)
 	if err != nil {
-		t.Fatalf("initialize managed Qwen (install first with `samantha models ensure --tts`): %v", err)
+		t.Fatalf("initialize managed Qwen (install first with `obey-voice models ensure --tts`): %v", err)
 	}
 	defer provider.Delete()
 
-	outDir := os.Getenv("SAMANTHA_QWEN_SMOKE_DIR")
+	outDir := os.Getenv("OBEY_VOICE_QWEN_SMOKE_DIR")
 	if outDir == "" {
 		outDir = t.TempDir()
 	}
@@ -78,7 +78,7 @@ func TestLiveManagedQwenVoiceMatrix(t *testing.T) {
 	}
 
 	cancelCtx, cancel := context.WithCancel(context.Background())
-	interrupted, err := provider.Synthesize(cancelCtx, "This deliberately long request is canceled to verify that Samantha replaces the managed Qwen worker and remains ready for the next utterance.")
+	interrupted, err := provider.Synthesize(cancelCtx, "This deliberately long request is canceled to verify that Obey Voice replaces the managed Qwen worker and remains ready for the next utterance.")
 	if err != nil {
 		t.Fatal(err)
 	}

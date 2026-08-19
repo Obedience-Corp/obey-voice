@@ -823,7 +823,7 @@ func TestLanguageEnvDoesNotLeak(t *testing.T) {
 	defer func() { configFile = orig }()
 	resetViper(t)
 
-	t.Setenv("LANGUAGE", "en_US:en") // standard locale var, not a samantha setting
+	t.Setenv("LANGUAGE", "en_US:en") // standard locale var, not a obey-voice setting
 	t.Setenv("TTS_VOICE", "af_nova") // documented binding must still apply
 
 	cfg, err := Load()

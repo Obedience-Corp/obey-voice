@@ -11,7 +11,7 @@ import (
 )
 
 // demoMeetingEnv scripts mic phases/levels for VHS without hardware.
-const demoMeetingEnv = "SAMANTHA_DEMO_MEETING"
+const demoMeetingEnv = "OBEY_VOICE_DEMO_MEETING"
 
 func demoMeetingEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(demoMeetingEnv))) {

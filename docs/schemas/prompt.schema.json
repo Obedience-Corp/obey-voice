@@ -1,26 +1,43 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Obedience-Corp/obey-voice/main/docs/schemas/prompt.schema.json",
-  "title": "Samantha prompt document",
-  "description": "Schema for samantha.prompt.v1 prompt documents. Editor tooling only; runtime validation lives in internal/prompts.",
+  "title": "Obey Voice prompt document",
+  "description": "Schema for obey-voice.prompt.v1 prompt documents. Editor tooling only; runtime validation lives in internal/prompts.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "prompt"],
+  "required": [
+    "schema",
+    "prompt"
+  ],
   "properties": {
     "schema": {
-      "const": "samantha.prompt.v1"
+      "enum": [
+        "obey-voice.prompt.v1",
+        "samantha.prompt.v1"
+      ]
     },
     "prompt": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "kind", "system_prompt"],
+      "required": [
+        "name",
+        "kind",
+        "system_prompt"
+      ],
       "properties": {
         "name": {
           "type": "string",
           "minLength": 1
         },
         "kind": {
-          "enum": ["persona", "system", "style", "pronunciation", "turn", "compact"]
+          "enum": [
+            "persona",
+            "system",
+            "style",
+            "pronunciation",
+            "turn",
+            "compact"
+          ]
         },
         "system_prompt": {
           "oneOf": [
@@ -31,7 +48,9 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["identity"],
+              "required": [
+                "identity"
+              ],
               "properties": {
                 "identity": {
                   "type": "string",
@@ -39,19 +58,27 @@
                 },
                 "conversation_style": {
                   "type": "array",
-                  "items": { "type": "string" }
+                  "items": {
+                    "type": "string"
+                  }
                 },
                 "guidance": {
                   "type": "array",
-                  "items": { "type": "string" }
+                  "items": {
+                    "type": "string"
+                  }
                 },
                 "constraints": {
                   "type": "array",
-                  "items": { "type": "string" }
+                  "items": {
+                    "type": "string"
+                  }
                 },
                 "core_concepts": {
                   "type": "object",
-                  "additionalProperties": { "type": "string" }
+                  "additionalProperties": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -63,9 +90,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "id": { "type": "string" },
-        "version": { "type": "integer" },
-        "description": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        }
       }
     }
   }

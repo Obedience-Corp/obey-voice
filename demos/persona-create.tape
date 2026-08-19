@@ -1,6 +1,6 @@
 # Personas → Create: the boxed form wizard with the full vim prompt editor.
 #
-# Seeds samantha under a disposable HOME, creates "Research Buddy" end to
+# Seeds obey-voice under a disposable HOME, creates "Research Buddy" end to
 # end: name box → starter system prompt in the vim editor (normal mode,
 # dd/undo, visual yank, o + insert) → model & voice step → save → edit reopens.
 #
@@ -54,7 +54,7 @@ Type "clear" Enter
 Show
 
 # ── Launcher → Personas ──────────────────────────────────────────────
-Type "samantha -t -n" Sleep 300ms Enter
+Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 2s
 Down
 Sleep 600ms

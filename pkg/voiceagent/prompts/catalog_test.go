@@ -36,7 +36,7 @@ func TestCatalogReportsUserOverride(t *testing.T) {
 	if err := os.MkdirAll(personaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	doc := "schema: samantha.prompt.v1\nprompt:\n  name: samantha\n  kind: persona\n  system_prompt: Custom persona.\n"
+	doc := "schema: obey-voice.prompt.v1\nprompt:\n  name: samantha\n  kind: persona\n  system_prompt: Custom persona.\n"
 	if err := os.WriteFile(filepath.Join(personaDir, "samantha.yaml"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}

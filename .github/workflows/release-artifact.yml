@@ -35,14 +35,14 @@ jobs:
         run: just release linux-artifact
       - uses: actions/upload-artifact@v4
         with:
-          name: samantha-linux-amd64
-          path: dist/samantha-linux-amd64.tar.gz
+          name: obey-voice-linux-amd64
+          path: dist/obey-voice-linux-amd64.tar.gz
           if-no-files-found: error
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/samantha-linux-amd64.tar.gz --clobber
+        run: gh release upload "${GITHUB_REF_NAME}" dist/obey-voice-linux-amd64.tar.gz --clobber
 
   macos-artifact:
     runs-on: macos-latest
@@ -60,11 +60,11 @@ jobs:
         run: just release macos-artifact
       - uses: actions/upload-artifact@v4
         with:
-          name: samantha-macos-arm64
-          path: dist/samantha-macos-arm64.tar.gz
+          name: obey-voice-macos-arm64
+          path: dist/obey-voice-macos-arm64.tar.gz
           if-no-files-found: error
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/samantha-macos-arm64.tar.gz --clobber
+        run: gh release upload "${GITHUB_REF_NAME}" dist/obey-voice-macos-arm64.tar.gz --clobber

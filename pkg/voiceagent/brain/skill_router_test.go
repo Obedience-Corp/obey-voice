@@ -141,8 +141,8 @@ func TestCosineSimilarity(t *testing.T) {
 }
 
 func TestSemanticSkillRouterWithOllama(t *testing.T) {
-	if os.Getenv("SAMANTHA_TEST_OLLAMA_EMBEDDINGS") == "" {
-		t.Skip("set SAMANTHA_TEST_OLLAMA_EMBEDDINGS=1 to run against local Ollama")
+	if os.Getenv("OBEY_VOICE_TEST_OLLAMA_EMBEDDINGS") == "" {
+		t.Skip("set OBEY_VOICE_TEST_OLLAMA_EMBEDDINGS=1 to run against local Ollama")
 	}
 	base, err := url.Parse("http://localhost:11434")
 	if err != nil {

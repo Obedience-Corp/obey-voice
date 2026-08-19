@@ -192,7 +192,7 @@ func formatAssetProgress(msg assetProgressMsg) string {
 }
 
 // drainTimeout caps how long shutdown waits for an in-flight turn after its
-// context is canceled, mirroring cmd/samantha's forceQuitTimeout.
+// context is canceled, mirroring cmd/obey-voice's forceQuitTimeout.
 const drainTimeout = 3 * time.Second
 
 func waitTimeout(wg *sync.WaitGroup, d time.Duration) {

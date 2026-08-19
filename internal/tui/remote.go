@@ -323,7 +323,7 @@ func (m *remoteModel) consumeLine(line string) {
 	}
 	if strings.Contains(strings.ToLower(clean), "address already in use") {
 		m.status = "Port already in use"
-		m.detail = "Something else is already sharing Samantha — stop it, then press r"
+		m.detail = "Something else is already sharing Obey Voice — stop it, then press r"
 	}
 
 	// Never mirror the long-lived bearer token into the TUI. The short-lived,

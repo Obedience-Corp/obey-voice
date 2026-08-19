@@ -14,15 +14,15 @@ import (
 // previews use when output_device names a non-default device. It starts the
 // device with a silent callback and closes it immediately; no tone is played.
 //
-//	SAMANTHA_HARDWARE_AUDIO=1 SAMANTHA_OUTPUT_DEVICE="Device Name" \
+//	OBEY_VOICE_HARDWARE_AUDIO=1 OBEY_VOICE_OUTPUT_DEVICE="Device Name" \
 //	  go test ./internal/audio -run HardwareNamedDeviceInitialization -v
 func TestHardwareNamedDeviceInitialization(t *testing.T) {
-	if os.Getenv("SAMANTHA_HARDWARE_AUDIO") == "" {
-		t.Skip("set SAMANTHA_HARDWARE_AUDIO=1 to run hardware playback tests")
+	if os.Getenv("OBEY_VOICE_HARDWARE_AUDIO") == "" {
+		t.Skip("set OBEY_VOICE_HARDWARE_AUDIO=1 to run hardware playback tests")
 	}
-	deviceName := strings.TrimSpace(os.Getenv("SAMANTHA_OUTPUT_DEVICE"))
+	deviceName := strings.TrimSpace(os.Getenv("OBEY_VOICE_OUTPUT_DEVICE"))
 	if deviceName == "" {
-		t.Skip("set SAMANTHA_OUTPUT_DEVICE to exercise named-device initialization")
+		t.Skip("set OBEY_VOICE_OUTPUT_DEVICE to exercise named-device initialization")
 	}
 
 	player := NewPlayerWithDevice(deviceName)
@@ -42,13 +42,13 @@ func TestHardwareNamedDeviceInitialization(t *testing.T) {
 // pre-backend PCM and callback delivery contain no underrun holes or click
 // impulses. Run on an affected machine with:
 //
-//	SAMANTHA_HARDWARE_AUDIO=1 go test ./internal/audio -run Hardware -v
+//	OBEY_VOICE_HARDWARE_AUDIO=1 go test ./internal/audio -run Hardware -v
 //
 // Capture artifacts land under the test temp directory when the assertion
 // fails so the debug bundle can be inspected with the audio corruption runbook.
 func TestHardwarePlayStreamNoSoftwareCrackle(t *testing.T) {
-	if os.Getenv("SAMANTHA_HARDWARE_AUDIO") == "" {
-		t.Skip("set SAMANTHA_HARDWARE_AUDIO=1 to run hardware playback crackle test")
+	if os.Getenv("OBEY_VOICE_HARDWARE_AUDIO") == "" {
+		t.Skip("set OBEY_VOICE_HARDWARE_AUDIO=1 to run hardware playback crackle test")
 	}
 
 	root := t.TempDir()

@@ -4,7 +4,7 @@
 Python samantha-cli uses:
   - kokoro-v1.0.onnx + voices-v1.0.bin (NPZ) from thewh1teagle/kokoro-onnx
 
-Go samantha/sherpa expects:
+Go obey-voice/sherpa expects:
   - model.onnx with sample_rate / n_speakers metadata
   - voices.bin as raw float32 [n_speakers, 510, 1, 256]
   - tokens.txt, espeak-ng-data, lexicon (copied from the multi-lang pack)

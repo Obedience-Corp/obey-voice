@@ -3,7 +3,7 @@
 // Package listen provides a continuous STT loop: run sessions back to back
 // against a provider and dispatch a callback per utterance until stopped. It
 // never touches Brain, TTS, or the pipeline — it is the reusable primitive
-// behind `samantha meeting record` and any future dictation or serve-mode
+// behind `obey-voice meeting record` and any future dictation or serve-mode
 // text bridge.
 package listen
 

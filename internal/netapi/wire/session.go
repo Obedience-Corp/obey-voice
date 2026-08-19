@@ -1,6 +1,6 @@
 // Package wire holds pure API/CLI value types shared by internal/netapi and
-// cmd/samantha/cmd. It must stay free of cgo-heavy imports (no
-// internal/meeting/remote, pkg/voiceagent/audio, etc.) so cmd/samantha/cmd
+// cmd/obey-voice/cmd. It must stay free of cgo-heavy imports (no
+// internal/meeting/remote, pkg/voiceagent/audio, etc.) so cmd/obey-voice/cmd
 // files built with -tags integration (CGO_ENABLED=0) can depend on these
 // shapes without pulling netapi's full dependency graph in.
 package wire

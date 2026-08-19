@@ -1,10 +1,10 @@
-# Samantha
+# Obey Voice
 
-A local voice assistant that starts speaking before the model finishes the thought.
+The voice engine behind the Obey Voice apps (formerly Samantha — she is still the default persona). A local voice assistant that starts speaking before the model finishes the thought.
 
 Speech stays on your machine. The brain is Claude, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
 
-![Samantha conversation TUI](docs/images/tui-samantha.gif)
+![Obey Voice conversation TUI](docs/images/tui-samantha.gif)
 
 ```text
 Mic → VAD → STT → Brain → Sentence chunker → TTS → Speaker
@@ -14,36 +14,30 @@ Target: under 2 seconds from the end of your utterance to first audio.
 
 ## Install
 
-**macOS**
+**macOS / Linux from source** (Go 1.26+, [just](https://github.com/casey/just), a C compiler):
 
 ```bash
-brew install --HEAD lancekrogers/tap/samantha
+just install          # installs obey-voice into $GOBIN, plus a `obey-voice` compatibility symlink
 ```
 
 Grant the terminal microphone access under System Settings → Privacy & Security → Microphone.
 
 **Linux (x86_64 glibc)**
 
-Download `samantha-linux-amd64.tar.gz` from the [latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest), then:
+Download `obey-voice-linux-amd64.tar.gz` from the [latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest), then:
 
 ```bash
-tar -xzf samantha-linux-amd64.tar.gz
+tar -xzf obey-voice-linux-amd64.tar.gz
 mkdir -p ~/.local/opt ~/.local/bin
-mv samantha-linux-amd64 ~/.local/opt/samantha
-ln -s ~/.local/opt/samantha/samantha ~/.local/bin/samantha
+mv obey-voice-linux-amd64 ~/.local/opt/obey-voice
+ln -s ~/.local/opt/obey-voice/obey-voice ~/.local/bin/obey-voice
 ```
 
 Keep the binary next to `lib/`. Ubuntu 24.04 is the compatibility floor. Then:
 
 ```bash
-samantha models ensure
-samantha doctor --voice-devices
-```
-
-**From source** (Go 1.26+, [just](https://github.com/casey/just), a C compiler):
-
-```bash
-just install
+obey-voice models ensure
+obey-voice doctor --voice-devices
 ```
 
 [Full install notes](docs/install.md) cover Homebrew caveats, the Linux archive, musl, and developer builds.
@@ -51,9 +45,9 @@ just install
 ## Talk
 
 ```bash
-samantha              # launcher → voice TUI
-samantha --text       # type, it speaks
-samantha --no-voice   # speak, it prints
+obey-voice            # launcher → voice TUI
+obey-voice --text       # type, it speaks
+obey-voice --no-voice   # speak, it prints
 ```
 
 Need it on a phone? Open the TUI, choose **Use on another device**, pick Tailscale or same Wi-Fi, open the link.
@@ -61,7 +55,7 @@ Need it on a phone? Open the TUI, choose **Use on another device**, pick Tailsca
 Headless:
 
 ```bash
-samantha serve --tailscale
+obey-voice serve --tailscale
 ```
 
 [Usage](docs/usage.md) has TUI keys, personas, remote HTTPS, and the full command list.
@@ -70,10 +64,10 @@ samantha serve --tailscale
 
 | Do this | Start here |
 |---------|------------|
-| Turn an EPUB, PDF, Markdown, or URL into audio | `samantha render book.epub --out-dir out/book` · [narration](docs/narration.md) |
-| Record a meeting (STT only, speaker labels) | `samantha meeting record` · [meetings](docs/meetings.md) |
-| Switch prompt + model + voice as one agent | `samantha persona use samantha` · [personas](docs/usage.md#personas-voice-agents) |
-| Inspect or change a setting | `samantha config` · [configuration](docs/configuration.md) |
+| Turn an EPUB, PDF, Markdown, or URL into audio | `obey-voice render book.epub --out-dir out/book` · [narration](docs/narration.md) |
+| Record a meeting (STT only, speaker labels) | `obey-voice meeting record` · [meetings](docs/meetings.md) |
+| Switch prompt + model + voice as one agent | `obey-voice persona use samantha` · [personas](docs/usage.md#personas-voice-agents) |
+| Inspect or change a setting | `obey-voice config` · [configuration](docs/configuration.md) |
 
 ## Stack
 
@@ -85,7 +79,7 @@ samantha serve --tailscale
 | VAD | Silero | |
 | Audio | miniaudio / malgo | |
 
-Models download on first use into `models_dir`. Qwen installs from TUI Settings or `samantha models ensure --tts`. No product Python runtime.
+Models download on first use into `models_dir`. Qwen installs from TUI Settings or `obey-voice models ensure --tts`. No product Python runtime.
 
 ## Docs
 

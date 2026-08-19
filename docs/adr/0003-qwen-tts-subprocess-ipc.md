@@ -24,7 +24,7 @@ model work (see lab `qwen3-tts-native` `docs/latency/`).
 
 ## Decision
 
-1. **Ship subprocess IPC** as the product default for Samantha Qwen TTS.
+1. **Ship subprocess IPC** as the product default for Obey Voice Qwen TTS.
 2. **Do not ship cgo** in this cutover train.
 3. Revisit cgo only if, after stage-B progressive PCM from the engine,
    framing/copy overhead is measured as a material share of TTFA (guideline:

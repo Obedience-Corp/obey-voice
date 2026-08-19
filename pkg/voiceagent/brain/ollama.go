@@ -82,7 +82,7 @@ func (o *OllamaBrain) formatStoredUser(stored string) string {
 // NewOllama creates an Ollama brain provider.
 func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 	if cfg.OllamaModel == "" {
-		return nil, fmt.Errorf("ollama_model not configured — run: samantha config ollama_model <model>")
+		return nil, fmt.Errorf("ollama_model not configured — run: obey-voice config ollama_model <model>")
 	}
 
 	base, err := url.Parse(cfg.OllamaHost)
@@ -135,7 +135,7 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 	router, routerErr := newSemanticSkillRouter(embedCtx, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog)
 	embedCancel()
 	if routerErr != nil {
-		fmt.Fprintf(os.Stderr, "samantha: semantic skill routing unavailable (%v); continuing with the Agent Skills catalog\n", routerErr)
+		fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing unavailable (%v); continuing with the Agent Skills catalog\n", routerErr)
 	}
 
 	var keepAlive *api.Duration
@@ -143,7 +143,7 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 		if d, err := time.ParseDuration(s); err == nil {
 			keepAlive = &api.Duration{Duration: d}
 		} else {
-			fmt.Fprintf(os.Stderr, "samantha: invalid ollama_keep_alive %q (%v); using the server default\n", s, err)
+			fmt.Fprintf(os.Stderr, "obey-voice: invalid ollama_keep_alive %q (%v); using the server default\n", s, err)
 		}
 	}
 
@@ -156,7 +156,7 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 		fullSystemPrompt: assembleSystemPrompt(systemPrompt, workDir, catalog, turn, cfg),
 		turnInstruction:  turn,
 		personaReloader: newPromptReloader(prompts.KindPersona, cfg.Persona, systemPrompt, func(hash string) {
-			fmt.Fprintf(os.Stderr, "samantha: persona prompt changed (hash %s)\n", hash)
+			fmt.Fprintf(os.Stderr, "obey-voice: persona prompt changed (hash %s)\n", hash)
 		}),
 		keepAlive:         keepAlive,
 		skills:            catalog,
@@ -168,7 +168,7 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 // loadSkillsCatalog returns the Agent Skills catalog when skills_enabled is
 // true; otherwise an empty catalog. Discovery follows the cross-client
 // .agents/skills convention (project, nearest workspace ancestor, then user)
-// and then checks the configured Samantha skills_dir. .claude/skills is
+// and then checks the configured Obey Voice skills_dir. .claude/skills is
 // intentionally not scanned — Claude Code owns that path. Missing dirs yield
 // empty contributions, not errors.
 // SkillsCatalogFor exposes the loader the ollama brain uses, so the CLI preview
@@ -480,7 +480,7 @@ func ollamaThinkValue(raw string) *api.ThinkValue {
 	case thinkLow, thinkMedium, thinkHigh, thinkMax:
 		return &api.ThinkValue{Value: s}
 	default:
-		fmt.Fprintf(os.Stderr, "samantha: invalid ollama_think %q; using false (speakable content only)\n", raw)
+		fmt.Fprintf(os.Stderr, "obey-voice: invalid ollama_think %q; using false (speakable content only)\n", raw)
 		return &api.ThinkValue{Value: false}
 	}
 }
@@ -492,7 +492,7 @@ func ollamaThinkValue(raw string) *api.ThinkValue {
 func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
 	err := o.client.Chat(ctx, req, fn)
 	if err != nil && req.Tools != nil && modelRejectedTools(err) {
-		fmt.Fprintf(os.Stderr, "samantha: ollama model %q rejected tools (%v); continuing without tool calling — file read/write will not run\n", o.model, err)
+		fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected tools (%v); continuing without tool calling — file read/write will not run\n", o.model, err)
 		req.Tools = nil
 		return o.client.Chat(ctx, req, fn)
 	}
@@ -534,7 +534,7 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 		think = o.cfg.OllamaThink
 	}
 	numCtx := o.warmupNumCtx()
-	fmt.Fprintf(os.Stderr, "samantha: warmup model=%s num_ctx=%d\n", o.model, numCtx)
+	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%d\n", o.model, numCtx)
 	req := &api.ChatRequest{
 		Model:     o.model,
 		Messages:  []api.Message{{Role: "user", Content: "hi"}},
@@ -680,7 +680,7 @@ func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
 	}
 	if !o.budgetWarned {
 		o.budgetWarned = true
-		fmt.Fprintf(os.Stderr, "samantha: prompt near ollama_num_ctx=%d; dropping oldest history to stay under budget\n", budget)
+		fmt.Fprintf(os.Stderr, "obey-voice: prompt near ollama_num_ctx=%d; dropping oldest history to stay under budget\n", budget)
 	}
 }
 
@@ -699,7 +699,7 @@ func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onSta
 	matched, err := o.skillRouter.Match(ctx, input)
 	if err != nil {
 		if !o.skillRouterWarned {
-			fmt.Fprintf(os.Stderr, "samantha: semantic skill routing failed (%v); continuing with the Agent Skills catalog\n", err)
+			fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing failed (%v); continuing with the Agent Skills catalog\n", err)
 			o.skillRouterWarned = true
 		}
 		return ""

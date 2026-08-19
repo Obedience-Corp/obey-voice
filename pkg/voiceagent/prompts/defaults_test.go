@@ -20,7 +20,7 @@ func TestResolverPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	userDoc := `schema: samantha.prompt.v1
+	userDoc := `schema: obey-voice.prompt.v1
 prompt:
   name: samantha
   kind: persona
@@ -32,7 +32,7 @@ prompt:
 
 	explicitDir := t.TempDir()
 	explicitPath := filepath.Join(explicitDir, "explicit.yaml")
-	explicitDoc := `schema: samantha.prompt.v1
+	explicitDoc := `schema: obey-voice.prompt.v1
 prompt:
   name: samantha
   kind: persona

@@ -121,7 +121,7 @@ func New(cfg *config.Config) (*Brain, error) {
 		systemPrompt:    systemPrompt,
 		turnInstruction: turn,
 		personaReloader: newPromptReloader(prompts.KindPersona, cfg.Persona, systemPrompt, func(hash string) {
-			fmt.Fprintf(os.Stderr, "samantha: persona prompt changed (hash %s)\n", hash)
+			fmt.Fprintf(os.Stderr, "obey-voice: persona prompt changed (hash %s)\n", hash)
 		}),
 		turnReloader: newPromptReloader(prompts.KindTurn, cfg.TurnPrompt, turn, nil),
 	}
@@ -212,7 +212,7 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 		// already-emitted audio, and on ctx.Err()==nil so a user barge-in cancel
 		// is not mistaken for a resume failure.
 		if err != nil && resuming && !streamedAny && ctx.Err() == nil {
-			fmt.Fprintf(os.Stderr, "samantha: claude resume failed, retrying without session: %v\n", err)
+			fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
 			b.dropSession()
 			raw, _, err = b.streamAttempt(ctx, out, streamOpts)
 		}
@@ -253,7 +253,7 @@ func (b *Brain) enforceSessionBudget() {
 	}
 	// Log every reset: each one floors the model back to the flatten window and
 	// is a real context change the user should be able to see in the log.
-	fmt.Fprintf(os.Stderr, "samantha: claude session past claude_max_session_tokens=%d; starting a fresh session from recent history\n", budget)
+	fmt.Fprintf(os.Stderr, "obey-voice: claude session past claude_max_session_tokens=%d; starting a fresh session from recent history\n", budget)
 	b.dropSession()
 }
 
@@ -278,7 +278,7 @@ func (b *Brain) warnSessionSize(streamOpts StreamOptions) {
 		return
 	}
 	b.sessionWarned = true
-	fmt.Fprintf(os.Stderr, "samantha: claude session prompt is %d tokens (claude_session_warn_tokens=%d); consider clearing the conversation\n", b.promptTokens, threshold)
+	fmt.Fprintf(os.Stderr, "obey-voice: claude session prompt is %d tokens (claude_session_warn_tokens=%d); consider clearing the conversation\n", b.promptTokens, threshold)
 	if streamOpts.OnSessionWarn != nil {
 		streamOpts.OnSessionWarn(b.promptTokens, threshold)
 	}
@@ -432,7 +432,7 @@ func (b *Brain) ThinkFull(ctx context.Context, input string, streamOpts StreamOp
 	// whole call, so drop the id and retry once via the flatten path. ctx.Err()
 	// gate keeps a user cancellation from being treated as a resume failure.
 	if err != nil && resuming && ctx.Err() == nil {
-		fmt.Fprintf(os.Stderr, "samantha: claude resume failed, retrying without session: %v\n", err)
+		fmt.Fprintf(os.Stderr, "obey-voice: claude resume failed, retrying without session: %v\n", err)
 		b.dropSession()
 		response, err = b.thinkFullAttempt(ctx, streamOpts)
 	}

@@ -449,7 +449,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// startup sweep cannot retry a bundle whose trailer never landed.
 			if plan.Kind == routePlanDest && plan.Dest.ID != "" {
 				a.meetingRoutePlan = meetingRoutePlan{}
-				banner += fmt.Sprintf(" — NOT filed to %s; recover with: samantha meeting route %s --to %s",
+				banner += fmt.Sprintf(" — NOT filed to %s; recover with: obey-voice meeting route %s --to %s",
 					plan.Dest.ID, summary.Bundle, plan.Dest.ID)
 			}
 			a.screen = screenLauncher

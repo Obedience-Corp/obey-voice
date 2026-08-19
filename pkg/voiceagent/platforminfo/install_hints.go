@@ -22,7 +22,7 @@ func PopplerInstallRemediation(goos string) string {
 // CalibreInstallRemediation returns platform-appropriate setup guidance for
 // the optional Calibre library integration.
 func CalibreInstallRemediation(goos string) string {
-	const finish = "open Calibre once to create a library, then run: samantha config calibre_enabled true"
+	const finish = "open Calibre once to create a library, then run: obey-voice config calibre_enabled true"
 	switch goos {
 	case "darwin":
 		return "Install Calibre with 'brew install --cask calibre' or from https://calibre-ebook.com, " + finish
@@ -35,7 +35,7 @@ func CalibreInstallRemediation(goos string) string {
 	}
 }
 
-// CalibreBinaryHint explains where Samantha looks when Calibre is installed
+// CalibreBinaryHint explains where Obey Voice looks when Calibre is installed
 // but calibredb is still unresolved.
 func CalibreBinaryHint(goos string) string {
 	switch goos {

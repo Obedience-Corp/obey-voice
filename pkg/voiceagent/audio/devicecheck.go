@@ -130,13 +130,13 @@ func copyDeviceIDToC(id malgo.DeviceID) (unsafe.Pointer, func()) {
 // native sample rate, and the channel count advertised by its shared-mode
 // formats. sourceRate is the TTS stream rate (Kokoro is 24 kHz): when the
 // device offers an integer multiple of that rate (e.g. 48 kHz), we prefer it
-// over 44.1 kHz so Samantha can upsample with an exact ratio instead of an
+// over 44.1 kHz so Obey Voice can upsample with an exact ratio instead of an
 // irrational 24→44.1 conversion that linear/cubic interpolation renders as
 // harsh/crackly HF on multi-channel displays.
 //
 // Opening CoreAudio at Kokoro's 24 kHz mono rate delegates rate and layout
 // conversion to the backend; on Studio Display Speakers (8 ch @ 44.1/48 kHz)
-// that path produced audible crackle. Samantha opens at a preferred device
+// that path produced audible crackle. Obey Voice opens at a preferred device
 // rate with a stereo client layout and expands mono TTS before the callback.
 func playbackDeviceDetails(ctx malgo.Context, name string, sourceRate int) (string, uint32, uint32, error) {
 	infos, err := ctx.Devices(malgo.Playback)
@@ -217,7 +217,7 @@ func pickPlaybackFormat(formats []malgo.DataFormat, sourceRate int) (rate uint32
 	return rate, channels
 }
 
-// choosePlaybackChannels picks the client layout Samantha opens on the device.
+// choosePlaybackChannels picks the client layout Obey Voice opens on the device.
 // Voice is mono; we open stereo when the device allows a 2ch client format so
 // L/R carry the same signal. When the device only advertises multi-channel
 // layouts (Studio Display Speakers lists 8ch), open at that count and map mono

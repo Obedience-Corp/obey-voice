@@ -17,7 +17,7 @@ import (
 // ttsProviderEnum mirrors tts.Providers().
 func ttsProviderEnum() []string { return []string{"kokoro", "qwen3-tts"} }
 
-// kokoroVoiceEnum mirrors tts.VoiceNames() — the same list `samantha voices`
+// kokoroVoiceEnum mirrors tts.VoiceNames() — the same list `obey-voice voices`
 // prints, in speaker-id order.
 func kokoroVoiceEnum() []string {
 	return []string{

@@ -17,7 +17,7 @@ import (
 )
 
 func TestManagedQwenSessionHelper(t *testing.T) {
-	if os.Getenv("SAMANTHA_QWEN_FAKE_SESSION") != "1" {
+	if os.Getenv("OBEY_VOICE_QWEN_FAKE_SESSION") != "1" {
 		return
 	}
 	fmt.Println(`{"protocol":"samantha-qwen/v1","type":"ready","voices":["Vivian","Ryan"],"languages":["Auto","English"]}`)
@@ -30,13 +30,13 @@ func TestManagedQwenSessionHelper(t *testing.T) {
 		if msg.Type == "shutdown" {
 			return
 		}
-		marker := os.Getenv("SAMANTHA_QWEN_FAKE_SESSION_MARKER")
+		marker := os.Getenv("OBEY_VOICE_QWEN_FAKE_SESSION_MARKER")
 		if marker != "" {
 			if _, err := os.Stat(marker); os.IsNotExist(err) {
 				if err := os.WriteFile(marker, []byte("attempted"), 0o600); err != nil {
 					os.Exit(3)
 				}
-				switch os.Getenv("SAMANTHA_QWEN_FAKE_SESSION_MODE") {
+				switch os.Getenv("OBEY_VOICE_QWEN_FAKE_SESSION_MODE") {
 				case "crash-once":
 					os.Exit(17)
 				case "block-once":
@@ -184,9 +184,9 @@ func TestManagedQwenSessionStartupHonorsCancellation(t *testing.T) {
 
 func TestManagedQwenProviderRestartsAndRetriesAfterWorkerCrash(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "first-attempt")
-	t.Setenv("SAMANTHA_QWEN_FAKE_SESSION", "1")
-	t.Setenv("SAMANTHA_QWEN_FAKE_SESSION_MODE", "crash-once")
-	t.Setenv("SAMANTHA_QWEN_FAKE_SESSION_MARKER", marker)
+	t.Setenv("OBEY_VOICE_QWEN_FAKE_SESSION", "1")
+	t.Setenv("OBEY_VOICE_QWEN_FAKE_SESSION_MODE", "crash-once")
+	t.Setenv("OBEY_VOICE_QWEN_FAKE_SESSION_MARKER", marker)
 
 	q := newManagedSessionTestProvider(t)
 	defer q.Delete()
@@ -204,9 +204,9 @@ func TestManagedQwenProviderRestartsAndRetriesAfterWorkerCrash(t *testing.T) {
 
 func TestManagedQwenProviderRecoversOnRequestAfterCancellation(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "first-attempt")
-	t.Setenv("SAMANTHA_QWEN_FAKE_SESSION", "1")
-	t.Setenv("SAMANTHA_QWEN_FAKE_SESSION_MODE", "block-once")
-	t.Setenv("SAMANTHA_QWEN_FAKE_SESSION_MARKER", marker)
+	t.Setenv("OBEY_VOICE_QWEN_FAKE_SESSION", "1")
+	t.Setenv("OBEY_VOICE_QWEN_FAKE_SESSION_MODE", "block-once")
+	t.Setenv("OBEY_VOICE_QWEN_FAKE_SESSION_MARKER", marker)
 
 	q := newManagedSessionTestProvider(t)
 	defer q.Delete()

@@ -1,4 +1,4 @@
-// Package prompts defines the samantha.prompt.v1 YAML document format,
+// Package prompts defines the obey-voice.prompt.v1 YAML document format,
 // its loader, deterministic assembly, and embedded defaults. Nothing
 // consumes it yet; wiring into the brain happens in a follow-up change.
 package prompts
@@ -10,8 +10,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Schema identifies the prompt document schema version.
-const Schema = "samantha.prompt.v1"
+// Schema identifies the prompt document schema version. Documents written
+// before the obey-voice rename declare LegacySchema; both load identically.
+const (
+	Schema       = "obey-voice.prompt.v1"
+	LegacySchema = "samantha.prompt.v1"
+)
 
 // Kind classifies what a prompt document provides.
 type Kind string
@@ -91,7 +95,7 @@ func (s *SystemPrompt) UnmarshalYAML(node *yaml.Node) error {
 // Validate checks the structural invariants of the document: the schema
 // string, a non-empty name, a known kind, and a non-empty identity.
 func (d *Document) Validate() error {
-	if d.Schema != Schema {
+	if d.Schema != Schema && d.Schema != LegacySchema {
 		return fmt.Errorf("prompt document: schema %q, want %q", d.Schema, Schema)
 	}
 	if d.Prompt.Name == "" {

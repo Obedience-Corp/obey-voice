@@ -48,7 +48,7 @@ func TestSeedNeverOverwrites(t *testing.T) {
 	}
 
 	path := filepath.Join(dir, "persona", "samantha.yaml")
-	custom := []byte("schema: samantha.prompt.v1\nprompt:\n  name: samantha\n  kind: persona\n  system_prompt: Custom.\n")
+	custom := []byte("schema: obey-voice.prompt.v1\nprompt:\n  name: samantha\n  kind: persona\n  system_prompt: Custom.\n")
 	if err := os.WriteFile(path, custom, 0o644); err != nil {
 		t.Fatal(err)
 	}
