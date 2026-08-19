@@ -1,6 +1,6 @@
 # Demos
 
-## tool-calls.gif — main Samantha TUI + live tool call
+## tool-calls.gif — main Obey Voice TUI + live tool call
 
 Full Bubble Tea UI (not `--no-tui`):
 
@@ -31,9 +31,9 @@ Full Bubble Tea conversation UI with a calm equalizer strip (not flame art):
 2. **Hearing** — level-reactive EQ driven by mic energy  
 3. **Speaking** — EQ driven by playback energy  
 
-`SAMANTHA_DEMO_VOICE_ANIM=1` scripts the same bus events production turns use
+`OBEY_VOICE_DEMO_VOICE_ANIM=1` scripts the same bus events production turns use
 (so the GIF does not depend on a live mic). The binary and PTY are still real.
-The tape unsets `NO_COLOR` and forces `SAMANTHA_COLOR_PROFILE=ansi` so VHS
+The tape unsets `NO_COLOR` and forces `OBEY_VOICE_COLOR_PROFILE=ansi` so VHS
 paints bright theme colors.
 
 ```bash
@@ -109,8 +109,8 @@ Full Bubble Tea app (not a CLI stub):
 3. **Recorder** — live voice EQ, scripted speech, typed **note**, **Ctrl+B** ★ bookmark  
 4. **Stop** — return to launcher  
 
-`SAMANTHA_DEMO_MEETING=1` scripts STT events (no live mic). Color: `env -u NO_COLOR`
-plus `SAMANTHA_COLOR_PROFILE=ansi` so the termcast theme paints bright cyan/amber/magenta.
+`OBEY_VOICE_DEMO_MEETING=1` scripts STT events (no live mic). Color: `env -u NO_COLOR`
+plus `OBEY_VOICE_COLOR_PROFILE=ansi` so the termcast theme paints bright cyan/amber/magenta.
 
 ```bash
 just demo-meeting
@@ -128,7 +128,7 @@ install or library required for recording):
 5. **Audiobook** — `a` fills Create audiobook with an EPUB/PDF path  
 
 Fixture: `demos/fixtures/fake-calibredb` (selected via `calibredb_binary` in a
-disposable `$HOME` config). Color: `env -u NO_COLOR` + `SAMANTHA_COLOR_PROFILE=ansi`.
+disposable `$HOME` config). Color: `env -u NO_COLOR` + `OBEY_VOICE_COLOR_PROFILE=ansi`.
 
 ```bash
 just demo-library
@@ -144,7 +144,7 @@ Full Bubble Tea app demonstrating the meeting notes routing UX:
 4. **Recorder** — brief demo STT, then stop auto-routes to the chosen campaign  
 
 Fixture: `demos/fixtures/camp` (selected via `PATH` ahead of a real camp).  
-Color: `env -u NO_COLOR` + `SAMANTHA_COLOR_PROFILE=ansi`.
+Color: `env -u NO_COLOR` + `OBEY_VOICE_COLOR_PROFILE=ansi`.
 
 ```bash
 just demo-meeting-route-speaker
@@ -158,7 +158,7 @@ results screen with labeled turns (`speaker-1`, `speaker-2`, …) before routing
 Each speaker label uses a stable, distinct color both while the meeting is live
 and on the results screen.
 
-No live mic. Uses `SAMANTHA_DEMO_MEETING_SPEAKERS=1`.
+No live mic. Uses `OBEY_VOICE_DEMO_MEETING_SPEAKERS=1`.
 
 ```bash
 just demo-meeting-speakers
@@ -171,7 +171,7 @@ just fetch-meeting-fixture   # yt-dlp YouTube meeting clip → 16 kHz WAV
 just speakerflow             # tests + refreshes this GIF when vhs is installed
 just test full               # unit + integration + voiceflow + speakerflow + audio-crackle
 just all                     # clean + build + test full
-samantha meeting analyze tests/fixtures/meetings/product-marketing-meeting-90s.wav
+obey-voice meeting analyze tests/fixtures/meetings/product-marketing-meeting-90s.wav
 ```
 
 `just speakerflow` auto-fetches the fixture if missing and, when `vhs` is on

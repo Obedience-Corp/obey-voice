@@ -2,13 +2,13 @@
 
 [Back to README](../README.md)
 
-`samantha meeting record` listens continuously (STT only — no Brain, no TTS)
+`obey-voice meeting record` listens continuously (STT only — no Brain, no TTS)
 and creates one timestamped `.meeting` bundle directory. Its canonical
 `meeting.md` and internal structured event stream are each synced so a crash
 never loses what was already captured.
 
-From the main `samantha` launcher choose **Record meeting**, or run
-`samantha meeting record` on a TTY (not `--json` / `--no-tui`) for the
+From the main `obey-voice` launcher choose **Record meeting**, or run
+`obey-voice meeting record` on a TTY (not `--json` / `--no-tui`) for the
 full-screen recorder:
 
 | Control | Action |
@@ -34,13 +34,13 @@ Meeting speaker analysis has two layers (both **on by default**):
    diarization**) — the review-screen source of truth. Stopping opens review
    immediately (the REC timer freezes at stop) and diarization continues **in
    the background** — in the launcher and in the standalone
-   `samantha meeting record` TUI alike; the attributed `speaker-1…N` turns
+   `obey-voice meeting record` TUI alike; the attributed `speaker-1…N` turns
    fold into the review when it finishes, or a status line reports the
    failure.
 
 Live labels and offline results may disagree; that is expected. The live
 scrollback is left as-shown; review uses the offline timeline. The first
-session that needs models installs Samantha's managed packs (embedding for
+session that needs models installs Obey Voice's managed packs (embedding for
 live; pyannote segmentation + NeMo TitaNet for offline), then captures 16 kHz
 PCM through a non-blocking subscriber so STT is never blocked.
 
@@ -54,7 +54,7 @@ screen to the configured routing flow. Turn either layer off in Settings if
 you do not want it.
 
 Background diarization never holds the transcript hostage: in the launcher,
-quitting Samantha cancels the enrichment only; in the CLI, leaving review
+quitting Obey Voice cancels the enrichment only; in the CLI, leaving review
 while analysis is still running prints `Diarizing speakers…` and a further
 **Ctrl+C** skips the labels (the transcript and any delivered route are
 already on disk). `--json` waits for the labels so the summary keeps its
@@ -68,7 +68,7 @@ review does not gate it, and Ctrl+C on the review screen continues instead of
 quitting. If the route cannot complete (quit, crash, or failure), the outcome
 is recorded on the bundle (`routed` / `route_failed`) and the next launcher
 start retries undelivered plans automatically (bounded attempts);
-`samantha meeting route <bundle> --to <dest>` remains the manual recovery.
+`obey-voice meeting route <bundle> --to <dest>` remains the manual recovery.
 The routed note carries the transcript as it stood at capture end; speaker
 labels that finish later live in the local bundle.
 
@@ -137,11 +137,11 @@ JSONL events include `offset_ms` from meeting start for alignment:
 ```
 
 ```bash
-samantha meeting record
-samantha meeting record --description "Weekly planning sync"
-samantha meeting record --description "Standup" --out-dir ~/notes/meetings --json
-samantha meeting record --description "CI log" --no-tui
-samantha meeting analyze meeting.wav --speakers 2
+obey-voice meeting record
+obey-voice meeting record --description "Weekly planning sync"
+obey-voice meeting record --description "Standup" --out-dir ~/notes/meetings --json
+obey-voice meeting record --description "CI log" --no-tui
+obey-voice meeting analyze meeting.wav --speakers 2
 ```
 
 Bundles default to `~/.obey/agents/voice/festival-voice/meetings/<slug>-<timestamp>.meeting/`.
@@ -150,7 +150,7 @@ Meeting routing accepts a `.meeting` bundle or its canonical `meeting.md`.
 
 ## Campaign routing (camp CI0009)
 
-When a meeting is routed to a **campaign** destination, Samantha defaults to
+When a meeting is routed to a **campaign** destination, Obey Voice defaults to
 `capture: meeting` and runs:
 
 ```bash

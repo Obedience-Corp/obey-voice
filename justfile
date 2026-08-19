@@ -1,10 +1,10 @@
 #!/usr/bin/env just --justfile
-# Samantha — ultra-low-latency voice assistant for AI coding
+# Obey Voice — ultra-low-latency voice assistant for AI coding (engine; formerly samantha)
 
 set dotenv-load := true
 
 BUILDTOOL := "go run ./internal/buildutil"
-binary_name := "samantha"
+binary_name := "obey-voice"
 bin_dir := "bin"
 gobin := env_var_or_default("GOBIN", `go env GOPATH` + "/bin")
 
@@ -97,15 +97,15 @@ demo-persona-create: build
     ls -lh demos/persona-create.gif
 
 # Opt-in live managed-Qwen gate. Requires the managed model to have already
-# been installed with `samantha models ensure --tts`; outputs remain available
+# been installed with `obey-voice models ensure --tts`; outputs remain available
 # for listening instead of disappearing with the Go test temp directory.
 qwen-live:
     #!/usr/bin/env bash
     set -euo pipefail
     cache="${XDG_CACHE_HOME:-$HOME/.cache}"
-    out="${SAMANTHA_QWEN_SMOKE_DIR:-$cache/samantha/smoke/qwen}"
+    out="${OBEY_VOICE_QWEN_SMOKE_DIR:-$cache/obey-voice/smoke/qwen}"
     mkdir -p "$out"
-    SAMANTHA_QWEN_REAL_MODEL=1 SAMANTHA_QWEN_SMOKE_DIR="$out" \
+    OBEY_VOICE_QWEN_REAL_MODEL=1 OBEY_VOICE_QWEN_SMOKE_DIR="$out" \
         go test -tags=integration -count=1 -timeout 30m -v ./pkg/voiceagent/tts \
         -run '^TestLiveManagedQwenVoiceMatrix$'
     echo "Qwen smoke WAVs: $out"
@@ -158,8 +158,8 @@ demo-meeting-speakers: build
 # Download the multi-speaker YouTube meeting clip (first 90s only, 16 kHz mono).
 # Source: https://www.youtube.com/watch?v=lBVtvOpU80Q (~43 min full video — we
 # only pull 0:00–1:30). Stored in a shared user cache so worktrees reuse it:
-#   ${XDG_CACHE_HOME:-$HOME/.cache}/samantha/fixtures/meetings/
-# Override with SAMANTHA_FIXTURE_CACHE=… or FORCE_FETCH=1 to re-download.
+#   ${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings/
+# Override with OBEY_VOICE_FIXTURE_CACHE=… or FORCE_FETCH=1 to re-download.
 fetch-meeting-fixture:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -178,13 +178,13 @@ speakerflow:
     #!/usr/bin/env bash
     set -euo pipefail
     # Resolve shared cache path (same rules as scripts/fetch-meeting-fixture.sh).
-    if [[ -n "${SAMANTHA_MEETING_FIXTURE:-}" ]]; then
-        fixture="$SAMANTHA_MEETING_FIXTURE"
+    if [[ -n "${OBEY_VOICE_MEETING_FIXTURE:-}" ]]; then
+        fixture="$OBEY_VOICE_MEETING_FIXTURE"
     else
         # App cache slug matches config.AppSlug / fetch-meeting-fixture.sh —
-        # never the retired `samantha` slug (WI-afaf92).
-        if [[ -n "${SAMANTHA_FIXTURE_CACHE:-}" ]]; then
-            cache="${SAMANTHA_FIXTURE_CACHE}"
+        # never the retired `obey-voice` slug (WI-afaf92).
+        if [[ -n "${OBEY_VOICE_FIXTURE_CACHE:-}" ]]; then
+            cache="${OBEY_VOICE_FIXTURE_CACHE}"
         elif [[ -n "${XDG_CACHE_HOME:-}" ]]; then
             cache="${XDG_CACHE_HOME}/festival-voice/fixtures/meetings"
         else
@@ -220,8 +220,8 @@ _optimize-demo-gif path:
     #!/usr/bin/env bash
     set -euo pipefail
     gif="{{path}}"
-    palette="$(mktemp /tmp/samantha-demo-palette.XXXXXX.png)"
-    optimized="$(mktemp /tmp/samantha-demo-output.XXXXXX.gif)"
+    palette="$(mktemp /tmp/obey-voice-demo-palette.XXXXXX.png)"
+    optimized="$(mktemp /tmp/obey-voice-demo-output.XXXXXX.gif)"
     trap 'rm -f "$palette" "$optimized"' EXIT
     # Optional compact pass for README weight — prefer full palette.
     ffmpeg -y -loglevel error -i "$gif" \
@@ -245,13 +245,15 @@ install: build
         codesign --force --sign - {{gobin}}/{{binary_name}} 2>/dev/null || \
         echo "Warning: Could not sign binary (non-fatal)"
     fi
-    echo "samantha installed to {{gobin}}/{{binary_name}}"
+    # One-cycle compatibility alias for scripts and muscle memory predating the rename.
+    ln -sfn {{gobin}}/{{binary_name}} {{gobin}}/samantha
+    echo "obey-voice installed to {{gobin}}/{{binary_name}} (alias: {{gobin}}/samantha)"
 
 # Build and run with any args
 run *ARGS: build
     ./{{bin_dir}}/{{binary_name}} {{ARGS}}
 
-# Talk to Samantha (full voice mode)
+# Talk to Obey Voice (full voice mode)
 talk: build
     ./{{bin_dir}}/{{binary_name}}
 

@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Load parses a samantha.prompt.v1 YAML document. Decoding is strict:
+// Load parses a obey-voice.prompt.v1 YAML document. Decoding is strict:
 // unknown keys are validation errors.
 func Load(data []byte) (*Document, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))

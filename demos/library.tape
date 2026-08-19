@@ -44,7 +44,7 @@ Type "clear" Enter
 Show
 
 # Main launcher — navigate to Library
-Type "samantha -t -n" Sleep 300ms Enter
+Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 2s
 
 # New conversation → Meeting → Use on another device → Library (4th item)

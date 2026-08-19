@@ -43,7 +43,7 @@ mkdir -p "$WORK/no-overrides"
 # Render the shipped default prompt, not the user's overrides: PROMPTS_DIR points
 # at an empty directory so embedded defaults win. Never edit the user's own
 # prompt documents to run a measurement.
-PROMPTS_DIR="$WORK/no-overrides" go run ./cmd/samantha prompts show persona \
+PROMPTS_DIR="$WORK/no-overrides" go run ./cmd/obey-voice prompts show persona \
   --provider ollama 2>/dev/null | tail -n +5 > "$WORK/after.txt"
 
 NUDGE='Get to the point in your first sentence, then say the rest however it needs to be said.'

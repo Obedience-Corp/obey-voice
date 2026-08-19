@@ -238,7 +238,7 @@ func (m *pickBookModel) runSearch() tea.Cmd {
 
 func (m *pickBookModel) runBrowse() tea.Cmd {
 	if m.cfg == nil || !m.cfg.CalibreEnabled {
-		m.errText = "Calibre is off — enable with: samantha config calibre_enabled true"
+		m.errText = "Calibre is off — enable with: obey-voice config calibre_enabled true"
 		return nil
 	}
 	m.loadPhase = pickSearching

@@ -7,8 +7,12 @@ import (
 	"strings"
 )
 
-// AssetSchema identifies the asset manifest schema version.
-const AssetSchema = "samantha.assets.v1"
+// AssetSchema identifies the asset manifest schema version. Manifests written
+// before the obey-voice rename declare legacyAssetSchema and still load.
+const (
+	AssetSchema       = "obey-voice.assets.v1"
+	legacyAssetSchema = "samantha.assets.v1"
+)
 
 // Canonical asset facts shared by the manifest builder and the legacy download
 // adapters so URLs and check files have a single source of truth. VAD/Kokoro
@@ -128,7 +132,7 @@ func (a Asset) Validate() error {
 
 // Validate checks the manifest schema and every asset, rejecting duplicate ids.
 func (m AssetManifest) Validate() error {
-	if m.Schema != AssetSchema {
+	if m.Schema != AssetSchema && m.Schema != legacyAssetSchema {
 		return fmt.Errorf("asset manifest: schema %q, want %q", m.Schema, AssetSchema)
 	}
 	seen := make(map[string]bool, len(m.Assets))

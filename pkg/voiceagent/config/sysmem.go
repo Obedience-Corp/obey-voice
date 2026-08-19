@@ -10,9 +10,9 @@ import (
 
 // systemMemoryBytes returns approximate total physical RAM, or 0 if unknown.
 // Prefer pure file/sysctl reads so doctor stays offline and dependency-free.
-// SAMANTHA_SYS_MEM_BYTES overrides for tests and constrained hosts.
+// OBEY_VOICE_SYS_MEM_BYTES overrides for tests and constrained hosts.
 func systemMemoryBytes() uint64 {
-	if v := strings.TrimSpace(os.Getenv("SAMANTHA_SYS_MEM_BYTES")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OBEY_VOICE_SYS_MEM_BYTES")); v != "" {
 		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
 			return n
 		}

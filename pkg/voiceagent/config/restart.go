@@ -2,7 +2,7 @@ package config
 
 // restartNotRequired lists the keys proven to take effect without restarting
 // the agent. Everything absent from this map is assumed to need a restart:
-// serve builds its pipeline once at start (cmd/samantha/cmd/serve.go
+// serve builds its pipeline once at start (cmd/obey-voice/cmd/serve.go
 // buildServePipeline) and the TUI snapshots config at conversation entry
 // (internal/tui/tui.go), so "no restart" is a claim that must be earned.
 //

@@ -31,7 +31,7 @@ func SetUserHomeDirForTest(fn func() (string, error)) (restore func()) {
 //  1. <workDir>/.agents/skills — project skills (Codex, VS Code, camp, …)
 //  2. nearest ancestor .agents/skills — workspace/project-root skills
 //  3. ~/.agents/skills         — user skills shared across tools
-//  4. configuredDir            — Samantha skills_dir (or its default under config)
+//  4. configuredDir            — Obey Voice skills_dir (or its default under config)
 //
 // Ollama does not scan .claude/skills: that is Claude Code's native path and
 // is handled by the Claude provider harness. Scanning both would duplicate

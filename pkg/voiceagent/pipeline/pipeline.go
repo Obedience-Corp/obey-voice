@@ -410,7 +410,7 @@ func (c *turnConductor) finish(terminal TurnState) {
 // stage. Under the TUI fd 2 is redirected to native-diagnostics.log, so this
 // is the durable record for degraded turns (bus Error flashes and can vanish).
 func logDegradedTurn(stage string, err error) {
-	fmt.Fprintf(os.Stderr, "%s samantha: degraded turn stage=%s: %v\n",
+	fmt.Fprintf(os.Stderr, "%s obey-voice: degraded turn stage=%s: %v\n",
 		time.Now().UTC().Format(time.RFC3339), stage, err)
 }
 

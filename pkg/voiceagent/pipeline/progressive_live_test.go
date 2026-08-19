@@ -18,13 +18,13 @@ import (
 // TestLiveProgressiveNativeConversation is opt-in conversation smoke:
 // multi-sentence stream → progressive segments on the native worker.
 //
-//	SAMANTHA_NATIVE_QWEN_LIVE=1 go test -tags=integration ./internal/pipeline/ -run LiveProgressive -count=1 -v
+//	OBEY_VOICE_NATIVE_QWEN_LIVE=1 go test -tags=integration ./internal/pipeline/ -run LiveProgressive -count=1 -v
 //
 // Requires a native package under models_dir/qwen3-tts (ensure tarball) or
 // QWEN_WORKER + QWEN_MODELS pointing at a lab install.
 func TestLiveProgressiveNativeConversation(t *testing.T) {
-	if os.Getenv("SAMANTHA_NATIVE_QWEN_LIVE") != "1" {
-		t.Skip("set SAMANTHA_NATIVE_QWEN_LIVE=1 with native package installed")
+	if os.Getenv("OBEY_VOICE_NATIVE_QWEN_LIVE") != "1" {
+		t.Skip("set OBEY_VOICE_NATIVE_QWEN_LIVE=1 with native package installed")
 	}
 
 	cfg, err := config.Load()

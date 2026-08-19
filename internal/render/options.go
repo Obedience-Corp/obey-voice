@@ -26,7 +26,7 @@ const (
 	FormatPDF      Format = "pdf"
 )
 
-// Options describes one `samantha render` invocation.
+// Options describes one `obey-voice render` invocation.
 type Options struct {
 	Input    string  // positional input path or URL (empty with Stdin)
 	Stdin    bool    // read input text from stdin

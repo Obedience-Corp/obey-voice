@@ -159,7 +159,7 @@ func speakerKeys() []KeySpec {
 		{
 			Key: "speaker.enrollment_dir", Type: TypeString, Default: "",
 			Group: GroupSpeakers, Title: "Enrolled voices folder",
-			Help: "Where enrolled voice profiles are stored. Empty uses the folder inside Samantha's install root.",
+			Help: "Where enrolled voice profiles are stored. Empty uses the folder inside Obey Voice's install root.",
 		},
 		{
 			Key: "speaker.live.enabled", Type: TypeBool, Default: true,
@@ -189,7 +189,7 @@ func meetingKeys() []KeySpec {
 		{
 			Key: "meeting.dir", Type: TypeString, Default: "",
 			Group: GroupMeetings, Title: "Meetings folder",
-			Help: "Where recorded meetings and their notes are written. Empty uses the folder inside Samantha's install root.",
+			Help: "Where recorded meetings and their notes are written. Empty uses the folder inside Obey Voice's install root.",
 		},
 		{
 			Key: "meeting.route.mode", Type: TypeEnum, Default: "ask", Enum: []string{"ask", "auto", "off"},
@@ -254,7 +254,7 @@ func toolKeys() []KeySpec {
 		{
 			Key: "skills_dir", Type: TypeString, Default: "",
 			Group: GroupTools, Title: "Skills folder",
-			Help: "An extra folder scanned for skills. Empty uses the folder inside Samantha's install root.",
+			Help: "An extra folder scanned for skills. Empty uses the folder inside Obey Voice's install root.",
 		},
 		{
 			Key: "skills_disabled", Type: TypeStringList, Default: []string{},

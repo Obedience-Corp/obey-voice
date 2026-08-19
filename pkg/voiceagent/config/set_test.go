@@ -625,11 +625,11 @@ func TestSetKeyFileRefusesManagedKeysWithTheRightCommand(t *testing.T) {
 		value   string
 		wantCmd string
 	}{
-		{"meeting.route.destinations", "[]", "`samantha meeting destinations`"},
-		{"active_persona", "ada", "`samantha persona use`"},
-		{"persona", "ada", "`samantha persona use`"},
+		{"meeting.route.destinations", "[]", "`obey-voice meeting destinations`"},
+		{"active_persona", "ada", "`obey-voice persona use`"},
+		{"persona", "ada", "`obey-voice persona use`"},
 		// The verb already names samantha; the message must not say it twice.
-		{"tui_mouse_enabled", "true", "`samantha TUI`"},
+		{"tui_mouse_enabled", "true", "`obey-voice TUI`"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {

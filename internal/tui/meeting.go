@@ -38,7 +38,7 @@ type MeetingOpts struct {
 	SpeakerError  string
 	// LiveSpeaker is optional; when set, provisional labels attach to live rows.
 	LiveSpeaker LiveSpeakerController
-	// Embedded is true when running inside the main Samantha App launcher
+	// Embedded is true when running inside the main Obey Voice App launcher
 	// flow. Stop returns meetingDoneMsg instead of quitting the process.
 	Embedded bool
 }
@@ -132,7 +132,7 @@ func RunMeeting(opts MeetingOpts) error {
 	m.started = time.Now()
 	m.sessionPhase = meetingSessionRecording
 	// CLI path never calls beginRecording; wire live labels the same way so
-	// samantha meeting record gets provisional speaker-N (not only launcher).
+	// obey-voice meeting record gets provisional speaker-N (not only launcher).
 	m.liveSpeaker = opts.LiveSpeaker
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()

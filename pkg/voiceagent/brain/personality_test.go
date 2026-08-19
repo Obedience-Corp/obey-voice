@@ -38,7 +38,7 @@ func TestPersonaSystemPromptFailsForInvalidConfiguredPersona(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(personaDir, "broken.yaml")
-	if err := os.WriteFile(path, []byte(`schema: samantha.prompt.v1
+	if err := os.WriteFile(path, []byte(`schema: obey-voice.prompt.v1
 prompt:
   name: broken
   kind: persona

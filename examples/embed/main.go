@@ -1,4 +1,4 @@
-// Command embed is a minimal host for the samantha voice agent.
+// Command embed is a minimal host for the obey-voice voice agent.
 //
 // It exists to prove two things that only an outside consumer can prove:
 //

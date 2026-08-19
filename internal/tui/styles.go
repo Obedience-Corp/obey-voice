@@ -11,7 +11,7 @@ import (
 )
 
 // Brand palette. Hex values paint as truecolor on modern terminals; under
-// SAMANTHA_COLOR_PROFILE=ansi (VHS) lipgloss maps them onto bright 16-color
+// OBEY_VOICE_COLOR_PROFILE=ansi (VHS) lipgloss maps them onto bright 16-color
 // slots that the termcast theme colors vividly (cyan/amber/purple/green).
 var (
 	colorBg      = lipgloss.Color("#0d0d11")
@@ -52,12 +52,12 @@ func init() {
 // Mirrors festival: pin dark bg + truecolor so OSC 11 / DSR never leaves us
 // stuck on an Ascii profile with zero SGR output.
 //
-// CLICOLOR_FORCE / SAMANTHA_COLOR_PROFILE override NO_COLOR so demos can still
+// CLICOLOR_FORCE / OBEY_VOICE_COLOR_PROFILE override NO_COLOR so demos can still
 // paint when the parent agent shell exported NO_COLOR=1.
 func forceTUIColorProfile() {
 	force := (os.Getenv("CLICOLOR_FORCE") != "" && os.Getenv("CLICOLOR_FORCE") != "0") ||
 		(os.Getenv("FORCE_COLOR") != "" && os.Getenv("FORCE_COLOR") != "0") ||
-		os.Getenv("SAMANTHA_COLOR_PROFILE") != ""
+		os.Getenv("OBEY_VOICE_COLOR_PROFILE") != ""
 	if os.Getenv("NO_COLOR") != "" && !force {
 		return
 	}
@@ -65,7 +65,7 @@ func forceTUIColorProfile() {
 	lipgloss.SetHasDarkBackground(true)
 
 	// Explicit override for demos/CI.
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("SAMANTHA_COLOR_PROFILE"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("OBEY_VOICE_COLOR_PROFILE"))) {
 	case "truecolor", "24bit", "true":
 		lipgloss.SetColorProfile(termenv.TrueColor)
 		return

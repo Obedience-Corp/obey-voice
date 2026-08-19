@@ -19,4 +19,4 @@ deps:
 
 # Watch for changes and rerun (requires entr)
 watch:
-    find . -name '*.go' | entr -r go run ./cmd/samantha
+    find . -name '*.go' | entr -r go run ./cmd/obey-voice

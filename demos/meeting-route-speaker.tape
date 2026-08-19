@@ -52,7 +52,7 @@ Type "clear" Enter
 Show
 
 # ── Launcher → Settings ──────────────────────────────────────────────
-Type "samantha -t -n" Sleep 300ms Enter
+Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 2s
 
 # New conversation, Meeting, Remote, Library, Audiobook, Settings (5 downs)

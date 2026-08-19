@@ -151,7 +151,7 @@ func TestRunTurnBargeInDuringPlaybackPause(t *testing.T) {
 	}
 
 	// The user talks into the pauses: speech chunks flow only while nothing is
-	// playing, never overlapping Samantha's own audio.
+	// playing, never overlapping Obey Voice's own audio.
 	stopSpeaking := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(10 * time.Millisecond)

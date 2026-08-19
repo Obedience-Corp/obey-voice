@@ -121,7 +121,7 @@ func UpdateDisplayName(id, displayName string) (*Profile, error) {
 	return p, nil
 }
 
-// WriteSystemPrompt writes a samantha.prompt.v1 persona document named `name`
+// WriteSystemPrompt writes a obey-voice.prompt.v1 persona document named `name`
 // under the user prompts directory (prompts/persona/<name>.yaml).
 func WriteSystemPrompt(name, identity string) error {
 	if err := ValidateID(name); err != nil {
@@ -172,7 +172,7 @@ func WriteSystemPrompt(name, identity string) error {
 	if err != nil {
 		return fmt.Errorf("encode prompt: %w", err)
 	}
-	header := "# yaml-language-server: $schema=samantha.prompt.v1\n"
+	header := "# yaml-language-server: $schema=obey-voice.prompt.v1\n"
 	path := filepath.Join(dir, name+".yaml")
 	if err := os.WriteFile(path, append([]byte(header), data...), 0o644); err != nil {
 		return fmt.Errorf("write prompt %s: %w", path, err)

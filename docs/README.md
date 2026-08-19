@@ -1,6 +1,6 @@
-# Samantha docs
+# Obey Voice docs
 
-The [root README](../README.md) is the first-visit page: what Samantha is, how to install it, and how to talk to it.
+The [root README](../README.md) is the first-visit page: what Obey Voice is, how to install it, and how to talk to it.
 
 Everything else lives here.
 

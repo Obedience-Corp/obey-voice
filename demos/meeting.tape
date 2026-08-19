@@ -41,7 +41,7 @@ Type "clear" Enter
 Show
 
 # Main launcher — restyled brand plate + Meeting entry
-Type "samantha -t -n" Sleep 300ms Enter
+Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 2s
 
 # Move to Meeting (no sessions → New conversation is first, Meeting is second)

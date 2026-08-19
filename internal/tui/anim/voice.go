@@ -1,4 +1,4 @@
-// Package anim renders terminal voice-activity visuals for Samantha.
+// Package anim renders terminal voice-activity visuals for Obey Voice.
 //
 // Design intent: a calm voice assistant meter — equalizer bars and a soft
 // pulse — not festival fire art. Listening breathes, hearing rides mic
@@ -49,7 +49,7 @@ var barGlyphs = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 
 // ReducedMotion reports whether ambient animation should be disabled.
 func ReducedMotion() bool {
-	for _, key := range []string{"SAMANTHA_REDUCED_MOTION", "NO_MOTION", "FESTIVAL_REDUCED_MOTION"} {
+	for _, key := range []string{"OBEY_VOICE_REDUCED_MOTION", "NO_MOTION", "FESTIVAL_REDUCED_MOTION"} {
 		switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
 		case "1", "true", "yes", "on":
 			return true

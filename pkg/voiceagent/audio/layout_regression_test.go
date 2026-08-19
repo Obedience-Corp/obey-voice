@@ -57,7 +57,7 @@ func TestPlaybackRateCandidatesPreferTTSThen44100(t *testing.T) {
 		t.Fatalf("candidates = %v, want at least [24000, 44100, 48000]", got)
 	}
 	if got[0] != 24_000 {
-		t.Fatalf("first candidate = %d, want 24000 (TTS rate, no Samantha resample)", got[0])
+		t.Fatalf("first candidate = %d, want 24000 (TTS rate, no Obey Voice resample)", got[0])
 	}
 	if got[1] != 44_100 {
 		t.Fatalf("second candidate = %d, want 44100", got[1])

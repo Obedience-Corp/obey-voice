@@ -25,7 +25,7 @@ func TestGenerateAudiobookCommandQuotesSpaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"samantha audiobook create",
+		"obey-voice audiobook create",
 		"'my book.epub'",
 		"--out-dir",
 		"'out dir/book'",

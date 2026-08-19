@@ -1,5 +1,5 @@
 {
-  "schema": "samantha.render.v1",
+  "schema": "obey-voice.render.v1",
   "title": "Tiny Test Book",
   "source": "../../tests/fixtures/documents/tiny-book.epub",
   "source_format": "epub",

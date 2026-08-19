@@ -22,7 +22,12 @@ import (
 )
 
 // SchemaVersion is the versioned audiobook-specific production-plan schema.
-const SchemaVersion = "samantha.audiobook-plan.v1"
+// Plans written before the obey-voice rename declare legacySchemaVersion and
+// still validate, so --resume keeps working across the rename.
+const (
+	SchemaVersion       = "obey-voice.audiobook-plan.v1"
+	legacySchemaVersion = "samantha.audiobook-plan.v1"
+)
 
 const (
 	DecisionInclude = "include"
@@ -301,7 +306,7 @@ func Load(path string) (*Plan, error) {
 }
 
 func (p *Plan) Validate() error {
-	if p.Schema != SchemaVersion {
+	if p.Schema != SchemaVersion && p.Schema != legacySchemaVersion {
 		return fmt.Errorf("schema must be %q, got %q", SchemaVersion, p.Schema)
 	}
 	if p.Source.Path == "" || p.Source.Format == "" {

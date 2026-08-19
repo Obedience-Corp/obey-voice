@@ -563,7 +563,7 @@ func (m audiobookModel) activate() (audiobookModel, tea.Cmd) {
 		return m.toggleCalibre()
 	case abFieldPickLibrary:
 		if !m.calibreEnabled() {
-			m.errText = "Calibre is off — toggle Calibre library on above (or: samantha config calibre_enabled true)"
+			m.errText = "Calibre is off — toggle Calibre library on above (or: obey-voice config calibre_enabled true)"
 			m.message = ""
 			return m, nil
 		}
@@ -638,7 +638,7 @@ func (m audiobookModel) fieldValue(i int) string {
 	}
 }
 
-// GenerateAudiobookCommand builds a shell-quoted samantha audiobook create line.
+// GenerateAudiobookCommand builds a shell-quoted obey-voice audiobook create line.
 // It never executes the command.
 func GenerateAudiobookCommand(input, outDir, voice, speed string, resume bool, audioFormat string) (string, error) {
 	return GenerateAudiobookCommandWithLanguage(input, outDir, voice, "", speed, resume, audioFormat)
@@ -658,7 +658,7 @@ func GenerateAudiobookCommandWithLanguage(input, outDir, voice, language, speed 
 			return "", fmt.Errorf("speed must be a number")
 		}
 	}
-	parts := []string{"samantha", "audiobook", "create", shellQuote(input), "--out-dir", shellQuote(outDir)}
+	parts := []string{"obey-voice", "audiobook", "create", shellQuote(input), "--out-dir", shellQuote(outDir)}
 	if resume {
 		parts = append(parts, "--resume")
 	}

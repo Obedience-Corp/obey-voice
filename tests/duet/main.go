@@ -19,7 +19,7 @@ import (
 
 func main() {
 	scenarioPath := flag.String("scenario", "", "scenario YAML (required)")
-	binPath := flag.String("bin", "bin/samantha", "samantha binary (just build)")
+	binPath := flag.String("bin", "bin/samantha", "obey-voice binary (just build)")
 	runsDir := flag.String("runs-dir", "runs", "artifact directory root")
 	keep := flag.Bool("keep", false, "keep the tmux session alive after the run")
 	flag.Parse()
@@ -42,7 +42,7 @@ func run(scenarioPath, binPath, runsDir string, keep bool) error {
 		return err
 	}
 	if _, err := os.Stat(abs); err != nil {
-		return fmt.Errorf("samantha binary %s not found — run `just build` first", abs)
+		return fmt.Errorf("obey-voice binary %s not found — run `just build` first", abs)
 	}
 
 	scn, err := LoadScenario(scenarioPath)

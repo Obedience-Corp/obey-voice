@@ -7,10 +7,10 @@
 # Only the first ~90 seconds are downloaded (not the full ~43 min video).
 # The WAV is stored in a *shared user cache* so every git worktree reuses it:
 #
-#   ${SAMANTHA_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings}
+#   ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings}
 #
 # App cache slug matches config.AppSlug (festival-voice). Override with
-# SAMANTHA_FIXTURE_CACHE if needed.
+# OBEY_VOICE_FIXTURE_CACHE if needed.
 #
 # Requires: yt-dlp, ffmpeg
 set -euo pipefail
@@ -23,8 +23,8 @@ URL="${MEETING_FIXTURE_URL:-https://www.youtube.com/watch?v=lBVtvOpU80Q}"
 # First 90s only — full video is ~43 minutes and unnecessary for the suite.
 SECTION="${MEETING_FIXTURE_SECTION:-*0:00-1:30}"
 
-if [[ -n "${SAMANTHA_FIXTURE_CACHE:-}" ]]; then
-	CACHE_DIR="${SAMANTHA_FIXTURE_CACHE}"
+if [[ -n "${OBEY_VOICE_FIXTURE_CACHE:-}" ]]; then
+	CACHE_DIR="${OBEY_VOICE_FIXTURE_CACHE}"
 elif [[ -n "${XDG_CACHE_HOME:-}" ]]; then
 	CACHE_DIR="${XDG_CACHE_HOME}/${APP_SLUG}/fixtures/meetings"
 else
@@ -77,4 +77,4 @@ ls -lh "$OUT_WAV"
 file "$OUT_WAV"
 echo "Wrote shared fixture: $OUT_WAV"
 echo "Source: $URL (section ${SECTION} only — not the full video)"
-echo "All worktrees reuse this path; set SAMANTHA_FIXTURE_CACHE to override."
+echo "All worktrees reuse this path; set OBEY_VOICE_FIXTURE_CACHE to override."

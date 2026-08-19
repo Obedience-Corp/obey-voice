@@ -309,7 +309,7 @@ func (w *Writer) write(r record) {
 func (w *Writer) noteWriteError(err error) {
 	w.writeErrors.Add(1)
 	if w.warnedIO.CompareAndSwap(false, true) {
-		fmt.Fprintf(os.Stderr, "%s samantha: transcript log write failed (further I/O errors counted, not repeated): %v\n",
+		fmt.Fprintf(os.Stderr, "%s obey-voice: transcript log write failed (further I/O errors counted, not repeated): %v\n",
 			time.Now().UTC().Format(time.RFC3339), err)
 	}
 }

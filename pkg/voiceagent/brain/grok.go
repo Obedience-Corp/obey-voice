@@ -73,7 +73,7 @@ func NewGrok(cfg *config.Config) (*GrokBrain, error) {
 		systemPrompt:    systemPrompt,
 		turnInstruction: turn,
 		personaReloader: newPromptReloader(prompts.KindPersona, cfg.Persona, systemPrompt, func(hash string) {
-			fmt.Fprintf(os.Stderr, "samantha: persona prompt changed (hash %s)\n", hash)
+			fmt.Fprintf(os.Stderr, "obey-voice: persona prompt changed (hash %s)\n", hash)
 		}),
 		turnReloader: newPromptReloader(prompts.KindTurn, cfg.TurnPrompt, turn, nil),
 	}
@@ -134,7 +134,7 @@ func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts St
 		// already-emitted audio, and on ctx.Err()==nil so a user barge-in cancel
 		// is not mistaken for a resume failure.
 		if err != nil && resuming && !streamedAny && ctx.Err() == nil {
-			fmt.Fprintf(os.Stderr, "samantha: grok resume failed, retrying without session: %v\n", err)
+			fmt.Fprintf(os.Stderr, "obey-voice: grok resume failed, retrying without session: %v\n", err)
 			g.dropSession()
 			raw, _, err = g.streamAttempt(ctx, out, streamOpts)
 		}
@@ -233,7 +233,7 @@ func (g *GrokBrain) ThinkFull(ctx context.Context, input string, streamOpts Stre
 	// whole call, so drop the id and retry once via the flatten path. ctx.Err()
 	// gate keeps a user cancellation from being treated as a resume failure.
 	if err != nil && resuming && ctx.Err() == nil {
-		fmt.Fprintf(os.Stderr, "samantha: grok resume failed, retrying without session: %v\n", err)
+		fmt.Fprintf(os.Stderr, "obey-voice: grok resume failed, retrying without session: %v\n", err)
 		g.dropSession()
 		response, err = g.thinkFullAttempt(ctx, streamOpts)
 	}

@@ -22,7 +22,7 @@
     },
     "builtin": {
       "type": "boolean",
-      "description": "True only for the shipped samantha persona, which cannot be deleted."
+      "description": "True only for the shipped obey-voice persona, which cannot be deleted."
     },
     "brain": {
       "type": "object",

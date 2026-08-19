@@ -1,6 +1,6 @@
 # AEC probe: measuring echo cancellation on real hardware
 
-`samantha aec-probe` plays a known signal through the real playback path,
+`obey-voice aec-probe` plays a known signal through the real playback path,
 records what the microphone actually hears, and reports how much of it the echo
 canceller removed.
 
@@ -34,7 +34,7 @@ just voice aec-probe macbook-builtin
 or directly:
 
 ```bash
-samantha aec-probe --label macbook-builtin
+obey-voice aec-probe --label macbook-builtin
 ```
 
 ### Before you start

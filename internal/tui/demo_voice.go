@@ -13,7 +13,7 @@ import (
 // demoVoiceAnimEnv enables a scripted listening→hearing→speaking sequence for
 // VHS/termcast recordings. Real mic/TTS are not required; events drive the
 // same meter path as production turns.
-const demoVoiceAnimEnv = "SAMANTHA_DEMO_VOICE_ANIM"
+const demoVoiceAnimEnv = "OBEY_VOICE_DEMO_VOICE_ANIM"
 
 type demoVoiceAnimStartedMsg struct{}
 

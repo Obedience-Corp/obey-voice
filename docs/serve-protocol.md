@@ -1,14 +1,14 @@
-# Samantha serve protocol
+# Obey Voice serve protocol
 
-Wire contract for remote clients (embedded voice page, `samantha connect`,
+Wire contract for remote clients (embedded voice page, `obey-voice connect`,
 future Swift iPad/iPhone apps). Host implementation: `internal/netapi`.
 
 ## Roles
 
 | Surface | Role |
 |---------|------|
-| `samantha` (TUI) | **Local** full voice agent, plus a launcher entry that manages the Tailscale remote daemon |
-| `samantha serve` | **Remote** daemon — no host mic loop; clients drive turns |
+| `obey-voice` (TUI) | **Local** full voice agent, plus a launcher entry that manages the Tailscale remote daemon |
+| `obey-voice serve` | **Remote** daemon — no host mic loop; clients drive turns |
 | Termius → TUI | Remote *control* only; audio still on the Mac |
 | Browser / native app | Remote *voice* client over HTTPS + WebSocket |
 
@@ -23,16 +23,16 @@ Default port: `7262`.
 
 ### Tailscale one-shot
 
-Interactive: launch `samantha`, then choose **Use on another device**. The
+Interactive: launch `obey-voice`, then choose **Use on another device**. The
 TUI displays the MagicDNS URL and pairing code and stops the child server when
 the user leaves the screen. This is remote voice for **any** tailnet client
-(phone, tablet, laptop browser, `samantha connect`) — not iPad-only. SSH/Termius
+(phone, tablet, laptop browser, `obey-voice connect`) — not iPad-only. SSH/Termius
 into the host is a separate path (local TUI audio still plays on the Mac).
 
 Headless/CLI:
 
 ```bash
-samantha serve --tailscale
+obey-voice serve --tailscale
 ```
 
 Binds the node’s Tailscale IPv4, prefers a cert via `tailscale cert` under
@@ -59,7 +59,7 @@ UX is “any device on this network,” not a single OS.
 Requires for `--tailscale`: Tailscale CLI logged in and MagicDNS on.
 
 `--tailscale` also binds `127.0.0.1` alongside the tailnet address, so a
-same-machine client (the Mac app, `samantha connect`) keeps a route to the
+same-machine client (the Mac app, `obey-voice connect`) keeps a route to the
 agent while the tailnet is exposed. The tailnet address stays primary — it is
 what `url`, mDNS, and the QR pairing payload advertise.
 
@@ -104,7 +104,7 @@ follows whenever serve mints a code.
 
 Primary token file: `~/.obey/agents/voice/festival-voice/serve/token` (0600).  
 Per-device tokens (D2): `…/serve/tokens/<id>.json` (0600 each).  
-Revoke all: `samantha serve --revoke-tokens` (primary + all devices).  
+Revoke all: `obey-voice serve --revoke-tokens` (primary + all devices).  
 Revoke one device: `DELETE /v1/devices/{id}`.
 
 ### Pairing
@@ -194,7 +194,7 @@ edge, so a traversal attempt is a client error and never a `500`. It applies to
 
 The **409** case is the live-session guard: deleting the file a running serve
 rewrites on every turn would just make it reappear, so the route refuses
-instead. The CLI (`samantha sessions rm`) has no way to see another process's
+instead. The CLI (`obey-voice sessions rm`) has no way to see another process's
 live session id, so it never tries to guess — this route is the one place
 that can and does refuse.
 
@@ -261,7 +261,7 @@ was. An unknown value is a `400`.
 `route_plan` (optional) chooses where the notes get filed **before** the
 recording starts. It is written to the bundle as a `route_plan` event
 immediately after creation — before the first segment — so a meeting that dies
-mid-capture still leaves a durable filing intent that `samantha meeting sweep`
+mid-capture still leaves a durable filing intent that `obey-voice meeting sweep`
 delivers later.
 
 - `destination_id` — a configured `meeting.route.destinations[]` id or
@@ -431,7 +431,7 @@ meeting is still recording, because the trailer is only written at the end.
 during the recording. Without it, speakers cannot be re-analyzed later; the
 transient working file is never reported.
 
-`route.retryable` is exactly the predicate `samantha meeting sweep` uses, so a
+`route.retryable` is exactly the predicate `obey-voice meeting sweep` uses, so a
 client offering "retry pending routes" promises only what the sweep delivers.
 
 ### Two ids, and which one to use
@@ -651,7 +651,7 @@ on how serve was configured, not on what the binary can do.
 
 ## Client checklist (Swift / web)
 
-1. Discover URL (MagicDNS banner, mDNS `_samantha._tcp`, or config).
+1. Discover URL (MagicDNS banner, mDNS `_obey-voice._tcp`, or config).
 2. Pair once → persist token + optional cert fingerprint.
 3. Open WebSocket with token.
 4. Send `audio_output` `{mode:stream}` for playback.
@@ -677,7 +677,7 @@ Ack:
 
 `prompt_hash` is the first 12 hex characters of the sha256 of the **assembled
 prompt text** (placeholders unresolved) — the same digest
-`samantha persona show --json --with-prompt` reports. It changes whenever the
+`obey-voice persona show --json --with-prompt` reports. It changes whenever the
 document changes, which is how a client tells "the prompt I just edited is the
 prompt the model now sees". It is not a document name and must not be compared
 to one. Empty means serve could not resolve the document.
@@ -692,7 +692,7 @@ Editing the *document* behind the persona a session is already bound to does
 take effect on the next turn; that is a different axis from switching identity.
 
 The change is not persisted: a remote client selecting a persona does not
-rewrite the host's `config.yaml`. `samantha persona use` remains the persisting
+rewrite the host's `config.yaml`. `obey-voice persona use` remains the persisting
 path.
 
 An unknown name returns an error envelope naming the personas that do exist.

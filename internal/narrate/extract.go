@@ -49,7 +49,7 @@ func (e PDFExtractor) ExtractPages(ctx context.Context, path string) ([]PageText
 		bin = "pdftotext"
 	}
 	if _, err := look(bin); err != nil {
-		return nil, nil, fmt.Errorf("narrate: %s not found on PATH; install Poppler (e.g. brew install poppler) and re-run 'samantha doctor'", bin)
+		return nil, nil, fmt.Errorf("narrate: %s not found on PATH; install Poppler (e.g. brew install poppler) and re-run 'obey-voice doctor'", bin)
 	}
 	run := e.Run
 	if run == nil {
@@ -73,13 +73,13 @@ func (e PDFExtractor) ExtractPages(ctx context.Context, path string) ([]PageText
 		pages = append(pages, PageText{Page: i + 1, Text: text})
 	}
 	if len(pages) == 0 {
-		return nil, nil, fmt.Errorf("narrate: no extractable text in %s (scanned PDFs need OCR; try a digital PDF or 'samantha narrate plan' after OCR)", path)
+		return nil, nil, fmt.Errorf("narrate: no extractable text in %s (scanned PDFs need OCR; try a digital PDF or 'obey-voice narrate plan' after OCR)", path)
 	}
 	var warnings []string
 	// Rough density heuristic: very short multi-page PDFs are OCR-suspect.
 	avg := totalChars / len(pages)
 	if avg < 80 {
-		warnings = append(warnings, fmt.Sprintf("low text density (~%d chars/page); OCR-suspect — prefer 'samantha narrate plan' with prompt cleanup", avg))
+		warnings = append(warnings, fmt.Sprintf("low text density (~%d chars/page); OCR-suspect — prefer 'obey-voice narrate plan' with prompt cleanup", avg))
 	}
 	return pages, warnings, nil
 }

@@ -1022,7 +1022,7 @@ func ResolveNativeURL(configured string) string {
 	if v := strings.TrimSpace(configured); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("SAMANTHA_QWEN_NATIVE_URL")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OBEY_VOICE_QWEN_NATIVE_URL")); v != "" {
 		return v
 	}
 	if v := strings.TrimSpace(os.Getenv("QWEN_TTS_NATIVE_URL")); v != "" {
@@ -1049,7 +1049,7 @@ func resolveNativeSHAForURL(url, configured string) string {
 	if v := strings.TrimSpace(configured); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("SAMANTHA_QWEN_NATIVE_SHA256")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("OBEY_VOICE_QWEN_NATIVE_SHA256")); v != "" {
 		return v
 	}
 	if v := strings.TrimSpace(os.Getenv("QWEN_TTS_NATIVE_SHA256")); v != "" {
@@ -1062,7 +1062,7 @@ func resolveNativeSHAForURL(url, configured string) string {
 }
 
 // PreferNative is always true after cutover (native-only product path).
-// Kept for callers/tests; SAMANTHA_QWEN_PREFER_NATIVE no longer disables native.
+// Kept for callers/tests; OBEY_VOICE_QWEN_PREFER_NATIVE no longer disables native.
 func PreferNative() bool {
 	return true
 }

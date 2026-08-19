@@ -1,6 +1,6 @@
 # Qwen3-TTS product path (native-only)
 
-Samantha supports Qwen3-TTS as an optional local TTS provider while keeping
+Obey Voice supports Qwen3-TTS as an optional local TTS provider while keeping
 Kokoro as the default and fallback. **Product inference is native-only**: a
 `qwen3-tts-worker` binary plus GGUF models under `models_dir/qwen3-tts`. There
 is no managed Python / uv / torch runtime on the product path after cutover
@@ -9,23 +9,23 @@ is no managed Python / uv / torch runtime on the product path after cutover
 ## Native package setup
 
 Settings → TTS → Qwen3-TTS (or CLI below) installs a release tarball when
-`qwen_tts_native_url` (or `SAMANTHA_QWEN_NATIVE_URL`) is set:
+`qwen_tts_native_url` (or `OBEY_VOICE_QWEN_NATIVE_URL`) is set:
 
 - layout under `models_dir/qwen3-tts/` (`bin/qwen3-tts-worker`, `models/*.gguf`, presets);
 - multi-tier packages may include 0.6B and 1.7B; product default tier is `0.6b`;
-- optional `qwen_tts_native_sha256` / `SAMANTHA_QWEN_NATIVE_SHA256` for verify.
+- optional `qwen_tts_native_sha256` / `OBEY_VOICE_QWEN_NATIVE_SHA256` for verify.
 
 Build and package the worker in the lab repo `qwen3-tts-native` (Metal / CUDA /
-CPU). Samantha only downloads, inspects, and runs the installed package.
+CPU). Obey Voice only downloads, inspects, and runs the installed package.
 
 Equivalent CLI after `tts_provider: qwen3-tts`:
 
 ```text
 # configure qwen_tts_native_url to a release tarball for your OS/arch
-samantha models ensure --tts
-samantha models status --tts
-samantha doctor
-samantha voices
+obey-voice models ensure --tts
+obey-voice models status --tts
+obey-voice doctor
+obey-voice voices
 ```
 
 No system Python or `qwen-tts` PyPI package is required for synthesis.
@@ -53,7 +53,7 @@ and speaker in its synthesis identity and manifest.
 
 ## Worker lifecycle
 
-Samantha starts one native `qwen3-tts-worker` process and keeps it warm.
+Obey Voice starts one native `qwen3-tts-worker` process and keeps it warm.
 Go and the worker speak a versioned JSONL control channel with float32 PCM
 frames. Soft-cancel is supported on the native path for barge-in / progressive
 pipeline interruption.
@@ -96,5 +96,5 @@ warm path.
 ## Lab repository
 
 Engine packaging, platform smoke, and CUDA validation live in
-`qwen3-tts-native` (standalone lab; not a Go library for Samantha). See that
+`qwen3-tts-native` (standalone lab; not a Go library for Obey Voice). See that
 repo’s `docs/PLATFORMS.md` and `docs/DISTRIBUTION.md`.

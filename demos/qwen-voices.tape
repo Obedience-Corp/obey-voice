@@ -44,7 +44,7 @@ Type "clear" Enter
 Show
 
 # Launcher → Settings (New conversation, Meeting, Remote, Library, Audiobook, Settings).
-Type "samantha -t -n" Sleep 300ms Enter
+Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 1800ms
 Down
 Sleep 180ms

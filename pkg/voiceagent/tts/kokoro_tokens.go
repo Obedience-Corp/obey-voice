@@ -26,7 +26,7 @@ var userCacheDir = os.UserCacheDir
 
 // warnf emits operator-visible warnings (stderr). Tests may override.
 var warnf = func(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "samantha: warning: "+format+"\n", args...)
+	fmt.Fprintf(os.Stderr, "obey-voice: warning: "+format+"\n", args...)
 }
 
 // ensureKokoroTokensWithSyllabicN returns a tokens file path that maps U+0329

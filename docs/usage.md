@@ -8,14 +8,14 @@ Mic and speakers on this machine:
 
 ```bash
 samantha              # Launcher → full conversation TUI with voice
-samantha --no-tui     # Start conversation directly (no launcher)
-samantha --text       # Text input, voice output
-samantha --no-voice   # Voice input, text output
+obey-voice --no-tui     # Start conversation directly (no launcher)
+obey-voice --text       # Text input, voice output
+obey-voice --no-voice   # Voice input, text output
 ```
 
 ## Remote access (phone / another device)
 
-Any device on the same Tailscale tailnet can use remote voice. Open the Samantha
+Any device on the same Tailscale tailnet can use remote voice. Open the Obey Voice
 TUI and choose **Use on another device**. Pick **Tailscale** or **Same Wi‑Fi**,
 then open the link on any phone, tablet, or laptop. The TUI shows pairing and
 client setup when the mic needs trusted HTTPS, and stops when you leave
@@ -25,14 +25,14 @@ The equivalent CLI path remains available for headless use:
 
 ```bash
 # Easiest remote access over Tailscale (MagicDNS URL; real cert when available):
-samantha serve --tailscale
+obey-voice serve --tailscale
 
 # LAN (self-signed TLS; iOS Safari mic needs a real cert):
-samantha serve
+obey-voice serve
 
 # Ops
-samantha serve --revoke-tokens   # Invalidate the bearer; next serve mints a new one
-samantha connect <host:port> --token <token>   # Debug text client
+obey-voice serve --revoke-tokens   # Invalidate the bearer; next serve mints a new one
+obey-voice connect <host:port> --token <token>   # Debug text client
 ```
 
 If a trusted cert is not available yet, remote access still starts in
@@ -47,44 +47,44 @@ On the client: open the printed URL → enter the pairing code → **Start** →
 
 | Path | Command | Where audio lives |
 |------|---------|-------------------|
-| Full local voice | `samantha` (TUI) | This machine’s mic + speakers |
-| Remote keyboard only | Termius/SSH → `samantha` | Still this machine |
-| Remote voice (LAN/tailnet) | TUI → **Use on another device**, or `samantha serve` / `--tailscale` | Client mic + speakers via WebSocket |
+| Full local voice | `obey-voice` (TUI) | This machine’s mic + speakers |
+| Remote keyboard only | Termius/SSH → `obey-voice` | Still this machine |
+| Remote voice (LAN/tailnet) | TUI → **Use on another device**, or `obey-voice serve` / `--tailscale` | Client mic + speakers via WebSocket |
 
 ## Commands
 
 ```bash
-samantha config                         # View all config
-samantha config tts_voice af_bella      # Set a config value
-samantha config schema --json           # Describe every key (types, bounds, help)
-samantha config get --json              # Every effective value with its source
-samantha config get tts_voice --json    # One value, its type, and its source
-samantha config set tts_voice af_bella --json   # Change one key, surgically
-samantha config unset stt_mode --json   # Remove a key so its default applies
-samantha config migrate --dry-run       # Preview explicit STT config migration
-samantha config migrate --write         # Apply STT config migration with backup
-samantha persona list                   # List voice agent personas
-samantha persona show                   # Show the active persona profile
-samantha persona use samantha           # Switch active persona (persists)
-samantha voices                         # List available Kokoro voices
-samantha voices --locale en-US          # Filter voices by locale
-samantha providers                      # Show brain, TTS, and STT providers
-samantha test                           # Test microphone and speaker
-samantha benchmark --prompt "hello"     # Run a local benchmark
-samantha resume <session-id>            # Resume a saved session
-samantha continue                       # Continue the most recent session
-samantha doctor                         # Diagnose config, assets, and binaries (read-only)
-samantha models status                  # Which model assets are installed vs missing
-samantha models clean --unused --dry-run # Review what would be deleted, and what is kept
-samantha models clean --unused --yes    # Delete the reviewed list (--plan when scripted)
-samantha prompts list                   # List embedded and user prompt documents
-samantha prompts show persona           # Show an assembled prompt document
-samantha render notes.txt --out a.wav   # Batch-render a document to audio
-samantha library list                  # Browse Calibre library (opt-in)
-samantha library search "cryptography" # Search Calibre library (opt-in)
-samantha library show 42               # Show one book's metadata
-samantha serve --tailscale              # Remote voice for Tailscale clients
-samantha serve --revoke-tokens          # Rotate serve bearer token
+obey-voice config                         # View all config
+obey-voice config tts_voice af_bella      # Set a config value
+obey-voice config schema --json           # Describe every key (types, bounds, help)
+obey-voice config get --json              # Every effective value with its source
+obey-voice config get tts_voice --json    # One value, its type, and its source
+obey-voice config set tts_voice af_bella --json   # Change one key, surgically
+obey-voice config unset stt_mode --json   # Remove a key so its default applies
+obey-voice config migrate --dry-run       # Preview explicit STT config migration
+obey-voice config migrate --write         # Apply STT config migration with backup
+obey-voice persona list                   # List voice agent personas
+obey-voice persona show                   # Show the active persona profile
+obey-voice persona use samantha           # Switch active persona (persists)
+obey-voice voices                         # List available Kokoro voices
+obey-voice voices --locale en-US          # Filter voices by locale
+obey-voice providers                      # Show brain, TTS, and STT providers
+obey-voice test                           # Test microphone and speaker
+obey-voice benchmark --prompt "hello"     # Run a local benchmark
+obey-voice resume <session-id>            # Resume a saved session
+obey-voice continue                       # Continue the most recent session
+obey-voice doctor                         # Diagnose config, assets, and binaries (read-only)
+obey-voice models status                  # Which model assets are installed vs missing
+obey-voice models clean --unused --dry-run # Review what would be deleted, and what is kept
+obey-voice models clean --unused --yes    # Delete the reviewed list (--plan when scripted)
+obey-voice prompts list                   # List embedded and user prompt documents
+obey-voice prompts show persona           # Show an assembled prompt document
+obey-voice render notes.txt --out a.wav   # Batch-render a document to audio
+obey-voice library list                  # Browse Calibre library (opt-in)
+obey-voice library search "cryptography" # Search Calibre library (opt-in)
+obey-voice library show 42               # Show one book's metadata
+obey-voice serve --tailscale              # Remote voice for Tailscale clients
+obey-voice serve --revoke-tokens          # Rotate serve bearer token
 ```
 
 ## TUI controls
@@ -119,7 +119,7 @@ commands are local — they do not cancel speech recognition or block the chat.
 | `/copy all` | Copy the full plain-text conversation |
 
 Select transcript text with the mouse and copy it the way you would anywhere
-else in your terminal — Samantha leaves the mouse alone, so click-drag
+else in your terminal — Obey Voice leaves the mouse alone, so click-drag
 selection and your terminal's own copy both work without a modifier.
 
 Scrolling still works: `Page Up` / `Page Down` always, and the wheel scrolls
@@ -150,14 +150,14 @@ lists Qwen's nine CustomVoice-class preset speakers; press `p` to preview and
 `Enter` to select one. The **Language** section selects Qwen's synthesis language
 (use **Auto** unless a book or conversation needs an explicit language). Returning
 from Settings replaces the provider used by subsequent utterances in an
-already-running conversation; no Samantha restart is required. The launcher
+already-running conversation; no Obey Voice restart is required. The launcher
 and conversation header show the active TTS provider/model/mode/voice badge.
 An empty device config value follows the current operating-system default.
 
 The first Qwen installation is a large download. It is isolated below
-`models_dir/qwen3-tts`, can be inspected with `samantha models status --tts`,
+`models_dir/qwen3-tts`, can be inspected with `obey-voice models status --tts`,
 and can also be installed non-interactively after selecting Qwen with
-`samantha models ensure --tts`. Samantha keeps the model loaded in one native
+`obey-voice models ensure --tts`. Obey Voice keeps the model loaded in one native
 warm worker for the lifetime of the provider. Advanced users can set both
 `qwen_tts_binary` and `qwen_tts_model` to point at an explicit worker/model dir.
 

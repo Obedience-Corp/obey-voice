@@ -37,10 +37,10 @@ const (
 func fixturePath(t *testing.T) string {
 	t.Helper()
 	var candidates []string
-	if p := os.Getenv("SAMANTHA_MEETING_FIXTURE"); p != "" {
+	if p := os.Getenv("OBEY_VOICE_MEETING_FIXTURE"); p != "" {
 		candidates = append(candidates, p)
 	}
-	cacheDir := os.Getenv("SAMANTHA_FIXTURE_CACHE")
+	cacheDir := os.Getenv("OBEY_VOICE_FIXTURE_CACHE")
 	if cacheDir == "" {
 		if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
 			cacheDir = filepath.Join(xdg, config.AppSlug, "fixtures", "meetings")

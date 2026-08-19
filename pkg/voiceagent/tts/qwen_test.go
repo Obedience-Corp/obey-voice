@@ -18,31 +18,31 @@ import (
 )
 
 func TestQwenFakeWorker(t *testing.T) {
-	if os.Getenv("SAMANTHA_QWEN_FAKE_WORKER") != "1" {
+	if os.Getenv("OBEY_VOICE_QWEN_FAKE_WORKER") != "1" {
 		return
 	}
 
-	if delay := os.Getenv("SAMANTHA_QWEN_FAKE_WORKER_SLEEP_MS"); delay != "" {
+	if delay := os.Getenv("OBEY_VOICE_QWEN_FAKE_WORKER_SLEEP_MS"); delay != "" {
 		ms := 0
 		_, _ = fmt.Sscanf(delay, "%d", &ms)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
-	if os.Getenv("SAMANTHA_QWEN_FAKE_WORKER_FAIL") == "1" {
+	if os.Getenv("OBEY_VOICE_QWEN_FAKE_WORKER_FAIL") == "1" {
 		_, _ = os.Stderr.WriteString("deterministic fake worker failure\n")
 		os.Exit(17)
 	}
 
-	output := os.Getenv("SAMANTHA_QWEN_FAKE_WORKER_OUTPUT")
+	output := os.Getenv("OBEY_VOICE_QWEN_FAKE_WORKER_OUTPUT")
 	if output == "" {
 		t.Fatal("fake worker output path is empty")
 	}
-	if os.Getenv("SAMANTHA_QWEN_FAKE_WORKER_INVALID") == "1" {
+	if os.Getenv("OBEY_VOICE_QWEN_FAKE_WORKER_INVALID") == "1" {
 		if err := os.WriteFile(output, []byte("not a wav"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		os.Exit(0)
 	}
-	if os.Getenv("SAMANTHA_QWEN_FAKE_WORKER_EMPTY") == "1" {
+	if os.Getenv("OBEY_VOICE_QWEN_FAKE_WORKER_EMPTY") == "1" {
 		if err := audio.WriteWAVFloat32(output, qwen3TTSSampleRate, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -465,18 +465,18 @@ func fakeQwenCommand(gotArgs *[]string, mode string) qwenCommand {
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQwenFakeWorker$")
 		env := append([]string{}, os.Environ()...)
 		env = append(env,
-			"SAMANTHA_QWEN_FAKE_WORKER=1",
-			"SAMANTHA_QWEN_FAKE_WORKER_OUTPUT="+output,
+			"OBEY_VOICE_QWEN_FAKE_WORKER=1",
+			"OBEY_VOICE_QWEN_FAKE_WORKER_OUTPUT="+output,
 		)
 		switch mode {
 		case "fail":
-			env = append(env, "SAMANTHA_QWEN_FAKE_WORKER_FAIL=1")
+			env = append(env, "OBEY_VOICE_QWEN_FAKE_WORKER_FAIL=1")
 		case "sleep":
-			env = append(env, "SAMANTHA_QWEN_FAKE_WORKER_SLEEP_MS=500")
+			env = append(env, "OBEY_VOICE_QWEN_FAKE_WORKER_SLEEP_MS=500")
 		case "invalid":
-			env = append(env, "SAMANTHA_QWEN_FAKE_WORKER_INVALID=1")
+			env = append(env, "OBEY_VOICE_QWEN_FAKE_WORKER_INVALID=1")
 		case "empty":
-			env = append(env, "SAMANTHA_QWEN_FAKE_WORKER_EMPTY=1")
+			env = append(env, "OBEY_VOICE_QWEN_FAKE_WORKER_EMPTY=1")
 		}
 		cmd.Env = env
 		return cmd

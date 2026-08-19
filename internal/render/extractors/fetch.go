@@ -15,7 +15,7 @@ import (
 const (
 	DefaultFetchTimeout   = 20 * time.Second
 	DefaultMaxArticleSize = 5 << 20 // 5 MiB
-	DefaultUserAgent      = "samantha-render/1.0"
+	DefaultUserAgent      = "obey-voice-render/1.0"
 	maxFetchRedirects     = 5
 )
 

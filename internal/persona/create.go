@@ -19,7 +19,7 @@ var nonSlugRunes = regexp.MustCompile(`[^a-z0-9]+`)
 // persona's identity by shared reference.
 //
 // prompts.turn is left empty: empty means the shared embedded turn instruction
-// (short per-reply voice style), not "this is the samantha persona".
+// (short per-reply voice style), not "this is the obey-voice persona".
 //
 // It does not activate the persona; call Use after.
 func Create(cfg *config.Config, displayName string) (*Profile, error) {

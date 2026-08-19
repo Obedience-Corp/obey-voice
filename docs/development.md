@@ -25,7 +25,7 @@ just test audio-hardware       # Opt-in: real speakers, Studio Display etc.
 go test ./...                  # Plain Go test fallback
 ```
 
-Integration tests expect `bin/linux/samantha` to exist. The build dashboard creates it for the integration workflow.
+Integration tests expect `bin/linux/obey-voice` to exist. The build dashboard creates it for the integration workflow.
 
 Playback crackle (Studio Display mono-client class) is guarded by `pkg/voiceagent/audio`
 layout + crackle tests in normal `go test -race ./...`. After any change under
@@ -37,7 +37,7 @@ confirm `--debug-audio` metadata reports `channels: 2` (not mono).
 The STT provider loops (`pkg/voiceagent/stt`) are covered by deterministic unit tests
 that use fakes, so they run without model files. Real end-to-end voice behavior
 depends on local STT/VAD/TTS models and is therefore opt-in. When the models are
-installed (`samantha models ensure`, once available), run the smoke plan:
+installed (`obey-voice models ensure`, once available), run the smoke plan:
 
 | Scenario | Expectation |
 |----------|-------------|
@@ -55,12 +55,12 @@ go test -tags integration ./tests/voiceflow      # turn state machine + barge-in
 
 # Real-provider smoke (needs models + whisper.cpp binary for that provider):
 just qwen-live                                   # real native Qwen voices + cancel/restart WAVs
-samantha listen                                  # manual: speak a short command
+obey-voice listen                                  # manual: speak a short command
 ```
 
 ### Latency benchmarks (protect the sub-2s goal)
 
-The `samantha benchmark` command measures the perceived-latency milestones that
+The `obey-voice benchmark` command measures the perceived-latency milestones that
 protect the <2s end-to-end goal and emits them as both a summary and (with
 `--json`) a stable `TurnMetrics` record per turn: STT final, first model chunk,
 first segment, first audio ready, playback start, playback complete, and — on a
@@ -69,19 +69,19 @@ milestone regresses, so the benchmark can gate CI or a local check:
 
 ```bash
 # Prompt latency with budgets (any breach exits non-zero):
-samantha benchmark --prompt "hello" \
+obey-voice benchmark --prompt "hello" \
   --max-total 2s --max-first-model-chunk 500ms --max-playback-start 800ms
 
 # STT fixture latency + transcript accuracy (stops at the final transcript):
-samantha benchmark --audio-fixture utterance.wav --expect-text "hello there" \
+obey-voice benchmark --audio-fixture utterance.wav --expect-text "hello there" \
   --max-stt-final 2s --min-transcript-score 0.8
 
 # Full voice turn from a recording — capture, VAD, STT, brain, TTS, playback:
-samantha benchmark --full-turn-fixture utterance.wav --expect-text "hello there" \
+obey-voice benchmark --full-turn-fixture utterance.wav --expect-text "hello there" \
   --max-playback-start 1200ms
 
 # Machine-readable output for tracking regressions over time:
-samantha benchmark --prompt "hello" --json bench.json
+obey-voice benchmark --prompt "hello" --json bench.json
 ```
 
 The three modes measure different paths, and only one of them measures the voice
@@ -108,10 +108,10 @@ Local model assets are described by an asset manifest and managed by three
 commands:
 
 ```bash
-samantha models status        # read-only: which assets are installed vs missing
-samantha models status --json # machine-readable for scripts
-samantha models ensure        # download any missing assets (atomic + verified)
-samantha doctor               # diagnose config, assets, and external binaries
+obey-voice models status        # read-only: which assets are installed vs missing
+obey-voice models status --json # machine-readable for scripts
+obey-voice models ensure        # download any missing assets (atomic + verified)
+obey-voice doctor               # diagnose config, assets, and external binaries
 ```
 
 `models status` and `doctor` are read-only and safe offline. Doctor validates
@@ -135,9 +135,9 @@ resolved — an unreadable persona, an unsupported model name — the command ex
 non-zero and deletes nothing.
 
 ```bash
-samantha models clean --unused --dry-run          # list candidates + "Kept (N)" with reasons
-samantha models clean --unused --dry-run --json > plan.json
-samantha models clean --unused --yes --plan plan.json --json
+obey-voice models clean --unused --dry-run          # list candidates + "Kept (N)" with reasons
+obey-voice models clean --unused --dry-run --json > plan.json
+obey-voice models clean --unused --yes --plan plan.json --json
 ```
 
 | Flag | Meaning |
@@ -163,9 +163,9 @@ Automated tests cover download/extraction reliability with fake HTTP servers (no
 network). To verify the **real** assets manually:
 
 ```bash
-samantha models status        # confirm what's missing
-samantha models ensure        # download from the real release URLs
-samantha doctor               # confirm everything reports OK
+obey-voice models status        # confirm what's missing
+obey-voice models ensure        # download from the real release URLs
+obey-voice doctor               # confirm everything reports OK
 ```
 
 ## Voice utilities

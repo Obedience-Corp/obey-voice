@@ -10,7 +10,7 @@ import (
 )
 
 // RenderSchema is the render manifest schema version.
-const RenderSchema = "samantha.render.v1"
+const RenderSchema = "obey-voice.render.v1"
 
 // Segment statuses.
 const (

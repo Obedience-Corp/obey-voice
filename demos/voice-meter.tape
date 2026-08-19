@@ -60,7 +60,7 @@ Type "clear" Enter
 # Real Bubble Tea UI in a VHS PTY. Wait for the launcher to paint before
 # sending Enter — a short post-launch sleep loses keys to the shell and the
 # GIF freezes on the main menu.
-Type "./bin/samantha -t -n"
+Type "./bin/obey-voice -t -n"
 Sleep 400ms
 Enter
 Sleep 6s

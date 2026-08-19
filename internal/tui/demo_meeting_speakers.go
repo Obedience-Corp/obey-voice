@@ -19,7 +19,7 @@ import (
 
 // demoMeetingSpeakersEnv scripts a multi-voice meeting + speaker analysis
 // status progression for VHS (no mic, no native diarization models).
-const demoMeetingSpeakersEnv = "SAMANTHA_DEMO_MEETING_SPEAKERS"
+const demoMeetingSpeakersEnv = "OBEY_VOICE_DEMO_MEETING_SPEAKERS"
 
 func demoMeetingSpeakersEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(demoMeetingSpeakersEnv))) {

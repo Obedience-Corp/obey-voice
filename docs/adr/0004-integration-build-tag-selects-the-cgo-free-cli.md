@@ -18,8 +18,8 @@ selects an alternate compilation of the CLI, not an additional one:
 
 | Files | Role |
 |---|---|
-| 26 in `cmd/samantha/cmd` tagged `!integration` | real commands |
-| 6 in `cmd/samantha/cmd` tagged `integration` | stubs replacing them |
+| 26 in `cmd/obey-voice/cmd` tagged `!integration` | real commands |
+| 6 in `cmd/obey-voice/cmd` tagged `integration` | stubs replacing them |
 | 3 in `internal/meeting`, 1 in `internal/listen` tagged `!integration` | reach `internal/speaker` / `pkg/voiceagent/audio` |
 
 The name is misleading. It reads as "also build the integration tests", and
@@ -45,7 +45,7 @@ badly.
    not expected to pass. Neither is `go test -tags integration ./...`. Build
    or test the specific packages that opt in.
 3. A package excluded from the tagged build needs no counterpart unless a
-   tagged package imports it. `cmd/samantha/cmd` has counterparts because the
+   tagged package imports it. `cmd/obey-voice/cmd` has counterparts because the
    CLI must still compile; `internal/meeting` and `internal/listen` have none
    because nothing in the tagged build reaches them — `internal/tui` is itself
    stubbed out at the `cmd` layer.

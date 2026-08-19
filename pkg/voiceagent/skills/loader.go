@@ -295,7 +295,7 @@ func ToolAllowed(toolName string, allowed []string) bool {
 	return false
 }
 
-// normalizeToolName maps skill allowed-tools tokens onto Samantha tool ids.
+// normalizeToolName maps skill allowed-tools tokens onto Obey Voice tool ids.
 func normalizeToolName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {

@@ -1,4 +1,4 @@
-// Package voiceagent assembles samantha's voice pipeline so it can be embedded.
+// Package voiceagent assembles obey-voice's voice pipeline so it can be embedded.
 //
 // The CLI is one consumer of this package, not its owner. Everything a host
 // application needs — brain, speech-to-text, text-to-speech, capture, playback —
@@ -6,7 +6,7 @@
 // Options.
 //
 // There is no API stability promise yet. That is deliberate: the surface is
-// being learned by using it, and the first two users are samantha's own
+// being learned by using it, and the first two users are obey-voice's own
 // interactive and serve paths.
 package voiceagent
 

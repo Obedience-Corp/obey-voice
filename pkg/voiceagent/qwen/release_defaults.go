@@ -3,7 +3,7 @@ package qwen
 import "runtime"
 
 // nativeReleaseTag is the published qwen3-tts-native GitHub release tag that
-// Samantha uses when qwen_tts_native_url is empty. Bump when shipping a new pin.
+// Obey Voice uses when qwen_tts_native_url is empty. Bump when shipping a new pin.
 const nativeReleaseTag = "v0.1.0"
 
 const nativeReleaseBase = "https://github.com/Obedience-Corp/qwen3-tts-native/releases/download/" + nativeReleaseTag

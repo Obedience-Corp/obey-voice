@@ -30,7 +30,7 @@ func BuildRenderUnits(plan *Plan, baseDir string) ([]render.RenderUnit, error) {
 		prep := resolveAgainst(baseDir, sec.PreparedPath)
 		data, err := os.ReadFile(prep)
 		if err != nil {
-			return nil, fmt.Errorf("narrate render: missing prepared file %s (run 'samantha narrate prepare'): %w", prep, err)
+			return nil, fmt.Errorf("narrate render: missing prepared file %s (run 'obey-voice narrate prepare'): %w", prep, err)
 		}
 		text := strings.TrimSpace(string(data))
 		units = append(units, render.RenderUnit{

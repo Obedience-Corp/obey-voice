@@ -24,8 +24,8 @@ MANIFEST="${REPO_ROOT}/testdata/corpus/manifest.json"
 # recorded. Deterministic and reproducible from their text, which makes them a
 # stable regression instrument; they are NOT a substitute for recorded speech
 # when judging endpointing, since they contain no natural mid-sentence pauses.
-SYNTH_DIR="${SAMANTHA_BENCH_FIXTURES:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/bench}"
-SAMANTHA="${SAMANTHA_BIN:-${REPO_ROOT}/bin/samantha}"
+SYNTH_DIR="${OBEY_VOICE_BENCH_FIXTURES:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/bench}"
+SAMANTHA="${OBEY_VOICE_BIN:-${REPO_ROOT}/bin/samantha}"
 
 # Regression tolerance and the absolute target from the latency spec.
 REGRESSION_PCT="${BENCH_REGRESSION_PCT:-10}"
@@ -39,7 +39,7 @@ command -v jq >/dev/null 2>&1 || { echo "error: jq is required" >&2; exit 1; }
 
 mkdir -p "$BENCH_DIR"
 
-# Read one config value. `samantha config <key>` prints "  key = value" with
+# Read one config value. `obey-voice config <key>` prints "  key = value" with
 # ANSI styling; strip both.
 cfg_get() {
 	"$SAMANTHA" config "$1" 2>/dev/null |

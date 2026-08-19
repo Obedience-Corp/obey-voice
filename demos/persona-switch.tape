@@ -1,6 +1,6 @@
 # Main menu → Personas: list, switch, and create a voice agent.
 #
-# Seeds samantha + festival under a disposable HOME, then creates
+# Seeds obey-voice + festival under a disposable HOME, then creates
 # "Research Buddy" from the Personas screen create form.
 #
 # From repo root after `just build`:
@@ -65,7 +65,7 @@ Type "clear" Enter
 Show
 
 # ── Launcher: New conversation, Personas, Meeting, … ─────────────────
-Type "samantha -t -n" Sleep 300ms Enter
+Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 2s
 
 # Cursor starts on New conversation → down once to Personas

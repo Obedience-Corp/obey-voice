@@ -14,9 +14,9 @@ import (
 func TestCLI_Help(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	output, err := tc.RunSamantha("--help")
+	output, err := tc.RunObeyVoice("--help")
 	if err != nil {
-		t.Fatalf("samantha --help failed: %v", err)
+		t.Fatalf("obey-voice --help failed: %v", err)
 	}
 
 	if !strings.Contains(output, "samantha") && !strings.Contains(output, "Samantha") {
@@ -27,9 +27,9 @@ func TestCLI_Help(t *testing.T) {
 func TestCLI_ConfigView(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	output, err := tc.RunSamantha("config")
+	output, err := tc.RunObeyVoice("config")
 	if err != nil {
-		t.Fatalf("samantha config failed: %v", err)
+		t.Fatalf("obey-voice config failed: %v", err)
 	}
 
 	// Should show default config values.
@@ -45,9 +45,9 @@ func TestCLI_ConfigSet(t *testing.T) {
 	tc := GetSharedContainer(t)
 
 	// Set a config value.
-	_, err := tc.RunSamantha("config", "tts_voice", "af_bella")
+	_, err := tc.RunObeyVoice("config", "tts_voice", "af_bella")
 	if err != nil {
-		t.Fatalf("samantha config set failed: %v", err)
+		t.Fatalf("obey-voice config set failed: %v", err)
 	}
 
 	// Verify the config file was written.
@@ -64,9 +64,9 @@ func TestCLI_ConfigSet(t *testing.T) {
 func TestCLI_Providers(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	output, err := tc.RunSamantha("providers")
+	output, err := tc.RunObeyVoice("providers")
 	if err != nil {
-		t.Fatalf("samantha providers failed: %v", err)
+		t.Fatalf("obey-voice providers failed: %v", err)
 	}
 
 	if !strings.Contains(output, "kokoro") {
@@ -79,9 +79,9 @@ func TestCLI_ModelsStatus(t *testing.T) {
 
 	// models status is read-only and offline: in the container the models are
 	// absent, so it must report them missing without attempting a download.
-	output, err := tc.RunSamantha("models", "status")
+	output, err := tc.RunObeyVoice("models", "status")
 	if err != nil {
-		t.Fatalf("samantha models status failed: %v", err)
+		t.Fatalf("obey-voice models status failed: %v", err)
 	}
 
 	for _, want := range []string{"Model assets", "missing"} {
@@ -94,9 +94,9 @@ func TestCLI_ModelsStatus(t *testing.T) {
 func TestCLI_ModelsStatusJSON(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	output, err := tc.RunSamantha("models", "status", "--json")
+	output, err := tc.RunObeyVoice("models", "status", "--json")
 	if err != nil {
-		t.Fatalf("samantha models status --json failed: %v", err)
+		t.Fatalf("obey-voice models status --json failed: %v", err)
 	}
 
 	if !strings.Contains(output, "\"installed\"") {
@@ -107,9 +107,9 @@ func TestCLI_ModelsStatusJSON(t *testing.T) {
 func TestCLI_RenderHelp(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	output, err := tc.RunSamantha("render", "--help")
+	output, err := tc.RunObeyVoice("render", "--help")
 	if err != nil {
-		t.Fatalf("samantha render --help failed: %v", err)
+		t.Fatalf("obey-voice render --help failed: %v", err)
 	}
 	for _, want := range []string{"render", "--stdin", "--out"} {
 		if !strings.Contains(output, want) {
@@ -123,17 +123,17 @@ func TestCLI_RenderRequiresOutput(t *testing.T) {
 
 	// --stdin with no --out/--out-dir is an invalid combination; the command
 	// must fail before doing any work.
-	if _, err := tc.RunSamantha("render", "--stdin"); err == nil {
-		t.Fatal("samantha render --stdin without an output should fail")
+	if _, err := tc.RunObeyVoice("render", "--stdin"); err == nil {
+		t.Fatal("obey-voice render --stdin without an output should fail")
 	}
 }
 
 func TestCLI_AudiobookCreateHelp(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	output, err := tc.RunSamantha("audiobook", "create", "--help")
+	output, err := tc.RunObeyVoice("audiobook", "create", "--help")
 	if err != nil {
-		t.Fatalf("samantha audiobook create --help failed: %v", err)
+		t.Fatalf("obey-voice audiobook create --help failed: %v", err)
 	}
 	for _, want := range []string{"EPUB", "--out-dir", "--resume", "--audio-format"} {
 		if !strings.Contains(output, want) {
@@ -147,9 +147,9 @@ func TestCLI_AudiobookCreatePlan(t *testing.T) {
 
 	// The integration binary uses the plan-only render runner, so a valid
 	// create invocation reports the plan without synthesizing audio.
-	output, err := tc.RunSamantha("audiobook", "create", "book.epub", "--out-dir", "out/book", "--json")
+	output, err := tc.RunObeyVoice("audiobook", "create", "book.epub", "--out-dir", "out/book", "--json")
 	if err != nil {
-		t.Fatalf("samantha audiobook create failed: %v", err)
+		t.Fatalf("obey-voice audiobook create failed: %v", err)
 	}
 	if !strings.Contains(output, "out/book") {
 		t.Errorf("plan output should mention out/book, got: %s", output)
@@ -162,22 +162,22 @@ func TestCLI_Doctor(t *testing.T) {
 	// Select the offline-valid brain configuration so this test isolates model
 	// asset warnings. The default Claude provider intentionally fails doctor
 	// when its required CLI is absent from this minimal container.
-	if _, err := tc.RunSamantha("config", "brain_provider", "ollama"); err != nil {
+	if _, err := tc.RunObeyVoice("config", "brain_provider", "ollama"); err != nil {
 		t.Fatalf("configure offline doctor brain provider: %v", err)
 	}
-	if _, err := tc.RunSamantha("config", "ollama_model", "integration-model"); err != nil {
+	if _, err := tc.RunObeyVoice("config", "ollama_model", "integration-model"); err != nil {
 		t.Fatalf("configure offline doctor model: %v", err)
 	}
 
 	// The container has sherpa + kokoro configured but no model assets, so
 	// doctor must report missing assets as warnings — and exit 0, read-only,
 	// with no network — since warnings are not errors.
-	output, err := tc.RunSamantha("doctor")
+	output, err := tc.RunObeyVoice("doctor")
 	if err != nil {
-		t.Fatalf("samantha doctor failed (warnings should exit 0): %v", err)
+		t.Fatalf("obey-voice doctor failed (warnings should exit 0): %v", err)
 	}
 
-	for _, want := range []string{"Samantha Doctor", "WARN", "models ensure"} {
+	for _, want := range []string{"Obey Voice Doctor", "WARN", "models ensure"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("doctor output should contain %q, got: %s", want, output)
 		}

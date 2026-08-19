@@ -1,4 +1,4 @@
-// Package narrate defines the samantha.narration-plan.v1 document: the typed,
+// Package narrate defines the obey-voice.narration-plan.v1 document: the typed,
 // validated artifact shared by the narrate pipeline stages (plan, prepare,
 // render).
 package narrate
@@ -16,8 +16,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SchemaVersion is the exact schema identifier a plan document must declare.
-const SchemaVersion = "samantha.narration-plan.v1"
+// SchemaVersion is the schema identifier new plan documents declare. Plans
+// written before the obey-voice rename declare legacySchemaVersion and still
+// validate.
+const (
+	SchemaVersion       = "obey-voice.narration-plan.v1"
+	legacySchemaVersion = "samantha.narration-plan.v1"
+)
 
 // Extraction methods. Native covers formats whose text is read directly
 // (plain text, markdown, epub) with no external extraction tool.
@@ -146,7 +151,7 @@ func (p *Plan) Save(path string) error {
 // Validate checks the document against the v1 schema rules and returns the
 // first problem found.
 func (p *Plan) Validate() error {
-	if p.Schema != SchemaVersion {
+	if p.Schema != SchemaVersion && p.Schema != legacySchemaVersion {
 		return fmt.Errorf("schema must be %q, got %q", SchemaVersion, p.Schema)
 	}
 	if p.Source.Path == "" {

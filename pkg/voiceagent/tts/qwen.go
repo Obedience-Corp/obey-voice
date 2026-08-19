@@ -296,7 +296,7 @@ func (q *Qwen3TTS) Synthesize(ctx context.Context, text string) (*audio.PCMStrea
 }
 
 // SynthesizeRequest validates provider-specific controls and converts the
-// worker's 24 kHz WAV output into Samantha's existing float32 PCM stream.
+// worker's 24 kHz WAV output into Obey Voice's existing float32 PCM stream.
 func (q *Qwen3TTS) SynthesizeRequest(ctx context.Context, req SynthesisRequest) (SynthesisResult, error) {
 	if ctx == nil {
 		ctx = context.Background()

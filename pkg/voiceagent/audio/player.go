@@ -486,7 +486,7 @@ func (p *Player) startPlaybackDevice(openedChannels int, start func() error) err
 // openPlaybackDevice tries client layouts/rates in an order tuned for Studio
 // Display Speakers and similar multi-channel CoreAudio devices:
 //
-//  1. stereo @ TTS rate (no Samantha resample; CoreAudio converts rate)
+//  1. stereo @ TTS rate (no Obey Voice resample; CoreAudio converts rate)
 //  2. stereo @ 44.1 kHz (device clock; linear resample from 24 kHz)
 //  3. stereo @ preferred/native rate from enumeration
 //  4. stereo @ 48 kHz last (exact 2× path was harsher on the affected machine)

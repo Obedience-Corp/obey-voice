@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const validDoc = `schema: samantha.prompt.v1
+const validDoc = `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: persona
@@ -22,7 +22,7 @@ func TestLoadErrors(t *testing.T) {
 	}{
 		{
 			name: "unknown top-level key",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: persona
@@ -33,7 +33,7 @@ extra: nope
 		},
 		{
 			name: "unknown prompt key",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: persona
@@ -44,7 +44,7 @@ prompt:
 		},
 		{
 			name: "unknown system_prompt key",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: persona
@@ -56,7 +56,7 @@ prompt:
 		},
 		{
 			name: "missing identity in object form",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: persona
@@ -68,7 +68,7 @@ prompt:
 		},
 		{
 			name: "empty identity in string form",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: persona
@@ -84,11 +84,11 @@ prompt:
   kind: persona
   system_prompt: hi
 `,
-			wantErrContains: `schema "samantha.prompt.v2", want "samantha.prompt.v1"`,
+			wantErrContains: `schema "samantha.prompt.v2", want "obey-voice.prompt.v1"`,
 		},
 		{
 			name: "unknown kind",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: vibe
@@ -98,7 +98,7 @@ prompt:
 		},
 		{
 			name: "empty name",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   kind: persona
   system_prompt: hi
@@ -107,7 +107,7 @@ prompt:
 		},
 		{
 			name: "system_prompt as sequence",
-			doc: `schema: samantha.prompt.v1
+			doc: `schema: obey-voice.prompt.v1
 prompt:
   name: test
   kind: persona
@@ -160,7 +160,7 @@ func TestLoadFileMarkdownInterop(t *testing.T) {
 	}
 
 	// The same identity in a YAML document must hash identically.
-	yamlDoc := "schema: samantha.prompt.v1\nprompt:\n  name: custom\n  kind: persona\n  system_prompt: |\n    You are {agent_name}, a markdown persona.\n"
+	yamlDoc := "schema: obey-voice.prompt.v1\nprompt:\n  name: custom\n  kind: persona\n  system_prompt: |\n    You are {agent_name}, a markdown persona.\n"
 	fromYAML, err := Load([]byte(yamlDoc))
 	if err != nil {
 		t.Fatalf("Load(yaml) error = %v", err)

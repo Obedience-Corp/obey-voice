@@ -1,4 +1,4 @@
-// Golden Kokoro synth via Go samantha (sherpa-onnx offline TTS).
+// Golden Kokoro synth via Go obey-voice (sherpa-onnx offline TTS).
 package main
 
 import (
@@ -103,7 +103,7 @@ func main() {
 		"tokens_path":    filepath.Join(modelsDir, "tokens.txt"),
 		"espeak_dir":     filepath.Join(modelsDir, "espeak-ng-data"),
 		"lexicon_path":   filepath.Join(modelsDir, "lexicon-us-en.txt"),
-		"sherpa_go":      "github.com/k2-fsa/sherpa-onnx-go (see projects/samantha go.mod)",
+		"sherpa_go":      "github.com/k2-fsa/sherpa-onnx-go (see projects/obey-voice go.mod)",
 	}
 	fmt.Fprintf(os.Stderr, "prepared_text: %q\n", prepared)
 	mp := *metaPath

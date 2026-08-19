@@ -61,7 +61,7 @@ func TestDiagnoseMissingAssetsAreWarnings(t *testing.T) {
 	}
 	warns := 0
 	for _, d := range diags {
-		if d.Severity == SeverityWarn && d.Remediation == "run 'samantha models ensure'" {
+		if d.Severity == SeverityWarn && d.Remediation == "run 'obey-voice models ensure'" {
 			warns++
 		}
 	}
@@ -114,7 +114,7 @@ func TestDiagnoseBrainProvider(t *testing.T) {
 			lookPath:        okLookPath,
 			wantSeverity:    SeverityError,
 			wantDetail:      "ollama_model is not configured",
-			wantRemediation: "samantha config ollama_model",
+			wantRemediation: "obey-voice config ollama_model",
 		},
 		{
 			name:         "default provider with model found",
@@ -152,7 +152,7 @@ func TestDiagnoseBrainProvider(t *testing.T) {
 			lookPath:        failLookPath,
 			wantSeverity:    SeverityError,
 			wantDetail:      "ollama_model is not configured",
-			wantRemediation: "samantha config ollama_model",
+			wantRemediation: "obey-voice config ollama_model",
 		},
 		{
 			name:            "ollama host invalid",

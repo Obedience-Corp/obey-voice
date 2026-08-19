@@ -22,8 +22,8 @@
 //	just test speakerflow
 //
 // Cache path (first hit wins):
-//  1. $SAMANTHA_MEETING_FIXTURE (explicit file)
-//  2. $SAMANTHA_FIXTURE_CACHE/product-marketing-meeting-90s.wav
+//  1. $OBEY_VOICE_MEETING_FIXTURE (explicit file)
+//  2. $OBEY_VOICE_FIXTURE_CACHE/product-marketing-meeting-90s.wav
 //  3. $XDG_CACHE_HOME/<AppSlug>/fixtures/meetings/… or ~/.cache/<AppSlug>/…
 //  4. <module>/tests/fixtures/meetings/… (legacy per-tree path)
 package speakerflow
@@ -64,10 +64,10 @@ func (f *fixtureCapture) Unsubscribe(int) { close(f.chunks) }
 // Prefer the user-level cache so every git worktree reuses one download.
 func sharedFixtureCandidates() []string {
 	var paths []string
-	if p := os.Getenv("SAMANTHA_MEETING_FIXTURE"); p != "" {
+	if p := os.Getenv("OBEY_VOICE_MEETING_FIXTURE"); p != "" {
 		paths = append(paths, p)
 	}
-	cacheDir := os.Getenv("SAMANTHA_FIXTURE_CACHE")
+	cacheDir := os.Getenv("OBEY_VOICE_FIXTURE_CACHE")
 	if cacheDir == "" {
 		if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
 			cacheDir = filepath.Join(xdg, config.AppSlug, "fixtures", "meetings")
@@ -298,7 +298,7 @@ func TestSharedFixtureCachePathHelpers(t *testing.T) {
 			break
 		}
 	}
-	if !foundCache && os.Getenv("SAMANTHA_FIXTURE_CACHE") == "" {
+	if !foundCache && os.Getenv("OBEY_VOICE_FIXTURE_CACHE") == "" {
 		t.Logf("no default cache path in candidates (unusual): %v", cands)
 	}
 }

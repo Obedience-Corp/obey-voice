@@ -45,7 +45,7 @@ Type "EOF" Enter
 Type "clear" Enter
 Show
 
-Type "samantha -t -n" Sleep 300ms Enter
+Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 2s
 
 # Open Meeting (New conversation → Personas → Meeting)

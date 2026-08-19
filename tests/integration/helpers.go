@@ -55,7 +55,7 @@ func NewSharedContainer() (*TestContainer, error) {
 
 	binaryPath, err := findBinary()
 	if err != nil {
-		return nil, fmt.Errorf("failed to find samantha binary: %w", err)
+		return nil, fmt.Errorf("failed to find obey-voice binary: %w", err)
 	}
 
 	req := testcontainers.ContainerRequest{
@@ -74,20 +74,20 @@ func NewSharedContainer() (*TestContainer, error) {
 	}
 
 	// Copy binary into the container (not bind mount — avoids Colima stale page issues).
-	if err := container.CopyFileToContainer(ctx, binaryPath, "/samantha", 0o755); err != nil {
+	if err := container.CopyFileToContainer(ctx, binaryPath, "/obey-voice", 0o755); err != nil {
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to copy samantha binary into container: %w", err)
+		return nil, fmt.Errorf("failed to copy obey-voice binary into container: %w", err)
 	}
 
 	// Verify binary is accessible.
-	exitCode, _, err := container.Exec(ctx, []string{"/samantha", "--help"})
+	exitCode, _, err := container.Exec(ctx, []string{"/obey-voice", "--help"})
 	if err != nil {
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("failed to verify samantha binary: %w", err)
+		return nil, fmt.Errorf("failed to verify obey-voice binary: %w", err)
 	}
 	if exitCode != 0 {
 		container.Terminate(ctx)
-		return nil, fmt.Errorf("samantha --help exited with code %d", exitCode)
+		return nil, fmt.Errorf("obey-voice --help exited with code %d", exitCode)
 	}
 
 	// Create working directories.
@@ -155,9 +155,9 @@ func (tc *TestContainer) Cleanup() {
 	}
 }
 
-// RunSamantha runs the samantha command in the container.
-func (tc *TestContainer) RunSamantha(args ...string) (string, error) {
-	cmd := append([]string{"/samantha"}, args...)
+// RunObeyVoice runs the obey-voice command in the container.
+func (tc *TestContainer) RunObeyVoice(args ...string) (string, error) {
+	cmd := append([]string{"/obey-voice"}, args...)
 
 	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)
 	if err != nil {

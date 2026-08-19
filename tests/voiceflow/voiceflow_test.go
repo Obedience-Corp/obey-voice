@@ -21,7 +21,7 @@ import (
 )
 
 // testBargeInArmDelay mirrors the pipeline's unexported bargeInArmDelay: barge-in
-// is held off this long after playback starts so the echo of Samantha's own
+// is held off this long after playback starts so the echo of Obey Voice's own
 // first words can't trip it. Keep this in sync with pipeline.bargeInArmDelay.
 const testBargeInArmDelay = 600 * time.Millisecond
 

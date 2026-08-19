@@ -63,7 +63,7 @@ Type "clear"
 Enter
 
 # Real Bubble Tea UI in a VHS PTY (not --no-tui, not a stdout simulation).
-Type "./bin/samantha -t -n"
+Type "./bin/obey-voice -t -n"
 Sleep 400ms
 Enter
 Sleep 6s

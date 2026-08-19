@@ -30,7 +30,7 @@ env -i HOME="$FAKEHOME" PATH=/usr/bin:/bin TMPDIR=/tmp /tmp/embed-bin -hermetic
 find "$FAKEHOME"          # must still be empty
 ```
 
-`env -i` clears the environment, so nothing is inherited — no `SAMANTHA_*`, no
+`env -i` clears the environment, so nothing is inherited — no `OBEY_VOICE_*`, no
 `OLLAMA_MODEL`, no `XDG_*`. `-hermetic` states the config in code, injects the
 brain and TTS, sets `Env` explicitly and points `PromptsDir` at a path that does
 not exist.
@@ -63,8 +63,8 @@ nothing**, and cannot without breaking documented behaviour. Twelve reads remain
 
 | Where | Why it stays |
 |---|---|
-| `config` | `BRAIN_PROVIDER`, `VOICE_TOOLS_ENABLED`, `SKILLS_ENABLED`, `SAMANTHA_SYS_MEM_BYTES` — the documented env-var configuration contract |
-| `qwen` | `SAMANTHA_QWEN_NATIVE_URL`, `QWEN_TTS_NATIVE_SHA256` and friends |
+| `config` | `BRAIN_PROVIDER`, `VOICE_TOOLS_ENABLED`, `SKILLS_ENABLED`, `OBEY_VOICE_SYS_MEM_BYTES` — the documented env-var configuration contract |
+| `qwen` | `OBEY_VOICE_QWEN_NATIVE_URL`, `QWEN_TTS_NATIVE_SHA256` and friends |
 | `brain`, `prompts` | `USER`, reached **only** when the caller supplied no `Env` or placeholder value |
 
 The intent behind that check — the library must not reach for process state

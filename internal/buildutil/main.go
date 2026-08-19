@@ -16,9 +16,9 @@ func main() {
 	}
 
 	buildutil.Run(args, buildutil.BuildConfig{
-		BinaryName:         "samantha",
-		MainPath:           "./cmd/samantha",
-		SectionName:        "Samantha Voice Assistant",
+		BinaryName:         "obey-voice",
+		MainPath:           "./cmd/obey-voice",
+		SectionName:        "Obey Voice",
 		IntegrationTestDir: "tests/integration",
 		IntegrationBuildEnv: func() []string {
 			// CGO_ENABLED=0 for CLI/config integration tests.
