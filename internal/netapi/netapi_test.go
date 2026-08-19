@@ -1585,7 +1585,7 @@ func TestSubmitVoiceRequiresVoiceRunner(t *testing.T) {
 	if d.VoiceEnabled() {
 		t.Fatal("scriptedRunner is not a VoiceTurnRunner")
 	}
-	if err := d.SubmitVoice(); err == nil {
+	if err := d.SubmitVoice(nil); err == nil {
 		t.Fatal("SubmitVoice must fail without voice runner")
 	}
 }

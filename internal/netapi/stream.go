@@ -49,6 +49,11 @@ type streamConn struct {
 	// interrupted. It stays set until the next turn starts, preventing tail
 	// chunks from the canceled turn from crossing the reset boundary.
 	audioBlocked atomic.Bool
+	// voiceQueued marks a voice turn this connection has queued behind
+	// another turn and that has not claimed the mic yet. Cleared when the
+	// turn is dequeued, when the client gives up (voice_end), or when the
+	// connection goes away — a cleared flag abandons the queued turn.
+	voiceQueued atomic.Bool
 }
 
 func (c *streamConn) evict(reason string) {
@@ -101,12 +106,25 @@ func (h *hub) claimMic(c *streamConn) error {
 	if h.ingress == nil {
 		return errors.New("remote mic is not enabled on this serve instance")
 	}
+	// A claim is only ever granted to a live connection. This is what stops a
+	// voice turn queued by a client that has since disconnected from taking
+	// the mic when it is finally dequeued.
+	if _, ok := h.conns[c]; !ok {
+		return errors.New("connection is closed")
+	}
 	if h.micClaimant != nil && h.micClaimant != c {
 		return errors.New("microphone claimed by another client")
 	}
 	h.micClaimant = c
 	h.ingress.Reset()
 	return nil
+}
+
+// isClaimant reports whether c currently owns the exclusive remote mic.
+func (h *hub) isClaimant(c *streamConn) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.micClaimant == c
 }
 
 func (h *hub) releaseMic(c *streamConn) {
@@ -348,6 +366,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() {
+		// Abandon anything this connection had queued before releasing: a
+		// turn dequeued after the socket is gone must not claim the mic.
+		conn.voiceQueued.Store(false)
 		s.hub.releaseMic(conn)
 		s.hub.remove(conn)
 	}()
@@ -427,15 +448,8 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			s.hub.setConnAudio(conn, mode == "stream")
 			s.sendAudioOutputAck(conn, mode)
 		case "voice_start":
-			// Phase 4 / WI-62e19b: exclusive push-to-talk. Claim mic, reset
-			// ingress, and enqueue a voice turn that blocks on remote PCM.
-			if err := s.hub.claimMic(conn); err != nil {
+			if err := s.startVoiceTurn(conn); err != nil {
 				s.sendError(conn, err.Error())
-				continue
-			}
-			if err := s.dispatcher.SubmitVoice(); err != nil {
-				s.hub.releaseMic(conn)
-				s.sendError(conn, dispatchErrText(err))
 			}
 		case "audio_input":
 			samples, err := decodePCMS16LE(msg.Data, msg.SampleRate)
@@ -447,19 +461,78 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 				s.sendError(conn, err.Error())
 			}
 		case "voice_end":
-			if err := s.hub.endMicUtterance(conn); err != nil {
+			if err := s.endVoiceTurn(conn); err != nil {
 				s.sendError(conn, err.Error())
-				continue
 			}
-			// Drop exclusive claim after finalizing so another client can talk
-			// while TTS plays. releaseMic finalizes again (idempotent).
-			s.hub.releaseMic(conn)
 		case "set_persona":
 			s.handleSetPersona(ctx, conn, msg.Name)
 		default:
 			s.sendError(conn, "unknown control message type: "+msg.Type)
 		}
 	}
+}
+
+// startVoiceTurn claims the exclusive mic and enqueues one push-to-talk turn
+// (Phase 4 / WI-62e19b).
+//
+// The claim is taken here only while the pipeline is idle — ordinary
+// push-to-talk, and the interrupt → voice_start barge-in — so the client may
+// stream PCM as soon as it has sent voice_start. A voice_start that lands
+// while another turn is in flight is still queued, but claims nothing until it
+// is dequeued: a false trigger, or a client that changes its mind, must not
+// hold the mic away from whoever is actually talking.
+func (s *Server) startVoiceTurn(conn *streamConn) error {
+	deferred := s.dispatcher.Pending()
+	prepare := func() bool { return true }
+	if deferred {
+		conn.voiceQueued.Store(true)
+		prepare = func() bool { return s.claimQueuedMic(conn) }
+	} else if err := s.hub.claimMic(conn); err != nil {
+		return err
+	}
+
+	if err := s.dispatcher.SubmitVoice(prepare); err != nil {
+		conn.voiceQueued.Store(false)
+		s.hub.releaseMic(conn)
+		return errors.New(dispatchErrText(err))
+	}
+	return nil
+}
+
+// claimQueuedMic runs on the dispatch goroutine when a queued voice turn
+// reaches the front of the queue: the one place a deferred voice_start takes
+// the mic. It abandons the turn rather than run it when the client is gone,
+// gave up, or lost the race for the mic to another client.
+func (s *Server) claimQueuedMic(conn *streamConn) bool {
+	if !conn.voiceQueued.Swap(false) {
+		return false
+	}
+	if err := s.hub.claimMic(conn); err != nil {
+		s.sendError(conn, err.Error())
+		return false
+	}
+	return true
+}
+
+// endVoiceTurn finalizes the utterance and drops the exclusive claim, so
+// another client can talk while TTS plays (releaseMic finalizes again,
+// idempotently).
+//
+// A voice_end from a client whose turn is still queued abandons that turn
+// instead: it never held the mic, so no audio was accepted for it, and letting
+// it dequeue would claim the mic for a turn nobody is speaking into.
+func (s *Server) endVoiceTurn(conn *streamConn) error {
+	if !s.hub.isClaimant(conn) {
+		if conn.voiceQueued.Swap(false) {
+			return errors.New("voice turn was queued behind another turn and never claimed the mic; send voice_start again")
+		}
+		return errors.New("microphone not claimed by this client")
+	}
+	if err := s.hub.endMicUtterance(conn); err != nil {
+		return err
+	}
+	s.hub.releaseMic(conn)
+	return nil
 }
 
 // remoteInterruptReason labels the two events a client-driven barge-in emits,

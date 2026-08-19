@@ -54,6 +54,11 @@ type dispatchOp struct {
 	// already canceled when the op reaches apply, the work is skipped so a
 	// timed-out client cannot still mutate session state later.
 	waitCtx context.Context
+	// prepare runs on the dispatch goroutine immediately before a voice turn
+	// starts, and is where a queued voice_start takes the exclusive mic —
+	// on dequeue, not on arrival. Returning false abandons the turn; the
+	// caller has already told its client why.
+	prepare func() bool
 }
 
 // Dispatcher serializes pipeline access: pipeline turn methods assume one
@@ -117,6 +122,9 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 			d.bus.Emit(events.Error{Stage: "turn", Message: "remote mic is not enabled on this serve instance"})
 			return
 		}
+		if op.prepare != nil && !op.prepare() {
+			return
+		}
 		turnCtx, cancel := context.WithCancel(ctx)
 		d.setCancel(cancel)
 		d.active.Store(true)
@@ -172,12 +180,13 @@ func (d *Dispatcher) SubmitText(text string) error {
 
 // SubmitVoice enqueues one remote-mic voice turn (STT → brain → TTS). The
 // remote client must stream audio_input frames and voice_end on the ingress
-// while this turn is active.
-func (d *Dispatcher) SubmitVoice() error {
+// while this turn is active. prepare, if set, runs on the dispatch goroutine
+// just before the turn and may abandon it by returning false.
+func (d *Dispatcher) SubmitVoice(prepare func() bool) error {
 	if _, ok := d.runner.(VoiceTurnRunner); !ok {
 		return errors.New("remote mic is not enabled")
 	}
-	return d.enqueue(dispatchOp{kind: opVoice})
+	return d.enqueue(dispatchOp{kind: opVoice, prepare: prepare})
 }
 
 // VoiceEnabled reports whether the runner can execute remote-mic turns.
@@ -229,9 +238,17 @@ func (d *Dispatcher) SetPersona(ctx context.Context, id string, apply func(strin
 
 // Interrupt cancels the in-flight turn, if any. Unlike the other controls it
 // does not queue — an interrupt behind the turn it targets is useless.
+//
+// The turn stops counting as active the moment it is canceled rather than when
+// it finishes unwinding, so the client-driven barge-in sequence
+// (interrupt → voice_start) still finds an idle pipeline and takes the mic
+// immediately instead of queueing behind the turn it just killed.
 func (d *Dispatcher) Interrupt() {
 	d.mu.Lock()
 	cancel := d.cancelTurn
+	if cancel != nil {
+		d.active.Store(false)
+	}
 	d.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -241,6 +258,13 @@ func (d *Dispatcher) Interrupt() {
 // TurnActive reports whether a turn is running right now.
 func (d *Dispatcher) TurnActive() bool {
 	return d.active.Load()
+}
+
+// Pending reports whether a submission would have to wait: a turn is running,
+// or ops are already queued ahead of it. A voice_start that lands here is
+// queued without claiming the mic.
+func (d *Dispatcher) Pending() bool {
+	return d.active.Load() || len(d.queue) > 0
 }
 
 func (d *Dispatcher) enqueue(op dispatchOp) error {
