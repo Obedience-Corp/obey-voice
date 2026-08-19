@@ -47,6 +47,15 @@ func (h *hub) isClaimant(c *streamConn) bool {
 	return h.micClaimant == c
 }
 
+// utteranceOpen reports whether the recogniser is still waiting on c's audio:
+// c owns the mic and its utterance has not been finalized. A claim whose
+// utterance is already closed belongs to a turn that has moved past STT.
+func (h *hub) utteranceOpen(c *streamConn) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.micClaimant == c && h.ingress != nil && !h.ingress.Finalized()
+}
+
 func (h *hub) releaseMic(c *streamConn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -120,6 +129,9 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 		}
 		return err
 	}
+	// The turn is open from here: only voice_end, a disconnect, or the
+	// deadline this arms will close it again.
+	s.armVoiceTurn(conn)
 	return nil
 }
 
@@ -128,6 +140,9 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 // still queued. A queued client keeps streaming exactly as it always has; the
 // frames simply wait with it.
 func (s *Server) writeVoiceAudio(conn *streamConn, samples []float32) error {
+	// A turn that is being fed is a turn its client has not abandoned,
+	// whether the frames are landing in the ingress or in staging.
+	conn.watch.refresh()
 	if conn.voiceQueued.Load() && conn.stage(samples) {
 		return nil
 	}
@@ -141,10 +156,12 @@ func (s *Server) writeVoiceAudio(conn *streamConn, samples []float32) error {
 func (s *Server) claimQueuedMic(conn *streamConn) bool {
 	if !conn.voiceQueued.Swap(false) {
 		conn.dropStaged()
+		conn.watch.disarm()
 		return false
 	}
 	if err := s.hub.claimMic(conn); err != nil {
 		conn.dropStaged()
+		conn.watch.disarm()
 		s.sendError(conn, err.Error())
 		return false
 	}
@@ -166,7 +183,12 @@ func (s *Server) claimQueuedMic(conn *streamConn) bool {
 			s.sendError(conn, err.Error())
 		}
 		s.hub.releaseMic(conn)
+		conn.watch.disarm()
+		return true
 	}
+	// The turn starts here, so its deadline does too: a client is not charged
+	// for the time the pipeline kept it waiting.
+	s.armVoiceTurn(conn)
 	return true
 }
 
@@ -180,6 +202,8 @@ func (s *Server) claimQueuedMic(conn *streamConn) bool {
 // pipeline happened to be busy when it started talking.
 func (s *Server) endVoiceTurn(conn *streamConn) error {
 	if !s.hub.isClaimant(conn) && conn.voiceQueued.Load() && conn.markStagedFinal() {
+		// The client is done talking; the dequeue finalizes for it.
+		conn.watch.disarm()
 		return nil
 	}
 	// Re-checked, not repeated by accident: the claim can be granted between
@@ -196,6 +220,7 @@ func (s *Server) endVoiceTurn(conn *streamConn) error {
 		return err
 	}
 	s.hub.releaseMic(conn)
+	conn.watch.disarm()
 	return nil
 }
 

@@ -60,6 +60,15 @@ func (i *Ingress) Finalize() {
 	i.cond.Broadcast()
 }
 
+// Finalized reports whether the current utterance has been closed. A network
+// layer holding a mic claim uses it to tell a turn the recogniser is still
+// waiting on from one it has already moved past.
+func (i *Ingress) Finalized() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.final
+}
+
 // Reset clears buffers for a new utterance (after a completed turn).
 func (i *Ingress) Reset() {
 	i.mu.Lock()

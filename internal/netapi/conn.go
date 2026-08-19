@@ -3,6 +3,7 @@ package netapi
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
@@ -33,6 +34,11 @@ type streamConn struct {
 	// abandons the queued turn.
 	voiceQueued atomic.Bool
 
+	// watch bounds the voice turn this connection has open, so a client that
+	// stops sending audio without ever sending voice_end cannot hold the
+	// exclusive mic forever.
+	watch voiceWatchdog
+
 	// staged holds the PCM this connection streamed while its voice turn was
 	// waiting in the queue. The claim is only granted on dequeue, so those
 	// frames have nowhere to go yet; they are replayed into the ingress the
@@ -53,11 +59,11 @@ func (c *streamConn) wantsAudio() bool {
 	return c.audioStream.Load()
 }
 
-// stagedMaxSamples caps the PCM held for one queued voice turn at 30 s, the
-// same ceiling the utterance cap uses. Past it, further frames are refused
-// rather than the head being dropped: the start of an utterance is the part
-// STT cannot do without.
-const stagedMaxSamples = 30 * audio.SampleRate
+// stagedMaxSamples caps the PCM held for one queued voice turn at the same
+// ceiling the utterance cap uses. Past it, further frames are refused rather
+// than the head being dropped: the start of an utterance is the part STT
+// cannot do without.
+const stagedMaxSamples = int(maxVoiceUtterance/time.Second) * audio.SampleRate
 
 // openStaging arms the buffer for a voice turn that is about to be queued.
 func (c *streamConn) openStaging() {

@@ -72,6 +72,15 @@ type Options struct {
 	// Ingress, when set, enables remote push-to-talk (Phase 4 / WI-62e19b).
 	// The serve pipeline's STT must already be wired to this same ingress.
 	Ingress *audio.Ingress
+	// VoiceSilenceTimeout bounds how long an open voice turn may go without an
+	// audio_input frame before serve takes the mic back and reports the turn
+	// interrupted. Zero uses defaultVoiceSilence. serve wires it from
+	// listen_timeout, the same clock STT waits for speech on.
+	VoiceSilenceTimeout time.Duration
+	// VoiceTurnMax caps a whole voice turn, measured from voice_start, for the
+	// client that streams without ever sending voice_end. Zero uses
+	// defaultVoiceTurnMax (listen_timeout + phrase_time_limit).
+	VoiceTurnMax time.Duration
 	// OnListening is called once every TCP listener is bound, before Accept
 	// loops run. addrs are the actual bound addresses (primary first, deduped,
 	// real ports under :0 requests) — advertise these, never the requested
@@ -143,6 +152,10 @@ type Server struct {
 	// bundleRoutes single-flights routes of finished bundles, which have no
 	// session to hold the receipt cache a live meeting uses.
 	bundleRoutes *routeGate
+	// voiceSilence and voiceTurnMax are the resolved turn deadlines every
+	// voice_start is armed with.
+	voiceSilence time.Duration
+	voiceTurnMax time.Duration
 	started      time.Time
 
 	mu    sync.Mutex
@@ -169,7 +182,17 @@ func New(opts Options) *Server {
 		routeMeeting:   opts.RouteMeeting,
 		segmentLimiter: newRateLimiter(segmentRateLimit, 10*time.Second),
 		bundleRoutes:   newRouteGate(),
+		voiceSilence:   positiveOr(opts.VoiceSilenceTimeout, defaultVoiceSilence),
+		voiceTurnMax:   positiveOr(opts.VoiceTurnMax, defaultVoiceTurnMax),
 	}
+}
+
+// positiveOr falls back when a duration option was left unset.
+func positiveOr(d, fallback time.Duration) time.Duration {
+	if d <= 0 {
+		return fallback
+	}
+	return d
 }
 
 // Addr returns the primary bound listener address once ListenAndServe has

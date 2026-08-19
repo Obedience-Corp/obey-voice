@@ -101,6 +101,14 @@ func (r *voiceRunner) voiceTurns() int {
 // it hands back the server so a test can inspect the claim the hub holds.
 func startVoiceServer(t *testing.T, runner *voiceRunner) (*Server, *Dispatcher, string, *Credentials) {
 	t.Helper()
+	return startVoiceServerWith(t, runner, nil)
+}
+
+// startVoiceServerWith lets a test tune Options before the server is built.
+// The turn deadlines above all: no test should wait out ten real seconds to
+// watch a silent client's claim come back.
+func startVoiceServerWith(t *testing.T, runner *voiceRunner, tune func(*Options)) (*Server, *Dispatcher, string, *Credentials) {
+	t.Helper()
 	creds, err := LoadOrCreateCredentials(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -116,14 +124,18 @@ func startVoiceServer(t *testing.T, runner *voiceRunner) (*Server, *Dispatcher, 
 	t.Cleanup(func() { ingress.Close() })
 	runner.ingress = ingress
 
-	s := New(Options{
+	opts := Options{
 		Bind:        "127.0.0.1:0",
 		Credentials: creds,
 		Bus:         bus,
 		Dispatcher:  d,
 		Ingress:     ingress,
 		Providers:   Providers{Brain: "claude", TTS: "kokoro"},
-	})
+	}
+	if tune != nil {
+		tune(&opts)
+	}
+	s := New(opts)
 	go func() {
 		if err := s.ListenAndServe(ctx); err != nil {
 			t.Errorf("ListenAndServe: %v", err)
