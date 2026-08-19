@@ -290,6 +290,21 @@ func sttAsset(cfg *Config, norm NormalizedSTT) (*Asset, error) {
 				model + "-decoder.onnx",
 			},
 		}, nil
+	case norm.Provider == STTProviderParakeet:
+		p, err := ParakeetModel(cfg.ParakeetModel)
+		if err != nil {
+			return nil, err
+		}
+		return &Asset{
+			ID:         "stt.parakeet.offline." + p.Name,
+			Provider:   STTProviderParakeet,
+			Mode:       STTModeOffline,
+			Kind:       AssetKindSTT,
+			Name:       p.Name,
+			TargetDir:  p.DirName,
+			Archive:    &AssetArchive{URL: p.URL, SHA256: p.ArchiveSHA256},
+			CheckFiles: p.RequiredFiles(),
+		}, nil
 	case norm.Provider == STTProviderWhisperCPP:
 		a, err := WhisperCPPModelAsset(cfg.WhisperCPPModel)
 		if err != nil {

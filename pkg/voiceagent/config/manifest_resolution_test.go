@@ -69,7 +69,9 @@ func TestManifestForEachProviderPath(t *testing.T) {
 		wantMode    string
 		wantArchive bool
 	}{
-		{"empty default", "", "", "sherpa", "offline", true},
+		{"empty default", "", "", "parakeet", "offline", true},
+		{"sherpa-parakeet", "sherpa-parakeet", "", "parakeet", "offline", true},
+		{"parakeet with offline mode", "parakeet", "offline", "parakeet", "offline", true},
 		{"sherpa", "sherpa", "", "sherpa", "offline", true},
 		{"sherpa-offline", "sherpa-offline", "", "sherpa", "offline", true},
 		{"sherpa-streaming", "sherpa-streaming", "", "sherpa", "streaming", true},

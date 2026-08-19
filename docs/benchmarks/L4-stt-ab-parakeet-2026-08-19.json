@@ -1,0 +1,64 @@
+{
+  "schema": "obey-voice.bench.stt-ab.v1",
+  "item": "L4",
+  "date": "2026-08-19",
+  "question": "Should the default STT provider flip from batch Whisper-small (sherpa) to NVIDIA Parakeet TDT 0.6B v2 (sherpa-parakeet), and is Parakeet worth adding at all?",
+  "criteria_fixed_in_advance": {
+    "accuracy": "mean transcript_score for sherpa-parakeet >= sherpa on the same fixtures (no regression)",
+    "latency": "median STTFinalElapsed for sherpa-parakeet <= sherpa (any improvement counts; the fixed floor is vad_silence + pre-roll)",
+    "reliability": "no runs without a final transcript; no caption hallucinations on non-speech audio",
+    "decision_rule": "flip the default only if all three hold; otherwise ship sherpa-parakeet as an opt-in"
+  },
+  "providers": {
+    "sherpa": {
+      "runs": 42,
+      "fixtures": 14,
+      "iterations": 3,
+      "runs_without_a_final_transcript": 0,
+      "mean_transcript_score": 0.9116,
+      "median_stt_final_ms": 5108.6,
+      "p90_stt_final_ms": 6518.5,
+      "sample_transcripts": [
+        "What is the capital of France? Answer in one word.",
+        "What is 2+2? Answer with just the number.",
+        "Say hello in exactly three words.",
+        "Open the pull request for the Obey Voice repo and summarize the review comments."
+      ]
+    },
+    "sherpa-parakeet": {
+      "runs": 42,
+      "fixtures": 14,
+      "iterations": 3,
+      "runs_without_a_final_transcript": 0,
+      "mean_transcript_score": 0.9246,
+      "median_stt_final_ms": 4580.1,
+      "p90_stt_final_ms": 5711.2,
+      "sample_transcripts": [
+        "What is the capital of France? Answer in one word.",
+        "What is 2 plus 2? Answer with just the number.",
+        "Say hello in exactly three words.",
+        "Open the poll request for the Obey Voice Repo and summarize the review comments."
+      ]
+    }
+  },
+  "result": {
+    "accuracy_gap_points": 1.3,
+    "accuracy_criterion_met": true,
+    "latency_delta_ms": -528.5,
+    "latency_criterion_met": true,
+    "reliability_criterion_met": true,
+    "decision": "FLIP the default to sherpa-parakeet (tdt-0.6b-v2). Keep sherpa (Whisper) as an explicit choice; add tdt-0.6b-v3 (25 languages) and tdt-110m (small) as parakeet_model choices."
+  },
+  "reading_the_numbers": "Parakeet transcribed 14 assistant-style utterances x3 with a slightly higher score (0.925 vs 0.912) and finalized ~530 ms earlier at the median (~800 ms at p90). The score differences are real-word wins for Parakeet ('Parakeet', 'Calibre', 'noisy', 'Dr. Patel' vs whisper's 'ParaKeep', 'Caliber', 'nizy', 'doctor. Patel') against two misses ('poll request', 'change log'); both lose the same points on number normalization ('7:45' vs 'seven forty five'), which the scorer does not forgive. Raw decode measured separately through sherpa-onnx-go: Parakeet int8 RTF ~0.025 vs whisper-small int8 ~0.12 on the same CPU (~5x), cold load 0.8 s vs 0.6 s. On the two non-speech fixtures in tests/voiceflow/testdata whisper-small emitted '(Bell)' and '[MUSIC PLAYING]'; Parakeet returned empty — the phantom-turn failure a push-to-talk assistant cannot tolerate. The coreml provider in the prebuilt sherpa lib was also tried: slower than cpu for these int8 models (RTF 0.045-0.10, 3.6 s load), so the engine stays on cpu.",
+  "evidence_limits": "Fixtures are TTS-synthesized (clean, no mid-sentence pauses, one voice) — they measure decode speed and word accuracy, not endpointing or noise robustness; recorded human speech (just bench record) is still the instrument for those. Score is the benchmark's transcript_score, not WER. Single machine, single run of 3 iterations.",
+  "durable_value": "Parakeet is the default STT for English installs; whisper-small remains available and protected from models clean while whisper_model is configured; non-English language with an English-only parakeet_model is flagged by doctor.",
+  "provenance": {
+    "obey_voice_commit": "ba6dd0485ae25aa47db3e1d7e60a87a860c0411e",
+    "machine": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "os": "macOS 26.5",
+    "fixtures": "synthetic (14 utterances, TTS-generated via cmd/golden-tts, 16 kHz mono, 1.5 s trailing silence)",
+    "iterations": 3,
+    "command": "obey-voice benchmark --stt-provider sherpa --stt-provider sherpa-parakeet --iterations 3 --audio-fixture <14 wavs> --expect-text <14 texts> --json-file"
+  }
+}

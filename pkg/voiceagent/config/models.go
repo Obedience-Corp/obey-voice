@@ -664,6 +664,9 @@ func extractTar(tr *tar.Reader, dir, name string) error {
 		if strings.HasPrefix(header.Name, "/") || filepath.IsAbs(header.Name) {
 			return fmt.Errorf("extract %s: refusing absolute path %q in archive", name, header.Name)
 		}
+		// Some release archives (e.g. the NeMo Parakeet 110m model) are built
+		// with "./dir/file" entries; the leading "./" is not a top-level dir.
+		header.Name = strings.TrimPrefix(header.Name, "./")
 
 		// Detect the top-level prefix from the first entry, then strip it.
 		if prefix == "" {

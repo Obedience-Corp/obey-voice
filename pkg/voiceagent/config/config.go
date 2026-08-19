@@ -41,6 +41,7 @@ type Config struct {
 	STTMode              string `mapstructure:"stt_mode"`
 	SherpaStreamingModel string `mapstructure:"sherpa_streaming_model"`
 	WhisperModel         string `mapstructure:"whisper_model"`
+	ParakeetModel        string `mapstructure:"parakeet_model"`
 	WhisperQuantized     bool   `mapstructure:"whisper_quantized"`
 	WhisperCPPBinary     string `mapstructure:"whispercpp_binary"`
 	WhisperCPPModel      string `mapstructure:"whispercpp_model"`
@@ -299,11 +300,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("qwen_tts_native_sha256", "")
 	v.SetDefault("output_device", "")
 
-	v.SetDefault("stt_provider", "sherpa")
+	v.SetDefault("stt_provider", "sherpa-parakeet")
 	v.SetDefault("input_device", "")
 	v.SetDefault("stt_mode", "")
 	v.SetDefault("sherpa_streaming_model", "en-2023-06-26")
 	v.SetDefault("whisper_model", "small")
+	v.SetDefault("parakeet_model", DefaultParakeetModel)
 	v.SetDefault("whisper_quantized", true)
 	v.SetDefault("whispercpp_binary", "whisper-cli")
 	v.SetDefault("whispercpp_model", "base.en")
@@ -495,6 +497,7 @@ var envBindings = map[string]string{
 	"stt_mode":                    "STT_MODE",
 	"sherpa_streaming_model":      "SHERPA_STREAMING_MODEL",
 	"whisper_model":               "WHISPER_MODEL",
+	"parakeet_model":              "PARAKEET_MODEL",
 	"whispercpp_binary":           "WHISPERCPP_BINARY",
 	"whispercpp_model":            "WHISPERCPP_MODEL",
 	"whispercpp_model_path":       "WHISPERCPP_MODEL_PATH",

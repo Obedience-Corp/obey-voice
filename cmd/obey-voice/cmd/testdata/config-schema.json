@@ -960,6 +960,25 @@
       "editable": true
     },
     {
+      "key": "parakeet_model",
+      "type": "enum",
+      "default": "tdt-0.6b-v2",
+      "enum": [
+        "tdt-0.6b-v2",
+        "tdt-0.6b-v3",
+        "tdt-110m"
+      ],
+      "allows_empty": false,
+      "group": "models",
+      "title": "Parakeet model",
+      "help": "Which NVIDIA Parakeet TDT model the sherpa-parakeet provider loads. tdt-0.6b-v2 is English and the most accurate; tdt-0.6b-v3 adds 25 languages; tdt-110m is small and fast.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "PARAKEET_MODEL",
+      "editable": true
+    },
+    {
       "key": "qwen_tts_binary",
       "type": "string",
       "default": "",
@@ -1239,10 +1258,12 @@
     {
       "key": "stt_provider",
       "type": "enum",
-      "default": "sherpa",
+      "default": "sherpa-parakeet",
       "enum": [
+        "parakeet",
         "sherpa",
         "sherpa-offline",
+        "sherpa-parakeet",
         "sherpa-streaming",
         "whispercpp"
       ],

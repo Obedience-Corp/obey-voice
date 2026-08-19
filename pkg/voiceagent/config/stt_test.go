@@ -16,12 +16,14 @@ func TestNormalizeSTT(t *testing.T) {
 		wantAlias    string
 		wantOK       bool
 	}{
-		{name: "empty defaults to sherpa offline", configured: "", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: "", wantOK: true},
-		{name: "whitespace only defaults to sherpa offline", configured: "   ", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: "", wantOK: true},
+		{name: "empty defaults to parakeet offline", configured: "", wantProvider: STTProviderParakeet, wantMode: STTModeOffline, wantAlias: "", wantOK: true},
+		{name: "whitespace only defaults to parakeet offline", configured: "   ", wantProvider: STTProviderParakeet, wantMode: STTModeOffline, wantAlias: "", wantOK: true},
 		{name: "sherpa keeps utterance-final offline", configured: "sherpa", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: "sherpa", wantOK: true},
 		{name: "sherpa-offline legacy alias", configured: "sherpa-offline", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: "sherpa-offline", wantOK: true},
 		{name: "sherpa-streaming explicit streaming", configured: "sherpa-streaming", wantProvider: STTProviderSherpa, wantMode: STTModeStreaming, wantAlias: "sherpa-streaming", wantOK: true},
 		{name: "whispercpp cli", configured: "whispercpp", wantProvider: STTProviderWhisperCPP, wantMode: STTModeCLI, wantAlias: "whispercpp", wantOK: true},
+		{name: "sherpa-parakeet offline", configured: "sherpa-parakeet", wantProvider: STTProviderParakeet, wantMode: STTModeOffline, wantAlias: "sherpa-parakeet", wantOK: true},
+		{name: "parakeet short alias", configured: " Parakeet ", wantProvider: STTProviderParakeet, wantMode: STTModeOffline, wantAlias: "parakeet", wantOK: true},
 		{name: "surrounding whitespace trimmed", configured: "  sherpa-streaming  ", wantProvider: STTProviderSherpa, wantMode: STTModeStreaming, wantAlias: "sherpa-streaming", wantOK: true},
 		{name: "case folded alias", configured: "Sherpa-Offline", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: "sherpa-offline", wantOK: true},
 		{name: "mixed case whispercpp", configured: "WhisperCPP", wantProvider: STTProviderWhisperCPP, wantMode: STTModeCLI, wantAlias: "whispercpp", wantOK: true},
@@ -75,7 +77,7 @@ func TestNormalizeSTTWithMode(t *testing.T) {
 		{name: "unknown mode value", provider: "sherpa", mode: "batch", wantErrContains: "set stt_mode to offline or streaming"},
 
 		// Empty mode preserves legacy alias behavior.
-		{name: "empty mode defaults", provider: "", mode: "", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: ""},
+		{name: "empty mode defaults", provider: "", mode: "", wantProvider: STTProviderParakeet, wantMode: STTModeOffline, wantAlias: ""},
 		{name: "empty mode sherpa", provider: "sherpa", mode: "", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: "sherpa"},
 		{name: "empty mode sherpa-offline alias", provider: "sherpa-offline", mode: "", wantProvider: STTProviderSherpa, wantMode: STTModeOffline, wantAlias: "sherpa-offline"},
 		{name: "empty mode sherpa-streaming alias", provider: "sherpa-streaming", mode: "", wantProvider: STTProviderSherpa, wantMode: STTModeStreaming, wantAlias: "sherpa-streaming"},
@@ -337,7 +339,7 @@ func TestLoadAndNormalizeSTTAliases(t *testing.T) {
 		wantProvider string
 		wantMode     string
 	}{
-		{name: "default unset routes to sherpa offline", setEnv: false, wantConfig: "sherpa", wantProvider: STTProviderSherpa, wantMode: STTModeOffline},
+		{name: "default unset routes to parakeet offline", setEnv: false, wantConfig: "sherpa-parakeet", wantProvider: STTProviderParakeet, wantMode: STTModeOffline},
 		{name: "sherpa routes to offline", setEnv: true, envValue: "sherpa", wantConfig: "sherpa", wantProvider: STTProviderSherpa, wantMode: STTModeOffline},
 		{name: "sherpa-offline alias routes to offline", setEnv: true, envValue: "sherpa-offline", wantConfig: "sherpa-offline", wantProvider: STTProviderSherpa, wantMode: STTModeOffline},
 		{name: "sherpa-streaming routes to streaming", setEnv: true, envValue: "sherpa-streaming", wantConfig: "sherpa-streaming", wantProvider: STTProviderSherpa, wantMode: STTModeStreaming},
@@ -346,6 +348,7 @@ func TestLoadAndNormalizeSTTAliases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			resetViper(t)
 			orig := configFile
 			configFile = filepath.Join(t.TempDir(), "nonexistent.yaml")
 			defer func() { configFile = orig }()

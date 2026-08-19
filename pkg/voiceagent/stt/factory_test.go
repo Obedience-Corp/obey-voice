@@ -59,7 +59,7 @@ func TestNewProviderRoutesConfiguredAliases(t *testing.T) {
 		mode     string
 		wantMsg  string
 	}{
-		{name: "default", provider: "", wantMsg: "sherpa STT requires audio capture"},
+		{name: "default", provider: "", wantMsg: "sherpa-parakeet STT requires audio capture"},
 		{name: "sherpa", provider: "sherpa", wantMsg: "sherpa STT requires audio capture"},
 		{name: "sherpa-offline", provider: "sherpa-offline", wantMsg: "sherpa STT requires audio capture"},
 		{name: "sherpa-streaming", provider: "sherpa-streaming", wantMsg: "sherpa-streaming STT requires audio capture"},

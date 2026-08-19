@@ -23,7 +23,7 @@ func TestSpecForNormalized(t *testing.T) {
 				UsesEndpoint:   false,
 				SupportsEOF:    true,
 				RequiresVAD:    true,
-				RecommendedUse: "default; reliable utterance-final transcription",
+				RecommendedUse: "reliable utterance-final Whisper transcription (previous default)",
 			},
 			wantOK: true,
 		},
@@ -95,7 +95,8 @@ func TestConfiguredAliasesResolveToSpecs(t *testing.T) {
 		wantProvider string
 		wantMode     string
 	}{
-		{alias: "", wantProvider: config.STTProviderSherpa, wantMode: config.STTModeOffline},
+		{alias: "", wantProvider: config.STTProviderParakeet, wantMode: config.STTModeOffline},
+		{alias: "sherpa-parakeet", wantProvider: config.STTProviderParakeet, wantMode: config.STTModeOffline},
 		{alias: "sherpa", wantProvider: config.STTProviderSherpa, wantMode: config.STTModeOffline},
 		{alias: "sherpa-offline", wantProvider: config.STTProviderSherpa, wantMode: config.STTModeOffline},
 		{alias: "sherpa-streaming", wantProvider: config.STTProviderSherpa, wantMode: config.STTModeStreaming},

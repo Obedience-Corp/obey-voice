@@ -13,7 +13,7 @@
 #   scripts/bench.sh diff                # measure and compare against the baseline
 #   scripts/bench.sh save L1             # measure and write docs/benchmarks/L1-<date>.json
 #
-# Requires: jq, a built ./bin/samantha (just build), and a reachable brain provider.
+# Requires: jq, a built ./bin/obey-voice (just build), and a reachable brain provider.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,7 +25,7 @@ MANIFEST="${REPO_ROOT}/testdata/corpus/manifest.json"
 # stable regression instrument; they are NOT a substitute for recorded speech
 # when judging endpointing, since they contain no natural mid-sentence pauses.
 SYNTH_DIR="${OBEY_VOICE_BENCH_FIXTURES:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/bench}"
-SAMANTHA="${OBEY_VOICE_BIN:-${REPO_ROOT}/bin/samantha}"
+SAMANTHA="${OBEY_VOICE_BIN:-${REPO_ROOT}/bin/obey-voice}"
 
 # Regression tolerance and the absolute target from the latency spec.
 REGRESSION_PCT="${BENCH_REGRESSION_PCT:-10}"

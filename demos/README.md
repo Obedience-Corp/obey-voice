@@ -18,7 +18,7 @@ mock screen.
 just demo
 ```
 
-The recipe builds `./bin/samantha`, runs `vhs demos/tool-calls.tape` against a
+The recipe builds `./bin/obey-voice`, runs `vhs demos/tool-calls.tape` against a
 disposable `$HOME`, then applies the termcast-style 20fps/960px palette pass.
 
 Still frames: `demos/frames/launcher.png`, `demos/frames/chat-tools.png`

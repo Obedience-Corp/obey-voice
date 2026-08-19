@@ -45,8 +45,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.TTSVoice != "af_heart" {
 		t.Errorf("TTSVoice = %q, want af_heart", cfg.TTSVoice)
 	}
-	if cfg.STTProvider != "sherpa" {
-		t.Errorf("STTProvider = %q, want sherpa", cfg.STTProvider)
+	if cfg.STTProvider != "sherpa-parakeet" {
+		t.Errorf("STTProvider = %q, want sherpa-parakeet", cfg.STTProvider)
 	}
 	if cfg.SherpaStreamingModel != "en-2023-06-26" {
 		t.Errorf("SherpaStreamingModel = %q, want en-2023-06-26", cfg.SherpaStreamingModel)
@@ -182,8 +182,8 @@ max_history: 20
 		t.Errorf("MaxHistory = %d, want 20", cfg.MaxHistory)
 	}
 	// Defaults still applied for unset keys
-	if cfg.STTProvider != "sherpa" {
-		t.Errorf("STTProvider = %q, want sherpa (default)", cfg.STTProvider)
+	if cfg.STTProvider != "sherpa-parakeet" {
+		t.Errorf("STTProvider = %q, want sherpa-parakeet (default)", cfg.STTProvider)
 	}
 }
 

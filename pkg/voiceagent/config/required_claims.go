@@ -33,6 +33,7 @@ func sttConfigClaims(cfg *Config, modelsDir string) ([]assetClaim, error) {
 	}{
 		{NormalizedSTT{Provider: STTProviderSherpa, Mode: STTModeStreaming}, "sherpa_streaming_model"},
 		{NormalizedSTT{Provider: STTProviderSherpa, Mode: STTModeOffline}, "whisper_model"},
+		{NormalizedSTT{Provider: STTProviderParakeet, Mode: STTModeOffline}, "parakeet_model"},
 		{NormalizedSTT{Provider: STTProviderWhisperCPP, Mode: STTModeCLI}, "whispercpp_model"},
 	}
 	claims := make([]assetClaim, 0, len(variants)+1)

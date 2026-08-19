@@ -59,6 +59,16 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	norm, sttErr := NormalizeSTTWithMode(cfg.STTProvider, cfg.STTMode)
 	if sttErr == nil {
 		diags = append(diags, Diagnostic{Name: "stt-provider", Severity: SeverityOK, Detail: fmt.Sprintf("%s/%s", norm.Provider, norm.Mode)})
+		if norm.Provider == STTProviderParakeet {
+			if p, err := ParakeetModel(cfg.ParakeetModel); err == nil && p.EnglishOnly() && LanguageCode(cfg.Language) != "en" {
+				diags = append(diags, Diagnostic{
+					Name:        "stt-language",
+					Severity:    SeverityWarn,
+					Detail:      fmt.Sprintf("parakeet_model %s transcribes English only; language is %s", p.Name, cfg.Language),
+					Remediation: "set parakeet_model tdt-0.6b-v3 (25 languages) or stt_provider sherpa (Whisper)",
+				})
+			}
+		}
 	} else {
 		diags = append(diags, Diagnostic{
 			Name:        "stt-provider",

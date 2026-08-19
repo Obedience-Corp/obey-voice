@@ -130,6 +130,10 @@
       "value": "",
       "source": "default"
     },
+    "parakeet_model": {
+      "value": "tdt-0.6b-v2",
+      "source": "default"
+    },
     "persona": {
       "value": "samantha",
       "source": "default"
@@ -279,7 +283,7 @@
       "source": "default"
     },
     "stt_provider": {
-      "value": "sherpa",
+      "value": "sherpa-parakeet",
       "source": "default"
     },
     "tool_command_timeout": {
