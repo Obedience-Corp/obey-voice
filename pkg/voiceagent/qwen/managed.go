@@ -17,7 +17,7 @@ import (
 
 const (
 	ProviderName = "qwen3-tts"
-	DefaultVoice = "Vivian"
+	DefaultVoice = "Veronica"
 	// DefaultLanguage is the product default for CustomVoice-class presets.
 	DefaultLanguage = "Auto"
 )

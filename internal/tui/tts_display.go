@@ -127,7 +127,7 @@ func ttsEffectiveVoiceLabelForProvider(provider string, cfg *config.Config) stri
 			return "voice " + strings.TrimSpace(cfg.QwenTTSVoice)
 		}
 		if cfg != nil && managedqwen.UseManaged(cfg.QwenTTSBinary, cfg.QwenTTSModel) {
-			return "voice Vivian"
+			return "voice " + managedqwen.DefaultVoice
 		}
 		return "voice model-native default"
 	}
