@@ -110,7 +110,12 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 
 	if err := s.dispatcher.SubmitVoice(prepare); err != nil {
 		conn.voiceQueued.Store(false)
-		s.hub.releaseMic(conn)
+		if !deferred {
+			// Release only what this call claimed. A deferred voice_start
+			// claimed nothing, and this connection may still be speaking into
+			// a live claim from an earlier turn.
+			s.hub.releaseMic(conn)
+		}
 		return errors.New(dispatchErrText(err))
 	}
 	return nil
@@ -145,6 +150,10 @@ func (s *Server) endVoiceTurn(conn *streamConn) error {
 		}
 		return errors.New("microphone not claimed by this client")
 	}
+	// Anything this connection queued behind its own live turn has no audio
+	// either; drop it rather than let it dequeue and take the mic. The
+	// immediate-claim path never sets the flag, so a fast tap is unaffected.
+	conn.voiceQueued.Store(false)
 	if err := s.hub.endMicUtterance(conn); err != nil {
 		return err
 	}

@@ -562,6 +562,11 @@ relative order. `audio_reset` is the ordered boundary for audio — chunks
 queued before it are dropped, and streaming resumes at the next
 `thinking_started`.
 
+`GET /v1/status` reports `turn_active: false` as soon as the interrupt lands,
+while the cancelled turn is still unwinding — that is the point: the turn is
+dead, and the `voice_start` that follows finds an idle pipeline and takes the
+mic straight away.
+
 A `turn_interrupted` a client did not ask for means **another** device barged
 in. That is the signal to return to an idle/armed state rather than keep
 waiting for a reply that is no longer coming.
@@ -576,7 +581,7 @@ One client owns the remote mic at a time (`voice_start` → `voice_end`).
 | Another client holds the claim | `error`: `microphone claimed by another client` — go back to idle and try later |
 | A turn is in flight | The turn is **queued** and claims **nothing** until it is dequeued |
 | Queue full (16 deep) | `error`: `server is busy — try again shortly`; no claim is taken |
-| Remote mic disabled on this serve | `error`: `remote mic is not enabled on this serve instance` |
+| Remote mic disabled on this serve | `error` beginning `remote mic is not enabled` (the claim path adds `on this serve instance`) |
 
 Deferring the claim is what stops one device's false trigger from locking every
 other device out: a queued `voice_start` holds nothing, so another client can

@@ -253,7 +253,7 @@ func (h *hub) resumeAudio() {
 
 func (h *hub) attachBus(bus *events.Bus) (detach func()) {
 	return bus.SubscribeAll(func(e events.Event) {
-		switch e.(type) {
+		switch e := e.(type) {
 		case events.ThinkingStarted:
 			h.speaking.Store(false)
 			h.resumeAudio()
@@ -261,6 +261,13 @@ func (h *hub) attachBus(bus *events.Bus) (detach func()) {
 			h.speaking.Store(true)
 		case events.SpeakingInterrupted, events.TurnMetrics:
 			h.speaking.Store(false)
+		case events.Error:
+			// A turn that dies before turn_metrics would otherwise leave the
+			// flag set, and the next idle interrupt would claim it cut off
+			// speech that had already stopped.
+			if e.Stage == "turn" {
+				h.speaking.Store(false)
+			}
 		}
 		msg, err := marshalEvent(e)
 		if err != nil {

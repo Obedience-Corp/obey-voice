@@ -411,3 +411,65 @@ func TestClaimMicRefusesClosedConnection(t *testing.T) {
 		})
 	}
 }
+
+// TestBusyRefusalKeepsALiveClaim: a second voice_start that bounces off a full
+// queue must not release the claim the connection is already speaking into.
+// Releasing it would also finalize the utterance mid-sentence.
+func TestBusyRefusalKeepsALiveClaim(t *testing.T) {
+	runner := &voiceRunner{block: true, voiceStart: make(chan struct{}, 1)}
+	s, d, addr, creds := startVoiceServer(t, runner)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	conn := dialStream(t, ctx, addr, creds)
+	frames := readFrames(t, ctx, conn)
+
+	writeControl(t, ctx, conn, controlMessage{Type: "voice_start"})
+	select {
+	case <-runner.voiceStart:
+	case <-ctx.Done():
+		t.Fatal("voice turn never started")
+	}
+	eventually(t, "the live claim", func() bool { return micClaimed(s.hub) })
+
+	for i := 0; i < dispatchQueueDepth; i++ {
+		if err := d.SubmitText("filler"); err != nil {
+			t.Fatalf("filling the queue: %v", err)
+		}
+	}
+	writeControl(t, ctx, conn, controlMessage{Type: "voice_start"})
+	if got := frames.await("error", 2*time.Second); !contains(got, "error") {
+		t.Fatalf("a full queue accepted the second voice_start; frames = %v", got)
+	}
+	consistently(t, "the live claim after a busy refusal", func() bool { return micClaimed(s.hub) })
+}
+
+// TestVoiceEndDropsTheConnectionsOwnQueuedTurn: a connection that fires a
+// second voice_start while it is still the claimant would otherwise leave a
+// queued turn that claims the mic for an utterance nobody is speaking, parking
+// the pipeline until that client disconnects.
+func TestVoiceEndDropsTheConnectionsOwnQueuedTurn(t *testing.T) {
+	runner := &voiceRunner{block: true, voiceStart: make(chan struct{}, 1)}
+	s, _, addr, creds := startVoiceServer(t, runner)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	conn := dialStream(t, ctx, addr, creds)
+
+	writeControl(t, ctx, conn, controlMessage{Type: "voice_start"})
+	<-runner.voiceStart
+	eventually(t, "the live claim", func() bool { return micClaimed(s.hub) })
+
+	// A second voice_start behind its own live turn: queued, claims nothing.
+	writeControl(t, ctx, conn, controlMessage{Type: "voice_start"})
+	writeControl(t, ctx, conn, controlMessage{Type: "voice_end"})
+	eventually(t, "the claim to be released by voice_end", func() bool { return !micClaimed(s.hub) })
+
+	writeControl(t, ctx, conn, controlMessage{Type: "interrupt"})
+	consistently(t, "the mic unclaimed after the queue drained", func() bool { return !micClaimed(s.hub) })
+	if got := runner.voiceTurns(); got != 1 {
+		t.Errorf("voice turns run = %d, want 1 — the abandoned second turn ran", got)
+	}
+}
