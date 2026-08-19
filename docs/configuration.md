@@ -86,7 +86,7 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `qwen_tts_native_sha256` | platform release | `QWEN_TTS_NATIVE_SHA256` / `OBEY_VOICE_QWEN_NATIVE_SHA256` | Archive digest matching the default or configured URL |
 | `qwen_tts_timeout` | `120` | `QWEN_TTS_TIMEOUT` | Per-request native/external worker timeout in seconds |
 | `qwen_tts_mode` | empty | `QWEN_TTS_MODE` | Product setup resolves empty to `customvoice` |
-| `qwen_tts_voice` | empty | `QWEN_TTS_VOICE` | CustomVoice-class speaker; setup resolves empty to `Vivian` |
+| `qwen_tts_voice` | empty | `QWEN_TTS_VOICE` | CustomVoice preset (`Vivian`, `Serena`, …) or shipped clone (`Veronica`). Empty resolves to `Vivian` |
 | `qwen_tts_language` | empty | `QWEN_TTS_LANGUAGE` | Synthesis language; setup resolves empty to `Auto` |
 | `qwen_tts_instruction` | empty | `QWEN_TTS_INSTRUCTION` | Reserved for an installable instruction-capable Qwen model tier |
 | `qwen_tts_reference_audio` | empty | `QWEN_TTS_REFERENCE_AUDIO` | Authorized local reference WAV for an approved clone workflow |

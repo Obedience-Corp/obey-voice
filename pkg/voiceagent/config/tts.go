@@ -77,7 +77,7 @@ func validateQwenPresetVoiceConfig(cfg *Config, label string) error {
 		unsupported = append(unsupported, "qwen_tts_mode")
 	}
 	if voice := strings.TrimSpace(cfg.QwenTTSVoice); voice != "" && !strings.EqualFold(voice, "default") {
-		if _, found := qwen.CanonicalVoice(voice); !found {
+		if _, _, ok := qwen.ResolveVoice(voice); !ok {
 			return fmt.Errorf("unsupported qwen_tts_voice %q for the %s CustomVoice model", voice, label)
 		}
 	}

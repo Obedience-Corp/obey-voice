@@ -90,6 +90,7 @@ type Qwen3TTS struct {
 	instruction         string
 	referenceAudio      string
 	referenceTranscript string
+	modelsDir           string
 	consent             bool
 	managed             bool // always false after cutover (kept for test seams)
 	native              bool // native qwen3-tts-worker protocol (product path)
@@ -192,6 +193,7 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	q.instruction = cfg.QwenTTSInstruction
 	q.referenceAudio = strings.TrimSpace(cfg.QwenTTSReferenceAudio)
 	q.referenceTranscript = cfg.QwenTTSReferenceText
+	q.modelsDir = modelsDir
 	q.consent = cfg.QwenTTSConsent
 	q.managed = managed
 	q.native = native
@@ -202,8 +204,13 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 		}
 		if q.voice == "" || strings.EqualFold(q.voice, "default") {
 			q.voice = managedqwen.DefaultVoice
-		} else if voice, ok := managedqwen.CanonicalVoice(q.voice); ok {
-			q.voice = voice
+		} else if name, isShipped, ok := managedqwen.ResolveVoice(q.voice); ok {
+			q.voice = name
+			if isShipped {
+				if err := bindShippedClone(context.Background(), &q.referenceAudio, &q.referenceTranscript, name, modelsDir); err != nil {
+					return nil, fmt.Errorf("qwen3-tts: %w", err)
+				}
+			}
 		}
 		if q.language == "" {
 			q.language = managedqwen.DefaultLanguage
@@ -306,6 +313,9 @@ func (q *Qwen3TTS) SynthesizeRequest(ctx context.Context, req SynthesisRequest) 
 	}
 	if strings.TrimSpace(req.Text) == "" {
 		return SynthesisResult{}, &ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: ProviderErrorInput, Err: errors.New("text is empty")}
+	}
+	if err := bindShippedOnRequest(ctx, &req, q.modelsDir); err != nil {
+		return SynthesisResult{}, &ProviderError{Provider: qwen3TTSProviderName, Operation: "bind shipped voice", Kind: ProviderErrorInput, Err: err}
 	}
 	// Same spoken-text rules Kokoro gets: emoji stripped, years read as years.
 	// Applied after the empty check above, so genuinely empty input is still a
@@ -777,7 +787,7 @@ func (q *Qwen3TTS) Capabilities() ProviderCapabilities {
 	}
 	q.sessionMu.Lock()
 	defer q.sessionMu.Unlock()
-	registry := managedqwen.CustomVoices()
+	registry := managedqwen.SelectableVoices()
 	voiceNames := make([]string, 0, len(registry))
 	switch {
 	case q.native && q.nativeSession != nil && len(q.nativeSession.presets) > 0:
@@ -797,6 +807,7 @@ func (q *Qwen3TTS) Capabilities() ProviderCapabilities {
 			voiceNames = append(voiceNames, voice.Name)
 		}
 	}
+	voiceNames = appendShippedVoiceNames(voiceNames)
 	voices := make([]Voice, 0, len(voiceNames))
 	for _, name := range voiceNames {
 		voice := managedqwen.Voice{Name: name}
@@ -868,4 +879,43 @@ func (q *Qwen3TTS) Delete() {
 	defer q.sessionMu.Unlock()
 	q.discardManagedSessionLocked()
 	q.discardNativeSessionLocked()
+}
+
+func bindShippedOnRequest(ctx context.Context, req *SynthesisRequest, modelsDir string) error {
+	if req == nil {
+		return nil
+	}
+	return bindShippedClone(ctx, &req.ReferenceAudio, &req.ReferenceTranscript, req.Voice, modelsDir)
+}
+
+func bindShippedClone(ctx context.Context, refAudio, refText *string, voiceName, modelsDir string) error {
+	sv, ok := managedqwen.LookupShipped(voiceName)
+	if !ok {
+		return nil
+	}
+	path, err := managedqwen.MaterializeShipped(ctx, sv, modelsDir)
+	if err != nil {
+		return err
+	}
+	if refAudio != nil && strings.TrimSpace(*refAudio) == "" {
+		*refAudio = path
+	}
+	if refText != nil && strings.TrimSpace(*refText) == "" {
+		*refText = sv.RefText
+	}
+	return nil
+}
+
+func appendShippedVoiceNames(names []string) []string {
+	seen := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		seen[strings.ToLower(n)] = struct{}{}
+	}
+	for _, s := range managedqwen.ShippedVoices() {
+		if _, ok := seen[strings.ToLower(s.Name)]; ok {
+			continue
+		}
+		names = append(names, s.Name)
+	}
+	return names
 }

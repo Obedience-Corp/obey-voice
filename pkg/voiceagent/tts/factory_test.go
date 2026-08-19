@@ -48,8 +48,8 @@ func TestStaticVoicesForQwenListsCustomVoicePresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StaticVoices() error = %v", err)
 	}
-	if len(voices) != len(managedqwen.CustomVoices()) {
-		t.Fatalf("StaticVoices() = %d voices, want %d (one per CustomVoices() preset)", len(voices), len(managedqwen.CustomVoices()))
+	if len(voices) != len(managedqwen.SelectableVoices()) {
+		t.Fatalf("StaticVoices() = %d voices, want %d (selectable catalog)", len(voices), len(managedqwen.SelectableVoices()))
 	}
 	var sawVivian bool
 	for _, v := range voices {
@@ -69,6 +69,18 @@ func TestStaticVoicesForQwenListsCustomVoicePresets(t *testing.T) {
 	}
 	if !sawVivian {
 		t.Fatalf("StaticVoices() = %+v, missing the Vivian preset", voices)
+	}
+	var sawVeronica bool
+	for _, v := range voices {
+		if v.Name == "Veronica" {
+			sawVeronica = true
+			if v.Locale != "English" {
+				t.Errorf("Veronica locale = %q, want English", v.Locale)
+			}
+		}
+	}
+	if !sawVeronica {
+		t.Fatalf("StaticVoices() = %+v, missing shipped Veronica", voices)
 	}
 }
 

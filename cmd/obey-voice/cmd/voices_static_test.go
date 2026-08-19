@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -86,8 +87,18 @@ func TestVoicesJSONQwenStaticFallbackWhenAssetsMissing(t *testing.T) {
 	if newProviderCalled {
 		t.Error("newProvider was called; the static fallback must never construct a provider")
 	}
-	if len(got.Voices) != 9 {
-		t.Fatalf("voices = %+v, want the 9 CustomVoice presets", got.Voices)
+	wantN := len(managedqwen.SelectableVoices())
+	if len(got.Voices) != wantN {
+		t.Fatalf("voices = %+v, want the %d selectable voices", got.Voices, wantN)
+	}
+	var sawVeronica bool
+	for _, v := range got.Voices {
+		if v.Name == "Veronica" {
+			sawVeronica = true
+		}
+	}
+	if !sawVeronica {
+		t.Fatalf("voices = %+v, missing shipped Veronica", got.Voices)
 	}
 	if len(got.Languages) == 0 {
 		t.Error("languages is empty, want qwen.SupportedLanguages()")

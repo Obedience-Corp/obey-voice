@@ -300,7 +300,7 @@ func qwenPresetVoices(cfg *config.Config, native managedqwen.NativeStatus) []tts
 			for _, name := range names {
 				desc := name
 				loc := "multi"
-				for _, v := range managedqwen.CustomVoices() {
+				for _, v := range managedqwen.SelectableVoices() {
 					if strings.EqualFold(v.Name, name) {
 						if v.Description != "" {
 							desc = v.Description
@@ -315,8 +315,8 @@ func qwenPresetVoices(cfg *config.Config, native managedqwen.NativeStatus) []tts
 			return out
 		}
 	}
-	out := make([]tts.Voice, 0, len(managedqwen.CustomVoices()))
-	for _, voice := range managedqwen.CustomVoices() {
+	out := make([]tts.Voice, 0, len(managedqwen.SelectableVoices()))
+	for _, voice := range managedqwen.SelectableVoices() {
 		out = append(out, tts.Voice{
 			Name: voice.Name, FriendlyName: voice.Description,
 			Gender: "preset", Locale: voice.NativeLanguage,
@@ -332,6 +332,9 @@ func loadNativePresetNames(modelDir string) []string {
 		if _, err := os.Stat(q3te); err == nil {
 			names = append(names, v.Name)
 		}
+	}
+	for _, s := range managedqwen.ShippedVoices() {
+		names = append(names, s.Name)
 	}
 	return names
 }

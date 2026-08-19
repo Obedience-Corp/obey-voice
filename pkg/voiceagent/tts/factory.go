@@ -90,8 +90,8 @@ func staticKokoroVoices(locale, gender string) []Voice {
 	return voices
 }
 
-// staticQwenVoices maps the 9 CustomVoice presets qwen.CustomVoices() ships —
-// they exist whether or not the native package is installed, so a picker can
+// staticQwenVoices maps selectable Qwen voices (model presets + shipped clones).
+// They exist whether or not the native package is installed, so a picker can
 // list them before anything has been downloaded. Gender is not something the
 // preset registry tracks per voice, so every row reports "preset" — the same
 // convention internal/tui/settings_qwen.go already uses for this exact
@@ -102,7 +102,7 @@ func staticQwenVoices(locale, gender string) []Voice {
 		return nil
 	}
 	var voices []Voice
-	for _, v := range managedqwen.CustomVoices() {
+	for _, v := range managedqwen.SelectableVoices() {
 		if locale != "" && !strings.HasPrefix(v.NativeLanguage, locale) {
 			continue
 		}

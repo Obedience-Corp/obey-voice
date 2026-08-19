@@ -176,7 +176,7 @@ func (m audiobookModel) usesQwenModelNativeControls() bool {
 func (m audiobookModel) voiceOptions() []string {
 	var names []string
 	if m.usesQwenModelNativeControls() {
-		for _, voice := range managedqwen.CustomVoices() {
+		for _, voice := range managedqwen.SelectableVoices() {
 			names = append(names, voice.Name)
 		}
 	} else {
