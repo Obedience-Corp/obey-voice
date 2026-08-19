@@ -75,6 +75,13 @@ type hub struct {
 	micClaimant *streamConn
 	// ingress receives remote PCM when remote mic is enabled.
 	ingress *audio.Ingress
+
+	// speaking reports whether the shared turn is in its TTS phase, so a
+	// remote interrupt can say what it interrupted. Set on the first
+	// speaking_started and cleared at the turn boundary rather than on each
+	// segment's speaking_complete: a multi-sentence reply is still speaking
+	// between its segments. Written only from the bus subscription.
+	speaking atomic.Bool
 }
 
 func newHub() *hub {
@@ -306,8 +313,14 @@ func (h *hub) resumeAudio() {
 
 func (h *hub) attachBus(bus *events.Bus) (detach func()) {
 	return bus.SubscribeAll(func(e events.Event) {
-		if _, ok := e.(events.ThinkingStarted); ok {
+		switch e.(type) {
+		case events.ThinkingStarted:
+			h.speaking.Store(false)
 			h.resumeAudio()
+		case events.SpeakingStarted:
+			h.speaking.Store(true)
+		case events.SpeakingInterrupted, events.TurnMetrics:
+			h.speaking.Store(false)
 		}
 		msg, err := marshalEvent(e)
 		if err != nil {
@@ -398,8 +411,7 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 				s.sendError(conn, dispatchErrText(err))
 			}
 		case "interrupt":
-			s.hub.resetAudio()
-			s.dispatcher.Interrupt()
+			s.interrupt()
 		case "clear_history":
 			if err := s.dispatcher.ClearHistory(); err != nil {
 				s.sendError(conn, dispatchErrText(err))
@@ -448,6 +460,38 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			s.sendError(conn, "unknown control message type: "+msg.Type)
 		}
 	}
+}
+
+// remoteInterruptReason labels the two events a client-driven barge-in emits,
+// distinguishing it in a transcript from the host mic's local "barge-in".
+const remoteInterruptReason = "remote_interrupt"
+
+// interrupt cancels the in-flight turn and tells every client what was
+// canceled. audio_reset alone said "drop the audio you have buffered" but
+// never "that turn is over", so a client had to infer its own turn state from
+// turn_metrics. Now the same two events the local barge-in path emits also
+// come out of a remote interrupt: turn_interrupted always, and
+// speaking_interrupted as well when TTS was in flight.
+//
+// An interrupt that hits an idle server still resets audio — it is the client
+// saying "I am about to talk" — but emits neither event: nothing was
+// interrupted, and a client must not be told a turn ended that never began.
+func (s *Server) interrupt() {
+	// Read what is in flight before canceling; both flags fall the moment
+	// the turn unwinds.
+	speaking := s.hub.speaking.Load()
+	interrupted := s.dispatcher.TurnActive() || speaking
+
+	s.hub.resetAudio()
+	s.dispatcher.Interrupt()
+
+	if !interrupted {
+		return
+	}
+	if speaking {
+		s.opts.Bus.Emit(events.SpeakingInterrupted{Reason: remoteInterruptReason})
+	}
+	s.opts.Bus.Emit(events.TurnInterrupted{Reason: remoteInterruptReason})
 }
 
 // decodePCMS16LE decodes base64 little-endian mono PCM into float32 samples

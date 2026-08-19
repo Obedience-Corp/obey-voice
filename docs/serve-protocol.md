@@ -515,6 +515,25 @@ in `GET /v1/status`:
 A client that needs sub-100 ms meter response should measure locally;
 `audio_level` crosses the network and is throttled at the source.
 
+**Interrupt events.** A remote `interrupt` that actually cancelled something
+also emits, to **every** connected client:
+
+| `type` | Fields | When |
+|--------|--------|------|
+| `turn_interrupted` | `reason` (`remote_interrupt`) | A turn was in flight when the `interrupt` arrived |
+| `speaking_interrupted` | `reason` (`remote_interrupt`) | …and that turn was in its TTS phase |
+
+`reason` distinguishes these from the host mic's own barge-in, which uses the
+local reason string. An `interrupt` on an idle server emits neither — only
+`audio_reset` — so a client is never told a turn ended that never began.
+
+The pipeline may emit its own `speaking_interrupted` (`reason: "stopped"`) as
+playback unwinds, so a client can see two: treat them as idempotent "stop
+speaking" signals, not as a count. `turn_metrics` still follows and its
+`outcome` is whatever the turn state machine decided — a reply the model had
+already finished reports `completed` even though playback was cut, which is
+exactly why `turn_interrupted` exists.
+
 **Audio** (only if `audio_output` mode is `stream`):
 
 | `type` | Fields |
