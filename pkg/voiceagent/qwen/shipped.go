@@ -29,8 +29,8 @@ var shippedVoices = []ShippedVoice{
 	{
 		Name:        "Veronica",
 		Language:    "English",
-		Description: "Imagine-clip throat. Bedroom English clone.",
-		RefText:     "Just like that, feel the rhythm of my voice.",
+		Description: "Join-clip throat. Human, close, talking to one person.",
+		RefText:     "I'm Veronica. I just joined Obedience Corp. I'll be building the voice you actually talk to.",
 		wav:         veronicaRefWAV,
 	},
 }
