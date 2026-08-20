@@ -5,7 +5,10 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
@@ -109,7 +112,7 @@ func TestVoicesJSONQwenLanguagesPresentOnLiveProviderPath(t *testing.T) {
 	personaEnv(t)
 	stubVoiceStack(t, &fakeTTS{voices: []tts.Voice{{Name: "Vivian", FriendlyName: "Vivian", Gender: "preset", Locale: "Chinese"}}}, nil)
 
-	out, err := runVoicesCmd(t, "--json", "--provider", "qwen3-tts")
+	out, err := runVoicesCmd(t, "--json", "--provider", "qwen3-tts", "--live")
 	if err != nil {
 		t.Fatalf("voices --json error = %v (out %s)", err, out)
 	}
@@ -141,5 +144,99 @@ func TestVoicesJSONMissingAssetsStillRefusesForNonQwenProviders(t *testing.T) {
 	}
 	if *ensured != 0 {
 		t.Fatalf("ensureAssets called %d times, want 0", *ensured)
+	}
+}
+
+// --- voices --json --provider qwen3-tts: presets without a model load ---
+
+// The macOS voice picker gives the CLI 10s; constructing qwen3-tts to read a
+// compile-time preset list measured 10.7s and timed the picker out. The
+// default answer is now static, and it must stay that way even on a machine
+// where the model is installed and a provider would have succeeded.
+func TestVoicesJSONQwenListsPresetsWithoutConstructingProvider(t *testing.T) {
+	dir := personaEnv(t)
+	writeQwenVoiceConfig(t, dir, "Ryan")
+
+	var constructed int
+	orig := voiceStack
+	voiceStack = voiceStackDeps{
+		newProvider: func(*config.Config) (tts.Provider, func(), error) {
+			constructed++
+			return kokoroFake(), nil, nil
+		},
+		missingAssets: func(*config.Config) []string { return nil },
+		ensureAssets: func(context.Context, *config.Config, config.AssetRequest, func(string, float64)) error {
+			t.Fatal("ensureAssets must never be called by voices --json")
+			return nil
+		},
+	}
+	t.Cleanup(func() { voiceStack = orig })
+
+	start := time.Now()
+	out, err := runVoicesCmd(t, "--json", "--provider", "qwen3-tts")
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("voices --json error = %v (out %s)", err, out)
+	}
+	if constructed != 0 {
+		t.Fatalf("newProvider called %d times, want 0: listing presets must not page a model in", constructed)
+	}
+	if elapsed > time.Second {
+		t.Errorf("elapsed = %v, want under 1s (the picker's budget is 10s)", elapsed)
+	}
+
+	var got voicesJSON
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("decoding %q: %v", out, err)
+	}
+	if got.Source != "static" {
+		t.Errorf("source = %q, want static", got.Source)
+	}
+	if got.ActiveVoice != "Ryan" {
+		t.Errorf("active_voice = %q, want the configured qwen_tts_voice", got.ActiveVoice)
+	}
+	if len(got.Voices) != len(managedqwen.SelectableVoices()) {
+		t.Fatalf("voices = %d, want the %d selectable presets", len(got.Voices), len(managedqwen.SelectableVoices()))
+	}
+	var active string
+	for _, v := range got.Voices {
+		if v.Active {
+			active = v.Name
+		}
+	}
+	if active != "Ryan" {
+		t.Errorf("marked-active voice = %q, want Ryan", active)
+	}
+}
+
+// --live is the escape hatch: presets a native package ships beyond the
+// compile-time registry are still reachable, at the cost of the model load.
+func TestVoicesJSONQwenLiveFlagQueriesTheProvider(t *testing.T) {
+	personaEnv(t)
+	stubVoiceStack(t, &fakeTTS{voices: []tts.Voice{
+		{Name: "InstalledOnly", FriendlyName: "Shipped with the package", Gender: "preset", Locale: "English"},
+	}}, nil)
+
+	out, err := runVoicesCmd(t, "--json", "--provider", "qwen3-tts", "--live")
+	if err != nil {
+		t.Fatalf("voices --json --live error = %v (out %s)", err, out)
+	}
+	var got voicesJSON
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("decoding %q: %v", out, err)
+	}
+	if got.Source != "provider" {
+		t.Errorf("source = %q, want provider under --live", got.Source)
+	}
+	if len(got.Voices) != 1 || got.Voices[0].Name != "InstalledOnly" {
+		t.Errorf("voices = %+v, want the provider's own catalog", got.Voices)
+	}
+}
+
+func writeQwenVoiceConfig(t *testing.T, dir, voice string) {
+	t.Helper()
+	body := "agent_name: Samantha\nactive_persona: samantha\ntts_provider: kokoro\ntts_voice: af_heart\nqwen_tts_voice: " + voice + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
 	}
 }

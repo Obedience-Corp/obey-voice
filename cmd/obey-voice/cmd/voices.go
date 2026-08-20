@@ -61,13 +61,17 @@ func newVoicesCmd() *cobra.Command {
 provider is built from a copy of the loaded config, never the live one.
 
 --json never downloads. When the provider's assets are missing it reports
-assets_missing and names the command that installs them.`,
+assets_missing and names the command that installs them. qwen3-tts answers
+from the compile-time preset catalog (source "static"), because constructing
+that provider pages a multi-gigabyte model in to report names this binary
+already knows; --live asks the installed native package instead.`,
 		RunE: runVoices,
 	}
 	cmd.Flags().StringP("locale", "l", "", "Filter by locale (e.g. en-US)")
 	cmd.Flags().StringP("gender", "g", "", "Filter by gender (male/female)")
 	cmd.Flags().StringP("provider", "p", "", "List this provider's catalog instead of the configured one")
 	cmd.Flags().Bool("json", false, "Emit JSON")
+	cmd.Flags().Bool("live", false, "Query the constructed provider (qwen3-tts: loads the model, ~10s, and reports presets shipped with the installed native package); no effect on providers that are already listed live")
 	cmd.AddCommand(newVoicesPreviewCmd())
 	return cmd
 }
@@ -92,15 +96,29 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 	}
 	locale, _ := cmd.Flags().GetString("locale")
 	gender, _ := cmd.Flags().GetString("gender")
+	live, _ := cmd.Flags().GetBool("live")
+
+	// qwen3-tts's selectable voices are a compile-time registry (presets plus
+	// shipped clones), not a property of the loaded model: constructing the
+	// provider pages gigabytes in and takes ~10s to report names this binary
+	// already knows, which is longer than a voice picker's whole CLI budget.
+	// Static is therefore the default answer. Presets the installed native
+	// package ships beyond the registry stay reachable through --live.
+	if isQwenTTS(cfg.TTSProvider) && !live {
+		voices, err := tts.StaticVoices(cfg.TTSProvider, locale, gender)
+		if err != nil {
+			return nil, codedError(codeInvalidProvider, "static voices: %v", err)
+		}
+		return buildVoicesJSON(cfg, voices, "static"), nil
+	}
 
 	if err := requireTTSAssets(cfg); err != nil {
-		// qwen3-tts's 9 CustomVoice presets are model-native, not
-		// install-dependent (tts.StaticVoices), so a fresh machine can still
-		// browse them before running `models ensure --tts`. Every other
-		// provider keeps the original refuse-on-missing contract: --json
-		// must never download, and a live catalog it cannot safely list
-		// without a model on disk is not silently swapped for something
-		// incomplete.
+		// A fresh machine can still browse qwen3-tts's model-native presets
+		// before running `models ensure --tts`, even when --live asked for the
+		// installed package. Every other provider keeps the original
+		// refuse-on-missing contract: --json must never download, and a live
+		// catalog it cannot safely list without a model on disk is not
+		// silently swapped for something incomplete.
 		if isQwenTTS(cfg.TTSProvider) {
 			if voices, staticErr := tts.StaticVoices(cfg.TTSProvider, locale, gender); staticErr == nil && len(voices) > 0 {
 				return buildVoicesJSON(cfg, voices, "static"), nil

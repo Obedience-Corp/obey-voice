@@ -4,17 +4,13 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -47,6 +43,7 @@ var (
 	serveRemoteMic    bool
 	serveTailscale    bool
 	serveBannerJSON   bool
+	serveLogFile      string
 	// publicHost is the hostname phones should open (MagicDNS). Empty when
 	// clients should use the bind address as-is.
 	servePublicHost string
@@ -58,15 +55,6 @@ var (
 	// the "Client setup:" human line and reaches clients on the ready banner.
 	serveClientSetupURL string
 )
-
-// serveHumanOut receives all human-readable banner and log output. With
-// --banner-json it is redirected to stderr so stdout carries only the
-// machine-readable JSON event lines a supervisor parses.
-var serveHumanOut io.Writer = os.Stdout
-
-// serveBannerOut receives the machine-readable JSON event lines. Always stdout
-// in production; tests swap it to capture the exact wire bytes.
-var serveBannerOut io.Writer = os.Stdout
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -104,8 +92,10 @@ _obey-voice._tcp on the LAN (--no-mdns to disable; --tailscale implies
 remote_tools_enabled is set.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if serveBannerJSON {
-			serveHumanOut = os.Stderr
+		restoreStdio, err := configureServeStdio()
+		defer restoreStdio()
+		if err != nil {
+			return err
 		}
 		if serveRevokeTokens {
 			return runRevokeTokens()
@@ -144,6 +134,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveRemoteMic, "remote-mic", true, "Enable remote push-to-talk (client STT over the WebSocket)")
 	serveCmd.Flags().BoolVar(&serveTailscale, "tailscale", false, "Tailscale remote mode: 100.x bind, MagicDNS URL, prefer trusted cert (self-signed fallback), host speaker muted unless --no-voice=false")
 	serveCmd.Flags().BoolVar(&serveBannerJSON, "banner-json", false, "Emit machine-readable JSON event lines on stdout (ready, pairing_code) and route human logs to stderr")
+	serveCmd.Flags().StringVar(&serveLogFile, "log-file", "", "Append human/diagnostic output to this file (created 0600) instead of the console; stdout still carries the --banner-json lines")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -234,7 +225,10 @@ func runServe(cfg *config.Config) error {
 	}
 
 	bus := events.NewBus()
-	ui.New(bus, cfg.AgentName) // local terminal mirrors the event stream
+	// The event mirror is human output, so it follows serveHumanOut: under
+	// --banner-json a conversation's transcript lines would otherwise land in
+	// the middle of the caller's JSON stream on stdout.
+	ui.NewWithOutput(bus, cfg.AgentName, serveHumanOut)
 
 	// Remote turns are gated by remote_tools_enabled only. The pipeline is
 	// the sole runtime tools gate (ThinkStream and ThinkFull both take
@@ -578,7 +572,7 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 	liveTTS := &voiceagent.LiveTTSManager{}
 	cleanups = append(cleanups, liveTTS.Close)
 	if ttsSet.FallbackWarning != nil {
-		fmt.Fprintf(os.Stderr, "warning: %v\n", ttsSet.FallbackWarning)
+		fmt.Fprintf(serveDiagOut, "warning: %v\n", ttsSet.FallbackWarning)
 	}
 
 	var local audio.Engine
@@ -597,7 +591,7 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 		TTS:         ttsSet.Primary,
 		TTSFallback: ttsSet.Fallback,
 		Player:      fanout,
-		Logf:        func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
+		Logf:        func(format string, args ...any) { fmt.Fprintf(serveDiagOut, format+"\n", args...) },
 	}
 
 	var ingress *audio.Ingress
@@ -639,180 +633,6 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 	cleanups = append([]func(){baseCleanup}, cleanups...)
 
 	return agent.Pipeline, fanout, ingress, liveTTS, cleanup, nil
-}
-
-func printServeBanner(addr string, creds *netapi.Credentials, cfg *config.Config) {
-	fmt.Println()
-	fmt.Printf("  %s\n", titleStyle.Render("Use on another device"))
-
-	// Prefer MagicDNS (or other public host) for the client-facing URL.
-	pageHost := servePublicHost
-	if pageHost == "" {
-		if host, _, err := net.SplitHostPort(addr); err == nil {
-			pageHost = host
-		} else {
-			pageHost = addr
-		}
-	}
-	pageURL := publicServeURL(pageHost, servePort)
-	fmt.Printf("  %s %s\n", keyStyle.Render(netapi.LabelOpenOnClient), pageURL)
-
-	if serveTailscale {
-		fmt.Printf("  %s %s\n", keyStyle.Render(netapi.LabelNetwork), netapi.NetworkTailscale)
-	} else {
-		fmt.Printf("  %s %s\n", keyStyle.Render(netapi.LabelNetwork), netapi.NetworkLAN)
-	}
-
-	// Product-facing access mode (TUI parses these labels via netapi constants).
-	// Trusted certs → full voice mic in any browser.
-	// Self-signed → page works after a warning; some mobile browsers block mic.
-	if creds.ExternalTLS {
-		fmt.Printf("  %s %s\n", keyStyle.Render(netapi.LabelClientAccess), netapi.AccessFull)
-		fmt.Println(dimStyle.Render("  Any device on this network can use text and the microphone."))
-	} else {
-		fmt.Printf("  %s %s\n", failStyle.Render(netapi.LabelClientAccess), netapi.AccessLimited)
-		if serveTailscale || servePublicHost != "" {
-			fmt.Printf("  %s %s\n", keyStyle.Render(netapi.LabelClientSetup), netapi.ClientSetupURL)
-			fmt.Println(dimStyle.Render("  Works now: most desktop browsers (accept one warning) + text on any device."))
-			fmt.Println(dimStyle.Render("  Full mic on every browser: Client setup → HTTPS Certificates → restart."))
-		} else {
-			fmt.Println(dimStyle.Render("  Works now: most desktop browsers (accept one warning) + text on any device."))
-			fmt.Println(dimStyle.Render("  Full mic on every browser: obey-voice serve --tailscale (with HTTPS"))
-			fmt.Println(dimStyle.Render("  Certificates on), or pass --tls-cert/--tls-key."))
-		}
-	}
-
-	if creds.Pairing != nil {
-		fmt.Printf("  %s %s  (expires %s)\n",
-			keyStyle.Render(netapi.LabelPairingCode),
-			creds.Pairing.Code,
-			creds.Pairing.ExpiresAt.Format("15:04:05"))
-		fmt.Println(dimStyle.Render("  On the device: open link → enter code → Pair → Start → Hold to Talk"))
-		fmt.Println(dimStyle.Render("  The code is single-use; restart serve to issue another."))
-	}
-
-	// Secondary / power-user lines stay dim and last.
-	fmt.Printf("  %s %s\n", dimStyle.Render("Listening:"), "https://"+addr)
-	if creds.ExternalTLS {
-		fp := creds.Fingerprint
-		if len(fp) > 16 {
-			fp = fp[:16] + "…"
-		}
-		fmt.Printf("  %s %s\n", dimStyle.Render("TLS:"), "trusted ("+fp+")")
-	} else {
-		fmt.Printf("  %s %s\n", dimStyle.Render("TLS:"), "browser warning (self-signed)")
-		if serveTLSFallbackNote != "" {
-			fmt.Printf("  %s %s\n", dimStyle.Render("Detail:"), serveTLSFallbackNote)
-		}
-	}
-	if creds.TokenCreated {
-		fmt.Printf("  %s %s\n", keyStyle.Render("Token:"), creds.Token)
-		fmt.Println(dimStyle.Render("  Shown once — stored under " + config.ConfigDir() + "/serve/"))
-	} else {
-		fmt.Println(dimStyle.Render("  Token on file at " + config.ConfigDir() + "/serve/token"))
-	}
-	fmt.Println(dimStyle.Render("  Revoke: obey-voice serve --revoke-tokens"))
-	if cfg.RemoteToolsEnabled {
-		fmt.Println(failStyle.Render("  WARNING: remote_tools_enabled=true — network clients can trigger tool calls on this machine."))
-	} else {
-		fmt.Println(dimStyle.Render("  Remote tool calls: disabled (remote_tools_enabled=false)"))
-	}
-	if serveNoVoice {
-		fmt.Println(dimStyle.Render("  Host speaker: muted (--no-voice); stream clients can still request audio_output"))
-	} else {
-		fmt.Println(dimStyle.Render("  Host speaker: on; clients opt in with {\"type\":\"audio_output\",\"mode\":\"stream\"}"))
-	}
-	if serveRemoteMic {
-		fmt.Println(dimStyle.Render("  Remote mic: push-to-talk enabled (hold Talk on the voice page)"))
-	} else {
-		fmt.Println(dimStyle.Render("  Remote mic: off (--remote-mic=false)"))
-	}
-	if serveTailscale {
-		fmt.Println(dimStyle.Render("  Mode: --tailscale (shared Tailscale network; host speaker muted unless --no-voice=false)"))
-	} else {
-		fmt.Println(dimStyle.Render("  Mode: LAN / same network (mDNS when enabled)"))
-	}
-	fmt.Println(dimStyle.Render("  Debug: obey-voice connect " + addr + " --token <token>"))
-	fmt.Println(dimStyle.Render("  Local full voice on this machine: run `obey-voice` (TUI), not serve"))
-	fmt.Println()
-}
-
-// emitServeBannerJSON writes the machine-readable ready line (and a
-// pairing_code line when a code is minted) to stdout, one JSON object per
-// line. The supervising process reads the ready line to learn the URL,
-// credentials, and fingerprint instead of scraping the human banner.
-func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Credentials) {
-	host, port := hostPortFromAddr(listenAddr)
-	pageHost := servePublicHost
-	if pageHost == "" {
-		pageHost = host
-	}
-
-	emitBannerLine(netapi.ReadyBanner{
-		Event:           "ready",
-		ProtocolVersion: netapi.ProtocolVersion,
-		URL:             "https://" + net.JoinHostPort(pageHost, strconv.Itoa(port)),
-		Port:            port,
-		Fingerprint:     creds.Fingerprint,
-		Token:           creds.Token,
-		MDNS:            !serveNoMDNS,
-		Tailscale:       serveTailscale,
-		PID:             os.Getpid(),
-		Binds:           allBinds,
-		ClientSetupURL:  serveClientSetupURL,
-		Capabilities:    netapi.Capabilities(),
-	})
-
-	if creds.Pairing != nil {
-		emitBannerLine(netapi.PairingCodeBanner{
-			Event:     "pairing_code",
-			Code:      creds.Pairing.Code,
-			ExpiresAt: creds.Pairing.ExpiresAt.Format(time.RFC3339),
-		})
-	}
-}
-
-// hostPortFromAddr splits a host:port listen address, falling back to the
-// configured serve port when the address carries no parseable port.
-func hostPortFromAddr(addr string) (host string, port int) {
-	port = servePort
-	h, p, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr, port
-	}
-	if n, err := strconv.Atoi(p); err == nil {
-		port = n
-	}
-	return h, port
-}
-
-func emitBannerLine(v any) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: encode serve banner: %v\n", err)
-		return
-	}
-	fmt.Fprintf(serveBannerOut, "%s\n", data)
-}
-
-// serveModelProgress mirrors modelProgress but writes to serveHumanOut so
-// asset-download output never pollutes stdout under --banner-json.
-var serveLastProgressPct int
-
-func serveModelProgress(name string, pct float64) {
-	iPct := int(pct)
-	if pct == 0 {
-		serveLastProgressPct = -1
-		fmt.Fprintf(serveHumanOut, "  Downloading %s...\n", name)
-		return
-	}
-	if iPct != serveLastProgressPct {
-		serveLastProgressPct = iPct
-		fmt.Fprintf(serveHumanOut, "\r  %s: %d%%", name, iPct)
-		if iPct >= 100 {
-			fmt.Fprintln(serveHumanOut)
-		}
-	}
 }
 
 func serveModelName(cfg *config.Config) string {
