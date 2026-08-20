@@ -68,6 +68,8 @@ obey-voice persona show                   # Show the active persona profile
 obey-voice persona use samantha           # Switch active persona (persists)
 obey-voice voices                         # List available Kokoro voices
 obey-voice voices --locale en-US          # Filter voices by locale
+obey-voice voices --json -p qwen3-tts     # Qwen presets from the static catalog (no model load)
+obey-voice voices --json -p qwen3-tts --live  # Ask the installed native package instead (~10s)
 obey-voice providers                      # Show brain, TTS, and STT providers
 obey-voice test                           # Test microphone and speaker
 obey-voice benchmark --prompt "hello"     # Run a local benchmark
@@ -85,6 +87,7 @@ obey-voice library search "cryptography" # Search Calibre library (opt-in)
 obey-voice library show 42               # Show one book's metadata
 obey-voice serve --tailscale              # Remote voice for Tailscale clients
 obey-voice serve --revoke-tokens          # Rotate serve bearer token
+obey-voice serve --log-file serve.log     # Append human/diagnostic output to a file (0600)
 ```
 
 ## TUI controls
