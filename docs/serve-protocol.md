@@ -103,8 +103,9 @@ diagnostics all go to stderr (or to `--log-file`).
 A supervisor that spawns serve on pipes — the macOS app does — may quit while
 serve keeps running so the next launch adopts a warm brain. Its pipes close
 with it, so serve treats a broken stdout/stderr as an ordinary dropped write:
-`SIGPIPE` is ignored for the lifetime of the command, and a write that fails
-with `EPIPE` is discarded rather than retried or logged.
+`SIGPIPE` is delivered to a drain for the lifetime of the command (not
+`SIG_IGN`, which children would inherit), and a write that fails with `EPIPE`
+is discarded rather than retried or logged.
 
 `--log-file <path>` gives that orphan a durable sink:
 
@@ -114,9 +115,10 @@ obey-voice serve --banner-json --tailscale --log-file ~/Library/Logs/obey-voice-
 
 | Behaviour | Detail |
 |-----------|--------|
-| File | Created `0600`, opened append-only, never truncated |
+| File | Created `0600`, and re-`chmod`ed to `0600` if it already existed — it receives the bearer token and the pairing code. Append-only, never truncated |
 | Buffering | None — `tail -f` sees each line as it is written |
-| Contents | Everything human: banner card, download progress, conversation mirror, TTS fallback warnings, the standard logger |
+| Contents | Everything human *and* everything on fd 2: banner card, download progress, conversation mirror, per-turn brain/pipeline diagnostics, the standard logger (including `http.Server` TLS errors), and any child that inherits stderr. serve dups fd 2 onto the file; fd 1 is untouched |
+| Framing | One newline-terminated record per line. No cursor control and no in-place status frames: those are console animation and are dropped for a non-console sink |
 | stdout | Unaffected — still only the `--banner-json` lines |
 
 With the flag absent, output goes where it always did (human on stdout, or on
