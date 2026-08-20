@@ -2,7 +2,7 @@
   "voice_id": "veronica",
   "kind": "voice_design",
   "source": "imagine-clip",
-  "clip": "docs/content/clips/join-obc.mp4",
-  "ref_text": "I'm Veronica. I just joined Obedience Corp. I'll be building the voice you actually talk to.",
+  "clip": "docs/content/clips/human-talk.mp4",
+  "ref_text": "Just like that, feel the rhythm of my voice.",
   "sample_rate": 24000
 }

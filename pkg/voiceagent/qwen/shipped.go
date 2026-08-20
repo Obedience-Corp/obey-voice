@@ -15,10 +15,14 @@ import (
 //go:embed voices/veronica/ref.wav
 var veronicaRefWAV []byte
 
+//go:embed voices/veronicadesk/ref.wav
+var veronicaDeskRefWAV []byte
+
 // ShippedVoice is a packaged clone throat, not a model-native CustomVoice preset.
 // Native qwen3-tts-worker speaks it via ref_wav.
 type ShippedVoice struct {
 	Name        string
+	ID          string
 	Language    string
 	Description string
 	RefText     string
@@ -28,25 +32,52 @@ type ShippedVoice struct {
 var shippedVoices = []ShippedVoice{
 	{
 		Name:        "Veronica",
+		ID:          "veronica",
 		Language:    "English",
-		Description: "Join-clip throat. Human, close, talking to one person.",
-		RefText:     "I'm Veronica. I just joined Obedience Corp. I'll be building the voice you actually talk to.",
+		Description: "Booth throat. Intimate Imagine-clip clone.",
+		RefText:     "Just like that, feel the rhythm of my voice.",
 		wav:         veronicaRefWAV,
+	},
+	{
+		Name:        "VeronicaDesk",
+		ID:          "veronicadesk",
+		Language:    "English",
+		Description: "Desk throat. Join-clip clone, talking to one person.",
+		RefText:     "I'm Veronica. I just joined Obedience Corp. I'll be building the voice you actually talk to.",
+		wav:         veronicaDeskRefWAV,
 	},
 }
 
-// ShippedVoices returns packaged clone throats (currently Veronica).
+// ShippedVoices returns packaged clone throats.
 func ShippedVoices() []ShippedVoice {
 	out := make([]ShippedVoice, len(shippedVoices))
 	copy(out, shippedVoices)
 	return out
 }
 
-// LookupShipped resolves a case-insensitive shipped clone name.
+func (s ShippedVoice) cacheID() string {
+	if id := strings.TrimSpace(s.ID); id != "" {
+		return strings.ToLower(id)
+	}
+	return shippedKey(s.Name)
+}
+
+func shippedKey(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, " ", "")
+	value = strings.ReplaceAll(value, "-", "")
+	value = strings.ReplaceAll(value, "_", "")
+	return value
+}
+
+// LookupShipped resolves a case-insensitive shipped clone name or id.
 func LookupShipped(value string) (ShippedVoice, bool) {
-	value = strings.TrimSpace(value)
+	key := shippedKey(value)
+	if key == "" {
+		return ShippedVoice{}, false
+	}
 	for _, voice := range shippedVoices {
-		if strings.EqualFold(voice.Name, value) {
+		if shippedKey(voice.Name) == key || shippedKey(voice.ID) == key {
 			return voice, true
 		}
 	}
@@ -93,7 +124,7 @@ func MaterializeShipped(ctx context.Context, voice ShippedVoice, modelsDir strin
 		}
 		root = filepath.Join(cache, "obey-voice")
 	}
-	dest := filepath.Join(root, "voices", strings.ToLower(voice.Name), "ref.wav")
+	dest := filepath.Join(root, "voices", voice.cacheID(), "ref.wav")
 	if sameShippedFile(dest, voice.wav) {
 		return dest, nil
 	}
