@@ -94,6 +94,34 @@ LAN mode with a trusted or self-signed cert omits `client_setup_url` entirely:
 A `pairing_code` line (`{"event":"pairing_code","code":"…","expires_at":"…"}`)
 follows whenever serve mints a code.
 
+Nothing else reaches stdout under `--banner-json`: the "Use on another device"
+card, asset-download progress, the conversation mirror, and library
+diagnostics all go to stderr (or to `--log-file`).
+
+### Surviving the parent (`--log-file`)
+
+A supervisor that spawns serve on pipes — the macOS app does — may quit while
+serve keeps running so the next launch adopts a warm brain. Its pipes close
+with it, so serve treats a broken stdout/stderr as an ordinary dropped write:
+`SIGPIPE` is ignored for the lifetime of the command, and a write that fails
+with `EPIPE` is discarded rather than retried or logged.
+
+`--log-file <path>` gives that orphan a durable sink:
+
+```bash
+obey-voice serve --banner-json --tailscale --log-file ~/Library/Logs/obey-voice-serve.log
+```
+
+| Behaviour | Detail |
+|-----------|--------|
+| File | Created `0600`, opened append-only, never truncated |
+| Buffering | None — `tail -f` sees each line as it is written |
+| Contents | Everything human: banner card, download progress, conversation mirror, TTS fallback warnings, the standard logger |
+| stdout | Unaffected — still only the `--banner-json` lines |
+
+With the flag absent, output goes where it always did (human on stdout, or on
+stderr under `--banner-json`; diagnostics on stderr).
+
 ## Auth
 
 | Mechanism | Where |
