@@ -76,6 +76,10 @@ func ttsConfigClaims(cfg *Config, modelsDir string) []assetClaim {
 		// KokoroDir prefers the thewh1teagle v1.0 pack whenever it is present,
 		// and no manifest asset owns it.
 		claims = append(claims, pathClaim(filepath.Join(modelsDir, KokoroV1Subdir), reason+" (v1.0 pack)"))
+		// The v1.0 download cache only exists while that same pack is still
+		// being installed (a successful import deletes it), so it is an
+		// install in progress, not a leftover: clean must not delete it.
+		claims = append(claims, pathClaim(filepath.Join(modelsDir, kokoroV1DownloadsSubdir), reason+" (v1.0 download cache)"))
 	}
 	// An external qwen worker or model tree under the models dir is named by
 	// config alone; qwen.UseManaged treats both as a supported setup.

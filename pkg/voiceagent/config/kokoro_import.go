@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 //go:embed kokoro_import.py
@@ -18,14 +20,42 @@ const (
 	kokoroV1VoicesURL  = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
 	kokoroV1OnnxName   = "kokoro-v1.0.onnx"
 	kokoroV1VoicesName = "voices-v1.0.bin"
+
+	// kokoroV1DownloadsSubdir holds the raw upstream weights between attempts.
+	// A temp stage threw away ~350 MB on every failed convert, so each serve
+	// start downloaded them again.
+	kokoroV1DownloadsSubdir = ".kokoro-v1-downloads"
+
+	// kokoroConverterProbeTimeout bounds the import probe: a wedged
+	// interpreter must not hold up the first Ready.
+	kokoroConverterProbeTimeout = 10 * time.Second
 )
+
+// kokoroImportEnv are the host seams the v1 import depends on — interpreter
+// discovery, the numpy/onnx probe, and the file fetch — injected so tests
+// never depend on the machine's Python or reach the network.
+type kokoroImportEnv struct {
+	lookupPython func() (string, error)
+	probe        func(ctx context.Context, python string) error
+	fetch        func(ctx context.Context, url, dest, name, localPath string, onProgress func(string, float64)) error
+}
+
+func defaultKokoroImportEnv() kokoroImportEnv {
+	return kokoroImportEnv{lookupPython: lookupPython3, probe: probeKokoroConverter, fetch: fetchOrReuse}
+}
 
 // EnsureKokoroV1EnglishPack downloads thewh1teagle Kokoro v1.0 weights and
 // converts them into models_dir/kokoro-v1.0-en for sherpa OfflineTts.
 // Requires python3 with numpy+onnx on PATH. On failure returns a soft error
 // so callers can keep using the multi-lang pack.
 func EnsureKokoroV1EnglishPack(ctx context.Context, onProgress func(name string, pct float64)) error {
-	root := ModelsDir()
+	return ensureKokoroV1EnglishPack(ctx, ModelsDir(), defaultKokoroImportEnv(), onProgress)
+}
+
+// ensureKokoroV1EnglishPack is the root-explicit core: it verifies the
+// converter can actually run before fetching anything, then keeps the weights
+// under root so a retry resumes instead of re-downloading.
+func ensureKokoroV1EnglishPack(ctx context.Context, root string, env kokoroImportEnv, onProgress func(name string, pct float64)) error {
 	outDir := filepath.Join(root, KokoroV1Subdir)
 	if kokoroPackReady(outDir) {
 		return nil
@@ -36,26 +66,36 @@ func EnsureKokoroV1EnglishPack(ctx context.Context, onProgress func(name string,
 		return fmt.Errorf("kokoro v1 import needs multi-lang frontend files (tokens.txt, espeak-ng-data) in %s", root)
 	}
 
-	python, err := lookupPython3()
+	python, err := kokoroConverterAvailable(ctx, env)
 	if err != nil {
 		return err
 	}
 
-	stage, err := os.MkdirTemp(root, ".kokoro-v1-stage-*")
-	if err != nil {
+	stage := filepath.Join(root, kokoroV1DownloadsSubdir)
+	if err := os.MkdirAll(stage, 0o755); err != nil {
 		return fmt.Errorf("kokoro v1 stage: %w", err)
 	}
-	defer os.RemoveAll(stage)
 
 	onnxPath := filepath.Join(stage, kokoroV1OnnxName)
 	voicesPath := filepath.Join(stage, kokoroV1VoicesName)
-	if err := fetchOrReuse(ctx, kokoroV1OnnxURL, onnxPath, kokoroV1OnnxName, localKokoroV1Onnx(), onProgress); err != nil {
+	if err := env.fetch(ctx, kokoroV1OnnxURL, onnxPath, kokoroV1OnnxName, localKokoroV1Onnx(), onProgress); err != nil {
 		return err
 	}
-	if err := fetchOrReuse(ctx, kokoroV1VoicesURL, voicesPath, kokoroV1VoicesName, localKokoroV1Voices(), onProgress); err != nil {
+	if err := env.fetch(ctx, kokoroV1VoicesURL, voicesPath, kokoroV1VoicesName, localKokoroV1Voices(), onProgress); err != nil {
 		return err
 	}
 
+	if err := convertKokoroV1(ctx, python, root, stage, outDir); err != nil {
+		return err
+	}
+	// The weights have served their purpose only once the pack exists.
+	_ = os.RemoveAll(stage)
+	return nil
+}
+
+// convertKokoroV1 runs the Python converter into a temp dir and swaps the
+// result into outDir.
+func convertKokoroV1(ctx context.Context, python, root, stage, outDir string) error {
 	script := filepath.Join(stage, "kokoro_import.py")
 	if err := os.WriteFile(script, kokoroImportPy, 0o644); err != nil {
 		return err
@@ -68,8 +108,8 @@ func EnsureKokoroV1EnglishPack(ctx context.Context, onProgress func(name string,
 	defer os.RemoveAll(outTmp)
 
 	cmd := exec.CommandContext(ctx, python, script,
-		"--onnx", onnxPath,
-		"--voices-npz", voicesPath,
+		"--onnx", filepath.Join(stage, kokoroV1OnnxName),
+		"--voices-npz", filepath.Join(stage, kokoroV1VoicesName),
 		"--frontend-dir", root,
 		"--out-dir", outTmp,
 	)
@@ -88,6 +128,48 @@ func EnsureKokoroV1EnglishPack(ctx context.Context, onProgress func(name string,
 		}
 	}
 	return nil
+}
+
+// kokoroConverterAvailable resolves an interpreter that can actually run the
+// converter. It runs before any download: without numpy+onnx the conversion
+// always fails, and every serve start would fetch ~350 MB only to discard it.
+func kokoroConverterAvailable(ctx context.Context, env kokoroImportEnv) (string, error) {
+	python, err := env.lookupPython()
+	if err != nil {
+		return "", err
+	}
+	if err := env.probe(ctx, python); err != nil {
+		return "", err
+	}
+	return python, nil
+}
+
+// probeKokoroConverter checks that python can import the converter's modules,
+// naming the missing one and how to install it.
+func probeKokoroConverter(ctx context.Context, python string) error {
+	ctx, cancel := context.WithTimeout(ctx, kokoroConverterProbeTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, python, "-c", "import numpy, onnx").CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	detail := lastLine(string(out))
+	if detail == "" {
+		detail = err.Error()
+	}
+	return fmt.Errorf("python3 with numpy+onnx not available (%s: %s); install with: pip3 install numpy onnx", python, detail)
+}
+
+// lastLine returns the final non-empty line of s, the one a Python traceback
+// puts the ModuleNotFoundError on.
+func lastLine(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 func copyDir(src, dst string) error {
@@ -129,28 +211,44 @@ func localKokoroV1Voices() string {
 	return filepath.Join(DefaultModelsDir(), kokoroV1VoicesName)
 }
 
-// fetchOrReuse copies localPath when present, otherwise downloads url to dest.
+// fetchOrReuse reuses an earlier download at dest, then a cached localPath,
+// and only downloads url as a last resort. downloadFile writes to a ".part"
+// temp and renames, so anything sitting at dest is a finished file.
 func fetchOrReuse(ctx context.Context, url, dest, name, localPath string, onProgress func(string, float64)) error {
-	if localPath != "" {
-		if st, err := os.Stat(localPath); err == nil && st.Size() > 0 {
-			data, err := os.ReadFile(localPath)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(dest, data, 0o644); err != nil {
-				return err
-			}
-			if onProgress != nil {
-				onProgress(name, 1)
-			}
-			return nil
+	if completeFile(dest) {
+		if onProgress != nil {
+			onProgress(name, 1)
 		}
+		return nil
+	}
+	if completeFile(localPath) {
+		data, err := os.ReadFile(localPath)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(dest, data, 0o644); err != nil {
+			return err
+		}
+		if onProgress != nil {
+			onProgress(name, 1)
+		}
+		return nil
 	}
 	var fileProg func(bytes, total int64)
 	if onProgress != nil {
 		fileProg = func(bytes, total int64) { onProgress(name, pctOfBytes(bytes, total)) }
 	}
 	return downloadFile(ctx, dest, url, name, 0, "", fileProg)
+}
+
+// completeFile reports whether path is a finished, reusable download. A
+// ".part" file is an interrupted transfer and is never reused.
+func completeFile(path string) bool {
+	if path == "" || strings.HasSuffix(path, ".part") {
+		return false
+	}
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir() && st.Size() > 0
 }
 
 // TryEnsureKokoroV1EnglishPack attempts the import and prints a warning on
@@ -161,7 +259,7 @@ func TryEnsureKokoroV1EnglishPack(ctx context.Context, onProgress func(name stri
 	}
 	if err := EnsureKokoroV1EnglishPack(ctx, onProgress); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: Kokoro v1.0 English pack not installed: %v\n", err)
-		fmt.Fprintf(os.Stderr, "  (using sherpa multi-lang pack; for Python-matching weights install python3+numpy+onnx and re-run models ensure)\n")
+		fmt.Fprintf(os.Stderr, "  (using sherpa multi-lang pack; re-run `obey-voice models ensure` once it is available)\n")
 		return
 	}
 	fmt.Fprintf(os.Stderr, "Kokoro pack: thewh1teagle v1.0 English (matches Python samantha-cli weights)\n")
