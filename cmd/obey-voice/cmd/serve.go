@@ -552,7 +552,7 @@ func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
 		nextTTS.Close()
 		return netapi.PersonaAck{}, fmt.Errorf("save previous persona session: %w", err)
 	}
-	if !s.tts.Install(s.pipeline, nextTTS) {
+	if !s.tts.ReplaceAndClose(s.pipeline, nextTTS) {
 		nextTTS.Close()
 		return netapi.PersonaAck{}, errors.New("serve runtime is shutting down")
 	}
