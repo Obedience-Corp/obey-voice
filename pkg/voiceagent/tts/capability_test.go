@@ -162,6 +162,47 @@ func TestValidateRequestCoversEveryAdvertisedVoiceMode(t *testing.T) {
 	}
 }
 
+func TestValidateRequestTakesReferenceAudioWhenTheProviderAdvertisesIt(t *testing.T) {
+	// The native worker speaks a shipped clone through ref_wav on a preset-mode
+	// request; the mode does not require reference audio, the provider accepts it.
+	withReference := ProviderCapabilities{
+		Provider:               "fake-qwen",
+		SampleRates:            []int{24000},
+		SupportsReferenceAudio: true,
+		Modes:                  []VoiceModeCapability{{ID: VoiceModeCustomVoice, Voices: []Voice{{Name: "Vivian"}}}},
+	}
+	withoutReference := withReference
+	withoutReference.SupportsReferenceAudio = false
+	clone := SynthesisRequest{Text: "hello", Mode: VoiceModeCustomVoice, ReferenceAudio: "/private/ref.wav", ReferenceTranscript: "hello"}
+	preset := SynthesisRequest{Text: "hello", Mode: VoiceModeCustomVoice, Voice: "Vivian"}
+
+	tests := []struct {
+		name    string
+		caps    ProviderCapabilities
+		req     SynthesisRequest
+		wantErr bool
+	}{
+		{name: "provider without reference audio rejects a clone", caps: withoutReference, req: clone, wantErr: true},
+		{name: "provider with reference audio takes a clone", caps: withReference, req: clone},
+		{name: "preset still passes either way", caps: withoutReference, req: preset},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRequest(tt.caps, tt.req)
+			if tt.wantErr {
+				var perr *ProviderError
+				if !errors.As(err, &perr) || perr.Kind != ProviderErrorInput {
+					t.Fatalf("ValidateRequest() error = %v, want unsupported", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateRequest() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateRequestRejectsUnsupportedCombinations(t *testing.T) {
 	capabilities := ProviderCapabilities{
 		Provider:    "fake-qwen",
