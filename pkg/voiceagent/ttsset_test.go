@@ -139,3 +139,21 @@ func TestLiveTTSManagerCloseAbortsRetire(t *testing.T) {
 		t.Fatal("Install after Close must fail")
 	}
 }
+
+func TestLiveTTSManagerReplaceAndCloseIgnoresDrain(t *testing.T) {
+	p := &pipeline.Pipeline{}
+	m := &LiveTTSManager{RetireDelay: time.Hour}
+	t.Cleanup(m.Close)
+
+	var closed atomic.Bool
+	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
+	if !m.Adopt(first) {
+		t.Fatal("Adopt initial set")
+	}
+	if !m.ReplaceAndClose(p, &TTSSet{}) {
+		t.Fatal("ReplaceAndClose")
+	}
+	if !closed.Load() {
+		t.Fatal("persona-switch path left the previous worker loaded")
+	}
+}

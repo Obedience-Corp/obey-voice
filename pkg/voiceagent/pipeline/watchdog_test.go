@@ -37,11 +37,13 @@ func TestStallTimeoutHonorsQwenFirstAudioGrace(t *testing.T) {
 		t.Fatalf("stallTimeout() = %v, want default %v without grace", got, defaultPlaybackStallTimeout)
 	}
 
-	// A Kokoro primary with a Qwen fallback still needs Qwen's budget: a
-	// reload can swap the labels without the worker getting faster.
+	// A Kokoro primary must not inherit a Qwen fallback's budget. That
+	// configuration is what NewTTSSet actually builds (qwen + kokoro
+	// fallback); waiting 90s for a Kokoro stall is a hung turn, not a slow
+	// synth.
 	p = &Pipeline{TTS: &fakeTTS{}, TTSFallback: graceful}
-	if got := p.stallTimeout(); got != 90*time.Second {
-		t.Fatalf("stallTimeout() = %v, want fallback FirstAudioGrace 90s", got)
+	if got := p.stallTimeout(); got != defaultPlaybackStallTimeout {
+		t.Fatalf("stallTimeout() = %v, want default %v with Kokoro primary", got, defaultPlaybackStallTimeout)
 	}
 }
 

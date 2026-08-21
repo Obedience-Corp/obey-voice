@@ -60,17 +60,20 @@ func (s *TTSSet) Close() {
 }
 
 // defaultTTSRetireDelay is how long a replaced TTS set stays loaded so an
-// utterance already handed to it can finish. The 1.7b native worker's warm
-// time-to-first-audio is 12–31s in the field; 45s covers that plus playback
-// drain without stacking workers across persona / Settings reloads.
-const defaultTTSRetireDelay = 45 * time.Second
+// utterance already handed to it can finish. It matches the native worker's
+// per-request timeout (qwen_tts_timeout default 120s): Settings → ReloadVoice
+// can land mid-turn, and a 45s drain would kill a synth still inside its
+// advertised budget.
+const defaultTTSRetireDelay = 120 * time.Second
 
 // LiveTTSManager owns the live TTS set and any set it just replaced.
 //
-// Install swaps the pipeline onto the new set immediately. The previous set
-// is closed after RetireDelay so a turn already synthesizing on the old
-// worker can finish; without that drain, every voice or persona change
-// leaked another qwen3-tts-worker (4 GB for the 1.7b tier) until serve exited.
+// Install swaps the pipeline onto the new set immediately and closes the
+// previous set after RetireDelay so a turn already synthesizing can finish
+// (Settings → ReloadVoice can land mid-turn). ReplaceAndClose is the
+// after-turn path (persona switch): no drain. Without either, every voice
+// change leaked another qwen3-tts-worker (4 GB for the 1.7b tier) until
+// serve exited.
 type LiveTTSManager struct {
 	mu sync.Mutex
 	// RetireDelay is how long a replaced set stays loaded. Zero uses
@@ -120,6 +123,18 @@ func (m *LiveTTSManager) Adopt(set *TTSSet) bool {
 }
 
 func (m *LiveTTSManager) Install(p *pipeline.Pipeline, set *TTSSet) bool {
+	return m.swap(p, set, m.retireDelay())
+}
+
+// ReplaceAndClose swaps the pipeline onto set and closes the previous set
+// immediately. Serve's persona switch runs after the current turn has
+// finished, so there is no in-flight utterance to drain — holding a 4 GB
+// 1.7b worker for the ReloadVoice delay would be a leak with a timer.
+func (m *LiveTTSManager) ReplaceAndClose(p *pipeline.Pipeline, set *TTSSet) bool {
+	return m.swap(p, set, 0)
+}
+
+func (m *LiveTTSManager) swap(p *pipeline.Pipeline, set *TTSSet, delay time.Duration) bool {
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -130,7 +145,6 @@ func (m *LiveTTSManager) Install(p *pipeline.Pipeline, set *TTSSet) bool {
 	m.sets = []*TTSSet{set}
 	m.retiring = append(m.retiring, retired...)
 	p.ReplaceTTS(set.Primary, set.Fallback)
-	delay := m.retireDelay()
 	done := m.done
 	m.mu.Unlock()
 
@@ -159,9 +173,9 @@ func (m *LiveTTSManager) finishRetire(sets []*TTSSet) {
 		m.mu.Unlock()
 		return
 	}
-	m.retiring = dropSets(m.retiring, sets)
+	owned := takeSets(&m.retiring, sets)
 	m.mu.Unlock()
-	closeTTSSets(sets)
+	closeTTSSets(owned)
 }
 
 func (m *LiveTTSManager) Close() {
@@ -186,19 +200,23 @@ func closeTTSSets(sets []*TTSSet) {
 	}
 }
 
-func dropSets(from, drop []*TTSSet) []*TTSSet {
-	if len(from) == 0 || len(drop) == 0 {
-		return from
+func takeSets(from *[]*TTSSet, want []*TTSSet) []*TTSSet {
+	if from == nil || len(*from) == 0 || len(want) == 0 {
+		return nil
 	}
-	remove := make(map[*TTSSet]struct{}, len(drop))
-	for _, s := range drop {
-		remove[s] = struct{}{}
+	claim := make(map[*TTSSet]struct{}, len(want))
+	for _, s := range want {
+		claim[s] = struct{}{}
 	}
-	kept := make([]*TTSSet, 0, len(from))
-	for _, s := range from {
-		if _, drop := remove[s]; !drop {
-			kept = append(kept, s)
+	taken := make([]*TTSSet, 0, len(want))
+	kept := make([]*TTSSet, 0, len(*from))
+	for _, s := range *from {
+		if _, ok := claim[s]; ok {
+			taken = append(taken, s)
+			continue
 		}
+		kept = append(kept, s)
 	}
-	return kept
+	*from = kept
+	return taken
 }
