@@ -254,6 +254,11 @@ func TestQwenFirstAudioGraceMatchesSynthTimeout(t *testing.T) {
 	if got := qn.FirstAudioGrace(); got != wantNative {
 		t.Fatalf("native FirstAudioGrace() = %v, want %v", got, wantNative)
 	}
+	qn.modelTier = "1.7b"
+	want17b := native17bWarmTTP95 + nativeColdReadyP95
+	if got := qn.FirstAudioGrace(); got != want17b {
+		t.Fatalf("native 1.7b FirstAudioGrace() = %v, want %v", got, want17b)
+	}
 	// Compile-time check: pipeline stallTimeout type-asserts this interface.
 	var _ FirstAudioGracer = (*Qwen3TTS)(nil)
 }

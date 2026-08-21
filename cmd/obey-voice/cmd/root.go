@@ -219,8 +219,10 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if err != nil {
 			return nil, fmt.Errorf("transcript log: %w", err)
 		}
-		p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice)
+		liveTTS := &voiceagent.LiveTTSManager{}
+		p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, liveTTS)
 		if err != nil {
+			liveTTS.Close()
 			closeTap()
 			return nil, fmt.Errorf("init pipeline: %w", err)
 		}
@@ -235,6 +237,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if sessionID != "" && (sess == nil || sess.ID != sessionID) {
 			sess, err = session.Load(sessionID)
 			if err != nil {
+				liveTTS.Close()
 				cleanup()
 				closeTap()
 				return nil, fmt.Errorf("load session: %w", err)
@@ -255,7 +258,6 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if liveDetail != "" {
 			bus.Emit(events.Info{Message: liveDetail})
 		}
-		liveTTS := &voiceagent.LiveTTSManager{}
 
 		// Session-local rename table: UI bubbles + model prompt attribution.
 		speakerNames := speaker.NewNameMap()
@@ -413,7 +415,7 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 	defer closeTap()
 	display := ui.New(bus, cfg.AgentName)
 
-	p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice)
+	p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, nil)
 	if err != nil {
 		return fmt.Errorf("init pipeline: %w", err)
 	}
@@ -463,12 +465,13 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 // CLI exercises exactly the surface an embedder gets. If something the CLI needs
 // cannot be expressed as voiceagent.Options, that is the library's problem to
 // fix, not the CLI's to work around.
-func buildPipeline(ctx context.Context, cfg *config.Config, bus *events.Bus, text, silent bool) (*pipeline.Pipeline, func(), error) {
+func buildPipeline(ctx context.Context, cfg *config.Config, bus *events.Bus, text, silent bool, liveTTS *voiceagent.LiveTTSManager) (*pipeline.Pipeline, func(), error) {
 	agent, cleanup, err := voiceagent.New(ctx, voiceagent.Options{
 		Config:   cfg,
 		Events:   bus,
 		TextOnly: text,
 		Silent:   silent,
+		LiveTTS:  liveTTS,
 		Logf:     func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
 	})
 	if err != nil {

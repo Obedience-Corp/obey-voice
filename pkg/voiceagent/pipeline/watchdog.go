@@ -37,19 +37,31 @@ func (p *Pipeline) stallTimeout() time.Duration {
 	return defaultPlaybackStallTimeout
 }
 
-// ttsFirstAudioGrace returns the primary TTS provider's FirstAudioGrace when
-// it implements tts.FirstAudioGracer; zero otherwise.
+// ttsFirstAudioGrace is the longest FirstAudioGrace of the primary or
+// fallback provider. A Settings reload or persona switch can leave Kokoro as
+// primary for one turn while Qwen is still the fallback (or the other way
+// around); taking only the primary is how a 1.7b utterance that needs 12–31s
+// got recovered at the 8s default.
 func (p *Pipeline) ttsFirstAudioGrace() time.Duration {
 	if p == nil {
 		return 0
 	}
-	primary, _ := p.ttsProviders()
-	if g, ok := primary.(tts.FirstAudioGracer); ok {
-		if d := g.FirstAudioGrace(); d > 0 {
-			return d
+	primary, fallback := p.ttsProviders()
+	return maxFirstAudioGrace(primary, fallback)
+}
+
+func maxFirstAudioGrace(providers ...tts.Provider) time.Duration {
+	var best time.Duration
+	for _, prov := range providers {
+		g, ok := prov.(tts.FirstAudioGracer)
+		if !ok {
+			continue
+		}
+		if d := g.FirstAudioGrace(); d > best {
+			best = d
 		}
 	}
-	return 0
+	return best
 }
 
 // stallHint names the knob that widens the budget, but only when the budget

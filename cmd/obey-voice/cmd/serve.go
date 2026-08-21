@@ -579,8 +579,8 @@ func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
 // swaps are passed IN rather than assigned onto the pipeline afterwards.
 //
 // Serve builds its override providers first, so their cleanup stays here. The
-// live manager owns later persona TTS replacements, while the initial set is
-// retained until shutdown as required for any already-started utterance.
+// live manager owns the initial TTS set and later persona replacements; a
+// replaced worker is closed after a drain so in-flight audio can finish.
 func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus, muteHost, remoteMic bool) (*pipeline.Pipeline, *netapi.AudioFanout, *audio.Ingress, *voiceagent.LiveTTSManager, func(), error) {
 	var cleanups []func()
 	cleanup := func() {
@@ -597,8 +597,11 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 	if err != nil {
 		return fail(fmt.Errorf("init TTS: %w", err))
 	}
-	cleanups = append(cleanups, ttsSet.Close)
 	liveTTS := &voiceagent.LiveTTSManager{}
+	if !liveTTS.Adopt(ttsSet) {
+		ttsSet.Close()
+		return fail(fmt.Errorf("init TTS: conversation is shutting down"))
+	}
 	cleanups = append(cleanups, liveTTS.Close)
 	if ttsSet.FallbackWarning != nil {
 		fmt.Fprintf(serveDiagOut, "warning: %v\n", ttsSet.FallbackWarning)
