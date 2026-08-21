@@ -82,7 +82,7 @@ bound:
 | `mdns` / `tailscale` | Discovery + network mode |
 | `pid` | Serve process id |
 | `binds` | Every bound `host:port`, **primary first**. Always present. Dial the loopback entry when one exists rather than resolving `url` |
-| `work_dir` | Directory the agent's file and shell tools start in (`work_dir` setting or `--work-dir`). A **default, not a sandbox**: a tool may still use an absolute path outside it. Omitted when serve resolved none |
+| `work_dir` | Directory the agent's file and shell tools start in (`work_dir` setting or `--work-dir`). Always present and never empty — `GET /v1/status` reports the same value. A **default, not a sandbox**: a tool may still use an absolute path outside it |
 | `client_setup_url` | Present **only** in limited client access. Its presence means limited; its absence means full |
 | `capabilities` | Additive `/v1/stream` contract flags (see below). Absent on older serves — treat a missing key as `false` |
 

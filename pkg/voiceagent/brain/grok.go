@@ -93,7 +93,7 @@ func (g *GrokBrain) Available() bool {
 // assembleSystem builds Grok's system prompt through the shared policy, so it
 // receives the same machine grounding every other provider does.
 func (g *GrokBrain) assembleSystem(persona string) string {
-	workDir := config.WorkDirFrom(g.cfg, "")
+	workDir := config.WorkDirFrom(g.cfg)
 	return AssembleSystemPrompt(SystemPromptInput{
 		Provider: providerGrok,
 		Persona:  persona,
@@ -287,6 +287,10 @@ func (g *GrokBrain) runOptions(format grok.OutputFormat, toolsEnabled bool) *gro
 	opts := &grok.RunOptions{
 		Format:               format,
 		SystemPromptOverride: g.systemPrompt,
+		// Same reason as Claude: the grok CLI runs its own tools, so the
+		// working directory must reach the subprocess (--cwd), not just the
+		// prompt text.
+		WorkingDirectory: config.WorkDirFrom(g.cfg),
 		// Empty until the first turn captures a session; once set, the SDK
 		// emits --resume so the CLI owns history server-side. The system
 		// prompt is still passed on resume (harmless; dropping flattened

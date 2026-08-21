@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -128,13 +127,21 @@ remote_tools_enabled is set.`,
 			}
 			cfg = binding.Config()
 		}
-		// The agent's tools operate here. Resolved after configureServeStdio
-		// so a relative --log-file stays relative to the caller, and stamped
-		// onto the config so cfg and the process cwd cannot disagree.
-		wd := config.WorkDirFrom(cfg, serveWorkDir)
-		if err := os.Chdir(wd); err != nil {
-			return fmt.Errorf("enter work dir %s: %w", wd, err)
+		// The agent's tools operate here. An explicit --work-dir that does not
+		// exist is an error, not a silent fall back to home. Resolved after
+		// configureServeStdio, which has already opened a relative --log-file
+		// against the caller's cwd.
+		wd, err := config.ResolveWorkDir(cfg, serveWorkDir)
+		if err != nil {
+			return err
 		}
+		// The TLS material is read inside runServe, after the chdir.
+		absPathFlag(&serveTLSCert)
+		absPathFlag(&serveTLSKey)
+		if err := enterWorkDir(wd); err != nil {
+			return err
+		}
+		// Stamped onto the config so cfg and the process cwd cannot disagree.
 		cfg.WorkDir = wd
 		serveWorkDirResolved = wd
 		return runServe(cfg)

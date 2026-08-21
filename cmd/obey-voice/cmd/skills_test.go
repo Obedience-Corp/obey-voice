@@ -393,6 +393,27 @@ func runSkillsList(t *testing.T, cfg *config.Config, workDir string) skillsListE
 	return env
 }
 
+// An explicit --work-dir that does not exist must fail loudly rather than
+// quietly listing the roots under some other directory.
+func TestSkillsListRejectsAMissingWorkDirFlag(t *testing.T) {
+	cfg := &config.Config{SkillsEnabled: true, BrainProvider: "ollama"}
+	missing := filepath.Join(t.TempDir(), "projct")
+
+	cmd := newSkillsCmd(skillsTestConfig(cfg))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"list", "--json", "--work-dir", missing})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("skills list --work-dir %s succeeded, want an error", missing)
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error %q does not name %q", err, missing)
+	}
+}
+
 // Without --work-dir the roots follow work_dir, not the process cwd. This is
 // the bug the flag was a workaround for: a serve spawned by the Mac app looked
 // for skills next to the binary.

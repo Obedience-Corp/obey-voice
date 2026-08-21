@@ -63,7 +63,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 			diags = append(diags, Diagnostic{
 				Name:        "work-dir",
 				Severity:    SeverityWarn,
-				Detail:      fmt.Sprintf("work_dir %q is not an existing directory — the agent falls back to %s", dir, WorkDirFrom(cfg, "")),
+				Detail:      fmt.Sprintf("work_dir %q is not an existing directory — the agent falls back to %s", dir, WorkDirFrom(cfg)),
 				Remediation: "point work_dir at a folder that exists, or clear it to use the directory Obey Voice was launched from",
 			})
 		}

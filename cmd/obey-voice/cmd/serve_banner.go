@@ -150,7 +150,7 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 		Tailscale:       serveTailscale,
 		PID:             os.Getpid(),
 		Binds:           allBinds,
-		WorkDir:         serveWorkDirResolved,
+		WorkDir:         serveBannerWorkDir(),
 		ClientSetupURL:  serveClientSetupURL,
 		Capabilities:    netapi.Capabilities(),
 	})

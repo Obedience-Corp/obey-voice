@@ -103,7 +103,10 @@ else.`,
 			if err != nil {
 				return err
 			}
-			workDir = config.WorkDirFrom(cfg, workDir)
+			workDir, err = config.ResolveWorkDir(cfg, workDir)
+			if err != nil {
+				return err
+			}
 
 			configured := cfg.SkillsDir
 			if configured == "" {
@@ -250,7 +253,7 @@ func runSkillsToggle(cmd *cobra.Command, loadConfig configLoader, name string, d
 	if err != nil {
 		return err
 	}
-	workDir := config.WorkDirFrom(cfg, "")
+	workDir := config.WorkDirFrom(cfg)
 	configured := cfg.SkillsDir
 	if configured == "" {
 		configured = config.SkillsDir()

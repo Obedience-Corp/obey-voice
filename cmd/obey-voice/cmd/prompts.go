@@ -116,7 +116,7 @@ var promptsShowCmd = &cobra.Command{
 			if kind != prompts.KindPersona {
 				return fmt.Errorf("--provider applies to the persona prompt (got kind %q)", kind)
 			}
-			workDir := config.WorkDirFrom(cfg, "")
+			workDir := config.WorkDirFrom(cfg)
 			catalog, _ := brain.SkillsCatalogFor(cmd.Context(), cfg, workDir)
 			turn, turnErr := brain.TurnInstructionFor(cfg)
 			if turnErr != nil {

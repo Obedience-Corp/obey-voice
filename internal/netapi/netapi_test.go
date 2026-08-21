@@ -621,6 +621,7 @@ func TestBannerEventsMarshalToSingleLine(t *testing.T) {
 				"mdns":             true,
 				"tailscale":        false,
 				"pid":              float64(4242),
+				"work_dir":         "",
 			},
 		},
 		{

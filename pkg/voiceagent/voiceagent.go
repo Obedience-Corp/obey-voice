@@ -97,11 +97,18 @@ type Options struct {
 	// builds from Config — rejected with an injected Brain.
 	PromptsDir string
 
-	// WorkDir is the directory the agent's file and shell tools start in.
-	// Empty falls back to the configured work_dir, then the process cwd, so an
-	// embedder never has to chdir the host to point the agent at a workspace.
-	// Only reaches a brain New builds from Config — rejected with an injected
-	// Brain.
+	// WorkDir is the directory the agent's file and shell tools start in, so an
+	// embedder points the agent at a workspace without chdir'ing its host.
+	// Empty falls back to the configured work_dir, then the process cwd.
+	//
+	// It reaches the tools of every provider: ollama runs them in-process and
+	// resolves paths against this directory, while claude and grok receive it
+	// as the cwd of the CLI subprocess that runs their own. All three are also
+	// told about it in the system prompt's grounding block.
+	//
+	// A default, not a sandbox: a tool may still use an absolute path outside
+	// it. Only reaches a brain New builds from Config — rejected with an
+	// injected Brain.
 	WorkDir string
 
 	// Logf receives non-fatal setup diagnostics — a configured TTS fallback that
