@@ -4,9 +4,34 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
+
+var brokenPipeOnce sync.Once
+
+// dropBrokenPipeSignals makes a write to a closed stdout or stderr return
+// EPIPE instead of killing the process, which is what lets an orphaned serve
+// outlive the app that spawned it.
+//
+// Notify with a drain, not signal.Ignore: Ignore installs SIG_IGN, and SIG_IGN
+// is inherited across exec. serve spawns children that must keep the default
+// disposition — native TTS/STT workers, the brain CLI, and tool shells where a
+// `cmd | head` has to end when head exits. Notify changes only this process.
+//
+// Installed once and never removed: it is a property of a serve process, and
+// nothing may write to a closed pipe in the window a removal would open.
+func dropBrokenPipeSignals() {
+	brokenPipeOnce.Do(func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGPIPE)
+		go func() {
+			for range ch { // a broken pipe is a dropped write, nothing more
+			}
+		}()
+	})
+}
 
 // forceQuitTimeout caps how long graceful shutdown may run after the first
 // interrupt before the process force-exits.

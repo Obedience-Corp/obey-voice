@@ -10,16 +10,20 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/internal/ui"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // stdioChildEnv re-enters this test binary as the process under test: only a
@@ -29,7 +33,8 @@ const stdioChildEnv = "OBEY_VOICE_TEST_STDIO_MODE"
 // TestServeStdioClosedStdout is the defect: the macOS app spawns serve with
 // pipes, quits, and the orphan it deliberately left running dies on its next
 // write to a closed fd 1. The "raw" row is that behaviour; the "serve" row is
-// the fix.
+// the fix, and it proves Notify + drain gives the same survival as SIG_IGN
+// without changing what serve's children inherit.
 func TestServeStdioClosedStdout(t *testing.T) {
 	if mode := os.Getenv(stdioChildEnv); mode != "" {
 		writeUntilBrokenPipe(mode)
@@ -47,7 +52,7 @@ func TestServeStdioClosedStdout(t *testing.T) {
 			wantSignal: syscall.SIGPIPE,
 		},
 		{
-			name:       "serve ignores SIGPIPE and survives",
+			name:       "the serve guard turns it into a dropped write",
 			mode:       "serve",
 			wantSignal: 0,
 		},
@@ -169,7 +174,9 @@ func TestConfigureServeStdioLogFile(t *testing.T) {
 
 	t.Run("human and diagnostic output land in the file", func(t *testing.T) {
 		path := filepath.Join(dir, "serve.log")
-		if err := os.WriteFile(path, []byte("earlier run\n"), 0o600); err != nil {
+		// Seeded world-readable: O_CREATE's mode applies only on creation, and
+		// this file receives the bearer token and the pairing code.
+		if err := os.WriteFile(path, []byte("earlier run\n"), 0o644); err != nil {
 			t.Fatalf("seed log: %v", err)
 		}
 		withServeLogFile(t, path)
@@ -186,6 +193,12 @@ func TestConfigureServeStdioLogFile(t *testing.T) {
 		}
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("human line"))
 		fmt.Fprintln(serveDiagOut, "diagnostic line")
+		// The per-turn diagnostics this file exists to preserve — brain,
+		// pipeline, meeting handlers — hardcode os.Stderr and never see a
+		// package variable, so fd 2 itself has to follow. The assertion writes
+		// to the descriptor rather than to os.Stderr because the test harness
+		// substitutes that variable; in a real serve they are the same file.
+		fmt.Fprintln(rawStderr(), "raw stderr line")
 		restore()
 
 		if got := lipgloss.ColorProfile(); got != termenv.ANSI256 {
@@ -196,7 +209,7 @@ func TestConfigureServeStdioLogFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read log: %v", err)
 		}
-		for _, want := range []string{"earlier run", "human line", "diagnostic line"} {
+		for _, want := range []string{"earlier run", "human line", "diagnostic line", "raw stderr line"} {
 			if !strings.Contains(string(data), want) {
 				t.Errorf("log = %q, missing %q (the file is appended, never truncated)", data, want)
 			}
@@ -285,4 +298,101 @@ func withServeLogFile(t *testing.T, path string) {
 	orig := serveLogFile
 	serveLogFile = path
 	t.Cleanup(func() { serveLogFile = orig })
+}
+
+// The guard must not reach the children serve spawns: SIG_IGN is inherited
+// across exec, and a tool shell's `cmd | head` has to still end when head does.
+func TestBrokenPipeGuardLeavesChildrenAlone(t *testing.T) {
+	dropBrokenPipeSignals()
+	if signal.Ignored(syscall.SIGPIPE) {
+		t.Fatal("SIGPIPE is SIG_IGN; children inherit that disposition, so the guard must use Notify + drain")
+	}
+}
+
+// The log is what someone tails when a turn goes wrong, so it has to be
+// line-oriented: the conversation mirror writes cursor control and
+// carriage-return frames on a console, and none of that may reach a file.
+func TestServeLogFileIsLineOrientedForUIEvents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "serve.log")
+	withServeLogFile(t, path)
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+
+	restore, err := configureServeStdio()
+	if err != nil {
+		t.Fatalf("configureServeStdio() error = %v", err)
+	}
+	bus := events.NewBus()
+	ui.NewWithOutput(bus, "Samantha", serveHumanOut)
+	for _, event := range []events.Event{
+		events.STTPhase{Phase: "listening"},
+		events.TranscriptPartial{Text: "what is the"},
+		events.STTPhase{Phase: "transcribing"},
+		events.UserInput{Text: "what is the build status"},
+		events.ThinkingStarted{},
+		events.ThinkingComplete{Elapsed: 1200 * time.Millisecond},
+		events.GeneratingVoice{},
+		events.ResponseReady{Response: "Green on main."},
+		events.Error{Stage: "brain", Message: "context deadline exceeded"},
+	} {
+		bus.Emit(event)
+	}
+	serveModelProgress("Kokoro", 50)
+	restore()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if strings.ContainsRune(string(data), 0x1b) {
+		t.Errorf("log contains an escape sequence: %q", data)
+	}
+	if strings.ContainsRune(string(data), '\r') {
+		t.Errorf("log contains a carriage return: %q", data)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Errorf("log = %q, want every record newline-terminated", data)
+	}
+	for _, want := range []string{"what is the build status", "Green on main.", "context deadline exceeded", "Kokoro: 50%"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("log = %q, missing %q", data, want)
+		}
+	}
+	// Transient frames are animation, not records: they must not accumulate.
+	for _, unwanted := range []string{"Listening", "Transcribing", "thinking", "Synthesizing", "You (partial)"} {
+		if strings.Contains(string(data), unwanted) {
+			t.Errorf("log = %q, want no transient frame %q", data, unwanted)
+		}
+	}
+}
+
+// A redirected fd 2 has to be handed back, or every later test in this binary
+// writes into a temp file.
+func TestConfigureServeStdioRestoresStderr(t *testing.T) {
+	before, err := os.Stderr.Stat()
+	if err != nil {
+		t.Fatalf("stat stderr: %v", err)
+	}
+	withServeLogFile(t, filepath.Join(t.TempDir(), "serve.log"))
+
+	restore, err := configureServeStdio()
+	if err != nil {
+		t.Fatalf("configureServeStdio() error = %v", err)
+	}
+	restore()
+
+	after, err := os.Stderr.Stat()
+	if err != nil {
+		t.Fatalf("stat stderr: %v", err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatalf("stderr = %v after restore, want the original %v", after.Name(), before.Name())
+	}
+}
+
+// rawStderr addresses file descriptor 2 itself, which is what every writer
+// that hardcodes os.Stderr resolves to in a real process.
+func rawStderr() *os.File {
+	return os.NewFile(uintptr(syscall.Stderr), "/dev/stderr")
 }

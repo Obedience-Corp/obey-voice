@@ -28,7 +28,12 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
-const defaultServePort = 7262 // "SAMA"
+const (
+	defaultServePort = 7262 // "SAMA"
+	// serveCommandName is the cobra name root's PersistentPreRunE matches to
+	// install serve-only process settings before it writes anything.
+	serveCommandName = "serve"
+)
 
 var (
 	servePersona      string
@@ -57,7 +62,7 @@ var (
 )
 
 var serveCmd = &cobra.Command{
-	Use:   "serve",
+	Use:   serveCommandName,
 	Short: "Serve Obey Voice to your LAN or Tailscale over HTTPS + WebSocket",
 	Long: `Run Obey Voice as a network-accessible instance for any device on your
 LAN or Tailscale network: phones, tablets, laptops, browsers, or
@@ -583,6 +588,9 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 	fanout := netapi.NewOwnedAudioFanout(local)
 	cleanups = append(cleanups, func() { _ = fanout.Close() })
 
+	// Captured, not read per call: the pipeline logs from turn goroutines that
+	// serve never joins, and the package var is restored when serve returns.
+	diag := serveDiagOut
 	opts := voiceagent.Options{
 		Config:      cfg,
 		Events:      bus,
@@ -591,7 +599,7 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 		TTS:         ttsSet.Primary,
 		TTSFallback: ttsSet.Fallback,
 		Player:      fanout,
-		Logf:        func(format string, args ...any) { fmt.Fprintf(serveDiagOut, format+"\n", args...) },
+		Logf:        func(format string, args ...any) { fmt.Fprintf(diag, format+"\n", args...) },
 	}
 
 	var ingress *audio.Ingress

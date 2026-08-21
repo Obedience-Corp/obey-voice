@@ -195,11 +195,20 @@ func serveModelProgress(name string, pct float64) {
 		fmt.Fprintf(serveHumanOut, "  Downloading %s...\n", name)
 		return
 	}
-	if iPct != serveLastProgressPct {
-		serveLastProgressPct = iPct
-		fmt.Fprintf(serveHumanOut, "\r  %s: %d%%", name, iPct)
-		if iPct >= 100 {
-			fmt.Fprintln(serveHumanOut)
+	if iPct == serveLastProgressPct {
+		return
+	}
+	serveLastProgressPct = iPct
+	if !serveHumanIsTerminal() {
+		// A file or a pipe gets whole lines at coarse steps: nothing there
+		// will ever redraw a carriage-return frame.
+		if iPct%25 == 0 {
+			fmt.Fprintf(serveHumanOut, "  %s: %d%%\n", name, iPct)
 		}
+		return
+	}
+	fmt.Fprintf(serveHumanOut, "\r  %s: %d%%", name, iPct)
+	if iPct >= 100 {
+		fmt.Fprintln(serveHumanOut)
 	}
 }

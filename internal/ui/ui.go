@@ -10,9 +10,10 @@ import (
 
 // UI handles terminal output for the voice assistant.
 type UI struct {
-	bus  *events.Bus
-	name string
-	out  io.Writer
+	bus   *events.Bus
+	name  string
+	out   io.Writer
+	plain bool
 }
 
 // New creates a UI writing to stdout and subscribes it to the event bus.
@@ -24,11 +25,23 @@ func New(bus *events.Bus, agentName string) *UI {
 // writer: stdout there belongs to the --banner-json protocol, and --log-file
 // expects the conversation mirror in the file rather than on a pipe the
 // spawning app may already have closed.
+//
+// A sink that is not a console gets plain records: no cursor control, one
+// newline-terminated line per event, and no transient status frames at all.
+// Redrawing "Listening..." in place is animation, and a file or pipe that
+// accumulates those as carriage-return fragments is not a log anyone can read
+// or tail. Console output is unchanged.
 func NewWithOutput(bus *events.Bus, agentName string, out io.Writer) *UI {
 	if out == nil {
 		out = os.Stdout
 	}
-	u := &UI{bus: bus, name: agentName, out: out}
+	return newUI(bus, agentName, out, !isConsole(out))
+}
+
+// newUI is the shared constructor; plain is the console/file decision, taken
+// by the exported constructors and set explicitly by tests.
+func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
+	u := &UI{bus: bus, name: agentName, out: out, plain: plain}
 
 	events.Subscribe(bus, u.onSTTPhase)
 	events.Subscribe(bus, u.onTranscriptPartial)
@@ -53,9 +66,54 @@ func NewWithOutput(bus *events.Bus, agentName string, out io.Writer) *UI {
 	return u
 }
 
+// isConsole reports whether w is a character device — a terminal that can act
+// on cursor control, rather than a file or a pipe that only stores bytes.
+func isConsole(w io.Writer) bool {
+	file, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
 // status prints a dim metric/phase line, clearing any transient text first.
 func (u *UI) status(text string) {
+	if u.plain {
+		fmt.Fprintf(u.out, "%s\n", dimStyle.Render(text))
+		return
+	}
 	fmt.Fprintf(u.out, "\033[2K%s\n", dimStyle.Render(text))
+}
+
+// transient writes an in-place status frame. A plain sink drops it: it is
+// cursor animation, not a record, and it carries nothing the durable events
+// around it do not already say.
+func (u *UI) transient(text string) {
+	if u.plain {
+		return
+	}
+	fmt.Fprintf(u.out, "  %s\r", text)
+}
+
+// transientClear is transient for a frame that must erase a longer one first.
+func (u *UI) transientClear(text string) {
+	if u.plain {
+		return
+	}
+	fmt.Fprintf(u.out, "\033[2K  %s\r", text)
+}
+
+// record writes one durable line, erasing any transient frame under it.
+func (u *UI) record(text string) {
+	if u.plain {
+		fmt.Fprintf(u.out, "  %s\n", text)
+		return
+	}
+	fmt.Fprintf(u.out, "\033[2K  %s\n", text)
 }
 
 // ShowWelcome displays the startup banner.
@@ -91,24 +149,24 @@ func (u *UI) onSTTPhase(e events.STTPhase) {
 	}
 	switch e.Phase {
 	case "listening":
-		fmt.Fprintf(u.out, "  %s\r", statusStyle.Render("🎙 Listening..."))
+		u.transient(statusStyle.Render("🎙 Listening..."))
 	case "hearing":
-		fmt.Fprintf(u.out, "  %s\r", statusStyle.Render("🎙 Hearing you..."))
+		u.transient(statusStyle.Render("🎙 Hearing you..."))
 	case "transcribing":
-		fmt.Fprintf(u.out, "  %s\r", dimStyle.Render("● Transcribing..."))
+		u.transient(dimStyle.Render("● Transcribing..."))
 	}
 }
 
 func (u *UI) onTranscriptPartial(e events.TranscriptPartial) {
-	fmt.Fprintf(u.out, "\033[2K  %s %s\r", dimStyle.Render("You (partial):"), dimStyle.Render(e.Text))
+	u.transientClear(dimStyle.Render("You (partial):") + " " + dimStyle.Render(e.Text))
 }
 
 func (u *UI) onUserInput(e events.UserInput) {
-	fmt.Fprintf(u.out, "\033[2K  %s %s\n", userStyle.Render("You:"), e.Text)
+	u.record(userStyle.Render("You:") + " " + e.Text)
 }
 
 func (u *UI) onThinkingStarted(_ events.ThinkingStarted) {
-	fmt.Fprintf(u.out, "  %s\r", dimStyle.Render(fmt.Sprintf("● %s thinking...", u.name)))
+	u.transient(dimStyle.Render(fmt.Sprintf("● %s thinking...", u.name)))
 }
 
 func (u *UI) onThinkingComplete(e events.ThinkingComplete) {
@@ -120,11 +178,11 @@ func (u *UI) onResponseStreamingStarted(e events.ResponseStreamingStarted) {
 }
 
 func (u *UI) onSpeechSegmentReady(_ events.SpeechSegmentReady) {
-	fmt.Fprintf(u.out, "  %s\r", dimStyle.Render("● Queuing speech..."))
+	u.transient(dimStyle.Render("● Queuing speech..."))
 }
 
 func (u *UI) onGeneratingVoice(_ events.GeneratingVoice) {
-	fmt.Fprintf(u.out, "  %s\r", dimStyle.Render("● Synthesizing voice..."))
+	u.transient(dimStyle.Render("● Synthesizing voice..."))
 }
 
 func (u *UI) onVoiceGenerated(e events.VoiceGenerated) {
@@ -132,7 +190,7 @@ func (u *UI) onVoiceGenerated(e events.VoiceGenerated) {
 }
 
 func (u *UI) onSpeakingStarted(_ events.SpeakingStarted) {
-	fmt.Fprintf(u.out, "  %s\r", statusStyle.Render("● Speaking..."))
+	u.transient(statusStyle.Render("● Speaking..."))
 }
 
 func (u *UI) onSpeakingComplete(e events.SpeakingComplete) {

@@ -41,3 +41,97 @@ func TestNewWithOutputWritesToTheGivenSink(t *testing.T) {
 		})
 	}
 }
+
+// A console redraws frames in place; a file or pipe only accumulates them.
+// The console bytes are pinned because serve's default path still writes them.
+func TestUIFramingPerSink(t *testing.T) {
+	cases := []struct {
+		name  string
+		plain bool
+		want  string
+	}{
+		{
+			name:  "console keeps cursor control and in-place frames",
+			plain: false,
+			want:  "  🎙 Listening...\r\x1b[2K  You: build status\n",
+		},
+		{
+			name:  "plain sink drops the frame and keeps the record",
+			plain: true,
+			want:  "  You: build status\n",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			bus := events.NewBus()
+			newUI(bus, "Samantha", &buf, tc.plain)
+
+			bus.Emit(events.STTPhase{Phase: "listening"})
+			bus.Emit(events.UserInput{Text: "build status"})
+
+			if got := buf.String(); got != tc.want {
+				t.Fatalf("output = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsConsole(t *testing.T) {
+	cases := []struct {
+		name string
+		out  func(t *testing.T) io.Writer
+		want bool
+	}{
+		{
+			name: "a buffer is not a console",
+			out:  func(*testing.T) io.Writer { return &bytes.Buffer{} },
+			want: false,
+		},
+		{
+			name: "a regular file is not a console",
+			out: func(t *testing.T) io.Writer {
+				file, err := os.CreateTemp(t.TempDir(), "log")
+				if err != nil {
+					t.Fatalf("create temp: %v", err)
+				}
+				t.Cleanup(func() { _ = file.Close() })
+				return file
+			},
+			want: false,
+		},
+		{
+			name: "a pipe is not a console",
+			out: func(t *testing.T) io.Writer {
+				reader, writer, err := os.Pipe()
+				if err != nil {
+					t.Fatalf("os.Pipe(): %v", err)
+				}
+				t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+				return writer
+			},
+			want: false,
+		},
+		{
+			name: "a character device is a console",
+			out: func(t *testing.T) io.Writer {
+				file, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+				if err != nil {
+					t.Fatalf("open %s: %v", os.DevNull, err)
+				}
+				t.Cleanup(func() { _ = file.Close() })
+				return file
+			},
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isConsole(tc.out(t)); got != tc.want {
+				t.Fatalf("isConsole() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

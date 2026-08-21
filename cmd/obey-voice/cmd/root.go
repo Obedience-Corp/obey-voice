@@ -41,6 +41,14 @@ var rootCmd = &cobra.Command{
 	Short: "Give Claude a voice",
 	Long:  "Obey Voice — ultra-low-latency voice assistant for AI coding, inspired by Her.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// serve outlives the app that spawned it, so its broken-pipe guard is
+		// installed in the earliest hook that runs — this one writes below
+		// (--debug-audio, prompt seeding) and fang renders usage before RunE.
+		// Other commands keep the default disposition, where a `| head` still
+		// ends the pipeline.
+		if cmd.Name() == serveCommandName {
+			dropBrokenPipeSignals()
+		}
 		if _, err := config.Load(); err != nil {
 			return err
 		}
