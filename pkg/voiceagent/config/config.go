@@ -171,6 +171,10 @@ type Config struct {
 	SkillsDisabled []string `mapstructure:"skills_disabled"`
 
 	// General
+	// WorkDir is where the agent's file and shell tools start. It is a
+	// default, not a sandbox — tools may still reach absolute paths.
+	// Empty resolves through WorkDirFrom.
+	WorkDir         string `mapstructure:"work_dir"`
 	Language        string `mapstructure:"language"`
 	MaxHistory      int    `mapstructure:"max_history"`
 	ListenTimeout   int    `mapstructure:"listen_timeout"`
@@ -383,6 +387,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("backchannel_enabled", false)
 	v.SetDefault("skills_enabled", true)
 	v.SetDefault("skills_dir", "")
+	v.SetDefault("work_dir", "")
 	v.SetDefault("skills_disabled", []string{})
 	v.SetDefault("models_dir", DefaultModelsDir())
 
@@ -521,6 +526,7 @@ var envBindings = map[string]string{
 	"backchannel_enabled":         "BACKCHANNEL_ENABLED",
 	"skills_enabled":              "SKILLS_ENABLED",
 	"skills_dir":                  "SKILLS_DIR",
+	"work_dir":                    "WORK_DIR",
 	"barge_in_enabled":            "BARGE_IN_ENABLED",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
@@ -910,4 +916,88 @@ func PromptsDirFrom(cfg *Config) string {
 		return strings.TrimSpace(cfg.PromptsDir)
 	}
 	return PromptsDir()
+}
+
+// executableDir reports the folder holding the running binary. A variable so a
+// test can aim the guard below at a directory it controls, rather than at
+// wherever `go test` happened to build its binary.
+var executableDir = func() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(exe)
+}
+
+// WorkDirFrom resolves the agent's working directory: explicit override,
+// then cfg.WorkDir, then the process cwd — except that the binary's own
+// folder, "/", and anything that is not an existing directory fall back to
+// the home directory.
+//
+// The binary-folder guard is the reason this exists: the Mac app spawns serve
+// with cwd set to the install's bin directory, so every file tool, skills root
+// and camp call landed there instead of somewhere the user chose. It is a
+// default, not a sandbox — nothing here stops a tool from using an absolute
+// path. The result is never empty.
+func WorkDirFrom(cfg *Config, override string) string {
+	candidate := strings.TrimSpace(override)
+	if candidate == "" && cfg != nil {
+		candidate = strings.TrimSpace(cfg.WorkDir)
+	}
+	if candidate == "" {
+		mu.RLock()
+		candidate = strings.TrimSpace(v.GetString("work_dir"))
+		mu.RUnlock()
+	}
+	if candidate == "" {
+		if wd, err := os.Getwd(); err == nil {
+			candidate = wd
+		}
+	}
+	return resolveWorkDir(candidate)
+}
+
+// WorkDir resolves the agent's working directory from global viper state, for
+// callers (paths, doctor output) that hold no Config.
+func WorkDir() string {
+	return WorkDirFrom(nil, "")
+}
+
+func resolveWorkDir(candidate string) string {
+	candidate = expandHomePath(strings.TrimSpace(candidate))
+	if candidate == "" {
+		return homeDir()
+	}
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return homeDir()
+	}
+	// "/" is checked before the stat: it exists, and it is never a workspace.
+	if abs == string(filepath.Separator) || sameDir(abs, executableDir()) {
+		return homeDir()
+	}
+	if info, err := os.Stat(abs); err != nil || !info.IsDir() {
+		return homeDir()
+	}
+	return abs
+}
+
+// sameDir compares directories through their symlinks, so an install reached
+// via a symlinked bin (or macOS /var vs /private/var) still matches.
+func sameDir(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		return false
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		return false
+	}
+	return ra == rb
 }

@@ -169,7 +169,7 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 // R-P3: Claude previously received the persona prompt alone, with no machine
 // grounding, so it could not answer "what directory am I in" that ollama could.
 func (b *Brain) assembleSystem(persona string) string {
-	workDir, _ := os.Getwd()
+	workDir := config.WorkDirFrom(b.cfg, "")
 	return AssembleSystemPrompt(SystemPromptInput{
 		Provider: providerClaude,
 		Persona:  persona,

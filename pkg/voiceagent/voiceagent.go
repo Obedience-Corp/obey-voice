@@ -97,6 +97,13 @@ type Options struct {
 	// builds from Config — rejected with an injected Brain.
 	PromptsDir string
 
+	// WorkDir is the directory the agent's file and shell tools start in.
+	// Empty falls back to the configured work_dir, then the process cwd, so an
+	// embedder never has to chdir the host to point the agent at a workspace.
+	// Only reaches a brain New builds from Config — rejected with an injected
+	// Brain.
+	WorkDir string
+
 	// Logf receives non-fatal setup diagnostics — a configured TTS fallback that
 	// could not be loaded, for instance. **Nil discards them**, which is the
 	// important half: a library that writes to a process stderr its caller does
@@ -130,6 +137,9 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		if opts.PromptsDir != "" {
 			return nil, nil, fmt.Errorf("voiceagent: Options.PromptsDir cannot reach an injected Brain — point the brain at its prompts directly")
 		}
+		if opts.WorkDir != "" {
+			return nil, nil, fmt.Errorf("voiceagent: Options.WorkDir cannot reach an injected Brain — give the brain its working directory directly")
+		}
 	}
 	cfg := opts.Config
 	logf := opts.Logf
@@ -137,14 +147,17 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		logf = func(string, ...any) {}
 	}
 
-	// PromptsDir and Env reach the brain through the config value it is built
-	// from, so a copy is taken rather than mutating the caller's config — a host
-	// that reuses one *Config across agents must not have it rewritten
+	// PromptsDir, WorkDir and Env reach the brain through the config value it is
+	// built from, so a copy is taken rather than mutating the caller's config —
+	// a host that reuses one *Config across agents must not have it rewritten
 	// underneath.
-	if opts.PromptsDir != "" || opts.Env != (brain.Env{}) {
+	if opts.PromptsDir != "" || opts.WorkDir != "" || opts.Env != (brain.Env{}) {
 		local := *cfg
 		if opts.PromptsDir != "" {
 			local.PromptsDir = opts.PromptsDir
+		}
+		if opts.WorkDir != "" {
+			local.WorkDir = opts.WorkDir
 		}
 		local.RuntimeEnvUser = opts.Env.User
 		local.RuntimeEnvHostname = opts.Env.Hostname

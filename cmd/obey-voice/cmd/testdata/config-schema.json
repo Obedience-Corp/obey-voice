@@ -769,6 +769,20 @@
       "editable": true
     },
     {
+      "key": "work_dir",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "tools",
+      "title": "Working folder",
+      "help": "The folder the agent's file and shell tools start in — a default, not a sandbox. Empty uses the folder it was launched from, or your home folder when that is the binary's own folder.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "WORK_DIR",
+      "editable": true
+    },
+    {
       "key": "remote_tools_enabled",
       "type": "bool",
       "default": false,

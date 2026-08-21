@@ -91,9 +91,10 @@ func newSkillsListCmd(loadConfig configLoader) *cobra.Command {
 		Short: "List discovered skills across all four search roots",
 		Long: `List every Agent Skill discovered under the four search roots (project,
 workspace ancestor, user, and skills_dir), first-root-wins on duplicate
-names. Pass --work-dir to match what the agent itself sees: roots 1-2
-resolve against the agent's working directory, which for a spawned serve
-process is the obey-voice binary's directory, not the caller's cwd.`,
+names. Roots 1-2 resolve against the agent's working directory: the
+work_dir setting when one is set, otherwise the folder this command was
+run from. Pass --work-dir to ask what the agent would see from somewhere
+else.`,
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -102,13 +103,7 @@ process is the obey-voice binary's directory, not the caller's cwd.`,
 			if err != nil {
 				return err
 			}
-			if workDir == "" {
-				wd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("resolve --work-dir: %w", err)
-				}
-				workDir = wd
-			}
+			workDir = config.WorkDirFrom(cfg, workDir)
 
 			configured := cfg.SkillsDir
 			if configured == "" {
@@ -199,7 +194,7 @@ process is the obey-voice binary's directory, not the caller's cwd.`,
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the discovery envelope as JSON")
-	cmd.Flags().StringVar(&workDir, "work-dir", "", "Working directory to resolve roots 1-2 against (default: current directory)")
+	cmd.Flags().StringVar(&workDir, "work-dir", "", "Working directory to resolve roots 1-2 against (default: the work_dir setting)")
 	return cmd
 }
 
@@ -255,10 +250,7 @@ func runSkillsToggle(cmd *cobra.Command, loadConfig configLoader, name string, d
 	if err != nil {
 		return err
 	}
-	workDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("resolve working directory: %w", err)
-	}
+	workDir := config.WorkDirFrom(cfg, "")
 	configured := cfg.SkillsDir
 	if configured == "" {
 		configured = config.SkillsDir()

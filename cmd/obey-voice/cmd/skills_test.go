@@ -392,3 +392,49 @@ func runSkillsList(t *testing.T, cfg *config.Config, workDir string) skillsListE
 	}
 	return env
 }
+
+// Without --work-dir the roots follow work_dir, not the process cwd. This is
+// the bug the flag was a workaround for: a serve spawned by the Mac app looked
+// for skills next to the binary.
+func TestSkillsListConfiguredWorkDirDrivesRoots1And2(t *testing.T) {
+	fakeHome := t.TempDir()
+	restore := skills.SetUserHomeDirForTest(func() (string, error) { return fakeHome, nil })
+	t.Cleanup(restore)
+
+	workDir := t.TempDir()
+	writeSkillFixture(t, filepath.Join(workDir, ".agents", "skills", "from-config"), "from-config", "found through work_dir")
+
+	cfg := &config.Config{
+		SkillsEnabled: true,
+		BrainProvider: "ollama",
+		WorkDir:       workDir,
+		SkillsDir:     filepath.Join(t.TempDir(), "missing"),
+	}
+
+	cmd := newSkillsCmd(skillsTestConfig(cfg))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"list", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("skills list --json: %v", err)
+	}
+	var env skillsListEnvelope
+	if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	projectRoot := filepath.Join(workDir, ".agents", "skills")
+	var found bool
+	for _, r := range env.Roots {
+		if r.Path == projectRoot && r.Exists && r.Skills == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("work_dir did not drive root 1: %+v", env.Roots)
+	}
+	if len(env.Skills) != 1 || env.Skills[0].Name != "from-config" {
+		t.Fatalf("skills = %+v, want the one under work_dir", env.Skills)
+	}
+}

@@ -165,3 +165,27 @@ func TestTurnInstructionPlacementIsProviderSpecific(t *testing.T) {
 		t.Error("ollama rebuilds its system prompt per turn, so the instruction rides there")
 	}
 }
+
+// The grounding block must name the directory the *config* selects, not the
+// process cwd: a library embedder points the agent at a workspace by setting
+// work_dir, never by chdir'ing its host.
+func TestConfiguredWorkDirReachesGroundingBlock(t *testing.T) {
+	dir := t.TempDir()
+	cfg := policyCfg()
+	cfg.WorkDir = dir
+
+	tests := []struct {
+		name string
+		got  string
+	}{
+		{"claude", (&Brain{cfg: cfg}).assembleSystem("PERSONA")},
+		{"grok", (&GrokBrain{cfg: cfg}).assembleSystem("PERSONA")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !strings.Contains(tt.got, "Working directory: "+dir) {
+				t.Errorf("assembled prompt does not carry the configured work dir %q:\n%s", dir, tt.got)
+			}
+		})
+	}
+}

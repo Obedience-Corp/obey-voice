@@ -28,6 +28,11 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
+// resolvedWorkDir is the agent working directory this process resolved at
+// startup. Stamped onto every config the CLI loads so a reload taken after the
+// TUI has chdir'd still reports the directory the process chose.
+var resolvedWorkDir string
+
 var (
 	textMode          bool
 	noVoice           bool
@@ -49,9 +54,15 @@ var rootCmd = &cobra.Command{
 		if cmd.Name() == serveCommandName {
 			dropBrokenPipeSignals()
 		}
-		if _, err := config.Load(); err != nil {
+		cfg, err := config.Load()
+		if err != nil {
 			return err
 		}
+		// Resolve the agent's working directory once, before anything can
+		// chdir, and stamp it onto every config this process loads. The
+		// process itself deliberately stays put: --log-file, --debug-audio and
+		// `narrate <file>` arguments must remain relative to the caller.
+		resolvedWorkDir = config.WorkDirFrom(cfg, "")
 		debugDir := debugAudioDir
 		if debugDir == "auto" {
 			debugDir = filepath.Join(config.ConfigDir(), "debug", "audio")
@@ -78,10 +89,22 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("load config: %w", err)
 		}
 
+		stampWorkDir(cfg)
+
 		// The TUI serves interactive invocations including --text (voice
 		// input off, D3). Non-TTY, --no-tui, and --no-voice without --text
 		// keep the plain stdout loop (scripts / demos without mic).
 		if useConversationTUI() {
+			// A relative --transcript-log is opened inside the runtime builder,
+			// after the chdir below, so pin it to the caller's cwd first.
+			if transcriptLogPath != "" && !filepath.IsAbs(transcriptLogPath) {
+				if abs, err := filepath.Abs(transcriptLogPath); err == nil {
+					transcriptLogPath = abs
+				}
+			}
+			if err := os.Chdir(cfg.WorkDir); err != nil {
+				return fmt.Errorf("enter work dir %s: %w", cfg.WorkDir, err)
+			}
 			return appTUI.RunWithMeeting(cfg, conversationRuntimeBuilder(nil), meetingRuntimeBuilder())
 		}
 
@@ -120,6 +143,15 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&debugAudioDir, "debug-audio", "", "Record TTS source WAVs, exact device-output WAV, and callback timing (optional DIR)")
 	rootCmd.PersistentFlags().Lookup("debug-audio").NoOptDefVal = "auto"
 	rootCmd.PersistentFlags().StringVar(&transcriptLogPath, "transcript-log", "", "Append conversation events as JSONL to FILE (harnesses, field debugging)")
+}
+
+// stampWorkDir pins the process-resolved working directory onto a freshly
+// loaded config, so every brain the CLI builds grounds itself in the same
+// folder no matter what the cwd is by the time it is built.
+func stampWorkDir(cfg *config.Config) {
+	if cfg != nil && resolvedWorkDir != "" {
+		cfg.WorkDir = resolvedWorkDir
+	}
 }
 
 // attachTranscriptLog starts the JSONL event tap when --transcript-log is
@@ -167,6 +199,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if err != nil {
 			return nil, fmt.Errorf("reload config: %w", err)
 		}
+		stampWorkDir(cfg)
 
 		// Bind the session's identity now: the runtime is built from this
 		// snapshot, so later persona switches/edits (Settings, Personas, other

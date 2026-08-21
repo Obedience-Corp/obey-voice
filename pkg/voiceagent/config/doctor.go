@@ -56,6 +56,19 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
+	// A work_dir pointing at a folder that no longer exists is silent otherwise:
+	// tools keep working, just somewhere the user did not choose.
+	if dir := strings.TrimSpace(cfg.WorkDir); dir != "" {
+		if info, err := os.Stat(expandHomePath(dir)); err != nil || !info.IsDir() {
+			diags = append(diags, Diagnostic{
+				Name:        "work-dir",
+				Severity:    SeverityWarn,
+				Detail:      fmt.Sprintf("work_dir %q is not an existing directory — the agent falls back to %s", dir, WorkDirFrom(cfg, "")),
+				Remediation: "point work_dir at a folder that exists, or clear it to use the directory Obey Voice was launched from",
+			})
+		}
+	}
+
 	norm, sttErr := NormalizeSTTWithMode(cfg.STTProvider, cfg.STTMode)
 	if sttErr == nil {
 		diags = append(diags, Diagnostic{Name: "stt-provider", Severity: SeverityOK, Detail: fmt.Sprintf("%s/%s", norm.Provider, norm.Mode)})

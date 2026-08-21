@@ -114,7 +114,7 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 		return nil, fmt.Errorf("model %q not found in ollama — run: ollama pull %s", cfg.OllamaModel, cfg.OllamaModel)
 	}
 
-	workDir, _ := os.Getwd()
+	workDir := config.WorkDirFrom(cfg, "")
 
 	systemPrompt, err := personaSystemPrompt(cfg)
 	if err != nil {

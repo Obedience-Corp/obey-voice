@@ -70,7 +70,7 @@ output moves to stderr. The first line is `ready`, written once the listener is
 bound:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"voice_claim_on_dequeue":true}}
 ```
 
 | Field | Meaning |
@@ -82,6 +82,7 @@ bound:
 | `mdns` / `tailscale` | Discovery + network mode |
 | `pid` | Serve process id |
 | `binds` | Every bound `host:port`, **primary first**. Always present. Dial the loopback entry when one exists rather than resolving `url` |
+| `work_dir` | Directory the agent's file and shell tools start in (`work_dir` setting or `--work-dir`). A **default, not a sandbox**: a tool may still use an absolute path outside it. Omitted when serve resolved none |
 | `client_setup_url` | Present **only** in limited client access. Its presence means limited; its absence means full |
 | `capabilities` | Additive `/v1/stream` contract flags (see below). Absent on older serves — treat a missing key as `false` |
 
@@ -232,7 +233,7 @@ that can and does refuse.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `GET` | `/v1/status` | yes | `protocol_version`, `turn_active`, `providers`, `uptime_seconds`, `fingerprint`, `meetings`, `capabilities` |
+| `GET` | `/v1/status` | yes | `protocol_version`, `turn_active`, `providers`, `uptime_seconds`, `fingerprint`, `work_dir`, `meetings`, `capabilities` |
 | `GET` | `/v1/sessions` | yes | Session summaries |
 | `GET` | `/v1/personas` | yes | Persona list for `set_persona` (see below) |
 | `POST` | `/v1/sessions/{id}/resume` | yes | Load history into the live pipeline |

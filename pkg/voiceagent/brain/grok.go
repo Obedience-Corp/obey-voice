@@ -93,7 +93,7 @@ func (g *GrokBrain) Available() bool {
 // assembleSystem builds Grok's system prompt through the shared policy, so it
 // receives the same machine grounding every other provider does.
 func (g *GrokBrain) assembleSystem(persona string) string {
-	workDir, _ := os.Getwd()
+	workDir := config.WorkDirFrom(g.cfg, "")
 	return AssembleSystemPrompt(SystemPromptInput{
 		Provider: providerGrok,
 		Persona:  persona,

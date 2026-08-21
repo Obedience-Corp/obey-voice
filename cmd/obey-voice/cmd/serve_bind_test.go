@@ -237,3 +237,44 @@ func captureReadyBanner(t *testing.T, listenAddr string, binds []string) netapi.
 	}
 	return banner
 }
+
+// work_dir rides the ready banner so a supervising app can show where a tool
+// call would land — and stays off the line entirely when serve resolved none,
+// which is what keeps the key set additive for older clients.
+func TestReadyBannerCarriesWorkDir(t *testing.T) {
+	withServeBindState(t)
+	orig := serveWorkDirResolved
+	t.Cleanup(func() { serveWorkDirResolved = orig })
+
+	dir := t.TempDir()
+	cases := []struct {
+		name    string
+		workDir string
+		wantKey bool
+	}{
+		{"unresolved omits the key", "", false},
+		{"resolved reports the directory", dir, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			serveWorkDirResolved = tc.workDir
+
+			raw := captureBannerLine(t, "127.0.0.1:7262", []string{"127.0.0.1:7262"})
+			var keys map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &keys); err != nil {
+				t.Fatalf("decode banner: %v", err)
+			}
+			if _, ok := keys["work_dir"]; ok != tc.wantKey {
+				t.Fatalf("work_dir present = %v, want %v (line %s)", ok, tc.wantKey, raw)
+			}
+
+			var banner netapi.ReadyBanner
+			if err := json.Unmarshal(raw, &banner); err != nil {
+				t.Fatalf("decode ready banner: %v", err)
+			}
+			if banner.WorkDir != tc.workDir {
+				t.Fatalf("work_dir = %q, want %q", banner.WorkDir, tc.workDir)
+			}
+		})
+	}
+}

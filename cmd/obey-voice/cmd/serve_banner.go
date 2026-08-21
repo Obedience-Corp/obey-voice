@@ -101,10 +101,12 @@ func printServeDetails(addr string, creds *netapi.Credentials, cfg *config.Confi
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Token on file at "+config.ConfigDir()+"/serve/token"))
 	}
 	fmt.Fprintln(serveHumanOut, dimStyle.Render("  Revoke: obey-voice serve --revoke-tokens"))
+	// Printed with the remote-tools line on purpose: together they say who may
+	// trigger a tool and which folder it starts in.
 	if cfg.RemoteToolsEnabled {
-		fmt.Fprintln(serveHumanOut, failStyle.Render("  WARNING: remote_tools_enabled=true — network clients can trigger tool calls on this machine."))
+		fmt.Fprintln(serveHumanOut, failStyle.Render("  WARNING: remote_tools_enabled=true — network clients can trigger tool calls on this machine, starting in "+cfg.WorkDir))
 	} else {
-		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote tool calls: disabled (remote_tools_enabled=false)"))
+		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote tool calls: disabled (remote_tools_enabled=false); tools start in "+cfg.WorkDir))
 	}
 	if serveNoVoice {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Host speaker: muted (--no-voice); stream clients can still request audio_output"))
@@ -148,6 +150,7 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 		Tailscale:       serveTailscale,
 		PID:             os.Getpid(),
 		Binds:           allBinds,
+		WorkDir:         serveWorkDirResolved,
 		ClientSetupURL:  serveClientSetupURL,
 		Capabilities:    netapi.Capabilities(),
 	})

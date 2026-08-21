@@ -54,6 +54,10 @@ type Options struct {
 	// worse than no list.
 	ListPersonas func() ([]PersonaSummary, error)
 
+	// WorkDir is the directory the agent's file and shell tools operate in.
+	// Reported by GET /v1/status so a client can show where a tool call lands.
+	WorkDir string
+
 	Credentials  *Credentials
 	Bus          *events.Bus
 	Dispatcher   *Dispatcher
