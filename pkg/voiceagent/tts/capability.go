@@ -184,13 +184,16 @@ func ValidateRequest(capabilities ProviderCapabilities, req SynthesisRequest) er
 	if mode.RequiresReferenceAudio && !hasReferenceAudio {
 		return &ProviderError{Provider: capabilities.Provider, Operation: "validate request", Kind: ProviderErrorInput, Err: errors.New("reference audio is required for this voice mode")}
 	}
-	if hasReferenceAudio && !mode.RequiresReferenceAudio {
+	// A provider that advertises reference audio takes it in any mode: on the
+	// native worker a shipped clone is a ref_wav riding a preset-mode request.
+	optionalReference := capabilities.SupportsReferenceAudio && !mode.RequiresReferenceAudio
+	if hasReferenceAudio && !mode.RequiresReferenceAudio && !optionalReference {
 		return unsupportedCapability(capabilities.Provider, "reference audio", fmt.Sprintf("mode %s does not accept reference audio", req.Mode))
 	}
 	if mode.RequiresReferenceText && !hasReferenceText {
 		return &ProviderError{Provider: capabilities.Provider, Operation: "validate request", Kind: ProviderErrorInput, Err: errors.New("reference transcript is required for this voice mode")}
 	}
-	if hasReferenceText && !mode.RequiresReferenceText {
+	if hasReferenceText && !mode.RequiresReferenceText && !optionalReference {
 		return unsupportedCapability(capabilities.Provider, "reference transcript", fmt.Sprintf("mode %s does not accept reference text", req.Mode))
 	}
 	return nil
