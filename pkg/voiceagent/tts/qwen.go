@@ -31,6 +31,9 @@ const (
 	//   warm_wall ~4–5s short phrase RTF~1.37 → p95 short ≈ 8s; long replies scale.
 	// Prefer configured timeout when larger so operators can raise the ceiling.
 	nativeWarmTTP95 = 8 * time.Second
+	// 1.7b field capture 2026-08-21: voice-ready 12–31s on a warm worker. The
+	// 0.6b 8s floor recovered those turns mid-synth.
+	native17bWarmTTP95 = 35 * time.Second
 	// Cold ready (~6s measured) is paid once at session start, not every turn.
 	// If the warm session dies mid-conversation, restart cost is folded into grace.
 	nativeColdReadyP95 = 12 * time.Second
@@ -262,7 +265,11 @@ func (q *Qwen3TTS) FirstAudioGrace() time.Duration {
 	p95 := managedWarmTTP95
 	if q.native {
 		// Warm turn + one unexpected restart (cold ready p95) for worst-case barge recovery.
-		p95 = nativeWarmTTP95 + nativeColdReadyP95
+		warm := nativeWarmTTP95
+		if managedqwen.NormalizeModelTier(q.modelTier) == managedqwen.Tier1_7B {
+			warm = native17bWarmTTP95
+		}
+		p95 = warm + nativeColdReadyP95
 	}
 	if q.timeoutSet && q.timeout > p95 {
 		return q.timeout

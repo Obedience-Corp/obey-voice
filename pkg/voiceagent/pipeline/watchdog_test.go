@@ -36,6 +36,13 @@ func TestStallTimeoutHonorsQwenFirstAudioGrace(t *testing.T) {
 	if got := p.stallTimeout(); got != defaultPlaybackStallTimeout {
 		t.Fatalf("stallTimeout() = %v, want default %v without grace", got, defaultPlaybackStallTimeout)
 	}
+
+	// A Kokoro primary with a Qwen fallback still needs Qwen's budget: a
+	// reload can swap the labels without the worker getting faster.
+	p = &Pipeline{TTS: &fakeTTS{}, TTSFallback: graceful}
+	if got := p.stallTimeout(); got != 90*time.Second {
+		t.Fatalf("stallTimeout() = %v, want fallback FirstAudioGrace 90s", got)
+	}
 }
 
 // graceTTS is a minimal Provider that also implements tts.FirstAudioGracer.

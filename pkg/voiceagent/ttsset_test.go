@@ -4,9 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // Conversation path may attach Kokoro as fallback when primary is qwen3-tts.
@@ -70,5 +73,69 @@ func TestNewTTSProviderSetNoFallbackWhenPrimaryIsKokoro(t *testing.T) {
 	defer set.Close()
 	if set.Fallback != nil {
 		t.Fatal("fallback must be nil when primary is already kokoro")
+	}
+}
+
+func TestLiveTTSManagerRetiresPreviousSet(t *testing.T) {
+	p := &pipeline.Pipeline{}
+	m := &LiveTTSManager{RetireDelay: -1}
+	t.Cleanup(m.Close)
+
+	var closed atomic.Bool
+	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
+	if !m.Adopt(first) {
+		t.Fatal("Adopt initial set")
+	}
+	if !m.Install(p, &TTSSet{}) {
+		t.Fatal("Install replacement")
+	}
+	if !closed.Load() {
+		t.Fatal("replaced set was not closed")
+	}
+}
+
+func TestLiveTTSManagerRetiresAfterDelay(t *testing.T) {
+	p := &pipeline.Pipeline{}
+	m := &LiveTTSManager{RetireDelay: 20 * time.Millisecond}
+	t.Cleanup(m.Close)
+
+	var closed atomic.Bool
+	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
+	if !m.Adopt(first) {
+		t.Fatal("Adopt initial set")
+	}
+	if !m.Install(p, &TTSSet{}) {
+		t.Fatal("Install replacement")
+	}
+	if closed.Load() {
+		t.Fatal("replaced set closed before the drain")
+	}
+	deadline := time.Now().Add(time.Second)
+	for !closed.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("replaced set was not closed after the drain")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestLiveTTSManagerCloseAbortsRetire(t *testing.T) {
+	p := &pipeline.Pipeline{}
+	m := &LiveTTSManager{RetireDelay: time.Hour}
+
+	var closed atomic.Bool
+	first := &TTSSet{cleanups: []func(){func() { closed.Store(true) }}}
+	if !m.Adopt(first) {
+		t.Fatal("Adopt initial set")
+	}
+	if !m.Install(p, &TTSSet{}) {
+		t.Fatal("Install replacement")
+	}
+	m.Close()
+	if !closed.Load() {
+		t.Fatal("Close left the replaced set loaded")
+	}
+	if m.Install(p, &TTSSet{}) {
+		t.Fatal("Install after Close must fail")
 	}
 }

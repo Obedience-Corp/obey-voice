@@ -117,6 +117,11 @@ type Options struct {
 	// not control is badly behaved. The CLI passes a function that writes to
 	// stderr; a host may route them anywhere.
 	Logf func(format string, args ...any)
+
+	// LiveTTS, when set, takes ownership of the TTS set New constructs so a
+	// later Install can retire the worker instead of stacking them until
+	// shutdown. Injected TTS (Options.TTS) is still the caller's to Adopt.
+	LiveTTS *LiveTTSManager
 }
 
 // New builds a voice agent and returns it with a cleanup function.
@@ -215,7 +220,15 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 				cleanup()
 				return nil, nil, fmt.Errorf("init TTS: %w", err)
 			}
-			cleanups = append(cleanups, ttsSet.Close)
+			if opts.LiveTTS != nil {
+				if !opts.LiveTTS.Adopt(ttsSet) {
+					ttsSet.Close()
+					cleanup()
+					return nil, nil, fmt.Errorf("init TTS: conversation is shutting down")
+				}
+			} else {
+				cleanups = append(cleanups, ttsSet.Close)
+			}
 			p.ReplaceTTS(ttsSet.Primary, ttsSet.Fallback)
 			if ttsSet.FallbackWarning != nil {
 				logf("warning: %v", ttsSet.FallbackWarning)
