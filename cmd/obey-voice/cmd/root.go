@@ -49,9 +49,17 @@ var rootCmd = &cobra.Command{
 		if cmd.Name() == serveCommandName {
 			dropBrokenPipeSignals()
 		}
-		if _, err := config.Load(); err != nil {
+		cfg, err := config.Load()
+		if err != nil {
 			return err
 		}
+		// Resolve the agent's working directory once, before anything can
+		// chdir, and stamp it onto every config this process loads. No chdir
+		// happens here: every command must still resolve --debug-audio,
+		// --log-file and `narrate <file>` against the caller's cwd. The two
+		// interactive surfaces (root's RunE and serve) enter the directory
+		// themselves, after pinning their own relative path flags.
+		resolvedWorkDir = config.WorkDirFrom(cfg)
 		debugDir := debugAudioDir
 		if debugDir == "auto" {
 			debugDir = filepath.Join(config.ConfigDir(), "debug", "audio")
@@ -76,6 +84,14 @@ var rootCmd = &cobra.Command{
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
+		}
+
+		stampWorkDir(cfg)
+		// --transcript-log is opened later, inside the runtime builder or
+		// startPipeline — both after the chdir — so pin it to the caller's cwd.
+		absPathFlag(&transcriptLogPath)
+		if err := enterWorkDir(cfg.WorkDir); err != nil {
+			return err
 		}
 
 		// The TUI serves interactive invocations including --text (voice
@@ -167,6 +183,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if err != nil {
 			return nil, fmt.Errorf("reload config: %w", err)
 		}
+		stampWorkDir(cfg)
 
 		// Bind the session's identity now: the runtime is built from this
 		// snapshot, so later persona switches/edits (Settings, Personas, other

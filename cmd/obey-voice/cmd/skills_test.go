@@ -392,3 +392,70 @@ func runSkillsList(t *testing.T, cfg *config.Config, workDir string) skillsListE
 	}
 	return env
 }
+
+// An explicit --work-dir that does not exist must fail loudly rather than
+// quietly listing the roots under some other directory.
+func TestSkillsListRejectsAMissingWorkDirFlag(t *testing.T) {
+	cfg := &config.Config{SkillsEnabled: true, BrainProvider: "ollama"}
+	missing := filepath.Join(t.TempDir(), "projct")
+
+	cmd := newSkillsCmd(skillsTestConfig(cfg))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"list", "--json", "--work-dir", missing})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("skills list --work-dir %s succeeded, want an error", missing)
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error %q does not name %q", err, missing)
+	}
+}
+
+// Without --work-dir the roots follow work_dir, not the process cwd. This is
+// the bug the flag was a workaround for: a serve spawned by the Mac app looked
+// for skills next to the binary.
+func TestSkillsListConfiguredWorkDirDrivesRoots1And2(t *testing.T) {
+	fakeHome := t.TempDir()
+	restore := skills.SetUserHomeDirForTest(func() (string, error) { return fakeHome, nil })
+	t.Cleanup(restore)
+
+	workDir := t.TempDir()
+	writeSkillFixture(t, filepath.Join(workDir, ".agents", "skills", "from-config"), "from-config", "found through work_dir")
+
+	cfg := &config.Config{
+		SkillsEnabled: true,
+		BrainProvider: "ollama",
+		WorkDir:       workDir,
+		SkillsDir:     filepath.Join(t.TempDir(), "missing"),
+	}
+
+	cmd := newSkillsCmd(skillsTestConfig(cfg))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"list", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("skills list --json: %v", err)
+	}
+	var env skillsListEnvelope
+	if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	projectRoot := filepath.Join(workDir, ".agents", "skills")
+	var found bool
+	for _, r := range env.Roots {
+		if r.Path == projectRoot && r.Exists && r.Skills == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("work_dir did not drive root 1: %+v", env.Roots)
+	}
+	if len(env.Skills) != 1 || env.Skills[0].Name != "from-config" {
+		t.Fatalf("skills = %+v, want the one under work_dir", env.Skills)
+	}
+}

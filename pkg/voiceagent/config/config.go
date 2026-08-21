@@ -171,6 +171,10 @@ type Config struct {
 	SkillsDisabled []string `mapstructure:"skills_disabled"`
 
 	// General
+	// WorkDir is where the agent's file and shell tools start. It is a
+	// default, not a sandbox — tools may still reach absolute paths.
+	// Empty resolves through WorkDirFrom.
+	WorkDir         string `mapstructure:"work_dir"`
 	Language        string `mapstructure:"language"`
 	MaxHistory      int    `mapstructure:"max_history"`
 	ListenTimeout   int    `mapstructure:"listen_timeout"`
@@ -383,6 +387,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("backchannel_enabled", false)
 	v.SetDefault("skills_enabled", true)
 	v.SetDefault("skills_dir", "")
+	v.SetDefault("work_dir", "")
 	v.SetDefault("skills_disabled", []string{})
 	v.SetDefault("models_dir", DefaultModelsDir())
 
@@ -521,6 +526,7 @@ var envBindings = map[string]string{
 	"backchannel_enabled":         "BACKCHANNEL_ENABLED",
 	"skills_enabled":              "SKILLS_ENABLED",
 	"skills_dir":                  "SKILLS_DIR",
+	"work_dir":                    "WORK_DIR",
 	"barge_in_enabled":            "BARGE_IN_ENABLED",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
@@ -890,7 +896,9 @@ func SkillsDir() string {
 	return filepath.Join(configDir, "skills")
 }
 
-func homeDir() string {
+// homeDir reports the user's home directory. A variable so a test can drive
+// the branch where the OS has none to report.
+var homeDir = func() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "."

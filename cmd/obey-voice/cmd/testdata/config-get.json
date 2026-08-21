@@ -353,6 +353,10 @@
     "whispercpp_model_path": {
       "value": "/Users/lance/.cache/festival-voice/models/whispercpp/ggml-base.en.bin",
       "source": "default"
+    },
+    "work_dir": {
+      "value": "",
+      "source": "default"
     }
   },
   "persona": {

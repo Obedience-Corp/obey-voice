@@ -156,6 +156,10 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		SystemPrompt:   b.systemPrompt,
 		PermissionMode: mode,
 		Tools:          tools,
+		// The CLI owns its own tools, so the agent's working directory has to
+		// reach it as a real cwd — telling it in the prompt only would leave
+		// every Read/Bash rooted wherever this process happens to be.
+		WorkingDirectory: config.WorkDirFrom(b.cfg),
 		// Empty until the first turn captures a session; once set, the SDK emits
 		// --resume so the CLI owns history server-side. The system prompt is still
 		// passed on resume (harmless; dropping flattened history is the win).
@@ -169,7 +173,7 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 // R-P3: Claude previously received the persona prompt alone, with no machine
 // grounding, so it could not answer "what directory am I in" that ollama could.
 func (b *Brain) assembleSystem(persona string) string {
-	workDir, _ := os.Getwd()
+	workDir := config.WorkDirFrom(b.cfg)
 	return AssembleSystemPrompt(SystemPromptInput{
 		Provider: providerClaude,
 		Persona:  persona,

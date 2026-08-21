@@ -34,6 +34,7 @@ type pathsReport struct {
 	PersonasDir   string `json:"personas_dir"`
 	PromptsDir    string `json:"prompts_dir"`
 	SkillsDir     string `json:"skills_dir"`
+	WorkDir       string `json:"work_dir"`
 }
 
 var pathsCmd = &cobra.Command{
@@ -42,7 +43,8 @@ var pathsCmd = &cobra.Command{
 	Long: "Show where this install reads and writes: config, serve credentials, model\n" +
 		"cache, and session data. Values are effective — config-file and environment\n" +
 		"overrides (models_dir/MODELS_DIR, prompts_dir, skills_dir, meeting.dir) are\n" +
-		"already applied.\n\n" +
+		"already applied. work_dir is where the agent's file and shell tools start —\n" +
+		"a default, not a sandbox.\n\n" +
 		"--json emits a single stable object for machine consumers; the Obey Voice\n" +
 		"app discovers the install root this way. Keys are a compatibility contract:\n" +
 		"only added, never renamed, without a schema_version bump.",
@@ -80,6 +82,7 @@ func collectPaths() pathsReport {
 		PersonasDir:   config.PersonasDir(),
 		PromptsDir:    config.PromptsDir(),
 		SkillsDir:     config.SkillsDir(),
+		WorkDir:       config.WorkDir(),
 	}
 }
 
@@ -103,6 +106,7 @@ func runPaths(cmd *cobra.Command, report pathsReport, asJSON bool) error {
 		{"Personas", report.PersonasDir},
 		{"Prompts", report.PromptsDir},
 		{"Skills", report.SkillsDir},
+		{"Work dir", report.WorkDir},
 	}
 	fmt.Fprintf(out, "\n  %s\n", titleStyle.Render("Obey Voice Paths"))
 	fmt.Fprintf(out, "  %s\n\n", dimStyle.Render("app slug: "+report.AppSlug))

@@ -97,6 +97,20 @@ type Options struct {
 	// builds from Config — rejected with an injected Brain.
 	PromptsDir string
 
+	// WorkDir is the directory the agent's file and shell tools start in, so an
+	// embedder points the agent at a workspace without chdir'ing its host.
+	// Empty falls back to the configured work_dir, then the process cwd.
+	//
+	// It reaches the tools of every provider: ollama runs them in-process and
+	// resolves paths against this directory, while claude and grok receive it
+	// as the cwd of the CLI subprocess that runs their own. All three are also
+	// told about it in the system prompt's grounding block.
+	//
+	// A default, not a sandbox: a tool may still use an absolute path outside
+	// it. Only reaches a brain New builds from Config — rejected with an
+	// injected Brain.
+	WorkDir string
+
 	// Logf receives non-fatal setup diagnostics — a configured TTS fallback that
 	// could not be loaded, for instance. **Nil discards them**, which is the
 	// important half: a library that writes to a process stderr its caller does
@@ -130,6 +144,9 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		if opts.PromptsDir != "" {
 			return nil, nil, fmt.Errorf("voiceagent: Options.PromptsDir cannot reach an injected Brain — point the brain at its prompts directly")
 		}
+		if opts.WorkDir != "" {
+			return nil, nil, fmt.Errorf("voiceagent: Options.WorkDir cannot reach an injected Brain — give the brain its working directory directly")
+		}
 	}
 	cfg := opts.Config
 	logf := opts.Logf
@@ -137,14 +154,17 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		logf = func(string, ...any) {}
 	}
 
-	// PromptsDir and Env reach the brain through the config value it is built
-	// from, so a copy is taken rather than mutating the caller's config — a host
-	// that reuses one *Config across agents must not have it rewritten
+	// PromptsDir, WorkDir and Env reach the brain through the config value it is
+	// built from, so a copy is taken rather than mutating the caller's config —
+	// a host that reuses one *Config across agents must not have it rewritten
 	// underneath.
-	if opts.PromptsDir != "" || opts.Env != (brain.Env{}) {
+	if opts.PromptsDir != "" || opts.WorkDir != "" || opts.Env != (brain.Env{}) {
 		local := *cfg
 		if opts.PromptsDir != "" {
 			local.PromptsDir = opts.PromptsDir
+		}
+		if opts.WorkDir != "" {
+			local.WorkDir = opts.WorkDir
 		}
 		local.RuntimeEnvUser = opts.Env.User
 		local.RuntimeEnvHostname = opts.Env.Hostname

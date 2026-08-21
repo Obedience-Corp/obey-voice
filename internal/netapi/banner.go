@@ -72,6 +72,11 @@ type ReadyBanner struct {
 	// process that only reads this line can gate a feature without opening a
 	// socket first.
 	Capabilities map[string]bool `json:"capabilities,omitempty"`
+	// WorkDir is the directory the agent's file and shell tools operate in, so
+	// a client can show where a tool call would land. Always present: the
+	// resolver behind it never yields an empty path, and GET /v1/status reports
+	// the same field unconditionally.
+	WorkDir string `json:"work_dir"`
 	// ClientSetupURL is present only in limited client-access mode (a Tailscale
 	// serve that could not mint a trusted cert). Its presence means "limited";
 	// its absence means full access.

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func TestResolveServeBindHostsExplicit(t *testing.T) {
@@ -236,4 +237,49 @@ func captureReadyBanner(t *testing.T, listenAddr string, binds []string) netapi.
 		t.Fatalf("decode ready banner: %v", err)
 	}
 	return banner
+}
+
+// work_dir rides the ready banner so a supervising app can show where a tool
+// call would land. It is unconditional and never empty — GET /v1/status reports
+// the same field the same way, and a client should not have to handle one
+// surface omitting what the other always sends.
+func TestReadyBannerCarriesWorkDir(t *testing.T) {
+	withServeBindState(t)
+	orig := serveWorkDirResolved
+	t.Cleanup(func() { serveWorkDirResolved = orig })
+
+	dir := t.TempDir()
+	cases := []struct {
+		name    string
+		workDir string
+		want    string
+	}{
+		{"unresolved falls back to the resolver", "", config.WorkDir()},
+		{"resolved reports the directory serve entered", dir, dir},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			serveWorkDirResolved = tc.workDir
+
+			raw := captureBannerLine(t, "127.0.0.1:7262", []string{"127.0.0.1:7262"})
+			var keys map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &keys); err != nil {
+				t.Fatalf("decode banner: %v", err)
+			}
+			if _, ok := keys["work_dir"]; !ok {
+				t.Fatalf("work_dir missing from the ready line: %s", raw)
+			}
+
+			var banner netapi.ReadyBanner
+			if err := json.Unmarshal(raw, &banner); err != nil {
+				t.Fatalf("decode ready banner: %v", err)
+			}
+			if banner.WorkDir != tc.want {
+				t.Fatalf("work_dir = %q, want %q", banner.WorkDir, tc.want)
+			}
+			if banner.WorkDir == "" {
+				t.Error("work_dir is empty; the resolver must always answer")
+			}
+		})
+	}
 }

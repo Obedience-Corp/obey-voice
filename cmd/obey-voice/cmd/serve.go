@@ -49,6 +49,11 @@ var (
 	serveTailscale    bool
 	serveBannerJSON   bool
 	serveLogFile      string
+	serveWorkDir      string
+	// serveWorkDirResolved is the directory serve chdir'd into. The ready
+	// banner and /v1/status report it so a client knows where a tool call
+	// would land.
+	serveWorkDirResolved string
 	// publicHost is the hostname phones should open (MagicDNS). Empty when
 	// clients should use the bind address as-is.
 	servePublicHost string
@@ -122,6 +127,23 @@ remote_tools_enabled is set.`,
 			}
 			cfg = binding.Config()
 		}
+		// The agent's tools operate here. An explicit --work-dir that does not
+		// exist is an error, not a silent fall back to home. Resolved after
+		// configureServeStdio, which has already opened a relative --log-file
+		// against the caller's cwd.
+		wd, err := config.ResolveWorkDir(cfg, serveWorkDir)
+		if err != nil {
+			return err
+		}
+		// The TLS material is read inside runServe, after the chdir.
+		absPathFlag(&serveTLSCert)
+		absPathFlag(&serveTLSKey)
+		if err := enterWorkDir(wd); err != nil {
+			return err
+		}
+		// Stamped onto the config so cfg and the process cwd cannot disagree.
+		cfg.WorkDir = wd
+		serveWorkDirResolved = wd
 		return runServe(cfg)
 	},
 }
@@ -139,6 +161,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveRemoteMic, "remote-mic", true, "Enable remote push-to-talk (client STT over the WebSocket)")
 	serveCmd.Flags().BoolVar(&serveTailscale, "tailscale", false, "Tailscale remote mode: 100.x bind, MagicDNS URL, prefer trusted cert (self-signed fallback), host speaker muted unless --no-voice=false")
 	serveCmd.Flags().BoolVar(&serveBannerJSON, "banner-json", false, "Emit machine-readable JSON event lines on stdout (ready, pairing_code) and route human logs to stderr")
+	serveCmd.Flags().StringVar(&serveWorkDir, "work-dir", "", "Directory the agent's file and shell tools operate in (default: the work_dir setting)")
 	serveCmd.Flags().StringVar(&serveLogFile, "log-file", "", "Append human/diagnostic output to this file (created 0600) instead of the console; stdout still carries the --banner-json lines")
 	rootCmd.AddCommand(serveCmd)
 }
@@ -346,6 +369,7 @@ func runServe(cfg *config.Config) error {
 		RouteMeeting:        newServeMeetingRouter(cfg),
 		ListSessions:        listSessionSummaries,
 		DeleteSession:       serveDeleteSession(ref),
+		WorkDir:             cfg.WorkDir,
 		Providers: netapi.Providers{
 			Brain: cfg.BrainProvider,
 			STT:   sttName,

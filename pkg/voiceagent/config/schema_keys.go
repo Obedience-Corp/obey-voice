@@ -257,6 +257,11 @@ func toolKeys() []KeySpec {
 			Help: "An extra folder scanned for skills. Empty uses the folder inside Obey Voice's install root.",
 		},
 		{
+			Key: "work_dir", Type: TypeString, Default: "",
+			Group: GroupTools, Title: "Working folder",
+			Help: "The folder the agent's file and shell tools start in — a default, not a sandbox. Empty uses the folder it was launched from, or your home folder when that is the binary's own folder.",
+		},
+		{
 			Key: "skills_disabled", Type: TypeStringList, Default: []string{},
 			Group: GroupTools, Title: "Disabled skills",
 			Help: "Skills the agent ignores even when discovered.",
