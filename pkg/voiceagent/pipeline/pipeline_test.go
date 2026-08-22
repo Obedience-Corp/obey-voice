@@ -1167,6 +1167,41 @@ func TestRecoverTurnDoesNotDuplicateRecoveryReply(t *testing.T) {
 	}
 }
 
+func TestRecoverTurnPlaybackStallDoesNotApologize(t *testing.T) {
+	bus := events.NewBus()
+	var got []string
+	events.Subscribe(bus, func(e events.ResponseReady) { got = append(got, e.Response) })
+
+	p := &Pipeline{Events: bus}
+	cases := []struct {
+		partial string
+		want    string
+	}{
+		{"", ""},
+		{"Come closer and tell me.", "Come closer and tell me."},
+		{"Come closer.\n\n" + brain.RecoveryReply, "Come closer.\n\n" + brain.RecoveryReply},
+	}
+	for _, tc := range cases {
+		metrics := newTurnMetrics()
+		turn := p.newTurnConductor(metrics)
+		p.recoverTurn(context.Background(), turn, metrics, tc.partial, errPlaybackStalled)
+	}
+	if len(got) != len(cases) {
+		t.Fatalf("ResponseReady count = %d, want %d", len(got), len(cases))
+	}
+	for i, tc := range cases {
+		if got[i] != tc.want {
+			t.Fatalf("case %d: response = %q, want %q", i, got[i], tc.want)
+		}
+		if tc.partial == "" && strings.Contains(got[i], brain.RecoveryReply) {
+			t.Fatalf("case %d: playback stall invented RecoveryReply: %q", i, got[i])
+		}
+		if tc.partial != "" && !strings.Contains(tc.partial, brain.RecoveryReply) && strings.Contains(got[i], brain.RecoveryReply) {
+			t.Fatalf("case %d: playback stall appended RecoveryReply: %q", i, got[i])
+		}
+	}
+}
+
 // Batching counts segments the listener will actually HEAR, not chunks the
 // segmenter emitted.
 //

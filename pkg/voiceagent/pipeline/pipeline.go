@@ -423,7 +423,8 @@ func (p *Pipeline) recoverTurn(ctx context.Context, turn *turnConductor, metrics
 	metrics.degraded = true
 	stage := "brain"
 	speak := true
-	if errors.Is(err, errPlaybackStalled) {
+	playbackStall := errors.Is(err, errPlaybackStalled)
+	if playbackStall {
 		// The player is wedged; queueing recovery speech into it would stall
 		// again. The reply text still reaches the transcript.
 		stage = "playback"
@@ -432,11 +433,19 @@ func (p *Pipeline) recoverTurn(ctx context.Context, turn *turnConductor, metrics
 	p.emit(events.Error{Stage: stage, Message: err.Error()})
 	logDegradedTurn(stage, err)
 
-	// Ollama's stream layer may already have recovered out loud (streaming
-	// RecoveryReply itself) before the turn died; appending a second copy is
-	// how the field capture showed the same apology twice.
+	partial = strings.TrimSpace(partial)
 	response := brain.RecoveryReply
-	if partial = strings.TrimSpace(partial); partial != "" {
+	if playbackStall {
+		// Whole-utterance TTS often delivers audio after the watchdog fires.
+		// Appending RecoveryReply is how 2026-08-21 showed Veronica's line plus
+		// "Want me to try a simpler approach?" on the same turn. The Error
+		// event above is the activity detail; the transcript keeps what was
+		// already spoken.
+		response = partial
+	} else if partial != "" {
+		// Ollama's stream layer may already have recovered out loud (streaming
+		// RecoveryReply itself) before the turn died; appending a second copy
+		// is how the field capture showed the same apology twice.
 		response = partial
 		if !strings.HasSuffix(partial, brain.RecoveryReply) {
 			response = partial + "\n\n" + brain.RecoveryReply
