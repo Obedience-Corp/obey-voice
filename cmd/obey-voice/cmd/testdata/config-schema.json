@@ -1198,12 +1198,14 @@
         "Ryan",
         "Aiden",
         "Ono_Anna",
-        "Sohee"
+        "Sohee",
+        "Veronica",
+        "VeronicaDesk"
       ],
       "allows_empty": true,
       "group": "models",
       "title": "Qwen voice",
-      "help": "Which Qwen preset speaks. Empty uses Vivian.",
+      "help": "Which Qwen voice speaks. Empty uses Veronica (shipped clone).",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,
@@ -1279,6 +1281,7 @@
         "sherpa-offline",
         "sherpa-parakeet",
         "sherpa-streaming",
+        "transcribecpp",
         "whispercpp"
       ],
       "allows_empty": false,
@@ -1289,6 +1292,37 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "STT_PROVIDER",
+      "editable": true
+    },
+    {
+      "key": "transcribecpp_binary",
+      "type": "string",
+      "default": "transcribe-cli",
+      "allows_empty": true,
+      "group": "models",
+      "title": "transcribe.cpp path",
+      "help": "Where the transcribe.cpp command lives. A bare name is looked up on PATH.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "TRANSCRIBECPP_BINARY",
+      "editable": true
+    },
+    {
+      "key": "transcribecpp_model",
+      "type": "enum",
+      "default": "parakeet-tdt-0.6b-v2",
+      "enum": [
+        "parakeet-tdt-0.6b-v2"
+      ],
+      "allows_empty": false,
+      "group": "models",
+      "title": "transcribe.cpp model",
+      "help": "Which GGUF the optional transcribecpp provider loads. The value is upstream's full model slug, so it reads longer than parakeet_model's — that is not a typo.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "TRANSCRIBECPP_MODEL",
       "editable": true
     },
     {

@@ -1059,3 +1059,66 @@ func TestModelsCleanJSONReportsFailuresOnStdout(t *testing.T) {
 		t.Errorf("failure = %+v, want a required_assets error naming the cause", failure)
 	}
 }
+
+// TestModelsSurfacesTranscribeCPPAttribution is the claim-skew guard: the GGUF
+// weights are cc-by-4.0, so the license and its source have to reach the user
+// on the surfaces that plan and fetch them, not just the asset struct.
+func TestModelsSurfacesTranscribeCPPAttribution(t *testing.T) {
+	cfg := &config.Config{STTProvider: "transcribecpp"}
+	noop := func(ctx context.Context, cfg *config.Config, req config.AssetRequest, onProgress func(string, float64)) error {
+		return nil
+	}
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T) string
+	}{
+		{
+			name: "ensure plan",
+			run: func(t *testing.T) string {
+				cmd := &cobra.Command{}
+				var buf bytes.Buffer
+				cmd.SetOut(&buf)
+				if err := runModelsEnsure(cmd, cfg, scopeFlags{stt: true}.request(cfg), noop); err != nil {
+					t.Fatalf("runModelsEnsure() error = %v", err)
+				}
+				return buf.String()
+			},
+		},
+		{
+			name: "status table",
+			run: func(t *testing.T) string {
+				return runStatusScoped(t, cfg, scopeFlags{stt: true}, t.TempDir(), false)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := tt.run(t)
+			if !contains(out, "cc-by-4.0") {
+				t.Errorf("output does not name the weight license:\n%s", out)
+			}
+			if !contains(out, "huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf") {
+				t.Errorf("output does not attribute the weights' source:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestModelsEnsureQuietForUnlicensedAssets keeps the attribution line off
+// assets that carry no separate obligation.
+func TestModelsEnsureQuietForUnlicensedAssets(t *testing.T) {
+	cmd := &cobra.Command{}
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	noop := func(ctx context.Context, cfg *config.Config, req config.AssetRequest, onProgress func(string, float64)) error {
+		return nil
+	}
+	if err := runModelsEnsure(cmd, fullCfg(), scopeFlags{}.request(fullCfg()), noop); err != nil {
+		t.Fatalf("runModelsEnsure() error = %v", err)
+	}
+	if contains(buf.String(), "license:") {
+		t.Errorf("unlicensed assets printed an attribution line:\n%s", buf.String())
+	}
+}

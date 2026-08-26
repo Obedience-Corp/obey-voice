@@ -115,6 +115,16 @@ func modelKeys() []KeySpec {
 			Help: "The exact ggml file to load, when it is not in the models folder.",
 		},
 		{
+			Key: "transcribecpp_binary", Type: TypeString, Default: "transcribe-cli",
+			Group: GroupModels, Title: "transcribe.cpp path",
+			Help: "Where the transcribe.cpp command lives. A bare name is looked up on PATH.",
+		},
+		{
+			Key: "transcribecpp_model", Type: TypeEnum, Default: DefaultTranscribeCPPModel, Enum: TranscribeCPPModelNames(),
+			Group: GroupModels, Title: "transcribe.cpp model",
+			Help: "Which GGUF the optional transcribecpp provider loads. The value is upstream's full model slug, so it reads longer than parakeet_model's — that is not a typo.",
+		},
+		{
 			Key: "models_dir", Type: TypeString, Default: DefaultModelsDir(),
 			Group: GroupModels, Title: "Models folder",
 			Help: "Where downloaded voice and speech models are cached. Moving it re-downloads everything.",

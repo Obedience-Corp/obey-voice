@@ -23,9 +23,9 @@ func configReferencedClaims(cfg *Config, modelsDir string) ([]assetClaim, error)
 }
 
 // sttConfigClaims protects the model every STT key names, in every mode:
-// sherpa streaming (sherpa_streaming_model), sherpa offline (whisper_model)
-// and whisper.cpp (whispercpp_model). Flipping stt_mode must never make the
-// other mode's configured model "unused".
+// sherpa streaming (sherpa_streaming_model), sherpa offline (whisper_model),
+// whisper.cpp (whispercpp_model) and transcribe.cpp (transcribecpp_model).
+// Flipping stt_mode must never make the other mode's configured model "unused".
 func sttConfigClaims(cfg *Config, modelsDir string) ([]assetClaim, error) {
 	variants := []struct {
 		norm   NormalizedSTT
@@ -35,6 +35,7 @@ func sttConfigClaims(cfg *Config, modelsDir string) ([]assetClaim, error) {
 		{NormalizedSTT{Provider: STTProviderSherpa, Mode: STTModeOffline}, "whisper_model"},
 		{NormalizedSTT{Provider: STTProviderParakeet, Mode: STTModeOffline}, "parakeet_model"},
 		{NormalizedSTT{Provider: STTProviderWhisperCPP, Mode: STTModeCLI}, "whispercpp_model"},
+		{NormalizedSTT{Provider: STTProviderTranscribeCPP, Mode: STTModeOffline}, "transcribecpp_model"},
 	}
 	claims := make([]assetClaim, 0, len(variants)+1)
 	for _, variant := range variants {
@@ -52,6 +53,7 @@ func sttConfigClaims(cfg *Config, modelsDir string) ([]assetClaim, error) {
 	for _, named := range []struct{ key, value string }{
 		{"whispercpp_model_path", cfg.WhisperCPPModelPath},
 		{"whispercpp_binary", cfg.WhisperCPPBinary},
+		{"transcribecpp_binary", cfg.TranscribeCPPBinary},
 	} {
 		if value := strings.TrimSpace(named.value); value != "" {
 			claims = append(claims, pathClaim(resolveUnder(modelsDir, value), named.key))
