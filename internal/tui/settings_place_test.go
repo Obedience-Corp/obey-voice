@@ -82,7 +82,7 @@ func TestTogglePlaceRefusesLanWithoutAnAddress(t *testing.T) {
 }
 
 func TestTogglePlaceRoundTrip(t *testing.T) {
-	m, saved := placeModel(t, &config.Config{TTSWorkerURL: "https://studio:7263"})
+	m, saved := placeModel(t, &config.Config{TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "s3cret"})
 
 	selectRow(t, m, qwenOptPlace)
 	if saved["tts_place"] != config.TTSPlaceLAN || m.cfg.TTSPlace != config.TTSPlaceLAN {
@@ -103,7 +103,7 @@ func TestTogglePlaceRoundTrip(t *testing.T) {
 }
 
 func TestToggleLanStrict(t *testing.T) {
-	m, saved := placeModel(t, &config.Config{TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"})
+	m, saved := placeModel(t, &config.Config{TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "s3cret"})
 
 	selectRow(t, m, qwenOptLanStrict)
 	if saved["tts_lan_strict"] != true || !m.cfg.TTSLanStrict {
@@ -184,6 +184,7 @@ func TestEditWorkerURL(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		place   string
+		token   string
 		typed   string
 		wantErr string
 		want    string
@@ -193,9 +194,10 @@ func TestEditWorkerURL(t *testing.T) {
 		{name: "tls host", typed: "https://studio:7263", want: "https://studio:7263"},
 		{name: "loopback plaintext", typed: "http://127.0.0.1:7263", want: "http://127.0.0.1:7263"},
 		{name: "cleared while local", typed: "", want: ""},
+		{name: "loopback plaintext while lan", place: config.TTSPlaceLAN, typed: "http://127.0.0.1:7263", want: "http://127.0.0.1:7263", token: "s3cret"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config.Config{TTSPlace: tc.place}
+			cfg := &config.Config{TTSPlace: tc.place, TTSWorkerToken: tc.token}
 			m, saved := placeModel(t, cfg)
 
 			selectRow(t, m, qwenOptWorkerURL)
@@ -225,7 +227,7 @@ func TestEditWorkerURL(t *testing.T) {
 
 // An empty address is only harmless while speech runs here.
 func TestEditWorkerURLRefusesClearingWhileOnAnotherComputer(t *testing.T) {
-	m, saved := placeModel(t, &config.Config{TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"})
+	m, saved := placeModel(t, &config.Config{TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "s3cret"})
 
 	selectRow(t, m, qwenOptWorkerURL)
 	next := commitTyped(*m, "")
@@ -263,7 +265,7 @@ func TestEditorOwnsKeysAndCancels(t *testing.T) {
 // Place is app topology; the picker writes app keys only, never a persona
 // field (D13).
 func TestPlaceRowsWriteOnlyAppKeys(t *testing.T) {
-	m, saved := placeModel(t, &config.Config{TTSWorkerURL: "https://studio:7263"})
+	m, saved := placeModel(t, &config.Config{TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "s3cret"})
 
 	selectRow(t, m, qwenOptPlace)
 	selectRow(t, m, qwenOptLanStrict)
@@ -280,7 +282,7 @@ func TestPlaceRowsWriteOnlyAppKeys(t *testing.T) {
 
 // Settings copy names computers, never the hardware in them (D12).
 func TestPlaceCopyNamesComputersNotHardware(t *testing.T) {
-	m, _ := placeModel(t, &config.Config{TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"})
+	m, _ := placeModel(t, &config.Config{TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "s3cret"})
 
 	var joined string
 	for _, item := range m.qwenItems {
@@ -290,6 +292,54 @@ func TestPlaceCopyNamesComputersNotHardware(t *testing.T) {
 		if strings.Contains(joined, banned) {
 			t.Fatalf("Settings copy names hardware (%q): %s", banned, joined)
 		}
+	}
+}
+
+// A speech worker cannot be reached without a token, so Settings refuses the
+// switch instead of saving a place that falls back to Kokoro on every turn.
+func TestTogglePlaceRefusesLanWithoutAToken(t *testing.T) {
+	m, saved := placeModel(t, &config.Config{TTSWorkerURL: "https://studio:7263"})
+
+	selectRow(t, m, qwenOptPlace)
+
+	if _, written := saved["tts_place"]; written {
+		t.Fatalf("place was saved without a token: %v", saved)
+	}
+	if !strings.Contains(m.message, "tts_worker_token") {
+		t.Fatalf("message = %q, want the token reason", m.message)
+	}
+}
+
+func TestTogglePlaceAcceptsAnEnvironmentToken(t *testing.T) {
+	t.Setenv(config.SpeechTokenEnv, "from-env")
+	m, saved := placeModel(t, &config.Config{TTSWorkerURL: "https://studio:7263"})
+
+	selectRow(t, m, qwenOptPlace)
+	if saved["tts_place"] != config.TTSPlaceLAN {
+		t.Fatalf("saved=%v message=%q", saved, m.message)
+	}
+}
+
+// Clearing the token while speech runs elsewhere would silently break every
+// turn; the environment may still supply one.
+func TestClearingTheTokenIsRefusedWhileOnAnotherComputer(t *testing.T) {
+	lan := &config.Config{TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "s3cret"}
+	m, saved := placeModel(t, lan)
+
+	selectRow(t, m, qwenOptWorkerToken)
+	next := commitTyped(*m, "")
+	if _, written := saved["tts_worker_token"]; written {
+		t.Fatalf("the only token a lan session has was cleared: %v", saved)
+	}
+	if !strings.Contains(next.message, "tts_worker_token") {
+		t.Fatalf("message = %q", next.message)
+	}
+
+	t.Setenv(config.SpeechTokenEnv, "from-env")
+	m2, saved2 := placeModel(t, lan)
+	selectRow(t, m2, qwenOptWorkerToken)
+	if next := commitTyped(*m2, ""); saved2["tts_worker_token"] != "" {
+		t.Fatalf("an environment token must allow clearing the file value: %v (%q)", saved2, next.message)
 	}
 }
 
@@ -306,6 +356,32 @@ func commitTyped(m settingsModel, text string) settingsModel {
 	m.edit.input.SetValue(text)
 	m, _ = m.updateEditor(tea.KeyMsg{Type: tea.KeyEnter})
 	return m
+}
+
+// The fingerprint must react to a rotated token without carrying it: this
+// string is app state a debug print could surface.
+func TestVoiceSettingsStateHidesTheToken(t *testing.T) {
+	const secret = "s3cret-token-value"
+	base := &config.Config{TTSProvider: "qwen3-tts", TTSPlace: config.TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"}
+	withToken := *base
+	withToken.TTSWorkerToken = secret
+
+	state := voiceSettingsState(&withToken)
+	if strings.Contains(state, secret) {
+		t.Fatalf("the fingerprint embeds the token: %q", state)
+	}
+	if state == voiceSettingsState(base) {
+		t.Fatal("setting a token must register as a voice change")
+	}
+	rotated := withToken
+	rotated.TTSWorkerToken = secret + "-2"
+	if voiceSettingsState(&rotated) == state {
+		t.Fatal("rotating the token must register as a voice change")
+	}
+	same := withToken
+	if voiceSettingsState(&same) != state {
+		t.Fatal("the fingerprint must be stable for the same token")
+	}
 }
 
 // Switching computers has to look like a voice change to the app, or Settings

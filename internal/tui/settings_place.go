@@ -149,14 +149,19 @@ func (m *settingsModel) commitSpeechEdit(kind settingsEditKind, value string) {
 	value = strings.TrimSpace(value)
 	switch kind {
 	case editWorkerURL:
-		// An address is only meaningful together with the place: check the pair
-		// the user would end up with, so a bad URL is refused here rather than
-		// at the start of the next conversation.
-		probe := *m.cfg
-		probe.TTSWorkerURL = value
-		if value != "" || config.TTSPlaceOf(m.cfg) == config.TTSPlaceLAN {
-			probe.TTSPlace = config.TTSPlaceLAN
+		// While speech runs here, only the address itself has to make sense —
+		// setting it is a step toward switching, not the switch. Once speech
+		// runs elsewhere the whole topology has to stay valid, so clearing the
+		// address (or breaking it) is refused.
+		if config.TTSPlaceOf(m.cfg) == config.TTSPlaceLAN {
+			probe := *m.cfg
+			probe.TTSWorkerURL = value
 			if err := config.ValidateTTSPlace(&probe); err != nil {
+				m.message = fmt.Sprintf("Not saved: %v", err)
+				return
+			}
+		} else if value != "" {
+			if err := config.ValidateSpeechWorkerURL(value); err != nil {
 				m.message = fmt.Sprintf("Not saved: %v", err)
 				return
 			}
@@ -174,6 +179,17 @@ func (m *settingsModel) commitSpeechEdit(kind settingsEditKind, value string) {
 		m.message = "Speech computer address set to " + value
 
 	case editWorkerToken:
+		// A speech worker on another computer cannot be reached without a
+		// token, so clearing one while place=lan is refused unless the
+		// environment supplies it.
+		if config.TTSPlaceOf(m.cfg) == config.TTSPlaceLAN {
+			probe := *m.cfg
+			probe.TTSWorkerToken = value
+			if err := config.ValidateTTSPlace(&probe); err != nil {
+				m.message = fmt.Sprintf("Not saved: %v", err)
+				return
+			}
+		}
 		if err := m.save("tts_worker_token", value); err != nil {
 			m.message = fmt.Sprintf("Failed to save the token: %v", err)
 			return

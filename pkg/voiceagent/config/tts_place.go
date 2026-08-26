@@ -61,9 +61,29 @@ func ValidateTTSPlace(cfg *Config) error {
 	default:
 		return fmt.Errorf("unsupported tts_place %q; want %s or %s", place, TTSPlaceLocal, TTSPlaceLAN)
 	}
-	raw := strings.TrimSpace(cfg.TTSWorkerURL)
-	if raw == "" {
+	if strings.TrimSpace(cfg.TTSWorkerURL) == "" {
 		return fmt.Errorf("tts_place %s requires tts_worker_url (https://host:7263)", TTSPlaceLAN)
+	}
+	if err := ValidateSpeechWorkerURL(cfg.TTSWorkerURL); err != nil {
+		return err
+	}
+	// Every speech worker authenticates, loopback included, so a missing token
+	// is a configuration error rather than a connection that fails later.
+	// Without this the refusal looks like an unreachable worker, falls back to
+	// Kokoro by default, and the operator never learns the token was unset.
+	if TTSWorkerTokenOf(cfg) == "" {
+		return fmt.Errorf("tts_place %s requires tts_worker_token (or %s); speech-serve prints one on first run", TTSPlaceLAN, SpeechTokenEnv)
+	}
+	return nil
+}
+
+// ValidateSpeechWorkerURL checks an address on its own, without asking whether
+// the rest of the topology is ready for it. A front end setting the address
+// before switching computers needs exactly this much.
+func ValidateSpeechWorkerURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fmt.Errorf("tts_worker_url is empty")
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -78,21 +98,15 @@ func ValidateTTSPlace(cfg *Config) error {
 	}
 	switch strings.ToLower(parsed.Scheme) {
 	case "https":
+		return nil
 	case "http":
 		if !isLoopbackHost(host) {
 			return fmt.Errorf("tts_worker_url %q is plaintext to a non-loopback host; use https://%s", raw, parsed.Host)
 		}
+		return nil
 	default:
 		return fmt.Errorf("tts_worker_url %q must be https:// (or http:// on loopback)", raw)
 	}
-	// Every speech worker authenticates, loopback included, so a missing token
-	// is a configuration error rather than a connection that fails later.
-	// Without this the refusal looks like an unreachable worker, falls back to
-	// Kokoro by default, and the operator never learns the token was unset.
-	if TTSWorkerTokenOf(cfg) == "" {
-		return fmt.Errorf("tts_place %s requires tts_worker_token (or %s); speech-serve prints one on first run", TTSPlaceLAN, SpeechTokenEnv)
-	}
-	return nil
 }
 
 // SpeechVoiceNotice reports a configured voice this topology cannot honor.
