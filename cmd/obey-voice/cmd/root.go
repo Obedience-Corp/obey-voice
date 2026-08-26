@@ -343,6 +343,9 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				// install and is consumed on the TUI update thread after
 				// voiceReloadedMsg — do not read it from other goroutines.
 				rt.SessionCfg = sessionCfg
+				if set.VoiceNotice != nil {
+					bus.Emit(events.Error{Stage: "tts-voice", Message: set.VoiceNotice.Error()})
+				}
 				if set.FallbackWarning != nil {
 					bus.Emit(events.Error{Stage: "tts-fallback", Message: set.FallbackWarning.Error()})
 				}

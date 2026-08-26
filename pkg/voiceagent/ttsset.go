@@ -24,7 +24,11 @@ type TTSSet struct {
 	Primary         tts.Provider
 	Fallback        tts.Provider
 	FallbackWarning error
-	cleanups        []func()
+	// VoiceNotice is a non-fatal warning about the voice this set will
+	// actually speak in — today, a clone voice that cannot cross the LAN.
+	// Displayed wherever FallbackWarning is: talk start and Settings reload.
+	VoiceNotice error
+	cleanups    []func()
 }
 
 func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
@@ -35,7 +39,7 @@ func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
 		}
 		return nil, err
 	}
-	set := &TTSSet{Primary: primary}
+	set := &TTSSet{Primary: primary, VoiceNotice: speechVoiceNotice(cfg)}
 	if primaryCleanup != nil {
 		set.cleanups = append(set.cleanups, primaryCleanup)
 	}
@@ -84,6 +88,9 @@ func speechPlaceFallbackSet(cfg *config.Config, cause error) (*TTSSet, bool) {
 	}
 	set := &TTSSet{
 		Primary: kokoro,
+		// The voice notice describes the configuration, not this session, so it
+		// still applies: when that computer comes back it speaks its own voice.
+		VoiceNotice: speechVoiceNotice(cfg),
 		FallbackWarning: fmt.Errorf("speech worker %s is unreachable; speaking with Kokoro on this computer: %w",
 			strings.TrimSpace(cfg.TTSWorkerURL), cause),
 	}
@@ -91,6 +98,14 @@ func speechPlaceFallbackSet(cfg *config.Config, cause error) (*TTSSet, bool) {
 		set.cleanups = append(set.cleanups, cleanup)
 	}
 	return set, true
+}
+
+// speechVoiceNotice adapts the config-level notice to an error for display.
+func speechVoiceNotice(cfg *config.Config) error {
+	if notice := config.SpeechVoiceNotice(cfg); notice != "" {
+		return errors.New(notice)
+	}
+	return nil
 }
 
 func (s *TTSSet) Close() {

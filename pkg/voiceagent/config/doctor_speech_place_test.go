@@ -30,14 +30,14 @@ func TestDiagnoseSpeechPlaceFailures(t *testing.T) {
 	}{
 		{
 			name:  "unreachable warns so talk still starts",
-			cfg:   Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"},
+			cfg:   Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "t"},
 			probe: unreachable,
 			want:  SeverityWarn,
 			match: "did not answer",
 		},
 		{
 			name:  "strict makes it an error",
-			cfg:   Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSLanStrict: true},
+			cfg:   Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "t", TTSLanStrict: true},
 			probe: unreachable,
 			want:  SeverityError,
 			match: "did not answer",
@@ -91,7 +91,7 @@ func TestDiagnoseSpeechPlaceLocalNeverDials(t *testing.T) {
 }
 
 func TestDiagnoseSpeechPlaceReportsTheWorker(t *testing.T) {
-	row := speechPlaceRow(t, &Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"},
+	row := speechPlaceRow(t, &Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "t"},
 		func(context.Context, *Config) (SpeechProbeResult, error) {
 			return SpeechProbeResult{Host: "studio:7263", RTT: 3 * time.Millisecond, Streaming: false, Tier: "0.6b"}, nil
 		})
@@ -108,7 +108,7 @@ func TestDiagnoseSpeechPlaceReportsTheWorker(t *testing.T) {
 // A LAN host owns no worker binary, no GGUF and no tier: those rows must not
 // fail a machine that never needed them.
 func TestDiagnoseSkipsLocalQwenAssetsOnLan(t *testing.T) {
-	cfg := &Config{TTSProvider: "qwen3-tts", TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"}
+	cfg := &Config{TTSProvider: "qwen3-tts", TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "t"}
 	diags := Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", errors.New("not installed") })
 
 	var provider *Diagnostic

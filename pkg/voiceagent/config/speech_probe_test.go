@@ -87,7 +87,7 @@ func TestSpeechDialTargetOf(t *testing.T) {
 		{name: "loopback plaintext", url: "http://127.0.0.1:7263", want: SpeechDialTarget{Address: "127.0.0.1:7263", Host: "127.0.0.1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := SpeechDialTargetOf(probeConfig(tc.url, ""))
+			got, err := SpeechDialTargetOf(probeConfig(tc.url, "s3cret"))
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("target=%+v, want an error", got)

@@ -30,6 +30,7 @@ func lanSetConfig(t *testing.T) *config.Config {
 		TTSFallbackProvider: "kokoro",
 		TTSPlace:            config.TTSPlaceLAN,
 		TTSWorkerURL:        unreachableSpeechURL(t),
+		TTSWorkerToken:      "s3cret",
 		TTSLanTimeoutMS:     200,
 	}
 }
@@ -72,6 +73,11 @@ func TestNewTTSSetUnreachableSpeechWorker(t *testing.T) {
 				return
 			}
 			if err != nil {
+				// Only a missing Kokoro install may skip here. A refusal that
+				// came from config would otherwise hide a real regression.
+				if strings.Contains(err.Error(), "tts_place") || strings.Contains(err.Error(), "tts_worker") {
+					t.Fatalf("config was refused, not the connection: %v", err)
+				}
 				t.Skipf("kokoro not installable in this environment: %v", err)
 			}
 			defer set.Close()
@@ -86,6 +92,55 @@ func TestNewTTSSetUnreachableSpeechWorker(t *testing.T) {
 				t.Fatalf("warning=%v, want one naming the speech worker", set.FallbackWarning)
 			}
 		})
+	}
+}
+
+// A missing token is a configuration error too: without it the refusal would
+// look like an unreachable worker and silently become Kokoro.
+func TestNewTTSSetLanWithoutATokenIsAnError(t *testing.T) {
+	cfg := lanSetConfig(t)
+	cfg.TTSWorkerToken = ""
+
+	set, err := NewTTSSet(cfg)
+	if err == nil {
+		set.Close()
+		t.Fatal("lan without a token must fail configuration, not fall back")
+	}
+	if !strings.Contains(err.Error(), "tts_worker_token") {
+		t.Fatalf("err=%v want the token remediation", err)
+	}
+}
+
+// The clone-voice degrade must reach the operator.
+func TestNewTTSSetSurfacesTheCloneVoiceNotice(t *testing.T) {
+	cfg := lanSetConfig(t)
+	cfg.QwenTTSVoice = "Veronica"
+
+	set, err := NewTTSSet(cfg)
+	if err != nil {
+		t.Skipf("kokoro not installable in this environment: %v", err)
+	}
+	defer set.Close()
+	if set.VoiceNotice == nil || !strings.Contains(set.VoiceNotice.Error(), "clone voice") {
+		t.Fatalf("notice=%v, want the clone-voice warning", set.VoiceNotice)
+	}
+
+	preset := lanSetConfig(t)
+	preset.QwenTTSVoice = "Vivian"
+	presetSet, err := NewTTSSet(preset)
+	if err != nil {
+		t.Skipf("kokoro not installable in this environment: %v", err)
+	}
+	defer presetSet.Close()
+	if presetSet.VoiceNotice != nil {
+		t.Fatalf("a preset voice must not warn: %v", presetSet.VoiceNotice)
+	}
+
+	local := lanSetConfig(t)
+	local.TTSPlace = config.TTSPlaceLocal
+	local.QwenTTSVoice = "Veronica"
+	if notice := speechVoiceNotice(local); notice != nil {
+		t.Fatalf("a clone on this computer must not warn: %v", notice)
 	}
 }
 
