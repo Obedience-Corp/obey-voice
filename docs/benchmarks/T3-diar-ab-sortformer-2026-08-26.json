@@ -1,21 +1,26 @@
 {
   "schema": "obey-voice.bench.diar-ab.v1",
   "artifact": "T3-diar-ab-sortformer-2026-08-26.json",
-  "spike": "P3 / Spike 3 \u2014 meeting-review diarization: Sortformer vs current sherpa offline path",
+  "spike": "P3 / Spike 3 — meeting-review diarization: Sortformer vs current sherpa offline path",
   "spec": [
     "workflow/design/obey-voice-transcribe-cpp/spec/20-eval-gates.md#spike-3",
     "workflow/design/obey-voice-transcribe-cpp/spec/50-diarization.md"
   ],
   "date": "2026-08-26",
+  "generated_by": "scripts/diar_ab_aggregate.py",
   "schema_notes": {
-    "purpose": "Dedicated diarization A/B record. NOT the stt-ab schema \u2014 there is no transcript, no WER, no STT-final latency; a diarization run produces only speaker spans.",
+    "purpose": "Dedicated diarization A/B record. NOT the stt-ab schema — there is no transcript, no WER, no STT-final latency; a diarization run produces only speaker spans.",
     "field_semantics": {
-      "coverage_ms": "total wall-clock ms of audio assigned to some speaker, computed on a 10 ms frame grid (overlaps counted once)",
-      "wall_ms": "full process wall clock incl. process start, model load and compute \u2014 measured identically for both systems",
+      "coverage_ms": "total ms of audio assigned to some speaker, computed on a 10 ms frame grid (overlaps counted once)",
+      "coverage_raw_span_sum_ms": "sum of (end-start) over raw spans, before grid quantization",
+      "wall_ms": "full process wall clock incl. process start, model load and compute — measured identically for both systems",
       "who_agreement_pct_where_both_speak": "of the frames BOTH systems mark as speech, the share where they name the same speaker. This is the quality signal; coverage differences are a separate axis.",
       "realtime_factor_x": "fixture_duration_ms / wall_ms_median; >1 is faster than realtime"
     },
-    "no_ground_truth": "The fixture ships no RTTM/label file (checked: the cache dir holds only the .wav). DER cannot be computed. Comparison is system-vs-system on the current path as reference, per spec/20 spike-3 'manual score + DER if we have labels'."
+    "coverage_grid_vs_raw": "coverage_ms is grid-quantized: each span's start floors and its end ceils to the 10 ms grid, so coverage_ms >= coverage_raw_span_sum_ms by up to 10 ms per span. For the reference run that is 84560 vs 84510 (6 spans, +50 ms). Both are reported; numbers.coverage_ms quotes the grid figure, because the agreement statistics are computed on the same grid and must be internally consistent with it.",
+    "no_ground_truth": "The fixture ships no RTTM/label file (checked: the cache dir holds only the .wav). DER cannot be computed. Comparison is system-vs-system on the current path as reference, per spec/20 spike-3 'manual score + DER if we have labels'.",
+    "iteration_counts": "Wall times are medians over the iteration count recorded per run. Only the reference run and the very_high_latency Sortformer runs were repeated; the default / high_latency / low_latency presets were measured once each and their wall_ms figures are INDICATIVE, not medians. Speaker-count and span outputs are deterministic per (backend, preset) and do not depend on iteration count.",
+    "regeneration": "Produced by scripts/diar_ab_aggregate.py from the raw outputs of scripts/diar-ab-sortformer.sh. No figure in this file is transcribed by hand."
   },
   "provenance": {
     "machine": {
@@ -26,26 +31,25 @@
       "os": "macOS 26.5"
     },
     "engine_repo": {
-      "path": "/Users/lancerogers/Dev/AI/My_Tools/projects/obey-voice",
-      "commit": "bfca22c44abb5801026811adff16c1fd063eceb7",
-      "branch": "spike/stt-ab-transcribecpp",
+      "path": "projects/obey-voice",
+      "commit": "9d1c1e5ad31e3ccdda0b053539bc9d5fb2ba7bbb",
+      "branch": "bench/t3-sortformer",
       "read_only": true,
-      "note": "Branch diff vs main touches only cmd/transcribecpp-ab, scripts/stt-ab-*, and the T1 artifact \u2014 internal/speaker and internal/meeting are identical to main, so the installed binary is representative of the current diarization path."
+      "note": "The spike branch diff vs main touches only cmd/transcribecpp-ab, scripts/stt-ab-*, scripts/diar-ab-* and the benchmark artifacts — internal/speaker and internal/meeting are identical to main, so the installed binary is representative of the current diarization path."
     },
     "sherpa_runner": {
-      "binary": "/Users/lancerogers/go/bin/obey-voice",
+      "binary": "$GOBIN/obey-voice",
       "sha256": "4f29c6c38b9b1e6286e20ee0db9d46b6559686732b78cff4217ebc03aedc5aaf",
-      "built": "2026-08-23T16:32 local",
       "subcommand": "meeting analyze",
       "code_path": "internal/speaker.SherpaEngine.Diarize -> sherpa OfflineSpeakerDiarization",
       "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small",
       "models": [
         {
-          "file": "~/.cache/festival-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx",
+          "file": "${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx",
           "sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d"
         },
         {
-          "file": "~/.cache/festival-voice/models/speaker/nemo_en_titanet_small.onnx",
+          "file": "${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/models/speaker/nemo_en_titanet_small.onnx",
           "sha256": "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e"
         }
       ],
@@ -54,14 +58,13 @@
     "transcribecpp_runner": {
       "pin": "v0.2.2",
       "commit": "c6a9257cdf8e9c6918c0f8f876246db048a22103",
-      "cli": "~/.cache/festival-voice/spikes/transcribecpp/src-v0.2.2/build/bin/transcribe-cli",
+      "cli": "${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/spikes/transcribecpp/src-v0.2.2/build/bin/transcribe-cli",
       "cli_sha256": "ad2722b4d416ee6d112af7275976ac7580c0cca9e54838b3a176a9bbf7de2e19",
       "model": {
         "name": "diar_streaming_sortformer_4spk-v2.1",
         "quant": "Q8_0",
-        "file": "~/.cache/festival-voice/spikes/transcribecpp/models/diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf",
+        "file": "${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/spikes/transcribecpp/models/diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf",
         "sha256": "a5dacdc650790266c7a362e54e6bf51952015487edaa606c4e11632bc32442a9",
-        "bytes": 139310336,
         "source": "https://huggingface.co/handy-computer/diar_streaming_sortformer_4spk-v2.1-gguf",
         "license": "NVIDIA Open Model License",
         "published_quants": [
@@ -69,12 +72,14 @@
           "F16",
           "Q8_0"
         ],
-        "upstream_der_ami_ihm_q8_0_pct": 14.73
+        "bytes": 139310336,
+        "upstream_der_ami_ihm_q8_0_pct": 14.73,
+        "committed": false
       }
     },
     "fixture": {
       "name": "product-marketing-meeting-90s.wav",
-      "resolved_path": "/Users/lancerogers/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
+      "resolved_path": "${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
       "sha256": "ed57895c81d4d5164be0ebace0cf4a71098a775caff143527d6d5d12b71816b7",
       "bytes": 2880510,
       "format": "pcm_s16le 16000 Hz mono",
@@ -86,8 +91,11 @@
       "ground_truth_labels": null
     },
     "commands": {
-      "fetch": "just fetch-meeting-fixture",
-      "sherpa": "obey-voice meeting analyze <fixture> --speakers {2,0} --json --out <path>",
+      "regenerate": "scripts/diar-ab-sortformer.sh",
+      "aggregate": "python3 scripts/diar_ab_aggregate.py --raw <raw-dir> --out <artifact>",
+      "verify": "python3 scripts/diar_ab_aggregate.py --raw <raw-dir> --check <artifact>",
+      "fetch_fixture": "just fetch-meeting-fixture",
+      "sherpa": "obey-voice meeting analyze <fixture> --speakers 2 --json --out <path>",
       "sortformer": "echo <fixture> > files.txt && TRANSCRIBE_SORTFORMER_STREAM_PRESET=<preset> transcribe-cli -m <sortformer.gguf> --backend <metal|cpu> -q --batch files.txt --batch-jsonl",
       "preset_selection_note": "transcribe-cli has no --preset flag; the operating point is selected by the TRANSCRIBE_SORTFORMER_STREAM_PRESET env var (values: default | very_high_latency | high_latency | low_latency), read by transcribe_sortformer_stream_ext_init. --diarize is unrelated (it is the moss/granite-plus ASR speaker-attribution flag) and is NOT used here: Sortformer is a diarization-only model driven by a plain run, with segments read back via the batch-jsonl 'speakers' array."
     }
@@ -116,7 +124,7 @@
           179.2
         ],
         "median": 170.1,
-        "note": "process start + config + model load; subtract for an approximate compute-only figure (~3.36 s)"
+        "note": "process start + config + model load; subtract for an approximate compute-only figure"
       },
       "result": {
         "speaker_count": 2,
@@ -126,6 +134,7 @@
         ],
         "n_spans": 6,
         "coverage_ms": 84560,
+        "coverage_raw_span_sum_ms": 84510,
         "talk_ms_per_speaker": {
           "speaker-1": 79718,
           "speaker-2": 4792
@@ -136,8 +145,39 @@
             77031
           ]
         ]
-      },
-      "expected_speakers_sensitivity": "--speakers 0 (auto) and --speakers 2 produced byte-identical timelines on this fixture"
+      }
+    },
+    {
+      "system": "sherpa-offline-current",
+      "backend": "cpu",
+      "preset": null,
+      "expected_speakers_arg": 0,
+      "iterations": 1,
+      "wall_ms_all": [
+        3583.4
+      ],
+      "wall_ms_median": 3583.4,
+      "realtime_factor_x": 25.1,
+      "result": {
+        "speaker_count": 2,
+        "labels": [
+          "speaker-1",
+          "speaker-2"
+        ],
+        "n_spans": 6,
+        "coverage_ms": 84560,
+        "coverage_raw_span_sum_ms": 84510,
+        "talk_ms_per_speaker": {
+          "speaker-1": 79718,
+          "speaker-2": 4792
+        },
+        "minority_speaker_spans_ms": [
+          [
+            72239,
+            77031
+          ]
+        ]
+      }
     },
     {
       "system": "transcribecpp-sortformer",
@@ -159,6 +199,7 @@
         ],
         "n_spans": 26,
         "coverage_ms": 69760,
+        "coverage_raw_span_sum_ms": 69760,
         "talk_ms_per_speaker": {
           "speaker-1": 66080,
           "speaker-2": 3680
@@ -205,6 +246,7 @@
         ],
         "n_spans": 25,
         "coverage_ms": 70240,
+        "coverage_raw_span_sum_ms": 70240,
         "talk_ms_per_speaker": {
           "speaker-1": 66640,
           "speaker-2": 3600
@@ -248,6 +290,7 @@
         ],
         "n_spans": 28,
         "coverage_ms": 69920,
+        "coverage_raw_span_sum_ms": 69920,
         "talk_ms_per_speaker": {
           "speaker-1": 66320,
           "speaker-2": 3600
@@ -291,6 +334,7 @@
         ],
         "n_spans": 31,
         "coverage_ms": 70080,
+        "coverage_raw_span_sum_ms": 70080,
         "talk_ms_per_speaker": {
           "speaker-1": 66480,
           "speaker-2": 3600
@@ -334,6 +378,7 @@
         ],
         "n_spans": 26,
         "coverage_ms": 69760,
+        "coverage_raw_span_sum_ms": 69760,
         "talk_ms_per_speaker": {
           "speaker-1": 66080,
           "speaker-2": 3680
@@ -380,6 +425,7 @@
         ],
         "n_spans": 25,
         "coverage_ms": 70240,
+        "coverage_raw_span_sum_ms": 70240,
         "talk_ms_per_speaker": {
           "speaker-1": 66640,
           "speaker-2": 3600
@@ -423,6 +469,7 @@
         ],
         "n_spans": 27,
         "coverage_ms": 70000,
+        "coverage_raw_span_sum_ms": 70000,
         "talk_ms_per_speaker": {
           "speaker-1": 66400,
           "speaker-2": 3600
@@ -466,6 +513,7 @@
         ],
         "n_spans": 31,
         "coverage_ms": 70240,
+        "coverage_raw_span_sum_ms": 70240,
         "talk_ms_per_speaker": {
           "speaker-1": 66640,
           "speaker-2": 3600
@@ -493,10 +541,25 @@
   "numbers": {
     "speaker_count": {
       "sherpa_current": 2,
-      "sortformer_all_presets_and_backends": 2,
+      "sortformer_per_run": {
+        "metal_default": 2,
+        "metal_very_high_latency": 2,
+        "metal_high_latency": 2,
+        "metal_low_latency": 2,
+        "cpu_default": 2,
+        "cpu_very_high_latency": 2,
+        "cpu_high_latency": 2,
+        "cpu_low_latency": 2
+      },
+      "sortformer_all_runs_agree_on": 2,
       "engine_test_expectation": "tests/speakerflow/speakerflow_test.go pins wantSpeakers = 2 for this fixture",
       "sortformer_cap": 4,
       "cap_exceeded": false
+    },
+    "expected_speakers_sensitivity": {
+      "compared": "--speakers 2 vs --speakers 0 (Auto), same binary and fixture",
+      "timelines_identical": true,
+      "auto_speaker_count": 2
     },
     "minority_speaker_span_ms": {
       "sherpa_current": [
@@ -515,13 +578,23 @@
       "end_delta_ms": -1111
     },
     "who_agreement_where_both_speak_pct": {
-      "metal_very_high_latency": 99.65
+      "metal_very_high_latency": 99.65,
+      "frames_same_speaker": 6925,
+      "frames_both_label_speech": 6949
     },
     "coverage_ms": {
-      "sherpa_current": 84600,
-      "sortformer_very_high_latency_metal": 70160,
-      "delta_ms": -14440,
-      "note": "Sortformer emits 25 fine spans that gap at pauses; sherpa emits 6 coarse spans that bridge them. 15.1 s of the difference is sherpa-labelled audio Sortformer calls silence; only 0.8 s runs the other way."
+      "sherpa_current": 84560,
+      "sherpa_current_raw_span_sum": 84510,
+      "sortformer_very_high_latency_metal": 70240,
+      "sortformer_very_high_latency_metal_raw_span_sum": 70240,
+      "delta_ms": -14320,
+      "sherpa_speech_sortformer_silent_ms": 15070,
+      "sortformer_speech_sherpa_silent_ms": 750,
+      "n_spans": {
+        "sherpa_current": 6,
+        "sortformer_very_high_latency_metal": 25
+      },
+      "note": "Sortformer emits fine spans that gap at pauses; sherpa emits coarse spans that bridge them. The bulk of the difference is sherpa-labelled audio Sortformer calls silence; very little runs the other way. See sherpa_speech_sortformer_silent_ms vs sortformer_speech_sherpa_silent_ms."
     },
     "wall_ms_median": {
       "sherpa_current_cpu": 3534.5,
@@ -537,14 +610,80 @@
       "sortformer_metal_vhl": 234.1,
       "sortformer_cpu_vhl": 65.9
     },
-    "preset_stability": "speaker count (2) and the minority-speaker span were identical across all four presets on both backends; only span granularity (25-31 spans) and wall time varied. low_latency costs 15x metal / 19x cpu over very_high_latency for no quality change on this fixture."
+    "preset_stability": {
+      "speaker_count_identical_across_all_runs": true,
+      "minority_span_per_run": {
+        "metal_default": [
+          [
+            72320,
+            76000
+          ]
+        ],
+        "metal_very_high_latency": [
+          [
+            72320,
+            75920
+          ]
+        ],
+        "metal_high_latency": [
+          [
+            72320,
+            75920
+          ]
+        ],
+        "metal_low_latency": [
+          [
+            72320,
+            75920
+          ]
+        ],
+        "cpu_default": [
+          [
+            72320,
+            76000
+          ]
+        ],
+        "cpu_very_high_latency": [
+          [
+            72320,
+            75920
+          ]
+        ],
+        "cpu_high_latency": [
+          [
+            72320,
+            75920
+          ]
+        ],
+        "cpu_low_latency": [
+          [
+            72320,
+            75920
+          ]
+        ]
+      },
+      "n_spans_per_run": {
+        "metal_default": 26,
+        "metal_very_high_latency": 25,
+        "metal_high_latency": 28,
+        "metal_low_latency": 31,
+        "cpu_default": 26,
+        "cpu_very_high_latency": 25,
+        "cpu_high_latency": 27,
+        "cpu_low_latency": 31
+      },
+      "low_latency_cost_x_over_vhl": {
+        "metal": 15.0,
+        "cpu": 18.6
+      }
+    }
   },
   "observations": [
     "Sortformer loads and runs in the pinned v0.2.2 CLI. Not a negative result.",
-    "The CLI path never holds capture by construction: it reads a finished .wav from disk and exits. Spike 3's capture invariant is therefore not exercised here \u2014 it is a question for the later in-process bind (spec/50 \u00a73), where Sortformer must load as a separate model from the STT model (D8 is per-model, so Parakeet + Sortformer is two loads and is allowed).",
+    "The CLI path never holds capture by construction: it reads a finished .wav from disk and exits. Spike 3's capture invariant is therefore not exercised here — it is a question for the later in-process bind (spec/50 §3), where Sortformer must load as a separate model from the STT model (D8 is per-model, so Parakeet + Sortformer is two loads and is allowed).",
     "Sortformer has no expected-speakers input. The current path's Auto/2/3/4 clustering hint (speaker.meeting.num_speakers) has no analog: the model is a fixed 4-slot arrival-order diarizer. On this fixture that costs nothing (both agree on 2), but a `sortformer` diarizer option would silently ignore an existing config key.",
-    "The coverage gap is the one behavioural difference that could reach users: meeting.AttributeTranscript maps transcript segments onto the timeline, and 15.1 s of audio that currently falls inside a coarse sherpa span would fall into a Sortformer inter-span gap. Whether that yields unlabelled turns depends on AttributeTranscript's overlap/nearest rule and was not measured in this spike.",
-    "Sortformer labels are arrival-order only, with no cross-recording identity \u2014 same as the current path's speaker-N, so enrollment/naming remains unaffected.",
-    "Single fixture, single meeting, 2 speakers, one 4.8 s interjection. This is one data point and it does not exercise the 3-4 speaker or overlapped-speech regimes where the current path's Auto over-split is a known failure."
+    "The coverage gap is the one behavioural difference that could reach users: meeting.AttributeTranscript maps transcript segments onto the timeline, and the audio that currently falls inside a coarse sherpa span would fall into a Sortformer inter-span gap. Whether that yields unlabelled turns depends on AttributeTranscript's overlap/nearest rule and was not measured in this spike.",
+    "Sortformer labels are arrival-order only, with no cross-recording identity — same as the current path's speaker-N, so enrollment/naming remains unaffected.",
+    "Single fixture, single meeting, 2 speakers, one ~4.8 s interjection. This is one data point and it does not exercise the 3-4 speaker or overlapped-speech regimes where the current path's Auto over-split is a known failure."
   ]
 }
