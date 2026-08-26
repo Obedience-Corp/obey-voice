@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 const managedQwenProtocol = "samantha-qwen/v1"
@@ -76,7 +77,7 @@ func startManagedQwenSessionContext(ctx context.Context, binary, workerScript, m
 		ctx = context.Background()
 	}
 	cmd := exec.CommandContext(context.Background(), binary, workerScript, "serve", "--model", model)
-	configureQwenCommand(cmd)
+	managedqwen.ConfigureWorkerCommand(cmd)
 	cmd.Env = append(os.Environ(), "JOBLIB_MULTIPROCESSING=0")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -346,7 +347,7 @@ func (s *managedQwenSession) Close() {
 	_ = s.stdin.Close()
 	select {
 	case <-s.wait:
-	case <-time.After(qwenProcessWaitDelay):
+	case <-time.After(managedqwen.WorkerProcessWaitDelay):
 		s.kill()
 	}
 }

@@ -73,9 +73,9 @@ func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier strin
 	}
 	tier = managedqwen.NormalizeModelTier(tier)
 	// Lifetime is owned by the session (Background), not the startup ctx.
-	// CommandContext is required because configureQwenCommand sets Cancel.
+	// CommandContext is required because ConfigureWorkerCommand sets Cancel.
 	cmd := exec.CommandContext(context.Background(), workerBin, modelDir)
-	configureQwenCommand(cmd)
+	managedqwen.ConfigureWorkerCommand(cmd)
 	libDir := filepath.Dir(workerBin)
 	cmd.Env = withNativeWorkerEnv(os.Environ(), libDir, tier)
 	stdin, err := cmd.StdinPipe()
@@ -160,36 +160,10 @@ func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier strin
 	}
 }
 
-// withNativeWorkerEnv sets DYLD/LD library paths and optional QWEN3_TTS_TIER.
-// Parent QWEN3_TTS_TIER / QWEN3_TTS_MODEL are stripped so the host config wins
-// and ambient shell env cannot override a fail-closed product tier.
+// withNativeWorkerEnv is the worker's environment contract, owned by the qwen
+// package so speech-serve spawns its child exactly as the provider does.
 func withNativeWorkerEnv(env []string, libDir, tier string) []string {
-	out := make([]string, 0, len(env)+4)
-	for _, e := range env {
-		key, _, ok := strings.Cut(e, "=")
-		if !ok {
-			out = append(out, e)
-			continue
-		}
-		switch key {
-		case "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH", "QWEN3_TTS_TIER", "QWEN3_TTS_MODEL":
-			continue
-		}
-		out = append(out, e)
-	}
-	sep := string(os.PathListSeparator)
-	for _, key := range []string{"DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"} {
-		prev := os.Getenv(key)
-		if prev != "" {
-			out = append(out, key+"="+libDir+sep+prev)
-		} else {
-			out = append(out, key+"="+libDir)
-		}
-	}
-	if tier = strings.TrimSpace(tier); tier != "" {
-		out = append(out, "QWEN3_TTS_TIER="+tier)
-	}
-	return out
+	return managedqwen.NativeWorkerEnv(env, libDir, tier)
 }
 
 func loadNativePresetsFromDisk(modelDir string) []string {

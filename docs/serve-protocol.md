@@ -3,6 +3,9 @@
 Wire contract for remote clients (embedded voice page, `obey-voice connect`,
 future Swift iPad/iPhone apps). Host implementation: `internal/netapi`.
 
+Offloading TTS to another computer is `speech-serve` on port 7263, not this —
+see [speech-serve.md](speech-serve.md).
+
 ## Roles
 
 | Surface | Role |

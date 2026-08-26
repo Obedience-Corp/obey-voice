@@ -538,11 +538,21 @@ func DiagnoseSpeechPlace(ctx context.Context, cfg *Config, probe SpeechProbe) []
 			Remediation: speechPlaceRemediation,
 		}}
 	}
-	detail := fmt.Sprintf("lan %s (rtt %s, streaming=%t)", result.Host, result.RTT.Round(time.Millisecond), result.Streaming)
+	detail := fmt.Sprintf("lan %s (rtt %s, streaming=%t)", result.Host, formatProbeRTT(result.RTT), result.Streaming)
 	if tier := strings.TrimSpace(result.Tier); tier != "" {
 		detail += ", tier " + tier
 	}
 	return []Diagnostic{{Name: "speech-place", Severity: SeverityOK, Detail: detail}}
+}
+
+// formatProbeRTT keeps a loopback probe from reporting "0s": on the same
+// machine the round trip is microseconds, and rounding it away hides whether
+// the probe ran at all.
+func formatProbeRTT(d time.Duration) string {
+	if d < 10*time.Millisecond {
+		return d.Round(time.Microsecond).String()
+	}
+	return d.Round(time.Millisecond).String()
 }
 
 const speechPlaceRemediation = "start speech-serve on the speech computer or set tts_place=local"

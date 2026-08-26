@@ -93,6 +93,7 @@ Models download on first use into `models_dir`. Qwen installs from TUI Settings 
 | [Configuration](docs/configuration.md) | `config.yaml`, Agent Skills |
 | [Development](docs/development.md) | Build, tests, models, benchmarks |
 | [Serve protocol](docs/serve-protocol.md) | HTTPS + WebSocket contract |
+| [Speech worker](docs/speech-serve.md) | Speech on another computer (`speech-serve`) |
 | [ADRs](docs/adr/) | Architecture decisions |
 
 ## License
