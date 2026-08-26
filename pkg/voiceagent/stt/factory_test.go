@@ -64,6 +64,8 @@ func TestNewProviderRoutesConfiguredAliases(t *testing.T) {
 		{name: "sherpa-offline", provider: "sherpa-offline", wantMsg: "sherpa STT requires audio capture"},
 		{name: "sherpa-streaming", provider: "sherpa-streaming", wantMsg: "sherpa-streaming STT requires audio capture"},
 		{name: "whispercpp", provider: "whispercpp", wantMsg: "whispercpp STT requires audio capture"},
+		{name: "transcribecpp", provider: "transcribecpp", wantMsg: "transcribecpp STT requires audio capture"},
+		{name: "transcribecpp with offline mode", provider: "transcribecpp", mode: "offline", wantMsg: "transcribecpp STT requires audio capture"},
 		{name: "sherpa with offline mode", provider: "sherpa", mode: "offline", wantMsg: "sherpa STT requires audio capture"},
 		{name: "sherpa with streaming mode", provider: "sherpa", mode: "streaming", wantMsg: "sherpa-streaming STT requires audio capture"},
 		{name: "whispercpp with cli mode", provider: "whispercpp", mode: "cli", wantMsg: "whispercpp STT requires audio capture"},

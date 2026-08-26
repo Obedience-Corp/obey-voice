@@ -56,6 +56,15 @@ var specTable = []Spec{
 		RequiresVAD:    true,
 		RecommendedUse: "utterance-final transcription via external whisper.cpp CLI",
 	},
+	{
+		Provider:       config.STTProviderTranscribeCPP,
+		Mode:           config.STTModeOffline,
+		EmitsPartial:   false,
+		UsesEndpoint:   false,
+		SupportsEOF:    true,
+		RequiresVAD:    true,
+		RecommendedUse: "optional; utterance-final Parakeet TDT on GPU via the external transcribe.cpp CLI",
+	},
 }
 
 // SpecForNormalized returns the capability spec for a normalized provider/mode
