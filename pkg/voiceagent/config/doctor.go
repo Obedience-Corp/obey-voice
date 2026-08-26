@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/platforminfo"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
@@ -91,7 +92,23 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
-	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) {
+	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) && TTSPlaceOf(cfg) == TTSPlaceLAN {
+		// The speech worker owns the binary, the GGUF and the tier; this host
+		// needs none of them. Reachability is the speech-place row.
+		diags = append(diags, Diagnostic{
+			Name:     "tts-provider",
+			Severity: SeverityOK,
+			Detail:   "qwen3-tts (speech worker on another computer)",
+		})
+		if err := ValidateQwenTTSConfig(cfg); err != nil {
+			diags = append(diags, Diagnostic{
+				Name:        "qwen3-tts-voice-controls",
+				Severity:    SeverityError,
+				Detail:      err.Error(),
+				Remediation: "select a speaker and mode the speech worker advertises",
+			})
+		}
+	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) {
 		binary := strings.TrimSpace(cfg.QwenTTSBinary)
 		model := strings.TrimSpace(cfg.QwenTTSModel)
 		managed := qwen.UseManaged(binary, model)
@@ -482,6 +499,53 @@ type VoiceDeviceChecker interface {
 	CaptureDevices(ctx context.Context) ([]string, error)
 	PlaybackDevices(ctx context.Context) ([]string, error)
 }
+
+// DiagnoseSpeechPlace reports where speech runs and, for tts_place=lan,
+// whether that worker answers. Local never dials. probe is injectable for
+// tests; nil uses ProbeSpeechWorker. The row is a warning by default because a
+// missing speech worker must not stop a conversation (D7) — only tts_lan_strict
+// makes it an error, and then talk does not start either.
+func DiagnoseSpeechPlace(ctx context.Context, cfg *Config, probe SpeechProbe) []Diagnostic {
+	place := TTSPlaceOf(cfg)
+	if place != TTSPlaceLAN {
+		return []Diagnostic{{
+			Name:     "speech-place",
+			Severity: SeverityOK,
+			Detail:   "local (speech runs on this computer)",
+		}}
+	}
+	severity := SeverityWarn
+	if cfg != nil && cfg.TTSLanStrict {
+		severity = SeverityError
+	}
+	if err := ValidateTTSPlace(cfg); err != nil {
+		return []Diagnostic{{
+			Name:        "speech-place",
+			Severity:    SeverityError,
+			Detail:      err.Error(),
+			Remediation: speechPlaceRemediation,
+		}}
+	}
+	if probe == nil {
+		probe = ProbeSpeechWorker
+	}
+	result, err := probe(ctx, cfg)
+	if err != nil {
+		return []Diagnostic{{
+			Name:        "speech-place",
+			Severity:    severity,
+			Detail:      fmt.Sprintf("speech worker did not answer: %v", err),
+			Remediation: speechPlaceRemediation,
+		}}
+	}
+	detail := fmt.Sprintf("lan %s (rtt %s, streaming=%t)", result.Host, result.RTT.Round(time.Millisecond), result.Streaming)
+	if tier := strings.TrimSpace(result.Tier); tier != "" {
+		detail += ", tier " + tier
+	}
+	return []Diagnostic{{Name: "speech-place", Severity: SeverityOK, Detail: detail}}
+}
+
+const speechPlaceRemediation = "start speech-serve on the speech computer or set tts_place=local"
 
 // DiagnoseVoiceDevices checks microphone and speaker availability through
 // checker. It is opt-in (doctor --voice-devices) because it touches audio

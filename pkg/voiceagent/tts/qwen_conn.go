@@ -11,6 +11,8 @@ import (
 	"math"
 	"strings"
 	"sync"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // speechConn is the line/PCM framing shared by every Qwen speech transport.
@@ -36,8 +38,9 @@ type speechConn struct {
 }
 
 // speechProtocol is the LAN wire contract (spec/30 obey-speech/v1). speech-serve
-// rewrites the child's protocol to this; the child itself never sees it.
-const speechProtocol = "obey-speech/v1"
+// rewrites the child's protocol to this; the child itself never sees it. config
+// owns the string because the doctor probe speaks it too.
+const speechProtocol = config.SpeechProtocol
 
 // shutdownLine is the exact byte sequence the child worker has always been
 // closed with. It is a literal rather than a marshalled map so the extraction

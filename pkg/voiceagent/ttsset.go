@@ -1,6 +1,7 @@
 package voiceagent
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,10 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
+
+// qwenProviderName is the only provider place applies to; kokoro always speaks
+// on this computer.
+const qwenProviderName = "qwen3-tts"
 
 // TTSSet is the selected provider plus its explicitly configured
 // conversational fallback. Preview/test/batch paths intentionally continue to
@@ -25,6 +30,9 @@ type TTSSet struct {
 func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
 	primary, primaryCleanup, err := tts.NewProvider(cfg)
 	if err != nil {
+		if set, ok := speechPlaceFallbackSet(cfg, err); ok {
+			return set, nil
+		}
 		return nil, err
 	}
 	set := &TTSSet{Primary: primary}
@@ -47,6 +55,42 @@ func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
 		}
 	}
 	return set, nil
+}
+
+// speechPlaceFallbackSet answers a speech worker that is not there at startup.
+// A conversation must still start (D7): mid-turn recovery (pipeline
+// playFallback) never runs for a provider that failed to construct, so the
+// swap to Kokoro has to happen here. It is deliberately narrow — only an
+// unreachable LAN speech worker qualifies. A misconfigured URL, a strict
+// operator, or a disabled fallback all still refuse to enter talk.
+func speechPlaceFallbackSet(cfg *config.Config, cause error) (*TTSSet, bool) {
+	switch {
+	case cfg == nil,
+		config.TTSPlaceOf(cfg) != config.TTSPlaceLAN,
+		!strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwenProviderName),
+		!errors.Is(cause, tts.ErrProviderUnavailable),
+		cfg.TTSLanStrict,
+		!strings.EqualFold(strings.TrimSpace(cfg.TTSFallbackProvider), string(tts.FallbackKokoro)):
+		return nil, false
+	}
+
+	fallbackCfg := *cfg
+	fallbackCfg.TTSProvider = "kokoro"
+	fallbackCfg.TTSPlace = config.TTSPlaceLocal
+	kokoro, cleanup, err := tts.NewProvider(&fallbackCfg)
+	if err != nil {
+		// No voice at all: report the speech worker, which is what broke.
+		return nil, false
+	}
+	set := &TTSSet{
+		Primary: kokoro,
+		FallbackWarning: fmt.Errorf("speech worker %s is unreachable; speaking with Kokoro on this computer: %w",
+			strings.TrimSpace(cfg.TTSWorkerURL), cause),
+	}
+	if cleanup != nil {
+		set.cleanups = append(set.cleanups, cleanup)
+	}
+	return set, true
 }
 
 func (s *TTSSet) Close() {

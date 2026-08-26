@@ -40,7 +40,6 @@ func TestNewQwen3TTSPlace(t *testing.T) {
 		url   string
 		want  string
 	}{
-		{name: "lan is not implemented in this build", place: config.TTSPlaceLAN, url: "https://studio:7263", want: "tts_place lan is not supported"},
 		{name: "lan without a url fails validation", place: config.TTSPlaceLAN, want: "tts_worker_url"},
 		{name: "unset place spawns locally"},
 		{name: "explicit local spawns locally", place: config.TTSPlaceLocal},
@@ -73,10 +72,10 @@ func TestNewQwen3TTSPlace(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			q.sessionMu.Lock()
-			err = q.ensureNativeSessionLocked(ctx)
+			err = q.ensureSpeechSessionLocked(ctx)
 			q.sessionMu.Unlock()
 			if err != nil {
-				t.Fatalf("ensureNativeSessionLocked: %v", err)
+				t.Fatalf("ensureSpeechSessionLocked: %v", err)
 			}
 		})
 	}
