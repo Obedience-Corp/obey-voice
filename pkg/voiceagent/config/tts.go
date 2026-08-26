@@ -32,6 +32,9 @@ func ValidateQwenTTSConfig(cfg *Config) error {
 	if cfg == nil {
 		return fmt.Errorf("nil config")
 	}
+	if err := ValidateTTSPlace(cfg); err != nil {
+		return err
+	}
 	// Product native worker (qwen3-tts-worker) accepts CustomVoice-class presets
 	// like the managed path; one-shot CLI remains default/static only.
 	if isNativeWorkerBinary(cfg.QwenTTSBinary) {

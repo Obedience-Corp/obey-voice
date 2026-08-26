@@ -114,6 +114,17 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	if err := config.ValidateQwenTTSConfig(cfg); err != nil {
 		return nil, fmt.Errorf("qwen3-tts: %w", err)
 	}
+	// Place is validated but not yet honored: the LAN client is the next slice.
+	// Falling through to a local spawn would silently speak on the wrong
+	// computer, so this fails closed until obey-speech/v1 dialing lands.
+	if place := config.TTSPlaceOf(cfg); place != config.TTSPlaceLocal {
+		return nil, &ProviderError{
+			Provider:  qwen3TTSProviderName,
+			Operation: "configure",
+			Kind:      ProviderErrorUnavailable,
+			Err:       fmt.Errorf("tts_place %s is not supported by this build; set tts_place=%s", place, config.TTSPlaceLocal),
+		}
+	}
 
 	binary := strings.TrimSpace(cfg.QwenTTSBinary)
 	model := strings.TrimSpace(cfg.QwenTTSModel)

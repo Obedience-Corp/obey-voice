@@ -1,14 +1,10 @@
 package tts
 
 import (
-	"bufio"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,18 +19,20 @@ import (
 // nativeWorkerProtocol is frozen in projects/qwen3-tts-native/docs/PROTOCOL.md.
 const nativeWorkerProtocol = "qwen3-tts-worker/v1"
 
+// nativeWorkerLabel prefixes this transport's protocol errors.
+const nativeWorkerLabel = "native worker"
+
 // nativeQwenSession is a long-lived client for bin/qwen3-tts-worker (no Python).
 // Stage A: whole-utterance PCM after synth (one pcm_meta + raw f32le + final).
 // Stage B will emit multiple pcm_meta chunks; this client already concatenates.
+// Framing lives in speechConn so the LAN client can reuse it byte for byte.
 type nativeQwenSession struct {
 	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Reader
+	conn   *speechConn
 	stderr *limitedBuffer
 	wait   chan error
 
 	mu        sync.Mutex
-	writeMu   sync.Mutex
 	activeMu  sync.Mutex
 	activeID  string
 	closed    bool
@@ -44,16 +42,6 @@ type nativeQwenSession struct {
 	rate      int
 	streaming bool
 	presets   []string
-}
-
-type nativeReadyMsg struct {
-	Type       string   `json:"type"`
-	Protocol   string   `json:"protocol"`
-	SampleRate int      `json:"sample_rate"`
-	PCMFormat  string   `json:"pcm_format"`
-	Streaming  bool     `json:"streaming"`
-	Presets    []string `json:"presets,omitempty"`
-	Note       string   `json:"note,omitempty"`
 }
 
 // isNativeWorkerBinary reports whether path names the product native worker.
@@ -116,26 +104,32 @@ func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier strin
 		return nil, fmt.Errorf("start native worker: %w", err)
 	}
 	s := &nativeQwenSession{
-		cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout), stderr: stderr,
-		wait: make(chan error, 1), modelDir: modelDir, protocol: nativeWorkerProtocol,
+		cmd:    cmd,
+		conn:   newSpeechConn(nativeWorkerLabel, nativeWorkerProtocol, stdout, stdin, stdin),
+		stderr: stderr,
+		wait:   make(chan error, 1), modelDir: modelDir, protocol: nativeWorkerProtocol,
 		rate: qwen3TTSSampleRate,
 	}
+	s.conn.abort = s.wait
+	s.conn.abortErr = s.exitError
 	go func() { s.wait <- cmd.Wait() }()
 
 	if timeout <= 0 {
 		timeout = defaultQwenTTSTimeout
 	}
-	readyCh := make(chan nativeReadyMsg, 1)
+	readyCh := make(chan speechReadyMsg, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		line, err := s.stdout.ReadString('\n')
+		// Blocking read: the select below owns the timeout and the exit race,
+		// so this must not consume s.wait itself.
+		line, err := s.conn.ReadLineBlocking()
 		if err != nil {
 			errCh <- err
 			return
 		}
-		var ready nativeReadyMsg
-		if err := json.Unmarshal([]byte(line), &ready); err != nil {
-			errCh <- fmt.Errorf("ready json: %w (%q)", err, strings.TrimSpace(line))
+		ready, err := s.conn.ParseReady(line)
+		if err != nil {
+			errCh <- err
 			return
 		}
 		readyCh <- ready
@@ -145,21 +139,12 @@ func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier strin
 	defer timer.Stop()
 	select {
 	case ready := <-readyCh:
-		if ready.Type != "ready" {
+		if err := s.conn.ValidateReady(ready); err != nil {
 			s.Close()
-			return nil, fmt.Errorf("native worker handshake failed: type=%s%s", ready.Type, workerOutputSuffix(stderr.String(), ""))
-		}
-		if ready.Protocol != nativeWorkerProtocol {
-			s.Close()
-			return nil, fmt.Errorf("native worker protocol %q unsupported; want %q", ready.Protocol, nativeWorkerProtocol)
-		}
-		if ready.SampleRate != qwen3TTSSampleRate {
-			s.Close()
-			return nil, fmt.Errorf("native worker sample rate %d unsupported; want %d", ready.SampleRate, qwen3TTSSampleRate)
-		}
-		if ready.PCMFormat != "f32le" {
-			s.Close()
-			return nil, fmt.Errorf("native worker PCM format %q unsupported; want f32le", ready.PCMFormat)
+			if errors.Is(err, errNotReady) {
+				return nil, fmt.Errorf("%w%s", err, workerOutputSuffix(stderr.String(), ""))
+			}
+			return nil, err
 		}
 		s.streaming = ready.Streaming
 		s.presets = append([]string(nil), ready.Presets...)
@@ -263,20 +248,21 @@ func (s *nativeQwenSession) SynthesizeToStream(ctx context.Context, req Synthesi
 			msg["preset"] = preset
 		}
 	}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
+	// The active id is published under the write lock so a concurrent
+	// CancelActive cannot name a request the worker has not read yet.
+	var aborted error
+	err := s.conn.WriteJSONFunc(func() (any, error) {
+		if aborted = ctx.Err(); aborted != nil {
+			return nil, aborted
+		}
+		s.activeMu.Lock()
+		s.activeID = id
+		s.activeMu.Unlock()
+		return msg, nil
+	})
+	if aborted != nil {
+		return aborted
 	}
-	s.writeMu.Lock()
-	if err := ctx.Err(); err != nil {
-		s.writeMu.Unlock()
-		return err
-	}
-	s.activeMu.Lock()
-	s.activeID = id
-	s.activeMu.Unlock()
-	_, err = s.stdin.Write(append(data, '\n'))
-	s.writeMu.Unlock()
 	if err != nil {
 		s.clearActive(id)
 		return fmt.Errorf("write native worker request: %w", err)
@@ -328,17 +314,9 @@ func (s *nativeQwenSession) SynthesizeToStream(ctx context.Context, req Synthesi
 				}
 				rateSet = true
 			}
-			buf := make([]byte, n*4)
-			if _, err := io.ReadFull(s.stdout, buf); err != nil {
+			samples, err := s.conn.ReadPCM(n)
+			if err != nil {
 				return fmt.Errorf("native worker pcm read: %w", err)
-			}
-			// Stage A trailing newline after raw PCM.
-			if b, err := s.stdout.ReadByte(); err == nil && b != '\n' {
-				_ = s.stdout.UnreadByte()
-			}
-			samples := make([]float32, n)
-			for i := 0; i < n; i++ {
-				samples[i] = math.Float32frombits(binary.LittleEndian.Uint32(buf[i*4:]))
 			}
 			const chunk = 2048
 			for start := 0; start < len(samples); start += chunk {
@@ -367,14 +345,7 @@ func (s *nativeQwenSession) SynthesizeToStream(ctx context.Context, req Synthesi
 }
 
 func (s *nativeQwenSession) sendCancel(id string) error {
-	b, err := json.Marshal(map[string]string{"type": "cancel", "id": id})
-	if err != nil {
-		return err
-	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	_, err = s.stdin.Write(append(b, '\n'))
-	return err
+	return s.conn.WriteJSON(map[string]string{"type": "cancel", "id": id})
 }
 
 // CancelActive writes a cancellation for the session-generated request ID
@@ -385,19 +356,20 @@ func (s *nativeQwenSession) CancelActive() error {
 	if s == nil {
 		return nil
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.activeMu.Lock()
-	id := s.activeID
-	s.activeMu.Unlock()
-	if id == "" {
+	// The id is read under the write lock: a synthesize that has published its
+	// id but not yet written the line must be waited out, not cancelled blind.
+	err := s.conn.WriteJSONFunc(func() (any, error) {
+		s.activeMu.Lock()
+		id := s.activeID
+		s.activeMu.Unlock()
+		if id == "" {
+			return nil, errNoActiveRequest
+		}
+		return map[string]string{"type": "cancel", "id": id}, nil
+	})
+	if errors.Is(err, errNoActiveRequest) {
 		return nil
 	}
-	b, err := json.Marshal(map[string]string{"type": "cancel", "id": id})
-	if err != nil {
-		return err
-	}
-	_, err = s.stdin.Write(append(b, '\n'))
 	return err
 }
 
@@ -410,23 +382,12 @@ func (s *nativeQwenSession) clearActive(id string) {
 }
 
 func (s *nativeQwenSession) readLine(ctx context.Context) (string, error) {
-	type result struct {
-		line string
-		err  error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		line, err := s.stdout.ReadString('\n')
-		ch <- result{line, err}
-	}()
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-ch:
-		return res.line, res.err
-	case err := <-s.wait:
-		return "", fmt.Errorf("native worker exited: %v%s", err, workerOutputSuffix(s.stderr.String(), ""))
-	}
+	return s.conn.ReadLine(ctx)
+}
+
+// exitError renders a child exit for a read that was waiting on it.
+func (s *nativeQwenSession) exitError(err error) error {
+	return fmt.Errorf("native worker exited: %v%s", err, workerOutputSuffix(s.stderr.String(), ""))
 }
 
 // Close shuts down the worker process.
@@ -437,11 +398,8 @@ func (s *nativeQwenSession) Close() {
 		return
 	}
 	s.closed = true
-	if s.stdin != nil {
-		s.writeMu.Lock()
-		_, _ = s.stdin.Write([]byte(`{"type":"shutdown"}` + "\n"))
-		s.writeMu.Unlock()
-		_ = s.stdin.Close()
+	if s.conn != nil {
+		_ = s.conn.Close()
 	}
 	if s.cmd != nil && s.cmd.Process != nil {
 		done := make(chan struct{})
