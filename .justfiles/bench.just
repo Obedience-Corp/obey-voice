@@ -92,3 +92,28 @@ corpus-check:
 [doc('Print manifest as repeatable --full-turn-fixture/--expect-text benchmark flags')]
 corpus-args:
     @cd "{{repo}}" && jq -r '.samples[] | "--full-turn-fixture=testdata/corpus/\(.path)", "--expect-text=\(.expect)"' testdata/corpus/manifest.json
+
+[doc('Aggregate a raw benchmark run into an stt-ab decision record. Usage: just bench stt-ab T1 raw.json sherpa-parakeet transcribecpp')]
+stt-ab label raw control candidate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{repo}}"
+    # Machine facts are gathered here, the same way scripts/bench.sh does it,
+    # so cmd/stt-ab stays a pure JSON-in/JSON-out function that unit tests can
+    # drive without a machine.
+    out="docs/benchmarks/{{label}}-stt-ab-{{candidate}}-$(date +%Y-%m-%d).json"
+    go run ./cmd/stt-ab \
+        -in "{{raw}}" \
+        -control "{{control}}" \
+        -candidate "{{candidate}}" \
+        -item "{{label}}" \
+        -date "$(date +%Y-%m-%d)" \
+        -commit "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+        -machine "$(sysctl -n hw.model 2>/dev/null || echo unknown)" \
+        -cpu "$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)" \
+        -os "$(sw_vers -productName 2>/dev/null || uname -s) $(sw_vers -productVersion 2>/dev/null || uname -r)" \
+        -backend "${STT_AB_BACKEND:-}" \
+        -fixtures "${FIXTURE_KIND:-}" \
+        -command "${STT_AB_COMMAND:-}" \
+        -out "$out"
+    echo "Now write the prose by hand: criteria_fixed_in_advance, reading_the_numbers, evidence_limits, durable_value, and the *_criterion_met verdicts."
