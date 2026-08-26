@@ -93,9 +93,9 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `qwen_tts_reference_text` | empty | `QWEN_TTS_REFERENCE_TEXT` | Transcript required by the approved clone workflow |
 | `qwen_tts_consent` | `false` | `QWEN_TTS_CONSENT` | Explicit consent/authorization gate for reference voice use |
 | `output_device` | empty | `OUTPUT_DEVICE` | Playback device name; empty follows the system default |
-| `stt_provider` | `sherpa-parakeet` | `STT_PROVIDER` | STT backend: `sherpa-parakeet` (NVIDIA Parakeet TDT — default; fastest and most accurate local option), `sherpa` (Whisper), `sherpa-streaming`, `sherpa-offline`, or `whispercpp` |
+| `stt_provider` | `sherpa-parakeet` | `STT_PROVIDER` | STT backend: `sherpa-parakeet` (NVIDIA Parakeet TDT — default; the best in-process option, and the most accurate), `sherpa` (Whisper), `sherpa-streaming`, `sherpa-offline`, `whispercpp`, or `transcribecpp` (optional; see below) |
 | `input_device` | empty | `INPUT_DEVICE` | Capture device name; empty follows the system default |
-| `stt_mode` | empty | `STT_MODE` | STT mode for the preferred provider+mode schema: `offline` or `streaming` for `sherpa`, `offline` for `parakeet`, `cli` for `whispercpp` |
+| `stt_mode` | empty | `STT_MODE` | STT mode for the preferred provider+mode schema: `offline` or `streaming` for `sherpa`, `offline` for `parakeet`, `cli` for `whispercpp`, `offline` for `transcribecpp` |
 | `sherpa_streaming_model` | `en-2023-06-26` | `SHERPA_STREAMING_MODEL` | sherpa-onnx streaming model |
 | `whisper_model` | `small` | `WHISPER_MODEL` | sherpa-onnx Whisper model size |
 | `parakeet_model` | `tdt-0.6b-v2` | `PARAKEET_MODEL` | Parakeet model for `sherpa-parakeet`: `tdt-0.6b-v2` (English), `tdt-0.6b-v3` (25 languages), `tdt-110m` (small, fast) |
@@ -103,6 +103,8 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `whispercpp_binary` | `whisper-cli` | `WHISPERCPP_BINARY` | whisper.cpp CLI executable |
 | `whispercpp_model` | `base.en` | `WHISPERCPP_MODEL` | Downloadable whisper.cpp model name |
 | `whispercpp_model_path` | `~/.cache/festival-voice/models/whispercpp/ggml-base.en.bin` | `WHISPERCPP_MODEL_PATH` | whisper.cpp model path |
+| `transcribecpp_binary` | `transcribe-cli` | `TRANSCRIBECPP_BINARY` | transcribe.cpp CLI executable; a bare name is looked up on `PATH` |
+| `transcribecpp_model` | `parakeet-tdt-0.6b-v2` | `TRANSCRIBECPP_MODEL` | GGUF the `transcribecpp` provider loads. This is upstream's full model slug, so it is spelled longer than `parakeet_model`'s `tdt-0.6b-v2` — not a typo |
 | `vad_enabled` | `true` | | Enable voice activity detection |
 | `vad_silence_duration` | `0.5` | | Seconds of silence before ending speech (raise to stop being cut off) |
 | `vad_threshold` | `0.6` | `VAD_THRESHOLD` | Speech-detection confidence (raise to ignore background noise) |
@@ -120,6 +122,38 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `max_history` | `10` | | Saved conversation history length |
 | `listen_timeout` | `10` | | Listen timeout in seconds |
 | `phrase_time_limit` | `30` | | Maximum phrase length in seconds |
+
+## transcribe.cpp (optional STT)
+
+`stt_provider: transcribecpp` runs the same NVIDIA Parakeet TDT 0.6B v2 weights as
+the default, but as a GGUF through the external [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp)
+CLI, which puts them on a GPU (Metal or CUDA) instead of CPU ONNX. It is opt-in: the
+default stays `sherpa-parakeet`, and nothing downloads or checks the GGUF until
+you select the provider. Utterance-final only — there is no streaming mode.
+
+**It requires a GPU and refuses to run without one.** Measured on the same
+weights, transcribe.cpp on Metal decodes 3.1x faster than the default, but on CPU
+it is *slower* than the default. `--backend auto` would fall back to CPU silently,
+so obey-voice probes `transcribe-cli --list-devices` at startup and fails with an
+error naming the remedy if no GPU lane is listed. On a CPU-only machine, stay on
+`sherpa-parakeet`.
+
+Two things are needed. Put `transcribe-cli` on `PATH` (or point
+`transcribecpp_binary` at it) — there is no Homebrew formula, so use an upstream
+release build — and run `obey-voice models ensure` to fetch the GGUF. The binary,
+the GGUF and the GPU lane are all checked at startup and by `obey-voice doctor`,
+which reports them as `transcribecpp-binary`.
+
+The GGUF weights are Parakeet TDT 0.6B v2, licensed **CC BY 4.0** and
+redistributed as GGUF by
+[handy-computer/parakeet-tdt-0.6b-v2-gguf](https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf);
+the transcribe.cpp runtime itself is MIT. `models ensure` and `models status`
+print that attribution alongside the asset. The license covers the weights you
+download, not this project.
+
+Each utterance is one short-lived CLI process with its own model load, so the
+per-utterance cost includes loading the GGUF — the win measured in the A/B is
+compute, not end-to-end warm latency.
 
 ## Agent Skills (Ollama)
 

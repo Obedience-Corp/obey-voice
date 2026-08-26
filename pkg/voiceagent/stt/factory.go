@@ -20,6 +20,7 @@ var providerSpecs = []ProviderSpec{
 	{Name: "sherpa-parakeet", Description: "Local sherpa-onnx NVIDIA Parakeet TDT (utterance-final, fast, no caption hallucinations)"},
 	{Name: "sherpa-offline", Description: "Local sherpa-onnx Whisper (legacy alias)"},
 	{Name: "whispercpp", Description: "Local whisper.cpp CLI"},
+	{Name: "transcribecpp", Description: "Local transcribe.cpp CLI running NVIDIA Parakeet TDT as GGUF (optional; needs transcribe-cli on PATH)"},
 }
 
 // Providers returns the list of implemented STT providers.
@@ -87,6 +88,19 @@ func NewProvider(cfg *config.Config, capture audioSource, vad *audio.VAD) (Provi
 		}
 
 		provider, err := NewWhisperCPPSTT(cfg, capture, vad)
+		if err != nil {
+			return nil, nil, err
+		}
+		return provider, nil, nil
+	case norm.Provider == config.STTProviderTranscribeCPP:
+		if capture == nil {
+			return nil, nil, fmt.Errorf("transcribecpp STT requires audio capture")
+		}
+		if vad == nil {
+			return nil, nil, fmt.Errorf("transcribecpp STT requires VAD; set vad_enabled=true or choose a different stt_provider")
+		}
+
+		provider, err := NewTranscribeCPPSTT(cfg, capture, vad)
 		if err != nil {
 			return nil, nil, err
 		}
