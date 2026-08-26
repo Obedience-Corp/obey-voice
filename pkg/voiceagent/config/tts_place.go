@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // Where speech synthesis runs. This is topology, not a provider: tts_provider
@@ -76,15 +78,48 @@ func ValidateTTSPlace(cfg *Config) error {
 	}
 	switch strings.ToLower(parsed.Scheme) {
 	case "https":
-		return nil
 	case "http":
 		if !isLoopbackHost(host) {
 			return fmt.Errorf("tts_worker_url %q is plaintext to a non-loopback host; use https://%s", raw, parsed.Host)
 		}
-		return nil
 	default:
 		return fmt.Errorf("tts_worker_url %q must be https:// (or http:// on loopback)", raw)
 	}
+	// Every speech worker authenticates, loopback included, so a missing token
+	// is a configuration error rather than a connection that fails later.
+	// Without this the refusal looks like an unreachable worker, falls back to
+	// Kokoro by default, and the operator never learns the token was unset.
+	if TTSWorkerTokenOf(cfg) == "" {
+		return fmt.Errorf("tts_place %s requires tts_worker_token (or %s); speech-serve prints one on first run", TTSPlaceLAN, SpeechTokenEnv)
+	}
+	return nil
+}
+
+// SpeechVoiceNotice reports a configured voice this topology cannot honor.
+// A shipped clone is a reference recording on *this* computer and
+// obey-speech/v1 carries no audio files, so over LAN the worker speaks in its
+// own voice. That is a deliberate degrade (a failed turn would be worse), but
+// it must never be silent: the talk path, the doctor and the docs all say it.
+func SpeechVoiceNotice(cfg *Config) string {
+	if cfg == nil || TTSPlaceOf(cfg) != TTSPlaceLAN {
+		return ""
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) {
+		return ""
+	}
+	voice := strings.TrimSpace(cfg.QwenTTSVoice)
+	configured := voice
+	if voice == "" || strings.EqualFold(voice, "default") {
+		// Empty resolves to the shipped default, which is itself a clone.
+		configured = qwen.DefaultVoice
+	}
+	sv, shipped := qwen.LookupShipped(configured)
+	if !shipped {
+		return ""
+	}
+	configured = sv.Name
+	return fmt.Sprintf("voice %q is a clone voice and cannot travel to a speech worker; that computer speaks in its own voice. Pick a preset voice, or set tts_place=%s to use %s here",
+		configured, TTSPlaceLocal, configured)
 }
 
 // isLoopbackHost reports whether host names this machine. Only a literal

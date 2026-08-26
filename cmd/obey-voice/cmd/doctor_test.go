@@ -51,7 +51,7 @@ func runDoctorCmd(t *testing.T, cfg *config.Config, modelsDir string, lookPath f
 	cmd := &cobra.Command{}
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
-	err := runDoctor(cmd, cfg, modelsDir, lookPath, checker, asJSON)
+	err := runDoctor(cmd, cfg, modelsDir, lookPath, checker, nil, asJSON)
 	return buf.String(), err
 }
 
@@ -129,7 +129,7 @@ func TestDoctorVoiceDevicesTimeoutWarnsWithRemediation(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 
-	err := runDoctor(cmd, cfg, t.TempDir(), okLookPath, fakeVoiceChecker{capture: []string{"Mic"}}, false)
+	err := runDoctor(cmd, cfg, t.TempDir(), okLookPath, fakeVoiceChecker{capture: []string{"Mic"}}, nil, false)
 	if err != nil {
 		t.Fatalf("timed-out probe should warn, not fail: %v", err)
 	}

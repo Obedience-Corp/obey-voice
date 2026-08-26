@@ -45,7 +45,7 @@ var doctorCmd = &cobra.Command{
 			}
 			checker = newVoiceDeviceChecker()
 		}
-		return runDoctor(cmd, cfg, config.ModelsDir(), doctorLookPath, checker, doctorJSON)
+		return runDoctor(cmd, cfg, config.ModelsDir(), doctorLookPath, checker, nil, doctorJSON)
 	},
 }
 
@@ -69,10 +69,19 @@ var severityMark = map[config.Severity]string{
 // runDoctor prints read-only setup diagnostics and returns an error (non-zero
 // exit) only when a check has error severity. lookPath is injectable for
 // tests. voiceChecker is nil unless --voice-devices opted in to hardware
-// probes (inject a fake in tests).
-func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPath func(string) (string, error), voiceChecker config.VoiceDeviceChecker, asJSON bool) error {
+// probes (inject a fake in tests). speechProbe is nil in production, which
+// uses the real obey-speech/v1 probe.
+func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPath func(string) (string, error), voiceChecker config.VoiceDeviceChecker, speechProbe config.SpeechProbe, asJSON bool) error {
 	diags := config.Diagnose(cfg, modelsDir, lookPath)
 	diags = append(diags, personaQwenDiags(cfg, modelsDir)...)
+
+	// Where speech runs, and whether a LAN speech worker answers. The probe
+	// bounds itself with tts_lan_timeout_ms; local never dials.
+	speechCtx := cmd.Context()
+	if speechCtx == nil {
+		speechCtx = context.Background()
+	}
+	diags = append(diags, config.DiagnoseSpeechPlace(speechCtx, cfg, speechProbe)...)
 
 	if voiceChecker != nil {
 		parent := cmd.Context()

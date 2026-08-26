@@ -43,12 +43,17 @@ func TestValidateTTSPlace(t *testing.T) {
 		},
 		{name: "empty place is local", cfg: Config{}},
 		{name: "explicit local ignores the url", cfg: Config{TTSPlace: TTSPlaceLocal, TTSWorkerURL: "nonsense"}},
-		{name: "tls off box", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://192.168.1.1:7263"}},
-		{name: "named tls host", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"}},
-		{name: "plaintext loopback ipv4", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "http://127.0.0.1:7263"}},
-		{name: "plaintext loopback ipv6", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "http://[::1]:7263"}},
-		{name: "plaintext localhost", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "http://localhost:7263"}},
-		{name: "mixed case place", cfg: Config{TTSPlace: "LAN", TTSWorkerURL: "https://studio:7263"}},
+		{
+			name: "lan without a token",
+			cfg:  Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"},
+			want: "requires tts_worker_token",
+		},
+		{name: "tls off box", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://192.168.1.1:7263", TTSWorkerToken: "t"}},
+		{name: "named tls host", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "t"}},
+		{name: "plaintext loopback ipv4", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "http://127.0.0.1:7263", TTSWorkerToken: "t"}},
+		{name: "plaintext loopback ipv6", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "http://[::1]:7263", TTSWorkerToken: "t"}},
+		{name: "plaintext localhost", cfg: Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "http://localhost:7263", TTSWorkerToken: "t"}},
+		{name: "mixed case place", cfg: Config{TTSPlace: "LAN", TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "t"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := ValidateTTSPlace(&tc.cfg)
@@ -60,6 +65,56 @@ func TestValidateTTSPlace(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err=%v want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// The token may come from the environment instead of the file.
+func TestValidateTTSPlaceAcceptsAnEnvironmentToken(t *testing.T) {
+	cfg := Config{TTSPlace: TTSPlaceLAN, TTSWorkerURL: "https://studio:7263"}
+	if err := ValidateTTSPlace(&cfg); err == nil {
+		t.Fatal("expected a missing token to fail")
+	}
+	t.Setenv(SpeechTokenEnv, "from-env")
+	if err := ValidateTTSPlace(&cfg); err != nil {
+		t.Fatalf("ValidateTTSPlace with an environment token: %v", err)
+	}
+}
+
+// A clone voice cannot travel: the degrade is deliberate, and loud.
+func TestSpeechVoiceNotice(t *testing.T) {
+	lan := func(voice string) *Config {
+		return &Config{
+			TTSProvider: "qwen3-tts", TTSPlace: TTSPlaceLAN,
+			TTSWorkerURL: "https://studio:7263", TTSWorkerToken: "t",
+			QwenTTSVoice: voice,
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		cfg  *Config
+		want string
+	}{
+		{name: "shipped clone by name", cfg: lan("Veronica"), want: "Veronica"},
+		{name: "shipped clone by id", cfg: lan("veronicadesk"), want: "VeronicaDesk"},
+		{name: "empty resolves to the shipped default", cfg: lan(""), want: "Veronica"},
+		{name: "default keyword", cfg: lan("default"), want: "Veronica"},
+		{name: "model preset", cfg: lan("Vivian")},
+		{name: "local clone is fine", cfg: &Config{TTSProvider: "qwen3-tts", QwenTTSVoice: "Veronica"}},
+		{name: "kokoro ignores place", cfg: &Config{TTSProvider: "kokoro", TTSPlace: TTSPlaceLAN}},
+		{name: "nil config", cfg: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SpeechVoiceNotice(tc.cfg)
+			if tc.want == "" {
+				if got != "" {
+					t.Fatalf("notice = %q, want none", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) || !strings.Contains(got, "clone voice") {
+				t.Fatalf("notice = %q, want it to name %q", got, tc.want)
 			}
 		})
 	}

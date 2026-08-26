@@ -78,6 +78,11 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |
 | `tts_voice` | `af_heart` | `TTS_VOICE` | Kokoro voice name |
+| `tts_place` | `local` | | Where Qwen speech runs: `local` (this computer) or `lan` (a speech worker on another computer). Host topology, never a persona field |
+| `tts_worker_url` | empty | | Speech worker address when `tts_place: lan`, e.g. `https://studio:7263`. `http://` only to loopback; never carries the token |
+| `tts_worker_token` | empty | `OBEY_SPEECH_TOKEN` | Shared secret the speech worker requires. **Required** whenever `tts_place: lan` — a missing token is refused at validation, not at connect time. `config get` reports only whether it is set |
+| `tts_lan_strict` | `false` | | Refuse to start a conversation when the speech worker is unreachable, instead of speaking with Kokoro here |
+| `tts_lan_timeout_ms` | `200` | | Dial and handshake budget for the speech worker. It never bounds the worker's model load |
 | `speech_speed` | `0.95` | | Playback speed |
 | `qwen_tts_binary` | empty | `QWEN_TTS_BINARY` | Empty uses the native package worker under `models_dir/qwen3-tts`; set with `qwen_tts_model` for an explicit external worker |
 | `qwen_tts_model` | empty | `QWEN_TTS_MODEL` | Empty uses the native package model dir; otherwise an external worker model directory |
@@ -86,7 +91,7 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `qwen_tts_native_sha256` | platform release | `QWEN_TTS_NATIVE_SHA256` / `OBEY_VOICE_QWEN_NATIVE_SHA256` | Archive digest matching the default or configured URL |
 | `qwen_tts_timeout` | `120` | `QWEN_TTS_TIMEOUT` | Per-request native/external worker timeout in seconds |
 | `qwen_tts_mode` | empty | `QWEN_TTS_MODE` | Product setup resolves empty to `customvoice` |
-| `qwen_tts_voice` | empty | `QWEN_TTS_VOICE` | CustomVoice preset (`Vivian`, `Serena`, …) or shipped clone (`Veronica`). Empty resolves to `Veronica` |
+| `qwen_tts_voice` | empty | `QWEN_TTS_VOICE` | CustomVoice preset (`Vivian`, `Serena`, …) or shipped clone (`Veronica`). Empty resolves to `Veronica`. **A clone voice cannot travel to a speech worker** — its throat is a recording on this computer — so under `tts_place: lan` that computer speaks in its own voice and Obey Voice warns at conversation start and in `doctor`. Pick a preset voice for LAN speech |
 | `qwen_tts_language` | empty | `QWEN_TTS_LANGUAGE` | Synthesis language; setup resolves empty to `Auto` |
 | `qwen_tts_instruction` | empty | `QWEN_TTS_INSTRUCTION` | Reserved for an installable instruction-capable Qwen model tier |
 | `qwen_tts_reference_audio` | empty | `QWEN_TTS_REFERENCE_AUDIO` | Authorized local reference WAV for an approved clone workflow |

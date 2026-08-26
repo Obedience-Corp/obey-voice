@@ -1,6 +1,7 @@
 package voiceagent
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -11,6 +12,10 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
+// qwenProviderName is the only provider place applies to; kokoro always speaks
+// on this computer.
+const qwenProviderName = "qwen3-tts"
+
 // TTSSet is the selected provider plus its explicitly configured
 // conversational fallback. Preview/test/batch paths intentionally continue to
 // use tts.NewProvider directly so they prove the selected voice instead of
@@ -19,15 +24,22 @@ type TTSSet struct {
 	Primary         tts.Provider
 	Fallback        tts.Provider
 	FallbackWarning error
-	cleanups        []func()
+	// VoiceNotice is a non-fatal warning about the voice this set will
+	// actually speak in — today, a clone voice that cannot cross the LAN.
+	// Displayed wherever FallbackWarning is: talk start and Settings reload.
+	VoiceNotice error
+	cleanups    []func()
 }
 
 func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
 	primary, primaryCleanup, err := tts.NewProvider(cfg)
 	if err != nil {
+		if set, ok := speechPlaceFallbackSet(cfg, err); ok {
+			return set, nil
+		}
 		return nil, err
 	}
-	set := &TTSSet{Primary: primary}
+	set := &TTSSet{Primary: primary, VoiceNotice: speechVoiceNotice(cfg)}
 	if primaryCleanup != nil {
 		set.cleanups = append(set.cleanups, primaryCleanup)
 	}
@@ -47,6 +59,53 @@ func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
 		}
 	}
 	return set, nil
+}
+
+// speechPlaceFallbackSet answers a speech worker that is not there at startup.
+// A conversation must still start (D7): mid-turn recovery (pipeline
+// playFallback) never runs for a provider that failed to construct, so the
+// swap to Kokoro has to happen here. It is deliberately narrow — only an
+// unreachable LAN speech worker qualifies. A misconfigured URL, a strict
+// operator, or a disabled fallback all still refuse to enter talk.
+func speechPlaceFallbackSet(cfg *config.Config, cause error) (*TTSSet, bool) {
+	switch {
+	case cfg == nil,
+		config.TTSPlaceOf(cfg) != config.TTSPlaceLAN,
+		!strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwenProviderName),
+		!errors.Is(cause, tts.ErrProviderUnavailable),
+		cfg.TTSLanStrict,
+		!strings.EqualFold(strings.TrimSpace(cfg.TTSFallbackProvider), string(tts.FallbackKokoro)):
+		return nil, false
+	}
+
+	fallbackCfg := *cfg
+	fallbackCfg.TTSProvider = "kokoro"
+	fallbackCfg.TTSPlace = config.TTSPlaceLocal
+	kokoro, cleanup, err := tts.NewProvider(&fallbackCfg)
+	if err != nil {
+		// No voice at all: report the speech worker, which is what broke.
+		return nil, false
+	}
+	set := &TTSSet{
+		Primary: kokoro,
+		// The voice notice describes the configuration, not this session, so it
+		// still applies: when that computer comes back it speaks its own voice.
+		VoiceNotice: speechVoiceNotice(cfg),
+		FallbackWarning: fmt.Errorf("speech worker %s is unreachable; speaking with Kokoro on this computer: %w",
+			strings.TrimSpace(cfg.TTSWorkerURL), cause),
+	}
+	if cleanup != nil {
+		set.cleanups = append(set.cleanups, cleanup)
+	}
+	return set, true
+}
+
+// speechVoiceNotice adapts the config-level notice to an error for display.
+func speechVoiceNotice(cfg *config.Config) error {
+	if notice := config.SpeechVoiceNotice(cfg); notice != "" {
+		return errors.New(notice)
+	}
+	return nil
 }
 
 func (s *TTSSet) Close() {

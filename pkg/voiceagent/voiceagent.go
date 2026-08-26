@@ -230,6 +230,9 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 				cleanups = append(cleanups, ttsSet.Close)
 			}
 			p.ReplaceTTS(ttsSet.Primary, ttsSet.Fallback)
+			if ttsSet.VoiceNotice != nil {
+				logf("warning: %v", ttsSet.VoiceNotice)
+			}
 			if ttsSet.FallbackWarning != nil {
 				logf("warning: %v", ttsSet.FallbackWarning)
 			}

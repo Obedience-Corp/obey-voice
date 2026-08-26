@@ -251,6 +251,10 @@ func newRenderSynth(ctx context.Context, opts *render.Options) (render.Synthesiz
 	}
 	cliVoice, cliLanguage, cliSpeed := opts.Voice, opts.Language, opts.Speed
 	applyVoiceOverrides(cfg, opts)
+	// A book render is hours of synthesis that must be reproducible from its
+	// manifest: it renders on this computer even when conversations offload to
+	// a speech worker (spec/10 §3).
+	cfg.TTSPlace = config.TTSPlaceLocal
 	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "qwen3-tts") {
 		if cliSpeed > 0 {
 			return nil, nil, errors.New("render: qwen3-tts does not support --speed")
