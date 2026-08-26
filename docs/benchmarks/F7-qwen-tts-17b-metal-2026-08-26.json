@@ -1,0 +1,431 @@
+{
+  "schema": "obey-voice.benchmark.tts-rtf.v1",
+  "id": "F7-qwen-tts-17b-metal",
+  "slice": "fast-local-fleet Slice 7 - Metal leg of pending measurement P5; CUDA leg outstanding",
+  "measured_at": "2026-08-26T20:12:53.295171Z",
+  "machine": {
+    "model_id": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "os": "macOS 26.5 (25F71)",
+    "power": "AC, no other GPU load observed; no thermal-throttle instrumentation"
+  },
+  "backend": {
+    "requested": "auto (QWEN3_TTS_BACKEND unset)",
+    "actual": "Metal (ggml-metal; engine emitted ggml_metal_free on exit)",
+    "note": "no CPU fallback observed"
+  },
+  "engine": {
+    "repo": "Obedience-Corp/qwen3-tts.cpp",
+    "engine_sha": "22277bc6f087fd081df8bffa9c280b106a8af567",
+    "harness_repo_sha": "135e01736401b6ae531e5b77fcb76100c9dc59de (projects/qwen3-tts-native)",
+    "worker": "build/qwen3-tts-worker (protocol qwen3-tts-worker/v1, streaming=false, stage A whole-utterance)",
+    "sample_rate": 24000,
+    "harness": {
+      "repo": "qwen3-tts-native (projects/qwen3-tts-native)",
+      "command": "cmd/warm-bench (schema qwen.warmbench.v1) + `just bench warm` recipe",
+      "commit": "915d767332f4a87deb0c6ff50f19bc0b0753d0ad on branch feat/warm-bench",
+      "note": "the numbers below were produced by an out-of-tree scratch module; that harness was then committed verbatim (same fixtures, same warmup, same RTF definition) as cmd/warm-bench so this artifact is re-runnable. The one-fixture re-run of the committed command reproduced F1 at rtf=1.322 vs the 1.341 median recorded here."
+    }
+  },
+  "models": [
+    {
+      "tier": "0.6b",
+      "gguf": "models/qwen3-tts-0.6b-f16.gguf",
+      "bytes": 1835428960,
+      "sha256_prefix": "0b89770118463af8f246",
+      "source": "local offline convert of Qwen/Qwen3-TTS-12Hz-0.6B-Base (just convert models 0.6b), converted 2026-08-16",
+      "preset_dir": "models/presets"
+    },
+    {
+      "tier": "1.7b",
+      "gguf": "models/qwen3-tts-1.7b-f16.gguf",
+      "bytes": 3863621120,
+      "sha256_prefix": "4fbf937e23c95777a1d0",
+      "source": "local offline convert of Qwen/Qwen3-TTS-12Hz-1.7B-Base (just convert models 1.7b), converted 2026-08-16; nothing downloaded for this benchmark",
+      "preset_dir": "models/presets-1.7b"
+    }
+  ],
+  "method": {
+    "definition": "RTF = synthesis wall time / audio duration. >1.0 is slower than realtime. Same definition and same worker client as cmd/worker-bench, which produced the committed 0.6b numbers (docs/latency/worker_warmish.json rtf=1.373, artifacts/latency/platform_Darwin_arm64_metal.json rtf=1.370).",
+    "warmup": "Model load excluded: one warmup synthesis ('Warmup utterance, discarded from the results.') is run after worker ready and discarded. Cold ready and warmup wall are reported separately.",
+    "iterations": 3,
+    "ordering": "round-robin: all 5 fixtures per iteration, 3 iterations (interleaved, so drift shows up across iterations rather than within a fixture)",
+    "preset": "Vivian (baked .q3te, per-tier dims)",
+    "ttfa": "NOT instrumented. Worker is stage A (streaming=false): PCM arrives as one blob after full synthesis, so time-to-first-audio == full wall by construction. Every TTFA figure here is the whole-utterance wall, not a streaming TTFA.",
+    "sampling": "engine defaults (temperature 0.9, top-k 50), so audio duration varies a few percent run to run; RTF is stable regardless",
+    "stat_note": "n=15 per tier; 'p95' below is reported as the observed max, which is the honest ceiling at this sample size"
+  },
+  "commands": [
+    "# primary numbers - committed harness in qwen3-tts-native @ 915d767 (branch feat/warm-bench)",
+    "just bench warm 0.6b 3        # -> artifacts/latency/warm_0.6b.json",
+    "just bench warm 1.7b 3        # -> artifacts/latency/warm_1.7b.json",
+    "# equivalent without just (root = qwen3-tts-native checkout):",
+    "QWEN3_TTS_TIER=1.7b QWEN_WORKER=$root/build/qwen3-tts-worker QWEN_MODELS=$root/models \\",
+    "  DYLD_LIBRARY_PATH=$root/build go run ./cmd/warm-bench -iters 3 -out artifacts/latency/warm_1.7b.json",
+    "# single-fixture smoke: just bench warm 0.6b 1 F1_anchor",
+    "# generate/decode split (single-shot CLI, timing block excludes load):",
+    "QWEN3_TTS_TIER=<tier> DYLD_LIBRARY_PATH=$root/build $root/third_party/qwen3-tts.cpp/build/qwen3-tts-cli -m $root/models -t \"<F4 text>\" -o cli_<tier>.wav"
+  ],
+  "results": {
+    "0.6b": {
+      "cold_ready_ms": 7055.3,
+      "warmup_wall_ms": 4356.4,
+      "rtf_median": 1.3289,
+      "rtf_p95_observed_max": 1.3637,
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "text": "Hello from the native warm worker latency bench.",
+          "iterations": 3,
+          "wall_ms_median": 4057.9,
+          "wall_ms_max": 4460.2,
+          "audio_s_median": 3.017,
+          "rtf_median": 1.3408,
+          "rtf_max": 1.3451,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 4057.9,
+              "audio_s": 3.017,
+              "rtf": 1.3451
+            },
+            {
+              "iter": 2,
+              "wall_ms": 3401.5,
+              "audio_s": 2.537,
+              "rtf": 1.3408
+            },
+            {
+              "iter": 3,
+              "wall_ms": 4460.2,
+              "audio_s": 3.337,
+              "rtf": 1.3367
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "text": "Sure, that works.",
+          "iterations": 3,
+          "wall_ms_median": 2671.8,
+          "wall_ms_max": 3080.7,
+          "audio_s_median": 1.977,
+          "rtf_median": 1.3515,
+          "rtf_max": 1.3637,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 2150.5,
+              "audio_s": 1.577,
+              "rtf": 1.3637
+            },
+            {
+              "iter": 2,
+              "wall_ms": 3080.7,
+              "audio_s": 2.297,
+              "rtf": 1.3412
+            },
+            {
+              "iter": 3,
+              "wall_ms": 2671.8,
+              "audio_s": 1.977,
+              "rtf": 1.3515
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "text": "I pulled the latest changes and the build is green on both machines.",
+          "iterations": 3,
+          "wall_ms_median": 6318.4,
+          "wall_ms_max": 6608.0,
+          "audio_s_median": 4.777,
+          "rtf_median": 1.3227,
+          "rtf_max": 1.3269,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 6608.0,
+              "audio_s": 5.017,
+              "rtf": 1.3172
+            },
+            {
+              "iter": 2,
+              "wall_ms": 6318.4,
+              "audio_s": 4.777,
+              "rtf": 1.3227
+            },
+            {
+              "iter": 3,
+              "wall_ms": 5489.1,
+              "audio_s": 4.137,
+              "rtf": 1.3269
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "text": "Before we ship the streaming path, I want to see a sustained run where the synthesizer keeps up with playback for at least fifteen seconds without a single underrun.",
+          "iterations": 3,
+          "wall_ms_median": 11674.7,
+          "wall_ms_max": 13258.3,
+          "audio_s_median": 8.937,
+          "rtf_median": 1.3063,
+          "rtf_max": 1.3289,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 13258.3,
+              "audio_s": 9.977,
+              "rtf": 1.3289
+            },
+            {
+              "iter": 2,
+              "wall_ms": 11674.7,
+              "audio_s": 8.937,
+              "rtf": 1.3063
+            },
+            {
+              "iter": 3,
+              "wall_ms": 11568.8,
+              "audio_s": 8.857,
+              "rtf": 1.3062
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "text": "The fleet design has three moving parts. First, the local model has to answer fast enough that the pause after you stop talking feels like a person thinking, not a machine loading. Second, the speech engine has to produce audio at least as fast as the speaker plays it, or the sentence will stutter halfway through. Third, everything has to keep working when the laptop is on battery and the fans are quiet.",
+          "iterations": 3,
+          "wall_ms_median": 30510.5,
+          "wall_ms_max": 31914.9,
+          "audio_s_median": 23.017,
+          "rtf_median": 1.3256,
+          "rtf_max": 1.3355,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 31914.9,
+              "audio_s": 23.897,
+              "rtf": 1.3355
+            },
+            {
+              "iter": 2,
+              "wall_ms": 30510.5,
+              "audio_s": 23.017,
+              "rtf": 1.3256
+            },
+            {
+              "iter": 3,
+              "wall_ms": 30209.6,
+              "audio_s": 22.857,
+              "rtf": 1.3217
+            }
+          ]
+        }
+      ]
+    },
+    "1.7b": {
+      "cold_ready_ms": 11053.3,
+      "warmup_wall_ms": 5974.0,
+      "rtf_median": 1.8653,
+      "rtf_p95_observed_max": 1.9355,
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "text": "Hello from the native warm worker latency bench.",
+          "iterations": 3,
+          "wall_ms_median": 6102.2,
+          "wall_ms_max": 7302.2,
+          "audio_s_median": 3.337,
+          "rtf_median": 1.8362,
+          "rtf_max": 1.8667,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 7302.2,
+              "audio_s": 3.977,
+              "rtf": 1.8362
+            },
+            {
+              "iter": 2,
+              "wall_ms": 6079.5,
+              "audio_s": 3.257,
+              "rtf": 1.8667
+            },
+            {
+              "iter": 3,
+              "wall_ms": 6102.2,
+              "audio_s": 3.337,
+              "rtf": 1.8287
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "text": "Sure, that works.",
+          "iterations": 3,
+          "wall_ms_median": 3296.5,
+          "wall_ms_max": 3822.1,
+          "audio_s_median": 1.737,
+          "rtf_median": 1.898,
+          "rtf_max": 1.9101,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 3822.1,
+              "audio_s": 2.057,
+              "rtf": 1.8582
+            },
+            {
+              "iter": 2,
+              "wall_ms": 3164.7,
+              "audio_s": 1.657,
+              "rtf": 1.9101
+            },
+            {
+              "iter": 3,
+              "wall_ms": 3296.5,
+              "audio_s": 1.737,
+              "rtf": 1.898
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "text": "I pulled the latest changes and the build is green on both machines.",
+          "iterations": 3,
+          "wall_ms_median": 8880.4,
+          "wall_ms_max": 8910.5,
+          "audio_s_median": 4.777,
+          "rtf_median": 1.8653,
+          "rtf_max": 1.9355,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 8910.5,
+              "audio_s": 4.777,
+              "rtf": 1.8653
+            },
+            {
+              "iter": 2,
+              "wall_ms": 8880.4,
+              "audio_s": 4.777,
+              "rtf": 1.859
+            },
+            {
+              "iter": 3,
+              "wall_ms": 8316.4,
+              "audio_s": 4.297,
+              "rtf": 1.9355
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "text": "Before we ship the streaming path, I want to see a sustained run where the synthesizer keeps up with playback for at least fifteen seconds without a single underrun.",
+          "iterations": 3,
+          "wall_ms_median": 17704.7,
+          "wall_ms_max": 18224.9,
+          "audio_s_median": 9.737,
+          "rtf_median": 1.8415,
+          "rtf_max": 1.8682,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 17443.6,
+              "audio_s": 9.337,
+              "rtf": 1.8682
+            },
+            {
+              "iter": 2,
+              "wall_ms": 18224.9,
+              "audio_s": 9.897,
+              "rtf": 1.8415
+            },
+            {
+              "iter": 3,
+              "wall_ms": 17704.7,
+              "audio_s": 9.737,
+              "rtf": 1.8183
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "text": "The fleet design has three moving parts. First, the local model has to answer fast enough that the pause after you stop talking feels like a person thinking, not a machine loading. Second, the speech engine has to produce audio at least as fast as the speaker plays it, or the sentence will stutter halfway through. Third, everything has to keep working when the laptop is on battery and the fans are quiet.",
+          "iterations": 3,
+          "wall_ms_median": 42873.7,
+          "wall_ms_max": 43058.3,
+          "audio_s_median": 22.857,
+          "rtf_median": 1.8707,
+          "rtf_max": 1.8957,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 43058.3,
+              "audio_s": 23.017,
+              "rtf": 1.8707
+            },
+            {
+              "iter": 2,
+              "wall_ms": 42873.7,
+              "audio_s": 22.617,
+              "rtf": 1.8957
+            },
+            {
+              "iter": 3,
+              "wall_ms": 42467.6,
+              "audio_s": 22.857,
+              "rtf": 1.858
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "generate_vs_decode_split": {
+    "note": "qwen3-tts-cli single-shot on the F4 fixture; the printed Timing block is synthesis-only (Load: 0 ms), but this is a first-synthesis-in-process run, not a warm-worker run, so its RTF sits at the high end of the warm distribution. Included only for the ratio.",
+    "0.6b": {
+      "generate_ms": 9440,
+      "decode_ms": 3168,
+      "tokenize_ms": 1,
+      "encode_ms": 0,
+      "total_ms": 12609,
+      "audio_s": 9.1,
+      "rtf": 1.386,
+      "generate_share": 0.749,
+      "rss_peak": "3.12 GB"
+    },
+    "1.7b": {
+      "generate_ms": 12965,
+      "decode_ms": 2672,
+      "tokenize_ms": 1,
+      "encode_ms": 0,
+      "total_ms": 15638,
+      "audio_s": 8.22,
+      "rtf": 1.903,
+      "generate_share": 0.829,
+      "rss_peak": "4.97 GB"
+    },
+    "reading": "Code generation dominates on both tiers and is the whole of the 1.7b regression (decode is flat/slightly lower). Per DESIGN's Stage B note, that means decode_chunked_* is NOT the lever: the autoregressive talker is, so Stage B streaming is the bigger job, not a decode tweak."
+  },
+  "anchor_check": {
+    "committed_0.6b_metal_rtf": 1.37,
+    "measured_0.6b_metal_rtf_median": 1.3289,
+    "verdict": "Reproduced. 1.329 median vs 1.370-1.373 committed (~3% faster, same methodology, same worker, same anchor phrase F1 which measures 1.341 here). Methodology matches; the small delta is sampling/audio-length variance and a possibly warmer machine. The 0.6b anchor is sound, so the 1.7b numbers below are comparable."
+  },
+  "reading": {
+    "does_17b_rtf_stay_above_1": "Yes, badly. 1.7b median RTF on Metal is 1.87 (range 1.82-1.94 across 15 runs), vs 0.6b 1.33. 1.7b is ~1.40x slower than 0.6b and ~1.9x slower than realtime. Stage B streaming at 1.7b would underrun continuously: it produces ~0.53s of audio per second of wall time, so playback would starve after any pre-buffer is drained. Streaming 1.7b on Metal is not viable without a pre-buffer that grows with utterance length (for a 23s reply, ~20s of pre-buffer), which is the same as not streaming.",
+    "warm_wall_for_a_typical_sentence": "A typical short conversational reply (F1, ~3.3s audio) is 6.1s warm wall at 1.7b (max 7.3s); a one-line ack (F2, ~1.7s audio) is 3.3s; a medium sentence (F3, ~4.8s) is 8.9s. Only a long multi-sentence paragraph (F5, ~23s audio) reaches 42.9s.",
+    "does_the_35s_claim_survive": "No, not as a warm-wall figure for a normal turn. native17bWarmTTP95 = 35s (obey-voice pkg/voiceagent/tts/qwen.go:36) is ~6x the measured 1.7b warm wall for a typical sentence and ~10x for a short one. Measured warm wall p95 (observed max) at 1.7b is 7.3s for the anchor phrase and 8.9s for a medium sentence -- so an 8-10s warm p95 covers ordinary turns. The 35s number is only reachable by long-form replies (the 23s-audio paragraph took 42.9s and would blow even 35s). Its origin comment says 'field capture: voice-ready 12-31s on a warm worker', which is consistent with turns whose replies were long, not with a per-sentence p95. Correct framing: the watchdog grace must scale with expected reply length (RTF ~1.9 x expected audio seconds + margin), not sit at a fixed 35s. Setting it as a constant makes short 1.7b turns wait 35s before the stall watchdog fires.",
+    "caveats": [
+      "TTFA is not separately measurable today (stage A, streaming=false); every TTFA here equals full wall.",
+      "n=3 per fixture per tier; 'p95' is the observed max.",
+      "No thermal instrumentation. Runs were back-to-back on AC over roughly 20 minutes; RTF did not drift across iterations (0.6b F5 1.336/1.326/1.322; 1.7b F5 1.871/1.896/1.858), which argues against throttling during the window.",
+      "Metal only. No CUDA measurement was taken here; the committed CUDA 0.6b number is 1.23, so a CUDA 1.7b run is still owed if the fleet design needs a per-backend 1.7b figure.",
+      "Audio duration varies run to run because sampling is stochastic at engine defaults; RTF is the stable quantity, wall time is not.",
+      "1.7b resident set peaks near 5.0 GB vs 3.1 GB at 0.6b -- relevant to the RAM doctor warning in docs/TIERS.md."
+    ]
+  }
+}
