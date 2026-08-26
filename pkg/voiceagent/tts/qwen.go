@@ -505,7 +505,7 @@ func (q *Qwen3TTS) synthesize(ctx context.Context, req SynthesisRequest, stream 
 		stream.CloseWithError(&ProviderError{Provider: qwen3TTSProviderName, Operation: "start worker", Kind: ProviderErrorWorker, Err: errors.New("command factory returned nil")})
 		return
 	}
-	configureQwenCommand(cmd)
+	managedqwen.ConfigureWorkerCommand(cmd)
 	var stdout, stderr limitedBuffer
 	stdout.limit = maxWorkerOutput
 	stderr.limit = maxWorkerOutput

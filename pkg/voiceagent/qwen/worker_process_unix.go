@@ -1,6 +1,6 @@
 //go:build darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd || solaris
 
-package tts
+package qwen
 
 import (
 	"os/exec"
@@ -8,11 +8,12 @@ import (
 	"time"
 )
 
-const qwenProcessWaitDelay = 2 * time.Second
+// WorkerProcessWaitDelay bounds how long a killed worker may hold its pipes.
+const WorkerProcessWaitDelay = 2 * time.Second
 
-// configureQwenCommand puts the worker in its own process group so cancellation
+// ConfigureWorkerCommand puts the worker in its own process group so cancellation
 // also terminates helpers forked by native GPU/runtime stacks.
-func configureQwenCommand(cmd *exec.Cmd) {
+func ConfigureWorkerCommand(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
@@ -20,5 +21,5 @@ func configureQwenCommand(cmd *exec.Cmd) {
 		}
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-	cmd.WaitDelay = qwenProcessWaitDelay
+	cmd.WaitDelay = WorkerProcessWaitDelay
 }
