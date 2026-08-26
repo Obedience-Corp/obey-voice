@@ -510,6 +510,7 @@ var envBindings = map[string]string{
 	"tts_provider":                "TTS_PROVIDER",
 	"voice_fallback_provider":     "VOICE_FALLBACK_PROVIDER",
 	"tts_voice":                   "TTS_VOICE",
+	"tts_worker_token":            "OBEY_SPEECH_TOKEN",
 	"qwen_tts_binary":             "QWEN_TTS_BINARY",
 	"qwen_tts_model":              "QWEN_TTS_MODEL",
 	"qwen_tts_timeout":            "QWEN_TTS_TIMEOUT",

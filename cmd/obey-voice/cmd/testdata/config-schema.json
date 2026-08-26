@@ -204,6 +204,7 @@
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
+      "env": "OBEY_SPEECH_TOKEN",
       "editable": true,
       "secret": true
     },

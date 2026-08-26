@@ -132,6 +132,37 @@ func TestTTSPlaceSchemaRoundTrip(t *testing.T) {
 	}
 }
 
+// The token's help text promises the environment variable works. This is the
+// binding that makes that true — and the schema reports the same binding the
+// loader honors, so `config schema` cannot advertise one that does nothing.
+func TestTTSWorkerTokenReadsTheEnvironment(t *testing.T) {
+	t.Setenv("OBEY_SPEECH_TOKEN", "from-env")
+	loadIntoEmptyInstall(t)
+
+	if got := Get("tts_worker_token"); got != "from-env" {
+		t.Fatalf("tts_worker_token = %v, want the environment value", got)
+	}
+	cfg, err := LoadRaw()
+	if err != nil {
+		t.Fatalf("LoadRaw: %v", err)
+	}
+	if cfg.TTSWorkerToken != "from-env" {
+		t.Fatalf("cfg.TTSWorkerToken = %q, want the environment value", cfg.TTSWorkerToken)
+	}
+	value := Values()["tts_worker_token"]
+	if value.Source != SourceEnv {
+		t.Fatalf("source = %q, want %q", value.Source, SourceEnv)
+	}
+	// Secret: reported as set, never rendered — not even from the environment.
+	if value.Value != "" {
+		t.Fatalf("config get rendered the token: %v", value.Value)
+	}
+	spec, ok := SpecFor("tts_worker_token")
+	if !ok || spec.Env != "OBEY_SPEECH_TOKEN" {
+		t.Fatalf("spec=%+v, want the schema to report the binding", spec)
+	}
+}
+
 func TestTTSWorkerTokenIsSecret(t *testing.T) {
 	loadIntoEmptyInstall(t)
 
