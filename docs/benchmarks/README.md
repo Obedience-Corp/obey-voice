@@ -65,7 +65,46 @@ differs from the baseline's.
 |---|---|
 | `baseline.json` | The canonical reference. Overwritten only by a deliberate `just bench baseline`. |
 | `<item>-<date>.json` | Per-item delta artifacts, e.g. `L1-2026-08-12.json`. The item id joins back to the requirement it closes. |
-| `<item>-stt-ab-*.json` | STT A/B decision records (criteria fixed in advance, then the numbers). `L2` kept Whisper over streaming Zipformer; `L4-stt-ab-parakeet-2026-08-19.json` flipped the default to Parakeet TDT. |
+| `<item>-stt-ab-*.json` | STT A/B decision records (criteria fixed in advance, then the numbers). `L2` kept Whisper over streaming Zipformer; `L4-stt-ab-parakeet-2026-08-19.json` flipped the default to Parakeet TDT. Generate with `just bench stt-ab` — see below. |
+
+## STT A/B records
+
+`obey-voice benchmark` writes **per-run** records: `transcript_score`, and a
+`metrics` object whose keys are Go field names carrying int64 nanoseconds. The
+stt-ab files are **aggregates** of those runs — different field names, one
+level up. L2 and L4 were aggregated by hand, so a gate written against their
+fields could not be evaluated from a harness run without redoing that by hand.
+
+`cmd/stt-ab` closes that gap:
+
+```bash
+obey-voice benchmark --stt-provider sherpa-parakeet --stt-provider transcribecpp \
+  --iterations 3 --audio-fixture <wavs> --expect-text <texts> --json-file raw.json
+
+STT_AB_BACKEND=metal FIXTURE_KIND="synthetic (14 utterances)" \
+  just bench stt-ab T1 raw.json sherpa-parakeet transcribecpp
+```
+
+It computes only what arithmetic settles and leaves every judgement blank:
+`criteria_fixed_in_advance`, the `*_criterion_met` verdicts, `decision`,
+`reading_the_numbers`, `evidence_limits`, and `durable_value` are yours to
+write. It prints to stderr what is still unfilled.
+
+Three things it records that hand-authored records did not:
+
+- **`runs_without_a_final_transcript` counts missing finals, not empty text.**
+  `STTFinalElapsed` is set only on a `FinalTranscript`, so zero means no final
+  arrived even when a trailing partial left plausible-looking text behind. That
+  is exactly what L2 caught — 6 of 9 runs, "fragments on the rest." Latency
+  percentiles exclude those runs, so a provider that mostly failed cannot look
+  fast; the failures are reported as their own count.
+- **`provenance.backend`** — a Metal run that silently fell back to CPU is not
+  a Metal result, and no existing key said which one ran.
+- **`warmup_dropped` and `percentile_method`** — `scripts/bench.sh` drops
+  iteration 1 as warm-up for its latency medians; the committed stt-ab records
+  did **not** (L4 is 42 runs = 14 fixtures × 3 iterations). Both choices are
+  defensible, so the artifact states which it made rather than leaving two
+  files silently incomparable.
 
 ## Verifying the gate still bites
 
