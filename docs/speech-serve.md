@@ -73,7 +73,9 @@ obey-voice config set tts_worker_token <the token>
 ```
 
 `https://` off-box, `http://` only to `127.0.0.1`. The token never goes in the
-URL. `OBEY_SPEECH_TOKEN` works here too.
+URL. `OBEY_SPEECH_TOKEN` works here too — and one of the two is **required**:
+`tts_place: lan` without a token is refused outright, so a missing token can
+never look like an unreachable worker and quietly become Kokoro.
 
 This computer needs no Qwen package, no GGUF and no GPU. It sends text and
 plays audio.
@@ -103,9 +105,12 @@ same setting turns the doctor's `speech-place` warning into a failure.
 
 ## What does not cross the network
 
-- **Voice cloning.** A shipped clone voice is a reference recording on *this*
-  computer; the wire carries no audio files. Over LAN the speech worker speaks
-  in its own voice. Set `tts_place: local` to clone.
+- **Voice cloning.** A shipped clone voice — including `Veronica`, the default —
+  is a reference recording on *this* computer, and the wire carries no audio
+  files. Over LAN the speech worker speaks in **its own voice**. Obey Voice
+  warns about this at the start of a conversation and in `doctor`; pick a
+  preset voice (`qwen_tts_voice: Vivian`) for LAN speech, or set
+  `tts_place: local` to clone.
 - **Speech recognition.** Only synthesis is offloaded. Your microphone stays
   local.
 - **Book rendering.** `obey-voice render` always synthesizes on this computer,
@@ -120,6 +125,11 @@ same setting turns the doctor's `speech-place` warning into a failure.
 refused immediately with an error frame rather than queued, so a forgotten
 session can never silently hold the worker while a live one waits. Disconnect
 the first host, or run a second worker.
+
+If a client disappears mid-sentence, the worker is told to stop and the slot
+stays held until that request has finished answering — a few seconds at most.
+Frames are routed by request id as well, so audio meant for a client that left
+is never delivered to the next one.
 
 Ending a conversation does not stop the worker: the disconnect cancels whatever
 was being spoken and leaves the model loaded. Only stopping `speech-serve`

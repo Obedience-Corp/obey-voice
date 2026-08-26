@@ -52,6 +52,10 @@ type Server struct {
 
 	mu     sync.Mutex
 	active *clientConn
+	// childDown records that the worker's stdout ended. A daemon whose worker
+	// died cannot speak, so it says that to the next client (and therefore in
+	// the host's doctor row) instead of accepting and going quiet.
+	childDown bool
 
 	closeOnce sync.Once
 }
@@ -172,6 +176,18 @@ func (s *Server) Close() {
 			s.child.Close()
 		}
 	})
+}
+
+func (s *Server) markWorkerStopped() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.childDown = true
+}
+
+func (s *Server) workerStopped() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.childDown
 }
 
 func (s *Server) logf(format string, args ...any) {

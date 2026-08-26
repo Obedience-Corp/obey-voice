@@ -20,25 +20,78 @@ import (
 // unprompted, one pcm_meta + raw f32le + final per synthesize, exit on
 // shutdown. Every line it receives is appended to logPath, so a test can prove
 // what the bridge did and did not forward.
-const fakeChildScript = `#!/usr/bin/env bash
-set -euo pipefail
-log="$1"
-delay="${2:-0}"
-echo '{"type":"ready","protocol":"qwen3-tts-worker/v1","sample_rate":24000,"pcm_format":"f32le","streaming":false,"presets":["Vivian"],"note":"stage_A"}'
-while IFS= read -r line; do
-  printf '%s\n' "$line" >>"$log"
-  case "$line" in
-    *'"shutdown"'*) exit 0 ;;
-    *'"cancel"'*) continue ;;
-    *'"synthesize"'*)
-      id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
-      if [[ "$delay" != "0" ]]; then sleep "$delay"; fi
-      echo "{\"type\":\"pcm_meta\",\"id\":\"$id\",\"sample_rate\":24000,\"format\":\"f32le\",\"n_samples\":3}"
-      python3 -c 'import sys,struct; sys.stdout.buffer.write(struct.pack("<fff",0.5,-0.5,0.25)); sys.stdout.buffer.write(b"\n")'
-      echo "{\"type\":\"final\",\"id\":\"$id\"}"
-      ;;
-  esac
-done
+//
+// Synthesis is interruptible: while a request is "generating" it keeps reading
+// stdin, so a cancel really aborts the request instead of arriving after the
+// audio was already emitted. The ready line carries an unknown field on
+// purpose — the bridge must pass it through.
+const fakeChildScript = `#!/usr/bin/env python3
+import json, select, struct, sys, time
+
+log_path = sys.argv[1]
+window = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
+ignore_cancel = len(sys.argv) > 3 and sys.argv[3] == "ignore-cancel"
+
+
+def log(raw):
+    with open(log_path, "a") as handle:
+        handle.write(raw.rstrip("\n") + "\n")
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def read_line(timeout=None):
+    ready, _, _ = select.select([sys.stdin], [], [], timeout)
+    if not ready:
+        return None
+    raw = sys.stdin.readline()
+    if raw == "":
+        raise SystemExit(0)
+    log(raw)
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {}
+
+
+emit({
+    "type": "ready", "protocol": "qwen3-tts-worker/v1", "sample_rate": 24000,
+    "pcm_format": "f32le", "streaming": False, "presets": ["Vivian"],
+    "note": "stage_A", "engine_build": "fake-engine-1",
+})
+
+while True:
+    msg = read_line()
+    if msg is None:
+        continue
+    kind = msg.get("type")
+    if kind == "shutdown":
+        break
+    if kind != "synthesize":
+        continue
+    request = msg.get("id", "")
+    deadline = time.time() + window
+    aborted = False
+    while time.time() < deadline:
+        nxt = read_line(timeout=0.05)
+        if nxt is None:
+            continue
+        if nxt.get("type") == "shutdown":
+            raise SystemExit(0)
+        if nxt.get("type") == "cancel" and not ignore_cancel:
+            aborted = True
+            break
+    if aborted:
+        emit({"type": "error", "id": request, "message": "canceled"})
+        continue
+    emit({"type": "pcm_meta", "id": request, "sample_rate": 24000, "format": "f32le", "n_samples": 3})
+    sys.stdout.buffer.write(struct.pack("<fff", 0.5, -0.5, 0.25))
+    sys.stdout.buffer.write(b"\n")
+    sys.stdout.buffer.flush()
+    emit({"type": "final", "id": request})
 `
 
 const testToken = "s3cret-token"
@@ -49,7 +102,9 @@ type testBridge struct {
 }
 
 // startTestBridge runs the real bridge over a scripted child on loopback.
-func startTestBridge(t *testing.T, delay string) *testBridge {
+// window is how many seconds a synthesize stays in flight before answering;
+// extra passes further arguments to the child (e.g. "ignore-cancel").
+func startTestBridge(t *testing.T, window string, extra ...string) *testBridge {
 	t.Helper()
 	dir := t.TempDir()
 	script := filepath.Join(dir, "qwen3-tts-worker")
@@ -64,7 +119,7 @@ func startTestBridge(t *testing.T, delay string) *testBridge {
 	server, err := New(Options{
 		Bind:  "127.0.0.1:0",
 		Token: testToken,
-		Child: ChildSpec{Binary: script, ModelDir: dir, Tier: "0.6b", Args: []string{logPath, delay}},
+		Child: ChildSpec{Binary: script, ModelDir: dir, Tier: "0.6b", Args: append([]string{logPath, window}, extra...)},
 		Tier:  "0.6b",
 		// The scripted child is ready at once; a real one takes seconds.
 		ReadyTimeout: 10 * time.Second,
@@ -353,8 +408,10 @@ func TestBridgeRefusesASecondClient(t *testing.T) {
 	first := dialBridge(t, bridge.Addr())
 	first.hello(t, testToken)
 
+	// Auth comes before the slot, so a second client is told it is welcome but
+	// not alone — and an unauthenticated connection never holds the slot at all.
 	second := dialBridge(t, bridge.Addr())
-	frame := second.frame(t)
+	frame := second.hello(t, testToken)
 	if frame["type"] != "error" || frame["message"] != msgBusy {
 		t.Fatalf("frame=%v want a busy refusal", frame)
 	}

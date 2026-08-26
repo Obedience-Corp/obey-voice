@@ -36,17 +36,12 @@ type ChildSpec struct {
 	Env []string
 }
 
-// childReady is the worker's ready line, kept in both parsed and raw form: the
-// raw JSON is what a client's ready is rewritten from, so fields this build
-// does not know about survive the trip.
+// childReady is the worker's ready line. Type is parsed for the startup check;
+// raw keeps every key the worker actually sent, including ones this build does
+// not model, so the client's ready can carry them forward.
 type childReady struct {
-	Type       string          `json:"type"`
-	Protocol   string          `json:"protocol"`
-	SampleRate int             `json:"sample_rate"`
-	PCMFormat  string          `json:"pcm_format"`
-	Streaming  bool            `json:"streaming"`
-	Presets    json.RawMessage `json:"presets,omitempty"`
-	Note       string          `json:"note,omitempty"`
+	Type string
+	raw  map[string]json.RawMessage
 }
 
 // child is the worker process plus its framed stdio.
@@ -133,12 +128,18 @@ func (c *child) readReady(ctx context.Context, timeout time.Duration) error {
 	defer timer.Stop()
 	select {
 	case line := <-lines:
-		if err := json.Unmarshal([]byte(line), &c.ready); err != nil {
+		raw := map[string]json.RawMessage{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			return fmt.Errorf("speech worker ready json: %w (%q)", err, strings.TrimSpace(line))
 		}
-		if c.ready.Type != "ready" {
-			return fmt.Errorf("speech worker handshake failed: type=%s", c.ready.Type)
+		var kind string
+		if value, ok := raw["type"]; ok {
+			_ = json.Unmarshal(value, &kind)
 		}
+		if kind != "ready" {
+			return fmt.Errorf("speech worker handshake failed: type=%s", kind)
+		}
+		c.ready = childReady{Type: kind, raw: raw}
 		return nil
 	case err := <-errs:
 		return fmt.Errorf("speech worker ready: %w", err)
