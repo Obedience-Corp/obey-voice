@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -802,9 +804,25 @@ func voiceSettingsState(cfg *config.Config) string {
 	if cfg == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s\x00%s",
+	// Where speech runs is part of the voice state: switching computers has to
+	// rebuild the TTS set (and its connection) exactly like switching engines.
+	// The token is fingerprinted, never embedded: this string is app state that
+	// any debug print or crash dump could carry.
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%t",
 		cfg.TTSProvider, cfg.TTSFallbackProvider, cfg.TTSVoice,
-		cfg.QwenTTSMode, cfg.QwenTTSVoice, cfg.QwenTTSLanguage)
+		cfg.QwenTTSMode, cfg.QwenTTSVoice, cfg.QwenTTSLanguage,
+		config.TTSPlaceOf(cfg), cfg.TTSWorkerURL, secretFingerprint(cfg.TTSWorkerToken), cfg.TTSLanStrict)
+}
+
+// secretFingerprint reduces a secret to something that changes when the secret
+// does and reveals nothing about it. A rotated token still triggers a voice
+// reload; the token itself never leaves config.
+func secretFingerprint(secret string) string {
+	if secret == "" {
+		return "unset"
+	}
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:8])
 }
 
 func (a App) View() string {

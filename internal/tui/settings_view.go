@@ -34,6 +34,9 @@ func (m settingsModel) View() string {
 	}
 
 	listLines := m.sectionListLines()
+	if m.edit.kind != editNone {
+		listLines = append([]string{m.editorLine(), ""}, listLines...)
+	}
 	// Fill the list region so short sections still expand with the terminal.
 	if len(listLines) > listRows {
 		listLines = listLines[:listRows]
@@ -48,6 +51,9 @@ func (m settingsModel) View() string {
 		help += " • p preview"
 	}
 	help += " • esc back"
+	if m.edit.kind != editNone {
+		help = "  type a value • enter save • esc cancel"
+	}
 	if compact {
 		footer := dimStyle.Render(help)
 		if m.message != "" {

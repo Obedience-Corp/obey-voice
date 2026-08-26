@@ -75,6 +75,10 @@ type settingsModel struct {
 	saveConfig      func(string, any) error
 	message         string
 
+	// edit is the inline value editor (speech computer address / token). Only
+	// the Qwen tab opens it today; while it is active it owns every key.
+	edit settingsEditor
+
 	qwenStatus        managedqwen.Status
 	nativeStatus      managedqwen.NativeStatus
 	qwenInstalling    bool
@@ -363,6 +367,9 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		m.ensureCursorVisible()
 
 	case tea.KeyMsg:
+		if m.edit.kind != editNone {
+			return m.updateEditor(msg)
+		}
 		switch msg.String() {
 		case "tab", "right", "l":
 			m.section = (m.section + 1) % settingsSectionCount

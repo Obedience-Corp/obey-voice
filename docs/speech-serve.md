@@ -72,6 +72,12 @@ obey-voice config set tts_worker_url https://speech-box:7263
 obey-voice config set tts_worker_token <the token>
 ```
 
+Settings → Qwen has the same switches — "Speech runs on", the address, the
+token, and whether an unreachable worker should stop a conversation — if you
+would rather not use the command line. The token is only ever typed there,
+never displayed, and Settings refuses to switch computers (or to clear the
+token) while that would leave the conversation with no way in.
+
 `https://` off-box, `http://` only to `127.0.0.1`. The token never goes in the
 URL. `OBEY_SPEECH_TOKEN` works here too — and one of the two is **required**:
 `tts_place: lan` without a token is refused outright, so a missing token can

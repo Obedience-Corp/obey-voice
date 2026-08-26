@@ -19,6 +19,10 @@ type qwenOptionKind int
 
 const (
 	qwenOptStatus qwenOptionKind = iota
+	qwenOptPlace
+	qwenOptWorkerURL
+	qwenOptWorkerToken
+	qwenOptLanStrict
 	qwenOptTier
 	qwenOptConsent
 	qwenOptCache
@@ -84,10 +88,13 @@ func (m *settingsModel) buildQwenItems() {
 
 	m.qwenItems = []qwenOptionItem{
 		{kind: qwenOptStatus, label: "Package — " + status},
-		{kind: qwenOptTier, label: "Model tier — " + tierDetail + " · enter to cycle"},
-		{kind: qwenOptConsent, label: "Clone consent — " + consent + " · required for reference voice"},
-		{kind: qwenOptCache, label: cacheLabel + " · enter clears"},
 	}
+	m.qwenItems = append(m.qwenItems, m.qwenPlaceItems()...)
+	m.qwenItems = append(m.qwenItems,
+		qwenOptionItem{kind: qwenOptTier, label: "Model tier — " + tierDetail + " · enter to cycle"},
+		qwenOptionItem{kind: qwenOptConsent, label: "Clone consent — " + consent + " · required for reference voice"},
+		qwenOptionItem{kind: qwenOptCache, label: cacheLabel + " · enter clears"},
+	)
 	if !m.nativeStatus.Installed {
 		install := "Install / repair — native package (ensure) or legacy managed"
 		if m.qwenInstalling {
@@ -143,6 +150,9 @@ func (m *settingsModel) selectQwenItem() tea.Cmd {
 		return nil
 	}
 	item := m.qwenItems[m.cursor]
+	if cmd, handled := m.selectQwenPlaceItem(item.kind); handled {
+		return cmd
+	}
 	save := m.saveConfig
 	if save == nil {
 		save = config.SetAndSave

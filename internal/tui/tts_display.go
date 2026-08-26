@@ -36,6 +36,14 @@ func ttsModelLabelForProvider(provider string, cfg *config.Config) string {
 		if cfg == nil {
 			return "unset"
 		}
+		// Speech on another computer: this host owns no model, so reporting a
+		// missing local package here would be alarming and wrong.
+		if config.TTSPlaceOf(cfg) == config.TTSPlaceLAN {
+			if host := speechHostLabel(cfg.TTSWorkerURL); host != "" {
+				return "speech worker " + host
+			}
+			return "speech worker (no address)"
+		}
 		// Managed selection (empty binary/model) prefers native package when present.
 		if qwenManagedNativeReady(cfg) {
 			tier := strings.TrimSpace(cfg.QwenTTSModelTier)
@@ -60,6 +68,9 @@ func ttsModelLabelForProvider(provider string, cfg *config.Config) string {
 func ttsBinaryLabel(cfg *config.Config) string {
 	if cfg == nil {
 		return "managed worker"
+	}
+	if config.TTSPlaceOf(cfg) == config.TTSPlaceLAN {
+		return "another computer"
 	}
 	if qwenManagedNativeReady(cfg) {
 		return "native worker"
@@ -86,7 +97,23 @@ func ttsBadgeLabel(cfg *config.Config) string {
 	if cfg == nil {
 		return ""
 	}
-	return "tts " + activeTTSProvider(cfg) + " · " + ttsModelLabel(cfg) + " · " + ttsVoiceModeLabel(cfg) + " · " + ttsEffectiveVoiceLabel(cfg)
+	return "tts " + activeTTSProvider(cfg) + ttsPlaceSuffix(cfg) + " · " + ttsModelLabel(cfg) + " · " + ttsVoiceModeLabel(cfg) + " · " + ttsEffectiveVoiceLabel(cfg)
+}
+
+// ttsPlaceSuffix marks the chip only when speech leaves this computer. A
+// single-machine install is the overwhelming case and says nothing extra: the
+// chip earns its width by reporting the surprising state, not the normal one.
+func ttsPlaceSuffix(cfg *config.Config) string {
+	if cfg == nil || !strings.EqualFold(activeTTSProvider(cfg), "qwen3-tts") {
+		return ""
+	}
+	if config.TTSPlaceOf(cfg) != config.TTSPlaceLAN {
+		return ""
+	}
+	if host := speechHostLabel(cfg.TTSWorkerURL); host != "" {
+		return " (lan " + host + ")"
+	}
+	return " (lan)"
 }
 
 func ttsProviderDetail(spec tts.ProviderSpec, cfg *config.Config) string {
