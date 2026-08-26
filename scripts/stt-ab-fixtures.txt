@@ -1,0 +1,19 @@
+# STT A/B fixture texts, one per line. Lines starting with # are ignored.
+# The first four are the recoverable L4 texts (L4-stt-ab-parakeet-2026-08-19.json
+# sample_transcripts); the L4 wavs themselves were never committed, so wavs are
+# re-synthesized from these texts via cmd/golden-tts (af_heart, 0.95), then
+# resampled to 16 kHz mono with 1.5 s trailing silence appended.
+What is the capital of France? Answer in one word.
+What is 2+2? Answer with just the number.
+Say hello in exactly three words.
+Open the pull request for the Obey Voice repo and summarize the review comments.
+Set a timer for twenty five minutes.
+What's the weather in Denver tomorrow morning?
+Read me the last message from the engineering channel.
+Turn the volume down a little bit.
+Schedule a meeting with the design team for Thursday at noon.
+How long does it take to drive from Austin to Houston?
+Add eggs, flour, and unsalted butter to the shopping list.
+Switch the voice to the British persona and keep the speed the same.
+Summarize the benchmark results and flag any regression over ten percent.
+Never mind, cancel that and go back to the previous topic.
