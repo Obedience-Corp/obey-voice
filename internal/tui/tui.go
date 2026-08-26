@@ -802,9 +802,12 @@ func voiceSettingsState(cfg *config.Config) string {
 	if cfg == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s\x00%s",
+	// Where speech runs is part of the voice state: switching computers has to
+	// rebuild the TTS set (and its connection) exactly like switching engines.
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%t",
 		cfg.TTSProvider, cfg.TTSFallbackProvider, cfg.TTSVoice,
-		cfg.QwenTTSMode, cfg.QwenTTSVoice, cfg.QwenTTSLanguage)
+		cfg.QwenTTSMode, cfg.QwenTTSVoice, cfg.QwenTTSLanguage,
+		config.TTSPlaceOf(cfg), cfg.TTSWorkerURL, cfg.TTSWorkerToken, cfg.TTSLanStrict)
 }
 
 func (a App) View() string {

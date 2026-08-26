@@ -78,7 +78,7 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |
 | `tts_voice` | `af_heart` | `TTS_VOICE` | Kokoro voice name |
-| `tts_place` | `local` | | Where Qwen speech runs: `local` (this computer) or `lan` (a speech worker on another computer). Host topology, never a persona field |
+| `tts_place` | `local` | | Where Qwen speech runs: `local` (this computer) or `lan` (a `speech-serve` host — see [speech-serve.md](speech-serve.md)). Host topology, never a persona field |
 | `tts_worker_url` | empty | | Speech worker address when `tts_place: lan`, e.g. `https://studio:7263`. `http://` only to loopback; never carries the token |
 | `tts_worker_token` | empty | `OBEY_SPEECH_TOKEN` | Shared secret the speech worker requires. **Required** whenever `tts_place: lan` — a missing token is refused at validation, not at connect time. `config get` reports only whether it is set |
 | `tts_lan_strict` | `false` | | Refuse to start a conversation when the speech worker is unreachable, instead of speaking with Kokoro here |
