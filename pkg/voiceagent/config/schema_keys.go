@@ -13,6 +13,31 @@ func voiceKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "tts_place", Type: TypeEnum, Default: TTSPlaceLocal, Enum: ttsPlaceEnum(),
+			Group: GroupVoice, Title: "Where speech runs",
+			Help: "Whether Qwen speaks on this computer or on another one running speech-serve. Kokoro always speaks here.",
+		},
+		{
+			Key: "tts_worker_url", Type: TypeString, Default: "",
+			Group: GroupVoice, Title: "Speech computer address",
+			Help: "The speech-serve host to send text to, like https://studio:7263. Only used when speech runs on another computer.",
+		},
+		{
+			Key: "tts_worker_token", Type: TypeString, Default: "", Secret: true,
+			Group: GroupVoice, Title: "Speech computer token",
+			Help: "The shared secret that speech computer requires. Empty falls back to the OBEY_SPEECH_TOKEN environment variable.",
+		},
+		{
+			Key: "tts_lan_strict", Type: TypeBool, Default: false,
+			Group: GroupVoice, Title: "Require the speech computer",
+			Help: "Refuses to start a conversation when the speech computer is unreachable, instead of speaking in the fallback voice.",
+		},
+		{
+			Key: "tts_lan_timeout_ms", Type: TypeInt, Default: DefaultTTSLanTimeoutMS, Unit: "ms", Min: num(50), Max: num(10000),
+			Group: GroupVoice, Title: "Speech computer timeout",
+			Help: "How long to wait for the speech computer to answer a connection. It does not bound the model load on a cold host.",
+		},
+		{
 			Key: "tts_voice", Type: TypeEnum, Default: "af_heart", Enum: kokoroVoiceEnum(),
 			Group: GroupVoice, Title: "Kokoro voice",
 			Help:               "The voice Kokoro speaks in. Qwen ignores this and uses its own preset.",

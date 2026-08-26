@@ -86,6 +86,52 @@
       "editable": true
     },
     {
+      "key": "tts_lan_strict",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Require the speech computer",
+      "help": "Refuses to start a conversation when the speech computer is unreachable, instead of speaking in the fallback voice.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "tts_lan_timeout_ms",
+      "type": "int",
+      "default": 200,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Speech computer timeout",
+      "help": "How long to wait for the speech computer to answer a connection. It does not bound the model load on a cold host.",
+      "unit": "ms",
+      "min": 50,
+      "max": 10000,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "tts_place",
+      "type": "enum",
+      "default": "local",
+      "enum": [
+        "local",
+        "lan"
+      ],
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Where speech runs",
+      "help": "Whether Qwen speaks on this computer or on another one running speech-serve. Kokoro always speaks here.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "tts_provider",
       "type": "enum",
       "default": "kokoro",
@@ -145,6 +191,33 @@
       "restart_verified": false,
       "persona_overridable": true,
       "env": "TTS_VOICE",
+      "editable": true
+    },
+    {
+      "key": "tts_worker_token",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech computer token",
+      "help": "The shared secret that speech computer requires. Empty falls back to the OBEY_SPEECH_TOKEN environment variable.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true,
+      "secret": true
+    },
+    {
+      "key": "tts_worker_url",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech computer address",
+      "help": "The speech-serve host to send text to, like https://studio:7263. Only used when speech runs on another computer.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
       "editable": true
     },
     {

@@ -298,12 +298,32 @@
       "value": "parakeet-tdt-0.6b-v2",
       "source": "default"
     },
+    "tts_lan_strict": {
+      "value": false,
+      "source": "default"
+    },
+    "tts_lan_timeout_ms": {
+      "value": 200,
+      "source": "default"
+    },
+    "tts_place": {
+      "value": "local",
+      "source": "default"
+    },
     "tts_provider": {
       "value": "kokoro",
       "source": "file"
     },
     "tts_voice": {
       "value": "af_heart",
+      "source": "default"
+    },
+    "tts_worker_token": {
+      "value": "",
+      "source": "default"
+    },
+    "tts_worker_url": {
+      "value": "",
       "source": "default"
     },
     "tui_mouse_enabled": {

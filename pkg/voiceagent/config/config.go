@@ -35,6 +35,21 @@ type Config struct {
 	QwenTTSNativeSHA256 string `mapstructure:"qwen_tts_native_sha256"`
 	OutputDevice        string `mapstructure:"output_device"`
 
+	// Speech place is host topology, not a provider: tts_provider still names
+	// the engine, tts_place says which computer runs it. Personas never store it.
+	TTSPlace string `mapstructure:"tts_place"`
+	// TTSWorkerURL addresses a speech-serve host when TTSPlace is lan.
+	// https://host:7263 off-box; http:// only for loopback. Never carries the token.
+	TTSWorkerURL string `mapstructure:"tts_worker_url"`
+	// TTSWorkerToken authenticates the obey-speech/v1 hello.
+	TTSWorkerToken string `mapstructure:"tts_worker_token"`
+	// TTSLanStrict fails the agent instead of falling back to Kokoro when the
+	// LAN speech host is unreachable.
+	TTSLanStrict bool `mapstructure:"tts_lan_strict"`
+	// TTSLanTimeoutMS bounds the dial and handshake, never the worker's model
+	// load, which is seconds on a cold speech-serve.
+	TTSLanTimeoutMS int `mapstructure:"tts_lan_timeout_ms"`
+
 	// STT
 	STTProvider          string `mapstructure:"stt_provider"`
 	InputDevice          string `mapstructure:"input_device"`
@@ -305,6 +320,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("qwen_tts_native_url", "")
 	v.SetDefault("qwen_tts_native_sha256", "")
 	v.SetDefault("output_device", "")
+
+	// Speech runs on this computer until an operator says otherwise; LAN is
+	// never the compiled default.
+	v.SetDefault("tts_place", TTSPlaceLocal)
+	v.SetDefault("tts_worker_url", "")
+	v.SetDefault("tts_worker_token", "")
+	v.SetDefault("tts_lan_strict", false)
+	v.SetDefault("tts_lan_timeout_ms", DefaultTTSLanTimeoutMS)
 
 	v.SetDefault("stt_provider", "sherpa-parakeet")
 	v.SetDefault("input_device", "")
