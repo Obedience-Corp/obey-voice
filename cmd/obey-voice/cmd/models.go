@@ -122,6 +122,9 @@ func printModelStatuses(out io.Writer, modelsDir string, statuses []config.Asset
 			mode = "/" + s.Mode
 		}
 		fmt.Fprintf(out, "  [%s] %s (%s%s) — %s\n", s.Kind, s.Name, s.Provider, mode, state)
+		if line := attributionLine(s.License, s.Source); line != "" {
+			fmt.Fprintf(out, "    %s\n", line)
+		}
 	}
 	if offered > 0 {
 		fmt.Fprintf(out, "\n  %d asset(s), %d missing (plus %d optional Qwen3-TTS tier(s) not installed).\n\n",
@@ -329,6 +332,7 @@ func runModelsEnsureJSON(cmd *cobra.Command, cfg *config.Config, req config.Asse
 // naming the failing asset if a download fails.
 func runModelsEnsure(cmd *cobra.Command, cfg *config.Config, req config.AssetRequest, ensure ensureAssetsFunc) error {
 	out := cmd.OutOrStdout()
+	printAttribution(out, cfg, req)
 
 	started := map[string]bool{}
 	progress := func(name string, pct float64) {
@@ -359,6 +363,34 @@ func runModelsEnsure(cmd *cobra.Command, cfg *config.Config, req config.AssetReq
 		fmt.Fprintf(out, "  Done — %d asset(s) ensured.\n", len(started))
 	}
 	return nil
+}
+
+// attributionLine renders an asset's license obligation, empty when it has
+// none. Weights under their own license are only lawfully redistributable with
+// the license named, so this belongs on the surface that fetches them.
+func attributionLine(license, source string) string {
+	if license == "" {
+		return ""
+	}
+	if source == "" {
+		return "license: " + license
+	}
+	return "license: " + license + " — " + source
+}
+
+// printAttribution names the license of every asset this ensure run may
+// download, before it downloads any of them. A manifest error here is not
+// fatal: ensure re-resolves it and reports it properly.
+func printAttribution(out io.Writer, cfg *config.Config, req config.AssetRequest) {
+	manifest, err := config.ManifestFor(cfg, req)
+	if err != nil {
+		return
+	}
+	for _, a := range manifest.Assets {
+		if line := attributionLine(a.License, a.Source); line != "" {
+			fmt.Fprintf(out, "  %s (%s) %s\n", a.Name, a.Provider, line)
+		}
+	}
 }
 
 // ensureQwenTierFn is the persona-tier ensure seam; tests swap it to observe

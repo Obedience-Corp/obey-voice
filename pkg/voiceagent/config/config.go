@@ -46,6 +46,8 @@ type Config struct {
 	WhisperCPPBinary     string `mapstructure:"whispercpp_binary"`
 	WhisperCPPModel      string `mapstructure:"whispercpp_model"`
 	WhisperCPPModelPath  string `mapstructure:"whispercpp_model_path"`
+	TranscribeCPPBinary  string `mapstructure:"transcribecpp_binary"`
+	TranscribeCPPModel   string `mapstructure:"transcribecpp_model"`
 
 	// VAD
 	VADEnabled                bool    `mapstructure:"vad_enabled"`
@@ -314,6 +316,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("whispercpp_binary", "whisper-cli")
 	v.SetDefault("whispercpp_model", "base.en")
 	v.SetDefault("whispercpp_model_path", filepath.Join(DefaultModelsDir(), "whispercpp", "ggml-base.en.bin"))
+	v.SetDefault("transcribecpp_binary", "transcribe-cli")
+	v.SetDefault("transcribecpp_model", DefaultTranscribeCPPModel)
 
 	v.SetDefault("vad_enabled", true)
 	v.SetDefault("vad_silence_duration", 0.5)
@@ -506,6 +510,8 @@ var envBindings = map[string]string{
 	"whispercpp_binary":           "WHISPERCPP_BINARY",
 	"whispercpp_model":            "WHISPERCPP_MODEL",
 	"whispercpp_model_path":       "WHISPERCPP_MODEL_PATH",
+	"transcribecpp_binary":        "TRANSCRIBECPP_BINARY",
+	"transcribecpp_model":         "TRANSCRIBECPP_MODEL",
 	"models_dir":                  "MODELS_DIR",
 	"brain_provider":              "BRAIN_PROVIDER",
 	"grok_model":                  "GROK_MODEL",

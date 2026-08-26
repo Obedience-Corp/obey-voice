@@ -290,6 +290,14 @@
       "value": 30,
       "source": "default"
     },
+    "transcribecpp_binary": {
+      "value": "transcribe-cli",
+      "source": "default"
+    },
+    "transcribecpp_model": {
+      "value": "parakeet-tdt-0.6b-v2",
+      "source": "default"
+    },
     "tts_provider": {
       "value": "kokoro",
       "source": "file"

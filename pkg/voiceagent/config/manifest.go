@@ -77,6 +77,12 @@ type Asset struct {
 	Files      []AssetFile   `json:"files,omitempty"`
 	Archive    *AssetArchive `json:"archive,omitempty"`
 	CheckFiles []string      `json:"check_files,omitempty"` // relative to target dir; required for archives
+	// License and Source carry an attribution obligation that downloading the
+	// asset triggers. Set them together on any asset whose weights are not
+	// covered by this project's own license; both surface in models status and
+	// models ensure so the claim reaches the user, not just the source.
+	License string `json:"license,omitempty"`
+	Source  string `json:"source,omitempty"`
 }
 
 // AssetManifest is a versioned collection of model assets.
@@ -318,6 +324,21 @@ func sttAsset(cfg *Config, norm NormalizedSTT) (*Asset, error) {
 			Name:     a.Name,
 			Files:    []AssetFile{{Path: filepath.Join("whispercpp", a.Filename), URL: a.URL, SHA256: a.SHA256, Size: a.Size}},
 		}, nil
+	case norm.Provider == STTProviderTranscribeCPP:
+		a, err := TranscribeCPPModel(cfg.TranscribeCPPModel)
+		if err != nil {
+			return nil, err
+		}
+		return &Asset{
+			ID:       "stt.transcribecpp." + a.Name,
+			Provider: STTProviderTranscribeCPP,
+			Mode:     STTModeOffline,
+			Kind:     AssetKindSTT,
+			Name:     a.Name,
+			Files:    []AssetFile{{Path: a.RelPath(), URL: a.URL, SHA256: a.SHA256, Size: a.Size}},
+			License:  a.License,
+			Source:   a.Source,
+		}, nil
 	}
 	return nil, nil
 }
@@ -382,6 +403,10 @@ type AssetStatus struct {
 	// Detail is optional human state when Installed/Missing is not enough
 	// (e.g. legacy trees that ensure will not remove).
 	Detail string `json:"detail,omitempty"`
+	// License/Source mirror the asset's attribution obligation, so every
+	// surface built from Status carries it.
+	License string `json:"license,omitempty"`
+	Source  string `json:"source,omitempty"`
 }
 
 // installPaths returns the absolute paths that must exist for the asset to be
@@ -441,7 +466,7 @@ func (a Asset) installProblems(modelsDir string) []string {
 func (m AssetManifest) Status(modelsDir string) []AssetStatus {
 	out := make([]AssetStatus, 0, len(m.Assets))
 	for _, a := range m.Assets {
-		st := AssetStatus{ID: a.ID, Name: a.Name, Provider: a.Provider, Mode: a.Mode, Kind: a.Kind}
+		st := AssetStatus{ID: a.ID, Name: a.Name, Provider: a.Provider, Mode: a.Mode, Kind: a.Kind, License: a.License, Source: a.Source}
 		st.Missing = a.installProblems(modelsDir)
 		st.Installed = len(st.Missing) == 0
 		out = append(out, st)

@@ -15,9 +15,10 @@ import (
 // Normalized STT provider and mode identifiers resolved from the single
 // stt_provider config value.
 const (
-	STTProviderSherpa     = "sherpa"
-	STTProviderParakeet   = "parakeet"
-	STTProviderWhisperCPP = "whispercpp"
+	STTProviderSherpa        = "sherpa"
+	STTProviderParakeet      = "parakeet"
+	STTProviderWhisperCPP    = "whispercpp"
+	STTProviderTranscribeCPP = "transcribecpp"
 
 	STTModeOffline   = "offline"
 	STTModeStreaming = "streaming"
@@ -64,6 +65,7 @@ var sttAliasTable = map[string]NormalizedSTT{
 	"sherpa-parakeet":  {Provider: STTProviderParakeet, Mode: STTModeOffline},
 	"parakeet":         {Provider: STTProviderParakeet, Mode: STTModeOffline},
 	"whispercpp":       {Provider: STTProviderWhisperCPP, Mode: STTModeCLI},
+	"transcribecpp":    {Provider: STTProviderTranscribeCPP, Mode: STTModeOffline},
 }
 
 // sttProviderModes lists the stt_mode values each normalized provider accepts.
@@ -71,6 +73,9 @@ var sttProviderModes = map[string][]string{
 	STTProviderSherpa:     {STTModeOffline, STTModeStreaming},
 	STTProviderParakeet:   {STTModeOffline},
 	STTProviderWhisperCPP: {STTModeCLI},
+	// Offline only: the transcribe.cpp CLI slices a file already on disk and
+	// cannot accept live capture, so streaming is not a v1 mode.
+	STTProviderTranscribeCPP: {STTModeOffline},
 }
 
 // sttModeLockedAliases are compound stt_provider aliases that already encode a
@@ -102,7 +107,7 @@ func NormalizeSTT(configured string) (norm NormalizedSTT, ok bool) {
 func NormalizeSTTWithMode(provider, mode string) (NormalizedSTT, error) {
 	norm, ok := NormalizeSTT(provider)
 	if !ok {
-		return NormalizedSTT{}, fmt.Errorf("unsupported stt_provider %q; set stt_provider to sherpa, sherpa-parakeet, sherpa-streaming, or whispercpp", provider)
+		return NormalizedSTT{}, fmt.Errorf("unsupported stt_provider %q; set stt_provider to sherpa, sherpa-parakeet, sherpa-streaming, whispercpp, or transcribecpp", provider)
 	}
 
 	m := strings.ToLower(strings.TrimSpace(mode))
