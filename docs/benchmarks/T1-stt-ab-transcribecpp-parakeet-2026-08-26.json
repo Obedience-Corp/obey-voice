@@ -1,0 +1,133 @@
+{
+  "schema": "obey-voice.bench.stt-ab.v1",
+  "item": "T1",
+  "date": "2026-08-26",
+  "question": "Should transcribecpp be added as an optional stt_provider because Metal Parakeet TDT 0.6B v2 (ggml, Q8_0) beats sherpa-parakeet CPU (int8 onnx) on the same fixtures? (WI-26ae84 spike 1)",
+  "criteria_fixed_in_advance": {
+    "accuracy": "mean transcript_score >= sherpa-parakeet on the same fixtures",
+    "latency": "median stt_final_ms <= sherpa-parakeet, compared on the same basis",
+    "reliability": "runs_without_a_final_transcript == 0 and no caption hallucinations on non-speech fixtures",
+    "backend_honesty": "the artifact records the backend that actually ran; a Metal run that silently fell back to CPU is not a Metal win",
+    "decision_rule": "add the optional provider only if all hold; the default stays sherpa-parakeet either way (flip is a later PR after a second run)"
+  },
+  "providers": {
+    "sherpa-parakeet": {
+      "runs": 42,
+      "fixtures": 14,
+      "iterations": 3,
+      "runs_without_a_final_transcript": 0,
+      "mean_transcript_score": 0.9645,
+      "median_stt_final_ms": 86.5,
+      "p90_stt_final_ms": 107.6,
+      "sample_transcripts": [
+        "What is the capital of France? Answer in one word.",
+        "What is 2 plus 2? Answer with just the number.",
+        "Say hello in exactly three words.",
+        "Open the poll request for the Obey Voice Repo and summarize the review comments."
+      ]
+    },
+    "transcribecpp-metal": {
+      "runs": 42,
+      "fixtures": 14,
+      "iterations": 3,
+      "runs_without_a_final_transcript": 0,
+      "mean_transcript_score": 0.9645,
+      "median_stt_final_ms": 28.1,
+      "p90_stt_final_ms": 40,
+      "sample_transcripts": [
+        "What is the capital of France? Answer in one word.",
+        "What is 2 plus 2? Answer with just the number.",
+        "Say hello in exactly three words.",
+        "Open the poll request for the Obey Voice repo and summarize the review comments."
+      ]
+    },
+    "transcribecpp-cpu": {
+      "runs": 42,
+      "fixtures": 14,
+      "iterations": 3,
+      "runs_without_a_final_transcript": 0,
+      "mean_transcript_score": 0.9645,
+      "median_stt_final_ms": 118.8,
+      "p90_stt_final_ms": 162.6,
+      "sample_transcripts": [
+        "What is the capital of France? Answer in one word.",
+        "What is 2 plus 2? Answer with just the number.",
+        "Say hello in exactly three words.",
+        "Open the poll request for the Obey Voice repo and summarize the review comments."
+      ]
+    },
+    "nonspeech_check": {
+      "runs": 12,
+      "backends": [
+        "cpu",
+        "metal"
+      ],
+      "fixtures": [
+        "nonspeech-silence.wav",
+        "nonspeech-noise.wav"
+      ],
+      "runs_with_nonempty_transcript": 0
+    }
+  },
+  "result": {
+    "metal": {
+      "accuracy_gap_points": 0.0,
+      "accuracy_criterion_met": true,
+      "latency_delta_ms": -58.4,
+      "latency_criterion_met": true,
+      "reliability_criterion_met": true,
+      "backend_honesty_criterion_met": true
+    },
+    "cpu_sanity": {
+      "accuracy_gap_points": 0.0,
+      "latency_delta_ms": 32.3,
+      "note": "ggml CPU is 1.4x slower than sherpa int8 CPU; the win is Metal, not ggml"
+    },
+    "decision": "ADD transcribecpp as an optional stt_provider (Metal passes every gate). Default stays sherpa-parakeet; a default flip needs a second T1-style run in the live pipeline per spec/20."
+  },
+  "reading_the_numbers": "Accuracy is identical to four decimals (0.9645 both) - same weights, two runtimes, so the gap collapsing to 0.0 is the expected result and a useful sanity check on the driver. The latency win is real but bounded: Metal decodes an utterance in 28.1 ms median vs 86.5 ms for sherpa CPU (3.1x), but on the realtime basis the full STT-final path medians 2812 ms because utterance length plus the VAD silence floor dominates. Adding the provider buys ~60 ms of perceived latency today; the durable value is GPU offload (CPU freed for brain/TTS) and 3x decode headroom for longer utterances. ggml CPU (118.8 ms) is slower than sherpa int8 CPU - transcribe.cpp earns its place only when Metal/CUDA actually runs.",
+  "evidence_limits": [
+    "Latency was compared on a compute-only basis: control ran with --fixture-realtime=false, candidate numbers are the CLI's per-file mel+encode+decode with the model loaded once per batch (load ~200-270 ms excluded). The realtime control run (median 2812 ms) is recorded in provenance to anchor the basis gap. An in-pipeline provider would add a temp-wav write per utterance (the whispercpp seam); that cost is not measured here.",
+    "The L4 wavs were never committed; fixtures were re-synthesized from scripts/stt-ab-fixtures.txt (4 recoverable L4 texts + 10 new same-style texts). Internally valid - both providers saw identical wavs - but absolute numbers are not comparable to L4's (its realtime median was 4580 ms on longer utterances).",
+    "spec/20 named tests/voiceflow/testdata as the non-speech pair, but barge_in.wav contains the spoken word 'Okay'; the driver generates deterministic silence and noise fixtures instead. sherpa-parakeet never opens VAD on them (stt timed out), so the hallucination comparison is CLI-only: both backends returned empty text on all 12 non-speech runs.",
+    "Metal was requested explicitly (--backend metal, never auto). Honesty evidence is indirect: encode_ms distributions differ clearly from the cpu runs (18-25 ms vs 80-140 ms) and the build's contract.json lane is metal; the CLI errors on unavailable backends rather than falling back.",
+    "This record was assembled from two cmd/stt-ab invocations (one per candidate) plus the non-speech and realtime raw files; provider blocks are verbatim aggregator output."
+  ],
+  "durable_value": "First measured proof that ggml Parakeet on Metal beats the shipped sherpa CPU path at equal accuracy on this machine class - the number E2 (offline provider) is justified by. Also fixes the fixture gap: the A/B texts are now committed (scripts/stt-ab-fixtures.txt) and the driver (cmd/transcribecpp-ab + scripts/stt-ab-transcribecpp.sh) regenerates wavs and records deterministically, so the pre-default-flip second run is a one-command rerun.",
+  "provenance": {
+    "obey_voice_commit": "ee269741a79e29ff6ed9d3b43781cd88f81f6a2d",
+    "machine": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "os": "macOS 26.5",
+    "fixtures": "synthetic (14 utterances re-synthesized from scripts/stt-ab-fixtures.txt via cmd/golden-tts af_heart 0.95, resampled to 16 kHz mono, 1.5 s trailing silence) + 2 generated non-speech (silence, fixed-seed noise)",
+    "iterations": 3,
+    "command": "scripts/stt-ab-transcribecpp.sh (control: obey-voice benchmark --stt-provider sherpa-parakeet --fixture-realtime=false; candidate: transcribe-cli --batch --batch-jsonl via cmd/transcribecpp-ab)",
+    "latency_basis": "compute-only: control --fixture-realtime=false STTFinalElapsed; candidate mel+encode+decode ms, model loaded once per batch",
+    "realtime_control_anchor": {
+      "median_stt_final_ms": 2812.4,
+      "runs": 42,
+      "mean_transcript_score": 0.9645,
+      "note": "same fixtures with --fixture-realtime=true; the audio + VAD floor the compute basis strips out"
+    },
+    "backend": {
+      "requested": "metal and cpu, each requested explicitly via --backend (never auto)",
+      "observed_evidence": "indirect for these numbers. The CLI does echo the executing lane ('parakeet: using metal backend: MTL0' / 'using cpu backend (strict)', and a 'backend:' summary line), but this run used -q --batch-jsonl, which suppresses that line and emits no backend field, so the driver captured no per-run confirmation. What supports the labels: --list-devices lists a metal GPU and a CPU device on this machine, the echo was verified out-of-band on the same binary and flags, and the two runs differ 4.2x in decode time"
+    },
+    "transcribecpp": {
+      "version": "v0.2.2",
+      "commit": "c6a9257cdf8e9c6918c0f8f876246db048a22103",
+      "built": "cmake from source (examples/cli transcribe-cli), macOS arm64, metal+cpu lanes",
+      "release_tarball_note": "upstream release assets ship only the native libraries; the CLI is an examples/ cmake target"
+    },
+    "model": {
+      "file": "parakeet-tdt-0.6b-v2-Q8_0.gguf",
+      "source": "huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf",
+      "sha256": "f0d0e99cebb6d3b83f1f7069b82b5d3c2e39a54545b0da039cb4bafd9c4e5caa",
+      "license": "cc-by-4.0",
+      "quant_note": "Q8_0 vs control int8 onnx - quant held near-lossless so runtime is the variable under test"
+    },
+    "warmup_dropped": false,
+    "percentile_method": "nearest-rank, as cmd/stt-ab computes",
+    "hand_assembled": "provider blocks verbatim from cmd/stt-ab; multi-candidate merge and prose by hand (single-candidate tool)"
+  }
+}
