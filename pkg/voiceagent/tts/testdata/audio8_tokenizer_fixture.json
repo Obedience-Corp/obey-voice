@@ -1,0 +1,82 @@
+{
+  "note": "token ids from the model's own HuggingFace tokenizer.json, captured 2026-08-27; used only so the Go pipeline can be tested without a Go BPE implementation",
+  "encodings": {
+    "<|im_start|>system\n": [
+      227,
+      13354,
+      709
+    ],
+    "convert the provided text to speech reference to the following:\n\nText:\n": [
+      22558,
+      790,
+      4930,
+      2757,
+      831,
+      19822,
+      10415,
+      831,
+      790,
+      3244,
+      549,
+      864,
+      4683,
+      549,
+      709
+    ],
+    "<|speaker:0|>至今为止，元气火箭总共发行了两张专辑。": [
+      2802,
+      32966,
+      9151,
+      549,
+      539,
+      2290,
+      21010,
+      42353,
+      833,
+      2428,
+      3162,
+      47456,
+      3155,
+      3210,
+      18931,
+      1237,
+      3410,
+      5298,
+      40338,
+      888
+    ],
+    "\n\nSpeech:\n": [
+      864,
+      43368,
+      11467,
+      549,
+      709
+    ],
+    "<|im_end|>\n": [
+      228,
+      709
+    ],
+    "<|im_start|>user\n": [
+      227,
+      3793,
+      709
+    ],
+    "<|im_start|>assistant\n<|voice|>": [
+      227,
+      1148,
+      34524,
+      709,
+      65536
+    ],
+    "It continues here.": [
+      5078,
+      17785,
+      2445,
+      537
+    ],
+    "priming": [
+      10375,
+      802
+    ]
+  }
+}

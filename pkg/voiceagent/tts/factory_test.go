@@ -1,6 +1,7 @@
 package tts
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -17,6 +18,19 @@ func TestNewProviderRejectsUnsupportedProvider(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported tts_provider") {
 		t.Fatalf("NewProvider() error = %q, want unsupported tts_provider message", err)
+	}
+}
+
+// Selecting audio8 must fail on the missing tokenizer before any model
+// loading. ModelsDir points at an empty directory: reaching the manifest or
+// the graphs would surface a missing-file error instead of
+// errAudio8NoTokenizer, so the sentinel proves the rejection happened first.
+func TestNewProviderAudio8FailsFastWithoutTokenizer(t *testing.T) {
+	cfg := &config.Config{TTSProvider: "audio8", ModelsDir: t.TempDir()}
+
+	_, _, err := NewProvider(cfg)
+	if !errors.Is(err, errAudio8NoTokenizer) {
+		t.Fatalf("NewProvider() error = %v, want errAudio8NoTokenizer", err)
 	}
 }
 
