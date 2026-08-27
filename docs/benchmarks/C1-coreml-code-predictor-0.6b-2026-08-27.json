@@ -1,0 +1,397 @@
+{
+  "schema": "obey-voice.benchmark.tts-rtf.v1",
+  "id": "C1-coreml-code-predictor-0.6b",
+  "question": "Does exporting the CoreML code predictor speed up qwen3-tts 0.6b on Apple Silicon, and by how much?",
+  "measured_at": "2026-08-27T23:18:50Z",
+  "machine": {
+    "model_id": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "os": "macOS 26.5",
+    "power": "AC; no other GPU load during either leg (ollama unloaded, verified)"
+  },
+  "what_changed": {
+    "finding": "The engine looks for models/coreml/code_predictor.mlpackage and logs 'CoreML code predictor load failed: Model does not exist' on every start. The shipped native package does not include it, so every install runs the ggml fallback.",
+    "export": "scripts/convert_code_predictor_to_coreml.py --input models/Qwen3-TTS-12Hz-0.6B-Base",
+    "export_sanity": {
+      "cosine_vs_torch": 0.999792,
+      "max_abs_diff": 0.230287,
+      "ane_ops_total": 765,
+      "ane_ops_with_usage": 408,
+      "ane_ops_supported": 408
+    },
+    "mlpackage_bytes": 220000000,
+    "note": "All 408 ops carrying usage are ANE-supported, so the exported graph is fully ANE-eligible."
+  },
+  "method": {
+    "harness": "qwen3-tts-native cmd/warm-bench via `just bench warm 0.6b 3` (the harness F7 used)",
+    "definition": "RTF = synthesis wall time / audio duration. >1.0 is slower than realtime.",
+    "iterations": 3,
+    "fixtures": 5,
+    "preset": "Vivian",
+    "control": "models dir WITHOUT coreml/",
+    "candidate": "same GGUFs symlinked, plus coreml/code_predictor.mlpackage",
+    "weights_identical": "sha256 prefix 0b89770118463af8f246 on both legs (matches F7's recorded prefix)",
+    "contention": "A first baseline was discarded: a concurrent 1.8 GB checksum inflated it (cold_ready 14.8 s vs 8.1 s clean). Both legs reported here ran with nothing else on the machine."
+  },
+  "results": {
+    "baseline": {
+      "rtf_median_all": 2.0417,
+      "rtf_max_all": 3.519,
+      "cold_ready_ms": 8124.2,
+      "warmup_wall_ms": 6000.4,
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "iterations": 3,
+          "audio_s_median": 3.017,
+          "wall_ms_median": 5549.5,
+          "rtf_median": 2.0417,
+          "rtf_max": 2.1851,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 7291.3,
+              "audio_s": 3.337,
+              "rtf": 2.1851
+            },
+            {
+              "iter": 2,
+              "wall_ms": 5506.2,
+              "audio_s": 2.697,
+              "rtf": 2.0417
+            },
+            {
+              "iter": 3,
+              "wall_ms": 5549.5,
+              "audio_s": 3.017,
+              "rtf": 1.8395
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "iterations": 3,
+          "audio_s_median": 1.737,
+          "wall_ms_median": 3279.2,
+          "rtf_median": 2.0969,
+          "rtf_max": 2.1276,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 3138.9,
+              "audio_s": 1.497,
+              "rtf": 2.0969
+            },
+            {
+              "iter": 2,
+              "wall_ms": 4376.2,
+              "audio_s": 2.057,
+              "rtf": 2.1276
+            },
+            {
+              "iter": 3,
+              "wall_ms": 3279.2,
+              "audio_s": 1.737,
+              "rtf": 1.888
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "iterations": 3,
+          "audio_s_median": 4.297,
+          "wall_ms_median": 8520.1,
+          "rtf_median": 1.878,
+          "rtf_max": 2.3136,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 9941.2,
+              "audio_s": 4.297,
+              "rtf": 2.3136
+            },
+            {
+              "iter": 2,
+              "wall_ms": 8520.1,
+              "audio_s": 4.537,
+              "rtf": 1.878
+            },
+            {
+              "iter": 3,
+              "wall_ms": 7295.1,
+              "audio_s": 4.137,
+              "rtf": 1.7634
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "iterations": 3,
+          "audio_s_median": 9.577,
+          "wall_ms_median": 21296.1,
+          "rtf_median": 2.0844,
+          "rtf_max": 3.519,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 33701.3,
+              "audio_s": 9.577,
+              "rtf": 3.519
+            },
+            {
+              "iter": 2,
+              "wall_ms": 21296.1,
+              "audio_s": 10.217,
+              "rtf": 2.0844
+            },
+            {
+              "iter": 3,
+              "wall_ms": 13852.5,
+              "audio_s": 9.097,
+              "rtf": 1.5228
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "iterations": 3,
+          "audio_s_median": 25.257,
+          "wall_ms_median": 50522.3,
+          "rtf_median": 2.0003,
+          "rtf_max": 2.655,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 68330.4,
+              "audio_s": 25.737,
+              "rtf": 2.655
+            },
+            {
+              "iter": 2,
+              "wall_ms": 50522.3,
+              "audio_s": 25.257,
+              "rtf": 2.0003
+            },
+            {
+              "iter": 3,
+              "wall_ms": 35043.0,
+              "audio_s": 23.417,
+              "rtf": 1.4965
+            }
+          ]
+        }
+      ]
+    },
+    "coreml": {
+      "rtf_median_all": 1.5061,
+      "rtf_max_all": 3.6678,
+      "cold_ready_ms": 17933.6,
+      "warmup_wall_ms": 5859.8,
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "iterations": 3,
+          "audio_s_median": 3.017,
+          "wall_ms_median": 4664.1,
+          "rtf_median": 1.5061,
+          "rtf_max": 1.8036,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 4664.1,
+              "audio_s": 3.097,
+              "rtf": 1.5061
+            },
+            {
+              "iter": 2,
+              "wall_ms": 5441.1,
+              "audio_s": 3.017,
+              "rtf": 1.8036
+            },
+            {
+              "iter": 3,
+              "wall_ms": 4222.6,
+              "audio_s": 3.017,
+              "rtf": 1.3997
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "iterations": 3,
+          "audio_s_median": 1.897,
+          "wall_ms_median": 2678.3,
+          "rtf_median": 1.4119,
+          "rtf_max": 3.6678,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 6957.4,
+              "audio_s": 1.897,
+              "rtf": 3.6678
+            },
+            {
+              "iter": 2,
+              "wall_ms": 2049.9,
+              "audio_s": 1.577,
+              "rtf": 1.3
+            },
+            {
+              "iter": 3,
+              "wall_ms": 2678.3,
+              "audio_s": 1.897,
+              "rtf": 1.4119
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "iterations": 3,
+          "audio_s_median": 4.217,
+          "wall_ms_median": 5623.1,
+          "rtf_median": 1.218,
+          "rtf_max": 1.6775,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 6537.0,
+              "audio_s": 3.897,
+              "rtf": 1.6775
+            },
+            {
+              "iter": 2,
+              "wall_ms": 5623.1,
+              "audio_s": 4.617,
+              "rtf": 1.218
+            },
+            {
+              "iter": 3,
+              "wall_ms": 4915.4,
+              "audio_s": 4.217,
+              "rtf": 1.1656
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "iterations": 3,
+          "audio_s_median": 8.777,
+          "wall_ms_median": 12813.7,
+          "rtf_median": 1.316,
+          "rtf_max": 1.6642,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 14473.0,
+              "audio_s": 8.697,
+              "rtf": 1.6642
+            },
+            {
+              "iter": 2,
+              "wall_ms": 11189.0,
+              "audio_s": 8.777,
+              "rtf": 1.2748
+            },
+            {
+              "iter": 3,
+              "wall_ms": 12813.7,
+              "audio_s": 9.737,
+              "rtf": 1.316
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "iterations": 3,
+          "audio_s_median": 22.617,
+          "wall_ms_median": 46001.6,
+          "rtf_median": 1.938,
+          "rtf_max": 2.1115,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 47755.3,
+              "audio_s": 22.617,
+              "rtf": 2.1115
+            },
+            {
+              "iter": 2,
+              "wall_ms": 46001.6,
+              "audio_s": 23.737,
+              "rtf": 1.938
+            },
+            {
+              "iter": 3,
+              "wall_ms": 35456.5,
+              "audio_s": 21.737,
+              "rtf": 1.6312
+            }
+          ]
+        }
+      ]
+    },
+    "per_fixture_delta": [
+      {
+        "fixture": "F1_anchor",
+        "audio_s_median_baseline": 3.017,
+        "audio_s_median_coreml": 3.017,
+        "rtf_median_baseline": 2.0417,
+        "rtf_median_coreml": 1.5061,
+        "rtf_delta_pct": -26.2
+      },
+      {
+        "fixture": "F2_short",
+        "audio_s_median_baseline": 1.737,
+        "audio_s_median_coreml": 1.897,
+        "rtf_median_baseline": 2.0969,
+        "rtf_median_coreml": 1.4119,
+        "rtf_delta_pct": -32.7
+      },
+      {
+        "fixture": "F3_medium",
+        "audio_s_median_baseline": 4.297,
+        "audio_s_median_coreml": 4.217,
+        "rtf_median_baseline": 1.878,
+        "rtf_median_coreml": 1.218,
+        "rtf_delta_pct": -35.1
+      },
+      {
+        "fixture": "F4_long_sentence",
+        "audio_s_median_baseline": 9.577,
+        "audio_s_median_coreml": 8.777,
+        "rtf_median_baseline": 2.0844,
+        "rtf_median_coreml": 1.316,
+        "rtf_delta_pct": -36.9
+      },
+      {
+        "fixture": "F5_paragraph",
+        "audio_s_median_baseline": 25.257,
+        "audio_s_median_coreml": 22.617,
+        "rtf_median_baseline": 2.0003,
+        "rtf_median_coreml": 1.938,
+        "rtf_delta_pct": -3.1
+      }
+    ]
+  },
+  "reading": {
+    "headline": "CoreML cuts median RTF from 2.0417 to 1.5061 (-26.2%).",
+    "shape": "The gain is concentrated in utterances up to ~10 s (-26% to -37%). The 23 s paragraph improved by only 3%, so this does not help long-form narration.",
+    "still_above_realtime": "Even at the improved figure the tier remains slower than realtime, so this reduces dead air between sentences rather than eliminating it. Kokoro (0.64 in-pipeline) is still the only engine measured that keeps up.",
+    "cold_start_cost": "Cold ready rose from 8124.2 ms to 17933.6 ms (+9809 ms), consistent with first-load ANE compilation. Whether macOS caches that across process restarts was not tested."
+  },
+  "evidence_limits": [
+    "BINARY PROVENANCE IS THE BIG ONE. build/qwen3-tts-worker dates from 2026-08-16 while the engine source sits at 22277bc6f087 with src/tts_transformer.cpp uncommitted (`22277bc-dirty`). The baseline here measures 2.042 where F7 recorded 1.33 for the same tier and byte-identical GGUF, so these ABSOLUTE numbers are not comparable to F7. Both legs used the identical binary, so the RATIO is internally valid; the absolute level is not. Rebuilding the engine was deliberately not done: the tree carries another session's uncommitted work.",
+    "n=3 per fixture in a single session; per-run RTF swings up to +/-25% (F1 coreml: 1.506 / 1.804 / 1.400), so individual fixture deltas have wide error bars. The consistent direction across four of five fixtures is the signal, not any single figure.",
+    "max_abs_diff 0.230287 against the torch reference means CoreML logits are close but not identical, and sampling is stochastic (temperature 0.9, top-k 50). Audio durations differed between legs; RTF normalizes for that, wall time does not.",
+    "English output quality was NOT judged. No ear check was performed, and a numerically-close predictor can still change prosody.",
+    "0.6b only. The 1.7b export was not attempted: its HF weights are not on this machine.",
+    "Apple Silicon only; the CoreML path does not exist on other platforms."
+  ],
+  "durable_value": "Records that the acceleration path the engine already supports is simply absent from the shipped package, and quantifies what it is worth. A packaging change (ship the mlpackage, or generate it at install) is the follow-up, and needs its own workitem with a quality check.",
+  "next": [
+    "Rebuild the worker from a clean engine pin and re-run both legs, to get numbers comparable to F7's 1.33 baseline.",
+    "Ear-check English output against the ggml predictor before shipping.",
+    "Export and measure the 1.7b tier.",
+    "Confirm whether the ANE compile is cached across restarts, since +9.8 s of cold start matters at session start."
+  ]
+}

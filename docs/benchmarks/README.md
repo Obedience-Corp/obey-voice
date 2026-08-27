@@ -67,6 +67,7 @@ differs from the baseline's.
 | `baseline.json` | The canonical reference. Overwritten only by a deliberate `just bench baseline`. |
 | `<item>-<date>.json` | Per-item delta artifacts, e.g. `L1-2026-08-12.json`. The item id joins back to the requirement it closes. |
 | `<item>-tts-ab-*.json` | TTS A/B decision records (`obey-voice.bench.tts-ab.v1`). Generate with `just bench tts-ab` — see below. |
+| `C1-coreml-*.json` | Engine-configuration A/B measured with the qwen3-tts-native warm-bench harness, not `obey-voice benchmark`. Records that the CoreML code predictor the engine already supports is absent from the shipped package. |
 | `N7-tts-bake-off-*.md` | The 2026-08 candidate review. Its "item 3's per-candidate measurement outstanding" is what `just bench tts` now makes mechanical. |
 | `<item>-stt-ab-*.json` | STT A/B decision records (criteria fixed in advance, then the numbers). `L2` kept Whisper over streaming Zipformer; `L4-stt-ab-parakeet-2026-08-19.json` flipped the default to Parakeet TDT. Generate with `just bench stt-ab` — see below. |
 
