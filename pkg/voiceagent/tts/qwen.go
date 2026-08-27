@@ -26,19 +26,54 @@ const (
 	maxQwenAudioDuration  = 2 * time.Hour
 	maxWorkerOutput       = 8 << 10
 
-	// Lab-measured stage-A warm TTFA ≈ full wall (qwen.latency.v1 worker_warmish).
-	// Stall watchdog FirstAudioGrace uses p95 headroom, not the mean:
-	//   warm_wall ~4–5s short phrase RTF~1.37 → p95 short ≈ 8s; long replies scale.
-	// Prefer configured timeout when larger so operators can raise the ceiling.
-	nativeWarmTTP95 = 8 * time.Second
-	// 1.7b field capture 2026-08-21: voice-ready 12–31s on a warm worker. The
-	// 0.6b 8s floor recovered those turns mid-synth.
-	native17bWarmTTP95 = 35 * time.Second
-	// Cold ready (~6s measured) is paid once at session start, not every turn.
-	// If the warm session dies mid-conversation, restart cost is folded into grace.
+	// Cold ready (~6s measured, 11s at 1.7b) is paid once at session start,
+	// not every turn. It is added only while the worker is not yet alive.
 	nativeColdReadyP95 = 12 * time.Second
 	// Managed Python whole-utterance was ~6–9s process wall; keep prior default floor.
 	managedWarmTTP95 = 15 * time.Second
+
+	// nativeRTFCeiling is the realtime factor the FIRST segment of a turn is
+	// expected to stay under, per tier, with margin. The first segment is the
+	// only one this budget is ever computed for, and it is measurably the
+	// expensive one.
+	//
+	// Measured in-pipeline on an M4 Max, 2026-08-27, with a 27B brain
+	// resident. At 1.7b the first segment of a turn ran 3.48 and 3.11 while
+	// every later segment in the same replies ran 2.15–2.61 — a fixed
+	// first-request cost that persists even on an already-warm worker, and
+	// which reproduced across separate runs. Sizing this from the median
+	// (2.41) would under-budget every turn's opening.
+	//
+	// F7's isolated lab run measured 1.87 median for this tier, so the
+	// product pays roughly 29% more than the bench does; these come from the
+	// in-pipeline figures, not the lab one.
+	//
+	// They err high on purpose. A budget shorter than healthy synthesis cuts
+	// off a working reply mid-sentence; one that is too long only makes a
+	// broken turn take longer to give up. The asymmetry is not close.
+	nativeRTFCeiling06B = 3.0
+	nativeRTFCeiling17B = 4.0
+
+	// speechCharsPerSecond converts a segment's length into expected audio
+	// duration.
+	//
+	// Measured 11.9–18.2 chars/s over real replies on both engines. 10 sits
+	// below the observed minimum on purpose: the estimate must over-predict
+	// audio, because under-predicting shortens the budget on exactly the
+	// segments that need it most. A slow-speaking segment at the observed
+	// floor would otherwise have left only 12% margin.
+	speechCharsPerSecond = 10.0
+
+	// typicalSegmentChars sizes the budget when the caller does not say how
+	// long the segment is. It is the measured median segment length, so the
+	// length-blind path lands on an ordinary sentence rather than a
+	// worst-case one.
+	typicalSegmentChars = 120
+
+	// minFirstAudioGrace floors every computed budget. A three-word reply
+	// synthesizes in well under a second, but the player still has a device
+	// to open and a scheduler to survive.
+	minFirstAudioGrace = 8 * time.Second
 )
 
 type limitedBuffer struct {
@@ -278,28 +313,86 @@ func (q *Qwen3TTS) ModelTier() string {
 	return managedqwen.NormalizeModelTier(q.modelTier)
 }
 
-// FirstAudioGrace reports how long the pipeline's playback-stall watchdog
-// should wait for the first audible frame. Stage-A Qwen (native or managed)
-// generates whole utterances before PCM, so grace is driven by measured warm
-// TTFA p95 headroom, not the 8s pipeline default. An explicitly configured
-// qwen_tts_timeout raises the grace when larger than p95 (long-form audio).
+// FirstAudioGrace reports the stall budget for a segment of unstated length.
+// See FirstAudioGraceForChars, which is what the pipeline calls when it knows.
 func (q *Qwen3TTS) FirstAudioGrace() time.Duration {
+	return q.FirstAudioGraceForChars(typicalSegmentChars)
+}
+
+// FirstAudioGraceForChars reports how long the pipeline's playback-stall
+// watchdog should wait for the first audible frame of a segment this long.
+//
+// Stage-A Qwen generates a whole utterance before exposing any PCM, so the
+// wait is the synthesis: expected audio duration times the realtime factor
+// the tier is expected to hold, plus a cold-start allowance while the worker
+// is still coming up.
+//
+// qwen_tts_timeout is a CAP here, not the budget. It bounds the synthesis call
+// itself (see Synthesize, which wraps the request in a context with this
+// timeout), so waiting past it cannot pay off — synthesis will already have
+// failed. Adopting it as the budget, which this used to do, meant an operator
+// who raised the synthesis ceiling for long-form audio silently raised the
+// deadline for noticing a wedged player to the same number: a 120s
+// qwen_tts_timeout bought a 120s stall grace, and two minutes of silence
+// registered as a healthy turn.
+func (q *Qwen3TTS) FirstAudioGraceForChars(chars int) time.Duration {
 	if q == nil {
 		return managedWarmTTP95
 	}
-	p95 := managedWarmTTP95
-	if q.native {
-		// Warm turn + one unexpected restart (cold ready p95) for worst-case barge recovery.
-		warm := nativeWarmTTP95
-		if managedqwen.NormalizeModelTier(q.modelTier) == managedqwen.Tier1_7B {
-			warm = native17bWarmTTP95
-		}
-		p95 = warm + nativeColdReadyP95
+	if !q.native {
+		grace := managedWarmTTP95
+		return q.capByTimeout(grace)
 	}
-	if q.timeoutSet && q.timeout > p95 {
+
+	if chars <= 0 {
+		chars = typicalSegmentChars
+	}
+	ceiling := nativeRTFCeiling06B
+	if managedqwen.NormalizeModelTier(q.modelTier) == managedqwen.Tier1_7B {
+		ceiling = nativeRTFCeiling17B
+	}
+	expectedAudio := float64(chars) / speechCharsPerSecond
+	grace := time.Duration(ceiling * expectedAudio * float64(time.Second))
+
+	// The cold-ready allowance is paid when a worker has to come up, not on
+	// every turn — charging it always is what made short warm turns wait out
+	// a worst-case budget.
+	if !q.hasLiveSession() {
+		grace += nativeColdReadyP95
+	}
+	return q.capByTimeout(grace)
+}
+
+// hasLiveSession reports whether a worker session is up right now, which is
+// what decides whether the next synthesis pays a cold start.
+//
+// q.alive is the wrong signal, and using it was a bug. It means "this
+// provider is usable", is set once during construction — before any synthesis
+// — and deliberately survives discardSpeechSessionLocked so the provider can
+// restart itself after a worker or protocol failure. Keyed to it, the
+// allowance never fired on a genuinely cold first turn, and a segment landing
+// on the restart path got the warm budget (often the 8s floor) while actually
+// paying a full ~11s startup. That would let the stall watchdog cancel the
+// self-healing restart it exists to protect.
+func (q *Qwen3TTS) hasLiveSession() bool {
+	if q == nil {
+		return false
+	}
+	ref := q.speechRef.Load()
+	return ref != nil && *ref != nil
+}
+
+// capByTimeout bounds a computed grace by the configured synthesis timeout,
+// beyond which waiting is provably useless, and floors it so a very short
+// segment still tolerates ordinary scheduling jitter.
+func (q *Qwen3TTS) capByTimeout(grace time.Duration) time.Duration {
+	if grace < minFirstAudioGrace {
+		grace = minFirstAudioGrace
+	}
+	if q.timeoutSet && q.timeout > 0 && grace > q.timeout {
 		return q.timeout
 	}
-	return p95
+	return grace
 }
 
 // SoftCancel asks the warm worker to abandon the current request without

@@ -84,6 +84,7 @@ type record struct {
 	TTSFallbacks       int       `json:"tts_fallbacks,omitempty"`
 	FirstAudioGraceS   float64   `json:"first_audio_grace_s,omitempty"`
 	StallWatchdogFired bool      `json:"stall_watchdog_fired,omitempty"`
+	DeadAirS           float64   `json:"dead_air_s,omitempty"`
 	Segments           []segment `json:"segments,omitempty"`
 }
 
@@ -206,6 +207,7 @@ func (w *Writer) Attach(bus *events.Bus) {
 			TTSFallbacks:       e.TTSFallbacks,
 			FirstAudioGraceS:   e.FirstAudioGrace.Seconds(),
 			StallWatchdogFired: e.StallWatchdogFired,
+			DeadAirS:           e.DeadAirElapsed.Seconds(),
 			Segments:           segmentRecords(e.Segments),
 		})
 	})

@@ -160,6 +160,9 @@ type Pipeline struct {
 	BargeInVAD        VoiceDetector
 	Events            *events.Bus
 	VoiceToolsEnabled bool
+	// underrunOnce gates the "synthesis cannot keep up" notice to one per
+	// session; the condition holds on every turn once it holds at all.
+	underrunOnce sync.Once
 	// backchannel is nil unless config.BackchannelEnabled; see backchannel.go.
 	backchannel       *backchannel
 	backchannelMu     sync.Mutex
@@ -342,6 +345,11 @@ type turnMetrics struct {
 	firstAudioGrace time.Duration
 	// stallWatchdogFired marks a turn the playback-stall watchdog cut short.
 	stallWatchdogFired bool
+	// lastPlaybackEnd is when the player last went idle mid-turn, and deadAir
+	// accumulates the gaps until the next segment became audible. Both are
+	// written only from the turn loop goroutine.
+	lastPlaybackEnd time.Time
+	deadAir         time.Duration
 }
 
 func newTurnMetrics() *turnMetrics {
@@ -366,6 +374,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		TTSFallbacks:            m.ttsFallbacks,
 		FirstAudioGrace:         m.firstAudioGrace,
 		StallWatchdogFired:      m.stallWatchdogFired,
+		DeadAirElapsed:          m.deadAir,
 		Segments:                append([]events.SegmentMetric(nil), m.segments...),
 	}
 }
@@ -458,6 +467,42 @@ func (c *turnConductor) finish(terminal TurnState) {
 	m := c.metrics.snapshot()
 	m.Outcome = outcome.String()
 	c.p.emit(m)
+	c.p.warnIfSynthesisCannotKeepUp(m)
+}
+
+// underrunDeadAirShare is the fraction of a turn's speaking time that may be
+// silence before the synthesizer is judged unable to keep up. A little slack
+// between sentences is normal; a third of the turn is a different engine.
+const underrunDeadAirShare = 0.25
+
+// warnIfSynthesisCannotKeepUp says so once per session when a turn spent a
+// large share of its speaking time in silence.
+//
+// It is deliberately not a per-turn message: when an engine is too slow for
+// conversation it is too slow on every turn, and a warning that fires every
+// time is one people learn to ignore. It is also deliberately not an
+// automatic downgrade — which voice to use is the operator's call, not a
+// decision to make silently on their behalf mid-conversation.
+func (p *Pipeline) warnIfSynthesisCannotKeepUp(m events.TurnMetrics) {
+	if m.DeadAirElapsed <= 0 || m.Interrupted {
+		return
+	}
+	speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed
+	if speaking <= 0 || float64(m.DeadAirElapsed)/float64(speaking) < underrunDeadAirShare {
+		return
+	}
+	engine := m.TTSProvider
+	if engine == "" {
+		engine = "the speech engine"
+	}
+	if m.TTSTier != "" {
+		engine += " " + m.TTSTier
+	}
+	p.underrunOnce.Do(func() {
+		p.emit(events.Info{Message: fmt.Sprintf(
+			"%s is synthesizing slower than it plays: %s of that reply's %s speaking time was silence between sentences. A faster voice (Settings → TTS) removes the gaps.",
+			engine, m.DeadAirElapsed.Round(time.Second), speaking.Round(time.Second))})
+	})
 }
 
 // logDegradedTurn writes the underlying error to stderr with a timestamp and
@@ -1139,10 +1184,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 			if !watchdogArmed {
 				watchdogArmed = true
-				stallTimeout := p.stallTimeout()
+				// The budget is sized to the segment the listener is actually
+				// waiting on. openingBatchSegments is 1, so this speakable is
+				// that segment.
+				stallTimeout := p.stallTimeout(len(speakable))
 				metrics.firstAudioGrace = stallTimeout
 				metrics.ttsProvider, metrics.ttsTier = p.ttsIdentity()
-				go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout)
+				go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(speakable))
 			}
 
 			voiceBatch = append(voiceBatch, speakable)
@@ -1395,6 +1443,12 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 		if metrics.playbackStart.IsZero() {
 			metrics.playbackStart = time.Now()
 		}
+		// The player went idle after the previous sentence and has only now
+		// found the next one ready. That gap is audible silence.
+		if !metrics.lastPlaybackEnd.IsZero() {
+			metrics.deadAir += time.Since(metrics.lastPlaybackEnd)
+			metrics.lastPlaybackEnd = time.Time{}
+		}
 		p.emit(events.VoiceGenerated{
 			Sentence: event.sentence,
 			Elapsed:  event.synthElapsed,
@@ -1406,6 +1460,10 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 
 	case playbackFinished:
 		metrics.playbackComplete = time.Now()
+		// Stamped unconditionally: if this was the turn's last segment the
+		// stamp is simply never consumed, so trailing silence after the reply
+		// is not counted as a gap inside it.
+		metrics.lastPlaybackEnd = metrics.playbackComplete
 		metrics.recordSegment(event)
 		if event.result.Interrupted {
 			p.emit(events.SpeakingComplete{
