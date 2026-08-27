@@ -1,0 +1,157 @@
+{
+  "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
+  "stt_provider": "parakeet",
+  "stt_mode": "offline",
+  "transcripts": [
+    {
+      "ID": "utterance-1",
+      "StartMS": 3600,
+      "EndMS": 5700,
+      "Text": "And we don't have a ton."
+    },
+    {
+      "ID": "utterance-2",
+      "StartMS": 6350,
+      "EndMS": 8100,
+      "Text": "Of items to get to."
+    },
+    {
+      "ID": "utterance-3",
+      "StartMS": 8300,
+      "EndMS": 9100,
+      "Text": "Uh"
+    },
+    {
+      "ID": "utterance-4",
+      "StartMS": 9100,
+      "EndMS": 13200,
+      "Text": "And I might be able to do one that might be fun."
+    },
+    {
+      "ID": "utterance-5",
+      "StartMS": 13200,
+      "EndMS": 15400,
+      "Text": "We have a little bit of time."
+    },
+    {
+      "ID": "utterance-6",
+      "StartMS": 17200,
+      "EndMS": 18600,
+      "Text": "Um so corporate events."
+    },
+    {
+      "ID": "utterance-7",
+      "StartMS": 19400,
+      "EndMS": 20200,
+      "Text": "Uh"
+    },
+    {
+      "ID": "utterance-8",
+      "StartMS": 22000,
+      "EndMS": 22800,
+      "Text": "Say"
+    },
+    {
+      "ID": "utterance-9",
+      "StartMS": 22800,
+      "EndMS": 28900,
+      "Text": "I think I saw a little, I put this in Slack and I saw a little bit of kind of noise around it."
+    },
+    {
+      "ID": "utterance-10",
+      "StartMS": 28900,
+      "EndMS": 30400,
+      "Text": "Yeah, I think it's a good idea"
+    },
+    {
+      "ID": "utterance-11",
+      "StartMS": 30900,
+      "EndMS": 31700,
+      "Text": "Um"
+    },
+    {
+      "ID": "utterance-12",
+      "StartMS": 32450,
+      "EndMS": 33500,
+      "Text": "You know, the"
+    },
+    {
+      "ID": "utterance-13",
+      "StartMS": 34550,
+      "EndMS": 39100,
+      "Text": "The nutshell here is as we've kind of restructured and tried different things."
+    },
+    {
+      "ID": "utterance-14",
+      "StartMS": 39100,
+      "EndMS": 44100,
+      "Text": "the event support that we need isn't as nailed down as it needs to be."
+    },
+    {
+      "ID": "utterance-15",
+      "StartMS": 45100,
+      "EndMS": 45900,
+      "Text": "Uh so"
+    },
+    {
+      "ID": "utterance-16",
+      "StartMS": 48100,
+      "EndMS": 53700,
+      "Text": "Current tactic that we're going with is go to market team, signs up and kind of"
+    },
+    {
+      "ID": "utterance-17",
+      "StartMS": 53900,
+      "EndMS": 62300,
+      "Text": "Sponsors that event. So you support as a PMM, your campaign manager does the campaigns for that event, et cetera, et cetera, et cetera."
+    },
+    {
+      "ID": "utterance-18",
+      "StartMS": 63600,
+      "EndMS": 66400,
+      "Text": "Uh I don't see anyone in the uh"
+    },
+    {
+      "ID": "utterance-19",
+      "StartMS": 66550,
+      "EndMS": 70400,
+      "Text": "Maybe there are comments in the issue. I don't see the"
+    },
+    {
+      "ID": "utterance-20",
+      "StartMS": 71600,
+      "EndMS": 76500,
+      "Text": "I thought we had in Slack sort of farmed each one of them out."
+    },
+    {
+      "ID": "utterance-21",
+      "StartMS": 77000,
+      "EndMS": 77800,
+      "Text": "That's"
+    },
+    {
+      "ID": "utterance-22",
+      "StartMS": 77800,
+      "EndMS": 80900,
+      "Text": "So I guess that the next, so it looks like."
+    },
+    {
+      "ID": "utterance-23",
+      "StartMS": 82700,
+      "EndMS": 83500,
+      "Text": "Hi."
+    },
+    {
+      "ID": "utterance-24",
+      "StartMS": 86250,
+      "EndMS": 88000,
+      "Text": "Some folks, it looks like"
+    },
+    {
+      "ID": "utterance-25",
+      "StartMS": 88750,
+      "EndMS": 89800,
+      "Text": "This looks good."
+    }
+  ]
+}

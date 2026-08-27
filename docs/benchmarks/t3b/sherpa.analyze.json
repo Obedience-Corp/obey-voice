@@ -1,0 +1,70 @@
+{
+  "status": "complete",
+  "timeline": {
+    "observations": [
+      {
+        "segment_id": "diarization-1",
+        "start_ms": 30,
+        "end_ms": 19538,
+        "label": "speaker-1",
+        "confidence": 0,
+        "state": "stable",
+        "source": "recording",
+        "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+      },
+      {
+        "segment_id": "diarization-2",
+        "start_ms": 21259,
+        "end_ms": 65978,
+        "label": "speaker-1",
+        "confidence": 0,
+        "state": "stable",
+        "source": "recording",
+        "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+      },
+      {
+        "segment_id": "diarization-3",
+        "start_ms": 66737,
+        "end_ms": 71395,
+        "label": "speaker-1",
+        "confidence": 0,
+        "state": "stable",
+        "source": "recording",
+        "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+      },
+      {
+        "segment_id": "diarization-4",
+        "start_ms": 72239,
+        "end_ms": 77031,
+        "label": "speaker-2",
+        "confidence": 0,
+        "state": "stable",
+        "source": "recording",
+        "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+      },
+      {
+        "segment_id": "diarization-5",
+        "start_ms": 77031,
+        "end_ms": 80085,
+        "label": "speaker-1",
+        "confidence": 0,
+        "state": "stable",
+        "source": "recording",
+        "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+      },
+      {
+        "segment_id": "diarization-6",
+        "start_ms": 82195,
+        "end_ms": 89974,
+        "label": "speaker-1",
+        "confidence": 0,
+        "state": "stable",
+        "source": "recording",
+        "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+      }
+    ],
+    "finalized_at": "2026-08-27T14:05:26.754032-06:00"
+  },
+  "artifact": "/private/tmp/claude-501/-Users-lancerogers-Dev-AI-My-Tools/8129bd07-6302-486e-9a89-00387867e1ae/scratchpad/raw/sherpa.analyze.json",
+  "speaker_count": 2
+}

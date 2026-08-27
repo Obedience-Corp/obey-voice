@@ -1,0 +1,980 @@
+{
+  "segments": [
+    {
+      "id": "utterance-1",
+      "start_ms": 3600,
+      "end_ms": 5700,
+      "text": "And we don't have a ton."
+    },
+    {
+      "id": "utterance-2",
+      "start_ms": 6350,
+      "end_ms": 8100,
+      "text": "Of items to get to."
+    },
+    {
+      "id": "utterance-3",
+      "start_ms": 8300,
+      "end_ms": 9100,
+      "text": "Uh"
+    },
+    {
+      "id": "utterance-4",
+      "start_ms": 9100,
+      "end_ms": 13200,
+      "text": "And I might be able to do one that might be fun."
+    },
+    {
+      "id": "utterance-5",
+      "start_ms": 13200,
+      "end_ms": 15400,
+      "text": "We have a little bit of time."
+    },
+    {
+      "id": "utterance-6",
+      "start_ms": 17200,
+      "end_ms": 18600,
+      "text": "Um so corporate events."
+    },
+    {
+      "id": "utterance-7",
+      "start_ms": 19400,
+      "end_ms": 20200,
+      "text": "Uh"
+    },
+    {
+      "id": "utterance-8",
+      "start_ms": 22000,
+      "end_ms": 22800,
+      "text": "Say"
+    },
+    {
+      "id": "utterance-9",
+      "start_ms": 22800,
+      "end_ms": 28900,
+      "text": "I think I saw a little, I put this in Slack and I saw a little bit of kind of noise around it."
+    },
+    {
+      "id": "utterance-10",
+      "start_ms": 28900,
+      "end_ms": 30400,
+      "text": "Yeah, I think it's a good idea"
+    },
+    {
+      "id": "utterance-11",
+      "start_ms": 30900,
+      "end_ms": 31700,
+      "text": "Um"
+    },
+    {
+      "id": "utterance-12",
+      "start_ms": 32450,
+      "end_ms": 33500,
+      "text": "You know, the"
+    },
+    {
+      "id": "utterance-13",
+      "start_ms": 34550,
+      "end_ms": 39100,
+      "text": "The nutshell here is as we've kind of restructured and tried different things."
+    },
+    {
+      "id": "utterance-14",
+      "start_ms": 39100,
+      "end_ms": 44100,
+      "text": "the event support that we need isn't as nailed down as it needs to be."
+    },
+    {
+      "id": "utterance-15",
+      "start_ms": 45100,
+      "end_ms": 45900,
+      "text": "Uh so"
+    },
+    {
+      "id": "utterance-16",
+      "start_ms": 48100,
+      "end_ms": 53700,
+      "text": "Current tactic that we're going with is go to market team, signs up and kind of"
+    },
+    {
+      "id": "utterance-17",
+      "start_ms": 53900,
+      "end_ms": 62300,
+      "text": "Sponsors that event. So you support as a PMM, your campaign manager does the campaigns for that event, et cetera, et cetera, et cetera."
+    },
+    {
+      "id": "utterance-18",
+      "start_ms": 63600,
+      "end_ms": 66400,
+      "text": "Uh I don't see anyone in the uh"
+    },
+    {
+      "id": "utterance-19",
+      "start_ms": 66550,
+      "end_ms": 70400,
+      "text": "Maybe there are comments in the issue. I don't see the"
+    },
+    {
+      "id": "utterance-20",
+      "start_ms": 71600,
+      "end_ms": 76500,
+      "text": "I thought we had in Slack sort of farmed each one of them out."
+    },
+    {
+      "id": "utterance-21",
+      "start_ms": 77000,
+      "end_ms": 77800,
+      "text": "That's"
+    },
+    {
+      "id": "utterance-22",
+      "start_ms": 77800,
+      "end_ms": 80900,
+      "text": "So I guess that the next, so it looks like."
+    },
+    {
+      "id": "utterance-23",
+      "start_ms": 82700,
+      "end_ms": 83500,
+      "text": "Hi."
+    },
+    {
+      "id": "utterance-24",
+      "start_ms": 86250,
+      "end_ms": 88000,
+      "text": "Some folks, it looks like"
+    },
+    {
+      "id": "utterance-25",
+      "start_ms": 88750,
+      "end_ms": 89800,
+      "text": "This looks good."
+    }
+  ],
+  "sherpa_attributed": [
+    {
+      "id": "utterance-1",
+      "start_ms": 3600,
+      "end_ms": 5700,
+      "text": "And we don't have a ton.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-2",
+      "start_ms": 6350,
+      "end_ms": 8100,
+      "text": "Of items to get to.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-3",
+      "start_ms": 8300,
+      "end_ms": 9100,
+      "text": "Uh",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-4",
+      "start_ms": 9100,
+      "end_ms": 13200,
+      "text": "And I might be able to do one that might be fun.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-5",
+      "start_ms": 13200,
+      "end_ms": 15400,
+      "text": "We have a little bit of time.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-6",
+      "start_ms": 17200,
+      "end_ms": 18600,
+      "text": "Um so corporate events.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-7",
+      "start_ms": 19400,
+      "end_ms": 20200,
+      "text": "Uh",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-8",
+      "start_ms": 22000,
+      "end_ms": 22800,
+      "text": "Say",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-9",
+      "start_ms": 22800,
+      "end_ms": 28900,
+      "text": "I think I saw a little, I put this in Slack and I saw a little bit of kind of noise around it.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-10",
+      "start_ms": 28900,
+      "end_ms": 30400,
+      "text": "Yeah, I think it's a good idea",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-11",
+      "start_ms": 30900,
+      "end_ms": 31700,
+      "text": "Um",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-12",
+      "start_ms": 32450,
+      "end_ms": 33500,
+      "text": "You know, the",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-13",
+      "start_ms": 34550,
+      "end_ms": 39100,
+      "text": "The nutshell here is as we've kind of restructured and tried different things.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-14",
+      "start_ms": 39100,
+      "end_ms": 44100,
+      "text": "the event support that we need isn't as nailed down as it needs to be.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-15",
+      "start_ms": 45100,
+      "end_ms": 45900,
+      "text": "Uh so",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-16",
+      "start_ms": 48100,
+      "end_ms": 53700,
+      "text": "Current tactic that we're going with is go to market team, signs up and kind of",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-17",
+      "start_ms": 53900,
+      "end_ms": 62300,
+      "text": "Sponsors that event. So you support as a PMM, your campaign manager does the campaigns for that event, et cetera, et cetera, et cetera.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-18",
+      "start_ms": 63600,
+      "end_ms": 66400,
+      "text": "Uh I don't see anyone in the uh",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-19",
+      "start_ms": 66550,
+      "end_ms": 70400,
+      "text": "Maybe there are comments in the issue. I don't see the",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-20",
+      "start_ms": 71600,
+      "end_ms": 76500,
+      "text": "I thought we had in Slack sort of farmed each one of them out.",
+      "speaker": "speaker-2",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-21",
+      "start_ms": 77000,
+      "end_ms": 77800,
+      "text": "That's",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-22",
+      "start_ms": 77800,
+      "end_ms": 80900,
+      "text": "So I guess that the next, so it looks like.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-23",
+      "start_ms": 82700,
+      "end_ms": 83500,
+      "text": "Hi.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-24",
+      "start_ms": 86250,
+      "end_ms": 88000,
+      "text": "Some folks, it looks like",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-25",
+      "start_ms": 88750,
+      "end_ms": 89800,
+      "text": "This looks good.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    }
+  ],
+  "sortformer_attributed": [
+    {
+      "id": "utterance-1",
+      "start_ms": 3600,
+      "end_ms": 5700,
+      "text": "And we don't have a ton.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-2",
+      "start_ms": 6350,
+      "end_ms": 8100,
+      "text": "Of items to get to.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-3",
+      "start_ms": 8300,
+      "end_ms": 9100,
+      "text": "Uh",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-4",
+      "start_ms": 9100,
+      "end_ms": 13200,
+      "text": "And I might be able to do one that might be fun.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-5",
+      "start_ms": 13200,
+      "end_ms": 15400,
+      "text": "We have a little bit of time.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-6",
+      "start_ms": 17200,
+      "end_ms": 18600,
+      "text": "Um so corporate events.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-7",
+      "start_ms": 19400,
+      "end_ms": 20200,
+      "text": "Uh",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-8",
+      "start_ms": 22000,
+      "end_ms": 22800,
+      "text": "Say",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-9",
+      "start_ms": 22800,
+      "end_ms": 28900,
+      "text": "I think I saw a little, I put this in Slack and I saw a little bit of kind of noise around it.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-10",
+      "start_ms": 28900,
+      "end_ms": 30400,
+      "text": "Yeah, I think it's a good idea",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-11",
+      "start_ms": 30900,
+      "end_ms": 31700,
+      "text": "Um",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-12",
+      "start_ms": 32450,
+      "end_ms": 33500,
+      "text": "You know, the",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-13",
+      "start_ms": 34550,
+      "end_ms": 39100,
+      "text": "The nutshell here is as we've kind of restructured and tried different things.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-14",
+      "start_ms": 39100,
+      "end_ms": 44100,
+      "text": "the event support that we need isn't as nailed down as it needs to be.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-15",
+      "start_ms": 45100,
+      "end_ms": 45900,
+      "text": "Uh so",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-16",
+      "start_ms": 48100,
+      "end_ms": 53700,
+      "text": "Current tactic that we're going with is go to market team, signs up and kind of",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-17",
+      "start_ms": 53900,
+      "end_ms": 62300,
+      "text": "Sponsors that event. So you support as a PMM, your campaign manager does the campaigns for that event, et cetera, et cetera, et cetera.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-18",
+      "start_ms": 63600,
+      "end_ms": 66400,
+      "text": "Uh I don't see anyone in the uh",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-19",
+      "start_ms": 66550,
+      "end_ms": 70400,
+      "text": "Maybe there are comments in the issue. I don't see the",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-20",
+      "start_ms": 71600,
+      "end_ms": 76500,
+      "text": "I thought we had in Slack sort of farmed each one of them out.",
+      "speaker": "speaker-2",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-21",
+      "start_ms": 77000,
+      "end_ms": 77800,
+      "text": "That's",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-22",
+      "start_ms": 77800,
+      "end_ms": 80900,
+      "text": "So I guess that the next, so it looks like.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-23",
+      "start_ms": 82700,
+      "end_ms": 83500,
+      "text": "Hi.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-24",
+      "start_ms": 86250,
+      "end_ms": 88000,
+      "text": "Some folks, it looks like",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    },
+    {
+      "id": "utterance-25",
+      "start_ms": 88750,
+      "end_ms": 89800,
+      "text": "This looks good.",
+      "speaker": "speaker-1",
+      "confidence": 0,
+      "state": "stable",
+      "source": "recording"
+    }
+  ],
+  "timelines": {
+    "sherpa": {
+      "observations": [
+        {
+          "segment_id": "diarization-1",
+          "start_ms": 30,
+          "end_ms": 19538,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+        },
+        {
+          "segment_id": "diarization-2",
+          "start_ms": 21259,
+          "end_ms": 65978,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+        },
+        {
+          "segment_id": "diarization-3",
+          "start_ms": 66737,
+          "end_ms": 71395,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+        },
+        {
+          "segment_id": "diarization-4",
+          "start_ms": 72239,
+          "end_ms": 77031,
+          "label": "speaker-2",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+        },
+        {
+          "segment_id": "diarization-5",
+          "start_ms": 77031,
+          "end_ms": 80085,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+        },
+        {
+          "segment_id": "diarization-6",
+          "start_ms": 82195,
+          "end_ms": 89974,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small"
+        }
+      ],
+      "finalized_at": "2026-08-27T14:05:26.754032-06:00"
+    },
+    "sortformer": {
+      "observations": [
+        {
+          "segment_id": "sortformer-1",
+          "start_ms": 0,
+          "end_ms": 560,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-2",
+          "start_ms": 880,
+          "end_ms": 1520,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-3",
+          "start_ms": 2800,
+          "end_ms": 5120,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-4",
+          "start_ms": 5840,
+          "end_ms": 7520,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-5",
+          "start_ms": 8000,
+          "end_ms": 8560,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-6",
+          "start_ms": 9360,
+          "end_ms": 12560,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-7",
+          "start_ms": 13280,
+          "end_ms": 14800,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-8",
+          "start_ms": 15440,
+          "end_ms": 16000,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-9",
+          "start_ms": 16320,
+          "end_ms": 18160,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-10",
+          "start_ms": 18960,
+          "end_ms": 19520,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-11",
+          "start_ms": 21280,
+          "end_ms": 22160,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-12",
+          "start_ms": 22880,
+          "end_ms": 29600,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-13",
+          "start_ms": 30640,
+          "end_ms": 31120,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-14",
+          "start_ms": 32240,
+          "end_ms": 32880,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-15",
+          "start_ms": 33680,
+          "end_ms": 38480,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-16",
+          "start_ms": 39280,
+          "end_ms": 43680,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-17",
+          "start_ms": 44160,
+          "end_ms": 66080,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-18",
+          "start_ms": 66880,
+          "end_ms": 71520,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-19",
+          "start_ms": 76800,
+          "end_ms": 77360,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-20",
+          "start_ms": 77600,
+          "end_ms": 80560,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-21",
+          "start_ms": 82160,
+          "end_ms": 83120,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-22",
+          "start_ms": 83600,
+          "end_ms": 84480,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-23",
+          "start_ms": 85360,
+          "end_ms": 87600,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-24",
+          "start_ms": 88240,
+          "end_ms": 89360,
+          "label": "speaker-1",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        },
+        {
+          "segment_id": "sortformer-25",
+          "start_ms": 72320,
+          "end_ms": 75920,
+          "label": "speaker-2",
+          "confidence": 0,
+          "state": "stable",
+          "source": "recording",
+          "model_revision": "diar_streaming_sortformer_4spk-v2.1-Q8_0"
+        }
+      ],
+      "finalized_at": "0001-01-01T00:00:00Z"
+    }
+  }
+}
