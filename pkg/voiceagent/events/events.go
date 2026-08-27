@@ -98,6 +98,15 @@ type TurnMetrics struct {
 	// StallWatchdogFired marks a turn cut short by that watchdog rather than
 	// by synthesis completing.
 	StallWatchdogFired bool
+	// DeadAirElapsed is the silence between segments: time the player spent
+	// idle after one sentence finished and before the next was ready.
+	//
+	// It is the cost of a synthesizer that cannot keep up, and until it was
+	// measured nothing in the system could see it — the stall watchdog only
+	// ever checks the FIRST audible frame, so a turn that starts speaking and
+	// then pauses for seconds between every sentence is, to the watchdog, a
+	// completely healthy turn.
+	DeadAirElapsed time.Duration
 	// Segments carries per-segment synthesis cost in playback order. The turn
 	// milestones above only ever describe the first segment; everything after
 	// it — where a long reply spends its time — is here.

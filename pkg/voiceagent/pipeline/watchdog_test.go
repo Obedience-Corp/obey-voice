@@ -21,19 +21,19 @@ import (
 func TestStallTimeoutHonorsQwenFirstAudioGrace(t *testing.T) {
 	graceful := &graceTTS{grace: 90 * time.Second}
 	p := &Pipeline{TTS: graceful}
-	if got := p.stallTimeout(); got != 90*time.Second {
+	if got := p.stallTimeout(0); got != 90*time.Second {
 		t.Fatalf("stallTimeout() = %v, want provider FirstAudioGrace 90s", got)
 	}
 
 	// Explicit override always wins (including short values used by tests).
 	p.PlaybackStallTimeout = 150 * time.Millisecond
-	if got := p.stallTimeout(); got != 150*time.Millisecond {
+	if got := p.stallTimeout(0); got != 150*time.Millisecond {
 		t.Fatalf("stallTimeout() = %v, want explicit 150ms override", got)
 	}
 
 	// Kokoro-style providers without FirstAudioGrace keep the default.
 	p = &Pipeline{TTS: &fakeTTS{}}
-	if got := p.stallTimeout(); got != defaultPlaybackStallTimeout {
+	if got := p.stallTimeout(0); got != defaultPlaybackStallTimeout {
 		t.Fatalf("stallTimeout() = %v, want default %v without grace", got, defaultPlaybackStallTimeout)
 	}
 
@@ -42,7 +42,7 @@ func TestStallTimeoutHonorsQwenFirstAudioGrace(t *testing.T) {
 	// fallback); waiting 90s for a Kokoro stall is a hung turn, not a slow
 	// synth.
 	p = &Pipeline{TTS: &fakeTTS{}, TTSFallback: graceful}
-	if got := p.stallTimeout(); got != defaultPlaybackStallTimeout {
+	if got := p.stallTimeout(0); got != defaultPlaybackStallTimeout {
 		t.Fatalf("stallTimeout() = %v, want default %v with Kokoro primary", got, defaultPlaybackStallTimeout)
 	}
 }
@@ -78,16 +78,16 @@ func TestStallNoticeDelay(t *testing.T) {
 // set the budget. A Kokoro turn on the default 8s is not governed by it.
 func TestStallHintNamesTheKnobOnlyWhenItApplies(t *testing.T) {
 	graceful := &Pipeline{TTS: &graceTTS{grace: 90 * time.Second}}
-	if got := graceful.stallHint(90 * time.Second); !strings.Contains(got, "qwen_tts_timeout") {
+	if got := graceful.stallHint(90*time.Second, 0); !strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(grace budget) = %q, want the qwen_tts_timeout knob named", got)
 	}
 	// Explicit override on the same provider: the budget is no longer the grace.
-	if got := graceful.stallHint(150 * time.Millisecond); strings.Contains(got, "qwen_tts_timeout") {
+	if got := graceful.stallHint(150*time.Millisecond, 0); strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(override) = %q, want no qwen_tts_timeout for a budget it did not set", got)
 	}
 
 	plain := &Pipeline{TTS: &fakeTTS{}}
-	if got := plain.stallHint(defaultPlaybackStallTimeout); strings.Contains(got, "qwen_tts_timeout") {
+	if got := plain.stallHint(defaultPlaybackStallTimeout, 0); strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(default, non-gracer) = %q, want no qwen_tts_timeout", got)
 	}
 }
@@ -113,7 +113,7 @@ func TestWatchPlaybackStallEmitsInterimNotice(t *testing.T) {
 	var started atomic.Bool
 	stalled := make(chan struct{})
 	// Notice at 30ms (scaled default), stall at 300ms.
-	go p.watchPlaybackStallAfter(streamCtx, &started, cancel, stalled, 300*time.Millisecond, 30*time.Millisecond)
+	go p.watchPlaybackStallAfter(streamCtx, &started, cancel, stalled, 300*time.Millisecond, 30*time.Millisecond, 0)
 
 	select {
 	case <-stalled:

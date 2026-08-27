@@ -22,7 +22,9 @@ const defaultPlaybackStallTimeout = 8 * time.Second
 // loop retries listening rather than treating it as a shutdown.
 var errPlaybackStalled = errors.New("playback stalled; turn recovered")
 
-func (p *Pipeline) stallTimeout() time.Duration {
+// stallTimeout is the budget for the first audible frame of a segment of
+// firstSegmentChars characters. Pass 0 when the length is not known.
+func (p *Pipeline) stallTimeout(firstSegmentChars int) time.Duration {
 	// Explicit override always wins (tests arm a short budget; ops can raise it).
 	if p.PlaybackStallTimeout > 0 {
 		return p.PlaybackStallTimeout
@@ -31,7 +33,7 @@ func (p *Pipeline) stallTimeout() time.Duration {
 	// it exceeds the default. Without this, Qwen (and any whole-utterance
 	// worker) regularly trips the 8s stall and the TUI shows the recovery
 	// line mid-reply even though synthesis is still healthy.
-	if grace := p.ttsFirstAudioGrace(); grace > defaultPlaybackStallTimeout {
+	if grace := p.ttsFirstAudioGrace(firstSegmentChars); grace > defaultPlaybackStallTimeout {
 		return grace
 	}
 	return defaultPlaybackStallTimeout
@@ -44,11 +46,19 @@ func (p *Pipeline) stallTimeout() time.Duration {
 // has no grace, so max(primary, fallback) was a no-op in production and would
 // be wrong if a FirstAudioGracer ever became the fallback: the watchdog would
 // wait out a Qwen budget while Kokoro was the voice actually playing.
-func (p *Pipeline) ttsFirstAudioGrace() time.Duration {
+func (p *Pipeline) ttsFirstAudioGrace(chars int) time.Duration {
 	if p == nil {
 		return 0
 	}
 	primary, _ := p.ttsProviders()
+	// A provider that can size the budget to the segment is preferred: a
+	// fixed budget has to cover the longest reply the engine might be asked
+	// for, so every short one inherits that ceiling.
+	if g, ok := primary.(tts.SegmentGracer); ok && chars > 0 {
+		if d := g.FirstAudioGraceForChars(chars); d > 0 {
+			return d
+		}
+	}
 	if g, ok := primary.(tts.FirstAudioGracer); ok {
 		if d := g.FirstAudioGrace(); d > 0 {
 			return d
@@ -61,8 +71,8 @@ func (p *Pipeline) ttsFirstAudioGrace() time.Duration {
 // actually came from the provider's FirstAudioGrace. On the default 8s a
 // Kokoro turn is not governed by qwen_tts_timeout, so naming it there points
 // the operator at a setting with no effect.
-func (p *Pipeline) stallHint(timeout time.Duration) string {
-	if grace := p.ttsFirstAudioGrace(); grace > 0 && timeout == grace {
+func (p *Pipeline) stallHint(timeout time.Duration, chars int) string {
+	if grace := p.ttsFirstAudioGrace(chars); grace > 0 && timeout == grace {
 		return " (TTS may still be synthesizing — raise qwen_tts_timeout if this is a slow worker)"
 	}
 	return " (TTS may still be synthesizing)"
@@ -84,14 +94,14 @@ func stallNoticeDelay(timeout time.Duration) time.Duration {
 // cancels streamCtx (unblocking waitReady/pumpSegment/Write/observeStream) and
 // signals streamResponse to return; returning then trips RunTurn's turnCancel,
 // which stops the brain stream too.
-func (p *Pipeline) watchPlaybackStall(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout time.Duration) {
-	p.watchPlaybackStallAfter(streamCtx, started, cancel, stalled, timeout, stallNoticeDelay(timeout))
+func (p *Pipeline) watchPlaybackStall(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout time.Duration, chars int) {
+	p.watchPlaybackStallAfter(streamCtx, started, cancel, stalled, timeout, stallNoticeDelay(timeout), chars)
 }
 
 // watchPlaybackStallAfter is watchPlaybackStall with the interim-notice delay
 // injected so tests can exercise both timers without waiting out the real
 // budget. noticeDelay of zero suppresses the notice.
-func (p *Pipeline) watchPlaybackStallAfter(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout, noticeDelay time.Duration) {
+func (p *Pipeline) watchPlaybackStallAfter(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout, noticeDelay time.Duration, chars int) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
@@ -126,7 +136,7 @@ waiting:
 		return
 	}
 
-	msg := fmt.Sprintf("playback did not start within %s; recovering turn%s", timeout, p.stallHint(timeout))
+	msg := fmt.Sprintf("playback did not start within %s; recovering turn%s", timeout, p.stallHint(timeout, chars))
 	if path, err := writeGoroutineDump(); err == nil {
 		msg += fmt.Sprintf(" (goroutine dump: %s)", path)
 	}

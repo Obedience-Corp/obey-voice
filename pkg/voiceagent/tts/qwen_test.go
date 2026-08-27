@@ -235,32 +235,104 @@ func TestQwenSynthesizeRequestRejectsMalformedAndEmptyWAV(t *testing.T) {
 	}
 }
 
-func TestQwenFirstAudioGraceMatchesSynthTimeout(t *testing.T) {
-	// Explicit timeout above p95 raises grace (long-form operator ceiling).
-	q := newQwen3TTS("fake-qwen3-tts", t.TempDir(), 90*time.Second, nil)
-	q.timeoutSet = true
-	if got := q.FirstAudioGrace(); got != 90*time.Second {
-		t.Fatalf("FirstAudioGrace() = %v, want 90s synth timeout (above p95 floor)", got)
-	}
-	// Default (unset) floors to measured warm-TTFA p95 headroom.
-	q = newQwen3TTS("fake-qwen3-tts", t.TempDir(), 0, nil)
-	if got := q.FirstAudioGrace(); got != managedWarmTTP95 {
-		t.Fatalf("FirstAudioGrace() = %v, want managed p95 floor %v", got, managedWarmTTP95)
-	}
-	// Native path uses lab warm + cold-ready p95 headroom.
+func TestQwenFirstAudioGraceScalesWithSegmentLength(t *testing.T) {
+	// The defect this replaces: every segment, however short, waited out a
+	// budget sized for the longest reply the tier might be asked for.
 	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 	qn.native = true
-	wantNative := nativeWarmTTP95 + nativeColdReadyP95
-	if got := qn.FirstAudioGrace(); got != wantNative {
-		t.Fatalf("native FirstAudioGrace() = %v, want %v", got, wantNative)
-	}
 	qn.modelTier = "1.7b"
-	want17b := native17bWarmTTP95 + nativeColdReadyP95
-	if got := qn.FirstAudioGrace(); got != want17b {
-		t.Fatalf("native 1.7b FirstAudioGrace() = %v, want %v", got, want17b)
+	qn.alive.Store(true) // warm worker: no cold-start allowance
+
+	short := qn.FirstAudioGraceForChars(17) // "Sure, that works."
+	long := qn.FirstAudioGraceForChars(150)
+	if short >= long {
+		t.Fatalf("grace did not scale with length: 17 chars = %v, 150 chars = %v", short, long)
 	}
-	// Compile-time check: pipeline stallTimeout type-asserts this interface.
+	if short != minFirstAudioGrace {
+		t.Errorf("short-segment grace = %v, want the %v floor", short, minFirstAudioGrace)
+	}
+	// 150 chars / 10 chars-per-second = 15s of expected audio, times the
+	// 1.7b ceiling of 4.0.
+	if want := 60 * time.Second; long != want {
+		t.Errorf("150-char grace = %v, want %v", long, want)
+	}
+}
+
+func TestQwenFirstAudioGraceChargesColdStartOnlyWhileTheWorkerIsDown(t *testing.T) {
+	// Cold ready is paid once at session start. Charging it to every turn is
+	// what made warm short turns wait out a worst-case budget.
+	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+	qn.native = true
+
+	cold := qn.FirstAudioGraceForChars(150)
+	qn.alive.Store(true)
+	warm := qn.FirstAudioGraceForChars(150)
+
+	if cold-warm != nativeColdReadyP95 {
+		t.Errorf("cold grace %v vs warm %v: difference should be exactly the cold-ready allowance %v", cold, warm, nativeColdReadyP95)
+	}
+}
+
+func TestQwenFirstAudioGraceTreatsSynthTimeoutAsACapNotTheBudget(t *testing.T) {
+	// The regression that let two minutes of silence read as a healthy turn:
+	// an operator raising qwen_tts_timeout for long-form audio also raised
+	// the deadline for noticing a wedged player to the same number.
+	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 120*time.Second, nil)
+	qn.native = true
+	qn.modelTier = "1.7b"
+	qn.timeoutSet = true
+	qn.alive.Store(true)
+
+	if got := qn.FirstAudioGraceForChars(120); got >= 120*time.Second {
+		t.Errorf("FirstAudioGraceForChars(120) = %v; a 120s synth timeout must not become a 120s stall budget", got)
+	}
+
+	// It still caps: waiting past the synthesis timeout cannot pay off,
+	// because the synthesis call itself has already failed by then.
+	tight := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 10*time.Second, nil)
+	tight.native = true
+	tight.modelTier = "1.7b"
+	tight.timeoutSet = true
+	tight.alive.Store(true)
+	if got := tight.FirstAudioGraceForChars(300); got != 10*time.Second {
+		t.Errorf("FirstAudioGraceForChars(300) = %v, want the 10s synth timeout as a ceiling", got)
+	}
+}
+
+func TestQwenFirstAudioGraceTierCeilings(t *testing.T) {
+	// 1.7b measured 2.41 median / 2.76 p90 in-pipeline against 0.6b's lower
+	// cost, so it must be allowed strictly more time for the same text.
+	mk := func(tier string) *Qwen3TTS {
+		q := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+		q.native = true
+		q.modelTier = tier
+		q.alive.Store(true)
+		return q
+	}
+	small, large := mk("0.6b").FirstAudioGraceForChars(200), mk("1.7b").FirstAudioGraceForChars(200)
+	if small >= large {
+		t.Errorf("0.6b grace %v should be below 1.7b grace %v for the same text", small, large)
+	}
+}
+
+func TestQwenFirstAudioGraceInterfaces(t *testing.T) {
+	// Length-blind callers land on an ordinary sentence, not a worst case.
+	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+	qn.native = true
+	qn.alive.Store(true)
+	if got, want := qn.FirstAudioGrace(), qn.FirstAudioGraceForChars(typicalSegmentChars); got != want {
+		t.Errorf("FirstAudioGrace() = %v, want the typical-segment budget %v", got, want)
+	}
+
+	// Managed (pre-cutover, test seams only) keeps its prior floor.
+	managed := newQwen3TTS("fake-qwen3-tts", t.TempDir(), 0, nil)
+	if got := managed.FirstAudioGrace(); got != managedWarmTTP95 {
+		t.Errorf("managed FirstAudioGrace() = %v, want %v", got, managedWarmTTP95)
+	}
+
+	// Compile-time checks: pipeline stallTimeout type-asserts both.
 	var _ FirstAudioGracer = (*Qwen3TTS)(nil)
+	var _ SegmentGracer = (*Qwen3TTS)(nil)
 }
 
 func TestNativeSoftCancelKeepsSession(t *testing.T) {

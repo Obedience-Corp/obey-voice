@@ -52,6 +52,7 @@ func encodeEvent(e events.Event) map[string]any {
 		env["tts_fallbacks"] = e.TTSFallbacks
 		env["first_audio_grace_ms"] = ms(e.FirstAudioGrace)
 		env["stall_watchdog_fired"] = e.StallWatchdogFired
+		env["dead_air_ms"] = ms(e.DeadAirElapsed)
 		if len(e.Segments) > 0 {
 			segments := make([]map[string]any, 0, len(e.Segments))
 			for _, seg := range e.Segments {

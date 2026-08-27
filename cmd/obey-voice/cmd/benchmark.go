@@ -792,6 +792,17 @@ func printTTSSummary(result benchmarkResult) {
 	} else if m.FirstAudioGrace > 0 {
 		printMetric("stall grace", formatMetric(m.FirstAudioGrace))
 	}
+	// Dead air is the headline for a whole-utterance engine: the first-audio
+	// delay is what you notice, but the silence between sentences is the same
+	// defect continuing for the rest of the reply.
+	if m.DeadAirElapsed > 0 {
+		detail := formatMetric(m.DeadAirElapsed)
+		if speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed; speaking > 0 {
+			detail += fmt.Sprintf(" of %s speaking (%.0f%%)", formatMetric(speaking),
+				float64(m.DeadAirElapsed)/float64(speaking)*100)
+		}
+		printMetric("dead air", detail)
+	}
 	if m.TTSFallbacks > 0 {
 		printMetric("tts fallbacks", failStyle.Render(fmt.Sprintf("%d segment(s) spoken by the fallback", m.TTSFallbacks)))
 	}
