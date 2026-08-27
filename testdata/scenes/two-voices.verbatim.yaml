@@ -1,0 +1,21 @@
+# A two-persona verbatim scene: every line is authored, nothing is generated.
+# Both personas must exist under the install's personas directory.
+schema: obey-voice.scene.v1
+id: coffee-counter
+title: Coffee counter
+mode: verbatim
+pause: 400ms
+cast:
+  - id: sam
+    persona: samantha
+  - id: uncle
+    persona: uncle-fu
+turns:
+  - speaker: sam
+    text: "You're late."
+  - speaker: uncle
+    text: "The bus had opinions."
+  - speaker: sam
+    text: "The bus is not on trial."
+  - speaker: uncle
+    text: "Neither am I. Two coffees, please."

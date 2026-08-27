@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Obedience-Corp/obey-voice/docs/schemas/scene.schema.json",
+  "title": "obey-voice.scene.v1",
+  "description": "A scripted spoken conversation between personas: who is in the cast, and either the lines they speak (verbatim) or the beats they improvise from (generate). A scene carries no STT, VAD, tools, skills, or meeting settings; the mouth of each speaker comes from their persona profile. Generated from internal/scene.Document and kept in step by TestSceneSchemaMatchesDocument.",
+  "type": "object",
+  "required": ["schema", "id", "cast"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "obey-voice.scene.v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Kebab-case id for this scene."
+    },
+    "title": {
+      "type": "string",
+      "description": "Optional display title, recorded in the run manifest."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["", "verbatim", "generate"],
+      "description": "Where the spoken lines come from. Empty means verbatim. The CLI --mode flag overrides this only when it is passed."
+    },
+    "pause": {
+      "type": "string",
+      "description": "Go duration of silence between turns, e.g. 400ms. Empty inherits the 400ms default. The CLI --pause flag overrides this only when it is passed."
+    },
+    "cast": {
+      "type": "array",
+      "minItems": 2,
+      "description": "The speakers. v1 records exactly two; the schema allows more so an N-cast script keeps validating once the renderer grows into it.",
+      "items": {
+        "type": "object",
+        "required": ["id", "persona"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Scene-local speaker id, unique within the cast. Turns name this, not the persona id, so a recast does not rewrite every line. It is also the turn WAV filename component."
+          },
+          "persona": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Id of a festival-voice.persona.v1 profile under the install's personas directory."
+          }
+        }
+      }
+    },
+    "turns": {
+      "type": "array",
+      "maxItems": 48,
+      "description": "The spoken lines. Required and non-empty in verbatim mode; in generate mode these are written by the renderer.",
+      "items": {
+        "type": "object",
+        "required": ["speaker", "text"],
+        "additionalProperties": false,
+        "properties": {
+          "speaker": {
+            "type": "string",
+            "description": "A cast id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The line to speak. Spoken-text cleaning happens inside the TTS provider."
+          }
+        }
+      }
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The improvisation brief. Required for generate mode; preserved but unused in verbatim mode.",
+      "properties": {
+        "setting": {
+          "type": "string",
+          "description": "One line of situation, given to both brains in the shared briefing."
+        },
+        "beats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "What has to happen, in order. Generate mode needs beats or an opener."
+        },
+        "opener": {
+          "type": "object",
+          "required": ["text"],
+          "additionalProperties": false,
+          "description": "A written first line, so the opening speaker does not have to invent one.",
+          "properties": {
+            "speaker": {
+              "type": "string",
+              "description": "A cast id. Empty opens with the first cast member."
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The opening line, spoken verbatim as turn 0."
+            }
+          }
+        },
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 48,
+          "description": "Cap on generated turns. Empty inherits the default of 24. The CLI --max-turns flag overrides this only when it is passed."
+        },
+        "stop_phrases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Case-sensitive substrings that end the conversation. The matching line is kept and then spoken."
+        }
+      }
+    }
+  }
+}
