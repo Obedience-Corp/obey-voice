@@ -20,12 +20,12 @@
     }
   },
   "method": {
-    "read_only": "projects/obey-voice was never modified; the repo was rsync-copied to a scratchpad and the probe programs were added to the copy (internal/meeting/speakers.go sha256 identical in both).",
+    "read_only": "projects/obey-voice was never modified for the measurement; the repo was rsync-copied to a scratchpad and the probe programs were added to the copy (internal/meeting/speakers.go sha256 identical in both). The probes and inputs were subsequently committed to this repo and the attribution + shift sweep re-run in-tree: outputs bit-identical (see raw_files.reproduced).",
     "transcript_segments": "Produced by the shipped WAV->transcript path, not synthesised: cmd/obey-voice/cmd/meeting_serve_pipeline.go newReplaySource + replayTranscribe driving the configured STT provider (parakeet, offline mode) over the fixture, with utterances appended through the production internal/meeting/log.Writer.OnUtterance. That writer is what stamps StartMS/EndMS (log.go:274-308: EndMS = utterance completion offset into the recording, StartMS = EndMS - 350 ms/word floored at 800 ms, clamped forward to the previous utterance end) and its records are exactly what internal/meeting.logAnalysis feeds AttributeTranscript in production.",
     "sherpa_timeline": "obey-voice meeting analyze <fixture> --speakers 2 --json (GOBIN binary, same command as T3): 6 spans, coverage 84560 ms.",
     "sortformer_timeline": "TRANSCRIBE_SORTFORMER_STREAM_PRESET=very_high_latency transcribe-cli -m diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf --backend metal -q --batch files.txt --batch-jsonl (pinned v0.2.2 CLI): 25 spans, coverage 70240 ms \u2014 reproduces T3's very_high_latency/metal run exactly.",
     "sortformer_to_timeline_mapping": "Each JSONL span became a speaker.Observation with Label=speaker-<speaker_id>, State=stable, Source=recording, Confidence=0 \u2014 the same shape SherpaEngine.Diarize emits, so the only variable between the two runs is span geometry.",
-    "attribution": "The real meeting.AttributeTranscript was called on both timelines (scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_attr_test.go); no logic was reimplemented.",
+    "attribution": "The real meeting.AttributeTranscript was called on both timelines (cmd/obey-voice/cmd/t3b_attr_test.go, env-gated: skips unless T3B_* are set); no logic was reimplemented.",
     "fixture": "~/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav (90014 ms, sha256 ed57895c...)"
   },
   "inputs": {
@@ -1034,15 +1034,17 @@
     "Nothing here evaluates diarization quality; it evaluates only whether the shipped attribution rule survives Sortformer's finer span geometry."
   ],
   "raw_files": {
-    "transcripts": "scratchpad/raw/transcripts.json",
-    "sherpa_timeline": "scratchpad/raw/sherpa.analyze.json",
-    "sortformer_timeline": "scratchpad/raw/sortformer-metal-vhl.jsonl",
-    "attribution_output": "scratchpad/raw/attributed.json",
-    "shift_sweep": "scratchpad/raw/shift.json",
+    "location": "docs/benchmarks/t3b/ (this repo) - README.md there records the regeneration commands",
+    "transcripts": "docs/benchmarks/t3b/transcripts.json",
+    "sherpa_timeline": "docs/benchmarks/t3b/sherpa.analyze.json",
+    "sortformer_timeline": "docs/benchmarks/t3b/sortformer-metal-vhl.jsonl",
+    "attribution_output": "docs/benchmarks/t3b/attributed.json",
+    "shift_sweep": "docs/benchmarks/t3b/shift.json",
     "probe_programs": [
-      "scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_test.go",
-      "scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_attr_test.go",
-      "scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_shift_test.go"
-    ]
+      "cmd/obey-voice/cmd/t3b_test.go (step 1: fixture -> transcripts; needs the local fixture WAV + STT models)",
+      "cmd/obey-voice/cmd/t3b_attr_test.go (step 2: attribution on both timelines)",
+      "cmd/obey-voice/cmd/t3b_shift_test.go (step 3: +/-2 s shift sweep)"
+    ],
+    "reproduced": "2026-08-27: steps 2-3 re-run from the committed probes against the committed inputs; attributed.json and shift.json regenerated bit-identical to the originals (the rule is deterministic). Step 1 needs the machine-local fixture WAV; its output IS the committed transcripts.json."
   }
 }
