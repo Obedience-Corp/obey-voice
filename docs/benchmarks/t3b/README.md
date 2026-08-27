@@ -14,12 +14,13 @@ set, and every one calls the shipped code (`meeting.AttributeTranscript`,
 | `sherpa.analyze.json` | Control timeline: `obey-voice meeting analyze <fixture> --speakers 2 --json` (6 spans) |
 | `sortformer-metal-vhl.jsonl` | Sortformer timeline: transcribe-cli v0.2.2, `very_high_latency`/metal (25 spans) |
 | `attributed.json` | Step-2 output: `AttributeTranscript` over both timelines |
-| `shift.json` | Step-3 output: 41-point ±2 s timestamp-shift sweep |
+| `shift.json` | Step-3 output: 41-point ±2 s timestamp-shift sweep, incl. per-row `disagreements` ({id, sherpa, sortformer}) |
 
 ## Regenerate
 
 Steps 2–3 need only this directory (deterministic; outputs reproduce
-bit-identical — verified 2026-08-27):
+bit-identical — verified 2026-08-27, before and after the probe gained the
+`disagreements` field):
 
 ```sh
 D=$PWD/docs/benchmarks/t3b

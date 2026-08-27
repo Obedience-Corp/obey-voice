@@ -99,6 +99,18 @@
     "sortformer_unlabelled_ids": [
       "utterance-11",
       "utterance-12"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-11",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      },
+      {
+        "id": "utterance-12",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -111,6 +123,13 @@
     "label_disagreements_ms": 800,
     "sortformer_unlabelled_ids": [
       "utterance-11"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-11",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -123,6 +142,13 @@
     "label_disagreements_ms": 800,
     "sortformer_unlabelled_ids": [
       "utterance-11"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-11",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -135,6 +161,13 @@
     "label_disagreements_ms": 800,
     "sortformer_unlabelled_ids": [
       "utterance-21"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-21",
+        "sherpa": "speaker-2",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -144,7 +177,14 @@
     "sortformer_unlabelled": 0,
     "sortformer_unlabelled_ms": 0,
     "label_disagreements": 1,
-    "label_disagreements_ms": 800
+    "label_disagreements_ms": 800,
+    "disagreements": [
+      {
+        "id": "utterance-21",
+        "sherpa": "speaker-2",
+        "sortformer": "speaker-1"
+      }
+    ]
   },
   {
     "shift_ms": -800,
@@ -153,7 +193,14 @@
     "sortformer_unlabelled": 0,
     "sortformer_unlabelled_ms": 0,
     "label_disagreements": 1,
-    "label_disagreements_ms": 800
+    "label_disagreements_ms": 800,
+    "disagreements": [
+      {
+        "id": "utterance-21",
+        "sherpa": "speaker-2",
+        "sortformer": "speaker-1"
+      }
+    ]
   },
   {
     "shift_ms": -700,
@@ -162,7 +209,14 @@
     "sortformer_unlabelled": 0,
     "sortformer_unlabelled_ms": 0,
     "label_disagreements": 1,
-    "label_disagreements_ms": 800
+    "label_disagreements_ms": 800,
+    "disagreements": [
+      {
+        "id": "utterance-21",
+        "sherpa": "speaker-2",
+        "sortformer": "speaker-1"
+      }
+    ]
   },
   {
     "shift_ms": -600,
@@ -171,7 +225,14 @@
     "sortformer_unlabelled": 0,
     "sortformer_unlabelled_ms": 0,
     "label_disagreements": 1,
-    "label_disagreements_ms": 800
+    "label_disagreements_ms": 800,
+    "disagreements": [
+      {
+        "id": "utterance-21",
+        "sherpa": "speaker-2",
+        "sortformer": "speaker-1"
+      }
+    ]
   },
   {
     "shift_ms": -500,
@@ -180,7 +241,14 @@
     "sortformer_unlabelled": 0,
     "sortformer_unlabelled_ms": 0,
     "label_disagreements": 1,
-    "label_disagreements_ms": 800
+    "label_disagreements_ms": 800,
+    "disagreements": [
+      {
+        "id": "utterance-21",
+        "sherpa": "speaker-2",
+        "sortformer": "speaker-1"
+      }
+    ]
   },
   {
     "shift_ms": -400,
@@ -189,7 +257,14 @@
     "sortformer_unlabelled": 0,
     "sortformer_unlabelled_ms": 0,
     "label_disagreements": 1,
-    "label_disagreements_ms": 800
+    "label_disagreements_ms": 800,
+    "disagreements": [
+      {
+        "id": "utterance-21",
+        "sherpa": "speaker-2",
+        "sortformer": "speaker-1"
+      }
+    ]
   },
   {
     "shift_ms": -300,
@@ -259,6 +334,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-7",
       "utterance-11"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-11",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -272,6 +354,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-7",
       "utterance-11"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-11",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -285,6 +374,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-7",
       "utterance-11"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-11",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -310,6 +406,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-7",
       "utterance-25"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-25",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -323,6 +426,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-7",
       "utterance-25"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-25",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -336,6 +446,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-7",
       "utterance-25"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-25",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -349,6 +466,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-7",
       "utterance-25"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-25",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -361,6 +485,13 @@
     "label_disagreements_ms": 1050,
     "sortformer_unlabelled_ids": [
       "utterance-25"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-25",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -373,6 +504,13 @@
     "label_disagreements_ms": 1050,
     "sortformer_unlabelled_ids": [
       "utterance-25"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-25",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {
@@ -446,6 +584,13 @@
     "sortformer_unlabelled_ids": [
       "utterance-23",
       "utterance-25"
+    ],
+    "disagreements": [
+      {
+        "id": "utterance-23",
+        "sherpa": "speaker-1",
+        "sortformer": "unknown"
+      }
     ]
   },
   {

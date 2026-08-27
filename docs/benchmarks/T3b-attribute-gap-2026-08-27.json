@@ -536,8 +536,6 @@
       -900,
       200
     ],
-    "all_differences_are_unknown_vs_labelled": true,
-    "no_wrong_speaker_at_any_shift": true,
     "rows": [
       {
         "shift_ms": -2000,
@@ -1023,13 +1021,32 @@
           "utterance-25"
         ]
       }
-    ]
+    ],
+    "all_differences_are_unknown_vs_labelled": false,
+    "no_wrong_speaker_at_any_shift": false,
+    "named_label_disagreements": {
+      "shifts_ms": [
+        -900,
+        -800,
+        -700,
+        -600,
+        -500,
+        -400
+      ],
+      "segment": "utterance-21 ('That's', 77000-77800 ms, 800 ms)",
+      "sherpa_says": "speaker-2",
+      "sortformer_says": "speaker-1",
+      "zero_shift_label_both": "speaker-1",
+      "mechanism": "utterance-21 sits on the speaker-2 -> speaker-1 boundary. Shifted 400-900 ms early it slides into sherpa's wide speaker-2 span (72239-77031), flipping the CONTROL to speaker-2, while Sortformer's speaker-2 span ends earlier (75920) and its speaker-1 spans (76800-77360, 77600-80560) hold speaker-1. Two named answers, one necessarily wrong: timestamp error near a speaker boundary produces a WRONG NAME, not unknown. The flip is on the sherpa side here, but the mode is symmetric - whichever geometry has the wider span adjacent to the boundary captures the mis-timed turn.",
+      "detail": "per-row {id, sherpa, sortformer} recorded in docs/benchmarks/t3b/shift.json (disagreements field)"
+    },
+    "contiguous_no_excess_window_note": "the [-900, 200] window bounds UNLABELLED excess only; the named-label disagreements above occur inside it"
   },
   "what_E5_would_need": [
     "The rule is greatest-overlap with a zero threshold and no nearest-span fallback (speakers.go:131-143), so a Sortformer gap only costs a label when a transcript turn misses EVERY span. On this fixture that never happens: 11990 ms (17.9%) of transcript time sits inside Sortformer gaps and is absorbed, all 25 turns keep a label, and every label matches the sherpa control.",
     "The margin is thin rather than structural: the worst-held turn survives on 120 ms of overlap, 13 of the 24 Sortformer gaps are at least as wide as the 800 ms minimum turn length, and the widest gap (1760 ms) exceeds it by 2x.",
     "Timestamp error is the lever, not the diarizer: within -900..+200 ms of uniform shift Sortformer drops nothing sherpa does not; beyond that it drops up to 2 extra turns (1850 ms). Any E5 gate should state the timestamp-error budget it assumes.",
-    "Failures degrade to unknown/rejected, never to a wrong speaker name \u2014 at no shift in +/-2 s did the two timelines disagree on a named speaker.",
+    "Failure is NOT confined to unknown/rejected: at zero shift every label matches the control, but under a 400-900 ms early shift the boundary-adjacent utterance-21 gets a different NAMED speaker from the two timelines (sherpa speaker-2 vs Sortformer speaker-1; both said speaker-1 unshifted) - one of them is wrong. Timestamp error near a speaker boundary can misattribute a turn to the wrong name in either geometry, so the E5 gate must check labels against the control (not merely count unknowns) and state the timestamp-error budget under which named-label agreement is required.",
     "Single fixture, 2 speakers, one interjection, one STT provider (parakeet offline). A 3-4 speaker meeting, an overlapped-speech regime, or a chattier turn distribution with many short back-channels would stress the gap case far harder and is unmeasured.",
     "Nothing here evaluates diarization quality; it evaluates only whether the shipped attribution rule survives Sortformer's finer span geometry."
   ],
@@ -1045,6 +1062,6 @@
       "cmd/obey-voice/cmd/t3b_attr_test.go (step 2: attribution on both timelines)",
       "cmd/obey-voice/cmd/t3b_shift_test.go (step 3: +/-2 s shift sweep)"
     ],
-    "reproduced": "2026-08-27: steps 2-3 re-run from the committed probes against the committed inputs; attributed.json and shift.json regenerated bit-identical to the originals (the rule is deterministic). Step 1 needs the machine-local fixture WAV; its output IS the committed transcripts.json."
+    "reproduced": "2026-08-27: steps 2-3 re-run from the committed probes against the committed inputs; attributed.json regenerated bit-identical and shift.json's original fields regenerated bit-identical (the rule is deterministic). shift.json has since gained a 'disagreements' field ({id, sherpa, sortformer} per disagreeing row), added when review of the committed data surfaced the named-label disagreement at shifts -900..-400 ms. Step 1 needs the machine-local fixture WAV; its output IS the committed transcripts.json."
   }
 }

@@ -43,15 +43,21 @@ func TestT3bShiftSweep(t *testing.T) {
 		})
 	}
 
+	type disagreement struct {
+		ID         string `json:"id"`
+		Sherpa     string `json:"sherpa"`
+		Sortformer string `json:"sortformer"`
+	}
 	type row struct {
-		ShiftMS            int64    `json:"shift_ms"`
-		SherpaUnlabelled   int      `json:"sherpa_unlabelled"`
-		SherpaUnlabelledMS int64    `json:"sherpa_unlabelled_ms"`
-		SortUnlabelled     int      `json:"sortformer_unlabelled"`
-		SortUnlabelledMS   int64    `json:"sortformer_unlabelled_ms"`
-		Disagree           int      `json:"label_disagreements"`
-		DisagreeMS         int64    `json:"label_disagreements_ms"`
-		SortUnlabelledIDs  []string `json:"sortformer_unlabelled_ids,omitempty"`
+		ShiftMS            int64          `json:"shift_ms"`
+		SherpaUnlabelled   int            `json:"sherpa_unlabelled"`
+		SherpaUnlabelledMS int64          `json:"sherpa_unlabelled_ms"`
+		SortUnlabelled     int            `json:"sortformer_unlabelled"`
+		SortUnlabelledMS   int64          `json:"sortformer_unlabelled_ms"`
+		Disagree           int            `json:"label_disagreements"`
+		DisagreeMS         int64          `json:"label_disagreements_ms"`
+		SortUnlabelledIDs  []string       `json:"sortformer_unlabelled_ids,omitempty"`
+		Disagreements      []disagreement `json:"disagreements,omitempty"`
 	}
 	var rows []row
 	for shift := int64(-2000); shift <= 2000; shift += 100 {
@@ -81,6 +87,9 @@ func TestT3bShiftSweep(t *testing.T) {
 			if a[i].Speaker != b[i].Speaker {
 				r.Disagree++
 				r.DisagreeMS += d
+				r.Disagreements = append(r.Disagreements, disagreement{
+					ID: segs[i].ID, Sherpa: a[i].Speaker, Sortformer: b[i].Speaker,
+				})
 			}
 		}
 		rows = append(rows, r)
