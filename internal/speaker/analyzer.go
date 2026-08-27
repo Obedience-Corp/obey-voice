@@ -115,10 +115,12 @@ func (a *Analyzer) Finalize(ctx context.Context, samples []float32) (Timeline, e
 		return Timeline{}, err
 	}
 	// Soft cleanup only for auto clustering (NumSpeakers == 0). Fixed N must
-	// keep short-turn partners the clusterer already separated. It applies to
-	// whichever diarizer produced the timeline: its floors (2 s / 1% of speech
-	// mass) are about what is worth showing, not about how the spans were cut.
-	if cfg.Meeting.NumSpeakers == 0 {
+	// keep short-turn partners the clusterer already separated. A diarizer that
+	// resolves its own count is skipped entirely: there is no over-split to
+	// undo, and gating a relabelling pass on a value that reached nothing would
+	// make "expected speakers" quietly change labels for a model that never
+	// saw it.
+	if cfg.Meeting.NumSpeakers == 0 && !speakerCountIsFixed(diarizer) {
 		tl = MergeSparseLabels(tl, MergeOpts{})
 	}
 	if res, ok := eng.(EnrolledResolver); ok && res.EnrolledCount() > 0 {

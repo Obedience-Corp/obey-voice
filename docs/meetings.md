@@ -60,12 +60,18 @@ swaps that one step for NVIDIA Streaming Sortformer through the
 [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) CLI
 (`transcribecpp_binary`) plus a managed 139 MB GGUF that `models ensure`
 installs once the key is set; it is optional, and everything else — live
-labels, embeddings, enrolled names — stays on sherpa either way. Sortformer
-resolves **up to four** speakers and has **no speaker-count input**, so
-**Expected speakers** is ignored under it (`obey-voice doctor` says so rather
-than pretending the setting applied). A missing CLI or GGUF fails at meeting
-start, not after the recording. An unrecognised value is a config error: the
-engine that labels a meeting never changes by typo.
+labels, embeddings, enrolled names — stays on sherpa either way. It applies to
+every path that produces a review: `meeting record`, `meeting analyze`, and
+meetings finished through `serve`.
+
+Sortformer resolves **up to four** speakers and has **no speaker-count input**,
+so **Expected speakers** has no effect while it is selected — not on the model,
+and not on the sparse-label merge that the count gates under sherpa (a setting
+that reached nothing must not go on relabelling the result). `obey-voice
+doctor` says so rather than pretending it applied. Switch back to `sherpa` and
+the count applies again. A missing CLI or GGUF fails at meeting start, not
+after the recording. An unrecognised value is a config error: the engine that
+labels a meeting never changes by typo.
 
 Background diarization never holds the transcript hostage: in the launcher,
 quitting Obey Voice cancels the enrichment only; in the CLI, leaving review

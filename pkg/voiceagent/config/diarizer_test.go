@@ -151,6 +151,79 @@ func TestDiagnoseMeetingDiarizer(t *testing.T) {
 	}
 }
 
+// doctor and 'models ensure' must agree: a row telling the user to fetch
+// weights the plan will never fetch is a permanent, unfixable FAIL.
+func TestDiagnoseAndEnsureAgreeOnWhenSortformerIsNeeded(t *testing.T) {
+	tests := []struct {
+		name    string
+		speaker bool
+		meeting bool
+		live    bool
+		want    bool // doctor reports AND models ensure plans
+	}{
+		{name: "speaker on, meetings on", speaker: true, meeting: true, want: true},
+		{name: "speaker on, meetings off", speaker: true, meeting: false, live: true, want: false},
+		{name: "speaker off entirely", speaker: false, meeting: false, live: false, want: false},
+	}
+
+	assetID := SortformerManifestAsset().ID
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := sortformerConfig(DiarizerSortformer)
+			cfg.Speaker.Enabled = tt.speaker
+			cfg.Speaker.Meeting.Enabled = tt.meeting
+			cfg.Speaker.Live.Enabled = tt.live
+
+			// An empty models dir: the GGUF is missing in every combination, so
+			// the only thing that varies is whether either surface asks for it.
+			reported := false
+			for _, d := range Diagnose(cfg, t.TempDir(), fakeDeviceCLI(t, gpuDeviceList)) {
+				if d.Name == "sortformer-diarizer" {
+					reported = true
+					if d.Severity != SeverityError {
+						t.Fatalf("expected the missing GGUF to be an error, got %+v", d)
+					}
+				}
+			}
+
+			m, err := ManifestFor(cfg, DefaultAssetRequest(cfg))
+			if err != nil {
+				t.Fatalf("ManifestFor() error = %v", err)
+			}
+			planned := false
+			for _, a := range m.Assets {
+				if a.ID == assetID {
+					planned = true
+				}
+			}
+
+			if reported != tt.want || planned != tt.want {
+				t.Fatalf("doctor reports = %v, models ensure plans = %v, want both %v",
+					reported, planned, tt.want)
+			}
+		})
+	}
+}
+
+// The claim is protected wider than it is planned — deliberately, per
+// required_claims.go: turning meetings off must not make 139 MB of already
+// downloaded weights "unused" and offer them to 'models clean'.
+func TestSortformerGGUFStaysClaimedWhenMeetingsAreOff(t *testing.T) {
+	cfg := sortformerConfig(DiarizerSortformer)
+	cfg.Speaker.Meeting.Enabled = false
+	modelsDir := t.TempDir()
+
+	want := SortformerDiarizerAsset().ModelPath(modelsDir)
+	for _, claim := range speakerConfigClaims(cfg, modelsDir) {
+		for _, own := range claim.own {
+			if own == want {
+				return
+			}
+		}
+	}
+	t.Fatal("the sortformer GGUF lost its claim when meetings were switched off")
+}
+
 func TestDiagnoseDefaultDiarizerNeverMentionsSortformer(t *testing.T) {
 	cfg := sortformerConfig("")
 	for _, d := range Diagnose(cfg, t.TempDir(), failLookPath) {

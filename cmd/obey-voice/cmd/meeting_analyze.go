@@ -37,7 +37,8 @@ Example (YouTube multi-voice fixture, shared cache):
 Notes:
   - Uses whichever engine speaker.meeting.diarizer selects: the managed
     pyannote + NeMo TitaNet models by default, or Sortformer through the
-    transcribe.cpp CLI, which ignores --speakers.
+    transcribe.cpp CLI, which resolves its own speaker count so --speakers
+    has no effect under it.
   - Speaker labels are anonymous clusters (speaker-1, speaker-2, ...).`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
@@ -83,12 +84,7 @@ Notes:
 			// Re-analysis reads the same speaker.meeting.diarizer selection the
 			// live recorder does, so a bundle analyzed later is labeled by the
 			// engine the install is configured for.
-			diarizer, err := meetingDiarizer(cmd.Context(), &cfg)
-			if err != nil {
-				_ = engine.Close()
-				return err
-			}
-			analyzer, err := speaker.NewAnalyzerWithDiarizer(sp, engine, diarizer)
+			analyzer, err := meetingAnalyzer(cmd.Context(), &cfg, sp, engine)
 			if err != nil {
 				_ = engine.Close()
 				return err

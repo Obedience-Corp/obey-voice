@@ -10,12 +10,14 @@ import (
 )
 
 // recordingDiarizer stands in for an injected review engine and records what
-// the analyzer handed it.
+// the analyzer handed it. fixedCount makes it declare FixedSpeakerCount, the
+// way SortformerDiarizer does.
 type recordingDiarizer struct {
 	calls       int
 	numSpeakers int
 	timeline    Timeline
 	err         error
+	fixedCount  bool
 }
 
 func (d *recordingDiarizer) Diarize(_ context.Context, _ []float32, numSpeakers int) (Timeline, error) {
@@ -23,6 +25,8 @@ func (d *recordingDiarizer) Diarize(_ context.Context, _ []float32, numSpeakers 
 	d.numSpeakers = numSpeakers
 	return d.timeline, d.err
 }
+
+func (d *recordingDiarizer) SpeakerCountIsFixed() bool { return d.fixedCount }
 
 func meetingConfigWithDiarizer(diarizer string) Config {
 	cfg := Config{Enabled: true}
@@ -71,6 +75,81 @@ func TestMeetingDiarizerConfig(t *testing.T) {
 				t.Fatalf("MeetingDiarizer() = %q, want %q", got, tt.resolved)
 			}
 		})
+	}
+}
+
+// sparseTimeline has one dominant label and one span far under the merge floors
+// (2 s / 1% of speech mass), so MergeSparseLabels visibly renames it.
+func sparseTimeline() Timeline {
+	return Timeline{Observations: []Observation{
+		{SegmentID: "a", StartMS: 0, EndMS: 300000, Label: "speaker-1", State: StateStable, Source: SourceRecording},
+		{SegmentID: "b", StartMS: 300000, EndMS: 300500, Label: "speaker-2", State: StateStable, Source: SourceRecording},
+	}}
+}
+
+// Expected speakers gates the sparse-label merge for a clusterer it can steer,
+// and must reach nothing at all for a diarizer that resolves its own count —
+// otherwise "the setting is ignored" would be false, and a count the model
+// never saw would still be renaming observations.
+func TestExpectedSpeakersOnlySteersASteerableDiarizer(t *testing.T) {
+	tests := []struct {
+		name        string
+		fixedCount  bool
+		numSpeakers int
+		wantLabels  []string
+	}{
+		{
+			name:        "steerable diarizer, auto: sparse labels merge as before",
+			numSpeakers: 0, wantLabels: []string{"speaker-1"},
+		},
+		{
+			name:        "steerable diarizer, fixed count: merge is skipped as before",
+			numSpeakers: 2, wantLabels: []string{"speaker-1", "speaker-2"},
+		},
+		{
+			name:       "fixed-count diarizer, auto: no merge, nothing to un-split",
+			fixedCount: true, numSpeakers: 0, wantLabels: []string{"speaker-1", "speaker-2"},
+		},
+		{
+			name:       "fixed-count diarizer, a count it never saw: same result",
+			fixedCount: true, numSpeakers: 3, wantLabels: []string{"speaker-1", "speaker-2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := meetingConfigWithDiarizer("")
+			cfg.Meeting.NumSpeakers = tt.numSpeakers
+			diarizer := &recordingDiarizer{timeline: sparseTimeline(), fixedCount: tt.fixedCount}
+
+			analyzer, err := NewAnalyzerWithDiarizer(cfg, &FakeEngine{}, diarizer)
+			if err != nil {
+				t.Fatalf("NewAnalyzerWithDiarizer() error = %v", err)
+			}
+			defer func() { _ = analyzer.Close() }()
+
+			timeline, err := analyzer.Finalize(context.Background(), make([]float32, 16000))
+			if err != nil {
+				t.Fatalf("Finalize() error = %v", err)
+			}
+			got := SortedSpeakerLabels(timeline)
+			if strings.Join(got, ",") != strings.Join(tt.wantLabels, ",") {
+				t.Fatalf("labels = %v, want %v", got, tt.wantLabels)
+			}
+		})
+	}
+}
+
+// The claim the doctor and docs make rests on this: the shipped Sortformer
+// diarizer really does declare its count fixed.
+func TestSortformerDeclaresAFixedSpeakerCount(t *testing.T) {
+	var d Diarizer = &SortformerDiarizer{}
+	if !speakerCountIsFixed(d) {
+		t.Fatal("SortformerDiarizer must declare FixedSpeakerCount; expected speakers would otherwise still gate the merge")
+	}
+	// The sherpa engine keeps today's behaviour: steerable.
+	if speakerCountIsFixed(&FakeEngine{}) {
+		t.Fatal("an engine without the interface must stay steerable")
 	}
 }
 

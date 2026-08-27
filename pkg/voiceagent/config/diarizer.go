@@ -66,6 +66,13 @@ func diagnoseMeetingDiarizer(cfg *Config, modelsDir string, lookPath func(string
 	if selected != DiarizerSortformer {
 		return nil
 	}
+	// Report only where the diarizer can actually run — the same gate
+	// ManifestFor uses to plan the GGUF. Checking the key alone would fail an
+	// install with meetings switched off, telling it to run a 'models ensure'
+	// that (correctly) plans nothing, for a path that is never constructed.
+	if !meetingDiarizationActive(cfg) {
+		return nil
+	}
 
 	asset := SortformerDiarizerAsset()
 	diags := []Diagnostic{diagnoseTranscribeCLI(transcribeCLICheck{
@@ -79,15 +86,26 @@ func diagnoseMeetingDiarizer(cfg *Config, modelsDir string, lookPath func(string
 	}, lookPath)}
 
 	// Sortformer takes no speaker count. Saying so beats silently ignoring a
-	// setting the user deliberately changed.
+	// setting the user deliberately changed. The count reaches nothing under it
+	// — not the model, and not the sparse-label merge, which the analyzer skips
+	// for a diarizer that resolves its own count — so this is a notice, and the
+	// remediation must not steer anyone into changing labels to "match".
 	if cfg.Speaker.Meeting.NumSpeakers > 0 {
 		diags = append(diags, Diagnostic{
 			Name:     "sortformer-expected-speakers",
 			Severity: SeverityWarn,
-			Detail: fmt.Sprintf("expected speakers is %d, but Sortformer has no speaker-count input; it resolves up to %d on its own",
+			Detail: fmt.Sprintf("expected speakers is %d, but Sortformer has no speaker-count input; it resolves up to %d on its own, and the setting changes nothing while it is selected",
 				cfg.Speaker.Meeting.NumSpeakers, SortformerMaxSpeakers),
-			Remediation: "set speaker.meeting.num_speakers 0 to match what runs, or keep it for a switch back to the sherpa diarizer",
+			Remediation: "nothing to do unless you switch speaker.meeting.diarizer back to " + DiarizerSherpa + ", where the count applies again",
 		})
 	}
 	return diags
+}
+
+// meetingDiarizationActive reports whether the offline review pass can run at
+// all. It mirrors ManifestFor's speaker gate (DefaultAssetRequest keys
+// NeedSpeaker off speaker.enabled; the meeting assets off the meeting toggle)
+// so doctor never asks for weights the plan will not fetch.
+func meetingDiarizationActive(cfg *Config) bool {
+	return cfg != nil && cfg.Speaker.Enabled && cfg.Speaker.Meeting.Enabled
 }

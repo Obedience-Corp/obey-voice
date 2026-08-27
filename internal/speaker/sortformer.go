@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -34,6 +35,9 @@ const (
 	// provider there is no CPU refusal: Sortformer on CPU is still 2.6x the
 	// sherpa review path it replaces (T3).
 	sortformerBackend = "auto"
+	// sortformerWaitDelay is how long a cancelled run may go on holding its
+	// output pipes before the process is killed outright.
+	sortformerWaitDelay = 5 * time.Second
 )
 
 // SortformerOptions is a resolved transcribe.cpp diarizer invocation.
@@ -99,6 +103,13 @@ func NewSortformerDiarizer(ctx context.Context, opts SortformerOptions) (*Sortfo
 	return &SortformerDiarizer{binary: binaryPath, modelPath: modelPath, modelRev: modelRev}, nil
 }
 
+// SpeakerCountIsFixed implements FixedSpeakerCount: the count is the model's,
+// capped at config.SortformerMaxSpeakers, and nothing the caller sets reaches
+// it. This is what keeps speaker.meeting.num_speakers from steering the
+// sparse-label merge behind the user's back — and it matches what the T3b gate
+// measured, which attributed raw Sortformer spans with no merge pass.
+func (d *SortformerDiarizer) SpeakerCountIsFixed() bool { return true }
+
 // Diarize writes the recording to a temp 16 kHz wav — the only rate the CLI
 // accepts — and reads speaker spans back from its batch JSONL. numSpeakers is
 // ignored: Sortformer resolves up to config.SortformerMaxSpeakers on its own
@@ -135,6 +146,10 @@ func (d *SortformerDiarizer) Diarize(ctx context.Context, samples []float32, _ i
 		"--batch-jsonl",
 	)
 	cmd.Env = append(os.Environ(), sortformerPresetEnv+"="+sortformerPreset)
+	// Without WaitDelay, cancellation only returns once the child's stdout is
+	// closed — a grandchild holding the pipe (a wrapper script that does not
+	// exec) would keep a skipped review running after Ctrl+C.
+	cmd.WaitDelay = sortformerWaitDelay
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
