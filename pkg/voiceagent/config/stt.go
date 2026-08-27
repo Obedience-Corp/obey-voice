@@ -78,6 +78,14 @@ var sttProviderModes = map[string][]string{
 	STTProviderTranscribeCPP: {STTModeOffline},
 }
 
+// STTModes lists the stt_mode values a normalized provider accepts, in the
+// order this build prefers them: the first is what a picker selects when the
+// user has expressed no preference. Empty for an unknown provider.
+func STTModes(provider string) []string {
+	modes := sttProviderModes[strings.ToLower(strings.TrimSpace(provider))]
+	return slices.Clone(modes)
+}
+
 // sttModeLockedAliases are compound stt_provider aliases that already encode a
 // mode; a conflicting stt_mode is a config error rather than a silent override.
 var sttModeLockedAliases = map[string]bool{

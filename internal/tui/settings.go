@@ -26,6 +26,7 @@ const (
 	sectionQwen
 	sectionVoice
 	sectionLanguage
+	sectionSTT
 	sectionSpeakers
 	sectionInput
 	sectionOutput
@@ -49,6 +50,7 @@ type settingsModel struct {
 	toolItems      []string
 	ttsItems       []ttsSettingItem
 	qwenItems      []qwenOptionItem
+	sttItems       []sttOptionItem
 	voiceItems     []tts.Voice
 	languageItems  []string
 	inputItems     []string
@@ -73,7 +75,11 @@ type settingsModel struct {
 	ensureTTSAssets func(ctx context.Context, cfg *config.Config, onProgress func(name string, pct float64)) error
 	newTTSProvider  func(*config.Config) (tts.Provider, func(), error)
 	saveConfig      func(string, any) error
-	message         string
+	// lookPath resolves external binaries for the recognizer rows; nil uses
+	// exec.LookPath. Tests inject a fake so a picker never depends on what
+	// happens to be installed on the machine running them.
+	lookPath func(string) (string, error)
+	message  string
 
 	// edit is the inline value editor (speech computer address / token). Only
 	// the Qwen tab opens it today; while it is active it owns every key.
@@ -111,6 +117,7 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 	m.buildQwenItems()
 	m.buildVoiceItems()
 	m.buildLanguageItems()
+	m.buildSTTItems()
 	m.inputItems = []string{""}
 	m.outputItems = []string{""}
 	return m
@@ -586,6 +593,8 @@ func (m *settingsModel) currentListLen() int {
 		return len(m.voiceItems)
 	case sectionLanguage:
 		return len(m.languageItems)
+	case sectionSTT:
+		return len(m.sttItems)
 	case sectionInput:
 		return len(m.inputItems)
 	case sectionOutput:
@@ -683,6 +692,8 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 		}
 	case sectionQwen:
 		return m.selectQwenItem()
+	case sectionSTT:
+		return m.selectSTTItem()
 	case sectionVoice:
 		if m.cursor < len(m.voiceItems) {
 			voice := m.voiceItems[m.cursor]

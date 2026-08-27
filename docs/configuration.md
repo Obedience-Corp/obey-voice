@@ -231,6 +231,12 @@ Say hello to the user.
 
 The preferred STT schema is `stt_provider` + `stt_mode` (e.g. `stt_provider: sherpa` with `stt_mode: streaming`). The legacy compound aliases (`sherpa-streaming`, `sherpa-offline`) still work with `stt_mode` unset and are never rewritten; combining a compound alias with a conflicting `stt_mode` is a config error.
 
+**Settings → STT** writes this schema directly: picking a recognizer stores the
+canonical `stt_provider` plus its `stt_mode`, never a compound alias, and keeps
+the mode you already had when the recognizer still supports it. A change takes
+effect on the next conversation — the running one keeps the recognizer it
+started with.
+
 Use `obey-voice config migrate --dry-run` to preview the explicit
 `stt_provider`/`stt_mode` values that would preserve the current STT behavior.
 Dry runs report the config path and proposed values without writing files. Use
