@@ -50,3 +50,4 @@ runs/
 
 # T3 diarization A/B raw outputs (regenerate with scripts/diar-ab-sortformer.sh)
 .diar-ab-raw/
+__pycache__/

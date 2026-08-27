@@ -1,0 +1,186 @@
+{
+  "schema": "obey-voice.benchmark.tts-rtf.v1",
+  "id": "A1-audio8-tts-0.1b-onnx-int8-cpu",
+  "slice": "explore WI-d6c086 step MEASURE - Audio8-TTS 0.1B ONNX INT8 on Apple Silicon CPU",
+  "measured_at": "2026-08-27T00:40:00Z",
+  "machine": {
+    "model_id": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "os": "macOS 26.5",
+    "power": "AC; no thermal-throttle instrumentation; other user processes not quiesced"
+  },
+  "backend": {
+    "requested": "CPUExecutionProvider",
+    "actual": "CPUExecutionProvider",
+    "onnxruntime": "1.24.4 (bench venv; NOT the 1.27.0 obey-voice links via sherpa-onnx-go)",
+    "note": "CoreML EP not attempted"
+  },
+  "model": {
+    "repo": "Audio8/audio8-TTS-0.1B-ONNX-INT8",
+    "revision": "e1c07e8a3725077e3ab80ad8578e5787e8a23c6c",
+    "base_model": "Audio8/Audio8-TTS-Preview-0.1b",
+    "fingerprint": "audio8-tts-preview-0.1b-int8-v1",
+    "graphs": [
+      "slow_ar_int8.onnx (4.6M + 127M data)",
+      "fast_ar_int8.onnx (499K + 35M data)",
+      "codec_decoder_fp16.onnx (580K + 249M data)"
+    ],
+    "on_disk_gb": 1.6,
+    "sample_rate": 44100,
+    "codec_hop_length": 2048,
+    "codec_frame_rate_hz": 21.53,
+    "num_codebooks": 10,
+    "reference_voice": "packaged reference_codes.npy (110 frames, Chinese reference text)"
+  },
+  "harness": {
+    "driver": "custom - written for this export",
+    "why": "the vendor's published onnx_runtime/ code CANNOT run these graphs: it expects a transformer slow model with per-layer cache_key_N inputs, while the published slow graph is a mamba/SSM hybrid taking cache_keys/cache_values/conv_states/ssm_states, and it does not handle slow_logits_layout=relative_semantic_then_eos",
+    "location": "scripts/audio8_bench/ (this repo) - README.md there maps each command to a section of this artifact",
+    "vendor_helpers": "arktts_runtime tokenizer/prompt code from github.com/Audio8-AI/Audio8_TTS @ c856e38 (Apache-2.0); only Encode/prompt-build and _sample are reused, no graph driving",
+    "python_env": "Python 3.12.13, scripts/audio8_bench/requirements.txt (numpy 2.4.3, onnxruntime 1.24.4, soundfile 0.13.1, tokenizers 0.23.1)",
+    "reproduced": "2026-08-27, vendored scripts re-run against the pinned snapshot: identical frame counts and audio durations, RTF 0.75x/1.16x vs 0.68x/1.09x recorded (run-to-run machine noise; machine not quiesced)",
+    "protocol": "N7 protocol - same two phrases as TestKokoroRealtimeFactor, warmup then median of 3",
+    "rtf_definition": "audio_seconds / total_synth_seconds (higher is faster; matches N7/F7)"
+  },
+  "baseline_same_session": {
+    "provider": "kokoro",
+    "voice": "af_heart",
+    "speed": 0.95,
+    "command": "go test -tags integration ./pkg/voiceagent/tts/ -run TestKokoroRealtimeFactor",
+    "one_sentence": {
+      "synth_s": 1.0138,
+      "audio_s": 1.186,
+      "rtf": 1.17
+    },
+    "two_sentences": {
+      "synth_s": 2.0779,
+      "audio_s": 2.749,
+      "rtf": 1.32
+    },
+    "note": "re-measured 2026-08-27, NOT quoted from N7 (which printed 1.32x/1.38x on a quieter machine)"
+  },
+  "results": {
+    "best_config_ar5_codec10": {
+      "ar_threads": 5,
+      "codec_threads": 10,
+      "one_sentence": {
+        "prompt_tokens": 169,
+        "frames": 32,
+        "prefill_s": 1.2434,
+        "decode_s": 0.5045,
+        "codec_s": 0.4173,
+        "first_frame_s": 0.0078,
+        "total_s": 2.1704,
+        "audio_s": 1.4861,
+        "rtf": 0.6847
+      },
+      "two_sentences": {
+        "prompt_tokens": 176,
+        "frames": 89,
+        "prefill_s": 1.2259,
+        "decode_s": 1.3135,
+        "codec_s": 1.1967,
+        "first_frame_s": 0.0076,
+        "total_s": 3.7211,
+        "audio_s": 4.1332,
+        "rtf": 1.0914
+      },
+      "cold_start_s": 1.136,
+      "peak_rss_mb": 2025
+    },
+    "thread_sweep_uniform": {
+      "t5": {
+        "one_sentence_rtf": 0.702,
+        "codec_s": 0.546
+      },
+      "t8": {
+        "one_sentence_rtf": 0.679,
+        "codec_s": 0.424
+      },
+      "t12": {
+        "one_sentence_rtf": 0.609,
+        "codec_s": 0.442
+      }
+    },
+    "prefix_cache_experiment": {
+      "constant_head_tokens": 153,
+      "detail": "43 system text tokens + 110 reference-voice frames, identical every turn",
+      "one_time_prime_ms": 1042,
+      "per_token_ms": 6.81,
+      "warm_prefill_one_sentence_ms": 111.6,
+      "warm_prefill_two_sentences_ms": 161.5,
+      "saving_per_utterance_ms": 1039
+    },
+    "codec_scaling": {
+      "note": "codec decode is perfectly LINEAR in frames with no fixed overhead - ~12.3 ms/frame across 6..140 frames",
+      "ms_per_frame": {
+        "6": 12.29,
+        "12": 11.83,
+        "24": 11.84,
+        "32": 12.85,
+        "64": 12.38,
+        "89": 12.6,
+        "140": 12.82
+      },
+      "consequence": "the vendor's stream() re-decodes a 128-frame context window every 12 frames, so it does ~5x more codec work than necessary. Context size is the critical streaming knob."
+    },
+    "cached_and_pipelined_MEASURED": {
+      "what": "prefix cache (prime the 153-token constant head once per process) + codec decoded on a worker thread concurrently with the AR loop",
+      "config": "AR 5 threads, codec 10 threads, chunk_frames=12, stream context=0",
+      "one_sentence": {
+        "prefill_ms": 107,
+        "ar_ms": 550,
+        "codec_busy_ms": 637,
+        "total_ms": 997,
+        "audio_s": 1.486,
+        "rtf": 1.49,
+        "ttfa_ms": 549
+      },
+      "two_sentences": {
+        "prefill_ms": 155,
+        "ar_ms": 1547,
+        "codec_busy_ms": 1712,
+        "total_ms": 2031,
+        "audio_s": 4.133,
+        "rtf": 2.03,
+        "ttfa_ms": 571
+      },
+      "context_sweep_rtf": {
+        "one_sentence": {
+          "ctx0": 1.49,
+          "ctx8": 1.09,
+          "ctx128": 1.09
+        },
+        "two_sentences": {
+          "ctx0": 2.03,
+          "ctx8": 1.52,
+          "ctx128": 0.67
+        }
+      },
+      "tuning_sweep": "AR/codec thread splits (4/4, 5/5, 6/6, 4/8) and chunk_frames=24 were all worse. chunk=24 roughly doubles TTFA (~900 ms vs ~550) without improving total.",
+      "caveat": "codec_busy exceeds AR time in every configuration, so the codec is the bottleneck even at ctx=0, and the two threads contend for CPU (AR slows from 504 ms sequential to 550 ms pipelined)."
+    }
+  },
+  "verdict": {
+    "as_shipped": "FAILS the N7 bar - 2.17 s for one sentence against a >1.8 s loses rule; RTF 0.68x, slower than realtime",
+    "cached_and_pipelined_MEASURED": "PASSES the bar - 997 ms for one sentence, RTF 1.49x; two sentences 2031 ms, RTF 2.03x",
+    "vs_kokoro_same_session": "wall-clock is a near tie (997 vs 1014 ms one sentence; 2031 vs 2078 ms two sentences) while RTF is better (1.49x vs 1.17x, 2.03x vs 1.32x) because Audio8 produces more audio for the same text",
+    "batching_threshold_2_3x": "NOT cleared in any measured configuration. Closest is 2.03x on two sentences. D009 and D010 stand.",
+    "ttfa": "~550 ms to first audio via the streaming path, roughly constant across utterance length. Kokoro's TTFA was NOT measured, so no comparison is claimed.",
+    "prediction_misses": "two, both recorded: pre-measurement arithmetic said 1.72x (counted only the AR loop, ignored prefill and codec); the post-measurement projection said ~3.2x cached+pipelined (assumed perfect overlap, ignored CPU contention and chunk overhead). Measured is 1.49x/2.03x."
+  },
+  "cost_decomposition_one_sentence_ms": {
+    "prefill": 1243,
+    "ar_decode": 504,
+    "codec_decode": 417,
+    "comment": "AR decode alone is 504 ms for 1.486 s of audio = 2.95x realtime. The AR loop is FAST. Prefill and codec are what fail the bar, and prefill is the cacheable one."
+  },
+  "open": [
+    "English quality unjudged - the packaged reference voice is Chinese; no English reference was registered. run_bench.py/pipelined.py write ear-check WAVs to the working directory",
+    "CoreML EP untested for the codec, which is the bottleneck",
+    "peak RSS 2.0 GB measured vs ~0.6 GB claimed on the model card",
+    "measured against onnxruntime 1.24.4; obey-voice links 1.27.0 via sherpa-onnx-go",
+    "ctx=0 chunking was not ear-checked for boundary artifacts - it is the fastest and the least safe",
+    "prefix cache is per-process and per-reference-voice; switching voices re-pays the ~1.0 s prime"
+  ]
+}
