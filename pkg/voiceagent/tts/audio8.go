@@ -76,6 +76,12 @@ func NewAudio8TTS(opts Audio8Options) (*Audio8TTS, error) {
 	if opts.ModelDir == "" {
 		return nil, fmt.Errorf("audio8: model dir is required")
 	}
+	if opts.Tokenizer == nil {
+		// Refuse before touching the manifest or the ~1.6 GB of graphs: a
+		// tokenizer-less provider can never synthesize, so paying the model
+		// load only to reject it afterwards would waste seconds and memory.
+		return nil, errAudio8NoTokenizer
+	}
 	man, err := loadAudio8Manifest(opts.ModelDir)
 	if err != nil {
 		return nil, err

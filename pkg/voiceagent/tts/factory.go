@@ -18,8 +18,9 @@ var providerSpecs = []ProviderSpec{
 	{Name: "kokoro", Description: "Local Kokoro TTS"},
 	{Name: "qwen3-tts", Description: "Qwen3-TTS preset voices (native worker preferred; managed Python legacy)"},
 	// audio8 is deliberately absent until a tokenizer is wired. NewProvider
-	// still constructs it for anyone who selects it explicitly, and fails with
-	// errAudio8NoTokenizer rather than advertising a provider that cannot speak.
+	// still recognizes it for anyone who selects it explicitly, and fails with
+	// errAudio8NoTokenizer — before any model loading — rather than
+	// advertising a provider that cannot speak.
 }
 
 // Providers returns the list of implemented TTS providers.
@@ -48,10 +49,6 @@ func NewProvider(cfg *config.Config) (Provider, func(), error) {
 		provider, err := NewAudio8TTS(Audio8Options{ModelDir: audio8ModelDir(cfg)})
 		if err != nil {
 			return nil, nil, err
-		}
-		if !provider.Available() {
-			provider.Delete()
-			return nil, nil, errAudio8NoTokenizer
 		}
 		return provider, provider.Delete, nil
 	default:
