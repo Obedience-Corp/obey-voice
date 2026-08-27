@@ -1,0 +1,1048 @@
+{
+  "schema": "obey-voice.probe.attribute-gap.v1",
+  "artifact": "T3b-attribute-gap-2026-08-27.json",
+  "date": "2026-08-27",
+  "follows": "docs/benchmarks/T3-diar-ab-sortformer-2026-08-26.json",
+  "question": "When Sortformer's speech spans gap at pauses, does meeting.AttributeTranscript leave transcript turns inside those gaps unlabelled, or does its overlap rule absorb them?",
+  "answer_in_one_line": "On this fixture: absorbed. Every one of the 25 real transcript turns keeps at least 120 ms of overlap with some Sortformer span, so all 25 are labelled and every label is identical to the sherpa control \u2014 but there is no nearest-span fallback, so a turn that falls entirely inside a gap would be dropped to unknown/rejected.",
+  "rule_as_written": {
+    "file": "internal/meeting/speakers.go",
+    "func": "AttributeTranscript",
+    "lines": "123-158",
+    "file_sha256": "625de03e275c21cb5a15b4344fb033f98597ff18fe5672a8a34fb1ae3435c8f2",
+    "repo_commit": "2e44ef48f8effe122a0ff0873ed5b1de7127764a",
+    "summary": "Pure greatest-positive-overlap, no threshold, no nearest-span fallback, no tolerance window. For each transcript segment it scans every timeline observation and computes min(segEnd,obsEnd)-max(segStart,obsStart); overlap<=0 is skipped entirely (l.131-134). The strictly-largest overlap wins (l.135-137); an exact tie for the maximum, or a winner whose State is StateOverlap, yields speaker=unknown with State=overlap (l.145-151). If no observation overlaps at all (best<0, l.141-143) the segment keeps its initialised value: Speaker=speaker.LabelUnknown, State=speaker.StateRejected, Confidence=0 \u2014 i.e. it is dropped as unlabelled, never attached to the nearest span.",
+    "threshold_ms": 0,
+    "nearest_span_fallback": false,
+    "unlabelled_representation": {
+      "speaker": "unknown",
+      "state": "rejected"
+    }
+  },
+  "method": {
+    "read_only": "projects/obey-voice was never modified; the repo was rsync-copied to a scratchpad and the probe programs were added to the copy (internal/meeting/speakers.go sha256 identical in both).",
+    "transcript_segments": "Produced by the shipped WAV->transcript path, not synthesised: cmd/obey-voice/cmd/meeting_serve_pipeline.go newReplaySource + replayTranscribe driving the configured STT provider (parakeet, offline mode) over the fixture, with utterances appended through the production internal/meeting/log.Writer.OnUtterance. That writer is what stamps StartMS/EndMS (log.go:274-308: EndMS = utterance completion offset into the recording, StartMS = EndMS - 350 ms/word floored at 800 ms, clamped forward to the previous utterance end) and its records are exactly what internal/meeting.logAnalysis feeds AttributeTranscript in production.",
+    "sherpa_timeline": "obey-voice meeting analyze <fixture> --speakers 2 --json (GOBIN binary, same command as T3): 6 spans, coverage 84560 ms.",
+    "sortformer_timeline": "TRANSCRIBE_SORTFORMER_STREAM_PRESET=very_high_latency transcribe-cli -m diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf --backend metal -q --batch files.txt --batch-jsonl (pinned v0.2.2 CLI): 25 spans, coverage 70240 ms \u2014 reproduces T3's very_high_latency/metal run exactly.",
+    "sortformer_to_timeline_mapping": "Each JSONL span became a speaker.Observation with Label=speaker-<speaker_id>, State=stable, Source=recording, Confidence=0 \u2014 the same shape SherpaEngine.Diarize emits, so the only variable between the two runs is span geometry.",
+    "attribution": "The real meeting.AttributeTranscript was called on both timelines (scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_attr_test.go); no logic was reimplemented.",
+    "fixture": "~/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav (90014 ms, sha256 ed57895c...)"
+  },
+  "inputs": {
+    "transcript_turns": 25,
+    "transcript_total_ms": 66800,
+    "transcript_frames_ms": 66800,
+    "sherpa_spans": 6,
+    "sherpa_coverage_ms": 84560,
+    "sortformer_spans": 25,
+    "sortformer_coverage_ms": 70240,
+    "sherpa_speech_sortformer_silent_ms": 15070,
+    "sortformer_speech_sherpa_silent_ms": 750
+  },
+  "results": {
+    "sherpa": {
+      "labelled_segments": 25,
+      "labelled_ms": 66800,
+      "unlabelled_segments": 0,
+      "unlabelled_ms": 0,
+      "overlap_state_segments": 0
+    },
+    "sortformer": {
+      "labelled_segments": 25,
+      "labelled_ms": 66800,
+      "unlabelled_segments": 0,
+      "unlabelled_ms": 0,
+      "overlap_state_segments": 0
+    },
+    "label_differences_between_timelines": 0,
+    "label_differences_ms": 0,
+    "the_15070_ms_gap_region": {
+      "definition": "audio sherpa places inside a span and Sortformer calls silence (10 ms frame grid)",
+      "total_ms": 15070,
+      "transcript_time_inside_it_ms": 9860,
+      "disposition": "absorbed by the greatest-overlap rule \u2014 0 ms of it becomes an unlabelled turn and 0 ms changes speaker, because every turn that reaches into the region also overlaps at least one Sortformer span and is labelled from that span",
+      "transcript_time_inside_sortformer_coverage_ms": 54810,
+      "transcript_time_outside_both_timelines_ms": 2130
+    },
+    "segment_time_inside_sortformer_gaps_ms": 11990,
+    "segment_time_inside_sortformer_gaps_pct": 17.9,
+    "min_winning_overlap_sortformer_ms": 120,
+    "min_winning_overlap_sherpa_ms": 138,
+    "margin_note": "the thinnest turn (utterance-7, 800 ms) is held by a 120 ms overlap under Sortformer vs 138 ms under sherpa; there is no threshold, so 1 ms would still be enough"
+  },
+  "per_segment": [
+    {
+      "id": "utterance-1",
+      "start_ms": 3600,
+      "end_ms": 5700,
+      "duration_ms": 2100,
+      "text": "And we don't have a ton.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 2100,
+      "best_overlap_sortformer_ms": 1520,
+      "ms_inside_sortformer_gaps": 580
+    },
+    {
+      "id": "utterance-2",
+      "start_ms": 6350,
+      "end_ms": 8100,
+      "duration_ms": 1750,
+      "text": "Of items to get to.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 1750,
+      "best_overlap_sortformer_ms": 1170,
+      "ms_inside_sortformer_gaps": 480
+    },
+    {
+      "id": "utterance-3",
+      "start_ms": 8300,
+      "end_ms": 9100,
+      "duration_ms": 800,
+      "text": "Uh",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 800,
+      "best_overlap_sortformer_ms": 260,
+      "ms_inside_sortformer_gaps": 540
+    },
+    {
+      "id": "utterance-4",
+      "start_ms": 9100,
+      "end_ms": 13200,
+      "duration_ms": 4100,
+      "text": "And I might be able to do one that might be fun.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 4100,
+      "best_overlap_sortformer_ms": 3200,
+      "ms_inside_sortformer_gaps": 900
+    },
+    {
+      "id": "utterance-5",
+      "start_ms": 13200,
+      "end_ms": 15400,
+      "duration_ms": 2200,
+      "text": "We have a little bit of time.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 2200,
+      "best_overlap_sortformer_ms": 1520,
+      "ms_inside_sortformer_gaps": 680
+    },
+    {
+      "id": "utterance-6",
+      "start_ms": 17200,
+      "end_ms": 18600,
+      "duration_ms": 1400,
+      "text": "Um so corporate events.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 1400,
+      "best_overlap_sortformer_ms": 960,
+      "ms_inside_sortformer_gaps": 440
+    },
+    {
+      "id": "utterance-7",
+      "start_ms": 19400,
+      "end_ms": 20200,
+      "duration_ms": 800,
+      "text": "Uh",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 138,
+      "best_overlap_sortformer_ms": 120,
+      "ms_inside_sortformer_gaps": 680
+    },
+    {
+      "id": "utterance-8",
+      "start_ms": 22000,
+      "end_ms": 22800,
+      "duration_ms": 800,
+      "text": "Say",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 800,
+      "best_overlap_sortformer_ms": 160,
+      "ms_inside_sortformer_gaps": 640
+    },
+    {
+      "id": "utterance-9",
+      "start_ms": 22800,
+      "end_ms": 28900,
+      "duration_ms": 6100,
+      "text": "I think I saw a little, I put this in Slack and I saw a little bit of kind of noise around it.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 6100,
+      "best_overlap_sortformer_ms": 6020,
+      "ms_inside_sortformer_gaps": 80
+    },
+    {
+      "id": "utterance-10",
+      "start_ms": 28900,
+      "end_ms": 30400,
+      "duration_ms": 1500,
+      "text": "Yeah, I think it's a good idea",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 1500,
+      "best_overlap_sortformer_ms": 700,
+      "ms_inside_sortformer_gaps": 800
+    },
+    {
+      "id": "utterance-11",
+      "start_ms": 30900,
+      "end_ms": 31700,
+      "duration_ms": 800,
+      "text": "Um",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 800,
+      "best_overlap_sortformer_ms": 220,
+      "ms_inside_sortformer_gaps": 580
+    },
+    {
+      "id": "utterance-12",
+      "start_ms": 32450,
+      "end_ms": 33500,
+      "duration_ms": 1050,
+      "text": "You know, the",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 1050,
+      "best_overlap_sortformer_ms": 430,
+      "ms_inside_sortformer_gaps": 620
+    },
+    {
+      "id": "utterance-13",
+      "start_ms": 34550,
+      "end_ms": 39100,
+      "duration_ms": 4550,
+      "text": "The nutshell here is as we've kind of restructured and tried different things.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 4550,
+      "best_overlap_sortformer_ms": 3930,
+      "ms_inside_sortformer_gaps": 620
+    },
+    {
+      "id": "utterance-14",
+      "start_ms": 39100,
+      "end_ms": 44100,
+      "duration_ms": 5000,
+      "text": "the event support that we need isn't as nailed down as it needs to be.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 5000,
+      "best_overlap_sortformer_ms": 4400,
+      "ms_inside_sortformer_gaps": 600
+    },
+    {
+      "id": "utterance-15",
+      "start_ms": 45100,
+      "end_ms": 45900,
+      "duration_ms": 800,
+      "text": "Uh so",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 800,
+      "best_overlap_sortformer_ms": 800,
+      "ms_inside_sortformer_gaps": 0
+    },
+    {
+      "id": "utterance-16",
+      "start_ms": 48100,
+      "end_ms": 53700,
+      "duration_ms": 5600,
+      "text": "Current tactic that we're going with is go to market team, signs up and kind of",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 5600,
+      "best_overlap_sortformer_ms": 5600,
+      "ms_inside_sortformer_gaps": 0
+    },
+    {
+      "id": "utterance-17",
+      "start_ms": 53900,
+      "end_ms": 62300,
+      "duration_ms": 8400,
+      "text": "Sponsors that event. So you support as a PMM, your campaign manager does the campaigns for that event, et cetera, et cetera, et cetera.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 8400,
+      "best_overlap_sortformer_ms": 8400,
+      "ms_inside_sortformer_gaps": 0
+    },
+    {
+      "id": "utterance-18",
+      "start_ms": 63600,
+      "end_ms": 66400,
+      "duration_ms": 2800,
+      "text": "Uh I don't see anyone in the uh",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 2378,
+      "best_overlap_sortformer_ms": 2480,
+      "ms_inside_sortformer_gaps": 320
+    },
+    {
+      "id": "utterance-19",
+      "start_ms": 66550,
+      "end_ms": 70400,
+      "duration_ms": 3850,
+      "text": "Maybe there are comments in the issue. I don't see the",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 3663,
+      "best_overlap_sortformer_ms": 3520,
+      "ms_inside_sortformer_gaps": 330
+    },
+    {
+      "id": "utterance-20",
+      "start_ms": 71600,
+      "end_ms": 76500,
+      "duration_ms": 4900,
+      "text": "I thought we had in Slack sort of farmed each one of them out.",
+      "sherpa_speaker": "speaker-2",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-2",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 4261,
+      "best_overlap_sortformer_ms": 3600,
+      "ms_inside_sortformer_gaps": 1300
+    },
+    {
+      "id": "utterance-21",
+      "start_ms": 77000,
+      "end_ms": 77800,
+      "duration_ms": 800,
+      "text": "That's",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 769,
+      "best_overlap_sortformer_ms": 360,
+      "ms_inside_sortformer_gaps": 240
+    },
+    {
+      "id": "utterance-22",
+      "start_ms": 77800,
+      "end_ms": 80900,
+      "duration_ms": 3100,
+      "text": "So I guess that the next, so it looks like.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 2285,
+      "best_overlap_sortformer_ms": 2760,
+      "ms_inside_sortformer_gaps": 340
+    },
+    {
+      "id": "utterance-23",
+      "start_ms": 82700,
+      "end_ms": 83500,
+      "duration_ms": 800,
+      "text": "Hi.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 800,
+      "best_overlap_sortformer_ms": 420,
+      "ms_inside_sortformer_gaps": 380
+    },
+    {
+      "id": "utterance-24",
+      "start_ms": 86250,
+      "end_ms": 88000,
+      "duration_ms": 1750,
+      "text": "Some folks, it looks like",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 1750,
+      "best_overlap_sortformer_ms": 1350,
+      "ms_inside_sortformer_gaps": 400
+    },
+    {
+      "id": "utterance-25",
+      "start_ms": 88750,
+      "end_ms": 89800,
+      "duration_ms": 1050,
+      "text": "This looks good.",
+      "sherpa_speaker": "speaker-1",
+      "sherpa_state": "stable",
+      "sortformer_speaker": "speaker-1",
+      "sortformer_state": "stable",
+      "best_overlap_sherpa_ms": 1050,
+      "best_overlap_sortformer_ms": 610,
+      "ms_inside_sortformer_gaps": 440
+    }
+  ],
+  "timeline_geometry": {
+    "sortformer_inter_span_gaps": {
+      "count": 24,
+      "max_ms": 1760,
+      "sum_ms": 19120,
+      "count_ge_800ms": 13,
+      "gaps_ge_800ms": [
+        [
+          1520,
+          2800,
+          1280
+        ],
+        [
+          8560,
+          9360,
+          800
+        ],
+        [
+          18160,
+          18960,
+          800
+        ],
+        [
+          19520,
+          21280,
+          1760
+        ],
+        [
+          29600,
+          30640,
+          1040
+        ],
+        [
+          31120,
+          32240,
+          1120
+        ],
+        [
+          32880,
+          33680,
+          800
+        ],
+        [
+          38480,
+          39280,
+          800
+        ],
+        [
+          66080,
+          66880,
+          800
+        ],
+        [
+          71520,
+          72320,
+          800
+        ],
+        [
+          75920,
+          76800,
+          880
+        ],
+        [
+          80560,
+          82160,
+          1600
+        ],
+        [
+          84480,
+          85360,
+          880
+        ]
+      ]
+    },
+    "sherpa_inter_span_gaps": {
+      "count": 4,
+      "max_ms": 2110,
+      "sum_ms": 5434,
+      "gaps": [
+        [
+          19538,
+          21259,
+          1721
+        ],
+        [
+          65978,
+          66737,
+          759
+        ],
+        [
+          71395,
+          72239,
+          844
+        ],
+        [
+          80085,
+          82195,
+          2110
+        ]
+      ]
+    },
+    "exposure_note": "the shortest turn the writer can emit is 800 ms (log.estimatedSpeechDuration floor). 13 of Sortformer's 24 gaps are >=800 ms and the widest is 1760 ms, so an 800 ms turn whose estimated timestamps land wholly inside one of them would be dropped to unknown/rejected. Sherpa's coarse spans leave only 4 gaps (max 2110 ms), so the same failure exists there \u2014 it is rarer, not absent."
+  },
+  "timing_robustness_sweep": {
+    "why": "transcript timestamps are estimates (350 ms/word), so the real question is how much timestamp error the rule tolerates before Sortformer's finer gaps start dropping turns",
+    "method": "the same 25 real turns shifted -2000..+2000 ms in 100 ms steps, re-attributed through the shipped AttributeTranscript against both timelines",
+    "points": 41,
+    "points_where_sortformer_drops_more_than_sherpa": 14,
+    "max_excess_segments": 2,
+    "max_excess_ms": 1850,
+    "contiguous_no_excess_window_ms": [
+      -900,
+      200
+    ],
+    "all_differences_are_unknown_vs_labelled": true,
+    "no_wrong_speaker_at_any_shift": true,
+    "rows": [
+      {
+        "shift_ms": -2000,
+        "sherpa_unlabelled": 2,
+        "sherpa_unlabelled_ms": 1600,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-8",
+          "utterance-23"
+        ]
+      },
+      {
+        "shift_ms": -1900,
+        "sherpa_unlabelled": 2,
+        "sherpa_unlabelled_ms": 1600,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-8",
+          "utterance-23"
+        ]
+      },
+      {
+        "shift_ms": -1800,
+        "sherpa_unlabelled": 2,
+        "sherpa_unlabelled_ms": 1600,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-8",
+          "utterance-23"
+        ]
+      },
+      {
+        "shift_ms": -1700,
+        "sherpa_unlabelled": 2,
+        "sherpa_unlabelled_ms": 1600,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-8",
+          "utterance-23"
+        ]
+      },
+      {
+        "shift_ms": -1600,
+        "sherpa_unlabelled": 2,
+        "sherpa_unlabelled_ms": 1600,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-8",
+          "utterance-23"
+        ]
+      },
+      {
+        "shift_ms": -1500,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 800,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-23"
+        ]
+      },
+      {
+        "shift_ms": -1400,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 800,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-23"
+        ]
+      },
+      {
+        "shift_ms": -1300,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1850,
+        "excess_segments": 2,
+        "excess_ms": 1850,
+        "sortformer_unlabelled_ids": [
+          "utterance-11",
+          "utterance-12"
+        ]
+      },
+      {
+        "shift_ms": -1200,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 800,
+        "excess_segments": 1,
+        "excess_ms": 800,
+        "sortformer_unlabelled_ids": [
+          "utterance-11"
+        ]
+      },
+      {
+        "shift_ms": -1100,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 800,
+        "excess_segments": 1,
+        "excess_ms": 800,
+        "sortformer_unlabelled_ids": [
+          "utterance-11"
+        ]
+      },
+      {
+        "shift_ms": -1000,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 800,
+        "excess_segments": 1,
+        "excess_ms": 800,
+        "sortformer_unlabelled_ids": [
+          "utterance-21"
+        ]
+      },
+      {
+        "shift_ms": -900,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -800,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -700,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -600,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -500,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -400,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -300,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -200,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": -100,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": 0,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": 100,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 0,
+        "sortformer_unlabelled_ms": 0,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": []
+      },
+      {
+        "shift_ms": 200,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 800,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-7"
+        ]
+      },
+      {
+        "shift_ms": 300,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 1,
+        "excess_ms": 800,
+        "sortformer_unlabelled_ids": [
+          "utterance-7",
+          "utterance-11"
+        ]
+      },
+      {
+        "shift_ms": 400,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 1,
+        "excess_ms": 800,
+        "sortformer_unlabelled_ids": [
+          "utterance-7",
+          "utterance-11"
+        ]
+      },
+      {
+        "shift_ms": 500,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1600,
+        "excess_segments": 1,
+        "excess_ms": 800,
+        "sortformer_unlabelled_ids": [
+          "utterance-7",
+          "utterance-11"
+        ]
+      },
+      {
+        "shift_ms": 600,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 800,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-7"
+        ]
+      },
+      {
+        "shift_ms": 700,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1850,
+        "excess_segments": 1,
+        "excess_ms": 1050,
+        "sortformer_unlabelled_ids": [
+          "utterance-7",
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 800,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1850,
+        "excess_segments": 1,
+        "excess_ms": 1050,
+        "sortformer_unlabelled_ids": [
+          "utterance-7",
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 900,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1850,
+        "excess_segments": 1,
+        "excess_ms": 1050,
+        "sortformer_unlabelled_ids": [
+          "utterance-7",
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1000,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 800,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1850,
+        "excess_segments": 1,
+        "excess_ms": 1050,
+        "sortformer_unlabelled_ids": [
+          "utterance-7",
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1100,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 1,
+        "excess_ms": 1050,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1200,
+        "sherpa_unlabelled": 0,
+        "sherpa_unlabelled_ms": 0,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 1,
+        "excess_ms": 1050,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1300,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1400,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1500,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1600,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1700,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1800,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 2,
+        "sortformer_unlabelled_ms": 1850,
+        "excess_segments": 1,
+        "excess_ms": 800,
+        "sortformer_unlabelled_ids": [
+          "utterance-23",
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 1900,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      },
+      {
+        "shift_ms": 2000,
+        "sherpa_unlabelled": 1,
+        "sherpa_unlabelled_ms": 1050,
+        "sortformer_unlabelled": 1,
+        "sortformer_unlabelled_ms": 1050,
+        "excess_segments": 0,
+        "excess_ms": 0,
+        "sortformer_unlabelled_ids": [
+          "utterance-25"
+        ]
+      }
+    ]
+  },
+  "what_E5_would_need": [
+    "The rule is greatest-overlap with a zero threshold and no nearest-span fallback (speakers.go:131-143), so a Sortformer gap only costs a label when a transcript turn misses EVERY span. On this fixture that never happens: 11990 ms (17.9%) of transcript time sits inside Sortformer gaps and is absorbed, all 25 turns keep a label, and every label matches the sherpa control.",
+    "The margin is thin rather than structural: the worst-held turn survives on 120 ms of overlap, 13 of the 24 Sortformer gaps are at least as wide as the 800 ms minimum turn length, and the widest gap (1760 ms) exceeds it by 2x.",
+    "Timestamp error is the lever, not the diarizer: within -900..+200 ms of uniform shift Sortformer drops nothing sherpa does not; beyond that it drops up to 2 extra turns (1850 ms). Any E5 gate should state the timestamp-error budget it assumes.",
+    "Failures degrade to unknown/rejected, never to a wrong speaker name \u2014 at no shift in +/-2 s did the two timelines disagree on a named speaker.",
+    "Single fixture, 2 speakers, one interjection, one STT provider (parakeet offline). A 3-4 speaker meeting, an overlapped-speech regime, or a chattier turn distribution with many short back-channels would stress the gap case far harder and is unmeasured.",
+    "Nothing here evaluates diarization quality; it evaluates only whether the shipped attribution rule survives Sortformer's finer span geometry."
+  ],
+  "raw_files": {
+    "transcripts": "scratchpad/raw/transcripts.json",
+    "sherpa_timeline": "scratchpad/raw/sherpa.analyze.json",
+    "sortformer_timeline": "scratchpad/raw/sortformer-metal-vhl.jsonl",
+    "attribution_output": "scratchpad/raw/attributed.json",
+    "shift_sweep": "scratchpad/raw/shift.json",
+    "probe_programs": [
+      "scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_test.go",
+      "scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_attr_test.go",
+      "scratchpad/repo/cmd/obey-voice/cmd/zz_t3b_shift_test.go"
+    ]
+  }
+}
