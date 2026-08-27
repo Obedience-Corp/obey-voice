@@ -115,9 +115,9 @@ func modelKeys() []KeySpec {
 			Help: "The exact ggml file to load, when it is not in the models folder.",
 		},
 		{
-			Key: "transcribecpp_binary", Type: TypeString, Default: "transcribe-cli",
+			Key: "transcribecpp_binary", Type: TypeString, Default: TranscribeCPPCLIName,
 			Group: GroupModels, Title: "transcribe.cpp path",
-			Help: "Where the transcribe.cpp command lives. A bare name is looked up on PATH.",
+			Help: "Where the transcribe.cpp command lives. A bare name is looked up on PATH, then in the copy models ensure installs; a path set here wins over both.",
 		},
 		{
 			Key: "transcribecpp_model", Type: TypeEnum, Default: DefaultTranscribeCPPModel, Enum: TranscribeCPPModelNames(),

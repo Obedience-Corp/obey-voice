@@ -20,7 +20,7 @@ var providerSpecs = []ProviderSpec{
 	{Name: "sherpa-parakeet", Description: "Local sherpa-onnx NVIDIA Parakeet TDT (utterance-final, fast, no caption hallucinations)"},
 	{Name: "sherpa-offline", Description: "Local sherpa-onnx Whisper (legacy alias)"},
 	{Name: "whispercpp", Description: "Local whisper.cpp CLI"},
-	{Name: "transcribecpp", Description: "Local transcribe.cpp CLI running NVIDIA Parakeet TDT as GGUF (optional; needs transcribe-cli on PATH)"},
+	{Name: "transcribecpp", Description: "Local transcribe.cpp CLI running NVIDIA Parakeet TDT as GGUF (optional; needs a GPU, and models ensure installs the CLI on Apple Silicon)"},
 }
 
 // Providers returns the list of implemented STT providers.

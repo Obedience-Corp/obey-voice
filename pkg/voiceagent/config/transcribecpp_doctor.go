@@ -12,8 +12,10 @@ import (
 // binary, the pin and the backend probe; only the weights and the GPU rule
 // differ, so both resolve through diagnoseTranscribeCLI.
 type transcribeCLICheck struct {
-	name   string
-	binary string
+	name string
+	// resolve finds the CLI: explicit config path, then PATH, then the
+	// managed pack models ensure installs (ResolveTranscribeCPPBinary).
+	resolve func() (string, error)
 	// model resolves the weights path. It is a function so it runs after the
 	// binary check and a machine missing the CLI is told that first.
 	model            func() (string, error)
@@ -31,14 +33,13 @@ type transcribeCLICheck struct {
 // construction-time failures, so a missing one is an error here rather than the
 // warning a merely-undownloaded asset gets.
 func diagnoseTranscribeCLI(c transcribeCLICheck, lookPath func(string) (string, error)) Diagnostic {
-	bin := strings.TrimSpace(c.binary)
-	binPath, err := lookPath(bin)
+	binPath, err := c.resolve()
 	if err != nil {
 		return Diagnostic{
 			Name:        c.name,
 			Severity:    SeverityError,
-			Detail:      fmt.Sprintf("transcribe.cpp binary %q not found in PATH", bin),
-			Remediation: "install the transcribe.cpp release CLI and put it on PATH, or set transcribecpp_binary",
+			Detail:      err.Error(),
+			Remediation: TranscribeCPPCLIRemediation(),
 		}
 	}
 
@@ -55,7 +56,7 @@ func diagnoseTranscribeCLI(c transcribeCLICheck, lookPath func(string) (string, 
 		return Diagnostic{
 			Name:        c.name,
 			Severity:    SeverityError,
-			Detail:      fmt.Sprintf("%s found, but the GGUF is missing at %s", bin, modelPath),
+			Detail:      fmt.Sprintf("%s found, but the GGUF is missing at %s", binPath, modelPath),
 			Remediation: c.missingRemedy,
 		}
 	}
@@ -71,7 +72,7 @@ func diagnoseTranscribeCLI(c transcribeCLICheck, lookPath func(string) (string, 
 			Remediation: "check that " + binPath + " runs and supports --list-devices (transcribe.cpp v0.2.2 or newer)",
 		}
 	}
-	detail := fmt.Sprintf("%s + %s (backends: %s)", bin, modelPath, strings.Join(LaneKinds(lanes), ", "))
+	detail := fmt.Sprintf("%s + %s (backends: %s)", binPath, modelPath, strings.Join(LaneKinds(lanes), ", "))
 	if c.requireGPU && len(GPULanes(lanes)) == 0 {
 		return Diagnostic{
 			Name:        c.name,
@@ -86,8 +87,8 @@ func diagnoseTranscribeCLI(c transcribeCLICheck, lookPath func(string) (string, 
 // diagnoseTranscribeCPP is the STT provider's view of that check.
 func diagnoseTranscribeCPP(cfg *Config, modelsDir string, lookPath func(string) (string, error)) Diagnostic {
 	return diagnoseTranscribeCLI(transcribeCLICheck{
-		name:   "transcribecpp-binary",
-		binary: cfg.TranscribeCPPBinary,
+		name:    "transcribecpp-binary",
+		resolve: func() (string, error) { return ResolveTranscribeCPPBinary(cfg, modelsDir, lookPath) },
 		model: func() (string, error) {
 			asset, err := TranscribeCPPModel(cfg.TranscribeCPPModel)
 			if err != nil {

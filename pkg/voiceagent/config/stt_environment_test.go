@@ -33,6 +33,16 @@ func TestSTTEnvironmentGap(t *testing.T) {
 	if err := os.WriteFile(path, []byte("gguf"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A models dir holding both the weights and the CLI models ensure installs,
+	// with nothing on PATH.
+	withManagedCLI := t.TempDir()
+	writeManagedTranscribeCLI(t, withManagedCLI)
+	if err := os.MkdirAll(filepath.Dir(asset.ModelPath(withManagedCLI)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(asset.ModelPath(withManagedCLI), []byte("gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct {
 		name      string
@@ -46,12 +56,16 @@ func TestSTTEnvironmentGap(t *testing.T) {
 		{
 			name: "transcribecpp binary missing", provider: STTProviderTranscribeCPP,
 			modelsDir: withWeights,
-			want:      "transcribe-cli is not on PATH", wantFix: "transcribecpp_binary",
+			want:      `"transcribe-cli" not found on PATH`, wantFix: "transcribecpp_binary",
 		},
 		{
-			name: "transcribecpp custom binary is named", provider: STTProviderTranscribeCPP,
+			name: "transcribecpp configured path does not exist", provider: STTProviderTranscribeCPP,
 			cfg: Config{TranscribeCPPBinary: "/opt/transcribe"}, modelsDir: withWeights,
-			want: "/opt/transcribe is not on PATH",
+			want: `"/opt/transcribe" is not an executable file`,
+		},
+		{
+			name: "transcribecpp satisfied by the managed copy", provider: STTProviderTranscribeCPP,
+			modelsDir: withManagedCLI,
 		},
 		{
 			name: "transcribecpp weights missing", provider: STTProviderTranscribeCPP,

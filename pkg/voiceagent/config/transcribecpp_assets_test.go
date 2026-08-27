@@ -123,17 +123,28 @@ func TestTranscribeCPPAssetCarriesAttributionIntoTheManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ManifestFor(transcribecpp) error = %v", err)
 	}
-	if len(m.Assets) != 1 {
-		t.Fatalf("planned %d assets, want 1", len(m.Assets))
+	// The weights and the vendored CLI are licensed differently, and each has to
+	// carry its own claim all the way into status.
+	wantAttribution := map[string][2]string{
+		"stt.transcribecpp.parakeet-tdt-0.6b-v2": {"cc-by-4.0", "huggingface.co"},
 	}
-	if m.Assets[0].License != "cc-by-4.0" {
-		t.Errorf("planned asset license = %q, want cc-by-4.0", m.Assets[0].License)
+	if cli, ok := TranscribeCPPCLIAsset(); ok {
+		wantAttribution[cli.ID] = [2]string{"MIT", "github.com/handy-computer/transcribe.cpp"}
 	}
-	if !strings.Contains(m.Assets[0].Source, "huggingface.co") {
-		t.Errorf("planned asset source = %q, want the weights' origin", m.Assets[0].Source)
+	if len(m.Assets) != len(wantAttribution) {
+		t.Fatalf("planned %d assets, want %d", len(m.Assets), len(wantAttribution))
 	}
-	st := m.Status(t.TempDir())
-	if st[0].License != m.Assets[0].License || st[0].Source != m.Assets[0].Source {
-		t.Errorf("status = %+v, want it to carry the asset's license and source", st[0])
+	statuses := m.Status(t.TempDir())
+	for i, a := range m.Assets {
+		want, ok := wantAttribution[a.ID]
+		if !ok {
+			t.Fatalf("unexpected planned asset %q", a.ID)
+		}
+		if a.License != want[0] || !strings.Contains(a.Source, want[1]) {
+			t.Errorf("%s: license/source = %q/%q, want %q/%q", a.ID, a.License, a.Source, want[0], want[1])
+		}
+		if statuses[i].License != a.License || statuses[i].Source != a.Source {
+			t.Errorf("status = %+v, want it to carry the asset's license and source", statuses[i])
+		}
 	}
 }
