@@ -26,6 +26,12 @@ const (
 type PlaybackResult struct {
 	Err         error
 	Interrupted bool
+	// AudioSeconds is the duration of the audio the synthesizer produced for
+	// this segment, measured at the stream's own sample rate before any
+	// resampling. It is the denominator of the realtime factor, so it reports
+	// what was synthesized even when playback was interrupted before the
+	// samples were heard.
+	AudioSeconds float64
 }
 
 // Playback exposes playback lifecycle signals for a single queued segment.
@@ -365,6 +371,7 @@ func finalizeSegment(segment *playbackSegment, debug *playerDebugRecorder, sampl
 	if debug != nil {
 		debug.captureSource(inputRate, samples)
 	}
+	segment.setAudioSeconds(samples, inputRate)
 	if inputRate != outputRate {
 		samples = resample(samples, inputRate, outputRate)
 	}
@@ -688,19 +695,20 @@ func (p *Player) finishSegment(segment *playbackSegment) {
 }
 
 type playbackSegment struct {
-	mu          sync.Mutex
-	samples     []int16
-	offset      int
-	readyFrames int
-	inputDone   bool
-	err         error
-	started     sync.Once
-	done        sync.Once
-	ready       chan struct{}
-	startedCh   chan struct{}
-	doneCh      chan PlaybackResult
-	readyClosed bool
-	interrupted bool
+	mu           sync.Mutex
+	audioSeconds float64
+	samples      []int16
+	offset       int
+	readyFrames  int
+	inputDone    bool
+	err          error
+	started      sync.Once
+	done         sync.Once
+	ready        chan struct{}
+	startedCh    chan struct{}
+	doneCh       chan PlaybackResult
+	readyClosed  bool
+	interrupted  bool
 }
 
 func newPlaybackSegment() *playbackSegment {
@@ -748,6 +756,24 @@ func (s *playbackSegment) waitReady(ctx context.Context) error {
 	return errors.New("pcm stream produced no samples")
 }
 
+// setAudioSeconds records how much audio the synthesizer produced, measured at
+// the stream's own rate so a resample cannot change the figure.
+func (s *playbackSegment) setAudioSeconds(samples []float32, inputRate int) {
+	if inputRate <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audioSeconds = float64(len(samples)) / float64(inputRate)
+}
+
+// resultLocked builds a terminal result carrying the synthesized duration.
+// Every exit path goes through it so an interrupted or failed segment still
+// reports what synthesis cost.
+func (s *playbackSegment) resultLocked(err error, interrupted bool) PlaybackResult {
+	return PlaybackResult{Err: err, Interrupted: interrupted, AudioSeconds: s.audioSeconds}
+}
+
 func (s *playbackSegment) append(samples []int16) {
 	if len(samples) == 0 {
 		return
@@ -779,12 +805,11 @@ func (s *playbackSegment) finishInput(err error) {
 	s.err = err
 	s.maybeReadyLocked()
 	shouldComplete := s.pendingLocked() == 0
-	interrupted := s.interrupted
-	resultErr := s.err
+	result := s.resultLocked(s.err, s.interrupted)
 	s.mu.Unlock()
 
 	if shouldComplete {
-		s.finish(PlaybackResult{Err: resultErr, Interrupted: interrupted})
+		s.finish(result)
 	}
 }
 
@@ -793,9 +818,10 @@ func (s *playbackSegment) fail(err error) {
 	s.inputDone = true
 	s.err = err
 	s.maybeReadyLocked()
+	result := s.resultLocked(err, false)
 	s.mu.Unlock()
 
-	s.finish(PlaybackResult{Err: err})
+	s.finish(result)
 }
 
 func (s *playbackSegment) interrupt() {
@@ -805,17 +831,15 @@ func (s *playbackSegment) interrupt() {
 	s.samples = nil
 	s.offset = 0
 	s.maybeReadyLocked()
+	result := s.resultLocked(nil, true)
 	s.mu.Unlock()
 
-	s.finish(PlaybackResult{Interrupted: true})
+	s.finish(result)
 }
 
 func (s *playbackSegment) complete() {
 	s.mu.Lock()
-	result := PlaybackResult{
-		Err:         s.err,
-		Interrupted: s.interrupted,
-	}
+	result := s.resultLocked(s.err, s.interrupted)
 	s.mu.Unlock()
 
 	s.finish(result)

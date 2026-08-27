@@ -266,6 +266,18 @@ func newQwen3TTS(binary, model string, timeout time.Duration, command qwenComman
 	return &Qwen3TTS{binary: binary, model: model, timeout: timeout, command: command}
 }
 
+// ProviderName identifies this provider in latency artifacts.
+func (q *Qwen3TTS) ProviderName() string { return qwen3TTSProviderName }
+
+// ModelTier reports the normalized model size (0.6b / 1.7b) so an artifact
+// records which one produced the numbers.
+func (q *Qwen3TTS) ModelTier() string {
+	if q == nil {
+		return ""
+	}
+	return managedqwen.NormalizeModelTier(q.modelTier)
+}
+
 // FirstAudioGrace reports how long the pipeline's playback-stall watchdog
 // should wait for the first audible frame. Stage-A Qwen (native or managed)
 // generates whole utterances before PCM, so grace is driven by measured warm

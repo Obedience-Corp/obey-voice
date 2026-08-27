@@ -706,6 +706,9 @@ func (f *fakeTTS) Texts() []string {
 
 type fakePlayer struct {
 	playDuration time.Duration
+	// audioSeconds is reported on every PlaybackResult, standing in for the
+	// duration the real player measures from the synthesized samples.
+	audioSeconds float64
 	notify       chan struct{}
 	quit         chan struct{}
 	started      chan struct{}
@@ -821,7 +824,7 @@ func (p *fakePlayer) loop() {
 		}
 
 		timer := time.NewTimer(p.playDuration)
-		result := audio.PlaybackResult{}
+		result := audio.PlaybackResult{AudioSeconds: p.audioSeconds}
 		select {
 		case <-p.quit:
 			timer.Stop()

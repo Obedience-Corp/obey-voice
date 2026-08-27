@@ -80,9 +80,95 @@ type TurnMetrics struct {
 	// turn — tool-shaped text the model narrated into its reply (WI-dc9e33
 	// B4). The chat transcript keeps the raw text; only TTS is filtered.
 	ToolLeakLines int
+	// TTSProvider and TTSTier identify which synthesizer produced this turn's
+	// audio. A latency artifact that does not say which one ran cannot be
+	// compared against another, and the tier matters as much as the provider:
+	// qwen3-tts 1.7b measured 1.40x slower than 0.6b on the same machine.
+	TTSProvider string
+	TTSTier     string
+	// TTSFallbacks counts segments the configured provider failed to
+	// synthesize, which the Kokoro fallback spoke instead. A turn that fell
+	// back is not a measurement of the configured provider.
+	TTSFallbacks int
+	// FirstAudioGrace is the stall watchdog's budget for this turn. It is
+	// recorded because a slow turn and a hung one are indistinguishable until
+	// the grace expires: a 30s wait under a 47s grace never fires the
+	// watchdog, so the budget belongs beside the measurement.
+	FirstAudioGrace time.Duration
+	// StallWatchdogFired marks a turn cut short by that watchdog rather than
+	// by synthesis completing.
+	StallWatchdogFired bool
+	// Segments carries per-segment synthesis cost in playback order. The turn
+	// milestones above only ever describe the first segment; everything after
+	// it — where a long reply spends its time — is here.
+	Segments []SegmentMetric
 }
 
 func (e TurnMetrics) eventType() string { return "turn_metrics" }
+
+// SegmentMetric is one synthesized speech segment's cost inside a turn.
+//
+// RealtimeFactor (SynthElapsed / AudioSeconds) is the quantity that decides
+// whether synthesis keeps up with playback: above 1.0 the synthesizer produces
+// audio more slowly than the speaker consumes it, so a streaming path would
+// underrun and a progressive path opens a gap between sentences.
+type SegmentMetric struct {
+	Index int
+	Chars int
+	// EngineElapsed is synthesis alone: the segment handed to the provider
+	// through the complete utterance being buffered for playback. This is the
+	// numerator of the realtime factor.
+	EngineElapsed time.Duration
+	// SynthElapsed spans the segment being handed to the synthesizer through
+	// its first audible frame, so it also includes waiting behind whatever is
+	// already playing.
+	//
+	// Both are kept because they answer different questions, and conflating
+	// them makes every segment after the first look slow: segment 1 is
+	// synthesized while segment 0 plays, so its wait is the previous
+	// sentence's audio, not the engine. Only the first segment's SynthElapsed
+	// is a delay a listener actually experiences.
+	SynthElapsed time.Duration
+	// AudioSeconds is the synthesized duration, measured at the stream's own
+	// sample rate.
+	AudioSeconds float64
+	// PlayElapsed spans the first audible frame through playback finishing.
+	PlayElapsed time.Duration
+	// Fallback marks a segment the Kokoro fallback spoke after the configured
+	// provider failed.
+	Fallback bool
+	// Interrupted marks a segment cut short by barge-in. Its AudioSeconds
+	// still reports what was synthesized.
+	Interrupted bool
+}
+
+// RealtimeFactor reports engine wall time divided by audio duration, or 0
+// when no audio was produced.
+//
+// EngineElapsed, not SynthElapsed: a segment queued behind another sentence's
+// playback did not take longer to synthesize, and charging it that wait would
+// report an engine as slower than it is.
+func (s SegmentMetric) RealtimeFactor() float64 {
+	if s.AudioSeconds <= 0 {
+		return 0
+	}
+	engine := s.EngineElapsed
+	if engine <= 0 {
+		// Pre-split records, and the recovery path before it stamps: fall
+		// back to the only figure available rather than reporting nothing.
+		engine = s.SynthElapsed
+	}
+	return engine.Seconds() / s.AudioSeconds
+}
+
+// QueueElapsed is the part of SynthElapsed spent waiting for the player, not
+// synthesizing. Zero when the split is not available.
+func (s SegmentMetric) QueueElapsed() time.Duration {
+	if s.EngineElapsed <= 0 || s.SynthElapsed <= s.EngineElapsed {
+		return 0
+	}
+	return s.SynthElapsed - s.EngineElapsed
+}
 
 // TokenUsage reports one model request's prompt/generation token counts.
 // With a warm prefix cache, Prefill should track the size of the new turn —
@@ -149,6 +235,11 @@ func (e GeneratingVoice) eventType() string { return "generating_voice" }
 type VoiceGenerated struct {
 	Sentence string
 	Elapsed  time.Duration
+	// Index is the segment's position in the turn, from 0.
+	Index int
+	// Fallback marks audio the Kokoro fallback produced after the configured
+	// provider failed.
+	Fallback bool
 }
 
 func (e VoiceGenerated) eventType() string { return "voice_generated" }

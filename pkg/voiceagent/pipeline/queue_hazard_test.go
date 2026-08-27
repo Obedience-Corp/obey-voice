@@ -40,7 +40,7 @@ func TestWatchPlaybackAbandonsSendWhenLoopDone(t *testing.T) {
 
 	finished := make(chan struct{})
 	go func() {
-		watchPlayback(loopDone, "hi", time.Now(), playback, &audioStarted, out)
+		watchPlayback(loopDone, "hi", 0, false, time.Now(), 0, playback, &audioStarted, out)
 		close(finished)
 	}()
 

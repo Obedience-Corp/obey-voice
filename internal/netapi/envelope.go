@@ -44,6 +44,32 @@ func encodeEvent(e events.Event) map[string]any {
 		env["playback_start_ms"] = ms(e.PlaybackStartElapsed)
 		env["playback_complete_ms"] = ms(e.PlaybackCompleteElapsed)
 		env["barge_in_ms"] = ms(e.BargeInElapsed)
+		// TTS accounting. Additive keys: the milestones above describe only
+		// the first segment, and a remote client benchmarking a long reply
+		// needs every segment plus the stall budget the turn ran under.
+		env["tts_provider"] = e.TTSProvider
+		env["tts_tier"] = e.TTSTier
+		env["tts_fallbacks"] = e.TTSFallbacks
+		env["first_audio_grace_ms"] = ms(e.FirstAudioGrace)
+		env["stall_watchdog_fired"] = e.StallWatchdogFired
+		if len(e.Segments) > 0 {
+			segments := make([]map[string]any, 0, len(e.Segments))
+			for _, seg := range e.Segments {
+				segments = append(segments, map[string]any{
+					"i":           seg.Index,
+					"chars":       seg.Chars,
+					"engine_ms":   ms(seg.EngineElapsed),
+					"queue_ms":    ms(seg.QueueElapsed()),
+					"synth_ms":    ms(seg.SynthElapsed),
+					"audio_ms":    int64(seg.AudioSeconds * 1000),
+					"rtf":         seg.RealtimeFactor(),
+					"play_ms":     ms(seg.PlayElapsed),
+					"fallback":    seg.Fallback,
+					"interrupted": seg.Interrupted,
+				})
+			}
+			env["segments"] = segments
+		}
 	case events.ResponseStreamingStarted:
 		env["elapsed_ms"] = ms(e.Elapsed)
 	case events.ResponseDelta:
@@ -58,6 +84,8 @@ func encodeEvent(e events.Event) map[string]any {
 	case events.VoiceGenerated:
 		env["sentence"] = e.Sentence
 		env["elapsed_ms"] = ms(e.Elapsed)
+		env["index"] = e.Index
+		env["fallback"] = e.Fallback
 	case events.SpeakingStarted:
 		env["text"] = e.Text
 	case events.SpeakingComplete:

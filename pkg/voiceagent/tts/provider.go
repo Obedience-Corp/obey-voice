@@ -19,6 +19,19 @@ type Provider interface {
 	ListVoices(locale, gender string) []Voice
 }
 
+// Describer is optionally implemented by providers that can name the engine
+// and model size behind them. A latency artifact that does not record both
+// cannot be compared against another: the same code on the same machine
+// measured 1.33x realtime at qwen3-tts 0.6b and 1.87x at 1.7b.
+type Describer interface {
+	// ProviderName is the configured provider id, e.g. "kokoro" or
+	// "qwen3-tts".
+	ProviderName() string
+	// ModelTier is the model size within that provider, e.g. "0.6b". Empty
+	// when the provider ships exactly one model.
+	ModelTier() string
+}
+
 // FirstAudioGracer is optionally implemented by providers whose time-to-first
 // audible frame can exceed the pipeline's default playback-stall budget.
 // When present, the stall watchdog waits at least this long before aborting a
