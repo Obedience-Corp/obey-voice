@@ -45,6 +45,7 @@ type rawMetrics struct {
 	TTSFallbacks            int          `json:"TTSFallbacks"`
 	FirstAudioGrace         int64        `json:"FirstAudioGrace"`
 	StallWatchdogFired      bool         `json:"StallWatchdogFired"`
+	DeadAirElapsed          int64        `json:"DeadAirElapsed"`
 	Segments                []rawSegment `json:"Segments"`
 }
 
@@ -164,6 +165,14 @@ type EngineStats struct {
 	MedianPlaybackStartMS *float64 `json:"median_playback_start_ms"`
 	P90PlaybackStartMS    *float64 `json:"p90_playback_start_ms"`
 
+	// DeadAir is silence between sentences: the player idle after one segment
+	// finished and before the next was ready. A whole-utterance engine slower
+	// than realtime cannot get ahead of playback, so the gap recurs at every
+	// sentence boundary and no watchdog sees it — the stall watchdog only
+	// checks the first audible frame.
+	MedianDeadAirMS    *float64 `json:"median_dead_air_ms"`
+	MedianDeadAirShare *float64 `json:"median_dead_air_share_of_speaking"`
+
 	// Segment-level aggregates. Segments, not turns, are the population here:
 	// a turn's first segment and its fifth are separate synthesis calls and
 	// pooling them into one per-turn figure hides where a long reply spends
@@ -192,6 +201,7 @@ type EngineStats struct {
 // which arithmetic cannot assert.
 type Result struct {
 	SynthStageDeltaMS       *float64 `json:"synth_stage_delta_ms"`
+	DeadAirDeltaPoints      *float64 `json:"dead_air_delta_points"`
 	RealtimeFactorDelta     *float64 `json:"realtime_factor_delta"`
 	LatencyCriterionMet     *bool    `json:"latency_criterion_met"`
 	NaturalnessCriterionMet *bool    `json:"naturalness_criterion_met"`
@@ -327,6 +337,7 @@ func StatsFor(runs []rawResult) EngineStats {
 
 	var synthStage, firstChunkToAudio, modelCompleteToAudio, playbackStart []float64
 	var segmentsPerTurn, segEngine, segSynth, segQueue, segAudio, segRTF, firstSegRTF []float64
+	var deadAir, deadAirShare []float64
 
 	for _, r := range runs {
 		if r.Fixture != "" {
@@ -371,6 +382,10 @@ func StatsFor(runs []rawResult) EngineStats {
 				modelCompleteToAudio = append(modelCompleteToAudio, ms(m.PlaybackStartElapsed-m.ModelCompleteElapsed))
 			}
 			playbackStart = append(playbackStart, ms(m.PlaybackStartElapsed))
+			deadAir = append(deadAir, ms(m.DeadAirElapsed))
+			if speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed; speaking > 0 {
+				deadAirShare = append(deadAirShare, float64(m.DeadAirElapsed)/float64(speaking))
+			}
 		}
 
 		if fellBack {
@@ -428,6 +443,8 @@ func StatsFor(runs []rawResult) EngineStats {
 	stats.MedianFirstChunkToAudioMS = roundPtr(percentile(firstChunkToAudio, 50), 1)
 	stats.MedianModelCompleteToAudioMS = roundPtr(percentile(modelCompleteToAudio, 50), 1)
 	stats.MedianPlaybackStartMS = roundPtr(percentile(playbackStart, 50), 1)
+	stats.MedianDeadAirMS = roundPtr(percentile(deadAir, 50), 1)
+	stats.MedianDeadAirShare = roundPtr(percentile(deadAirShare, 50), 4)
 	stats.P90PlaybackStartMS = roundPtr(percentile(playbackStart, 90), 1)
 	stats.MedianSegmentsPerTurn = roundPtr(percentile(segmentsPerTurn, 50), 1)
 	stats.MedianSegmentEngineMS = roundPtr(percentile(segEngine, 50), 1)
@@ -457,6 +474,10 @@ func Compare(control, candidate EngineStats) Result {
 		res.ClearsBatchingThreshold = &clears
 	}
 	res.AudioRegressed = candidate.TurnsWithoutAudio > control.TurnsWithoutAudio
+	if control.MedianDeadAirShare != nil && candidate.MedianDeadAirShare != nil {
+		delta := (*candidate.MedianDeadAirShare - *control.MedianDeadAirShare) * 100
+		res.DeadAirDeltaPoints = roundPtr(&delta, 1)
+	}
 	return res
 }
 

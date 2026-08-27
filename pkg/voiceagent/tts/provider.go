@@ -42,6 +42,17 @@ type FirstAudioGracer interface {
 	FirstAudioGrace() time.Duration
 }
 
+// SegmentGracer refines FirstAudioGracer with the length of the segment about
+// to be synthesized.
+//
+// A fixed budget has to be sized for the longest reply the engine might be
+// asked for, so every short one inherits that ceiling: a 17-character
+// acknowledgement waited out the same grace as a paragraph. Synthesis cost
+// scales with how much audio there is, so the budget should too.
+type SegmentGracer interface {
+	FirstAudioGraceForChars(chars int) time.Duration
+}
+
 // SoftCanceler is optionally implemented by warm-worker TTS providers.
 // Pipeline barge-in and turn cancel should SoftCancel the in-flight request
 // without killing the worker process (reload cost).
