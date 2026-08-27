@@ -337,11 +337,10 @@ type turnMetrics struct {
 	// ttsFallbacks counts segments the Kokoro fallback spoke after the
 	// configured provider failed.
 	ttsFallbacks int
-	// ttsProvider, ttsTier and firstAudioGrace are stamped once per turn when
-	// the first segment is synthesized, so a metrics record identifies the
-	// engine that produced it and the stall budget it ran under.
-	ttsProvider     string
-	ttsTier         string
+	// ttsEngine and firstAudioGrace are stamped once per turn when the first
+	// segment is synthesized, so a metrics record identifies the engine that
+	// produced it, where it ran, and the stall budget it ran under.
+	ttsEngine       ttsEngineIdentity
 	firstAudioGrace time.Duration
 	// stallWatchdogFired marks a turn the playback-stall watchdog cut short.
 	stallWatchdogFired bool
@@ -369,8 +368,10 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		PlaybackCompleteElapsed: m.elapsed(m.playbackComplete),
 		BargeInElapsed:          m.elapsed(m.bargeInAt()),
 		ToolLeakLines:           m.toolLeakLines,
-		TTSProvider:             m.ttsProvider,
-		TTSTier:                 m.ttsTier,
+		TTSProvider:             m.ttsEngine.provider,
+		TTSTier:                 m.ttsEngine.tier,
+		TTSPlace:                m.ttsEngine.place,
+		TTSWorkerStreaming:      m.ttsEngine.workerStreaming,
 		TTSFallbacks:            m.ttsFallbacks,
 		FirstAudioGrace:         m.firstAudioGrace,
 		StallWatchdogFired:      m.stallWatchdogFired,
@@ -397,15 +398,30 @@ func (m *turnMetrics) recordSegment(event playbackEvent) {
 	}
 }
 
-// ttsIdentity names the primary provider and its model tier for the turn's
-// metrics. A provider that does not describe itself leaves both empty rather
-// than guessing, so an artifact never claims an engine it did not confirm.
-func (p *Pipeline) ttsIdentity() (provider, tier string) {
+// ttsEngineIdentity is everything a latency artifact needs to say which engine
+// produced a turn: the provider, its model tier, the computer it ran on, and
+// whether that computer's worker streams PCM during decode.
+type ttsEngineIdentity struct {
+	provider        string
+	tier            string
+	place           string
+	workerStreaming bool
+}
+
+// ttsIdentity names the primary provider, its model tier and its topology for
+// the turn's metrics. A provider that does not describe itself leaves provider
+// and tier empty rather than guessing, so an artifact never claims an engine it
+// did not confirm.
+func (p *Pipeline) ttsIdentity() ttsEngineIdentity {
 	primary, _ := p.ttsProviders()
-	if d, ok := primary.(tts.Describer); ok {
-		return d.ProviderName(), d.ModelTier()
+	id := ttsEngineIdentity{
+		place:           tts.SpeechPlaceOf(primary),
+		workerStreaming: tts.WorkerStreamingOf(primary),
 	}
-	return "", ""
+	if d, ok := primary.(tts.Describer); ok {
+		id.provider, id.tier = d.ProviderName(), d.ModelTier()
+	}
+	return id
 }
 
 // markBargeIn stamps the first barge-in moment; later marks are ignored.
@@ -575,8 +591,8 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	p.emit(events.SpeechSegmentReady{Text: sentence})
 	p.emit(events.GeneratingVoice{Sentence: sentence})
 
-	if metrics.ttsProvider == "" {
-		metrics.ttsProvider, metrics.ttsTier = p.ttsIdentity()
+	if metrics.ttsEngine.provider == "" {
+		metrics.ttsEngine = p.ttsIdentity()
 	}
 	synthStarted := time.Now()
 	stream, usedFallback, err := p.synthesizeWithFallback(ctx, sentence, nil)
@@ -810,7 +826,7 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 		if metrics.firstSegment.IsZero() {
 			metrics.firstSegment = time.Now()
 		}
-		metrics.ttsProvider, metrics.ttsTier = p.ttsIdentity()
+		metrics.ttsEngine = p.ttsIdentity()
 		p.emit(events.SpeechSegmentReady{Text: speakable})
 		p.emit(events.GeneratingVoice{Sentence: speakable})
 
@@ -1189,7 +1205,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				// that segment.
 				stallTimeout := p.stallTimeout(len(speakable))
 				metrics.firstAudioGrace = stallTimeout
-				metrics.ttsProvider, metrics.ttsTier = p.ttsIdentity()
+				metrics.ttsEngine = p.ttsIdentity()
 				go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(speakable))
 			}
 

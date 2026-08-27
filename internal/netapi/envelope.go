@@ -49,6 +49,8 @@ func encodeEvent(e events.Event) map[string]any {
 		// needs every segment plus the stall budget the turn ran under.
 		env["tts_provider"] = e.TTSProvider
 		env["tts_tier"] = e.TTSTier
+		env["tts_place"] = e.TTSPlace
+		env["tts_streaming"] = e.TTSWorkerStreaming
 		env["tts_fallbacks"] = e.TTSFallbacks
 		env["first_audio_grace_ms"] = ms(e.FirstAudioGrace)
 		env["stall_watchdog_fired"] = e.StallWatchdogFired

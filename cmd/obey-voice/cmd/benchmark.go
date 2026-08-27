@@ -33,6 +33,7 @@ var (
 	benchmarkExpectedTranscripts []string
 	benchmarkSTTProviders        []string
 	benchmarkTTSProviders        []string
+	benchmarkTTSPlace            string
 	benchmarkFixtureRealtime     bool
 	benchmarkMaxTotal            time.Duration
 	benchmarkMaxFirstModelChunk  time.Duration
@@ -98,6 +99,30 @@ func parseTTSSpecs(values []string) ([]ttsSpec, error) {
 		specs = append(specs, ttsSpec{provider: provider, tier: tier})
 	}
 	return specs, nil
+}
+
+// applyBenchmarkTTSPlace overrides where speech is synthesized for this run.
+//
+// Place is app-level topology rather than one leg of a sweep: a single
+// benchmark process holds one speech transport, so "the same fixtures against
+// both computers" is two runs, one per place, compared through their
+// artifacts. Having the flag at all is what makes those two runs the same
+// instrument — otherwise the operator edits config between them and the
+// difference is no longer only the place.
+//
+// An invalid topology fails here rather than at the first synthesis, where it
+// would fall back to Kokoro and quietly produce a Kokoro measurement labelled
+// lan.
+func applyBenchmarkTTSPlace(cfg *config.Config, place string) error {
+	place = strings.ToLower(strings.TrimSpace(place))
+	if place == "" {
+		return nil
+	}
+	cfg.TTSPlace = place
+	if err := config.ValidateTTSPlace(cfg); err != nil {
+		return fmt.Errorf("--tts-place %s: %w", place, err)
+	}
+	return nil
 }
 
 var defaultBenchmarkPrompts = []string{
@@ -222,6 +247,10 @@ var benchmarkCmd = &cobra.Command{
 			return errors.New("--tts-provider cannot be combined with --no-voice: no audio would be synthesized")
 		}
 
+		if err := applyBenchmarkTTSPlace(cfg, benchmarkTTSPlace); err != nil {
+			return err
+		}
+
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
 
@@ -267,6 +296,7 @@ func init() {
 	benchmarkCmd.Flags().StringArrayVar(&benchmarkExpectedTranscripts, "expect-text", nil, "Expected transcript for each fixture (repeatable)")
 	benchmarkCmd.Flags().StringArrayVar(&benchmarkSTTProviders, "stt-provider", nil, "STT provider(s) to benchmark in fixture mode (repeatable)")
 	benchmarkCmd.Flags().StringArrayVar(&benchmarkTTSProviders, "tts-provider", nil, "TTS provider(s) to benchmark, optionally with a model tier: kokoro, qwen3-tts:0.6b, qwen3-tts:1.7b (repeatable)")
+	benchmarkCmd.Flags().StringVar(&benchmarkTTSPlace, "tts-place", "", "Where speech is synthesized for this run: local or lan (default: the configured tts_place)")
 	benchmarkCmd.Flags().BoolVar(&benchmarkFixtureRealtime, "fixture-realtime", true, "Replay fixture audio in real time for latency measurements")
 	benchmarkCmd.Flags().DurationVar(&benchmarkMaxTotal, "max-total", 0, "Fail when total benchmark time exceeds this duration")
 	benchmarkCmd.Flags().DurationVar(&benchmarkMaxFirstModelChunk, "max-first-model-chunk", 0, "Fail when first model chunk exceeds this duration")
@@ -781,11 +811,22 @@ func printTTSSummary(result benchmarkResult) {
 		engine += " " + m.TTSTier
 	}
 	// Name the requested provider too when it differs: a leg that fell back
-	// is not a measurement of what was asked for.
+	// is not a measurement of what was asked for. Checked before the topology
+	// is appended, so decorating the line cannot invent a substitution.
 	if want := result.TTSRequested; want != "" && want != m.TTSProvider && want != engine {
 		engine = fmt.Sprintf("%s (requested %s)", engine, want)
 	}
 	printMetric("tts", engine)
+	// Topology is its own line: the same engine name means different silicon
+	// and a socket in the path once speech runs off-box, and a worker that
+	// does not stream cannot produce first audio before synthesis ends.
+	if m.TTSPlace != "" {
+		place := m.TTSPlace
+		if m.TTSWorkerStreaming {
+			place += ", worker streams PCM"
+		}
+		printMetric("speech place", place)
+	}
 
 	if m.StallWatchdogFired {
 		printMetric("stall watchdog", failStyle.Render(fmt.Sprintf("FIRED after %s", formatMetric(m.FirstAudioGrace))))
