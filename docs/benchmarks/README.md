@@ -168,7 +168,7 @@ what is still yours to write.
 | `clears_batching_threshold` | Whether the candidate beats the ~2.3x realtime that makes cross-sentence batching free (D009). |
 | `median_model_complete_to_audio_ms` | **Signed.** Negative means audio started before the reply finished — the progressive path working. A positive median means the pipeline waited for the whole reply. |
 | `turns_without_audio` | A turn that produced silence never enters the latency percentiles; it is counted separately, so an engine that mostly failed cannot look fast. |
-| `turns_with_fallback` | Segments the configured provider failed and Kokoro spoke. Those turns are not a measurement of the engine in the column. |
+| `turns_with_fallback` / `segments_fallback` | Segments the configured provider failed and Kokoro spoke. `TurnMetrics.TTSProvider` names the *configured* engine, stamped before synthesis, so such a turn still carries the primary's name — it is **excluded from every latency figure** and reported only as this count. Kokoro is ~4x faster than qwen3-tts:1.7b here, so a few contaminated turns could reverse a decision. |
 | `turns_stall_watchdog_fired` / `first_audio_grace_ms` | A slow turn and a hung one are the same observation until the grace expires. Qwen's `FirstAudioGrace` is 8s+12s at 0.6b and **35s+12s at 1.7b** (`pkg/voiceagent/tts/qwen.go`), so a 30s wait never trips it. The budget belongs beside the measurement. |
 
 Engines are grouped by what the pipeline **reported**, not by what

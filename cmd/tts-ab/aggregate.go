@@ -95,6 +95,34 @@ func (r rawResult) engine() string {
 // a provider that mostly failed reads as the fast one.
 func (r rawResult) producedAudio() bool { return r.Metrics.PlaybackStartElapsed > 0 }
 
+// usedFallback reports whether any segment of this turn was spoken by the
+// fallback engine instead of the configured one.
+//
+// Such a turn is excluded from every latency figure. TurnMetrics.TTSProvider
+// names the engine that was CONFIGURED, stamped before synthesis begins, so a
+// turn that fell back still carries the primary's name: aggregating it would
+// credit the primary with the fallback's timings. Kokoro is roughly four
+// times faster than qwen3-tts:1.7b here, so a handful of contaminated turns
+// could pull a candidate's median under its control's and reverse the
+// decision the artifact exists to record.
+//
+// The exclusion is deliberately whole-turn rather than per-segment even
+// though a turn whose LAST segment fell back still measured its first audio
+// cleanly. Turn-level figures like dead air span the whole reply and cannot
+// be attributed segment by segment, and a column that mixes engines is worth
+// less than one with fewer, honest samples.
+func (r rawResult) usedFallback() bool {
+	if r.Metrics.TTSFallbacks > 0 {
+		return true
+	}
+	for _, seg := range r.Metrics.Segments {
+		if seg.Fallback {
+			return true
+		}
+	}
+	return false
+}
+
 func ms(ns int64) float64 { return float64(ns) / 1e6 }
 
 // EngineStats is one engine's column in the artifact.
@@ -107,8 +135,12 @@ type EngineStats struct {
 	TurnsWithErrors   int      `json:"turns_with_errors,omitempty"`
 	// TurnsWithFallback counts turns in which the configured provider failed
 	// at least one segment and Kokoro spoke it instead. Those turns are not a
-	// measurement of the engine named in the column.
+	// measurement of the engine named in the column, so they are excluded
+	// from every latency figure below and reported only as this count.
 	TurnsWithFallback int `json:"turns_with_fallback"`
+	// SegmentsFallback counts segments the fallback engine spoke. They are
+	// excluded from the segment aggregates for the same reason.
+	SegmentsFallback int `json:"segments_fallback"`
 	// TurnsStallWatchdogFired counts turns the playback-stall watchdog cut
 	// short. Reported beside the grace it ran under, because a turn slower
 	// than the grace and a hung one are the same observation until it fires.
@@ -311,7 +343,8 @@ func StatsFor(runs []rawResult) EngineStats {
 		if len(r.Errors) > 0 {
 			stats.TurnsWithErrors++
 		}
-		if r.Metrics.TTSFallbacks > 0 {
+		fellBack := r.usedFallback()
+		if fellBack {
 			stats.TurnsWithFallback++
 		}
 		if r.Metrics.StallWatchdogFired {
@@ -323,7 +356,7 @@ func StatsFor(runs []rawResult) EngineStats {
 
 		if !r.producedAudio() {
 			stats.TurnsWithoutAudio++
-		} else {
+		} else if !fellBack {
 			m := r.Metrics
 			if m.FirstSegmentElapsed > 0 && m.FirstAudioReadyElapsed > 0 {
 				synthStage = append(synthStage, ms(m.FirstAudioReadyElapsed-m.FirstSegmentElapsed))
@@ -340,8 +373,23 @@ func StatsFor(runs []rawResult) EngineStats {
 			playbackStart = append(playbackStart, ms(m.PlaybackStartElapsed))
 		}
 
+		if fellBack {
+			// Its segments are counted below so the exclusion is visible, but
+			// none of this turn's timings describe the engine in this column.
+			for _, seg := range r.Metrics.Segments {
+				if seg.Fallback {
+					stats.SegmentsFallback++
+				}
+			}
+			continue
+		}
+
 		segmentsPerTurn = append(segmentsPerTurn, float64(len(r.Metrics.Segments)))
 		for _, seg := range r.Metrics.Segments {
+			if seg.Fallback {
+				stats.SegmentsFallback++
+				continue
+			}
 			stats.Segments++
 			if seg.Interrupted {
 				stats.SegmentsInterrupted++

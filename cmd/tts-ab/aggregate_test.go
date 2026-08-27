@@ -125,6 +125,58 @@ func TestStatsForKeepsModelCompleteToAudioSigned(t *testing.T) {
 	}
 }
 
+// TestStatsForExcludesFallbackTurnsFromLatency is the review finding on #31.
+// TurnMetrics.TTSProvider names the CONFIGURED engine, stamped before
+// synthesis, so a turn that fell back to Kokoro still carries qwen3-tts's
+// name. Aggregating it credited the slow engine with the fast one's timings —
+// and Kokoro is roughly 4x faster here, so a few contaminated turns could
+// reverse the decision the artifact exists to record.
+func TestStatsForExcludesFallbackTurnsFromLatency(t *testing.T) {
+	// A clean qwen turn: 2.4x realtime.
+	clean := turn("qwen3-tts", "1.7b", 2, seg(0, 2400*time.Millisecond, 1.0))
+	// A turn that fell back: Kokoro's 0.64x, still labelled qwen3-tts.
+	contaminated := turn("qwen3-tts", "1.7b", 2, rawSegment{
+		Index: 0, EngineElapsed: int64(640 * time.Millisecond),
+		SynthElapsed: int64(640 * time.Millisecond), AudioSeconds: 1.0, Fallback: true,
+	})
+	contaminated.Metrics.TTSFallbacks = 1
+
+	stats := StatsFor([]rawResult{clean, contaminated})
+
+	if stats.TurnsWithFallback != 1 {
+		t.Fatalf("TurnsWithFallback = %d, want 1", stats.TurnsWithFallback)
+	}
+	if stats.SegmentsFallback != 1 {
+		t.Errorf("SegmentsFallback = %d, want 1", stats.SegmentsFallback)
+	}
+	if stats.Segments != 1 {
+		t.Errorf("Segments = %d, want only the clean turn's segment", stats.Segments)
+	}
+	// The whole point: the median must be the clean 2.4, not a blend pulled
+	// toward Kokoro's 0.64.
+	if got := value(t, stats.MedianRealtimeFactor); math.Abs(got-2.4) > 1e-9 {
+		t.Errorf("MedianRealtimeFactor = %v, want 2.4 — the fallback turn must not count", got)
+	}
+}
+
+// TestStatsForCatchesAFallbackSegmentWithoutTheTurnCounter guards the second
+// route to the same contamination: the per-segment flag alone must be enough,
+// because a reader should not have to trust two fields to agree.
+func TestStatsForCatchesAFallbackSegmentWithoutTheTurnCounter(t *testing.T) {
+	r := turn("qwen3-tts", "1.7b", 2, rawSegment{
+		Index: 0, EngineElapsed: int64(640 * time.Millisecond),
+		SynthElapsed: int64(640 * time.Millisecond), AudioSeconds: 1.0, Fallback: true,
+	})
+	// TTSFallbacks deliberately left at 0.
+	stats := StatsFor([]rawResult{r})
+	if stats.TurnsWithFallback != 1 {
+		t.Errorf("TurnsWithFallback = %d, want 1 from the segment flag alone", stats.TurnsWithFallback)
+	}
+	if stats.MedianRealtimeFactor != nil {
+		t.Errorf("MedianRealtimeFactor = %v, want nil: every segment fell back", *stats.MedianRealtimeFactor)
+	}
+}
+
 func TestStatsForCountsFallbackAndWatchdogTurns(t *testing.T) {
 	fell := turn("qwen3-tts", "1.7b", 2, seg(0, time.Second, 1))
 	fell.Metrics.TTSFallbacks = 1
@@ -140,6 +192,11 @@ func TestStatsForCountsFallbackAndWatchdogTurns(t *testing.T) {
 	stats := StatsFor([]rawResult{fell, stalled, clean})
 	if stats.TurnsWithFallback != 1 {
 		t.Errorf("TurnsWithFallback = %d, want 1", stats.TurnsWithFallback)
+	}
+	// The fallback turn is counted but not measured, so only the other two
+	// contribute segments.
+	if stats.Segments != 2 {
+		t.Errorf("Segments = %d, want 2 (the fallback turn is excluded)", stats.Segments)
 	}
 	if stats.TurnsStallWatchdogFired != 1 {
 		t.Errorf("TurnsStallWatchdogFired = %d, want 1", stats.TurnsStallWatchdogFired)
