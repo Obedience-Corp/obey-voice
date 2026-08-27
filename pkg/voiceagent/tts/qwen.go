@@ -354,12 +354,32 @@ func (q *Qwen3TTS) FirstAudioGraceForChars(chars int) time.Duration {
 	expectedAudio := float64(chars) / speechCharsPerSecond
 	grace := time.Duration(ceiling * expectedAudio * float64(time.Second))
 
-	// The cold-ready allowance is paid once, at session start. Charging it to
-	// every turn is what made short warm turns wait out a worst-case budget.
-	if !q.alive.Load() {
+	// The cold-ready allowance is paid when a worker has to come up, not on
+	// every turn — charging it always is what made short warm turns wait out
+	// a worst-case budget.
+	if !q.hasLiveSession() {
 		grace += nativeColdReadyP95
 	}
 	return q.capByTimeout(grace)
+}
+
+// hasLiveSession reports whether a worker session is up right now, which is
+// what decides whether the next synthesis pays a cold start.
+//
+// q.alive is the wrong signal, and using it was a bug. It means "this
+// provider is usable", is set once during construction — before any synthesis
+// — and deliberately survives discardSpeechSessionLocked so the provider can
+// restart itself after a worker or protocol failure. Keyed to it, the
+// allowance never fired on a genuinely cold first turn, and a segment landing
+// on the restart path got the warm budget (often the 8s floor) while actually
+// paying a full ~11s startup. That would let the stall watchdog cancel the
+// self-healing restart it exists to protect.
+func (q *Qwen3TTS) hasLiveSession() bool {
+	if q == nil {
+		return false
+	}
+	ref := q.speechRef.Load()
+	return ref != nil && *ref != nil
 }
 
 // capByTimeout bounds a computed grace by the configured synthesis timeout,

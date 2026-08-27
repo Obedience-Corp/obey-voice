@@ -241,7 +241,7 @@ func TestQwenFirstAudioGraceScalesWithSegmentLength(t *testing.T) {
 	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 	qn.native = true
 	qn.modelTier = "1.7b"
-	qn.alive.Store(true) // warm worker: no cold-start allowance
+	qn.speechRef.Store(liveSession(t)) // warm worker: no cold-start allowance
 
 	short := qn.FirstAudioGraceForChars(17) // "Sure, that works."
 	long := qn.FirstAudioGraceForChars(150)
@@ -258,18 +258,73 @@ func TestQwenFirstAudioGraceScalesWithSegmentLength(t *testing.T) {
 	}
 }
 
-func TestQwenFirstAudioGraceChargesColdStartOnlyWhileTheWorkerIsDown(t *testing.T) {
-	// Cold ready is paid once at session start. Charging it to every turn is
-	// what made warm short turns wait out a worst-case budget.
+// fakeSpeechSession stands in for a running worker. Only its presence
+// matters here: the grace asks whether a session exists, never what it does.
+type fakeSpeechSession struct{}
+
+func (fakeSpeechSession) SynthesizeToStream(context.Context, SynthesisRequest, *audio.PCMStream) error {
+	return nil
+}
+func (fakeSpeechSession) CancelActive() error { return nil }
+func (fakeSpeechSession) Presets() []string   { return nil }
+func (fakeSpeechSession) Streaming() bool     { return false }
+func (fakeSpeechSession) Close()              {}
+
+// liveSession returns a session pointer suitable for speechRef, standing in
+// for a running worker.
+func liveSession(t *testing.T) *qwenSpeechSession {
+	t.Helper()
+	var s qwenSpeechSession = fakeSpeechSession{}
+	return &s
+}
+
+func TestQwenFirstAudioGraceChargesColdStartOnlyWhenNoWorkerIsUp(t *testing.T) {
 	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 	qn.native = true
 
 	cold := qn.FirstAudioGraceForChars(150)
-	qn.alive.Store(true)
+	qn.speechRef.Store(liveSession(t))
 	warm := qn.FirstAudioGraceForChars(150)
 
 	if cold-warm != nativeColdReadyP95 {
 		t.Errorf("cold grace %v vs warm %v: difference should be exactly the cold-ready allowance %v", cold, warm, nativeColdReadyP95)
+	}
+}
+
+// TestQwenFirstAudioGraceCoversAWorkerRestart is the review finding this
+// replaces. The allowance used to key off q.alive, which means "the provider
+// is usable": it is set during construction and deliberately survives
+// discardSpeechSessionLocked so the provider can restart itself. A segment
+// landing on the restart path therefore got the warm budget — often the 8s
+// floor — while actually paying a full worker startup, so the stall watchdog
+// could cancel the self-healing restart it exists to protect.
+func TestQwenFirstAudioGraceCoversAWorkerRestart(t *testing.T) {
+	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+	qn.native = true
+	qn.modelTier = "1.7b"
+	qn.alive.Store(true) // provider stays usable across a worker failure
+	qn.speech = fakeSpeechSession{}
+	qn.speechRef.Store(liveSession(t))
+
+	warm := qn.FirstAudioGraceForChars(20) // short segment: hits the floor
+	if warm != minFirstAudioGrace {
+		t.Fatalf("warm short-segment grace = %v, want the %v floor", warm, minFirstAudioGrace)
+	}
+
+	// A worker or protocol failure discards the session. alive stays true.
+	qn.discardSpeechSessionLocked()
+	if !qn.alive.Load() {
+		t.Fatal("precondition: alive should survive a discarded session")
+	}
+
+	restarting := qn.FirstAudioGraceForChars(20)
+	if restarting <= warm {
+		t.Fatalf("grace after discard = %v, want more than the warm %v: the next synthesis pays a full startup", restarting, warm)
+	}
+	// A native 1.7b worker takes ~11s to come up; the budget must clear that
+	// or the watchdog kills the restart mid-flight.
+	if restarting < nativeColdReadyP95 {
+		t.Errorf("grace after discard = %v, want at least the cold-ready allowance %v", restarting, nativeColdReadyP95)
 	}
 }
 
@@ -281,7 +336,7 @@ func TestQwenFirstAudioGraceTreatsSynthTimeoutAsACapNotTheBudget(t *testing.T) {
 	qn.native = true
 	qn.modelTier = "1.7b"
 	qn.timeoutSet = true
-	qn.alive.Store(true)
+	qn.speechRef.Store(liveSession(t))
 
 	if got := qn.FirstAudioGraceForChars(120); got >= 120*time.Second {
 		t.Errorf("FirstAudioGraceForChars(120) = %v; a 120s synth timeout must not become a 120s stall budget", got)
@@ -293,7 +348,7 @@ func TestQwenFirstAudioGraceTreatsSynthTimeoutAsACapNotTheBudget(t *testing.T) {
 	tight.native = true
 	tight.modelTier = "1.7b"
 	tight.timeoutSet = true
-	tight.alive.Store(true)
+	tight.speechRef.Store(liveSession(t))
 	if got := tight.FirstAudioGraceForChars(300); got != 10*time.Second {
 		t.Errorf("FirstAudioGraceForChars(300) = %v, want the 10s synth timeout as a ceiling", got)
 	}
@@ -306,7 +361,7 @@ func TestQwenFirstAudioGraceTierCeilings(t *testing.T) {
 		q := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 		q.native = true
 		q.modelTier = tier
-		q.alive.Store(true)
+		q.speechRef.Store(liveSession(t))
 		return q
 	}
 	small, large := mk("0.6b").FirstAudioGraceForChars(200), mk("1.7b").FirstAudioGraceForChars(200)
@@ -319,7 +374,7 @@ func TestQwenFirstAudioGraceInterfaces(t *testing.T) {
 	// Length-blind callers land on an ordinary sentence, not a worst case.
 	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 	qn.native = true
-	qn.alive.Store(true)
+	qn.speechRef.Store(liveSession(t))
 	if got, want := qn.FirstAudioGrace(), qn.FirstAudioGraceForChars(typicalSegmentChars); got != want {
 		t.Errorf("FirstAudioGrace() = %v, want the typical-segment budget %v", got, want)
 	}
