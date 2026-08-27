@@ -1,0 +1,480 @@
+{
+  "schema": "obey-voice.benchmark.tts-rtf.v1",
+  "id": "F8-qwen-tts-cuda",
+  "slice": "fast-local-fleet Slice 0 (Stage A CUDA re-anchor, pending measurement P1) + Slice 7 CUDA leg of P5 (Metal leg = F7-qwen-tts-17b-metal-2026-08-26.json)",
+  "measured_at": "2026-08-27T20:08:25Z",
+  "machine": {
+    "hostname": "archdtop",
+    "cpu": "AMD Ryzen 9 3900X 12-Core Processor",
+    "gpu": "NVIDIA GeForce RTX 5060 Ti 16GB (15887 MiB usable, compute capability 12.0)",
+    "driver": "610.43.03",
+    "cuda_toolkit": "13.3 (V13.3.73, local extract under ~/.cache/qwen3-tts-native/cuda-root)",
+    "os": "Arch Linux x86_64, kernel 7.1.3-arch1-3",
+    "power": "desktop, AC",
+    "concurrent_load": "ollama llama-server held 5655 MiB of VRAM resident throughout (idle, ~4% GPU util between runs). Not evicted; the benches ran alongside it. GPU peaked at 12235 MiB / 2850 MHz / 63C during the 1.7b run, so no VRAM pressure and no observed clock throttle."
+  },
+  "backend": {
+    "requested": "QWEN3_TTS_BACKEND=cuda (EXPLICIT - see backend_gotcha below; this differs from F7, which ran Metal with the variable unset)",
+    "actual": "CUDA0",
+    "evidence": [
+      "qwen3-tts-cli on the same engine build and same models dir: 'ggml_cuda_init: found 1 CUDA devices (Total VRAM: 15887 MiB) / Device 0: NVIDIA GeForce RTX 5060 Ti, compute capability 12.0' then 'TTSTransformer backend: CUDA0' and 'AudioTokenizerDecoder backend: CUDA0'.",
+      "During the warm-bench runs themselves, nvidia-smi --query-compute-apps sampled at 1 Hz showed the worker resident on the GPU: '<root>/build/qwen3-tts-worker, 2814 MiB' (0.6b) and '<root>/build/qwen3-tts-worker, 4780 MiB' (1.7b).",
+      "ldd build/qwen3-tts-worker resolves libggml-cuda.so.0, libcuda.so.1, libcudart.so.13, libcublas.so.13, libcublasLt.so.13.",
+      "The harness itself cannot show this: pkg/workerclient/client.go:76 does `go io.Copy(io.Discard, stderr)`, so the worker's backend banner never reaches the bench log. Backend evidence here is out-of-band by construction."
+    ],
+    "note": "No CPU fallback for the reported numbers. 'AudioTokenizerDecoder: chunked GPU decode enabled (frames=108, chunk=34, context=12)' confirms the CUDA chunked decode path is active in this engine pin."
+  },
+  "backend_gotcha": {
+    "finding": "On this Linux CUDA host the WORKER's auto backend selection does NOT reach the fast all-CUDA placement, while the CLI's does. Leaving QWEN3_TTS_BACKEND unset costs ~3.5x and is the difference between passing and failing the Stage B throughput gate.",
+    "measured": {
+      "0.6b_F1_anchor_backend_cuda": {
+        "rtf": [
+          0.4716,
+          0.4589,
+          0.4572
+        ],
+        "wall_ms_median": 1416.0
+      },
+      "0.6b_F1_anchor_backend_unset_auto": {
+        "rtf": [
+          1.335,
+          1.681,
+          1.679,
+          1.711
+        ],
+        "wall_ms_range": [
+          3493,
+          5204
+        ],
+        "note": "two separate 2-iteration runs, plus the first smoke run at rtf=1.692; reproducible"
+      }
+    },
+    "diagnosis": "Not a clean CPU fallback: nvidia-smi still showed the worker holding 2404 MiB of VRAM during the unset-auto run, so at least one component is on CUDA0 while the hot one is not. init_preferred_backend's AUTO path (third_party/qwen3-tts.cpp/src/gguf_loader.cpp:163-181) tries GGML_BACKEND_DEVICE_TYPE_IGPU, then GPU, then ACCEL, then CPU, and init_tensor_loader_backend's AUTO path (same file, :138-143) instead honours a caller-supplied preferred type; the two disagree for the talker under AUTO. Root-causing this was out of scope for a measurement run - it is recorded as an observation, not a fix.",
+    "impact_on_obey_voice": "obey-voice never sets QWEN3_TTS_BACKEND anywhere (grep across the repo: the only hits are this docs/benchmarks tree). pkg/voiceagent/qwen/worker_env.go builds the worker environment and passes DYLD_LIBRARY_PATH / LD_LIBRARY_PATH / QWEN3_TTS_TIER / QWEN3_TTS_MODEL only. A Linux CUDA speech-serve host - which is exactly the Topology B offload target this design exists to build - would therefore run at rtf ~1.7 instead of ~0.47 out of the box. Setting QWEN3_TTS_BACKEND=cuda in worker_env.go on Linux is a one-line prerequisite for Slice 3, and PLATFORMS.md:66 already documents the export for manual runs.",
+    "measurement_choice": "Because the intent of this artifact is to characterise the CUDA backend, the reported runs set QWEN3_TTS_BACKEND=cuda explicitly. This is a documented deviation from F7's unset/auto invocation."
+  },
+  "engine": {
+    "repo": "Obedience-Corp/qwen3-tts.cpp",
+    "engine_sha": "22277bc6f087fd081df8bffa9c280b106a8af567",
+    "engine_sha_previous_on_this_host": "b3ba14077cf1b3e11b86e5f84aa9184605c89b28 (predict-woo upstream) - the pin that produced the committed 1.23 CUDA number on 2026-07-29",
+    "harness_repo_sha": "e66661a (qwen3-tts-native main, 'Merge pull request #4 from Obedience-Corp/feat/warm-bench')",
+    "worker": "build/qwen3-tts-worker (protocol qwen3-tts-worker/v1, streaming=false, stage A whole-utterance), rebuilt on this host 2026-08-27 against engine 22277bc",
+    "sample_rate": 24000,
+    "harness": {
+      "repo": "qwen3-tts-native (projects/qwen3-tts-native)",
+      "command": "cmd/warm-bench (schema qwen.warmbench.v1) via `just bench warm <tier> <iters>`",
+      "commit": "915d767332f4a87deb0c6ff50f19bc0b0753d0ad, merged to main as e66661a",
+      "note": "Same committed harness, same five fixtures, same warmup discard and same RTF definition as F7. This is the committed harness, not an out-of-tree scratch module."
+    }
+  },
+  "models": [
+    {
+      "tier": "0.6b",
+      "gguf": "models/qwen3-tts-0.6b-f16.gguf",
+      "bytes": 1835428960,
+      "source": "already present on this host since 2026-07-29 (byte-identical size to the Mac's copy); not re-copied",
+      "preset_dir": "models/presets"
+    },
+    {
+      "tier": "1.7b",
+      "gguf": "models/qwen3-tts-1.7b-f16.gguf",
+      "bytes": 3863621120,
+      "source": "rsynced from the Mac checkout (the 2026-08-16 local offline convert of Qwen/Qwen3-TTS-12Hz-1.7B-Base) over the tailnet; NOT re-converted. models/presets-1.7b copied alongside it.",
+      "preset_dir": "models/presets-1.7b"
+    }
+  ],
+  "method": {
+    "definition": "RTF = synthesis wall time / audio duration. >1.0 is slower than realtime.",
+    "warmup": "Model load excluded: one warmup synthesis ('Warmup utterance, discarded from the results.') after worker ready, discarded. Cold ready and warmup wall reported separately.",
+    "iterations": 3,
+    "ordering": "round-robin: all 5 fixtures per iteration, 3 iterations",
+    "preset": "Vivian (baked .q3te, per-tier dims)",
+    "ttfa": "NOT instrumented. Worker is stage A (streaming=false): PCM arrives as one blob after full synthesis, so time-to-first-audio == full wall by construction. Every wall figure here is the whole-utterance wall, not a streaming TTFA.",
+    "sampling": "engine defaults (temperature 0.9, top-k 50), so audio duration varies a few percent run to run; RTF is the stable quantity.",
+    "stat_note": "n=15 per tier; 'p95' is reported as the observed max, the honest ceiling at this sample size."
+  },
+  "commands": [
+    "# on archdtop, root = ~/campaigns/lance-arch/projects/qwen3-tts-native",
+    "git pull --ff-only                                    # aa2f188 -> e66661a",
+    "export CUDA_ROOT=$HOME/.cache/qwen3-tts-native/cuda-root/opt/cuda",
+    "export PATH=$CUDA_ROOT/bin:$PATH CUDAToolkit_ROOT=$CUDA_ROOT",
+    "export LD_LIBRARY_PATH=$CUDA_ROOT/targets/x86_64-linux/lib:$LD_LIBRARY_PATH",
+    "just engine pin                                       # docs/ENGINE_PIN.txt -> Obedience-Corp @ 22277bc",
+    "CUDA=1 just engine build",
+    "just engine worker",
+    "QWEN3_TTS_BACKEND=cuda just bench warm 0.6b 3         # -> artifacts/latency/warm_0.6b.json",
+    "QWEN3_TTS_BACKEND=cuda just bench warm 1.7b 3         # -> artifacts/latency/warm_1.7b.json",
+    "# generate/decode split (single-shot CLI; its Timing block excludes load):",
+    "QWEN3_TTS_BACKEND=cuda QWEN3_TTS_TIER=<tier> $root/third_party/qwen3-tts.cpp/build/qwen3-tts-cli -m $root/models -t \"<F4 text>\" -o cli_<tier>.wav"
+  ],
+  "results": {
+    "0.6b": {
+      "cold_ready_ms": 1290.9,
+      "warmup_wall_ms": 1251.3,
+      "rtf_median": 0.4751,
+      "rtf_p95_observed_max": 0.5054,
+      "measured_at": "2026-08-27T20:07:05Z",
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "text": "Hello from the native warm worker latency bench.",
+          "iterations": 3,
+          "wall_ms_median": 1416.0,
+          "wall_ms_max": 1422.9,
+          "audio_s_median": 3.017,
+          "rtf_median": 0.4589,
+          "rtf_max": 0.4716,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 1422.9,
+              "audio_s": 3.017,
+              "rtf": 0.4716
+            },
+            {
+              "iter": 2,
+              "wall_ms": 1384.5,
+              "audio_s": 3.017,
+              "rtf": 0.4589
+            },
+            {
+              "iter": 3,
+              "wall_ms": 1416.0,
+              "audio_s": 3.097,
+              "rtf": 0.4572
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "text": "Sure, that works.",
+          "iterations": 3,
+          "wall_ms_median": 795.3,
+          "wall_ms_max": 1293.7,
+          "audio_s_median": 1.897,
+          "rtf_median": 0.4292,
+          "rtf_max": 0.4659,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 745.4,
+              "audio_s": 1.737,
+              "rtf": 0.4292
+            },
+            {
+              "iter": 2,
+              "wall_ms": 795.3,
+              "audio_s": 1.897,
+              "rtf": 0.4193
+            },
+            {
+              "iter": 3,
+              "wall_ms": 1293.7,
+              "audio_s": 2.777,
+              "rtf": 0.4659
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "text": "I pulled the latest changes and the build is green on both machines.",
+          "iterations": 3,
+          "wall_ms_median": 1870.7,
+          "wall_ms_max": 1998.3,
+          "audio_s_median": 3.817,
+          "rtf_median": 0.4901,
+          "rtf_max": 0.5054,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 1998.3,
+              "audio_s": 4.137,
+              "rtf": 0.483
+            },
+            {
+              "iter": 2,
+              "wall_ms": 1848.2,
+              "audio_s": 3.657,
+              "rtf": 0.5054
+            },
+            {
+              "iter": 3,
+              "wall_ms": 1870.7,
+              "audio_s": 3.817,
+              "rtf": 0.4901
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "text": "Before we ship the streaming path, I want to see a sustained run where the synthesizer keeps up with playback for at least fifteen seconds without a single underrun.",
+          "iterations": 3,
+          "wall_ms_median": 4689.5,
+          "wall_ms_max": 4741.7,
+          "audio_s_median": 9.737,
+          "rtf_median": 0.4804,
+          "rtf_max": 0.4816,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 4562.4,
+              "audio_s": 9.497,
+              "rtf": 0.4804
+            },
+            {
+              "iter": 2,
+              "wall_ms": 4689.5,
+              "audio_s": 9.737,
+              "rtf": 0.4816
+            },
+            {
+              "iter": 3,
+              "wall_ms": 4741.7,
+              "audio_s": 10.137,
+              "rtf": 0.4678
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "text": "The fleet design has three moving parts. First, the local model has to answer fast enough that the pause after you stop talking feels like a person thinking, not a machine loading. Second, the speech engine has to produce audio at least as fast as the speaker plays it, or the sentence will stutter halfway through. Third, everything has to keep working when the laptop is on battery and the fans are quiet.",
+          "iterations": 3,
+          "wall_ms_median": 12003.1,
+          "wall_ms_max": 13024.7,
+          "audio_s_median": 25.177,
+          "rtf_median": 0.4768,
+          "rtf_max": 0.4784,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 11662.4,
+              "audio_s": 24.377,
+              "rtf": 0.4784
+            },
+            {
+              "iter": 2,
+              "wall_ms": 13024.7,
+              "audio_s": 27.417,
+              "rtf": 0.4751
+            },
+            {
+              "iter": 3,
+              "wall_ms": 12003.1,
+              "audio_s": 25.177,
+              "rtf": 0.4768
+            }
+          ]
+        }
+      ]
+    },
+    "1.7b": {
+      "cold_ready_ms": 1806.1,
+      "warmup_wall_ms": 2188.2,
+      "rtf_median": 0.6033,
+      "rtf_p95_observed_max": 0.6217,
+      "measured_at": "2026-08-27T20:08:25Z",
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "text": "Hello from the native warm worker latency bench.",
+          "iterations": 3,
+          "wall_ms_median": 1966.6,
+          "wall_ms_max": 1983.7,
+          "audio_s_median": 3.337,
+          "rtf_median": 0.5945,
+          "rtf_max": 0.6,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 1983.7,
+              "audio_s": 3.337,
+              "rtf": 0.5945
+            },
+            {
+              "iter": 2,
+              "wall_ms": 1810.1,
+              "audio_s": 3.017,
+              "rtf": 0.6
+            },
+            {
+              "iter": 3,
+              "wall_ms": 1966.6,
+              "audio_s": 3.337,
+              "rtf": 0.5893
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "text": "Sure, that works.",
+          "iterations": 3,
+          "wall_ms_median": 983.2,
+          "wall_ms_max": 1024.0,
+          "audio_s_median": 1.737,
+          "rtf_median": 0.5661,
+          "rtf_max": 0.5766,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 1024.0,
+              "audio_s": 1.817,
+              "rtf": 0.5636
+            },
+            {
+              "iter": 2,
+              "wall_ms": 863.1,
+              "audio_s": 1.497,
+              "rtf": 0.5766
+            },
+            {
+              "iter": 3,
+              "wall_ms": 983.2,
+              "audio_s": 1.737,
+              "rtf": 0.5661
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "text": "I pulled the latest changes and the build is green on both machines.",
+          "iterations": 3,
+          "wall_ms_median": 2562.1,
+          "wall_ms_max": 2817.0,
+          "audio_s_median": 4.137,
+          "rtf_median": 0.6193,
+          "rtf_max": 0.6217,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 2817.0,
+              "audio_s": 4.617,
+              "rtf": 0.6102
+            },
+            {
+              "iter": 2,
+              "wall_ms": 2562.1,
+              "audio_s": 4.137,
+              "rtf": 0.6193
+            },
+            {
+              "iter": 3,
+              "wall_ms": 2522.2,
+              "audio_s": 4.057,
+              "rtf": 0.6217
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "text": "Before we ship the streaming path, I want to see a sustained run where the synthesizer keeps up with playback for at least fifteen seconds without a single underrun.",
+          "iterations": 3,
+          "wall_ms_median": 5941.1,
+          "wall_ms_max": 6357.2,
+          "audio_s_median": 9.737,
+          "rtf_median": 0.6033,
+          "rtf_max": 0.6102,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 5941.1,
+              "audio_s": 9.737,
+              "rtf": 0.6102
+            },
+            {
+              "iter": 2,
+              "wall_ms": 6357.2,
+              "audio_s": 10.537,
+              "rtf": 0.6033
+            },
+            {
+              "iter": 3,
+              "wall_ms": 5186.8,
+              "audio_s": 8.617,
+              "rtf": 0.6019
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "text": "The fleet design has three moving parts. First, the local model has to answer fast enough that the pause after you stop talking feels like a person thinking, not a machine loading. Second, the speech engine has to produce audio at least as fast as the speaker plays it, or the sentence will stutter halfway through. Third, everything has to keep working when the laptop is on battery and the fans are quiet.",
+          "iterations": 3,
+          "wall_ms_median": 14547.9,
+          "wall_ms_max": 14822.0,
+          "audio_s_median": 23.737,
+          "rtf_median": 0.6129,
+          "rtf_max": 0.6169,
+          "raw": [
+            {
+              "iter": 1,
+              "wall_ms": 14547.9,
+              "audio_s": 23.737,
+              "rtf": 0.6129
+            },
+            {
+              "iter": 2,
+              "wall_ms": 14249.5,
+              "audio_s": 23.097,
+              "rtf": 0.6169
+            },
+            {
+              "iter": 3,
+              "wall_ms": 14822.0,
+              "audio_s": 24.297,
+              "rtf": 0.61
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "generate_vs_decode_split": {
+    "note": "qwen3-tts-cli single-shot on the F4 fixture, QWEN3_TTS_BACKEND=cuda. First-synthesis-in-process, not a warm-worker run, so RTF sits slightly above the warm distribution. Included for the ratio.",
+    "0.6b": {
+      "generate_ms": 2144,
+      "decode_ms": 1733,
+      "tokenize_ms": 1,
+      "encode_ms": 0,
+      "total_ms": 3878,
+      "audio_s": 7.9,
+      "rtf": 0.491,
+      "generate_share": 0.553,
+      "rss_peak": "1.02 GB (host RSS; weights live in VRAM)"
+    },
+    "1.7b": {
+      "generate_ms": 3416,
+      "decode_ms": 1820,
+      "tokenize_ms": 1,
+      "encode_ms": 0,
+      "total_ms": 5237,
+      "audio_s": 8.38,
+      "rtf": 0.625,
+      "generate_share": 0.652,
+      "rss_peak": "1.01 GB (host RSS; weights live in VRAM)"
+    },
+    "reading": "On CUDA the split is far more balanced than on Metal. F7 measured generate_share 0.749 (0.6b) / 0.829 (1.7b); here it is 0.553 / 0.652. Vocoder decode is nearly tier-independent in absolute terms (1733 vs 1820 ms) and is now ~45% of 0.6b synthesis, because the CUDA chunked GPU decode path shortens generate much more than it shortens decode. The whole 0.6b->1.7b regression is still generate (+1272 ms) with decode flat (+87 ms), so DESIGN's conclusion stands qualitatively - the autoregressive talker, not decode_chunked_*, is the tier lever - but on CUDA decode is a big enough share that it would matter for a Stage B chunk schedule."
+  },
+  "anchor_check": {
+    "committed_0.6b_cuda_rtf": 1.23,
+    "committed_measured_when": "2026-07-29, this same host, engine b3ba140 (predict-woo upstream)",
+    "measured_0.6b_cuda_rtf_median": 0.4751,
+    "verdict": "NOT reproduced - and the miss is real, not methodological. 0.475 median vs the committed 1.23 is 2.6x faster, far outside any few-percent tolerance. The methodology matches F7 exactly (same committed harness, same fixtures, same warmup discard, same RTF definition), and the anchor phrase F1 measures 0.459 here. Two things changed on this host since the 1.23 run: the engine pin moved from predict-woo b3ba140 to Obedience-Corp 22277bc (which brings the chunked GPU decode path this run logs as active), and the run now sets QWEN3_TTS_BACKEND=cuda explicitly. The second alone does not explain it: unset/auto on the NEW engine measures 1.68-1.71, which is in the same neighbourhood as, but still worse than, the committed 1.23. Best available reading is that the committed 1.23 was an unset/auto run on the old engine, and the 0.475 figure is what the current pinned engine does when actually placed on CUDA. Treat 1.23 as stale, not as a target."
+  },
+  "reading": {
+    "slice_0_p1_does_06b_cuda_sustained_rtf_stay_above_1": "No. This is the headline and it reverses the design's expectation. 0.6b on CUDA measures rtf_median 0.475 (observed max 0.505) across 15 warm runs, i.e. it synthesises at ~2.1x realtime. Crucially it does NOT degrade with length: the long fixtures are the FASTEST-converging, not the slowest. F5_paragraph (23-27 s of audio, the >=15 s sustained fixture DESIGN's D16 asks for) measures 0.478 / 0.475 / 0.477 - a 0.6% spread - and F4 (8.6-10.1 s) measures 0.480 / 0.482 / 0.468. Only the very short F2 (1.7-2.8 s) sits lower at 0.429, so fixed per-request overhead is small and slightly favourable, not the thing inflating the number. Steady-state CUDA throughput at 0.6b is ~0.475 and flat. Conclusion for Slice 5's gate: the Stage B throughput gate PASSES on CUDA with roughly 2x headroom, so the design's premise that 'the throughput gate is the one likely to fail' holds for Metal but NOT for CUDA. Streaming Stage A output on a CUDA host would not underrun at 0.6b; a modest fixed pre-buffer suffices rather than one that grows with utterance length.",
+    "p5_cuda_17b_warm_wall_and_rtf": "1.7b on CUDA measures rtf_median 0.603 (observed max 0.622), also flat across length: F5 0.613 / 0.617 / 0.610 on 23-24 s of audio. Warm wall for a typical short conversational reply (F1, ~3.0-3.3 s audio) is 1.97 s median (max 1.98 s); a one-line ack (F2) is 0.98 s; a medium sentence (F3, ~4.1 s) is 2.56 s; the long sentence (F4, ~9.7 s) is 5.94 s; the 23 s paragraph is 14.5 s. Cold ready is 1.81 s and the discarded warmup synthesis is 2.19 s. 1.7b on CUDA is ~1.27x slower than 0.6b on CUDA - a much gentler tier penalty than Metal's 1.40x - and is still ~1.66x realtime, so 1.7b ALSO passes the throughput gate on CUDA. With F7's Metal leg, P5 is now closed on both backends.",
+    "p5_the_35s_claim": "Dead on CUDA, as it was on Metal. native17bWarmTTP95 = 35 s (obey-voice pkg/voiceagent/tts/qwen.go:36) is ~18x the measured 1.7b CUDA warm wall for a typical sentence (1.97 s) and ~2.4x even the 23 s paragraph (14.5 s). F7 already showed it is ~6x too large on Metal. The same correction applies and is now backend-independent: the watchdog grace must scale with expected reply length (roughly RTF x expected audio seconds + margin), not sit at a fixed 35 s. A fixed 35 s makes a short 1.7b CUDA turn wait ~18x longer than it should before the stall watchdog can fire.",
+    "vram_16gb_and_the_17b_tier": "1.7b f16 does NOT OOM on a 16 GB card. The worker's peak GPU allocation was 4780 MiB at 1.7b (2814 MiB at 0.6b), measured by 1 Hz nvidia-smi compute-app sampling. This was with ollama's llama-server concurrently holding 5655 MiB resident; whole-device peak was 12235 / 15887 MiB. So the 1.7b tier fits comfortably on a 16 GB-class card and even coexists with a mid-size LLM resident on the same GPU - which is the Topology B co-tenancy question. Headroom at 1.7b alone would be ~11 GB.",
+    "cross_backend_summary": "0.6b: CUDA 0.475 vs Metal 1.329 (2.8x). 1.7b: CUDA 0.603 vs Metal 1.865 (3.1x). The RTX 5060 Ti is decisively faster than the M4 Max for this workload, and it is the only measured configuration where either tier synthesises faster than realtime. If Stage B streaming is worth building, CUDA/Topology B offload is where it pays; on Metal both tiers remain above 1.0 and F7's conclusion is unchanged.",
+    "caveats": [
+      "TTFA is not separately measurable today (stage A, streaming=false); every wall figure here equals full wall.",
+      "n=3 per fixture per tier; 'p95' is the observed max.",
+      "This run set QWEN3_TTS_BACKEND=cuda explicitly, unlike F7's unset/auto. That is a deliberate deviation - see backend_gotcha. The unset/auto numbers on the same host and engine are 1.68-1.71 at 0.6b F1 and are reported there, not in results.",
+      "The committed 1.23 CUDA anchor did NOT reproduce (0.475 measured). Both the engine pin and the backend env differ from that 2026-07-29 run, so the two are not directly comparable; 1.23 should be retired rather than reconciled.",
+      "The engine pin on this host was moved from predict-woo b3ba140 to Obedience-Corp 22277bc as part of this run, because main's docs/ENGINE_PIN.txt requires the fork for the 1.7b tier. The host's previously-validated CUDA configuration (PLATFORMS.md:26-27) is therefore no longer the one installed; PLATFORMS.md's Linux build block still names b3ba140 and is now stale.",
+      "The GPU was shared: ollama's llama-server held 5655 MiB throughout at ~4% utilisation. It was idle, and RTF did not drift across iterations (0.6b F5 0.478/0.475/0.477; 1.7b F5 0.613/0.617/0.610), which argues against interference during the window - but these are not exclusive-GPU numbers.",
+      "The very first post-build smoke (0.6b F1, backend unset) measured rtf=1.692 and was initially mistaken for a slow CUDA result; it was in fact the auto-backend path and is reproducible. No results in this artifact come from that path.",
+      "Audio duration varies run to run because sampling is stochastic at engine defaults; RTF is the stable quantity, wall time is not.",
+      "No thermal instrumentation beyond nvidia-smi sampling: SM clock held 2850 MHz at 63 C during the 1.7b run, so no throttling was observed."
+    ]
+  }
+}
