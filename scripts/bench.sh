@@ -131,27 +131,51 @@ SYNTH_TEXTS=(
 	"Say hello in exactly three words."
 )
 
-# Generate the synthetic fixture set if missing. Uses the project's own TTS, so
+# The TTS fixture set is deliberately the opposite of the one above.
+#
+# SYNTH_TEXTS elicits SHORT replies because the gated stt stage does not care
+# how long the answer is, and a long reply only adds noise. That choice makes
+# the default instrument blind to TTS: synthesis cost scales with how much
+# audio there is, so a one-word reply measures almost none of it. Every
+# committed latency artifact so far was recorded on that set, which is why they
+# show a fast synth stage while a real conversation does not.
+#
+# These prompts ask for several sentences, so a turn exercises the progressive
+# path the product actually runs: first segment out alone, later segments
+# synthesized while the previous one plays.
+SYNTH_TTS_TEXTS=(
+	"In three or four sentences, explain why fast feedback matters when writing software."
+	"Describe your morning routine in about five sentences."
+	"Give me a short paragraph on how to review a pull request carefully."
+)
+
+# Generate a synthetic fixture set if missing. Uses the project's own TTS, so
 # it needs no external tooling and no recording session.
+#
+# $1 is the filename prefix, and the remaining arguments are the sentences. The
+# prefix keeps the two sets in separate files: they are different instruments
+# and must never be pooled into one median.
 ensure_synth_fixtures() {
+	local prefix="$1"; shift
+	local texts=("$@")
 	mkdir -p "$SYNTH_DIR"
 	local i=0 missing=0
-	for _ in "${SYNTH_TEXTS[@]}"; do
+	for _ in "${texts[@]}"; do
 		i=$((i + 1))
-		[[ -s "${SYNTH_DIR}/synth-$(printf '%02d' "$i").wav" ]] || missing=1
+		[[ -s "${SYNTH_DIR}/${prefix}-$(printf '%02d' "$i").wav" ]] || missing=1
 	done
 	[[ "$missing" -eq 1 ]] || return 0
 
-	echo "  generating synthetic fixtures in ${SYNTH_DIR} ..." >&2
+	echo "  generating synthetic fixtures (${prefix}) in ${SYNTH_DIR} ..." >&2
 	local tmpdir gtts out
 	tmpdir="$(mktemp -d)"
 	gtts="${tmpdir}/golden-tts"
 	(cd "$REPO_ROOT" && go build -o "$gtts" ./cmd/golden-tts) || {
 		rm -rf "$tmpdir"; echo "error: could not build cmd/golden-tts" >&2; return 1; }
 	i=0
-	for text in "${SYNTH_TEXTS[@]}"; do
+	for text in "${texts[@]}"; do
 		i=$((i + 1))
-		out="${SYNTH_DIR}/synth-$(printf '%02d' "$i").wav"
+		out="${SYNTH_DIR}/${prefix}-$(printf '%02d' "$i").wav"
 		if ! "$gtts" -text "$text" -out "${tmpdir}/raw.wav" >/dev/null 2>&1 || [[ ! -s "${tmpdir}/raw.wav" ]]; then
 			rm -rf "$tmpdir"
 			echo "error: failed to synthesize fixture ${i} (is the TTS model installed?)" >&2
@@ -171,15 +195,20 @@ ensure_synth_fixtures() {
 	rm -rf "$tmpdir"
 }
 
-# Expand the synthetic set into full-turn benchmark arguments.
-synth_args() {
-	ensure_synth_fixtures || return 1
+# Expand a synthetic set into full-turn benchmark arguments.
+synth_args_for() {
+	local prefix="$1"; shift
+	local texts=("$@")
+	ensure_synth_fixtures "$prefix" "${texts[@]}" || return 1
 	local i=0
-	for text in "${SYNTH_TEXTS[@]}"; do
+	for text in "${texts[@]}"; do
 		i=$((i + 1))
-		printf '%s\n' "--full-turn-fixture=${SYNTH_DIR}/synth-$(printf '%02d' "$i").wav" "--expect-text=${text}"
+		printf '%s\n' "--full-turn-fixture=${SYNTH_DIR}/${prefix}-$(printf '%02d' "$i").wav" "--expect-text=${text}"
 	done
 }
+
+synth_args() { synth_args_for synth "${SYNTH_TEXTS[@]}"; }
+tts_synth_args() { synth_args_for tts "${SYNTH_TTS_TEXTS[@]}"; }
 
 # Recorded corpus wins when present: it is real speech with real pauses.
 corpus_args() {
@@ -237,6 +266,63 @@ measure() {
 		  thresholds: {playback_start_p50_ms: $target, regression_tolerance_pct: $tolerance},
 		  results: $results}' >"$envelope"
 	echo "$envelope"
+}
+
+# measure_tts runs the long-reply fixture set across one or more TTS engines
+# and writes the raw benchmark array to $1.
+#
+# Unlike measure(), this writes the bare array rather than a bench.sh envelope:
+# cmd/tts-ab reads either, and the envelope's single tts_provider provenance
+# field cannot describe a sweep that deliberately ran several.
+measure_tts() {
+	local out="$1"; shift
+	local specs=("$@")
+	[[ ${#specs[@]} -gt 0 ]] || { echo "error: no TTS providers given" >&2; return 1; }
+
+	local args=()
+	while IFS= read -r a; do [[ -n "$a" ]] && args+=("$a"); done < <(tts_synth_args)
+	[[ ${#args[@]} -gt 0 ]] || { echo "error: no TTS fixtures available" >&2; return 1; }
+
+	local spec_args=()
+	for spec in "${specs[@]}"; do spec_args+=("--tts-provider=${spec}"); done
+
+	echo "  running TTS benchmark: ${specs[*]} over $(( ${#args[@]} / 2 )) long-reply utterances, ${ITERATIONS} iterations..." >&2
+	# Threshold violations are reported in the JSON and via exit status;
+	# capture the results either way.
+	"$SAMANTHA" benchmark --iterations "$ITERATIONS" --json-file "$out" 		"${spec_args[@]}" "${args[@]}" >/dev/null 2>&1 || true
+
+	[[ -s "$out" ]] || { echo "error: benchmark produced no JSON (is a brain provider reachable, and the TTS model installed?)" >&2; return 1; }
+}
+
+# print_tts_table summarizes a raw run per engine. It reports what actually
+# synthesized, not what was requested: a leg that fell back to Kokoro is a
+# Kokoro measurement, and pooling it under the requested name would describe
+# an engine that never ran.
+print_tts_table() {
+	jq -r '
+		[ .[] | select(.metrics.TTSProvider != null and .metrics.TTSProvider != "") ]
+		| group_by(.metrics.TTSProvider + (if (.metrics.TTSTier // "") == "" then "" else ":" + .metrics.TTSTier end))
+		| .[]
+		| {
+			engine: (.[0].metrics.TTSProvider + (if (.[0].metrics.TTSTier // "") == "" then "" else ":" + .[0].metrics.TTSTier end)),
+			turns: length,
+			silent: ([ .[] | select((.metrics.PlaybackStartElapsed // 0) <= 0) ] | length),
+			fellback: ([ .[] | select((.metrics.TTSFallbacks // 0) > 0) ] | length),
+			stalled: ([ .[] | select(.metrics.StallWatchdogFired == true) ] | length),
+			grace_s: (([ .[] | .metrics.FirstAudioGrace // 0 ] | max) / 1e9),
+			synth_stage_s: ([ .[]
+				| select((.metrics.PlaybackStartElapsed // 0) > 0)
+				| (.metrics.FirstAudioReadyElapsed - .metrics.FirstSegmentElapsed) / 1e9 ] | sort
+				| if length == 0 then null else .[(length/2|floor)] end),
+			segments: ([ .[] | (.metrics.Segments // []) | length ] | add),
+			rtf: ([ .[] | (.metrics.Segments // [])[] | select(.AudioSeconds > 0)
+				| (.SynthElapsed / 1e9) / .AudioSeconds ] | sort
+				| if length == 0 then null else .[(length/2|floor)] end)
+		  }
+		| "  \(.engine)",
+		  "      turns \(.turns)   silent \(.silent)   fell back \(.fellback)   stalled \(.stalled)   stall grace \(.grace_s)s",
+		  "      median synth stage \(if .synth_stage_s == null then "n/a" else (.synth_stage_s * 1000 | floor | tostring + " ms") end)   segments \(.segments)   median rtf \(if .rtf == null then "n/a" else (.rtf * 100 | round / 100 | tostring) end)"
+	' "$1"
 }
 
 # Per-fixture stage medians over warm samples (iteration 1 is warmup).
@@ -368,8 +454,26 @@ diff)
 	echo "  ✓ no regression"
 	;;
 
+tts)
+	shift || true
+	specs=("$@")
+	if [[ ${#specs[@]} -eq 0 ]]; then
+		# Default sweep: the configured default against the alternative. Both
+		# qwen tiers are named explicitly because the tier is part of the
+		# engine's identity, not a detail of it.
+		specs=(kokoro qwen3-tts:0.6b)
+	fi
+	raw="${BENCH_TTS_RAW:-${BENCH_DIR}/.tts-raw.json}"
+	measure_tts "$raw" "${specs[@]}" || exit 1
+	echo ""
+	print_tts_table "$raw"
+	echo ""
+	echo "  raw run: ${raw}"
+	echo "  aggregate it with: just bench tts-ab <label> ${raw} <control> <candidate>"
+	;;
+
 *)
-	echo "usage: bench.sh {run|baseline|diff|save <label>}" >&2
+	echo "usage: bench.sh {run|baseline|diff|save <label>|tts [provider...]}" >&2
 	exit 2
 	;;
 esac

@@ -26,7 +26,11 @@ const queueCapacity = 1024
 const summaryPreviewMax = 240
 
 // Version is the JSONL schema version written in the header record.
-const Version = 1
+//
+// 2 added per-segment TTS cost to the metrics record (segments, tts_provider,
+// tts_tier, tts_fallbacks, first_audio_grace_s, stall_watchdog_fired). All are
+// additive and omitted when zero, so a v1 reader still parses a v2 line.
+const Version = 2
 
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
@@ -71,6 +75,35 @@ type record struct {
 	// LeakLines is the voice gate's stripped-line count: per event on
 	// voice_gate records, per turn on metrics records (WI-dc9e33 B4).
 	LeakLines int `json:"leak_lines,omitempty"`
+
+	// TTS accounting on metrics records. The milestone fields above only ever
+	// describe the first segment; Segments carries every segment's synthesis
+	// cost, which is where a long reply actually spends its time.
+	TTSProvider        string    `json:"tts_provider,omitempty"`
+	TTSTier            string    `json:"tts_tier,omitempty"`
+	TTSFallbacks       int       `json:"tts_fallbacks,omitempty"`
+	FirstAudioGraceS   float64   `json:"first_audio_grace_s,omitempty"`
+	StallWatchdogFired bool      `json:"stall_watchdog_fired,omitempty"`
+	Segments           []segment `json:"segments,omitempty"`
+}
+
+// segment is one synthesized speech segment's cost. rtf is carried rather
+// than left to the reader because it is the quantity every consumer wants and
+// the one an aggregate must not recompute differently.
+type segment struct {
+	Index int `json:"i"`
+	Chars int `json:"chars,omitempty"`
+	// EngineS is synthesis alone; SynthS also covers waiting behind whatever
+	// was already playing. Only the first segment's SynthS is a delay a
+	// listener experienced.
+	EngineS     float64 `json:"engine_s"`
+	SynthS      float64 `json:"synth_s"`
+	QueueS      float64 `json:"queue_s,omitempty"`
+	AudioS      float64 `json:"audio_s"`
+	RTF         float64 `json:"rtf,omitempty"`
+	PlayS       float64 `json:"play_s,omitempty"`
+	Fallback    bool    `json:"fallback,omitempty"`
+	Interrupted bool    `json:"interrupted,omitempty"`
 }
 
 // Writer subscribes to a bus and appends one record per event.
@@ -110,7 +143,8 @@ func newWriter(path string, capacity int) (*Writer, error) {
 
 // Attach subscribes the writer to the events the transcript records.
 // High-rate display traffic (AudioLevel, TranscriptPartial, per-segment voice
-// events) stays excluded by design. agent_delta is recorded but non-durable
+// events) stays excluded by design — per-segment synthesis cost rides the
+// once-per-turn metrics record instead, so a long reply still costs one line. agent_delta is recorded but non-durable
 // under back-pressure so terminal user/agent/error/metrics lines win.
 func (w *Writer) Attach(bus *events.Bus) {
 	events.Subscribe(bus, func(e events.UserInput) {
@@ -166,6 +200,13 @@ func (w *Writer) Attach(bus *events.Bus) {
 			SpokeS:         e.PlaybackCompleteElapsed.Seconds(),
 			BargeInS:       e.BargeInElapsed.Seconds(),
 			LeakLines:      e.ToolLeakLines,
+
+			TTSProvider:        e.TTSProvider,
+			TTSTier:            e.TTSTier,
+			TTSFallbacks:       e.TTSFallbacks,
+			FirstAudioGraceS:   e.FirstAudioGrace.Seconds(),
+			StallWatchdogFired: e.StallWatchdogFired,
+			Segments:           segmentRecords(e.Segments),
 		})
 	})
 	events.Subscribe(bus, func(e events.VoiceGateStripped) {
@@ -187,6 +228,29 @@ func (w *Writer) Attach(bus *events.Bus) {
 	events.Subscribe(bus, func(events.ConversationCleared) {
 		w.enqueue(record{Type: "cleared"})
 	})
+}
+
+// segmentRecords converts the turn's segment metrics to their wire form.
+func segmentRecords(in []events.SegmentMetric) []segment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]segment, 0, len(in))
+	for _, s := range in {
+		out = append(out, segment{
+			Index:       s.Index,
+			Chars:       s.Chars,
+			EngineS:     s.EngineElapsed.Seconds(),
+			QueueS:      s.QueueElapsed().Seconds(),
+			SynthS:      s.SynthElapsed.Seconds(),
+			AudioS:      s.AudioSeconds,
+			RTF:         s.RealtimeFactor(),
+			PlayS:       s.PlayElapsed.Seconds(),
+			Fallback:    s.Fallback,
+			Interrupted: s.Interrupted,
+		})
+	}
+	return out
 }
 
 // isDurableRecord reports terminal / harness-critical record types that must

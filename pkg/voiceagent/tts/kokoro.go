@@ -50,6 +50,12 @@ func init() {
 const kokoroProviderName = "kokoro"
 
 // KokoroTTS implements TTS using sherpa-onnx Kokoro.
+// ProviderName identifies this provider in latency artifacts.
+func (k *KokoroTTS) ProviderName() string { return "kokoro" }
+
+// ModelTier is empty: Kokoro ships one 82M model.
+func (k *KokoroTTS) ModelTier() string { return "" }
+
 type KokoroTTS struct {
 	mu         sync.Mutex
 	tts        *sherpa.OfflineTts

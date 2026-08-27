@@ -147,7 +147,7 @@ func TestSynthesizeSegmentRetriesWhenProviderStreamFailsBeforeReady(t *testing.T
 	p := &Pipeline{TTS: failedStreamTTS{}, TTSFallback: fallback, Player: player, Events: bus}
 
 	out := make(chan playbackEvent, 2)
-	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "hello", new(atomic.Bool), out, nil) {
+	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "hello", 0, new(atomic.Bool), out, nil) {
 		t.Fatalf("synthesizeSegment() = false, want fallback playback enqueued; fallback event=%+v playback event=%+v calls=%d queued-events=%d", fallbackEvent, playbackErrEvent, len(fallback.CallTimes()), len(out))
 	}
 	if fallbackEvent.Stage != "tts-fallback" {
@@ -205,7 +205,7 @@ func TestSynthesizeSegmentEnqueuesPlayback(t *testing.T) {
 	var audioStarted atomic.Bool
 	out := make(chan playbackEvent, 4)
 
-	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "hello world", &audioStarted, out, nil) {
+	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "hello world", 0, &audioStarted, out, nil) {
 		t.Fatal("synthesizeSegment returned false, want true (playback enqueued)")
 	}
 	if !sawSegment.Load() || !sawGen.Load() {
@@ -279,7 +279,7 @@ func TestSynthesizeSegmentSkipsWhenMutedBeforeSynth(t *testing.T) {
 
 	var audioStarted atomic.Bool
 	out := make(chan playbackEvent, 1)
-	if p.synthesizeSegment(context.Background(), make(chan struct{}), "skip", &audioStarted, out, nil) {
+	if p.synthesizeSegment(context.Background(), make(chan struct{}), "skip", 0, &audioStarted, out, nil) {
 		t.Fatal("muted synthesizeSegment enqueued playback")
 	}
 	if len(out) != 0 {
@@ -294,7 +294,7 @@ func TestSynthesizeSegmentStopsAudioEnqueuedAfterMute(t *testing.T) {
 	result := make(chan bool, 1)
 
 	go func() {
-		result <- p.synthesizeSegment(context.Background(), make(chan struct{}), "late sentence", &audioStarted, make(chan playbackEvent, 1), nil)
+		result <- p.synthesizeSegment(context.Background(), make(chan struct{}), "late sentence", 0, &audioStarted, make(chan playbackEvent, 1), nil)
 	}()
 
 	select {
@@ -332,7 +332,7 @@ func TestSynthesizeSegmentTTSErrorEmitsErrorAndSkips(t *testing.T) {
 
 	var audioStarted atomic.Bool
 	out := make(chan playbackEvent, 1)
-	if p.synthesizeSegment(context.Background(), make(chan struct{}), "hi", &audioStarted, out, nil) {
+	if p.synthesizeSegment(context.Background(), make(chan struct{}), "hi", 0, &audioStarted, out, nil) {
 		t.Fatal("synthesizeSegment returned true on TTS error, want false")
 	}
 	if !sawErr || errEvent.Stage != "tts" {
@@ -356,7 +356,7 @@ func TestSynthesizeSegmentPlaybackErrorEmitsError(t *testing.T) {
 
 	var audioStarted atomic.Bool
 	out := make(chan playbackEvent, 1)
-	if p.synthesizeSegment(context.Background(), make(chan struct{}), "hi", &audioStarted, out, nil) {
+	if p.synthesizeSegment(context.Background(), make(chan struct{}), "hi", 0, &audioStarted, out, nil) {
 		t.Fatal("synthesizeSegment returned true on playback error, want false")
 	}
 	if !sawErr || errEvent.Stage != "playback" {
@@ -374,7 +374,7 @@ func TestSynthesizeSegmentPlaybackErrorEngineDrainsStream(t *testing.T) {
 		Events: events.NewBus(),
 	}
 	var audioStarted atomic.Bool
-	if p.synthesizeSegment(context.Background(), make(chan struct{}), "hi", &audioStarted, make(chan playbackEvent, 1), nil) {
+	if p.synthesizeSegment(context.Background(), make(chan struct{}), "hi", 0, &audioStarted, make(chan playbackEvent, 1), nil) {
 		t.Fatal("expected false on playback error")
 	}
 	select {
@@ -399,7 +399,7 @@ func TestSynthesizeSegmentSuppressesErrorsAfterCancel(t *testing.T) {
 
 	var audioStarted atomic.Bool
 	out := make(chan playbackEvent, 1)
-	if p.synthesizeSegment(ctx, make(chan struct{}), "hi", &audioStarted, out, nil) {
+	if p.synthesizeSegment(ctx, make(chan struct{}), "hi", 0, &audioStarted, out, nil) {
 		t.Fatal("synthesizeSegment returned true with canceled ctx, want false")
 	}
 	if sawErr {
@@ -466,7 +466,7 @@ func TestFirstRealSegmentStopsBackchannelBeforePlayback(t *testing.T) {
 	var audioStarted, realAudioQueued atomic.Bool
 	out := make(chan playbackEvent, 4)
 
-	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "hello", &audioStarted, out, nil, &realAudioQueued) {
+	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "hello", 0, &audioStarted, out, nil, &realAudioQueued) {
 		t.Fatal("synthesizeSegment returned false")
 	}
 	if player.StopCount() != 1 {
@@ -474,7 +474,7 @@ func TestFirstRealSegmentStopsBackchannelBeforePlayback(t *testing.T) {
 	}
 	_ = drainPlaybackKinds(t, out, 2)
 
-	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "again", &audioStarted, out, nil, &realAudioQueued) {
+	if !p.synthesizeSegment(context.Background(), make(chan struct{}), "again", 0, &audioStarted, out, nil, &realAudioQueued) {
 		t.Fatal("second synthesizeSegment returned false")
 	}
 	if player.StopCount() != 1 {

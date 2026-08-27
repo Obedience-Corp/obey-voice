@@ -298,11 +298,16 @@ const (
 )
 
 type playbackEvent struct {
-	kind         playbackEventType
-	sentence     string
-	synthElapsed time.Duration
-	playElapsed  time.Duration
-	result       audio.PlaybackResult
+	kind     playbackEventType
+	sentence string
+	index    int
+	fallback bool
+	// engineElapsed is synthesis alone; synthElapsed also covers waiting
+	// behind whatever was already playing.
+	engineElapsed time.Duration
+	synthElapsed  time.Duration
+	playElapsed   time.Duration
+	result        audio.PlaybackResult
 }
 
 type turnMetrics struct {
@@ -323,6 +328,20 @@ type turnMetrics struct {
 	// toolLeakLines counts lines the voice gate stripped from speech this
 	// turn (WI-dc9e33 B4). Written only from the turn's own goroutine.
 	toolLeakLines int
+	// segments accumulates per-segment synthesis cost in playback order.
+	// Written only from the turn loop goroutine, in applyPlaybackEvent.
+	segments []events.SegmentMetric
+	// ttsFallbacks counts segments the Kokoro fallback spoke after the
+	// configured provider failed.
+	ttsFallbacks int
+	// ttsProvider, ttsTier and firstAudioGrace are stamped once per turn when
+	// the first segment is synthesized, so a metrics record identifies the
+	// engine that produced it and the stall budget it ran under.
+	ttsProvider     string
+	ttsTier         string
+	firstAudioGrace time.Duration
+	// stallWatchdogFired marks a turn the playback-stall watchdog cut short.
+	stallWatchdogFired bool
 }
 
 func newTurnMetrics() *turnMetrics {
@@ -342,7 +361,42 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		PlaybackCompleteElapsed: m.elapsed(m.playbackComplete),
 		BargeInElapsed:          m.elapsed(m.bargeInAt()),
 		ToolLeakLines:           m.toolLeakLines,
+		TTSProvider:             m.ttsProvider,
+		TTSTier:                 m.ttsTier,
+		TTSFallbacks:            m.ttsFallbacks,
+		FirstAudioGrace:         m.firstAudioGrace,
+		StallWatchdogFired:      m.stallWatchdogFired,
+		Segments:                append([]events.SegmentMetric(nil), m.segments...),
 	}
+}
+
+// recordSegment appends one finished segment's synthesis cost. Called only
+// from the turn loop goroutine, which is the sole writer of metrics.segments.
+func (m *turnMetrics) recordSegment(event playbackEvent) {
+	m.segments = append(m.segments, events.SegmentMetric{
+		Index:         event.index,
+		Chars:         len(event.sentence),
+		EngineElapsed: event.engineElapsed,
+		SynthElapsed:  event.synthElapsed,
+		AudioSeconds:  event.result.AudioSeconds,
+		PlayElapsed:   event.playElapsed,
+		Fallback:      event.fallback,
+		Interrupted:   event.result.Interrupted,
+	})
+	if event.fallback {
+		m.ttsFallbacks++
+	}
+}
+
+// ttsIdentity names the primary provider and its model tier for the turn's
+// metrics. A provider that does not describe itself leaves both empty rather
+// than guessing, so an artifact never claims an engine it did not confirm.
+func (p *Pipeline) ttsIdentity() (provider, tier string) {
+	primary, _ := p.ttsProviders()
+	if d, ok := primary.(tts.Describer); ok {
+		return d.ProviderName(), d.ModelTier()
+	}
+	return "", ""
 }
 
 // markBargeIn stamps the first barge-in moment; later marks are ignored.
@@ -476,8 +530,11 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	p.emit(events.SpeechSegmentReady{Text: sentence})
 	p.emit(events.GeneratingVoice{Sentence: sentence})
 
+	if metrics.ttsProvider == "" {
+		metrics.ttsProvider, metrics.ttsTier = p.ttsIdentity()
+	}
 	synthStarted := time.Now()
-	stream, _, err := p.synthesizeWithFallback(ctx, sentence, nil)
+	stream, usedFallback, err := p.synthesizeWithFallback(ctx, sentence, nil)
 	if err != nil {
 		p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
 		return
@@ -491,7 +548,7 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 		p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", err)})
 		return
 	}
-	p.handlePlaybackLifecycle(sentence, synthStarted, playback, metrics)
+	p.handlePlaybackLifecycle(sentence, usedFallback, synthStarted, time.Since(synthStarted), playback, metrics)
 }
 
 // StopPlayback aborts audible TTS immediately. Used by the TUI when the user
@@ -708,6 +765,7 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 		if metrics.firstSegment.IsZero() {
 			metrics.firstSegment = time.Now()
 		}
+		metrics.ttsProvider, metrics.ttsTier = p.ttsIdentity()
 		p.emit(events.SpeechSegmentReady{Text: speakable})
 		p.emit(events.GeneratingVoice{Sentence: speakable})
 
@@ -731,8 +789,7 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 		playback, err := p.Player.PlayStream(ctx, stream)
 		if err != nil {
 			if !usedFallback {
-				// usedFallback is not read again on this linear path; discard it.
-				playback, _, err = p.playFallback(ctx, speakable, err, nil)
+				playback, usedFallback, err = p.playFallback(ctx, speakable, err, nil)
 			}
 			if err == nil {
 				// The fallback playback is ready; continue through the normal
@@ -754,7 +811,9 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 			return nil
 		}
 
-		p.handlePlaybackLifecycle(speakable, synthStarted, playback, metrics)
+		// PlayStream returned, so the utterance is fully synthesized and
+		// buffered: everything after this point is playback, not the engine.
+		p.handlePlaybackLifecycle(speakable, usedFallback, synthStarted, time.Since(synthStarted), playback, metrics)
 	}
 
 	p.completeTextTurn(turn, metrics, response)
@@ -946,12 +1005,16 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		openingSpoken = true
 	}
 	go func() {
+		// Segments are numbered in playback order by the single ordered synth
+		// worker, so the index is the position a listener hears.
+		index := 0
 		for sentence := range synthQueue {
-			if !p.synthesizeSegment(streamCtx, loopDone, sentence, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued) {
+			if !p.synthesizeSegment(streamCtx, loopDone, sentence, index, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued) {
 				// No playback was enqueued: release the pending slot so the
 				// loop's accounting and the intake gate stay correct.
-				sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: sentence})
+				sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: sentence, index: index})
 			}
+			index++
 		}
 	}()
 
@@ -972,6 +1035,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			return strings.TrimSpace(fullResponse.String()), interrupted, ctx.Err()
 
 		case <-stalled:
+			metrics.stallWatchdogFired = true
 			return strings.TrimSpace(fullResponse.String()), interrupted, errPlaybackStalled
 
 		case req := <-bargeIn:
@@ -1075,7 +1139,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 			if !watchdogArmed {
 				watchdogArmed = true
-				go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, p.stallTimeout())
+				stallTimeout := p.stallTimeout()
+				metrics.firstAudioGrace = stallTimeout
+				metrics.ttsProvider, metrics.ttsTier = p.ttsIdentity()
+				go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout)
 			}
 
 			voiceBatch = append(voiceBatch, speakable)
@@ -1155,7 +1222,7 @@ func discardPCMStream(stream *audio.PCMStream) {
 // stickFallback, when non-nil, is turn-scoped sticky Kokoro fallback: after the
 // first successful primary→fallback switch, later sentences skip the primary so
 // one reply cannot alternate persona voice and Kokoro.
-func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct{}, sentence string, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *bool, realAudioQueued ...*atomic.Bool) bool {
+func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct{}, sentence string, index int, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *bool, realAudioQueued ...*atomic.Bool) bool {
 	if ctx.Err() != nil || p.OutputMuted() {
 		return false // canceled while queued: drain without synthesizing
 	}
@@ -1187,8 +1254,7 @@ func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct
 	playback, err := p.Player.PlayStream(ctx, stream)
 	if err != nil {
 		if !usedFallback {
-			// usedFallback is not read again on this linear path; discard it.
-			playback, _, err = p.playFallback(ctx, sentence, err, stickFallback)
+			playback, usedFallback, err = p.playFallback(ctx, sentence, err, stickFallback)
 		}
 		if err == nil {
 			// The fallback playback is ready; continue to enqueue its watcher.
@@ -1201,6 +1267,10 @@ func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct
 			return false
 		}
 	}
+	// PlayStream returns once the complete utterance is buffered, so this is
+	// where synthesis actually ended. Everything after it is queue wait.
+	engineElapsed := time.Since(synthStarted)
+
 	// PlayStream buffers a complete sentence before enqueueing it. Muting can
 	// race that wait, so the initial Stop may see nothing; close the race by
 	// checking once more after enqueue and stopping the late segment.
@@ -1209,7 +1279,7 @@ func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct
 		return false
 	}
 
-	go watchPlayback(loopDone, sentence, synthStarted, playback, audioStarted, out)
+	go watchPlayback(loopDone, sentence, index, usedFallback, synthStarted, engineElapsed, playback, audioStarted, out)
 	return true
 }
 
@@ -1328,12 +1398,15 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 		p.emit(events.VoiceGenerated{
 			Sentence: event.sentence,
 			Elapsed:  event.synthElapsed,
+			Index:    event.index,
+			Fallback: event.fallback,
 		})
 		p.emit(events.SpeakingStarted{Text: event.sentence})
 		return false
 
 	case playbackFinished:
 		metrics.playbackComplete = time.Now()
+		metrics.recordSegment(event)
 		if event.result.Interrupted {
 			p.emit(events.SpeakingComplete{
 				Elapsed:     event.playElapsed,
@@ -1350,12 +1423,21 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 	return false
 }
 
-func (p *Pipeline) handlePlaybackLifecycle(sentence string, synthStarted time.Time, playback *audio.Playback, metrics *turnMetrics) {
+// handlePlaybackLifecycle drives one utterance queued outside the turn loop —
+// today only the degraded turn's recovery line. Its segment is recorded like
+// any other: a degraded turn that spoke still paid for the synthesis, and a
+// metrics record showing zero segments beside audible speech is wrong.
+func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synthStarted time.Time, engineElapsed time.Duration, playback *audio.Playback, metrics *turnMetrics) {
 	var startedAt time.Time
+	synthElapsed := time.Duration(0)
+	// Index continues the turn's own numbering: recovery speech follows
+	// whatever the reply managed to say.
+	index := len(metrics.segments)
 
 	select {
 	case <-playback.Started():
 		startedAt = time.Now()
+		synthElapsed = time.Since(synthStarted)
 		if metrics.firstAudioReady.IsZero() {
 			metrics.firstAudioReady = startedAt
 		}
@@ -1364,7 +1446,9 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, synthStarted time.Ti
 		}
 		p.emit(events.VoiceGenerated{
 			Sentence: sentence,
-			Elapsed:  time.Since(synthStarted),
+			Elapsed:  synthElapsed,
+			Index:    index,
+			Fallback: fallback,
 		})
 		p.emit(events.SpeakingStarted{Text: sentence})
 	case result := <-playback.Done():
@@ -1372,6 +1456,14 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, synthStarted time.Ti
 			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", result.Err)})
 		}
 		metrics.playbackComplete = time.Now()
+		metrics.recordSegment(playbackEvent{
+			sentence:      sentence,
+			index:         index,
+			fallback:      fallback,
+			engineElapsed: engineElapsed,
+			synthElapsed:  time.Since(synthStarted),
+			result:        result,
+		})
 		p.emit(events.SpeakingComplete{Interrupted: result.Interrupted})
 		return
 	}
@@ -1381,6 +1473,15 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, synthStarted time.Ti
 	if !startedAt.IsZero() {
 		elapsed = time.Since(startedAt)
 	}
+	metrics.recordSegment(playbackEvent{
+		sentence:      sentence,
+		index:         index,
+		fallback:      fallback,
+		engineElapsed: engineElapsed,
+		synthElapsed:  synthElapsed,
+		playElapsed:   elapsed,
+		result:        result,
+	})
 
 	if result.Err != nil && !result.Interrupted && !errors.Is(result.Err, context.Canceled) {
 		p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", result.Err)})
@@ -1626,8 +1727,13 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 // is deliberately not the turn context: a barge-in cancels the turn context but
 // the loop keeps consuming, so finished events must still be delivered to drain
 // the pending count.
-func watchPlayback(loopDone <-chan struct{}, sentence string, synthStarted time.Time, playback *audio.Playback, started *atomic.Bool, out chan<- playbackEvent) {
+func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallback bool, synthStarted time.Time, engineElapsed time.Duration, playback *audio.Playback, started *atomic.Bool, out chan<- playbackEvent) {
 	var startedAt time.Time
+	// synthElapsed is stamped on both terminal paths, not just the audible
+	// one: a segment whose playback finished without ever starting still cost
+	// its synthesis time, and dropping it would silently bias the aggregate
+	// toward the segments that went well.
+	synthElapsed := time.Duration(0)
 
 	select {
 	case <-loopDone:
@@ -1635,18 +1741,26 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, synthStarted time.
 	case <-playback.Started():
 		started.Store(true)
 		startedAt = time.Now()
+		synthElapsed = time.Since(synthStarted)
 		if !sendPlaybackEvent(loopDone, out, playbackEvent{
-			kind:         playbackStarted,
-			sentence:     sentence,
-			synthElapsed: time.Since(synthStarted),
+			kind:          playbackStarted,
+			sentence:      sentence,
+			index:         index,
+			fallback:      fallback,
+			engineElapsed: engineElapsed,
+			synthElapsed:  synthElapsed,
 		}) {
 			return
 		}
 	case result := <-playback.Done():
 		sendPlaybackEvent(loopDone, out, playbackEvent{
-			kind:     playbackFinished,
-			sentence: sentence,
-			result:   result,
+			kind:          playbackFinished,
+			sentence:      sentence,
+			index:         index,
+			fallback:      fallback,
+			engineElapsed: engineElapsed,
+			synthElapsed:  time.Since(synthStarted),
+			result:        result,
 		})
 		return
 	}
@@ -1663,10 +1777,14 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, synthStarted time.
 	}
 
 	sendPlaybackEvent(loopDone, out, playbackEvent{
-		kind:        playbackFinished,
-		sentence:    sentence,
-		playElapsed: elapsed,
-		result:      result,
+		kind:          playbackFinished,
+		sentence:      sentence,
+		index:         index,
+		fallback:      fallback,
+		engineElapsed: engineElapsed,
+		synthElapsed:  synthElapsed,
+		playElapsed:   elapsed,
+		result:        result,
 	})
 }
 

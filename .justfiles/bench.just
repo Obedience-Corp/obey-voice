@@ -93,6 +93,43 @@ corpus-check:
 corpus-args:
     @cd "{{repo}}" && jq -r '.samples[] | "--full-turn-fixture=testdata/corpus/\(.path)", "--expect-text=\(.expect)"' testdata/corpus/manifest.json
 
+[doc('Measure TTS engines over long-reply fixtures. Usage: just bench tts, or just bench tts "kokoro qwen3-tts:1.7b"')]
+tts specs="":
+    @{{repo}}/scripts/bench.sh tts {{specs}}
+
+[doc('Aggregate a raw TTS run into a tts-ab decision record. Usage: just bench tts-ab V1 raw.json kokoro qwen3-tts:1.7b')]
+tts-ab label raw control candidate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{repo}}"
+    # Machine facts are gathered here, the same way scripts/bench.sh does it,
+    # so cmd/tts-ab stays a pure JSON-in/JSON-out function that unit tests can
+    # drive without a machine.
+    #
+    # The candidate can carry a tier ("qwen3-tts:1.7b"), which is not a legal
+    # filename fragment, so it is flattened for the artifact name only.
+    slug="$(printf '%s' "{{candidate}}" | tr ':' '-')"
+    out="docs/benchmarks/{{label}}-tts-ab-${slug}-$(date +%Y-%m-%d).json"
+    cfg() { ./bin/obey-voice config "$1" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk -F' = ' 'NR==1 {gsub(/^[ \t]+/, "", $2); print $2}'; }
+    go run ./cmd/tts-ab \
+        -in "{{raw}}" \
+        -control "{{control}}" \
+        -candidate "{{candidate}}" \
+        -item "{{label}}" \
+        -date "$(date +%Y-%m-%d)" \
+        -commit "$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+        -machine "$(sysctl -n hw.model 2>/dev/null || echo unknown)" \
+        -cpu "$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)" \
+        -os "$(sw_vers -productName 2>/dev/null || uname -s) $(sw_vers -productVersion 2>/dev/null || uname -r)" \
+        -backend "${TTS_AB_BACKEND:-}" \
+        -brain-provider "${BRAIN_PROVIDER:-$(cfg brain_provider)}" \
+        -brain-model "${OLLAMA_MODEL:-$(cfg ollama_model)}" \
+        -persona "$(cfg active_persona)" \
+        -fixtures "${FIXTURE_KIND:-synthetic long-reply (3 utterances)}" \
+        -command "${TTS_AB_COMMAND:-just bench tts}" \
+        -out "$out"
+    echo "Now write the prose by hand: criteria_fixed_in_advance, reading_the_numbers, evidence_limits, durable_value, and the *_criterion_met verdicts."
+
 [doc('Aggregate a raw benchmark run into an stt-ab decision record. Usage: just bench stt-ab T1 raw.json sherpa-parakeet transcribecpp')]
 stt-ab label raw control candidate:
     #!/usr/bin/env bash

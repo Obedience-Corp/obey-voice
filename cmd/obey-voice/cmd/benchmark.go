@@ -32,6 +32,7 @@ var (
 	benchmarkFullTurnFixtures    []string
 	benchmarkExpectedTranscripts []string
 	benchmarkSTTProviders        []string
+	benchmarkTTSProviders        []string
 	benchmarkFixtureRealtime     bool
 	benchmarkMaxTotal            time.Duration
 	benchmarkMaxFirstModelChunk  time.Duration
@@ -41,6 +42,64 @@ var (
 	benchmarkMinTranscriptScore  float64
 )
 
+// ttsSpec is one leg of a TTS sweep: a provider and, for a multi-tier
+// provider, the model size. Written "qwen3-tts:1.7b" on the command line so
+// the sweep stays one repeatable flag, exactly like --stt-provider.
+type ttsSpec struct {
+	provider string
+	tier     string
+}
+
+// String is the round-trip of the flag value, and "" for the configured
+// provider (no override).
+func (t ttsSpec) String() string {
+	if t.provider == "" {
+		return ""
+	}
+	if t.tier == "" {
+		return t.provider
+	}
+	return t.provider + ":" + t.tier
+}
+
+// apply overrides the TTS selection on a config copy. An empty spec leaves the
+// configured provider alone.
+func (t ttsSpec) apply(cfg *config.Config) {
+	if t.provider == "" {
+		return
+	}
+	cfg.TTSProvider = t.provider
+	if t.tier != "" {
+		cfg.QwenTTSModelTier = t.tier
+	}
+}
+
+// parseTTSSpecs turns the --tts-provider values into sweep legs. No values
+// means one leg using the configured provider, so every mode keeps its
+// existing single-run behaviour.
+func parseTTSSpecs(values []string) ([]ttsSpec, error) {
+	if len(values) == 0 {
+		return []ttsSpec{{}}, nil
+	}
+	specs := make([]ttsSpec, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil, errors.New("--tts-provider: empty value")
+		}
+		provider, tier, hasTier := strings.Cut(v, ":")
+		provider, tier = strings.TrimSpace(provider), strings.TrimSpace(tier)
+		if provider == "" {
+			return nil, fmt.Errorf("--tts-provider %q: missing provider before the tier", v)
+		}
+		if hasTier && tier == "" {
+			return nil, fmt.Errorf("--tts-provider %q: empty tier after ':'", v)
+		}
+		specs = append(specs, ttsSpec{provider: provider, tier: tier})
+	}
+	return specs, nil
+}
+
 var defaultBenchmarkPrompts = []string{
 	"Explain in one sentence why fast feedback matters in software development.",
 	"Give me two short sentences on how to review a pull request carefully.",
@@ -48,8 +107,13 @@ var defaultBenchmarkPrompts = []string{
 }
 
 type benchmarkResult struct {
-	Mode            string              `json:"mode"`
-	Provider        string              `json:"provider,omitempty"`
+	Mode     string `json:"mode"`
+	Provider string `json:"provider,omitempty"`
+	// TTSRequested is the --tts-provider value this run was asked to use.
+	// What actually synthesized is in Metrics.TTSProvider / Metrics.TTSTier:
+	// a run that silently fell back to Kokoro is not a measurement of the
+	// provider that was requested, and only the pair shows that.
+	TTSRequested    string              `json:"tts_requested,omitempty"`
 	Iteration       int                 `json:"iteration"`
 	Prompt          string              `json:"prompt,omitempty"`
 	Fixture         string              `json:"fixture,omitempty"`
@@ -151,6 +215,13 @@ var benchmarkCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "--json <path> is deprecated; use --json-file <path>")
 		}
 
+		// A TTS sweep with the voice disabled would produce a full set of
+		// results in which nothing was ever synthesized. Fail rather than
+		// write an artifact that reads like a measurement.
+		if len(benchmarkTTSProviders) > 0 && noVoice {
+			return errors.New("--tts-provider cannot be combined with --no-voice: no audio would be synthesized")
+		}
+
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
 
@@ -195,6 +266,7 @@ func init() {
 	benchmarkCmd.Flags().StringArrayVar(&benchmarkFullTurnFixtures, "full-turn-fixture", nil, "WAV fixture driven through the full voice turn: capture, VAD, STT, brain, TTS (repeatable)")
 	benchmarkCmd.Flags().StringArrayVar(&benchmarkExpectedTranscripts, "expect-text", nil, "Expected transcript for each fixture (repeatable)")
 	benchmarkCmd.Flags().StringArrayVar(&benchmarkSTTProviders, "stt-provider", nil, "STT provider(s) to benchmark in fixture mode (repeatable)")
+	benchmarkCmd.Flags().StringArrayVar(&benchmarkTTSProviders, "tts-provider", nil, "TTS provider(s) to benchmark, optionally with a model tier: kokoro, qwen3-tts:0.6b, qwen3-tts:1.7b (repeatable)")
 	benchmarkCmd.Flags().BoolVar(&benchmarkFixtureRealtime, "fixture-realtime", true, "Replay fixture audio in real time for latency measurements")
 	benchmarkCmd.Flags().DurationVar(&benchmarkMaxTotal, "max-total", 0, "Fail when total benchmark time exceeds this duration")
 	benchmarkCmd.Flags().DurationVar(&benchmarkMaxFirstModelChunk, "max-first-model-chunk", 0, "Fail when first model chunk exceeds this duration")
@@ -206,6 +278,28 @@ func init() {
 }
 
 func runTextBenchmarks(ctx context.Context, cfg *config.Config) ([]benchmarkResult, error) {
+	specs, err := parseTTSSpecs(benchmarkTTSProviders)
+	if err != nil {
+		return nil, err
+	}
+	var results []benchmarkResult
+	for _, spec := range specs {
+		// One pipeline per leg: the TTS provider is bound at build time, so a
+		// sweep cannot reuse a pipeline across legs.
+		legResults, err := runTextBenchmarkLeg(ctx, cfg, spec)
+		results = append(results, legResults...)
+		if err != nil {
+			return results, err
+		}
+	}
+	return results, nil
+}
+
+func runTextBenchmarkLeg(ctx context.Context, cfg *config.Config, spec ttsSpec) ([]benchmarkResult, error) {
+	cfgCopy := *cfg
+	spec.apply(&cfgCopy)
+	cfg = &cfgCopy
+
 	bus := events.NewBus()
 	p, cleanup, err := buildPipeline(ctx, cfg, bus, true, noVoice, nil)
 	if err != nil {
@@ -253,12 +347,13 @@ func runTextBenchmarks(ctx context.Context, cfg *config.Config) ([]benchmarkResu
 			}
 
 			result := benchmarkResult{
-				Mode:      "text",
-				Iteration: iteration,
-				Prompt:    prompt,
-				Elapsed:   elapsed,
-				Metrics:   metric,
-				Errors:    errs,
+				Mode:         "text",
+				TTSRequested: spec.String(),
+				Iteration:    iteration,
+				Prompt:       prompt,
+				Elapsed:      elapsed,
+				Metrics:      metric,
+				Errors:       errs,
 			}
 			result.Violations = evaluateTextThresholds(result)
 			results = append(results, result)
@@ -289,26 +384,32 @@ func runFullTurnBenchmarks(ctx context.Context, cfg *config.Config) ([]benchmark
 	if len(providers) == 0 {
 		providers = []string{""} // configured provider
 	}
+	ttsSpecs, err := parseTTSSpecs(benchmarkTTSProviders)
+	if err != nil {
+		return nil, err
+	}
 
 	var results []benchmarkResult
-	for _, providerName := range providers {
-		for iteration := 1; iteration <= benchmarkIterations; iteration++ {
-			for idx, fixture := range benchmarkFullTurnFixtures {
-				expected := ""
-				if idx < len(benchmarkExpectedTranscripts) {
-					expected = benchmarkExpectedTranscripts[idx]
-				}
-				result, err := runSingleFullTurnBenchmark(ctx, cfg, providerName, fixture, expected, iteration)
-				if err != nil {
-					result.Errors = append(result.Errors, benchmarkErrorLog{Stage: "benchmark", Message: err.Error()})
-				}
-				result.Violations = fullTurnViolations(result)
-				results = append(results, result)
+	for _, spec := range ttsSpecs {
+		for _, providerName := range providers {
+			for iteration := 1; iteration <= benchmarkIterations; iteration++ {
+				for idx, fixture := range benchmarkFullTurnFixtures {
+					expected := ""
+					if idx < len(benchmarkExpectedTranscripts) {
+						expected = benchmarkExpectedTranscripts[idx]
+					}
+					result, err := runSingleFullTurnBenchmark(ctx, cfg, providerName, spec, fixture, expected, iteration)
+					if err != nil {
+						result.Errors = append(result.Errors, benchmarkErrorLog{Stage: "benchmark", Message: err.Error()})
+					}
+					result.Violations = fullTurnViolations(result)
+					results = append(results, result)
 
-				if ctx.Err() != nil {
-					// Surface the cancellation: a truncated run must not be
-					// written as if it were a complete one.
-					return results, ctx.Err()
+					if ctx.Err() != nil {
+						// Surface the cancellation: a truncated run must not be
+						// written as if it were a complete one.
+						return results, ctx.Err()
+					}
 				}
 			}
 		}
@@ -330,16 +431,18 @@ func fullTurnViolations(result benchmarkResult) []string {
 // single-shot (Exhausted), and the STT provider retains it, so a reused
 // pipeline would replay an empty source on the second turn. Rebuilding costs
 // model load time, which is why iteration 1 is treated as warmup by callers.
-func runSingleFullTurnBenchmark(ctx context.Context, cfg *config.Config, providerName, fixture, expected string, iteration int) (benchmarkResult, error) {
+func runSingleFullTurnBenchmark(ctx context.Context, cfg *config.Config, providerName string, spec ttsSpec, fixture, expected string, iteration int) (benchmarkResult, error) {
 	result := benchmarkResult{
-		Mode:      "voice",
-		Provider:  providerName,
-		Iteration: iteration,
-		Fixture:   fixture,
-		Expected:  expected,
+		Mode:         "voice",
+		Provider:     providerName,
+		TTSRequested: spec.String(),
+		Iteration:    iteration,
+		Fixture:      fixture,
+		Expected:     expected,
 	}
 
 	cfgCopy := *cfg
+	spec.apply(&cfgCopy)
 	if providerName != "" {
 		// An explicit alias must fully select the path rather than conflicting
 		// with the user's configured mode.
@@ -661,6 +764,71 @@ func benchmarkExitErr(results []benchmarkResult) error {
 	}
 }
 
+// printTTSSummary reports what synthesized the turn and what it cost per
+// segment. The milestones above describe only the first segment, so a reply
+// whose later sentences are the slow part reads as fast without this.
+func printTTSSummary(result benchmarkResult) {
+	m := result.Metrics
+	if m.TTSProvider == "" && len(m.Segments) == 0 {
+		return
+	}
+
+	engine := m.TTSProvider
+	if engine == "" {
+		engine = "unknown"
+	}
+	if m.TTSTier != "" {
+		engine += " " + m.TTSTier
+	}
+	// Name the requested provider too when it differs: a leg that fell back
+	// is not a measurement of what was asked for.
+	if want := result.TTSRequested; want != "" && want != m.TTSProvider && want != engine {
+		engine = fmt.Sprintf("%s (requested %s)", engine, want)
+	}
+	printMetric("tts", engine)
+
+	if m.StallWatchdogFired {
+		printMetric("stall watchdog", failStyle.Render(fmt.Sprintf("FIRED after %s", formatMetric(m.FirstAudioGrace))))
+	} else if m.FirstAudioGrace > 0 {
+		printMetric("stall grace", formatMetric(m.FirstAudioGrace))
+	}
+	if m.TTSFallbacks > 0 {
+		printMetric("tts fallbacks", failStyle.Render(fmt.Sprintf("%d segment(s) spoken by the fallback", m.TTSFallbacks)))
+	}
+
+	var engineTotal time.Duration
+	var audio float64
+	for _, seg := range m.Segments {
+		engineTotal += seg.EngineElapsed
+		audio += seg.AudioSeconds
+	}
+	if len(m.Segments) > 0 {
+		summary := fmt.Sprintf("%d, engine %s for %.2fs audio", len(m.Segments), formatMetric(engineTotal), audio)
+		if audio > 0 {
+			summary += fmt.Sprintf(" (rtf %.2f)", engineTotal.Seconds()/audio)
+		}
+		printMetric("segments", summary)
+	}
+	for _, seg := range m.Segments {
+		// Engine and queue are printed apart because a large wait on a later
+		// segment is the previous sentence still playing, not a slow engine.
+		detail := fmt.Sprintf("engine %s / audio %.2fs", formatMetric(seg.EngineElapsed), seg.AudioSeconds)
+		if rtf := seg.RealtimeFactor(); rtf > 0 {
+			detail += fmt.Sprintf(" = rtf %.2f", rtf)
+		}
+		if wait := seg.QueueElapsed(); wait > 0 {
+			detail += fmt.Sprintf(", queued %s", formatMetric(wait))
+		}
+		if seg.Fallback {
+			detail += " [fallback]"
+		}
+		if seg.Interrupted {
+			detail += " [interrupted]"
+		}
+		printMetric(fmt.Sprintf("  segment %d", seg.Index), detail)
+	}
+}
+
 func printBenchmarkSummary(results []benchmarkResult) {
 	fmt.Println()
 	fmt.Printf("  %s\n", titleStyle.Render("Obey Voice Benchmark"))
@@ -706,6 +874,7 @@ func printBenchmarkSummary(results []benchmarkResult) {
 			if result.Metrics.Interrupted || result.Metrics.BargeInElapsed > 0 {
 				printMetric("interruption", formatMetric(result.Metrics.BargeInElapsed))
 			}
+			printTTSSummary(result)
 		}
 
 		if len(result.Errors) > 0 {
