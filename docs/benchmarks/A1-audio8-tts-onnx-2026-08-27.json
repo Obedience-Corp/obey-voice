@@ -1,0 +1,131 @@
+{
+  "schema": "obey-voice.benchmark.tts-rtf.v1",
+  "id": "A1-audio8-tts-0.1b-onnx-int8-cpu",
+  "slice": "explore WI-d6c086 step MEASURE - Audio8-TTS 0.1B ONNX INT8 on Apple Silicon CPU",
+  "measured_at": "2026-08-27T00:40:00Z",
+  "machine": {
+    "model_id": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "os": "macOS 26.5",
+    "power": "AC; no thermal-throttle instrumentation; other user processes not quiesced"
+  },
+  "backend": {
+    "requested": "CPUExecutionProvider",
+    "actual": "CPUExecutionProvider",
+    "onnxruntime": "1.24.4 (bench venv; NOT the 1.27.0 obey-voice links via sherpa-onnx-go)",
+    "note": "CoreML EP not attempted"
+  },
+  "model": {
+    "repo": "Audio8/audio8-TTS-0.1B-ONNX-INT8",
+    "revision": "e1c07e8a3725077e3ab80ad8578e5787e8a23c6c",
+    "base_model": "Audio8/Audio8-TTS-Preview-0.1b",
+    "fingerprint": "audio8-tts-preview-0.1b-int8-v1",
+    "graphs": [
+      "slow_ar_int8.onnx (4.6M + 127M data)",
+      "fast_ar_int8.onnx (499K + 35M data)",
+      "codec_decoder_fp16.onnx (580K + 249M data)"
+    ],
+    "on_disk_gb": 1.6,
+    "sample_rate": 44100,
+    "codec_hop_length": 2048,
+    "codec_frame_rate_hz": 21.53,
+    "num_codebooks": 10,
+    "reference_voice": "packaged reference_codes.npy (110 frames, Chinese reference text)"
+  },
+  "harness": {
+    "driver": "custom - written for this export",
+    "why": "the vendor's published onnx_runtime/ code CANNOT run these graphs: it expects a transformer slow model with per-layer cache_key_N inputs, while the published slow graph is a mamba/SSM hybrid taking cache_keys/cache_values/conv_states/ssm_states, and it does not handle slow_logits_layout=relative_semantic_then_eos",
+    "location": "/Volumes/fast/Caches/obey-voice-tts-bench/{driver.py,run_bench.py,prefix_test.py}",
+    "protocol": "N7 protocol - same two phrases as TestKokoroRealtimeFactor, warmup then median of 3",
+    "rtf_definition": "audio_seconds / total_synth_seconds (higher is faster; matches N7/F7)"
+  },
+  "baseline_same_session": {
+    "provider": "kokoro",
+    "voice": "af_heart",
+    "speed": 0.95,
+    "command": "go test -tags integration ./pkg/voiceagent/tts/ -run TestKokoroRealtimeFactor",
+    "one_sentence": {
+      "synth_s": 1.0138,
+      "audio_s": 1.186,
+      "rtf": 1.17
+    },
+    "two_sentences": {
+      "synth_s": 2.0779,
+      "audio_s": 2.749,
+      "rtf": 1.32
+    },
+    "note": "re-measured 2026-08-27, NOT quoted from N7 (which printed 1.32x/1.38x on a quieter machine)"
+  },
+  "results": {
+    "best_config_ar5_codec10": {
+      "ar_threads": 5,
+      "codec_threads": 10,
+      "one_sentence": {
+        "prompt_tokens": 169,
+        "frames": 32,
+        "prefill_s": 1.2434,
+        "decode_s": 0.5045,
+        "codec_s": 0.4173,
+        "first_frame_s": 0.0078,
+        "total_s": 2.1704,
+        "audio_s": 1.4861,
+        "rtf": 0.6847
+      },
+      "two_sentences": {
+        "prompt_tokens": 176,
+        "frames": 89,
+        "prefill_s": 1.2259,
+        "decode_s": 1.3135,
+        "codec_s": 1.1967,
+        "first_frame_s": 0.0076,
+        "total_s": 3.7211,
+        "audio_s": 4.1332,
+        "rtf": 1.0914
+      },
+      "cold_start_s": 1.136,
+      "peak_rss_mb": 2025
+    },
+    "thread_sweep_uniform": {
+      "t5": {
+        "one_sentence_rtf": 0.702,
+        "codec_s": 0.546
+      },
+      "t8": {
+        "one_sentence_rtf": 0.679,
+        "codec_s": 0.424
+      },
+      "t12": {
+        "one_sentence_rtf": 0.609,
+        "codec_s": 0.442
+      }
+    },
+    "prefix_cache_experiment": {
+      "constant_head_tokens": 153,
+      "detail": "43 system text tokens + 110 reference-voice frames, identical every turn",
+      "one_time_prime_ms": 1042,
+      "per_token_ms": 6.81,
+      "warm_prefill_one_sentence_ms": 111.6,
+      "warm_prefill_two_sentences_ms": 161.5,
+      "saving_per_utterance_ms": 1039
+    }
+  },
+  "verdict": {
+    "as_shipped": "FAILS the N7 bar - 2.17 s for one sentence against a >1.8 s loses rule; RTF 0.68x, slower than realtime",
+    "with_prefix_cache": "PASSES the bar - projected ~1.03 s per sentence, RTF ~1.44x, ahead of Kokoro's same-session 1.17x",
+    "batching_threshold_2_3x": "NOT cleared in any measured or projected configuration; D009 and D010 stand",
+    "projection_warning": "the with_prefix_cache line is arithmetic on measured parts (measured warm prefill + measured decode + measured codec), NOT an end-to-end measurement. Build it before believing it."
+  },
+  "cost_decomposition_one_sentence_ms": {
+    "prefill": 1243,
+    "ar_decode": 504,
+    "codec_decode": 417,
+    "comment": "AR decode alone is 504 ms for 1.486 s of audio = 2.95x realtime. The AR loop is FAST. Prefill and codec are what fail the bar, and prefill is the cacheable one."
+  },
+  "open": [
+    "English quality unjudged - the packaged reference voice is Chinese; no English reference was registered",
+    "CoreML EP untested",
+    "codec streaming/pipelining with the AR loop untested (would overlap the two largest costs)",
+    "peak RSS 2.0 GB measured vs ~0.6 GB claimed on the model card",
+    "measured against onnxruntime 1.24.4; obey-voice links 1.27.0 via sherpa-onnx-go"
+  ]
+}
