@@ -107,13 +107,64 @@
       "warm_prefill_one_sentence_ms": 111.6,
       "warm_prefill_two_sentences_ms": 161.5,
       "saving_per_utterance_ms": 1039
+    },
+    "codec_scaling": {
+      "note": "codec decode is perfectly LINEAR in frames with no fixed overhead - ~12.3 ms/frame across 6..140 frames",
+      "ms_per_frame": {
+        "6": 12.29,
+        "12": 11.83,
+        "24": 11.84,
+        "32": 12.85,
+        "64": 12.38,
+        "89": 12.6,
+        "140": 12.82
+      },
+      "consequence": "the vendor's stream() re-decodes a 128-frame context window every 12 frames, so it does ~5x more codec work than necessary. Context size is the critical streaming knob."
+    },
+    "cached_and_pipelined_MEASURED": {
+      "what": "prefix cache (prime the 153-token constant head once per process) + codec decoded on a worker thread concurrently with the AR loop",
+      "config": "AR 5 threads, codec 10 threads, chunk_frames=12, stream context=0",
+      "one_sentence": {
+        "prefill_ms": 107,
+        "ar_ms": 550,
+        "codec_busy_ms": 637,
+        "total_ms": 997,
+        "audio_s": 1.486,
+        "rtf": 1.49,
+        "ttfa_ms": 549
+      },
+      "two_sentences": {
+        "prefill_ms": 155,
+        "ar_ms": 1547,
+        "codec_busy_ms": 1712,
+        "total_ms": 2031,
+        "audio_s": 4.133,
+        "rtf": 2.03,
+        "ttfa_ms": 571
+      },
+      "context_sweep_rtf": {
+        "one_sentence": {
+          "ctx0": 1.49,
+          "ctx8": 1.09,
+          "ctx128": 1.09
+        },
+        "two_sentences": {
+          "ctx0": 2.03,
+          "ctx8": 1.52,
+          "ctx128": 0.67
+        }
+      },
+      "tuning_sweep": "AR/codec thread splits (4/4, 5/5, 6/6, 4/8) and chunk_frames=24 were all worse. chunk=24 roughly doubles TTFA (~900 ms vs ~550) without improving total.",
+      "caveat": "codec_busy exceeds AR time in every configuration, so the codec is the bottleneck even at ctx=0, and the two threads contend for CPU (AR slows from 504 ms sequential to 550 ms pipelined)."
     }
   },
   "verdict": {
     "as_shipped": "FAILS the N7 bar - 2.17 s for one sentence against a >1.8 s loses rule; RTF 0.68x, slower than realtime",
-    "with_prefix_cache": "PASSES the bar - projected ~1.03 s per sentence, RTF ~1.44x, ahead of Kokoro's same-session 1.17x",
-    "batching_threshold_2_3x": "NOT cleared in any measured or projected configuration; D009 and D010 stand",
-    "projection_warning": "the with_prefix_cache line is arithmetic on measured parts (measured warm prefill + measured decode + measured codec), NOT an end-to-end measurement. Build it before believing it."
+    "cached_and_pipelined_MEASURED": "PASSES the bar - 997 ms for one sentence, RTF 1.49x; two sentences 2031 ms, RTF 2.03x",
+    "vs_kokoro_same_session": "wall-clock is a near tie (997 vs 1014 ms one sentence; 2031 vs 2078 ms two sentences) while RTF is better (1.49x vs 1.17x, 2.03x vs 1.32x) because Audio8 produces more audio for the same text",
+    "batching_threshold_2_3x": "NOT cleared in any measured configuration. Closest is 2.03x on two sentences. D009 and D010 stand.",
+    "ttfa": "~550 ms to first audio via the streaming path, roughly constant across utterance length. Kokoro's TTFA was NOT measured, so no comparison is claimed.",
+    "prediction_misses": "two, both recorded: pre-measurement arithmetic said 1.72x (counted only the AR loop, ignored prefill and codec); the post-measurement projection said ~3.2x cached+pipelined (assumed perfect overlap, ignored CPU contention and chunk overhead). Measured is 1.49x/2.03x."
   },
   "cost_decomposition_one_sentence_ms": {
     "prefill": 1243,
@@ -122,10 +173,11 @@
     "comment": "AR decode alone is 504 ms for 1.486 s of audio = 2.95x realtime. The AR loop is FAST. Prefill and codec are what fail the bar, and prefill is the cacheable one."
   },
   "open": [
-    "English quality unjudged - the packaged reference voice is Chinese; no English reference was registered",
-    "CoreML EP untested",
-    "codec streaming/pipelining with the AR loop untested (would overlap the two largest costs)",
+    "English quality unjudged - the packaged reference voice is Chinese; no English reference was registered. WAVs written to /Volumes/fast/Caches/obey-voice-tts-bench/",
+    "CoreML EP untested for the codec, which is the bottleneck",
     "peak RSS 2.0 GB measured vs ~0.6 GB claimed on the model card",
-    "measured against onnxruntime 1.24.4; obey-voice links 1.27.0 via sherpa-onnx-go"
+    "measured against onnxruntime 1.24.4; obey-voice links 1.27.0 via sherpa-onnx-go",
+    "ctx=0 chunking was not ear-checked for boundary artifacts - it is the fastest and the least safe",
+    "prefix cache is per-process and per-reference-voice; switching voices re-pays the ~1.0 s prime"
   ]
 }
