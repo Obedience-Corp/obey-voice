@@ -687,6 +687,23 @@
       "editable": true
     },
     {
+      "key": "speaker.meeting.diarizer",
+      "type": "enum",
+      "default": "sherpa",
+      "enum": [
+        "sherpa",
+        "sortformer"
+      ],
+      "allows_empty": false,
+      "group": "meetings",
+      "title": "Diarization engine",
+      "help": "Which model splits a finished recording by speaker. Sortformer is optional, needs the transcribe.cpp CLI plus its weights, and ignores the expected-speaker count.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "speaker.meeting.enabled",
       "type": "bool",
       "default": true,

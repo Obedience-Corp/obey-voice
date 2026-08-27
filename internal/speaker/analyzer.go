@@ -22,6 +22,9 @@ import (
 type Analyzer struct {
 	cfg    Config
 	engine Engine
+	// diarizer runs the offline review pass. nil means the engine's own
+	// Diarize, which is the default sherpa path.
+	diarizer Diarizer
 
 	// stateMu protects closed and events lifecycle.
 	stateMu  sync.Mutex
@@ -34,9 +37,18 @@ type Analyzer struct {
 	engineMu sync.Mutex
 }
 
-// NewAnalyzer builds an analyzer. engine may be nil only when no sub-path is
-// active; when AnyActive, engine is required.
+// NewAnalyzer builds an analyzer whose offline review runs on the engine.
+// engine may be nil only when no sub-path is active; when AnyActive, engine is
+// required.
 func NewAnalyzer(cfg Config, engine Engine) (*Analyzer, error) {
+	return NewAnalyzerWithDiarizer(cfg, engine, nil)
+}
+
+// NewAnalyzerWithDiarizer builds an analyzer whose offline meeting review runs
+// on diarizer instead of the engine's own Diarize. A nil diarizer is the
+// default sherpa path. Everything else — live windows, embeddings, enrolled
+// resolution — stays on the engine, which is why it is still required.
+func NewAnalyzerWithDiarizer(cfg Config, engine Engine, diarizer Diarizer) (*Analyzer, error) {
 	cfg = cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -45,10 +57,11 @@ func NewAnalyzer(cfg Config, engine Engine) (*Analyzer, error) {
 		return nil, fmt.Errorf("speaker: engine required when live or meeting analysis is enabled")
 	}
 	return &Analyzer{
-		cfg:     cfg,
-		engine:  engine,
-		events:  make(chan Event, 64),
-		session: 1,
+		cfg:      cfg,
+		engine:   engine,
+		diarizer: diarizer,
+		events:   make(chan Event, 64),
+		session:  1,
 	}, nil
 }
 
@@ -71,6 +84,12 @@ func (a *Analyzer) Finalize(ctx context.Context, samples []float32) (Timeline, e
 	}
 	cfg := a.cfg
 	eng := a.engine
+	// An injected diarizer replaces only this step; the engine is still needed
+	// for enrolled resolution below, so an absent one disables review either way.
+	var diarizer Diarizer = eng
+	if a.diarizer != nil {
+		diarizer = a.diarizer
+	}
 	a.stateMu.Unlock()
 
 	if !cfg.MeetingActive() || eng == nil {
@@ -90,13 +109,15 @@ func (a *Analyzer) Finalize(ctx context.Context, samples []float32) (Timeline, e
 	}
 	a.stateMu.Unlock()
 
-	tl, err := eng.Diarize(ctx, samples, cfg.Meeting.NumSpeakers)
+	tl, err := diarizer.Diarize(ctx, samples, cfg.Meeting.NumSpeakers)
 	a.engineMu.Unlock()
 	if err != nil {
 		return Timeline{}, err
 	}
 	// Soft cleanup only for auto clustering (NumSpeakers == 0). Fixed N must
-	// keep short-turn partners the clusterer already separated.
+	// keep short-turn partners the clusterer already separated. It applies to
+	// whichever diarizer produced the timeline: its floors (2 s / 1% of speech
+	// mass) are about what is worth showing, not about how the spans were cut.
 	if cfg.Meeting.NumSpeakers == 0 {
 		tl = MergeSparseLabels(tl, MergeOpts{})
 	}

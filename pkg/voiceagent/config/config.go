@@ -267,6 +267,9 @@ type SpeakerMeetingConfig struct {
 	// Live enables provisional speaker-N labels on the live transcript while
 	// recording (embedding path). Offline diarization after stop is separate.
 	Live bool `mapstructure:"live"`
+	// Diarizer selects the engine behind the offline review pass; see
+	// MeetingDiarizers. Empty is the default sherpa path.
+	Diarizer string `mapstructure:"diarizer"`
 }
 
 // SpeakerModelsConfig holds optional model paths under models_dir.
@@ -447,6 +450,7 @@ func setDefaults(v *viper.Viper) {
 	// Live meeting labels default on with master speaker analysis; users can
 	// turn them off if CPU cost is unwanted. Offline diarize stays independent.
 	v.SetDefault("speaker.meeting.live", true)
+	v.SetDefault("speaker.meeting.diarizer", DefaultMeetingDiarizer)
 	v.SetDefault("speaker.models.embedding", "")
 	v.SetDefault("speaker.models.segmentation", "")
 }

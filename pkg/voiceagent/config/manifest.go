@@ -200,6 +200,17 @@ func ManifestFor(cfg *Config, req AssetRequest) (AssetManifest, error) {
 				m.Assets = append(m.Assets, SpeakerEmbeddingAsset())
 			}
 		}
+		// The optional Sortformer review diarizer adds weights; it does not
+		// remove the sherpa pair, which still runs live labels and enrollment.
+		if needMeeting {
+			diarizer, err := MeetingDiarizerFrom(cfg)
+			if err != nil {
+				return AssetManifest{}, err
+			}
+			if diarizer == DiarizerSortformer {
+				m.Assets = append(m.Assets, SortformerManifestAsset())
+			}
+		}
 	}
 
 	return m, nil
