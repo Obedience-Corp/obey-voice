@@ -35,7 +35,10 @@
   "harness": {
     "driver": "custom - written for this export",
     "why": "the vendor's published onnx_runtime/ code CANNOT run these graphs: it expects a transformer slow model with per-layer cache_key_N inputs, while the published slow graph is a mamba/SSM hybrid taking cache_keys/cache_values/conv_states/ssm_states, and it does not handle slow_logits_layout=relative_semantic_then_eos",
-    "location": "/Volumes/fast/Caches/obey-voice-tts-bench/{driver.py,run_bench.py,prefix_test.py}",
+    "location": "scripts/audio8_bench/ (this repo) - README.md there maps each command to a section of this artifact",
+    "vendor_helpers": "arktts_runtime tokenizer/prompt code from github.com/Audio8-AI/Audio8_TTS @ c856e38 (Apache-2.0); only Encode/prompt-build and _sample are reused, no graph driving",
+    "python_env": "Python 3.12.13, scripts/audio8_bench/requirements.txt (numpy 2.4.3, onnxruntime 1.24.4, soundfile 0.13.1, tokenizers 0.23.1)",
+    "reproduced": "2026-08-27, vendored scripts re-run against the pinned snapshot: identical frame counts and audio durations, RTF 0.75x/1.16x vs 0.68x/1.09x recorded (run-to-run machine noise; machine not quiesced)",
     "protocol": "N7 protocol - same two phrases as TestKokoroRealtimeFactor, warmup then median of 3",
     "rtf_definition": "audio_seconds / total_synth_seconds (higher is faster; matches N7/F7)"
   },
@@ -173,7 +176,7 @@
     "comment": "AR decode alone is 504 ms for 1.486 s of audio = 2.95x realtime. The AR loop is FAST. Prefill and codec are what fail the bar, and prefill is the cacheable one."
   },
   "open": [
-    "English quality unjudged - the packaged reference voice is Chinese; no English reference was registered. WAVs written to /Volumes/fast/Caches/obey-voice-tts-bench/",
+    "English quality unjudged - the packaged reference voice is Chinese; no English reference was registered. run_bench.py/pipelined.py write ear-check WAVs to the working directory",
     "CoreML EP untested for the codec, which is the bottleneck",
     "peak RSS 2.0 GB measured vs ~0.6 GB claimed on the model card",
     "measured against onnxruntime 1.24.4; obey-voice links 1.27.0 via sherpa-onnx-go",
