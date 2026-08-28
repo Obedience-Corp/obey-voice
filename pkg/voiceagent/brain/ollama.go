@@ -216,6 +216,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			onEnd:          opts.OnToolEnd,
 		}
 
+		// spoken is every delta already forwarded this turn. After a tool
+		// loop the model often restates that text; forwarding it again is
+		// how Veronica said the same sentence twice (2026-08-28).
+		var spoken strings.Builder
+
 		for i := 0; i < maxToolIterations; i++ {
 			var tools api.Tools
 			if opts.ToolsEnabled {
@@ -236,11 +241,17 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					// Stream every content delta as it arrives, tools enabled or
 					// not, so the TUI renders token-by-token. Any preamble a
 					// tool-calling iteration emits streams too; the final answer
-					// continues the same reply after tools run.
-					if emit := strip.Feed(resp.Message.Content); emit != "" {
+					// continues the same reply after tools run — unless it is
+					// the same reply, which we swallow.
+					emit := strip.Feed(resp.Message.Content)
+					if restatementSkip(spoken.String(), textBuf.String()) {
+						return nil
+					}
+					if emit != "" {
 						if err := sendChunk(ctx, out, emit); err != nil {
 							return err
 						}
+						spoken.WriteString(emit)
 					}
 				}
 				if len(resp.Message.ToolCalls) > 0 {
@@ -253,9 +264,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			})
 			// Anything the label check still holds is real reply text; release
 			// it whether the turn ends, errors, or loops into tools.
-			if held := strip.Flush(); held != "" {
+			if held := strip.Flush(); held != "" && !restatementSkip(spoken.String(), textBuf.String()) {
 				if sendErr := sendChunk(ctx, out, held); sendErr != nil && err == nil {
 					err = sendErr
+				} else if sendErr == nil {
+					spoken.WriteString(held)
 				}
 			}
 			if opts.OnUsage != nil && prefillTokens+genTokens > 0 {
@@ -408,6 +421,19 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	}
 
 	return "I seem to be going in circles with my tools. Let me just answer directly.", nil
+}
+
+// restatementSkip reports whether soFar is still a restatement of already —
+// text this turn already streamed, usually before a tool call. Local models
+// often emit the spoken line, fire a phantom tool, then emit the same line
+// again. Forwarding the second copy is how Veronica said one sentence twice.
+func restatementSkip(already, soFar string) bool {
+	already = strings.TrimSpace(already)
+	soFar = strings.TrimSpace(soFar)
+	if already == "" || soFar == "" {
+		return false
+	}
+	return soFar == already || strings.HasPrefix(already, soFar)
 }
 
 // newChatRequest builds a streaming chat request carrying the session's

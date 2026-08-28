@@ -90,8 +90,13 @@ func speakableFromResponse(gated string) string {
 	close(input)
 
 	var kept []string
+	seen := make(map[string]struct{})
 	for segment := range brain.ChunkSentencesRaw(input) {
 		if cleaned := brain.CleanForVoice(segment); speakableSegment(cleaned) {
+			if _, dup := seen[cleaned]; dup {
+				continue
+			}
+			seen[cleaned] = struct{}{}
 			kept = append(kept, cleaned)
 		}
 	}
@@ -980,6 +985,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	gate := &voiceGate{}
 
 	var fullResponse strings.Builder
+	// heard / spoken drop a sentence this turn already put on the transcript
+	// or in the synth queue. Local models often emit the spoken line, fire a
+	// phantom tool, then emit the same line again (Veronica, 2026-08-28:
+	// web_search for the World Cup mid-conversation, then the identical
+	// sentence a second time). Without this she says it twice.
+	heard := make(map[string]struct{})
+	spoken := make(map[string]struct{})
 	var interrupted bool
 	var pending int
 	var bargeIn <-chan interruptRequest
@@ -1174,10 +1186,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// and TTS so the finalizer's replacement is the only visible/audible
 			// response. A filler followed by content in the same sentence survives.
 			if display := brain.CleanForVoice(sentence); speakableSegment(display) {
-				if fullResponse.Len() > 0 {
-					fullResponse.WriteByte(' ')
+				if _, dup := heard[display]; !dup {
+					heard[display] = struct{}{}
+					if fullResponse.Len() > 0 {
+						fullResponse.WriteByte(' ')
+					}
+					fullResponse.WriteString(display)
 				}
-				fullResponse.WriteString(display)
 			}
 
 			if interrupted || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
@@ -1193,6 +1208,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			if !speakableSegment(speakable) {
 				continue
 			}
+			if _, dup := spoken[speakable]; dup {
+				continue
+			}
+			spoken[speakable] = struct{}{}
 
 			turn.to(TurnSpeaking)
 			if metrics.firstSegment.IsZero() {
