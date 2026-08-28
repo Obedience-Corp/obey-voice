@@ -20,6 +20,8 @@ import (
 //   - Four-digit years are read as years. "1999" reached eSpeak as "one thousand
 //     nine hundred ninety-nine"; as a year it is 0.285 s shorter and is how a
 //     person says it.
+//   - Chain-of-thought XML (`<think>…</think>`) is stripped. Qwen3 and similar
+//     models dump reasoning in the reply body; that is for the TUI, not TTS.
 //   - Quotation marks are stripped. They are not spoken, and Qwen3-TTS treats a
 //     quoted span as something other than the utterance: wrapping a reply in
 //     quotes (a common LLM habit — `"aww, did that hurt, baby"`) produced no
@@ -33,7 +35,7 @@ import (
 // naive expansion breaks: "555-1234", "2026-08-11", "$5", "R2D2" and "12:00" all
 // garbled. See decision D008.
 func PrepareSpokenText(s string) string {
-	return expandYears(StripSpeechQuotes(StripEmoji(s)))
+	return expandYears(StripSpeechQuotes(StripEmoji(StripThinkBlocks(s))))
 }
 
 // --- emoji -----------------------------------------------------------------

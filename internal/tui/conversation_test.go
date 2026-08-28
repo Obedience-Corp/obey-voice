@@ -61,6 +61,25 @@ func TestConversationDisplaysSessionBoundUncleFuTTS(t *testing.T) {
 	}
 }
 
+func TestRenderAgentTurnStylesThinkBlocks(t *testing.T) {
+	view := renderAgentTurn("Santa", "<think>The user says \"speaker-2: Hi santa\". This is a greeting.</think>\nHello speaker-2! It's a wonderful day.")
+	if strings.Contains(view, "<think>") || strings.Contains(view, "</think>") {
+		t.Fatalf("raw think tags still in the bubble:\n%s", view)
+	}
+	if !strings.Contains(view, "thinking") {
+		t.Fatalf("missing thinking label:\n%s", view)
+	}
+	if !strings.Contains(view, "This is a greeting") {
+		t.Fatalf("think body not shown:\n%s", view)
+	}
+	if !strings.Contains(view, "Hello speaker-2") {
+		t.Fatalf("spoken reply missing:\n%s", view)
+	}
+	if !strings.Contains(view, "● Santa") {
+		t.Fatalf("agent header missing:\n%s", view)
+	}
+}
+
 func TestConversationAppendAndView(t *testing.T) {
 	m := sizedConversation(t, 80, 24)
 

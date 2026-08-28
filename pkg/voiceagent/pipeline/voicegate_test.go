@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 func TestVoiceGateRegions(t *testing.T) {
@@ -96,6 +97,39 @@ func TestVoiceGateRegions(t *testing.T) {
 				t.Fatalf("leaked = %d, want %d", leaked, tc.wantLeaked)
 			}
 		})
+	}
+}
+
+func TestThinkBlockIsNotSpoken(t *testing.T) {
+	text := "<think>The user says \"speaker-2: Hi santa\". Plan a greeting.</think>\nHello speaker-2! It's a wonderful day."
+	g := &voiceGate{}
+	kept, _ := g.filter(textclean.StripThinkBlocks(text))
+	if strings.Contains(kept, "Plan a greeting") || strings.Contains(strings.ToLower(kept), "<think") {
+		t.Fatalf("think leaked into speech: %q", kept)
+	}
+	if !strings.Contains(kept, "Hello speaker-2") {
+		t.Fatalf("spoken reply missing: %q", kept)
+	}
+}
+
+func TestThinkFilterSpansSegmentsLikeAFence(t *testing.T) {
+	var f textclean.ThinkFilter
+	g := &voiceGate{}
+	segs := []string{
+		`<think>The user says "speaker-2: Hi santa".`,
+		"This is a greeting.",
+		"</think>",
+		"Hello speaker-2! It's a wonderful day.",
+	}
+	var spoken []string
+	for _, seg := range segs {
+		kept, _ := g.filter(f.Feed(seg))
+		if strings.TrimSpace(kept) != "" {
+			spoken = append(spoken, kept)
+		}
+	}
+	if len(spoken) != 1 || spoken[0] != "Hello speaker-2! It's a wonderful day." {
+		t.Fatalf("spoken = %q, want only the reply", spoken)
 	}
 }
 

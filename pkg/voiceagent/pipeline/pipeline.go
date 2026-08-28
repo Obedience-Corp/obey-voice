@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -1012,6 +1013,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// strips, so gating happens first and each destination cleans after.
 	sentences := brain.ChunkSentencesRaw(streamedChunks)
 	gate := &voiceGate{}
+	think := &textclean.ThinkFilter{}
 
 	var fullResponse strings.Builder
 	// heard / spoken drop a sentence this turn already put on the transcript
@@ -1208,7 +1210,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// Feed the gate every segment, in order, before deciding whether
 			// this turn speaks at all: its regions span segments, so skipping
 			// one loses the boundary that closes a tool block or a fence.
-			voiceText, stripped := gate.filter(sentence)
+			// Think blocks are stripped first: they look like speech (letters,
+			// periods) so the gate would otherwise read them aloud.
+			voiceText, stripped := gate.filter(think.Feed(sentence))
 
 			// Filler-only chunks are provisional: providers replace a turn that
 			// ends there with the recovery reply. Keep them out of both transcript
