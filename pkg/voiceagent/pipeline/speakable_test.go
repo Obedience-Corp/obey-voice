@@ -46,7 +46,7 @@ func TestSpeakableSegmentNeedsBothHalves(t *testing.T) {
 	})
 
 	t.Run("real content survives both", func(t *testing.T) {
-		for _, text := range []string{"Hello.", "42.", "$5", "R2D2", "12:00", "Hmm, yes.", "日本語"} {
+		for _, text := range []string{"Hello.", "42.", "$5", "R2D2", "12:00", "Hmm, yes.", "日本語", "Ahh, that's it.", "Mmm.", "Heh."} {
 			if !speakableSegment(text) {
 				t.Errorf("%q: real content must be spoken", text)
 			}

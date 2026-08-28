@@ -40,9 +40,6 @@ func TestStrippedFillersNeverReachTTS(t *testing.T) {
 	samples := map[string][]string{
 		`umm+`: {"Umm, sure", "It was, umm, complicated", "UMM, sure", "Ummm, sure"},
 		`uhh+`: {"Uhh I forgot", "uhh, I forgot"},
-		`ahh+`: {"Ahh, I see", "ahh I see"},
-		`mmm+`: {"Mmm, interesting", "mmm interesting"},
-		`heh`:  {"Heh, fair enough", "heh fair enough"},
 	}
 
 	for _, filler := range strippedFillers {
@@ -108,6 +105,25 @@ func TestFillerOnlyReplyFallsBackToRecoveryLine(t *testing.T) {
 			if got := spokenOrFallback(cleaned); got != cleaned {
 				t.Errorf("spokenOrFallback(%q) = %q, want %q — a filler followed by content "+
 					"is a real reply", in, got, cleaned)
+			}
+		})
+	}
+}
+
+// Ahh / mmm / heh used to be stripped fillers. A reply that is only a moan is
+// still a reply — it must reach TTS, not the recovery line.
+func TestVocalizationOnlyReplyIsSpoken(t *testing.T) {
+	for _, in := range []string{"Ahh.", "Ahhh", "Mmm.", "Heh.", "Ahh, mmm."} {
+		t.Run(in, func(t *testing.T) {
+			cleaned := cleanForVoice(in)
+			if cleaned == "" {
+				t.Fatalf("cleanForVoice(%q) emptied a vocalization", in)
+			}
+			if !hasSpeakableContent(cleaned) {
+				t.Errorf("cleanForVoice(%q) = %q was treated as empty; a moan is content", in, cleaned)
+			}
+			if got := spokenOrFallback(cleaned); got != cleaned {
+				t.Errorf("spokenOrFallback(%q) = %q, want the vocalization spoken", in, got)
 			}
 		})
 	}
@@ -180,6 +196,13 @@ func TestCleanForVoice(t *testing.T) {
 		{"mid-sentence umm", "It was, umm, complicated", "It was, complicated"},
 		{"uppercase filler", "UMM, sure", "sure"},
 		{"uhh stripped", "Uhh I forgot", "I forgot"},
+		// Vocalizations are speech, not dead air. Stripping them ate moans,
+		// hums, and smirks before TTS ever saw them.
+		{"ahh moan kept", "Ahh, that's it", "Ahh, that's it"},
+		{"elongated ahhh kept", "Ahhh yes", "Ahhh yes"},
+		{"mmm kept", "Mmm, don't stop", "Mmm, don't stop"},
+		{"heh smirk kept", "Heh, you wish", "Heh, you wish"},
+		{"moan-only reply kept", "Ahh.", "Ahh."},
 		// The stripped tier must not reach inside a voiced one: the "mmm" in
 		// "Hmmm" is not a word of its own.
 		{"mmm inside hmmm not stripped", "Hmmm.", "Hmmm."},

@@ -606,14 +606,20 @@ const RecoveryReply = "I hit an error while working on that. Want me to try a si
 // thought that makes a spoken reply sound like a person considering the
 // question — "Hmm, good question" jumped straight to "good question".
 //
-// strippedFillers are still removed.
+// strippedFillers are still removed. These are dead-air stalls (umm, uhh),
+// not sounds. ahh / mmm / heh used to live here; they are moans, assent,
+// smirks — the thing a voice agent is actually saying — and stripping them
+// left Veronica (and anyone moaning, humming, or laughing in prose) silent
+// on those beats while the transcript still showed the words (2026-08-28).
+// They are ordinary speakable content now, not a filler tier: a turn that is
+// only "Ahh." must still be spoken, not replaced by the recovery line.
 //
 // What the evidence actually shows (docs/audio/golden/N2/provenance.json):
 // synthesizing all seven fillers in isolation produced 0.58-0.80s of audio at
 // -22 to -24 dBFS for every one of them. Nothing is silent and nothing is being
 // spelled out letter by letter, so **duration and loudness do not discriminate
-// the tiers**. The split is currently a product decision awaiting a listen
-// check, not a measured result. Do not cite the measurements as justification.
+// the tiers**. umm/uhh stay stripped as a product choice for dead air, not
+// because they failed to render.
 //
 // To move a filler between tiers, play it through Kokoro, listen, and record the
 // verdict in the golden provenance. Do not move one on the theory that it
@@ -621,7 +627,7 @@ const RecoveryReply = "I hit an error while working on that. Want me to try a si
 // measurement did not support it.
 var (
 	voicedFillers   = []string{`hmm+`, `haha`}
-	strippedFillers = []string{`umm+`, `uhh+`, `ahh+`, `mmm+`, `heh`}
+	strippedFillers = []string{`umm+`, `uhh+`}
 )
 
 var (
