@@ -119,6 +119,14 @@ type TurnMetrics struct {
 	// then pauses for seconds between every sentence is, to the watchdog, a
 	// completely healthy turn.
 	DeadAirElapsed time.Duration
+	// Underruns is the turn's total of the per-segment counts below: gaps
+	// inside a sentence, which only incremental playback can produce.
+	//
+	// DeadAirElapsed cannot see these. It measures the player going idle
+	// between segments; a segment that starts speaking, runs dry mid-word and
+	// resumes never goes idle by that definition, so before this counter a
+	// stuttering streamed reply and a clean one produced identical metrics.
+	Underruns int
 	// Segments carries per-segment synthesis cost in playback order. The turn
 	// milestones above only ever describe the first segment; everything after
 	// it — where a long reply spends its time — is here.
@@ -161,6 +169,12 @@ type SegmentMetric struct {
 	// Interrupted marks a segment cut short by barge-in. Its AudioSeconds
 	// still reports what was synthesized.
 	Interrupted bool
+	// Underruns counts audible gaps *inside* this segment: the speaker ran out
+	// of audio while the synthesizer was still producing it. Only a segment
+	// played incrementally can have any — a whole-utterance one is complete
+	// before it is audible — and one is enough to say streaming is running
+	// dry on this machine.
+	Underruns int
 }
 
 // RealtimeFactor reports engine wall time divided by audio duration, or 0

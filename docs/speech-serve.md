@@ -147,3 +147,16 @@ The wire is `obey-speech/v1`: newline-delimited JSON plus raw 24 kHz f32le PCM,
 on one long-lived TCP connection. It is not HTTP, and it is not the serve
 protocol. A client sends `hello` with the token, receives the worker's `ready`,
 then exchanges `synthesize` / `pcm_meta` + PCM / `final`.
+
+A Stage B worker answers `"stream": true` with several `pcm_meta` + PCM groups
+instead of one, each carrying its 0-based `chunk` index, and a `final` totalling
+`chunks` and `n_samples`. The bridge forwards all of it byte for byte — it never
+had to learn those fields, because the chunk framing is the Stage A framing
+repeated. The host counts the chunks and the samples against that final and
+fails the request rather than playing short audio; `chunk` indices are what make
+a lost frame visible at all, since the payload lengths still line up without it.
+
+Whether chunks are requested is the host's decision, not the daemon's: the
+`stream` field travels on each `synthesize` and `speech-serve` passes it
+through unchanged. See `qwen_tts_stream` in
+[configuration.md](configuration.md#chunk-playback-qwen-stage-b).

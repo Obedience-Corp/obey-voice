@@ -21,6 +21,18 @@ const (
 	// audible, which is the bulk of the AEC reference delay.
 	playbackPeriodFrames = 512
 	playbackPeriods      = 3
+
+	// incrementalPreRoll is how much audio an incremental segment buffers
+	// before it becomes audible.
+	//
+	// It is a fixed head start, not one scaled to the reply's length, because
+	// this path is only taken where synthesis is measured to run *faster* than
+	// realtime: the buffer grows from here rather than shrinking, so the only
+	// thing to survive is scheduler jitter, and 150 ms is seven device periods
+	// of it. A producer slower than realtime needs a pre-buffer proportional to
+	// the whole utterance (audio_len × (RTF − 1)) — that engine must not take
+	// this path at all, which is the streaming-eligibility policy's job.
+	incrementalPreRoll = 150 * time.Millisecond
 )
 
 // PlaybackResult reports the terminal state of a queued playback segment.
@@ -33,6 +45,25 @@ type PlaybackResult struct {
 	// what was synthesized even when playback was interrupted before the
 	// samples were heard.
 	AudioSeconds float64
+	// Underruns counts how many times this segment ran dry: the device asked
+	// for audio, the segment had none buffered, and synthesis had not finished
+	// producing it. Each one is an audible gap *inside* a sentence.
+	//
+	// A whole-utterance segment cannot report one — its audio is complete
+	// before it becomes audible. Only an incremental stream can, which is
+	// exactly why the count exists: it is the failure mode streaming
+	// introduces, and dead-air accounting cannot see it because that only
+	// measures the silence *between* segments.
+	Underruns int
+	// SynthesisEndedAt is when the last frame of this segment arrived from the
+	// synthesizer, or the zero time when the player did not observe an end
+	// (a barge-in that discarded the segment first).
+	//
+	// A whole-utterance segment becomes audible only after synthesis ends, so
+	// the caller can time that from its own side. A streamed one is audible
+	// long before, so the only honest numerator for its realtime factor is
+	// this stamp.
+	SynthesisEndedAt time.Time
 }
 
 // Playback exposes playback lifecycle signals for a single queued segment.
@@ -345,14 +376,20 @@ func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stre
 	// front-end ignores an unchanged value.
 	p.applyReferenceDelay()
 
+	p.mu.Lock()
+	debug := p.debug
+	p.mu.Unlock()
+
+	if stream.Incremental() {
+		pumpIncremental(ctx, segment, stream, debug, inputRate, outputRate, budget)
+		return
+	}
+
 	// Kokoro produces the complete sentence before exposing its PCM samples.
 	// Buffer that already-generated sentence before handing it to the real-time
 	// device callback. Starting from a partial buffer lets a brief scheduler
 	// delay drain the segment and insert silence in the middle of speech.
 	segment.setReadyFrames(0)
-	p.mu.Lock()
-	debug := p.debug
-	p.mu.Unlock()
 	var samples []float32
 
 	// Reset on every batch: the budget bounds silence, not total duration.
@@ -428,6 +465,104 @@ func (s *silenceTimer) stop() {
 	if s.timer != nil {
 		s.timer.Stop()
 	}
+}
+
+// pumpIncremental releases audio to the device as it arrives instead of
+// buffering the utterance first. It is the whole point of a streaming
+// synthesizer: the first chunk becomes audible while the rest is still being
+// generated, so time-to-first-audio stops being the full synthesis.
+//
+// Resampling is the reason this cannot just call finalizeSegment per chunk.
+// resampleLinear is a whole-buffer operation that restarts its phase at zero
+// and clamps its own tail, so running it once per chunk would drop and repeat
+// samples at every chunk boundary — a click per chunk. streamResampler carries
+// the fractional phase and the interpolation overlap across calls, which is
+// what makes a chunked stream reconstruct as one continuous signal.
+//
+// The stall budget is enforced exactly as the buffered path enforces it, and
+// for the same reason: it bounds silence between batches, never the utterance.
+// A worker that is slow but still emitting chunks resets the timer on every one
+// of them and keeps its segment — which is precisely the engine this path
+// exists for.
+func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *PCMStream, debug *playerDebugRecorder, inputRate, outputRate int, budget time.Duration) {
+	segment.setReadyFrames(preRollFrames(outputRate))
+
+	var resampler streamResampler
+	resampler.Configure(inputRate, outputRate)
+	var converted []float32
+
+	silence := newSilenceTimer(budget)
+	defer silence.stop()
+
+	// The debug recorder writes one WAV per captured source, so the chunks are
+	// rejoined and handed over once, on every exit path. Capturing per chunk
+	// would scatter a single sentence across dozens of files and make the
+	// capture useless for hearing the joins — the thing it would be opened to
+	// check. A partial utterance is still worth writing: a segment that
+	// stalled or was cancelled is exactly when someone goes looking.
+	var captured []float32
+	if debug != nil {
+		defer func() { debug.captureSource(inputRate, captured) }()
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			segment.fail(ctx.Err())
+			return
+		case <-silence.C():
+			segment.fail(fmt.Errorf("%w after %s", ErrStreamStalled, budget))
+			return
+		case frames, ok := <-stream.Frames():
+			if !ok {
+				segment.finishInput(stream.Err())
+				return
+			}
+			if len(frames) == 0 {
+				continue
+			}
+			if debug != nil {
+				captured = append(captured, frames...)
+			}
+			// Duration is measured at the input rate and accumulated per
+			// chunk: nothing here ever sees the whole utterance at once.
+			segment.addAudioSamples(len(frames), inputRate)
+			if inputRate == outputRate {
+				segment.append(float32ToPCM16(frames))
+			} else {
+				converted = resampleChunk(&resampler, frames, converted, inputRate, outputRate)
+				segment.append(float32ToPCM16(converted))
+			}
+			silence.reset()
+		}
+	}
+}
+
+// preRollFrames converts incrementalPreRoll into output frames, flooring at one
+// device period so a pathological rate cannot make a segment audible with
+// nothing behind it.
+func preRollFrames(outputRate int) int {
+	if outputRate <= 0 {
+		return playbackPeriodFrames
+	}
+	frames := int(float64(outputRate) * incrementalPreRoll.Seconds())
+	if frames < playbackPeriodFrames {
+		return playbackPeriodFrames
+	}
+	return frames
+}
+
+// resampleChunk converts one chunk through the phase-preserving resampler,
+// reusing buf. Whatever cannot be interpolated yet (at most one sample, needed
+// as the left neighbour of the next chunk's first output) stays in the
+// resampler's carry rather than being flushed with a duplicated edge.
+func resampleChunk(resampler *streamResampler, frames, buf []float32, inputRate, outputRate int) []float32 {
+	need := len(frames)*outputRate/inputRate + 2
+	if cap(buf) < need {
+		buf = make([]float32, need)
+	}
+	buf = buf[:need]
+	return buf[:resampler.Resample(frames, buf)]
 }
 
 // finalizeSegment resamples the fully-buffered utterance once and appends it
@@ -783,6 +918,17 @@ type playbackSegment struct {
 	doneCh       chan PlaybackResult
 	readyClosed  bool
 	interrupted  bool
+	// audible latches once the device has taken frames from this segment.
+	// Running dry before that is not an underrun — it is the segment waiting
+	// its turn in the queue.
+	audible bool
+	// starved is true while the device is asking for audio this segment does
+	// not have. It debounces the counter: one gap is one underrun, however
+	// many callbacks it spans.
+	starved   bool
+	underruns int
+	// inputEndedAt is when the synthesizer stopped producing for this segment.
+	inputEndedAt time.Time
 }
 
 func newPlaybackSegment() *playbackSegment {
@@ -841,11 +987,38 @@ func (s *playbackSegment) setAudioSeconds(samples []float32, inputRate int) {
 	s.audioSeconds = float64(len(samples)) / float64(inputRate)
 }
 
+// addAudioSamples accumulates synthesized duration one chunk at a time. The
+// whole-utterance path knows the total up front and calls setAudioSeconds; an
+// incremental one only ever learns it a chunk at a time.
+func (s *playbackSegment) addAudioSamples(count, inputRate int) {
+	if count <= 0 || inputRate <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audioSeconds += float64(count) / float64(inputRate)
+}
+
+// markInputEndedLocked stamps when the synthesizer stopped producing, once.
+// Later terminal paths (a barge-in Stop arriving after the stream closed) must
+// not overwrite it: the engine finished when it finished.
+func (s *playbackSegment) markInputEndedLocked() {
+	if s.inputEndedAt.IsZero() {
+		s.inputEndedAt = time.Now()
+	}
+}
+
 // resultLocked builds a terminal result carrying the synthesized duration.
 // Every exit path goes through it so an interrupted or failed segment still
 // reports what synthesis cost.
 func (s *playbackSegment) resultLocked(err error, interrupted bool) PlaybackResult {
-	return PlaybackResult{Err: err, Interrupted: interrupted, AudioSeconds: s.audioSeconds}
+	return PlaybackResult{
+		Err:              err,
+		Interrupted:      interrupted,
+		AudioSeconds:     s.audioSeconds,
+		Underruns:        s.underruns,
+		SynthesisEndedAt: s.inputEndedAt,
+	}
 }
 
 func (s *playbackSegment) append(samples []int16) {
@@ -877,6 +1050,7 @@ func (s *playbackSegment) finishInput(err error) {
 	}
 	s.inputDone = true
 	s.err = err
+	s.markInputEndedLocked()
 	s.maybeReadyLocked()
 	shouldComplete := s.pendingLocked() == 0
 	result := s.resultLocked(s.err, s.interrupted)
@@ -891,6 +1065,7 @@ func (s *playbackSegment) fail(err error) {
 	s.mu.Lock()
 	s.inputDone = true
 	s.err = err
+	s.markInputEndedLocked()
 	s.maybeReadyLocked()
 	result := s.resultLocked(err, false)
 	s.mu.Unlock()
@@ -925,13 +1100,22 @@ func (s *playbackSegment) writeTo(output []byte, maxFrames int) (int, bool) {
 
 	available := s.pendingLocked()
 	if available == 0 {
+		// Audible, still being synthesized, and out of audio: the listener is
+		// about to hear a hole in the middle of a sentence. Count the gap, not
+		// the callbacks it spans.
+		if s.audible && !s.inputDone && !s.interrupted && !s.starved {
+			s.starved = true
+			s.underruns++
+		}
 		return 0, s.inputDone
 	}
+	s.starved = false
 
 	if maxFrames > available {
 		maxFrames = available
 	}
 
+	s.audible = true
 	s.started.Do(func() { close(s.startedCh) })
 
 	for i := range maxFrames {

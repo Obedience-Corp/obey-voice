@@ -15,13 +15,15 @@ var ErrStreamStalled = errors.New("pcm stream stalled: no audio within budget")
 
 // PCMStream carries synthesized mono PCM frames for playback.
 type PCMStream struct {
-	mu         sync.Mutex
-	ctx        context.Context
-	sampleRate int
-	err        error
-	closed     bool
-	ready      chan struct{}
-	frames     chan []float32
+	mu          sync.Mutex
+	ctx         context.Context
+	sampleRate  int
+	err         error
+	closed      bool
+	incremental bool
+	written     int
+	ready       chan struct{}
+	frames      chan []float32
 	// stallBudget bounds the silence between frame batches, not the whole
 	// utterance. A slow engine that keeps emitting audio keeps its segment;
 	// one that emits nothing loses it. Zero leaves the stream unbounded.
@@ -79,6 +81,33 @@ func (s *PCMStream) SetSampleRate(sampleRate int) error {
 	return nil
 }
 
+// SetIncremental declares that frames arrive *during* synthesis rather than
+// all at once when it ends, so playback may start on the first frames instead
+// of waiting for the whole utterance.
+//
+// It is a property of the producer, not a request from the consumer: only the
+// synthesizer knows whether it is emitting PCM as it decodes (a Stage B Qwen
+// worker) or handing over a finished blob (Kokoro, Stage A Qwen). A whole-blob
+// producer must leave this false — starting playback from a partial buffer it
+// filled in one burst gains nothing and risks draining mid-sentence.
+//
+// Call it before SetSampleRate, which is what the ordering rests on: a
+// consumer only reads this after WaitReady has returned, and WaitReady cannot
+// return until the rate is set. Setting it after that is a race the mutex
+// hides — the flag would be correct and already too late to be read.
+func (s *PCMStream) SetIncremental(incremental bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.incremental = incremental
+}
+
+// Incremental reports whether this stream's frames arrive during synthesis.
+func (s *PCMStream) Incremental() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.incremental
+}
+
 // WaitReady waits until the stream sample rate is known or the stream fails.
 func (s *PCMStream) WaitReady(ctx context.Context) (int, error) {
 	select {
@@ -128,10 +157,23 @@ func (s *PCMStream) Write(samples []float32) error {
 
 	select {
 	case s.frames <- chunk:
+		s.mu.Lock()
+		s.written += len(chunk)
+		s.mu.Unlock()
 		return nil
 	case <-s.ctx.Done():
 		return s.ctx.Err()
 	}
+}
+
+// Written reports how many samples have been handed to the consumer. A
+// producer that fails partway uses it to tell "nothing was heard yet, a retry
+// is clean" from "some of this sentence has already played, and synthesizing
+// it again would say those words twice".
+func (s *PCMStream) Written() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.written
 }
 
 // Close marks the stream complete.

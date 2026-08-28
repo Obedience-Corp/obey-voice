@@ -187,6 +187,11 @@ func modelKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "qwen_tts_stream", Type: TypeEnum, Default: QwenStreamAuto, Enum: qwenStreamEnum(),
+			Group: GroupModels, Title: "Qwen chunk playback",
+			Help: "Whether Qwen starts speaking on its first chunk instead of the finished sentence. Auto only does it where that was measured not to stutter.",
+		},
+		{
 			Key: "qwen_tts_native_url", Type: TypeString, Default: "",
 			Group: GroupModels, Title: "Qwen package URL",
 			Help: "Where the Qwen package is fetched from. Empty uses the release Obey Voice pins.",

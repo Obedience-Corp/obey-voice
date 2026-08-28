@@ -33,6 +33,10 @@ type fakeSpeechServer struct {
 	helloSeen string
 	// hangBeforeReady holds the connection open without answering.
 	hangBeforeReady bool
+	// chunks, when set, answers a stream:true request Stage B style: one
+	// numbered pcm_meta per chunk, then a final carrying the totals. Empty
+	// leaves every existing test on the whole-blob path unchanged.
+	chunks [][]float32
 }
 
 func startFakeSpeechServer(t *testing.T, srv *fakeSpeechServer) *fakeSpeechServer {
@@ -104,6 +108,10 @@ func (s *fakeSpeechServer) handle(conn net.Conn) {
 		switch msg["type"] {
 		case "synthesize":
 			id, _ := msg["id"].(string)
+			if wantStream, _ := msg["stream"].(bool); wantStream && len(s.chunks) > 0 {
+				s.writeChunks(conn, id)
+				continue
+			}
 			fmt.Fprintf(conn, `{"type":"pcm_meta","id":%q,"sample_rate":24000,"format":"f32le","n_samples":%d}`+"\n", id, len(s.samples))
 			raw := make([]byte, len(s.samples)*4)
 			for i, sample := range s.samples {
@@ -116,6 +124,23 @@ func (s *fakeSpeechServer) handle(conn net.Conn) {
 			return
 		}
 	}
+}
+
+// writeChunks answers Stage B style, framed exactly as the worker frames it.
+func (s *fakeSpeechServer) writeChunks(conn net.Conn, id string) {
+	total := 0
+	for index, chunk := range s.chunks {
+		fmt.Fprintf(conn, `{"type":"pcm_meta","id":%q,"sample_rate":24000,"format":"f32le","n_samples":%d,"chunk":%d}`+"\n",
+			id, len(chunk), index)
+		raw := make([]byte, len(chunk)*4)
+		for i, sample := range chunk {
+			binary.LittleEndian.PutUint32(raw[i*4:], math.Float32bits(sample))
+		}
+		_, _ = conn.Write(raw)
+		_, _ = conn.Write([]byte("\n"))
+		total += len(chunk)
+	}
+	fmt.Fprintf(conn, `{"type":"final","id":%q,"chunks":%d,"n_samples":%d}`+"\n", id, len(s.chunks), total)
 }
 
 func (s *fakeSpeechServer) seen() (string, []map[string]any) {

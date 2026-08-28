@@ -82,6 +82,9 @@ func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPat
 		speechCtx = context.Background()
 	}
 	diags = append(diags, config.DiagnoseSpeechPlace(speechCtx, cfg, speechProbe)...)
+	// Whether that speech is played chunk by chunk. Read-only: it reports the
+	// policy, and never starts a worker to ask.
+	diags = append(diags, config.DiagnoseQwenStreaming(cfg, modelsDir)...)
 
 	if voiceChecker != nil {
 		parent := cmd.Context()
