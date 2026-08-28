@@ -50,10 +50,10 @@ var (
 	serveBannerJSON   bool
 	serveLogFile      string
 	serveWorkDir      string
-	// serveWorkDirResolved is the directory serve chdir'd into. The ready
-	// banner and /v1/status report it so a client knows where a tool call
-	// would land.
-	serveWorkDirResolved string
+	// serveWorkDirInfo is the directory serve chdir'd into, with the layer that
+	// decided it. The ready banner and /v1/status report both, so a client
+	// knows where a tool call would land and whether anyone chose that.
+	serveWorkDirInfo config.WorkDirInfo
 	// publicHost is the hostname phones should open (MagicDNS). Empty when
 	// clients should use the bind address as-is.
 	servePublicHost string
@@ -131,19 +131,19 @@ remote_tools_enabled is set.`,
 		// exist is an error, not a silent fall back to home. Resolved after
 		// configureServeStdio, which has already opened a relative --log-file
 		// against the caller's cwd.
-		wd, err := config.ResolveWorkDir(cfg, serveWorkDir)
+		wd, err := config.ResolveWorkDirInfo(cfg, serveWorkDir)
 		if err != nil {
 			return err
 		}
 		// The TLS material is read inside runServe, after the chdir.
 		absPathFlag(&serveTLSCert)
 		absPathFlag(&serveTLSKey)
-		if err := enterWorkDir(wd); err != nil {
+		if err := enterWorkDir(wd.Dir); err != nil {
 			return err
 		}
 		// Stamped onto the config so cfg and the process cwd cannot disagree.
-		cfg.WorkDir = wd
-		serveWorkDirResolved = wd
+		cfg.WorkDir = wd.Dir
+		serveWorkDirInfo = wd
 		return runServe(cfg)
 	},
 }
@@ -370,6 +370,8 @@ func runServe(cfg *config.Config) error {
 		ListSessions:        listSessionSummaries,
 		DeleteSession:       serveDeleteSession(ref),
 		WorkDir:             cfg.WorkDir,
+		WorkDirSource:       string(serveWorkDirInfo.Source),
+		Campaign:            bannerCampaign(cfg.WorkDir),
 		Providers: netapi.Providers{
 			Brain: cfg.BrainProvider,
 			STT:   sttName,

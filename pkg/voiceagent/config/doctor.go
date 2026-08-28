@@ -57,6 +57,8 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
+	diags = append(diags, diagnoseWorkDirSource(cfg))
+
 	// A work_dir pointing at a folder that no longer exists is silent otherwise:
 	// tools keep working, just somewhere the user did not choose.
 	if dir := strings.TrimSpace(cfg.WorkDir); dir != "" {
@@ -381,6 +383,37 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	}
 
 	return diags
+}
+
+// diagnoseWorkDirSource reports which layer decided the working directory.
+//
+// A launch decided by the environment or by a fallback is the silent case: the
+// config file shows nothing, the banner reads the same as always, and the agent
+// works in a directory — and a campaign — nobody chose. Those two warn. A flag,
+// the setting, and the launch directory are all things the user did, so they
+// report OK rather than staying silent: seeing the source named is how the
+// warning cases become recognizable.
+func diagnoseWorkDirSource(cfg *Config) Diagnostic {
+	info := WorkDirInfoFrom(cfg)
+	d := Diagnostic{
+		Name:     "work-dir-source",
+		Severity: SeverityOK,
+		Detail:   fmt.Sprintf("%s (from %s)", info.Dir, info.Describe()),
+	}
+	switch info.Source {
+	case WorkDirSourceEnv:
+		d.Severity = SeverityWarn
+		d.Detail = fmt.Sprintf("%s comes from the %s environment variable, not from config or the launch directory", info.Dir, info.EnvVar)
+		d.Remediation = fmt.Sprintf("unset %s (a bare WORK_DIR exported by a shell or .envrc hijacks every launch), or set work_dir if this is intended", info.EnvVar)
+	case WorkDirSourceHomeFallback, WorkDirSourceTempFallback:
+		d.Severity = SeverityWarn
+		d.Detail = fmt.Sprintf("%s is %s — no usable directory came from the flag, config, or the launch directory", info.Dir, info.Describe())
+		d.Remediation = "set work_dir to a folder that exists, or launch Obey Voice from the folder you want the agent to work in"
+	}
+	if c := CampaignFor(info.Dir); c.Found() {
+		d.Detail += fmt.Sprintf("; campaign %s", c.Describe())
+	}
+	return d
 }
 
 func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) Diagnostic {

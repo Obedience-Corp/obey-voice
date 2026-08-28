@@ -57,6 +57,12 @@ type Options struct {
 	// WorkDir is the directory the agent's file and shell tools operate in.
 	// Reported by GET /v1/status so a client can show where a tool call lands.
 	WorkDir string
+	// WorkDirSource is the layer that decided WorkDir, and Campaign is the
+	// campaign workspace it sits in. Both ride /v1/status alongside WorkDir,
+	// the same pair the ready banner carries: the path alone cannot tell a
+	// client that an environment variable moved the agent.
+	WorkDirSource string
+	Campaign      CampaignInfo
 
 	Credentials  *Credentials
 	Bus          *events.Bus

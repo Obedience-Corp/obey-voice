@@ -121,12 +121,48 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `prompts_dir` | empty | `PROMPTS_DIR` | Prompt document directory; defaults to `~/.obey/agents/voice/festival-voice/prompts` when unset |
 | `skills_enabled` | `true` | `SKILLS_ENABLED` | Agent Skills (`SKILL.md`) discovery for Ollama. Default on; set `false` to disable. Discovers project/workspace/user skill frontmatter into the system prompt; not a pre-activation sandbox. Claude/Grok already discover skills via their CLIs. |
 | `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after project/workspace/user harness dirs); defaults to `~/.obey/agents/voice/festival-voice/skills` when unset. |
-| `work_dir` | empty | `WORK_DIR` | Directory the agent's file and shell tools start in. **A default, not a sandbox** — a tool may still reach an absolute path outside it. Empty uses the directory Obey Voice was launched from; the binary's own folder, `/`, and any path that is not an existing directory fall back to your home folder. `obey-voice serve --work-dir DIR` overrides it for one process, and an override that is not an existing directory is a startup error rather than a silent fallback. |
+| `work_dir` | empty | `OBEY_VOICE_WORK_DIR` | Directory the agent's file and shell tools start in. **A default, not a sandbox** — a tool may still reach an absolute path outside it. Empty uses the directory Obey Voice was launched from; the binary's own folder, `/`, and any path that is not an existing directory fall back to your home folder. `obey-voice serve --work-dir DIR` overrides it for one process, and an override that is not an existing directory is a startup error rather than a silent fallback. The bare `WORK_DIR` is still honored for compatibility but `OBEY_VOICE_WORK_DIR` wins when both are set — see [Where the working directory came from](#where-the-working-directory-came-from). |
 | `models_dir` | `~/.cache/festival-voice/models` | `MODELS_DIR` | Model download directory |
 | `language` | `en-US` | | Recognition language |
 | `max_history` | `10` | | Saved conversation history length |
 | `listen_timeout` | `10` | | Listen timeout in seconds |
 | `phrase_time_limit` | `30` | | Maximum phrase length in seconds |
+
+## Where the working directory came from
+
+The agent's working directory decides where every file tool, shell tool and
+`camp` call lands — and therefore which campaign workspace it acts on. It is
+resolved in one order, and the layer that won is reported everywhere the
+directory is:
+
+1. `--work-dir DIR` (serve; a path that does not exist is a startup error)
+2. `work_dir` in config.yaml
+3. `OBEY_VOICE_WORK_DIR`, else the legacy bare `WORK_DIR` (both reach the same
+   setting; the prefixed name wins when both are set)
+4. the directory Obey Voice was launched from
+5. your home directory, then the temp directory, when none of the above is a
+   usable directory
+
+Steps 3 and 5 are the silent ones: config.yaml shows nothing, and a generic
+`WORK_DIR` exported by a shell profile or an `.envrc` for its own purposes
+moves the agent for every launch. So they are reported by name:
+
+```bash
+obey-voice paths          # Work dir source + Campaign rows (--json: work_dir_source, campaign)
+obey-voice doctor         # work-dir-source: WARN for an env var or a fallback
+obey-voice serve          # Work dir / Campaign lines on the banner (--banner-json: same fields)
+```
+
+The campaign is detected by walking up from the working directory to the first
+`.campaign/campaign.yaml` and reading its `name` and `id`. Nothing is executed
+to learn it — the file read is the detection — and the same line is injected
+into the model's grounding block, so the agent states which workspace it is in
+rather than assuming:
+
+```
+- Working directory: /Users/you/Dev/My_Tools
+- Campaign: My_Tools (root: /Users/you/Dev/My_Tools)
+```
 
 ## transcribe.cpp (optional STT)
 

@@ -64,6 +64,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"uptime_seconds":   int64(time.Since(s.started).Seconds()),
 		"fingerprint":      s.opts.Credentials.Fingerprint,
 		"work_dir":         s.opts.WorkDir,
+		"work_dir_source":  s.opts.WorkDirSource,
+		"campaign":         s.opts.Campaign,
 		// Capability flags let a client gate a whole UI surface on what this
 		// serve actually offers, rather than inferring it from the version.
 		"meetings": s.meetings != nil,

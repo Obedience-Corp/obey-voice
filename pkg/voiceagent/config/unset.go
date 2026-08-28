@@ -94,13 +94,16 @@ func effectiveAfterUnset(spec KeySpec) any {
 		return spec.Default
 	}
 	value := spec.Default
-	if env := envBindings[spec.Key]; env != "" {
-		if raw, ok := os.LookupEnv(env); ok {
-			value = raw
-			if coerced, err := coerceToSpec(spec, raw); err == nil {
-				value = coerced
-			}
+	for _, env := range envNamesFor(spec.Key) {
+		raw, ok := os.LookupEnv(env)
+		if !ok {
+			continue
 		}
+		value = raw
+		if coerced, err := coerceToSpec(spec, raw); err == nil {
+			value = coerced
+		}
+		break
 	}
 	Set(spec.Key, value)
 	return value

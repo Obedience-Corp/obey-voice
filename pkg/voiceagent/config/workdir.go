@@ -11,6 +11,61 @@ import (
 // rootDir is "/": an existing directory, and never a workspace.
 const rootDir = string(filepath.Separator)
 
+// WorkDirSource names the layer that decided the working directory.
+//
+// It is the difference between a launch the user can explain and one they
+// cannot. flag, config and launch-dir are all things someone typed; env and the
+// two fallbacks move the agent somewhere nobody chose, and until they were
+// reported a hijacked launch looked identical to a normal one (WI-742a80).
+type WorkDirSource string
+
+const (
+	WorkDirSourceFlag         WorkDirSource = "flag"
+	WorkDirSourceConfig       WorkDirSource = "config"
+	WorkDirSourceEnv          WorkDirSource = "env"
+	WorkDirSourceLaunchDir    WorkDirSource = "launch-dir"
+	WorkDirSourceHomeFallback WorkDirSource = "home-fallback"
+	WorkDirSourceTempFallback WorkDirSource = "temp-fallback"
+)
+
+// WorkDirInfo is a resolved working directory plus the provenance of the value.
+// Dir keeps the contract the resolver has always promised: absolute, existing,
+// chdir-able — empty only alongside a resolution error.
+type WorkDirInfo struct {
+	Dir    string
+	Source WorkDirSource
+	// EnvVar names the environment variable that decided Dir. Non-empty only
+	// when Source is WorkDirSourceEnv, and it names the variable that actually
+	// won, since work_dir is bound to more than one.
+	EnvVar string
+}
+
+// Describe renders the provenance as one human phrase, for the serve banner,
+// `paths`, and the doctor row. It names the deciding environment variable
+// rather than the binding in the abstract: "an env var" sends the user hunting,
+// and the whole defect was not knowing which name to look for.
+func (i WorkDirInfo) Describe() string {
+	switch i.Source {
+	case WorkDirSourceFlag:
+		return "the --work-dir flag"
+	case WorkDirSourceConfig:
+		return "the work_dir setting"
+	case WorkDirSourceEnv:
+		if i.EnvVar == "" {
+			return "an environment variable"
+		}
+		return "the " + i.EnvVar + " environment variable"
+	case WorkDirSourceLaunchDir:
+		return "the directory Obey Voice was launched from"
+	case WorkDirSourceHomeFallback:
+		return "the home-directory fallback (the resolved work_dir was unusable)"
+	case WorkDirSourceTempFallback:
+		return "the temp-directory fallback (no usable home directory)"
+	default:
+		return "an unknown source"
+	}
+}
+
 // ErrNotADirectory reports a path that exists but is not a directory.
 var ErrNotADirectory = errors.New("not a directory")
 
@@ -37,14 +92,21 @@ var executableDir = func() string {
 // back quietly (doctor warns about it) so a stale config.yaml never stops the
 // agent from starting.
 func ResolveWorkDir(cfg *Config, override string) (string, error) {
+	info, err := ResolveWorkDirInfo(cfg, override)
+	return info.Dir, err
+}
+
+// ResolveWorkDirInfo is ResolveWorkDir with the provenance of the answer, for
+// the surfaces that report where the working directory came from.
+func ResolveWorkDirInfo(cfg *Config, override string) (WorkDirInfo, error) {
 	if o := strings.TrimSpace(override); o != "" {
 		dir, err := existingDir(o)
 		if err != nil {
-			return "", fmt.Errorf("work directory %q: %w", o, err)
+			return WorkDirInfo{}, fmt.Errorf("work directory %q: %w", o, err)
 		}
-		return dir, nil
+		return WorkDirInfo{Dir: dir, Source: WorkDirSourceFlag}, nil
 	}
-	return WorkDirFrom(cfg), nil
+	return WorkDirInfoFrom(cfg), nil
 }
 
 // WorkDirFrom resolves the agent's working directory from configuration alone:
@@ -60,31 +122,73 @@ func ResolveWorkDir(cfg *Config, override string) (string, error) {
 // can chdir into it and a client can display it. It is a default, not a
 // sandbox — nothing here stops a tool from using an absolute path.
 func WorkDirFrom(cfg *Config) string {
-	candidate := ""
-	if cfg != nil {
-		candidate = strings.TrimSpace(cfg.WorkDir)
-	}
-	if candidate == "" {
-		mu.RLock()
-		candidate = strings.TrimSpace(v.GetString("work_dir"))
-		mu.RUnlock()
-	}
-	if candidate == "" {
-		if wd, err := os.Getwd(); err == nil {
-			candidate = wd
-		}
-	}
+	return WorkDirInfoFrom(cfg).Dir
+}
+
+// WorkDirInfoFrom is WorkDirFrom with the provenance of the answer. The
+// resolution order and every guard are WorkDirFrom's — this is the one
+// implementation, and the plain form is the projection of it.
+func WorkDirInfoFrom(cfg *Config) WorkDirInfo {
+	candidate, source, envVar := workDirCandidate(cfg)
 	dir, err := existingDir(candidate)
 	if err != nil || dir == rootDir || sameDir(dir, executableDir()) {
 		return workDirFallback()
 	}
-	return dir
+	return WorkDirInfo{Dir: dir, Source: source, EnvVar: envVar}
+}
+
+// workDirCandidate returns the first value the resolution order offers, and the
+// layer it came from: cfg.WorkDir, then the configured work_dir, then the
+// process cwd. The value is returned unvalidated — the guards belong to the
+// caller, so a rejected candidate becomes a fallback rather than a silent
+// promotion of the next layer.
+func workDirCandidate(cfg *Config) (candidate string, source WorkDirSource, envVar string) {
+	if cfg != nil {
+		if c := strings.TrimSpace(cfg.WorkDir); c != "" {
+			src, name := workDirValueSource(c)
+			return c, src, name
+		}
+	}
+	mu.RLock()
+	configured := strings.TrimSpace(v.GetString("work_dir"))
+	mu.RUnlock()
+	if configured != "" {
+		src, name := workDirValueSource(configured)
+		return configured, src, name
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd, WorkDirSourceLaunchDir, ""
+	}
+	// No cwd to launch from: the caller's guards turn this into a fallback,
+	// which carries its own source.
+	return "", WorkDirSourceLaunchDir, ""
+}
+
+// workDirValueSource attributes a non-empty work_dir value to the layer that
+// produced it.
+//
+// Viper layers the environment over the file and reports one merged value, so
+// v.GetString alone cannot tell them apart. The bound variables are therefore
+// looked up directly, and only a variable whose value IS the candidate can be
+// the one that decided it — an env var that lost to an explicit cfg.WorkDir
+// must not be blamed for the answer.
+func workDirValueSource(candidate string) (WorkDirSource, string) {
+	if name, value, ok := envValueFor("work_dir"); ok && strings.TrimSpace(value) == candidate {
+		return WorkDirSourceEnv, name
+	}
+	return WorkDirSourceConfig, ""
 }
 
 // WorkDir resolves the agent's working directory from global viper state, for
 // callers (paths, doctor) that hold no Config.
 func WorkDir() string {
-	return WorkDirFrom(nil)
+	return CurrentWorkDirInfo().Dir
+}
+
+// CurrentWorkDirInfo is WorkDir with provenance, the twin those same
+// Config-less callers need to report where the directory came from.
+func CurrentWorkDirInfo() WorkDirInfo {
+	return WorkDirInfoFrom(nil)
 }
 
 // existingDir trims, ~-expands and absolutizes path, and fails unless the
@@ -114,17 +218,17 @@ func existingDir(path string) (string, error) {
 // the OS reports no home, and chdir'ing to "." would leave a spawned serve in
 // the binary's folder — the exact failure the guards exist to prevent — so a
 // home that is not usable falls through to the temp directory.
-func workDirFallback() string {
+func workDirFallback() WorkDirInfo {
 	if home := homeDir(); filepath.IsAbs(home) {
 		if dir, err := existingDir(home); err == nil && dir != rootDir && !sameDir(dir, executableDir()) {
-			return dir
+			return WorkDirInfo{Dir: dir, Source: WorkDirSourceHomeFallback}
 		}
 	}
 	tmp, err := filepath.Abs(os.TempDir())
 	if err != nil {
-		return rootDir
+		return WorkDirInfo{Dir: rootDir, Source: WorkDirSourceTempFallback}
 	}
-	return tmp
+	return WorkDirInfo{Dir: tmp, Source: WorkDirSourceTempFallback}
 }
 
 // sameDir compares directories through their symlinks, so an install reached

@@ -245,8 +245,8 @@ func captureReadyBanner(t *testing.T, listenAddr string, binds []string) netapi.
 // surface omitting what the other always sends.
 func TestReadyBannerCarriesWorkDir(t *testing.T) {
 	withServeBindState(t)
-	orig := serveWorkDirResolved
-	t.Cleanup(func() { serveWorkDirResolved = orig })
+	orig := serveWorkDirInfo
+	t.Cleanup(func() { serveWorkDirInfo = orig })
 
 	dir := t.TempDir()
 	cases := []struct {
@@ -259,7 +259,7 @@ func TestReadyBannerCarriesWorkDir(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			serveWorkDirResolved = tc.workDir
+			serveWorkDirInfo = config.WorkDirInfo{Dir: tc.workDir, Source: config.WorkDirSourceFlag}
 
 			raw := captureBannerLine(t, "127.0.0.1:7262", []string{"127.0.0.1:7262"})
 			var keys map[string]json.RawMessage

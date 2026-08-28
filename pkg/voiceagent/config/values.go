@@ -47,11 +47,13 @@ func valueFor(spec KeySpec) KeyValue {
 	return KeyValue{Value: value, Source: Source(spec.Key)}
 }
 
-// Source names where key's effective value comes from: the environment when the
-// key has a binding and that variable is set, otherwise the config file when it
-// holds the key, otherwise the built-in default.
+// Source names where key's effective value comes from: the environment when any
+// variable bound to the key is set, otherwise the config file when it holds the
+// key, otherwise the built-in default. Aliases count — a key answered by its
+// compatibility name is still answered by the environment, and reporting "file"
+// there is exactly the lie work_dir's bare WORK_DIR was telling.
 func Source(key string) string {
-	if env := envBindings[key]; env != "" {
+	for _, env := range envNamesFor(key) {
 		if _, ok := os.LookupEnv(env); ok {
 			return SourceEnv
 		}

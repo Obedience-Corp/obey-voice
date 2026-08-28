@@ -18,6 +18,11 @@ var resolvedWorkDir string
 // stampWorkDir pins the process-resolved working directory onto a freshly
 // loaded config, so every brain the CLI builds grounds itself in the same
 // folder no matter what the cwd is by the time it is built.
+//
+// A stamped config reads as an explicit setting afterwards, which is why the
+// surfaces that report provenance (paths, doctor, serve's banner) resolve it
+// before or without the stamp rather than from a config that has been through
+// here.
 func stampWorkDir(cfg *config.Config) {
 	if cfg != nil && resolvedWorkDir != "" {
 		cfg.WorkDir = resolvedWorkDir
@@ -45,12 +50,13 @@ func enterWorkDir(dir string) error {
 	return nil
 }
 
-// serveBannerWorkDir is the directory serve chdir'd into. The fallback keeps a
-// banner emitted outside serve's own run honest: it is the same resolver, so
-// the field is never an empty string on the wire.
-func serveBannerWorkDir() string {
-	if serveWorkDirResolved != "" {
-		return serveWorkDirResolved
+// serveBannerWorkDir is the directory serve chdir'd into, with the layer that
+// decided it. The fallback keeps a banner emitted outside serve's own run
+// honest: it is the same resolver, so the field is never an empty string on the
+// wire.
+func serveBannerWorkDir() config.WorkDirInfo {
+	if serveWorkDirInfo.Dir != "" {
+		return serveWorkDirInfo
 	}
-	return config.WorkDir()
+	return config.CurrentWorkDirInfo()
 }
