@@ -172,7 +172,9 @@ type Pipeline struct {
 	backchannel       *backchannel
 	backchannelMu     sync.Mutex
 	backchannelCancel context.CancelFunc
-	OnTurn            func() // called after each completed turn for session auto-save
+	// vocals plays [moan]/[gasp]/[laugh] as sounds instead of reading the tag.
+	vocals *vocalBank
+	OnTurn func() // called after each completed turn for session auto-save
 
 	// CompactPrompt is the resolved kind=compact instruction for /compact's
 	// summarize turn. Empty disables compaction with a clear error.
@@ -836,7 +838,7 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 		p.emit(events.GeneratingVoice{Sentence: speakable})
 
 		synthStarted := time.Now()
-		stream, usedFallback, err := p.synthesizeWithFallback(ctx, speakable, nil)
+		stream, usedFallback, err := p.synthUtterance(ctx, speakable, nil)
 		if err != nil {
 			// Voice is best-effort in text mode: the text response still
 			// completed, so the turn is completed (degraded), not failed.
@@ -1185,7 +1187,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// ends there with the recovery reply. Keep them out of both transcript
 			// and TTS so the finalizer's replacement is the only visible/audible
 			// response. A filler followed by content in the same sentence survives.
-			if display := brain.CleanForVoice(sentence); speakableSegment(display) {
+			if display := stripVocalTags(brain.CleanForVoice(sentence)); speakableSegment(display) {
 				if _, dup := heard[display]; !dup {
 					heard[display] = struct{}{}
 					if fullResponse.Len() > 0 {
@@ -1205,13 +1207,19 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// which is non-empty, unpronounceable, and — because segments are
 			// batched — would be glued onto the front of a real sentence inside
 			// one synthesis call.
-			if !speakableSegment(speakable) {
+			// A tag-only beat ([moan]) has no speakable prose and must still
+			// reach the synth queue so the sound plays.
+			if !speakableSegment(speakable) && !hasVocalTag(speakable) {
 				continue
 			}
-			if _, dup := spoken[speakable]; dup {
-				continue
+			// Sound-only beats ([moan]) may repeat in one turn on purpose.
+			// Restated prose after a phantom tool still drops.
+			if speakableSegment(stripVocalTags(speakable)) {
+				if _, dup := spoken[speakable]; dup {
+					continue
+				}
+				spoken[speakable] = struct{}{}
 			}
-			spoken[speakable] = struct{}{}
 
 			turn.to(TurnSpeaking)
 			if metrics.firstSegment.IsZero() {
@@ -1313,7 +1321,7 @@ func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct
 	p.emit(events.GeneratingVoice{Sentence: sentence})
 
 	synthStarted := time.Now()
-	stream, usedFallback, err := p.synthesizeWithFallback(ctx, sentence, stickFallback)
+	stream, usedFallback, err := p.synthUtterance(ctx, sentence, stickFallback)
 	if err != nil {
 		if ctx.Err() == nil {
 			p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})

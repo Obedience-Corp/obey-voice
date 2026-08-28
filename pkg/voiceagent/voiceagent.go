@@ -13,6 +13,7 @@ package voiceagent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -243,6 +244,13 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	// never pays for it. Off by default; see pipeline/backchannel.go.
 	if cfg.BackchannelEnabled && !opts.Silent && p.HasTTS() {
 		p.EnableBackchannel(ctx)
+	}
+
+	// Non-speech sounds ([moan], [gasp], …). Procedural clips always load;
+	// WAVs in the active persona's sounds/ dir overlay a kind when present.
+	if !opts.Silent {
+		sounds := filepath.Join(config.ConfigDir(), "personas", cfg.ActivePersona, "sounds")
+		p.EnableVocals(sounds)
 	}
 
 	// Capture + VAD + STT (skipped in text mode).
