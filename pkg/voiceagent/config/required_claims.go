@@ -219,5 +219,5 @@ func usesKokoro(provider string) bool {
 // usesAudio8 has no empty-string case: kokoro is the default provider, audio8
 // is only ever an explicit selection.
 func usesAudio8(provider string) bool {
-	return strings.EqualFold(strings.TrimSpace(provider), "audio8")
+	return strings.EqualFold(strings.TrimSpace(provider), Audio8ProviderName)
 }

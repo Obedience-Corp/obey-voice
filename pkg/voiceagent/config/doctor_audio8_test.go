@@ -42,7 +42,7 @@ func TestDiagnoseTTSProviderAudio8(t *testing.T) {
 		},
 		{
 			name: "selected but missing", provider: "audio8", install: false,
-			wantSev: SeverityWarn, wantDetail: "no export is installed",
+			wantSev: SeverityError, wantDetail: "no export is installed",
 			// It must say how to install it, and must never suggest
 			// abandoning the provider or running a command that installs
 			// nothing for it (`models ensure` skips unmanaged providers).

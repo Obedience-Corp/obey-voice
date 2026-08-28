@@ -11,6 +11,16 @@ import (
 // provider all have to name the same directory.
 const Audio8Subdir = "audio8-tts"
 
+// Audio8ProviderName is the tts_provider value for the Audio8 provider.
+const Audio8ProviderName = "audio8"
+
+// Audio8SnapshotRepo / Audio8SnapshotRev pin the export the tokenizer and
+// benchmarks were verified against; obey-voice never downloads it itself.
+const (
+	Audio8SnapshotRepo = "Audio8/audio8-TTS-0.1B-ONNX-INT8"
+	Audio8SnapshotRev  = "e1c07e8a3725077e3ab80ad8578e5787e8a23c6c"
+)
+
 // audio8ExportRequired are the files that make an export usable: the text
 // frontend the Go BPE reads, and the manifest the provider needs before it can
 // open a single graph.
