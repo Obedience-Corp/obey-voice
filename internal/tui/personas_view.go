@@ -196,7 +196,7 @@ func (m personasModel) stackLines() []string {
 	}
 	return []string{
 		brainRow,
-		row(stackRowBrainModel, "Model", m.brainModelInput.View()),
+		row(stackRowBrainModel, "Model", m.stackModelRowValue()),
 		row(stackRowTTSProvider, "TTS  ", "‹ "+ttsProvider+" ›"),
 		row(stackRowVoice, "Voice", "‹ "+voiceLabel+" ›"),
 		row(stackRowTier, "Tier ", tierValue),

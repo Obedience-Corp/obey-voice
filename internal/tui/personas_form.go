@@ -258,7 +258,10 @@ func (m *personasModel) resizeForm() {
 	m.nameInput.Width = max(inner-2, 10)
 	// The editor draws a 4-column line-number gutter inside the box.
 	m.promptTA.SetWidth(max(inner-5, 20))
-	m.brainModelInput.Width = max(inner-12, 10)
+	// The model field shares its row with the "‹ (custom) ›" chip, so it gets
+	// the row minus the label and chip — otherwise typing runs under the box
+	// border and the tail is truncated away.
+	m.brainModelInput.Width = max(inner-24, 10)
 	// Leave room for chrome (pills, field boxes, help) so the prompt editor
 	// is never clipped out of the form body.
 	h := min(max(m.height-18, 3), 12)
@@ -395,6 +398,12 @@ func (m personasModel) updateStackStep(msg tea.KeyMsg) (personasModel, tea.Cmd) 
 		case stackRowBrainProvider:
 			list := stackBrainProviders()
 			m.brainProviderIdx = (m.brainProviderIdx + delta + len(list)) % len(list)
+			// The model catalog is provider-specific: re-scope it and drop a
+			// selection the new provider does not offer.
+			m.clampSelectedModel()
+			return m, nil
+		case stackRowBrainModel:
+			m.cycleStackModel(delta)
 			return m, nil
 		case stackRowTTSProvider:
 			list := stackTTSProviders()
@@ -414,7 +423,9 @@ func (m personasModel) updateStackStep(msg tea.KeyMsg) (personasModel, tea.Cmd) 
 	}
 
 	var cmd tea.Cmd
-	if m.stackRow == stackRowBrainModel {
+	// Typing edits the model only under "(custom)"; the listed entries are
+	// select-only, like Voice and Tier.
+	if m.stackRow == stackRowBrainModel && m.brainModels.custom {
 		m.brainModelInput, cmd = m.brainModelInput.Update(msg)
 	}
 	return m, cmd
@@ -444,11 +455,11 @@ func (m *personasModel) clampSelectedVoice() {
 }
 
 // setStackRow moves focus between stack rows, focusing the model text input
-// only on that row (voice is cycled with ←/→, not typed).
+// only on the model row under "(custom)" (everything else is cycled with ←/→).
 func (m *personasModel) setStackRow(row int) {
 	m.stackRow = row
 	m.brainModelInput.Blur()
-	if row == stackRowBrainModel {
+	if row == stackRowBrainModel && m.brainModels.custom {
 		m.brainModelInput.Focus()
 	}
 }
@@ -458,7 +469,7 @@ func (m personasModel) focusStackStep() (personasModel, tea.Cmd) {
 	m.nameInput.Blur()
 	m.promptTA.Blur()
 	m.setStackRow(stackRowBrainProvider)
-	m.message = "Model & voice · ←/→ pick provider or voice · ↑/↓ rows · (default) inherits Settings"
+	m.message = "Model & voice · ←/→ pick provider, model or voice · ↑/↓ rows · (default) inherits Settings"
 	return m, nil
 }
 
@@ -481,6 +492,9 @@ func (m *personasModel) formTTS() persona.TTS {
 
 // prefillStack seeds the stack step from a profile (nil = defaults).
 func (m *personasModel) prefillStack(p *persona.Profile) {
+	// The Model row always opens on the picker; "(custom)" is chosen, never
+	// inherited from the last form.
+	m.brainModels.custom = false
 	if p == nil {
 		m.brainProviderIdx = 0
 		m.ttsProviderIdx = 0
@@ -491,6 +505,8 @@ func (m *personasModel) prefillStack(p *persona.Profile) {
 	}
 	m.brainProviderIdx = providerIndex(stackBrainProviders(), p.Brain.Provider)
 	m.ttsProviderIdx = providerIndex(stackTTSProviders(), p.TTS.Provider)
+	// A saved model the scan does not list stays selectable (stackModelList
+	// appends it) rather than being dropped on open.
 	m.brainModelInput.SetValue(strings.TrimSpace(p.Brain.Model))
 	m.selectedTier = strings.TrimSpace(p.TTS.Tier)
 	m.selectedVoice = strings.TrimSpace(p.TTS.Voice)
@@ -522,6 +538,8 @@ func (m *personasModel) cancelForm() {
 	m.prefillStack(nil)
 	m.brainModelInput.Blur()
 	m.stackRow = stackRowBrainProvider
+	// Abandon any in-flight model scan with the form it was opened for.
+	m.resetBrainModels()
 }
 
 func (m personasModel) focusNameStep() (personasModel, tea.Cmd) {
@@ -585,7 +603,8 @@ func (m *personasModel) beginCreate() tea.Cmd {
 	m.formInitialPrompt = m.promptTA.Value()
 	m.promptTA.Blur()
 	m.prefillStack(nil) // "(default)" = clone current globals at create time
-	return textinput.Blink
+	// Scan providers in the background; the form is usable immediately.
+	return tea.Batch(textinput.Blink, m.loadBrainModels())
 }
 
 func (m *personasModel) beginEdit() tea.Cmd {
@@ -611,7 +630,7 @@ func (m *personasModel) beginEdit() tea.Cmd {
 	}
 	m.promptTA.Blur()
 	m.prefillStack(p)
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, m.loadBrainModels())
 }
 
 // loadEditPrompt loads the system prompt body for the editor without ever

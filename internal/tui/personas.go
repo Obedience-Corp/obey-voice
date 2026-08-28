@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
@@ -46,6 +47,9 @@ type personasModel struct {
 	brainModelInput  textinput.Model
 	selectedVoice    string
 	selectedTier     string
+	// Model row picker: discovered models per provider + async scan state.
+	// See personas_models.go; brainModelInput stays the selected value.
+	brainModels personaModelPicker
 
 	listPersonas         func() ([]*persona.Profile, error)
 	usePersona           func(*config.Config, string) error
@@ -78,6 +82,10 @@ func newPersonas(cfg *config.Config) personasModel {
 		promptTA:             newPromptEditor(),
 		brainModelInput:      newPersonaStackInput("empty = provider default"),
 	}
+	// The Model row picks from the same discovery Settings uses. It runs as a
+	// command on form open, never here: constructing the screen must not block
+	// on an ollama socket (and tests must not reach the network at all).
+	m.brainModels.discover = discovery.DiscoverProvidersContext
 	m.reload()
 	return m
 }
@@ -170,6 +178,9 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.resizeForm()
 		m.ensureVisible()
+
+	case personaModelsMsg:
+		m.applyBrainModels(msg)
 
 	case tea.KeyMsg:
 		if m.formMode != "" {
