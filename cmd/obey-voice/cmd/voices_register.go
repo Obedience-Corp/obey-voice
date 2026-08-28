@@ -127,7 +127,8 @@ func registerAudio8Voice(cmd *cobra.Command, name string) (tts.Audio8VoiceMeta, 
 	if err != nil {
 		return tts.Audio8VoiceMeta{}, nil, err
 	}
-	if err := config.ValidateAudio8VoiceName(name); err != nil {
+	name, err = config.CanonicalAudio8VoiceName(name)
+	if err != nil {
 		return tts.Audio8VoiceMeta{}, nil, codedError(codeInvalidVoice, "%v", err)
 	}
 
@@ -341,8 +342,8 @@ func runVoicesRemove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fail(err)
 	}
-	name := args[0]
-	if err := config.ValidateAudio8VoiceName(name); err != nil {
+	name, err := config.CanonicalAudio8VoiceName(args[0])
+	if err != nil {
 		return fail(codedError(codeInvalidVoice, "%v", err))
 	}
 	modelsDir := config.ModelsDirFrom(cfg)

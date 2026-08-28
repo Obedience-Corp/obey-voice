@@ -73,6 +73,12 @@ anything.
   seconds is the useful range.
 - **The transcript must be exact.** It is fed to the model as what the reference
   audio says; a wrong transcript teaches the model the wrong mapping.
+- **The name** is 1-64 characters of `a-z`, `0-9`, dot, dash or underscore,
+  starting with a letter or digit. Surrounding whitespace is stripped — so
+  `register "  bob  "` registers `bob`, and the command prints the name it
+  actually stored. Everything else is refused rather than adjusted: a voice
+  registered under a name you did not choose is worse than one that would not
+  register.
 
 Longer is not better. The reference frames are prepended to *every* prompt, so a
 30-second reference makes both the one-time prefix prime and every turn

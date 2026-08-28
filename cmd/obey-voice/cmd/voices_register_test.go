@@ -120,16 +120,35 @@ func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
 func (f fakeFileInfo) IsDir() bool        { return f.mode.IsDir() }
 func (f fakeFileInfo) Sys() any           { return nil }
 
+// runVoicesSub drives a verb through the real `voices` command, not a bare root
+// with the subcommands re-attached: the wiring in newVoicesCmd is part of what
+// these tests are for, and building a fresh parent would let deleting it pass.
 func runVoicesSub(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	root := &cobra.Command{Use: "obey-voice"}
-	root.AddCommand(newVoicesRegisterCmd(), newVoicesRegisteredCmd(), newVoicesRemoveCmd())
+	root.AddCommand(newVoicesCmd())
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs(args)
+	root.SetArgs(append([]string{"voices"}, args...))
 	err := root.Execute()
 	return out.String(), err
+}
+
+// TestVoicesSubcommandsAreRegistered pins the wiring itself. Nothing else fails
+// if the AddCommand calls go: the verbs keep working when a test attaches them
+// by hand, and only the shipped CLI loses them.
+func TestVoicesSubcommandsAreRegistered(t *testing.T) {
+	want := []string{"preview", "register", "registered", "remove"}
+	have := map[string]bool{}
+	for _, sub := range newVoicesCmd().Commands() {
+		have[sub.Name()] = true
+	}
+	for _, name := range want {
+		if !have[name] {
+			t.Errorf("`obey-voice voices %s` is not registered on the voices command", name)
+		}
+	}
 }
 
 func TestVoicesRegisterRefusesBadInvocations(t *testing.T) {
@@ -292,7 +311,11 @@ func TestVoicesRegisterFromKokoro(t *testing.T) {
 	}
 }
 
-func TestVoicesRegisterRefusesAnExistingNameWithoutOverwrite(t *testing.T) {
+// The guard itself lives in tts.RegisterAudio8Voice, which this file fakes out;
+// TestRegisterAudio8VoiceRefusesAnExistingName covers it there. What is left to
+// check here is the plumbing: that the flag reaches the request at all, and
+// defaults off.
+func TestVoicesRegisterPassesOverwriteThrough(t *testing.T) {
 	modelsDir := newAudio8TestConfig(t)
 	installTestAudio8Export(t, modelsDir)
 	seen := fakeRegistration(t)

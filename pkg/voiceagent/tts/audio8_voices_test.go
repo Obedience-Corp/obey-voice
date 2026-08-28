@@ -1,6 +1,7 @@
 package tts
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -602,5 +603,143 @@ func TestSaveAudio8VoicePreservesTheOldVoiceWhenTheRestoreAlsoFails(t *testing.T
 	}
 	if !strings.Contains(string(raw), original.Transcript) {
 		t.Errorf("the preserved voice is not the original:\n%s", raw)
+	}
+}
+
+// TestAudio8VoiceNamesAreCanonicalEndToEnd is the whitespace hole: the
+// validator checked the trimmed name while every caller built its path from the
+// raw one, so `voices register " bob "` created a directory called " bob ",
+// listed it, and let Settings select it — and then synthesis failed forever,
+// because resolveVoice trims the request and asked for "bob".
+//
+// The rule is that a padded name registers as the trimmed one and speaks, since
+// trimmed is the only spelling the request side can ever produce.
+func TestAudio8VoiceNamesAreCanonicalEndToEnd(t *testing.T) {
+	modelsDir := t.TempDir()
+	padded := testMeta("  bob  ")
+	if err := SaveAudio8Voice(modelsDir, padded, testCodes(10, 12)); err != nil {
+		t.Fatalf("SaveAudio8Voice: %v", err)
+	}
+
+	// One directory, canonically named.
+	entries, err := os.ReadDir(config.Audio8VoicesDir(modelsDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "bob" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("store holds %q, want exactly [bob]", names)
+	}
+	// The record inside agrees with the directory.
+	meta, err := LoadAudio8VoiceMeta(modelsDir, "bob")
+	if err != nil {
+		t.Fatalf("the canonical name does not load: %v", err)
+	}
+	if meta.Name != "bob" {
+		t.Errorf("voice.json name = %q, want bob", meta.Name)
+	}
+	// And the padded spelling reaches the same voice rather than a second one.
+	if _, err := LoadAudio8VoiceMeta(modelsDir, " bob\n"); err != nil {
+		t.Errorf("the padded spelling does not resolve to the same voice: %v", err)
+	}
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); strings.Join(names, ",") != "bob" {
+		t.Errorf("listing = %v, want [bob]", names)
+	}
+
+	// The point of the whole thing: it can be spoken. resolveVoice is the path
+	// synthesis takes, and it is what used to come up empty.
+	a := newVoiceResolver(t, modelsDir, "")
+	for _, requested := range []string{"bob", "  bob  ", "bob\n"} {
+		v, err := a.resolveVoice(requested)
+		if err != nil {
+			t.Errorf("resolveVoice(%q) = %v; a registered voice that cannot be resolved can never speak", requested, err)
+			continue
+		}
+		if v.name != "bob" || len(v.codes[0]) != 12 {
+			t.Errorf("resolveVoice(%q) = %q with %d frames, want bob with 12", requested, v.name, len(v.codes[0]))
+		}
+	}
+
+	// Re-registering the trimmed spelling replaces it rather than making a
+	// second directory that shadows the first.
+	second := testMeta("bob")
+	second.Transcript = "the replacement line"
+	if err := SaveAudio8Voice(modelsDir, second, testCodes(10, 33)); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = os.ReadDir(config.Audio8VoicesDir(modelsDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("store holds %d entries after re-registering the padded name, want 1", len(entries))
+	}
+
+	// Removal takes the padded spelling too.
+	if err := RemoveAudio8Voice(modelsDir, " bob "); err != nil {
+		t.Errorf("RemoveAudio8Voice(\" bob \") = %v, want it to reach the same voice", err)
+	}
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); len(names) != 0 {
+		t.Errorf("after removal the store lists %v", names)
+	}
+}
+
+// TestRegisterAudio8VoiceRefusesAnExistingName covers the guard where it lives.
+// The CLI test that used to claim this faked RegisterAudio8Voice out entirely,
+// so deleting the guard passed.
+//
+// No export is needed: the check runs before NewAudio8Encoder, and the point of
+// the ordering is that a name collision is reported without paying for ~400 MB
+// of weights. The error each call returns says which of the two ran.
+func TestRegisterAudio8VoiceRefusesAnExistingName(t *testing.T) {
+	modelsDir := t.TempDir()
+	if err := SaveAudio8Voice(modelsDir, testMeta("alice"), testCodes(10, 8)); err != nil {
+		t.Fatal(err)
+	}
+	req := Audio8RegisterRequest{
+		ModelDir:   t.TempDir(), // deliberately not an export
+		ModelsDir:  modelsDir,
+		Name:       "alice",
+		Transcript: "a new reference line",
+		Samples:    make([]float32, 44100),
+		SampleRate: 44100,
+	}
+
+	_, err := RegisterAudio8Voice(context.Background(), req)
+	if err == nil {
+		t.Fatal("RegisterAudio8Voice() error = nil, want a name collision")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("error = %q, want the collision refused before the encoder loads", err)
+	}
+
+	// A padded spelling is the same voice, so it must collide too.
+	padded := req
+	padded.Name = "  alice  "
+	if _, err := RegisterAudio8Voice(context.Background(), padded); err == nil ||
+		!strings.Contains(err.Error(), "already exists") {
+		t.Errorf("RegisterAudio8Voice(%q) error = %v, want the same collision", padded.Name, err)
+	}
+
+	// With --overwrite the guard stands aside, and the next thing to fail is
+	// the export that is not there - which is how we know the guard is what
+	// stopped the previous calls.
+	req.Overwrite = true
+	_, err = RegisterAudio8Voice(context.Background(), req)
+	if err == nil {
+		t.Fatal("RegisterAudio8Voice(--overwrite) error = nil, want the missing export")
+	}
+	if strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("--overwrite did not lift the guard: %v", err)
+	}
+	if !strings.Contains(err.Error(), "runtime_manifest.json") {
+		t.Errorf("error = %q, want the missing export, i.e. execution reached the encoder", err)
+	}
+	// And the existing voice is untouched by the failed overwrite.
+	if _, err := LoadAudio8VoiceMeta(modelsDir, "alice"); err != nil {
+		t.Errorf("a failed overwrite damaged the existing voice: %v", err)
 	}
 }

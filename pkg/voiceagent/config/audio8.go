@@ -88,9 +88,10 @@ func Audio8VoicesDirFrom(cfg *Config) string {
 	return Audio8VoicesDir(ModelsDirFrom(cfg))
 }
 
-// Audio8VoiceDir is one registered voice's directory. The name must have been
-// through ValidateAudio8VoiceName; callers that take a name from a user run it
-// first so no input can escape the store.
+// Audio8VoiceDir is one registered voice's directory. name must be the value
+// CanonicalAudio8VoiceName returned, not the raw user input: building a path
+// from an unnormalized name is how a voice ends up registered under one
+// spelling and looked up under another.
 func Audio8VoiceDir(modelsDir, name string) string {
 	return filepath.Join(Audio8VoicesDir(modelsDir), name)
 }
@@ -101,19 +102,33 @@ func Audio8VoiceDir(modelsDir, name string) string {
 // in any of those is a name a user cannot reliably select.
 var audio8VoiceNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-// ValidateAudio8VoiceName reports whether name may become a registered voice.
-func ValidateAudio8VoiceName(name string) error {
+// CanonicalAudio8VoiceName validates a voice name and returns the single form
+// every surface must use for it.
+//
+// It returns the name rather than only an error because the two used to
+// disagree: validation ran on the trimmed name while callers built paths from
+// the raw one, so `voices register " bob "` created a directory called " bob ",
+// listed it, and let Settings select it - and then synthesis failed forever,
+// because resolveVoice trims the requested name and asked for "bob". Surrounding
+// whitespace is stripped here, once, and the caller uses what comes back.
+//
+// Whitespace is stripped rather than refused because the request side already
+// trims: a name that only round-trips when it is trimmed has exactly one usable
+// spelling, and that is the one to store. Everything else - case, path
+// separators, length - is still refused rather than mangled, since silently
+// changing those would register a voice under a name the user did not choose.
+func CanonicalAudio8VoiceName(name string) (string, error) {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
-		return fmt.Errorf("voice name is required")
+		return "", fmt.Errorf("voice name is required")
 	}
 	if !audio8VoiceNameRE.MatchString(trimmed) {
-		return fmt.Errorf("invalid voice name %q: use 1-64 characters of a-z, 0-9, dot, dash or underscore, starting with a letter or digit", name)
+		return "", fmt.Errorf("invalid voice name %q: use 1-64 characters of a-z, 0-9, dot, dash or underscore, starting with a letter or digit", name)
 	}
 	if trimmed == Audio8PackagedVoice {
-		return fmt.Errorf("voice name %q is reserved for the voice packaged with the export", Audio8PackagedVoice)
+		return "", fmt.Errorf("voice name %q is reserved for the voice packaged with the export", Audio8PackagedVoice)
 	}
-	return nil
+	return trimmed, nil
 }
 
 // Audio8RegisteredVoiceNames lists the registered voices under modelsDir, in
@@ -133,7 +148,10 @@ func Audio8RegisteredVoiceNames(modelsDir string) []string {
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() || ValidateAudio8VoiceName(entry.Name()) != nil {
+		// Only already-canonical directories count. A hand-made " bob " could
+		// otherwise be listed and selected but never resolved.
+		canonical, err := CanonicalAudio8VoiceName(entry.Name())
+		if !entry.IsDir() || err != nil || canonical != entry.Name() {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(Audio8VoicesDir(modelsDir), entry.Name(), Audio8VoiceMetaFile)); err != nil {

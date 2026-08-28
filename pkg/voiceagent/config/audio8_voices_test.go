@@ -7,38 +7,60 @@ import (
 	"testing"
 )
 
-func TestValidateAudio8VoiceName(t *testing.T) {
+func TestCanonicalAudio8VoiceName(t *testing.T) {
 	tests := []struct {
-		name string
-		in   string
-		want string
+		name    string
+		in      string
+		wantErr string
+		want    string
 	}{
-		{"empty", "", "voice name is required"},
-		{"blank", "   ", "voice name is required"},
-		{"a parent traversal", "../escape", "invalid voice name"},
-		{"a nested path", "a/b", "invalid voice name"},
-		{"a leading dot hides it from the listing", ".hidden", "invalid voice name"},
-		{"uppercase would render differently in each surface", "Alice", "invalid voice name"},
-		{"a space", "my voice", "invalid voice name"},
-		{"too long", strings.Repeat("a", 65), "invalid voice name"},
-		{"the packaged voice", Audio8PackagedVoice, "reserved"},
+		{name: "empty", in: "", wantErr: "voice name is required"},
+		{name: "blank", in: "   ", wantErr: "voice name is required"},
+		{name: "a parent traversal", in: "../escape", wantErr: "invalid voice name"},
+		{name: "a nested path", in: "a/b", wantErr: "invalid voice name"},
+		{name: "a leading dot hides it from the listing", in: ".hidden", wantErr: "invalid voice name"},
+		{name: "uppercase would render differently in each surface", in: "Alice", wantErr: "invalid voice name"},
+		{name: "an interior space", in: "my voice", wantErr: "invalid voice name"},
+		{name: "too long", in: strings.Repeat("a", 65), wantErr: "invalid voice name"},
+		{name: "the packaged voice", in: Audio8PackagedVoice, wantErr: "reserved"},
+		{name: "the packaged voice, padded", in: "  " + Audio8PackagedVoice + "  ", wantErr: "reserved"},
 
-		{name: "a simple name", in: "alice"},
-		{name: "dots dashes and underscores", in: "alice.2_a-b"},
-		{name: "a digit start", in: "2nd-take"},
-		{name: "the longest allowed", in: strings.Repeat("a", 64)},
+		{name: "a simple name", in: "alice", want: "alice"},
+		{name: "dots dashes and underscores", in: "alice.2_a-b", want: "alice.2_a-b"},
+		{name: "a digit start", in: "2nd-take", want: "2nd-take"},
+		{name: "the longest allowed", in: strings.Repeat("a", 64), want: strings.Repeat("a", 64)},
+
+		// Surrounding whitespace is stripped, not refused: resolveVoice trims
+		// the requested name, so the trimmed spelling is the only one that can
+		// ever be spoken. Storing " bob " would list and select fine and then
+		// fail at synthesis forever.
+		{name: "surrounding spaces are stripped", in: "  bob  ", want: "bob"},
+		{name: "a trailing newline is stripped", in: "bob\n", want: "bob"},
+		{name: "a trailing tab is stripped", in: "bob\t", want: "bob"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateAudio8VoiceName(tt.in)
-			if tt.want == "" {
-				if err != nil {
-					t.Fatalf("ValidateAudio8VoiceName(%q) = %v, want nil", tt.in, err)
+			got, err := CanonicalAudio8VoiceName(tt.in)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("CanonicalAudio8VoiceName(%q) error = %v, want %q", tt.in, err, tt.wantErr)
+				}
+				if got != "" {
+					t.Errorf("CanonicalAudio8VoiceName(%q) = %q on error, want empty", tt.in, got)
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("ValidateAudio8VoiceName(%q) = %v, want %q", tt.in, err, tt.want)
+			if err != nil {
+				t.Fatalf("CanonicalAudio8VoiceName(%q) = %v, want nil", tt.in, err)
+			}
+			if got != tt.want {
+				t.Fatalf("CanonicalAudio8VoiceName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+			// The canonical form has to be a fixed point, or the round trip
+			// through config and back is not stable.
+			again, err := CanonicalAudio8VoiceName(got)
+			if err != nil || again != got {
+				t.Errorf("CanonicalAudio8VoiceName(%q) = %q, %v; want it unchanged", got, again, err)
 			}
 		})
 	}
@@ -70,6 +92,9 @@ func TestAudio8RegisteredVoiceNames(t *testing.T) {
 	// A half-written registration and a stray file are not voices.
 	write(".alice.staging", true)
 	write("nometa", false)
+	// Nor is a hand-made directory whose name is not already canonical: it
+	// would list and be selectable, and then never resolve.
+	write(" bob ", true)
 	if err := os.WriteFile(filepath.Join(Audio8VoicesDir(modelsDir), "loose.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}

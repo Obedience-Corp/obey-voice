@@ -43,9 +43,11 @@ type Audio8RegisterRequest struct {
 // only reference this repository ships is the one packaged inside the export.
 // That is deliberate - see docs/audio8-voices.md.
 func RegisterAudio8Voice(ctx context.Context, req Audio8RegisterRequest) (Audio8VoiceMeta, error) {
-	if err := config.ValidateAudio8VoiceName(req.Name); err != nil {
+	name, err := config.CanonicalAudio8VoiceName(req.Name)
+	if err != nil {
 		return Audio8VoiceMeta{}, err
 	}
+	req.Name = name
 	// SaveAudio8Voice collapses it; the check here is so a caller learns before
 	// the encoder pages in 400 MB of weights.
 	transcript := req.Transcript

@@ -88,9 +88,13 @@ const audio8CodecFrameRateHz = 21.533203125
 // leaves either the previous voice or nothing - never a voice whose transcript
 // and codes disagree.
 func SaveAudio8Voice(modelsDir string, meta Audio8VoiceMeta, codes [][]int64) error {
-	if err := config.ValidateAudio8VoiceName(meta.Name); err != nil {
+	name, err := config.CanonicalAudio8VoiceName(meta.Name)
+	if err != nil {
 		return err
 	}
+	// The stored record and the directory both take the canonical name, so a
+	// voice can never be filed under a spelling it cannot be asked for by.
+	meta.Name = name
 	// Collapse the transcript here rather than at each caller: it is prepended
 	// to every prompt, so stray line breaks from a copy-pasted script would be
 	// tokenized on every turn for the life of the voice.
@@ -180,10 +184,11 @@ var audio8Rename = os.Rename
 
 // LoadAudio8VoiceMeta reads one voice's metadata.
 func LoadAudio8VoiceMeta(modelsDir, name string) (Audio8VoiceMeta, error) {
-	if err := config.ValidateAudio8VoiceName(name); err != nil {
+	canonical, err := config.CanonicalAudio8VoiceName(name)
+	if err != nil {
 		return Audio8VoiceMeta{}, err
 	}
-	return readAudio8VoiceMeta(config.Audio8VoiceDir(modelsDir, name), name)
+	return readAudio8VoiceMeta(config.Audio8VoiceDir(modelsDir, canonical), canonical)
 }
 
 func readAudio8VoiceMeta(dir, name string) (Audio8VoiceMeta, error) {
@@ -227,15 +232,16 @@ func ListAudio8Voices(modelsDir string) ([]Audio8VoiceMeta, error) {
 // inside the export and is not removable through here; ValidateAudio8VoiceName
 // rejects its name before any path is built.
 func RemoveAudio8Voice(modelsDir, name string) error {
-	if err := config.ValidateAudio8VoiceName(name); err != nil {
+	canonical, err := config.CanonicalAudio8VoiceName(name)
+	if err != nil {
 		return err
 	}
-	dir := config.Audio8VoiceDir(modelsDir, name)
+	dir := config.Audio8VoiceDir(modelsDir, canonical)
 	if _, err := os.Stat(filepath.Join(dir, config.Audio8VoiceMetaFile)); err != nil {
-		return fmt.Errorf("%w: %s", ErrAudio8VoiceNotFound, name)
+		return fmt.Errorf("%w: %s", ErrAudio8VoiceNotFound, canonical)
 	}
 	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("audio8: remove voice %q: %w", name, err)
+		return fmt.Errorf("audio8: remove voice %q: %w", canonical, err)
 	}
 	return nil
 }
