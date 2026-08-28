@@ -88,6 +88,16 @@ func ttsConfigClaims(cfg *Config, modelsDir string) []assetClaim {
 		// install in progress, not a leftover: clean must not delete it.
 		claims = append(claims, pathClaim(filepath.Join(modelsDir, kokoroV1DownloadsSubdir), reason+" (v1.0 download cache)"))
 	}
+	// No manifest owns the Audio8 export — obey-voice does not download it —
+	// so nothing else claims it, and a clean would offer to delete a
+	// multi-gigabyte export the selected provider is about to load.
+	if usesAudio8(cfg.TTSProvider) || usesAudio8(cfg.TTSFallbackProvider) {
+		reason := "tts_provider audio8"
+		if !usesAudio8(cfg.TTSProvider) {
+			reason = "voice_fallback_provider audio8"
+		}
+		claims = append(claims, pathClaim(filepath.Join(modelsDir, Audio8Subdir), reason))
+	}
 	// An external qwen worker or model tree under the models dir is named by
 	// config alone; qwen.UseManaged treats both as a supported setup.
 	for _, named := range []struct{ key, value string }{
@@ -204,4 +214,10 @@ func qwenTier(cfg *Config) string {
 func usesKokoro(provider string) bool {
 	provider = strings.TrimSpace(provider)
 	return provider == "" || strings.EqualFold(provider, "kokoro")
+}
+
+// usesAudio8 has no empty-string case: kokoro is the default provider, audio8
+// is only ever an explicit selection.
+func usesAudio8(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), "audio8")
 }

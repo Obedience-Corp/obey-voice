@@ -562,7 +562,7 @@ var _ Provider = (*Audio8TTS)(nil)
 var _ RequestProvider = (*Audio8TTS)(nil)
 
 func audio8ModelDir(cfg *config.Config) string {
-	return filepath.Join(cfg.ModelsDir, "audio8-tts")
+	return filepath.Join(cfg.ModelsDir, config.Audio8Subdir)
 }
 
 // errAudio8NoTokenizer rejects a provider that could never synthesize. The

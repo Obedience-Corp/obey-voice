@@ -2,8 +2,6 @@ package tts
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/hfbpe"
@@ -12,7 +10,7 @@ import (
 // audio8TokenizerPath is where the export keeps its text frontend: the same
 // <model dir>/tokenizer/tokenizer.json the vendor's PromptBuilder reads.
 func audio8TokenizerPath(modelDir string) string {
-	return filepath.Join(modelDir, "tokenizer", "tokenizer.json")
+	return config.Audio8TokenizerPath(modelDir)
 }
 
 // NewAudio8Tokenizer loads the checkpoint's byte-level BPE.
@@ -28,22 +26,14 @@ func NewAudio8Tokenizer(modelDir string) (Audio8Tokenizer, error) {
 	return tok, nil
 }
 
-// Audio8Installed reports whether the Audio8 export is on disk. The provider is
-// in the catalog whether or not it is downloaded — the same as qwen3-tts — so
-// the surfaces that describe a provider use this to say "not installed" instead
-// of implying it can speak here.
+// Audio8Installed reports whether the Audio8 export is on disk for cfg. The
+// provider is in the catalog whether or not it is downloaded — the same as
+// qwen3-tts — so the surfaces that describe a provider use this to say "not
+// installed" instead of implying it can speak here. doctor asks config the
+// same question about the models dir it was handed.
 func Audio8Installed(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
-	dir := audio8ModelDir(cfg)
-	for _, path := range []string{
-		audio8TokenizerPath(dir),
-		filepath.Join(dir, "runtime_manifest.json"),
-	} {
-		if _, err := os.Stat(path); err != nil {
-			return false
-		}
-	}
-	return true
+	return config.Audio8ExportInstalled(audio8ModelDir(cfg))
 }

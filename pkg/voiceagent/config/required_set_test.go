@@ -246,6 +246,48 @@ func TestRequiredAssetPathsProtectsReferencedAssets(t *testing.T) {
 			wantCandidates: []string{".archive-99.tar.bz2.part", ".extract-1234"},
 		},
 		{
+			name: "the audio8 export is kept while audio8 is selected",
+			cfg: func() *Config {
+				// No manifest owns this export (obey-voice does not download
+				// it), so without a config claim a clean would offer to delete
+				// the gigabytes the selected provider is about to load.
+				cfg := liveCfg()
+				cfg.TTSProvider = "audio8"
+				return cfg
+			},
+			install: []string{
+				filepath.Join(Audio8Subdir, "runtime_manifest.json"),
+				filepath.Join(Audio8Subdir, "tokenizer", "tokenizer.json"),
+				filepath.Join(Audio8Subdir, "slow_ar_int8.onnx"),
+				"stale.bin",
+			},
+			keptReasons:    map[string]string{Audio8Subdir: "config tts_provider audio8"},
+			wantCandidates: []string{"stale.bin"},
+		},
+		{
+			name: "the audio8 export is kept as a fallback provider too",
+			cfg: func() *Config {
+				cfg := liveCfg()
+				cfg.TTSFallbackProvider = "audio8"
+				return cfg
+			},
+			install: []string{
+				filepath.Join(Audio8Subdir, "runtime_manifest.json"),
+				"stale.bin",
+			},
+			keptReasons:    map[string]string{Audio8Subdir: "config voice_fallback_provider audio8"},
+			wantCandidates: []string{"stale.bin"},
+		},
+		{
+			name: "the audio8 export is a candidate when nothing selects it",
+			cfg:  liveCfg,
+			install: []string{
+				filepath.Join(Audio8Subdir, "runtime_manifest.json"),
+				"stale.bin",
+			},
+			wantCandidates: []string{Audio8Subdir, "stale.bin"},
+		},
+		{
 			name: "speaker models are kept when no mode currently loads them",
 			cfg: func() *Config {
 				// speaker.enabled with both modes off: the global manifest

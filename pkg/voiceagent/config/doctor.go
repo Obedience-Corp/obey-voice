@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -242,12 +243,33 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 			Severity: SeverityOK,
 			Detail:   "kokoro (" + KokoroPack() + ")",
 		})
+	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "audio8") {
+		// audio8 is a real provider that obey-voice does not manage assets
+		// for, so it needs its own row: the unmanaged fallthrough below would
+		// tell the user to abandon a provider that works once its export is on
+		// disk. `models ensure` installs nothing here (ManagedTTS excludes it),
+		// so the remediation must not point at it.
+		dir := filepath.Join(modelsDir, Audio8Subdir)
+		if Audio8ExportInstalled(dir) {
+			diags = append(diags, Diagnostic{
+				Name:     "tts-provider",
+				Severity: SeverityOK,
+				Detail:   "audio8 (experimental; export at " + dir + ")",
+			})
+		} else {
+			diags = append(diags, Diagnostic{
+				Name:        "tts-provider",
+				Severity:    SeverityWarn,
+				Detail:      "audio8 is selected but no export is installed at " + dir,
+				Remediation: "install the Audio8 ONNX export into " + dir + " (obey-voice does not download it; see scripts/audio8_bench/README.md for the pinned snapshot)",
+			})
+		}
 	} else {
 		diags = append(diags, Diagnostic{
 			Name:        "tts-provider",
 			Severity:    SeverityWarn,
-			Detail:      fmt.Sprintf("tts_provider %q is not a managed provider", cfg.TTSProvider),
-			Remediation: "set tts_provider=kokoro or tts_provider=qwen3-tts with its native worker and model configured",
+			Detail:      fmt.Sprintf("tts_provider %q is not a known provider", cfg.TTSProvider),
+			Remediation: "set tts_provider=kokoro, tts_provider=qwen3-tts (with its native worker and model configured), or tts_provider=audio8 (with the Audio8 export installed)",
 		})
 	}
 
