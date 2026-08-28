@@ -61,9 +61,13 @@ type Audio8TTS struct {
 	// mu guards the sessions, the resolved-voice cache and the primed prefixes.
 	// One synthesis runs at a time whatever the voice, because all three graphs
 	// are shared; the caches are per voice.
-	mu       sync.Mutex
-	voices   map[string]*audio8Voice
-	prefixes map[string]*audio8Prefix
+	mu     sync.Mutex
+	voices map[string]*audio8Voice
+	// prefixes is bounded; prefixLRU holds its keys, least recently used first.
+	// The resolved-voice cache beside it is not bounded on purpose: a voice is
+	// its codes, tens of kilobytes, where a primed prefix is tens of megabytes.
+	prefixes  map[string]*audio8Prefix
+	prefixLRU []string
 
 	chunkFrames int
 	maxNew      int
@@ -102,6 +106,34 @@ type audio8Prefix struct {
 	state  *slowState
 	length int
 }
+
+// bytes is the entry's resident size, from the state's own slices.
+func (p *audio8Prefix) bytes() int {
+	if p == nil || p.state == nil {
+		return 0
+	}
+	s := p.state
+	return 4 * (len(s.cacheKeys) + len(s.cacheValues) + len(s.convStates) + len(s.ssmStates))
+}
+
+// audio8PrefixCacheSize bounds how many voices stay primed at once.
+//
+// One entry is the slow graph's entire recurrent state, and it is large: with
+// the shipped export's dimensions (24 layers, 2 local heads, max_seq_len 2048,
+// head dim 64) each KV cache is 24*2*2048*64 float32 = 25,165,824 bytes, and
+// there are two of them, plus 4,718,592 of SSM state and 344,064 of conv state.
+// 55,394,304 bytes - 52.8 MiB - per primed voice, asserted against the
+// allocator by TestAudio8PrefixEntrySizeMatchesTheDocumentedBound. Now that a
+// user can register as many voices as they like, an unbounded cache is an
+// unbounded leak: ten auditioned voices would pin half a gigabyte for the life
+// of the process.
+//
+// Three is the working set that actually occurs: the voice being spoken, the
+// one just switched away from, and one more for a persona that alternates.
+// Past that the least recently used entry is dropped and re-primed if it comes
+// back, at the ~1.0 s recorded in
+// docs/benchmarks/A1-audio8-tts-onnx-2026-08-27.json.
+const audio8PrefixCacheSize = 3
 
 // NewAudio8TTS loads the export in modelDir.
 func NewAudio8TTS(opts Audio8Options) (*Audio8TTS, error) {
@@ -317,13 +349,12 @@ func (a *Audio8TTS) buildPrompt(voice *audio8Voice, target string) (rows [][]int
 //
 // The cache is per voice, and switching voices pays the prime again: the
 // reference frames are part of the primed state, so one cache entry cannot
-// serve two voices. It is never evicted - each entry is the slow graph's
-// recurrent state, and a machine that can hold the model can hold a handful of
-// these.
+// serve two voices. It holds at most audio8PrefixCacheSize of them - see there
+// for why that number and what one costs.
 func (a *Audio8TTS) prefixFor(voice *audio8Voice) (*audio8Prefix, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if p := a.prefixes[voice.name]; p != nil {
+	if p := a.lookupPrefixLocked(voice.name); p != nil {
 		return p, nil
 	}
 	rows, constHead, err := a.buildPrompt(voice, "priming")
@@ -341,8 +372,46 @@ func (a *Audio8TTS) prefixFor(voice *audio8Voice) (*audio8Prefix, error) {
 		}
 	}
 	p := &audio8Prefix{state: st, length: constHead}
-	a.prefixes[voice.name] = p
+	a.insertPrefixLocked(voice.name, p)
 	return p, nil
+}
+
+// lookupPrefixLocked returns the primed prefix for name, marking it as most
+// recently used. a.mu must be held.
+func (a *Audio8TTS) lookupPrefixLocked(name string) *audio8Prefix {
+	p := a.prefixes[name]
+	if p != nil {
+		a.touchPrefixLocked(name)
+	}
+	return p
+}
+
+// insertPrefixLocked stores a freshly primed prefix and evicts down to the
+// bound. a.mu must be held.
+//
+// Eviction drops the map's reference, not the memory: a caller that took a
+// prefix from prefixFor and has not reached generate yet still holds a valid
+// pointer, and generate clones the state it is given. An evicted voice is
+// simply re-primed the next time it is asked for.
+func (a *Audio8TTS) insertPrefixLocked(name string, p *audio8Prefix) {
+	a.prefixes[name] = p
+	a.touchPrefixLocked(name)
+	for len(a.prefixLRU) > audio8PrefixCacheSize {
+		evicted := a.prefixLRU[0]
+		a.prefixLRU = a.prefixLRU[1:]
+		delete(a.prefixes, evicted)
+	}
+}
+
+// touchPrefixLocked moves name to the most-recently-used end. a.mu must be held.
+func (a *Audio8TTS) touchPrefixLocked(name string) {
+	for i, n := range a.prefixLRU {
+		if n == name {
+			a.prefixLRU = append(a.prefixLRU[:i], a.prefixLRU[i+1:]...)
+			break
+		}
+	}
+	a.prefixLRU = append(a.prefixLRU, name)
 }
 
 // loadNPYInt64Rows reads a 2-D little-endian int64 .npy into rows.

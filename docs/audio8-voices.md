@@ -93,6 +93,13 @@ part of that primed state, so **the cache is per voice**: the first utterance in
 a newly selected voice pays the prime again. Switching voices mid-conversation
 is not free.
 
+That cache holds **three voices**. One primed prefix is the slow graph's whole
+recurrent state — 52.8 MiB — so it is bounded rather than kept for every voice
+ever spoken. Three covers the working set that occurs in practice: the voice
+being spoken, the one just switched away from, and one more for a persona that
+alternates. Cycling through more than three voices in a session re-pays the
+~1.0 s prime each time one returns.
+
 ## Where voices are stored
 
 ```

@@ -743,3 +743,148 @@ func TestRegisterAudio8VoiceRefusesAnExistingName(t *testing.T) {
 		t.Errorf("a failed overwrite damaged the existing voice: %v", err)
 	}
 }
+
+// stubPrefix is a cache entry with no recurrent state: the cache does not read
+// it, and allocating a real one per voice would be 55 MB a time.
+func stubPrefix(length int) *audio8Prefix {
+	return &audio8Prefix{state: &slowState{}, length: length}
+}
+
+// cachedNames reports the cache contents, least recently used first.
+func cachedNames(a *Audio8TTS) []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]string, len(a.prefixLRU))
+	copy(out, a.prefixLRU)
+	return out
+}
+
+func insertPrefix(a *Audio8TTS, name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.insertPrefixLocked(name, stubPrefix(len(name)))
+}
+
+func lookupPrefix(a *Audio8TTS, name string) *audio8Prefix {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lookupPrefixLocked(name)
+}
+
+// TestAudio8PrefixCacheEvictsLeastRecentlyUsed pins the eviction order. Before
+// this the cache was unbounded, and at 55.4 MB an entry that is a leak the size
+// of the model once a user can register voices freely.
+func TestAudio8PrefixCacheEvictsLeastRecentlyUsed(t *testing.T) {
+	a := newVoiceResolver(t, t.TempDir(), "")
+
+	for _, name := range []string{"one", "two", "three"} {
+		insertPrefix(a, name)
+	}
+	if got := strings.Join(cachedNames(a), ","); got != "one,two,three" {
+		t.Fatalf("cache = %s, want the three inserted in order", got)
+	}
+
+	// A hit on the oldest entry makes it the newest, so the next eviction takes
+	// what is now least recently used.
+	if lookupPrefix(a, "one") == nil {
+		t.Fatal("lookupPrefixLocked(one) = nil, want the entry just inserted")
+	}
+	if got := strings.Join(cachedNames(a), ","); got != "two,three,one" {
+		t.Fatalf("cache = %s, want a hit to move the entry to the newest end", got)
+	}
+
+	insertPrefix(a, "four")
+	if got := strings.Join(cachedNames(a), ","); got != "three,one,four" {
+		t.Fatalf("cache = %s, want two evicted as least recently used", got)
+	}
+	if lookupPrefix(a, "two") != nil {
+		t.Error("the evicted entry is still cached")
+	}
+	if len(a.prefixes) != audio8PrefixCacheSize {
+		t.Errorf("cache holds %d entries, want the bound of %d", len(a.prefixes), audio8PrefixCacheSize)
+	}
+
+	// Re-inserting an evicted voice is the re-prime path, and must not grow the
+	// cache past the bound.
+	insertPrefix(a, "two")
+	if len(a.prefixes) != audio8PrefixCacheSize || len(a.prefixLRU) != audio8PrefixCacheSize {
+		t.Errorf("after a re-prime: %d entries, %d LRU slots, want %d of each",
+			len(a.prefixes), len(a.prefixLRU), audio8PrefixCacheSize)
+	}
+
+	// Re-inserting a voice already cached replaces rather than duplicating it.
+	insertPrefix(a, "two")
+	seen := map[string]int{}
+	for _, n := range cachedNames(a) {
+		seen[n]++
+	}
+	if seen["two"] != 1 {
+		t.Errorf("cache lists 'two' %d times, want once", seen["two"])
+	}
+	if len(a.prefixLRU) != len(a.prefixes) {
+		t.Errorf("LRU (%d) and map (%d) disagree", len(a.prefixLRU), len(a.prefixes))
+	}
+}
+
+// TestAudio8PrefixCacheIsRaceFree hammers the cache from many goroutines with
+// more voices than the bound. The map and the LRU slice are mutated together
+// under one lock; a torn update there would be a voice speaking with another
+// voice's primed state.
+func TestAudio8PrefixCacheIsRaceFree(t *testing.T) {
+	a := newVoiceResolver(t, t.TempDir(), "")
+	names := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot"}
+
+	var wg sync.WaitGroup
+	for i := range 64 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := names[i%len(names)]
+			if p := lookupPrefix(a, name); p == nil {
+				insertPrefix(a, name)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.prefixes) > audio8PrefixCacheSize {
+		t.Errorf("cache holds %d entries, want at most %d", len(a.prefixes), audio8PrefixCacheSize)
+	}
+	if len(a.prefixLRU) != len(a.prefixes) {
+		t.Errorf("LRU holds %d names but the map holds %d entries", len(a.prefixLRU), len(a.prefixes))
+	}
+	// Every LRU name resolves, and no name appears twice.
+	seen := map[string]bool{}
+	for _, n := range a.prefixLRU {
+		if seen[n] {
+			t.Errorf("%q appears twice in the LRU", n)
+		}
+		seen[n] = true
+		if a.prefixes[n] == nil {
+			t.Errorf("LRU names %q but the map has no entry for it", n)
+		}
+	}
+}
+
+// TestAudio8PrefixEntrySizeMatchesTheDocumentedBound checks the arithmetic in
+// audio8PrefixCacheSize's comment against what the allocator actually produces
+// for the shipped export's dimensions. A bound justified by a number that has
+// drifted is not a justified bound.
+func TestAudio8PrefixEntrySizeMatchesTheDocumentedBound(t *testing.T) {
+	shipped := &audio8Manifest{NumLayers: 24, NLocalHeads: 2, MaxSeqLen: 2048, HeadDim: 64}
+	entry := &audio8Prefix{state: newSlowState(shipped)}
+
+	// 2 KV caches of 24*2*2048*64 float32, plus SSM and conv state.
+	const want = 2*24*2*2048*64*4 + 24*24*32*64*4 + 24*896*4*4
+	if got := entry.bytes(); got != want {
+		t.Fatalf("one primed prefix is %d bytes, the comment says %d", got, want)
+	}
+	if want != 55394304 {
+		t.Fatalf("the documented 55.4 MB per entry is now %d bytes", want)
+	}
+	t.Logf("one primed prefix = %.1f MB; the cache is bounded at %d = %.0f MB",
+		float64(want)/(1<<20), audio8PrefixCacheSize,
+		float64(want)*audio8PrefixCacheSize/(1<<20))
+}

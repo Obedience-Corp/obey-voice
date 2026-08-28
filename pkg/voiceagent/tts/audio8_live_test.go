@@ -4,12 +4,16 @@ package tts
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -446,5 +450,196 @@ func TestAudio8RefusesCodesFromAnotherModel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "9.9b") {
 		t.Errorf("error = %q, want it to name the stale fingerprint", err)
+	}
+}
+
+// TestAudio8PrefixCacheIsBoundedUnderRealSynthesis drives more voices than the
+// cache holds, through the real graphs, and checks the three things bounding it
+// could have broken: the cache stays at the bound, an evicted voice still
+// speaks (it re-primes), and every voice keeps speaking in its own voice rather
+// than inheriting an evicted neighbour's primed state.
+//
+// Correctness is by content hash: synthesis is seeded (rand.NewSource(42)) and
+// the prompt is deterministic, so the same voice and text must produce the same
+// PCM every time — and two voices must not.
+func TestAudio8PrefixCacheIsBoundedUnderRealSynthesis(t *testing.T) {
+	dir := audio8ModelDirForTest(t)
+	if !Audio8RegistrationInstalled(dir) {
+		t.Skipf("no registration package under %s", dir)
+	}
+	modelsDir := t.TempDir()
+	// One more voice than the cache holds, so eviction is guaranteed. Each gets
+	// a different reference length, which changes its primed head.
+	names := []string{"tone.a", "tone.b", "tone.c", "tone.d"}
+	if len(names) <= audio8PrefixCacheSize {
+		t.Fatalf("this test needs more than %d voices to force eviction", audio8PrefixCacheSize)
+	}
+	for i, name := range names {
+		registerLiveVoice(t, modelsDir, name, 1.0+0.4*float64(i))
+	}
+
+	a := newTestAudio8WithStore(t, modelsDir, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+
+	const line = "Steady on."
+	speak := func(voice string) string {
+		t.Helper()
+		res, err := a.SynthesizeRequest(ctx, SynthesisRequest{Text: line, Voice: voice})
+		if err != nil {
+			t.Fatalf("SynthesizeRequest(%q): %v", voice, err)
+		}
+		if _, err := res.Stream.WaitReady(ctx); err != nil {
+			t.Fatalf("WaitReady(%q): %v", voice, err)
+		}
+		sum := sha256.New()
+		samples := 0
+		for frame := range res.Stream.Frames() {
+			samples += len(frame)
+			for _, v := range frame {
+				var buf [4]byte
+				binary.LittleEndian.PutUint32(buf[:], math.Float32bits(v))
+				sum.Write(buf[:])
+			}
+		}
+		if err := res.Stream.Err(); err != nil {
+			t.Fatalf("stream error for %q: %v", voice, err)
+		}
+		if samples == 0 {
+			t.Fatalf("voice %q produced no audio", voice)
+		}
+		return hex.EncodeToString(sum.Sum(nil))[:16]
+	}
+
+	// First pass: one utterance per voice, in order. By the end the first voice
+	// must have been evicted.
+	first := map[string]string{}
+	for _, name := range names {
+		first[name] = speak(name)
+		t.Logf("%-7s -> %s", name, first[name])
+	}
+	a.mu.Lock()
+	cached := len(a.prefixes)
+	resident := 0
+	for _, p := range a.prefixes {
+		resident += p.bytes()
+	}
+	lru := strings.Join(a.prefixLRU, ",")
+	a.mu.Unlock()
+
+	if cached != audio8PrefixCacheSize {
+		t.Errorf("after %d voices the cache holds %d, want the bound of %d", len(names), cached, audio8PrefixCacheSize)
+	}
+	if lru != "tone.b,tone.c,tone.d" {
+		t.Errorf("cache = %s, want the first voice evicted as least recently used", lru)
+	}
+	t.Logf("cache holds %d of %d voices, %.0f MiB resident", cached, len(names), float64(resident)/(1<<20))
+
+	// Distinct voices must produce distinct audio: if an evicted entry let one
+	// voice speak with another's primed state, two of these would collide.
+	seen := map[string]string{}
+	for name, digest := range first {
+		if other, dup := seen[digest]; dup {
+			t.Errorf("%q and %q produced identical audio (%s); a voice spoke with another's prefix", name, other, digest)
+		}
+		seen[digest] = name
+	}
+
+	// Second pass in reverse, so the evicted first voice comes back and has to
+	// re-prime. Same audio as before, or the re-prime is not equivalent.
+	for i := len(names) - 1; i >= 0; i-- {
+		name := names[i]
+		if got := speak(name); got != first[name] {
+			t.Errorf("voice %q after eviction/re-prime = %s, want %s (the first pass)", name, got, first[name])
+		}
+	}
+	a.mu.Lock()
+	cached = len(a.prefixes)
+	a.mu.Unlock()
+	if cached != audio8PrefixCacheSize {
+		t.Errorf("after the second pass the cache holds %d, want the bound of %d", cached, audio8PrefixCacheSize)
+	}
+}
+
+// TestAudio8ConcurrentVoicesAreBoundedAndCorrect runs the same claim through
+// concurrent callers: more voices than the bound, from many goroutines, with
+// every result checked against the single-threaded digest for that voice.
+func TestAudio8ConcurrentVoicesAreBoundedAndCorrect(t *testing.T) {
+	dir := audio8ModelDirForTest(t)
+	if !Audio8RegistrationInstalled(dir) {
+		t.Skipf("no registration package under %s", dir)
+	}
+	modelsDir := t.TempDir()
+	names := []string{"tone.a", "tone.b", "tone.c", "tone.d"}
+	for i, name := range names {
+		registerLiveVoice(t, modelsDir, name, 1.0+0.4*float64(i))
+	}
+
+	a := newTestAudio8WithStore(t, modelsDir, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+
+	const line = "Steady on."
+	digest := func(voice string) (string, error) {
+		res, err := a.SynthesizeRequest(ctx, SynthesisRequest{Text: line, Voice: voice})
+		if err != nil {
+			return "", err
+		}
+		if _, err := res.Stream.WaitReady(ctx); err != nil {
+			return "", err
+		}
+		sum := sha256.New()
+		for frame := range res.Stream.Frames() {
+			for _, v := range frame {
+				var buf [4]byte
+				binary.LittleEndian.PutUint32(buf[:], math.Float32bits(v))
+				sum.Write(buf[:])
+			}
+		}
+		if err := res.Stream.Err(); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(sum.Sum(nil))[:16], nil
+	}
+
+	want := map[string]string{}
+	for _, name := range names {
+		d, err := digest(name)
+		if err != nil {
+			t.Fatalf("baseline %q: %v", name, err)
+		}
+		want[name] = d
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2*len(names))
+	for i := range 2 * len(names) {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := names[i%len(names)]
+			got, err := digest(name)
+			if err != nil {
+				errs <- fmt.Errorf("%s: %w", name, err)
+				return
+			}
+			if got != want[name] {
+				errs <- fmt.Errorf("%s produced %s concurrently, want %s", name, got, want[name])
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.prefixes) > audio8PrefixCacheSize {
+		t.Errorf("cache holds %d entries after concurrent use, want at most %d", len(a.prefixes), audio8PrefixCacheSize)
+	}
+	if len(a.prefixLRU) != len(a.prefixes) {
+		t.Errorf("LRU (%d) and map (%d) disagree after concurrent use", len(a.prefixLRU), len(a.prefixes))
 	}
 }
