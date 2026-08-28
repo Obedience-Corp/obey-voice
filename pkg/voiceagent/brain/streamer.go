@@ -3,6 +3,8 @@ package brain
 import (
 	"strings"
 	"unicode"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // sentencesPerChunk is 1: this package segments, it does not batch.
@@ -97,7 +99,8 @@ func ChunkSentencesRaw(input <-chan string) <-chan string {
 }
 
 // findSentenceEnd returns the index of the first sentence-ending punctuation
-// followed by a space or end of string. Returns -1 if no boundary found.
+// followed by a space (closing quotes between the punct and the space ride
+// with the sentence). Returns -1 if no boundary found.
 func findSentenceEnd(text string) int {
 	runes := []rune(text)
 	for i, r := range runes {
@@ -110,13 +113,21 @@ func findSentenceEnd(text string) int {
 				}
 			}
 
-			// Must be followed by space or quote — NOT end of buffer.
+			// Closing quotes after .?! belong to this sentence. Splitting at
+			// the punct used to send `"Hello?` to TTS and a leftover `"` as
+			// the next segment — unmatched quotes, which Qwen3-TTS then
+			// treated as a quoted span and did not speak.
+			end := i
+			j := i + 1
+			for j < len(runes) && textclean.IsSpeechQuote(runes[j]) {
+				end = j
+				j++
+			}
+
+			// Must be followed by space — NOT end of buffer.
 			// End-of-buffer splits cause premature cuts on streaming partial text.
-			if i < len(runes)-1 {
-				next := runes[i+1]
-				if unicode.IsSpace(next) || next == '"' || next == '\'' {
-					return i
-				}
+			if j < len(runes) && unicode.IsSpace(runes[j]) {
+				return end
 			}
 		}
 	}

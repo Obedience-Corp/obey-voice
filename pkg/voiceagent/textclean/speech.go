@@ -20,6 +20,11 @@ import (
 //   - Four-digit years are read as years. "1999" reached eSpeak as "one thousand
 //     nine hundred ninety-nine"; as a year it is 0.285 s shorter and is how a
 //     person says it.
+//   - Quotation marks are stripped. They are not spoken, and Qwen3-TTS treats a
+//     quoted span as something other than the utterance: wrapping a reply in
+//     quotes (a common LLM habit — `"aww, did that hurt, baby"`) produced no
+//     audible audio on Veronica, 2026-08-28. Apostrophes stay so contractions
+//     survive.
 //
 // What is deliberately NOT here: plain integers and simple decimals. Measuring
 // showed eSpeak already renders them as words — "42" and "forty-two" differ by
@@ -28,7 +33,7 @@ import (
 // naive expansion breaks: "555-1234", "2026-08-11", "$5", "R2D2" and "12:00" all
 // garbled. See decision D008.
 func PrepareSpokenText(s string) string {
-	return expandYears(StripEmoji(s))
+	return expandYears(StripSpeechQuotes(StripEmoji(s)))
 }
 
 // --- emoji -----------------------------------------------------------------
@@ -164,6 +169,47 @@ func repairSpacing(s string) string {
 	s = spaceBeforePunc.ReplaceAllString(s, "$1")
 	s = spaceBeforePeriod.ReplaceAllString(s, ".$1")
 	return strings.TrimSpace(s)
+}
+
+// --- quotes ----------------------------------------------------------------
+
+// IsSpeechQuote reports whether r is a quotation mark stripped before TTS.
+// Straight apostrophe is not in this set: contractions are words.
+func IsSpeechQuote(r rune) bool {
+	switch r {
+	case '"', // U+0022
+		'\u201C', // “
+		'\u201D', // ”
+		'\u201E', // „
+		'\u00AB', // «
+		'\u00BB', // »
+		'\u300C', // 「
+		'\u300D', // 」
+		'\u300E', // 『
+		'\u300F': // 』
+		return true
+	default:
+		return false
+	}
+}
+
+// StripSpeechQuotes removes quotation marks that wrap or punctuate dialogue.
+// The inner words stay; the marks do not. Spacing is repaired the same way as
+// after an emoji, so `She said “hello”` reaches the synthesiser as
+// `She said hello`.
+func StripSpeechQuotes(s string) string {
+	if !strings.ContainsFunc(s, IsSpeechQuote) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if IsSpeechQuote(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return repairSpacing(b.String())
 }
 
 // --- years -----------------------------------------------------------------
