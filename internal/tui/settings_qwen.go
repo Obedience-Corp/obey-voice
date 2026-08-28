@@ -97,6 +97,9 @@ func (m *settingsModel) buildQwenItems() {
 	)
 	if !m.nativeStatus.Installed {
 		install := "Install / repair — native package (ensure) or legacy managed"
+		if m.cfg != nil && managedqwen.ResolveNativeURL(m.cfg.QwenTTSNativeURL) == "" {
+			install = "No published package for this OS/arch — set qwen_tts_native_url"
+		}
 		if m.qwenInstalling {
 			install = "Installing…"
 		}
@@ -236,6 +239,14 @@ func (m *settingsModel) selectQwenItem() tea.Cmd {
 
 	case qwenOptInstall:
 		if m.qwenInstalling {
+			return nil
+		}
+		nativeURL := ""
+		if m.cfg != nil {
+			nativeURL = m.cfg.QwenTTSNativeURL
+		}
+		if managedqwen.ResolveNativeURL(nativeURL) == "" {
+			m.message = managedqwen.UnavailableHint()
 			return nil
 		}
 		ctx, cancel := context.WithCancel(context.Background())

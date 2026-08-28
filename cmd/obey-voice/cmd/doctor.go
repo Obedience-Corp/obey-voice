@@ -148,11 +148,15 @@ func personaQwenDiags(cfg *config.Config, modelsDir string) []config.Diagnostic 
 		if st.Installed {
 			detail = fmt.Sprintf("persona %q pins qwen3-tts tier %s but the installed package lacks it", p.ID, tier)
 		}
+		nativeURL := ""
+		if cfg != nil {
+			nativeURL = cfg.QwenTTSNativeURL
+		}
 		diags = append(diags, config.Diagnostic{
 			Name:        "qwen persona " + p.ID,
 			Severity:    config.SeverityWarn,
 			Detail:      detail,
-			Remediation: "run obey-voice models ensure --tts (or Settings → Qwen) to install the package for this tier",
+			Remediation: managedqwen.InstallRemediation(nativeURL),
 		})
 	}
 	return diags

@@ -3,6 +3,7 @@ package qwen
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +31,15 @@ func TestInspectEmpty(t *testing.T) {
 	st := Inspect(dir)
 	if st.Installed {
 		t.Fatalf("%+v", st)
+	}
+	if !strings.Contains(st.Detail, "not installed") {
+		t.Fatalf("detail = %q, want not installed", st.Detail)
+	}
+	if ResolveNativeURL("") == "" && !strings.Contains(st.Detail, "no published package") {
+		t.Fatalf("unpublished platform detail = %q, want no published package", st.Detail)
+	}
+	if ResolveNativeURL("") == "" && strings.Contains(st.Detail, "uses published platform release") {
+		t.Fatalf("must not promise a download that does not exist: %q", st.Detail)
 	}
 }
 

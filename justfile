@@ -235,7 +235,9 @@ _optimize-demo-gif path:
     rm -f "$palette"
     ls -lh "$gif"
 
-# Build, sign, install to $GOBIN
+# Build, sign, install to $GOBIN, then download the default STT/TTS/VAD stack.
+# Qwen is opt-in and only downloads on platforms with a published native package.
+# Set OBEY_VOICE_SKIP_MODELS_ENSURE=1 for a binary-only install.
 install: build
     #!/usr/bin/env bash
     set -euo pipefail
@@ -248,6 +250,14 @@ install: build
     # One-cycle compatibility alias for scripts and muscle memory predating the rename.
     ln -sfn {{gobin}}/{{binary_name}} {{gobin}}/samantha
     echo "obey-voice installed to {{gobin}}/{{binary_name}} (alias: {{gobin}}/samantha)"
+    if [[ "${OBEY_VOICE_SKIP_MODELS_ENSURE:-}" == "1" ]]; then
+        echo "Skipping model download (OBEY_VOICE_SKIP_MODELS_ENSURE=1). Run: {{binary_name}} models ensure"
+    else
+        echo "Downloading default model assets (STT/TTS/VAD for this config)..."
+        if ! "{{gobin}}/{{binary_name}}" models ensure; then
+            echo "Warning: model download failed. Run: {{binary_name}} models ensure"
+        fi
+    fi
 
 # Build and run with any args
 run *ARGS: build

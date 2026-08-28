@@ -52,7 +52,7 @@ Privacy & Security → Microphone.
 ## From source
 
 ```bash
-just install    # Build, sign on macOS when possible, install obey-voice to $GOBIN (+ a `samantha` alias symlink)
+just install    # Build, sign on macOS when possible, install obey-voice to $GOBIN (+ a `samantha` alias symlink), then `models ensure` for the default STT/TTS/VAD stack
 ```
 
 For development builds:
@@ -65,6 +65,8 @@ just run -- --text
 On Linux, `just install` is a source/developer install and retains the native
 libraries supplied through the Go module cache. Use the release archive when
 you need a relocatable installation that remains valid after cleaning that
-cache.
+cache. Set `OBEY_VOICE_SKIP_MODELS_ENSURE=1` to skip the model download (binary
+only). Qwen3-TTS is not part of that default ensure: there is no published
+linux/amd64 native package yet.
 
 See [Development](development.md) for test, lint, and model-asset commands.

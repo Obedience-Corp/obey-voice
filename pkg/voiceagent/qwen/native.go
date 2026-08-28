@@ -603,7 +603,7 @@ func EnsureNative(ctx context.Context, modelsDir string, opt NativeEnsureOptions
 		if status.Installed {
 			return status, nil
 		}
-		return status, fmt.Errorf("native Qwen3-TTS is not installed; no published package for %s/%s — set qwen_tts_native_url to a release tarball, then run models ensure --tts", runtime.GOOS, runtime.GOARCH)
+		return status, fmt.Errorf("native Qwen3-TTS is not installed; %s", InstallRemediation(""))
 	}
 
 	if progress != nil {

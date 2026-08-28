@@ -125,7 +125,7 @@ func Inspect(modelsDir string) Status {
 	}
 	return Status{
 		Root:   NativeInstallPaths(modelsDir).Root,
-		Detail: "native Qwen3-TTS package is not installed; run models ensure --tts (uses published platform release, or set qwen_tts_native_url)",
+		Detail: "native Qwen3-TTS package is not installed; " + InstallRemediation(""),
 	}
 }
 

@@ -60,6 +60,18 @@ func TestQwenTierStatusRowsPackageAbsentReportsBothTiersMissing(t *testing.T) {
 		}
 	}
 
+	if managedqwen.ResolveNativeURL("") == "" {
+		// No published tarball: both tiers fail closed. Advertising
+		// `models ensure --tts` here was the linux/amd64 lie.
+		want := managedqwen.UnavailableHint()
+		if got := byID["tts.qwen3.tier.0.6b"].Detail; got != want {
+			t.Errorf("0.6b detail = %q, want %q", got, want)
+		}
+		if got := byID["tts.qwen3.tier.1.7b"].Detail; got != want {
+			t.Errorf("1.7b detail = %q, want %q", got, want)
+		}
+		return
+	}
 	// Only the 1.7b row carries the fail-closed detail (0.6b is the pinned
 	// release's own tier, so a plain "missing" already explains it).
 	if byID["tts.qwen3.tier.0.6b"].Detail != "" {
@@ -110,11 +122,20 @@ func TestQwenTierStatusRowsReadyTierHasNoMissingOrDetail(t *testing.T) {
 }
 
 func TestQwenTierFailClosedDetailOnlyFor1_7bAndPinnedRelease(t *testing.T) {
-	if got := qwenTierFailClosedDetail("", "0.6b"); got != "" {
-		t.Errorf("0.6b detail = %q, want empty (never fails closed)", got)
-	}
 	if got := qwenTierFailClosedDetail("https://example.test/custom-multi-tier.tar.gz", "1.7b"); got != "" {
 		t.Errorf("custom URL 1.7b detail = %q, want empty (not the pinned release)", got)
+	}
+	if managedqwen.ResolveNativeURL("") == "" {
+		want := managedqwen.UnavailableHint()
+		for _, tier := range []string{"0.6b", "1.7b"} {
+			if got := qwenTierFailClosedDetail("", tier); got != want {
+				t.Errorf("unpublished %s detail = %q, want %q", tier, got, want)
+			}
+		}
+		return
+	}
+	if got := qwenTierFailClosedDetail("", "0.6b"); got != "" {
+		t.Errorf("0.6b detail = %q, want empty (never fails closed)", got)
 	}
 	if got := qwenTierFailClosedDetail("", "1.7b"); got == "" {
 		t.Error("pinned-release 1.7b detail = \"\", want the fail-closed explanation")

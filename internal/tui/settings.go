@@ -499,6 +499,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		m.buildLanguageItems()
 		if m.nativeStatus.Installed {
 			m.message = "Native Qwen package ready; open Voice for presets, Qwen tab for tier/consent/cache"
+		} else if m.cfg != nil && managedqwen.ResolveNativeURL(m.cfg.QwenTTSNativeURL) == "" {
+			m.message = "Qwen activated, but " + managedqwen.UnavailableHint()
 		} else {
 			m.message = "Qwen activated; open Settings → Qwen → Install package (or run models ensure --tts)"
 		}

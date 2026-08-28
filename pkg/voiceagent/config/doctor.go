@@ -132,7 +132,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		} else if managed {
 			providerDetail = "qwen3-tts (product path; native package required)"
 			controlsDetail = "native CustomVoice speaker selection"
-			controlsRemediation = "run 'obey-voice models ensure --tts' to install the native package"
+			controlsRemediation = qwen.InstallRemediation(cfg.QwenTTSNativeURL)
 		} else if isNativeWorkerBinary(binary) {
 			providerDetail = "qwen3-tts (explicit native worker)"
 			controlsDetail = "native CustomVoice speaker selection"
@@ -195,17 +195,18 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 				diags = append(diags, Diagnostic{Name: "qwen3-tts-binary", Severity: SeverityWarn, Detail: native.Worker + " (worker present; runtime libs incomplete)"})
 				diags = append(diags, Diagnostic{Name: "qwen3-tts-model", Severity: SeverityOK, Detail: native.ModelDir + " (tier " + native.DefaultTier + ")"})
 			} else {
+				nativeRemediation := qwen.InstallRemediation(cfg.QwenTTSNativeURL)
 				diags = append(diags, Diagnostic{
 					Name:        "qwen3-tts-binary",
 					Severity:    SeverityError,
 					Detail:      "native Qwen3-TTS package is not installed under models/qwen3-tts",
-					Remediation: "run 'obey-voice models ensure --tts' (downloads the published platform package; override with qwen_tts_native_url if needed)",
+					Remediation: nativeRemediation,
 				})
 				diags = append(diags, Diagnostic{
 					Name:        "qwen3-tts-model",
 					Severity:    SeverityError,
 					Detail:      "native Qwen GGUF models are not installed",
-					Remediation: "run 'obey-voice models ensure --tts'",
+					Remediation: nativeRemediation,
 				})
 			}
 		} else {
