@@ -86,9 +86,9 @@ func addSceneFlags(cmd *cobra.Command, opts *scene.Options) {
 	f.BoolVar(&opts.RequireDistinctVoices, "require-distinct-voices", false, "Fail instead of warning when the cast shares one voice")
 }
 
-// runScenePlan reports the resolved scene plan. The synthesis runtime is wired
-// in the next task; for now this validates the script, resolves the cast, and
-// shows what would be recorded.
+// runScenePlan reports the resolved scene plan without recording anything. It
+// is the runner the cgo-free integration binary ships: that build has no audio
+// stack, so it validates the script and shows what the real binary would record.
 func runScenePlan(cmd *cobra.Command, opts scene.Options) error {
 	return runScenePlanWith(cmd, opts, loadScenePersona)
 }
@@ -133,7 +133,7 @@ func writeScenePlan(out io.Writer, plan *scene.Plan) {
 	for _, member := range plan.Cast {
 		fmt.Fprintf(out, "      %s — %s (%s)\n", member.ID, member.DisplayName, member.Mouth)
 	}
-	fmt.Fprintln(out, "  (scene synthesis is wired in the next task; no audio produced yet)")
+	fmt.Fprintln(out, "  (this build validates scripts only; no audio produced)")
 }
 
 // loadScenePersona resolves a cast persona, naming the ids that do exist when

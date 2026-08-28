@@ -231,3 +231,23 @@ func TestSceneCmdPlanWritesNothing(t *testing.T) {
 		t.Fatalf("plan runner created %s", outDir)
 	}
 }
+
+// runScenePlan is the runner the cgo-free integration binary ships. A broken
+// script has to report itself before the plan runner goes looking for personas,
+// so this exercises the shipped entry point without reading the operator's
+// install.
+func TestSceneCmdPlanRunnerReportsScriptProblems(t *testing.T) {
+	cmd := newSceneCmd(runScenePlan)
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{filepath.Join(t.TempDir(), "missing.yaml"), "--out-dir", "out"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("the plan runner accepted a script that does not exist")
+	}
+	if !contains(err.Error(), "scene: reading script") {
+		t.Errorf("error = %v, want the script read failure", err)
+	}
+}

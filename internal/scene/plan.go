@@ -41,12 +41,15 @@ func orAppDefault(value string) string {
 	return value
 }
 
-// ResolvedCast is one cast member with their persona profile loaded.
+// ResolvedCast is one cast member with their persona profile loaded. Mouth
+// records what the profile *declares*; the effective mouth is only known once
+// the profile has been applied to a config (see BuildCast).
 type ResolvedCast struct {
 	ID          string // scene-local speaker id
 	PersonaID   string
 	DisplayName string
 	Mouth       Mouth
+	Profile     *persona.Profile
 }
 
 // ResolveCast loads every cast member's persona through load. It is the only
@@ -74,6 +77,7 @@ func (d *Document) ResolveCast(ctx context.Context, load PersonaLoader) ([]Resol
 				Voice:    profile.TTS.Voice,
 				Tier:     profile.TTS.Tier,
 			},
+			Profile: profile,
 		})
 	}
 	return resolved, nil
@@ -115,7 +119,7 @@ func BuildPlan(ctx context.Context, doc *Document, opts Options, load PersonaLoa
 		return nil, fmt.Errorf("scene: --mode verbatim needs turns[]: the script has none")
 	}
 
-	warnings := sharedMouths(cast)
+	warnings := declaredSharedMouths(cast)
 	if len(warnings) > 0 && opts.RequireDistinctVoices {
 		return nil, fmt.Errorf("scene: --require-distinct-voices: %s", warnings[0])
 	}
@@ -133,20 +137,36 @@ func BuildPlan(ctx context.Context, doc *Document, opts Options, load PersonaLoa
 	}, nil
 }
 
-// sharedMouths reports each group of cast members that would speak with the
-// same voice, in cast order. Personas that both inherit the app voice collide
-// on it, which is why an empty Mouth compares like any other value.
-func sharedMouths(cast []ResolvedCast) []string {
-	groups := map[Mouth][]string{}
+// declaredSharedMouths reports collisions visible from the persona documents
+// alone, which is all a plan-only run can see. It catches the symmetric case
+// (both personas declare the same voice, or neither declares one) but not a
+// persona inheriting an app default another names outright — SharedVoices does
+// that, once the profiles have been applied.
+func declaredSharedMouths(cast []ResolvedCast) []string {
+	ids := make([]string, 0, len(cast))
+	mouths := make([]Mouth, 0, len(cast))
 	for _, member := range cast {
-		groups[member.Mouth] = append(groups[member.Mouth], member.ID)
+		ids = append(ids, member.ID)
+		mouths = append(mouths, member.Mouth)
+	}
+	return sharedMouths(ids, mouths)
+}
+
+// sharedMouths reports each group of speakers that would sound identical, in
+// speaker order. Two speakers that resolve to the same provider and voice are
+// one mouth reading both parts, which is why an empty Mouth compares like any
+// other value.
+func sharedMouths(ids []string, mouths []Mouth) []string {
+	groups := map[Mouth][]string{}
+	for i, mouth := range mouths {
+		groups[mouth] = append(groups[mouth], ids[i])
 	}
 	var warnings []string
-	for mouth, ids := range groups {
-		if len(ids) < 2 {
+	for mouth, group := range groups {
+		if len(group) < 2 {
 			continue
 		}
-		warnings = append(warnings, fmt.Sprintf("%s speak with the same voice %s", strings.Join(ids, " and "), mouth))
+		warnings = append(warnings, fmt.Sprintf("%s speak with the same voice %s", strings.Join(group, " and "), mouth))
 	}
 	sort.Strings(warnings)
 	return warnings
