@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
@@ -41,8 +42,29 @@ type speechSession struct {
 	rate     int
 
 	streaming bool
-	presets   []string
+	capable   bool
+	// requestStream is the host's decision for this transport, applied by the
+	// provider once the handshake has said whether the worker can honour it.
+	// Atomic because Capabilities() and the metrics path read it off the
+	// synthesis goroutine.
+	requestStream atomic.Bool
+	presets       []string
 }
+
+// applyStreamPolicy records whether this session asks the worker for Stage B
+// chunks. It is only meaningful on a capable worker: an incapable one ignores
+// the request field, and telling it otherwise would make Capabilities() claim
+// a behaviour the wire will not produce.
+func (s *speechSession) applyStreamPolicy(stream bool) {
+	s.requestStream.Store(stream && s.capable)
+}
+
+// StreamingCapable reports the worker's ready.streaming_capable.
+func (s *speechSession) StreamingCapable() bool { return s != nil && s.capable }
+
+// StreamRequested reports whether this session asks for chunks, which is what
+// decides whether the PCM it produces can be played before synthesis ends.
+func (s *speechSession) StreamRequested() bool { return s != nil && s.requestStream.Load() }
 
 func (s *speechSession) Presets() []string {
 	if s == nil {
@@ -78,10 +100,19 @@ func (s *speechSession) SynthesizeToStream(ctx context.Context, req SynthesisReq
 	s.request++
 	id := fmt.Sprintf("nqwen-%d", s.request)
 
-	msg := map[string]string{
+	msg := map[string]any{
 		"type": "synthesize",
 		"id":   id,
 		"text": req.Text,
+	}
+	// Only a capable worker is told anything about streaming, so the request a
+	// Stage A worker reads is byte-identical to the one it has always read.
+	// A capable one is told explicitly in both directions, never by omission:
+	// its own default comes from QWEN3_TTS_STREAM in whatever environment
+	// started it, so leaving the field out on a Metal box would stream exactly
+	// where this host has decided it must not.
+	if s.capable {
+		msg["stream"] = s.requestStream.Load()
 	}
 	if ref := strings.TrimSpace(req.ReferenceAudio); ref != "" && s.referenceAudio {
 		msg["ref_wav"] = ref
@@ -117,9 +148,16 @@ func (s *speechSession) SynthesizeToStream(ctx context.Context, req SynthesisReq
 }
 
 // readSynthesis consumes control lines until final, writing PCM as it arrives.
-// Stage B emits several pcm_meta before final; this loop already concatenates.
+// Stage A sends one pcm_meta, Stage B several; this loop concatenates either.
+//
+// A Stage B worker numbers its chunks and totals them on final precisely so a
+// reader can tell a complete stream from a truncated one. Those fields are
+// checked here, not discarded: without them a dropped chunk arrives as audio
+// that is simply shorter than what was said, which is the one failure a
+// listener cannot detect and the pipeline would score as a healthy turn.
 func (s *speechSession) readSynthesis(ctx context.Context, id string, stream *audio.PCMStream) error {
 	rateSet := false
+	var tally chunkTally
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = s.sendCancel(id)
@@ -139,6 +177,13 @@ func (s *speechSession) readSynthesis(ctx context.Context, id string, stream *au
 			Message    string `json:"message"`
 			SampleRate int    `json:"sample_rate"`
 			NSamples   int    `json:"n_samples"`
+			// Chunk is this frame's 0-based index within a streamed response.
+			// A pointer because absent (Stage A) and 0 (the first streamed
+			// chunk) are different facts.
+			Chunk *int `json:"chunk"`
+			// Chunks is the total the worker claims to have sent, present only
+			// on a streamed final.
+			Chunks int `json:"chunks"`
 		}
 		if err := json.Unmarshal([]byte(line), &head); err != nil {
 			return fmt.Errorf("%s line: %w (%q)", s.label, err, line)
@@ -147,10 +192,16 @@ func (s *speechSession) readSynthesis(ctx context.Context, id string, stream *au
 		case "error":
 			return fmt.Errorf("%s error: %s", s.label, head.Message)
 		case "pcm_meta":
+			if err := tally.accept(s.label, head.Chunk, head.NSamples); err != nil {
+				return err
+			}
 			if err := s.readPCMChunk(ctx, id, head.NSamples, head.SampleRate, &rateSet, stream); err != nil {
 				return err
 			}
 		case "final":
+			if err := tally.verify(s.label, head.Chunks, head.NSamples); err != nil {
+				return err
+			}
 			if !rateSet {
 				if err := stream.SetSampleRate(qwen3TTSSampleRate); err != nil {
 					return err
@@ -163,6 +214,59 @@ func (s *speechSession) readSynthesis(ctx context.Context, id string, stream *au
 			// ignore future control types
 		}
 	}
+}
+
+// chunkTally counts what a response actually delivered so the worker's own
+// totals can be checked against it.
+type chunkTally struct {
+	frames   int
+	samples  int
+	indexed  bool
+	nextIdx  int
+	numbered int
+}
+
+// accept records one pcm_meta and rejects a gap in the chunk numbering.
+//
+// Out-of-order or missing indices are the shape a lost frame takes on a
+// byte-stream transport: the payload lengths still line up, so nothing else in
+// the reader would notice.
+func (t *chunkTally) accept(label string, index *int, samples int) error {
+	t.frames++
+	t.samples += samples
+	if index == nil {
+		return nil
+	}
+	t.indexed = true
+	t.numbered++
+	if *index != t.nextIdx {
+		return fmt.Errorf("%s pcm chunk %d arrived where %d was expected; a chunk was dropped or reordered", label, *index, t.nextIdx)
+	}
+	t.nextIdx++
+	return nil
+}
+
+// verify checks a streamed final's totals against what was read.
+//
+// Stage A sends neither field and is not checked — there is nothing to check,
+// one blob either arrives or the read fails. A response that carried numbered
+// chunks but ends without totals is a different matter: something between the
+// worker and here dropped the fields that make truncation detectable, and
+// accepting it would be accepting exactly the silence this guards against.
+func (t *chunkTally) verify(label string, chunks, samples int) error {
+	if chunks <= 0 {
+		if t.indexed {
+			return fmt.Errorf("%s streamed %d chunks but final carried no chunk total", label, t.numbered)
+		}
+		return nil
+	}
+	if chunks != t.frames {
+		return fmt.Errorf("%s final reports %d chunks, host read %d", label, chunks, t.frames)
+	}
+	if samples > 0 && samples != t.samples {
+		return fmt.Errorf("%s final reports %d samples, host read %d", label, samples, t.samples)
+	}
+	return nil
 }
 
 func (s *speechSession) readPCMChunk(ctx context.Context, id string, n, metaRate int, rateSet *bool, stream *audio.PCMStream) error {

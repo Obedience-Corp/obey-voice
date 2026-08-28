@@ -356,6 +356,8 @@ type turnMetrics struct {
 	// written only from the turn loop goroutine.
 	lastPlaybackEnd time.Time
 	deadAir         time.Duration
+	// underruns totals the gaps *inside* segments, which deadAir cannot see.
+	underruns int
 }
 
 func newTurnMetrics() *turnMetrics {
@@ -383,6 +385,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		FirstAudioGrace:         m.firstAudioGrace,
 		StallWatchdogFired:      m.stallWatchdogFired,
 		DeadAirElapsed:          m.deadAir,
+		Underruns:               m.underruns,
 		Segments:                append([]events.SegmentMetric(nil), m.segments...),
 	}
 }
@@ -399,7 +402,9 @@ func (m *turnMetrics) recordSegment(event playbackEvent) {
 		PlayElapsed:   event.playElapsed,
 		Fallback:      event.fallback,
 		Interrupted:   event.result.Interrupted,
+		Underruns:     event.result.Underruns,
 	})
+	m.underruns += event.result.Underruns
 	if event.fallback {
 		m.ttsFallbacks++
 	}
@@ -506,12 +511,20 @@ const underrunDeadAirShare = 0.25
 // time is one people learn to ignore. It is also deliberately not an
 // automatic downgrade — which voice to use is the operator's call, not a
 // decision to make silently on their behalf mid-conversation.
+//
+// It fires on either of two symptoms of the same illness. Silence between
+// sentences is what a whole-utterance engine does when it falls behind. Gaps
+// inside a sentence are what an incrementally-played one does, and those are
+// worse — the reply stutters mid-word — so a single one is enough to say so
+// rather than a quarter of the turn.
 func (p *Pipeline) warnIfSynthesisCannotKeepUp(m events.TurnMetrics) {
-	if m.DeadAirElapsed <= 0 || m.Interrupted {
+	if m.Interrupted {
 		return
 	}
 	speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed
-	if speaking <= 0 || float64(m.DeadAirElapsed)/float64(speaking) < underrunDeadAirShare {
+	deadAirShare := m.DeadAirElapsed > 0 && speaking > 0 &&
+		float64(m.DeadAirElapsed)/float64(speaking) >= underrunDeadAirShare
+	if !deadAirShare && m.Underruns == 0 {
 		return
 	}
 	engine := m.TTSProvider
@@ -521,11 +534,25 @@ func (p *Pipeline) warnIfSynthesisCannotKeepUp(m events.TurnMetrics) {
 	if m.TTSTier != "" {
 		engine += " " + m.TTSTier
 	}
+	symptom := fmt.Sprintf("%s of that reply's %s speaking time was silence between sentences",
+		m.DeadAirElapsed.Round(time.Second), speaking.Round(time.Second))
+	remedy := "A faster voice (Settings → TTS) removes the gaps."
+	if m.Underruns > 0 {
+		symptom = fmt.Sprintf("that reply broke up %s while it was still being generated",
+			pluralize(m.Underruns, "time", "times"))
+		remedy = "Set qwen_tts_stream to off to speak whole sentences instead, or use a faster voice (Settings → TTS)."
+	}
 	p.underrunOnce.Do(func() {
 		p.emit(events.Info{Message: fmt.Sprintf(
-			"%s is synthesizing slower than it plays: %s of that reply's %s speaking time was silence between sentences. A faster voice (Settings → TTS) removes the gaps.",
-			engine, m.DeadAirElapsed.Round(time.Second), speaking.Round(time.Second))})
+			"%s is synthesizing slower than it plays: %s. %s", engine, symptom, remedy)})
 	})
+}
+
+func pluralize(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 // logDegradedTurn writes the underlying error to stderr with a timestamp and
@@ -1358,8 +1385,10 @@ func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct
 			return false
 		}
 	}
-	// PlayStream returns once the complete utterance is buffered, so this is
-	// where synthesis actually ended. Everything after it is queue wait.
+	// For a whole-utterance engine PlayStream returns once the audio is
+	// buffered, so this is where synthesis ended. A streamed segment becomes
+	// audible long before that; watchPlayback replaces this with the player's
+	// own stamp of when the last frame arrived.
 	engineElapsed := time.Since(synthStarted)
 
 	// PlayStream buffers a complete sentence before enqueueing it. Muting can
@@ -1892,7 +1921,7 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 			sentence:      sentence,
 			index:         index,
 			fallback:      fallback,
-			engineElapsed: engineElapsed,
+			engineElapsed: measuredEngineElapsed(synthStarted, engineElapsed, result),
 			synthElapsed:  time.Since(synthStarted),
 			result:        result,
 		})
@@ -1915,11 +1944,32 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 		sentence:      sentence,
 		index:         index,
 		fallback:      fallback,
-		engineElapsed: engineElapsed,
+		engineElapsed: measuredEngineElapsed(synthStarted, engineElapsed, result),
 		synthElapsed:  synthElapsed,
 		playElapsed:   elapsed,
 		result:        result,
 	})
+}
+
+// measuredEngineElapsed prefers the player's stamp of when the synthesizer
+// stopped producing over the caller's own timing.
+//
+// They agree for a whole-utterance engine — PlayStream returns immediately
+// after the stream closes — and they disagree by the length of the reply for a
+// streamed one, which becomes audible on its first chunk. Without this the
+// realtime factor of every streamed segment would read as a fraction of its
+// true value, and RealtimeFactor is the number that decides whether an engine
+// can keep up. A missing stamp (an interrupted segment, or a player that does
+// not report one) keeps the caller's measurement.
+func measuredEngineElapsed(synthStarted time.Time, fallback time.Duration, result audio.PlaybackResult) time.Duration {
+	if result.SynthesisEndedAt.IsZero() {
+		return fallback
+	}
+	measured := result.SynthesisEndedAt.Sub(synthStarted)
+	if measured <= 0 {
+		return fallback
+	}
+	return measured
 }
 
 // sendPlaybackEvent delivers ev unless the loop has stopped consuming, returning

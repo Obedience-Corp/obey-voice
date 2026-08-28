@@ -78,10 +78,14 @@ func (a *AudioFanout) PlayStream(ctx context.Context, stream *audio.PCMStream) (
 	var localStream *audio.PCMStream
 	var localReady <-chan localStart
 	if a.local != nil {
-		localStream = audio.NewPCMStream(ctx)
-		if err := localStream.SetSampleRate(sampleRate); err != nil {
-			return nil, err
-		}
+		// Derive, never NewPCMStream: the local speaker is handed a different
+		// object from the one the synthesizer produced, so everything that says
+		// *how* this audio must be played has to travel with it. Copying the
+		// sample rate by hand — which this used to do — silently dropped both
+		// the Stage B incremental flag and the stall budget, leaving chunk
+		// playback and stall-to-fallback inert under `serve` (the Mac app path)
+		// while every other path had them.
+		localStream = stream.Derive(ctx)
 		ch := make(chan localStart, 1)
 		localReady = ch
 		go func() {

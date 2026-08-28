@@ -49,6 +49,10 @@ func newRemoteQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	if language, ok := managedqwen.CanonicalLanguage(strings.TrimSpace(cfg.QwenTTSLanguage)); ok {
 		q.language = language
 	}
+	q.streamMode = config.QwenTTSStreamOf(cfg)
+	// No backend hint over the LAN: the install manifest describes this
+	// computer, which is not the one synthesizing. Eligibility for lan does not
+	// consult it (see config.QwenStreamEligible).
 	q.alive.Store(true)
 	q.startSpeech = func(ctx context.Context) (qwenSpeechSession, error) {
 		return dialRemoteQwenSession(ctx, cfg)
@@ -59,6 +63,7 @@ func newRemoteQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 		q.alive.Store(false)
 		return nil, err
 	}
+	q.applyStreamPolicy(session)
 	q.speech = session
 	q.speechRef.Store(&session)
 	return q, nil
@@ -146,6 +151,7 @@ func dialRemoteQwenSession(ctx context.Context, cfg *config.Config) (*remoteQwen
 		return nil, speechUnavailable("dial speech worker", err)
 	}
 	session.streaming = ready.Streaming
+	session.capable = ready.streamCapable()
 	session.presets = append([]string(nil), ready.Presets...)
 	session.tier = strings.TrimSpace(ready.Tier)
 	return session, nil

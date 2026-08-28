@@ -55,16 +55,36 @@ var errNotReady = errors.New("handshake failed")
 var errNoActiveRequest = errors.New("no active request")
 
 type speechReadyMsg struct {
-	Type       string   `json:"type"`
-	Protocol   string   `json:"protocol"`
-	SampleRate int      `json:"sample_rate"`
-	PCMFormat  string   `json:"pcm_format"`
-	Streaming  bool     `json:"streaming"`
-	Presets    []string `json:"presets,omitempty"`
-	Note       string   `json:"note,omitempty"`
+	Type       string `json:"type"`
+	Protocol   string `json:"protocol"`
+	SampleRate int    `json:"sample_rate"`
+	PCMFormat  string `json:"pcm_format"`
+	// Streaming is the worker's own default for a request that does not say.
+	Streaming bool `json:"streaming"`
+	// StreamingCapable is whether the worker was built against an engine with
+	// a PCM callback at all. It is the field that decides whether asking for
+	// chunks means anything: a worker can be capable and still default to
+	// whole-utterance, and a worker that is not capable ignores the request
+	// field entirely. Absent (every Stage A worker in the field today) decodes
+	// as false, which is the truth about them.
+	StreamingCapable bool     `json:"streaming_capable"`
+	Presets          []string `json:"presets,omitempty"`
+	Note             string   `json:"note,omitempty"`
 	// Tier is optional and speech-serve only; the child worker never emits it
 	// and no path may require it.
 	Tier string `json:"tier,omitempty"`
+}
+
+// streamCapable reports whether this worker can emit PCM during synthesis.
+//
+// streaming_capable is the direct answer, but a worker that reports
+// streaming=true has already answered it: its default is computed as
+// capability AND the environment flag, so it cannot default to streaming
+// without being capable. Reading both keeps a worker that advertises only the
+// older field from being told to speak whole utterances it was built to
+// stream.
+func (r speechReadyMsg) streamCapable() bool {
+	return r.StreamingCapable || r.Streaming
 }
 
 func newSpeechConn(label, proto string, r io.Reader, w io.Writer, closer io.Closer) *speechConn {

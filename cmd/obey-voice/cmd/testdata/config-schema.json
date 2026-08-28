@@ -137,7 +137,8 @@
       "default": "kokoro",
       "enum": [
         "kokoro",
-        "qwen3-tts"
+        "qwen3-tts",
+        "audio8"
       ],
       "allows_empty": false,
       "group": "voice",
@@ -306,7 +307,8 @@
       "default": "kokoro",
       "enum": [
         "kokoro",
-        "qwen3-tts"
+        "qwen3-tts",
+        "audio8"
       ],
       "allows_empty": false,
       "group": "voice",
@@ -870,7 +872,7 @@
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
-      "env": "WORK_DIR",
+      "env": "OBEY_VOICE_WORK_DIR",
       "editable": true
     },
     {
@@ -1260,6 +1262,25 @@
       "editable": true
     },
     {
+      "key": "qwen_tts_stream",
+      "type": "enum",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "on",
+        "off"
+      ],
+      "allows_empty": false,
+      "group": "models",
+      "title": "Qwen chunk playback",
+      "help": "Whether Qwen starts speaking on its first chunk instead of the finished sentence. Auto only does it where that was measured not to stutter.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "QWEN_TTS_STREAM",
+      "editable": true
+    },
+    {
       "key": "qwen_tts_timeout",
       "type": "int",
       "default": 120,
@@ -1392,7 +1413,7 @@
       "allows_empty": true,
       "group": "models",
       "title": "transcribe.cpp path",
-      "help": "Where the transcribe.cpp command lives. A bare name is looked up on PATH.",
+      "help": "Where the transcribe.cpp command lives. A bare name is looked up on PATH, then in the copy models ensure installs; a path set here wins over both.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

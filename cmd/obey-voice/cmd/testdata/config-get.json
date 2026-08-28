@@ -190,6 +190,10 @@
       "value": "",
       "source": "default"
     },
+    "qwen_tts_stream": {
+      "value": "auto",
+      "source": "default"
+    },
     "qwen_tts_timeout": {
       "value": 120,
       "source": "default"

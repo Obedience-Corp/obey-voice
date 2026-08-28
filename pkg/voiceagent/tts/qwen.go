@@ -145,6 +145,12 @@ type Qwen3TTS struct {
 	// that assumes a local worker: GGUF paths, ref_wav, disk presets.
 	remote     bool
 	remoteAddr string
+	// streamMode is the resolved qwen_tts_stream setting and backendHint is
+	// what the installed package says it was built against. Together with the
+	// worker's advertised capability they decide whether this host plays PCM
+	// chunks as they arrive; see config.QwenStreamEligible.
+	streamMode  string
+	backendHint string
 }
 
 // NewQwen3TTS resolves the native package or an explicit external CLI/worker.
@@ -167,6 +173,7 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	managed := false
 	native := false
 	workerScript := ""
+	backendHint := ""
 
 	// Prefer explicit native worker binary.
 	if binary != "" && isNativeWorkerBinary(binary) {
@@ -178,6 +185,7 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 		// Product default: empty binary/model → ensure-installed native package.
 		binary = install.Worker
 		model = install.ModelDir
+		backendHint = install.BackendHint
 		native = true
 	} else if managedqwen.UseManaged(binary, model) {
 		// No Python product path: require native package.
@@ -246,6 +254,8 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	q.managed = managed
 	q.native = native
 	q.workerScript = workerScript
+	q.streamMode = config.QwenTTSStreamOf(cfg)
+	q.backendHint = backendHint
 	if managed || native {
 		if q.mode == "" || q.mode == VoiceModeStatic {
 			q.mode = VoiceModeCustomVoice
@@ -278,6 +288,7 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 			q.alive.Store(false)
 			return nil, fmt.Errorf("qwen3-tts: %w", err)
 		}
+		q.applyStreamPolicy(session)
 		q.speech = session
 		q.speechRef.Store(&session)
 	} else if managed {
@@ -332,12 +343,38 @@ func (q *Qwen3TTS) SpeechPlace() string {
 	return PlaceLocal
 }
 
-// WorkerStreaming reports the worker's ready.streaming frame. Stage A workers
-// answer false: PCM exists only once the whole utterance is generated, so
-// time-to-first-audio is the synthesis and no earlier.
+// WorkerStreaming reports whether this session's PCM actually arrives during
+// synthesis: the worker can stream and this host asked it to. Stage A workers,
+// and capable workers this host has decided not to stream from, answer false —
+// for both, time-to-first-audio is the whole synthesis and no earlier, which
+// is what a latency artifact needs to know.
 func (q *Qwen3TTS) WorkerStreaming() bool {
-	session := q.liveSession()
-	return session != nil && session.Streaming()
+	return streamRequestedOn(q.liveSession())
+}
+
+// applyStreamPolicy tells a freshly-opened session whether to ask for chunks.
+// It runs after every handshake — a worker restart re-decides rather than
+// inheriting, because the replacement worker answers the capability question
+// for itself.
+func (q *Qwen3TTS) applyStreamPolicy(session qwenSpeechSession) {
+	applier, ok := session.(interface {
+		applyStreamPolicy(bool)
+		StreamingCapable() bool
+	})
+	if !ok {
+		return
+	}
+	applier.applyStreamPolicy(config.QwenStreamEligible(
+		q.streamMode, q.remote, q.backendHint, applier.StreamingCapable(),
+	))
+}
+
+// streamRequestedOn reports whether a session is asking its worker for chunks.
+// A transport that cannot answer (the managed fixture sessions) is not
+// streaming, which is the truth about it rather than a guess.
+func streamRequestedOn(session qwenSpeechSession) bool {
+	reporter, ok := session.(interface{ StreamRequested() bool })
+	return ok && reporter.StreamRequested()
 }
 
 // workerTier is the tier the speech worker named for itself, when the
@@ -379,6 +416,13 @@ func (q *Qwen3TTS) FirstAudioGrace() time.Duration {
 // wait is the synthesis: expected audio duration times the realtime factor
 // the tier is expected to hold, plus a cold-start allowance while the worker
 // is still coming up.
+//
+// A streaming session reaches its first audible frame far sooner than that, so
+// this budget is generous rather than wrong there — and it stays deliberately
+// sized for the whole utterance, because the same session falls back to Stage
+// A whenever the worker turns out not to be capable. What streaming needs
+// bounded is the *silence between chunks*, which is a different budget the
+// pipeline arms separately (boundPrimarySilence).
 //
 // qwen_tts_timeout is a CAP here, not the budget. It bounds the synthesis call
 // itself (see Synthesize, which wraps the request in a context with this
@@ -703,6 +747,11 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req SynthesisRequ
 		return err
 	}
 
+	// Declared before the first frame: the player reads it once, when it takes
+	// the segment. A session that is not streaming leaves it false, so the
+	// whole-utterance path is unchanged down to the byte.
+	stream.SetIncremental(streamRequestedOn(q.speech))
+
 	err := q.speech.SynthesizeToStream(ctx, req, stream)
 	if err == nil {
 		return nil
@@ -711,9 +760,26 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req SynthesisRequ
 	if ctx.Err() != nil || !managedWorkerRestartable(err) {
 		return err
 	}
+	// Retrying is only free while nothing has been heard. Once samples have
+	// been handed to the player, part of the sentence is already in front of
+	// the listener, and synthesizing it again from the top would append a
+	// second copy to the same stream — the sentence spoken twice, concatenated.
+	// So the segment ends here: the listener hears a truncated sentence, the
+	// pipeline surfaces the error, and nothing is repeated. The turn's Kokoro
+	// fallback does not cover this — playFallback only runs for a failure
+	// raised before the player owns the stream — which is the right trade,
+	// because the alternative is saying half a sentence twice.
+	if stream.Written() > 0 {
+		return fmt.Errorf("%s failed after %d samples were already playing: %w", q.speechLabel(), stream.Written(), err)
+	}
 	if restartErr := q.ensureSpeechSessionLocked(ctx); restartErr != nil {
 		return fmt.Errorf("%s failed (%v); reconnect failed: %w", q.speechLabel(), err, restartErr)
 	}
+	// The replacement worker answers the capability question for itself, so the
+	// stream has to be re-declared against it rather than left describing the
+	// session that just died. Nothing has been written yet (guarded above), so
+	// the player has not read the flag and a change here is still in time.
+	stream.SetIncremental(streamRequestedOn(q.speech))
 	if retryErr := q.speech.SynthesizeToStream(ctx, req, stream); retryErr != nil {
 		q.discardSpeechSessionLocked()
 		return fmt.Errorf("%s failed after one reconnect: %w", q.speechLabel(), retryErr)
@@ -743,6 +809,7 @@ func (q *Qwen3TTS) ensureSpeechSessionLocked(ctx context.Context) error {
 		}
 		return fmt.Errorf("start native worker: %w", err)
 	}
+	q.applyStreamPolicy(session)
 	q.speech = session
 	q.speechRef.Store(&session)
 	return nil

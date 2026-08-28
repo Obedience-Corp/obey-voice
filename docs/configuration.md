@@ -89,6 +89,7 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `qwen_tts_model_tier` | `0.6b` | `QWEN_TTS_MODEL_TIER` | Preferred native tier (`0.6b` or `1.7b` when present) |
 | `qwen_tts_native_url` | platform release | `QWEN_TTS_NATIVE_URL` / `OBEY_VOICE_QWEN_NATIVE_URL` | Empty uses the published `qwen3-tts-native` release for this OS/arch; override for custom builds |
 | `qwen_tts_native_sha256` | platform release | `QWEN_TTS_NATIVE_SHA256` / `OBEY_VOICE_QWEN_NATIVE_SHA256` | Archive digest matching the default or configured URL |
+| `qwen_tts_stream` | `auto` | `QWEN_TTS_STREAM` | Whether Qwen's PCM chunks are played as they arrive instead of after the whole sentence. `auto` streams only where it was measured not to break up: `tts_place: lan`, or a local package whose `backend_hint` is `cuda`. `on` / `off` force it. A worker that cannot stream ignores all three. See [Chunk playback](#chunk-playback-qwen-stage-b) |
 | `qwen_tts_timeout` | `120` | `QWEN_TTS_TIMEOUT` | Per-request native/external worker timeout in seconds |
 | `qwen_tts_mode` | empty | `QWEN_TTS_MODE` | Product setup resolves empty to `customvoice` |
 | `qwen_tts_voice` | empty | `QWEN_TTS_VOICE` | CustomVoice preset (`Vivian`, `Serena`, …) or shipped clone (`Veronica`). Empty resolves to `Veronica`. **A clone voice cannot travel to a speech worker** — its throat is a recording on this computer — so under `tts_place: lan` that computer speaks in its own voice and Obey Voice warns at conversation start and in `doctor`. Pick a preset voice for LAN speech |
@@ -178,6 +179,61 @@ rather than assuming:
 - Working directory: /Users/you/Dev/My_Tools
 - Campaign: My_Tools (root: /Users/you/Dev/My_Tools)
 ```
+
+## Chunk playback (Qwen Stage B)
+
+A Stage B `qwen3-tts-worker` emits PCM while it is still synthesizing, one
+numbered `pcm_meta` chunk at a time, instead of one blob at the end. When Obey
+Voice plays those chunks as they arrive, a reply starts speaking on the first
+chunk rather than on the finished sentence.
+
+That is only safe where synthesis runs **faster than realtime**. Streaming
+changes when the first sample arrives; it does not change how fast samples are
+produced. If the engine produces audio more slowly than the speaker consumes
+it, the player drains the buffer and the sentence breaks up mid-word — which is
+worse than waiting, because a whole-utterance segment never runs dry.
+
+Measured 2026-08-27 (`qwen3-tts-native` `docs/latency/stage_b_streaming_2026-08-27.json`,
+0.6b, multi-sentence fixture, 15 runs each):
+
+| Backend | TTFA p50 | RTF | Underruns | Gate |
+|---------|----------|-----|-----------|------|
+| CUDA (RTX 5060 Ti) | 435 ms | 0.55 | 0 | pass |
+| Metal (M4 Max) | 1295 ms | 1.66 | 120 | **fail** |
+
+Metal's RTF gets *worse* when streaming (1.40 whole-utterance → 1.66), and the
+pre-buffer that would prevent its dropouts is 15.6 s on a 23 s reply — so the
+effective time to first audio would be ~16 s, not the 1.3 s the TTFA column
+suggests. `auto` therefore streams over `tts_place: lan` (the CUDA offload
+target this exists for) and on a local package whose install manifest reports
+`backend_hint: cuda`, and keeps whole sentences everywhere else, including any
+backend nobody has measured.
+
+`doctor` prints the decision as the `qwen3-tts-streaming` row. If a reply does
+break up, the turn's metrics count it (`Underruns`, per segment and per turn)
+and the session says so once — set `qwen_tts_stream: off` to go back to whole
+sentences.
+
+Two things worth knowing about a **local CUDA** package: Obey Voice does not
+set `QWEN3_TTS_BACKEND`, and the worker's own auto backend selection does not
+always reach the fast all-CUDA placement (~3.5× slower when it misses; see
+`docs/benchmarks/F8-qwen-tts-cuda-2026-08-27.json`). The worker inherits the
+environment Obey Voice was started in, so exporting `QWEN3_TTS_BACKEND=cuda`
+before launching is what makes the measured numbers the ones you get.
+
+### Measuring it here (E9 follow-up)
+
+The numbers above are the worker's, measured in `qwen3-tts-native`'s own
+harness. The product number is the full turn, and it is measured with the
+existing bench, not a new one: run `just bench` against a conversation fixture
+twice on the same machine and the same worker — once with `qwen_tts_stream:
+off` and once with `on` — and compare `PlaybackStartElapsed`, which is the
+listener's actual wait, plus per-segment `RealtimeFactor` and `Underruns` from
+the turn metrics. A `PlaybackStartElapsed` that does not move means STT and the
+brain dominate and the TTS win is invisible; any non-zero `Underruns` on the
+streamed run means that machine must not stream, whatever its TTFA says. The
+two-machine Topology B run (host here, CUDA worker over `speech-serve`) is the
+one that exercises the LAN default and needs both computers.
 
 ## transcribe.cpp (optional STT)
 

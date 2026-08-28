@@ -84,12 +84,18 @@ type NativeStatus struct {
 	DefaultTier  string   `json:"default_tier"`
 	TiersReady   []string `json:"tiers_ready"`
 	TiersMissing []string `json:"tiers_missing,omitempty"`
-	EngineSHA    string   `json:"engine_sha,omitempty"`
-	RepoCommit   string   `json:"repo_commit,omitempty"`
-	Root         string   `json:"root"`
-	Worker       string   `json:"worker"`
-	ModelDir     string   `json:"model_dir"`
-	Detail       string   `json:"detail,omitempty"`
+	// BackendHint is what the package was built against (metal, cuda, cpu), as
+	// recorded by the release packager. It is a hint, not a guarantee: the
+	// worker still selects a backend at runtime. Callers use it to answer
+	// "which silicon do this install's published measurements describe", never
+	// to assert what the worker is doing right now.
+	BackendHint string `json:"backend_hint,omitempty"`
+	EngineSHA   string `json:"engine_sha,omitempty"`
+	RepoCommit  string `json:"repo_commit,omitempty"`
+	Root        string `json:"root"`
+	Worker      string `json:"worker"`
+	ModelDir    string `json:"model_dir"`
+	Detail      string `json:"detail,omitempty"`
 }
 
 // nativeInstallJSON is a subset of lab install.json (qwen3-tts-native.install.v1).
@@ -176,6 +182,7 @@ func InspectNative(modelsDir, preferredTier string) NativeStatus {
 	}
 	st.EngineSHA = install.EngineSHA
 	st.RepoCommit = install.RepoCommit
+	st.BackendHint = strings.ToLower(strings.TrimSpace(install.BackendHint))
 
 	// Discover tiers from install.json and/or on-disk GGUF names.
 	known := ModelTiers()

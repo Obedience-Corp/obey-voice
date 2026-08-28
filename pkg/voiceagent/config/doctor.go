@@ -577,6 +577,75 @@ func DiagnoseSpeechPlace(ctx context.Context, cfg *Config, probe SpeechProbe) []
 	return []Diagnostic{{Name: "speech-place", Severity: SeverityOK, Detail: detail}}
 }
 
+// DiagnoseQwenStreaming reports whether this host will play Qwen's PCM chunks
+// as they arrive, and why.
+//
+// It is a statement about policy, not about a live worker: answering for
+// certain would mean starting one, and doctor never does. The row therefore
+// says what this configuration decides *for a worker that can stream*, which
+// is the half an operator can act on — the other half is the worker's own
+// ready line, which the speech-place row already prints for lan.
+//
+// It exists because the decision is otherwise invisible. Streaming is the
+// difference between speaking on the first chunk and speaking after the whole
+// sentence, and on the wrong backend it is the difference between a fluent
+// reply and one that breaks up mid-word.
+func DiagnoseQwenStreaming(cfg *Config, modelsDir string) []Diagnostic {
+	if cfg == nil || !strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) {
+		return nil
+	}
+	if err := ValidateQwenTTSStream(cfg); err != nil {
+		return []Diagnostic{{
+			Name:        "qwen3-tts-streaming",
+			Severity:    SeverityError,
+			Detail:      err.Error(),
+			Remediation: "set qwen_tts_stream to auto, on or off",
+		}}
+	}
+
+	mode := QwenTTSStreamOf(cfg)
+	remote := TTSPlaceOf(cfg) == TTSPlaceLAN
+	backend := ""
+	installed := false
+	if !remote {
+		native := qwen.InspectNative(modelsDir, cfg.QwenTTSModelTier)
+		backend = native.BackendHint
+		installed = native.Installed
+	}
+	eligible := QwenStreamEligible(mode, remote, backend, true)
+
+	detail := fmt.Sprintf("%s: chunks play as they arrive on a worker that streams", mode)
+	remediation := ""
+	if !eligible {
+		detail = fmt.Sprintf("%s: whole sentences (chunk playback off)", mode)
+	}
+	switch {
+	case mode != QwenStreamAuto:
+		detail += ", set explicitly"
+	case remote:
+		detail += "; lan is the offload target streaming was measured on"
+	case eligible:
+		detail += "; this package reports backend " + backend
+	case backend == "" && installed:
+		// An install predating backend_hint. Pointing at a missing package
+		// here would send the operator to reinstall something already present.
+		detail += "; the installed package predates the backend field, and only CUDA has been measured safe"
+		remediation = "reinstall with 'obey-voice models ensure --tts' so the package reports its backend, or set qwen_tts_stream=on after checking the reply does not break up"
+	case backend == "":
+		detail += "; no installed package to report a backend, and only CUDA has been measured safe"
+		remediation = "set qwen_tts_stream=on to stream anyway, after checking the reply does not break up"
+	default:
+		detail += "; backend " + backend + " synthesizes slower than it plays, so chunks would run dry mid-word"
+		remediation = "leave it off, or set tts_place=lan to synthesize on a CUDA computer"
+	}
+	return []Diagnostic{{
+		Name:        "qwen3-tts-streaming",
+		Severity:    SeverityOK,
+		Detail:      detail,
+		Remediation: remediation,
+	}}
+}
+
 // formatProbeRTT keeps a loopback probe from reporting "0s": on the same
 // machine the round trip is microseconds, and rounding it away hides whether
 // the probe ran at all.

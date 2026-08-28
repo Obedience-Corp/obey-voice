@@ -29,6 +29,9 @@ type Config struct {
 	QwenTTSConsent        bool    `mapstructure:"qwen_tts_consent"`
 	// QwenTTSModelTier selects 0.6b (default) or 1.7b when the native package includes it.
 	QwenTTSModelTier string `mapstructure:"qwen_tts_model_tier"`
+	// QwenTTSStream decides whether a Stage B worker's PCM chunks are played as
+	// they arrive (auto / on / off). See tts_stream.go.
+	QwenTTSStream string `mapstructure:"qwen_tts_stream"`
 	// QwenTTSNativeURL is the release tarball (https://… or file://…/…tar.gz) for models ensure.
 	QwenTTSNativeURL string `mapstructure:"qwen_tts_native_url"`
 	// QwenTTSNativeSHA256 is the optional sha256 of that compressed tarball.
@@ -319,6 +322,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("qwen_tts_reference_text", "")
 	v.SetDefault("qwen_tts_consent", false)
 	v.SetDefault("qwen_tts_model_tier", "0.6b")
+	// Chunk playback follows the measurements, not a preference: auto streams
+	// only where synthesis was measured faster than realtime (tts_stream.go).
+	v.SetDefault("qwen_tts_stream", QwenStreamAuto)
 	// Empty → published platform release from qwen3-tts-native (see internal/qwen DefaultNativeRelease).
 	v.SetDefault("qwen_tts_native_url", "")
 	v.SetDefault("qwen_tts_native_sha256", "")
@@ -526,6 +532,7 @@ var envBindings = map[string]string{
 	"qwen_tts_reference_text":     "QWEN_TTS_REFERENCE_TEXT",
 	"qwen_tts_consent":            "QWEN_TTS_CONSENT",
 	"qwen_tts_model_tier":         "QWEN_TTS_MODEL_TIER",
+	"qwen_tts_stream":             "QWEN_TTS_STREAM",
 	"qwen_tts_native_url":         "QWEN_TTS_NATIVE_URL",
 	"qwen_tts_native_sha256":      "QWEN_TTS_NATIVE_SHA256",
 	"output_device":               "OUTPUT_DEVICE",

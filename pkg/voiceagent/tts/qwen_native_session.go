@@ -22,7 +22,9 @@ const nativeWorkerLabel = "native worker"
 
 // nativeQwenSession is a long-lived client for bin/qwen3-tts-worker (no Python).
 // Stage A: whole-utterance PCM after synth (one pcm_meta + raw f32le + final).
-// Stage B will emit multiple pcm_meta chunks; this client already concatenates.
+// Stage B: several numbered pcm_meta chunks during synth, then a final that
+// totals them — requested per-request, and only where this host has decided
+// chunks can be played without running dry (config.QwenStreamEligible).
 // Framing lives in speechConn so the LAN client can reuse it byte for byte.
 type nativeQwenSession struct {
 	*speechSession
@@ -45,6 +47,9 @@ type nativeInstallPaths struct {
 	Root     string
 	Worker   string
 	ModelDir string
+	// BackendHint is the package's build backend (metal / cuda / cpu). It is
+	// the only thing a local install reports about which silicon it runs on.
+	BackendHint string
 }
 
 // findNativeInstall looks for a release package installed for product use.
@@ -53,7 +58,12 @@ func findNativeInstall(modelsDir, preferredTier string) (nativeInstallPaths, boo
 	if !status.Installed {
 		return nativeInstallPaths{}, false
 	}
-	return nativeInstallPaths{Root: status.Root, Worker: status.Worker, ModelDir: status.ModelDir}, true
+	return nativeInstallPaths{
+		Root:        status.Root,
+		Worker:      status.Worker,
+		ModelDir:    status.ModelDir,
+		BackendHint: status.BackendHint,
+	}, true
 }
 
 // startNativeQwenSession launches qwen3-tts-worker against modelDir.
@@ -141,6 +151,7 @@ func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier strin
 			return nil, err
 		}
 		s.streaming = ready.Streaming
+		s.capable = ready.streamCapable()
 		s.presets = append([]string(nil), ready.Presets...)
 		if len(s.presets) == 0 {
 			s.presets = loadNativePresetsFromDisk(modelDir)
