@@ -72,6 +72,13 @@ var benchPrompts = []benchPrompt{
 	{ID: "P5", Kind: "opinion_short", Text: "Should I use a local model or a cloud model for voice? Keep it short."},
 }
 
+// warmupPrompt primes each condition and is deliberately NOT one of the measured
+// prompts. Ollama keeps the KV state of the request it just processed, so a
+// warm-up that reused P1 handed P1's first rep a total cache hit — 306 ms
+// against 4.5 s for every other sample on the same model. One spuriously fast
+// sample in fifteen is enough to move the median, which is the gated statistic.
+var warmupPrompt = benchPrompt{ID: "W0", Kind: "warmup", Text: "Say hello in one short sentence."}
+
 type sample struct {
 	Prompt  string  `json:"prompt"`
 	Rep     int     `json:"rep"`
@@ -407,7 +414,7 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 
 		// Cold: first real turn after an unload. Reported, not gated.
 		b.ClearHistory()
-		cold := measure(ctx, b, benchPrompts[0], toolsEnabled, turnTimeout, 0)
+		cold := measure(ctx, b, warmupPrompt, toolsEnabled, turnTimeout, 0)
 		res.Cold = coldResult{TTFTMS: cold.TTFTMS, TotalMS: cold.TotalMS, Err: cold.Err}
 		fmt.Fprintf(os.Stderr, "  cold  ttft=%.0fms total=%.0fms %s\n", cold.TTFTMS, cold.TotalMS, cold.Err)
 
@@ -433,7 +440,7 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 			if len(cond.base) > 0 {
 				b.LoadHistory(cond.base)
 			}
-			warm := measure(ctx, b, benchPrompts[0], toolsEnabled, turnTimeout, 0)
+			warm := measure(ctx, b, warmupPrompt, toolsEnabled, turnTimeout, 0)
 			fmt.Fprintf(os.Stderr, "  %-18s warm-up (discarded) ttft=%.0fms prompt=%d %s\n", cond.name, warm.TTFTMS, warm.PromptTokens, warm.Err)
 
 			for rep := 1; rep <= reps; rep++ {
