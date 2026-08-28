@@ -460,7 +460,7 @@ func TestVoicePageIsPublic(t *testing.T) {
 		t.Fatalf("GET / = %d, want 200", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "Samantha") {
+	if !strings.Contains(string(body), "Obey Voice") {
 		t.Fatalf("voice page body missing title, got %q", string(body)[:min(80, len(body))])
 	}
 

@@ -891,11 +891,11 @@
     {
       "key": "agent_name",
       "type": "string",
-      "default": "Samantha",
+      "default": "Obey",
       "allows_empty": true,
       "group": "advanced",
       "title": "Agent name",
-      "help": "What she calls herself. The active persona overrides this when one sets a display name.",
+      "help": "What the agent calls itself. The active persona overrides this when one sets a display name.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,
@@ -1509,7 +1509,7 @@
     {
       "key": "active_persona",
       "type": "string",
-      "default": "samantha",
+      "default": "obey",
       "allows_empty": true,
       "group": "hidden",
       "title": "Active persona",
@@ -1524,7 +1524,7 @@
     {
       "key": "persona",
       "type": "string",
-      "default": "samantha",
+      "default": "obey",
       "allows_empty": true,
       "group": "hidden",
       "title": "Persona prompt",

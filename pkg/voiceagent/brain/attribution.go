@@ -46,7 +46,7 @@ func promptUserLine(t Turn, agentName string, names SpeakerNames) string {
 	switch t.Role {
 	case "samantha", "assistant":
 		if agentName == "" {
-			agentName = "Samantha"
+			agentName = "Obey"
 		}
 		return agentName + ": " + t.Content
 	default:

@@ -7,7 +7,7 @@
       "source": "file"
     },
     "agent_name": {
-      "value": "Samantha",
+      "value": "Obey",
       "source": "default"
     },
     "backchannel_enabled": {
@@ -135,7 +135,7 @@
       "source": "default"
     },
     "persona": {
-      "value": "samantha",
+      "value": "obey",
       "source": "default"
     },
     "phrase_time_limit": {

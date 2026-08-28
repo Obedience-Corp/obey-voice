@@ -210,7 +210,7 @@ func printStream(ctx context.Context, ws *websocket.Conn, audioFile *os.File) {
 		case "user_input":
 			fmt.Printf("  %s %s\n", keyStyle.Render("You:"), asString("text"))
 		case "response_ready":
-			fmt.Printf("  %s %s\n\n", activeStyle.Render("Samantha:"), asString("response"))
+			fmt.Printf("  %s %s\n\n", activeStyle.Render("Agent:"), asString("response"))
 		case "thinking_started":
 			fmt.Println(dimStyle.Render("  ● thinking..."))
 		case "conversation_cleared":

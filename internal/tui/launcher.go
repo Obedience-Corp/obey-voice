@@ -319,7 +319,7 @@ func (m launcherModel) fullView(width int) string {
 	var b strings.Builder
 
 	// Brand plate
-	wordmark := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("SAMANTHA")
+	wordmark := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("OBEY VOICE")
 	tag := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render("voice · speed · signal")
 	brand := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -421,7 +421,7 @@ func (m launcherModel) fullView(width int) string {
 
 func (m launcherModel) compactView(width int) string {
 	var b strings.Builder
-	b.WriteString(ansi.Truncate(headerStyle.Render("  SAMANTHA"), width, "…"))
+	b.WriteString(ansi.Truncate(headerStyle.Render("  OBEY VOICE"), width, "…"))
 	b.WriteString("\n")
 	if m.banner != "" {
 		style := statusStyle

@@ -233,16 +233,17 @@ func TestApplyRoutesPersonaBrainModel(t *testing.T) {
 	}
 }
 
+// A pre-personas install is a config file with no personas directory beside
+// it, so these tests write one and go through config.Load: the migration
+// decision reads the install's artifacts, and an in-memory Config alone is not
+// one. (The keys mirror what the old struct literal carried.)
 func TestEnsureAndApplyMigratesFromLegacy(t *testing.T) {
 	dir := t.TempDir()
 	setConfigDir(t, dir)
+	writeConfigFile(t, dir, "agent_name: LegacySam\npersona: samantha\ntts_voice: af_nova\n")
 
-	cfg := &config.Config{
-		AgentName: "LegacySam",
-		Persona:   "samantha",
-		TTSVoice:  "af_nova",
-	}
-	if err := EnsureAndApply(cfg); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -260,14 +261,14 @@ func TestEnsureAndApplyMigratesFromLegacy(t *testing.T) {
 		t.Errorf("ActivePersona = %q, want samantha", cfg.ActivePersona)
 	}
 
-	// Second call is idempotent and does not clobber.
+	// Second load is idempotent and does not clobber.
 	raw, _ := os.ReadFile(path)
-	if err := EnsureAndApply(cfg); err != nil {
+	if _, err := config.Load(); err != nil {
 		t.Fatal(err)
 	}
 	raw2, _ := os.ReadFile(path)
 	if string(raw) != string(raw2) {
-		t.Fatal("EnsureAndApply rewrote existing profile")
+		t.Fatal("the second load rewrote an existing profile")
 	}
 }
 
@@ -279,14 +280,13 @@ func TestEnsureAndApplyMigratesLegacyNonDefaultPersona(t *testing.T) {
 	dir := t.TempDir()
 	setConfigDir(t, dir)
 
-	cfg := &config.Config{
-		AgentName:     "Festival Bot",
-		Persona:       "festival",
-		TTSVoice:      "af_bella",
-		ActivePersona: "samantha", // viper default; not a real profile yet
-	}
-	if err := EnsureAndApply(cfg); err != nil {
-		t.Fatalf("EnsureAndApply() error = %v", err)
+	// active_persona names a profile this install does not have — the shape the
+	// old viper default produced, and one a hand-edited config can still hold.
+	writeConfigFile(t, dir, "agent_name: Festival Bot\npersona: festival\ntts_voice: af_bella\nactive_persona: samantha\n")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
 	}
 
 	if _, err := os.Stat(ProfilePath("festival")); err != nil {
@@ -302,15 +302,10 @@ func TestEnsureAndApplyMigratesLegacyNonDefaultPersona(t *testing.T) {
 		t.Fatalf("overlay mismatch: name=%q voice=%q persona=%q", cfg.AgentName, cfg.TTSVoice, cfg.Persona)
 	}
 
-	// Second load still heals if active stays at the viper default.
-	cfg2 := &config.Config{
-		AgentName:     "Festival Bot",
-		Persona:       "festival",
-		TTSVoice:      "af_bella",
-		ActivePersona: "samantha",
-	}
-	if err := EnsureAndApply(cfg2); err != nil {
-		t.Fatalf("second EnsureAndApply() error = %v", err)
+	// Second load still heals: active_persona names a built-in that is not here.
+	cfg2, err := config.Load()
+	if err != nil {
+		t.Fatalf("second Load() error = %v", err)
 	}
 	if cfg2.ActivePersona != "festival" {
 		t.Errorf("second ActivePersona = %q, want festival", cfg2.ActivePersona)
@@ -332,8 +327,10 @@ func TestEnsureAndApplyMissingActive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := &config.Config{ActivePersona: "nope"}
-	err := EnsureAndApply(cfg)
+	// Declared in the file, so it is a choice the user made and gets an error
+	// rather than a silent heal onto some other persona.
+	writeConfigFile(t, dir, "active_persona: nope\n")
+	_, err := config.Load()
 	if err == nil {
 		t.Fatal("expected error for missing active_persona")
 	}

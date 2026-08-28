@@ -49,13 +49,33 @@ On load, the active profile overlays `agent_name`, the persona prompt name, and 
 Each persona can use any supported TTS backend and any voice for that backend.
 Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 
+Two profiles ship built in and neither can be deleted: **obey**, the default a
+fresh install talks to, and **samantha**, the pre-rebrand default. `obey` pins
+nothing — no brain provider, model, TTS provider, voice or tier — so it always
+speaks with whatever the config above says; `samantha` keeps her own prompt and
+her Kokoro voice.
+
+Which one an install gets is decided by what is on disk, not by which keys the
+config happens to hold. An install with no personas directory **and no
+`config.yaml`** has never run: it is seeded with both built-ins and starts on
+`obey`. An install with a `config.yaml` but no personas directory predates the
+personas system: it migrates into the single profile its own keys describe,
+which is Samantha unless `persona:` says otherwise. An install that already has
+personas keeps them, and adding one is never automatic.
+
+`builtin: true` in a profile is a provenance record — it marks a file this
+product wrote, and it is what makes a profile undeletable. A persona you create
+is never marked builtin, including one you name `obey`: a persona of your own at
+a shipped id keeps its own prompt, pins and deletability, and is only activated
+when you select it.
+
 > **Upgrading:** installs that saved settings while `claude_max_session_tokens` defaulted to `60000` still carry that value in `config.yaml` and keep the silent session drops. Delete the key (or set `0`) to adopt the warn-only default. `obey-voice doctor` flags this.
 
 | Key | Default | Environment | Description |
 |-----|---------|-------------|-------------|
-| `active_persona` | `obey-voice` | `ACTIVE_PERSONA` | Persona profile id under `personas/<id>/` |
-| `agent_name` | `Samantha` | | Display name (overlaid from active persona) |
-| `persona` | `obey-voice` | `PERSONA` | Prompt document name for kind=persona (overlaid from active persona) |
+| `active_persona` | `obey` | `ACTIVE_PERSONA` | Persona profile id under `personas/<id>/` |
+| `agent_name` | `Obey` | | Display name (overlaid from active persona) |
+| `persona` | `obey` | `PERSONA` | Prompt document name for kind=persona (overlaid from active persona) |
 | `compact_prompt` | *(embedded default)* | `COMPACT_PROMPT` | Prompt document name for kind=compact — the `/compact` summarize-turn instruction |
 | `brain_provider` | `ollama` | `BRAIN_PROVIDER` | Brain backend: `ollama`, `claude`, or `grok` |
 | `ollama_model` | empty | `OLLAMA_MODEL` | Ollama model name |
@@ -117,8 +137,8 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `vad_min_speech_duration` | `0.25` | `VAD_MIN_SPEECH_DURATION` | Minimum speech length in seconds (raise to ignore brief noises) |
 | `voice_frontend_enabled` | `false` | `VOICE_FRONTEND_ENABLED` | Local AEC/NS/AGC on mic input (off by default: the noise suppressor currently over-suppresses normal-volume speech; enable only with barge-in) |
 | `tui_mouse_enabled` | `false` | `TUI_MOUSE_ENABLED` | Claim the mouse so the wheel/trackpad is routed to the transcript viewport. Off by default so the terminal keeps click-drag selection and copy; turning it on means selecting needs a modifier (option/fn/shift). Either way `Page Up`/`Page Down` scroll, and with it off the wheel scrolls whenever the composer is empty. Applies on next enter/leave of conversation (Settings → Tools toggle or re-entry); no full process restart required for the TUI claim |
-| `agent_name` | `Samantha` | | Display name |
-| `persona` | `obey-voice` | `PERSONA` | Prompt document name for the interactive persona |
+| `agent_name` | `Obey` | | Display name |
+| `persona` | `obey` | `PERSONA` | Prompt document name for the interactive persona |
 | `prompts_dir` | empty | `PROMPTS_DIR` | Prompt document directory; defaults to `~/.obey/agents/voice/festival-voice/prompts` when unset |
 | `skills_enabled` | `true` | `SKILLS_ENABLED` | Agent Skills (`SKILL.md`) discovery for Ollama. Default on; set `false` to disable. Discovers project/workspace/user skill frontmatter into the system prompt; not a pre-activation sandbox. Claude/Grok already discover skills via their CLIs. |
 | `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after project/workspace/user harness dirs); defaults to `~/.obey/agents/voice/festival-voice/skills` when unset. |

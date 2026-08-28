@@ -416,9 +416,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("calibre_convert_binary", "")
 	v.SetDefault("calibre_prefer_format", "epub")
 
-	v.SetDefault("agent_name", "Samantha")
-	v.SetDefault("active_persona", "samantha")
-	v.SetDefault("persona", "samantha")
+	v.SetDefault("agent_name", "Obey")
+	v.SetDefault("active_persona", "obey")
+	v.SetDefault("persona", "obey")
 	v.SetDefault("prompts_dir", "")
 	v.SetDefault("backchannel_enabled", false)
 	v.SetDefault("skills_enabled", true)
@@ -806,6 +806,41 @@ func Get(key string) any {
 	mu.RLock()
 	defer mu.RUnlock()
 	return v.Get(key)
+}
+
+// Declared reports whether key's value was chosen — named in the config file
+// or in a bound environment variable — rather than coming from the shipped
+// default. viper merges all three into one value, so a caller that must tell a
+// decision from a default (persona migration does) cannot read Config alone.
+//
+// It answers for the file the last load read. ollamaChosen makes the same
+// distinction inline for brain_provider.
+func Declared(key string) bool {
+	mu.RLock()
+	inFile := v.InConfig(key)
+	mu.RUnlock()
+	if inFile {
+		return true
+	}
+	_, _, fromEnv := envValueFor(key)
+	return fromEnv
+}
+
+// FileExists reports whether a config file is present at ConfigFile().
+//
+// It is the one signal about an install's age that neither viper nor the
+// environment can fabricate: keys are written surgically, so an absent key
+// proves nothing, but an absent file proves nothing has ever configured this
+// install.
+func FileExists() bool {
+	mu.RLock()
+	path := configFile
+	mu.RUnlock()
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // Set updates a config value.

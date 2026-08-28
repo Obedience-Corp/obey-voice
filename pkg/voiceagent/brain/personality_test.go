@@ -98,3 +98,49 @@ func TestPersonaSystemPromptDoesNotFallBackToSamantha(t *testing.T) {
 		t.Fatalf("error = %q, want uncle-fu named", err)
 	}
 }
+
+// TestLegacyRefsStillResolve: a profile written before the rebrand can name
+// "samantha" for its turn instruction, and config can name it for compact.
+// demos/persona-create.tape:51 and demos/persona-switch.tape type that exact
+// ref into a fresh $HOME, and an unresolvable ref is not a cosmetic problem —
+// turnInstruction's error aborts brain construction, so the agent never starts.
+func TestLegacyRefsStillResolve(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *config.Config
+		resolve func(*config.Config) (string, error)
+	}{
+		{
+			name:    "prompts.turn: samantha",
+			cfg:     &config.Config{AgentName: "Samantha", Persona: "samantha", TurnPrompt: "samantha"},
+			resolve: turnInstruction,
+		},
+		{
+			name:    "compact_prompt: samantha",
+			cfg:     &config.Config{AgentName: "Samantha", Persona: "samantha", CompactPrompt: "samantha"},
+			resolve: CompactInstruction,
+		},
+		{
+			name:    "persona: samantha",
+			cfg:     &config.Config{AgentName: "Samantha", Persona: "samantha"},
+			resolve: personaSystemPrompt,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// An empty prompts dir, so only an embedded document can answer:
+			// the machine's own seeded files must not decide this test.
+			tt.cfg.PromptsDir = t.TempDir()
+			got, err := tt.resolve(tt.cfg)
+			if err != nil {
+				t.Fatalf("resolving the legacy ref: %v", err)
+			}
+			if strings.TrimSpace(got) == "" {
+				t.Fatal("resolved to empty text")
+			}
+			if strings.Contains(got, "{agent_name}") {
+				t.Errorf("placeholders unresolved:\n%s", got)
+			}
+		})
+	}
+}

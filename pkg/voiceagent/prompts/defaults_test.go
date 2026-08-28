@@ -79,7 +79,7 @@ prompt:
 			name:         "no layers configured uses embedded when name matches",
 			resolver:     Resolver{},
 			kind:         KindPersona,
-			promptName:   "samantha",
+			promptName:   "obey",
 			wantIdentity: embedded.Prompt.SystemPrompt.Identity,
 		},
 	}
@@ -97,7 +97,7 @@ prompt:
 }
 
 func TestResolverDoesNotInjectWrongPersona(t *testing.T) {
-	// Regression: missing "uncle-fu" used to return the embedded samantha
+	// Regression: missing "uncle-fu" used to return the embedded default
 	// persona, so the Personas editor and brain silently showed the wrong identity.
 	userDir := t.TempDir()
 	_, err := Resolver{UserDir: userDir}.Resolve(KindPersona, "uncle-fu")
@@ -107,13 +107,17 @@ func TestResolverDoesNotInjectWrongPersona(t *testing.T) {
 	if !strings.Contains(err.Error(), "uncle-fu") {
 		t.Fatalf("error = %q, want it to name uncle-fu", err)
 	}
-	// Embedded default still answers under its real name.
-	doc, err := Resolver{UserDir: userDir}.Resolve(KindPersona, "samantha")
-	if err != nil {
-		t.Fatalf("Resolve(samantha) error = %v", err)
-	}
-	if doc.Prompt.Name != "samantha" {
-		t.Fatalf("name = %q, want samantha", doc.Prompt.Name)
+	// Embedded documents still answer under their real names: the default
+	// persona, and samantha, who ships beside it so an install bound to her
+	// keeps resolving her identity with no file on disk.
+	for _, name := range []string{"obey", "samantha"} {
+		doc, err := Resolver{UserDir: userDir}.Resolve(KindPersona, name)
+		if err != nil {
+			t.Fatalf("Resolve(%s) error = %v", name, err)
+		}
+		if doc.Prompt.Name != name {
+			t.Fatalf("name = %q, want %s", doc.Prompt.Name, name)
+		}
 	}
 }
 

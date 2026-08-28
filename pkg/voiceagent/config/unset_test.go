@@ -58,7 +58,7 @@ func TestUnsetKeyFileAbsentKeyIsANoOp(t *testing.T) {
 	if result.Changed {
 		t.Error("changed = true for a key the file never held")
 	}
-	if result.OldValue != "Samantha" || result.Value != "Samantha" {
+	if result.OldValue != "Obey" || result.Value != "Obey" {
 		t.Errorf("old/new = %v/%v, want the schema default both times", result.OldValue, result.Value)
 	}
 	if result.BackupPath != "" {

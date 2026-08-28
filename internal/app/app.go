@@ -72,8 +72,12 @@ var exitPhrases = map[string]bool{
 	"i'm out": true, "i'm done": true, "wrap up": true, "talk later": true,
 	"see you later": true, "see ya": true, "good night": true,
 	"signing off": true, "peace out": true, "catch you later": true,
-	"bye samantha": true, "bye bye": true, "that's all": true,
-	"we're done": true, "samantha exit": true, "samantha quit": true,
+	"bye bye": true, "that's all": true, "we're done": true,
+	// Name-addressed goodbyes, for both the current default persona and the
+	// one that shipped before the rebrand — an install still talking to
+	// Samantha still says goodbye to her by name.
+	"bye obey": true, "obey exit": true, "obey quit": true, "obey bye": true,
+	"bye samantha": true, "samantha exit": true, "samantha quit": true,
 	"samantha bye": true,
 }
 

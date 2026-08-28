@@ -25,8 +25,23 @@ import (
 // Schema identifies the persona profile document version.
 const Schema = "festival-voice.persona.v1"
 
-// DefaultID is the built-in samantha profile id.
-const DefaultID = "samantha"
+// DefaultID is the built-in default profile id: the persona a fresh install
+// talks to and the id every heal path prefers.
+const DefaultID = "obey"
+
+// DefaultDisplayName is the display name of the built-in default profile. It
+// matches the agent_name config default; a config that names the agent wins.
+const DefaultDisplayName = "Obey"
+
+// LegacyDefaultID is the profile id single-agent installs carried before the
+// rebrand. Nothing defaults to it any more, but it is still seeded, still
+// loadable, and still what a pre-personas config migrates into — an install
+// that has been talking to Samantha keeps talking to Samantha.
+const LegacyDefaultID = "samantha"
+
+// LegacyDefaultDisplayName is the display name that pre-personas installs
+// carried in agent_name.
+const LegacyDefaultDisplayName = "Samantha"
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
@@ -261,15 +276,27 @@ func Write(p *Profile, skipExisting bool) error {
 	return nil
 }
 
-// FromConfig builds a samantha (or slug) profile from legacy single-agent keys.
+// FromConfig builds the profile a pre-personas install implies from its legacy
+// single-agent keys (persona, agent_name, tts_*).
+//
+// Its fallbacks are deliberately the LEGACY ones, not today's defaults: a
+// config written before personas existed named no profile id, and the identity
+// it was running was Samantha. Migrating such an install into an "obey" profile
+// would rename the agent out from under it. Fresh installs never come through
+// here — they get the shipped built-ins (see builtin.go).
+//
+// Builtin is likewise the legacy answer. A migrated profile is only ever the
+// pre-rebrand default; anything else came out of the user's own config keys, so
+// flagging it shipped would take ownership of a profile this code did not write
+// — and Delete refuses to remove a flagged profile.
 func FromConfig(cfg *config.Config) *Profile {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
-	id := DefaultID
+	id := LegacyDefaultID
 	promptName := strings.TrimSpace(cfg.Persona)
 	if promptName == "" {
-		promptName = DefaultID
+		promptName = LegacyDefaultID
 	}
 	// Prefer a valid persona prompt name as the profile id when it is a slug.
 	if err := ValidateID(promptName); err == nil {
@@ -277,7 +304,7 @@ func FromConfig(cfg *config.Config) *Profile {
 	}
 	display := strings.TrimSpace(cfg.AgentName)
 	if display == "" {
-		display = "Samantha"
+		display = LegacyDefaultDisplayName
 	}
 	provider := strings.TrimSpace(cfg.TTSProvider)
 	voice := voiceForProvider(cfg, provider)
@@ -285,7 +312,7 @@ func FromConfig(cfg *config.Config) *Profile {
 		Schema:      Schema,
 		ID:          id,
 		DisplayName: display,
-		Builtin:     id == DefaultID,
+		Builtin:     id == LegacyDefaultID,
 		TTS: TTS{
 			Provider: provider,
 			Voice:    voice,
@@ -324,7 +351,7 @@ func Apply(cfg *config.Config, p *Profile) {
 // for p. The private prompts/persona/<id>.yaml wins over prompts.persona so a
 // stale ref (the real Uncle_Fu case: prompts.persona held the TTS voice id)
 // cannot hard-fail brain construction now that the resolver no longer falls back
-// to the embedded samantha document. The editor heals the file on disk; this
+// to the embedded default document. The editor heals the file on disk; this
 // keeps the running process working before anyone opens it.
 func effectivePersonaRef(p *Profile) string {
 	ref := strings.TrimSpace(p.Prompts.Persona)
@@ -462,7 +489,7 @@ func PersistTTS(p *Profile) error {
 	}
 }
 
-// ActiveID returns the configured active persona id, defaulting to samantha.
+// ActiveID returns the configured active persona id, defaulting to DefaultID.
 func ActiveID(cfg *config.Config) string {
 	if cfg == nil {
 		return DefaultID

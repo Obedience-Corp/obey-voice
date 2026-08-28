@@ -779,3 +779,43 @@ func TestPersonasStackEscWithBlankNameReturnsToName(t *testing.T) {
 		t.Fatal("stack esc cancelled instead of stepping back")
 	}
 }
+
+// TestPersonaListLabelMarksTheBuiltinDefault: obey pins nothing, so its row
+// would otherwise be the one line in the list with nothing to say.
+func TestPersonaListLabelMarksTheBuiltinDefault(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile *persona.Profile
+		want    string
+	}{
+		{
+			name:    "default with no pinned stack",
+			profile: &persona.Profile{ID: persona.DefaultID, DisplayName: "Obey", Builtin: true},
+			want:    "Obey — built-in default",
+		},
+		{
+			name:    "default with a pinned voice still says default",
+			profile: &persona.Profile{ID: persona.DefaultID, DisplayName: "Obey", Builtin: true, TTS: persona.TTS{Provider: "kokoro", Voice: "af_heart"}},
+			want:    "Obey — built-in default · kokoro · af_heart",
+		},
+		{
+			// A user persona named obey is not shipped content and must not
+			// wear the badge.
+			name:    "user persona at the default id is not badged",
+			profile: &persona.Profile{ID: persona.DefaultID, DisplayName: "Obey", TTS: persona.TTS{Provider: "qwen3-tts", Voice: "Ryan"}},
+			want:    "Obey — qwen3-tts · Ryan",
+		},
+		{
+			name:    "samantha is an ordinary row",
+			profile: &persona.Profile{ID: "samantha", DisplayName: "Samantha", Builtin: true, TTS: persona.TTS{Provider: "kokoro", Voice: "af_heart"}},
+			want:    "Samantha — kokoro · af_heart",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := personaListLabel(tt.profile); got != tt.want {
+				t.Errorf("personaListLabel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

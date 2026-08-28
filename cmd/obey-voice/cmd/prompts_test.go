@@ -19,20 +19,20 @@ func runRootForPrompts(t *testing.T, promptDir string, args ...string) (string, 
 	// Isolate from the real ~/.obey. `prompts show persona` calls config.Load,
 	// whose afterLoad hook (persona.EnsureAndApply) overlays the machine's active
 	// persona onto cfg.Persona. A fresh temp config dir means an empty personas
-	// tree that seeds the embedded "samantha" default, and the active_persona
+	// tree that seeds the built-in "obey" default, and the active_persona
 	// override defeats any value viper's config layer retained from a prior
 	// test's real Load. Without both, the developer's real active persona leaks
-	// in and flakes the "samantha"/"embedded" assertions in full-suite runs.
+	// in and flakes the "obey"/"embedded" assertions in full-suite runs.
 	config.SetConfigDirForTest(t, t.TempDir())
 	config.Set("prompts_dir", promptDir)
-	config.Set("persona", "samantha")
-	config.Set("active_persona", "samantha")
+	config.Set("persona", "obey")
+	config.Set("active_persona", "obey")
 	promptsListJSON = false
 	promptsShowJSON = false
 	t.Cleanup(func() {
 		config.Set("prompts_dir", "")
-		config.Set("persona", "samantha")
-		config.Set("active_persona", "samantha")
+		config.Set("persona", "obey")
+		config.Set("active_persona", "obey")
 		promptsListJSON = false
 		promptsShowJSON = false
 	})
@@ -143,7 +143,9 @@ func TestPromptsCommandsHumanOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompts list error = %v", err)
 	}
-	for _, want := range []string{"KIND", "NAME", "SOURCE", "HASH", "persona", "samantha", "embedded"} {
+	// samantha is asserted beside the default on purpose: she still ships, so
+	// the catalog must still offer her identity to an install bound to it.
+	for _, want := range []string{"KIND", "NAME", "SOURCE", "HASH", "persona", "obey", "samantha", "embedded"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("prompts list output = %q, want it to contain %q", out, want)
 		}
@@ -153,7 +155,7 @@ func TestPromptsCommandsHumanOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prompts show error = %v", err)
 	}
-	for _, want := range []string{"kind:   persona", "name:   samantha", "source: embedded", "hash:", "You are Samantha"} {
+	for _, want := range []string{"kind:   persona", "name:   obey", "source: embedded", "hash:", "You are Obey"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("prompts show output = %q, want it to contain %q", out, want)
 		}

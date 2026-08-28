@@ -26,7 +26,7 @@ func TestStripAgentLabel(t *testing.T) {
 		{name: "space before colon", agent: "Samantha", in: "Samantha : Hi.", want: "Hi."},
 		{name: "leading whitespace", agent: "Samantha", in: "  \nSamantha: Hi.", want: "Hi."},
 		{name: "custom agent name", agent: "Nova", in: "Nova: ready.", want: "ready."},
-		{name: "empty name defaults to Obey Voice", agent: "", in: "Samantha: Hi.", want: "Hi."},
+		{name: "empty name defaults to the built-in agent name", agent: "", in: "Obey: Hi.", want: "Hi."},
 		{name: "label only", agent: "Samantha", in: "Samantha: ", want: ""},
 		{name: "only first line stripped", agent: "Samantha", in: "Samantha: one.\nSamantha: two.", want: "one.\nSamantha: two."},
 		{name: "mid-text name untouched", agent: "Samantha", in: "Ask Samantha: she knows.", want: "Ask Samantha: she knows."},

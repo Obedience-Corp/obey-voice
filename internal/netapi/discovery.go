@@ -48,7 +48,7 @@ func StartDiscovery(bind string, fingerprint string, instance string) (*Discover
 	}
 	hostname, _ := os.Hostname()
 	if hostname == "" {
-		hostname = "samantha"
+		hostname = "obey-voice"
 	}
 	if instance == "" {
 		instance = hostname
