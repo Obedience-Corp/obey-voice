@@ -45,7 +45,7 @@ var vocalAlias = map[string]string{
 }
 
 // vocalTagRE matches [moan], [gasp], [laugh], … including common aliases.
-var vocalTagRE = regexp.MustCompile(`(?i)\[(moans?|gasps?|laughs?|sighs?|whimpers?|kisses?|ahhs?|mmm|haha)\]`)
+var vocalTagRE = regexp.MustCompile(`(?i)\[(moans?|gasps?|laughs?|sighs?|whimpers?|kiss(?:es)?|ahhs?|mmm|haha)\]`)
 
 type vocalPart struct {
 	sound string // empty = speech
@@ -132,7 +132,8 @@ var vocalPhrases = map[string][]string{
 	vocalLaugh:   {"Haha!", "Haha haha."},
 	vocalSigh:    {"Hahh...", "Haaah."},
 	vocalWhimper: {"Nngh...", "Mmh..."},
-	vocalKiss:    {"Mwah."},
+	// kiss is recognized so [kiss] can be stripped, not spoken. Qwen just
+	// says the word; there is no onomatopoeia that comes out as a kiss.
 }
 
 func firstVocalPhrase(kind string) string {
