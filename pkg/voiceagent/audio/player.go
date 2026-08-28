@@ -8,6 +8,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gen2brain/malgo"
 )
@@ -312,8 +313,24 @@ func runPlaybackWorker(ctx context.Context, segment *playbackSegment, stream *PC
 }
 
 func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stream *PCMStream) {
-	inputRate, err := stream.WaitReady(ctx)
+	// A stalled engine has to surface as a segment failure rather than an
+	// unbounded wait: the pipeline can only switch to the fallback voice if
+	// this call returns. The budget measures the gap between frame batches,
+	// not the whole utterance, so an engine that streams audio slowly keeps
+	// its segment while one that produces nothing at all loses it.
+	budget := stream.StallBudget()
+
+	readyCtx := ctx
+	if budget > 0 {
+		var cancelReady context.CancelFunc
+		readyCtx, cancelReady = context.WithTimeout(ctx, budget)
+		defer cancelReady()
+	}
+	inputRate, err := stream.WaitReady(readyCtx)
 	if err != nil {
+		if budget > 0 && ctx.Err() == nil && errors.Is(readyCtx.Err(), context.DeadlineExceeded) {
+			err = fmt.Errorf("%w after %s", ErrStreamStalled, budget)
+		}
 		segment.fail(err)
 		return
 	}
@@ -338,10 +355,17 @@ func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stre
 	p.mu.Unlock()
 	var samples []float32
 
+	// Reset on every batch: the budget bounds silence, not total duration.
+	silence := newSilenceTimer(budget)
+	defer silence.stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			segment.fail(ctx.Err())
+			return
+		case <-silence.C():
+			segment.fail(fmt.Errorf("%w after %s", ErrStreamStalled, budget))
 			return
 		case frames, ok := <-stream.Frames():
 			if !ok {
@@ -352,7 +376,57 @@ func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stre
 				continue
 			}
 			samples = append(samples, frames...)
+			silence.reset()
 		}
+	}
+}
+
+// silenceTimer fires when no reset arrives within budget. A zero or negative
+// budget yields a timer that never fires, so an unbounded stream keeps the
+// pre-existing behaviour of waiting as long as the turn allows.
+//
+// It exists so an engine that delivers audio slowly is judged on whether audio
+// is still arriving rather than on total synthesis time: every batch resets it.
+type silenceTimer struct {
+	budget time.Duration
+	timer  *time.Timer
+}
+
+func newSilenceTimer(budget time.Duration) *silenceTimer {
+	s := &silenceTimer{budget: budget}
+	if budget > 0 {
+		s.timer = time.NewTimer(budget)
+	}
+	return s
+}
+
+// C is the fire channel, nil when the timer is disabled so a select on it
+// blocks forever.
+func (s *silenceTimer) C() <-chan time.Time {
+	if s.timer == nil {
+		return nil
+	}
+	return s.timer.C
+}
+
+// reset restarts the budget, draining an already-delivered tick so a batch that
+// races the deadline does not leave a stale fire queued.
+func (s *silenceTimer) reset() {
+	if s.timer == nil {
+		return
+	}
+	if !s.timer.Stop() {
+		select {
+		case <-s.timer.C:
+		default:
+		}
+	}
+	s.timer.Reset(s.budget)
+}
+
+func (s *silenceTimer) stop() {
+	if s.timer != nil {
+		s.timer.Stop()
 	}
 }
 

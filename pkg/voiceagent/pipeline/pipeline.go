@@ -1395,6 +1395,7 @@ func (p *Pipeline) synthesizeWithFallback(ctx context.Context, text string, stic
 	}
 	stream, err := primary.Synthesize(ctx, text)
 	if err == nil {
+		p.boundPrimarySilence(stream, len(text))
 		return stream, false, nil
 	}
 	if !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(err) {
@@ -1446,12 +1447,44 @@ func (p *Pipeline) playFallback(ctx context.Context, text string, primaryErr err
 // errors must reach the user instead of being silently converted into a
 // different voice policy.
 func shouldFallback(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if err == nil {
 		return false
 	}
-	return tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) ||
+	// A stalled engine is precisely what the fallback voice exists for.
+	if errors.Is(err, audio.ErrStreamStalled) {
+		return true
+	}
+	// An explicit provider classification outranks the raw cause. A worker that
+	// times out reports ProviderErrorWorker while still unwrapping to
+	// context.DeadlineExceeded, so sniffing the cause first refused the
+	// fallback for the exact failure it should have covered. Turn-level
+	// cancellation is still refused below, and canUseFallback re-checks the
+	// turn context before anything is synthesized.
+	if tts.IsProviderErrorKind(err, tts.ProviderErrorCanceled) {
+		return false
+	}
+	if tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) ||
 		tts.IsProviderErrorKind(err, tts.ProviderErrorWorker) ||
-		tts.IsProviderErrorKind(err, tts.ProviderErrorMalformed)
+		tts.IsProviderErrorKind(err, tts.ProviderErrorMalformed) {
+		return true
+	}
+	return false
+}
+
+// boundPrimarySilence arms the primary engine's stall budget on a synthesis
+// stream so a worker that produces no audio fails the segment over to the
+// fallback voice instead of holding the turn until the watchdog abandons it.
+//
+// Only the primary is bounded. The fallback is the last voice available, so
+// failing it would produce silence rather than another retry. Providers that
+// publish no grace (Kokoro) leave the stream unbounded, exactly as before.
+func (p *Pipeline) boundPrimarySilence(stream *audio.PCMStream, chars int) {
+	if stream == nil {
+		return
+	}
+	if budget := p.ttsFirstAudioGrace(chars); budget > 0 {
+		stream.SetStallBudget(budget)
+	}
 }
 
 func (p *Pipeline) canUseFallback(ctx context.Context, primary, fallback tts.Provider) bool {

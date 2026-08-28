@@ -4,7 +4,14 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 )
+
+// ErrStreamStalled reports that a synthesis stream delivered no audio within
+// its stall budget. It is deliberately distinct from context.DeadlineExceeded:
+// the turn is still healthy and the engine is the thing that failed, so the
+// pipeline can cover it with the fallback voice instead of abandoning the turn.
+var ErrStreamStalled = errors.New("pcm stream stalled: no audio within budget")
 
 // PCMStream carries synthesized mono PCM frames for playback.
 type PCMStream struct {
@@ -15,6 +22,26 @@ type PCMStream struct {
 	closed     bool
 	ready      chan struct{}
 	frames     chan []float32
+	// stallBudget bounds the silence between frame batches, not the whole
+	// utterance. A slow engine that keeps emitting audio keeps its segment;
+	// one that emits nothing loses it. Zero leaves the stream unbounded.
+	stallBudget time.Duration
+}
+
+// SetStallBudget bounds how long a consumer should wait for the next frame
+// batch before treating the stream as stalled. Callers set it before handing
+// the stream to a player. Zero (the default) disables the check.
+func (s *PCMStream) SetStallBudget(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stallBudget = d
+}
+
+// StallBudget returns the per-batch budget set by SetStallBudget.
+func (s *PCMStream) StallBudget() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stallBudget
 }
 
 // NewPCMStream creates a new PCM stream bound to ctx. A blocked Write unblocks
