@@ -17,10 +17,13 @@ type ProviderSpec struct {
 var providerSpecs = []ProviderSpec{
 	{Name: "kokoro", Description: "Local Kokoro TTS"},
 	{Name: "qwen3-tts", Description: "Qwen3-TTS preset voices (native worker preferred; managed Python legacy)"},
-	// audio8 is deliberately absent until a tokenizer is wired. NewProvider
-	// still recognizes it for anyone who selects it explicitly, and fails with
-	// errAudio8NoTokenizer — before any model loading — rather than
-	// advertising a provider that cannot speak.
+	// audio8 was held out of this catalog while it had no tokenizer and could
+	// never speak. It now speaks wherever its export is installed, so it is
+	// listed on qwen3-tts's terms: the catalog says what this build implements,
+	// and the not-installed case is reported where installs are known —
+	// Settings marks the row via Audio8Installed, and NewProvider names the
+	// missing file — rather than by hiding the row.
+	{Name: "audio8", Description: "Audio8 DualAR ONNX (experimental · quality preview · packaged reference voice)"},
 }
 
 // Providers returns the list of implemented TTS providers.
@@ -46,7 +49,15 @@ func NewProvider(cfg *config.Config) (Provider, func(), error) {
 		}
 		return provider, provider.Delete, nil
 	case audio8ProviderName:
-		provider, err := NewAudio8TTS(Audio8Options{ModelDir: audio8ModelDir(cfg)})
+		modelDir := audio8ModelDir(cfg)
+		tok, err := NewAudio8Tokenizer(modelDir)
+		if err != nil {
+			// Before the manifest and the graphs: a missing or malformed
+			// tokenizer.json means this provider can never speak, and saying so
+			// costs nothing instead of seconds and gigabytes.
+			return nil, nil, err
+		}
+		provider, err := NewAudio8TTS(Audio8Options{ModelDir: modelDir, Tokenizer: tok})
 		if err != nil {
 			return nil, nil, err
 		}

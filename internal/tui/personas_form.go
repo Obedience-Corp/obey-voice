@@ -84,8 +84,14 @@ func stackVoiceCatalog(provider string) []string {
 			out = append(out, v.Name)
 		}
 		return out
-	case "", "kokoro":
-		voices, err := tts.StaticVoices("kokoro", "", "")
+	case "", "kokoro", "audio8":
+		// audio8 publishes exactly one packaged reference voice; both read the
+		// same static catalog StaticVoices owns.
+		name := strings.ToLower(strings.TrimSpace(provider))
+		if name == "" {
+			name = "kokoro"
+		}
+		voices, err := tts.StaticVoices(name, "", "")
 		if err != nil {
 			return nil
 		}

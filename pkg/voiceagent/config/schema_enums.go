@@ -15,7 +15,7 @@ import (
 // test, which may import them) fails the build when they drift.
 
 // ttsProviderEnum mirrors tts.Providers().
-func ttsProviderEnum() []string { return []string{"kokoro", "qwen3-tts"} }
+func ttsProviderEnum() []string { return []string{"kokoro", "qwen3-tts", "audio8"} }
 
 // kokoroVoiceEnum mirrors tts.VoiceNames() — the same list `obey-voice voices`
 // prints, in speaker-id order.

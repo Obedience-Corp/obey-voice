@@ -75,7 +75,7 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `calibredb_binary` | empty | `CALIBREDB_BINARY` | `calibredb` path; empty uses PATH then macOS app bundle / `/opt/calibre` |
 | `calibre_convert_binary` | empty | `CALIBRE_CONVERT_BINARY` | `ebook-convert` path used to convert MOBI/AZW-family books to EPUB |
 | `calibre_prefer_format` | `epub` | `CALIBRE_PREFER_FORMAT` | Preferred book format when resolving (`epub`, `pdf`, then convertible MOBI/AZW-family formats) |
-| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend |
+| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, or `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`, packaged reference voice only) |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |
 | `tts_voice` | `af_heart` | `TTS_VOICE` | Kokoro voice name |
 | `tts_place` | `local` | | Where Qwen speech runs: `local` (this computer) or `lan` (a `speech-serve` host — see [speech-serve.md](speech-serve.md)). Host topology, never a persona field |

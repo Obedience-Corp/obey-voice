@@ -122,6 +122,13 @@ func ttsProviderDetail(spec tts.ProviderSpec, cfg *config.Config) string {
 		return "managed model · static voices · " + ttsEffectiveVoiceLabelForProvider("kokoro", cfg)
 	case "qwen3-tts":
 		return "model " + ttsModelLabelForProvider("qwen3-tts", cfg) + " · " + ttsBinaryLabel(cfg) + " · " + ttsVoiceModeLabelForProvider("qwen3-tts", cfg) + " · " + ttsEffectiveVoiceLabelForProvider("qwen3-tts", cfg)
+	case "audio8":
+		// Listed whether or not the export is downloaded, like qwen3-tts; the
+		// row says so rather than implying it can speak here.
+		if !tts.Audio8Installed(cfg) {
+			return spec.Description + " · export not installed under models_dir/audio8-tts"
+		}
+		return spec.Description
 	default:
 		return spec.Description
 	}
