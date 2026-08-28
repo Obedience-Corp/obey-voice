@@ -355,6 +355,13 @@ func populateTTSMetadata(opts *render.Options, cfg *config.Config) {
 		return
 	}
 	opts.TTSModel = "managed"
+	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), config.Audio8ProviderName) {
+		opts.TTSVoice = strings.TrimSpace(cfg.Audio8Voice)
+		if opts.TTSVoice == "" {
+			opts.TTSVoice = config.Audio8PackagedVoice
+		}
+		return
+	}
 	opts.TTSVoice = strings.TrimSpace(cfg.TTSVoice)
 }
 
@@ -410,7 +417,17 @@ func synthIdentityFor(cfg *config.Config) string {
 		id += "/consent=" + strconv.FormatBool(cfg.QwenTTSConsent)
 		return id
 	}
-	if cfg.TTSVoice != "" {
+	// The voice belongs in the identity per provider: audio8 reads its own key,
+	// and leaving it out would give two different audio8 voices the same
+	// identity - so a --resume across a voice change would splice segments from
+	// both into one file.
+	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), config.Audio8ProviderName) {
+		voice := strings.TrimSpace(cfg.Audio8Voice)
+		if voice == "" {
+			voice = config.Audio8PackagedVoice
+		}
+		id += "/voice=" + voice
+	} else if cfg.TTSVoice != "" {
 		id += "/voice=" + cfg.TTSVoice
 	}
 	if cfg.SpeechSpeed > 0 {

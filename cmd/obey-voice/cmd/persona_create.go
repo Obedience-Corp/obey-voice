@@ -78,7 +78,20 @@ func activeVoiceFor(cfg *config.Config) string {
 	if isQwenTTS(cfg.TTSProvider) && strings.TrimSpace(cfg.QwenTTSVoice) != "" {
 		return cfg.QwenTTSVoice
 	}
+	if isAudio8(cfg.TTSProvider) {
+		// Empty is a real answer, not a missing one: it selects the voice
+		// packaged with the export.
+		if v := strings.TrimSpace(cfg.Audio8Voice); v != "" {
+			return v
+		}
+		return config.Audio8PackagedVoice
+	}
 	return cfg.TTSVoice
+}
+
+// isAudio8 reports whether a provider key selects the Audio8 provider.
+func isAudio8(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), config.Audio8ProviderName)
 }
 
 // activeTierFor reports the model tier only where one is read: the tier key is

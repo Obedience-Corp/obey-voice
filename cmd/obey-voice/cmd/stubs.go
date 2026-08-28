@@ -431,7 +431,15 @@ func ttsImplemented(name string) bool {
 // voices only exist inside a running worker (qwen3-tts) return no names, and
 // the caller then keeps the value as typed.
 func ttsVoiceCatalog(provider string) ([]string, error) {
-	voices, err := tts.StaticVoices(provider, "", "")
+	// audio8's catalog is the packaged reference plus whatever is registered
+	// under models_dir, so this needs a config to find the store. A config that
+	// will not load is not a validation failure: fall back to the static
+	// catalog rather than refusing every persona save.
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = nil
+	}
+	voices, err := tts.StaticVoicesFor(cfg, provider, "", "")
 	if err != nil {
 		return nil, err
 	}

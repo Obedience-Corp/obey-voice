@@ -16,6 +16,7 @@ type Config struct {
 	TTSProvider           string  `mapstructure:"tts_provider"`
 	TTSFallbackProvider   string  `mapstructure:"voice_fallback_provider"`
 	TTSVoice              string  `mapstructure:"tts_voice"`
+	Audio8Voice           string  `mapstructure:"audio8_voice"`
 	SpeechSpeed           float64 `mapstructure:"speech_speed"`
 	QwenTTSBinary         string  `mapstructure:"qwen_tts_binary"`
 	QwenTTSModel          string  `mapstructure:"qwen_tts_model"`
@@ -308,6 +309,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tts_provider", "kokoro")
 	v.SetDefault("voice_fallback_provider", "kokoro")
 	v.SetDefault("tts_voice", "af_heart")
+	v.SetDefault("audio8_voice", "")
 	v.SetDefault("speech_speed", 0.95)
 	// Empty selects Obey Voice's managed Qwen runtime. Set an explicit binary and
 	// model path only for the advanced external-worker compatibility path.
@@ -520,6 +522,7 @@ var envBindings = map[string]string{
 	"tts_provider":                "TTS_PROVIDER",
 	"voice_fallback_provider":     "VOICE_FALLBACK_PROVIDER",
 	"tts_voice":                   "TTS_VOICE",
+	"audio8_voice":                "AUDIO8_VOICE",
 	"tts_worker_token":            "OBEY_SPEECH_TOKEN",
 	"qwen_tts_binary":             "QWEN_TTS_BINARY",
 	"qwen_tts_model":              "QWEN_TTS_MODEL",

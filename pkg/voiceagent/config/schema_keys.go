@@ -44,6 +44,17 @@ func voiceKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			// Not an enum, unlike every other voice key: an audio8 voice is a
+			// name the user chose when they registered a reference recording,
+			// so the valid set lives in the voice store on disk, not in this
+			// binary. `config set` therefore accepts any well-formed name and
+			// the provider reports an unknown one when it goes to speak.
+			Key: "audio8_voice", Type: TypeString, Default: "",
+			Group: GroupVoice, Title: "Audio8 voice",
+			Help:               "Which registered Audio8 voice speaks. Empty uses the voice packaged with the export. Register more with `obey-voice voices register`.",
+			PersonaOverridable: true,
+		},
+		{
 			Key: "voice_fallback_provider", Type: TypeEnum, Default: "kokoro", Enum: ttsProviderEnum(),
 			Group: GroupVoice, Title: "Fallback engine",
 			Help: "Speaks one sentence in this engine's voice when the main engine fails, instead of going silent.",

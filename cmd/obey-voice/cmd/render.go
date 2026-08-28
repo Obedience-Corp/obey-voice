@@ -119,6 +119,14 @@ func applyVoiceOverrides(cfg *config.Config, opts *render.Options) {
 			cfg.QwenTTSLanguage = opts.Language
 		}
 		opts.Language = cfg.QwenTTSLanguage
+	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), config.Audio8ProviderName) {
+		// audio8 reads audio8_voice, never tts_voice. Routing --voice into the
+		// Kokoro key here would render the packaged reference and say nothing
+		// about the voice the user asked for.
+		if opts.Voice != "" {
+			cfg.Audio8Voice = opts.Voice
+		}
+		opts.Voice = cfg.Audio8Voice
 	} else {
 		if opts.Voice != "" {
 			cfg.TTSVoice = opts.Voice

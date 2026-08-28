@@ -18,6 +18,13 @@ func configReferencedClaims(cfg *Config, modelsDir string) ([]assetClaim, error)
 		return nil, err
 	}
 	claims := append(stt, ttsConfigClaims(cfg, modelsDir)...)
+	// Registered audio8 voices are claimed whatever provider is selected, which
+	// the export beside them deliberately is not. The asymmetry is the point:
+	// the export is a gigabyte-and-a-half that can be fetched again from the
+	// pinned snapshot, a registered voice is a few kilobytes encoded from a
+	// recording the user may no longer have. Nothing here is worth reclaiming
+	// and losing it is not recoverable.
+	claims = append(claims, pathClaim(Audio8VoicesDir(modelsDir), "registered audio8 voices"))
 	claims = append(claims, assetClaimFor(VADAsset(), modelsDir, "vad model silero_vad.onnx"))
 	return append(claims, speakerConfigClaims(cfg, modelsDir)...), nil
 }

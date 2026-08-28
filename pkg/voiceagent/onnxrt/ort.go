@@ -59,6 +59,17 @@ static OrtStatus* ort_run(OrtSession* s, const char* const* in_names, const OrtV
 }
 static OrtStatus* ort_tensor_data(OrtValue* v, void** out) { return ort_api()->GetTensorMutableData(v, out); }
 
+static OrtStatus* ort_tensor_elem_type(OrtValue* v, int* out) {
+  OrtTensorTypeAndShapeInfo* info = NULL;
+  OrtStatus* st = ort_api()->GetTensorTypeAndShape(v, &info);
+  if (st) return st;
+  ONNXTensorElementDataType dt = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  st = ort_api()->GetTensorElementType(info, &dt);
+  *out = (int)dt;
+  ort_api()->ReleaseTensorTypeAndShapeInfo(info);
+  return st;
+}
+
 static OrtStatus* ort_tensor_shape(OrtValue* v, int64_t* dims, size_t cap, size_t* ndim) {
   OrtTensorTypeAndShapeInfo* info = NULL;
   OrtStatus* st = ort_api()->GetTensorTypeAndShape(v, &info);
@@ -160,24 +171,6 @@ func (s *Session) Close() {
 	}
 }
 
-// Tensor is a dense tensor backed by Go memory. The backing slice must outlive
-// any Run call it is passed to; callers keep the slices alive across the call.
-type Tensor struct {
-	F32   []float32
-	I64   []int64
-	Bool  []bool
-	Shape []int64
-}
-
-// F32Tensor builds a float32 tensor.
-func F32Tensor(data []float32, shape ...int64) *Tensor { return &Tensor{F32: data, Shape: shape} }
-
-// I64Tensor builds an int64 tensor.
-func I64Tensor(data []int64, shape ...int64) *Tensor { return &Tensor{I64: data, Shape: shape} }
-
-// BoolTensor builds a bool tensor.
-func BoolTensor(data []bool, shape ...int64) *Tensor { return &Tensor{Bool: data, Shape: shape} }
-
 func (t *Tensor) toOrt(env *Env) (*C.OrtValue, error) {
 	var (
 		ptr    unsafe.Pointer
@@ -187,6 +180,8 @@ func (t *Tensor) toOrt(env *Env) (*C.OrtValue, error) {
 	switch {
 	case t.F32 != nil:
 		ptr, nbytes, dt = unsafe.Pointer(&t.F32[0]), C.size_t(len(t.F32)*4), C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT
+	case t.F16 != nil:
+		ptr, nbytes, dt = unsafe.Pointer(&t.F16[0]), C.size_t(len(t.F16)*2), C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16
 	case t.I64 != nil:
 		ptr, nbytes, dt = unsafe.Pointer(&t.I64[0]), C.size_t(len(t.I64)*8), C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64
 	case t.Bool != nil:
@@ -205,12 +200,6 @@ func (t *Tensor) toOrt(env *Env) (*C.OrtValue, error) {
 		return nil, err
 	}
 	return v, nil
-}
-
-// Output is a float32 result tensor copied out of the runtime.
-type Output struct {
-	Data  []float32
-	Shape []int64
 }
 
 // Run executes the graph. inputs maps graph input names to tensors; outputs come
@@ -267,17 +256,34 @@ func (s *Session) Run(inputs map[string]*Tensor) ([]Output, error) {
 			shape[d] = int64(dims[d])
 			n *= shape[d]
 		}
+		var elem C.int
+		if err := check(C.ort_tensor_elem_type(ov, &elem)); err != nil {
+			C.ort_value_free(ov)
+			return nil, err
+		}
 		var raw unsafe.Pointer
 		if err := check(C.ort_tensor_data(ov, &raw)); err != nil {
 			C.ort_value_free(ov)
 			return nil, err
 		}
-		// Copy out: the OrtValue owns this memory and is released below.
-		src := unsafe.Slice((*float32)(raw), int(n))
-		data := make([]float32, int(n))
-		copy(data, src)
+		// Copy out: the OrtValue owns this memory and is released below. The
+		// element type decides which field is filled — reading an int64 output
+		// as float32 would silently return noise, which is what a graph with a
+		// codes output (the codec encoder) would have done here before.
+		out := Output{Shape: shape}
+		switch elem {
+		case C.ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
+			out.Data = make([]float32, int(n))
+			copy(out.Data, unsafe.Slice((*float32)(raw), int(n)))
+		case C.ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:
+			out.I64 = make([]int64, int(n))
+			copy(out.I64, unsafe.Slice((*int64)(raw), int(n)))
+		default:
+			C.ort_value_free(ov)
+			return nil, fmt.Errorf("onnxrt: output %s has unsupported element type %d", C.GoString(s.outNames[i]), int(elem))
+		}
 		C.ort_value_free(ov)
-		result[i] = Output{Data: data, Shape: shape}
+		result[i] = out
 	}
 	return result, nil
 }

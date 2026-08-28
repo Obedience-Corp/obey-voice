@@ -14,6 +14,20 @@
   ],
   "keys": [
     {
+      "key": "audio8_voice",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Audio8 voice",
+      "help": "Which registered Audio8 voice speaks. Empty uses the voice packaged with the export. Register more with `obey-voice voices register`.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "AUDIO8_VOICE",
+      "editable": true
+    },
+    {
       "key": "backchannel_enabled",
       "type": "bool",
       "default": false,

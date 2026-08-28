@@ -48,12 +48,26 @@ type Audio8TTS struct {
 	man               *audio8Manifest
 	tok               Audio8Tokenizer
 
-	refCodes [][]int64 // [numCodebooks][T]
+	// modelDir is the export; modelsDir is the tree the registered-voice store
+	// hangs off, which is deliberately outside the export - that is usually a
+	// symlink tree into a read-only cache.
+	modelDir     string
+	modelsDir    string
+	defaultVoice string
+
+	refCodes [][]int64 // packaged reference, [numCodebooks][T]
 	refText  string
 
-	mu        sync.Mutex
-	prefix    *slowState // primed state after the constant head
-	prefixLen int
+	// mu guards the sessions, the resolved-voice cache and the primed prefixes.
+	// One synthesis runs at a time whatever the voice, because all three graphs
+	// are shared; the caches are per voice.
+	mu     sync.Mutex
+	voices map[string]*audio8Voice
+	// prefixes is bounded; prefixLRU holds its keys, least recently used first.
+	// The resolved-voice cache beside it is not bounded on purpose: a voice is
+	// its codes, tens of kilobytes, where a primed prefix is tens of megabytes.
+	prefixes  map[string]*audio8Prefix
+	prefixLRU []string
 
 	chunkFrames int
 	maxNew      int
@@ -64,12 +78,62 @@ type Audio8TTS struct {
 
 // Audio8Options tunes the provider. Zero values take the measured defaults.
 type Audio8Options struct {
-	ModelDir     string
+	ModelDir string
+	// ModelsDir is the models tree holding the registered-voice store
+	// (config.Audio8VoicesDir under it). Empty means the export's packaged
+	// reference is the only voice, which is what a caller with no models dir
+	// (a test, a probe) should get.
+	ModelsDir string
+	// Voice is the voice to speak in when a request does not name one. Empty
+	// selects the packaged reference.
+	Voice        string
 	Tokenizer    Audio8Tokenizer
 	ARThreads    int
 	CodecThreads int
 	ChunkFrames  int
 }
+
+// audio8Voice is a resolved reference: the codes the model conditions on and
+// the transcript of the audio they came from.
+type audio8Voice struct {
+	name       string
+	codes      [][]int64
+	transcript string
+}
+
+// audio8Prefix is the primed slow-graph state after a voice's constant head.
+type audio8Prefix struct {
+	state  *slowState
+	length int
+}
+
+// bytes is the entry's resident size, from the state's own slices.
+func (p *audio8Prefix) bytes() int {
+	if p == nil || p.state == nil {
+		return 0
+	}
+	s := p.state
+	return 4 * (len(s.cacheKeys) + len(s.cacheValues) + len(s.convStates) + len(s.ssmStates))
+}
+
+// audio8PrefixCacheSize bounds how many voices stay primed at once.
+//
+// One entry is the slow graph's entire recurrent state, and it is large: with
+// the shipped export's dimensions (24 layers, 2 local heads, max_seq_len 2048,
+// head dim 64) each KV cache is 24*2*2048*64 float32 = 25,165,824 bytes, and
+// there are two of them, plus 4,718,592 of SSM state and 344,064 of conv state.
+// 55,394,304 bytes - 52.8 MiB - per primed voice, asserted against the
+// allocator by TestAudio8PrefixEntrySizeMatchesTheDocumentedBound. Now that a
+// user can register as many voices as they like, an unbounded cache is an
+// unbounded leak: ten auditioned voices would pin half a gigabyte for the life
+// of the process.
+//
+// Three is the working set that actually occurs: the voice being spoken, the
+// one just switched away from, and one more for a persona that alternates.
+// Past that the least recently used entry is dropped and re-primed if it comes
+// back, at the ~1.0 s recorded in
+// docs/benchmarks/A1-audio8-tts-onnx-2026-08-27.json.
+const audio8PrefixCacheSize = 3
 
 // NewAudio8TTS loads the export in modelDir.
 func NewAudio8TTS(opts Audio8Options) (*Audio8TTS, error) {
@@ -98,8 +162,13 @@ func NewAudio8TTS(opts Audio8Options) (*Audio8TTS, error) {
 	}
 	a := &Audio8TTS{
 		env: env, man: man, tok: opts.Tokenizer,
-		chunkFrames: orDefault(opts.ChunkFrames, 12),
-		maxNew:      1024, temperature: 0.7, topP: 0.9, topK: 50,
+		modelDir:     opts.ModelDir,
+		modelsDir:    strings.TrimSpace(opts.ModelsDir),
+		defaultVoice: audio8VoiceOrDefault(opts.Voice),
+		voices:       map[string]*audio8Voice{},
+		prefixes:     map[string]*audio8Prefix{},
+		chunkFrames:  orDefault(opts.ChunkFrames, 12),
+		maxNew:       1024, temperature: 0.7, topP: 0.9, topK: 50,
 	}
 	slowOut := []string{"logits", "hidden", "key_delta", "value_delta", "next_conv_states", "next_ssm_states"}
 	if a.slow, err = onnxrt.NewSession(env, filepath.Join(opts.ModelDir, man.SlowDecodeModel), arThreads, 1, slowOut); err != nil {
@@ -151,14 +220,21 @@ func (a *Audio8TTS) Delete() {
 // Available reports whether the provider can synthesize.
 func (a *Audio8TTS) Available() bool { return a != nil && a.slow != nil && a.tok != nil }
 
-// ListVoices returns the registered reference voices. Only the packaged
-// reference is available until voice registration is wired.
+// ListVoices returns the packaged reference plus every registered voice.
+//
+// A store that cannot be read falls back to the packaged voice rather than
+// failing: the provider can still speak, and `voices registered` is the surface
+// that reports why a voice is missing.
 func (a *Audio8TTS) ListVoices(locale, gender string) []Voice {
-	return staticAudio8Voices(locale, gender)
+	voices, err := audio8VoiceCatalog(a.modelsDir, locale, gender)
+	if err != nil {
+		return staticAudio8Voices(locale, gender)
+	}
+	return voices
 }
 
 func staticAudio8Voices(locale, gender string) []Voice {
-	v := Voice{Name: "reference", FriendlyName: "Audio8 packaged reference", Locale: "en-us"}
+	v := Voice{Name: config.Audio8PackagedVoice, FriendlyName: "Audio8 packaged reference", Locale: "en-us"}
 	if locale != "" && !strings.HasPrefix(v.Locale, locale) {
 		return nil
 	}
@@ -168,12 +244,54 @@ func staticAudio8Voices(locale, gender string) []Voice {
 	return []Voice{v}
 }
 
+// audio8VoiceOrDefault normalizes a requested voice name; empty means the
+// packaged reference.
+func audio8VoiceOrDefault(name string) string {
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		return trimmed
+	}
+	return config.Audio8PackagedVoice
+}
+
+// resolveVoice returns the codes and transcript for a requested voice, loading
+// and caching a registered one on first use. Empty falls back to the provider's
+// configured voice, then to the packaged reference.
+func (a *Audio8TTS) resolveVoice(name string) (*audio8Voice, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = a.defaultVoice
+	}
+	name = audio8VoiceOrDefault(name)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if v := a.voices[name]; v != nil {
+		return v, nil
+	}
+	if name == config.Audio8PackagedVoice {
+		v := &audio8Voice{name: name, codes: a.refCodes, transcript: a.refText}
+		a.voices[name] = v
+		return v, nil
+	}
+	if a.modelsDir == "" {
+		return nil, fmt.Errorf("audio8: no voice store configured, so %q cannot be resolved (only %q is available)",
+			name, config.Audio8PackagedVoice)
+	}
+	codes, meta, err := loadAudio8VoiceCodes(a.modelsDir, name, a.man.ModelFingerprint, a.man.NumCodebooks)
+	if err != nil {
+		return nil, err
+	}
+	v := &audio8Voice{name: name, codes: codes, transcript: meta.Transcript}
+	a.voices[name] = v
+	return v, nil
+}
+
 var audio8SpeakerRE = regexp.MustCompile(`<\|speaker:\d+\|>`)
 
 // buildPrompt lays out [1, numCodebooks+1, N]: row 0 carries text ids and the
 // reference semantic ids, rows 1..n carry the reference codebooks.
-func (a *Audio8TTS) buildPrompt(target string) (rows [][]int64, constHead int, err error) {
-	refText := a.refText
+func (a *Audio8TTS) buildPrompt(voice *audio8Voice, target string) (rows [][]int64, constHead int, err error) {
+	refText := voice.transcript
 	if !audio8SpeakerRE.MatchString(refText) {
 		refText = "<|speaker:0|>" + refText
 	}
@@ -206,10 +324,10 @@ func (a *Audio8TTS) buildPrompt(target string) (rows [][]int64, constHead int, e
 	if err != nil {
 		return nil, 0, err
 	}
-	refLen := len(a.refCodes[0])
+	refLen := len(voice.codes[0])
 	row0 := make([]int64, 0, len(prefix)+refLen+len(suffix))
 	row0 = append(row0, prefix...)
-	for _, c := range a.refCodes[0] {
+	for _, c := range voice.codes[0] {
 		row0 = append(row0, c+int64(a.man.SemanticBeginID))
 	}
 	row0 = append(row0, suffix...)
@@ -218,24 +336,30 @@ func (a *Audio8TTS) buildPrompt(target string) (rows [][]int64, constHead int, e
 	rows[0] = row0
 	for cb := 1; cb <= a.man.NumCodebooks; cb++ {
 		r := make([]int64, len(row0))
-		copy(r[len(prefix):len(prefix)+refLen], a.refCodes[cb-1])
+		copy(r[len(prefix):len(prefix)+refLen], voice.codes[cb-1])
 		rows[cb] = r
 	}
 	return rows, len(prefix) + refLen, nil
 }
 
-// primePrefix runs the constant head once and caches the resulting state. The
-// system prompt and reference voice are identical every turn, so this is the
-// difference between ~1.1 s and ~110 ms of prefill per utterance.
-func (a *Audio8TTS) primePrefix() error {
+// prefixFor runs one voice's constant head once and caches the resulting state.
+// The system prompt and the reference voice are identical on every turn in that
+// voice, so this is the difference between ~1.1 s and ~110 ms of prefill per
+// utterance (docs/benchmarks/A1-audio8-tts-onnx-2026-08-27.json).
+//
+// The cache is per voice, and switching voices pays the prime again: the
+// reference frames are part of the primed state, so one cache entry cannot
+// serve two voices. It holds at most audio8PrefixCacheSize of them - see there
+// for why that number and what one costs.
+func (a *Audio8TTS) prefixFor(voice *audio8Voice) (*audio8Prefix, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.prefix != nil {
-		return nil
+	if p := a.lookupPrefixLocked(voice.name); p != nil {
+		return p, nil
 	}
-	rows, constHead, err := a.buildPrompt("priming")
+	rows, constHead, err := a.buildPrompt(voice, "priming")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	st := newSlowState(a.man)
 	col := make([]int64, a.man.NumCodebooks+1)
@@ -244,11 +368,50 @@ func (a *Audio8TTS) primePrefix() error {
 			col[r] = rows[r][pos]
 		}
 		if _, _, err := a.slowStep(st, col, pos); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	a.prefix, a.prefixLen = st, constHead
-	return nil
+	p := &audio8Prefix{state: st, length: constHead}
+	a.insertPrefixLocked(voice.name, p)
+	return p, nil
+}
+
+// lookupPrefixLocked returns the primed prefix for name, marking it as most
+// recently used. a.mu must be held.
+func (a *Audio8TTS) lookupPrefixLocked(name string) *audio8Prefix {
+	p := a.prefixes[name]
+	if p != nil {
+		a.touchPrefixLocked(name)
+	}
+	return p
+}
+
+// insertPrefixLocked stores a freshly primed prefix and evicts down to the
+// bound. a.mu must be held.
+//
+// Eviction drops the map's reference, not the memory: a caller that took a
+// prefix from prefixFor and has not reached generate yet still holds a valid
+// pointer, and generate clones the state it is given. An evicted voice is
+// simply re-primed the next time it is asked for.
+func (a *Audio8TTS) insertPrefixLocked(name string, p *audio8Prefix) {
+	a.prefixes[name] = p
+	a.touchPrefixLocked(name)
+	for len(a.prefixLRU) > audio8PrefixCacheSize {
+		evicted := a.prefixLRU[0]
+		a.prefixLRU = a.prefixLRU[1:]
+		delete(a.prefixes, evicted)
+	}
+}
+
+// touchPrefixLocked moves name to the most-recently-used end. a.mu must be held.
+func (a *Audio8TTS) touchPrefixLocked(name string) {
+	for i, n := range a.prefixLRU {
+		if n == name {
+			a.prefixLRU = append(a.prefixLRU[:i], a.prefixLRU[i+1:]...)
+			break
+		}
+	}
+	a.prefixLRU = append(a.prefixLRU, name)
 }
 
 // loadNPYInt64Rows reads a 2-D little-endian int64 .npy into rows.
@@ -293,6 +456,43 @@ func loadNPYInt64Rows(path string, wantRows int) ([][]int64, error) {
 	return rows, nil
 }
 
+// writeNPYInt64Rows writes rows as a 2-D little-endian int64 .npy, the shape
+// loadNPYInt64Rows reads back and the shape the export's own
+// reference_codes.npy uses. A registered voice is stored in the packaged
+// voice's format so one loader serves both.
+func writeNPYInt64Rows(path string, rows [][]int64) error {
+	if len(rows) == 0 || len(rows[0]) == 0 {
+		return fmt.Errorf("write %s: refusing to write empty codes", path)
+	}
+	cols := len(rows[0])
+	for r, row := range rows {
+		if len(row) != cols {
+			return fmt.Errorf("write %s: row %d has %d columns, want %d", path, r, len(row), cols)
+		}
+	}
+	header := fmt.Sprintf("{'descr': '<i8', 'fortran_order': False, 'shape': (%d, %d), }", len(rows), cols)
+	// numpy pads the header with spaces so the data starts on a 64-byte
+	// boundary, and the header always ends with a newline.
+	const preamble = 10 // magic(6) + version(2) + header length(2)
+	pad := 64 - (preamble+len(header)+1)%64
+	if pad == 64 {
+		pad = 0
+	}
+	header += strings.Repeat(" ", pad) + "\n"
+
+	buf := make([]byte, 0, preamble+len(header)+len(rows)*cols*8)
+	buf = append(buf, "\x93NUMPY"...)
+	buf = append(buf, 1, 0)
+	buf = binary.LittleEndian.AppendUint16(buf, uint16(len(header)))
+	buf = append(buf, header...)
+	for _, row := range rows {
+		for _, v := range row {
+			buf = binary.LittleEndian.AppendUint64(buf, uint64(v))
+		}
+	}
+	return os.WriteFile(path, buf, 0o600)
+}
+
 var npyShapeRE = regexp.MustCompile(`'shape':\s*\(([^)]*)\)`)
 
 func parseNPYShape(header string) ([]int, error) {
@@ -333,7 +533,15 @@ func (a *Audio8TTS) SynthesizeRequest(ctx context.Context, req SynthesisRequest)
 	if req.SampleRate != 0 && req.SampleRate != a.man.SampleRate {
 		return SynthesisResult{}, fmt.Errorf("audio8 cannot resample to %d Hz (native %d Hz)", req.SampleRate, a.man.SampleRate)
 	}
-	if err := a.primePrefix(); err != nil {
+	voice, err := a.resolveVoice(req.Voice)
+	if err != nil {
+		return SynthesisResult{}, err
+	}
+	// Priming is synchronous so an unusable voice fails the call rather than
+	// the stream, and so the caller's first read is not the one that waits a
+	// second for a cold prefix.
+	prefix, err := a.prefixFor(voice)
+	if err != nil {
 		return SynthesisResult{}, err
 	}
 	stream := audio.NewPCMStream(ctx)
@@ -352,7 +560,7 @@ func (a *Audio8TTS) SynthesizeRequest(ctx context.Context, req SynthesisRequest)
 			stream.Close()
 			return
 		}
-		if err := a.generate(ctx, req.Text, stream); err != nil {
+		if err := a.generate(ctx, voice, prefix, req.Text, stream); err != nil {
 			stream.CloseWithError(err)
 			return
 		}
@@ -362,22 +570,29 @@ func (a *Audio8TTS) SynthesizeRequest(ctx context.Context, req SynthesisRequest)
 	return SynthesisResult{
 		Stream: stream, SampleRate: a.man.SampleRate,
 		Provider: audio8ProviderName, Model: "audio8-tts-0.1b-onnx-int8",
-		Voice: "reference",
+		Voice: voice.name,
 	}, nil
 }
 
 // generate runs the AR loop, handing completed chunks to a codec goroutine so
 // decode overlaps generation.
-func (a *Audio8TTS) generate(ctx context.Context, text string, stream *audio.PCMStream) error {
-	// One synthesis at a time: the sessions and the primed state are shared.
+func (a *Audio8TTS) generate(ctx context.Context, voice *audio8Voice, prefix *audio8Prefix, text string, stream *audio.PCMStream) error {
+	// One synthesis at a time: the sessions are shared across voices. The
+	// prefix is only ever read here - prefixFor never mutates a cached entry -
+	// so cloning it outside the lock would be safe too; taking the lock first
+	// keeps the graphs single-threaded, which is what actually matters.
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	rows, constHead, err := a.buildPrompt(text)
+	rows, constHead, err := a.buildPrompt(voice, text)
 	if err != nil {
 		return err
 	}
-	st := a.prefix.clone()
+	if constHead != prefix.length {
+		return fmt.Errorf("audio8: voice %q primed %d tokens but this prompt has a %d token head",
+			voice.name, prefix.length, constHead)
+	}
+	st := prefix.state.clone()
 	col := make([]int64, a.man.NumCodebooks+1)
 	n := len(rows[0])
 	var logits, hidden []float32
@@ -552,9 +767,11 @@ func (a *Audio8TTS) Capabilities() ProviderCapabilities {
 		ModelReady:        a.Available(),
 		SampleRates:       []int{a.man.SampleRate},
 		SupportsStreaming: true,
-		// Reference audio is the model's native conditioning path, but voice
-		// registration (encoding a new reference) is not wired yet.
-		SupportsReferenceAudio: false,
+		// Reference audio is the model's native conditioning path. It is
+		// supported only when the export carries the registration package -
+		// the encoder is an optional part of the snapshot, and without it
+		// there is no way to turn audio into a voice.
+		SupportsReferenceAudio: Audio8RegistrationInstalled(a.modelDir),
 	}
 }
 

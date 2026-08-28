@@ -58,21 +58,90 @@ func TestSettingsTTSDetailForAnInstalledAudio8(t *testing.T) {
 	}
 }
 
-// Selecting audio8 must list its one packaged voice rather than crash or fall
-// through to kokoro's catalog.
-func TestSettingsVoiceListForAudio8(t *testing.T) {
-	m := newSettings(&config.Config{TTSProvider: "audio8", ModelsDir: t.TempDir()}, nil)
-	m.buildVoiceItems()
+// registerTestVoice writes one voice into the store the way the register
+// command does, without the encoder: the pickers read voice.json only.
+func registerTestVoice(t *testing.T, modelsDir, name string) {
+	t.Helper()
+	meta := tts.Audio8VoiceMeta{
+		Name:             name,
+		Transcript:       "the reference line",
+		ModelFingerprint: "audio8-tts-preview-0.1b-int8-v1",
+		SampleRate:       44100,
+		Provenance:       tts.Audio8VoiceProvenance{Kind: tts.Audio8VoiceRecorded, Consent: true},
+	}
+	codes := make([][]int64, 10)
+	for i := range codes {
+		codes[i] = []int64{int64(i), 1, 2}
+	}
+	if err := tts.SaveAudio8Voice(modelsDir, meta, codes); err != nil {
+		t.Fatal(err)
+	}
+}
 
+// Selecting audio8 must list the packaged voice rather than crash or fall
+// through to kokoro's catalog, and every registered voice beside it.
+func TestSettingsVoiceListForAudio8(t *testing.T) {
+	modelsDir := t.TempDir()
+	m := newSettings(&config.Config{TTSProvider: "audio8", ModelsDir: modelsDir}, nil)
+	m.buildVoiceItems()
 	if len(m.voiceItems) != 1 || m.voiceItems[0].Name != "reference" {
 		t.Fatalf("voice items = %+v, want the single audio8 reference voice", m.voiceItems)
+	}
+
+	registerTestVoice(t, modelsDir, "alice")
+	registerTestVoice(t, modelsDir, "bob")
+	m = newSettings(&config.Config{TTSProvider: "audio8", ModelsDir: modelsDir}, nil)
+	m.buildVoiceItems()
+	var names []string
+	for _, v := range m.voiceItems {
+		names = append(names, v.Name)
+	}
+	if strings.Join(names, ",") != "reference,alice,bob" {
+		t.Fatalf("voice items = %v, want the packaged reference plus both registered voices", names)
+	}
+}
+
+// A registered voice must be selectable in Settings, and the selection must
+// land on audio8's own key: tts_voice is a Kokoro enum that would refuse it.
+func TestSettingsSelectingAnAudio8VoiceWritesItsOwnKey(t *testing.T) {
+	modelsDir := t.TempDir()
+	registerTestVoice(t, modelsDir, "alice")
+	cfg := &config.Config{TTSProvider: "audio8", ModelsDir: modelsDir}
+	m := newSettings(cfg, nil)
+	saved := map[string]any{}
+	m.saveConfig = func(key string, value any) error {
+		saved[key] = value
+		return nil
+	}
+	m.section = sectionVoice
+	m.buildVoiceItems()
+	m.cursor = slices.IndexFunc(m.voiceItems, func(v tts.Voice) bool { return v.Name == "alice" })
+	if m.cursor < 0 {
+		t.Fatal("the registered voice is not selectable")
+	}
+	m.selectCurrent()
+
+	if saved["audio8_voice"] != "alice" {
+		t.Errorf("saved = %v, want audio8_voice=alice", saved)
+	}
+	if _, wrote := saved["tts_voice"]; wrote {
+		t.Error("Settings wrote the audio8 voice into tts_voice, which only Kokoro reads")
+	}
+	if cfg.Audio8Voice != "alice" {
+		t.Errorf("cfg.Audio8Voice = %q, want alice", cfg.Audio8Voice)
 	}
 }
 
 func TestStackVoiceCatalogForAudio8(t *testing.T) {
-	got := stackVoiceCatalog("audio8")
-	if len(got) != 1 || got[0] != "reference" {
+	modelsDir := t.TempDir()
+	cfg := &config.Config{ModelsDir: modelsDir}
+	if got := stackVoiceCatalog(cfg, "audio8"); len(got) != 1 || got[0] != "reference" {
 		t.Fatalf("stackVoiceCatalog(audio8) = %v, want [reference]", got)
+	}
+	registerTestVoice(t, modelsDir, "alice")
+	got := stackVoiceCatalog(cfg, "audio8")
+	if strings.Join(got, ",") != "reference,alice" {
+		t.Fatalf("stackVoiceCatalog(audio8) = %v, want [reference alice]; a persona could not select a registered voice", got)
 	}
 }
 
@@ -90,7 +159,7 @@ func TestStackVoiceCatalogStillHandlesKokoro(t *testing.T) {
 		t.Fatalf("StaticVoices: %v", err)
 	}
 	for _, provider := range []string{"", "kokoro"} {
-		if got := stackVoiceCatalog(provider); len(got) != len(kokoro) {
+		if got := stackVoiceCatalog(nil, provider); len(got) != len(kokoro) {
 			t.Fatalf("stackVoiceCatalog(%q) = %d voices, want %d", provider, len(got), len(kokoro))
 		}
 	}

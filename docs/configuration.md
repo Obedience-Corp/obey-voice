@@ -95,9 +95,10 @@ when you select it.
 | `calibredb_binary` | empty | `CALIBREDB_BINARY` | `calibredb` path; empty uses PATH then macOS app bundle / `/opt/calibre` |
 | `calibre_convert_binary` | empty | `CALIBRE_CONVERT_BINARY` | `ebook-convert` path used to convert MOBI/AZW-family books to EPUB |
 | `calibre_prefer_format` | `epub` | `CALIBRE_PREFER_FORMAT` | Preferred book format when resolving (`epub`, `pdf`, then convertible MOBI/AZW-family formats) |
-| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, or `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`, packaged reference voice only) |
+| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, or `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`) |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |
 | `tts_voice` | `af_heart` | `TTS_VOICE` | Kokoro voice name |
+| `audio8_voice` | empty | `AUDIO8_VOICE` | Which Audio8 voice speaks. Empty uses the reference packaged with the export; otherwise a voice registered with `obey-voice voices register` (see [Audio8 voices](audio8-voices.md)). Not an enum: registered names are yours, so an unknown one is reported by the provider rather than by `config set`. Switching voices re-pays the ~1.0 s prefix prime |
 | `tts_place` | `local` | | Where Qwen speech runs: `local` (this computer) or `lan` (a `speech-serve` host — see [speech-serve.md](speech-serve.md)). Host topology, never a persona field |
 | `tts_worker_url` | empty | | Speech worker address when `tts_place: lan`, e.g. `https://studio:7263`. `http://` only to loopback; never carries the token |
 | `tts_worker_token` | empty | `OBEY_SPEECH_TOKEN` | Shared secret the speech worker requires. **Required** whenever `tts_place: lan` — a missing token is refused at validation, not at connect time. `config get` reports only whether it is set |

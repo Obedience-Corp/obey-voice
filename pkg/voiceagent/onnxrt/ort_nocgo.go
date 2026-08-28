@@ -31,26 +31,3 @@ func (s *Session) Close() {}
 
 // Run always fails without cgo.
 func (s *Session) Run(map[string]*Tensor) ([]Output, error) { return nil, ErrNoCGO }
-
-// Tensor mirrors the cgo build's tensor type.
-type Tensor struct {
-	F32   []float32
-	I64   []int64
-	Bool  []bool
-	Shape []int64
-}
-
-// F32Tensor builds a float32 tensor.
-func F32Tensor(data []float32, shape ...int64) *Tensor { return &Tensor{F32: data, Shape: shape} }
-
-// I64Tensor builds an int64 tensor.
-func I64Tensor(data []int64, shape ...int64) *Tensor { return &Tensor{I64: data, Shape: shape} }
-
-// BoolTensor builds a bool tensor.
-func BoolTensor(data []bool, shape ...int64) *Tensor { return &Tensor{Bool: data, Shape: shape} }
-
-// Output mirrors the cgo build's output type.
-type Output struct {
-	Data  []float32
-	Shape []int64
-}

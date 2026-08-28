@@ -13,6 +13,7 @@ Everything else lives here.
 | [Narration](narration.md) | `render`, audiobooks, Calibre, narrate pipeline |
 | [Scenes](scene.md) | `scene`, scripted two-persona conversation audio |
 | [Meetings](meetings.md) | Meeting recorder, speaker labels, campaign routing |
+| [Audio8 voices](audio8-voices.md) | Registering reference voices for the audio8 provider, and the consent rules |
 | [Configuration](configuration.md) | `config.yaml` keys, Agent Skills |
 | [Development](development.md) | Build, tests, model assets, benchmarks |
 

@@ -70,6 +70,10 @@ obey-voice voices                         # List available Kokoro voices
 obey-voice voices --locale en-US          # Filter voices by locale
 obey-voice voices --json -p qwen3-tts     # Qwen presets from the static catalog (no model load)
 obey-voice voices --json -p qwen3-tts --live  # Ask the installed native package instead (~10s)
+obey-voice voices register en --from-kokoro af_heart   # Audio8 voice from synthesized audio (no recording)
+obey-voice voices register me --wav ref.wav --text "..." --consent  # ...or your own recording
+obey-voice voices registered              # Registered Audio8 voices and where they came from
+obey-voice voices remove me               # Delete one registered Audio8 voice
 obey-voice providers                      # Show brain, TTS, and STT providers
 obey-voice test                           # Test microphone and speaker
 obey-voice benchmark --prompt "hello"     # Run a local benchmark

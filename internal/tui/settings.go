@@ -335,7 +335,9 @@ func (m *settingsModel) buildVoiceItems() {
 	if strings.EqualFold(activeTTSProvider(m.cfg), managedqwen.ProviderName) {
 		return
 	}
-	voices, err := tts.StaticVoices(m.cfg.TTSProvider, "", "")
+	// StaticVoicesFor, not StaticVoices: audio8's catalog is the packaged
+	// reference plus whatever this config's models_dir has registered.
+	voices, err := tts.StaticVoicesFor(m.cfg, m.cfg.TTSProvider, "", "")
 	if err != nil {
 		return
 	}
@@ -698,8 +700,11 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 		if m.cursor < len(m.voiceItems) {
 			voice := m.voiceItems[m.cursor]
 			key := "tts_voice"
-			if strings.EqualFold(activeTTSProvider(m.cfg), managedqwen.ProviderName) {
+			switch {
+			case strings.EqualFold(activeTTSProvider(m.cfg), managedqwen.ProviderName):
 				key = "qwen_tts_voice"
+			case strings.EqualFold(activeTTSProvider(m.cfg), config.Audio8ProviderName):
+				key = "audio8_voice"
 			}
 			saveConfig := m.saveConfig
 			if saveConfig == nil {
@@ -710,9 +715,12 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 				m.message = fmt.Sprintf("Failed to save voice: %v", err)
 				return nil
 			}
-			if key == "qwen_tts_voice" {
+			switch key {
+			case "qwen_tts_voice":
 				m.cfg.QwenTTSVoice = voice.Name
-			} else {
+			case "audio8_voice":
+				m.cfg.Audio8Voice = voice.Name
+			default:
 				m.cfg.TTSVoice = voice.Name
 			}
 			m.message = fmt.Sprintf("Default voice set to %s · personas with their own voice keep it", voice.Name)

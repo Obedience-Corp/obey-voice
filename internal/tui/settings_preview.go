@@ -61,6 +61,8 @@ func (m settingsModel) previewVoice(ctx context.Context, id int64, voice tts.Voi
 		if cfg.QwenTTSLanguage == "" {
 			cfg.QwenTTSLanguage = "Auto"
 		}
+	} else if activeTTSProvider(&cfg) == config.Audio8ProviderName {
+		cfg.Audio8Voice = voice.Name
 	} else {
 		cfg.TTSVoice = voice.Name
 	}

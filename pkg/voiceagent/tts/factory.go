@@ -57,7 +57,12 @@ func NewProvider(cfg *config.Config) (Provider, func(), error) {
 			// costs nothing instead of seconds and gigabytes.
 			return nil, nil, err
 		}
-		provider, err := NewAudio8TTS(Audio8Options{ModelDir: modelDir, Tokenizer: tok})
+		provider, err := NewAudio8TTS(Audio8Options{
+			ModelDir:  modelDir,
+			ModelsDir: config.ModelsDirFrom(cfg),
+			Voice:     cfg.Audio8Voice,
+			Tokenizer: tok,
+		})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -74,13 +79,25 @@ func NewProvider(cfg *config.Config) (Provider, func(), error) {
 // caller that must never construct a provider or touch a model file — e.g.
 // `voices --json` on a fresh machine — can still list real voice names.
 func StaticVoices(providerName, locale, gender string) ([]Voice, error) {
+	return StaticVoicesFor(nil, providerName, locale, gender)
+}
+
+// StaticVoicesFor is StaticVoices with a config, which audio8 needs and no
+// other provider does: its catalog is the packaged reference plus whatever the
+// user registered under models_dir, so the answer depends on which models_dir
+// this config points at. Every caller that has a config should use this one -
+// StaticVoices without one can only ever report audio8's packaged voice.
+func StaticVoicesFor(cfg *config.Config, providerName, locale, gender string) ([]Voice, error) {
 	switch strings.TrimSpace(strings.ToLower(providerName)) {
 	case "", "kokoro":
 		return staticKokoroVoices(locale, gender), nil
 	case "qwen3-tts":
 		return staticQwenVoices(locale, gender), nil
 	case audio8ProviderName:
-		return staticAudio8Voices(locale, gender), nil
+		if cfg == nil {
+			return staticAudio8Voices(locale, gender), nil
+		}
+		return audio8VoiceCatalog(config.ModelsDirFrom(cfg), locale, gender)
 	default:
 		return nil, unsupportedProviderError(providerName)
 	}
