@@ -1,0 +1,526 @@
+{
+  "schema": "obey-voice.benchmark.tts-rtf.v1",
+  "id": "C1-coreml-code-predictor-0.6b",
+  "question": "Does exporting the CoreML code predictor speed up qwen3-tts 0.6b on Apple Silicon, and by how much?",
+  "measured_at": "2026-08-28T05:00:48Z",
+  "machine": {
+    "model_id": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "os": "macOS 26.5",
+    "power": "AC; ollama unloaded and nothing else touching disk or GPU during either leg"
+  },
+  "what_changed": {
+    "finding": "The engine looks for models/coreml/code_predictor.mlpackage and logs 'CoreML code predictor load failed: Model does not exist' on every start. The shipped native package does not include it, so every macOS install runs the ggml fallback.",
+    "why_it_matters": "The code predictor sits inside the autoregressive loop, which F7's generate/decode split measured at 75-83% of synthesis cost and called the lever.",
+    "export_command": "python scripts/convert_code_predictor_to_coreml.py --input models/Qwen3-TTS-12Hz-0.6B-Base --output <out>/coreml/code_predictor.mlpackage",
+    "export_env": "isolated venv, coremltools 9.0, torch 2.13.0, python 3.12",
+    "export_sanity": {
+      "cosine_vs_torch": 0.999792,
+      "max_abs_diff": 0.230287,
+      "ane_ops_total": 765,
+      "ane_ops_with_usage": 408,
+      "ane_ops_supported": 408
+    },
+    "mlpackage_sha256": "c1a11bab95532649e9e6034c38e06c17a6c3a1d847d4b5f0decd2c67675071e3",
+    "mlpackage_bytes_approx": 220000000
+  },
+  "provenance": {
+    "engine_repo": "qwen3-tts.cpp",
+    "engine_commit": "22277bc6f087fd081df8bffa9c280b106a8af567",
+    "engine_worktree_diff_lines": 0,
+    "ggml_submodule_commit": "3af5f5760e19a96427f5f7a93b79cbdf3d4b265b",
+    "worker_source_repo": "qwen3-tts-native",
+    "worker_source_commit": "e66661a66c2d3f6d71388c640fc5b11c7cb32faa",
+    "worker_source_file": "tools/worker_main.c",
+    "build_commands": [
+      "git worktree add --detach <clean> 22277bc6f087fd081df8bffa9c280b106a8af567",
+      "git -C <clean> submodule update --init --recursive",
+      "cmake -S ggml -B ggml/build -DGGML_METAL=ON && cmake --build ggml/build -j$(sysctl -n hw.ncpu)",
+      "cmake -S . -B build && cmake --build build -j$(sysctl -n hw.ncpu)",
+      "cc -O2 -Wall -Wextra -I<clean>/src -L<clean>/build -Wl,-rpath,@loader_path -o <clean>/build/qwen3-tts-worker <lab>/tools/worker_main.c -lqwen3tts -lm -lpthread"
+    ],
+    "toolchain": {
+      "cmake": "4.3.4",
+      "cc": "Apple clang 21.0.0 (clang-2100.1.1.101)"
+    },
+    "binaries": {
+      "libqwen3tts.0.1.0.dylib_sha256": "44008d812752fe219c2b6e66479836e71b9434d95016946e9bcf460ab053c207",
+      "qwen3-tts-worker_sha256": "681cfc8f1eddc25a99a1f5b94ab19ea86d33779c66d0f10c439146ba20628f2f"
+    },
+    "model_sha256": {
+      "qwen3-tts-0.6b-f16.gguf": "0b89770118463af8f2467d824a8de57d96df6a09f927a9769a3f7b7fffa7087d"
+    },
+    "bench_command": "QWEN_ROOT=<lab> QWEN3_TTS_TIER=0.6b QWEN_WORKER=<clean>/build/qwen3-tts-worker DYLD_LIBRARY_PATH=<clean>/build QWEN_MODELS=<models-plain|models-coreml> go run ./cmd/warm-bench -iters 3 -out <out>.json",
+    "inputs": "two model dirs symlinking the SAME GGUFs and presets; they differ only by the presence of coreml/code_predictor.mlpackage",
+    "note": "QWEN_WARM_BENCH_JSON / -out is set deliberately: the default path artifacts/latency/warm_<tier>.json is F7's referenced artifact and would be overwritten."
+  },
+  "method": {
+    "harness": "qwen3-tts-native cmd/warm-bench (the harness F7 used), preset Vivian, 5 fixtures x 3 iterations, round-robin",
+    "definition": "RTF = synthesis wall time / audio duration. >1.0 is slower than realtime.",
+    "warmup": "one discarded warmup synthesis after worker ready; cold ready reported separately"
+  },
+  "results": {
+    "plain": {
+      "schema": "qwen.warmbench.v1",
+      "backend": "native-qwen3-tts-worker",
+      "backend_env": "",
+      "protocol": "qwen3-tts-worker/v1",
+      "tier": "0.6b",
+      "preset": "Vivian",
+      "streaming": false,
+      "sample_rate": 24000,
+      "cold_ready_ms": 14263.498249999999,
+      "warmup_wall_ms": 3942.0749170000004,
+      "warmup_text": "Warmup utterance, discarded from the results.",
+      "ttfa_honesty": "stage_A_ttfa_equals_full_wall",
+      "rtf_median_all": 1.3393509367522276,
+      "rtf_max_all": 1.7897764576620654,
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "text": "Hello from the native warm worker latency bench.",
+          "iterations": 3,
+          "wall_ms_median": 4266.935541999999,
+          "wall_ms_max": 6401.806667,
+          "audio_s_median": 3.256875,
+          "rtf_median": 1.3161752995956586,
+          "rtf_max": 1.7897764576620654,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 3865.442333,
+              "audio_duration_s": 2.936875,
+              "rtf": 1.3161752995956586,
+              "n_samples": 70485,
+              "started_at": "2026-08-28T04:57:50Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 6401.806667,
+              "audio_duration_s": 3.576875,
+              "rtf": 1.7897764576620654,
+              "n_samples": 85845,
+              "started_at": "2026-08-28T04:58:47Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 4266.935541999999,
+              "audio_duration_s": 3.256875,
+              "rtf": 1.31013181101516,
+              "n_samples": 78165,
+              "started_at": "2026-08-28T04:59:46Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "text": "Sure, that works.",
+          "iterations": 3,
+          "wall_ms_median": 2423.204625,
+          "wall_ms_max": 2962.2469589999996,
+          "audio_s_median": 1.736875,
+          "rtf_median": 1.3862518673296285,
+          "rtf_max": 1.3951519971212667,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 2962.2469589999996,
+              "audio_duration_s": 2.136875,
+              "rtf": 1.3862518673296285,
+              "n_samples": 51285,
+              "started_at": "2026-08-28T04:57:54Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 2423.204625,
+              "audio_duration_s": 1.736875,
+              "rtf": 1.3951519971212667,
+              "n_samples": 41685,
+              "started_at": "2026-08-28T04:58:53Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 2346.38675,
+              "audio_duration_s": 1.736875,
+              "rtf": 1.3509243612810364,
+              "n_samples": 41685,
+              "started_at": "2026-08-28T04:59:50Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "text": "I pulled the latest changes and the build is green on both machines.",
+          "iterations": 3,
+          "wall_ms_median": 5970.215083,
+          "wall_ms_max": 6135.380792,
+          "audio_s_median": 4.536875,
+          "rtf_median": 1.3489900004584903,
+          "rtf_max": 1.3523363090232814,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 5148.926208,
+              "audio_duration_s": 3.816875,
+              "rtf": 1.3489900004584903,
+              "n_samples": 91605,
+              "started_at": "2026-08-28T04:57:57Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 5970.215083,
+              "audio_duration_s": 4.536875,
+              "rtf": 1.3159311382835102,
+              "n_samples": 108885,
+              "started_at": "2026-08-28T04:58:56Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 6135.380792,
+              "audio_duration_s": 4.536875,
+              "rtf": 1.3523363090232814,
+              "n_samples": 108885,
+              "started_at": "2026-08-28T04:59:52Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "text": "Before we ship the streaming path, I want to see a sustained run where the synthesizer keeps up with playback for at least fifteen seconds without a single underrun.",
+          "iterations": 3,
+          "wall_ms_median": 12049.908875,
+          "wall_ms_max": 12437.878125,
+          "audio_s_median": 9.096875,
+          "rtf_median": 1.312534479295765,
+          "rtf_max": 1.3246206939196152,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 11834.959333,
+              "audio_duration_s": 9.016875,
+              "rtf": 1.312534479295765,
+              "n_samples": 216405,
+              "started_at": "2026-08-28T04:58:02Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 12437.878125,
+              "audio_duration_s": 9.576875,
+              "rtf": 1.2987407818312342,
+              "n_samples": 229845,
+              "started_at": "2026-08-28T04:59:02Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 12049.908875,
+              "audio_duration_s": 9.096875,
+              "rtf": 1.3246206939196152,
+              "n_samples": 218325,
+              "started_at": "2026-08-28T04:59:58Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "text": "The fleet design has three moving parts. First, the local model has to answer fast enough that the pause after you stop talking feels like a person thinking, not a machine loading. Second, the speech engine has to produce audio at least as fast as the speaker plays it, or the sentence will stutter halfway through. Third, everything has to keep working when the laptop is on battery and the fans are quiet.",
+          "iterations": 3,
+          "wall_ms_median": 31470.561542,
+          "wall_ms_max": 33425.351917,
+          "audio_s_median": 23.496875,
+          "rtf_median": 1.3393509367522276,
+          "rtf_max": 1.3757058023717041,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 33425.351917,
+              "audio_duration_s": 24.296875,
+              "rtf": 1.3757058023717041,
+              "n_samples": 583125,
+              "started_at": "2026-08-28T04:58:14Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 31470.561542,
+              "audio_duration_s": 23.496875,
+              "rtf": 1.3393509367522276,
+              "n_samples": 563925,
+              "started_at": "2026-08-28T04:59:14Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 28704.33825,
+              "audio_duration_s": 21.816875,
+              "rtf": 1.3156943077319736,
+              "n_samples": 523605,
+              "started_at": "2026-08-28T05:00:10Z"
+            }
+          ]
+        }
+      ],
+      "measured_at": "2026-08-28T04:57:46Z"
+    },
+    "coreml": {
+      "schema": "qwen.warmbench.v1",
+      "backend": "native-qwen3-tts-worker",
+      "backend_env": "",
+      "protocol": "qwen3-tts-worker/v1",
+      "tier": "0.6b",
+      "preset": "Vivian",
+      "streaming": false,
+      "sample_rate": 24000,
+      "cold_ready_ms": 8383.674916,
+      "warmup_wall_ms": 3012.782916,
+      "warmup_text": "Warmup utterance, discarded from the results.",
+      "ttfa_honesty": "stage_A_ttfa_equals_full_wall",
+      "rtf_median_all": 0.9990299111183887,
+      "rtf_max_all": 1.0329570352754658,
+      "fixtures": [
+        {
+          "fixture": "F1_anchor",
+          "text": "Hello from the native warm worker latency bench.",
+          "iterations": 3,
+          "wall_ms_median": 3140.197833,
+          "wall_ms_max": 3311.443958,
+          "audio_s_median": 3.096875,
+          "rtf_median": 1.0167550053348686,
+          "rtf_max": 1.0185860714942025,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 2909.9730830000003,
+              "audio_duration_s": 2.856875,
+              "rtf": 1.0185860714942025,
+              "n_samples": 68565,
+              "started_at": "2026-08-28T05:00:51Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 3140.197833,
+              "audio_duration_s": 3.096875,
+              "rtf": 1.0139892094450051,
+              "n_samples": 74325,
+              "started_at": "2026-08-28T05:01:32Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 3311.443958,
+              "audio_duration_s": 3.256875,
+              "rtf": 1.0167550053348686,
+              "n_samples": 78165,
+              "started_at": "2026-08-28T05:02:14Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F2_short",
+          "text": "Sure, that works.",
+          "iterations": 3,
+          "wall_ms_median": 1628.844125,
+          "wall_ms_max": 1784.941291,
+          "audio_s_median": 1.576875,
+          "rtf_median": 1.0314957797970887,
+          "rtf_max": 1.0329570352754658,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 1461.500583,
+              "audio_duration_s": 1.416875,
+              "rtf": 1.0314957797970887,
+              "n_samples": 34005,
+              "started_at": "2026-08-28T05:00:54Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 1784.941291,
+              "audio_duration_s": 1.736875,
+              "rtf": 1.0276740070528967,
+              "n_samples": 41685,
+              "started_at": "2026-08-28T05:01:35Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 1628.844125,
+              "audio_duration_s": 1.576875,
+              "rtf": 1.0329570352754658,
+              "n_samples": 37845,
+              "started_at": "2026-08-28T05:02:18Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F3_medium",
+          "text": "I pulled the latest changes and the build is green on both machines.",
+          "iterations": 3,
+          "wall_ms_median": 4368.874708,
+          "wall_ms_max": 4544.040625,
+          "audio_s_median": 4.376875,
+          "rtf_median": 0.9990299111183887,
+          "rtf_max": 1.001579418652707,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 4368.874708,
+              "audio_duration_s": 4.376875,
+              "rtf": 0.9981721451949164,
+              "n_samples": 105045,
+              "started_at": "2026-08-28T05:00:55Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 4544.040625,
+              "audio_duration_s": 4.536875,
+              "rtf": 1.001579418652707,
+              "n_samples": 108885,
+              "started_at": "2026-08-28T05:01:37Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 3813.1722919999997,
+              "audio_duration_s": 3.816875,
+              "rtf": 0.9990299111183887,
+              "n_samples": 91605,
+              "started_at": "2026-08-28T05:02:19Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F4_long_sentence",
+          "text": "Before we ship the streaming path, I want to see a sustained run where the synthesizer keeps up with playback for at least fifteen seconds without a single underrun.",
+          "iterations": 3,
+          "wall_ms_median": 9025.182958,
+          "wall_ms_max": 10174.668334,
+          "audio_s_median": 9.096875,
+          "rtf_median": 0.9921190472552387,
+          "rtf_max": 0.9943302047435989,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 8568.019083,
+              "audio_duration_s": 8.616875,
+              "rtf": 0.9943302047435989,
+              "n_samples": 206805,
+              "started_at": "2026-08-28T05:01:00Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 9025.182958,
+              "audio_duration_s": 9.096875,
+              "rtf": 0.9921190472552387,
+              "n_samples": 218325,
+              "started_at": "2026-08-28T05:01:42Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 10174.668334,
+              "audio_duration_s": 10.296875,
+              "rtf": 0.9881316743186647,
+              "n_samples": 247125,
+              "started_at": "2026-08-28T05:02:23Z"
+            }
+          ]
+        },
+        {
+          "fixture": "F5_paragraph",
+          "text": "The fleet design has three moving parts. First, the local model has to answer fast enough that the pause after you stop talking feels like a person thinking, not a machine loading. Second, the speech engine has to produce audio at least as fast as the speaker plays it, or the sentence will stutter halfway through. Third, everything has to keep working when the laptop is on battery and the fans are quiet.",
+          "iterations": 3,
+          "wall_ms_median": 23791.309291,
+          "wall_ms_max": 24120.585625,
+          "audio_s_median": 23.976875,
+          "rtf_median": 0.9927443601286173,
+          "rtf_max": 0.9954038494957739,
+          "runs": [
+            {
+              "iter": 1,
+              "wall_ms": 24120.585625,
+              "audio_duration_s": 24.296875,
+              "rtf": 0.9927443601286173,
+              "n_samples": 583125,
+              "started_at": "2026-08-28T05:01:08Z"
+            },
+            {
+              "iter": 2,
+              "wall_ms": 23627.776749999997,
+              "audio_duration_s": 23.736875,
+              "rtf": 0.9954038494957739,
+              "n_samples": 569685,
+              "started_at": "2026-08-28T05:01:51Z"
+            },
+            {
+              "iter": 3,
+              "wall_ms": 23791.309291,
+              "audio_duration_s": 23.976875,
+              "rtf": 0.9922606382608243,
+              "n_samples": 575445,
+              "started_at": "2026-08-28T05:02:33Z"
+            }
+          ]
+        }
+      ],
+      "measured_at": "2026-08-28T05:00:48Z"
+    },
+    "per_fixture_delta": [
+      {
+        "fixture": "F1_anchor",
+        "audio_s_median_plain": 3.257,
+        "audio_s_median_coreml": 3.097,
+        "rtf_median_plain": 1.3162,
+        "rtf_median_coreml": 1.0168,
+        "rtf_delta_pct": -22.7
+      },
+      {
+        "fixture": "F2_short",
+        "audio_s_median_plain": 1.737,
+        "audio_s_median_coreml": 1.577,
+        "rtf_median_plain": 1.3863,
+        "rtf_median_coreml": 1.0315,
+        "rtf_delta_pct": -25.6
+      },
+      {
+        "fixture": "F3_medium",
+        "audio_s_median_plain": 4.537,
+        "audio_s_median_coreml": 4.377,
+        "rtf_median_plain": 1.349,
+        "rtf_median_coreml": 0.999,
+        "rtf_delta_pct": -25.9
+      },
+      {
+        "fixture": "F4_long_sentence",
+        "audio_s_median_plain": 9.097,
+        "audio_s_median_coreml": 9.097,
+        "rtf_median_plain": 1.3125,
+        "rtf_median_coreml": 0.9921,
+        "rtf_delta_pct": -24.4
+      },
+      {
+        "fixture": "F5_paragraph",
+        "audio_s_median_plain": 23.497,
+        "audio_s_median_coreml": 23.977,
+        "rtf_median_plain": 1.3394,
+        "rtf_median_coreml": 0.9927,
+        "rtf_delta_pct": -25.9
+      }
+    ]
+  },
+  "reading": {
+    "headline": "CoreML cuts median RTF 1.3394 -> 0.999 (-25.4%), taking 0.6b from slower-than-realtime to approximately realtime.",
+    "harness_validated": "The plain leg medians 1.3394 against F7's committed 1.33 for this tier on byte-identical GGUF. That agreement is what makes these numbers comparable to the existing record.",
+    "uniform_across_length": "-22.7% to -25.9% on every fixture from 1.7s to 23.5s. An earlier run on an unpinned binary showed only -3% on the 23s paragraph; that was an artifact of that build, not a property of the approach.",
+    "what_it_does_not_settle": "This is the engine in isolation. obey-voice measured 0.6b in-pipeline at 1.83 median, but against the INSTALLED worker (a different binary), so the product-level figure with this engine plus CoreML is unmeasured. Reaching realtime in the lab does not establish reaching it in a real turn."
+  },
+  "evidence_limits": [
+    "n=3 per fixture in one session. Per-run RTF varies; the medians are stable and the direction is consistent across all five fixtures, but small deltas should not be read closely.",
+    "Cold ready came out 14263 ms plain vs 8383 ms coreml \u2014 the reverse of an earlier run (+9.8 s for coreml). Load time is noisy here and macOS may cache the compiled ANE model across processes; treat cold-start cost as unmeasured rather than as a benefit.",
+    "max_abs_diff 0.230287 against the torch reference: CoreML logits are close but not identical, and sampling is stochastic (temperature 0.9, top-k 50). RTF normalizes for the resulting duration differences; wall time does not.",
+    "English output quality was NOT judged. No ear check was performed. A numerically-close predictor can still change prosody, and no packaging change should land without one.",
+    "0.6b only. The 1.7b HF weights are not on this machine, so that tier is unmeasured.",
+    "Apple Silicon only; this path does not exist on other platforms.",
+    "The measured RTF sits at 0.999 \u2014 right at the boundary. Do not read it as headroom."
+  ],
+  "durable_value": "Establishes that an acceleration path the engine already supports is absent from the shipped package, quantifies it against a validated baseline, and records the exact build that produced the numbers so it can be replayed.",
+  "next": [
+    "Ear-check English output against the ggml predictor. Blocking for any packaging change.",
+    "Measure in-pipeline with this engine + CoreML: the lab figure does not establish the product figure.",
+    "Export and measure 1.7b (needs its HF weights).",
+    "Decide packaging: ship the mlpackage, or generate it at install time."
+  ]
+}
