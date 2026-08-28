@@ -562,7 +562,9 @@ var _ Provider = (*Audio8TTS)(nil)
 var _ RequestProvider = (*Audio8TTS)(nil)
 
 func audio8ModelDir(cfg *config.Config) string {
-	return filepath.Join(cfg.ModelsDir, config.Audio8Subdir)
+	// ModelsDirFrom, not raw cfg.ModelsDir: kokoro/qwen resolve through it, and
+	// an empty ModelsDir must not make this row disagree with theirs.
+	return filepath.Join(config.ModelsDirFrom(cfg), config.Audio8Subdir)
 }
 
 // errAudio8NoTokenizer rejects a provider that could never synthesize. The

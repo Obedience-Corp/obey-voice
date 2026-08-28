@@ -243,7 +243,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 			Severity: SeverityOK,
 			Detail:   "kokoro (" + KokoroPack() + ")",
 		})
-	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "audio8") {
+	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), Audio8ProviderName) {
 		// audio8 is a real provider that obey-voice does not manage assets
 		// for, so it needs its own row: the unmanaged fallthrough below would
 		// tell the user to abandon a provider that works once its export is on
@@ -259,9 +259,9 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		} else {
 			diags = append(diags, Diagnostic{
 				Name:        "tts-provider",
-				Severity:    SeverityWarn,
+				Severity:    SeverityError,
 				Detail:      "audio8 is selected but no export is installed at " + dir,
-				Remediation: "install the Audio8 ONNX export into " + dir + " (obey-voice does not download it; see scripts/audio8_bench/README.md for the pinned snapshot)",
+				Remediation: "install the Audio8 ONNX export into " + dir + " (obey-voice does not download it; snapshot " + Audio8SnapshotRepo + " @ " + Audio8SnapshotRev + ")",
 			})
 		}
 	} else {
