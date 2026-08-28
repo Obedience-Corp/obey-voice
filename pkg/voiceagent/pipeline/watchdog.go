@@ -17,6 +17,11 @@ import (
 
 const defaultPlaybackStallTimeout = 8 * time.Second
 
+// fallbackSpeakAllowance is the extra time the watchdog waits beyond the
+// primary engine's own budget so the fallback voice can be synthesized and
+// start playing before the turn is written off as unrecoverable.
+const fallbackSpeakAllowance = defaultPlaybackStallTimeout
+
 // errPlaybackStalled signals that the watchdog recovered a turn whose playback
 // never became audible. It is intentionally not context.Canceled so the run
 // loop retries listening rather than treating it as a shutdown.
@@ -34,9 +39,24 @@ func (p *Pipeline) stallTimeout(firstSegmentChars int) time.Duration {
 	// worker) regularly trips the 8s stall and the TUI shows the recovery
 	// line mid-reply even though synthesis is still healthy.
 	if grace := p.ttsFirstAudioGrace(firstSegmentChars); grace > defaultPlaybackStallTimeout {
+		// The stream-level stall budget fails a silent primary over to the
+		// fallback voice at exactly this grace. Give that rescue room to
+		// synthesize and start playing, or the hard recovery below races it
+		// and wins — which is how a slow engine produced a turn with text and
+		// no audio at all.
+		if p.hasFallbackVoice() {
+			return grace + fallbackSpeakAllowance
+		}
 		return grace
 	}
 	return defaultPlaybackStallTimeout
+}
+
+// hasFallbackVoice reports whether a distinct, ready fallback provider could
+// speak this turn. It mirrors canUseFallback without the per-call context.
+func (p *Pipeline) hasFallbackVoice() bool {
+	primary, fallback := p.ttsProviders()
+	return fallback != nil && fallback != primary && fallback.Available()
 }
 
 // ttsFirstAudioGrace returns the primary TTS provider's FirstAudioGrace when
@@ -72,7 +92,7 @@ func (p *Pipeline) ttsFirstAudioGrace(chars int) time.Duration {
 // Kokoro turn is not governed by qwen_tts_timeout, so naming it there points
 // the operator at a setting with no effect.
 func (p *Pipeline) stallHint(timeout time.Duration, chars int) string {
-	if grace := p.ttsFirstAudioGrace(chars); grace > 0 && timeout == grace {
+	if grace := p.ttsFirstAudioGrace(chars); grace > 0 && timeout >= grace {
 		return " (TTS may still be synthesizing — raise qwen_tts_timeout if this is a slow worker)"
 	}
 	return " (TTS may still be synthesizing)"
