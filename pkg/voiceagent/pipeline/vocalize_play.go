@@ -8,8 +8,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
-// EnableVocals installs the non-speech sound bank. dir may be empty: procedural
-// moans/gasps/laughs still play. WAV files in dir overlay a kind when present.
+// EnableVocals installs the optional recorded-sound bank. Empty dir is fine:
+// [moan]/[laugh] expand to onomatopoeia and go through the live TTS throat.
+// WAV files in dir (moan.wav, gasp.wav, …) replace a kind with a recording.
 func (p *Pipeline) EnableVocals(dir string) {
 	p.vocals = newVocalBank(dir)
 }
@@ -47,10 +48,16 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 
 func (p *Pipeline) synthUtterance(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, error) {
 	parts := splitVocalizations(sentence)
-	if p.vocals != nil && vocalPartsHaveSound(parts) {
+	// Recorded WAVs (persona sounds/) splice in. Otherwise expand tags to the
+	// onomatopoeia Qwen vocalizes in this speaker — one take, same throat.
+	if p.vocals != nil && p.vocals.allSoundsRecorded(parts) {
 		return p.renderVocalized(ctx, parts, stickFallback)
 	}
-	text := stripVocalTags(sentence)
+	pick := firstVocalPhrase
+	if p.vocals != nil {
+		pick = p.vocals.nextPhrase
+	}
+	text := expandVocalTags(sentence, pick)
 	if text == "" {
 		return nil, false, errors.New("nothing to synthesize")
 	}
