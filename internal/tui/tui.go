@@ -338,6 +338,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.remote.width, a.remote.height = a.width, a.height
 			return a, a.remote.start()
 		case screenPersonas:
+			// Entering the screen replaces the model wholesale, so hand the
+			// outgoing one's in-flight model scan its cancel instead of
+			// dropping the func on the floor.
+			a.personas.cancelBrainModels()
 			a.personas = newPersonas(a.cfg)
 			a.personas.width, a.personas.height = a.width, a.height
 			a.personas.ensureVisible()

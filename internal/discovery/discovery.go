@@ -21,12 +21,24 @@ type ProviderInfo struct {
 	Models    []string
 }
 
+// probeTimeout caps each network/subprocess probe so a wedged provider cannot
+// stall discovery.
+const probeTimeout = 3 * time.Second
+
 // DiscoverProviders probes the system for available brain providers.
 func DiscoverProviders(cfg *config.Config) []ProviderInfo {
+	return DiscoverProvidersContext(context.Background(), cfg)
+}
+
+// DiscoverProvidersContext is DiscoverProviders with caller-owned cancellation:
+// the probes stop when ctx is done, so a UI that opens a form can abandon the
+// scan when the form closes. Providers are always reported (a failed probe is
+// an unavailable provider, not a missing row).
+func DiscoverProvidersContext(ctx context.Context, cfg *config.Config) []ProviderInfo {
 	return []ProviderInfo{
 		discoverClaude(),
-		discoverGrok(),
-		discoverOllama(cfg),
+		discoverGrok(ctx),
+		discoverOllama(ctx, cfg),
 	}
 }
 
@@ -39,7 +51,7 @@ func discoverClaude() ProviderInfo {
 	}
 }
 
-func discoverGrok() ProviderInfo {
+func discoverGrok(parent context.Context) ProviderInfo {
 	info := ProviderInfo{Name: "grok"}
 
 	binPath, err := grok.LocateBinary()
@@ -48,7 +60,7 @@ func discoverGrok() ProviderInfo {
 	}
 	info.Available = true
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, probeTimeout)
 	defer cancel()
 
 	models, err := grok.NewClient(binPath).Models(ctx)
@@ -66,7 +78,7 @@ func discoverGrok() ProviderInfo {
 	return info
 }
 
-func discoverOllama(cfg *config.Config) ProviderInfo {
+func discoverOllama(parent context.Context, cfg *config.Config) ProviderInfo {
 	info := ProviderInfo{Name: "ollama"}
 
 	base, err := url.Parse(cfg.OllamaHost)
@@ -76,7 +88,7 @@ func discoverOllama(cfg *config.Config) ProviderInfo {
 
 	client := api.NewClient(base, http.DefaultClient)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, probeTimeout)
 	defer cancel()
 
 	resp, err := client.List(ctx)

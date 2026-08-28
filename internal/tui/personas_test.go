@@ -585,7 +585,12 @@ func TestPersonasColonWAdvancesToStackStep(t *testing.T) {
 	if m.brainProviderIdx == before {
 		t.Fatal("stack step did not respond to ←/→ after :w")
 	}
+	// Model is a picker now: cycle to "(custom)" first, then it takes text.
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
+	if !m.brainModels.custom {
+		t.Fatalf("←  on the Model row did not reach %q", stackCustomLabel)
+	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	if m.brainModelInput.Value() != "q" {
 		t.Fatalf("model input = %q, want typed char after :w", m.brainModelInput.Value())
