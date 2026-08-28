@@ -109,6 +109,16 @@ func TestChunkSentencesSegmentation(t *testing.T) {
 			[]string{"   ", "\n"},
 			nil,
 		},
+		{
+			"closing quote stays with the sentence",
+			[]string{`"Aww, did that hurt, baby?" she whispered. `},
+			[]string{`"Aww, did that hurt, baby?"`, "she whispered."},
+		},
+		{
+			"quoted reply with no following sentence flushes intact",
+			[]string{`"Aww, did that hurt, baby?"`},
+			[]string{`"Aww, did that hurt, baby?"`},
+		},
 	}
 
 	for _, tt := range tests {

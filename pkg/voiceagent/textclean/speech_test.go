@@ -144,7 +144,6 @@ func TestPrepareSpokenTextStripsEmoji(t *testing.T) {
 func TestPrepareSpokenTextKeepsMeaningfulSymbols(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"It cost €20 or $30", "It cost €20 or $30"},
-		{"She said “hello” and left", "She said “hello” and left"},
 		{"Wait — actually, no", "Wait — actually, no"},
 		{"To be continued…", "To be continued…"},
 		{"That's a 50% gain", "That's a 50% gain"},
@@ -162,6 +161,44 @@ func TestPrepareSpokenTextKeepsMeaningfulSymbols(t *testing.T) {
 				t.Errorf("PrepareSpokenText(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// Quotation marks are not spoken. Wrapping a whole reply in them is how an LLM
+// writes dialogue on the page, and Qwen3-TTS then treats the span as something
+// other than the utterance — the field capture was `"aww, did that hurt, baby"`
+// on screen and silence on the speaker.
+func TestPrepareSpokenTextStripsQuotes(t *testing.T) {
+	tests := []struct{ name, in, want string }{
+		{"wrapping straight quotes", `"aww, did that hurt, baby"`, "aww, did that hurt, baby"},
+		{"wrapping curly quotes", `“aww, did that hurt, baby”`, "aww, did that hurt, baby"},
+		{"quoted question", `"did that hurt, baby?"`, "did that hurt, baby?"},
+		{"unmatched opening quote", `"aww, did that hurt, baby?`, "aww, did that hurt, baby?"},
+		{"inner curly quotes", `She said “hello” and left`, "She said hello and left"},
+		{"inner straight quotes", `She said "hello" and left`, "She said hello and left"},
+		{"leading space then quotes", ` "aww, did that hurt, baby"`, "aww, did that hurt, baby"},
+		{"guillemets", `«hello» there`, "hello there"},
+		{"cjk quotes", `「hello」`, "hello"},
+		{"quotes only", `"`, ""},
+		{"empty pair", `""`, ""},
+		{"contraction preserved", "That's enough", "That's enough"},
+		{"no quotes unchanged", "Come here, baby.", "Come here, baby."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PrepareSpokenText(tt.in); got != tt.want {
+				t.Errorf("PrepareSpokenText(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	// Emoji strip must still leave quotes alone — the quote pass, not the
+	// emoji range, is what removes them. Otherwise a future emoji-range
+	// change could eat typographic quotes as "collateral" and this test
+	// would not notice the two stages collapsing into one.
+	const quoted = `She said “hello” and left`
+	if got := StripEmoji(quoted); got != quoted {
+		t.Errorf("StripEmoji(%q) = %q, want quotes preserved for StripSpeechQuotes", quoted, got)
 	}
 }
 
@@ -213,6 +250,8 @@ func TestPrepareSpokenTextIsIdempotent(t *testing.T) {
 		"Nice 👍 work — 1,000 users at 99.9% uptime",
 		"Zero 0 and 0.5 and 007 and 12345",
 		"From 🏴󠁧󠁢󠁳󠁣󠁴󠁿 to 🇺🇸 in 2026",
+		`"aww, did that hurt, baby"`,
+		`She said “hello” and left`,
 		"",
 	}
 	for _, in := range inputs {
