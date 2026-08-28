@@ -246,8 +246,8 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		p.EnableBackchannel(ctx)
 	}
 
-	// Non-speech sounds ([moan], [gasp], …). Procedural clips always load;
-	// WAVs in the active persona's sounds/ dir overlay a kind when present.
+	// Non-speech tags ([moan], [laugh], …) expand to onomatopoeia in the live
+	// TTS throat. WAVs in the persona sounds/ dir overlay a kind when present.
 	if !opts.Silent {
 		sounds := filepath.Join(config.ConfigDir(), "personas", cfg.ActivePersona, "sounds")
 		p.EnableVocals(sounds)

@@ -48,43 +48,26 @@ func TestStripVocalTags(t *testing.T) {
 	}
 }
 
-func TestProceduralVocalIsSoundNotSilence(t *testing.T) {
-	for _, kind := range []string{vocalMoan, vocalGasp, vocalLaugh, vocalSigh, vocalWhimper, vocalKiss} {
-		samples := proceduralVocal(kind, 1)
-		if len(samples) < vocalSampleRate/20 {
-			t.Errorf("%s: %d samples, want at least 50ms", kind, len(samples))
-		}
-		var energy float64
-		for _, s := range samples {
-			energy += float64(s) * float64(s)
-		}
-		rms := energy / float64(len(samples))
-		if rms < 1e-6 {
-			t.Errorf("%s: rms %g, want audible energy", kind, rms)
-		}
-		dur := time.Duration(float64(len(samples)) / vocalSampleRate * float64(time.Second))
-		if dur > 2*time.Second {
-			t.Errorf("%s: duration %s, want a short sound", kind, dur)
+func TestExpandVocalTagsUsesHumanOnomatopoeia(t *testing.T) {
+	got := expandVocalTags("[moan] that's it, baby.", nil)
+	if strings.Contains(strings.ToLower(got), "[moan]") {
+		t.Errorf("markup leaked into TTS text: %q", got)
+	}
+	if !strings.Contains(got, "that's it, baby.") {
+		t.Errorf("speech dropped: %q", got)
+	}
+	found := false
+	for _, phrase := range vocalPhrases[vocalMoan] {
+		if strings.Contains(got, phrase) {
+			found = true
+			break
 		}
 	}
-}
-
-func TestVocalBankPickVaries(t *testing.T) {
-	b := newVocalBank("")
-	first, ok := b.pick(vocalMoan)
-	if !ok || len(first.samples) == 0 {
-		t.Fatal("expected a procedural moan")
+	if !found {
+		t.Errorf("expected a moan onomatopoeia in %q, want one of %v", got, vocalPhrases[vocalMoan])
 	}
-	seen := map[int]bool{len(first.samples): true}
-	for i := 0; i < 8; i++ {
-		clip, ok := b.pick(vocalMoan)
-		if !ok {
-			t.Fatal("pick failed")
-		}
-		seen[len(clip.samples)] = true
-	}
-	if len(seen) < 2 {
-		t.Errorf("expected more than one moan variant, got lengths %v", seen)
+	if expandVocalTags("[laugh]", nil) != vocalPhrases[vocalLaugh][0] {
+		t.Errorf("tag-only laugh = %q", expandVocalTags("[laugh]", nil))
 	}
 }
 
@@ -111,5 +94,18 @@ func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
 	}
 	if !strings.Contains(joined, "that's it, baby.") {
 		t.Errorf("TTS missed the speech: %v", texts)
+	}
+	found := false
+	for _, phrase := range vocalPhrases[vocalMoan] {
+		if strings.Contains(joined, phrase) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("TTS should receive a moan onomatopoeia in the same take, got %v", texts)
+	}
+	if len(texts) != 1 {
+		t.Errorf("want one TTS take so the moan is in her voice with the sentence, got %v", texts)
 	}
 }

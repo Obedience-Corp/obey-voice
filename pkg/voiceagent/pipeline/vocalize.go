@@ -6,10 +6,16 @@ import (
 	"unicode"
 )
 
-// vocalKind is a non-speech sound the voice can play instead of reading a word.
-// Qwen3-TTS has no breath/moan token — sending "ahh" makes it say the letters.
-// These tags are the product seam: the model writes [moan], the pipeline plays
-// a sound, the transcript never shows the markup.
+// vocalKind is a non-speech beat in a reply. The model writes [moan]; TTS
+// hears the onomatopoeia Qwen actually renders as a human sound in the
+// current throat (clone or preset). Square-bracket markup never reaches
+// the synthesiser and never reaches the transcript.
+//
+// Official Qwen3-TTS has no <laugh> token. It does keep paralinguistics in
+// the codec, so "Haha!", "Haaaah…", "Hahh…" come out as a laugh / moan /
+// sigh in that speaker — the same trick the 1.7B instruct path uses.
+const vocalSampleRate = 24000
+
 const (
 	vocalMoan    = "moan"
 	vocalGasp    = "gasp"
@@ -115,4 +121,48 @@ func vocalPartsHaveSound(parts []vocalPart) bool {
 
 func vocalSpeechOnly(s string) string {
 	return stripVocalTags(s)
+}
+
+// vocalPhrases are what Qwen3-TTS renders as the sound, in the active voice.
+// Leading "h" adds breath. These are not English words to be read out —
+// they are the onomatopoeia the model was trained to vocalize.
+var vocalPhrases = map[string][]string{
+	vocalMoan:    {"Haaaah...", "Nnngh...", "Ahhn..."},
+	vocalGasp:    {"Hah!", "Haah!"},
+	vocalLaugh:   {"Haha!", "Haha haha."},
+	vocalSigh:    {"Hahh...", "Haaah."},
+	vocalWhimper: {"Nngh...", "Mmh..."},
+	vocalKiss:    {"Mwah."},
+}
+
+func firstVocalPhrase(kind string) string {
+	phrases := vocalPhrases[kind]
+	if len(phrases) == 0 {
+		return ""
+	}
+	return phrases[0]
+}
+
+// expandVocalTags rewrites [moan] / [laugh] / … into the onomatopoeia the
+// synthesiser should speak, so one TTS call produces the sound in the same
+// throat as the surrounding words. pick chooses a variant; nil uses the first.
+func expandVocalTags(s string, pick func(kind string) string) string {
+	if s == "" || !hasVocalTag(s) {
+		return s
+	}
+	if pick == nil {
+		pick = firstVocalPhrase
+	}
+	return strings.TrimSpace(vocalTagRE.ReplaceAllStringFunc(s, func(tag string) string {
+		m := vocalTagRE.FindStringSubmatch(tag)
+		if len(m) < 2 {
+			return ""
+		}
+		kind := canonicalVocal(m[1])
+		phrase := pick(kind)
+		if phrase == "" {
+			return ""
+		}
+		return phrase
+	}))
 }

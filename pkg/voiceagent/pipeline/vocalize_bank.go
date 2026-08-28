@@ -11,47 +11,34 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
-const vocalVariants = 3
-
 type vocalClip struct {
 	kind    string
 	samples []float32
 	rate    int
 }
 
-// vocalBank holds non-speech sounds. Procedural clips always exist; WAV files
-// in dir (moan.wav, gasp-2.wav, …) overlay the matching kind so a persona can
-// drop recordings of the cloned throat without a code change.
+// vocalBank holds optional recorded sounds. Empty means [moan]/[laugh] expand
+// to onomatopoeia and go through live TTS in the current throat. WAV files in
+// dir overlay a kind when present.
 type vocalBank struct {
-	mu    sync.Mutex
-	clips map[string][]vocalClip
-	last  map[string]int
-	rnd   *rand.Rand
+	mu         sync.Mutex
+	clips      map[string][]vocalClip
+	last       map[string]int
+	lastPhrase map[string]int
+	rnd        *rand.Rand
 }
 
 func newVocalBank(dir string) *vocalBank {
 	b := &vocalBank{
-		clips: make(map[string][]vocalClip),
-		last:  make(map[string]int),
-		rnd:   rand.New(rand.NewSource(time.Now().UnixNano())),
+		clips:      make(map[string][]vocalClip),
+		last:       make(map[string]int),
+		lastPhrase: make(map[string]int),
+		rnd:        rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
-	b.seedProcedural()
 	if dir != "" {
 		b.loadDir(dir)
 	}
 	return b
-}
-
-func (b *vocalBank) seedProcedural() {
-	kinds := []string{vocalMoan, vocalGasp, vocalLaugh, vocalSigh, vocalWhimper, vocalKiss}
-	for _, kind := range kinds {
-		for v := 0; v < vocalVariants; v++ {
-			samples := proceduralVocal(kind, int64(v+1)*17+int64(len(kind))*31)
-			b.clips[kind] = append(b.clips[kind], vocalClip{
-				kind: kind, samples: samples, rate: vocalSampleRate,
-			})
-		}
-	}
 }
 
 func (b *vocalBank) loadDir(dir string) {
@@ -116,6 +103,42 @@ func (b *vocalBank) pick(kind string) (vocalClip, bool) {
 	}
 	b.last[kind] = idx
 	return clips[idx], true
+}
+
+func (b *vocalBank) hasRecorded(kind string) bool {
+	if b == nil {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.clips[kind]) > 0
+}
+
+func (b *vocalBank) allSoundsRecorded(parts []vocalPart) bool {
+	for _, p := range parts {
+		if p.sound != "" && !b.hasRecorded(p.sound) {
+			return false
+		}
+	}
+	return vocalPartsHaveSound(parts)
+}
+
+func (b *vocalBank) nextPhrase(kind string) string {
+	phrases := vocalPhrases[kind]
+	if len(phrases) == 0 {
+		return ""
+	}
+	if b == nil || len(phrases) == 1 {
+		return phrases[0]
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	idx := b.rnd.Intn(len(phrases))
+	if idx == b.lastPhrase[kind] {
+		idx = (idx + 1) % len(phrases)
+	}
+	b.lastPhrase[kind] = idx
+	return phrases[idx]
 }
 
 func resampleLinear(in []float32, from, to int) []float32 {
