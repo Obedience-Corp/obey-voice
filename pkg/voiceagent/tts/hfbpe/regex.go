@@ -232,6 +232,17 @@ func translateBranch(src string) (string, error) {
 		}
 		switch {
 		case inClass:
+			// Character-class set operations are the one family Go's regexp
+			// compiles happily and reads differently: to the reference
+			// [\p{L}&&\p{Greek}] is an intersection and [a-z--[aeiou]] a
+			// difference, while Go sees literal '&' and '-' members. Silently
+			// wrong splits are exactly what this translation exists to prevent.
+			if c == '[' {
+				return "", fmt.Errorf("a nested character class is a set union in the reference and a literal '[' in Go")
+			}
+			if (c == '&' || c == '-' || c == '~') && i+1 < len(src) && src[i+1] == c {
+				return "", fmt.Errorf("character-class set operation %q means literal characters in Go", src[i:i+2])
+			}
 			if c == ']' {
 				inClass = false
 			}

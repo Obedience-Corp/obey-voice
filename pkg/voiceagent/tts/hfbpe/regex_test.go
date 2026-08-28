@@ -77,6 +77,11 @@ func TestTranslateBranch(t *testing.T) {
 		{"non-space", `\S`, `[^` + unicodeSpaceClass + `]`},
 		{"digit", `\d+`, `\p{Nd}+`},
 		{"escaped backslash keeps its escape", `a\\s`, `a\\s`},
+		// A single hyphen is still a range, and an escaped one still a member:
+		// only the doubled operators are rejected.
+		{"range", `[0-9]`, `[0-9]`},
+		{"leading hyphen", `[^-a]`, `[^-a]`},
+		{"escaped hyphen before a range", `[a\--b]`, `[a\--b]`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,6 +107,13 @@ func TestTranslateBranchRejections(t *testing.T) {
 		{`[\D]`, "set subtraction"},
 		{`[abc`, "unterminated character class"},
 		{`abc\`, "trailing backslash"},
+		// Set operations: the reference intersects/subtracts, Go takes the
+		// operator characters as literal class members. Both compile.
+		{`[\p{L}&&\p{Greek}]`, "set operation"},
+		{`[a-z--[aeiou]]`, "set operation"},
+		{`[a~~b]`, "set operation"},
+		{`[[a-z]&&[b]]`, "nested character class"},
+		{`[a[b]]`, "nested character class"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.src, func(t *testing.T) {

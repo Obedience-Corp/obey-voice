@@ -302,6 +302,20 @@ func TestNewRejectsUnsupportedTokenizers(t *testing.T) {
 			seq := d["pre_tokenizer"].(map[string]any)["pretokenizers"].([]any)
 			seq[1].(map[string]any)["pattern"] = map[string]any{"Regex": `^a`}
 		}, "anchor"},
+		// Set operations compile in Go with a different meaning, so nothing
+		// downstream would notice: this file has to refuse them at load.
+		{"split regex with a class intersection", func(d map[string]any) {
+			seq := d["pre_tokenizer"].(map[string]any)["pretokenizers"].([]any)
+			seq[1].(map[string]any)["pattern"] = map[string]any{"Regex": `[\p{L}&&\p{Greek}]`}
+		}, "set operation"},
+		{"split regex with a class difference", func(d map[string]any) {
+			seq := d["pre_tokenizer"].(map[string]any)["pretokenizers"].([]any)
+			seq[1].(map[string]any)["pattern"] = map[string]any{"Regex": `[a-z--[aeiou]]`}
+		}, "set operation"},
+		{"split regex with a nested class", func(d map[string]any) {
+			seq := d["pre_tokenizer"].(map[string]any)["pretokenizers"].([]any)
+			seq[1].(map[string]any)["pattern"] = map[string]any{"Regex": `[[a-z]&&[b]]`}
+		}, "nested character class"},
 	}
 
 	for _, tc := range tests {
@@ -314,6 +328,43 @@ func TestNewRejectsUnsupportedTokenizers(t *testing.T) {
 				t.Fatalf("New() error = %q, want it to contain %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestCheckpointSequenceRejectsASetOperationSplit replays the review's
+// end-to-end demonstration on the real pre-tokenizer sequence: swapping the
+// checkpoint's fourth step ("[0-9]") for a class intersection used to load
+// clean and then split differently from the reference. It must now fail at
+// load, and the untouched file must still load.
+func TestCheckpointSequenceRejectsASetOperationSplit(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "mini_tokenizer.json"))
+	if err != nil {
+		t.Fatalf("read mini_tokenizer.json: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse mini_tokenizer.json: %v", err)
+	}
+	if _, err := New(raw); err != nil {
+		t.Fatalf("New() on the untouched file = %v, want it to load", err)
+	}
+
+	steps := doc["pre_tokenizer"].(map[string]any)["pretokenizers"].([]any)
+	digits := steps[3].(map[string]any)
+	if got := digits["pattern"].(map[string]any)["Regex"]; got != "[0-9]" {
+		t.Fatalf("pre_tokenizer[3] pattern = %v, want the checkpoint's [0-9] split", got)
+	}
+	digits["pattern"] = map[string]any{"Regex": `[\p{L}&&\p{Greek}]`}
+	patched, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = New(patched)
+	if err == nil {
+		t.Fatal("New() error = nil, want the class intersection refused")
+	}
+	if !strings.Contains(err.Error(), "set operation") {
+		t.Fatalf("New() error = %q, want it to name the set operation", err)
 	}
 }
 
