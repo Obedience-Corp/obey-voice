@@ -790,8 +790,15 @@ func TestPersonaListLabelMarksTheBuiltinDefault(t *testing.T) {
 		},
 		{
 			name:    "default with a pinned voice still says default",
-			profile: &persona.Profile{ID: persona.DefaultID, DisplayName: "Obey", TTS: persona.TTS{Provider: "kokoro", Voice: "af_heart"}},
+			profile: &persona.Profile{ID: persona.DefaultID, DisplayName: "Obey", Builtin: true, TTS: persona.TTS{Provider: "kokoro", Voice: "af_heart"}},
 			want:    "Obey — built-in default · kokoro · af_heart",
+		},
+		{
+			// A user persona named obey is not shipped content and must not
+			// wear the badge.
+			name:    "user persona at the default id is not badged",
+			profile: &persona.Profile{ID: persona.DefaultID, DisplayName: "Obey", TTS: persona.TTS{Provider: "qwen3-tts", Voice: "Ryan"}},
+			want:    "Obey — qwen3-tts · Ryan",
 		},
 		{
 			name:    "samantha is an ordinary row",

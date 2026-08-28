@@ -1,6 +1,7 @@
 package persona
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,18 @@ func writeProfileFile(t *testing.T, dir, id, body string) string {
 	}
 	return path
 }
+
+// builtinObeyOnDisk is the obey profile as SeedBuiltins writes it: flagged
+// ours, pinning nothing.
+const builtinObeyOnDisk = `# yaml-language-server: $schema=festival-voice.persona.v1
+schema: festival-voice.persona.v1
+id: obey
+display_name: Obey
+builtin: true
+tts: {}
+prompts:
+    persona: obey
+`
 
 const samanthaProfileOnDisk = `# yaml-language-server: $schema=festival-voice.persona.v1
 schema: festival-voice.persona.v1
@@ -304,6 +317,11 @@ func TestLegacySingleAgentMigration(t *testing.T) {
 		wantVoice     string
 		wantProfile   []string
 		wantPromptRef string
+		wantPrompt    string
+		// wantPins/wantOwned are only checked for the rows that set them: a
+		// migrated profile the user owns must keep its pins and stay deletable.
+		wantPins  TTS
+		wantOwned bool
 	}{
 		{
 			name:        "pre-personas samantha keeps her name and voice",
@@ -343,12 +361,41 @@ func TestLegacySingleAgentMigration(t *testing.T) {
 			wantPromptRef: "Uncle_Fu",
 		},
 		{
-			name:        "a config that names no persona is a fresh install",
-			config:      "tts_provider: kokoro\ntts_voice: af_heart\n",
-			wantActive:  DefaultID,
-			wantName:    DefaultDisplayName,
+			// Matrix row d2, the one the first review caught flipping. The
+			// config writer is surgical, so a pre-personas install holds only
+			// the keys someone set — and almost nobody set persona. A missing
+			// key must not read as "fresh".
+			name:        "no persona key at all still migrates Samantha",
+			config:      "agent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_heart\nbrain_provider: ollama\n",
+			wantActive:  LegacyDefaultID,
+			wantName:    LegacyDefaultDisplayName,
 			wantVoice:   "af_heart",
-			wantProfile: []string{LegacyDefaultID, DefaultID},
+			wantProfile: []string{LegacyDefaultID},
+			wantPrompt:  "inspired by the character from the movie Her",
+		},
+		{
+			// Row d2b: no agent_name either. Under the broken gate this was a
+			// clean name-and-prompt flip to Obey.
+			name:        "no identity keys at all still migrates Samantha",
+			config:      "tts_provider: kokoro\ntts_voice: af_heart\n",
+			wantActive:  LegacyDefaultID,
+			wantName:    LegacyDefaultDisplayName,
+			wantVoice:   "af_heart",
+			wantProfile: []string{LegacyDefaultID},
+			wantPrompt:  "inspired by the character from the movie Her",
+		},
+		{
+			// Finding 6 / row B: the config names a user-authored obey
+			// document. The migrated profile is theirs — it keeps their pins
+			// and stays deletable, because we did not write it.
+			name:        "a config naming obey migrates the user's own profile",
+			config:      "persona: obey\nagent_name: Custom\ntts_provider: kokoro\ntts_voice: af_sky\n",
+			wantActive:  DefaultID,
+			wantName:    "Custom",
+			wantVoice:   "af_sky",
+			wantProfile: []string{DefaultID},
+			wantOwned:   false,
+			wantPins:    TTS{Provider: "kokoro", Voice: "af_sky"},
 		},
 	}
 	for _, tt := range tests {
@@ -390,6 +437,25 @@ func TestLegacySingleAgentMigration(t *testing.T) {
 				}
 				if p.Prompts.Persona != tt.wantPromptRef {
 					t.Errorf("prompts.persona = %q, want the config's own ref %q", p.Prompts.Persona, tt.wantPromptRef)
+				}
+			}
+			p, err := Load(tt.wantActive)
+			if err != nil {
+				t.Fatalf("Load(%s): %v", tt.wantActive, err)
+			}
+			if p.Builtin != tt.wantOwned && (tt.wantOwned || p.ID == DefaultID) {
+				t.Errorf("%s builtin = %v, want %v — provenance, not id, decides ownership", p.ID, p.Builtin, tt.wantOwned)
+			}
+			if (tt.wantPins != TTS{}) && p.TTS != tt.wantPins {
+				t.Errorf("%s tts = %+v, want the config's own pins %+v", p.ID, p.TTS, tt.wantPins)
+			}
+			if tt.wantPrompt != "" {
+				text, err := LoadSystemPrompt(cfg.Persona)
+				if err != nil {
+					t.Fatalf("LoadSystemPrompt(%s): %v", cfg.Persona, err)
+				}
+				if !strings.Contains(text, tt.wantPrompt) {
+					t.Errorf("resolved prompt does not contain %q:\n%s", tt.wantPrompt, text)
 				}
 			}
 			if tt.wantPromptRef == "" {
@@ -509,4 +575,272 @@ func TestResolveActiveIDMatchesTheLoader(t *testing.T) {
 	if got := ResolveActiveID(raw); got != cfg.ActivePersona {
 		t.Errorf("ResolveActiveID(raw) = %q, want the loaded %q", got, cfg.ActivePersona)
 	}
+}
+
+// userProfile is a profile the USER wrote: no builtin flag, own pins. The flag
+// is the provenance record every ownership decision reads, so a test that plants
+// one of these is planting a slot this code may not claim.
+func userProfile(id, display, provider, voice string) string {
+	return "schema: festival-voice.persona.v1\nid: " + id + "\ndisplay_name: " + display +
+		"\ntts:\n    provider: " + provider + "\n    voice: " + voice +
+		"\nprompts:\n    persona: " + id + "\n"
+}
+
+// TestUserPersonaNamedObeyIsNotAdopted is finding 5: `obey` is not a reserved
+// id, and the install this branch was written against holds user-created
+// obey and obey-2..obey-6. Promoting obey to the default must not hand those
+// installs a different agent, prompt, model or voice on first load.
+func TestUserPersonaNamedObeyIsNotAdopted(t *testing.T) {
+	tests := []struct {
+		name       string
+		config     string
+		wantActive string
+	}{
+		{
+			// Row A2. active_persona is only the shipped default, so the obey
+			// profile it names is a collision, not a choice.
+			name:       "defaulted active_persona skips the user's obey",
+			config:     "tts_provider: kokoro\n",
+			wantActive: "samantha",
+		},
+		{
+			// The same install, one `persona use obey` later: now it IS a
+			// choice, and the user's own profile is what they get.
+			name:       "explicitly chosen obey is honored",
+			config:     "active_persona: obey\ntts_provider: kokoro\n",
+			wantActive: "obey",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newInstall(t)
+			writeConfigFile(t, dir, tt.config)
+			path := writeProfileFile(t, dir, "obey", userProfile("obey", "Obey", "qwen3-tts", "Ryan"))
+			writeProfileFile(t, dir, "samantha", samanthaProfileOnDisk)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := config.Load()
+			if err != nil {
+				t.Fatalf("Load(): %v", err)
+			}
+			if cfg.ActivePersona != tt.wantActive {
+				t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, tt.wantActive)
+			}
+
+			// Either way the user's file is theirs: not rewritten, not flagged
+			// shipped, still deletable, pins intact.
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(before) != string(after) {
+				t.Errorf("the user's obey profile was rewritten:\n%s", after)
+			}
+			p, err := Load("obey")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Builtin {
+				t.Error("the user's obey profile was flagged builtin — that also makes it undeletable")
+			}
+			if (p.TTS != TTS{Provider: "qwen3-tts", Voice: "Ryan"}) {
+				t.Errorf("the user's pins moved: %+v", p.TTS)
+			}
+			if _, err := Delete(cfg, "obey"); err != nil && errors.Is(err, ErrBuiltinProtected) {
+				t.Error("the user can no longer delete their own persona")
+			}
+		})
+	}
+}
+
+// TestUserPersonasBesideTheDefaultAreUntouched is matrix row C: the live
+// install carries obey-2..obey-6, and nothing in seeding, healing or the
+// fallback order may notice them.
+func TestUserPersonasBesideTheDefaultAreUntouched(t *testing.T) {
+	dir := newInstall(t)
+	writeConfigFile(t, dir, "active_persona: samantha\npersona: samantha\nagent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_heart\n")
+	writeProfileFile(t, dir, "samantha", samanthaProfileOnDisk)
+	want := []string{"samantha"}
+	for _, id := range []string{"obey-2", "obey-3", "obey-4", "obey-5", "obey-6"} {
+		writeProfileFile(t, dir, id, userProfile(id, id, "kokoro", "af_sky"))
+		want = append(want, id)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if cfg.ActivePersona != "samantha" {
+		t.Errorf("ActivePersona = %q, want samantha", cfg.ActivePersona)
+	}
+	got := loadIDs(t)
+	if len(got) != len(want) {
+		t.Fatalf("personas = %v, want %v", got, want)
+	}
+	for _, id := range want {
+		if !hasProfileID(mustList(t), id) {
+			t.Errorf("personas = %v, missing %q", got, id)
+		}
+	}
+	// Each one still resolves and still belongs to the user.
+	for _, id := range []string{"obey-2", "obey-6"} {
+		p, err := Load(id)
+		if err != nil {
+			t.Fatalf("Load(%s): %v", id, err)
+		}
+		if p.Builtin || p.TTS.Voice != "af_sky" {
+			t.Errorf("%s = %+v, want an untouched user profile", id, p)
+		}
+	}
+}
+
+// TestFreshDecisionIgnoresTheEnvironment: the fresh-vs-migrate decision reads
+// artifacts, never keys. Both persona keys are env-bound, so a gate that read
+// them could be flipped by an exported variable — which is how the first review
+// found the bug by accident.
+func TestFreshDecisionIgnoresTheEnvironment(t *testing.T) {
+	tests := []struct {
+		name       string
+		env        map[string]string
+		wantActive string
+	}{
+		{name: "no environment", wantActive: DefaultID},
+		{name: "PERSONA exported", env: map[string]string{"PERSONA": "something"}, wantActive: DefaultID},
+		{name: "ACTIVE_PERSONA at the default", env: map[string]string{"ACTIVE_PERSONA": DefaultID}, wantActive: DefaultID},
+		{
+			// A chosen id is still honored — it just cannot decide whether the
+			// install is fresh. samantha is seeded, so this resolves.
+			name:       "ACTIVE_PERSONA names the other built-in",
+			env:        map[string]string{"ACTIVE_PERSONA": LegacyDefaultID},
+			wantActive: LegacyDefaultID,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			newInstall(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			cfg, err := config.Load()
+			if err != nil {
+				t.Fatalf("Load(): %v", err)
+			}
+			if cfg.ActivePersona != tt.wantActive {
+				t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, tt.wantActive)
+			}
+			// Whichever way it went, both built-ins are on disk and no config
+			// file was invented.
+			for _, id := range []string{DefaultID, LegacyDefaultID} {
+				if !Exists(id) {
+					t.Errorf("%s was not seeded", id)
+				}
+			}
+			if config.FileExists() {
+				t.Error("a fresh install wrote a config file")
+			}
+		})
+	}
+}
+
+// TestActivePersonaAdoptionMatrix covers the rows about an install that already
+// has profiles: which id an explicit choice, a stale choice and a bare default
+// each land on.
+func TestActivePersonaAdoptionMatrix(t *testing.T) {
+	ada := userProfile("ada", "Ada", "kokoro", "af_sky")
+	tests := []struct {
+		name     string
+		config   string
+		profiles map[string]string
+		want     string
+	}{
+		{
+			name:     "row e: an explicit user persona is adopted",
+			config:   "active_persona: ada\n",
+			profiles: map[string]string{"ada": ada, "samantha": samanthaProfileOnDisk},
+			want:     "ada",
+		},
+		{
+			name:     "row g: an explicit samantha that is missing heals",
+			config:   "active_persona: samantha\n",
+			profiles: map[string]string{"ada": ada},
+			want:     "ada",
+		},
+		{
+			name:     "an explicit obey that is missing heals to the shipped samantha",
+			config:   "active_persona: obey\n",
+			profiles: map[string]string{"ada": ada, "samantha": samanthaProfileOnDisk},
+			want:     "samantha",
+		},
+		{
+			name:     "the seeded default is adopted when it is ours",
+			config:   "tts_provider: kokoro\n",
+			profiles: map[string]string{"obey": builtinObeyOnDisk, "samantha": samanthaProfileOnDisk},
+			want:     "obey",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newInstall(t)
+			writeConfigFile(t, dir, tt.config)
+			for id, body := range tt.profiles {
+				writeProfileFile(t, dir, id, body)
+			}
+			cfg, err := config.Load()
+			if err != nil {
+				t.Fatalf("Load(): %v", err)
+			}
+			if cfg.ActivePersona != tt.want {
+				t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, tt.want)
+			}
+		})
+	}
+}
+
+// TestFreshInstallLoadsAreIdempotent is matrix row h: nothing drifts on the
+// second load, and no path invents a config file.
+func TestFreshInstallLoadsAreIdempotent(t *testing.T) {
+	newInstall(t)
+	first, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := readAllProfiles(t)
+
+	second, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := readAllProfiles(t)
+
+	if first.ActivePersona != second.ActivePersona || first.AgentName != second.AgentName {
+		t.Errorf("second load drifted: %q/%q then %q/%q",
+			first.ActivePersona, first.AgentName, second.ActivePersona, second.AgentName)
+	}
+	if len(before) != len(after) {
+		t.Fatalf("profile set changed: %d then %d", len(before), len(after))
+	}
+	for id, raw := range before {
+		if after[id] != raw {
+			t.Errorf("%s was rewritten on the second load", id)
+		}
+	}
+	if config.FileExists() {
+		t.Error("loading wrote a config file")
+	}
+}
+
+func readAllProfiles(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range mustList(t) {
+		raw, err := os.ReadFile(p.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[p.ID] = string(raw)
+	}
+	return out
 }

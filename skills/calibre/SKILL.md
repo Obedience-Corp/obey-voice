@@ -16,7 +16,7 @@ metadata search over reading whole books. Excerpts must stay short.
 
 ## How to query (fixed argv — no shell interpolation of user text)
 
-Use the Samantha CLI (preferred) or `calibredb` with fixed arguments:
+Use the Obey Voice CLI (preferred) or `calibredb` with fixed arguments:
 
 ```bash
 # Browse catalog (no filter; title order)
@@ -60,7 +60,7 @@ run `fts_index enable` unless the user explicitly asks.
 3. **Content / quote search**: try FTS; if it fails or is empty, explain and
    offer metadata search instead. Never dump a whole book into the reply.
 4. **Audiobook path**: resolve to an EPUB or PDF path. If only MOBI/AZW3 (or
-   another supported Calibre source format) is available, Samantha converts it
+   another supported Calibre source format) is available, Obey Voice converts it
    to a cached EPUB with `ebook-convert` when Calibre is installed; mention the
    converter requirement if conversion cannot run.
 5. Cap results at ~20 titles unless the user asks for more. Prefer the most

@@ -19,8 +19,9 @@ func personaDeleteCmd() *cobra.Command {
 Removes personas/<id>/ and prompts/persona/<id>.yaml. A prompt document another
 persona points at is left in place and reported as kept.
 
-Deleting the active persona re-activates the built-in obey persona (or the first
-remaining profile), so agent_name and the voice keys stay consistent.
+Deleting the active persona re-activates a built-in — obey when this install has
+it, otherwise samantha — or the first remaining profile, so agent_name and the
+voice keys stay consistent.
 
 --yes is required: this is not reversible.`,
 		Args: cobra.ExactArgs(1),
@@ -79,7 +80,7 @@ func deletePersona(cmd *cobra.Command, id string) (*personaDeleteJSON, error) {
 func classifyDeleteError(id string, err error) error {
 	switch {
 	case errors.Is(err, persona.ErrBuiltinProtected):
-		return codedError(codeBuiltinProtected, "%q is the built-in persona and cannot be deleted", id)
+		return codedError(codeBuiltinProtected, "%q is a built-in persona and cannot be deleted", id)
 	case errors.Is(err, persona.ErrLastPersona):
 		return codedError(codeLastPersona, "%q is the only persona: create another before deleting it", id)
 	default:

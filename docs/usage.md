@@ -7,7 +7,7 @@
 Mic and speakers on this machine:
 
 ```bash
-samantha              # Launcher → full conversation TUI with voice
+obey-voice            # Launcher → full conversation TUI with voice
 obey-voice --no-tui     # Start conversation directly (no launcher)
 obey-voice --text       # Text input, voice output
 obey-voice --no-voice   # Voice input, text output

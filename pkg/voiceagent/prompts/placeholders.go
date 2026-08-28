@@ -35,7 +35,7 @@ var PersonaPlaceholders = []Placeholder{
 	},
 	{
 		Name:        "user_name",
-		Description: "The operating-system user running samantha",
+		Description: "The operating-system user running the agent",
 	},
 	{
 		Name:        "os",

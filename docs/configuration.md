@@ -53,9 +53,21 @@ Two profiles ship built in and neither can be deleted: **obey**, the default a
 fresh install talks to, and **samantha**, the pre-rebrand default. `obey` pins
 nothing — no brain provider, model, TTS provider, voice or tier — so it always
 speaks with whatever the config above says; `samantha` keeps her own prompt and
-her Kokoro voice. An install that already had a persona keeps it: only an
-install with no personas directory and no persona named in `config.yaml`
-resolves `obey`.
+her Kokoro voice.
+
+Which one an install gets is decided by what is on disk, not by which keys the
+config happens to hold. An install with no personas directory **and no
+`config.yaml`** has never run: it is seeded with both built-ins and starts on
+`obey`. An install with a `config.yaml` but no personas directory predates the
+personas system: it migrates into the single profile its own keys describe,
+which is Samantha unless `persona:` says otherwise. An install that already has
+personas keeps them, and adding one is never automatic.
+
+`builtin: true` in a profile is a provenance record — it marks a file this
+product wrote, and it is what makes a profile undeletable. A persona you create
+is never marked builtin, including one you name `obey`: a persona of your own at
+a shipped id keeps its own prompt, pins and deletability, and is only activated
+when you select it.
 
 > **Upgrading:** installs that saved settings while `claude_max_session_tokens` defaulted to `60000` still carry that value in `config.yaml` and keep the silent session drops. Delete the key (or set `0`) to adopt the warn-only default. `obey-voice doctor` flags this.
 

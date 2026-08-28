@@ -115,7 +115,9 @@ func personaListLabel(p *persona.Profile) string {
 	}
 	// The built-in default is worth naming in the list: it pins nothing, so
 	// without this its row is the only one with no voice to show for itself.
-	if p.ID == persona.DefaultID {
+	// Both halves matter — the id alone would badge a user's own persona that
+	// happens to be named obey as shipped content.
+	if p.Builtin && p.ID == persona.DefaultID {
 		if detail != "" {
 			detail = "built-in default · " + detail
 		} else {

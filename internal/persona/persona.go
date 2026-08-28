@@ -284,6 +284,11 @@ func Write(p *Profile, skipExisting bool) error {
 // it was running was Samantha. Migrating such an install into an "obey" profile
 // would rename the agent out from under it. Fresh installs never come through
 // here — they get the shipped built-ins (see builtin.go).
+//
+// Builtin is likewise the legacy answer. A migrated profile is only ever the
+// pre-rebrand default; anything else came out of the user's own config keys, so
+// flagging it shipped would take ownership of a profile this code did not write
+// — and Delete refuses to remove a flagged profile.
 func FromConfig(cfg *config.Config) *Profile {
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -307,7 +312,7 @@ func FromConfig(cfg *config.Config) *Profile {
 		Schema:      Schema,
 		ID:          id,
 		DisplayName: display,
-		Builtin:     IsBuiltinID(id),
+		Builtin:     id == LegacyDefaultID,
 		TTS: TTS{
 			Provider: provider,
 			Voice:    voice,

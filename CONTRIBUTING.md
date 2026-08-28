@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for taking the time to improve Samantha.
+Thanks for taking the time to improve Obey Voice.
 
 ## Development Setup
 

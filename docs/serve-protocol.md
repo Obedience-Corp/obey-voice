@@ -767,6 +767,9 @@ which one it is using right now.
 
 ```json
 {"personas": [
+  {"id": "obey", "display_name": "Obey", "active": false, "builtin": true,
+   "brain": {"provider": "ollama", "model": "qwen2.5:14b"},
+   "tts": {"provider": "kokoro", "voice": "af_heart", "tier": ""}},
   {"id": "samantha", "display_name": "Samantha", "active": false, "builtin": true,
    "brain": {"provider": "ollama", "model": "qwen2.5:14b"},
    "tts": {"provider": "kokoro", "voice": "af_heart", "tier": ""}},
@@ -785,8 +788,11 @@ never has to. `tier` is empty for providers that do not select a model tier.
 that is correct, and a client that reads the config file instead will be wrong
 for the rest of the session.
 
-`builtin` marks the shipped persona, which cannot be deleted. It is additive
-beyond ADR-004; decode it as optional.
+`builtin` marks a shipped persona, which cannot be deleted. Two ship — `obey`,
+the default, and `samantha` — and an install may have either, both, or (before
+the rebrand) only samantha. It is also the provenance flag: a user persona is
+never marked builtin, even when its id happens to be `obey`. Additive beyond
+ADR-004; decode it as optional.
 
 The route is **absent (404)** on a serve that did not wire persona resolution,
 the same way `/v1/meeting/*` is absent without meeting capture. Feature-detect
