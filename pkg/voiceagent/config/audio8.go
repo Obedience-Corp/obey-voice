@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 // Audio8Subdir is where the Audio8 ONNX export lives under models_dir. The
@@ -161,4 +163,89 @@ func Audio8RegisteredVoiceNames(modelsDir string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// TTSVoiceFor reports the voice the given provider will speak in, read from the
+// one config key that provider reads.
+//
+// It exists because the same three-way substitution had been written out at
+// eight call sites — render's synthesizer, its manifest and its resume key, the
+// audiobook form, the launcher badge, the speaker test, the persona stack and
+// the Settings row — and four of them were wrong. audio8 turned that from a
+// cosmetic mismatch into a hard failure: it resolves the voice it is handed and
+// refuses one it does not recognise, so a surface that forwards Kokoro's
+// af_heart to it stops the render dead.
+//
+// audio8 is also the only provider whose *unset* key has a name — an empty
+// audio8_voice means the reference packaged in the export — so this substitutes
+// it rather than returning empty. kokoro and qwen3-tts return their key as it
+// is; their fallbacks belong to them, and applying one here would change resume
+// keys that already exist.
+func TTSVoiceFor(cfg *Config, provider string) string {
+	if cfg == nil {
+		return ""
+	}
+	switch normalizeTTSProviderName(provider) {
+	case qwen.ProviderName:
+		return strings.TrimSpace(cfg.QwenTTSVoice)
+	case Audio8ProviderName:
+		if voice := strings.TrimSpace(cfg.Audio8Voice); voice != "" {
+			return voice
+		}
+		return Audio8PackagedVoice
+	default:
+		return strings.TrimSpace(cfg.TTSVoice)
+	}
+}
+
+// ConfiguredTTSVoice is TTSVoiceFor without the substitution: the raw value of
+// the key, where empty means the user has not chosen one.
+//
+// The two are not interchangeable. A surface that forwards a voice to a
+// provider, or shows which voice will speak, wants TTSVoiceFor - audio8 refuses
+// a voice it does not recognise, and "" is not one. A surface that records a
+// choice wants this one, because there empty means "inherit", and writing
+// "reference" into a persona would pin a voice the user never picked.
+func ConfiguredTTSVoice(cfg *Config, provider string) string {
+	if cfg == nil {
+		return ""
+	}
+	if normalizeTTSProviderName(provider) == Audio8ProviderName {
+		return strings.TrimSpace(cfg.Audio8Voice)
+	}
+	return TTSVoiceFor(cfg, provider)
+}
+
+// TTSVoiceKeyFor names the config key holding the given provider's voice, for
+// the surfaces that write through `config set` rather than onto a struct.
+func TTSVoiceKeyFor(provider string) string {
+	switch normalizeTTSProviderName(provider) {
+	case qwen.ProviderName:
+		return "qwen_tts_voice"
+	case Audio8ProviderName:
+		return "audio8_voice"
+	default:
+		return "tts_voice"
+	}
+}
+
+// SetTTSVoiceFor writes voice onto the key the given provider reads, leaving
+// the other providers' keys untouched: they are different namespaces, and a
+// Kokoro voice id means nothing to audio8 or to qwen3-tts.
+func SetTTSVoiceFor(cfg *Config, provider, voice string) {
+	if cfg == nil {
+		return
+	}
+	switch normalizeTTSProviderName(provider) {
+	case qwen.ProviderName:
+		cfg.QwenTTSVoice = voice
+	case Audio8ProviderName:
+		cfg.Audio8Voice = voice
+	default:
+		cfg.TTSVoice = voice
+	}
+}
+
+func normalizeTTSProviderName(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
 }

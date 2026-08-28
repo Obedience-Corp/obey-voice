@@ -286,13 +286,16 @@ func audio8VoiceCatalog(modelsDir, locale, gender string) ([]Voice, error) {
 		v := Voice{
 			Name:         meta.Name,
 			FriendlyName: audio8FriendlyName(meta),
-			Gender:       audio8VoiceKind(meta),
+			Kind:         audio8VoiceKind(meta),
 			Locale:       meta.Locale,
 		}
 		if locale != "" && !strings.HasPrefix(strings.ToLower(v.Locale), strings.ToLower(locale)) {
 			continue
 		}
-		if gender != "" && !strings.EqualFold(gender, v.Gender) {
+		// A registered voice has no gender: nothing about a reference recording
+		// says one, and guessing would be worse than leaving the column empty.
+		// A gender filter therefore matches none of them.
+		if gender != "" {
 			continue
 		}
 		voices = append(voices, v)

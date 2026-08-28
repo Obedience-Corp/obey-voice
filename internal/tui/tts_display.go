@@ -169,9 +169,9 @@ func ttsEffectiveVoiceLabelForProvider(provider string, cfg *config.Config) stri
 		}
 		return "voice model-native default"
 	}
-	voice := "af_heart"
-	if cfg != nil && strings.TrimSpace(cfg.TTSVoice) != "" {
-		voice = strings.TrimSpace(cfg.TTSVoice)
+	voice := config.TTSVoiceFor(cfg, provider)
+	if voice == "" {
+		voice = "af_heart" // kokoro's own fallback
 	}
 	return "voice " + voice
 }

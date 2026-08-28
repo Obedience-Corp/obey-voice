@@ -422,18 +422,10 @@ func applyTTS(cfg *config.Config, t TTS) {
 		cfg.TTSProvider = provider
 	}
 	if voice := strings.TrimSpace(t.Voice); voice != "" {
-		// Route voice to the config key the selected provider reads. audio8
-		// needs its own: tts_voice is a Kokoro enum, so an audio8 voice landing
-		// there was rejected on save and would never have reached the provider.
-		switch normalizeTTSProvider(cfg.TTSProvider) {
-		case "qwen3-tts":
-			cfg.QwenTTSVoice = voice
-		case config.Audio8ProviderName:
-			cfg.Audio8Voice = voice
-		default:
-			// kokoro and any other voice-keyed providers use tts_voice.
-			cfg.TTSVoice = voice
-		}
+		// Onto the key the selected provider reads, and no other. audio8 needs
+		// its own: tts_voice is a Kokoro enum, so an audio8 voice landing there
+		// was rejected on save and never reached the provider.
+		config.SetTTSVoiceFor(cfg, cfg.TTSProvider, voice)
 	}
 	// Tier picks the native model inside the multi-tier package; only qwen
 	// reads it, and empty inherits the app-level qwen_tts_model_tier.
@@ -447,20 +439,17 @@ func voiceForProvider(cfg *config.Config, provider string) string {
 	if cfg == nil {
 		return ""
 	}
-	switch normalizeTTSProvider(provider) {
-	case "qwen3-tts":
+	if normalizeTTSProvider(provider) == "qwen3-tts" {
 		if v := strings.TrimSpace(cfg.QwenTTSVoice); v != "" {
 			return v
 		}
 		// Fall back to kokoro voice if qwen voice unset (legacy single-agent).
 		return strings.TrimSpace(cfg.TTSVoice)
-	case config.Audio8ProviderName:
-		// No fall back to tts_voice: a Kokoro voice id means nothing to audio8,
-		// and empty is a real answer here — the packaged reference voice.
-		return strings.TrimSpace(cfg.Audio8Voice)
-	default:
-		return strings.TrimSpace(cfg.TTSVoice)
 	}
+	// ConfiguredTTSVoice, not TTSVoiceFor: this feeds a persona profile, where
+	// an empty voice means "inherit the global" and substituting audio8's
+	// packaged reference would pin a voice the user never chose.
+	return config.ConfiguredTTSVoice(cfg, provider)
 }
 
 func normalizeTTSProvider(provider string) string {
@@ -489,14 +478,7 @@ func PersistTTS(p *Profile) error {
 			provider = v
 		}
 	}
-	switch normalizeTTSProvider(provider) {
-	case "qwen3-tts":
-		return config.SetAndSave("qwen_tts_voice", voice)
-	case config.Audio8ProviderName:
-		return config.SetAndSave("audio8_voice", voice)
-	default:
-		return config.SetAndSave("tts_voice", voice)
-	}
+	return config.SetAndSave(config.TTSVoiceKeyFor(provider), voice)
 }
 
 // ActiveID returns the configured active persona id, defaulting to DefaultID.

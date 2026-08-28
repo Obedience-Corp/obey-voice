@@ -164,3 +164,101 @@ func TestStackVoiceCatalogStillHandlesKokoro(t *testing.T) {
 		}
 	}
 }
+
+// The audiobook form composes a `--voice` flag for the render it launches, so
+// under audio8 it used to compose `--voice af_heart` — the same root cause as
+// the render blocker, one screen further out.
+func TestAudiobookVoiceForAudio8(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{
+			name: "an untouched config gets the packaged reference",
+			cfg:  config.Config{TTSProvider: "audio8", TTSVoice: "af_heart"},
+			want: config.Audio8PackagedVoice,
+		},
+		{
+			name: "a registered voice",
+			cfg:  config.Config{TTSProvider: "audio8", TTSVoice: "af_heart", Audio8Voice: "mine"},
+			want: "mine",
+		},
+		{name: "kokoro is unchanged", cfg: config.Config{TTSProvider: "kokoro", TTSVoice: "af_bella"}, want: "af_bella"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := newAudiobook(&tt.cfg).voice; got != tt.want {
+				t.Errorf("audiobook voice = %q, want %q (it becomes --voice)", got, tt.want)
+			}
+		})
+	}
+}
+
+// The launcher badge reported `voice af_heart` for an audio8 stack whatever
+// audio8_voice said.
+func TestLauncherVoiceLabelForAudio8(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{
+			name: "an untouched config names the packaged reference",
+			cfg:  config.Config{TTSProvider: "audio8", TTSVoice: "af_heart"},
+			want: "voice " + config.Audio8PackagedVoice,
+		},
+		{
+			name: "a registered voice",
+			cfg:  config.Config{TTSProvider: "audio8", Audio8Voice: "mine"},
+			want: "voice mine",
+		},
+		{name: "kokoro default", cfg: config.Config{TTSProvider: "kokoro"}, want: "voice af_heart"},
+		{name: "kokoro set", cfg: config.Config{TTSProvider: "kokoro", TTSVoice: "af_sky"}, want: "voice af_sky"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ttsEffectiveVoiceLabel(&tt.cfg); got != tt.want {
+				t.Errorf("badge = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Provenance is not gender: putting it in Gender made `voices --gender male`
+// drop every registered voice and the Settings row read "alice  recording /".
+func TestRegisteredVoicesCarryKindNotGender(t *testing.T) {
+	modelsDir := t.TempDir()
+	registerTestVoice(t, modelsDir, "alice")
+	voices, err := tts.StaticVoicesFor(&config.Config{ModelsDir: modelsDir}, "audio8", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, v := range voices {
+		if v.Name != "alice" {
+			continue
+		}
+		found = true
+		if v.Gender != "" {
+			t.Errorf("registered voice reports gender %q; a reference recording has none", v.Gender)
+		}
+		if v.Kind != tts.Audio8VoiceRecorded {
+			t.Errorf("Kind = %q, want %q", v.Kind, tts.Audio8VoiceRecorded)
+		}
+	}
+	if !found {
+		t.Fatal("the registered voice is missing from the catalog")
+	}
+
+	// And a gender filter no longer matches provenance.
+	filtered, err := tts.StaticVoicesFor(&config.Config{ModelsDir: modelsDir}, "audio8", "", "recording")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range filtered {
+		if v.Name == "alice" {
+			t.Error("--gender recording matched a registered voice; provenance is not a gender")
+		}
+	}
+}

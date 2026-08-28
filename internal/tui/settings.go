@@ -699,13 +699,7 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 	case sectionVoice:
 		if m.cursor < len(m.voiceItems) {
 			voice := m.voiceItems[m.cursor]
-			key := "tts_voice"
-			switch {
-			case strings.EqualFold(activeTTSProvider(m.cfg), managedqwen.ProviderName):
-				key = "qwen_tts_voice"
-			case strings.EqualFold(activeTTSProvider(m.cfg), config.Audio8ProviderName):
-				key = "audio8_voice"
-			}
+			key := config.TTSVoiceKeyFor(activeTTSProvider(m.cfg))
 			saveConfig := m.saveConfig
 			if saveConfig == nil {
 				saveConfig = config.SetAndSave
@@ -715,14 +709,7 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 				m.message = fmt.Sprintf("Failed to save voice: %v", err)
 				return nil
 			}
-			switch key {
-			case "qwen_tts_voice":
-				m.cfg.QwenTTSVoice = voice.Name
-			case "audio8_voice":
-				m.cfg.Audio8Voice = voice.Name
-			default:
-				m.cfg.TTSVoice = voice.Name
-			}
+			config.SetTTSVoiceFor(m.cfg, activeTTSProvider(m.cfg), voice.Name)
 			m.message = fmt.Sprintf("Default voice set to %s · personas with their own voice keep it", voice.Name)
 		}
 	case sectionLanguage:

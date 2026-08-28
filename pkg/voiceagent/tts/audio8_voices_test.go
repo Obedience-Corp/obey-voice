@@ -247,7 +247,10 @@ func TestAudio8VoiceCatalog(t *testing.T) {
 		{"unfiltered lists the packaged voice first", "", "", []string{config.Audio8PackagedVoice, "alice", "bootstrapped"}},
 		{"locale filters case-insensitively", "en-gb", "", []string{"alice"}},
 		{"a locale nothing matches is empty", "de", "", nil},
-		{"provenance is the gender column", "", Audio8VoiceSynthetic, []string{"bootstrapped"}},
+		// Provenance is reported in Kind, never Gender: a registered voice has
+		// no gender, so a gender filter matches none of them.
+		{"a gender filter matches no registered voice", "", "female", nil},
+		{"provenance is not a gender either", "", Audio8VoiceSynthetic, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -270,8 +273,17 @@ func TestAudio8VoiceCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, v := range voices {
-		if v.Name == "bootstrapped" && !strings.Contains(v.FriendlyName, "af_heart") {
+		if v.Name != "bootstrapped" {
+			continue
+		}
+		if !strings.Contains(v.FriendlyName, "af_heart") {
 			t.Errorf("synthetic voice reads %q; the bootstrap source must be visible", v.FriendlyName)
+		}
+		if v.Kind != Audio8VoiceSynthetic {
+			t.Errorf("Kind = %q, want %q", v.Kind, Audio8VoiceSynthetic)
+		}
+		if v.Gender != "" {
+			t.Errorf("Gender = %q; provenance belongs in Kind", v.Gender)
 		}
 	}
 }

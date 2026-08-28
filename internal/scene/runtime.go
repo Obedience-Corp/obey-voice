@@ -125,14 +125,11 @@ func applyPersonaCopy(cfg *config.Config, profile *persona.Profile) *config.Conf
 func templateFor(cfg *config.Config) SynthTemplate {
 	provider := normalizeProvider(cfg.TTSProvider)
 	if provider != providerQwen {
-		voice := strings.TrimSpace(cfg.TTSVoice)
-		switch provider {
-		case providerKokoro:
+		// Each provider keeps its voice in its own key; tts_voice holds a
+		// Kokoro id that audio8 would reject.
+		voice := config.TTSVoiceFor(cfg, provider)
+		if provider == providerKokoro {
 			voice = firstNonBlank(voice, defaultKokoroVoice)
-		case config.Audio8ProviderName:
-			// audio8 keeps its voice in its own key; tts_voice holds a Kokoro
-			// id it would reject.
-			voice = strings.TrimSpace(cfg.Audio8Voice)
 		}
 		return SynthTemplate{Provider: provider, Voice: voice}
 	}

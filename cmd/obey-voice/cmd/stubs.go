@@ -73,10 +73,7 @@ func runSpeakerTest(ctx context.Context, cfg *config.Config) error {
 
 	// Speaker test uses the configured voice name so multi-provider previews
 	// match Settings → Voice audition lines.
-	voiceName := strings.TrimSpace(cfg.TTSVoice)
-	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "qwen3-tts") && strings.TrimSpace(cfg.QwenTTSVoice) != "" {
-		voiceName = cfg.QwenTTSVoice
-	}
+	voiceName := config.TTSVoiceFor(cfg, cfg.TTSProvider)
 	stream, err := ttsProvider.Synthesize(ctx, tts.SpokenPreviewLine(voiceName))
 	if err != nil {
 		return err
