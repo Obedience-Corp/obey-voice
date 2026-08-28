@@ -236,6 +236,13 @@ just bench place-diff docs/benchmarks/S6-local-<date>.json \
                       docs/benchmarks/S6-lan-<date>.json
 ```
 
+A turn the Kokoro fallback spoke — wholly or partly (`TTSFallbacks > 0`) — is
+**excluded** from the turn tables and the place-diff medians, and the exclusion
+is printed. A LAN run whose worker kept failing would otherwise be measuring
+local Kokoro under a `lan` label, and an unreachable worker would read as a
+fast one. When every turn on one side fell back, `place-diff` refuses with an
+error instead of printing a delta.
+
 `--tts-place` on `obey-voice benchmark` (and `BENCH_TTS_PLACE` for the script)
 is what keeps those two runs one instrument. Without it the operator edits
 config between them, and the difference is no longer only the place. An

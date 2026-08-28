@@ -418,7 +418,8 @@ turn_table() {
 		def med: sort | if length == 0 then null
 			elif length % 2 == 1 then .[(length - 1) / 2]
 			else (.[length / 2 - 1] + .[length / 2]) / 2 end;
-		[.results[] | select(.iteration > 1) | select((.metrics.PlaybackStartElapsed // 0) > 0)]
+		[.results[] | select(.iteration > 1) | select((.metrics.PlaybackStartElapsed // 0) > 0)
+			| select((.metrics.TTSFallbacks // 0) == 0)]
 		| group_by(.fixture)
 		| map({
 			fixture: (.[0].fixture | split("/") | last),
@@ -443,13 +444,20 @@ engine_line() {
 }
 
 print_turn() {
-	local engines
+	local engines fellback
 	engines="$(engine_line "$1")"
 	printf "\n  %-28s %3s %14s\n" "fixture" "n" "playback(ms)"
 	turn_table "$1" | while IFS=$'\t' read -r f n playback; do
 		printf "  %-28s %3s %14.0f\n" "$f" "$n" "$playback"
 	done
 	echo "  engine: ${engines:-none reported}   place: $(jq -r '.provenance.tts_place // "unknown"' "$1")"
+	# A turn the Kokoro fallback spoke (wholly or partly) did not measure the
+	# labelled topology; it is excluded from the table above, and silently
+	# dropping it would make a broken LAN look fast.
+	fellback="$(jq -r '[.results[] | select((.metrics.TTSFallbacks // 0) > 0)] | length' "$1")"
+	if [ "${fellback:-0}" -gt 0 ]; then
+		echo "  excluded: ${fellback} fallback-bearing turn(s) — audio was not (fully) synthesized by the labelled place"
+	fi
 }
 
 # Gated metric: median stt stage across fixtures. Reported for a quick headline.
@@ -587,7 +595,7 @@ place-diff)
 
 	med_a="$(turn_table "$a" | awk -F'\t' '{print $3}' | sort -n | awk '{x[NR]=$1} END {if (NR==0) print "null"; else if (NR%2) print x[(NR+1)/2]; else print (x[NR/2]+x[NR/2+1])/2}')"
 	med_b="$(turn_table "$b" | awk -F'\t' '{print $3}' | sort -n | awk '{x[NR]=$1} END {if (NR==0) print "null"; else if (NR%2) print x[(NR+1)/2]; else print (x[NR/2]+x[NR/2+1])/2}')"
-	[[ "$med_a" != "null" && "$med_b" != "null" ]] || { echo "error: one side has no completed turns" >&2; exit 1; }
+	[[ "$med_a" != "null" && "$med_b" != "null" ]] || { echo "error: one side has no comparable turns (completed without the Kokoro fallback) — a place whose every turn fell back measured Kokoro, not the labelled topology" >&2; exit 1; }
 	delta_pct="$(jq -n --argjson a "$med_a" --argjson b "$med_b" '(($b - $a) / $a) * 100')"
 	printf "\n  full turn (median PlaybackStartElapsed): %.0f ms -> %.0f ms   %+.1f%%\n" "$med_a" "$med_b" "$delta_pct"
 	echo ""
