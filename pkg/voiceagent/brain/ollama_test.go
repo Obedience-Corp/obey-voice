@@ -105,6 +105,71 @@ func TestThinkStreamStreamsDeltasWithToolsEnabled(t *testing.T) {
 	}
 }
 
+// After a phantom tool call the model often restates the line it already
+// streamed. Forwarding that copy made Veronica say the same sentence twice.
+func TestThinkStreamDoesNotRestateAfterTools(t *testing.T) {
+	const line = "Stay right there, baby."
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs++
+		if reqs == 1 {
+			fmt.Fprintf(w, `{"model":"m","message":{"role":"assistant","content":%q,"tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true}`+"\n", line)
+			return
+		}
+		fmt.Fprintf(w, `{"model":"m","message":{"role":"assistant","content":%q},"done":true,"done_reason":"stop"}`+"\n", line)
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	stream, err := o.ThinkStream(context.Background(), "hi", StreamOptions{ToolsEnabled: true})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	var chunks []string
+	for c := range stream.Chunks {
+		chunks = append(chunks, c)
+	}
+	if res := <-stream.Done; res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+	if reqs < 2 {
+		t.Fatalf("expected a tool loop, got %d chat requests", reqs)
+	}
+	got := strings.Join(chunks, "")
+	if got != line {
+		t.Fatalf("streamed %q, want the spoken line once, not restated after the tool", got)
+	}
+}
+
+func TestRestatementSkip(t *testing.T) {
+	const already = "Stay right there, baby."
+	tests := []struct {
+		soFar string
+		skip  bool
+	}{
+		{"", false},
+		{"Stay", true},
+		{"Stay right there, baby.", true},
+		{"Stay right there, baby. And then this.", false},
+		{"Something else entirely.", false},
+	}
+	for _, tt := range tests {
+		if got := restatementSkip(already, tt.soFar); got != tt.skip {
+			t.Errorf("restatementSkip(%q, %q) = %v, want %v", already, tt.soFar, got, tt.skip)
+		}
+	}
+	if restatementSkip("", "hello") {
+		t.Error("empty already must not skip; that is the first iteration")
+	}
+}
+
 // Tool-only turns used to close the stream with zero chunks, so the TUI showed
 // tool activity and then nothing — "looking into it" with no reply.
 func TestThinkStreamFallbackAfterToolOnlyTurn(t *testing.T) {

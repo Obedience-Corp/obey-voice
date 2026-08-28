@@ -108,6 +108,35 @@ func TestRunTurnFillerOnlyStreamSpeaksRecoveryInstead(t *testing.T) {
 	}
 }
 
+// A tool loop that restates the spoken line must not queue it for TTS again.
+func TestRunTurnDoesNotSpeakRestatedSentence(t *testing.T) {
+	const line = "Stay right there, baby."
+	bus := events.NewBus()
+	ttsProvider := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+
+	var response events.ResponseReady
+	events.Subscribe(bus, func(e events.ResponseReady) { response = e })
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hello"},
+		Brain:  &fakeBrain{chunks: []string{line + " ", line}},
+		TTS:    ttsProvider,
+		Player: player,
+		Events: bus,
+	}
+
+	if _, err := p.RunTurn(context.Background()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if got := ttsProvider.Texts(); len(got) != 1 || got[0] != line {
+		t.Fatalf("TTS texts = %v, want [%q] once", got, line)
+	}
+	if response.Response != line {
+		t.Fatalf("ResponseReady = %q, want the line once", response.Response)
+	}
+}
+
 func TestRunTurnDrainsFullPlaybackQueue(t *testing.T) {
 	bus := events.NewBus()
 	sttProvider := &fakeSTT{text: "hello"}
