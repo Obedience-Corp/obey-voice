@@ -17,6 +17,14 @@ const (
 	providerQwen   = "qwen3-tts"
 )
 
+// defaultKokoroVoice is what an unset tts_voice speaks as. The value is
+// duplicated rather than imported because neither source exports it: it is the
+// viper default (config setDefaults) and, independently, Kokoro's own fallback
+// for a voice it does not recognize (NewKokoroTTS). Naming it here is what
+// keeps an empty voice from reaching a pooled worker, where it would fall back
+// to whichever cast member happened to construct that worker.
+const defaultKokoroVoice = "af_heart"
+
 // SynthTemplate is everything one cast member needs to speak a line. Every
 // field is a string because internal/scene must not import
 // pkg/voiceagent/tts — the command layer maps these onto a typed request.
@@ -107,13 +115,21 @@ func applyPersonaCopy(cfg *config.Config, profile *persona.Profile) *config.Conf
 }
 
 // templateFor snapshots the per-turn synthesis settings from an applied config.
-// Empty voice and language are filled in for Qwen rather than left to the
-// provider: an empty field there falls back to whichever cast member happened
-// to construct the shared worker.
+//
+// An empty voice is resolved to the provider's default here rather than left to
+// the provider itself, because there an empty field falls back to whichever
+// cast member happened to construct the shared worker — cast member B would
+// speak in cast member A's voice, and the mouths would still compare as
+// distinct. A provider this package does not know the default for keeps the
+// config value verbatim; ValidatePool refuses to seat two speakers behind it.
 func templateFor(cfg *config.Config) SynthTemplate {
 	provider := normalizeProvider(cfg.TTSProvider)
 	if provider != providerQwen {
-		return SynthTemplate{Provider: provider, Voice: strings.TrimSpace(cfg.TTSVoice)}
+		voice := strings.TrimSpace(cfg.TTSVoice)
+		if provider == providerKokoro {
+			voice = firstNonBlank(voice, defaultKokoroVoice)
+		}
+		return SynthTemplate{Provider: provider, Voice: voice}
 	}
 	return SynthTemplate{
 		Provider:            provider,

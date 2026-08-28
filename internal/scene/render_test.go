@@ -18,10 +18,11 @@ type fakeAudio struct {
 	stored    map[string]TurnPCM
 	written   []string
 	failWrite map[string]bool
+	failRead  map[string]bool
 }
 
 func newFakeAudio() *fakeAudio {
-	return &fakeAudio{stored: map[string]TurnPCM{}, failWrite: map[string]bool{}}
+	return &fakeAudio{stored: map[string]TurnPCM{}, failWrite: map[string]bool{}, failRead: map[string]bool{}}
 }
 
 func (f *fakeAudio) write(path string, rate int, samples []float32) error {
@@ -37,6 +38,9 @@ func (f *fakeAudio) write(path string, rate int, samples []float32) error {
 }
 
 func (f *fakeAudio) read(path string) ([]float32, int, error) {
+	if f.failRead[filepath.Base(path)] {
+		return nil, 0, errors.New("synthetic read failure")
+	}
 	pcm, ok := f.stored[path]
 	if !ok {
 		return nil, 0, fmt.Errorf("no wav recorded at %s", path)
@@ -110,11 +114,16 @@ turns:
 // have assembled: validated document, resolved plan, applied cast.
 func sceneFixture(t *testing.T, dir string, personas ...*ttsPersona) Request {
 	t.Helper()
+	return sceneFixtureFrom(t, dir, twoVoiceScript, personas...)
+}
+
+func sceneFixtureFrom(t *testing.T, dir, script string, personas ...*ttsPersona) Request {
+	t.Helper()
 	scriptPath := filepath.Join(dir, "script.yaml")
-	if err := os.WriteFile(scriptPath, []byte(twoVoiceScript), 0o600); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
 		t.Fatalf("writing script: %v", err)
 	}
-	doc, err := Parse([]byte(twoVoiceScript))
+	doc, err := Parse([]byte(script))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -549,5 +558,108 @@ func TestSceneRenderReportsProgress(t *testing.T) {
 		if !strings.Contains(lines[0], want) {
 			t.Errorf("progress line %q is missing %q", lines[0], want)
 		}
+	}
+}
+
+// fiveTurnScript has room for a silent turn and a failed turn in the middle,
+// with audio on both sides of each.
+const fiveTurnScript = `schema: obey-voice.scene.v1
+id: coffee-counter
+mode: verbatim
+pause: 400ms
+cast:
+  - id: sam
+    persona: samantha
+  - id: uncle
+    persona: uncle-fu
+turns:
+  - speaker: sam
+    text: "One."
+  - speaker: uncle
+    text: "Silent."
+  - speaker: sam
+    text: "Three."
+  - speaker: uncle
+    text: "Broken."
+  - speaker: sam
+    text: "Five."
+`
+
+// Every turn gets a place on the timeline, including the two that produce no
+// audio. Without this a silent or failed line keeps start_ms 0 and a caption
+// step puts it at the top of the conversation.
+func TestSceneRenderClocksCoverSilentAndFailedTurns(t *testing.T) {
+	dir := t.TempDir()
+	audio := newFakeAudio()
+	synth := &fakeSynth{
+		rate:     24000,
+		silent:   map[string]bool{"Silent.": true},
+		failText: map[string]bool{"Broken.": true},
+	}
+	req := sceneFixtureFrom(t, dir, fiveTurnScript, kokoroCast()...)
+
+	result, err := newRenderer(audio, synth).Render(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected an error for the failed turn")
+	}
+	m := result.Manifest
+	if complete, _, failed := m.Counts(); complete != 4 || failed != 1 {
+		t.Fatalf("counts complete=%d failed=%d, want 4/1", complete, failed)
+	}
+
+	silent, broken := m.Turns[1], m.Turns[3]
+	if silent.Status != StatusComplete || silent.DurationMS != 0 {
+		t.Errorf("silent turn = %+v, want complete with no duration", silent)
+	}
+	if broken.Status != StatusFailed || broken.DurationMS != 0 {
+		t.Errorf("failed turn = %+v, want failed with no duration", broken)
+	}
+
+	// A turn with no audio is stamped where the previous turn ended, and spends
+	// no pause of its own.
+	if want := m.Turns[0].StartMS + m.Turns[0].DurationMS; silent.StartMS != want {
+		t.Errorf("silent turn starts at %d ms, want %d (the end of turn 0)", silent.StartMS, want)
+	}
+	if want := m.Turns[2].StartMS + m.Turns[2].DurationMS; broken.StartMS != want {
+		t.Errorf("failed turn starts at %d ms, want %d (the end of turn 2)", broken.StartMS, want)
+	}
+	if silent.StartMS == 0 || broken.StartMS == 0 {
+		t.Fatalf("a mid-conversation turn is still stamped at 0 ms: silent=%d failed=%d", silent.StartMS, broken.StartMS)
+	}
+
+	// The identity still holds across the turns that produced audio, with the
+	// silent and failed turns costing nothing in between.
+	audible := []int{0, 2, 4}
+	for n := 0; n+1 < len(audible); n++ {
+		prev, next := m.Turns[audible[n]], m.Turns[audible[n+1]]
+		if want := prev.StartMS + prev.DurationMS + m.PauseMS; next.StartMS != want {
+			t.Errorf("turn %d starts at %d ms, want %d", audible[n+1], next.StartMS, want)
+		}
+	}
+	if last := m.Turns[4]; m.DurationMS != last.StartMS+last.DurationMS {
+		t.Errorf("duration_ms = %d, want %d (no trailing silence)", m.DurationMS, last.StartMS+last.DurationMS)
+	}
+}
+
+// A failed turn and an unmixable run are different problems; reporting only the
+// first would hide why there is no conversation.wav.
+func TestSceneRenderReportsBothFailureAndMixError(t *testing.T) {
+	dir := t.TempDir()
+	audio := newFakeAudio()
+	audio.failRead["000-sam.wav"] = true
+	synth := &fakeSynth{rate: 24000, failText: map[string]bool{"The bus had opinions.": true}}
+	req := sceneFixture(t, dir, kokoroCast()...)
+
+	result, err := newRenderer(audio, synth).Render(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"turn(s) failed", "synthetic read failure"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not report %q", err, want)
+		}
+	}
+	if result.Conversation != "" {
+		t.Error("a run that could not mix reported a conversation")
 	}
 }

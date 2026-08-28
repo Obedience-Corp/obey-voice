@@ -38,10 +38,14 @@ type Combined struct {
 // converted to it. Clocks accumulate the integer millisecond values the
 // manifest publishes — start[i+1] = start[i] + duration[i] + pause_ms — rather
 // than being recomputed from sample offsets, so the identity a caption or
-// avatar step relies on holds exactly in the units it reads.
+// avatar step relies on holds exactly in the units it reads. That identity
+// covers turns that produced audio.
 //
-// There is no leading or trailing silence, and a turn that produced no samples
-// neither takes time nor earns a pause of its own.
+// A turn that produced none is still placed: it is stamped at the instant the
+// previous turn ended and given a zero duration, so a silent or failed line
+// keeps its position in the conversation instead of collapsing to the start.
+// It spends no pause of its own, which is what "occupies no time" means here.
+// There is no leading or trailing silence.
 func ConcatTurns(turns []TurnPCM, pause time.Duration, resample Resampler) (Combined, error) {
 	if resample == nil {
 		return Combined{}, fmt.Errorf("scene: concat: no resampler")

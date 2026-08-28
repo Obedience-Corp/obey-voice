@@ -2,6 +2,7 @@ package scene
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -78,8 +79,11 @@ func (r Renderer) Render(ctx context.Context, req Request) (Result, error) {
 
 	conversation, mixErr := r.mix(req, &manifest)
 	if failed > 0 {
-		return Result{Manifest: manifest, Conversation: conversation},
-			fmt.Errorf("scene: %d of %d turn(s) failed: %w", failed, len(turns), firstErr)
+		// Both are reported: a failed turn and an unmixable run are different
+		// problems, and losing the second one behind the first would hide why
+		// there is no conversation.wav.
+		return Result{Manifest: manifest, Conversation: conversation}, errors.Join(
+			fmt.Errorf("scene: %d of %d turn(s) failed: %w", failed, len(turns), firstErr), mixErr)
 	}
 	if mixErr != nil {
 		return Result{Manifest: manifest}, mixErr
@@ -224,11 +228,17 @@ func newRunTurn(index int, line Turn, member CastRuntime) RunTurn {
 // makes a resumed run produce the same mix as a fresh one: a skipped turn only
 // exists as a file. It also means the combined clocks always describe the file
 // that was just written, so the manifest cannot describe a stale mix.
+//
+// Every turn is passed to the concat, including the ones with no audio. A
+// failed turn and a line that cleaned away to nothing occupy no time (spec/10
+// §3), but they still need a place on the timeline: dropping them here would
+// leave them stamped at 0 ms in the middle of a conversation, and a caption
+// step keyed on start_ms would put those lines at the top.
 func (r Renderer) mix(req Request, m *RunManifest) (string, error) {
-	spoken := make([]int, 0, len(m.Turns))
 	pcm := make([]TurnPCM, 0, len(m.Turns))
-	for i, turn := range m.Turns {
-		if turn.WAV == "" || turn.Status == StatusFailed {
+	for _, turn := range m.Turns {
+		if turn.WAV == "" {
+			pcm = append(pcm, TurnPCM{})
 			continue
 		}
 		wavPath := filepath.Join(req.Options.OutDir, filepath.FromSlash(turn.WAV))
@@ -236,7 +246,6 @@ func (r Renderer) mix(req Request, m *RunManifest) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("scene: reading %s: %w", turn.WAV, err)
 		}
-		spoken = append(spoken, i)
 		pcm = append(pcm, TurnPCM{Samples: samples, Rate: rate})
 	}
 
@@ -249,10 +258,12 @@ func (r Renderer) mix(req Request, m *RunManifest) (string, error) {
 		return "", fmt.Errorf("scene: writing %s: %w", ConversationFile, err)
 	}
 
-	for n, i := range spoken {
-		m.Turns[i].StartMS = combined.Clocks[n].StartMS
-		m.Turns[i].DurationMS = combined.Clocks[n].DurationMS
-		m.Turns[i].SampleRate = pcm[n].Rate
+	for i := range m.Turns {
+		m.Turns[i].StartMS = combined.Clocks[i].StartMS
+		m.Turns[i].DurationMS = combined.Clocks[i].DurationMS
+		if pcm[i].Rate > 0 {
+			m.Turns[i].SampleRate = pcm[i].Rate
+		}
 	}
 	m.Conversation = ConversationFile
 	m.SampleRate = combined.Rate

@@ -122,8 +122,13 @@ func sceneProgress(cmd *cobra.Command, opts scene.Options) func(string, ...any) 
 // that member's applied config, because NeedTTS follows the provider on the
 // config it is given — one ensure on the app config leaves a mixed
 // Kokoro + Qwen cast half-installed.
+//
+// A provider that cannot take a typed request fails the run here, once, rather
+// than every turn in turn — the rest of this command is deliberately
+// fail-before-work. Whether a provider that *accepts* one actually honours the
+// voice is a separate question, settled by ValidatePool before we get here.
 func newSceneSynth(ctx context.Context, cast []scene.CastRuntime) (scene.Synthesizer, func(), error) {
-	pool := map[scene.PoolKey]tts.Provider{}
+	pool := map[scene.PoolKey]tts.RequestProvider{}
 	var cleanups []func()
 	cleanup := func() {
 		for i := len(cleanups) - 1; i >= 0; i-- {
@@ -148,7 +153,12 @@ func newSceneSynth(ctx context.Context, cast []scene.CastRuntime) (scene.Synthes
 		if done != nil {
 			cleanups = append(cleanups, done)
 		}
-		pool[member.Key] = provider
+		rp, ok := provider.(tts.RequestProvider)
+		if !ok {
+			cleanup()
+			return nil, nil, fmt.Errorf("scene: %s does not accept a per-turn voice", member.Key)
+		}
+		pool[member.Key] = rp
 	}
 
 	synth := func(ctx context.Context, tmpl scene.SynthTemplate, text string) ([]float32, int, error) {
@@ -157,7 +167,7 @@ func newSceneSynth(ctx context.Context, cast []scene.CastRuntime) (scene.Synthes
 		if !ok {
 			return nil, 0, fmt.Errorf("scene: no TTS provider for %s", key)
 		}
-		return synthesizeSceneTurn(ctx, key, provider, tmpl, text)
+		return synthesizeSceneTurn(ctx, provider, tmpl, text)
 	}
 	return synth, cleanup, nil
 }
@@ -166,14 +176,8 @@ func newSceneSynth(ctx context.Context, cast []scene.CastRuntime) (scene.Synthes
 // the provider was constructed with. Reusing render's adapter here would bind
 // the constructing persona's voice over every request, which is right for a
 // one-voice document and wrong for a conversation.
-func synthesizeSceneTurn(ctx context.Context, key scene.PoolKey, provider tts.Provider, tmpl scene.SynthTemplate, text string) ([]float32, int, error) {
-	rp, ok := provider.(tts.RequestProvider)
-	if !ok {
-		// Without a per-request voice this provider would speak every part in
-		// the same voice, which is not a scene.
-		return nil, 0, fmt.Errorf("scene: %s cannot take a per-turn voice", key)
-	}
-	result, err := rp.SynthesizeRequest(ctx, tts.SynthesisRequest{
+func synthesizeSceneTurn(ctx context.Context, provider tts.RequestProvider, tmpl scene.SynthTemplate, text string) ([]float32, int, error) {
+	result, err := provider.SynthesizeRequest(ctx, tts.SynthesisRequest{
 		Text:                text,
 		Voice:               tmpl.Voice,
 		Mode:                tts.VoiceMode(tmpl.Mode),

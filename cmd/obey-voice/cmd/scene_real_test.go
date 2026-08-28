@@ -225,3 +225,27 @@ func TestSceneFinishSceneJSON(t *testing.T) {
 		t.Errorf("no manifest was written: %v", err)
 	}
 }
+
+// A provider that accepts a typed request but ignores the voice in it would
+// read both parts identically while --require-distinct-voices still passed:
+// the two personas declare different voices, so the mouths compare as distinct
+// and only the pool rule can catch it. The cast is refused before any model
+// loads.
+func TestSceneCmdRejectsOneWorkerForBothVoices(t *testing.T) {
+	single := sceneProfiles(map[string][3]string{
+		"samantha": {"audio8", "voice-a", ""},
+		"uncle-fu": {"audio8", "voice-b", ""},
+	})
+	outDir := filepath.Join(t.TempDir(), "scene")
+
+	_, _, err := runSceneReal(t, single, sceneFixture, "--out-dir", outDir, "--require-distinct-voices")
+	if err == nil {
+		t.Fatal("a cast sharing one single-voice worker was accepted")
+	}
+	if !contains(err.Error(), "per-turn voice") {
+		t.Errorf("error does not explain the refusal: %v", err)
+	}
+	if _, statErr := os.Stat(outDir); !os.IsNotExist(statErr) {
+		t.Errorf("the refused run created %s", outDir)
+	}
+}

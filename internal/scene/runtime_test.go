@@ -222,6 +222,10 @@ func TestSceneValidatePool(t *testing.T) {
 		"two qwen voices one tier": {[2]*persona.Profile{profile("a", "A", "qwen3-tts", "Vivian", "0.6b"), profile("b", "B", "qwen3-tts", "Uncle_Fu", "0.6b")}, false},
 		"one qwen tier inherited":  {[2]*persona.Profile{profile("a", "A", "qwen3-tts", "Vivian", ""), profile("b", "B", "qwen3-tts", "Uncle_Fu", "0.6b")}, false},
 		"two qwen tiers":           {[2]*persona.Profile{profile("a", "A", "qwen3-tts", "Vivian", "0.6b"), profile("b", "B", "qwen3-tts", "Uncle_Fu", "1.7b")}, true},
+		// A provider that ignores the per-turn voice would read both parts in
+		// one voice while the cast still looked like two mouths.
+		"two single-voice mouths": {[2]*persona.Profile{profile("a", "A", "audio8", "", ""), profile("b", "B", "audio8", "", "")}, true},
+		"one single-voice mouth":  {[2]*persona.Profile{profile("a", "A", "audio8", "", ""), profile("b", "B", "kokoro", "af_sky", "")}, false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -256,6 +260,80 @@ func TestScenePoolPlanDeduplicates(t *testing.T) {
 			}
 			if got := len(PoolPlan(cast)); got != tc.want {
 				t.Fatalf("PoolPlan constructs %d worker(s), want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// An unset Kokoro voice is resolved here, not left for the provider. Left
+// empty it would reach a pooled worker and fall back to whichever cast member
+// constructed it, so B would speak in A's voice while the two mouths still
+// compared as distinct.
+func TestSceneBuildCastFillsKokoroDefault(t *testing.T) {
+	cfg := appConfig()
+	cfg.TTSVoice = "" // an explicit tts_voice: "" in the operator's config
+
+	cast, err := BuildCast(cfg, []ResolvedCast{
+		resolved(profile("a", "A", "kokoro", "af_sky", "")),
+		resolved(profile("b", "B", "kokoro", "", "")),
+	})
+	if err != nil {
+		t.Fatalf("BuildCast: %v", err)
+	}
+	if cast[1].Template.Voice == "" {
+		t.Fatal("an inherited kokoro voice was left empty for the shared worker to guess")
+	}
+	if cast[1].Template.Voice != defaultKokoroVoice {
+		t.Errorf("inherited voice = %q, want the kokoro default %q", cast[1].Template.Voice, defaultKokoroVoice)
+	}
+
+	// Two personas that both inherit the empty default now compare as one
+	// mouth, which is what they are.
+	both, err := BuildCast(cfg, []ResolvedCast{
+		resolved(profile("a", "A", "kokoro", "", "")),
+		resolved(profile("b", "B", "", "", "")),
+	})
+	if err != nil {
+		t.Fatalf("BuildCast: %v", err)
+	}
+	if len(SharedVoices(both)) != 1 {
+		t.Errorf("two inherited kokoro voices did not compare as one mouth: %+v", both)
+	}
+}
+
+// A provider this package does not know a default for keeps the config value
+// verbatim rather than being stamped with Kokoro's.
+func TestSceneBuildCastLeavesUnknownProviderVoiceAlone(t *testing.T) {
+	cfg := appConfig()
+	cfg.TTSVoice = ""
+
+	cast, err := BuildCast(cfg, []ResolvedCast{
+		resolved(profile("a", "A", "audio8", "", "")),
+		resolved(profile("b", "B", "kokoro", "af_sky", "")),
+	})
+	if err != nil {
+		t.Fatalf("BuildCast: %v", err)
+	}
+	if cast[0].Template.Voice != "" {
+		t.Errorf("audio8 voice = %q, want the config value verbatim", cast[0].Template.Voice)
+	}
+}
+
+// The pool knows which providers can tell two speakers apart.
+func TestScenePoolKeySpeaksOneVoice(t *testing.T) {
+	cases := map[string]struct {
+		key  PoolKey
+		want bool
+	}{
+		"kokoro":         {PoolKey{Provider: "kokoro"}, false},
+		"qwen3-tts":      {PoolKey{Provider: "qwen3-tts", Tier: "0.6b"}, false},
+		"audio8":         {PoolKey{Provider: "audio8"}, true},
+		"something else": {PoolKey{Provider: "future-tts"}, true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := tc.key.SpeaksOneVoice(); got != tc.want {
+				t.Fatalf("SpeaksOneVoice() = %v, want %v", got, tc.want)
 			}
 		})
 	}

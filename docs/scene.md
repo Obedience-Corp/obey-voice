@@ -78,8 +78,15 @@ video step does not have to re-derive them from the per-turn files:
 }
 ```
 
-`start_ms[i+1] == start_ms[i] + duration_ms[i] + pause_ms` holds exactly, in
-whole milliseconds.
+Across turns that produced audio, `start_ms[i+1] == start_ms[i] +
+duration_ms[i] + pause_ms` holds exactly, in whole milliseconds.
+
+A turn that produced none occupies no time: a `failed` turn, and a `complete`
+turn whose line cleaned away to nothing, both carry `duration_ms: 0` and an
+empty `wav`. They are still placed — stamped at the instant the previous turn
+ended — so a caption keyed on `start_ms` stays where the line belongs instead of
+jumping to the start of the conversation. No pause is spent on them, so the
+identity above skips over them to the next turn that spoke.
 
 ## Voices
 
@@ -93,6 +100,12 @@ voice. A cast mixing Kokoro and Qwen3-TTS loads both. Two **different** Qwen
 tiers in one scene is refused: that would be two multi-gigabyte workers resident
 at once.
 
+Both parts on one engine that cannot take a per-turn voice is refused too, before
+anything loads. Such an engine would read both parts in the same voice while the
+cast still looked like two speakers, which would make `--require-distinct-voices`
+pass on a one-voice recording. Kokoro and Qwen3-TTS both take a per-turn voice;
+give one persona a different provider if you hit this.
+
 WAV is always the source of truth. `--audio-format` encodes only
 `conversation.wav`, never the per-turn files, and a missing encoder fails before
 any model loads.
@@ -101,7 +114,7 @@ any model loads.
 
 | Event | Behaviour |
 |-------|-----------|
-| One turn fails to synthesize | Recorded as `failed`, the rest still record, exit is non-zero, `--resume` retries it |
+| One turn fails to synthesize | Recorded as `failed` with `duration_ms: 0` and no `wav`, the rest still record, exit is non-zero, `--resume` retries it |
 | Every turn fails | No `conversation.wav` is written |
 | Interrupted (Ctrl-C) | The turns already recorded are kept and the manifest is written; no partial mix |
 | Encoder missing | Fails before any model loads |
