@@ -1,6 +1,7 @@
 # Binaries
 bin/
 /samantha
+/obey-voice
 /buildutil
 *.exe
 *.dll

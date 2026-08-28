@@ -90,7 +90,7 @@ func TestPromptEditorExCommandsMapToFormEvents(t *testing.T) {
 	}
 }
 
-func TestPromptEditorEscCancelsOnlyWhenIdle(t *testing.T) {
+func TestPromptEditorEscNeverCancels(t *testing.T) {
 	p := newPromptEditor()
 	p.SetValue("some text")
 
