@@ -50,6 +50,11 @@ func sttConfigClaims(cfg *Config, modelsDir string) ([]assetClaim, error) {
 		}
 		claims = append(claims, assetClaimFor(*asset, modelsDir, variant.reason))
 	}
+	// The managed transcribe.cpp CLI is claimed like the models are: whatever
+	// provider is active today, a clean must not delete the vendored executable.
+	if cli, ok := TranscribeCPPCLIAsset(); ok {
+		claims = append(claims, assetClaimFor(cli, modelsDir, "transcribecpp CLI"))
+	}
 	for _, named := range []struct{ key, value string }{
 		{"whispercpp_model_path", cfg.WhisperCPPModelPath},
 		{"whispercpp_binary", cfg.WhisperCPPBinary},

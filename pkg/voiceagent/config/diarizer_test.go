@@ -106,7 +106,7 @@ func TestDiagnoseMeetingDiarizer(t *testing.T) {
 		},
 		{
 			name: "missing binary", diarizer: DiarizerSortformer, modelsDir: installed, lookPath: failLookPath,
-			wantRow: "sortformer-diarizer", wantSeverity: SeverityError, wantDetail: "not found in PATH",
+			wantRow: "sortformer-diarizer", wantSeverity: SeverityError, wantDetail: "not found on PATH",
 		},
 		{
 			name: "missing gguf", diarizer: DiarizerSortformer, modelsDir: t.TempDir(), lookPath: okLookPath,

@@ -76,9 +76,9 @@ func diagnoseMeetingDiarizer(cfg *Config, modelsDir string, lookPath func(string
 
 	asset := SortformerDiarizerAsset()
 	diags := []Diagnostic{diagnoseTranscribeCLI(transcribeCLICheck{
-		name:   "sortformer-diarizer",
-		binary: cfg.TranscribeCPPBinary,
-		model:  func() (string, error) { return asset.ModelPath(modelsDir), nil },
+		name:    "sortformer-diarizer",
+		resolve: func() (string, error) { return ResolveTranscribeCPPBinary(cfg, modelsDir, lookPath) },
+		model:   func() (string, error) { return asset.ModelPath(modelsDir), nil },
 		// Sortformer on CPU is still 2.6x the sherpa review path it replaces
 		// (T3), so unlike the STT provider a CPU-only machine is usable.
 		requireGPU:    false,

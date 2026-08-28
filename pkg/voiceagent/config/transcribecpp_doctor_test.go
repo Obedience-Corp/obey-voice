@@ -65,7 +65,7 @@ func TestDiagnoseTranscribeCPPBinary(t *testing.T) {
 	}{
 		{
 			name: "missing binary", modelsDir: installed, lookPath: failLookPath,
-			wantSeverity: SeverityError, wantDetail: "not found in PATH",
+			wantSeverity: SeverityError, wantDetail: "not found on PATH",
 		},
 		{
 			name: "missing gguf", modelsDir: t.TempDir(), lookPath: okLookPath,

@@ -35,17 +35,17 @@ type TranscribeCPPSTT struct {
 // misconfigured or unsuitable install fails before a turn starts rather than
 // mid-conversation.
 func NewTranscribeCPPSTT(cfg *config.Config, capture audioSource, vad *audio.VAD) (*TranscribeCPPSTT, error) {
-	configured := strings.TrimSpace(cfg.TranscribeCPPBinary)
-	binaryPath, err := exec.LookPath(configured)
+	modelsDir := config.ModelsDirFrom(cfg)
+	binaryPath, err := config.ResolveTranscribeCPPBinary(cfg, modelsDir, nil)
 	if err != nil {
-		return nil, fmt.Errorf("transcribe.cpp binary %q not found in PATH; install the transcribe.cpp release CLI or set transcribecpp_binary to its path", configured)
+		return nil, err
 	}
 
 	asset, err := config.TranscribeCPPModel(cfg.TranscribeCPPModel)
 	if err != nil {
 		return nil, err
 	}
-	modelPath := asset.ModelPath(config.ModelsDirFrom(cfg))
+	modelPath := asset.ModelPath(modelsDir)
 	if _, err := os.Stat(modelPath); err != nil {
 		return nil, fmt.Errorf("transcribe.cpp model not found at %s; run 'obey-voice models ensure' to download it", modelPath)
 	}

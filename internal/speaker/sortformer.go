@@ -67,6 +67,12 @@ func SortformerOptionsFromConfig(cfg *config.Config, modelsDir string) Sortforme
 	if cfg != nil {
 		binary = cfg.TranscribeCPPBinary
 	}
+	// Prefer the full resolution order (explicit path, PATH, then the managed
+	// pack models ensure installs) so a machine with only the vendored CLI
+	// works; on failure keep the raw value and let construction report it.
+	if resolved, err := config.ResolveTranscribeCPPBinary(cfg, modelsDir, nil); err == nil {
+		binary = resolved
+	}
 	return SortformerOptions{
 		Binary:    binary,
 		ModelPath: config.SortformerDiarizerAsset().ModelPath(modelsDir),

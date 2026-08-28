@@ -43,14 +43,10 @@ func STTEnvironmentGap(provider string, cfg *Config, modelsDir string, lookPath 
 		return STTGap{}
 
 	case STTProviderTranscribeCPP:
-		binary := strings.TrimSpace(cfg.TranscribeCPPBinary)
-		if binary == "" {
-			binary = "transcribe-cli"
-		}
-		if _, err := lookPath(binary); err != nil {
+		if _, err := ResolveTranscribeCPPBinary(cfg, modelsDir, lookPath); err != nil {
 			return STTGap{
-				Detail:      fmt.Sprintf("%s is not on PATH", binary),
-				Remediation: "install the transcribe.cpp CLI, or set transcribecpp_binary to its path",
+				Detail:      err.Error(),
+				Remediation: TranscribeCPPCLIRemediation(),
 			}
 		}
 		asset, err := TranscribeCPPModel(cfg.TranscribeCPPModel)

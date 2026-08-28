@@ -181,6 +181,13 @@ func ManifestFor(cfg *Config, req AssetRequest) (AssetManifest, error) {
 			if asset != nil {
 				m.Assets = append(m.Assets, *asset)
 			}
+			// transcribe.cpp is the one provider whose executable we vendor:
+			// upstream publishes dylibs, not the CLI. Only where a build exists.
+			if norm.Provider == STTProviderTranscribeCPP {
+				if cli, ok := TranscribeCPPCLIAsset(); ok {
+					m.Assets = append(m.Assets, cli)
+				}
+			}
 		}
 	}
 

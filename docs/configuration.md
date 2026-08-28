@@ -108,7 +108,7 @@ Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 | `whispercpp_binary` | `whisper-cli` | `WHISPERCPP_BINARY` | whisper.cpp CLI executable |
 | `whispercpp_model` | `base.en` | `WHISPERCPP_MODEL` | Downloadable whisper.cpp model name |
 | `whispercpp_model_path` | `~/.cache/festival-voice/models/whispercpp/ggml-base.en.bin` | `WHISPERCPP_MODEL_PATH` | whisper.cpp model path |
-| `transcribecpp_binary` | `transcribe-cli` | `TRANSCRIBECPP_BINARY` | transcribe.cpp CLI executable; a bare name is looked up on `PATH` |
+| `transcribecpp_binary` | `transcribe-cli` | `TRANSCRIBECPP_BINARY` | transcribe.cpp CLI executable. A path is used as given; a bare name is looked up on `PATH`, then in the copy `models ensure` manages |
 | `transcribecpp_model` | `parakeet-tdt-0.6b-v2` | `TRANSCRIBECPP_MODEL` | GGUF the `transcribecpp` provider loads. This is upstream's full model slug, so it is spelled longer than `parakeet_model`'s `tdt-0.6b-v2` — not a typo |
 | `vad_enabled` | `true` | | Enable voice activity detection |
 | `vad_silence_duration` | `0.5` | | Seconds of silence before ending speech (raise to stop being cut off) |
@@ -143,18 +143,32 @@ so obey-voice probes `transcribe-cli --list-devices` at startup and fails with a
 error naming the remedy if no GPU lane is listed. On a CPU-only machine, stay on
 `sherpa-parakeet`.
 
-Two things are needed. Put `transcribe-cli` on `PATH` (or point
-`transcribecpp_binary` at it) — there is no Homebrew formula, so use an upstream
-release build — and run `obey-voice models ensure` to fetch the GGUF. The binary,
-the GGUF and the GPU lane are all checked at startup and by `obey-voice doctor`,
-which reports them as `transcribecpp-binary`.
+Two things are needed: the `transcribe-cli` executable and the GGUF. On Apple
+Silicon `obey-voice models ensure` installs both — it fetches a pinned
+transcribe.cpp **0.2.2** CLI build alongside the weights, so there is nothing to
+compile. Upstream publishes no Homebrew formula and its release tarballs carry
+only the shared libraries (the CLI is a `cmake` `examples/` target), which is why
+the build is vendored rather than pointed at.
+
+On every other platform the CLI is not bundled yet. Build
+[transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) v0.2.2 from
+source and set `transcribecpp_binary` to the resulting `transcribe-cli`;
+`models ensure` still fetches the GGUF. `doctor` says which of the two cases you
+are in.
+
+The binary is resolved in that order of authority: an explicit
+`transcribecpp_binary` path wins, then `transcribe-cli` on `PATH`, then the
+managed copy under `<models_dir>/transcribecpp/bin/`. Managed comes last, so
+installing your own CLI keeps overriding the vendored one. The binary, the GGUF
+and the GPU lane are all checked at startup and by `obey-voice doctor`, which
+reports them as `transcribecpp-binary`.
 
 The GGUF weights are Parakeet TDT 0.6B v2, licensed **CC BY 4.0** and
 redistributed as GGUF by
 [handy-computer/parakeet-tdt-0.6b-v2-gguf](https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf);
-the transcribe.cpp runtime itself is MIT. `models ensure` and `models status`
-print that attribution alongside the asset. The license covers the weights you
-download, not this project.
+the transcribe.cpp runtime and its vendored CLI build are **MIT**. `models
+ensure` and `models status` print both attributions alongside the assets. The
+licenses cover what you download, not this project.
 
 Each utterance is one short-lived CLI process with its own model load, so the
 per-utterance cost includes loading the GGUF — the win measured in the A/B is
