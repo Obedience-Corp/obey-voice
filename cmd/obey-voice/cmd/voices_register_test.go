@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -28,9 +30,20 @@ func installTestAudio8Export(t *testing.T, modelsDir string) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{config.Audio8TokenizerPath(dir), filepath.Join(dir, "runtime_manifest.json")} {
-		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(`{"slow_logits_layout":"relative_semantic_then_eos"}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// The registration manifest carries max_audio_bytes, which the pre-decode
+	// size gate reads before anything opens the WAV.
+	reg := filepath.Join(dir, "registration")
+	if err := os.MkdirAll(reg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"model_fingerprint":"audio8-tts-preview-0.1b-int8-v1","sample_rate":44100,` +
+		`"num_codebooks":10,"encoder":"codec_encoder_fp16.onnx","max_audio_bytes":52428800}`
+	if err := os.WriteFile(filepath.Join(reg, "registration_manifest.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -78,15 +91,34 @@ func fakeRegistration(t *testing.T) *tts.Audio8RegisterRequest {
 		},
 		readWAV: func(string) ([]float32, int, error) { return make([]float32, 44100*5), 44100, nil },
 		digest:  func(string) (string, error) { return "deadbeef", nil },
+		stat:    func(string) (os.FileInfo, error) { return fakeFileInfo{size: 1 << 20}, nil },
 		synthesize: func(_ context.Context, _ *config.Config, voice, text string) ([]float32, int, error) {
 			if voice == "" || text == "" {
 				t.Errorf("bootstrap called with voice %q text %q", voice, text)
 			}
+			synthesized = voice
 			return make([]float32, 24000*10), 24000, nil
 		},
 	}
 	return &seen
 }
+
+// synthesized records the voice the bootstrap actually handed to Kokoro, which
+// is the thing the stored provenance has to agree with.
+var synthesized string
+
+// fakeFileInfo is a regular file of a chosen size, for the pre-decode size gate.
+type fakeFileInfo struct {
+	size int64
+	mode fs.FileMode
+}
+
+func (f fakeFileInfo) Name() string       { return "ref.wav" }
+func (f fakeFileInfo) Size() int64        { return f.size }
+func (f fakeFileInfo) Mode() fs.FileMode  { return f.mode }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return f.mode.IsDir() }
+func (f fakeFileInfo) Sys() any           { return nil }
 
 func runVoicesSub(t *testing.T, args ...string) (string, error) {
 	t.Helper()
@@ -148,6 +180,21 @@ func TestVoicesRegisterRefusesBadInvocations(t *testing.T) {
 			install: false,
 			args:    []string{"register", "mine", "--from-kokoro", "af_heart"},
 			want:    "no Audio8 export",
+		},
+		{
+			// Kokoro resolves its voice by exact map key and silently falls
+			// back to af_heart, so a name it cannot resolve must be refused
+			// here rather than recorded as the voice that spoke.
+			name:    "an unknown kokoro voice",
+			install: true,
+			args:    []string{"register", "mine", "--from-kokoro", "af_nonesuch"},
+			want:    "is not a Kokoro voice",
+		},
+		{
+			name:    "consent is meaningless for synthesized audio",
+			install: true,
+			args:    []string{"register", "mine", "--from-kokoro", "af_heart", "--consent"},
+			want:    "--consent does not apply",
 		},
 	}
 	for _, tt := range tests {
@@ -381,5 +428,90 @@ func TestActiveVoiceForAudio8(t *testing.T) {
 				t.Errorf("activeVoiceFor() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestVoicesRegisterCanonicalizesTheKokoroVoice is the provenance-truth check:
+// Kokoro looks its voice up by exact map key with a silent af_heart fallback,
+// so "AF_SKY" used to speak as af_heart while the store recorded AF_SKY.
+func TestVoicesRegisterCanonicalizesTheKokoroVoice(t *testing.T) {
+	modelsDir := newAudio8TestConfig(t)
+	installTestAudio8Export(t, modelsDir)
+	seen := fakeRegistration(t)
+	synthesized = ""
+
+	if _, err := runVoicesSub(t, "register", "shouty", "--from-kokoro", "AF_SKY"); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if synthesized != "af_sky" {
+		t.Errorf("Kokoro was asked for %q, want the canonical af_sky (an unresolvable name speaks as af_heart)", synthesized)
+	}
+	if seen.Provenance.BootstrapVoice != "af_sky" {
+		t.Errorf("provenance records %q, want the voice that actually synthesized (af_sky)", seen.Provenance.BootstrapVoice)
+	}
+	if seen.Provenance.BootstrapVoice != synthesized {
+		t.Errorf("provenance %q disagrees with the voice that spoke %q", seen.Provenance.BootstrapVoice, synthesized)
+	}
+	// VoiceInfo keys its language table on the lowercase first byte, so an
+	// uppercased name would have landed here with no locale at all.
+	if seen.Locale != "en-US" {
+		t.Errorf("locale = %q, want en-US from the canonical name", seen.Locale)
+	}
+}
+
+func TestCanonicalKokoroVoice(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{name: "empty", in: ""},
+		{name: "unknown", in: "af_nonesuch"},
+		{name: "whitespace only", in: "   "},
+		{name: "exact", in: "af_heart", want: "af_heart", wantOK: true},
+		{name: "uppercase", in: "AF_SKY", want: "af_sky", wantOK: true},
+		{name: "mixed case", in: "Bm_George", want: "bm_george", wantOK: true},
+		{name: "padded", in: "  af_bella  ", want: "af_bella", wantOK: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := canonicalKokoroVoice(tt.in)
+			if ok != tt.wantOK || got != tt.want {
+				t.Errorf("canonicalKokoroVoice(%q) = %q, %v; want %q, %v", tt.in, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+// The size gate has to run before the decode and before ~400 MB of encoder
+// weights, so an oversized file is refused without either being paid for.
+func TestVoicesRegisterRefusesAnOversizedReferenceBeforeReadingIt(t *testing.T) {
+	modelsDir := newAudio8TestConfig(t)
+	installTestAudio8Export(t, modelsDir)
+	fakeRegistration(t)
+
+	read := false
+	voiceRegister.readWAV = func(string) ([]float32, int, error) {
+		read = true
+		return make([]float32, 44100), 44100, nil
+	}
+	voiceRegister.stat = func(string) (os.FileInfo, error) {
+		return fakeFileInfo{size: 52428801}, nil // one byte over the manifest cap
+	}
+	_, err := runVoicesSub(t, "register", "big", "--wav", "big.wav", "--text", "hello there", "--consent")
+	if err == nil || !strings.Contains(err.Error(), "over the export's") {
+		t.Fatalf("register error = %v, want the size refusal", err)
+	}
+	if read {
+		t.Error("the WAV was decoded before the size gate refused it")
+	}
+
+	voiceRegister.stat = func(string) (os.FileInfo, error) {
+		return fakeFileInfo{size: 52428800, mode: fs.ModeDir}, nil
+	}
+	_, err = runVoicesSub(t, "register", "dir", "--wav", "somedir", "--text", "hello there", "--consent")
+	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("register error = %v, want a regular-file refusal", err)
 	}
 }

@@ -298,3 +298,99 @@ func TestApplyVoiceOverridesRecordsEffectiveValues(t *testing.T) {
 		t.Fatalf("Qwen opts = voice %q language %q, want Ryan/English", opts.Voice, opts.Language)
 	}
 }
+
+// Two audio8 voices used to produce the same synth identity, because the
+// identity read tts_voice — a key audio8 never touches. A --resume across a
+// voice change would then skip the completed segments and splice the two
+// voices into one file.
+func TestSynthIdentityDistinguishesAudio8Voices(t *testing.T) {
+	packaged := synthIdentityFor(&config.Config{TTSProvider: "audio8", SpeechSpeed: 1})
+	if !strings.Contains(packaged, "voice="+config.Audio8PackagedVoice) {
+		t.Fatalf("identity = %q, want the packaged voice named even when the key is empty", packaged)
+	}
+
+	mine := synthIdentityFor(&config.Config{TTSProvider: "audio8", Audio8Voice: "mine", SpeechSpeed: 1})
+	if mine == packaged {
+		t.Fatal("changing audio8_voice must change the synth identity, or --resume splices two voices")
+	}
+	yours := synthIdentityFor(&config.Config{TTSProvider: "audio8", Audio8Voice: "yours", SpeechSpeed: 1})
+	if yours == mine {
+		t.Fatal("two different registered voices share a synth identity")
+	}
+
+	// A stale Kokoro voice must not leak into an audio8 identity: audio8 does
+	// not read it, so it cannot be allowed to decide whether a resume matches.
+	stale := synthIdentityFor(&config.Config{
+		TTSProvider: "audio8", Audio8Voice: "mine", TTSVoice: "af_bella", SpeechSpeed: 1,
+	})
+	if stale != mine {
+		t.Errorf("tts_voice changed an audio8 identity:\n %q\n %q", stale, mine)
+	}
+}
+
+// render --voice under audio8 has to reach the key audio8 reads, and the
+// manifest has to record the voice that actually spoke.
+func TestApplyVoiceOverridesRoutesAudio8(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        config.Config
+		flagVoice  string
+		wantAudio8 string
+		wantKokoro string
+		wantOpts   string
+	}{
+		{
+			name:       "--voice reaches audio8_voice, not tts_voice",
+			cfg:        config.Config{TTSProvider: "audio8", TTSVoice: "af_heart"},
+			flagVoice:  "mine",
+			wantAudio8: "mine",
+			wantKokoro: "af_heart",
+			wantOpts:   "mine",
+		},
+		{
+			name:       "no --voice keeps the configured audio8 voice",
+			cfg:        config.Config{TTSProvider: "audio8", Audio8Voice: "mine"},
+			wantAudio8: "mine",
+			wantOpts:   "mine",
+		},
+		{
+			name:       "kokoro is untouched",
+			cfg:        config.Config{TTSProvider: "kokoro", TTSVoice: "af_heart"},
+			flagVoice:  "af_bella",
+			wantKokoro: "af_bella",
+			wantOpts:   "af_bella",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg
+			opts := render.Options{Voice: tt.flagVoice}
+			applyVoiceOverrides(&cfg, &opts)
+			if cfg.Audio8Voice != tt.wantAudio8 {
+				t.Errorf("Audio8Voice = %q, want %q", cfg.Audio8Voice, tt.wantAudio8)
+			}
+			if cfg.TTSVoice != tt.wantKokoro {
+				t.Errorf("TTSVoice = %q, want %q", cfg.TTSVoice, tt.wantKokoro)
+			}
+			if opts.Voice != tt.wantOpts {
+				t.Errorf("opts.Voice = %q, want %q (the manifest records this)", opts.Voice, tt.wantOpts)
+			}
+		})
+	}
+}
+
+// populateTTSMetadata feeds the manifest; under audio8 it recorded the Kokoro
+// key, so a manifest could not say which voice rendered the file.
+func TestPopulateTTSMetadataRecordsTheAudio8Voice(t *testing.T) {
+	var opts render.Options
+	populateTTSMetadata(&opts, &config.Config{TTSProvider: "audio8", Audio8Voice: "mine", TTSVoice: "af_heart"})
+	if opts.TTSVoice != "mine" {
+		t.Errorf("manifest voice = %q, want mine", opts.TTSVoice)
+	}
+
+	opts = render.Options{}
+	populateTTSMetadata(&opts, &config.Config{TTSProvider: "audio8", TTSVoice: "af_heart"})
+	if opts.TTSVoice != config.Audio8PackagedVoice {
+		t.Errorf("manifest voice = %q, want the packaged reference named explicitly", opts.TTSVoice)
+	}
+}

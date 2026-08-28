@@ -27,6 +27,7 @@ const (
 	codePromptEmpty      = "prompt_empty"
 	codePromptStructured = "prompt_structured"
 	codeAssetsMissing    = "assets_missing"
+	codeInvalidInput     = "invalid_input"
 	codeLastPersona      = "last_persona"
 )
 

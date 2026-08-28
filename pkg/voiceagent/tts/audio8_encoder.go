@@ -170,9 +170,16 @@ func (e *Audio8Encoder) Encode(ctx context.Context, samples []float32, rate int)
 	if err != nil {
 		return nil, fmt.Errorf("audio8: %w", err)
 	}
-	if e.man.MaxAudioBytes > 0 && int64(len(pcm))*4 > e.man.MaxAudioBytes {
-		return nil, fmt.Errorf("audio8: reference audio is %d bytes at %d Hz, over the manifest's %d byte limit",
-			len(pcm)*4, e.man.SampleRate, e.man.MaxAudioBytes)
+	// max_audio_bytes bounds the *source file* - that is what the vendor's own
+	// registration applies it to - so the CLI checks it on a stat before
+	// anything is read (see checkReferenceFileSize). This is the backstop for
+	// callers that supply samples directly: the tensor is fed as float16, so
+	// two bytes a sample, not four. The 30 s duration cap above already keeps
+	// this well under 50 MiB; it exists so a future cap change cannot quietly
+	// hand the graph more than the manifest allows.
+	if e.man.MaxAudioBytes > 0 && int64(len(pcm))*2 > e.man.MaxAudioBytes {
+		return nil, fmt.Errorf("audio8: reference audio is %d encoder bytes at %d Hz, over the manifest's %d byte limit",
+			len(pcm)*2, e.man.SampleRate, e.man.MaxAudioBytes)
 	}
 	// The codec consumes whole hops; the vendor's registration path pads the
 	// tail the same way rather than dropping the last partial frame.
@@ -232,4 +239,18 @@ func checkAudio8Fingerprint(runtime, other, what string) error {
 		return fmt.Errorf("audio8: %s belongs to model %q but the installed export is %q", what, other, runtime)
 	}
 	return nil
+}
+
+// Audio8MaxReferenceBytes is the largest reference file the export's
+// registration package accepts, from the manifest's max_audio_bytes. Zero means
+// the manifest declares no limit.
+//
+// It reads one small JSON file and opens no graph, so a caller can reject an
+// oversized file before paying for the decode or the encoder weights.
+func Audio8MaxReferenceBytes(modelDir string) (int64, error) {
+	man, err := loadAudio8RegistrationManifest(modelDir)
+	if err != nil {
+		return 0, err
+	}
+	return man.MaxAudioBytes, nil
 }

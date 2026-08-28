@@ -432,3 +432,175 @@ func TestResolveVoiceIsRaceFree(t *testing.T) {
 		t.Errorf("cache holds %d voices, want %d", len(a.voices), len(names)+1)
 	}
 }
+
+// TestSaveAudio8VoiceKeepsTheOldVoiceWhenTheInstallFails is the reviewer's
+// scenario: the replacement rename fails after the previous voice has been
+// moved aside. Deleting the old voice first, as this originally did, would have
+// left the name with no voice at all - and the staging cleanup would then take
+// the replacement too. This is the one asset under models_dir that cannot be
+// re-downloaded.
+func TestSaveAudio8VoiceKeepsTheOldVoiceWhenTheInstallFails(t *testing.T) {
+	dir := t.TempDir()
+	original := testMeta("alice")
+	original.Transcript = "the original reference line"
+	if err := SaveAudio8Voice(dir, original, testCodes(10, 11)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fail only the install rename, leaving the set-aside rename and the
+	// restore to succeed: that is the window where the voice would otherwise
+	// not exist at all.
+	real := audio8Rename
+	t.Cleanup(func() { audio8Rename = real })
+	target := config.Audio8VoiceDir(dir, "alice")
+	failed := false
+	audio8Rename = func(from, to string) error {
+		if to == target && !failed {
+			failed = true
+			return errors.New("simulated rename failure")
+		}
+		return real(from, to)
+	}
+
+	replacement := testMeta("alice")
+	replacement.Transcript = "the replacement reference line"
+	err := SaveAudio8Voice(dir, replacement, testCodes(10, 99))
+	if err == nil {
+		t.Fatal("SaveAudio8Voice() error = nil, want the simulated failure")
+	}
+
+	audio8Rename = real
+	if !failed {
+		t.Fatal("the install rename was never attempted; the test proves nothing")
+	}
+	meta, loadErr := LoadAudio8VoiceMeta(dir, "alice")
+	if loadErr != nil {
+		t.Fatalf("the previous voice did not survive a failed install: %v", loadErr)
+	}
+	if meta.Transcript != original.Transcript || meta.Frames != 11 {
+		t.Errorf("surviving voice = %q / %d frames, want the original", meta.Transcript, meta.Frames)
+	}
+	codes, _, err := loadAudio8VoiceCodes(dir, "alice", testFingerprint, 10)
+	if err != nil {
+		t.Fatalf("the surviving voice has no readable codes: %v", err)
+	}
+	if len(codes[0]) != 11 {
+		t.Errorf("surviving codes hold %d frames, want the original 11", len(codes[0]))
+	}
+	// And no staging or set-aside directory is left behind.
+	entries, err := os.ReadDir(config.Audio8VoicesDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "alice" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("store holds %v, want just the surviving voice", names)
+	}
+}
+
+// A first registration has nothing to set aside; the same path must still work.
+func TestSaveAudio8VoiceInstallsAFirstVoice(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveAudio8Voice(dir, testMeta("alice"), testCodes(10, 5)); err != nil {
+		t.Fatalf("SaveAudio8Voice: %v", err)
+	}
+	entries, err := os.ReadDir(config.Audio8VoicesDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("store holds %d entries after a first registration, want 1", len(entries))
+	}
+}
+
+// TestAudio8VoiceJSONAlwaysRecordsConsent pins the on-disk shape. `omitempty`
+// on the bool dropped `false`, so the consent record the feature is built
+// around was simply absent for exactly the voices that need it stated.
+func TestAudio8VoiceJSONAlwaysRecordsConsent(t *testing.T) {
+	tests := []struct {
+		name       string
+		provenance Audio8VoiceProvenance
+		want       string
+	}{
+		{
+			name: "synthetic audio records that nobody consented",
+			provenance: Audio8VoiceProvenance{
+				Kind: Audio8VoiceSynthetic, BootstrapProvider: "kokoro", BootstrapVoice: "af_heart",
+			},
+			want: `"consent": false`,
+		},
+		{
+			name:       "a recording records that someone did",
+			provenance: Audio8VoiceProvenance{Kind: Audio8VoiceRecorded, SourceFile: "ref.wav", Consent: true},
+			want:       `"consent": true`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			meta := testMeta("alice")
+			meta.Provenance = tt.provenance
+			if err := SaveAudio8Voice(dir, meta, testCodes(10, 4)); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(filepath.Join(config.Audio8VoiceDir(dir, "alice"), config.Audio8VoiceMetaFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(raw), tt.want) {
+				t.Errorf("voice.json does not contain %s:\n%s", tt.want, raw)
+			}
+		})
+	}
+}
+
+// And when even the restore fails, the previous voice is left on disk rather
+// than cleaned up: at that point the set-aside copy is the only one there is.
+func TestSaveAudio8VoicePreservesTheOldVoiceWhenTheRestoreAlsoFails(t *testing.T) {
+	dir := t.TempDir()
+	original := testMeta("alice")
+	original.Transcript = "the original reference line"
+	if err := SaveAudio8Voice(dir, original, testCodes(10, 11)); err != nil {
+		t.Fatal(err)
+	}
+
+	real := audio8Rename
+	t.Cleanup(func() { audio8Rename = real })
+	target := config.Audio8VoiceDir(dir, "alice")
+	audio8Rename = func(from, to string) error {
+		if to == target { // every attempt to occupy the name fails
+			return errors.New("simulated rename failure")
+		}
+		return real(from, to)
+	}
+
+	err := SaveAudio8Voice(dir, testMeta("alice"), testCodes(10, 99))
+	audio8Rename = real
+	if err == nil {
+		t.Fatal("SaveAudio8Voice() error = nil, want the simulated failure")
+	}
+	if !strings.Contains(err.Error(), "preserved at") {
+		t.Fatalf("error = %q, want it to name where the previous voice was kept", err)
+	}
+
+	// The message has to be true: the codes are still readable at that path.
+	var preserved string
+	for _, field := range strings.Fields(err.Error()) {
+		if strings.Contains(field, ".old.") {
+			preserved = strings.TrimSuffix(field, ")")
+		}
+	}
+	if preserved == "" {
+		t.Fatalf("could not find the preserved path in %q", err)
+	}
+	raw, readErr := os.ReadFile(filepath.Join(preserved, config.Audio8VoiceMetaFile))
+	if readErr != nil {
+		t.Fatalf("the preserved voice is not at the path the error names: %v", readErr)
+	}
+	if !strings.Contains(string(raw), original.Transcript) {
+		t.Errorf("the preserved voice is not the original:\n%s", raw)
+	}
+}

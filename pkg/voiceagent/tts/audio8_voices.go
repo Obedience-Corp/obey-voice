@@ -43,7 +43,12 @@ type Audio8VoiceProvenance struct {
 	// Consent records that the person registering a recording affirmed they had
 	// permission to use that voice. It is always false for synthetic audio,
 	// where there is no one to ask.
-	Consent bool `json:"consent,omitempty"`
+	//
+	// Deliberately not omitempty: this is the field someone reads to answer
+	// "was this cloned from a person, and were they asked". An absent key would
+	// be indistinguishable from an explicit false, and from a voice.json
+	// written before the field existed.
+	Consent bool `json:"consent"`
 }
 
 // Audio8VoiceMeta is voice.json: everything about a registered voice except the
@@ -126,17 +131,52 @@ func SaveAudio8Voice(modelsDir string, meta Audio8VoiceMeta, codes [][]int64) er
 		return fmt.Errorf("audio8: write metadata for %q: %w", meta.Name, err)
 	}
 
+	// Replacement is rename-aside, rename-in, drop-aside. Deleting the old
+	// voice first and renaming the new one into the gap would mean that any
+	// failure in that window - a crash, a SIGINT, a rename error - left no
+	// voice at all, and the staging cleanup above would take the replacement
+	// with it. This is the one thing under models_dir that cannot be
+	// re-downloaded, so the previous voice stays on disk until the new one is
+	// installed, and comes back if the install fails.
 	target := config.Audio8VoiceDir(modelsDir, meta.Name)
-	// Rename onto an existing directory fails, so a re-registration replaces
-	// the old voice only once the new one is completely written.
-	if err := os.RemoveAll(target); err != nil {
-		return fmt.Errorf("audio8: replace voice %q: %w", meta.Name, err)
+	aside, err := os.MkdirTemp(root, "."+meta.Name+".old.")
+	if err != nil {
+		return fmt.Errorf("audio8: stage replacement of voice %q: %w", meta.Name, err)
 	}
-	if err := os.Rename(staging, target); err != nil {
+
+	// Into a fresh directory rather than onto it: renaming onto an existing
+	// path has different rules per platform, and this has none of them.
+	saved := filepath.Join(aside, "voice")
+	replacing := true
+	if err := audio8Rename(target, saved); err != nil {
+		if !os.IsNotExist(err) {
+			os.RemoveAll(aside)
+			return fmt.Errorf("audio8: set aside existing voice %q: %w", meta.Name, err)
+		}
+		replacing = false // a first registration, nothing to preserve
+	}
+	if err := audio8Rename(staging, target); err != nil {
+		if replacing {
+			if restore := audio8Rename(saved, target); restore != nil {
+				// Deliberately leaving the set-aside copy on disk: it is now
+				// the only one, and removing it here would be exactly the data
+				// loss this path exists to prevent. Name it so it can be
+				// recovered by hand.
+				return fmt.Errorf("audio8: install voice %q: %w (the previous voice is preserved at %s)",
+					meta.Name, err, saved)
+			}
+		}
+		os.RemoveAll(aside)
 		return fmt.Errorf("audio8: install voice %q: %w", meta.Name, err)
 	}
+	os.RemoveAll(aside)
 	return nil
 }
+
+// audio8Rename is os.Rename, indirected so the replacement window above can be
+// tested. The guarantee it makes - a failed install leaves the previous voice
+// in place - is otherwise only reachable by killing the process mid-rename.
+var audio8Rename = os.Rename
 
 // LoadAudio8VoiceMeta reads one voice's metadata.
 func LoadAudio8VoiceMeta(modelsDir, name string) (Audio8VoiceMeta, error) {

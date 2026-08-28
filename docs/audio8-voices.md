@@ -40,12 +40,22 @@ obey-voice voices registered --json     # the same, machine-readable
 obey-voice voices remove mine           # delete one registered voice
 ```
 
+`--from-kokoro` matches the Kokoro catalog case-insensitively but records the
+catalog's own spelling, and refuses a name that is not in it. Kokoro resolves
+its voice by exact name and otherwise falls back to `af_heart`, so a name it
+cannot resolve would be synthesized in one voice and recorded as another.
+
 Then select it, globally or per persona:
 
 ```bash
 obey-voice config set audio8_voice english     # global default
 obey-voice persona edit ada --tts-provider audio8 --voice english
 ```
+
+`obey-voice render --voice <name>` selects a registered voice too, and the
+render manifest and `--resume` key both record it — resuming a render after
+changing `audio8_voice` starts over rather than splicing two voices into one
+file.
 
 Settings → Voice lists registered voices beside the packaged reference, and the
 persona editor's voice row offers them too. `obey-voice voices preview --voice
@@ -54,10 +64,11 @@ anything.
 
 ### The reference audio
 
-- **Any 16-bit PCM WAV.** Stereo is downmixed and any sample rate is resampled
-  to the model's 44.1 kHz with a band-limited filter. Registration happens once,
-  so it uses a real anti-alias filter rather than the linear interpolation the
-  playback path uses.
+- **Any 16-bit PCM WAV**, up to the export's `max_audio_bytes` (50 MiB), which
+  is checked on the file before it is opened. Stereo is downmixed and any sample
+  rate is resampled to the model's 44.1 kHz with a band-limited filter.
+  Registration happens once, so it uses a real anti-alias filter rather than the
+  linear interpolation the playback path uses.
 - **Between 0.5 and 30 seconds**, matching the vendor's own limit. Around ten
   seconds is the useful range.
 - **The transcript must be exact.** It is fed to the model as what the reference
@@ -89,6 +100,16 @@ models_dir/
       codes.npy               # [10][T] int64, the same format as the packaged reference
       voice.json              # name, transcript, locale, fingerprint, provenance
 ```
+
+Registering a name that already exists replaces it by rename-aside, rename-in,
+drop-aside: the previous voice stays on disk until the new one is installed, and
+comes back if the install fails. If even that restore fails, the previous voice
+is left in a `.<name>.old.*` directory and the error names the path — nothing
+here deletes the only copy of a voice.
+
+`voice.json` always records `consent`, including `"consent": false` for
+synthesized references. An absent key would be indistinguishable from an
+explicit no.
 
 The store is a **sibling** of the export, not a directory inside it. The export
 is normally a symlink tree into a read-only HuggingFace snapshot: a voice written

@@ -5,6 +5,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -34,6 +35,7 @@ type voiceRegisterDeps struct {
 	register   func(context.Context, tts.Audio8RegisterRequest) (tts.Audio8VoiceMeta, error)
 	readWAV    func(string) ([]float32, int, error)
 	digest     func(string) (string, error)
+	stat       func(string) (os.FileInfo, error)
 	synthesize func(context.Context, *config.Config, string, string) ([]float32, int, error)
 }
 
@@ -41,6 +43,7 @@ var voiceRegister = voiceRegisterDeps{
 	register:   tts.RegisterAudio8Voice,
 	readWAV:    audio.ReadWAVFloat32,
 	digest:     tts.Audio8SourceDigest,
+	stat:       os.Stat,
 	synthesize: synthesizeBootstrapAudio,
 }
 
@@ -159,10 +162,24 @@ func registerAudio8Voice(cmd *cobra.Command, name string) (tts.Audio8VoiceMeta, 
 	}
 
 	if bootstrap != "" {
+		if consent {
+			// The help says consent does not apply here; accepting and dropping
+			// it would leave the user believing they recorded something.
+			return tts.Audio8VoiceMeta{}, nil, usageError(
+				"--consent does not apply to --from-kokoro: the reference is synthesized here, so there is nobody to have given it")
+		}
+		// Canonicalize before anything records the name. Kokoro resolves its
+		// voice by exact map key and silently falls back to af_heart, so an
+		// almost-right name would speak in one voice and be recorded as another.
+		canonical, ok := canonicalKokoroVoice(bootstrap)
+		if !ok {
+			return tts.Audio8VoiceMeta{}, nil, codedError(codeInvalidVoice,
+				"--from-kokoro %q is not a Kokoro voice (try `obey-voice voices --provider kokoro`)", bootstrap)
+		}
 		if strings.TrimSpace(text) == "" {
 			text = audio8BootstrapText
 		}
-		samples, rate, err := voiceRegister.synthesize(cmd.Context(), cfg, bootstrap, text)
+		samples, rate, err := voiceRegister.synthesize(cmd.Context(), cfg, canonical, text)
 		if err != nil {
 			return tts.Audio8VoiceMeta{}, nil, err
 		}
@@ -170,12 +187,12 @@ func registerAudio8Voice(cmd *cobra.Command, name string) (tts.Audio8VoiceMeta, 
 		if req.Locale == "" {
 			// Kokoro's catalog is locale-tagged, so the synthesized reference
 			// inherits a locale we actually know rather than guessing one.
-			req.Locale = tts.VoiceInfo(bootstrap).Locale
+			req.Locale = tts.VoiceInfo(canonical).Locale
 		}
 		req.Provenance = tts.Audio8VoiceProvenance{
 			Kind:              tts.Audio8VoiceSynthetic,
 			BootstrapProvider: "kokoro",
-			BootstrapVoice:    bootstrap,
+			BootstrapVoice:    canonical,
 		}
 		meta, err := voiceRegister.register(cmd.Context(), req)
 		return meta, cfg, err
@@ -189,6 +206,9 @@ func registerAudio8Voice(cmd *cobra.Command, name string) (tts.Audio8VoiceMeta, 
 		// voice frictionless. The flag is the record that someone said yes.
 		return tts.Audio8VoiceMeta{}, nil, codedError(codeConfirmRequired,
 			"pass --consent to confirm you have permission to use the voice in %s", wav)
+	}
+	if err := checkReferenceFileSize(modelDir, wav); err != nil {
+		return tts.Audio8VoiceMeta{}, nil, err
 	}
 	samples, rate, err := voiceRegister.readWAV(wav)
 	if err != nil {
@@ -207,6 +227,30 @@ func registerAudio8Voice(cmd *cobra.Command, name string) (tts.Audio8VoiceMeta, 
 	}
 	meta, err := voiceRegister.register(cmd.Context(), req)
 	return meta, cfg, err
+}
+
+// checkReferenceFileSize refuses an oversized reference before anything reads
+// it. The manifest's max_audio_bytes bounds the source file - it is the limit
+// the vendor's own registration applies to the uploaded bytes - so it is
+// checked here, on a stat, rather than after a full decode, a resample and
+// ~400 MB of encoder weights.
+func checkReferenceFileSize(modelDir, path string) error {
+	limit, err := tts.Audio8MaxReferenceBytes(modelDir)
+	if err != nil {
+		return err
+	}
+	info, err := voiceRegister.stat(path)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", path)
+	}
+	if limit > 0 && info.Size() > limit {
+		return codedError(codeInvalidInput,
+			"%s is %d bytes, over the export's %d byte reference limit", path, info.Size(), limit)
+	}
+	return nil
 }
 
 func newVoicesRegisteredCmd() *cobra.Command {
