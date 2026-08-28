@@ -654,3 +654,54 @@ func TestPersonasFormFitsTerminalWithLongPromptLines(t *testing.T) {
 		}
 	}
 }
+
+// Esc must never silently discard an edit: leaving insert mode and the vim
+// double-tap reflex both keep the form open, and esc on Model & voice steps
+// back to the prompt instead of cancelling.
+func TestPersonasEscNeverDiscardsTheEdit(t *testing.T) {
+	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
+	m := newPersonas(cfg)
+	m.listPersonas = func() ([]*persona.Profile, error) {
+		return []*persona.Profile{{ID: "samantha", DisplayName: "Samantha"}}, nil
+	}
+	m.loadPromptForProfile = func(*persona.Profile) (string, error) { return "You are {agent_name}.", nil }
+	m.reload()
+	m.width, m.height = 80, 30
+	m.cursor = 0
+	m.beginEdit()
+	m, _ = m.focusPromptStep()
+
+	// Insert → esc → esc: normal mode first, then the hint — never a cancel.
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.formMode == "" {
+		t.Fatal("double esc discarded the edit")
+	}
+	if !strings.Contains(m.message, ":q") {
+		t.Fatalf("message = %q, want the :q hint", m.message)
+	}
+
+	// Esc on Model & voice returns to the prompt, keeping the form open.
+	m, _ = m.focusStackStep()
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.formMode == "" {
+		t.Fatal("esc on the stack step discarded the edit")
+	}
+	if m.formStep != personaFormPrompt {
+		t.Fatalf("formStep = %d, want prompt after stack esc", m.formStep)
+	}
+
+	// :q is the explicit discard, and still works. (focusPromptStep re-enters
+	// insert mode, so drop to normal first — which itself must not discard.)
+	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyEscape},
+		{Type: tea.KeyRunes, Runes: []rune{':'}},
+		{Type: tea.KeyRunes, Runes: []rune{'q'}},
+		{Type: tea.KeyEnter},
+	} {
+		m, _ = m.updateForm(k)
+	}
+	if m.formMode != "" {
+		t.Fatal(":q should still discard the edit")
+	}
+}

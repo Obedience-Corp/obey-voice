@@ -47,6 +47,10 @@ const (
 	// Mirrors vim write-without-quit so users can still set model & voice.
 	promptEventAccept
 	promptEventCancel
+	// promptEventIdleEsc is a bare esc in idle normal mode. It must NOT cancel:
+	// vim muscle memory hammers esc, and a reflex tap right after leaving insert
+	// used to silently discard the whole edit. The form shows how to leave.
+	promptEventIdleEsc
 )
 
 func newPromptEditor() promptEditor {
@@ -139,11 +143,12 @@ func knownPlaceholderSet() map[string]bool {
 }
 
 // Update routes one key through the modal editor and maps the outcome onto a
-// form event. A bare esc in idle normal mode cancels the form (matching the
-// previous editor); esc with pending state only clears that state.
+// form event. A bare esc in idle normal mode is deliberately inert (surfaced
+// as promptEventIdleEsc so the form can hint at :q); esc with pending state
+// only clears that state. Discarding is explicit: :q / :q!.
 func (p promptEditor) Update(msg tea.KeyMsg) (promptEditor, tea.Cmd, promptEvent) {
 	if msg.String() == "esc" && p.idleNormal() {
-		return p, nil, promptEventCancel
+		return p, nil, promptEventIdleEsc
 	}
 
 	// Placeholder completion intercepts Tab/Enter/Esc in insert mode.

@@ -276,10 +276,16 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	key := msg.String()
 	switch {
 	case key == "esc":
-		// The prompt step owns esc: insert→normal first; only an idle
-		// normal-mode esc (surfacing as promptEventCancel below) leaves the form.
+		// The prompt step owns esc entirely: insert→normal, pending-state
+		// clears, and idle-normal esc is inert (promptEventIdleEsc below) —
+		// discarding is explicit (:q), never a reflex tap away.
 		if m.formStep == personaFormPrompt {
 			break
+		}
+		// Model & voice: esc steps back to the prompt rather than discarding
+		// a form that already carries an edited prompt.
+		if m.formStep == personaFormStack {
+			return m.focusPromptStep()
 		}
 		m.cancelForm()
 		m.message = "Edit cancelled"
@@ -346,6 +352,8 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	case promptEventCancel:
 		m.cancelForm()
 		m.message = "Edit cancelled"
+	case promptEventIdleEsc:
+		m.message = "Still editing — :wq saves, :q discards"
 	}
 	return m, cmd
 }
