@@ -151,6 +151,121 @@ func TestDiagnoseMeetingDiarizer(t *testing.T) {
 	}
 }
 
+// The settings row reads the same install state doctor does, without paying
+// for the backend probe.
+func TestMeetingDiarizerGap(t *testing.T) {
+	installed := installSortformerGGUF(t)
+
+	tests := []struct {
+		name       string
+		diarizer   string
+		modelsDir  string
+		lookPath   func(string) (string, error)
+		wantDetail string
+	}{
+		{name: "sherpa needs nothing", diarizer: DiarizerSherpa, modelsDir: t.TempDir(), lookPath: failLookPath},
+		{name: "unset needs nothing", diarizer: "", modelsDir: t.TempDir(), lookPath: failLookPath},
+		{name: "an unknown engine is not an install gap", diarizer: "pyannote", modelsDir: t.TempDir(), lookPath: failLookPath},
+		{
+			name: "missing CLI", diarizer: DiarizerSortformer, modelsDir: installed, lookPath: failLookPath,
+			wantDetail: TranscribeCPPCLIName + " not installed",
+		},
+		{
+			name: "missing weights", diarizer: DiarizerSortformer, modelsDir: t.TempDir(), lookPath: okLookPath,
+			wantDetail: "weights not downloaded",
+		},
+		{name: "installed", diarizer: DiarizerSortformer, modelsDir: installed, lookPath: okLookPath},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gap := MeetingDiarizerGap(sortformerConfig(tt.diarizer), tt.modelsDir, tt.lookPath)
+			if gap.Detail != tt.wantDetail {
+				t.Fatalf("detail = %q, want %q", gap.Detail, tt.wantDetail)
+			}
+			if gap.Missing() && gap.Remediation == "" {
+				t.Errorf("a reported gap must carry remediation: %+v", gap)
+			}
+			// Remediation is the action, not the detail said twice.
+			if gap.Missing() && strings.Contains(gap.Remediation, gap.Detail) {
+				t.Errorf("remediation %q merely restates the detail %q", gap.Remediation, gap.Detail)
+			}
+		})
+	}
+
+	// A configured path is a decision the resolver never falls back from, so a
+	// bad one must not be reported as something to install.
+	t.Run("configured binary is not executable", func(t *testing.T) {
+		cfg := sortformerConfig(DiarizerSortformer)
+		cfg.TranscribeCPPBinary = filepath.Join(t.TempDir(), "transcribe-cli")
+		gap := MeetingDiarizerGap(cfg, installed, okLookPath)
+		if gap.Detail != "transcribecpp_binary is not executable" {
+			t.Fatalf("detail = %q, want the configured path named", gap.Detail)
+		}
+		if !strings.Contains(gap.Remediation, "transcribecpp_binary") || strings.Contains(gap.Remediation, "models ensure") {
+			t.Errorf("remediation = %q, want the fix for a bad path, not an install", gap.Remediation)
+		}
+	})
+
+	// No config and no lookPath are the picker's own zero values, not a gap.
+	if gap := MeetingDiarizerGap(nil, installed, okLookPath); gap.Missing() {
+		t.Errorf("nil config = %+v, want no gap", gap)
+	}
+	if gap := MeetingDiarizerGap(sortformerConfig(DiarizerSortformer), t.TempDir(), nil); gap.Missing() {
+		t.Errorf("nil lookPath = %+v, want no gap", gap)
+	}
+}
+
+// The settings row is held to the same bargain doctor is: it may ask for an
+// install only in the states where 'models ensure' would actually fetch it.
+func TestMeetingDiarizerGapAndEnsureAgree(t *testing.T) {
+	tests := []struct {
+		name    string
+		speaker bool
+		meeting bool
+		want    bool // the row may say 'models ensure' AND the plan fetches it
+	}{
+		{name: "speaker on, meetings on", speaker: true, meeting: true, want: true},
+		{name: "speaker on, meetings off", speaker: true, meeting: false},
+		{name: "speaker off entirely"},
+	}
+
+	assetID := SortformerManifestAsset().ID
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := sortformerConfig(DiarizerSortformer)
+			cfg.Speaker.Enabled = tt.speaker
+			cfg.Speaker.Meeting.Enabled = tt.meeting
+
+			// An empty models dir: the weights are missing either way, so the
+			// only thing that varies is whether the two surfaces ask for them.
+			gap := MeetingDiarizerGap(cfg, t.TempDir(), okLookPath)
+			asked := strings.Contains(gap.Remediation, "models ensure")
+
+			m, err := ManifestFor(cfg, DefaultAssetRequest(cfg))
+			if err != nil {
+				t.Fatalf("ManifestFor() error = %v", err)
+			}
+			planned := false
+			for _, a := range m.Assets {
+				if a.ID == assetID {
+					planned = true
+				}
+			}
+
+			if asked != tt.want || planned != tt.want {
+				t.Fatalf("row asks for an install = %v (%+v), models ensure plans = %v, want both %v",
+					asked, gap, planned, tt.want)
+			}
+			// Silence is not an option either: an inactive review pass is why
+			// nothing installs, and the row has to say so.
+			if !tt.want && !strings.Contains(gap.Detail, "diarization is off") {
+				t.Errorf("detail = %q, want it to explain the off state", gap.Detail)
+			}
+		})
+	}
+}
+
 // doctor and 'models ensure' must agree: a row telling the user to fetch
 // weights the plan will never fetch is a permanent, unfixable FAIL.
 func TestDiagnoseAndEnsureAgreeOnWhenSortformerIsNeeded(t *testing.T) {
