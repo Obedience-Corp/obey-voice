@@ -306,11 +306,64 @@ func (q *Qwen3TTS) ProviderName() string { return qwen3TTSProviderName }
 
 // ModelTier reports the normalized model size (0.6b / 1.7b) so an artifact
 // records which one produced the numbers.
+//
+// Over LAN the local qwen_tts_model_tier describes a worker this process never
+// started, so the tier the speech worker reported about itself wins when it
+// reported one (spec/30 §2 makes it optional). Falling back to the local key
+// there would attribute the numbers to the wrong model.
 func (q *Qwen3TTS) ModelTier() string {
 	if q == nil {
 		return ""
 	}
+	if q.remote {
+		if tier := q.workerTier(); tier != "" {
+			return managedqwen.NormalizeModelTier(tier)
+		}
+		return ""
+	}
 	return managedqwen.NormalizeModelTier(q.modelTier)
+}
+
+// SpeechPlace reports which computer synthesizes for this provider.
+func (q *Qwen3TTS) SpeechPlace() string {
+	if q != nil && q.remote {
+		return PlaceLAN
+	}
+	return PlaceLocal
+}
+
+// WorkerStreaming reports the worker's ready.streaming frame. Stage A workers
+// answer false: PCM exists only once the whole utterance is generated, so
+// time-to-first-audio is the synthesis and no earlier.
+func (q *Qwen3TTS) WorkerStreaming() bool {
+	session := q.liveSession()
+	return session != nil && session.Streaming()
+}
+
+// workerTier is the tier the speech worker named for itself, when the
+// transport can carry one. The local child never sends it.
+func (q *Qwen3TTS) workerTier() string {
+	session := q.liveSession()
+	if session == nil {
+		return ""
+	}
+	reporter, ok := session.(interface{ Tier() string })
+	if !ok {
+		return ""
+	}
+	return reporter.Tier()
+}
+
+// liveSession reads the current speech transport, which a worker restart
+// replaces under the caller.
+func (q *Qwen3TTS) liveSession() qwenSpeechSession {
+	if q == nil {
+		return nil
+	}
+	if ref := q.speechRef.Load(); ref != nil && *ref != nil {
+		return *ref
+	}
+	return nil
 }
 
 // FirstAudioGrace reports the stall budget for a segment of unstated length.
@@ -375,11 +428,7 @@ func (q *Qwen3TTS) FirstAudioGraceForChars(chars int) time.Duration {
 // paying a full ~11s startup. That would let the stall watchdog cancel the
 // self-healing restart it exists to protect.
 func (q *Qwen3TTS) hasLiveSession() bool {
-	if q == nil {
-		return false
-	}
-	ref := q.speechRef.Load()
-	return ref != nil && *ref != nil
+	return q.liveSession() != nil
 }
 
 // capByTimeout bounds a computed grace by the configured synthesis timeout,
@@ -985,8 +1034,8 @@ func (q *Qwen3TTS) Capabilities() ProviderCapabilities {
 		caps.Languages = managedqwen.SupportedLanguages()
 	}
 	// Stage A: streaming=false at protocol layer; PCM still arrives as one chunk post-synth.
-	if q.native && q.speech != nil {
-		caps.SupportsStreaming = q.speech.Streaming()
+	if q.native {
+		caps.SupportsStreaming = q.WorkerStreaming()
 	}
 	caps.SupportsPreview = true
 	return caps

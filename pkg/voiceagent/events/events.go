@@ -86,6 +86,18 @@ type TurnMetrics struct {
 	// qwen3-tts 1.7b measured 1.40x slower than 0.6b on the same machine.
 	TTSProvider string
 	TTSTier     string
+	// TTSPlace is which computer synthesized: "local" or "lan". Provider and
+	// tier alone do not identify an engine once speech can run off-box — the
+	// same qwen3-tts:0.6b is different silicon plus a socket over LAN — so a
+	// turn that does not record its place cannot be compared with one that
+	// ran elsewhere.
+	TTSPlace string
+	// TTSWorkerStreaming is the speech worker's ready.streaming frame
+	// (spec/30 §2). False means the worker generates the whole utterance
+	// before any PCM exists, so first audio cannot arrive before synthesis
+	// finishes no matter what the rest of the pipeline does. It is recorded
+	// beside the timings because it is what makes them explicable.
+	TTSWorkerStreaming bool
 	// TTSFallbacks counts segments the configured provider failed to
 	// synthesize, which the Kokoro fallback spoke instead. A turn that fell
 	// back is not a measurement of the configured provider.

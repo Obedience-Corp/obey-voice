@@ -15,6 +15,9 @@ just bench diff       # measure and compare; fails on >10% regression
 just bench run        # measure and print, writing nothing
 just bench save L1    # measure and write L1-<date>.json (per-item delta artifact)
 just bench tts        # measure TTS engines over long-reply fixtures
+
+just bench save-place S6 lan          # same fixtures, speech on the other computer
+just bench place-diff a.json b.json   # full-turn local vs LAN (reported, never gated)
 ```
 
 ## What is measured, and what is gated
@@ -32,6 +35,7 @@ fixture mix changes rather than when performance does.
 | `stt` | Endpointing + recognition | **Yes.** Measured at ±0.6 % run to run |
 | `model` | First model chunk after the transcript | No — swings 1.5 s–24 s on a large local model, and nothing in this track changes it. Gating it would produce only false failures |
 | `synth` | First segment → first audio (first-sentence synthesis) | No, reported |
+| `playback` | `PlaybackStartElapsed` — end of speech to first audible frame | No, reported. The "talk feels fast" number, and the one `place-diff` compares |
 
 The gate is the **median stt stage across fixtures**, with a 10 % tolerance
 against a measured 0.6 % noise floor — a ~16× margin.
@@ -53,6 +57,24 @@ warns when it changes.
 
 Every artifact records machine, CPU, OS, samantha commit, worktree cleanliness,
 persona, brain provider, **brain model**, and TTS provider.
+
+Speech can now run on another computer (`tts_place`), so the envelope also
+records **where** it ran (`tts_place`, and `tts_worker` — host and port, never
+the token — when that is `lan`) and the configured **tier** when the engine is
+qwen. Each *run* additionally carries its own `metrics.TTSPlace` and
+`metrics.TTSWorkerStreaming`, because a sweep can measure several engines into
+one file and the envelope has room for only one answer.
+
+`metrics.TTSTier` is the authoritative tier. Over LAN the local
+`qwen_tts_model_tier` key describes a worker this process never started, so the
+provider reports the tier the worker named for itself in its ready frame
+(spec/30 §2) and leaves it empty when the worker named none — rather than
+labelling the numbers with a model that did not produce them.
+
+`metrics.TTSWorkerStreaming` is the worker's `ready.streaming`. It is recorded
+beside the timings because it is what makes them explicable: a false there
+means the worker generates the whole utterance before any PCM exists, so first
+audio *cannot* arrive before synthesis ends no matter what the pipeline does.
 
 Hardware is the obvious one. The **model matters just as much**: the same code on
 the same Mac produces entirely different numbers under a 135 M model than a 26 B
@@ -187,16 +209,56 @@ obey-voice --transcript-log /tmp/session.jsonl
 ```
 
 Each turn appends one `metrics` record carrying `tts_provider`, `tts_tier`,
-`first_audio_grace_s`, `stall_watchdog_fired`, and a `segments` array with
-`engine_s` / `queue_s` / `synth_s` / `audio_s` / `rtf` per segment (schema v2).
+`tts_place`, `tts_streaming`, `first_audio_grace_s`, `stall_watchdog_fired`,
+and a `segments` array with `engine_s` / `queue_s` / `synth_s` / `audio_s` /
+`rtf` per segment (schema v2).
 To find the slow turns:
 
 ```bash
 jq -r 'select(.type=="metrics") |
-  "\(.tts_provider):\(.tts_tier // "")  playback_start \(.playback_start_s)s  " +
+  "\(.tts_provider):\(.tts_tier // "")@\(.tts_place // "local")  playback_start \(.playback_start_s)s  " +
   "segments \((.segments//[])|length)  worst_rtf \([(.segments//[])[].rtf]|max // 0)"' \
   /tmp/session.jsonl
 ```
+
+## Comparing speech on this computer against speech on another
+
+The fleet design's product question is not "is the LAN worker faster at
+synthesis" — it is whether moving speech off-box moves the number a listener
+experiences, `PlaybackStartElapsed`. That comparison is two runs of the *same*
+fixtures differing only in `tts_place`, read off their artifacts:
+
+```bash
+just build
+just bench save-place S6 local     # writes S6-local-<date>.json
+just bench save-place S6 lan       # needs tts_worker_url + token; run on the same host
+just bench place-diff docs/benchmarks/S6-local-<date>.json \
+                      docs/benchmarks/S6-lan-<date>.json
+```
+
+A turn the Kokoro fallback spoke — wholly or partly (`TTSFallbacks > 0`) — is
+**excluded** from the turn tables and the place-diff medians, and the exclusion
+is printed. A LAN run whose worker kept failing would otherwise be measuring
+local Kokoro under a `lan` label, and an unreachable worker would read as a
+fast one. When every turn on one side fell back, `place-diff` refuses with an
+error instead of printing a delta.
+
+`--tts-place` on `obey-voice benchmark` (and `BENCH_TTS_PLACE` for the script)
+is what keeps those two runs one instrument. Without it the operator edits
+config between them, and the difference is no longer only the place. An
+unreachable or misconfigured worker fails the command outright rather than
+falling back to Kokoro and writing a Kokoro measurement labelled `lan`.
+
+**`place-diff` reports; it never gates.** `PlaybackStartElapsed` is dominated
+by model think time — measured at 307 % spread, which is why the gate is the
+stt stage and not this — so a full-turn delta is evidence to read alongside the
+stage table, not a pass/fail. Both are printed. `just bench run` and
+`just bench save` print the same full-turn table, so any artifact answers the
+question without a second tool.
+
+The LAN side needs a second machine running `obey-voice speech-serve`; there is
+no way to fake it locally that would mean anything, since the whole point is
+the other computer's silicon.
 
 ## Verifying the gate still bites
 

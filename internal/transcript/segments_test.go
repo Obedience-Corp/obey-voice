@@ -28,6 +28,8 @@ func TestMetricsRecordCarriesSegmentCost(t *testing.T) {
 		PlaybackStartElapsed:   7100 * time.Millisecond,
 		TTSProvider:            "qwen3-tts",
 		TTSTier:                "1.7b",
+		TTSPlace:               "lan",
+		TTSWorkerStreaming:     true,
 		TTSFallbacks:           1,
 		FirstAudioGrace:        47 * time.Second,
 		StallWatchdogFired:     true,
@@ -57,6 +59,12 @@ func TestMetricsRecordCarriesSegmentCost(t *testing.T) {
 
 	if metrics.TTSProvider != "qwen3-tts" || metrics.TTSTier != "1.7b" {
 		t.Errorf("engine = %q/%q, want qwen3-tts/1.7b", metrics.TTSProvider, metrics.TTSTier)
+	}
+	// Topology travels with the numbers: the same engine name over a LAN
+	// socket is a different measurement, and a non-streaming worker cannot
+	// produce first audio before synthesis ends.
+	if metrics.TTSPlace != "lan" || !metrics.TTSStreaming {
+		t.Errorf("topology = %q/%v, want lan/true", metrics.TTSPlace, metrics.TTSStreaming)
 	}
 	if metrics.TTSFallbacks != 1 {
 		t.Errorf("tts_fallbacks = %d, want 1", metrics.TTSFallbacks)

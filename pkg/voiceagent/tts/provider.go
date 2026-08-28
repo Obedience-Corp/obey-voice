@@ -32,6 +32,52 @@ type Describer interface {
 	ModelTier() string
 }
 
+// TopologyDescriber is optionally implemented by providers whose synthesis can
+// happen on another computer.
+//
+// Provider and tier are only two thirds of an engine's identity. The same
+// qwen3-tts:0.6b measured from a local Metal worker and from a speech-serve
+// host over the LAN are different measurements — different silicon, plus a
+// socket in the path — and whether the worker emits PCM during decode
+// (ready.streaming, spec/30 §2) decides whether time-to-first-audio can be
+// anything but the whole synthesis. A latency number without that topology
+// cannot be read.
+type TopologyDescriber interface {
+	// SpeechPlace is PlaceLocal or PlaceLAN.
+	SpeechPlace() string
+	// WorkerStreaming is the speech worker's ready.streaming frame. False for
+	// an engine that synthesizes in this process and has no worker to ask.
+	WorkerStreaming() bool
+}
+
+// Where synthesis ran, as recorded on a turn's metrics. These mirror the
+// tts_place config values; they are repeated as provider-facing constants so
+// nothing on the metrics path has to depend on the config package.
+const (
+	PlaceLocal = "local"
+	PlaceLAN   = "lan"
+)
+
+// SpeechPlaceOf reports which computer a provider speaks from. Only the Qwen
+// speech path has a LAN transport, so a provider that does not describe itself
+// synthesized in this process and PlaceLocal is the truthful answer rather
+// than a guess.
+func SpeechPlaceOf(p Provider) string {
+	if d, ok := p.(TopologyDescriber); ok {
+		if place := d.SpeechPlace(); place != "" {
+			return place
+		}
+	}
+	return PlaceLocal
+}
+
+// WorkerStreamingOf reports the speech worker's ready.streaming frame, and
+// false when there is no worker.
+func WorkerStreamingOf(p Provider) bool {
+	d, ok := p.(TopologyDescriber)
+	return ok && d.WorkerStreaming()
+}
+
 // FirstAudioGracer is optionally implemented by providers whose time-to-first
 // audible frame can exceed the pipeline's default playback-stall budget.
 // When present, the stall watchdog waits at least this long before aborting a

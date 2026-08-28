@@ -27,6 +27,14 @@ run:
 save label:
     @{{repo}}/scripts/bench.sh save {{label}}
 
+[doc('Measure the same fixtures with speech on this computer or another, e.g. `just bench save-place S6 lan`')]
+save-place label place:
+    @BENCH_TTS_PLACE={{place}} {{repo}}/scripts/bench.sh save {{label}}-{{place}}
+
+[doc('Compare full-turn PlaybackStartElapsed between two artifacts (reported, never gated)')]
+place-diff a b:
+    @{{repo}}/scripts/bench.sh place-diff {{a}} {{b}}
+
 [doc('List audio input devices for recording')]
 devices:
     @{{repo}}/scripts/record-corpus.sh --devices

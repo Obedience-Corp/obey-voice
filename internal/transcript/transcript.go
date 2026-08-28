@@ -79,8 +79,14 @@ type record struct {
 	// TTS accounting on metrics records. The milestone fields above only ever
 	// describe the first segment; Segments carries every segment's synthesis
 	// cost, which is where a long reply actually spends its time.
-	TTSProvider        string    `json:"tts_provider,omitempty"`
-	TTSTier            string    `json:"tts_tier,omitempty"`
+	TTSProvider string `json:"tts_provider,omitempty"`
+	TTSTier     string `json:"tts_tier,omitempty"`
+	// TTSPlace and TTSStreaming are the turn's topology: which computer
+	// synthesized, and whether its worker emitted PCM during decode. Without
+	// them a slow turn in this log cannot be told from a fast one that
+	// crossed a LAN.
+	TTSPlace           string    `json:"tts_place,omitempty"`
+	TTSStreaming       bool      `json:"tts_streaming,omitempty"`
 	TTSFallbacks       int       `json:"tts_fallbacks,omitempty"`
 	FirstAudioGraceS   float64   `json:"first_audio_grace_s,omitempty"`
 	StallWatchdogFired bool      `json:"stall_watchdog_fired,omitempty"`
@@ -204,6 +210,8 @@ func (w *Writer) Attach(bus *events.Bus) {
 
 			TTSProvider:        e.TTSProvider,
 			TTSTier:            e.TTSTier,
+			TTSPlace:           e.TTSPlace,
+			TTSStreaming:       e.TTSWorkerStreaming,
 			TTSFallbacks:       e.TTSFallbacks,
 			FirstAudioGraceS:   e.FirstAudioGrace.Seconds(),
 			StallWatchdogFired: e.StallWatchdogFired,

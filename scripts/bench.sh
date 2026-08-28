@@ -12,6 +12,10 @@
 #   scripts/bench.sh baseline            # measure and (re)write docs/benchmarks/baseline.json
 #   scripts/bench.sh diff                # measure and compare against the baseline
 #   scripts/bench.sh save L1             # measure and write docs/benchmarks/L1-<date>.json
+#   scripts/bench.sh place-diff a.json b.json   # full-turn local vs LAN, reported
+#
+# BENCH_TTS_PLACE=local|lan runs the same fixtures against the other computer,
+# so the two artifacts differ only in where speech was synthesized.
 #
 # Requires: jq, a built ./bin/obey-voice (just build), and a reachable brain provider.
 set -euo pipefail
@@ -61,20 +65,50 @@ provenance() {
 		--arg provider "${BRAIN_PROVIDER:-$(cfg_get brain_provider)}" \
 		--arg model "${OLLAMA_MODEL:-$(cfg_get ollama_model)}" \
 		--arg tts "$(cfg_get tts_provider)" \
+		--arg tts_tier "$(qwen_tier)" \
+		--arg tts_place "${BENCH_TTS_PLACE:-$(cfg_get tts_place)}" \
+		--arg tts_worker "$(speech_worker_host)" \
 		--arg fixtures "${FIXTURE_KIND:-unknown}" \
 		--arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 		'{machine: $machine, cpu: $cpu, os: $os, samantha_commit: $commit, worktree: $dirty,
 		  persona: $persona, brain_provider: $provider, brain_model: $model, tts_provider: $tts,
+		  tts_tier: $tts_tier, tts_place: (if $tts_place == "" then "local" else $tts_place end),
+		  tts_worker: $tts_worker,
 		  fixtures: $fixtures,
 		  recorded_at: $at}'
+}
+
+# The configured model tier, and only where it means anything: the key is
+# qwen's, so reporting it under a Kokoro run would attribute a size to an
+# engine that ships exactly one model. Over LAN the authoritative tier is the
+# one the worker reported, which rides on each run's metrics.
+qwen_tier() {
+	[[ "$(cfg_get tts_provider)" == "qwen3-tts" ]] || return 0
+	cfg_get qwen_tts_model_tier
+}
+
+# The speech worker's address, for a run whose synthesis happened off-box.
+# Host and port only: the URL may not carry credentials, but an artifact is
+# committed and a bearer token must never be one edit away from being.
+speech_worker_host() {
+	local place="${BENCH_TTS_PLACE:-$(cfg_get tts_place)}"
+	[[ "$place" == "lan" ]] || return 0
+	cfg_get tts_worker_url | sed -E 's#^[a-zA-Z]+://##; s#^[^@]*@##; s#/.*$##'
 }
 
 # A comparison across different hardware, model or fixture kind is meaningless.
 # Both sides are read from their envelopes: FIXTURE_KIND is set inside measure(),
 # which runs in a command substitution, so it cannot be read from a variable here.
+# The caller may narrow the fields: place-diff compares two topologies on
+# purpose, so warning that they differ there would be noise.
 warn_if_incomparable() {
 	local base="$1" cur="$2" field was now
-	for field in machine brain_model fixtures; do
+	local fields=("${@:3}")
+	# tts_place is in the default list because a topology change is exactly
+	# the kind of difference that reads as a performance change: the same
+	# engine name over a LAN socket is different silicon plus a network.
+	[[ ${#fields[@]} -gt 0 ]] || fields=(machine brain_model fixtures tts_place)
+	for field in "${fields[@]}"; do
 		was="$(jq -r --arg f "$field" '.provenance[$f] // "unknown"' "$base")"
 		now="$(jq -r --arg f "$field" '.provenance[$f] // "unknown"' "$cur")"
 		if [[ "$was" != "$now" ]]; then
@@ -249,10 +283,16 @@ measure() {
 	[[ ${#args[@]} -gt 0 ]] || { echo "error: no fixtures available" >&2; exit 1; }
 
 	FIXTURE_KIND="$kind"
-	echo "  running full-turn benchmark (${kind}, $(( ${#args[@]} / 2 )) utterances)..." >&2
+	# BENCH_TTS_PLACE runs this same fixture set against the other computer.
+	# Passing it as a flag rather than asking the operator to edit config is
+	# what keeps the two runs one instrument: nothing but the place differs.
+	local place_args=()
+	[[ -n "${BENCH_TTS_PLACE:-}" ]] && place_args+=("--tts-place=${BENCH_TTS_PLACE}")
+	echo "  running full-turn benchmark (${kind}, $(( ${#args[@]} / 2 )) utterances${BENCH_TTS_PLACE:+, tts_place=${BENCH_TTS_PLACE}})..." >&2
 	# A threshold violation is reported in the JSON and via exit status; capture
 	# the results either way and let the diff decide.
-	"$SAMANTHA" benchmark --iterations "$ITERATIONS" --json "$raw" "${args[@]+"${args[@]}"}" >/dev/null 2>&1 || true
+	"$SAMANTHA" benchmark --iterations "$ITERATIONS" --json "$raw" \
+		"${place_args[@]+"${place_args[@]}"}" "${args[@]+"${args[@]}"}" >/dev/null 2>&1 || true
 
 	[[ -s "$raw" ]] || { echo "error: benchmark produced no JSON (is a brain provider reachable?)" >&2; exit 1; }
 
@@ -285,6 +325,7 @@ measure_tts() {
 
 	local spec_args=()
 	for spec in "${specs[@]}"; do spec_args+=("--tts-provider=${spec}"); done
+	[[ -n "${BENCH_TTS_PLACE:-}" ]] && spec_args+=("--tts-place=${BENCH_TTS_PLACE}")
 
 	echo "  running TTS benchmark: ${specs[*]} over $(( ${#args[@]} / 2 )) long-reply utterances, ${ITERATIONS} iterations..." >&2
 	# Threshold violations are reported in the JSON and via exit status;
@@ -368,6 +409,57 @@ print_stages() {
 	done
 }
 
+# Full-turn table: per-fixture median PlaybackStartElapsed, the "talk feels
+# fast" number. Reported, never gated — it is dominated by model think time,
+# measured 307% spread, and a gate on it would fire on the brain rather than on
+# anything a speech change did (docs/benchmarks/README.md).
+turn_table() {
+	jq -r '
+		def med: sort | if length == 0 then null
+			elif length % 2 == 1 then .[(length - 1) / 2]
+			else (.[length / 2 - 1] + .[length / 2]) / 2 end;
+		[.results[] | select(.iteration > 1) | select((.metrics.PlaybackStartElapsed // 0) > 0)
+			| select((.metrics.TTSFallbacks // 0) == 0)]
+		| group_by(.fixture)
+		| map({
+			fixture: (.[0].fixture | split("/") | last),
+			n: length,
+			playback: ([.[] | .metrics.PlaybackStartElapsed / 1000000] | med)
+		})
+		| .[] | "\(.fixture)\t\(.n)\t\(.playback)"' "$1"
+}
+
+# What actually spoke, and from where. Read off the results rather than the
+# envelope: a sweep can run several engines into one file, and the envelope has
+# room for only one answer.
+engine_line() {
+	jq -r '
+		[ .results[] | .metrics | select(.TTSProvider != null and .TTSProvider != "") ]
+		| group_by(.TTSProvider + ":" + (.TTSTier // "") + "@" + (.TTSPlace // "unknown"))
+		| map(.[0].TTSProvider
+			+ (if (.[0].TTSTier // "") == "" then "" else ":" + .[0].TTSTier end)
+			+ " @" + (.[0].TTSPlace // "unknown")
+			+ " ready.streaming=" + (.[0].TTSWorkerStreaming | tostring))
+		| unique | join(", ")' "$1"
+}
+
+print_turn() {
+	local engines fellback
+	engines="$(engine_line "$1")"
+	printf "\n  %-28s %3s %14s\n" "fixture" "n" "playback(ms)"
+	turn_table "$1" | while IFS=$'\t' read -r f n playback; do
+		printf "  %-28s %3s %14.0f\n" "$f" "$n" "$playback"
+	done
+	echo "  engine: ${engines:-none reported}   place: $(jq -r '.provenance.tts_place // "unknown"' "$1")"
+	# A turn the Kokoro fallback spoke (wholly or partly) did not measure the
+	# labelled topology; it is excluded from the table above, and silently
+	# dropping it would make a broken LAN look fast.
+	fellback="$(jq -r '[.results[] | select((.metrics.TTSFallbacks // 0) > 0)] | length' "$1")"
+	if [ "${fellback:-0}" -gt 0 ]; then
+		echo "  excluded: ${fellback} fallback-bearing turn(s) — audio was not (fully) synthesized by the labelled place"
+	fi
+}
+
 # Gated metric: median stt stage across fixtures. Reported for a quick headline.
 stt_median() {
 	stage_table "$1" | awk -F'\t' '{print $3}' | sort -n |
@@ -383,6 +475,7 @@ run)
 	env_file="$(measure)"
 	jq '.' "$env_file"
 	print_stages "$env_file" >&2
+	print_turn "$env_file" >&2
 	rm -f "$env_file"
 	;;
 
@@ -418,6 +511,7 @@ save)
 	out="${BENCH_DIR}/${label}-$(date -u +%Y-%m-%d).json"
 	mv "$env_file" "$out"
 	print_stages "$out"
+	print_turn "$out"
 	echo ""
 	echo "  ✓ wrote ${out}"
 	echo "    gated metric: median stt stage $(stt_median "$out") ms"
@@ -472,8 +566,46 @@ tts)
 	echo "  aggregate it with: just bench tts-ab <label> ${raw} <control> <candidate>"
 	;;
 
+place-diff)
+	# Read the local-vs-LAN answer off two committed artifacts. Deliberately
+	# not a new statistical framework and deliberately not a gate: the two
+	# runs are the same fixtures and the same instrument, so the comparison
+	# is the two tables side by side and the reader's judgement.
+	a="${2:?usage: bench.sh place-diff <a.json> <b.json>}"
+	b="${3:?usage: bench.sh place-diff <a.json> <b.json>}"
+	for f in "$a" "$b"; do
+		[[ -f "$f" ]] || { echo "error: no such artifact: $f" >&2; exit 1; }
+	done
+	require_same_fixtures "$a" "$b" || exit 1
+
+	place_a="$(jq -r '.provenance.tts_place // "unknown"' "$a")"
+	place_b="$(jq -r '.provenance.tts_place // "unknown"' "$b")"
+	if [[ "$place_a" == "$place_b" ]]; then
+		echo ""
+		echo "  ⚠ both artifacts recorded tts_place=${place_a}; this compares two runs of the same topology"
+	fi
+	warn_if_incomparable "$a" "$b" machine brain_model fixtures
+
+	echo ""
+	echo "  A: $(basename "$a")  (place ${place_a}$(jq -r 'if (.provenance.tts_worker // "") == "" then "" else " via " + .provenance.tts_worker end' "$a"))"
+	print_turn "$a"
+	echo ""
+	echo "  B: $(basename "$b")  (place ${place_b}$(jq -r 'if (.provenance.tts_worker // "") == "" then "" else " via " + .provenance.tts_worker end' "$b"))"
+	print_turn "$b"
+
+	med_a="$(turn_table "$a" | awk -F'\t' '{print $3}' | sort -n | awk '{x[NR]=$1} END {if (NR==0) print "null"; else if (NR%2) print x[(NR+1)/2]; else print (x[NR/2]+x[NR/2+1])/2}')"
+	med_b="$(turn_table "$b" | awk -F'\t' '{print $3}' | sort -n | awk '{x[NR]=$1} END {if (NR==0) print "null"; else if (NR%2) print x[(NR+1)/2]; else print (x[NR/2]+x[NR/2+1])/2}')"
+	[[ "$med_a" != "null" && "$med_b" != "null" ]] || { echo "error: one side has no comparable turns (completed without the Kokoro fallback) — a place whose every turn fell back measured Kokoro, not the labelled topology" >&2; exit 1; }
+	delta_pct="$(jq -n --argjson a "$med_a" --argjson b "$med_b" '(($b - $a) / $a) * 100')"
+	printf "\n  full turn (median PlaybackStartElapsed): %.0f ms -> %.0f ms   %+.1f%%\n" "$med_a" "$med_b" "$delta_pct"
+	echo ""
+	echo "  Reported, not gated. PlaybackStartElapsed is dominated by model think"
+	echo "  time (docs/benchmarks/README.md), so read the stt/synth stages beside it"
+	echo "  before attributing this number to the speech topology."
+	;;
+
 *)
-	echo "usage: bench.sh {run|baseline|diff|save <label>|tts [provider...]}" >&2
+	echo "usage: bench.sh {run|baseline|diff|save <label>|tts [provider...]|place-diff <a.json> <b.json>}" >&2
 	exit 2
 	;;
 esac

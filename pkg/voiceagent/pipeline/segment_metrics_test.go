@@ -150,12 +150,56 @@ func TestSegmentMetricRealtimeFactor(t *testing.T) {
 
 func TestTTSIdentityIsEmptyForAnUndescribedProvider(t *testing.T) {
 	// Guessing an engine name would put a claim in a latency artifact that
-	// nothing confirmed.
+	// nothing confirmed. Place is the exception: an engine with no LAN
+	// transport synthesized in this process, which is a fact, not a guess.
 	p := &Pipeline{TTS: &fakeTTS{}, Events: events.NewBus()}
-	provider, tier := p.ttsIdentity()
-	if provider != "" || tier != "" {
-		t.Errorf("ttsIdentity() = %q/%q, want empty for a provider that does not describe itself", provider, tier)
+	id := p.ttsIdentity()
+	if id.provider != "" || id.tier != "" {
+		t.Errorf("ttsIdentity() = %q/%q, want empty for a provider that does not describe itself", id.provider, id.tier)
+	}
+	if id.place != tts.PlaceLocal || id.workerStreaming {
+		t.Errorf("ttsIdentity() place = %q streaming = %v, want %q/false", id.place, id.workerStreaming, tts.PlaceLocal)
 	}
 }
 
-var _ tts.Describer = (*describedTTS)(nil)
+// TestTTSIdentityRecordsTopology is the E9 provenance guard: an artifact that
+// records provider and tier but not where they ran cannot be compared across
+// the two topologies the fleet design exists to choose between.
+func TestTTSIdentityRecordsTopology(t *testing.T) {
+	provider := &remoteDescribedTTS{
+		describedTTS: describedTTS{name: "qwen3-tts", tier: "1.7b"},
+		place:        tts.PlaceLAN,
+		streaming:    true,
+	}
+	p := &Pipeline{TTS: provider, Events: events.NewBus()}
+	id := p.ttsIdentity()
+	if id.place != tts.PlaceLAN || !id.workerStreaming {
+		t.Fatalf("ttsIdentity() place = %q streaming = %v, want %q/true", id.place, id.workerStreaming, tts.PlaceLAN)
+	}
+
+	m := newTurnMetrics()
+	m.ttsEngine = id
+	snap := m.snapshot()
+	if snap.TTSPlace != tts.PlaceLAN || !snap.TTSWorkerStreaming {
+		t.Errorf("snapshot place = %q streaming = %v, want %q/true", snap.TTSPlace, snap.TTSWorkerStreaming, tts.PlaceLAN)
+	}
+	if snap.TTSProvider != "qwen3-tts" || snap.TTSTier != "1.7b" {
+		t.Errorf("snapshot engine = %q/%q, want qwen3-tts/1.7b", snap.TTSProvider, snap.TTSTier)
+	}
+}
+
+// remoteDescribedTTS speaks from another computer, the way a Qwen provider
+// dialing speech-serve does.
+type remoteDescribedTTS struct {
+	describedTTS
+	place     string
+	streaming bool
+}
+
+func (r *remoteDescribedTTS) SpeechPlace() string   { return r.place }
+func (r *remoteDescribedTTS) WorkerStreaming() bool { return r.streaming }
+
+var (
+	_ tts.Describer         = (*describedTTS)(nil)
+	_ tts.TopologyDescriber = (*remoteDescribedTTS)(nil)
+)
