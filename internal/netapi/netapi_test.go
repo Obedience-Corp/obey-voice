@@ -597,6 +597,9 @@ func TestBannerEventsMarshalToSingleLine(t *testing.T) {
 		name   string
 		banner any
 		want   map[string]any
+		// wantCampaign is the campaign object the line must carry, separate
+		// from want because a nested object cannot be compared as a scalar.
+		wantCampaign *CampaignInfo
 	}{
 		{
 			name: "ready",
@@ -622,7 +625,14 @@ func TestBannerEventsMarshalToSingleLine(t *testing.T) {
 				"tailscale":        false,
 				"pid":              float64(4242),
 				"work_dir":         "",
+				// Provenance rides with work_dir: both are unconditional, so a
+				// client never has to guess whether a missing key means "not
+				// reported" or "nothing decided it".
+				"work_dir_source": "",
 			},
+			// campaign is an object, so it is compared below rather than in the
+			// flat want map.
+			wantCampaign: &CampaignInfo{},
 		},
 		{
 			name: "pairing_code",
@@ -652,12 +662,27 @@ func TestBannerEventsMarshalToSingleLine(t *testing.T) {
 			if err := json.Unmarshal(data, &got); err != nil {
 				t.Fatal(err)
 			}
-			if len(got) != len(tt.want) {
-				t.Fatalf("field count = %d (%v), want %d (%v)", len(got), got, len(tt.want), tt.want)
+			wantFields := len(tt.want)
+			if tt.wantCampaign != nil {
+				wantFields++
+			}
+			if len(got) != wantFields {
+				t.Fatalf("field count = %d (%v), want %d (%v)", len(got), got, wantFields, tt.want)
 			}
 			for k, v := range tt.want {
 				if got[k] != v {
 					t.Errorf("field %q = %v, want %v", k, got[k], v)
+				}
+			}
+			if tt.wantCampaign != nil {
+				var line struct {
+					Campaign *CampaignInfo `json:"campaign"`
+				}
+				if err := json.Unmarshal(data, &line); err != nil {
+					t.Fatal(err)
+				}
+				if line.Campaign == nil || *line.Campaign != *tt.wantCampaign {
+					t.Errorf("campaign = %+v, want %+v", line.Campaign, tt.wantCampaign)
 				}
 			}
 		})

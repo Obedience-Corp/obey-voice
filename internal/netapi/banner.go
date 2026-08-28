@@ -77,10 +77,30 @@ type ReadyBanner struct {
 	// resolver behind it never yields an empty path, and GET /v1/status reports
 	// the same field unconditionally.
 	WorkDir string `json:"work_dir"`
+	// WorkDirSource is the layer that decided WorkDir: flag, config, env,
+	// launch-dir, home-fallback, or temp-fallback. Present with WorkDir because
+	// the path alone cannot tell a supervising app that an environment variable
+	// moved the agent somewhere nobody chose.
+	WorkDirSource string `json:"work_dir_source"`
+	// Campaign is the campaign workspace WorkDir sits in, with found=false when
+	// it sits in none. Always present, so "not in a campaign" and "older serve
+	// that does not report campaigns" stay distinguishable.
+	Campaign CampaignInfo `json:"campaign"`
 	// ClientSetupURL is present only in limited client-access mode (a Tailscale
 	// serve that could not mint a trusted cert). Its presence means "limited";
 	// its absence means full access.
 	ClientSetupURL string `json:"client_setup_url,omitempty"`
+}
+
+// CampaignInfo is the campaign workspace the agent's working directory belongs
+// to, as it appears on the wire. Name is empty for a campaign whose marker
+// could not be read — Found, not Name, is the question "is the agent inside a
+// campaign".
+type CampaignInfo struct {
+	Found bool   `json:"found"`
+	Name  string `json:"name"`
+	ID    string `json:"id"`
+	Root  string `json:"root"`
 }
 
 // PairingCodeBanner is written to stdout whenever serve mints a pairing code

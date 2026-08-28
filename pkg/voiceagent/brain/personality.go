@@ -119,10 +119,23 @@ func EnvironmentContextFrom(workDir string, env Env) string {
 Environment:
 - User: %s
 - Working directory: %s
+- Campaign: %s
 - Hostname: %s
 - OS: %s
 - You have tools available: list_files, read_file, write_file, run_command, web_search, fetch_url
-- All file paths are relative to the working directory unless absolute`, env.User, workDir, env.Hostname, env.OS)
+- All file paths are relative to the working directory unless absolute`, env.User, workDir, campaignLine(workDir), env.Hostname, env.OS)
+}
+
+// campaignLine grounds the agent in the campaign its working directory belongs
+// to. Naming it is the point: a working directory redirected by a stray
+// environment variable reads exactly like the one the user launched in, and the
+// agent went on to act on another campaign's work items (WI-742a80). Detection
+// is cached per directory, so this costs nothing per turn.
+func campaignLine(workDir string) string {
+	if c := config.CampaignFor(workDir); c.Found() {
+		return c.Describe()
+	}
+	return "none — the working directory is not inside a campaign"
 }
 
 // SkillContext renders the progressive-disclosure skills menu for the Ollama

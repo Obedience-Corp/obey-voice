@@ -35,6 +35,25 @@ type pathsReport struct {
 	PromptsDir    string `json:"prompts_dir"`
 	SkillsDir     string `json:"skills_dir"`
 	WorkDir       string `json:"work_dir"`
+	// WorkDirSource is the layer that decided WorkDir (flag, config, env,
+	// launch-dir, home-fallback, temp-fallback) and WorkDirSourceDetail is the
+	// same fact in words, naming the environment variable when one decided it.
+	// Both are always present: a client that only sees the path cannot tell a
+	// chosen directory from a hijacked one.
+	WorkDirSource       string `json:"work_dir_source"`
+	WorkDirSourceDetail string `json:"work_dir_source_detail"`
+	// Campaign is the campaign workspace WorkDir sits in. Always present, with
+	// found=false rather than an omitted key, so "not in a campaign" and "this
+	// build does not report campaigns" stay distinguishable.
+	Campaign campaignReport `json:"campaign"`
+}
+
+// campaignReport is the campaign half of the paths contract.
+type campaignReport struct {
+	Found bool   `json:"found"`
+	Name  string `json:"name"`
+	ID    string `json:"id"`
+	Root  string `json:"root"`
 }
 
 var pathsCmd = &cobra.Command{
@@ -44,7 +63,9 @@ var pathsCmd = &cobra.Command{
 		"cache, and session data. Values are effective — config-file and environment\n" +
 		"overrides (models_dir/MODELS_DIR, prompts_dir, skills_dir, meeting.dir) are\n" +
 		"already applied. work_dir is where the agent's file and shell tools start —\n" +
-		"a default, not a sandbox.\n\n" +
+		"a default, not a sandbox — reported with the layer that decided it and the\n" +
+		"campaign it lands in, so a launch redirected by an environment variable is\n" +
+		"visible rather than silent.\n\n" +
 		"--json emits a single stable object for machine consumers; the Obey Voice\n" +
 		"app discovers the install root this way. Keys are a compatibility contract:\n" +
 		"only added, never renamed, without a schema_version bump.",
@@ -69,6 +90,8 @@ var pathsCmd = &cobra.Command{
 // helpers so a slug or layout change lands here automatically.
 func collectPaths() pathsReport {
 	root := config.ConfigDir()
+	workDir := config.CurrentWorkDirInfo()
+	campaign := config.CampaignFor(workDir.Dir)
 	return pathsReport{
 		SchemaVersion: pathsSchemaVersion,
 		AppSlug:       config.AppSlug,
@@ -82,7 +105,16 @@ func collectPaths() pathsReport {
 		PersonasDir:   config.PersonasDir(),
 		PromptsDir:    config.PromptsDir(),
 		SkillsDir:     config.SkillsDir(),
-		WorkDir:       config.WorkDir(),
+		WorkDir:       workDir.Dir,
+
+		WorkDirSource:       string(workDir.Source),
+		WorkDirSourceDetail: workDir.Describe(),
+		Campaign: campaignReport{
+			Found: campaign.Found(),
+			Name:  campaign.Name,
+			ID:    campaign.ID,
+			Root:  campaign.Root,
+		},
 	}
 }
 
@@ -107,6 +139,8 @@ func runPaths(cmd *cobra.Command, report pathsReport, asJSON bool) error {
 		{"Prompts", report.PromptsDir},
 		{"Skills", report.SkillsDir},
 		{"Work dir", report.WorkDir},
+		{"Work dir source", report.WorkDirSource + " (" + report.WorkDirSourceDetail + ")"},
+		{"Campaign", humanCampaign(report.Campaign)},
 	}
 	fmt.Fprintf(out, "\n  %s\n", titleStyle.Render("Obey Voice Paths"))
 	fmt.Fprintf(out, "  %s\n\n", dimStyle.Render("app slug: "+report.AppSlug))
@@ -115,6 +149,16 @@ func runPaths(cmd *cobra.Command, report pathsReport, asJSON bool) error {
 	}
 	fmt.Fprintln(out)
 	return nil
+}
+
+// humanCampaign renders the campaign row. The rows are one label and one value,
+// so the "none" case says why in the value rather than leaving a blank line the
+// reader has to interpret.
+func humanCampaign(c campaignReport) string {
+	if !c.Found {
+		return "none (work dir is not inside a campaign)"
+	}
+	return config.Campaign{Name: c.Name, ID: c.ID, Root: c.Root}.Describe()
 }
 
 func init() {

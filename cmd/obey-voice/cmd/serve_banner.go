@@ -101,6 +101,7 @@ func printServeDetails(addr string, creds *netapi.Credentials, cfg *config.Confi
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Token on file at "+config.ConfigDir()+"/serve/token"))
 	}
 	fmt.Fprintln(serveHumanOut, dimStyle.Render("  Revoke: obey-voice serve --revoke-tokens"))
+	printServeWorkDir()
 	// Printed with the remote-tools line on purpose: together they say who may
 	// trigger a tool and which folder it starts in.
 	if cfg.RemoteToolsEnabled {
@@ -128,6 +129,21 @@ func printServeDetails(addr string, creds *netapi.Credentials, cfg *config.Confi
 	fmt.Fprintln(serveHumanOut)
 }
 
+// printServeWorkDir states where the agent works, who decided that, and which
+// campaign it lands in. A source of env or a fallback is not dim: nobody typed
+// it, and it is the case where a serve quietly works in the wrong campaign.
+func printServeWorkDir() {
+	info := serveBannerWorkDir()
+	line := fmt.Sprintf("  Work dir: %s (from %s)", info.Dir, info.Describe())
+	switch info.Source {
+	case config.WorkDirSourceEnv, config.WorkDirSourceHomeFallback, config.WorkDirSourceTempFallback:
+		fmt.Fprintln(serveHumanOut, failStyle.Render(line))
+	default:
+		fmt.Fprintln(serveHumanOut, dimStyle.Render(line))
+	}
+	fmt.Fprintln(serveHumanOut, dimStyle.Render("  Campaign: "+config.CampaignFor(info.Dir).Describe()))
+}
+
 // emitServeBannerJSON writes the machine-readable ready line (and a
 // pairing_code line when a code is minted) to stdout, one JSON object per
 // line. The supervising process reads the ready line to learn the URL,
@@ -139,6 +155,7 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 		pageHost = host
 	}
 
+	workDir := serveBannerWorkDir()
 	emitBannerLine(netapi.ReadyBanner{
 		Event:           "ready",
 		ProtocolVersion: netapi.ProtocolVersion,
@@ -150,7 +167,9 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 		Tailscale:       serveTailscale,
 		PID:             os.Getpid(),
 		Binds:           allBinds,
-		WorkDir:         serveBannerWorkDir(),
+		WorkDir:         workDir.Dir,
+		WorkDirSource:   string(workDir.Source),
+		Campaign:        bannerCampaign(workDir.Dir),
 		ClientSetupURL:  serveClientSetupURL,
 		Capabilities:    netapi.Capabilities(),
 	})
@@ -162,6 +181,13 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 			ExpiresAt: creds.Pairing.ExpiresAt.Format(time.RFC3339),
 		})
 	}
+}
+
+// bannerCampaign maps the detected campaign onto the wire type. netapi owns its
+// own shape rather than exporting a config struct over the network.
+func bannerCampaign(workDir string) netapi.CampaignInfo {
+	c := config.CampaignFor(workDir)
+	return netapi.CampaignInfo{Found: c.Found(), Name: c.Name, ID: c.ID, Root: c.Root}
 }
 
 // hostPortFromAddr splits a host:port listen address, falling back to the

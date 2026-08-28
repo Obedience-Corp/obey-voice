@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -94,12 +93,16 @@ func effectiveAfterUnset(spec KeySpec) any {
 		return spec.Default
 	}
 	value := spec.Default
-	if env := envBindings[spec.Key]; env != "" {
-		if raw, ok := os.LookupEnv(env); ok {
-			value = raw
-			if coerced, err := coerceToSpec(spec, raw); err == nil {
-				value = coerced
-			}
+	// envValueFor, not a LookupEnv of its own: the value written back here
+	// becomes a viper override, the highest-precedence layer, so it must be the
+	// value the resolver would pick. Reading the first *present* name instead of
+	// the first *non-empty* one let an exported-but-empty OBEY_VOICE_WORK_DIR
+	// mask a real WORK_DIR, and a long-lived process then stopped honoring the
+	// directory it was actually using. Found by adversarial review.
+	if _, raw, ok := envValueFor(spec.Key); ok {
+		value = raw
+		if coerced, err := coerceToSpec(spec, raw); err == nil {
+			value = coerced
 		}
 	}
 	Set(spec.Key, value)

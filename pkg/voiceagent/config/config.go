@@ -560,7 +560,7 @@ var envBindings = map[string]string{
 	"backchannel_enabled":         "BACKCHANNEL_ENABLED",
 	"skills_enabled":              "SKILLS_ENABLED",
 	"skills_dir":                  "SKILLS_DIR",
-	"work_dir":                    "WORK_DIR",
+	"work_dir":                    workDirEnvName,
 	"barge_in_enabled":            "BARGE_IN_ENABLED",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
@@ -577,6 +577,58 @@ var envBindings = map[string]string{
 	"skills_similarity_threshold": "SKILLS_SIMILARITY_THRESHOLD",
 }
 
+// envAliases lists extra environment variables a key still honors, after the
+// documented binding in envBindings. Aliases are compatibility only: the schema
+// and `config get` report the documented name, and a launch decided by an alias
+// is called out by name wherever provenance is shown.
+//
+// work_dir is the only entry, and the reason the mechanism exists. It was bound
+// to the bare, generic WORK_DIR — a name any shell or .envrc can export for its
+// own purposes — so an unrelated export silently moved the agent's tools, its
+// skills roots and its campaign, with nothing in config.yaml to explain it
+// (WI-742a80). The prefixed name is now the documented override and wins when
+// both are set; the bare name keeps working so existing setups do not break.
+var envAliases = map[string][]string{
+	"work_dir": {legacyWorkDirEnvName},
+}
+
+const (
+	// workDirEnvName is the documented environment override for work_dir;
+	// legacyWorkDirEnvName is the bare name it replaced. Both are named because
+	// the provenance surfaces have to tell one from the other: unsetting the
+	// documented override is a choice, while a bare WORK_DIR is usually an
+	// accident belonging to some other tool.
+	workDirEnvName       = "OBEY_VOICE_WORK_DIR"
+	legacyWorkDirEnvName = "WORK_DIR"
+)
+
+// envNamesFor lists every environment variable bound to key, in resolution
+// order: the documented binding first, then compatibility aliases. It is the
+// order loadLocked registers with viper, which honors the first name that is
+// set, so anything reasoning about environment precedence reads it from here.
+func envNamesFor(key string) []string {
+	primary := envBindings[key]
+	if primary == "" {
+		return nil
+	}
+	aliases := envAliases[key]
+	names := make([]string, 0, 1+len(aliases))
+	return append(append(names, primary), aliases...)
+}
+
+// envValueFor reports the environment variable currently deciding key, by
+// viper's own rule: the first bound name that is set to a non-empty value.
+// Empty is not "set" here because AllowEmptyEnv is off, so an empty variable
+// does not reach the merged value and must not be blamed for it.
+func envValueFor(key string) (name, value string, ok bool) {
+	for _, candidate := range envNamesFor(key) {
+		if raw, found := os.LookupEnv(candidate); found && raw != "" {
+			return candidate, raw, true
+		}
+	}
+	return "", "", false
+}
+
 // loadLocked reads and unmarshals config while holding mu.
 func loadLocked() (*Config, error) {
 	mu.Lock()
@@ -585,8 +637,10 @@ func loadLocked() (*Config, error) {
 	v.SetConfigFile(configFile)
 	v.SetConfigType("yaml")
 
-	for key, env := range envBindings {
-		_ = v.BindEnv(key, env)
+	for key := range envBindings {
+		// Multiple names per key: viper takes the first one that is set, which
+		// is what makes the documented binding outrank a compatibility alias.
+		_ = v.BindEnv(append([]string{key}, envNamesFor(key)...)...)
 	}
 
 	// Read config file (missing file is OK — use defaults)
