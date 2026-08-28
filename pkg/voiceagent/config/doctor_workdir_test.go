@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -108,6 +109,76 @@ func TestDiagnoseReportsWorkDirSource(t *testing.T) {
 	}
 	if row.Severity != SeverityWarn || !strings.Contains(row.Detail, "WORK_DIR") {
 		t.Errorf("work-dir-source = %+v, want a warning naming WORK_DIR", row)
+	}
+}
+
+// The remediation has to be actionable for the variable that actually decided
+// the launch. Telling someone their documented override is a shell accident, or
+// telling them to "set work_dir" when the environment outranks that key and
+// they may have set it already, is advice that does not help.
+func TestDiagnoseWorkDirSourceRemediationNamesTheRightFix(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVar   string
+		want     []string
+		unwanted []string
+	}{
+		{
+			name:     "the bare name keeps the hijack framing",
+			envVar:   legacyWorkDirEnvName,
+			want:     []string{"unset WORK_DIR", ".envrc", workDirEnvName},
+			unwanted: []string{"set work_dir if this is intended"},
+		},
+		{
+			name:     "the documented override is not called an accident",
+			envVar:   workDirEnvName,
+			want:     []string{"unset " + workDirEnvName},
+			unwanted: []string{".envrc", "hijacks", "set work_dir if this is intended"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			newWorkDirEnv(t)
+			dir := t.TempDir()
+			t.Setenv(tt.envVar, dir)
+
+			got := diagnoseWorkDirSource(loadForTest(t))
+			if got.Severity != SeverityWarn {
+				t.Fatalf("Severity = %q, want a warning", got.Severity)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(got.Remediation, want) {
+					t.Errorf("Remediation %q does not mention %q", got.Remediation, want)
+				}
+			}
+			for _, unwanted := range tt.unwanted {
+				if strings.Contains(got.Remediation, unwanted) {
+					t.Errorf("Remediation %q should not say %q", got.Remediation, unwanted)
+				}
+			}
+		})
+	}
+}
+
+// One typo in an exported variable is the scenario this row exists for: the
+// source stays honest (the agent really is in the home directory), and the
+// variable that sent it there is still named, in the detail and in the fix.
+func TestDiagnoseWorkDirSourceNamesTheVariableBehindAFallback(t *testing.T) {
+	env := newWorkDirEnv(t)
+	missing := filepath.Join(t.TempDir(), "typo")
+	t.Setenv("WORK_DIR", missing)
+
+	got := diagnoseWorkDirSource(loadForTest(t))
+	if got.Severity != SeverityWarn {
+		t.Fatalf("Severity = %q, want a warning", got.Severity)
+	}
+	for _, want := range []string{env.home, "home-directory fallback", "WORK_DIR", missing} {
+		if !strings.Contains(got.Detail, want) {
+			t.Errorf("Detail %q does not mention %q", got.Detail, want)
+		}
+	}
+	if !strings.Contains(got.Remediation, "point WORK_DIR at a folder that exists") {
+		t.Errorf("Remediation %q does not point at the variable to fix", got.Remediation)
 	}
 }
 

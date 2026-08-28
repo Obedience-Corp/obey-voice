@@ -309,6 +309,53 @@ func TestUnsetKeyFileReportsTheEffectiveValueNotJustTheDefault(t *testing.T) {
 			t.Errorf("source = %q, want %q", got, SourceEnv)
 		}
 	})
+
+	// The value written back here becomes a viper override, the highest
+	// precedence layer, so reading the wrong variable does not merely misprint:
+	// an exported-but-empty OBEY_VOICE_WORK_DIR masking a real WORK_DIR made a
+	// long-lived process stop honoring the directory it was working in. Viper
+	// skips empty variables (AllowEmptyEnv is off) and so must this.
+	t.Run("an exported-but-empty binding is not set", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("OBEY_VOICE_WORK_DIR", "")
+		t.Setenv("WORK_DIR", dir)
+		newInstall(t, "work_dir: /somewhere/else\n")
+
+		result, err := UnsetKeyFile("work_dir")
+		if err != nil {
+			t.Fatalf("UnsetKeyFile: %v", err)
+		}
+		if result.Value != dir {
+			t.Errorf("value = %v, want the WORK_DIR the key still resolves to (%q)", result.Value, dir)
+		}
+		if got := Get("work_dir"); got != dir {
+			t.Errorf("Get(work_dir) = %v after unset, want %q — the override must not contradict the environment", got, dir)
+		}
+		if got := Source("work_dir"); got != SourceEnv {
+			t.Errorf("source = %q, want %q", got, SourceEnv)
+		}
+		if got := WorkDir(); got != dir {
+			t.Errorf("WorkDir() = %q, want %q", got, dir)
+		}
+	})
+
+	// The mirror image: an empty variable decides nothing, so the key falls back
+	// to its schema default rather than being pinned to "".
+	t.Run("only an empty binding leaves the default", func(t *testing.T) {
+		t.Setenv("STT_MODE", "")
+		newInstall(t, "stt_mode: cli\n")
+
+		result, err := UnsetKeyFile("stt_mode")
+		if err != nil {
+			t.Fatalf("UnsetKeyFile: %v", err)
+		}
+		if result.Value != "" {
+			t.Errorf("value = %v, want the schema default", result.Value)
+		}
+		if got := Source("stt_mode"); got != SourceDefault {
+			t.Errorf("source = %q, want %q — an empty variable never reaches viper", got, SourceDefault)
+		}
+	})
 }
 
 // A flow document lives on one line, so removing a key from it by line would

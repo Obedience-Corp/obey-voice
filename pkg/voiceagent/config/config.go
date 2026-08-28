@@ -560,7 +560,7 @@ var envBindings = map[string]string{
 	"backchannel_enabled":         "BACKCHANNEL_ENABLED",
 	"skills_enabled":              "SKILLS_ENABLED",
 	"skills_dir":                  "SKILLS_DIR",
-	"work_dir":                    "OBEY_VOICE_WORK_DIR",
+	"work_dir":                    workDirEnvName,
 	"barge_in_enabled":            "BARGE_IN_ENABLED",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
@@ -589,8 +589,18 @@ var envBindings = map[string]string{
 // (WI-742a80). The prefixed name is now the documented override and wins when
 // both are set; the bare name keeps working so existing setups do not break.
 var envAliases = map[string][]string{
-	"work_dir": {"WORK_DIR"},
+	"work_dir": {legacyWorkDirEnvName},
 }
+
+const (
+	// workDirEnvName is the documented environment override for work_dir;
+	// legacyWorkDirEnvName is the bare name it replaced. Both are named because
+	// the provenance surfaces have to tell one from the other: unsetting the
+	// documented override is a choice, while a bare WORK_DIR is usually an
+	// accident belonging to some other tool.
+	workDirEnvName       = "OBEY_VOICE_WORK_DIR"
+	legacyWorkDirEnvName = "WORK_DIR"
+)
 
 // envNamesFor lists every environment variable bound to key, in resolution
 // order: the documented binding first, then compatibility aliases. It is the

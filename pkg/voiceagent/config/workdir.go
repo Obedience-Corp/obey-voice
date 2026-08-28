@@ -34,10 +34,18 @@ const (
 type WorkDirInfo struct {
 	Dir    string
 	Source WorkDirSource
-	// EnvVar names the environment variable that decided Dir. Non-empty only
-	// when Source is WorkDirSourceEnv, and it names the variable that actually
-	// won, since work_dir is bound to more than one.
+	// EnvVar names the environment variable in play: the one that decided Dir
+	// when Source is WorkDirSourceEnv, or — when a guard rejected that value and
+	// Source is a fallback — the one whose value was rejected. work_dir is bound
+	// to more than one name, so the variable that actually won is named rather
+	// than implied.
 	EnvVar string
+	// Rejected is the candidate a guard refused, and RejectedSource the layer
+	// that offered it. Set only on a fallback, and the reason one is legible: a
+	// typo'd WORK_DIR otherwise lands the agent in the home directory with
+	// nothing naming the variable that sent it there.
+	Rejected       string
+	RejectedSource WorkDirSource
 }
 
 // Describe renders the provenance as one human phrase, for the serve banner,
@@ -46,21 +54,44 @@ type WorkDirInfo struct {
 // and the whole defect was not knowing which name to look for.
 func (i WorkDirInfo) Describe() string {
 	switch i.Source {
+	case WorkDirSourceHomeFallback, WorkDirSourceTempFallback:
+		return workDirSourcePhrase(i.Source, "") + i.rejectedSuffix()
+	default:
+		return workDirSourcePhrase(i.Source, i.EnvVar)
+	}
+}
+
+// rejectedSuffix names what a fallback replaced. Without it the two fallbacks
+// report only that nothing usable was found, and the user is left hunting for
+// the variable or setting that pointed at the unusable path.
+func (i WorkDirInfo) rejectedSuffix() string {
+	if i.Rejected == "" {
+		return " (nothing named a usable directory)"
+	}
+	return fmt.Sprintf(" (%s pointed at %s, which is not a usable directory)",
+		workDirSourcePhrase(i.RejectedSource, i.EnvVar), i.Rejected)
+}
+
+// workDirSourcePhrase is the one place a source becomes words, so the phrase a
+// fallback uses for the value it rejected matches the phrase that value would
+// have printed had it been accepted.
+func workDirSourcePhrase(source WorkDirSource, envVar string) string {
+	switch source {
 	case WorkDirSourceFlag:
 		return "the --work-dir flag"
 	case WorkDirSourceConfig:
 		return "the work_dir setting"
 	case WorkDirSourceEnv:
-		if i.EnvVar == "" {
+		if envVar == "" {
 			return "an environment variable"
 		}
-		return "the " + i.EnvVar + " environment variable"
+		return "the " + envVar + " environment variable"
 	case WorkDirSourceLaunchDir:
 		return "the directory Obey Voice was launched from"
 	case WorkDirSourceHomeFallback:
-		return "the home-directory fallback (the resolved work_dir was unusable)"
+		return "the home-directory fallback"
 	case WorkDirSourceTempFallback:
-		return "the temp-directory fallback (no usable home directory)"
+		return "the temp-directory fallback"
 	default:
 		return "an unknown source"
 	}
@@ -132,7 +163,14 @@ func WorkDirInfoFrom(cfg *Config) WorkDirInfo {
 	candidate, source, envVar := workDirCandidate(cfg)
 	dir, err := existingDir(candidate)
 	if err != nil || dir == rootDir || sameDir(dir, executableDir()) {
-		return workDirFallback()
+		info := workDirFallback()
+		// The fallback is the honest source — that directory is where the agent
+		// works — but the rejected candidate is what the user has to fix, so it
+		// travels with it instead of being dropped.
+		if candidate = strings.TrimSpace(candidate); candidate != "" {
+			info.Rejected, info.RejectedSource, info.EnvVar = candidate, source, envVar
+		}
+		return info
 	}
 	return WorkDirInfo{Dir: dir, Source: source, EnvVar: envVar}
 }

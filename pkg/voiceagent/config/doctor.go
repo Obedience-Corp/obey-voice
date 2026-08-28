@@ -62,12 +62,18 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	// A work_dir pointing at a folder that no longer exists is silent otherwise:
 	// tools keep working, just somewhere the user did not choose.
 	if dir := strings.TrimSpace(cfg.WorkDir); dir != "" {
-		if info, err := os.Stat(expandHomePath(dir)); err != nil || !info.IsDir() {
+		if st, err := os.Stat(expandHomePath(dir)); err != nil || !st.IsDir() {
+			// The remediation comes from the same helper the provenance row
+			// uses, so the two rows cannot advise different fixes: with an
+			// exported variable behind the bad path, "point work_dir at a
+			// folder that exists" sends the user to a config.yaml that does not
+			// hold the key.
+			resolved := WorkDirInfoFrom(cfg)
 			diags = append(diags, Diagnostic{
 				Name:        "work-dir",
 				Severity:    SeverityWarn,
-				Detail:      fmt.Sprintf("work_dir %q is not an existing directory — the agent falls back to %s", dir, WorkDirFrom(cfg)),
-				Remediation: "point work_dir at a folder that exists, or clear it to use the directory Obey Voice was launched from",
+				Detail:      fmt.Sprintf("work_dir %q is not an existing directory — the agent falls back to %s", dir, resolved.Dir),
+				Remediation: workDirFallbackRemediation(resolved),
 			})
 		}
 	}
@@ -403,17 +409,41 @@ func diagnoseWorkDirSource(cfg *Config) Diagnostic {
 	switch info.Source {
 	case WorkDirSourceEnv:
 		d.Severity = SeverityWarn
-		d.Detail = fmt.Sprintf("%s comes from the %s environment variable, not from config or the launch directory", info.Dir, info.EnvVar)
-		d.Remediation = fmt.Sprintf("unset %s (a bare WORK_DIR exported by a shell or .envrc hijacks every launch), or set work_dir if this is intended", info.EnvVar)
+		d.Detail = fmt.Sprintf("%s comes from the %s environment variable, which outranks work_dir in config.yaml and the launch directory", info.Dir, info.EnvVar)
+		d.Remediation = workDirEnvRemediation(info.EnvVar)
 	case WorkDirSourceHomeFallback, WorkDirSourceTempFallback:
 		d.Severity = SeverityWarn
-		d.Detail = fmt.Sprintf("%s is %s — no usable directory came from the flag, config, or the launch directory", info.Dir, info.Describe())
-		d.Remediation = "set work_dir to a folder that exists, or launch Obey Voice from the folder you want the agent to work in"
+		d.Detail = fmt.Sprintf("%s is %s", info.Dir, info.Describe())
+		d.Remediation = workDirFallbackRemediation(info)
 	}
 	if c := CampaignFor(info.Dir); c.Found() {
 		d.Detail += fmt.Sprintf("; campaign %s", c.Describe())
 	}
 	return d
+}
+
+// workDirEnvRemediation tells the user how to take the directory back, in terms
+// of the variable that actually decided it. The hijack framing belongs to the
+// bare name only: OBEY_VOICE_WORK_DIR is the documented override, and calling a
+// deliberate export a shell accident teaches the user to distrust the right
+// answer. Neither wording tells them to "set work_dir" — the environment
+// outranks that key, so they may have set it already.
+func workDirEnvRemediation(envVar string) string {
+	if envVar == legacyWorkDirEnvName {
+		return fmt.Sprintf("unset %s — a bare %s exported by a shell or .envrc for its own purposes hijacks every launch; use %s when the override is deliberate",
+			legacyWorkDirEnvName, legacyWorkDirEnvName, workDirEnvName)
+	}
+	return fmt.Sprintf("unset %s to let work_dir or the launch directory decide again", envVar)
+}
+
+// workDirFallbackRemediation points at whatever named the unusable path, since
+// that is the thing to edit — "set work_dir" is wrong advice when an exported
+// variable is what pointed at a directory that does not exist.
+func workDirFallbackRemediation(info WorkDirInfo) string {
+	if info.RejectedSource == WorkDirSourceEnv && info.EnvVar != "" {
+		return fmt.Sprintf("point %s at a folder that exists, or unset it to use work_dir or the launch directory", info.EnvVar)
+	}
+	return "set work_dir to a folder that exists, or clear it to use the directory Obey Voice was launched from"
 }
 
 func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) Diagnostic {

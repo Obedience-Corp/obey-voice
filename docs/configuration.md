@@ -136,20 +136,35 @@ resolved in one order, and the layer that won is reported everywhere the
 directory is:
 
 1. `--work-dir DIR` (serve; a path that does not exist is a startup error)
-2. `work_dir` in config.yaml
-3. `OBEY_VOICE_WORK_DIR`, else the legacy bare `WORK_DIR` (both reach the same
+2. `OBEY_VOICE_WORK_DIR`, else the legacy bare `WORK_DIR` (both reach the same
    setting; the prefixed name wins when both are set)
+3. `work_dir` in config.yaml
 4. the directory Obey Voice was launched from
 5. your home directory, then the temp directory, when none of the above is a
    usable directory
 
-Steps 3 and 5 are the silent ones: config.yaml shows nothing, and a generic
+**The environment outranks config.yaml.** Values are layered env-over-file, so
+pinning `work_dir` in config.yaml does *not* protect you from a stray
+`WORK_DIR` — with `work_dir: /tmp/A` in the file and `WORK_DIR=/tmp/B`
+exported, the agent works in `/tmp/B`. That is why the source is reported
+rather than assumed:
+
+```
+$ WORK_DIR=/tmp/B obey-voice paths
+  Work dir           /tmp/B
+  Work dir source    env (the WORK_DIR environment variable)
+```
+
+Steps 2 and 5 are the silent ones: config.yaml shows nothing, and a generic
 `WORK_DIR` exported by a shell profile or an `.envrc` for its own purposes
 moves the agent for every launch. So they are reported by name:
 
 ```bash
 obey-voice paths          # Work dir source + Campaign rows (--json: work_dir_source, campaign)
-obey-voice doctor         # work-dir-source: WARN for an env var or a fallback
+obey-voice doctor         # work-dir-source: WARN for an env var or a fallback,
+                          #   naming the variable — including the one whose bad
+                          #   path caused the fallback
+obey-voice config get work_dir --json   # source: env when a bound variable decides it
 obey-voice serve          # Work dir / Campaign lines on the banner (--banner-json: same fields)
 ```
 

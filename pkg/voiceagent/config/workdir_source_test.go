@@ -50,9 +50,27 @@ func TestWorkDirProvenance(t *testing.T) {
 			},
 		},
 		{
-			name: "a configured directory that is gone falls back to home",
+			name: "a configured directory that is gone falls back to home, carrying what it rejected",
 			setup: func(t *testing.T, env workDirEnv) (*Config, string, WorkDirInfo) {
-				return &Config{WorkDir: filepath.Join(t.TempDir(), "gone")}, "", WorkDirInfo{Dir: env.home, Source: WorkDirSourceHomeFallback}
+				missing := filepath.Join(t.TempDir(), "gone")
+				return &Config{WorkDir: missing}, "", WorkDirInfo{
+					Dir: env.home, Source: WorkDirSourceHomeFallback,
+					Rejected: missing, RejectedSource: WorkDirSourceConfig,
+				}
+			},
+		},
+		{
+			// The headline scenario: one typo in an exported variable. The
+			// fallback is the honest source, but the variable has to survive it
+			// or the user has nothing to search for.
+			name: "a typo'd WORK_DIR falls back to home and is still named",
+			setup: func(t *testing.T, env workDirEnv) (*Config, string, WorkDirInfo) {
+				missing := filepath.Join(t.TempDir(), "typo")
+				t.Setenv("WORK_DIR", missing)
+				return loadForTest(t), "", WorkDirInfo{
+					Dir: env.home, Source: WorkDirSourceHomeFallback, EnvVar: "WORK_DIR",
+					Rejected: missing, RejectedSource: WorkDirSourceEnv,
+				}
 			},
 		},
 		{
@@ -68,11 +86,31 @@ func TestWorkDirProvenance(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				return nil, "", WorkDirInfo{Dir: tmp, Source: WorkDirSourceTempFallback}
+				return nil, "", WorkDirInfo{
+					Dir: tmp, Source: WorkDirSourceTempFallback,
+					Rejected: env.exeDir, RejectedSource: WorkDirSourceLaunchDir,
+				}
 			},
 		},
 		{
-			name: "an explicit setting outranks the environment",
+			// The axis the documented precedence turns on, exercised through the
+			// loader the CLI actually uses: viper layers env over the file, so
+			// pinning work_dir in config.yaml does NOT protect a user from a
+			// stray WORK_DIR. Reporting the source is the protection.
+			name: "the environment outranks work_dir in the config file",
+			setup: func(t *testing.T, _ workDirEnv) (*Config, string, WorkDirInfo) {
+				fromFile, fromEnv := t.TempDir(), t.TempDir()
+				if err := os.WriteFile(ConfigFile(), []byte("work_dir: "+fromFile+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("WORK_DIR", fromEnv)
+				return loadForTest(t), "", WorkDirInfo{Dir: fromEnv, Source: WorkDirSourceEnv, EnvVar: "WORK_DIR"}
+			},
+		},
+		{
+			// The embedder path, not the CLI's: a host that hands the library a
+			// Config has already decided, and config.Load's merge never ran.
+			name: "a caller-supplied cfg.WorkDir outranks the environment",
 			setup: func(t *testing.T, _ workDirEnv) (*Config, string, WorkDirInfo) {
 				dir := t.TempDir()
 				t.Setenv("WORK_DIR", t.TempDir())
@@ -157,6 +195,16 @@ func TestWorkDirInfoDescribe(t *testing.T) {
 		{"flag", WorkDirInfo{Source: WorkDirSourceFlag}, "the --work-dir flag"},
 		{"config", WorkDirInfo{Source: WorkDirSourceConfig}, "the work_dir setting"},
 		{"launch dir", WorkDirInfo{Source: WorkDirSourceLaunchDir}, "the directory Obey Voice was launched from"},
+		{
+			"a fallback names what it rejected",
+			WorkDirInfo{Source: WorkDirSourceHomeFallback, EnvVar: "WORK_DIR", Rejected: "/typo", RejectedSource: WorkDirSourceEnv},
+			"the home-directory fallback (the WORK_DIR environment variable pointed at /typo, which is not a usable directory)",
+		},
+		{
+			"a fallback with nothing to blame says so",
+			WorkDirInfo{Source: WorkDirSourceTempFallback},
+			"the temp-directory fallback (nothing named a usable directory)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

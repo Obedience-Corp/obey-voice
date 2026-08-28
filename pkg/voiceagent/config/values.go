@@ -1,7 +1,5 @@
 package config
 
-import "os"
-
 // Where an effective value came from. There is no "flag" source: flags are
 // per-run overrides that never reach the config surface.
 const (
@@ -47,16 +45,18 @@ func valueFor(spec KeySpec) KeyValue {
 	return KeyValue{Value: value, Source: Source(spec.Key)}
 }
 
-// Source names where key's effective value comes from: the environment when any
-// variable bound to the key is set, otherwise the config file when it holds the
-// key, otherwise the built-in default. Aliases count — a key answered by its
-// compatibility name is still answered by the environment, and reporting "file"
-// there is exactly the lie work_dir's bare WORK_DIR was telling.
+// Source names where key's effective value comes from: the environment when a
+// variable bound to the key decides it, otherwise the config file when it holds
+// the key, otherwise the built-in default.
+//
+// It answers through envValueFor, so it reports what viper actually resolved.
+// Aliases count — a key answered by its compatibility name is still answered by
+// the environment, and reporting "file" there is the lie work_dir's bare
+// WORK_DIR was telling. An exported-but-empty variable does not count, because
+// AllowEmptyEnv is off and viper never reads it.
 func Source(key string) string {
-	for _, env := range envNamesFor(key) {
-		if _, ok := os.LookupEnv(env); ok {
-			return SourceEnv
-		}
+	if _, _, ok := envValueFor(key); ok {
+		return SourceEnv
 	}
 	if InConfig(key) {
 		return SourceFile
