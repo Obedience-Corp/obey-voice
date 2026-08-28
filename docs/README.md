@@ -11,6 +11,7 @@ Everything else lives here.
 | [Install](install.md) | Requirements, Homebrew, Linux archive, source builds |
 | [Usage](usage.md) | Local voice, remote access, commands, TUI, personas |
 | [Narration](narration.md) | `render`, audiobooks, Calibre, narrate pipeline |
+| [Scenes](scene.md) | `scene`, scripted two-persona conversation audio |
 | [Meetings](meetings.md) | Meeting recorder, speaker labels, campaign routing |
 | [Configuration](configuration.md) | `config.yaml` keys, Agent Skills |
 | [Development](development.md) | Build, tests, model assets, benchmarks |

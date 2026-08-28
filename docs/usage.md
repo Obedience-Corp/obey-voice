@@ -82,6 +82,7 @@ obey-voice models clean --unused --yes    # Delete the reviewed list (--plan whe
 obey-voice prompts list                   # List embedded and user prompt documents
 obey-voice prompts show persona           # Show an assembled prompt document
 obey-voice render notes.txt --out a.wav   # Batch-render a document to audio
+obey-voice scene script.yaml --out-dir out/scene  # Record a two-persona conversation
 obey-voice library list                  # Browse Calibre library (opt-in)
 obey-voice library search "cryptography" # Search Calibre library (opt-in)
 obey-voice library show 42               # Show one book's metadata
