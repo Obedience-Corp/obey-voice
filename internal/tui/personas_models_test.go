@@ -394,7 +394,13 @@ func TestPersonaBrainModelScanIsCancelledWithTheForm(t *testing.T) {
 	cmd := personaScanCmd(t, m.beginEdit())
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()
-	<-started
+	// Guarded: if the scan command ever stops reaching discovery, fail here
+	// instead of blocking the whole package until the test binary times out.
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the scan command never called discovery")
+	}
 
 	// Closing the form abandons the scan instead of leaking it.
 	m.cancelForm()
