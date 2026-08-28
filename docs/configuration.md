@@ -233,13 +233,20 @@ pass** — the timeline meeting speaker labels are read from.
 | Value | What runs |
 |---|---|
 | `sherpa` (default) | Managed pyannote segmentation 3.0 + NeMo TitaNet, in process. Every install gets this |
-| `sortformer` | NVIDIA Streaming Sortformer through the same transcribe.cpp CLI as above (`transcribecpp_binary`), plus a managed 139 MB GGUF that `models ensure` installs once the key is set |
+| `sortformer` | NVIDIA Streaming Sortformer through the same transcribe.cpp CLI as above (`transcribecpp_binary`), plus a managed 139 MB GGUF |
 
 It is opt-in, and independent of `stt_provider`: either engine pairs with any
 recognizer, and unlike the STT provider it does **not** require a GPU — Sortformer
 on CPU still beats the sherpa review path it replaces. Live labels, embeddings
-and enrolled names stay on the sherpa path either way. Nothing downloads or is
-checked until the key is set to `sortformer`.
+and enrolled names stay on the sherpa path either way.
+
+`models ensure` plans that GGUF only when all three of these hold: `speaker.enabled`
+is on, meeting diarization is on (`speaker.meeting.enabled`, **Settings → Meeting →
+Speaker diarization**), and this key is `sortformer`. With any of them off nothing
+downloads and nothing is checked — doctor and the settings row stay quiet about
+weights that the plan would not fetch. (Weights already downloaded keep their claim
+even when meetings are switched off, so `models clean` will not offer to delete
+them.)
 
 Set it in **Settings → Meeting → Diarization engine**, or in the config file. An
 unrecognised value is a config error, not a silent fall back. `obey-voice doctor`

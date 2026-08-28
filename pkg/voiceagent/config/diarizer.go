@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -113,8 +114,8 @@ func diagnoseMeetingDiarizer(cfg *Config, modelsDir string, lookPath func(string
 // rendering; the doctor's sortformer-diarizer row adds the backend probe.
 // It reuses STTGap rather than adding a second identical struct.
 //
-// Detail stays short enough for one row; the fix travels in Remediation, in
-// the resolver's own words.
+// Detail says what is wrong, briefly enough for one row; Remediation is the
+// action that fixes it, never a restatement of the detail.
 func MeetingDiarizerGap(cfg *Config, modelsDir string, lookPath func(string) (string, error)) STTGap {
 	if cfg == nil || lookPath == nil {
 		return STTGap{}
@@ -124,8 +125,26 @@ func MeetingDiarizerGap(cfg *Config, modelsDir string, lookPath func(string) (st
 	if selected, err := MeetingDiarizerFrom(cfg); err != nil || selected != DiarizerSortformer {
 		return STTGap{}
 	}
+	// Same gate as the doctor row and ManifestFor: with the review pass switched
+	// off, nothing constructs this engine and 'models ensure' plans no weights,
+	// so telling anyone to run it would be an instruction that cannot work.
+	if !meetingDiarizationActive(cfg) {
+		return STTGap{
+			Detail:      "meeting diarization is off",
+			Remediation: "turn Speaker diarization on to install and run it",
+		}
+	}
 	if _, err := ResolveTranscribeCPPBinary(cfg, modelsDir, lookPath); err != nil {
-		return STTGap{Detail: TranscribeCPPCLIName + " not installed", Remediation: err.Error()}
+		// A configured path is a decision the resolver never falls back from
+		// (ResolveTranscribeCPPBinary), so a bad one is its own problem: saying
+		// "not installed" would send the user installing what they already have.
+		if strings.ContainsRune(strings.TrimSpace(cfg.TranscribeCPPBinary), filepath.Separator) {
+			return STTGap{
+				Detail:      "transcribecpp_binary is not executable",
+				Remediation: "point transcribecpp_binary at a transcribe-cli build, or clear it to use PATH and the managed copy",
+			}
+		}
+		return STTGap{Detail: TranscribeCPPCLIName + " not installed", Remediation: TranscribeCPPCLIRemediation()}
 	}
 	if _, err := os.Stat(SortformerDiarizerAsset().ModelPath(modelsDir)); err != nil {
 		return STTGap{Detail: "weights not downloaded", Remediation: sortformerEnsureRemedy}

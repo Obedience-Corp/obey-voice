@@ -13,10 +13,13 @@ import (
 
 // meetingSettings is a Meeting tab whose writes are recorded and whose PATH
 // lookups are answered by the test, so the diarizer row never depends on what
-// happens to be installed on the machine running it.
+// happens to be installed on the machine running it. Diarization starts on:
+// that is the state where an install gap is worth reporting at all.
 func meetingSettings(t *testing.T, diarizer string, installed ...string) (*settingsModel, map[string]any) {
 	t.Helper()
 	cfg := &config.Config{ModelsDir: t.TempDir()}
+	cfg.Speaker.Enabled = true
+	cfg.Speaker.Meeting.Enabled = true
 	cfg.Speaker.Meeting.Diarizer = diarizer
 	saved := map[string]any{}
 	m := newSettings(cfg, nil)
@@ -53,6 +56,7 @@ func TestSettingsMeetingDiarizerRow(t *testing.T) {
 		diarizer       string
 		installed      []string
 		weights        bool
+		diarizationOff bool
 		wantContains   []string
 		wantNotContain []string
 	}{
@@ -85,6 +89,14 @@ func TestSettingsMeetingDiarizerRow(t *testing.T) {
 			wantNotContain: []string{"not installed", "not downloaded"},
 		},
 		{
+			// With the review pass off, 'models ensure' plans no weights, so a
+			// row telling the user to run it would be an unfixable instruction.
+			name: "sortformer with diarization off", diarizer: config.DiarizerSortformer,
+			diarizationOff: true,
+			wantContains:   []string{"(optional)", "diarization is off"},
+			wantNotContain: []string{"not installed", "not downloaded", "models ensure"},
+		},
+		{
 			// A value this build cannot resolve is named, not silently rendered
 			// as the default it is not.
 			name: "hand-edited value", diarizer: "pyannote",
@@ -97,6 +109,9 @@ func TestSettingsMeetingDiarizerRow(t *testing.T) {
 			m, _ := meetingSettings(t, tt.diarizer, tt.installed...)
 			if tt.weights {
 				installSortformerWeights(t, m.cfg.ModelsDir)
+			}
+			if tt.diarizationOff {
+				m.cfg.Speaker.Meeting.Enabled = false
 			}
 			row := m.meetingItems()[meetingRowDiarizer]
 			for _, want := range tt.wantContains {
@@ -182,6 +197,25 @@ func TestSettingsMeetingDiarizerReportsAMissingInstall(t *testing.T) {
 	// Live labels are a separate embedding path and must not be implied to move.
 	if !strings.Contains(m.message, "sherpa") {
 		t.Errorf("message = %q, want it to say live labels stay on sherpa", m.message)
+	}
+}
+
+// With the review pass switched off, 'models ensure' plans nothing — so
+// neither the row nor the status line may send anyone to run it.
+func TestSettingsMeetingDiarizerNeverAsksForAnInstallItCannotPlan(t *testing.T) {
+	m, _ := meetingSettings(t, config.DiarizerSherpa)
+	m.cfg.Speaker.Meeting.Enabled = false
+	m.cursor = meetingRowDiarizer
+	m.selectCurrent()
+
+	if m.cfg.Speaker.Meeting.Diarizer != config.DiarizerSortformer {
+		t.Fatalf("engine = %q, want the pick to save with diarization off", m.cfg.Speaker.Meeting.Diarizer)
+	}
+	if strings.Contains(m.message, "models ensure") {
+		t.Errorf("message = %q, want no models ensure while the review pass is off", m.message)
+	}
+	if !strings.Contains(m.message, "diarization is off") {
+		t.Errorf("message = %q, want it to say why nothing installs", m.message)
 	}
 }
 

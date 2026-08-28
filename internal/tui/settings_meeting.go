@@ -315,7 +315,9 @@ func (m *settingsModel) cycleMeetingDiarizer(saveConfig func(string, any) error)
 	}
 	m.message = "Diarization engine: sortformer (optional) — labels the review pass only; live labels stay on sherpa"
 	if gap := m.meetingDiarizerGap(); gap.Missing() {
-		m.message += fmt.Sprintf(" · not ready on this computer: %s — %s", gap.Detail, gap.Remediation)
+		// The gap already knows whether the blocker is this computer or the
+		// review pass being switched off, so the message states it as found.
+		m.message += fmt.Sprintf(" · %s — %s", gap.Detail, gap.Remediation)
 	}
 }
 
