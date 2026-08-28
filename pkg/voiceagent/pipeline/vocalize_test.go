@@ -69,6 +69,12 @@ func TestExpandVocalTagsUsesHumanOnomatopoeia(t *testing.T) {
 	if expandVocalTags("[laugh]", nil) != vocalPhrases[vocalLaugh][0] {
 		t.Errorf("tag-only laugh = %q", expandVocalTags("[laugh]", nil))
 	}
+	if !hasVocalTag("[kiss] come here.") {
+		t.Fatal("[kiss] must match so it can be stripped; kisses? does not match kiss")
+	}
+	if got := expandVocalTags("[kiss] come here.", nil); got != "come here." {
+		t.Errorf("kiss should be dropped, not spoken: %q", got)
+	}
 }
 
 func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
