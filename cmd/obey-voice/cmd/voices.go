@@ -73,6 +73,9 @@ already knows; --live asks the installed native package instead.`,
 	cmd.Flags().Bool("json", false, "Emit JSON")
 	cmd.Flags().Bool("live", false, "Query the constructed provider (qwen3-tts: loads the model, ~10s, and reports presets shipped with the installed native package); no effect on providers that are already listed live")
 	cmd.AddCommand(newVoicesPreviewCmd())
+	cmd.AddCommand(newVoicesRegisterCmd())
+	cmd.AddCommand(newVoicesRegisteredCmd())
+	cmd.AddCommand(newVoicesRemoveCmd())
 	return cmd
 }
 
@@ -105,7 +108,7 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 	// Static is therefore the default answer. Presets the installed native
 	// package ships beyond the registry stay reachable through --live.
 	if isQwenTTS(cfg.TTSProvider) && !live {
-		voices, err := tts.StaticVoices(cfg.TTSProvider, locale, gender)
+		voices, err := tts.StaticVoicesFor(cfg, cfg.TTSProvider, locale, gender)
 		if err != nil {
 			return nil, codedError(codeInvalidProvider, "static voices: %v", err)
 		}
@@ -120,7 +123,7 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 		// catalog it cannot safely list without a model on disk is not
 		// silently swapped for something incomplete.
 		if isQwenTTS(cfg.TTSProvider) {
-			if voices, staticErr := tts.StaticVoices(cfg.TTSProvider, locale, gender); staticErr == nil && len(voices) > 0 {
+			if voices, staticErr := tts.StaticVoicesFor(cfg, cfg.TTSProvider, locale, gender); staticErr == nil && len(voices) > 0 {
 				return buildVoicesJSON(cfg, voices, "static"), nil
 			}
 		}

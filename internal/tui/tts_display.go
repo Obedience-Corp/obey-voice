@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -122,11 +123,14 @@ func ttsProviderDetail(spec tts.ProviderSpec, cfg *config.Config) string {
 		return "managed model · static voices · " + ttsEffectiveVoiceLabelForProvider("kokoro", cfg)
 	case "qwen3-tts":
 		return "model " + ttsModelLabelForProvider("qwen3-tts", cfg) + " · " + ttsBinaryLabel(cfg) + " · " + ttsVoiceModeLabelForProvider("qwen3-tts", cfg) + " · " + ttsEffectiveVoiceLabelForProvider("qwen3-tts", cfg)
-	case "audio8":
+	case config.Audio8ProviderName:
 		// Listed whether or not the export is downloaded, like qwen3-tts; the
 		// row says so rather than implying it can speak here.
 		if !tts.Audio8Installed(cfg) {
 			return spec.Description + " · export not installed under models_dir/audio8-tts"
+		}
+		if n := len(config.Audio8RegisteredVoiceNames(config.ModelsDirFrom(cfg))); n > 0 {
+			return fmt.Sprintf("%s · %d registered", spec.Description, n)
 		}
 		return spec.Description
 	default:

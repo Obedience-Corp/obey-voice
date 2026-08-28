@@ -10,6 +10,10 @@
       "value": "Samantha",
       "source": "default"
     },
+    "audio8_voice": {
+      "value": "",
+      "source": "default"
+    },
     "backchannel_enabled": {
       "value": false,
       "source": "default"

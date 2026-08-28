@@ -13,7 +13,9 @@ import (
 
 // audio8Manifest is the subset of runtime_manifest.json the provider needs.
 type audio8Manifest struct {
+	ModelFingerprint string            `json:"model_fingerprint"`
 	SampleRate       int               `json:"sample_rate"`
+	CodecFrameSize   int               `json:"codec_frame_size"`
 	CodecHopLength   int               `json:"codec_hop_length"`
 	NumCodebooks     int               `json:"num_codebooks"`
 	CodebookSize     int               `json:"codebook_size"`

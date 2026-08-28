@@ -244,7 +244,7 @@ func TestPersonaOverridableMatchesApplyRoutingTable(t *testing.T) {
 	// routing table; this asserts the schema agrees with it, and
 	// TestOverriddenKeysMatchesApply asserts the routing table agrees with Apply.
 	want := []string{
-		"active_persona", "agent_name", "brain_provider", "grok_model",
+		"active_persona", "agent_name", "audio8_voice", "brain_provider", "grok_model",
 		"ollama_model", "persona", "qwen_tts_model_tier", "qwen_tts_voice",
 		"tts_provider", "tts_voice",
 	}

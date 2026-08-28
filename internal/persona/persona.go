@@ -395,10 +395,14 @@ func applyTTS(cfg *config.Config, t TTS) {
 		cfg.TTSProvider = provider
 	}
 	if voice := strings.TrimSpace(t.Voice); voice != "" {
-		// Route voice to the config key the selected provider reads.
+		// Route voice to the config key the selected provider reads. audio8
+		// needs its own: tts_voice is a Kokoro enum, so an audio8 voice landing
+		// there was rejected on save and would never have reached the provider.
 		switch normalizeTTSProvider(cfg.TTSProvider) {
 		case "qwen3-tts":
 			cfg.QwenTTSVoice = voice
+		case config.Audio8ProviderName:
+			cfg.Audio8Voice = voice
 		default:
 			// kokoro and any other voice-keyed providers use tts_voice.
 			cfg.TTSVoice = voice
@@ -423,6 +427,10 @@ func voiceForProvider(cfg *config.Config, provider string) string {
 		}
 		// Fall back to kokoro voice if qwen voice unset (legacy single-agent).
 		return strings.TrimSpace(cfg.TTSVoice)
+	case config.Audio8ProviderName:
+		// No fall back to tts_voice: a Kokoro voice id means nothing to audio8,
+		// and empty is a real answer here — the packaged reference voice.
+		return strings.TrimSpace(cfg.Audio8Voice)
 	default:
 		return strings.TrimSpace(cfg.TTSVoice)
 	}
@@ -457,6 +465,8 @@ func PersistTTS(p *Profile) error {
 	switch normalizeTTSProvider(provider) {
 	case "qwen3-tts":
 		return config.SetAndSave("qwen_tts_voice", voice)
+	case config.Audio8ProviderName:
+		return config.SetAndSave("audio8_voice", voice)
 	default:
 		return config.SetAndSave("tts_voice", voice)
 	}

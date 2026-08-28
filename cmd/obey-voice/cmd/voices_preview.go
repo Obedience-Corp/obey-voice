@@ -171,7 +171,13 @@ func applyPreviewVoice(cmd *cobra.Command, cfg *config.Config, voice string) (st
 	tier = strings.TrimSpace(tier)
 
 	if !isQwenTTS(cfg.TTSProvider) {
-		cfg.TTSVoice = voice
+		// Each provider reads its own voice key. Writing an audio8 voice into
+		// tts_voice would audition Kokoro's default instead, silently.
+		if isAudio8(cfg.TTSProvider) {
+			cfg.Audio8Voice = voice
+		} else {
+			cfg.TTSVoice = voice
+		}
 		if tier == "" {
 			return "", nil
 		}

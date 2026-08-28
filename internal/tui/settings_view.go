@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	ansi "github.com/charmbracelet/x/ansi"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func (m settingsModel) View() string {
@@ -147,8 +149,16 @@ func (m settingsModel) sectionListLines() []string {
 			v := m.voiceItems[i]
 			active := ""
 			activeVoice := m.cfg.TTSVoice
-			if strings.EqualFold(activeTTSProvider(m.cfg), "qwen3-tts") {
+			switch {
+			case strings.EqualFold(activeTTSProvider(m.cfg), "qwen3-tts"):
 				activeVoice = m.cfg.QwenTTSVoice
+			case strings.EqualFold(activeTTSProvider(m.cfg), config.Audio8ProviderName):
+				// Empty selects the packaged reference, so the tick lands on it
+				// rather than on nothing.
+				activeVoice = m.cfg.Audio8Voice
+				if strings.TrimSpace(activeVoice) == "" {
+					activeVoice = config.Audio8PackagedVoice
+				}
 			}
 			if strings.EqualFold(v.Name, activeVoice) {
 				active = " ✓"

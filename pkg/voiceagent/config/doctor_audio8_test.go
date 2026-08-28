@@ -30,6 +30,7 @@ func TestDiagnoseTTSProviderAudio8(t *testing.T) {
 		name       string
 		provider   string
 		install    bool
+		register   []string
 		wantSev    Severity
 		wantDetail string
 		wantRemedy []string
@@ -39,6 +40,17 @@ func TestDiagnoseTTSProviderAudio8(t *testing.T) {
 		{
 			name: "installed", provider: "audio8", install: true,
 			wantSev: SeverityOK, wantDetail: "audio8", wantNoQwen: true,
+		},
+		{
+			// With no registrations the row still has to say what is available,
+			// so a user selecting audio8 knows they are on the packaged voice.
+			name: "installed names the voice count", provider: "audio8", install: true,
+			wantSev: SeverityOK, wantDetail: "1 voice (packaged reference only)", wantNoQwen: true,
+		},
+		{
+			name: "installed counts registered voices", provider: "audio8", install: true,
+			register: []string{"alice", "bob"},
+			wantSev:  SeverityOK, wantDetail: "3 voices (packaged reference + 2 registered)", wantNoQwen: true,
 		},
 		{
 			name: "selected but missing", provider: "audio8", install: false,
@@ -63,6 +75,15 @@ func TestDiagnoseTTSProviderAudio8(t *testing.T) {
 			var dir string
 			if tc.install {
 				dir = installAudio8Export(t, modelsDir)
+			}
+			for _, name := range tc.register {
+				voice := filepath.Join(Audio8VoicesDir(modelsDir), name)
+				if err := os.MkdirAll(voice, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(voice, Audio8VoiceMetaFile), []byte("{}"), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 			cfg := &Config{
 				BrainProvider: "ollama", OllamaModel: "test-model",

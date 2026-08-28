@@ -254,7 +254,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 			diags = append(diags, Diagnostic{
 				Name:     "tts-provider",
 				Severity: SeverityOK,
-				Detail:   "audio8 (experimental; export at " + dir + ")",
+				Detail:   "audio8 (experimental; " + audio8VoiceCountDetail(modelsDir) + "; export at " + dir + ")",
 			})
 		} else {
 			diags = append(diags, Diagnostic{
@@ -714,4 +714,18 @@ func HasErrors(diags []Diagnostic) bool {
 		}
 	}
 	return false
+}
+
+// audio8VoiceCountDetail describes the voice store for the doctor row: the
+// packaged reference is always there, registered voices are however many the
+// user has made.
+func audio8VoiceCountDetail(modelsDir string) string {
+	registered := len(Audio8RegisteredVoiceNames(modelsDir))
+	if registered == 0 {
+		return "1 voice (packaged reference only)"
+	}
+	if registered == 1 {
+		return "2 voices (packaged reference + 1 registered)"
+	}
+	return fmt.Sprintf("%d voices (packaged reference + %d registered)", registered+1, registered)
 }

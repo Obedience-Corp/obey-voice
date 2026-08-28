@@ -75,7 +75,12 @@ func providerAt(list []string, idx int) string {
 
 // stackVoiceCatalog returns known voice ids for a TTS provider. Empty provider
 // falls through to kokoro (the product default when Settings is also unset).
-func stackVoiceCatalog(provider string) []string {
+//
+// cfg is needed for audio8 alone, whose catalog is the packaged reference plus
+// whatever is registered under that config's models_dir. It is passed in rather
+// than loaded here so a form never reads a different config from the one it is
+// editing against.
+func stackVoiceCatalog(cfg *config.Config, provider string) []string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "qwen3-tts":
 		voices := managedqwen.SelectableVoices()
@@ -84,14 +89,16 @@ func stackVoiceCatalog(provider string) []string {
 			out = append(out, v.Name)
 		}
 		return out
-	case "", "kokoro", "audio8":
-		// audio8 publishes exactly one packaged reference voice; both read the
-		// same static catalog StaticVoices owns.
+	case "", "kokoro", config.Audio8ProviderName:
+		// Both read the catalog StaticVoicesFor owns. For audio8 that is the
+		// packaged reference plus every voice registered under models_dir, so
+		// the config has to come along - a persona form that could not offer a
+		// registered voice is the reason audio8 personas could not be saved.
 		name := strings.ToLower(strings.TrimSpace(provider))
 		if name == "" {
 			name = "kokoro"
 		}
-		voices, err := tts.StaticVoices(name, "", "")
+		voices, err := tts.StaticVoicesFor(cfg, name, "", "")
 		if err != nil {
 			return nil
 		}
@@ -115,7 +122,7 @@ func (m personasModel) stackVoiceList() []string {
 		provider = strings.TrimSpace(m.cfg.TTSProvider)
 	}
 	out := []string{stackDefaultLabel}
-	out = append(out, stackVoiceCatalog(provider)...)
+	out = append(out, stackVoiceCatalog(m.cfg, provider)...)
 	if v := strings.TrimSpace(m.selectedVoice); v != "" {
 		found := false
 		for _, item := range out[1:] {
@@ -433,7 +440,7 @@ func (m *personasModel) clampSelectedVoice() {
 	if provider == "" && m.cfg != nil {
 		provider = strings.TrimSpace(m.cfg.TTSProvider)
 	}
-	for _, name := range stackVoiceCatalog(provider) {
+	for _, name := range stackVoiceCatalog(m.cfg, provider) {
 		if strings.EqualFold(name, v) {
 			// Canonicalize to the catalog spelling (e.g. Uncle_Fu vs uncle_fu).
 			m.selectedVoice = name
@@ -501,7 +508,7 @@ func (m *personasModel) prefillStack(p *persona.Profile) {
 		if provider == "" && m.cfg != nil {
 			provider = strings.TrimSpace(m.cfg.TTSProvider)
 		}
-		for _, name := range stackVoiceCatalog(provider) {
+		for _, name := range stackVoiceCatalog(m.cfg, provider) {
 			if strings.EqualFold(name, m.selectedVoice) {
 				m.selectedVoice = name
 				break
