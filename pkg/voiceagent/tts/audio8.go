@@ -21,11 +21,11 @@ const audio8ProviderName = "audio8"
 
 // Audio8Tokenizer turns text into the model's token ids.
 //
-// This is a seam, not an oversight: the checkpoint ships a HuggingFace
-// byte-level BPE (65k vocab, 64.7k merges, a Unicode-property pre-tokenizer
-// sequence and 4621 added tokens) and there is no in-tree Go implementation.
-// Everything else in this provider is exercised by the integration test using a
-// fixture tokenizer; wiring a real one is a separate, explicit decision.
+// The checkpoint ships a HuggingFace byte-level BPE (65k vocab, 64.7k merges, a
+// Unicode-property pre-tokenizer sequence and 4621 added tokens); tts/hfbpe
+// implements it and NewAudio8Tokenizer loads it from the model dir. The seam
+// stays so the integration test can replay captured ids without the export,
+// and so a future checkpoint can bring its own frontend.
 type Audio8Tokenizer interface {
 	Encode(text string) ([]int64, error)
 }
@@ -565,8 +565,8 @@ func audio8ModelDir(cfg *config.Config) string {
 	return filepath.Join(cfg.ModelsDir, "audio8-tts")
 }
 
-// errAudio8NoTokenizer is returned until a text tokenizer is wired. The model
-// ships a HuggingFace byte-level BPE and there is no in-tree Go implementation;
-// see Audio8Tokenizer.
+// errAudio8NoTokenizer rejects a provider that could never synthesize. The
+// factory builds one with NewAudio8Tokenizer; a caller constructing Audio8TTS
+// directly has to supply its own.
 var errAudio8NoTokenizer = fmt.Errorf(
-	"audio8: no tokenizer configured - the export needs a HuggingFace byte-level BPE and obey-voice has no Go implementation yet")
+	"audio8: no tokenizer configured - pass Audio8Options.Tokenizer (see NewAudio8Tokenizer)")

@@ -21,16 +21,55 @@ func TestNewProviderRejectsUnsupportedProvider(t *testing.T) {
 	}
 }
 
-// Selecting audio8 must fail on the missing tokenizer before any model
-// loading. ModelsDir points at an empty directory: reaching the manifest or
-// the graphs would surface a missing-file error instead of
-// errAudio8NoTokenizer, so the sentinel proves the rejection happened first.
-func TestNewProviderAudio8FailsFastWithoutTokenizer(t *testing.T) {
+// Selecting audio8 must still fail before any model loading, now on the
+// tokenizer file rather than on a nil tokenizer. ModelsDir points at an empty
+// directory: reaching the manifest or the graphs would name
+// runtime_manifest.json or a .onnx instead, so naming tokenizer.json proves the
+// rejection happened first.
+func TestNewProviderAudio8FailsFastWithoutTokenizerFile(t *testing.T) {
 	cfg := &config.Config{TTSProvider: "audio8", ModelsDir: t.TempDir()}
 
 	_, _, err := NewProvider(cfg)
+	if err == nil {
+		t.Fatal("NewProvider() error = nil, want a tokenizer error")
+	}
+	if !strings.Contains(err.Error(), "audio8 tokenizer") || !strings.Contains(err.Error(), "tokenizer.json") {
+		t.Fatalf("NewProvider() error = %q, want it to name the audio8 tokenizer file", err)
+	}
+	if strings.Contains(err.Error(), "runtime_manifest.json") || strings.Contains(err.Error(), ".onnx") {
+		t.Fatalf("NewProvider() error = %q, want the failure before any model loading", err)
+	}
+}
+
+// The constructor keeps its own guard: a tokenizer-less Audio8TTS can never
+// synthesize, so it is refused before the manifest and the ~1.6 GB of graphs.
+func TestNewAudio8TTSRejectsANilTokenizer(t *testing.T) {
+	_, err := NewAudio8TTS(Audio8Options{ModelDir: t.TempDir()})
 	if !errors.Is(err, errAudio8NoTokenizer) {
-		t.Fatalf("NewProvider() error = %v, want errAudio8NoTokenizer", err)
+		t.Fatalf("NewAudio8TTS() error = %v, want errAudio8NoTokenizer", err)
+	}
+}
+
+func TestProvidersIncludesAudio8(t *testing.T) {
+	for _, spec := range Providers() {
+		if spec.Name != audio8ProviderName {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(spec.Description), "experimental") {
+			t.Errorf("audio8 description = %q, want it marked experimental", spec.Description)
+		}
+		return
+	}
+	t.Fatalf("Providers() = %+v, missing audio8", Providers())
+}
+
+func TestStaticVoicesForAudio8(t *testing.T) {
+	voices, err := StaticVoices(audio8ProviderName, "", "")
+	if err != nil {
+		t.Fatalf("StaticVoices() error = %v", err)
+	}
+	if len(voices) != 1 || voices[0].Name != "reference" {
+		t.Fatalf("StaticVoices(audio8) = %+v, want the single packaged reference voice", voices)
 	}
 }
 
