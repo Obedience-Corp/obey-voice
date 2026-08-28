@@ -13,21 +13,39 @@ import (
 // pipeline can cover it with the fallback voice instead of abandoning the turn.
 var ErrStreamStalled = errors.New("pcm stream stalled: no audio within budget")
 
-// PCMStream carries synthesized mono PCM frames for playback.
-type PCMStream struct {
-	mu          sync.Mutex
-	ctx         context.Context
+// streamProperties are the facts that describe how a stream must be *consumed*,
+// as opposed to what it currently holds. Every one of them is set by the
+// producer before any frame is written and read by the player once, so any
+// component that re-frames a stream — a tee, a fanout, a resampling adapter —
+// has to carry all of them or it silently changes how the audio is played.
+//
+// They are grouped in one struct so Derive can copy them in a single
+// assignment. That is the point: the fanout used to copy the sample rate by
+// hand, which meant every property added afterwards was dropped without a
+// compile error and without a failing test. A new field added here is carried
+// by every existing caller of Derive for free, and TestPCMStreamPropertiesAreDerived
+// fails if one is added outside this struct instead.
+type streamProperties struct {
 	sampleRate  int
-	err         error
-	closed      bool
 	incremental bool
-	written     int
-	ready       chan struct{}
-	frames      chan []float32
 	// stallBudget bounds the silence between frame batches, not the whole
 	// utterance. A slow engine that keeps emitting audio keeps its segment;
 	// one that emits nothing loses it. Zero leaves the stream unbounded.
 	stallBudget time.Duration
+}
+
+// PCMStream carries synthesized mono PCM frames for playback.
+type PCMStream struct {
+	mu    sync.Mutex
+	ctx   context.Context
+	props streamProperties
+	// The rest is this stream's own lifecycle and payload — never derived,
+	// because a derived stream carries its own.
+	err     error
+	closed  bool
+	written int
+	ready   chan struct{}
+	frames  chan []float32
 }
 
 // SetStallBudget bounds how long a consumer should wait for the next frame
@@ -36,14 +54,40 @@ type PCMStream struct {
 func (s *PCMStream) SetStallBudget(d time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.stallBudget = d
+	s.props.stallBudget = d
 }
 
 // StallBudget returns the per-batch budget set by SetStallBudget.
 func (s *PCMStream) StallBudget() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.stallBudget
+	return s.props.stallBudget
+}
+
+// Derive returns a new, empty stream that carries every property of s and is
+// bound to ctx. Anything that tees or re-frames a stream must build the copy
+// this way rather than with NewPCMStream, so that how the audio is meant to be
+// played travels with it.
+//
+// It copies properties only. The error, the closed flag, the frames already
+// written and the frame channel all belong to the stream that owns them: a
+// derived stream is a fresh pipe with the same instructions on it.
+//
+// When s has no sample rate yet the derived stream has none either, and the
+// caller must set it before writing — the same contract NewPCMStream has.
+func (s *PCMStream) Derive(ctx context.Context) *PCMStream {
+	s.mu.Lock()
+	props := s.props
+	s.mu.Unlock()
+
+	derived := NewPCMStream(ctx)
+	derived.props = props
+	if props.sampleRate > 0 {
+		// SetSampleRate's side effect, without its validation: the value came
+		// from a stream that already passed it.
+		close(derived.ready)
+	}
+	return derived
 }
 
 // NewPCMStream creates a new PCM stream bound to ctx. A blocked Write unblocks
@@ -69,14 +113,14 @@ func (s *PCMStream) SetSampleRate(sampleRate int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.sampleRate != 0 {
-		if s.sampleRate != sampleRate {
+	if s.props.sampleRate != 0 {
+		if s.props.sampleRate != sampleRate {
 			return errors.New("sample rate already set")
 		}
 		return nil
 	}
 
-	s.sampleRate = sampleRate
+	s.props.sampleRate = sampleRate
 	close(s.ready)
 	return nil
 }
@@ -98,14 +142,14 @@ func (s *PCMStream) SetSampleRate(sampleRate int) error {
 func (s *PCMStream) SetIncremental(incremental bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.incremental = incremental
+	s.props.incremental = incremental
 }
 
 // Incremental reports whether this stream's frames arrive during synthesis.
 func (s *PCMStream) Incremental() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.incremental
+	return s.props.incremental
 }
 
 // WaitReady waits until the stream sample rate is known or the stream fails.
@@ -116,13 +160,13 @@ func (s *PCMStream) WaitReady(ctx context.Context) (int, error) {
 	case <-s.ready:
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.sampleRate == 0 {
+		if s.props.sampleRate == 0 {
 			if s.err != nil {
 				return 0, s.err
 			}
 			return 0, errors.New("pcm stream closed before sample rate was set")
 		}
-		return s.sampleRate, nil
+		return s.props.sampleRate, nil
 	}
 }
 
@@ -142,7 +186,7 @@ func (s *PCMStream) Write(samples []float32) error {
 		}
 		return errors.New("pcm stream is closed")
 	}
-	if s.sampleRate == 0 {
+	if s.props.sampleRate == 0 {
 		s.mu.Unlock()
 		return errors.New("sample rate must be set before writing frames")
 	}
@@ -190,7 +234,7 @@ func (s *PCMStream) CloseWithError(err error) {
 	}
 	s.closed = true
 	s.err = err
-	if s.sampleRate == 0 {
+	if s.props.sampleRate == 0 {
 		close(s.ready)
 	}
 	close(s.frames)

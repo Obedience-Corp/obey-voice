@@ -604,12 +604,15 @@ func DiagnoseQwenStreaming(cfg *Config, modelsDir string) []Diagnostic {
 	}
 
 	mode := QwenTTSStreamOf(cfg)
-	place := TTSPlaceOf(cfg)
+	remote := TTSPlaceOf(cfg) == TTSPlaceLAN
 	backend := ""
-	if place == TTSPlaceLocal {
-		backend = qwen.InspectNative(modelsDir, cfg.QwenTTSModelTier).BackendHint
+	installed := false
+	if !remote {
+		native := qwen.InspectNative(modelsDir, cfg.QwenTTSModelTier)
+		backend = native.BackendHint
+		installed = native.Installed
 	}
-	eligible := QwenStreamEligible(mode, place, backend, true)
+	eligible := QwenStreamEligible(mode, remote, backend, true)
 
 	detail := fmt.Sprintf("%s: chunks play as they arrive on a worker that streams", mode)
 	remediation := ""
@@ -619,10 +622,15 @@ func DiagnoseQwenStreaming(cfg *Config, modelsDir string) []Diagnostic {
 	switch {
 	case mode != QwenStreamAuto:
 		detail += ", set explicitly"
-	case place == TTSPlaceLAN:
+	case remote:
 		detail += "; lan is the offload target streaming was measured on"
 	case eligible:
 		detail += "; this package reports backend " + backend
+	case backend == "" && installed:
+		// An install predating backend_hint. Pointing at a missing package
+		// here would send the operator to reinstall something already present.
+		detail += "; the installed package predates the backend field, and only CUDA has been measured safe"
+		remediation = "reinstall with 'obey-voice models ensure --tts' so the package reports its backend, or set qwen_tts_stream=on after checking the reply does not break up"
 	case backend == "":
 		detail += "; no installed package to report a backend, and only CUDA has been measured safe"
 		remediation = "set qwen_tts_stream=on to stream anyway, after checking the reply does not break up"

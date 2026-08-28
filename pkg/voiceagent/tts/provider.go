@@ -38,15 +38,25 @@ type Describer interface {
 // Provider and tier are only two thirds of an engine's identity. The same
 // qwen3-tts:0.6b measured from a local Metal worker and from a speech-serve
 // host over the LAN are different measurements — different silicon, plus a
-// socket in the path — and whether the worker emits PCM during decode
-// (ready.streaming, spec/30 §2) decides whether time-to-first-audio can be
-// anything but the whole synthesis. A latency number without that topology
-// cannot be read.
+// socket in the path — and whether PCM actually arrives during decode decides
+// whether time-to-first-audio can be anything but the whole synthesis. A
+// latency number without that topology cannot be read.
 type TopologyDescriber interface {
 	// SpeechPlace is PlaceLocal or PlaceLAN.
 	SpeechPlace() string
-	// WorkerStreaming is the speech worker's ready.streaming frame. False for
-	// an engine that synthesizes in this process and has no worker to ask.
+	// WorkerStreaming reports whether this session's PCM arrives *during*
+	// synthesis: the worker advertised the capability and this host asked it
+	// to use it. False for an engine that synthesizes in this process, for a
+	// Stage A worker, and for a capable worker whose backend was measured to
+	// underrun — in all three, first audio is the whole synthesis.
+	//
+	// It is deliberately the effective answer rather than the worker's raw
+	// ready.streaming frame. A capable worker told not to stream produces
+	// whole-utterance audio, and an artifact recording it as streaming would
+	// attribute a whole-utterance latency to a streaming engine. The value
+	// travels: TurnMetrics.TTSWorkerStreaming, transcript TTSStreaming, the
+	// netapi tts_streaming field and the bench's "worker streams PCM" line all
+	// read it, and all of them want what happened, not what was possible.
 	WorkerStreaming() bool
 }
 
@@ -71,8 +81,8 @@ func SpeechPlaceOf(p Provider) string {
 	return PlaceLocal
 }
 
-// WorkerStreamingOf reports the speech worker's ready.streaming frame, and
-// false when there is no worker.
+// WorkerStreamingOf reports whether a provider's PCM arrives during synthesis
+// (see TopologyDescriber.WorkerStreaming), and false when there is no worker.
 func WorkerStreamingOf(p Provider) bool {
 	d, ok := p.(TopologyDescriber)
 	return ok && d.WorkerStreaming()

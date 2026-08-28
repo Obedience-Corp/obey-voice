@@ -540,3 +540,132 @@ func TestReadyStreamingImpliesCapability(t *testing.T) {
 		t.Error("a stage A ready read as capable")
 	}
 }
+
+// stubSpeechSession fails its first synthesis with a restartable error and
+// succeeds afterwards, so the provider's reconnect path can be driven without
+// a process.
+type stubSpeechSession struct {
+	*speechSession
+	fail  bool
+	wrote int
+}
+
+func (s *stubSpeechSession) SynthesizeToStream(_ context.Context, _ SynthesisRequest, stream *audio.PCMStream) error {
+	if s.fail {
+		return &ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: ProviderErrorWorker, Err: errors.New("worker died")}
+	}
+	if err := stream.SetSampleRate(qwen3TTSSampleRate); err != nil {
+		return err
+	}
+	s.wrote++
+	return stream.Write([]float32{0.1, 0.2})
+}
+
+func (*stubSpeechSession) Close() {}
+
+// The replacement worker answers the capability question for itself. Leaving
+// the stream describing the session that just died is wrong in the direction
+// that matters: marked incremental while a blob arrives, which would start
+// playback on a partial buffer that is filled in one burst.
+func TestReconnectRedeclaresIncrementalForTheReplacementSession(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		replacementLocal bool
+		want             bool
+	}{
+		{name: "replacement cannot stream", replacementLocal: false, want: false},
+		{name: "replacement can stream", replacementLocal: true, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := newQwen3TTS("", "", time.Minute, nil)
+			q.native = true
+			q.streamMode = config.QwenStreamOn
+			q.alive.Store(true)
+
+			// The dead session streamed; the replacement may not.
+			dead := &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}, fail: true}
+			dead.capable = true
+			dead.applyStreamPolicy(true)
+
+			live := &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}}
+			live.capable = tc.replacementLocal
+
+			handed := []qwenSpeechSession{dead, live}
+			q.startSpeech = func(context.Context) (qwenSpeechSession, error) {
+				next := handed[0]
+				handed = handed[1:]
+				return next, nil
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			stream := audio.NewPCMStream(ctx)
+			go func() {
+				for range stream.Frames() {
+				}
+			}()
+			if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err != nil {
+				t.Fatalf("synthesizeNativeStream: %v", err)
+			}
+			stream.Close()
+
+			if live.wrote != 1 {
+				t.Fatalf("the replacement session synthesized %d times, want 1", live.wrote)
+			}
+			if got := stream.Incremental(); got != tc.want {
+				t.Fatalf("stream.Incremental() = %v after reconnect, want %v: the flag still describes the dead session", got, tc.want)
+			}
+		})
+	}
+}
+
+// Nothing is retried once the listener has heard part of the sentence: a
+// second pass would append a duplicate to the same stream.
+func TestNoReconnectAfterSamplesHavePlayed(t *testing.T) {
+	q := newQwen3TTS("", "", time.Minute, nil)
+	q.native = true
+	q.alive.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream := audio.NewPCMStream(ctx)
+	go func() {
+		for range stream.Frames() {
+		}
+	}()
+
+	starts := 0
+	q.startSpeech = func(context.Context) (qwenSpeechSession, error) {
+		starts++
+		session := &partialThenFailSession{speechSession: &speechSession{label: nativeWorkerLabel}}
+		return session, nil
+	}
+
+	err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream)
+	if err == nil {
+		t.Fatal("a worker that died after playing audio was silently retried")
+	}
+	if !strings.Contains(err.Error(), "already playing") {
+		t.Fatalf("error = %v, want it to name the audio already played", err)
+	}
+	if starts != 1 {
+		t.Fatalf("started %d sessions, want 1: the sentence would have been spoken twice", starts)
+	}
+	stream.Close()
+}
+
+// partialThenFailSession writes part of an utterance and then dies, which is
+// the shape a mid-stream worker death takes.
+type partialThenFailSession struct{ *speechSession }
+
+func (s *partialThenFailSession) SynthesizeToStream(_ context.Context, _ SynthesisRequest, stream *audio.PCMStream) error {
+	if err := stream.SetSampleRate(qwen3TTSSampleRate); err != nil {
+		return err
+	}
+	if err := stream.Write([]float32{0.1, 0.2}); err != nil {
+		return err
+	}
+	return &ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: ProviderErrorWorker, Err: errors.New("worker died mid-utterance")}
+}
+
+func (*partialThenFailSession) Close() {}

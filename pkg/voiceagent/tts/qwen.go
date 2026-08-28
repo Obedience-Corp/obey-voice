@@ -365,7 +365,7 @@ func (q *Qwen3TTS) applyStreamPolicy(session qwenSpeechSession) {
 		return
 	}
 	applier.applyStreamPolicy(config.QwenStreamEligible(
-		q.streamMode, q.SpeechPlace(), q.backendHint, applier.StreamingCapable(),
+		q.streamMode, q.remote, q.backendHint, applier.StreamingCapable(),
 	))
 }
 
@@ -760,16 +760,26 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req SynthesisRequ
 	if ctx.Err() != nil || !managedWorkerRestartable(err) {
 		return err
 	}
-	// Retrying is only free while nothing has been heard. A streamed segment
-	// that dies mid-utterance has already put part of the sentence in front of
-	// the listener, and synthesizing it again from the top would repeat those
-	// words. Surface the failure and let the turn's fallback speak instead.
+	// Retrying is only free while nothing has been heard. Once samples have
+	// been handed to the player, part of the sentence is already in front of
+	// the listener, and synthesizing it again from the top would append a
+	// second copy to the same stream — the sentence spoken twice, concatenated.
+	// So the segment ends here: the listener hears a truncated sentence, the
+	// pipeline surfaces the error, and nothing is repeated. The turn's Kokoro
+	// fallback does not cover this — playFallback only runs for a failure
+	// raised before the player owns the stream — which is the right trade,
+	// because the alternative is saying half a sentence twice.
 	if stream.Written() > 0 {
 		return fmt.Errorf("%s failed after %d samples were already playing: %w", q.speechLabel(), stream.Written(), err)
 	}
 	if restartErr := q.ensureSpeechSessionLocked(ctx); restartErr != nil {
 		return fmt.Errorf("%s failed (%v); reconnect failed: %w", q.speechLabel(), err, restartErr)
 	}
+	// The replacement worker answers the capability question for itself, so the
+	// stream has to be re-declared against it rather than left describing the
+	// session that just died. Nothing has been written yet (guarded above), so
+	// the player has not read the flag and a change here is still in time.
+	stream.SetIncremental(streamRequestedOn(q.speech))
 	if retryErr := q.speech.SynthesizeToStream(ctx, req, stream); retryErr != nil {
 		q.discardSpeechSessionLocked()
 		return fmt.Errorf("%s failed after one reconnect: %w", q.speechLabel(), retryErr)

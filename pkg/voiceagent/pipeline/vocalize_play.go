@@ -33,6 +33,14 @@ func collectPCM(ctx context.Context, stream *audio.PCMStream) ([]float32, int, e
 	return samples, rate, nil
 }
 
+// pcmStreamFromSamples publishes an already-complete buffer as a stream.
+//
+// It deliberately does NOT derive from whatever stream those samples came out
+// of, even though it looks like a re-frame. The samples are in memory before
+// this is called, so the result is whole-utterance by construction: carrying an
+// incremental flag would tell the player to start on a partial buffer that was
+// filled in one burst, and carrying a stall budget would arm a silence timer
+// against a producer that cannot be silent.
 func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *audio.PCMStream {
 	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(rate); err != nil {

@@ -28,10 +28,27 @@ const (
 	// It is a fixed head start, not one scaled to the reply's length, because
 	// this path is only taken where synthesis is measured to run *faster* than
 	// realtime: the buffer grows from here rather than shrinking, so the only
-	// thing to survive is scheduler jitter, and 150 ms is seven device periods
-	// of it. A producer slower than realtime needs a pre-buffer proportional to
-	// the whole utterance (audio_len × (RTF − 1)) — that engine must not take
-	// this path at all, which is the streaming-eligibility policy's job.
+	// thing that has to be survived is a late delivery, not a rate deficit. A
+	// producer slower than realtime needs a pre-buffer proportional to the
+	// whole utterance (audio_len × (RTF − 1)) — that engine must not take this
+	// path at all, which is the streaming-eligibility policy's job.
+	//
+	// Why 150 ms. The device's own ring is playbackPeriods × playbackPeriodFrames,
+	// which is ~32 ms at 48 kHz and ~64 ms at 24 kHz — so this is roughly two
+	// to five ring-fulls of slack behind whatever miniaudio has already queued.
+	// (Counting it in periods is rate-dependent and therefore the wrong unit:
+	// 150 ms is 7 periods at 24 kHz and 14 at 48 kHz. Time is the invariant.)
+	// Against it: the measured CUDA producer delivers 1 s of audio every 0.55 s,
+	// so the gap it has to cover is a scheduling hiccup, not a shortfall. In
+	// favour of more: it is also the whole budget for a LAN round trip, and the
+	// Topology B path fights network jitter rather than scheduler jitter — an
+	// arriving chunk that is 200 ms late is unremarkable on wifi and would run
+	// this dry.
+	//
+	// It stays a constant until that is measured rather than guessed. The
+	// hardware pass reports per-segment Underruns, which is exactly the signal
+	// that would justify raising it, and qwen_tts_stream is where a knob would
+	// hang if it does.
 	incrementalPreRoll = 150 * time.Millisecond
 )
 

@@ -54,8 +54,16 @@ func ValidateQwenTTSStream(cfg *Config) error {
 }
 
 // QwenStreamEligible reports whether this host should ask the worker for Stage
-// B chunks, given the resolved mode, where speech runs, and what the installed
-// package says it was built against.
+// B chunks, given the resolved mode, whether speech runs on another computer,
+// and what the installed package says it was built against.
+//
+// remote is a bool rather than a place string on purpose. The obvious signature
+// took a place and compared it to TTSPlaceLAN, while every production caller
+// passed tts.PlaceLAN — a different constant that provider.go documents as
+// deliberately *repeated* so the metrics path need not import config. They were
+// equal only because both spell "lan", so renaming either one would have turned
+// LAN streaming off silently, and silent is the one failure mode this function
+// cannot afford. A bool cannot drift.
 //
 // capable is the worker's own ready.streaming_capable: a worker whose engine
 // pin has no PCM callback cannot stream no matter what the config asks for, and
@@ -63,9 +71,9 @@ func ValidateQwenTTSStream(cfg *Config) error {
 //
 // auto is deliberately asymmetric between the two places:
 //
-//   - lan is the Topology B offload target, which exists because the GPU is on
-//     another computer. That is the configuration Stage B was measured on and
-//     passed (CUDA: TTFA p50 435 ms, RTF max 0.571, zero underruns).
+//   - remote is the Topology B offload target, which exists because the GPU is
+//     on another computer. That is the configuration Stage B was measured on
+//     and passed (CUDA: TTFA p50 435 ms, RTF max 0.571, zero underruns).
 //   - local streams only when the installed package reports backend_hint=cuda.
 //     A Metal package is the measured failure — playing its chunks as they
 //     arrive underruns mid-word, and the pre-buffer that would prevent it is
@@ -73,7 +81,7 @@ func ValidateQwenTTSStream(cfg *Config) error {
 //     package, or an external worker with no manifest to ask, is unmeasured and
 //     therefore treated as ineligible: this fails closed toward the path that
 //     has never produced a dropout.
-func QwenStreamEligible(mode, place, backendHint string, capable bool) bool {
+func QwenStreamEligible(mode string, remote bool, backendHint string, capable bool) bool {
 	if !capable {
 		return false
 	}
@@ -83,7 +91,7 @@ func QwenStreamEligible(mode, place, backendHint string, capable bool) bool {
 	case QwenStreamOn:
 		return true
 	}
-	if place == TTSPlaceLAN {
+	if remote {
 		return true
 	}
 	return strings.EqualFold(strings.TrimSpace(backendHint), QwenBackendCUDA)

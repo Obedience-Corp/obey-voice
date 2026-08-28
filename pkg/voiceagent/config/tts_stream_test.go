@@ -1,8 +1,12 @@
 package config
 
 import (
+	"context"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
 func TestQwenTTSStreamOfNormalizes(t *testing.T) {
@@ -48,56 +52,56 @@ func TestQwenStreamEligible(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		mode    string
-		place   string
+		remote  bool
 		backend string
 		capable bool
 		want    bool
 	}{
 		{
 			name: "auto lan is the measured CUDA offload target",
-			mode: QwenStreamAuto, place: TTSPlaceLAN, capable: true, want: true,
+			mode: QwenStreamAuto, remote: true, capable: true, want: true,
 		},
 		{
 			name: "auto local cuda passed the gate with 2x headroom",
-			mode: QwenStreamAuto, place: TTSPlaceLocal, backend: "cuda", capable: true, want: true,
+			mode: QwenStreamAuto, backend: "cuda", capable: true, want: true,
 		},
 		{
 			name: "auto local cuda hint is case insensitive",
-			mode: QwenStreamAuto, place: TTSPlaceLocal, backend: "CUDA", capable: true, want: true,
+			mode: QwenStreamAuto, backend: "CUDA", capable: true, want: true,
 		},
 		{
 			name: "auto local metal is the measured failure",
-			mode: QwenStreamAuto, place: TTSPlaceLocal, backend: "metal", capable: true, want: false,
+			mode: QwenStreamAuto, backend: "metal", capable: true, want: false,
 		},
 		{
 			name: "auto local cpu is unmeasured and fails closed",
-			mode: QwenStreamAuto, place: TTSPlaceLocal, backend: "cpu", capable: true, want: false,
+			mode: QwenStreamAuto, backend: "cpu", capable: true, want: false,
 		},
 		{
 			name: "auto local with no manifest to ask fails closed",
-			mode: QwenStreamAuto, place: TTSPlaceLocal, backend: "", capable: true, want: false,
+			mode: QwenStreamAuto, backend: "", capable: true, want: false,
 		},
 		{
 			name: "on overrides a failing backend for an operator who asked",
-			mode: QwenStreamOn, place: TTSPlaceLocal, backend: "metal", capable: true, want: true,
+			mode: QwenStreamOn, backend: "metal", capable: true, want: true,
 		},
 		{
 			name: "off overrides the passing one",
-			mode: QwenStreamOff, place: TTSPlaceLAN, capable: true, want: false,
+			mode: QwenStreamOff, remote: true, capable: true, want: false,
 		},
 		{
 			name: "an incapable worker cannot stream however it is configured",
-			mode: QwenStreamOn, place: TTSPlaceLAN, backend: "cuda", capable: false, want: false,
+			mode: QwenStreamOn, remote: true, backend: "cuda", capable: false, want: false,
 		},
 		{
 			name: "an incapable local worker either",
-			mode: QwenStreamAuto, place: TTSPlaceLocal, backend: "cuda", capable: false, want: false,
+			mode: QwenStreamAuto, backend: "cuda", capable: false, want: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := QwenStreamEligible(tc.mode, tc.place, tc.backend, tc.capable); got != tc.want {
-				t.Fatalf("QwenStreamEligible(%q, %q, %q, %v) = %v, want %v",
-					tc.mode, tc.place, tc.backend, tc.capable, got, tc.want)
+			if got := QwenStreamEligible(tc.mode, tc.remote, tc.backend, tc.capable); got != tc.want {
+				t.Fatalf("QwenStreamEligible(%q, remote=%v, %q, %v) = %v, want %v",
+					tc.mode, tc.remote, tc.backend, tc.capable, got, tc.want)
 			}
 		})
 	}
@@ -192,5 +196,75 @@ func TestDiagnoseQwenStreaming(t *testing.T) {
 				t.Fatalf("detail = %q, want it to contain %q", diags[0].Detail, tc.wantDetail)
 			}
 		})
+	}
+}
+
+// The eligibility seam takes a bool, not a place string. This is the test that
+// would have caught the original cross-package coincidence: the production
+// caller's notion of "remote" is tts.PlaceLAN, a constant provider.go keeps
+// deliberately separate from config's, and comparing the two strings was only
+// correct until someone renamed one. A bool argument cannot be renamed apart.
+func TestQwenStreamEligibleTakesRemoteNotAPlaceString(t *testing.T) {
+	fn := reflect.TypeOf(QwenStreamEligible)
+	if got := fn.In(1).Kind(); got != reflect.Bool {
+		t.Fatalf("QwenStreamEligible's second parameter is %v; a place string here can be silently "+
+			"renamed out of agreement with the caller's own constant", got)
+	}
+	// And it must actually branch on it.
+	if !QwenStreamEligible(QwenStreamAuto, true, "", true) {
+		t.Error("remote=true did not stream under auto")
+	}
+	if QwenStreamEligible(QwenStreamAuto, false, "", true) {
+		t.Error("remote=false streamed under auto with no CUDA package")
+	}
+}
+
+// An install that predates backend_hint must not read as a missing install:
+// the two need different fixes, and the wrong one sends the operator to
+// reinstall something that is already there.
+func TestDiagnoseQwenStreamingSeparatesAStaleManifestFromNoInstall(t *testing.T) {
+	diags := DiagnoseQwenStreaming(&Config{TTSProvider: "qwen3-tts"}, t.TempDir())
+	if len(diags) != 1 {
+		t.Fatalf("got %d rows", len(diags))
+	}
+	if !strings.Contains(diags[0].Detail, "no installed package") {
+		t.Fatalf("detail = %q, want it to name the missing install", diags[0].Detail)
+	}
+}
+
+// The real thing writeFakeQwenNativeTar produces has no backend_hint — it is
+// the shape every package installed before this field existed still has on
+// disk. That must read as "stale manifest", not as "nothing installed".
+func TestDiagnoseQwenStreamingNamesAStaleManifest(t *testing.T) {
+	modelsDir := t.TempDir()
+	cfg := &Config{
+		TTSProvider:      "qwen3-tts",
+		ModelsDir:        modelsDir,
+		QwenTTSModelTier: "0.6b",
+		QwenTTSNativeURL: writeFakeQwenNativeTar(t, t.TempDir(), "0.6b"),
+	}
+	if err := EnsureQwenTTSTier(context.Background(), cfg, "0.6b", nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if st := qwen.InspectNative(modelsDir, "0.6b"); !st.Installed || st.BackendHint != "" {
+		t.Fatalf("fixture is not the pre-backend_hint shape: installed=%v hint=%q", st.Installed, st.BackendHint)
+	}
+
+	diags := DiagnoseQwenStreaming(cfg, modelsDir)
+	if len(diags) != 1 {
+		t.Fatalf("got %d rows", len(diags))
+	}
+	if !strings.Contains(diags[0].Detail, "predates the backend field") {
+		t.Errorf("detail = %q, want it to name the stale manifest", diags[0].Detail)
+	}
+	if strings.Contains(diags[0].Detail, "no installed package") {
+		t.Error("an installed package was reported as missing")
+	}
+	if !strings.Contains(diags[0].Remediation, "models ensure") {
+		t.Errorf("remediation = %q, want it to point at a reinstall", diags[0].Remediation)
+	}
+	// Whole sentences either way: an unknown backend is not an eligible one.
+	if !strings.Contains(diags[0].Detail, "whole sentences") {
+		t.Errorf("detail = %q, want streaming off for an unknown backend", diags[0].Detail)
 	}
 }
