@@ -170,7 +170,7 @@ func diarizeMeetingAudio(ctx context.Context, cfg *config.Config, job remote.Job
 		return meeting.AnalysisResult{}, err
 	}
 	seedEnrolledProfiles(cfg, engine, nil)
-	analyzer, err := speaker.NewAnalyzer(sp, engine)
+	analyzer, err := meetingAnalyzer(ctx, cfg, sp, engine)
 	if err != nil {
 		_ = engine.Close()
 		return meeting.AnalysisResult{}, err

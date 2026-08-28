@@ -256,6 +256,11 @@ func meetingKeys() []KeySpec {
 			Group: GroupMeetings, Title: "Label while recording",
 			Help: "Shows provisional speaker labels during the meeting; the final pass still corrects them.",
 		},
+		{
+			Key: "speaker.meeting.diarizer", Type: TypeEnum, Default: DefaultMeetingDiarizer, Enum: MeetingDiarizers(),
+			Group: GroupMeetings, Title: "Diarization engine",
+			Help: "Which model splits a finished recording by speaker. Sortformer is optional, needs the transcribe.cpp CLI plus its weights, and ignores the expected-speaker count.",
+		},
 	}
 }
 

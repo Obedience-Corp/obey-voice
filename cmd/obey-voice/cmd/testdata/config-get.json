@@ -246,6 +246,10 @@
       "value": 1500,
       "source": "file"
     },
+    "speaker.meeting.diarizer": {
+      "value": "sherpa",
+      "source": "default"
+    },
     "speaker.meeting.enabled": {
       "value": true,
       "source": "default"

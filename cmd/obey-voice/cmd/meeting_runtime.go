@@ -406,7 +406,9 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 		return nil, err
 	}
 	seedEnrolledProfiles(cfg, engine, nil)
-	analyzer, err := speaker.NewAnalyzer(sp, engine)
+	// The engine stays whatever speaker.meeting.diarizer says: it still owns
+	// live labels, embeddings and enrollment even when review runs elsewhere.
+	analyzer, err := meetingAnalyzer(ctx, cfg, sp, engine)
 	if err != nil {
 		_ = engine.Close()
 		return nil, err

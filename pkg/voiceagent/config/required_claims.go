@@ -114,6 +114,12 @@ func speakerConfigClaims(cfg *Config, modelsDir string) []assetClaim {
 	for _, asset := range []Asset{SpeakerEmbeddingAsset(), SpeakerSegmentationAsset()} {
 		claims = append(claims, assetClaimFor(asset, modelsDir, "speaker.enabled"))
 	}
+	// The Sortformer GGUF is claimed by the key that names it, whether or not
+	// the meeting sub-toggle happens to be on right now: flipping
+	// speaker.meeting.enabled must not make 139 MB of weights "unused".
+	if diarizer, err := MeetingDiarizerFrom(cfg); err == nil && diarizer == DiarizerSortformer {
+		claims = append(claims, assetClaimFor(SortformerManifestAsset(), modelsDir, "speaker.meeting.diarizer sortformer"))
+	}
 	return claims
 }
 

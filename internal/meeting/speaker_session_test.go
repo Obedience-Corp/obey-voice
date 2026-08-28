@@ -41,6 +41,12 @@ func (f *fakeCaptureSubscriber) publish(samples []float32) {
 	f.chunks <- samples
 }
 
+func (f *fakeCaptureSubscriber) released() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closed
+}
+
 type recordingSpeakerAnalyzer struct {
 	sampleCount int
 	timeline    speaker.Timeline

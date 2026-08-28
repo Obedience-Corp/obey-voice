@@ -35,7 +35,10 @@ Example (YouTube multi-voice fixture, shared cache):
   obey-voice meeting analyze ~/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav
 
 Notes:
-  - Uses Obey Voice's managed pyannote + NeMo TitaNet speaker models.
+  - Uses whichever engine speaker.meeting.diarizer selects: the managed
+    pyannote + NeMo TitaNet models by default, or Sortformer through the
+    transcribe.cpp CLI, which resolves its own speaker count so --speakers
+    has no effect under it.
   - Speaker labels are anonymous clusters (speaker-1, speaker-2, ...).`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
@@ -78,7 +81,10 @@ Notes:
 			seedEnrolledProfiles(&cfg, engine, func(msg string) {
 				fmt.Fprintln(cmd.ErrOrStderr(), "  warning: "+msg)
 			})
-			analyzer, err := speaker.NewAnalyzer(sp, engine)
+			// Re-analysis reads the same speaker.meeting.diarizer selection the
+			// live recorder does, so a bundle analyzed later is labeled by the
+			// engine the install is configured for.
+			analyzer, err := meetingAnalyzer(cmd.Context(), &cfg, sp, engine)
 			if err != nil {
 				_ = engine.Close()
 				return err

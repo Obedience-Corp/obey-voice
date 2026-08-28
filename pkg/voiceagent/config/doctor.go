@@ -311,10 +311,16 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		diags = append(diags, diagnoseTranscribeCPP(cfg, modelsDir, lookPath))
 	}
 
-	// Skip STT asset resolution when the STT config already failed above, so
-	// the model-assets check stays about model names rather than repeating it.
+	// The optional Sortformer meeting-review diarizer shares that CLI.
+	_, diarErr := MeetingDiarizerFrom(cfg)
+	diags = append(diags, diagnoseMeetingDiarizer(cfg, modelsDir, lookPath)...)
+
+	// Skip STT and speaker asset resolution when their config already failed
+	// above, so the model-assets check stays about model names rather than
+	// repeating what a dedicated row just said.
 	req := DefaultAssetRequest(cfg)
 	req.NeedSTT = req.NeedSTT && sttErr == nil
+	req.NeedSpeaker = req.NeedSpeaker && diarErr == nil
 	if m, err := ManifestFor(cfg, req); err != nil {
 		diags = append(diags, Diagnostic{
 			Name:        "model-assets",
@@ -375,65 +381,6 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	}
 
 	return diags
-}
-
-// diagnoseTranscribeCPP reports on the two things the optional transcribecpp
-// provider needs before a turn can start: the external CLI and the managed
-// GGUF. Both are construction-time failures in the factory, so a missing one is
-// an error here rather than the warning a merely-undownloaded asset gets.
-func diagnoseTranscribeCPP(cfg *Config, modelsDir string, lookPath func(string) (string, error)) Diagnostic {
-	bin := strings.TrimSpace(cfg.TranscribeCPPBinary)
-	binPath, err := lookPath(bin)
-	if err != nil {
-		return Diagnostic{
-			Name:        "transcribecpp-binary",
-			Severity:    SeverityError,
-			Detail:      fmt.Sprintf("transcribe.cpp binary %q not found in PATH", bin),
-			Remediation: "install the transcribe.cpp release CLI and put it on PATH, or set transcribecpp_binary",
-		}
-	}
-
-	asset, err := TranscribeCPPModel(cfg.TranscribeCPPModel)
-	if err != nil {
-		return Diagnostic{
-			Name:        "transcribecpp-binary",
-			Severity:    SeverityError,
-			Detail:      err.Error(),
-			Remediation: "set transcribecpp_model to " + strings.Join(TranscribeCPPModelNames(), " or "),
-		}
-	}
-	modelPath := asset.ModelPath(modelsDir)
-	if _, err := os.Stat(modelPath); err != nil {
-		return Diagnostic{
-			Name:        "transcribecpp-binary",
-			Severity:    SeverityError,
-			Detail:      fmt.Sprintf("%s found, but the GGUF is missing at %s", bin, modelPath),
-			Remediation: "run 'obey-voice models ensure' to download the transcribe.cpp weights",
-		}
-	}
-
-	// Mirror the provider's fail-closed backend check, so doctor reports the
-	// same refusal the factory would raise instead of a clean bill of health.
-	lanes, err := TranscribeCPPLanes(context.Background(), binPath)
-	if err != nil {
-		return Diagnostic{
-			Name:        "transcribecpp-binary",
-			Severity:    SeverityError,
-			Detail:      err.Error(),
-			Remediation: "check that " + binPath + " runs and supports --list-devices (transcribe.cpp v0.2.2 or newer)",
-		}
-	}
-	gpu := GPULanes(lanes)
-	detail := fmt.Sprintf("%s + %s (backends: %s)", bin, modelPath, strings.Join(LaneKinds(lanes), ", "))
-	if len(gpu) == 0 {
-		return Diagnostic{
-			Name:        "transcribecpp-binary",
-			Severity:    SeverityError,
-			Detail:      detail + " — no GPU lane; transcribe.cpp on CPU is slower than the default sherpa-parakeet",
-			Remediation: "use a machine with a Metal or CUDA lane, or set stt_provider back to sherpa-parakeet",
-		}
-	}
-	return Diagnostic{Name: "transcribecpp-binary", Severity: SeverityOK, Detail: detail}
 }
 
 func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) Diagnostic {

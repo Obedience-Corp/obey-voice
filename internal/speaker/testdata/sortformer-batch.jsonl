@@ -1,0 +1,2 @@
+{"type":"batch_header","load_ms":88.9}
+{"file":"/tmp/meeting.wav","text":"","speakers":[{"t0_ms":0,"t1_ms":560,"speaker_id":1},{"t0_ms":880,"t1_ms":1520,"speaker_id":1},{"t0_ms":2800,"t1_ms":5120,"speaker_id":1},{"t0_ms":66880,"t1_ms":71520,"speaker_id":1},{"t0_ms":76800,"t1_ms":77360,"speaker_id":1},{"t0_ms":85360,"t1_ms":87600,"speaker_id":1},{"t0_ms":88240,"t1_ms":89360,"speaker_id":1},{"t0_ms":72320,"t1_ms":75920,"speaker_id":2}],"mel_ms":0.0,"encode_ms":287.5,"decode_ms":0.0}

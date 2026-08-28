@@ -2,8 +2,10 @@ package speaker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // minLiveWindowMS is the effective window floor, derived from
@@ -48,6 +50,10 @@ type MeetingConfig struct {
 	// Live enables provisional speaker-N labels on the meeting transcript
 	// while recording (embedding path; same engine family as chat L1).
 	Live bool `mapstructure:"live" json:"live"`
+	// Diarizer selects the engine behind the offline review pass
+	// (config.MeetingDiarizers). Empty is the default sherpa path; live labels
+	// are unaffected by it.
+	Diarizer string `mapstructure:"diarizer" json:"diarizer"`
 }
 
 // ModelsConfig holds paths under models_dir (or absolute).
@@ -85,17 +91,32 @@ func (c Config) Normalize() Config {
 	default:
 		c.Live.Mode = LiveModeIndicator
 	}
+	// An unknown diarizer is deliberately left alone here so Validate can
+	// refuse it: unlike live.mode, silently reverting to the default would
+	// change which model labels a meeting without saying so.
+	if strings.TrimSpace(c.Meeting.Diarizer) == "" {
+		c.Meeting.Diarizer = config.DefaultMeetingDiarizer
+	}
 	return c
 }
 
 // Validate reports config errors that should fail analyzer construction.
-// Unknown live modes are normalized away; this is for future hard failures.
+// Unknown live modes are normalized away; an unknown meeting diarizer is not.
 func (c Config) Validate() error {
 	c = c.Normalize()
 	if c.Live.Mode != LiveModeIndicator && c.Live.Mode != LiveModeOwnerVerify {
 		return fmt.Errorf("speaker: invalid live.mode %q", c.Live.Mode)
 	}
+	if _, err := config.NormalizeMeetingDiarizer(c.Meeting.Diarizer); err != nil {
+		return fmt.Errorf("speaker: %w", err)
+	}
 	return nil
+}
+
+// MeetingDiarizer is the resolved review engine. Callers that already ran
+// Validate can ignore the error.
+func (c Config) MeetingDiarizer() (string, error) {
+	return config.NormalizeMeetingDiarizer(c.Normalize().Meeting.Diarizer)
 }
 
 // AnyActive is true when master is on and at least one sub-path is enabled
