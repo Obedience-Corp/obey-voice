@@ -462,6 +462,9 @@ func (m *personasModel) setStackRow(row int) {
 	if row == stackRowBrainModel && m.brainModels.custom {
 		m.brainModelInput.Focus()
 	}
+	// Row help is scoped to the active row: leaving the row that owns the
+	// typing keys puts the step help back.
+	m.message = m.stackStepMessage()
 }
 
 func (m personasModel) focusStackStep() (personasModel, tea.Cmd) {
@@ -469,7 +472,7 @@ func (m personasModel) focusStackStep() (personasModel, tea.Cmd) {
 	m.nameInput.Blur()
 	m.promptTA.Blur()
 	m.setStackRow(stackRowBrainProvider)
-	m.message = "Model & voice · ←/→ pick provider, model or voice · ↑/↓ rows · (default) inherits Settings"
+	m.message = m.stackStepMessage()
 	return m, nil
 }
 
@@ -492,9 +495,9 @@ func (m *personasModel) formTTS() persona.TTS {
 
 // prefillStack seeds the stack step from a profile (nil = defaults).
 func (m *personasModel) prefillStack(p *persona.Profile) {
-	// The Model row always opens on the picker; "(custom)" is chosen, never
-	// inherited from the last form.
-	m.brainModels.custom = false
+	// The Model row always opens on the picker; "(custom)" and anything typed
+	// under it are chosen per form, never inherited from the last one.
+	m.brainModels.clearCustom()
 	if p == nil {
 		m.brainProviderIdx = 0
 		m.ttsProviderIdx = 0

@@ -6,10 +6,16 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	ansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+// stackStepHelp is the Model & voice step's help line. Row-specific help
+// replaces it only while that row owns the typing keys, and every row move
+// puts it back (see stackStepMessage).
+const stackStepHelp = "Model & voice · ←/→ pick provider, model or voice · ↑/↓ rows · (default) inherits Settings"
 
 // stackCustomLabel is the escape hatch on the Model row: it reveals the free
 // text field so a model the scan did not list (a tag not pulled yet, a remote
@@ -36,6 +42,10 @@ type personaModelPicker struct {
 	loaded  bool
 	err     string
 	custom  bool
+	// customText remembers what was typed under "(custom)" so cycling off the
+	// entry and back inside one form-open does not destroy it. Cleared when the
+	// form closes, never mid-form.
+	customText string
 	// byProvider is lower-cased provider name → selectable models.
 	byProvider map[string][]string
 	cancel     context.CancelFunc
@@ -95,8 +105,15 @@ func (m *personasModel) resetBrainModels() {
 	m.brainModels.loading = false
 	m.brainModels.loaded = false
 	m.brainModels.err = ""
-	m.brainModels.custom = false
 	m.brainModels.byProvider = nil
+	m.brainModels.clearCustom()
+}
+
+// clearCustom drops the "(custom)" mode and the text typed under it. Only a
+// closing (or reopening) form may do this — cycling must not.
+func (p *personaModelPicker) clearCustom() {
+	p.custom = false
+	p.customText = ""
 }
 
 // applyBrainModels folds a scan result into the row, dropping stale results.
@@ -216,24 +233,43 @@ func (m personasModel) stackModelIndex() int {
 
 // cycleStackModel moves ←/→ through the model catalog for the current brain
 // provider. Landing on (custom) focuses the free text field; leaving it blurs.
+// Both directions out of (custom) are non-destructive: the typed text is kept
+// and restored on the way back, so wrapping past "(default)" costs nothing.
 func (m *personasModel) cycleStackModel(delta int) {
 	list := m.stackModelList()
 	idx := (m.stackModelIndex() + delta + len(list)) % len(list)
+	custom := idx == len(list)-1
+	if m.brainModels.custom && !custom {
+		m.brainModels.customText = m.stackModelValue()
+	}
 	switch {
+	case custom:
+		m.brainModels.custom = true
+		if text := m.brainModels.customText; text != "" {
+			m.brainModelInput.SetValue(text)
+		}
+		m.brainModelInput.Focus()
+		m.brainModelInput.CursorEnd()
 	case idx == 0:
 		m.brainModels.custom = false
 		m.brainModelInput.SetValue("")
 		m.brainModelInput.Blur()
-	case idx == len(list)-1:
-		m.brainModels.custom = true
-		m.brainModelInput.Focus()
-		m.brainModelInput.CursorEnd()
-		m.message = "Type a model name · ←/→ leaves custom · ctrl+b/ctrl+f move the cursor"
 	default:
 		m.brainModels.custom = false
 		m.brainModelInput.SetValue(list[idx])
 		m.brainModelInput.Blur()
 	}
+	m.message = m.stackStepMessage()
+}
+
+// stackStepMessage is the help line for the Model & voice step. Row help is
+// scoped to the active row: only the Model row under "(custom)" takes typing,
+// so only it replaces the step help — and moving away restores it.
+func (m personasModel) stackStepMessage() string {
+	if m.stackRow == stackRowBrainModel && m.brainModels.custom {
+		return "Type a model name · ←/→ leaves custom · ctrl+b/ctrl+f move the cursor"
+	}
+	return stackStepHelp
 }
 
 // canonicalizeBrainModel rewrites the current value to the catalog spelling so
@@ -318,13 +354,59 @@ func (m personasModel) stackModelNote() string {
 
 // stackModelRowValue renders the Model row: the picker chip, the free text
 // field when (custom) owns the row, and the scan note.
+//
+// Everything is sized to the row's share of the box interior. Without that the
+// row overflowed and formBox truncated the tail: a long ollama name lost its
+// closing chevron, and the note vanished entirely behind the text field, which
+// pads itself out to its full Width.
 func (m personasModel) stackModelRowValue() string {
-	value := "‹ " + m.stackModelLabel() + " ›"
-	if m.brainModels.custom {
-		value += " " + m.brainModelInput.View()
+	// formBox renders body lines at formBoxWidth()-4; stackLines spends 8 more
+	// columns on the row mark and the "Model " label. Everything below is laid
+	// out left to right against what is left of that.
+	remaining := max(m.formBoxWidth()-12, 12)
+	note := m.stackModelNote()
+
+	// The chip is the row's primary content, but it yields half the row when
+	// the text field or a note has to share. Truncating the label rather than
+	// the chip is what keeps "›" on the end of a long ollama name.
+	chipRoom := remaining
+	if m.brainModels.custom || note != "" {
+		chipRoom = max(remaining/2, 12)
 	}
-	if note := m.stackModelNote(); note != "" {
-		value += dimStyle.Render("  " + note)
+	value := "‹ " + ansi.Truncate(m.stackModelLabel(), max(chipRoom-4, 4), "…") + " ›"
+	remaining -= ansi.StringWidth(value)
+
+	if m.brainModels.custom && remaining >= 10 {
+		// Render through a copy: sized for the space this row actually has,
+		// without disturbing the model's own input width.
+		field := m.brainModelInput
+		width := remaining - 1
+		if note != "" {
+			// Keep a slice of the row for the note instead of letting the
+			// field's own padding push it out of sight. A scan note also
+			// outranks the placeholder: an empty field keeps just its cursor
+			// so the diagnostic gets the room.
+			if field.Value() == "" {
+				field.Placeholder = ""
+			}
+			width = max(min(width, 24), 8)
+		}
+		field.Width = width
+		rendered := ansi.Truncate(trimTrailingSpaces(field.View()), width, "…")
+		value += " " + rendered
+		remaining -= ansi.StringWidth(rendered) + 1
+	}
+
+	if note != "" && remaining >= 6 {
+		value += dimStyle.Render("  " + ansi.Truncate(note, remaining-2, "…"))
 	}
 	return value
+}
+
+// trimTrailingSpaces drops the blank padding a text input emits to fill its
+// width, so whatever follows it on the row sits next to the text instead of
+// being pushed off the end. Padding carrying a style is left alone — the row
+// budget already reserves room for the note in that case.
+func trimTrailingSpaces(s string) string {
+	return strings.TrimRight(s, " ")
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	ansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
@@ -454,5 +455,238 @@ func TestPersonaBrainModelScanRace(t *testing.T) {
 	}
 	if !m.brainModels.loaded {
 		t.Fatal("scan results never landed")
+	}
+}
+
+// modelRowLine returns the rendered Model row as the user sees it (box
+// truncation included), so layout assertions test the real output.
+func modelRowLine(t *testing.T, m personasModel) string {
+	t.Helper()
+	view := stripANSI(m.View())
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "Model ‹") {
+			return line
+		}
+	}
+	t.Fatalf("no Model row in view:\n%s", view)
+	return ""
+}
+
+// openPickerForm opens the edit form with a scan already folded in.
+func openPickerForm(t *testing.T, cfg *config.Config, p *persona.Profile, scan map[string][]string) personasModel {
+	t.Helper()
+	m := newPickerPersonas(t, cfg, p)
+	m.brainModels.discover = func(context.Context, *config.Config) []discovery.ProviderInfo {
+		return fakeScan(scan)
+	}
+	m.cursor = 0
+	m.beginEdit()
+	m.applyBrainModels(personaModelsMsg{seq: m.brainModels.seq, providers: fakeScan(scan)})
+	m, _ = m.focusStackStep()
+	m.setStackRow(stackRowBrainModel)
+	return m
+}
+
+func TestPersonaBrainModelCustomTextIsNotDestroyedByCycling(t *testing.T) {
+	// Leaving (custom) must cost nothing in either direction: → used to wrap
+	// onto (default) and blank the field, while ← preserved it.
+	scan := map[string][]string{"ollama": {"llama3", "qwen3:8b"}}
+	cfg := &config.Config{BrainProvider: "ollama"}
+
+	typeCustom := func(t *testing.T, m personasModel) personasModel {
+		t.Helper()
+		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft}) // (default) → (custom)
+		if !m.brainModels.custom {
+			t.Fatal("← from (default) did not reach (custom)")
+		}
+		for _, r := range "my-model" {
+			m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		if got := m.formBrain().Model; got != "my-model" {
+			t.Fatalf("typed model = %q, want my-model", got)
+		}
+		return m
+	}
+
+	for _, tc := range []struct {
+		name     string
+		leave    tea.KeyType
+		wantLeft string // model value after leaving (custom)
+	}{
+		{name: "leaving forward wraps to (default)", leave: tea.KeyRight, wantLeft: ""},
+		{name: "leaving backward keeps it as an entry", leave: tea.KeyLeft, wantLeft: "my-model"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := typeCustom(t, openPickerForm(t, cfg, &persona.Profile{ID: "test", DisplayName: "Test"}, scan))
+
+			m, _ = m.updateStackStep(tea.KeyMsg{Type: tc.leave})
+			if m.brainModels.custom {
+				t.Fatal("still in custom after cycling away")
+			}
+			if got := m.formBrain().Model; got != tc.wantLeft {
+				t.Fatalf("model after leaving custom = %q, want %q", got, tc.wantLeft)
+			}
+
+			// Cycling back restores what was typed, whichever way we left.
+			back := tea.KeyLeft
+			if tc.leave == tea.KeyLeft {
+				back = tea.KeyRight
+			}
+			m, _ = m.updateStackStep(tea.KeyMsg{Type: back})
+			if !m.brainModels.custom {
+				t.Fatalf("cycling back did not return to (custom)")
+			}
+			if got := m.formBrain().Model; got != "my-model" {
+				t.Fatalf("restored custom text = %q, want my-model", got)
+			}
+		})
+	}
+
+	t.Run("closing the form clears it", func(t *testing.T) {
+		m := typeCustom(t, openPickerForm(t, cfg, &persona.Profile{ID: "test", DisplayName: "Test"}, scan))
+		m.cancelForm()
+		if m.brainModels.custom || m.brainModels.customText != "" {
+			t.Fatalf("form close left custom=%v text=%q", m.brainModels.custom, m.brainModels.customText)
+		}
+		m.cursor = 0
+		m.beginEdit()
+		m, _ = m.focusStackStep()
+		m.setStackRow(stackRowBrainModel)
+		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft})
+		if got := m.formBrain().Model; got != "" {
+			t.Fatalf("reopened form restored stale custom text %q", got)
+		}
+	})
+}
+
+func TestPersonaBrainModelRowHelpIsScopedToTheRow(t *testing.T) {
+	// The (custom) hint used to stick to the status line after moving away.
+	scan := map[string][]string{"ollama": {"llama3"}}
+	m := openPickerForm(t, &config.Config{BrainProvider: "ollama"},
+		&persona.Profile{ID: "test", DisplayName: "Test"}, scan)
+
+	if m.message != stackStepHelp {
+		t.Fatalf("step help = %q, want %q", m.message, stackStepHelp)
+	}
+	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft}) // → (custom)
+	if !strings.Contains(m.message, "Type a model name") {
+		t.Fatalf("custom row help = %q", m.message)
+	}
+
+	// Moving to another row restores the step help while custom stays selected.
+	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyDown})
+	if m.stackRow == stackRowBrainModel {
+		t.Fatal("↓ did not leave the Model row")
+	}
+	if m.message != stackStepHelp {
+		t.Fatalf("help after leaving the row = %q, want the step help", m.message)
+	}
+
+	// Coming back re-scopes it to the row that owns the typing keys.
+	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyUp})
+	if m.stackRow != stackRowBrainModel {
+		t.Fatal("↑ did not return to the Model row")
+	}
+	if !strings.Contains(m.message, "Type a model name") {
+		t.Fatalf("help back on the custom row = %q", m.message)
+	}
+
+	// Cycling off (custom) on the row drops the row help too.
+	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	if m.brainModels.custom {
+		t.Fatal("→ did not leave custom")
+	}
+	if m.message != stackStepHelp {
+		t.Fatalf("help after leaving custom = %q, want the step help", m.message)
+	}
+}
+
+func TestPersonaBrainModelRowFitsTheBox(t *testing.T) {
+	const longName = "hf.co/lordx64/Qwen3.6-35B-A3B-Kimi-K2.6-Reasoning-Distilled-GGUF:IQ4_XS"
+	tests := []struct {
+		name     string
+		width    int
+		custom   bool
+		pending  bool
+		scan     map[string][]string
+		selected string
+		wantNote string
+	}{
+		{
+			name:     "ollama down under (custom) still shows why",
+			width:    100,
+			custom:   true,
+			scan:     map[string][]string{"ollama": nil},
+			wantNote: "no ollama models discovered",
+		},
+		{
+			name:     "a pending scan is visible under (custom)",
+			width:    100,
+			custom:   true,
+			pending:  true,
+			scan:     map[string][]string{"ollama": {"llama3"}},
+			wantNote: "scanning models…",
+		},
+		{
+			name:     "a narrow box still shows the note",
+			width:    62,
+			custom:   true,
+			scan:     map[string][]string{"ollama": nil},
+			wantNote: "no ollama",
+		},
+		{
+			name:     "a long model name keeps its closing chevron",
+			width:    80,
+			scan:     map[string][]string{"ollama": {longName}},
+			selected: longName,
+		},
+		{
+			name:     "a long model name in a narrow box keeps it too",
+			width:    40,
+			scan:     map[string][]string{"ollama": {longName}},
+			selected: longName,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{BrainProvider: "ollama"}
+			m := newPickerPersonas(t, cfg, &persona.Profile{
+				ID: "test", DisplayName: "Test",
+				Brain: persona.Brain{Provider: "ollama", Model: tc.selected},
+			})
+			m.width = tc.width
+			m.brainModels.discover = func(context.Context, *config.Config) []discovery.ProviderInfo {
+				return fakeScan(tc.scan)
+			}
+			m.cursor = 0
+			m.beginEdit()
+			if !tc.pending {
+				m.applyBrainModels(personaModelsMsg{seq: m.brainModels.seq, providers: fakeScan(tc.scan)})
+			}
+			m, _ = m.focusStackStep()
+			m.setStackRow(stackRowBrainModel)
+			if tc.custom {
+				m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft})
+				if !m.brainModels.custom {
+					t.Fatal("could not reach (custom)")
+				}
+			}
+
+			line := modelRowLine(t, m)
+			// The chip always closes: the value is never cut mid-name.
+			if !strings.Contains(line, "›") {
+				t.Errorf("model row lost its closing chevron:\n%s", line)
+			}
+			if tc.wantNote != "" && !strings.Contains(line, tc.wantNote) {
+				t.Errorf("model row hid the scan note %q:\n%s", tc.wantNote, line)
+			}
+			// The row must fit its share of the box, so nothing on it is ever
+			// truncated away by formBox.
+			budget := m.formBoxWidth() - 12
+			if w := ansi.StringWidth(stripANSI(m.stackModelRowValue())); w > budget {
+				t.Errorf("model row is %d columns wide, over its %d budget:\n%s", w, budget, line)
+			}
+		})
 	}
 }
