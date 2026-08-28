@@ -78,7 +78,9 @@ func newAudiobook(cfg *config.Config) audiobookModel {
 				language = canonical
 			}
 		} else {
-			voice = cfg.TTSVoice
+			// Not cfg.TTSVoice: this composes a --voice flag, and handing
+			// audio8 a Kokoro voice id fails the render outright.
+			voice = config.TTSVoiceFor(cfg, activeTTSProvider(cfg))
 		}
 	}
 	return audiobookModel{

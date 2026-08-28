@@ -306,9 +306,14 @@ func newRenderSynth(ctx context.Context, opts *render.Options) (render.Synthesiz
 		cleanup = func() {}
 	}
 	return &ttsSynth{
-		provider:            provider,
-		id:                  synthIdentityFor(cfg),
-		voice:               cfg.TTSVoice,
+		provider: provider,
+		id:       synthIdentityFor(cfg),
+		// The voice key the selected provider actually reads. Forwarding
+		// cfg.TTSVoice unconditionally sent Kokoro's af_heart to audio8, which
+		// resolves what it is handed and refuses a voice it has never heard of
+		// - so an untouched config rendered under kokoro and hard-failed under
+		// audio8.
+		voice:               config.TTSVoiceFor(cfg, cfg.TTSProvider),
 		speed:               cfg.SpeechSpeed,
 		mode:                tts.VoiceMode(cfg.QwenTTSMode),
 		qwenVoice:           cfg.QwenTTSVoice,
@@ -355,14 +360,7 @@ func populateTTSMetadata(opts *render.Options, cfg *config.Config) {
 		return
 	}
 	opts.TTSModel = "managed"
-	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), config.Audio8ProviderName) {
-		opts.TTSVoice = strings.TrimSpace(cfg.Audio8Voice)
-		if opts.TTSVoice == "" {
-			opts.TTSVoice = config.Audio8PackagedVoice
-		}
-		return
-	}
-	opts.TTSVoice = strings.TrimSpace(cfg.TTSVoice)
+	opts.TTSVoice = config.TTSVoiceFor(cfg, cfg.TTSProvider)
 }
 
 func activeTTSProviderName(provider string) string {
@@ -420,15 +418,11 @@ func synthIdentityFor(cfg *config.Config) string {
 	// The voice belongs in the identity per provider: audio8 reads its own key,
 	// and leaving it out would give two different audio8 voices the same
 	// identity - so a --resume across a voice change would splice segments from
-	// both into one file.
-	if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), config.Audio8ProviderName) {
-		voice := strings.TrimSpace(cfg.Audio8Voice)
-		if voice == "" {
-			voice = config.Audio8PackagedVoice
-		}
+	// both into one file. An empty kokoro voice still contributes nothing,
+	// because adding its default here would invalidate every existing resume
+	// key for a config that never set tts_voice.
+	if voice := config.TTSVoiceFor(cfg, cfg.TTSProvider); voice != "" {
 		id += "/voice=" + voice
-	} else if cfg.TTSVoice != "" {
-		id += "/voice=" + cfg.TTSVoice
 	}
 	if cfg.SpeechSpeed > 0 {
 		id += "/speed=" + strconv.FormatFloat(cfg.SpeechSpeed, 'f', -1, 64)

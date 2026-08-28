@@ -394,3 +394,68 @@ func TestPopulateTTSMetadataRecordsTheAudio8Voice(t *testing.T) {
 		t.Errorf("manifest voice = %q, want the packaged reference named explicitly", opts.TTSVoice)
 	}
 }
+
+// TestNewRenderSynthVoiceForAnUntouchedAudio8Config is the reviewer's blocker:
+// newRenderSynth seeded the synthesizer's voice from cfg.TTSVoice whatever the
+// provider, so a config that only set tts_provider: audio8 carried Kokoro's
+// af_heart default into a provider that now resolves what it is handed —
+// "no such registered voice: af_heart" on the untouched-config path that main
+// rendered fine.
+//
+// The synthesizer's field is unexported and the constructor loads real config
+// and a real model, so this asserts the value that fills it.
+func TestNewRenderSynthVoiceForAnUntouchedAudio8Config(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{
+			name: "audio8 with nothing but the provider set",
+			cfg:  config.Config{TTSProvider: "audio8", TTSVoice: "af_heart"},
+			want: config.Audio8PackagedVoice,
+		},
+		{
+			name: "audio8 with a registered voice",
+			cfg:  config.Config{TTSProvider: "audio8", TTSVoice: "af_heart", Audio8Voice: "mine"},
+			want: "mine",
+		},
+		{
+			name: "kokoro is unchanged",
+			cfg:  config.Config{TTSProvider: "kokoro", TTSVoice: "af_bella"},
+			want: "af_bella",
+		},
+		{
+			name: "an empty kokoro voice still passes empty, so the provider's own default applies",
+			cfg:  config.Config{TTSProvider: "kokoro"},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := config.TTSVoiceFor(&tt.cfg, tt.cfg.TTSProvider); got != tt.want {
+				t.Errorf("synth voice = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The whole render chain has to agree on the voice: the synthesizer speaks it,
+// the manifest records it, and the resume key is derived from it. Three sites
+// meant three chances to disagree.
+func TestRenderVoiceIsConsistentAcrossTheChain(t *testing.T) {
+	for _, cfg := range []config.Config{
+		{TTSProvider: "audio8", TTSVoice: "af_heart", SpeechSpeed: 1},
+		{TTSProvider: "audio8", TTSVoice: "af_heart", Audio8Voice: "mine", SpeechSpeed: 1},
+	} {
+		var opts render.Options
+		populateTTSMetadata(&opts, &cfg)
+		synth := config.TTSVoiceFor(&cfg, cfg.TTSProvider)
+		if opts.TTSVoice != synth {
+			t.Errorf("manifest records %q but the synthesizer speaks %q", opts.TTSVoice, synth)
+		}
+		if id := synthIdentityFor(&cfg); !strings.Contains(id, "/voice="+synth) {
+			t.Errorf("resume identity %q does not carry the voice %q", id, synth)
+		}
+	}
+}

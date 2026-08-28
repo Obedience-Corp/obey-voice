@@ -171,3 +171,116 @@ func TestAudio8VoicesDirFrom(t *testing.T) {
 		t.Error("the voice store lives inside the export, which may be read-only")
 	}
 }
+
+// TestTTSVoiceFor is the resolver the whole voice-key bug class collapsed into.
+// Eight surfaces had written this substitution out by hand and four were wrong;
+// each of them now asks here.
+func TestTTSVoiceFor(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		provider string
+		want     string
+	}{
+		{name: "a nil config has no voice", provider: "kokoro"},
+
+		{
+			name:     "audio8 with an untouched config is the packaged reference",
+			cfg:      &Config{TTSVoice: "af_heart"},
+			provider: Audio8ProviderName,
+			want:     Audio8PackagedVoice,
+		},
+		{
+			name:     "audio8 never reads the kokoro key",
+			cfg:      &Config{TTSVoice: "af_bella", Audio8Voice: "mine"},
+			provider: Audio8ProviderName,
+			want:     "mine",
+		},
+		{
+			name:     "audio8 trims",
+			cfg:      &Config{Audio8Voice: "  mine  "},
+			provider: Audio8ProviderName,
+			want:     "mine",
+		},
+		{
+			name:     "provider matching is case-insensitive",
+			cfg:      &Config{Audio8Voice: "mine"},
+			provider: "Audio8",
+			want:     "mine",
+		},
+		{
+			name:     "kokoro reads its own key, empty and all",
+			cfg:      &Config{Audio8Voice: "mine", QwenTTSVoice: "Vivian"},
+			provider: "kokoro",
+			want:     "",
+		},
+		{
+			name:     "kokoro",
+			cfg:      &Config{TTSVoice: "af_bella"},
+			provider: "kokoro",
+			want:     "af_bella",
+		},
+		{
+			name:     "an empty provider is kokoro",
+			cfg:      &Config{TTSVoice: "af_bella"},
+			provider: "",
+			want:     "af_bella",
+		},
+		{
+			name:     "qwen reads its own key and gets no default here",
+			cfg:      &Config{TTSVoice: "af_bella", QwenTTSVoice: ""},
+			provider: "qwen3-tts",
+			want:     "",
+		},
+		{
+			name:     "qwen",
+			cfg:      &Config{TTSVoice: "af_bella", QwenTTSVoice: "Vivian"},
+			provider: "qwen3-tts",
+			want:     "Vivian",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TTSVoiceFor(tt.cfg, tt.provider); got != tt.want {
+				t.Errorf("TTSVoiceFor(%q) = %q, want %q", tt.provider, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTTSVoiceKeyForAndSet(t *testing.T) {
+	tests := []struct {
+		provider string
+		key      string
+	}{
+		{"kokoro", "tts_voice"},
+		{"", "tts_voice"},
+		{"qwen3-tts", "qwen_tts_voice"},
+		{Audio8ProviderName, "audio8_voice"},
+		{"AUDIO8", "audio8_voice"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.provider, func(t *testing.T) {
+			if got := TTSVoiceKeyFor(tt.provider); got != tt.key {
+				t.Fatalf("TTSVoiceKeyFor(%q) = %q, want %q", tt.provider, got, tt.key)
+			}
+			// The writer and the reader must agree, or a surface saves into one
+			// key and reads back another.
+			cfg := &Config{}
+			SetTTSVoiceFor(cfg, tt.provider, "chosen")
+			if got := TTSVoiceFor(cfg, tt.provider); got != "chosen" {
+				t.Errorf("SetTTSVoiceFor then TTSVoiceFor(%q) = %q, want chosen", tt.provider, got)
+			}
+			// And it must not have written any other provider's key.
+			for _, other := range []string{"kokoro", "qwen3-tts", Audio8ProviderName} {
+				if TTSVoiceKeyFor(other) == tt.key {
+					continue
+				}
+				if v := TTSVoiceFor(cfg, other); v != "" && v != Audio8PackagedVoice {
+					t.Errorf("writing %s also set %s to %q", tt.key, TTSVoiceKeyFor(other), v)
+				}
+			}
+		})
+	}
+	SetTTSVoiceFor(nil, "kokoro", "x") // must not panic
+}
