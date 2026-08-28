@@ -654,3 +654,123 @@ func TestPersonasFormFitsTerminalWithLongPromptLines(t *testing.T) {
 		}
 	}
 }
+
+// Esc must never silently discard an edit: leaving insert mode and the vim
+// double-tap reflex both keep the form open, and esc on Model & voice steps
+// back to the prompt instead of cancelling.
+func TestPersonasEscNeverDiscardsTheEdit(t *testing.T) {
+	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
+	m := newPersonas(cfg)
+	m.listPersonas = func() ([]*persona.Profile, error) {
+		return []*persona.Profile{{ID: "samantha", DisplayName: "Samantha"}}, nil
+	}
+	m.loadPromptForProfile = func(*persona.Profile) (string, error) { return "You are {agent_name}.", nil }
+	m.reload()
+	m.width, m.height = 80, 30
+	m.cursor = 0
+	m.beginEdit()
+	m, _ = m.focusPromptStep()
+
+	// Insert → esc → esc: normal mode first, then the hint — never a cancel.
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.formMode == "" {
+		t.Fatal("double esc discarded the edit")
+	}
+	if !strings.Contains(m.message, ":q") {
+		t.Fatalf("message = %q, want the :q hint", m.message)
+	}
+
+	// Esc on Model & voice returns to the prompt, keeping the form open.
+	m, _ = m.focusStackStep()
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.formMode == "" {
+		t.Fatal("esc on the stack step discarded the edit")
+	}
+	if m.formStep != personaFormPrompt {
+		t.Fatalf("formStep = %d, want prompt after stack esc", m.formStep)
+	}
+
+	// :q is the explicit discard, and still works. (focusPromptStep re-enters
+	// insert mode, so drop to normal first — which itself must not discard.)
+	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyEscape},
+		{Type: tea.KeyRunes, Runes: []rune{':'}},
+		{Type: tea.KeyRunes, Runes: []rune{'q'}},
+		{Type: tea.KeyEnter},
+	} {
+		m, _ = m.updateForm(k)
+	}
+	if m.formMode != "" {
+		t.Fatal(":q should still discard the edit")
+	}
+}
+
+// The name step is reachable backwards (shift+tab) with an edited prompt in
+// hand; esc there must refuse to discard until the prompt matches what the
+// form opened with.
+func TestPersonasNameStepEscGuardsEditedPrompt(t *testing.T) {
+	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
+	m := newPersonas(cfg)
+	m.listPersonas = func() ([]*persona.Profile, error) {
+		return []*persona.Profile{{ID: "samantha", DisplayName: "Samantha"}}, nil
+	}
+	m.loadPromptForProfile = func(*persona.Profile) (string, error) { return "original prompt", nil }
+	m.reload()
+	m.width, m.height = 80, 30
+	m.cursor = 0
+	m.beginEdit()
+	m, _ = m.focusPromptStep()
+
+	// Edit the prompt, drop to normal, shift+tab back to the name step.
+	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'A'}},
+		{Type: tea.KeyEscape},
+		{Type: tea.KeyShiftTab},
+	} {
+		m, _ = m.updateForm(k)
+	}
+	if m.formStep != personaFormName {
+		t.Fatalf("formStep = %d, want name after shift+tab", m.formStep)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.formMode == "" {
+		t.Fatal("name-step esc discarded an edited prompt")
+	}
+
+	// With the prompt untouched, name-step esc still cancels.
+	m2 := newPersonas(cfg)
+	m2.listPersonas = m.listPersonas
+	m2.loadPromptForProfile = func(*persona.Profile) (string, error) { return "original prompt", nil }
+	m2.reload()
+	m2.width, m2.height = 80, 30
+	m2.cursor = 0
+	m2.beginEdit()
+	m2, _ = m2.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if m2.formMode != "" {
+		t.Fatal("pristine name-step esc should cancel")
+	}
+}
+
+// A blank name (shift+tab from the name step on create) must not leave esc on
+// the stack step appearing to do nothing: it returns to the name step.
+func TestPersonasStackEscWithBlankNameReturnsToName(t *testing.T) {
+	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
+	m := newPersonas(cfg)
+	m.listPersonas = func() ([]*persona.Profile, error) { return nil, nil }
+	m.starterPrompt = func() (string, error) { return "You are {agent_name}.", nil }
+	m.reload()
+	m.width, m.height = 80, 30
+	m.beginCreate()
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyShiftTab}) // name → stack (backwards)
+	if m.formStep != personaFormStack {
+		t.Fatalf("formStep = %d, want stack after shift+tab", m.formStep)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.formStep != personaFormName {
+		t.Fatalf("formStep = %d, want name after esc with blank name", m.formStep)
+	}
+	if m.formMode == "" {
+		t.Fatal("stack esc cancelled instead of stepping back")
+	}
+}

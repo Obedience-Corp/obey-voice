@@ -32,6 +32,9 @@ type personasModel struct {
 	editID    string
 	nameInput textinput.Model
 	promptTA  promptEditor
+	// formInitialPrompt is the prompt body the form opened with; esc-to-cancel
+	// on the name step is allowed only while the prompt still matches it.
+	formInitialPrompt string
 
 	// Stack step: per-persona brain provider/model + TTS provider/voice.
 	// Index 0 of the provider lists is "(default)" = inherit the app config.

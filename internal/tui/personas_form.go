@@ -276,10 +276,27 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	key := msg.String()
 	switch {
 	case key == "esc":
-		// The prompt step owns esc: insert→normal first; only an idle
-		// normal-mode esc (surfacing as promptEventCancel below) leaves the form.
+		// The prompt step owns esc entirely: insert→normal, pending-state
+		// clears, and idle-normal esc is inert (promptEventIdleEsc below) —
+		// discarding is explicit (:q), never a reflex tap away.
 		if m.formStep == personaFormPrompt {
 			break
+		}
+		// Model & voice: esc steps back to the prompt rather than discarding
+		// a form that already carries an edited prompt. A blank name (reachable
+		// via shift+tab on create) would make focusPromptStep refuse, so fall
+		// back to the name step instead of an esc that appears to do nothing.
+		if m.formStep == personaFormStack {
+			if strings.TrimSpace(m.nameInput.Value()) == "" {
+				return m.focusNameStep()
+			}
+			return m.focusPromptStep()
+		}
+		// Name step: cancel only while the prompt is untouched — the step is
+		// reachable backwards (shift+tab) with an edited prompt in hand.
+		if m.promptTA.Value() != m.formInitialPrompt {
+			m.message = "Still editing — save with ctrl+j, or :q on the prompt to discard"
+			return m, nil
 		}
 		m.cancelForm()
 		m.message = "Edit cancelled"
@@ -346,6 +363,8 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	case promptEventCancel:
 		m.cancelForm()
 		m.message = "Edit cancelled"
+	case promptEventIdleEsc:
+		m.message = "Still editing — :wq saves, :q discards"
 	}
 	return m, cmd
 }
@@ -493,6 +512,7 @@ func (m *personasModel) cancelForm() {
 	m.nameInput.SetValue("")
 	m.promptTA.Blur()
 	m.promptTA.SetValue("")
+	m.formInitialPrompt = ""
 	m.prefillStack(nil)
 	m.brainModelInput.Blur()
 	m.stackRow = stackRowBrainProvider
@@ -556,6 +576,7 @@ func (m *personasModel) beginCreate() tea.Cmd {
 	m.nameInput.SetValue("")
 	m.nameInput.Focus()
 	m.promptTA.SetValue(m.resolveSeedPrompt())
+	m.formInitialPrompt = m.promptTA.Value()
 	m.promptTA.Blur()
 	m.prefillStack(nil) // "(default)" = clone current globals at create time
 	return textinput.Blink
@@ -578,6 +599,7 @@ func (m *personasModel) beginEdit() tea.Cmd {
 	m.nameInput.Focus()
 	text, loadNote := m.loadEditPrompt(p)
 	m.promptTA.SetValue(text)
+	m.formInitialPrompt = text
 	if loadNote != "" {
 		m.message = loadNote
 	}

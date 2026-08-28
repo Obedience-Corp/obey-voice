@@ -90,7 +90,7 @@ func TestPromptEditorExCommandsMapToFormEvents(t *testing.T) {
 	}
 }
 
-func TestPromptEditorEscCancelsOnlyWhenIdle(t *testing.T) {
+func TestPromptEditorEscNeverCancels(t *testing.T) {
 	p := newPromptEditor()
 	p.SetValue("some text")
 
@@ -104,10 +104,27 @@ func TestPromptEditorEscCancelsOnlyWhenIdle(t *testing.T) {
 	if ev != promptEventNone {
 		t.Fatalf("esc in visual → %v, want none", ev)
 	}
-	// Idle normal mode: esc cancels the form.
+	// Idle normal mode: esc is inert (surfaced as the hint event) — a reflex
+	// tap right after leaving insert must never discard the edit.
+	p, ev = promptKeys(t, p, "esc")
+	if ev != promptEventIdleEsc {
+		t.Fatalf("idle esc → %v, want idle-esc hint", ev)
+	}
+	if p.Value() != "some text" {
+		t.Fatalf("idle esc changed content to %q", p.Value())
+	}
+	// Insert → esc → esc: the double-tap vim reflex. Normal after the first,
+	// hint (not cancel) after the second, content intact.
+	p, ev = promptKeys(t, p, "i", "esc")
+	if ev != promptEventNone {
+		t.Fatalf("esc leaving insert → %v, want none", ev)
+	}
+	if p.Mode() != vim.ModeNormal {
+		t.Fatalf("mode after insert-esc = %v, want normal", p.Mode())
+	}
 	_, ev = promptKeys(t, p, "esc")
-	if ev != promptEventCancel {
-		t.Fatalf("idle esc → %v, want cancel", ev)
+	if ev != promptEventIdleEsc {
+		t.Fatalf("second esc → %v, want idle-esc hint", ev)
 	}
 }
 
