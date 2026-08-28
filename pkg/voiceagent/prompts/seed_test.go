@@ -13,9 +13,14 @@ func TestSeedWritesDefaults(t *testing.T) {
 		t.Fatalf("Seed() error = %v", err)
 	}
 
+	// Every shipped document lands, named for the document rather than the
+	// file it is embedded as. samantha is in the list because she still ships:
+	// the rebrand moved her out of the default slot, not out of the product.
 	want := map[string]bool{
+		filepath.Join("persona", "obey.yaml"):     true,
 		filepath.Join("persona", "samantha.yaml"): true,
-		filepath.Join("turn", "samantha.yaml"):    true,
+		filepath.Join("turn", "obey.yaml"):        true,
+		filepath.Join("compact", "obey.yaml"):     true,
 	}
 	for _, rel := range created {
 		delete(want, rel)
@@ -24,19 +29,19 @@ func TestSeedWritesDefaults(t *testing.T) {
 		t.Errorf("Seed() missing expected files %v (created %v)", want, created)
 	}
 
-	// Seeded files must load and match the embedded defaults' hashes.
-	for _, kind := range []Kind{KindPersona, KindTurn} {
-		path := filepath.Join(dir, string(kind), "samantha.yaml")
-		doc, err := LoadFile(path, kind)
+	// Seeded files must load and match the embedded documents' hashes.
+	shipped, err := Shipped()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, def := range shipped {
+		path := filepath.Join(dir, string(def.Prompt.Kind), def.Prompt.Name+".yaml")
+		doc, err := LoadFile(path, def.Prompt.Kind)
 		if err != nil {
 			t.Fatalf("loading seeded %s: %v", path, err)
 		}
-		def, err := Default(kind)
-		if err != nil {
-			t.Fatal(err)
-		}
 		if doc.Hash() != def.Hash() {
-			t.Errorf("seeded %s hash %s != embedded %s", kind, doc.Hash(), def.Hash())
+			t.Errorf("seeded %s/%s hash %s != embedded %s", def.Prompt.Kind, def.Prompt.Name, doc.Hash(), def.Hash())
 		}
 	}
 }

@@ -136,7 +136,7 @@ var (
 			Foreground(colorUser).
 			Bold(true)
 
-	samanthaStyle = lipgloss.NewStyle().
+	agentStyle = lipgloss.NewStyle().
 			Foreground(colorAgent).
 			Bold(true)
 

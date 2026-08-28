@@ -2,12 +2,12 @@
 schema: obey-voice.prompt.v1
 
 prompt:
-  name: samantha
+  name: obey
   kind: compact
   system_prompt: |-
     Summarize this entire conversation so far for your own future reference as {agent_name}. Capture what the user wanted, key facts and decisions, unresolved questions, and the current state of any ongoing task. Write it as one compact briefing you can continue the conversation from: plain prose, no formatting, no commentary — output only the summary.
 
 metadata:
-  id: samantha-compact
+  id: obey-compact
   version: 1
   description: Instruction for the /compact summarize turn; the reply reseeds the conversation as its opening context.

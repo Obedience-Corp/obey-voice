@@ -25,28 +25,17 @@ type Entry struct {
 	Hash   string `json:"hash"`
 }
 
-// Catalog reports the active prompt documents: one per embedded default kind,
+// Catalog reports the active prompt documents: every embedded document,
 // each marked user when a document in userDir shadows it, otherwise embedded.
 // Entries are sorted by kind then name.
 func Catalog(userDir string) ([]Entry, error) {
-	embedded, err := fs.ReadDir(defaultsFS, "defaults")
+	embedded, err := Shipped()
 	if err != nil {
-		return nil, fmt.Errorf("reading embedded defaults: %w", err)
+		return nil, err
 	}
 
 	entries := map[string]Entry{}
-	for _, e := range embedded {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
-			continue
-		}
-		data, err := defaultsFS.ReadFile("defaults/" + e.Name())
-		if err != nil {
-			return nil, fmt.Errorf("reading embedded default %s: %w", e.Name(), err)
-		}
-		doc, err := Load(data)
-		if err != nil {
-			return nil, fmt.Errorf("embedded default %s: %w", e.Name(), err)
-		}
+	for _, doc := range embedded {
 		entry, err := Describe(userDir, doc.Prompt.Kind, doc.Prompt.Name)
 		if err != nil {
 			return nil, err
@@ -96,12 +85,16 @@ func Describe(userDir string, kind Kind, name string) (Entry, error) {
 	return Entry{Kind: kind, Name: name, Source: SourceEmbedded, Hash: doc.Hash()}, nil
 }
 
+// isEmbeddedDefault reports whether doc is an unmodified copy of a shipped
+// document. Seed writes those copies into the user dir, so an untouched file
+// there must still read as embedded — otherwise every install would list the
+// documents it was given as if the user had authored them.
 func isEmbeddedDefault(doc *Document) bool {
-	embedded, err := Default(doc.Prompt.Kind)
-	if err != nil {
+	embedded, ok := shippedNamed(doc.Prompt.Kind, doc.Prompt.Name)
+	if !ok {
 		return false
 	}
-	return doc.Prompt.Name == embedded.Prompt.Name && doc.Hash() == embedded.Hash()
+	return doc.Hash() == embedded.Hash()
 }
 
 // userDocPath returns the first existing user document for kind/name, honoring

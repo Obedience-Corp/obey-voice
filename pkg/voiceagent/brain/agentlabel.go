@@ -18,7 +18,7 @@ import (
 // merely begins with the name without a colon ("Samantha is my name").
 
 // agentLabelRE matches a leading "Name:" label for the given agent name.
-// Empty names fall back to "Samantha", mirroring promptUserLine's default so
+// Empty names fall back to "Obey", mirroring promptUserLine's default so
 // the strip and the prompt convention can never disagree about the name.
 func agentLabelRE(agentName string) *regexp.Regexp {
 	return regexp.MustCompile(`(?i)^\s*(?:\*\*|__|[*_])?` + regexp.QuoteMeta(effectiveAgentName(agentName)) + `(?:\*\*|__|[*_])?\s*:\s*`)
@@ -28,7 +28,7 @@ func effectiveAgentName(agentName string) string {
 	if name := strings.TrimSpace(agentName); name != "" {
 		return name
 	}
-	return "Samantha"
+	return "Obey"
 }
 
 // StripAgentLabel removes one leading "AgentName:" label from a complete

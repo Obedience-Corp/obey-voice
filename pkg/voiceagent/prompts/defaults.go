@@ -33,6 +33,47 @@ func Default(kind Kind) (*Document, error) {
 	return doc, nil
 }
 
+// Shipped returns every embedded document, in file-name order. One per kind is
+// that kind's Default (defaults/<kind>.yaml); the rest are named documents the
+// product ships beside it — today the samantha persona, kept resolvable so the
+// rebrand to obey costs no existing install its identity.
+func Shipped() ([]*Document, error) {
+	entries, err := defaultsFS.ReadDir("defaults")
+	if err != nil {
+		return nil, fmt.Errorf("reading embedded defaults: %w", err)
+	}
+	docs := make([]*Document, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		data, err := defaultsFS.ReadFile("defaults/" + e.Name())
+		if err != nil {
+			return nil, fmt.Errorf("reading embedded default %s: %w", e.Name(), err)
+		}
+		doc, err := Load(data)
+		if err != nil {
+			return nil, fmt.Errorf("embedded default %s: %w", e.Name(), err)
+		}
+		docs = append(docs, doc)
+	}
+	return docs, nil
+}
+
+// shippedNamed returns the embedded document for an exact kind/name pair.
+func shippedNamed(kind Kind, name string) (*Document, bool) {
+	docs, err := Shipped()
+	if err != nil {
+		return nil, false
+	}
+	for _, doc := range docs {
+		if doc.Prompt.Kind == kind && doc.Prompt.Name == name {
+			return doc, true
+		}
+	}
+	return nil, false
+}
+
 // Starter returns the embedded starter document for a kind — a minimal
 // template meant to seed new user-authored prompts — at starters/<kind>.yaml.
 func Starter(kind Kind) (*Document, error) {
@@ -53,7 +94,7 @@ func Starter(kind Kind) (*Document, error) {
 // name is empty or matches the embedded document's name.
 //
 // A missing user document named "uncle-fu" must NOT silently return the
-// embedded "samantha" persona. That footgun made the Personas editor and
+// embedded "obey" persona. That footgun made the Personas editor and
 // brain load the wrong identity whenever a profile's prompt ref was stale.
 type Resolver struct {
 	Path    string // explicit document path; wins when set
@@ -81,8 +122,10 @@ func (r Resolver) Resolve(kind Kind, name string) (*Document, error) {
 	return resolveEmbedded(kind, name)
 }
 
-// resolveEmbedded returns the one-per-kind embedded default only when the
-// caller asked for it (empty name) or for the document's real name.
+// resolveEmbedded returns an embedded document only when the caller asked for
+// it: the kind's default for an empty name, otherwise the shipped document
+// carrying that exact name. A name no embedded document answers to is an
+// error, never a silent substitution.
 func resolveEmbedded(kind Kind, name string) (*Document, error) {
 	doc, err := Default(kind)
 	if err != nil {
@@ -93,6 +136,9 @@ func resolveEmbedded(kind Kind, name string) (*Document, error) {
 	}
 	if name == "" || name == doc.Prompt.Name {
 		return doc, nil
+	}
+	if shipped, ok := shippedNamed(kind, name); ok {
+		return shipped, nil
 	}
 	return nil, fmt.Errorf("no %s prompt named %q", kind, name)
 }

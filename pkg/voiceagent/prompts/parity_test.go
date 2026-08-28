@@ -8,20 +8,40 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 )
 
-// TestDefaultPersonaGolden pins the embedded persona: assembled and resolved
-// with an agent name, it must equal the checked-in golden captured from the
-// original hard-coded brain.GetSystemPrompt before the loader wiring. This is
-// the migration-safety contract — the default persona must not drift.
-func TestDefaultPersonaGolden(t *testing.T) {
-	got := resolveDefault(t, prompts.KindPersona, "TestAgent")
+// TestSamanthaPersonaGolden pins the samantha persona against the golden
+// captured from the original hard-coded brain.GetSystemPrompt before the
+// loader wiring. She is no longer the default — obey is — but every install
+// that was talking to her still resolves this document, so it must not drift.
+// It is also no longer reachable through Default(): only by its own name.
+func TestSamanthaPersonaGolden(t *testing.T) {
+	got := resolveNamed(t, prompts.KindPersona, "samantha", "TestAgent")
+	assertGolden(t, "testdata/persona.samantha.golden", got)
+}
 
-	want, err := os.ReadFile("testdata/persona.golden")
+// TestDefaultPersonaGolden pins the shipped default persona: assembled and
+// resolved with an agent name, it must equal the checked-in golden. Changing
+// the identity every fresh install wakes up with is a product decision, so it
+// takes a deliberate golden update.
+func TestDefaultPersonaGolden(t *testing.T) {
+	doc, err := prompts.Default(prompts.KindPersona)
+	if err != nil {
+		t.Fatalf("Default(persona) error = %v", err)
+	}
+	if doc.Prompt.Name != "obey" {
+		t.Errorf("default persona name = %q, want obey", doc.Prompt.Name)
+	}
+	assertGolden(t, "testdata/persona.obey.golden", resolveDefault(t, prompts.KindPersona, "TestAgent"))
+}
+
+func assertGolden(t *testing.T, path, got string) {
+	t.Helper()
+	want, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading golden: %v", err)
 	}
 	wantText := strings.TrimSuffix(string(want), "\n")
 	if got != wantText {
-		t.Errorf("assembled persona diverges from golden at byte %d:\ngot:  %q\nwant: %q", firstDiff(got, wantText), got, wantText)
+		t.Errorf("assembled prompt diverges from %s at byte %d:\ngot:  %q\nwant: %q", path, firstDiff(got, wantText), got, wantText)
 	}
 }
 
@@ -34,9 +54,9 @@ func TestDefaultPersonaGolden(t *testing.T) {
 // set of deliberate additions — so an accidental edit still fails, while an
 // intentional one has to be declared here and justified in turn.yaml's metadata.
 func TestDefaultTurnGolden(t *testing.T) {
-	got := resolveDefault(t, prompts.KindTurn, "Samantha")
+	got := resolveDefault(t, prompts.KindTurn, "Obey")
 
-	const original = "Respond as Samantha. 2-3 sentences max, natural speech, NO markdown, NO formatting, NO code blocks, NO bullet points. Just talk naturally."
+	const original = "Respond as Obey. 2-3 sentences max, natural speech, NO markdown, NO formatting, NO code blocks, NO bullet points. Just talk naturally."
 	if !strings.HasPrefix(got, original) {
 		t.Fatalf("assembled turn instruction no longer opens with the original literal, "+
 			"diverging at byte %d:\ngot:  %q\nwant prefix: %q", firstDiff(got, original), got, original)
@@ -66,6 +86,22 @@ func resolveDefault(t *testing.T, kind prompts.Kind, agentName string) string {
 	if err != nil {
 		t.Fatalf("Default(%s) error = %v", kind, err)
 	}
+	return resolvePlaceholders(t, doc, agentName)
+}
+
+// resolveNamed goes through the resolver with no user dir, which is how a
+// shipped document that is not its kind's default is reached.
+func resolveNamed(t *testing.T, kind prompts.Kind, name, agentName string) string {
+	t.Helper()
+	doc, err := prompts.Resolver{}.Resolve(kind, name)
+	if err != nil {
+		t.Fatalf("Resolve(%s, %s) error = %v", kind, name, err)
+	}
+	return resolvePlaceholders(t, doc, agentName)
+}
+
+func resolvePlaceholders(t *testing.T, doc *prompts.Document, agentName string) string {
+	t.Helper()
 	got, err := prompts.ResolvePlaceholders(doc.Assemble(), []string{"agent_name"}, map[string]string{"agent_name": agentName})
 	if err != nil {
 		t.Fatalf("ResolvePlaceholders() error = %v", err)

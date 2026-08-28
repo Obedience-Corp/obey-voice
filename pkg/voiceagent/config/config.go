@@ -416,9 +416,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("calibre_convert_binary", "")
 	v.SetDefault("calibre_prefer_format", "epub")
 
-	v.SetDefault("agent_name", "Samantha")
-	v.SetDefault("active_persona", "samantha")
-	v.SetDefault("persona", "samantha")
+	v.SetDefault("agent_name", "Obey")
+	v.SetDefault("active_persona", "obey")
+	v.SetDefault("persona", "obey")
 	v.SetDefault("prompts_dir", "")
 	v.SetDefault("backchannel_enabled", false)
 	v.SetDefault("skills_enabled", true)

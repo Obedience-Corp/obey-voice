@@ -24,9 +24,9 @@ func advancedKeys() []KeySpec {
 			Help: "The longest single stretch of speech she will transcribe before ending the turn for you.",
 		},
 		{
-			Key: "agent_name", Type: TypeString, Default: "Samantha",
+			Key: "agent_name", Type: TypeString, Default: "Obey",
 			Group: GroupAdvanced, Title: "Agent name",
-			Help:               "What she calls herself. The active persona overrides this when one sets a display name.",
+			Help:               "What the agent calls itself. The active persona overrides this when one sets a display name.",
 			PersonaOverridable: true,
 		},
 		{
@@ -217,13 +217,13 @@ func modelKeys() []KeySpec {
 func hiddenKeys() []KeySpec {
 	return []KeySpec{
 		{
-			Key: "active_persona", Type: TypeString, Default: "samantha",
+			Key: "active_persona", Type: TypeString, Default: "obey",
 			Group: GroupHidden, Title: "Active persona",
 			Help:               "Set by the Personas screen.",
 			PersonaOverridable: true, ManagedBy: "persona use",
 		},
 		{
-			Key: "persona", Type: TypeString, Default: "samantha",
+			Key: "persona", Type: TypeString, Default: "obey",
 			Group: GroupHidden, Title: "Persona prompt",
 			Help:               "Set by the Personas screen.",
 			PersonaOverridable: true, ManagedBy: "persona use",

@@ -113,6 +113,15 @@ func personaListLabel(p *persona.Profile) string {
 			detail = v
 		}
 	}
+	// The built-in default is worth naming in the list: it pins nothing, so
+	// without this its row is the only one with no voice to show for itself.
+	if p.ID == persona.DefaultID {
+		if detail != "" {
+			detail = "built-in default · " + detail
+		} else {
+			detail = "built-in default"
+		}
+	}
 	if detail != "" {
 		label += " — " + detail
 	}

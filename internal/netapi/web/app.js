@@ -303,7 +303,7 @@
           log("You: " + (env.text || ""), "you");
           break;
         case "response_ready":
-          log("Samantha: " + (env.response || ""), "sam");
+          log("Agent: " + (env.response || ""), "sam");
           break;
         case "thinking_started":
           log("thinking…", "sys");

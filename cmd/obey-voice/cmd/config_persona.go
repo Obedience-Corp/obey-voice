@@ -28,7 +28,11 @@ func personaOverlay() *configPersonaPayload {
 	if err != nil {
 		return nil
 	}
-	id := strings.TrimSpace(cfg.ActivePersona)
+	// LoadRaw skips the persona hook, so active_persona here is the raw key —
+	// which on an install that never ran `persona use` is only the shipped
+	// default. Resolve it the way the loader does, or this reports no overlay
+	// for the persona the agent is actually speaking as.
+	id := strings.TrimSpace(persona.ResolveActiveID(cfg))
 	if id == "" {
 		return nil
 	}

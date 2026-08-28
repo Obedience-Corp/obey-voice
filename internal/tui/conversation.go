@@ -128,7 +128,7 @@ type conversationModel struct {
 
 func newConversation(agentName string) conversationModel {
 	if agentName == "" {
-		agentName = "Samantha"
+		agentName = "Obey"
 	}
 
 	input := textarea.New()
@@ -1060,7 +1060,7 @@ func renderUserTurn(text string) string {
 }
 
 func renderAgentTurn(name, text string) string {
-	body := samanthaStyle.Render("● "+name) + "\n" + normalStyle.Render(text)
+	body := agentStyle.Render("● "+name) + "\n" + normalStyle.Render(text)
 	return agentBubbleStyle.Render(body)
 }
 

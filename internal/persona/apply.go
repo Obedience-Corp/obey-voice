@@ -56,14 +56,24 @@ func isNotExist(err error) bool {
 	return os.IsNotExist(err) || strings.Contains(err.Error(), "no such file")
 }
 
-// ensureMigrated creates personas/<id>/persona.yaml from legacy config keys
-// when the personas directory has no valid profiles yet.
+// ensureMigrated populates the personas directory when it has no valid
+// profiles yet, and heals active_persona when it names a profile that is not
+// there.
 //
-// active_persona defaults to "samantha" via viper, so an empty/unset value is
-// indistinguishable from that default. When seeding from a legacy non-default
-// persona (e.g. persona: festival), the profile id is seed.ID — always point
-// active_persona at the profile we just created. When profiles already exist
-// but the default active id is missing, heal by selecting a real profile.
+// active_persona defaults to DefaultID via viper, so an empty/unset value is
+// indistinguishable from that default. Two seeding paths follow from that:
+//
+//   - A config that names a persona other than the default describes an
+//     install that was running something before this one: it migrates into the
+//     single profile its keys describe (legacySeed), and nothing else is
+//     written — the profile list such an install wakes up with is the one it
+//     had.
+//   - A config that names only defaults is a fresh install and gets the
+//     shipped built-ins: obey, which is the default, plus samantha.
+//
+// When profiles already exist, this call adds none. An install that was
+// talking to samantha before the rebrand keeps talking to samantha, whether
+// active_persona says so explicitly or fell through to the default.
 func ensureMigrated(cfg *config.Config) error {
 	existing, err := List()
 	if err != nil {
@@ -78,9 +88,12 @@ func ensureMigrated(cfg *config.Config) error {
 			cfg.ActivePersona = id
 			return nil
 		}
-		// Heal: viper defaulted active_persona to samantha while migration
-		// only created a legacy non-default profile (or samantha was deleted).
-		if id == DefaultID {
+		// Heal: active_persona names a built-in that is not on this install —
+		// either viper defaulted it to obey while only pre-rebrand profiles
+		// exist, or the reverse, a config that still says samantha on an
+		// install whose profile she never got. Neither is worth a hard error;
+		// an unknown id the user chose is.
+		if IsBuiltinID(id) {
 			cfg.ActivePersona = pickFallbackID(existing)
 			return nil
 		}
@@ -89,14 +102,66 @@ func ensureMigrated(cfg *config.Config) error {
 		return nil
 	}
 
-	seed := FromConfig(cfg)
-	if err := Write(seed, true); err != nil {
-		return fmt.Errorf("migrating default persona: %w", err)
+	if id := legacyPersonaID(cfg); id != "" {
+		seed := legacySeed(cfg, id)
+		if err := Write(seed, true); err != nil {
+			return fmt.Errorf("migrating default persona: %w", err)
+		}
+		// Always bind active to the seeded profile. seed.ID may be a legacy
+		// persona slug (e.g. festival), not a built-in id.
+		cfg.ActivePersona = seed.ID
+		return nil
 	}
-	// Always bind active to the seeded profile. seed.ID may be a legacy
-	// persona slug (e.g. festival), not the viper default "samantha".
-	cfg.ActivePersona = seed.ID
+
+	if err := SeedBuiltins(cfg); err != nil {
+		return err
+	}
+	cfg.ActivePersona = DefaultID
 	return nil
+}
+
+// legacyPersonaID returns the persona this config was already running, or ""
+// when it names nothing but the current defaults.
+//
+// A value equal to DefaultID cannot be told apart from the shipped default, so
+// it never counts as a migration signal — otherwise a fresh install would take
+// the migration path. persona wins over active_persona because that is the
+// order the old migration read them in: a pre-personas config carries only
+// persona, while active_persona may be a stale in-memory default.
+func legacyPersonaID(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	for _, named := range []string{cfg.Persona, cfg.ActivePersona} {
+		named = strings.TrimSpace(named)
+		if named == "" || named == DefaultID {
+			continue
+		}
+		if ValidateID(named) == nil {
+			return named
+		}
+		// A prompt name that is not a profile id (the real Uncle_Fu case) still
+		// says this install had an identity. It migrates under the pre-personas
+		// id, keeping its prompt ref — which is what the old code did with it.
+		return LegacyDefaultID
+	}
+	return ""
+}
+
+// legacySeed is FromConfig bound to the id the config actually names, so the
+// migrated profile carries the install's own agent name, prompt and voice.
+//
+// The prompt ref is repointed only when it still holds the shipped default: an
+// install whose active_persona says samantha while persona was never written
+// must not migrate into a samantha profile that reads the obey identity.
+func legacySeed(cfg *config.Config, id string) *Profile {
+	p := FromConfig(cfg)
+	p.ID = id
+	p.Builtin = IsBuiltinID(id)
+	if ref := strings.TrimSpace(p.Prompts.Persona); ref == "" || ref == DefaultID {
+		p.Prompts.Persona = id
+	}
+	return p
 }
 
 func hasProfileID(profiles []*Profile, id string) bool {
@@ -108,17 +173,40 @@ func hasProfileID(profiles []*Profile, id string) bool {
 	return false
 }
 
-// pickFallbackID prefers the built-in default id, else the first listed profile.
+// pickFallbackID prefers the built-in default, then the pre-rebrand default,
+// then the first listed profile. The middle step is what keeps an install that
+// predates obey on samantha instead of on whatever sorts first: before the
+// rebrand samantha WAS this function's answer, and an install that never set
+// active_persona must not be handed a different agent by an upgrade.
 func pickFallbackID(profiles []*Profile) string {
 	if len(profiles) == 0 {
 		return DefaultID
 	}
-	for _, p := range profiles {
-		if p.ID == DefaultID {
-			return DefaultID
+	for _, want := range builtinIDs {
+		for _, p := range profiles {
+			if p.ID == want {
+				return want
+			}
 		}
 	}
 	return profiles[0].ID
+}
+
+// ResolveActiveID reports the persona id a config load settles on, including
+// the heal ensureMigrated applies when active_persona names a built-in this
+// install does not have. It writes nothing, so read-only surfaces that load
+// with LoadRaw (config get's persona overlay) can name the same persona the
+// running agent uses instead of the raw key.
+func ResolveActiveID(cfg *config.Config) string {
+	id := ActiveID(cfg)
+	if Exists(id) || !IsBuiltinID(id) {
+		return id
+	}
+	existing, err := List()
+	if err != nil || len(existing) == 0 {
+		return id
+	}
+	return pickFallbackID(existing)
 }
 
 // Use sets active_persona, persists it, and applies the profile to cfg.

@@ -27,7 +27,7 @@ import '.justfiles/dev.just'
 [private]
 default:
     #!/usr/bin/env bash
-    echo "Samantha — Give Claude a voice (Go)"
+    echo "Obey Voice — Give Claude a voice (Go)"
     echo ""
     just --list --unsorted
 

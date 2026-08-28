@@ -45,7 +45,7 @@ func TestLauncherDisplaysConfiguredBrainModel(t *testing.T) {
 			if !strings.Contains(view, tt.want) {
 				t.Fatalf("launcher view missing %q:\n%s", tt.want, view)
 			}
-			if !strings.Contains(view, "samantha") {
+			if !strings.Contains(view, "obey voice") {
 				t.Fatalf("launcher missing brand:\n%s", view)
 			}
 		})
