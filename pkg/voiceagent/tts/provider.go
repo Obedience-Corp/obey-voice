@@ -153,6 +153,15 @@ type Voice struct {
 	FriendlyName string
 	Gender       string
 	Locale       string
+	// Kind says where a voice came from, for providers where that is not a
+	// fixed property of the engine: audio8 reports "recording" or "synthetic"
+	// for a registered voice. Empty for the built-in catalogs, whose voices
+	// all came from the same place.
+	//
+	// It is its own field because provenance is not gender: putting it in
+	// Gender made `voices --gender male` drop every registered voice and
+	// `voices --json` emit "gender":"recording".
+	Kind string
 }
 
 // VoiceNames returns the ordered list of all kokoro voice names.

@@ -148,18 +148,9 @@ func (m settingsModel) sectionListLines() []string {
 		for i := start; i < end; i++ {
 			v := m.voiceItems[i]
 			active := ""
-			activeVoice := m.cfg.TTSVoice
-			switch {
-			case strings.EqualFold(activeTTSProvider(m.cfg), "qwen3-tts"):
-				activeVoice = m.cfg.QwenTTSVoice
-			case strings.EqualFold(activeTTSProvider(m.cfg), config.Audio8ProviderName):
-				// Empty selects the packaged reference, so the tick lands on it
-				// rather than on nothing.
-				activeVoice = m.cfg.Audio8Voice
-				if strings.TrimSpace(activeVoice) == "" {
-					activeVoice = config.Audio8PackagedVoice
-				}
-			}
+			// An empty audio8_voice selects the packaged reference, so the
+			// tick lands on it rather than on nothing.
+			activeVoice := config.TTSVoiceFor(m.cfg, activeTTSProvider(m.cfg))
 			if strings.EqualFold(v.Name, activeVoice) {
 				active = " ✓"
 			}

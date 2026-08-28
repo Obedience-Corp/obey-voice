@@ -36,7 +36,11 @@ type voiceJSON struct {
 	FriendlyName string `json:"friendly_name"`
 	Gender       string `json:"gender"`
 	Locale       string `json:"locale"`
-	Active       bool   `json:"active"`
+	// Kind is where the voice came from, where the provider distinguishes:
+	// audio8 reports "recording" or "synthetic" for a registered voice.
+	// Omitted for the built-in catalogs rather than emitted empty.
+	Kind   string `json:"kind,omitempty"`
+	Active bool   `json:"active"`
 }
 
 // voicesJSON is the body of `voices --json`: the catalog of one provider,
@@ -92,6 +96,11 @@ func runVoices(cmd *cobra.Command, _ []string) error {
 	return encodeJSON(cmd, catalog)
 }
 
+// isAudio8Provider reports whether a provider key selects the Audio8 provider.
+func isAudio8Provider(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), config.Audio8ProviderName)
+}
+
 func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 	cfg, err := voicesConfig(cmd)
 	if err != nil {
@@ -101,13 +110,16 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 	gender, _ := cmd.Flags().GetString("gender")
 	live, _ := cmd.Flags().GetBool("live")
 
-	// qwen3-tts's selectable voices are a compile-time registry (presets plus
-	// shipped clones), not a property of the loaded model: constructing the
-	// provider pages gigabytes in and takes ~10s to report names this binary
-	// already knows, which is longer than a voice picker's whole CLI budget.
-	// Static is therefore the default answer. Presets the installed native
-	// package ships beyond the registry stay reachable through --live.
-	if isQwenTTS(cfg.TTSProvider) && !live {
+	// Two providers can answer without a model. qwen3-tts's selectable voices
+	// are a compile-time registry (presets plus shipped clones), not a property
+	// of the loaded model; audio8's are the packaged reference plus the
+	// voice.json files under models_dir. Constructing either provider pages
+	// gigabytes in to report names that are already on disk, which is longer
+	// than a voice picker's whole CLI budget. Static is therefore the default
+	// answer for both. Presets the installed qwen3-tts native package ships
+	// beyond the registry stay reachable through --live; for audio8 --live
+	// asks the constructed provider, which reads the same store.
+	if (isQwenTTS(cfg.TTSProvider) || isAudio8Provider(cfg.TTSProvider)) && !live {
 		voices, err := tts.StaticVoicesFor(cfg, cfg.TTSProvider, locale, gender)
 		if err != nil {
 			return nil, codedError(codeInvalidProvider, "static voices: %v", err)
@@ -122,7 +134,7 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 		// refuse-on-missing contract: --json must never download, and a live
 		// catalog it cannot safely list without a model on disk is not
 		// silently swapped for something incomplete.
-		if isQwenTTS(cfg.TTSProvider) {
+		if isQwenTTS(cfg.TTSProvider) || isAudio8Provider(cfg.TTSProvider) {
 			if voices, staticErr := tts.StaticVoicesFor(cfg, cfg.TTSProvider, locale, gender); staticErr == nil && len(voices) > 0 {
 				return buildVoicesJSON(cfg, voices, "static"), nil
 			}
@@ -152,6 +164,7 @@ func buildVoicesJSON(cfg *config.Config, voices []tts.Voice, source string) *voi
 			FriendlyName: v.FriendlyName,
 			Gender:       v.Gender,
 			Locale:       v.Locale,
+			Kind:         v.Kind,
 			Active:       strings.EqualFold(v.Name, active),
 		})
 	}

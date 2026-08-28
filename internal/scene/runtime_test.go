@@ -308,14 +308,36 @@ func TestSceneBuildCastLeavesUnknownProviderVoiceAlone(t *testing.T) {
 	cfg.TTSVoice = ""
 
 	cast, err := BuildCast(cfg, []ResolvedCast{
-		resolved(profile("a", "A", "audio8", "", "")),
+		resolved(profile("a", "A", "some-future-engine", "", "")),
 		resolved(profile("b", "B", "kokoro", "af_sky", "")),
 	})
 	if err != nil {
 		t.Fatalf("BuildCast: %v", err)
 	}
 	if cast[0].Template.Voice != "" {
-		t.Errorf("audio8 voice = %q, want the config value verbatim", cast[0].Template.Voice)
+		t.Errorf("unknown-provider voice = %q, want the config value verbatim", cast[0].Template.Voice)
+	}
+}
+
+// audio8 is no longer such a provider: its empty key names the reference
+// packaged in the export, and the template is forwarded to a provider that
+// refuses a voice it does not recognise.
+func TestSceneBuildCastResolvesTheAudio8Voice(t *testing.T) {
+	cfg := appConfig()
+	cfg.TTSVoice = "af_heart"
+
+	cast, err := BuildCast(cfg, []ResolvedCast{
+		resolved(profile("a", "A", "audio8", "", "")),
+		resolved(profile("b", "B", "audio8", "mine", "")),
+	})
+	if err != nil {
+		t.Fatalf("BuildCast: %v", err)
+	}
+	if cast[0].Template.Voice != config.Audio8PackagedVoice {
+		t.Errorf("audio8 voice = %q, want the packaged reference (never Kokoro's af_heart)", cast[0].Template.Voice)
+	}
+	if cast[1].Template.Voice != "mine" {
+		t.Errorf("audio8 persona voice = %q, want mine", cast[1].Template.Voice)
 	}
 }
 
