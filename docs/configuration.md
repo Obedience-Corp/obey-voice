@@ -225,6 +225,36 @@ Each utterance is one short-lived CLI process with its own model load, so the
 per-utterance cost includes loading the GGUF — the win measured in the A/B is
 compute, not end-to-end warm latency.
 
+## Sortformer meeting diarizer (optional)
+
+`speaker.meeting.diarizer` picks the engine behind the **offline meeting review
+pass** — the timeline meeting speaker labels are read from.
+
+| Value | What runs |
+|---|---|
+| `sherpa` (default) | Managed pyannote segmentation 3.0 + NeMo TitaNet, in process. Every install gets this |
+| `sortformer` | NVIDIA Streaming Sortformer through the same transcribe.cpp CLI as above (`transcribecpp_binary`), plus a managed 139 MB GGUF that `models ensure` installs once the key is set |
+
+It is opt-in, and independent of `stt_provider`: either engine pairs with any
+recognizer, and unlike the STT provider it does **not** require a GPU — Sortformer
+on CPU still beats the sherpa review path it replaces. Live labels, embeddings
+and enrolled names stay on the sherpa path either way. Nothing downloads or is
+checked until the key is set to `sortformer`.
+
+Set it in **Settings → Meeting → Diarization engine**, or in the config file. An
+unrecognised value is a config error, not a silent fall back. `obey-voice doctor`
+reports the CLI and the weights as `sortformer-diarizer`, and adds a
+`sortformer-expected-speakers` warning when a count is configured that this
+engine cannot use: Sortformer has no speaker-count input and resolves up to four
+speakers on its own, so `speaker.meeting.num_speakers` has no effect while it is
+selected (switch back to `sherpa` and the count applies again).
+
+What it changes about a meeting — and what it deliberately does not — is in
+[meetings.md](meetings.md). The weights are under the **NVIDIA Open Model
+License** (the runtime and CLI stay MIT), and `models ensure` / `models status`
+print that attribution with the asset. Measured against the sherpa path in
+[`benchmarks/T3-diar-ab-sortformer-2026-08-26.json`](benchmarks/T3-diar-ab-sortformer-2026-08-26.json).
+
 ## Agent Skills (Ollama)
 
 With `skills_enabled=true` (the product default unless explicitly disabled), the

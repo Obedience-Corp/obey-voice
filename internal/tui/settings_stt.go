@@ -44,7 +44,7 @@ func (m *settingsModel) buildSTTItems() {
 	if m.cfg == nil {
 		return
 	}
-	lookPath := m.sttLookPath()
+	lookPath := m.binaryLookPath()
 	modelsDir := config.ModelsDirFrom(m.cfg)
 	// stt_mode is part of the current state: resolving the provider alone
 	// would demote a canonical sherpa+streaming pair to offline on re-pick.
@@ -140,8 +140,10 @@ func sttConfiguredAliasNote(cfg *config.Config) string {
 	return fmt.Sprintf("configured as %q, which is %s · %s", norm.Alias, norm.Provider, norm.Mode)
 }
 
-// sttLookPath resolves external recognizer binaries. Tests inject a fake.
-func (m *settingsModel) sttLookPath() func(string) (string, error) {
+// binaryLookPath resolves the external binaries a picker reports on — the
+// recognizers here, the transcribe.cpp CLI behind the Meeting tab's diarizer.
+// Tests inject a fake.
+func (m *settingsModel) binaryLookPath() func(string) (string, error) {
 	if m.lookPath != nil {
 		return m.lookPath
 	}
@@ -184,7 +186,7 @@ func (m *settingsModel) selectSTTItem() tea.Cmd {
 	// microphone when a conversation starts, and this one keeps the recognizer
 	// it opened with.
 	m.message = fmt.Sprintf("Speech recognition set to %s · %s", item.provider, sttApplyNote)
-	if gap := config.STTEnvironmentGap(item.provider, m.cfg, config.ModelsDirFrom(m.cfg), m.sttLookPath()); gap.Missing() {
+	if gap := config.STTEnvironmentGap(item.provider, m.cfg, config.ModelsDirFrom(m.cfg), m.binaryLookPath()); gap.Missing() {
 		m.message += fmt.Sprintf(" · %s is not ready on this computer: %s — %s", item.provider, gap.Detail, gap.Remediation)
 	}
 	return nil

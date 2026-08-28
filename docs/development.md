@@ -102,6 +102,28 @@ are always present in the `--json` output.
 
 Committed before/after artifacts live in [benchmarks/](benchmarks/README.md).
 
+### Diarization A/B (T3 / T3b)
+
+`obey-voice benchmark` measures the conversation turn; it cannot see the offline
+meeting review pass, so the optional
+[Sortformer diarizer](configuration.md#sortformer-meeting-diarizer-optional) has
+its own recipe:
+
+```bash
+just fetch-meeting-fixture               # shared 90s multi-speaker WAV (gitignored)
+scripts/diar-ab-sortformer.sh --help     # prereqs: CLI, GGUF, installed engine
+scripts/diar-ab-sortformer.sh            # -> docs/benchmarks/T3-diar-ab-sortformer-<date>.json
+```
+
+The script runs both engines over the same fixture, then aggregates the raw
+outputs into the `obey-voice.bench.diar-ab.v1` artifact with
+`scripts/diar_ab_aggregate.py`; every path it needs is overridable by
+environment variable, and it prints the prereq block on a missing input. The
+attribution follow-up (does a better timeline change who said what) is
+env-gated Go tests over committed inputs —
+[`benchmarks/t3b/README.md`](benchmarks/t3b/README.md) has the two commands, and
+steps 2–3 reproduce with no models installed.
+
 ## Model assets and readiness
 
 Local model assets are described by an asset manifest and managed by three

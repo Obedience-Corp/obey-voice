@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -40,6 +41,10 @@ func NormalizeMeetingDiarizer(value string) (string, error) {
 			value, strings.Join(MeetingDiarizers(), ", "))
 	}
 }
+
+// sortformerEnsureRemedy is the one sentence every surface prints for absent
+// diarizer weights, so doctor and the settings row cannot drift apart.
+const sortformerEnsureRemedy = "run 'obey-voice models ensure' to download the Sortformer weights"
 
 // MeetingDiarizerFrom resolves the configured engine. A nil config is the
 // default, matching how an absent key reads.
@@ -82,7 +87,7 @@ func diagnoseMeetingDiarizer(cfg *Config, modelsDir string, lookPath func(string
 		// Sortformer on CPU is still 2.6x the sherpa review path it replaces
 		// (T3), so unlike the STT provider a CPU-only machine is usable.
 		requireGPU:    false,
-		missingRemedy: "run 'obey-voice models ensure' to download the Sortformer weights",
+		missingRemedy: sortformerEnsureRemedy,
 	}, lookPath)}
 
 	// Sortformer takes no speaker count. Saying so beats silently ignoring a
@@ -100,6 +105,32 @@ func diagnoseMeetingDiarizer(cfg *Config, modelsDir string, lookPath func(string
 		})
 	}
 	return diags
+}
+
+// MeetingDiarizerGap reports what the selected review diarizer still needs on
+// this computer. It is the cheap counterpart of the doctor row above — a PATH
+// lookup and a stat, no subprocess — so a settings row can call it while
+// rendering; the doctor's sortformer-diarizer row adds the backend probe.
+// It reuses STTGap rather than adding a second identical struct.
+//
+// Detail stays short enough for one row; the fix travels in Remediation, in
+// the resolver's own words.
+func MeetingDiarizerGap(cfg *Config, modelsDir string, lookPath func(string) (string, error)) STTGap {
+	if cfg == nil || lookPath == nil {
+		return STTGap{}
+	}
+	// An unreadable value is a configuration problem the picker reports itself,
+	// not something missing from this computer.
+	if selected, err := MeetingDiarizerFrom(cfg); err != nil || selected != DiarizerSortformer {
+		return STTGap{}
+	}
+	if _, err := ResolveTranscribeCPPBinary(cfg, modelsDir, lookPath); err != nil {
+		return STTGap{Detail: TranscribeCPPCLIName + " not installed", Remediation: err.Error()}
+	}
+	if _, err := os.Stat(SortformerDiarizerAsset().ModelPath(modelsDir)); err != nil {
+		return STTGap{Detail: "weights not downloaded", Remediation: sortformerEnsureRemedy}
+	}
+	return STTGap{}
 }
 
 // meetingDiarizationActive reports whether the offline review pass can run at

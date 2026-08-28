@@ -151,6 +151,53 @@ func TestDiagnoseMeetingDiarizer(t *testing.T) {
 	}
 }
 
+// The settings row reads the same install state doctor does, without paying
+// for the backend probe.
+func TestMeetingDiarizerGap(t *testing.T) {
+	installed := installSortformerGGUF(t)
+
+	tests := []struct {
+		name       string
+		diarizer   string
+		modelsDir  string
+		lookPath   func(string) (string, error)
+		wantDetail string
+	}{
+		{name: "sherpa needs nothing", diarizer: DiarizerSherpa, modelsDir: t.TempDir(), lookPath: failLookPath},
+		{name: "unset needs nothing", diarizer: "", modelsDir: t.TempDir(), lookPath: failLookPath},
+		{name: "an unknown engine is not an install gap", diarizer: "pyannote", modelsDir: t.TempDir(), lookPath: failLookPath},
+		{
+			name: "missing CLI", diarizer: DiarizerSortformer, modelsDir: installed, lookPath: failLookPath,
+			wantDetail: TranscribeCPPCLIName + " not installed",
+		},
+		{
+			name: "missing weights", diarizer: DiarizerSortformer, modelsDir: t.TempDir(), lookPath: okLookPath,
+			wantDetail: "weights not downloaded",
+		},
+		{name: "installed", diarizer: DiarizerSortformer, modelsDir: installed, lookPath: okLookPath},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gap := MeetingDiarizerGap(sortformerConfig(tt.diarizer), tt.modelsDir, tt.lookPath)
+			if gap.Detail != tt.wantDetail {
+				t.Fatalf("detail = %q, want %q", gap.Detail, tt.wantDetail)
+			}
+			if gap.Missing() && gap.Remediation == "" {
+				t.Errorf("a reported gap must carry remediation: %+v", gap)
+			}
+		})
+	}
+
+	// No config and no lookPath are the picker's own zero values, not a gap.
+	if gap := MeetingDiarizerGap(nil, installed, okLookPath); gap.Missing() {
+		t.Errorf("nil config = %+v, want no gap", gap)
+	}
+	if gap := MeetingDiarizerGap(sortformerConfig(DiarizerSortformer), t.TempDir(), nil); gap.Missing() {
+		t.Errorf("nil lookPath = %+v, want no gap", gap)
+	}
+}
+
 // doctor and 'models ensure' must agree: a row telling the user to fetch
 // weights the plan will never fetch is a permanent, unfixable FAIL.
 func TestDiagnoseAndEnsureAgreeOnWhenSortformerIsNeeded(t *testing.T) {

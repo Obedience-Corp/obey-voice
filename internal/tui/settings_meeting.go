@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -14,6 +15,7 @@ import (
 const (
 	meetingRowDiarization = iota
 	meetingRowLiveLabels
+	meetingRowDiarizer
 	meetingRowNumSpeakers
 	meetingRowRecordAudio
 	meetingRowMode
@@ -58,10 +60,12 @@ func (m settingsModel) meetingItems() []string {
 	diarizationOn := m.cfg.Speaker.Enabled && m.cfg.Speaker.Meeting.Enabled
 	liveLabelsOn := m.cfg.Speaker.Enabled && m.cfg.Speaker.Meeting.Live
 	recordAudioOn := m.cfg.Speaker.Meeting.RecordAudio
+	engine, engineErr := config.MeetingDiarizerFrom(m.cfg)
 	return []string{
 		fmt.Sprintf("Speaker diarization — %s", enabledLabel(diarizationOn)),
 		fmt.Sprintf("Live labels while recording — %s", enabledLabel(liveLabelsOn)),
-		fmt.Sprintf("Expected speakers: %s", meetingNumSpeakersLabel(m.cfg.Speaker.Meeting.NumSpeakers)),
+		m.meetingDiarizerLabel(engine, engineErr),
+		fmt.Sprintf("Expected speakers: %s", meetingNumSpeakersLabel(m.cfg.Speaker.Meeting.NumSpeakers, engine)),
 		fmt.Sprintf("Record audio for analysis — %s", enabledLabel(recordAudioOn)),
 		fmt.Sprintf("Route mode: %s", mode),
 		fmt.Sprintf("Default destination: %s", def),
@@ -72,11 +76,63 @@ func (m settingsModel) meetingItems() []string {
 	}
 }
 
-func meetingNumSpeakersLabel(n int) string {
+// meetingNumSpeakersLabel describes the count under the engine that would read
+// it. Under sortformer it reads nothing — not the model, and not the
+// sparse-label merge the count gates under sherpa — so the row says so instead
+// of offering tuning advice for a setting that changes nothing.
+func meetingNumSpeakersLabel(n int, engine string) string {
+	value := "Auto"
+	if n > 0 {
+		value = fmt.Sprintf("%d", n)
+	}
+	if engine == config.DiarizerSortformer {
+		return value + " — no effect: sortformer takes no speaker count"
+	}
 	if n <= 0 {
 		return "Auto (can over-split long meetings)"
 	}
 	return fmt.Sprintf("%d (set 2 for 1:1 interviews)", n)
+}
+
+// meetingDiarizerLabel is the engine row. A gap replaces the blurb rather than
+// extending the line: what is missing matters more than what the engine is.
+func (m settingsModel) meetingDiarizerLabel(engine string, err error) string {
+	if err != nil {
+		return fmt.Sprintf("Diarization engine: unknown value %q — enter picks %s",
+			strings.TrimSpace(m.cfg.Speaker.Meeting.Diarizer), config.DefaultMeetingDiarizer)
+	}
+	if engine != config.DiarizerSortformer {
+		return "Diarization engine: " + engine + " (default) — pyannote + TitaNet"
+	}
+	label := "Diarization engine: sortformer (optional)"
+	if gap := m.meetingDiarizerGap(); gap.Missing() {
+		return label + " · " + gap.Detail
+	}
+	return label + " — NVIDIA, through transcribe.cpp"
+}
+
+// meetingDiarizerGap is what the selected engine still needs here. The check is
+// a PATH lookup and a stat, cheap enough to run while the row renders, so the
+// state is current after an install without a Settings reopen.
+func (m settingsModel) meetingDiarizerGap() config.STTGap {
+	return config.MeetingDiarizerGap(m.cfg, config.ModelsDirFrom(m.cfg), m.binaryLookPath())
+}
+
+// nextMeetingDiarizer cycles sherpa → sortformer → sherpa. A value this build
+// does not know lands on the default rather than advancing past it: the engine
+// that labels a meeting should never be reached by stepping through a typo.
+func nextMeetingDiarizer(current string) string {
+	choices := config.MeetingDiarizers()
+	selected, err := config.NormalizeMeetingDiarizer(current)
+	if err != nil {
+		return config.DefaultMeetingDiarizer
+	}
+	for i, choice := range choices {
+		if choice == selected {
+			return choices[(i+1)%len(choices)]
+		}
+	}
+	return config.DefaultMeetingDiarizer
 }
 
 // nextMeetingNumSpeakers cycles Auto → 2 → 3 → 4 → Auto. Values outside the
@@ -150,6 +206,8 @@ func (m *settingsModel) selectMeetingItem() {
 		}
 		m.cfg.Speaker.Meeting.Live = false
 		m.message = "Live labels OFF — mic glyph only until offline diarize"
+	case meetingRowDiarizer:
+		m.cycleMeetingDiarizer(saveConfig)
 	case meetingRowNumSpeakers:
 		next := nextMeetingNumSpeakers(m.cfg.Speaker.Meeting.NumSpeakers)
 		if err := saveConfig("speaker.meeting.num_speakers", next); err != nil {
@@ -157,7 +215,12 @@ func (m *settingsModel) selectMeetingItem() {
 			return
 		}
 		m.cfg.Speaker.Meeting.NumSpeakers = next
-		m.message = fmt.Sprintf("Expected speakers: %s", meetingNumSpeakersLabel(next))
+		engine, _ := config.MeetingDiarizerFrom(m.cfg)
+		m.message = fmt.Sprintf("Expected speakers: %s", meetingNumSpeakersLabel(next, engine))
+		if engine == config.DiarizerSortformer {
+			m.message += fmt.Sprintf(" — it resolves up to %d on its own; set the engine back to %s and the count applies again",
+				config.SortformerMaxSpeakers, config.DiarizerSherpa)
+		}
 	case meetingRowRecordAudio:
 		next := !m.cfg.Speaker.Meeting.RecordAudio
 		if err := saveConfig("speaker.meeting.record_audio", next); err != nil {
@@ -226,6 +289,33 @@ func (m *settingsModel) selectMeetingItem() {
 		m.message = fmt.Sprintf("%d destination(s): %v%s — choose when starting a meeting", len(m.routeDests), parts, more)
 	case meetingRowRefresh:
 		m.message = "Refreshing destinations…"
+	}
+}
+
+// cycleMeetingDiarizer switches the engine behind the offline review pass.
+// Nothing else moves: live labels, embeddings and enrolled names stay on the
+// sherpa path either way, and a meeting already recording keeps the engine it
+// started with.
+func (m *settingsModel) cycleMeetingDiarizer(saveConfig func(string, any) error) {
+	next := nextMeetingDiarizer(m.cfg.Speaker.Meeting.Diarizer)
+	// A refusal here would mean this screen's own table disagrees with the
+	// schema, which is worth saying rather than writing.
+	if _, err := config.NormalizeMeetingDiarizer(next); err != nil {
+		m.message = fmt.Sprintf("Not saved: %v", err)
+		return
+	}
+	if err := saveConfig("speaker.meeting.diarizer", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save speaker.meeting.diarizer: %v", err)
+		return
+	}
+	m.cfg.Speaker.Meeting.Diarizer = next
+	if next != config.DiarizerSortformer {
+		m.message = "Diarization engine: sherpa — the managed pyannote + TitaNet review pass"
+		return
+	}
+	m.message = "Diarization engine: sortformer (optional) — labels the review pass only; live labels stay on sherpa"
+	if gap := m.meetingDiarizerGap(); gap.Missing() {
+		m.message += fmt.Sprintf(" · not ready on this computer: %s — %s", gap.Detail, gap.Remediation)
 	}
 }
 
