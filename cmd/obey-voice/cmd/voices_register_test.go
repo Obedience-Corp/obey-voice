@@ -454,6 +454,31 @@ func TestActiveVoiceForAudio8(t *testing.T) {
 	}
 }
 
+// activeVoiceFor carried a qwen branch returning cfg.QwenTTSVoice whenever it
+// was non-empty — the answer config.TTSVoiceFor already gives for that provider,
+// minus the trim. These are the four shapes the branch could see; padding is the
+// only one where the two ever differed, and the trimmed spelling is the one
+// every other surface reports (render_real.go:346, tts_display.go:165).
+func TestActiveVoiceForQwenNeedsNoBranchOfItsOwn(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{"kokoro's key is not qwen's", config.Config{TTSProvider: "qwen3-tts", TTSVoice: "af_heart"}, ""},
+		{"unset stays unset: the model-native default has no name here", config.Config{TTSProvider: "qwen3-tts"}, ""},
+		{"a preset", config.Config{TTSProvider: "qwen3-tts", QwenTTSVoice: "Vivian"}, "Vivian"},
+		{"padding is stripped", config.Config{TTSProvider: "qwen3-tts", QwenTTSVoice: "  Vivian  "}, "Vivian"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := activeVoiceFor(&tt.cfg); got != tt.want {
+				t.Errorf("activeVoiceFor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestVoicesRegisterCanonicalizesTheKokoroVoice is the provenance-truth check:
 // Kokoro looks its voice up by exact map key with a silent af_heart fallback,
 // so "AF_SKY" used to speak as af_heart while the store recorded AF_SKY.

@@ -72,12 +72,9 @@ func personaUseResult(cfg *config.Config) personaUseJSON {
 }
 
 // activeVoiceFor reads the voice key the configured provider actually speaks
-// from. Qwen and Kokoro keep separate keys, so reading tts_voice alone would
-// report the wrong voice for half the personas.
+// from. Qwen, Kokoro and audio8 keep separate keys, so reading tts_voice alone
+// would report the wrong voice for half the personas.
 func activeVoiceFor(cfg *config.Config) string {
-	if isQwenTTS(cfg.TTSProvider) && strings.TrimSpace(cfg.QwenTTSVoice) != "" {
-		return cfg.QwenTTSVoice
-	}
 	return config.TTSVoiceFor(cfg, cfg.TTSProvider)
 }
 
