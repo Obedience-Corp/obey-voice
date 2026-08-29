@@ -17,7 +17,7 @@ Target: under 2 seconds from the end of your utterance to first audio.
 **macOS / Linux from source** (Go 1.26+, [just](https://github.com/casey/just), a C compiler):
 
 ```bash
-just install          # installs obey-voice into $GOBIN, plus a `obey-voice` compatibility symlink
+just install          # binary into $GOBIN, then default STT/TTS/VAD assets (`models ensure`)
 ```
 
 Grant the terminal microphone access under System Settings → Privacy & Security → Microphone.
@@ -79,7 +79,7 @@ obey-voice serve --tailscale
 | VAD | Silero | |
 | Audio | miniaudio / malgo | |
 
-Models download on first use into `models_dir`. Qwen installs from TUI Settings or `obey-voice models ensure --tts`. No product Python runtime.
+Models download on first use into `models_dir`, and `just install` runs `models ensure` for the default Kokoro/STT/VAD stack. Qwen installs from TUI Settings or `obey-voice models ensure --tts` on macOS Apple Silicon (Metal) and linux/amd64 (CPU). No product Python runtime.
 
 ## Docs
 

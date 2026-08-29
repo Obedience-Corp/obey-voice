@@ -110,17 +110,21 @@ func qwenTierStatusRows(native managedqwen.NativeStatus, nativeURL string) []con
 }
 
 // qwenTierFailClosedDetail explains why a missing tier cannot simply be
-// re-fetched: today only the pinned default release is known to ship 0.6b
-// alone, so 1.7b fails closed unless a multi-tier tarball is configured
-// (mirrors the fail-fast check in qwen.EnsureNative). Every other case
-// returns "" — a plain "missing" is self-explanatory.
+// re-fetched. No published package for this OS/arch fails closed for every
+// tier — `models ensure --tts` cannot invent a tarball. On platforms that
+// do have a pin, only 1.7b is known to be absent from that archive (mirrors
+// the fail-fast check in qwen.EnsureNative). Every other case returns "" —
+// a plain "missing" is self-explanatory.
 func qwenTierFailClosedDetail(configuredURL, tier string) string {
+	effective := managedqwen.ResolveNativeURL(configuredURL)
+	if effective == "" {
+		return managedqwen.UnavailableHint()
+	}
 	if tier != managedqwen.Tier1_7B {
 		return ""
 	}
 	defaultURL, _ := managedqwen.DefaultNativeRelease()
-	effective := managedqwen.ResolveNativeURL(configuredURL)
-	if effective == "" || effective == defaultURL {
+	if effective == defaultURL {
 		return "not in the pinned release — set qwen_tts_native_url to a multi-tier tarball"
 	}
 	return ""

@@ -152,8 +152,9 @@ Microphone and speaker devices can be selected from the **Input** and
 **Output** sections in TUI Settings. The **TTS** section selects the active
 text-to-speech provider and shows its configured model context. Kokoro exposes
 the static voice picker. Selecting an uninstalled **Qwen3-TTS** row installs the
-native multi-tier package (worker binary + GGUF under `models_dir/qwen3-tts`;
-uses the published platform release by default). After setup, the **Voice** section
+native multi-tier package (worker binary + GGUF under `models_dir/qwen3-tts`)
+when a published platform tarball exists (macOS Apple Silicon Metal, or
+linux/amd64 CPU) or `qwen_tts_native_url` is set. After setup, the **Voice** section
 lists Qwen's nine CustomVoice-class preset speakers; press `p` to preview and
 `Enter` to select one. The **Language** section selects Qwen's synthesis language
 (use **Auto** unless a book or conversation needs an explicit language). Returning
@@ -162,10 +163,13 @@ already-running conversation; no Obey Voice restart is required. The launcher
 and conversation header show the active TTS provider/model/mode/voice badge.
 An empty device config value follows the current operating-system default.
 
-The first Qwen installation is a large download. It is isolated below
-`models_dir/qwen3-tts`, can be inspected with `obey-voice models status --tts`,
-and can also be installed non-interactively after selecting Qwen with
-`obey-voice models ensure --tts`. Obey Voice keeps the model loaded in one native
+The first Qwen installation is a large download on platforms that have a
+published package. It is isolated below `models_dir/qwen3-tts`, can be inspected
+with `obey-voice models status --tts`, and can also be installed
+non-interactively after selecting Qwen with `obey-voice models ensure --tts`.
+Linux/amd64 downloads the CPU package (`qwen3-tts-native` v0.1.1). It is
+slower than realtime on a handheld; Kokoro stays the conversation default.
+Obey Voice keeps the model loaded in one native
 warm worker for the lifetime of the provider. Advanced users can set both
 `qwen_tts_binary` and `qwen_tts_model` to point at an explicit worker/model dir.
 

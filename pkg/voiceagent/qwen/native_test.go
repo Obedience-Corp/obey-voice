@@ -26,6 +26,22 @@ func TestInspectNativeEmpty(t *testing.T) {
 	}
 }
 
+func TestEnsureNativeFailsClosedWithoutPublishedPackage(t *testing.T) {
+	if ResolveNativeURL("") != "" {
+		t.Skip("this platform has a published package")
+	}
+	_, err := EnsureNative(context.Background(), t.TempDir(), NativeEnsureOptions{}, nil)
+	if err == nil {
+		t.Fatal("want fail-closed error when no published tarball exists")
+	}
+	if !strings.Contains(err.Error(), "no published package") {
+		t.Fatalf("err = %v, want no published package", err)
+	}
+	if strings.Contains(err.Error(), "downloads the published platform package") {
+		t.Fatalf("must not promise a download that does not exist: %v", err)
+	}
+}
+
 func TestEnsureNativeFromLocalTarGz(t *testing.T) {
 	modelsDir := t.TempDir()
 	archive, sum := writeFakeNativeTar(t, t.TempDir())
