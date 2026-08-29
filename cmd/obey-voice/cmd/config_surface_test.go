@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -528,6 +529,52 @@ func TestCapturedFixturesMatchTheCurrentPayloads(t *testing.T) {
 		}
 	})
 
+	// The remaining subtests run in the capture script's order and share this
+	// install, because `config set` writes to it: capturing the no-op after the
+	// successful write is what makes the two payloads different, and comparing
+	// either against an install in the other state would be meaningless.
+	t.Run("config-get-key", func(t *testing.T) {
+		out, err := runConfigSubcommand(t, newConfigGetCmd, "vad_silence_duration", "--json")
+		if err != nil {
+			t.Fatalf("config get vad_silence_duration --json: %v", err)
+		}
+		live := decodeJSON[configValuePayload](t, normalizeCapturedPaths(out))
+		fixture := decodeJSON[configValuePayload](t, readFixture(t, "config-get-key.json"))
+		if !reflect.DeepEqual(live, fixture) {
+			t.Errorf("single-value payload drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: %+v\nfixture: %+v",
+				live, fixture)
+		}
+	})
+
+	t.Run("config-set-ok", func(t *testing.T) {
+		out, err := runConfigSubcommand(t, newConfigSetCmd, "vad_silence_duration", "0.9", "--json")
+		if err != nil {
+			t.Fatalf("config set: %v", err)
+		}
+		live := decodeJSON[configSetPayload](t, normalizeCapturedPaths(out))
+		fixture := decodeJSON[configSetPayload](t, readFixture(t, "config-set-ok.json"))
+		if !reflect.DeepEqual(live, fixture) {
+			t.Errorf("set payload drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: %+v\nfixture: %+v",
+				live, fixture)
+		}
+	})
+
+	t.Run("config-set-noop", func(t *testing.T) {
+		out, err := runConfigSubcommand(t, newConfigSetCmd, "vad_silence_duration", "0.9", "--json")
+		if err != nil {
+			t.Fatalf("config set (no-op): %v", err)
+		}
+		live := decodeJSON[configSetPayload](t, normalizeCapturedPaths(out))
+		fixture := decodeJSON[configSetPayload](t, readFixture(t, "config-set-noop.json"))
+		if !reflect.DeepEqual(live, fixture) {
+			t.Errorf("no-op set payload drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: %+v\nfixture: %+v",
+				live, fixture)
+		}
+		if live.Changed {
+			t.Error("writing the value that is already there reported changed: the no-op fixture is not a no-op")
+		}
+	})
+
 	t.Run("config-set-error", func(t *testing.T) {
 		out, _ := runConfigSubcommand(t, newConfigSetCmd, "vad_silence_duration", "fast", "--json")
 		live := decodeJSON[configErrorPayload](t, out)
@@ -607,11 +654,18 @@ func copyFixtureTree(t *testing.T, src, dst string) {
 const (
 	capturedInstallRoot = "/Users/lance/.obey/agents/voice/festival-voice"
 	capturedCacheRoot   = "/Users/lance/.cache/festival-voice"
+	// `config set` names the backup it wrote, and the name carries the moment
+	// it was written. The script pins it so re-capturing does not churn the
+	// fixture; the same substitution has to happen here or every run differs.
+	capturedBackupSuffix = "config.yaml.bak.20260817T031500.000000000Z"
 )
+
+var capturedBackupRE = regexp.MustCompile(`config\.yaml\.bak\.[0-9TZ.]*`)
 
 func normalizeCapturedPaths(payload string) string {
 	payload = strings.ReplaceAll(payload, filepath.Dir(config.ConfigFile()), capturedInstallRoot)
-	return strings.ReplaceAll(payload, config.DefaultCacheDir(), capturedCacheRoot)
+	payload = strings.ReplaceAll(payload, config.DefaultCacheDir(), capturedCacheRoot)
+	return capturedBackupRE.ReplaceAllString(payload, capturedBackupSuffix)
 }
 
 func sortedKeys[V any](m map[string]V) []string {

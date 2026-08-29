@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -317,6 +318,86 @@ func TestSweepAudio8VoiceStoreDropsOnlyRedundantAsides(t *testing.T) {
 	}
 	if _, err := LoadAudio8VoiceMeta(modelsDir, "alice"); err != nil {
 		t.Errorf("the installed voice did not survive the sweep: %v", err)
+	}
+}
+
+// The staging directory spans the whole codes write, so it is the residue that
+// carries the megabytes — and the one that accumulates, because a registration
+// in flight and one killed an hour ago are the same bytes on disk. Age is the
+// only thing that separates them.
+func TestSweepAudio8VoiceStoreDropsAbandonedStagingDirs(t *testing.T) {
+	modelsDir := t.TempDir()
+	root := config.Audio8VoicesDir(modelsDir)
+	if err := SaveAudio8Voice(modelsDir, testMeta("alice"), testCodes(10, 8)); err != nil {
+		t.Fatal(err)
+	}
+
+	// A registration killed mid-write: the store never learned the name.
+	abandoned := filepath.Join(root, ".ghost.222222222")
+	writeStoreDir(t, abandoned, "ghost")
+	ageStoreDir(t, abandoned, audio8ResidueMaxAge+time.Minute)
+
+	// An aside created and killed before the previous voice was moved into it.
+	emptyAside := filepath.Join(root, ".alice.old.333333333")
+	if err := os.MkdirAll(emptyAside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ageStoreDir(t, emptyAside, audio8ResidueMaxAge+time.Minute)
+
+	// The same shape, seconds old: this is what a live registration in another
+	// process looks like, and sweeping it would destroy that registration.
+	inFlight := filepath.Join(root, ".pending.444444444")
+	writeStoreDir(t, inFlight, "pending")
+
+	swept := SweepAudio8VoiceStore(modelsDir)
+	want := []string{emptyAside, abandoned}
+	sort.Strings(want)
+	if !reflect.DeepEqual(swept, want) {
+		t.Fatalf("swept = %v, want %v", swept, want)
+	}
+	if _, err := os.Stat(inFlight); err != nil {
+		t.Errorf("a staging directory seconds old was swept: %v", err)
+	}
+	if _, err := LoadAudio8VoiceMeta(modelsDir, "alice"); err != nil {
+		t.Errorf("the installed voice did not survive the sweep: %v", err)
+	}
+}
+
+// The orphan aside is the one residue holding codes that cannot be re-fetched,
+// and it was unreachable in both directions: skipped by `registered`, kept by
+// the sweep, and invisible to removal, which builds the canonical path. The
+// case that most deserves a recovery path had none, while a legacy spelling —
+// argued for on exactly that ground — got one.
+func TestRemoveAudio8VoiceReachesAnOrphanAside(t *testing.T) {
+	modelsDir := t.TempDir()
+	orphan := filepath.Join(config.Audio8VoicesDir(modelsDir), ".carol.old.987654321")
+	writeStoreDir(t, filepath.Join(orphan, audio8AsideVoiceSubdir), "carol")
+
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); len(names) != 0 {
+		t.Fatalf("the store lists %v; the fixture is not the invisible-directory case", names)
+	}
+	if swept := SweepAudio8VoiceStore(modelsDir); len(swept) != 0 {
+		t.Fatalf("the sweep took the only copy: %v", swept)
+	}
+
+	removed, err := RemoveAudio8Voice(modelsDir, "carol")
+	if err != nil {
+		t.Fatalf("RemoveAudio8Voice on an orphaned aside = %v, want it reachable by name", err)
+	}
+	if want := []string{orphan}; !reflect.DeepEqual(removed, want) {
+		t.Fatalf("removed = %v, want %v", removed, want)
+	}
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Errorf("the orphaned aside is still on disk: %v", err)
+	}
+}
+
+// ageStoreDir backdates a directory's mtime so the sweep sees it as abandoned.
+func ageStoreDir(t *testing.T, dir string, age time.Duration) {
+	t.Helper()
+	when := time.Now().Add(-age)
+	if err := os.Chtimes(dir, when, when); err != nil {
+		t.Fatal(err)
 	}
 }
 

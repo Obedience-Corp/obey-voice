@@ -446,6 +446,50 @@ func TestVoicesRemoveReachesALegacyDirectory(t *testing.T) {
 	}
 }
 
+// A removal that fails for a real reason must say so. The branch keyed on
+// metaErr, which is non-nil for every directory the store cannot load — exactly
+// the legacy case — so a permission error from RemoveAll came back as "no such
+// registered voice" and sent the user looking for a voice that is right there.
+func TestVoicesRemoveReportsARealFailureNotNotFound(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions, so RemoveAll cannot be made to fail")
+	}
+	modelsDir := newAudio8TestConfig(t)
+	root := config.Audio8VoicesDir(modelsDir)
+	legacy := filepath.Join(root, " bob ")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(tts.Audio8VoiceMeta{Name: " bob ", Transcript: "the reference line"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, config.Audio8VoiceMetaFile), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Removing an entry needs write permission on its parent, not on itself.
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+
+	out, err := runVoicesSub(t, "remove", "bob", "--json")
+	if err == nil {
+		t.Fatal("remove of an unremovable directory error = nil")
+	}
+	payload := decodeJSON[struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}](t, out)
+	if payload.Code == codeNotFound {
+		t.Errorf("code = %q for a permission failure; the directory is right there and the message hides why: %q",
+			payload.Code, payload.Error)
+	}
+	if !strings.Contains(payload.Error, legacy) {
+		t.Errorf("message = %q, want it to name the directory it could not remove", payload.Error)
+	}
+}
+
 // A registered voice must reach every catalog surface without loading a model,
 // and the packaged reference must stay first.
 func TestRegisteredVoicesReachTheStaticCatalog(t *testing.T) {

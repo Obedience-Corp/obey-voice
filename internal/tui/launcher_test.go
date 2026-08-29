@@ -73,6 +73,9 @@ func TestLauncherDisplaysConfiguredTTSProviderAndModel(t *testing.T) {
 // `== "kokoro"` guard, so an audio8 stack read "voice model-native" whatever
 // audio8_voice named. Both chips resolve through config.TTSVoiceFor now, so the
 // label appears twice; one occurrence means the chip fell back to the guard.
+//
+// Three of the four cases discriminate. The kokoro one is the regression guard:
+// it is the case the old guard got right, and it has to keep passing.
 func TestLauncherVoiceChipResolvesThroughConfig(t *testing.T) {
 	tests := []struct {
 		name string

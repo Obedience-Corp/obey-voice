@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,8 +63,9 @@ type audio8VoiceJSON struct {
 	Path        string  `json:"path"`
 	Removed     bool    `json:"removed,omitempty"`
 	// RemovedPaths names every directory a removal deleted. It is more than
-	// Path whenever a legacy, non-canonical spelling of the same voice was on
-	// disk beside it - the only way a caller can see that one existed.
+	// Path whenever the store held something no listing could show: a
+	// non-canonical spelling of the same voice, or an aside left by an
+	// interrupted replacement. It is the only way a caller learns one existed.
 	RemovedPaths []string `json:"removed_paths,omitempty"`
 }
 
@@ -352,14 +354,17 @@ func runVoicesRemove(cmd *cobra.Command, args []string) error {
 	}
 	modelsDir := config.ModelsDirFrom(cfg)
 	// Read the metadata before the removal, but do not require it: a directory
-	// registered before names were canonicalized ("  bob  ") cannot be loaded,
-	// because the store builds its path from the canonical name. It is still on
-	// disk holding that name, so removal has to reach it or nothing will.
+	// the store cannot address - a pre-canonicalization spelling, or an aside
+	// left by an interrupted replacement - has no loadable metadata under the
+	// canonical path, and removal has to reach it or nothing will.
 	meta, metaErr := tts.LoadAudio8VoiceMeta(modelsDir, name)
 	removed, err := tts.RemoveAudio8Voice(modelsDir, name)
 	if err != nil {
-		if metaErr != nil {
-			return fail(codedError(codeNotFound, "%v", metaErr))
+		// Branch on the error, not on metaErr: metaErr is non-nil for every
+		// unloadable directory, so keying on it reported an EPERM from
+		// RemoveAll as "no such registered voice" and swallowed the real cause.
+		if errors.Is(err, tts.ErrAudio8VoiceNotFound) {
+			return fail(codedError(codeNotFound, "%v", err))
 		}
 		return fail(err)
 	}
@@ -377,7 +382,7 @@ func runVoicesRemove(cmd *cobra.Command, args []string) error {
 	for _, path := range removed {
 		if path != config.Audio8VoiceDir(modelsDir, name) {
 			fmt.Fprintf(out, "  %s\n", dimStyle.Render(
-				"also removed "+path+", registered under a spelling this store cannot resolve"))
+				"also removed "+path+", which no listing could show you"))
 		}
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.Audio8Voice), name) {

@@ -12,6 +12,11 @@ type liveFake struct {
 	release chan struct{}
 	label   string
 	err     error
+	// resetStarted/resetRelease hold LiveAdapter.Reset inside the analyzer call
+	// it makes while holding the adapter mutex. That is the only way a test can
+	// put a known, controlled duration in front of a Submit.
+	resetStarted chan struct{}
+	resetRelease chan struct{}
 }
 
 func (f *liveFake) IdentifySegment(ctx context.Context, seg Segment) (Observation, error) {
@@ -41,7 +46,18 @@ func (f *liveFake) IdentifySegment(ctx context.Context, seg Segment) (Observatio
 	return Observation{SegmentID: seg.ID, StartMS: MS(seg.Start), EndMS: MS(seg.End), Label: label, Confidence: .9, State: StateStable, Source: seg.Source}, nil
 }
 
-func (f *liveFake) Reset() error { return nil }
+func (f *liveFake) Reset() error {
+	if f.resetStarted != nil {
+		select {
+		case f.resetStarted <- struct{}{}:
+		default:
+		}
+	}
+	if f.resetRelease != nil {
+		<-f.resetRelease
+	}
+	return nil
+}
 
 func TestLiveAdapterDropsWithoutBlockingAndCopiesFrames(t *testing.T) {
 	fake := &liveFake{started: make(chan struct{}, 1), release: make(chan struct{})}
@@ -112,10 +128,110 @@ func TestLiveAdapterRecordsAnalyzerAndResponsePathTimings(t *testing.T) {
 		t.Fatalf("analyzer timings = %s total / %s last, want at least %s: the held call was not measured",
 			time.Duration(stats.AnalyzerNanos), time.Duration(stats.LastAnalyzerNanos), analyzerHeld)
 	}
-	// The totals are sums, so neither can sit below the sample it just took in.
-	if stats.ResponsePathNanos < stats.LastResponsePathNanos {
-		t.Fatalf("response-path total %s is below its last sample %s: submits are not accumulated",
+}
+
+// The response-path total is a sum, and one Submit cannot show that: with a
+// single sample an accumulator and a plain store are indistinguishable, which
+// is what the earlier `total >= last` check amounted to. Two samples with
+// independent floors separate them — under a store the total would equal the
+// second sample alone, which is strictly less than the two together.
+func TestLiveAdapterAccumulatesResponsePathTime(t *testing.T) {
+	big := make([]float32, 1<<20) // 4 MiB: cannot be copied inside a clock tick
+
+	// The analyzer never returns, so neither frame is consumed and nothing but
+	// Submit touches the counters. Close cancels the context the fake selects on.
+	fake := &liveFake{started: make(chan struct{}, 1), release: make(chan struct{})}
+	a := NewLiveAdapter(context.Background(), fake, 4)
+	defer a.Close()
+
+	if err := a.Submit(context.Background(), Segment{ID: "first", Samples: big}); err != nil {
+		t.Fatal(err)
+	}
+	<-fake.started
+	first := a.Stats().LastResponsePathNanos
+	if first < uint64(time.Microsecond) {
+		t.Fatalf("first submit recorded %dns for a 4 MiB frame, want at least 1µs", first)
+	}
+
+	if err := a.Submit(context.Background(), Segment{ID: "second", Samples: big}); err != nil {
+		t.Fatal(err)
+	}
+	stats := a.Stats()
+	if stats.LastResponsePathNanos < uint64(time.Microsecond) {
+		t.Fatalf("second submit recorded %dns for a 4 MiB frame, want at least 1µs", stats.LastResponsePathNanos)
+	}
+	if want := first + stats.LastResponsePathNanos; stats.ResponsePathNanos < want {
+		t.Fatalf("response-path total %s is below the two samples it took in (%s + %s): it is storing, not accumulating",
+			time.Duration(stats.ResponsePathNanos), time.Duration(first), time.Duration(stats.LastResponsePathNanos))
+	}
+}
+
+// A dropped submit is the one call that never reaches the queue, and it was
+// covered only by accident: the old `!= 0` block ran with the dropped Submit as
+// the last one, so removing that block left the drop path's accounting asserted
+// nowhere. It cannot be floored by work — the drop returns before it copies
+// anything — but the response-path clock starts before the mutex is taken, so a
+// lock held for a known time is a floor the test can create. That is also the
+// honest claim: this counter measures what the caller waited for.
+func TestLiveAdapterTimesADroppedSubmit(t *testing.T) {
+	const lockHeld = 20 * time.Millisecond
+
+	fake := &liveFake{
+		started:      make(chan struct{}, 1),
+		release:      make(chan struct{}),
+		resetStarted: make(chan struct{}, 1),
+		resetRelease: make(chan struct{}),
+	}
+	a := NewLiveAdapter(context.Background(), fake, 1)
+	defer a.Close()
+
+	// Saturate: the worker takes the first frame and blocks in the analyzer, the
+	// second fills the one-deep queue, so the third has nowhere to go.
+	if err := a.Submit(context.Background(), Segment{ID: "held", Samples: []float32{1}}); err != nil {
+		t.Fatal(err)
+	}
+	<-fake.started
+	if err := a.Submit(context.Background(), Segment{ID: "queued", Samples: []float32{1}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read the baseline first: Stats takes the same mutex, so asking for it
+	// after Reset has the lock would spend the whole hold here instead.
+	before := a.Stats()
+
+	// Reset calls the analyzer while holding the adapter mutex, so the dropped
+	// Submit below waits on the lock for as long as the fake holds it.
+	resetDone := make(chan error, 1)
+	go func() { resetDone <- a.Reset() }()
+	<-fake.resetStarted
+	go func() {
+		time.Sleep(lockHeld)
+		close(fake.resetRelease)
+	}()
+
+	if err := a.Submit(context.Background(), Segment{ID: "dropped", Samples: []float32{1}}); !errors.Is(err, ErrLiveDropped) {
+		t.Fatalf("saturated submit error = %v, want ErrLiveDropped", err)
+	}
+	if err := <-resetDone; err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+
+	stats := a.Stats()
+	if stats.Dropped != before.Dropped+1 {
+		t.Errorf("dropped = %d, want %d", stats.Dropped, before.Dropped+1)
+	}
+	if stats.LastResponsePathNanos < uint64(lockHeld) {
+		t.Errorf("the dropped submit recorded %s while it waited at least %s on the lock: the drop path returns without being timed",
+			time.Duration(stats.LastResponsePathNanos), lockHeld)
+	}
+	if stats.ResponsePathNanos < before.ResponsePathNanos+stats.LastResponsePathNanos {
+		t.Errorf("response-path total %s did not take in the dropped submit's %s",
 			time.Duration(stats.ResponsePathNanos), time.Duration(stats.LastResponsePathNanos))
+	}
+	// It never reached the analyzer, so nothing about it may land there.
+	if stats.Processed != before.Processed || stats.AnalyzerNanos != before.AnalyzerNanos {
+		t.Errorf("a dropped frame moved the analyzer counters: processed %d->%d, nanos %d->%d",
+			before.Processed, stats.Processed, before.AnalyzerNanos, stats.AnalyzerNanos)
 	}
 }
 
