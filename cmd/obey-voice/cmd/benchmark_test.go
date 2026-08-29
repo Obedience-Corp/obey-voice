@@ -183,6 +183,51 @@ func TestEvaluateThresholdsWithinBudgetNoViolations(t *testing.T) {
 	}
 }
 
+// A rescued turn is not a failed run. The fallback event is emitted as an
+// events.Error, so `benchmark` exited non-zero when Kokoro successfully spoke a
+// sentence qwen could not — a recovery reported as a failure.
+func TestBenchmarkSeparatesATTSFallbackFromAFailure(t *testing.T) {
+	errorCh := make(chan events.Error, 8)
+	errorCh <- events.Error{Stage: events.StageTTSFallback, Message: "primary playback TTS failed; retrying this sentence with Kokoro"}
+	errorCh <- events.Error{Stage: "brain", Message: "ollama refused the request"}
+	errorCh <- events.Error{Stage: events.StageTTSFallback, Message: "primary TTS failed; speaking with Kokoro for the rest of the reply"}
+
+	errs, recovered := readBenchmarkErrors(errorCh)
+	if len(errs) != 1 || errs[0].Stage != "brain" {
+		t.Fatalf("failures = %+v, want only the brain error", errs)
+	}
+	if len(recovered) != 2 {
+		t.Fatalf("recoveries = %+v, want both fallback events", recovered)
+	}
+
+	// The exit status is decided from Errors alone, so a run whose only event
+	// was the rescue has to come back clean.
+	if err := benchmarkExitErr([]benchmarkResult{{Recovered: recovered}}); err != nil {
+		t.Errorf("benchmarkExitErr on a rescued run = %v, want nil", err)
+	}
+	if err := benchmarkExitErr([]benchmarkResult{{Errors: errs, Recovered: recovered}}); err == nil {
+		t.Error("benchmarkExitErr with a real failure alongside the rescue = nil, want a failure")
+	}
+}
+
+// Not failed is not the same as unreported: a reply that changed voice halfway
+// is not a clean measurement of the engine that was asked for.
+func TestBenchmarkSummaryReportsARescueAsDegraded(t *testing.T) {
+	results := []benchmarkResult{{
+		Mode:      "text",
+		Iteration: 1,
+		Prompt:    "hi",
+		Recovered: []benchmarkErrorLog{{Stage: events.StageTTSFallback, Message: "pcm stream stalled"}},
+	}}
+	out := captureStdout(t, func() { printBenchmarkSummary(results) })
+	if !strings.Contains(out, "degraded [tts-fallback]: pcm stream stalled") {
+		t.Fatalf("summary does not report the rescue:\n%s", out)
+	}
+	if strings.Contains(out, "error [tts-fallback]") {
+		t.Fatalf("summary still calls the rescue an error:\n%s", out)
+	}
+}
+
 func TestBenchmarkSummaryShowsInterruptionLatency(t *testing.T) {
 	results := []benchmarkResult{{
 		Mode:      "voice",

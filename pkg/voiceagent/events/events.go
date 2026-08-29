@@ -332,6 +332,18 @@ type Error struct {
 
 func (e Error) eventType() string { return "error" }
 
+// StageTTSFallback is the one Error stage that reports a recovery rather than a
+// failure: the primary engine could not speak a sentence, so Kokoro spoke it.
+// The turn still produced audio in a different voice.
+//
+// It stays an Error because a voice changing mid-reply is precisely the kind of
+// thing a listener needs told, and the TUI renders it as such. Anything
+// deciding an *outcome* from these events has to tell the two apart, though —
+// `benchmark` counted a rescued turn as a failed run and exited non-zero on a
+// successful recovery. The name exists so that decision is not a string
+// literal repeated in a package that does not own the emit site.
+const StageTTSFallback = "tts-fallback"
+
 // Info carries an informational message.
 type Info struct {
 	Message string

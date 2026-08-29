@@ -148,7 +148,12 @@ type benchmarkResult struct {
 	Expected        string              `json:"expected,omitempty"`
 	TranscriptScore float64             `json:"transcript_score,omitempty"`
 	Errors          []benchmarkErrorLog `json:"errors,omitempty"`
-	Violations      []string            `json:"violations,omitempty"`
+	// Recovered holds the events that report a rescue rather than a failure -
+	// today only events.StageTTSFallback. They are kept out of Errors because
+	// countErrorResults reads that field to decide the exit status, and a turn
+	// the fallback voice completed is degraded, not failed.
+	Recovered  []benchmarkErrorLog `json:"recovered,omitempty"`
+	Violations []string            `json:"violations,omitempty"`
 }
 
 type benchmarkErrorLog struct {
@@ -370,7 +375,7 @@ func runTextBenchmarkLeg(ctx context.Context, cfg *config.Config, spec ttsSpec) 
 			runErr := p.RunTurnTextMode(ctx, prompt)
 			elapsed := time.Since(start)
 			metric := readBenchmarkMetrics(metricsCh)
-			errs := readBenchmarkErrors(errorCh)
+			errs, recovered := readBenchmarkErrors(errorCh)
 
 			if runErr != nil {
 				errs = append(errs, benchmarkErrorLog{Stage: "benchmark", Message: runErr.Error()})
@@ -384,6 +389,7 @@ func runTextBenchmarkLeg(ctx context.Context, cfg *config.Config, spec ttsSpec) 
 				Elapsed:      elapsed,
 				Metrics:      metric,
 				Errors:       errs,
+				Recovered:    recovered,
 			}
 			result.Violations = evaluateTextThresholds(result)
 			results = append(results, result)
@@ -544,7 +550,9 @@ func runSingleFullTurnBenchmark(ctx context.Context, cfg *config.Config, provide
 	transcript, runErr := p.RunTurn(ctx)
 	result.Elapsed = time.Since(start)
 	result.Metrics = readBenchmarkMetrics(metricsCh)
-	result.Errors = append(result.Errors, readBenchmarkErrors(errorCh)...)
+	errs, recovered := readBenchmarkErrors(errorCh)
+	result.Errors = append(result.Errors, errs...)
+	result.Recovered = append(result.Recovered, recovered...)
 	result.Transcript = transcript
 
 	if expected != "" {
@@ -714,17 +722,26 @@ func readBenchmarkMetrics(metricsCh chan events.TurnMetrics) events.TurnMetrics 
 	}
 }
 
-func readBenchmarkErrors(errorCh chan events.Error) []benchmarkErrorLog {
-	var out []benchmarkErrorLog
+// readBenchmarkErrors drains the bus, separating recoveries from failures.
+//
+// events.StageTTSFallback announces that Kokoro spoke a sentence the primary
+// engine could not, so the turn produced audio: counting it as an error made
+// `benchmark` exit non-zero on a successful rescue and read a recovered run as
+// a failed one. It is still reported — a reply that changed voice mid-way is
+// not a clean measurement of the engine that was asked for — but it is
+// reported as what it is.
+func readBenchmarkErrors(errorCh chan events.Error) (errs, recovered []benchmarkErrorLog) {
 	for {
 		select {
 		case err := <-errorCh:
-			out = append(out, benchmarkErrorLog{
-				Stage:   err.Stage,
-				Message: err.Message,
-			})
+			entry := benchmarkErrorLog{Stage: err.Stage, Message: err.Message}
+			if err.Stage == events.StageTTSFallback {
+				recovered = append(recovered, entry)
+				continue
+			}
+			errs = append(errs, entry)
 		default:
-			return out
+			return errs, recovered
 		}
 	}
 }
@@ -937,6 +954,10 @@ func printBenchmarkSummary(results []benchmarkResult) {
 				}
 				fmt.Printf("    %s %s\n", failStyle.Render(fmt.Sprintf("error [%s]:", stage)), err.Message)
 			}
+		}
+		// Reported, but not in the style that says the run failed: it did not.
+		for _, entry := range result.Recovered {
+			fmt.Printf("    %s %s\n", dimStyle.Render(fmt.Sprintf("degraded [%s]:", entry.Stage)), entry.Message)
 		}
 		if len(result.Violations) > 0 {
 			for _, violation := range result.Violations {
