@@ -36,7 +36,11 @@ type qwenOptionItem struct {
 
 func (m *settingsModel) refreshQwenStatus() {
 	modelsDir := config.ModelsDirFrom(m.cfg)
-	m.qwenStatus = managedqwen.Inspect(modelsDir)
+	nativeURL := ""
+	if m.cfg != nil {
+		nativeURL = m.cfg.QwenTTSNativeURL
+	}
+	m.qwenStatus = managedqwen.InspectURL(modelsDir, nativeURL)
 	m.nativeStatus = managedqwen.InspectNative(modelsDir, m.cfg.QwenTTSModelTier)
 }
 
@@ -98,7 +102,7 @@ func (m *settingsModel) buildQwenItems() {
 	if !m.nativeStatus.Installed {
 		install := "Install / repair — native package (ensure) or legacy managed"
 		if m.cfg != nil && managedqwen.ResolveNativeURL(m.cfg.QwenTTSNativeURL) == "" {
-			install = "No published package for this OS/arch — set qwen_tts_native_url"
+			install = managedqwen.UnavailableHint()
 		}
 		if m.qwenInstalling {
 			install = "Installing…"
@@ -293,7 +297,7 @@ func (m settingsModel) installQwenAssets(ctx context.Context) tea.Cmd {
 			events.send(qwenInstallProgressClosedMsg{})
 		}
 		st := managedqwen.InspectNative(config.ModelsDirFrom(&cfgCopy), cfgCopy.QwenTTSModelTier)
-		status := managedqwen.Inspect(config.ModelsDirFrom(&cfgCopy))
+		status := managedqwen.InspectURL(config.ModelsDirFrom(&cfgCopy), cfgCopy.QwenTTSNativeURL)
 		return qwenInstallDoneMsg{status: status, native: st, err: err}
 	}
 }
