@@ -14,7 +14,7 @@ import (
 func appConfig() *config.Config {
 	return &config.Config{
 		TTSProvider:               "kokoro",
-		TTSVoice:                  "af_heart",
+		TTSVoice:                  config.DefaultKokoroVoice,
 		TTSPlace:                  "lan",
 		BrainProvider:             "ollama",
 		OllamaModel:               "qwen2.5:14b",

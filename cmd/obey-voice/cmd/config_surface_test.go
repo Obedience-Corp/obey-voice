@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -449,49 +450,128 @@ func TestLegacyConfigFormsSurvive(t *testing.T) {
 }
 
 func TestCapturedFixturesMatchTheCurrentPayloads(t *testing.T) {
-	// The fixtures the Mac app decodes are captured from this binary. If a
-	// payload's shape changes without re-capturing them, the app is testing
-	// against a wire format samantha no longer speaks.
-	newSurfaceInstall(t, surfaceConfig)
+	// The fixtures the Mac app decodes are captured from this binary by
+	// testdata/capture-config-fixtures.sh. If a payload changes without
+	// re-capturing them, the app is testing against a wire format obey-voice no
+	// longer speaks.
+	//
+	// This compared key count and key order only, so enum members, env names,
+	// help text and defaults could rot indefinitely with nothing red: #57 found
+	// four such drifts in a file every one of these subtests passed on. Values
+	// are compared now, which is what makes the fixture a contract.
+	newCapturedFixtureInstall(t)
 
 	t.Run("config-schema", func(t *testing.T) {
 		out, err := runConfigSubcommand(t, newConfigSchemaCmd, "--json")
 		if err != nil {
 			t.Fatalf("config schema --json: %v", err)
 		}
-		live := decodeJSON[configSchemaPayload](t, out)
+		live := decodeJSON[configSchemaPayload](t, normalizeCapturedPaths(out))
 		fixture := decodeJSON[configSchemaPayload](t, readFixture(t, "config-schema.json"))
+		if live.SchemaVersion != fixture.SchemaVersion || live.ConfigFile != fixture.ConfigFile ||
+			!reflect.DeepEqual(live.Groups, fixture.Groups) {
+			t.Errorf("schema envelope drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: v%d %s %v\nfixture: v%d %s %v",
+				live.SchemaVersion, live.ConfigFile, live.Groups,
+				fixture.SchemaVersion, fixture.ConfigFile, fixture.Groups)
+		}
 		if len(live.Keys) != len(fixture.Keys) {
 			t.Fatalf("fixture has %d keys, the binary emits %d — re-run testdata/capture-config-fixtures.sh",
 				len(fixture.Keys), len(live.Keys))
 		}
 		for i := range live.Keys {
-			if live.Keys[i].Key != fixture.Keys[i].Key {
-				t.Fatalf("key %d: fixture %q, binary %q — re-run testdata/capture-config-fixtures.sh",
-					i, fixture.Keys[i].Key, live.Keys[i].Key)
+			// Whole spec, not just the name: the enum a picker renders, the env
+			// var a launch honors and the help a Settings row prints are all in
+			// here, and each of them is a thing the app displays verbatim.
+			if !reflect.DeepEqual(live.Keys[i], fixture.Keys[i]) {
+				t.Errorf("key %d (%q) drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: %+v\nfixture: %+v",
+					i, fixture.Keys[i].Key, live.Keys[i], fixture.Keys[i])
 			}
 		}
 	})
 
 	t.Run("config-get", func(t *testing.T) {
-		root := newSurfaceInstall(t, surfaceConfig)
-		seedPersona(t, root, "ada", adaProfile)
 		out, err := runConfigSubcommand(t, newConfigGetCmd, "--json")
 		if err != nil {
 			t.Fatalf("config get --json: %v", err)
 		}
-		live := decodeJSON[configValuesPayload](t, out)
+		live := decodeJSON[configValuesPayload](t, normalizeCapturedPaths(out))
 		fixture := decodeJSON[configValuesPayload](t, readFixture(t, "config-get.json"))
 		if fixture.Persona == nil {
 			t.Fatal("the captured fixture has no persona block — re-run testdata/capture-config-fixtures.sh")
 		}
-		if !reflect.DeepEqual(live.Persona.Overrides, fixture.Persona.Overrides) {
-			t.Errorf("persona overrides drifted from the fixture:\n live: %v\nfixture: %v",
-				live.Persona.Overrides, fixture.Persona.Overrides)
+		if live.Persona == nil {
+			t.Fatal("no persona block: testdata/fixture-install no longer activates a persona")
 		}
-		if len(live.Values) != len(fixture.Values) {
-			t.Errorf("fixture has %d values, the binary emits %d — re-run testdata/capture-config-fixtures.sh",
-				len(fixture.Values), len(live.Values))
+		if !reflect.DeepEqual(*live.Persona, *fixture.Persona) {
+			t.Errorf("persona block drifted from the fixture:\n live: %+v\nfixture: %+v", *live.Persona, *fixture.Persona)
+		}
+		if live.SchemaVersion != fixture.SchemaVersion || live.ConfigFile != fixture.ConfigFile {
+			t.Errorf("values envelope drifted:\n live: v%d %s\nfixture: v%d %s",
+				live.SchemaVersion, live.ConfigFile, fixture.SchemaVersion, fixture.ConfigFile)
+		}
+		// Both the effective value and where it came from: "default" turning
+		// into "file" is a loader change the app has to know about, and it is
+		// invisible to a count.
+		for _, key := range sortedKeys(fixture.Values) {
+			got, ok := live.Values[key]
+			if !ok {
+				t.Errorf("key %q is in the fixture and not in the payload — re-run testdata/capture-config-fixtures.sh", key)
+				continue
+			}
+			if !reflect.DeepEqual(got, fixture.Values[key]) {
+				t.Errorf("value %q drifted from the fixture:\n live: %+v\nfixture: %+v", key, got, fixture.Values[key])
+			}
+		}
+		for _, key := range sortedKeys(live.Values) {
+			if _, ok := fixture.Values[key]; !ok {
+				t.Errorf("key %q is emitted and not in the fixture — re-run testdata/capture-config-fixtures.sh", key)
+			}
+		}
+	})
+
+	// The remaining subtests run in the capture script's order and share this
+	// install, because `config set` writes to it: capturing the no-op after the
+	// successful write is what makes the two payloads different, and comparing
+	// either against an install in the other state would be meaningless.
+	t.Run("config-get-key", func(t *testing.T) {
+		out, err := runConfigSubcommand(t, newConfigGetCmd, "vad_silence_duration", "--json")
+		if err != nil {
+			t.Fatalf("config get vad_silence_duration --json: %v", err)
+		}
+		live := decodeJSON[configValuePayload](t, normalizeCapturedPaths(out))
+		fixture := decodeJSON[configValuePayload](t, readFixture(t, "config-get-key.json"))
+		if !reflect.DeepEqual(live, fixture) {
+			t.Errorf("single-value payload drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: %+v\nfixture: %+v",
+				live, fixture)
+		}
+	})
+
+	t.Run("config-set-ok", func(t *testing.T) {
+		out, err := runConfigSubcommand(t, newConfigSetCmd, "vad_silence_duration", "0.9", "--json")
+		if err != nil {
+			t.Fatalf("config set: %v", err)
+		}
+		live := decodeJSON[configSetPayload](t, normalizeCapturedPaths(out))
+		fixture := decodeJSON[configSetPayload](t, readFixture(t, "config-set-ok.json"))
+		if !reflect.DeepEqual(live, fixture) {
+			t.Errorf("set payload drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: %+v\nfixture: %+v",
+				live, fixture)
+		}
+	})
+
+	t.Run("config-set-noop", func(t *testing.T) {
+		out, err := runConfigSubcommand(t, newConfigSetCmd, "vad_silence_duration", "0.9", "--json")
+		if err != nil {
+			t.Fatalf("config set (no-op): %v", err)
+		}
+		live := decodeJSON[configSetPayload](t, normalizeCapturedPaths(out))
+		fixture := decodeJSON[configSetPayload](t, readFixture(t, "config-set-noop.json"))
+		if !reflect.DeepEqual(live, fixture) {
+			t.Errorf("no-op set payload drifted from the fixture — re-run testdata/capture-config-fixtures.sh:\n live: %+v\nfixture: %+v",
+				live, fixture)
+		}
+		if live.Changed {
+			t.Error("writing the value that is already there reported changed: the no-op fixture is not a no-op")
 		}
 	})
 
@@ -499,10 +579,102 @@ func TestCapturedFixturesMatchTheCurrentPayloads(t *testing.T) {
 		out, _ := runConfigSubcommand(t, newConfigSetCmd, "vad_silence_duration", "fast", "--json")
 		live := decodeJSON[configErrorPayload](t, out)
 		fixture := decodeJSON[configErrorPayload](t, readFixture(t, "config-set-error.json"))
-		if !reflect.DeepEqual(live.Error, fixture.Error) {
-			t.Errorf("error payload drifted from the fixture:\n live: %+v\nfixture: %+v", live.Error, fixture.Error)
+		if !reflect.DeepEqual(live, fixture) {
+			t.Errorf("error payload drifted from the fixture:\n live: %+v\nfixture: %+v", live, fixture)
 		}
 	})
+}
+
+// newCapturedFixtureInstall reproduces the install the capture script builds:
+// the same config.yaml and the same active persona, from testdata/fixture-install
+// so the script and this test cannot describe two different installs, and with
+// the bound environment neutralized because the script captures under a clean
+// one. Without that a developer with TTS_PROVIDER or MODELS_DIR exported would
+// see a value drift that is theirs, not the payload's.
+func newCapturedFixtureInstall(t *testing.T) string {
+	t.Helper()
+	clearBoundEnv(t)
+	// The one variable the script sets while capturing config-get.json, so the
+	// fixture carries a value whose source is "env" rather than only defaults.
+	t.Setenv("OLLAMA_MODEL", "qwen2.5:14b")
+
+	dir := t.TempDir()
+	copyFixtureTree(t, filepath.Join("testdata", "fixture-install"), dir)
+	config.SetConfigDirForTest(t, dir)
+	if _, err := config.LoadRaw(); err != nil {
+		t.Fatalf("LoadRaw on the captured fixture install: %v", err)
+	}
+	return dir
+}
+
+// clearBoundEnv unsets every environment variable the loader binds. Viper runs
+// with AllowEmptyEnv off, so an empty value is not a value — and t.Setenv puts
+// the developer's own back when the test ends.
+func clearBoundEnv(t *testing.T) {
+	t.Helper()
+	for _, spec := range config.SchemaFor(nil) {
+		if spec.Env != "" {
+			t.Setenv(spec.Env, "")
+		}
+	}
+	// work_dir's compatibility alias: bound by the loader, absent from the
+	// schema, and a name any shell exports for its own purposes.
+	t.Setenv("WORK_DIR", "")
+}
+
+func copyFixtureTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o600)
+	})
+	if err != nil {
+		t.Fatalf("copying %s: %v", src, err)
+	}
+}
+
+// The two roots the capture script normalizes, verbatim from it. A payload
+// names this run's temp install and this machine's cache; the fixture names the
+// canonical home it was captured under, so the live side is rewritten the same
+// way before anything is compared.
+const (
+	capturedInstallRoot = "/Users/lance/.obey/agents/voice/festival-voice"
+	capturedCacheRoot   = "/Users/lance/.cache/festival-voice"
+	// `config set` names the backup it wrote, and the name carries the moment
+	// it was written. The script pins it so re-capturing does not churn the
+	// fixture; the same substitution has to happen here or every run differs.
+	capturedBackupSuffix = "config.yaml.bak.20260817T031500.000000000Z"
+)
+
+var capturedBackupRE = regexp.MustCompile(`config\.yaml\.bak\.[0-9TZ.]*`)
+
+func normalizeCapturedPaths(payload string) string {
+	payload = strings.ReplaceAll(payload, filepath.Dir(config.ConfigFile()), capturedInstallRoot)
+	payload = strings.ReplaceAll(payload, config.DefaultCacheDir(), capturedCacheRoot)
+	return capturedBackupRE.ReplaceAllString(payload, capturedBackupSuffix)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func readFixture(t *testing.T, name string) string {
@@ -514,18 +686,12 @@ func readFixture(t *testing.T, name string) string {
 	return string(data)
 }
 
-const adaProfile = `schema: festival-voice.persona.v1
-id: ada
-display_name: Ada
-brain:
-  provider: ollama
-  model: llama3.1
-tts:
-  provider: kokoro
-  voice: af_sky
-prompts:
-  persona: ada
-`
+// adaProfile is the persona the capture script installs, read from the same
+// file it copies so the two cannot drift apart.
+func adaProfile(t *testing.T) string {
+	t.Helper()
+	return readFixture(t, filepath.Join("fixture-install", "personas", "ada", "persona.yaml"))
+}
 
 // seedPersona writes a persona profile into the current install root and makes
 // it active in the config file.
@@ -553,7 +719,7 @@ func seedPersona(t *testing.T, root, id, profile string) {
 
 func TestConfigGetReportsPersonaOverrides(t *testing.T) {
 	root := newSurfaceInstall(t, surfaceConfig)
-	seedPersona(t, root, "ada", adaProfile)
+	seedPersona(t, root, "ada", adaProfile(t))
 
 	out, err := runConfigSubcommand(t, newConfigGetCmd, "--json")
 	if err != nil {
@@ -638,7 +804,7 @@ func TestConfigGetWithAPersonaStillWritesNothing(t *testing.T) {
 	// Loading a persona profile must not migrate it. This is landmine 1 again,
 	// now with a profile actually present.
 	root := newSurfaceInstall(t, surfaceConfig)
-	seedPersona(t, root, "ada", adaProfile)
+	seedPersona(t, root, "ada", adaProfile(t))
 	before := snapshotTree(t, root)
 
 	if _, err := runConfigSubcommand(t, newConfigGetCmd, "--json"); err != nil {

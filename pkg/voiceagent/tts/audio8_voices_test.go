@@ -2,9 +2,12 @@ package tts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -195,17 +198,227 @@ func TestRemoveAudio8Voice(t *testing.T) {
 	if err := SaveAudio8Voice(dir, testMeta("alice"), testCodes(10, 8)); err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveAudio8Voice(dir, config.Audio8PackagedVoice); err == nil {
+	if _, err := RemoveAudio8Voice(dir, config.Audio8PackagedVoice); err == nil {
 		t.Error("RemoveAudio8Voice(reference) error = nil, want the packaged voice to be protected")
 	}
-	if err := RemoveAudio8Voice(dir, "nobody"); !errors.Is(err, ErrAudio8VoiceNotFound) {
+	if _, err := RemoveAudio8Voice(dir, "nobody"); !errors.Is(err, ErrAudio8VoiceNotFound) {
 		t.Errorf("RemoveAudio8Voice(nobody) error = %v, want ErrAudio8VoiceNotFound", err)
 	}
-	if err := RemoveAudio8Voice(dir, "alice"); err != nil {
+	removed, err := RemoveAudio8Voice(dir, "alice")
+	if err != nil {
 		t.Fatalf("RemoveAudio8Voice: %v", err)
+	}
+	if want := []string{config.Audio8VoiceDir(dir, "alice")}; !reflect.DeepEqual(removed, want) {
+		t.Errorf("removed = %v, want %v", removed, want)
 	}
 	if names := config.Audio8RegisteredVoiceNames(dir); len(names) != 0 {
 		t.Errorf("after removal the store lists %v", names)
+	}
+}
+
+// writeStoreDir writes a voice.json-bearing directory at an arbitrary path,
+// which is how the two shapes SaveAudio8Voice can no longer produce - a legacy
+// non-canonical spelling, and a replacement aside - are reproduced.
+func writeStoreDir(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(testMeta(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, config.Audio8VoiceMetaFile), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A directory registered before names were canonicalized is invisible to
+// `registered` and unresolvable by synthesis, and `voices remove` could not
+// address it either: it builds the canonical path. It held a name with no way
+// to give it back, and only a manual rm could reach it.
+func TestRemoveAudio8VoiceReachesALegacySpelling(t *testing.T) {
+	modelsDir := t.TempDir()
+	legacy := filepath.Join(config.Audio8VoicesDir(modelsDir), " bob ")
+	writeStoreDir(t, legacy, " bob ")
+
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); len(names) != 0 {
+		t.Fatalf("the store lists %v; the fixture is not the invisible-directory case", names)
+	}
+
+	removed, err := RemoveAudio8Voice(modelsDir, "  bob  ")
+	if err != nil {
+		t.Fatalf("RemoveAudio8Voice on a legacy spelling = %v, want it removed", err)
+	}
+	if want := []string{legacy}; !reflect.DeepEqual(removed, want) {
+		t.Fatalf("removed = %v, want %v", removed, want)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Errorf("the legacy directory is still on disk: %v", err)
+	}
+
+	// A canonical voice and a legacy spelling of it can both exist; removing
+	// the name has to clear the name, not one of the two directories.
+	if err := SaveAudio8Voice(modelsDir, testMeta("bob"), testCodes(10, 8)); err != nil {
+		t.Fatal(err)
+	}
+	writeStoreDir(t, legacy, " bob ")
+	removed, err = RemoveAudio8Voice(modelsDir, "bob")
+	if err != nil {
+		t.Fatalf("RemoveAudio8Voice: %v", err)
+	}
+	if len(removed) != 2 {
+		t.Errorf("removed = %v, want both the canonical directory and the legacy one", removed)
+	}
+	entries, err := os.ReadDir(config.Audio8VoicesDir(modelsDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("store holds %d entries after removing the name", len(entries))
+	}
+}
+
+// A SIGKILL between the rename-in and the drop-aside leaves ".<name>.old.<n>"
+// behind, which nothing lists and nothing can remove. Sweeping it is only safe
+// when the voice it preserves is installed - otherwise it is the last copy, and
+// that is the case SaveAudio8Voice deliberately keeps it for.
+func TestSweepAudio8VoiceStoreDropsOnlyRedundantAsides(t *testing.T) {
+	modelsDir := t.TempDir()
+	root := config.Audio8VoicesDir(modelsDir)
+	// Both installed first: SaveAudio8Voice sweeps on the way in, so a fixture
+	// written before the last registration would be cleared by it instead.
+	for _, name := range []string{"alice", "dave"} {
+		if err := SaveAudio8Voice(modelsDir, testMeta(name), testCodes(10, 8)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	redundant := filepath.Join(root, ".alice.old.123456789")
+	writeStoreDir(t, filepath.Join(redundant, audio8AsideVoiceSubdir), "alice")
+
+	// No voice named "carol": this aside is the only copy of it.
+	orphan := filepath.Join(root, ".carol.old.987654321")
+	writeStoreDir(t, filepath.Join(orphan, audio8AsideVoiceSubdir), "carol")
+
+	// A registration of a voice literally called "dave.old", staged but not yet
+	// installed. Its staging directory has exactly the name an aside for the
+	// installed voice "dave" would - the strings are identical - and the only
+	// thing that tells them apart is where the metadata sits.
+	staging := filepath.Join(root, ".dave.old.111111111")
+	writeStoreDir(t, staging, "dave.old")
+
+	swept := SweepAudio8VoiceStore(modelsDir)
+	if want := []string{redundant}; !reflect.DeepEqual(swept, want) {
+		t.Fatalf("swept = %v, want only %v", swept, want)
+	}
+	for _, kept := range []string{orphan, staging} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("%s was swept: %v", filepath.Base(kept), err)
+		}
+	}
+	if _, err := LoadAudio8VoiceMeta(modelsDir, "alice"); err != nil {
+		t.Errorf("the installed voice did not survive the sweep: %v", err)
+	}
+}
+
+// The staging directory spans the whole codes write, so it is the residue that
+// carries the megabytes — and the one that accumulates, because a registration
+// in flight and one killed an hour ago are the same bytes on disk. Age is the
+// only thing that separates them.
+func TestSweepAudio8VoiceStoreDropsAbandonedStagingDirs(t *testing.T) {
+	modelsDir := t.TempDir()
+	root := config.Audio8VoicesDir(modelsDir)
+	if err := SaveAudio8Voice(modelsDir, testMeta("alice"), testCodes(10, 8)); err != nil {
+		t.Fatal(err)
+	}
+
+	// A registration killed mid-write: the store never learned the name.
+	abandoned := filepath.Join(root, ".ghost.222222222")
+	writeStoreDir(t, abandoned, "ghost")
+	ageStoreDir(t, abandoned, audio8ResidueMaxAge+time.Minute)
+
+	// An aside created and killed before the previous voice was moved into it.
+	emptyAside := filepath.Join(root, ".alice.old.333333333")
+	if err := os.MkdirAll(emptyAside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ageStoreDir(t, emptyAside, audio8ResidueMaxAge+time.Minute)
+
+	// The same shape, seconds old: this is what a live registration in another
+	// process looks like, and sweeping it would destroy that registration.
+	inFlight := filepath.Join(root, ".pending.444444444")
+	writeStoreDir(t, inFlight, "pending")
+
+	swept := SweepAudio8VoiceStore(modelsDir)
+	want := []string{emptyAside, abandoned}
+	sort.Strings(want)
+	if !reflect.DeepEqual(swept, want) {
+		t.Fatalf("swept = %v, want %v", swept, want)
+	}
+	if _, err := os.Stat(inFlight); err != nil {
+		t.Errorf("a staging directory seconds old was swept: %v", err)
+	}
+	if _, err := LoadAudio8VoiceMeta(modelsDir, "alice"); err != nil {
+		t.Errorf("the installed voice did not survive the sweep: %v", err)
+	}
+}
+
+// The orphan aside is the one residue holding codes that cannot be re-fetched,
+// and it was unreachable in both directions: skipped by `registered`, kept by
+// the sweep, and invisible to removal, which builds the canonical path. The
+// case that most deserves a recovery path had none, while a legacy spelling —
+// argued for on exactly that ground — got one.
+func TestRemoveAudio8VoiceReachesAnOrphanAside(t *testing.T) {
+	modelsDir := t.TempDir()
+	orphan := filepath.Join(config.Audio8VoicesDir(modelsDir), ".carol.old.987654321")
+	writeStoreDir(t, filepath.Join(orphan, audio8AsideVoiceSubdir), "carol")
+
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); len(names) != 0 {
+		t.Fatalf("the store lists %v; the fixture is not the invisible-directory case", names)
+	}
+	if swept := SweepAudio8VoiceStore(modelsDir); len(swept) != 0 {
+		t.Fatalf("the sweep took the only copy: %v", swept)
+	}
+
+	removed, err := RemoveAudio8Voice(modelsDir, "carol")
+	if err != nil {
+		t.Fatalf("RemoveAudio8Voice on an orphaned aside = %v, want it reachable by name", err)
+	}
+	if want := []string{orphan}; !reflect.DeepEqual(removed, want) {
+		t.Fatalf("removed = %v, want %v", removed, want)
+	}
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Errorf("the orphaned aside is still on disk: %v", err)
+	}
+}
+
+// ageStoreDir backdates a directory's mtime so the sweep sees it as abandoned.
+func ageStoreDir(t *testing.T, dir string, age time.Duration) {
+	t.Helper()
+	when := time.Now().Add(-age)
+	if err := os.Chtimes(dir, when, when); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Registration is what creates asides, so it is what clears the ones a previous
+// interrupted run of it left behind.
+func TestSaveAudio8VoiceSweepsAnOrphanedAside(t *testing.T) {
+	modelsDir := t.TempDir()
+	if err := SaveAudio8Voice(modelsDir, testMeta("alice"), testCodes(10, 8)); err != nil {
+		t.Fatal(err)
+	}
+	aside := filepath.Join(config.Audio8VoicesDir(modelsDir), ".alice.old.123456789")
+	writeStoreDir(t, filepath.Join(aside, audio8AsideVoiceSubdir), "alice")
+
+	if err := SaveAudio8Voice(modelsDir, testMeta("bob"), testCodes(10, 8)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(aside); !os.IsNotExist(err) {
+		t.Errorf("the orphaned aside survived a registration: %v", err)
+	}
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); strings.Join(names, ",") != "alice,bob" {
+		t.Errorf("store lists %v, want both voices intact", names)
 	}
 }
 
@@ -691,7 +904,7 @@ func TestAudio8VoiceNamesAreCanonicalEndToEnd(t *testing.T) {
 	}
 
 	// Removal takes the padded spelling too.
-	if err := RemoveAudio8Voice(modelsDir, " bob "); err != nil {
+	if _, err := RemoveAudio8Voice(modelsDir, " bob "); err != nil {
 		t.Errorf("RemoveAudio8Voice(\" bob \") = %v, want it to reach the same voice", err)
 	}
 	if names := config.Audio8RegisteredVoiceNames(modelsDir); len(names) != 0 {

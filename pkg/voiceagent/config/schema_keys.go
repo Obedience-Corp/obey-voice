@@ -38,7 +38,7 @@ func voiceKeys() []KeySpec {
 			Help: "How long to wait for the speech computer to answer a connection. It does not bound the model load on a cold host.",
 		},
 		{
-			Key: "tts_voice", Type: TypeEnum, Default: "af_heart", Enum: kokoroVoiceEnum(),
+			Key: "tts_voice", Type: TypeEnum, Default: DefaultKokoroVoice, Enum: kokoroVoiceEnum(),
 			Group: GroupVoice, Title: "Kokoro voice",
 			Help:               "The voice Kokoro speaks in. Qwen ignores this and uses its own preset.",
 			PersonaOverridable: true,

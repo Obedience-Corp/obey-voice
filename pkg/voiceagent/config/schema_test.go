@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -86,6 +87,29 @@ func TestSchemaDefaultsMatchConfigDefaults(t *testing.T) {
 		}
 		if want != got {
 			t.Errorf("%s: schema default %q, config default %q", spec.Key, got, want)
+		}
+	}
+}
+
+// An enum key whose default is not one of its own values leaves the Settings
+// picker nothing to highlight, and `config set <key> <that default>` is
+// refused. tts_voice is the reason this exists: af_heart was a literal in
+// setDefaults, in this key's Default, in internal/scene and in the TUI's voice
+// label, and nothing failed when any of them moved. They read
+// DefaultKokoroVoice now; this is the half a shared constant cannot cover,
+// because the enum is an independent list.
+func TestEnumDefaultsAreOfferedByTheirOwnEnum(t *testing.T) {
+	for _, spec := range Schema() {
+		if spec.Type != TypeEnum || len(spec.Enum) == 0 {
+			continue
+		}
+		def, _ := spec.Default.(string)
+		if def == "" {
+			continue // the unset state; AllowsEmpty is what describes it
+		}
+		if !slices.Contains(spec.Enum, def) {
+			t.Errorf("%s defaults to %q, which is not one of its %d enum values: %v",
+				spec.Key, def, len(spec.Enum), spec.Enum)
 		}
 	}
 }

@@ -171,7 +171,7 @@ func ttsEffectiveVoiceLabelForProvider(provider string, cfg *config.Config) stri
 	}
 	voice := config.TTSVoiceFor(cfg, provider)
 	if voice == "" {
-		voice = "af_heart" // kokoro's own fallback
+		voice = config.DefaultKokoroVoice // what an unset tts_voice speaks as
 	}
 	return "voice " + voice
 }

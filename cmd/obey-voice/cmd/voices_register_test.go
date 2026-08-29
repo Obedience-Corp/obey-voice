@@ -404,6 +404,92 @@ func TestVoicesRemove(t *testing.T) {
 	}
 }
 
+// A directory registered before names were canonicalized is invisible to
+// `registered` and can never speak, and `voices remove` could not address it
+// either: it builds the canonical path and reported "no such registered
+// voice". The name was occupied with no way to give it back short of a manual
+// rm somewhere under models_dir.
+func TestVoicesRemoveReachesALegacyDirectory(t *testing.T) {
+	modelsDir := newAudio8TestConfig(t)
+	legacy := filepath.Join(config.Audio8VoicesDir(modelsDir), " bob ")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(tts.Audio8VoiceMeta{Name: " bob ", Transcript: "the reference line"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, config.Audio8VoiceMetaFile), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); len(names) != 0 {
+		t.Fatalf("the store lists %v; the fixture is not the invisible-directory case", names)
+	}
+
+	out, err := runVoicesSub(t, "remove", "  bob  ", "--json")
+	if err != nil {
+		t.Fatalf("remove of a legacy spelling: %v (%s)", err, out)
+	}
+	var row audio8VoiceJSON
+	if err := json.Unmarshal([]byte(out), &row); err != nil {
+		t.Fatalf("parse: %v (%s)", err, out)
+	}
+	if !row.Removed || row.Name != "bob" {
+		t.Errorf("json = %+v, want bob removed", row)
+	}
+	// The path is the only way a caller can see which directory this reached.
+	if len(row.RemovedPaths) != 1 || row.RemovedPaths[0] != legacy {
+		t.Errorf("removed_paths = %v, want [%s]", row.RemovedPaths, legacy)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Errorf("the legacy directory is still on disk: %v", err)
+	}
+}
+
+// A removal that fails for a real reason must say so. The branch keyed on
+// metaErr, which is non-nil for every directory the store cannot load — exactly
+// the legacy case — so a permission error from RemoveAll came back as "no such
+// registered voice" and sent the user looking for a voice that is right there.
+func TestVoicesRemoveReportsARealFailureNotNotFound(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions, so RemoveAll cannot be made to fail")
+	}
+	modelsDir := newAudio8TestConfig(t)
+	root := config.Audio8VoicesDir(modelsDir)
+	legacy := filepath.Join(root, " bob ")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(tts.Audio8VoiceMeta{Name: " bob ", Transcript: "the reference line"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, config.Audio8VoiceMetaFile), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Removing an entry needs write permission on its parent, not on itself.
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+
+	out, err := runVoicesSub(t, "remove", "bob", "--json")
+	if err == nil {
+		t.Fatal("remove of an unremovable directory error = nil")
+	}
+	payload := decodeJSON[struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}](t, out)
+	if payload.Code == codeNotFound {
+		t.Errorf("code = %q for a permission failure; the directory is right there and the message hides why: %q",
+			payload.Code, payload.Error)
+	}
+	if !strings.Contains(payload.Error, legacy) {
+		t.Errorf("message = %q, want it to name the directory it could not remove", payload.Error)
+	}
+}
+
 // A registered voice must reach every catalog surface without loading a model,
 // and the packaged reference must stay first.
 func TestRegisteredVoicesReachTheStaticCatalog(t *testing.T) {
@@ -444,6 +530,31 @@ func TestActiveVoiceForAudio8(t *testing.T) {
 			config.Audio8PackagedVoice,
 		},
 		{"kokoro is unaffected", config.Config{TTSProvider: "kokoro", TTSVoice: "af_heart"}, "af_heart"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := activeVoiceFor(&tt.cfg); got != tt.want {
+				t.Errorf("activeVoiceFor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// activeVoiceFor carried a qwen branch returning cfg.QwenTTSVoice whenever it
+// was non-empty — the answer config.TTSVoiceFor already gives for that provider,
+// minus the trim. These are the four shapes the branch could see; padding is the
+// only one where the two ever differed, and the trimmed spelling is the one
+// every other surface reports (render_real.go:346, tts_display.go:165).
+func TestActiveVoiceForQwenNeedsNoBranchOfItsOwn(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{"kokoro's key is not qwen's", config.Config{TTSProvider: "qwen3-tts", TTSVoice: "af_heart"}, ""},
+		{"unset stays unset: the model-native default has no name here", config.Config{TTSProvider: "qwen3-tts"}, ""},
+		{"a preset", config.Config{TTSProvider: "qwen3-tts", QwenTTSVoice: "Vivian"}, "Vivian"},
+		{"padding is stripped", config.Config{TTSProvider: "qwen3-tts", QwenTTSVoice: "  Vivian  "}, "Vivian"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

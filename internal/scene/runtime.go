@@ -17,13 +17,13 @@ const (
 	providerQwen   = "qwen3-tts"
 )
 
-// defaultKokoroVoice is what an unset tts_voice speaks as. The value is
-// duplicated rather than imported because neither source exports it: it is the
-// viper default (config setDefaults) and, independently, Kokoro's own fallback
-// for a voice it does not recognize (NewKokoroTTS). Naming it here is what
-// keeps an empty voice from reaching a pooled worker, where it would fall back
-// to whichever cast member happened to construct that worker.
-const defaultKokoroVoice = "af_heart"
+// defaultKokoroVoice is what an unset tts_voice speaks as. Substituting it
+// here is what keeps an empty voice from reaching a pooled worker, where it
+// would fall back to whichever cast member happened to construct that worker.
+//
+// It is config's value, not a copy of it: the literal used to live here as
+// well, and nothing failed if the two moved apart.
+const defaultKokoroVoice = config.DefaultKokoroVoice
 
 // SynthTemplate is everything one cast member needs to speak a line. Every
 // field is a string because internal/scene must not import

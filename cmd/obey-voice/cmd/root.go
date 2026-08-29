@@ -347,7 +347,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 					bus.Emit(events.Error{Stage: "tts-voice", Message: set.VoiceNotice.Error()})
 				}
 				if set.FallbackWarning != nil {
-					bus.Emit(events.Error{Stage: "tts-fallback", Message: set.FallbackWarning.Error()})
+					bus.Emit(events.Error{Stage: events.StageTTSFallback, Message: set.FallbackWarning.Error()})
 				}
 				return nil
 			},

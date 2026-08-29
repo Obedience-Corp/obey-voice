@@ -1,0 +1,11 @@
+# Samantha settings.
+tts_provider: kokoro
+
+# Voice activity detection.
+vad_silence_duration: 0.8
+barge_in_enabled: true
+
+speaker:
+  live:
+    window_ms: 1500
+active_persona: ada

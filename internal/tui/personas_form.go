@@ -644,7 +644,7 @@ func (m *personasModel) beginEdit() tea.Cmd {
 }
 
 // loadEditPrompt loads the system prompt body for the editor without ever
-// substituting the embedded samantha default for a different persona.
+// substituting the embedded default identity for a different persona.
 func (m *personasModel) loadEditPrompt(p *persona.Profile) (text, note string) {
 	if p == nil {
 		return "", "No persona selected"
@@ -670,7 +670,7 @@ func (m *personasModel) loadEditPrompt(p *persona.Profile) (text, note string) {
 		}
 		note = fmt.Sprintf("System prompt %q not found · edit and save to create prompts/persona/%s.yaml", name, p.ID)
 	}
-	// Empty body — never inject the default samantha identity into another
+	// Empty body — never inject the embedded default identity into another
 	// persona's editor. Create form still seeds the default via beginCreate.
 	return "", note
 }

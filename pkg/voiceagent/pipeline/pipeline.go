@@ -1430,7 +1430,7 @@ func (p *Pipeline) synthesizeWithFallback(ctx context.Context, text string, stic
 	if !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(err) {
 		return nil, false, err
 	}
-	p.emit(events.Error{Stage: "tts-fallback", Message: ttsFallbackMessage("primary TTS failed", err, stickFallback != nil)})
+	p.emit(events.Error{Stage: events.StageTTSFallback, Message: ttsFallbackMessage("primary TTS failed", err, stickFallback != nil)})
 	fallbackStream, fallbackErr := fallback.Synthesize(ctx, text)
 	if fallbackErr != nil {
 		return nil, true, fmt.Errorf("primary TTS: %v; Kokoro fallback: %w", err, fallbackErr)
@@ -1459,7 +1459,7 @@ func (p *Pipeline) playFallback(ctx context.Context, text string, primaryErr err
 	if !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(primaryErr) {
 		return nil, false, primaryErr
 	}
-	p.emit(events.Error{Stage: "tts-fallback", Message: ttsFallbackMessage("primary playback TTS failed", primaryErr, stickFallback != nil)})
+	p.emit(events.Error{Stage: events.StageTTSFallback, Message: ttsFallbackMessage("primary playback TTS failed", primaryErr, stickFallback != nil)})
 	stream, err := fallback.Synthesize(ctx, text)
 	if err != nil {
 		return nil, true, fmt.Errorf("primary playback TTS: %v; Kokoro fallback: %w", primaryErr, err)
