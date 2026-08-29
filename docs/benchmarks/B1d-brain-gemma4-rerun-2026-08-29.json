@@ -1,0 +1,537 @@
+{
+  "id": "B1",
+  "work_item": "WI-a981e4",
+  "title": "Conversational brain model A/B through the real obey-voice brain seam",
+  "criteria_doc": "docs/benchmarks/B1-brain-latency-ab-criteria.md",
+  "generated_at": "2026-08-29T01:54:55-06:00",
+  "harness": {
+    "command": "go run ./scripts/brain_bench",
+    "path": "scripts/brain_bench",
+    "persona": "obey",
+    "prompts": 5,
+    "reps": 1,
+    "seam": "brain.NewOllama(cfg).ThinkStream(ctx, input, StreamOptions{VoiceMode:true, ToolsEnabled:...})",
+    "stop_between": false,
+    "turn_timeout": "3m0s",
+    "workdir": "/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab"
+  },
+  "provenance": {
+    "branch": "bench/brain-latency-ab",
+    "commit": "63d8c099cbc2552a83b55a46a217e5b78d5b449a",
+    "cpu": "Apple M4 Max",
+    "machine": "Mac16,9",
+    "memory_bytes": "137438953472",
+    "ollama_version": "0.32.14",
+    "os": "26.5",
+    "worktree_clean": false
+  },
+  "config_layering": {
+    "config_active_persona": "samantha",
+    "config_brain_provider": "grok",
+    "config_ollama_model": "qwen3.8-uncensored:27b",
+    "effective_brain_provider": "ollama",
+    "note": "config brain_provider is grok, but every persona profile pins provider ollama, so the persona overlay decides. The ollama path is what the live session logs show, and it is what is measured here.",
+    "persona_brain_model": "qwen3.8:latest",
+    "persona_brain_provider": "ollama",
+    "persona_measured": "obey",
+    "source": "/Users/lancerogers/.obey/agents/voice/festival-voice/config.yaml"
+  },
+  "effective_request_options": {
+    "agent_name": "Obey",
+    "embedding_model": "nomic-embed-text",
+    "keep_alive": "10m",
+    "max_history": 10,
+    "num_ctx": 8192,
+    "persona_prompt": "obey",
+    "skills_enabled": true,
+    "stream": true,
+    "think": "false",
+    "tools_enabled": true,
+    "turn_prompt": "",
+    "voice_tools_config": true
+  },
+  "system_prompt": {
+    "bytes": 3765,
+    "elements": "persona + environment + skills catalog + turn instruction (brain.AssembleSystemPrompt, ollama policy)",
+    "estimated_tokens": 941,
+    "render_matches_brain": true,
+    "sha256": "4aed4325ad11c55a4216af2a7e1f43dafa3af2f0a7227f8dd1a39d0b22945f44"
+  },
+  "gate": {
+    "g1_ttft_p50_ms": 2000,
+    "g2_ttft_p95_ms": 4000,
+    "g3_gen_tok_s": 25,
+    "g4_worst_turn_ms": 90000,
+    "g5": "G1-G4 must hold in both history conditions",
+    "p95_caveat": "nearest-rank on n=15; read as worst observed, not a distributional claim",
+    "pipeline_turn_timeout_ms": 180000
+  },
+  "prompts": [
+    {
+      "id": "P1",
+      "kind": "factual_short",
+      "text": "What's the capital of Australia?"
+    },
+    {
+      "id": "P2",
+      "kind": "command_short",
+      "text": "In one sentence, tell me what you're good at."
+    },
+    {
+      "id": "P3",
+      "kind": "explain_brief",
+      "text": "Explain briefly what a vector database is."
+    },
+    {
+      "id": "P4",
+      "kind": "reason_multi",
+      "text": "I've got two hours before a meeting and three tasks: prep slides, review a pull request, and reply to email. How should I order them, and why?"
+    },
+    {
+      "id": "P5",
+      "kind": "opinion_short",
+      "text": "Should I use a local model or a cloud model for voice? Keep it short."
+    }
+  ],
+  "filled_history": {
+    "estimated_prompt_tokens": 5934,
+    "source": "scripts/brain_bench/history.go — real dialogue about this repository's work, tail-trimmed to fit",
+    "target_tokens": 6000,
+    "trim_line_tokens": 7372,
+    "turns": 64
+  },
+  "installed_models": [
+    {
+      "digest": "6fac2f98fdf7",
+      "modified": "2026-08-19T20:19:40-06:00",
+      "name": "qwen3.8-uncensored:27b",
+      "size_bytes": 17741860746
+    },
+    {
+      "digest": "6fac2f98fdf7",
+      "modified": "2026-08-19T20:19:40-06:00",
+      "name": "qwen3.8-uncensored:latest",
+      "size_bytes": 17741860746
+    },
+    {
+      "digest": "6fac2f98fdf7",
+      "modified": "2026-08-19T20:19:29-06:00",
+      "name": "orcarouter/Qwen3.8-27B-Uncensored:q4_K_M",
+      "size_bytes": 17741860746
+    },
+    {
+      "digest": "5dc8c5a2be65",
+      "modified": "2026-08-15T21:37:05-06:00",
+      "name": "dolphin-mistral:latest",
+      "size_bytes": 4108940323
+    },
+    {
+      "digest": "22130167c4c2",
+      "modified": "2026-08-15T20:54:10-06:00",
+      "name": "qwen3.8:latest",
+      "size_bytes": 17741872154
+    },
+    {
+      "digest": "5571076f3d70",
+      "modified": "2026-06-25T17:55:46-06:00",
+      "name": "gemma4:26b",
+      "size_bytes": 17987581215
+    },
+    {
+      "digest": "0a109f422b47",
+      "modified": "2026-06-10T13:22:46-06:00",
+      "name": "nomic-embed-text:latest",
+      "size_bytes": 274302450
+    },
+    {
+      "digest": "9077fe9d2ae1",
+      "modified": "2026-06-10T13:22:39-06:00",
+      "name": "smollm2:135m",
+      "size_bytes": 270898672
+    },
+    {
+      "digest": "def4049bfaa6",
+      "modified": "2026-04-30T05:46:50-06:00",
+      "name": "kimi-k2.6-distilled:IQ4_XS",
+      "size_bytes": 18939313581
+    },
+    {
+      "digest": "57c10cd89e9f",
+      "modified": "2026-04-30T05:39:24-06:00",
+      "name": "hf.co/lordx64/Qwen3.6-35B-A3B-Kimi-K2.6-Reasoning-Distilled-GGUF:IQ4_XS",
+      "size_bytes": 18939313745
+    },
+    {
+      "digest": "f6d8b7ff496c",
+      "modified": "2026-04-30T05:23:20-06:00",
+      "name": "nemotron3:33b",
+      "size_bytes": 27638631632
+    },
+    {
+      "digest": "07d35212591f",
+      "modified": "2026-04-30T05:23:13-06:00",
+      "name": "qwen3.6:latest",
+      "size_bytes": 23938333577
+    },
+    {
+      "digest": "ea027821675c",
+      "modified": "2026-04-30T05:13:48-06:00",
+      "name": "deepseek-v4-flash:cloud",
+      "size_bytes": 348
+    },
+    {
+      "digest": "d6c816d74887",
+      "modified": "2026-02-26T11:39:20-07:00",
+      "name": "lfm2:latest",
+      "size_bytes": 14415742358
+    },
+    {
+      "digest": "b725f1117407",
+      "modified": "2025-12-27T15:09:51-07:00",
+      "name": "nemotron-3-nano:30b",
+      "size_bytes": 24271934866
+    },
+    {
+      "digest": "a6eb4748fd29",
+      "modified": "2025-12-27T15:05:01-07:00",
+      "name": "llama3.3:latest",
+      "size_bytes": 42520413916
+    },
+    {
+      "digest": "e50831eb2d91",
+      "modified": "2025-08-19T17:04:51-06:00",
+      "name": "qwen3:30b",
+      "size_bytes": 18556699301
+    },
+    {
+      "digest": "500a1f067a9f",
+      "modified": "2025-08-19T10:11:12-06:00",
+      "name": "qwen3:8b",
+      "size_bytes": 5225388164
+    },
+    {
+      "digest": "ad67f85ca250",
+      "modified": "2025-08-05T23:48:00-06:00",
+      "name": "qwen3-coder:latest",
+      "size_bytes": 18556701140
+    },
+    {
+      "digest": "a80c4f17acd5",
+      "modified": "2025-05-21T22:16:30-06:00",
+      "name": "llama3.2:latest",
+      "size_bytes": 2019393189
+    },
+    {
+      "digest": "3ca8c2865ce9",
+      "modified": "2025-05-21T22:11:03-06:00",
+      "name": "phi4-mini-reasoning:latest",
+      "size_bytes": 3152479391
+    },
+    {
+      "digest": "570a450e5ebc",
+      "modified": "2025-05-21T22:04:05-06:00",
+      "name": "local-phi-3.1:latest",
+      "size_bytes": 2393232685
+    },
+    {
+      "digest": "59cdb329dff1",
+      "modified": "2025-05-21T22:03:06-06:00",
+      "name": "local-llama-3.1:latest",
+      "size_bytes": 4920739830
+    },
+    {
+      "digest": "78e26419b446",
+      "modified": "2024-04-26T09:44:20-06:00",
+      "name": "llama2:latest",
+      "size_bytes": 3826793677
+    }
+  ],
+  "results": [
+    {
+      "model": "gemma4:26b",
+      "size_bytes": 17987581215,
+      "digest": "5571076f3d70",
+      "cold_first_turn": {
+        "ttft_ms": 9473.856,
+        "total_ms": 9580.306
+      },
+      "conditions": {
+        "empty_history": {
+          "estimated_prompt_tokens_at_start": 941,
+          "history_turns": 0,
+          "summary": {
+            "n": 5,
+            "errors": 0,
+            "ttft_p50_ms": 357.761,
+            "ttft_p95_ms": 378.242,
+            "ttft_max_ms": 378.242,
+            "total_median_ms": 744.65,
+            "total_max_ms": 999.446,
+            "gen_tok_s_median": 92.52112125025114,
+            "prefill_tok_s_median": 3907.6366624646057,
+            "prompt_tokens_median_real": 1398,
+            "prompt_tokens_max_real": 1420,
+            "tool_calls_total": 0,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 0,
+            "route_ms_median": 17.328
+          },
+          "clean_turns_summary": {
+            "n": 5,
+            "errors": 0,
+            "ttft_p50_ms": 357.761,
+            "ttft_p95_ms": 378.242,
+            "ttft_max_ms": 378.242,
+            "total_median_ms": 744.65,
+            "total_max_ms": 999.446,
+            "gen_tok_s_median": 92.52112125025114,
+            "prefill_tok_s_median": 3907.6366624646057,
+            "prompt_tokens_median_real": 1398,
+            "prompt_tokens_max_real": 1420,
+            "tool_calls_total": 0,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 0,
+            "route_ms_median": 17.328
+          },
+          "clean_turns": 5,
+          "gate": {
+            "g1_ttft_p50_le_2000ms": true,
+            "g2_ttft_p95_le_4000ms": true,
+            "g3_gen_tok_s_ge_25": true,
+            "g4_worst_turn_le_90s": true
+          },
+          "gate_pass": true,
+          "samples": [
+            {
+              "prompt": "P1",
+              "rep": 1,
+              "route_ms": 17.552,
+              "ttft_ms": 340.77,
+              "total_ms": 505.537,
+              "prompt_tokens": 1393,
+              "prompt_tokens_all_requests": 1393,
+              "gen_tokens": 17,
+              "model_requests": 1,
+              "gen_tok_s": 103.17600004855342,
+              "prefill_tok_s": 4087.8011562050656,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 88,
+              "reply": "The capital of Australia is Canberra. It is located in the Australian Capital Territory."
+            },
+            {
+              "prompt": "P2",
+              "rep": 1,
+              "route_ms": 17.911,
+              "ttft_ms": 357.761,
+              "total_ms": 736.053,
+              "prompt_tokens": 1398,
+              "prompt_tokens_all_requests": 1398,
+              "gen_tokens": 35,
+              "model_requests": 1,
+              "gen_tok_s": 92.52112125025114,
+              "prefill_tok_s": 3907.6366624646057,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 199,
+              "reply": "I'm great at helping you manage your projects, automate workflows, and navigate your entire development ecosystem. I can handle everything from running shell commands to organizing complex campaigns."
+            },
+            {
+              "prompt": "P3",
+              "rep": 1,
+              "route_ms": 17.025,
+              "ttft_ms": 342.144,
+              "total_ms": 744.65,
+              "prompt_tokens": 1393,
+              "prompt_tokens_all_requests": 1393,
+              "gen_tokens": 38,
+              "model_requests": 1,
+              "gen_tok_s": 94.40853055606625,
+              "prefill_tok_s": 4071.385147774037,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 223,
+              "reply": "A vector database is a specialized type of database that stores information as mathematical vectors. This allows it to perform similarity searches, making it really great for things like recommendation engines or AI memory."
+            },
+            {
+              "prompt": "P4",
+              "rep": 1,
+              "route_ms": 16.566,
+              "ttft_ms": 378.242,
+              "total_ms": 999.446,
+              "prompt_tokens": 1420,
+              "prompt_tokens_all_requests": 1420,
+              "gen_tokens": 56,
+              "model_requests": 1,
+              "gen_tok_s": 90.14751997733434,
+              "prefill_tok_s": 3754.2102675007004,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 246,
+              "reply": "I'd suggest starting with the pull request while your focus is fresh, then moving to your slides since they likely need the most deep work. You can wrap things up by replying to emails once you're in a bit of a wind-down mode before your meeting."
+            },
+            {
+              "prompt": "P5",
+              "rep": 1,
+              "route_ms": 17.328,
+              "ttft_ms": 370.698,
+              "total_ms": 797.838,
+              "prompt_tokens": 1402,
+              "prompt_tokens_all_requests": 1402,
+              "gen_tokens": 37,
+              "model_requests": 1,
+              "gen_tok_s": 86.62265299433442,
+              "prefill_tok_s": 3782.054394682464,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 207,
+              "reply": "It really depends on if you prioritize privacy and low latency or raw intelligence. Local models are great for speed and keeping things offline, but cloud models usually handle complex reasoning much better."
+            }
+          ]
+        },
+        "filled_history_6k": {
+          "estimated_prompt_tokens_at_start": 5934,
+          "history_turns": 64,
+          "summary": {
+            "n": 5,
+            "errors": 0,
+            "ttft_p50_ms": 386.5,
+            "ttft_p95_ms": 7893.098,
+            "ttft_max_ms": 7893.098,
+            "total_median_ms": 1138.296,
+            "total_max_ms": 9687.039,
+            "gen_tok_s_median": 92.05923354112417,
+            "prefill_tok_s_median": 14367.399741267787,
+            "prompt_tokens_median_real": 5553,
+            "prompt_tokens_max_real": 5575,
+            "tool_calls_total": 0,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 0,
+            "route_ms_median": 23.685
+          },
+          "clean_turns_summary": {
+            "n": 5,
+            "errors": 0,
+            "ttft_p50_ms": 386.5,
+            "ttft_p95_ms": 7893.098,
+            "ttft_max_ms": 7893.098,
+            "total_median_ms": 1138.296,
+            "total_max_ms": 9687.039,
+            "gen_tok_s_median": 92.05923354112417,
+            "prefill_tok_s_median": 14367.399741267787,
+            "prompt_tokens_median_real": 5553,
+            "prompt_tokens_max_real": 5575,
+            "tool_calls_total": 0,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 0,
+            "route_ms_median": 23.685
+          },
+          "clean_turns": 5,
+          "gate": {
+            "g1_ttft_p50_le_2000ms": true,
+            "g2_ttft_p95_le_4000ms": false,
+            "g3_gen_tok_s_ge_25": true,
+            "g4_worst_turn_le_90s": true
+          },
+          "gate_pass": false,
+          "samples": [
+            {
+              "prompt": "P1",
+              "rep": 1,
+              "route_ms": 23.685,
+              "ttft_ms": 371.897,
+              "total_ms": 637.291,
+              "prompt_tokens": 5548,
+              "prompt_tokens_all_requests": 5548,
+              "gen_tokens": 26,
+              "model_requests": 1,
+              "gen_tok_s": 97.96755013300977,
+              "prefill_tok_s": 14918.109046321966,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 114,
+              "reply": "The capital of Australia is Canberra. It is a common question, but I am ready to start the benchmark when you are."
+            },
+            {
+              "prompt": "P2",
+              "rep": 1,
+              "route_ms": 17.292,
+              "ttft_ms": 386.5,
+              "total_ms": 600.428,
+              "prompt_tokens": 5553,
+              "prompt_tokens_all_requests": 5553,
+              "gen_tokens": 21,
+              "model_requests": 1,
+              "gen_tok_s": 98.16386821734415,
+              "prefill_tok_s": 14367.399741267787,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 115,
+              "reply": "I am good at executing structured workflows with high precision and reporting results without the bias of a person."
+            },
+            {
+              "prompt": "P3",
+              "rep": 1,
+              "route_ms": 17.887,
+              "ttft_ms": 377.916,
+              "total_ms": 1138.296,
+              "prompt_tokens": 5548,
+              "prompt_tokens_all_requests": 5548,
+              "gen_tokens": 70,
+              "model_requests": 1,
+              "gen_tok_s": 92.05923354112417,
+              "prefill_tok_s": 14680.51101302935,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 393,
+              "reply": "A vector database stores pieces of information as numerical lists called embeddings, which represent the meaning of the data rather than just the literal text. When you ask a question, the database converts your query into a similar list of numbers and finds the entries that are mathematically closest to it. This allows for searching by concept or context rather than just matching keywords."
+            },
+            {
+              "prompt": "P4",
+              "rep": 1,
+              "route_ms": 344.993,
+              "ttft_ms": 7893.098,
+              "total_ms": 9687.039,
+              "prompt_tokens": 5575,
+              "prompt_tokens_all_requests": 5575,
+              "gen_tokens": 69,
+              "model_requests": 1,
+              "gen_tok_s": 38.46280340323342,
+              "prefill_tok_s": 706.3132878877217,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 345,
+              "reply": "Start with the pull request. It is the most cognitively heavy and requires the highest concentration to catch errors before they become your problem later. Then move to the slides while you still have the momentum from the review. Save the emails for last, since that is just a low-energy way to close out the session before your meeting starts."
+            },
+            {
+              "prompt": "P5",
+              "rep": 1,
+              "route_ms": 26.71,
+              "ttft_ms": 569.03,
+              "total_ms": 1604.252,
+              "prompt_tokens": 5557,
+              "prompt_tokens_all_requests": 5557,
+              "gen_tokens": 41,
+              "model_requests": 1,
+              "gen_tok_s": 39.60503157776786,
+              "prefill_tok_s": 9765.741700789064,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 203,
+              "reply": "Local for privacy and no network jitter, cloud for raw intelligence and speed. If you have the hardware to keep a dense model resident without a delay, local is the superior experience for a voice agent."
+            }
+          ]
+        }
+      },
+      "overall_gate_pass": false
+    }
+  ],
+  "notes": [
+    "Latency only. Nothing here judges response quality; that is the user's judgment in real use.",
+    "Each sample resets history to the condition baseline first, so prompt size is constant across reps.",
+    "route_ms is the synchronous skill-router embedding call and is included in ttft_ms, because the user waits for it.",
+    "~/.obey was read, never written. No model was pulled or deleted. Models were unloaded (not removed) to measure cold load.",
+    "left resident after the run: qwen3.8-uncensored:27b (expires 2026-08-29T02:05:31-06:00)",
+    "left resident after the run: nomic-embed-text:latest (expires 2026-08-29T02:00:29-06:00)"
+  ]
+}

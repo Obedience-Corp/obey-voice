@@ -3,6 +3,7 @@ bin/
 /samantha
 /obey-voice
 /buildutil
+/brain_bench
 *.exe
 *.dll
 *.so

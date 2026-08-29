@@ -37,7 +37,8 @@ Its gate is written down before each run and lives beside the results:
   thresholds, the candidate list, and the exclusions, committed before any
   number existed.
 - [`B1-brain-latency-ab-2026-08-28.md`](B1-brain-latency-ab-2026-08-28.md) —
-  results and recommendation.
+  results and recommendation, with `B1b` (tool side effects) and `B1c`
+  (tools-off floor) as the supporting runs its claims cite.
 - Harness and flags: [`scripts/brain_bench/README.md`](../../scripts/brain_bench/README.md).
 
 ## What is measured, and what is gated

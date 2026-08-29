@@ -282,12 +282,15 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 	// should say so rather than quietly report the wrong prompt.
 	promptRenderAgrees := abs(len(sysPrompt)/4-emptyPromptTokens) <= 1
 
-	filled := buildFilledHistory(targetTok, func(turns []brain.Turn) int {
+	filled, err := buildFilledHistory(targetTok, func(turns []brain.Turn) int {
 		probe.LoadHistory(turns)
 		n := probe.SessionInfo().PromptTokens
 		probe.ClearHistory()
 		return n
 	})
+	if err != nil {
+		return err
+	}
 	probe.LoadHistory(filled)
 	filledPromptTokens := probe.SessionInfo().PromptTokens
 	probe.ClearHistory()

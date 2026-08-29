@@ -1,6 +1,10 @@
 package main
 
-import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+import (
+	"fmt"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+)
 
 // filledHistoryScript is the prior conversation the filled-history condition
 // replays. It is real dialogue about work in this repository — the kind of
@@ -89,19 +93,32 @@ var filledHistoryScript = []brain.Turn{
 //
 // sizeFor reports the estimated prompt tokens for a candidate history, using the
 // brain's own estimator rather than a second one that would drift from it.
-func buildFilledHistory(targetTokens int, sizeFor func([]brain.Turn) int) []brain.Turn {
+//
+// A target too small for even the shortest window is an error, not an empty
+// history. Returning nil there would silently make the "filled" condition
+// identical to the empty one and report `turns: 0` in the artifact — two
+// conditions measuring the same thing, with nothing to show it had happened.
+func buildFilledHistory(targetTokens int, sizeFor func([]brain.Turn) int) ([]brain.Turn, error) {
 	script := filledHistoryScript
 	// Widen from the end until the next step would exceed the target.
 	best := []brain.Turn(nil)
+	shortest := 0
 	for start := len(script) - 1; start >= 0; start-- {
 		if script[start].Role != "user" {
 			continue
 		}
 		candidate := script[start:]
-		if sizeFor(candidate) > targetTokens {
+		size := sizeFor(candidate)
+		if shortest == 0 {
+			shortest = size
+		}
+		if size > targetTokens {
 			break
 		}
 		best = candidate
 	}
-	return best
+	if len(best) == 0 {
+		return nil, fmt.Errorf("no history window fits -history-tokens %d: the shortest is %d tokens", targetTokens, shortest)
+	}
+	return best, nil
 }
