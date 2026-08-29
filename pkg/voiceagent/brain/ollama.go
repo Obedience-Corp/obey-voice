@@ -287,7 +287,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Keep any partial streamed text: the user already saw/heard
 				// it, so the next turn's context must include it too.
 				reply := RecoveryReply
-				if partial := strings.TrimSpace(StripAgentLabel(o.cfg.AgentName, textBuf.String())); partial != "" {
+				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, textBuf.String())); partial != "" {
 					reply = partial + "\n\n" + RecoveryReply
 				}
 				o.history = append(o.history, api.Message{Role: "assistant", Content: reply})
@@ -301,7 +301,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Add the assistant's tool-calling message to history.
 				o.history = append(o.history, api.Message{
 					Role:      "assistant",
-					Content:   StripAgentLabel(o.cfg.AgentName, textBuf.String()),
+					Content:   stripReplyConventions(o.cfg.AgentName, textBuf.String()),
 					ToolCalls: toolCalls,
 				})
 
@@ -320,7 +320,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// cleaned form in history. Tool-only turns often finish with an
 			// empty final message; finalizeStreamedText streams a fallback so
 			// the UI never ends on "looking into it" with silence.
-			response, err := finalizeStreamedText(ctx, out, StripAgentLabel(o.cfg.AgentName, textBuf.String()))
+			response, err := finalizeStreamedText(ctx, out, stripReplyConventions(o.cfg.AgentName, textBuf.String()))
 			if err != nil {
 				done <- StreamResult{Err: err}
 				return
@@ -398,7 +398,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if len(response.ToolCalls) > 0 {
 			o.history = append(o.history, api.Message{
 				Role:      "assistant",
-				Content:   StripAgentLabel(o.cfg.AgentName, response.Content),
+				Content:   stripReplyConventions(o.cfg.AgentName, response.Content),
 				ToolCalls: response.ToolCalls,
 			})
 
@@ -412,9 +412,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			continue
 		}
 
-		// Text response. Strip the label, clean, then fall back, so the
-		// fallback is spoken verbatim.
-		text := spokenOrFallback(cleanForVoice(StripAgentLabel(o.cfg.AgentName, response.Content)))
+		// Text response. Strip the label and think block, clean, then fall
+		// back, so the fallback is spoken verbatim.
+		text := spokenOrFallback(cleanForVoice(stripReplyConventions(o.cfg.AgentName, response.Content)))
 		o.history = append(o.history, api.Message{Role: "assistant", Content: text})
 		o.trimHistory()
 		return text, nil

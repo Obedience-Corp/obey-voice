@@ -151,6 +151,14 @@ var (
 	thinkStyle = lipgloss.NewStyle().
 			Foreground(colorThink)
 
+	thinkLabelStyle = lipgloss.NewStyle().
+			Foreground(colorThink).
+			Italic(true)
+
+	thinkBodyStyle = lipgloss.NewStyle().
+			Foreground(colorDim).
+			Italic(true)
+
 	chipStyle = lipgloss.NewStyle().
 			Foreground(colorBg).
 			Background(colorAccent).

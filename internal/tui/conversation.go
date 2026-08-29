@@ -18,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 const conversationInputHeight = 3
@@ -1060,8 +1061,30 @@ func renderUserTurn(text string) string {
 }
 
 func renderAgentTurn(name, text string) string {
-	body := agentStyle.Render("● "+name) + "\n" + normalStyle.Render(text)
-	return agentBubbleStyle.Render(body)
+	think, spoken := textclean.SplitThink(text)
+	var b strings.Builder
+	b.WriteString(agentStyle.Render("● " + name))
+	if think != "" {
+		b.WriteByte('\n')
+		b.WriteString(thinkLabelStyle.Render("thinking"))
+		b.WriteByte('\n')
+		b.WriteString(thinkBodyStyle.Render(think))
+	}
+	if spoken != "" {
+		b.WriteByte('\n')
+		b.WriteString(normalStyle.Render(spoken))
+	}
+	// Both halves empty on non-blank text means the reply so far is nothing but
+	// think markup — a reasoning block that has opened (or opened and closed)
+	// before any token arrived. This runs on every streaming frame, so it is a
+	// normal transient state, not a corner case. Painting text here would put
+	// the raw <think> tags on screen, which is the bug this function exists to
+	// fix; paint the dim state instead.
+	if think == "" && spoken == "" && strings.TrimSpace(text) != "" {
+		b.WriteByte('\n')
+		b.WriteString(thinkLabelStyle.Render("thinking"))
+	}
+	return agentBubbleStyle.Render(b.String())
 }
 
 func (m conversationModel) View() string {

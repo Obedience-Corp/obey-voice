@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 func TestVoiceGateRegions(t *testing.T) {
@@ -94,6 +95,130 @@ func TestVoiceGateRegions(t *testing.T) {
 			}
 			if leaked != tc.wantLeaked {
 				t.Fatalf("leaked = %d, want %d", leaked, tc.wantLeaked)
+			}
+		})
+	}
+}
+
+// The whole-reply speech path, exercised through the real function rather than
+// a copy of its body, so the two cannot drift.
+func TestThinkBlockIsNotSpoken(t *testing.T) {
+	text := "<think>The user says \"speaker-2: Hi santa\". Plan a greeting.</think>\nHello speaker-2! It's a wonderful day."
+	p := &Pipeline{Events: events.NewBus()}
+	kept := p.gateForSpeech(text, newTurnMetrics())
+	if strings.Contains(kept, "Plan a greeting") || strings.Contains(strings.ToLower(kept), "<think") {
+		t.Fatalf("think leaked into speech: %q", kept)
+	}
+	if !strings.Contains(kept, "Hello speaker-2") {
+		t.Fatalf("spoken reply missing: %q", kept)
+	}
+}
+
+func TestThinkFilterSpansSegmentsLikeAFence(t *testing.T) {
+	var f textclean.ThinkFilter
+	g := &voiceGate{}
+	segs := []string{
+		`<think>The user says "speaker-2: Hi santa".`,
+		"This is a greeting.",
+		"</think>",
+		"Hello speaker-2! It's a wonderful day.",
+	}
+	var spoken []string
+	for _, seg := range segs {
+		kept, _ := g.filter(f.Feed(seg))
+		if strings.TrimSpace(kept) != "" {
+			spoken = append(spoken, kept)
+		}
+	}
+	if len(spoken) != 1 || spoken[0] != "Hello speaker-2! It's a wonderful day." {
+		t.Fatalf("spoken = %q, want only the reply", spoken)
+	}
+}
+
+// The transcript streamResponse returns becomes the assistant turn in history.
+// Reasoning that survives there is read back by the model on every following
+// turn — it pays the tokens again and learns the block belongs in its reply.
+func TestStreamResponseKeepsThinkOutOfTranscript(t *testing.T) {
+	provider := &progressiveFakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream := scriptedStream(ctx, []string{
+		`<think>The user says "speaker-2: Hi santa". `,
+		"Plan a warm greeting. ",
+		"</think>\n",
+		"Hello speaker-2! ",
+		"It's a wonderful day.",
+	}, nil)
+
+	response, interrupted, err := p.streamResponse(ctx, cancel, stream, false, metrics, turn)
+	if err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+	if interrupted {
+		t.Fatal("unexpected interrupt")
+	}
+	for _, leak := range []string{"<think", "</think", "Plan a warm greeting", "The user says"} {
+		if strings.Contains(response, leak) {
+			t.Errorf("transcript carries %q: %q", leak, response)
+		}
+	}
+	if !strings.Contains(response, "Hello speaker-2") || !strings.Contains(response, "wonderful day") {
+		t.Fatalf("transcript lost the spoken reply: %q", response)
+	}
+	for _, call := range provider.Calls() {
+		if strings.Contains(call, "Plan a warm greeting") || strings.Contains(strings.ToLower(call), "<think") {
+			t.Errorf("think reached TTS: %q", call)
+		}
+	}
+}
+
+// ThinkFilter.Feed holds a trailing tag prefix across segments. When the turn
+// ends on one, streamResponse must drain it rather than leave it stranded — and
+// must not speak a tag the model never finished writing.
+func TestStreamResponseDrainsHeldThinkPrefix(t *testing.T) {
+	tests := map[string]struct {
+		chunks []string
+		want   string
+	}{
+		"unfinished tag is not spoken": {
+			chunks: []string{"The answer is ready. ", "<thi"},
+			want:   "The answer is ready.",
+		},
+		"trailing comparison keeps the reply": {
+			chunks: []string{"The threshold is <"},
+			want:   "The threshold is",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			provider := &progressiveFakeTTS{}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+
+			metrics := newTurnMetrics()
+			turn := p.newTurnConductor(metrics)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			response, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, tt.chunks, nil), false, metrics, turn)
+			if err != nil {
+				t.Fatalf("streamResponse: %v", err)
+			}
+			if response != tt.want {
+				t.Fatalf("transcript = %q, want %q", response, tt.want)
+			}
+			for _, call := range provider.Calls() {
+				if strings.Contains(call, "<") {
+					t.Errorf("half-written tag reached TTS: %q", call)
+				}
 			}
 		})
 	}

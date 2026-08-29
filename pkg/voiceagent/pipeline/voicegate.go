@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // toolRegionRE opens a suppressed region: transcript narration announcing a
@@ -188,7 +189,7 @@ func (p *Pipeline) recordStrips(stripped int, metrics *turnMetrics) {
 // where the whole response arrives as one blob rather than as segments.
 func (p *Pipeline) gateForSpeech(text string, metrics *turnMetrics) string {
 	g := &voiceGate{}
-	speakable, stripped := g.filter(text)
+	speakable, stripped := g.filter(textclean.StripThinkBlocks(text))
 	p.recordStrips(stripped, metrics)
 	return speakable
 }

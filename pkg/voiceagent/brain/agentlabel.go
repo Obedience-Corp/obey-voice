@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // The flatten prompts and speaker attribution teach the model a "Name: content"
@@ -39,6 +41,22 @@ func StripAgentLabel(agentName, text string) string {
 		return text[loc[1]:]
 	}
 	return text
+}
+
+// stripReplyConventions removes both conventions a model must not read back in
+// its own context, in the only order that works: the chain-of-thought block
+// first, because a reasoning model writes "<think>…</think>\nObey: hi" and the
+// label strip is anchored to the start of the reply — stripping the label first
+// finds the block instead and leaves the label to be spoken.
+//
+// Use this on a complete reply or a finished accumulation buffer, wherever a
+// turn is recorded in history. Streaming has its own pair (labelStripper and
+// textclean.ThinkFilter), because neither convention can be recognised from a
+// partial reply. cleanForVoice strips think blocks again on the paths that
+// reach it; the two are not redundant — this one fixes the ordering, that one
+// covers callers who never pass through here.
+func stripReplyConventions(agentName, text string) string {
+	return StripAgentLabel(agentName, textclean.StripThinkBlocks(text))
 }
 
 // labelStripper strips the label from a streamed reply without re-chunking

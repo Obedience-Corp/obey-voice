@@ -44,6 +44,29 @@ func TestStripAgentLabel(t *testing.T) {
 	}
 }
 
+// A reasoning model writes "<think>…</think>\nObey: hi", which puts the label
+// where StripAgentLabel's start-anchored match cannot see it. Order is the
+// whole point of this helper: strip the block first, or the label is spoken.
+func TestStripReplyConventionsStripsBlockBeforeLabel(t *testing.T) {
+	tests := []struct {
+		name, agent, in, want string
+	}{
+		{"label behind a think block", "Samantha", "<think>plan the greeting</think>\nSamantha: Hi.", "Hi."},
+		{"think block alone leaves nothing", "Samantha", "<think>still reasoning</think>", ""},
+		{"label with no block still strips", "Samantha", "Samantha: Hi.", "Hi."},
+		{"block with no label still strips", "Samantha", "<think>plan it</think>Hi.", "Hi."},
+		{"neither convention present", "Samantha", "Sure, sounds good.", "Sure, sounds good."},
+		{"a comparison is not a tag", "Samantha", "Is 3 < 4? Yes.", "Is 3 < 4? Yes."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripReplyConventions(tt.agent, tt.in); got != tt.want {
+				t.Fatalf("stripReplyConventions(%q, %q) = %q, want %q", tt.agent, tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func feedAll(s *labelStripper, chunks []string) []string {
 	var out []string
 	for _, c := range chunks {
