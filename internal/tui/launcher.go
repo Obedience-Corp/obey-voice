@@ -336,10 +336,10 @@ func (m launcherModel) fullView(width int) string {
 			brainStatus += " !"
 		}
 	}
-	voiceLabel := "voice model-native"
-	if activeTTSProvider(m.cfg) == "kokoro" {
-		voiceLabel = "voice " + m.cfg.TTSVoice
-	}
+	// The ninth site of the substitution config.TTSVoiceFor owns: this chip
+	// hand-rolled it behind a kokoro guard, so an audio8 stack read "voice
+	// model-native" instead of the reference or the registered name it speaks.
+	voiceLabel := ttsEffectiveVoiceLabel(m.cfg)
 	chips := lipgloss.JoinHorizontal(lipgloss.Center,
 		chipStyle.Render("brain "+brainStatus),
 		" ",

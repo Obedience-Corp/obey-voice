@@ -69,6 +69,49 @@ func TestLauncherDisplaysConfiguredTTSProviderAndModel(t *testing.T) {
 	}
 }
 
+// The voice chip hand-rolled the provider-to-key substitution behind a
+// `== "kokoro"` guard, so an audio8 stack read "voice model-native" whatever
+// audio8_voice named. Both chips resolve through config.TTSVoiceFor now, so the
+// label appears twice; one occurrence means the chip fell back to the guard.
+func TestLauncherVoiceChipResolvesThroughConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{
+			name: "audio8 with a registered voice",
+			cfg:  config.Config{TTSProvider: "audio8", TTSVoice: "af_heart", Audio8Voice: "mine"},
+			want: "voice mine",
+		},
+		{
+			name: "audio8 untouched speaks the packaged reference",
+			cfg:  config.Config{TTSProvider: "audio8", TTSVoice: "af_heart"},
+			want: "voice " + config.Audio8PackagedVoice,
+		},
+		{
+			name: "qwen still reports its model-native voice",
+			cfg:  config.Config{TTSProvider: "qwen3-tts", QwenTTSModel: "/opt/qwen/models/1.7b"},
+			want: "voice model-native default",
+		},
+		{
+			name: "kokoro reads its own key",
+			cfg:  config.Config{TTSProvider: "kokoro", TTSVoice: "af_sky"},
+			want: "voice af_sky",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newLauncher(&tt.cfg, nil)
+			m.width, m.height = 200, 40
+			view := stripANSI(m.View())
+			if got := strings.Count(view, tt.want); got != 2 {
+				t.Fatalf("%q appears %d time(s), want 2 (tts badge and voice chip):\n%s", tt.want, got, view)
+			}
+		})
+	}
+}
+
 func TestLauncherDefaultsToContinueWhenSessionExists(t *testing.T) {
 	saved := []session.Session{{ID: "session-123", Summary: "Fix the TUI", UpdatedAt: time.Now()}}
 	m := newLauncher(&config.Config{}, nil, saved)
