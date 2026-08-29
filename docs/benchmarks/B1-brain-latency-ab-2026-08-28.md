@@ -78,10 +78,14 @@ label: tokenizers differ, so there was never one "1.4k".
 Two models of essentially identical size, one 12× slower to speak, and the gap
 does not come from context pressure. **The pre-registered hypothesis that
 `num_ctx` was half of Lance's pain is wrong**: a 3.5× larger prompt costs the
-incumbent between **+96 ms (+2 %) and +420 ms (+9 %)** — this run measured the
-former, an independent n=5 re-run on a different day measured the latter. Treat
-the range as the finding, not either endpoint; against a 4.7 s wait, both are
-noise next to the fixed cost.
+incumbent **+96 ms (+2 %)**, against a 4.7 s wait.
+
+Read that as one run's figure, not a constant. Growth is the small term here, but
+this benchmark measured the incumbent once — the only model with a repeated
+committed measurement is gemma4, at **+24 ms (+6.7 %)** in `B1` and **+29 ms
+(+8.0 %)** in `B1d`. Close, but not identical, and two runs is not a distribution
+either. The conclusion needs only that growth is negligible beside the fixed
+cost, which every committed run shows.
 
 A diagnostic run isolates how little of it is ours to fix. With tools disabled —
 committed as [`B1c-brain-tools-off-2026-08-28.json`](B1c-brain-tools-off-2026-08-28.json),
@@ -92,16 +96,20 @@ Nothing in the config surface — tools, context window, think — removes that
 floor.
 
 What causes it is **not established by this benchmark**. It is a property of the
-qwen3.8 family under Ollama 0.32.14 on this machine. The effect is large and it
-reproduces — an independent n=5 re-run measured p50 4676 ms empty / 5096 ms at
-6k against this run's 4637 / 4733, and 23.9 tok/s on the nose.
+qwen3.8 family under Ollama 0.32.14 on this machine.
 
-The *floor* is consistent; the **tail is not**. This run's spread looks tight
-(p50 4637 ms, p95 4824 ms) but that p95 is just its maximum at n=15, and the
-re-run drew a 22.5 s first token at 6k. So: reliably ~4.6 s at best, with
-occasional multi-second excursions on top. That makes the FAIL verdict stronger,
-not weaker, and it is why the tight-looking spread should not be quoted as
-evidence of consistency.
+Within the committed data the floor is consistent: 15 samples per condition, p50
+4637 ms empty and 4733 ms at 6k, never below 4.4 s. A review-round
+re-measurement agreed within noise, but **its raw output was not committed and no
+figure from it is cited here** — the numbers above are `B1`'s own.
+
+What this run cannot tell you is the shape of the **tail**. Its spread looks
+tight (p50 4637 ms, p95 4824 ms), but at n=15 that p95 *is* the maximum, so it
+says only that this run drew no excursion — not that none exists. `B1d` shows an
+excursion is possible on this machine for a different model (below). So: reliably
+~4.6 s at best, with an unmeasured tail on top. The tight-looking spread should
+not be quoted as evidence of consistency, and the FAIL verdict does not rest on
+it — a 4637 ms median fails G1 and G2 on its own.
 
 It also matches the complaint exactly. Lance's 27.8 s first token and 227.8 s
 turn are this floor plus a longer reply — and 227.8 s is past the 180 s
@@ -231,13 +239,13 @@ Switching to `gemma4:26b` costs ~1.5 s more on a cold start and saves ~4.3 s on
 ### 1. `gemma4:26b` for the `obey` persona's conversational default
 
 The strongest result in the field on the metric that matters most for a voice
-agent — a **median first token of ~0.39 s at full context**, holding across three
-separate runs.
+agent — a **median first token of ~0.39 s at full context**, in both committed
+runs that measured it.
 
-- TTFT p50 388 ms at 6k context, and **the median is the most reproducible number
-  in this whole benchmark**: 388 ms here, 447 ms in an independent n=5 re-run,
-  386 ms in a second one. The listener's normal experience is a third of a
-  second.
+- TTFT p50 at 6k is **388 ms in `B1` (n=15) and 386 ms in `B1d` (n=5)** — the
+  most reproducible number in this benchmark, and the only claim here supported
+  by two independent committed runs. The listener's normal experience is a third
+  of a second.
 - († in the results table) Its tail is *not* proven tight, and this run's 423 ms p95 should not be quoted
   as if it were. A later n=5 re-run
   ([`B1d`](B1d-brain-gemma4-rerun-2026-08-29.json)) drew a single 7.9 s first
@@ -256,10 +264,11 @@ separate runs.
   model rather than a downgrade to something small. It is already pinned by the
   `dylan` persona, so it is not an unknown quantity.
 
-**Confidence: high** on the central latency claim — a 12× margin on a median that
-reproduced three times, in both conditions. That margin is far too large for the
-one tail excursion above to threaten it: even that 7.9 s outlier is inside the
-band the incumbent sits in *typically*.
+**Confidence: high** on the central latency claim — a 12× margin, in both
+conditions, on a median that reproduced across the two committed runs that
+measured it (388 ms and 386 ms at 6k). That margin is far too large for the one
+tail excursion above to threaten it: even that 7.9 s outlier is inside the band
+the incumbent sits in *typically*.
 
 **Confidence: moderate** on it being the right *overall* answer, because that
 depends on whether Lance likes talking to it, which this benchmark cannot tell
@@ -372,23 +381,23 @@ those replies, deliberately not a score.
 **n=15 per model per condition.** At n=15 the nearest-rank p95 resolves to rank
 15 — it *is* the maximum, in all 18 rows. Read the p95 column as **worst
 observed**; it is not a distributional claim, and a tighter p50/p95 spread means
-only that this run never drew a tail, not that no tail exists. An independent
-n=5 re-run drew a 22.5 s first token from the incumbent at 6k where this run's
-worst was 5.5 s. The medians are the numbers to trust. (`bench_test.go` pins the
-p95≡max identity so raising `-reps` cannot silently change what the column
+only that this run never drew a tail, not that no tail exists. `B1d` is the
+committed demonstration: gemma4's worst 6k first token is 423 ms in `B1` and
+7,893 ms in `B1d`. The medians are the numbers to trust. (`bench_test.go` pins
+the p95≡max identity so raising `-reps` cannot silently change what the column
 means.)
 
 **Live machine.** This ran on Lance's daily driver against his live Ollama
 server. Contention is a real error term and no confidence interval here would be
 honest. Runs were serialized, one model resident at a time.
 
-That error term is not hypothetical: across three runs of gemma4 the medians
-agree to within a few ms, while one n=5 re-run drew a 7.9 s first token whose
-sample *also* showed a 20× stall in an unrelated embedding call. Medians here are
-solid; individual maxima say as much about the machine that day as about the
-model. This is the reason the gate is judged on both a median and a worst case,
-and the reason a single re-run flipping a p95 does not overturn a p50 that
-reproduces three times.
+That error term is not hypothetical, and `B1` and `B1d` bracket it between them:
+gemma4's 6k median moves 2 ms between the two runs (388 → 386 ms) while its
+worst sample moves from 423 ms to 7,893 ms — and that outlying sample *also*
+showed a 20× stall in an unrelated embedding call. Medians here are solid;
+individual maxima say as much about the machine that day as about the model.
+This is why the gate is judged on both a median and a worst case, and why one
+run flipping a p95 does not overturn a p50 that reproduced in both.
 
 **Tools stay enabled**, because `voice_tools_enabled: true` is what Lance runs.
 The gate counts tool detours, since the user waits through them.
@@ -421,7 +430,7 @@ code was committed at `6f2e4fb` (15:25:33), six seconds before the run stamped
 The flag's cause is `Email/Reply.txt`, written at 15:22:17 by the smoke run
 described above and still untracked when the run started. An earlier version of
 this document blamed "the artifact being written into `docs/benchmarks/`", which
-is impossible: `provenance()` runs at `main.go:313`, *before* the model loop, so
+is impossible: `provenance()` is called at `main.go:333`, *before* the model loop, so
 nothing the run itself produces — neither the artifact nor any side effect — can
 appear in its own provenance. `Hello.txt` cannot be the cause either; it did not
 exist until 15:48.
