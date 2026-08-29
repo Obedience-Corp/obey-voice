@@ -32,6 +32,16 @@ func TestDefaultNativeReleaseForLinuxAmd64(t *testing.T) {
 	}
 }
 
+func TestDefaultNativeReleaseForWindowsAmd64Empty(t *testing.T) {
+	// CI only runs darwin/linux, both of which now have pins. This tuple stays
+	// unpublished so the fail-closed path is still exercised after linux/amd64
+	// gained a tarball.
+	url, sha := DefaultNativeReleaseFor("windows", "amd64")
+	if url != "" || sha != "" {
+		t.Fatalf("windows/amd64 pin = %q/%q, want empty", url, sha)
+	}
+}
+
 func TestDefaultNativeReleaseMatchesThisPlatform(t *testing.T) {
 	backend := "cpu"
 	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {

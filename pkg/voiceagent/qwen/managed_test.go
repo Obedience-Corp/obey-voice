@@ -43,6 +43,20 @@ func TestInspectEmpty(t *testing.T) {
 	}
 }
 
+func TestInspectURLHonorsConfiguredURL(t *testing.T) {
+	dir := t.TempDir()
+	st := InspectURL(dir, "https://example.invalid/pkg.tar.gz")
+	if st.Installed {
+		t.Fatalf("%+v", st)
+	}
+	if strings.Contains(st.Detail, "no published package") {
+		t.Fatalf("custom URL must not claim there is no package: %q", st.Detail)
+	}
+	if !strings.Contains(st.Detail, "models ensure") {
+		t.Fatalf("custom URL detail = %q, want models ensure remediation", st.Detail)
+	}
+}
+
 func TestCanonicalVoice(t *testing.T) {
 	if v, ok := CanonicalVoice("vivian"); !ok || v != "Vivian" {
 		t.Fatalf("%v %v", v, ok)
