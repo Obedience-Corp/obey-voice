@@ -205,7 +205,7 @@ func LoadSystemPrompt(name string) (string, error) {
 // When the private id document exists but the profile still points at a stale
 // ref (e.g. prompts.persona: Uncle_Fu while uncle-fu.yaml is on disk), the
 // profile is healed to prompts.persona: <id> so runtime and the editor agree.
-// Never substitutes the embedded samantha document for a different id.
+// Never substitutes the embedded default document for a different id.
 func LoadSystemPromptForProfile(p *Profile) (string, error) {
 	if p == nil {
 		return "", fmt.Errorf("persona profile: nil")
@@ -240,7 +240,7 @@ func DefaultSystemPrompt() (string, error) {
 
 // StarterSystemPrompt returns the minimal embedded starter identity used to
 // seed brand-new personas — enough structure to get going, not the full
-// built-in samantha prompt.
+// built-in default persona prompt.
 func StarterSystemPrompt() (string, error) {
 	doc, err := prompts.Starter(prompts.KindPersona)
 	if err != nil {
