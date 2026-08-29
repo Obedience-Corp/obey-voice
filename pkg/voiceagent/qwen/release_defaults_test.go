@@ -19,10 +19,16 @@ func TestDefaultNativeReleaseForDarwinArm64(t *testing.T) {
 	}
 }
 
-func TestDefaultNativeReleaseForLinuxAmd64Empty(t *testing.T) {
+func TestDefaultNativeReleaseForLinuxAmd64(t *testing.T) {
 	url, sha := DefaultNativeReleaseFor("linux", "amd64")
-	if url != "" || sha != "" {
-		t.Fatalf("linux/amd64 pin = %q/%q, want empty until a tarball is published", url, sha)
+	if !strings.Contains(url, "qwen3-tts-native-linux-amd64.tar.gz") {
+		t.Fatalf("url = %q", url)
+	}
+	if !strings.Contains(url, "/v0.1.1/") {
+		t.Fatalf("linux pin should be v0.1.1 (CPU), got %q", url)
+	}
+	if len(sha) != 64 {
+		t.Fatalf("sha length = %d, want 64 hex", len(sha))
 	}
 }
 

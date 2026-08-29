@@ -79,7 +79,7 @@ obey-voice serve --tailscale
 | VAD | Silero | |
 | Audio | miniaudio / malgo | |
 
-Models download on first use into `models_dir`, and `just install` runs `models ensure` for the default Kokoro/STT/VAD stack. Qwen installs from TUI Settings or `obey-voice models ensure --tts` only on platforms with a published native package (today: macOS Apple Silicon). No product Python runtime.
+Models download on first use into `models_dir`, and `just install` runs `models ensure` for the default Kokoro/STT/VAD stack. Qwen installs from TUI Settings or `obey-voice models ensure --tts` on macOS Apple Silicon (Metal) and linux/amd64 (CPU). No product Python runtime.
 
 ## Docs
 

@@ -153,8 +153,8 @@ Microphone and speaker devices can be selected from the **Input** and
 text-to-speech provider and shows its configured model context. Kokoro exposes
 the static voice picker. Selecting an uninstalled **Qwen3-TTS** row installs the
 native multi-tier package (worker binary + GGUF under `models_dir/qwen3-tts`)
-when a published platform tarball exists (today: macOS Apple Silicon) or
-`qwen_tts_native_url` is set. After setup, the **Voice** section
+when a published platform tarball exists (macOS Apple Silicon Metal, or
+linux/amd64 CPU) or `qwen_tts_native_url` is set. After setup, the **Voice** section
 lists Qwen's nine CustomVoice-class preset speakers; press `p` to preview and
 `Enter` to select one. The **Language** section selects Qwen's synthesis language
 (use **Auto** unless a book or conversation needs an explicit language). Returning
@@ -167,8 +167,9 @@ The first Qwen installation is a large download on platforms that have a
 published package. It is isolated below `models_dir/qwen3-tts`, can be inspected
 with `obey-voice models status --tts`, and can also be installed
 non-interactively after selecting Qwen with `obey-voice models ensure --tts`.
-Linux/amd64 has no published tarball yet — status and doctor say so instead of
-advertising that ensure. Obey Voice keeps the model loaded in one native
+Linux/amd64 downloads the CPU package (`qwen3-tts-native` v0.1.1). It is
+slower than realtime on a handheld; Kokoro stays the conversation default.
+Obey Voice keeps the model loaded in one native
 warm worker for the lifetime of the provider. Advanced users can set both
 `qwen_tts_binary` and `qwen_tts_model` to point at an explicit worker/model dir.
 
