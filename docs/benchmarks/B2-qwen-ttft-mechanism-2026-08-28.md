@@ -66,8 +66,10 @@ traceable.
 
 ## The rule
 
-`cached_tokens ≈ prompt_tokens − num_batch`. Measured against predicted, on
-`qwen3.8-uncensored:27b` at ~1196 prompt tokens:
+`cached_tokens ≈ prompt_tokens − num_batch`, because llama.cpp creates a
+checkpoint `4 + n_ubatch` tokens before the end of the prompt
+([PR #20288](https://github.com/ggml-org/llama.cpp/pull/20288)). Measured
+against predicted, on `qwen3.8-uncensored:27b` at ~1196 prompt tokens:
 
 | `num_batch` | predicted cached | measured cached | measured share |
 |---:|---:|---:|---:|
@@ -121,21 +123,30 @@ depend on checkpoints, so the batch does not move it.
 
 ## The trade, and its sign
 
-Cold prompts — nothing reusable, verified at 0 % cached in the server log:
+Cold prompts. Getting a genuinely cold read on the incumbent needed the cache
+*emptied* — the model is unloaded before each sample — because a differing
+prefix alone did not do it (see [the one thing not
+explained](#what-this-does-not-fix-and-one-thing-it-does-not-explain)). Same
+prompt size, same harness, `n = 4`:
 
-| `num_batch` | qwen3.8 | gemma4:26b | qwen3:8b |
-|---:|---:|---:|---:|
-| 1024 | — *(see below)* | **722 ms** | **1146 ms** |
-| 512 | — *(see below)* | 818 ms | 1155 ms |
-| 256 | 5622 ms | 961 ms | 1177 ms |
-| **128** | **5892 ms** | **1228 ms** | **1275 ms** |
-| 64 | 6310 ms | 1743 ms | 1485 ms |
-| 32 | 8362 ms | 2672 ms | 1794 ms |
+| `num_batch` | qwen3.8 forced-cold prefill |
+|---:|---:|
+| 1024 | **5486 ms** |
+| 512 | 5502 ms |
+| 256 | 5621 ms |
+| **128** | **5893 ms** |
 
-Cold is worse at 128 than at Ollama's own choice, on every model: gemma4 **+70 %**,
-qwen3:8b **+11 %**, and the incumbent's cold curve rises monotonically as the
-batch shrinks. The reviewer measured the incumbent's cold 1024 point
-independently at ~4000 ms / 235 tok/s against 4318 ms / 218 at 128 — same sign.
+**+407 ms at 128**, and monotonic. The reviewer's independent spot-check put the
+same trade at +358 ms. For the two models whose head-nonce rows *did* verify at
+0 % cached, the same sign is much larger:
+
+| `num_batch` | gemma4:26b cold | qwen3:8b cold |
+|---:|---:|---:|
+| 1024 | **722 ms** | **1146 ms** |
+| 128 | 1228 ms | 1275 ms |
+| 32 | 2672 ms | 1794 ms |
+
+gemma4 pays **+70 %** at 128, qwen3:8b **+11 %**.
 
 This lands exactly where it hurts, and the product-path table shows it:
 
@@ -167,27 +178,46 @@ TTFT inflates the denominator.
 
 ## Why 128
 
-| model | production path @1024 | @128 | cold @1024 | cold @128 |
-|---|---:|---:|---:|---:|
-| qwen3.8-uncensored:27b | 4403 ms | **827 ms** | ~4000 ms | 5892 ms |
-| gemma4:26b | 844 ms | **393 ms** | 722 ms | 1228 ms |
-| qwen3:8b | 140 ms | 138 ms | 1146 ms | 1275 ms |
+| model | production path @1024 | @128 | won | cold @1024 | cold @128 | cost |
+|---|---:|---:|---:|---:|---:|---:|
+| qwen3.8-uncensored:27b | 4403 ms | **827 ms** | −3576 ms | 5486 ms | 5893 ms | +407 ms |
+| gemma4:26b | 844 ms | **393 ms** | −451 ms | 722 ms | 1228 ms | +506 ms |
+| qwen3:8b | 140 ms | 138 ms | −2 ms | 1146 ms | 1275 ms | +129 ms |
 
-128 is a 5× win for the incumbent and a 2× win for gemma4 on the path that
-dominates, for +129 ms and +506 ms on cold turns. 64 and 32 buy little more on
-the production path and cost a great deal cold — the incumbent's cold read goes
-to 8.4 s at 32 — so the sweep does **not** recommend pushing lower.
+Each row is one measurement source at one prompt size, so the two halves are
+comparable: the incumbent's cold cells are the forced-cold run above, the other
+two models' are their verified-0 %-cached rows.
+
+The incumbent trades **+407 ms on a cold turn for −3576 ms on a conversational
+one**. gemma4 trades +506 ms for −451 ms, which is roughly a wash and would not
+justify the change on its own; qwen3:8b is indifferent on the production path
+and pays 129 ms cold. The change is carried by the model it was chosen for, and
+that is worth saying plainly rather than claiming it helps everything.
+
+64 and 32 buy little more on the production path and cost a great deal cold —
+the incumbent reaches 8.4 s at batch 32 with a head nonce — so the sweep does
+**not** recommend pushing lower.
 
 ## Upstream
 
-- **[llama.cpp PR #20087](https://github.com/ggml-org/llama.cpp/pull/20087)**
-  (merged) introduces the periodic context-checkpoint mechanism this depends on.
+- **[llama.cpp PR #16382](https://github.com/ggml-org/llama.cpp/pull/16382)**
+  (merged) implements context checkpointing for hybrid and recurrent models —
+  the mechanism everything here depends on.
+- **[llama.cpp PR #20288](https://github.com/ggml-org/llama.cpp/pull/20288)**
+  (merged) is where the measured rule comes from. It creates checkpoints at two
+  fixed offsets before the end of the prompt, and the diff names them:
+
+  ```c
+  // create checkpoints that many tokens before the end of the prompt:
+  static const int checkpoint_offsets[] = {4 + n_ubatch, 4};
+  ```
+
+  `4 + n_ubatch` before the end is exactly the `cached ≈ prompt − num_batch`
+  measured above, to within the few tokens the offset adds.
 - **[llama.cpp PR #25472](https://github.com/ggml-org/llama.cpp/pull/25472)**
-  (merged) is the closest thing to a root cause: when
-  `checkpoint_min_step >= min(n_batch, n_ubatch+4) − 4`, the checkpoint near the
-  end of the prompt is never created and every rollback costs a full micro-batch.
-  **The shipped defaults — `checkpoint_min_step 8192`, `n_ubatch 512` — are
-  inside that regime.**
+  (merged) evicts checkpoints that fall within `checkpoint_min_step` of each
+  other, which can remove the near-end one. Relevant, but it is *not* where the
+  `4 + n_ubatch` constant comes from — that is #20288 above.
 - **[llama.cpp #24055](https://github.com/ggml-org/llama.cpp/issues/24055)**
   (open) is the live hybrid/recurrent checkpoint-invalidation case; its fix
   [#25592](https://github.com/ggml-org/llama.cpp/pull/25592) is still open.
@@ -209,13 +239,19 @@ when it was closed as not-a-bug hours after filing.
 re-read, now slightly more expensive than before. The upstream fix for the
 hybrid/recurrent case is unmerged (#25592).
 
-**An observation, not a diagnosis.** On `qwen3.8-uncensored:27b` *only*, cases
-built with a completely different 90-word prefix still restored a checkpoint
-about one batch from the end — 21 % reused at batch 1024, 61 % at 512 — instead
-of going cold. `gemma4:26b` and `qwen3:8b` went to 0–1 % under identical
-construction. Replies stayed correct in every sample. Those two rows are
-therefore **excluded from the cold table** rather than relabelled, and the
-behaviour is recorded here rather than explained.
+**An observation, not a diagnosis.** On `qwen3.8-uncensored:27b` *only*, a
+request whose entire 90-word leading prefix differs still restores a checkpoint
+about one micro-batch from the end — 21 % reported cached at batch 1024, 61 % at
+512 — instead of reading the prompt cold. Moving the varying text to the very
+first token did not change it. `gemma4:26b` and `qwen3:8b` go to 0–1 % under
+identical construction.
+
+The forced-cold run above measures what it costs: with the cache actually
+emptied the incumbent needs **5486 ms** at batch 1024, against **4284 ms** for
+the same prompt with a fully different prefix and no flush. So the restore is
+real and it is saving work on a prefix that does not match. Replies were correct
+in every sample. Recorded, not explained — and it is why the cold numbers in
+this document come from the forced-cold run rather than from a nonce.
 
 **One machine, one Ollama build, three models.** The checkpoint rule is
 upstream behaviour and should reproduce; 128 is tuned against an M4 Max, which

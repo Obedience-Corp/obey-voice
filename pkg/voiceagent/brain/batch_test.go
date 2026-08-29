@@ -486,6 +486,74 @@ func TestFakeBatchProviderRecordsRequests(t *testing.T) {
 	}
 }
 
+// TestNewOllamaBatchWiresRequestPolicy drives the CONSTRUCTOR, because the
+// constructor wiring is the fix. Building an ollamaBatch field by field — as
+// TestOllamaBatchCarriesRequestPolicy does — proves Transform forwards whatever
+// it is handed, and would keep passing if newOllamaBatch went back to handing it
+// nothing. In particular a nil `think` is exactly what the bug looked like, and
+// a hand-built struct with think:nil passes the other test's shape.
+func TestNewOllamaBatchWiresRequestPolicy(t *testing.T) {
+	var bodies [][]byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/api/tags") {
+			_, _ = io.WriteString(w, `{"models":[{"name":"test-model"}]}`)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, body)
+		_, _ = io.WriteString(w, `{"model":"test-model","message":{"role":"assistant","content":"out"},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+
+	o, err := newOllamaBatch(&config.Config{
+		OllamaModel:     "test-model",
+		OllamaHost:      srv.URL,
+		OllamaNumCtx:    8192,
+		OllamaNumBatch:  128,
+		OllamaKeepAlive: "10m",
+		OllamaThink:     "false",
+		WorkDir:         t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("newOllamaBatch: %v", err)
+	}
+	if _, err := o.Transform(context.Background(), BatchRequest{Text: "hello"}); err != nil {
+		t.Fatalf("Transform: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("got %d chat requests, want 1", len(bodies))
+	}
+
+	var got struct {
+		Options   map[string]any `json:"options"`
+		KeepAlive any            `json:"keep_alive"`
+		Think     *bool          `json:"think"`
+	}
+	if err := json.Unmarshal(bodies[0], &got); err != nil {
+		t.Fatalf("request body: %v", err)
+	}
+	for k, want := range map[string]int{"num_ctx": 8192, "num_batch": 128} {
+		v, ok := got.Options[k]
+		if !ok {
+			t.Errorf("%s absent: the constructor did not carry the interactive request options", k)
+			continue
+		}
+		if int(v.(float64)) != want {
+			t.Errorf("%s = %v, want %d", k, v, want)
+		}
+	}
+	if got.KeepAlive == nil {
+		t.Error("keep_alive absent: batch would fall back to the server default and evict the warm conversational model")
+	}
+	// The one that made the original bug invisible: batch output is read, not
+	// spoken, so a reasoning model reasoning here costs time and nothing warns.
+	if got.Think == nil {
+		t.Error("think absent: a reasoning model would reason into a file")
+	} else if *got.Think {
+		t.Errorf("think = true, want false from ollama_think")
+	}
+}
+
 // TestOllamaBatchCarriesRequestPolicy pins B2's finding at the third call site.
 // Batch runs against the same Ollama, and usually the same model, as the
 // conversation. Ollama reloads the runner whenever a request's options differ

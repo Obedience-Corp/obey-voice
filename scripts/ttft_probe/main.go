@@ -172,8 +172,15 @@ type caseSpec struct {
 	// Generation speed cannot be read off a nine-character reply, and num_batch
 	// sets llama.cpp's logical batch as well as its micro-batch, so a prefill
 	// win has to be checked against what it costs the rest of the turn.
-	LongReply bool   `json:"long_reply,omitempty"`
-	Why       string `json:"why"`
+	LongReply bool `json:"long_reply,omitempty"`
+
+	// FlushBefore unloads the model before every sample, so the runner comes up
+	// with an empty cache and "cold" is a fact rather than a hope. Needed
+	// because a head nonce did NOT reliably force a cold read on the hybrid
+	// model: it kept restoring a checkpoint one micro-batch from the end even
+	// when the whole prefix differed. Costs a model load per sample.
+	FlushBefore bool   `json:"flush_before,omitempty"`
+	Why         string `json:"why"`
 }
 
 // allCases is the criteria doc's condition table plus the cache-behaviour cases
@@ -246,6 +253,14 @@ func allCases() []caseSpec {
 		{Name: "coldbatch-64", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 64, Why: "cold batch sweep"},
 		{Name: "coldbatch-32", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 32, Why: "cold batch sweep"},
 
+		// Cold by construction rather than by hoping the nonce lands: the model
+		// is unloaded before each sample.
+		{Name: "flushcold-1024", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 1024, FlushBefore: true,
+			Why: "cold with an empty cache, guaranteed by unloading the model first"},
+		{Name: "flushcold-512", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 512, FlushBefore: true, Why: "forced-cold sweep"},
+		{Name: "flushcold-256", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 256, FlushBefore: true, Why: "forced-cold sweep"},
+		{Name: "flushcold-128", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 128, FlushBefore: true, Why: "forced-cold sweep"},
+
 		// A small batch could plausibly win on a 1.2k prompt and lose on a real
 		// conversation, so the fix is re-measured at B1's filled-history size
 		// before it is believed.
@@ -310,17 +325,21 @@ func headNonceBlock(nonce string) string {
 	if h < 0 {
 		h = -h
 	}
+	// The varying part goes FIRST, before any fixed wording. An earlier version
+	// opened with "Session reference " and shared about ten leading tokens
+	// between samples, which is enough for the runner to match a prefix and
+	// restore a checkpoint — the rows this was meant to make cold came back
+	// partly reused.
 	var b strings.Builder
-	b.WriteString("Session reference ")
-	b.WriteString(nonce)
-	b.WriteString(". Working notes for this session only:\n")
 	for i := 0; i < 90; i++ {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
 		b.WriteString(padWords[(h+i*7+i*i)%len(padWords)])
 	}
-	b.WriteString(".\n\n")
+	b.WriteString(". Session reference ")
+	b.WriteString(nonce)
+	b.WriteString(", working notes for this session only.\n\n")
 	return b.String()
 }
 
@@ -629,6 +648,9 @@ func probeModel(ctx context.Context, client *api.Client, model string, cases []c
 		_ = runOnce(ctx, client, model, c, nonceFor(c, 0), timeout)
 		var got []sample
 		for r := 1; r <= reps; r++ {
+			if c.FlushBefore {
+				unloadAllExcept(ctx, client, "")
+			}
 			s := runOnce(ctx, client, model, c, nonceFor(c, r), timeout)
 			s.Case, s.Model, s.Rep = c.Name, model, r
 			got = append(got, s)
