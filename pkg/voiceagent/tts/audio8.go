@@ -150,6 +150,12 @@ func NewAudio8TTS(opts Audio8Options) (*Audio8TTS, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Opening the store is where residue from an interrupted registration gets
+	// noticed; nothing else ever looks at it. Best effort by design - a store
+	// that cannot be tidied still speaks.
+	if dir := strings.TrimSpace(opts.ModelsDir); dir != "" {
+		SweepAudio8VoiceStore(dir)
+	}
 	// Measured on an M4 Max: the per-token AR graphs get slower with more
 	// threads (sync overhead dominates) while the codec, one large op, wants
 	// more. Hence per-graph thread counts rather than one global setting.

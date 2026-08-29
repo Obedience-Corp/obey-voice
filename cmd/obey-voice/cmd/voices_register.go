@@ -61,6 +61,10 @@ type audio8VoiceJSON struct {
 	CreatedAt   string  `json:"created_at"`
 	Path        string  `json:"path"`
 	Removed     bool    `json:"removed,omitempty"`
+	// RemovedPaths names every directory a removal deleted. It is more than
+	// Path whenever a legacy, non-canonical spelling of the same voice was on
+	// disk beside it - the only way a caller can see that one existed.
+	RemovedPaths []string `json:"removed_paths,omitempty"`
 }
 
 func newVoicesRegisterCmd() *cobra.Command {
@@ -347,20 +351,35 @@ func runVoicesRemove(cmd *cobra.Command, args []string) error {
 		return fail(codedError(codeInvalidVoice, "%v", err))
 	}
 	modelsDir := config.ModelsDirFrom(cfg)
-	meta, err := tts.LoadAudio8VoiceMeta(modelsDir, name)
+	// Read the metadata before the removal, but do not require it: a directory
+	// registered before names were canonicalized ("  bob  ") cannot be loaded,
+	// because the store builds its path from the canonical name. It is still on
+	// disk holding that name, so removal has to reach it or nothing will.
+	meta, metaErr := tts.LoadAudio8VoiceMeta(modelsDir, name)
+	removed, err := tts.RemoveAudio8Voice(modelsDir, name)
 	if err != nil {
-		return fail(codedError(codeNotFound, "%v", err))
-	}
-	if err := tts.RemoveAudio8Voice(modelsDir, name); err != nil {
+		if metaErr != nil {
+			return fail(codedError(codeNotFound, "%v", metaErr))
+		}
 		return fail(err)
+	}
+	if metaErr != nil {
+		meta = tts.Audio8VoiceMeta{Name: name}
 	}
 	row := audio8VoiceRow(cfg, meta)
 	row.Removed = true
+	row.RemovedPaths = removed
 	if asJSON {
 		return encodeJSON(cmd, row)
 	}
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "\n  Removed %s\n", meta.Name)
+	for _, path := range removed {
+		if path != config.Audio8VoiceDir(modelsDir, name) {
+			fmt.Fprintf(out, "  %s\n", dimStyle.Render(
+				"also removed "+path+", registered under a spelling this store cannot resolve"))
+		}
+	}
 	if strings.EqualFold(strings.TrimSpace(cfg.Audio8Voice), name) {
 		fmt.Fprintf(out, "  %s\n", dimStyle.Render(
 			"audio8_voice still names it; audio8 will refuse to speak until you change or unset that key"))

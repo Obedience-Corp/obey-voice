@@ -404,6 +404,48 @@ func TestVoicesRemove(t *testing.T) {
 	}
 }
 
+// A directory registered before names were canonicalized is invisible to
+// `registered` and can never speak, and `voices remove` could not address it
+// either: it builds the canonical path and reported "no such registered
+// voice". The name was occupied with no way to give it back short of a manual
+// rm somewhere under models_dir.
+func TestVoicesRemoveReachesALegacyDirectory(t *testing.T) {
+	modelsDir := newAudio8TestConfig(t)
+	legacy := filepath.Join(config.Audio8VoicesDir(modelsDir), " bob ")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(tts.Audio8VoiceMeta{Name: " bob ", Transcript: "the reference line"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, config.Audio8VoiceMetaFile), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if names := config.Audio8RegisteredVoiceNames(modelsDir); len(names) != 0 {
+		t.Fatalf("the store lists %v; the fixture is not the invisible-directory case", names)
+	}
+
+	out, err := runVoicesSub(t, "remove", "  bob  ", "--json")
+	if err != nil {
+		t.Fatalf("remove of a legacy spelling: %v (%s)", err, out)
+	}
+	var row audio8VoiceJSON
+	if err := json.Unmarshal([]byte(out), &row); err != nil {
+		t.Fatalf("parse: %v (%s)", err, out)
+	}
+	if !row.Removed || row.Name != "bob" {
+		t.Errorf("json = %+v, want bob removed", row)
+	}
+	// The path is the only way a caller can see which directory this reached.
+	if len(row.RemovedPaths) != 1 || row.RemovedPaths[0] != legacy {
+		t.Errorf("removed_paths = %v, want [%s]", row.RemovedPaths, legacy)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Errorf("the legacy directory is still on disk: %v", err)
+	}
+}
+
 // A registered voice must reach every catalog surface without loading a model,
 // and the packaged reference must stay first.
 func TestRegisteredVoicesReachTheStaticCatalog(t *testing.T) {

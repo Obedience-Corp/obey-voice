@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -81,6 +83,11 @@ func (m Audio8VoiceMeta) Seconds() float64 {
 // docs/benchmarks/A1-audio8-tts-onnx-2026-08-27.json as codec_frame_rate_hz.
 const audio8CodecFrameRateHz = 21.533203125
 
+// audio8AsideVoiceSubdir is where a replacement sets the previous voice while
+// the new one is installed. Named because the sweep recognises an aside by it:
+// a staging directory of the same shape has the voice files at its own root.
+const audio8AsideVoiceSubdir = "voice"
+
 // SaveAudio8Voice writes one registered voice into the store under modelsDir.
 //
 // The write is atomic at the voice level: codes and metadata land in a
@@ -118,6 +125,9 @@ func SaveAudio8Voice(modelsDir string, meta Audio8VoiceMeta, codes [][]int64) er
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return fmt.Errorf("audio8: create voice store %s: %w", root, err)
 	}
+	// This is the operation that creates asides, so it is the one that clears
+	// the ones a previous interrupted run of it left behind.
+	SweepAudio8VoiceStore(modelsDir)
 	staging, err := os.MkdirTemp(root, "."+meta.Name+".")
 	if err != nil {
 		return fmt.Errorf("audio8: stage voice %q: %w", meta.Name, err)
@@ -150,7 +160,7 @@ func SaveAudio8Voice(modelsDir string, meta Audio8VoiceMeta, codes [][]int64) er
 
 	// Into a fresh directory rather than onto it: renaming onto an existing
 	// path has different rules per platform, and this has none of them.
-	saved := filepath.Join(aside, "voice")
+	saved := filepath.Join(aside, audio8AsideVoiceSubdir)
 	replacing := true
 	if err := audio8Rename(target, saved); err != nil {
 		if !os.IsNotExist(err) {
@@ -228,22 +238,124 @@ func ListAudio8Voices(modelsDir string) ([]Audio8VoiceMeta, error) {
 	return out, nil
 }
 
-// RemoveAudio8Voice deletes one registered voice. The packaged reference lives
-// inside the export and is not removable through here; ValidateAudio8VoiceName
-// rejects its name before any path is built.
-func RemoveAudio8Voice(modelsDir, name string) error {
+// RemoveAudio8Voice deletes one registered voice and returns the directories it
+// removed. The packaged reference lives inside the export and is not removable
+// through here; CanonicalAudio8VoiceName rejects its name before any path is
+// built.
+//
+// It also removes any directory holding the same voice under a spelling the
+// store cannot resolve. Registrations made before names were canonicalized
+// could create one - `voices register "  bob  "` built its path from the raw
+// argument - and such a directory is invisible to `registered`, unusable by
+// `resolveVoice`, and was unreachable by this command, which builds the
+// canonical path. It occupied a name with no way to give it back.
+func RemoveAudio8Voice(modelsDir, name string) ([]string, error) {
 	canonical, err := config.CanonicalAudio8VoiceName(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var removed []string
 	dir := config.Audio8VoiceDir(modelsDir, canonical)
-	if _, err := os.Stat(filepath.Join(dir, config.Audio8VoiceMetaFile)); err != nil {
-		return fmt.Errorf("%w: %s", ErrAudio8VoiceNotFound, canonical)
+	if _, statErr := os.Stat(filepath.Join(dir, config.Audio8VoiceMetaFile)); statErr == nil {
+		if err := os.RemoveAll(dir); err != nil {
+			return removed, fmt.Errorf("audio8: remove voice %q: %w", canonical, err)
+		}
+		removed = append(removed, dir)
 	}
-	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("audio8: remove voice %q: %w", canonical, err)
+	for _, legacy := range legacyAudio8VoiceDirs(modelsDir, canonical) {
+		if err := os.RemoveAll(legacy); err != nil {
+			return removed, fmt.Errorf("audio8: remove voice directory %s: %w", legacy, err)
+		}
+		removed = append(removed, legacy)
 	}
-	return nil
+	if len(removed) == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrAudio8VoiceNotFound, canonical)
+	}
+	return removed, nil
+}
+
+// legacyAudio8VoiceDirs lists directories under the store that hold a voice
+// named canonical but are filed under a different spelling of it - only ever a
+// whitespace-padded one, since everything else the validator refuses outright
+// rather than adjusts. A metadata file is required so this can never reach a
+// directory that is not a voice at all.
+func legacyAudio8VoiceDirs(modelsDir, canonical string) []string {
+	root := config.Audio8VoicesDir(modelsDir)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == canonical {
+			continue
+		}
+		spelling, err := config.CanonicalAudio8VoiceName(entry.Name())
+		if err != nil || spelling != canonical {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, entry.Name(), config.Audio8VoiceMetaFile)); err != nil {
+			continue
+		}
+		out = append(out, filepath.Join(root, entry.Name()))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// audio8AsideDirRE matches the directory SaveAudio8Voice sets a previous voice
+// into: "." + name + ".old." + os.MkdirTemp's random digits.
+var audio8AsideDirRE = regexp.MustCompile(`^\.(.+)\.old\.[0-9]+$`)
+
+// SweepAudio8VoiceStore removes replacement asides the store no longer needs,
+// and returns what it removed.
+//
+// SaveAudio8Voice renames the previous voice aside, renames the new one in,
+// then drops the aside. A process killed between the second step and the third
+// leaves ".<name>.old.<n>/voice" on disk with nothing to surface or remove it:
+// the leading dot is not a canonical name, so `registered` skips it and
+// `voices remove` cannot address it.
+//
+// An aside is dropped only when the voice it was set aside for is installed,
+// which is what makes it redundant rather than the last copy of something. That
+// rule is also what makes the sweep safe next to a registration running in
+// another process: between the rename-aside and the rename-in the target does
+// not exist, so the sweep passes it over; after the rename-in the aside is
+// already redundant and SaveAudio8Voice is about to remove it anyway.
+//
+// It never touches a directory filed under a non-canonical spelling. That is
+// residue too, but it holds the codes of a voice someone recorded, and a
+// registered voice is the one thing under models_dir obey-voice cannot
+// re-fetch. `voices remove` reaches those, by name, when a person asks.
+func SweepAudio8VoiceStore(modelsDir string) []string {
+	root := config.Audio8VoicesDir(modelsDir)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var swept []string
+	for _, entry := range entries {
+		match := audio8AsideDirRE.FindStringSubmatch(entry.Name())
+		if !entry.IsDir() || match == nil {
+			continue
+		}
+		// The preserved voice, not the staging directory of a registration
+		// whose voice name happens to end in ".old" - the two spell the same
+		// directory name, and only this subdirectory tells them apart.
+		aside := filepath.Join(root, entry.Name())
+		if _, err := os.Stat(filepath.Join(aside, audio8AsideVoiceSubdir, config.Audio8VoiceMetaFile)); err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(config.Audio8VoiceDir(modelsDir, match[1]), config.Audio8VoiceMetaFile)); err != nil {
+			continue // the aside is the only copy; SaveAudio8Voice's error names it
+		}
+		if err := os.RemoveAll(aside); err != nil {
+			continue // best effort: a store that cannot be tidied still speaks
+		}
+		swept = append(swept, aside)
+	}
+	sort.Strings(swept)
+	return swept
 }
 
 // loadAudio8VoiceCodes reads a registered voice's codes, refusing any whose
