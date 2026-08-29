@@ -122,6 +122,10 @@
       "value": "qwen2.5:14b",
       "source": "env"
     },
+    "ollama_num_batch": {
+      "value": 128,
+      "source": "default"
+    },
     "ollama_num_ctx": {
       "value": 8192,
       "source": "default"

@@ -487,6 +487,23 @@
       "editable": true
     },
     {
+      "key": "ollama_num_batch",
+      "type": "int",
+      "default": 128,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Prompt batch size",
+      "help": "How much of the prompt is re-read each turn. Smaller lets Ollama reuse more of an unchanged conversation, which is a large win to the first word on qwen3.8-class models, and costs a little on brand-new prompts. 0 lets Ollama choose.",
+      "unit": "tokens",
+      "min": 0,
+      "max": 4096,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OLLAMA_NUM_BATCH",
+      "editable": true
+    },
+    {
       "key": "ollama_num_ctx",
       "type": "int",
       "default": 8192,

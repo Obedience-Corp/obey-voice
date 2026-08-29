@@ -148,6 +148,11 @@ func brainKeys() []KeySpec {
 			Help: "How much conversation the local model sees. 0 uses the server's own size, which silently drops the oldest turns.",
 		},
 		{
+			Key: "ollama_num_batch", Type: TypeInt, Default: 128, Unit: "tokens", Min: num(0), Max: num(4096),
+			Group: GroupBrain, Title: "Prompt batch size",
+			Help: "How much of the prompt is re-read each turn. Smaller lets Ollama reuse more of an unchanged conversation, which is a large win to the first word on qwen3.8-class models, and costs a little on brand-new prompts. 0 lets Ollama choose.",
+		},
+		{
 			Key: "ollama_keep_alive", Type: TypeString, Default: "10m",
 			Group: GroupBrain, Title: "Model residency",
 			Help: "How long Ollama keeps the model in memory between turns. Shorter frees RAM but pays the load cost again.",

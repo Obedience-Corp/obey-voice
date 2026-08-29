@@ -109,6 +109,22 @@ type Config struct {
 	// falls back to the server's model default — which silently truncates
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
+	// OllamaNumBatch is how many prompt tokens Ollama reads per pass. Left
+	// unset, Ollama picks it mainly from the context window — 512 at or below
+	// 4096, 1024 above, 2048 above 32768 — downgrading toward 512 when the
+	// model's predicted VRAM will not fit. It weighs the model's memory
+	// footprint, never its architecture. Values above OllamaNumCtx are clamped
+	// to it at load; see ClampOllamaNumBatch.
+	//
+	// It is a prefix-REUSE control, not a speed control. llama.cpp keeps its
+	// last reusable context checkpoint about one batch back from the end of the
+	// prompt, so a smaller batch lets the server skip more of a conversational
+	// prompt whose persona and history have not changed. Measured on
+	// qwen3.8-uncensored:27b (B2): batch 1024 skips 14 % and waits 4.4 s before
+	// the first word; batch 128 skips 89 % and waits 0.8 s. Raw reading speed
+	// moves the other way (239 to 182 tok/s), so genuinely new prompts cost
+	// slightly more. 0 restores Ollama's own choice.
+	OllamaNumBatch int `mapstructure:"ollama_num_batch"`
 	// OllamaKeepAlive keeps the model resident between voice turns
 	// (Go duration string; empty = server default).
 	OllamaKeepAlive string `mapstructure:"ollama_keep_alive"`
@@ -390,6 +406,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("skills_similarity_threshold", 0.55)
 	v.SetDefault("ollama_host", "http://localhost:11434")
 	v.SetDefault("ollama_num_ctx", 8192)
+	v.SetDefault("ollama_num_batch", 128)
 	v.SetDefault("ollama_keep_alive", "10m")
 	// Disable chain-of-thought on voice turns: thinking models (qwen3.x) often
 	// return empty content after a long think block, which becomes the canned
@@ -557,6 +574,7 @@ var envBindings = map[string]string{
 	"ollama_embedding_model":      "OLLAMA_EMBEDDING_MODEL",
 	"ollama_host":                 "OLLAMA_HOST",
 	"ollama_num_ctx":              "OLLAMA_NUM_CTX",
+	"ollama_num_batch":            "OLLAMA_NUM_BATCH",
 	"ollama_keep_alive":           "OLLAMA_KEEP_ALIVE",
 	"ollama_think":                "OLLAMA_THINK",
 	"claude_max_session_tokens":   "CLAUDE_MAX_SESSION_TOKENS",
@@ -668,6 +686,7 @@ func loadLocked() (*Config, error) {
 	}
 	applyOllamaDefaults(&cfg, v, ollamaChosen(v))
 	cfg.ToolCommandTimeout = ClampToolCommandTimeout(cfg.ToolCommandTimeout)
+	cfg.OllamaNumBatch = ClampOllamaNumBatch(cfg.OllamaNumBatch, cfg.OllamaNumCtx)
 	return &cfg, nil
 }
 
@@ -782,6 +801,33 @@ func envForcesFalse(key string) bool {
 	default:
 		return false
 	}
+}
+
+// ClampOllamaNumBatch keeps ollama_num_batch from exceeding ollama_num_ctx.
+//
+// A batch larger than the window is not merely redundant, it is
+// self-defeating: llama.cpp places its last reusable context checkpoint about
+// one batch before the end of the prompt, so a batch wider than anything that
+// can be in the window puts that checkpoint at or before position zero and
+// nothing is ever reused — the exact condition ollama_num_batch exists to
+// avoid. The schema bounds the key, but a hand-edited config.yaml or
+// OLLAMA_NUM_BATCH does not go through the schema, so the guard lives at load
+// where every path reaches it.
+//
+// Zero is left alone: it is the documented escape hatch meaning "let Ollama
+// choose". A window of zero means the server sizes it, so there is nothing to
+// clamp against and the batch is left as written.
+func ClampOllamaNumBatch(numBatch, numCtx int) int {
+	if numBatch <= 0 {
+		return 0
+	}
+	if numCtx > 0 && numBatch > numCtx {
+		fmt.Fprintf(os.Stderr,
+			"obey-voice: ollama_num_batch %d exceeds ollama_num_ctx %d; using %d (a batch wider than the window disables prompt reuse)\n",
+			numBatch, numCtx, numCtx)
+		return numCtx
+	}
+	return numBatch
 }
 
 // ClampToolCommandTimeout bounds tool_command_timeout to 1–120 seconds.

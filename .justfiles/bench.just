@@ -162,3 +162,11 @@ stt-ab label raw control candidate:
         -command "${STT_AB_COMMAND:-}" \
         -out "$out"
     echo "Now write the prose by hand: criteria_fixed_in_advance, reading_the_numbers, evidence_limits, durable_value, and the *_criterion_met verdicts."
+
+[doc('Diagnose per-turn brain latency against the raw ollama API (B2). Usage: just bench ttft, or just bench ttft "-cases cache-tail-vary -reps 3"')]
+ttft *ARGS:
+    @cd "{{repo}}" && go run ./scripts/ttft_probe {{ARGS}}
+
+[doc('Record what a client actually sends ollama. Point the client at it with OLLAMA_HOST=http://127.0.0.1:11500')]
+ttft-proxy out=(`printf '%s/ttft-proxy-capture.jsonl' "${TMPDIR:-/tmp}"`):
+    @cd "{{repo}}" && go run ./scripts/ttft_probe -proxy 127.0.0.1:11500 -proxy-out "{{out}}"

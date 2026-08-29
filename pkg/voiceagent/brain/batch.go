@@ -83,19 +83,37 @@ func joinPromptParts(parts ...string) string {
 
 // ollamaBatch adapts the Ollama chat client to BatchProvider.
 type ollamaBatch struct {
-	client *api.Client
-	model  string
+	client    *api.Client
+	model     string
+	options   map[string]any
+	keepAlive *api.Duration
+	think     *api.ThinkValue
 }
 
 // newOllamaBatch reuses the interactive constructor for its connection and
-// model checks, then keeps only the client — batch calls never touch the
-// interactive brain or its history.
+// model checks, then keeps only what a stateless call needs — batch calls never
+// touch the interactive brain or its history.
+//
+// It carries the interactive brain's request policy on purpose. Batch runs
+// against the same Ollama and usually the same model as the conversation, and
+// Ollama reloads the runner whenever a request's options differ from the loaded
+// ones: a batch call sent bare would evict the warm conversational runner, then
+// the next spoken turn would evict it back. The think value matters for the
+// same reason it does interactively — omitting it lets a reasoning model think,
+// and batch output is written to a file, not spoken, so nobody would hear the
+// reasoning arrive; they would only see a slow, padded transform.
 func newOllamaBatch(cfg *config.Config) (*ollamaBatch, error) {
 	b, err := NewOllama(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &ollamaBatch{client: b.client, model: b.model}, nil
+	return &ollamaBatch{
+		client:    b.client,
+		model:     b.model,
+		options:   b.requestOptions(),
+		keepAlive: b.keepAlive,
+		think:     ollamaThinkValue(cfg.OllamaThink),
+	}, nil
 }
 
 func (o *ollamaBatch) Transform(ctx context.Context, req BatchRequest) (BatchResult, error) {
@@ -111,9 +129,12 @@ func (o *ollamaBatch) Transform(ctx context.Context, req BatchRequest) (BatchRes
 
 	stream := false
 	chatReq := &api.ChatRequest{
-		Model:    o.model,
-		Messages: messages,
-		Stream:   &stream,
+		Model:     o.model,
+		Messages:  messages,
+		Stream:    &stream,
+		Options:   o.options,
+		KeepAlive: o.keepAlive,
+		Think:     o.think,
 	}
 
 	var response api.Message
