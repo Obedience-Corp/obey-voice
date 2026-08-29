@@ -305,10 +305,19 @@ func init() {
 	setDefaults(v)
 }
 
+// DefaultKokoroVoice is what an unset tts_voice speaks as.
+//
+// It is exported because three places outside this function had the literal:
+// the schema key's Default, internal/scene (which substitutes it before a
+// pooled worker can fall back to whichever cast member built it) and the TUI's
+// effective-voice label. Nothing failed when they diverged, and the test that
+// looked like it covered it compared the constant against itself.
+const DefaultKokoroVoice = "af_heart"
+
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("tts_provider", "kokoro")
 	v.SetDefault("voice_fallback_provider", "kokoro")
-	v.SetDefault("tts_voice", "af_heart")
+	v.SetDefault("tts_voice", DefaultKokoroVoice)
 	v.SetDefault("audio8_voice", "")
 	v.SetDefault("speech_speed", 0.95)
 	// Empty selects Obey Voice's managed Qwen runtime. Set an explicit binary and
