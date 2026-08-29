@@ -1,0 +1,11 @@
+schema: festival-voice.persona.v1
+id: ada
+display_name: Ada
+brain:
+  provider: ollama
+  model: llama3.1
+tts:
+  provider: kokoro
+  voice: af_sky
+prompts:
+  persona: ada
