@@ -16,6 +16,8 @@ func TestStripThinkBlocks(t *testing.T) {
 		{"inner comparison survives", "Is 3 < 4? Yes.", "Is 3 < 4? Yes."},
 		{"case insensitive", "<THINK>secret</THINK>Spoken.", "Spoken."},
 		{"mid-sentence", `She said <think>don't speak this</think> hello.`, "She said hello."},
+		{"trailing bracket is a comparison and survives", "The threshold is <", "The threshold is <"},
+		{"tag the model never finished is dropped", "Hi <th", "Hi"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -75,6 +77,47 @@ func TestThinkFilterHoldsIncompleteTag(t *testing.T) {
 	}
 	if got := f.Feed("nk>secret</think> there."); got != " there." {
 		t.Fatalf("after completing the tag = %q, want the spoken tail", got)
+	}
+}
+
+// Feed holds a trailing tag prefix hoping the next segment completes it. At end
+// of stream nothing else can, so Flush is the only thing that can release it —
+// a caller that never calls it drops that text silently.
+func TestThinkFilterFlushReleasesHeldTail(t *testing.T) {
+	tests := []struct {
+		name, feed, wantFeed, wantFlush string
+	}{
+		{"open tag the model never finished is dropped", "Hi <th", "Hi ", ""},
+		{"close tag the model never finished is dropped", "<think>reasoning</thin", "", ""},
+		{"held text inside a think region is never released", "<think>reasoning <", "", ""},
+		{"lone bracket is a comparison, not a tag", "Reply that trails off <", "Reply that trails off ", "<"},
+		{"nothing held", "Plain reply.", "Plain reply.", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var f ThinkFilter
+			if got := f.Feed(tt.feed); got != tt.wantFeed {
+				t.Fatalf("Feed(%q) = %q, want %q", tt.feed, got, tt.wantFeed)
+			}
+			if got := f.Flush(); got != tt.wantFlush {
+				t.Fatalf("Flush() after %q = %q, want %q", tt.feed, got, tt.wantFlush)
+			}
+			if got := f.Flush(); got != "" {
+				t.Fatalf("second Flush() = %q, want the hold consumed", got)
+			}
+		})
+	}
+}
+
+// Both halves empty means the reply is nothing but think markup so far. The
+// renderer keys the dim "thinking" state off exactly this, so it must not be
+// confused with a reply that has no markup at all.
+func TestSplitThinkEmptyBlockYieldsNothingToPaint(t *testing.T) {
+	for _, in := range []string{"<think></think>", "<think>\n</think>", "<think> </think>", "<think>"} {
+		think, body := SplitThink(in)
+		if think != "" || body != "" {
+			t.Errorf("SplitThink(%q) = (%q, %q), want both empty", in, think, body)
+		}
 	}
 }
 

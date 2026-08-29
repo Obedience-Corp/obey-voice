@@ -1074,9 +1074,15 @@ func renderAgentTurn(name, text string) string {
 		b.WriteByte('\n')
 		b.WriteString(normalStyle.Render(spoken))
 	}
-	if think == "" && spoken == "" && text != "" {
+	// Both halves empty on non-blank text means the reply so far is nothing but
+	// think markup — a reasoning block that has opened (or opened and closed)
+	// before any token arrived. This runs on every streaming frame, so it is a
+	// normal transient state, not a corner case. Painting text here would put
+	// the raw <think> tags on screen, which is the bug this function exists to
+	// fix; paint the dim state instead.
+	if think == "" && spoken == "" && strings.TrimSpace(text) != "" {
 		b.WriteByte('\n')
-		b.WriteString(normalStyle.Render(text))
+		b.WriteString(thinkLabelStyle.Render("thinking"))
 	}
 	return agentBubbleStyle.Render(b.String())
 }

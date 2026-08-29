@@ -225,7 +225,7 @@ func (b *Brain) ThinkStream(ctx context.Context, input string, streamOpts Stream
 			return
 		}
 
-		response, finErr := finalizeStreamedText(ctx, out, StripAgentLabel(b.agentName(), raw))
+		response, finErr := finalizeStreamedText(ctx, out, stripReplyConventions(b.agentName(), raw))
 		if finErr != nil {
 			done <- StreamResult{Err: finErr}
 			return
@@ -491,8 +491,9 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) 
 		return "", resultError("claude", result.Subtype, result.Result)
 	}
 
-	// Strip the label, clean, then fall back, so the fallback is spoken verbatim.
-	return spokenOrFallback(cleanForVoice(StripAgentLabel(b.agentName(), result.Result))), nil
+	// Strip the label and think block, clean, then fall back, so the fallback
+	// is spoken verbatim.
+	return spokenOrFallback(cleanForVoice(stripReplyConventions(b.agentName(), result.Result))), nil
 }
 
 // buildPrompt renders the next turn for the CLI. omitTurnInstruction leaves off
@@ -640,6 +641,13 @@ var (
 )
 
 func cleanForVoice(s string) string {
+	// Chain-of-thought goes first: everything below reasons about spoken prose,
+	// and a <think> block is not that. It is stripped here rather than only at
+	// the synthesis boundary for the same reason emoji are (below) — every
+	// provider records this function's output as the assistant turn, so leaving
+	// the block in teaches the model its reasoning belongs in the reply and
+	// re-bills those tokens on every turn that follows.
+	s = textclean.StripThinkBlocks(s)
 	s = fillerRE.ReplaceAllString(markdownReplacer.Replace(s), "")
 	// Emoji go here rather than at the synthesis boundary alone, for two reasons.
 	// The persona document bans them, so a reply containing one is already out of

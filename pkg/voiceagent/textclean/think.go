@@ -11,6 +11,11 @@ import "strings"
 // it from a complete string. ThinkFilter does the same across streamed
 // sentences so a tag that opens in one segment and closes in another cannot
 // leak into TTS.
+//
+// Nesting is not supported: the first </think> closes the region regardless of
+// how many opens preceded it. Qwen3 and the other models this targets emit one
+// well-formed pair, and a depth counter would turn a stray close tag — which
+// these models do emit — into a region that never ends.
 var (
 	thinkOpenTags  = []string{"<think>", "<thinking>"}
 	thinkCloseTags = []string{"</think>", "</thinking>"}
@@ -21,10 +26,7 @@ var (
 // stream (an unclosed open would eat the spoken reply that has not arrived).
 func StripThinkBlocks(s string) string {
 	var f ThinkFilter
-	out := f.Feed(s)
-	if leftover := f.Flush(); leftover != "" && !looksLikeIncompleteThinkTag(leftover) {
-		out += leftover
-	}
+	out := f.Feed(s) + f.Flush()
 	if out == s {
 		return s
 	}
@@ -34,6 +36,12 @@ func StripThinkBlocks(s string) string {
 // SplitThink separates a reply into chain-of-thought (inner text, no tags)
 // and the spoken body. An unclosed <think> at the end is still think, so a
 // live stream can paint it before </think> arrives.
+//
+// Only tag bytes are removed and both halves are trimmed, so two empty results
+// from non-blank input mean the reply is nothing but think markup so far —
+// the frame between "<think>" arriving and the first reasoning token. Callers
+// must not fall back to rendering the input in that case; that is the raw tag
+// on screen.
 func SplitThink(s string) (think, body string) {
 	var thinkB, bodyB strings.Builder
 	inThink := false
@@ -113,12 +121,19 @@ func (f *ThinkFilter) Feed(s string) string {
 	return out.String()
 }
 
-// Flush emits a held suffix that is not inside a think region. A lone "<" at
-// EOF is a comparison, not a tag; call this at end of stream.
+// Flush releases the suffix Feed is still holding and must be called once the
+// turn's last segment has arrived — nothing else can release it, so a caller
+// that skips Flush drops that text permanently.
+//
+// A lone "<" at EOF is a comparison, not a tag, and is returned. A longer
+// fragment ("<th", "</thinkin") is a tag the model never finished writing:
+// speaking it would be gibberish, so it is dropped. Both halves of that rule
+// live here rather than at the call sites, so every consumer decides the same
+// way — StripThinkBlocks used to carry a copy of it.
 func (f *ThinkFilter) Flush() string {
 	hold := f.hold
 	f.hold = ""
-	if hold == "" || f.inThink {
+	if hold == "" || f.inThink || looksLikeIncompleteThinkTag(hold) {
 		return ""
 	}
 	return hold

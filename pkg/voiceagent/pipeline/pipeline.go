@@ -1108,6 +1108,82 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		voiceBatch = voiceBatch[:0]
 		openingSpoken = true
 	}
+	// routeSegment sends one think-filtered segment to the transcript and, if it
+	// survives gating and cleaning, to the voice batch. The end-of-stream think
+	// flush enters here too, so both entry points share one copy of the
+	// transcript and speakability rules instead of drifting apart.
+	routeSegment := func(text string) {
+		if text == "" {
+			return
+		}
+
+		// Feed the gate every segment, in order, before deciding whether
+		// this turn speaks at all: its regions span segments, so skipping
+		// one loses the boundary that closes a tool block or a fence.
+		voiceText, stripped := gate.filter(text)
+
+		// Filler-only chunks are provisional: providers replace a turn that
+		// ends there with the recovery reply. Keep them out of both transcript
+		// and TTS so the finalizer's replacement is the only visible/audible
+		// response. A filler followed by content in the same sentence survives.
+		if display := stripVocalTags(brain.CleanForVoice(text)); speakableSegment(display) {
+			if _, dup := heard[display]; !dup {
+				heard[display] = struct{}{}
+				if fullResponse.Len() > 0 {
+					fullResponse.WriteByte(' ')
+				}
+				fullResponse.WriteString(display)
+			}
+		}
+
+		if interrupted || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
+			return
+		}
+
+		p.recordStrips(stripped, metrics)
+		speakable := brain.CleanForVoice(voiceText)
+		// Not just != "": stripping a filler from "Umm." leaves a bare ".",
+		// which is non-empty, unpronounceable, and — because segments are
+		// batched — would be glued onto the front of a real sentence inside
+		// one synthesis call.
+		// A tag-only beat ([moan]) has no speakable prose and must still
+		// reach the synth queue so the sound plays.
+		if !speakableSegment(speakable) && !hasVocalTag(speakable) {
+			return
+		}
+		// Sound-only beats ([moan]) may repeat in one turn on purpose.
+		// Restated prose after a phantom tool still drops.
+		if speakableSegment(stripVocalTags(speakable)) {
+			if _, dup := spoken[speakable]; dup {
+				return
+			}
+			spoken[speakable] = struct{}{}
+		}
+
+		turn.to(TurnSpeaking)
+		if metrics.firstSegment.IsZero() {
+			metrics.firstSegment = time.Now()
+		}
+		if !watchdogArmed {
+			watchdogArmed = true
+			// The budget is sized to the segment the listener is actually
+			// waiting on. openingBatchSegments is 1, so this speakable is
+			// that segment.
+			stallTimeout := p.stallTimeout(len(speakable))
+			metrics.firstAudioGrace = stallTimeout
+			metrics.ttsEngine = p.ttsIdentity()
+			go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(speakable))
+		}
+
+		voiceBatch = append(voiceBatch, speakable)
+		target := laterBatchSegments
+		if !openingSpoken {
+			target = openingBatchSegments
+		}
+		if len(voiceBatch) >= target {
+			flushVoiceBatch()
+		}
+	}
 	go func() {
 		// Segments are numbered in playback order by the single ordered synth
 		// worker, so the index is the position a listener hears.
@@ -1192,6 +1268,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		case sentence, ok := <-sentenceCh:
 			if !ok {
 				sentences = nil
+				// Drain the think filter: Feed holds a trailing "<" in case it
+				// opens a think tag, and at end of stream nothing more can
+				// arrive to disambiguate it. Without this the held text is
+				// dropped silently rather than by the speakability rule below —
+				// the same end-of-stream Flush the label stripper does in
+				// brain.go.
+				routeSegment(think.Flush())
 				// A half-full batch is still a real segment: flush it before
 				// closing, or the last sentence of every odd-length reply is
 				// silently never spoken.
@@ -1207,74 +1290,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				continue
 			}
 
-			// Feed the gate every segment, in order, before deciding whether
-			// this turn speaks at all: its regions span segments, so skipping
-			// one loses the boundary that closes a tool block or a fence.
-			// Think blocks are stripped first: they look like speech (letters,
-			// periods) so the gate would otherwise read them aloud.
-			voiceText, stripped := gate.filter(think.Feed(sentence))
-
-			// Filler-only chunks are provisional: providers replace a turn that
-			// ends there with the recovery reply. Keep them out of both transcript
-			// and TTS so the finalizer's replacement is the only visible/audible
-			// response. A filler followed by content in the same sentence survives.
-			if display := stripVocalTags(brain.CleanForVoice(sentence)); speakableSegment(display) {
-				if _, dup := heard[display]; !dup {
-					heard[display] = struct{}{}
-					if fullResponse.Len() > 0 {
-						fullResponse.WriteByte(' ')
-					}
-					fullResponse.WriteString(display)
-				}
-			}
-
-			if interrupted || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
-				continue
-			}
-
-			p.recordStrips(stripped, metrics)
-			speakable := brain.CleanForVoice(voiceText)
-			// Not just != "": stripping a filler from "Umm." leaves a bare ".",
-			// which is non-empty, unpronounceable, and — because segments are
-			// batched — would be glued onto the front of a real sentence inside
-			// one synthesis call.
-			// A tag-only beat ([moan]) has no speakable prose and must still
-			// reach the synth queue so the sound plays.
-			if !speakableSegment(speakable) && !hasVocalTag(speakable) {
-				continue
-			}
-			// Sound-only beats ([moan]) may repeat in one turn on purpose.
-			// Restated prose after a phantom tool still drops.
-			if speakableSegment(stripVocalTags(speakable)) {
-				if _, dup := spoken[speakable]; dup {
-					continue
-				}
-				spoken[speakable] = struct{}{}
-			}
-
-			turn.to(TurnSpeaking)
-			if metrics.firstSegment.IsZero() {
-				metrics.firstSegment = time.Now()
-			}
-			if !watchdogArmed {
-				watchdogArmed = true
-				// The budget is sized to the segment the listener is actually
-				// waiting on. openingBatchSegments is 1, so this speakable is
-				// that segment.
-				stallTimeout := p.stallTimeout(len(speakable))
-				metrics.firstAudioGrace = stallTimeout
-				metrics.ttsEngine = p.ttsIdentity()
-				go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(speakable))
-			}
-
-			voiceBatch = append(voiceBatch, speakable)
-			target := laterBatchSegments
-			if !openingSpoken {
-				target = openingBatchSegments
-			}
-			if len(voiceBatch) >= target {
-				flushVoiceBatch()
-			}
+			// Think blocks come off before anything else reads the segment.
+			// They look like speech (letters, periods) so the gate would read
+			// them aloud, and the same filtered text feeds the transcript — so
+			// the model never reads its own reasoning back out of conversation
+			// history on the next turn, paying its tokens every turn after.
+			routeSegment(think.Feed(sentence))
 
 		case event := <-playbackEvents:
 			if interrupted && event.kind == playbackStarted && p.Player != nil {

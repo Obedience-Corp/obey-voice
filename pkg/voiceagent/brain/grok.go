@@ -143,7 +143,7 @@ func (g *GrokBrain) ThinkStream(ctx context.Context, input string, streamOpts St
 			return
 		}
 
-		response, finErr := finalizeStreamedText(ctx, out, StripAgentLabel(g.agentName(), raw))
+		response, finErr := finalizeStreamedText(ctx, out, stripReplyConventions(g.agentName(), raw))
 		if finErr != nil {
 			done <- StreamResult{Err: finErr}
 			return
@@ -269,8 +269,9 @@ func (g *GrokBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptio
 		return "", resultError("grok", result.Subtype, result.Text)
 	}
 
-	// Strip the label, clean, then fall back, so the fallback is spoken verbatim.
-	return spokenOrFallback(cleanForVoice(StripAgentLabel(g.agentName(), result.Text))), nil
+	// Strip the label and think block, clean, then fall back, so the fallback
+	// is spoken verbatim.
+	return spokenOrFallback(cleanForVoice(stripReplyConventions(g.agentName(), result.Text))), nil
 }
 
 // dropSession clears the CLI resume id. Call whenever the session is

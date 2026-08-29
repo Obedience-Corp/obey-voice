@@ -105,6 +105,48 @@ func TestThinkStreamStreamsDeltasWithToolsEnabled(t *testing.T) {
 	}
 }
 
+// Qwen3 dumps chain-of-thought into the reply body. The deltas carry it — the
+// TUI paints those as a dim aside — but the assistant turn recorded in history
+// must not, or the model reads its own reasoning back on every following turn:
+// it pays those tokens again and learns the block belongs in the reply. Showing
+// the reasoning and persisting it are different things.
+func TestThinkStreamKeepsThinkBlocksOutOfHistory(t *testing.T) {
+	lines := []string{
+		`{"model":"m","message":{"role":"assistant","content":"<think>The user said hi. "},"done":false}`,
+		`{"model":"m","message":{"role":"assistant","content":"Plan a warm greeting.</think>"},"done":false}`,
+		`{"model":"m","message":{"role":"assistant","content":"\nHello there!"},"done":true,"done_reason":"stop"}`,
+	}
+	o := &OllamaBrain{client: ollamaStreamStub(t, lines), model: "m", cfg: &config.Config{MaxHistory: 10}}
+
+	stream, err := o.ThinkStream(context.Background(), "hi", StreamOptions{})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	var deltas strings.Builder
+	for c := range stream.Chunks {
+		deltas.WriteString(c)
+	}
+	if res := <-stream.Done; res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+
+	if len(o.history) == 0 {
+		t.Fatal("no assistant turn recorded")
+	}
+	recorded := o.history[len(o.history)-1].Content
+	for _, leak := range []string{"<think", "</think", "Plan a warm greeting", "The user said hi"} {
+		if strings.Contains(recorded, leak) {
+			t.Errorf("history carries %q: %q", leak, recorded)
+		}
+	}
+	if !strings.Contains(recorded, "Hello there!") {
+		t.Fatalf("history lost the reply: %q", recorded)
+	}
+	if !strings.Contains(deltas.String(), "<think>") {
+		t.Fatalf("deltas = %q, want the raw block the TUI paints dim", deltas.String())
+	}
+}
+
 // After a phantom tool call the model often restates the line it already
 // streamed. Forwarding that copy made Veronica say the same sentence twice.
 func TestThinkStreamDoesNotRestateAfterTools(t *testing.T) {
