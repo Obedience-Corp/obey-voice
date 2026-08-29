@@ -16,6 +16,12 @@ import "strings"
 // how many opens preceded it. Qwen3 and the other models this targets emit one
 // well-formed pair, and a depth counter would turn a stray close tag — which
 // these models do emit — into a region that never ends.
+//
+// The corollary is that a close tag outside any region is dropped rather than
+// passed through as prose. Without depth, an extra close carries no meaning a
+// listener wants: it is either the model's own noise or the tail of a nested
+// block, and both read aloud as "less than slash think". Losing the tag from a
+// sentence genuinely about XML is the cheaper mistake.
 var (
 	thinkOpenTags  = []string{"<think>", "<thinking>"}
 	thinkCloseTags = []string{"</think>", "</thinking>"}
@@ -42,6 +48,12 @@ func StripThinkBlocks(s string) string {
 // the frame between "<think>" arriving and the first reasoning token. Callers
 // must not fall back to rendering the input in that case; that is the raw tag
 // on screen.
+//
+// It matches tags by the same rules ThinkFilter does, deliberately: this is the
+// render path and that is the speech path, and a reader comparing the bubble to
+// what was said must not find them disagreeing about what a tag is. That
+// includes holding back a trailing partial tag — a frame landing mid-"<think>"
+// paints nothing rather than the bytes so far.
 func SplitThink(s string) (think, body string) {
 	var thinkB, bodyB strings.Builder
 	inThink := false
@@ -54,6 +66,13 @@ func SplitThink(s string) (think, body string) {
 				i += n
 				continue
 			}
+			if n := matchTagAt(lower, i, thinkCloseTags); n > 0 {
+				i += n
+				continue
+			}
+			if s[i] == '<' && isThinkTagPrefix(lower[i:]) {
+				break
+			}
 			bodyB.WriteByte(s[i])
 			i++
 			continue
@@ -62,6 +81,9 @@ func SplitThink(s string) (think, body string) {
 			inThink = false
 			i += n
 			continue
+		}
+		if s[i] == '<' && isThinkTagPrefix(lower[i:]) {
+			break
 		}
 		thinkB.WriteByte(s[i])
 		i++
@@ -81,15 +103,46 @@ func (f *ThinkFilter) InThink() bool { return f.inThink }
 
 // Feed returns the speakable portion of s. Think content is dropped.
 func (f *ThinkFilter) Feed(s string) string {
+	out, _, _ := f.scan(s)
+	return out
+}
+
+// ContentOffset advances the filter over s exactly as Feed does, but reports
+// where the reply proper begins instead of removing the reasoning: the index in
+// s of the first byte Feed would have emitted, or len(s) when s is nothing but
+// think markup.
+//
+// It exists for callers that must forward the model's raw bytes — the TUI
+// paints the reasoning live — while still knowing which bytes are the reply and
+// therefore judgeable (see brain.labelStripper). A tag prefix held from the
+// previous call belongs to that earlier chunk, already forwarded, so a first
+// content byte landing inside it clamps to 0.
+func (f *ThinkFilter) ContentOffset(s string) int {
+	held := len(f.hold)
+	out, first, _ := f.scan(s)
+	if out == "" {
+		return len(s)
+	}
+	if i := first - held; i > 0 {
+		return i
+	}
+	return 0
+}
+
+// scan is the one tag-matching pass Feed and ContentOffset share. It returns the
+// speakable text, the index of its first byte within the scanned string (the
+// held prefix, if any, prepended to s), and whether any content was emitted.
+func (f *ThinkFilter) scan(s string) (string, int, bool) {
 	if f.hold != "" {
 		s = f.hold + s
 		f.hold = ""
 	}
 	if s == "" {
-		return ""
+		return "", 0, false
 	}
 	var out strings.Builder
 	out.Grow(len(s))
+	first, found := 0, false
 	lower := strings.ToLower(s)
 	i := 0
 	for i < len(s) {
@@ -99,9 +152,20 @@ func (f *ThinkFilter) Feed(s string) string {
 				i += n
 				continue
 			}
+			// A close tag outside any region is the model's noise or a nested
+			// block's tail; dropping it is the documented rule above, and it is
+			// what keeps this consistent with the same tag arriving at the very
+			// end of a segment, which the hold already drops.
+			if n := matchTagAt(lower, i, thinkCloseTags); n > 0 {
+				i += n
+				continue
+			}
 			if s[i] == '<' && isThinkTagPrefix(lower[i:]) {
 				f.hold = s[i:]
 				break
+			}
+			if !found {
+				first, found = i, true
 			}
 			out.WriteByte(s[i])
 			i++
@@ -118,7 +182,7 @@ func (f *ThinkFilter) Feed(s string) string {
 		}
 		i++
 	}
-	return out.String()
+	return out.String(), first, found
 }
 
 // Flush releases the suffix Feed is still holding and must be called once the

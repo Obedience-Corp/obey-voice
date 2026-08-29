@@ -50,11 +50,12 @@ func StripAgentLabel(agentName, text string) string {
 // finds the block instead and leaves the label to be spoken.
 //
 // Use this on a complete reply or a finished accumulation buffer, wherever a
-// turn is recorded in history. Streaming has its own pair (labelStripper and
-// textclean.ThinkFilter), because neither convention can be recognised from a
-// partial reply. cleanForVoice strips think blocks again on the paths that
-// reach it; the two are not redundant — this one fixes the ordering, that one
-// covers callers who never pass through here.
+// turn is recorded in history. A stream cannot use it — neither convention is
+// recognisable from a partial reply — so labelStripper carries its own
+// textclean.ThinkFilter and applies the same order chunk by chunk.
+// cleanForVoice strips think blocks again on the paths that reach it; the two
+// are not redundant — this one fixes the ordering, that one covers callers who
+// never pass through here.
 func stripReplyConventions(agentName, text string) string {
 	return StripAgentLabel(agentName, textclean.StripThinkBlocks(text))
 }
@@ -65,10 +66,17 @@ func stripReplyConventions(agentName, text string) string {
 // single token — so time-to-first-audio is unaffected: sentence segmentation
 // already buffers far longer than this.
 type labelStripper struct {
-	re      *regexp.Regexp
-	lname   string
-	pending strings.Builder
-	decided bool
+	re    *regexp.Regexp
+	lname string
+	// think tells the reasoning prologue from the reply. "<think>" is not a label
+	// prefix, so judging the first raw chunk resolved the head before the reply
+	// had said a word and let the "Obey:" after </think> through. The block is
+	// forwarded verbatim — the TUI paints it live — and only the reply after it
+	// is judged: the order stripReplyConventions uses, block off then label.
+	think      textclean.ThinkFilter
+	sawContent bool
+	pending    strings.Builder
+	decided    bool
 }
 
 func newLabelStripper(agentName string) *labelStripper {
@@ -86,6 +94,25 @@ func (s *labelStripper) Feed(chunk string) string {
 	if s.decided {
 		return chunk
 	}
+	if !s.sawContent {
+		i := s.think.ContentOffset(chunk)
+		if i >= len(chunk) {
+			// Still the reasoning prologue. Forward it and judge nothing: the
+			// reply has not started, so there is no head to resolve yet.
+			return chunk
+		}
+		s.sawContent = true
+		if i > 0 {
+			// The reply begins inside this chunk. The prologue half goes out as
+			// it is; only the half after </think> reaches the label check.
+			return chunk[:i] + s.feedHead(chunk[i:])
+		}
+	}
+	return s.feedHead(chunk)
+}
+
+// feedHead runs the label decision over the reply's opening bytes.
+func (s *labelStripper) feedHead(chunk string) string {
 	s.pending.WriteString(chunk)
 	text := s.pending.String()
 	if s.couldBeLabel(text) {
@@ -97,6 +124,9 @@ func (s *labelStripper) Feed(chunk string) string {
 // Flush releases whatever the head still holds. Call when the stream ends —
 // including on error, where the held text is real partial reply — so a short
 // reply is never swallowed.
+//
+// Prologue bytes are never held (they were forwarded as they arrived), so a
+// turn that ended inside a reasoning block has nothing left here.
 func (s *labelStripper) Flush() string {
 	if s.decided {
 		return ""

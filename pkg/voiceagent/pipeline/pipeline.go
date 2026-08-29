@@ -1270,10 +1270,14 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				sentences = nil
 				// Drain the think filter: Feed holds a trailing "<" in case it
 				// opens a think tag, and at end of stream nothing more can
-				// arrive to disambiguate it. Without this the held text is
-				// dropped silently rather than by the speakability rule below —
-				// the same end-of-stream Flush the label stripper does in
-				// brain.go.
+				// arrive to disambiguate it — the same end-of-stream Flush the
+				// label stripper does in brain.go.
+				//
+				// This cannot change what is spoken today: the hold is only ever
+				// a prefix of a tag, so the one value Flush releases is a lone
+				// "<", which speakableSegment rejects anyway. It routes rather
+				// than drops so that if the hold ever carries content, the loop
+				// judges it by the same predicate as every other segment.
 				routeSegment(think.Flush())
 				// A half-full batch is still a real segment: flush it before
 				// closing, or the last sentence of every odd-length reply is

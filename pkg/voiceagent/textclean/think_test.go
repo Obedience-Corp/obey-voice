@@ -18,6 +18,33 @@ func TestStripThinkBlocks(t *testing.T) {
 		{"mid-sentence", `She said <think>don't speak this</think> hello.`, "She said hello."},
 		{"trailing bracket is a comparison and survives", "The threshold is <", "The threshold is <"},
 		{"tag the model never finished is dropped", "Hi <th", "Hi"},
+		{"stray close mid-string is dropped, not spoken", "All done </think> here.", "All done here."},
+		{"stray close at the end is dropped", "All done here.</think>", "All done here."},
+		{"a nested block leaks no literal tag", "<think>a<think>b</think>c</think>d", "cd"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := StripThinkBlocks(tt.in); got != tt.want {
+				t.Errorf("StripThinkBlocks(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// A stray open tag in prose swallows the rest of the reply, and that is the
+// deliberate half of the no-nesting rule at the top of think.go: with no depth
+// counter an open must mean "reasoning from here", or a real block whose close
+// has not streamed yet would be spoken aloud. The cost is a reply that talks
+// *about* the tag, which these models do not write and a listener would rather
+// lose than hear the reasoning of. Asserted here so the trade is a decision on
+// the record instead of a surprise found in a transcript.
+func TestStripThinkBlocksStrayOpenTagTruncates(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"stray open eats the tail", "All done <think> here.", "All done"},
+		{"prose about the tag loses it", "Use the <think> tag for reasoning.", "Use the"},
+		{"alias behaves the same", "A <thinking> block is XML.", "A"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,6 +144,74 @@ func TestSplitThinkEmptyBlockYieldsNothingToPaint(t *testing.T) {
 		think, body := SplitThink(in)
 		if think != "" || body != "" {
 			t.Errorf("SplitThink(%q) = (%q, %q), want both empty", in, think, body)
+		}
+	}
+}
+
+// ContentOffset is for callers that forward the model's raw bytes — the TUI
+// paints the reasoning live — while still needing to know which bytes are the
+// reply. State advances exactly as Feed's does, including across chunks.
+func TestThinkFilterContentOffset(t *testing.T) {
+	tests := []struct {
+		name  string
+		feeds []string
+		want  []int
+	}{
+		{"no markup starts at once", []string{"Hello there."}, []int{0}},
+		{"whole chunk is reasoning", []string{"<think>plan it"}, []int{14}},
+		{"reply begins after the close tag", []string{"<think>plan it", "</think>Hi."}, []int{14, 8}},
+		{"block and reply in one chunk", []string{"<think>plan it</think>Hi."}, []int{22}},
+		{"open tag split across chunks", []string{"<thi", "nk>plan it</think>Hi."}, []int{4, 18}},
+		{"held bracket that was a comparison clamps to zero", []string{"Is 3 <", "4? Yes."}, []int{0, 0}},
+		{"empty chunk has no content", []string{""}, []int{0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var f ThinkFilter
+			for i, in := range tt.feeds {
+				if got := f.ContentOffset(in); got != tt.want[i] {
+					t.Fatalf("ContentOffset(%q) [feed %d] = %d, want %d", in, i, got, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+// ContentOffset must advance the filter the same way Feed does, or a caller
+// mixing them would see the two disagree about where a region ends.
+func TestThinkFilterContentOffsetAdvancesLikeFeed(t *testing.T) {
+	chunks := []string{"<think>plan", " it", "</think>Hi ", "there."}
+	var byOffset, byFeed ThinkFilter
+	for _, c := range chunks {
+		byOffset.ContentOffset(c)
+		byFeed.Feed(c)
+		if byOffset.InThink() != byFeed.InThink() {
+			t.Fatalf("after %q: ContentOffset inThink=%v, Feed inThink=%v", c, byOffset.InThink(), byFeed.InThink())
+		}
+	}
+}
+
+// A frame landing mid-tag must paint nothing rather than the bytes so far —
+// the same hold the speech path applies, so bubble and audio never disagree
+// about what counts as a tag.
+func TestSplitThinkHoldsPartialTags(t *testing.T) {
+	tests := []struct {
+		in, think, body string
+	}{
+		{"Hello <thi", "", "Hello"},
+		{"<think>reasoning</thin", "reasoning", ""},
+		{"<think>reasoning</think>Hi <t", "reasoning", "Hi"},
+		// Only tag bytes go: the gap the tag left is the model's own spacing.
+		// StripThinkBlocks repairs that because its output is spoken; this is
+		// rendered, and the invariant the TUI leans on is that nothing but tags
+		// is removed.
+		{"stray </think> in prose", "", "stray  in prose"},
+		{"Is 3 < 4? Yes.", "", "Is 3 < 4? Yes."},
+	}
+	for _, tt := range tests {
+		think, body := SplitThink(tt.in)
+		if think != tt.think || body != tt.body {
+			t.Errorf("SplitThink(%q) = (%q, %q), want (%q, %q)", tt.in, think, body, tt.think, tt.body)
 		}
 	}
 }
