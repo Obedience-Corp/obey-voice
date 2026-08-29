@@ -440,7 +440,8 @@ func restatementSkip(already, soFar string) bool {
 // context policy: an explicit num_ctx so the server never silently truncates
 // at its own default (top truncation eats the system prompt — and the
 // persona — first), keep_alive so the model stays resident between voice
-// turns (a reload is a multi-second mid-conversation stall), and think so
+// turns (a reload is a multi-second mid-conversation stall), num_batch so
+// prompt reading is not throttled by a window-derived guess, and think so
 // reasoning models emit speakable content instead of empty replies after a
 // private chain-of-thought.
 func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *api.ChatRequest {
@@ -452,11 +453,34 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 		Stream:    &stream,
 		KeepAlive: o.keepAlive,
 		Think:     ollamaThinkValue(o.cfg.OllamaThink),
-	}
-	if o.cfg.OllamaNumCtx > 0 {
-		req.Options = map[string]any{"num_ctx": o.cfg.OllamaNumCtx}
+		Options:   o.requestOptions(),
 	}
 	return req
+}
+
+// requestOptions carries the two settings that decide how the prompt is read.
+// They travel together because sending num_ctx alone is what produced the
+// symptom this exists to fix: Ollama derives the prompt batch from the context
+// window and nothing else — 512 at or below 4096, 1024 above — so raising the
+// window to hold a conversation silently halves prompt throughput. On a hybrid
+// attention/SSM model that is the difference between a 4.4 s pause before the
+// first word and 0.8 s (docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md).
+//
+// Sending num_batch explicitly also turns off that automatic choice, which is
+// the point: the right batch depends on the model's architecture, and the
+// window knows nothing about it.
+func (o *OllamaBrain) requestOptions() map[string]any {
+	opts := map[string]any{}
+	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
+		opts["num_ctx"] = o.cfg.OllamaNumCtx
+	}
+	if o.cfg != nil && o.cfg.OllamaNumBatch > 0 {
+		opts["num_batch"] = o.cfg.OllamaNumBatch
+	}
+	if len(opts) == 0 {
+		return nil
+	}
+	return opts
 }
 
 // Think levels ollama_think accepts beyond the boolean forms.
@@ -560,17 +584,25 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 		think = o.cfg.OllamaThink
 	}
 	numCtx := o.warmupNumCtx()
-	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%d\n", o.model, numCtx)
+	opts := map[string]any{
+		"num_predict": 1,
+		"num_ctx":     numCtx,
+	}
+	// The warmup must request the same options the real turns will, or it warms
+	// the wrong runner: Ollama reloads the model whenever a request's options
+	// differ from the loaded ones, so a warmup that omits num_batch buys a
+	// model load that the user's first sentence then pays for again.
+	if o.cfg != nil && o.cfg.OllamaNumBatch > 0 {
+		opts["num_batch"] = o.cfg.OllamaNumBatch
+	}
+	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%d num_batch=%v\n", o.model, numCtx, opts["num_batch"])
 	req := &api.ChatRequest{
 		Model:     o.model,
 		Messages:  []api.Message{{Role: "user", Content: "hi"}},
 		Stream:    &stream,
 		Think:     ollamaThinkValue(think),
 		KeepAlive: o.keepAlive,
-		Options: map[string]any{
-			"num_predict": 1,
-			"num_ctx":     numCtx,
-		},
+		Options:   opts,
 	}
 	_ = o.client.Chat(ctx, req, func(api.ChatResponse) error { return nil })
 }

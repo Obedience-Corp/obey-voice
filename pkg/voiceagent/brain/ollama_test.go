@@ -3,6 +3,7 @@ package brain
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -63,6 +64,37 @@ func ollamaStreamStub(t *testing.T, lines []string) *api.Client {
 				f.Flush()
 			}
 		}
+	}))
+	t.Cleanup(srv.Close)
+
+	base, _ := url.Parse(srv.URL)
+	return api.NewClient(base, http.DefaultClient)
+}
+
+// optionCapturingStub records the options block of the request it receives, so
+// a test can compare what warmup asks for against what a real turn asks for.
+func optionCapturingStub(t *testing.T, into *map[string]any) *api.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Options map[string]any `json:"options"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Errorf("stub: bad request body: %v", err)
+		}
+		// JSON numbers arrive as float64; compare as int so the test reads in
+		// the units the config is written in.
+		norm := map[string]any{}
+		for k, v := range req.Options {
+			if f, ok := v.(float64); ok {
+				norm[k] = int(f)
+				continue
+			}
+			norm[k] = v
+		}
+		*into = norm
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"hi"},"done":true,"done_reason":"stop"}`+"\n")
 	}))
 	t.Cleanup(srv.Close)
 
@@ -553,7 +585,54 @@ func TestChatRequestCarriesContextPolicy(t *testing.T) {
 	// num_ctx 0 defers to the server default: no Options at all.
 	o = &OllamaBrain{model: "m", cfg: &config.Config{}}
 	if req := o.newChatRequest(nil, nil); req.Options != nil {
-		t.Fatalf("Options = %v, want nil when ollama_num_ctx is 0", req.Options)
+		t.Fatalf("Options = %v, want nil when ollama_num_ctx and ollama_num_batch are 0", req.Options)
+	}
+}
+
+// TestChatRequestCarriesNumBatch is the regression for B2: Ollama derives the
+// prompt batch from the context window alone, so raising num_ctx to hold a
+// conversation quietly halves prompt-reading throughput. On
+// qwen3.8-uncensored:27b that was a 4.4 s pause before every spoken word.
+// num_batch has to reach the request, and it has to be absent — not zero —
+// when the setting is off, because an explicit 0 would be a real batch size to
+// Ollama rather than "choose for me".
+func TestChatRequestCarriesNumBatch(t *testing.T) {
+	o := &OllamaBrain{model: "m", cfg: &config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128}}
+	req := o.newChatRequest(nil, nil)
+	if got := req.Options["num_batch"]; got != 128 {
+		t.Fatalf("num_batch = %v, want 128", got)
+	}
+	if got := req.Options["num_ctx"]; got != 8192 {
+		t.Fatalf("num_ctx = %v, want 8192 alongside num_batch", got)
+	}
+
+	// 0 means "let Ollama choose", which it can only do if the key is missing.
+	o = &OllamaBrain{model: "m", cfg: &config.Config{OllamaNumCtx: 8192}}
+	req = o.newChatRequest(nil, nil)
+	if _, ok := req.Options["num_batch"]; ok {
+		t.Fatalf("num_batch present (%v) when ollama_num_batch is 0; Ollama must pick its own", req.Options["num_batch"])
+	}
+}
+
+// TestWarmupMatchesChatOptions guards a subtle way to lose the whole benefit:
+// Ollama reloads the model when a request's options differ from the loaded
+// runner's, so a warmup that omits num_batch warms a runner the first real turn
+// throws away — and the user pays a model load in the middle of saying hello.
+func TestWarmupMatchesChatOptions(t *testing.T) {
+	var got map[string]any
+	o := &OllamaBrain{
+		model:  "m",
+		cfg:    &config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128},
+		client: optionCapturingStub(t, &got),
+	}
+	o.Warmup(context.Background())
+
+	chat := o.newChatRequest(nil, nil)
+	for _, k := range []string{"num_ctx", "num_batch"} {
+		if got[k] != chat.Options[k] {
+			t.Fatalf("warmup %s = %v, chat %s = %v: a mismatch reloads the model on the first real turn",
+				k, got[k], k, chat.Options[k])
+		}
 	}
 }
 

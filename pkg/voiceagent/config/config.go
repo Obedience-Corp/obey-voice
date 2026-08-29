@@ -109,6 +109,15 @@ type Config struct {
 	// falls back to the server's model default — which silently truncates
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
+	// OllamaNumBatch is how many prompt tokens Ollama processes per pass.
+	// Left unset, Ollama picks it from the context window alone — 512 at or
+	// below 4096, 1024 above — with no regard for the model, and hybrid
+	// attention/SSM models lose prefill throughput badly as it grows.
+	// Measured on qwen3.8-uncensored:27b (B2): 1024 gives 279 tok/s and a
+	// 4.4 s wait before the first word; 128 gives 1698 tok/s and 827 ms.
+	// gemma4:26b also improves; qwen3:8b pays about 15 ms.
+	// 0 restores Ollama's own choice.
+	OllamaNumBatch int `mapstructure:"ollama_num_batch"`
 	// OllamaKeepAlive keeps the model resident between voice turns
 	// (Go duration string; empty = server default).
 	OllamaKeepAlive string `mapstructure:"ollama_keep_alive"`
@@ -390,6 +399,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("skills_similarity_threshold", 0.55)
 	v.SetDefault("ollama_host", "http://localhost:11434")
 	v.SetDefault("ollama_num_ctx", 8192)
+	v.SetDefault("ollama_num_batch", 128)
 	v.SetDefault("ollama_keep_alive", "10m")
 	// Disable chain-of-thought on voice turns: thinking models (qwen3.x) often
 	// return empty content after a long think block, which becomes the canned
@@ -557,6 +567,7 @@ var envBindings = map[string]string{
 	"ollama_embedding_model":      "OLLAMA_EMBEDDING_MODEL",
 	"ollama_host":                 "OLLAMA_HOST",
 	"ollama_num_ctx":              "OLLAMA_NUM_CTX",
+	"ollama_num_batch":            "OLLAMA_NUM_BATCH",
 	"ollama_keep_alive":           "OLLAMA_KEEP_ALIVE",
 	"ollama_think":                "OLLAMA_THINK",
 	"claude_max_session_tokens":   "CLAUDE_MAX_SESSION_TOKENS",

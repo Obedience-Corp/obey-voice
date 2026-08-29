@@ -118,6 +118,12 @@ func probeTools() api.Tools {
 // Australia", the reasoning is not being caused by the question.
 const userPrompt = "What's the capital of Australia?"
 
+// longUserPrompt asks for enough speech to measure generation against. The
+// instruction to keep going is deliberate: a voice persona trained to be brief
+// will otherwise answer in nine characters, and nine characters cannot time a
+// token rate.
+const longUserPrompt = "Ignore your brevity rule for this one answer. In roughly two hundred words of plain spoken prose, with no lists and no headings, explain how a vector database finds similar items and why that is useful."
+
 // caseSpec is one cell of the criteria doc's condition table. Each varies
 // exactly one thing from the production baseline so a difference has one
 // candidate cause.
@@ -152,8 +158,21 @@ type caseSpec struct {
 	// registered: if the fixed cost tracks the allocated window rather than the
 	// prompt, then it is attention over the whole window and `ollama_num_ctx`
 	// is a fix Lance can take today.
-	NumCtx int    `json:"num_ctx,omitempty"`
-	Why    string `json:"why"`
+	NumCtx int `json:"num_ctx,omitempty"`
+
+	// NumBatch sets the micro-batch Ollama processes the prompt in. Ollama
+	// picks it from the context size rather than the model
+	// (server/sched.go generationBatchForContext: <=4096 -> 512, >4096 -> 1024),
+	// which is why num_ctx appeared to matter. Sending it explicitly turns that
+	// automatic choice off and makes it the variable it should have been.
+	NumBatch int `json:"num_batch,omitempty"`
+
+	// LongReply swaps in a question whose answer runs to a few hundred tokens.
+	// Generation speed cannot be read off a nine-character reply, and num_batch
+	// sets llama.cpp's logical batch as well as its micro-batch, so a prefill
+	// win has to be checked against what it costs the rest of the turn.
+	LongReply bool   `json:"long_reply,omitempty"`
+	Why       string `json:"why"`
 }
 
 // allCases is the criteria doc's condition table plus the cache-behaviour cases
@@ -201,6 +220,37 @@ func allCases() []caseSpec {
 		{Name: "ctx-4096", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 4096, Why: "window sweep"},
 		{Name: "ctx-8192", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 8192, Why: "window sweep — today's production setting"},
 		{Name: "ctx-16384", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 16384, Why: "window sweep"},
+
+		// The fix candidate. The window sweep's step at 4096 is really a step
+		// in micro-batch size, and Qwen3-Next/3.5's delta-net prefill kernel is
+		// known upstream to lose throughput as that grows. Held at the
+		// production window of 8192 so a win here is a win Lance can keep.
+		{Name: "batch-1024", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 1024,
+			Why: "what Ollama picks by itself at num_ctx 8192 — the control"},
+		{Name: "batch-512", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 512, Why: "batch sweep"},
+		{Name: "batch-256", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 256, Why: "batch sweep"},
+		{Name: "batch-128", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 128, Why: "batch sweep"},
+		{Name: "batch-64", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 64, Why: "batch sweep"},
+		{Name: "batch-32", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 32, Why: "batch sweep"},
+
+		// A small batch could plausibly win on a 1.2k prompt and lose on a real
+		// conversation, so the fix is re-measured at B1's filled-history size
+		// before it is believed.
+		{Name: "batch-1024-6k", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 1024, PadTokens: 4500,
+			Why: "control at ~6k tokens — Ollama's own choice"},
+		{Name: "batch-256-6k", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 256, PadTokens: 4500,
+			Why: "does the fix still hold at ~6k tokens?"},
+		{Name: "batch-64-6k", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 64, PadTokens: 4500,
+			Why: "does the smallest batch still win at ~6k tokens, or does it invert?"},
+
+		// What the prefill win costs. num_batch is passed to llama.cpp as both
+		// -b and -ub, so it is not only a prompt-reading knob.
+		{Name: "gen-batch-1024", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 1024, LongReply: true,
+			Why: "generation speed at Ollama's own batch — the control"},
+		{Name: "gen-batch-512", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 512, LongReply: true, Why: "generation speed sweep"},
+		{Name: "gen-batch-256", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 256, LongReply: true, Why: "generation speed sweep"},
+		{Name: "gen-batch-128", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 128, LongReply: true, Why: "generation speed sweep"},
+		{Name: "gen-batch-64", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 64, LongReply: true, Why: "generation speed sweep"},
 	}
 }
 
@@ -559,7 +609,11 @@ func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, 
 			tools = probeTools()
 		}
 	}
-	user := userPrompt + c.UserSuffix
+	base := userPrompt
+	if c.LongReply {
+		base = longUserPrompt
+	}
+	user := base + c.UserSuffix
 	if c.Vary == "tail" {
 		// A new sentence at the end of the user turn — exactly what a real
 		// conversational turn changes, and nothing more.
@@ -571,6 +625,10 @@ func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, 
 	if c.NumCtx > 0 {
 		numCtx = c.NumCtx
 	}
+	opts := map[string]any{"num_ctx": numCtx}
+	if c.NumBatch > 0 {
+		opts["num_batch"] = c.NumBatch
+	}
 	stream := true
 	req := &api.ChatRequest{
 		Model:     model,
@@ -578,7 +636,7 @@ func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, 
 		Tools:     tools,
 		Stream:    &stream,
 		KeepAlive: probeKeepAlive,
-		Options:   map[string]any{"num_ctx": numCtx},
+		Options:   opts,
 	}
 	// "absent" is the point of the condition: a nil Think omits the field
 	// entirely, which is a different request from an explicit false.
