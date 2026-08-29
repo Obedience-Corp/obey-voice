@@ -1,0 +1,771 @@
+{
+  "id": "B1",
+  "work_item": "WI-a981e4",
+  "title": "Conversational brain model A/B through the real obey-voice brain seam",
+  "criteria_doc": "docs/benchmarks/B1-brain-latency-ab-criteria.md",
+  "generated_at": "2026-08-28T15:22:17-06:00",
+  "harness": {
+    "command": "go run ./scripts/brain_bench",
+    "path": "scripts/brain_bench",
+    "persona": "obey",
+    "prompts": 5,
+    "reps": 2,
+    "seam": "brain.NewOllama(cfg).ThinkStream(ctx, input, StreamOptions{VoiceMode:true, ToolsEnabled:...})",
+    "stop_between": true,
+    "turn_timeout": "3m0s",
+    "workdir": "/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab"
+  },
+  "provenance": {
+    "branch": "bench/brain-latency-ab",
+    "commit": "0480fd02e84fb54112cfd7e9319a51ef32dcceca",
+    "cpu": "Apple M4 Max",
+    "machine": "Mac16,9",
+    "memory_bytes": "137438953472",
+    "ollama_version": "0.32.14",
+    "os": "26.5",
+    "worktree_clean": false
+  },
+  "config_layering": {
+    "config_active_persona": "samantha",
+    "config_brain_provider": "grok",
+    "config_ollama_model": "qwen3.8-uncensored:27b",
+    "effective_brain_provider": "ollama",
+    "note": "config brain_provider is grok, but every persona profile pins provider ollama, so the persona overlay decides. The ollama path is what the live session logs show, and it is what is measured here.",
+    "persona_brain_model": "qwen3.8:latest",
+    "persona_brain_provider": "ollama",
+    "persona_measured": "obey",
+    "source": "/Users/lancerogers/.obey/agents/voice/festival-voice/config.yaml"
+  },
+  "effective_request_options": {
+    "agent_name": "Obey",
+    "embedding_model": "nomic-embed-text",
+    "keep_alive": "10m",
+    "max_history": 10,
+    "num_ctx": 8192,
+    "persona_prompt": "obey",
+    "skills_enabled": true,
+    "stream": true,
+    "think": "false",
+    "tools_enabled": true,
+    "turn_prompt": "",
+    "voice_tools_config": true
+  },
+  "system_prompt": {
+    "bytes": 3765,
+    "elements": "persona + environment + skills catalog + turn instruction (brain.AssembleSystemPrompt, ollama policy)",
+    "estimated_tokens": 941,
+    "render_matches_brain": true,
+    "sha256": "4aed4325ad11c55a4216af2a7e1f43dafa3af2f0a7227f8dd1a39d0b22945f44"
+  },
+  "gate": {
+    "g1_ttft_p50_ms": 2000,
+    "g2_ttft_p95_ms": 4000,
+    "g3_gen_tok_s": 25,
+    "g4_worst_turn_ms": 90000,
+    "g5": "G1-G4 must hold in both history conditions",
+    "p95_caveat": "nearest-rank on n=15; read as worst observed, not a distributional claim",
+    "pipeline_turn_timeout_ms": 180000
+  },
+  "prompts": [
+    {
+      "id": "P1",
+      "kind": "factual_short",
+      "text": "What's the capital of Australia?"
+    },
+    {
+      "id": "P2",
+      "kind": "command_short",
+      "text": "In one sentence, tell me what you're good at."
+    },
+    {
+      "id": "P3",
+      "kind": "explain_brief",
+      "text": "Explain briefly what a vector database is."
+    },
+    {
+      "id": "P4",
+      "kind": "reason_multi",
+      "text": "I've got two hours before a meeting and three tasks: prep slides, review a pull request, and reply to email. How should I order them, and why?"
+    },
+    {
+      "id": "P5",
+      "kind": "opinion_short",
+      "text": "Should I use a local model or a cloud model for voice? Keep it short."
+    }
+  ],
+  "filled_history": {
+    "estimated_prompt_tokens": 5934,
+    "source": "scripts/brain_bench/history.go — real dialogue about this repository's work, tail-trimmed to fit",
+    "target_tokens": 6000,
+    "trim_line_tokens": 7372,
+    "turns": 64
+  },
+  "installed_models": [
+    {
+      "digest": "6fac2f98fdf7",
+      "modified": "2026-08-19T20:19:40-06:00",
+      "name": "qwen3.8-uncensored:27b",
+      "size_bytes": 17741860746
+    },
+    {
+      "digest": "6fac2f98fdf7",
+      "modified": "2026-08-19T20:19:40-06:00",
+      "name": "qwen3.8-uncensored:latest",
+      "size_bytes": 17741860746
+    },
+    {
+      "digest": "6fac2f98fdf7",
+      "modified": "2026-08-19T20:19:29-06:00",
+      "name": "orcarouter/Qwen3.8-27B-Uncensored:q4_K_M",
+      "size_bytes": 17741860746
+    },
+    {
+      "digest": "5dc8c5a2be65",
+      "modified": "2026-08-15T21:37:05-06:00",
+      "name": "dolphin-mistral:latest",
+      "size_bytes": 4108940323
+    },
+    {
+      "digest": "22130167c4c2",
+      "modified": "2026-08-15T20:54:10-06:00",
+      "name": "qwen3.8:latest",
+      "size_bytes": 17741872154
+    },
+    {
+      "digest": "5571076f3d70",
+      "modified": "2026-06-25T17:55:46-06:00",
+      "name": "gemma4:26b",
+      "size_bytes": 17987581215
+    },
+    {
+      "digest": "0a109f422b47",
+      "modified": "2026-06-10T13:22:46-06:00",
+      "name": "nomic-embed-text:latest",
+      "size_bytes": 274302450
+    },
+    {
+      "digest": "9077fe9d2ae1",
+      "modified": "2026-06-10T13:22:39-06:00",
+      "name": "smollm2:135m",
+      "size_bytes": 270898672
+    },
+    {
+      "digest": "def4049bfaa6",
+      "modified": "2026-04-30T05:46:50-06:00",
+      "name": "kimi-k2.6-distilled:IQ4_XS",
+      "size_bytes": 18939313581
+    },
+    {
+      "digest": "57c10cd89e9f",
+      "modified": "2026-04-30T05:39:24-06:00",
+      "name": "hf.co/lordx64/Qwen3.6-35B-A3B-Kimi-K2.6-Reasoning-Distilled-GGUF:IQ4_XS",
+      "size_bytes": 18939313745
+    },
+    {
+      "digest": "f6d8b7ff496c",
+      "modified": "2026-04-30T05:23:20-06:00",
+      "name": "nemotron3:33b",
+      "size_bytes": 27638631632
+    },
+    {
+      "digest": "07d35212591f",
+      "modified": "2026-04-30T05:23:13-06:00",
+      "name": "qwen3.6:latest",
+      "size_bytes": 23938333577
+    },
+    {
+      "digest": "ea027821675c",
+      "modified": "2026-04-30T05:13:48-06:00",
+      "name": "deepseek-v4-flash:cloud",
+      "size_bytes": 348
+    },
+    {
+      "digest": "d6c816d74887",
+      "modified": "2026-02-26T11:39:20-07:00",
+      "name": "lfm2:latest",
+      "size_bytes": 14415742358
+    },
+    {
+      "digest": "b725f1117407",
+      "modified": "2025-12-27T15:09:51-07:00",
+      "name": "nemotron-3-nano:30b",
+      "size_bytes": 24271934866
+    },
+    {
+      "digest": "a6eb4748fd29",
+      "modified": "2025-12-27T15:05:01-07:00",
+      "name": "llama3.3:latest",
+      "size_bytes": 42520413916
+    },
+    {
+      "digest": "e50831eb2d91",
+      "modified": "2025-08-19T17:04:51-06:00",
+      "name": "qwen3:30b",
+      "size_bytes": 18556699301
+    },
+    {
+      "digest": "500a1f067a9f",
+      "modified": "2025-08-19T10:11:12-06:00",
+      "name": "qwen3:8b",
+      "size_bytes": 5225388164
+    },
+    {
+      "digest": "ad67f85ca250",
+      "modified": "2025-08-05T23:48:00-06:00",
+      "name": "qwen3-coder:latest",
+      "size_bytes": 18556701140
+    },
+    {
+      "digest": "a80c4f17acd5",
+      "modified": "2025-05-21T22:16:30-06:00",
+      "name": "llama3.2:latest",
+      "size_bytes": 2019393189
+    },
+    {
+      "digest": "3ca8c2865ce9",
+      "modified": "2025-05-21T22:11:03-06:00",
+      "name": "phi4-mini-reasoning:latest",
+      "size_bytes": 3152479391
+    },
+    {
+      "digest": "570a450e5ebc",
+      "modified": "2025-05-21T22:04:05-06:00",
+      "name": "local-phi-3.1:latest",
+      "size_bytes": 2393232685
+    },
+    {
+      "digest": "59cdb329dff1",
+      "modified": "2025-05-21T22:03:06-06:00",
+      "name": "local-llama-3.1:latest",
+      "size_bytes": 4920739830
+    },
+    {
+      "digest": "78e26419b446",
+      "modified": "2024-04-26T09:44:20-06:00",
+      "name": "llama2:latest",
+      "size_bytes": 3826793677
+    }
+  ],
+  "results": [
+    {
+      "model": "llama3.2:latest",
+      "size_bytes": 2019393189,
+      "digest": "a80c4f17acd5",
+      "cold_first_turn": {
+        "ttft_ms": 2603.9,
+        "total_ms": 2648.619
+      },
+      "conditions": {
+        "empty_history": {
+          "estimated_prompt_tokens_at_start": 941,
+          "history_turns": 0,
+          "summary": {
+            "n": 10,
+            "errors": 0,
+            "ttft_p50_ms": 663.809,
+            "ttft_p95_ms": 3020.177,
+            "ttft_max_ms": 3020.177,
+            "total_median_ms": 1066.03,
+            "total_max_ms": 7123.835,
+            "gen_tok_s_median": 204.6123941265474,
+            "prefill_tok_s_median": 2056.6375201592273,
+            "prompt_tokens_median_real": 1405,
+            "prompt_tokens_max_real": 1427,
+            "tool_calls_total": 17,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 10,
+            "route_ms_median": 18.92
+          },
+          "clean_turns_summary": {
+            "n": 0,
+            "errors": 0,
+            "ttft_p50_ms": 0,
+            "ttft_p95_ms": 0,
+            "ttft_max_ms": 0,
+            "total_median_ms": 0,
+            "total_max_ms": 0,
+            "gen_tok_s_median": 0,
+            "prefill_tok_s_median": 0,
+            "prompt_tokens_median_real": 0,
+            "prompt_tokens_max_real": 0,
+            "tool_calls_total": 0,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 0,
+            "route_ms_median": 0
+          },
+          "clean_turns": 0,
+          "gate": {
+            "g1_ttft_p50_le_2000ms": true,
+            "g2_ttft_p95_le_4000ms": true,
+            "g3_gen_tok_s_ge_25": true,
+            "g4_worst_turn_le_90s": true
+          },
+          "gate_pass": true,
+          "samples": [
+            {
+              "prompt": "P1",
+              "rep": 1,
+              "route_ms": 19.507,
+              "ttft_ms": 3020.177,
+              "total_ms": 7123.835,
+              "prompt_tokens": 1400,
+              "prompt_tokens_all_requests": 5498,
+              "gen_tokens": 608,
+              "model_requests": 2,
+              "gen_tok_s": 148.16049485605285,
+              "prefill_tok_s": 463.54899067173875,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "fetch_url(https://en.wikipedia.org/wiki/Capital_of_Australia)"
+              ],
+              "reply_chars": 2499,
+              "reply": "This is a comprehensive overview of the history and geography of Canberra, the capital of Australia. Here's a summary of the main points:\n\n**Early History**\n\n*1827: The Yarralumla estate, now the site of the Governor-General's official residence, was established.\n* 1828: John Palmer employed Duncan Macfarlane to form the Jerrabomberra property.\n* 1845: The Anglican church of St John the Baptist was consecrated, and a school was established nearby.\n* 1911: An international design competition was launched to design the new capital city, with Walter Burley Griffin's plan winning the competition.\n\n**Capital City Development**\n\n* 1913: The Commonwealth government purchased the Yarralumla estate to provide an official residence for the Governor-General.\n* 1913-1927: Construction of the capital city began, with Griffin's plan being revised and implemented.\n* 1927: The Provisional Parliament House opened, and the Commonwealth parliament moved to Canberra.\n* 1927: The Governor-General's official residence, Government House, was completed.\n* 1930s-1940s: Development of the city slowed due to the Great Depression and World War II.\n\n**Post-War Development**\n\n* 1950s: Urban development in the city's suburbs, including Woden Valley, Belconnen, and Weston Creek.\n* 1957: The National Capital Development Commission (NCDC) was formed to oversee the city's development.\n* 1960s: The construction of the Lake Burley Griffin and the Parliamentary Triangle.\n* 1988: The ACT was granted full self-government by the Commonwealth Parliament.\n* 1989: The first election was held, and the Australian Labor Party formed the ACT's first government.\n\n**Geography and Climate**\n\n* Canberra is located near the Brindabella Ranges, approximately 150 km inland from the coast.\n* The city has an oceanic climate, with warm summers and cool winters.\n* The highest recorded temperature was 44.0 °C (111.2 °F) in 2020.\n* The lowest recorded minimum temperature was -10.0 °C (14.0 °F) in 1971.\n* The city gets 100.4 clear days annually and has an annual rainfall of 550 mm.\n\n**Other Features**\n\n* The Molonglo River, which flows through the city, was dammed to form Lake Burley Griffin.\n* The city's suburbs, including Gungahlin, Tuggeranong, and Woden Valley, have been developed since the 1950s.\n* The Canberra Centenary Column was unveiled in 2014 to celebrate the city's centenary year.\n\nThis summary provides a brief overview of the history, geography, and development of Canberra, the capital of Australia."
+            },
+            {
+              "prompt": "P2",
+              "rep": 1,
+              "route_ms": 21.458,
+              "ttft_ms": 434.494,
+              "total_ms": 659.299,
+              "prompt_tokens": 1405,
+              "prompt_tokens_all_requests": 2302,
+              "gen_tokens": 50,
+              "model_requests": 2,
+              "gen_tok_s": 222.41498187317902,
+              "prefill_tok_s": 3233.6464945430776,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 176,
+              "reply": "I'm good at helping you navigate and understand your campaign workspaces, managing project repositories, and working with work items, so feel free to ask me about those topics."
+            },
+            {
+              "prompt": "P3",
+              "rep": 1,
+              "route_ms": 18.11,
+              "ttft_ms": 658.821,
+              "total_ms": 1066.03,
+              "prompt_tokens": 1402,
+              "prompt_tokens_all_requests": 2296,
+              "gen_tokens": 83,
+              "model_requests": 2,
+              "gen_tok_s": 203.82653625042673,
+              "prefill_tok_s": 2128.043884454199,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 300,
+              "reply": "I think I have the right tool for the job. Let me try using the \"campaign-structure\" skill instead.A vector database is a type of database that uses a collection of dense vectors to store and retrieve data. It's like a big vector space where you can find the closest match to what you're looking for."
+            },
+            {
+              "prompt": "P4",
+              "rep": 1,
+              "route_ms": 18.85,
+              "ttft_ms": 2237.81,
+              "total_ms": 3078.396,
+              "prompt_tokens": 1427,
+              "prompt_tokens_all_requests": 3217,
+              "gen_tokens": 303,
+              "model_requests": 2,
+              "gen_tok_s": 360.4628199851055,
+              "prefill_tok_s": 637.67701458122,
+              "skills_activated": 0,
+              "tool_calls": 8,
+              "tool_names": [
+                "read_skill(camp-structure)",
+                "list_files(Slides/Slide.pptx)",
+                "read_file(Slides/Slide.pptx)",
+                "run_command(open Slides/Slide.pptx)",
+                "read_skill(campaign-commit)",
+                "write_file(Email/Reply.txt)",
+                "list_files(Email/Reply.txt)",
+                "run_command(open Email/Reply.txt)"
+              ],
+              "reply_chars": 609,
+              "reply": "To get the best workflow order for your tasks, I would recommend doing your tasks in this order: review the pull request, reply to the email, and then prepare the slides.Reviewing the pull request first will help you understand any changes that might be related to your slides or email, and you can make any necessary adjustments before moving on. Next, responding to the email will allow you to get that out of the way and free up your mental energy for more focused work on your slides. Finally, preparing your slides will be the most focused task, and doing it last will help you stay in a productive flow."
+            },
+            {
+              "prompt": "P5",
+              "rep": 1,
+              "route_ms": 20.913,
+              "ttft_ms": 740.172,
+              "total_ms": 1430.398,
+              "prompt_tokens": 1410,
+              "prompt_tokens_all_requests": 2312,
+              "gen_tokens": 128,
+              "model_requests": 2,
+              "gen_tok_s": 185.4465059270442,
+              "prefill_tok_s": 1904.96263030755,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 513,
+              "reply": "It looks like I was supposed to format my response based on the output of a tool call, but I didn't receive one. Let me try that again.\n\nYou're deciding between a local model and a cloud model for voice. If you're looking for a more controlled environment and don't mind the potential latency, a local model might be the way to go. On the other hand, a cloud model can provide more flexibility and access to a wider range of resources, but you'll need to consider the potential impact on latency and availability."
+            },
+            {
+              "prompt": "P1",
+              "rep": 2,
+              "route_ms": 19.023,
+              "ttft_ms": 1628.725,
+              "total_ms": 1672.188,
+              "prompt_tokens": 1400,
+              "prompt_tokens_all_requests": 2759,
+              "gen_tokens": 22,
+              "model_requests": 2,
+              "gen_tok_s": 506.1776683615926,
+              "prefill_tok_s": 859.5680670463092,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "web_search(Australia capital)"
+              ],
+              "reply_chars": 37,
+              "reply": "The capital of Australia is Canberra."
+            },
+            {
+              "prompt": "P2",
+              "rep": 2,
+              "route_ms": 18.91,
+              "ttft_ms": 658.214,
+              "total_ms": 856.079,
+              "prompt_tokens": 1405,
+              "prompt_tokens_all_requests": 2302,
+              "gen_tokens": 48,
+              "model_requests": 2,
+              "gen_tok_s": 242.58964445455246,
+              "prefill_tok_s": 2134.5641387147643,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 184,
+              "reply": "I'm good at helping with campaign workspaces and project management, such as navigating worktrees, managing project repositories, and understanding the overall structure of a campaign."
+            },
+            {
+              "prompt": "P3",
+              "rep": 2,
+              "route_ms": 17.723,
+              "ttft_ms": 663.809,
+              "total_ms": 1035.243,
+              "prompt_tokens": 1402,
+              "prompt_tokens_all_requests": 2296,
+              "gen_tokens": 76,
+              "model_requests": 2,
+              "gen_tok_s": 204.6123941265474,
+              "prefill_tok_s": 2112.0533165413544,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 317,
+              "reply": "A vector database is a type of database that stores and indexes large amounts of data in a way that allows for efficient searching and retrieval of data that is similar to a given query. It's called a \"vector\" database because it uses vectors to represent the data, rather than traditional text-based representations."
+            },
+            {
+              "prompt": "P4",
+              "rep": 2,
+              "route_ms": 20.404,
+              "ttft_ms": 693.851,
+              "total_ms": 1278.409,
+              "prompt_tokens": 1427,
+              "prompt_tokens_all_requests": 2346,
+              "gen_tokens": 106,
+              "model_requests": 2,
+              "gen_tok_s": 181.33358879700555,
+              "prefill_tok_s": 2056.6375201592273,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 444,
+              "reply": "To get started with task management, I'd suggest prioritizing the most critical task first. In your case, I'd recommend reviewing the pull request before the meeting. This will help you address any potential issues or concerns that might impact the discussion. The prep slides can be done next, ensuring you're well-prepared to present. The email reply can be done last, as it's less time-sensitive and can be done during the meeting if needed."
+            },
+            {
+              "prompt": "P5",
+              "rep": 2,
+              "route_ms": 18.92,
+              "ttft_ms": 659.36,
+              "total_ms": 864.27,
+              "prompt_tokens": 1410,
+              "prompt_tokens_all_requests": 2312,
+              "gen_tokens": 49,
+              "model_requests": 2,
+              "gen_tok_s": 239.12937387145578,
+              "prefill_tok_s": 2138.437272506673,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 136,
+              "reply": "You'll need to activate the \"campaign-structure\" skill before proceeding. Let me do that for you. I'll call \"read_skill\" for that skill."
+            }
+          ]
+        },
+        "filled_history_6k": {
+          "estimated_prompt_tokens_at_start": 5934,
+          "history_turns": 64,
+          "summary": {
+            "n": 10,
+            "errors": 0,
+            "ttft_p50_ms": 859.559,
+            "ttft_p95_ms": 1953.073,
+            "ttft_max_ms": 1953.073,
+            "total_median_ms": 1482.573,
+            "total_max_ms": 2666.425,
+            "gen_tok_s_median": 160.34401078677888,
+            "prefill_tok_s_median": 5585.3561352819515,
+            "prompt_tokens_median_real": 5584,
+            "prompt_tokens_max_real": 5606,
+            "tool_calls_total": 11,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 9,
+            "route_ms_median": 20.172
+          },
+          "clean_turns_summary": {
+            "n": 1,
+            "errors": 0,
+            "ttft_p50_ms": 514.644,
+            "ttft_p95_ms": 514.644,
+            "ttft_max_ms": 514.644,
+            "total_median_ms": 794.169,
+            "total_max_ms": 794.169,
+            "gen_tok_s_median": 139.52240407834722,
+            "prefill_tok_s_median": 10850.218792019337,
+            "prompt_tokens_median_real": 5584,
+            "prompt_tokens_max_real": 5584,
+            "tool_calls_total": 0,
+            "skill_activations_total": 0,
+            "turns_with_more_than_one_model_request": 0,
+            "route_ms_median": 19.511
+          },
+          "clean_turns": 1,
+          "gate": {
+            "g1_ttft_p50_le_2000ms": true,
+            "g2_ttft_p95_le_4000ms": true,
+            "g3_gen_tok_s_ge_25": true,
+            "g4_worst_turn_le_90s": true
+          },
+          "gate_pass": true,
+          "samples": [
+            {
+              "prompt": "P1",
+              "rep": 1,
+              "route_ms": 20.702,
+              "ttft_ms": 1720.948,
+              "total_ms": 1774.106,
+              "prompt_tokens": 5579,
+              "prompt_tokens_all_requests": 11118,
+              "gen_tokens": 23,
+              "model_requests": 2,
+              "gen_tok_s": 432.6724105496829,
+              "prefill_tok_s": 3241.817881772139,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "web_search(capital of Australia)"
+              ],
+              "reply_chars": 37,
+              "reply": "The capital of Australia is Canberra."
+            },
+            {
+              "prompt": "P2",
+              "rep": 1,
+              "route_ms": 19.934,
+              "ttft_ms": 1203.317,
+              "total_ms": 2061.256,
+              "prompt_tokens": 5584,
+              "prompt_tokens_all_requests": 11316,
+              "gen_tokens": 129,
+              "model_requests": 2,
+              "gen_tok_s": 150.3603403039144,
+              "prefill_tok_s": 4640.5062007766865,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-navigation)"
+              ],
+              "reply_chars": 618,
+              "reply": "The skills catalog is a useful tool for navigation and exploration within a campaign. It provides a list of shortcuts and concepts that can be used to navigate to different parts of the campaign, such as projects, festivals, and workflow directories. The catalog also includes fuzzy finding, which allows users to find projects or festivals by name or description. Additionally, the catalog provides information on how to use the `cgo` shell function, which is a primary navigation tool in Camp.\n\nOverall, the skills catalog is a valuable resource for users who want to efficiently navigate and manage their campaigns."
+            },
+            {
+              "prompt": "P3",
+              "rep": 1,
+              "route_ms": 20.172,
+              "ttft_ms": 794.529,
+              "total_ms": 1223.868,
+              "prompt_tokens": 5581,
+              "prompt_tokens_all_requests": 10654,
+              "gen_tokens": 73,
+              "model_requests": 2,
+              "gen_tok_s": 170.0288117315222,
+              "prefill_tok_s": 7024.287345081174,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 322,
+              "reply": "A vector database is a data structure that stores vectors, typically used for efficient nearest neighbor searches. In our context, it's likely being used for similarity search tasks, such as finding similar models or skills, by storing vector representations of the words in the skill descriptions and other relevant data."
+            },
+            {
+              "prompt": "P4",
+              "rep": 1,
+              "route_ms": 18.884,
+              "ttft_ms": 1953.073,
+              "total_ms": 2666.425,
+              "prompt_tokens": 5606,
+              "prompt_tokens_all_requests": 11446,
+              "gen_tokens": 188,
+              "model_requests": 2,
+              "gen_tok_s": 263.54450537742935,
+              "prefill_tok_s": 2870.3484201563383,
+              "skills_activated": 0,
+              "tool_calls": 3,
+              "tool_names": [
+                "read_skill(camp-projects)",
+                "read_file(/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab/camp-projects.md)",
+                "list_files(/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab)"
+              ],
+              "reply_chars": 339,
+              "reply": "It looks like the `camp-projects` skill directory does not exist yet. This is because I was supposed to run the `list_files` tool before trying to read the `camp-projects.md` file. Let me try that again.\n\n```\n{\"name\": \"list_files\", \"parameters\": {\"path\":\"/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab\"}}"
+            },
+            {
+              "prompt": "P5",
+              "rep": 1,
+              "route_ms": 20.734,
+              "ttft_ms": 796.548,
+              "total_ms": 1482.573,
+              "prompt_tokens": 5589,
+              "prompt_tokens_all_requests": 10670,
+              "gen_tokens": 110,
+              "model_requests": 2,
+              "gen_tok_s": 160.34401078677888,
+              "prefill_tok_s": 7016.526311032103,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 491,
+              "reply": "Camp-structure is not a real skill for the voice agent. I made a mistake by suggesting it earlier.\n\nTo answer your question, you can use either a local model or a cloud model for voice, depending on your needs and preferences. Local models can be more responsive and have lower latency, but they require more computational resources and may not be as accurate. Cloud models can provide more accuracy and flexibility, but they may have higher latency and require a stable internet connection."
+            },
+            {
+              "prompt": "P1",
+              "rep": 2,
+              "route_ms": 20.257,
+              "ttft_ms": 998.862,
+              "total_ms": 1104.912,
+              "prompt_tokens": 5579,
+              "prompt_tokens_all_requests": 10713,
+              "gen_tokens": 54,
+              "model_requests": 2,
+              "gen_tok_s": 509.19377652050883,
+              "prefill_tok_s": 5585.3561352819515,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "run_command(wiki --http --format json https://en.wikipedia.org/w/api.php…)"
+              ],
+              "reply_chars": 69,
+              "reply": "I was not able to find the capital of Australia in my knowledge base."
+            },
+            {
+              "prompt": "P2",
+              "rep": 2,
+              "route_ms": 19.511,
+              "ttft_ms": 514.644,
+              "total_ms": 794.169,
+              "prompt_tokens": 5584,
+              "prompt_tokens_all_requests": 5584,
+              "gen_tokens": 39,
+              "model_requests": 1,
+              "gen_tok_s": 139.52240407834722,
+              "prefill_tok_s": 10850.218792019337,
+              "skills_activated": 0,
+              "tool_calls": 0,
+              "reply_chars": 202,
+              "reply": "I'm good at providing a conversational experience and answering questions to the best of my knowledge, and I can be instructed to perform specific tasks or provide information on a wide range of topics."
+            },
+            {
+              "prompt": "P3",
+              "rep": 2,
+              "route_ms": 17.707,
+              "ttft_ms": 1394.462,
+              "total_ms": 2057.327,
+              "prompt_tokens": 5581,
+              "prompt_tokens_all_requests": 11128,
+              "gen_tokens": 106,
+              "model_requests": 2,
+              "gen_tok_s": 159.91189759604137,
+              "prefill_tok_s": 4002.260369949127,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "web_search(vector database)"
+              ],
+              "reply_chars": 544,
+              "reply": "A vector database is a type of database that stores and retrieves embeddings of data in vector space, allowing users to search for records that are semantically similar to a given input. It typically implements approximate nearest neighbor algorithms, which enable search for records that are similar in meaning or concept, rather than exact matches. Vector databases are designed to handle high-dimensional vector data and provide low-latency queries, making them suitable for applications such as artificial intelligence and machine learning."
+            },
+            {
+              "prompt": "P4",
+              "rep": 2,
+              "route_ms": 21.773,
+              "ttft_ms": 859.559,
+              "total_ms": 2054.19,
+              "prompt_tokens": 5606,
+              "prompt_tokens_all_requests": 10704,
+              "gen_tokens": 184,
+              "model_requests": 2,
+              "gen_tok_s": 154.02245546951318,
+              "prefill_tok_s": 6521.949045964268,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 794,
+              "reply": "It seems I made a mistake earlier. I was supposed to generate a skill name that would be relevant to your task, not just a random one.\n\nLet me try again. Since you have a meeting and three tasks, I would recommend prioritizing the most important and urgent task first, which is probably the email response. Then, tackle the pull request review, as it's likely to be less time-sensitive than the email response. Finally, prep your slides for the meeting.\n\nThis order makes sense because responding to an email is likely to be a matter of urgency, and getting that out of the way first will free up your mental bandwidth for the other two tasks. Reviewing a pull request can be done concurrently with responding to an email, and prep work for a meeting can be done while you're doing other tasks."
+            },
+            {
+              "prompt": "P5",
+              "rep": 2,
+              "route_ms": 21.772,
+              "ttft_ms": 791.228,
+              "total_ms": 1302.021,
+              "prompt_tokens": 5589,
+              "prompt_tokens_all_requests": 10670,
+              "gen_tokens": 87,
+              "model_requests": 2,
+              "gen_tok_s": 170.3233991068789,
+              "prefill_tok_s": 7063.703508975922,
+              "skills_activated": 0,
+              "tool_calls": 1,
+              "tool_names": [
+                "read_skill(camp-structure)"
+              ],
+              "reply_chars": 288,
+              "reply": "You can't use the camp-projects skill here, it's not a good fit for measuring a voice prompt. What you want to know is whether you should use a local model or a cloud model for voice, and the answer to that is yes, use a local model. I'm a local model, and I'm the best measure of myself."
+            }
+          ]
+        }
+      },
+      "overall_gate_pass": true
+    }
+  ],
+  "notes": [
+    "Latency only. Nothing here judges response quality; that is the user's judgment in real use.",
+    "Each sample resets history to the condition baseline first, so prompt size is constant across reps.",
+    "route_ms is the synchronous skill-router embedding call and is included in ttft_ms, because the user waits for it.",
+    "~/.obey was read, never written. No model was pulled or deleted. Models were unloaded (not removed) to measure cold load."
+  ]
+}

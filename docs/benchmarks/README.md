@@ -18,7 +18,28 @@ just bench tts        # measure TTS engines over long-reply fixtures
 
 just bench save-place S6 lan          # same fixtures, speech on the other computer
 just bench place-diff a.json b.json   # full-turn local vs LAN (reported, never gated)
+
+just bench brain                      # conversational brain-model A/B (B-series)
+just bench brain-one qwen3:30b        # one model, one rep
 ```
+
+## The B series: brain-model A/B
+
+`just bench` above measures the **speech stack** from recorded audio, and
+deliberately does not gate the `model` stage. `just bench brain` measures the
+**model itself**, and needs no corpus: it drives `brain.ThinkStream` directly
+with the real persona system prompt, the real tool schemas, and the real
+`num_ctx` / `think` / `keep_alive` options.
+
+Its gate is written down before each run and lives beside the results:
+
+- [`B1-brain-latency-ab-criteria.md`](B1-brain-latency-ab-criteria.md) — the
+  thresholds, the candidate list, and the exclusions, committed before any
+  number existed.
+- [`B1-brain-latency-ab-2026-08-28.md`](B1-brain-latency-ab-2026-08-28.md) —
+  results and recommendation, with `B1b` (tool side effects) and `B1c`
+  (tools-off floor) as the supporting runs its claims cite.
+- Harness and flags: [`scripts/brain_bench/README.md`](../../scripts/brain_bench/README.md).
 
 ## What is measured, and what is gated
 

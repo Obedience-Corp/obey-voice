@@ -35,6 +35,25 @@ save-place label place:
 place-diff a b:
     @{{repo}}/scripts/bench.sh place-diff {{a}} {{b}}
 
+# Brain-model A/B. Separate from the fixture benches above because it measures
+# the model, not the speech stack: it drives brain.ThinkStream directly rather
+# than a recorded utterance, so it needs no corpus. Gate and candidate list:
+# docs/benchmarks/B1-brain-latency-ab-criteria.md
+[doc('Conversational brain-model A/B through the real brain seam (all nine candidates, ~1h)')]
+brain *ARGS:
+    @cd "{{repo}}" && go run ./scripts/brain_bench {{ARGS}}
+
+# -out goes to a temp file, not /dev/stdout: the harness prints its own summary
+# table to stdout, and interleaving the JSON with it makes both unreadable.
+[doc('Same A/B, one model and one rep, e.g. `just bench brain-one qwen3:30b`')]
+brain-one model:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{repo}}"
+    out=$(mktemp -t brain_bench).json
+    go run ./scripts/brain_bench -models "{{model}}" -reps 1 -rewarm "" -out "$out"
+    echo "  artifact: $out"
+
 [doc('List audio input devices for recording')]
 devices:
     @{{repo}}/scripts/record-corpus.sh --devices
