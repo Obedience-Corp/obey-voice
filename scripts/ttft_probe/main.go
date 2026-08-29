@@ -127,32 +127,130 @@ type caseSpec struct {
 	Think      string `json:"think"`   // false | true | absent | low
 	Tools      bool   `json:"tools"`
 	UserSuffix string `json:"user_suffix"`
-	Why        string `json:"why"`
+
+	// Vary decides what the KV prefix cache is allowed to reuse, and it is the
+	// single most important knob here. Ollama keeps the previous request's
+	// tokens and reuses the longest matching prefix, so a probe that sends the
+	// same request five times measures the cache, not the model. The first cut
+	// of this probe did exactly that and reported a 291 ms first token for a
+	// model the product measures at 4.5 s.
+	//
+	//	"none" — byte-identical repeats. The cache-hit floor.
+	//	"tail" — a unique nonce in the user message, system and tools untouched.
+	//	         This is the production pattern: every conversational turn keeps
+	//	         the persona prompt and changes only what the user just said.
+	//	"head" — a unique nonce at the front of the system prompt, which
+	//	         invalidates everything. True cold prefill.
+	Vary string `json:"vary"`
+
+	// PadTokens grows the system prompt with deterministic filler so prefill
+	// cost can be measured against prompt size rather than argued about.
+	PadTokens int `json:"pad_tokens"`
+
+	// NumCtx overrides the requested context window for this case, which forces
+	// Ollama to reload the runner. Added after the first run, not pre
+	// registered: if the fixed cost tracks the allocated window rather than the
+	// prompt, then it is attention over the whole window and `ollama_num_ctx`
+	// is a fix Lance can take today.
+	NumCtx int    `json:"num_ctx,omitempty"`
+	Why    string `json:"why"`
 }
 
+// allCases is the criteria doc's condition table plus the cache-behaviour cases
+// the first run showed were missing. The three `cache-*` rows are the load
+// bearing ones: they differ only in what the KV prefix cache may reuse, so the
+// gap between them is the cost of *not* reusing it.
 func allCases() []caseSpec {
 	return []caseSpec{
-		{"prod-think-false", "production", "false", true, "", "the production setting: ollama_think false, tools on, persona-sized prompt"},
-		{"prod-think-true", "production", "true", true, "", "does the think flag change anything at all?"},
-		{"prod-think-absent", "production", "absent", true, "", "is an explicit false different from omitting the field?"},
-		{"prod-nothink-marker", "production", "false", true, " /no_think", "the one-line fix candidate: the qwen3 /no_think convention"},
-		{"prod-think-false-notools", "production", "false", false, "", "M6: how much of the floor is the tool schemas"},
-		{"prod-nothink-notools", "production", "false", false, " /no_think", "fix x M6 interaction"},
-		{"min-think-false", "minimal", "false", false, "", "M3: a ~20-token prompt. Prefill cannot explain a cost that survives this"},
-		{"min-think-true", "minimal", "true", false, "", "minimal-prompt control for the think flag"},
-		{"min-nothink-marker", "minimal", "false", false, " /no_think", "fix candidate at minimal prompt size"},
+		// What the product actually does on every conversational turn.
+		{Name: "cache-tail-vary", Profile: "production", Think: "false", Tools: true, Vary: "tail",
+			Why: "THE PRODUCTION PATTERN: persona and tools fixed, only the user's new sentence changes"},
+		{Name: "cache-exact-repeat", Profile: "production", Think: "false", Tools: true, Vary: "none",
+			Why: "byte-identical repeats — the prefix-cache-hit floor, and what a naive probe measures by accident"},
+		{Name: "cache-head-vary", Profile: "production", Think: "false", Tools: true, Vary: "head",
+			Why: "nonce at the front of the system prompt: nothing is reusable, so this is true cold prefill"},
+
+		// Does anything in the config surface move the production pattern?
+		{Name: "prod-think-true", Profile: "production", Think: "true", Tools: true, Vary: "tail",
+			Why: "does the think flag change anything at all?"},
+		{Name: "prod-think-absent", Profile: "production", Think: "absent", Tools: true, Vary: "tail",
+			Why: "is an explicit false different from omitting the field?"},
+		{Name: "prod-nothink-marker", Profile: "production", Think: "false", Tools: true, Vary: "tail", UserSuffix: " /no_think",
+			Why: "the qwen3 /no_think convention as a one-line fix candidate"},
+		{Name: "prod-notools", Profile: "production", Think: "false", Tools: false, Vary: "tail",
+			Why: "M6: how much of the cost is the tool schemas"},
+		{Name: "prod-nosystem", Profile: "minimal", Think: "false", Tools: false, Vary: "tail",
+			Why: "no system prompt and no tools — how much prompt is left to be slow"},
+
+		// Prefill against prompt size, cache fully busted each time. A rate,
+		// not a single number, so "slow prefill" becomes checkable.
+		{Name: "prefill-cold-0500", Profile: "production", Think: "false", Tools: false, Vary: "head", PadTokens: 500,
+			Why: "cold prefill rate at ~500 tokens"},
+		{Name: "prefill-cold-1500", Profile: "production", Think: "false", Tools: false, Vary: "head", PadTokens: 1500,
+			Why: "cold prefill rate at ~1500 tokens — the size B1 ran at"},
+		{Name: "prefill-cold-3000", Profile: "production", Think: "false", Tools: false, Vary: "head", PadTokens: 3000,
+			Why: "cold prefill rate at ~3000 tokens"},
+		{Name: "prefill-cold-6000", Profile: "production", Think: "false", Tools: false, Vary: "head", PadTokens: 6000,
+			Why: "cold prefill rate at ~6000 tokens — B1's filled-history size"},
+
+		// Post-hoc, added after the first run showed a size-independent cost:
+		// does it track the allocated context window instead of the prompt?
+		{Name: "ctx-1024", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 1024,
+			Why: "does the fixed cost scale with the allocated window rather than the prompt?"},
+		{Name: "ctx-2048", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 2048, Why: "window sweep"},
+		{Name: "ctx-4096", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 4096, Why: "window sweep"},
+		{Name: "ctx-8192", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 8192, Why: "window sweep — today's production setting"},
+		{Name: "ctx-16384", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumCtx: 16384, Why: "window sweep"},
 	}
 }
 
 // controlCases are what the fast models run. They exist to calibrate the
 // instrument, not to be optimized: if the probe cannot reproduce gemma4's
-// sub-400 ms TTFT, the probe is wrong and nothing it says about the incumbent
-// can be trusted.
+// sub-400 ms TTFT on the production pattern, the probe is wrong and nothing it
+// says about the incumbent can be trusted.
 func controlCases() []caseSpec {
-	return []caseSpec{
-		{"prod-think-false", "production", "false", true, "", "the production setting"},
-		{"min-think-false", "minimal", "false", false, "", "minimal prompt"},
+	all := allCases()
+	keep := map[string]bool{
+		"cache-tail-vary": true, "cache-exact-repeat": true, "cache-head-vary": true,
+		"prefill-cold-0500": true, "prefill-cold-1500": true, "prefill-cold-3000": true, "prefill-cold-6000": true,
 	}
+	var out []caseSpec
+	for _, c := range all {
+		if keep[c.Name] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// padWords is deterministic filler: the same text for every model and every
+// run, so a size sweep compares like with like. It is prose rather than
+// repeated tokens because a tokenizer collapses repetition and the point is to
+// buy a known number of tokens.
+var padWords = strings.Fields(`the quick brown fox jumps over a lazy dog while seventeen careful engineers
+measure latency in a warm room and write down what they saw before arguing about
+what it meant because a number without a method is only an opinion wearing a
+uniform and the machine does not care which of them is louder today`)
+
+func padding(tokens int) string {
+	if tokens <= 0 {
+		return ""
+	}
+	// ~0.75 tokens per word for ordinary English prose; the artifact reports
+	// the real prompt_eval_count, so this only has to be close.
+	want := (tokens * 4) / 3
+	var b strings.Builder
+	b.WriteString("\n\nReference notes, for context only:\n")
+	for i := 0; i < want; i++ {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(padWords[i%len(padWords)])
+		if i%17 == 16 {
+			b.WriteByte('.')
+		}
+	}
+	return b.String()
 }
 
 type sample struct {
@@ -275,8 +373,19 @@ func main() {
 		out         = flag.String("out", "", "artifact path (default docs/benchmarks/B2-qwen-ttft-mechanism-<date>.json)")
 		casesFlag   = flag.String("cases", "", "comma-separated case names to run (default: all)")
 		timeout     = flag.Duration("timeout", 5*time.Minute, "per-sample timeout")
+
+		proxyListen   = flag.String("proxy", "", "run as a recording proxy on this address instead of probing (e.g. 127.0.0.1:11500)")
+		proxyUpstream = flag.String("proxy-upstream", "http://127.0.0.1:11434", "real ollama address the proxy forwards to")
+		proxyOut      = flag.String("proxy-out", "ttft-proxy-capture.jsonl", "where the proxy writes captured requests")
 	)
 	flag.Parse()
+
+	if *proxyListen != "" {
+		if err := runProxy(*proxyListen, *proxyUpstream, *proxyOut); err != nil {
+			fatal("proxy: %v", err)
+		}
+		return
+	}
 
 	ctx := context.Background()
 	client, err := api.ClientFromEnvironment()
@@ -410,11 +519,12 @@ func probeModel(ctx context.Context, client *api.Client, model string, cases []c
 
 	for _, c := range cases {
 		fmt.Fprintf(os.Stderr, "  %-26s ", c.Name)
-		// Discard sample: settles the runner for this case's prompt shape.
-		_ = runOnce(ctx, client, model, c, timeout)
+		// Discard sample: settles the runner for this case's prompt shape. For
+		// the "none" case it also primes the cache the case exists to measure.
+		_ = runOnce(ctx, client, model, c, nonceFor(c, 0), timeout)
 		var got []sample
 		for r := 1; r <= reps; r++ {
-			s := runOnce(ctx, client, model, c, timeout)
+			s := runOnce(ctx, client, model, c, nonceFor(c, r), timeout)
 			s.Case, s.Model, s.Rep = c.Name, model, r
 			got = append(got, s)
 			if s.Err != "" {
@@ -432,20 +542,35 @@ func probeModel(ctx context.Context, client *api.Client, model string, cases []c
 	return res
 }
 
-func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, timeout time.Duration) sample {
+func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, nonce string, timeout time.Duration) sample {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	var msgs []api.Message
 	var tools api.Tools
 	if c.Profile == "production" {
-		msgs = append(msgs, api.Message{Role: "system", Content: systemPrompt})
+		sys := systemPrompt + padding(c.PadTokens)
+		if c.Vary == "head" {
+			// In front of everything, so not one cached token survives.
+			sys = "Session reference " + nonce + ".\n\n" + sys
+		}
+		msgs = append(msgs, api.Message{Role: "system", Content: sys})
 		if c.Tools {
 			tools = probeTools()
 		}
 	}
-	msgs = append(msgs, api.Message{Role: "user", Content: userPrompt + c.UserSuffix})
+	user := userPrompt + c.UserSuffix
+	if c.Vary == "tail" {
+		// A new sentence at the end of the user turn — exactly what a real
+		// conversational turn changes, and nothing more.
+		user = user + " (note " + nonce + ")"
+	}
+	msgs = append(msgs, api.Message{Role: "user", Content: user})
 
+	numCtx := probeNumCtx
+	if c.NumCtx > 0 {
+		numCtx = c.NumCtx
+	}
 	stream := true
 	req := &api.ChatRequest{
 		Model:     model,
@@ -453,7 +578,7 @@ func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, 
 		Tools:     tools,
 		Stream:    &stream,
 		KeepAlive: probeKeepAlive,
-		Options:   map[string]any{"num_ctx": probeNumCtx},
+		Options:   map[string]any{"num_ctx": numCtx},
 	}
 	// "absent" is the point of the condition: a nil Think omits the field
 	// entirely, which is a different request from an explicit false.
@@ -593,6 +718,16 @@ func summarize(c caseSpec, ss []sample) caseSummary {
 	return sum
 }
 
+// nonceFor makes each sample's prompt unique except where the case is
+// deliberately measuring a repeat. Deterministic per (case, rep) so a re-run
+// sends the same bytes as the run before it.
+func nonceFor(c caseSpec, rep int) string {
+	if c.Vary == "" || c.Vary == "none" {
+		return "fixed"
+	}
+	return fmt.Sprintf("%s-%03d", c.Name, rep)
+}
+
 // warmup reproduces brain.Warmup exactly (ollama.go:553-576). Using a different
 // shape here is the documented RAM trap: a request without num_ctx loads the
 // qwen3.8 tags at 262144.
@@ -679,17 +814,18 @@ func provenance(ctx context.Context, client *api.Client) map[string]any {
 }
 
 func printTable(a *artifact) {
-	fmt.Printf("\n%-26s %-30s %9s %9s %9s %8s %9s %6s\n",
-		"model", "case", "content", "any", "think@", "thinkCh", "prefill", "gate")
+	fmt.Printf("\n%-26s %-20s %8s %9s %9s %7s %9s %7s %6s\n",
+		"model", "case", "promptTk", "content", "prefill", "pf tok/s", "eval", "thinkCh", "gate")
 	for _, r := range a.Results {
 		for _, c := range r.Cases {
 			gate := "FAIL"
 			if c.GatePass {
 				gate = "pass"
 			}
-			fmt.Printf("%-26s %-30s %8.0fms %8.0fms %8.0fms %8d %8.0fms %6s\n",
-				r.Model, c.Case, c.FirstContentP50MS, c.FirstAnyP50MS,
-				c.FirstThinkingP50MS, c.ThinkingCharsMedian, c.PromptEvalDurationP50MS, gate)
+			fmt.Printf("%-26s %-20s %8d %8.0fms %8.0fms %7.0f %8.0fms %7d %6s\n",
+				r.Model, c.Case, c.PromptEvalCountMedian, c.FirstContentP50MS,
+				c.PromptEvalDurationP50MS, c.PrefillTokPerSMedian,
+				c.EvalDurationP50MS, c.ThinkingCharsMedian, gate)
 		}
 	}
 }
