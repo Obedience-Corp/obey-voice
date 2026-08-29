@@ -386,6 +386,59 @@ func TestClampToolCommandTimeout(t *testing.T) {
 	}
 }
 
+// A batch wider than the context window puts llama.cpp's end-of-prompt
+// checkpoint at or before position zero, so nothing is ever reused — which is
+// precisely the state ollama_num_batch exists to get out of. The schema bounds
+// the key, but a hand-edited config.yaml and OLLAMA_NUM_BATCH both skip the
+// schema, so the guard has to be at load.
+func TestClampOllamaNumBatch(t *testing.T) {
+	tests := []struct {
+		name             string
+		batch, ctx, want int
+	}{
+		{"default under window", 128, 8192, 128},
+		{"equal to window is fine", 8192, 8192, 8192},
+		{"wider than window clamps", 16384, 8192, 8192},
+		{"wider than a small window clamps", 1024, 512, 512},
+		// 0 is the documented escape hatch: let Ollama choose. It must survive
+		// the guard, or setting it would silently become a real batch size.
+		{"zero stays zero", 0, 8192, 0},
+		{"negative normalises to zero", -5, 8192, 0},
+		// num_ctx 0 means the server sizes the window, so there is nothing to
+		// clamp against and the batch is left as written.
+		{"unknown window leaves batch alone", 4096, 0, 4096},
+		{"zero batch and zero window", 0, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClampOllamaNumBatch(tt.batch, tt.ctx); got != tt.want {
+				t.Fatalf("ClampOllamaNumBatch(%d, %d) = %d, want %d", tt.batch, tt.ctx, got, tt.want)
+			}
+		})
+	}
+}
+
+// The clamp is only useful if Load actually applies it — the schema is not on
+// the path a hand-edited config.yaml takes.
+func TestLoadClampsOllamaNumBatchToWindow(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("ollama_num_ctx: 2048\nollama_num_batch: 8192\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	orig := configFile
+	configFile = path
+	defer func() { configFile = orig }()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.OllamaNumBatch != 2048 {
+		t.Fatalf("OllamaNumBatch = %d, want 2048 (clamped to ollama_num_ctx)", cfg.OllamaNumBatch)
+	}
+}
+
 func TestApplyOllamaDefaultsAfterProviderSwitch(t *testing.T) {
 	orig := configFile
 	configFile = filepath.Join(t.TempDir(), "nonexistent.yaml")

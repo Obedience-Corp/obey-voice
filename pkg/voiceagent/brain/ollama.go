@@ -460,10 +460,13 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 
 // requestOptions carries the two settings that decide how the prompt is read.
 // They travel together because sending num_ctx alone is what produced the
-// symptom this exists to fix: Ollama derives the prompt micro-batch from the
-// context window and nothing else — 512 at or below 4096, 1024 above — so
-// raising the window to hold a conversation silently changed how the prompt is
-// read.
+// symptom this exists to fix: Ollama derives the prompt micro-batch mainly from
+// the context window — 512 at or below 4096, 1024 above, 2048 above 32768,
+// downgraded toward 512 when the model's predicted VRAM will not fit
+// (server/sched.go automaticGenerationBatch at v0.32.14) — so raising the
+// window to hold a conversation silently changed how the prompt is read. It
+// weighs the model's memory footprint; it never weighs its architecture, which
+// is the part that matters below.
 //
 // num_batch buys prefix REUSE, not prompt-reading speed. llama.cpp keeps its
 // last reusable context checkpoint roughly one micro-batch back from the end of

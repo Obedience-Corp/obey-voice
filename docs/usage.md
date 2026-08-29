@@ -202,8 +202,9 @@ tracks the size of your new turn, not the whole transcript, and is bounded by
 omitting it lets Ollama allocate the model's full window (262k on qwen3/kimi)
 and a serve restart loop will pin a runner per spawn. `ollama_num_batch`
 (default `128`) decides how much of the prompt is re-read each turn. Ollama
-otherwise derives it from the context window alone — 512 at or below 4096, 1024
-above — and llama.cpp keeps its last reusable checkpoint about one batch back
+otherwise derives it mainly from the context window — 512 at or below 4096, 1024
+above, 2048 above 32768, downgraded toward 512 if the model's predicted VRAM
+will not fit — and llama.cpp keeps its last reusable checkpoint about one batch back
 from the end of the prompt, so a large batch means a conversational turn reuses
 almost nothing and re-reads the persona and history from scratch. On
 `qwen3.8-uncensored:27b` that cost 4.3 s before every spoken word; `128` skips

@@ -110,8 +110,11 @@ type Config struct {
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
 	// OllamaNumBatch is how many prompt tokens Ollama reads per pass. Left
-	// unset, Ollama picks it from the context window alone — 512 at or below
-	// 4096, 1024 above — with no regard for the model.
+	// unset, Ollama picks it mainly from the context window — 512 at or below
+	// 4096, 1024 above, 2048 above 32768 — downgrading toward 512 when the
+	// model's predicted VRAM will not fit. It weighs the model's memory
+	// footprint, never its architecture. Values above OllamaNumCtx are clamped
+	// to it at load; see ClampOllamaNumBatch.
 	//
 	// It is a prefix-REUSE control, not a speed control. llama.cpp keeps its
 	// last reusable context checkpoint about one batch back from the end of the
@@ -683,6 +686,7 @@ func loadLocked() (*Config, error) {
 	}
 	applyOllamaDefaults(&cfg, v, ollamaChosen(v))
 	cfg.ToolCommandTimeout = ClampToolCommandTimeout(cfg.ToolCommandTimeout)
+	cfg.OllamaNumBatch = ClampOllamaNumBatch(cfg.OllamaNumBatch, cfg.OllamaNumCtx)
 	return &cfg, nil
 }
 
@@ -797,6 +801,33 @@ func envForcesFalse(key string) bool {
 	default:
 		return false
 	}
+}
+
+// ClampOllamaNumBatch keeps ollama_num_batch from exceeding ollama_num_ctx.
+//
+// A batch larger than the window is not merely redundant, it is
+// self-defeating: llama.cpp places its last reusable context checkpoint about
+// one batch before the end of the prompt, so a batch wider than anything that
+// can be in the window puts that checkpoint at or before position zero and
+// nothing is ever reused — the exact condition ollama_num_batch exists to
+// avoid. The schema bounds the key, but a hand-edited config.yaml or
+// OLLAMA_NUM_BATCH does not go through the schema, so the guard lives at load
+// where every path reaches it.
+//
+// Zero is left alone: it is the documented escape hatch meaning "let Ollama
+// choose". A window of zero means the server sizes it, so there is nothing to
+// clamp against and the batch is left as written.
+func ClampOllamaNumBatch(numBatch, numCtx int) int {
+	if numBatch <= 0 {
+		return 0
+	}
+	if numCtx > 0 && numBatch > numCtx {
+		fmt.Fprintf(os.Stderr,
+			"obey-voice: ollama_num_batch %d exceeds ollama_num_ctx %d; using %d (a batch wider than the window disables prompt reuse)\n",
+			numBatch, numCtx, numCtx)
+		return numCtx
+	}
+	return numBatch
 }
 
 // ClampToolCommandTimeout bounds tool_command_timeout to 1–120 seconds.

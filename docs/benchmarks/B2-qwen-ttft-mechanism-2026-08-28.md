@@ -19,11 +19,18 @@
 
 ## Headline
 
-Ollama picks how many prompt tokens to read per pass from the **context window
-alone** (`server/sched.go`, `generationBatchForContext`: 512 at or below
-`num_ctx` 4096, 1024 above), never consulting the model. llama.cpp keeps its
-last reusable **context checkpoint about one micro-batch back from the end of
-the prompt**. Put together: at `num_ctx` 8192 the batch is 1024, a ~1.2k-token
+Ollama picks how many prompt tokens to read per pass mainly from the **context
+window** (`server/sched.go` at v0.32.14, `automaticGenerationBatch` →
+`generationBatchForContext`: 512 at or below `num_ctx` 4096, 1024 above 4096,
+2048 above 32768). It then *downgrades* that choice toward 512 while the model's
+predicted VRAM will not fit with headroom (`generationBatchFits`), and on a CUDA
+device without flash attention it skips the context tiers entirely and returns
+256 or 512. So it does consult the model's **memory footprint** — what it never
+consults is the model's **architecture**, which is the thing that matters here.
+On this machine (Metal, 128 GB) none of the downgrade paths trigger, so
+`num_ctx` 8192 yields exactly the 1024 tier, which is what was measured.
+llama.cpp then keeps its last reusable **context checkpoint about one
+micro-batch back from the end of the prompt**. Put together: at `num_ctx` 8192 the batch is 1024, a ~1.2k-token
 conversational prompt has no usable checkpoint, and every turn re-reads the
 persona, the tools and the history from scratch.
 
