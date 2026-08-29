@@ -18,6 +18,13 @@ family on this machine. It is nearly independent of how much context sits in
 front of it, so shrinking the conversation would not have fixed it either.
 
 **Recommendation: make `gemma4:26b` the `obey` persona's conversational default.**
+
+> **Decision (2026-08-28, Lance):** declined — the quality judgment the criteria
+> reserved to him: qwen3.8-uncensored is better on this machine, and product
+> defaults must never pin a large model (the obey persona correctly pins
+> nothing). The measurement stands as record; the follow-up is WI-adf58f,
+> finding the incumbent's fixed-TTFT mechanism so quality and speed stop being
+> a trade.
 No default is flipped in this PR.
 
 ## Results
@@ -37,7 +44,7 @@ Warm, `n = 15` per model per condition. `empty` = fresh conversation;
 | kimi-k2.6-distilled:IQ4_XS | empty | 266 ms | 1390 ms | 94.3 | 1.8 s | pass |
 | | 6k | 292 ms | 3213 ms | 89.2 | 3.5 s | pass |
 | **gemma4:26b** | empty | **364 ms** | **382 ms** | 96.4 | **0.9 s** | **pass** |
-| | 6k | **388 ms** | **423 ms** | 92.5 | **1.3 s** | **pass** |
+| | 6k | **388 ms** | **423 ms**† | 92.5 | **1.3 s** | **pass** |
 | qwen3:8b | empty | 170 ms | 208 ms | 79.9 | 1.0 s | pass |
 | | 6k | 199 ms | 239 ms | 73.2 | 1.9 s | pass |
 | dolphin-mistral:latest | empty | 105 ms | 138 ms | 94.9 | 2.5 s | pass\* |
@@ -231,7 +238,7 @@ separate runs.
   in this whole benchmark**: 388 ms here, 447 ms in an independent n=5 re-run,
   386 ms in a second one. The listener's normal experience is a third of a
   second.
-- Its tail is *not* proven tight, and this run's 423 ms p95 should not be quoted
+- († in the results table) Its tail is *not* proven tight, and this run's 423 ms p95 should not be quoted
   as if it were. A later n=5 re-run
   ([`B1d`](B1d-brain-gemma4-rerun-2026-08-29.json)) drew a single 7.9 s first
   token out of 5 samples at 6k — enough to fail G2 on that run. On that same
