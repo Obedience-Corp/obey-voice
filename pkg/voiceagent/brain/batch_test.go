@@ -15,6 +15,8 @@ import (
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 	"github.com/ollama/ollama/api"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // fakeBatchProvider is the in-package fake for BatchProvider consumers.
@@ -481,5 +483,59 @@ func TestFakeBatchProviderRecordsRequests(t *testing.T) {
 	}
 	if len(f.got) != 1 || f.got[0].Text != "in" {
 		t.Errorf("recorded requests = %+v, want the one sent", f.got)
+	}
+}
+
+// TestOllamaBatchCarriesRequestPolicy pins B2's finding at the third call site.
+// Batch runs against the same Ollama, and usually the same model, as the
+// conversation. Ollama reloads the runner whenever a request's options differ
+// from the loaded ones, so a bare batch call evicts the warm conversational
+// runner and the next spoken turn evicts it back — a model load on each side of
+// every transform. The missing think value is the same bug this work was about:
+// omitted, a reasoning model reasons, and batch output is read rather than
+// heard, so nobody notices except as a slow, padded transform.
+func TestOllamaBatchCarriesRequestPolicy(t *testing.T) {
+	cfg := &config.Config{
+		OllamaNumCtx:    8192,
+		OllamaNumBatch:  128,
+		OllamaKeepAlive: "10m",
+		OllamaThink:     "false",
+	}
+	interactive := &OllamaBrain{model: "m", cfg: cfg, keepAlive: &api.Duration{Duration: 10 * time.Minute}}
+
+	var bodies [][]byte
+	o := &ollamaBatch{
+		client:    batchStub(t, "out", http.StatusOK, &bodies),
+		model:     "m",
+		options:   interactive.requestOptions(),
+		keepAlive: interactive.keepAlive,
+		think:     ollamaThinkValue(cfg.OllamaThink),
+	}
+	if _, err := o.Transform(context.Background(), BatchRequest{Text: "hello"}); err != nil {
+		t.Fatalf("Transform: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("got %d requests, want 1", len(bodies))
+	}
+
+	var got struct {
+		Options   map[string]any `json:"options"`
+		KeepAlive any            `json:"keep_alive"`
+		Think     *bool          `json:"think"`
+	}
+	if err := json.Unmarshal(bodies[0], &got); err != nil {
+		t.Fatalf("request body: %v", err)
+	}
+	for _, k := range []string{"num_ctx", "num_batch"} {
+		want := interactive.newChatRequest(nil, nil).Options[k]
+		if int(got.Options[k].(float64)) != want.(int) {
+			t.Errorf("batch %s = %v, interactive %s = %v: a mismatch reloads the runner", k, got.Options[k], k, want)
+		}
+	}
+	if got.KeepAlive == nil {
+		t.Error("keep_alive absent: the batch call would fall back to the server default and evict the warm model early")
+	}
+	if got.Think == nil || *got.Think {
+		t.Errorf("think = %v, want an explicit false so a reasoning model does not reason into a file", got.Think)
 	}
 }

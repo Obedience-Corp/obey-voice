@@ -460,15 +460,30 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 
 // requestOptions carries the two settings that decide how the prompt is read.
 // They travel together because sending num_ctx alone is what produced the
-// symptom this exists to fix: Ollama derives the prompt batch from the context
-// window and nothing else — 512 at or below 4096, 1024 above — so raising the
-// window to hold a conversation silently halves prompt throughput. On a hybrid
-// attention/SSM model that is the difference between a 4.4 s pause before the
-// first word and 0.8 s (docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md).
+// symptom this exists to fix: Ollama derives the prompt micro-batch from the
+// context window and nothing else — 512 at or below 4096, 1024 above — so
+// raising the window to hold a conversation silently changed how the prompt is
+// read.
 //
-// Sending num_batch explicitly also turns off that automatic choice, which is
-// the point: the right batch depends on the model's architecture, and the
-// window knows nothing about it.
+// num_batch buys prefix REUSE, not prompt-reading speed. llama.cpp keeps its
+// last reusable context checkpoint roughly one micro-batch back from the end of
+// the prompt, so the server re-reads about num_batch tokens and restores the
+// rest. Measured on qwen3.8-uncensored:27b at a ~1.2k-token conversational
+// prompt, cached share tracks it almost exactly: 14 % skipped at batch 1024,
+// 89 % at 128, 97 % at 32 — while raw prompt-reading throughput *falls* the
+// whole way, 239 to 94 tok/s.
+//
+// So smaller is not simply faster, and anyone tuning this should know which
+// direction they are trading in: a smaller batch skips more of an unchanged
+// conversational prompt (4.4 s to 0.8 s here) and reads a genuinely new one
+// more slowly (5.2 s to 5.4 s cold at 128, 7.8 s at 32). It is a win because
+// voice turns keep the persona and history fixed and change only the last
+// sentence; it is not a free one.
+//
+// Sending num_batch explicitly also turns off Ollama's automatic choice, which
+// is the point: the useful batch depends on the model and on how much of the
+// prompt repeats, and the context window knows neither.
+// See docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md.
 func (o *OllamaBrain) requestOptions() map[string]any {
 	opts := map[string]any{}
 	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
@@ -583,19 +598,23 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 	if o.cfg != nil {
 		think = o.cfg.OllamaThink
 	}
-	numCtx := o.warmupNumCtx()
-	opts := map[string]any{
-		"num_predict": 1,
-		"num_ctx":     numCtx,
+	// Build on the same options a real turn sends, rather than assembling a
+	// second map by hand. Ollama reloads the model whenever a request's options
+	// differ from the loaded runner's, so any drift between these two sets buys
+	// a model load that the user's first sentence pays for.
+	opts := o.requestOptions()
+	if opts == nil {
+		opts = map[string]any{}
 	}
-	// The warmup must request the same options the real turns will, or it warms
-	// the wrong runner: Ollama reloads the model whenever a request's options
-	// differ from the loaded ones, so a warmup that omits num_batch buys a
-	// model load that the user's first sentence then pays for again.
-	if o.cfg != nil && o.cfg.OllamaNumBatch > 0 {
-		opts["num_batch"] = o.cfg.OllamaNumBatch
-	}
-	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%d num_batch=%v\n", o.model, numCtx, opts["num_batch"])
+	opts["num_predict"] = 1
+	// The one deliberate difference: with ollama_num_ctx unset a chat request
+	// defers to the server, but loading the model that way sizes the runner to
+	// the tag's advertised window (262144 on qwen3.8) and pins the RAM. Warmup
+	// floors it instead. The two then disagree and the first real turn reloads
+	// — pinned by TestWarmupMatchesChatOptions/window_unset_diverges, which is
+	// where to start if that reload is ever worth closing.
+	opts["num_ctx"] = o.warmupNumCtx()
+	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%v num_batch=%v\n", o.model, opts["num_ctx"], opts["num_batch"])
 	req := &api.ChatRequest{
 		Model:     o.model,
 		Messages:  []api.Message{{Role: "user", Content: "hi"}},

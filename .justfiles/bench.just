@@ -168,5 +168,5 @@ ttft *ARGS:
     @cd "{{repo}}" && go run ./scripts/ttft_probe {{ARGS}}
 
 [doc('Record what a client actually sends ollama. Point the client at it with OLLAMA_HOST=http://127.0.0.1:11500')]
-ttft-proxy out="ttft-proxy-capture.jsonl":
+ttft-proxy out=(`printf '%s/ttft-proxy-capture.jsonl' "${TMPDIR:-/tmp}"`):
     @cd "{{repo}}" && go run ./scripts/ttft_probe -proxy 127.0.0.1:11500 -proxy-out "{{out}}"

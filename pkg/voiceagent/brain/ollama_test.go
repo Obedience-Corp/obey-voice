@@ -619,20 +619,55 @@ func TestChatRequestCarriesNumBatch(t *testing.T) {
 // runner's, so a warmup that omits num_batch warms a runner the first real turn
 // throws away — and the user pays a model load in the middle of saying hello.
 func TestWarmupMatchesChatOptions(t *testing.T) {
-	var got map[string]any
-	o := &OllamaBrain{
-		model:  "m",
-		cfg:    &config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128},
-		client: optionCapturingStub(t, &got),
+	tests := []struct {
+		name    string
+		cfg     config.Config
+		diverge string // non-empty: the key that is knowingly allowed to differ
+		why     string
+	}{
+		{name: "configured", cfg: config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128}},
+		{name: "batch off", cfg: config.Config{OllamaNumCtx: 8192}},
+		{name: "small window", cfg: config.Config{OllamaNumCtx: 2048, OllamaNumBatch: 64}},
+		{name: "large window", cfg: config.Config{OllamaNumCtx: 32768, OllamaNumBatch: 256}},
+		{
+			// A known divergence, pinned here rather than left to be discovered
+			// in a log. ollama_num_ctx 0 means "let the server size it", so the
+			// chat request omits num_ctx — but Warmup substitutes
+			// defaultWarmupNumCtx to avoid loading the model at its advertised
+			// 262144 window. The two disagree, so the first real turn reloads
+			// the model, and on these tags it reloads at 262144. Reconciling
+			// them is a behaviour change to a documented setting and does not
+			// belong in a latency fix; this test exists so the next person
+			// finds it stated instead of inferring it from a stall.
+			name:    "window unset diverges",
+			cfg:     config.Config{OllamaNumBatch: 128},
+			diverge: "num_ctx",
+			why:     "warmup pins defaultWarmupNumCtx while chat defers to the server",
+		},
 	}
-	o.Warmup(context.Background())
 
-	chat := o.newChatRequest(nil, nil)
-	for _, k := range []string{"num_ctx", "num_batch"} {
-		if got[k] != chat.Options[k] {
-			t.Fatalf("warmup %s = %v, chat %s = %v: a mismatch reloads the model on the first real turn",
-				k, got[k], k, chat.Options[k])
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got map[string]any
+			cfg := tt.cfg
+			o := &OllamaBrain{model: "m", cfg: &cfg, client: optionCapturingStub(t, &got)}
+			o.Warmup(context.Background())
+			chat := o.newChatRequest(nil, nil)
+
+			for _, k := range []string{"num_ctx", "num_batch"} {
+				w, c := got[k], chat.Options[k]
+				if k == tt.diverge {
+					if w == c {
+						t.Fatalf("%s now agrees (%v): the documented divergence is gone, so delete this case", k, w)
+					}
+					t.Logf("known divergence: warmup %s = %v, chat %s = %v (%s)", k, w, k, c, tt.why)
+					continue
+				}
+				if w != c {
+					t.Fatalf("warmup %s = %v, chat %s = %v: a mismatch reloads the model on the first real turn", k, w, k, c)
+				}
+			}
+		})
 	}
 }
 

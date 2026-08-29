@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -233,6 +234,18 @@ func allCases() []caseSpec {
 		{Name: "batch-64", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 64, Why: "batch sweep"},
 		{Name: "batch-32", Profile: "production", Think: "false", Tools: true, Vary: "tail", NumBatch: 32, Why: "batch sweep"},
 
+		// The same sweep with nothing reusable. The tail sweep above cannot
+		// tell prefill throughput from prefix reuse, because a stable system
+		// prompt is exactly what a cache can reuse; run both or the numbers
+		// mean whichever of the two the reader already believed.
+		{Name: "coldbatch-1024", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 1024,
+			Why: "TRUE cold prefill throughput: nonce in front of the system prompt, nothing reusable"},
+		{Name: "coldbatch-512", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 512, Why: "cold batch sweep"},
+		{Name: "coldbatch-256", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 256, Why: "cold batch sweep"},
+		{Name: "coldbatch-128", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 128, Why: "cold batch sweep"},
+		{Name: "coldbatch-64", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 64, Why: "cold batch sweep"},
+		{Name: "coldbatch-32", Profile: "production", Think: "false", Tools: true, Vary: "head", NumBatch: 32, Why: "cold batch sweep"},
+
 		// A small batch could plausibly win on a 1.2k prompt and lose on a real
 		// conversation, so the fix is re-measured at B1's filled-history size
 		// before it is believed.
@@ -262,7 +275,12 @@ func controlCases() []caseSpec {
 	all := allCases()
 	keep := map[string]bool{
 		"cache-tail-vary": true, "cache-exact-repeat": true, "cache-head-vary": true,
-		"prefill-cold-0500": true, "prefill-cold-1500": true, "prefill-cold-3000": true, "prefill-cold-6000": true,
+		"prefill-cold-0500": true, "prefill-cold-1500": true, "prefill-cold-3000": true,
+		// Both batch sweeps, because the claim under review is that num_batch
+		// buys reuse rather than speed, and that has to be checkable on models
+		// other than the one it was discovered on.
+		"batch-1024": true, "batch-512": true, "batch-256": true, "batch-128": true, "batch-64": true, "batch-32": true,
+		"coldbatch-1024": true, "coldbatch-512": true, "coldbatch-256": true, "coldbatch-128": true, "coldbatch-64": true, "coldbatch-32": true,
 	}
 	var out []caseSpec
 	for _, c := range all {
@@ -281,6 +299,30 @@ var padWords = strings.Fields(`the quick brown fox jumps over a lazy dog while s
 measure latency in a warm room and write down what they saw before arguing about
 what it meant because a number without a method is only an opinion wearing a
 uniform and the machine does not care which of them is louder today`)
+
+// headNonceBlock is ~90 tokens of prose whose word order depends on the nonce,
+// so two samples share no usable prefix from the first token onward.
+func headNonceBlock(nonce string) string {
+	h := 0
+	for _, r := range nonce {
+		h = h*31 + int(r)
+	}
+	if h < 0 {
+		h = -h
+	}
+	var b strings.Builder
+	b.WriteString("Session reference ")
+	b.WriteString(nonce)
+	b.WriteString(". Working notes for this session only:\n")
+	for i := 0; i < 90; i++ {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(padWords[(h+i*7+i*i)%len(padWords)])
+	}
+	b.WriteString(".\n\n")
+	return b.String()
+}
 
 func padding(tokens int) string {
 	if tokens <= 0 {
@@ -335,8 +377,8 @@ type sample struct {
 	EvalDurationMS       float64 `json:"eval_duration_ms"`
 	TotalDurationMS      float64 `json:"total_duration_ms"`
 
-	PrefillTokPerS float64 `json:"prefill_tok_per_s"`
-	GenTokPerS     float64 `json:"gen_tok_per_s"`
+	ApparentPrefillTokPerS float64 `json:"apparent_prefill_tok_per_s"`
+	GenTokPerS             float64 `json:"gen_tok_per_s"`
 
 	// UnaccountedMS is wall clock minus what Ollama says it spent. M7 lives
 	// here: a fixed cost that belongs to none of the reported phases.
@@ -368,15 +410,23 @@ type caseSummary struct {
 	EvalCountMedian         int     `json:"eval_count_median"`
 	EvalDurationP50MS       float64 `json:"eval_duration_p50_ms"`
 	LoadDurationP50MS       float64 `json:"load_duration_p50_ms"`
-	PrefillTokPerSMedian    float64 `json:"prefill_tok_per_s_median"`
-	GenTokPerSMedian        float64 `json:"gen_tok_per_s_median"`
-	UnaccountedP50MS        float64 `json:"unaccounted_p50_ms"`
+	// Apparent, not measured: prompt_eval_count counts tokens the server
+	// skipped from cache as well as ones it read, so this rate is only a real
+	// throughput when reuse is zero. Compare `reuse.true_prefill_tok_per_s`.
+	ApparentPrefillTokPerSMedian float64 `json:"apparent_prefill_tok_per_s_median"`
+	GenTokPerSMedian             float64 `json:"gen_tok_per_s_median"`
+	UnaccountedP50MS             float64 `json:"unaccounted_p50_ms"`
 
 	// GateTTFT is the criteria doc's bar: p50 first_content <= 1500 ms.
 	GateTTFT     bool `json:"gate_ttft_p50_le_1500ms"`
 	GateClean    bool `json:"gate_no_think_tag_in_content"`
 	GateAnswered bool `json:"gate_every_sample_answered"`
 	GatePass     bool `json:"gate_pass"`
+
+	// Reuse is the server's own account of how much of the prompt it skipped.
+	// Without it, prefill time and prefill throughput are indistinguishable.
+	// Nil when the server log was unreadable.
+	Reuse *caseReuse `json:"reuse,omitempty"`
 }
 
 type modelResult struct {
@@ -426,7 +476,8 @@ func main() {
 
 		proxyListen   = flag.String("proxy", "", "run as a recording proxy on this address instead of probing (e.g. 127.0.0.1:11500)")
 		proxyUpstream = flag.String("proxy-upstream", "http://127.0.0.1:11434", "real ollama address the proxy forwards to")
-		proxyOut      = flag.String("proxy-out", "ttft-proxy-capture.jsonl", "where the proxy writes captured requests")
+		proxyOut      = flag.String("proxy-out", filepath.Join(os.TempDir(), "ttft-proxy-capture.jsonl"), "where the proxy writes captured requests")
+		serverLog     = flag.String("server-log", os.ExpandEnv("$HOME/.ollama/logs/server.log"), "ollama server log, read to recover how much prefix each request reused; empty to skip")
 	)
 	flag.Parse()
 
@@ -504,7 +555,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\n=== %s ===\n", j.model)
 		// Serialized: nothing else stays resident while this model is measured.
 		unloadAllExcept(ctx, client, j.model)
-		res := probeModel(ctx, client, j.model, j.cases, *reps, *timeout)
+		res := probeModel(ctx, client, j.model, j.cases, *reps, *timeout, *serverLog)
 		art.Results = append(art.Results, res)
 	}
 
@@ -535,7 +586,7 @@ func main() {
 	printTable(art)
 }
 
-func probeModel(ctx context.Context, client *api.Client, model string, cases []caseSpec, reps int, timeout time.Duration) modelResult {
+func probeModel(ctx context.Context, client *api.Client, model string, cases []caseSpec, reps int, timeout time.Duration, serverLog string) modelResult {
 	res := modelResult{Model: model}
 	if info, err := client.Show(ctx, &api.ShowRequest{Model: model}); err == nil {
 		for _, c := range info.Capabilities {
@@ -569,6 +620,10 @@ func probeModel(ctx context.Context, client *api.Client, model string, cases []c
 
 	for _, c := range cases {
 		fmt.Fprintf(os.Stderr, "  %-26s ", c.Name)
+		var logAt int64 = -1
+		if serverLog != "" {
+			logAt = logOffset(serverLog)
+		}
 		// Discard sample: settles the runner for this case's prompt shape. For
 		// the "none" case it also primes the cache the case exists to measure.
 		_ = runOnce(ctx, client, model, c, nonceFor(c, 0), timeout)
@@ -584,10 +639,17 @@ func probeModel(ctx context.Context, client *api.Client, model string, cases []c
 			}
 		}
 		sum := summarize(c, got)
+		if stats, ok := readReuse(serverLog, logAt); ok {
+			sum.Reuse = summarizeReuse(stats)
+		}
 		res.Cases = append(res.Cases, sum)
 		res.Samples = append(res.Samples, got...)
-		fmt.Fprintf(os.Stderr, "  content p50 %.0fms  any p50 %.0fms  think %d ch  prefill %.0fms\n",
-			sum.FirstContentP50MS, sum.FirstAnyP50MS, sum.ThinkingCharsMedian, sum.PromptEvalDurationP50MS)
+		reuse := "reuse n/a"
+		if sum.Reuse != nil {
+			reuse = fmt.Sprintf("cached %.0f%%  true %.0f tok/s", sum.Reuse.CachedSharePct, sum.Reuse.TrueTokPerSec)
+		}
+		fmt.Fprintf(os.Stderr, "  content p50 %.0fms  prefill %.0fms  %s\n",
+			sum.FirstContentP50MS, sum.PromptEvalDurationP50MS, reuse)
 	}
 	return res
 }
@@ -601,8 +663,14 @@ func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, 
 	if c.Profile == "production" {
 		sys := systemPrompt + padding(c.PadTokens)
 		if c.Vary == "head" {
-			// In front of everything, so not one cached token survives.
-			sys = "Session reference " + nonce + ".\n\n" + sys
+			// In front of everything, so no cached prefix survives. This is a
+			// long varying block rather than a short id on purpose: a one-token
+			// difference near the start was NOT enough on this runner — the
+			// server still restored a context checkpoint hundreds of tokens in,
+			// and rows meant to be cold came back 57 % reused. Coldness is
+			// therefore asserted here and *verified* from the server's own
+			// cached_share_pct, never assumed from the label.
+			sys = headNonceBlock(nonce) + sys
 		}
 		msgs = append(msgs, api.Message{Role: "system", Content: sys})
 		if c.Tools {
@@ -709,7 +777,7 @@ func runOnce(ctx context.Context, client *api.Client, model string, c caseSpec, 
 		s.FirstContentMS = s.TotalMS
 	}
 	if s.PromptEvalDurationMS > 0 {
-		s.PrefillTokPerS = float64(s.PromptEvalCount) / (s.PromptEvalDurationMS / 1000)
+		s.ApparentPrefillTokPerS = float64(s.PromptEvalCount) / (s.PromptEvalDurationMS / 1000)
 	}
 	if s.EvalDurationMS > 0 {
 		s.GenTokPerS = float64(s.EvalCount) / (s.EvalDurationMS / 1000)
@@ -737,7 +805,7 @@ func summarize(c caseSpec, ss []sample) caseSummary {
 		ped = append(ped, s.PromptEvalDurationMS)
 		ed = append(ed, s.EvalDurationMS)
 		ld = append(ld, s.LoadDurationMS)
-		pref = append(pref, s.PrefillTokPerS)
+		pref = append(pref, s.ApparentPrefillTokPerS)
 		gen = append(gen, s.GenTokPerS)
 		unacc = append(unacc, s.UnaccountedMS)
 		thch = append(thch, float64(s.ThinkingChars))
@@ -759,7 +827,7 @@ func summarize(c caseSpec, ss []sample) caseSummary {
 	sum.PromptEvalDurationP50MS = pct(ped, 50)
 	sum.EvalDurationP50MS = pct(ed, 50)
 	sum.LoadDurationP50MS = pct(ld, 50)
-	sum.PrefillTokPerSMedian = pct(pref, 50)
+	sum.ApparentPrefillTokPerSMedian = pct(pref, 50)
 	sum.GenTokPerSMedian = pct(gen, 50)
 	sum.UnaccountedP50MS = pct(unacc, 50)
 	sum.ThinkingCharsMedian = int(pct(thch, 50))
@@ -872,18 +940,21 @@ func provenance(ctx context.Context, client *api.Client) map[string]any {
 }
 
 func printTable(a *artifact) {
-	fmt.Printf("\n%-26s %-20s %8s %9s %9s %7s %9s %7s %6s\n",
-		"model", "case", "promptTk", "content", "prefill", "pf tok/s", "eval", "thinkCh", "gate")
+	fmt.Printf("\n%-26s %-20s %8s %9s %9s %8s %10s %6s\n",
+		"model", "case", "promptTk", "content", "prefill", "cached%", "true tok/s", "gate")
 	for _, r := range a.Results {
 		for _, c := range r.Cases {
 			gate := "FAIL"
 			if c.GatePass {
 				gate = "pass"
 			}
-			fmt.Printf("%-26s %-20s %8d %8.0fms %8.0fms %7.0f %8.0fms %7d %6s\n",
+			cached, trueRate := -1.0, -1.0
+			if c.Reuse != nil {
+				cached, trueRate = c.Reuse.CachedSharePct, c.Reuse.TrueTokPerSec
+			}
+			fmt.Printf("%-26s %-20s %8d %8.0fms %8.0fms %7.0f%% %10.0f %6s\n",
 				r.Model, c.Case, c.PromptEvalCountMedian, c.FirstContentP50MS,
-				c.PromptEvalDurationP50MS, c.PrefillTokPerSMedian,
-				c.EvalDurationP50MS, c.ThinkingCharsMedian, gate)
+				c.PromptEvalDurationP50MS, cached, trueRate, gate)
 		}
 	}
 }

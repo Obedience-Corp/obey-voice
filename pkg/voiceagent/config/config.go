@@ -109,14 +109,18 @@ type Config struct {
 	// falls back to the server's model default — which silently truncates
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
-	// OllamaNumBatch is how many prompt tokens Ollama processes per pass.
-	// Left unset, Ollama picks it from the context window alone — 512 at or
-	// below 4096, 1024 above — with no regard for the model, and hybrid
-	// attention/SSM models lose prefill throughput badly as it grows.
-	// Measured on qwen3.8-uncensored:27b (B2): 1024 gives 279 tok/s and a
-	// 4.4 s wait before the first word; 128 gives 1698 tok/s and 827 ms.
-	// gemma4:26b also improves; qwen3:8b pays about 15 ms.
-	// 0 restores Ollama's own choice.
+	// OllamaNumBatch is how many prompt tokens Ollama reads per pass. Left
+	// unset, Ollama picks it from the context window alone — 512 at or below
+	// 4096, 1024 above — with no regard for the model.
+	//
+	// It is a prefix-REUSE control, not a speed control. llama.cpp keeps its
+	// last reusable context checkpoint about one batch back from the end of the
+	// prompt, so a smaller batch lets the server skip more of a conversational
+	// prompt whose persona and history have not changed. Measured on
+	// qwen3.8-uncensored:27b (B2): batch 1024 skips 14 % and waits 4.4 s before
+	// the first word; batch 128 skips 89 % and waits 0.8 s. Raw reading speed
+	// moves the other way (239 to 182 tok/s), so genuinely new prompts cost
+	// slightly more. 0 restores Ollama's own choice.
 	OllamaNumBatch int `mapstructure:"ollama_num_batch"`
 	// OllamaKeepAlive keeps the model resident between voice turns
 	// (Go duration string; empty = server default).

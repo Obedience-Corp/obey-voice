@@ -52,3 +52,6 @@ runs/
 # T3 diarization A/B raw outputs (regenerate with scripts/diar-ab-sortformer.sh)
 .diar-ab-raw/
 __pycache__/
+
+# Diagnostic captures from scripts/ttft_probe (default to TMPDIR; this is belt and braces)
+ttft-proxy-capture*.jsonl

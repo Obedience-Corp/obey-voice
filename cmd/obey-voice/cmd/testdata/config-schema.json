@@ -493,7 +493,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Prompt batch size",
-      "help": "How much of the prompt the local model reads per pass. Smaller is much faster to the first word on qwen3.8-class models. 0 lets Ollama choose.",
+      "help": "How much of the prompt is re-read each turn. Smaller lets Ollama reuse more of an unchanged conversation, which is a large win to the first word on qwen3.8-class models, and costs a little on brand-new prompts. 0 lets Ollama choose.",
       "unit": "tokens",
       "min": 0,
       "max": 4096,
