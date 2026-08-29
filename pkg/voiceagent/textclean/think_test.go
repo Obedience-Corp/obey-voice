@@ -164,6 +164,8 @@ func TestThinkFilterContentOffset(t *testing.T) {
 		{"open tag split across chunks", []string{"<thi", "nk>plan it</think>Hi."}, []int{4, 18}},
 		{"held bracket that was a comparison clamps to zero", []string{"Is 3 <", "4? Yes."}, []int{0, 0}},
 		{"empty chunk has no content", []string{""}, []int{0}},
+		{"whitespace before the block is not the reply", []string{"\n<think>plan</think>\nObey: Hi."}, []int{21}},
+		{"whitespace-only chunk is not the reply", []string{"\n", "<think>plan</think>", "\nObey: Hi."}, []int{1, 19, 1}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

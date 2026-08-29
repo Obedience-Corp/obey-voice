@@ -8,20 +8,13 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
-// The flatten prompts and speaker attribution teach the model a "Name: content"
-// convention (promptUserLine, FormatUserLine). Models mirror it and open
-// replies with the agent's own label — "Samantha: Hi" — which no cleaning
-// stage removed, so TTS spoke the name aloud and the labeled reply was echoed
-// back into history, reinforcing the habit.
-//
-// These helpers remove exactly that echo: one leading agent-name label,
-// optionally emphasis-wrapped, at the start of a reply. The agent's name
-// appearing anywhere else is content and survives — including a reply that
-// merely begins with the name without a colon ("Samantha is my name").
+// The prompt convention teaches models a "Name: content" line format; they
+// mirror it and open replies with their own label, which TTS then speaks and
+// history reinforces. These helpers remove exactly one leading agent-name
+// label (optionally emphasis-wrapped); the name anywhere else is content.
 
-// agentLabelRE matches a leading "Name:" label for the given agent name.
-// Empty names fall back to "Obey", mirroring promptUserLine's default so
-// the strip and the prompt convention can never disagree about the name.
+// agentLabelRE matches a leading "Name:" label. Empty names fall back to
+// "Obey", mirroring promptUserLine's default.
 func agentLabelRE(agentName string) *regexp.Regexp {
 	return regexp.MustCompile(`(?i)^\s*(?:\*\*|__|[*_])?` + regexp.QuoteMeta(effectiveAgentName(agentName)) + `(?:\*\*|__|[*_])?\s*:\s*`)
 }
@@ -34,8 +27,7 @@ func effectiveAgentName(agentName string) string {
 }
 
 // StripAgentLabel removes one leading "AgentName:" label from a complete
-// reply. Apply before cleanForVoice, while any markdown emphasis around the
-// name is still present, and before the reply is stored in history.
+// reply. Apply before cleanForVoice, while markdown emphasis is still present.
 func StripAgentLabel(agentName, text string) string {
 	if loc := agentLabelRE(agentName).FindStringIndex(text); loc != nil {
 		return text[loc[1]:]
@@ -43,36 +35,23 @@ func StripAgentLabel(agentName, text string) string {
 	return text
 }
 
-// stripReplyConventions removes both conventions a model must not read back in
-// its own context, in the only order that works: the chain-of-thought block
-// first, because a reasoning model writes "<think>…</think>\nObey: hi" and the
-// label strip is anchored to the start of the reply — stripping the label first
-// finds the block instead and leaves the label to be spoken.
-//
-// Use this on a complete reply or a finished accumulation buffer, wherever a
-// turn is recorded in history. A stream cannot use it — neither convention is
-// recognisable from a partial reply — so labelStripper carries its own
-// textclean.ThinkFilter and applies the same order chunk by chunk.
-// cleanForVoice strips think blocks again on the paths that reach it; the two
-// are not redundant — this one fixes the ordering, that one covers callers who
-// never pass through here.
+// stripReplyConventions removes both conventions from a complete reply, think
+// block first: the label strip is anchored to the reply's start, and a
+// reasoning model writes "<think>…</think>\nObey: hi". Streams cannot use it;
+// labelStripper applies the same order chunk by chunk.
 func stripReplyConventions(agentName, text string) string {
 	return StripAgentLabel(agentName, textclean.StripThinkBlocks(text))
 }
 
-// labelStripper strips the label from a streamed reply without re-chunking
-// anything past the head. Output is held only while the reply's opening runes
-// could still become the label — at most the name plus wrappers, typically a
-// single token — so time-to-first-audio is unaffected: sentence segmentation
-// already buffers far longer than this.
+// labelStripper strips the label from a streamed reply. Output is held only
+// while the opening runes could still become the label, far shorter than
+// sentence segmentation already buffers.
 type labelStripper struct {
 	re    *regexp.Regexp
 	lname string
-	// think tells the reasoning prologue from the reply. "<think>" is not a label
-	// prefix, so judging the first raw chunk resolved the head before the reply
-	// had said a word and let the "Obey:" after </think> through. The block is
-	// forwarded verbatim — the TUI paints it live — and only the reply after it
-	// is judged: the order stripReplyConventions uses, block off then label.
+	// think separates the reasoning prologue from the reply: the block is
+	// forwarded verbatim (the TUI paints it live) and only the reply after it
+	// is judged, or the label following </think> slips through to TTS.
 	think      textclean.ThinkFilter
 	sawContent bool
 	pending    strings.Builder
@@ -87,9 +66,8 @@ func newLabelStripper(agentName string) *labelStripper {
 	}
 }
 
-// Feed accepts the next raw chunk and returns whatever is safe to emit now —
-// "" while the head is still ambiguous, the (possibly stripped) held text at
-// the moment of decision, and each chunk verbatim thereafter.
+// Feed accepts the next raw chunk and returns whatever is safe to emit now:
+// "" while the head is ambiguous, then each chunk verbatim once decided.
 func (s *labelStripper) Feed(chunk string) string {
 	if s.decided {
 		return chunk
@@ -97,14 +75,17 @@ func (s *labelStripper) Feed(chunk string) string {
 	if !s.sawContent {
 		i := s.think.ContentOffset(chunk)
 		if i >= len(chunk) {
-			// Still the reasoning prologue. Forward it and judge nothing: the
-			// reply has not started, so there is no head to resolve yet.
+			// Still the prologue; forward it, nothing to judge yet.
 			return chunk
 		}
 		s.sawContent = true
+		// ContentOffset points at the first non-whitespace reply byte; pull the
+		// whitespace run before it back into the judged head so the label regex
+		// eats it. Whitespace before <think> stops at the tag's '>'.
+		for i > 0 && unicode.IsSpace(rune(chunk[i-1])) {
+			i--
+		}
 		if i > 0 {
-			// The reply begins inside this chunk. The prologue half goes out as
-			// it is; only the half after </think> reaches the label check.
 			return chunk[:i] + s.feedHead(chunk[i:])
 		}
 	}
@@ -121,12 +102,9 @@ func (s *labelStripper) feedHead(chunk string) string {
 	return s.release(text)
 }
 
-// Flush releases whatever the head still holds. Call when the stream ends —
-// including on error, where the held text is real partial reply — so a short
-// reply is never swallowed.
-//
-// Prologue bytes are never held (they were forwarded as they arrived), so a
-// turn that ended inside a reasoning block has nothing left here.
+// Flush releases whatever the head still holds; call when the stream ends,
+// including on error, so a short reply is never swallowed. Prologue bytes are
+// never held.
 func (s *labelStripper) Flush() string {
 	if s.decided {
 		return ""
@@ -144,9 +122,7 @@ func (s *labelStripper) release(text string) string {
 }
 
 // couldBeLabel reports whether text is still a strict prefix of some form the
-// label can take: whitespace, an emphasis wrapper, the name, closing emphasis
-// and spacing, then a colon. The first rune that breaks the pattern resolves
-// the head, so an ordinary reply is held for at most one delta.
+// label can take; the first rune that breaks the pattern resolves the head.
 func (s *labelStripper) couldBeLabel(text string) bool {
 	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
 	if trimmed == "" {

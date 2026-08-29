@@ -173,6 +173,16 @@ func TestLabelStripperJudgesTheReplyNotTheReasoning(t *testing.T) {
 			chunks: []string{"<think>plan it</think>Samantha is my name."},
 			want:   "<think>plan it</think>Samantha is my name.",
 		},
+		{
+			name: "whitespace before the block", agent: "Samantha",
+			chunks: []string{"\n<think>plan it</think>", "\nSamantha: Hi."},
+			want:   "\n<think>plan it</think>Hi.",
+		},
+		{
+			name: "whitespace-only chunk before the block", agent: "Obey",
+			chunks: []string{"\n", "<think>a</think>", "\nObey: Hi"},
+			want:   "\n<think>a</think>Hi",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
