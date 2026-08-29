@@ -252,8 +252,8 @@ runs that measured it.
   token out of 5 samples at 6k — enough to fail G2 on that run. On that same
   sample the unrelated skill-router embedding call also stalled 20× (345 ms
   against a 17 ms norm), which points at a whole-server hiccup rather than
-  anything about gemma4; but that is an inference, and one excursion in 25
-  observed 6k samples is the honest characterization. The p50 is the claim; the
+  anything about gemma4; but that is an inference, and one excursion in 20
+  committed 6k samples (15 B1 + 5 B1d) is the honest characterization. The p50 is the claim; the
   tail is a machine property this benchmark cannot pin down.
 - 92.5 tok/s — 4× the incumbent.
 - Replies run 88–426 characters (medians 216 empty / 249 at 6k): the 2–3
