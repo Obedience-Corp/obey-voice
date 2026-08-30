@@ -179,6 +179,59 @@ func TestThinkStreamKeepsThinkBlocksOutOfHistory(t *testing.T) {
 	}
 }
 
+// A tool-calling turn records the model's preamble verbatim — that append never
+// reaches cleanForVoice, so it is the one place a reasoning block survives into
+// history on a qwen3 tool turn, and it is read back on every turn after.
+func TestThinkStreamKeepsThinkBlocksOutOfToolCallHistory(t *testing.T) {
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs++
+		if reqs == 1 {
+			// Reasoning preamble alongside the tool call, as qwen3 emits it.
+			_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"<think>They want the files. Call list_files.</think>Let me look.","tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true}`+"\n")
+			return
+		}
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"Here they are."},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	stream, err := o.ThinkStream(context.Background(), "list files", StreamOptions{ToolsEnabled: true})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	for range stream.Chunks { //nolint:revive // draining the stream is the point
+	}
+	if res := <-stream.Done; res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+
+	var preamble *api.Message
+	for i := range o.history {
+		if len(o.history[i].ToolCalls) > 0 {
+			preamble = &o.history[i]
+		}
+	}
+	if preamble == nil {
+		t.Fatalf("no tool-calling assistant message in history: %+v", o.history)
+	}
+	for _, leak := range []string{"<think", "</think", "Call list_files"} {
+		if strings.Contains(preamble.Content, leak) {
+			t.Errorf("tool-call history carries %q: %q", leak, preamble.Content)
+		}
+	}
+	if !strings.Contains(preamble.Content, "Let me look.") {
+		t.Fatalf("tool-call history lost the preamble: %q", preamble.Content)
+	}
+}
+
 // After a phantom tool call the model often restates the line it already
 // streamed. Forwarding that copy made Veronica say the same sentence twice.
 func TestThinkStreamDoesNotRestateAfterTools(t *testing.T) {

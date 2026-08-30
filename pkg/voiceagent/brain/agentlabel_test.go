@@ -67,6 +67,25 @@ func TestStripReplyConventionsStripsBlockBeforeLabel(t *testing.T) {
 	}
 }
 
+// cleanForVoice is the last common seam before a reply becomes both the spoken
+// text and the recorded assistant turn. stripReplyConventions covers the nine
+// provider call sites; this covers everyone who never passes through one.
+func TestCleanForVoiceStripsThinkBlocks(t *testing.T) {
+	tests := []struct{ name, in, want string }{
+		{"block then reply", "<think>plan the greeting</think>Hi there.", "Hi there."},
+		{"nothing but reasoning", "<think>still going</think>", ""},
+		{"no block untouched", "Hi there.", "Hi there."},
+		{"a comparison is not a tag", "Is 3 < 4? Yes.", "Is 3 < 4? Yes."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CleanForVoice(tt.in); got != tt.want {
+				t.Fatalf("CleanForVoice(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func feedAll(s *labelStripper, chunks []string) []string {
 	var out []string
 	for _, c := range chunks {
@@ -104,6 +123,86 @@ func TestLabelStripperStreaming(t *testing.T) {
 				t.Fatalf("streamed %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A reasoning model opens with "<think>", which is not a label prefix — so the
+// head used to resolve on it and the "Samantha:" arriving after "</think>"
+// streamed through untouched. The block decides nothing; the reply after it is
+// judged exactly as an unprefixed reply would be. The block itself must still
+// come out verbatim, because the TUI paints it live.
+func TestLabelStripperJudgesTheReplyNotTheReasoning(t *testing.T) {
+	tests := []struct {
+		name   string
+		agent  string
+		chunks []string
+		want   string
+	}{
+		{
+			name: "label after a closed block", agent: "Samantha",
+			chunks: []string{"<think>plan it</think>", "\nSamantha: Hi there."},
+			want:   "<think>plan it</think>Hi there.",
+		},
+		{
+			name: "close tag and label in one chunk", agent: "Samantha",
+			chunks: []string{"<think>plan it", "</think>\nSamantha: Hi."},
+			want:   "<think>plan it</think>Hi.",
+		},
+		{
+			name: "label split across chunks after the block", agent: "Samantha",
+			chunks: []string{"<think>plan it</think>\nSam", "antha: Hi."},
+			want:   "<think>plan it</think>Hi.",
+		},
+		{
+			name: "open tag split across chunks", agent: "Samantha",
+			chunks: []string{"<thi", "nk>plan it</think>Samantha: Hi."},
+			want:   "<think>plan it</think>Hi.",
+		},
+		{
+			name: "no label after the block", agent: "Samantha",
+			chunks: []string{"<think>plan it</think>", "Hi there."},
+			want:   "<think>plan it</think>Hi there.",
+		},
+		{
+			name: "reply is only reasoning", agent: "Samantha",
+			chunks: []string{"<think>still going"},
+			want:   "<think>still going",
+		},
+		{
+			name: "name after a block is not a label", agent: "Samantha",
+			chunks: []string{"<think>plan it</think>Samantha is my name."},
+			want:   "<think>plan it</think>Samantha is my name.",
+		},
+		{
+			name: "whitespace before the block", agent: "Samantha",
+			chunks: []string{"\n<think>plan it</think>", "\nSamantha: Hi."},
+			want:   "\n<think>plan it</think>Hi.",
+		},
+		{
+			name: "whitespace-only chunk before the block", agent: "Obey",
+			chunks: []string{"\n", "<think>a</think>", "\nObey: Hi"},
+			want:   "\n<think>a</think>Hi",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newLabelStripper(tt.agent)
+			if got := strings.Join(feedAll(s, tt.chunks), ""); got != tt.want {
+				t.Fatalf("streamed %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The reasoning block must not be buffered while it streams: holding it until
+// </think> would leave the TUI with an empty bubble for the whole thinking
+// phase, which is the state the dim paint exists to show.
+func TestLabelStripperForwardsReasoningAsItArrives(t *testing.T) {
+	s := newLabelStripper("Samantha")
+	for _, chunk := range []string{"<think>", "The user said hi. ", "Plan a greeting."} {
+		if got := s.Feed(chunk); got != chunk {
+			t.Fatalf("Feed(%q) = %q, want it forwarded as it arrives", chunk, got)
+		}
 	}
 }
 

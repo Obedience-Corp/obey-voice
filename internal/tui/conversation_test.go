@@ -95,6 +95,20 @@ func TestRenderAgentTurnEmptyThinkBlockShowsStateNotTags(t *testing.T) {
 	}
 }
 
+// A streaming frame can land in the middle of a tag. Painting the bytes so far
+// puts "<thi" in the reply style and "</thin" in the dim body — the same class
+// of leak as a whole tag, one frame smaller.
+func TestRenderAgentTurnHoldsPartialTagFrames(t *testing.T) {
+	for _, in := range []string{"<t", "<thi", "<think", "<think>reasoning</thin", "<think>reasoning</think>Hi <t"} {
+		view := renderAgentTurn("Santa", in)
+		for _, fragment := range []string{"<t", "</t"} {
+			if strings.Contains(view, fragment) {
+				t.Errorf("renderAgentTurn(%q) painted %q:\n%s", in, fragment, view)
+			}
+		}
+	}
+}
+
 func TestConversationAppendAndView(t *testing.T) {
 	m := sizedConversation(t, 80, 24)
 

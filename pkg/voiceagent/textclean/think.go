@@ -2,20 +2,12 @@ package textclean
 
 import "strings"
 
-// Qwen3 and similar models dump chain-of-thought as XML in the reply body:
-//
-//	<think>The user said hi. I should greet them.</think>
-//	Hello there!
-//
-// That block is for the operator, not the listener. StripThinkBlocks removes
-// it from a complete string. ThinkFilter does the same across streamed
-// sentences so a tag that opens in one segment and closes in another cannot
-// leak into TTS.
-//
-// Nesting is not supported: the first </think> closes the region regardless of
-// how many opens preceded it. Qwen3 and the other models this targets emit one
-// well-formed pair, and a depth counter would turn a stray close tag — which
-// these models do emit — into a region that never ends.
+// Reasoning models emit chain-of-thought as <think>…</think> in the reply
+// body; it is for the operator, not the listener. Nesting is unsupported by
+// design — the first close ends the region (a depth counter would turn a stray
+// close, which these models do emit, into a region that never ends), and a
+// close tag outside any region is dropped rather than spoken as "less than
+// slash think".
 var (
 	thinkOpenTags  = []string{"<think>", "<thinking>"}
 	thinkCloseTags = []string{"</think>", "</thinking>"}
@@ -34,14 +26,12 @@ func StripThinkBlocks(s string) string {
 }
 
 // SplitThink separates a reply into chain-of-thought (inner text, no tags)
-// and the spoken body. An unclosed <think> at the end is still think, so a
-// live stream can paint it before </think> arrives.
-//
-// Only tag bytes are removed and both halves are trimmed, so two empty results
-// from non-blank input mean the reply is nothing but think markup so far —
-// the frame between "<think>" arriving and the first reasoning token. Callers
-// must not fall back to rendering the input in that case; that is the raw tag
-// on screen.
+// and the spoken body; an unclosed <think> at the end is still think, so a
+// live stream can paint it before </think> arrives. Two empty results from
+// non-blank input mean the reply is only think markup so far — callers must
+// not fall back to rendering the raw input. Tag matching mirrors ThinkFilter
+// (render path and speech path must agree), including holding a trailing
+// partial tag.
 func SplitThink(s string) (think, body string) {
 	var thinkB, bodyB strings.Builder
 	inThink := false
@@ -54,6 +44,13 @@ func SplitThink(s string) (think, body string) {
 				i += n
 				continue
 			}
+			if n := matchTagAt(lower, i, thinkCloseTags); n > 0 {
+				i += n
+				continue
+			}
+			if s[i] == '<' && isThinkTagPrefix(lower[i:]) {
+				break
+			}
 			bodyB.WriteByte(s[i])
 			i++
 			continue
@@ -62,6 +59,9 @@ func SplitThink(s string) (think, body string) {
 			inThink = false
 			i += n
 			continue
+		}
+		if s[i] == '<' && isThinkTagPrefix(lower[i:]) {
+			break
 		}
 		thinkB.WriteByte(s[i])
 		i++
@@ -81,15 +81,43 @@ func (f *ThinkFilter) InThink() bool { return f.inThink }
 
 // Feed returns the speakable portion of s. Think content is dropped.
 func (f *ThinkFilter) Feed(s string) string {
+	out, _, _ := f.scan(s)
+	return out
+}
+
+// ContentOffset advances the filter over s exactly as Feed does, but reports
+// where the reply proper begins instead of removing the reasoning: the index
+// in s of the first non-whitespace byte Feed would have emitted, or len(s)
+// when s holds nothing judgeable yet. Whitespace never starts the reply —
+// counting it did, and a "\n" before <think> re-opened the label leak.
+// A tag prefix held from the previous call was already forwarded, so a first
+// content byte landing inside it clamps to 0.
+func (f *ThinkFilter) ContentOffset(s string) int {
+	held := len(f.hold)
+	_, first, found := f.scan(s)
+	if !found {
+		return len(s)
+	}
+	if i := first - held; i > 0 {
+		return i
+	}
+	return 0
+}
+
+// scan is the one tag-matching pass Feed and ContentOffset share. It returns
+// the speakable text, the index of its first non-whitespace byte within the
+// scanned string (held prefix prepended), and whether such a byte was found.
+func (f *ThinkFilter) scan(s string) (string, int, bool) {
 	if f.hold != "" {
 		s = f.hold + s
 		f.hold = ""
 	}
 	if s == "" {
-		return ""
+		return "", 0, false
 	}
 	var out strings.Builder
 	out.Grow(len(s))
+	first, found := 0, false
 	lower := strings.ToLower(s)
 	i := 0
 	for i < len(s) {
@@ -99,9 +127,17 @@ func (f *ThinkFilter) Feed(s string) string {
 				i += n
 				continue
 			}
+			// Stray close outside a region: dropped, per the package rule.
+			if n := matchTagAt(lower, i, thinkCloseTags); n > 0 {
+				i += n
+				continue
+			}
 			if s[i] == '<' && isThinkTagPrefix(lower[i:]) {
 				f.hold = s[i:]
 				break
+			}
+			if !found && !isSpaceByte(s[i]) {
+				first, found = i, true
 			}
 			out.WriteByte(s[i])
 			i++
@@ -118,18 +154,13 @@ func (f *ThinkFilter) Feed(s string) string {
 		}
 		i++
 	}
-	return out.String()
+	return out.String(), first, found
 }
 
-// Flush releases the suffix Feed is still holding and must be called once the
-// turn's last segment has arrived — nothing else can release it, so a caller
-// that skips Flush drops that text permanently.
-//
-// A lone "<" at EOF is a comparison, not a tag, and is returned. A longer
-// fragment ("<th", "</thinkin") is a tag the model never finished writing:
-// speaking it would be gibberish, so it is dropped. Both halves of that rule
-// live here rather than at the call sites, so every consumer decides the same
-// way — StripThinkBlocks used to carry a copy of it.
+// Flush releases the suffix Feed is still holding; call it after the turn's
+// last segment or that text is dropped permanently. A lone "<" at EOF is a
+// comparison and is returned; a longer tag fragment ("<th") was never finished
+// and is dropped.
 func (f *ThinkFilter) Flush() string {
 	hold := f.hold
 	f.hold = ""
@@ -137,6 +168,14 @@ func (f *ThinkFilter) Flush() string {
 		return ""
 	}
 	return hold
+}
+
+func isSpaceByte(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	}
+	return false
 }
 
 func looksLikeIncompleteThinkTag(s string) bool {
