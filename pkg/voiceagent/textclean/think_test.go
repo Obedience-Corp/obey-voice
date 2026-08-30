@@ -232,3 +232,30 @@ func TestPrepareSpokenTextStripsThinkBlocks(t *testing.T) {
 		t.Fatalf("PrepareSpokenText = %q, want the spoken reply only", got)
 	}
 }
+
+// TestContainsThinkTag pins the cases a hand-rolled Contains(s, "<think")
+// misses. A leak check that only looks for an opening tag reports clean on the
+// stray closer these models actually emit.
+func TestContainsThinkTag(t *testing.T) {
+	for _, s := range []string{
+		"<think>reasoning",
+		"prose <THINK> shouting",
+		"<thinking>the other spelling",
+		"a stray </think> with no opener",
+		"</thinking> either spelling, closing",
+	} {
+		if !ContainsThinkTag(s) {
+			t.Errorf("ContainsThinkTag(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []string{
+		"",
+		"Is 3 < 4? Yes.",
+		"I was thinking about Canberra.",
+		"<thinker> is not a think tag",
+	} {
+		if ContainsThinkTag(s) {
+			t.Errorf("ContainsThinkTag(%q) = true, want false", s)
+		}
+	}
+}

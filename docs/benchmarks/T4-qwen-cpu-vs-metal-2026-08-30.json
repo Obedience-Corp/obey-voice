@@ -1,0 +1,989 @@
+{
+  "schema": "obey-voice.benchmark.tts-rtf.v1",
+  "id": "T4-qwen-cpu-vs-metal",
+  "title": "Qwen3-TTS 0.6b, CPU backend vs Metal backend, measured in the obey-voice pipeline",
+  "question": "Does QWEN3_TTS_BACKEND=cpu sustain per-segment RTF below 1.0 on this Mac where the default Metal placement does not, and does RTF stay flat as the utterance gets longer?",
+  "why_it_matters": "The qwen_tts_stream auto-gate streams only where streaming was measured not to break up: tts_place=lan, or a local package whose backend_hint is cuda. Metal at 0.6b measures ~1.30-1.36 RTF, which is why the local Metal case is excluded \u2014 a synthesizer slower than realtime underruns a streaming player. A prior unrecorded spot-check put the CPU backend near 0.80, which would clear that bar. This run checks it properly. It changes no gate and no default.",
+  "measured_at": "2026-08-30T01:00:00Z",
+  "machine": {
+    "model_id": "Mac16,9",
+    "cpu": "Apple M4 Max",
+    "memory_bytes": 137438953472,
+    "os": "macOS 26.5",
+    "power": "AC. The two legs ran back to back with nothing else benchmarking; a long-running VM process was resident throughout both, equally."
+  },
+  "obey_voice": {
+    "commit": "7d26f670ba00f5615a6e581bf9f8203440cd8df5",
+    "branch": "bench/30b-rerun-cpu-tts",
+    "worktree": "dirty \u2014 the B1e artifacts of this same PR were untracked at run time; no code differed from the commit",
+    "binary": "./bin/obey-voice (just build)"
+  },
+  "engine": {
+    "install": "~/.cache/festival-voice/models/qwen3-tts/install.json (qwen3-tts-native.install.v1)",
+    "repo_commit": "135e01736401b6ae531e5b77fcb76100c9dc59de",
+    "engine_sha": "22277bc6f087fd081df8bffa9c280b106a8af567",
+    "worker": "bin/qwen3-tts-worker",
+    "worker_sha256": "ebbe018e7e49549fd40150531481f25c9deeaabfa8eb39c2cdab7be8b397e5f4",
+    "protocol": "qwen3-tts-worker/v1",
+    "streaming": false,
+    "sample_rate": 24000,
+    "backend_hint_in_package": "metal",
+    "tier": "0.6b",
+    "model": "models/qwen3-tts-0.6b-f16.gguf",
+    "model_sha256": "0b89770118463af8f2467d824a8de57d96df6a09f927a9769a3f7b7fffa7087d",
+    "note": "Same engine_sha as F7, so the Metal leg here is directly comparable to F7's lab figure."
+  },
+  "method": {
+    "harness": "cmd/obey-voice `benchmark --full-turn-fixture`, the committed per-segment TTS bench. Whole voice turns: capture -> VAD -> STT -> brain -> TTS -> playback, with events.SegmentMetric recorded per synthesized segment.",
+    "rtf_definition": "SegmentMetric.RealtimeFactor() = EngineElapsed / AudioSeconds \u2014 synthesis alone. NOT SynthElapsed, which includes the queue wait behind an earlier sentence and would report a healthy engine as slow.",
+    "warmup": "iteration 1 of 4 discarded on both legs (a cold worker pays 7-11s of model load on its first synthesis), matching cmd/tts-ab's -drop-warmup default. 3 iterations x 3 fixtures = 9 measured turns per leg.",
+    "exclusions": "segments marked Fallback (Kokoro spoke them) or Interrupted, and any with AudioSeconds <= 0. None occurred: turns_with_fallback is 0 on both legs.",
+    "fixtures": "3 synthetic long-reply fixtures, the SYNTH_TTS_TEXTS set from scripts/bench.sh, regenerated with cmd/golden-tts (kokoro af_heart, speed 0.95) plus 1.5s of ffmpeg apad \u2014 the same construction ensure_synth_fixtures performs. Written to a scratch directory via OBEY_VOICE_BENCH_FIXTURES so ~/.cache was not modified.",
+    "brain": "qwen3.8-uncensored:27b via ollama, persona samantha (the live config). The brain decides the reply text, so segment texts differ between legs; RTF is normalized by audio duration and is bucketed by length below for exactly that reason.",
+    "ordering": "Metal leg first, then the CPU leg, strictly serialized. Never concurrent.",
+    "stat_note": "n=40 (Metal) and n=35 (CPU) segments. 'p95' is nearest-rank and at this n reads as the worst or near-worst observation, not a distributional claim."
+  },
+  "commands": [
+    "just build",
+    "# fixtures (mirrors scripts/bench.sh ensure_synth_fixtures, into a scratch dir)",
+    "go build -o $SCRATCH/golden-tts ./cmd/golden-tts",
+    "$SCRATCH/golden-tts -text \"<SYNTH_TTS_TEXTS[i]>\" -out $SCRATCH/raw-NN.wav",
+    "ffmpeg -i $SCRATCH/raw-NN.wav -af apad=pad_dur=1.5 -c:a pcm_s16le -y $FIX/tts-NN.wav",
+    "# Metal leg (default: QWEN3_TTS_BACKEND unset)",
+    "./bin/obey-voice benchmark --iterations 4 --json-file $SCRATCH/t4-metal.json --tts-provider=qwen3-tts:0.6b --full-turn-fixture=$FIX/tts-01.wav --expect-text=... (x3)",
+    "# CPU leg",
+    "QWEN3_TTS_BACKEND=cpu ./bin/obey-voice benchmark --iterations 4 --json-file $SCRATCH/t4-cpu.json --tts-provider=qwen3-tts:0.6b --full-turn-fixture=$FIX/tts-01.wav --expect-text=... (x3)"
+  ],
+  "results": {
+    "metal": {
+      "backend": "metal",
+      "n_segments": 40,
+      "rtf_median": 1.3562,
+      "rtf_max_observed": 2.8528,
+      "rtf_min_observed": 1.3055,
+      "first_segment_rtf_median": 2.2727,
+      "audio_seconds_median": 6.297,
+      "underruns_total": 0,
+      "by_audio_length": [
+        {
+          "audio_seconds": "0-2",
+          "n": 4,
+          "rtf_median": 1.3812,
+          "rtf_max": 1.408
+        },
+        {
+          "audio_seconds": "2-4",
+          "n": 6,
+          "rtf_median": 1.3731,
+          "rtf_max": 2.2727
+        },
+        {
+          "audio_seconds": "4-6",
+          "n": 8,
+          "rtf_median": 1.3613,
+          "rtf_max": 2.8528
+        },
+        {
+          "audio_seconds": "6-+",
+          "n": 22,
+          "rtf_median": 1.3335,
+          "rtf_max": 2.8182
+        }
+      ],
+      "turns": 9,
+      "turns_without_audio": 0,
+      "turns_with_fallback": 0,
+      "turns_stall_watchdog_fired": 0,
+      "backend_env": "QWEN3_TTS_BACKEND unset (worker auto -> Metal, install.json backend_hint=metal)",
+      "rtf_p95_nearest_rank": 2.6572,
+      "first_segment_rtf_max": 2.8528,
+      "later_segment_rtf_median": 1.335,
+      "later_segment_rtf_max": 1.7204,
+      "segments_at_or_above_realtime": 40,
+      "turn_level": {
+        "turns": 9,
+        "median_playback_start_s": 22.7,
+        "median_dead_air_s": 8.85,
+        "underruns_total": 0,
+        "stall_watchdog_fired": 0,
+        "median_segments_per_turn": 4,
+        "tts_provider": [
+          "qwen3-tts"
+        ],
+        "tts_tier": [
+          "0.6b"
+        ],
+        "tts_place": [
+          "local"
+        ],
+        "worker_streaming": [
+          "False"
+        ],
+        "turn_errors": 0
+      },
+      "per_segment": [
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 0,
+          "chars": 60,
+          "audio_s": 4.217,
+          "engine_s": 11.205,
+          "rtf": 2.6572,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 1,
+          "chars": 109,
+          "audio_s": 6.617,
+          "engine_s": 8.703,
+          "rtf": 1.3153,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 2,
+          "chars": 111,
+          "audio_s": 7.497,
+          "engine_s": 9.899,
+          "rtf": 1.3204,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 3,
+          "chars": 99,
+          "audio_s": 7.017,
+          "engine_s": 9.442,
+          "rtf": 1.3457,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 0,
+          "chars": 59,
+          "audio_s": 3.977,
+          "engine_s": 9.038,
+          "rtf": 2.2727,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 1,
+          "chars": 42,
+          "audio_s": 3.257,
+          "engine_s": 4.437,
+          "rtf": 1.3623,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 2,
+          "chars": 114,
+          "audio_s": 6.057,
+          "engine_s": 8.846,
+          "rtf": 1.4606,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 2,
+          "index": 0,
+          "chars": 116,
+          "audio_s": 7.177,
+          "engine_s": 14.283,
+          "rtf": 1.9901,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 2,
+          "index": 1,
+          "chars": 106,
+          "audio_s": 6.857,
+          "engine_s": 11.797,
+          "rtf": 1.7204,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 2,
+          "index": 2,
+          "chars": 156,
+          "audio_s": 9.177,
+          "engine_s": 13.295,
+          "rtf": 1.4487,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 0,
+          "chars": 118,
+          "audio_s": 7.337,
+          "engine_s": 17.022,
+          "rtf": 2.3201,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 1,
+          "chars": 148,
+          "audio_s": 8.297,
+          "engine_s": 10.837,
+          "rtf": 1.3062,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 2,
+          "chars": 146,
+          "audio_s": 7.657,
+          "engine_s": 10.173,
+          "rtf": 1.3286,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 3,
+          "chars": 137,
+          "audio_s": 8.297,
+          "engine_s": 11.064,
+          "rtf": 1.3335,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 3,
+          "index": 0,
+          "chars": 71,
+          "audio_s": 4.697,
+          "engine_s": 13.399,
+          "rtf": 2.8528,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 3,
+          "index": 1,
+          "chars": 110,
+          "audio_s": 6.377,
+          "engine_s": 8.503,
+          "rtf": 1.3335,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 3,
+          "index": 2,
+          "chars": 124,
+          "audio_s": 6.697,
+          "engine_s": 8.866,
+          "rtf": 1.3239,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 3,
+          "index": 3,
+          "chars": 92,
+          "audio_s": 5.657,
+          "engine_s": 8.347,
+          "rtf": 1.4755,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 3,
+          "index": 4,
+          "chars": 54,
+          "audio_s": 3.737,
+          "engine_s": 5.171,
+          "rtf": 1.3838,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 0,
+          "chars": 123,
+          "audio_s": 6.937,
+          "engine_s": 14.184,
+          "rtf": 2.0447,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 1,
+          "chars": 111,
+          "audio_s": 6.777,
+          "engine_s": 9.003,
+          "rtf": 1.3286,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 2,
+          "chars": 93,
+          "audio_s": 6.697,
+          "engine_s": 8.787,
+          "rtf": 1.3122,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 3,
+          "chars": 43,
+          "audio_s": 2.937,
+          "engine_s": 3.921,
+          "rtf": 1.335,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 0,
+          "chars": 113,
+          "audio_s": 7.017,
+          "engine_s": 14.114,
+          "rtf": 2.0114,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 1,
+          "chars": 2,
+          "audio_s": 1.497,
+          "engine_s": 2.038,
+          "rtf": 1.3616,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 2,
+          "chars": 83,
+          "audio_s": 5.177,
+          "engine_s": 6.758,
+          "rtf": 1.3055,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 3,
+          "chars": 91,
+          "audio_s": 5.177,
+          "engine_s": 6.83,
+          "rtf": 1.3194,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 4,
+          "chars": 2,
+          "audio_s": 1.177,
+          "engine_s": 1.59,
+          "rtf": 1.3509,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 5,
+          "chars": 88,
+          "audio_s": 5.017,
+          "engine_s": 6.893,
+          "rtf": 1.3739,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 0,
+          "chars": 101,
+          "audio_s": 6.217,
+          "engine_s": 17.52,
+          "rtf": 2.8182,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 1,
+          "chars": 2,
+          "audio_s": 1.017,
+          "engine_s": 1.424,
+          "rtf": 1.4008,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 2,
+          "chars": 141,
+          "audio_s": 8.617,
+          "engine_s": 11.412,
+          "rtf": 1.3243,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 3,
+          "chars": 102,
+          "audio_s": 5.817,
+          "engine_s": 7.834,
+          "rtf": 1.3468,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 4,
+          "chars": 51,
+          "audio_s": 3.497,
+          "engine_s": 4.626,
+          "rtf": 1.3228,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 5,
+          "chars": 8,
+          "audio_s": 1.017,
+          "engine_s": 1.432,
+          "rtf": 1.408,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 6,
+          "chars": 96,
+          "audio_s": 5.017,
+          "engine_s": 6.766,
+          "rtf": 1.3486,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 7,
+          "chars": 50,
+          "audio_s": 3.337,
+          "engine_s": 5.134,
+          "rtf": 1.5387,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 4,
+          "index": 0,
+          "chars": 149,
+          "audio_s": 10.137,
+          "engine_s": 16.721,
+          "rtf": 1.6495,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 4,
+          "index": 1,
+          "chars": 139,
+          "audio_s": 8.537,
+          "engine_s": 11.169,
+          "rtf": 1.3083,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 4,
+          "index": 2,
+          "chars": 139,
+          "audio_s": 8.137,
+          "engine_s": 10.644,
+          "rtf": 1.3082,
+          "underruns": 0
+        }
+      ]
+    },
+    "cpu": {
+      "backend": "cpu",
+      "n_segments": 35,
+      "rtf_median": 0.821,
+      "rtf_max_observed": 1.4727,
+      "rtf_min_observed": 0.7992,
+      "first_segment_rtf_median": 0.95,
+      "audio_seconds_median": 6.137,
+      "underruns_total": 0,
+      "by_audio_length": [
+        {
+          "audio_seconds": "0-2",
+          "n": 1,
+          "rtf_median": 0.8865,
+          "rtf_max": 0.8865
+        },
+        {
+          "audio_seconds": "2-4",
+          "n": 6,
+          "rtf_median": 0.8389,
+          "rtf_max": 1.0091
+        },
+        {
+          "audio_seconds": "4-6",
+          "n": 10,
+          "rtf_median": 0.8175,
+          "rtf_max": 0.9962
+        },
+        {
+          "audio_seconds": "6-+",
+          "n": 18,
+          "rtf_median": 0.8387,
+          "rtf_max": 1.4727
+        }
+      ],
+      "turns": 9,
+      "turns_without_audio": 0,
+      "turns_with_fallback": 0,
+      "turns_stall_watchdog_fired": 0,
+      "backend_env": "QWEN3_TTS_BACKEND=cpu exported to the obey-voice process; pkg/voiceagent/tts/qwen_native_session.go passes os.Environ() through to the worker",
+      "rtf_p95_nearest_rank": 1.0091,
+      "first_segment_rtf_max": 1.0091,
+      "later_segment_rtf_median": 0.8103,
+      "later_segment_rtf_max": 1.4727,
+      "segments_at_or_above_realtime": 2,
+      "turn_level": {
+        "turns": 9,
+        "median_playback_start_s": 12.05,
+        "median_dead_air_s": 1.81,
+        "underruns_total": 0,
+        "stall_watchdog_fired": 0,
+        "median_segments_per_turn": 4,
+        "tts_provider": [
+          "qwen3-tts"
+        ],
+        "tts_tier": [
+          "0.6b"
+        ],
+        "tts_place": [
+          "local"
+        ],
+        "worker_streaming": [
+          "False"
+        ],
+        "turn_errors": 0
+      },
+      "per_segment": [
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 0,
+          "chars": 64,
+          "audio_s": 4.297,
+          "engine_s": 4.216,
+          "rtf": 0.9812,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 1,
+          "chars": 116,
+          "audio_s": 7.017,
+          "engine_s": 6.076,
+          "rtf": 0.8659,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 2,
+          "chars": 137,
+          "audio_s": 6.697,
+          "engine_s": 5.383,
+          "rtf": 0.8039,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 2,
+          "index": 3,
+          "chars": 39,
+          "audio_s": 2.857,
+          "engine_s": 2.307,
+          "rtf": 0.8076,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 0,
+          "chars": 76,
+          "audio_s": 4.857,
+          "engine_s": 4.838,
+          "rtf": 0.9962,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 1,
+          "chars": 78,
+          "audio_s": 4.377,
+          "engine_s": 3.859,
+          "rtf": 0.8817,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 2,
+          "chars": 63,
+          "audio_s": 3.817,
+          "engine_s": 3.093,
+          "rtf": 0.8102,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 3,
+          "chars": 103,
+          "audio_s": 6.457,
+          "engine_s": 5.767,
+          "rtf": 0.8932,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 2,
+          "index": 4,
+          "chars": 95,
+          "audio_s": 5.577,
+          "engine_s": 4.537,
+          "rtf": 0.8135,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 2,
+          "index": 0,
+          "chars": 160,
+          "audio_s": 9.497,
+          "engine_s": 8.626,
+          "rtf": 0.9083,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 2,
+          "index": 1,
+          "chars": 133,
+          "audio_s": 8.137,
+          "engine_s": 6.503,
+          "rtf": 0.7992,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 2,
+          "index": 2,
+          "chars": 168,
+          "audio_s": 10.697,
+          "engine_s": 9.265,
+          "rtf": 0.8662,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 0,
+          "chars": 98,
+          "audio_s": 6.137,
+          "engine_s": 5.83,
+          "rtf": 0.95,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 1,
+          "chars": 130,
+          "audio_s": 7.737,
+          "engine_s": 6.279,
+          "rtf": 0.8115,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 2,
+          "chars": 76,
+          "audio_s": 5.097,
+          "engine_s": 4.185,
+          "rtf": 0.821,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 3,
+          "index": 3,
+          "chars": 42,
+          "audio_s": 2.937,
+          "engine_s": 2.376,
+          "rtf": 0.8089,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 3,
+          "index": 0,
+          "chars": 46,
+          "audio_s": 3.017,
+          "engine_s": 3.044,
+          "rtf": 1.0091,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 3,
+          "index": 1,
+          "chars": 29,
+          "audio_s": 2.297,
+          "engine_s": 1.993,
+          "rtf": 0.8675,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 0,
+          "chars": 111,
+          "audio_s": 8.217,
+          "engine_s": 7.586,
+          "rtf": 0.9232,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 1,
+          "chars": 139,
+          "audio_s": 8.297,
+          "engine_s": 6.679,
+          "rtf": 0.805,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 2,
+          "chars": 133,
+          "audio_s": 8.057,
+          "engine_s": 6.449,
+          "rtf": 0.8004,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 3,
+          "index": 3,
+          "chars": 101,
+          "audio_s": 6.137,
+          "engine_s": 9.038,
+          "rtf": 1.4727,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 0,
+          "chars": 111,
+          "audio_s": 7.177,
+          "engine_s": 6.651,
+          "rtf": 0.9267,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 1,
+          "chars": 127,
+          "audio_s": 7.097,
+          "engine_s": 5.751,
+          "rtf": 0.8104,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 2,
+          "chars": 2,
+          "audio_s": 0.937,
+          "engine_s": 0.831,
+          "rtf": 0.8865,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 3,
+          "chars": 88,
+          "audio_s": 5.817,
+          "engine_s": 4.679,
+          "rtf": 0.8045,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-01.wav",
+          "iteration": 4,
+          "index": 4,
+          "chars": 75,
+          "audio_s": 5.177,
+          "engine_s": 4.161,
+          "rtf": 0.8038,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 0,
+          "chars": 53,
+          "audio_s": 3.657,
+          "engine_s": 3.641,
+          "rtf": 0.9956,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 1,
+          "chars": 143,
+          "audio_s": 8.377,
+          "engine_s": 7.33,
+          "rtf": 0.875,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 2,
+          "chars": 72,
+          "audio_s": 5.177,
+          "engine_s": 4.214,
+          "rtf": 0.8141,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 3,
+          "chars": 104,
+          "audio_s": 6.537,
+          "engine_s": 5.263,
+          "rtf": 0.8052,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-02.wav",
+          "iteration": 4,
+          "index": 4,
+          "chars": 82,
+          "audio_s": 5.417,
+          "engine_s": 4.341,
+          "rtf": 0.8014,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 4,
+          "index": 0,
+          "chars": 96,
+          "audio_s": 5.577,
+          "engine_s": 5.277,
+          "rtf": 0.9463,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 4,
+          "index": 1,
+          "chars": 144,
+          "audio_s": 9.257,
+          "engine_s": 7.409,
+          "rtf": 0.8004,
+          "underruns": 0
+        },
+        {
+          "fixture": "tts-03.wav",
+          "iteration": 4,
+          "index": 2,
+          "chars": 109,
+          "audio_s": 7.417,
+          "engine_s": 5.936,
+          "rtf": 0.8003,
+          "underruns": 0
+        }
+      ]
+    }
+  },
+  "findings": {
+    "sustained_rtf_below_1": {
+      "metal": "NO. Median 1.3562, minimum observed 1.3055, and all 40 of 40 segments at or above 1.0. Not one segment kept up with playback.",
+      "cpu": "YES. Median 0.8210, minimum 0.7992, and 33 of 35 segments below 1.0.",
+      "ratio": "CPU synthesizes the same work 1.65x faster than the Metal placement on this machine."
+    },
+    "flat_with_length": {
+      "metal": "Flat. Median RTF by audio length: 1.381 (0-2s, n=4), 1.373 (2-4s, n=6), 1.361 (4-6s, n=8), 1.334 (6s+, n=22).",
+      "cpu": "Flat. 0.887 (0-2s, n=1), 0.839 (2-4s, n=6), 0.818 (4-6s, n=10), 0.839 (6s+, n=18).",
+      "reading": "Neither backend degrades as the utterance grows; the difference between them is a level shift, not a slope. CPU's line sits below 1.0 across every length bucket measured, out to its longest segment at 10.697s audio (the longest Metal segment is 10.137s)."
+    },
+    "the_first_segment_is_the_exception": {
+      "metal": "First segment of a turn: median 2.273, range 1.649-2.853. Later segments: median 1.335, max 1.720.",
+      "cpu": "First segment: median 0.950, range 0.908-1.009. Later segments: median 0.810, max 1.473.",
+      "reading": "Both backends pay a first-segment premium. On Metal it is enormous (1.7x the steady state) and it lands on time-to-first-audio, which is the wait a listener feels. On CPU the premium survives but the first segment still lands at or just under realtime."
+    },
+    "listener_consequences": {
+      "median_dead_air_per_turn_s": {
+        "metal": 8.9,
+        "cpu": 1.8
+      },
+      "median_playback_start_s": {
+        "metal": 22.7,
+        "cpu": 12.1
+      },
+      "reading": "Dead air is the silence the player spends idle between sentences waiting for the next one \u2014 the direct cost of RTF above 1.0, and it falls by 80% on CPU. PlaybackStartElapsed is dominated by brain think time on a 20 tok/s local model and should not be attributed to the speech backend; it is reported for completeness only.",
+      "underruns": "Zero on both legs, as expected: this worker is streaming=false, so a segment is complete before it is audible. Underruns are what a streaming path would produce, and that is precisely the path this measurement is about."
+    },
+    "outliers": {
+      "cpu_1_47": "One CPU segment measured 1.4727 (tts-03, iteration 3, segment index 3, 6.1s of audio). It is the only CPU segment materially above 1.0; the next highest is 1.0091. Cause not established.",
+      "metal_high_first_segments": "Metal's 2.66-2.85 samples are all segment index 0."
+    },
+    "cross_check_against_F7": "F7 measured 0.6b Metal at rtf_median 1.3289 with the out-of-tree lab harness on the same engine_sha. This run measures 1.3562 in the pipeline \u2014 2.05% apart. The instruments agree, which is the evidence that the CPU figure is a real backend difference and not a harness artifact.",
+    "did_the_env_var_reach_the_worker": "Yes, by result: the same binary, fixtures and tier measured 1.36 and 0.82 with only QWEN3_TTS_BACKEND changed. The mechanism is pkg/voiceagent/tts/qwen_native_session.go building the worker environment from os.Environ() \u2014 it strips QWEN3_TTS_TIER/MODEL and rewrites the library paths, but passes everything else through. obey-voice itself never sets QWEN3_TTS_BACKEND anywhere; this run set it in the parent shell."
+  },
+  "what_this_does_not_settle": [
+    "Audio quality. Nothing here listened to the two legs side by side. A backend that is faster and worse is not a win, and this artifact contains no evidence either way.",
+    "Whether the streaming gate should change. The gate reads the installed package's backend_hint (metal here), not an ambient env var, and nothing in obey-voice sets QWEN3_TTS_BACKEND. Acting on this finding means deciding how a CPU placement gets selected and recorded, which is a separate decision this run only supplies the number for.",
+    "The 1.7b tier, which is where the dead-air problem was worst. Only 0.6b was measured.",
+    "Thermals and sustained load. Nine turns per leg is minutes, not an hour; a CPU backend under long use may throttle where Metal would not. Not measured.",
+    "CPU cost to the rest of the machine. The CPU backend spends cores the brain also wants; on a box running a local LLM and speech at once that trade is real and is not measured here."
+  ]
+}
