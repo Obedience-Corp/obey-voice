@@ -56,3 +56,9 @@ __pycache__/
 
 # Diagnostic captures from scripts/ttft_probe (default to TMPDIR; this is belt and braces)
 ttft-proxy-capture*.jsonl
+
+# webrtc-audio-processing (AEC3) vendor build for the `apm` cgo shim — cloned
+# and meson-built by scripts/build-webrtc-apm.sh, not committed. See
+# pkg/voiceagent/audio/apm and cmd/apmharness.
+/third_party/webrtc-audio-processing/
+/third_party/webrtc-apm-prefix/
