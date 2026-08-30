@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=festival-voice.persona.v1
+schema: festival-voice.persona.v1
+id: veronica
+display_name: Veronica
+builtin: true
+tts:
+    provider: qwen3-tts
+    voice: VeronicaDesk
+    tier: 0.6b
+prompts:
+    persona: veronica

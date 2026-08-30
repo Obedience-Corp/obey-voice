@@ -25,32 +25,14 @@ import (
 // Schema identifies the persona profile document version.
 const Schema = "festival-voice.persona.v1"
 
-// DefaultID is the built-in default profile id: the persona a fresh install
-// talks to and the id every heal path prefers.
+// DefaultID is the shipped default profile id: the persona a fresh install
+// talks to and the id every heal path prefers. Companions (samantha, veronica,
+// whoever is added next) live in shipped/*.yaml; they are not defaults.
 const DefaultID = "obey"
 
-// DefaultDisplayName is the display name of the built-in default profile. It
+// DefaultDisplayName is the display name of the shipped default profile. It
 // matches the agent_name config default; a config that names the agent wins.
 const DefaultDisplayName = "Obey"
-
-// LegacyDefaultID is the profile id single-agent installs carried before the
-// rebrand. Nothing defaults to it any more, but it is still seeded, still
-// loadable, and still what a pre-personas config migrates into — an install
-// that has been talking to Samantha keeps talking to Samantha.
-const LegacyDefaultID = "samantha"
-
-// LegacyDefaultDisplayName is the display name that pre-personas installs
-// carried in agent_name.
-const LegacyDefaultDisplayName = "Samantha"
-
-// VeronicaID is the shipped companion persona: Her-inspired, speaking with
-// the VeronicaDesk Qwen clone. She is selectable, not the default. A user
-// persona that already occupies this id is left alone (SeedBuiltins never
-// overwrites); that is how a private local Veronica stays private.
-const VeronicaID = "veronica"
-
-// VeronicaDisplayName is the display name of the shipped Veronica profile.
-const VeronicaDisplayName = "Veronica"
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
@@ -285,35 +267,26 @@ func Write(p *Profile, skipExisting bool) error {
 	return nil
 }
 
-// FromConfig builds the profile a pre-personas install implies from its legacy
-// single-agent keys (persona, agent_name, tts_*).
-//
-// Its fallbacks are deliberately the LEGACY ones, not today's defaults: a
-// config written before personas existed named no profile id, and the identity
-// it was running was Samantha. Migrating such an install into an "obey" profile
-// would rename the agent out from under it. Fresh installs never come through
-// here — they get the shipped built-ins (see builtin.go).
-//
-// Builtin is likewise the legacy answer. A migrated profile is only ever the
-// pre-rebrand default; anything else came out of the user's own config keys, so
-// flagging it shipped would take ownership of a profile this code did not write
-// — and Delete refuses to remove a flagged profile.
+// FromConfig snapshots the live config as a user profile. Create uses it to
+// clone today's voice onto a new persona. It is not a migration path and it
+// never flags the result builtin.
 func FromConfig(cfg *config.Config) *Profile {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
-	id := LegacyDefaultID
+	id := DefaultID
 	promptName := strings.TrimSpace(cfg.Persona)
-	if promptName == "" {
-		promptName = LegacyDefaultID
-	}
-	// Prefer a valid persona prompt name as the profile id when it is a slug.
-	if err := ValidateID(promptName); err == nil {
+	if err := ValidateID(strings.TrimSpace(cfg.ActivePersona)); err == nil {
+		id = strings.TrimSpace(cfg.ActivePersona)
+	} else if err := ValidateID(promptName); err == nil {
 		id = promptName
+	}
+	if promptName == "" {
+		promptName = id
 	}
 	display := strings.TrimSpace(cfg.AgentName)
 	if display == "" {
-		display = LegacyDefaultDisplayName
+		display = DefaultDisplayName
 	}
 	provider := strings.TrimSpace(cfg.TTSProvider)
 	voice := voiceForProvider(cfg, provider)
@@ -321,14 +294,12 @@ func FromConfig(cfg *config.Config) *Profile {
 		Schema:      Schema,
 		ID:          id,
 		DisplayName: display,
-		Builtin:     id == LegacyDefaultID,
 		TTS: TTS{
 			Provider: provider,
 			Voice:    voice,
 		},
 		Prompts: PromptRefs{
 			Persona: promptName,
-			// Empty turn = shared embedded turn instruction.
 		},
 	}
 }

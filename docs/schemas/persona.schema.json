@@ -22,7 +22,7 @@
     },
     "builtin": {
       "type": "boolean",
-      "description": "True only for the shipped obey-voice persona, which cannot be deleted."
+      "description": "True for shipped product personas (the YAML catalog under internal/persona/shipped/), which cannot be deleted."
     },
     "brain": {
       "type": "object",

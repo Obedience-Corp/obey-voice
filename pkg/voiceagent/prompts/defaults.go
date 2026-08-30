@@ -35,9 +35,8 @@ func Default(kind Kind) (*Document, error) {
 
 // Shipped returns every embedded document, in file-name order. One per kind is
 // that kind's Default (defaults/<kind>.yaml); the rest are named documents the
-// product ships beside it — samantha (the pre-rebrand default, kept resolvable
-// so the rebrand costs no existing install its identity) and veronica (the
-// companion persona, selectable, not the default).
+// product ships beside it (samantha, veronica, …). Companion personas are
+// selectable; obey remains the kind default.
 func Shipped() ([]*Document, error) {
 	entries, err := defaultsFS.ReadDir("defaults")
 	if err != nil {

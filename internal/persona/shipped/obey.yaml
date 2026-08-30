@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=festival-voice.persona.v1
+schema: festival-voice.persona.v1
+id: obey
+display_name: Obey
+builtin: true
+tts: {}
+prompts:
+    persona: obey

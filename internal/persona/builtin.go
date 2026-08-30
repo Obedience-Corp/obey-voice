@@ -7,18 +7,13 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// builtinIDs are the ids the product ships profiles under. Membership is about
-// the NAME, not about ownership: a profile at one of these ids is ours only
-// when its own builtin flag says we wrote it (see Owned). Nothing may be
-// inferred about a file on disk from its id alone — users create personas, and
-// "obey" is a name a user can pick.
-var builtinIDs = []string{DefaultID, LegacyDefaultID, VeronicaID}
-
 // IsBuiltinID reports whether id is one the product ships a profile under.
+// Membership is about the NAME, not about ownership: a profile at one of these
+// ids is ours only when its own builtin flag says we wrote it (see Owned).
 func IsBuiltinID(id string) bool {
 	id = strings.TrimSpace(id)
-	for _, b := range builtinIDs {
-		if id == b {
+	for _, want := range ShippedIDs() {
+		if id == want {
 			return true
 		}
 	}
@@ -33,73 +28,24 @@ func Owned(p *Profile) bool {
 	return p != nil && p.Builtin
 }
 
-// Builtins returns the profiles a fresh install starts with, default first.
+// Builtins returns the shipped profiles, default first. The catalog is the
+// YAML under shipped/; this function does not special-case companions.
 //
-// obey pins nothing — no brain provider, no model, no TTS provider, voice or
-// tier — so the default persona always speaks with whatever the app config
-// says. Every field it left empty inherits at Apply time, which is what makes
-// "the default model settings" mean today's settings rather than the ones that
-// happened to be current when the profile was written. Its display name is the
-// one thing it must carry, since a profile without one is invalid; it comes
-// from agent_name, which is "Obey" unless this install named the agent.
-//
-// samantha is the profile a pre-rebrand fresh install would have been given:
-// her own prompt document and the app's TTS stack snapshotted onto the profile,
-// exactly as FromConfig produced it. She is an ordinary persona now — seeded,
-// listed, selectable — just not the default.
-//
-// veronica is the companion persona: same Her-inspired speech style as
-// samantha, but she speaks with the shipped VeronicaDesk Qwen clone at 0.6b.
-// Brain routing is inherited so she does not force an ollama model onto a
-// grok or claude install. She is not the default; picking her is a choice.
+// obey pins nothing — no brain, no TTS — so the default persona speaks with
+// whatever the app config says. Display names come from the YAML, not from
+// whatever agent_name happens to be at seed time (that would rename Obey
+// to the currently active companion when filling a missing slot).
 func Builtins(cfg *config.Config) []*Profile {
-	if cfg == nil {
-		cfg = &config.Config{}
-	}
-	display := strings.TrimSpace(cfg.AgentName)
-	if display == "" {
-		display = DefaultDisplayName
-	}
-	obey := &Profile{
-		Schema:      Schema,
-		ID:          DefaultID,
-		DisplayName: display,
-		Builtin:     true,
-		Prompts:     PromptRefs{Persona: DefaultID},
-	}
-
-	legacy := FromConfig(cfg)
-	samantha := &Profile{
-		Schema:      Schema,
-		ID:          LegacyDefaultID,
-		DisplayName: LegacyDefaultDisplayName,
-		Builtin:     true,
-		TTS:         legacy.TTS,
-		Prompts:     PromptRefs{Persona: LegacyDefaultID},
-	}
-	veronica := &Profile{
-		Schema:      Schema,
-		ID:          VeronicaID,
-		DisplayName: VeronicaDisplayName,
-		Builtin:     true,
-		TTS: TTS{
-			Provider: "qwen3-tts",
-			Voice:    "VeronicaDesk",
-			Tier:     "0.6b",
-		},
-		Prompts: PromptRefs{Persona: VeronicaID},
-	}
-	return []*Profile{obey, samantha, veronica}
+	_ = cfg
+	return shippedProfiles()
 }
 
-// SeedBuiltins writes the shipped profiles whose slots are free.
+// SeedBuiltins writes any shipped profile whose slot is still free.
 //
-// It never writes over an occupied slot. A user persona named obey or
-// veronica keeps its file, its pins and its deletability; the shipped
-// profile simply does not exist on that install, and the fallback order in
-// pickFallbackID takes it from there. Stamping builtin:true onto someone
-// else's profile would make it undeletable and depin its voice — taking
-// ownership of a file we did not write.
+// Call it on every load, not just a first run: that is how a new companion
+// (Veronica today, whoever next) appears on an install that already has
+// personas. Occupied slots stay occupied. A user persona named obey or
+// veronica keeps its file, its pins and its deletability.
 func SeedBuiltins(cfg *config.Config) error {
 	for _, p := range Builtins(cfg) {
 		if err := Write(p, true); err != nil {

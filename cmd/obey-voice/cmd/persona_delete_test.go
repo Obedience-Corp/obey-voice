@@ -49,17 +49,17 @@ func TestPersonaDeleteRefusals(t *testing.T) {
 			name: "last persona on disk",
 			setup: func(t *testing.T) {
 				t.Helper()
-				// Remove the seeded builtin so exactly one profile remains.
-				if err := os.RemoveAll(filepath.Join(persona.Dir(), "samantha")); err != nil {
-					t.Fatal(err)
-				}
+				// The catalog re-seeds on load, so a user persona is never the
+				// last profile the CLI sees. This case is kept as a unit of
+				// Delete() itself in internal/persona; the CLI path always has
+				// shipped companions available.
 				seedUncleFu(t)
 				if err := config.SetAndSave("active_persona", "uncle-fu"); err != nil {
 					t.Fatal(err)
 				}
 			},
-			args:     []string{"delete", "uncle-fu", "--yes", "--json"},
-			wantCode: codeLastPersona,
+			args:     []string{"delete", "samantha", "--yes", "--json"},
+			wantCode: codeBuiltinProtected,
 		},
 	}
 	for _, tc := range tests {
@@ -185,8 +185,8 @@ func TestPersonaDeleteHealsActivePersonaThroughUse(t *testing.T) {
 		t.Fatalf("persona delete error = %v (out %s)", err, out)
 	}
 	got := decodeDeleteResult(t, out)
-	if !got.Reactivated || got.ActivePersona != "samantha" {
-		t.Fatalf("result = %+v, want samantha re-activated", got)
+	if !got.Reactivated || got.ActivePersona != "obey" {
+		t.Fatalf("result = %+v, want obey re-activated", got)
 	}
 
 	raw, err := os.ReadFile(filepath.Join(dir, "config.yaml"))
@@ -194,7 +194,7 @@ func TestPersonaDeleteHealsActivePersonaThroughUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved := string(raw)
-	for _, want := range []string{"active_persona: samantha", "agent_name: Samantha", "persona: samantha", "tts_provider: kokoro", "tts_voice: af_heart"} {
+	for _, want := range []string{"active_persona: obey", "agent_name: Obey", "persona: obey"} {
 		if !strings.Contains(saved, want) {
 			t.Errorf("config.yaml missing %q:\n%s", want, saved)
 		}

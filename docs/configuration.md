@@ -49,19 +49,17 @@ On load, the active profile overlays `agent_name`, the persona prompt name, and 
 Each persona can use any supported TTS backend and any voice for that backend.
 Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 
-Two profiles ship built in and neither can be deleted: **obey**, the default a
-fresh install talks to, and **samantha**, the pre-rebrand default. `obey` pins
-nothing — no brain provider, model, TTS provider, voice or tier — so it always
-speaks with whatever the config above says; `samantha` keeps her own prompt and
-her Kokoro voice.
+Shipped personas live in the catalog (`internal/persona/shipped/*.yaml` plus a
+matching `prompts/defaults/persona.<id>.yaml`). Adding a companion is those two
+files; there is no Go special case. **obey** is the default a fresh install
+talks to and pins nothing — no brain, no TTS — so it speaks with whatever the
+config above says. **samantha** and **veronica** are selectable companions
+(Kokoro / VeronicaDesk). None of them can be deleted.
 
-Which one an install gets is decided by what is on disk, not by which keys the
-config happens to hold. An install with no personas directory **and no
-`config.yaml`** has never run: it is seeded with both built-ins and starts on
-`obey`. An install with a `config.yaml` but no personas directory predates the
-personas system: it migrates into the single profile its own keys describe,
-which is Samantha unless `persona:` says otherwise. An install that already has
-personas keeps them, and adding one is never automatic.
+On every load, empty catalog slots are filled and occupied slots are left
+alone. A fresh install starts on `obey`. An install that already named
+`active_persona` keeps that choice. A user-authored profile at a shipped id
+(`obey`, `veronica`, …) is never overwritten.
 
 `builtin: true` in a profile is a provenance record — it marks a file this
 product wrote, and it is what makes a profile undeletable. A persona you create

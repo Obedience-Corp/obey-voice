@@ -19,9 +19,9 @@ func personaDeleteCmd() *cobra.Command {
 Removes personas/<id>/ and prompts/persona/<id>.yaml. A prompt document another
 persona points at is left in place and reported as kept.
 
-Deleting the active persona re-activates a built-in — obey when this install has
-it, otherwise samantha — or the first remaining profile, so agent_name and the
-voice keys stay consistent.
+Deleting the active persona re-activates a shipped built-in — obey when this
+install has it, otherwise the next owned companion — or the first remaining
+profile, so agent_name and the voice keys stay consistent.
 
 --yes is required: this is not reversible.`,
 		Args: cobra.ExactArgs(1),
