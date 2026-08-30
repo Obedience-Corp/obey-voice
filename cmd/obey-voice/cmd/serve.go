@@ -50,6 +50,7 @@ var (
 	serveBannerJSON   bool
 	serveLogFile      string
 	serveWorkDir      string
+	serveOpen         bool
 	// serveWorkDirInfo is the directory serve chdir'd into, with the layer that
 	// decided it. The ready banner and /v1/status report both, so a client
 	// knows where a tool call would land and whether anyone chose that.
@@ -88,7 +89,12 @@ Quick paths:
       pairing flow. Prefer --tailscale when devices are not on the same
       network, or pass --tls-cert/--tls-key for trusted HTTPS on the LAN.
 
-Embedded voice page: open the link → enter code → Pair → Start → Hold to Talk.
+  obey-voice serve --open
+      After listen, open the Stage camera page in the default browser, already
+      paired. Voice-only orb; no copy-paste of the URL.
+
+Embedded voice page: obey-voice serve --open, or open the Stage: URL from the
+banner. The phone client still uses Open on client: → Pair → Start.
 Protocol details: docs/serve-protocol.md.
 
 Local full voice (mic + speakers on this machine) is still "obey-voice" TUI —
@@ -163,6 +169,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveBannerJSON, "banner-json", false, "Emit machine-readable JSON event lines on stdout (ready, pairing_code) and route human logs to stderr")
 	serveCmd.Flags().StringVar(&serveWorkDir, "work-dir", "", "Directory the agent's file and shell tools operate in (default: the work_dir setting)")
 	serveCmd.Flags().StringVar(&serveLogFile, "log-file", "", "Append human/diagnostic output to this file (created 0600) instead of the console; stdout still carries the --banner-json lines")
+	serveCmd.Flags().BoolVar(&serveOpen, "open", false, "Open the Stage camera page in the default browser after listen (already paired)")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -401,6 +408,9 @@ func runServe(cfg *config.Config) error {
 				if len(extras) > 0 {
 					fmt.Fprintln(serveHumanOut, dimStyle.Render("  Also listening: https://"+strings.Join(extras, "  https://")))
 				}
+			}
+			if serveOpen {
+				openStage(listenAddr, creds)
 			}
 			// Warm after the listener is up so a bind/config failure cannot
 			// pin an Ollama runner, and a supervisor waiting on the ready

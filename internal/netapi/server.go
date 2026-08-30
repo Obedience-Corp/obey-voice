@@ -285,6 +285,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.Handle("GET /{$}", web)
 	mux.Handle("GET /index.html", web)
 	mux.Handle("GET /app.js", web)
+	mux.Handle("GET /stage.html", web)
+	mux.Handle("GET /stage.js", web)
 
 	server := &http.Server{
 		Handler:           s.rateLimit(s.authMiddleware(mux)),

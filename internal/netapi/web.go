@@ -28,7 +28,7 @@ func webFileServer() http.Handler {
 // authenticated.
 func isPublicPath(path string) bool {
 	switch path {
-	case "/", "/index.html", "/app.js", "/v1/pair":
+	case "/", "/index.html", "/app.js", "/stage.html", "/stage.js", "/v1/pair":
 		return true
 	default:
 		return false

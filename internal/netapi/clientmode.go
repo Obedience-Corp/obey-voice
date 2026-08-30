@@ -8,6 +8,7 @@ const (
 	ClientSetupURL = "https://login.tailscale.com/admin/dns"
 
 	LabelOpenOnClient = "Open on client:"
+	LabelStage        = "Stage:"
 	LabelPairingCode  = "Pairing code:"
 	LabelNetwork      = "Network:"
 	LabelClientAccess = "Client access:"
