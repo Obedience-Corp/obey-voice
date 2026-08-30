@@ -70,10 +70,25 @@ const (
 	// worst-case one.
 	typicalSegmentChars = 120
 
-	// minFirstAudioGrace floors every computed budget. A three-word reply
-	// synthesizes in well under a second, but the player still has a device
-	// to open and a scheduler to survive.
+	// minFirstAudioGrace floors every computed budget for the 0.6b worker
+	// (and as the scheduler/device floor for every native tier). Isolated
+	// 0.6b short sentences synthesize in ~2.7s, so 8s is still plenty of
+	// margin for a device open.
 	minFirstAudioGrace = 8 * time.Second
+
+	// minFirstAudioGrace17B is the 1.7b floor. The 8s value above assumed
+	// a three-word reply synthesizes in well under a second. That is false
+	// for native 1.7b in the product path: session 20260829-182727-10c0
+	// spent 5.8s on "Hey!" (warm worker, Stage A, Metal, brain resident)
+	// and then lost "What's on your mind?" (20 chars → exactly 8s of RTF
+	// budget) to the Kokoro fallback. The RTF ceiling is fitted to longer
+	// first segments, so it does not carry that per-request cost onto a
+	// short closer.
+	//
+	// 16s is 2× the old floor: it covers the measured 5.8s short with
+	// GPU-sharing margin, and a 1.7b worker restart (~11s) even when the
+	// budget was armed while the session pointer still looked live.
+	minFirstAudioGrace17B = 16 * time.Second
 )
 
 type limitedBuffer struct {
@@ -477,15 +492,26 @@ func (q *Qwen3TTS) hasLiveSession() bool {
 
 // capByTimeout bounds a computed grace by the configured synthesis timeout,
 // beyond which waiting is provably useless, and floors it so a very short
-// segment still tolerates ordinary scheduling jitter.
+// segment still tolerates the tier's per-request cost plus scheduling jitter.
 func (q *Qwen3TTS) capByTimeout(grace time.Duration) time.Duration {
-	if grace < minFirstAudioGrace {
-		grace = minFirstAudioGrace
+	if min := q.minGrace(); grace < min {
+		grace = min
 	}
 	if q.timeoutSet && q.timeout > 0 && grace > q.timeout {
 		return q.timeout
 	}
 	return grace
+}
+
+// minGrace is the shortest stall budget this provider will accept. The 1.7b
+// worker's per-request cost is larger than the 0.6b scheduler floor; using
+// one number for both is how a selected 1.7b voice was replaced with Kokoro
+// on a still-working short sentence.
+func (q *Qwen3TTS) minGrace() time.Duration {
+	if q != nil && q.native && managedqwen.NormalizeModelTier(q.modelTier) == managedqwen.Tier1_7B {
+		return minFirstAudioGrace17B
+	}
+	return minFirstAudioGrace
 }
 
 // SoftCancel asks the warm worker to abandon the current request without

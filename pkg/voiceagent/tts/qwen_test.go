@@ -248,8 +248,8 @@ func TestQwenFirstAudioGraceScalesWithSegmentLength(t *testing.T) {
 	if short >= long {
 		t.Fatalf("grace did not scale with length: 17 chars = %v, 150 chars = %v", short, long)
 	}
-	if short != minFirstAudioGrace {
-		t.Errorf("short-segment grace = %v, want the %v floor", short, minFirstAudioGrace)
+	if short != minFirstAudioGrace17B {
+		t.Errorf("short-segment grace = %v, want the 1.7b floor %v", short, minFirstAudioGrace17B)
 	}
 	// 150 chars / 10 chars-per-second = 15s of expected audio, times the
 	// 1.7b ceiling of 4.0.
@@ -306,9 +306,9 @@ func TestQwenFirstAudioGraceCoversAWorkerRestart(t *testing.T) {
 	qn.speech = fakeSpeechSession{}
 	qn.speechRef.Store(liveSession(t))
 
-	warm := qn.FirstAudioGraceForChars(20) // short segment: hits the floor
-	if warm != minFirstAudioGrace {
-		t.Fatalf("warm short-segment grace = %v, want the %v floor", warm, minFirstAudioGrace)
+	warm := qn.FirstAudioGraceForChars(20) // short segment: hits the 1.7b floor
+	if warm != minFirstAudioGrace17B {
+		t.Fatalf("warm short-segment grace = %v, want the 1.7b floor %v", warm, minFirstAudioGrace17B)
 	}
 
 	// A worker or protocol failure discards the session. alive stays true.
@@ -351,6 +351,34 @@ func TestQwenFirstAudioGraceTreatsSynthTimeoutAsACapNotTheBudget(t *testing.T) {
 	tight.speechRef.Store(liveSession(t))
 	if got := tight.FirstAudioGraceForChars(300); got != 10*time.Second {
 		t.Errorf("FirstAudioGraceForChars(300) = %v, want the 10s synth timeout as a ceiling", got)
+	}
+}
+
+// TestQwenFirstAudioGraceKeepsAShortWarm17BSegment is session
+// 20260829-182727-10c0: a warm 1.7b worker spoke "Hey!" in 5.8s, then the
+// 20-character closer "What's on your mind?" was given the old 8s floor and
+// failed over to Kokoro. The user picked Qwen; a working engine must keep it.
+func TestQwenFirstAudioGraceKeepsAShortWarm17BSegment(t *testing.T) {
+	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+	qn.native = true
+	qn.modelTier = "1.7b"
+	qn.speechRef.Store(liveSession(t))
+
+	const closer = "What's on your mind?" // 20 chars: RTF estimate is exactly 8s
+	got := qn.FirstAudioGraceForChars(len(closer))
+	if got <= minFirstAudioGrace {
+		t.Fatalf("1.7b grace for %q = %v; the old %v floor is what replaced Qwen with Kokoro", closer, got, minFirstAudioGrace)
+	}
+	if got != minFirstAudioGrace17B {
+		t.Fatalf("1.7b grace for %q = %v, want the 1.7b floor %v", closer, got, minFirstAudioGrace17B)
+	}
+
+	small := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+	small.native = true
+	small.modelTier = "0.6b"
+	small.speechRef.Store(liveSession(t))
+	if got := small.FirstAudioGraceForChars(len(closer)); got != minFirstAudioGrace {
+		t.Fatalf("0.6b short grace = %v, want the %v scheduler floor (0.6b recovery must not wait out a 1.7b budget)", got, minFirstAudioGrace)
 	}
 }
 
