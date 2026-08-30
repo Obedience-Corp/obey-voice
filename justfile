@@ -43,6 +43,8 @@ demo: build
     set -euo pipefail
     vhs demos/tool-calls.tape
     just _optimize-demo-gif demos/tool-calls.gif
+    mkdir -p docs/images
+    cp demos/tool-calls.gif docs/images/tui.gif
 
 # Voice meter animation demo (listening / hearing / speaking).
 # Matches festival/termcast tapes: shell-exported color env, raw VHS GIF.
