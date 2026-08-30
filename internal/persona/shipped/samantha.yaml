@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=festival-voice.persona.v1
+schema: festival-voice.persona.v1
+id: samantha
+display_name: Samantha
+builtin: true
+tts:
+    provider: kokoro
+    voice: af_heart
+prompts:
+    persona: samantha

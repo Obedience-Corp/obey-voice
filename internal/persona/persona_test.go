@@ -233,82 +233,40 @@ func TestApplyRoutesPersonaBrainModel(t *testing.T) {
 	}
 }
 
-// A pre-personas install is a config file with no personas directory beside
-// it, so these tests write one and go through config.Load: the migration
-// decision reads the install's artifacts, and an in-memory Config alone is not
-// one. (The keys mirror what the old struct literal carried.)
-func TestEnsureAndApplyMigratesFromLegacy(t *testing.T) {
+// A config file with no personas dir is a first run: seed the catalog, default
+// to obey. There is no Samantha-shaped migration of leftover single-agent keys.
+func TestEnsureAndApplySeedsCatalogWhenPersonasDirIsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	setConfigDir(t, dir)
-	writeConfigFile(t, dir, "agent_name: LegacySam\npersona: samantha\ntts_voice: af_nova\n")
+	writeConfigFile(t, dir, "agent_name: Custom\ntts_voice: af_nova\n")
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.ActivePersona != DefaultID {
+		t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, DefaultID)
+	}
+	for _, id := range ShippedIDs() {
+		if !Exists(id) {
+			t.Errorf("%s was not seeded", id)
+		}
 	}
 
 	path := ProfilePath("samantha")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected migrated profile at %s: %v", path, err)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cfg.AgentName != "LegacySam" {
-		t.Errorf("AgentName = %q, want LegacySam", cfg.AgentName)
-	}
-	if cfg.TTSVoice != "af_nova" {
-		t.Errorf("TTSVoice = %q, want af_nova", cfg.TTSVoice)
-	}
-	if cfg.ActivePersona != "samantha" {
-		t.Errorf("ActivePersona = %q, want samantha", cfg.ActivePersona)
-	}
-
-	// Second load is idempotent and does not clobber.
-	raw, _ := os.ReadFile(path)
 	if _, err := config.Load(); err != nil {
 		t.Fatal(err)
 	}
-	raw2, _ := os.ReadFile(path)
+	raw2, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(raw) != string(raw2) {
-		t.Fatal("the second load rewrote an existing profile")
-	}
-}
-
-// Regression: viper defaults active_persona to "samantha" even when the legacy
-// persona prompt name is a different slug. Migration must create that slug's
-// profile and set active_persona to match (not leave active pointing at a
-// missing samantha profile).
-func TestEnsureAndApplyMigratesLegacyNonDefaultPersona(t *testing.T) {
-	dir := t.TempDir()
-	setConfigDir(t, dir)
-
-	// active_persona names a profile this install does not have — the shape the
-	// old viper default produced, and one a hand-edited config can still hold.
-	writeConfigFile(t, dir, "agent_name: Festival Bot\npersona: festival\ntts_voice: af_bella\nactive_persona: samantha\n")
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	if _, err := os.Stat(ProfilePath("festival")); err != nil {
-		t.Fatalf("expected migrated profile at festival: %v", err)
-	}
-	if _, err := os.Stat(ProfilePath("samantha")); err == nil {
-		t.Fatal("did not expect a samantha profile for legacy persona=festival")
-	}
-	if cfg.ActivePersona != "festival" {
-		t.Errorf("ActivePersona = %q, want festival", cfg.ActivePersona)
-	}
-	if cfg.AgentName != "Festival Bot" || cfg.TTSVoice != "af_bella" || cfg.Persona != "festival" {
-		t.Fatalf("overlay mismatch: name=%q voice=%q persona=%q", cfg.AgentName, cfg.TTSVoice, cfg.Persona)
-	}
-
-	// Second load still heals: active_persona names a built-in that is not here.
-	cfg2, err := config.Load()
-	if err != nil {
-		t.Fatalf("second Load() error = %v", err)
-	}
-	if cfg2.ActivePersona != "festival" {
-		t.Errorf("second ActivePersona = %q, want festival", cfg2.ActivePersona)
+		t.Fatal("the second load rewrote a shipped profile")
 	}
 }
 

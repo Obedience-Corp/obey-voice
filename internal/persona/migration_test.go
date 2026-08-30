@@ -158,20 +158,18 @@ func TestFreshInstallStillSeedsSamantha(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, err := Load(LegacyDefaultID)
+	p, err := Load("samantha")
 	if err != nil {
-		t.Fatalf("Load(%s): %v", LegacyDefaultID, err)
+		t.Fatalf("Load(%s): %v", "samantha", err)
 	}
-	if p.DisplayName != LegacyDefaultDisplayName || !p.Builtin {
-		t.Errorf("samantha profile = %+v, want display %q and builtin", p, LegacyDefaultDisplayName)
+	if p.DisplayName != "Samantha" || !p.Builtin {
+		t.Errorf("samantha profile = %+v, want display %q and builtin", p, "Samantha")
 	}
-	// Her voice keeps being pinned from the app defaults, exactly as the
-	// pre-rebrand seeding produced it.
-	if p.TTS.Provider != cfg.TTSProvider || p.TTS.Voice == "" {
-		t.Errorf("samantha tts = %+v, want the app default provider %q and a voice", p.TTS, cfg.TTSProvider)
+	if p.TTS.Provider != "kokoro" || p.TTS.Voice != "af_heart" {
+		t.Errorf("samantha tts = %+v, want the catalog pin kokoro/af_heart", p.TTS)
 	}
 
-	text, err := LoadSystemPrompt(LegacyDefaultID)
+	text, err := LoadSystemPrompt("samantha")
 	if err != nil {
 		t.Fatalf("LoadSystemPrompt(samantha): %v", err)
 	}
@@ -180,19 +178,103 @@ func TestFreshInstallStillSeedsSamantha(t *testing.T) {
 	}
 
 	// Switching to her carries her identity onto the config.
-	if err := Use(cfg, LegacyDefaultID); err != nil {
+	if err := Use(cfg, "samantha"); err != nil {
 		t.Fatalf("Use(samantha): %v", err)
 	}
-	if cfg.ActivePersona != LegacyDefaultID || cfg.AgentName != LegacyDefaultDisplayName || cfg.Persona != LegacyDefaultID {
+	if cfg.ActivePersona != "samantha" || cfg.AgentName != "Samantha" || cfg.Persona != "samantha" {
 		t.Errorf("after Use(samantha): active %q name %q prompt %q", cfg.ActivePersona, cfg.AgentName, cfg.Persona)
 	}
 }
 
-// TestExistingSamanthaInstallIsUnchanged is the migration contract: a config
-// that names samantha, on an install that already has her profile, loads
-// exactly what it loaded before the default moved — id, name, prompt, pinned
-// kokoro voice — and its persona directory is not added to or rewritten.
-func TestExistingSamanthaInstallIsUnchanged(t *testing.T) {
+// TestFreshInstallSeedsVeronica: she is a selectable companion, not the
+// default. A fresh install can switch to her without authoring a profile.
+func TestFreshInstallSeedsVeronica(t *testing.T) {
+	newInstall(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ActivePersona != DefaultID {
+		t.Fatalf("ActivePersona = %q, want obey as the default even after Veronica ships", cfg.ActivePersona)
+	}
+
+	p, err := Load("veronica")
+	if err != nil {
+		t.Fatalf("Load(%s): %v", "veronica", err)
+	}
+	if p.DisplayName != "Veronica" || !p.Builtin {
+		t.Errorf("veronica profile = %+v, want display %q and builtin", p, "Veronica")
+	}
+	if p.TTS.Provider != "qwen3-tts" || p.TTS.Voice != "VeronicaDesk" || p.TTS.Tier != "0.6b" {
+		t.Errorf("veronica tts = %+v, want qwen3-tts VeronicaDesk 0.6b", p.TTS)
+	}
+	if p.Brain != (Brain{}) {
+		t.Errorf("veronica brain = %+v, want inherited", p.Brain)
+	}
+
+	text, err := LoadSystemPrompt("veronica")
+	if err != nil {
+		t.Fatalf("LoadSystemPrompt(veronica): %v", err)
+	}
+	if !strings.Contains(text, "inspired by the character from the movie Her") {
+		t.Errorf("veronica prompt is not her public identity:\n%s", text)
+	}
+
+	if err := Use(cfg, "veronica"); err != nil {
+		t.Fatalf("Use(veronica): %v", err)
+	}
+	if cfg.ActivePersona != "veronica" || cfg.AgentName != "Veronica" || cfg.Persona != "veronica" {
+		t.Errorf("after Use(veronica): active %q name %q prompt %q", cfg.ActivePersona, cfg.AgentName, cfg.Persona)
+	}
+	if cfg.TTSProvider != "qwen3-tts" || cfg.QwenTTSVoice != "VeronicaDesk" || cfg.QwenTTSModelTier != "0.6b" {
+		t.Errorf("after Use(veronica): tts %q voice %q tier %q", cfg.TTSProvider, cfg.QwenTTSVoice, cfg.QwenTTSModelTier)
+	}
+}
+
+// TestSeedBuiltinsLeavesAUserVeronicaAlone is the privacy contract: a
+// user-authored profile at id veronica is not replaced by the shipped one.
+func TestSeedBuiltinsLeavesAUserVeronicaAlone(t *testing.T) {
+	dir := newInstall(t)
+	const private = `# yaml-language-server: $schema=festival-voice.persona.v1
+schema: festival-voice.persona.v1
+id: veronica
+display_name: Veronica
+builtin: false
+tts:
+    provider: kokoro
+    voice: af_sky
+prompts:
+    persona: veronica
+`
+	path := writeProfileFile(t, dir, "veronica", private)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SeedBuiltins(&config.Config{AgentName: "Obey"}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("SeedBuiltins rewrote a user Veronica:\n%s", after)
+	}
+	p, err := Load("veronica")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Builtin || p.TTS.Voice != "af_sky" {
+		t.Errorf("veronica = %+v, want the user profile left in place", p)
+	}
+}
+
+// TestExistingSamanthaInstallKeepsSamanthaAndGainsCompanions: a config that
+// names samantha stays on samantha. Missing shipped slots (obey, veronica)
+// are filled. Her own file is not rewritten.
+func TestExistingSamanthaInstallKeepsSamanthaAndGainsCompanions(t *testing.T) {
 	dir := newInstall(t)
 	writeConfigFile(t, dir, "active_persona: samantha\npersona: samantha\nagent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_heart\n")
 	path := writeProfileFile(t, dir, "samantha", samanthaProfileOnDisk)
@@ -227,8 +309,9 @@ func TestExistingSamanthaInstallIsUnchanged(t *testing.T) {
 		t.Errorf("samantha resolved somebody else's prompt:\n%s", text)
 	}
 
-	if ids := loadIDs(t); len(ids) != 1 || ids[0] != "samantha" {
-		t.Errorf("personas = %v, want only samantha — an upgrade must not inject profiles", ids)
+	ids := loadIDs(t)
+	if !hasProfileID(mustList(t), "samantha") || !hasProfileID(mustList(t), DefaultID) || !hasProfileID(mustList(t), "veronica") {
+		t.Errorf("personas = %v, want samantha kept and missing shipped slots filled", ids)
 	}
 	rawAfter, err := os.ReadFile(path)
 	if err != nil {
@@ -248,226 +331,44 @@ func TestExistingSamanthaInstallIsUnchanged(t *testing.T) {
 	}
 }
 
-// TestExistingInstallWithoutActivePersonaKeepsItsPersona covers the install
-// that never ran `persona use`: active_persona is only the shipped default, so
-// after the rebrand it points at a profile that install does not have. It must
-// heal onto what it already had, not error and not silently become obey.
-func TestExistingInstallWithoutActivePersonaKeepsItsPersona(t *testing.T) {
-	tests := []struct {
-		name     string
-		profiles map[string]string
-		want     string
-	}{
-		{
-			name:     "samantha only",
-			profiles: map[string]string{"samantha": samanthaProfileOnDisk},
-			want:     "samantha",
-		},
-		{
-			name: "samantha beside a user persona",
-			profiles: map[string]string{
-				"samantha": samanthaProfileOnDisk,
-				"ada":      "schema: festival-voice.persona.v1\nid: ada\ndisplay_name: Ada\nprompts:\n  persona: ada\n",
-			},
-			// ada sorts first; the pre-rebrand default still wins.
-			want: "samantha",
-		},
-		{
-			name: "no built-in profile at all",
-			profiles: map[string]string{
-				"ada": "schema: festival-voice.persona.v1\nid: ada\ndisplay_name: Ada\nprompts:\n  persona: ada\n",
-			},
-			want: "ada",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := newInstall(t)
-			writeConfigFile(t, dir, "tts_provider: kokoro\n")
-			for id, body := range tt.profiles {
-				writeProfileFile(t, dir, id, body)
-			}
+// TestUndeclaredActivePersonaUsesTheShippedDefault: with no active_persona
+// in the file, viper's default is obey. Once obey is seeded as owned, that
+// is who talks. There is no second-class "heal to samantha" path.
+func TestUndeclaredActivePersonaUsesTheShippedDefault(t *testing.T) {
+	dir := newInstall(t)
+	writeConfigFile(t, dir, "tts_provider: kokoro\n")
+	writeProfileFile(t, dir, "ada", "schema: festival-voice.persona.v1\nid: ada\ndisplay_name: Ada\nprompts:\n  persona: ada\n")
 
-			cfg, err := config.Load()
-			if err != nil {
-				t.Fatalf("Load(): %v", err)
-			}
-			if cfg.ActivePersona != tt.want {
-				t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, tt.want)
-			}
-			if len(loadIDs(t)) != len(tt.profiles) {
-				t.Errorf("personas = %v, want the %d already installed", loadIDs(t), len(tt.profiles))
-			}
-		})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if cfg.ActivePersona != DefaultID {
+		t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, DefaultID)
+	}
+	if !hasProfileID(mustList(t), "ada") {
+		t.Errorf("personas = %v, want ada kept", loadIDs(t))
 	}
 }
 
-// TestLegacySingleAgentMigration covers installs that predate the personas
-// directory: their identity lives in config keys and migrates into one profile.
-// Which profile is decided by what the config names, never by today's default.
-func TestLegacySingleAgentMigration(t *testing.T) {
-	tests := []struct {
-		name string
-		// userPrompt seeds prompts/persona/<name>.yaml the way a pre-personas
-		// install that authored its own identity already has one.
-		userPrompt    string
-		config        string
-		wantActive    string
-		wantName      string
-		wantVoice     string
-		wantProfile   []string
-		wantPromptRef string
-		wantPrompt    string
-		// wantPins/wantOwned are only checked for the rows that set them: a
-		// migrated profile the user owns must keep its pins and stay deletable.
-		wantPins  TTS
-		wantOwned bool
-	}{
-		{
-			name:        "pre-personas samantha keeps her name and voice",
-			config:      "persona: samantha\nagent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_nova\n",
-			wantActive:  "samantha",
-			wantName:    "Samantha",
-			wantVoice:   "af_nova",
-			wantProfile: []string{"samantha"},
-		},
-		{
-			name:        "pre-personas custom prompt name becomes the profile id",
-			userPrompt:  "festival",
-			config:      "persona: festival\nagent_name: Festival Bot\ntts_provider: kokoro\ntts_voice: af_bella\n",
-			wantActive:  "festival",
-			wantName:    "Festival Bot",
-			wantVoice:   "af_bella",
-			wantProfile: []string{"festival"},
-		},
-		{
-			name:        "active_persona alone still migrates that persona",
-			config:      "active_persona: samantha\nagent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_heart\n",
-			wantActive:  "samantha",
-			wantName:    "Samantha",
-			wantVoice:   "af_heart",
-			wantProfile: []string{"samantha"},
-		},
-		{
-			name:        "a non-slug prompt name migrates under the pre-personas id",
-			userPrompt:  "uncle-fu",
-			config:      "persona: Uncle_Fu\nagent_name: Uncle Fu\ntts_provider: kokoro\ntts_voice: af_heart\n",
-			wantActive:  "samantha",
-			wantName:    "Uncle Fu",
-			wantVoice:   "af_heart",
-			wantProfile: []string{"samantha"},
-			// The stale ref is preserved, not repointed at the new default;
-			// LoadSystemPrompt then resolves it through the profile's own id.
-			wantPromptRef: "Uncle_Fu",
-		},
-		{
-			// Matrix row d2, the one the first review caught flipping. The
-			// config writer is surgical, so a pre-personas install holds only
-			// the keys someone set — and almost nobody set persona. A missing
-			// key must not read as "fresh".
-			name:        "no persona key at all still migrates Samantha",
-			config:      "agent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_heart\nbrain_provider: ollama\n",
-			wantActive:  LegacyDefaultID,
-			wantName:    LegacyDefaultDisplayName,
-			wantVoice:   "af_heart",
-			wantProfile: []string{LegacyDefaultID},
-			wantPrompt:  "inspired by the character from the movie Her",
-		},
-		{
-			// Row d2b: no agent_name either. Under the broken gate this was a
-			// clean name-and-prompt flip to Obey.
-			name:        "no identity keys at all still migrates Samantha",
-			config:      "tts_provider: kokoro\ntts_voice: af_heart\n",
-			wantActive:  LegacyDefaultID,
-			wantName:    LegacyDefaultDisplayName,
-			wantVoice:   "af_heart",
-			wantProfile: []string{LegacyDefaultID},
-			wantPrompt:  "inspired by the character from the movie Her",
-		},
-		{
-			// Finding 6 / row B: the config names a user-authored obey
-			// document. The migrated profile is theirs — it keeps their pins
-			// and stays deletable, because we did not write it.
-			name:        "a config naming obey migrates the user's own profile",
-			config:      "persona: obey\nagent_name: Custom\ntts_provider: kokoro\ntts_voice: af_sky\n",
-			wantActive:  DefaultID,
-			wantName:    "Custom",
-			wantVoice:   "af_sky",
-			wantProfile: []string{DefaultID},
-			wantOwned:   false,
-			wantPins:    TTS{Provider: "kokoro", Voice: "af_sky"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := newInstall(t)
-			writeConfigFile(t, dir, tt.config)
-			if tt.userPrompt != "" {
-				if err := WriteSystemPrompt(tt.userPrompt, "You are {agent_name}."); err != nil {
-					t.Fatal(err)
-				}
-			}
+// TestConfigWithoutPersonasSeedsTheCatalog: a config file with an empty
+// personas dir is a first run, not a Samantha migration. The product has not
+// shipped publicly; there is no pre-personas field population to preserve.
+func TestConfigWithoutPersonasSeedsTheCatalog(t *testing.T) {
+	dir := newInstall(t)
+	writeConfigFile(t, dir, "tts_provider: kokoro\ntts_voice: af_heart\n")
 
-			cfg, err := config.Load()
-			if err != nil {
-				t.Fatalf("Load(): %v", err)
-			}
-			if cfg.ActivePersona != tt.wantActive {
-				t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, tt.wantActive)
-			}
-			if cfg.AgentName != tt.wantName {
-				t.Errorf("AgentName = %q, want %q", cfg.AgentName, tt.wantName)
-			}
-			if cfg.TTSVoice != tt.wantVoice {
-				t.Errorf("TTSVoice = %q, want %q", cfg.TTSVoice, tt.wantVoice)
-			}
-			got := loadIDs(t)
-			if len(got) != len(tt.wantProfile) {
-				t.Fatalf("personas = %v, want %v", got, tt.wantProfile)
-			}
-			for _, want := range tt.wantProfile {
-				if !hasProfileID(mustList(t), want) {
-					t.Errorf("personas = %v, missing %q", got, want)
-				}
-			}
-			if tt.wantPromptRef != "" {
-				p, err := Load(tt.wantActive)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if p.Prompts.Persona != tt.wantPromptRef {
-					t.Errorf("prompts.persona = %q, want the config's own ref %q", p.Prompts.Persona, tt.wantPromptRef)
-				}
-			}
-			p, err := Load(tt.wantActive)
-			if err != nil {
-				t.Fatalf("Load(%s): %v", tt.wantActive, err)
-			}
-			if p.Builtin != tt.wantOwned && (tt.wantOwned || p.ID == DefaultID) {
-				t.Errorf("%s builtin = %v, want %v — provenance, not id, decides ownership", p.ID, p.Builtin, tt.wantOwned)
-			}
-			if (tt.wantPins != TTS{}) && p.TTS != tt.wantPins {
-				t.Errorf("%s tts = %+v, want the config's own pins %+v", p.ID, p.TTS, tt.wantPins)
-			}
-			if tt.wantPrompt != "" {
-				text, err := LoadSystemPrompt(cfg.Persona)
-				if err != nil {
-					t.Fatalf("LoadSystemPrompt(%s): %v", cfg.Persona, err)
-				}
-				if !strings.Contains(text, tt.wantPrompt) {
-					t.Errorf("resolved prompt does not contain %q:\n%s", tt.wantPrompt, text)
-				}
-			}
-			if tt.wantPromptRef == "" {
-				// Whatever was migrated, its prompt must resolve. Skipped for
-				// the stale-ref case: that ref did not resolve before the
-				// rebrand either (it is the Uncle_Fu footgun effectivePersonaRef
-				// exists to survive), and preserving it verbatim is the point.
-				if _, err := LoadSystemPrompt(cfg.Persona); err != nil {
-					t.Errorf("LoadSystemPrompt(%s): %v", cfg.Persona, err)
-				}
-			}
-		})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if cfg.ActivePersona != DefaultID {
+		t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, DefaultID)
+	}
+	for _, id := range ShippedIDs() {
+		if !Exists(id) {
+			t.Errorf("%s was not seeded", id)
+		}
 	}
 }
 
@@ -509,43 +410,56 @@ func TestActivePersonaErrors(t *testing.T) {
 	}
 }
 
-// TestBuiltinsPinNothingButSamanthasVoice pins the shape of the seeded
-// profiles directly, independent of any load path.
-func TestBuiltinsPinNothingButSamanthasVoice(t *testing.T) {
+// TestBuiltinsObeyInheritsAndCompanionsPinVoices pins catalog shape without
+// freezing the companion count. Adding shipped/<id>.yaml must not require
+// rewriting this test except to assert that companion's pins.
+func TestBuiltinsObeyInheritsAndCompanionsPinVoices(t *testing.T) {
 	cfg := &config.Config{
 		AgentName:     "Obey",
 		BrainProvider: "ollama",
 		OllamaModel:   "qwen3:14b",
 		TTSProvider:   "kokoro",
-		TTSVoice:      "af_heart",
+		TTSVoice:      "af_sky",
 	}
 	got := Builtins(cfg)
-	if len(got) != 2 || got[0].ID != DefaultID || got[1].ID != LegacyDefaultID {
-		t.Fatalf("Builtins() = %+v, want obey then samantha", got)
+	if len(got) == 0 || got[0].ID != DefaultID {
+		t.Fatalf("Builtins()[0] = %+v, want %q first", got, DefaultID)
 	}
-	if got[0].Brain != (Brain{}) || got[0].TTS != (TTS{}) {
-		t.Errorf("obey pins %+v / %+v, want everything inherited", got[0].Brain, got[0].TTS)
+	byID := map[string]*Profile{}
+	for _, p := range got {
+		byID[p.ID] = p
 	}
-	if got[0].Prompts.Persona != DefaultID || !got[0].Builtin {
-		t.Errorf("obey profile = %+v, want its own prompt and builtin", got[0])
+	obey := byID[DefaultID]
+	if obey.Brain != (Brain{}) || obey.TTS != (TTS{}) {
+		t.Errorf("obey pins %+v / %+v, want everything inherited", obey.Brain, obey.TTS)
 	}
-	if got[1].TTS.Provider != "kokoro" || got[1].TTS.Voice != "af_heart" {
-		t.Errorf("samantha tts = %+v, want the app stack snapshotted", got[1].TTS)
+	samantha := byID["samantha"]
+	if samantha == nil {
+		t.Fatal("catalog missing samantha")
 	}
-	if got[1].Brain != (Brain{}) {
-		t.Errorf("samantha brain = %+v, want inherited (she never pinned one)", got[1].Brain)
+	if samantha.TTS.Provider != "kokoro" || samantha.TTS.Voice != "af_heart" {
+		t.Errorf("samantha tts = %+v, want catalog pin kokoro/af_heart (not the live af_sky)", samantha.TTS)
+	}
+	veronica := byID["veronica"]
+	if veronica == nil {
+		t.Fatal("catalog missing veronica")
+	}
+	if veronica.TTS.Provider != "qwen3-tts" || veronica.TTS.Voice != "VeronicaDesk" || veronica.TTS.Tier != "0.6b" {
+		t.Errorf("veronica tts = %+v, want qwen3-tts VeronicaDesk 0.6b even on a kokoro install", veronica.TTS)
+	}
+	if veronica.Brain != (Brain{}) {
+		t.Errorf("veronica brain = %+v, want inherited", veronica.Brain)
 	}
 }
 
-// TestBuiltinsAreUndeletable: obey because every heal path falls back to it,
-// samantha because that is exactly what she was before the rebrand.
+// TestBuiltinsAreUndeletable: every catalog profile is flagged builtin.
 func TestBuiltinsAreUndeletable(t *testing.T) {
 	newInstall(t)
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{DefaultID, LegacyDefaultID} {
+	for _, id := range ShippedIDs() {
 		if _, err := Delete(cfg, id); err == nil {
 			t.Errorf("Delete(%s) succeeded, want the built-in refusal", id)
 		}
@@ -663,7 +577,7 @@ func TestUserPersonasBesideTheDefaultAreUntouched(t *testing.T) {
 	dir := newInstall(t)
 	writeConfigFile(t, dir, "active_persona: samantha\npersona: samantha\nagent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_heart\n")
 	writeProfileFile(t, dir, "samantha", samanthaProfileOnDisk)
-	want := []string{"samantha"}
+	want := append([]string{}, ShippedIDs()...)
 	for _, id := range []string{"obey-2", "obey-3", "obey-4", "obey-5", "obey-6"} {
 		writeProfileFile(t, dir, id, userProfile(id, id, "kokoro", "af_sky"))
 		want = append(want, id)
@@ -714,8 +628,8 @@ func TestFreshDecisionIgnoresTheEnvironment(t *testing.T) {
 			// A chosen id is still honored — it just cannot decide whether the
 			// install is fresh. samantha is seeded, so this resolves.
 			name:       "ACTIVE_PERSONA names the other built-in",
-			env:        map[string]string{"ACTIVE_PERSONA": LegacyDefaultID},
-			wantActive: LegacyDefaultID,
+			env:        map[string]string{"ACTIVE_PERSONA": "samantha"},
+			wantActive: "samantha",
 		},
 	}
 	for _, tt := range tests {
@@ -731,9 +645,9 @@ func TestFreshDecisionIgnoresTheEnvironment(t *testing.T) {
 			if cfg.ActivePersona != tt.wantActive {
 				t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, tt.wantActive)
 			}
-			// Whichever way it went, both built-ins are on disk and no config
-			// file was invented.
-			for _, id := range []string{DefaultID, LegacyDefaultID} {
+			// Whichever way it went, the shipped profiles are on disk and no
+			// config file was invented.
+			for _, id := range ShippedIDs() {
 				if !Exists(id) {
 					t.Errorf("%s was not seeded", id)
 				}
@@ -763,16 +677,16 @@ func TestActivePersonaAdoptionMatrix(t *testing.T) {
 			want:     "ada",
 		},
 		{
-			name:     "row g: an explicit samantha that is missing heals",
+			name:     "an explicit samantha that is missing is seeded, then adopted",
 			config:   "active_persona: samantha\n",
 			profiles: map[string]string{"ada": ada},
-			want:     "ada",
+			want:     "samantha",
 		},
 		{
-			name:     "an explicit obey that is missing heals to the shipped samantha",
+			name:     "an explicit obey that is missing is seeded, then adopted",
 			config:   "active_persona: obey\n",
 			profiles: map[string]string{"ada": ada, "samantha": samanthaProfileOnDisk},
-			want:     "samantha",
+			want:     "obey",
 		},
 		{
 			name:     "the seeded default is adopted when it is ours",

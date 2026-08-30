@@ -1,4 +1,4 @@
-# Main Samantha Bubble Tea TUI — live Ollama list_files tool call.
+# Main Obey Voice Bubble Tea TUI — live Ollama list_files tool call.
 # This follows the termcast recording contract: real binary, real PTY, dark
 # branded terminal, hidden setup, and a short story that fits a README GIF.
 # From repo root after `just build`:
@@ -19,7 +19,7 @@ Set Framerate 30
 Set TypingSpeed 55ms
 Set Theme { "name": "termcast", "background": "#0d0d11", "foreground": "#f8f8f2", "cursor": "#F2721C", "selection": "#2a2a33", "black": "#16161a", "red": "#ff5f57", "green": "#50fa7b", "yellow": "#febc2e", "blue": "#57a6ff", "magenta": "#bd93f9", "cyan": "#8be9fd", "white": "#f8f8f2", "brightBlack": "#6b7280", "brightRed": "#ff6e67", "brightGreen": "#69ff94", "brightYellow": "#ffd23f", "brightBlue": "#7ab8ff", "brightMagenta": "#d0a9ff", "brightCyan": "#a4f0ff", "brightWhite": "#ffffff" }
 
-Env HOME "/tmp/samantha-tui-demo-home"
+Env HOME "/tmp/obey-voice-tui-demo-home"
 Env VOICE_TOOLS_ENABLED "true"
 Env SKILLS_ENABLED "true"
 Env TERM "xterm-256color"
@@ -31,9 +31,9 @@ Env COLORFGBG "15;0"
 Hide
 
 # Isolated HOME: empty sessions → cursor on New conversation.
-Type "rm -rf /tmp/samantha-tui-demo-home && mkdir -p /tmp/samantha-tui-demo-home/.obey/agents/voice/samantha/sessions"
+Type "rm -rf /tmp/obey-voice-tui-demo-home && mkdir -p /tmp/obey-voice-tui-demo-home/.obey/agents/voice/festival-voice/sessions /tmp/obey-voice-tui-demo-home/.cache && ln -sfn /Users/$USER/.cache/festival-voice /tmp/obey-voice-tui-demo-home/.cache/festival-voice"
 Enter
-Type "cat > /tmp/samantha-tui-demo-home/.obey/agents/voice/samantha/config.yaml <<'EOF'"
+Type "cat > /tmp/obey-voice-tui-demo-home/.obey/agents/voice/festival-voice/config.yaml <<'EOF'"
 Enter
 Type "brain_provider: ollama"
 Enter
@@ -47,11 +47,13 @@ Type "skills_enabled: true"
 Enter
 Type "tts_provider: kokoro"
 Enter
-Type "tts_voice: af_sky"
+Type "tts_voice: af_heart"
 Enter
 Type "stt_provider: sherpa"
 Enter
-Type "agent_name: Samantha"
+Type "agent_name: Obey"
+Enter
+Type "active_persona: obey"
 Enter
 Type "language: en-US"
 Enter
@@ -68,17 +70,19 @@ Sleep 400ms
 Enter
 Sleep 6s
 
-# Show the real launcher briefly, then select New conversation.
+# Show the real launcher briefly, then New conversation → Obey.
 Show
 Sleep 2s
 Enter
-Sleep 1500ms
+Sleep 1200ms
+Enter
+Sleep 2s
 
 # Live tool call and response.
 Type "Call list_files with path . then name the first three entries from the result. You must use list_files."
 Sleep 600ms
 Enter
-Sleep 12s
+Sleep 18s
 
 Ctrl+C
 Sleep 800ms

@@ -1,10 +1,10 @@
 # Obey Voice
 
-The voice engine behind the Obey Voice apps (formerly Samantha — she still ships as a persona; the default is now **obey**). A local voice assistant that starts speaking before the model finishes the thought.
+A local voice assistant that starts speaking before the model finishes the thought.
 
 Speech stays on your machine. The brain is Claude, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
 
-![Obey Voice conversation TUI](docs/images/tui-samantha.gif)
+![Obey Voice conversation TUI](docs/images/tui.gif)
 
 ```text
 Mic → VAD → STT → Brain → Sentence chunker → TTS → Speaker
@@ -66,7 +66,7 @@ obey-voice serve --tailscale
 |---------|------------|
 | Turn an EPUB, PDF, Markdown, or URL into audio | `obey-voice render book.epub --out-dir out/book` · [narration](docs/narration.md) |
 | Record a meeting (STT only, speaker labels) | `obey-voice meeting record` · [meetings](docs/meetings.md) |
-| Switch prompt + model + voice as one agent | `obey-voice persona use samantha` · [personas](docs/usage.md#personas-voice-agents) |
+| Switch prompt + model + voice as one agent | `obey-voice persona use veronica` · [personas](docs/usage.md#personas-voice-agents) |
 | Inspect or change a setting | `obey-voice config` · [configuration](docs/configuration.md) |
 
 ## Stack

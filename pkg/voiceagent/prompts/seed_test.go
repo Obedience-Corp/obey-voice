@@ -14,14 +14,13 @@ func TestSeedWritesDefaults(t *testing.T) {
 	}
 
 	// Every shipped document lands, named for the document rather than the
-	// file it is embedded as. The samantha documents are in the list because
-	// they still ship: the rebrand moved them out of the default slot, not out
-	// of the product. All three kinds keep a samantha-named document because a
-	// profile can reference any of them by name (prompts.persona, prompts.turn,
-	// compact_prompt), and a fresh install must be able to resolve those refs.
+	// file it is embedded as. Companion persona prompts (samantha, veronica)
+	// sit beside obey. Samantha also still has turn and compact documents
+	// because a profile can reference those kinds by name.
 	want := map[string]bool{
 		filepath.Join("persona", "obey.yaml"):     true,
 		filepath.Join("persona", "samantha.yaml"): true,
+		filepath.Join("persona", "veronica.yaml"): true,
 		filepath.Join("turn", "obey.yaml"):        true,
 		filepath.Join("turn", "samantha.yaml"):    true,
 		filepath.Join("compact", "obey.yaml"):     true,
