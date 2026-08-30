@@ -30,7 +30,7 @@ obey-voice serve --tailscale
 # LAN (self-signed TLS; iOS Safari mic needs a real cert):
 obey-voice serve
 
-# Same machine, open the voice-only Stage orb in the browser:
+# Same machine: start serve and open the speaking Stage orb:
 obey-voice serve --open
 
 # Ops

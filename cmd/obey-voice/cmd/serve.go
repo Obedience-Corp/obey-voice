@@ -91,7 +91,8 @@ Quick paths:
 
   obey-voice serve --open
       After listen, open the Stage camera page in the default browser, already
-      paired. Voice-only orb; no copy-paste of the URL.
+      paired. The orb speaks there. Host speaker is muted so you do not get
+      two voices at once; pass --no-voice=false if you want both.
 
 Embedded voice page: obey-voice serve --open, or open the Stage: URL from the
 banner. The phone client still uses Open on client: → Pair → Start.
@@ -119,6 +120,7 @@ remote_tools_enabled is set.`,
 		if err := applyServeTailscaleDefaults(cmd); err != nil {
 			return err
 		}
+		applyServeOpenDefaults(cmd)
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
@@ -169,7 +171,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveBannerJSON, "banner-json", false, "Emit machine-readable JSON event lines on stdout (ready, pairing_code) and route human logs to stderr")
 	serveCmd.Flags().StringVar(&serveWorkDir, "work-dir", "", "Directory the agent's file and shell tools operate in (default: the work_dir setting)")
 	serveCmd.Flags().StringVar(&serveLogFile, "log-file", "", "Append human/diagnostic output to this file (created 0600) instead of the console; stdout still carries the --banner-json lines")
-	serveCmd.Flags().BoolVar(&serveOpen, "open", false, "Open the Stage camera page in the default browser after listen (already paired)")
+	serveCmd.Flags().BoolVar(&serveOpen, "open", false, "Open Stage in the default browser after listen; voice plays in the orb")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -180,6 +182,18 @@ func init() {
 // tailnets often cannot mint Let's Encrypt material. We fall back to the same
 // self-signed TOFU path as LAN serve so any device on the tailnet can still
 // reach MagicDNS (browsers accept the warning; obey-voice connect pins the cert).
+// applyServeOpenDefaults mutes the host speaker when --open is set, unless the
+// user already chose --no-voice explicitly. TTS still runs; it plays in Stage
+// instead of doubling with the laptop speaker.
+func applyServeOpenDefaults(cmd *cobra.Command) {
+	if !serveOpen {
+		return
+	}
+	if !cmd.Flags().Changed("no-voice") {
+		serveNoVoice = true
+	}
+}
+
 func applyServeTailscaleDefaults(cmd *cobra.Command) error {
 	serveClientSetupURL = ""
 	if !serveTailscale {

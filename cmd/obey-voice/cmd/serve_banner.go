@@ -130,12 +130,16 @@ func printServeDetails(addr string, creds *netapi.Credentials, cfg *config.Confi
 	} else {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote tool calls: disabled (remote_tools_enabled=false); tools start in "+cfg.WorkDir))
 	}
-	if serveNoVoice {
+	if serveOpen {
+		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Voice: plays in the Stage window (host speaker muted so it does not double)"))
+	} else if serveNoVoice {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Host speaker: muted (--no-voice); stream clients can still request audio_output"))
 	} else {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Host speaker: on; clients opt in with {\"type\":\"audio_output\",\"mode\":\"stream\"}"))
 	}
-	if serveRemoteMic {
+	if serveOpen {
+		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Stage mic: open — just talk; tap the orb to cut"))
+	} else if serveRemoteMic {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote mic: push-to-talk enabled (hold Talk on the voice page)"))
 	} else {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote mic: off (--remote-mic=false)"))
