@@ -188,6 +188,91 @@ func TestFreshInstallStillSeedsSamantha(t *testing.T) {
 	}
 }
 
+// TestFreshInstallSeedsVeronica: she is a selectable companion, not the
+// default. A fresh install can switch to her without authoring a profile.
+func TestFreshInstallSeedsVeronica(t *testing.T) {
+	newInstall(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ActivePersona != DefaultID {
+		t.Fatalf("ActivePersona = %q, want obey as the default even after Veronica ships", cfg.ActivePersona)
+	}
+
+	p, err := Load(VeronicaID)
+	if err != nil {
+		t.Fatalf("Load(%s): %v", VeronicaID, err)
+	}
+	if p.DisplayName != VeronicaDisplayName || !p.Builtin {
+		t.Errorf("veronica profile = %+v, want display %q and builtin", p, VeronicaDisplayName)
+	}
+	if p.TTS.Provider != "qwen3-tts" || p.TTS.Voice != "VeronicaDesk" || p.TTS.Tier != "0.6b" {
+		t.Errorf("veronica tts = %+v, want qwen3-tts VeronicaDesk 0.6b", p.TTS)
+	}
+	if p.Brain != (Brain{}) {
+		t.Errorf("veronica brain = %+v, want inherited", p.Brain)
+	}
+
+	text, err := LoadSystemPrompt(VeronicaID)
+	if err != nil {
+		t.Fatalf("LoadSystemPrompt(veronica): %v", err)
+	}
+	if !strings.Contains(text, "inspired by the character from the movie Her") {
+		t.Errorf("veronica prompt is not her public identity:\n%s", text)
+	}
+
+	if err := Use(cfg, VeronicaID); err != nil {
+		t.Fatalf("Use(veronica): %v", err)
+	}
+	if cfg.ActivePersona != VeronicaID || cfg.AgentName != VeronicaDisplayName || cfg.Persona != VeronicaID {
+		t.Errorf("after Use(veronica): active %q name %q prompt %q", cfg.ActivePersona, cfg.AgentName, cfg.Persona)
+	}
+	if cfg.TTSProvider != "qwen3-tts" || cfg.QwenTTSVoice != "VeronicaDesk" || cfg.QwenTTSModelTier != "0.6b" {
+		t.Errorf("after Use(veronica): tts %q voice %q tier %q", cfg.TTSProvider, cfg.QwenTTSVoice, cfg.QwenTTSModelTier)
+	}
+}
+
+// TestSeedBuiltinsLeavesAUserVeronicaAlone is the privacy contract: a
+// user-authored profile at id veronica is not replaced by the shipped one.
+func TestSeedBuiltinsLeavesAUserVeronicaAlone(t *testing.T) {
+	dir := newInstall(t)
+	const private = `# yaml-language-server: $schema=festival-voice.persona.v1
+schema: festival-voice.persona.v1
+id: veronica
+display_name: Veronica
+builtin: false
+tts:
+    provider: kokoro
+    voice: af_sky
+prompts:
+    persona: veronica
+`
+	path := writeProfileFile(t, dir, VeronicaID, private)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SeedBuiltins(&config.Config{AgentName: "Obey"}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("SeedBuiltins rewrote a user Veronica:\n%s", after)
+	}
+	p, err := Load(VeronicaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Builtin || p.TTS.Voice != "af_sky" {
+		t.Errorf("veronica = %+v, want the user profile left in place", p)
+	}
+}
+
 // TestExistingSamanthaInstallIsUnchanged is the migration contract: a config
 // that names samantha, on an install that already has her profile, loads
 // exactly what it loaded before the default moved — id, name, prompt, pinned
@@ -520,8 +605,8 @@ func TestBuiltinsPinNothingButSamanthasVoice(t *testing.T) {
 		TTSVoice:      "af_heart",
 	}
 	got := Builtins(cfg)
-	if len(got) != 2 || got[0].ID != DefaultID || got[1].ID != LegacyDefaultID {
-		t.Fatalf("Builtins() = %+v, want obey then samantha", got)
+	if len(got) != 3 || got[0].ID != DefaultID || got[1].ID != LegacyDefaultID || got[2].ID != VeronicaID {
+		t.Fatalf("Builtins() = %+v, want obey, samantha, veronica", got)
 	}
 	if got[0].Brain != (Brain{}) || got[0].TTS != (TTS{}) {
 		t.Errorf("obey pins %+v / %+v, want everything inherited", got[0].Brain, got[0].TTS)
@@ -535,17 +620,27 @@ func TestBuiltinsPinNothingButSamanthasVoice(t *testing.T) {
 	if got[1].Brain != (Brain{}) {
 		t.Errorf("samantha brain = %+v, want inherited (she never pinned one)", got[1].Brain)
 	}
+	if got[2].TTS.Provider != "qwen3-tts" || got[2].TTS.Voice != "VeronicaDesk" || got[2].TTS.Tier != "0.6b" {
+		t.Errorf("veronica tts = %+v, want qwen3-tts VeronicaDesk 0.6b even on a kokoro install", got[2].TTS)
+	}
+	if got[2].Brain != (Brain{}) {
+		t.Errorf("veronica brain = %+v, want inherited so she does not force an ollama model", got[2].Brain)
+	}
+	if got[2].Prompts.Persona != VeronicaID || !got[2].Builtin {
+		t.Errorf("veronica profile = %+v, want its own prompt and builtin", got[2])
+	}
 }
 
 // TestBuiltinsAreUndeletable: obey because every heal path falls back to it,
-// samantha because that is exactly what she was before the rebrand.
+// samantha because that is exactly what she was before the rebrand, veronica
+// because she is a shipped companion and not a user-authored profile.
 func TestBuiltinsAreUndeletable(t *testing.T) {
 	newInstall(t)
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{DefaultID, LegacyDefaultID} {
+	for _, id := range []string{DefaultID, LegacyDefaultID, VeronicaID} {
 		if _, err := Delete(cfg, id); err == nil {
 			t.Errorf("Delete(%s) succeeded, want the built-in refusal", id)
 		}
@@ -731,9 +826,9 @@ func TestFreshDecisionIgnoresTheEnvironment(t *testing.T) {
 			if cfg.ActivePersona != tt.wantActive {
 				t.Errorf("ActivePersona = %q, want %q", cfg.ActivePersona, tt.wantActive)
 			}
-			// Whichever way it went, both built-ins are on disk and no config
-			// file was invented.
-			for _, id := range []string{DefaultID, LegacyDefaultID} {
+			// Whichever way it went, the shipped profiles are on disk and no
+			// config file was invented.
+			for _, id := range []string{DefaultID, LegacyDefaultID, VeronicaID} {
 				if !Exists(id) {
 					t.Errorf("%s was not seeded", id)
 				}

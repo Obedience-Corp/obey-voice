@@ -22,6 +22,7 @@ func TestSeedWritesDefaults(t *testing.T) {
 	want := map[string]bool{
 		filepath.Join("persona", "obey.yaml"):     true,
 		filepath.Join("persona", "samantha.yaml"): true,
+		filepath.Join("persona", "veronica.yaml"): true,
 		filepath.Join("turn", "obey.yaml"):        true,
 		filepath.Join("turn", "samantha.yaml"):    true,
 		filepath.Join("compact", "obey.yaml"):     true,

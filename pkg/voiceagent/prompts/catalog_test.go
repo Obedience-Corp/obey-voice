@@ -47,9 +47,12 @@ func TestCatalogReportsUserOverride(t *testing.T) {
 	}
 	var persona Entry
 	for _, e := range entries {
-		if e.Kind == KindPersona {
+		if e.Kind == KindPersona && e.Name == "samantha" {
 			persona = e
 		}
+	}
+	if persona.Name != "samantha" {
+		t.Fatal("catalog missing the samantha override")
 	}
 	if persona.Source != SourceUser {
 		t.Errorf("persona source = %s, want user", persona.Source)

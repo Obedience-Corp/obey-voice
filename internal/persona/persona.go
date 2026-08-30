@@ -43,6 +43,15 @@ const LegacyDefaultID = "samantha"
 // carried in agent_name.
 const LegacyDefaultDisplayName = "Samantha"
 
+// VeronicaID is the shipped companion persona: Her-inspired, speaking with
+// the VeronicaDesk Qwen clone. She is selectable, not the default. A user
+// persona that already occupies this id is left alone (SeedBuiltins never
+// overwrites); that is how a private local Veronica stays private.
+const VeronicaID = "veronica"
+
+// VeronicaDisplayName is the display name of the shipped Veronica profile.
+const VeronicaDisplayName = "Veronica"
+
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // Profile is one voice agent persona (not the system-prompt body).

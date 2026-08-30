@@ -12,7 +12,7 @@ import (
 // when its own builtin flag says we wrote it (see Owned). Nothing may be
 // inferred about a file on disk from its id alone — users create personas, and
 // "obey" is a name a user can pick.
-var builtinIDs = []string{DefaultID, LegacyDefaultID}
+var builtinIDs = []string{DefaultID, LegacyDefaultID, VeronicaID}
 
 // IsBuiltinID reports whether id is one the product ships a profile under.
 func IsBuiltinID(id string) bool {
@@ -47,6 +47,11 @@ func Owned(p *Profile) bool {
 // her own prompt document and the app's TTS stack snapshotted onto the profile,
 // exactly as FromConfig produced it. She is an ordinary persona now — seeded,
 // listed, selectable — just not the default.
+//
+// veronica is the companion persona: same Her-inspired speech style as
+// samantha, but she speaks with the shipped VeronicaDesk Qwen clone at 0.6b.
+// Brain routing is inherited so she does not force an ollama model onto a
+// grok or claude install. She is not the default; picking her is a choice.
 func Builtins(cfg *config.Config) []*Profile {
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -72,17 +77,29 @@ func Builtins(cfg *config.Config) []*Profile {
 		TTS:         legacy.TTS,
 		Prompts:     PromptRefs{Persona: LegacyDefaultID},
 	}
-	return []*Profile{obey, samantha}
+	veronica := &Profile{
+		Schema:      Schema,
+		ID:          VeronicaID,
+		DisplayName: VeronicaDisplayName,
+		Builtin:     true,
+		TTS: TTS{
+			Provider: "qwen3-tts",
+			Voice:    "VeronicaDesk",
+			Tier:     "0.6b",
+		},
+		Prompts: PromptRefs{Persona: VeronicaID},
+	}
+	return []*Profile{obey, samantha, veronica}
 }
 
 // SeedBuiltins writes the shipped profiles whose slots are free.
 //
-// It never writes over an occupied slot. A user persona named obey keeps its
-// file, its pins and its deletability; the shipped default simply does not
-// exist on that install, and the fallback order in pickFallbackID takes it from
-// there. Stamping builtin:true onto someone else's profile would make it
-// undeletable and depin its voice — taking ownership of a file we did not
-// write.
+// It never writes over an occupied slot. A user persona named obey or
+// veronica keeps its file, its pins and its deletability; the shipped
+// profile simply does not exist on that install, and the fallback order in
+// pickFallbackID takes it from there. Stamping builtin:true onto someone
+// else's profile would make it undeletable and depin its voice — taking
+// ownership of a file we did not write.
 func SeedBuiltins(cfg *config.Config) error {
 	for _, p := range Builtins(cfg) {
 		if err := Write(p, true); err != nil {

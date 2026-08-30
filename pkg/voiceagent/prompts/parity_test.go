@@ -18,6 +18,13 @@ func TestSamanthaPersonaGolden(t *testing.T) {
 	assertGolden(t, "testdata/persona.samantha.golden", got)
 }
 
+// TestVeronicaPersonaGolden pins the shipped companion persona. She shares
+// Samantha's Her-inspired speech style and is reached by name, not Default().
+func TestVeronicaPersonaGolden(t *testing.T) {
+	got := resolveNamed(t, prompts.KindPersona, "veronica", "TestAgent")
+	assertGolden(t, "testdata/persona.veronica.golden", got)
+}
+
 // TestDefaultPersonaGolden pins the shipped default persona: assembled and
 // resolved with an agent name, it must equal the checked-in golden. Changing
 // the identity every fresh install wakes up with is a product decision, so it
