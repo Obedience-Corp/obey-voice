@@ -37,7 +37,7 @@ func runReal(o options) error {
 	}
 	fmt.Println(")")
 
-	a, err := apm.New(aecprobe.Rate, o.enableNS, apm.NSLevel(o.nsLevel))
+	a, err := apm.New(aecprobe.Rate, o.enableNS, apm.NSLevel(o.nsLevel), false)
 	if err != nil {
 		return fmt.Errorf("apm.New: %w", err)
 	}

@@ -45,11 +45,16 @@ typedef struct ApmStats {
 // detector, and level estimator are enabled too: all three are cheap and
 // their stats come back through apm_get_stats for free. Noise suppression is
 // enabled at ns_level (0=low, 1=moderate, 2=high, 3=very high) only when
-// enable_ns is non-zero.
+// enable_ns is non-zero. When export_linear_aec is non-zero, AEC3's linear
+// (pre-nonlinear-suppression) filter output is retrievable per capture frame
+// via apm_get_linear_aec_output — see 04-measurements.md finding 3: the
+// suppressed output eats near-end speech during double-talk, but the linear
+// output is documented to preserve it.
 //
 // Returns NULL if the library rejects the configuration (e.g. an
 // unsupported sample rate).
-ApmHandle* apm_new(int sample_rate_hz, int enable_ns, int ns_level);
+ApmHandle* apm_new(int sample_rate_hz, int enable_ns, int ns_level,
+                    int export_linear_aec);
 
 // apm_frame_samples reports the number of mono int16 samples a single 10ms
 // frame holds at the handle's sample rate (sample_rate_hz / 100). Every
@@ -81,6 +86,21 @@ int apm_set_stream_delay_ms(ApmHandle* h, int delay_ms);
 // to call every frame; the underlying library aggregates internally and
 // only updates roughly once a second.
 void apm_get_stats(const ApmHandle* h, ApmStats* out);
+
+// apm_get_linear_aec_output retrieves the most recently produced 10ms chunk
+// of AEC3's linear AEC output — AudioProcessing::GetLinearAecOutput, from
+// the installed public header modules/audio_processing/include/audio_processing.h.
+// That call always produces mono float samples in [-1, 1] at a fixed 16kHz,
+// 160 samples per 10ms frame, regardless of this handle's own
+// sample_rate_hz; max_samples must be at least 160.
+//
+// Only produces output when the handle was created with export_linear_aec
+// non-zero. Returns the number of samples written (160) on success, 0 if no
+// new linear output was available for this call (the underlying call
+// returned false — e.g. before the canceller has processed a first frame),
+// or a negative webrtc::AudioProcessing::Error code if h or out is invalid,
+// or max_samples is too small.
+int apm_get_linear_aec_output(ApmHandle* h, float* out, int max_samples);
 
 // apm_free destroys the instance. h may be NULL.
 void apm_free(ApmHandle* h);

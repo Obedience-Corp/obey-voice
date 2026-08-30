@@ -11,6 +11,9 @@
 // The surface mirrors the four calls 03-candidates.md scoped for a thin
 // shim: New, ProcessRender, ProcessCapture, SetStreamDelayMs, plus Close and
 // the stats getters the library computes for free once AEC3 is enabled.
+// LinearAecOutput was added afterward per 04-measurements.md finding 3, to
+// retrieve AEC3's linear (pre-nonlinear-suppression) output alongside the
+// suppressed one.
 //
 //go:build apm
 
@@ -63,10 +66,19 @@ type APM struct {
 	frameSamples int
 }
 
+// LinearAECFrameSamples is the fixed number of mono float32 samples
+// GetLinearAecOutput (and LinearAecOutput below) produce per call: 10ms at
+// 16kHz, always — regardless of an instance's own configured sample rate.
+const LinearAECFrameSamples = 160
+
 // New creates an APM instance for mono audio at sampleRateHz, which must be
 // one of 8000, 16000, 32000, or 48000. AEC3 is always enabled; enableNS turns
-// on the noise suppressor at level nsLevel.
-func New(sampleRateHz int, enableNS bool, nsLevel NSLevel) (*APM, error) {
+// on the noise suppressor at level nsLevel. exportLinearAEC enables
+// retrieving AEC3's linear (pre-nonlinear-suppression) output via
+// LinearAecOutput after each ProcessCapture call — see 04-measurements.md
+// finding 3: the default suppressed output destroys near-end speech during
+// double-talk, but the linear output is documented to preserve it.
+func New(sampleRateHz int, enableNS bool, nsLevel NSLevel, exportLinearAEC bool) (*APM, error) {
 	if !validSampleRate(sampleRateHz) {
 		return nil, fmt.Errorf("apm: sample rate %d is not a native rate (8000, 16000, 32000, 48000)", sampleRateHz)
 	}
@@ -75,7 +87,11 @@ func New(sampleRateHz int, enableNS bool, nsLevel NSLevel) (*APM, error) {
 	if enableNS {
 		ns = 1
 	}
-	handle := C.apm_new(C.int(sampleRateHz), ns, C.int(nsLevel))
+	linear := C.int(0)
+	if exportLinearAEC {
+		linear = 1
+	}
+	handle := C.apm_new(C.int(sampleRateHz), ns, C.int(nsLevel), linear)
 	if handle == nil {
 		return nil, fmt.Errorf("apm: AudioProcessingBuilder rejected sample rate %d", sampleRateHz)
 	}
@@ -116,6 +132,30 @@ func (a *APM) ProcessCapture(frame []int16) ([]int16, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// LinearAecOutput returns the most recently produced 10ms chunk of AEC3's
+// linear (pre-nonlinear-suppression) filter output, following a
+// ProcessCapture call. The output is always mono float32 in [-1, 1] at a
+// fixed 16kHz — LinearAECFrameSamples (160) samples — regardless of this
+// instance's own sample rate; callers running at a different rate must
+// account for that themselves when comparing it against their own signal.
+//
+// Only produces samples when New was called with exportLinearAEC true. ok is
+// false when no new output was available for the most recent call (e.g.
+// export not enabled, or called before the first ProcessCapture); that is
+// not an error.
+func (a *APM) LinearAecOutput() (samples []float32, ok bool, err error) {
+	buf := make([]float32, LinearAECFrameSamples)
+	n := int(C.apm_get_linear_aec_output(a.handle, (*C.float)(unsafe.Pointer(&buf[0])), C.int(len(buf))))
+	switch {
+	case n < 0:
+		return nil, false, apmError("get linear aec output", C.int(n))
+	case n == 0:
+		return nil, false, nil
+	default:
+		return buf[:n], true, nil
+	}
 }
 
 // SetStreamDelayMs declares the render-to-capture delay: how long after a

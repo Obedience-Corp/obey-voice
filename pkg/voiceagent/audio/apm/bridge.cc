@@ -3,9 +3,12 @@
 // type.
 #include "bridge.h"
 
+#include <algorithm>
+#include <array>
 #include <memory>
 #include <utility>
 
+#include "api/array_view.h"
 #include "api/audio/echo_canceller3_config.h"
 #include "modules/audio_processing/include/audio_processing.h"
 
@@ -33,6 +36,11 @@ AudioProcessing::Config::NoiseSuppression::Level NoiseSuppressionLevel(
   }
 }
 
+// kLinearAecFrameSamples matches GetLinearAecOutput's documented contract in
+// audio_processing.h: 10ms of mono float audio at a fixed 16kHz, regardless
+// of the AudioProcessing instance's own configured sample rate.
+constexpr int kLinearAecFrameSamples = 160;
+
 }  // namespace
 
 struct ApmHandle {
@@ -42,7 +50,8 @@ struct ApmHandle {
   int stream_delay_ms = 0;
 };
 
-ApmHandle* apm_new(int sample_rate_hz, int enable_ns, int ns_level) {
+ApmHandle* apm_new(int sample_rate_hz, int enable_ns, int ns_level,
+                    int export_linear_aec) {
   rtc::scoped_refptr<AudioProcessing> apm = AudioProcessingBuilder().Create();
   if (!apm) {
     return nullptr;
@@ -54,6 +63,11 @@ ApmHandle* apm_new(int sample_rate_hz, int enable_ns, int ns_level) {
   // there is no separate legacy AECM path left in this library version.
   config.echo_canceller.enabled = true;
   config.echo_canceller.mobile_mode = false;
+  // See 04-measurements.md finding 3: the default (suppressed) output
+  // destroys near-end speech during double-talk, but the linear,
+  // pre-nonlinear-suppression output is documented to preserve it. This
+  // flag is the only knob needed to retrieve it via GetLinearAecOutput.
+  config.echo_canceller.export_linear_aec_output = export_linear_aec != 0;
   // AEC3 assumes a high-pass-filtered capture signal; enforce_high_pass_filtering
   // defaults to true, but enabling the filter explicitly avoids depending on
   // that default silently changing upstream.
@@ -173,6 +187,20 @@ void apm_get_stats(const ApmHandle* h, ApmStats* out) {
     out->output_rms_dbfs = *stats.output_rms_dbfs;
     out->has_output_rms_dbfs = 1;
   }
+}
+
+int apm_get_linear_aec_output(ApmHandle* h, float* out, int max_samples) {
+  if (!h || !out || max_samples < kLinearAecFrameSamples) {
+    return AudioProcessing::kBadDataLengthError;
+  }
+
+  std::array<float, kLinearAecFrameSamples> frame;
+  rtc::ArrayView<std::array<float, kLinearAecFrameSamples>> view(&frame, 1);
+  if (!h->apm->GetLinearAecOutput(view)) {
+    return 0;
+  }
+  std::copy(frame.begin(), frame.end(), out);
+  return kLinearAecFrameSamples;
 }
 
 void apm_free(ApmHandle* h) { delete h; }

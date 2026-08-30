@@ -50,6 +50,7 @@ type options struct {
 	delayHintMs int
 	maxLagMs    int
 	seconds     float64
+	linearAEC   bool
 
 	enableNS bool
 	nsLevel  int
@@ -68,6 +69,10 @@ func parseFlags() options {
 	flag.IntVar(&o.delayHintMs, "delay-hint-ms", -1, "selftest: what to tell SetStreamDelayMs, if different from the true synthesized delay (-1 = use the true delay)")
 	flag.IntVar(&o.maxLagMs, "max-lag-ms", 1000, "real mode: maximum lag searched when auto-measuring the render->capture delay")
 	flag.Float64Var(&o.seconds, "seconds", 8, "selftest: duration of the synthesized signal")
+	flag.BoolVar(&o.linearAEC, "linear-aec", false, "selftest, rate=16000 only: also request AEC3's linear (pre-suppressor) output via export_linear_aec_output and score it in the lin ERLE/lin near-end columns. "+
+		"WARNING: on webrtc-audio-processing v1.3 (this vendored build and the matching distro package) this SIGSEGVs on the first capture frame — the top-level "+
+		"AudioProcessing::Config::EchoCanceller.export_linear_aec_output flag never reaches EchoCanceller3Config.filter.export_linear_aec_output, so the library "+
+		"allocates a non-null linear-output buffer but never allocates the framer that writes into it. See 04-measurements.md. Default off so -selftest stays usable.")
 
 	flag.BoolVar(&o.enableNS, "ns", false, "enable the noise suppressor alongside AEC3")
 	flag.IntVar(&o.nsLevel, "ns-level", 1, "noise suppressor level: 0=low 1=moderate 2=high 3=very high")
