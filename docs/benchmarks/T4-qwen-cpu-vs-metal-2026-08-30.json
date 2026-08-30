@@ -953,7 +953,7 @@
     "flat_with_length": {
       "metal": "Flat. Median RTF by audio length: 1.381 (0-2s, n=4), 1.373 (2-4s, n=6), 1.361 (4-6s, n=8), 1.334 (6s+, n=22).",
       "cpu": "Flat. 0.887 (0-2s, n=1), 0.839 (2-4s, n=6), 0.818 (4-6s, n=10), 0.839 (6s+, n=18).",
-      "reading": "Neither backend degrades as the utterance grows; the difference between them is a level shift, not a slope. CPU's line sits below 1.0 across every length bucket measured, out to a 10.1s segment."
+      "reading": "Neither backend degrades as the utterance grows; the difference between them is a level shift, not a slope. CPU's line sits below 1.0 across every length bucket measured, out to its longest segment at 10.697s audio (the longest Metal segment is 10.137s)."
     },
     "the_first_segment_is_the_exception": {
       "metal": "First segment of a turn: median 2.273, range 1.649-2.853. Later segments: median 1.335, max 1.720.",
@@ -976,7 +976,7 @@
       "cpu_1_47": "One CPU segment measured 1.4727 (tts-03, iteration 3, segment index 3, 6.1s of audio). It is the only CPU segment materially above 1.0; the next highest is 1.0091. Cause not established.",
       "metal_high_first_segments": "Metal's 2.66-2.85 samples are all segment index 0."
     },
-    "cross_check_against_F7": "F7 measured 0.6b Metal at rtf_median 1.3289 with the out-of-tree lab harness on the same engine_sha. This run measures 1.3562 in the pipeline \u2014 2% apart. The instruments agree, which is the evidence that the CPU figure is a real backend difference and not a harness artifact.",
+    "cross_check_against_F7": "F7 measured 0.6b Metal at rtf_median 1.3289 with the out-of-tree lab harness on the same engine_sha. This run measures 1.3562 in the pipeline \u2014 2.05% apart. The instruments agree, which is the evidence that the CPU figure is a real backend difference and not a harness artifact.",
     "did_the_env_var_reach_the_worker": "Yes, by result: the same binary, fixtures and tier measured 1.36 and 0.82 with only QWEN3_TTS_BACKEND changed. The mechanism is pkg/voiceagent/tts/qwen_native_session.go building the worker environment from os.Environ() \u2014 it strips QWEN3_TTS_TIER/MODEL and rewrites the library paths, but passes everything else through. obey-voice itself never sets QWEN3_TTS_BACKEND anywhere; this run set it in the parent shell."
   },
   "what_this_does_not_settle": [

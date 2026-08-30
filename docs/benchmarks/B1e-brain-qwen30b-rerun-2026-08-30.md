@@ -31,8 +31,13 @@ arrives at **4.1 s** on a fresh conversation and **7.0 s** with 6k of history.
 
 The incumbent, re-measured at the shipped `num_batch`, speaks first in
 **2.2 s / 2.3 s**. On the number the listener experiences, **the incumbent is
-1.8× faster empty and 3.0× faster at 6k** than the model whose raw TTFT is 25×
-better.
+1.8× faster empty and 3.0× faster at 6k** — against a raw first-token advantage
+of **5.5×** in `qwen3:30b`'s favour (925.15 / 167.278 ms empty; 4.4× at 6k).
+
+The 25–26× first-token gap is not this run's number and should not be quoted as
+one: `B1` measured 26.3× (4636.9 / 176.4 ms) against the *pre-#67* incumbent,
+and that is the figure this re-run retires — see [the incumbent's 4.6 s
+floor](#the-incumbents-46-s-floor-is-gone) below.
 
 Think-filtering **held**: across all 60 measured turns, zero think tags reached
 the spoken stream.
@@ -44,9 +49,19 @@ Lance's judgment; this is the latency half only.
 
 Warm, `n = 15` per model per condition, one discarded warm-up per condition.
 `ttft` stops on the first streamed token; `speak` stops on the first segment
-that survives the pipeline's own spoken path (`ChunkSentencesRaw` → one
-per-turn `textclean.ThinkFilter` → `CleanForVoice`) — i.e. the first text handed
-to TTS.
+that survives `pipeline.SpeechProjection` — the product's own path from a model
+segment to TTS, run as shared code rather than as a copy: think filter, voice
+gate, `CleanForVoice`, the speakability predicate, and this turn's repeat
+suppression. That is the first text handed to the synthesizer.
+
+*Provenance of that projection:* when these samples were taken the harness ran
+its own copy of the path and omitted the voice gate, so a reply opening on tool
+output or a fenced block could have been timed as speech the pipeline
+suppresses. It is now the shared code above, and all 60 committed replies were
+replayed through the complete projection: **the first spoken segment is
+identical in 60 of 60**, and the gate suppresses **zero** lines anywhere in the
+corpus, so no timing in this document moves. Details in the artifact under
+`post_hoc.projection`.
 
 | model | cond | ttft p50 | **speak p50** | speak worst | tok/s | worst turn | gate |
 |---|---|---:|---:|---:|---:|---:|:--:|
@@ -76,6 +91,12 @@ the whole story:
 | qwen3.8-uncensored:27b | empty | 221 chars | 220 chars | 0 % |
 | qwen3.8-uncensored:27b | 6k | 337 chars | 335 chars | 0 % |
 
+The "spoken" column is `spoken_chars` as committed, which for this run is the
+think-filtered text — before `CleanForVoice` and before gating, so it counts
+markdown the listener never hears and runs slightly high. Recomputed through the
+complete projection the medians are 163 / 132 / 221 / 337 characters, and every
+discard percentage in the table is unchanged.
+
 `qwen3:30b` writes about 3,000 characters in order to say 132. Its 90–111 tok/s
 generation rate — genuinely the fastest in the field — is spent almost entirely
 on text that is deleted before anyone hears it. That is why a model 5× faster at
@@ -104,6 +125,15 @@ spoken verbatim:
 
 Nothing in a think filter can catch that — there is no tag to match. It is a
 model-behavior observation, not a regression in #64/#68.
+
+**One thing the projection did catch.** On `qwen3.8-uncensored:27b`
+`empty_history` P4 rep 3 the model emitted its whole two-sentence reply, then a
+stray `</think>`, then the identical reply again. The pipeline speaks it once —
+repeat suppression is turn-scoped and drops a restated line — but the harness
+copy had no such suppression, so that sample's `spoken` field carries the reply
+twice. Timing is unaffected (the first segment is the same one either way); it
+is the one place in the artifact where the old copy of the path reported
+something the product would not have done.
 
 ## The incumbent's 4.6 s floor is gone
 
@@ -136,12 +166,42 @@ Both models drew large excursions this run:
 | qwen3.8-uncensored:27b | empty | 8.0 s ×1 | 870–1561 ms |
 | qwen3.8-uncensored:27b | 6k | 19.9 s, 20.0 s | 875–1186 ms |
 
-**The machine was not idle.** A live `obey-voice` session was observed running
-from 18:27 to ~18:32 during this run (an interactive process plus its own
-`qwen3-tts-worker`), alongside a long-running VM. The excursions are not
-attributable to the models on this evidence, and neither are they excused: they
-are reported as observed and the medians are the figures to read. Re-running on
-a quiet machine is the way to settle the tail; this run does not.
+**The machine was not idle, and the contamination is not confined to the tail.**
+A live `obey-voice` session was observed running from about 18:27 to 18:32 local
+during this run (an interactive process plus its own `qwen3-tts-worker`),
+alongside a long-running VM.
+
+That observation was never written into the artifact at run time, and the
+samples carry no wall clock, so which of them it touched has to be
+reconstructed. From committed fields alone: `generated_at` is **18:26:34** and
+is stamped before the first model runs; the run is strictly serialized, and
+summing cold load plus every `total_ms` gives **219.5 s** for the `qwen3:30b`
+block and **203.6 s** for the incumbent's; the incumbent was re-warmed last and
+left resident under `keep_alive 10m` with a recorded expiry of **18:44:23**,
+putting the run's last request at ~18:34:23 and its length at **~7.8 minutes**.
+
+The observed window therefore covers roughly five of those eight minutes:
+**effectively the whole `qwen3:30b` block and the front of the incumbent's,
+which includes both headline `speak` medians.** An earlier version of this
+document said "the medians are the figures to read" — that is a safety this run
+does not have, and it is withdrawn. A detail in the artifact corroborates the
+observation independently: `qwen3.8:latest`, a model this run never measured and
+the one the personas pin, was left resident with an expiry of 18:41:39 — last
+used around 18:31:39, by something other than this benchmark.
+
+What survives the contamination is the **structure**, because it is arithmetic
+over committed fields rather than a clock: `qwen3:30b` generates a reasoning
+prologue of ~1.5–2.9 k characters before its first spoken word and the incumbent
+generates none, and `think_chars` ÷ `gen_tok_s` reproduces the 4.1 s / 7.0 s
+figures to within about 15 %. The wait a listener hears on `qwen3:30b` is
+think-generation-bound, and machine load does not create that.
+
+What is **soft** is everything quantitative: the 1.8× and 3.0× ratios, both
+medians, and both tails. Load depresses generation rate, and a depressed rate
+moves the measured wait and the reconstruction together, so the internal
+consistency above is not a clean bill of health. Settling the numbers needs a
+re-run on a quiet machine; this run does not settle them. The full reconstruction
+is recorded in the artifact under `post_hoc.concurrent_load`.
 
 ## Unprompted `run_command` — worth Lance's attention
 
@@ -191,8 +251,10 @@ go run ./scripts/brain_bench \
   `keep_alive 10m`, tools enabled, `obey` persona, 941-token system prompt.
 - `~/.obey` was read, never written. The incumbent was re-warmed at the end.
 - Statistics as in the criteria: at n=15 the "p95" is the worst or second-worst
-  observation and is not a distributional claim. Medians are the figures to
-  trust, and the tail here is unmeasured.
+  observation and is not a distributional claim. Medians are the more stable
+  statistic, but on this run they are not a clean one either — the concurrent
+  session above covers them, so read every figure here as provisional pending a
+  quiet-machine re-run.
 
 ## What this does not say
 

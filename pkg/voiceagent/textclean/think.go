@@ -25,6 +25,26 @@ func StripThinkBlocks(s string) string {
 	return repairSpacing(out)
 }
 
+// ContainsThinkTag reports whether s still carries think markup — either
+// spelling, open or close.
+//
+// Detection, not filtering: this is the question a leak check asks after
+// ThinkFilter has run, and it lives here so the caller does not keep its own
+// idea of what a think tag looks like. Contains(s, "<think") — the obvious
+// hand-rolled version — misses a stray "</think>", which is exactly the shape
+// these models emit and the filter drops silently.
+func ContainsThinkTag(s string) bool {
+	lower := strings.ToLower(s)
+	for _, tags := range [][]string{thinkOpenTags, thinkCloseTags} {
+		for _, tag := range tags {
+			if strings.Contains(lower, tag) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // SplitThink separates a reply into chain-of-thought (inner text, no tags)
 // and the spoken body; an unclosed <think> at the end is still think, so a
 // live stream can paint it before </think> arrives. Two empty results from

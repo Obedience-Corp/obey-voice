@@ -35,6 +35,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -108,16 +109,28 @@ type sample struct {
 	Err             string   `json:"error,omitempty"`
 
 	// SpeakTTFTMS is the wait a listener actually hears: the stream is
-	// segmented and think-filtered exactly as the pipeline does it
-	// (ChunkSentencesRaw -> textclean.ThinkFilter -> CleanForVoice), and the
-	// clock stops on the first segment with speakable content. On a reasoning
-	// model TTFTMS stops on the first <think> token, which nobody hears, so
-	// the two numbers diverge by the whole reasoning prologue.
+	// segmented and projected onto speech by the pipeline's own code
+	// (ChunkSentencesRaw -> pipeline.SpeechProjection: think filter, voice
+	// gate, CleanForVoice, speakability, repeat suppression), and the clock
+	// stops on the first segment that survives it. On a reasoning model
+	// TTFTMS stops on the first <think> token, which nobody hears, so the two
+	// numbers diverge by the whole reasoning prologue.
 	SpeakTTFTMS float64 `json:"speak_ttft_ms"`
-	SpokenChars int     `json:"spoken_chars"`
-	ThinkChars  int     `json:"think_chars"`
-	// ThinkLeak is a think tag surviving into the spoken text. It must be
-	// false; a true here is the defect PRs #64/#68 closed, reopening.
+	// SpokenChars measures Spoken, which is what TTS receives — post-gate and
+	// post-CleanForVoice. Artifacts generated before 2026-08-30 recorded the
+	// ThinkFilter output instead, which still carried markdown and any gated
+	// lines, so their spoken_chars runs a little high.
+	SpokenChars int `json:"spoken_chars"`
+	ThinkChars  int `json:"think_chars"`
+	// GateSuppressedLines counts lines the voice gate removed this turn: tool
+	// narration, fenced blocks, and anything else that does not read as
+	// speech. Zero means the gate never fired, which is worth knowing before
+	// reading any spoken figure as load-bearing.
+	GateSuppressedLines int `json:"gate_suppressed_lines"`
+	// ThinkLeak is a think tag surviving the filter. It must be false; a true
+	// here is the defect PRs #64/#68 closed, reopening. Judged on the
+	// think-filtered text rather than Spoken, because CleanForVoice strips
+	// think blocks itself and would hide the leak it is meant to catch.
 	ThinkLeak bool   `json:"think_leak"`
 	Spoken    string `json:"spoken"`
 }
@@ -409,7 +422,7 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 			"Latency only. Nothing here judges response quality; that is the user's judgment in real use.",
 			"Each sample resets history to the condition baseline first, so prompt size is constant across reps.",
 			"route_ms is the synchronous skill-router embedding call and is included in ttft_ms, because the user waits for it.",
-			"ttft_ms stops on the first streamed token; speak_ttft_ms stops on the first segment that survives the pipeline's ThinkFilter and voice cleaning. On a reasoning model the gap between them is the reasoning prologue, which nobody hears.",
+			"ttft_ms stops on the first streamed token; speak_ttft_ms stops on the first segment that survives pipeline.SpeechProjection — the product's own path from a model segment to TTS (think filter, voice gate, CleanForVoice, speakability, repeat suppression), shared code rather than a copy. On a reasoning model the gap between the two is the reasoning prologue, which nobody hears.",
 			"~/.obey was read, never written. No model was pulled or deleted. Models were unloaded (not removed) to measure cold load.",
 		},
 	}
@@ -597,7 +610,11 @@ func measure(ctx context.Context, b *brain.OllamaBrain, p benchPrompt, tools boo
 	sp := <-spokenDone
 	s.SpeakTTFTMS, s.Spoken = sp.firstMS, sp.text
 	s.SpokenChars = len(sp.text)
-	s.ThinkLeak = strings.Contains(strings.ToLower(sp.text), "<think")
+	s.GateSuppressedLines = sp.suppressed
+	// The leak check runs on the think-filtered text, not the spoken text:
+	// CleanForVoice strips think blocks itself, so asking the cleaned output
+	// whether a tag survived can only ever answer no.
+	s.ThinkLeak = textclean.ContainsThinkTag(sp.filtered)
 	if first.IsZero() {
 		s.TTFTMS = s.TotalMS
 	}
@@ -626,30 +643,47 @@ func measure(ctx context.Context, b *brain.OllamaBrain, p benchPrompt, tools boo
 }
 
 type spokenTrace struct {
-	firstMS float64
-	text    string
+	firstMS    float64
+	text       string
+	filtered   string
+	suppressed int
 }
 
-// traceSpoken consumes the raw chunk stream the way the pipeline does and
-// reports when the first speakable segment was ready for TTS, plus the whole
-// spoken text. It stops the clock at a segment boundary because that is when
-// the pipeline hands text to the synthesizer — a mid-sentence token is not yet
-// audible to anyone.
+// traceSpoken runs the raw chunk stream through the product's own speech
+// projection and reports when the first segment was ready for TTS, plus the
+// text that reaches it. It stops the clock at a segment boundary because that
+// is when the pipeline hands text to the synthesizer — a mid-sentence token is
+// not yet audible to anyone.
+//
+// pipeline.SpeechProjection is the same code the turn loop runs, not a copy of
+// it: think filter, voice gate, cleaning, speakability, repeat suppression. An
+// earlier draft applied only the first, third and fourth, which would have
+// timed a reply opening on a tool region or a fenced block as a spoken word
+// the pipeline suppresses.
 func traceSpoken(start time.Time, raw <-chan string) spokenTrace {
 	var tr spokenTrace
-	var out strings.Builder
-	var filter textclean.ThinkFilter
-	take := func(seg string) {
-		out.WriteString(seg)
-		if tr.firstMS == 0 && brain.HasSpeakableContent(brain.CleanForVoice(seg)) {
+	var spoken, filtered strings.Builder
+	proj := pipeline.NewSpeechProjection()
+	take := func(seg pipeline.SpokenSegment) {
+		filtered.WriteString(seg.Filtered)
+		tr.suppressed += seg.Suppressed
+		if !seg.Heard() {
+			return
+		}
+		if spoken.Len() > 0 {
+			spoken.WriteByte(' ')
+		}
+		spoken.WriteString(seg.Speakable)
+		if tr.firstMS == 0 {
 			tr.firstMS = msSince(start)
 		}
 	}
 	for seg := range brain.ChunkSentencesRaw(raw) {
-		take(filter.Feed(seg))
+		take(proj.Speak(seg))
 	}
-	take(filter.Flush())
-	tr.text = strings.TrimSpace(out.String())
+	take(proj.Flush())
+	tr.text = strings.TrimSpace(spoken.String())
+	tr.filtered = strings.TrimSpace(filtered.String())
 	return tr
 }
 

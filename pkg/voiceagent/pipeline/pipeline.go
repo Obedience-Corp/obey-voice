@@ -15,7 +15,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -1012,17 +1011,19 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// Raw segments: the voice gate needs the markdown fences CleanForVoice
 	// strips, so gating happens first and each destination cleans after.
 	sentences := brain.ChunkSentencesRaw(streamedChunks)
-	gate := &voiceGate{}
-	think := &textclean.ThinkFilter{}
+	// One projection per turn holds the think filter, the voice gate and the
+	// spoken-line memory, so the rules a segment is judged by live in one place
+	// and a measurement harness can ask for them instead of re-deriving them.
+	proj := NewSpeechProjection()
 
 	var fullResponse strings.Builder
-	// heard / spoken drop a sentence this turn already put on the transcript
-	// or in the synth queue. Local models often emit the spoken line, fire a
-	// phantom tool, then emit the same line again (Veronica, 2026-08-28:
-	// web_search for the World Cup mid-conversation, then the identical
-	// sentence a second time). Without this she says it twice.
+	// heard drops a sentence this turn already put on the transcript; the
+	// projection drops one already in the synth queue. Local models often emit
+	// the spoken line, fire a phantom tool, then emit the same line again
+	// (Veronica, 2026-08-28: web_search for the World Cup mid-conversation,
+	// then the identical sentence a second time). Without this she says it
+	// twice.
 	heard := make(map[string]struct{})
-	spoken := make(map[string]struct{})
 	var interrupted bool
 	var pending int
 	var bargeIn <-chan interruptRequest
@@ -1120,7 +1121,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// Feed the gate every segment, in order, before deciding whether
 		// this turn speaks at all: its regions span segments, so skipping
 		// one loses the boundary that closes a tool block or a fence.
-		voiceText, stripped := gate.filter(text)
+		voiceText, stripped := proj.gateSegment(text)
 
 		// Filler-only chunks are provisional: providers replace a turn that
 		// ends there with the recovery reply. Keep them out of both transcript
@@ -1141,23 +1142,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		}
 
 		p.recordStrips(stripped, metrics)
-		speakable := brain.CleanForVoice(voiceText)
-		// Not just != "": stripping a filler from "Umm." leaves a bare ".",
-		// which is non-empty, unpronounceable, and — because segments are
-		// batched — would be glued onto the front of a real sentence inside
-		// one synthesis call.
-		// A tag-only beat ([moan]) has no speakable prose and must still
-		// reach the synth queue so the sound plays.
-		if !speakableSegment(speakable) && !hasVocalTag(speakable) {
+		// Cleaning, the speakability predicate and this turn's repeat
+		// suppression, all of which the bench harness replays through the
+		// same code (SpeechProjection).
+		speakable, ok := proj.admit(voiceText)
+		if !ok {
 			return
-		}
-		// Sound-only beats ([moan]) may repeat in one turn on purpose.
-		// Restated prose after a phantom tool still drops.
-		if speakableSegment(stripVocalTags(speakable)) {
-			if _, dup := spoken[speakable]; dup {
-				return
-			}
-			spoken[speakable] = struct{}{}
 		}
 
 		turn.to(TurnSpeaking)
@@ -1278,7 +1268,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				// "<", which speakableSegment rejects anyway. It routes rather
 				// than drops so that if the hold ever carries content, the loop
 				// judges it by the same predicate as every other segment.
-				routeSegment(think.Flush())
+				routeSegment(proj.flushThink())
 				// A half-full batch is still a real segment: flush it before
 				// closing, or the last sentence of every odd-length reply is
 				// silently never spoken.
@@ -1299,7 +1289,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// them aloud, and the same filtered text feeds the transcript — so
 			// the model never reads its own reasoning back out of conversation
 			// history on the next turn, paying its tokens every turn after.
-			routeSegment(think.Feed(sentence))
+			routeSegment(proj.filterThink(sentence))
 
 		case event := <-playbackEvents:
 			if interrupted && event.kind == playbackStarted && p.Player != nil {

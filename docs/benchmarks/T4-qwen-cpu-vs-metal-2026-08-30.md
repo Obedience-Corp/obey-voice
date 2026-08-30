@@ -50,8 +50,9 @@ Median RTF by segment audio duration:
 | 6 s+ | 1.334 *(n=22)* | 0.839 *(n=18)* |
 
 Neither backend degrades as the utterance grows — the difference between them is
-a level shift, not a slope. CPU stays under realtime in every bucket, out to a
-10.1-second segment. That is the shape the fleet design asks for.
+a level shift, not a slope. CPU stays under realtime in every bucket, out to its
+longest segment at 10.697 s (Metal's longest is 10.137 s). That is the shape the
+fleet design asks for.
 
 ### The first segment is where both backends hurt
 
@@ -102,9 +103,9 @@ to inform.
   obey-voice sets `QWEN3_TTS_BACKEND`; this run set it in the parent shell. The
   result is the proof: same binary, same fixtures, same tier, 1.36 → 0.82.
 - **Cross-check.** `F7` measured this engine at 1.3289 with a different harness
-  out of tree; this run measures 1.3562 in the pipeline. Two instruments, 2 %
-  apart — which is what makes the CPU figure a backend difference rather than a
-  harness artifact.
+  out of tree; this run measures 1.3562 in the pipeline. Two instruments,
+  **2.05 %** apart — which is what makes the CPU figure a backend difference
+  rather than a harness artifact.
 
 ## What this does not settle
 
