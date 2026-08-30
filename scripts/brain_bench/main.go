@@ -36,6 +36,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // defaultCandidates are the models measured when -models is not given. The
@@ -105,6 +106,20 @@ type sample struct {
 	Chars           int      `json:"reply_chars"`
 	Reply           string   `json:"reply"`
 	Err             string   `json:"error,omitempty"`
+
+	// SpeakTTFTMS is the wait a listener actually hears: the stream is
+	// segmented and think-filtered exactly as the pipeline does it
+	// (ChunkSentencesRaw -> textclean.ThinkFilter -> CleanForVoice), and the
+	// clock stops on the first segment with speakable content. On a reasoning
+	// model TTFTMS stops on the first <think> token, which nobody hears, so
+	// the two numbers diverge by the whole reasoning prologue.
+	SpeakTTFTMS float64 `json:"speak_ttft_ms"`
+	SpokenChars int     `json:"spoken_chars"`
+	ThinkChars  int     `json:"think_chars"`
+	// ThinkLeak is a think tag surviving into the spoken text. It must be
+	// false; a true here is the defect PRs #64/#68 closed, reopening.
+	ThinkLeak bool   `json:"think_leak"`
+	Spoken    string `json:"spoken"`
 }
 
 type summary struct {
@@ -126,6 +141,13 @@ type summary struct {
 	SkillActivations  int     `json:"skill_activations_total"`
 	MultiRequestTurns int     `json:"turns_with_more_than_one_model_request"`
 	RouteMedianMS     float64 `json:"route_ms_median"`
+	// Speak* are the same percentiles over the think-filtered spoken stream.
+	// For a model that emits no reasoning they equal the TTFT figures above.
+	SpeakTTFTp50MS float64 `json:"speak_ttft_p50_ms"`
+	SpeakTTFTp95MS float64 `json:"speak_ttft_p95_ms"`
+	SpeakTTFTMaxMS float64 `json:"speak_ttft_max_ms"`
+	ThinkLeaks     int     `json:"think_leaks"`
+	ThinkCharsMed  int     `json:"think_chars_median"`
 }
 
 type gateResult struct {
@@ -200,16 +222,17 @@ func main() {
 		rewarm      = flag.String("rewarm", "qwen3.8-uncensored:27b", "model to leave resident when the run ends; empty to skip")
 		stopBetween = flag.Bool("stop-between", true, "unload each model before measuring it, so cold-load numbers are real")
 		toolsFlag   = flag.String("tools", "config", "tool schemas in the request: config|on|off")
+		artifactID  = flag.String("id", "B1", "artifact id recorded in the JSON, e.g. B1e for a one-row re-run")
 	)
 	flag.Parse()
 
-	if err := run(*personaID, *modelsCSV, *reps, *targetTok, *turnTimeout, *workDir, *out, *rewarm, *stopBetween, *toolsFlag); err != nil {
+	if err := run(*personaID, *modelsCSV, *reps, *targetTok, *turnTimeout, *workDir, *out, *rewarm, *stopBetween, *toolsFlag, *artifactID); err != nil {
 		fmt.Fprintf(os.Stderr, "brain_bench: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Duration, workDirFlag, outPath, rewarm string, stopBetween bool, toolsFlag string) error {
+func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Duration, workDirFlag, outPath, rewarm string, stopBetween bool, toolsFlag, artifactID string) error {
 	ctx := context.Background()
 
 	if workDirFlag == "" {
@@ -314,7 +337,7 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 		len(sysPrompt), emptyPromptTokens, len(filled), filledPromptTokens, trimLine)
 
 	art := &artifact{
-		ID:          "B1",
+		ID:          artifactID,
 		WorkItem:    "WI-a981e4",
 		Title:       "Conversational brain model A/B through the real obey-voice brain seam",
 		CriteriaDoc: "docs/benchmarks/B1-brain-latency-ab-criteria.md",
@@ -344,6 +367,7 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 		},
 		Request: map[string]any{
 			"num_ctx":            probeCfg.OllamaNumCtx,
+			"num_batch":          probeCfg.OllamaNumBatch,
 			"think":              probeCfg.OllamaThink,
 			"keep_alive":         probeCfg.OllamaKeepAlive,
 			"stream":             true,
@@ -385,6 +409,7 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 			"Latency only. Nothing here judges response quality; that is the user's judgment in real use.",
 			"Each sample resets history to the condition baseline first, so prompt size is constant across reps.",
 			"route_ms is the synchronous skill-router embedding call and is included in ttft_ms, because the user waits for it.",
+			"ttft_ms stops on the first streamed token; speak_ttft_ms stops on the first segment that survives the pipeline's ThinkFilter and voice cleaning. On a reasoning model the gap between them is the reasoning prologue, which nobody hears.",
 			"~/.obey was read, never written. No model was pulled or deleted. Models were unloaded (not removed) to measure cold load.",
 		},
 	}
@@ -454,8 +479,8 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 					}
 					s := measure(ctx, b, p, toolsEnabled, turnTimeout, rep)
 					cr.Samples = append(cr.Samples, s)
-					fmt.Fprintf(os.Stderr, "  %-18s %s r%d ttft=%.0fms total=%.0fms gen=%.1f tok/s prompt=%d %s\n",
-						cond.name, p.ID, rep, s.TTFTMS, s.TotalMS, s.GenTokS, s.PromptTokens, s.Err)
+					fmt.Fprintf(os.Stderr, "  %-18s %s r%d ttft=%.0fms speak=%.0fms total=%.0fms gen=%.1f tok/s prompt=%d think=%dch %s\n",
+						cond.name, p.ID, rep, s.TTFTMS, s.SpeakTTFTMS, s.TotalMS, s.GenTokS, s.PromptTokens, s.ThinkChars, s.Err)
 				}
 			}
 			cr.Summary = summarize(cr.Samples)
@@ -547,6 +572,15 @@ func measure(ctx context.Context, b *brain.OllamaBrain, p benchPrompt, tools boo
 		return s
 	}
 
+	// The spoken path, mirrored: the pipeline segments the raw chunk stream and
+	// routes every segment through one per-turn ThinkFilter before TTS and the
+	// transcript see it (pkg/voiceagent/pipeline/pipeline.go). Running the same
+	// helpers here is what separates "the model emitted a token" from "the
+	// listener heard a word" on a reasoning model.
+	raw := make(chan string, 32)
+	spokenDone := make(chan spokenTrace, 1)
+	go func() { spokenDone <- traceSpoken(start, raw) }()
+
 	var reply strings.Builder
 	first := time.Time{}
 	for chunk := range stream.Chunks {
@@ -555,9 +589,15 @@ func measure(ctx context.Context, b *brain.OllamaBrain, p benchPrompt, tools boo
 			s.TTFTMS = float64(first.Sub(start).Microseconds()) / 1000
 		}
 		reply.WriteString(chunk)
+		raw <- chunk
 	}
+	close(raw)
 	result := <-stream.Done
 	s.TotalMS = msSince(start)
+	sp := <-spokenDone
+	s.SpeakTTFTMS, s.Spoken = sp.firstMS, sp.text
+	s.SpokenChars = len(sp.text)
+	s.ThinkLeak = strings.Contains(strings.ToLower(sp.text), "<think")
 	if first.IsZero() {
 		s.TTFTMS = s.TotalMS
 	}
@@ -569,6 +609,13 @@ func measure(ctx context.Context, b *brain.OllamaBrain, p benchPrompt, tools boo
 	s.ToolNames = toolNames
 	s.Reply = strings.TrimSpace(reply.String())
 	s.Chars = len(s.Reply)
+	if think, _ := textclean.SplitThink(s.Reply); think != "" {
+		s.ThinkChars = len(think)
+	}
+	if s.SpeakTTFTMS == 0 {
+		// Nothing speakable ever arrived; the listener waited the whole turn.
+		s.SpeakTTFTMS = s.TotalMS
+	}
 	if genMS := s.TotalMS - s.TTFTMS; genMS > 0 && gen > 0 {
 		s.GenTokS = float64(gen) / (genMS / 1000)
 	}
@@ -578,14 +625,47 @@ func measure(ctx context.Context, b *brain.OllamaBrain, p benchPrompt, tools boo
 	return s
 }
 
+type spokenTrace struct {
+	firstMS float64
+	text    string
+}
+
+// traceSpoken consumes the raw chunk stream the way the pipeline does and
+// reports when the first speakable segment was ready for TTS, plus the whole
+// spoken text. It stops the clock at a segment boundary because that is when
+// the pipeline hands text to the synthesizer — a mid-sentence token is not yet
+// audible to anyone.
+func traceSpoken(start time.Time, raw <-chan string) spokenTrace {
+	var tr spokenTrace
+	var out strings.Builder
+	var filter textclean.ThinkFilter
+	take := func(seg string) {
+		out.WriteString(seg)
+		if tr.firstMS == 0 && brain.HasSpeakableContent(brain.CleanForVoice(seg)) {
+			tr.firstMS = msSince(start)
+		}
+	}
+	for seg := range brain.ChunkSentencesRaw(raw) {
+		take(filter.Feed(seg))
+	}
+	take(filter.Flush())
+	tr.text = strings.TrimSpace(out.String())
+	return tr
+}
+
 func summarize(samples []sample) summary {
 	sum := summary{N: len(samples)}
 	var ttft, total, gen, prefill, route []float64
-	var prompt []float64
+	var prompt, speak, thinkChars []float64
 	for _, s := range samples {
 		if s.Err != "" {
 			sum.Errors++
 		}
+		if s.ThinkLeak {
+			sum.ThinkLeaks++
+		}
+		speak = append(speak, s.SpeakTTFTMS)
+		thinkChars = append(thinkChars, float64(s.ThinkChars))
 		sum.ToolCalls += s.ToolCalls
 		sum.SkillActivations += s.SkillsActivated
 		if s.Requests > 1 {
@@ -612,6 +692,10 @@ func summarize(samples []sample) summary {
 	sum.PromptTokens = int(pct(prompt, 50))
 	sum.PromptTokensMax = int(pct(prompt, 100))
 	sum.RouteMedianMS = pct(route, 50)
+	sum.SpeakTTFTp50MS = pct(speak, 50)
+	sum.SpeakTTFTp95MS = pct(speak, 95)
+	sum.SpeakTTFTMaxMS = pct(speak, 100)
+	sum.ThinkCharsMed = int(pct(thinkChars, 50))
 	return sum
 }
 
@@ -721,7 +805,7 @@ func provenance(ollamaVersion string) map[string]any {
 }
 
 func printTable(a *artifact) {
-	fmt.Printf("\n%-28s %8s %10s %10s %9s %9s %6s\n", "model", "cond", "ttft_p50", "ttft_p95", "tok/s", "worst_s", "gate")
+	fmt.Printf("\n%-28s %8s %10s %10s %11s %9s %9s %6s\n", "model", "cond", "ttft_p50", "ttft_p95", "speak_p50", "tok/s", "worst_s", "gate")
 	for _, r := range a.Results {
 		if r.SetupErr != "" {
 			fmt.Printf("%-28s %s\n", r.Model, r.SetupErr)
@@ -736,8 +820,8 @@ func printTable(a *artifact) {
 			if name != "empty_history" {
 				short = "6k"
 			}
-			fmt.Printf("%-28s %8s %9.0fms %9.0fms %9.1f %9.1f %6s\n",
-				r.Model, short, c.Summary.TTFTp50MS, c.Summary.TTFTp95MS,
+			fmt.Printf("%-28s %8s %9.0fms %9.0fms %10.0fms %9.1f %9.1f %6s\n",
+				r.Model, short, c.Summary.TTFTp50MS, c.Summary.TTFTp95MS, c.Summary.SpeakTTFTp50MS,
 				c.Summary.GenTokSMedian, c.Summary.TotalMaxMS/1000, passWord(c.GatePass))
 		}
 	}
