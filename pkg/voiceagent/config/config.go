@@ -104,6 +104,10 @@ type Config struct {
 	// skipped after playback pauses so trailing speaker echo cannot
 	// accumulate toward a trip (200-800). See barge_in.go BargeInTailGuardOf.
 	BargeInTailGuardMS int `mapstructure:"barge_in_tail_guard_ms"`
+	// BargeInSpeakers is the S3 policy seam (D7): anyone (default) or
+	// enrolled_only, which fuses the live speaker analyzer's verdict into the
+	// interrupt controller. See barge_in_speakers.go BargeInSpeakersOf.
+	BargeInSpeakers string `mapstructure:"barge_in_speakers"`
 
 	// TUIMouseEnabled lets the TUI claim the mouse so the wheel and trackpad
 	// scroll the transcript. Claiming it means the terminal routes drags to
@@ -416,6 +420,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("barge_in_enabled", false)
 	v.SetDefault("barge_in_vad_threshold", DefaultBargeInVADThreshold)
 	v.SetDefault("barge_in_tail_guard_ms", DefaultBargeInTailGuardMS)
+	// barge_in_speakers defaults to anyone (D7): enrolled_only is opt-in
+	// policy, not a defaults change (S3 scope).
+	v.SetDefault("barge_in_speakers", BargeInSpeakersAnyone)
 
 	// Off by default so the terminal keeps its own click-drag selection, which
 	// is how every other agent chat behaves — you select transcript text and
@@ -624,6 +631,7 @@ var envBindings = map[string]string{
 	"barge_in_enabled":            "BARGE_IN_ENABLED",
 	"barge_in_vad_threshold":      "BARGE_IN_VAD_THRESHOLD",
 	"barge_in_tail_guard_ms":      "BARGE_IN_TAIL_GUARD_MS",
+	"barge_in_speakers":           "BARGE_IN_SPEAKERS",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
 	"vad_silence_duration":        "VAD_SILENCE_DURATION",

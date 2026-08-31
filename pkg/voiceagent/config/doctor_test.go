@@ -626,6 +626,33 @@ func TestDiagnoseWarnsOnFrontendWithoutBargeIn(t *testing.T) {
 	}
 }
 
+func TestDiagnoseErrorsOnInvalidBargeInSpeakers(t *testing.T) {
+	cfg := healthyBrain(&Config{STTProvider: "sherpa", TTSProvider: "kokoro", BargeInSpeakers: "owner_only"})
+	diags := Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil })
+	var found *Diagnostic
+	for i := range diags {
+		if diags[i].Name == "barge-in-speakers-invalid" {
+			found = &diags[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a barge-in-speakers-invalid diagnostic for an unrecognized value")
+	}
+	if found.Severity != SeverityError {
+		t.Errorf("barge-in-speakers-invalid severity = %q, want error", found.Severity)
+	}
+	if !HasErrors(diags) {
+		t.Error("an invalid barge_in_speakers value must be a hard error")
+	}
+
+	cfg.BargeInSpeakers = BargeInSpeakersEnrolledOnly
+	for _, d := range Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil }) {
+		if d.Name == "barge-in-speakers-invalid" {
+			t.Fatal("no barge-in-speakers-invalid diagnostic expected for a recognized value")
+		}
+	}
+}
+
 func TestDiagnoseErrorsOnWebRTCWithoutTheApmBuild(t *testing.T) {
 	// Runs both untagged (the common case: WebRTCFrontendBuildAvailable is
 	// false, so the diagnostic must fire) and with -tags apm (available is

@@ -22,6 +22,10 @@
       "value": true,
       "source": "file"
     },
+    "barge_in_speakers": {
+      "value": "anyone",
+      "source": "default"
+    },
     "barge_in_tail_guard_ms": {
       "value": 200,
       "source": "default"

@@ -56,6 +56,24 @@
       "editable": true
     },
     {
+      "key": "barge_in_speakers",
+      "type": "enum",
+      "default": "anyone",
+      "enum": [
+        "anyone",
+        "enrolled_only"
+      ],
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Who can interrupt",
+      "help": "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "BARGE_IN_SPEAKERS",
+      "editable": true
+    },
+    {
       "key": "barge_in_tail_guard_ms",
       "type": "int",
       "default": 200,

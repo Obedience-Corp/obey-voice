@@ -213,6 +213,19 @@ type Pipeline struct {
 	// means ordinary single-user attribution.
 	CurrentSpeaker func() string
 
+	// BargeInSpeakerVerdict, when set, reports the live speaker analyzer's
+	// most recent window verdict to the interrupt controller (config
+	// barge_in_speakers=enrolled_only, D7). Wired only for that policy —
+	// anyone (the default) leaves this nil and it is never consulted. See
+	// interrupt.go SpeakerVerdict / interruptController.allowsInterrupt.
+	BargeInSpeakerVerdict func() SpeakerVerdict
+	// BargeInSpeakerVerdictMaxAge bounds how old a BargeInSpeakerVerdict may
+	// be before the interrupt controller treats it as stale and fails open
+	// (~2x speaker.live.window_ms). Zero uses
+	// bargeInSpeakerVerdictMaxAgeDefault. See
+	// config.BargeInSpeakerVerdictMaxAgeOf.
+	BargeInSpeakerVerdictMaxAge time.Duration
+
 	// keepCapture preserves the capture buffer into the next turn after a
 	// barge-in — or a near-miss, speech heard during a playback pause that
 	// never tripped — where the buffered audio is the user mid-utterance.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // prepareLiveSpeaker builds the live speaker controller for a conversation.
@@ -67,15 +68,39 @@ func prepareLiveSpeaker(
 func ownerVerifyGate(stats func() speaker.LiveStats) func(string) string {
 	return func(string) string {
 		st := stats()
-		switch st.Status {
-		case speaker.LiveHealthy, speaker.LiveRunning:
-		default:
+		if !st.ConfidentlyHealthy() {
 			return ""
 		}
 		if st.LastLabel == "" || st.LastEnrollRev != "" {
 			return ""
 		}
 		return fmt.Sprintf("utterance ignored: %q is not an enrolled speaker (speaker.live.mode=owner_verify)", st.LastLabel)
+	}
+}
+
+// bargeInSpeakerVerdict builds the interrupt controller's verdict source for
+// barge_in_speakers=enrolled_only (S3, D7). It reports the analyzer's most
+// recent window through pipeline.SpeakerVerdict's plain fields rather than
+// exposing speaker.LiveStats to the pipeline package, the same decoupling
+// SpeakerGate/CurrentSpeaker already use. The interrupt controller (not this
+// function) applies the freshness/staleness check, since only it knows the
+// configured max age.
+//
+// ConfidentlyHealthy and the LastLabel/LastEnrollRev pair are exactly what
+// ownerVerifyGate above already checks — factored onto LiveStats itself so
+// the two privacy-guard consumers cannot drift apart on what "healthy" and
+// "enrolled" mean.
+func bargeInSpeakerVerdict(stats func() speaker.LiveStats) func() pipeline.SpeakerVerdict {
+	return func() pipeline.SpeakerVerdict {
+		st := stats()
+		return pipeline.SpeakerVerdict{
+			Healthy:    st.ConfidentlyHealthy(),
+			HasVerdict: st.LastLabel != "",
+			Enrolled:   st.LastEnrollRev != "",
+			Label:      st.LastLabel,
+			Confidence: st.LastConfidence,
+			At:         st.LastUpdated,
+		}
 	}
 }
 

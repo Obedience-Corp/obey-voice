@@ -267,6 +267,17 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			if liveCfg.LiveActive() && liveCfg.Live.Mode == speaker.LiveModeOwnerVerify {
 				p.SpeakerGate = ownerVerifyGate(liveSpeaker.Stats)
 			}
+			// barge_in_speakers=enrolled_only is a separate axis from
+			// speaker.live.mode (D7): wired regardless of mode, and even
+			// when speaker.live is currently disabled — a later /speakers
+			// on should not need a session restart to start gating. The
+			// verdict source itself fails open until live analysis is
+			// actually healthy and producing verdicts (see doctor's
+			// barge-in-speakers-gate warning for the disabled/unenrolled
+			// case).
+			if config.BargeInSpeakersOf(cfg) == config.BargeInSpeakersEnrolledOnly {
+				p.BargeInSpeakerVerdict = bargeInSpeakerVerdict(liveSpeaker.Stats)
+			}
 		}
 		p.CurrentSpeaker = func() string {
 			if liveSpeaker == nil {
