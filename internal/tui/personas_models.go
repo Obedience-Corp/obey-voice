@@ -12,11 +12,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// stackStepHelp is the Model & voice step's help line. Row-specific help
-// replaces it only while that row owns the typing keys, and every row move
-// puts it back (see stackStepMessage).
-const stackStepHelp = "Model & voice · ←/→ pick provider, model or voice · ↑/↓ rows · (default) inherits Settings"
-
 // stackCustomLabel is the escape hatch on the Model row: it reveals the free
 // text field so a model the scan did not list (a tag not pulled yet, a remote
 // name) is still reachable.
@@ -259,17 +254,32 @@ func (m *personasModel) cycleStackModel(delta int) {
 		m.brainModelInput.SetValue(list[idx])
 		m.brainModelInput.Blur()
 	}
-	m.message = m.stackStepMessage()
+	m.message = m.formRowHelp()
 }
 
-// stackStepMessage is the help line for the Model & voice step. Row help is
-// scoped to the active row: only the Model row under "(custom)" takes typing,
-// so only it replaces the step help — and moving away restores it.
-func (m personasModel) stackStepMessage() string {
-	if m.stackRow == stackRowBrainModel && m.brainModels.custom {
-		return "Type a model name · ←/→ leaves custom · ctrl+b/ctrl+f move the cursor"
+// formRowHelp says what the row under the cursor means. The footer already
+// lists the keys, so this line spends itself on the field instead — and the
+// (custom) typing hint is scoped to the row that owns it, never left behind.
+func (m personasModel) formRowHelp() string {
+	switch m.formRow {
+	case formRowName:
+		return "Display name · the agent answers to this"
+	case formRowBrainProvider:
+		return "Brain provider · (default) inherits Settings"
+	case formRowBrainModel:
+		if m.brainModels.custom {
+			return "Type a model name · ←/→ leaves custom · ctrl+b/ctrl+f move the cursor"
+		}
+		return "Model · (default) lets the provider choose"
+	case formRowTTSProvider:
+		return "TTS provider · (default) inherits Settings"
+	case formRowVoice:
+		return "Voice · the catalog for the effective TTS provider"
+	case formRowTier:
+		return "Tier · qwen3-tts only"
+	default:
+		return "System prompt · enter opens the editor"
 	}
-	return stackStepHelp
 }
 
 // canonicalizeBrainModel rewrites the current value to the catalog spelling so

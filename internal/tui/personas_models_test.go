@@ -40,7 +40,7 @@ func newPickerPersonas(t *testing.T, cfg *config.Config, p *persona.Profile) per
 	return m
 }
 
-// personaScanCmd digs the model-scan command out of the batch beginEdit /
+// personaScanCmd digs the model-scan command out of the batch beginEditAt /
 // beginCreate return (cursor blink first, scan last).
 func personaScanCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 	t.Helper()
@@ -165,9 +165,9 @@ func TestPersonaBrainModelList(t *testing.T) {
 				return fakeScan(tc.scan)
 			}
 			m.cursor = 0
-			cmd := m.beginEdit()
+			cmd := m.beginEditAt(formRowName)
 			if cmd == nil {
-				t.Fatal("beginEdit returned no command; the model scan must run async")
+				t.Fatal("beginEditAt returned no command; the model scan must run async")
 			}
 			if !tc.pending {
 				m.applyBrainModels(personaModelsMsg{
@@ -199,13 +199,13 @@ func TestPersonaBrainModelRowIsAPicker(t *testing.T) {
 		return fakeScan(map[string][]string{"ollama": {"llama3", "qwen3:8b"}})
 	}
 	m.cursor = 0
-	m.beginEdit()
+	m.beginEditAt(formRowName)
 	m.applyBrainModels(personaModelsMsg{
 		seq:       m.brainModels.seq,
 		providers: fakeScan(map[string][]string{"ollama": {"llama3", "qwen3:8b"}}),
 	})
-	m, _ = m.focusStackStep()
-	m.setStackRow(stackRowBrainModel)
+	m.setFormRow(formRowBrainProvider)
+	m.setFormRow(formRowBrainModel)
 
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "‹ "+stackDefaultLabel+" ›") {
@@ -213,27 +213,27 @@ func TestPersonaBrainModelRowIsAPicker(t *testing.T) {
 	}
 
 	// Typing on a listed entry must not edit anything (select-only row).
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
 	if m.brainModelInput.Value() != "" {
 		t.Fatalf("typing on a listed entry changed the model to %q", m.brainModelInput.Value())
 	}
 
 	// →  walks the discovered models.
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if got := m.formBrain().Model; got != "llama3" {
 		t.Fatalf("after → model = %q, want llama3", got)
 	}
 	if !strings.Contains(stripANSI(m.View()), "‹ llama3 ›") {
 		t.Fatalf("model row did not render the selection:\n%s", stripANSI(m.View()))
 	}
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if got := m.formBrain().Model; got != "qwen3:8b" {
 		t.Fatalf("after →→ model = %q, want qwen3:8b", got)
 	}
 
 	// One more → lands on (custom): the free text field appears, focused, and
 	// unlisted names stay reachable.
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if !m.brainModels.custom {
 		t.Fatal("→ past the last model did not reach (custom)")
 	}
@@ -244,14 +244,14 @@ func TestPersonaBrainModelRowIsAPicker(t *testing.T) {
 		t.Fatalf("(custom) not rendered:\n%s", stripANSI(m.View()))
 	}
 	for _, r := range "-remote" {
-		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 	if got := m.formBrain().Model; got != "qwen3:8b-remote" {
 		t.Fatalf("custom text = %q, want qwen3:8b-remote", got)
 	}
 
 	// → wraps back to (default) = inherit the app config.
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if m.brainModels.custom || m.formBrain().Model != "" {
 		t.Fatalf("wrap to (default) left custom=%v model=%q", m.brainModels.custom, m.formBrain().Model)
 	}
@@ -301,20 +301,20 @@ func TestPersonaBrainModelClampsOnProviderChange(t *testing.T) {
 				return fakeScan(scan)
 			}
 			m.cursor = 0
-			m.beginEdit()
+			m.beginEditAt(formRowName)
 			if tc.applyScan {
 				m.applyBrainModels(personaModelsMsg{seq: m.brainModels.seq, providers: fakeScan(scan)})
 			}
 			m.brainModels.custom = tc.custom
-			m, _ = m.focusStackStep()
+			m.setFormRow(formRowBrainProvider)
 
 			// Move the Brain row from ollama to grok.
-			m.setStackRow(stackRowBrainProvider)
+			m.setFormRow(formRowBrainProvider)
 			for i := 0; i < len(stackBrainProviders()); i++ {
 				if providerAt(stackBrainProviders(), m.brainProviderIdx) == "grok" {
 					break
 				}
-				m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+				m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 			}
 			if providerAt(stackBrainProviders(), m.brainProviderIdx) != "grok" {
 				t.Fatal("failed to select the grok provider")
@@ -338,9 +338,9 @@ func TestPersonaBrainModelScanIsAsyncAndOrdered(t *testing.T) {
 		return fakeScan(map[string][]string{"ollama": {"llama3"}})
 	}
 	m.cursor = 0
-	cmd := personaScanCmd(t, m.beginEdit())
-	m, _ = m.focusStackStep()
-	m.setStackRow(stackRowBrainModel)
+	cmd := personaScanCmd(t, m.beginEditAt(formRowName))
+	m.setFormRow(formRowBrainProvider)
+	m.setFormRow(formRowBrainModel)
 	if !strings.Contains(stripANSI(m.View()), "scanning models…") {
 		t.Fatalf("pending scan is not visible:\n%s", stripANSI(m.View()))
 	}
@@ -370,7 +370,7 @@ func TestPersonaBrainModelScanIsAsyncAndOrdered(t *testing.T) {
 	if strings.Contains(view, "scanning models…") {
 		t.Fatalf("scanning note outlived the scan:\n%s", view)
 	}
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if got := m.formBrain().Model; got != "llama3" {
 		t.Fatalf("discovered model not selectable after the scan: %q", got)
 	}
@@ -392,7 +392,7 @@ func TestPersonaBrainModelScanIsCancelledWithTheForm(t *testing.T) {
 		return nil
 	}
 	m.cursor = 0
-	cmd := personaScanCmd(t, m.beginEdit())
+	cmd := personaScanCmd(t, m.beginEditAt(formRowName))
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()
 	// Guarded: if the scan command ever stops reaching discovery, fail here
@@ -429,7 +429,7 @@ func TestPersonaBrainModelScanRace(t *testing.T) {
 		return fakeScan(map[string][]string{"ollama": {"llama3", "qwen3:8b"}})
 	}
 	m.cursor = 0
-	cmd := personaScanCmd(t, m.beginEdit())
+	cmd := personaScanCmd(t, m.beginEditAt(formRowName))
 
 	msgs := make(chan tea.Msg, 4)
 	var wg sync.WaitGroup
@@ -441,10 +441,10 @@ func TestPersonaBrainModelScanRace(t *testing.T) {
 		}()
 	}
 
-	m, _ = m.focusStackStep()
+	m.setFormRow(formRowBrainProvider)
 	for i := 0; i < 20; i++ {
-		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyDown})
-		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyDown})
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 		_ = m.View()
 	}
 	wg.Wait()
@@ -480,10 +480,10 @@ func openPickerForm(t *testing.T, cfg *config.Config, p *persona.Profile, scan m
 		return fakeScan(scan)
 	}
 	m.cursor = 0
-	m.beginEdit()
+	m.beginEditAt(formRowName)
 	m.applyBrainModels(personaModelsMsg{seq: m.brainModels.seq, providers: fakeScan(scan)})
-	m, _ = m.focusStackStep()
-	m.setStackRow(stackRowBrainModel)
+	m.setFormRow(formRowBrainProvider)
+	m.setFormRow(formRowBrainModel)
 	return m
 }
 
@@ -495,12 +495,12 @@ func TestPersonaBrainModelCustomTextIsNotDestroyedByCycling(t *testing.T) {
 
 	typeCustom := func(t *testing.T, m personasModel) personasModel {
 		t.Helper()
-		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft}) // (default) → (custom)
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft}) // (default) → (custom)
 		if !m.brainModels.custom {
 			t.Fatal("← from (default) did not reach (custom)")
 		}
 		for _, r := range "my-model" {
-			m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		}
 		if got := m.formBrain().Model; got != "my-model" {
 			t.Fatalf("typed model = %q, want my-model", got)
@@ -519,7 +519,7 @@ func TestPersonaBrainModelCustomTextIsNotDestroyedByCycling(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := typeCustom(t, openPickerForm(t, cfg, &persona.Profile{ID: "test", DisplayName: "Test"}, scan))
 
-			m, _ = m.updateStackStep(tea.KeyMsg{Type: tc.leave})
+			m, _ = m.updateForm(tea.KeyMsg{Type: tc.leave})
 			if m.brainModels.custom {
 				t.Fatal("still in custom after cycling away")
 			}
@@ -532,7 +532,7 @@ func TestPersonaBrainModelCustomTextIsNotDestroyedByCycling(t *testing.T) {
 			if tc.leave == tea.KeyLeft {
 				back = tea.KeyRight
 			}
-			m, _ = m.updateStackStep(tea.KeyMsg{Type: back})
+			m, _ = m.updateForm(tea.KeyMsg{Type: back})
 			if !m.brainModels.custom {
 				t.Fatalf("cycling back did not return to (custom)")
 			}
@@ -549,10 +549,10 @@ func TestPersonaBrainModelCustomTextIsNotDestroyedByCycling(t *testing.T) {
 			t.Fatalf("form close left custom=%v text=%q", m.brainModels.custom, m.brainModels.customText)
 		}
 		m.cursor = 0
-		m.beginEdit()
-		m, _ = m.focusStackStep()
-		m.setStackRow(stackRowBrainModel)
-		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft})
+		m.beginEditAt(formRowName)
+		m.setFormRow(formRowBrainProvider)
+		m.setFormRow(formRowBrainModel)
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
 		if got := m.formBrain().Model; got != "" {
 			t.Fatalf("reopened form restored stale custom text %q", got)
 		}
@@ -565,26 +565,26 @@ func TestPersonaBrainModelRowHelpIsScopedToTheRow(t *testing.T) {
 	m := openPickerForm(t, &config.Config{BrainProvider: "ollama"},
 		&persona.Profile{ID: "test", DisplayName: "Test"}, scan)
 
-	if m.message != stackStepHelp {
-		t.Fatalf("step help = %q, want %q", m.message, stackStepHelp)
+	if !strings.Contains(m.message, "Model") || strings.Contains(m.message, "Type a model name") {
+		t.Fatalf("row help = %q, want the Model row's own help", m.message)
 	}
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft}) // → (custom)
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft}) // → (custom)
 	if !strings.Contains(m.message, "Type a model name") {
 		t.Fatalf("custom row help = %q", m.message)
 	}
 
 	// Moving to another row restores the step help while custom stays selected.
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyDown})
-	if m.stackRow == stackRowBrainModel {
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyDown})
+	if m.formRow == formRowBrainModel {
 		t.Fatal("↓ did not leave the Model row")
 	}
-	if m.message != stackStepHelp {
-		t.Fatalf("help after leaving the row = %q, want the step help", m.message)
+	if strings.Contains(m.message, "Type a model name") {
+		t.Fatalf("help after leaving the row = %q, want the new row's help", m.message)
 	}
 
 	// Coming back re-scopes it to the row that owns the typing keys.
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyUp})
-	if m.stackRow != stackRowBrainModel {
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyUp})
+	if m.formRow != formRowBrainModel {
 		t.Fatal("↑ did not return to the Model row")
 	}
 	if !strings.Contains(m.message, "Type a model name") {
@@ -592,12 +592,12 @@ func TestPersonaBrainModelRowHelpIsScopedToTheRow(t *testing.T) {
 	}
 
 	// Cycling off (custom) on the row drops the row help too.
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if m.brainModels.custom {
 		t.Fatal("→ did not leave custom")
 	}
-	if m.message != stackStepHelp {
-		t.Fatalf("help after leaving custom = %q, want the step help", m.message)
+	if strings.Contains(m.message, "Type a model name") {
+		t.Fatalf("help after leaving custom = %q, want the row help", m.message)
 	}
 }
 
@@ -660,14 +660,14 @@ func TestPersonaBrainModelRowFitsTheBox(t *testing.T) {
 				return fakeScan(tc.scan)
 			}
 			m.cursor = 0
-			m.beginEdit()
+			m.beginEditAt(formRowName)
 			if !tc.pending {
 				m.applyBrainModels(personaModelsMsg{seq: m.brainModels.seq, providers: fakeScan(tc.scan)})
 			}
-			m, _ = m.focusStackStep()
-			m.setStackRow(stackRowBrainModel)
+			m.setFormRow(formRowBrainProvider)
+			m.setFormRow(formRowBrainModel)
 			if tc.custom {
-				m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyLeft})
+				m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyLeft})
 				if !m.brainModels.custom {
 					t.Fatal("could not reach (custom)")
 				}

@@ -109,7 +109,7 @@ func TestPersonasScreenEditSystemPrompt(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 28
 	m.cursor = 0
-	m.beginEdit()
+	m.beginEditAt(formRowName)
 	if m.formMode != "edit" || m.editID != "samantha" {
 		t.Fatalf("edit mode = %q id = %q", m.formMode, m.editID)
 	}
@@ -215,7 +215,7 @@ func TestPersonasFormSavesWithoutRelyingOnCtrlS(t *testing.T) {
 			m.beginCreate()
 			m.nameInput.SetValue("Buddy")
 			m.promptTA.SetValue("You are {agent_name}, buddy.")
-			m.formStep = personaFormPrompt
+			m.promptOpen = true
 			m, _ = m.updateForm(tc.msg)
 			if m.formMode != "" {
 				t.Fatalf("form still open after %s (save not handled)", tc.name)
@@ -309,7 +309,7 @@ func TestPersonasEditFallbackInjectsNothing(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 30
 	m.cursor = 0
-	m.beginEdit()
+	m.beginEditAt(formRowName)
 
 	if got := m.promptTA.Value(); got != "" {
 		t.Fatalf("edit fallback injected a prompt body: %q", got)
@@ -342,7 +342,7 @@ func TestPersonasEditDoesNotInjectSamanthaForWrongRef(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 28
 	m.cursor = 0
-	m.beginEdit()
+	m.beginEditAt(formRowName)
 	if strings.Contains(m.promptTA.Value(), "samantha default") {
 		t.Fatalf("editor injected samantha default: %q", m.promptTA.Value())
 	}
@@ -369,7 +369,7 @@ func TestPersonasFormStackRoundTrip(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 30
 	m.cursor = 0
-	m.beginEdit()
+	m.beginEditAt(formRowName)
 
 	if got := stackBrainProviders()[m.brainProviderIdx]; got != "ollama" {
 		t.Fatalf("prefilled brain provider = %q, want ollama", got)
@@ -424,11 +424,11 @@ func TestPersonasStackVoiceIsSelectable(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 30
 	m.cursor = 0
-	m.beginEdit()
-	m, _ = m.focusStackStep()
+	m.beginEditAt(formRowName)
+	m.setFormRow(formRowBrainProvider)
 
 	// Land on the Voice row and cycle away from af_heart.
-	m.setStackRow(stackRowVoice)
+	m.setFormRow(formRowVoice)
 	before := m.selectedVoice
 	if before != "af_heart" {
 		t.Fatalf("selectedVoice = %q, want af_heart from profile", before)
@@ -437,26 +437,26 @@ func TestPersonasStackVoiceIsSelectable(t *testing.T) {
 	if !strings.Contains(view, "‹ af_heart ›") {
 		t.Fatalf("voice row should render as selectable, got:\n%s", view)
 	}
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if m.selectedVoice == before {
 		t.Fatal("←/→ on Voice row did not change the selection")
 	}
 	// Typing must not mutate the voice selection (no free-text field).
 	typed := m.selectedVoice
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	if m.selectedVoice != typed {
 		t.Fatalf("typing changed voice to %q; voice is select-only", m.selectedVoice)
 	}
 
 	// Changing TTS provider drops a voice that is not in the new catalog.
 	m.selectedVoice = "af_bella"
-	m.setStackRow(stackRowTTSProvider)
+	m.setFormRow(formRowTTSProvider)
 	// Cycle until qwen3-tts is selected.
 	for i := 0; i < len(stackTTSProviders()); i++ {
 		if providerAt(stackTTSProviders(), m.ttsProviderIdx) == "qwen3-tts" {
 			break
 		}
-		m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	}
 	if providerAt(stackTTSProviders(), m.ttsProviderIdx) != "qwen3-tts" {
 		t.Fatal("failed to select qwen3-tts provider")
@@ -465,8 +465,8 @@ func TestPersonasStackVoiceIsSelectable(t *testing.T) {
 		t.Fatalf("kokoro voice should clear under qwen3-tts, got %q", m.selectedVoice)
 	}
 	// Qwen catalog is selectable.
-	m.setStackRow(stackRowVoice)
-	m, _ = m.updateStackStep(tea.KeyMsg{Type: tea.KeyRight})
+	m.setFormRow(formRowVoice)
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if m.selectedVoice == "" {
 		t.Fatal("expected a qwen preset after cycling voice")
 	}
@@ -498,7 +498,7 @@ func TestPersonasPromptStepTabCompletesPlaceholder(t *testing.T) {
 	m.width, m.height = 80, 30
 	m.beginCreate()
 	m.nameInput.SetValue("Tabby")
-	m, _ = m.focusPromptStep()
+	m, _ = m.openPrompt()
 	m.promptTA.SetValue("")
 	m.promptTA.StartInsert()
 
@@ -506,8 +506,8 @@ func TestPersonasPromptStepTabCompletesPlaceholder(t *testing.T) {
 		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyTab})
-	if m.formStep != personaFormPrompt {
-		t.Fatalf("tab left the prompt step (step=%d); completion is unreachable", m.formStep)
+	if !m.promptOpen {
+		t.Fatal("tab left the prompt editor; completion is unreachable")
 	}
 	if !strings.Contains(m.promptTA.Value(), "{agent_name") {
 		t.Fatalf("tab did not complete the placeholder: %q", m.promptTA.Value())
@@ -518,8 +518,8 @@ func TestPersonasPromptStepTabCompletesPlaceholder(t *testing.T) {
 	}
 }
 
-// With nothing to complete, tab still moves between fields.
-func TestPersonasPromptStepTabStillNavigatesFields(t *testing.T) {
+// With nothing to complete, tab accepts the prompt and returns to the form.
+func TestPersonasPromptTabReturnsToTheForm(t *testing.T) {
 	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
 	m := newPersonas(cfg)
 	m.listPersonas = func() ([]*persona.Profile, error) {
@@ -530,21 +530,27 @@ func TestPersonasPromptStepTabStillNavigatesFields(t *testing.T) {
 	m.width, m.height = 80, 30
 	m.beginCreate()
 	m.nameInput.SetValue("Tabby")
-	m, _ = m.focusPromptStep()
+	m, _ = m.openPrompt()
 
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyTab})
-	if m.formStep != personaFormStack {
-		t.Fatalf("tab with no open brace should advance to the stack step, got %d", m.formStep)
+	if m.promptOpen {
+		t.Fatal("tab with no open brace should leave the editor")
 	}
-	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if m.formStep != personaFormPrompt {
-		t.Fatalf("shift+tab should return to the prompt step, got %d", m.formStep)
+	if m.formRow != formRowPrompt {
+		t.Fatalf("formRow = %d, want the prompt row after leaving the editor", m.formRow)
+	}
+	if m.formMode != "create" {
+		t.Fatal("tab closed the whole form")
+	}
+	// Back on the form, tab keeps moving between rows.
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyTab})
+	if m.formRow != formRowName {
+		t.Fatalf("formRow = %d, want a wrap to the name row", m.formRow)
 	}
 }
 
-// :w must accept the prompt and land on Model & voice — not submit the form.
-// Submitting closed the wizard and made the next step unreachable.
-func TestPersonasColonWAdvancesToStackStep(t *testing.T) {
+// :w must accept the prompt and hand the screen back to the form — not submit.
+func TestPersonasColonWReturnsToTheForm(t *testing.T) {
 	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
 	m := newPersonas(cfg)
 	m.listPersonas = func() ([]*persona.Profile, error) {
@@ -560,7 +566,7 @@ func TestPersonasColonWAdvancesToStackStep(t *testing.T) {
 	m.width, m.height = 80, 30
 	m.beginCreate()
 	m.nameInput.SetValue("Buddy")
-	m, _ = m.focusPromptStep()
+	m, _ = m.openPrompt()
 	// INSERT → NORMAL, then :w <enter>
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
 	for _, k := range []tea.KeyMsg{
@@ -571,19 +577,23 @@ func TestPersonasColonWAdvancesToStackStep(t *testing.T) {
 		m, _ = m.updateForm(k)
 	}
 	if created {
-		t.Fatal(":w submitted the form; it should only advance to Model & voice")
+		t.Fatal(":w submitted the form; it should only accept the prompt")
 	}
 	if m.formMode != "create" {
 		t.Fatalf("formMode = %q, want create still open", m.formMode)
 	}
-	if m.formStep != personaFormStack {
-		t.Fatalf("formStep = %d, want stack (Model & voice)", m.formStep)
+	if m.promptOpen {
+		t.Fatal(":w left the editor open")
 	}
-	// Stack must accept input after leaving the vim editor.
+	if m.formRow != formRowPrompt {
+		t.Fatalf("formRow = %d, want the prompt row", m.formRow)
+	}
+	// Model & voice must accept input after leaving the vim editor.
+	m.setFormRow(formRowBrainProvider)
 	before := m.brainProviderIdx
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
 	if m.brainProviderIdx == before {
-		t.Fatal("stack step did not respond to ←/→ after :w")
+		t.Fatal("the Brain row did not respond to ←/→ after :w")
 	}
 	// Model is a picker now: cycle to "(custom)" first, then it takes text.
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyDown})
@@ -615,7 +625,7 @@ func TestPersonasColonWQSubmitsForm(t *testing.T) {
 	m.beginCreate()
 	m.nameInput.SetValue("Buddy")
 	m.promptTA.SetValue("You are {agent_name}, buddy.")
-	m, _ = m.focusPromptStep()
+	m, _ = m.openPrompt()
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
 	for _, k := range []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune{':'}},
@@ -651,18 +661,18 @@ func TestPersonasFormFitsTerminalWithLongPromptLines(t *testing.T) {
 		m.reload()
 		m.width, m.height = size.w, size.h
 		m.beginCreate()
-		m, _ = m.focusPromptStep()
+		m, _ = m.openPrompt()
 
-		if got := len(m.formLines()); got > size.h {
-			t.Errorf("%dx%d: form is %d rows, exceeds the %d available",
+		if got := len(strings.Split(m.View(), "\n")); got > size.h {
+			t.Errorf("%dx%d: screen is %d rows, exceeds the %d available",
 				size.w, size.h, got, size.h)
 		}
 	}
 }
 
 // Esc must never silently discard an edit: leaving insert mode and the vim
-// double-tap reflex both keep the form open, and esc on Model & voice steps
-// back to the prompt instead of cancelling.
+// double-tap reflex both keep the form open, and esc on the form refuses while
+// the prompt differs from what the form opened with.
 func TestPersonasEscNeverDiscardsTheEdit(t *testing.T) {
 	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
 	m := newPersonas(cfg)
@@ -673,8 +683,8 @@ func TestPersonasEscNeverDiscardsTheEdit(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 30
 	m.cursor = 0
-	m.beginEdit()
-	m, _ = m.focusPromptStep()
+	m.beginEditAt(formRowName)
+	m, _ = m.openPrompt()
 
 	// Insert → esc → esc: normal mode first, then the hint — never a cancel.
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
@@ -686,19 +696,31 @@ func TestPersonasEscNeverDiscardsTheEdit(t *testing.T) {
 		t.Fatalf("message = %q, want the :q hint", m.message)
 	}
 
-	// Esc on Model & voice returns to the prompt, keeping the form open.
-	m, _ = m.focusStackStep()
+	// Edit the prompt for real, hand the screen back, and esc on the form must
+	// refuse just as firmly.
+	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'i'}},
+		{Type: tea.KeyRunes, Runes: []rune{'X'}},
+		{Type: tea.KeyEscape},
+		{Type: tea.KeyTab},
+	} {
+		m, _ = m.updateForm(k)
+	}
+	if m.promptOpen {
+		t.Fatal("tab did not hand the screen back to the form")
+	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
 	if m.formMode == "" {
-		t.Fatal("esc on the stack step discarded the edit")
+		t.Fatal("esc on the form discarded an edited prompt")
 	}
-	if m.formStep != personaFormPrompt {
-		t.Fatalf("formStep = %d, want prompt after stack esc", m.formStep)
+	if !strings.Contains(m.message, ":q") {
+		t.Fatalf("message = %q, want the :q hint", m.message)
 	}
 
-	// :q is the explicit discard, and still works. (focusPromptStep re-enters
-	// insert mode, so drop to normal first — which itself must not discard.)
+	// :q is the explicit discard, and still works. (Reopening re-enters insert
+	// mode, so drop to normal first — which itself must not discard.)
 	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyEnter},
 		{Type: tea.KeyEscape},
 		{Type: tea.KeyRunes, Runes: []rune{':'}},
 		{Type: tea.KeyRunes, Runes: []rune{'q'}},
@@ -711,10 +733,10 @@ func TestPersonasEscNeverDiscardsTheEdit(t *testing.T) {
 	}
 }
 
-// The name step is reachable backwards (shift+tab) with an edited prompt in
-// hand; esc there must refuse to discard until the prompt matches what the
+// Leaving the editor with an edited prompt in hand puts the user back on the
+// form; esc there must refuse to discard until the prompt matches what the
 // form opened with.
-func TestPersonasNameStepEscGuardsEditedPrompt(t *testing.T) {
+func TestPersonasFormEscGuardsEditedPrompt(t *testing.T) {
 	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
 	m := newPersonas(cfg)
 	m.listPersonas = func() ([]*persona.Profile, error) {
@@ -724,10 +746,10 @@ func TestPersonasNameStepEscGuardsEditedPrompt(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 30
 	m.cursor = 0
-	m.beginEdit()
-	m, _ = m.focusPromptStep()
+	m.beginEditAt(formRowName)
+	m, _ = m.openPrompt()
 
-	// Edit the prompt, drop to normal, shift+tab back to the name step.
+	// Edit the prompt, drop to normal, shift+tab back to the form.
 	for _, k := range []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune{'A'}},
 		{Type: tea.KeyEscape},
@@ -735,31 +757,32 @@ func TestPersonasNameStepEscGuardsEditedPrompt(t *testing.T) {
 	} {
 		m, _ = m.updateForm(k)
 	}
-	if m.formStep != personaFormName {
-		t.Fatalf("formStep = %d, want name after shift+tab", m.formStep)
+	if m.promptOpen {
+		t.Fatal("shift+tab did not leave the editor")
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
 	if m.formMode == "" {
-		t.Fatal("name-step esc discarded an edited prompt")
+		t.Fatal("form esc discarded an edited prompt")
 	}
 
-	// With the prompt untouched, name-step esc still cancels.
+	// With the prompt untouched, esc still cancels.
 	m2 := newPersonas(cfg)
 	m2.listPersonas = m.listPersonas
 	m2.loadPromptForProfile = func(*persona.Profile) (string, error) { return "original prompt", nil }
 	m2.reload()
 	m2.width, m2.height = 80, 30
 	m2.cursor = 0
-	m2.beginEdit()
+	m2.beginEditAt(formRowName)
 	m2, _ = m2.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
 	if m2.formMode != "" {
-		t.Fatal("pristine name-step esc should cancel")
+		t.Fatal("pristine esc should cancel")
 	}
 }
 
-// A blank name (shift+tab from the name step on create) must not leave esc on
-// the stack step appearing to do nothing: it returns to the name step.
-func TestPersonasStackEscWithBlankNameReturnsToName(t *testing.T) {
+// The form is one screen, so shift+tab from the name row wraps to the prompt
+// row rather than stepping backwards through a wizard, and esc on a form
+// nobody has edited cancels outright.
+func TestPersonasFormWrapsRowsAndEscCancels(t *testing.T) {
 	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
 	m := newPersonas(cfg)
 	m.listPersonas = func() ([]*persona.Profile, error) { return nil, nil }
@@ -767,16 +790,19 @@ func TestPersonasStackEscWithBlankNameReturnsToName(t *testing.T) {
 	m.reload()
 	m.width, m.height = 80, 30
 	m.beginCreate()
-	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyShiftTab}) // name → stack (backwards)
-	if m.formStep != personaFormStack {
-		t.Fatalf("formStep = %d, want stack after shift+tab", m.formStep)
+	if m.formRow != formRowName {
+		t.Fatalf("formRow = %d, want the name row on open", m.formRow)
+	}
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.formRow != formRowPrompt {
+		t.Fatalf("formRow = %d, want a wrap to the prompt row", m.formRow)
+	}
+	if m.promptOpen {
+		t.Fatal("shift+tab opened the editor; only enter does that")
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
-	if m.formStep != personaFormName {
-		t.Fatalf("formStep = %d, want name after esc with blank name", m.formStep)
-	}
-	if m.formMode == "" {
-		t.Fatal("stack esc cancelled instead of stepping back")
+	if m.formMode != "" {
+		t.Fatal("esc on a pristine form should cancel it")
 	}
 }
 

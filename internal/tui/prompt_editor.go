@@ -460,10 +460,10 @@ func (p promptEditor) modeline() string {
 	}
 	switch p.ed.Mode() {
 	case vim.ModeInsert:
-		return "-- INSERT -- · { tab variables · esc normal · :w next · :wq / ctrl+j save"
+		return "-- INSERT -- · { tab variables · esc normal · :w back to form · :wq / ctrl+j save"
 	case vim.ModeVisual, vim.ModeVisualLine:
 		return "-- VISUAL -- · y yank · d delete · c change · esc normal"
 	default:
-		return "NORMAL · i insert · v visual · u undo · p paste · :w next · :wq save · :q cancel"
+		return "NORMAL · i insert · v visual · u undo · p paste · :w back to form · :wq save · :q cancel"
 	}
 }

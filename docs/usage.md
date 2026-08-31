@@ -199,11 +199,21 @@ are refused. Deleting the active persona activates another one so the agent
 name and voice keys stay consistent. The same removal from the shell is
 `obey-voice persona delete <id> --yes`.
 
-The persona system-prompt editor has a vim mode: `esc` for NORMAL; `i`/`a`/`o`
-to insert; `h`/`j`/`k`/`l`/`0`/`$`/`w`/`b`/`gg`/`G` to move; `x`/`D`/`dd` to
-delete; `:w` accepts the prompt and advances to Model & voice; `:wq` (or
-normal-mode `enter`) saves the whole form; `:q` cancels. `ctrl+j`, `alt+s`,
-and `f2` also save the form from any step.
+The create/edit form is one screen, not a wizard: Name, the Model & voice rows
+(Brain, Model, TTS, Voice, Tier), and the System prompt. `↑`/`↓` (or tab) move
+between rows, `←`/`→` change the provider, model or voice under the cursor, and
+`ctrl+j` (also `alt+s`, `f2`, `ctrl+s`) saves from anywhere — so changing a
+persona's model or voice never goes through the prompt editor. `esc` cancels,
+except while the prompt differs from what the form opened with; that is
+discarded explicitly with `:q`. From the Personas list, `e` opens the form on
+the name and `m` opens it straight on Model & voice.
+
+The System prompt row shows the document's opening line and its size; `enter`
+gives the vim editor the whole screen: `esc` for NORMAL; `i`/`a`/`o` to insert;
+`h`/`j`/`k`/`l`/`0`/`$`/`w`/`b`/`gg`/`G` to move; `x`/`D`/`dd` to delete; `tab`
+completes a `{placeholder}` when there is one and otherwise returns to the form,
+as does `:w`; `:wq` (or normal-mode `enter`) saves the persona; `:q` discards
+the whole edit.
 
 ## Turn recovery and token usage
 
