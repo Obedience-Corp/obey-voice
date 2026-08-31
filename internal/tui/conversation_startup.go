@@ -6,7 +6,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	ansi "github.com/charmbracelet/x/ansi"
+
+	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 )
 
 // The conversation screen while its runtime is being built.
@@ -16,17 +19,24 @@ import (
 // say so. It used to render the full conversation chrome with "Preparing..."
 // in the header corner: an empty transcript, a composer that accepted text
 // nothing would answer, and no sign the program was doing anything at all.
+//
+// What it shows now, in the order it matters: the presence mark turning (this
+// program is alive), the step being waited on with the steps already done, a
+// bar, and an elapsed clock. The clock is the one that survives every layout —
+// when a single stage takes thirty seconds it is the only proof of progress.
 
 const (
-	// startupTickInterval drives the spinner (~8 fps).
-	startupTickInterval = 120 * time.Millisecond
+	// startupTickInterval drives the orb and the sweep (~12 fps).
+	startupTickInterval = 80 * time.Millisecond
 	// startupReducedTickInterval still moves the clock without animating: the
 	// elapsed time is information, not decoration, so reduced motion keeps it.
 	startupReducedTickInterval = time.Second
+	// startupBlockWidth is the width of the text block under the orb.
+	startupBlockWidth = 52
+	// startupHistoryMax caps the completed-step list so the block cannot grow
+	// past the screen on a long cold start.
+	startupHistoryMax = 4
 )
-
-// startupSpinner is the animated glyph; reduced motion gets a static one.
-var startupSpinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // startupTickMsg advances the starting screen.
 type startupTickMsg time.Time
@@ -44,26 +54,40 @@ type startupState struct {
 	active bool
 	label  string
 	stage  BuildStage
-	since  time.Time
-	frame  int
+	// done is the steps already finished, oldest first.
+	done  []string
+	since time.Time
+	frame int
 }
 
 // beginStartup puts the screen into the waiting state. name is what the
 // session is being started as, when the caller knows it — the runtime's own
 // identity is not resolved until the build finishes.
 func (m *conversationModel) beginStartup(name string) tea.Cmd {
+	// The opening stage carries no label: it is a placeholder for the first
+	// real step, and retiring it would put "✓ Preparing" in a list of steps
+	// that actually happened.
 	m.startup = startupState{
 		active: true,
 		label:  strings.TrimSpace(name),
-		stage:  BuildStage{Label: "Preparing"},
 		since:  time.Now(),
 	}
 	return startupTickCmd(m.reducedMotion)
 }
 
+// setBuildStage advances to the next step, retiring the current one to the
+// done list. A download reports many times under one label; that is one step,
+// not one per percent.
 func (m *conversationModel) setBuildStage(stage BuildStage) {
 	if !m.startup.active || strings.TrimSpace(stage.Label) == "" {
 		return
+	}
+	if stage.Label == m.startup.stage.Label {
+		m.startup.stage = stage
+		return
+	}
+	if prev := strings.TrimSpace(m.startup.stage.Label); prev != "" {
+		m.startup.done = append(m.startup.done, prev)
 	}
 	m.startup.stage = stage
 }
@@ -90,46 +114,113 @@ func formatElapsed(d time.Duration) string {
 	return fmt.Sprintf("%d:%02d", int(d.Minutes()), int(d.Seconds())%60)
 }
 
+// orbStyles paints the presence mark: brand cyan rings, a white middle C, and
+// a dim core. The voice meter's palette is cyan throughout, which would lose
+// the middle ring.
+func orbStyles() anim.Styles {
+	return anim.Styles{
+		Accent: lipgloss.NewStyle().Foreground(colorAccent),
+		Label:  lipgloss.NewStyle().Foreground(colorNormal),
+		Muted:  lipgloss.NewStyle().Foreground(colorDim),
+	}
+}
+
+// startupLayout sizes the screen to the terminal: the orb is the first thing
+// to shrink and the first thing to go, the clock the last.
+func startupLayout(width, height int) (orbRows, history int) {
+	switch {
+	case height >= 30 && width >= 60:
+		return 11, startupHistoryMax
+	case height >= 24 && width >= 44:
+		return 9, 3
+	case height >= 18 && width >= 34:
+		return 7, 2
+	case height >= 14:
+		return 5, 1
+	default:
+		return 0, 0
+	}
+}
+
 // startupView is the whole screen while the runtime is being built.
 func (m conversationModel) startupView() string {
-	// The screen can render before the first WindowSizeMsg lands; 80 is the
+	// The screen can render before the first WindowSizeMsg lands; 80x24 is the
 	// same fallback the other screens use.
-	width := m.width
+	width, height := m.width, m.height
 	if width <= 0 {
 		width = 80
 	}
-	glyph := "●"
-	if !m.reducedMotion {
-		glyph = startupSpinner[m.startup.frame%len(startupSpinner)]
+	if height <= 0 {
+		height = 24
 	}
+	orbRows, history := startupLayout(width, height)
+	block := min(startupBlockWidth, max(width-4, 24))
+
+	var lines []string
+	if orbRows > 0 {
+		lines = append(lines, centerBlock(anim.Orb(m.startup.frame, orbRows, orbStyles(), m.reducedMotion), width)...)
+		lines = append(lines, "")
+	}
+	lines = append(lines, centerLine(headerStyle.Render(m.startupTitle()), width), "")
+	lines = append(lines, centerBlock(m.startupSteps(block, history), width)...)
+	lines = append(lines, "", centerLine(dimStyle.Render(startupNote(m.startup.stage)), width))
+	lines = append(lines, "", centerLine(dimStyle.Render("ctrl+c quits"), width))
+
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width, "…")
+	}
+	return "\n" + strings.Join(lines, "\n")
+}
+
+func (m conversationModel) startupTitle() string {
 	name := m.startup.label
 	if name == "" {
 		name = m.agentName
 	}
-	title := "Starting a conversation"
-	if name != "" {
-		title = "Starting " + name
+	if name == "" {
+		return "Starting a conversation"
+	}
+	return "Starting " + name
+}
+
+// startupSteps is the checklist block: finished steps, then the one in flight
+// with the clock, then its bar.
+func (m conversationModel) startupSteps(width, history int) []string {
+	styles := orbStyles()
+	var lines []string
+
+	done := m.startup.done
+	if history <= 0 {
+		done = nil
+	} else if len(done) > history {
+		done = done[len(done)-history:]
+	}
+	for _, step := range done {
+		lines = append(lines, statusStyle.Render("✓ ")+dimStyle.Render(step))
 	}
 
-	stage := m.startup.stage.Text()
-	elapsed := formatElapsed(m.startupElapsed())
-	// The stage and the clock share a line, the clock pinned right: a number
-	// that moves every second is the clearest proof the program is alive.
-	line := agentStyle.Render(glyph) + "  " + normalStyle.Render(stage)
-	if pad := width - 2 - ansi.StringWidth(line) - ansi.StringWidth(elapsed) - 2; pad > 0 {
-		line += strings.Repeat(" ", pad) + dimStyle.Render(elapsed)
+	// Current step, with the clock pushed to the right edge of the block. No
+	// spinner here: the orb above is the motion, and the bar below is the
+	// second one — a third would be noise.
+	step := m.startup.stage.Label
+	if strings.TrimSpace(step) == "" {
+		step = "Preparing"
+	}
+	left := selectedStyle.Render("▸ ") + normalStyle.Render(step+"…")
+	elapsed := dimStyle.Render(formatElapsed(m.startupElapsed()))
+	if pad := width - ansi.StringWidth(left) - ansi.StringWidth(elapsed); pad > 0 {
+		left += strings.Repeat(" ", pad) + elapsed
 	} else {
-		line += "  " + dimStyle.Render(elapsed)
+		left += " " + elapsed
 	}
+	lines = append(lines, left)
 
-	var b strings.Builder
-	b.WriteString("\n")
-	b.WriteString("  " + headerStyle.Render(title) + "\n\n")
-	inner := max(width-2, 20)
-	b.WriteString("  " + ansi.Truncate(line, inner, "…") + "\n\n")
-	b.WriteString("  " + dimStyle.Render(ansi.Truncate(startupNote(m.startup.stage), inner, "…")) + "\n")
-	b.WriteString("\n  " + dimStyle.Render("ctrl+c quits"))
-	return b.String()
+	if m.startup.stage.Download {
+		lines = append(lines, "  "+anim.Bar(m.startup.stage.Pct, width-2, styles))
+	} else {
+		lines = append(lines, "  "+anim.Sweep(m.startup.frame, width-2, styles, m.reducedMotion))
+	}
+	return lines
 }
 
 // startupNote explains the wait in the terms of the step being waited on.
@@ -138,4 +229,32 @@ func startupNote(stage BuildStage) string {
 		return "First run downloads the models once; later sessions skip this."
 	}
 	return "Models load at session start — the first one after a restart is the slow one."
+}
+
+// centerLine centres one rendered line in width columns.
+func centerLine(line string, width int) string {
+	pad := (width - ansi.StringWidth(line)) / 2
+	if pad <= 0 {
+		return line
+	}
+	return strings.Repeat(" ", pad) + line
+}
+
+// centerBlock centres a group of lines as one block, so their left edges stay
+// aligned with each other rather than each line floating on its own.
+func centerBlock(lines []string, width int) []string {
+	widest := 0
+	for _, line := range lines {
+		widest = max(widest, ansi.StringWidth(line))
+	}
+	pad := (width - widest) / 2
+	if pad <= 0 {
+		return lines
+	}
+	out := make([]string, len(lines))
+	prefix := strings.Repeat(" ", pad)
+	for i, line := range lines {
+		out[i] = prefix + line
+	}
+	return out
 }

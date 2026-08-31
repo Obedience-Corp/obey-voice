@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	ansi "github.com/charmbracelet/x/ansi"
 )
 
 // Starting a session must say so. The build runs off the update loop for
@@ -57,20 +58,36 @@ func TestBuildStagesReachTheStartingScreen(t *testing.T) {
 
 	for _, tc := range []struct {
 		stage BuildStage
-		want  string
+		want  []string
 	}{
-		{BuildStage{Label: "Loading speech recognition"}, "Loading speech recognition…"},
-		{BuildStage{Label: "Downloading kokoro-v1", Download: true, Pct: 42}, "Downloading kokoro-v1: 42%"},
-		{BuildStage{Label: "Opening the microphone"}, "Opening the microphone…"},
+		{BuildStage{Label: "Loading speech recognition"}, []string{"▸ Loading speech recognition…"}},
+		// A download names the asset on the step line and puts the number on
+		// the bar, where a percentage means something.
+		{BuildStage{Label: "Downloading kokoro-v1", Download: true, Pct: 42},
+			[]string{"▸ Downloading kokoro-v1…", "42%", "✓ Loading speech recognition"}},
+		{BuildStage{Label: "Opening the microphone"}, []string{"▸ Opening the microphone…", "✓ Downloading kokoro-v1"}},
 	} {
 		model, cmd := app.Update(buildStageMsg{stage: tc.stage})
 		app = model.(App)
 		if cmd == nil {
 			t.Fatal("stage handler did not re-arm the progress feed")
 		}
-		if got := stripANSI(app.conversation.View()); !strings.Contains(got, tc.want) {
-			t.Fatalf("stage %q not shown:\n%s", tc.want, got)
+		got := stripANSI(app.conversation.View())
+		for _, want := range tc.want {
+			if !strings.Contains(got, want) {
+				t.Fatalf("stage screen missing %q:\n%s", want, got)
+			}
 		}
+	}
+
+	// A download reports many times under one label: that is one step in the
+	// list, not one per percent.
+	for _, pct := range []float64{10, 55, 99} {
+		model, _ := app.Update(buildStageMsg{stage: BuildStage{Label: "Downloading parakeet", Download: true, Pct: pct}})
+		app = model.(App)
+	}
+	if got := strings.Count(stripANSI(app.conversation.View()), "Downloading parakeet"); got != 1 {
+		t.Fatalf("one download appears %d times in the step list", got)
 	}
 
 	// An empty stage never blanks the line that is already there.
@@ -139,22 +156,24 @@ func TestStartupTickStopsWhenReady(t *testing.T) {
 	}
 }
 
-// Reduced motion keeps the clock (information) and drops the spinner
-// (decoration), on a slower tick.
+// Reduced motion keeps the clock and the layout (information) and drops the
+// motion: the orb stops turning and the indeterminate bar stops travelling.
 func TestStartingScreenRespectsReducedMotion(t *testing.T) {
 	m := newConversation("Samantha")
 	m.width, m.height = 80, 24
 	m.reducedMotion = true
 	m.beginStartup("Samantha")
-	m.startup.frame = 3
-	view := stripANSI(m.View())
-	for _, glyph := range startupSpinner {
-		if strings.Contains(view, glyph) {
-			t.Fatalf("reduced motion still animates (%s):\n%s", glyph, view)
-		}
+
+	first := stripANSI(m.View())
+	m.startup.frame = 17
+	if second := stripANSI(m.View()); second != first {
+		t.Fatalf("reduced motion still animates between frames:\n%s\n---\n%s", first, second)
 	}
-	if !strings.Contains(view, "0:00") {
-		t.Fatalf("reduced motion dropped the elapsed clock:\n%s", view)
+	if !strings.Contains(first, "0:00") {
+		t.Fatalf("reduced motion dropped the elapsed clock:\n%s", first)
+	}
+	if !strings.Contains(first, "Starting Samantha") {
+		t.Fatalf("reduced motion dropped the screen:\n%s", first)
 	}
 }
 
@@ -174,5 +193,51 @@ func TestRuntimeReadyClearsTheStartingScreen(t *testing.T) {
 	}
 	if strings.Contains(stripANSI(app.conversation.View()), "Starting Uncle Fu") {
 		t.Fatal("starting screen still rendered after ready")
+	}
+}
+
+// The orb is the first thing to shrink and the first thing to go; the clock
+// and the current step survive every layout.
+func TestStartingScreenFitsSmallTerminals(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{120, 40}, {80, 24}, {70, 20}, {60, 16}, {40, 12}, {30, 10}} {
+		m := newConversation("Samantha")
+		m.width, m.height = size.w, size.h
+		m.beginStartup("Samantha")
+		m.setBuildStage(BuildStage{Label: "Opening the microphone"})
+
+		view := m.View()
+		lines := strings.Split(view, "\n")
+		if len(lines) > size.h {
+			t.Errorf("%dx%d: screen is %d rows, exceeds the %d available", size.w, size.h, len(lines), size.h)
+		}
+		for _, line := range lines {
+			if got := ansi.StringWidth(line); got > size.w {
+				t.Errorf("%dx%d: line %q is %d cells wide", size.w, size.h, stripANSI(line), got)
+			}
+		}
+		plain := stripANSI(view)
+		if !strings.Contains(plain, "Opening the microphone") {
+			t.Errorf("%dx%d: current step dropped:\n%s", size.w, size.h, plain)
+		}
+		if !strings.Contains(plain, "0:00") {
+			t.Errorf("%dx%d: elapsed clock dropped:\n%s", size.w, size.h, plain)
+		}
+	}
+}
+
+// A download gets a bar that means something; everything else gets one that
+// does not pretend to.
+func TestStartingScreenBarMatchesTheStage(t *testing.T) {
+	m := newConversation("Samantha")
+	m.width, m.height = 90, 30
+	m.beginStartup("Samantha")
+
+	m.setBuildStage(BuildStage{Label: "Loading the voice"})
+	if got := stripANSI(m.View()); strings.Contains(got, "%") {
+		t.Fatalf("a model load claimed a percentage:\n%s", got)
+	}
+	m.setBuildStage(BuildStage{Label: "Downloading kokoro", Download: true, Pct: 73})
+	if got := stripANSI(m.View()); !strings.Contains(got, "73%") {
+		t.Fatalf("download bar does not show its percentage:\n%s", got)
 	}
 }
