@@ -591,6 +591,41 @@ func TestDiagnoseWarnsOnBargeInWithoutFrontend(t *testing.T) {
 	}
 }
 
+func TestDiagnoseWarnsOnFrontendWithoutBargeIn(t *testing.T) {
+	cfg := healthyBrain(&Config{STTProvider: "sherpa", TTSProvider: "kokoro", BargeInEnabled: false, VoiceFrontendEnabled: true})
+	diags := Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil })
+	found := false
+	for _, d := range diags {
+		if d.Name == "voice-frontend-suppression" {
+			found = true
+			if d.Severity != SeverityWarn {
+				t.Errorf("voice-frontend-suppression severity = %q, want warn", d.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected a voice-frontend-suppression warning when the frontend is on without barge-in")
+	}
+	if HasErrors(diags) {
+		t.Error("voice-frontend-suppression must be a warning, not an error")
+	}
+
+	cfg.BargeInEnabled = true
+	for _, d := range Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil }) {
+		if d.Name == "voice-frontend-suppression" {
+			t.Fatal("no voice-frontend-suppression warning expected when barge-in is also on")
+		}
+	}
+
+	cfg.BargeInEnabled = false
+	cfg.VoiceFrontendEnabled = false
+	for _, d := range Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil }) {
+		if d.Name == "voice-frontend-suppression" {
+			t.Fatal("no voice-frontend-suppression warning expected when the frontend is off")
+		}
+	}
+}
+
 func TestDiagnoseFlagsLegacySessionFuse(t *testing.T) {
 	find := func(diags []Diagnostic) *Diagnostic {
 		for i := range diags {

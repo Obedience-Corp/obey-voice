@@ -259,6 +259,9 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		if opts.Capture == nil && cfg.VoiceFrontendEnabled {
 			frontend = audio.NewVoiceFrontend()
 			cleanups = append(cleanups, func() { _ = frontend.Close() })
+			if !cfg.BargeInEnabled {
+				logf("warning: voice_frontend_enabled without barge-in; the noise suppressor over-gates normal speech so VAD starts late and STT hears fragments")
+			}
 		}
 
 		var localCapture *audio.Capture
