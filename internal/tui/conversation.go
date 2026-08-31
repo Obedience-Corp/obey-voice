@@ -1097,12 +1097,9 @@ func renderUserTurn(text string) string {
 func renderAgentTurn(name, text string) string {
 	think, spoken := textclean.SplitThink(text)
 	showThink := think != ""
-	// Both halves empty on non-blank text means the reply so far is nothing but
-	// think markup — a reasoning block that has opened (or opened and closed)
-	// before any token arrived. This runs on every streaming frame, so it is a
-	// normal transient state, not a corner case. Painting text here would put
-	// the raw <think> tags on screen, which is the bug this function exists to
-	// fix; paint the dim state instead.
+	// Tag-only leftover on ResponseReady / session replay: both halves empty
+	// means the stored text is think markup with no inner body. Paint the dim
+	// state rather than the raw tags. Live frames no longer call this function.
 	if !showThink && spoken == "" && strings.TrimSpace(text) != "" {
 		showThink = true
 	}

@@ -80,9 +80,8 @@ func TestRenderAgentTurnStylesThinkBlocks(t *testing.T) {
 	}
 }
 
-// renderAgentTurn runs on every streaming frame, so it sees the moment a model
-// has opened a reasoning block and produced nothing yet. That frame must paint
-// the dim state, never the raw tags.
+// Replay/ResponseReady defense: a stored think-only block must paint the dim
+// state, never the raw tags. Live frames use renderAgentBubble, not this path.
 func TestRenderAgentTurnEmptyThinkBlockShowsStateNotTags(t *testing.T) {
 	for _, in := range []string{"<think>", "<think></think>", "<think>\n</think>", "<think> </think>"} {
 		view := renderAgentTurn("Santa", in)
@@ -95,9 +94,8 @@ func TestRenderAgentTurnEmptyThinkBlockShowsStateNotTags(t *testing.T) {
 	}
 }
 
-// A streaming frame can land in the middle of a tag. Painting the bytes so far
-// puts "<thi" in the reply style and "</thin" in the dim body — the same class
-// of leak as a whole tag, one frame smaller.
+// SplitThink on replayed session text can still see a partial tag. Painting
+// those bytes would leak markup; hold them. Live frames no longer call this.
 func TestRenderAgentTurnHoldsPartialTagFrames(t *testing.T) {
 	for _, in := range []string{"<t", "<thi", "<think", "<think>reasoning</thin", "<think>reasoning</think>Hi <t"} {
 		view := renderAgentTurn("Santa", in)
