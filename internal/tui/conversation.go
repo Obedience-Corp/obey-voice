@@ -23,6 +23,11 @@ import (
 
 const conversationInputHeight = 3
 
+// rmsHearingFloor is when mic energy flips the TUI chrome from Listening to
+// Hearing you. Silero still endpoints the turn. 0.15 ignores a quiet fan
+// (~0.12) but still reacts as soon as you start talking.
+const rmsHearingFloor = 0.15
+
 // voiceTickInterval drives the conversation meter animation (~10 fps).
 const voiceTickInterval = 100 * time.Millisecond
 
@@ -775,7 +780,12 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			} else {
 				m.inputLevel = m.inputLevel*0.55 + level*0.45
 			}
-			// Meter only. Hearing is STTPhase "hearing" (Silero), not RMS.
+			// Silero still endpoints the turn. This only flips the chrome so the
+			// meter rides your voice instead of the idle listening pulse.
+			if m.voiceMode == anim.ModeListening && m.inputLevel > rmsHearingFloor {
+				m.setVoiceMode(anim.ModeHearing)
+				m.setStatus("Hearing you", false)
+			}
 		}
 
 	case events.STTPhase:

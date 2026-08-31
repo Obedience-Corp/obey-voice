@@ -83,12 +83,8 @@ func TestMeetingPhaseAndLevelUpdateMode(t *testing.T) {
 		t.Fatalf("mode = %v", m.voiceMode)
 	}
 	m, _ = m.handleListenMsg(meetingLevelMsg(0.8))
-	if m.voiceMode != anim.ModeListening {
-		t.Fatalf("loud noise must not promote to hearing, got %v", m.voiceMode)
-	}
-	m, _ = m.handleListenMsg(meetingPhaseMsg("hearing"))
 	if m.voiceMode != anim.ModeHearing {
-		t.Fatalf("STT hearing phase should set hearing, got %v", m.voiceMode)
+		t.Fatalf("loud mic energy should promote to hearing, got %v", m.voiceMode)
 	}
 	m, _ = m.handleListenMsg(meetingPartialMsg("hello world"))
 	if m.partial != "hello world" {

@@ -337,17 +337,20 @@ func TestVoiceMeterTracksInputLevelAndModes(t *testing.T) {
 		t.Fatalf("status = %q, want Listening", m.status)
 	}
 
+	m.handleEvent(events.AudioLevel{Source: "input", Level: 0.08})
+	if m.status != "Listening" {
+		t.Fatalf("status = %q after quiet energy, want Listening (fan must not promote)", m.status)
+	}
+
 	m.handleEvent(events.AudioLevel{Source: "input", Level: 0.8})
 	if m.inputLevel < 0.7 {
 		t.Fatalf("inputLevel = %v, want elevated after AudioLevel", m.inputLevel)
 	}
-	if m.status != "Listening" {
-		t.Fatalf("status = %q after loud noise, want Listening (hearing is Silero, not RMS)", m.status)
-	}
-
-	m.handleEvent(events.STTPhase{Phase: "hearing"})
 	if m.status != "Hearing you" {
-		t.Fatalf("status = %q after STT hearing, want Hearing you", m.status)
+		t.Fatalf("status = %q after loud mic energy, want Hearing you", m.status)
+	}
+	if m.voiceMode != anim.ModeHearing {
+		t.Fatalf("voiceMode = %v after loud mic energy, want Hearing", m.voiceMode)
 	}
 	if !strings.Contains(m.View(), "Hearing you") {
 		t.Fatalf("voice meter not visible in view:\n%s", m.View())

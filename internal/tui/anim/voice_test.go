@@ -98,6 +98,9 @@ func TestEffectiveLevel(t *testing.T) {
 	if effectiveLevel(ModeListening, 0, 0) <= 0 {
 		t.Fatal("listening needs ambient level")
 	}
+	if got := effectiveLevel(ModeListening, 0.8, 0); got != 0.8 {
+		t.Fatalf("listening should ride strong mic energy, got %v", got)
+	}
 	if effectiveLevel(ModeHearing, 0.8, 0) != 0.8 {
 		t.Fatal("hearing should pass through strong levels")
 	}

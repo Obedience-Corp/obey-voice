@@ -557,7 +557,10 @@ func (m meetingModel) handleListenMsg(msg tea.Msg) (meetingModel, tea.Cmd) {
 		} else {
 			m.inputLevel = m.inputLevel*0.55 + level*0.45
 		}
-		// Meter only. Hearing is the STT "hearing" phase (Silero), not RMS.
+		if m.voiceMode == anim.ModeListening && m.inputLevel > rmsHearingFloor {
+			m.voiceMode = anim.ModeHearing
+			m.status = "Hearing speech"
+		}
 	case meetingPartialMsg:
 		if m.sessionPhase != meetingSessionRecording {
 			return m, nil
