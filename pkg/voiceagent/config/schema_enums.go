@@ -37,7 +37,7 @@ func brainProviderEnum() []string { return []string{"claude", "grok", "ollama"} 
 // accepts. The parser also takes off/0/no and on/1/yes as aliases; those are
 // not offered as choices.
 func ollamaThinkEnum() []string {
-	return []string{"false", "true", "low", "medium", "high", "max"}
+	return []string{"auto", "false", "true", "low", "medium", "high", "max"}
 }
 
 // qwenVoiceModeEnum mirrors the tts.VoiceMode constants a Qwen worker accepts.

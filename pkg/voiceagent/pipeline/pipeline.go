@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -358,6 +359,9 @@ type turnMetrics struct {
 	deadAir         time.Duration
 	// underruns totals the gaps *inside* segments, which deadAir cannot see.
 	underruns int
+	// thinkLeak counts think tags that still reached filterThink after the
+	// brain split. Must stay 0 on the product path.
+	thinkLeak int
 }
 
 func newTurnMetrics() *turnMetrics {
@@ -589,8 +593,8 @@ func (p *Pipeline) recoverTurn(ctx context.Context, turn *turnConductor, metrics
 		// Appending RecoveryReply is how 2026-08-21 showed Veronica's line plus
 		// "Want me to try a simpler approach?" on the same turn. The Error
 		// event above is the activity detail; the transcript keeps what was
-		// already spoken.
-		response = partial
+		// already spoken — speakable content only, never a think region.
+		response = speakableStallTranscript(partial)
 	} else if partial != "" {
 		// Ollama's stream layer may already have recovered out loud (streaming
 		// RecoveryReply itself) before the turn died; appending a second copy
@@ -609,6 +613,14 @@ func (p *Pipeline) recoverTurn(ctx context.Context, turn *turnConductor, metrics
 	if p.OnTurn != nil {
 		p.OnTurn()
 	}
+}
+
+func speakableStallTranscript(partial string) string {
+	s := strings.TrimSpace(textclean.StripThinkBlocks(partial))
+	if s == "" || textclean.ContainsThinkTag(s) {
+		return ""
+	}
+	return s
 }
 
 // speakBestEffort synthesizes and plays one utterance for a degraded turn.
@@ -667,6 +679,7 @@ func (p *Pipeline) StopPlayback() {
 // RunTurn executes one conversational turn with streaming TTS.
 // Returns the user's input text, or empty string if no speech was detected.
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
+	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics)
@@ -787,6 +800,7 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics)
@@ -1289,6 +1303,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// them aloud, and the same filtered text feeds the transcript — so
 			// the model never reads its own reasoning back out of conversation
 			// history on the next turn, paying its tokens every turn after.
+			// A tag still on Chunks after the brain split is a leak: strip it
+			// and tell the operator, but do not stall the turn.
+			if textclean.ContainsThinkTag(sentence) {
+				metrics.thinkLeak++
+				p.emit(events.Error{Stage: "think", Message: "think markup leaked onto the speech bus"})
+			}
 			routeSegment(proj.filterThink(sentence))
 
 		case event := <-playbackEvents:
@@ -1679,12 +1699,16 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synth
 }
 
 // observeStream is the model-observer stage. It is the sole consumer of
-// stream.Chunks, forwarding each chunk to a fresh channel and stamping the
-// first-model-chunk metric (with a ResponseStreamingStarted event) on the first
-// one. The terminal result path (stream.Done) is owned separately by
-// streamResponse. The forwarding send is cancellation-safe: on ctx cancellation
-// the stage returns instead of blocking on a downstream that has stopped
-// reading, so it cannot wedge teardown, model completion, or barge-in.
+// stream.Chunks and stream.Thinking. Chunks are forwarded for sentence
+// segmentation; Thinking is drained so a thinking producer cannot block, and
+// emitted as ThinkingDelta for the operator. The terminal result path
+// (stream.Done) is owned separately by streamResponse.
+//
+// A closed Thinking channel must be niled: a closed case delivers "" forever
+// and can starve Chunks.
+//
+// The forwarding send is cancellation-safe: on ctx cancellation the stage
+// returns instead of blocking on a downstream that has stopped reading.
 // The returned done channel closes once the goroutine has fully exited, so a
 // caller can join it before reading metrics (it stamps firstModelChunk) and
 // avoid racing snapshot() on an early return.
@@ -1695,27 +1719,44 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 	go func() {
 		defer close(done)
 		defer close(out)
+		chunks, thinking := stream.Chunks, stream.Thinking
 		first := true
-		for {
+		for chunks != nil || thinking != nil {
 			select {
 			case <-ctx.Done():
 				return
-			case chunk, ok := <-stream.Chunks:
+			case t, ok := <-thinking:
 				if !ok {
-					return
+					thinking = nil
+					continue
+				}
+				if t == "" {
+					continue
 				}
 				if first {
 					first = false
 					metrics.firstModelChunk = time.Now()
 					p.emit(events.ResponseStreamingStarted{Elapsed: metrics.elapsed(metrics.firstModelChunk)})
 				}
-				// Surface the raw chunk for incremental TUI display before it is
-				// batched into sentences for TTS downstream.
-				p.emit(events.ResponseDelta{Text: chunk})
+				p.emit(events.ThinkingDelta{Text: t})
+			case c, ok := <-chunks:
+				if !ok {
+					chunks = nil
+					continue
+				}
+				if c == "" {
+					continue
+				}
+				if first {
+					first = false
+					metrics.firstModelChunk = time.Now()
+					p.emit(events.ResponseStreamingStarted{Elapsed: metrics.elapsed(metrics.firstModelChunk)})
+				}
+				p.emit(events.ResponseDelta{Text: c})
 				select {
 				case <-ctx.Done():
 					return
-				case out <- chunk:
+				case out <- c:
 				}
 			}
 		}
@@ -1774,6 +1815,10 @@ func (p *Pipeline) emit(event events.Event) {
 	if p.Events != nil {
 		p.Events.Emit(event)
 	}
+}
+
+func (p *Pipeline) bindBrainInfo() {
+	brain.SetInfoSink(func(info events.Info) { p.emit(info) })
 }
 
 // toolStartHook emits ToolCallStarted for UI (stdout + TUI).

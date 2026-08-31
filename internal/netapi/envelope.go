@@ -80,6 +80,8 @@ func encodeEvent(e events.Event) map[string]any {
 		// is the field every other text-bearing event on this wire uses, and
 		// what existing clients already decode.
 		env["text"] = e.Text
+	case events.ThinkingDelta:
+		env["text"] = e.Text
 	case events.SpeechSegmentReady:
 		env["text"] = e.Text
 	case events.GeneratingVoice:

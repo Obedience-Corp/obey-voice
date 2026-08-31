@@ -13,6 +13,7 @@ import (
 func TestCapabilitiesAdvertiseThisBuild(t *testing.T) {
 	want := []string{
 		CapResponseDeltaPayload,
+		CapThinkingDeltaPayload,
 		CapAudioLevelPayload,
 		CapInterruptEvents,
 		CapVoiceClaimOnDequeue,

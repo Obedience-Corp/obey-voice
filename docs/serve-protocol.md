@@ -73,7 +73,7 @@ output moves to stderr. The first line is `ready`, written once the listener is
 bound:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
 ```
 
 | Field | Meaning |
@@ -92,7 +92,7 @@ bound:
 LAN mode with a trusted or self-signed cert omits `client_setup_url` entirely:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
 ```
 
 A `pairing_code` line (`{"event":"pairing_code","code":"…","expires_at":"…"}`)
@@ -544,7 +544,8 @@ in `GET /v1/status`:
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `response_delta` | `text` (string) | One incremental piece of the assistant's reply as the brain produces it. Advisory and droppable: `response_ready` always follows with the complete, canonical text, and concatenating the deltas of an ordinary turn reproduces it. (Not on a *degraded* turn — a recovery reply after a hard brain or tool failure is appended to `response_ready` without ever being streamed. Render `response_ready`, and use the deltas only to fill in ahead of it.) |
+| `response_delta` | `text` (string) | One incremental piece of the assistant's reply as the brain produces it. Advisory and droppable: `response_ready` always follows with the complete, canonical text, and concatenating the deltas of an ordinary turn reproduces it. (Not on a *degraded* turn — a recovery reply after a hard brain or tool failure is appended to `response_ready` without ever being streamed. Render `response_ready`, and use the deltas only to fill in ahead of it.) Speakable content only — no think tags. |
+| `thinking_delta` | `text` (string) | One incremental piece of operator-facing reasoning. Advisory and droppable like `response_delta`. Never spoken; Stage ignores it. |
 | `audio_level` | `source` (`input` \| `output`), `level` (number, `0`–`1`) | Throttled (~50 ms) energy sample. `level` is the normalised RMS the engine already computes for its own meters — not raw dBFS. Droppable by design: a client must not infer anything from a gap. **`source` is `input` in practice**: serve has no host mic loop and no output meter, so an output level is not currently emitted. A client that needs an output meter measures its own playback. |
 
 A client that needs sub-100 ms meter response should measure locally;
@@ -687,6 +688,7 @@ it is absent, which is what an older serve looks like:
 | Flag | Means |
 |---|---|
 | `response_delta_payload` | `response_delta` carries `text` (streaming replies are usable) |
+| `thinking_delta_payload` | `thinking_delta` carries `text` (operator-facing reasoning is usable) |
 | `audio_level_payload` | `audio_level` carries `source` and `level` |
 | `interrupt_events` | A remote `interrupt` emits `turn_interrupted` / `speaking_interrupted` |
 | `voice_claim_on_dequeue` | A queued `voice_start` does not hold the mic |

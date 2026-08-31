@@ -158,9 +158,9 @@ func brainKeys() []KeySpec {
 			Help: "How long Ollama keeps the model in memory between turns. Shorter frees RAM but pays the load cost again.",
 		},
 		{
-			Key: "ollama_think", Type: TypeEnum, Default: "false", Enum: ollamaThinkEnum(),
+			Key: "ollama_think", Type: TypeEnum, Default: "auto", Enum: ollamaThinkEnum(),
 			Group: GroupBrain, Title: "Reasoning",
-			Help: "Lets reasoning models think before answering. Costs latency, and some models then reply with nothing speakable.",
+			Help: "auto turns thinking on for qwen3-family models so chain-of-thought is not spoken. Explicit false is the leaky hatch.",
 		},
 		{
 			Key: "claude_max_session_tokens", Type: TypeInt, Default: 0, Unit: "tokens", Min: num(0), Max: num(1000000),

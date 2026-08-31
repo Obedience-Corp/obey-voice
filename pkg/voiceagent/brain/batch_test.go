@@ -577,7 +577,7 @@ func TestOllamaBatchCarriesRequestPolicy(t *testing.T) {
 		model:     "m",
 		options:   interactive.requestOptions(),
 		keepAlive: interactive.keepAlive,
-		think:     ollamaThinkValue(cfg.OllamaThink),
+		think:     resolveOllamaThink(cfg.OllamaThink, "m"),
 	}
 	if _, err := o.Transform(context.Background(), BatchRequest{Text: "hello"}); err != nil {
 		t.Fatalf("Transform: %v", err)
@@ -605,5 +605,17 @@ func TestOllamaBatchCarriesRequestPolicy(t *testing.T) {
 	}
 	if got.Think == nil || *got.Think {
 		t.Errorf("think = %v, want an explicit false so a reasoning model does not reason into a file", got.Think)
+	}
+}
+
+func TestOllamaBatchResolveThink(t *testing.T) {
+	if got := resolveOllamaThink("false", "qwen3:4b"); got == nil || got.Value != false {
+		t.Errorf("explicit false on qwen3 = %#v, want false", got)
+	}
+	if got := resolveOllamaThink("auto", "qwen3:4b"); got == nil || got.Value != true {
+		t.Errorf("qwen3+auto = %#v, want true", got)
+	}
+	if got := resolveOllamaThink("auto", "m"); got == nil || got.Value != false {
+		t.Errorf("non-qwen3+auto = %#v, want false", got)
 	}
 }

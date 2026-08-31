@@ -220,8 +220,8 @@ almost nothing and re-reads the persona and history from scratch. On
 slightly slower, so this trades the tail for the median. `0` restores Ollama's
 own choice. `ollama_keep_alive`
 (default `10m`) keeps the
-model resident between turns; `ollama_think` (default `false`) disables
-chain-of-thought on thinking models so voice turns get speakable `content`
-instead of empty replies after a private think block.
+model resident between turns; `ollama_think` (default `auto`) turns thinking
+on for qwen3-family models so chain-of-thought is not spoken. Explicit `false`
+on qwen3 dumps untagged CoT into Content, which can be spoken.
 
 See [Configuration](configuration.md) for the matching keys.

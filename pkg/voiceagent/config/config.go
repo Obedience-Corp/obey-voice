@@ -128,11 +128,10 @@ type Config struct {
 	// OllamaKeepAlive keeps the model resident between voice turns
 	// (Go duration string; empty = server default).
 	OllamaKeepAlive string `mapstructure:"ollama_keep_alive"`
-	// OllamaThink controls Ollama chat thinking/reasoning for models that
-	// support it (qwen3.x, etc.). Voice defaults to "false": thinking models
-	// otherwise often fill message.thinking and leave message.content empty,
-	// which Obey Voice surfaces as the "lost my train of thought" fallback.
-	// Values: false|off|0, true|on|1, or low|medium|high|max.
+	// OllamaThink controls Ollama chat thinking/reasoning. Default "auto":
+	// qwen3-family models get Think:true so chain-of-thought lands in
+	// Message.Thinking, not spoken Content. Explicit false is the leaky hatch.
+	// Values: auto, false|off|0, true|on|1, or low|medium|high|max.
 	OllamaThink string `mapstructure:"ollama_think"`
 	// ClaudeMaxSessionTokens caps the prompt the claude CLI replays on --resume.
 	// Past it the brain starts a fresh CLI session from recent history instead of
@@ -417,10 +416,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ollama_num_ctx", 8192)
 	v.SetDefault("ollama_num_batch", 128)
 	v.SetDefault("ollama_keep_alive", "10m")
-	// Disable chain-of-thought on voice turns: thinking models (qwen3.x) often
-	// return empty content after a long think block, which becomes the canned
-	// "lost my train of thought" reply. Set ollama_think=true or a level to re-enable.
-	v.SetDefault("ollama_think", "false")
+	// auto: qwen3-family models get Think:true so CoT lands in Message.Thinking
+	// instead of spoken Content. Explicit false remains the leaky hatch.
+	v.SetDefault("ollama_think", "auto")
 	// The CLI session is trusted by default (no silent drops); the fuse is
 	// opt-in for unattended/serve setups.
 	v.SetDefault("claude_max_session_tokens", 0)

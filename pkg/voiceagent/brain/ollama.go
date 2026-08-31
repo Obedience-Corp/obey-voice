@@ -7,13 +7,16 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ollama/ollama/api"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // ollamaSpeakerSep marks a stable speaker id prefix on stored user messages so
@@ -203,9 +206,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	o.ensureContextBudget(skillCtx)
 
 	out := make(chan string, 8)
+	thinking := make(chan string, 8)
 	done := make(chan StreamResult, 1)
 	go func() {
 		defer close(out)
+		defer close(thinking)
 		defer close(done)
 
 		// Per-turn tool session: exposes skills through progressive disclosure.
@@ -220,6 +225,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		// loop the model often restates that text; forwarding it again is
 		// how Veronica said the same sentence twice (2026-08-28).
 		var spoken strings.Builder
+		hadThinking := false
+		hadTools := false
 
 		for i := 0; i < maxToolIterations; i++ {
 			var tools api.Tools
@@ -234,16 +241,31 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			var toolCalls []api.ToolCall
 			var prefillTokens, genTokens int
 			strip := newLabelStripper(o.cfg.AgentName)
+			var split textclean.ThinkFilter
 
 			err := o.chat(ctx, req, func(resp api.ChatResponse) error {
+				fieldThink := resp.Message.Thinking
+				if fieldThink != "" {
+					hadThinking = true
+					if err := sendChunk(ctx, thinking, fieldThink); err != nil {
+						return err
+					}
+				}
 				if resp.Message.Content != "" {
 					textBuf.WriteString(resp.Message.Content)
-					// Stream every content delta as it arrives, tools enabled or
+					speakable, inner := split.FeedSplit(resp.Message.Content)
+					if inner != "" && fieldThink == "" {
+						hadThinking = true
+						if err := sendChunk(ctx, thinking, inner); err != nil {
+							return err
+						}
+					}
+					// Stream speakable content as it arrives, tools enabled or
 					// not, so the TUI renders token-by-token. Any preamble a
 					// tool-calling iteration emits streams too; the final answer
 					// continues the same reply after tools run — unless it is
 					// the same reply, which we swallow.
-					emit := strip.Feed(resp.Message.Content)
+					emit := strip.Feed(speakable)
 					if restatementSkip(spoken.String(), textBuf.String()) {
 						return nil
 					}
@@ -262,6 +284,23 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				return nil
 			})
+			heldSpeak, heldThink := split.FlushSplit()
+			if heldThink != "" {
+				hadThinking = true
+				if sendErr := sendChunk(ctx, thinking, heldThink); sendErr != nil && err == nil {
+					err = sendErr
+				}
+			}
+			if heldSpeak != "" {
+				emit := strip.Feed(heldSpeak)
+				if emit != "" && !restatementSkip(spoken.String(), textBuf.String()) {
+					if sendErr := sendChunk(ctx, out, emit); sendErr != nil && err == nil {
+						err = sendErr
+					} else if sendErr == nil {
+						spoken.WriteString(emit)
+					}
+				}
+			}
 			// Anything the label check still holds is real reply text; release
 			// it whether the turn ends, errors, or loops into tools.
 			if held := strip.Flush(); held != "" && !restatementSkip(spoken.String(), textBuf.String()) {
@@ -298,6 +337,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
+				hadTools = true
 				// Add the assistant's tool-calling message to history.
 				o.history = append(o.history, api.Message{
 					Role:      "assistant",
@@ -317,13 +357,21 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 
 			// No tool calls — the answer already streamed above; record a
-			// cleaned form in history. Tool-only turns often finish with an
-			// empty final message; finalizeStreamedText streams a fallback so
-			// the UI never ends on "looking into it" with silence.
-			response, err := finalizeStreamedText(ctx, out, stripReplyConventions(o.cfg.AgentName, textBuf.String()))
-			if err != nil {
-				done <- StreamResult{Err: err}
-				return
+			// cleaned form in history. Empty-content fallback is only for
+			// tool-only or fully empty turns: thinking-only empty stays
+			// empty so the operator-facing thought is not replaced by a
+			// spoken recovery line.
+			raw := stripReplyConventions(o.cfg.AgentName, textBuf.String())
+			cleaned := cleanForVoice(raw)
+			var response string
+			if fallbackEmptyContent(cleaned, hadTools, hadThinking) || hasSpeakableContent(cleaned) {
+				response, err = finalizeStreamedText(ctx, out, raw)
+				if err != nil {
+					done <- StreamResult{Err: err}
+					return
+				}
+			} else {
+				response = cleaned
 			}
 			o.history = append(o.history, api.Message{Role: "assistant", Content: response})
 			o.trimHistory()
@@ -343,7 +391,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		done <- StreamResult{}
 	}()
 
-	return &Stream{Chunks: out, Done: done}, nil
+	return &Stream{Chunks: out, Thinking: thinking, Done: done}, nil
 }
 
 func sendChunk(ctx context.Context, out chan<- string, chunk string) error {
@@ -374,6 +422,8 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		onEnd:          opts.OnToolEnd,
 	}
 
+	hadThinking := false
+	hadTools := false
 	for i := 0; i < maxToolIterations; i++ {
 		var tools api.Tools
 		if opts.ToolsEnabled {
@@ -396,6 +446,8 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 		// Tool calls — execute and loop (skills stack on full CLI tools).
 		if len(response.ToolCalls) > 0 {
+			hadTools = true
+			hadThinking = hadThinking || messageHadThinking(response)
 			o.history = append(o.history, api.Message{
 				Role:      "assistant",
 				Content:   stripReplyConventions(o.cfg.AgentName, response.Content),
@@ -412,9 +464,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			continue
 		}
 
-		// Text response. Strip the label and think block, clean, then fall
-		// back, so the fallback is spoken verbatim.
-		text := spokenOrFallback(cleanForVoice(stripReplyConventions(o.cfg.AgentName, response.Content)))
+		hadThinking = hadThinking || messageHadThinking(response)
+		// Same empty-content table as ThinkStream: thinking-only empty stays
+		// empty so /compact is not replaced by the recovery line.
+		text := cleanForVoice(stripReplyConventions(o.cfg.AgentName, response.Content))
+		if fallbackEmptyContent(text, hadTools, hadThinking) {
+			text = spokenOrFallback(text)
+		}
 		o.history = append(o.history, api.Message{Role: "assistant", Content: text})
 		o.trimHistory()
 		return text, nil
@@ -427,13 +483,31 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 // text this turn already streamed, usually before a tool call. Local models
 // often emit the spoken line, fire a phantom tool, then emit the same line
 // again. Forwarding the second copy is how Veronica said one sentence twice.
+// soFar is compared as speakable text: think tags in a restated Content
+// must not hide that it is the same reply.
 func restatementSkip(already, soFar string) bool {
 	already = strings.TrimSpace(already)
-	soFar = strings.TrimSpace(soFar)
+	soFar = strings.TrimSpace(textclean.StripThinkBlocks(soFar))
 	if already == "" || soFar == "" {
 		return false
 	}
 	return soFar == already || strings.HasPrefix(already, soFar)
+}
+
+// fallbackEmptyContent is the empty-Content table: recover when there is
+// nothing speakable and the turn either used tools or never thought.
+func fallbackEmptyContent(cleaned string, hadTools, hadThinking bool) bool {
+	return !hasSpeakableContent(cleaned) && (hadTools || !hadThinking)
+}
+
+func messageHadThinking(msg api.Message) bool {
+	if strings.TrimSpace(msg.Thinking) != "" {
+		return true
+	}
+	var f textclean.ThinkFilter
+	_, inner := f.FeedSplit(msg.Content)
+	_, held := f.FlushSplit()
+	return inner != "" || held != ""
 }
 
 // newChatRequest builds a streaming chat request carrying the session's
@@ -442,8 +516,7 @@ func restatementSkip(already, soFar string) bool {
 // persona — first), keep_alive so the model stays resident between voice
 // turns (a reload is a multi-second mid-conversation stall), num_batch so
 // prompt reading is not throttled by a window-derived guess, and think so
-// reasoning models emit speakable content instead of empty replies after a
-// private chain-of-thought.
+// qwen3-family models put CoT in Message.Thinking instead of spoken Content.
 func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *api.ChatRequest {
 	stream := true
 	req := &api.ChatRequest{
@@ -452,7 +525,7 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 		Tools:     tools,
 		Stream:    &stream,
 		KeepAlive: o.keepAlive,
-		Think:     ollamaThinkValue(o.cfg.OllamaThink),
+		Think:     o.resolvedThink(),
 		Options:   o.requestOptions(),
 	}
 	return req
@@ -516,7 +589,7 @@ const (
 // It is the source of truth for the ollama_think setting: a level the parser
 // gains is invisible to Settings until it is listed here.
 func ThinkLevels() []string {
-	return []string{"false", "true", thinkLow, thinkMedium, thinkHigh, thinkMax}
+	return []string{"auto", "false", "true", thinkLow, thinkMedium, thinkHigh, thinkMax}
 }
 
 // ThinkLevelAccepted reports whether ollamaThinkValue understands value. It
@@ -525,7 +598,7 @@ func ThinkLevels() []string {
 // picker.
 func ThinkLevelAccepted(value string) bool {
 	switch strings.TrimSpace(strings.ToLower(value)) {
-	case "", "false", "off", "0", "no", "true", "on", "1", "yes",
+	case "", "auto", "false", "off", "0", "no", "true", "on", "1", "yes",
 		thinkLow, thinkMedium, thinkHigh, thinkMax:
 		return true
 	default:
@@ -533,13 +606,76 @@ func ThinkLevelAccepted(value string) bool {
 	}
 }
 
-// ollamaThinkValue maps config ollama_think onto the Ollama API Think field.
-// Voice defaults to false: thinking models (qwen3.x) often fill
-// message.thinking and leave message.content empty, which the harness turns
-// into the "lost my train of thought" fallback. Unknown values fall back to
-// false so a typo never re-enables thinking by accident.
+// PreferOllamaThink reports whether model is in the qwen3 family that dumps
+// untagged chain-of-thought into Content unless the API Think field is on.
+func PreferOllamaThink(model string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "qwen3")
+}
+
+// resolveOllamaThink maps config ollama_think onto the API Think field.
+// Empty and "auto" consult PreferOllamaThink; any other value goes through
+// ollamaThinkValue. Keys off raw, not viper.
+func resolveOllamaThink(raw, model string) *api.ThinkValue {
+	s := strings.TrimSpace(strings.ToLower(raw))
+	if s == "" || s == "auto" {
+		if PreferOllamaThink(model) {
+			return &api.ThinkValue{Value: true}
+		}
+		return &api.ThinkValue{Value: false}
+	}
+	return ollamaThinkValue(raw)
+}
+
+func (o *OllamaBrain) resolvedThink() *api.ThinkValue {
+	raw := ""
+	if o.cfg != nil {
+		raw = o.cfg.OllamaThink
+	}
+	v := resolveOllamaThink(raw, o.model)
+	maybeWarnThinkOff(o.model, v)
+	return v
+}
+
+var (
+	thinkOffOnce sync.Once
+	infoSinkMu   sync.Mutex
+	infoSink     func(events.Info)
+)
+
+// SetInfoSink routes operator Info from this package onto the app event bus.
+// Once-per-process warnings (qwen3 + ollama_think=false) must reach the
+// activity feed, not only stderr.
+func SetInfoSink(fn func(events.Info)) {
+	infoSinkMu.Lock()
+	infoSink = fn
+	infoSinkMu.Unlock()
+}
+
+func maybeWarnThinkOff(model string, think *api.ThinkValue) {
+	if !PreferOllamaThink(model) || think == nil || think.Value != false {
+		return
+	}
+	thinkOffOnce.Do(func() {
+		msg := fmt.Sprintf("thinking model %q with ollama_think=false; untagged CoT can be spoken", model)
+		fmt.Fprintf(os.Stderr, "obey-voice: %s\n", msg)
+		infoSinkMu.Lock()
+		sink := infoSink
+		infoSinkMu.Unlock()
+		if sink != nil {
+			sink(events.Info{Message: msg})
+		}
+	})
+}
+
+// ollamaThinkValue maps an explicit ollama_think value onto the Ollama API
+// Think field. It must not receive "auto" — that is resolveOllamaThink's job.
+// Unknown values fall back to false so a typo never re-enables thinking.
 func ollamaThinkValue(raw string) *api.ThinkValue {
 	s := strings.TrimSpace(strings.ToLower(raw))
+	if s == "auto" {
+		fmt.Fprintf(os.Stderr, "obey-voice: ollamaThinkValue received auto; using false (call resolveOllamaThink)\n")
+		return &api.ThinkValue{Value: false}
+	}
 	switch s {
 	case "", "false", "off", "0", "no":
 		return &api.ThinkValue{Value: false}
@@ -562,6 +698,11 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 	if err != nil && req.Tools != nil && modelRejectedTools(err) {
 		fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected tools (%v); continuing without tool calling — file read/write will not run\n", o.model, err)
 		req.Tools = nil
+		err = o.client.Chat(ctx, req, fn)
+	}
+	if err != nil && thinkEnabled(req.Think) && modelRejectedThink(err) {
+		fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected think (%v); continuing with think=false\n", o.model, err)
+		req.Think = ollamaThinkValue("false")
 		return o.client.Chat(ctx, req, fn)
 	}
 	return err
@@ -569,6 +710,28 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 
 func modelRejectedTools(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "does not support tools")
+}
+
+func modelRejectedThink(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not support think") || strings.Contains(msg, "does not support thinking")
+}
+
+func thinkEnabled(v *api.ThinkValue) bool {
+	if v == nil || v.Value == nil {
+		return false
+	}
+	switch x := v.Value.(type) {
+	case bool:
+		return x
+	case string:
+		return x != ""
+	default:
+		return false
+	}
 }
 
 // defaultWarmupNumCtx is used when ollama_num_ctx is unset (0). Omitting
@@ -597,10 +760,6 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 		return
 	}
 	stream := false
-	think := "false"
-	if o.cfg != nil {
-		think = o.cfg.OllamaThink
-	}
 	// Build on the same options a real turn sends, rather than assembling a
 	// second map by hand. Ollama reloads the model whenever a request's options
 	// differ from the loaded runner's, so any drift between these two sets buys
@@ -622,7 +781,7 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 		Model:     o.model,
 		Messages:  []api.Message{{Role: "user", Content: "hi"}},
 		Stream:    &stream,
-		Think:     ollamaThinkValue(think),
+		Think:     o.resolvedThink(),
 		KeepAlive: o.keepAlive,
 		Options:   opts,
 	}

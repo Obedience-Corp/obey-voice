@@ -48,6 +48,105 @@ func collect(t *testing.T, ch <-chan string) []string {
 	}
 }
 
+func TestObserveStreamNilThinkingDoesNotSpin(t *testing.T) {
+	p := &Pipeline{Events: events.NewBus()}
+	metrics := newTurnMetrics()
+	stream := scriptedStream(context.Background(), []string{"Hello."}, nil)
+	if stream.Thinking != nil {
+		t.Fatal("scriptedStream Thinking must stay nil")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	chunks, done := p.observeStream(ctx, stream, metrics)
+	got := collect(t, chunks)
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("observeStream spun or hung with Thinking == nil")
+	}
+	if len(got) != 1 || got[0] != "Hello." {
+		t.Fatalf("forwarded %v, want [Hello.]", got)
+	}
+	if metrics.firstModelChunk.IsZero() {
+		t.Fatal("firstModelChunk was not stamped")
+	}
+}
+
+func TestObserveStreamThinkingClosedBeforeChunks(t *testing.T) {
+	p := &Pipeline{Events: events.NewBus()}
+	metrics := newTurnMetrics()
+	chunksCh := make(chan string)
+	thinkingCh := make(chan string)
+	close(thinkingCh)
+	go func() {
+		chunksCh <- "Hello."
+		close(chunksCh)
+	}()
+	stream := &brain.Stream{Chunks: chunksCh, Thinking: thinkingCh, Done: make(chan brain.StreamResult, 1)}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, done := p.observeStream(ctx, stream, metrics)
+	got := collect(t, out)
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("observeStream hung after Thinking closed before Chunks")
+	}
+	if len(got) != 1 || got[0] != "Hello." {
+		t.Fatalf("later Chunks = %v, want [Hello.]", got)
+	}
+}
+
+func TestObserveStreamDrainsBufferedThinkingAfterChunksClose(t *testing.T) {
+	bus := events.NewBus()
+	var thinks []string
+	events.Subscribe(bus, func(e events.ThinkingDelta) { thinks = append(thinks, e.Text) })
+
+	p := &Pipeline{Events: bus}
+	metrics := newTurnMetrics()
+	chunksCh := make(chan string)
+	thinkingCh := make(chan string, 2)
+	thinkingCh <- "The user "
+	thinkingCh <- "said hi."
+	close(thinkingCh)
+	close(chunksCh)
+	stream := &brain.Stream{Chunks: chunksCh, Thinking: thinkingCh, Done: make(chan brain.StreamResult, 1)}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, done := p.observeStream(ctx, stream, metrics)
+	_ = collect(t, out)
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("observeStream did not drain buffered Thinking after Chunks closed")
+	}
+	if len(thinks) != 2 || thinks[0] != "The user " || thinks[1] != "said hi." {
+		t.Fatalf("ThinkingDelta = %q, want both buffered strings", thinks)
+	}
+}
+
+func TestObserveStreamBothNilExitsImmediately(t *testing.T) {
+	p := &Pipeline{Events: events.NewBus()}
+	metrics := newTurnMetrics()
+	stream := &brain.Stream{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	out, done := p.observeStream(ctx, stream, metrics)
+	_ = collect(t, out)
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("observeStream did not exit when both channels were nil")
+	}
+	if !metrics.firstModelChunk.IsZero() {
+		t.Fatal("nil stream must not stamp firstModelChunk")
+	}
+}
+
 func TestObserveStreamForwardsChunksAndMarksFirstChunk(t *testing.T) {
 	bus := events.NewBus()
 	var started events.ResponseStreamingStarted

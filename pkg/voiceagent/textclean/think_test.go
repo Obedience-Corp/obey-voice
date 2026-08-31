@@ -75,6 +75,69 @@ func TestSplitThink(t *testing.T) {
 	}
 }
 
+func TestThinkFilterFeedSplitCapturesInnerText(t *testing.T) {
+	tests := []struct {
+		name, in, wantSpeak, wantThink string
+	}{
+		{"think then reply", "<think>The user said hi.</think>\nHello there!", "\nHello there!", "The user said hi."},
+		{"thinking alias", "<thinking>plan the greeting</thinking>Hi.", "Hi.", "plan the greeting"},
+		{"no tags", "Hello there!", "Hello there!", ""},
+		{"unclosed", "<think>still reasoning", "", "still reasoning"},
+		{"tags dropped from both", "<think></think>Hi.", "Hi.", ""},
+		{"stray close is not think", "All done </think> here.", "All done  here.", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var f ThinkFilter
+			speak, think := f.FeedSplit(tt.in)
+			if speak != tt.wantSpeak || think != tt.wantThink {
+				t.Errorf("FeedSplit(%q) = (%q, %q), want (%q, %q)", tt.in, speak, think, tt.wantSpeak, tt.wantThink)
+			}
+			if ContainsThinkTag(speak) || ContainsThinkTag(think) {
+				t.Errorf("FeedSplit leaked tags: speak=%q think=%q", speak, think)
+			}
+		})
+	}
+
+	var f ThinkFilter
+	speak, think := f.FeedSplit(`<think>The user says "hi".`)
+	if speak != "" {
+		t.Fatalf("open segment speak = %q, want empty", speak)
+	}
+	if think != `The user says "hi".` {
+		t.Fatalf("open segment think = %q", think)
+	}
+	speak, think = f.FeedSplit(" Plan a greeting.</think>Hello there!")
+	if think != " Plan a greeting." {
+		t.Fatalf("close segment think = %q", think)
+	}
+	if speak != "Hello there!" {
+		t.Fatalf("close segment speak = %q", speak)
+	}
+}
+
+func TestThinkFilterFlushSplit(t *testing.T) {
+	var f ThinkFilter
+	speak, think := f.FeedSplit("Reply that trails off <")
+	if speak != "Reply that trails off " || think != "" {
+		t.Fatalf("FeedSplit held comparison = (%q, %q)", speak, think)
+	}
+	speak, think = f.FlushSplit()
+	if speak != "<" || think != "" {
+		t.Fatalf("FlushSplit comparison = (%q, %q), want the held bracket as speakable", speak, think)
+	}
+
+	f = ThinkFilter{}
+	_, think = f.FeedSplit("<think>reasoning <")
+	if think != "reasoning " {
+		t.Fatalf("in-think body = %q, want captured before the held prefix", think)
+	}
+	speak, think = f.FlushSplit()
+	if speak != "" || think != "" {
+		t.Fatalf("FlushSplit inside think = (%q, %q), want tag fragment dropped", speak, think)
+	}
+}
+
 func TestThinkFilterSpansSegments(t *testing.T) {
 	var f ThinkFilter
 	if got := f.Feed(`<think>The user says "speaker-2: Hi santa".`); got != "" {
