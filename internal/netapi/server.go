@@ -26,10 +26,11 @@ type Options struct {
 	Bind        string
 	AllowPublic bool
 	// ExtraBinds are additional host:port addresses served by the same
-	// handler, TLS certificate, and auth. Each entry passes the same
-	// validateBind policy as Bind. Lets one serve reach loopback clients
-	// (the Mac app) and LAN clients (a paired phone) simultaneously.
-	// Duplicates of Bind or of earlier entries are ignored.
+	// handler and auth. Each entry is TLS unless LoopbackHTTP is set and
+	// that listener is loopback. Each entry passes the same validateBind
+	// policy as Bind. Lets one serve reach loopback clients (the Mac app)
+	// and LAN clients (a paired phone) simultaneously. Duplicates of Bind
+	// or of earlier entries are ignored.
 	ExtraBinds []string
 
 	// SetPersona, when set, enables the set_persona control message. It is a

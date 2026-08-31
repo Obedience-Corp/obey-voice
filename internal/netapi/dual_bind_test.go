@@ -167,6 +167,31 @@ func TestListenAndServeRejectsPublicExtraBind(t *testing.T) {
 	}
 }
 
+func TestLoopbackAddr(t *testing.T) {
+	cases := []struct {
+		addr net.Addr
+		want bool
+	}{
+		{&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 7262}, true},
+		{&net.TCPAddr{IP: net.IPv6loopback, Port: 7262}, true},
+		{&net.TCPAddr{IP: net.IPv4(192, 168, 0, 188), Port: 7262}, false},
+		{&net.TCPAddr{IP: net.IPv4(100, 64, 0, 7), Port: 7262}, false},
+		{&net.TCPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 7262}, false},
+		{nil, false},
+	}
+	for _, tc := range cases {
+		name := "nil"
+		if tc.addr != nil {
+			name = tc.addr.String()
+		}
+		t.Run(name, func(t *testing.T) {
+			if got := loopbackAddr(tc.addr); got != tc.want {
+				t.Fatalf("loopbackAddr(%v) = %v, want %v", tc.addr, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoopbackHTTPServesPlainHTTP(t *testing.T) {
 	creds, err := LoadOrCreateCredentials(t.TempDir())
 	if err != nil {
@@ -233,6 +258,109 @@ func TestLoopbackHTTPServesPlainHTTP(t *testing.T) {
 	}
 	if _, err := insecureClient().Do(httpsReq); err == nil {
 		t.Fatal("HTTPS on LoopbackHTTP loopback unexpectedly succeeded")
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ListenAndServe after cancel: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ListenAndServe did not return after cancel")
+	}
+}
+
+func TestLoopbackHTTPLeavesNonLoopbackOnTLS(t *testing.T) {
+	// Mixed bind: unspecified primary is not loopback so it stays ServeTLS;
+	// a loopback extra is Serve. 0.0.0.0 is used because a real LAN IP is
+	// not guaranteed in CI.
+	creds, err := LoadOrCreateCredentials(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	dispatcher := NewDispatcher(&scriptedRunner{}, bus, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go dispatcher.Run(ctx)
+
+	got := make(chan []net.Addr, 1)
+	server := New(Options{
+		Bind:         "0.0.0.0:0",
+		AllowPublic:  true,
+		ExtraBinds:   []string{"127.0.0.1:0"},
+		LoopbackHTTP: true,
+		Credentials:  creds,
+		Bus:          bus,
+		Dispatcher:   dispatcher,
+		OnListening:  func(addrs []net.Addr) { got <- addrs },
+	})
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe(ctx) }()
+
+	var addrs []net.Addr
+	select {
+	case addrs = <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnListening never fired")
+	}
+	if len(addrs) != 2 {
+		t.Fatalf("Addrs() = %v, want primary + extra", addrs)
+	}
+	_, primaryPort, err := net.SplitHostPort(addrs[0].String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsAddr := net.JoinHostPort("127.0.0.1", primaryPort)
+	httpAddr := addrs[1].String()
+	if !loopbackAddr(addrs[1]) {
+		t.Fatalf("extra %s should be loopback", httpAddr)
+	}
+
+	status := func(rawURL string, client *http.Client) (*http.Response, error) {
+		t.Helper()
+		reqCtx, reqCancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer reqCancel()
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+creds.Token)
+		return client.Do(req)
+	}
+
+	resp, err := status("http://"+httpAddr+"/v1/status", http.DefaultClient)
+	if err != nil {
+		t.Fatalf("HTTP on loopback extra: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP on loopback extra: code %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	httpsOnHTTP, err := status("https://"+httpAddr+"/v1/status", insecureClient())
+	if err == nil {
+		_ = httpsOnHTTP.Body.Close()
+		t.Fatal("HTTPS on LoopbackHTTP extra unexpectedly succeeded")
+	}
+
+	resp, err = status("https://"+tlsAddr+"/v1/status", insecureClient())
+	if err != nil {
+		t.Fatalf("HTTPS on non-loopback primary: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("HTTPS on non-loopback primary: code %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	httpOnTLS, err := status("http://"+tlsAddr+"/v1/status", http.DefaultClient)
+	if err == nil {
+		code := httpOnTLS.StatusCode
+		_ = httpOnTLS.Body.Close()
+		if code == http.StatusOK {
+			t.Fatal("HTTP on non-loopback primary served /v1/status")
+		}
 	}
 
 	cancel()

@@ -108,8 +108,6 @@ func loopbackHTTPBaseURL(listenAddr string) string {
 	return "http://127.0.0.1:" + port + "/"
 }
 
-// listenAdvertiseURL is the scheme:host:port printed for a bound address.
-// --open / LoopbackHTTP is plain HTTP on loopback; LAN and Tailscale stay HTTPS.
 func listenAdvertiseURL(addr string) string {
 	return listenScheme(addr) + "://" + addr
 }

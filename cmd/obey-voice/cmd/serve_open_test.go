@@ -183,4 +183,9 @@ func TestReadyBannerLoopbackHTTPWhenOpen(t *testing.T) {
 	if lan.URL != "https://192.168.0.188:7262" {
 		t.Fatalf("LAN ready url = %q, want https", lan.URL)
 	}
+	// ADR-008 binds stay host:port. Under --open the loopback extra is HTTP
+	// even though url is HTTPS — clients must not reuse url's scheme.
+	if lan.Binds[1] != "127.0.0.1:7262" {
+		t.Fatalf("loopback bind = %q, want host:port without scheme", lan.Binds[1])
+	}
 }
