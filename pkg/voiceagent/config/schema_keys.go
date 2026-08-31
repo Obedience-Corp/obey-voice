@@ -125,6 +125,11 @@ func voiceKeys() []KeySpec {
 			Help: "How long after playback pauses to ignore the mic, so speaker echo trailing off doesn't trip a false barge-in.",
 		},
 		{
+			Key: "barge_in_speakers", Type: TypeEnum, Default: BargeInSpeakersAnyone, Enum: bargeInSpeakersEnum(),
+			Group: GroupVoice, Title: "Who can interrupt",
+			Help: "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+		},
+		{
 			Key: "backchannel_enabled", Type: TypeBool, Default: false,
 			Group: GroupVoice, Title: "Thinking sounds",
 			Help: "Plays a short \"mm-hm\" while a slow answer is still coming, so the pause doesn't feel dead.",

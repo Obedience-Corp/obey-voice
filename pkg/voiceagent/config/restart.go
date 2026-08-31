@@ -32,10 +32,10 @@ var restartVerified = map[string]bool{
 	// restart_required=true (the honest default for an uncharacterised key)
 	// without claiming restart_verified.
 	"barge_in_enabled": true, // verified: runtime rebuild required
-	// barge_in_vad_threshold and barge_in_tail_guard_ms are new (S2): the
-	// VAD and the interrupt controller are both built once at startup
-	// (voiceagent.New), same as above, and are likewise absent from both
-	// maps rather than marked verified.
+	// barge_in_vad_threshold, barge_in_tail_guard_ms, and barge_in_speakers
+	// are new (S2/S3): the VAD and the interrupt controller are both built
+	// once at startup (voiceagent.New), same as above, and are likewise
+	// absent from both maps rather than marked verified.
 }
 
 // RestartRequired reports whether changing key needs an agent restart to take
