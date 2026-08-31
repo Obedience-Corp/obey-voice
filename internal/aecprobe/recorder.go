@@ -2,6 +2,7 @@ package aecprobe
 
 import (
 	"sync"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
@@ -46,6 +47,12 @@ type Recorder struct {
 	// run-to-run scatter that was pure scheduling jitter.
 	refAnchor    int
 	refAnchorSet bool
+	// captureDur/captureCalls time only the wrapped front-end's ProcessCapture
+	// call (not the copy this recorder makes around it), closing explore
+	// gate 4 (D6): S1's gate compares this against the nlms path's per-chunk
+	// time, both measured the same way.
+	captureDur   time.Duration
+	captureCalls int
 }
 
 // NewRecorder wraps inner. inner is used, not replaced: the probe measures the
@@ -60,12 +67,16 @@ func (r *Recorder) ProcessCapture(samples []float32) []float32 {
 	// backing array it was given, and Capture fans one slice to every
 	// subscriber, so retaining either without a copy would alias live audio.
 	in := append([]float32(nil), samples...)
+	start := time.Now()
 	out := r.inner.ProcessCapture(samples)
+	elapsed := time.Since(start)
 
 	r.mu.Lock()
 	r.micIn = append(r.micIn, in...)
 	r.micOut = append(r.micOut, out...)
 	r.capChunks++
+	r.captureDur += elapsed
+	r.captureCalls++
 	r.mu.Unlock()
 	return out
 }
@@ -136,6 +147,16 @@ func (r *Recorder) ReferenceAnchor() (offset int, ok bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.refAnchor, r.refAnchorSet
+}
+
+// ProcessCaptureTiming reports the total time spent inside the wrapped
+// front-end's ProcessCapture, and how many calls that covers — the
+// per-chunk cost is total/calls. Copying the recorded samples around the
+// call is excluded, so this measures the front-end alone.
+func (r *Recorder) ProcessCaptureTiming() (total time.Duration, calls int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.captureDur, r.captureCalls
 }
 
 // Mark returns the current length of the microphone recording. The probe takes

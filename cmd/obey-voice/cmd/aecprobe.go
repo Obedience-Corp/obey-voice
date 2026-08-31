@@ -13,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/aecprobe"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/apmfrontend"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -72,10 +73,16 @@ func runAECProbe(ctx context.Context, out interface{ Write([]byte) (int, error) 
 		ctx = context.Background()
 	}
 
-	// The probe measures the front-end, so it must exist regardless of the
-	// user's config: voice_frontend_enabled defaults to false and would
-	// otherwise make every run report "no reference reached the canceller".
-	frontend := audio.NewVoiceFrontend()
+	// The probe measures whatever front-end voice_frontend names, per
+	// 03-slices.md S1's gate ("aec-probe --label run with voice_frontend:
+	// webrtc"). off still needs a concrete Frontend to wrap — passthrough
+	// measures the honest pre-front-end baseline rather than silently
+	// substituting nlms.
+	frontendKind := config.VoiceFrontendOf(cfg)
+	frontend, err := probeFrontend(frontendKind, cfg)
+	if err != nil {
+		return fmt.Errorf("build voice frontend: %w", err)
+	}
 	recorder := aecprobe.NewRecorder(frontend)
 	defer func() { _ = recorder.Close() }()
 
@@ -166,7 +173,9 @@ func runAECProbe(ctx context.Context, out interface{ Write([]byte) (int, error) 
 		Clipped: aecprobe.PeakLevel(echoIn) >= 0.99,
 		// Below this the microphone effectively heard nothing, and an ERLE
 		// computed from it describes room noise rather than cancellation.
-		SilentRun: echoRMS < aecprobe.SilentEchoRMS,
+		SilentRun:           echoRMS < aecprobe.SilentEchoRMS,
+		VoiceFrontend:       frontendKind,
+		ProcessCaptureAvgUS: processCaptureAvgUS(recorder),
 	}
 	report.Interpret()
 
@@ -244,6 +253,35 @@ func probeRunDir() (string, error) {
 	return filepath.Join(root, "aec-probe", name), nil
 }
 
+// probeFrontend constructs the front-end named by kind. off maps to
+// passthrough rather than nlms: the probe honors exactly what voice_frontend
+// says, so a run against the default config measures "no processing" instead
+// of silently substituting a different front-end than the one configured.
+func probeFrontend(kind string, cfg *config.Config) (audio.Frontend, error) {
+	switch kind {
+	case config.VoiceFrontendWebRTC:
+		if err := config.ValidateVoiceFrontend(cfg); err != nil {
+			return nil, err
+		}
+		return apmfrontend.New(config.VoiceFrontendNSLevelOf(cfg))
+	case config.VoiceFrontendNLMS:
+		return audio.NewVoiceFrontend(), nil
+	default:
+		return audio.NewPassthroughFrontend(), nil
+	}
+}
+
+// processCaptureAvgUS is the front-end's average ProcessCapture time per
+// capture chunk, in microseconds — D6's per-chunk timing instrumentation.
+// 0 when nothing was captured.
+func processCaptureAvgUS(recorder *aecprobe.Recorder) float64 {
+	total, calls := recorder.ProcessCaptureTiming()
+	if calls == 0 {
+		return 0
+	}
+	return float64(total.Microseconds()) / float64(calls)
+}
+
 func deviceLabel(name string) string {
 	if name == "" {
 		return "(system default)"
@@ -253,6 +291,7 @@ func deviceLabel(name string) string {
 
 func printProbeSummary(out interface{ Write([]byte) (int, error) }, r *aecprobe.Report, dir string) {
 	fmt.Fprintf(out, "\n─── AEC probe: %s ───\n", labelOrDefault(r.Label))
+	fmt.Fprintf(out, "  voice front-end           : %s (%.1fus/chunk)\n", r.VoiceFrontend, r.ProcessCaptureAvgUS)
 	fmt.Fprintf(out, "  delay estimated by player : %d samples (%.2f ms)\n", r.EstimatedDelaySamples, r.EstimatedDelayMS)
 	fmt.Fprintf(out, "  delay measured from chirp : %d samples (%.2f ms, confidence %.2f)\n",
 		r.MeasuredDelaySamples, r.MeasuredDelayMS, r.DelayConfidence)

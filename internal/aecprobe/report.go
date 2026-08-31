@@ -53,6 +53,14 @@ type Report struct {
 	ReferencePushes int     `json:"reference_pushes"`
 	CaptureChunks   int     `json:"capture_chunks"`
 
+	// VoiceFrontend names which front-end this run measured (D6/S1 gate:
+	// compares webrtc's per-chunk cost against nlms's).
+	VoiceFrontend string `json:"voice_frontend"`
+	// ProcessCaptureAvgUS is the wrapped front-end's average ProcessCapture
+	// time in microseconds, per capture chunk (not per 10ms APM frame — the
+	// production chunk size is 100ms). 0 when no chunks were captured.
+	ProcessCaptureAvgUS float64 `json:"process_capture_avg_us"`
+
 	// Warnings are conditions that make the numbers above untrustworthy. A run
 	// with warnings should be re-run, not recorded as a result.
 	Warnings []string `json:"warnings,omitempty"`
@@ -75,7 +83,7 @@ func (r *Report) Interpret() {
 	}
 	if r.ReferencePushes == 0 {
 		r.Warnings = append(r.Warnings,
-			"no playback reference reached the canceller: check voice_frontend_enabled")
+			"no playback reference reached the canceller: check voice_frontend")
 	}
 	if r.CaptureChunks == 0 {
 		r.Warnings = append(r.Warnings, "no microphone audio captured")
