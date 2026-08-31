@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -251,6 +252,39 @@ func TestWriterConcurrentCloseAndEmit(t *testing.T) {
 func TestNewWriterFailsOnUnwritablePath(t *testing.T) {
 	if _, err := NewWriter(filepath.Join(t.TempDir(), "missing", "t.jsonl")); err == nil {
 		t.Fatal("expected error for unwritable path — a harness must not run blind")
+	}
+}
+
+func TestWriterDoesNotRecordThinkingAsAgentDelta(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	w.Attach(bus)
+
+	bus.Emit(events.ThinkingStarted{})
+	bus.Emit(events.ThinkingDelta{Text: "the user said hi"})
+	bus.Emit(events.ResponseDelta{Text: "Hello there."})
+	bus.Emit(events.ResponseReady{Response: "Hello there."})
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	recs := readRecords(t, path)
+	var deltas []string
+	for _, r := range recs {
+		if strings.Contains(r.Text, "the user said hi") {
+			t.Fatalf("thinking body recorded as %s: %+v", r.Type, r)
+		}
+		if r.Type == "agent_delta" {
+			deltas = append(deltas, r.Text)
+		}
+	}
+	if len(deltas) != 1 || deltas[0] != "Hello there." {
+		t.Fatalf("agent_delta = %v, want speakable only", deltas)
 	}
 }
 

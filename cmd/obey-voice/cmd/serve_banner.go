@@ -34,7 +34,11 @@ func printServeBanner(addr string, creds *netapi.Credentials, cfg *config.Config
 
 	printServeClientAccess(creds)
 	printServePairing(creds)
-	printServeStage(pageURL, creds)
+	stagePage := pageURL
+	if serveOpen {
+		stagePage = localStagePageURL(addr)
+	}
+	printServeStage(stagePage, creds)
 	printServeDetails(addr, creds, cfg)
 }
 
@@ -81,7 +85,58 @@ func clientPageURL(listenAddr string) string {
 			pageHost = listenAddr
 		}
 	}
+	if serveOpen && isLoopbackHost(pageHost) {
+		return loopbackHTTPBaseURL(listenAddr)
+	}
 	return publicServeURL(pageHost, servePort)
+}
+
+// localStagePageURL is the URL --open loads on this machine. Loopback HTTP
+// skips the self-signed cert warning; MagicDNS / public host stay HTTPS.
+func localStagePageURL(listenAddr string) string {
+	if strings.TrimSpace(servePublicHost) != "" {
+		return clientPageURL(listenAddr)
+	}
+	return loopbackHTTPBaseURL(listenAddr)
+}
+
+func loopbackHTTPBaseURL(listenAddr string) string {
+	_, port, err := net.SplitHostPort(listenAddr)
+	if err != nil || port == "" {
+		port = strconv.Itoa(servePort)
+	}
+	return "http://127.0.0.1:" + port + "/"
+}
+
+func listenAdvertiseURL(addr string) string {
+	return listenScheme(addr) + "://" + addr
+}
+
+func listenScheme(addr string) string {
+	if serveOpen && isLoopbackListenAddr(addr) {
+		return "http"
+	}
+	return "https"
+}
+
+func isLoopbackListenAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return isLoopbackHost(addr)
+	}
+	return isLoopbackHost(host)
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func stageServeURL(pageURL string, creds *netapi.Credentials) string {
@@ -102,7 +157,7 @@ func printServeStage(pageURL string, creds *netapi.Credentials) {
 
 // printServeDetails writes the secondary / power-user lines, dim and last.
 func printServeDetails(addr string, creds *netapi.Credentials, cfg *config.Config) {
-	fmt.Fprintf(serveHumanOut, "  %s %s\n", dimStyle.Render("Listening:"), "https://"+addr)
+	fmt.Fprintf(serveHumanOut, "  %s %s\n", dimStyle.Render("Listening:"), listenAdvertiseURL(addr))
 	if creds.ExternalTLS {
 		fp := creds.Fingerprint
 		if len(fp) > 16 {
@@ -181,10 +236,11 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 	}
 
 	workDir := serveBannerWorkDir()
+	urlHost := net.JoinHostPort(pageHost, strconv.Itoa(port))
 	emitBannerLine(netapi.ReadyBanner{
 		Event:           "ready",
 		ProtocolVersion: netapi.ProtocolVersion,
-		URL:             "https://" + net.JoinHostPort(pageHost, strconv.Itoa(port)),
+		URL:             listenScheme(urlHost) + "://" + urlHost,
 		Port:            port,
 		Fingerprint:     creds.Fingerprint,
 		Token:           creds.Token,

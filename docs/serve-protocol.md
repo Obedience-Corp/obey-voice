@@ -24,6 +24,13 @@ https://<host>:<port>/v1/...    # API (authenticated unless noted)
 
 Default port: `7262`.
 
+`obey-voice serve --open` loads Stage at `http://127.0.0.1:<port>/stage.html`
+(loopback is a browser secure context without TLS). LAN and Tailscale clients
+still use `https://`. Auth on loopback HTTP is still the bearer token. The
+serve banner must not advertise `https://127.0.0.1` for that local Stage URL.
+The Stage page opens `/v1/stream` as `ws://127.0.0.1` (`ws:` when
+`location.protocol` is `http:`); LAN and Tailscale remain `wss://`.
+
 ### Tailscale one-shot
 
 Interactive: launch `obey-voice`, then choose **Use on another device**. The
@@ -84,7 +91,7 @@ bound:
 | `token` | Bearer token for `/v1/*` |
 | `mdns` / `tailscale` | Discovery + network mode |
 | `pid` | Serve process id |
-| `binds` | Every bound `host:port`, **primary first**. Always present. Dial the loopback entry when one exists rather than resolving `url` |
+| `binds` | Every bound `host:port`, **primary first**. Always present. Dial the loopback entry when one exists rather than resolving `url`. Entries have no scheme. Under `--open`, a loopback bind is plain HTTP even when `url` is the LAN/Tailscale HTTPS address — dial `http://<loopback-bind>/`; do not reuse `url`'s scheme on that entry. LAN and Tailscale binds stay HTTPS |
 | `work_dir` | Directory the agent's file and shell tools start in (`work_dir` setting or `--work-dir`). Always present and never empty — `GET /v1/status` reports the same value. A **default, not a sandbox**: a tool may still use an absolute path outside it |
 | `client_setup_url` | Present **only** in limited client access. Its presence means limited; its absence means full |
 | `capabilities` | Additive `/v1/stream` contract flags (see below). Absent on older serves — treat a missing key as `false` |
@@ -511,6 +518,8 @@ meetings per serve, and on-phone STT.
 ## WebSocket `/v1/stream`
 
 Connect: `wss://host:port/v1/stream?token=...` (or Bearer on non-browser clients).
+On `--open` / LoopbackHTTP, Stage on loopback uses `ws://127.0.0.1:<port>/v1/stream?token=...`.
+LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bearer.
 
 ### Client → server (JSON text frames)
 

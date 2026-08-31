@@ -71,6 +71,9 @@ type ReadyBanner struct {
 	// on a serve that reached OnListening, including single-bind serves, so a
 	// client picks a reachable address instead of inferring one from URL
 	// (ADR-008). URL stays the address remote clients should open.
+	// Entries are host:port with no scheme. Under LoopbackHTTP / --open a
+	// loopback entry is plain HTTP even when URL is HTTPS — dial http:// on
+	// that bind; do not reuse URL's scheme. LAN and Tailscale binds stay HTTPS.
 	Binds []string `json:"binds,omitempty"`
 	// Capabilities are the additive /v1/stream contract flags this build
 	// carries, the same set GET /v1/status reports. Present so a supervising

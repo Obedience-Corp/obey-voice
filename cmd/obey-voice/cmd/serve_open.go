@@ -30,7 +30,7 @@ func openURLDefault(url string) error {
 }
 
 func openStage(listenAddr string, creds *netapi.Credentials) {
-	u := stageServeURL(clientPageURL(listenAddr), creds)
+	u := stageServeURL(localStagePageURL(listenAddr), creds)
 	if u == "" {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  --open: no pairing code; Stage was not opened"))
 		return

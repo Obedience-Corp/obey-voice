@@ -392,6 +392,7 @@ func runServe(cfg *config.Config) error {
 		DeleteSession:       serveDeleteSession(ref),
 		WorkDir:             cfg.WorkDir,
 		WorkDirSource:       string(serveWorkDirInfo.Source),
+		LoopbackHTTP:        serveOpen,
 		Campaign:            bannerCampaign(cfg.WorkDir),
 		Providers: netapi.Providers{
 			Brain: cfg.BrainProvider,
@@ -420,7 +421,11 @@ func runServe(cfg *config.Config) error {
 			} else {
 				printServeBanner(listenAddr, creds, cfg)
 				if len(extras) > 0 {
-					fmt.Fprintln(serveHumanOut, dimStyle.Render("  Also listening: https://"+strings.Join(extras, "  https://")))
+					parts := make([]string, len(extras))
+					for i, a := range extras {
+						parts[i] = listenAdvertiseURL(a)
+					}
+					fmt.Fprintln(serveHumanOut, dimStyle.Render("  Also listening: "+strings.Join(parts, "  ")))
 				}
 			}
 			if serveOpen {

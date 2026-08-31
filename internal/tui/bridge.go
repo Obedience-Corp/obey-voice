@@ -51,6 +51,9 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	// under UI back-pressure deltas drop first (fitBridgeQueue), and the final
 	// ResponseReady still renders the complete canonical text.
 	forward[events.ResponseDelta](b, bus)
+	// ThinkingDelta is operator-facing reasoning. Non-durable like ResponseDelta:
+	// the spoken bubble is ResponseReady, not a reconstruction of dropped think.
+	forward[events.ThinkingDelta](b, bus)
 	forward[events.ThinkingComplete](b, bus)
 	forward[events.TurnMetrics](b, bus)
 	// GeneratingVoice / Speaking* are once-per-playback milestones; segment
