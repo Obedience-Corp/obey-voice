@@ -4,7 +4,9 @@
   const SKIN_KEY = "obey.stage.skin";
   const CAPTURE_RATE = 16000;
   const SKINS = ["orb", "radial", "wave"];
-  const VAD = { on: 0.08, off: 0.04, startMs: 160, endMs: 700, bargeMs: 260 };
+  // Energy gate only to avoid streaming silence. Speech vs noise is Silero
+  // on the server (vad_threshold 0.6). These floors must not trip on a fan.
+  const VAD = { on: 0.22, off: 0.08, startMs: 450, endMs: 800, bargeMs: 260 };
 
   const $ = (id) => document.getElementById(id);
   const glCanvas = $("gl");

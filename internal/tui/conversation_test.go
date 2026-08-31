@@ -341,9 +341,13 @@ func TestVoiceMeterTracksInputLevelAndModes(t *testing.T) {
 	if m.inputLevel < 0.7 {
 		t.Fatalf("inputLevel = %v, want elevated after AudioLevel", m.inputLevel)
 	}
-	// Strong mic energy while listening promotes to the hearing animation.
+	if m.status != "Listening" {
+		t.Fatalf("status = %q after loud noise, want Listening (hearing is Silero, not RMS)", m.status)
+	}
+
+	m.handleEvent(events.STTPhase{Phase: "hearing"})
 	if m.status != "Hearing you" {
-		t.Fatalf("status = %q after loud input, want Hearing you", m.status)
+		t.Fatalf("status = %q after STT hearing, want Hearing you", m.status)
 	}
 	if !strings.Contains(m.View(), "Hearing you") {
 		t.Fatalf("voice meter not visible in view:\n%s", m.View())
