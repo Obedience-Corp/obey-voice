@@ -27,12 +27,15 @@ const (
 	bargeInMinSpeechChunks = 6
 	// bargeInBufferSize is the capture subscription depth for the controller.
 	bargeInBufferSize = 8
-	// bargeInPauseTailGuard skips capture chunks for a short window after
-	// playback stops. Speaker echo keeps hitting the mic briefly after the
-	// player drains between sentences; now that pauses stay armed, that tail
-	// must not accumulate toward a trip. Chunks inside the guard are skipped,
-	// not cleared — an utterance spanning the gap keeps its speech streak.
-	bargeInPauseTailGuard = 200 * time.Millisecond
+	// bargeInPauseTailGuardDefault skips capture chunks for a short window
+	// after playback stops, when Pipeline.BargeInTailGuard is unset (zero).
+	// Speaker echo keeps hitting the mic briefly after the player drains
+	// between sentences; now that pauses stay armed, that tail must not
+	// accumulate toward a trip. Chunks inside the guard are skipped, not
+	// cleared — an utterance spanning the gap keeps its speech streak.
+	// Config-driven via barge_in_tail_guard_ms (200-800ms); see
+	// Pipeline.bargeInTailGuard.
+	bargeInPauseTailGuardDefault = 200 * time.Millisecond
 	// bargeInNearMissWindow bounds how recent below-threshold pause speech must
 	// be for the turn to keep the capture buffer for the next listen (F3.3):
 	// the user spoke during a pause but the turn completed before the trip
@@ -87,10 +90,20 @@ func (p *Pipeline) newInterruptController() *interruptController {
 		vad:        p.BargeInVAD,
 		playback:   p.Player,
 		armDelay:   bargeInArmDelay,
-		tailGuard:  bargeInPauseTailGuard,
+		tailGuard:  p.bargeInTailGuard(),
 		minSpeech:  bargeInMinSpeechChunks,
 		bufferSize: bargeInBufferSize,
 	}
+}
+
+// bargeInTailGuard returns Pipeline.BargeInTailGuard when set (positive),
+// otherwise the built-in default. Mirrors stallTimeout's override pattern in
+// watchdog.go.
+func (p *Pipeline) bargeInTailGuard() time.Duration {
+	if p.BargeInTailGuard > 0 {
+		return p.BargeInTailGuard
+	}
+	return bargeInPauseTailGuardDefault
 }
 
 // enabled reports whether every collaborator required for barge-in is present.

@@ -96,6 +96,14 @@ type Config struct {
 	// Barge-in (interrupt TTS when the user starts speaking). Off by default
 	// until the echo-canceller is strong enough to avoid self-interruption.
 	BargeInEnabled bool `mapstructure:"barge_in_enabled"`
+	// BargeInVADThreshold is the Silero speech-confidence the barge-in VAD
+	// requires before treating captured audio as the user interrupting
+	// (0.3-0.95). See barge_in.go BargeInVADThresholdOf.
+	BargeInVADThreshold float64 `mapstructure:"barge_in_vad_threshold"`
+	// BargeInTailGuardMS is how long, in milliseconds, capture chunks are
+	// skipped after playback pauses so trailing speaker echo cannot
+	// accumulate toward a trip (200-800). See barge_in.go BargeInTailGuardOf.
+	BargeInTailGuardMS int `mapstructure:"barge_in_tail_guard_ms"`
 
 	// TUIMouseEnabled lets the TUI claim the mouse so the wheel and trackpad
 	// scroll the transcript. Claiming it means the terminal routes drags to
@@ -406,6 +414,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_frontend", VoiceFrontendOff)
 	v.SetDefault("voice_frontend_ns_level", DefaultVoiceFrontendNSLevel)
 	v.SetDefault("barge_in_enabled", false)
+	v.SetDefault("barge_in_vad_threshold", DefaultBargeInVADThreshold)
+	v.SetDefault("barge_in_tail_guard_ms", DefaultBargeInTailGuardMS)
 
 	// Off by default so the terminal keeps its own click-drag selection, which
 	// is how every other agent chat behaves — you select transcript text and
@@ -612,6 +622,8 @@ var envBindings = map[string]string{
 	"skills_dir":                  "SKILLS_DIR",
 	"work_dir":                    workDirEnvName,
 	"barge_in_enabled":            "BARGE_IN_ENABLED",
+	"barge_in_vad_threshold":      "BARGE_IN_VAD_THRESHOLD",
+	"barge_in_tail_guard_ms":      "BARGE_IN_TAIL_GUARD_MS",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
 	"vad_silence_duration":        "VAD_SILENCE_DURATION",

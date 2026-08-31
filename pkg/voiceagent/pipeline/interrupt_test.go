@@ -304,6 +304,35 @@ func TestArmDelayAppliesOncePerTurn(t *testing.T) {
 	}
 }
 
+// TestBargeInTailGuardDefaultsWhenUnset proves Pipeline.bargeInTailGuard falls
+// back to the built-in default when BargeInTailGuard (wired from config
+// barge_in_tail_guard_ms in voiceagent.New) is left zero.
+func TestBargeInTailGuardDefaultsWhenUnset(t *testing.T) {
+	p := &Pipeline{}
+	if got := p.bargeInTailGuard(); got != bargeInPauseTailGuardDefault {
+		t.Errorf("bargeInTailGuard() = %v, want default %v", got, bargeInPauseTailGuardDefault)
+	}
+}
+
+// TestBargeInTailGuardHonorsConfiguredOverride proves a configured
+// BargeInTailGuard (barge_in_tail_guard_ms) reaches the interrupt controller
+// instead of the package default.
+func TestBargeInTailGuardHonorsConfiguredOverride(t *testing.T) {
+	const configured = 500 * time.Millisecond
+	p := &Pipeline{BargeInTailGuard: configured}
+	if got := p.bargeInTailGuard(); got != configured {
+		t.Errorf("bargeInTailGuard() = %v, want configured %v", got, configured)
+	}
+
+	// newInterruptController must thread the same value through, regardless
+	// of whether the other collaborators are wired (enabled() is checked
+	// separately by watch/watchWithDone, not by this constructor).
+	ctrl := p.newInterruptController()
+	if ctrl.tailGuard != configured {
+		t.Errorf("newInterruptController() tailGuard = %v, want configured %v", ctrl.tailGuard, configured)
+	}
+}
+
 func TestInterruptControllerUnsubscribesOnCancel(t *testing.T) {
 	capture := newFakeCapture()
 	vad := &fakeVAD{}

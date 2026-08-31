@@ -22,6 +22,14 @@
       "value": true,
       "source": "file"
     },
+    "barge_in_tail_guard_ms": {
+      "value": 200,
+      "source": "default"
+    },
+    "barge_in_vad_threshold": {
+      "value": 0.85,
+      "source": "default"
+    },
     "brain_provider": {
       "value": "ollama",
       "source": "default"
