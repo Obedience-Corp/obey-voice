@@ -370,8 +370,16 @@
       "value": "kokoro",
       "source": "default"
     },
+    "voice_frontend": {
+      "value": "off",
+      "source": "default"
+    },
     "voice_frontend_enabled": {
       "value": false,
+      "source": "default"
+    },
+    "voice_frontend_ns_level": {
+      "value": 1,
       "source": "default"
     },
     "voice_tools_enabled": {

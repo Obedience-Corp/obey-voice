@@ -100,9 +100,14 @@ func voiceKeys() []KeySpec {
 			Help: "Audio kept from just before speech is detected, so your first word isn't clipped.",
 		},
 		{
-			Key: "voice_frontend_enabled", Type: TypeBool, Default: false,
+			Key: "voice_frontend", Type: TypeEnum, Default: VoiceFrontendOff, Enum: voiceFrontendEnum(),
 			Group: GroupVoice, Title: "Voice front-end",
-			Help: "Runs echo cancellation and noise suppression on this Mac's microphone. Required for barge-in.",
+			Help: "Runs echo cancellation on this Mac's microphone before speech detection. webrtc needs a build with the apm tag; nlms is the built-in fallback. Required for barge-in.",
+		},
+		{
+			Key: "voice_frontend_ns_level", Type: TypeInt, Default: DefaultVoiceFrontendNSLevel, Min: num(0), Max: num(3),
+			Group: GroupVoice, Title: "Noise suppression level",
+			Help: "How aggressively the webrtc front-end suppresses background noise, from 0 (off) to 3 (aggressive). No effect on nlms or off.",
 		},
 		{
 			Key: "barge_in_enabled", Type: TypeBool, Default: false,

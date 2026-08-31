@@ -26,7 +26,12 @@ var restartVerified = map[string]bool{
 	"tui_mouse_enabled":      true,
 	"active_persona":         true,
 	"voice_frontend_enabled": true, // verified: runtime rebuild required
-	"barge_in_enabled":       true, // verified: runtime rebuild required
+	// voice_frontend and voice_frontend_ns_level are new (S1): both build the
+	// same once-at-startup object as the legacy bool above, but that has not
+	// itself been hardware-re-verified for these keys, so they report
+	// restart_required=true (the honest default for an uncharacterised key)
+	// without claiming restart_verified.
+	"barge_in_enabled": true, // verified: runtime rebuild required
 }
 
 // RestartRequired reports whether changing key needs an agent restart to take

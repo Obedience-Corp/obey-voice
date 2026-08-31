@@ -80,8 +80,17 @@ type Config struct {
 	// (the first word) is otherwise clipped before STT ever sees it.
 	VADPreRollMS int `mapstructure:"vad_pre_roll_ms"`
 
-	// VoiceFrontend runs local AEC/NS/AGC on the mic before STT. Disable to feed
-	// raw audio to the recognizer (often more accurate for whisper).
+	// VoiceFrontend selects which AEC/NS/AGC chain runs on the mic before STT:
+	// webrtc (apm build tag), nlms (built in), or off. See voice_frontend.go.
+	VoiceFrontend string `mapstructure:"voice_frontend"`
+	// VoiceFrontendNSLevel is APM's noise-suppression aggressiveness (0-3).
+	// No effect on nlms or off.
+	VoiceFrontendNSLevel int `mapstructure:"voice_frontend_ns_level"`
+	// VoiceFrontendEnabled is the pre-migration key voice_frontend replaced
+	// (D8): true -> nlms, false/absent -> off, applied by
+	// resolveVoiceFrontendMigration only when voice_frontend is not itself
+	// set. Kept so an old config.yaml keeps its behavior; new code should read
+	// VoiceFrontendOf(cfg) instead of this field.
 	VoiceFrontendEnabled bool `mapstructure:"voice_frontend_enabled"`
 
 	// Barge-in (interrupt TTS when the user starts speaking). Off by default
@@ -390,6 +399,12 @@ func setDefaults(v *viper.Viper) {
 	// needs the suppressor re-tuned against real mic input. Its main consumer, AEC
 	// for barge-in, is also off by default.
 	v.SetDefault("voice_frontend_enabled", false)
+	// voice_frontend itself defaults to off (D8: the defaults flip to webrtc
+	// is slice 4, gated on the hardware sign-off, not this migration). The
+	// legacy bool above still decides an unmigrated config's real behavior —
+	// see resolveVoiceFrontendMigration.
+	v.SetDefault("voice_frontend", VoiceFrontendOff)
+	v.SetDefault("voice_frontend_ns_level", DefaultVoiceFrontendNSLevel)
 	v.SetDefault("barge_in_enabled", false)
 
 	// Off by default so the terminal keeps its own click-drag selection, which
@@ -602,6 +617,8 @@ var envBindings = map[string]string{
 	"vad_silence_duration":        "VAD_SILENCE_DURATION",
 	"environment_context_enabled": "ENVIRONMENT_CONTEXT_ENABLED",
 	"voice_frontend_enabled":      "VOICE_FRONTEND_ENABLED",
+	"voice_frontend":              "VOICE_FRONTEND",
+	"voice_frontend_ns_level":     "VOICE_FRONTEND_NS_LEVEL",
 	"tui_mouse_enabled":           "TUI_MOUSE_ENABLED",
 	"calibre_enabled":             "CALIBRE_ENABLED",
 	"calibre_library_path":        "CALIBRE_LIBRARY_PATH",
@@ -694,6 +711,7 @@ func loadLocked() (*Config, error) {
 	applyOllamaDefaults(&cfg, v, ollamaChosen(v))
 	cfg.ToolCommandTimeout = ClampToolCommandTimeout(cfg.ToolCommandTimeout)
 	cfg.OllamaNumBatch = ClampOllamaNumBatch(cfg.OllamaNumBatch, cfg.OllamaNumCtx)
+	resolveVoiceFrontendMigration(v, &cfg)
 	return &cfg, nil
 }
 

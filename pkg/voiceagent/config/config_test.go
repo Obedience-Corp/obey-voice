@@ -99,6 +99,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.VoiceFrontendEnabled {
 		t.Error("VoiceFrontendEnabled = true, want false (frontend over-suppresses normal speech)")
 	}
+	if got := VoiceFrontendOf(cfg); got != VoiceFrontendOff {
+		t.Errorf("VoiceFrontendOf = %q, want %q", got, VoiceFrontendOff)
+	}
+	if got := VoiceFrontendNSLevelOf(cfg); got != DefaultVoiceFrontendNSLevel {
+		t.Errorf("VoiceFrontendNSLevelOf = %d, want %d", got, DefaultVoiceFrontendNSLevel)
+	}
 }
 
 func TestBargeInEnvOverride(t *testing.T) {

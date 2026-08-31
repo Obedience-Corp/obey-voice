@@ -17,6 +17,30 @@ type ReferenceDelayer interface {
 	SetReferenceDelay(samples int)
 }
 
+// FrontendStats is a diagnostics-only snapshot of a front-end's aggregate
+// health metrics. APM-backed front-ends update these roughly once a second —
+// far too coarse a signal to gate any per-frame decision, so nothing in the
+// barge-in path may treat this as a trip signal (see
+// workflow/design/obey-voice-barge-in/03-slices.md, S2): the suppressed
+// capture stream feeding the existing VAD/streak logic IS the double-talk
+// detector. FrontendStats exists for logs and `doctor`.
+type FrontendStats struct {
+	ERLE                      float64
+	HasERLE                   bool
+	ResidualEchoLikelihood    float64
+	HasResidualEchoLikelihood bool
+	VoiceDetected             bool
+	HasVoiceDetected          bool
+	DelayMs                   int32
+	HasDelayMs                bool
+}
+
+// FrontendStatsReporter is optionally implemented by front-ends that can
+// report FrontendStats. Passthrough and the NLMS front-end do not.
+type FrontendStatsReporter interface {
+	FrontendStats() FrontendStats
+}
+
 // PassthroughFrontend leaves audio unchanged while preserving the runtime hook
 // points needed for a future AEC/NS/AGC implementation.
 type PassthroughFrontend struct{}

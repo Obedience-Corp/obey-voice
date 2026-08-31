@@ -441,10 +441,34 @@ func TestOptionsEnvReachesBrainConstructedByNew(t *testing.T) {
 	}
 }
 
+func TestNewRejectsWebRTCFrontendWithoutTheApmBuild(t *testing.T) {
+	if config.WebRTCFrontendBuildAvailable() {
+		// Built with -tags apm: webrtc construction would succeed here and New
+		// would proceed to open a real capture device (opts.Capture is nil on
+		// purpose, to reach that code) — exactly what every other New test
+		// avoids. The rejection this test checks only exists in a build
+		// without the tag.
+		t.Skip("apm tag present: webrtc construction would succeed and open real capture hardware")
+	}
+	// D5 requires a hard, explained rejection here (never a silent fallback to
+	// nlms). New must fail before it would otherwise open a real capture
+	// device.
+	_, _, err := New(context.Background(), Options{
+		Config: &config.Config{AgentName: "Test", VoiceFrontend: config.VoiceFrontendWebRTC},
+		Events: events.NewBus(), Brain: &stubBrain{}, Silent: true,
+	})
+	if err == nil {
+		t.Fatal("New succeeded with voice_frontend=webrtc in an untagged build")
+	}
+	if !strings.Contains(err.Error(), "apm tag") {
+		t.Errorf("error = %v, want it to explain the missing apm tag", err)
+	}
+}
+
 func TestOptionsCaptureIsInstalledWithoutOpeningLocalDevice(t *testing.T) {
 	capture := &stubCapture{}
 	agent, cleanup, err := New(context.Background(), Options{
-		Config: &config.Config{AgentName: "Test", VoiceFrontendEnabled: true},
+		Config: &config.Config{AgentName: "Test", VoiceFrontend: config.VoiceFrontendNLMS},
 		Events: events.NewBus(), Brain: &stubBrain{}, Silent: true,
 		Capture: capture, STT: &stubSTT{},
 	})

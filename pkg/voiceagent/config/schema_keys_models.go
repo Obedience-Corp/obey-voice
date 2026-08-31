@@ -233,6 +233,15 @@ func hiddenKeys() []KeySpec {
 			Group: GroupHidden, Title: "TUI mouse capture",
 			Help: "Set from the terminal app; it has no effect on this Mac app.", ManagedBy: "obey-voice TUI",
 		},
+		{
+			// Superseded by voice_frontend (D8), but still read: an unmigrated
+			// config.yaml's true/false here decides voice_frontend's effective
+			// value (nlms/off) whenever the new key is absent. Stays editable —
+			// old tooling that only knows this key still works.
+			Key: "voice_frontend_enabled", Type: TypeBool, Default: false,
+			Group: GroupHidden, Title: "Voice front-end (legacy)",
+			Help: "Superseded by voice_frontend (webrtc/nlms/off). Ignored once voice_frontend is set explicitly.",
+		},
 	}
 }
 

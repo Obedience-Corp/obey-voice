@@ -274,26 +274,42 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
-	// Barge-in monitors the mic while Samantha speaks, so without the voice
-	// frontend's echo cancellation her own playback can trip it.
-	if cfg.BargeInEnabled && !cfg.VoiceFrontendEnabled {
+	// A selection this build cannot honor (webrtc without the apm tag) is a
+	// hard startup error (D5); surface the identical message here so `doctor`
+	// catches it before the agent ever tries to start.
+	if err := ValidateVoiceFrontend(cfg); err != nil {
 		diags = append(diags, Diagnostic{
-			Name:        "barge-in-echo",
-			Severity:    SeverityWarn,
-			Detail:      "barge_in_enabled without voice_frontend_enabled: playback echo may trigger barge-in",
-			Remediation: "set voice_frontend_enabled=true when using barge-in",
+			Name:        "voice-frontend-unavailable",
+			Severity:    SeverityError,
+			Detail:      err.Error(),
+			Remediation: "set voice_frontend to nlms or off, or rebuild with -tags apm",
 		})
 	}
 
-	// The noise suppressor's floor is above normal speaking RMS, so it gates
-	// ordinary speech and Silero only sees fragments. Parakeet then hallucinates
-	// "yeah". The frontend is for barge-in AEC; it is not a general noise fix.
-	if cfg.VoiceFrontendEnabled && !cfg.BargeInEnabled {
+	// Barge-in monitors the mic while Samantha speaks, so without a front-end's
+	// echo cancellation her own playback can trip it. Applies to either
+	// front-end (webrtc or nlms) — only "off" leaves barge-in unprotected.
+	frontend := VoiceFrontendOf(cfg)
+	if cfg.BargeInEnabled && frontend == VoiceFrontendOff {
+		diags = append(diags, Diagnostic{
+			Name:        "barge-in-echo",
+			Severity:    SeverityWarn,
+			Detail:      "barge_in_enabled with voice_frontend=off: playback echo may trigger barge-in",
+			Remediation: "set voice_frontend to nlms or webrtc when using barge-in",
+		})
+	}
+
+	// The nlms path's hand-rolled noise suppressor sits above normal speaking
+	// RMS, so it gates ordinary speech and Silero only sees fragments; Parakeet
+	// then hallucinates "yeah". That suppressor retires with nlms (D4) — webrtc
+	// uses APM's NS at a configurable level instead, so this warning is
+	// nlms-specific until a webrtc hardware run says otherwise.
+	if frontend == VoiceFrontendNLMS && !cfg.BargeInEnabled {
 		diags = append(diags, Diagnostic{
 			Name:        "voice-frontend-suppression",
 			Severity:    SeverityWarn,
-			Detail:      "voice_frontend_enabled without barge-in: the noise suppressor over-gates normal speech, so VAD starts late and STT hears clipped fragments",
-			Remediation: "set voice_frontend_enabled=false unless you also need barge-in",
+			Detail:      "voice_frontend=nlms without barge-in: the noise suppressor over-gates normal speech, so VAD starts late and STT hears clipped fragments",
+			Remediation: "set voice_frontend=off unless you also need barge-in",
 		})
 	}
 
