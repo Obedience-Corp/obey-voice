@@ -59,20 +59,23 @@ active persona).
 just demo-persona-switch
 ```
 
-## persona-create.gif — boxed create form with the vim prompt editor
+## persona-create.gif — one-screen create form with the vim prompt editor
 
-The full create wizard: step pills (Name → Prompt → Model & voice), one
-rounded box per field with the focused box in accent, and the system prompt
-edited in a real vim modal editor:
+The whole persona on one screen: a rounded box per field with the focused box
+in accent, Model & voice visible from the start, and the system prompt edited
+in a real vim modal editor when it is asked for:
 
 1. **n** — open the create form; type **Research Buddy** into the Name box
    (the derived id updates live in the box title)
-2. **Prompt step** — the short starter prompt is pre-seeded; the box title
-   shows the vim mode (INSERT/NORMAL/VISUAL/COMMAND)
-3. **Vim** — `dd` deletes a line, `u` undoes it, `v`+`e` selects, `y` yanks,
-   `o` opens a line and types; `:w` next step, `:wq` saves form, `:q!` cancels
-4. **Model & voice** — `←/→` cycles the per-persona brain provider
-5. **ctrl+j** — commits the form; **e** reopens the persona in the edit form
+2. **Model & voice** — `↓` to the Brain row, `←/→` cycles the per-persona brain
+   provider, model, TTS provider and voice; no editor in the way
+3. **System prompt row** — shows the seeded prompt's opening line and size;
+   **enter** hands it the screen, and the box title shows the vim mode
+   (INSERT/NORMAL/VISUAL/COMMAND)
+4. **Vim** — `dd` deletes a line, `u` undoes it, `v`+`e` selects, `y` yanks,
+   `o` opens a line and types; `:w` back to the form, `:wq` saves, `:q` discards
+5. **ctrl+j** — commits the form; **e** reopens the persona, **m** reopens it
+   straight on Model & voice
 
 Uses the same disposable `$HOME` seeding as persona-switch.
 

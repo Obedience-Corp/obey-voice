@@ -14,21 +14,26 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
+// Rows of the create/edit form. It is one screen, not a wizard: name, the
+// model & voice rows, then the system prompt. Model & voice is what changes
+// most often, so it is visible the moment the form opens rather than parked
+// behind an editor step.
 const (
-	personaFormName   = 0
-	personaFormPrompt = 1
-	personaFormStack  = 2
+	formRowName = iota
+	formRowBrainProvider
+	formRowBrainModel
+	formRowTTSProvider
+	formRowVoice
+	formRowTier
+	formRowPrompt
+	formRowCount
 )
 
-// Stack step rows.
-const (
-	stackRowBrainProvider = 0
-	stackRowBrainModel    = 1
-	stackRowTTSProvider   = 2
-	stackRowVoice         = 3
-	stackRowTier          = 4
-	stackRowCount         = 5
-)
+// isStackRow reports the rows ←/→ cycles: everything between Name and the
+// system prompt.
+func isStackRow(row int) bool {
+	return row >= formRowBrainProvider && row <= formRowTier
+}
 
 // stackDefaultLabel is provider index 0: inherit the app-level default.
 const stackDefaultLabel = "(default)"
@@ -269,9 +274,13 @@ func (m *personasModel) resizeForm() {
 	// the row minus the label and chip — otherwise typing runs under the box
 	// border and the tail is truncated away.
 	m.brainModelInput.Width = max(inner-24, 10)
-	// Leave room for chrome (pills, field boxes, help) so the prompt editor
-	// is never clipped out of the form body.
-	h := min(max(m.height-18, 3), 12)
+	// With the editor open the other fields are not drawn, so it gets the body
+	// budget; on the form screen it is a two-line summary and only the boxes
+	// around it need the room.
+	h := min(max(m.height-12, 3), 24)
+	if !m.promptOpen {
+		h = min(max(m.height-18, 3), 12)
+	}
 	m.promptTA.SetHeight(h)
 }
 
@@ -289,153 +298,144 @@ func isPersonaFormSaveKey(key string) bool {
 }
 
 func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
+	if m.promptOpen {
+		return m.updatePromptEditor(msg)
+	}
 	key := msg.String()
 	switch {
+	case isPersonaFormSaveKey(key):
+		return m.submitForm()
 	case key == "esc":
-		// The prompt step owns esc entirely: insert→normal, pending-state
-		// clears, and idle-normal esc is inert (promptEventIdleEsc below) —
-		// discarding is explicit (:q), never a reflex tap away.
-		if m.formStep == personaFormPrompt {
-			break
-		}
-		// Model & voice: esc steps back to the prompt rather than discarding
-		// a form that already carries an edited prompt. A blank name (reachable
-		// via shift+tab on create) would make focusPromptStep refuse, so fall
-		// back to the name step instead of an esc that appears to do nothing.
-		if m.formStep == personaFormStack {
-			if strings.TrimSpace(m.nameInput.Value()) == "" {
-				return m.focusNameStep()
-			}
-			return m.focusPromptStep()
-		}
-		// Name step: cancel only while the prompt is untouched — the step is
-		// reachable backwards (shift+tab) with an edited prompt in hand.
+		// Only an untouched prompt may be abandoned by reflex; a real edit is
+		// discarded explicitly, with :q inside the editor.
 		if m.promptTA.Value() != m.formInitialPrompt {
-			m.message = "Still editing — save with ctrl+j, or :q on the prompt to discard"
+			m.message = "Still editing — ctrl+j saves · open the prompt and :q to discard"
 			return m, nil
 		}
 		m.cancelForm()
 		m.message = "Edit cancelled"
 		return m, nil
-	case isPersonaFormSaveKey(key):
-		return m.submitForm()
-	case key == "tab", key == "shift+tab":
-		// On the prompt step Tab is the placeholder-completion key whenever the
-		// editor has a `{…}` to complete; only fall through to field navigation
-		// when it does not, otherwise the completion is unreachable in the form.
-		if m.formStep == personaFormPrompt && m.promptTA.completionActive() {
-			break
-		}
-		if key == "shift+tab" {
-			switch m.formStep {
-			case personaFormPrompt:
-				return m.focusNameStep()
-			case personaFormStack:
-				return m.focusPromptStep()
-			default:
-				return m.focusStackStep()
-			}
-		}
-		switch m.formStep {
-		case personaFormName:
-			return m.focusPromptStep()
-		case personaFormPrompt:
-			return m.focusStackStep()
-		default:
-			return m.focusNameStep()
-		}
+	case key == "up", key == "shift+tab":
+		m.setFormRow((m.formRow + formRowCount - 1) % formRowCount)
+		return m, nil
+	case key == "down", key == "tab":
+		m.setFormRow((m.formRow + 1) % formRowCount)
+		return m, nil
 	case key == "enter":
-		if m.formStep == personaFormName {
-			// Name done → prompt. Save is intentionally not Enter (multi-line
-			// prompt needs Enter for newlines).
-			return m.focusPromptStep()
+		if m.formRow == formRowPrompt {
+			return m.openPrompt()
 		}
-		// Enter falls through to the prompt editor (newline in insert mode,
-		// save in normal mode); on the stack step it advances rows.
-		if m.formStep == personaFormStack {
-			m.setStackRow((m.stackRow + 1) % stackRowCount)
+		m.setFormRow((m.formRow + 1) % formRowCount)
+		return m, nil
+	case key == "left", key == "right":
+		// Off the stack rows the arrows belong to the text field under them.
+		if isStackRow(m.formRow) {
+			delta := 1
+			if key == "left" {
+				delta = -1
+			}
+			m.cycleStackRow(delta)
 			return m, nil
 		}
 	}
-	if m.formStep == personaFormStack {
-		return m.updateStackStep(msg)
-	}
 
 	var cmd tea.Cmd
-	if m.formStep == personaFormName {
+	switch {
+	case m.formRow == formRowName:
 		m.nameInput, cmd = m.nameInput.Update(msg)
-		return m, cmd
-	}
-	var ev promptEvent
-	m.promptTA, cmd, ev = m.promptTA.Update(msg)
-	switch ev {
-	case promptEventSave:
-		return m.submitForm()
-	case promptEventAccept:
-		// :w — leave the prompt editor and continue the wizard (Model & voice).
-		// Submitting the whole form from here used to skip that step and leave
-		// users staring at a closed form with no way to set provider/voice.
-		return m.focusStackStep()
-	case promptEventCancel:
-		m.cancelForm()
-		m.message = "Edit cancelled"
-	case promptEventIdleEsc:
-		m.message = "Still editing — :wq saves, :q discards"
+	case m.formRow == formRowBrainModel && m.brainModels.custom:
+		// Typing edits the model only under "(custom)"; the listed entries are
+		// select-only, like Voice and Tier.
+		m.brainModelInput, cmd = m.brainModelInput.Update(msg)
 	}
 	return m, cmd
 }
 
-// updateStackStep routes keys inside the model/voice step: ↑/↓ move rows,
-// ←/→ cycle providers/voices on those rows, typing goes into the model field.
-func (m personasModel) updateStackStep(msg tea.KeyMsg) (personasModel, tea.Cmd) {
+// updatePromptEditor routes keys while the system prompt owns the screen.
+func (m personasModel) updatePromptEditor(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	key := msg.String()
-	switch key {
-	case "up":
-		m.setStackRow((m.stackRow + stackRowCount - 1) % stackRowCount)
-		return m, nil
-	case "down":
-		m.setStackRow((m.stackRow + 1) % stackRowCount)
-		return m, nil
-	case "left", "right":
-		delta := 1
-		if key == "left" {
-			delta = -1
-		}
-		switch m.stackRow {
-		case stackRowBrainProvider:
-			list := stackBrainProviders()
-			m.brainProviderIdx = (m.brainProviderIdx + delta + len(list)) % len(list)
-			// The model catalog is provider-specific: re-scope it and drop a
-			// selection the new provider does not offer.
-			m.clampSelectedModel()
-			return m, nil
-		case stackRowBrainModel:
-			m.cycleStackModel(delta)
-			return m, nil
-		case stackRowTTSProvider:
-			list := stackTTSProviders()
-			m.ttsProviderIdx = (m.ttsProviderIdx + delta + len(list)) % len(list)
-			// Voice catalog and tier are provider-specific: drop selections
-			// that no longer apply so we don't keep a Kokoro id under Qwen.
-			m.clampSelectedVoice()
-			m.clampSelectedTier()
-			return m, nil
-		case stackRowVoice:
-			m.cycleStackVoice(delta)
-			return m, nil
-		case stackRowTier:
-			m.cycleStackTier(delta)
-			return m, nil
-		}
+	if isPersonaFormSaveKey(key) {
+		return m.submitForm()
+	}
+	// Tab is the placeholder-completion key whenever the editor has a `{…}` to
+	// complete — otherwise it means here what it means on the form: move on.
+	if (key == "tab" || key == "shift+tab") && !m.promptTA.completionActive() {
+		return m.closePrompt(promptAcceptedNote)
 	}
 
 	var cmd tea.Cmd
-	// Typing edits the model only under "(custom)"; the listed entries are
-	// select-only, like Voice and Tier.
-	if m.stackRow == stackRowBrainModel && m.brainModels.custom {
-		m.brainModelInput, cmd = m.brainModelInput.Update(msg)
+	var ev promptEvent
+	m.promptTA, cmd, ev = m.promptTA.Update(msg)
+	switch ev {
+	case promptEventSave:
+		// :wq, or normal-mode enter — save the whole persona.
+		return m.submitForm()
+	case promptEventAccept:
+		// :w — keep the prompt, go back to the form.
+		return m.closePrompt(promptAcceptedNote)
+	case promptEventCancel:
+		m.cancelForm()
+		m.message = "Edit cancelled"
+	case promptEventIdleEsc:
+		m.message = "Still editing — :w back to the form · :wq saves · :q discards"
 	}
 	return m, cmd
+}
+
+const promptAcceptedNote = "Prompt accepted · ctrl+j saves the persona"
+
+// openPrompt hands the screen to the vim editor. The prompt is the one field
+// that needs a whole screen, so it is the one field that takes it.
+func (m personasModel) openPrompt() (personasModel, tea.Cmd) {
+	m.promptOpen = true
+	m.nameInput.Blur()
+	m.brainModelInput.Blur()
+	// Ensure a usable draft: an empty prompt body gets the seed identity.
+	if strings.TrimSpace(m.promptTA.Value()) == "" {
+		if text := m.resolveSeedPrompt(); text != "" {
+			m.promptTA.SetValue(text)
+		}
+	}
+	m.resizeForm()
+	m.promptTA.StartInsert()
+	m.promptTA.Focus()
+	m.message = "This body is the persona identity the brain loads"
+	return m, nil
+}
+
+// closePrompt returns from the editor to the form, landing on the prompt row.
+func (m personasModel) closePrompt(note string) (personasModel, tea.Cmd) {
+	m.promptOpen = false
+	m.promptTA.Blur()
+	m.resizeForm()
+	m.setFormRow(formRowPrompt)
+	m.message = note
+	return m, nil
+}
+
+// cycleStackRow applies ←/→ to the model & voice row under the cursor.
+func (m *personasModel) cycleStackRow(delta int) {
+	switch m.formRow {
+	case formRowBrainProvider:
+		list := stackBrainProviders()
+		m.brainProviderIdx = (m.brainProviderIdx + delta + len(list)) % len(list)
+		// The model catalog is provider-specific: re-scope it and drop a
+		// selection the new provider does not offer.
+		m.clampSelectedModel()
+	case formRowBrainModel:
+		m.cycleStackModel(delta)
+	case formRowTTSProvider:
+		list := stackTTSProviders()
+		m.ttsProviderIdx = (m.ttsProviderIdx + delta + len(list)) % len(list)
+		// Voice catalog and tier are provider-specific: drop selections that no
+		// longer apply so we don't keep a Kokoro id under Qwen.
+		m.clampSelectedVoice()
+		m.clampSelectedTier()
+	case formRowVoice:
+		m.cycleStackVoice(delta)
+	case formRowTier:
+		m.cycleStackTier(delta)
+	}
 }
 
 // clampSelectedVoice clears selectedVoice when it is not in the current
@@ -461,26 +461,21 @@ func (m *personasModel) clampSelectedVoice() {
 	m.selectedVoice = ""
 }
 
-// setStackRow moves focus between stack rows, focusing the model text input
-// only on the model row under "(custom)" (everything else is cycled with ←/→).
-func (m *personasModel) setStackRow(row int) {
-	m.stackRow = row
+// setFormRow moves the screen cursor, focusing the text field that row owns.
+// Everything else is cycled with ←/→, so no other row takes typing.
+func (m *personasModel) setFormRow(row int) {
+	m.formRow = row
+	m.nameInput.Blur()
 	m.brainModelInput.Blur()
-	if row == stackRowBrainModel && m.brainModels.custom {
+	switch {
+	case row == formRowName:
+		m.nameInput.Focus()
+	case row == formRowBrainModel && m.brainModels.custom:
 		m.brainModelInput.Focus()
 	}
 	// Row help is scoped to the active row: leaving the row that owns the
-	// typing keys puts the step help back.
-	m.message = m.stackStepMessage()
-}
-
-func (m personasModel) focusStackStep() (personasModel, tea.Cmd) {
-	m.formStep = personaFormStack
-	m.nameInput.Blur()
-	m.promptTA.Blur()
-	m.setStackRow(stackRowBrainProvider)
-	m.message = m.stackStepMessage()
-	return m, nil
+	// typing keys puts the general help back.
+	m.message = m.formRowHelp()
 }
 
 // formBrain returns the stack step's brain selection ("" fields = inherit).
@@ -538,7 +533,8 @@ func (m *personasModel) prefillStack(p *persona.Profile) {
 
 func (m *personasModel) cancelForm() {
 	m.formMode = ""
-	m.formStep = personaFormName
+	m.formRow = formRowName
+	m.promptOpen = false
 	m.editID = ""
 	m.nameInput.Blur()
 	m.nameInput.SetValue("")
@@ -547,35 +543,8 @@ func (m *personasModel) cancelForm() {
 	m.formInitialPrompt = ""
 	m.prefillStack(nil)
 	m.brainModelInput.Blur()
-	m.stackRow = stackRowBrainProvider
 	// Abandon any in-flight model scan with the form it was opened for.
 	m.resetBrainModels()
-}
-
-func (m personasModel) focusNameStep() (personasModel, tea.Cmd) {
-	m.formStep = personaFormName
-	m.promptTA.Blur()
-	m.nameInput.Focus()
-	return m, textinput.Blink
-}
-
-func (m personasModel) focusPromptStep() (personasModel, tea.Cmd) {
-	if strings.TrimSpace(m.nameInput.Value()) == "" {
-		m.message = "Enter a display name first"
-		return m, nil
-	}
-	m.formStep = personaFormPrompt
-	m.nameInput.Blur()
-	// Ensure a usable draft: an empty prompt body gets the seed identity.
-	if strings.TrimSpace(m.promptTA.Value()) == "" {
-		if text := m.resolveSeedPrompt(); text != "" {
-			m.promptTA.SetValue(text)
-		}
-	}
-	m.promptTA.StartInsert()
-	m.promptTA.Focus()
-	m.message = "Edit the system prompt · esc for NORMAL · :w next step · :wq / ctrl+j save form · :q cancel"
-	return m, nil
 }
 
 func (m *personasModel) resolveDefaultPrompt() string {
@@ -603,9 +572,10 @@ func (m *personasModel) resolveSeedPrompt() string {
 
 func (m *personasModel) beginCreate() tea.Cmd {
 	m.formMode = "create"
-	m.formStep = personaFormName
+	m.promptOpen = false
+	m.setFormRow(formRowName)
 	m.editID = ""
-	m.message = "Name the agent, then edit the system prompt · save with ctrl+j / alt+s / f2"
+	m.message = "Name the agent · ↑/↓ moves · ←/→ picks model & voice · ctrl+j saves"
 	m.resizeForm()
 	m.nameInput.SetValue("")
 	m.nameInput.Focus()
@@ -617,7 +587,9 @@ func (m *personasModel) beginCreate() tea.Cmd {
 	return tea.Batch(textinput.Blink, m.loadBrainModels())
 }
 
-func (m *personasModel) beginEdit() tea.Cmd {
+// beginEditAt opens the edit form for the persona under the cursor, landing on
+// row — the list's `m` key uses it to arrive straight on Model & voice.
+func (m *personasModel) beginEditAt(row int) tea.Cmd {
 	if m.loadErr != "" || m.cursor < 0 || m.cursor >= len(m.items) {
 		return nil
 	}
@@ -626,20 +598,21 @@ func (m *personasModel) beginEdit() tea.Cmd {
 		return nil
 	}
 	m.formMode = "edit"
-	m.formStep = personaFormName
+	m.promptOpen = false
 	m.editID = p.ID
-	m.message = "Edit name + system prompt (used by the brain as the real persona system prompt)"
 	m.resizeForm()
 	m.nameInput.SetValue(p.DisplayName)
-	m.nameInput.Focus()
 	text, loadNote := m.loadEditPrompt(p)
 	m.promptTA.SetValue(text)
 	m.formInitialPrompt = text
+	m.promptTA.Blur()
+	m.prefillStack(p)
+	// setFormRow last: prefillStack decides whether the model row is a text
+	// field ("(custom)") or a picker, and the row owns that focus.
+	m.setFormRow(row)
 	if loadNote != "" {
 		m.message = loadNote
 	}
-	m.promptTA.Blur()
-	m.prefillStack(p)
 	return tea.Batch(textinput.Blink, m.loadBrainModels())
 }
 
@@ -678,9 +651,8 @@ func (m *personasModel) loadEditPrompt(p *persona.Profile) (text, note string) {
 func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 	name := strings.TrimSpace(m.nameInput.Value())
 	if name == "" {
+		m.setFormRow(formRowName)
 		m.message = "Enter a display name"
-		m.formStep = personaFormName
-		m.nameInput.Focus()
 		return m, textinput.Blink
 	}
 	prompt := strings.TrimSpace(m.promptTA.Value())
@@ -689,9 +661,8 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 		prompt = strings.TrimSpace(m.resolveSeedPrompt())
 	}
 	if prompt == "" {
-		m.message = "Enter a system prompt (this is the persona identity the brain loads)"
-		m.formStep = personaFormPrompt
-		m.promptTA.Focus()
+		m.setFormRow(formRowPrompt)
+		m.message = "Enter a system prompt (this is the persona identity the brain loads) · enter opens the editor"
 		return m, nil
 	}
 

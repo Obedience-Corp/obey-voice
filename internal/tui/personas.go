@@ -28,11 +28,15 @@ type personasModel struct {
 	message string
 
 	// formMode: "" | "create" | "edit"
-	formMode  string
-	formStep  int // name | prompt | stack
-	editID    string
-	nameInput textinput.Model
-	promptTA  promptEditor
+	formMode string
+	// formRow is the cursor over the one-screen form: name, the model & voice
+	// rows, then the system prompt. promptOpen hands the whole screen to the
+	// prompt editor — the one field that needs it.
+	formRow    int
+	promptOpen bool
+	editID     string
+	nameInput  textinput.Model
+	promptTA   promptEditor
 	// formInitialPrompt is the prompt body the form opened with; esc-to-cancel
 	// on the name step is allowed only while the prompt still matches it.
 	formInitialPrompt string
@@ -43,11 +47,10 @@ type personasModel struct {
 	confirmDeleteID   string
 	confirmDeleteName string
 
-	// Stack step: per-persona brain provider/model + TTS provider/voice.
+	// Model & voice rows: per-persona brain provider/model + TTS provider/voice.
 	// Index 0 of the provider lists is "(default)" = inherit the app config.
 	// Voice is a selectable catalog (←/→), not free text — empty selectedVoice
 	// means inherit the Settings default for the effective TTS provider.
-	stackRow         int
 	brainProviderIdx int
 	ttsProviderIdx   int
 	brainModelInput  textinput.Model
@@ -223,7 +226,10 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 			// Create without scrolling to the trailing "+ Create" row.
 			return m, m.beginCreate()
 		case "e":
-			return m, m.beginEdit()
+			return m, m.beginEditAt(formRowName)
+		case "m":
+			// The most-changed fields, one key from the list.
+			return m, m.beginEditAt(formRowBrainProvider)
 		case "d", "delete":
 			m.beginDelete()
 		case "esc", "q":

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -49,10 +50,12 @@ func (m personasModel) View() string {
 	} else {
 		b.WriteString("\n")
 	}
-	help := "  ↑/↓ navigate • enter switch • n create • e edit • d delete • esc back"
+	help := "  ↑/↓ • enter switch • n create • e edit • m model & voice • d delete • esc back"
 	switch {
+	case m.formMode != "" && m.promptOpen:
+		help = "  esc NORMAL • :w back to form • :wq save • ctrl+j save • :q discard"
 	case m.formMode != "":
-		help = "  tab fields • save: ctrl+j · alt+s · f2 • esc cancel"
+		help = "  ↑/↓ move • ←/→ change • enter edit prompt • ctrl+j save • esc cancel"
 	case m.confirmDeleteID != "":
 		help = "  y delete permanently • any other key cancels"
 	}
@@ -97,23 +100,6 @@ func (m personasModel) formBoxWidth() int {
 	return max(min(w-2, 78), 24)
 }
 
-// personaStepPills renders the wizard progress line: done, current, upcoming.
-func personaStepPills(current int) string {
-	steps := []string{"Name", "Prompt", "Model & voice"}
-	parts := make([]string, 0, len(steps))
-	for i, s := range steps {
-		switch {
-		case i < current:
-			parts = append(parts, statusStyle.Render("✓ "+s))
-		case i == current:
-			parts = append(parts, selectedStyle.Render("▸ "+s))
-		default:
-			parts = append(parts, dimStyle.Render("· "+s))
-		}
-	}
-	return "  " + strings.Join(parts, "   ")
-}
-
 // formBox draws a titled, rounded box around body lines. The title is already
 // styled; the border tracks focus (accent when active, dim otherwise).
 func formBox(title string, body []string, width int, focused bool) []string {
@@ -142,9 +128,8 @@ func formBoxStyled(title string, body []string, width int, border lipgloss.Style
 }
 
 func (m personasModel) formLines() []string {
-	title := "Create a new voice agent"
-	if m.formMode == "edit" {
-		title = "Edit persona " + m.editID
+	if m.promptOpen {
+		return m.promptEditorLines()
 	}
 	boxW := m.formBoxWidth()
 
@@ -156,37 +141,77 @@ func (m personasModel) formLines() []string {
 		}
 		nameTitle += dimStyle.Render(" · id: " + slug)
 	}
-	promptTitle := headerStyle.Render("System prompt") + dimStyle.Render(" · {agent_name} supported")
-	if m.formStep == personaFormPrompt {
-		promptTitle += dimStyle.Render(" — ") + m.promptTA.modeChip()
-	}
 	stackTitle := headerStyle.Render("Model & voice") + dimStyle.Render(" · (default) inherits Settings")
+	promptTitle := headerStyle.Render("System prompt") + dimStyle.Render(" · {agent_name} supported")
 
 	lines := []string{
-		"  " + normalStyle.Bold(true).Render(title),
-		personaStepPills(m.formStep),
+		"  " + normalStyle.Bold(true).Render(m.formTitle()),
 		"",
 	}
-	lines = append(lines, formBox(nameTitle, []string{m.nameInput.View()}, boxW, m.formStep == personaFormName)...)
-	lines = append(lines, formBox(promptTitle, strings.Split(m.promptTA.View(), "\n"), boxW, m.formStep == personaFormPrompt)...)
-	if m.formStep == personaFormPrompt {
-		lines = append(lines, dimStyle.Render("  "+m.promptTA.modeline()))
-	}
-	lines = append(lines, formBox(stackTitle, m.stackLines(), boxW, m.formStep == personaFormStack)...)
+	lines = append(lines, formBox(nameTitle, []string{m.nameInput.View()}, boxW, m.formRow == formRowName)...)
+	lines = append(lines, formBox(stackTitle, m.stackLines(), boxW, isStackRow(m.formRow))...)
+	lines = append(lines, formBox(promptTitle, m.promptSummaryLines(), boxW, m.formRow == formRowPrompt)...)
 	return lines
 }
 
-// stackLines renders the model/voice rows of the form's stack step.
+// formTitle names what the form is editing.
+func (m personasModel) formTitle() string {
+	if m.formMode == "edit" {
+		return "Edit persona " + m.editID
+	}
+	return "Create a new voice agent"
+}
+
+// promptEditorLines is the system prompt with the screen to itself. The other
+// fields are not drawn: the editor is the only thing taking keys here, and it
+// was easy to clip when it shared the body height budget.
+func (m personasModel) promptEditorLines() []string {
+	title := headerStyle.Render("System prompt") + dimStyle.Render(" · {agent_name} supported") +
+		dimStyle.Render(" — ") + m.promptTA.modeChip()
+	lines := []string{
+		"  " + normalStyle.Bold(true).Render(m.formTitle()),
+		"",
+	}
+	lines = append(lines, formBox(title, strings.Split(m.promptTA.View(), "\n"), m.formBoxWidth(), true)...)
+	return append(lines, dimStyle.Render("  "+m.promptTA.modeline()))
+}
+
+// promptSummaryLines is the collapsed prompt row: what the document opens with
+// and how big it is, so the field says what it holds without taking the screen.
+func (m personasModel) promptSummaryLines() []string {
+	body := strings.TrimRight(m.promptTA.Value(), "\n")
+	if strings.TrimSpace(body) == "" {
+		return []string{dimStyle.Render("(empty) · enter to write one")}
+	}
+	rows := strings.Split(body, "\n")
+	first := ""
+	for _, line := range rows {
+		if strings.TrimSpace(line) != "" {
+			first = strings.TrimSpace(line)
+			break
+		}
+	}
+	count := fmt.Sprintf("%d lines", len(rows))
+	if len(rows) == 1 {
+		count = "1 line"
+	}
+	return []string{
+		normalStyle.Render(first),
+		dimStyle.Render(count + " · enter to edit"),
+	}
+}
+
+// stackLines renders the model & voice rows of the form.
 func (m personasModel) stackLines() []string {
 	row := func(idx int, label, value string) string {
 		mark, labelStyle := "  ", dimStyle
-		if m.formStep == personaFormStack && m.stackRow == idx {
+		if m.formRow == idx {
 			mark, labelStyle = selectedStyle.Render("▸ "), selectedStyle
 		}
 		return mark + labelStyle.Render(label) + " " + value
 	}
 	brainProvider := stackBrainProviders()[m.brainProviderIdx]
-	brainRow := row(stackRowBrainProvider, "Brain", "‹ "+brainProvider+" ›")
+	brainRow := row(formRowBrainProvider, "Brain", "‹ "+brainProvider+" ›")
 	if strings.EqualFold(brainProvider, "claude") && strings.TrimSpace(m.brainModelInput.Value()) != "" {
 		// Claude has no app-level model key yet; be honest that the model
 		// string is recorded on the profile but not routed.
@@ -209,10 +234,10 @@ func (m personasModel) stackLines() []string {
 	}
 	return []string{
 		brainRow,
-		row(stackRowBrainModel, "Model", m.stackModelRowValue()),
-		row(stackRowTTSProvider, "TTS  ", "‹ "+ttsProvider+" ›"),
-		row(stackRowVoice, "Voice", "‹ "+voiceLabel+" ›"),
-		row(stackRowTier, "Tier ", tierValue),
+		row(formRowBrainModel, "Model", m.stackModelRowValue()),
+		row(formRowTTSProvider, "TTS  ", "‹ "+ttsProvider+" ›"),
+		row(formRowVoice, "Voice", "‹ "+voiceLabel+" ›"),
+		row(formRowTier, "Tier ", tierValue),
 	}
 }
 
