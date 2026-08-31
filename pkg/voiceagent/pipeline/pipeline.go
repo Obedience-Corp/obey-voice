@@ -2024,6 +2024,7 @@ func (p *Pipeline) emit(event events.Event) {
 
 func (p *Pipeline) bindBrainInfo() {
 	brain.SetInfoSink(func(info events.Info) { p.emit(info) })
+	brain.SetContinuitySink(func(e events.Event) { p.emit(e) })
 }
 
 // toolStartHook emits ToolCallStarted for UI (stdout + TUI).
