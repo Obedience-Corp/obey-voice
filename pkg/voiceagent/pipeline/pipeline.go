@@ -1704,10 +1704,8 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synth
 // emitted as ThinkingDelta for the operator. The terminal result path
 // (stream.Done) is owned separately by streamResponse.
 //
-// Locals are copied from the stream and set to nil on close so a closed
-// Thinking channel cannot spin the select. The loop continues until both are
-// nil. Empty strings are ignored. Unused providers leave Thinking nil, which
-// disables that case.
+// A closed Thinking channel must be niled: a closed case delivers "" forever
+// and can starve Chunks.
 //
 // The forwarding send is cancellation-safe: on ctx cancellation the stage
 // returns instead of blocking on a downstream that has stopped reading.

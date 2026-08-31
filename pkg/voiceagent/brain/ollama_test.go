@@ -485,6 +485,43 @@ func TestThinkStreamDoesNotRestateAfterTools(t *testing.T) {
 	}
 }
 
+func TestThinkStreamDoesNotRestateTaggedContentAfterTools(t *testing.T) {
+	const line = "Stay right there, baby."
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs++
+		if reqs == 1 {
+			fmt.Fprintf(w, `{"model":"m","message":{"role":"assistant","content":%q,"tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true}`+"\n", line)
+			return
+		}
+		fmt.Fprintf(w, `{"model":"m","message":{"role":"assistant","content":"<think>plan a greeting</think>%s"},"done":true,"done_reason":"stop"}`+"\n", line)
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	stream, err := o.ThinkStream(context.Background(), "hi", StreamOptions{ToolsEnabled: true})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	chunks, _ := drainStream(t, stream)
+	if res := <-stream.Done; res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+	if reqs < 2 {
+		t.Fatalf("expected a tool loop, got %d chat requests", reqs)
+	}
+	if chunks != line {
+		t.Fatalf("streamed %q, want the spoken line once (tagged restatement must not replay)", chunks)
+	}
+}
+
 func TestRestatementSkip(t *testing.T) {
 	const already = "Stay right there, baby."
 	tests := []struct {
@@ -504,6 +541,9 @@ func TestRestatementSkip(t *testing.T) {
 	}
 	if restatementSkip("", "hello") {
 		t.Error("empty already must not skip; that is the first iteration")
+	}
+	if !restatementSkip(already, "<think>plan a greeting</think>"+already) {
+		t.Error("tagged restatement of the same reply must skip")
 	}
 }
 
@@ -556,6 +596,19 @@ func TestThinkStreamFallbackAfterToolOnlyTurn(t *testing.T) {
 	}
 }
 
+func TestModelRejectedThink(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"model does not support thinking":      true,
+		"400: llama3.2 does not support think": true,
+		"does not support tools":               false,
+		"connection refused":                   false,
+	} {
+		if got := modelRejectedThink(errors.New(msg)); got != want {
+			t.Errorf("modelRejectedThink(%q) = %v, want %v", msg, got, want)
+		}
+	}
+}
+
 func TestChatRetriesWithoutThinkWhenUnsupported(t *testing.T) {
 	var withThink, withoutThink int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -588,6 +641,35 @@ func TestChatRetriesWithoutThinkWhenUnsupported(t *testing.T) {
 	}
 	if req.Think == nil || req.Think.Value != false {
 		t.Errorf("Think = %#v, want false after the reject retry", req.Think)
+	}
+}
+
+func TestChatDoesNotRetryThinkOnUnrelatedError(t *testing.T) {
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":"connection refused"}`)
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{client: api.NewClient(base, http.DefaultClient), model: "m"}
+	stream := false
+	req := &api.ChatRequest{
+		Model:    "m",
+		Messages: []api.Message{{Role: "user", Content: "hi"}},
+		Stream:   &stream,
+		Think:    &api.ThinkValue{Value: true},
+	}
+	if err := o.chat(context.Background(), req, func(api.ChatResponse) error { return nil }); err == nil {
+		t.Fatal("chat returned nil, want the unrelated error")
+	}
+	if n != 1 {
+		t.Errorf("requests = %d, want 1 (non-think errors must not retry without Think)", n)
+	}
+	if req.Think == nil || req.Think.Value != true {
+		t.Errorf("Think = %#v, want still true (no think-reject retry)", req.Think)
 	}
 }
 
@@ -919,7 +1001,7 @@ func TestChatRequestCarriesContextPolicy(t *testing.T) {
 	}
 	// Non-qwen3 model with empty ollama_think: Prefer is false, so Think is off.
 	if req.Think == nil || req.Think.Value != false {
-		t.Fatalf("Think = %#v, want false (default ollama_think)", req.Think)
+		t.Fatalf("Think = %#v, want false for non-qwen3", req.Think)
 	}
 
 	// num_ctx 0 defers to the server default: no Options at all.
@@ -1018,10 +1100,8 @@ func TestWarmupMatchesChatOptions(t *testing.T) {
 	}
 }
 
-// TestChatRequestThinkPolicy is the regression for empty-content turns on
-// thinking models (qwen3.x): voice defaults think=false so Ollama returns
-// message.content instead of only message.thinking, which previously became
-// the "lost my train of thought" fallback.
+// TestChatRequestThinkPolicy: empty/"auto" on a non-qwen3 model stay
+// Think=false (PreferOllamaThink is false). Explicit levels still map through.
 func TestChatRequestThinkPolicy(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1127,6 +1207,98 @@ func TestThinkFullSpeaksFallbackVerbatim(t *testing.T) {
 	}
 	if resp != fallbackResponse {
 		t.Errorf("resp = %q, want fallback verbatim %q", resp, fallbackResponse)
+	}
+}
+
+func TestThinkFullThinkingOnlyEmptyDoesNotFallback(t *testing.T) {
+	const thought = "The user said hi. I should greet them."
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"model":"m","message":{"role":"assistant","thinking":%q,"content":""},"done":true,"done_reason":"stop"}`+"\n", thought)
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	resp, err := o.ThinkFull(context.Background(), "hello", StreamOptions{})
+	if err != nil {
+		t.Fatalf("ThinkFull returned error: %v", err)
+	}
+	if resp != "" {
+		t.Fatalf("resp = %q, want empty thinking-only (not fallback)", resp)
+	}
+	if len(o.history) == 0 {
+		t.Fatal("no assistant turn recorded")
+	}
+	tail := o.history[len(o.history)-1]
+	if tail.Content != "" {
+		t.Errorf("history Content = %q, want empty", tail.Content)
+	}
+	if strings.Contains(tail.Content, thought) || tail.Thinking != "" {
+		t.Errorf("history persisted thinking: Content=%q Thinking=%q", tail.Content, tail.Thinking)
+	}
+}
+
+func TestThinkFullToolOnlyEmptyFallsBack(t *testing.T) {
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs++
+		if reqs == 1 {
+			_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true}`+"\n")
+			return
+		}
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	resp, err := o.ThinkFull(context.Background(), "list files", StreamOptions{ToolsEnabled: true})
+	if err != nil {
+		t.Fatalf("ThinkFull returned error: %v", err)
+	}
+	if resp != fallbackResponse {
+		t.Fatalf("resp = %q, want fallback after tool-only empty", resp)
+	}
+}
+
+func TestThinkFullThinkingThenToolsEmptyFallsBack(t *testing.T) {
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs++
+		if reqs == 1 {
+			_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","thinking":"need the files","content":"","tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true}`+"\n")
+			return
+		}
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","thinking":"still nothing","content":""},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	resp, err := o.ThinkFull(context.Background(), "list files", StreamOptions{ToolsEnabled: true})
+	if err != nil {
+		t.Fatalf("ThinkFull returned error: %v", err)
+	}
+	if resp != fallbackResponse {
+		t.Fatalf("resp = %q, want fallback after thinking+tools+empty", resp)
 	}
 }
 
