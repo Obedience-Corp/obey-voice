@@ -78,7 +78,11 @@ type App struct {
 	progress *eventBridge
 	// slot owns the built runtime for shutdown cleanup even when a ready
 	// message is dropped because the user quit mid-build.
-	slot *runtimeSlot
+	slot *runtimeSlot[*ConversationRuntime]
+	// meetingSlot owns a recorder built after a quit, the same way slot owns a
+	// conversation: Ctrl+C during the build means the ready message may never
+	// be applied.
+	meetingSlot *runtimeSlot[*MeetingRuntime]
 
 	// Meeting recorder wiring (launcher → setup → recorder).
 	meetingBuilder   MeetingBuilder
@@ -232,9 +236,14 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Meeting owns Ctrl+C as "stop recording" (returns to launcher).
 		// Results and the route picker own it too: quitting the app from
 		// those screens silently discarded the planned route (WI-162bbb).
-		if msg.String() == "ctrl+c" &&
-			(a.screen == screenMeeting || a.screen == screenMeetingSetup ||
-				a.screen == screenMeetingResults || a.screen == screenMeetingRoute) {
+		//
+		// Not while the recorder is still being built: there is nothing to
+		// stop, and the waiting screen tells the user ctrl+c quits — which it
+		// must, or the only key it offers them does nothing.
+		meetingOwnsCancel := (a.screen == screenMeeting && !a.meeting.startup.active) ||
+			a.screen == screenMeetingSetup || a.screen == screenMeetingResults ||
+			a.screen == screenMeetingRoute
+		if msg.String() == "ctrl+c" && meetingOwnsCancel {
 			break // fall through to screen Update
 		}
 		if msg.String() == "ctrl+c" {
@@ -385,11 +394,25 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.meeting = newEmbeddedMeeting()
 		a.meeting.width, a.meeting.height = a.width, a.height
 		a.meeting.reflow()
-		a.meeting.status = "Preparing models…"
-		return a, buildMeeting(a.meetingBuilder, a.runCtx, msg.Description)
+		// Same wait, same screen as a conversation start: models load and the
+		// mic opens before anything can be recorded.
+		tick := a.meeting.beginStartup(msg.Description)
+		return a, tea.Batch(tick, a.progress.wait(),
+			buildMeeting(a.meetingBuilder, a.runCtx, a.progress, a.meetingSlot, msg.Description))
 
 	case meetingReadyMsg:
+		// Build finished after quit: the slot already owns the recorder's
+		// teardown (or run() will call it), and applying it now would start a
+		// listen loop on a program that is exiting.
+		//
+		// Only a.quitting, not runCtx: a cancelled run context is also how a
+		// recorder is told its listen loop must exit, which is not the same
+		// thing as the app going away.
+		if a.quitting {
+			return a, nil
+		}
 		if msg.err != nil {
+			a.meeting.finishStartup()
 			a.screen = screenMeetingSetup
 			a.meetingSetup = newMeetingSetup(a.cfg)
 			a.meetingSetup.width, a.meetingSetup.height = a.width, a.height
@@ -426,6 +449,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Child cancel stops the listen loop without ending the whole App.
 		mctx, mcancel := context.WithCancel(a.runCtx)
+		a.meeting.finishStartup()
 		cmd := a.meeting.beginRecording(MeetingOpts{
 			Ctx:           mctx,
 			Cancel:        mcancel,
@@ -672,7 +696,13 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID))
 
 	case buildStageMsg:
-		a.conversation.setBuildStage(msg.stage)
+		// Whichever screen is waiting owns the stage; only one build runs at a
+		// time, and the meeting screen is entered before its build starts.
+		if a.screen == screenMeeting {
+			a.meeting.setBuildStage(msg.stage)
+		} else {
+			a.conversation.setBuildStage(msg.stage)
+		}
 		return a, a.progress.wait()
 
 	case progressClosedMsg:

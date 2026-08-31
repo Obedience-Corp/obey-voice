@@ -60,37 +60,50 @@ type startupState struct {
 	frame int
 }
 
+// begin puts the state into the waiting state. label is what is being started,
+// when the caller knows it.
+func (s *startupState) begin(label string) {
+	// The opening stage carries no label: it is a placeholder for the first
+	// real step, and retiring it would put "✓ Preparing" in a list of steps
+	// that actually happened.
+	*s = startupState{active: true, label: strings.TrimSpace(label), since: time.Now()}
+}
+
+// advance moves to the next step, retiring the current one to the done list. A
+// download reports many times under one label; that is one step in the list,
+// not one per percent.
+func (s *startupState) advance(stage BuildStage) {
+	if !s.active || strings.TrimSpace(stage.Label) == "" {
+		return
+	}
+	if stage.Label == s.stage.Label {
+		s.stage = stage
+		return
+	}
+	if prev := strings.TrimSpace(s.stage.Label); prev != "" {
+		s.done = append(s.done, prev)
+	}
+	s.stage = stage
+}
+
+// tick advances the animation, reporting whether the loop should continue.
+func (s *startupState) tick() bool {
+	if !s.active {
+		return false
+	}
+	s.frame++
+	return true
+}
+
 // beginStartup puts the screen into the waiting state. name is what the
 // session is being started as, when the caller knows it — the runtime's own
 // identity is not resolved until the build finishes.
 func (m *conversationModel) beginStartup(name string) tea.Cmd {
-	// The opening stage carries no label: it is a placeholder for the first
-	// real step, and retiring it would put "✓ Preparing" in a list of steps
-	// that actually happened.
-	m.startup = startupState{
-		active: true,
-		label:  strings.TrimSpace(name),
-		since:  time.Now(),
-	}
+	m.startup.begin(name)
 	return startupTickCmd(m.reducedMotion)
 }
 
-// setBuildStage advances to the next step, retiring the current one to the
-// done list. A download reports many times under one label; that is one step,
-// not one per percent.
-func (m *conversationModel) setBuildStage(stage BuildStage) {
-	if !m.startup.active || strings.TrimSpace(stage.Label) == "" {
-		return
-	}
-	if stage.Label == m.startup.stage.Label {
-		m.startup.stage = stage
-		return
-	}
-	if prev := strings.TrimSpace(m.startup.stage.Label); prev != "" {
-		m.startup.done = append(m.startup.done, prev)
-	}
-	m.startup.stage = stage
-}
+func (m *conversationModel) setBuildStage(stage BuildStage) { m.startup.advance(stage) }
 
 // finishStartup returns the screen to the conversation proper.
 func (m *conversationModel) finishStartup() {
@@ -99,12 +112,12 @@ func (m *conversationModel) finishStartup() {
 
 func (m conversationModel) startingUp() bool { return m.startup.active }
 
-// startupElapsed is the wall time this build has taken, floored to the second.
-func (m conversationModel) startupElapsed() time.Duration {
-	if m.startup.since.IsZero() {
+// elapsed is the wall time this build has taken, floored to the second.
+func (s startupState) elapsed() time.Duration {
+	if s.since.IsZero() {
 		return 0
 	}
-	return time.Since(m.startup.since).Truncate(time.Second)
+	return time.Since(s.since).Truncate(time.Second)
 }
 
 func formatElapsed(d time.Duration) string {
@@ -144,32 +157,7 @@ func startupLayout(width, height int) (orbRows, history int) {
 
 // startupView is the whole screen while the runtime is being built.
 func (m conversationModel) startupView() string {
-	// The screen can render before the first WindowSizeMsg lands; 80x24 is the
-	// same fallback the other screens use.
-	width, height := m.width, m.height
-	if width <= 0 {
-		width = 80
-	}
-	if height <= 0 {
-		height = 24
-	}
-	orbRows, history := startupLayout(width, height)
-	block := min(startupBlockWidth, max(width-4, 24))
-
-	var lines []string
-	if orbRows > 0 {
-		lines = append(lines, centerBlock(anim.Orb(m.startup.frame, orbRows, orbStyles(), m.reducedMotion), width)...)
-		lines = append(lines, "")
-	}
-	lines = append(lines, centerLine(headerStyle.Render(m.startupTitle()), width), "")
-	lines = append(lines, centerBlock(m.startupSteps(block, history), width)...)
-	lines = append(lines, "", centerLine(dimStyle.Render(startupNote(m.startup.stage)), width))
-	lines = append(lines, "", centerLine(dimStyle.Render("ctrl+c quits"), width))
-
-	for i, line := range lines {
-		lines[i] = ansi.Truncate(line, width, "…")
-	}
-	return "\n" + strings.Join(lines, "\n")
+	return m.startup.view(m.width, m.height, m.startupTitle(), m.reducedMotion)
 }
 
 func (m conversationModel) startupTitle() string {
@@ -183,13 +171,44 @@ func (m conversationModel) startupTitle() string {
 	return "Starting " + name
 }
 
-// startupSteps is the checklist block: finished steps, then the one in flight
-// with the clock, then its bar.
-func (m conversationModel) startupSteps(width, history int) []string {
+// view renders the whole waiting screen. It belongs to the state rather than
+// to one model: the conversation and the meeting recorder wait on the same
+// kind of build and have the same nothing else to show meanwhile.
+func (s startupState) view(width, height int, title string, reduced bool) string {
+	// The screen can render before the first WindowSizeMsg lands; 80x24 is the
+	// same fallback the other screens use.
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+	orbRows, history := startupLayout(width, height)
+	block := min(startupBlockWidth, max(width-4, 24))
+
+	var lines []string
+	if orbRows > 0 {
+		lines = append(lines, centerBlock(anim.Orb(s.frame, orbRows, orbStyles(), reduced), width)...)
+		lines = append(lines, "")
+	}
+	lines = append(lines, centerLine(headerStyle.Render(title), width), "")
+	lines = append(lines, centerBlock(s.steps(block, history, reduced), width)...)
+	lines = append(lines, "", centerLine(dimStyle.Render(startupNote(s.stage)), width))
+	lines = append(lines, "", centerLine(dimStyle.Render("ctrl+c quits"), width))
+
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width, "…")
+	}
+	return "\n" + strings.Join(lines, "\n")
+}
+
+// steps is the checklist block: finished steps, then the one in flight with
+// the clock, then its bar.
+func (s startupState) steps(width, history int, reduced bool) []string {
 	styles := orbStyles()
 	var lines []string
 
-	done := m.startup.done
+	done := s.done
 	if history <= 0 {
 		done = nil
 	} else if len(done) > history {
@@ -202,12 +221,12 @@ func (m conversationModel) startupSteps(width, history int) []string {
 	// Current step, with the clock pushed to the right edge of the block. No
 	// spinner here: the orb above is the motion, and the bar below is the
 	// second one — a third would be noise.
-	step := m.startup.stage.Label
+	step := s.stage.Label
 	if strings.TrimSpace(step) == "" {
 		step = "Preparing"
 	}
 	left := selectedStyle.Render("▸ ") + normalStyle.Render(step+"…")
-	elapsed := dimStyle.Render(formatElapsed(m.startupElapsed()))
+	elapsed := dimStyle.Render(formatElapsed(s.elapsed()))
 	if pad := width - ansi.StringWidth(left) - ansi.StringWidth(elapsed); pad > 0 {
 		left += strings.Repeat(" ", pad) + elapsed
 	} else {
@@ -215,10 +234,10 @@ func (m conversationModel) startupSteps(width, history int) []string {
 	}
 	lines = append(lines, left)
 
-	if m.startup.stage.Download {
-		lines = append(lines, "  "+anim.Bar(m.startup.stage.Pct, width-2, styles))
+	if s.stage.Download {
+		lines = append(lines, "  "+anim.Bar(s.stage.Pct, width-2, styles))
 	} else {
-		lines = append(lines, "  "+anim.Sweep(m.startup.frame, width-2, styles, m.reducedMotion))
+		lines = append(lines, "  "+anim.Sweep(s.frame, width-2, styles, reduced))
 	}
 	return lines
 }
