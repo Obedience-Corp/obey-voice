@@ -894,10 +894,7 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 	return msgs
 }
 
-// toolResultFitKeep is how much of a tool result survives when the prompt
-// would otherwise overflow num_ctx. Keep the start of the payload so the
-// model still sees the command and a sample of the output.
-const toolResultFitKeep = 512
+const toolResultTruncationMarker = "... (truncated to fit context)"
 
 func toolResultMessage(tc api.ToolCall, result string) api.Message {
 	return api.Message{
@@ -942,9 +939,7 @@ func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
 	}
 	trimmed := o.dropOldestBeforeLastUser(skillCtx, limit)
 	if o.estimateTokens(skillCtx) > limit {
-		trimmed = shrinkToolResults(o.history, func() bool {
-			return o.estimateTokens(skillCtx) <= limit
-		}) || trimmed
+		trimmed = o.shrinkToolsToTokenLimit(skillCtx, limit) || trimmed
 	}
 	if trimmed && !o.budgetWarned {
 		o.budgetWarned = true
@@ -969,30 +964,85 @@ func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool 
 	return trimmed
 }
 
-func shrinkToolResults(history []api.Message, underBudget func() bool) bool {
-	changed := false
-	for i := range history {
-		if history[i].Role != "tool" || len(history[i].Content) <= toolResultFitKeep {
-			continue
-		}
-		history[i].Content = history[i].Content[:toolResultFitKeep] + "\n... (truncated to fit context)"
-		changed = true
-		if underBudget() {
-			return true
+// shrinkToolsToTokenLimit assigns remaining prompt bytes to tool bodies,
+// newest first, so the request fits limit tokens. Older results shrink
+// first; a tool may become empty if the budget is that tight.
+func (o *OllamaBrain) shrinkToolsToTokenLimit(skillCtx string, limit int) bool {
+	if o.estimateTokens(skillCtx) <= limit {
+		return false
+	}
+	remaining := limit*4 - (o.promptBytes(skillCtx) - toolContentBytes(o.history))
+	return shrinkToolResults(o.history, remaining)
+}
+
+func shrinkToolResults(history []api.Message, remainingBytes int) bool {
+	if remainingBytes < 0 {
+		remainingBytes = 0
+	}
+	var tools []int
+	for i, m := range history {
+		if m.Role == "tool" {
+			tools = append(tools, i)
 		}
 	}
+	keep := make([]int, len(history))
+	budget := remainingBytes
+	for t := len(tools) - 1; t >= 0; t-- {
+		i := tools[t]
+		n := min(len(history[i].Content), budget)
+		keep[i] = n
+		budget -= n
+	}
+	changed := false
+	for _, i := range tools {
+		cur := history[i].Content
+		want := keep[i]
+		if want >= len(cur) {
+			continue
+		}
+		history[i].Content = truncateToBytes(cur, want)
+		changed = true
+	}
 	return changed
+}
+
+func truncateToBytes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if len(s) <= n {
+		return s
+	}
+	marker := toolResultTruncationMarker
+	if n <= len(marker) {
+		return marker[:n]
+	}
+	return s[:n-len(marker)] + marker
+}
+
+func toolContentBytes(history []api.Message) int {
+	n := 0
+	for _, m := range history {
+		if m.Role == "tool" {
+			n += len(m.Content)
+		}
+	}
+	return n
 }
 
 // estimateTokens coarsely sizes the next request (≈4 bytes per token plus
 // per-message overhead). It only needs to be accurate enough to trim before
 // the server truncates.
 func (o *OllamaBrain) estimateTokens(skillCtx string) int {
+	return o.promptBytes(skillCtx) / 4
+}
+
+func (o *OllamaBrain) promptBytes(skillCtx string) int {
 	n := len(o.fullSystemPrompt) + len(skillCtx)
 	for _, m := range o.history {
 		n += len(m.Content) + 16
 	}
-	return n / 4
+	return n
 }
 
 func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart, onEnd func(name, detail string)) string {

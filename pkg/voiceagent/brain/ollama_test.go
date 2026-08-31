@@ -1213,6 +1213,7 @@ func TestEnsureContextBudgetPinsLatestUserDuringToolLoop(t *testing.T) {
 		t.Fatalf("lost in-flight user query: %+v", rolesOf(o.history))
 	}
 	assertNoStrandedTools(t, o.history)
+	assertWithinContextBudget(t, o, "")
 }
 
 func TestEnsureContextBudgetShrinksToolResultsToKeepUser(t *testing.T) {
@@ -1233,16 +1234,58 @@ func TestEnsureContextBudgetShrinksToolResultsToKeepUser(t *testing.T) {
 	if got := lastUserIndex(o.history); got != 0 {
 		t.Fatalf("last user index = %d, want 0 (cannot drop the only query)", got)
 	}
-	for _, m := range o.history {
-		if m.Role != "tool" {
-			continue
-		}
-		if len(m.Content) > toolResultFitKeep+len("\n... (truncated to fit context)") {
-			t.Fatalf("tool result not shrunk: %d bytes", len(m.Content))
-		}
-		if !strings.Contains(m.Content, "truncated to fit context") {
-			t.Fatal("shrunk tool result missing truncation marker")
-		}
+	assertWithinContextBudget(t, o, "")
+	if newest, oldest := o.history[3].Content, o.history[2].Content; len(newest) < len(oldest) {
+		t.Fatalf("newest tool (%d bytes) smaller than oldest (%d); budget should keep the latest result", len(newest), len(oldest))
+	}
+}
+
+func TestEnsureContextBudgetFitsSmallNumCtx(t *testing.T) {
+	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
+	o := &OllamaBrain{
+		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 128},
+		fullSystemPrompt: "sys",
+		history: []api.Message{
+			{Role: "user", Content: "summarize my campaign"},
+			call,
+			{Role: "tool", Content: strings.Repeat("x", 8000), ToolName: "run_command"},
+		},
+	}
+
+	o.ensureContextBudget("")
+	if o.history[0].Role != "user" {
+		t.Fatalf("lost user query: %+v", rolesOf(o.history))
+	}
+	assertWithinContextBudget(t, o, "")
+}
+
+func TestEnsureContextBudgetFitsManyToolResults(t *testing.T) {
+	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
+	hist := []api.Message{
+		{Role: "user", Content: "summarize my campaign"},
+		call,
+	}
+	for range 8 {
+		hist = append(hist, api.Message{Role: "tool", Content: strings.Repeat("x", 4000), ToolName: "run_command"})
+	}
+	o := &OllamaBrain{
+		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 400},
+		fullSystemPrompt: "sys",
+		history:          hist,
+	}
+
+	o.ensureContextBudget("")
+	if o.history[0].Content != "summarize my campaign" {
+		t.Fatalf("lost user query: %+v", rolesOf(o.history))
+	}
+	assertWithinContextBudget(t, o, "")
+}
+
+func assertWithinContextBudget(t *testing.T, o *OllamaBrain, skillCtx string) {
+	t.Helper()
+	limit := o.cfg.OllamaNumCtx * 9 / 10
+	if got := o.estimateTokens(skillCtx); got > limit {
+		t.Fatalf("estimateTokens = %d, want <= %d (num_ctx=%d)", got, limit, o.cfg.OllamaNumCtx)
 	}
 }
 
