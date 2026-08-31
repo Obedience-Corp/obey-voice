@@ -417,10 +417,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ollama_num_ctx", 8192)
 	v.SetDefault("ollama_num_batch", 128)
 	v.SetDefault("ollama_keep_alive", "10m")
-	// Disable chain-of-thought on voice turns: thinking models (qwen3.x) often
-	// return empty content after a long think block, which becomes the canned
-	// "lost my train of thought" reply. Set ollama_think=true or a level to re-enable.
-	v.SetDefault("ollama_think", "false")
+	// auto: qwen3-family models get Think:true so CoT lands in Message.Thinking
+	// instead of spoken Content. Explicit false remains the leaky hatch.
+	v.SetDefault("ollama_think", "auto")
 	// The CLI session is trusted by default (no silent drops); the fuse is
 	// opt-in for unattended/serve setups.
 	v.SetDefault("claude_max_session_tokens", 0)

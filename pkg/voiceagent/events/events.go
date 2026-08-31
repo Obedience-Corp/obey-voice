@@ -252,6 +252,14 @@ type ResponseDelta struct {
 
 func (e ResponseDelta) eventType() string { return "response_delta" }
 
+// ThinkingDelta carries one incremental piece of operator-facing reasoning.
+// It is never spoken. Advisory and droppable like ResponseDelta.
+type ThinkingDelta struct {
+	Text string
+}
+
+func (e ThinkingDelta) eventType() string { return "thinking_delta" }
+
 // SpeechSegmentReady signals a sentence is ready for voice synthesis.
 type SpeechSegmentReady struct {
 	Text string

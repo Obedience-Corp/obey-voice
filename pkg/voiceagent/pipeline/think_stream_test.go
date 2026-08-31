@@ -100,8 +100,9 @@ func TestReasoningReplyReachesNoDestinationWithALabel(t *testing.T) {
 			defer player.Close()
 			p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
 
-			var deltas strings.Builder
+			var deltas, thinks strings.Builder
 			events.Subscribe(p.Events, func(d events.ResponseDelta) { deltas.WriteString(d.Text) })
+			events.Subscribe(p.Events, func(d events.ThinkingDelta) { thinks.WriteString(d.Text) })
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -142,11 +143,18 @@ func TestReasoningReplyReachesNoDestinationWithALabel(t *testing.T) {
 				}
 			}
 
-			// The TUI paints from the delta stream, so the block must survive
-			// there — showing the reasoning and letting it reach speech, the
-			// transcript or history are different things.
-			if got := strings.Contains(deltas.String(), "<think>"); got != tt.wantThink {
-				t.Errorf("deltas carry a think block = %v, want %v: %q", got, tt.wantThink, deltas.String())
+			if strings.Contains(deltas.String(), "<think>") || strings.Contains(deltas.String(), "</think>") {
+				t.Errorf("ResponseDelta carries think tags: %q", deltas.String())
+			}
+			if tt.wantThink {
+				if thinks.String() == "" {
+					t.Errorf("ThinkingDelta empty, want inner think text")
+				}
+				if strings.Contains(thinks.String(), "<think>") || strings.Contains(thinks.String(), "</think>") {
+					t.Errorf("ThinkingDelta carries tags: %q", thinks.String())
+				}
+			} else if thinks.Len() != 0 {
+				t.Errorf("ThinkingDelta = %q, want empty when there is no think block", thinks.String())
 			}
 			if strings.Contains(strings.ToLower(deltas.String()), "obey:") {
 				t.Errorf("deltas carry the agent label: %q", deltas.String())

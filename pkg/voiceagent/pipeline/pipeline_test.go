@@ -1212,6 +1212,8 @@ func TestRecoverTurnPlaybackStallDoesNotApologize(t *testing.T) {
 		{"", ""},
 		{"Come closer and tell me.", "Come closer and tell me."},
 		{"Come closer.\n\n" + brain.RecoveryReply, "Come closer.\n\n" + brain.RecoveryReply},
+		{"<think>plan a greeting</think>", ""},
+		{"<think>plan a greeting</think>\nHello there.", "Hello there."},
 	}
 	for _, tc := range cases {
 		metrics := newTurnMetrics()

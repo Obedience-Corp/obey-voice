@@ -27,6 +27,16 @@ func TestEncodeEventPayloadsRoundTrip(t *testing.T) {
 			want:  map[string]any{"type": "response_delta", "text": ""},
 		},
 		{
+			name:  "thinking_delta empty text still carries the key",
+			event: events.ThinkingDelta{},
+			want:  map[string]any{"type": "thinking_delta", "text": ""},
+		},
+		{
+			name:  "thinking_delta text survives",
+			event: events.ThinkingDelta{Text: "The user said hi."},
+			want:  map[string]any{"type": "thinking_delta", "text": "The user said hi."},
+		},
+		{
 			name:  "audio_level zero level still carries the key",
 			event: events.AudioLevel{Source: "input"},
 			want:  map[string]any{"type": "audio_level", "source": "input", "level": float64(0)},

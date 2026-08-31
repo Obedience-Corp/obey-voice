@@ -23,6 +23,10 @@ const (
 	// event arrives as a bare {"type":"response_delta"} and a client cannot
 	// render a streaming reply.
 	CapResponseDeltaPayload = "response_delta_payload"
+	// CapThinkingDeltaPayload: thinking_delta carries "text". Without it the
+	// event arrives as a bare {"type":"thinking_delta"} and a client cannot
+	// render operator-facing reasoning.
+	CapThinkingDeltaPayload = "thinking_delta_payload"
 	// CapAudioLevelPayload: audio_level carries "source" and "level".
 	CapAudioLevelPayload = "audio_level_payload"
 	// CapInterruptEvents: a remote interrupt that cancelled something emits
@@ -41,6 +45,7 @@ const (
 func Capabilities() map[string]bool {
 	return map[string]bool{
 		CapResponseDeltaPayload: true,
+		CapThinkingDeltaPayload: true,
 		CapAudioLevelPayload:    true,
 		CapInterruptEvents:      true,
 		CapVoiceClaimOnDequeue:  true,

@@ -101,8 +101,14 @@ func (f *ThinkFilter) InThink() bool { return f.inThink }
 
 // Feed returns the speakable portion of s. Think content is dropped.
 func (f *ThinkFilter) Feed(s string) string {
-	out, _, _ := f.scan(s)
+	out, _, _, _ := f.scan(s)
 	return out
+}
+
+// FeedSplit is Feed plus the inner think text dropped this call (no tags).
+func (f *ThinkFilter) FeedSplit(s string) (speakable, think string) {
+	speakable, think, _, _ = f.scan(s)
+	return
 }
 
 // ContentOffset advances the filter over s exactly as Feed does, but reports
@@ -114,7 +120,7 @@ func (f *ThinkFilter) Feed(s string) string {
 // content byte landing inside it clamps to 0.
 func (f *ThinkFilter) ContentOffset(s string) int {
 	held := len(f.hold)
-	_, first, found := f.scan(s)
+	_, _, first, found := f.scan(s)
 	if !found {
 		return len(s)
 	}
@@ -125,19 +131,19 @@ func (f *ThinkFilter) ContentOffset(s string) int {
 }
 
 // scan is the one tag-matching pass Feed and ContentOffset share. It returns
-// the speakable text, the index of its first non-whitespace byte within the
-// scanned string (held prefix prepended), and whether such a byte was found.
-func (f *ThinkFilter) scan(s string) (string, int, bool) {
+// the speakable text, the inner think text (no tags), the index of the first
+// non-whitespace speakable byte within the scanned string (held prefix
+// prepended), and whether such a byte was found.
+func (f *ThinkFilter) scan(s string) (speakable, think string, first int, found bool) {
 	if f.hold != "" {
 		s = f.hold + s
 		f.hold = ""
 	}
 	if s == "" {
-		return "", 0, false
+		return "", "", 0, false
 	}
-	var out strings.Builder
+	var out, thinkB strings.Builder
 	out.Grow(len(s))
-	first, found := 0, false
 	lower := strings.ToLower(s)
 	i := 0
 	for i < len(s) {
@@ -172,9 +178,10 @@ func (f *ThinkFilter) scan(s string) (string, int, bool) {
 			f.hold = s[i:]
 			break
 		}
+		thinkB.WriteByte(s[i])
 		i++
 	}
-	return out.String(), first, found
+	return out.String(), thinkB.String(), first, found
 }
 
 // Flush releases the suffix Feed is still holding; call it after the turn's
@@ -182,12 +189,21 @@ func (f *ThinkFilter) scan(s string) (string, int, bool) {
 // comparison and is returned; a longer tag fragment ("<th") was never finished
 // and is dropped.
 func (f *ThinkFilter) Flush() string {
+	speakable, _ := f.FlushSplit()
+	return speakable
+}
+
+// FlushSplit is Flush plus any held inner think that is not a tag fragment.
+func (f *ThinkFilter) FlushSplit() (speakable, think string) {
 	hold := f.hold
 	f.hold = ""
-	if hold == "" || f.inThink || looksLikeIncompleteThinkTag(hold) {
-		return ""
+	if hold == "" || looksLikeIncompleteThinkTag(hold) {
+		return "", ""
 	}
-	return hold
+	if f.inThink {
+		return "", ""
+	}
+	return hold, ""
 }
 
 func isSpaceByte(b byte) bool {

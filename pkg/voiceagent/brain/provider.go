@@ -47,8 +47,18 @@ type StreamResult struct {
 
 // Stream carries a streamed model response and its terminal result.
 type Stream struct {
+	// Chunks are speakable content only. No think tags, no Thinking-field
+	// bytes.
 	Chunks <-chan string
-	Done   <-chan StreamResult
+	// Thinking is operator-facing reasoning. Pipeline must not segment,
+	// gate, or synthesize it. TUI paints it dim.
+	//
+	// Contract: nil when the provider has nothing to report (Claude, Grok,
+	// stubs, scriptedStream). Not a closed channel. A closed channel in a
+	// Go select delivers the zero value forever; nil disables the case.
+	// Ollama allocates and closes both channels when the goroutine exits.
+	Thinking <-chan string
+	Done     <-chan StreamResult
 }
 
 // Provider is the interface for all brain backends (Claude, Ollama, etc.).

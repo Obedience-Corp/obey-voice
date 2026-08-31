@@ -107,12 +107,14 @@ func newOllamaBatch(cfg *config.Config) (*ollamaBatch, error) {
 	if err != nil {
 		return nil, err
 	}
+	think := resolveOllamaThink(cfg.OllamaThink, b.model)
+	maybeWarnThinkOff(b.model, think)
 	return &ollamaBatch{
 		client:    b.client,
 		model:     b.model,
 		options:   b.requestOptions(),
 		keepAlive: b.keepAlive,
-		think:     ollamaThinkValue(cfg.OllamaThink),
+		think:     think,
 	}, nil
 }
 
