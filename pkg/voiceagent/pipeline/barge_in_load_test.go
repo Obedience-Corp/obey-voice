@@ -193,3 +193,91 @@ func TestRunTurnBargeInDuringPlaybackPause(t *testing.T) {
 		t.Fatal("pause barge-in should preserve the capture buffer for the next listen")
 	}
 }
+
+// TestBargeInEmitsSincePlaybackStart is the S2 contextual-bookkeeping
+// regression: a mic barge-in must tell downstream consumers how far into TTS
+// playback the interrupt landed, on both events it produces.
+func TestBargeInEmitsSincePlaybackStart(t *testing.T) {
+	bus := events.NewBus()
+	var (
+		speakingInterrupted events.SpeakingInterrupted
+		turnInterrupted     events.TurnInterrupted
+	)
+	turnInterruptedSeen := make(chan struct{}, 1)
+	events.Subscribe(bus, func(e events.SpeakingInterrupted) { speakingInterrupted = e })
+	events.Subscribe(bus, func(e events.TurnInterrupted) {
+		turnInterrupted = e
+		select {
+		case turnInterruptedSeen <- struct{}{}:
+		default:
+		}
+	})
+
+	player := newFakePlayer(5 * time.Second)
+	defer player.Close()
+	capture := newFakeCapture()
+
+	p := &Pipeline{
+		STT:        &fakeSTT{text: "hello"},
+		Brain:      &fakeBrain{chunks: []string{"One. Two. Three."}},
+		TTS:        &fakeTTS{delay: 30 * time.Millisecond},
+		Player:     player,
+		Capture:    capture,
+		VAD:        &fakeVAD{},
+		BargeInVAD: &fakeVAD{},
+		Events:     bus,
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.RunTurn(context.Background())
+		done <- err
+	}()
+
+	select {
+	case <-player.StartedSignal():
+	case <-time.After(2 * time.Second):
+		t.Fatal("playback did not start")
+	}
+
+	// Wait past the arm delay, plus a margin, before tripping barge-in — the
+	// recorded delta should reflect roughly this much time into playback.
+	wait := bargeInArmDelay + 150*time.Millisecond
+	time.Sleep(wait)
+	for range bargeInMinSpeechChunks {
+		capture.Publish([]float32{0.9, 0.9, 0.9})
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	select {
+	case <-turnInterruptedSeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not observe TurnInterrupted")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunTurn() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunTurn did not return after barge-in")
+	}
+
+	if speakingInterrupted.SincePlaybackStart <= 0 {
+		t.Fatalf("SpeakingInterrupted.SincePlaybackStart = %v, want > 0", speakingInterrupted.SincePlaybackStart)
+	}
+	if turnInterrupted.SincePlaybackStart != speakingInterrupted.SincePlaybackStart {
+		t.Fatalf("TurnInterrupted.SincePlaybackStart = %v, want %v (same interrupt moment)",
+			turnInterrupted.SincePlaybackStart, speakingInterrupted.SincePlaybackStart)
+	}
+	// The controller cannot trip before armAt elapses, so the recorded delta
+	// can never be shorter than the arm delay.
+	if speakingInterrupted.SincePlaybackStart < bargeInArmDelay {
+		t.Fatalf("SincePlaybackStart = %v, want >= arm delay %v", speakingInterrupted.SincePlaybackStart, bargeInArmDelay)
+	}
+	// Sanity ceiling: this test waited ~wait plus a handful of 20ms chunks, not
+	// anywhere near the fake player's 5s playback duration.
+	if upper := wait + 2*time.Second; speakingInterrupted.SincePlaybackStart > upper {
+		t.Fatalf("SincePlaybackStart = %v, want under %v (sanity upper bound)", speakingInterrupted.SincePlaybackStart, upper)
+	}
+}

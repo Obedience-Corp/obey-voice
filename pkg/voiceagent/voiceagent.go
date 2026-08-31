@@ -189,6 +189,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	p := &pipeline.Pipeline{
 		Events:            opts.Events,
 		VoiceToolsEnabled: cfg.VoiceToolsEnabled,
+		BargeInTailGuard:  config.BargeInTailGuardOf(cfg),
 	}
 
 	// Brain — injected, or selected by config.

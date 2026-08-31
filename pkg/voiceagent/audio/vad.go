@@ -10,10 +10,7 @@ import (
 )
 
 const (
-	vadThreshold = 0.6
-	// bargeInVADThreshold is stricter than the capture VAD so residual TTS echo
-	// is far less likely to register as the user interrupting.
-	bargeInVADThreshold  = 0.85
+	vadThreshold         = 0.6
 	vadMinSpeechDuration = 0.25
 	// vadWindowSize is the Silero v5 analysis window in samples (32ms at 16kHz).
 	// The binding forwards a zero value straight to C, so set it explicitly
@@ -40,11 +37,17 @@ func NewVAD(cfg *config.Config) (*VAD, error) {
 	return newVAD(cfg, threshold, minSpeech)
 }
 
-// NewBargeInVAD creates a VAD tuned for interrupt detection with a stricter
-// speech threshold than the capture VAD. It keeps the default tuning so the
-// capture VAD's configurable values don't bleed into barge-in.
+// NewBargeInVAD creates a VAD tuned for interrupt detection, stricter by
+// default than the capture VAD so residual TTS echo is far less likely to
+// register as the user interrupting. The threshold is config-driven
+// (barge_in_vad_threshold, default 0.85, clamped 0.3-0.95 by
+// config.BargeInVADThresholdOf) — droppable toward ~0.6 once
+// voice_frontend=webrtc's AEC is doing the echo suppression instead. Minimum
+// speech duration keeps the capture VAD's own tuning from bleeding into
+// barge-in.
 func NewBargeInVAD(cfg *config.Config) (*VAD, error) {
-	return newVAD(cfg, bargeInVADThreshold, vadMinSpeechDuration)
+	threshold := float32(config.BargeInVADThresholdOf(cfg))
+	return newVAD(cfg, threshold, vadMinSpeechDuration)
 }
 
 func newVAD(cfg *config.Config, threshold, minSpeech float32) (*VAD, error) {
