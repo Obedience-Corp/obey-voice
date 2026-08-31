@@ -55,9 +55,9 @@ func voiceKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
-			Key: "voice_fallback_provider", Type: TypeEnum, Default: "kokoro", Enum: ttsProviderEnum(),
+			Key: "voice_fallback_provider", Type: TypeEnum, Default: "kokoro", Enum: ttsFallbackEnum(),
 			Group: GroupVoice, Title: "Fallback engine",
-			Help: "Speaks one sentence in this engine's voice when the main engine fails, instead of going silent.",
+			Help: "When the main engine is slow or fails, speak that sentence in this engine instead. disabled waits for the main engine (you hear Qwen, not Kokoro).",
 		},
 		{
 			Key: "speech_speed", Type: TypeFloat, Default: 0.95, Unit: "×", Min: num(0.5), Max: num(2.0),
@@ -80,7 +80,7 @@ func voiceKeys() []KeySpec {
 			Help: "Ends your turn when you stop talking. Off means every turn waits for the listen timeout.",
 		},
 		{
-			Key: "vad_silence_duration", Type: TypeFloat, Default: 0.5, Unit: "seconds", Min: num(0.1), Max: num(3.0),
+			Key: "vad_silence_duration", Type: TypeFloat, Default: 1.2, Unit: "seconds", Min: num(0.1), Max: num(3.0),
 			Group: GroupVoice, Title: "End-of-turn silence",
 			Help: "Seconds of quiet that end your turn. Lower feels snappier; too low cuts you off mid-sentence.",
 		},
@@ -160,7 +160,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "ollama_think", Type: TypeEnum, Default: "auto", Enum: ollamaThinkEnum(),
 			Group: GroupBrain, Title: "Reasoning",
-			Help: "auto turns thinking on for qwen3-family models so chain-of-thought is not spoken. Explicit false is the leaky hatch.",
+			Help: "auto/false leave thinking off so greetings are not a minute of silent CoT. Set true or low/medium/high/max to enable it.",
 		},
 		{
 			Key: "claude_max_session_tokens", Type: TypeInt, Default: 0, Unit: "tokens", Min: num(0), Max: num(1000000),

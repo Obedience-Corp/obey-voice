@@ -775,11 +775,8 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			} else {
 				m.inputLevel = m.inputLevel*0.55 + level*0.45
 			}
-			// Real energy while listening implies the user is speaking.
-			if m.voiceMode == anim.ModeListening && m.inputLevel > 0.12 {
-				m.setVoiceMode(anim.ModeHearing)
-				m.setStatus("Hearing you", false)
-			}
+			// Meter only. Hearing you is Silero (STTPhase), not RMS — a fan
+			// must not look like a turn that will never end.
 		}
 
 	case events.STTPhase:

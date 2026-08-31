@@ -17,6 +17,11 @@ import (
 // ttsProviderEnum mirrors tts.Providers().
 func ttsProviderEnum() []string { return []string{"kokoro", "qwen3-tts", "audio8"} }
 
+// ttsFallbackEnum is the engines NewTTSSet will actually construct as a
+// fallback, plus disabled. "disabled" is tts.FallbackDisabled: wait for the
+// chosen engine instead of switching voices.
+func ttsFallbackEnum() []string { return []string{"kokoro", "qwen3-tts", "audio8", "disabled"} }
+
 // kokoroVoiceEnum mirrors tts.VoiceNames() — the same list `obey-voice voices`
 // prints, in speaker-id order.
 func kokoroVoiceEnum() []string {

@@ -613,14 +613,13 @@ func PreferOllamaThink(model string) bool {
 }
 
 // resolveOllamaThink maps config ollama_think onto the API Think field.
-// Empty and "auto" consult PreferOllamaThink; any other value goes through
-// ollamaThinkValue. Keys off raw, not viper.
-func resolveOllamaThink(raw, model string) *api.ThinkValue {
+// Empty and "auto" leave thinking off (voice must not pay a think pass on
+// every turn). PreferOllamaThink is not applied here — forcing Think:true
+// for qwen3 made greetings take a minute on CPU. Explicit true/low/… still
+// enable it. Keys off raw, not viper.
+func resolveOllamaThink(raw, _ string) *api.ThinkValue {
 	s := strings.TrimSpace(strings.ToLower(raw))
 	if s == "" || s == "auto" {
-		if PreferOllamaThink(model) {
-			return &api.ThinkValue{Value: true}
-		}
 		return &api.ThinkValue{Value: false}
 	}
 	return ollamaThinkValue(raw)
@@ -632,7 +631,10 @@ func (o *OllamaBrain) resolvedThink() *api.ThinkValue {
 		raw = o.cfg.OllamaThink
 	}
 	v := resolveOllamaThink(raw, o.model)
-	maybeWarnThinkOff(o.model, v)
+	s := strings.TrimSpace(strings.ToLower(raw))
+	if s == "false" || s == "off" || s == "0" || s == "no" {
+		maybeWarnThinkOff(o.model, v)
+	}
 	return v
 }
 

@@ -180,6 +180,10 @@ type Pipeline struct {
 	// CompactPrompt is the resolved kind=compact instruction for /compact's
 	// summarize turn. Empty disables compaction with a clear error.
 	CompactPrompt string
+	// AutoCompactAfter is the history length that triggers CompactConversation
+	// before a user turn, instead of silently dropping old messages. Zero
+	// disables auto-compact. /compact still works at any length.
+	AutoCompactAfter int
 	// OnCompactBackup receives the pre-compact history so the host can persist
 	// one recovery generation before LoadHistory rewrites the conversation.
 	OnCompactBackup func(turns []brain.Turn)
@@ -834,6 +838,9 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		}
 	}
 	p.emit(events.UserInput{Text: text, Speaker: speakerID})
+	if err := p.autoCompactIfNeeded(ctx); err != nil {
+		p.emit(events.Error{Stage: "compact", Message: err.Error()})
+	}
 	p.emit(events.ThinkingStarted{})
 
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain
@@ -923,6 +930,9 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	turn.to(TurnThinking)
 	speakerID := p.currentSpeakerID()
 	p.emit(events.UserInput{Text: input, Speaker: speakerID})
+	if err := p.autoCompactIfNeeded(ctx); err != nil {
+		p.emit(events.Error{Stage: "compact", Message: err.Error()})
+	}
 	p.emit(events.ThinkingStarted{})
 	if metrics.sttFinal.IsZero() {
 		metrics.sttFinal = time.Now()
@@ -2100,6 +2110,17 @@ func compactTail(before []brain.Turn) []brain.Turn {
 		tail = append(tail, t)
 	}
 	return tail
+}
+
+func (p *Pipeline) autoCompactIfNeeded(ctx context.Context) error {
+	if p.Brain == nil || p.CompactPrompt == "" || p.AutoCompactAfter <= 0 {
+		return nil
+	}
+	if len(p.Brain.History()) <= p.AutoCompactAfter {
+		return nil
+	}
+	p.emit(events.Info{Message: "Compacting conversation."})
+	return p.CompactConversation(ctx)
 }
 
 func (p *Pipeline) CompactConversation(ctx context.Context) error {

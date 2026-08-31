@@ -278,6 +278,31 @@ func liveSession(t *testing.T) *qwenSpeechSession {
 	return &s
 }
 
+func TestQwenFirstAudioGraceCPUUsesHighRTF(t *testing.T) {
+	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+	qn.native = true
+	qn.backendHint = "cpu"
+	qn.speechRef.Store(liveSession(t))
+
+	short := qn.FirstAudioGraceForChars(10) // 1s of audio × 16 RTF = 16s → floor
+	if short != minFirstAudioGraceCPU {
+		t.Errorf("CPU short grace = %v, want the %v floor (8s is Metal/CUDA)", short, minFirstAudioGraceCPU)
+	}
+	// 60 chars / 10 chars-s = 6s audio × 16 RTF = 96s, under the 120s timeout.
+	long := qn.FirstAudioGraceForChars(60)
+	if want := 96 * time.Second; long != want {
+		t.Errorf("CPU 60-char grace = %v, want %v (the 3.0 ceiling expired at ~30s)", long, want)
+	}
+
+	metal := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
+	metal.native = true
+	metal.backendHint = "metal"
+	metal.speechRef.Store(liveSession(t))
+	if got := metal.FirstAudioGraceForChars(17); got != minFirstAudioGrace {
+		t.Errorf("Metal short grace = %v, want %v", got, minFirstAudioGrace)
+	}
+}
+
 func TestQwenFirstAudioGraceChargesColdStartOnlyWhenNoWorkerIsUp(t *testing.T) {
 	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 	qn.native = true

@@ -310,7 +310,11 @@ func effectiveLevel(mode Mode, level float64, frame int) float64 {
 	level = clamp01(level)
 	switch mode {
 	case ModeListening:
-		return 0.2 + 0.1*math.Abs(math.Sin(float64(frame)*0.35))
+		breath := 0.2 + 0.1*math.Abs(math.Sin(float64(frame)*0.35))
+		if level > breath {
+			return level
+		}
+		return breath
 	case ModeHearing:
 		if level < 0.08 {
 			return 0.3 + 0.12*math.Abs(math.Sin(float64(frame)*0.65))

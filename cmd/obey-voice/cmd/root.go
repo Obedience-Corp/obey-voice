@@ -381,6 +381,9 @@ func wireCompact(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session
 		return
 	}
 	p.CompactPrompt = prompt
+	if cfg != nil && cfg.MaxHistory > 0 {
+		p.AutoCompactAfter = cfg.MaxHistory * 2
+	}
 	p.OnCompactBackup = func(turns []brain.Turn) {
 		if err := sess.SaveBackup(turns); err != nil {
 			bus.Emit(events.Error{Stage: "compact", Message: fmt.Sprintf("pre-compact backup: %v", err)})

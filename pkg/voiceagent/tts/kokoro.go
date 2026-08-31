@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 
@@ -47,7 +49,25 @@ func init() {
 	}
 }
 
-const kokoroProviderName = "kokoro"
+const (
+	kokoroProviderName = "kokoro"
+
+	// kokoroMinFirstAudioGrace floors every stall budget. Kokoro is
+	// whole-utterance: sherpa Generate returns no PCM until the sentence is
+	// done. On a GPD Pocket 4 CPU that regularly exceeds the pipeline's 8s
+	// default, which is how a healthy synth showed up as "playback stalled".
+	kokoroMinFirstAudioGrace = 12 * time.Second
+
+	// kokoroRTFCeiling is synth_seconds / audio_seconds for a loaded CPU
+	// Kokoro. M4 Max measured ~0.76 (1.32× realtime); this box is slower and
+	// often shares the CPU with Ollama. 4× covers that without waiting out a
+	// wedged player.
+	kokoroRTFCeiling = 4.0
+
+	// kokoroMaxFirstAudioGrace caps a paragraph so a hung Generate cannot
+	// hold the turn open for minutes.
+	kokoroMaxFirstAudioGrace = 45 * time.Second
+)
 
 // KokoroTTS implements TTS using sherpa-onnx Kokoro.
 // ProviderName identifies this provider in latency artifacts.
@@ -109,7 +129,9 @@ func NewKokoroTTS(cfg *config.Config) (*KokoroTTS, error) {
 	}
 
 	modelConfig := sherpa.OfflineTtsModelConfig{
-		Kokoro: kokoroConfig,
+		Kokoro:     kokoroConfig,
+		NumThreads: min(runtime.NumCPU(), 4),
+		Provider:   "cpu",
 	}
 
 	ttsConfig := sherpa.OfflineTtsConfig{
@@ -254,6 +276,29 @@ func (k *KokoroTTS) generate(text string, sid int, speed float32) *sherpa.Genera
 // Available is called from the turn loop, which must never block behind one.
 func (k *KokoroTTS) Available() bool {
 	return k.alive.Load()
+}
+
+// FirstAudioGrace reports the stall budget for a segment of unstated length.
+func (k *KokoroTTS) FirstAudioGrace() time.Duration {
+	return k.FirstAudioGraceForChars(typicalSegmentChars)
+}
+
+// FirstAudioGraceForChars is how long the playback-stall watchdog should wait
+// for the first audible frame. Kokoro generates the whole utterance before
+// any PCM, so this is the synthesis, not a streaming warmup.
+func (k *KokoroTTS) FirstAudioGraceForChars(chars int) time.Duration {
+	if chars <= 0 {
+		chars = typicalSegmentChars
+	}
+	expectedAudio := float64(chars) / speechCharsPerSecond
+	grace := time.Duration(kokoroRTFCeiling * expectedAudio * float64(time.Second))
+	if grace < kokoroMinFirstAudioGrace {
+		return kokoroMinFirstAudioGrace
+	}
+	if grace > kokoroMaxFirstAudioGrace {
+		return kokoroMaxFirstAudioGrace
+	}
+	return grace
 }
 
 // ListVoices returns available Kokoro voices with optional filtering. It

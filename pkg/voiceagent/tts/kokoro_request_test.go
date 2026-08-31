@@ -12,6 +12,34 @@ import (
 )
 
 var _ RequestProvider = (*KokoroTTS)(nil)
+var _ FirstAudioGracer = (*KokoroTTS)(nil)
+var _ SegmentGracer = (*KokoroTTS)(nil)
+
+func TestKokoroFirstAudioGraceScalesWithSegmentLength(t *testing.T) {
+	k := &KokoroTTS{}
+	short := k.FirstAudioGraceForChars(17) // "Sure, that works."
+	if short != kokoroMinFirstAudioGrace {
+		t.Errorf("short grace = %v, want the %v floor", short, kokoroMinFirstAudioGrace)
+	}
+	long := k.FirstAudioGraceForChars(200)
+	if long <= short {
+		t.Errorf("200-char grace %v should exceed short %v", long, short)
+	}
+	if long > kokoroMaxFirstAudioGrace {
+		t.Errorf("200-char grace %v exceeds the %v cap", long, kokoroMaxFirstAudioGrace)
+	}
+	huge := k.FirstAudioGraceForChars(5000)
+	if huge != kokoroMaxFirstAudioGrace {
+		t.Errorf("huge segment grace = %v, want the %v cap", huge, kokoroMaxFirstAudioGrace)
+	}
+}
+
+func TestKokoroFirstAudioGraceDefaultMatchesTypicalSegment(t *testing.T) {
+	k := &KokoroTTS{}
+	if got, want := k.FirstAudioGrace(), k.FirstAudioGraceForChars(typicalSegmentChars); got != want {
+		t.Errorf("FirstAudioGrace() = %v, want typical-segment %v", got, want)
+	}
+}
 
 type generateCall struct {
 	text  string

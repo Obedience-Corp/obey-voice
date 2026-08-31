@@ -31,10 +31,17 @@ func TestStallTimeoutHonorsQwenFirstAudioGrace(t *testing.T) {
 		t.Fatalf("stallTimeout() = %v, want explicit 150ms override", got)
 	}
 
-	// Kokoro-style providers without FirstAudioGrace keep the default.
+	// Providers without FirstAudioGrace keep the default.
 	p = &Pipeline{TTS: &fakeTTS{}}
 	if got := p.stallTimeout(0); got != defaultPlaybackStallTimeout {
 		t.Fatalf("stallTimeout() = %v, want default %v without grace", got, defaultPlaybackStallTimeout)
+	}
+
+	// Kokoro is whole-utterance on CPU; a short sentence still needs more
+	// than the 8s default on a GPD-class machine.
+	p = &Pipeline{TTS: &tts.KokoroTTS{}}
+	if got := p.stallTimeout(17); got != 12*time.Second {
+		t.Fatalf("Kokoro stallTimeout(17) = %v, want 12s floor", got)
 	}
 
 	// A Kokoro primary must not inherit a Qwen fallback's budget. That

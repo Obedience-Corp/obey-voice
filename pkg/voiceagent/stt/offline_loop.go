@@ -57,6 +57,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 
 	track := newSpeechTracker()
 	var levels levelEmitter
+	var gate noiseGate
 
 	// finalize collects buffered segments and transcribes them. It returns true
 	// when the session is resolved (final transcript, timeout, or failure). When
@@ -110,7 +111,18 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		if read.ready && len(read.frame.Samples) > 0 {
 			levels.maybeEmit(events, read.frame.Samples)
 			deps.seg.AcceptWaveform(read.frame.Samples)
-			if track.observe(deps.seg.IsSpeech(), frameDur(read.frame)) {
+			d := gate.decide(read.frame.Samples, deps.seg.IsSpeech())
+			if d.drop {
+				// Fan/AC latched Silero: discard the noise blob and wait for
+				// a real onset instead of holding the turn open forever.
+				deps.seg.Reset()
+				if track.detected {
+					track.reset()
+					if !emitPhase("listening") {
+						return
+					}
+				}
+			} else if track.observe(d.voice, frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
 				}

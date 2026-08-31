@@ -285,6 +285,18 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
+	// The noise suppressor's floor is above normal speaking RMS, so it gates
+	// ordinary speech and Silero only sees fragments. Parakeet then hallucinates
+	// "yeah". The frontend is for barge-in AEC; it is not a general noise fix.
+	if cfg.VoiceFrontendEnabled && !cfg.BargeInEnabled {
+		diags = append(diags, Diagnostic{
+			Name:        "voice-frontend-suppression",
+			Severity:    SeverityWarn,
+			Detail:      "voice_frontend_enabled without barge-in: the noise suppressor over-gates normal speech, so VAD starts late and STT hears clipped fragments",
+			Remediation: "set voice_frontend_enabled=false unless you also need barge-in",
+		})
+	}
+
 	// File tools only run when the local tools gate is on (pipeline passes
 	// VoiceToolsEnabled into every brain turn). Ollama users hit this most.
 	if strings.EqualFold(strings.TrimSpace(cfg.BrainProvider), "ollama") {

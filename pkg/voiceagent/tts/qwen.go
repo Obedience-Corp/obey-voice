@@ -53,6 +53,14 @@ const (
 	// broken turn take longer to give up. The asymmetry is not close.
 	nativeRTFCeiling06B = 3.0
 	nativeRTFCeiling17B = 4.0
+	// nativeRTFCeilingCPU is the Pocket 4 / linux-amd64 native package.
+	// Isolated 0.6b on this host measured ~14.6× realtime (TTFA 13.5s for a
+	// short "Hello there."). The 3.0 Metal/CUDA ceiling expires at ~30s on a
+	// 60-char opener and Kokoro takes the rest of the reply.
+	nativeRTFCeilingCPU = 16.0
+	// minFirstAudioGraceCPU floors CPU native so a 13.5s short still has
+	// margin after a warm worker; 8s is the Metal/CUDA scheduler floor.
+	minFirstAudioGraceCPU = 24 * time.Second
 
 	// speechCharsPerSecond converts a segment's length into expected audio
 	// duration.
@@ -459,10 +467,7 @@ func (q *Qwen3TTS) FirstAudioGraceForChars(chars int) time.Duration {
 	if chars <= 0 {
 		chars = typicalSegmentChars
 	}
-	ceiling := nativeRTFCeiling06B
-	if managedqwen.NormalizeModelTier(q.modelTier) == managedqwen.Tier1_7B {
-		ceiling = nativeRTFCeiling17B
-	}
+	ceiling := q.rtfCeiling()
 	expectedAudio := float64(chars) / speechCharsPerSecond
 	grace := time.Duration(ceiling * expectedAudio * float64(time.Second))
 
@@ -507,7 +512,20 @@ func (q *Qwen3TTS) capByTimeout(grace time.Duration) time.Duration {
 // worker's per-request cost is larger than the 0.6b scheduler floor; using
 // one number for both is how a selected 1.7b voice was replaced with Kokoro
 // on a still-working short sentence.
+func (q *Qwen3TTS) rtfCeiling() float64 {
+	if q != nil && q.native && strings.EqualFold(q.backendHint, "cpu") {
+		return nativeRTFCeilingCPU
+	}
+	if q != nil && managedqwen.NormalizeModelTier(q.modelTier) == managedqwen.Tier1_7B {
+		return nativeRTFCeiling17B
+	}
+	return nativeRTFCeiling06B
+}
+
 func (q *Qwen3TTS) minGrace() time.Duration {
+	if q != nil && q.native && strings.EqualFold(q.backendHint, "cpu") {
+		return minFirstAudioGraceCPU
+	}
 	if q != nil && q.native && managedqwen.NormalizeModelTier(q.modelTier) == managedqwen.Tier1_7B {
 		return minFirstAudioGrace17B
 	}

@@ -173,8 +173,8 @@ func TestUnsetKeyFileRestoresTheDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRaw: %v", err)
 	}
-	if cfg.VADSilenceDuration != 0.5 {
-		t.Errorf("vad_silence_duration = %v after unset, want the 0.5 default", cfg.VADSilenceDuration)
+	if cfg.VADSilenceDuration != 1.2 {
+		t.Errorf("vad_silence_duration = %v after unset, want the 1.2 default", cfg.VADSilenceDuration)
 	}
 	if cfg.STTMode != "streaming" {
 		t.Errorf("stt_mode = %q, want the untouched neighbour's value", cfg.STTMode)

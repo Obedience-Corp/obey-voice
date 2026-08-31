@@ -360,8 +360,8 @@ func TestResolveOllamaThink(t *testing.T) {
 	}{
 		{"", "m", false},
 		{"auto", "m", false},
-		{"", "qwen3:4b", true},
-		{"auto", "qwen3:4b", true},
+		{"", "qwen3:4b", false},
+		{"auto", "qwen3:4b", false},
 		{"false", "qwen3:4b", false},
 		{"true", "llama3.2", true},
 		{"low", "m", "low"},
@@ -377,16 +377,21 @@ func TestResolveOllamaThink(t *testing.T) {
 	}
 }
 
-func TestChatRequestQwen3AutoEnablesThink(t *testing.T) {
+func TestChatRequestQwen3AutoDoesNotForceThink(t *testing.T) {
 	o := &OllamaBrain{model: "qwen3:4b", cfg: &config.Config{OllamaThink: "auto"}}
 	req := o.newChatRequest(nil, nil)
-	if req.Think == nil || req.Think.Value != true {
-		t.Fatalf("Think = %#v, want true for qwen3+auto", req.Think)
+	if req.Think == nil || req.Think.Value != false {
+		t.Fatalf("Think = %#v, want false for qwen3+auto", req.Think)
 	}
 	o = &OllamaBrain{model: "qwen3:4b", cfg: &config.Config{}}
 	req = o.newChatRequest(nil, nil)
+	if req.Think == nil || req.Think.Value != false {
+		t.Fatalf("Think = %#v, want false for qwen3+empty", req.Think)
+	}
+	o = &OllamaBrain{model: "qwen3:4b", cfg: &config.Config{OllamaThink: "true"}}
+	req = o.newChatRequest(nil, nil)
 	if req.Think == nil || req.Think.Value != true {
-		t.Fatalf("Think = %#v, want true for qwen3+empty", req.Think)
+		t.Fatalf("Think = %#v, want true when explicitly set", req.Think)
 	}
 }
 

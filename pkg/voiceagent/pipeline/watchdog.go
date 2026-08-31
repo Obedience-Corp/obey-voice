@@ -62,10 +62,9 @@ func (p *Pipeline) hasFallbackVoice() bool {
 // ttsFirstAudioGrace returns the primary TTS provider's FirstAudioGrace when
 // it implements tts.FirstAudioGracer; zero otherwise.
 //
-// Fallback is not consulted. NewTTSSet only attaches Kokoro as fallback, which
-// has no grace, so max(primary, fallback) was a no-op in production and would
-// be wrong if a FirstAudioGracer ever became the fallback: the watchdog would
-// wait out a Qwen budget while Kokoro was the voice actually playing.
+// Fallback is not consulted. NewTTSSet attaches Kokoro as fallback; waiting
+// out a Qwen budget while Kokoro is the voice actually playing would hang
+// the turn. A Kokoro primary reports its own grace via FirstAudioGracer.
 func (p *Pipeline) ttsFirstAudioGrace(chars int) time.Duration {
 	if p == nil {
 		return 0
@@ -88,12 +87,15 @@ func (p *Pipeline) ttsFirstAudioGrace(chars int) time.Duration {
 }
 
 // stallHint names the knob that widens the budget, but only when the budget
-// actually came from the provider's FirstAudioGrace. On the default 8s a
-// Kokoro turn is not governed by qwen_tts_timeout, so naming it there points
-// the operator at a setting with no effect.
+// actually came from the provider's FirstAudioGrace and that provider is Qwen.
+// A Kokoro turn is not governed by qwen_tts_timeout.
 func (p *Pipeline) stallHint(timeout time.Duration, chars int) string {
 	if grace := p.ttsFirstAudioGrace(chars); grace > 0 && timeout >= grace {
-		return " (TTS may still be synthesizing — raise qwen_tts_timeout if this is a slow worker)"
+		if primary, _ := p.ttsProviders(); primary != nil {
+			if d, ok := primary.(tts.Describer); ok && d.ProviderName() == "qwen3-tts" {
+				return " (TTS may still be synthesizing — raise qwen_tts_timeout if this is a slow worker)"
+			}
+		}
 	}
 	return " (TTS may still be synthesizing)"
 }

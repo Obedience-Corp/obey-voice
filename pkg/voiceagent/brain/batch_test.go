@@ -612,8 +612,8 @@ func TestOllamaBatchResolveThink(t *testing.T) {
 	if got := resolveOllamaThink("false", "qwen3:4b"); got == nil || got.Value != false {
 		t.Errorf("explicit false on qwen3 = %#v, want false", got)
 	}
-	if got := resolveOllamaThink("auto", "qwen3:4b"); got == nil || got.Value != true {
-		t.Errorf("qwen3+auto = %#v, want true", got)
+	if got := resolveOllamaThink("auto", "qwen3:4b"); got == nil || got.Value != false {
+		t.Errorf("qwen3+auto = %#v, want false", got)
 	}
 	if got := resolveOllamaThink("auto", "m"); got == nil || got.Value != false {
 		t.Errorf("non-qwen3+auto = %#v, want false", got)

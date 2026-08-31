@@ -37,7 +37,7 @@ func TestSchemaEnumsMatchOwningPackages(t *testing.T) {
 		want  []string
 	}{
 		{"tts_provider", "tts.Providers", ttsProviders},
-		{"voice_fallback_provider", "tts.Providers", ttsProviders},
+		{"voice_fallback_provider", "tts.Providers+disabled", append(append([]string{}, ttsProviders...), "disabled")},
 		{"tts_voice", "tts.VoiceNames", tts.VoiceNames()},
 		{"brain_provider", "brain.Providers", brainProviders},
 		{"qwen_tts_voice", "qwen.SelectableVoices", qwenVoices},

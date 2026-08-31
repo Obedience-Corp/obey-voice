@@ -863,8 +863,8 @@ func TestConfigUnsetSurface(t *testing.T) {
 		if payload.OldValue != 0.8 {
 			t.Errorf("old_value = %v, want 0.8 (what the file held)", payload.OldValue)
 		}
-		if payload.Value != 0.5 {
-			t.Errorf("value = %v, want the 0.5 default", payload.Value)
+		if payload.Value != 1.2 {
+			t.Errorf("value = %v, want the 1.2 default", payload.Value)
 		}
 	})
 
