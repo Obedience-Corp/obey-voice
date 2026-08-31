@@ -30,6 +30,9 @@ obey-voice serve --tailscale
 # LAN (self-signed TLS; iOS Safari mic needs a real cert):
 obey-voice serve
 
+# Same machine: start serve and open the speaking Stage orb:
+obey-voice serve --open
+
 # Ops
 obey-voice serve --revoke-tokens   # Invalidate the bearer; next serve mints a new one
 obey-voice connect <host:port> --token <token>   # Debug text client

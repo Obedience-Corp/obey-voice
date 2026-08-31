@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
@@ -22,16 +23,7 @@ func printServeBanner(addr string, creds *netapi.Credentials, cfg *config.Config
 	fmt.Fprintln(serveHumanOut)
 	fmt.Fprintf(serveHumanOut, "  %s\n", titleStyle.Render("Use on another device"))
 
-	// Prefer MagicDNS (or other public host) for the client-facing URL.
-	pageHost := servePublicHost
-	if pageHost == "" {
-		if host, _, err := net.SplitHostPort(addr); err == nil {
-			pageHost = host
-		} else {
-			pageHost = addr
-		}
-	}
-	pageURL := publicServeURL(pageHost, servePort)
+	pageURL := clientPageURL(addr)
 	fmt.Fprintf(serveHumanOut, "  %s %s\n", keyStyle.Render(netapi.LabelOpenOnClient), pageURL)
 
 	if serveTailscale {
@@ -42,6 +34,7 @@ func printServeBanner(addr string, creds *netapi.Credentials, cfg *config.Config
 
 	printServeClientAccess(creds)
 	printServePairing(creds)
+	printServeStage(pageURL, creds)
 	printServeDetails(addr, creds, cfg)
 }
 
@@ -75,8 +68,36 @@ func printServePairing(creds *netapi.Credentials) {
 		keyStyle.Render(netapi.LabelPairingCode),
 		creds.Pairing.Code,
 		creds.Pairing.ExpiresAt.Format("15:04:05"))
-	fmt.Fprintln(serveHumanOut, dimStyle.Render("  On the device: open link → enter code → Pair → Start → Hold to Talk"))
+	fmt.Fprintln(serveHumanOut, dimStyle.Render("  On the device: open link → enter code → Pair → Start, or open Stage (already paired)."))
 	fmt.Fprintln(serveHumanOut, dimStyle.Render("  The code is single-use; restart serve to issue another."))
+}
+
+func clientPageURL(listenAddr string) string {
+	pageHost := servePublicHost
+	if pageHost == "" {
+		if host, _, err := net.SplitHostPort(listenAddr); err == nil {
+			pageHost = host
+		} else {
+			pageHost = listenAddr
+		}
+	}
+	return publicServeURL(pageHost, servePort)
+}
+
+func stageServeURL(pageURL string, creds *netapi.Credentials) string {
+	if creds == nil || creds.Pairing == nil || strings.TrimSpace(pageURL) == "" || creds.Pairing.Code == "" {
+		return ""
+	}
+	return strings.TrimRight(pageURL, "/") + "/stage.html?code=" + creds.Pairing.Code
+}
+
+func printServeStage(pageURL string, creds *netapi.Credentials) {
+	stage := stageServeURL(pageURL, creds)
+	if stage == "" {
+		return
+	}
+	fmt.Fprintf(serveHumanOut, "  %s %s\n", keyStyle.Render(netapi.LabelStage), stage)
+	fmt.Fprintln(serveHumanOut, dimStyle.Render("  Camera face — already paired. Prefer: obey-voice serve --open"))
 }
 
 // printServeDetails writes the secondary / power-user lines, dim and last.
@@ -109,12 +130,16 @@ func printServeDetails(addr string, creds *netapi.Credentials, cfg *config.Confi
 	} else {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote tool calls: disabled (remote_tools_enabled=false); tools start in "+cfg.WorkDir))
 	}
-	if serveNoVoice {
+	if serveOpen {
+		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Voice: plays in the Stage window (host speaker muted so it does not double)"))
+	} else if serveNoVoice {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Host speaker: muted (--no-voice); stream clients can still request audio_output"))
 	} else {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Host speaker: on; clients opt in with {\"type\":\"audio_output\",\"mode\":\"stream\"}"))
 	}
-	if serveRemoteMic {
+	if serveOpen {
+		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Stage mic: open — just talk; tap the orb to cut"))
+	} else if serveRemoteMic {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote mic: push-to-talk enabled (hold Talk on the voice page)"))
 	} else {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  Remote mic: off (--remote-mic=false)"))

@@ -250,16 +250,9 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 		if err := sanitizeKokoroLexicons(dir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not sanitize kokoro lexicons: %v\n", err)
 		}
-		// Best-effort: install thewh1teagle Kokoro v1.0 English weights
-		// (same ONNX as Python samantha-cli) into models_dir/kokoro-v1.0-en.
-		// Needs python3+numpy+onnx; multi-lang pack remains the fallback. This
-		// seam only ever reports a percentage (no byte counts), so Bytes/Total
-		// stay 0 and Pct is clamped as usual.
-		TryEnsureKokoroV1EnglishPack(ctx, func(name string, pct float64) {
-			if onProgress != nil {
-				onProgress(AssetProgress{Asset: name, Phase: assetPhaseDownload, Pct: clampPct(pct)})
-			}
-		})
+		// Product TTS is the sherpa multi-lang pack already in the manifest.
+		// Do not probe Python here: the optional Kokoro v1 English converter
+		// is a lab import (EnsureKokoroV1EnglishPack), never serve startup.
 	}
 	return nil
 }
