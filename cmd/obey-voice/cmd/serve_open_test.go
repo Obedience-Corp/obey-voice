@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func TestStageServeURL(t *testing.T) {
@@ -67,13 +68,119 @@ func TestOpenStageCallsOpenURL(t *testing.T) {
 		servePort = origPort
 	})
 
-	openStage("127.0.0.1:7262", &netapi.Credentials{
+	openStage("192.168.0.188:7262", &netapi.Credentials{
 		Pairing: &netapi.PairingCode{Code: "654321"},
 	})
-	if opened != "https://127.0.0.1:7262/stage.html?code=654321" {
-		t.Fatalf("opened %q", opened)
+	if opened != "http://127.0.0.1:7262/stage.html?code=654321" {
+		t.Fatalf("opened LAN bind, want loopback HTTP, got %q", opened)
 	}
 	if !strings.Contains(human.String(), "Opened Stage") {
 		t.Fatalf("human output = %q", human.String())
+	}
+}
+
+func TestLocalStageURLIsHTTPWhenOpen(t *testing.T) {
+	origOpen, origHost, origPort := serveOpen, servePublicHost, servePort
+	t.Cleanup(func() {
+		serveOpen, servePublicHost, servePort = origOpen, origHost, origPort
+	})
+	serveOpen = true
+	servePublicHost = ""
+	servePort = 7262
+
+	got := localStagePageURL("192.168.0.188:7262")
+	if got != "http://127.0.0.1:7262/" {
+		t.Fatalf("localStagePageURL = %q, want loopback HTTP", got)
+	}
+	stage := stageServeURL(got, &netapi.Credentials{
+		Pairing: &netapi.PairingCode{Code: "123456"},
+	})
+	if stage != "http://127.0.0.1:7262/stage.html?code=123456" {
+		t.Fatalf("advertised Stage URL = %q", stage)
+	}
+}
+
+func TestListenAdvertiseURLLoopbackHTTPWhenOpen(t *testing.T) {
+	orig := serveOpen
+	t.Cleanup(func() { serveOpen = orig })
+
+	serveOpen = true
+	if got := listenAdvertiseURL("127.0.0.1:7262"); got != "http://127.0.0.1:7262" {
+		t.Fatalf("loopback --open Listening = %q", got)
+	}
+	if got := listenAdvertiseURL("192.168.0.188:7262"); got != "https://192.168.0.188:7262" {
+		t.Fatalf("LAN --open Listening = %q, want HTTPS", got)
+	}
+
+	serveOpen = false
+	if got := listenAdvertiseURL("127.0.0.1:7262"); got != "https://127.0.0.1:7262" {
+		t.Fatalf("loopback without --open Listening = %q, want HTTPS", got)
+	}
+}
+
+func TestBannerDoesNotAdvertiseHTTPSLoopbackWhenOpen(t *testing.T) {
+	var human bytes.Buffer
+	origHuman, origOpen, origHost, origPort := serveHumanOut, serveOpen, servePublicHost, servePort
+	serveHumanOut = &human
+	serveOpen = true
+	servePublicHost = ""
+	servePort = 7262
+	t.Cleanup(func() {
+		serveHumanOut, serveOpen, servePublicHost, servePort = origHuman, origOpen, origHost, origPort
+	})
+
+	creds := &netapi.Credentials{
+		Pairing: &netapi.PairingCode{Code: "123456", ExpiresAt: time.Now().Add(time.Minute)},
+	}
+	printServeBanner("192.168.0.188:7262", creds, &config.Config{})
+	out := human.String()
+	if strings.Contains(out, "https://127.0.0.1") {
+		t.Fatalf("banner advertised HTTPS loopback:\n%s", out)
+	}
+	if !strings.Contains(out, "http://127.0.0.1:7262/stage.html?code=123456") {
+		t.Fatalf("banner Stage URL missing loopback HTTP:\n%s", out)
+	}
+	if !strings.Contains(out, "https://192.168.0.188:7262") {
+		t.Fatalf("LAN Listening should stay HTTPS:\n%s", out)
+	}
+
+	human.Reset()
+	printServeBanner("127.0.0.1:7262", creds, &config.Config{})
+	out = human.String()
+	if strings.Contains(out, "https://127.0.0.1") {
+		t.Fatalf("loopback bind advertised HTTPS:\n%s", out)
+	}
+	if !strings.Contains(out, "Listening:") || !strings.Contains(out, "http://127.0.0.1:7262") {
+		t.Fatalf("loopback Listening should be HTTP:\n%s", out)
+	}
+}
+
+func TestLocalStageURLKeepsMagicDNSHTTPS(t *testing.T) {
+	origOpen, origHost, origPort := serveOpen, servePublicHost, servePort
+	t.Cleanup(func() {
+		serveOpen, servePublicHost, servePort = origOpen, origHost, origPort
+	})
+	serveOpen = true
+	servePublicHost = "mac.tail.ts.net"
+	servePort = 7262
+	got := localStagePageURL("100.64.0.7:7262")
+	if got != "https://mac.tail.ts.net:7262/" {
+		t.Fatalf("Tailscale --open = %q, want MagicDNS HTTPS", got)
+	}
+}
+
+func TestReadyBannerLoopbackHTTPWhenOpen(t *testing.T) {
+	withServeBindState(t)
+	orig := serveOpen
+	serveOpen = true
+	t.Cleanup(func() { serveOpen = orig })
+
+	loop := captureReadyBanner(t, "127.0.0.1:7262", []string{"127.0.0.1:7262"})
+	if loop.URL != "http://127.0.0.1:7262" {
+		t.Fatalf("loopback ready url = %q, want http", loop.URL)
+	}
+	lan := captureReadyBanner(t, "192.168.0.188:7262", []string{"192.168.0.188:7262", "127.0.0.1:7262"})
+	if lan.URL != "https://192.168.0.188:7262" {
+		t.Fatalf("LAN ready url = %q, want https", lan.URL)
 	}
 }

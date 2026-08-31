@@ -24,6 +24,11 @@ https://<host>:<port>/v1/...    # API (authenticated unless noted)
 
 Default port: `7262`.
 
+`obey-voice serve --open` loads Stage at `http://127.0.0.1:<port>/stage.html`
+(loopback is a browser secure context without TLS). LAN and Tailscale clients
+still use `https://`. Auth on loopback HTTP is still the bearer token. The
+serve banner must not advertise `https://127.0.0.1` for that local Stage URL.
+
 ### Tailscale one-shot
 
 Interactive: launch `obey-voice`, then choose **Use on another device**. The

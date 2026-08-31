@@ -166,3 +166,82 @@ func TestListenAndServeRejectsPublicExtraBind(t *testing.T) {
 		t.Fatalf("public extra bind must be refused, got %v", err)
 	}
 }
+
+func TestLoopbackHTTPServesPlainHTTP(t *testing.T) {
+	creds, err := LoadOrCreateCredentials(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	dispatcher := NewDispatcher(&scriptedRunner{}, bus, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go dispatcher.Run(ctx)
+
+	server := New(Options{
+		Bind:         "127.0.0.1:0",
+		LoopbackHTTP: true,
+		Credentials:  creds,
+		Bus:          bus,
+		Dispatcher:   dispatcher,
+	})
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe(ctx) }()
+
+	deadline := time.After(2 * time.Second)
+	for server.Addr() == nil {
+		select {
+		case <-deadline:
+			t.Fatal("server never bound")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	addr := server.Addr().String()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/v1/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+creds.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP GET status: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP GET status: code %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	unauth, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/v1/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthResp, err := http.DefaultClient.Do(unauth)
+	if err != nil {
+		t.Fatalf("HTTP GET without token: %v", err)
+	}
+	if unauthResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("HTTP without token = %d, want 401", unauthResp.StatusCode)
+	}
+	_ = unauthResp.Body.Close()
+
+	httpsCtx, httpsCancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer httpsCancel()
+	httpsReq, err := http.NewRequestWithContext(httpsCtx, http.MethodGet, "https://"+addr+"/v1/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := insecureClient().Do(httpsReq); err == nil {
+		t.Fatal("HTTPS on LoopbackHTTP loopback unexpectedly succeeded")
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ListenAndServe after cancel: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ListenAndServe did not return after cancel")
+	}
+}

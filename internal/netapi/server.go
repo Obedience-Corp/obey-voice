@@ -96,6 +96,11 @@ type Options struct {
 	// real ports under :0 requests) — advertise these, never the requested
 	// bind strings.
 	OnListening func(addrs []net.Addr)
+	// LoopbackHTTP serves loopback listeners as plain HTTP instead of TLS.
+	// Localhost is already a browser secure context, so Stage can open on
+	// 127.0.0.1 without a self-signed cert warning. LAN and Tailscale binds
+	// stay HTTPS. Auth is unchanged.
+	LoopbackHTTP bool
 	// IntentSink configures POST /v1/intent (PROTOCOL_DELTAS D3). Optional;
 	// defaults to file mode under credentials Dir/intents.
 	IntentSink IntentSinkConfig
@@ -323,7 +328,13 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	errCh := make(chan error, len(lns))
 	for _, ln := range lns {
-		go func() { errCh <- server.ServeTLS(ln, "", "") }()
+		go func() {
+			if s.opts.LoopbackHTTP && loopbackAddr(ln.Addr()) {
+				errCh <- server.Serve(ln)
+				return
+			}
+			errCh <- server.ServeTLS(ln, "", "")
+		}()
 	}
 	monitorCtx, stopMonitor := context.WithCancel(ctx)
 	defer stopMonitor()
@@ -409,6 +420,18 @@ func IsTrustedServeIP(ip net.IP) bool {
 		return true
 	}
 	return cgnatRange.Contains(ip)
+}
+
+func loopbackAddr(addr net.Addr) bool {
+	if addr == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // validateBind refuses to listen beyond loopback/private/link-local/tailnet
