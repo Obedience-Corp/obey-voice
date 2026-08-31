@@ -111,6 +111,42 @@ func TestCaptureFramerPropagatesProcessError(t *testing.T) {
 	}
 }
 
+func TestCaptureFramerResetsStateAfterProcessError(t *testing.T) {
+	f := &captureFramer{}
+
+	// Fail once with a distinctive full frame buffered.
+	stale := make([]float32, frameSamples)
+	for i := range stale {
+		stale[i] = 0.5
+	}
+	if _, err := f.Process(stale, func([]int16) ([]int16, error) { return nil, errFake }); err != errFake {
+		t.Fatalf("err = %v, want %v", err, errFake)
+	}
+	if len(f.pending) != 0 || len(f.ready) != 0 {
+		t.Fatalf("state after error: pending=%d ready=%d, want both 0", len(f.pending), len(f.ready))
+	}
+
+	// The next chunk must be processed on its own — no stale frame ahead of it.
+	fresh := make([]float32, frameSamples)
+	for i := range fresh {
+		fresh[i] = -0.25
+	}
+	var seen []int16
+	out, err := f.Process(fresh, func(frame []int16) ([]int16, error) {
+		seen = append([]int16(nil), frame...)
+		return frame, nil
+	})
+	if err != nil {
+		t.Fatalf("Process after error: %v", err)
+	}
+	if len(out) != frameSamples {
+		t.Fatalf("len(out) = %d, want %d", len(out), frameSamples)
+	}
+	if want := float32ToInt16(fresh)[0]; len(seen) == 0 || seen[0] != want {
+		t.Fatalf("processed frame starts with %d, want %d (stale audio leaked through)", seen[0], want)
+	}
+}
+
 func TestRenderFramerBuffersAndFlushes(t *testing.T) {
 	f := &renderFramer{}
 	var got [][]int16

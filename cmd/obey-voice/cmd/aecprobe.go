@@ -266,8 +266,12 @@ func probeFrontend(kind string, cfg *config.Config) (audio.Frontend, error) {
 		return apmfrontend.New(config.VoiceFrontendNSLevelOf(cfg))
 	case config.VoiceFrontendNLMS:
 		return audio.NewVoiceFrontend(), nil
-	default:
+	case config.VoiceFrontendOff:
 		return audio.NewPassthroughFrontend(), nil
+	default:
+		// Same contract as startup: an invalid value is an error, never a
+		// silent passthrough run mislabeled as an explicit off measurement.
+		return nil, config.ValidateVoiceFrontend(cfg)
 	}
 }
 

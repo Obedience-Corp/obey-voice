@@ -48,6 +48,11 @@ func (f *captureFramer) Process(samples []float32, process captureProcessFunc) (
 		frame := f.pending[:frameSamples]
 		out, err := process(float32ToInt16(frame))
 		if err != nil {
+			// The caller falls back to raw passthrough for this chunk. Buffered
+			// state must go with it: a frame left in pending would be drained
+			// into the NEXT chunk's output, shifting and duplicating audio.
+			f.pending = f.pending[:0]
+			f.ready = f.ready[:0]
 			return nil, err
 		}
 		f.ready = append(f.ready, int16ToFloat32(out)...)
