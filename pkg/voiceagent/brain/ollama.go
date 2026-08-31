@@ -347,12 +347,12 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 				// Execute each tool and add results (skills + full CLI tools).
 				for _, tc := range toolCalls {
-					result := sess.execute(ctx, o.workDir, tc)
-					o.history = append(o.history, api.Message{
-						Role:    "tool",
-						Content: result,
-					})
+					o.history = append(o.history, toolResultMessage(tc, sess.execute(ctx, o.workDir, tc)))
 				}
+				// Re-budget after tools: a large result can push the user
+				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s
+				// with "no user query found in messages" (ollama#17778).
+				o.ensureContextBudget(skillCtx)
 				continue // re-request with tool results
 			}
 
@@ -455,12 +455,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			})
 
 			for _, tc := range response.ToolCalls {
-				result := sess.execute(ctx, o.workDir, tc)
-				o.history = append(o.history, api.Message{
-					Role:    "tool",
-					Content: result,
-				})
+				o.history = append(o.history, toolResultMessage(tc, sess.execute(ctx, o.workDir, tc)))
 			}
+			o.ensureContextBudget(skillCtx)
 			continue
 		}
 
@@ -897,13 +894,44 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 	return msgs
 }
 
+// toolResultFitKeep is how much of a tool result survives when the prompt
+// would otherwise overflow num_ctx. Keep the start of the payload so the
+// model still sees the command and a sample of the output.
+const toolResultFitKeep = 512
+
+func toolResultMessage(tc api.ToolCall, result string) api.Message {
+	return api.Message{
+		Role:       "tool",
+		Content:    result,
+		ToolName:   tc.Function.Name,
+		ToolCallID: tc.ID,
+	}
+}
+
+// lastUserIndex is the most recent user turn, or -1 if the history has none.
+func lastUserIndex(history []api.Message) int {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			return i
+		}
+	}
+	return -1
+}
+
 // ensureContextBudget permanently drops the oldest history (user-turn
 // aligned) when the estimated prompt would overflow ollama_num_ctx. An
 // explicit trim beats the server silently truncating from the top, which
 // eats the system prompt — and with it the persona — first. The system
 // prompt itself is never trimmed: if it alone exceeds the budget, the
 // num_ctx setting is what has to change.
+//
+// The in-flight user query is pinned. Mid-loop tool results are shrunk
+// instead of dropped, because Ollama 0.32.14 + qwen3.8 500s when
+// truncation leaves no plain user message (ollama#17778).
 func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
+	if o.cfg == nil {
+		return
+	}
 	budget := o.cfg.OllamaNumCtx
 	if budget <= 0 {
 		return
@@ -912,17 +940,48 @@ func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
 	if o.estimateTokens(skillCtx) <= limit {
 		return
 	}
+	trimmed := o.dropOldestBeforeLastUser(skillCtx, limit)
+	if o.estimateTokens(skillCtx) > limit {
+		trimmed = shrinkToolResults(o.history, func() bool {
+			return o.estimateTokens(skillCtx) <= limit
+		}) || trimmed
+	}
+	if trimmed && !o.budgetWarned {
+		o.budgetWarned = true
+		fmt.Fprintf(os.Stderr, "obey-voice: prompt near ollama_num_ctx=%d; dropping oldest history or shrinking tool results to stay under budget\n", budget)
+	}
+}
+
+func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool {
+	trimmed := false
 	for len(o.history) > 2 && o.estimateTokens(skillCtx) > limit {
+		lastUser := lastUserIndex(o.history)
+		if lastUser < 0 {
+			break
+		}
 		start := historyWindowStart(o.history, len(o.history)-2)
-		if start <= 0 || start >= len(o.history) {
+		if start <= 0 || start >= len(o.history) || start > lastUser {
 			break
 		}
 		o.history = o.history[start:]
+		trimmed = true
 	}
-	if !o.budgetWarned {
-		o.budgetWarned = true
-		fmt.Fprintf(os.Stderr, "obey-voice: prompt near ollama_num_ctx=%d; dropping oldest history to stay under budget\n", budget)
+	return trimmed
+}
+
+func shrinkToolResults(history []api.Message, underBudget func() bool) bool {
+	changed := false
+	for i := range history {
+		if history[i].Role != "tool" || len(history[i].Content) <= toolResultFitKeep {
+			continue
+		}
+		history[i].Content = history[i].Content[:toolResultFitKeep] + "\n... (truncated to fit context)"
+		changed = true
+		if underBudget() {
+			return true
+		}
 	}
+	return changed
 }
 
 // estimateTokens coarsely sizes the next request (≈4 bytes per token plus
