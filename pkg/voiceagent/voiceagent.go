@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/apmfrontend"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -269,12 +270,31 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 
 	// Capture + VAD + STT (skipped in text mode).
 	if !opts.TextOnly {
-		var frontend *audio.VoiceFrontend
-		if opts.Capture == nil && cfg.VoiceFrontendEnabled {
-			frontend = audio.NewVoiceFrontend()
-			cleanups = append(cleanups, func() { _ = frontend.Close() })
-			if !cfg.BargeInEnabled {
-				logf("warning: voice_frontend_enabled without barge-in; the noise suppressor over-gates normal speech so VAD starts late and STT hears fragments")
+		var frontend audio.Frontend
+		if opts.Capture == nil {
+			if front := config.VoiceFrontendOf(cfg); front != config.VoiceFrontendOff {
+				// A selection this build cannot honor (webrtc without the apm
+				// tag) is a hard startup error, never a silent fallback to
+				// nlms — see DECISIONS.md D5, config.ValidateVoiceFrontend.
+				if err := config.ValidateVoiceFrontend(cfg); err != nil {
+					cleanup()
+					return nil, nil, fmt.Errorf("voice front-end: %w", err)
+				}
+				built, err := newVoiceFrontend(front, cfg)
+				if err != nil {
+					cleanup()
+					return nil, nil, fmt.Errorf("init voice front-end: %w", err)
+				}
+				frontend = built
+				cleanups = append(cleanups, func() { _ = frontend.Close() })
+				if !cfg.BargeInEnabled {
+					switch front {
+					case config.VoiceFrontendNLMS:
+						logf("warning: voice_frontend=nlms without barge-in; the noise suppressor over-gates normal speech so VAD starts late and STT hears fragments")
+					case config.VoiceFrontendWebRTC:
+						logf("warning: voice_frontend=webrtc without barge-in; echo cancellation runs but nothing consumes it")
+					}
+				}
 			}
 		}
 
@@ -368,4 +388,19 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	}
 
 	return &Agent{Pipeline: p}, cleanup, nil
+}
+
+// newVoiceFrontend constructs the front-end config.VoiceFrontendOf(cfg) named.
+// Callers are expected to have already handled off (no front-end at all) and
+// called config.ValidateVoiceFrontend(cfg) (webrtc without the apm tag is a
+// startup error, not something this function falls back from).
+func newVoiceFrontend(front string, cfg *config.Config) (audio.Frontend, error) {
+	switch front {
+	case config.VoiceFrontendWebRTC:
+		return apmfrontend.New(config.VoiceFrontendNSLevelOf(cfg))
+	case config.VoiceFrontendNLMS:
+		return audio.NewVoiceFrontend(), nil
+	default:
+		return nil, fmt.Errorf("unsupported voice_frontend %q", front)
+	}
 }

@@ -242,6 +242,24 @@ func newAutomaticGainControl(target, minGain, maxGain float64) automaticGainCont
 	}
 }
 
+// AGC is the automatic gain control stage. D4 keeps AGC out of APM's chain —
+// APM only replaces AEC and noise suppression — so apmfrontend composes this
+// same stage after the APM shim rather than reimplementing gain control.
+type AGC = automaticGainControl
+
+// Default AGC tuning, exported so apmfrontend composes the identical stage
+// VoiceFrontend uses rather than picking its own numbers.
+const (
+	DefaultAGCTargetRMS = frontendTargetRMS
+	DefaultAGCMinGain   = agcMinGain
+	DefaultAGCMaxGain   = agcMaxGain
+)
+
+// NewAGC creates the front-end's automatic gain control stage.
+func NewAGC(target, minGain, maxGain float64) AGC {
+	return newAutomaticGainControl(target, minGain, maxGain)
+}
+
 func (a *automaticGainControl) Process(samples []float32) {
 	if len(samples) == 0 {
 		return

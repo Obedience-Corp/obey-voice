@@ -2,8 +2,8 @@ package audio
 
 import "testing"
 
-// TestVoiceFrontendOverSuppressesNormalSpeech documents why the voice frontend
-// ships disabled by default (see config default voice_frontend_enabled=false).
+// TestVoiceFrontendOverSuppressesNormalSpeech documents why nlms ships
+// disabled by default (see config default voice_frontend=off).
 //
 // The noise suppressor's initial noise floor (noiseSuppressorFloor = 0.12) is
 // higher than the RMS of normal-volume speech, so it treats an ordinary voice as
@@ -31,6 +31,6 @@ func TestVoiceFrontendOverSuppressesNormalSpeech(t *testing.T) {
 	// flip the default back on and turn this into a "must survive" assertion.
 	if survived >= 0.2 {
 		t.Fatalf("normal speech survived at %.2fx — frontend may be fixed; "+
-			"revisit voice_frontend_enabled default and this test", survived)
+			"revisit the voice_frontend default and this test", survived)
 	}
 }

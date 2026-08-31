@@ -25,7 +25,7 @@ func TestInterpretFlagsUntrustworthyRuns(t *testing.T) {
 		{
 			name:   "no reference reached the canceller",
 			report: Report{DelayPublished: true, ReferencePushes: 0, CaptureChunks: 10, TapWindowSamples: 768},
-			want:   "voice_frontend_enabled",
+			want:   "voice_frontend",
 		},
 		{
 			name:   "microphone heard nothing",

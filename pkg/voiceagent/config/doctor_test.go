@@ -564,7 +564,7 @@ func TestDiagnoseVoiceDevicesHealthy(t *testing.T) {
 }
 
 func TestDiagnoseWarnsOnBargeInWithoutFrontend(t *testing.T) {
-	cfg := healthyBrain(&Config{STTProvider: "sherpa", TTSProvider: "kokoro", BargeInEnabled: true, VoiceFrontendEnabled: false})
+	cfg := healthyBrain(&Config{STTProvider: "sherpa", TTSProvider: "kokoro", BargeInEnabled: true, VoiceFrontend: VoiceFrontendOff})
 	diags := Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil })
 	found := false
 	for _, d := range diags {
@@ -576,23 +576,23 @@ func TestDiagnoseWarnsOnBargeInWithoutFrontend(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("expected a barge-in-echo warning when barge-in is on without the voice frontend")
+		t.Fatal("expected a barge-in-echo warning when barge-in is on without a voice frontend")
 	}
 	if HasErrors(diags) {
 		t.Error("barge-in-echo must be a warning, not an error")
 	}
 
-	// With the frontend enabled (or barge-in off) there is no warning.
-	cfg.VoiceFrontendEnabled = true
+	// With a frontend enabled (or barge-in off) there is no warning.
+	cfg.VoiceFrontend = VoiceFrontendNLMS
 	for _, d := range Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil }) {
 		if d.Name == "barge-in-echo" {
-			t.Fatal("no barge-in-echo warning expected when the frontend is enabled")
+			t.Fatal("no barge-in-echo warning expected when the frontend is on")
 		}
 	}
 }
 
 func TestDiagnoseWarnsOnFrontendWithoutBargeIn(t *testing.T) {
-	cfg := healthyBrain(&Config{STTProvider: "sherpa", TTSProvider: "kokoro", BargeInEnabled: false, VoiceFrontendEnabled: true})
+	cfg := healthyBrain(&Config{STTProvider: "sherpa", TTSProvider: "kokoro", BargeInEnabled: false, VoiceFrontend: VoiceFrontendNLMS})
 	diags := Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil })
 	found := false
 	for _, d := range diags {
@@ -604,7 +604,7 @@ func TestDiagnoseWarnsOnFrontendWithoutBargeIn(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("expected a voice-frontend-suppression warning when the frontend is on without barge-in")
+		t.Fatal("expected a voice-frontend-suppression warning when nlms is on without barge-in")
 	}
 	if HasErrors(diags) {
 		t.Error("voice-frontend-suppression must be a warning, not an error")
@@ -618,10 +618,45 @@ func TestDiagnoseWarnsOnFrontendWithoutBargeIn(t *testing.T) {
 	}
 
 	cfg.BargeInEnabled = false
-	cfg.VoiceFrontendEnabled = false
+	cfg.VoiceFrontend = VoiceFrontendOff
 	for _, d := range Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil }) {
 		if d.Name == "voice-frontend-suppression" {
 			t.Fatal("no voice-frontend-suppression warning expected when the frontend is off")
+		}
+	}
+}
+
+func TestDiagnoseErrorsOnWebRTCWithoutTheApmBuild(t *testing.T) {
+	// Runs both untagged (the common case: WebRTCFrontendBuildAvailable is
+	// false, so the diagnostic must fire) and with -tags apm (available is
+	// true, so it must not) — see the "tagged tests for the new package"
+	// verification step.
+	cfg := healthyBrain(&Config{STTProvider: "sherpa", TTSProvider: "kokoro", VoiceFrontend: VoiceFrontendWebRTC})
+	diags := Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil })
+	var found *Diagnostic
+	for i := range diags {
+		if diags[i].Name == "voice-frontend-unavailable" {
+			found = &diags[i]
+		}
+	}
+
+	if WebRTCFrontendBuildAvailable() {
+		if found != nil {
+			t.Fatalf("unexpected voice-frontend-unavailable diagnostic in a build with the apm tag: %+v", found)
+		}
+		return
+	}
+	if found == nil {
+		t.Fatal("expected a voice-frontend-unavailable diagnostic for webrtc in an untagged build")
+	}
+	if found.Severity != SeverityError {
+		t.Errorf("voice-frontend-unavailable severity = %q, want error", found.Severity)
+	}
+
+	cfg.VoiceFrontend = VoiceFrontendNLMS
+	for _, d := range Diagnose(cfg, t.TempDir(), func(string) (string, error) { return "", nil }) {
+		if d.Name == "voice-frontend-unavailable" {
+			t.Fatal("no voice-frontend-unavailable diagnostic expected for nlms")
 		}
 	}
 }

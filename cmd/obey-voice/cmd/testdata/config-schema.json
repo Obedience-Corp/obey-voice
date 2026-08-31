@@ -336,17 +336,38 @@
       "editable": true
     },
     {
-      "key": "voice_frontend_enabled",
-      "type": "bool",
-      "default": false,
+      "key": "voice_frontend",
+      "type": "enum",
+      "default": "off",
+      "enum": [
+        "webrtc",
+        "nlms",
+        "off"
+      ],
       "allows_empty": false,
       "group": "voice",
       "title": "Voice front-end",
-      "help": "Runs echo cancellation and noise suppression on this Mac's microphone. Required for barge-in.",
+      "help": "Runs echo cancellation on this Mac's microphone before speech detection. webrtc needs a build with the apm tag; nlms is the built-in fallback. Required for barge-in.",
       "restart_required": true,
-      "restart_verified": true,
+      "restart_verified": false,
       "persona_overridable": false,
-      "env": "VOICE_FRONTEND_ENABLED",
+      "env": "VOICE_FRONTEND",
+      "editable": true
+    },
+    {
+      "key": "voice_frontend_ns_level",
+      "type": "int",
+      "default": 1,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Noise suppression level",
+      "help": "How aggressively the webrtc front-end suppresses background noise, from 0 (off) to 3 (aggressive). No effect on nlms or off.",
+      "min": 0,
+      "max": 3,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "VOICE_FRONTEND_NS_LEVEL",
       "editable": true
     },
     {
@@ -1583,6 +1604,20 @@
       "env": "TUI_MOUSE_ENABLED",
       "editable": false,
       "managed_by": "obey-voice TUI"
+    },
+    {
+      "key": "voice_frontend_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "hidden",
+      "title": "Voice front-end (legacy)",
+      "help": "Superseded by voice_frontend (webrtc/nlms/off). Ignored once voice_frontend is set explicitly.",
+      "restart_required": true,
+      "restart_verified": true,
+      "persona_overridable": false,
+      "env": "VOICE_FRONTEND_ENABLED",
+      "editable": true
     }
   ]
 }
