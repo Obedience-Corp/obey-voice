@@ -63,6 +63,22 @@ func TestNoiseGateTrustsModulatedSpeech(t *testing.T) {
 	}
 }
 
+func TestNoiseGateDoesNotDropFirstUtteranceWithoutAFloor(t *testing.T) {
+	var g noiseGate
+	off := 0
+	for i := 0; i < gateHist+2; i++ {
+		frame := modulatedFrame(1600, off, 0.06, 0.16)
+		off += 1600
+		d := g.decide(frame, true)
+		if d.drop {
+			t.Fatalf("frame %d: first utterance must not be dropped before a noise floor exists", i)
+		}
+		if !d.voice {
+			t.Fatalf("frame %d: first utterance must count as voice", i)
+		}
+	}
+}
+
 func TestNoiseGateSilentZerosAreNotAFanLatch(t *testing.T) {
 	var g noiseGate
 	z := constFrame(1600, 0)
