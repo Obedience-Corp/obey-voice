@@ -55,9 +55,9 @@ func voiceKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
-			Key: "voice_fallback_provider", Type: TypeEnum, Default: "kokoro", Enum: ttsProviderEnum(),
+			Key: "voice_fallback_provider", Type: TypeEnum, Default: "kokoro", Enum: ttsFallbackEnum(),
 			Group: GroupVoice, Title: "Fallback engine",
-			Help: "Speaks one sentence in this engine's voice when the main engine fails, instead of going silent.",
+			Help: "When the main engine is slow or fails, speak that sentence in this engine instead. disabled waits for the main engine (you hear Qwen, not Kokoro).",
 		},
 		{
 			Key: "speech_speed", Type: TypeFloat, Default: 0.95, Unit: "×", Min: num(0.5), Max: num(2.0),

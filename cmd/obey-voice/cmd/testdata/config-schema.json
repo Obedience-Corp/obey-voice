@@ -322,12 +322,13 @@
       "enum": [
         "kokoro",
         "qwen3-tts",
-        "audio8"
+        "audio8",
+        "disabled"
       ],
       "allows_empty": false,
       "group": "voice",
       "title": "Fallback engine",
-      "help": "Speaks one sentence in this engine's voice when the main engine fails, instead of going silent.",
+      "help": "When the main engine is slow or fails, speak that sentence in this engine instead. disabled waits for the main engine (you hear Qwen, not Kokoro).",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
