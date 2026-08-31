@@ -78,7 +78,11 @@ type App struct {
 	progress *eventBridge
 	// slot owns the built runtime for shutdown cleanup even when a ready
 	// message is dropped because the user quit mid-build.
-	slot *runtimeSlot
+	slot *runtimeSlot[*ConversationRuntime]
+	// meetingSlot owns a recorder built after a quit, the same way slot owns a
+	// conversation: Ctrl+C during the build means the ready message may never
+	// be applied.
+	meetingSlot *runtimeSlot[*MeetingRuntime]
 
 	// Meeting recorder wiring (launcher → setup → recorder).
 	meetingBuilder   MeetingBuilder
@@ -394,9 +398,19 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// mic opens before anything can be recorded.
 		tick := a.meeting.beginStartup(msg.Description)
 		return a, tea.Batch(tick, a.progress.wait(),
-			buildMeeting(a.meetingBuilder, a.runCtx, a.progress, msg.Description))
+			buildMeeting(a.meetingBuilder, a.runCtx, a.progress, a.meetingSlot, msg.Description))
 
 	case meetingReadyMsg:
+		// Build finished after quit: the slot already owns the recorder's
+		// teardown (or run() will call it), and applying it now would start a
+		// listen loop on a program that is exiting.
+		//
+		// Only a.quitting, not runCtx: a cancelled run context is also how a
+		// recorder is told its listen loop must exit, which is not the same
+		// thing as the app going away.
+		if a.quitting {
+			return a, nil
+		}
 		if msg.err != nil {
 			a.meeting.finishStartup()
 			a.screen = screenMeetingSetup

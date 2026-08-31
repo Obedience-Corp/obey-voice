@@ -35,7 +35,8 @@ func wiredApp(build RuntimeBuilder) App {
 	app.runCtx = context.Background()
 	app.wg = &sync.WaitGroup{}
 	app.progress = newEventBridge(16)
-	app.slot = &runtimeSlot{}
+	app.slot = newConversationSlot()
+	app.meetingSlot = newMeetingSlot()
 	return app
 }
 

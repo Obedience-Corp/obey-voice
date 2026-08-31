@@ -133,7 +133,7 @@ type meetingReadyMsg struct {
 	err error
 }
 
-func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, description string) tea.Cmd {
+func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot[*MeetingRuntime], description string) tea.Cmd {
 	if build == nil {
 		return func() tea.Msg {
 			return meetingReadyMsg{err: fmt.Errorf("meeting builder not configured")}
@@ -144,35 +144,83 @@ func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, 
 			feed.send(buildStageMsg{stage: stage})
 		})
 		feed.send(progressClosedMsg{})
+		if err != nil {
+			return meetingReadyMsg{err: err}
+		}
+		if rt != nil && slot != nil {
+			// Claim ownership before returning so run() can always clean up,
+			// even if the ready message is never applied (quit mid-build).
+			slot.store(rt)
+			if ctx.Err() != nil {
+				slot.cleanup()
+				return meetingReadyMsg{err: ctx.Err()}
+			}
+		}
 		return meetingReadyMsg{rt: rt, err: err}
 	}
 }
 
-// runtimeSlot owns the built ConversationRuntime across the race between the
-// builder Cmd finishing and the Bubble Tea program quitting. Without it, a
-// runtimeReadyMsg that never reaches Update would leak mic/player resources.
-type runtimeSlot struct {
+// runtimeSlot owns a built runtime across the race between the builder Cmd
+// finishing and the Bubble Tea program quitting. Without it, a ready message
+// that never reaches Update would leak whatever the build opened: a hot mic,
+// a loaded model, an open meeting bundle.
+//
+// Both builds need one. Ctrl+C has always been able to quit during a
+// conversation build, and quits during a meeting build too now that the
+// recorder has a waiting screen instead of owning the key as "stop".
+type runtimeSlot[T comparable] struct {
 	mu sync.Mutex
-	rt *ConversationRuntime
+	rt T
+	// release tears the runtime down. Held as a function so one slot serves
+	// both runtimes, which share the shape but not a type.
+	release func(T)
 }
 
-func (s *runtimeSlot) store(rt *ConversationRuntime) {
+// newConversationSlot owns a ConversationRuntime's teardown.
+func newConversationSlot() *runtimeSlot[*ConversationRuntime] {
+	return &runtimeSlot[*ConversationRuntime]{release: func(rt *ConversationRuntime) {
+		if rt.Cleanup != nil {
+			rt.Cleanup()
+		}
+	}}
+}
+
+// newMeetingSlot owns a MeetingRuntime's teardown. MeetingRuntime.Cleanup is
+// idempotent by contract, so a recorder stopped through its own lifecycle is
+// safe to release again here.
+func newMeetingSlot() *runtimeSlot[*MeetingRuntime] {
+	return &runtimeSlot[*MeetingRuntime]{release: func(rt *MeetingRuntime) {
+		if rt.Cleanup != nil {
+			rt.Cleanup()
+		}
+	}}
+}
+
+func (s *runtimeSlot[T]) store(rt T) {
+	var zero T
 	s.mu.Lock()
 	old := s.rt
 	s.rt = rt
 	s.mu.Unlock()
-	if old != nil && old != rt && old.Cleanup != nil {
-		old.Cleanup()
+	if old != zero && old != rt {
+		s.free(old)
 	}
 }
 
-func (s *runtimeSlot) cleanup() {
+func (s *runtimeSlot[T]) cleanup() {
+	var zero T
 	s.mu.Lock()
 	rt := s.rt
-	s.rt = nil
+	s.rt = zero
 	s.mu.Unlock()
-	if rt != nil && rt.Cleanup != nil {
-		rt.Cleanup()
+	if rt != zero {
+		s.free(rt)
+	}
+}
+
+func (s *runtimeSlot[T]) free(rt T) {
+	if s.release != nil {
+		s.release(rt)
 	}
 }
 
@@ -203,7 +251,7 @@ func reloadVoice(ctx context.Context, reload func(context.Context) error, resume
 
 // buildRuntime runs the builder off the update loop, streaming progress
 // through the feed so the conversation screen can render it.
-func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot, sessionID, personaID string) tea.Cmd {
+func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot[*ConversationRuntime], sessionID, personaID string) tea.Cmd {
 	return func() tea.Msg {
 		rt, err := build(ctx, func(stage BuildStage) {
 			feed.send(buildStageMsg{stage: stage})

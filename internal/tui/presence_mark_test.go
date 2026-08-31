@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -238,5 +239,75 @@ func TestCtrlCQuitsWhileTheRecorderIsStarting(t *testing.T) {
 	model, _ = running.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if model.(App).quitting {
 		t.Fatal("ctrl+c quit the app instead of stopping the recording")
+	}
+}
+
+// Quitting during a meeting build is newly reachable — the waiting screen
+// hands Ctrl+C back to the app — so the recorder needs the ownership slot the
+// conversation has. A runtime built after the quit must be torn down even
+// though its ready message never reaches Update. (PR #84 review.)
+func TestMeetingBuildCancelsCleanupViaSlot(t *testing.T) {
+	cleaned := false
+	rt := &MeetingRuntime{Cleanup: func() { cleaned = true }}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	slot := newMeetingSlot()
+	build := func(context.Context, string, BuildProgress) (*MeetingRuntime, error) { return rt, nil }
+	cancel() // quit while the builder is still opening the mic
+
+	msg := buildMeeting(build, ctx, newEventBridge(4), slot, "Standup")()
+	ready, ok := msg.(meetingReadyMsg)
+	if !ok {
+		t.Fatalf("buildMeeting returned %#v", msg)
+	}
+	if ready.err == nil {
+		t.Fatal("expected a cancelled-context error when the build finishes after quit")
+	}
+	if !cleaned {
+		t.Fatal("recorder Cleanup not called when ctx was cancelled after the build")
+	}
+}
+
+// The slot is the backstop, not the primary path: a recorder that reached
+// Update is still owned by the slot so run() can release it at exit, and
+// releasing twice is safe by MeetingRuntime's contract.
+func TestMeetingSlotReleasesAtExit(t *testing.T) {
+	var calls int
+	rt := &MeetingRuntime{Cleanup: func() { calls++ }}
+	slot := newMeetingSlot()
+
+	msg := buildMeeting(
+		func(context.Context, string, BuildProgress) (*MeetingRuntime, error) { return rt, nil },
+		context.Background(), newEventBridge(4), slot, "Standup",
+	)()
+	if ready := msg.(meetingReadyMsg); ready.err != nil || ready.rt != rt {
+		t.Fatalf("build did not deliver the runtime: %+v", ready)
+	}
+	if calls != 0 {
+		t.Fatal("a live recorder was cleaned up while the build succeeded")
+	}
+
+	slot.cleanup()
+	if calls != 1 {
+		t.Fatalf("Cleanup ran %d times at exit, want 1", calls)
+	}
+	slot.cleanup() // the slot is empty now; exit paths may run twice
+	if calls != 1 {
+		t.Fatalf("Cleanup ran again on an empty slot (%d)", calls)
+	}
+}
+
+// Storing a second recorder retires the first: a rebuild must not strand the
+// mic the previous build opened.
+func TestMeetingSlotReleasesTheRuntimeItReplaces(t *testing.T) {
+	first, second := 0, 0
+	slot := newMeetingSlot()
+	slot.store(&MeetingRuntime{Cleanup: func() { first++ }})
+	slot.store(&MeetingRuntime{Cleanup: func() { second++ }})
+	if first != 1 {
+		t.Fatalf("replaced recorder cleaned %d times, want 1", first)
+	}
+	if second != 0 {
+		t.Fatal("the current recorder was cleaned on store")
 	}
 }
