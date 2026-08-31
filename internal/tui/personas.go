@@ -37,6 +37,12 @@ type personasModel struct {
 	// on the name step is allowed only while the prompt still matches it.
 	formInitialPrompt string
 
+	// confirmDeleteID is the persona a delete is pending on; "" when nothing
+	// is awaiting an answer. Deletion is not reversible, so it never happens
+	// on the keystroke that asks for it.
+	confirmDeleteID   string
+	confirmDeleteName string
+
 	// Stack step: per-persona brain provider/model + TTS provider/voice.
 	// Index 0 of the provider lists is "(default)" = inherit the app config.
 	// Voice is a selectable catalog (←/→), not free text — empty selectedVoice
@@ -57,6 +63,7 @@ type personasModel struct {
 	savePrompt           func(id, systemPrompt string) (*persona.Profile, error)
 	saveName             func(id, displayName string) (*persona.Profile, error)
 	saveStack            func(id string, b persona.Brain, t persona.TTS) (*persona.Profile, error)
+	deletePersona        func(*config.Config, string) (*persona.DeleteResult, error)
 	loadPrompt           func(name string) (string, error)
 	loadPromptForProfile func(*persona.Profile) (string, error)
 	defaultPrompt        func() (string, error)
@@ -72,6 +79,7 @@ func newPersonas(cfg *config.Config) personasModel {
 		savePrompt:    persona.UpdateSystemPrompt,
 		saveName:      persona.UpdateDisplayName,
 		saveStack:     persona.UpdateStack,
+		deletePersona: persona.Delete,
 		loadPrompt:    persona.LoadSystemPrompt,
 		// Prefer profile-aware load so a private prompts/persona/<id>.yaml wins
 		// over a stale prompts.persona ref (e.g. TTS voice name as the ref).
@@ -197,6 +205,9 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 		if m.formMode != "" {
 			return m.updateForm(msg)
 		}
+		if m.confirmDeleteID != "" {
+			return m.updateDeleteConfirm(msg)
+		}
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
@@ -213,6 +224,8 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 			return m, m.beginCreate()
 		case "e":
 			return m, m.beginEdit()
+		case "d", "delete":
+			m.beginDelete()
 		case "esc", "q":
 			return m, func() tea.Msg { return switchScreenMsg(screenLauncher) }
 		}

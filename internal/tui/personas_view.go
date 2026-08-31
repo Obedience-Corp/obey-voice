@@ -33,7 +33,11 @@ func (m personasModel) View() string {
 		}
 	} else {
 		listRows := m.visibleRows()
-		for _, line := range m.listLines(listRows) {
+		lines := m.listLines(listRows)
+		if m.confirmDeleteID != "" {
+			lines = m.confirmDeleteLines(listRows)
+		}
+		for _, line := range lines {
 			b.WriteString(line)
 			b.WriteString("\n")
 		}
@@ -45,9 +49,12 @@ func (m personasModel) View() string {
 	} else {
 		b.WriteString("\n")
 	}
-	help := "  ↑/↓ navigate • enter switch • n create • e edit • esc back"
-	if m.formMode != "" {
+	help := "  ↑/↓ navigate • enter switch • n create • e edit • d delete • esc back"
+	switch {
+	case m.formMode != "":
 		help = "  tab fields • save: ctrl+j · alt+s · f2 • esc cancel"
+	case m.confirmDeleteID != "":
+		help = "  y delete permanently • any other key cancels"
 	}
 	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
 	return b.String()
@@ -114,6 +121,12 @@ func formBox(title string, body []string, width int, focused bool) []string {
 	if focused {
 		border = lipgloss.NewStyle().Foreground(colorAccent)
 	}
+	return formBoxStyled(title, body, width, border)
+}
+
+// formBoxStyled is formBox with the border style chosen by the caller, so a
+// destructive prompt can wear a colour the ordinary form never uses.
+func formBoxStyled(title string, body []string, width int, border lipgloss.Style) []string {
 	inner := width - 4
 	titleText := " " + title + " "
 	fill := max(width-3-ansi.StringWidth(titleText), 0)

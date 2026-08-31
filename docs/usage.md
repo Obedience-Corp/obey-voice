@@ -191,6 +191,14 @@ profile. A conversation binds its identity — name, prompt, brain, and voice �
 start, so editing a persona or switching the active one never affects a session
 already in flight.
 
+In the Personas list, `d` deletes the persona under the cursor. It always asks
+first — only `y` confirms, any other key cancels — and it removes
+`personas/<id>/` plus the system prompt that persona owns, keeping a prompt
+document another persona points at. Built-ins and the last remaining persona
+are refused. Deleting the active persona activates another one so the agent
+name and voice keys stay consistent. The same removal from the shell is
+`obey-voice persona delete <id> --yes`.
+
 The persona system-prompt editor has a vim mode: `esc` for NORMAL; `i`/`a`/`o`
 to insert; `h`/`j`/`k`/`l`/`0`/`$`/`w`/`b`/`gg`/`G` to move; `x`/`D`/`dd` to
 delete; `:w` accepts the prompt and advances to Model & voice; `:wq` (or
