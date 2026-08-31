@@ -49,6 +49,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onThinkingStarted)
 	events.Subscribe(bus, u.onThinkingComplete)
 	events.Subscribe(bus, u.onResponseStreamingStarted)
+	events.Subscribe(bus, u.onResponseSpeakableStarted)
 	events.Subscribe(bus, u.onSpeechSegmentReady)
 	events.Subscribe(bus, u.onGeneratingVoice)
 	events.Subscribe(bus, u.onVoiceGenerated)
@@ -177,7 +178,14 @@ func (u *UI) onResponseStreamingStarted(e events.ResponseStreamingStarted) {
 	u.status(fmt.Sprintf("    first token (%.1fs)", e.Elapsed.Seconds()))
 }
 
-func (u *UI) onSpeechSegmentReady(_ events.SpeechSegmentReady) {
+func (u *UI) onResponseSpeakableStarted(e events.ResponseSpeakableStarted) {
+	u.status(fmt.Sprintf("    first speakable (%.1fs)", e.Elapsed.Seconds()))
+}
+
+func (u *UI) onSpeechSegmentReady(e events.SpeechSegmentReady) {
+	if e.Elapsed > 0 {
+		u.status(fmt.Sprintf("    first admit (%.1fs)", e.Elapsed.Seconds()))
+	}
 	u.transient(dimStyle.Render("● Queuing speech..."))
 }
 
@@ -186,14 +194,29 @@ func (u *UI) onGeneratingVoice(_ events.GeneratingVoice) {
 }
 
 func (u *UI) onVoiceGenerated(e events.VoiceGenerated) {
-	u.status(fmt.Sprintf("    voice ready (%.1fs)", e.Elapsed.Seconds()))
+	u.status(fmt.Sprintf("    synth first frame (%.1fs)", e.Elapsed.Seconds()))
 }
 
-func (u *UI) onSpeakingStarted(_ events.SpeakingStarted) {
+func (u *UI) onSpeakingStarted(e events.SpeakingStarted) {
+	if e.Elapsed > 0 {
+		label := "audible"
+		if e.AudibleSink == "stream_client" {
+			label = "audible_tx"
+		}
+		u.status(fmt.Sprintf("    %s (%.1fs)", label, e.Elapsed.Seconds()))
+	}
 	u.transient(statusStyle.Render("● Speaking..."))
 }
 
 func (u *UI) onSpeakingComplete(e events.SpeakingComplete) {
+	switch e.AudibleSink {
+	case "none":
+		u.status(fmt.Sprintf("    synth drain (no sink) (%.1fs)", e.Elapsed.Seconds()))
+		return
+	case "stream_client":
+		// Fanout drain is not playback; TTFA was audible_tx at sink-start.
+		return
+	}
 	label := "playback"
 	if e.Interrupted {
 		label = "playback interrupted"

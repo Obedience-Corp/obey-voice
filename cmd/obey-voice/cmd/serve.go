@@ -192,6 +192,10 @@ func applyServeOpenDefaults(cmd *cobra.Command) {
 	if !cmd.Flags().Changed("no-voice") {
 		serveNoVoice = true
 	}
+	// Host mute means SinkKind may be none until Stage opts into audio_output.
+	// The pipeline emits a once-per-process Info on the first no-sink synth;
+	// do not arm a delayed OnListening warning — Stage often connects after
+	// listen and before the first admit.
 }
 
 func applyServeTailscaleDefaults(cmd *cobra.Command) error {
@@ -642,7 +646,9 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 	if !muteHost {
 		local = audio.NewPlayerWithDevice(cfg.OutputDevice)
 	}
-	// Fanout owns local so Close is exactly once via cleanup.
+	// Fanout owns local so Close is exactly once via cleanup. SinkKind is
+	// none until a Stage client opts into audio_output; the pipeline warns
+	// once per process on the first synthesize with no listener.
 	fanout := netapi.NewOwnedAudioFanout(local)
 	cleanups = append(cleanups, func() { _ = fanout.Close() })
 

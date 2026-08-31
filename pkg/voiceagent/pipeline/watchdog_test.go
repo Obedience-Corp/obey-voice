@@ -113,7 +113,7 @@ func TestWatchPlaybackStallEmitsInterimNotice(t *testing.T) {
 	var started atomic.Bool
 	stalled := make(chan struct{})
 	// Notice at 30ms (scaled default), stall at 300ms.
-	go p.watchPlaybackStallAfter(streamCtx, &started, cancel, stalled, 300*time.Millisecond, 30*time.Millisecond, 0)
+	go p.watchPlaybackStallAfter(streamCtx, &started, cancel, stalled, 300*time.Millisecond, 30*time.Millisecond, 0, false)
 
 	select {
 	case <-stalled:

@@ -147,6 +147,67 @@ func TestObserveStreamBothNilExitsImmediately(t *testing.T) {
 	}
 }
 
+func TestFirstTokenSpeakableAdmitClocksAreDistinct(t *testing.T) {
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{TTS: &fakeTTS{}, Player: player, Events: events.NewBus()}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	chunks := make(chan string)
+	done := make(chan brain.StreamResult, 1)
+	go func() {
+		defer close(chunks)
+		defer close(done)
+		chunks <- "  "
+		time.Sleep(25 * time.Millisecond)
+		chunks <- "Hello there."
+		done <- brain.StreamResult{}
+	}()
+
+	metrics := newTurnMetrics()
+	metrics.sttFinal = metrics.start
+	_, _, err := p.streamResponse(ctx, cancel, &brain.Stream{Chunks: chunks, Done: done}, false, metrics, p.newTurnConductor(metrics))
+	if err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+
+	if metrics.firstToken.IsZero() || metrics.firstSpeakable.IsZero() || metrics.firstAdmit.IsZero() {
+		t.Fatalf("clocks missing token=%v speakable=%v admit=%v", metrics.firstToken, metrics.firstSpeakable, metrics.firstAdmit)
+	}
+	if !metrics.firstSpeakable.After(metrics.firstToken) {
+		t.Fatalf("firstSpeakable %v not after firstToken %v — whitespace chunk should separate them", metrics.firstSpeakable, metrics.firstToken)
+	}
+	if metrics.firstAdmit.Before(metrics.firstSpeakable) {
+		t.Fatalf("firstAdmit %v before firstSpeakable %v", metrics.firstAdmit, metrics.firstSpeakable)
+	}
+	snap := metrics.snapshot()
+	if snap.FirstTokenElapsed <= 0 || snap.FirstSpeakableElapsed <= 0 || snap.FirstAdmitElapsed <= 0 {
+		t.Fatalf("T_eou clocks = token %v speakable %v admit %v", snap.FirstTokenElapsed, snap.FirstSpeakableElapsed, snap.FirstAdmitElapsed)
+	}
+	if snap.FirstSpeakableElapsed <= snap.FirstTokenElapsed {
+		t.Fatalf("FirstSpeakableElapsed %v <= FirstTokenElapsed %v", snap.FirstSpeakableElapsed, snap.FirstTokenElapsed)
+	}
+}
+
+func TestRunTurnTextModeStampsSTTFinalAtThinkingStarted(t *testing.T) {
+	bus := events.NewBus()
+	var metricsEvt events.TurnMetrics
+	events.Subscribe(bus, func(e events.TurnMetrics) { metricsEvt = e })
+
+	p := &Pipeline{Brain: &fakeBrain{chunks: []string{"Hello there."}}, Events: bus}
+	if err := p.RunTurnTextMode(context.Background(), "hi"); err != nil {
+		t.Fatalf("RunTurnTextMode: %v", err)
+	}
+	if metricsEvt.STTFinalElapsed <= 0 {
+		t.Fatalf("STTFinalElapsed = %v, want stamped at ThinkingStarted in text mode", metricsEvt.STTFinalElapsed)
+	}
+	if metricsEvt.FirstTokenElapsed < 0 {
+		t.Fatalf("FirstTokenElapsed = %v", metricsEvt.FirstTokenElapsed)
+	}
+}
+
 func TestObserveStreamForwardsChunksAndMarksFirstChunk(t *testing.T) {
 	bus := events.NewBus()
 	var started events.ResponseStreamingStarted

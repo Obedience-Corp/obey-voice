@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 func scriptedStreamWithThinking(ctx context.Context, chunks, thinking []string, doneErr error) *brain.Stream {
@@ -266,5 +269,249 @@ func TestSilentReasoningLeakFixtureNotSynthesized(t *testing.T) {
 	spoken := strings.Join(provider.Calls(), " ")
 	if strings.Contains(spoken, "escaped tag") || textclean.ContainsThinkTag(spoken) {
 		t.Errorf("leaked tag was synthesized: %q", spoken)
+	}
+}
+
+type hungReadyTTS struct{}
+
+func (h *hungReadyTTS) Synthesize(ctx context.Context, text string) (*audio.PCMStream, error) {
+	return audio.NewPCMStream(ctx), nil
+}
+func (h *hungReadyTTS) Available() bool                       { return true }
+func (h *hungReadyTTS) ListVoices(string, string) []tts.Voice { return nil }
+
+// sinkEngine is Engine + SinkReporter for watchdog / TTFA tests.
+type sinkEngine struct {
+	kind     string
+	accepted int
+	inner    *fakePlayer
+}
+
+func (s *sinkEngine) SinkKind() string   { return s.kind }
+func (s *sinkEngine) AcceptedCount() int { return s.accepted }
+
+func (s *sinkEngine) IsPlaying() bool {
+	return s.inner != nil && s.inner.IsPlaying()
+}
+
+func (s *sinkEngine) Close() error {
+	if s.inner != nil {
+		return s.inner.Close()
+	}
+	return nil
+}
+
+func (s *sinkEngine) Stop() {
+	if s.inner != nil {
+		s.inner.Stop()
+	}
+}
+
+func (s *sinkEngine) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audio.Playback, error) {
+	if s.inner != nil {
+		return s.inner.PlayStream(ctx, stream)
+	}
+	_, err := stream.WaitReady(ctx)
+	if err != nil {
+		return nil, err
+	}
+	started := make(chan struct{})
+	done := make(chan audio.PlaybackResult, 1)
+	close(started)
+	done <- audio.PlaybackResult{}
+	close(done)
+	return audio.NewPlayback(started, done), nil
+}
+
+var (
+	_ audio.Engine       = (*sinkEngine)(nil)
+	_ audio.SinkReporter = (*sinkEngine)(nil)
+)
+
+func TestSilentReasoningHungWaitReadyStreamClientStalls(t *testing.T) {
+	bus := events.NewBus()
+	var metricsEvt events.TurnMetrics
+	events.Subscribe(bus, func(e events.TurnMetrics) { metricsEvt = e })
+	var stallErrs int
+	events.Subscribe(bus, func(e events.Error) {
+		if e.Stage == "playback" {
+			stallErrs++
+		}
+	})
+
+	p := &Pipeline{
+		STT:                  &fakeSTT{text: "hi"},
+		Brain:                &stallBrain{},
+		TTS:                  &hungReadyTTS{},
+		Player:               &sinkEngine{kind: audio.SinkStreamClient, accepted: 1},
+		Events:               bus,
+		PlaybackStallTimeout: 150 * time.Millisecond,
+	}
+
+	start := time.Now()
+	_, err := p.RunTurn(context.Background())
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("stall took %v, want within ~8s budget", elapsed)
+	}
+	if err != nil {
+		t.Fatalf("RunTurn err = %v, want nil after stall recover", err)
+	}
+	if stallErrs == 0 {
+		t.Fatal("want playback stall Error (errPlaybackStalled)")
+	}
+	if !metricsEvt.StallWatchdogFired {
+		t.Fatal("StallWatchdogFired = false, want true for stream_client hung WaitReady")
+	}
+}
+
+func TestSilentReasoningNoSinkHungWaitReadyDoesNotStall(t *testing.T) {
+	bus := events.NewBus()
+	var ready events.ResponseReady
+	events.Subscribe(bus, func(e events.ResponseReady) { ready = e })
+	var metricsEvt events.TurnMetrics
+	events.Subscribe(bus, func(e events.TurnMetrics) { metricsEvt = e })
+	var stallErrs int
+	events.Subscribe(bus, func(e events.Error) {
+		if e.Stage == "playback" {
+			stallErrs++
+		}
+	})
+
+	p := &Pipeline{
+		STT:                  &fakeSTT{text: "hi"},
+		Brain:                &stallBrain{},
+		TTS:                  &hungReadyTTS{},
+		Player:               &sinkEngine{kind: audio.SinkNone},
+		Events:               bus,
+		PlaybackStallTimeout: 150 * time.Millisecond,
+	}
+
+	start := time.Now()
+	_, err := p.RunTurn(context.Background())
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("no-sink hung WaitReady took %v, want within 2s", elapsed)
+	}
+	if err != nil {
+		t.Fatalf("RunTurn err = %v, want nil (no errPlaybackStalled)", err)
+	}
+	if errors.Is(err, errPlaybackStalled) {
+		t.Fatal("no-sink timeout returned errPlaybackStalled")
+	}
+	if stallErrs != 0 {
+		t.Fatalf("playback Error events = %d, want 0", stallErrs)
+	}
+	if !strings.Contains(ready.Response, "Hello there") {
+		t.Fatalf("ResponseReady = %q, want speakable greeting", ready.Response)
+	}
+	if metricsEvt.StallWatchdogFired {
+		t.Fatal("StallWatchdogFired on no-sink timeout")
+	}
+}
+
+func TestSilentReasoningNoSinkPCMArrivesNoStall(t *testing.T) {
+	bus := events.NewBus()
+	var metricsEvt events.TurnMetrics
+	events.Subscribe(bus, func(e events.TurnMetrics) { metricsEvt = e })
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:                  &fakeSTT{text: "hi"},
+		Brain:                &fakeBrain{chunks: []string{"Hello there."}},
+		TTS:                  &fakeTTS{},
+		Player:               &sinkEngine{kind: audio.SinkNone, inner: player},
+		Events:               bus,
+		PlaybackStallTimeout: time.Second,
+	}
+
+	if _, err := p.RunTurn(context.Background()); err != nil {
+		t.Fatalf("RunTurn err = %v", err)
+	}
+	if metricsEvt.StallWatchdogFired {
+		t.Fatal("stall with no sink and PCM")
+	}
+	if metricsEvt.TTFAElapsed != 0 {
+		t.Fatalf("TTFAElapsed = %v, want 0", metricsEvt.TTFAElapsed)
+	}
+	if metricsEvt.AudibleSink != audio.SinkNone {
+		t.Fatalf("AudibleSink = %q, want none", metricsEvt.AudibleSink)
+	}
+	if metricsEvt.PlaybackCompleteElapsed != 0 {
+		t.Fatalf("PlaybackCompleteElapsed = %v, want 0 for no sink", metricsEvt.PlaybackCompleteElapsed)
+	}
+	found := false
+	for _, msg := range infos {
+		if strings.Contains(msg, "synth drain (no sink)") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("infos = %v, want synth drain (no sink)", infos)
+	}
+}
+
+func TestSilentReasoningStreamClientAcceptedSetsTTFA(t *testing.T) {
+	bus := events.NewBus()
+	var metricsEvt events.TurnMetrics
+	events.Subscribe(bus, func(e events.TurnMetrics) { metricsEvt = e })
+	var started int
+	events.Subscribe(bus, func(events.SpeakingStarted) { started++ })
+
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hi"},
+		Brain:  &fakeBrain{chunks: []string{"Hello there."}},
+		TTS:    &fakeTTS{},
+		Player: &sinkEngine{kind: audio.SinkStreamClient, accepted: 2, inner: player},
+		Events: bus,
+	}
+
+	if _, err := p.RunTurn(context.Background()); err != nil {
+		t.Fatalf("RunTurn err = %v", err)
+	}
+	if started == 0 {
+		t.Fatal("Started() / SpeakingStarted not fired at pcmReady")
+	}
+	if metricsEvt.FirstAudioReadyElapsed <= 0 {
+		t.Fatal("FirstAudioReadyElapsed unset — Started() should fire at pcmReady, not at accept")
+	}
+	if metricsEvt.TTFAElapsed <= 0 {
+		t.Fatalf("TTFAElapsed = %v, want set when accepted-count > 0", metricsEvt.TTFAElapsed)
+	}
+	if metricsEvt.AudibleSink != audio.SinkStreamClient {
+		t.Fatalf("AudibleSink = %q, want stream_client", metricsEvt.AudibleSink)
+	}
+	if metricsEvt.PlaybackCompleteElapsed != 0 {
+		t.Fatalf("PlaybackCompleteElapsed = %v, want 0 for stream_client", metricsEvt.PlaybackCompleteElapsed)
+	}
+}
+
+func TestSilentReasoningStreamClientZeroAcceptLeavesTTFAUnset(t *testing.T) {
+	bus := events.NewBus()
+	var metricsEvt events.TurnMetrics
+	events.Subscribe(bus, func(e events.TurnMetrics) { metricsEvt = e })
+
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hi"},
+		Brain:  &fakeBrain{chunks: []string{"Hello there."}},
+		TTS:    &fakeTTS{},
+		Player: &sinkEngine{kind: audio.SinkStreamClient, accepted: 0, inner: player},
+		Events: bus,
+	}
+
+	if _, err := p.RunTurn(context.Background()); err != nil {
+		t.Fatalf("RunTurn err = %v", err)
+	}
+	if metricsEvt.FirstAudioReadyElapsed <= 0 {
+		t.Fatal("Started() should still fire at pcmReady when nothing accepts")
+	}
+	if metricsEvt.TTFAElapsed != 0 {
+		t.Fatalf("TTFAElapsed = %v, want 0 when accepted-count is 0", metricsEvt.TTFAElapsed)
 	}
 }

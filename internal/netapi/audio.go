@@ -40,7 +40,13 @@ type AudioFanout struct {
 	// segmentID is a monotonic counter so clients can group chunks that
 	// belong to one PlayStream call.
 	segmentID atomic.Uint64
+
+	// accepted is how many stream-client sends succeeded this PlayStream.
+	// Pipeline reads it for TTFAElapsed only; Started() stays pcmReady.
+	accepted atomic.Int32
 }
+
+var _ audio.SinkReporter = (*AudioFanout)(nil)
 
 // NewAudioFanout builds a fanout that does not own local (caller closes it).
 // local may be nil (host speaker muted).
@@ -58,6 +64,30 @@ func (a *AudioFanout) AttachHub(h *hub) {
 	a.hub = h
 }
 
+// SinkKind reports who can hear this fanout right now. Local speaker wins
+// when present; otherwise any opted-in stream client; otherwise none.
+func (a *AudioFanout) SinkKind() string {
+	if a == nil {
+		return audio.SinkNone
+	}
+	if a.local != nil {
+		return audio.SinkLocalSpeaker
+	}
+	if a.hub != nil && a.hub.hasStreamClients() {
+		return audio.SinkStreamClient
+	}
+	return audio.SinkNone
+}
+
+// AcceptedCount is the number of stream-client sends that succeeded for the
+// in-flight PlayStream. Zero means every chunk dropped or nobody opted in.
+func (a *AudioFanout) AcceptedCount() int {
+	if a == nil {
+		return 0
+	}
+	return int(a.accepted.Load())
+}
+
 // PlayStream drains the TTS stream, pushes wire chunks to stream clients, and
 // optionally forwards a teed copy to the local speaker. Matches the Engine
 // contract: returns only after the first frames are ready (or the stream fails).
@@ -65,6 +95,8 @@ func (a *AudioFanout) PlayStream(ctx context.Context, stream *audio.PCMStream) (
 	if stream == nil {
 		return nil, errors.New("nil pcm stream")
 	}
+
+	a.accepted.Store(0)
 
 	sampleRate, err := stream.WaitReady(ctx)
 	if err != nil {
@@ -238,7 +270,9 @@ func (a *AudioFanout) emitAudioChunks(segID uint64, sampleRate int, frames []flo
 		pcm := float32ToPCM16LE(frames[:n])
 		msg, err := marshalAudioChunk(segID, sampleRate, pcm)
 		if err == nil {
-			a.hub.broadcastAudio(msg)
+			if accepted := a.hub.broadcastAudio(msg); accepted > 0 {
+				a.accepted.Add(int32(accepted))
+			}
 		}
 		frames = frames[n:]
 	}

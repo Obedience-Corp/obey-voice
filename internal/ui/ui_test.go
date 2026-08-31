@@ -94,6 +94,30 @@ func TestResponseStreamingStartedIsFirstToken(t *testing.T) {
 	}
 }
 
+func TestClockLabelsNeverSayPlaybackForNoSink(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "Obey", &buf, true)
+
+	bus.Emit(events.ResponseStreamingStarted{Elapsed: time.Second})
+	bus.Emit(events.VoiceGenerated{Elapsed: 2 * time.Second})
+	bus.Emit(events.SpeakingComplete{Elapsed: 0, AudibleSink: "none"})
+
+	got := buf.String()
+	if strings.Contains(got, "playback") {
+		t.Fatalf("no-sink output contains playback: %q", got)
+	}
+	if !strings.Contains(got, "first token") {
+		t.Fatalf("missing first token label: %q", got)
+	}
+	if !strings.Contains(got, "synth first frame") {
+		t.Fatalf("missing synth first frame label: %q", got)
+	}
+	if !strings.Contains(got, "synth drain (no sink)") {
+		t.Fatalf("missing no-sink drain label: %q", got)
+	}
+}
+
 func TestIsConsole(t *testing.T) {
 	cases := []struct {
 		name string

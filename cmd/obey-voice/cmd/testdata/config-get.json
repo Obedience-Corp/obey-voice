@@ -131,7 +131,7 @@
       "source": "default"
     },
     "ollama_think": {
-      "value": "false",
+      "value": "auto",
       "source": "default"
     },
     "output_device": {

@@ -523,8 +523,9 @@
     {
       "key": "ollama_think",
       "type": "enum",
-      "default": "false",
+      "default": "auto",
       "enum": [
+        "auto",
         "false",
         "true",
         "low",
@@ -535,7 +536,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Reasoning",
-      "help": "Lets reasoning models think before answering. Costs latency, and some models then reply with nothing speakable.",
+      "help": "auto turns thinking on for qwen3-family models so chain-of-thought is not spoken. Explicit false is the leaky hatch.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

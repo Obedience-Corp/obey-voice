@@ -1327,6 +1327,61 @@ func bufferedPCM(t *testing.T, ctx context.Context, rate int, frames []float32) 
 	return stream
 }
 
+func TestAudioFanoutSinkKind(t *testing.T) {
+	none := NewAudioFanout(nil)
+	if got := none.SinkKind(); got != audio.SinkNone {
+		t.Fatalf("nil local: SinkKind = %q, want none", got)
+	}
+
+	local := NewAudioFanout(&drainEngine{})
+	if got := local.SinkKind(); got != audio.SinkLocalSpeaker {
+		t.Fatalf("local engine: SinkKind = %q, want local_speaker", got)
+	}
+
+	h := newHub()
+	conn := newTestConn(4, 4)
+	h.add(conn)
+	h.setConnAudio(conn, true)
+	stream := NewAudioFanout(nil)
+	stream.AttachHub(h)
+	if got := stream.SinkKind(); got != audio.SinkStreamClient {
+		t.Fatalf("stream client: SinkKind = %q, want stream_client", got)
+	}
+}
+
+func TestBroadcastAudioReturnsAcceptedCount(t *testing.T) {
+	h := newHub()
+	if n := h.broadcastAudio([]byte("chunk")); n != 0 {
+		t.Fatalf("no clients accepted = %d, want 0", n)
+	}
+	conn := newTestConn(4, 4)
+	h.add(conn)
+	h.setConnAudio(conn, true)
+	if n := h.broadcastAudio([]byte("chunk")); n != 1 {
+		t.Fatalf("accepted = %d, want 1", n)
+	}
+}
+
+func TestAudioFanoutStartedAtPCMReadyWhenNothingAccepts(t *testing.T) {
+	fanout := NewAudioFanout(nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stream := bufferedPCM(t, ctx, 24000, []float32{0.1, 0.2})
+	playback, err := fanout.PlayStream(ctx, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-playback.Started():
+	case <-ctx.Done():
+		t.Fatal("Started() did not fire at pcmReady with no sink")
+	}
+	if fanout.AcceptedCount() != 0 {
+		t.Fatalf("AcceptedCount = %d, want 0", fanout.AcceptedCount())
+	}
+	<-playback.Done()
+}
+
 func TestAudioFanoutStreamsWithoutLocalSpeaker(t *testing.T) {
 	h := newHub()
 	conn := newTestConn(16, 16)
