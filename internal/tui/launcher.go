@@ -214,7 +214,9 @@ func (m launcherModel) updateSubmenu(msg tea.KeyMsg) (launcherModel, tea.Cmd) {
 		m.closeSubmenu()
 		switch item.action {
 		case actionStartPersona:
-			return m, func() tea.Msg { return startPipelineMsg{personaID: item.personaID} }
+			return m, func() tea.Msg {
+				return startPipelineMsg{personaID: item.personaID, personaName: item.label}
+			}
 		case actionCreatePersona:
 			return m, func() tea.Msg { return switchScreenMsg(screenPersonas) }
 		case actionMeetingStart:

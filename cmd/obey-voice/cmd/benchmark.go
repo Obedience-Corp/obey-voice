@@ -336,7 +336,7 @@ func runTextBenchmarkLeg(ctx context.Context, cfg *config.Config, spec ttsSpec) 
 	cfg = &cfgCopy
 
 	bus := events.NewBus()
-	p, cleanup, err := buildPipeline(ctx, cfg, bus, true, noVoice, nil)
+	p, cleanup, err := buildPipeline(ctx, cfg, bus, true, noVoice, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("init benchmark pipeline: %w", err)
 	}
@@ -511,7 +511,7 @@ func runSingleFullTurnBenchmark(ctx context.Context, cfg *config.Config, provide
 
 	// text=true skips the live microphone; silent=noVoice keeps TTS and the
 	// player unless the caller asked for silence.
-	p, cleanup, err := buildPipeline(ctx, &cfgCopy, bus, true, noVoice, nil)
+	p, cleanup, err := buildPipeline(ctx, &cfgCopy, bus, true, noVoice, nil, nil)
 	if err != nil {
 		return result, fmt.Errorf("init full-turn pipeline: %w", err)
 	}

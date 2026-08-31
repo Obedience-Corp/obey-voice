@@ -160,6 +160,10 @@ type startPipelineMsg struct {
 	// personaID selects the session binding; empty = configured active persona.
 	// The persona picker (launcher "New conversation") sets this.
 	personaID string
+	// personaName labels the starting screen. The binding's real identity is
+	// not resolved until the build finishes, so the picker passes what the
+	// user just chose rather than the screen guessing from live config.
+	personaName string
 }
 
 // quitMsg signals the app should exit.
@@ -662,11 +666,13 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.screen = screenConversation
-		a.conversation.setStatus("Preparing...", false)
-		return a, tea.Batch(a.progress.wait(), buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID))
+		// The build takes seconds to minutes; the screen says so until it lands.
+		tick := a.conversation.beginStartup(msg.personaName)
+		return a, tea.Batch(tick, a.progress.wait(),
+			buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID))
 
-	case assetProgressMsg:
-		a.conversation.setStatus(formatAssetProgress(msg), false)
+	case buildStageMsg:
+		a.conversation.setBuildStage(msg.stage)
 		return a, a.progress.wait()
 
 	case progressClosedMsg:
@@ -693,6 +699,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.rt.SessionCfg != nil {
 			a.conversation.cfg = msg.rt.SessionCfg
 		}
+		a.conversation.finishStartup()
 		a.conversation.setStatus("", false)
 		a.conversation.seedTranscript(msg.rt.Seed)
 		cmd := a.conversation.startConversation(conversationDeps{
