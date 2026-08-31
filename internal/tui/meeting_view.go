@@ -154,6 +154,9 @@ func (m *meetingModel) refreshTranscript() {
 }
 
 func (m meetingModel) View() string {
+	if m.startup.active {
+		return m.startup.view(m.width, m.height, m.startupTitle(), m.reducedMotion)
+	}
 	if !m.ready {
 		return "\n  " + headerStyle.Render("Starting meeting recorder…") + "\n"
 	}

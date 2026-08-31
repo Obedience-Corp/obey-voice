@@ -232,9 +232,14 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Meeting owns Ctrl+C as "stop recording" (returns to launcher).
 		// Results and the route picker own it too: quitting the app from
 		// those screens silently discarded the planned route (WI-162bbb).
-		if msg.String() == "ctrl+c" &&
-			(a.screen == screenMeeting || a.screen == screenMeetingSetup ||
-				a.screen == screenMeetingResults || a.screen == screenMeetingRoute) {
+		//
+		// Not while the recorder is still being built: there is nothing to
+		// stop, and the waiting screen tells the user ctrl+c quits — which it
+		// must, or the only key it offers them does nothing.
+		meetingOwnsCancel := (a.screen == screenMeeting && !a.meeting.startup.active) ||
+			a.screen == screenMeetingSetup || a.screen == screenMeetingResults ||
+			a.screen == screenMeetingRoute
+		if msg.String() == "ctrl+c" && meetingOwnsCancel {
 			break // fall through to screen Update
 		}
 		if msg.String() == "ctrl+c" {
@@ -385,11 +390,15 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.meeting = newEmbeddedMeeting()
 		a.meeting.width, a.meeting.height = a.width, a.height
 		a.meeting.reflow()
-		a.meeting.status = "Preparing models…"
-		return a, buildMeeting(a.meetingBuilder, a.runCtx, msg.Description)
+		// Same wait, same screen as a conversation start: models load and the
+		// mic opens before anything can be recorded.
+		tick := a.meeting.beginStartup(msg.Description)
+		return a, tea.Batch(tick, a.progress.wait(),
+			buildMeeting(a.meetingBuilder, a.runCtx, a.progress, msg.Description))
 
 	case meetingReadyMsg:
 		if msg.err != nil {
+			a.meeting.finishStartup()
 			a.screen = screenMeetingSetup
 			a.meetingSetup = newMeetingSetup(a.cfg)
 			a.meetingSetup.width, a.meetingSetup.height = a.width, a.height
@@ -426,6 +435,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Child cancel stops the listen loop without ending the whole App.
 		mctx, mcancel := context.WithCancel(a.runCtx)
+		a.meeting.finishStartup()
 		cmd := a.meeting.beginRecording(MeetingOpts{
 			Ctx:           mctx,
 			Cancel:        mcancel,
@@ -672,7 +682,13 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID))
 
 	case buildStageMsg:
-		a.conversation.setBuildStage(msg.stage)
+		// Whichever screen is waiting owns the stage; only one build runs at a
+		// time, and the meeting screen is entered before its build starts.
+		if a.screen == screenMeeting {
+			a.meeting.setBuildStage(msg.stage)
+		} else {
+			a.conversation.setBuildStage(msg.stage)
+		}
 		return a, a.progress.wait()
 
 	case progressClosedMsg:

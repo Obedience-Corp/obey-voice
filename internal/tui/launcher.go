@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
@@ -317,18 +318,50 @@ func (m launcherModel) View() string {
 	return m.fullView(width)
 }
 
-func (m launcherModel) fullView(width int) string {
-	var b strings.Builder
-
-	// Brand plate
+// brandPlate is the front door: the presence mark beside the wordmark.
+//
+// The mark is static here. This screen is where the app sits idle, and a
+// permanently animating front door would hold a redraw loop open for as long
+// as the program is running — the rest of the TUI stops ticking when nothing
+// is happening, and the launcher should not be the exception. The spec agrees:
+// the static PresenceMark is the onboarding/About form of the orb.
+func (m launcherModel) brandPlate(width int) string {
 	wordmark := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("OBEY VOICE")
 	tag := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render("voice · speed · signal")
-	brand := lipgloss.NewStyle().
+	plate := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorAccent).
 		Padding(0, 2).
 		Render(lipgloss.JoinVertical(lipgloss.Left, wordmark, tag))
-	b.WriteString(brand)
+
+	rows := launcherMarkRows(width, m.height)
+	if rows == 0 {
+		return plate
+	}
+	mark := strings.Join(anim.Orb(0, rows, orbStyles(), true), "\n")
+	return lipgloss.JoinHorizontal(lipgloss.Center, mark, "  ", plate)
+}
+
+// launcherMarkRows sizes the mark, or drops it when the terminal cannot spare
+// the room the menu needs.
+func launcherMarkRows(width, height int) int {
+	// Seven rows is the floor: below that the four concentric arcs merge into
+	// a blob, and a blurred logo is worse than none. A tall terminal gets the
+	// crisper nine.
+	switch {
+	case height >= 30 && width >= 76:
+		return 9
+	case height >= 24 && width >= 66:
+		return 7
+	default:
+		return 0
+	}
+}
+
+func (m launcherModel) fullView(width int) string {
+	var b strings.Builder
+
+	b.WriteString(m.brandPlate(width))
 	b.WriteString("\n\n")
 
 	// Status chips

@@ -122,8 +122,10 @@ type MeetingRuntime struct {
 }
 
 // MeetingBuilder constructs meeting resources when the user starts recording
-// from the main launcher (assets + mic hot only after title confirm).
-type MeetingBuilder func(ctx context.Context, description string, progress func(name string, pct float64)) (*MeetingRuntime, error)
+// from the main launcher (assets + mic hot only after title confirm). Build
+// progress is reported through progress and rendered in-screen, the same way
+// the conversation reports its own.
+type MeetingBuilder func(ctx context.Context, description string, progress BuildProgress) (*MeetingRuntime, error)
 
 // meetingReadyMsg delivers a built meeting runtime (or error) into Update.
 type meetingReadyMsg struct {
@@ -131,18 +133,17 @@ type meetingReadyMsg struct {
 	err error
 }
 
-func buildMeeting(build MeetingBuilder, ctx context.Context, description string) tea.Cmd {
+func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, description string) tea.Cmd {
 	if build == nil {
 		return func() tea.Msg {
 			return meetingReadyMsg{err: fmt.Errorf("meeting builder not configured")}
 		}
 	}
 	return func() tea.Msg {
-		rt, err := build(ctx, description, func(name string, pct float64) {
-			// Progress is best-effort; the preparing screen shows a static label.
-			_ = name
-			_ = pct
+		rt, err := build(ctx, description, func(stage BuildStage) {
+			feed.send(buildStageMsg{stage: stage})
 		})
+		feed.send(progressClosedMsg{})
 		return meetingReadyMsg{rt: rt, err: err}
 	}
 }

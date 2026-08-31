@@ -183,10 +183,9 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 		return m, m.ensureVoiceTick()
 
 	case startupTickMsg:
-		if !m.startup.active {
+		if !m.startup.tick() {
 			return m, nil
 		}
-		m.startup.frame++
 		return m, startupTickCmd(m.reducedMotion)
 
 	case voiceTickMsg:

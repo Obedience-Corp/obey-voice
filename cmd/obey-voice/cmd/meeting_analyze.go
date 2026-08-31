@@ -71,7 +71,7 @@ Notes:
 			sp.Meeting.Enabled = true
 			sp = sp.Normalize()
 
-			if err := config.EnsureRuntimeAssets(cmd.Context(), &cfg, config.AssetRequest{NeedSpeaker: true}, meetingAssetProgress(jsonOut)); err != nil {
+			if err := config.EnsureRuntimeAssets(cmd.Context(), &cfg, config.AssetRequest{NeedSpeaker: true}, meetingAssetProgress(jsonOut).Downloading); err != nil {
 				return err
 			}
 			engine, err := speaker.NewSherpaEngine(sp, config.ModelsDirFrom(&cfg))

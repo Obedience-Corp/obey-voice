@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -279,7 +280,8 @@ func useMeetingRecordTUI(opts meetingOptions) bool {
 
 // meetingRuntimeBuilder powers the main launcher "Meeting" entry.
 func meetingRuntimeBuilder() appTUI.MeetingBuilder {
-	return func(ctx context.Context, description string, progress func(string, float64)) (*appTUI.MeetingRuntime, error) {
+	return func(ctx context.Context, description string, progress appTUI.BuildProgress) (*appTUI.MeetingRuntime, error) {
+		progress.Stage("Reading settings")
 		cfg, err := config.Load()
 		if err != nil {
 			return nil, err
@@ -315,6 +317,7 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 		if err != nil {
 			return nil, err
 		}
+		progress.Stage("Opening the meeting bundle")
 		writer, err := meetinglog.CreateBundle(bundlePath, description, sttLabel, "mac")
 		if err != nil {
 			cleanup()
@@ -376,12 +379,13 @@ func prepareMeetingLiveSpeaker(
 	ctx context.Context,
 	cfg *config.Config,
 	capture *audio.Capture,
-	progress func(string, float64),
+	progress appTUI.BuildProgress,
 ) (appTUI.LiveSpeakerController, func()) {
 	sp := speaker.FromAppConfig(cfg)
 	if !sp.MeetingLiveActive() || capture == nil {
 		return nil, nil
 	}
+	progress.Stage("Preparing speaker identification")
 	// Reuse chat's live builder so meeting labels share the embedding model
 	// and /speakers-class startup path (assets ensured on first enable).
 	controller, stop, _ := prepareLiveSpeaker(ctx, cfg, capture)
@@ -393,12 +397,13 @@ func prepareMeetingLiveSpeaker(
 	return controller, stop
 }
 
-func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *audio.Capture, writer *meetinglog.Writer, bundlePath string, progress func(string, float64)) (*meeting.SpeakerSession, error) {
+func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *audio.Capture, writer *meetinglog.Writer, bundlePath string, progress appTUI.BuildProgress) (*meeting.SpeakerSession, error) {
 	sp := speaker.FromAppConfig(cfg)
 	if !sp.MeetingActive() {
 		return nil, nil
 	}
-	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSpeaker: true}, progress); err != nil {
+	progress.Stage("Checking speaker models")
+	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSpeaker: true}, progress.Downloading); err != nil {
 		return nil, fmt.Errorf("prepare speaker models: %w", err)
 	}
 	engine, err := speaker.NewSherpaEngine(sp, config.ModelsDirFrom(cfg))
@@ -468,21 +473,28 @@ func (noopProvider) Start(ctx context.Context) (stt.Session, error) {
 	return nil, fmt.Errorf("demo noop provider")
 }
 
-func meetingAssetProgress(jsonOutput bool) func(string, float64) {
+func meetingAssetProgress(jsonOutput bool) appTUI.BuildProgress {
 	if jsonOutput {
 		// Machine-readable output must remain JSONL even on a first run that
 		// downloads model assets. modelProgress writes human text to stdout.
 		return nil
 	}
-	return modelProgress
+	return func(stage appTUI.BuildStage) {
+		if stage.Download {
+			modelProgress(strings.TrimPrefix(stage.Label, "Downloading "), stage.Pct)
+			return
+		}
+		printStage(stage.Label)
+	}
 }
 
 // buildSTTOnly constructs asset preflight -> capture -> VAD -> STT provider,
 // with no Brain or TTS — the chain benchmark.go's runSingleSTTBenchmark
 // proves. VAD is required: every shipped STT backend rejects a nil VAD.
 // root.go's buildPipeline should eventually share this helper.
-func buildSTTOnly(ctx context.Context, cfg *config.Config, progress func(string, float64)) (capture *audio.Capture, provider stt.Provider, sttLabel string, cleanup func(), err error) {
-	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSTT: true, NeedVAD: true}, progress); err != nil {
+func buildSTTOnly(ctx context.Context, cfg *config.Config, progress appTUI.BuildProgress) (capture *audio.Capture, provider stt.Provider, sttLabel string, cleanup func(), err error) {
+	progress.Stage("Checking models")
+	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSTT: true, NeedVAD: true}, progress.Downloading); err != nil {
 		return nil, nil, "", nil, err
 	}
 
