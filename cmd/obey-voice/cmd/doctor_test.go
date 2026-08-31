@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -210,18 +209,12 @@ func TestDoctorBargeInSpeakersGate(t *testing.T) {
 	})
 
 	t.Run("enrolled_only with live on and someone enrolled is silent", func(t *testing.T) {
-		dir := t.TempDir()
-		store, err := speaker.OpenEnrollment(dir)
-		if err != nil {
-			t.Fatalf("OpenEnrollment: %v", err)
-		}
-		if _, err := store.Add(context.Background(), "lance", "titanet", [][]float32{{1, 2, 3}}); err != nil {
-			t.Fatalf("Add profile: %v", err)
-		}
+		orig := hasEnrolledSpeaker
+		hasEnrolledSpeaker = func(string) bool { return true }
+		t.Cleanup(func() { hasEnrolledSpeaker = orig })
 		cfg := healthyBrain(&config.Config{STTProvider: "sherpa", WhisperModel: "base.en", TTSProvider: "kokoro", BargeInSpeakers: config.BargeInSpeakersEnrolledOnly})
 		cfg.Speaker.Enabled = true
 		cfg.Speaker.Live.Enabled = true
-		cfg.Speaker.EnrollmentDir = dir
 		out, _ := runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
 		if contains(out, "barge-in-speakers-gate") {
 			t.Errorf("no gate warning expected once a speaker is enrolled:\n%s", out)

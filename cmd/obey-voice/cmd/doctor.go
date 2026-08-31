@@ -185,8 +185,7 @@ func bargeInSpeakersDiags(cfg *config.Config) []config.Diagnostic {
 			Remediation: "enable speaker.enabled and speaker.live.enabled",
 		}}
 	}
-	store, err := speaker.LoadEnrollment(bargeInSpeakersEnrollmentDir(cfg))
-	if err != nil || store == nil || len(store.List()) == 0 {
+	if !hasEnrolledSpeaker(bargeInSpeakersEnrollmentDir(cfg)) {
 		return []config.Diagnostic{{
 			Name:        "barge-in-speakers-gate",
 			Severity:    config.SeverityWarn,
@@ -195,6 +194,14 @@ func bargeInSpeakersDiags(cfg *config.Config) []config.Diagnostic {
 		}}
 	}
 	return nil
+}
+
+// hasEnrolledSpeaker is a seam so unit tests can exercise the enrolled-store
+// doctor path without writing a real enrollment store on the host (repo test
+// policy: filesystem-mutating coverage belongs to the containerized harness).
+var hasEnrolledSpeaker = func(dir string) bool {
+	store, err := speaker.LoadEnrollment(dir)
+	return err == nil && store != nil && len(store.List()) > 0
 }
 
 // bargeInSpeakersEnrollmentDir duplicates speaker_cmd.go's speakerEnrollmentDir
