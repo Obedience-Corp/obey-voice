@@ -96,8 +96,6 @@ func encodeEvent(e events.Event) map[string]any {
 		env["text"] = e.Text
 	case events.ThinkingDelta:
 		env["text"] = e.Text
-	case events.ResponseSpeakableStarted:
-		env["elapsed_ms"] = ms(e.Elapsed)
 	case events.SpeechSegmentReady:
 		env["text"] = e.Text
 		if e.Elapsed > 0 {

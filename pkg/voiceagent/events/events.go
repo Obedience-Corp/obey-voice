@@ -309,15 +309,6 @@ type ThinkingDelta struct {
 
 func (e ThinkingDelta) eventType() string { return "thinking_delta" }
 
-// ResponseSpeakableStarted is the first non-whitespace Chunks byte. Distinct
-// from ResponseStreamingStarted, which fires on the first byte of either
-// channel (including thinking).
-type ResponseSpeakableStarted struct {
-	Elapsed time.Duration
-}
-
-func (e ResponseSpeakableStarted) eventType() string { return "response_speakable_started" }
-
 // SpeechSegmentReady signals a sentence is ready for voice synthesis.
 type SpeechSegmentReady struct {
 	Text string
