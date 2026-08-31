@@ -80,9 +80,8 @@ func TestRenderAgentTurnStylesThinkBlocks(t *testing.T) {
 	}
 }
 
-// renderAgentTurn runs on every streaming frame, so it sees the moment a model
-// has opened a reasoning block and produced nothing yet. That frame must paint
-// the dim state, never the raw tags.
+// Replay/ResponseReady defense: a stored think-only block must paint the dim
+// state, never the raw tags. Live frames use renderAgentBubble, not this path.
 func TestRenderAgentTurnEmptyThinkBlockShowsStateNotTags(t *testing.T) {
 	for _, in := range []string{"<think>", "<think></think>", "<think>\n</think>", "<think> </think>"} {
 		view := renderAgentTurn("Santa", in)
@@ -95,9 +94,8 @@ func TestRenderAgentTurnEmptyThinkBlockShowsStateNotTags(t *testing.T) {
 	}
 }
 
-// A streaming frame can land in the middle of a tag. Painting the bytes so far
-// puts "<thi" in the reply style and "</thin" in the dim body — the same class
-// of leak as a whole tag, one frame smaller.
+// SplitThink on replayed session text can still see a partial tag. Painting
+// those bytes would leak markup; hold them. Live frames no longer call this.
 func TestRenderAgentTurnHoldsPartialTagFrames(t *testing.T) {
 	for _, in := range []string{"<t", "<thi", "<think", "<think>reasoning</thin", "<think>reasoning</think>Hi <t"} {
 		view := renderAgentTurn("Santa", in)
@@ -161,6 +159,7 @@ func TestConversationClearsStaleStreamOnNewTurn(t *testing.T) {
 
 	// A turn streams a delta but never finalizes (e.g. interrupted).
 	m.handleEvent(events.ThinkingStarted{})
+	m.handleEvent(events.ThinkingDelta{Text: "orphaned think"})
 	m.handleEvent(events.ResponseDelta{Text: "orphaned partial"})
 
 	// The next turn begins; the stale buffer must be discarded.
@@ -168,8 +167,111 @@ func TestConversationClearsStaleStreamOnNewTurn(t *testing.T) {
 	if m.streamingAgent != "" {
 		t.Fatalf("streamingAgent = %q at new turn, want empty", m.streamingAgent)
 	}
-	if strings.Contains(m.View(), "orphaned partial") {
-		t.Fatalf("stale streamed text leaked into next turn:\n%s", m.View())
+	if m.streamingThink != "" {
+		t.Fatalf("streamingThink = %q at new turn, want empty", m.streamingThink)
+	}
+	view := m.View()
+	if strings.Contains(view, "orphaned partial") {
+		t.Fatalf("stale streamed text leaked into next turn:\n%s", view)
+	}
+	if strings.Contains(view, "orphaned think") {
+		t.Fatalf("stale thinking leaked into next turn:\n%s", view)
+	}
+}
+
+func TestConversationPaintsThinkingDeltaDim(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.ready = true
+
+	m.handleEvent(events.ThinkingStarted{})
+	m.handleEvent(events.ThinkingDelta{Text: "The user said hi."})
+
+	if m.streamingThink != "The user said hi." {
+		t.Fatalf("streamingThink = %q, want the delta", m.streamingThink)
+	}
+	if m.streamingAgent != "" {
+		t.Fatalf("streamingAgent = %q, want empty — thinking is not speakable", m.streamingAgent)
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "thinking") {
+		t.Fatalf("live view missing thinking label:\n%s", view)
+	}
+	if !strings.Contains(view, "The user said hi.") {
+		t.Fatalf("live view missing think body:\n%s", view)
+	}
+
+	found := false
+	for _, a := range m.activity {
+		if a.stage == "model" && a.detail == "thinking" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("first ThinkingDelta must append model/thinking activity, got %+v", m.activity)
+	}
+
+	m.handleEvent(events.ThinkingDelta{Text: " More plan."})
+	count := 0
+	for _, a := range m.activity {
+		if a.stage == "model" && a.detail == "thinking" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("thinking activity fired %d times, want 1", count)
+	}
+	if m.streamingThink != "The user said hi. More plan." {
+		t.Fatalf("streamingThink = %q after second delta", m.streamingThink)
+	}
+}
+
+func TestConversationResponseReadyIsSpeakableOnly(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.ready = true
+
+	m.handleEvent(events.ThinkingStarted{})
+	m.handleEvent(events.ThinkingDelta{Text: "The user said hi."})
+	m.handleEvent(events.ResponseDelta{Text: "Hello there!"})
+	if m.streamingAgent != "Hello there!" {
+		t.Fatalf("streamingAgent = %q, want speakable only", m.streamingAgent)
+	}
+
+	m.handleEvent(events.ResponseReady{Response: "Hello there!"})
+	if m.streamingThink != "" || m.streamingAgent != "" {
+		t.Fatalf("live buffers after ResponseReady: think=%q agent=%q", m.streamingThink, m.streamingAgent)
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Hello there!") {
+		t.Fatalf("spoken reply missing from view:\n%s", view)
+	}
+	if strings.Contains(view, "The user said hi.") {
+		t.Fatalf("thinking leaked into transcript:\n%s", view)
+	}
+}
+
+func TestThinkingOnlyEmptyResponseReadySkipsNoReplyPlaceholder(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.ready = true
+
+	m.handleEvent(events.ThinkingStarted{})
+	m.handleEvent(events.ThinkingDelta{Text: "plan the greeting"})
+	m.handleEvent(events.ResponseReady{Response: ""})
+
+	view := stripANSI(m.View())
+	if strings.Contains(view, "no reply") {
+		t.Fatalf("thinking-only empty must not paint no-reply placeholder:\n%s", view)
+	}
+	if strings.Contains(view, "plan the greeting") {
+		t.Fatalf("thinking must not be copied into the transcript:\n%s", view)
+	}
+	found := false
+	for _, a := range m.activity {
+		if a.stage == "model" && strings.Contains(a.detail, "thought") && strings.Contains(a.detail, "chars") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want thought N chars activity, got %+v", m.activity)
 	}
 }
 
@@ -736,5 +838,22 @@ func TestOrphanedStreamFoldsIntoTranscriptOnTurnEnd(t *testing.T) {
 	view := stripANSI(m.View())
 	if got := strings.Count(view, "interesting scenery"); got != 1 {
 		t.Fatalf("View shows partial %d times, want 1 (no live-buffer duplicate):\n%s", got, view)
+	}
+}
+
+func TestOrphanedThinkDoesNotFoldIntoTranscript(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.ready = true
+
+	m.handleEvent(events.ThinkingStarted{})
+	m.handleEvent(events.ThinkingDelta{Text: "secret plan"})
+	m.handleEvent(events.TurnMetrics{Outcome: "interrupted"})
+
+	if m.streamingThink != "" {
+		t.Fatalf("streamingThink = %q after terminal metrics, want empty", m.streamingThink)
+	}
+	view := stripANSI(m.View())
+	if strings.Contains(view, "secret plan") {
+		t.Fatalf("thinking must not fold into transcript:\n%s", view)
 	}
 }

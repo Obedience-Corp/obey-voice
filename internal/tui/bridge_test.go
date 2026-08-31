@@ -166,6 +166,45 @@ func TestFitBridgeQueueDropsNonDurableFirst(t *testing.T) {
 	}
 }
 
+func TestBridgeForwardsThinkingDelta(t *testing.T) {
+	bus := events.NewBus()
+	bridge := newEventBridge(8)
+	bridge.attach(bus)
+
+	bus.Emit(events.ThinkingDelta{Text: "plan"})
+	select {
+	case msg := <-bridge.ch:
+		e, ok := msg.(busEventMsg).event.(events.ThinkingDelta)
+		if !ok {
+			t.Fatalf("got %T, want ThinkingDelta", msg.(busEventMsg).event)
+		}
+		if e.Text != "plan" {
+			t.Fatalf("ThinkingDelta.Text = %q, want plan", e.Text)
+		}
+	default:
+		t.Fatal("ThinkingDelta was not forwarded")
+	}
+}
+
+func TestFitBridgeQueueDropsThinkingDelta(t *testing.T) {
+	q := []tea.Msg{
+		busEventMsg{event: events.UserInput{Text: "keep-me"}},
+		busEventMsg{event: events.ThinkingDelta{Text: "noise"}},
+		busEventMsg{event: events.ResponseDelta{Text: "noise-2"}},
+		busEventMsg{event: events.ResponseReady{Response: "keep-reply"}},
+	}
+	got := fitBridgeQueue(q, 2)
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2: %v", len(got), got)
+	}
+	if _, ok := got[0].(busEventMsg).event.(events.UserInput); !ok {
+		t.Fatalf("first kept = %T, want UserInput", got[0].(busEventMsg).event)
+	}
+	if _, ok := got[1].(busEventMsg).event.(events.ResponseReady); !ok {
+		t.Fatalf("second kept = %T, want ResponseReady", got[1].(busEventMsg).event)
+	}
+}
+
 // waitForEvent must re-arm after every delivered message: consuming N events
 // through the model must return a non-nil Cmd each time.
 func TestBridgeRearmsThroughModel(t *testing.T) {

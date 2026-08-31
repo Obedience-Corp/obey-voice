@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
@@ -75,6 +76,21 @@ func TestUIFramingPerSink(t *testing.T) {
 				t.Fatalf("output = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResponseStreamingStartedIsFirstToken(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "Samantha", &buf, true)
+
+	bus.Emit(events.ResponseStreamingStarted{Elapsed: 1500 * time.Millisecond})
+	got := buf.String()
+	if !strings.Contains(got, "first token") {
+		t.Fatalf("output = %q, want first token label", got)
+	}
+	if strings.Contains(got, "first response chunk") {
+		t.Fatalf("output still uses the old first-response-chunk label: %q", got)
 	}
 }
 
