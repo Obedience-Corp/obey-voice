@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	ansi "github.com/charmbracelet/x/ansi"
 
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -309,5 +311,26 @@ func TestMeetingSlotReleasesTheRuntimeItReplaces(t *testing.T) {
 	}
 	if second != 0 {
 		t.Fatal("the current recorder was cleaned on store")
+	}
+}
+
+// A recorder released through the slot never reached meetingRT, so nothing
+// else closes its bundle. Cleanup stops the mic; only Close writes the
+// trailer, and an opened-but-never-finished meeting is the one part of a
+// quit-during-build that outlives the process.
+func TestMeetingSlotClosesAnAbandonedBundle(t *testing.T) {
+	w := recordedBundleWriter(t)
+	t.Cleanup(func() { _, _ = w.Close() })
+
+	slot := newMeetingSlot()
+	slot.store(&MeetingRuntime{Writer: w})
+	slot.cleanup()
+
+	events, err := os.ReadFile(w.JSONLPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(events), meetinglog.TypeSessionEnd) {
+		t.Fatalf("bundle left unfinished after the slot released it:\n%s", events)
 	}
 }

@@ -185,11 +185,23 @@ func newConversationSlot() *runtimeSlot[*ConversationRuntime] {
 	}}
 }
 
-// newMeetingSlot owns a MeetingRuntime's teardown. MeetingRuntime.Cleanup is
-// idempotent by contract, so a recorder stopped through its own lifecycle is
-// safe to release again here.
+// newMeetingSlot owns a MeetingRuntime's teardown.
+//
+// The bundle is closed as well as the devices: a recorder released through the
+// slot never reached meetingRT, so nothing else will write its trailer —
+// Cleanup tears down the mic and the analyzer, but only Close finishes the
+// document. Without this a quit during the build leaves an opened, never
+// finished meeting on disk, which is the one piece of it that outlives the
+// process.
+//
+// Both are idempotent (Writer.Close returns its summary once closed, Cleanup
+// is sync.Once-guarded), so a recorder that did record — already finalized by
+// stopMeetingRuntime — is unaffected by this backstop.
 func newMeetingSlot() *runtimeSlot[*MeetingRuntime] {
 	return &runtimeSlot[*MeetingRuntime]{release: func(rt *MeetingRuntime) {
+		if rt.Writer != nil {
+			_, _ = rt.Writer.Close()
+		}
 		if rt.Cleanup != nil {
 			rt.Cleanup()
 		}
