@@ -320,9 +320,14 @@ func (steadyNoiseFrames) Close() error { return nil }
 func TestOfflineLoopStationaryNoiseDoesNotHoldTheTurn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	// Floor is learned from Silero-false frames. Latch after one history
+	// window so the gate has a floor; a boot-time held vowel has no floor
+	// and must not be dropped.
+	seq := make([]bool, gateHist+1)
+	seq[gateHist] = true
 	deps := offlineLoopDeps{
 		frames:     steadyNoiseFrames{},
-		seg:        &fakeSegmenter{speech: true},
+		seg:        &fakeSegmenter{speechSeq: seq},
 		policy:     endpoint.Policy{StartTimeout: 200 * time.Millisecond, MinSpeech: 50 * time.Millisecond},
 		transcribe: func([]float32) (string, error) { t.Fatal("noise must not be transcribed"); return "", nil },
 	}

@@ -27,6 +27,9 @@ func modulatedFrame(n int, t0 int, lo, hi float64) []float32 {
 func TestNoiseGateRejectsStationaryNoiseEvenIfSileroTrue(t *testing.T) {
 	var g noiseGate
 	fan := constFrame(1600, 0.05)
+	for i := 0; i < gateHist; i++ {
+		g.decide(fan, false)
+	}
 	var sawDrop bool
 	for i := 0; i < gateHist+2; i++ {
 		d := g.decide(fan, true)
@@ -75,6 +78,20 @@ func TestNoiseGateDoesNotDropFirstUtteranceWithoutAFloor(t *testing.T) {
 		}
 		if !d.voice {
 			t.Fatalf("frame %d: first utterance must count as voice", i)
+		}
+	}
+}
+
+func TestNoiseGateDoesNotDropConstantAmplitudeFirstUtterance(t *testing.T) {
+	var g noiseGate
+	vowel := constFrame(1600, 0.08)
+	for i := 0; i < gateHist+2; i++ {
+		d := g.decide(vowel, true)
+		if d.drop {
+			t.Fatalf("frame %d: constant-amplitude first utterance must not be dropped", i)
+		}
+		if !d.voice {
+			t.Fatalf("frame %d: constant-amplitude first utterance must count as voice", i)
 		}
 	}
 }

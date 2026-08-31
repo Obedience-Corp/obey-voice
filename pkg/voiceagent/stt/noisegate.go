@@ -45,17 +45,11 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 	if g.floor > 0 && rms >= g.floor*gateSNR {
 		return gateDecision{voice: true}
 	}
-	// Only drop a Silero latch that is sitting on the noise floor. A flat
-	// hold at speaking level is a vowel, not a fan — treating it as noise
-	// cut people off mid-sentence and ate the first utterance (floor was
-	// still 0, so any stationary window dropped).
-	if g.stationary() {
-		if g.floor == 0 {
-			g.learn(rms, true)
-		}
-		if g.floor > 0 && rms < g.floor*gateSNR {
-			return gateDecision{drop: true}
-		}
+	// Floor is learned only from Silero-false frames. A first held vowel is
+	// stationary with floor==0; treating that window as noise ate the
+	// utterance. Drop only a latch sitting on an already-learned floor.
+	if g.stationary() && g.floor > 0 && rms < g.floor*gateSNR {
+		return gateDecision{drop: true}
 	}
 	return gateDecision{voice: true}
 }
