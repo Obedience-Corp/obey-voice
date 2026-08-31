@@ -132,7 +132,7 @@ when you select it.
 | `transcribecpp_binary` | `transcribe-cli` | `TRANSCRIBECPP_BINARY` | transcribe.cpp CLI executable. A path is used as given; a bare name is looked up on `PATH`, then in the copy `models ensure` manages |
 | `transcribecpp_model` | `parakeet-tdt-0.6b-v2` | `TRANSCRIBECPP_MODEL` | GGUF the `transcribecpp` provider loads. This is upstream's full model slug, so it is spelled longer than `parakeet_model`'s `tdt-0.6b-v2` — not a typo |
 | `vad_enabled` | `true` | | Enable voice activity detection |
-| `vad_silence_duration` | `0.5` | | Seconds of silence before ending speech (raise to stop being cut off) |
+| `vad_silence_duration` | `1.2` | | Seconds of silence before ending speech (raise to stop being cut off) |
 | `vad_threshold` | `0.6` | `VAD_THRESHOLD` | Speech-detection confidence (raise to ignore background noise) |
 | `vad_min_speech_duration` | `0.25` | `VAD_MIN_SPEECH_DURATION` | Minimum speech length in seconds (raise to ignore brief noises) |
 | `voice_frontend_enabled` | `false` | `VOICE_FRONTEND_ENABLED` | Local AEC/NS/AGC on mic input (off by default: the noise suppressor currently over-suppresses normal-volume speech; enable only with barge-in) |

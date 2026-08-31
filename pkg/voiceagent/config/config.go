@@ -378,7 +378,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("transcribecpp_model", DefaultTranscribeCPPModel)
 
 	v.SetDefault("vad_enabled", true)
-	v.SetDefault("vad_silence_duration", 0.5)
+	v.SetDefault("vad_silence_duration", 1.2)
 	// Machine grounding (user, cwd, host, OS) reaches every provider by default.
 	v.SetDefault("environment_context_enabled", true)
 	v.SetDefault("vad_threshold", 0.6)

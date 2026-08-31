@@ -80,7 +80,7 @@ func voiceKeys() []KeySpec {
 			Help: "Ends your turn when you stop talking. Off means every turn waits for the listen timeout.",
 		},
 		{
-			Key: "vad_silence_duration", Type: TypeFloat, Default: 0.5, Unit: "seconds", Min: num(0.1), Max: num(3.0),
+			Key: "vad_silence_duration", Type: TypeFloat, Default: 1.2, Unit: "seconds", Min: num(0.1), Max: num(3.0),
 			Group: GroupVoice, Title: "End-of-turn silence",
 			Help: "Seconds of quiet that end your turn. Lower feels snappier; too low cuts you off mid-sentence.",
 		},

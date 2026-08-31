@@ -285,7 +285,7 @@
     {
       "key": "vad_silence_duration",
       "type": "float",
-      "default": 0.5,
+      "default": 1.2,
       "allows_empty": false,
       "group": "voice",
       "title": "End-of-turn silence",
@@ -536,7 +536,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Reasoning",
-      "help": "auto turns thinking on for qwen3-family models so chain-of-thought is not spoken. Explicit false is the leaky hatch.",
+      "help": "auto/false leave thinking off so greetings are not a minute of silent CoT. Set true or low/medium/high/max to enable it.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
