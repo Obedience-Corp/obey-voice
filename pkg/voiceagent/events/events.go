@@ -66,16 +66,38 @@ type TurnMetrics struct {
 	Outcome string
 	// Degraded marks a completed turn whose reply is a recovery line after a
 	// hard brain/tool failure rather than a normal model response.
-	Degraded                bool
-	Interrupted             bool
-	STTFinalElapsed         time.Duration
-	FirstModelChunkElapsed  time.Duration
-	ModelCompleteElapsed    time.Duration
-	FirstSegmentElapsed     time.Duration
-	FirstAudioReadyElapsed  time.Duration
-	PlaybackStartElapsed    time.Duration
+	Degraded               bool
+	Interrupted            bool
+	STTFinalElapsed        time.Duration
+	FirstModelChunkElapsed time.Duration
+	ModelCompleteElapsed   time.Duration
+	FirstSegmentElapsed    time.Duration
+	FirstAudioReadyElapsed time.Duration
+	PlaybackStartElapsed   time.Duration
+	// PlaybackCompleteElapsed is local-speaker Done from T_eou. Zero when
+	// AudibleSink is stream_client or none — fanout drain is not playback.
+	// Do not subtract PlaybackStartElapsed (start-relative) from this field.
 	PlaybackCompleteElapsed time.Duration
 	BargeInElapsed          time.Duration
+	// FirstTokenElapsed is T_eou to the first byte on Chunks or Thinking.
+	FirstTokenElapsed time.Duration
+	// FirstThinkElapsed is T_eou to the first ThinkingDelta. Zero if none.
+	FirstThinkElapsed time.Duration
+	// FirstSpeakableElapsed is T_eou to the first non-whitespace Chunks byte.
+	// Not SpeakTTFTMS — that is FirstAdmitElapsed.
+	FirstSpeakableElapsed time.Duration
+	// FirstAdmitElapsed is T_eou to the first speakable segment admitted to
+	// synth. Aligns with SpeakTTFTMS.
+	FirstAdmitElapsed time.Duration
+	// SynthFirstFrameElapsed is T_eou to the first PCM the synthesizer produced.
+	SynthFirstFrameElapsed time.Duration
+	// TTFAElapsed is T_eou to the first sample an audible sink accepted.
+	// Zero when AudibleSink is none, or a stream client dropped every chunk.
+	TTFAElapsed time.Duration
+	// AudibleSink is local_speaker, stream_client, or none.
+	AudibleSink string
+	// ThinkLeak counts think tags that reached filterThink after the brain split.
+	ThinkLeak int
 	// ToolLeakLines counts lines the voice gate stripped from speech this
 	// turn — tool-shaped text the model narrated into its reply (WI-dc9e33
 	// B4). The chat transcript keeps the raw text; only TTS is filtered.
@@ -205,6 +227,25 @@ func (s SegmentMetric) QueueElapsed() time.Duration {
 	return s.SynthElapsed - s.EngineElapsed
 }
 
+// SpeakingWindow is local-speaker play plus inter-segment dead air — the
+// denominator for dead-air share. Zero for stream_client and none: fanout
+// PlayElapsed is queue-drain, not acoustic play. Empty AudibleSink is treated
+// as local so unit fixtures that omit the field still exercise the math.
+func (e TurnMetrics) SpeakingWindow() time.Duration {
+	switch e.AudibleSink {
+	case "stream_client", "none":
+		return 0
+	}
+	var play time.Duration
+	for _, seg := range e.Segments {
+		play += seg.PlayElapsed
+	}
+	if play > 0 {
+		return play + e.DeadAirElapsed
+	}
+	return 0
+}
+
 // TokenUsage reports one model request's prompt/generation token counts.
 // With a warm prefix cache, Prefill should track the size of the new turn —
 // a prefill near the whole transcript means the cache was invalidated.
@@ -235,12 +276,20 @@ type ConversationCompacted struct {
 
 func (e ConversationCompacted) eventType() string { return "conversation_compacted" }
 
-// ResponseStreamingStarted signals the first token on either channel.
+// ResponseStreamingStarted signals the first token on either brain channel.
 type ResponseStreamingStarted struct {
 	Elapsed time.Duration
 }
 
 func (e ResponseStreamingStarted) eventType() string { return "response_streaming_started" }
+
+// ResponseSpeakableStarted is T_eou to the first non-whitespace Chunks byte.
+// Emitted only when that instant differs from the first token.
+type ResponseSpeakableStarted struct {
+	Elapsed time.Duration
+}
+
+func (e ResponseSpeakableStarted) eventType() string { return "response_speakable_started" }
 
 // ResponseDelta carries one incremental piece of assistant text as it streams
 // from the brain, for token-by-token display in the TUI. Deltas are advisory
@@ -260,18 +309,12 @@ type ThinkingDelta struct {
 
 func (e ThinkingDelta) eventType() string { return "thinking_delta" }
 
-// ResponseSpeakableStarted is the first non-whitespace Chunks byte. Distinct
-// from ResponseStreamingStarted, which fires on the first byte of either
-// channel (including thinking).
-type ResponseSpeakableStarted struct {
-	Elapsed time.Duration
-}
-
-func (e ResponseSpeakableStarted) eventType() string { return "response_speakable_started" }
-
 // SpeechSegmentReady signals a sentence is ready for voice synthesis.
 type SpeechSegmentReady struct {
 	Text string
+	// Elapsed is FirstAdmitElapsed on the opening segment when it differs
+	// from first speakable; zero otherwise.
+	Elapsed time.Duration
 }
 
 func (e SpeechSegmentReady) eventType() string { return "speech_segment_ready" }
@@ -298,7 +341,10 @@ func (e VoiceGenerated) eventType() string { return "voice_generated" }
 
 // SpeakingStarted signals audio playback has begun.
 type SpeakingStarted struct {
-	Text string
+	Text        string
+	AudibleSink string
+	// Elapsed is TTFA from T_eou when an audible sink accepted; zero otherwise.
+	Elapsed time.Duration
 }
 
 func (e SpeakingStarted) eventType() string { return "speaking_started" }
@@ -307,6 +353,7 @@ func (e SpeakingStarted) eventType() string { return "speaking_started" }
 type SpeakingComplete struct {
 	Elapsed     time.Duration
 	Interrupted bool
+	AudibleSink string
 }
 
 func (e SpeakingComplete) eventType() string { return "speaking_complete" }

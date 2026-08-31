@@ -555,7 +555,23 @@ in `GET /v1/status`:
 |--------|--------|---------|
 | `response_delta` | `text` (string) | One incremental piece of the assistant's reply as the brain produces it. Advisory and droppable: `response_ready` always follows with the complete, canonical text, and concatenating the deltas of an ordinary turn reproduces it. (Not on a *degraded* turn — a recovery reply after a hard brain or tool failure is appended to `response_ready` without ever being streamed. Render `response_ready`, and use the deltas only to fill in ahead of it.) Speakable content only — no think tags. |
 | `thinking_delta` | `text` (string) | One incremental piece of operator-facing reasoning. Advisory and droppable like `response_delta`. Never spoken; Stage ignores it. |
+| `response_speakable_started` | `elapsed_ms` | T_eou to the first non-whitespace speakable token. Emitted only when that instant differs from `first token`. |
 | `audio_level` | `source` (`input` \| `output`), `level` (number, `0`–`1`) | Throttled (~50 ms) energy sample. `level` is the normalised RMS the engine already computes for its own meters — not raw dBFS. Droppable by design: a client must not infer anything from a gap. **`source` is `input` in practice**: serve has no host mic loop and no output meter, so an output level is not currently emitted. A client that needs an output meter measures its own playback. |
+
+`turn_metrics` additive keys (zero durations encode as `0`; `audible_sink` is the string `"none"` when there is no listener, never omitted):
+
+| Key | Meaning |
+|-----|---------|
+| `first_token_ms` | T_eou to first byte on Chunks or Thinking |
+| `first_think_ms` | T_eou to first thinking delta (0 if none) |
+| `first_speakable_ms` | T_eou to first non-whitespace Chunks byte (not SpeakTTFT) |
+| `first_admit_ms` | T_eou to first speakable segment admitted to synth (SpeakTTFT) |
+| `synth_first_frame_ms` | T_eou to first PCM |
+| `ttfa_ms` | T_eou to first sample an audible sink accepted (`0` when `audible_sink` is `none`) |
+| `audible_sink` | `local_speaker` \| `stream_client` \| `none` |
+| `think_leak` | count of think tags that hit the speech filter after the brain split; must be 0 |
+
+`playback_complete_ms` is local-speaker Done only. It is `0` for `stream_client` and `none` — fanout drain is not playback.
 
 A client that needs sub-100 ms meter response should measure locally;
 `audio_level` crosses the network and is throttled at the source.

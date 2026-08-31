@@ -330,6 +330,14 @@ type turnMetrics struct {
 	firstAudioReady  time.Time
 	playbackStart    time.Time
 	playbackComplete time.Time
+	firstToken       time.Time
+	firstThink       time.Time
+	firstSpeakable   time.Time
+	firstAdmit       time.Time
+	synthFirstFrame  time.Time
+	ttfa             time.Time
+	audibleSink      string
+	sinkAtArm        string
 	// bargeInMu guards bargeIn: the voice watcher stamps it from the turn
 	// goroutine, keystroke barge-in from the TUI goroutine.
 	bargeInMu   sync.Mutex
@@ -369,6 +377,14 @@ func newTurnMetrics() *turnMetrics {
 }
 
 func (m *turnMetrics) snapshot() events.TurnMetrics {
+	playbackComplete := time.Duration(0)
+	if m.audibleSink == audio.SinkLocalSpeaker {
+		playbackComplete = m.elapsedFromEOU(m.playbackComplete)
+	}
+	audible := m.audibleSink
+	if audible == "" {
+		audible = audio.SinkNone
+	}
 	return events.TurnMetrics{
 		Degraded:                m.degraded,
 		Interrupted:             m.interrupted,
@@ -378,8 +394,16 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		FirstSegmentElapsed:     m.elapsed(m.firstSegment),
 		FirstAudioReadyElapsed:  m.elapsed(m.firstAudioReady),
 		PlaybackStartElapsed:    m.elapsed(m.playbackStart),
-		PlaybackCompleteElapsed: m.elapsed(m.playbackComplete),
+		PlaybackCompleteElapsed: playbackComplete,
 		BargeInElapsed:          m.elapsed(m.bargeInAt()),
+		FirstTokenElapsed:       m.elapsedFromEOU(m.firstToken),
+		FirstThinkElapsed:       m.elapsedFromEOU(m.firstThink),
+		FirstSpeakableElapsed:   m.elapsedFromEOU(m.firstSpeakable),
+		FirstAdmitElapsed:       m.elapsedFromEOU(m.firstAdmit),
+		SynthFirstFrameElapsed:  m.elapsedFromEOU(m.synthFirstFrame),
+		TTFAElapsed:             m.elapsedFromEOU(m.ttfa),
+		AudibleSink:             audible,
+		ThinkLeak:               m.thinkLeak,
 		ToolLeakLines:           m.toolLeakLines,
 		TTSProvider:             m.ttsEngine.provider,
 		TTSTier:                 m.ttsEngine.tier,
@@ -462,6 +486,97 @@ func (m *turnMetrics) elapsed(ts time.Time) time.Duration {
 	return ts.Sub(m.start)
 }
 
+func (m *turnMetrics) tEOU() time.Time {
+	if m != nil && !m.sttFinal.IsZero() {
+		return m.sttFinal
+	}
+	if m == nil {
+		return time.Time{}
+	}
+	return m.start
+}
+
+func (m *turnMetrics) elapsedFromEOU(ts time.Time) time.Duration {
+	if ts.IsZero() {
+		return 0
+	}
+	origin := m.tEOU()
+	if ts.Before(origin) {
+		return 0
+	}
+	return ts.Sub(origin)
+}
+
+func (p *Pipeline) sinkKind() string {
+	if p == nil || p.Player == nil || p.OutputMuted() {
+		return audio.SinkNone
+	}
+	if r, ok := p.Player.(audio.SinkReporter); ok {
+		if kind := r.SinkKind(); kind != "" {
+			return kind
+		}
+		return audio.SinkNone
+	}
+	return audio.SinkLocalSpeaker
+}
+
+type streamAccepter interface {
+	AcceptedCount() int
+}
+
+func (p *Pipeline) acceptedCount() int {
+	if p == nil || p.Player == nil {
+		return 0
+	}
+	if a, ok := p.Player.(streamAccepter); ok {
+		return a.AcceptedCount()
+	}
+	return 0
+}
+
+var noSinkSynthOnce sync.Once
+
+func (p *Pipeline) warnNoSinkSynth(kind string) {
+	if kind != audio.SinkNone {
+		return
+	}
+	noSinkSynthOnce.Do(func() {
+		p.emit(events.Info{Message: "synthesizing with no audible sink; Stage is not listening"})
+	})
+}
+
+func (p *Pipeline) stampTTFA(metrics *turnMetrics, at time.Time) {
+	if metrics == nil || !metrics.ttfa.IsZero() || at.IsZero() {
+		return
+	}
+	switch metrics.audibleSink {
+	case audio.SinkNone, "":
+		return
+	case audio.SinkStreamClient:
+		if p.acceptedCount() <= 0 {
+			return
+		}
+	}
+	metrics.ttfa = at
+}
+
+// maybeStampLateTTFA covers a stream_client whose first broadcast dropped
+// every chunk and a later one accepted. TTFA is pcmReady, not drain, and
+// Started() is not delayed to accept.
+func (p *Pipeline) maybeStampLateTTFA(metrics *turnMetrics) {
+	if metrics == nil || !metrics.ttfa.IsZero() {
+		return
+	}
+	at := metrics.synthFirstFrame
+	if at.IsZero() {
+		at = metrics.firstAudioReady
+	}
+	if at.IsZero() {
+		at = metrics.playbackStart
+	}
+	p.stampTTFA(metrics, at)
+}
+
 // turnConductor bridges the turn state machine into the live pipeline: stages
 // report state transitions and it guarantees exactly one terminal TurnMetrics
 // emission per turn, regardless of which return path ends the turn.
@@ -525,7 +640,7 @@ func (p *Pipeline) warnIfSynthesisCannotKeepUp(m events.TurnMetrics) {
 	if m.Interrupted {
 		return
 	}
-	speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed
+	speaking := m.SpeakingWindow()
 	deadAirShare := m.DeadAirElapsed > 0 && speaking > 0 &&
 		float64(m.DeadAirElapsed)/float64(speaking) >= underrunDeadAirShare
 	if !deadAirShare && m.Underruns == 0 {
@@ -809,7 +924,10 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	speakerID := p.currentSpeakerID()
 	p.emit(events.UserInput{Text: input, Speaker: speakerID})
 	p.emit(events.ThinkingStarted{})
-	thinkingStarted := time.Now()
+	if metrics.sttFinal.IsZero() {
+		metrics.sttFinal = time.Now()
+	}
+	thinkingStarted := metrics.sttFinal
 
 	// Bound model + tools so a hung Ollama chat after tool results cannot leave
 	// the TUI forever on "thinking" / last tool status.
@@ -871,11 +989,22 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	}
 	if speakable != "" {
 		turn.to(TurnSpeaking)
+		now := time.Now()
 		if metrics.firstSegment.IsZero() {
-			metrics.firstSegment = time.Now()
+			metrics.firstSegment = now
+		}
+		if metrics.firstAdmit.IsZero() {
+			metrics.firstAdmit = now
 		}
 		metrics.ttsEngine = p.ttsIdentity()
-		p.emit(events.SpeechSegmentReady{Text: speakable})
+		metrics.sinkAtArm = p.sinkKind()
+		metrics.audibleSink = metrics.sinkAtArm
+		p.warnNoSinkSynth(metrics.sinkAtArm)
+		seg := events.SpeechSegmentReady{Text: speakable}
+		if !metrics.firstSpeakable.IsZero() && !metrics.firstAdmit.Equal(metrics.firstSpeakable) {
+			seg.Elapsed = metrics.elapsedFromEOU(metrics.firstAdmit)
+		}
+		p.emit(seg)
 		p.emit(events.GeneratingVoice{Sentence: speakable})
 
 		synthStarted := time.Now()
@@ -1165,18 +1294,25 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		}
 
 		turn.to(TurnSpeaking)
+		now := time.Now()
 		if metrics.firstSegment.IsZero() {
-			metrics.firstSegment = time.Now()
+			metrics.firstSegment = now
+		}
+		if metrics.firstAdmit.IsZero() {
+			metrics.firstAdmit = now
 		}
 		if !watchdogArmed {
 			watchdogArmed = true
 			// The budget is sized to the segment the listener is actually
 			// waiting on. openingBatchSegments is 1, so this speakable is
-			// that segment.
+			// that segment. Arm before PlayStream so hung WaitReady is visible.
 			stallTimeout := p.stallTimeout(len(speakable))
 			metrics.firstAudioGrace = stallTimeout
 			metrics.ttsEngine = p.ttsIdentity()
-			go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(speakable))
+			metrics.sinkAtArm = p.sinkKind()
+			metrics.audibleSink = metrics.sinkAtArm
+			p.warnNoSinkSynth(metrics.sinkAtArm)
+			go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(speakable), metrics.sinkAtArm == audio.SinkNone)
 		}
 
 		voiceBatch = append(voiceBatch, speakable)
@@ -1219,6 +1355,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			return strings.TrimSpace(fullResponse.String()), interrupted, ctx.Err()
 
 		case <-stalled:
+			if metrics.sinkAtArm == audio.SinkNone {
+				return strings.TrimSpace(fullResponse.String()), interrupted, nil
+			}
 			metrics.stallWatchdogFired = true
 			return strings.TrimSpace(fullResponse.String()), interrupted, errPlaybackStalled
 
@@ -1383,7 +1522,16 @@ func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct
 	if ctx.Err() != nil || p.OutputMuted() {
 		return false // canceled while queued: drain without synthesizing
 	}
-	p.emit(events.SpeechSegmentReady{Text: sentence})
+	seg := events.SpeechSegmentReady{Text: sentence}
+	if index == 0 {
+		p.activeMu.Lock()
+		m := p.activeMetrics
+		p.activeMu.Unlock()
+		if m != nil && !m.firstAdmit.IsZero() && !m.firstAdmit.Equal(m.firstSpeakable) {
+			seg.Elapsed = m.elapsedFromEOU(m.firstAdmit)
+		}
+	}
+	p.emit(seg)
 	p.emit(events.GeneratingVoice{Sentence: sentence})
 
 	synthStarted := time.Now()
@@ -1572,9 +1720,16 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 		// Arm once per turn, on the first playback: re-arming per sentence left
 		// short sentences uninterruptible and re-imposed the delay across every
 		// queue-drain gap (WI-dc9e33 B3 / F3.2).
-		armAt.CompareAndSwap(0, time.Now().Add(bargeInArmDelay).UnixNano())
+		now := time.Now()
+		armAt.CompareAndSwap(0, now.Add(bargeInArmDelay).UnixNano())
+		// Re-check sink at pcmReady (PlayStream already returned) so a Stage
+		// that opted in during generate still names AudibleSink / TTFA.
+		metrics.audibleSink = p.sinkKind()
 		if metrics.firstAudioReady.IsZero() {
-			metrics.firstAudioReady = time.Now()
+			metrics.firstAudioReady = now
+			if metrics.synthFirstFrame.IsZero() {
+				metrics.synthFirstFrame = now
+			}
 			// No sttFinal, no sample — deliberately. The only fallback stamp,
 			// metrics.start, includes the user's own speaking time, so it would
 			// inflate the rolling p50 and open the filler gate on turns that are
@@ -1585,8 +1740,9 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 			}
 		}
 		if metrics.playbackStart.IsZero() {
-			metrics.playbackStart = time.Now()
+			metrics.playbackStart = now
 		}
+		p.stampTTFA(metrics, now)
 		// The player went idle after the previous sentence and has only now
 		// found the next one ready. That gap is audible silence.
 		if !metrics.lastPlaybackEnd.IsZero() {
@@ -1599,7 +1755,11 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 			Index:    event.index,
 			Fallback: event.fallback,
 		})
-		p.emit(events.SpeakingStarted{Text: event.sentence})
+		started := events.SpeakingStarted{Text: event.sentence, AudibleSink: metrics.audibleSink}
+		if !metrics.ttfa.IsZero() {
+			started.Elapsed = metrics.elapsedFromEOU(metrics.ttfa)
+		}
+		p.emit(started)
 		return false
 
 	case playbackFinished:
@@ -1608,18 +1768,24 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 		// stamp is simply never consumed, so trailing silence after the reply
 		// is not counted as a gap inside it.
 		metrics.lastPlaybackEnd = metrics.playbackComplete
+		p.maybeStampLateTTFA(metrics)
+		if metrics.audibleSink == audio.SinkNone && len(metrics.segments) == 0 {
+			p.emit(events.Info{Message: "synth drain (no sink)"})
+		}
 		metrics.recordSegment(event)
+		complete := events.SpeakingComplete{
+			Elapsed:     event.playElapsed,
+			Interrupted: event.result.Interrupted,
+			AudibleSink: metrics.audibleSink,
+		}
 		if event.result.Interrupted {
-			p.emit(events.SpeakingComplete{
-				Elapsed:     event.playElapsed,
-				Interrupted: true,
-			})
+			p.emit(complete)
 			return true
 		}
 		if event.result.Err != nil && !errors.Is(event.result.Err, context.Canceled) {
 			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", event.result.Err)})
 		}
-		p.emit(events.SpeakingComplete{Elapsed: event.playElapsed})
+		p.emit(complete)
 		return true
 	}
 	return false
@@ -1640,24 +1806,37 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synth
 	case <-playback.Started():
 		startedAt = time.Now()
 		synthElapsed = time.Since(synthStarted)
+		metrics.audibleSink = p.sinkKind()
 		if metrics.firstAudioReady.IsZero() {
 			metrics.firstAudioReady = startedAt
+		}
+		if metrics.synthFirstFrame.IsZero() {
+			metrics.synthFirstFrame = startedAt
 		}
 		if metrics.playbackStart.IsZero() {
 			metrics.playbackStart = startedAt
 		}
+		p.stampTTFA(metrics, startedAt)
 		p.emit(events.VoiceGenerated{
 			Sentence: sentence,
 			Elapsed:  synthElapsed,
 			Index:    index,
 			Fallback: fallback,
 		})
-		p.emit(events.SpeakingStarted{Text: sentence})
+		started := events.SpeakingStarted{Text: sentence, AudibleSink: metrics.audibleSink}
+		if !metrics.ttfa.IsZero() {
+			started.Elapsed = metrics.elapsedFromEOU(metrics.ttfa)
+		}
+		p.emit(started)
 	case result := <-playback.Done():
 		if result.Err != nil && !result.Interrupted && !errors.Is(result.Err, context.Canceled) {
 			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", result.Err)})
 		}
 		metrics.playbackComplete = time.Now()
+		p.maybeStampLateTTFA(metrics)
+		if metrics.audibleSink == audio.SinkNone {
+			p.emit(events.Info{Message: "synth drain (no sink)"})
+		}
 		metrics.recordSegment(playbackEvent{
 			sentence:      sentence,
 			index:         index,
@@ -1666,7 +1845,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synth
 			synthElapsed:  time.Since(synthStarted),
 			result:        result,
 		})
-		p.emit(events.SpeakingComplete{Interrupted: result.Interrupted})
+		p.emit(events.SpeakingComplete{Interrupted: result.Interrupted, AudibleSink: metrics.audibleSink})
 		return
 	}
 
@@ -1692,9 +1871,14 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synth
 		p.emit(events.SpeakingInterrupted{Reason: "stopped"})
 	}
 	metrics.playbackComplete = time.Now()
+	p.maybeStampLateTTFA(metrics)
+	if metrics.audibleSink == audio.SinkNone {
+		p.emit(events.Info{Message: "synth drain (no sink)"})
+	}
 	p.emit(events.SpeakingComplete{
 		Elapsed:     elapsed,
 		Interrupted: result.Interrupted,
+		AudibleSink: metrics.audibleSink,
 	})
 }
 
@@ -1720,7 +1904,15 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 		defer close(done)
 		defer close(out)
 		chunks, thinking := stream.Chunks, stream.Thinking
-		first := true
+		stampToken := func(now time.Time) {
+			if metrics.firstModelChunk.IsZero() {
+				metrics.firstModelChunk = now
+			}
+			if metrics.firstToken.IsZero() {
+				metrics.firstToken = now
+				p.emit(events.ResponseStreamingStarted{Elapsed: metrics.elapsedFromEOU(now)})
+			}
+		}
 		for chunks != nil || thinking != nil {
 			select {
 			case <-ctx.Done():
@@ -1733,10 +1925,10 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 				if t == "" {
 					continue
 				}
-				if first {
-					first = false
-					metrics.firstModelChunk = time.Now()
-					p.emit(events.ResponseStreamingStarted{Elapsed: metrics.elapsed(metrics.firstModelChunk)})
+				now := time.Now()
+				stampToken(now)
+				if metrics.firstThink.IsZero() {
+					metrics.firstThink = now
 				}
 				p.emit(events.ThinkingDelta{Text: t})
 			case c, ok := <-chunks:
@@ -1747,10 +1939,13 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 				if c == "" {
 					continue
 				}
-				if first {
-					first = false
-					metrics.firstModelChunk = time.Now()
-					p.emit(events.ResponseStreamingStarted{Elapsed: metrics.elapsed(metrics.firstModelChunk)})
+				now := time.Now()
+				stampToken(now)
+				if metrics.firstSpeakable.IsZero() && strings.TrimSpace(c) != "" {
+					metrics.firstSpeakable = now
+					if !metrics.firstSpeakable.Equal(metrics.firstToken) {
+						p.emit(events.ResponseSpeakableStarted{Elapsed: metrics.elapsedFromEOU(now)})
+					}
 				}
 				p.emit(events.ResponseDelta{Text: c})
 				select {

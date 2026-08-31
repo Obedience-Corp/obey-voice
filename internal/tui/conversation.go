@@ -844,7 +844,10 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.setStatus(m.agentName+" thinking", false)
 
 	case events.ResponseStreamingStarted:
-		m.appendActivity("model", "first response", e.Elapsed)
+		m.appendActivity("model", "first token", e.Elapsed)
+
+	case events.ResponseSpeakableStarted:
+		m.appendActivity("model", "first speakable", e.Elapsed)
 
 	case events.ThinkingDelta:
 		if e.Text == "" {
@@ -865,7 +868,11 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.appendActivity("model", fmt.Sprintf("session prompt %d tok ≥ warn %d — consider clearing the conversation", e.PromptTokens, e.Threshold), 0)
 
 	case events.SpeechSegmentReady:
-		m.appendActivity("voice", "segment ready", 0)
+		if e.Elapsed > 0 {
+			m.appendActivity("voice", "first admit", e.Elapsed)
+		} else {
+			m.appendActivity("voice", "segment ready", 0)
+		}
 
 	case events.GeneratingVoice:
 		m.appendActivity("voice", "synthesizing", 0)
@@ -877,17 +884,31 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.VoiceGenerated:
-		m.appendActivity("voice", "generated", e.Elapsed)
+		m.appendActivity("voice", "synth first frame", e.Elapsed)
 
 	case events.SpeakingStarted:
-		m.appendActivity("output", "playing", 0)
+		label := "playing"
+		if e.AudibleSink == "none" {
+			label = "synth"
+		} else if e.Elapsed > 0 && e.AudibleSink == "stream_client" {
+			label = "audible_tx"
+		} else if e.Elapsed > 0 {
+			label = "audible"
+		}
+		m.appendActivity("output", label, e.Elapsed)
 		m.setVoiceMode(anim.ModeSpeaking)
 		if !m.statusErr {
 			m.setStatus("Speaking", false)
 		}
 
 	case events.SpeakingComplete:
-		m.appendActivity("output", "complete", e.Elapsed)
+		label := "complete"
+		if e.AudibleSink == "none" {
+			label = "synth drain (no sink)"
+		} else if e.AudibleSink == "stream_client" {
+			label = "audible_tx done"
+		}
+		m.appendActivity("output", label, e.Elapsed)
 		// A degraded turn speaks its recovery line after the Error event; the
 		// error status must survive that playback finishing. Still leave
 		// ModeSpeaking so the EQ/label does not stay "Speaking" forever.
@@ -1050,7 +1071,7 @@ func formatTurnMetrics(e events.TurnMetrics) string {
 	if e.FirstAudioReadyElapsed > 0 {
 		parts = append(parts, "voice "+formatSeconds(e.FirstAudioReadyElapsed))
 	}
-	if e.PlaybackCompleteElapsed > 0 {
+	if e.PlaybackCompleteElapsed > 0 && e.AudibleSink != "none" && e.AudibleSink != "stream_client" {
 		parts = append(parts, "spoke "+formatSeconds(e.PlaybackCompleteElapsed))
 	}
 	if e.Degraded {

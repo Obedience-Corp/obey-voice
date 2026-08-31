@@ -71,6 +71,31 @@ func TestTurnsByEngineSkipsTurnsWithoutAnEngine(t *testing.T) {
 	}
 }
 
+func TestSpeakingWindowNanosUsesPlayElapsed(t *testing.T) {
+	m := rawMetrics{
+		PlaybackStartElapsed:    int64(10 * time.Second),
+		PlaybackCompleteElapsed: int64(2 * time.Second), // T_eou, must not be subtracted
+		DeadAirElapsed:          int64(time.Second),
+		Segments:                []rawSegment{{PlayElapsed: int64(5 * time.Second)}},
+	}
+	if got, want := speakingWindowNanos(m), int64(6*time.Second); got != want {
+		t.Fatalf("speakingWindowNanos = %d, want %d (play+dead air)", got, want)
+	}
+	if speakingWindowNanos(rawMetrics{}) != 0 {
+		t.Fatal("empty metrics must not invent a speaking window")
+	}
+	m.AudibleSink = "local_speaker"
+	if got, want := speakingWindowNanos(m), int64(6*time.Second); got != want {
+		t.Fatalf("local_speaker speakingWindowNanos = %d, want %d", got, want)
+	}
+	for _, sink := range []string{"stream_client", "none"} {
+		m.AudibleSink = sink
+		if got := speakingWindowNanos(m); got != 0 {
+			t.Fatalf("AudibleSink %q speakingWindowNanos = %d, want 0 (drain is not speaking)", sink, got)
+		}
+	}
+}
+
 func TestStatsForRealtimeFactor(t *testing.T) {
 	// 1.5s of synthesis for 1s of audio is 1.5x realtime.
 	runs := []rawResult{

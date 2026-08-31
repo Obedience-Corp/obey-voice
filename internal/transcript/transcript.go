@@ -61,8 +61,11 @@ type record struct {
 	ModelS         float64 `json:"model_s,omitempty"`
 	VoiceS         float64 `json:"voice_s,omitempty"`
 	PlaybackStartS float64 `json:"playback_start_s,omitempty"`
-	SpokeS         float64 `json:"spoke_s,omitempty"`
-	BargeInS       float64 `json:"barge_in_s,omitempty"`
+	// SpokeS on metrics is T_eou-to-local-Done (PlaybackCompleteElapsed).
+	// Zero when AudibleSink is stream_client or none — fanout drain is not
+	// playback. Per-segment speaking.complete records still use PlayElapsed.
+	SpokeS   float64 `json:"spoke_s,omitempty"`
+	BargeInS float64 `json:"barge_in_s,omitempty"`
 
 	Prefill   int `json:"prefill,omitempty"`
 	Gen       int `json:"gen,omitempty"`

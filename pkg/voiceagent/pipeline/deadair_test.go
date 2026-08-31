@@ -85,13 +85,12 @@ func TestWarnIfSynthesisCannotKeepUpFiresOncePerSession(t *testing.T) {
 	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
 	p := &Pipeline{Events: bus}
 
-	// 6s of silence in a 12s reply: half the speaking time.
+	// 6s of silence in a 12s reply: half the speaking window (play + dead air).
 	bad := events.TurnMetrics{
-		TTSProvider:             "qwen3-tts",
-		TTSTier:                 "1.7b",
-		DeadAirElapsed:          6 * time.Second,
-		PlaybackStartElapsed:    10 * time.Second,
-		PlaybackCompleteElapsed: 22 * time.Second,
+		TTSProvider:    "qwen3-tts",
+		TTSTier:        "1.7b",
+		DeadAirElapsed: 6 * time.Second,
+		Segments:       []events.SegmentMetric{{PlayElapsed: 6 * time.Second}},
 	}
 	p.warnIfSynthesisCannotKeepUp(bad)
 	p.warnIfSynthesisCannotKeepUp(bad)
@@ -113,17 +112,15 @@ func TestWarnIfSynthesisCannotKeepUpStaysQuietWhenItKeepsUp(t *testing.T) {
 		{
 			name: "no dead air",
 			m: events.TurnMetrics{
-				PlaybackStartElapsed:    time.Second,
-				PlaybackCompleteElapsed: 20 * time.Second,
+				Segments: []events.SegmentMetric{{PlayElapsed: 19 * time.Second}},
 			},
 		},
 		{
 			// A little slack between sentences is normal and must not nag.
 			name: "dead air below the share threshold",
 			m: events.TurnMetrics{
-				DeadAirElapsed:          time.Second,
-				PlaybackStartElapsed:    time.Second,
-				PlaybackCompleteElapsed: 21 * time.Second,
+				DeadAirElapsed: time.Second,
+				Segments:       []events.SegmentMetric{{PlayElapsed: 19 * time.Second}},
 			},
 		},
 		{
@@ -131,10 +128,9 @@ func TestWarnIfSynthesisCannotKeepUpStaysQuietWhenItKeepsUp(t *testing.T) {
 			// Blaming the engine for the user interrupting would be wrong.
 			name: "interrupted turn",
 			m: events.TurnMetrics{
-				Interrupted:             true,
-				DeadAirElapsed:          9 * time.Second,
-				PlaybackStartElapsed:    time.Second,
-				PlaybackCompleteElapsed: 11 * time.Second,
+				Interrupted:    true,
+				DeadAirElapsed: 9 * time.Second,
+				Segments:       []events.SegmentMetric{{PlayElapsed: 2 * time.Second}},
 			},
 		},
 	}
@@ -149,5 +145,32 @@ func TestWarnIfSynthesisCannotKeepUpStaysQuietWhenItKeepsUp(t *testing.T) {
 				t.Fatalf("got %v, want no notice", infos)
 			}
 		})
+	}
+}
+
+func TestWarnIfSynthesisCannotKeepUpIgnoresFanoutDrainDeadAir(t *testing.T) {
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	p := &Pipeline{Events: bus}
+
+	// Stage still playing while the host is idle: drain+dead-air must not
+	// count as a keep-up failure. Underruns still warn on their own.
+	p.warnIfSynthesisCannotKeepUp(events.TurnMetrics{
+		AudibleSink:    "stream_client",
+		DeadAirElapsed: 6 * time.Second,
+		Segments:       []events.SegmentMetric{{PlayElapsed: time.Millisecond}},
+	})
+	if len(infos) != 0 {
+		t.Fatalf("fanout drain dead-air warned: %v", infos)
+	}
+
+	p.warnIfSynthesisCannotKeepUp(events.TurnMetrics{
+		AudibleSink: "stream_client",
+		Underruns:   1,
+		Segments:    []events.SegmentMetric{{PlayElapsed: time.Millisecond, Underruns: 1}},
+	})
+	if len(infos) != 1 {
+		t.Fatalf("underrun on stream_client: got %d notices, want 1: %v", len(infos), infos)
 	}
 }

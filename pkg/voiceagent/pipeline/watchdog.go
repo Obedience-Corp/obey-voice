@@ -114,14 +114,14 @@ func stallNoticeDelay(timeout time.Duration) time.Duration {
 // cancels streamCtx (unblocking waitReady/pumpSegment/Write/observeStream) and
 // signals streamResponse to return; returning then trips RunTurn's turnCancel,
 // which stops the brain stream too.
-func (p *Pipeline) watchPlaybackStall(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout time.Duration, chars int) {
-	p.watchPlaybackStallAfter(streamCtx, started, cancel, stalled, timeout, stallNoticeDelay(timeout), chars)
+func (p *Pipeline) watchPlaybackStall(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout time.Duration, chars int, noSink bool) {
+	p.watchPlaybackStallAfter(streamCtx, started, cancel, stalled, timeout, stallNoticeDelay(timeout), chars, noSink)
 }
 
 // watchPlaybackStallAfter is watchPlaybackStall with the interim-notice delay
 // injected so tests can exercise both timers without waiting out the real
 // budget. noticeDelay of zero suppresses the notice.
-func (p *Pipeline) watchPlaybackStallAfter(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout, noticeDelay time.Duration, chars int) {
+func (p *Pipeline) watchPlaybackStallAfter(streamCtx context.Context, started *atomic.Bool, cancel context.CancelFunc, stalled chan<- struct{}, timeout, noticeDelay time.Duration, chars int, noSink bool) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
@@ -153,6 +153,17 @@ waiting:
 	}
 
 	if started.Load() || streamCtx.Err() != nil {
+		return
+	}
+
+	if noSink {
+		// Hung WaitReady with nobody listening is not a playback stall.
+		p.emit(events.Info{Message: "hung synth, no listener"})
+		cancel()
+		if p.Player != nil {
+			p.Player.Stop()
+		}
+		close(stalled)
 		return
 	}
 

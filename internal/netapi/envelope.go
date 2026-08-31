@@ -44,6 +44,18 @@ func encodeEvent(e events.Event) map[string]any {
 		env["playback_start_ms"] = ms(e.PlaybackStartElapsed)
 		env["playback_complete_ms"] = ms(e.PlaybackCompleteElapsed)
 		env["barge_in_ms"] = ms(e.BargeInElapsed)
+		env["first_token_ms"] = ms(e.FirstTokenElapsed)
+		env["first_think_ms"] = ms(e.FirstThinkElapsed)
+		env["first_speakable_ms"] = ms(e.FirstSpeakableElapsed)
+		env["first_admit_ms"] = ms(e.FirstAdmitElapsed)
+		env["synth_first_frame_ms"] = ms(e.SynthFirstFrameElapsed)
+		env["ttfa_ms"] = ms(e.TTFAElapsed)
+		audible := e.AudibleSink
+		if audible == "" {
+			audible = "none"
+		}
+		env["audible_sink"] = audible
+		env["think_leak"] = e.ThinkLeak
 		// TTS accounting. Additive keys: the milestones above describe only
 		// the first segment, and a remote client benchmarking a long reply
 		// needs every segment plus the stall budget the turn ran under.
@@ -75,6 +87,8 @@ func encodeEvent(e events.Event) map[string]any {
 		}
 	case events.ResponseStreamingStarted:
 		env["elapsed_ms"] = ms(e.Elapsed)
+	case events.ResponseSpeakableStarted:
+		env["elapsed_ms"] = ms(e.Elapsed)
 	case events.ResponseDelta:
 		// One incremental piece of assistant text. Named "text" because that
 		// is the field every other text-bearing event on this wire uses, and
@@ -82,10 +96,11 @@ func encodeEvent(e events.Event) map[string]any {
 		env["text"] = e.Text
 	case events.ThinkingDelta:
 		env["text"] = e.Text
-	case events.ResponseSpeakableStarted:
-		env["elapsed_ms"] = ms(e.Elapsed)
 	case events.SpeechSegmentReady:
 		env["text"] = e.Text
+		if e.Elapsed > 0 {
+			env["elapsed_ms"] = ms(e.Elapsed)
+		}
 	case events.GeneratingVoice:
 		env["sentence"] = e.Sentence
 	case events.VoiceGenerated:
@@ -95,9 +110,18 @@ func encodeEvent(e events.Event) map[string]any {
 		env["fallback"] = e.Fallback
 	case events.SpeakingStarted:
 		env["text"] = e.Text
+		if e.AudibleSink != "" {
+			env["audible_sink"] = e.AudibleSink
+		}
+		if e.Elapsed > 0 {
+			env["elapsed_ms"] = ms(e.Elapsed)
+		}
 	case events.SpeakingComplete:
 		env["elapsed_ms"] = ms(e.Elapsed)
 		env["interrupted"] = e.Interrupted
+		if e.AudibleSink != "" {
+			env["audible_sink"] = e.AudibleSink
+		}
 	case events.SpeakingInterrupted:
 		env["reason"] = e.Reason
 	case events.TurnInterrupted:

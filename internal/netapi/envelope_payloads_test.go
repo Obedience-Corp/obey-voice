@@ -96,6 +96,25 @@ func TestEncodeEventPayloadsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTurnMetricsClockKeysArePresentAtZero(t *testing.T) {
+	env := encodeEvent(events.TurnMetrics{})
+	want := map[string]any{
+		"first_token_ms":       int64(0),
+		"first_think_ms":       int64(0),
+		"first_speakable_ms":   int64(0),
+		"first_admit_ms":       int64(0),
+		"synth_first_frame_ms": int64(0),
+		"ttfa_ms":              int64(0),
+		"audible_sink":         "none",
+		"think_leak":           0,
+	}
+	for k, v := range want {
+		if env[k] != v {
+			t.Errorf("turn_metrics %q = %v (%T), want %v (%T)", k, env[k], env[k], v, v)
+		}
+	}
+}
+
 // TestEncodeEventLeavesOtherShapesAlone guards the E1 blast radius: adding two
 // cases to a closed switch must not change any other event's envelope.
 func TestEncodeEventLeavesOtherShapesAlone(t *testing.T) {

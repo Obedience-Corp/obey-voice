@@ -164,19 +164,23 @@ func (h *hub) broadcast(msg []byte) {
 
 // broadcastAudio delivers TTS wire chunks only to clients that opted into
 // stream mode. A full audio queue drops the chunk; it never kicks the client.
-func (h *hub) broadcastAudio(msg []byte) {
+// The return value is how many clients accepted the send (TTFA only).
+func (h *hub) broadcastAudio(msg []byte) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	accepted := 0
 	for c := range h.conns {
 		if !c.wantsAudio() || c.audioBlocked.Load() {
 			continue
 		}
 		select {
 		case c.audio <- msg:
+			accepted++
 		default:
 			// Drop this chunk; keep the connection for events/control.
 		}
 	}
+	return accepted
 }
 
 var audioResetEnvelope = []byte(`{"type":"audio_reset"}`)
