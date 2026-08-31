@@ -304,7 +304,7 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	q.startupTimeout = startupTimeout
 	if native {
 		q.startSpeech = func(ctx context.Context) (qwenSpeechSession, error) {
-			return startNativeQwenSession(ctx, binaryPath, model, q.modelTier, startupTimeout)
+			return startNativeQwenSession(ctx, binaryPath, model, q.modelTier, startupTimeout, q.backendHint)
 		}
 		session, err := q.startSpeech(context.Background())
 		if err != nil {

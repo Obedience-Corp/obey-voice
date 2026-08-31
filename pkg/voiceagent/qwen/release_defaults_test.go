@@ -33,10 +33,30 @@ func TestDefaultNativeReleaseForLinuxAmd64(t *testing.T) {
 }
 
 func TestDefaultNativeReleaseMatchesThisPlatform(t *testing.T) {
-	wantURL, wantSHA := DefaultNativeReleaseFor(runtime.GOOS, runtime.GOARCH)
+	backend := "cpu"
+	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+		backend = DetectLinuxTTSBackend()
+	}
+	wantURL, wantSHA := DefaultNativeReleaseForBackend(runtime.GOOS, runtime.GOARCH, backend)
 	gotURL, gotSHA := DefaultNativeRelease()
 	if gotURL != wantURL || gotSHA != wantSHA {
 		t.Fatalf("DefaultNativeRelease() = %q/%q, want %q/%q", gotURL, gotSHA, wantURL, wantSHA)
+	}
+}
+
+func TestDefaultNativeReleaseForLinuxAmd64Vulkan(t *testing.T) {
+	url, sha := DefaultNativeReleaseForBackend("linux", "amd64", "vulkan")
+	if linuxAmd64VulkanSHA256 == "" {
+		if url != "" || sha != "" {
+			t.Fatalf("unpublished vulkan pin must be empty, got %q/%q", url, sha)
+		}
+		return
+	}
+	if !strings.Contains(url, "qwen3-tts-native-linux-amd64-vulkan.tar.gz") {
+		t.Fatalf("url = %q", url)
+	}
+	if len(sha) != 64 {
+		t.Fatalf("sha length = %d, want 64 hex", len(sha))
 	}
 }
 
