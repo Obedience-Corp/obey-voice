@@ -67,11 +67,11 @@ func TestOpenStageCallsOpenURL(t *testing.T) {
 		servePort = origPort
 	})
 
-	openStage("127.0.0.1:7262", &netapi.Credentials{
+	openStage("192.168.0.188:7262", &netapi.Credentials{
 		Pairing: &netapi.PairingCode{Code: "654321"},
 	})
 	if opened != "https://127.0.0.1:7262/stage.html?code=654321" {
-		t.Fatalf("opened %q", opened)
+		t.Fatalf("opened LAN bind, want loopback, got %q", opened)
 	}
 	if !strings.Contains(human.String(), "Opened Stage") {
 		t.Fatalf("human output = %q", human.String())

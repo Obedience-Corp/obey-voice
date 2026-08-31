@@ -84,6 +84,28 @@ func clientPageURL(listenAddr string) string {
 	return publicServeURL(pageHost, servePort)
 }
 
+// localStagePageURL is the URL --open should load on this machine. Tailscale
+// MagicDNS stays as-is; otherwise use 127.0.0.1 so Chrome is not pointed at a
+// LAN IP whose cert it will reject.
+func localStagePageURL(listenAddr string) string {
+	if strings.TrimSpace(servePublicHost) != "" {
+		return clientPageURL(listenAddr)
+	}
+	_, port, err := net.SplitHostPort(listenAddr)
+	if err != nil || port == "" {
+		port = strconv.Itoa(servePort)
+	}
+	return publicServeURL("127.0.0.1", mustAtoiPort(port))
+}
+
+func mustAtoiPort(port string) int {
+	n, err := strconv.Atoi(port)
+	if err != nil || n <= 0 {
+		return servePort
+	}
+	return n
+}
+
 func stageServeURL(pageURL string, creds *netapi.Credentials) string {
 	if creds == nil || creds.Pairing == nil || strings.TrimSpace(pageURL) == "" || creds.Pairing.Code == "" {
 		return ""

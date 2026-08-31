@@ -30,7 +30,10 @@ func openURLDefault(url string) error {
 }
 
 func openStage(listenAddr string, creds *netapi.Credentials) {
-	u := stageServeURL(clientPageURL(listenAddr), creds)
+	// Prefer loopback so the local browser hits a name the self-signed cert
+	// matches. Opening the LAN IP (192.168.x) makes Chrome send
+	// tls: bad certificate and Stage never connects — so it never replies.
+	u := stageServeURL(localStagePageURL(listenAddr), creds)
 	if u == "" {
 		fmt.Fprintln(serveHumanOut, dimStyle.Render("  --open: no pairing code; Stage was not opened"))
 		return
