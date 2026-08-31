@@ -298,6 +298,41 @@ func TestOfflineLoopWedgedSourceMidSpeechStillEnds(t *testing.T) {
 	}
 }
 
+// steadyNoiseFrames is a live source that never ends and never goes quiet:
+// the GPD-fan failure mode. Combined with a VAD that latches IsSpeech, the
+// pre-gate loop would wait forever for trailing silence.
+type steadyNoiseFrames struct{}
+
+func (steadyNoiseFrames) ReadFrame(ctx context.Context) (audio.Frame, error) {
+	if err := ctx.Err(); err != nil {
+		return audio.Frame{}, err
+	}
+	return audio.Frame{
+		Samples:    constFrame(1600, 0.05),
+		SampleRate: audio.SampleRate,
+		Channels:   audio.Channels,
+		SourceKind: audio.SourceLive,
+	}, nil
+}
+
+func (steadyNoiseFrames) Close() error { return nil }
+
+func TestOfflineLoopStationaryNoiseDoesNotHoldTheTurn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	deps := offlineLoopDeps{
+		frames:     steadyNoiseFrames{},
+		seg:        &fakeSegmenter{speech: true},
+		policy:     endpoint.Policy{StartTimeout: 200 * time.Millisecond, MinSpeech: 50 * time.Millisecond},
+		transcribe: func([]float32) (string, error) { t.Fatal("noise must not be transcribed"); return "", nil },
+	}
+
+	got := runLoop(ctx, deps)
+	if _, ok := terminal(got).(Timeout); !ok {
+		t.Fatalf("terminal event = %T, want Timeout (fan must not hold the turn)", terminal(got))
+	}
+}
+
 func TestOfflineLoopBusyNoSpeechStartTimeout(t *testing.T) {
 	// A live source streaming non-speech frames back to back (never
 	// ErrNoFrameReady, never Final) must still hit the no-speech start timeout
