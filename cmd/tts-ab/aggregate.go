@@ -72,6 +72,20 @@ func (s rawSegment) engineNanos() int64 {
 	return s.SynthElapsed
 }
 
+// speakingWindowNanos is play plus dead air. PlaybackCompleteElapsed is T_eou
+// (and zero for stream_client / none) and must not be subtracted from
+// start-relative PlaybackStartElapsed.
+func speakingWindowNanos(m rawMetrics) int64 {
+	var play int64
+	for _, seg := range m.Segments {
+		play += seg.PlayElapsed
+	}
+	if play > 0 {
+		return play + m.DeadAirElapsed
+	}
+	return 0
+}
+
 type rawError struct {
 	Stage   string `json:"stage"`
 	Message string `json:"message"`
@@ -383,7 +397,7 @@ func StatsFor(runs []rawResult) EngineStats {
 			}
 			playbackStart = append(playbackStart, ms(m.PlaybackStartElapsed))
 			deadAir = append(deadAir, ms(m.DeadAirElapsed))
-			if speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed; speaking > 0 {
+			if speaking := speakingWindowNanos(m); speaking > 0 {
 				deadAirShare = append(deadAirShare, float64(m.DeadAirElapsed)/float64(speaking))
 			}
 		}

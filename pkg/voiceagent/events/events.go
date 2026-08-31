@@ -76,6 +76,7 @@ type TurnMetrics struct {
 	PlaybackStartElapsed   time.Duration
 	// PlaybackCompleteElapsed is local-speaker Done from T_eou. Zero when
 	// AudibleSink is stream_client or none — fanout drain is not playback.
+	// Do not subtract PlaybackStartElapsed (start-relative) from this field.
 	PlaybackCompleteElapsed time.Duration
 	BargeInElapsed          time.Duration
 	// FirstTokenElapsed is T_eou to the first byte on Chunks or Thinking.
@@ -224,6 +225,21 @@ func (s SegmentMetric) QueueElapsed() time.Duration {
 		return 0
 	}
 	return s.SynthElapsed - s.EngineElapsed
+}
+
+// SpeakingWindow is audible play plus inter-segment dead air — the denominator
+// for dead-air share. Prefer this over PlaybackCompleteElapsed minus
+// PlaybackStartElapsed: those clocks have different origins (T_eou vs start)
+// and complete is zero for stream_client / none.
+func (e TurnMetrics) SpeakingWindow() time.Duration {
+	var play time.Duration
+	for _, seg := range e.Segments {
+		play += seg.PlayElapsed
+	}
+	if play > 0 {
+		return play + e.DeadAirElapsed
+	}
+	return 0
 }
 
 // TokenUsage reports one model request's prompt/generation token counts.

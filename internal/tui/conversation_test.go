@@ -61,6 +61,37 @@ func TestConversationDisplaysSessionBoundUncleFuTTS(t *testing.T) {
 	}
 }
 
+func TestNoSinkSpeakingNeverSaysPlayback(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.handleEvent(events.SpeakingStarted{AudibleSink: "none"})
+	m.handleEvent(events.SpeakingComplete{AudibleSink: "none"})
+	m.handleEvent(events.TurnMetrics{Outcome: "completed", AudibleSink: "none"})
+
+	found := false
+	for _, e := range m.activity {
+		if strings.Contains(e.detail, "playback") {
+			t.Errorf("activity %q contains playback", e.detail)
+		}
+		if strings.Contains(e.detail, "synth drain (no sink)") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("activity missing synth drain (no sink): %+v", m.activity)
+	}
+	if line := formatTurnMetrics(events.TurnMetrics{AudibleSink: "none", PlaybackCompleteElapsed: time.Second}); strings.Contains(line, "spoke") {
+		t.Fatalf("formatTurnMetrics no-sink line = %q, want no spoke/playback", line)
+	}
+
+	m2 := sizedConversation(t, 80, 24)
+	m2.handleEvent(events.SpeakingComplete{AudibleSink: "stream_client"})
+	for _, e := range m2.activity {
+		if strings.Contains(e.detail, "playback") {
+			t.Errorf("stream_client activity %q contains playback", e.detail)
+		}
+	}
+}
+
 func TestRenderAgentTurnStylesThinkBlocks(t *testing.T) {
 	view := renderAgentTurn("Santa", "<think>The user says \"speaker-2: Hi santa\". This is a greeting.</think>\nHello speaker-2! It's a wonderful day.")
 	if strings.Contains(view, "<think>") || strings.Contains(view, "</think>") {

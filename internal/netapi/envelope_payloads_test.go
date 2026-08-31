@@ -99,13 +99,14 @@ func TestEncodeEventPayloadsRoundTrip(t *testing.T) {
 func TestTurnMetricsClockKeysArePresentAtZero(t *testing.T) {
 	env := encodeEvent(events.TurnMetrics{})
 	want := map[string]any{
-		"first_token_ms":     int64(0),
-		"first_think_ms":     int64(0),
-		"first_speakable_ms": int64(0),
-		"first_admit_ms":     int64(0),
-		"ttfa_ms":            int64(0),
-		"audible_sink":       "none",
-		"think_leak":         0,
+		"first_token_ms":       int64(0),
+		"first_think_ms":       int64(0),
+		"first_speakable_ms":   int64(0),
+		"first_admit_ms":       int64(0),
+		"synth_first_frame_ms": int64(0),
+		"ttfa_ms":              int64(0),
+		"audible_sink":         "none",
+		"think_leak":           0,
 	}
 	for k, v := range want {
 		if env[k] != v {

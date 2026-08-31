@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -513,5 +514,31 @@ func TestSilentReasoningStreamClientZeroAcceptLeavesTTFAUnset(t *testing.T) {
 	}
 	if metricsEvt.TTFAElapsed != 0 {
 		t.Fatalf("TTFAElapsed = %v, want 0 when accepted-count is 0", metricsEvt.TTFAElapsed)
+	}
+}
+
+func TestStampTTFAOnFinishedIfLaterChunkAccepted(t *testing.T) {
+	player := &sinkEngine{kind: audio.SinkStreamClient, accepted: 0}
+	p := &Pipeline{Player: player, Events: events.NewBus()}
+	m := newTurnMetrics()
+	m.audibleSink = audio.SinkStreamClient
+	m.sinkAtArm = audio.SinkStreamClient
+
+	p.applyPlaybackEvent(playbackEvent{kind: playbackStarted, sentence: "hi"}, m, new(atomic.Int64))
+	if !m.ttfa.IsZero() {
+		t.Fatal("TTFA stamped at pcmReady with accepted-count 0")
+	}
+	pcmReady := m.firstAudioReady
+	if pcmReady.IsZero() {
+		t.Fatal("pcmReady / firstAudioReady unset")
+	}
+
+	player.accepted = 1
+	p.applyPlaybackEvent(playbackEvent{kind: playbackFinished, sentence: "hi"}, m, new(atomic.Int64))
+	if m.ttfa.IsZero() {
+		t.Fatal("TTFA unset after a later chunk was accepted")
+	}
+	if !m.ttfa.Equal(pcmReady) {
+		t.Fatalf("TTFA %v != pcmReady %v — stamp the existing pcmReady time, not drain", m.ttfa, pcmReady)
 	}
 }

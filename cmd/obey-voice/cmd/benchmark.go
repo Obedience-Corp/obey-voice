@@ -855,7 +855,7 @@ func printTTSSummary(result benchmarkResult) {
 	// defect continuing for the rest of the reply.
 	if m.DeadAirElapsed > 0 {
 		detail := formatMetric(m.DeadAirElapsed)
-		if speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed; speaking > 0 {
+		if speaking := m.SpeakingWindow(); speaking > 0 {
 			detail += fmt.Sprintf(" of %s speaking (%.0f%%)", formatMetric(speaking),
 				float64(m.DeadAirElapsed)/float64(speaking)*100)
 		}
@@ -939,7 +939,9 @@ func printBenchmarkSummary(results []benchmarkResult) {
 			printMetric("first segment", formatMetric(result.Metrics.FirstSegmentElapsed))
 			printMetric("first audio ready", formatMetric(result.Metrics.FirstAudioReadyElapsed))
 			printMetric("playback start", formatMetric(result.Metrics.PlaybackStartElapsed))
-			printMetric("playback complete", formatMetric(result.Metrics.PlaybackCompleteElapsed))
+			if result.Metrics.PlaybackCompleteElapsed > 0 {
+				printMetric("playback complete", formatMetric(result.Metrics.PlaybackCompleteElapsed))
+			}
 			if result.Metrics.Interrupted || result.Metrics.BargeInElapsed > 0 {
 				printMetric("interruption", formatMetric(result.Metrics.BargeInElapsed))
 			}

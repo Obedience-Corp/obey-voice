@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestEventTypeExposesWireNames(t *testing.T) {
@@ -97,5 +98,20 @@ func TestSubscribeAllConcurrentAttachDetach(t *testing.T) {
 	bus.mu.RUnlock()
 	if leaked != 0 {
 		t.Fatalf("%d handlers leaked after all removals", leaked)
+	}
+}
+
+func TestSpeakingWindowUsesPlayElapsedNotMixedOrigins(t *testing.T) {
+	m := TurnMetrics{
+		PlaybackStartElapsed:    10 * time.Second,
+		PlaybackCompleteElapsed: 2 * time.Second, // T_eou; must not be subtracted
+		DeadAirElapsed:          time.Second,
+		Segments:                []SegmentMetric{{PlayElapsed: 5 * time.Second}},
+	}
+	if got, want := m.SpeakingWindow(), 6*time.Second; got != want {
+		t.Fatalf("SpeakingWindow = %v, want %v", got, want)
+	}
+	if (TurnMetrics{}).SpeakingWindow() != 0 {
+		t.Fatal("empty metrics must not invent a speaking window")
 	}
 }

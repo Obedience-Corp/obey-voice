@@ -546,7 +546,7 @@ func (p *Pipeline) warnNoSinkSynth(kind string) {
 }
 
 func (p *Pipeline) stampTTFA(metrics *turnMetrics, at time.Time) {
-	if metrics == nil || !metrics.ttfa.IsZero() {
+	if metrics == nil || !metrics.ttfa.IsZero() || at.IsZero() {
 		return
 	}
 	switch metrics.audibleSink {
@@ -558,6 +558,23 @@ func (p *Pipeline) stampTTFA(metrics *turnMetrics, at time.Time) {
 		}
 	}
 	metrics.ttfa = at
+}
+
+// maybeStampLateTTFA covers a stream_client whose first broadcast dropped
+// every chunk and a later one accepted. TTFA is pcmReady, not drain, and
+// Started() is not delayed to accept.
+func (p *Pipeline) maybeStampLateTTFA(metrics *turnMetrics) {
+	if metrics == nil || !metrics.ttfa.IsZero() {
+		return
+	}
+	at := metrics.synthFirstFrame
+	if at.IsZero() {
+		at = metrics.firstAudioReady
+	}
+	if at.IsZero() {
+		at = metrics.playbackStart
+	}
+	p.stampTTFA(metrics, at)
 }
 
 // turnConductor bridges the turn state machine into the live pipeline: stages
@@ -623,7 +640,7 @@ func (p *Pipeline) warnIfSynthesisCannotKeepUp(m events.TurnMetrics) {
 	if m.Interrupted {
 		return
 	}
-	speaking := m.PlaybackCompleteElapsed - m.PlaybackStartElapsed
+	speaking := m.SpeakingWindow()
 	deadAirShare := m.DeadAirElapsed > 0 && speaking > 0 &&
 		float64(m.DeadAirElapsed)/float64(speaking) >= underrunDeadAirShare
 	if !deadAirShare && m.Underruns == 0 {
@@ -1751,6 +1768,7 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 		// stamp is simply never consumed, so trailing silence after the reply
 		// is not counted as a gap inside it.
 		metrics.lastPlaybackEnd = metrics.playbackComplete
+		p.maybeStampLateTTFA(metrics)
 		if metrics.audibleSink == audio.SinkNone && len(metrics.segments) == 0 {
 			p.emit(events.Info{Message: "synth drain (no sink)"})
 		}
@@ -1815,6 +1833,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synth
 			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", result.Err)})
 		}
 		metrics.playbackComplete = time.Now()
+		p.maybeStampLateTTFA(metrics)
 		if metrics.audibleSink == audio.SinkNone {
 			p.emit(events.Info{Message: "synth drain (no sink)"})
 		}
@@ -1852,6 +1871,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, synth
 		p.emit(events.SpeakingInterrupted{Reason: "stopped"})
 	}
 	metrics.playbackComplete = time.Now()
+	p.maybeStampLateTTFA(metrics)
 	if metrics.audibleSink == audio.SinkNone {
 		p.emit(events.Info{Message: "synth drain (no sink)"})
 	}

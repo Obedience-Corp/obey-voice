@@ -28,7 +28,7 @@ const (
 //  1. an optional local speaker (real Player, or nil to mute the host), and
 //  2. any WebSocket clients that opted into audio_output mode "stream".
 //
-// It is the Phase 3 seam: pipeline.Player stays an Engine; no pipeline changes.
+// It is the Phase 3 seam: pipeline.Player stays an Engine plus SinkReporter.
 //
 // Local engine ownership: when ownLocal is true, Close() closes the local
 // engine. When false, the caller (typically buildPipeline's cleanup) owns it.
