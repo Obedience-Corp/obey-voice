@@ -200,15 +200,13 @@ func TestThinkStreamIntegrityDisabled(t *testing.T) {
 	lines := []string{
 		`{"model":"m","message":{"role":"assistant","content":"Cut off"},"done":true,"done_reason":"length","prompt_eval_count":100,"eval_count":12}`,
 	}
-	var got []events.Event
-	SetContinuitySink(func(e events.Event) { got = append(got, e) })
-	t.Cleanup(func() { SetContinuitySink(nil) })
-
 	o := &OllamaBrain{
 		client: ollamaStreamStub(t, lines),
 		model:  "m",
 		cfg:    &config.Config{MaxHistory: 10, ContinuityIntegrityEnabled: false},
 	}
+	var got []events.Event
+	o.SetContinuitySink(func(e events.Event) { got = append(got, e) })
 	stream, err := o.ThinkStream(context.Background(), "hi", StreamOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -235,14 +233,13 @@ func TestContinuityBudgetEmittedOnTurn(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var budgets []events.ContinuityBudget
-	SetContinuitySink(func(e events.Event) {
+	o.SetContinuitySink(func(e events.Event) {
 		if b, ok := e.(events.ContinuityBudget); ok {
 			mu.Lock()
 			budgets = append(budgets, b)
 			mu.Unlock()
 		}
 	})
-	t.Cleanup(func() { SetContinuitySink(nil) })
 
 	stream, err := o.ThinkStream(context.Background(), "hello", StreamOptions{})
 	if err != nil {
@@ -257,5 +254,44 @@ func TestContinuityBudgetEmittedOnTurn(t *testing.T) {
 	}
 	if budgets[0].NumCtx != 8192 {
 		t.Fatalf("NumCtx = %d, want 8192", budgets[0].NumCtx)
+	}
+}
+
+// TestContinuitySinkIsInstanceScoped locks in the review fix: two active
+// brains route continuity telemetry to their own pipelines' buses, never to
+// each other's.
+func TestContinuitySinkIsInstanceScoped(t *testing.T) {
+	lines := []string{
+		`{"model":"m","message":{"role":"assistant","content":"Hi."},"done":true,"done_reason":"stop"}`,
+	}
+	newBrain := func() *OllamaBrain {
+		return &OllamaBrain{
+			client:           ollamaStreamStub(t, lines),
+			model:            "m",
+			fullSystemPrompt: "system",
+			cfg:              &config.Config{MaxHistory: 10, OllamaNumCtx: 8192, ContinuityIntegrityEnabled: true},
+		}
+	}
+	a, b := newBrain(), newBrain()
+	var mu sync.Mutex
+	counts := map[string]int{}
+	a.SetContinuitySink(func(events.Event) { mu.Lock(); counts["a"]++; mu.Unlock() })
+	b.SetContinuitySink(func(events.Event) { mu.Lock(); counts["b"]++; mu.Unlock() })
+
+	for _, o := range []*OllamaBrain{a, b} {
+		stream, err := o.ThinkStream(context.Background(), "hello", StreamOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		collectStream(t, stream)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if counts["a"] == 0 || counts["b"] == 0 {
+		t.Fatalf("both sinks should receive their own events, got %v", counts)
+	}
+	if counts["a"] != counts["b"] {
+		t.Fatalf("identical turns should emit identically per instance, got %v", counts)
 	}
 }

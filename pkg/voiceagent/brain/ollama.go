@@ -27,6 +27,9 @@ const ollamaSpeakerSep = "\x1e"
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
 	client       *api.Client
+	continuityMu sync.Mutex
+	// continuitySink receives this instance's continuity events (integrity.go).
+	continuitySink func(events.Event)
 	model        string
 	workDir      string
 	history      []api.Message

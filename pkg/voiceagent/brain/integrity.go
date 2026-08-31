@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -60,22 +59,19 @@ func endsMidSentence(s string) bool {
 	return true
 }
 
-var (
-	continuitySinkMu sync.Mutex
-	continuitySink   func(events.Event)
-)
-
-// SetContinuitySink routes continuity observability events onto the app bus.
-func SetContinuitySink(fn func(events.Event)) {
-	continuitySinkMu.Lock()
-	continuitySink = fn
-	continuitySinkMu.Unlock()
+// SetContinuitySink routes this brain's continuity observability events onto
+// its owning pipeline's event bus. Instance-scoped: with several pipelines
+// active, each brain's telemetry stays on its own conversation's bus.
+func (o *OllamaBrain) SetContinuitySink(fn func(events.Event)) {
+	o.continuityMu.Lock()
+	o.continuitySink = fn
+	o.continuityMu.Unlock()
 }
 
-func emitContinuity(e events.Event) {
-	continuitySinkMu.Lock()
-	sink := continuitySink
-	continuitySinkMu.Unlock()
+func (o *OllamaBrain) emitContinuity(e events.Event) {
+	o.continuityMu.Lock()
+	sink := o.continuitySink
+	o.continuityMu.Unlock()
 	if sink != nil {
 		sink(e)
 	}
@@ -116,7 +112,7 @@ func (o *OllamaBrain) maybeEmitContinuityBudget(skillCtx string) {
 	fmt.Fprintf(os.Stderr,
 		"obey-voice: continuity.budget est=%d soft=%d hard=%d num_ctx=%d action=%s\n",
 		evt.EstTokens, evt.SoftLimit, evt.HardLimit, evt.NumCtx, evt.Action)
-	emitContinuity(evt)
+	o.emitContinuity(evt)
 }
 
 func (o *OllamaBrain) emitContinuityTruncated(r IntegrityResult) {
@@ -129,5 +125,5 @@ func (o *OllamaBrain) emitContinuityTruncated(r IntegrityResult) {
 	fmt.Fprintf(os.Stderr,
 		"obey-voice: continuity.truncated done_reason=%q prompt=%d gen=%d mid_sentence=%t\n",
 		evt.DoneReason, evt.PromptTokens, evt.GenTokens, evt.MidSentence)
-	emitContinuity(evt)
+	o.emitContinuity(evt)
 }
