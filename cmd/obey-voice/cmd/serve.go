@@ -306,6 +306,7 @@ func runServe(cfg *config.Config) error {
 			bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 		}
 	}
+	wireCompact(p, cfg, ref.sess, bus)
 	defer func() {
 		if err := ref.save(p.Brain.History()); err != nil {
 			fmt.Fprintf(serveHumanOut, "  warning: failed to save session: %v\n", err)

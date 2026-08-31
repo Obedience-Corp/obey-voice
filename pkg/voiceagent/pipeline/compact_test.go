@@ -78,6 +78,44 @@ func compactHistory() []brain.Turn {
 	}
 }
 
+func TestAutoCompactIfNeededSummarizesInsteadOfDropping(t *testing.T) {
+	hist := make([]brain.Turn, 0, 22)
+	for i := 0; i < 11; i++ {
+		hist = append(hist,
+			brain.Turn{Role: "user", Content: "turn"},
+			brain.Turn{Role: "assistant", Content: "reply"},
+		)
+	}
+	b := &compactBrain{history: hist, summary: "the gist"}
+	var compacted int
+	bus := events.NewBus()
+	bus.SubscribeAll(func(e events.Event) {
+		if _, ok := e.(events.ConversationCompacted); ok {
+			compacted++
+		}
+	})
+	p := &Pipeline{Brain: b, Events: bus, CompactPrompt: "SUMMARIZE", AutoCompactAfter: 20}
+	if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+		t.Fatalf("autoCompactIfNeeded: %v", err)
+	}
+	if compacted != 1 {
+		t.Fatalf("compacted = %d, want 1", compacted)
+	}
+	if len(b.history) >= len(hist) {
+		t.Fatalf("history still %d, want a compacted seed", len(b.history))
+	}
+	if b.history[0].Content != "the gist" {
+		t.Fatalf("seed[0] = %+v, want summary first", b.history[0])
+	}
+	p2 := &Pipeline{Brain: &compactBrain{history: compactHistory()}, CompactPrompt: "S", AutoCompactAfter: 20}
+	if err := p2.autoCompactIfNeeded(context.Background()); err != nil {
+		t.Fatalf("under threshold: %v", err)
+	}
+	if len(p2.Brain.History()) != 4 {
+		t.Fatalf("under threshold must not compact, got %d", len(p2.Brain.History()))
+	}
+}
+
 func TestCompactConversationSummarizesAndReseeds(t *testing.T) {
 	b := &compactBrain{history: compactHistory(), summary: "the summary"}
 	bus := events.NewBus()

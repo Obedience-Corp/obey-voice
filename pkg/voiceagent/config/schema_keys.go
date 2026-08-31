@@ -160,7 +160,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "ollama_think", Type: TypeEnum, Default: "auto", Enum: ollamaThinkEnum(),
 			Group: GroupBrain, Title: "Reasoning",
-			Help: "auto turns thinking on for qwen3-family models so chain-of-thought is not spoken. Explicit false is the leaky hatch.",
+			Help: "auto/false leave thinking off so greetings are not a minute of silent CoT. Set true or low/medium/high/max to enable it.",
 		},
 		{
 			Key: "claude_max_session_tokens", Type: TypeInt, Default: 0, Unit: "tokens", Min: num(0), Max: num(1000000),
