@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
@@ -35,6 +36,16 @@ func TestEncodeEventPayloadsRoundTrip(t *testing.T) {
 			name:  "thinking_delta text survives",
 			event: events.ThinkingDelta{Text: "The user said hi."},
 			want:  map[string]any{"type": "thinking_delta", "text": "The user said hi."},
+		},
+		{
+			name:  "response_speakable_started elapsed_ms",
+			event: events.ResponseSpeakableStarted{Elapsed: 1500 * time.Millisecond},
+			want:  map[string]any{"type": "response_speakable_started", "elapsed_ms": float64(1500)},
+		},
+		{
+			name:  "response_speakable_started zero elapsed still carries the key",
+			event: events.ResponseSpeakableStarted{},
+			want:  map[string]any{"type": "response_speakable_started", "elapsed_ms": float64(0)},
 		},
 		{
 			name:  "audio_level zero level still carries the key",
@@ -96,6 +107,7 @@ func TestEncodeEventLeavesOtherShapesAlone(t *testing.T) {
 		{events.ConversationCleared{}, []string{"type"}},
 		{events.TranscriptPartial{Text: "part"}, []string{"type", "text"}},
 		{events.ResponseStreamingStarted{}, []string{"type", "elapsed_ms"}},
+		{events.ResponseSpeakableStarted{}, []string{"type", "elapsed_ms"}},
 		{events.SpeakingStarted{Text: "hi"}, []string{"type", "text"}},
 		{events.TurnInterrupted{Reason: "remote_interrupt"}, []string{"type", "reason"}},
 		{events.SpeakingInterrupted{Reason: "remote_interrupt"}, []string{"type", "reason"}},

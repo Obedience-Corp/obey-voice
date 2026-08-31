@@ -157,6 +157,8 @@ func (w *Writer) Attach(bus *events.Bus) {
 	events.Subscribe(bus, func(e events.UserInput) {
 		w.enqueue(record{Type: "user", Text: e.Text})
 	})
+	// agent_delta is ResponseDelta (speakable) only. ThinkingDelta is operator-facing
+	// and must not be recorded as agent_delta.
 	events.Subscribe(bus, func(e events.ResponseDelta) {
 		w.enqueue(record{Type: "agent_delta", Text: e.Text})
 	})

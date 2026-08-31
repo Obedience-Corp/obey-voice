@@ -174,7 +174,7 @@ func (u *UI) onThinkingComplete(e events.ThinkingComplete) {
 }
 
 func (u *UI) onResponseStreamingStarted(e events.ResponseStreamingStarted) {
-	u.status(fmt.Sprintf("    first response chunk (%.1fs)", e.Elapsed.Seconds()))
+	u.status(fmt.Sprintf("    first token (%.1fs)", e.Elapsed.Seconds()))
 }
 
 func (u *UI) onSpeechSegmentReady(_ events.SpeechSegmentReady) {

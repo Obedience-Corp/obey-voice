@@ -53,6 +53,9 @@ type conversationModel struct {
 	activity   []activityEntry
 	status     string
 	statusErr  bool
+	// streamingThink accumulates ThinkingDelta text for the in-progress turn,
+	// painted dim and labeled "thinking". Never copied into the transcript.
+	streamingThink string
 	// streamingAgent accumulates ResponseDelta text for the in-progress agent
 	// turn, rendered live beneath the transcript until ResponseReady finalizes
 	// it into transcript. Empty when no turn is streaming.
@@ -649,10 +652,10 @@ func (m *conversationModel) refreshContent() {
 		return
 	}
 	content := strings.Join(m.transcript, "\n")
-	// Render the in-progress agent turn live beneath the finalized transcript
-	// so the reply streams in token-by-token before ResponseReady lands.
-	if m.streamingAgent != "" {
-		live := renderAgentTurn(m.agentName, m.streamingAgent)
+	// Render the in-progress turn live beneath the finalized transcript so
+	// thinking and speakable stream in before ResponseReady lands.
+	if m.streamingThink != "" || m.streamingAgent != "" {
+		live := renderAgentBubble(m.agentName, m.streamingThink, m.streamingAgent, m.streamingThink != "")
 		if content != "" {
 			content += "\n" + live
 		} else {
@@ -667,6 +670,16 @@ func (m *conversationModel) refreshContent() {
 // following the tail when followChat is set.
 func (m *conversationModel) appendStreamingDelta(text string) {
 	m.streamingAgent += text
+	m.refreshContent()
+	m.applyFollow()
+}
+
+func (m *conversationModel) appendStreamingThink(text string) {
+	first := m.streamingThink == ""
+	m.streamingThink += text
+	if first {
+		m.appendActivity("model", "thinking", 0)
+	}
 	m.refreshContent()
 	m.applyFollow()
 }
@@ -820,8 +833,9 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		// Start a fresh streaming buffer; a prior turn's leftover (e.g. after an
 		// interrupt that skipped ResponseReady) must not bleed into this reply.
 		// Re-render so any stale live partial leaves the viewport immediately.
-		if m.streamingAgent != "" {
+		if m.streamingAgent != "" || m.streamingThink != "" {
 			m.streamingAgent = ""
+			m.streamingThink = ""
 			m.refreshContent()
 			m.applyFollow()
 		}
@@ -831,6 +845,12 @@ func (m *conversationModel) handleEvent(e events.Event) {
 
 	case events.ResponseStreamingStarted:
 		m.appendActivity("model", "first response", e.Elapsed)
+
+	case events.ThinkingDelta:
+		if e.Text == "" {
+			break
+		}
+		m.appendStreamingThink(e.Text)
 
 	case events.ResponseDelta:
 		m.appendStreamingDelta(e.Text)
@@ -900,13 +920,21 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			m.setVoiceMode(anim.ModeIdle)
 			m.setStatus("", false)
 		}
-		// Finalize the streamed turn: clear the live buffer first so it is not
-		// rendered twice, then append the canonical response to the transcript.
+		// Finalize the streamed turn: clear the live buffers first so they are
+		// not rendered twice. Thinking stays off the transcript; the spoken
+		// bubble comes from e.Response only.
+		thought := m.streamingThink
 		m.streamingAgent = ""
+		m.streamingThink = ""
 		if e.Response != "" {
 			m.rememberAssistant(e.Response)
 			m.appendTranscript(renderAgentTurn(m.agentName, e.Response), "")
 		} else if e.Interrupted {
+			m.refreshContent()
+			m.applyFollow()
+		} else if thought != "" {
+			// Thinking-only empty: the dim bubble already showed the thought.
+			m.appendActivity("model", fmt.Sprintf("thought %d chars", len(thought)), 0)
 			m.refreshContent()
 			m.applyFollow()
 		} else {
@@ -936,10 +964,15 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		// the viewport immediately, and leaving streamingAgent set would render
 		// the same text twice (transcript bubble + live buffer) with no later
 		// refresh on a bare interrupted metrics event.
+		hadThink := m.streamingThink != ""
+		m.streamingThink = ""
 		if partial := m.streamingAgent; partial != "" {
 			m.streamingAgent = ""
 			m.rememberAssistant(partial)
 			m.appendTranscript(renderAgentTurn(m.agentName, partial), "")
+		} else if hadThink {
+			m.refreshContent()
+			m.applyFollow()
 		}
 		// Idle no-speech timeouts restart listening every ~listen_timeout
 		// seconds. Logging each one floods Activity without helping the user.
@@ -1053,8 +1086,9 @@ func formatActivityAt(d time.Duration) string {
 	return fmt.Sprintf("%2d:%02d.%d", m, s, tenths)
 }
 
-// renderUserTurn and renderAgentTurn are the single rendering path for both
-// live events and replayed session history, so the two cannot drift apart.
+// renderUserTurn and renderAgentTurn paint finalized turns (ResponseReady and
+// session replay). Live streaming uses renderAgentBubble so think and speakable
+// stay on separate accumulators.
 func renderUserTurn(text string) string {
 	body := userStyle.Render("› You") + "\n" + normalStyle.Render(text)
 	return userBubbleStyle.Render(body)
@@ -1062,27 +1096,33 @@ func renderUserTurn(text string) string {
 
 func renderAgentTurn(name, text string) string {
 	think, spoken := textclean.SplitThink(text)
-	var b strings.Builder
-	b.WriteString(agentStyle.Render("● " + name))
-	if think != "" {
-		b.WriteByte('\n')
-		b.WriteString(thinkLabelStyle.Render("thinking"))
-		b.WriteByte('\n')
-		b.WriteString(thinkBodyStyle.Render(think))
-	}
-	if spoken != "" {
-		b.WriteByte('\n')
-		b.WriteString(normalStyle.Render(spoken))
-	}
+	showThink := think != ""
 	// Both halves empty on non-blank text means the reply so far is nothing but
 	// think markup — a reasoning block that has opened (or opened and closed)
 	// before any token arrived. This runs on every streaming frame, so it is a
 	// normal transient state, not a corner case. Painting text here would put
 	// the raw <think> tags on screen, which is the bug this function exists to
 	// fix; paint the dim state instead.
-	if think == "" && spoken == "" && strings.TrimSpace(text) != "" {
+	if !showThink && spoken == "" && strings.TrimSpace(text) != "" {
+		showThink = true
+	}
+	return renderAgentBubble(name, think, spoken, showThink)
+}
+
+func renderAgentBubble(name, think, spoken string, showThink bool) string {
+	var b strings.Builder
+	b.WriteString(agentStyle.Render("● " + name))
+	if showThink {
 		b.WriteByte('\n')
 		b.WriteString(thinkLabelStyle.Render("thinking"))
+		if think != "" {
+			b.WriteByte('\n')
+			b.WriteString(thinkBodyStyle.Render(think))
+		}
+	}
+	if spoken != "" {
+		b.WriteByte('\n')
+		b.WriteString(normalStyle.Render(spoken))
 	}
 	return agentBubbleStyle.Render(b.String())
 }
