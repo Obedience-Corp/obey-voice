@@ -52,12 +52,53 @@ type ConversationRuntime struct {
 	Cleanup      func()                      // tears down pipeline resources and saves the session
 }
 
+// BuildStage is one step of the conversation build, reported so the starting
+// screen can name what it is waiting on. Model loads take seconds each; a
+// screen that says nothing through them reads as a hang.
+//
+// Label is what to show. Pct is meaningful only for a download, where it is
+// 0-100; every other stage has no measurable progress.
+type BuildStage struct {
+	Label    string
+	Download bool
+	Pct      float64
+}
+
+// BuildProgress receives stages from the builder. It is called on the
+// builder's goroutine, never the update loop.
+type BuildProgress func(BuildStage)
+
+// Downloading reports an asset transfer at pct (0-100).
+func (p BuildProgress) Downloading(name string, pct float64) {
+	if p != nil {
+		p(BuildStage{Label: "Downloading " + name, Download: true, Pct: pct})
+	}
+}
+
+// Stage reports a step with no measurable progress.
+func (p BuildProgress) Stage(label string) {
+	if p != nil {
+		p(BuildStage{Label: label})
+	}
+}
+
+// Text renders the stage for the starting screen.
+func (s BuildStage) Text() string {
+	if s.Download && s.Pct > 0 {
+		return fmt.Sprintf("%s: %d%%", s.Label, int(s.Pct))
+	}
+	if s.Download {
+		return s.Label + "…"
+	}
+	return s.Label + "…"
+}
+
 // RuntimeBuilder constructs the runtime when the user enters the
 // conversation screen (D2: the mic goes hot here, not in the launcher).
-// Asset download progress is reported through progress and rendered
-// in-screen. personaID selects the session's persona binding; empty resolves
-// the configured active persona.
-type RuntimeBuilder func(ctx context.Context, progress func(name string, pct float64), sessionID, personaID string) (*ConversationRuntime, error)
+// Build progress is reported through progress and rendered in-screen.
+// personaID selects the session's persona binding; empty resolves the
+// configured active persona.
+type RuntimeBuilder func(ctx context.Context, progress BuildProgress, sessionID, personaID string) (*ConversationRuntime, error)
 
 // MeetingRuntime holds STT, the bundle writer, and optional speaker finalizer
 // for the embedded meeting screen.
@@ -134,10 +175,9 @@ func (s *runtimeSlot) cleanup() {
 	}
 }
 
-// assetProgressMsg carries EnsureRuntimeAssets progress into the update loop.
-type assetProgressMsg struct {
-	name string
-	pct  float64
+// buildStageMsg carries a build stage into the update loop.
+type buildStageMsg struct {
+	stage BuildStage
 }
 
 // progressClosedMsg tells the update loop to stop draining the progress feed.
@@ -164,8 +204,8 @@ func reloadVoice(ctx context.Context, reload func(context.Context) error, resume
 // through the feed so the conversation screen can render it.
 func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot, sessionID, personaID string) tea.Cmd {
 	return func() tea.Msg {
-		rt, err := build(ctx, func(name string, pct float64) {
-			feed.send(assetProgressMsg{name: name, pct: pct})
+		rt, err := build(ctx, func(stage BuildStage) {
+			feed.send(buildStageMsg{stage: stage})
 		}, sessionID, personaID)
 		feed.send(progressClosedMsg{})
 		if err != nil {
@@ -182,13 +222,6 @@ func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, 
 		}
 		return runtimeReadyMsg{rt: rt, err: err}
 	}
-}
-
-func formatAssetProgress(msg assetProgressMsg) string {
-	if msg.pct <= 0 {
-		return fmt.Sprintf("Downloading %s...", msg.name)
-	}
-	return fmt.Sprintf("Downloading %s: %d%%", msg.name, int(msg.pct))
 }
 
 // drainTimeout caps how long shutdown waits for an in-flight turn after its

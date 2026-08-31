@@ -384,7 +384,7 @@ func prepareMeetingLiveSpeaker(
 	}
 	// Reuse chat's live builder so meeting labels share the embedding model
 	// and /speakers-class startup path (assets ensured on first enable).
-	controller, stop, _ := prepareLiveSpeaker(ctx, cfg, capture, progress)
+	controller, stop, _ := prepareLiveSpeaker(ctx, cfg, capture)
 	if controller == nil {
 		return nil, stop
 	}
