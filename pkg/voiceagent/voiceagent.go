@@ -160,6 +160,12 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
+	// An unrecognized barge_in_speakers value is a hard startup error (D7) —
+	// see config.ValidateBargeInSpeakers for why a typo must not silently
+	// become the more permissive "anyone".
+	if err := config.ValidateBargeInSpeakers(cfg); err != nil {
+		return nil, nil, fmt.Errorf("voiceagent: %w", err)
+	}
 
 	// PromptsDir, WorkDir and Env reach the brain through the config value it is
 	// built from, so a copy is taken rather than mutating the caller's config —
@@ -187,9 +193,10 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	}
 
 	p := &pipeline.Pipeline{
-		Events:            opts.Events,
-		VoiceToolsEnabled: cfg.VoiceToolsEnabled,
-		BargeInTailGuard:  config.BargeInTailGuardOf(cfg),
+		Events:                      opts.Events,
+		VoiceToolsEnabled:           cfg.VoiceToolsEnabled,
+		BargeInTailGuard:            config.BargeInTailGuardOf(cfg),
+		BargeInSpeakerVerdictMaxAge: config.BargeInSpeakerVerdictMaxAgeOf(cfg),
 	}
 
 	// Brain — injected, or selected by config.

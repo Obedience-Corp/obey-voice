@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/calibre"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
@@ -74,6 +76,7 @@ var severityMark = map[config.Severity]string{
 func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPath func(string) (string, error), voiceChecker config.VoiceDeviceChecker, speechProbe config.SpeechProbe, asJSON bool) error {
 	diags := config.Diagnose(cfg, modelsDir, lookPath)
 	diags = append(diags, personaQwenDiags(cfg, modelsDir)...)
+	diags = append(diags, bargeInSpeakersDiags(cfg)...)
 
 	// Where speech runs, and whether a LAN speech worker answers. The probe
 	// bounds itself with tts_lan_timeout_ms; local never dials.
@@ -160,6 +163,48 @@ func personaQwenDiags(cfg *config.Config, modelsDir string) []config.Diagnostic 
 		})
 	}
 	return diags
+}
+
+// bargeInSpeakersDiags warns when barge_in_speakers=enrolled_only cannot
+// actually gate anything yet. The interrupt watcher's verdict source
+// (pipeline.SpeakerVerdict, see bargeInSpeakerVerdict) only blocks a trip on
+// a confident, enrolled-mismatch window — with live analysis off or nobody
+// enrolled it never produces one, so the gate fails open on every turn (D7's
+// documented posture, not a bug). Read-only: LoadEnrollment never creates the
+// store, unlike speakerEnrollmentDir's sibling OpenEnrollment used by
+// `speaker enroll`.
+func bargeInSpeakersDiags(cfg *config.Config) []config.Diagnostic {
+	if config.BargeInSpeakersOf(cfg) != config.BargeInSpeakersEnrolledOnly {
+		return nil
+	}
+	if !speaker.FromAppConfig(cfg).LiveActive() {
+		return []config.Diagnostic{{
+			Name:        "barge-in-speakers-gate",
+			Severity:    config.SeverityWarn,
+			Detail:      "barge_in_speakers=enrolled_only but speaker.live is disabled: the interrupt watcher never gets a verdict, so it fails open and anyone can interrupt",
+			Remediation: "enable speaker.enabled and speaker.live.enabled",
+		}}
+	}
+	store, err := speaker.LoadEnrollment(bargeInSpeakersEnrollmentDir(cfg))
+	if err != nil || store == nil || len(store.List()) == 0 {
+		return []config.Diagnostic{{
+			Name:        "barge-in-speakers-gate",
+			Severity:    config.SeverityWarn,
+			Detail:      "barge_in_speakers=enrolled_only but no speaker is enrolled: no verdict can ever match, so it fails open and anyone can interrupt",
+			Remediation: "enroll a speaker: obey-voice speaker enroll --name <name> --from-wav clip.wav",
+		}}
+	}
+	return nil
+}
+
+// bargeInSpeakersEnrollmentDir duplicates speaker_cmd.go's speakerEnrollmentDir
+// (that file is !integration-only; doctor.go builds for both) rather than
+// sharing it — three lines, not worth a cross-build-tag indirection.
+func bargeInSpeakersEnrollmentDir(cfg *config.Config) string {
+	if cfg != nil && cfg.Speaker.EnrollmentDir != "" {
+		return cfg.Speaker.EnrollmentDir
+	}
+	return filepath.Join(config.ConfigDir(), "speakers")
 }
 
 func init() {

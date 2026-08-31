@@ -333,6 +333,55 @@ func TestBargeInTailGuardHonorsConfiguredOverride(t *testing.T) {
 	}
 }
 
+// TestBargeInSpeakerVerdictMaxAgeDefaultsWhenUnset mirrors
+// TestBargeInTailGuardDefaultsWhenUnset for the S3 staleness bound.
+func TestBargeInSpeakerVerdictMaxAgeDefaultsWhenUnset(t *testing.T) {
+	p := &Pipeline{}
+	if got := p.bargeInSpeakerVerdictMaxAge(); got != bargeInSpeakerVerdictMaxAgeDefault {
+		t.Errorf("bargeInSpeakerVerdictMaxAge() = %v, want default %v", got, bargeInSpeakerVerdictMaxAgeDefault)
+	}
+}
+
+// TestBargeInSpeakerVerdictWiring proves BargeInSpeakerVerdict and
+// BargeInSpeakerVerdictMaxAge (wired from config barge_in_speakers /
+// speaker.live.window_ms in voiceagent.New and cmd/root.go) both reach the
+// interrupt controller through newInterruptController.
+func TestBargeInSpeakerVerdictWiring(t *testing.T) {
+	const configured = 750 * time.Millisecond
+	verdict := func() SpeakerVerdict { return SpeakerVerdict{Enrolled: true} }
+	p := &Pipeline{BargeInSpeakerVerdict: verdict, BargeInSpeakerVerdictMaxAge: configured}
+
+	if got := p.bargeInSpeakerVerdictMaxAge(); got != configured {
+		t.Errorf("bargeInSpeakerVerdictMaxAge() = %v, want configured %v", got, configured)
+	}
+
+	ctrl := p.newInterruptController()
+	if ctrl.verdictMaxAge != configured {
+		t.Errorf("newInterruptController() verdictMaxAge = %v, want configured %v", ctrl.verdictMaxAge, configured)
+	}
+	if ctrl.speakerVerdict == nil {
+		t.Fatal("newInterruptController() speakerVerdict is nil, want the configured func")
+	}
+	if got := ctrl.speakerVerdict(); !got.Enrolled {
+		t.Error("newInterruptController() speakerVerdict did not thread through Pipeline.BargeInSpeakerVerdict")
+	}
+}
+
+// TestInterruptControllerAnyoneModeHasNilSpeakerVerdict proves
+// newInterruptController leaves speakerVerdict nil when
+// Pipeline.BargeInSpeakerVerdict was never wired (barge_in_speakers=anyone,
+// the default) — allowsInterrupt's nil check is what "never consulted" means.
+func TestInterruptControllerAnyoneModeHasNilSpeakerVerdict(t *testing.T) {
+	p := &Pipeline{}
+	ctrl := p.newInterruptController()
+	if ctrl.speakerVerdict != nil {
+		t.Error("newInterruptController() speakerVerdict is non-nil with no Pipeline.BargeInSpeakerVerdict wired")
+	}
+	if !ctrl.allowsInterrupt() {
+		t.Error("allowsInterrupt() = false with a nil speakerVerdict, want true (anyone mode is never blocked)")
+	}
+}
+
 func TestInterruptControllerUnsubscribesOnCancel(t *testing.T) {
 	capture := newFakeCapture()
 	vad := &fakeVAD{}
