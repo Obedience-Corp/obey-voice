@@ -40,6 +40,7 @@ type rawMetrics struct {
 	FirstAudioReadyElapsed  int64        `json:"FirstAudioReadyElapsed"`
 	PlaybackStartElapsed    int64        `json:"PlaybackStartElapsed"`
 	PlaybackCompleteElapsed int64        `json:"PlaybackCompleteElapsed"`
+	AudibleSink             string       `json:"AudibleSink"`
 	TTSProvider             string       `json:"TTSProvider"`
 	TTSTier                 string       `json:"TTSTier"`
 	TTSFallbacks            int          `json:"TTSFallbacks"`
@@ -72,10 +73,14 @@ func (s rawSegment) engineNanos() int64 {
 	return s.SynthElapsed
 }
 
-// speakingWindowNanos is play plus dead air. PlaybackCompleteElapsed is T_eou
-// (and zero for stream_client / none) and must not be subtracted from
-// start-relative PlaybackStartElapsed.
+// speakingWindowNanos is local-speaker play plus dead air. Fanout drain
+// (stream_client / none) is not speaking. Empty AudibleSink is treated as
+// local so fixtures that omit the field still exercise the math.
 func speakingWindowNanos(m rawMetrics) int64 {
+	switch m.AudibleSink {
+	case "stream_client", "none":
+		return 0
+	}
 	var play int64
 	for _, seg := range m.Segments {
 		play += seg.PlayElapsed

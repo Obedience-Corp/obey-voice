@@ -227,11 +227,15 @@ func (s SegmentMetric) QueueElapsed() time.Duration {
 	return s.SynthElapsed - s.EngineElapsed
 }
 
-// SpeakingWindow is audible play plus inter-segment dead air — the denominator
-// for dead-air share. Prefer this over PlaybackCompleteElapsed minus
-// PlaybackStartElapsed: those clocks have different origins (T_eou vs start)
-// and complete is zero for stream_client / none.
+// SpeakingWindow is local-speaker play plus inter-segment dead air — the
+// denominator for dead-air share. Zero for stream_client and none: fanout
+// PlayElapsed is queue-drain, not acoustic play. Empty AudibleSink is treated
+// as local so unit fixtures that omit the field still exercise the math.
 func (e TurnMetrics) SpeakingWindow() time.Duration {
+	switch e.AudibleSink {
+	case "stream_client", "none":
+		return 0
+	}
 	var play time.Duration
 	for _, seg := range e.Segments {
 		play += seg.PlayElapsed

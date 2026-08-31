@@ -147,3 +147,30 @@ func TestWarnIfSynthesisCannotKeepUpStaysQuietWhenItKeepsUp(t *testing.T) {
 		})
 	}
 }
+
+func TestWarnIfSynthesisCannotKeepUpIgnoresFanoutDrainDeadAir(t *testing.T) {
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	p := &Pipeline{Events: bus}
+
+	// Stage still playing while the host is idle: drain+dead-air must not
+	// count as a keep-up failure. Underruns still warn on their own.
+	p.warnIfSynthesisCannotKeepUp(events.TurnMetrics{
+		AudibleSink:    "stream_client",
+		DeadAirElapsed: 6 * time.Second,
+		Segments:       []events.SegmentMetric{{PlayElapsed: time.Millisecond}},
+	})
+	if len(infos) != 0 {
+		t.Fatalf("fanout drain dead-air warned: %v", infos)
+	}
+
+	p.warnIfSynthesisCannotKeepUp(events.TurnMetrics{
+		AudibleSink: "stream_client",
+		Underruns:   1,
+		Segments:    []events.SegmentMetric{{PlayElapsed: time.Millisecond, Underruns: 1}},
+	})
+	if len(infos) != 1 {
+		t.Fatalf("underrun on stream_client: got %d notices, want 1: %v", len(infos), infos)
+	}
+}

@@ -114,4 +114,14 @@ func TestSpeakingWindowUsesPlayElapsedNotMixedOrigins(t *testing.T) {
 	if (TurnMetrics{}).SpeakingWindow() != 0 {
 		t.Fatal("empty metrics must not invent a speaking window")
 	}
+	m.AudibleSink = "local_speaker"
+	if got, want := m.SpeakingWindow(), 6*time.Second; got != want {
+		t.Fatalf("local_speaker SpeakingWindow = %v, want %v", got, want)
+	}
+	for _, sink := range []string{"stream_client", "none"} {
+		m.AudibleSink = sink
+		if got := m.SpeakingWindow(); got != 0 {
+			t.Fatalf("AudibleSink %q SpeakingWindow = %v, want 0 (drain is not speaking)", sink, got)
+		}
+	}
 }
