@@ -27,7 +27,7 @@ const Schema = "festival-voice.persona.v1"
 
 // DefaultID is the shipped default profile id: the persona a fresh install
 // talks to and the id every heal path prefers. Companions (samantha, veronica,
-// whoever is added next) live in shipped/*.yaml; they are not defaults.
+// jarvis, whoever is added next) live in shipped/*.yaml; they are not defaults.
 const DefaultID = "obey"
 
 // DefaultDisplayName is the display name of the shipped default profile. It

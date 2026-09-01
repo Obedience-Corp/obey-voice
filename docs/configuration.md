@@ -53,8 +53,9 @@ Shipped personas live in the catalog (`internal/persona/shipped/*.yaml` plus a
 matching `prompts/defaults/persona.<id>.yaml`). Adding a companion is those two
 files; there is no Go special case. **obey** is the default a fresh install
 talks to and pins nothing — no brain, no TTS — so it speaks with whatever the
-config above says. **samantha** and **veronica** are selectable companions
-(Kokoro / VeronicaDesk). None of them can be deleted.
+config above says. **samantha**, **veronica**, and **jarvis** are selectable
+companions (Kokoro Heart / VeronicaDesk / Kokoro George). None of them can be
+deleted.
 
 On every load, empty catalog slots are filled and occupied slots are left
 alone. A fresh install starts on `obey`. An install that already named

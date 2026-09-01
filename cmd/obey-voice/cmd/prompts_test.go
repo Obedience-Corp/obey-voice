@@ -145,7 +145,7 @@ func TestPromptsCommandsHumanOutput(t *testing.T) {
 	}
 	// samantha is asserted beside the default on purpose: she still ships, so
 	// the catalog must still offer her identity to an install bound to it.
-	for _, want := range []string{"KIND", "NAME", "SOURCE", "HASH", "persona", "obey", "samantha", "veronica", "embedded"} {
+	for _, want := range []string{"KIND", "NAME", "SOURCE", "HASH", "persona", "obey", "samantha", "veronica", "jarvis", "embedded"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("prompts list output = %q, want it to contain %q", out, want)
 		}

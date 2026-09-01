@@ -231,6 +231,52 @@ func TestFreshInstallSeedsVeronica(t *testing.T) {
 	}
 }
 
+// TestFreshInstallSeedsJarvis: he is a selectable companion, not the default.
+// A fresh install can switch to him without authoring a profile; Kokoro George
+// is the matching voice.
+func TestFreshInstallSeedsJarvis(t *testing.T) {
+	newInstall(t)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ActivePersona != DefaultID {
+		t.Fatalf("ActivePersona = %q, want obey as the default even after Jarvis ships", cfg.ActivePersona)
+	}
+
+	p, err := Load("jarvis")
+	if err != nil {
+		t.Fatalf("Load(%s): %v", "jarvis", err)
+	}
+	if p.DisplayName != "Jarvis" || !p.Builtin {
+		t.Errorf("jarvis profile = %+v, want display %q and builtin", p, "Jarvis")
+	}
+	if p.TTS.Provider != "kokoro" || p.TTS.Voice != "bm_george" {
+		t.Errorf("jarvis tts = %+v, want kokoro/bm_george", p.TTS)
+	}
+	if p.Brain != (Brain{}) {
+		t.Errorf("jarvis brain = %+v, want inherited", p.Brain)
+	}
+
+	text, err := LoadSystemPrompt("jarvis")
+	if err != nil {
+		t.Fatalf("LoadSystemPrompt(jarvis): %v", err)
+	}
+	if !strings.Contains(text, "inspired by the dry British AI butler from Iron Man") {
+		t.Errorf("jarvis prompt is not his public identity:\n%s", text)
+	}
+
+	if err := Use(cfg, "jarvis"); err != nil {
+		t.Fatalf("Use(jarvis): %v", err)
+	}
+	if cfg.ActivePersona != "jarvis" || cfg.AgentName != "Jarvis" || cfg.Persona != "jarvis" {
+		t.Errorf("after Use(jarvis): active %q name %q prompt %q", cfg.ActivePersona, cfg.AgentName, cfg.Persona)
+	}
+	if cfg.TTSProvider != "kokoro" || cfg.TTSVoice != "bm_george" {
+		t.Errorf("after Use(jarvis): tts %q voice %q", cfg.TTSProvider, cfg.TTSVoice)
+	}
+}
+
 // TestSeedBuiltinsLeavesAUserVeronicaAlone is the privacy contract: a
 // user-authored profile at id veronica is not replaced by the shipped one.
 func TestSeedBuiltinsLeavesAUserVeronicaAlone(t *testing.T) {
@@ -272,8 +318,8 @@ prompts:
 }
 
 // TestExistingSamanthaInstallKeepsSamanthaAndGainsCompanions: a config that
-// names samantha stays on samantha. Missing shipped slots (obey, veronica)
-// are filled. Her own file is not rewritten.
+// names samantha stays on samantha. Missing shipped slots (obey, veronica,
+// jarvis) are filled. Her own file is not rewritten.
 func TestExistingSamanthaInstallKeepsSamanthaAndGainsCompanions(t *testing.T) {
 	dir := newInstall(t)
 	writeConfigFile(t, dir, "active_persona: samantha\npersona: samantha\nagent_name: Samantha\ntts_provider: kokoro\ntts_voice: af_heart\n")
@@ -310,7 +356,7 @@ func TestExistingSamanthaInstallKeepsSamanthaAndGainsCompanions(t *testing.T) {
 	}
 
 	ids := loadIDs(t)
-	if !hasProfileID(mustList(t), "samantha") || !hasProfileID(mustList(t), DefaultID) || !hasProfileID(mustList(t), "veronica") {
+	if !hasProfileID(mustList(t), "samantha") || !hasProfileID(mustList(t), DefaultID) || !hasProfileID(mustList(t), "veronica") || !hasProfileID(mustList(t), "jarvis") {
 		t.Errorf("personas = %v, want samantha kept and missing shipped slots filled", ids)
 	}
 	rawAfter, err := os.ReadFile(path)
@@ -379,6 +425,17 @@ func mustList(t *testing.T) []*Profile {
 		t.Fatal(err)
 	}
 	return list
+}
+
+// firstCompanionID is the fallback pickFallbackID uses after skipping an
+// unowned default: ShippedIDs order, first id that is not DefaultID.
+func firstCompanionID() string {
+	for _, id := range ShippedIDs() {
+		if id != DefaultID {
+			return id
+		}
+	}
+	return ""
 }
 
 // TestActivePersonaErrors: a persona the user chose and that is not there is an
@@ -450,6 +507,16 @@ func TestBuiltinsObeyInheritsAndCompanionsPinVoices(t *testing.T) {
 	if veronica.Brain != (Brain{}) {
 		t.Errorf("veronica brain = %+v, want inherited", veronica.Brain)
 	}
+	jarvis := byID["jarvis"]
+	if jarvis == nil {
+		t.Fatal("catalog missing jarvis")
+	}
+	if jarvis.TTS.Provider != "kokoro" || jarvis.TTS.Voice != "bm_george" {
+		t.Errorf("jarvis tts = %+v, want catalog pin kokoro/bm_george (not the live af_sky)", jarvis.TTS)
+	}
+	if jarvis.Brain != (Brain{}) {
+		t.Errorf("jarvis brain = %+v, want inherited", jarvis.Brain)
+	}
 }
 
 // TestBuiltinsAreUndeletable: every catalog profile is flagged builtin.
@@ -512,10 +579,11 @@ func TestUserPersonaNamedObeyIsNotAdopted(t *testing.T) {
 	}{
 		{
 			// Row A2. active_persona is only the shipped default, so the obey
-			// profile it names is a collision, not a choice.
+			// profile it names is a collision, not a choice. Fallback follows
+			// ShippedIDs: default first, then alphabetical owned companions.
 			name:       "defaulted active_persona skips the user's obey",
 			config:     "tts_provider: kokoro\n",
-			wantActive: "samantha",
+			wantActive: firstCompanionID(),
 		},
 		{
 			// The same install, one `persona use obey` later: now it IS a

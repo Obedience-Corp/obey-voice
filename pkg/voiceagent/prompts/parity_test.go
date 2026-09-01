@@ -25,6 +25,13 @@ func TestVeronicaPersonaGolden(t *testing.T) {
 	assertGolden(t, "testdata/persona.veronica.golden", got)
 }
 
+// TestJarvisPersonaGolden pins the shipped Iron Man-inspired companion.
+// Reached by name, not Default(); Kokoro George is the matching voice.
+func TestJarvisPersonaGolden(t *testing.T) {
+	got := resolveNamed(t, prompts.KindPersona, "jarvis", "TestAgent")
+	assertGolden(t, "testdata/persona.jarvis.golden", got)
+}
+
 // TestDefaultPersonaGolden pins the shipped default persona: assembled and
 // resolved with an agent name, it must equal the checked-in golden. Changing
 // the identity every fresh install wakes up with is a product decision, so it
