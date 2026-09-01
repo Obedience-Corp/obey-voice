@@ -72,6 +72,26 @@ func TestEncodeEventPayloadsRoundTrip(t *testing.T) {
 			event: events.AudioLevel{Source: "output", Level: 1},
 			want:  map[string]any{"type": "audio_level", "source": "output", "level": float64(1)},
 		},
+		{
+			name:  "speaking_interrupted since_playback_start_ms",
+			event: events.SpeakingInterrupted{Reason: "barge-in", SincePlaybackStart: 1500 * time.Millisecond},
+			want:  map[string]any{"type": "speaking_interrupted", "reason": "barge-in", "since_playback_start_ms": float64(1500)},
+		},
+		{
+			name:  "speaking_interrupted zero since_playback_start still carries the key",
+			event: events.SpeakingInterrupted{Reason: "remote_interrupt"},
+			want:  map[string]any{"type": "speaking_interrupted", "reason": "remote_interrupt", "since_playback_start_ms": float64(0)},
+		},
+		{
+			name:  "turn_interrupted since_playback_start_ms",
+			event: events.TurnInterrupted{Reason: "barge-in", SincePlaybackStart: 250 * time.Millisecond},
+			want:  map[string]any{"type": "turn_interrupted", "reason": "barge-in", "since_playback_start_ms": float64(250)},
+		},
+		{
+			name:  "turn_interrupted zero since_playback_start still carries the key",
+			event: events.TurnInterrupted{Reason: "client_silent"},
+			want:  map[string]any{"type": "turn_interrupted", "reason": "client_silent", "since_playback_start_ms": float64(0)},
+		},
 	}
 
 	for _, tt := range tests {
@@ -128,8 +148,8 @@ func TestEncodeEventLeavesOtherShapesAlone(t *testing.T) {
 		{events.ResponseStreamingStarted{}, []string{"type", "elapsed_ms"}},
 		{events.ResponseSpeakableStarted{}, []string{"type", "elapsed_ms"}},
 		{events.SpeakingStarted{Text: "hi"}, []string{"type", "text"}},
-		{events.TurnInterrupted{Reason: "remote_interrupt"}, []string{"type", "reason"}},
-		{events.SpeakingInterrupted{Reason: "remote_interrupt"}, []string{"type", "reason"}},
+		{events.TurnInterrupted{Reason: "remote_interrupt"}, []string{"type", "reason", "since_playback_start_ms"}},
+		{events.SpeakingInterrupted{Reason: "remote_interrupt"}, []string{"type", "reason", "since_playback_start_ms"}},
 	}
 
 	for _, tt := range tests {

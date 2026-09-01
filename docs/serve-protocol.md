@@ -581,9 +581,14 @@ also emits, to **every** connected client:
 
 | `type` | Fields | When |
 |--------|--------|------|
-| `turn_interrupted` | `reason` (`remote_interrupt`) | A turn was in flight when the `interrupt` arrived |
-| `turn_interrupted` | `reason` (`client_silent`) | Not an `interrupt` at all: a voice turn was ended by the server because its client stopped sending audio (see The turn deadline). Treat any `reason` you do not know as "that turn is over" |
-| `speaking_interrupted` | `reason` (`remote_interrupt`) | …and that turn was in its TTS phase |
+| `turn_interrupted` | `reason` (`remote_interrupt`), `since_playback_start_ms` | A turn was in flight when the `interrupt` arrived |
+| `turn_interrupted` | `reason` (`client_silent`), `since_playback_start_ms` | Not an `interrupt` at all: a voice turn was ended by the server because its client stopped sending audio (see The turn deadline). Treat any `reason` you do not know as "that turn is over" |
+| `speaking_interrupted` | `reason` (`remote_interrupt`), `since_playback_start_ms` | …and that turn was in its TTS phase |
+
+`since_playback_start_ms` is how far into TTS playback the interrupt landed
+(integer milliseconds, from the turn's first playback start). Always present:
+`0` when not applicable — a keystroke, remote, or `client_silent` interrupt,
+which this field does not cover yet. Older serves omit the key.
 
 `reason` distinguishes these from the host mic's own barge-in, which uses the
 local reason string. An `interrupt` on an idle server emits neither — only
