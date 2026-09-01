@@ -27,7 +27,7 @@ func DefaultNativeRelease() (url, sha256 string) {
 
 // DefaultNativeReleaseFor is the testable form without a live machine probe.
 // linux/amd64 here is always the CPU pin; use DefaultNativeReleaseForBackend
-// for vulkan.
+// for vulkan or cuda.
 func DefaultNativeReleaseFor(goos, goarch string) (url, sha256 string) {
 	return DefaultNativeReleaseForBackend(goos, goarch, "cpu")
 }
@@ -40,6 +40,13 @@ func DefaultNativeReleaseForBackend(goos, goarch, backend string) (url, sha256 s
 		return nativeReleaseHost + "v0.1.0/qwen3-tts-native-darwin-arm64.tar.gz",
 			"67b6e7514168d146cf4d892d6594559796bcea4f130c9c837beb8eac1c416e2f"
 	case "linux/amd64":
+		if strings.EqualFold(backend, "cuda") {
+			if linuxAmd64CudaSHA256 == "" {
+				return "", ""
+			}
+			return nativeReleaseHost + "v0.1.3/qwen3-tts-native-linux-amd64-cuda.tar.gz",
+				linuxAmd64CudaSHA256
+		}
 		if strings.EqualFold(backend, "vulkan") {
 			if linuxAmd64VulkanSHA256 == "" {
 				return "", ""
@@ -58,6 +65,11 @@ func DefaultNativeReleaseForBackend(goos, goarch, backend string) (url, sha256 s
 // linuxAmd64VulkanSHA256 is the published linux-amd64-vulkan archive digest.
 // Empty until the release asset exists; ensure then fails closed.
 const linuxAmd64VulkanSHA256 = "532b72718d71dc81bc25d10badce84b8231ebef68b2753ae3b577c591c0efbf8"
+
+// linuxAmd64CudaSHA256 is the published linux-amd64-cuda archive digest.
+// Empty until the release asset exists; DetectLinuxTTSBackend then keeps
+// NVIDIA on the CPU pin so ensure downloads a working tarball, not a 404.
+const linuxAmd64CudaSHA256 = ""
 
 // UnavailableHint is the fail-closed line when this OS/arch has no published
 // tarball. Status, doctor, and ensure must quote it instead of advertising

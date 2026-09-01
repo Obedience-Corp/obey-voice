@@ -15,13 +15,18 @@ var linuxVulkanICDDirs = []string{
 }
 
 // DetectLinuxTTSBackend picks the public Qwen native tarball lane for this
-// Linux host. NVIDIA stays on the CPU pin until a linux-amd64-cuda default
-// exists. Hardware Vulkan ICDs (RADV/ANV) get vulkan. Lavapipe is ignored.
+// Linux host. NVIDIA gets cuda only when the linux-amd64-cuda pin SHA is set;
+// otherwise it stays on the CPU pin (fail closed — no 404). Hardware Vulkan
+// ICDs (RADV/ANV) get vulkan. Lavapipe is ignored. NVIDIA ICDs are never
+// treated as vulkan.
 func DetectLinuxTTSBackend() string {
 	if runtime.GOOS != "linux" {
 		return "cpu"
 	}
 	if nvidiaGPUPresent() {
+		if linuxAmd64CudaSHA256 != "" {
+			return "cuda"
+		}
 		return "cpu"
 	}
 	if hardwareVulkanICD(linuxVulkanICDDirs) {
