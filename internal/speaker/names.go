@@ -20,6 +20,22 @@ func NewNameMap() *NameMap {
 	return &NameMap{names: make(map[string]string)}
 }
 
+// SeedPrimary binds speaker-1 to name when name is set and that id is not
+// already bound. Empty name is a no-op so callers can pass config through
+// without a branch. Session /speakers name still wins because it overwrites.
+// speaker-2 and later stay anonymous until named or enrolled (D3).
+func (m *NameMap) SeedPrimary(name string) {
+	name = strings.TrimSpace(name)
+	if m == nil || name == "" {
+		return
+	}
+	id := AnonymousLabel(1)
+	if m.Get(id) != "" {
+		return
+	}
+	_ = m.Set(id, name)
+}
+
 // NormalizeID accepts "1", "speaker-1", or "Speaker-1" and returns "speaker-N".
 // Empty or invalid input returns "".
 func NormalizeID(raw string) string {

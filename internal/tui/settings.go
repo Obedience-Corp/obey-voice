@@ -739,7 +739,7 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 			m.message = "Microphone set to " + deviceLabel(name)
 		}
 	case sectionSpeakers:
-		m.selectSpeakerItem()
+		return m.selectSpeakerItem()
 	case sectionMeeting:
 		m.selectMeetingItem()
 	case sectionOutput:

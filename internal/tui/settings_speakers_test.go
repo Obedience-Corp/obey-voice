@@ -175,7 +175,7 @@ func TestSettingsSpeakersViewShowsState(t *testing.T) {
 
 	view := stripANSI(m.View())
 
-	for _, want := range []string{"Speakers", "Speaker labels in chat", "Match threshold", "Analysis window", "Meeting diarization"} {
+	for _, want := range []string{"Speakers", "Your name", "Speaker labels in chat", "Match threshold", "Analysis window", "Meeting diarization"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("speakers view missing %q:\n%s", want, view)
 		}
@@ -188,5 +188,44 @@ func TestSpeakerItemsRowCountMatchesConstants(t *testing.T) {
 	m := newSettings(&config.Config{}, nil)
 	if got := len(m.speakerItems()); got != speakerRowCount {
 		t.Errorf("speakerItems() has %d rows, speakerRowCount = %d", got, speakerRowCount)
+	}
+}
+
+func TestSettingsSpeakersNameOpensEditorAndSaves(t *testing.T) {
+	cfg := &config.Config{}
+	m, saved := newSpeakerSettings(t, cfg, speakerRowName)
+
+	if cmd := m.selectCurrent(); cmd == nil {
+		t.Fatal("selecting Your name must open the editor")
+	}
+	if m.edit.kind != editUserDisplayName {
+		t.Fatalf("edit kind = %v, want editUserDisplayName", m.edit.kind)
+	}
+
+	next := commitTyped(*m, "  Lance  ")
+	if saved["user_display_name"] != "Lance" {
+		t.Fatalf("saved = %v, want Lance", saved["user_display_name"])
+	}
+	if next.cfg.UserDisplayName != "Lance" {
+		t.Fatalf("cfg name = %q", next.cfg.UserDisplayName)
+	}
+	if !strings.Contains(next.message, "Lance") {
+		t.Fatalf("message = %q, want the saved name", next.message)
+	}
+}
+
+func TestSettingsSpeakersNameClear(t *testing.T) {
+	cfg := &config.Config{UserDisplayName: "Lance"}
+	m, saved := newSpeakerSettings(t, cfg, speakerRowName)
+	m.selectCurrent()
+	next := commitTyped(*m, "")
+	if saved["user_display_name"] != "" {
+		t.Fatalf("cleared save = %#v", saved["user_display_name"])
+	}
+	if next.cfg.UserDisplayName != "" {
+		t.Fatalf("cfg after clear = %q", next.cfg.UserDisplayName)
+	}
+	if !strings.Contains(next.message, "cleared") {
+		t.Fatalf("message = %q, want cleared", next.message)
 	}
 }

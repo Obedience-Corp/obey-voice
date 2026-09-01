@@ -26,6 +26,17 @@ func TestUserSpeakerLabel(t *testing.T) {
 	}
 }
 
+func TestFormatUserLineUsesDisplayName(t *testing.T) {
+	line := FormatUserLine("speaker-1", "hello", testNames{"speaker-1": "Lance"})
+	if line != "Lance: hello" {
+		t.Fatalf("line = %q", line)
+	}
+	line = FormatUserLine("speaker-2", "hi", testNames{"speaker-1": "Lance"})
+	if line != "speaker-2: hi" {
+		t.Fatalf("unbound cluster = %q", line)
+	}
+}
+
 func TestPromptUserLine(t *testing.T) {
 	line := promptUserLine(Turn{Role: "user", Content: "hi", Speaker: "speaker-1"}, "Sam", testNames{"speaker-1": "Lance"})
 	if line != "Lance: hi" {

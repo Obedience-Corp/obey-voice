@@ -362,6 +362,10 @@
       "value": false,
       "source": "default"
     },
+    "user_display_name": {
+      "value": "",
+      "source": "default"
+    },
     "vad_enabled": {
       "value": true,
       "source": "default"

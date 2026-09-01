@@ -165,3 +165,21 @@ func TestTurnInstructionPlacementIsProviderSpecific(t *testing.T) {
 		t.Error("ollama rebuilds its system prompt per turn, so the instruction rides there")
 	}
 }
+
+func TestAssembleSystemPromptUsesDisplayName(t *testing.T) {
+	cfg := policyCfg()
+	cfg.UserDisplayName = "Lance"
+	cfg.RuntimeEnvUser = "lancerogers"
+	got := AssembleSystemPrompt(SystemPromptInput{
+		Provider: providerClaude,
+		Persona:  "PERSONA",
+		WorkDir:  "/work",
+		Cfg:      cfg,
+	})
+	if !strings.Contains(got, "- User: Lance") {
+		t.Fatalf("environment user missing display name:\n%s", got)
+	}
+	if strings.Contains(got, "lancerogers") {
+		t.Fatalf("OS login leaked into environment:\n%s", got)
+	}
+}

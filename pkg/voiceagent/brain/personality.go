@@ -70,8 +70,12 @@ func resolvePrompt(cfg *config.Config, kind prompts.Kind, name string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("resolving %s prompt %q: %w", kind, name, err)
 	}
+	env := prompts.PlaceholderEnv{}
+	if cfg != nil {
+		env.UserName = strings.TrimSpace(cfg.UserDisplayName)
+	}
 	// Catalog-driven names/values (#166) with the nil-cfg-safe agent name (#164).
-	text, err := prompts.ResolvePlaceholders(doc.Assemble(), prompts.PlaceholderNames(), prompts.PlaceholderValues(agentName, prompts.PlaceholderEnv{}))
+	text, err := prompts.ResolvePlaceholders(doc.Assemble(), prompts.PlaceholderNames(), prompts.PlaceholderValues(agentName, env))
 	if err != nil {
 		return "", fmt.Errorf("%s prompt %q: %w", kind, name, err)
 	}

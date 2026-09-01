@@ -2,13 +2,17 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // Speakers settings row indices — keep in lockstep with speakerItems().
 const (
-	speakerRowLive = iota
+	speakerRowName = iota
+	speakerRowLive
 	speakerRowThreshold
 	speakerRowWindow
 	speakerRowMeeting
@@ -48,7 +52,13 @@ func (m settingsModel) speakerItems() []string {
 		window = 1500
 	}
 
+	name := strings.TrimSpace(m.cfg.UserDisplayName)
+	if name == "" {
+		name = "not set"
+	}
+
 	return []string{
+		fmt.Sprintf("Your name — %s", name),
 		fmt.Sprintf("Speaker labels in chat — %s", enabledLabel(liveOn)),
 		fmt.Sprintf("Match threshold: %.2f", threshold),
 		fmt.Sprintf("Analysis window: %d ms", window),
@@ -56,19 +66,21 @@ func (m settingsModel) speakerItems() []string {
 	}
 }
 
-func (m *settingsModel) selectSpeakerItem() {
+func (m *settingsModel) selectSpeakerItem() tea.Cmd {
 	saveConfig := m.saveConfig
 	if saveConfig == nil {
 		saveConfig = config.SetAndSave
 	}
 	switch m.cursor {
+	case speakerRowName:
+		return m.beginEdit(editUserDisplayName, "Your name", strings.TrimSpace(m.cfg.UserDisplayName))
 	case speakerRowLive:
 		m.toggleLiveSpeakers(saveConfig)
 	case speakerRowThreshold:
 		next := nextLiveThreshold(m.effectiveLiveThreshold())
 		if err := saveConfig("speaker.live.threshold", next); err != nil {
 			m.message = fmt.Sprintf("Failed to save live threshold: %v", err)
-			return
+			return nil
 		}
 		m.cfg.Speaker.Live.Threshold = next
 		m.message = fmt.Sprintf("Match threshold %.2f — lower merges similar voices, higher splits them", next)
@@ -76,13 +88,32 @@ func (m *settingsModel) selectSpeakerItem() {
 		next := nextLiveWindow(m.cfg.Speaker.Live.WindowMS)
 		if err := saveConfig("speaker.live.window_ms", next); err != nil {
 			m.message = fmt.Sprintf("Failed to save live window: %v", err)
-			return
+			return nil
 		}
 		m.cfg.Speaker.Live.WindowMS = next
 		m.message = fmt.Sprintf("Analysis window %d ms", next)
 	case speakerRowMeeting:
 		m.message = "Meeting diarization is per-meeting — toggle it in Settings → Meeting"
 	}
+	return nil
+}
+
+func (m *settingsModel) commitUserDisplayName(value string) {
+	saveConfig := m.saveConfig
+	if saveConfig == nil {
+		saveConfig = config.SetAndSave
+	}
+	value = strings.TrimSpace(value)
+	if err := saveConfig("user_display_name", value); err != nil {
+		m.message = fmt.Sprintf("Failed to save your name: %v", err)
+		return
+	}
+	m.cfg.UserDisplayName = value
+	if value == "" {
+		m.message = "Your name cleared — new conversations show speaker-1 until you enroll or /speakers name"
+		return
+	}
+	m.message = fmt.Sprintf("Your name is %s — new conversations use it in place of speaker-1", value)
 }
 
 // toggleLiveSpeakers flips chat labels. Turning on also turns on the master

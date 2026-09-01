@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"cmp"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -104,7 +105,11 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 			b.WriteString("\n")
 			env := Env{}
 			if in.Cfg != nil {
-				env = Env{User: in.Cfg.RuntimeEnvUser, Hostname: in.Cfg.RuntimeEnvHostname, OS: in.Cfg.RuntimeEnvOS}
+				env = Env{
+					User:     cmp.Or(strings.TrimSpace(in.Cfg.UserDisplayName), in.Cfg.RuntimeEnvUser),
+					Hostname: in.Cfg.RuntimeEnvHostname,
+					OS:       in.Cfg.RuntimeEnvOS,
+				}
 			}
 			b.WriteString(EnvironmentContextFrom(in.WorkDir, env))
 		case ElemSkills:
