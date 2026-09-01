@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=festival-voice.persona.v1
+schema: festival-voice.persona.v1
+id: jarvis
+display_name: Jarvis
+builtin: true
+tts:
+    provider: kokoro
+    voice: bm_george
+prompts:
+    persona: jarvis
