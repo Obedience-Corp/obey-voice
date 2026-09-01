@@ -66,10 +66,10 @@ func DefaultNativeReleaseForBackend(goos, goarch, backend string) (url, sha256 s
 // Empty until the release asset exists; ensure then fails closed.
 const linuxAmd64VulkanSHA256 = "532b72718d71dc81bc25d10badce84b8231ebef68b2753ae3b577c591c0efbf8"
 
-// linuxAmd64CudaSHA256 is the published linux-amd64-cuda archive digest.
-// Empty until the release asset exists; DetectLinuxTTSBackend then keeps
-// NVIDIA on the CPU pin so ensure downloads a working tarball, not a 404.
-const linuxAmd64CudaSHA256 = ""
+// linuxAmd64CudaSHA256 is the published linux-amd64-cuda archive digest
+// (qwen3-tts-native v0.1.3, 0.6B F16, RTX 5060 Ti smoke). Empty would keep
+// NVIDIA on the CPU pin so ensure never 404s a missing asset.
+const linuxAmd64CudaSHA256 = "eea2446480f632b64051ef2eb747cf4d62a6cadd331a0b2e0f5500ca8e711f7e"
 
 // UnavailableHint is the fail-closed line when this OS/arch has no published
 // tarball. Status, doctor, and ensure must quote it instead of advertising
