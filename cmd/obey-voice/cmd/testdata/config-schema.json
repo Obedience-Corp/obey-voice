@@ -475,6 +475,19 @@
       "editable": true
     },
     {
+      "key": "continuity_integrity_enabled",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Context integrity checks",
+      "help": "Detect truncated Ollama completions and emit continuity events. Off restores pre-continuity behavior.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "environment_context_enabled",
       "type": "bool",
       "default": true,

@@ -70,6 +70,10 @@
       "value": null,
       "source": "default"
     },
+    "continuity_integrity_enabled": {
+      "value": true,
+      "source": "default"
+    },
     "environment_context_enabled": {
       "value": true,
       "source": "default"
