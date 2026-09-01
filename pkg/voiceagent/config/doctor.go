@@ -44,6 +44,17 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 
 	diags = append(diags, diagnoseBrainProvider(cfg, lookPath))
 
+	if provider := strings.ToLower(strings.TrimSpace(cfg.BrainProvider)); provider == "" || provider == "ollama" {
+		if cfg.OllamaNumCtx == 0 {
+			diags = append(diags, Diagnostic{
+				Name:     "ollama-num-ctx",
+				Severity: SeverityWarn,
+				Detail:   "ollama_num_ctx is 0 — Ollama uses the server model default (often 262k), risking high RAM and silent prompt truncation from the top",
+				Remediation: "set ollama_num_ctx explicitly (default 8192)",
+			})
+		}
+	}
+
 	// Legacy fuse detection: 60000 was the baked default that installs wrote
 	// to config.yaml between the session-budget release and the warn-path
 	// change, so an explicit 60000 is almost always inherited, not chosen.

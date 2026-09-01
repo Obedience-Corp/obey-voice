@@ -27,6 +27,9 @@ const ollamaSpeakerSep = "\x1e"
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
 	client       *api.Client
+	continuityMu sync.Mutex
+	// continuitySink receives this instance's continuity events (integrity.go).
+	continuitySink func(events.Event)
 	model        string
 	workDir      string
 	history      []api.Message
@@ -204,6 +207,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
 	o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
 	o.ensureContextBudget(skillCtx)
+	o.maybeEmitContinuityBudget(skillCtx)
 
 	out := make(chan string, 8)
 	thinking := make(chan string, 8)
@@ -240,6 +244,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			var textBuf strings.Builder
 			var toolCalls []api.ToolCall
 			var prefillTokens, genTokens int
+			var doneReason string
 			strip := newLabelStripper(o.cfg.AgentName)
 			var split textclean.ThinkFilter
 
@@ -281,6 +286,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				if resp.Done {
 					prefillTokens, genTokens = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
+					doneReason = resp.DoneReason
 				}
 				return nil
 			})
@@ -375,7 +381,20 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			o.history = append(o.history, api.Message{Role: "assistant", Content: response})
 			o.trimHistory()
-			done <- StreamResult{}
+			var integrity IntegrityResult
+			if o.continuityIntegrityEnabled() {
+				integrity = evaluateStreamIntegrity(IntegrityInput{
+					DoneReason:   doneReason,
+					PromptTokens: prefillTokens,
+					GenTokens:    genTokens,
+					NumCtx:       o.cfg.OllamaNumCtx,
+					Speakable:    spoken.String(),
+				})
+				if integrity.Truncated {
+					o.emitContinuityTruncated(integrity)
+				}
+			}
+			done <- StreamResult{Integrity: integrity}
 			return
 		}
 
