@@ -52,12 +52,53 @@ type ConversationRuntime struct {
 	Cleanup      func()                      // tears down pipeline resources and saves the session
 }
 
+// BuildStage is one step of the conversation build, reported so the starting
+// screen can name what it is waiting on. Model loads take seconds each; a
+// screen that says nothing through them reads as a hang.
+//
+// Label is what to show. Pct is meaningful only for a download, where it is
+// 0-100; every other stage has no measurable progress.
+type BuildStage struct {
+	Label    string
+	Download bool
+	Pct      float64
+}
+
+// BuildProgress receives stages from the builder. It is called on the
+// builder's goroutine, never the update loop.
+type BuildProgress func(BuildStage)
+
+// Downloading reports an asset transfer at pct (0-100).
+func (p BuildProgress) Downloading(name string, pct float64) {
+	if p != nil {
+		p(BuildStage{Label: "Downloading " + name, Download: true, Pct: pct})
+	}
+}
+
+// Stage reports a step with no measurable progress.
+func (p BuildProgress) Stage(label string) {
+	if p != nil {
+		p(BuildStage{Label: label})
+	}
+}
+
+// Text renders the stage for the starting screen.
+func (s BuildStage) Text() string {
+	if s.Download && s.Pct > 0 {
+		return fmt.Sprintf("%s: %d%%", s.Label, int(s.Pct))
+	}
+	if s.Download {
+		return s.Label + "…"
+	}
+	return s.Label + "…"
+}
+
 // RuntimeBuilder constructs the runtime when the user enters the
 // conversation screen (D2: the mic goes hot here, not in the launcher).
-// Asset download progress is reported through progress and rendered
-// in-screen. personaID selects the session's persona binding; empty resolves
-// the configured active persona.
-type RuntimeBuilder func(ctx context.Context, progress func(name string, pct float64), sessionID, personaID string) (*ConversationRuntime, error)
+// Build progress is reported through progress and rendered in-screen.
+// personaID selects the session's persona binding; empty resolves the
+// configured active persona.
+type RuntimeBuilder func(ctx context.Context, progress BuildProgress, sessionID, personaID string) (*ConversationRuntime, error)
 
 // MeetingRuntime holds STT, the bundle writer, and optional speaker finalizer
 // for the embedded meeting screen.
@@ -81,8 +122,10 @@ type MeetingRuntime struct {
 }
 
 // MeetingBuilder constructs meeting resources when the user starts recording
-// from the main launcher (assets + mic hot only after title confirm).
-type MeetingBuilder func(ctx context.Context, description string, progress func(name string, pct float64)) (*MeetingRuntime, error)
+// from the main launcher (assets + mic hot only after title confirm). Build
+// progress is reported through progress and rendered in-screen, the same way
+// the conversation reports its own.
+type MeetingBuilder func(ctx context.Context, description string, progress BuildProgress) (*MeetingRuntime, error)
 
 // meetingReadyMsg delivers a built meeting runtime (or error) into Update.
 type meetingReadyMsg struct {
@@ -90,54 +133,112 @@ type meetingReadyMsg struct {
 	err error
 }
 
-func buildMeeting(build MeetingBuilder, ctx context.Context, description string) tea.Cmd {
+func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot[*MeetingRuntime], description string) tea.Cmd {
 	if build == nil {
 		return func() tea.Msg {
 			return meetingReadyMsg{err: fmt.Errorf("meeting builder not configured")}
 		}
 	}
 	return func() tea.Msg {
-		rt, err := build(ctx, description, func(name string, pct float64) {
-			// Progress is best-effort; the preparing screen shows a static label.
-			_ = name
-			_ = pct
+		rt, err := build(ctx, description, func(stage BuildStage) {
+			feed.send(buildStageMsg{stage: stage})
 		})
+		feed.send(progressClosedMsg{})
+		if err != nil {
+			return meetingReadyMsg{err: err}
+		}
+		if rt != nil && slot != nil {
+			// Claim ownership before returning so run() can always clean up,
+			// even if the ready message is never applied (quit mid-build).
+			slot.store(rt)
+			if ctx.Err() != nil {
+				slot.cleanup()
+				return meetingReadyMsg{err: ctx.Err()}
+			}
+		}
 		return meetingReadyMsg{rt: rt, err: err}
 	}
 }
 
-// runtimeSlot owns the built ConversationRuntime across the race between the
-// builder Cmd finishing and the Bubble Tea program quitting. Without it, a
-// runtimeReadyMsg that never reaches Update would leak mic/player resources.
-type runtimeSlot struct {
+// runtimeSlot owns a built runtime across the race between the builder Cmd
+// finishing and the Bubble Tea program quitting. Without it, a ready message
+// that never reaches Update would leak whatever the build opened: a hot mic,
+// a loaded model, an open meeting bundle.
+//
+// Both builds need one. Ctrl+C has always been able to quit during a
+// conversation build, and quits during a meeting build too now that the
+// recorder has a waiting screen instead of owning the key as "stop".
+type runtimeSlot[T comparable] struct {
 	mu sync.Mutex
-	rt *ConversationRuntime
+	rt T
+	// release tears the runtime down. Held as a function so one slot serves
+	// both runtimes, which share the shape but not a type.
+	release func(T)
 }
 
-func (s *runtimeSlot) store(rt *ConversationRuntime) {
+// newConversationSlot owns a ConversationRuntime's teardown.
+func newConversationSlot() *runtimeSlot[*ConversationRuntime] {
+	return &runtimeSlot[*ConversationRuntime]{release: func(rt *ConversationRuntime) {
+		if rt.Cleanup != nil {
+			rt.Cleanup()
+		}
+	}}
+}
+
+// newMeetingSlot owns a MeetingRuntime's teardown.
+//
+// The bundle is closed as well as the devices: a recorder released through the
+// slot never reached meetingRT, so nothing else will write its trailer —
+// Cleanup tears down the mic and the analyzer, but only Close finishes the
+// document. Without this a quit during the build leaves an opened, never
+// finished meeting on disk, which is the one piece of it that outlives the
+// process.
+//
+// Both are idempotent (Writer.Close returns its summary once closed, Cleanup
+// is sync.Once-guarded), so a recorder that did record — already finalized by
+// stopMeetingRuntime — is unaffected by this backstop.
+func newMeetingSlot() *runtimeSlot[*MeetingRuntime] {
+	return &runtimeSlot[*MeetingRuntime]{release: func(rt *MeetingRuntime) {
+		if rt.Writer != nil {
+			_, _ = rt.Writer.Close()
+		}
+		if rt.Cleanup != nil {
+			rt.Cleanup()
+		}
+	}}
+}
+
+func (s *runtimeSlot[T]) store(rt T) {
+	var zero T
 	s.mu.Lock()
 	old := s.rt
 	s.rt = rt
 	s.mu.Unlock()
-	if old != nil && old != rt && old.Cleanup != nil {
-		old.Cleanup()
+	if old != zero && old != rt {
+		s.free(old)
 	}
 }
 
-func (s *runtimeSlot) cleanup() {
+func (s *runtimeSlot[T]) cleanup() {
+	var zero T
 	s.mu.Lock()
 	rt := s.rt
-	s.rt = nil
+	s.rt = zero
 	s.mu.Unlock()
-	if rt != nil && rt.Cleanup != nil {
-		rt.Cleanup()
+	if rt != zero {
+		s.free(rt)
 	}
 }
 
-// assetProgressMsg carries EnsureRuntimeAssets progress into the update loop.
-type assetProgressMsg struct {
-	name string
-	pct  float64
+func (s *runtimeSlot[T]) free(rt T) {
+	if s.release != nil {
+		s.release(rt)
+	}
+}
+
+// buildStageMsg carries a build stage into the update loop.
+type buildStageMsg struct {
+	stage BuildStage
 }
 
 // progressClosedMsg tells the update loop to stop draining the progress feed.
@@ -162,10 +263,10 @@ func reloadVoice(ctx context.Context, reload func(context.Context) error, resume
 
 // buildRuntime runs the builder off the update loop, streaming progress
 // through the feed so the conversation screen can render it.
-func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot, sessionID, personaID string) tea.Cmd {
+func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot[*ConversationRuntime], sessionID, personaID string) tea.Cmd {
 	return func() tea.Msg {
-		rt, err := build(ctx, func(name string, pct float64) {
-			feed.send(assetProgressMsg{name: name, pct: pct})
+		rt, err := build(ctx, func(stage BuildStage) {
+			feed.send(buildStageMsg{stage: stage})
 		}, sessionID, personaID)
 		feed.send(progressClosedMsg{})
 		if err != nil {
@@ -182,13 +283,6 @@ func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, 
 		}
 		return runtimeReadyMsg{rt: rt, err: err}
 	}
-}
-
-func formatAssetProgress(msg assetProgressMsg) string {
-	if msg.pct <= 0 {
-		return fmt.Sprintf("Downloading %s...", msg.name)
-	}
-	return fmt.Sprintf("Downloading %s: %d%%", msg.name, int(msg.pct))
 }
 
 // drainTimeout caps how long shutdown waits for an in-flight turn after its

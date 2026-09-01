@@ -18,17 +18,35 @@ const nativeReleaseHost = "https://github.com/Obedience-Corp/qwen3-tts-native/re
 //
 //	qwen3-tts-native-<goos>-<goarch>.tar.gz
 func DefaultNativeRelease() (url, sha256 string) {
-	return DefaultNativeReleaseFor(runtime.GOOS, runtime.GOARCH)
+	backend := "cpu"
+	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+		backend = DetectLinuxTTSBackend()
+	}
+	return DefaultNativeReleaseForBackend(runtime.GOOS, runtime.GOARCH, backend)
 }
 
-// DefaultNativeReleaseFor is the testable form of DefaultNativeRelease.
+// DefaultNativeReleaseFor is the testable form without a live machine probe.
+// linux/amd64 here is always the CPU pin; use DefaultNativeReleaseForBackend
+// for vulkan.
 func DefaultNativeReleaseFor(goos, goarch string) (url, sha256 string) {
+	return DefaultNativeReleaseForBackend(goos, goarch, "cpu")
+}
+
+// DefaultNativeReleaseForBackend pins a published tarball for os/arch/backend.
+func DefaultNativeReleaseForBackend(goos, goarch, backend string) (url, sha256 string) {
 	switch goos + "/" + goarch {
 	case "darwin/arm64":
 		// qwen3-tts-native v0.1.0 — Metal 0.6B F16 package
 		return nativeReleaseHost + "v0.1.0/qwen3-tts-native-darwin-arm64.tar.gz",
 			"67b6e7514168d146cf4d892d6594559796bcea4f130c9c837beb8eac1c416e2f"
 	case "linux/amd64":
+		if strings.EqualFold(backend, "vulkan") {
+			if linuxAmd64VulkanSHA256 == "" {
+				return "", ""
+			}
+			return nativeReleaseHost + "v0.1.2/qwen3-tts-native-linux-amd64-vulkan.tar.gz",
+				linuxAmd64VulkanSHA256
+		}
 		// qwen3-tts-native v0.1.1 — CPU 0.6B F16 (no NVIDIA required)
 		return nativeReleaseHost + "v0.1.1/qwen3-tts-native-linux-amd64.tar.gz",
 			"9655d41ec044a7be43404053746c6cd0d68fb11fb0e22b3a3723aa0265c1a1fd"
@@ -36,6 +54,10 @@ func DefaultNativeReleaseFor(goos, goarch string) (url, sha256 string) {
 		return "", ""
 	}
 }
+
+// linuxAmd64VulkanSHA256 is the published linux-amd64-vulkan archive digest.
+// Empty until the release asset exists; ensure then fails closed.
+const linuxAmd64VulkanSHA256 = "532b72718d71dc81bc25d10badce84b8231ebef68b2753ae3b577c591c0efbf8"
 
 // UnavailableHint is the fail-closed line when this OS/arch has no published
 // tarball. Status, doctor, and ensure must quote it instead of advertising

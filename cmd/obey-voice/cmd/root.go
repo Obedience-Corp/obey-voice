@@ -177,8 +177,9 @@ func modelName(cfg *config.Config) string {
 // progress and the mic goes hot here, not in the launcher (D2). A non-nil
 // resume session seeds both the brain history and the viewport.
 func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBuilder {
-	return func(ctx context.Context, progress func(name string, pct float64), sessionID, personaID string) (*appTUI.ConversationRuntime, error) {
+	return func(ctx context.Context, progress appTUI.BuildProgress, sessionID, personaID string) (*appTUI.ConversationRuntime, error) {
 		// Reload config in case settings changed inside the TUI.
+		progress.Stage("Reading settings")
 		cfg, err := config.Load()
 		if err != nil {
 			return nil, fmt.Errorf("reload config: %w", err)
@@ -210,7 +211,8 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			NeedVAD:     !textMode && cfg.VADEnabled,
 			NeedSpeaker: !textMode && spCfg.LiveActive(),
 		}
-		if err := config.EnsureRuntimeAssets(ctx, cfg, req, progress); err != nil {
+		progress.Stage("Checking models")
+		if err := config.EnsureRuntimeAssets(ctx, cfg, req, progress.Downloading); err != nil {
 			return nil, fmt.Errorf("ensure runtime assets: %w", err)
 		}
 
@@ -220,7 +222,9 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			return nil, fmt.Errorf("transcript log: %w", err)
 		}
 		liveTTS := &voiceagent.LiveTTSManager{}
-		p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, liveTTS)
+		// The pipeline names its own steps: each model load is seconds, and the
+		// screen waiting on them has nothing else to report.
+		p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, liveTTS, progress.Stage)
 		if err != nil {
 			liveTTS.Close()
 			closeTap()
@@ -235,6 +239,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 
 		sess := resumeSession
 		if sessionID != "" && (sess == nil || sess.ID != sessionID) {
+			progress.Stage("Loading the session")
 			sess, err = session.Load(sessionID)
 			if err != nil {
 				liveTTS.Close()
@@ -254,7 +259,8 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if p.Capture != nil {
 			captureSrc = p.Capture
 		}
-		liveSpeaker, stopLive, liveDetail := prepareLiveSpeaker(ctx, cfg, captureSrc, progress)
+		progress.Stage("Preparing speaker identification")
+		liveSpeaker, stopLive, liveDetail := prepareLiveSpeaker(ctx, cfg, captureSrc)
 		if liveDetail != "" {
 			bus.Emit(events.Info{Message: liveDetail})
 		}
@@ -432,7 +438,7 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 	defer closeTap()
 	display := ui.New(bus, cfg.AgentName)
 
-	p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, nil)
+	p, cleanup, err := buildPipeline(ctx, cfg, bus, textMode, noVoice, nil, printStage)
 	if err != nil {
 		return fmt.Errorf("init pipeline: %w", err)
 	}
@@ -482,19 +488,26 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 // CLI exercises exactly the surface an embedder gets. If something the CLI needs
 // cannot be expressed as voiceagent.Options, that is the library's problem to
 // fix, not the CLI's to work around.
-func buildPipeline(ctx context.Context, cfg *config.Config, bus *events.Bus, text, silent bool, liveTTS *voiceagent.LiveTTSManager) (*pipeline.Pipeline, func(), error) {
+func buildPipeline(ctx context.Context, cfg *config.Config, bus *events.Bus, text, silent bool, liveTTS *voiceagent.LiveTTSManager, stage func(string)) (*pipeline.Pipeline, func(), error) {
 	agent, cleanup, err := voiceagent.New(ctx, voiceagent.Options{
 		Config:   cfg,
 		Events:   bus,
 		TextOnly: text,
 		Silent:   silent,
 		LiveTTS:  liveTTS,
+		Stage:    stage,
 		Logf:     func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 	return agent.Pipeline, cleanup, nil
+}
+
+// printStage narrates pipeline startup on the plain CLI, which otherwise sits
+// silent through every model load.
+func printStage(label string) {
+	fmt.Printf("  %s...\n", label)
 }
 
 var lastProgressPct int

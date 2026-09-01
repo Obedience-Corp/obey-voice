@@ -45,7 +45,8 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 	app.runCtx = ctx
 	app.wg = &sync.WaitGroup{}
 	app.progress = newEventBridge(16)
-	app.slot = &runtimeSlot{}
+	app.slot = newConversationSlot()
+	app.meetingSlot = newMeetingSlot()
 
 	// Native libraries write directly to file descriptor 2, bypassing Bubble
 	// Tea and corrupting the terminal surface. Keep those diagnostics in a log;
@@ -112,8 +113,18 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 
 	// Meeting recorder may still be open if the program quit mid-session
 	// without a meetingDoneMsg (e.g. outer Quit). Idempotent when already closed.
+	// This runs first: it writes the bundle trailer that a bare Cleanup does not.
 	if err := final.stopMeetingRuntime(); err != nil {
 		final.fatalErr = errors.Join(final.fatalErr, err)
+	}
+
+	// Then the slot, for the recorder that finished building after the quit
+	// and never reached meetingRT. Cleanup is idempotent, so a recorder the
+	// line above already stopped is unaffected.
+	if final.meetingSlot != nil {
+		final.meetingSlot.cleanup()
+	} else if app.meetingSlot != nil {
+		app.meetingSlot.cleanup()
 	}
 
 	if runErr != nil {

@@ -195,6 +195,25 @@ func TestDiagnoseBrainProvider(t *testing.T) {
 	}
 }
 
+func TestDiagnoseOllamaNumCtxZero(t *testing.T) {
+	cfg := &Config{
+		BrainProvider: "ollama",
+		OllamaModel:   "gemma",
+		OllamaHost:    "http://localhost:11434",
+		OllamaNumCtx:  0,
+	}
+	d, ok := diagByName(Diagnose(cfg, t.TempDir(), okLookPath))["ollama-num-ctx"]
+	if !ok {
+		t.Fatal("expected ollama-num-ctx diagnostic")
+	}
+	if d.Severity != SeverityWarn {
+		t.Fatalf("severity = %q, want warn", d.Severity)
+	}
+	if !strings.Contains(d.Detail, "ollama_num_ctx is 0") {
+		t.Fatalf("detail = %q", d.Detail)
+	}
+}
+
 // TestDiagnoseConflictingSTTModeIsError proves an stt_provider/stt_mode
 // conflict surfaces as a doctor error with the resolver's actionable message,
 // and does not leak a misleading model-assets error.

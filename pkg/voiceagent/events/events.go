@@ -461,3 +461,35 @@ type BackchannelStarted struct {
 }
 
 func (e BackchannelStarted) eventType() string { return "backchannel_started" }
+
+// ContinuityBudget reports the estimated prompt size against soft/hard limits
+// before an Ollama turn (WI-b94dad observability).
+type ContinuityBudget struct {
+	EstTokens int
+	SoftLimit int
+	HardLimit int
+	NumCtx    int
+	Action    string
+}
+
+func (e ContinuityBudget) eventType() string { return "continuity.budget" }
+
+// ContinuityTruncated reports a completion that may have ended before the model
+// finished — done_reason=length, prompt saturation, or mid-sentence heuristic.
+type ContinuityTruncated struct {
+	DoneReason   string
+	PromptTokens int
+	GenTokens    int
+	MidSentence  bool
+}
+
+func (e ContinuityTruncated) eventType() string { return "continuity.truncated" }
+
+// ContinuityRecovery reports a truncation recovery attempt. Emitted by S5;
+// defined in S1 so the event table compiles.
+type ContinuityRecovery struct {
+	Attempt  int
+	Strategy string
+}
+
+func (e ContinuityRecovery) eventType() string { return "continuity.recovery" }

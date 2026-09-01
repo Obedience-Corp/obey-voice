@@ -53,6 +53,9 @@ type conversationModel struct {
 	activity   []activityEntry
 	status     string
 	statusErr  bool
+	// startup is the waiting state while the runtime is built; see
+	// conversation_startup.go.
+	startup startupState
 	// streamingThink accumulates ThinkingDelta text for the in-progress turn,
 	// painted dim and labeled "thinking". Never copied into the transcript.
 	streamingThink string
@@ -179,6 +182,12 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 		m.setSize(msg.Width, msg.Height)
 		return m, m.ensureVoiceTick()
 
+	case startupTickMsg:
+		if !m.startup.tick() {
+			return m, nil
+		}
+		return m, startupTickCmd(m.reducedMotion)
+
 	case voiceTickMsg:
 		m.voiceFrame++
 		// Decay mic energy so the meter settles when speech pauses.
@@ -243,6 +252,11 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.startup.active {
+			// Nothing is wired yet: a turn typed here would be dispatched at a
+			// nil runner. ctrl+c still quits (the app handles it above).
+			return m, nil
+		}
 		m.syncEditorFromTextarea()
 		// Page keys scroll history. Editing keys stay with the always-focused
 		// composer so multiline drafting never needs a mode switch.
@@ -1143,6 +1157,9 @@ func renderAgentBubble(name, think, spoken string, showThink bool) string {
 }
 
 func (m conversationModel) View() string {
+	if m.startup.active {
+		return m.startupView()
+	}
 	if !m.ready {
 		return "\n  " + headerStyle.Render("Preparing conversation…") + "\n"
 	}

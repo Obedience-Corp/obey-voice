@@ -166,6 +166,10 @@ type Config struct {
 	ClaudeSessionWarnTokens int `mapstructure:"claude_session_warn_tokens"`
 
 	VoiceToolsEnabled bool `mapstructure:"voice_tools_enabled"`
+	// ContinuityIntegrityEnabled detects truncated Ollama completions and
+	// emits continuity observability events. False restores pre-WI-b94dad
+	// behavior (no integrity flags or continuity events).
+	ContinuityIntegrityEnabled bool `mapstructure:"continuity_integrity_enabled"`
 	// ToolCommandTimeout bounds one local run_command invocation in seconds.
 	// The brain turn timeout remains the outer bound for a complete turn.
 	ToolCommandTimeout int `mapstructure:"tool_command_timeout"`
@@ -464,6 +468,7 @@ func setDefaults(v *viper.Viper) {
 	// false (config key or env) still wins. Remote serve stays default-deny
 	// via remote_tools_enabled.
 	v.SetDefault("voice_tools_enabled", true)
+	v.SetDefault("continuity_integrity_enabled", true)
 	v.SetDefault("tool_command_timeout", 30)
 	v.SetDefault("remote_tools_enabled", false)
 

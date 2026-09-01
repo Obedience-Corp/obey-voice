@@ -25,7 +25,6 @@ func prepareLiveSpeaker(
 	ctx context.Context,
 	cfg *config.Config,
 	capture speaker.CaptureSource,
-	_ func(string, float64),
 ) (controller *speaker.LazyLive, stop func(), detail string) {
 	sp := speaker.FromAppConfig(cfg)
 

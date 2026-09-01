@@ -160,7 +160,7 @@ done
 		t.Fatal(err)
 	}
 	modelDir := t.TempDir()
-	session, err := startNativeQwenSession(context.Background(), script, modelDir, "0.6b", 5*time.Second)
+	session, err := startNativeQwenSession(context.Background(), script, modelDir, "0.6b", 5*time.Second, "")
 	if err != nil {
 		t.Fatalf("startNativeQwenSession: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestNativeQwenSessionRejectsIncompatibleHandshake(t *testing.T) {
 			if err := os.WriteFile(script, []byte(source), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			_, err := startNativeQwenSession(context.Background(), script, t.TempDir(), "0.6b", 5*time.Second)
+			_, err := startNativeQwenSession(context.Background(), script, t.TempDir(), "0.6b", 5*time.Second, "")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error=%v, want %q rejection", err, tc.want)
 			}
@@ -268,13 +268,13 @@ done
 	if err := os.WriteFile(script, []byte(source), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	session, err := startNativeQwenSession(context.Background(), script, t.TempDir(), "1.7b", 5*time.Second)
+	session, err := startNativeQwenSession(context.Background(), script, t.TempDir(), "1.7b", 5*time.Second, "")
 	if err != nil {
 		t.Fatalf("startNativeQwenSession: %v", err)
 	}
 	session.Close()
 
-	_, err = startNativeQwenSession(context.Background(), script, t.TempDir(), "0.6b", 5*time.Second)
+	_, err = startNativeQwenSession(context.Background(), script, t.TempDir(), "0.6b", 5*time.Second, "")
 	if err == nil {
 		t.Fatal("expected failure when worker requires 1.7b env")
 	}

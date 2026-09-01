@@ -202,6 +202,11 @@ func brainKeys() []KeySpec {
 			Group: GroupBrain, Title: "Remembered turns",
 			Help: "How many past exchanges she carries into the next answer. More context costs latency.",
 		},
+		{
+			Key: "continuity_integrity_enabled", Type: TypeBool, Default: true,
+			Group: GroupBrain, Title: "Context integrity checks",
+			Help: "Detect truncated Ollama completions and emit continuity events. Off restores pre-continuity behavior.",
+		},
 	}
 }
 

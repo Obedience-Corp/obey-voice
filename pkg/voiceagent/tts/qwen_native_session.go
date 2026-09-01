@@ -69,7 +69,7 @@ func findNativeInstall(modelsDir, preferredTier string) (nativeInstallPaths, boo
 // startNativeQwenSession launches qwen3-tts-worker against modelDir.
 // tier selects the GGUF when the package is multi-tier (QWEN3_TTS_TIER); empty
 // uses DefaultModelTier so multi-tier packages do not silently pick the wrong size.
-func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier string, timeout time.Duration) (*nativeQwenSession, error) {
+func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier string, timeout time.Duration, backendHint string) (*nativeQwenSession, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -87,7 +87,7 @@ func startNativeQwenSession(ctx context.Context, workerBin, modelDir, tier strin
 	cmd := exec.CommandContext(context.Background(), workerBin, modelDir)
 	managedqwen.ConfigureWorkerCommand(cmd)
 	libDir := filepath.Dir(workerBin)
-	cmd.Env = withNativeWorkerEnv(os.Environ(), libDir, tier)
+	cmd.Env = managedqwen.NativeWorkerEnvWithBackend(os.Environ(), libDir, tier, backendHint)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("native worker stdin: %w", err)

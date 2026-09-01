@@ -9,7 +9,13 @@ import (
 // Parent QWEN3_TTS_TIER / QWEN3_TTS_MODEL are stripped so the host config wins
 // and ambient shell env cannot override a fail-closed product tier.
 func NativeWorkerEnv(env []string, libDir, tier string) []string {
-	out := make([]string, 0, len(env)+4)
+	return NativeWorkerEnvWithBackend(env, libDir, tier, "")
+}
+
+// NativeWorkerEnvWithBackend is NativeWorkerEnv plus a fail-closed
+// QWEN3_TTS_BACKEND from the installed package's backend_hint.
+func NativeWorkerEnvWithBackend(env []string, libDir, tier, backendHint string) []string {
+	out := make([]string, 0, len(env)+5)
 	for _, e := range env {
 		key, _, ok := strings.Cut(e, "=")
 		if !ok {
@@ -17,7 +23,7 @@ func NativeWorkerEnv(env []string, libDir, tier string) []string {
 			continue
 		}
 		switch key {
-		case "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH", "QWEN3_TTS_TIER", "QWEN3_TTS_MODEL":
+		case "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH", "QWEN3_TTS_TIER", "QWEN3_TTS_MODEL", "QWEN3_TTS_BACKEND":
 			continue
 		}
 		out = append(out, e)
@@ -33,6 +39,10 @@ func NativeWorkerEnv(env []string, libDir, tier string) []string {
 	}
 	if tier = strings.TrimSpace(tier); tier != "" {
 		out = append(out, "QWEN3_TTS_TIER="+tier)
+	}
+	switch b := strings.ToLower(strings.TrimSpace(backendHint)); b {
+	case "vulkan", "cuda", "cpu":
+		out = append(out, "QWEN3_TTS_BACKEND="+b)
 	}
 	return out
 }

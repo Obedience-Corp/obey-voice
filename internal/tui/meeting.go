@@ -82,12 +82,15 @@ type meetingModel struct {
 	// re-parsing styled strings (design WI-1e881a P1).
 	lines []meetingLine
 
-	voiceMode     anim.Mode
-	voiceFrame    int
-	inputLevel    float64
-	partial       string
-	status        string
-	statusErr     bool
+	voiceMode  anim.Mode
+	voiceFrame int
+	inputLevel float64
+	partial    string
+	status     string
+	statusErr  bool
+	// startup is the waiting state while the recorder is built; the screen is
+	// the conversation's (see conversation_startup.go).
+	startup       startupState
 	flash         string // brief action feedback ("★ bookmarked")
 	flashUntil    time.Time
 	reducedMotion bool
@@ -284,6 +287,28 @@ func (m *meetingModel) startLoop() tea.Cmd {
 	return tea.Batch(waitMeetingCh(ch), demoMeetingSpeakerStatusCmds())
 }
 
+// beginStartup puts the recorder into the waiting state while its models load
+// and the microphone opens. description is the meeting title the user just
+// confirmed, which is what they are waiting on.
+func (m *meetingModel) beginStartup(description string) tea.Cmd {
+	m.startup.begin(description)
+	return startupTickCmd(m.reducedMotion)
+}
+
+func (m *meetingModel) setBuildStage(stage BuildStage) { m.startup.advance(stage) }
+
+// finishStartup hands the screen to the recorder proper.
+func (m *meetingModel) finishStartup() { m.startup = startupState{} }
+
+// startupTitle names the wait. A meeting has a title of its own, so it says
+// what is being recorded rather than repeating the word "meeting".
+func (m meetingModel) startupTitle() string {
+	if desc := strings.TrimSpace(m.startup.label); desc != "" {
+		return "Starting " + desc
+	}
+	return "Starting the recorder"
+}
+
 func (m meetingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -299,6 +324,12 @@ func (m meetingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmd, m.stopResultCmd())
 		}
 		return m, tea.Batch(cmd, waitMeetingCh(msg.ch), m.ensureVoiceTick())
+
+	case startupTickMsg:
+		if !m.startup.tick() {
+			return m, nil
+		}
+		return m, startupTickCmd(m.reducedMotion)
 
 	case meetingTickMsg:
 		m.voiceFrame++
@@ -352,6 +383,11 @@ func (m meetingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.startup.active {
+			// Nothing is recording yet; these keys act on a capture that does
+			// not exist. Ctrl+C still leaves — the app owns it on this screen.
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+c", "ctrl+q":
 			return m.requestStop()

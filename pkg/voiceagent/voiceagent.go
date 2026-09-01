@@ -124,6 +124,13 @@ type Options struct {
 	// later Install can retire the worker instead of stacking them until
 	// shutdown. Injected TTS (Options.TTS) is still the caller's to Adopt.
 	LiveTTS *LiveTTSManager
+
+	// Stage names the step New is about to take — loading a model, opening the
+	// microphone. **Nil discards them**, like Logf. A UI that makes the user
+	// wait through this function has nothing else to show them: model loads
+	// take seconds each, and a screen that says nothing reads as a hang.
+	// Called on New's goroutine, before the step it names.
+	Stage func(string)
 }
 
 // New builds a voice agent and returns it with a cleanup function.
@@ -166,6 +173,10 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	if err := config.ValidateBargeInSpeakers(cfg); err != nil {
 		return nil, nil, fmt.Errorf("voiceagent: %w", err)
 	}
+	stage := opts.Stage
+	if stage == nil {
+		stage = func(string) {}
+	}
 
 	// PromptsDir, WorkDir and Env reach the brain through the config value it is
 	// built from, so a copy is taken rather than mutating the caller's config —
@@ -203,6 +214,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	if opts.Brain != nil {
 		p.Brain = opts.Brain
 	} else {
+		stage("Connecting the brain")
 		b, err := brain.NewProvider(cfg)
 		if err != nil {
 			cleanup()
@@ -225,6 +237,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		case opts.TTS != nil:
 			p.ReplaceTTS(opts.TTS, opts.TTSFallback)
 		default:
+			stage("Loading the voice")
 			ttsSet, err := NewTTSSet(cfg)
 			if err != nil {
 				cleanup()
@@ -252,6 +265,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	// Backchannel, if enabled: synthesizes its phrase pool once, here, so a turn
 	// never pays for it. Off by default; see pipeline/backchannel.go.
 	if cfg.BackchannelEnabled && !opts.Silent && p.HasTTS() {
+		stage("Synthesizing backchannel phrases")
 		p.EnableBackchannel(ctx)
 	}
 
@@ -298,6 +312,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 			// device nor stop the source during cleanup.
 			p.Capture = opts.Capture
 		} else {
+			stage("Opening the microphone")
 			localCapture = audio.NewCaptureWithDevice(cfg.InputDevice)
 			if frontend != nil {
 				localCapture.SetFrontend(frontend)
@@ -331,6 +346,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 				sttVAD = concrete
 			}
 		case cfg.VADEnabled:
+			stage("Loading voice activity detection")
 			built, err := audio.NewVAD(cfg)
 			if err != nil {
 				cleanup()
@@ -361,6 +377,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 				cleanup()
 				return nil, nil, fmt.Errorf("voiceagent: an injected Capture requires an injected STT provider")
 			}
+			stage("Loading speech recognition")
 			sttProvider, sttCleanup, err := stt.NewProvider(cfg, localCapture, sttVAD)
 			if err != nil {
 				cleanup()

@@ -36,6 +36,18 @@ type StreamOptions struct {
 	OmitTurnInstruction bool
 }
 
+// IntegrityResult reports whether a streamed completion may have been
+// truncated before the model finished. Populated on the Ollama path when
+// continuity_integrity_enabled is true (WI-b94dad S1).
+type IntegrityResult struct {
+	Truncated    bool
+	MidSentence  bool
+	SpokenSoFar  string
+	PromptTokens int
+	GenTokens    int
+	DoneReason   string
+}
+
 // StreamResult reports the terminal outcome of a streamed response.
 type StreamResult struct {
 	Err error
@@ -43,6 +55,10 @@ type StreamResult struct {
 	// reply streamed through Chunks (and recorded in history). Consumers must
 	// treat the turn as degraded-complete and surface Err as detail only.
 	Recovered bool
+	// Integrity is set when continuity_integrity_enabled and the provider
+	// detected a probable truncation. S5 owns audible recovery; S1 emits
+	// events only.
+	Integrity IntegrityResult
 }
 
 // Stream carries a streamed model response and its terminal result.
