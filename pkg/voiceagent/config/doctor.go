@@ -310,6 +310,19 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
+	// An unrecognized barge_in_speakers value (typo) is a hard startup error
+	// for the same reason as voice_frontend: silently falling back to the
+	// more permissive "anyone" on a typo is exactly the direction D7's
+	// fail-open posture must never be silent about.
+	if err := ValidateBargeInSpeakers(cfg); err != nil {
+		diags = append(diags, Diagnostic{
+			Name:        "barge-in-speakers-invalid",
+			Severity:    SeverityError,
+			Detail:      err.Error(),
+			Remediation: "set barge_in_speakers to anyone or enrolled_only",
+		})
+	}
+
 	// The nlms path's hand-rolled noise suppressor sits above normal speaking
 	// RMS, so it gates ordinary speech and Silero only sees fragments; Parakeet
 	// then hallucinates "yeah". That suppressor retires with nlms (D4) — webrtc

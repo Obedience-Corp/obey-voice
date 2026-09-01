@@ -115,6 +115,21 @@ func voiceKeys() []KeySpec {
 			Help: "Lets you talk over her. Needs the voice front-end on, and only affects this Mac's microphone — phone clients still need the interrupt button.",
 		},
 		{
+			Key: "barge_in_vad_threshold", Type: TypeFloat, Default: DefaultBargeInVADThreshold, Min: num(MinBargeInVADThreshold), Max: num(MaxBargeInVADThreshold),
+			Group: GroupVoice, Title: "Barge-in speech confidence",
+			Help: "How sure the barge-in detector must be that mic audio is real speech before cutting her off. Lower it toward 0.6 once voice_frontend=webrtc is doing the echo cancellation.",
+		},
+		{
+			Key: "barge_in_tail_guard_ms", Type: TypeInt, Default: DefaultBargeInTailGuardMS, Unit: "ms", Min: num(MinBargeInTailGuardMS), Max: num(MaxBargeInTailGuardMS),
+			Group: GroupVoice, Title: "Barge-in echo tail guard",
+			Help: "How long after playback pauses to ignore the mic, so speaker echo trailing off doesn't trip a false barge-in.",
+		},
+		{
+			Key: "barge_in_speakers", Type: TypeEnum, Default: BargeInSpeakersAnyone, Enum: bargeInSpeakersEnum(),
+			Group: GroupVoice, Title: "Who can interrupt",
+			Help: "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+		},
+		{
 			Key: "backchannel_enabled", Type: TypeBool, Default: false,
 			Group: GroupVoice, Title: "Thinking sounds",
 			Help: "Plays a short \"mm-hm\" while a slow answer is still coming, so the pause doesn't feel dead.",

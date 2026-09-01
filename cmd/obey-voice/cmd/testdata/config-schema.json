@@ -56,6 +56,57 @@
       "editable": true
     },
     {
+      "key": "barge_in_speakers",
+      "type": "enum",
+      "default": "anyone",
+      "enum": [
+        "anyone",
+        "enrolled_only"
+      ],
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Who can interrupt",
+      "help": "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "BARGE_IN_SPEAKERS",
+      "editable": true
+    },
+    {
+      "key": "barge_in_tail_guard_ms",
+      "type": "int",
+      "default": 200,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Barge-in echo tail guard",
+      "help": "How long after playback pauses to ignore the mic, so speaker echo trailing off doesn't trip a false barge-in.",
+      "unit": "ms",
+      "min": 200,
+      "max": 800,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "BARGE_IN_TAIL_GUARD_MS",
+      "editable": true
+    },
+    {
+      "key": "barge_in_vad_threshold",
+      "type": "float",
+      "default": 0.85,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Barge-in speech confidence",
+      "help": "How sure the barge-in detector must be that mic audio is real speech before cutting her off. Lower it toward 0.6 once voice_frontend=webrtc is doing the echo cancellation.",
+      "min": 0.3,
+      "max": 0.95,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "BARGE_IN_VAD_THRESHOLD",
+      "editable": true
+    },
+    {
       "key": "input_device",
       "type": "string",
       "default": "",
@@ -421,6 +472,19 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "CLAUDE_SESSION_WARN_TOKENS",
+      "editable": true
+    },
+    {
+      "key": "continuity_integrity_enabled",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Context integrity checks",
+      "help": "Detect truncated Ollama completions and emit continuity events. Off restores pre-continuity behavior.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
       "editable": true
     },
     {

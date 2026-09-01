@@ -27,19 +27,53 @@ const (
 	bargeInMinSpeechChunks = 6
 	// bargeInBufferSize is the capture subscription depth for the controller.
 	bargeInBufferSize = 8
-	// bargeInPauseTailGuard skips capture chunks for a short window after
-	// playback stops. Speaker echo keeps hitting the mic briefly after the
-	// player drains between sentences; now that pauses stay armed, that tail
-	// must not accumulate toward a trip. Chunks inside the guard are skipped,
-	// not cleared — an utterance spanning the gap keeps its speech streak.
-	bargeInPauseTailGuard = 200 * time.Millisecond
+	// bargeInPauseTailGuardDefault skips capture chunks for a short window
+	// after playback stops, when Pipeline.BargeInTailGuard is unset (zero).
+	// Speaker echo keeps hitting the mic briefly after the player drains
+	// between sentences; now that pauses stay armed, that tail must not
+	// accumulate toward a trip. Chunks inside the guard are skipped, not
+	// cleared — an utterance spanning the gap keeps its speech streak.
+	// Config-driven via barge_in_tail_guard_ms (200-800ms); see
+	// Pipeline.bargeInTailGuard.
+	bargeInPauseTailGuardDefault = 200 * time.Millisecond
 	// bargeInNearMissWindow bounds how recent below-threshold pause speech must
 	// be for the turn to keep the capture buffer for the next listen (F3.3):
 	// the user spoke during a pause but the turn completed before the trip
 	// threshold, so their utterance is sitting in the capture ring buffer and
 	// Reset() would delete it right before STT opens.
 	bargeInNearMissWindow = 1500 * time.Millisecond
+	// bargeInSpeakerVerdictMaxAgeDefault is the fallback staleness bound when
+	// Pipeline.BargeInSpeakerVerdictMaxAge is unset (zero): 2x
+	// speaker.live.window_ms's own default (1500ms). See
+	// Pipeline.bargeInSpeakerVerdictMaxAge and config.BargeInSpeakerVerdictMaxAgeOf,
+	// which computes the configured value from the real window.
+	bargeInSpeakerVerdictMaxAgeDefault = 3 * time.Second
 )
+
+// SpeakerVerdict is the interrupt controller's narrow view of the live
+// speaker analyzer's most recent window result (S3, D7). It mirrors the
+// fields ownerVerifyGate already checks on internal/speaker.LiveStats
+// (Status/LastLabel/LastEnrollRev) rather than importing that package, the
+// same decoupling SpeakerGate and CurrentSpeaker already use.
+type SpeakerVerdict struct {
+	// Healthy reports the analyzer is confidently running — mirrors
+	// ownerVerifyGate's LiveHealthy/LiveRunning check.
+	Healthy bool
+	// HasVerdict reports at least one window has been analyzed. False during
+	// the cold-start window after arming (~1.5s) before LiveFeed's first
+	// window lands.
+	HasVerdict bool
+	// Enrolled reports the most recent window matched an enrolled profile.
+	Enrolled bool
+	// Label is the most recent speaker label. Diagnostics only; the trip
+	// decision uses Enrolled, not the label itself.
+	Label string
+	// Confidence is the most recent match confidence. Diagnostics only.
+	Confidence float32
+	// At is when this verdict was produced, used for the staleness check
+	// (Pipeline.bargeInSpeakerVerdictMaxAge). A zero value is always stale.
+	At time.Time
+}
 
 // interruptRequest is the typed barge-in signal the interrupt controller reports
 // to the turn runtime, which owns the decision to act on it.
@@ -68,6 +102,11 @@ type interruptController struct {
 	minSpeech  int
 	bufferSize int
 
+	// speakerVerdict is nil for barge_in_speakers=anyone (never consulted).
+	// Set, it gates a trip through allowsInterrupt (D7).
+	speakerVerdict func() SpeakerVerdict
+	verdictMaxAge  time.Duration
+
 	// lastPauseSpeech is the UnixNano of the newest speech chunk heard while
 	// armed but not playing — the near-miss evidence sawPauseSpeechWithin
 	// reports after the watcher goroutine has been joined.
@@ -83,19 +122,63 @@ type interruptWatch struct {
 // and the package barge-in tuning constants.
 func (p *Pipeline) newInterruptController() *interruptController {
 	return &interruptController{
-		capture:    p.Capture,
-		vad:        p.BargeInVAD,
-		playback:   p.Player,
-		armDelay:   bargeInArmDelay,
-		tailGuard:  bargeInPauseTailGuard,
-		minSpeech:  bargeInMinSpeechChunks,
-		bufferSize: bargeInBufferSize,
+		capture:        p.Capture,
+		vad:            p.BargeInVAD,
+		playback:       p.Player,
+		armDelay:       bargeInArmDelay,
+		tailGuard:      p.bargeInTailGuard(),
+		minSpeech:      bargeInMinSpeechChunks,
+		bufferSize:     bargeInBufferSize,
+		speakerVerdict: p.BargeInSpeakerVerdict,
+		verdictMaxAge:  p.bargeInSpeakerVerdictMaxAge(),
 	}
+}
+
+// bargeInSpeakerVerdictMaxAge returns Pipeline.BargeInSpeakerVerdictMaxAge
+// when set (positive), otherwise the built-in default. Mirrors
+// bargeInTailGuard's override pattern.
+func (p *Pipeline) bargeInSpeakerVerdictMaxAge() time.Duration {
+	if p.BargeInSpeakerVerdictMaxAge > 0 {
+		return p.BargeInSpeakerVerdictMaxAge
+	}
+	return bargeInSpeakerVerdictMaxAgeDefault
+}
+
+// bargeInTailGuard returns Pipeline.BargeInTailGuard when set (positive),
+// otherwise the built-in default. Mirrors stallTimeout's override pattern in
+// watchdog.go.
+func (p *Pipeline) bargeInTailGuard() time.Duration {
+	if p.BargeInTailGuard > 0 {
+		return p.BargeInTailGuard
+	}
+	return bargeInPauseTailGuardDefault
 }
 
 // enabled reports whether every collaborator required for barge-in is present.
 func (c *interruptController) enabled() bool {
 	return c.capture != nil && c.vad != nil && c.playback != nil
+}
+
+// allowsInterrupt reports whether the current speaker verdict permits a trip
+// (D7, review #13/#14). It fails open (true) whenever speakerVerdict is nil
+// (barge_in_speakers=anyone: never consulted), the analyzer is not
+// confidently healthy, no window verdict has arrived yet (cold start), or
+// the verdict is older than verdictMaxAge (stale — including a verdict whose
+// At was never stamped, since time.Since of a zero Time is always large).
+// Only a confident, current, non-enrolled verdict blocks (returns false) —
+// same posture as ownerVerifyGate: a privacy guard, not an auth boundary.
+func (c *interruptController) allowsInterrupt() bool {
+	if c.speakerVerdict == nil {
+		return true
+	}
+	v := c.speakerVerdict()
+	if !v.Healthy || !v.HasVerdict {
+		return true
+	}
+	if c.verdictMaxAge > 0 && time.Since(v.At) > c.verdictMaxAge {
+		return true
+	}
+	return v.Enrolled
 }
 
 // watch subscribes to capture and reports one barge-in request once sustained
@@ -171,6 +254,16 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				}
 
 				if c.vad.IsSpeechDetected() || consecutiveSpeech >= c.minSpeech {
+					if !c.allowsInterrupt() {
+						// Confident non-enrolled speaker under
+						// barge_in_speakers=enrolled_only: withhold this
+						// trip but keep watching — the streak is left
+						// alone, so an enrolled speaker joining a moment
+						// later still trips immediately, and the same
+						// stranger continuing to talk is re-checked on
+						// every subsequent chunk.
+						continue
+					}
 					select {
 					case out <- interruptRequest{Reason: "barge_in", At: time.Now()}:
 					default:

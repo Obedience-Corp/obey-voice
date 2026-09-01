@@ -48,8 +48,28 @@ type LiveStats struct {
 	// LastLabel is the most recent stable/provisional speaker id (indicator mode).
 	LastLabel string
 	// LastEnrollRev is the enrollment revision behind LastLabel; empty when
-	// the last label is anonymous or unknown (owner-verify consults this).
+	// the last label is anonymous or unknown (owner-verify and the S3
+	// barge-in gate both consult this).
 	LastEnrollRev string
+	// LastConfidence is the match confidence behind LastLabel. Diagnostics
+	// only — no consumer gates on this field; owner-verify and the S3
+	// barge-in gate both key off LastEnrollRev instead.
+	LastConfidence float32
+	// LastUpdated is when LastLabel/LastEnrollRev/LastConfidence were last
+	// written — a window result, success or failure. Zero means no window
+	// has been analyzed yet (cold start). The S3 barge-in gate uses this for
+	// its staleness check.
+	LastUpdated time.Time
+}
+
+// ConfidentlyHealthy reports whether the adapter is running with enough
+// confidence that a consumer should act on its last label — Healthy or
+// Running, not Degraded/Disabled/Unavailable/Closed. Shared by
+// ownerVerifyGate (cmd/obey-voice/cmd/live_speaker.go) and the S3 barge-in
+// gate so the two privacy-guard consumers can never define "healthy"
+// differently.
+func (s LiveStats) ConfidentlyHealthy() bool {
+	return s.Status == LiveHealthy || s.Status == LiveRunning
 }
 
 type liveFrame struct{ segment Segment }
@@ -63,16 +83,18 @@ type LiveAdapter struct {
 	frames   chan liveFrame
 	events   chan Event
 
-	mu          sync.Mutex
-	closed      bool
-	enabled     bool
-	status      LiveStatus
-	lastErr     string
-	session     uint64
-	sequence    uint64
-	previous    string
-	previousRev string
-	wg          sync.WaitGroup
+	mu                 sync.Mutex
+	closed             bool
+	enabled            bool
+	status             LiveStatus
+	lastErr            string
+	session            uint64
+	sequence           uint64
+	previous           string
+	previousRev        string
+	previousConfidence float32
+	lastUpdated        time.Time
+	wg                 sync.WaitGroup
 
 	dropped               atomic.Uint64
 	processed             atomic.Uint64
@@ -202,6 +224,8 @@ func (a *LiveAdapter) process(segment Segment) {
 		}
 		a.previous = obs.Label
 		a.previousRev = obs.EnrollRev
+		a.previousConfidence = obs.Confidence
+		a.lastUpdated = time.Now()
 	}
 	select {
 	case a.events <- ev:
@@ -248,6 +272,8 @@ func (a *LiveAdapter) Reset() error {
 	a.sequence = 0
 	a.previous = ""
 	a.previousRev = ""
+	a.previousConfidence = 0
+	a.lastUpdated = time.Time{}
 	return nil
 }
 
@@ -267,6 +293,8 @@ func (a *LiveAdapter) Stats() LiveStats {
 		LastError:             a.lastErr,
 		LastLabel:             a.previous,
 		LastEnrollRev:         a.previousRev,
+		LastConfidence:        a.previousConfidence,
+		LastUpdated:           a.lastUpdated,
 	}
 }
 

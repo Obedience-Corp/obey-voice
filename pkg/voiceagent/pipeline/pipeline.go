@@ -197,6 +197,12 @@ type Pipeline struct {
 	// defaultBrainTurnTimeout; negative disables the bound.
 	BrainTurnTimeout time.Duration
 
+	// BargeInTailGuard overrides the interrupt controller's post-playback
+	// echo tail guard (config barge_in_tail_guard_ms) and always wins when
+	// positive. Zero uses bargeInPauseTailGuardDefault. See interrupt.go
+	// bargeInTailGuard.
+	BargeInTailGuard time.Duration
+
 	// SpeakerGate, when set, may veto a voice turn after transcription based
 	// on the live speaker state; a non-empty return is the user-facing reason
 	// the utterance was dropped. Wired only for speaker.live.mode=owner_verify
@@ -206,6 +212,19 @@ type Pipeline struct {
 	// in-flight user turn when live labels are active. Optional; nil/empty
 	// means ordinary single-user attribution.
 	CurrentSpeaker func() string
+
+	// BargeInSpeakerVerdict, when set, reports the live speaker analyzer's
+	// most recent window verdict to the interrupt controller (config
+	// barge_in_speakers=enrolled_only, D7). Wired only for that policy —
+	// anyone (the default) leaves this nil and it is never consulted. See
+	// interrupt.go SpeakerVerdict / interruptController.allowsInterrupt.
+	BargeInSpeakerVerdict func() SpeakerVerdict
+	// BargeInSpeakerVerdictMaxAge bounds how old a BargeInSpeakerVerdict may
+	// be before the interrupt controller treats it as stale and fails open
+	// (~2x speaker.live.window_ms). Zero uses
+	// bargeInSpeakerVerdictMaxAgeDefault. See
+	// config.BargeInSpeakerVerdictMaxAgeOf.
+	BargeInSpeakerVerdictMaxAge time.Duration
 
 	// keepCapture preserves the capture buffer into the next turn after a
 	// barge-in — or a near-miss, speech heard during a playback pause that
@@ -488,6 +507,19 @@ func (m *turnMetrics) elapsed(ts time.Time) time.Duration {
 		return 0
 	}
 	return ts.Sub(m.start)
+}
+
+// sincePlaybackStart reports how long TTS had been audible at ts, measured
+// from the turn's first playbackStarted event (metrics.playbackStart, stamped
+// once in applyPlaybackEvent). Zero when playback never started or ts
+// precedes it — the mic barge-in path can only fire once armed, which itself
+// only happens after the first playbackStarted event, so this is non-zero on
+// every real barge-in.
+func (m *turnMetrics) sincePlaybackStart(ts time.Time) time.Duration {
+	if m.playbackStart.IsZero() || ts.Before(m.playbackStart) {
+		return 0
+	}
+	return ts.Sub(m.playbackStart)
 }
 
 func (m *turnMetrics) tEOU() time.Time {
@@ -1390,8 +1422,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			if p.Player != nil {
 				p.Player.Stop()
 			}
-			p.emit(events.SpeakingInterrupted{Reason: req.Reason})
-			p.emit(events.TurnInterrupted{Reason: req.Reason})
+			sincePlayback := metrics.sincePlaybackStart(req.At)
+			p.emit(events.SpeakingInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
+			p.emit(events.TurnInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
 
 		case result, ok := <-modelDone:
 			if !ok {

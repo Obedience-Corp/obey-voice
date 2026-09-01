@@ -172,3 +172,52 @@ func TestDoctorVoiceDevicesJSONIncludesDiagnostics(t *testing.T) {
 		t.Errorf("JSON output should include 2 voice diagnostics, got %d: %+v", found, diags)
 	}
 }
+
+// TestDoctorBargeInSpeakersGate covers the S3 doctor requirement: warn when
+// barge_in_speakers=enrolled_only cannot gate anything yet (speaker.live
+// disabled, or nobody enrolled), and stay silent otherwise.
+func TestDoctorBargeInSpeakersGate(t *testing.T) {
+	t.Run("anyone: no diagnostic even with nothing enrolled", func(t *testing.T) {
+		cfg := healthyBrain(&config.Config{STTProvider: "sherpa", WhisperModel: "base.en", TTSProvider: "kokoro"})
+		out, _ := runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+		if contains(out, "barge-in-speakers-gate") {
+			t.Errorf("anyone mode must never surface the gate warning:\n%s", out)
+		}
+	})
+
+	t.Run("enrolled_only with speaker.live disabled warns", func(t *testing.T) {
+		cfg := healthyBrain(&config.Config{STTProvider: "sherpa", WhisperModel: "base.en", TTSProvider: "kokoro", BargeInSpeakers: config.BargeInSpeakersEnrolledOnly})
+		out, err := runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+		if err != nil {
+			t.Fatalf("the gate warning must not fail doctor: %v", err)
+		}
+		if !contains(out, "barge-in-speakers-gate") || !contains(out, "speaker.live is disabled") {
+			t.Errorf("expected a barge-in-speakers-gate warning about disabled live analysis:\n%s", out)
+		}
+	})
+
+	t.Run("enrolled_only with live on but nobody enrolled warns", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := healthyBrain(&config.Config{STTProvider: "sherpa", WhisperModel: "base.en", TTSProvider: "kokoro", BargeInSpeakers: config.BargeInSpeakersEnrolledOnly})
+		cfg.Speaker.Enabled = true
+		cfg.Speaker.Live.Enabled = true
+		cfg.Speaker.EnrollmentDir = dir
+		out, _ := runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+		if !contains(out, "barge-in-speakers-gate") || !contains(out, "no speaker is enrolled") {
+			t.Errorf("expected a barge-in-speakers-gate warning about nobody enrolled:\n%s", out)
+		}
+	})
+
+	t.Run("enrolled_only with live on and someone enrolled is silent", func(t *testing.T) {
+		orig := hasEnrolledSpeaker
+		hasEnrolledSpeaker = func(string) bool { return true }
+		t.Cleanup(func() { hasEnrolledSpeaker = orig })
+		cfg := healthyBrain(&config.Config{STTProvider: "sherpa", WhisperModel: "base.en", TTSProvider: "kokoro", BargeInSpeakers: config.BargeInSpeakersEnrolledOnly})
+		cfg.Speaker.Enabled = true
+		cfg.Speaker.Live.Enabled = true
+		out, _ := runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
+		if contains(out, "barge-in-speakers-gate") {
+			t.Errorf("no gate warning expected once a speaker is enrolled:\n%s", out)
+		}
+	})
+}

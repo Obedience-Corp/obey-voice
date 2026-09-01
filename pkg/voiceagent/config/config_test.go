@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -105,6 +106,12 @@ func TestLoadDefaults(t *testing.T) {
 	if got := VoiceFrontendNSLevelOf(cfg); got != DefaultVoiceFrontendNSLevel {
 		t.Errorf("VoiceFrontendNSLevelOf = %d, want %d", got, DefaultVoiceFrontendNSLevel)
 	}
+	if got := BargeInVADThresholdOf(cfg); got != DefaultBargeInVADThreshold {
+		t.Errorf("BargeInVADThresholdOf = %v, want %v", got, DefaultBargeInVADThreshold)
+	}
+	if got := BargeInTailGuardMSOf(cfg); got != DefaultBargeInTailGuardMS {
+		t.Errorf("BargeInTailGuardMSOf = %d, want %d", got, DefaultBargeInTailGuardMS)
+	}
 }
 
 func TestBargeInEnvOverride(t *testing.T) {
@@ -122,6 +129,101 @@ func TestBargeInEnvOverride(t *testing.T) {
 
 	if !cfg.BargeInEnabled {
 		t.Error("BargeInEnabled = false, want true from env")
+	}
+}
+
+func TestBargeInVADThresholdEnvOverride(t *testing.T) {
+	orig := configFile
+	configFile = filepath.Join(t.TempDir(), "nonexistent.yaml")
+	defer func() { configFile = orig }()
+
+	setDefaults(v)
+	t.Setenv("BARGE_IN_VAD_THRESHOLD", "0.65")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if got := BargeInVADThresholdOf(cfg); got != 0.65 {
+		t.Errorf("BargeInVADThresholdOf = %v, want 0.65 from env", got)
+	}
+}
+
+func TestBargeInTailGuardMSEnvOverride(t *testing.T) {
+	orig := configFile
+	configFile = filepath.Join(t.TempDir(), "nonexistent.yaml")
+	defer func() { configFile = orig }()
+
+	setDefaults(v)
+	t.Setenv("BARGE_IN_TAIL_GUARD_MS", "350")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if got := BargeInTailGuardMSOf(cfg); got != 350 {
+		t.Errorf("BargeInTailGuardMSOf = %d, want 350 from env", got)
+	}
+}
+
+// TestBargeInVADThresholdOfClampsOutOfRange documents the D8-style posture
+// (shared with VoiceFrontendNSLevelOf): a value outside 0.3-0.95 — including
+// the zero value of an unloaded Config — falls back to the default rather
+// than failing the whole selection.
+func TestBargeInVADThresholdOfClampsOutOfRange(t *testing.T) {
+	tests := []struct {
+		name  string
+		value float64
+		want  float64
+	}{
+		{"unset (zero value)", 0, DefaultBargeInVADThreshold},
+		{"below min", 0.1, DefaultBargeInVADThreshold},
+		{"above max", 0.99, DefaultBargeInVADThreshold},
+		{"at min", MinBargeInVADThreshold, MinBargeInVADThreshold},
+		{"at max", MaxBargeInVADThreshold, MaxBargeInVADThreshold},
+		{"lowered for webrtc", 0.6, 0.6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{BargeInVADThreshold: tt.value}
+			if got := BargeInVADThresholdOf(cfg); got != tt.want {
+				t.Errorf("BargeInVADThresholdOf(%v) = %v, want %v", tt.value, got, tt.want)
+			}
+		})
+	}
+	if got := BargeInVADThresholdOf(nil); got != DefaultBargeInVADThreshold {
+		t.Errorf("BargeInVADThresholdOf(nil) = %v, want %v", got, DefaultBargeInVADThreshold)
+	}
+}
+
+// TestBargeInTailGuardMSOfClampsOutOfRange mirrors the threshold's posture
+// for the 200-800ms tail-guard window.
+func TestBargeInTailGuardMSOfClampsOutOfRange(t *testing.T) {
+	tests := []struct {
+		name  string
+		value int
+		want  int
+	}{
+		{"unset (zero value)", 0, DefaultBargeInTailGuardMS},
+		{"below min", 50, DefaultBargeInTailGuardMS},
+		{"above max", 5000, DefaultBargeInTailGuardMS},
+		{"at min", MinBargeInTailGuardMS, MinBargeInTailGuardMS},
+		{"at max", MaxBargeInTailGuardMS, MaxBargeInTailGuardMS},
+		{"mid-range", 500, 500},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{BargeInTailGuardMS: tt.value}
+			if got := BargeInTailGuardMSOf(cfg); got != tt.want {
+				t.Errorf("BargeInTailGuardMSOf(%d) = %d, want %d", tt.value, got, tt.want)
+			}
+		})
+	}
+	if got := BargeInTailGuardMSOf(nil); got != DefaultBargeInTailGuardMS {
+		t.Errorf("BargeInTailGuardMSOf(nil) = %d, want %d", got, DefaultBargeInTailGuardMS)
+	}
+	if got := BargeInTailGuardOf(&Config{BargeInTailGuardMS: 500}); got != 500*time.Millisecond {
+		t.Errorf("BargeInTailGuardOf = %v, want 500ms", got)
 	}
 }
 
@@ -797,6 +899,8 @@ func TestValidateAndSet(t *testing.T) {
 		{"bool", "vad_enabled", "false", "false"},
 		{"int", "max_history", "25", "25"},
 		{"float", "vad_threshold", "0.45", "0.45"},
+		{"float barge-in vad threshold", "barge_in_vad_threshold", "0.6", "0.6"},
+		{"int barge-in tail guard", "barge_in_tail_guard_ms", "350", "350"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -834,6 +938,10 @@ func TestValidateAndSetRejects(t *testing.T) {
 		{"bad bool", "vad_enabled", "high", "vad_enabled expects true or false"},
 		{"bad int", "max_history", "many", "max_history expects a whole number between 1 and 100"},
 		{"bad float", "vad_threshold", "high", "vad_threshold expects a number between 0 and 1"},
+		{"barge-in vad threshold below min", "barge_in_vad_threshold", "0.2", "barge_in_vad_threshold expects a number between 0.3 and 0.95"},
+		{"barge-in vad threshold above max", "barge_in_vad_threshold", "0.99", "barge_in_vad_threshold expects a number between 0.3 and 0.95"},
+		{"barge-in tail guard below min", "barge_in_tail_guard_ms", "100", "barge_in_tail_guard_ms expects a number between 200 and 800"},
+		{"barge-in tail guard above max", "barge_in_tail_guard_ms", "5000", "barge_in_tail_guard_ms expects a number between 200 and 800"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

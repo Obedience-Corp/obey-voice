@@ -361,6 +361,11 @@ func (e SpeakingComplete) eventType() string { return "speaking_complete" }
 // SpeakingInterrupted signals playback was cut short.
 type SpeakingInterrupted struct {
 	Reason string
+	// SincePlaybackStart is how long TTS had been audible — from the turn's
+	// first playbackStarted event to this interrupt — when a mic barge-in cut
+	// it off. Zero when not applicable (e.g. a keystroke, remote, or
+	// client-silent interrupt, which this field does not cover yet).
+	SincePlaybackStart time.Duration
 }
 
 func (e SpeakingInterrupted) eventType() string { return "speaking_interrupted" }
@@ -368,6 +373,9 @@ func (e SpeakingInterrupted) eventType() string { return "speaking_interrupted" 
 // TurnInterrupted signals the active assistant turn was canceled.
 type TurnInterrupted struct {
 	Reason string
+	// SincePlaybackStart mirrors SpeakingInterrupted's field of the same
+	// name — see there.
+	SincePlaybackStart time.Duration
 }
 
 func (e TurnInterrupted) eventType() string { return "turn_interrupted" }
