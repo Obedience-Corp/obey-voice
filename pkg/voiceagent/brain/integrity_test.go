@@ -295,3 +295,23 @@ func TestContinuitySinkIsInstanceScoped(t *testing.T) {
 		t.Fatalf("identical turns should emit identically per instance, got %v", counts)
 	}
 }
+
+// TestInfoSinkIsInstanceScoped locks in the same isolation as the continuity
+// sink: two active brains route operator Info to their own pipelines' buses,
+// never to each other's.
+func TestInfoSinkIsInstanceScoped(t *testing.T) {
+	a, b := &OllamaBrain{}, &OllamaBrain{}
+	var mu sync.Mutex
+	counts := map[string]int{}
+	a.SetInfoSink(func(events.Info) { mu.Lock(); counts["a"]++; mu.Unlock() })
+	b.SetInfoSink(func(events.Info) { mu.Lock(); counts["b"]++; mu.Unlock() })
+
+	a.emitInfo(events.Info{Message: "from a"})
+	b.emitInfo(events.Info{Message: "from b"})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if counts["a"] != 1 || counts["b"] != 1 {
+		t.Fatalf("each sink should receive only its own event, got %v", counts)
+	}
+}

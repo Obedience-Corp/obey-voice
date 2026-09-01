@@ -2056,7 +2056,9 @@ func (p *Pipeline) emit(event events.Event) {
 }
 
 func (p *Pipeline) bindBrainInfo() {
-	brain.SetInfoSink(func(info events.Info) { p.emit(info) })
+	if is, ok := p.Brain.(interface{ SetInfoSink(func(events.Info)) }); ok {
+		is.SetInfoSink(func(info events.Info) { p.emit(info) })
+	}
 	if cs, ok := p.Brain.(interface{ SetContinuitySink(func(events.Event)) }); ok {
 		cs.SetContinuitySink(func(e events.Event) { p.emit(e) })
 	}
