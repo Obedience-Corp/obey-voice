@@ -159,7 +159,8 @@ type openSettingsSectionMsg struct{ section settingsSection }
 
 // StartDefaultsID is the New-conversation "Use defaults" signal. It is not a
 // persona profile id. The runtime builder loads Settings without a persona
-// overlay and binds the shipped default persona, which inherits those keys.
+// overlay and binds the shipped default persona's identity and prompt, not
+// that profile's saved brain or TTS.
 const StartDefaultsID = ":defaults"
 
 // startPipelineMsg enters the conversation screen and builds the pipeline

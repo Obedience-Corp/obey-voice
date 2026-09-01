@@ -91,3 +91,45 @@ func TestLoadConfigForSessionDefaultsSkipsPersonaOverlay(t *testing.T) {
 		t.Fatalf("Use defaults = %q, want grok from Settings", settings.BrainProvider)
 	}
 }
+
+func TestBindSessionDefaultsIgnoresCustomDefaultPersonaTTS(t *testing.T) {
+	dir := t.TempDir()
+	config.SetConfigDirForTest(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(""+
+		"brain_provider: grok\n"+
+		"grok_model: grok-build\n"+
+		"tts_provider: qwen3-tts\n"+
+		"qwen_tts_voice: Vivian\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := &persona.Profile{
+		Schema:      persona.Schema,
+		ID:          persona.DefaultID,
+		DisplayName: "Obey",
+		Brain:       persona.Brain{Provider: "ollama", Model: "llama3"},
+		TTS:         persona.TTS{Provider: "kokoro", Voice: "af_bella"},
+		Prompts:     persona.PromptRefs{Persona: persona.DefaultID},
+	}
+	if err := persona.Write(p, false); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfigForSession(appTUI.StartDefaultsID)
+	if err != nil {
+		t.Fatalf("LoadRaw: %v", err)
+	}
+	binding, err := bindSession(cfg, appTUI.StartDefaultsID)
+	if err != nil {
+		t.Fatalf("bindSession: %v", err)
+	}
+	got := binding.Config()
+	if got.BrainProvider != "grok" || got.GrokModel != "grok-build" {
+		t.Fatalf("defaults brain = %s/%s, want Settings grok", got.BrainProvider, got.GrokModel)
+	}
+	if got.TTSProvider != "qwen3-tts" || got.QwenTTSVoice != "Vivian" {
+		t.Fatalf("defaults TTS = %s/%s, want Settings qwen3-tts/Vivian (not default persona af_bella)", got.TTSProvider, got.QwenTTSVoice)
+	}
+	if binding.AgentName != "Obey" {
+		t.Fatalf("defaults identity = %q, want Obey", binding.AgentName)
+	}
+}

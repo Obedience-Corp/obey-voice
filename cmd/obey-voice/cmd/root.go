@@ -182,6 +182,18 @@ func loadConfigForSession(personaID string) (*config.Config, error) {
 	return config.Load()
 }
 
+// bindSession resolves the conversation identity for a start. StartDefaultsID
+// keeps Settings routing and TTS; named personas still overlay their stack.
+func bindSession(cfg *config.Config, personaID string) (*persona.SessionBinding, error) {
+	if personaID == appTUI.StartDefaultsID {
+		return persona.ResolveDefaultsBinding(cfg)
+	}
+	if personaID == "" {
+		personaID = personaOverride
+	}
+	return persona.ResolveBinding(cfg, personaID)
+}
+
 // conversationRuntimeBuilder returns the RuntimeBuilder the TUI invokes on
 // entering the conversation screen: assets are ensured with in-screen
 // progress and the mic goes hot here, not in the launcher (D2). A non-nil
@@ -205,12 +217,8 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		// two different axes and only the first is pinned: switching to another
 		// persona mid-session still cannot retarget this conversation. See
 		// internal/brain/reresolve.go.
-		if personaID == appTUI.StartDefaultsID {
-			personaID = persona.DefaultID
-		} else if personaID == "" {
-			personaID = personaOverride
-		}
-		binding, err := persona.ResolveBinding(cfg, personaID)
+		sessionBindID := personaID
+		binding, err := bindSession(cfg, personaID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve persona: %w", err)
 		}
@@ -317,11 +325,14 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		}
 		wireCompact(p, cfg, sess, bus)
 
-		// Capture the session persona id so Settings → ReloadVoice cannot swap
-		// this conversation onto a different identity's voice (e.g. uncle-fu
-		// mid-session must not become samantha/kokoro just because that is the
-		// live active_persona on disk).
-		sessionPersonaID := binding.PersonaID
+		// Capture the bind id (StartDefaultsID or a persona id) so Settings →
+		// ReloadVoice cannot swap this conversation onto a different identity's
+		// voice (e.g. uncle-fu mid-session must not become samantha/kokoro just
+		// because that is the live active_persona on disk). Defaults sessions
+		// keep loading Settings without the default persona's saved stack.
+		if sessionBindID == "" {
+			sessionBindID = binding.PersonaID
+		}
 
 		// Declare first so ReloadVoice can update SessionCfg after install.
 		var rt *appTUI.ConversationRuntime
@@ -342,14 +353,15 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				if noVoice {
 					return nil
 				}
-				reloaded, err := config.Load()
+				reloaded, err := loadConfigForSession(sessionBindID)
 				if err != nil {
 					return fmt.Errorf("reload config: %w", err)
 				}
 				// Re-apply the session persona on top of the reloaded app config
 				// so device/settings changes take effect without replacing the
-				// bound voice identity.
-				rebound, err := persona.ResolveBinding(reloaded, sessionPersonaID)
+				// bound voice identity. Defaults sessions re-bind Settings, not
+				// the default persona's saved TTS.
+				rebound, err := bindSession(reloaded, sessionBindID)
 				if err != nil {
 					return fmt.Errorf("resolve session persona: %w", err)
 				}

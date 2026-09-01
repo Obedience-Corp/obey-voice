@@ -156,3 +156,60 @@ func TestResolveBindingCarriesPersonaBrain(t *testing.T) {
 		t.Fatalf("caller config mutated: %s/%s", cfg.BrainProvider, cfg.OllamaModel)
 	}
 }
+
+func TestResolveDefaultsBindingKeepsSettingsStack(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	p := &Profile{
+		Schema:      Schema,
+		ID:          DefaultID,
+		DisplayName: "Obey",
+		Brain:       Brain{Provider: "ollama", Model: "llama3"},
+		TTS:         TTS{Provider: "kokoro", Voice: "af_bella"},
+		Prompts:     PromptRefs{Persona: DefaultID},
+	}
+	if err := Write(p, false); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		BrainProvider: "grok",
+		GrokModel:     "grok-build",
+		TTSProvider:   "qwen3-tts",
+		QwenTTSVoice:  "Vivian",
+		AgentName:     "FromSettings",
+	}
+
+	binding, err := ResolveDefaultsBinding(cfg)
+	if err != nil {
+		t.Fatalf("ResolveDefaultsBinding() error = %v", err)
+	}
+	if binding.PersonaID != DefaultID || binding.AgentName != "Obey" || binding.PromptRef != DefaultID {
+		t.Fatalf("defaults identity = %+v, want shipped name and prompt", binding)
+	}
+	if binding.TTS.Voice != "" || binding.TTS.Provider != "" {
+		t.Fatalf("defaults TTS = %+v, want inherit (empty), not the profile voice", binding.TTS)
+	}
+	bcfg := binding.Config()
+	if bcfg.BrainProvider != "grok" || bcfg.GrokModel != "grok-build" {
+		t.Fatalf("defaults brain = %s/%s, want Settings grok/grok-build", bcfg.BrainProvider, bcfg.GrokModel)
+	}
+	if bcfg.TTSProvider != "qwen3-tts" || bcfg.QwenTTSVoice != "Vivian" {
+		t.Fatalf("defaults TTS config = %s/%s, want Settings qwen3-tts/Vivian", bcfg.TTSProvider, bcfg.QwenTTSVoice)
+	}
+	if cfg.TTSProvider != "qwen3-tts" || cfg.BrainProvider != "grok" {
+		t.Fatalf("caller config mutated: %s/%s", cfg.TTSProvider, cfg.BrainProvider)
+	}
+
+	stolen, err := ResolveBinding(cfg, DefaultID)
+	if err != nil {
+		t.Fatalf("ResolveBinding(%s): %v", DefaultID, err)
+	}
+	if stolen.Config().TTSProvider != "kokoro" {
+		t.Fatal("control: ResolveBinding must still apply the default persona TTS")
+	}
+}
+
+func TestResolveDefaultsBindingNilConfig(t *testing.T) {
+	if _, err := ResolveDefaultsBinding(nil); err == nil {
+		t.Fatal("ResolveDefaultsBinding(nil) = nil error, want error")
+	}
+}

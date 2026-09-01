@@ -65,16 +65,47 @@ func ResolveBinding(cfg *config.Config, id string) (*SessionBinding, error) {
 
 	snap := *cfg
 	Apply(&snap, p)
+	return newBinding(p.ID, p.DisplayName, p.TTS, snap), nil
+}
+
+// ResolveDefaultsBinding binds Settings routing and TTS (cfg should be
+// LoadRaw) to the shipped default persona's identity and prompt. Brain and
+// TTS on that profile are ignored: a customized default persona must not
+// steal the Settings stack when the TUI starts with "Use defaults".
+func ResolveDefaultsBinding(cfg *config.Config) (*SessionBinding, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("persona: config is nil")
+	}
+	snap := *cfg
+	p, err := Load(DefaultID)
+	if err != nil {
+		if !isNotExist(err) {
+			return nil, err
+		}
+		if strings.TrimSpace(snap.AgentName) == "" {
+			snap.AgentName = DefaultDisplayName
+		}
+		if strings.TrimSpace(snap.Persona) == "" {
+			snap.Persona = DefaultID
+		}
+		snap.ActivePersona = DefaultID
+		return newBinding(DefaultID, DefaultDisplayName, TTS{}, snap), nil
+	}
+	applyIdentity(&snap, p)
+	return newBinding(p.ID, p.DisplayName, TTS{}, snap), nil
+}
+
+func newBinding(id, display string, tts TTS, snap config.Config) *SessionBinding {
 	return &SessionBinding{
-		PersonaID:     p.ID,
-		DisplayName:   p.DisplayName,
+		PersonaID:     id,
+		DisplayName:   display,
 		AgentName:     snap.AgentName,
 		PromptRef:     snap.Persona,
 		BrainProvider: snap.BrainProvider,
 		BrainModel:    modelForProvider(&snap, snap.BrainProvider),
-		TTS:           p.TTS,
+		TTS:           tts,
 		cfg:           snap,
-	}, nil
+	}
 }
 
 // Config returns a fresh copy of the binding-derived config, so no caller can

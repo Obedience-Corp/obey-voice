@@ -311,6 +311,15 @@ func Apply(cfg *config.Config, p *Profile) {
 	if cfg == nil || p == nil {
 		return
 	}
+	applyIdentity(cfg, p)
+	applyBrain(cfg, p.Brain)
+	applyTTS(cfg, p.TTS)
+}
+
+// applyIdentity copies name, prompt refs, and id onto cfg. Brain and TTS stay
+// with the caller — Use defaults needs the shipped identity without the
+// profile's saved stack.
+func applyIdentity(cfg *config.Config, p *Profile) {
 	if name := strings.TrimSpace(p.DisplayName); name != "" {
 		cfg.AgentName = name
 	}
@@ -323,8 +332,6 @@ func Apply(cfg *config.Config, p *Profile) {
 	if id := strings.TrimSpace(p.ID); id != "" {
 		cfg.ActivePersona = id
 	}
-	applyBrain(cfg, p.Brain)
-	applyTTS(cfg, p.TTS)
 }
 
 // effectivePersonaRef is the kind=persona catalog name the brain should resolve
