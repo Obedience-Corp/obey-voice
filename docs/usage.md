@@ -185,11 +185,12 @@ TTS provider/voice all belong to the persona rather than to global config. TUI
 empty inherits the app default — an empty `brain:` uses the app-level
 `brain_provider`/model, and an empty `tts:` uses the app-level TTS keys.
 
-Starting a new conversation opens a persona picker: the active persona is
-pre-selected, and `+ Create persona…` clones the current global stack into a new
-profile. A conversation binds its identity — name, prompt, brain, and voice — at
-start, so editing a persona or switching the active one never affects a session
-already in flight.
+Starting a new conversation opens a persona picker: **Use defaults** is always
+the first option (the models, providers, and voice from Settings). Named
+personas follow, with the active one marked, and `+ Create persona…` clones the
+current global stack into a new profile. A conversation binds its identity —
+name, prompt, brain, and voice — at start, so editing a persona or switching the
+active one never affects a session already in flight.
 
 In the Personas list, `d` deletes the persona under the cursor. It always asks
 first — only `y` confirms, any other key cancels — and it removes

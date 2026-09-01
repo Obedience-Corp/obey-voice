@@ -29,11 +29,14 @@ const (
 	actionSettings
 	actionQuit
 	// Submenu actions (design WI-c8884d §2.4/§2.6).
+	actionStartDefaults   // start with Settings defaults (not a named persona)
 	actionStartPersona    // start a conversation bound to item.personaID
 	actionCreatePersona   // jump to the Personas editor to create one
 	actionMeetingStart    // today's meeting setup → record flow
 	actionMeetingSettings // Settings opened on the Meeting section
 )
+
+const defaultsPickerLabel = "Use defaults"
 
 type launcherItem struct {
 	label     string
@@ -214,6 +217,8 @@ func (m launcherModel) updateSubmenu(msg tea.KeyMsg) (launcherModel, tea.Cmd) {
 		item := m.submenu[m.submenuCursor]
 		m.closeSubmenu()
 		switch item.action {
+		case actionStartDefaults:
+			return m, func() tea.Msg { return startDefaultsMsg() }
 		case actionStartPersona:
 			return m, func() tea.Msg {
 				return startPipelineMsg{personaID: item.personaID, personaName: item.label}
@@ -235,26 +240,32 @@ func (m *launcherModel) closeSubmenu() {
 	m.submenuCursor = 0
 }
 
-// openPersonaPicker builds the New-conversation submenu: every persona (the
-// active one pre-selected as the explicit default), plus a create shortcut.
-// The conversation never starts without a persona choice; a picker failure
-// falls back to the bound default rather than blocking the user.
+// openPersonaPicker builds the New-conversation submenu. Use defaults is
+// always first — Settings models, providers, and voice — so starting a
+// session does not require hunting through personas. Named personas follow
+// (the active one marked), then a create shortcut. A listing failure still
+// starts with those defaults rather than blocking the user.
 func (m launcherModel) openPersonaPicker() (launcherModel, tea.Cmd) {
 	list := m.listPersonas
 	if list == nil {
 		list = persona.List
 	}
 	profiles, err := list()
-	if err != nil || len(profiles) == 0 {
-		return m, func() tea.Msg { return startPipelineMsg{} }
+	if err != nil {
+		return m, func() tea.Msg { return startDefaultsMsg() }
 	}
 	active := ""
 	if m.cfg != nil {
 		active = persona.ActiveID(m.cfg)
 	}
-	m.submenu = nil
-	m.submenuTitle = "New conversation — pick a persona"
+	m.submenuTitle = "New conversation"
 	m.submenuCursor = 0
+	m.submenu = []launcherItem{{
+		label:  defaultsPickerLabel,
+		hint:   m.defaultsHint(),
+		glyph:  "★",
+		action: actionStartDefaults,
+	}}
 	for _, p := range profiles {
 		if p == nil {
 			continue
@@ -272,9 +283,6 @@ func (m launcherModel) openPersonaPicker() (launcherModel, tea.Cmd) {
 			} else {
 				hint = "active"
 			}
-			// Cursor tracks the built submenu, not the profiles index — nil
-			// holes in the listing must not skew the pre-selection.
-			m.submenuCursor = len(m.submenu)
 		}
 		m.submenu = append(m.submenu, launcherItem{
 			label: label, hint: hint, glyph: glyph,
@@ -286,6 +294,38 @@ func (m launcherModel) openPersonaPicker() (launcherModel, tea.Cmd) {
 		action: actionCreatePersona,
 	})
 	return m, nil
+}
+
+// defaultsHint names the Settings stack the first picker row will start with.
+func (m launcherModel) defaultsHint() string {
+	if m.cfg == nil {
+		return "Models, providers, and voice from Settings"
+	}
+	brain := strings.TrimSpace(m.cfg.BrainProvider)
+	model := m.activeModel()
+	line := "Settings"
+	if brain != "" {
+		if model != "" && model != "default" {
+			line += " · " + brain + " " + model
+		} else {
+			line += " · " + brain
+		}
+	}
+	tts := activeTTSProvider(m.cfg)
+	voice := strings.TrimPrefix(ttsEffectiveVoiceLabel(m.cfg), "voice ")
+	if tts != "" {
+		line += " · " + tts
+		if voice != "" {
+			line += " " + voice
+		}
+	}
+	return line
+}
+
+// startDefaultsMsg starts a conversation from Settings (models, providers,
+// voice) rather than a named persona overlay.
+func startDefaultsMsg() startPipelineMsg {
+	return startPipelineMsg{personaID: StartDefaultsID, personaName: "with defaults"}
 }
 
 // openMeetingMenu splits Meeting into start vs settings (design §2.6).

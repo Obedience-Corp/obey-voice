@@ -157,11 +157,17 @@ type settingsDoneMsg struct{}
 // section (e.g. the launcher's "Meeting settings" entry).
 type openSettingsSectionMsg struct{ section settingsSection }
 
+// StartDefaultsID is the New-conversation "Use defaults" signal. It is not a
+// persona profile id. The runtime builder loads Settings without a persona
+// overlay and binds the shipped default persona, which inherits those keys.
+const StartDefaultsID = ":defaults"
+
 // startPipelineMsg enters the conversation screen and builds the pipeline
 // there (D2) — the TUI no longer exits to hand off.
 type startPipelineMsg struct {
 	sessionID string
 	// personaID selects the session binding; empty = configured active persona.
+	// StartDefaultsID (launcher "Use defaults") starts from Settings instead.
 	// The persona picker (launcher "New conversation") sets this.
 	personaID string
 	// personaName labels the starting screen. The binding's real identity is

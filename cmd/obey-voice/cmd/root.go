@@ -172,6 +172,16 @@ func modelName(cfg *config.Config) string {
 	}
 }
 
+// loadConfigForSession reloads config for a conversation start. "Use defaults"
+// reads Settings without the active-persona overlay so the models and
+// providers from Settings actually take effect.
+func loadConfigForSession(personaID string) (*config.Config, error) {
+	if personaID == appTUI.StartDefaultsID {
+		return config.LoadRaw()
+	}
+	return config.Load()
+}
+
 // conversationRuntimeBuilder returns the RuntimeBuilder the TUI invokes on
 // entering the conversation screen: assets are ensured with in-screen
 // progress and the mic goes hot here, not in the launcher (D2). A non-nil
@@ -180,7 +190,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 	return func(ctx context.Context, progress appTUI.BuildProgress, sessionID, personaID string) (*appTUI.ConversationRuntime, error) {
 		// Reload config in case settings changed inside the TUI.
 		progress.Stage("Reading settings")
-		cfg, err := config.Load()
+		cfg, err := loadConfigForSession(personaID)
 		if err != nil {
 			return nil, fmt.Errorf("reload config: %w", err)
 		}
@@ -195,7 +205,9 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		// two different axes and only the first is pinned: switching to another
 		// persona mid-session still cannot retarget this conversation. See
 		// internal/brain/reresolve.go.
-		if personaID == "" {
+		if personaID == appTUI.StartDefaultsID {
+			personaID = persona.DefaultID
+		} else if personaID == "" {
 			personaID = personaOverride
 		}
 		binding, err := persona.ResolveBinding(cfg, personaID)

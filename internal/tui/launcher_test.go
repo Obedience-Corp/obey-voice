@@ -216,10 +216,16 @@ func TestLauncherMeetingSplitsStartAndSettings(t *testing.T) {
 }
 
 func TestLauncherNewConversationOpensPersonaPicker(t *testing.T) {
-	// Design WI-c8884d §2.4: New conversation always establishes the session
-	// persona — the picker pre-selects the active persona as the explicit
-	// default and offers create.
-	cfg := &config.Config{ActivePersona: "bob"}
+	// New conversation opens a picker: Use defaults is always first (Settings
+	// stack, no persona hunt), then named personas (active marked, not
+	// pre-selected), then create.
+	cfg := &config.Config{
+		ActivePersona: "bob",
+		BrainProvider: "ollama",
+		OllamaModel:   "llama3.2",
+		TTSProvider:   "kokoro",
+		TTSVoice:      "af_heart",
+	}
 	m := newLauncher(cfg, nil)
 	m.listPersonas = func() ([]*persona.Profile, error) {
 		return []*persona.Profile{
@@ -236,17 +242,40 @@ func TestLauncherNewConversationOpensPersonaPicker(t *testing.T) {
 		if cmd != nil {
 			t.Fatal("new conversation must open the picker, not start immediately")
 		}
-		if len(m.submenu) != 3 {
-			t.Fatalf("picker = %d rows, want 2 personas + create", len(m.submenu))
+		if len(m.submenu) != 4 {
+			t.Fatalf("picker = %d rows, want defaults + 2 personas + create", len(m.submenu))
 		}
-		if m.submenuCursor != 1 {
-			t.Fatalf("picker cursor = %d, want active persona pre-selected", m.submenuCursor)
+		if m.submenuCursor != 0 {
+			t.Fatalf("picker cursor = %d, want Use defaults first", m.submenuCursor)
+		}
+		if m.submenu[0].action != actionStartDefaults || m.submenu[0].label != defaultsPickerLabel {
+			t.Fatalf("first row = %+v, want Use defaults", m.submenu[0])
+		}
+		if !strings.Contains(m.submenu[0].hint, "Settings") || !strings.Contains(m.submenu[0].hint, "ollama") {
+			t.Fatalf("defaults hint = %q, want Settings stack", m.submenu[0].hint)
+		}
+		if m.submenu[2].glyph != "✓" || m.submenu[2].personaID != "bob" {
+			t.Fatalf("active persona row = %+v, want bob marked", m.submenu[2])
 		}
 
-		// Pick Ada → conversation starts bound to her.
-		m.submenuCursor = 0
+		// Enter starts with Settings defaults (no named persona overlay).
 		m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		start, ok := cmd().(startPipelineMsg)
+		if !ok || start.personaID != StartDefaultsID {
+			t.Fatalf("defaults start message = %#v", cmd())
+		}
+		if start.personaName != "with defaults" {
+			t.Fatalf("defaults start name = %q", start.personaName)
+		}
+
+		// Reopen and pick Ada → conversation starts bound to her.
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if m.submenu == nil {
+			t.Fatal("picker did not reopen")
+		}
+		m.submenuCursor = 1
+		m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		start, ok = cmd().(startPipelineMsg)
 		if !ok || start.personaID != "ada" {
 			t.Fatalf("picker start message = %#v", cmd())
 		}
@@ -273,6 +302,57 @@ func TestLauncherNewConversationOpensPersonaPicker(t *testing.T) {
 	t.Fatal("launcher has no New conversation action")
 }
 
+func TestLauncherPickerShowsDefaultsWhenNoPersonas(t *testing.T) {
+	m := newLauncher(&config.Config{}, nil)
+	m.listPersonas = func() ([]*persona.Profile, error) {
+		return nil, nil
+	}
+	for i, item := range m.items {
+		if item.action != actionNew {
+			continue
+		}
+		m.cursor = i
+		m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd != nil {
+			t.Fatal("empty listing must still open the picker on Use defaults")
+		}
+		if len(m.submenu) != 2 {
+			t.Fatalf("picker = %d rows, want defaults + create", len(m.submenu))
+		}
+		if m.submenu[0].action != actionStartDefaults || m.submenuCursor != 0 {
+			t.Fatalf("first row = %+v cursor = %d, want Use defaults", m.submenu[0], m.submenuCursor)
+		}
+		return
+	}
+	t.Fatal("launcher has no New conversation action")
+}
+
+func TestLauncherPickerRendersDefaultsFirst(t *testing.T) {
+	m := newLauncher(&config.Config{BrainProvider: "grok", GrokModel: "grok-build"}, nil)
+	m.width, m.height = 80, 24
+	m.listPersonas = func() ([]*persona.Profile, error) {
+		return []*persona.Profile{{ID: "ada", DisplayName: "Ada"}}, nil
+	}
+	for i, item := range m.items {
+		if item.action != actionNew {
+			continue
+		}
+		m.cursor = i
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		view := stripANSI(m.View())
+		if !strings.Contains(view, defaultsPickerLabel) {
+			t.Fatalf("picker view missing Use defaults:\n%s", view)
+		}
+		defaultsAt := strings.Index(view, defaultsPickerLabel)
+		adaAt := strings.Index(view, "Ada")
+		if adaAt < 0 || defaultsAt > adaAt {
+			t.Fatalf("Use defaults is not above named personas:\n%s", view)
+		}
+		return
+	}
+	t.Fatal("launcher has no New conversation action")
+}
+
 func TestLauncherPickerFallsBackWhenListingFails(t *testing.T) {
 	m := newLauncher(&config.Config{}, nil)
 	m.listPersonas = func() ([]*persona.Profile, error) {
@@ -287,8 +367,8 @@ func TestLauncherPickerFallsBackWhenListingFails(t *testing.T) {
 		if m.submenu != nil {
 			t.Fatal("failed listing must not open an empty picker")
 		}
-		if _, ok := cmd().(startPipelineMsg); !ok {
-			t.Fatalf("fallback message = %#v, want default start", cmd())
+		if msg, ok := cmd().(startPipelineMsg); !ok || msg.personaID != StartDefaultsID {
+			t.Fatalf("fallback message = %#v, want Use defaults start", cmd())
 		}
 		return
 	}

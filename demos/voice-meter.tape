@@ -67,7 +67,7 @@ Sleep 6s
 Show
 Sleep 2s
 
-# New conversation → persona picker (Samantha pre-selected) → start
+# New conversation → persona picker (Use defaults first) → start
 Enter
 Sleep 1200ms
 Enter
