@@ -1189,6 +1189,157 @@ func TestEnsureContextBudgetShrinksHistory(t *testing.T) {
 	}
 }
 
+// Session 20260831-152533-026a died mid-tool-loop with Ollama 500
+// "no user query found in messages": large camp/festival dumps overflowed
+// num_ctx and the server dropped the user turn. The in-flight query must stay.
+func TestEnsureContextBudgetPinsLatestUserDuringToolLoop(t *testing.T) {
+	huge := strings.Repeat("x", 8000)
+	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
+	o := &OllamaBrain{
+		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 400},
+		fullSystemPrompt: "sys",
+		history: []api.Message{
+			{Role: "user", Content: "older question"},
+			{Role: "assistant", Content: "older reply"},
+			{Role: "user", Content: "summarize my campaign"},
+			call,
+			{Role: "tool", Content: huge, ToolName: "run_command"},
+			{Role: "tool", Content: huge, ToolName: "run_command"},
+		},
+	}
+
+	o.ensureContextBudget("")
+	if idx := lastUserIndex(o.history); idx < 0 || o.history[idx].Content != "summarize my campaign" {
+		t.Fatalf("lost in-flight user query: %+v", rolesOf(o.history))
+	}
+	assertNoStrandedTools(t, o.history)
+	assertWithinContextBudget(t, o, "")
+}
+
+func TestEnsureContextBudgetShrinksToolResultsToKeepUser(t *testing.T) {
+	huge := strings.Repeat("campaign yaml dump ", 400)
+	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
+	o := &OllamaBrain{
+		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 400},
+		fullSystemPrompt: "sys",
+		history: []api.Message{
+			{Role: "user", Content: "summarize my campaign"},
+			call,
+			{Role: "tool", Content: huge, ToolName: "run_command"},
+			{Role: "tool", Content: huge, ToolName: "run_command"},
+		},
+	}
+
+	o.ensureContextBudget("")
+	if got := lastUserIndex(o.history); got != 0 {
+		t.Fatalf("last user index = %d, want 0 (cannot drop the only query)", got)
+	}
+	assertWithinContextBudget(t, o, "")
+	if newest, oldest := o.history[3].Content, o.history[2].Content; len(newest) < len(oldest) {
+		t.Fatalf("newest tool (%d bytes) smaller than oldest (%d); budget should keep the latest result", len(newest), len(oldest))
+	}
+}
+
+func TestEnsureContextBudgetFitsSmallNumCtx(t *testing.T) {
+	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
+	o := &OllamaBrain{
+		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 128},
+		fullSystemPrompt: "sys",
+		history: []api.Message{
+			{Role: "user", Content: "summarize my campaign"},
+			call,
+			{Role: "tool", Content: strings.Repeat("x", 8000), ToolName: "run_command"},
+		},
+	}
+
+	o.ensureContextBudget("")
+	if o.history[0].Role != "user" {
+		t.Fatalf("lost user query: %+v", rolesOf(o.history))
+	}
+	assertWithinContextBudget(t, o, "")
+}
+
+func TestEnsureContextBudgetFitsManyToolResults(t *testing.T) {
+	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
+	hist := []api.Message{
+		{Role: "user", Content: "summarize my campaign"},
+		call,
+	}
+	for range 8 {
+		hist = append(hist, api.Message{Role: "tool", Content: strings.Repeat("x", 4000), ToolName: "run_command"})
+	}
+	o := &OllamaBrain{
+		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 400},
+		fullSystemPrompt: "sys",
+		history:          hist,
+	}
+
+	o.ensureContextBudget("")
+	if o.history[0].Content != "summarize my campaign" {
+		t.Fatalf("lost user query: %+v", rolesOf(o.history))
+	}
+	assertWithinContextBudget(t, o, "")
+}
+
+func assertWithinContextBudget(t *testing.T, o *OllamaBrain, skillCtx string) {
+	t.Helper()
+	limit := o.cfg.OllamaNumCtx * 9 / 10
+	if got := o.estimateTokens(skillCtx); got > limit {
+		t.Fatalf("estimateTokens = %d, want <= %d (num_ctx=%d)", got, limit, o.cfg.OllamaNumCtx)
+	}
+}
+
+func TestThinkStreamToolResultsCarryToolName(t *testing.T) {
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs++
+		if reqs == 1 {
+			_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true}`+"\n")
+			return
+		}
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"done"},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	stream, err := o.ThinkStream(t.Context(), "list files", StreamOptions{ToolsEnabled: true})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	_, _ = drainStream(t, stream)
+	if res := <-stream.Done; res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+
+	found := false
+	for _, m := range o.history {
+		if m.Role == "tool" {
+			found = true
+			if m.ToolName != "list_files" {
+				t.Fatalf("tool message ToolName = %q, want list_files", m.ToolName)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no tool result in history")
+	}
+}
+
+func rolesOf(history []api.Message) []string {
+	roles := make([]string, len(history))
+	for i, m := range history {
+		roles[i] = m.Role
+	}
+	return roles
+}
+
 // TestThinkFullSpeaksFallbackVerbatim: an empty model response must yield the
 // canned fallback untouched — cleanForVoice runs before the fallback is
 // substituted, never on it.
