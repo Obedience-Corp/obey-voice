@@ -888,7 +888,7 @@ func TestHistoryWindowStart(t *testing.T) {
 		{"window opens on tool result, advances to next user", 7, 5},
 		{"window opens mid first tool group", 6, 5},
 		{"window opens on user", 4, 5},
-		{"window opens on assistant tool-call", 3, 6},
+		{"window opens on assistant tool-call", 3, 5},
 		{"window fits whole history", 9, 0},
 		{"max larger than history", 20, 0},
 	}
@@ -1593,5 +1593,60 @@ func TestThinkStreamChatErrorKeepsPartialTextInHistory(t *testing.T) {
 	tail := hist[len(hist)-1]
 	if !strings.Contains(tail.Content, "Let me check that.") || !strings.Contains(tail.Content, RecoveryReply) {
 		t.Fatalf("history tail = %q, want partial text plus recovery reply", tail.Content)
+	}
+}
+
+func TestOllamaHistoryRoundTripsToolCalls(t *testing.T) {
+	call := api.ToolCall{Function: api.ToolCallFunction{Name: "run_command", Arguments: mustArgs(map[string]any{"command": "echo hi"})}}
+	o := &OllamaBrain{history: []api.Message{
+		{Role: "user", Content: "do the thing"},
+		{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{call}},
+		{Role: "tool", Content: "ok", ToolName: "run_command"},
+		{Role: "assistant", Content: "Done."},
+	}}
+
+	var restored OllamaBrain
+	restored.LoadHistory(o.History())
+	if len(restored.history) != 4 {
+		t.Fatalf("history len = %d, want 4", len(restored.history))
+	}
+	got := restored.history[1]
+	if got.Role != "assistant" || len(got.ToolCalls) != 1 || got.ToolCalls[0].Function.Name != "run_command" {
+		t.Fatalf("assistant tool-call = %+v, want run_command preserved", got)
+	}
+	if restored.history[2].Role != "tool" || restored.history[2].ToolName != "run_command" {
+		t.Fatalf("tool result = %+v, want tool_name preserved", restored.history[2])
+	}
+}
+
+func TestLoadHistoryDropsOrphanedToolPrefix(t *testing.T) {
+	// Role sequence from a live Jarvis session whose first user turn was
+	// trimmed but whose tool group was kept: Ollama then 500s.
+	o := &OllamaBrain{}
+	o.LoadHistory([]Turn{
+		{Role: "assistant"},
+		{Role: "tool", Content: "result 1"},
+		{Role: "assistant"},
+		{Role: "tool", Content: "result 2"},
+		{Role: "assistant", Content: "Done, sir."},
+		{Role: "user", Content: "next question"},
+		{Role: "assistant", Content: "On it."},
+	})
+	if len(o.history) == 0 || o.history[0].Role != "assistant" || o.history[0].Content != "Done, sir." {
+		t.Fatalf("history = %+v, want orphaned tool prefix dropped through to the speakable assistant", o.history)
+	}
+	if o.history[1].Role != "user" || o.history[1].Content != "next question" {
+		t.Fatalf("history after prefix = %+v, want the following user turn", o.history)
+	}
+}
+
+func TestLoadHistoryKeepsCompactSummary(t *testing.T) {
+	o := &OllamaBrain{}
+	o.LoadHistory([]Turn{
+		{Role: "assistant", Content: "Earlier we discussed the build."},
+		{Role: "user", Content: "and then?"},
+	})
+	if len(o.history) != 2 || o.history[0].Content != "Earlier we discussed the build." {
+		t.Fatalf("history = %+v, want compact summary kept", o.history)
 	}
 }

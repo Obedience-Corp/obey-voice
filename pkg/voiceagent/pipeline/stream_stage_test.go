@@ -363,6 +363,59 @@ func TestRunTurnTextModeBrainTimeoutRecovers(t *testing.T) {
 	}
 }
 
+// toolThenHangBrain fires OnToolStart then blocks until ctx dies — a tool
+// loop that is still working. The idle deadline must reset on the tool hook
+// so wall-clock 3 minutes does not kill a busy 27b turn.
+type toolThenHangBrain struct {
+	started time.Time
+	waited  time.Duration
+}
+
+func (h *toolThenHangBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	h.started = time.Now()
+	out := make(chan string)
+	done := make(chan brain.StreamResult, 1)
+	go func() {
+		defer close(out)
+		defer close(done)
+		select {
+		case <-ctx.Done():
+			h.waited = time.Since(h.started)
+			done <- brain.StreamResult{Err: ctx.Err()}
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+		if opts.OnToolStart != nil {
+			opts.OnToolStart("run_command", "working")
+		}
+		<-ctx.Done()
+		h.waited = time.Since(h.started)
+		done <- brain.StreamResult{Err: ctx.Err()}
+	}()
+	return &brain.Stream{Chunks: out, Done: done}, nil
+}
+func (h *toolThenHangBrain) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
+	return "", context.DeadlineExceeded
+}
+func (h *toolThenHangBrain) ClearHistory()            {}
+func (h *toolThenHangBrain) History() []brain.Turn    { return nil }
+func (h *toolThenHangBrain) LoadHistory([]brain.Turn) {}
+
+func TestRunTurnTextModeToolActivityExtendsBrainTimeout(t *testing.T) {
+	bus := events.NewBus()
+	h := &toolThenHangBrain{}
+	p := &Pipeline{
+		Brain:            h,
+		Events:           bus,
+		BrainTurnTimeout: 80 * time.Millisecond,
+	}
+
+	_ = p.RunTurnTextMode(context.Background(), "look into this")
+	if h.waited < 120*time.Millisecond {
+		t.Fatalf("brain waited %v, want the 80ms idle bound to reset on tool start", h.waited)
+	}
+}
+
 func TestObserveStreamClosesOnStreamCompletion(t *testing.T) {
 	p := &Pipeline{Events: events.NewBus()}
 	metrics := newTurnMetrics()

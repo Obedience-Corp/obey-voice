@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -829,7 +830,24 @@ func (o *OllamaBrain) History() []Turn {
 		if m.Role == "user" {
 			speaker, content = decodeOllamaUser(m.Content)
 		}
-		turns[i] = Turn{Role: m.Role, Content: content, Speaker: speaker}
+		turns[i] = Turn{
+			Role:       m.Role,
+			Content:    content,
+			Speaker:    speaker,
+			ToolName:   m.ToolName,
+			ToolCallID: m.ToolCallID,
+		}
+		for _, tc := range m.ToolCalls {
+			args, err := json.Marshal(tc.Function.Arguments)
+			if err != nil {
+				args = []byte("{}")
+			}
+			turns[i].ToolCalls = append(turns[i].ToolCalls, TurnToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: string(args),
+			})
+		}
 	}
 	return turns
 }
@@ -838,8 +856,8 @@ func (o *OllamaBrain) History() []Turn {
 // saved by the prompt-based providers use role "samantha" for replies; map it
 // to ollama's native "assistant".
 func (o *OllamaBrain) LoadHistory(turns []Turn) {
-	o.history = make([]api.Message, len(turns))
-	for i, t := range turns {
+	history := make([]api.Message, 0, len(turns))
+	for _, t := range turns {
 		role := t.Role
 		if role == "samantha" {
 			role = "assistant"
@@ -848,8 +866,28 @@ func (o *OllamaBrain) LoadHistory(turns []Turn) {
 		if role == "user" && strings.TrimSpace(t.Speaker) != "" {
 			content = encodeOllamaUser(t.Speaker, t.Content)
 		}
-		o.history[i] = api.Message{Role: role, Content: content}
+		m := api.Message{
+			Role:       role,
+			Content:    content,
+			ToolName:   t.ToolName,
+			ToolCallID: t.ToolCallID,
+		}
+		for _, tc := range t.ToolCalls {
+			args := api.NewToolCallFunctionArguments()
+			if strings.TrimSpace(tc.Arguments) != "" {
+				_ = json.Unmarshal([]byte(tc.Arguments), &args)
+			}
+			m.ToolCalls = append(m.ToolCalls, api.ToolCall{
+				ID: tc.ID,
+				Function: api.ToolCallFunction{
+					Name:      tc.Name,
+					Arguments: args,
+				},
+			})
+		}
+		history = append(history, m)
 	}
+	o.history = sanitizeOllamaHistory(history)
 }
 
 // refreshSystemPrompt re-resolves the persona document and rebuilds the
@@ -1104,9 +1142,14 @@ func (o *OllamaBrain) trimHistory() {
 }
 
 // historyWindowStart returns the index where a history window of at most max
-// messages begins. If the tail slice would open on a tool result — stranding
-// it from its assistant tool-call antecedent — the window advances to the
-// next user message.
+// messages begins. A window must not open in the middle of a tool-call group:
+// stranded tool results (or a tool-call assistant without its user) make
+// Ollama 0.32.14 500 with "no user query found in messages" (ollama#17778).
+//
+// If the tail would open on a tool result, the window advances to the next
+// user. If it would open on an assistant tool-call, it walks back to the
+// user that started that exchange — slightly over max, rather than dropping
+// the query the in-flight tools belong to.
 func historyWindowStart(history []api.Message, max int) int {
 	if max <= 0 {
 		return len(history)
@@ -1115,7 +1158,17 @@ func historyWindowStart(history []api.Message, max int) int {
 	if len(history) > max {
 		start = len(history) - max
 	}
-	if start == 0 || history[start].Role != "tool" {
+	if start == 0 {
+		return start
+	}
+	if history[start].Role == "assistant" && len(history[start].ToolCalls) > 0 {
+		for i := start - 1; i >= 0; i-- {
+			if history[i].Role == "user" {
+				return i
+			}
+		}
+	}
+	if history[start].Role != "tool" {
 		return start
 	}
 	for i := start + 1; i < len(history); i++ {
@@ -1124,4 +1177,24 @@ func historyWindowStart(history []api.Message, max int) int {
 		}
 	}
 	return len(history)
+}
+
+// sanitizeOllamaHistory repairs a session that was saved before ToolCalls
+// round-tripped: empty assistant + tool results with no user, which Ollama
+// rejects as "no user query found in messages". Compact seeds (a non-empty
+// assistant summary) stay.
+func sanitizeOllamaHistory(in []api.Message) []api.Message {
+	i := 0
+	for i < len(in) {
+		m := in[i]
+		if m.Role == "user" {
+			break
+		}
+		if m.Role == "assistant" && strings.TrimSpace(m.Content) != "" && len(m.ToolCalls) == 0 {
+			break
+		}
+		i++
+	}
+	in = in[i:]
+	return in
 }

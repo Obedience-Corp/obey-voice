@@ -87,6 +87,13 @@ type Turn struct {
 	// assistant turns and unlabeled single-user chat. Optional on disk so
 	// older sessions load unchanged.
 	Speaker string `json:"speaker,omitempty"`
+	// ToolCalls is the assistant tool-call payload. Empty assistants that
+	// requested tools used to persist as content-only, so a resume sent
+	// stranded tool results and Ollama 500'd with "no user query found".
+	ToolCalls []TurnToolCall `json:"tool_calls,omitempty"`
+	// ToolName / ToolCallID belong on role=tool results (Ollama wire fields).
+	ToolName   string `json:"tool_name,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
 	// At is when this turn was appended to history, stamped at every
 	// append site in this provider and in grok.go. It is the zero value
 	// (and so does not survive a round-trip through this field's own
@@ -95,6 +102,13 @@ type Turn struct {
 	// it (ollama, for now); session.go's own JSON consumers treat a zero
 	// time as "no timestamp" explicitly rather than trusting omitempty here.
 	At time.Time `json:"at,omitempty"`
+}
+
+// TurnToolCall is the persistable form of an Ollama assistant tool call.
+type TurnToolCall struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 // New creates a Brain instance.

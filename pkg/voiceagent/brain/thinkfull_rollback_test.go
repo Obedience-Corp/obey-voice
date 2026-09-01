@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func assertHistory(t *testing.T, got, want []Turn, context string) {
 	for i := range want {
 		g, w := got[i], want[i]
 		g.At, w.At = time.Time{}, time.Time{}
-		if g != w {
+		if !reflect.DeepEqual(g, w) {
 			t.Fatalf("%s: history[%d] = %+v, want %+v", context, i, got[i], want[i])
 		}
 	}

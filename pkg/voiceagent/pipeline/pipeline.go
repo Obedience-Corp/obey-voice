@@ -121,9 +121,12 @@ func hasPronounceableContent(s string) bool {
 	return false
 }
 
-// defaultBrainTurnTimeout bounds model + tool work for one conversational
-// turn. Without this, a hung Ollama/Claude stream after tools leaves the TUI
-// stuck on "thinking" forever while listening never resumes.
+// defaultBrainTurnTimeout is the idle bound on model + tool work for one
+// conversational turn. Tokens and tool activity reset it. Without a bound, a
+// hung Ollama/Claude stream after tools leaves the TUI stuck on "thinking"
+// forever while listening never resumes. A wall-clock cap on the whole turn
+// is wrong: a 27b tool loop can be busy for longer than 3 minutes and still
+// be healthy.
 const defaultBrainTurnTimeout = 3 * time.Minute
 
 // CaptureMonitor is an audio source the pipeline listens to.
@@ -194,8 +197,12 @@ type Pipeline struct {
 	PlaybackStallTimeout time.Duration
 
 	// BrainTurnTimeout bounds ThinkStream (model + tools) per turn. Zero uses
-	// defaultBrainTurnTimeout; negative disables the bound.
+	// defaultBrainTurnTimeout; negative disables the bound. The bound is idle
+	// time: tokens and tool activity reset it, so a long tool loop does not
+	// die at wall-clock 3 minutes while work is still happening.
 	BrainTurnTimeout time.Duration
+	brainDeadlineMu  sync.Mutex
+	brainDeadlineBump func()
 
 	// BargeInTailGuard overrides the interrupt controller's post-playback
 	// echo tail guard (config barge_in_tail_guard_ms) and always wins when
@@ -264,13 +271,66 @@ func (p *Pipeline) brainTimeout() (time.Duration, bool) {
 	return defaultBrainTurnTimeout, true
 }
 
-// withBrainTimeout derives a child context that expires if the model/tools
-// stall. Parent cancellation still wins immediately.
+// withBrainTimeout derives a child context that expires after idle brain work.
+// Tokens and tool activity reset the timer; parent cancellation still wins
+// immediately.
 func (p *Pipeline) withBrainTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
-	if d, ok := p.brainTimeout(); ok {
-		return context.WithTimeout(ctx, d)
+	d, ok := p.brainTimeout()
+	if !ok {
+		return context.WithCancel(ctx)
 	}
-	return context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
+	timer := time.AfterFunc(d, func() { cancel(context.DeadlineExceeded) })
+	alive := true
+	bump := func() {
+		p.brainDeadlineMu.Lock()
+		defer p.brainDeadlineMu.Unlock()
+		if !alive || timer == nil {
+			return
+		}
+		if timer.Stop() {
+			timer.Reset(d)
+		}
+	}
+	p.brainDeadlineMu.Lock()
+	p.brainDeadlineBump = bump
+	p.brainDeadlineMu.Unlock()
+	return ctx, func() {
+		p.brainDeadlineMu.Lock()
+		alive = false
+		p.brainDeadlineBump = nil
+		t := timer
+		timer = nil
+		p.brainDeadlineMu.Unlock()
+		if t != nil {
+			t.Stop()
+		}
+		cancel(nil)
+	}
+}
+
+func (p *Pipeline) bumpBrainDeadline() {
+	p.brainDeadlineMu.Lock()
+	bump := p.brainDeadlineBump
+	p.brainDeadlineMu.Unlock()
+	if bump != nil {
+		bump()
+	}
+}
+
+// mapIdleDeadline turns an idle-timer cancel into DeadlineExceeded so callers
+// that already distinguish a stall from a barge-in keep working.
+func mapIdleDeadline(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if errors.Is(err, context.Canceled) && errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return err
 }
 
 // currentSpeakerID returns the live speaker label for this turn, if any.
@@ -1448,7 +1508,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				if p.Player != nil {
 					p.Player.Stop()
 				}
-				return strings.TrimSpace(fullResponse.String()), interrupted, fmt.Errorf("brain: %w", result.Err)
+				return strings.TrimSpace(fullResponse.String()), interrupted, fmt.Errorf("brain: %w", mapIdleDeadline(ctx, result.Err))
 			}
 
 		case sentence, ok := <-sentenceCh:
@@ -1968,6 +2028,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 				if t == "" {
 					continue
 				}
+				p.bumpBrainDeadline()
 				now := time.Now()
 				stampToken(now)
 				if metrics.firstThink.IsZero() {
@@ -1982,6 +2043,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 				if c == "" {
 					continue
 				}
+				p.bumpBrainDeadline()
 				now := time.Now()
 				stampToken(now)
 				if metrics.firstSpeakable.IsZero() && strings.TrimSpace(c) != "" {
@@ -2030,10 +2092,10 @@ func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, 
 			}
 			// Return any partial text so the caller's recovery path can keep
 			// it in the transcript alongside the recovery reply.
-			return strings.TrimSpace(b.String()), res.Err
+			return strings.TrimSpace(b.String()), mapIdleDeadline(ctx, res.Err)
 		}
 	case <-ctx.Done():
-		return strings.TrimSpace(b.String()), ctx.Err()
+		return strings.TrimSpace(b.String()), mapIdleDeadline(ctx, ctx.Err())
 	}
 	return strings.TrimSpace(b.String()), nil
 }
@@ -2065,6 +2127,7 @@ func (p *Pipeline) bindBrainInfo() {
 // toolStartHook emits ToolCallStarted for UI (stdout + TUI).
 func (p *Pipeline) toolStartHook() func(name, summary string) {
 	return func(name, summary string) {
+		p.bumpBrainDeadline()
 		p.emit(events.ToolCallStarted{Name: name, Summary: summary})
 	}
 }
@@ -2072,6 +2135,7 @@ func (p *Pipeline) toolStartHook() func(name, summary string) {
 // toolEndHook emits ToolCallFinished for UI.
 func (p *Pipeline) toolEndHook() func(name, preview string) {
 	return func(name, preview string) {
+		p.bumpBrainDeadline()
 		p.emit(events.ToolCallFinished{Name: name, Preview: preview})
 	}
 }
