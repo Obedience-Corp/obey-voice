@@ -65,6 +65,8 @@ func (g *graceTTS) Synthesize(context.Context, string) (*audio.PCMStream, error)
 func (g *graceTTS) Available() bool                       { return true }
 func (g *graceTTS) ListVoices(string, string) []tts.Voice { return nil }
 func (g *graceTTS) FirstAudioGrace() time.Duration        { return g.grace }
+func (g *graceTTS) ProviderName() string                  { return "qwen3-tts" }
+func (g *graceTTS) ModelTier() string                     { return "" }
 
 // A long grace must stay legible: the watchdog says it is still waiting once
 // the old 8s budget passes, so a 120s Qwen turn does not look frozen. Budgets
@@ -96,6 +98,12 @@ func TestStallHintNamesTheKnobOnlyWhenItApplies(t *testing.T) {
 	plain := &Pipeline{TTS: &fakeTTS{}}
 	if got := plain.stallHint(defaultPlaybackStallTimeout, 0); strings.Contains(got, "qwen_tts_timeout") {
 		t.Fatalf("stallHint(default, non-gracer) = %q, want no qwen_tts_timeout", got)
+	}
+
+	// Kokoro now has FirstAudioGrace too; qwen_tts_timeout still does not govern it.
+	kokoro := &Pipeline{TTS: &tts.KokoroTTS{}}
+	if got := kokoro.stallHint(12*time.Second, 17); strings.Contains(got, "qwen_tts_timeout") {
+		t.Fatalf("stallHint(Kokoro grace) = %q, want no qwen_tts_timeout", got)
 	}
 }
 

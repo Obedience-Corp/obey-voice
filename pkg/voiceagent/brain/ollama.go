@@ -30,6 +30,9 @@ type OllamaBrain struct {
 	continuityMu sync.Mutex
 	// continuitySink receives this instance's continuity events (integrity.go).
 	continuitySink func(events.Event)
+	infoMu         sync.Mutex
+	// infoSink receives this instance's operator Info (think-off warnings).
+	infoSink     func(events.Info)
 	model        string
 	workDir      string
 	history      []api.Message
@@ -649,39 +652,39 @@ func (o *OllamaBrain) resolvedThink() *api.ThinkValue {
 	v := resolveOllamaThink(raw, o.model)
 	s := strings.TrimSpace(strings.ToLower(raw))
 	if s == "false" || s == "off" || s == "0" || s == "no" {
-		maybeWarnThinkOff(o.model, v)
+		o.maybeWarnThinkOff(v)
 	}
 	return v
 }
 
-var (
-	thinkOffOnce sync.Once
-	infoSinkMu   sync.Mutex
-	infoSink     func(events.Info)
-)
+var thinkOffOnce sync.Once
 
-// SetInfoSink routes operator Info from this package onto the app event bus.
-// Once-per-process warnings (qwen3 + ollama_think=false) must reach the
-// activity feed, not only stderr.
-func SetInfoSink(fn func(events.Info)) {
-	infoSinkMu.Lock()
-	infoSink = fn
-	infoSinkMu.Unlock()
+// SetInfoSink routes this brain's operator Info onto its owning pipeline's
+// event bus. Instance-scoped: with several pipelines active, each brain's
+// warnings stay on its own conversation's bus.
+func (o *OllamaBrain) SetInfoSink(fn func(events.Info)) {
+	o.infoMu.Lock()
+	o.infoSink = fn
+	o.infoMu.Unlock()
 }
 
-func maybeWarnThinkOff(model string, think *api.ThinkValue) {
-	if !PreferOllamaThink(model) || think == nil || think.Value != false {
+func (o *OllamaBrain) emitInfo(info events.Info) {
+	o.infoMu.Lock()
+	sink := o.infoSink
+	o.infoMu.Unlock()
+	if sink != nil {
+		sink(info)
+	}
+}
+
+func (o *OllamaBrain) maybeWarnThinkOff(think *api.ThinkValue) {
+	if !PreferOllamaThink(o.model) || think == nil || think.Value != false {
 		return
 	}
 	thinkOffOnce.Do(func() {
-		msg := fmt.Sprintf("thinking model %q with ollama_think=false; untagged CoT can be spoken", model)
+		msg := fmt.Sprintf("thinking model %q with ollama_think=false; untagged CoT can be spoken", o.model)
 		fmt.Fprintf(os.Stderr, "obey-voice: %s\n", msg)
-		infoSinkMu.Lock()
-		sink := infoSink
-		infoSinkMu.Unlock()
-		if sink != nil {
-			sink(events.Info{Message: msg})
-		}
+		o.emitInfo(events.Info{Message: msg})
 	})
 }
 
