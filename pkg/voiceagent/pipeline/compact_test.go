@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -63,7 +64,7 @@ func assertTurns(t *testing.T, got, want []brain.Turn, context string) {
 		t.Fatalf("%s = %+v, want %+v", context, got, want)
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if !reflect.DeepEqual(got[i], want[i]) {
 			t.Fatalf("%s[%d] = %+v, want %+v", context, i, got[i], want[i])
 		}
 	}
@@ -162,7 +163,7 @@ func TestCompactConversationSummarizesAndReseeds(t *testing.T) {
 		t.Fatalf("reseeded history = %+v, want %+v", b.history, want)
 	}
 	for i := range want {
-		if b.history[i] != want[i] {
+		if !reflect.DeepEqual(b.history[i], want[i]) {
 			t.Fatalf("seed[%d] = %+v, want %+v", i, b.history[i], want[i])
 		}
 	}
