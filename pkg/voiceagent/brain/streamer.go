@@ -99,8 +99,9 @@ func ChunkSentencesRaw(input <-chan string) <-chan string {
 }
 
 // findSentenceEnd returns the index of the first sentence-ending punctuation
-// followed by a space (closing quotes between the punct and the space ride
-// with the sentence). Returns -1 if no boundary found.
+// followed by a space or by a glued next sentence (closing quotes between the
+// punct and that follower ride with the sentence). Returns -1 if no boundary
+// found.
 func findSentenceEnd(text string) int {
 	runes := []rune(text)
 	for i, r := range runes {
@@ -124,9 +125,15 @@ func findSentenceEnd(text string) int {
 				j++
 			}
 
-			// Must be followed by space — NOT end of buffer.
-			// End-of-buffer splits cause premature cuts on streaming partial text.
+			// Must be followed by something that proves the sentence is
+			// finished — NOT end of buffer. End-of-buffer splits cause
+			// premature cuts on streaming partial text.
 			if j < len(runes) && unicode.IsSpace(runes[j]) {
+				return end
+			}
+			// Models omit the space (`loop.Festival`). Without a split,
+			// Kokoro/eSpeak read the period as "dot".
+			if textclean.MissingSentenceSpace(runes, i) {
 				return end
 			}
 		}
