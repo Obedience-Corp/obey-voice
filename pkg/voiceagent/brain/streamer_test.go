@@ -119,6 +119,21 @@ func TestChunkSentencesSegmentation(t *testing.T) {
 			[]string{`"Aww, did that hurt, baby?"`},
 			[]string{`"Aww, did that hurt, baby?"`},
 		},
+		{
+			"glued sentence after period splits",
+			[]string{"Now let me drive the planning loop.Festival is scaffolded. "},
+			[]string{"Now let me drive the planning loop.", "Festival is scaffolded."},
+		},
+		{
+			"glued sentence arriving across stream chunks",
+			[]string{"drive the planning loop.", "Festival is scaffolded. "},
+			[]string{"drive the planning loop.", "Festival is scaffolded."},
+		},
+		{
+			"hostname stays one sentence",
+			[]string{"See example.com for details. "},
+			[]string{"See example.com for details."},
+		},
 	}
 
 	for _, tt := range tests {

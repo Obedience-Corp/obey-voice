@@ -27,6 +27,11 @@ import (
 //     quotes (a common LLM habit — `"aww, did that hurt, baby"`) produced no
 //     audible audio on Veronica, 2026-08-28. Apostrophes stay so contractions
 //     survive.
+//   - A missing space after sentence punctuation is restored. Models glue the
+//     next sentence on (`loop.Festival`); Kokoro/eSpeak then treat the period as
+//     a hostname dot and say "loop dot festival". The insert is the observed
+//     failure, not a general formatter: decimals, domains, and initialisms stay
+//     glued.
 //
 // What is deliberately NOT here: plain integers and simple decimals. Measuring
 // showed eSpeak already renders them as words — "42" and "forty-two" differ by
@@ -35,7 +40,7 @@ import (
 // naive expansion breaks: "555-1234", "2026-08-11", "$5", "R2D2" and "12:00" all
 // garbled. See decision D008.
 func PrepareSpokenText(s string) string {
-	return expandYears(StripSpeechQuotes(StripEmoji(StripThinkBlocks(s))))
+	return insertMissingSentenceSpaces(expandYears(StripSpeechQuotes(StripEmoji(StripThinkBlocks(s)))))
 }
 
 // --- emoji -----------------------------------------------------------------
@@ -286,6 +291,86 @@ func isStandaloneToken(s string, start, end int) bool {
 		}
 	}
 	return true
+}
+
+// --- glued sentences -------------------------------------------------------
+
+// MissingSentenceSpace reports whether rs[punctIdx] is sentence punctuation
+// immediately followed by another sentence with no space between them.
+//
+// The streamer uses this to split `loop.Festival` into two TTS segments; the
+// synthesis boundary uses it to insert the space so eSpeak does not read the
+// period as "dot". Closing quotes between the punct and the next letter ride
+// with the first sentence, matching findSentenceEnd.
+func MissingSentenceSpace(rs []rune, punctIdx int) bool {
+	if punctIdx < 0 || punctIdx >= len(rs) {
+		return false
+	}
+	switch rs[punctIdx] {
+	case '.', '?', '!':
+	default:
+		return false
+	}
+	next := punctIdx + 1
+	for next < len(rs) && IsSpeechQuote(rs[next]) {
+		next++
+	}
+	if next >= len(rs) || unicode.IsSpace(rs[next]) {
+		return false
+	}
+	return gluedSentenceFollows(rs, punctIdx, next)
+}
+
+func insertMissingSentenceSpaces(s string) string {
+	rs := []rune(s)
+	if len(rs) < 2 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	inserted := false
+	for i := 0; i < len(rs); i++ {
+		b.WriteRune(rs[i])
+		if !MissingSentenceSpace(rs, i) {
+			continue
+		}
+		b.WriteByte(' ')
+		inserted = true
+	}
+	if !inserted {
+		return s
+	}
+	return b.String()
+}
+
+func gluedSentenceFollows(rs []rune, punctIdx, next int) bool {
+	if next >= len(rs) || !unicode.IsLetter(rs[next]) {
+		return false
+	}
+	if punctIdx < 1 || !unicode.IsLetter(rs[punctIdx-1]) {
+		return false
+	}
+	// Single-letter initialisms stay glued: U.S.Army, J.R.R.Tolkien, e.g.This.
+	if letterRunLen(rs, punctIdx) == 1 {
+		return false
+	}
+	switch rs[punctIdx] {
+	case '.':
+		// Hostnames and filenames stay glued: example.com, README.md.
+		return unicode.IsUpper(rs[next])
+	case '?', '!':
+		return true
+	default:
+		return false
+	}
+}
+
+func letterRunLen(rs []rune, punctIdx int) int {
+	n := 0
+	for i := punctIdx - 1; i >= 0 && unicode.IsLetter(rs[i]); i-- {
+		n++
+	}
+	return n
 }
 
 func yearWords(n int) string {

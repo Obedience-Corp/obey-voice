@@ -43,6 +43,9 @@ func TestPrepareSpokenTextLeavesNumbersAlone(t *testing.T) {
 		{"ratio", "Ratio of 3:1 or better"},
 		{"percentage", "That's a 50% gain"},
 		{"degrees", "Temperature was 20°C"},
+		{"hostname stays glued", "See example.com for details."},
+		{"filename stays glued", "Open README.md now"},
+		{"initialism stays glued", "The U.S.Army arrived"},
 	}
 
 	for _, tt := range tests {
@@ -252,6 +255,8 @@ func TestPrepareSpokenTextIsIdempotent(t *testing.T) {
 		"From 🏴󠁧󠁢󠁳󠁣󠁴󠁿 to 🇺🇸 in 2026",
 		`"aww, did that hurt, baby"`,
 		`She said “hello” and left`,
+		"Now let me drive the planning loop.Festival is scaffolded.",
+		"OK.Got it!Next.",
 		"",
 	}
 	for _, in := range inputs {
@@ -267,11 +272,66 @@ func TestPrepareSpokenTextIsIdempotent(t *testing.T) {
 
 // Kokoro's transform must include the shared rules rather than reimplementing
 // them.
+func TestPrepareSpokenTextInsertsMissingSentenceSpaces(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"period then capital — the Kokoro 'dot' failure",
+			"Now let me drive the planning loop.Festival is scaffolded.",
+			"Now let me drive the planning loop. Festival is scaffolded.",
+		},
+		{
+			"already spaced stays put",
+			"Now let me drive the planning loop. Festival is scaffolded.",
+			"Now let me drive the planning loop. Festival is scaffolded.",
+		},
+		{
+			"abbreviation still gets a space so TTS does not say dot",
+			"Ask Dr.Smith next.",
+			"Ask Dr. Smith next.",
+		},
+		{
+			"exclamation then next sentence",
+			"Done!Next we ship.",
+			"Done! Next we ship.",
+		},
+		{
+			"question then next sentence, even lowercase",
+			"Ready?now we start.",
+			"Ready? now we start.",
+		},
+		{
+			"two glued boundaries in one line",
+			"OK.Got it!Next.",
+			"OK. Got it! Next.",
+		},
+		{
+			"year then glued sentence still reads as a year",
+			"It was 1999.Now we ship.",
+			"It was nineteen ninety-nine. Now we ship.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PrepareSpokenText(tt.in); got != tt.want {
+				t.Errorf("PrepareSpokenText(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPrepareKokoroTextIncludesSpokenRules(t *testing.T) {
 	got := PrepareKokoroText("Back in 1999 🎉")
 	want := "Back in nineteen ninety-nine"
 	if got != want {
 		t.Errorf("PrepareKokoroText = %q, want %q", got, want)
+	}
+	glued := PrepareKokoroText("drive the planning loop.Festival is scaffolded.")
+	if glued != "drive the planning loop. Festival is scaffolded." {
+		t.Errorf("PrepareKokoroText glued = %q, want a space after the period", glued)
 	}
 }
 

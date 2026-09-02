@@ -12,7 +12,7 @@
       "id": "ch1",
       "title": "Chapter One",
       "text_sha256": "6167fad1b925c7aed73f53fc5f1fffe6a71395800143842af0841b1c3e5cd68a",
-      "resume_key": "0c2845f3e8bed82025dfaa217fcc291fb45af9d5e534d3b9f6fef7c2ee343c75",
+      "resume_key": "c7f67ae784700560785ca4307d240d9048aa8e2b5014f5a6b75c7addbd5cc537",
       "output": "001-chapter-one.wav",
       "duration_ms": 10,
       "status": "complete"
@@ -22,7 +22,7 @@
       "id": "ch2",
       "title": "Chapter Two",
       "text_sha256": "6415ba1ea4a1b152aa5933db60bb5219fa377b3ea9bd2837e2057623079adeb9",
-      "resume_key": "8d6f5794adf030f568b85ef15e484b533f5d5709f990e90b308b50fe9d724311",
+      "resume_key": "7953af5e68ca9d58ba4674dbb311074c72fd96eb58a7f4fddee8b47ddea5bf84",
       "output": "002-chapter-two.wav",
       "duration_ms": 10,
       "status": "complete"
