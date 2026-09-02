@@ -110,7 +110,16 @@ type Status struct {
 type ProgressFunc func(stage string, pct float64)
 
 // Inspect reports product readiness for the native package only.
+// Prefer InspectURL when the caller has qwen_tts_native_url: Inspect alone
+// cannot see a custom URL, so Status.Detail would still say "set
+// qwen_tts_native_url" on a platform with no default pin.
 func Inspect(modelsDir string) Status {
+	return InspectURL(modelsDir, "")
+}
+
+// InspectURL is Inspect with the configured native tarball URL, so Detail
+// matches InstallRemediation for that config.
+func InspectURL(modelsDir, configuredURL string) Status {
 	ns := InspectNative(modelsDir, DefaultModelTier)
 	if ns.Installed {
 		return Status{
@@ -125,7 +134,7 @@ func Inspect(modelsDir string) Status {
 	}
 	return Status{
 		Root:   NativeInstallPaths(modelsDir).Root,
-		Detail: "native Qwen3-TTS package is not installed; " + InstallRemediation(""),
+		Detail: "native Qwen3-TTS package is not installed; " + InstallRemediation(configuredURL),
 	}
 }
 
