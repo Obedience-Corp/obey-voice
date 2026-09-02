@@ -192,6 +192,9 @@ type Config struct {
 
 	// Agent
 	AgentName string `mapstructure:"agent_name"`
+	// UserDisplayName is the human's chosen name for prompts and live labels.
+	// Empty keeps today's speaker-1 / $USER behaviour.
+	UserDisplayName string `mapstructure:"user_display_name"`
 	// RuntimeEnv* is an embedder-only grounding override. These values are not
 	// loaded from or persisted to Obey Voice config; voiceagent.Options.Env writes
 	// them onto its private config copy before constructing the brain.
@@ -480,6 +483,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("calibre_prefer_format", "epub")
 
 	v.SetDefault("agent_name", "Obey")
+	v.SetDefault("user_display_name", "")
 	v.SetDefault("active_persona", "obey")
 	v.SetDefault("persona", "obey")
 	v.SetDefault("prompts_dir", "")

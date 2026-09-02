@@ -1,6 +1,7 @@
 package prompts
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"regexp"
@@ -35,7 +36,7 @@ var PersonaPlaceholders = []Placeholder{
 	},
 	{
 		Name:        "user_name",
-		Description: "The operating-system user running the agent",
+		Description: "Your name from Settings, or the operating-system user",
 	},
 	{
 		Name:        "os",
@@ -74,10 +75,7 @@ func PlaceholderValues(agentName string, env PlaceholderEnv) map[string]string {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	userName := env.UserName
-	if userName == "" {
-		userName = os.Getenv("USER")
-	}
+	userName := cmp.Or(strings.TrimSpace(env.UserName), os.Getenv("USER"))
 	osName := env.OS
 	if osName == "" {
 		osName = runtime.GOOS + "/" + runtime.GOARCH

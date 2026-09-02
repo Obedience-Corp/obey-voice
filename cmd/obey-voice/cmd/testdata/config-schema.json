@@ -732,6 +732,19 @@
       "editable": true
     },
     {
+      "key": "user_display_name",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "speakers",
+      "title": "Your name",
+      "help": "The name the agent uses for you in prompts and chat labels instead of speaker-1. Empty keeps the operating-system user and anonymous labels.",
+      "restart_required": false,
+      "restart_verified": true,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "meeting.dir",
       "type": "string",
       "default": "",

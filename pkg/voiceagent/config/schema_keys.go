@@ -213,6 +213,11 @@ func brainKeys() []KeySpec {
 func speakerKeys() []KeySpec {
 	return []KeySpec{
 		{
+			Key: "user_display_name", Type: TypeString, Default: "",
+			Group: GroupSpeakers, Title: "Your name",
+			Help: "The name the agent uses for you in prompts and chat labels instead of speaker-1. Empty keeps the operating-system user and anonymous labels.",
+		},
+		{
 			Key: "speaker.enabled", Type: TypeBool, Default: true,
 			Group: GroupSpeakers, Title: "Speaker recognition",
 			Help: "Master switch. Off means no speaker models load and nobody is ever labelled.",

@@ -119,7 +119,13 @@ choice for future conversations. Live analysis needs microphone capture, so it
 is unavailable in `--text` mode.
 
 When labels are active, the **model** also sees speaker attribution on user
-turns (`speaker-1: …` in the prompt, or a human name after rename). Rename with:
+turns (`speaker-1: …` in the prompt, or a human name after rename or Settings).
+**Settings → Speakers → Your name** (`user_display_name`) is the persistent
+desk default: a one-person session overlays that name onto `speaker-1` so the
+model sees `Lance:` instead of `speaker-1:`. It does not enroll a voiceprint.
+A second live cluster stays `speaker-2` until named or enrolled.
+
+Session rename (does not write config):
 
 ```text
 /speakers name 1 Lance
@@ -128,8 +134,9 @@ turns (`speaker-1: …` in the prompt, or a human name after rename). Rename wit
 ```
 
 Renames are session-local: they update bubbles, the footer, and subsequent
-prompt attribution. They do not change the embedding manager’s stable
-`speaker-N` ids. The model cannot rename speakers; only this command does.
+prompt attribution, and they win over the Settings name for that chat. They do
+not change the embedding manager’s stable `speaker-N` ids. The model cannot
+rename speakers; only this command does.
 
 The meetings directory contains one visible item per recording:
 

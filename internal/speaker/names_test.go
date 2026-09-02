@@ -43,6 +43,27 @@ func TestNameMapSetDisplayAndClear(t *testing.T) {
 	}
 }
 
+func TestNameMapSeedPrimary(t *testing.T) {
+	m := NewNameMap()
+	m.SeedPrimary("  Lance  ")
+	if got := m.Display("speaker-1"); got != "Lance" {
+		t.Fatalf("seeded Display = %q, want Lance", got)
+	}
+	if got := m.Display("speaker-2"); got != "speaker-2" {
+		t.Fatalf("multi-cluster must not guess speaker-2, got %q", got)
+	}
+	m.SeedPrimary("Alex")
+	if got := m.Display("speaker-1"); got != "Lance" {
+		t.Fatalf("second seed must not overwrite, got %q", got)
+	}
+	empty := NewNameMap()
+	empty.SeedPrimary("")
+	empty.SeedPrimary("   ")
+	if snap := empty.Snapshot(); len(snap) != 0 {
+		t.Fatalf("empty name must not bind, snapshot=%+v", snap)
+	}
+}
+
 func TestNameMapSnapshotSorted(t *testing.T) {
 	m := NewNameMap()
 	_ = m.Set("3", "C")

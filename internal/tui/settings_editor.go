@@ -13,6 +13,7 @@ const (
 	editNone settingsEditKind = iota
 	editWorkerURL
 	editWorkerToken
+	editUserDisplayName
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -57,7 +58,11 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 	case "enter":
 		kind, value := m.edit.kind, m.edit.input.Value()
 		m.cancelEdit()
-		m.commitSpeechEdit(kind, value)
+		if kind == editUserDisplayName {
+			m.commitUserDisplayName(value)
+		} else {
+			m.commitSpeechEdit(kind, value)
+		}
 		return m, nil
 	}
 	input, cmd := m.edit.input.Update(msg)

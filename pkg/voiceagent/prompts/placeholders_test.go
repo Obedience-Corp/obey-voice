@@ -123,6 +123,18 @@ func TestFindPlaceholders(t *testing.T) {
 	}
 }
 
+func TestPlaceholderUserNamePrefersSettings(t *testing.T) {
+	t.Setenv("USER", "lancerogers")
+	vals := PlaceholderValues("Sam", PlaceholderEnv{UserName: "Lance"})
+	if vals["user_name"] != "Lance" {
+		t.Fatalf("user_name = %q, want Lance", vals["user_name"])
+	}
+	vals = PlaceholderValues("Sam", PlaceholderEnv{})
+	if vals["user_name"] != "lancerogers" {
+		t.Fatalf("fallback user_name = %q, want lancerogers", vals["user_name"])
+	}
+}
+
 // The acceptance criterion for {date}: a persona using it must speak today's
 // date after midnight without a restart. That only holds because prompts are
 // resolved per turn — resolved once at construction, the value would be stamped

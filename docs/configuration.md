@@ -74,6 +74,7 @@ when you select it.
 |-----|---------|-------------|-------------|
 | `active_persona` | `obey` | `ACTIVE_PERSONA` | Persona profile id under `personas/<id>/` |
 | `agent_name` | `Obey` | | Display name (overlaid from active persona) |
+| `user_display_name` | empty | | Your name in prompts and chat labels. Empty keeps `speaker-1` and `{user_name}` as the OS login |
 | `persona` | `obey` | `PERSONA` | Prompt document name for kind=persona (overlaid from active persona) |
 | `compact_prompt` | *(embedded default)* | `COMPACT_PROMPT` | Prompt document name for kind=compact — the `/compact` summarize-turn instruction |
 | `brain_provider` | `ollama` | `BRAIN_PROVIDER` | Brain backend: `ollama`, `claude`, or `grok` |

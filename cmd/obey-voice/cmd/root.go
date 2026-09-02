@@ -266,7 +266,10 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		}
 
 		// Session-local rename table: UI bubbles + model prompt attribution.
+		// user_display_name overlays speaker-1 for the desk case (one human,
+		// no enrollment yet). speaker-2+ stay anonymous until named or enrolled.
 		speakerNames := speaker.NewNameMap()
+		speakerNames.SeedPrimary(cfg.UserDisplayName)
 		brain.AttachSpeakerNames(p.Brain, speakerNames)
 		if liveSpeaker != nil {
 			liveCfg := speaker.FromAppConfig(cfg).Normalize()

@@ -14,6 +14,7 @@ var restartNotRequired = map[string]bool{
 	"tts_provider":      true, // applies to subsequent utterances
 	"tui_mouse_enabled": true, // applies on next enter/leave of the conversation
 	"active_persona":    true, // a new conversation re-resolves the binding
+	"user_display_name": true, // NameMap seeds at conversation entry from loaded config
 }
 
 // restartVerified marks keys whose restart behaviour has been confirmed on
@@ -25,6 +26,7 @@ var restartVerified = map[string]bool{
 	"tts_provider":           true,
 	"tui_mouse_enabled":      true,
 	"active_persona":         true,
+	"user_display_name":      true, // conversation entry re-seeds NameMap from loaded config
 	"voice_frontend_enabled": true, // verified: runtime rebuild required
 	// voice_frontend and voice_frontend_ns_level are new (S1): both build the
 	// same once-at-startup object as the legacy bool above, but that has not
