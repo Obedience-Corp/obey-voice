@@ -60,6 +60,25 @@ func TestDefaultNativeReleaseForLinuxAmd64Vulkan(t *testing.T) {
 	}
 }
 
+func TestDefaultNativeReleaseForLinuxAmd64Cuda(t *testing.T) {
+	url, sha := DefaultNativeReleaseForBackend("linux", "amd64", "cuda")
+	if linuxAmd64CudaSHA256 == "" {
+		if url != "" || sha != "" {
+			t.Fatalf("unpublished cuda pin must be empty, got %q/%q", url, sha)
+		}
+		return
+	}
+	if !strings.Contains(url, "qwen3-tts-native-linux-amd64-cuda.tar.gz") {
+		t.Fatalf("url = %q", url)
+	}
+	if !strings.Contains(url, "/v0.1.3/") {
+		t.Fatalf("cuda pin should be v0.1.3, got %q", url)
+	}
+	if len(sha) != 64 {
+		t.Fatalf("sha length = %d, want 64 hex", len(sha))
+	}
+}
+
 func TestUnavailableHintNamesThisPlatform(t *testing.T) {
 	got := UnavailableHint()
 	want := "no published package for " + runtime.GOOS + "/" + runtime.GOARCH
