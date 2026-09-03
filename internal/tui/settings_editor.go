@@ -53,16 +53,16 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.cancelEdit()
+		m.enrollAfterName = false
 		m.message = "Cancelled"
 		return m, nil
 	case "enter":
 		kind, value := m.edit.kind, m.edit.input.Value()
 		m.cancelEdit()
 		if kind == editUserDisplayName {
-			m.commitUserDisplayName(value)
-		} else {
-			m.commitSpeechEdit(kind, value)
+			return m, m.commitUserDisplayName(value)
 		}
+		m.commitSpeechEdit(kind, value)
 		return m, nil
 	}
 	input, cmd := m.edit.input.Update(msg)

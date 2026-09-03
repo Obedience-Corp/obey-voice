@@ -165,6 +165,21 @@ func (l *LazyLive) Stats() LiveStats {
 	return LiveStats{Status: status, Capacity: l.capacity, LastError: lastErr}
 }
 
+// SeedEnrolled forwards a freshly enrolled profile to a built engine.
+//
+// No engine yet is success, not an error: the build that eventually runs seeds
+// every stored profile from the enrollment store anyway, so a profile written
+// to disk before the first /speakers on is already accounted for.
+func (l *LazyLive) SeedEnrolled(name, modelRev string, embeddings [][]float32) error {
+	l.mu.Lock()
+	analyzer := l.analyzer
+	l.mu.Unlock()
+	if analyzer == nil {
+		return nil
+	}
+	return analyzer.SeedEnrolled(name, modelRev, embeddings)
+}
+
 // Reset starts a new logical session when an engine is present.
 func (l *LazyLive) Reset() error {
 	l.mu.Lock()

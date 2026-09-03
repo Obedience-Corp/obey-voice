@@ -150,6 +150,22 @@ func NewSherpaLiveEngine(cfg Config, modelsDir string) (*SherpaEngine, error) {
 	return engine, nil
 }
 
+// NewEmbeddingEngine loads the engine enrollment and live identification need:
+// the embedding-only build first, falling back to the full meeting engine when
+// live-only init fails (an install whose embedding model is only reachable
+// through the diarization pack). Callers that want one specific build still
+// call the constructors directly.
+func NewEmbeddingEngine(cfg Config, modelsDir string) (*SherpaEngine, error) {
+	engine, err := NewSherpaLiveEngine(cfg, modelsDir)
+	if err != nil {
+		engine, err = NewSherpaEngine(cfg, modelsDir)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("speaker: load embedding model: %w", err)
+	}
+	return engine, nil
+}
+
 // ExpectedLiveRev computes the embedding revision string a live engine
 // built from sp would report, without loading the ONNX model — so listing
 // stored profiles for staleness never has to construct a SherpaEngine.

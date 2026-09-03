@@ -261,6 +261,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.library.cancelPrepare()
 			}
 			a.settings.closePreview()
+			a.settings.cancelEnroll()
 			a.remote.stop()
 			if err := a.stopMeetingRuntime(); err != nil {
 				a.fatalErr = errors.Join(a.fatalErr, err)
@@ -306,6 +307,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.screen == screenSettings {
 			a.settings.closePreview()
+			a.settings.cancelEnroll()
 		}
 		if a.screen == screenRemote && target != screenRemote {
 			a.remote.stop()
@@ -323,7 +325,12 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenSettings:
 			// Replacing the model must not orphan an in-flight preview or player.
 			a.settings.closePreview()
+			a.settings.cancelEnroll()
 			a.settings = newSettings(a.cfg, a.providers)
+			// Only the App knows whether a conversation is running, so it owns
+			// the choice between the live capture graph and a fresh one.
+			a.settings.captureFor = a.settingsCaptureFor()
+			a.settings.liveSeeder = a.settingsLiveSeeder()
 			// Apply stored geometry immediately — Bubble Tea only re-emits
 			// WindowSize on actual resize, not on screen switches. Without
 			// this, the list falls back to a default height and 80-col width
@@ -642,6 +649,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case settingsDoneMsg:
 		a.settings.closePreview()
+		a.settings.cancelEnroll()
 		target := a.settingsReturnScreen
 		if target == screenSettings {
 			target = screenLauncher
@@ -692,6 +700,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case startPipelineMsg:
 		a.settings.closePreview()
+		a.settings.cancelEnroll()
 		if a.builder == nil {
 			// No runtime wiring (tests): nothing to build.
 			return a, nil

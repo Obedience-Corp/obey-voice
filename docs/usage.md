@@ -152,6 +152,11 @@ enter INSERT, `h`/`j`/`k`/`l` and `w`/`b` to move, `x`/`D`/`dd` to delete,
 `o`/`O` to open lines, `u` to undo, and `Enter` to send. `Esc` returns from
 INSERT to NORMAL.
 
+The **Speakers** section holds chat speaker labels, your display name, and
+**Register your voice** — three short clips recorded on the conversation’s
+microphone so live labels say your name instead of `speaker-1` (see
+[meetings.md](meetings.md#register-your-voice)).
+
 Microphone and speaker devices can be selected from the **Input** and
 **Output** sections in TUI Settings. The **TTS** section selects the active
 text-to-speech provider and shows its configured model context. Kokoro exposes

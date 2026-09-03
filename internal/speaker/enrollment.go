@@ -30,10 +30,14 @@ const (
 // sidecar file (embeddings/<slug>.f32) and are only comparable to
 // embeddings produced by the same model — ModelRev records which.
 type Profile struct {
-	Name      string    `yaml:"name" json:"name"`
-	ModelRev  string    `yaml:"model_revision" json:"model_revision"`
-	Dim       int       `yaml:"dim" json:"dim"`
-	Samples   int       `yaml:"samples" json:"samples"`
+	Name     string `yaml:"name" json:"name"`
+	ModelRev string `yaml:"model_revision" json:"model_revision"`
+	Dim      int    `yaml:"dim" json:"dim"`
+	Samples  int    `yaml:"samples" json:"samples"`
+	// Owner marks the machine's human: the subject owner_verify and
+	// barge_in_speakers=enrolled_only gate on, and the profile Settings
+	// re-enrolls or removes as "your voice". At most one profile carries it.
+	Owner     bool      `yaml:"owner,omitempty" json:"owner,omitempty"`
 	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
 }
@@ -147,17 +151,9 @@ func (e *Enrollment) Add(ctx context.Context, name, modelRev string, embeddings 
 	if err != nil {
 		return Profile{}, err
 	}
-	if len(embeddings) == 0 {
-		return Profile{}, fmt.Errorf("speaker: enroll %q: no embeddings", name)
-	}
-	dim := len(embeddings[0])
-	if dim == 0 {
-		return Profile{}, fmt.Errorf("speaker: enroll %q: empty embedding", name)
-	}
-	for i, emb := range embeddings {
-		if len(emb) != dim {
-			return Profile{}, fmt.Errorf("speaker: enroll %q: embedding %d has dim %d, want %d", name, i, len(emb), dim)
-		}
+	dim, err := embeddingDim(name, embeddings)
+	if err != nil {
+		return Profile{}, err
 	}
 
 	e.mu.Lock()
@@ -179,6 +175,13 @@ func (e *Enrollment) Add(ctx context.Context, name, modelRev string, embeddings 
 			return Profile{}, fmt.Errorf("speaker: enroll %q: collides with enrolled profile %q (both stored as %q); remove it first or choose a distinct name", name, prev.Name, slug)
 		}
 		profile.CreatedAt = prev.CreatedAt
+		// A re-enroll refreshes embeddings, never identity: the owner stays
+		// the owner and a second voice stays a second voice.
+		profile.Owner = prev.Owner
+	} else {
+		// The first voice on a machine is its owner. Later profiles are guests
+		// until SetOwner says otherwise, and removing the owner promotes nobody.
+		profile.Owner = len(e.profiles) == 0
 	}
 
 	if err := writeEmbeddingsFile(e.embeddingsPath(slug), embeddings); err != nil {
@@ -189,6 +192,25 @@ func (e *Enrollment) Add(ctx context.Context, name, modelRev string, embeddings 
 		return Profile{}, err
 	}
 	return profile, nil
+}
+
+// embeddingDim validates a profile's embedding rows and returns their shared
+// width. Rows of mixed width would produce a file readEmbeddingsFile cannot
+// interpret, so this is a store invariant, not a caller convenience.
+func embeddingDim(name string, embeddings [][]float32) (int, error) {
+	if len(embeddings) == 0 {
+		return 0, fmt.Errorf("speaker: enroll %q: no embeddings", name)
+	}
+	dim := len(embeddings[0])
+	if dim == 0 {
+		return 0, fmt.Errorf("speaker: enroll %q: empty embedding", name)
+	}
+	for i, emb := range embeddings {
+		if len(emb) != dim {
+			return 0, fmt.Errorf("speaker: enroll %q: embedding %d has dim %d, want %d", name, i, len(emb), dim)
+		}
+	}
+	return dim, nil
 }
 
 // Remove deletes the named profile and its embedding file from disk.

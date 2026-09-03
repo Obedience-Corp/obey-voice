@@ -249,6 +249,29 @@ func (a *Analyzer) emit(ev Event) {
 	}
 }
 
+// SeedEnrolled registers one durable profile with the running engine, so a
+// voice enrolled mid-session resolves to its name on the next window instead
+// of waiting for the next engine build to seed it from disk.
+//
+// Serialized on engineMu like every other engine call: the live worker may be
+// embedding a window while Settings finishes an enrollment.
+func (a *Analyzer) SeedEnrolled(name, modelRev string, embeddings [][]float32) error {
+	a.engineMu.Lock()
+	defer a.engineMu.Unlock()
+
+	a.stateMu.Lock()
+	closed, eng := a.closed, a.engine
+	a.stateMu.Unlock()
+	if closed {
+		return fmt.Errorf("speaker: analyzer closed")
+	}
+	seeder, ok := eng.(EnrolledSeeder)
+	if !ok {
+		return fmt.Errorf("speaker: engine cannot seed")
+	}
+	return seeder.SeedEnrolled(name, modelRev, embeddings)
+}
+
 // Reset starts a new logical analysis session without rebuilding the native
 // engine. It drains queued events and restarts deterministic sequence numbers.
 func (a *Analyzer) Reset() error {

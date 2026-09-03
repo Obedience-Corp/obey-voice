@@ -36,7 +36,12 @@ func (m settingsModel) View() string {
 	}
 
 	listLines := m.sectionListLines()
-	if m.edit.kind != editNone {
+	switch {
+	case m.enroll.active:
+		listLines = m.enrollOverlayLines()
+	case m.confirmRemoveVoice != "":
+		listLines = m.confirmRemoveVoiceLines()
+	case m.edit.kind != editNone:
 		listLines = append([]string{m.editorLine(), ""}, listLines...)
 	}
 	// Fill the list region so short sections still expand with the terminal.
@@ -55,6 +60,12 @@ func (m settingsModel) View() string {
 	help += " • esc back"
 	if m.edit.kind != editNone {
 		help = "  type a value • enter save • esc cancel"
+	}
+	if m.enroll.active {
+		help = "  recording your voice • esc cancel"
+	}
+	if m.confirmRemoveVoice != "" {
+		help = "  y remove • any other key keeps it"
 	}
 	if compact {
 		footer := dimStyle.Render(help)
