@@ -46,6 +46,30 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "description": "Id of a festival-voice.persona.v1 profile under the install's personas directory."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Output-only. The persona's display name at the time of the run."
+          },
+          "tts_provider": {
+            "type": "string",
+            "description": "Output-only. The effective TTS provider after the persona was applied."
+          },
+          "tts_voice": {
+            "type": "string",
+            "description": "Output-only. The effective voice id after the persona was applied."
+          },
+          "tts_tier": {
+            "type": "string",
+            "description": "Output-only. The effective Qwen model tier, empty for other providers."
+          },
+          "brain_provider": {
+            "type": "string",
+            "description": "Output-only. The brain provider that wrote, or would have written, this speaker's lines."
+          },
+          "brain_model": {
+            "type": "string",
+            "description": "Output-only. The model behind brain_provider, when the provider names one."
           }
         }
       }
@@ -118,6 +142,10 @@
           "description": "Case-sensitive substrings that end the conversation. The matching line is kept and then spoken."
         }
       }
+    },
+    "generate_fingerprint": {
+      "type": "string",
+      "description": "Output-only. A generated run's resolved script records a SHA-256 of the brief its lines came from (renderer version, persona ids, setting, beats, opener, authored turns), so --resume keeps a prefix only when it was written for this same brief. Leave it out of authored documents; the loader ignores it."
     }
   }
 }

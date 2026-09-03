@@ -90,6 +90,7 @@ obey-voice prompts list                   # List embedded and user prompt docume
 obey-voice prompts show persona           # Show an assembled prompt document
 obey-voice render notes.txt --out a.wav   # Batch-render a document to audio
 obey-voice scene script.yaml --out-dir out/scene  # Record a two-persona conversation
+obey-voice scene beats.yaml --out-dir out/improv  # Let two personas improvise it from a brief (mode: generate)
 obey-voice library list                  # Browse Calibre library (opt-in)
 obey-voice library search "cryptography" # Search Calibre library (opt-in)
 obey-voice library show 42               # Show one book's metadata

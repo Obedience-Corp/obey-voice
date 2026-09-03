@@ -304,7 +304,7 @@ func newRunManifest(req Request, script scriptRecord, turns []RunTurn) RunManife
 		Source:         script.Source,
 		SourceSHA256:   script.SHA256,
 		Title:          req.Doc.Title,
-		Mode:           ModeVerbatim,
+		Mode:           req.Plan.Mode,
 		PauseMS:        req.Plan.Pause.Milliseconds(),
 		ScriptResolved: ResolvedScriptFile,
 		Cast:           cast,

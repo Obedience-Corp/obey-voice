@@ -14,6 +14,8 @@ obey-voice scene script.yaml --out-dir out/coffee
 obey-voice scene script.yaml --out-dir out/coffee --pause 250ms
 obey-voice scene script.yaml --out-dir out/coffee --resume --json
 obey-voice scene script.yaml --out-dir out/coffee --audio-format mp3
+obey-voice scene beats.yaml  --out-dir out/improv                  # generate mode: the personas write the lines
+obey-voice scene beats.yaml  --out-dir out/improv --resolve-only   # write the lines, record nothing
 ```
 
 `--out-dir` is required: a scene always writes several files.
@@ -21,14 +23,15 @@ obey-voice scene script.yaml --out-dir out/coffee --audio-format mp3
 ## The script
 
 A scene script is an `obey-voice.scene.v1` YAML document — a cast of exactly two
-personas and the turns they speak. Unknown keys are a load error, so a typo
-surfaces instead of being ignored.
+personas and either the turns they speak (`verbatim`) or the brief they
+improvise from (`generate`). Unknown keys are a load error, so a typo surfaces
+instead of being ignored.
 
 ```yaml
 schema: obey-voice.scene.v1
 id: coffee-counter
 title: Coffee counter
-mode: verbatim          # verbatim | generate (generate is not in this build)
+mode: verbatim          # verbatim | generate; --mode wins only if you pass it
 pause: 400ms            # optional; --pause wins only if you pass it
 cast:
   - id: sam             # scene-local speaker id, referenced by turns
@@ -46,7 +49,7 @@ Turns name **cast** ids, not persona ids, so recasting a part does not rewrite
 every line. Both personas must be installed. A committed example lives at
 [`testdata/scenes/two-voices.verbatim.yaml`](../testdata/scenes/two-voices.verbatim.yaml).
 
-The full field list, including the `scene:` block generated mode will use, is in
+The full field list, including the `scene:` block generate mode reads, is in
 [`docs/schemas/scene.schema.json`](schemas/scene.schema.json).
 
 ## What a run writes
@@ -54,7 +57,8 @@ The full field list, including the `scene:` block generated mode will use, is in
 ```text
 out/coffee/
   script.yaml            copy of the input
-  script.resolved.yaml   the script as recorded, always verbatim
+  script.resolved.yaml   the script as recorded: always verbatim, every line,
+                         and each speaker's effective voice and brain
   turns/000-sam.wav      one WAV per turn, at the provider's native rate
   turns/001-uncle.wav
   conversation.wav       all turns joined, with the pause between them
@@ -118,7 +122,7 @@ any model loads.
 | Every turn fails | No `conversation.wav` is written |
 | Interrupted (Ctrl-C) | The turns already recorded are kept and the manifest is written; no partial mix |
 | Encoder missing | Fails before any model loads |
-| `--mode generate` | `scene: generated mode is not in this build` |
+| A brain fails while generating | The lines written so far stay in `script.resolved.yaml`, nothing is recorded, exit is non-zero, `--resume` continues from the last line |
 
 `--resume` keeps turns whose audio is already on disk and unchanged; a changed
 line, voice, or persona re-records that turn. `--overwrite` re-records
@@ -133,7 +137,70 @@ obey-voice scene script.yaml --out-dir out/coffee --json | jq '.failed'
 
 ## Generated dialogue
 
-`--mode generate` (write beats, let the personas improvise the lines) and
-`--resolve-only` are defined in the schema but not implemented in this build.
-Both refuse after validating the script, so a generate script can still be
-checked against this binary.
+In `generate` mode you write the brief and the two personas write the lines.
+Each persona's own brain — the provider and model its profile names — speaks
+for it, in character, with tools, skills and the environment block off. The
+recording path is then exactly the verbatim one.
+
+```yaml
+schema: obey-voice.scene.v1
+id: coffee-counter-improv
+title: Coffee counter
+mode: generate
+cast:
+  - id: sam
+    persona: samantha
+  - id: uncle
+    persona: uncle-fu
+scene:
+  setting: A coffee counter, morning rush.
+  beats:                      # what has to happen, in order
+    - Uncle dodges why he is late.
+    - Sam does not buy it.
+  opener:                     # optional written first line, spoken as turn 0
+    speaker: sam
+    text: "You're late."
+  max_turns: 8                # default 24, at most 48
+  stop_phrases: ["[END]"]     # a line containing one ends the scene and is kept
+```
+
+A committed example lives at
+[`testdata/scenes/two-voices.generate.yaml`](../testdata/scenes/two-voices.generate.yaml).
+A generate script needs `beats` or an `opener`; `turns` may be left out, or
+may hold a written prefix the personas continue from.
+
+How the lines are produced:
+
+- Both brains first read the same briefing: the title, the setting, both
+  characters' names, the beats, and an instruction to answer with spoken
+  dialogue only.
+- The opener, if any, is turn 0 and is never asked for. The other speaker
+  hears it as their first input. Without an opener, `cast[0]` speaks first and
+  is told only `Speak your first line now.`
+- Speakers alternate; every later input is exactly the other character's last
+  line. `max_turns` counts every line, the opener included.
+- A line containing a stop phrase (case-sensitive, after trimming) ends the
+  scene and is kept.
+
+Every generated line is written to `script.resolved.yaml` before the next one
+is asked for, and that file is a verbatim script: edit a line and run it again
+as the input to re-record without regenerating. It also records a
+`generate_fingerprint` of the brief it was written for.
+
+`--resume` on a generate script keeps the lines already written **for this
+same brief** — the personas, setting, beats, opener and any written prefix —
+replays them into both brains, and asks for the first missing line. Raising
+`--max-turns` continues a finished scene rather than restarting it; changing a
+beat starts over. `--overwrite` starts over regardless.
+
+`--resolve-only` stops once the lines are written: no TTS asset is checked, no
+model is loaded. Use it to read the dialogue before spending the recording, or
+to record it later with `--resume`. On a verbatim script it just writes the
+scripts.
+
+With `--json`, a run that ends at the resolved script — `--resolve-only`, or a
+brain error — reports `turns` and `completed` as the lines written, an empty
+`conversation` and `manifest`, and `failed: 1` on an error.
+
+The cgo-free integration binary validates generate scripts and prints their
+plan; it generates nothing and records nothing.

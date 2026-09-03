@@ -126,8 +126,9 @@ turns: [{speaker: sam, text: hi}]
 	}
 }
 
-// Generating dialogue is not in this build yet, in either spelling.
-func TestSceneCmdGenerateIsNotInThisBuild(t *testing.T) {
+// The plan runner shows a generate script for what it is — a brief and a cap —
+// and generates nothing: that binary has no brain path either.
+func TestSceneCmdPlanRunnerShowsGeneratePlan(t *testing.T) {
 	generateScript := writeScene(t, `schema: obey-voice.scene.v1
 id: a-scene
 mode: generate
@@ -135,28 +136,37 @@ cast: [{id: sam, persona: samantha}, {id: uncle, persona: uncle-fu}]
 scene:
   beats: ["they argue about the bus"]
 `)
-	cases := map[string][]string{
-		"--mode generate":        {sceneFixture, "--out-dir", "out", "--mode", "generate"},
-		"a generate script":      {generateScript, "--out-dir", "out"},
-		"--resolve-only":         {sceneFixture, "--out-dir", "out", "--resolve-only"},
-		"--resolve-only on both": {generateScript, "--out-dir", "out", "--resolve-only"},
-	}
-	for name, args := range cases {
+	for name, args := range map[string][]string{
+		"a generate script": {generateScript, "--out-dir", "out"},
+		"--resolve-only":    {generateScript, "--out-dir", "out", "--resolve-only"},
+		"--max-turns":       {generateScript, "--out-dir", "out", "--max-turns", "6"},
+	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := runScene(t, distinctScenePersonas(), args...)
-			if err == nil {
-				t.Fatal("expected an error")
+			out, _, err := runScene(t, distinctScenePersonas(), args...)
+			if err != nil {
+				t.Fatalf("plan failed: %v", err)
 			}
-			if err.Error() != "scene: generated mode is not in this build" {
-				t.Fatalf("error = %q, want the not-in-this-build message", err)
+			if !contains(out, "mode:   generate") || !contains(out, "0 written, up to") {
+				t.Errorf("plan does not describe the generate run:\n%s", out)
+			}
+			if _, statErr := os.Stat("out"); !os.IsNotExist(statErr) {
+				t.Error("the plan runner created the out-dir")
 			}
 		})
 	}
 }
 
-// The script's own problems have to surface before "not in this build", or a
-// generate script can never be debugged against this binary.
-func TestSceneCmdValidatesBeforeRefusingGenerate(t *testing.T) {
+// --mode generate on a verbatim script has nothing to improvise from; the
+// missing brief is reported at plan time.
+func TestSceneCmdPlanRefusesGenerateWithoutABrief(t *testing.T) {
+	_, _, err := runScene(t, distinctScenePersonas(), sceneFixture, "--out-dir", "out", "--mode", "generate")
+	if err == nil || !contains(err.Error(), "beats or an opener") {
+		t.Fatalf("error = %v, want the missing-brief refusal", err)
+	}
+}
+
+// The script's own problems surface as themselves on a generate script too.
+func TestSceneCmdReportsUnknownKeysOnGenerateScripts(t *testing.T) {
 	broken := writeScene(t, `schema: obey-voice.scene.v1
 id: a-scene
 mode: generate
@@ -166,11 +176,8 @@ scene:
   beats: ["they argue"]
 `)
 	_, _, err := runScene(t, distinctScenePersonas(), broken, "--out-dir", "out")
-	if err == nil {
-		t.Fatal("expected an error for an unknown key")
-	}
-	if err.Error() == "scene: generated mode is not in this build" {
-		t.Fatalf("the unknown key went unreported: %v", err)
+	if err == nil || !contains(err.Error(), "narrator") {
+		t.Fatalf("error = %v, want the unknown key named", err)
 	}
 }
 
@@ -184,9 +191,12 @@ turns: [{speaker: sam, text: hi}]
 scene:
   beats: ["they argue"]
 `)
-	_, _, err := runScene(t, distinctScenePersonas(), script, "--out-dir", "out")
-	if err == nil || err.Error() != "scene: generated mode is not in this build" {
-		t.Fatalf("error = %v, want the document's generate mode to stand", err)
+	out, _, err := runScene(t, distinctScenePersonas(), script, "--out-dir", "out")
+	if err != nil {
+		t.Fatalf("plan failed: %v", err)
+	}
+	if !contains(out, "mode:   generate") || !contains(out, "1 written, up to 24 generated") {
+		t.Fatalf("the document's generate mode did not stand:\n%s", out)
 	}
 }
 

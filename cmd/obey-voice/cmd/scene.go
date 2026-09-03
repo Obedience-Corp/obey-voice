@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,11 +18,6 @@ import (
 // cgo-free and shared across both binaries.
 type sceneRunner func(cmd *cobra.Command, opts scene.Options) error
 
-// errSceneGenerateUnsupported is returned for a generated scene until the
-// resolver that writes the dialogue lands. It is raised after the script has
-// been validated, so a broken script still reports its own problem first.
-var errSceneGenerateUnsupported = errors.New("scene: generated mode is not in this build")
-
 // newSceneCmd builds the `obey-voice scene` command. It parses and validates
 // flags (cgo-free) and delegates execution to run.
 func newSceneCmd(run sceneRunner) *cobra.Command {
@@ -35,18 +29,26 @@ func newSceneCmd(run sceneRunner) *cobra.Command {
 		Long: `Record a written conversation between two personas as audio files.
 
 A scene script is an obey-voice.scene.v1 YAML document: a cast of two personas
-and the turns they speak. Each persona brings its own voice, so the recording
-is a conversation rather than one narrator reading both parts. This is batch
-work — no microphone, no live pipeline, no interaction.
+and either the turns they speak (verbatim) or a brief they improvise from
+(generate). Each persona brings its own voice, so the recording is a
+conversation rather than one narrator reading both parts. This is batch work —
+no microphone, no live pipeline, no interaction.
+
+In generate mode the two personas' brains take turns writing the lines, tools
+and skills off, and every line is saved to script.resolved.yaml before the next
+is asked for. That file is a verbatim script: edit a line and record it again,
+or pass --resume to pick up where a stopped run left off.
 
 Examples:
   obey-voice scene testdata/scenes/two-voices.verbatim.yaml --out-dir out/coffee
   obey-voice scene script.yaml --out-dir out/scene --pause 250ms
+  obey-voice scene testdata/scenes/two-voices.generate.yaml --out-dir out/improv
+  obey-voice scene beats.yaml --out-dir out/improv --resolve-only --max-turns 6
 
 Overrides:
   --mode, --pause and --max-turns default to empty: the script document wins
   unless you actually pass the flag. Unset, a scene is verbatim with 400ms
-  between turns.`,
+  between turns and a generated one stops after 24 lines.`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -78,11 +80,11 @@ func addSceneFlags(cmd *cobra.Command, opts *scene.Options) {
 	f.StringVar(&opts.Pause, "pause", "", "Override the silence between turns (Go duration, e.g. 250ms; default 400ms)")
 	f.IntVar(&opts.MaxTurns, "max-turns", 0, "Override the generated conversation length (1-48; default 24)")
 	f.BoolVar(&opts.JSON, "json", false, "Print a machine-readable summary")
-	f.BoolVar(&opts.Resume, "resume", false, "Keep turns whose audio is already rendered and unchanged")
+	f.BoolVar(&opts.Resume, "resume", false, "Keep turns already rendered and unchanged, and lines already generated for this brief")
 	f.BoolVar(&opts.Overwrite, "overwrite", false, "Replace existing outputs")
 	f.StringVar(&opts.AudioFormat, "audio-format", "", "Also encode conversation.wav to mp3|m4a|m4b|aac|opus (WAV is always written)")
 	f.StringVar(&opts.EncoderBin, "encoder", "", "External encoder binary to use (default: ffmpeg)")
-	f.BoolVar(&opts.ResolveOnly, "resolve-only", false, "Write the resolved script without synthesizing audio")
+	f.BoolVar(&opts.ResolveOnly, "resolve-only", false, "Write script.resolved.yaml (generating the lines if the mode is generate) and synthesize nothing")
 	f.BoolVar(&opts.RequireDistinctVoices, "require-distinct-voices", false, "Fail instead of warning when the cast shares one voice")
 }
 
@@ -105,9 +107,6 @@ func runScenePlanWith(cmd *cobra.Command, opts scene.Options, loadPersona scene.
 	if err != nil {
 		return err
 	}
-	if plan.Mode == scene.ModeGenerate || opts.ResolveOnly {
-		return errSceneGenerateUnsupported
-	}
 
 	errOut := cmd.ErrOrStderr()
 	for _, warning := range plan.Warnings {
@@ -128,12 +127,16 @@ func writeScenePlan(out io.Writer, plan *scene.Plan) {
 	}
 	fmt.Fprintf(out, "    mode:   %s\n", plan.Mode)
 	fmt.Fprintf(out, "    pause:  %s\n", plan.Pause)
-	fmt.Fprintf(out, "    turns:  %d\n", plan.Turns)
+	if plan.Mode == scene.ModeGenerate {
+		fmt.Fprintf(out, "    turns:  %d written, up to %d generated\n", plan.Turns, plan.MaxTurns)
+	} else {
+		fmt.Fprintf(out, "    turns:  %d\n", plan.Turns)
+	}
 	fmt.Fprintln(out, "    cast:")
 	for _, member := range plan.Cast {
 		fmt.Fprintf(out, "      %s — %s (%s)\n", member.ID, member.DisplayName, member.Mouth)
 	}
-	fmt.Fprintln(out, "  (this build validates scripts only; no audio produced)")
+	fmt.Fprintln(out, "  (this build validates scripts only; no dialogue generated, no audio produced)")
 }
 
 // loadScenePersona resolves a cast persona, naming the ids that do exist when
