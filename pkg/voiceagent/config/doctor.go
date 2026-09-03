@@ -323,6 +323,18 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
+	// A talk hotkey that does not parse is reported whether or not the key is
+	// enabled: the helper would refuse to register it, and the user would be
+	// pressing a key nothing is listening for.
+	if err := ValidateTalkHotkey(cfg); err != nil {
+		diags = append(diags, Diagnostic{
+			Name:        "talk-hotkey-invalid",
+			Severity:    SeverityError,
+			Detail:      err.Error(),
+			Remediation: "set talk_hotkey to a combo like alt+space, and talk_hotkey_mode to hold, toggle or automatic",
+		})
+	}
+
 	// The nlms path's hand-rolled noise suppressor sits above normal speaking
 	// RMS, so it gates ordinary speech and Silero only sees fragments; Parakeet
 	// then hallucinates "yeah". That suppressor retires with nlms (D4) — webrtc

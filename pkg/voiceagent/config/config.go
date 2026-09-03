@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/spf13/viper"
+
+	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 )
 
 // Config holds all application configuration.
@@ -108,6 +110,17 @@ type Config struct {
 	// enrolled_only, which fuses the live speaker analyzer's verdict into the
 	// interrupt controller. See barge_in_speakers.go BargeInSpeakersOf.
 	BargeInSpeakers string `mapstructure:"barge_in_speakers"`
+
+	// Talk hotkey (macOS only): a system-wide combo that opens and closes a
+	// spoken turn from whatever app has focus. See talk_hotkey.go for the
+	// accessors, and internal/talkhotkey for the combo grammar and the mode
+	// semantics.
+	TalkHotkeyEnabled bool `mapstructure:"talk_hotkey_enabled"`
+	// TalkHotkeyMode is hold, toggle or automatic — how a press maps onto a
+	// turn. See talkhotkey.Driver.
+	TalkHotkeyMode string `mapstructure:"talk_hotkey_mode"`
+	// TalkHotkey is the combo itself, e.g. alt+space. See talkhotkey.ParseCombo.
+	TalkHotkey string `mapstructure:"talk_hotkey"`
 
 	// TUIMouseEnabled lets the TUI claim the mouse so the wheel and trackpad
 	// scroll the transcript. Claiming it means the terminal routes drags to
@@ -431,6 +444,13 @@ func setDefaults(v *viper.Viper) {
 	// policy, not a defaults change (S3 scope).
 	v.SetDefault("barge_in_speakers", BargeInSpeakersAnyone)
 
+	// On by default: the key only registers on macOS, and hold-to-talk is the
+	// one input mode that works with the mic muted — nothing is captured until
+	// the key is down.
+	v.SetDefault("talk_hotkey_enabled", true)
+	v.SetDefault("talk_hotkey_mode", string(talkhotkey.DefaultMode))
+	v.SetDefault("talk_hotkey", talkhotkey.DefaultCombo)
+
 	// Off by default so the terminal keeps its own click-drag selection, which
 	// is how every other agent chat behaves — you select transcript text and
 	// copy it with the terminal, no modifier and no app-specific mode.
@@ -641,6 +661,9 @@ var envBindings = map[string]string{
 	"barge_in_vad_threshold":      "BARGE_IN_VAD_THRESHOLD",
 	"barge_in_tail_guard_ms":      "BARGE_IN_TAIL_GUARD_MS",
 	"barge_in_speakers":           "BARGE_IN_SPEAKERS",
+	"talk_hotkey_enabled":         "TALK_HOTKEY_ENABLED",
+	"talk_hotkey_mode":            "TALK_HOTKEY_MODE",
+	"talk_hotkey":                 "TALK_HOTKEY",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
 	"vad_silence_duration":        "VAD_SILENCE_DURATION",

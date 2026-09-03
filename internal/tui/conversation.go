@@ -118,6 +118,8 @@ type conversationModel struct {
 	stickyLive stickyLiveLabel
 	// speakerNames maps speaker-N → display name (session-local renames).
 	speakerNames *speaker.NameMap
+	// talk is the system-wide talk key for this session; nil when none.
+	talk *talkState
 
 	commandQuery     string
 	commandSelection int
@@ -223,6 +225,13 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 
 	case voiceRetryMsg:
 		return m, tea.Batch(m.handleVoiceRetry(), m.ensureVoiceTick())
+
+	case talkHotkeyEventMsg:
+		return m, tea.Batch(m.handleTalkHotkey(msg.ev), m.ensureVoiceTick())
+
+	case talkHotkeyExitedMsg:
+		m.talkExited()
+		return m, nil
 
 	case liveSpeakerStatsMsg:
 		m.liveSpeakerStats = msg.stats
@@ -1234,6 +1243,9 @@ func (m conversationModel) View() string {
 		footerLeft += " " + chipMutedStyle.Render(fmt.Sprintf("%d%%", int(activeViewport.ScrollPercent()*100)))
 	}
 	footerHelp := m.vimFooterHelp()
+	if hint := m.talkHint(); hint != "" && !m.vim.enabled {
+		footerHelp = hint + "  " + footerHelp
+	}
 	footerText := footerLeft
 	switch {
 	case m.vim.enabled:
@@ -1247,7 +1259,11 @@ func (m conversationModel) View() string {
 	case m.width >= lipgloss.Width(footerLeft)+lipgloss.Width(footerHelp)+4:
 		footerText += strings.Repeat(" ", m.width-lipgloss.Width(footerLeft)-lipgloss.Width(footerHelp)) + dimStyle.Render(footerHelp)
 	case m.width >= 60:
-		footerText += dimStyle.Render("  ·  ^G mic  ^O audio  ^T switch")
+		compact := "  ·  ^G mic  ^O audio  ^T switch"
+		if hint := m.talkHint(); hint != "" {
+			compact = "  ·  " + hint + "  ^G mic  ^O audio  ^T switch"
+		}
+		footerText += dimStyle.Render(compact)
 	default:
 		footerText += dimStyle.Render("  ^G  ^O  ^T")
 	}

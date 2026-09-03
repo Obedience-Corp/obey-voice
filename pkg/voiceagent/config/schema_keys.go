@@ -1,5 +1,7 @@
 package config
 
+import "github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
+
 // This file holds the key specs for the groups Settings renders itself.
 // schema_keys_models.go holds the rest. Titles are sentence case and name the
 // thing rather than the key; help is one sentence stating the consequence.
@@ -128,6 +130,21 @@ func voiceKeys() []KeySpec {
 			Key: "barge_in_speakers", Type: TypeEnum, Default: BargeInSpeakersAnyone, Enum: bargeInSpeakersEnum(),
 			Group: GroupVoice, Title: "Who can interrupt",
 			Help: "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+		},
+		{
+			Key: "talk_hotkey_enabled", Type: TypeBool, Default: true,
+			Group: GroupVoice, Title: "Talk hotkey",
+			Help: "Lets a system-wide key start and end a spoken turn from any app on macOS. Ctrl+G stays the mute.",
+		},
+		{
+			Key: "talk_hotkey_mode", Type: TypeEnum, Default: string(talkhotkey.DefaultMode), Enum: talkhotkey.Modes(),
+			Group: GroupVoice, Title: "Talk hotkey mode",
+			Help: "hold = press to talk, release to send; toggle = tap to start, tap to send; automatic = tap toggles, holding longer than 300 ms is a hold.",
+		},
+		{
+			Key: "talk_hotkey", Type: TypeString, Default: talkhotkey.DefaultCombo,
+			Group: GroupVoice, Title: "Talk hotkey combo",
+			Help: "Modifiers plus a key, like alt+space or ctrl+alt+t. Needs at least one of ctrl, alt or cmd, or a bare function key.",
 		},
 		{
 			Key: "backchannel_enabled", Type: TypeBool, Default: false,

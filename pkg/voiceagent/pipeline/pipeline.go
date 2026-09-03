@@ -153,11 +153,22 @@ type VoiceDetector interface {
 	Clear()
 }
 
+// UtteranceEnder ends the utterance the recogniser is currently reading, on
+// demand. The local microphone is wrapped in one (audio.Finalizable) so a talk
+// key can say "I have finished" instead of waiting out the silence timeout;
+// serve's network ingress finalizes itself.
+type UtteranceEnder interface {
+	Finalize()
+	Clear()
+}
+
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
 	STT   stt.Provider
 	Brain brain.Provider
 	TTS   tts.Provider
+	// Utterance is nil when the audio source cannot be ended on demand.
+	Utterance UtteranceEnder
 	// TTSFallback is an optional, explicitly configured provider used for one
 	// affected sentence when the selected provider fails before playback.
 	// Kokoro is constructed here when voice_fallback_provider=kokoro.
@@ -200,8 +211,8 @@ type Pipeline struct {
 	// defaultBrainTurnTimeout; negative disables the bound. The bound is idle
 	// time: tokens and tool activity reset it, so a long tool loop does not
 	// die at wall-clock 3 minutes while work is still happening.
-	BrainTurnTimeout time.Duration
-	brainDeadlineMu  sync.Mutex
+	BrainTurnTimeout  time.Duration
+	brainDeadlineMu   sync.Mutex
 	brainDeadlineBump func()
 
 	// BargeInTailGuard overrides the interrupt controller's post-playback
@@ -887,6 +898,17 @@ func (p *Pipeline) StopPlayback() {
 	p.Player.Stop()
 }
 
+// EndUtterance asks the recogniser to commit what it has heard so far, as a
+// talk key released or a "send" tap would. It reports false when the audio
+// source cannot be ended on demand, so a caller can fall back to waiting.
+func (p *Pipeline) EndUtterance() bool {
+	if p.Utterance == nil {
+		return false
+	}
+	p.Utterance.Finalize()
+	return true
+}
+
 // RunTurn executes one conversational turn with streaming TTS.
 // Returns the user's input text, or empty string if no speech was detected.
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
@@ -901,6 +923,11 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 
 	turn.to(TurnListening)
 	text, err := p.transcribeTurn(ctx, metrics, turn)
+	// An EndUtterance that arrived after listening stopped was meant for this
+	// turn; dropping it keeps it from cutting the next one short.
+	if p.Utterance != nil {
+		p.Utterance.Clear()
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)

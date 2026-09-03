@@ -124,11 +124,49 @@ commands are local — they do not cancel speech recognition or block the chat.
 | `Ctrl+Y` | Copy the last assistant reply to the clipboard |
 | `Ctrl+C` (empty composer, after a reply) | Copy the last assistant reply; press again within ~1.5s to quit (`/quit` also exits) |
 | `Ctrl+G` | Pause/resume voice input (capture may stay armed; listening stops) |
+| `⌥Space` (macOS, any app focused) | Talk key: hold to talk and release to send, by default. See below |
 | `Ctrl+O` | Mute/unmute spoken responses (also stops current playback) |
 | `Home` / `End` | Jump to the start/end of the focused feed (on Chat, only when the composer is empty) |
 | `Ctrl+Home` / `Ctrl+End` | Always jump to the start/end of the focused feed |
 | `/copy` | Copy the last assistant reply |
 | `/copy all` | Copy the full plain-text conversation |
+
+### Talk key (macOS)
+
+The conversation registers a system-wide talk key while it runs, so you can
+speak to it from whatever app is focused instead of finding the terminal for
+`Ctrl+G`. The helper process only holds the key; the microphone stays where it
+is, in the conversation.
+
+| Mode (`talk_hotkey_mode`) | Press | Release |
+|---|---|---|
+| `hold` (default) | opens your turn | sends it |
+| `toggle` | opens your turn; the next tap sends | nothing |
+| `automatic` | opens your turn | a press shorter than 300 ms is a tap (next tap sends); longer is a hold (release sends) |
+
+Releasing sends what was heard even if you said nothing; the pipeline reports
+an empty turn and listens again. Pressing over a reply interrupts it first.
+
+The key never changes the mute. While the mic is paused with `Ctrl+G`, a press
+is one bounded turn: the mic opens for that press, the release sends, and the
+session is still paused afterwards. When the mic is already listening, the
+press adopts the open turn and the release commits it without waiting for the
+silence timeout.
+
+The combo is `talk_hotkey` (default `alt+space`; at least one of ctrl, alt or
+cmd, or a bare function key), the mode is `talk_hotkey_mode`, and
+`talk_hotkey_enabled: false` turns the helper off. Changes apply to the next
+conversation. The key is registered with Carbon's `RegisterEventHotKey`, which
+swallows the combo so it never types into the focused app and needs no
+accessibility permission.
+
+macOS lets several apps hold the same hot key and fires every one of them. The
+Obey Voice Mac app registers ⌥Space for itself, so while it is running the TUI
+leaves that combo to it and says so in the activity panel; `obey-voice doctor`
+reports the same. Give the TUI another combo (`talk_hotkey: ctrl+alt+space`)
+to use both at once. Raycast and Spotlight also default to a modifier plus
+space; if a press does two things, that is why. When registration itself fails,
+the conversation says so in its header and `Ctrl+G` keeps working.
 
 Select transcript text with the mouse and copy it the way you would anywhere
 else in your terminal — Obey Voice leaves the mouse alone, so click-drag
