@@ -96,10 +96,6 @@ import (
 	"time"
 )
 
-// hotkeyID is our one registration. The handler is an application-wide one, so
-// it must ignore ids it did not register.
-const hotkeyID = 1
-
 // stopPoll is how often the loop-thread timer checks whether Serve should
 // quit: a quarter second of shutdown latency nobody can feel.
 const stopPoll = 0.25
@@ -227,15 +223,4 @@ func registerDetail(combo Combo, status int) string {
 		return fmt.Sprintf("%s is already registered by another app — the Obey Voice Mac app, Raycast, or another obey-voice TUI. Quit whichever holds it, or choose a different combo.", combo.Display())
 	}
 	return fmt.Sprintf("could not register %s (OSStatus %d)", combo.Display(), status)
-}
-
-type lineWriter struct{ out *bufio.Writer }
-
-func (w *lineWriter) write(event Event) {
-	line, err := event.Marshal()
-	if err != nil {
-		return
-	}
-	_, _ = w.out.Write(append(line, '\n'))
-	_ = w.out.Flush()
 }

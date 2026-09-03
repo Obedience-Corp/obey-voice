@@ -319,7 +319,7 @@
       "source": "default"
     },
     "talk_hotkey": {
-      "value": "alt+space",
+      "value": "",
       "source": "default"
     },
     "talk_hotkey_enabled": {

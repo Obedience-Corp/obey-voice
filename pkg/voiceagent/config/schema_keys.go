@@ -134,7 +134,7 @@ func voiceKeys() []KeySpec {
 		{
 			Key: "talk_hotkey_enabled", Type: TypeBool, Default: true,
 			Group: GroupVoice, Title: "Talk hotkey",
-			Help: "Lets a system-wide key start and end a spoken turn from any app on macOS. Ctrl+G stays the mute.",
+			Help: "Lets a system-wide key start and end a spoken turn from any app. macOS and Windows register the combo themselves; elsewhere bind your shortcut tool to `obey-voice talk`. Ctrl+G stays the mute.",
 		},
 		{
 			Key: "talk_hotkey_mode", Type: TypeEnum, Default: string(talkhotkey.DefaultMode), Enum: talkhotkey.Modes(),
@@ -142,9 +142,9 @@ func voiceKeys() []KeySpec {
 			Help: "hold = press to talk, release to send; toggle = tap to start, tap to send; automatic = tap toggles, holding longer than 300 ms is a hold.",
 		},
 		{
-			Key: "talk_hotkey", Type: TypeString, Default: talkhotkey.DefaultCombo,
+			Key: "talk_hotkey", Type: TypeString, Default: "",
 			Group: GroupVoice, Title: "Talk hotkey combo",
-			Help: "Modifiers plus a key, like alt+space or ctrl+alt+t. Needs at least one of ctrl, alt or cmd, or a bare function key.",
+			Help: "Modifiers plus a key, like alt+space or ctrl+alt+t. Needs at least one of ctrl, alt or cmd, or a bare function key. Empty uses the platform default: ⌥Space on macOS, Ctrl+Alt+Space on Windows; on Linux the key is whatever you bind to `obey-voice talk`.",
 		},
 		{
 			Key: "backchannel_enabled", Type: TypeBool, Default: false,

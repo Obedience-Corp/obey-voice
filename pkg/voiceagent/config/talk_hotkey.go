@@ -3,6 +3,7 @@ package config
 import (
 	"cmp"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
@@ -28,11 +29,13 @@ func TalkHotkeyModeOf(cfg *Config) talkhotkey.Mode {
 // TalkHotkeyComboOf parses cfg's combo. Unlike the mode there is no safe
 // fallback: silently registering a different key than the one in config.yaml
 // would leave the user pressing a key nothing listens to, so a bad value is an
-// error the caller has to show.
+// error the caller has to show. An empty value means the platform default,
+// which is not the same string everywhere — see talkhotkey.DefaultComboFor.
 func TalkHotkeyComboOf(cfg *Config) (talkhotkey.Combo, error) {
-	spelling := talkhotkey.DefaultCombo
+	fallback := talkhotkey.DefaultComboFor(runtime.GOOS)
+	spelling := fallback
 	if cfg != nil {
-		spelling = cmp.Or(strings.TrimSpace(cfg.TalkHotkey), talkhotkey.DefaultCombo)
+		spelling = cmp.Or(strings.TrimSpace(cfg.TalkHotkey), fallback)
 	}
 	combo, err := talkhotkey.ParseCombo(spelling)
 	if err != nil {

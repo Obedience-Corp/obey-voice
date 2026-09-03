@@ -111,15 +111,17 @@ type Config struct {
 	// interrupt controller. See barge_in_speakers.go BargeInSpeakersOf.
 	BargeInSpeakers string `mapstructure:"barge_in_speakers"`
 
-	// Talk hotkey (macOS only): a system-wide combo that opens and closes a
-	// spoken turn from whatever app has focus. See talk_hotkey.go for the
-	// accessors, and internal/talkhotkey for the combo grammar and the mode
-	// semantics.
+	// Talk hotkey: a system-wide key that opens and closes a spoken turn from
+	// whatever app has focus. macOS and Windows register the combo; every other
+	// OS reaches the same driver through `obey-voice talk`. See talk_hotkey.go
+	// for the accessors, and internal/talkhotkey for the combo grammar and the
+	// mode semantics.
 	TalkHotkeyEnabled bool `mapstructure:"talk_hotkey_enabled"`
 	// TalkHotkeyMode is hold, toggle or automatic — how a press maps onto a
 	// turn. See talkhotkey.Driver.
 	TalkHotkeyMode string `mapstructure:"talk_hotkey_mode"`
-	// TalkHotkey is the combo itself, e.g. alt+space. See talkhotkey.ParseCombo.
+	// TalkHotkey is the combo itself, e.g. alt+space. Empty means the platform
+	// default. See talkhotkey.ParseCombo and talkhotkey.DefaultComboFor.
 	TalkHotkey string `mapstructure:"talk_hotkey"`
 
 	// TUIMouseEnabled lets the TUI claim the mouse so the wheel and trackpad
@@ -444,12 +446,14 @@ func setDefaults(v *viper.Viper) {
 	// policy, not a defaults change (S3 scope).
 	v.SetDefault("barge_in_speakers", BargeInSpeakersAnyone)
 
-	// On by default: the key only registers on macOS, and hold-to-talk is the
-	// one input mode that works with the mic muted — nothing is captured until
-	// the key is down.
+	// On by default: hold-to-talk is the one input mode that works with the mic
+	// muted — nothing is captured until the key is down. The combo defaults to
+	// empty rather than a spelling, because the right default differs by OS
+	// (⌥Space is free on macOS and is the window menu on Windows) and a value
+	// written into config.yaml would follow a home directory across machines.
 	v.SetDefault("talk_hotkey_enabled", true)
 	v.SetDefault("talk_hotkey_mode", string(talkhotkey.DefaultMode))
-	v.SetDefault("talk_hotkey", talkhotkey.DefaultCombo)
+	v.SetDefault("talk_hotkey", "")
 
 	// Off by default so the terminal keeps its own click-drag selection, which
 	// is how every other agent chat behaves — you select transcript text and

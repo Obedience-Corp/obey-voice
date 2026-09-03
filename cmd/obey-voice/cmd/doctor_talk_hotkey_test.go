@@ -77,3 +77,49 @@ func TestTalkHotkeyDiagsRows(t *testing.T) {
 		})
 	}
 }
+
+func withNativeTalkHotkey(t *testing.T, native bool) {
+	t.Helper()
+	prev := nativeTalkHotkey
+	nativeTalkHotkey = func() bool { return native }
+	t.Cleanup(func() { nativeTalkHotkey = prev })
+}
+
+// Where no process may claim a key, doctor reports the working path rather
+// than a missing one: an OK row naming the endpoint and the commands to bind.
+func TestTalkHotkeyDiagsReportsTheControlEndpoint(t *testing.T) {
+	withNativeTalkHotkey(t, false)
+	withTalkHotkeyProbe(t, talkhotkey.Event{}, errors.New("must not probe without a native key"))
+
+	cfg := &config.Config{TalkHotkeyEnabled: true, TalkHotkeyMode: "hold"}
+	got := talkHotkeyDiags(t.Context(), cfg)
+	if len(got) != 1 || got[0].Name != "talk-hotkey" {
+		t.Fatalf("diags = %+v, want one talk-hotkey row", got)
+	}
+	if got[0].Severity != config.SeverityOK || got[0].Remediation != "" {
+		t.Fatalf("row = %+v, want an OK row with nothing to fix", got[0])
+	}
+	for _, want := range []string{"obey-voice talk down", "talk_hotkey_mode: toggle", "endpoint "} {
+		if !strings.Contains(got[0].Detail, want) {
+			t.Fatalf("detail %q lacks %q", got[0].Detail, want)
+		}
+	}
+}
+
+// The native rows are unchanged where a key can be claimed.
+func TestTalkHotkeyDiagsKeepsTheNativeRowWithAHelper(t *testing.T) {
+	if !talkhotkey.Supported() {
+		t.Skip("no helper on this platform")
+	}
+	withNativeTalkHotkey(t, true)
+	prev := talkhotkey.ProcessRunning
+	talkhotkey.ProcessRunning = func(string) bool { return false }
+	t.Cleanup(func() { talkhotkey.ProcessRunning = prev })
+	withTalkHotkeyProbe(t, talkhotkey.Event{Kind: talkhotkey.KindRegistered, Combo: "alt+space"}, nil)
+
+	cfg := &config.Config{TalkHotkeyEnabled: true, TalkHotkey: "alt+space", TalkHotkeyMode: "hold"}
+	got := talkHotkeyDiags(t.Context(), cfg)
+	if len(got) != 1 || !strings.Contains(got[0].Detail, "⌥Space (hold) registers") {
+		t.Fatalf("diags = %+v, want the native registration row", got)
+	}
+}

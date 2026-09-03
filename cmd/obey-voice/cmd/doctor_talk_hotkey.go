@@ -38,18 +38,26 @@ var probeTalkHotkey = func(ctx context.Context, combo talkhotkey.Combo) (talkhot
 	return talkhotkey.Event{}, errors.New("the helper printed no event")
 }
 
+// nativeTalkHotkey reports whether this OS lets a process claim a key for
+// itself. A seam so the control-endpoint row can be tested from any host.
+var nativeTalkHotkey = talkhotkey.Supported
+
 // talkHotkeyDiags reports whether the talk key can be held on this machine
 // right now: first the one collision registration cannot see (the Mac app on
-// the same combo), then a real registration, released immediately. Silent
-// where the key is off or the platform has no helper, matching the rest of
-// doctor. A combo that does not parse is already reported by the config layer.
+// the same combo), then a real registration, released immediately. Where no
+// process may claim a key it reports the control endpoint instead, which is
+// the working path there rather than a degraded one. Silent where the key is
+// off; a combo that does not parse is already reported by the config layer.
 func talkHotkeyDiags(ctx context.Context, cfg *config.Config) []config.Diagnostic {
-	if cfg == nil || !cfg.TalkHotkeyEnabled || !talkhotkey.Supported() {
+	if cfg == nil || !cfg.TalkHotkeyEnabled {
 		return nil
 	}
 	combo, err := config.TalkHotkeyComboOf(cfg)
 	if err != nil {
 		return nil
+	}
+	if !nativeTalkHotkey() {
+		return []config.Diagnostic{talkControlDiag()}
 	}
 	label := combo.Display() + " (" + string(config.TalkHotkeyModeOf(cfg)) + ")"
 	if owner, ok := talkhotkey.OtherOwner(combo); ok {
@@ -61,36 +69,58 @@ func talkHotkeyDiags(ctx context.Context, cfg *config.Config) []config.Diagnosti
 		}}
 	}
 
+	return []config.Diagnostic{probedTalkHotkeyDiag(ctx, combo, label)}
+}
+
+// probedTalkHotkeyDiag registers the combo for an instant and reports what
+// happened, which is the only way to know it is actually free.
+func probedTalkHotkeyDiag(ctx context.Context, combo talkhotkey.Combo, label string) config.Diagnostic {
 	ctx, cancel := context.WithTimeout(ctx, talkHotkeyProbeTimeout)
 	defer cancel()
 	ev, err := probeTalkHotkey(ctx, combo)
 	switch {
 	case err != nil && ev.Kind == "":
-		return []config.Diagnostic{{
+		return config.Diagnostic{
 			Name:        "talk-hotkey",
 			Severity:    config.SeverityWarn,
 			Detail:      fmt.Sprintf("talk hotkey %s could not be probed: %v", label, err),
 			Remediation: "the conversation falls back to Ctrl+G; rebuild with cgo on macOS, or set talk_hotkey_enabled: false",
-		}}
+		}
 	case ev.Kind == talkhotkey.KindRegistered:
-		return []config.Diagnostic{{
+		return config.Diagnostic{
 			Name:     "talk-hotkey",
 			Severity: config.SeverityOK,
 			Detail:   "talk hotkey " + label + " registers (macOS also lets other apps hold the same key; Raycast and Spotlight default to modifier+space)",
-		}}
+		}
 	case ev.Conflict():
-		return []config.Diagnostic{{
+		return config.Diagnostic{
 			Name:        "talk-hotkey",
 			Severity:    config.SeverityWarn,
 			Detail:      "talk hotkey " + label + " is owned by another app (the Obey Voice Mac app, Raycast, or a running obey-voice conversation)",
 			Remediation: "quit the other owner or set talk_hotkey to a different combo, e.g. ctrl+alt+space",
-		}}
+		}
 	default:
-		return []config.Diagnostic{{
+		return config.Diagnostic{
 			Name:        "talk-hotkey",
 			Severity:    config.SeverityWarn,
 			Detail:      "talk hotkey " + label + " failed to register: " + ev.Detail,
 			Remediation: "set talk_hotkey to a different combo, or talk_hotkey_enabled: false to use Ctrl+G only",
-		}}
+		}
+	}
+}
+
+// talkControlDiag is the row for an OS where only the compositor may grab a
+// key. Nothing is wrong here, so it is an OK row with no remediation: it names
+// the endpoint and the commands to bind, and that is the whole setup.
+func talkControlDiag() config.Diagnostic {
+	endpoint := "unavailable"
+	if _, address, err := talkhotkey.ControlEndpoint(); err == nil {
+		endpoint = address
+	}
+	return config.Diagnostic{
+		Name:     "talk-hotkey",
+		Severity: config.SeverityOK,
+		Detail: "talk control: no native key on this OS; bind a shortcut to `obey-voice talk down` / `up` " +
+			"(or `press` with talk_hotkey_mode: toggle) — endpoint " + endpoint,
 	}
 }

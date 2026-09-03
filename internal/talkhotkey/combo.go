@@ -37,6 +37,16 @@ type Combo struct {
 // (Spotlight owns Cmd+Space) and reachable with one hand.
 const DefaultCombo = "alt+space"
 
+// DefaultComboFor is the shipped combo for one OS. Windows is the exception:
+// Alt+Space opens the window menu in every Win32 app, so taking it would
+// swallow a shortcut the whole desktop answers.
+func DefaultComboFor(goos string) string {
+	if goos == "windows" {
+		return "ctrl+alt+space"
+	}
+	return DefaultCombo
+}
+
 var modifierAliases = map[string]Modifier{
 	"ctrl": ModCtrl, "control": ModCtrl, "⌃": ModCtrl,
 	"alt": ModAlt, "option": ModAlt, "opt": ModAlt, "⌥": ModAlt,

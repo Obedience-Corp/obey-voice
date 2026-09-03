@@ -25,10 +25,11 @@ const DefaultStopTimeout = 3 * time.Second
 // need to be preserved.
 const eventBuffer = 64
 
-// Supported reports whether this build can run the helper at all. The
-// talk-hotkey subcommand exists only on macOS, where Carbon can register a
-// system-wide combo without a TCC prompt.
-func Supported() bool { return runtime.GOOS == "darwin" }
+// Supported reports whether this build can run the helper at all — that is,
+// whether the OS lets a process claim a key for itself. macOS (Carbon, no TCC
+// prompt) and Windows (RegisterHotKey) do; on Linux only the compositor may,
+// so there the talk key arrives through the control endpoint instead.
+func Supported() bool { return runtime.GOOS == "darwin" || runtime.GOOS == "windows" }
 
 // Command builds the helper process. Injected so tests can run a scripted fake
 // instead of the real Carbon helper. It must build the Cmd with

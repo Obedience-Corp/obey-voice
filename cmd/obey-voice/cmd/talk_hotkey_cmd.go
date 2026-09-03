@@ -1,4 +1,4 @@
-//go:build darwin && cgo && !integration
+//go:build !integration && (windows || (darwin && cgo))
 
 package cmd
 
@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -30,10 +31,12 @@ func init() {
 
 // newTalkHotkeyCmd builds the helper the TUI spawns to own a system-wide key.
 //
-// It is a subprocess rather than a goroutine because Carbon's hotkey API runs
-// an event loop on the main thread, and it is hidden because nobody runs it by
-// hand: its stdout is a machine protocol, and it exits when its stdin closes so
-// it cannot outlive the parent still holding the key.
+// It is a subprocess rather than a goroutine because both platform APIs want a
+// thread of their own running an event loop — Carbon's on the process's main
+// thread, Win32's on whichever thread registered the key — and it is hidden
+// because nobody runs it by hand: its stdout is a machine protocol, and it
+// exits when its stdin closes so it cannot outlive the parent still holding
+// the key.
 func newTalkHotkeyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "talk-hotkey",
@@ -57,7 +60,7 @@ func newTalkHotkeyCmd() *cobra.Command {
 			return talkhotkey.Serve(ctx, combo, cmd.OutOrStdout(), talkHotkeyProbe)
 		},
 	}
-	cmd.Flags().StringVar(&talkHotkeyCombo, "combo", talkhotkey.DefaultCombo, "Combo to register, e.g. alt+space or ctrl+alt+f13")
+	cmd.Flags().StringVar(&talkHotkeyCombo, "combo", talkhotkey.DefaultComboFor(runtime.GOOS), "Combo to register, e.g. alt+space or ctrl+alt+f13")
 	cmd.Flags().BoolVar(&talkHotkeyProbe, "probe", false, "Register, report, and exit — availability check only")
 	return cmd
 }

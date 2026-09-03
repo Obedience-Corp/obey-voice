@@ -10,31 +10,65 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
-// talkHotkeyEventMsg carries one line from the talk-hotkey helper.
+// talkHotkeyEventMsg carries one key edge, from either source: the native
+// helper's stdout, or a command sent to the control endpoint. fromControl says
+// which pump to re-arm, and nothing else reads it — by the time the driver
+// sees the event, where it came from no longer matters.
 type talkHotkeyEventMsg struct {
-	ev talkhotkey.Event
+	ev          talkhotkey.Event
+	fromControl bool
 }
 
 // talkHotkeyExitedMsg reports the helper process ending; its event stream is
 // closed and no further keys will arrive.
 type talkHotkeyExitedMsg struct{}
 
-// startTalkHotkey spawns the Darwin helper for the conversation that just
-// became ready. It is a no-op when the key is disabled, on other platforms, or
-// when the session has no microphone. A helper that cannot start reports why
-// in the conversation instead of failing the session: Ctrl+G still works.
+// talkControlClosedMsg reports the control endpoint closing. The conversation
+// is unaffected: nothing was registered, so there is nothing to take back.
+type talkControlClosedMsg struct{}
+
+// startTalkHotkey opens the talk key for the conversation that just became
+// ready. Two paths, and both are optional: the control endpoint any shortcut
+// tool can drive, and — where the OS lets a process claim a key — the native
+// helper. A failure on either reports why in the conversation instead of
+// failing the session: Ctrl+G still works.
 func (a *App) startTalkHotkey() tea.Cmd {
-	if a.hotkey != nil || a.runtime == nil || !a.runtime.Voice {
+	if a.hotkey != nil || a.control != nil || a.runtime == nil || !a.runtime.Voice {
 		return nil
 	}
-	if !a.cfg.TalkHotkeyEnabled || !talkhotkey.Supported() {
+	if !a.cfg.TalkHotkeyEnabled {
 		return nil
 	}
-	combo, err := config.TalkHotkeyComboOf(a.cfg)
+	mode := config.TalkHotkeyModeOf(a.cfg)
+	combo, comboErr := config.TalkHotkeyComboOf(a.cfg)
+	// The control endpoint is the only talk path on an OS with no native key,
+	// so it starts first and a bad combo must not take it down: the combo is
+	// only ever registered by the helper.
+	cmds := []tea.Cmd{a.startTalkControl(combo, mode)}
+	if comboErr != nil {
+		a.conversation.talkUnavailable(comboErr.Error())
+		return tea.Batch(cmds...)
+	}
+	if talkhotkey.Supported() {
+		cmds = append(cmds, a.startTalkHelper(combo, mode))
+	}
+	return tea.Batch(cmds...)
+}
+
+// startTalkControl opens the local endpoint a shortcut tool sends commands to.
+func (a *App) startTalkControl(combo talkhotkey.Combo, mode talkhotkey.Mode) tea.Cmd {
+	control, err := talkhotkey.ListenControl(a.runCtx)
 	if err != nil {
-		a.conversation.talkUnavailable(err.Error())
+		a.conversation.talkUnavailable("control endpoint: " + err.Error())
 		return nil
 	}
+	a.control = control
+	a.conversation.attachTalkControl(control.Address(), combo, mode)
+	return a.nextTalkControlEvent()
+}
+
+// startTalkHelper spawns the process that holds the combo system-wide.
+func (a *App) startTalkHelper(combo talkhotkey.Combo, mode talkhotkey.Mode) tea.Cmd {
 	// macOS delivers one hot key to every process that registered it, so
 	// sharing the combo with the Mac app would open a turn in both. Leave it
 	// to the app and say so; a different combo for the TUI is one setting.
@@ -48,7 +82,7 @@ func (a *App) startTalkHotkey() tea.Cmd {
 		return nil
 	}
 	a.hotkey = client
-	a.conversation.attachTalk(combo, config.TalkHotkeyModeOf(a.cfg))
+	a.conversation.attachTalk(combo, mode)
 	return a.nextTalkHotkeyEvent()
 }
 
@@ -68,13 +102,40 @@ func (a *App) nextTalkHotkeyEvent() tea.Cmd {
 	}
 }
 
-// stopTalkHotkey ends the helper. Idempotent.
-func (a *App) stopTalkHotkey() {
-	if a.hotkey == nil {
-		return
+// nextTalkControlEvent is the same pump for the control endpoint.
+func (a *App) nextTalkControlEvent() tea.Cmd {
+	control := a.control
+	if control == nil {
+		return nil
 	}
-	a.hotkey.Stop()
-	a.hotkey = nil
+	return func() tea.Msg {
+		ev, ok := <-control.Events()
+		if !ok {
+			return talkControlClosedMsg{}
+		}
+		return talkHotkeyEventMsg{ev: ev, fromControl: true}
+	}
+}
+
+// rearmTalk re-arms the pump the event came from. Arming the other one would
+// leave two readers on one channel and none on the other.
+func (a *App) rearmTalk(msg talkHotkeyEventMsg) tea.Cmd {
+	if msg.fromControl {
+		return a.nextTalkControlEvent()
+	}
+	return a.nextTalkHotkeyEvent()
+}
+
+// stopTalkHotkey ends both talk paths. Idempotent.
+func (a *App) stopTalkHotkey() {
+	if a.hotkey != nil {
+		a.hotkey.Stop()
+		a.hotkey = nil
+	}
+	if a.control != nil {
+		_ = a.control.Close()
+		a.control = nil
+	}
 }
 
 // talkState is the conversation's view of the talk key: which combo, which
@@ -90,6 +151,18 @@ type talkState struct {
 
 func (m *conversationModel) attachTalk(combo talkhotkey.Combo, mode talkhotkey.Mode) {
 	m.talk = &talkState{driver: talkhotkey.NewDriver(mode), combo: combo}
+}
+
+// attachTalkControl shows the endpoint a shortcut tool sends commands to, and
+// makes sure there is a driver to receive them. On an OS with no native key
+// this is the whole talk key, and the combo is informational: nothing
+// registers it, so only the mode decides what a command does. The footer hint
+// stays quiet until something actually holds the combo.
+func (m *conversationModel) attachTalkControl(address string, combo talkhotkey.Combo, mode talkhotkey.Mode) {
+	if m.talk == nil {
+		m.attachTalk(combo, mode)
+	}
+	m.appendActivity("talk control", address, 0)
 }
 
 // talkUnavailable records why there is no talk key this session.

@@ -103,9 +103,12 @@ type App struct {
 	// the program exits.
 	runtime  *ConversationRuntime
 	fatalErr error
-	// hotkey is the Darwin talk-key helper for the live conversation; nil
+	// hotkey is the native talk-key helper for the live conversation; nil
 	// when disabled, unsupported, or not started yet.
 	hotkey *talkhotkey.Client
+	// control is the local endpoint a shortcut tool drives the talk key
+	// through. It runs on every OS, alongside the helper where there is one.
+	control *talkhotkey.Control
 
 	// Settings can be opened from the launcher or from a live conversation.
 	// Keep the origin so Esc/q returns to the screen the user came from.
@@ -768,11 +771,17 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// whichever screen is showing, then keep pumping.
 		var cmd tea.Cmd
 		a.conversation, cmd = a.conversation.Update(msg)
-		return a, tea.Batch(cmd, a.nextTalkHotkeyEvent())
+		return a, tea.Batch(cmd, a.rearmTalk(msg))
 
 	case talkHotkeyExitedMsg:
 		a.hotkey = nil
 		a.conversation.talkExited()
+		return a, nil
+
+	case talkControlClosedMsg:
+		// Nothing was registered, so the conversation loses no state: the
+		// endpoint simply stops answering.
+		a.control = nil
 		return a, nil
 
 	case quitMsg:

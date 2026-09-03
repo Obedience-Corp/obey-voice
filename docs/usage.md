@@ -124,19 +124,18 @@ commands are local — they do not cancel speech recognition or block the chat.
 | `Ctrl+Y` | Copy the last assistant reply to the clipboard |
 | `Ctrl+C` (empty composer, after a reply) | Copy the last assistant reply; press again within ~1.5s to quit (`/quit` also exits) |
 | `Ctrl+G` | Pause/resume voice input (capture may stay armed; listening stops) |
-| `⌥Space` (macOS, any app focused) | Talk key: hold to talk and release to send, by default. See below |
+| `⌥Space` (macOS) / `Ctrl+Alt+Space` (Windows), any app focused | Talk key: hold to talk and release to send, by default. On Linux, bind your own shortcut to `obey-voice talk` — see below |
 | `Ctrl+O` | Mute/unmute spoken responses (also stops current playback) |
 | `Home` / `End` | Jump to the start/end of the focused feed (on Chat, only when the composer is empty) |
 | `Ctrl+Home` / `Ctrl+End` | Always jump to the start/end of the focused feed |
 | `/copy` | Copy the last assistant reply |
 | `/copy all` | Copy the full plain-text conversation |
 
-### Talk key (macOS)
+### Talk key
 
-The conversation registers a system-wide talk key while it runs, so you can
-speak to it from whatever app is focused instead of finding the terminal for
-`Ctrl+G`. The helper process only holds the key; the microphone stays where it
-is, in the conversation.
+The conversation gives you one system-wide way to speak to it from whatever app
+is focused, instead of finding the terminal for `Ctrl+G`. Only the key is held
+outside the conversation; the microphone stays where it is, in the pipeline.
 
 | Mode (`talk_hotkey_mode`) | Press | Release |
 |---|---|---|
@@ -153,12 +152,15 @@ session is still paused afterwards. When the mic is already listening, the
 press adopts the open turn and the release commits it without waiting for the
 silence timeout.
 
-The combo is `talk_hotkey` (default `alt+space`; at least one of ctrl, alt or
-cmd, or a bare function key), the mode is `talk_hotkey_mode`, and
-`talk_hotkey_enabled: false` turns the helper off. Changes apply to the next
-conversation. The key is registered with Carbon's `RegisterEventHotKey`, which
-swallows the combo so it never types into the focused app and needs no
-accessibility permission.
+The mode is `talk_hotkey_mode`, the combo is `talk_hotkey` (empty means the
+platform default), and `talk_hotkey_enabled: false` turns the whole thing off.
+Changes apply to the next conversation.
+
+#### macOS
+
+The conversation registers the combo itself — `talk_hotkey`, default ⌥Space —
+through Carbon's `RegisterEventHotKey`, which swallows it so it never types
+into the focused app and needs no accessibility permission.
 
 macOS lets several apps hold the same hot key and fires every one of them. The
 Obey Voice Mac app registers ⌥Space for itself, so while it is running the TUI
@@ -167,6 +169,63 @@ reports the same. Give the TUI another combo (`talk_hotkey: ctrl+alt+space`)
 to use both at once. Raycast and Spotlight also default to a modifier plus
 space; if a press does two things, that is why. When registration itself fails,
 the conversation says so in its header and `Ctrl+G` keeps working.
+
+#### Windows
+
+The conversation registers the combo itself, through `RegisterHotKey`. The
+default is Ctrl+Alt+Space, not ⌥Space: Alt+Space opens the window menu in every
+Win32 app. Unlike macOS, a Windows hotkey belongs to one process — a combo
+another program already holds fails outright, and the conversation reports
+which combo is taken rather than silently doing nothing.
+
+The Windows helper is compile-verified only; it has not been run on a Windows
+machine.
+
+#### Linux, and any tool you already use
+
+Wayland compositors reserve keyboard grabs for themselves — that is the point
+of the design, and it is why there is no Linux helper. Instead the conversation
+listens on a private endpoint and your own shortcut tool drives it:
+
+```
+obey-voice talk down     open a spoken turn
+obey-voice talk up       send it
+obey-voice talk press    both at once — a tap
+```
+
+Bind `down` to the press and `up` to the release for hold-to-talk. A tool that
+only reports presses (GNOME, KDE) binds `press` with `talk_hotkey_mode: toggle`,
+so one tap opens the turn and the next sends it.
+
+sway / i3:
+
+```
+bindsym --no-repeat $mod+space exec obey-voice talk down
+bindsym --release $mod+space exec obey-voice talk up
+```
+
+Hyprland:
+
+```
+bind  = , code:65, exec, obey-voice talk down
+bindr = , code:65, exec, obey-voice talk up
+```
+
+GNOME / KDE (custom shortcut, press only — set `talk_hotkey_mode: toggle`):
+
+```
+obey-voice talk press
+```
+
+The same commands work on macOS, so Raycast, Karabiner-Elements or Hammerspoon
+can drive the talk key instead of the built-in combo.
+
+The endpoint is per user and private: a unix socket in a `0700` directory under
+`$XDG_RUNTIME_DIR` (or your temp directory, named with your uid), and on Windows
+a loopback port plus a token recorded under `%LOCALAPPDATA%`. `obey-voice
+doctor` prints the address, and the conversation names it in the activity panel
+when it opens. With no conversation running, `obey-voice talk` exits 1 and says
+so.
 
 Select transcript text with the mouse and copy it the way you would anywhere
 else in your terminal — Obey Voice leaves the mouse alone, so click-drag
