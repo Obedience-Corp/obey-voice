@@ -16,13 +16,15 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/render/encoder"
 	"github.com/Obedience-Corp/obey-voice/internal/scene"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 // runSceneText is the real scene runner: two personas, two mouths, one
-// conversation WAV. It constructs TTS and nothing else — no STT, no brain, no
-// microphone, no playback.
+// conversation WAV. A generated scene also constructs the two personas'
+// brains, tools off, before any TTS. Nothing else — no STT, no microphone, no
+// playback.
 func runSceneText(cmd *cobra.Command, opts scene.Options) error {
 	// Preflight the optional encoder BEFORE anything loads a model, exactly as
 	// render does: a missing ffmpeg must not cost a Qwen worker start.
@@ -34,12 +36,19 @@ func runSceneText(cmd *cobra.Command, opts scene.Options) error {
 		// The encoder stack is render's; the command that failed is this one.
 		return fmt.Errorf("scene: %w", err)
 	}
-	return runSceneWith(cmd, opts, enc, loadScenePersona, config.Load)
+	return runSceneWith(cmd, opts, enc, loadScenePersona, config.Load, newSceneBrain)
 }
 
-// runSceneWith is runSceneText with the encoder, persona store and config
-// loader injected, so the flow around the TTS pool is testable.
-func runSceneWith(cmd *cobra.Command, opts scene.Options, enc encoder.Encoder, loadPersona scene.PersonaLoader, loadConfig func() (*config.Config, error)) error {
+// newSceneBrain is the production brain factory: the same provider switch the
+// live agent uses, on the cast member's applied config copy.
+func newSceneBrain(cfg *config.Config) (scene.Brain, error) {
+	return brain.NewProvider(cfg)
+}
+
+// runSceneWith is runSceneText with the encoder, persona store, config loader
+// and brain factory injected, so the flow around the brains and the TTS pool
+// is testable without a model.
+func runSceneWith(cmd *cobra.Command, opts scene.Options, enc encoder.Encoder, loadPersona scene.PersonaLoader, loadConfig func() (*config.Config, error), newBrain scene.BrainFactory) error {
 	ctx := cmd.Context()
 	doc, err := scene.Load(ctx, opts.Script)
 	if err != nil {
@@ -48,9 +57,6 @@ func runSceneWith(cmd *cobra.Command, opts scene.Options, enc encoder.Encoder, l
 	plan, err := scene.BuildPlan(ctx, doc, opts, loadPersona)
 	if err != nil {
 		return err
-	}
-	if plan.Mode == scene.ModeGenerate || opts.ResolveOnly {
-		return errSceneGenerateUnsupported
 	}
 
 	cfg, err := loadConfig()
@@ -68,6 +74,18 @@ func runSceneWith(cmd *cobra.Command, opts scene.Options, enc encoder.Encoder, l
 		return err
 	}
 
+	req := scene.Request{Doc: doc, Plan: plan, Cast: cast, Options: opts}
+	if plan.Mode == scene.ModeGenerate || opts.ResolveOnly {
+		// The lines exist before any mouth is constructed: a brain that fails
+		// on turn three must not have cost a Qwen worker start, and
+		// --resolve-only never touches TTS assets at all.
+		resolver := scene.Resolver{NewBrain: newBrain, Progress: sceneProgress(cmd, opts)}
+		resolved, err := resolver.Resolve(ctx, req)
+		if err != nil || opts.ResolveOnly {
+			return finishResolve(cmd, opts, resolved, err)
+		}
+	}
+
 	synth, cleanup, err := newSceneSynth(ctx, cast)
 	if err != nil {
 		return err
@@ -81,8 +99,47 @@ func runSceneWith(cmd *cobra.Command, opts scene.Options, enc encoder.Encoder, l
 		Resample:   scene.ResampleLinear,
 		Progress:   sceneProgress(cmd, opts),
 	}
-	result, renderErr := renderer.Render(ctx, scene.Request{Doc: doc, Plan: plan, Cast: cast, Options: opts})
+	result, renderErr := renderer.Render(ctx, req)
 	return finishScene(cmd, opts, result, enc, renderErr)
+}
+
+// finishResolve reports a run that ends at the resolved script: a --resolve-only
+// run, or a generated one its brain stopped. The --json shape is the one
+// finishScene prints, with no conversation and no manifest, so a calling script
+// reads one contract. resolveErr is returned after reporting.
+func finishResolve(cmd *cobra.Command, opts scene.Options, resolved scene.Resolved, resolveErr error) error {
+	scriptResolved := filepath.Join(opts.OutDir, scene.ResolvedScriptFile)
+	failed := 0
+	if resolveErr != nil {
+		failed = 1
+	}
+	out := cmd.OutOrStdout()
+	if opts.JSON {
+		if err := writeRenderJSON(out, map[string]any{
+			"output_dir":      opts.OutDir,
+			"conversation":    "",
+			"manifest":        "",
+			"script_resolved": scriptResolved,
+			"turns":           len(resolved.Turns),
+			"completed":       len(resolved.Turns),
+			"skipped":         0,
+			"failed":          failed,
+			"encoded":         []string{},
+			"sample_rate":     0,
+			"duration_ms":     0,
+		}); err != nil {
+			return err
+		}
+		return resolveErr
+	}
+	fmt.Fprintf(out, "  Resolved %d turn(s) (%d generated)\n", len(resolved.Turns), resolved.Generated)
+	if resolved.Stopped == scene.StoppedStopPhrase {
+		fmt.Fprintln(out, "  Stopped on a stop phrase")
+	}
+	if len(resolved.Turns) > 0 {
+		fmt.Fprintf(out, "  Script:       %s\n", scriptResolved)
+	}
+	return resolveErr
 }
 
 // reportSceneVoices applies the same-voice policy to the *effective* mouths.

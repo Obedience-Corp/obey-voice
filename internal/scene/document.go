@@ -64,13 +64,31 @@ type Document struct {
 	Cast   []CastMember `yaml:"cast" json:"cast"`
 	Turns  []Turn       `yaml:"turns,omitempty" json:"turns,omitempty"`
 	Scene  *SceneBlock  `yaml:"scene,omitempty" json:"scene,omitempty"`
+
+	// GenerateFingerprint is output-only: the resolved script of a generated
+	// run records which brief its lines came from, so --resume can tell a
+	// prefix worth keeping from one written for a different scene. Authored
+	// documents leave it empty; the loader ignores it.
+	GenerateFingerprint string `yaml:"generate_fingerprint,omitempty" json:"generate_fingerprint,omitempty"`
 }
 
 // CastMember binds a scene-local speaker id to a persona profile. Turns name
 // the cast id, not the persona id, so a recast does not rewrite every line.
+//
+// The remaining fields are output-only: the resolved script records each
+// speaker's effective stack so a run that never reaches the manifest (a
+// --resolve-only run, or one stopped by a brain error) still says which mouth
+// and which model stood behind every line. The loader ignores them.
 type CastMember struct {
 	ID      string `yaml:"id" json:"id"`
 	Persona string `yaml:"persona" json:"persona"`
+
+	DisplayName   string `yaml:"display_name,omitempty" json:"display_name,omitempty"`
+	TTSProvider   string `yaml:"tts_provider,omitempty" json:"tts_provider,omitempty"`
+	TTSVoice      string `yaml:"tts_voice,omitempty" json:"tts_voice,omitempty"`
+	TTSTier       string `yaml:"tts_tier,omitempty" json:"tts_tier,omitempty"`
+	BrainProvider string `yaml:"brain_provider,omitempty" json:"brain_provider,omitempty"`
+	BrainModel    string `yaml:"brain_model,omitempty" json:"brain_model,omitempty"`
 }
 
 // Turn is one spoken line.
@@ -113,6 +131,19 @@ func Load(ctx context.Context, path string) (*Document, error) {
 // validates it. Unknown keys are a hard failure so a typo surfaces as an error
 // instead of a silently ignored setting.
 func Parse(data []byte) (*Document, error) {
+	d, err := decode(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.Validate(); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// decode is the strict YAML half of Parse, without validation, for a reader
+// that has its own rules about what the document must contain.
+func decode(data []byte) (*Document, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	var d Document
@@ -121,9 +152,6 @@ func Parse(data []byte) (*Document, error) {
 			return nil, fmt.Errorf("scene: parsing script: document is empty")
 		}
 		return nil, fmt.Errorf("scene: parsing script: %w", err)
-	}
-	if err := d.Validate(); err != nil {
-		return nil, err
 	}
 	return &d, nil
 }
@@ -164,6 +192,21 @@ func (d *Document) ValidateV1() error {
 		return fmt.Errorf("scene: cast has %d members: v1 records exactly %d", len(d.Cast), castSize)
 	}
 	return nil
+}
+
+// ValidateFor re-checks the mode-dependent rules against the mode a run will
+// actually use, which the --mode flag can make differ from the document's own.
+// A verbatim script forced to generate still needs a brief; a generate script
+// forced to verbatim still needs lines.
+func (d *Document) ValidateFor(mode Mode) error {
+	speakers, err := d.validateCast()
+	if err != nil {
+		return err
+	}
+	if err := d.validateTurns(mode, speakers); err != nil {
+		return err
+	}
+	return d.validateSceneBlock(mode, speakers)
 }
 
 // validateCast checks cast shape and returns the set of legal speaker ids.

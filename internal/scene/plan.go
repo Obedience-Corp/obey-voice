@@ -118,6 +118,9 @@ func BuildPlan(ctx context.Context, doc *Document, opts Options, load PersonaLoa
 	if mode == ModeVerbatim && len(doc.Turns) == 0 {
 		return nil, fmt.Errorf("scene: --mode verbatim needs turns[]: the script has none")
 	}
+	if err := doc.ValidateFor(mode); err != nil {
+		return nil, err
+	}
 
 	warnings := declaredSharedMouths(cast)
 	if len(warnings) > 0 && opts.RequireDistinctVoices {

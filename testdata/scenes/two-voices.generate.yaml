@@ -1,0 +1,21 @@
+schema: obey-voice.scene.v1
+id: coffee-counter-improv
+title: Coffee counter
+mode: generate
+pause: 400ms
+cast:
+  - id: sam
+    persona: samantha
+  - id: uncle
+    persona: uncle-fu
+scene:
+  setting: A coffee counter, morning rush.
+  beats:
+    - Uncle dodges why he is late.
+    - Sam does not buy it.
+    - They settle it over the first cup.
+  opener:
+    speaker: sam
+    text: "You're late."
+  max_turns: 8
+  stop_phrases: ["[END]"]
