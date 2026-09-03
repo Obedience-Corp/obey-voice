@@ -318,6 +318,18 @@
       "value": "sherpa-parakeet",
       "source": "default"
     },
+    "talk_hotkey": {
+      "value": "alt+space",
+      "source": "default"
+    },
+    "talk_hotkey_enabled": {
+      "value": true,
+      "source": "default"
+    },
+    "talk_hotkey_mode": {
+      "value": "hold",
+      "source": "default"
+    },
     "tool_command_timeout": {
       "value": 30,
       "source": "default"

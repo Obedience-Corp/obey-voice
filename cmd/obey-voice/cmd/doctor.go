@@ -84,6 +84,9 @@ func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPat
 	if speechCtx == nil {
 		speechCtx = context.Background()
 	}
+	// Whether the system-wide talk key can be held right now: a real
+	// registration, released at once.
+	diags = append(diags, talkHotkeyDiags(speechCtx, cfg)...)
 	diags = append(diags, config.DiagnoseSpeechPlace(speechCtx, cfg, speechProbe)...)
 	// Whether that speech is played chunk by chunk. Read-only: it reports the
 	// policy, and never starts a worker to ask.

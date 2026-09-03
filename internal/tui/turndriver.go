@@ -82,8 +82,11 @@ type conversationDeps struct {
 	outputDevice   string
 	liveSpeaker    LiveSpeakerController
 	speakerNames   *speaker.NameMap
-	ctx            context.Context // pipeline lifetime; parent of every turn ctx
-	wg             *sync.WaitGroup // tracks in-flight turns so shutdown can drain them
+	// endUtterance commits the utterance the recogniser is reading, for a
+	// talk key released; nil when the audio source cannot be ended on demand.
+	endUtterance func() bool
+	ctx          context.Context // pipeline lifetime; parent of every turn ctx
+	wg           *sync.WaitGroup // tracks in-flight turns so shutdown can drain them
 }
 
 // startConversation attaches the model to a live pipeline and kicks off the
@@ -524,16 +527,26 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	if wasCanceling {
 		text := m.pendingText
 		m.pendingText = ""
+		talk := m.takeTalkTurn()
 		if m.pendingCompact {
 			m.pendingCompact = false
 			m.discardDraft(text)
+			m.talkTurnEnded()
 			return m.dispatchCompact()
 		}
 		if text != "" {
+			m.talkTurnEnded()
 			return m.submitText(text)
 		}
+		if talk {
+			// The key interrupted a reply and is still held: its turn opens
+			// now, and the driver keeps owning it until the release.
+			return m.dispatchVoiceTurn()
+		}
+		m.talkTurnEnded()
 		return m.resumeListening()
 	}
+	m.talkTurnEnded()
 
 	if msg.err != nil {
 		switch app.ClassifyVoiceFailure(msg.err, m.deps.ctx.Err(), m.voiceFailures+1) {
@@ -585,16 +598,24 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.turnState = turnIdle
 
 	if wasCanceling {
+		talk := m.takeTalkTurn()
 		if m.pendingCompact {
 			m.pendingCompact = false
 			m.discardDraft(pending)
+			m.talkTurnEnded()
 			return m.dispatchCompact()
 		}
 		if pending != "" {
+			m.talkTurnEnded()
 			return m.submitText(pending)
 		}
+		if talk {
+			return m.dispatchVoiceTurn()
+		}
+		m.talkTurnEnded()
 		return m.resumeListening()
 	}
+	m.talkTurnEnded()
 
 	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
 		m.emit(events.Error{Message: msg.err.Error()})

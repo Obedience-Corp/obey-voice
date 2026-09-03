@@ -378,7 +378,11 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 				return nil, nil, fmt.Errorf("voiceagent: an injected Capture requires an injected STT provider")
 			}
 			stage("Loading speech recognition")
-			sttProvider, sttCleanup, err := stt.NewProvider(cfg, localCapture, sttVAD)
+			// The recogniser reads the microphone through a wrapper the
+			// pipeline can finalize, so a talk key can end a turn the way
+			// serve's voice_end ends a network one.
+			endable := audio.NewFinalizable(localCapture)
+			sttProvider, sttCleanup, err := stt.NewProvider(cfg, endable, sttVAD)
 			if err != nil {
 				cleanup()
 				return nil, nil, fmt.Errorf("init STT: %w", err)
@@ -387,6 +391,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 				cleanups = append(cleanups, sttCleanup)
 			}
 			p.STT = sttProvider
+			p.Utterance = endable
 		}
 	} else if opts.STT != nil {
 		// A caller that injects an STT provider in text mode means it: the

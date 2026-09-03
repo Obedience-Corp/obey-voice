@@ -96,6 +96,10 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 	} else {
 		app.remote.stopAndWait(remoteStopTimeout)
 	}
+	// The talk-key helper holds a system-wide key; it must not outlive the
+	// conversation that owned it.
+	final.stopTalkHotkey()
+	app.stopTalkHotkey()
 
 	// Stop the in-flight turn, drain it, then tear the pipeline down — the
 	// same order app.Run's defer chain guarantees on the non-TTY path.

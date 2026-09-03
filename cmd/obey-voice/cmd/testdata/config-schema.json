@@ -151,6 +151,53 @@
       "editable": true
     },
     {
+      "key": "talk_hotkey",
+      "type": "string",
+      "default": "alt+space",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Talk hotkey combo",
+      "help": "Modifiers plus a key, like alt+space or ctrl+alt+t. Needs at least one of ctrl, alt or cmd, or a bare function key.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "TALK_HOTKEY",
+      "editable": true
+    },
+    {
+      "key": "talk_hotkey_enabled",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Talk hotkey",
+      "help": "Lets a system-wide key start and end a spoken turn from any app on macOS. Ctrl+G stays the mute.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "TALK_HOTKEY_ENABLED",
+      "editable": true
+    },
+    {
+      "key": "talk_hotkey_mode",
+      "type": "enum",
+      "default": "hold",
+      "enum": [
+        "hold",
+        "toggle",
+        "automatic"
+      ],
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Talk hotkey mode",
+      "help": "hold = press to talk, release to send; toggle = tap to start, tap to send; automatic = tap toggles, holding longer than 300 ms is a hold.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "TALK_HOTKEY_MODE",
+      "editable": true
+    },
+    {
       "key": "tts_lan_strict",
       "type": "bool",
       "default": false,
