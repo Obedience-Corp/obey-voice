@@ -23,6 +23,22 @@ func TestProvidersIncludesGrok(t *testing.T) {
 	}
 }
 
+func TestProvidersIncludesCursor(t *testing.T) {
+	var spec ProviderSpec
+	for _, p := range Providers() {
+		if p.Name == "cursor" {
+			spec = p
+			break
+		}
+	}
+	if spec.Name != "cursor" {
+		t.Fatalf("Providers() missing cursor provider, got %+v", Providers())
+	}
+	if spec.Description == "" {
+		t.Error("cursor provider spec has empty description")
+	}
+}
+
 func TestNewProviderRejectsUnsupportedProvider(t *testing.T) {
 	cfg := &config.Config{BrainProvider: "not-real"}
 
@@ -58,9 +74,10 @@ func TestNewBatchProviderAcceptsImplementedProviders(t *testing.T) {
 		"cannot connect to ollama",    // no local server in CI
 		"not found in ollama",         // server up, model not pulled
 		"claude CLI not found",
+		"cursor-agent CLI not found",
 		"grok CLI not found",
 	}
-	for _, provider := range []string{"", "ollama", "claude", "grok"} {
+	for _, provider := range []string{"", "ollama", "claude", "cursor", "grok"} {
 		cfg := &config.Config{BrainProvider: provider}
 
 		_, err := NewBatchProvider(cfg)

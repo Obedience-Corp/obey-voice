@@ -28,6 +28,7 @@ func TestConfiguredWorkDirReachesGroundingBlock(t *testing.T) {
 		got  string
 	}{
 		{"claude", (&Brain{cfg: cfg}).assembleSystem("PERSONA")},
+		{"cursor", (&CursorBrain{cfg: cfg}).assembleSystem("PERSONA")},
 		{"grok", (&GrokBrain{cfg: cfg}).assembleSystem("PERSONA")},
 	}
 	for _, tt := range tests {
@@ -46,6 +47,7 @@ func TestConfiguredWorkDirReachesProviderSubprocess(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{WorkDir: dir}
 	grokOpts := (&GrokBrain{cfg: cfg}).runOptions(grok.PlainOutput, true)
+	cursorOpts := (&CursorBrain{cfg: cfg}).askOptions(true)
 
 	tests := []struct {
 		name string
@@ -55,6 +57,10 @@ func TestConfiguredWorkDirReachesProviderSubprocess(t *testing.T) {
 		{
 			name: "claude",
 			got:  (&Brain{cfg: cfg}).runOptions(claude.StreamJSONOutput, true).WorkingDirectory,
+		},
+		{
+			name: "cursor",
+			got:  cursorOpts.WorkingDirectory,
 		},
 		{
 			name: "grok",

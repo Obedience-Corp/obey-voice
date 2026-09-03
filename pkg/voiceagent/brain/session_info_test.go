@@ -36,6 +36,17 @@ func TestSessionInfoPerProvider(t *testing.T) {
 			want: SessionState{Kind: "harness", Turns: 1},
 		},
 		{
+			name: "cursor harness with live session",
+			provider: func() *CursorBrain {
+				b := newTestCursorBrain(&fakeCursorClient{})
+				b.sessionID = "csess-12345678"
+				b.promptTokens = 99
+				b.history = []Turn{{Role: "user", Content: "hi"}}
+				return b
+			}(),
+			want: SessionState{Kind: "harness", ID: "csess-12345678", PromptTokens: 99, Turns: 1},
+		},
+		{
 			name: "ollama chat estimates next request",
 			provider: &OllamaBrain{
 				fullSystemPrompt: "0123",

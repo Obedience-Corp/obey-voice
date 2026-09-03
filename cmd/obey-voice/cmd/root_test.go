@@ -40,6 +40,8 @@ func TestModelName(t *testing.T) {
 		{"claude", config.Config{BrainProvider: "claude"}, "claude"},
 		{"grok with model", config.Config{BrainProvider: "grok", GrokModel: "grok-4"}, "grok-4"},
 		{"grok default", config.Config{BrainProvider: "grok"}, "grok"},
+		{"cursor with model", config.Config{BrainProvider: "cursor", CursorModel: "composer-2.5"}, "composer-2.5"},
+		{"cursor default", config.Config{BrainProvider: "cursor"}, "cursor"},
 		{"ollama", config.Config{BrainProvider: "ollama", OllamaModel: "llama3"}, "llama3"},
 	}
 	for _, tt := range tests {

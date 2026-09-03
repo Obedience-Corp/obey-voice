@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 	"github.com/ollama/ollama/api"
@@ -195,6 +196,53 @@ func (g *grokBatch) Transform(ctx context.Context, req BatchRequest) (BatchResul
 		return BatchResult{}, fmt.Errorf("grok batch: empty response from model %s", modelIDOrDefault(g.model))
 	}
 	return BatchResult{Text: text, Provider: "grok", Model: modelIDOrDefault(g.model)}, nil
+}
+
+// cursorPromptRunner is the slice of the cursor-agent client the batch adapter needs.
+type cursorPromptRunner interface {
+	AskCtx(ctx context.Context, prompt string, opts *cursor.AskOptions) (*cursor.AskResult, error)
+}
+
+// cursorBatch adapts the cursor-agent CLI client to BatchProvider.
+type cursorBatch struct {
+	runner cursorPromptRunner
+	model  string
+}
+
+func newCursorBatch(cfg *config.Config) (*cursorBatch, error) {
+	b, err := NewCursor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &cursorBatch{runner: b.client, model: cfg.CursorModel}, nil
+}
+
+func (c *cursorBatch) Transform(ctx context.Context, req BatchRequest) (BatchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return BatchResult{}, err
+	}
+
+	opts := &cursor.AskOptions{
+		// Batch is a pure text transform: ask mode refuses edits, and Trust
+		// avoids a workspace-trust prompt stalling a headless call.
+		Mode:  cursor.ModeAsk,
+		Trust: true,
+		Model: c.model,
+	}
+
+	result, err := c.runner.AskCtx(ctx, AssembleBatchPrompt(req), opts)
+	if err != nil {
+		return BatchResult{}, fmt.Errorf("cursor batch: %w", err)
+	}
+	if result == nil {
+		return BatchResult{}, fmt.Errorf("cursor batch: empty result from model %s", modelIDOrDefault(c.model))
+	}
+
+	text := strings.TrimSpace(result.Result)
+	if text == "" {
+		return BatchResult{}, fmt.Errorf("cursor batch: empty response from model %s", modelIDOrDefault(c.model))
+	}
+	return BatchResult{Text: text, Provider: "cursor", Model: modelIDOrDefault(c.model)}, nil
 }
 
 // claudePromptRunner is the slice of the claude client the batch adapter needs.

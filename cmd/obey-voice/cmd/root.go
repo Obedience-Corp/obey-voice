@@ -167,6 +167,11 @@ func modelName(cfg *config.Config) string {
 			return cfg.GrokModel
 		}
 		return "grok"
+	case "cursor":
+		if cfg.CursorModel != "" {
+			return cfg.CursorModel
+		}
+		return "cursor"
 	default:
 		return cfg.OllamaModel
 	}

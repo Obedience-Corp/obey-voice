@@ -26,6 +26,7 @@ const (
 const (
 	providerOllama = "ollama"
 	providerClaude = "claude"
+	providerCursor = "cursor"
 	providerGrok   = "grok"
 )
 
@@ -59,12 +60,12 @@ func SystemPromptPolicy(provider string, cfg *config.Config) []PromptElement {
 
 // SkillMenuApplies reports whether a provider receives samantha's skills menu.
 //
-// **Deliberate asymmetry, not an oversight.** Claude and Grok run their own tool
-// and skill routing; injecting samantha's progressive-disclosure catalog into
-// their system prompt would duplicate a surface they already have, compete with
-// their native tool selection, and spend system-prompt budget on instructions
-// the model has a better mechanism for. Ollama has no such surface, so the menu
-// is how skills reach it at all.
+// **Deliberate asymmetry, not an oversight.** Claude, Cursor, and Grok run their
+// own tool and skill routing; injecting samantha's progressive-disclosure
+// catalog into their system prompt would duplicate a surface they already have,
+// compete with their native tool selection, and spend system-prompt budget on
+// instructions the model has a better mechanism for. Ollama has no such
+// surface, so the menu is how skills reach it at all.
 //
 // If ollama's routing is ever replaced by native tool-calling, revisit this.
 func SkillMenuApplies(provider string) bool {
@@ -117,9 +118,9 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 				b.WriteString(sc)
 			}
 		case ElemTurn:
-			// Claude and Grok append the turn instruction to the user message
-			// instead, so that the meta-turn override (OmitTurnInstruction) can
-			// drop it per turn without rebuilding the system prompt.
+			// Claude, Cursor, and Grok append the turn instruction to the user
+			// message instead, so that the meta-turn override (OmitTurnInstruction)
+			// can drop it per turn without rebuilding the system prompt.
 			if TurnGoesInSystemPrompt(in.Provider) && strings.TrimSpace(in.Turn) != "" {
 				b.WriteString("\n\n")
 				b.WriteString(in.Turn)
@@ -132,10 +133,10 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 // TurnGoesInSystemPrompt reports where the turn instruction is placed.
 //
 // Ollama rebuilds its system prompt per turn anyway, so the instruction rides
-// there. Claude and Grok send a persistent system prompt and a fresh user
-// message each turn, so appending it to the message is what lets a meta turn
-// (/compact's summarize) drop it without disturbing the cached system prompt.
-// Either way the model sees it — that is what the policy guarantees.
+// there. Claude, Cursor, and Grok send a persistent system prompt and a fresh
+// user message each turn, so appending it to the message is what lets a meta
+// turn (/compact's summarize) drop it without disturbing the cached system
+// prompt. Either way the model sees it — that is what the policy guarantees.
 func TurnGoesInSystemPrompt(provider string) bool {
 	return normalizeProvider(provider) == providerOllama
 }

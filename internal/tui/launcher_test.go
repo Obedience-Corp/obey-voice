@@ -31,6 +31,11 @@ func TestLauncherDisplaysConfiguredBrainModel(t *testing.T) {
 			want: "model grok-build",
 		},
 		{
+			name: "cursor",
+			cfg:  &config.Config{BrainProvider: "cursor", CursorModel: "composer-2.5", TTSVoice: "af_heart"},
+			want: "model composer-2.5",
+		},
+		{
 			name: "default",
 			cfg:  &config.Config{BrainProvider: "claude", TTSVoice: "af_heart"},
 			want: "model default",

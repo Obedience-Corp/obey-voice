@@ -427,13 +427,14 @@
       "default": "ollama",
       "enum": [
         "claude",
+        "cursor",
         "grok",
         "ollama"
       ],
       "allows_empty": false,
       "group": "brain",
       "title": "Model provider",
-      "help": "Who answers. Ollama runs on this Mac; Claude and Grok call out to their CLIs.",
+      "help": "Who answers. Ollama runs on this Mac; Claude, Cursor, and Grok call out to their CLIs.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,
@@ -485,6 +486,20 @@
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "cursor_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Cursor model",
+      "help": "The model cursor-agent is asked for. Empty uses the CLI's own default.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "CURSOR_MODEL",
       "editable": true
     },
     {

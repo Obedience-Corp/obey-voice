@@ -49,6 +49,15 @@ func TestLoadHistoryNormalizesRoles(t *testing.T) {
 			want: promptWant,
 		},
 		{
+			name: "cursor maps assistant to samantha and drops tool results",
+			load: func(turns []Turn) []Turn {
+				b := &CursorBrain{}
+				b.LoadHistory(turns)
+				return b.History()
+			},
+			want: promptWant,
+		},
+		{
 			name: "ollama maps samantha to assistant and keeps tool results",
 			load: func(turns []Turn) []Turn {
 				o := &OllamaBrain{}

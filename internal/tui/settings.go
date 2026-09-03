@@ -365,6 +365,10 @@ func (m settingsModel) activeModel() string {
 		if m.cfg.GrokModel != "" {
 			return m.cfg.GrokModel
 		}
+	case "cursor":
+		if m.cfg.CursorModel != "" {
+			return m.cfg.CursorModel
+		}
 	}
 	return "default"
 }
@@ -641,6 +645,8 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 				field, key = &m.cfg.OllamaModel, "ollama_model"
 			case "grok":
 				field, key = &m.cfg.GrokModel, "grok_model"
+			case "cursor":
+				field, key = &m.cfg.CursorModel, "cursor_model"
 			}
 			if field != nil {
 				if err := config.SetAndSave(key, model); err != nil {

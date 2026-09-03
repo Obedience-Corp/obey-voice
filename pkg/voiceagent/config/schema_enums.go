@@ -36,7 +36,7 @@ func kokoroVoiceEnum() []string {
 }
 
 // brainProviderEnum mirrors brain.Providers().
-func brainProviderEnum() []string { return []string{"claude", "grok", "ollama"} }
+func brainProviderEnum() []string { return []string{"claude", "cursor", "grok", "ollama"} }
 
 // ollamaThinkEnum mirrors the canonical values brain's think-level parser
 // accepts. The parser also takes off/0/no and on/1/yes as aliases; those are

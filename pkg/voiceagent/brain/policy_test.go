@@ -27,7 +27,7 @@ func TestSystemPromptPolicyIsIdenticalAcrossProviders(t *testing.T) {
 	// Everything except the documented provider-adaptive element.
 	shared := []PromptElement{ElemPersona, ElemEnvironment, ElemTurn}
 
-	for _, provider := range []string{providerOllama, providerClaude, providerGrok} {
+	for _, provider := range []string{providerOllama, providerClaude, providerCursor, providerGrok} {
 		got := SystemPromptPolicy(provider, cfg)
 
 		var universal []PromptElement
@@ -55,7 +55,7 @@ func TestSkillsMenuIsDeliberatelyOllamaOnly(t *testing.T) {
 			"so the menu is how skills reach it at all")
 	}
 
-	for _, provider := range []string{providerClaude, providerGrok} {
+	for _, provider := range []string{providerClaude, providerCursor, providerGrok} {
 		if slices.Contains(SystemPromptPolicy(provider, cfg), ElemSkills) {
 			t.Errorf("provider %q must NOT receive samantha's skills menu.\n"+
 				"This asymmetry is deliberate (not an oversight): %s runs its own tool "+
@@ -75,7 +75,7 @@ func TestSkillMenuAppliesExportedForCLI(t *testing.T) {
 	if !SkillMenuApplies(providerOllama) {
 		t.Error("SkillMenuApplies(ollama) = false, want true")
 	}
-	for _, provider := range []string{providerClaude, providerGrok, "unknown"} {
+	for _, provider := range []string{providerClaude, providerCursor, providerGrok, "unknown"} {
 		if SkillMenuApplies(provider) {
 			t.Errorf("SkillMenuApplies(%q) = true, want false", provider)
 		}
@@ -88,7 +88,7 @@ func TestEnvironmentContextCanBeDisabledUniformly(t *testing.T) {
 	cfg := policyCfg()
 	cfg.EnvironmentContextEnabled = false
 
-	for _, provider := range []string{providerOllama, providerClaude, providerGrok} {
+	for _, provider := range []string{providerOllama, providerClaude, providerCursor, providerGrok} {
 		if slices.Contains(SystemPromptPolicy(provider, cfg), ElemEnvironment) {
 			t.Errorf("provider %q still includes environment grounding when disabled", provider)
 		}
@@ -144,7 +144,7 @@ func TestAssembledPromptFollowsPolicyOrder(t *testing.T) {
 func TestTurnInstructionPlacementIsProviderSpecific(t *testing.T) {
 	cfg := policyCfg()
 
-	for _, provider := range []string{providerClaude, providerGrok} {
+	for _, provider := range []string{providerClaude, providerCursor, providerGrok} {
 		got := AssembleSystemPrompt(SystemPromptInput{
 			Provider: provider,
 			Persona:  "PERSONA_MARKER",

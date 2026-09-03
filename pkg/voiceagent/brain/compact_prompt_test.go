@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 
@@ -80,6 +81,31 @@ func TestOmitTurnInstructionDropsVoiceFramingFromPrompt(t *testing.T) {
 			t.Fatalf("ThinkFull() error = %v", err)
 		}
 		if got := fake.runPrompts[1]; !strings.Contains(got, g.turnInstruction) {
+			t.Fatalf("normal turn lost the turn instruction:\n%s", got)
+		}
+	})
+
+	t.Run("cursor", func(t *testing.T) {
+		fake := &fakeCursorClient{
+			results: []*cursor.AskResult{{Result: "a summary"}, {Result: "a summary"}},
+		}
+		b := newTestCursorBrain(fake)
+		b.LoadHistory(seededHistory())
+
+		if _, err := b.ThinkFull(t.Context(), compactPrompt, StreamOptions{OmitTurnInstruction: true}); err != nil {
+			t.Fatalf("ThinkFull() error = %v", err)
+		}
+		if got := fake.prompts[0]; strings.Contains(got, b.turnInstruction) {
+			t.Fatalf("compact prompt still carries the turn instruction %q:\n%s", b.turnInstruction, got)
+		}
+		if got := fake.prompts[0]; !strings.HasSuffix(got, compactPrompt) {
+			t.Fatalf("compact instruction must be the model's last word:\n%s", got)
+		}
+
+		if _, err := b.ThinkFull(t.Context(), "how are you", StreamOptions{}); err != nil {
+			t.Fatalf("ThinkFull() error = %v", err)
+		}
+		if got := fake.prompts[1]; !strings.Contains(got, b.turnInstruction) {
 			t.Fatalf("normal turn lost the turn instruction:\n%s", got)
 		}
 	})

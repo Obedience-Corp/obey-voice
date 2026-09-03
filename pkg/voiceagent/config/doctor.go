@@ -47,9 +47,9 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	if provider := strings.ToLower(strings.TrimSpace(cfg.BrainProvider)); provider == "" || provider == "ollama" {
 		if cfg.OllamaNumCtx == 0 {
 			diags = append(diags, Diagnostic{
-				Name:     "ollama-num-ctx",
-				Severity: SeverityWarn,
-				Detail:   "ollama_num_ctx is 0 — Ollama uses the server model default (often 262k), risking high RAM and silent prompt truncation from the top",
+				Name:        "ollama-num-ctx",
+				Severity:    SeverityWarn,
+				Detail:      "ollama_num_ctx is 0 — Ollama uses the server model default (often 262k), risking high RAM and silent prompt truncation from the top",
 				Remediation: "set ollama_num_ctx explicitly (default 8192)",
 			})
 		}
@@ -528,20 +528,24 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 	}
 
 	switch provider {
-	case "claude", "grok":
-		path, err := lookPath(provider)
+	case "claude", "cursor", "grok":
+		cli := provider
+		if provider == "cursor" {
+			cli = "cursor-agent"
+		}
+		path, err := lookPath(cli)
 		if err != nil {
 			return Diagnostic{
 				Name:        "brain-provider",
 				Severity:    SeverityError,
-				Detail:      fmt.Sprintf("%s CLI not found on PATH", provider),
-				Remediation: fmt.Sprintf("install the %s CLI and ensure %q is on PATH, or select another brain_provider", provider, provider),
+				Detail:      fmt.Sprintf("%s CLI not found on PATH", cli),
+				Remediation: fmt.Sprintf("install the %s CLI and ensure %q is on PATH, or select another brain_provider", cli, cli),
 			}
 		}
 		return Diagnostic{
 			Name:     "brain-provider",
 			Severity: SeverityOK,
-			Detail:   fmt.Sprintf("%s CLI (%s)", provider, path),
+			Detail:   fmt.Sprintf("%s CLI (%s)", cli, path),
 		}
 	case "ollama":
 		model := strings.TrimSpace(cfg.OllamaModel)
@@ -573,7 +577,7 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 			Name:        "brain-provider",
 			Severity:    SeverityError,
 			Detail:      fmt.Sprintf("unsupported brain_provider %q", cfg.BrainProvider),
-			Remediation: "set brain_provider to claude, grok, or ollama",
+			Remediation: "set brain_provider to claude, cursor, grok, or ollama",
 		}
 	}
 }

@@ -75,6 +75,15 @@ func TestOverriddenKeysMatchesApply(t *testing.T) {
 			want: []string{"active_persona", "brain_provider", "grok_model"},
 		},
 		{
+			name: "cursor model routes to cursor_model",
+			cfg:  appConfig,
+			profile: &Profile{
+				ID:    "ada",
+				Brain: Brain{Provider: "cursor", Model: "composer-2.5"},
+			},
+			want: []string{"active_persona", "brain_provider", "cursor_model"},
+		},
+		{
 			name: "model with no provider follows the config's provider",
 			cfg:  appConfig,
 			profile: &Profile{

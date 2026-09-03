@@ -15,7 +15,7 @@ func TestDiscoverProvidersIncludesAllBackends(t *testing.T) {
 		found[p.Name] = true
 	}
 
-	for _, name := range []string{"claude", "grok", "ollama"} {
+	for _, name := range []string{"claude", "cursor", "grok", "ollama"} {
 		if !found[name] {
 			t.Errorf("DiscoverProviders() missing %q provider; got %v", name, found)
 		}

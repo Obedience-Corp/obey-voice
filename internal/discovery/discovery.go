@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 	"github.com/ollama/ollama/api"
 
@@ -37,6 +38,7 @@ func DiscoverProviders(cfg *config.Config) []ProviderInfo {
 func DiscoverProvidersContext(ctx context.Context, cfg *config.Config) []ProviderInfo {
 	return []ProviderInfo{
 		discoverClaude(),
+		discoverCursor(ctx),
 		discoverGrok(ctx),
 		discoverOllama(ctx, cfg),
 	}
@@ -49,6 +51,33 @@ func discoverClaude() ProviderInfo {
 		Available: err == nil,
 		Models:    []string{"default"},
 	}
+}
+
+func discoverCursor(parent context.Context) ProviderInfo {
+	info := ProviderInfo{Name: "cursor"}
+
+	binPath, err := cursor.LocateBinary()
+	if err != nil {
+		return info
+	}
+	info.Available = true
+
+	ctx, cancel := context.WithTimeout(parent, probeTimeout)
+	defer cancel()
+
+	models, err := cursor.NewClient(binPath).Models(ctx)
+	if err != nil {
+		info.Models = []string{"default"}
+		return info
+	}
+	for _, mod := range models {
+		info.Models = append(info.Models, mod.ID)
+	}
+	if len(info.Models) == 0 {
+		info.Models = []string{"default"}
+	}
+
+	return info
 }
 
 func discoverGrok(parent context.Context) ProviderInfo {

@@ -375,6 +375,8 @@ func applyBrain(cfg *config.Config, b Brain) {
 		cfg.OllamaModel = model
 	case "grok":
 		cfg.GrokModel = model
+	case "cursor":
+		cfg.CursorModel = model
 		// claude has no app-level model key today; a persona model for it is
 		// recorded on the profile but not routed.
 	}
@@ -398,6 +400,8 @@ func modelForProvider(cfg *config.Config, provider string) string {
 		return strings.TrimSpace(cfg.OllamaModel)
 	case "grok":
 		return strings.TrimSpace(cfg.GrokModel)
+	case "cursor":
+		return strings.TrimSpace(cfg.CursorModel)
 	default:
 		return ""
 	}

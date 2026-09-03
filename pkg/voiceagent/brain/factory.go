@@ -15,6 +15,7 @@ type ProviderSpec struct {
 
 var providerSpecs = []ProviderSpec{
 	{Name: "claude", Description: "Claude CLI"},
+	{Name: "cursor", Description: "Cursor Agent CLI"},
 	{Name: "grok", Description: "Grok CLI"},
 	{Name: "ollama", Description: "Local Ollama server"},
 }
@@ -33,6 +34,8 @@ func NewProvider(cfg *config.Config) (Provider, error) {
 		return NewOllama(cfg)
 	case "claude":
 		return New(cfg)
+	case "cursor":
+		return NewCursor(cfg)
 	case "grok":
 		return NewGrok(cfg)
 	default:
@@ -42,6 +45,7 @@ func NewProvider(cfg *config.Config) (Provider, error) {
 
 var batchProviderSpecs = []ProviderSpec{
 	{Name: "claude", Description: "Claude CLI"},
+	{Name: "cursor", Description: "Cursor Agent CLI"},
 	{Name: "grok", Description: "Grok CLI"},
 	{Name: "ollama", Description: "Local Ollama server"},
 }
@@ -55,6 +59,8 @@ func NewBatchProvider(cfg *config.Config) (BatchProvider, error) {
 		return newOllamaBatch(cfg)
 	case "claude":
 		return newClaudeBatch(cfg)
+	case "cursor":
+		return newCursorBatch(cfg)
 	case "grok":
 		return newGrokBatch(cfg)
 	default:
