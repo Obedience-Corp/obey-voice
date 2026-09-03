@@ -190,7 +190,7 @@ func TestDiagnoseBrainProvider(t *testing.T) {
 			lookPath:        okLookPath,
 			wantSeverity:    SeverityError,
 			wantDetail:      "unsupported brain_provider",
-			wantRemediation: "claude, cursor, grok, or ollama",
+			wantRemediation: "set brain_provider to",
 		},
 	}
 

@@ -334,3 +334,13 @@ func (c *CursorBrain) LoadHistory(turns []Turn) {
 	c.history = normalizePromptHistory(turns)
 	c.dropSession()
 }
+
+func init() {
+	register(config.BrainProviderSpec{
+		Name: "cursor", Description: "Cursor Agent CLI", CLIBinary: "cursor-agent",
+	}, func(cfg *config.Config) (Provider, error) {
+		return NewCursor(cfg)
+	}, func(cfg *config.Config) (BatchProvider, error) {
+		return newCursorBatch(cfg)
+	})
+}

@@ -10,9 +10,11 @@ import (
 // import graph allows it, so a new provider or preset cannot appear in samantha
 // and be invisible to a front end.
 //
-// config sits below tts, brain and calibre in the import graph, so those four
-// enums are literal here and TestSchemaEnumsMatchOwningPackages (an external
-// test, which may import them) fails the build when they drift.
+// config sits below tts and calibre in the import graph, so those enums are
+// literal here and TestSchemaEnumsMatchOwningPackages (an external test, which
+// may import them) fails the build when they drift. Brain providers register
+// themselves (see RegisterBrainProvider) so the schema does not keep a
+// parallel name list.
 
 // ttsProviderEnum mirrors tts.Providers().
 func ttsProviderEnum() []string { return []string{"kokoro", "qwen3-tts", "audio8"} }
@@ -34,9 +36,6 @@ func kokoroVoiceEnum() []string {
 		"bm_daniel", "bm_fable", "bm_george", "bm_lewis",
 	}
 }
-
-// brainProviderEnum mirrors brain.Providers().
-func brainProviderEnum() []string { return []string{"claude", "cursor", "grok", "ollama"} }
 
 // ollamaThinkEnum mirrors the canonical values brain's think-level parser
 // accepts. The parser also takes off/0/no and on/1/yes as aliases; those are

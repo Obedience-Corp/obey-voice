@@ -383,3 +383,13 @@ func (g *GrokBrain) LoadHistory(turns []Turn) {
 	g.history = normalizePromptHistory(turns)
 	g.dropSession()
 }
+
+func init() {
+	register(config.BrainProviderSpec{
+		Name: "grok", Description: "Grok CLI", CLIBinary: "grok",
+	}, func(cfg *config.Config) (Provider, error) {
+		return NewGrok(cfg)
+	}, func(cfg *config.Config) (BatchProvider, error) {
+		return newGrokBatch(cfg)
+	})
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 	"github.com/ollama/ollama/api"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -36,11 +37,26 @@ func DiscoverProviders(cfg *config.Config) []ProviderInfo {
 // scan when the form closes. Providers are always reported (a failed probe is
 // an unavailable provider, not a missing row).
 func DiscoverProvidersContext(ctx context.Context, cfg *config.Config) []ProviderInfo {
-	return []ProviderInfo{
-		discoverClaude(),
-		discoverCursor(ctx),
-		discoverGrok(ctx),
-		discoverOllama(ctx, cfg),
+	specs := brain.Providers()
+	out := make([]ProviderInfo, 0, len(specs))
+	for _, spec := range specs {
+		out = append(out, probeProvider(ctx, cfg, spec.Name))
+	}
+	return out
+}
+
+func probeProvider(ctx context.Context, cfg *config.Config, name string) ProviderInfo {
+	switch name {
+	case "claude":
+		return discoverClaude()
+	case "cursor":
+		return discoverCursor(ctx)
+	case "grok":
+		return discoverGrok(ctx)
+	case "ollama":
+		return discoverOllama(ctx, cfg)
+	default:
+		return ProviderInfo{Name: name}
 	}
 }
 

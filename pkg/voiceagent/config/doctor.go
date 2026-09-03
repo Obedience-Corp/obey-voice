@@ -527,26 +527,24 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 		provider = "ollama"
 	}
 
-	switch provider {
-	case "claude", "cursor", "grok":
-		cli := provider
-		if provider == "cursor" {
-			cli = "cursor-agent"
-		}
-		path, err := lookPath(cli)
+	if spec, ok := lookupBrainProvider(provider); ok && spec.CLIBinary != "" {
+		path, err := lookPath(spec.CLIBinary)
 		if err != nil {
 			return Diagnostic{
 				Name:        "brain-provider",
 				Severity:    SeverityError,
-				Detail:      fmt.Sprintf("%s CLI not found on PATH", cli),
-				Remediation: fmt.Sprintf("install the %s CLI and ensure %q is on PATH, or select another brain_provider", cli, cli),
+				Detail:      fmt.Sprintf("%s CLI not found on PATH", spec.CLIBinary),
+				Remediation: fmt.Sprintf("install the %s CLI and ensure %q is on PATH, or select another brain_provider", spec.CLIBinary, spec.CLIBinary),
 			}
 		}
 		return Diagnostic{
 			Name:     "brain-provider",
 			Severity: SeverityOK,
-			Detail:   fmt.Sprintf("%s CLI (%s)", cli, path),
+			Detail:   fmt.Sprintf("%s CLI (%s)", spec.CLIBinary, path),
 		}
+	}
+
+	switch provider {
 	case "ollama":
 		model := strings.TrimSpace(cfg.OllamaModel)
 		if model == "" {
@@ -577,7 +575,7 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 			Name:        "brain-provider",
 			Severity:    SeverityError,
 			Detail:      fmt.Sprintf("unsupported brain_provider %q", cfg.BrainProvider),
-			Remediation: "set brain_provider to claude, cursor, grok, or ollama",
+			Remediation: "set brain_provider to " + joinEnglish(brainProviderEnum(), "or"),
 		}
 	}
 }

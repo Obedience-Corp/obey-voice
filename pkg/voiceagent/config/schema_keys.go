@@ -142,7 +142,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "brain_provider", Type: TypeEnum, Default: "ollama", Enum: brainProviderEnum(),
 			Group: GroupBrain, Title: "Model provider",
-			Help:               "Who answers. Ollama runs on this Mac; Claude, Cursor, and Grok call out to their CLIs.",
+			Help:               brainProviderHelp(),
 			PersonaOverridable: true,
 		},
 		{

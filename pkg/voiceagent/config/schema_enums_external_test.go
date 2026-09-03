@@ -22,6 +22,9 @@ func TestSchemaEnumsMatchOwningPackages(t *testing.T) {
 	for _, spec := range brain.Providers() {
 		brainProviders = append(brainProviders, spec.Name)
 	}
+	if len(brainProviders) == 0 {
+		t.Fatal("brain.Providers() is empty; the schema enum has nothing to track")
+	}
 	ttsProviders := make([]string, 0, 2)
 	for _, spec := range tts.Providers() {
 		ttsProviders = append(ttsProviders, spec.Name)

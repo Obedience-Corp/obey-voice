@@ -1201,3 +1201,13 @@ func sanitizeOllamaHistory(in []api.Message) []api.Message {
 	in = in[i:]
 	return in
 }
+
+func init() {
+	register(config.BrainProviderSpec{
+		Name: "ollama", Description: "Local Ollama server",
+	}, func(cfg *config.Config) (Provider, error) {
+		return NewOllama(cfg)
+	}, func(cfg *config.Config) (BatchProvider, error) {
+		return newOllamaBatch(cfg)
+	})
+}
