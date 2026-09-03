@@ -380,7 +380,9 @@ func GenerateFingerprint(doc *Document, cast []CastRuntime) string {
 
 // briefingFor is the one user message both brains read before any line. It
 // names both characters, so the bytes are identical for each, and leans on the
-// persona system prompt for who "you" is.
+// persona system prompt for who "you" is. The first-person rule is spelled out
+// because the first recorded clip had a persona narrate its own actions in the
+// third person; a line that reads as prose is not a line a mouth can speak.
 func briefingFor(doc *Document, cast []CastRuntime) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are performing a short spoken scene titled %s.\n", cmp.Or(doc.Title, doc.ID))
@@ -393,6 +395,8 @@ func briefingFor(doc *Document, cast []CastRuntime) string {
 	}
 	fmt.Fprintf(&b, "Cast: %s. Stay in your own character.\n", strings.Join(names, " and "))
 	b.WriteString("You are talking to the other character, not to a user or an operator.\n")
+	b.WriteString("Each reply is only your own next spoken line, in the first person, as if said aloud.\n")
+	b.WriteString("Do not narrate what your character does, do not write the other character's words, and do not describe the scene.\n")
 	b.WriteString("Reply with spoken dialogue only: no markdown, no stage directions, no tool calls.")
 	if doc.Scene != nil && len(doc.Scene.Beats) > 0 {
 		b.WriteString("\nBeats:")
