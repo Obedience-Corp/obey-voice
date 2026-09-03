@@ -240,7 +240,7 @@ func TestSceneResolveAlternatesFromTheOpener(t *testing.T) {
 	if briefing.Role != "user" || !sameTurn(uncle.loaded[0][0], "user", briefing.Content) {
 		t.Fatalf("the two brains were not seeded with the same user briefing:\n%v\n%v", sam.loaded[0][0], uncle.loaded[0][0])
 	}
-	for _, want := range []string{"Coffee counter", "A coffee counter, morning rush.", "Samantha and Uncle Fu", "- Uncle dodges why he is late.", "no tool calls"} {
+	for _, want := range []string{"Coffee counter", "A coffee counter, morning rush.", "Samantha and Uncle Fu", "- Uncle dodges why he is late.", "no tool calls", "only your own next spoken line, in the first person", "do not write the other character's words"} {
 		if !strings.Contains(briefing.Content, want) {
 			t.Errorf("briefing lacks %q:\n%s", want, briefing.Content)
 		}
