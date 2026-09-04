@@ -138,6 +138,38 @@ prompt attribution, and they win over the Settings name for that chat. They do
 not change the embedding manager’s stable `speaker-N` ids. The model cannot
 rename speakers; only this command does.
 
+### Register your voice
+
+**Settings → Speakers → Register your voice** records three short clips on the
+conversation’s own microphone — the same capture graph live analysis listens
+to — and stores a voiceprint under **Your name**. The microphone is live during
+the recording even though entering Settings mutes the conversation; `Esc`
+cancels and nothing is saved. Registering while a chat is open takes effect
+immediately: the running engine is seeded, so the next turn that matches is
+labelled with the name instead of `speaker-1`. The first registered profile is
+the machine’s **owner** — the one Settings calls “your voice”, the profile
+**Re-enroll your voice** replaces in place and **Remove your voice** deletes
+(chat falls back to `speaker-1` until you register again; a conversation already
+running keeps the old voice until it restarts). The flag picks that subject, not
+an access level: `speaker.live.mode=owner_verify` and
+`barge_in_speakers=enrolled_only` accept any enrolled profile, including guests
+enrolled from the CLI.
+
+Changing `speaker.live.window_ms` restamps the enrollment recipe: embeddings
+recorded at the old window are no longer comparable, so the row says
+*(re-enroll to refresh)*, `obey-voice speaker list` marks the profile, and live
+seeding skips it until it is recorded again.
+
+The same store is used by the CLI, so a clip recorded elsewhere works too:
+
+```bash
+obey-voice speaker enroll --name Lance --from-wav clip.wav
+obey-voice speaker list     # * marks the owner
+obey-voice speaker remove Lance
+```
+
+`obey-voice doctor` warns when chat labels are on and no voice is registered.
+
 The meetings directory contains one visible item per recording:
 
 ```text

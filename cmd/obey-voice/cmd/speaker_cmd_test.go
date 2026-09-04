@@ -234,3 +234,61 @@ func TestSpeakerRenameRequiresTwoArgs(t *testing.T) {
 		t.Fatal("rename with one arg must fail")
 	}
 }
+
+// TestSpeakerListSurfacesTheOwner: the Mac app reads the JSON flag and a human
+// reads the marker, so both have to say which profile owns the machine.
+func TestSpeakerListSurfacesTheOwner(t *testing.T) {
+	dir := t.TempDir()
+	store, err := speaker.OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := speaker.ExpectedLiveRev(speaker.Config{}.Normalize())
+	if _, err := store.Add(context.Background(), "Lance", rev, [][]float32{{1, 2}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Add(context.Background(), "Alex", rev, [][]float32{{3, 4}}); err != nil {
+		t.Fatal(err)
+	}
+
+	runList := func(t *testing.T, args ...string) string {
+		t.Helper()
+		cmd := newSpeakerCmd(speakerTestConfig(dir))
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("speaker %v: %v", args, err)
+		}
+		return out.String()
+	}
+
+	var rows []speakerListRow
+	if err := json.Unmarshal([]byte(runList(t, "list", "--json")), &rows); err != nil {
+		t.Fatalf("decode rows: %v", err)
+	}
+	owners := 0
+	for _, r := range rows {
+		if r.Owner {
+			owners++
+			if r.Name != "Lance" {
+				t.Errorf("owner = %q, want Lance (first enrolled)", r.Name)
+			}
+		}
+	}
+	if owners != 1 {
+		t.Fatalf("%d owners in --json, want exactly 1: %+v", owners, rows)
+	}
+
+	text := runList(t, "list")
+	if !strings.Contains(text, "* Lance") {
+		t.Errorf("text listing does not mark the owner:\n%s", text)
+	}
+	if !strings.Contains(text, "* owner") {
+		t.Errorf("text listing does not explain the marker:\n%s", text)
+	}
+	if strings.Contains(text, "* Alex") {
+		t.Errorf("a guest is marked as owner:\n%s", text)
+	}
+}

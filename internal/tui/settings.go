@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/meeting"
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
@@ -85,6 +86,26 @@ type settingsModel struct {
 	// the Qwen tab opens it today; while it is active it owns every key.
 	edit settingsEditor
 
+	// Voice registration (Speakers → Register your voice). captureFor yields
+	// the conversation's own capture graph when one is running — enrollment
+	// records on the graph live analysis verifies on, never a second mic
+	// pipeline. A nil captureFor means no microphone is reachable from here.
+	captureFor      func() (speaker.CaptureSource, func(), error)
+	enrollmentStore func() (*speaker.Enrollment, error)
+	speakerEngine   func(ctx context.Context) (speaker.Engine, func(), error)
+	liveSeeder      func() LiveSpeakerController
+	// enrollGap is the pause between clips; tests set it to zero.
+	enrollGap time.Duration
+	enroll    enrollSession
+	// enrollAfterName resumes a registration that stopped to ask for a name.
+	enrollAfterName bool
+	// confirmRemoveVoice holds the armed removal's subject ("" = not armed).
+	confirmRemoveVoice string
+	// enrolledOwner caches the store's owner for the row labels, so rendering
+	// the list never reads the filesystem.
+	enrolledOwner   speaker.Profile
+	enrolledOwnerOK bool
+
 	qwenStatus        managedqwen.Status
 	nativeStatus      managedqwen.NativeStatus
 	qwenInstalling    bool
@@ -109,6 +130,7 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 		saveConfig:     config.SetAndSave,
 		ensureQwen:     managedqwen.Ensure,
 	}
+	m.initEnrollSeams(cfg)
 	m.refreshQwenStatus()
 	m.buildProviderItems()
 	m.buildModelItems()
@@ -379,6 +401,13 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		if m.edit.kind != editNone {
 			return m.updateEditor(msg)
 		}
+		// A registration or an armed removal owns every key while it is up.
+		if m.enroll.active {
+			return m.updateEnrollKey(msg)
+		}
+		if m.confirmRemoveVoice != "" {
+			return m.updateRemoveVoiceConfirm(msg)
+		}
 		switch msg.String() {
 		case "tab", "right", "l":
 			m.section = (m.section + 1) % settingsSectionCount
@@ -431,6 +460,9 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			return m, func() tea.Msg { return settingsDoneMsg{} }
 		}
 		m.ensureCursorVisible()
+
+	case enrollProgressMsg, enrollEnrollingMsg, enrollClosedMsg, enrollDoneMsg:
+		return m.updateEnroll(msg)
 
 	case voicePreviewDoneMsg:
 		// Ignore completions from a preview that's already been superseded.

@@ -1,6 +1,21 @@
 package speaker
 
-import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+import (
+	"path/filepath"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+)
+
+// EnrollmentDir resolves the profile store location: the configured directory,
+// else <config>/speakers. Single source of the rule for `speaker enroll`,
+// doctor, and Settings — three call sites that must agree on where a voice
+// registered in one of them is read by the others.
+func EnrollmentDir(cfg *config.Config) string {
+	if cfg != nil && cfg.Speaker.EnrollmentDir != "" {
+		return cfg.Speaker.EnrollmentDir
+	}
+	return filepath.Join(config.ConfigDir(), "speakers")
+}
 
 // FromAppConfig maps config.Speaker into speaker.Config.
 // Kept here for a single mapping site; config mirrors fields to avoid

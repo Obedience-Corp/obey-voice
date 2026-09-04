@@ -221,3 +221,46 @@ func TestDoctorBargeInSpeakersGate(t *testing.T) {
 		}
 	})
 }
+
+// TestSpeakersEnrollmentDiag: doctor stays silent unless live labels are on
+// and nobody is registered — the one state where every turn says speaker-1 and
+// the product never explains why.
+func TestSpeakersEnrollmentDiag(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		live     bool
+		enrolled bool
+		want     bool
+	}{
+		{name: "labels off, nobody enrolled", live: false, enrolled: false, want: false},
+		{name: "labels off, someone enrolled", live: false, enrolled: true, want: false},
+		{name: "labels on, someone enrolled", live: true, enrolled: true, want: false},
+		{name: "labels on, nobody enrolled", live: true, enrolled: false, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := hasEnrolledSpeaker
+			hasEnrolledSpeaker = func(string) bool { return tc.enrolled }
+			t.Cleanup(func() { hasEnrolledSpeaker = orig })
+
+			cfg := &config.Config{}
+			cfg.Speaker.Enabled = tc.live
+			cfg.Speaker.Live.Enabled = tc.live
+			cfg.Speaker.EnrollmentDir = t.TempDir()
+
+			diags := speakersEnrollmentDiags(cfg)
+			if got := len(diags) > 0; got != tc.want {
+				t.Fatalf("diagnostics = %+v, want present=%v", diags, tc.want)
+			}
+			if !tc.want {
+				return
+			}
+			d := diags[0]
+			if d.Name != "speakers-enrollment" || d.Severity != config.SeverityWarn {
+				t.Errorf("diagnostic = %+v, want a speakers-enrollment warning", d)
+			}
+			if !contains(d.Detail, "speaker-1") || !contains(d.Remediation, "Register your voice") {
+				t.Errorf("diagnostic copy does not point at the fix: %+v", d)
+			}
+		})
+	}
+}

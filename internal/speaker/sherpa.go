@@ -150,6 +150,22 @@ func NewSherpaLiveEngine(cfg Config, modelsDir string) (*SherpaEngine, error) {
 	return engine, nil
 }
 
+// NewEmbeddingEngine loads the engine enrollment and live identification need:
+// the embedding-only build first, falling back to the full meeting engine when
+// live-only init fails (an install whose embedding model is only reachable
+// through the diarization pack). Callers that want one specific build still
+// call the constructors directly.
+func NewEmbeddingEngine(cfg Config, modelsDir string) (*SherpaEngine, error) {
+	engine, err := NewSherpaLiveEngine(cfg, modelsDir)
+	if err != nil {
+		engine, err = NewSherpaEngine(cfg, modelsDir)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("speaker: load embedding model: %w", err)
+	}
+	return engine, nil
+}
+
 // ExpectedLiveRev computes the embedding revision string a live engine
 // built from sp would report, without loading the ONNX model — so listing
 // stored profiles for staleness never has to construct a SherpaEngine.
@@ -172,6 +188,11 @@ func (e *SherpaEngine) EmbeddingRev() string {
 // Search resolves the enrolled name before anonymous registration invents a
 // speaker-N for that voice. Callers are responsible for skipping profiles
 // from a different embedding revision (SeedFromStore does).
+//
+// Seeding replaces in place. The manager refuses to add a name it already
+// holds, so a re-enroll of the running session's own voice would otherwise be
+// rejected: the new voiceprint reaches disk and the conversation keeps
+// labelling with the old one.
 func (e *SherpaEngine) SeedEnrolled(name, modelRev string, embeddings [][]float32) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len(embeddings) == 0 {
@@ -182,7 +203,13 @@ func (e *SherpaEngine) SeedEnrolled(name, modelRev string, embeddings [][]float3
 	if e.closed || e.manager == nil {
 		return fmt.Errorf("speaker: seed enrolled %q: live identification unavailable", name)
 	}
+	if e.manager.Contains(name) && !e.manager.Remove(name) {
+		return fmt.Errorf("speaker: seed enrolled %q: manager kept the previous embeddings", name)
+	}
 	if !e.manager.RegisterV(name, embeddings) {
+		// The old rows are gone, so the revision map must not keep claiming a
+		// name the manager can no longer resolve.
+		delete(e.enrolled, strings.ToLower(name))
 		return fmt.Errorf("speaker: seed enrolled %q: manager rejected embeddings", name)
 	}
 	if e.enrolled == nil {

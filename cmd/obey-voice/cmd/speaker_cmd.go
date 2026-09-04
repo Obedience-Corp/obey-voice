@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -34,14 +33,6 @@ and are versioned with the embedding model that produced them.`,
 		newSpeakerRenameCmd(loadConfig),
 	)
 	return cmd
-}
-
-// speakerEnrollmentDir resolves the profile store location.
-func speakerEnrollmentDir(cfg *config.Config) string {
-	if cfg != nil && cfg.Speaker.EnrollmentDir != "" {
-		return cfg.Speaker.EnrollmentDir
-	}
-	return filepath.Join(config.ConfigDir(), "speakers")
 }
 
 func newSpeakerEnrollCmd(loadConfig configLoader) *cobra.Command {
@@ -84,17 +75,13 @@ Record a clip on macOS (16 kHz mono):
 			if err := config.EnsureRuntimeAssets(cmd.Context(), &cfg, config.AssetRequest{NeedSpeaker: true}, speakerAssetProgress(cmd, jsonOut)); err != nil {
 				return err
 			}
-			modelsDir := config.ModelsDirFrom(&cfg)
-			engine, err := speaker.NewSherpaLiveEngine(sp, modelsDir)
+			engine, err := speaker.NewEmbeddingEngine(sp, config.ModelsDirFrom(&cfg))
 			if err != nil {
-				engine, err = speaker.NewSherpaEngine(sp, modelsDir)
-			}
-			if err != nil {
-				return fmt.Errorf("load speaker embedding model: %w", err)
+				return err
 			}
 			defer func() { _ = engine.Close() }()
 
-			store, err := speaker.OpenEnrollment(speakerEnrollmentDir(&cfg))
+			store, err := speaker.OpenEnrollment(speaker.EnrollmentDir(&cfg))
 			if err != nil {
 				return err
 			}
@@ -108,7 +95,11 @@ Record a clip on macOS (16 kHz mono):
 				enc.SetIndent("", "  ")
 				return enc.Encode(profile)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Enrolled %q: %d clip(s), model %s\n", profile.Name, profile.Samples, profile.ModelRev)
+			owner := ""
+			if profile.Owner {
+				owner = ", owner"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Enrolled %q: %d clip(s), model %s%s\n", profile.Name, profile.Samples, profile.ModelRev, owner)
 			fmt.Fprintf(cmd.OutOrStdout(), "  store: %s\n", store.Dir())
 			return nil
 		},
@@ -142,7 +133,7 @@ func newSpeakerListCmd(loadConfig configLoader) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store, err := speaker.OpenEnrollment(speakerEnrollmentDir(cfg))
+			store, err := speaker.OpenEnrollment(speaker.EnrollmentDir(cfg))
 			if err != nil {
 				return err
 			}
@@ -172,14 +163,27 @@ func newSpeakerListCmd(loadConfig configLoader) *cobra.Command {
 			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tCLIPS\tMODEL\tUPDATED")
+			owned := false
 			for _, p := range profiles {
 				marker := ""
 				if p.ModelRev != expectedRev {
 					marker = " (re-enroll to refresh)"
 				}
-				fmt.Fprintf(w, "%s\t%d\t%s\t%s%s\n", p.Name, p.Samples, p.ModelRev, p.UpdatedAt.Local().Format("2006-01-02 15:04"), marker)
+				name := p.Name
+				if p.Owner {
+					name = "* " + name
+					owned = true
+				}
+				fmt.Fprintf(w, "%s\t%d\t%s\t%s%s\n", name, p.Samples, p.ModelRev, p.UpdatedAt.Local().Format("2006-01-02 15:04"), marker)
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
+			if owned {
+				fmt.Fprintln(cmd.OutOrStdout(), "* owner — your voice in Settings → Speakers: the profile Register, Re-enroll and Remove act on.")
+				fmt.Fprintln(cmd.OutOrStdout(), "  Not an access level: owner_verify and barge_in_speakers=enrolled_only accept any enrolled profile.")
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print profiles as JSON")
@@ -199,7 +203,7 @@ func newSpeakerRemoveCmd(loadConfig configLoader) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store, err := speaker.OpenEnrollment(speakerEnrollmentDir(cfg))
+			store, err := speaker.OpenEnrollment(speaker.EnrollmentDir(cfg))
 			if err != nil {
 				return err
 			}
@@ -237,7 +241,7 @@ func newSpeakerRenameCmd(loadConfig configLoader) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store, err := speaker.OpenEnrollment(speakerEnrollmentDir(cfg))
+			store, err := speaker.OpenEnrollment(speaker.EnrollmentDir(cfg))
 			if err != nil {
 				return err
 			}
@@ -269,7 +273,7 @@ func seedEnrolledProfiles(cfg *config.Config, eng speaker.Engine, warn func(stri
 	if warn == nil {
 		warn = func(string) {}
 	}
-	store, err := speaker.LoadEnrollment(speakerEnrollmentDir(cfg))
+	store, err := speaker.LoadEnrollment(speaker.EnrollmentDir(cfg))
 	if err != nil {
 		warn(fmt.Sprintf("speaker enrollment unavailable: %v", err))
 		return

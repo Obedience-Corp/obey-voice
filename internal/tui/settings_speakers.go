@@ -16,6 +16,8 @@ const (
 	speakerRowThreshold
 	speakerRowWindow
 	speakerRowMeeting
+	speakerRowRegister
+	speakerRowRemove
 	speakerRowCount
 )
 
@@ -63,7 +65,30 @@ func (m settingsModel) speakerItems() []string {
 		fmt.Sprintf("Match threshold: %.2f", threshold),
 		fmt.Sprintf("Analysis window: %d ms", window),
 		fmt.Sprintf("Meeting diarization — %s (set in the Meeting tab)", enabledLabel(meetingOn)),
+		m.registerRowLabel(),
+		m.removeRowLabel(),
 	}
+}
+
+// registerRowLabel names the enrollment action for the state the store is in.
+// A stale owner keeps the same wording `speaker list` uses, because it is the
+// same problem: those embeddings no longer match what live analysis produces.
+func (m settingsModel) registerRowLabel() string {
+	if !m.enrolledOwnerOK {
+		return "Register your voice"
+	}
+	label := fmt.Sprintf("Re-enroll your voice — %s", m.enrolledOwner.Name)
+	if m.ownerRevIsStale() {
+		label += " (re-enroll to refresh)"
+	}
+	return label
+}
+
+func (m settingsModel) removeRowLabel() string {
+	if !m.enrolledOwnerOK {
+		return "Remove your voice — (nothing registered)"
+	}
+	return fmt.Sprintf("Remove your voice — %s", m.enrolledOwner.Name)
 }
 
 func (m *settingsModel) selectSpeakerItem() tea.Cmd {
@@ -94,11 +119,21 @@ func (m *settingsModel) selectSpeakerItem() tea.Cmd {
 		m.message = fmt.Sprintf("Analysis window %d ms", next)
 	case speakerRowMeeting:
 		m.message = "Meeting diarization is per-meeting — toggle it in Settings → Meeting"
+	case speakerRowRegister:
+		return m.beginEnroll()
+	case speakerRowRemove:
+		m.beginRemoveVoice()
 	}
 	return nil
 }
 
-func (m *settingsModel) commitUserDisplayName(value string) {
+// commitUserDisplayName saves the typed name. It returns a Cmd because the
+// editor is also the first step of a registration that had no name to use:
+// that flow resumes here, once the name is really saved and non-empty.
+func (m *settingsModel) commitUserDisplayName(value string) tea.Cmd {
+	resume := m.enrollAfterName
+	m.enrollAfterName = false
+
 	saveConfig := m.saveConfig
 	if saveConfig == nil {
 		saveConfig = config.SetAndSave
@@ -106,14 +141,21 @@ func (m *settingsModel) commitUserDisplayName(value string) {
 	value = strings.TrimSpace(value)
 	if err := saveConfig("user_display_name", value); err != nil {
 		m.message = fmt.Sprintf("Failed to save your name: %v", err)
-		return
+		return nil
 	}
 	m.cfg.UserDisplayName = value
 	if value == "" {
 		m.message = "Your name cleared — new conversations show speaker-1 until you enroll or /speakers name"
-		return
+		if resume {
+			m.message = "Registration needs a name — nothing was recorded"
+		}
+		return nil
 	}
 	m.message = fmt.Sprintf("Your name is %s — new conversations use it in place of speaker-1", value)
+	if resume {
+		return m.startEnroll(value)
+	}
+	return nil
 }
 
 // toggleLiveSpeakers flips chat labels. Turning on also turns on the master

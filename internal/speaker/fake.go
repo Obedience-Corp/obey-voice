@@ -48,6 +48,8 @@ func (f *FakeEngine) EmbeddingRev() string {
 }
 
 // SeedEnrolled implements EnrolledSeeder by recording the name and revision.
+// Like the sherpa engine it replaces in place, so a re-enroll of an already
+// seeded name succeeds and leaves one entry rather than being rejected.
 func (f *FakeEngine) SeedEnrolled(name, modelRev string, embeddings [][]float32) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

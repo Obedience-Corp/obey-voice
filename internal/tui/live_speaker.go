@@ -24,6 +24,10 @@ const (
 type LiveSpeakerController interface {
 	Stats() speaker.LiveStats
 	SetEnabled(bool)
+	// SeedEnrolled registers a profile enrolled mid-session, so the next
+	// window resolves it by name instead of waiting for a new engine build to
+	// seed it from disk. Implementations without a built engine return nil.
+	SeedEnrolled(name, modelRev string, embeddings [][]float32) error
 }
 
 // stickyLiveLabel remembers the last non-empty speaker-N so short empty gaps

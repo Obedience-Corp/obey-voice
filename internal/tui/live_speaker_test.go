@@ -10,6 +10,23 @@ import (
 type tuiLiveSpeakerFake struct {
 	stats   speaker.LiveStats
 	enabled []bool
+	seeded  []seededProfile
+	seedErr error
+}
+
+// seededProfile records a SeedEnrolled call for assertions.
+type seededProfile struct {
+	name       string
+	modelRev   string
+	embeddings [][]float32
+}
+
+func (f *tuiLiveSpeakerFake) SeedEnrolled(name, modelRev string, embeddings [][]float32) error {
+	if f.seedErr != nil {
+		return f.seedErr
+	}
+	f.seeded = append(f.seeded, seededProfile{name: name, modelRev: modelRev, embeddings: embeddings})
+	return nil
 }
 
 func TestConversationVoiceTurnUsesCurrentSpeakerColor(t *testing.T) {

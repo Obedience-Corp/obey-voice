@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -77,6 +76,7 @@ func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPat
 	diags := config.Diagnose(cfg, modelsDir, lookPath)
 	diags = append(diags, personaQwenDiags(cfg, modelsDir)...)
 	diags = append(diags, bargeInSpeakersDiags(cfg)...)
+	diags = append(diags, speakersEnrollmentDiags(cfg)...)
 
 	// Where speech runs, and whether a LAN speech worker answers. The probe
 	// bounds itself with tts_lan_timeout_ms; local never dials.
@@ -199,6 +199,27 @@ func bargeInSpeakersDiags(cfg *config.Config) []config.Diagnostic {
 	return nil
 }
 
+// speakersEnrollmentDiags reports the empty state of the enrollment store, but
+// only when live labels are actually on: with speaker.live off nothing shows a
+// name anywhere, so there is nothing to fix and doctor stays silent (its norm).
+// With live on and no profile, every turn is labelled speaker-1 and the user
+// has no way to learn from the running product that registering a voice is
+// what changes that.
+func speakersEnrollmentDiags(cfg *config.Config) []config.Diagnostic {
+	if !speaker.FromAppConfig(cfg).LiveActive() {
+		return nil
+	}
+	if hasEnrolledSpeaker(bargeInSpeakersEnrollmentDir(cfg)) {
+		return nil
+	}
+	return []config.Diagnostic{{
+		Name:        "speakers-enrollment",
+		Severity:    config.SeverityWarn,
+		Detail:      "No voice registered — live labels will say speaker-1",
+		Remediation: "Settings → Speakers → Register your voice, or: obey-voice speaker enroll --name <name> --from-wav clip.wav",
+	}}
+}
+
 // hasEnrolledSpeaker is a seam so unit tests can exercise the enrolled-store
 // doctor path without writing a real enrollment store on the host (repo test
 // policy: filesystem-mutating coverage belongs to the containerized harness).
@@ -207,14 +228,11 @@ var hasEnrolledSpeaker = func(dir string) bool {
 	return err == nil && store != nil && len(store.List()) > 0
 }
 
-// bargeInSpeakersEnrollmentDir duplicates speaker_cmd.go's speakerEnrollmentDir
-// (that file is !integration-only; doctor.go builds for both) rather than
-// sharing it — three lines, not worth a cross-build-tag indirection.
+// bargeInSpeakersEnrollmentDir is speaker.EnrollmentDir under the name the
+// barge-in checks already use; the rule itself now lives in one place, next to
+// the store it addresses.
 func bargeInSpeakersEnrollmentDir(cfg *config.Config) string {
-	if cfg != nil && cfg.Speaker.EnrollmentDir != "" {
-		return cfg.Speaker.EnrollmentDir
-	}
-	return filepath.Join(config.ConfigDir(), "speakers")
+	return speaker.EnrollmentDir(cfg)
 }
 
 func init() {
