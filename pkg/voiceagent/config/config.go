@@ -197,7 +197,14 @@ type Config struct {
 	// ContinuityIntegrityEnabled detects truncated Ollama completions and
 	// emits continuity observability events. False restores pre-WI-b94dad
 	// behavior (no integrity flags or continuity events).
-	ContinuityIntegrityEnabled bool `mapstructure:"continuity_integrity_enabled"`
+	ContinuityIntegrityEnabled  bool    `mapstructure:"continuity_integrity_enabled"`
+	ContinuityProjectionEnabled bool    `mapstructure:"continuity_projection_enabled"`
+	ContinuityArchiveEnabled    bool    `mapstructure:"continuity_archive_enabled"`
+	ContinuitySoftLimitRatio    float64 `mapstructure:"continuity_soft_limit_ratio"`
+	ContinuityCompactFiller     bool    `mapstructure:"continuity_compact_filler"`
+	ContinuityRecoveryMax       int     `mapstructure:"continuity_recovery_max"`
+	ContinuityNumCtxCeil        int     `mapstructure:"continuity_num_ctx_ceil"`
+
 	// ToolCommandTimeout bounds one local run_command invocation in seconds.
 	// The brain turn timeout remains the outer bound for a complete turn.
 	ToolCommandTimeout int `mapstructure:"tool_command_timeout"`
@@ -517,6 +524,13 @@ func setDefaults(v *viper.Viper) {
 	// via remote_tools_enabled.
 	v.SetDefault("voice_tools_enabled", true)
 	v.SetDefault("continuity_integrity_enabled", true)
+	v.SetDefault("continuity_projection_enabled", true)
+	v.SetDefault("continuity_archive_enabled", true)
+	v.SetDefault("continuity_soft_limit_ratio", 0.80)
+	v.SetDefault("continuity_compact_filler", true)
+	v.SetDefault("continuity_recovery_max", 2)
+	// Expansion remains opt-in until live voice/latency acceptance is recorded.
+	v.SetDefault("continuity_num_ctx_ceil", 8192)
 	v.SetDefault("tool_command_timeout", 30)
 	v.SetDefault("remote_tools_enabled", false)
 

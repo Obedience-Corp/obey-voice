@@ -452,3 +452,6 @@ Dry runs report the config path and proposed values without writing files. Use
 timestamped `.bak` file before replacing an existing config. The write path
 updates YAML via `yaml.v3`, so comments and unrelated keys are preserved where
 possible, but scalar formatting around touched keys may be normalized.
+
+Ollama tool-result projection, bounded archive, automatic compaction, and
+continuation recovery settings are described in [Context continuity](context-continuity.md).

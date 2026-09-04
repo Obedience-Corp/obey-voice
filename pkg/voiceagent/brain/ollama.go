@@ -10,10 +10,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ollama/ollama/api"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
@@ -59,6 +61,8 @@ type OllamaBrain struct {
 	skillRouter       *semanticSkillRouter
 	skillRouterWarned bool
 	budgetWarned      bool
+	archive           continuity.Store
+	contextHighWater  int
 	// speakerNames resolves stable speaker ids when building chat messages.
 	speakerNames SpeakerNames
 }
@@ -235,6 +239,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var spoken strings.Builder
 		hadThinking := false
 		hadTools := false
+		recoveryAttempts := 0
+		var continuation string
 
 		for i := 0; i < maxToolIterations; i++ {
 			var tools api.Tools
@@ -242,7 +248,22 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = sess.tools()
 			}
 
-			req := o.newChatRequest(o.buildMessages(skillCtx), tools)
+			messages := o.buildMessages(skillCtx)
+			if continuation != "" {
+				messages = append(messages, api.Message{Role: "user", Content: continuation})
+				tools = nil
+			}
+			if budgetErr := o.messagesBudgetError(messages, tools); budgetErr != nil {
+				if ctx.Err() != nil || sendChunk(ctx, out, RecoveryReply) != nil {
+					done <- StreamResult{Err: budgetErr}
+					return
+				}
+				o.history = append(o.history, api.Message{Role: "assistant", Content: RecoveryReply})
+				o.trimHistory()
+				done <- StreamResult{Err: budgetErr, Recovered: true}
+				return
+			}
+			req := o.newChatRequest(messages, tools)
 
 			// Accumulate the full response (text + tool calls).
 			var textBuf strings.Builder
@@ -345,6 +366,17 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 
+			if continuation != "" && len(toolCalls) > 0 {
+				if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
+					done <- StreamResult{Err: err}
+					return
+				}
+				o.history = append(o.history, api.Message{Role: "assistant", Content: continuityFallback})
+				o.trimHistory()
+				done <- StreamResult{Err: fmt.Errorf("continuation returned tool calls"), Recovered: true}
+				return
+			}
+
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
 				hadTools = true
@@ -357,7 +389,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 				// Execute each tool and add results (skills + full CLI tools).
 				for _, tc := range toolCalls {
-					o.history = append(o.history, toolResultMessage(tc, sess.execute(ctx, o.workDir, tc)))
+					result := sess.execute(ctx, o.workDir, tc)
+					// read_skill is the established instruction-loading path. Preserve its
+					// full body in this turn's transient skill splice, not persisted history.
+					if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
+						skillCtx += "\n" + result
+					}
+					o.history = append(o.history, o.projectedToolResult(tc, result))
 				}
 				// Re-budget after tools: a large result can push the user
 				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s
@@ -383,21 +421,59 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			} else {
 				response = cleaned
 			}
-			o.history = append(o.history, api.Message{Role: "assistant", Content: response})
-			o.trimHistory()
+
 			var integrity IntegrityResult
 			if o.continuityIntegrityEnabled() {
 				integrity = evaluateStreamIntegrity(IntegrityInput{
 					DoneReason:   doneReason,
 					PromptTokens: prefillTokens,
 					GenTokens:    genTokens,
-					NumCtx:       o.cfg.OllamaNumCtx,
-					Speakable:    spoken.String(),
+					NumCtx:       o.effectiveNumCtx(),
+					Speakable:    response,
 				})
 				if integrity.Truncated {
 					o.emitContinuityTruncated(integrity)
 				}
 			}
+			if integrity.Truncated && o.cfg.ContinuityRecoveryMax > 0 {
+				if ctx.Err() != nil {
+					done <- StreamResult{Err: ctx.Err(), Integrity: integrity}
+					return
+				}
+				o.history = append(o.history, api.Message{Role: "assistant", Content: "[incomplete response] " + response})
+				if recoveryAttempts >= min(o.cfg.ContinuityRecoveryMax, 2) {
+					if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
+						done <- StreamResult{Err: err}
+						return
+					}
+					o.history = append(o.history, api.Message{Role: "assistant", Content: continuityFallback})
+					o.trimHistory()
+					done <- StreamResult{Integrity: integrity, Err: fmt.Errorf("continuation attempts exhausted"), Recovered: true}
+					return
+				}
+				recoveryAttempts++
+				o.emitContinuity(events.ContinuityRecovery{Attempt: recoveryAttempts, Strategy: "compact_then_continue"})
+				if err := sendChunk(ctx, out, "\n\nContinuing.\n\n"); err != nil {
+					done <- StreamResult{Err: err}
+					return
+				}
+				if recoveryAttempts > 1 {
+					o.expandContext()
+				}
+				if err := o.compactForContinuation(ctx); err != nil {
+					if ctx.Err() != nil {
+						done <- StreamResult{Err: ctx.Err()}
+						return
+					}
+					o.emitContinuity(events.Info{Message: "continuity compact failed: " + err.Error()})
+				}
+				continuation = "Continue the incomplete answer to the latest user request without repeating what was already spoken. The partial answer ended with: " + continuity.Clip(response, 800)
+				// Rebudget including the temporary continuation instruction.
+				o.ensureContextBudget(skillCtx + continuation)
+				continue
+			}
+			o.history = append(o.history, api.Message{Role: "assistant", Content: response})
+			o.trimHistory()
 			done <- StreamResult{Integrity: integrity}
 			return
 		}
@@ -453,18 +529,33 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			tools = sess.tools()
 		}
 
-		req := o.newChatRequest(o.buildMessages(skillCtx), tools)
+		if err := o.contextBudgetError(skillCtx, tools); err != nil {
+			o.history = restore
+			return "", err
+		}
+		messages := o.buildMessages(skillCtx)
+		if opts.OmitTurnInstruction {
+			messages = o.compactionMessages(skillCtx)
+		}
+		req := o.newChatRequest(messages, tools)
 		stream := false
 		req.Stream = &stream
 
 		var response api.Message
+		var doneReason string
 		err := o.chat(ctx, req, func(resp api.ChatResponse) error {
 			response = resp.Message
+			doneReason = resp.DoneReason
 			return nil
 		})
 		if err != nil {
 			o.history = restore
 			return "", fmt.Errorf("ollama error: %w", err)
+		}
+
+		if doneReason == "length" {
+			o.history = restore
+			return "", fmt.Errorf("ollama full response truncated")
 		}
 
 		// Tool calls — execute and loop (skills stack on full CLI tools).
@@ -478,7 +569,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			})
 
 			for _, tc := range response.ToolCalls {
-				o.history = append(o.history, toolResultMessage(tc, sess.execute(ctx, o.workDir, tc)))
+				result := sess.execute(ctx, o.workDir, tc)
+				// read_skill is the established instruction-loading path. Preserve its
+				// full body in this turn's transient skill splice, not persisted history.
+				if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
+					skillCtx += "\n" + result
+				}
+				o.history = append(o.history, o.projectedToolResult(tc, result))
 			}
 			o.ensureContextBudget(skillCtx)
 			continue
@@ -583,7 +680,7 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 func (o *OllamaBrain) requestOptions() map[string]any {
 	opts := map[string]any{}
 	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
-		opts["num_ctx"] = o.cfg.OllamaNumCtx
+		opts["num_ctx"] = o.effectiveNumCtx()
 	}
 	if o.cfg != nil && o.cfg.OllamaNumBatch > 0 {
 		opts["num_batch"] = o.cfg.OllamaNumBatch
@@ -764,7 +861,7 @@ const defaultWarmupNumCtx = 8192
 
 func (o *OllamaBrain) warmupNumCtx() int {
 	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
-		return o.cfg.OllamaNumCtx
+		return o.effectiveNumCtx()
 	}
 	return defaultWarmupNumCtx
 }
@@ -812,6 +909,7 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 
 // ClearHistory wipes conversation history.
 func (o *OllamaBrain) ClearHistory() {
+	o.archive = continuity.Store{}
 	o.history = nil
 }
 
@@ -859,6 +957,13 @@ func (o *OllamaBrain) History() []Turn {
 // saved by the prompt-based providers use role "samantha" for replies; map it
 // to ollama's native "assistant".
 func (o *OllamaBrain) LoadHistory(turns []Turn) {
+	// Restore starts a distinct session; never recall another session's archive.
+	o.archive = continuity.Store{}
+	o.contextHighWater = 0
+	o.loadHistory(turns)
+}
+
+func (o *OllamaBrain) loadHistory(turns []Turn) {
 	history := make([]api.Message, 0, len(turns))
 	for _, t := range turns {
 		role := t.Role
@@ -887,6 +992,9 @@ func (o *OllamaBrain) LoadHistory(turns []Turn) {
 					Arguments: args,
 				},
 			})
+		}
+		if m.Role == "tool" && o.cfg != nil && o.cfg.ContinuityProjectionEnabled && !strings.HasPrefix(m.Content, "[tool:") {
+			m.Content = o.AddContinuityNote(m.Content, continuity.Provenance{ToolName: m.ToolName})
 		}
 		history = append(history, m)
 	}
@@ -937,7 +1045,12 @@ func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill,
 func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 	msgs := make([]api.Message, 0, len(o.history)+1)
 	msgs = append(msgs, api.Message{Role: "system", Content: o.fullSystemPrompt})
-	for _, m := range o.history {
+	recall := o.recallNotes()
+	lastUser := lastUserIndex(o.history)
+	for i, m := range o.history {
+		if i == lastUser && recall != "" {
+			msgs = append(msgs, recallMessages(recall)...)
+		}
 		if m.Role == "user" {
 			m.Content = o.formatStoredUser(m.Content)
 		}
@@ -989,15 +1102,20 @@ func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
 	if o.cfg == nil {
 		return
 	}
-	budget := o.cfg.OllamaNumCtx
+	budget := o.effectiveNumCtx()
 	if budget <= 0 {
 		return
 	}
+	// Drop/archive older exchanges before expanding a pressured active turn.
 	limit := budget * 9 / 10
 	if o.estimateTokens(skillCtx) <= limit {
 		return
 	}
 	trimmed := o.dropOldestBeforeLastUser(skillCtx, limit)
+	for o.estimateTokens(skillCtx) > o.effectiveNumCtx()*85/100 && o.expandContext() {
+	}
+	budget = o.effectiveNumCtx()
+	limit = budget * 9 / 10
 	if o.estimateTokens(skillCtx) > limit {
 		trimmed = o.shrinkToolsToTokenLimit(skillCtx, limit) || trimmed
 	}
@@ -1018,7 +1136,8 @@ func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool 
 		if start <= 0 || start >= len(o.history) || start > lastUser {
 			break
 		}
-		o.history = o.history[start:]
+		o.archiveMessages(o.history[:start])
+		o.history = append([]api.Message(nil), o.history[start:]...)
 		trimmed = true
 	}
 	return trimmed
@@ -1077,7 +1196,11 @@ func truncateToBytes(s string, n int) string {
 	if n <= len(marker) {
 		return marker[:n]
 	}
-	return s[:n-len(marker)] + marker
+	end := n - len(marker)
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end] + marker
 }
 
 func toolContentBytes(history []api.Message) int {
@@ -1099,8 +1222,15 @@ func (o *OllamaBrain) estimateTokens(skillCtx string) int {
 
 func (o *OllamaBrain) promptBytes(skillCtx string) int {
 	n := len(o.fullSystemPrompt) + len(skillCtx)
+	if recall := o.recallNotes(); recall != "" {
+		n += len(recall) + 256
+	}
 	for _, m := range o.history {
 		n += len(m.Content) + 16
+		if len(m.ToolCalls) > 0 {
+			encoded, _ := json.Marshal(m.ToolCalls)
+			n += len(encoded)
+		}
 	}
 	return n
 }
@@ -1136,11 +1266,17 @@ func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onSta
 // keeps hitting; a slide-per-turn window shifted the prefix every turn and
 // forced a full re-prefill for the rest of the conversation.
 func (o *OllamaBrain) trimHistory() {
-	if len(o.history) <= o.cfg.MaxHistory*2 {
+	high, low := o.cfg.MaxHistory*2, o.cfg.MaxHistory
+	if o.cfg.ContinuityArchiveEnabled {
+		high = min(high, 12)
+		low = min(low, 10)
+	}
+	if len(o.history) <= high {
 		return
 	}
-	if start := historyWindowStart(o.history, o.cfg.MaxHistory); start > 0 {
-		o.history = o.history[start:]
+	if start := historyWindowStart(o.history, low); start > 0 {
+		o.archiveMessages(o.history[:start])
+		o.history = append([]api.Message(nil), o.history[start:]...)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -270,4 +271,61 @@ func TestCompactConversationGuards(t *testing.T) {
 		}
 		assertTurns(t, b.history, compactHistory(), "history after cancellation")
 	})
+}
+
+// continuityCompactBrain isolates the provider's token-budget seam from the
+// older count trigger, and records whether the real turn was sent after failure.
+type continuityCompactBrain struct {
+	compactBrain
+	receivedInput string
+	streamCalls   int
+}
+
+func (b *continuityCompactBrain) NeedsContinuityCompact(input string) bool {
+	b.receivedInput = input
+	return true
+}
+func (b *continuityCompactBrain) ContinuityCompactFiller() bool { return true }
+func (b *continuityCompactBrain) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
+	b.streamCalls++
+	return nil, errors.New("unexpected stream")
+}
+
+func TestPrepareTurnTokenPressureSpeaksOnceBeforeCompact(t *testing.T) {
+	b := &continuityCompactBrain{compactBrain: compactBrain{history: compactHistory(), summary: "WI-b94dad is the pending task."}}
+	tts := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{Brain: b, TTS: tts, Player: player, CompactPrompt: "SUMMARIZE", AutoCompactAfter: 100}
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	turn.to(TurnThinking)
+	if err := p.prepareTurn(t.Context(), "remember WI-b94dad", metrics, turn); err != nil {
+		t.Fatal(err)
+	}
+	if b.receivedInput != "remember WI-b94dad" || len(b.thinkInputs) != 1 {
+		t.Fatalf("budget input/compact missing: %+v", b)
+	}
+	if got := tts.Texts(); len(got) != 1 || got[0] != "Give me a moment to gather my notes." {
+		t.Fatalf("filler=%q", got)
+	}
+	if len(b.history) == 0 || !strings.Contains(b.history[0].Content, "WI-b94dad") {
+		t.Fatal("compacted identity missing")
+	}
+}
+
+func TestPrepareFailureKeepsHistoryAndStopsIncomingRequest(t *testing.T) {
+	b := &continuityCompactBrain{compactBrain: compactBrain{history: compactHistory(), fullErr: errors.New("summary unavailable")}}
+	before := append([]brain.Turn(nil), b.history...)
+	var ready events.ResponseReady
+	bus := events.NewBus()
+	events.Subscribe(bus, func(e events.ResponseReady) { ready = e })
+	p := &Pipeline{Brain: b, CompactPrompt: "SUMMARIZE", Events: bus, AutoCompactAfter: 100}
+	if err := p.RunTurnTextMode(t.Context(), "follow up"); err != nil {
+		t.Fatal(err)
+	}
+	if b.streamCalls != 0 || !ready.Degraded || ready.Response == "" {
+		t.Fatalf("silent compact failure: streams=%d response=%+v", b.streamCalls, ready)
+	}
+	assertTurns(t, b.history, before, "failed prepare history")
 }

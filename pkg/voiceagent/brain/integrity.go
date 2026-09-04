@@ -88,7 +88,7 @@ func (o *OllamaBrain) maybeEmitContinuityBudget(skillCtx string) {
 	if !o.continuityIntegrityEnabled() || o.cfg == nil {
 		return
 	}
-	numCtx := o.cfg.OllamaNumCtx
+	numCtx := o.effectiveNumCtx()
 	if numCtx <= 0 {
 		return
 	}
