@@ -7,19 +7,23 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-func TestProvidersIncludesGrok(t *testing.T) {
-	var spec ProviderSpec
-	for _, p := range Providers() {
-		if p.Name == "grok" {
-			spec = p
-			break
+func TestProvidersAreNamedAndDescribed(t *testing.T) {
+	got := Providers()
+	if len(got) == 0 {
+		t.Fatal("Providers() is empty; each backend must register itself")
+	}
+	seen := map[string]bool{}
+	for _, spec := range got {
+		if spec.Name == "" {
+			t.Error("provider with empty name")
 		}
-	}
-	if spec.Name != "grok" {
-		t.Fatalf("Providers() missing grok provider, got %+v", Providers())
-	}
-	if spec.Description == "" {
-		t.Error("grok provider spec has empty description")
+		if spec.Description == "" {
+			t.Errorf("provider %q has empty description", spec.Name)
+		}
+		if seen[spec.Name] {
+			t.Errorf("duplicate provider %q", spec.Name)
+		}
+		seen[spec.Name] = true
 	}
 }
 
@@ -58,9 +62,14 @@ func TestNewBatchProviderAcceptsImplementedProviders(t *testing.T) {
 		"cannot connect to ollama",    // no local server in CI
 		"not found in ollama",         // server up, model not pulled
 		"claude CLI not found",
+		"cursor-agent CLI not found",
 		"grok CLI not found",
 	}
-	for _, provider := range []string{"", "ollama", "claude", "grok"} {
+	providers := []string{""}
+	for _, spec := range Providers() {
+		providers = append(providers, spec.Name)
+	}
+	for _, provider := range providers {
 		cfg := &config.Config{BrainProvider: provider}
 
 		_, err := NewBatchProvider(cfg)

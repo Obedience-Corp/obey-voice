@@ -31,11 +31,11 @@
       "properties": {
         "provider": {
           "type": "string",
-          "description": "Brain backend (ollama, claude, grok). Empty keeps app-level brain_provider."
+          "description": "Brain backend (ollama, claude, cursor, grok). Empty keeps app-level brain_provider."
         },
         "model": {
           "type": "string",
-          "description": "Provider-specific model id, routed to ollama_model or grok_model. Claude has no app-level model key, so a persona-level Claude model is recorded but not routed."
+          "description": "Provider-specific model id, routed to ollama_model, grok_model, or cursor_model. Claude has no app-level model key, so a persona-level Claude model is recorded but not routed."
         }
       }
     },

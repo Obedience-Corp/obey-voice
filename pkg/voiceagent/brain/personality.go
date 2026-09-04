@@ -20,7 +20,7 @@ func personaSystemPrompt(cfg *config.Config) (string, error) {
 }
 
 // turnInstruction resolves the per-turn instruction appended to each user
-// message on the Claude and Grok prompt paths.
+// message on the Claude, Cursor, and Grok prompt paths.
 //
 // Name comes from cfg.TurnPrompt (profile prompts.turn). Empty uses the
 // shared embedded turn document — not the persona system-prompt name — so a

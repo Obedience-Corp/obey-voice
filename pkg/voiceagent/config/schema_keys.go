@@ -159,7 +159,7 @@ func brainKeys() []KeySpec {
 		{
 			Key: "brain_provider", Type: TypeEnum, Default: "ollama", Enum: brainProviderEnum(),
 			Group: GroupBrain, Title: "Model provider",
-			Help:               "Who answers. Ollama runs on this Mac; Claude and Grok call out to their CLIs.",
+			Help:               brainProviderHelp(),
 			PersonaOverridable: true,
 		},
 		{
@@ -172,6 +172,12 @@ func brainKeys() []KeySpec {
 			Key: "grok_model", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Grok model",
 			Help:               "The model the Grok CLI is asked for. Empty uses the CLI's own default.",
+			PersonaOverridable: true,
+		},
+		{
+			Key: "cursor_model", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Cursor model",
+			Help:               "The model cursor-agent is asked for. Empty uses the CLI's own default.",
 			PersonaOverridable: true,
 		},
 		{

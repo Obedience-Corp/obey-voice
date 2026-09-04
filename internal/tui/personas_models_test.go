@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -56,12 +57,14 @@ func personaScanCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 
 // fakeScan is the discovery result a test wants the form to see.
 func fakeScan(models map[string][]string) []discovery.ProviderInfo {
-	out := make([]discovery.ProviderInfo, 0, len(models))
-	for _, name := range []string{"claude", "grok", "ollama"} {
-		list, ok := models[name]
-		if !ok {
-			continue
-		}
+	names := make([]string, 0, len(models))
+	for name := range models {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]discovery.ProviderInfo, 0, len(names))
+	for _, name := range names {
+		list := models[name]
 		out = append(out, discovery.ProviderInfo{Name: name, Available: len(list) > 0, Models: list})
 	}
 	return out

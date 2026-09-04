@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 	"github.com/ollama/ollama/api"
@@ -313,6 +314,113 @@ func TestGrokBatchReportsDefaultModelWhenUnconfigured(t *testing.T) {
 	}
 	if res.Provider != "grok" || res.Model != "default" {
 		t.Errorf("identity = %s/%s, want grok/default", res.Provider, res.Model)
+	}
+}
+
+type fakeCursorRunner struct {
+	result    *cursor.AskResult
+	err       error
+	gotPrompt string
+	gotOpts   *cursor.AskOptions
+	calls     int
+}
+
+func (f *fakeCursorRunner) AskCtx(_ context.Context, prompt string, opts *cursor.AskOptions) (*cursor.AskResult, error) {
+	f.calls++
+	f.gotPrompt = prompt
+	f.gotOpts = opts
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.result, nil
+}
+
+func TestCursorBatchTransformErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		runner  *fakeCursorRunner
+		wantErr string
+	}{
+		{"provider failure", &fakeCursorRunner{err: errors.New("boom")}, "cursor batch:"},
+		{"empty response", &fakeCursorRunner{result: &cursor.AskResult{Result: ""}}, "empty response"},
+		{"whitespace-only response", &fakeCursorRunner{result: &cursor.AskResult{Result: " \n "}}, "empty response"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &cursorBatch{runner: tt.runner, model: "m"}
+
+			_, err := c.Transform(t.Context(), BatchRequest{Text: "hello"})
+			if err == nil {
+				t.Fatal("Transform() error = nil, want error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Transform() error = %q, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCursorBatchTransformCancelledBeforeCall(t *testing.T) {
+	runner := &fakeCursorRunner{result: &cursor.AskResult{Result: "out"}}
+	c := &cursorBatch{runner: runner, model: "m"}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := c.Transform(ctx, BatchRequest{Text: "hello"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Transform() error = %v, want context.Canceled", err)
+	}
+	if runner.calls != 0 {
+		t.Fatalf("cancelled context must not reach the provider; got %d calls", runner.calls)
+	}
+}
+
+func TestCursorBatchTransformSendsAssembledPrompt(t *testing.T) {
+	runner := &fakeCursorRunner{result: &cursor.AskResult{Result: " transformed "}}
+	c := &cursorBatch{runner: runner, model: "composer-2.5"}
+
+	req := BatchRequest{
+		SystemPrompt: "You rewrite text for narration.",
+		StylePrompt:  "Warm and steady.",
+		Text:         "Raw text.",
+	}
+	res, err := c.Transform(t.Context(), req)
+	if err != nil {
+		t.Fatalf("Transform() error = %v", err)
+	}
+
+	if res.Text != "transformed" {
+		t.Errorf("Text = %q, want trimmed %q", res.Text, "transformed")
+	}
+	if res.Provider != "cursor" || res.Model != "composer-2.5" {
+		t.Errorf("identity = %s/%s, want cursor/composer-2.5", res.Provider, res.Model)
+	}
+	if runner.gotPrompt != AssembleBatchPrompt(req) {
+		t.Errorf("prompt = %q, want assembled prompt %q", runner.gotPrompt, AssembleBatchPrompt(req))
+	}
+	if runner.gotOpts.Mode != cursor.ModeAsk {
+		t.Errorf("Mode = %q, want ask so batch cannot edit", runner.gotOpts.Mode)
+	}
+	if !runner.gotOpts.Trust {
+		t.Error("Trust = false, want true")
+	}
+	if runner.gotOpts.Model != "composer-2.5" {
+		t.Errorf("Model = %q, want composer-2.5", runner.gotOpts.Model)
+	}
+}
+
+func TestCursorBatchReportsDefaultModelWhenUnconfigured(t *testing.T) {
+	runner := &fakeCursorRunner{result: &cursor.AskResult{Result: "out"}}
+	c := &cursorBatch{runner: runner}
+
+	res, err := c.Transform(t.Context(), BatchRequest{Text: "hello"})
+	if err != nil {
+		t.Fatalf("Transform() error = %v", err)
+	}
+	if res.Provider != "cursor" || res.Model != "default" {
+		t.Errorf("identity = %s/%s, want cursor/default", res.Provider, res.Model)
 	}
 }
 

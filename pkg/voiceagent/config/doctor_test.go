@@ -147,6 +147,21 @@ func TestDiagnoseBrainProvider(t *testing.T) {
 			wantRemediation: "brain_provider",
 		},
 		{
+			name:            "selected cursor missing",
+			cfg:             Config{BrainProvider: "cursor"},
+			lookPath:        failLookPath,
+			wantSeverity:    SeverityError,
+			wantDetail:      "cursor-agent CLI not found",
+			wantRemediation: "brain_provider",
+		},
+		{
+			name:         "selected cursor found",
+			cfg:          Config{BrainProvider: "cursor"},
+			lookPath:     okLookPath,
+			wantSeverity: SeverityOK,
+			wantDetail:   "cursor-agent CLI",
+		},
+		{
 			name:            "ollama model missing",
 			cfg:             Config{BrainProvider: "ollama", OllamaHost: "http://localhost:11434"},
 			lookPath:        failLookPath,
@@ -175,7 +190,7 @@ func TestDiagnoseBrainProvider(t *testing.T) {
 			lookPath:        okLookPath,
 			wantSeverity:    SeverityError,
 			wantDetail:      "unsupported brain_provider",
-			wantRemediation: "claude, grok, or ollama",
+			wantRemediation: "set brain_provider to",
 		},
 	}
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 	"github.com/ollama/ollama/api"
@@ -164,6 +165,34 @@ func TestGrokThinkFullRollsBackHistoryOnError(t *testing.T) {
 			Turn{Role: "samantha", Content: "the summary"},
 		), "after successful ThinkFull")
 		assertFreshlyStamped(t, g.History(), 2, 4)
+	})
+}
+
+func TestCursorThinkFullRollsBackHistoryOnError(t *testing.T) {
+	t.Run("run error", func(t *testing.T) {
+		fake := &fakeCursorClient{errs: []error{errors.New("cli down")}}
+		b := newTestCursorBrain(fake)
+		b.LoadHistory(seededHistory())
+
+		if _, err := b.ThinkFull(t.Context(), "COMPACT", StreamOptions{}); err == nil {
+			t.Fatal("ThinkFull() error = nil, want the CLI failure")
+		}
+		assertHistory(t, b.History(), seededHistory(), "after failed ThinkFull")
+	})
+
+	t.Run("success keeps the exchange", func(t *testing.T) {
+		fake := &fakeCursorClient{results: []*cursor.AskResult{{Result: "the summary"}}}
+		b := newTestCursorBrain(fake)
+		b.LoadHistory(seededHistory())
+
+		if _, err := b.ThinkFull(t.Context(), "COMPACT", StreamOptions{}); err != nil {
+			t.Fatalf("ThinkFull() error = %v", err)
+		}
+		assertHistory(t, b.History(), append(seededHistory(),
+			Turn{Role: "user", Content: "COMPACT"},
+			Turn{Role: "samantha", Content: "the summary"},
+		), "after successful ThinkFull")
+		assertFreshlyStamped(t, b.History(), 2, 4)
 	})
 }
 

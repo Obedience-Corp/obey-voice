@@ -29,6 +29,8 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.OllamaModel = v }},
 	{"grok_model", func(c *config.Config) string { return c.GrokModel },
 		func(c *config.Config, v string) { c.GrokModel = v }},
+	{"cursor_model", func(c *config.Config) string { return c.CursorModel },
+		func(c *config.Config, v string) { c.CursorModel = v }},
 	{"tts_provider", func(c *config.Config) string { return c.TTSProvider },
 		func(c *config.Config, v string) { c.TTSProvider = v }},
 	{"tts_voice", func(c *config.Config) string { return c.TTSVoice },

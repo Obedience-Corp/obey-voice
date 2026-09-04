@@ -74,6 +74,10 @@
       "value": true,
       "source": "default"
     },
+    "cursor_model": {
+      "value": "",
+      "source": "default"
+    },
     "environment_context_enabled": {
       "value": true,
       "source": "default"

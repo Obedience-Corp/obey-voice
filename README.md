@@ -2,7 +2,7 @@
 
 A local voice assistant that starts speaking before the model finishes the thought.
 
-Speech stays on your machine. The brain is Claude, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
+Speech stays on your machine. The brain is Claude, Cursor, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
 
 ![Obey Voice conversation TUI](docs/images/tui.gif)
 

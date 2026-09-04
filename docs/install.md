@@ -9,6 +9,8 @@
 - A C compiler for source builds (`gcc` or `clang`; Obey Voice uses CGO)
 - A working microphone and speaker for voice mode
 - Claude CLI on `PATH` when `brain_provider=claude`
+- `cursor-agent` CLI on `PATH` when `brain_provider=cursor` ([Cursor Agent CLI](https://cursor.com/docs/cli/overview); auth via `CURSOR_API_KEY` or `cursor-agent login`)
+- Grok CLI on `PATH` when `brain_provider=grok`
 - Ollama running locally when `brain_provider=ollama`
 - Docker or a compatible container runtime for integration tests
 

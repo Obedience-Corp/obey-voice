@@ -13,53 +13,62 @@ type ProviderSpec struct {
 	Description string
 }
 
-var providerSpecs = []ProviderSpec{
-	{Name: "claude", Description: "Claude CLI"},
-	{Name: "grok", Description: "Grok CLI"},
-	{Name: "ollama", Description: "Local Ollama server"},
+type providerEntry struct {
+	spec  config.BrainProviderSpec
+	new   func(*config.Config) (Provider, error)
+	batch func(*config.Config) (BatchProvider, error)
 }
 
-// Providers returns the list of implemented brain providers.
+var registry []providerEntry
+
+func register(
+	spec config.BrainProviderSpec,
+	newFn func(*config.Config) (Provider, error),
+	batchFn func(*config.Config) (BatchProvider, error),
+) {
+	config.RegisterBrainProvider(spec)
+	registry = append(registry, providerEntry{spec: spec, new: newFn, batch: batchFn})
+}
+
+// Providers returns the list of implemented brain providers, in registration
+// order. Adding a backend is registering it from that backend's file, not
+// appending a name here.
 func Providers() []ProviderSpec {
-	out := make([]ProviderSpec, len(providerSpecs))
-	copy(out, providerSpecs)
+	out := make([]ProviderSpec, 0, len(registry))
+	for _, e := range registry {
+		out = append(out, ProviderSpec{Name: e.spec.Name, Description: e.spec.Description})
+	}
 	return out
 }
 
 // NewProvider constructs the configured brain provider.
 func NewProvider(cfg *config.Config) (Provider, error) {
-	switch normalizeProvider(cfg.BrainProvider) {
-	case "", "ollama":
-		return NewOllama(cfg)
-	case "claude":
-		return New(cfg)
-	case "grok":
-		return NewGrok(cfg)
-	default:
-		return nil, unsupportedProviderError("brain_provider", cfg.BrainProvider, providerSpecs)
+	name := normalizeProvider(cfg.BrainProvider)
+	if name == "" {
+		name = "ollama"
 	}
-}
-
-var batchProviderSpecs = []ProviderSpec{
-	{Name: "claude", Description: "Claude CLI"},
-	{Name: "grok", Description: "Grok CLI"},
-	{Name: "ollama", Description: "Local Ollama server"},
+	for _, e := range registry {
+		if e.spec.Name == name {
+			return e.new(cfg)
+		}
+	}
+	return nil, unsupportedProviderError("brain_provider", cfg.BrainProvider, Providers())
 }
 
 // NewBatchProvider constructs the configured provider's batch adapter for
 // single-shot, history-free transforms. It mirrors NewProvider's provider
 // selection, so the default ("" / "ollama") config resolves to Ollama.
 func NewBatchProvider(cfg *config.Config) (BatchProvider, error) {
-	switch normalizeProvider(cfg.BrainProvider) {
-	case "", "ollama":
-		return newOllamaBatch(cfg)
-	case "claude":
-		return newClaudeBatch(cfg)
-	case "grok":
-		return newGrokBatch(cfg)
-	default:
-		return nil, unsupportedProviderError("batch brain_provider", cfg.BrainProvider, batchProviderSpecs)
+	name := normalizeProvider(cfg.BrainProvider)
+	if name == "" {
+		name = "ollama"
 	}
+	for _, e := range registry {
+		if e.spec.Name == name {
+			return e.batch(cfg)
+		}
+	}
+	return nil, unsupportedProviderError("batch brain_provider", cfg.BrainProvider, Providers())
 }
 
 func normalizeProvider(name string) string {

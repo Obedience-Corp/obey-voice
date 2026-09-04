@@ -340,6 +340,28 @@ func TestGrokModelEnvOverride(t *testing.T) {
 	}
 }
 
+func TestCursorModelEnvOverride(t *testing.T) {
+	orig := configFile
+	configFile = filepath.Join(t.TempDir(), "nonexistent.yaml")
+	defer func() { configFile = orig }()
+
+	setDefaults(v)
+	t.Setenv("BRAIN_PROVIDER", "cursor")
+	t.Setenv("CURSOR_MODEL", "composer-2.5")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.BrainProvider != "cursor" {
+		t.Errorf("BrainProvider = %q, want cursor (from env)", cfg.BrainProvider)
+	}
+	if cfg.CursorModel != "composer-2.5" {
+		t.Errorf("CursorModel = %q, want composer-2.5 (from env)", cfg.CursorModel)
+	}
+}
+
 func TestVoiceToolsEnvOverride(t *testing.T) {
 	orig := configFile
 	configFile = filepath.Join(t.TempDir(), "nonexistent.yaml")

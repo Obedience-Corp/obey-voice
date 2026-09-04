@@ -134,6 +134,7 @@ type Config struct {
 	// Brain
 	BrainProvider string `mapstructure:"brain_provider"`
 	GrokModel     string `mapstructure:"grok_model"`
+	CursorModel   string `mapstructure:"cursor_model"`
 	OllamaModel   string `mapstructure:"ollama_model"`
 	// OllamaEmbeddingModel routes user prompts to relevant Agent Skills. Empty
 	// disables harness-side semantic activation and leaves model-driven
@@ -472,6 +473,7 @@ func setDefaults(v *viper.Viper) {
 	// than silently routing to a cloud CLI.
 	v.SetDefault("brain_provider", "ollama")
 	v.SetDefault("grok_model", "")
+	v.SetDefault("cursor_model", "")
 	v.SetDefault("ollama_model", "")
 	v.SetDefault("ollama_embedding_model", "nomic-embed-text")
 	v.SetDefault("skills_similarity_threshold", 0.55)
@@ -642,6 +644,7 @@ var envBindings = map[string]string{
 	"models_dir":                  "MODELS_DIR",
 	"brain_provider":              "BRAIN_PROVIDER",
 	"grok_model":                  "GROK_MODEL",
+	"cursor_model":                "CURSOR_MODEL",
 	"ollama_model":                "OLLAMA_MODEL",
 	"ollama_embedding_model":      "OLLAMA_EMBEDDING_MODEL",
 	"ollama_host":                 "OLLAMA_HOST",

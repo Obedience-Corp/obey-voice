@@ -18,6 +18,16 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
+func init() {
+	register(config.BrainProviderSpec{
+		Name: "claude", Description: "Claude CLI", CLIBinary: "claude",
+	}, func(cfg *config.Config) (Provider, error) {
+		return New(cfg)
+	}, func(cfg *config.Config) (BatchProvider, error) {
+		return newClaudeBatch(cfg)
+	})
+}
+
 // claudeRunner is the slice of the claude client the interactive Brain needs:
 // the streaming path for voice/TUI turns and the blocking path for text turns.
 // Narrowing it to an interface lets tests inject a fake without shelling out to

@@ -3,6 +3,7 @@ package discovery
 import (
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -15,9 +16,13 @@ func TestDiscoverProvidersIncludesAllBackends(t *testing.T) {
 		found[p.Name] = true
 	}
 
-	for _, name := range []string{"claude", "grok", "ollama"} {
-		if !found[name] {
-			t.Errorf("DiscoverProviders() missing %q provider; got %v", name, found)
+	specs := brain.Providers()
+	if len(specs) == 0 {
+		t.Fatal("brain.Providers() is empty")
+	}
+	for _, spec := range specs {
+		if !found[spec.Name] {
+			t.Errorf("DiscoverProviders() missing %q provider; got %v", spec.Name, found)
 		}
 	}
 }

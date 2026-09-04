@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 	"github.com/lancekrogers/grok-go-sdk/pkg/grok"
 
@@ -293,6 +294,25 @@ func TestGrokThinkStreamStripsAgentLabel(t *testing.T) {
 		t.Fatalf("streamed %q, want %q", got, "Hi there.")
 	}
 	if got := g.history[len(g.history)-1].Content; got != "Hi there." {
+		t.Fatalf("history tail = %q, want %q", got, "Hi there.")
+	}
+}
+
+func TestCursorThinkStreamStripsAgentLabel(t *testing.T) {
+	fake := &fakeCursorClient{
+		results: []*cursor.AskResult{{Result: "Samantha: Hi there."}},
+	}
+	b := newTestCursorBrain(fake)
+
+	s := mustCursorStream(t, b, "hello")
+	text, res := collectStream(t, s)
+	if res.Err != nil {
+		t.Fatalf("stream result error = %v", res.Err)
+	}
+	if text != "Hi there." {
+		t.Fatalf("streamed %q, want %q", text, "Hi there.")
+	}
+	if got := b.history[len(b.history)-1].Content; got != "Hi there." {
 		t.Fatalf("history tail = %q, want %q", got, "Hi there.")
 	}
 }
