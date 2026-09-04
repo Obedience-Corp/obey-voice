@@ -147,6 +147,16 @@ func voiceKeys() []KeySpec {
 			Help: "Modifiers plus a key, like alt+space or ctrl+alt+t. Needs at least one of ctrl, alt or cmd, or a bare function key. Empty uses the platform default: ⌥Space on macOS, Ctrl+Alt+Space on Windows; on Linux the key is whatever you bind to `obey-voice talk`.",
 		},
 		{
+			Key: "name_summon_enabled", Type: TypeBool, Default: false,
+			Group: GroupVoice, Title: "Name summon",
+			Help: "With the mic open, only a turn that starts with the agent's name or an alias is answered; the talk key bypasses it. Needs the voice front-end on, so playback of the name cannot summon the agent.",
+		},
+		{
+			Key: "name_summon_aliases", Type: TypeStringList, Default: []string{},
+			Group: GroupVoice, Title: "Name summon aliases",
+			Help: "Extra wake words besides the agent's display name and its first word — \"computer\", say. Edited in config.yaml; Settings has no row for it.",
+		},
+		{
 			Key: "backchannel_enabled", Type: TypeBool, Default: false,
 			Group: GroupVoice, Title: "Thinking sounds",
 			Help: "Plays a short \"mm-hm\" while a slow answer is still coming, so the pause doesn't feel dead.",

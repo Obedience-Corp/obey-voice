@@ -124,6 +124,18 @@ type Config struct {
 	// default. See talkhotkey.ParseCombo and talkhotkey.DefaultComboFor.
 	TalkHotkey string `mapstructure:"talk_hotkey"`
 
+	// Name summon: a second way to open a hands-free turn, off by default
+	// (D5). The gate is STT-side — a finalized transcript that does not start
+	// with the agent's name is dropped before the brain sees it — so it costs
+	// nothing until it is switched on. See internal/summon for the matching
+	// rules and name_summon.go for the front-end it depends on.
+	NameSummonEnabled bool `mapstructure:"name_summon_enabled"`
+	// NameSummonAliases are extra wake words beyond the persona display name
+	// and its first word. Config-file only: no Settings row, and no environment
+	// binding, for the same reason skills_disabled has none — a list is not
+	// something an environment variable spells well.
+	NameSummonAliases []string `mapstructure:"name_summon_aliases"`
+
 	// TUIMouseEnabled lets the TUI claim the mouse so the wheel and trackpad
 	// scroll the transcript. Claiming it means the terminal routes drags to
 	// Obey Voice instead of its own selection, so copying transcript text needs a
@@ -456,6 +468,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("talk_hotkey_mode", string(talkhotkey.DefaultMode))
 	v.SetDefault("talk_hotkey", "")
 
+	// Off by default (D5): the gate has not been evaluated against a room, and
+	// on without a voice front-end the agent summons itself out of its own
+	// playback. Aliases are empty — the display name and its first word are
+	// already the wake words.
+	v.SetDefault("name_summon_enabled", false)
+	v.SetDefault("name_summon_aliases", []string{})
+
 	// Off by default so the terminal keeps its own click-drag selection, which
 	// is how every other agent chat behaves — you select transcript text and
 	// copy it with the terminal, no modifier and no app-specific mode.
@@ -671,6 +690,7 @@ var envBindings = map[string]string{
 	"talk_hotkey_enabled":         "TALK_HOTKEY_ENABLED",
 	"talk_hotkey_mode":            "TALK_HOTKEY_MODE",
 	"talk_hotkey":                 "TALK_HOTKEY",
+	"name_summon_enabled":         "NAME_SUMMON_ENABLED",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",
 	"vad_silence_duration":        "VAD_SILENCE_DURATION",

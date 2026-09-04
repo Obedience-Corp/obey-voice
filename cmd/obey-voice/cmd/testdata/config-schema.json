@@ -121,6 +121,33 @@
       "editable": true
     },
     {
+      "key": "name_summon_aliases",
+      "type": "list\u003cstring\u003e",
+      "default": [],
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Name summon aliases",
+      "help": "Extra wake words besides the agent's display name and its first word — \"computer\", say. Edited in config.yaml; Settings has no row for it.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "name_summon_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Name summon",
+      "help": "With the mic open, only a turn that starts with the agent's name or an alias is answered; the talk key bypasses it. Needs the voice front-end on, so playback of the name cannot summon the agent.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "NAME_SUMMON_ENABLED",
+      "editable": true
+    },
+    {
       "key": "output_device",
       "type": "string",
       "default": "",

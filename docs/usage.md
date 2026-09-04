@@ -233,6 +233,41 @@ One conversation owns the endpoint at a time. A second one started while the
 first is running says so and leaves the first one's endpoint alone, so a bound
 key keeps reaching the conversation that answered it.
 
+### Name summon
+
+Off by default (`name_summon_enabled`). Turned on, the open microphone stops
+answering everything it hears and answers only what is addressed to the agent —
+which is the point in a room where other people are talking.
+
+An utterance is addressed when it **starts** with the agent's name: `agent_name`,
+its first word when the name has several (`Uncle Fu` also answers to `Uncle`),
+or any word in `name_summon_aliases`. Matching is case-insensitive and
+whole-word, and one filler may come first — `hey`, `ok`, `okay`, `hi`, `hello`
+or `yo`. So "Obey, what's the time?" and "hey obey what's the time" both open a
+turn, while "what's for dinner?" and "I told Obey earlier" are dropped, with a
+line in the conversation naming what was ignored.
+
+The talk key always bypasses the gate: pressing it *is* addressing the agent, so
+a held key answers whatever you say, name or no name. `Ctrl+G` mute keeps the
+gate deaf — nothing is listening, so there is nothing to summon — and the agent
+does not listen for its name while it is speaking. Talking over a reply is
+barge-in, which has its own rules.
+
+Name summon needs the voice front end on (`voice_frontend: nlms` or `webrtc`).
+Without echo cancellation the microphone hears the speakers, so the agent would
+hear its own name in its own playback and summon itself: `obey-voice doctor`
+reports that as an error, the **Settings → Tools → Name summon** toggle refuses
+to turn on, and a conversation started that way says so and runs without the
+gate.
+
+**What this version is not.** The gate reads the finished transcript, not the
+audio, so the agent decides whether it was addressed only after you stop
+talking. Recognition still runs on every utterance; the saving is in what gets
+answered, not in what gets heard. A wake-word model that reacts to the name
+itself is a later step — this is the version that needs no new model.
+
+### Mouse, editing and Settings
+
 Select transcript text with the mouse and copy it the way you would anywhere
 else in your terminal — Obey Voice leaves the mouse alone, so click-drag
 selection and your terminal's own copy both work without a modifier.

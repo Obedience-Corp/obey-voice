@@ -120,6 +120,13 @@ type conversationModel struct {
 	speakerNames *speaker.NameMap
 	// talk is the system-wide talk key for this session; nil when none.
 	talk *talkState
+	// nameSummon is this session's name gate; nil when name summon is off or
+	// the front end refused it. See summon.go.
+	nameSummon *summonGate
+	// talkKeyTurn is true while the talk key owns the in-flight turn, so the
+	// name gate lets it through. Pointer so Bubble Tea model copies and the
+	// pipeline goroutine share one flag, same as canCancelVoice.
+	talkKeyTurn *atomic.Bool
 
 	commandQuery     string
 	commandSelection int
