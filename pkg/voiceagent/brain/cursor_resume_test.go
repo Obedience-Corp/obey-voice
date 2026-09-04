@@ -354,15 +354,15 @@ func TestCursorAskOptionsGateToolsOnVoiceToolsEnabled(t *testing.T) {
 	if enabled.Model != "composer-2.5" {
 		t.Fatalf("Model = %q, want composer-2.5", enabled.Model)
 	}
-	if !enabled.Force || !enabled.Yolo || !enabled.AllowDangerousMode {
-		t.Fatalf("enabled must set force/yolo so a headless turn cannot stall: %+v", enabled)
+	if enabled.Force || enabled.Yolo || enabled.AllowDangerousMode {
+		t.Fatalf("tools-on must not set force/yolo: voice_tools_enabled is not a dangerous-mode opt-in: %+v", enabled)
 	}
 	if err := enabled.Validate(); err != nil {
 		t.Fatalf("enabled options rejected by SDK: %v", err)
 	}
 	args := cursor.BuildPrintArgs("prompt", enabled)
-	if slices.Index(args, "--force") < 0 {
-		t.Fatalf("tools-on args = %#v, want --force", args)
+	if slices.Index(args, "--force") >= 0 {
+		t.Fatalf("tools-on args = %#v, did not want --force", args)
 	}
 	if i := slices.Index(args, "--mode"); i < 0 || i+1 >= len(args) || args[i+1] != "agent" {
 		t.Fatalf("tools-on args = %#v, want --mode agent", args)

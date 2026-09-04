@@ -257,10 +257,14 @@ func (c *CursorBrain) dropSession() {
 
 // askOptions builds the print-mode options shared by the streaming and
 // blocking paths. Tool execution is gated by voice_tools_enabled: disabled
-// uses ask mode (no edits); enabled uses agent mode with force/yolo so a
-// headless voice turn cannot stall on a permission prompt — the same contract
-// as Claude/Grok's bypassPermissions + AllowDangerousMode. Trust is always
-// set so a first run in an untrusted workspace cannot stall either.
+// uses ask mode (no edits); enabled uses agent mode. Trust is always set so
+// a first run in an untrusted workspace cannot stall on a human prompt.
+//
+// Force/yolo/AllowDangerousMode stay off. Those skip Cursor's permission
+// checks, and tying them to voice_tools_enabled (on by default) would let a
+// spoken or misrecognized turn run agent actions with no confirmation.
+// Agent mode without --force still lets Cursor ask; that is the permission
+// boundary this provider keeps.
 func (c *CursorBrain) askOptions(toolsEnabled bool) *cursor.AskOptions {
 	opts := &cursor.AskOptions{
 		Trust:            true,
@@ -269,9 +273,6 @@ func (c *CursorBrain) askOptions(toolsEnabled bool) *cursor.AskOptions {
 	}
 	if toolsEnabled {
 		opts.Mode = cursor.ModeAgent
-		opts.Force = true
-		opts.Yolo = true
-		opts.AllowDangerousMode = true
 	} else {
 		opts.Mode = cursor.ModeAsk
 	}
