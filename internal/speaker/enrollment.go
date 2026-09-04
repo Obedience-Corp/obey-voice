@@ -34,10 +34,16 @@ type Profile struct {
 	ModelRev string `yaml:"model_revision" json:"model_revision"`
 	Dim      int    `yaml:"dim" json:"dim"`
 	Samples  int    `yaml:"samples" json:"samples"`
-	// Owner marks the machine's human: the subject owner_verify and
-	// barge_in_speakers=enrolled_only gate on, and the profile Settings
-	// re-enrolls or removes as "your voice". At most one profile carries it.
-	Owner     bool      `yaml:"owner,omitempty" json:"owner,omitempty"`
+	// Owner marks the Settings "your voice" subject: the one profile Register,
+	// Re-enroll, and Remove act on. It is not an access level — owner_verify
+	// and barge_in_speakers=enrolled_only key off the live label's enrollment
+	// revision, so they accept any enrolled profile, guests included. At most
+	// one profile carries the flag.
+	//
+	// The YAML key is written even when false, unlike the JSON the app reads:
+	// its absence is what identifies a store recorded before the flag existed,
+	// which is the only store load may adopt an owner for.
+	Owner     bool      `yaml:"owner" json:"owner,omitempty"`
 	CreatedAt time.Time `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time `yaml:"updated_at" json:"updated_at"`
 }
@@ -133,6 +139,7 @@ func OpenEnrollment(dir string) (*Enrollment, error) {
 		}
 		e.profiles[slug] = p
 	}
+	e.backfillOwner(ownerKeysAbsent(raw))
 	return e, nil
 }
 

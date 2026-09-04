@@ -1,6 +1,10 @@
 package speaker
 
-import "fmt"
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Owner returns the profile flagged as the machine's human, if any.
 //
@@ -19,6 +23,28 @@ func (e *Enrollment) Owner() (Profile, bool) {
 		}
 	}
 	return Profile{}, false
+}
+
+// backfillOwner adopts the lone profile of a store written before the owner
+// flag existed, so Settings does not report "nothing registered" over a
+// voiceprint that can only be the user's own.
+//
+// Two conditions narrow it to that case and no other. legacy means the file
+// carried no `owner:` key at all, which separates a pre-flag store from one
+// whose owner was deliberately removed and left a guest behind — that seat
+// stays empty. And exactly one profile, because with two there is nothing to
+// read the answer off and map order is not a human.
+//
+// The adopted flag lives in memory until the next save persists it: load is a
+// read path, and LoadEnrollment exists so an unenrolled install stays untouched.
+func (e *Enrollment) backfillOwner(legacy bool) {
+	if !legacy || len(e.profiles) != 1 {
+		return
+	}
+	for slug, p := range e.profiles {
+		p.Owner = true
+		e.profiles[slug] = p
+	}
 }
 
 // SetOwner moves the owner flag onto name, clearing it everywhere else, so the
@@ -67,6 +93,28 @@ func (e *Enrollment) SetOwner(name string) error {
 func (e *Enrollment) singleOwnerLocked(slug string) bool {
 	for key, p := range e.profiles {
 		if p.Owner && key != slug {
+			return false
+		}
+	}
+	return true
+}
+
+// ownerKeysAbsent reports whether profiles.yaml predates the owner flag. Every
+// save since writes `owner:` on every profile, false included, so a file with
+// none was recorded before ownership was a concept — the one case where a lone
+// profile can be assumed to be the machine's human rather than a guest left
+// behind by a deliberate removal.
+func ownerKeysAbsent(raw []byte) bool {
+	var probe struct {
+		Profiles []struct {
+			Owner *bool `yaml:"owner"`
+		} `yaml:"profiles"`
+	}
+	if err := yaml.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	for _, p := range probe.Profiles {
+		if p.Owner != nil {
 			return false
 		}
 	}

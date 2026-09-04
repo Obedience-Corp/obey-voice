@@ -19,13 +19,15 @@ const (
 	// distinct utterances is what `speaker enroll` already recommends: enough
 	// windows for the manager to average over, short enough to sit through.
 	enrollClips = 3
-	// enrollClipSeconds is the length of each clip. Long enough to split into
-	// two live-sized analysis windows at the default 1500 ms.
-	enrollClipSeconds = 3
 	// enrollClipGap is the pause between clips, so the user can draw breath
 	// and start a new sentence instead of being cut off mid-word.
 	enrollClipGap = time.Second
 )
+
+// enrollClipLength is how long each clip runs: long enough to split into two
+// live-sized analysis windows at the default 1500 ms. A var rather than a
+// const so tests can shrink a clip and still afford a real inter-clip gap.
+var enrollClipLength = 3 * time.Second
 
 // errNoMicrophone is the one enrollment failure the user can act on without a
 // stack trace: there is no capture graph to record from. The status line shows
@@ -302,7 +304,7 @@ func (m settingsModel) enrollOverlayLines() []string {
 
 // enrollProgressBar renders elapsed against one clip's length.
 func enrollProgressBar(elapsed time.Duration, width int) string {
-	total := time.Duration(enrollClipSeconds) * time.Second
+	total := enrollClipLength
 	filled := 0
 	if total > 0 {
 		filled = min(int(float64(width)*elapsed.Seconds()/total.Seconds()), width)

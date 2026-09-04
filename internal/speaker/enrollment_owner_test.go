@@ -3,6 +3,9 @@ package speaker
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -122,5 +125,91 @@ func TestRemoveOwnerPromotesNobody(t *testing.T) {
 	// And a later enrollment does not inherit it either, while a guest remains.
 	if again := addProfile(t, store, "Lance"); again.Owner {
 		t.Fatal("re-enrolling into a store that already has profiles must not claim ownership")
+	}
+}
+
+// writeLegacyProfiles lays down a profiles.yaml as it was written before the
+// owner flag existed: no `owner:` key anywhere.
+func writeLegacyProfiles(t *testing.T, dir string, names ...string) {
+	t.Helper()
+	body := "profiles:\n"
+	for _, name := range names {
+		body += fmt.Sprintf("    - name: %s\n      model_revision: rev-1\n      dim: 4\n      samples: 1\n", name)
+	}
+	if err := os.WriteFile(filepath.Join(dir, profilesFileName), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLoneLegacyProfileBecomesTheOwner: a store enrolled before the flag
+// existed holds exactly one voice, and it is plainly the user's own. Leaving it
+// unflagged made Settings say "nothing registered" over a working voiceprint.
+func TestLoneLegacyProfileBecomesTheOwner(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, embeddingsDirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeLegacyProfiles(t, dir, "Lance")
+
+	store, err := OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, ok := store.Owner()
+	if !ok || owner.Name != "Lance" {
+		t.Fatalf("owner = %+v (%v), want the single stored profile", owner, ok)
+	}
+
+	// Adopted in memory; the next write is what persists it.
+	if err := store.SetOwner("Lance"); err != nil {
+		t.Fatalf("SetOwner: %v", err)
+	}
+	reopened, err := OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner, ok := reopened.Owner(); !ok || owner.Name != "Lance" {
+		t.Fatalf("owner after reload = %+v (%v), want Lance", owner, ok)
+	}
+}
+
+// TestTwoLegacyProfilesGetNoOwner: with nothing to read the answer off, map
+// order must not hand owner_verify's subject to whoever sorts first.
+func TestTwoLegacyProfilesGetNoOwner(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, embeddingsDirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeLegacyProfiles(t, dir, "Lance", "Alex")
+
+	store, err := OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner, ok := store.Owner(); ok {
+		t.Fatalf("owner = %+v, want none: an ambiguous legacy store must not promote anyone", owner)
+	}
+}
+
+// TestBackfillNeverOverridesAStoredOwner: a single guest whose owner was
+// removed on purpose keeps the seat empty.
+func TestBackfillNeverOverridesAStoredOwner(t *testing.T) {
+	dir := t.TempDir()
+	store, err := OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addProfile(t, store, "Lance")
+	addProfile(t, store, "Alex")
+	if err := store.Remove("Lance"); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner, ok := reopened.Owner(); ok {
+		t.Fatalf("owner after reload = %+v, want none — the seat was emptied deliberately", owner)
 	}
 }

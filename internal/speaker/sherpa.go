@@ -188,6 +188,11 @@ func (e *SherpaEngine) EmbeddingRev() string {
 // Search resolves the enrolled name before anonymous registration invents a
 // speaker-N for that voice. Callers are responsible for skipping profiles
 // from a different embedding revision (SeedFromStore does).
+//
+// Seeding replaces in place. The manager refuses to add a name it already
+// holds, so a re-enroll of the running session's own voice would otherwise be
+// rejected: the new voiceprint reaches disk and the conversation keeps
+// labelling with the old one.
 func (e *SherpaEngine) SeedEnrolled(name, modelRev string, embeddings [][]float32) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len(embeddings) == 0 {
@@ -198,7 +203,13 @@ func (e *SherpaEngine) SeedEnrolled(name, modelRev string, embeddings [][]float3
 	if e.closed || e.manager == nil {
 		return fmt.Errorf("speaker: seed enrolled %q: live identification unavailable", name)
 	}
+	if e.manager.Contains(name) && !e.manager.Remove(name) {
+		return fmt.Errorf("speaker: seed enrolled %q: manager kept the previous embeddings", name)
+	}
 	if !e.manager.RegisterV(name, embeddings) {
+		// The old rows are gone, so the revision map must not keep claiming a
+		// name the manager can no longer resolve.
+		delete(e.enrolled, strings.ToLower(name))
 		return fmt.Errorf("speaker: seed enrolled %q: manager rejected embeddings", name)
 	}
 	if e.enrolled == nil {

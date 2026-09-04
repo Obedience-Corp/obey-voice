@@ -180,7 +180,8 @@ func newSpeakerListCmd(loadConfig configLoader) *cobra.Command {
 				return err
 			}
 			if owned {
-				fmt.Fprintln(cmd.OutOrStdout(), "* owner — the voice owner_verify and enrolled-only barge-in gate on")
+				fmt.Fprintln(cmd.OutOrStdout(), "* owner — your voice in Settings → Speakers: the profile Register, Re-enroll and Remove act on.")
+				fmt.Fprintln(cmd.OutOrStdout(), "  Not an access level: owner_verify and barge_in_speakers=enrolled_only accept any enrolled profile.")
 			}
 			return nil
 		},

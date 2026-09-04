@@ -90,3 +90,55 @@ func TestSherpaEngineHonorsCanceledContextBeforeNativeCall(t *testing.T) {
 		t.Fatal("expected context cancellation")
 	}
 }
+
+// TestSeedEnrolledReplacesInPlace runs against the real sherpa embedding
+// manager, which needs an embedding dimension rather than a model file and so
+// constructs offline. It holds the contract the bug lived in: the manager
+// refuses to add a name it already holds, which is exactly what re-enrolling
+// the running session's own voice asks it to do.
+func TestSeedEnrolledReplacesInPlace(t *testing.T) {
+	mgr := sherpa.NewSpeakerEmbeddingManager(4)
+	if mgr == nil {
+		t.Fatal("could not construct an embedding manager")
+	}
+	engine := &SherpaEngine{manager: mgr, windowMS: 1500}
+	defer func() { _ = engine.Close() }()
+
+	if err := engine.SeedEnrolled("Lance", "titanet-w1500", [][]float32{{1, 0, 0, 0}}); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+	// The premise: a plain add of the same name is refused. If sherpa ever
+	// starts accepting it, this test says so instead of silently passing.
+	if mgr.RegisterV("Lance", [][]float32{{0, 1, 0, 0}}) {
+		t.Fatal("sherpa accepted a duplicate name; SeedEnrolled's remove-first step needs revisiting")
+	}
+
+	if err := engine.SeedEnrolled("Lance", "titanet-w3000", [][]float32{{0, 1, 0, 0}}); err != nil {
+		t.Fatalf("re-enroll seed: %v", err)
+	}
+	if rev := engine.EnrollRevFor("lance"); rev != "titanet-w3000" {
+		t.Fatalf("enrolled rev = %q, want the re-enrolled revision", rev)
+	}
+	if n := engine.EnrolledCount(); n != 1 {
+		t.Fatalf("enrolled count = %d, want 1 — a replace must not double-count", n)
+	}
+	// The manager resolves the new voiceprint and no longer the replaced one.
+	if got := mgr.Search([]float32{0, 1, 0, 0}, 0.5); got != "Lance" {
+		t.Fatalf("search for the re-enrolled voice = %q, want Lance", got)
+	}
+	if got := mgr.Search([]float32{1, 0, 0, 0}, 0.5); got != "" {
+		t.Fatalf("search for the replaced voice = %q, want no match", got)
+	}
+}
+
+// TestSeedEnrolledOnClosedEngine keeps the refusal path honest now that seeding
+// mutates the manager before registering.
+func TestSeedEnrolledOnClosedEngine(t *testing.T) {
+	engine := &SherpaEngine{manager: sherpa.NewSpeakerEmbeddingManager(4)}
+	if err := engine.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.SeedEnrolled("Lance", "titanet-w1500", [][]float32{{1, 0, 0, 0}}); err == nil {
+		t.Fatal("seeding a closed engine must fail")
+	}
+}

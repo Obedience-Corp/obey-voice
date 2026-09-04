@@ -124,3 +124,48 @@ func TestLazyLiveSeedEnrolledReachesBuiltEngine(t *testing.T) {
 		t.Fatalf("engine enrolled rev = %q, want titanet", rev)
 	}
 }
+
+// TestLazyLiveSeedDuringBuildReachesTheLandingEngine covers the window the
+// on-demand build opens: the builder seeds itself from the enrollment store and
+// only then installs the analyzer. A registration that finishes in between is
+// in neither — it was written to disk after the builder read it, and there is no
+// analyzer yet to hand it to — so it must be held and applied when the engine
+// lands, not silently dropped until some later rebuild.
+func TestLazyLiveSeedDuringBuildReachesTheLandingEngine(t *testing.T) {
+	capture := newStubCapture()
+	engine := &FakeEngine{}
+	release := make(chan struct{})
+	lazy := NewLazyLive(context.Background(), liveOnConfig(), capture, func() (Engine, error) {
+		<-release
+		return engine, nil
+	}, "")
+	defer func() { _ = lazy.Close() }()
+
+	// SetEnabled marks the build in flight before it returns, so the seed below
+	// is squarely inside the window.
+	lazy.SetEnabled(true)
+	if err := lazy.SeedEnrolled("lance", "titanet", [][]float32{{0.5, 0, 0, 0}}); err != nil {
+		t.Fatalf("seeding during a build = %v, want nil", err)
+	}
+	if rev := engine.EnrollRevFor("lance"); rev != "" {
+		t.Fatalf("the engine took a seed before it was built: rev %q", rev)
+	}
+
+	close(release)
+	waitForBuild(t, capture)
+	waitForEnrolledRev(t, engine, "lance", "titanet")
+}
+
+// waitForEnrolledRev polls the engine because the pending seeds are applied by
+// the build goroutine, just after it installs the analyzer.
+func waitForEnrolledRev(t *testing.T, engine *FakeEngine, name, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if engine.EnrollRevFor(name) == want {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("engine enrolled rev for %q = %q, want %q", name, engine.EnrollRevFor(name), want)
+}

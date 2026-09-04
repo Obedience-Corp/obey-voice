@@ -147,11 +147,13 @@ the recording even though entering Settings mutes the conversation; `Esc`
 cancels and nothing is saved. Registering while a chat is open takes effect
 immediately: the running engine is seeded, so the next turn that matches is
 labelled with the name instead of `speaker-1`. The first registered profile is
-the machine’s **owner** — the subject `speaker.live.mode=owner_verify` and
-`barge_in_speakers=enrolled_only` gate on. **Re-enroll your voice** replaces it
-in place, and **Remove your voice** deletes it (chat falls back to `speaker-1`
-until you register again; a conversation already running keeps the old voice
-until it restarts).
+the machine’s **owner** — the one Settings calls “your voice”, the profile
+**Re-enroll your voice** replaces in place and **Remove your voice** deletes
+(chat falls back to `speaker-1` until you register again; a conversation already
+running keeps the old voice until it restarts). The flag picks that subject, not
+an access level: `speaker.live.mode=owner_verify` and
+`barge_in_speakers=enrolled_only` accept any enrolled profile, including guests
+enrolled from the CLI.
 
 Changing `speaker.live.window_ms` restamps the enrollment recipe: embeddings
 recorded at the old window are no longer comparable, so the row says

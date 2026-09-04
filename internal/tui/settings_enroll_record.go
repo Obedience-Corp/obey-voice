@@ -27,7 +27,9 @@ const (
 )
 
 // enrollClipSamples is the per-clip sample count at the capture rate.
-func enrollClipSamples() int { return enrollClipSeconds * audio.SampleRate }
+func enrollClipSamples() int {
+	return int(enrollClipLength * audio.SampleRate / time.Second)
+}
 
 // recordEnrollment records the clips, enrolls them, and seeds a running live
 // engine. Everything here runs on the Cmd goroutine; the update loop only sees
@@ -85,9 +87,6 @@ func recordEnrollClips(
 	}
 	cleanup = func() { _ = os.RemoveAll(dir) }
 
-	subID, chunks := capture.Subscribe(enrollCaptureQueue)
-	defer capture.Unsubscribe(subID)
-
 	paths = make([]string, 0, enrollClips)
 	for clip := 1; clip <= enrollClips; clip++ {
 		if clip > 1 && gap > 0 {
@@ -98,7 +97,7 @@ func recordEnrollClips(
 			}
 		}
 		events.send(enrollProgressMsg{clip: clip})
-		samples, err := recordEnrollClip(ctx, clip, chunks, events)
+		samples, err := recordEnrollClip(ctx, capture, clip, events)
 		if err != nil {
 			return nil, cleanup, err
 		}
@@ -133,7 +132,16 @@ func openEnrollCapture(captureFor func() (speaker.CaptureSource, func(), error))
 }
 
 // recordEnrollClip accumulates one clip from the capture fan-out.
-func recordEnrollClip(ctx context.Context, clip int, chunks <-chan []float32, events *eventBridge) ([]float32, error) {
+//
+// The subscription opens here and closes with the clip, because capture keeps
+// publishing through the pause between clips. A fan-out held open across that
+// pause hands the next clip a queue of stale gap audio, and the clip fills its
+// quota from the backlog — losing the tail of what the user actually said. Each
+// WAV therefore starts at the moment the overlay says "recording clip N".
+func recordEnrollClip(ctx context.Context, capture speaker.CaptureSource, clip int, events *eventBridge) ([]float32, error) {
+	subID, chunks := capture.Subscribe(enrollCaptureQueue)
+	defer capture.Unsubscribe(subID)
+
 	want := enrollClipSamples()
 	samples := make([]float32, 0, want)
 	nextReport := time.Now()

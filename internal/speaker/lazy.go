@@ -44,6 +44,18 @@ type LazyLive struct {
 	// status reporting.
 	status  LiveStatus
 	lastErr string
+	// pendingSeeds holds profiles registered while a build was in flight. The
+	// builder seeds from the enrollment store before the analyzer is installed,
+	// so a registration that lands in that window is invisible to both paths.
+	pendingSeeds []pendingSeed
+}
+
+// pendingSeed is one enrollment waiting for the engine it was registered
+// against to finish loading.
+type pendingSeed struct {
+	name       string
+	modelRev   string
+	embeddings [][]float32
 }
 
 // NewLazyLive returns a controller that builds its engine on first enable.
@@ -138,17 +150,37 @@ func (l *LazyLive) startEngine() {
 		if l.closed {
 			l.status = LiveClosed
 		}
+		// Nothing will ever consume them: the profiles are on disk, and there
+		// is no engine left for them to reach.
+		l.pendingSeeds = nil
 		l.mu.Unlock()
 		teardown(stopFeed, adapter, analyzer, engine)
 		return
 	}
 	l.adapter, l.analyzer, l.stopFeed = adapter, analyzer, stopFeed
 	desired := l.desired
+	pending := l.pendingSeeds
+	l.pendingSeeds = nil
 	l.mu.Unlock()
+
+	l.applyPendingSeeds(analyzer, pending)
 
 	// The adapter comes up enabled; honor a disable that arrived mid-load.
 	if !desired {
 		adapter.SetEnabled(false)
+	}
+}
+
+// applyPendingSeeds hands the landed engine every profile registered while it
+// was still loading. A failed seed is recorded, not returned: the engine is up
+// and labelling, and the profile is on disk for the next build to pick up.
+func (l *LazyLive) applyPendingSeeds(analyzer *Analyzer, pending []pendingSeed) {
+	for _, seed := range pending {
+		if err := analyzer.SeedEnrolled(seed.name, seed.modelRev, seed.embeddings); err != nil {
+			l.mu.Lock()
+			l.lastErr = err.Error()
+			l.mu.Unlock()
+		}
 	}
 }
 
@@ -167,16 +199,26 @@ func (l *LazyLive) Stats() LiveStats {
 
 // SeedEnrolled forwards a freshly enrolled profile to a built engine.
 //
-// No engine yet is success, not an error: the build that eventually runs seeds
-// every stored profile from the enrollment store anyway, so a profile written
-// to disk before the first /speakers on is already accounted for.
+// A build already in flight is the one case that needs holding: it read the
+// enrollment store before this profile was written and installs the analyzer
+// after this call returns, so the profile would reach neither path and stay
+// unlabelled until some later rebuild. Those are queued and applied once the
+// analyzer lands.
+//
+// With no engine and no build there is genuinely nothing to do, and that is
+// success rather than an error: the next build seeds every stored profile from
+// disk, and this profile is already there.
 func (l *LazyLive) SeedEnrolled(name, modelRev string, embeddings [][]float32) error {
 	l.mu.Lock()
 	analyzer := l.analyzer
-	l.mu.Unlock()
 	if analyzer == nil {
+		if l.building && !l.closed {
+			l.pendingSeeds = append(l.pendingSeeds, pendingSeed{name: name, modelRev: modelRev, embeddings: embeddings})
+		}
+		l.mu.Unlock()
 		return nil
 	}
+	l.mu.Unlock()
 	return analyzer.SeedEnrolled(name, modelRev, embeddings)
 }
 

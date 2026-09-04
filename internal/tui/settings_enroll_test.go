@@ -115,14 +115,16 @@ func TestRegisterRecordsThreeClipsAndSeedsTheRunningEngine(t *testing.T) {
 	if msg.profile.Name != "Lance" || !msg.profile.Owner {
 		t.Fatalf("profile = %+v, want the owner named Lance", msg.profile)
 	}
-	// Three clips of enrollClipSeconds at the default 1500 ms window embed as
+	// Three clips of enrollClipLength at the default 1500 ms window embed as
 	// two rows each: the store must hold what was recorded, not one whole-span
 	// embed (the FRR 0.80 shape windowed enrollment exists to avoid).
 	if msg.profile.Samples != enrollClips*2 {
 		t.Errorf("profile samples = %d, want %d", msg.profile.Samples, enrollClips*2)
 	}
-	if capture.released() != 1 {
-		t.Errorf("capture subscriptions released = %d, want 1", capture.released())
+	// One subscription per clip, each released with its clip: the fan-out is
+	// never held across the pause between clips.
+	if capture.released() != enrollClips {
+		t.Errorf("capture subscriptions released = %d, want %d", capture.released(), enrollClips)
 	}
 
 	if !msg.seeded || msg.seedErr != nil {
@@ -167,8 +169,8 @@ func TestRecordEnrollClipsWritesThenRemovesTheClips(t *testing.T) {
 		if rate != audio.SampleRate {
 			t.Errorf("%s sample rate = %d, want %d", path, rate, audio.SampleRate)
 		}
-		if got := len(samples); got < enrollClipSeconds*audio.SampleRate {
-			t.Errorf("%s has %d samples, want at least %d", path, got, enrollClipSeconds*audio.SampleRate)
+		if got := len(samples); got < enrollClipSamples() {
+			t.Errorf("%s has %d samples, want at least %d", path, got, enrollClipSamples())
 		}
 	}
 	cleanup()
@@ -363,4 +365,52 @@ func TestEnrollOverlayOwnsTheScreen(t *testing.T) {
 // key builds a rune KeyMsg for the confirmation and overlay paths.
 func key(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// TestReEnrollSeedsTheRunningEngineAgain: "Re-enroll your voice" is the second
+// registration under the same name, and the seat it writes to is already
+// occupied — in the store and in the running engine's embedding manager. It has
+// to land in both, and the status line must not tell the user the open
+// conversation kept its old labels.
+func TestReEnrollSeedsTheRunningEngineAgain(t *testing.T) {
+	capture := newEnrollCapture()
+	m, live := enrollTestSettings(t, capture)
+
+	first, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg)
+	if first.err != nil {
+		t.Fatalf("first registration failed: %v", first.err)
+	}
+
+	again, ok := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg)
+	if !ok || again.err != nil {
+		t.Fatalf("re-enroll = %+v, want a successful registration", again)
+	}
+	if !again.seeded || again.seedErr != nil {
+		t.Fatalf("re-enroll seeded=%v seedErr=%v, want the running engine to take it", again.seeded, again.seedErr)
+	}
+	if len(live.seeded) != 2 || live.seeded[1].name != "Lance" {
+		t.Fatalf("seed calls = %+v, want a second seed for Lance", live.seeded)
+	}
+	// Re-enrolling refreshes embeddings, not identity: still one owner.
+	if !again.profile.Owner {
+		t.Error("re-enrolling the owner must keep ownership")
+	}
+	store, err := speaker.LoadEnrollment(speaker.EnrollmentDir(m.cfg))
+	if err != nil || store == nil {
+		t.Fatalf("store after re-enroll: %v (%v)", store, err)
+	}
+	if got := len(store.List()); got != 1 {
+		t.Fatalf("profiles after re-enroll = %d, want 1", got)
+	}
+
+	m.enroll = enrollSession{active: true, name: "Lance"}
+	m.finishEnroll(again)
+	if !strings.Contains(m.message, "Registered Lance") {
+		t.Errorf("message = %q, want a successful registration", m.message)
+	}
+	for _, unwanted := range []string{"rejected", "keeps its old labels", "next conversation"} {
+		if strings.Contains(m.message, unwanted) {
+			t.Errorf("message = %q, must not claim %q after a seeded re-enroll", m.message, unwanted)
+		}
+	}
 }
