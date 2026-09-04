@@ -4,6 +4,8 @@ import "context"
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	// Background marks a host-scheduled result notification, not a user utterance.
+	Background   bool
 	VoiceMode    bool
 	ToolsEnabled bool
 	// Speaker is the stable live speaker id for this user turn (speaker-1),

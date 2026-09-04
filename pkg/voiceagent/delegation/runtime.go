@@ -36,6 +36,7 @@ type Runtime struct {
 	job       *job
 	pending   *Delivery
 	closed    bool
+	ready     chan struct{}
 	wg        sync.WaitGroup
 }
 
@@ -53,7 +54,7 @@ func New(ctx context.Context, client Client, timeout time.Duration, summarize Su
 		timeout = 5 * time.Minute
 	}
 	lifetime, stop := context.WithCancel(context.Background())
-	return &Runtime{client: client, summarize: summarize, timeout: timeout, ctx: lifetime, stop: stop}, nil
+	return &Runtime{client: client, summarize: summarize, timeout: timeout, ctx: lifetime, stop: stop, ready: make(chan struct{}, 1)}, nil
 }
 
 // Start queues dispatch and returns immediately. A ticket acknowledges the
@@ -253,6 +254,7 @@ func (r *Runtime) run(j *job, req Request) {
 	defer r.mu.Unlock()
 	j.done = true
 	r.pending = &Delivery{Ticket: j.ticket, SourceRef: snapshot.ID, Brief: brief}
+	r.signalReady()
 }
 func (r *Runtime) update(j *job, s Snapshot) { r.mu.Lock(); j.snapshot = s; r.mu.Unlock() }
 func (r *Runtime) finishError(j *job, message string) {
@@ -272,4 +274,14 @@ func (r *Runtime) finishError(j *job, message string) {
 	j.done = true
 	j.err = message
 	r.pending = &Delivery{Ticket: j.ticket, SourceRef: j.snapshot.ID, Brief: message}
+	r.signalReady()
+}
+
+// Ready wakes a host-owned serialized turn driver. It never starts a turn.
+func (r *Runtime) Ready() <-chan struct{} { return r.ready }
+func (r *Runtime) signalReady() {
+	select {
+	case r.ready <- struct{}{}:
+	default:
+	}
 }

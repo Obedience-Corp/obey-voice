@@ -215,8 +215,13 @@ func loadSkillsCatalog(ctx context.Context, cfg *config.Config, workDir string) 
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	o.refreshSystemPrompt(opts.OnPromptWarn)
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
-	o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	if !opts.Background {
+		o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	}
 	o.receiveDelegationResults(opts)
+	if opts.Background {
+		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
+	}
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 
@@ -532,8 +537,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	// ThinkStream — which records a recovery reply and keeps the turn — a failed
 	// ThinkFull answers nothing, so its input must not stay behind.
 	restore := append([]api.Message(nil), o.history...)
-	o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	if !opts.Background {
+		o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	}
 	o.receiveDelegationResults(opts)
+	if opts.Background {
+		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
+	}
 	o.ensureContextBudget(skillCtx)
 
 	sess := &toolSession{
