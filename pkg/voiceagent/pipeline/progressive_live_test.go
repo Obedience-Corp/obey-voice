@@ -74,7 +74,7 @@ func TestLiveProgressiveNativeConversation(t *testing.T) {
 		"And the third ends the reply.",
 	}, nil)
 
-	response, _, err := p.streamResponse(ctx, cancel, stream, false, tm, turn)
+	response, _, err := p.streamResponse(ctx, cancel, stream, false, tm, turn, nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}

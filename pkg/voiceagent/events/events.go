@@ -443,6 +443,32 @@ type ToolCallFinished struct {
 
 func (e ToolCallFinished) eventType() string { return "tool_call_finished" }
 
+// JobStarted signals an async worker job began (queued or running).
+type JobStarted struct {
+	ID   string
+	Task string
+}
+
+func (e JobStarted) eventType() string { return "job_started" }
+
+// JobFinished signals a worker job completed successfully.
+type JobFinished struct {
+	ID      string
+	Task    string
+	Summary string
+}
+
+func (e JobFinished) eventType() string { return "job_finished" }
+
+// JobFailed signals a worker job ended with an error.
+type JobFailed struct {
+	ID   string
+	Task string
+	Err  string
+}
+
+func (e JobFailed) eventType() string { return "job_failed" }
+
 // VoiceGateStripped reports that the pipeline's voice gate removed tool-shaped
 // lines from a speech segment before TTS (WI-dc9e33 B4). The stripped text
 // still reaches the chat transcript — only the spoken channel is filtered.

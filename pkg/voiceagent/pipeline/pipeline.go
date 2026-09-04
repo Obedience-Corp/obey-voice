@@ -180,6 +180,20 @@ type Pipeline struct {
 	BargeInVAD        VoiceDetector
 	Events            *events.Bus
 	VoiceToolsEnabled bool
+	// RouterToolsPolicy is the live-brain tool surface (route_only vs legacy).
+	RouterToolsPolicy brain.RouterToolsPolicy
+	// VoiceFailedRouteRepair enables Layer 3 spawn repair for spoken tool promises.
+	VoiceFailedRouteRepair bool
+	// OnRoute is invoked when a turn is classified without speaking a chat reply.
+	// Sequence 04 wires job/narration handlers here; tests observe spawn/narrate.
+	OnRoute func(RouteDecision)
+	// NarrationActive reports whether narration mode is active (Layer 1 guards).
+	NarrationActive func() bool
+	// JobActive reports whether a worker job is running or queued.
+	JobActive func() bool
+	// Agency handles spawn/abort/status routes and async worker jobs.
+	Agency *Agency
+	activeTurns atomic.Int32
 	// underrunOnce gates the "synthesis cannot keep up" notice to one per
 	// session; the condition holds on every turn once it holds at all.
 	underrunOnce sync.Once
@@ -880,6 +894,48 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	p.handlePlaybackLifecycle(sentence, usedFallback, synthStarted, time.Since(synthStarted), playback, metrics)
 }
 
+// speakStandalone synthesizes one short utterance outside the streaming path.
+// turn may be nil for idle job summaries.
+func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, metrics *turnMetrics, sentence string) error {
+	sentence = strings.TrimSpace(sentence)
+	if sentence == "" || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
+		return nil
+	}
+	if turn != nil {
+		turn.to(TurnSpeaking)
+	}
+	if metrics != nil && metrics.firstSegment.IsZero() {
+		metrics.firstSegment = time.Now()
+	}
+	p.emit(events.SpeechSegmentReady{Text: sentence})
+	p.emit(events.GeneratingVoice{Sentence: sentence})
+
+	stream, usedFallback, err := p.synthesizeWithFallback(ctx, sentence, nil)
+	if err != nil {
+		p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
+		return err
+	}
+	if p.OutputMuted() {
+		discardPCMStream(stream)
+		return nil
+	}
+	playback, err := p.Player.PlayStream(ctx, stream)
+	if err != nil {
+		p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", err)})
+		return err
+	}
+	if metrics != nil {
+		if metrics.ttsEngine.provider == "" {
+			metrics.ttsEngine = p.ttsIdentity()
+		}
+		synthStarted := time.Now()
+		p.handlePlaybackLifecycle(sentence, usedFallback, synthStarted, time.Since(synthStarted), playback, metrics)
+	} else {
+		<-playback.Done()
+	}
+	return nil
+}
+
 // StopPlayback aborts audible TTS immediately. Used by the TUI when the user
 // types to barge in so speech does not continue until the turn context drains.
 // A stop that lands mid-playback is a barge-in and stamps the active turn's
@@ -912,6 +968,8 @@ func (p *Pipeline) EndUtterance() bool {
 // RunTurn executes one conversational turn with streaming TTS.
 // Returns the user's input text, or empty string if no speech was detected.
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
+	p.incActiveTurn()
+	defer p.decActiveTurn()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.trackMetrics(metrics)()
@@ -962,22 +1020,33 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	}
 	p.emit(events.ThinkingStarted{})
 
+	// Layer 1 — deterministic phrase routing before the small brain runs.
+	routeCtx := p.routeContext()
+	if kind, ok := classifyPhrase(text, routeCtx); ok && routeKindSkipsBrain(kind) {
+		p.completeRoutedTurn(ctx, turn, metrics, text, kind, "phrase")
+		return text, nil
+	}
+
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain
 	// stream too — not just the derived playback context. Brain work is further
 	// bounded so a hung model after tools cannot wedge the conversation loop.
 	turnCtx, turnCancel := p.withBrainTimeout(ctx)
 	defer turnCancel()
 
-	brainStream, err := p.Brain.ThinkStream(turnCtx, text, brain.StreamOptions{
-		VoiceMode:     true,
-		Speaker:       speakerID,
-		ToolsEnabled:  p.VoiceToolsEnabled,
-		OnToolStart:   p.toolStartHook(),
-		OnToolEnd:     p.toolEndHook(),
-		OnUsage:       p.usageHook(),
-		OnSessionWarn: p.sessionWarnHook(),
-		OnPromptWarn:  p.promptWarnHook(),
-	})
+	var toolsFired bool
+	streamOpts := brain.StreamOptions{
+		VoiceMode:         true,
+		Speaker:           speakerID,
+		ToolsEnabled:      p.VoiceToolsEnabled,
+		RouterToolsPolicy: p.liveRouterToolsPolicy(),
+		OnToolStart:       p.toolStartHookTracked(&toolsFired),
+		OnToolEnd:         p.toolEndHook(),
+		OnUsage:           p.usageHook(),
+		OnSessionWarn:     p.sessionWarnHook(),
+		OnPromptWarn:      p.promptWarnHook(),
+	}
+
+	brainStream, err := p.Brain.ThinkStream(turnCtx, text, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -987,7 +1056,19 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		return text, nil
 	}
 
-	fullResponse, interrupted, err := p.streamResponse(turnCtx, turnCancel, brainStream, true, metrics, turn)
+	var repair *promiseRepairState
+	if p.VoiceFailedRouteRepair {
+		repair = &promiseRepairState{enabled: true, toolsFired: toolsFired}
+	}
+
+	fullResponse, interrupted, err := p.streamResponse(turnCtx, turnCancel, brainStream, true, metrics, turn, repair)
+	if repair != nil && repair.spawn {
+		if p.Player != nil {
+			p.Player.Stop()
+		}
+		p.completeRoutedTurn(ctx, turn, metrics, text, RouteSpawn, "repair")
+		return text, nil
+	}
 	if err != nil {
 		if interrupted || errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -1041,6 +1122,8 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	p.incActiveTurn()
+	defer p.decActiveTurn()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.trackMetrics(metrics)()
@@ -1256,7 +1339,7 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 	}
 }
 
-func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.CancelFunc, stream *brain.Stream, allowBargeIn bool, metrics *turnMetrics, turn *turnConductor) (string, bool, error) {
+func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.CancelFunc, stream *brain.Stream, allowBargeIn bool, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) (string, bool, error) {
 	streamCtx, cancel := context.WithCancel(ctx)
 
 	// loopDone closes when this function returns — the moment the loop stops
@@ -1407,6 +1490,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				}
 				fullResponse.WriteString(display)
 			}
+		}
+
+		if repair != nil && repair.shouldRepair(fullResponse.String()) {
+			if p.Player != nil {
+				p.Player.Stop()
+			}
+			return
 		}
 
 		if interrupted || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
@@ -2158,6 +2248,55 @@ func (p *Pipeline) toolStartHook() func(name, summary string) {
 	return func(name, summary string) {
 		p.bumpBrainDeadline()
 		p.emit(events.ToolCallStarted{Name: name, Summary: summary})
+	}
+}
+
+func (p *Pipeline) toolStartHookTracked(toolsFired *bool) func(name, summary string) {
+	base := p.toolStartHook()
+	return func(name, summary string) {
+		if toolsFired != nil {
+			*toolsFired = true
+		}
+		base(name, summary)
+	}
+}
+
+func (p *Pipeline) liveRouterToolsPolicy() brain.RouterToolsPolicy {
+	if !p.VoiceToolsEnabled {
+		return ""
+	}
+	if p.RouterToolsPolicy != "" {
+		return p.RouterToolsPolicy
+	}
+	return brain.RouterToolsRouteOnly
+}
+
+func (p *Pipeline) routeContext() RouteContext {
+	ctx := RouteContext{}
+	if p.NarrationActive != nil {
+		ctx.NarrationActive = p.NarrationActive()
+	}
+	if p.JobActive != nil {
+		ctx.JobActive = p.JobActive()
+	}
+	return ctx
+}
+
+func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, transcript string, kind RouteKind, source string) {
+	decision := RouteDecision{Kind: kind, Transcript: transcript, Source: source}
+	if p.Agency != nil {
+		p.Agency.HandleRoute(ctx, turn, metrics, decision)
+	} else if p.OnRoute != nil {
+		p.OnRoute(decision)
+	}
+	p.emit(events.ResponseReady{
+		Response:    "",
+		Interrupted: false,
+		Degraded:    metrics.degraded,
+	})
+	turn.finish(TurnCompleted)
+	if p.OnTurn != nil {
+		p.OnTurn()
 	}
 }
 

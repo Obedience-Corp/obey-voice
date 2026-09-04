@@ -34,6 +34,9 @@ type StreamOptions struct {
 	// summarize turn — where the turn instruction's voice framing ("2–3
 	// sentences max") lands after the real instruction and starves it.
 	OmitTurnInstruction bool
+	// RouterToolsPolicy selects live route_only vs legacy full tools when
+	// ToolsEnabled is true. Empty defaults to route_only on the mic path.
+	RouterToolsPolicy RouterToolsPolicy
 }
 
 // IntegrityResult reports whether a streamed completion may have been

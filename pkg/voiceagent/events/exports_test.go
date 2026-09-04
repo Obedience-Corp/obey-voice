@@ -25,6 +25,9 @@ func TestEventTypeExposesWireNames(t *testing.T) {
 		{ConversationCleared{}, "conversation_cleared"},
 		{ThinkingDelta{}, "thinking_delta"},
 		{ResponseSpeakableStarted{}, "response_speakable_started"},
+		{JobStarted{}, "job_started"},
+		{JobFinished{}, "job_finished"},
+		{JobFailed{}, "job_failed"},
 	}
 	for _, tt := range tests {
 		if got := EventType(tt.event); got != tt.want {

@@ -168,6 +168,15 @@ fetch-meeting-fixture:
     chmod +x scripts/fetch-meeting-fixture.sh
     ./scripts/fetch-meeting-fixture.sh
 
+# Download a multi-speaker Zoom-style call clip (first ~2 min, 16 kHz mono).
+# Source: https://www.youtube.com/watch?v=DvO10dFJaFE
+# Roster: tests/speakerflow/zoom-call-roster.json
+fetch-zoom-fixture:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    chmod +x scripts/fetch-zoom-fixture.sh
+    ./scripts/fetch-zoom-fixture.sh
+
 # Diarization integration against real multi-voice meeting audio.
 #
 # 1. Ensures the shared-cache YouTube fixture (auto-fetch once if missing)

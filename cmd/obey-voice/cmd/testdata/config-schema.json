@@ -692,6 +692,50 @@
       "editable": true
     },
     {
+      "key": "voice_worker_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Worker model",
+      "help": "Model pin for the async worker. Empty uses that provider's usual default.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "voice_worker_ollama_host",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Worker Ollama server",
+      "help": "Ollama base URL for the async worker when voice_worker_provider is ollama. Empty inherits ollama_host.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "voice_worker_provider",
+      "type": "enum",
+      "default": "grok",
+      "enum": [
+        "ollama",
+        "grok",
+        "claude"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Worker provider",
+      "help": "Which model runs async jobs after a spawn. Defaults to Grok on Pocket-class devices; Ollama is supported when configured.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "speaker.enabled",
       "type": "bool",
       "default": true,
@@ -1038,6 +1082,38 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "TOOL_COMMAND_TIMEOUT",
+      "editable": true
+    },
+    {
+      "key": "voice_failed_route_repair",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "tools",
+      "title": "Failed route repair",
+      "help": "When the model speaks a tool promise without calling a tool, classify the turn as spawn instead of reading the promise aloud.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "VOICE_FAILED_ROUTE_REPAIR",
+      "editable": true
+    },
+    {
+      "key": "voice_router_tools",
+      "type": "enum",
+      "default": "route_only",
+      "enum": [
+        "route_only",
+        "legacy"
+      ],
+      "allows_empty": false,
+      "group": "tools",
+      "title": "Live router tools",
+      "help": "route_only exposes only the route tool on the microphone brain; legacy keeps the full tool list for comparison.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "VOICE_ROUTER_TOOLS",
       "editable": true
     },
     {

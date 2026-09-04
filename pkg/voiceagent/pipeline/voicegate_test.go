@@ -157,7 +157,7 @@ func TestStreamResponseKeepsThinkOutOfTranscript(t *testing.T) {
 		"It's a wonderful day.",
 	}, nil)
 
-	response, interrupted, err := p.streamResponse(ctx, cancel, stream, false, metrics, turn)
+	response, interrupted, err := p.streamResponse(ctx, cancel, stream, false, metrics, turn, nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestStreamResponseDrainsHeldThinkPrefix(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			response, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, tt.chunks, nil), false, metrics, turn)
+			response, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, tt.chunks, nil), false, metrics, turn, nil)
 			if err != nil {
 				t.Fatalf("streamResponse: %v", err)
 			}

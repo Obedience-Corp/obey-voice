@@ -56,7 +56,7 @@ func prepareLiveSpeaker(
 		return controller, stop, ""
 	}
 	controller.SetEnabled(true)
-	return controller, stop, "live speakers starting (auto-label speaker-1..N)"
+	return controller, stop, "live speakers starting (enrolled names or unknown)"
 }
 
 // ownerVerifyGate vetoes voice turns while the live speaker resolves to a

@@ -128,7 +128,7 @@ func AttributeTranscript(segments []TranscriptSegment, timeline speaker.Timeline
 		bestOverlap := int64(0)
 		tie := false
 		for j, obs := range timeline.Observations {
-			overlap := min64(segment.EndMS, obs.EndMS) - max64(segment.StartMS, obs.StartMS)
+			overlap := min(segment.EndMS, obs.EndMS) - max(segment.StartMS, obs.StartMS)
 			if overlap <= 0 {
 				continue
 			}
@@ -155,18 +155,4 @@ func AttributeTranscript(segments []TranscriptSegment, timeline speaker.Timeline
 		result[i].Source = obs.Source
 	}
 	return result
-}
-
-func min64(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }

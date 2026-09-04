@@ -133,6 +133,13 @@ type Config struct {
 
 	// Brain
 	BrainProvider string `mapstructure:"brain_provider"`
+	// VoiceWorkerProvider selects the async job worker brain (ollama/grok/claude).
+	// Empty defaults to grok.
+	VoiceWorkerProvider string `mapstructure:"voice_worker_provider"`
+	// VoiceWorkerModel pins the worker model; empty inherits the provider default.
+	VoiceWorkerModel string `mapstructure:"voice_worker_model"`
+	// VoiceWorkerOllamaHost overrides ollama_host for the worker when it is ollama.
+	VoiceWorkerOllamaHost string `mapstructure:"voice_worker_ollama_host"`
 	GrokModel     string `mapstructure:"grok_model"`
 	CursorModel   string `mapstructure:"cursor_model"`
 	OllamaModel   string `mapstructure:"ollama_model"`
@@ -182,6 +189,12 @@ type Config struct {
 	ClaudeSessionWarnTokens int `mapstructure:"claude_session_warn_tokens"`
 
 	VoiceToolsEnabled bool `mapstructure:"voice_tools_enabled"`
+	// VoiceRouterTools selects the live-brain tool surface: route_only (default)
+	// or legacy (full worker tool list for A/B).
+	VoiceRouterTools string `mapstructure:"voice_router_tools"`
+	// VoiceFailedRouteRepair enables Layer 3 spawn repair when the model speaks
+	// a tool promise with no tool_calls (design D3).
+	VoiceFailedRouteRepair bool `mapstructure:"voice_failed_route_repair"`
 	// ContinuityIntegrityEnabled detects truncated Ollama completions and
 	// emits continuity observability events. False restores pre-WI-b94dad
 	// behavior (no integrity flags or continuity events).
@@ -472,6 +485,9 @@ func setDefaults(v *viper.Viper) {
 	// with no ollama_model fails with an actionable message from NewOllama rather
 	// than silently routing to a cloud CLI.
 	v.SetDefault("brain_provider", "ollama")
+	v.SetDefault("voice_worker_provider", "grok")
+	v.SetDefault("voice_worker_model", "")
+	v.SetDefault("voice_worker_ollama_host", "")
 	v.SetDefault("grok_model", "")
 	v.SetDefault("cursor_model", "")
 	v.SetDefault("ollama_model", "")
@@ -497,6 +513,8 @@ func setDefaults(v *viper.Viper) {
 	// false (config key or env) still wins. Remote serve stays default-deny
 	// via remote_tools_enabled.
 	v.SetDefault("voice_tools_enabled", true)
+	v.SetDefault("voice_router_tools", "route_only")
+	v.SetDefault("voice_failed_route_repair", true)
 	v.SetDefault("continuity_integrity_enabled", true)
 	v.SetDefault("tool_command_timeout", 30)
 	v.SetDefault("remote_tools_enabled", false)
@@ -655,6 +673,8 @@ var envBindings = map[string]string{
 	"claude_max_session_tokens":   "CLAUDE_MAX_SESSION_TOKENS",
 	"claude_session_warn_tokens":  "CLAUDE_SESSION_WARN_TOKENS",
 	"voice_tools_enabled":         "VOICE_TOOLS_ENABLED",
+	"voice_router_tools":          "VOICE_ROUTER_TOOLS",
+	"voice_failed_route_repair":   "VOICE_FAILED_ROUTE_REPAIR",
 	"tool_command_timeout":        "TOOL_COMMAND_TIMEOUT",
 	"persona":                     "PERSONA",
 	"compact_prompt":              "COMPACT_PROMPT",

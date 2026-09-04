@@ -21,6 +21,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -206,6 +207,8 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	p := &pipeline.Pipeline{
 		Events:                      opts.Events,
 		VoiceToolsEnabled:           cfg.VoiceToolsEnabled,
+		RouterToolsPolicy:           brain.NormalizeRouterToolsPolicy(cfg.VoiceRouterTools),
+		VoiceFailedRouteRepair:      cfg.VoiceFailedRouteRepair,
 		BargeInTailGuard:            config.BargeInTailGuardOf(cfg),
 		BargeInSpeakerVerdictMaxAge: config.BargeInSpeakerVerdictMaxAgeOf(cfg),
 	}
@@ -399,6 +402,15 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		// exactly what serve does with a network ingress.
 		p.STT = opts.STT
 	}
+
+	jobs := job.NewTable(ctx)
+	worker, workerErr := brain.NewWorkerProvider(cfg)
+	if workerErr != nil {
+		logf("warning: worker provider: %v", workerErr)
+	}
+	agency := pipeline.NewAgency(p, jobs, worker, cfg, workerErr)
+	agency.Wire()
+	cleanups = append(cleanups, jobs.Close)
 
 	return &Agent{Pipeline: p}, cleanup, nil
 }

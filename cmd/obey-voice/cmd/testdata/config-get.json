@@ -402,6 +402,10 @@
       "value": 0.6,
       "source": "default"
     },
+    "voice_failed_route_repair": {
+      "value": true,
+      "source": "default"
+    },
     "voice_fallback_provider": {
       "value": "kokoro",
       "source": "default"
@@ -418,8 +422,24 @@
       "value": 1,
       "source": "default"
     },
+    "voice_router_tools": {
+      "value": "route_only",
+      "source": "default"
+    },
     "voice_tools_enabled": {
       "value": true,
+      "source": "default"
+    },
+    "voice_worker_model": {
+      "value": "",
+      "source": "default"
+    },
+    "voice_worker_ollama_host": {
+      "value": "",
+      "source": "default"
+    },
+    "voice_worker_provider": {
+      "value": "grok",
       "source": "default"
     },
     "whisper_model": {
