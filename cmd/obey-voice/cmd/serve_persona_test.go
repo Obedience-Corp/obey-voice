@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
@@ -17,6 +18,7 @@ import (
 
 type servePersonaTestBrain struct {
 	history []brain.Turn
+	closed  int
 }
 
 func (*servePersonaTestBrain) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
@@ -25,7 +27,8 @@ func (*servePersonaTestBrain) ThinkStream(context.Context, string, brain.StreamO
 func (*servePersonaTestBrain) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
 	return "", nil
 }
-func (*servePersonaTestBrain) ClearHistory() {}
+func (*servePersonaTestBrain) ClearHistory()  {}
+func (b *servePersonaTestBrain) Close() error { b.closed++; return nil }
 func (b *servePersonaTestBrain) History() []brain.Turn {
 	return append([]brain.Turn(nil), b.history...)
 }
@@ -94,6 +97,9 @@ func TestServePersonaSwitcherReplacesBrainTTSAndSession(t *testing.T) {
 	}
 	if p.Brain != newBrain {
 		t.Fatal("pipeline brain was not replaced")
+	}
+	if oldBrain.closed != 1 || newBrain.closed != 0 {
+		t.Fatalf("brain close counts old=%d new=%d", oldBrain.closed, newBrain.closed)
 	}
 	if brainCfg.OllamaModel != "pirate-model" || brainCfg.Persona != "pirate" {
 		t.Fatalf("brain config = model %q persona %q", brainCfg.OllamaModel, brainCfg.Persona)
@@ -208,4 +214,23 @@ func mustLoadPersona(t *testing.T, id string) *persona.Profile {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestServePersonaFailureClosesUnusedBrain(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	writeAckTestPersona(t, "worker", "You are a helpful voice.")
+	cfg := &config.Config{BrainProvider: "ollama", TTSProvider: "kokoro"}
+	switcher := newSwitcherForTest(t, cfg)
+	next := &servePersonaTestBrain{}
+	switcher.newBrain = func(*config.Config) (brain.Provider, error) { return next, nil }
+	switcher.newTTS = func(*config.Config) (*voiceagent.TTSSet, error) { return nil, fmt.Errorf("TTS construction failed") }
+	if _, err := switcher.apply("worker"); err == nil {
+		t.Fatal("failed TTS accepted")
+	}
+	if next.closed != 1 {
+		t.Fatalf("unused brain closed %d times", next.closed)
+	}
+	if switcher.pipeline.Brain.(*servePersonaTestBrain).closed != 0 {
+		t.Fatal("old brain closed during failed replacement")
+	}
 }

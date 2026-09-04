@@ -14,6 +14,15 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
+	// Delegation is opt-in and bound to an operator-selected Obey parent.
+	DelegationEnabled         bool   `mapstructure:"delegation_enabled"`
+	DelegationBinary          string `mapstructure:"delegation_binary"`
+	DelegationSocket          string `mapstructure:"delegation_socket"`
+	DelegationCampaignID      string `mapstructure:"delegation_campaign_id"`
+	DelegationParentSessionID string `mapstructure:"delegation_parent_session_id"`
+	DelegationProfile         string `mapstructure:"delegation_profile"`
+	DelegationTimeout         int    `mapstructure:"delegation_timeout"`
+
 	// TTS
 	TTSProvider           string  `mapstructure:"tts_provider"`
 	TTSFallbackProvider   string  `mapstructure:"voice_fallback_provider"`
@@ -513,6 +522,13 @@ func setDefaults(v *viper.Viper) {
 	// Expansion remains opt-in until live voice/latency acceptance is recorded.
 	v.SetDefault("continuity_num_ctx_ceil", 8192)
 	v.SetDefault("tool_command_timeout", 30)
+	v.SetDefault("delegation_enabled", false)
+	v.SetDefault("delegation_binary", "obey")
+	v.SetDefault("delegation_socket", "")
+	v.SetDefault("delegation_campaign_id", "")
+	v.SetDefault("delegation_parent_session_id", "")
+	v.SetDefault("delegation_profile", "")
+	v.SetDefault("delegation_timeout", 300)
 	v.SetDefault("remote_tools_enabled", false)
 
 	// Calibre is opt-in. Empty binaries are resolved by bundle-aware LookPath.
