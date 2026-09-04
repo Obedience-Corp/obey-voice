@@ -348,8 +348,8 @@ func TestCursorAskOptionsGateToolsOnVoiceToolsEnabled(t *testing.T) {
 	}
 
 	enabled := b.askOptions(true)
-	if enabled.Mode != cursor.ModeAgent {
-		t.Fatalf("enabled Mode = %q, want %q", enabled.Mode, cursor.ModeAgent)
+	if enabled.Mode != cursor.ModeUnset {
+		t.Fatalf("enabled Mode = %q, want unset; print mode rejects --mode agent", enabled.Mode)
 	}
 	if enabled.Model != "composer-2.5" {
 		t.Fatalf("Model = %q, want composer-2.5", enabled.Model)
@@ -364,7 +364,22 @@ func TestCursorAskOptionsGateToolsOnVoiceToolsEnabled(t *testing.T) {
 	if slices.Index(args, "--force") >= 0 {
 		t.Fatalf("tools-on args = %#v, did not want --force", args)
 	}
-	if i := slices.Index(args, "--mode"); i < 0 || i+1 >= len(args) || args[i+1] != "agent" {
-		t.Fatalf("tools-on args = %#v, want --mode agent", args)
+	if slices.Index(args, "--mode") >= 0 {
+		t.Fatalf("tools-on args = %#v, did not want --mode (CLI print mode allows only plan/ask)", args)
+	}
+}
+
+func TestWrapCursorAskErrorIncludesStderr(t *testing.T) {
+	err := wrapCursorAskError(&cursor.Error{
+		Kind:    cursor.KindValidation,
+		Message: "cursor-agent ask produced no output on stdout",
+		Stderr:  "error: option '--mode <mode>' argument 'agent' is invalid. Allowed choices are plan, ask.\n",
+	})
+	got := err.Error()
+	if !strings.Contains(got, "no output on stdout") {
+		t.Fatalf("error = %q, want the SDK message", got)
+	}
+	if !strings.Contains(got, "argument 'agent' is invalid") {
+		t.Fatalf("error = %q, want stderr so the activity feed names the real CLI failure", got)
 	}
 }
