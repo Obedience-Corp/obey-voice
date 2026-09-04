@@ -3,7 +3,10 @@
 package talkhotkey
 
 import (
+	"bufio"
 	"errors"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,5 +160,64 @@ func TestListenControlClearsAStaleSocket(t *testing.T) {
 	}
 	if event := nextEvent(t, second); event.Kind != KindDown {
 		t.Fatalf("first event = %+v, want %s", event, KindDown)
+	}
+}
+
+// ping is liveness only: it answers, and it must leave the turn alone. A
+// listener probing a record it found in the way would otherwise open a mic.
+func TestControlPingAnswersWithoutAnEvent(t *testing.T) {
+	controlHome(t)
+	control := listenForTest(t)
+
+	if err := SendControl(t.Context(), "ping"); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+	select {
+	case event := <-control.Events():
+		t.Fatalf("ping emitted %+v", event)
+	default:
+	}
+}
+
+// A hold longer than the idle bound still delivers its up on the same
+// connection: the bound covers the wait for the first command, and after that
+// the client is holding a key rather than sitting idle.
+func TestControlHoldOutlivesTheIdleTimeout(t *testing.T) {
+	controlHome(t)
+	previous := controlIdleTimeout
+	controlIdleTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { controlIdleTimeout = previous })
+	control := listenForTest(t)
+
+	conn, err := net.Dial("unix", control.Address())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	reader := bufio.NewReader(conn)
+	say := func(command string) {
+		t.Helper()
+		if _, err := io.WriteString(conn, command+"\n"); err != nil {
+			t.Fatalf("send %s: %v", command, err)
+		}
+		reply, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("reply to %s: %v", command, err)
+		}
+		if strings.TrimSpace(reply) != "ok" {
+			t.Fatalf("reply to %s = %q, want ok", command, reply)
+		}
+	}
+
+	say("down")
+	time.Sleep(4 * controlIdleTimeout)
+	say("up")
+
+	if event := nextEvent(t, control); event.Kind != KindDown {
+		t.Fatalf("first event = %+v, want %s", event, KindDown)
+	}
+	up := nextEvent(t, control)
+	if up.Kind != KindUp || up.Held() < 4*controlIdleTimeout {
+		t.Fatalf("second event = %+v, want an %s holding at least the idle bound", up, KindUp)
 	}
 }

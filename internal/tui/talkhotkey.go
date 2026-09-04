@@ -126,15 +126,30 @@ func (a *App) rearmTalk(msg talkHotkeyEventMsg) tea.Cmd {
 	return a.nextTalkHotkeyEvent()
 }
 
-// stopTalkHotkey ends both talk paths. Idempotent.
-func (a *App) stopTalkHotkey() {
+// signalTalkHotkey asks both talk paths to end and returns at once. This is
+// what quit runs: it happens on the update loop, and waiting out a helper's
+// stop timeout there would freeze the UI for as long as the helper took to
+// leave. The endpoint closes here for real — it drops its connections first,
+// so it has nothing to wait for — and run's teardown does the waiting for the
+// helper process. Idempotent.
+func (a *App) signalTalkHotkey() {
 	if a.hotkey != nil {
-		a.hotkey.Stop()
-		a.hotkey = nil
+		a.hotkey.Signal()
 	}
 	if a.control != nil {
 		_ = a.control.Close()
 		a.control = nil
+	}
+}
+
+// stopTalkHotkey ends both talk paths and waits for the helper to be gone.
+// Idempotent, and safe after signalTalkHotkey. Teardown only — the helper holds
+// a system-wide key, so something has to outlast it rather than just ask.
+func (a *App) stopTalkHotkey() {
+	a.signalTalkHotkey()
+	if a.hotkey != nil {
+		a.hotkey.Stop()
+		a.hotkey = nil
 	}
 }
 

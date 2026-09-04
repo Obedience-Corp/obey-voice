@@ -93,3 +93,35 @@ func TestTalkSkipsTheRootSetupHook(t *testing.T) {
 		t.Fatal("talk has no PersistentPreRunE, so it inherits the root's config load")
 	}
 }
+
+// ping is the liveness check a script runs before binding anything: it says
+// whether a conversation is listening and moves nothing.
+func TestTalkPingChecksLivenessOnly(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "obey-talk-ping")
+	if err != nil {
+		t.Fatalf("temp runtime dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	if err := runTalk(t, "ping"); !errors.Is(err, talkhotkey.ErrNoListener) {
+		t.Fatalf("ping with no conversation = %v, want ErrNoListener", err)
+	} else if code := ExitCode(err); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+
+	control, err := talkhotkey.ListenControl(t.Context())
+	if err != nil {
+		t.Fatalf("ListenControl: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+
+	if err := runTalk(t, "ping"); err != nil {
+		t.Fatalf("ping against a live conversation = %v, want exit 0", err)
+	}
+	select {
+	case event := <-control.Events():
+		t.Fatalf("ping moved the turn: %+v", event)
+	case <-time.After(50 * time.Millisecond):
+	}
+}

@@ -1,8 +1,7 @@
 package talkhotkey
 
-// The Windows half of the combo grammar. Untagged on purpose: the mapping is
-// a table, and a table that only compiles on one OS is a table nobody's tests
-// ever check. hotkey_windows.go is the only file that calls into user32.
+// The Windows half of the combo grammar, untagged so the VK table is tested on
+// every OS.
 
 // RegisterHotKey modifier bits (winuser.h MOD_*). ModCmd is the Windows key,
 // which is the same physical position as Command on a Mac keyboard.

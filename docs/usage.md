@@ -191,6 +191,7 @@ listens on a private endpoint and your own shortcut tool drives it:
 obey-voice talk down     open a spoken turn
 obey-voice talk up       send it
 obey-voice talk press    both at once — a tap
+obey-voice talk ping     exit 0 if a conversation is listening, 1 if not
 ```
 
 Bind `down` to the press and `up` to the release for hold-to-talk. A tool that
@@ -207,8 +208,8 @@ bindsym --release $mod+space exec obey-voice talk up
 Hyprland:
 
 ```
-bind  = , code:65, exec, obey-voice talk down
-bindr = , code:65, exec, obey-voice talk up
+bind  = ALT, SPACE, exec, obey-voice talk down
+bindr = ALT, SPACE, exec, obey-voice talk up
 ```
 
 GNOME / KDE (custom shortcut, press only — set `talk_hotkey_mode: toggle`):
@@ -223,9 +224,14 @@ can drive the talk key instead of the built-in combo.
 The endpoint is per user and private: a unix socket in a `0700` directory under
 `$XDG_RUNTIME_DIR` (or your temp directory, named with your uid), and on Windows
 a loopback port plus a token recorded under `%LOCALAPPDATA%`. `obey-voice
-doctor` prints the address, and the conversation names it in the activity panel
-when it opens. With no conversation running, `obey-voice talk` exits 1 and says
-so.
+doctor` prints the address in its `talk-control` row on every platform, and the
+conversation names it in the activity panel when it opens. With no conversation
+running, `obey-voice talk` exits 1 and says so; `obey-voice talk ping` is that
+check on its own, with no turn attached.
+
+One conversation owns the endpoint at a time. A second one started while the
+first is running says so and leaves the first one's endpoint alone, so a bound
+key keeps reaching the conversation that answered it.
 
 Select transcript text with the mouse and copy it the way you would anywhere
 else in your terminal — Obey Voice leaves the mouse alone, so click-drag

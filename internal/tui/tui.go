@@ -792,7 +792,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.library.cancelPrepare()
 		}
 		a.remote.stop()
-		a.stopTalkHotkey()
+		// Ask, do not wait: this is the update loop.
+		a.signalTalkHotkey()
 		a.quitting = true
 		return a, tea.Quit
 	}

@@ -93,6 +93,12 @@ func Serve(ctx context.Context, combo Combo, out io.Writer, probe bool) error {
 }
 
 // pump runs the thread's message loop until ctx is done.
+//
+// A thread parked in GetMessageW cannot be interrupted, and Windows has no
+// os.Interrupt for a child process, so the parent's only way out is the one it
+// always has: close the helper's stdin. The talk-hotkey command copies stdin
+// until EOF and cancels ctx there, the AfterFunc below posts WM_QUIT to this
+// thread, and GetMessageW returns 0. That is the whole shutdown chain.
 func pump(ctx context.Context, lines *lineWriter, vk uint32) error {
 	stop := context.AfterFunc(ctx, quitPoster(currentThreadID()))
 	defer stop()

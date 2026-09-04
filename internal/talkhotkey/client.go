@@ -15,9 +15,15 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 )
 
-// DefaultStopTimeout is how long a helper gets to leave on SIGINT before it is
+// DefaultStopTimeout is how long a helper gets to leave on its own before it is
 // killed.
 const DefaultStopTimeout = 3 * time.Second
+
+// signalInterrupt is whether this OS can ask another process to leave with a
+// signal. Windows cannot: os.Interrupt is not deliverable to a child there, so
+// the closed stdin below is the whole request. A var so the Windows shape is
+// exercised by tests on any host.
+var signalInterrupt = runtime.GOOS != "windows"
 
 // eventBuffer is deep enough for a burst of key edges the reader has not drained
 // yet. It is not a queue anybody should fall behind on: the parent reads events
@@ -60,7 +66,7 @@ type Client struct {
 	events      chan Event
 	done        chan struct{}
 	stopTimeout time.Duration
-	stopOnce    sync.Once
+	signalOnce  sync.Once
 }
 
 // Start spawns the helper and begins streaming its events. The helper is
@@ -121,22 +127,32 @@ func (c *Client) Events() <-chan Event { return c.events }
 // Done closes when the helper has exited and Events is drained of new sends.
 func (c *Client) Done() <-chan struct{} { return c.done }
 
-// Stop asks the helper to leave, escalates to a kill after StopTimeout, and
-// returns once it is gone. Safe to call more than once and from more than one
-// goroutine.
-func (c *Client) Stop() {
-	c.stopOnce.Do(func() {
-		if c.cmd.Process != nil {
+// Signal asks the helper to leave and returns without waiting for it. Closing
+// stdin is the request every build understands — it is the parent-death path
+// the helper already watches — and on the platforms that have it a signal goes
+// with it. Safe to call more than once and from more than one goroutine.
+func (c *Client) Signal() {
+	c.signalOnce.Do(func() {
+		_ = c.stdin.Close()
+		if signalInterrupt && c.cmd.Process != nil {
 			_ = c.cmd.Process.Signal(os.Interrupt)
 		}
-		select {
-		case <-c.done:
-		case <-time.After(c.stopTimeout):
-			if c.cmd.Process != nil {
-				_ = c.cmd.Process.Kill()
-			}
-		}
 	})
+}
+
+// Stop asks the helper to leave, escalates to a kill after StopTimeout, and
+// returns once it is gone. Safe to call more than once and from more than one
+// goroutine. Never call it from a UI update loop: use Signal there and let the
+// teardown wait.
+func (c *Client) Stop() {
+	c.Signal()
+	select {
+	case <-c.done:
+	case <-time.After(c.stopTimeout):
+		if c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+	}
 	<-c.done
 }
 

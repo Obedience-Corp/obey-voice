@@ -52,7 +52,9 @@ func newTalkHotkeyCmd() *cobra.Command {
 			defer stop()
 			// A parent that died without stopping us closes this pipe. Without
 			// this the helper would keep the combo registered forever, and the
-			// user's key would be swallowed by a process nothing points at.
+			// user's key would be swallowed by a process nothing points at. It
+			// is also how a live parent asks us to leave on Windows, which has
+			// no os.Interrupt for a child process.
 			go func() {
 				_, _ = io.Copy(io.Discard, os.Stdin)
 				stop()

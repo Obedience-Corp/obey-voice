@@ -11,8 +11,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 )
 
-// talkCommands is the whole protocol, in the order a hold sends them.
-var talkCommands = []string{"down", "up", "press"}
+// talkCommands is the whole protocol: the edges a hold sends, in order, then
+// the liveness check that sends no edge at all.
+var talkCommands = []string{"down", "up", "press", "ping"}
 
 // newTalkCmd is the shortcut tool's side of the talk key. macOS and Windows
 // register a combo themselves; everywhere else — and for anyone who would
@@ -20,13 +21,14 @@ var talkCommands = []string{"down", "up", "press"}
 // reaches the conversation.
 func newTalkCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "talk <down|up|press>",
+		Use:   "talk <down|up|press|ping>",
 		Short: "Drive the running conversation's talk key from a shortcut tool",
 		Long: `Send one talk-key command to the obey-voice conversation running as you.
 
   obey-voice talk down     open a spoken turn
   obey-voice talk up       send it, reporting how long the key was held
   obey-voice talk press    both edges at once — a tap
+  obey-voice talk ping     exit 0 if a conversation is listening, 1 if not
 
 Bind down to your shortcut's press and up to its release for hold-to-talk; a
 tool that only reports presses binds press with talk_hotkey_mode: toggle.

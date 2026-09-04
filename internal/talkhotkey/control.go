@@ -22,6 +22,18 @@ import (
 // Karabiner, Raycast — sends it one line. The commands land on the same Driver
 // as the native helper's key edges, so the mode semantics are identical and
 // there is one behavioral contract, not two.
+//
+// The protocol is one command per line, answered with "ok" or "error: why":
+//
+//	down    open a turn
+//	up      close it, reporting how long the key was held
+//	press   both edges at once — a tap
+//	ping    liveness only; it answers and emits nothing
+//
+// One command per dial is the recommended shape and what the recipes do. A
+// client may also keep one connection and send several commands through it;
+// the idle bound covers only the wait for the first, so a hold of any length
+// still delivers its up on the same connection.
 
 // ErrNoListener is what a shortcut tool gets when the conversation is not
 // running. It is the ordinary case (you pressed the key before starting a
@@ -33,19 +45,25 @@ const (
 	controlSocketName = "talk.sock"
 	controlInfoName   = "talk-control.json"
 
-	// controlIdleTimeout bounds one connection's silence. A shortcut tool
-	// sends a line and leaves; anything holding the socket open longer than
-	// this is a mistake, not a client.
-	controlIdleTimeout = 5 * time.Second
-
-	// controlDialTimeout bounds the liveness probe of a socket file we found
-	// in the way. Loopback answers in microseconds.
+	// controlDialTimeout bounds the liveness probe of a socket file, or a
+	// record, we found in the way. Loopback answers in microseconds.
 	controlDialTimeout = 200 * time.Millisecond
 
 	// controlLineLimit caps one command line. Commands are a few bytes and the
 	// token line is 70; anything longer is not a shortcut tool.
 	controlLineLimit = 512
 )
+
+// controlIdleTimeout bounds the wait for a connection's first command and
+// every reply write. A shortcut tool sends a line and leaves; a connection
+// that dials and says nothing is not a client. A held key is, so the read
+// bound is dropped once a command has arrived. A var so tests can shrink it.
+var controlIdleTimeout = 5 * time.Second
+
+// useControlTCP selects the Windows shape: a loopback port plus a token
+// recorded in a file, rather than a unix socket in a 0700 directory. A var so
+// the TCP path — including its info-file races — is testable from any host.
+var useControlTCP = runtime.GOOS == "windows"
 
 // Control is the conversation's side: a listener, the events its commands
 // produced, and the file it has to remove when it lets go.
@@ -70,7 +88,7 @@ type Control struct {
 // ListenControl opens the endpoint and starts accepting commands. It stops
 // when ctx is done or Close is called, whichever comes first.
 func ListenControl(ctx context.Context) (*Control, error) {
-	if runtime.GOOS == "windows" {
+	if useControlTCP {
 		return listenControlTCP(ctx)
 	}
 	return listenControlUnix(ctx)
@@ -121,10 +139,18 @@ func controlAnswers(path string) bool {
 	return true
 }
 
+// listenControlTCP takes a loopback port and records it. The record is the
+// endpoint's name here, so it gets the same liveness rule listenUnix applies to
+// a socket file: a record that still answers belongs to a live conversation and
+// is left alone. Overwriting one would point every client at the newest TUI and
+// let the first one out delete the record of the one still running.
 func listenControlTCP(ctx context.Context) (*Control, error) {
 	infoPath, err := controlInfoPath()
 	if err != nil {
 		return nil, err
+	}
+	if existing, err := readControlInfo(infoPath); err == nil && controlInfoAnswers(existing) {
+		return nil, fmt.Errorf("talk control: another obey-voice conversation is already listening at %s", existing.Address)
 	}
 	var config net.ListenConfig
 	listener, err := config.Listen(ctx, "tcp", "127.0.0.1:0")
@@ -136,12 +162,31 @@ func listenControlTCP(ctx context.Context) (*Control, error) {
 		_ = listener.Close()
 		return nil, err
 	}
-	address := listener.Addr().String()
-	if err := writeControlInfo(infoPath, controlInfoFile{Address: address, Token: token}); err != nil {
+	info := controlInfoFile{Address: listener.Addr().String(), Token: token}
+	if err := writeControlInfo(infoPath, info); err != nil {
 		_ = listener.Close()
 		return nil, err
 	}
-	return newControl(ctx, listener, address, token, func() { _ = os.Remove(infoPath) }), nil
+	return newControl(ctx, listener, info.Address, token, func() { removeControlInfo(infoPath, info) }), nil
+}
+
+// controlInfoAnswers reports whether the endpoint a record names is a live
+// conversation. The token handshake is part of the check: loopback ports are
+// reused, and something else that happens to hold the port is not us.
+func controlInfoAnswers(info controlInfoFile) bool {
+	conn, err := net.DialTimeout("tcp", info.Address, controlDialTimeout)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(controlDialTimeout))
+	reader := bufio.NewReader(io.LimitReader(conn, controlLineLimit*4))
+	if info.Token != "" {
+		if err := exchange(conn, reader, "token "+info.Token); err != nil {
+			return false
+		}
+	}
+	return exchange(conn, reader, "ping") == nil
 }
 
 func newControl(ctx context.Context, listener net.Listener, address, token string, cleanup func()) *Control {
@@ -241,8 +286,12 @@ func (c *Control) serve(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 0, 128), controlLineLimit)
 	authorized := c.token == ""
+	// The read bound covers the handshake and the first command only. After
+	// that the connection belongs to a client that is holding the key, and the
+	// up it owes may be minutes away — dropping it there would leave the turn
+	// open with nothing left to close it.
+	_ = conn.SetReadDeadline(time.Now().Add(controlIdleTimeout))
 	for {
-		_ = conn.SetDeadline(time.Now().Add(controlIdleTimeout))
 		if !scanner.Scan() {
 			return
 		}
@@ -264,6 +313,7 @@ func (c *Control) serve(conn net.Conn) {
 		if err := c.dispatch(conn, command); err != nil {
 			return
 		}
+		_ = conn.SetReadDeadline(time.Time{})
 	}
 }
 
@@ -305,6 +355,10 @@ func (c *Control) apply(command string) ([]Event, bool) {
 		// report and automatic mode reads it as the tap it is.
 		c.takeHeld()
 		return []Event{{Proto: Proto, Kind: KindDown}, {Proto: Proto, Kind: KindUp}}, true
+	case "ping":
+		// Liveness only. It must not touch the turn: a listener probing a
+		// record it found in the way would otherwise open somebody's mic.
+		return nil, true
 	default:
 		return nil, false
 	}
@@ -331,7 +385,10 @@ func (c *Control) emit(event Event) {
 	}
 }
 
+// writeReply bounds its own write: the read deadline is dropped once a client
+// is holding the key, and a client that never reads must not park a handler.
 func writeReply(conn net.Conn, reply string) error {
+	_ = conn.SetWriteDeadline(time.Now().Add(controlIdleTimeout))
 	_, err := io.WriteString(conn, reply+"\n")
 	return err
 }
