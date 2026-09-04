@@ -608,3 +608,9 @@ possible, but scalar formatting around touched keys may be normalized.
 
 Ollama tool-result projection, bounded archive, automatic compaction, and
 continuation recovery settings are described in [Context continuity](context-continuity.md).
+
+## Background tasks
+
+Ollama can delegate managed work to Obey with `delegation_enabled: true`. Setup,
+backend requirements, and next-turn result delivery are documented in
+[Background tasks](delegation.md). The feature is off by default.

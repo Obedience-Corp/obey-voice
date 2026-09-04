@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -576,6 +577,14 @@ func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
 	if err != nil {
 		return netapi.PersonaAck{}, fmt.Errorf("init persona brain: %w", err)
 	}
+	installed := false
+	defer func() {
+		if !installed {
+			if closeErr := brain.CloseProvider(nextBrain); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "obey-voice: unused persona brain cleanup: %v\n", closeErr)
+			}
+		}
+	}()
 	nextTTS, err := s.newTTS(nextCfg)
 	if err != nil {
 		return netapi.PersonaAck{}, fmt.Errorf("init persona TTS: %w", err)
@@ -593,7 +602,12 @@ func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
 		return netapi.PersonaAck{}, errors.New("serve runtime is shutting down")
 	}
 
+	oldBrain := s.pipeline.Brain
 	s.pipeline.Brain = nextBrain
+	installed = true
+	if closeErr := brain.CloseProvider(oldBrain); closeErr != nil {
+		fmt.Fprintf(os.Stderr, "obey-voice: previous persona brain cleanup: %v\n", closeErr)
+	}
 	*s.cfg = *nextCfg
 	s.sessions.swap(session.New(nextCfg.BrainProvider, serveModelName(nextCfg)))
 	if warmer, ok := nextBrain.(brain.Warmer); ok {

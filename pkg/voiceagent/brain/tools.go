@@ -12,6 +12,7 @@ import (
 
 	"github.com/ollama/ollama/api"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
@@ -30,7 +31,8 @@ const defaultToolCommandTimeout = 30 * time.Second
 // voice_tools_enabled / remote_tools_enabled gates remain the authority for
 // whether tools are available at all.
 type toolSession struct {
-	catalog []skills.Skill
+	delegation *delegation.Runtime
+	catalog    []skills.Skill
 	// routerPolicy selects live route_only vs legacy full tools. Workers use legacy.
 	routerPolicy RouterToolsPolicy
 	// commandTimeout bounds each run_command call in this session.
@@ -45,7 +47,11 @@ type toolSession struct {
 // local Ollama should behave like a general harness and may load more than one
 // relevant skill without losing capabilities on the legacy worker path.
 func (s *toolSession) tools() api.Tools {
-	return RouterToolsForSession(s.routerPolicy, s.catalog)
+	tools := RouterToolsForSession(s.routerPolicy, s.catalog)
+	if s.delegation != nil {
+		tools = append(tools, delegationTools()...)
+	}
+	return tools
 }
 
 // execute runs a tool call. read_skill returns instructions without changing
@@ -63,6 +69,9 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 			s.onEnd(name, toolResultPreview(result))
 		}
 	}()
+	if name == "agent_delegate" || name == "agent_cancel" || name == "agent_delegations" {
+		return s.executeDelegation(call)
+	}
 	if name == "read_skill" {
 		return s.executeReadSkill(call)
 	}

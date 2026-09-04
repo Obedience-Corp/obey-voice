@@ -13,6 +13,7 @@ package voiceagent
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -232,6 +233,12 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 			return nil, nil, fmt.Errorf("init brain: %w", err)
 		}
 		p.Brain = b
+		// Persona switches replace p.Brain; teardown owns the current provider.
+		cleanups = append(cleanups, func() {
+			if err := brain.CloseProvider(p.Brain); err != nil {
+				fmt.Fprintf(os.Stderr, "obey-voice: brain cleanup: %v\n", err)
+			}
+		})
 	}
 
 	// TTS + Player (skipped in silent mode).

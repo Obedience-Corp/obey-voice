@@ -66,6 +66,9 @@ func LiveRouterDecision(policy RouterToolsPolicy, calls []api.ToolCall) string {
 			}
 			continue
 		}
+		if name == "agent_delegate" || name == "agent_cancel" || name == "agent_delegations" {
+			continue
+		}
 		if name != "" {
 			return "spawn"
 		}
