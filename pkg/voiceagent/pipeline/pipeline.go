@@ -2313,7 +2313,11 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	}
 
 	seed := append([]brain.Turn{{Role: "assistant", Content: summary}}, tail...)
-	p.Brain.LoadHistory(seed)
+	if reseed, ok := p.Brain.(interface{ ReseedContinuity([]brain.Turn) }); ok {
+		reseed.ReseedContinuity(seed)
+	} else {
+		p.Brain.LoadHistory(seed)
+	}
 	p.emit(events.ConversationCompacted{TurnsBefore: turnsBefore, Summary: summary})
 	if p.OnTurn != nil {
 		p.OnTurn()

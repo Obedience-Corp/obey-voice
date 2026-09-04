@@ -241,3 +241,10 @@ func recallMessages(notes string) []api.Message {
 		{Role: "tool", ToolName: "recall_context", ToolCallID: "continuity-recall", Content: notes},
 	}
 }
+
+// ReseedContinuity replaces hot history after same-session compaction. Unlike
+// LoadHistory (session restore), this intentionally keeps the session archive.
+func (o *OllamaBrain) ReseedContinuity(turns []Turn) {
+	o.archiveMessages(o.history)
+	o.loadHistory(turns)
+}

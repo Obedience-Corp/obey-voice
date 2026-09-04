@@ -312,3 +312,22 @@ func TestBudgetShrinkPreservesProjectedUTF8(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionRestoreClearsArchiveWhileCompactionPreservesIt(t *testing.T) {
+	o := &OllamaBrain{cfg: continuityConfig()}
+	o.history = []api.Message{{Role: "user", Content: "Session A secret WI-private"}, {Role: "assistant", Content: "Recorded."}}
+	o.archiveMessages(o.history)
+	o.ReseedContinuity([]Turn{{Role: "assistant", Content: "Summary of session A."}, {Role: "user", Content: "What did we discuss earlier?"}})
+	if !strings.Contains(o.recallNotes(), "WI-private") {
+		t.Fatal("same-session compact lost archive")
+	}
+	o.LoadHistory([]Turn{{Role: "user", Content: "Session B: what did we discuss earlier?"}})
+	if len(o.ContinuityArchive()) != 0 || o.recallNotes() != "" {
+		t.Fatal("session restore retained another session's archive")
+	}
+	for _, m := range o.buildMessages("") {
+		if strings.Contains(m.Content, "WI-private") {
+			t.Fatal("session A leaked into session B")
+		}
+	}
+}

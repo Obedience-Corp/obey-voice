@@ -957,6 +957,13 @@ func (o *OllamaBrain) History() []Turn {
 // saved by the prompt-based providers use role "samantha" for replies; map it
 // to ollama's native "assistant".
 func (o *OllamaBrain) LoadHistory(turns []Turn) {
+	// Restore starts a distinct session; never recall another session's archive.
+	o.archive = continuity.Store{}
+	o.contextHighWater = 0
+	o.loadHistory(turns)
+}
+
+func (o *OllamaBrain) loadHistory(turns []Turn) {
 	history := make([]api.Message, 0, len(turns))
 	for _, t := range turns {
 		role := t.Role
@@ -991,7 +998,6 @@ func (o *OllamaBrain) LoadHistory(turns []Turn) {
 		}
 		history = append(history, m)
 	}
-	o.archiveMessages(o.history)
 	o.history = sanitizeOllamaHistory(history)
 }
 
