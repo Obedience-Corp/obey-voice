@@ -2,19 +2,18 @@
 
 Opt-in background tasks let the Ollama voice conductor queue a managed worker,
 acknowledge the request immediately, and keep answering unrelated questions.
-A finished task's compact brief enters the next conversational turn. Obey owns
+A finished task's compact brief is scheduled through the host's ordinary turn queue. Obey owns
 execution, policy, budgets, durable results, and cancellation.
 
 ## Required integration
 
 This consumes the managed delegation **CLI schema version 1**, including
-`obey delegation capabilities`, `start`, `await`, and `cancel`, from the
-voice-delegation-bridge change in Obey. OA0002 alone is insufficient: it shipped
+`obey delegation capabilities`, `start`, `await`, and `cancel`, from [Obey PR #358](https://github.com/Obedience-Corp/obey/pull/358). OA0002 alone is insufficient: it shipped
 managed execution internally, but its external start/status RPCs did not expose
 result text or cancellation. A successful OA0002 festival does not establish
 that this voice client can use the complete lifecycle.
 
-The voice build also needs WI-b94dad's `AddDelegationNote` projection boundary.
+The voice build also needs [WI-b94dad / PR #108](https://github.com/Obedience-Corp/obey-voice/pull/108) and its `AddDelegationNote` projection boundary.
 Enabling the setting without either dependency fails startup with a concrete
 error. The client never exposes partially usable worker tools. No public Go
 imports of Obey's internal protobuf package or separate voice A2A stack are used.
@@ -65,12 +64,27 @@ produces a short explanatory message instead of raw JSON, markdown, or code.
 Only this brief is projected into conversation history, with the durable Obey
 ID as its source reference. Raw results remain in Obey.
 
+Serve and the TUI text mode announce results when idle. Active user turns and
+already-queued requests finish first. In the local voice TUI, an active STT
+listen retains ownership until the current utterance finishes or its configured
+no-speech timeout expires; a result notification never cancels a possibly
+starting utterance. The background reply uses normal progressive speech and VAD
+barge-in. No synthetic user utterance appears in the transcript.
+
 Ready briefs join the current user turn's context group, so context-budget
 trimming cannot evict them as an older exchange. They are acknowledged only
-after a successful final model request that included the note. A failed or
-interrupted turn keeps the brief pending for retry. Compaction/meta turns do
+after a successful final model request that included the note. For unsolicited
+background replies, acknowledgment waits until playback completes; acoustic
+barge-in keeps both the result pending and the user's captured audio for the next
+turn. A failed or interrupted model turn keeps the brief pending for retry. Compaction/meta turns do
 not consume results. Delivery means the conductor received the brief; the
 model chooses how to include it in its spoken reply.
+
+Clearing or restoring a voice session requests cancellation and immediately
+switches to a fresh runtime; old ready notes and late results cannot enter the
+new conversation. Same-session compaction preserves workers. Persona replacement
+retires the previous brain in the background. Final shutdown joins current and
+retired cleanup so admission can resolve before its child is canceled.
 
 Interrupting speech does not cancel background work. Explicit cancellation,
 the configured task timeout (measured from queueing), and voice-session cleanup
@@ -84,14 +98,19 @@ work until the operator checks Obey and restarts the voice session.
 
 ## Remaining WI-ebe14b scope
 
-This is the managed-worker integration with **next-turn delivery**. It does not
-implement unsolicited speech while the user is idle, delivery immediately after
-an already-running reply, remote A2A targets, worker continuation/input-required
-UX, or recovery of voice tickets after process restart. Those are separate
-follow-ups; the complete V5 idle mini-turn acceptance gate remains open. Obey's
-durable results remain available independently of this process.
+This implements managed worker admission, asynchronous acknowledgment, compact
+briefs, host-serialized unsolicited delivery, status, explicit cancellation,
+timeouts, and session cleanup. Immediate preemption of an idle local STT listen
+is deferred: without an atomic capture handoff it can discard speech just
+starting, so the existing listen timeout defines that turn boundary.
+
+Remote A2A targets, worker continuation/input-required UX, and recovery of voice
+tickets after process restart remain outside this first managed integration.
+Obey's durable results remain available independently of this process. Live
+microphone/provider validation is still required for the hardware acceptance
+gate; unit tests exercise scripted capture/playback and the real CLI process
+boundary, not an actual paid worker.
 
 The original seed's one-tool restriction is revised: explicit cancellation and
 cached status need model-callable controls. All three names already belong to
-Obey's vocabulary; no blocking wait is exposed. Hardware speech and a real
-provider-backed worker are not simulated by the unit tests.
+Obey's vocabulary; no blocking wait is exposed.

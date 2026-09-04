@@ -1114,7 +1114,7 @@
       "allows_empty": false,
       "group": "tools",
       "title": "Background tasks",
-      "help": "Lets Ollama delegate work to Obey and summarize finished results on your next turn.",
+      "help": "Lets Ollama delegate work to Obey and announce finished results between user turns.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

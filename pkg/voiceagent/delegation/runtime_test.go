@@ -234,3 +234,32 @@ func TestTaskLimitReservesWorkerInstruction(t *testing.T) {
 		t.Fatalf("task bytes=%d", len(req.Task))
 	}
 }
+
+func TestNewSessionDoesNotWaitForAdmissionAndOldResultCannotLeak(t *testing.T) {
+	f := newFake()
+	f.admit = make(chan struct{})
+	old := newRuntime(t, f, time.Minute)
+	_, err := old.Start("session A task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	next := old.NewSession()
+	t.Cleanup(func() { _ = next.Close() })
+	if next.Ready() != old.Ready() {
+		t.Fatal("notification channel changed")
+	}
+	if _, ok := next.Pending(); ok {
+		t.Fatal("new session inherited pending result")
+	}
+	close(f.admit)
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := next.Pending(); ok {
+		t.Fatal("late old cancellation/result entered new session")
+	}
+	if !strings.Contains(next.Status(), "No background") {
+		t.Fatal(next.Status())
+	}
+}

@@ -605,9 +605,7 @@ func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
 	oldBrain := s.pipeline.Brain
 	s.pipeline.Brain = nextBrain
 	installed = true
-	if closeErr := brain.CloseProvider(oldBrain); closeErr != nil {
-		fmt.Fprintf(os.Stderr, "obey-voice: previous persona brain cleanup: %v\n", closeErr)
-	}
+	s.pipeline.RetireBrain(oldBrain)
 	*s.cfg = *nextCfg
 	s.sessions.swap(session.New(nextCfg.BrainProvider, serveModelName(nextCfg)))
 	if warmer, ok := nextBrain.(brain.Warmer); ok {

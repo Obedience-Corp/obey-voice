@@ -164,9 +164,10 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
-	STT   stt.Provider
-	Brain brain.Provider
-	TTS   tts.Provider
+	retiredBrains sync.WaitGroup
+	STT           stt.Provider
+	Brain         brain.Provider
+	TTS           tts.Provider
 	// Utterance is nil when the audio source cannot be ended on demand.
 	Utterance UtteranceEnder
 	// TTSFallback is an optional, explicitly configured provider used for one
@@ -1201,6 +1202,10 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		}
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("brain: %w", err))
 		return nil
+	}
+
+	if background {
+		return p.finishBackgroundStream(ctx, brainCtx, brainCancel, stream, metrics, turn)
 	}
 
 	// Stream the reply so the TUI can render it token-by-token, then fall back

@@ -28,6 +28,9 @@ func (m *conversationModel) waitBackground() tea.Cmd {
 	}
 }
 func (m *conversationModel) dispatchBackground() tea.Cmd {
+	if capture, ok := m.deps.runner.(interface{ HasCapturedInput() bool }); ok && capture.HasCapturedInput() {
+		return nil
+	}
 	runner, ok := m.deps.runner.(backgroundRunner)
 	if !ok || !runner.BackgroundPending() {
 		return nil

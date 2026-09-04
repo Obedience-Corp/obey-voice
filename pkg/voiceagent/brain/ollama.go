@@ -30,9 +30,11 @@ const ollamaSpeakerSep = "\x1e"
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
-	delegation   *delegation.Runtime
-	client       *api.Client
-	continuityMu sync.Mutex
+	retiredDelegations  sync.WaitGroup
+	backgroundDelivered string
+	delegation          *delegation.Runtime
+	client              *api.Client
+	continuityMu        sync.Mutex
 	// continuitySink receives this instance's continuity events (integrity.go).
 	continuitySink func(events.Event)
 	infoMu         sync.Mutex
@@ -498,7 +500,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				continue
 			}
 			o.history = append(o.history, api.Message{Role: "assistant", Content: response})
-			o.ackDelegationResults(req.Messages)
+			if !opts.Background {
+				o.ackDelegationResults(req.Messages)
+			} else {
+				o.markBackgroundDelivered(req.Messages)
+			}
 			o.trimHistory()
 			done <- StreamResult{Integrity: integrity}
 			return
@@ -623,7 +629,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			text = spokenOrFallback(text)
 		}
 		o.history = append(o.history, api.Message{Role: "assistant", Content: text})
-		o.ackDelegationResults(req.Messages)
+		if !opts.Background {
+			o.ackDelegationResults(req.Messages)
+		} else {
+			o.markBackgroundDelivered(req.Messages)
+		}
 		o.trimHistory()
 		return text, nil
 	}
@@ -944,6 +954,7 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 
 // ClearHistory wipes conversation history.
 func (o *OllamaBrain) ClearHistory() {
+	o.resetDelegation()
 	o.archive = continuity.Store{}
 	o.history = nil
 }
@@ -992,6 +1003,7 @@ func (o *OllamaBrain) History() []Turn {
 // saved by the prompt-based providers use role "samantha" for replies; map it
 // to ollama's native "assistant".
 func (o *OllamaBrain) LoadHistory(turns []Turn) {
+	o.resetDelegation()
 	// Restore starts a distinct session; never recall another session's archive.
 	o.archive = continuity.Store{}
 	o.contextHighWater = 0

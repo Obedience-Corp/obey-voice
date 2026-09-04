@@ -98,7 +98,10 @@ func TestServePersonaSwitcherReplacesBrainTTSAndSession(t *testing.T) {
 	if p.Brain != newBrain {
 		t.Fatal("pipeline brain was not replaced")
 	}
-	if oldBrain.closed != 1 || newBrain.closed != 0 {
+	if err := p.CloseBrains(); err != nil {
+		t.Fatal(err)
+	}
+	if oldBrain.closed != 1 || newBrain.closed != 1 {
 		t.Fatalf("brain close counts old=%d new=%d", oldBrain.closed, newBrain.closed)
 	}
 	if brainCfg.OllamaModel != "pirate-model" || brainCfg.Persona != "pirate" {

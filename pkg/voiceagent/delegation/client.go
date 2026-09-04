@@ -69,7 +69,7 @@ func (c *CLI) Probe(ctx context.Context) error {
 		return err
 	}
 	if caps.Version != 1 || !caps.Managed || !caps.Start || !caps.Await || !caps.Cancel {
-		return errors.New("Obey does not expose the required managed delegation start, await and cancel capabilities")
+		return errors.New("obey does not expose the required managed delegation start, await and cancel capabilities")
 	}
 	return nil
 }
@@ -91,7 +91,7 @@ func (c *CLI) snapshot(ctx context.Context, verb string, args []string) (Snapsho
 	var s Snapshot
 	err := c.run(ctx, verb, args, &s)
 	if err == nil && (s.ID == "" || s.State == "") {
-		err = errors.New("Obey returned an incomplete delegation snapshot")
+		err = errors.New("obey returned an incomplete delegation snapshot")
 	}
 	return s, err
 }
@@ -127,17 +127,17 @@ func (c *CLI) run(ctx context.Context, verb string, extra []string, result any) 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Obey delegation %s: %w", verb, err)
+		return fmt.Errorf("obey delegation %s: %w", verb, err)
 	}
 	if stdout.overflow {
-		return errors.New("Obey delegation response exceeded 128 KiB")
+		return errors.New("obey delegation response exceeded 128 KiB")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
 	if err := decoder.Decode(result); err != nil {
 		return fmt.Errorf("decode Obey delegation %s: %w", verb, err)
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		return errors.New("Obey delegation response contained trailing data")
+		return errors.New("obey delegation response contained trailing data")
 	}
 	return nil
 }
