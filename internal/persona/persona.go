@@ -434,8 +434,17 @@ func voiceForProvider(cfg *config.Config, provider string) string {
 		if v := strings.TrimSpace(cfg.QwenTTSVoice); v != "" {
 			return v
 		}
-		// Fall back to kokoro voice if qwen voice unset (legacy single-agent).
-		return strings.TrimSpace(cfg.TTSVoice)
+		// Preserve legacy single-agent Qwen selections only when they belong
+		// to Qwen's voice catalog. tts_voice normally holds a Kokoro name;
+		// copying it would persist a persona that Qwen cannot synthesize.
+		if v := strings.TrimSpace(cfg.TTSVoice); v != "" {
+			if _, _, ok := managedqwen.ResolveVoice(v); ok {
+				return v
+			}
+		}
+		// Empty inherits Qwen's configured/provider default, including the
+		// default-only external CLI; do not pin a voice the user never chose.
+		return ""
 	}
 	// ConfiguredTTSVoice, not TTSVoiceFor: this feeds a persona profile, where
 	// an empty voice means "inherit the global" and substituting audio8's
