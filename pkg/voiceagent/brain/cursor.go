@@ -114,7 +114,14 @@ func (c *CursorBrain) assembleSystem(persona string) string {
 func (c *CursorBrain) refreshPrompts(onWarn func(string)) {
 	if c.personaReloader != nil {
 		if persona, _, err := c.personaReloader.resolve(c.cfg); err == nil {
-			c.systemPrompt = c.assembleSystem(persona)
+			next := c.assembleSystem(persona)
+			// Print mode has no --system-prompt, so a resume cannot pick up a
+			// persona edit. Drop the CLI session and re-flatten with the new
+			// prompt. Unchanged text keeps the session.
+			if next != c.systemPrompt && c.sessionID != "" {
+				c.dropSession()
+			}
+			c.systemPrompt = next
 		} else if onWarn != nil {
 			onWarn(err.Error())
 		}
@@ -154,9 +161,13 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 			return
 		}
 
+		// Print mode returns the whole reply at once. Speak the same cleaned
+		// string ThinkFull would return; finalizeStreamedText then emits the
+		// fallback only when that string has no speakable content.
 		stripped := stripReplyConventions(c.agentName(), raw)
-		if stripped != "" {
-			if sendErr := sendChunk(ctx, out, stripped); sendErr != nil {
+		cleaned := cleanForVoice(stripped)
+		if hasSpeakableContent(cleaned) {
+			if sendErr := sendChunk(ctx, out, cleaned); sendErr != nil {
 				done <- StreamResult{Err: sendErr}
 				return
 			}
@@ -176,6 +187,7 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 
 // ThinkFull sends input and waits for the complete response.
 func (c *CursorBrain) ThinkFull(ctx context.Context, input string, streamOpts StreamOptions) (string, error) {
+	c.refreshPrompts(streamOpts.OnPromptWarn)
 	// Same append-then-roll-back contract as Claude: the prompt comes from
 	// history, and a turn that never answered must not leave its input behind.
 	restore := len(c.history)
@@ -214,15 +226,6 @@ func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) 
 	prompt := c.buildPrompt(streamOpts.OmitTurnInstruction)
 
 	result, err := c.client.AskCtx(ctx, prompt, c.askOptions(streamOpts.ToolsEnabled))
-	if result != nil && result.SessionID != "" {
-		c.sessionID = result.SessionID
-	}
-	if result != nil {
-		c.promptTokens = result.Usage.InputTokens + result.Usage.CacheReadTokens + result.Usage.CacheWriteTokens
-		if streamOpts.OnUsage != nil {
-			streamOpts.OnUsage(c.promptTokens, result.Usage.OutputTokens)
-		}
-	}
 	if err != nil {
 		return "", fmt.Errorf("cursor error: %w", err)
 	}
@@ -232,6 +235,16 @@ func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) 
 	if result.IsError {
 		return "", resultError("cursor", result.Subtype, result.Result)
 	}
+	// Stamp session and usage only on a successful turn, matching Grok.
+	// AskCtx can return a parsed JSON result together with a Classify error;
+	// capturing that id would start a resume after a failed first turn.
+	if result.SessionID != "" {
+		c.sessionID = result.SessionID
+	}
+	c.promptTokens = result.Usage.InputTokens + result.Usage.CacheReadTokens + result.Usage.CacheWriteTokens
+	if streamOpts.OnUsage != nil {
+		streamOpts.OnUsage(c.promptTokens, result.Usage.OutputTokens)
+	}
 	return result.Result, nil
 }
 
@@ -239,13 +252,15 @@ func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) 
 // intentionally abandoned (clear/load history, or a rejected --resume).
 func (c *CursorBrain) dropSession() {
 	c.sessionID = ""
+	c.promptTokens = 0
 }
 
 // askOptions builds the print-mode options shared by the streaming and
 // blocking paths. Tool execution is gated by voice_tools_enabled: disabled
-// uses ask mode (no edits); enabled uses agent mode. Trust is always set so
-// a first run in an untrusted workspace cannot stall on a human prompt.
-// Force/yolo is never set — that lives behind the SDK's dangerous subpackage.
+// uses ask mode (no edits); enabled uses agent mode with force/yolo so a
+// headless voice turn cannot stall on a permission prompt — the same contract
+// as Claude/Grok's bypassPermissions + AllowDangerousMode. Trust is always
+// set so a first run in an untrusted workspace cannot stall either.
 func (c *CursorBrain) askOptions(toolsEnabled bool) *cursor.AskOptions {
 	opts := &cursor.AskOptions{
 		Trust:            true,
@@ -254,6 +269,9 @@ func (c *CursorBrain) askOptions(toolsEnabled bool) *cursor.AskOptions {
 	}
 	if toolsEnabled {
 		opts.Mode = cursor.ModeAgent
+		opts.Force = true
+		opts.Yolo = true
+		opts.AllowDangerousMode = true
 	} else {
 		opts.Mode = cursor.ModeAsk
 	}

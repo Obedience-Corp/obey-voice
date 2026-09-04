@@ -3,12 +3,14 @@ package brain
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 )
 
 // fakeCursorClient scripts print-mode turns and records the prompts and
@@ -179,19 +181,81 @@ func TestCursorThinkFullCapturesSessionAndRetries(t *testing.T) {
 func TestCursorDropsSessionOnClearAndLoadHistory(t *testing.T) {
 	b := newTestCursorBrain(&fakeCursorClient{})
 	b.sessionID = "csess-1"
+	b.promptTokens = 99
 
 	b.ClearHistory()
 	if b.sessionID != "" {
 		t.Fatalf("ClearHistory: sessionID = %q, want empty", b.sessionID)
 	}
+	if b.promptTokens != 0 {
+		t.Fatalf("ClearHistory: promptTokens = %d, want 0", b.promptTokens)
+	}
 
 	b.sessionID = "csess-2"
+	b.promptTokens = 42
 	b.LoadHistory([]Turn{{Role: "user", Content: "hi"}})
 	if b.sessionID != "" {
 		t.Fatalf("LoadHistory: sessionID = %q, want empty", b.sessionID)
 	}
+	if b.promptTokens != 0 {
+		t.Fatalf("LoadHistory: promptTokens = %d, want 0", b.promptTokens)
+	}
 	if len(b.history) != 1 {
 		t.Fatalf("LoadHistory history len = %d, want 1", len(b.history))
+	}
+}
+
+func TestCursorFailedFirstTurnDoesNotCaptureSession(t *testing.T) {
+	fake := &fakeCursorClient{
+		results: []*cursor.AskResult{
+			{Result: "error text", SessionID: "csess-bad", IsError: true, Usage: cursor.Usage{InputTokens: 12}},
+			{Result: "One.", SessionID: "csess-1"},
+		},
+		errs: []error{errors.New("boom"), nil},
+	}
+	b := newTestCursorBrain(fake)
+
+	if _, err := b.ThinkFull(t.Context(), "first", StreamOptions{}); err == nil {
+		t.Fatal("ThinkFull() error = nil, want the first-turn failure")
+	}
+	if b.sessionID != "" {
+		t.Fatalf("sessionID = %q, want empty so a failed first turn cannot start a resume", b.sessionID)
+	}
+	if b.promptTokens != 0 {
+		t.Fatalf("promptTokens = %d, want 0 after a failed attempt", b.promptTokens)
+	}
+
+	if _, err := b.ThinkFull(t.Context(), "second", StreamOptions{}); err != nil {
+		t.Fatalf("turn 2 error = %v", err)
+	}
+	if got := fake.opts[1].Resume; got != "" {
+		t.Fatalf("turn 2 Resume = %q, want empty (flatten, not resume)", got)
+	}
+	if p := fake.prompts[1]; !strings.Contains(p, "SYSTEM") {
+		t.Fatalf("turn 2 after a failed first turn must flatten with the system prompt:\n%s", p)
+	}
+}
+
+func TestCursorAskAttemptFailureDoesNotStampSession(t *testing.T) {
+	fake := &fakeCursorClient{
+		results: []*cursor.AskResult{
+			{Result: "nope", SessionID: "csess-bad", IsError: true, Usage: cursor.Usage{InputTokens: 12}},
+		},
+		errs: []error{errors.New("boom")},
+	}
+	b := newTestCursorBrain(fake)
+	b.sessionID = "csess-1"
+	b.promptTokens = 7
+	b.history = []Turn{{Role: "user", Content: "hi"}}
+
+	if _, err := b.askAttempt(t.Context(), StreamOptions{}); err == nil {
+		t.Fatal("askAttempt() error = nil, want the CLI failure")
+	}
+	if b.sessionID != "csess-1" {
+		t.Fatalf("sessionID = %q, want csess-1 left in place", b.sessionID)
+	}
+	if b.promptTokens != 7 {
+		t.Fatalf("promptTokens = %d, want 7 left in place", b.promptTokens)
 	}
 }
 
@@ -204,6 +268,68 @@ func TestCursorSessionInfoReportsLiveSession(t *testing.T) {
 	want := SessionState{Kind: "harness", ID: "csess-12345678", PromptTokens: 42, Turns: 1}
 	if got := b.SessionInfo(); got != want {
 		t.Fatalf("SessionInfo() = %+v, want %+v", got, want)
+	}
+}
+
+func TestCursorStreamSpeaksCleanedText(t *testing.T) {
+	fake := &fakeCursorClient{
+		results: []*cursor.AskResult{{Result: "<think>secret</think>Hello there."}},
+	}
+	b := newTestCursorBrain(fake)
+
+	text, res := collectStream(t, mustCursorStream(t, b, "hello"))
+	if res.Err != nil {
+		t.Fatalf("stream result error = %v", res.Err)
+	}
+	if strings.Contains(text, "secret") || strings.Contains(text, "<think>") {
+		t.Fatalf("streamed uncleaned text %q", text)
+	}
+	if !strings.Contains(text, "Hello there.") {
+		t.Fatalf("streamed %q, want the cleaned reply", text)
+	}
+	if got := b.history[len(b.history)-1].Content; got != text {
+		t.Fatalf("history %q != spoken %q", got, text)
+	}
+}
+
+func TestCursorRefreshDropsSessionWhenPersonaChanges(t *testing.T) {
+	b := newTestCursorBrain(&fakeCursorClient{})
+	b.sessionID = "csess-1"
+	b.promptTokens = 99
+	b.systemPrompt = "OLD"
+	b.personaReloader = newPromptReloader(prompts.KindPersona, "", "OLD PERSONA", nil)
+
+	b.refreshPrompts(nil)
+	if b.sessionID != "" {
+		t.Fatalf("sessionID = %q, want empty after the system prompt changed", b.sessionID)
+	}
+	if b.promptTokens != 0 {
+		t.Fatalf("promptTokens = %d, want 0 after dropSession", b.promptTokens)
+	}
+	if b.systemPrompt == "OLD" {
+		t.Fatal("systemPrompt was not rebuilt")
+	}
+}
+
+func TestCursorRefreshKeepsSessionWhenPersonaUnchanged(t *testing.T) {
+	cfg := &config.Config{AgentName: "Samantha", EnvironmentContextEnabled: true, MaxHistory: 10}
+	persona, err := personaSystemPrompt(cfg)
+	if err != nil {
+		t.Fatalf("personaSystemPrompt: %v", err)
+	}
+	b := newTestCursorBrain(&fakeCursorClient{})
+	b.cfg = cfg
+	b.sessionID = "csess-1"
+	b.promptTokens = 7
+	b.systemPrompt = b.assembleSystem(persona)
+	b.personaReloader = newPromptReloader(prompts.KindPersona, cfg.Persona, persona, nil)
+
+	b.refreshPrompts(nil)
+	if b.sessionID != "csess-1" {
+		t.Fatalf("sessionID = %q, want csess-1 when the system prompt is unchanged", b.sessionID)
+	}
+	if b.promptTokens != 7 {
+		t.Fatalf("promptTokens = %d, want 7", b.promptTokens)
 	}
 }
 
@@ -228,7 +354,17 @@ func TestCursorAskOptionsGateToolsOnVoiceToolsEnabled(t *testing.T) {
 	if enabled.Model != "composer-2.5" {
 		t.Fatalf("Model = %q, want composer-2.5", enabled.Model)
 	}
-	if enabled.Force || enabled.Yolo || enabled.AllowDangerousMode {
-		t.Fatalf("enabled must not enable force/yolo: %+v", enabled)
+	if !enabled.Force || !enabled.Yolo || !enabled.AllowDangerousMode {
+		t.Fatalf("enabled must set force/yolo so a headless turn cannot stall: %+v", enabled)
+	}
+	if err := enabled.Validate(); err != nil {
+		t.Fatalf("enabled options rejected by SDK: %v", err)
+	}
+	args := cursor.BuildPrintArgs("prompt", enabled)
+	if slices.Index(args, "--force") < 0 {
+		t.Fatalf("tools-on args = %#v, want --force", args)
+	}
+	if i := slices.Index(args, "--mode"); i < 0 || i+1 >= len(args) || args[i+1] != "agent" {
+		t.Fatalf("tools-on args = %#v, want --mode agent", args)
 	}
 }
