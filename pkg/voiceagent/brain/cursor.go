@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -227,7 +228,7 @@ func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) 
 
 	result, err := c.client.AskCtx(ctx, prompt, c.askOptions(streamOpts.ToolsEnabled))
 	if err != nil {
-		return "", fmt.Errorf("cursor error: %w", err)
+		return "", wrapCursorAskError(err)
 	}
 	if result == nil {
 		return "", fmt.Errorf("cursor error: empty result")
@@ -257,29 +258,46 @@ func (c *CursorBrain) dropSession() {
 
 // askOptions builds the print-mode options shared by the streaming and
 // blocking paths. Tool execution is gated by voice_tools_enabled: disabled
-// uses ask mode (no edits); enabled uses agent mode. Trust is always set so
+// uses ask mode (no edits); enabled leaves --mode unset so the CLI runs
+// full agent (print mode rejects --mode agent). Trust is always set so
 // a first run in an untrusted workspace cannot stall on a human prompt.
 //
-// Force/yolo/AllowDangerousMode stay off. Those skip Cursor's permission
-// checks, and tying them to voice_tools_enabled (on by default) would let a
-// spoken or misrecognized turn run agent actions with no confirmation.
-// Agent mode without --force still lets Cursor ask; that is the permission
-// boundary this provider keeps.
+// Print-mode --mode accepts only plan and ask (cursor-agent 2026.09.02).
+// Full agent is the CLI default, so tools-on omits --mode rather than
+// passing --mode agent, which exits 1 with empty stdout. Force/yolo stay
+// off: voice_tools_enabled is not a dangerous-mode opt-in.
 func (c *CursorBrain) askOptions(toolsEnabled bool) *cursor.AskOptions {
 	opts := &cursor.AskOptions{
 		Trust:            true,
 		WorkingDirectory: config.WorkDirFrom(c.cfg),
 		Resume:           c.sessionID,
 	}
-	if toolsEnabled {
-		opts.Mode = cursor.ModeAgent
-	} else {
+	if !toolsEnabled {
 		opts.Mode = cursor.ModeAsk
 	}
 	if c.cfg != nil && c.cfg.CursorModel != "" {
 		opts.Model = c.cfg.CursorModel
 	}
 	return opts
+}
+
+func wrapCursorAskError(err error) error {
+	var sdkErr *cursor.Error
+	if errors.As(err, &sdkErr) {
+		if detail := firstNonEmptyLine(sdkErr.Stderr); detail != "" {
+			return fmt.Errorf("cursor error: %w (%s)", err, detail)
+		}
+	}
+	return fmt.Errorf("cursor error: %w", err)
+}
+
+func firstNonEmptyLine(s string) string {
+	for line := range strings.SplitSeq(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 // buildPrompt renders the next turn for the CLI. omitTurnInstruction leaves off
