@@ -2,7 +2,7 @@ package config
 
 func delegationKeys() []KeySpec {
 	return []KeySpec{
-		{Key: "delegation_enabled", Type: TypeBool, Default: false, Group: GroupTools, Title: "Background tasks", Help: "Lets Ollama delegate work to Obey and summarize finished results on your next turn."},
+		{Key: "delegation_enabled", Type: TypeBool, Default: false, Group: GroupTools, Title: "Background tasks", Help: "Lets Ollama delegate work to Obey and announce finished results between user turns."},
 		{Key: "delegation_binary", Type: TypeString, Default: "obey", Group: GroupAdvanced, Title: "Obey executable", Help: "Executable providing managed delegation commands."},
 		{Key: "delegation_socket", Type: TypeString, Default: "", Group: GroupAdvanced, Title: "Obey socket", Help: "Local Unix socket; empty uses Obey's configured socket."},
 		{Key: "delegation_campaign_id", Type: TypeString, Default: "", Group: GroupAdvanced, Title: "Delegation campaign", Help: "Existing Obey campaign that owns background tasks."},

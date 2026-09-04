@@ -62,7 +62,7 @@ func New(ctx context.Context, client Client, timeout time.Duration, summarize Su
 func (r *Runtime) Start(task string) (string, error) {
 	task = strings.TrimSpace(task)
 	if task == "" || len(task) > MaxTaskBytes {
-		return "", errors.New(fmt.Sprintf("task must contain between 1 and %d bytes", MaxTaskBytes))
+		return "", fmt.Errorf("task must contain between 1 and %d bytes", MaxTaskBytes)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -141,18 +141,12 @@ func (r *Runtime) Ack(ticket string) {
 }
 
 func (r *Runtime) Close() error {
-	r.mu.Lock()
-	r.closed = true
-	if r.job != nil && !r.job.done {
-		r.job.cancelReason = "voice session stopped"
-	}
-	r.mu.Unlock()
-	r.stop()
+	r.Stop()
 	r.wg.Wait()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.job != nil && r.job.err != "" {
-		return errors.New(r.job.err)
+		return fmt.Errorf("%s (ticket %s)", r.job.err, r.job.ticket)
 	}
 	return nil
 }
@@ -285,3 +279,22 @@ func (r *Runtime) signalReady() {
 	default:
 	}
 }
+
+// NewSession detaches the prior conversation without waiting for admission.
+// Both runtimes use the same trusted backend and notification channel; the
+// host drops the old runtime's pending view and closes it asynchronously.
+func (r *Runtime) NewSession() *Runtime {
+	r.Stop()
+	lifetime, stop := context.WithCancel(context.Background())
+	return &Runtime{client: r.client, summarize: r.summarize, timeout: r.timeout, ctx: lifetime, stop: stop, ready: r.ready}
+}
+func (r *Runtime) Stop() {
+	r.mu.Lock()
+	r.closed = true
+	if r.job != nil && !r.job.done {
+		r.job.cancelReason = "voice session stopped"
+	}
+	r.mu.Unlock()
+	r.stop()
+}
+func (r *Runtime) Enabled() bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.closed }

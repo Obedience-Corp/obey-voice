@@ -132,3 +132,52 @@ func TestReadyDelegationSurvivesBudgetAndFailedDelivery(t *testing.T) {
 		t.Fatal("successfully included result remains pending")
 	}
 }
+
+func TestSessionRestoreDropsWorkerAndKeepsReadySubscription(t *testing.T) {
+	for _, action := range []string{"load", "clear", "compact"} {
+		t.Run(action, func(t *testing.T) {
+			client := &delegationClientStub{started: make(chan struct{})}
+			runtime, err := delegation.New(context.Background(), client, time.Minute, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = runtime.Close() }()
+			_, err = runtime.Start("session A task")
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-client.started
+			o := &OllamaBrain{delegation: runtime, cfg: &config.Config{OllamaNumCtx: 4096}}
+			ready := o.BackgroundReady()
+			switch action {
+			case "load":
+				o.LoadHistory([]Turn{{Role: "user", Content: "session B"}})
+			case "clear":
+				o.ClearHistory()
+			case "compact":
+				o.ReseedContinuity([]Turn{{Role: "user", Content: "session A summary"}})
+			}
+			if o.BackgroundReady() != ready {
+				t.Fatal("session reset stranded Ready subscriber")
+			}
+			if o.BackgroundPending() {
+				t.Fatal("old task result leaked into new session")
+			}
+			if action == "compact" {
+				if got := o.delegation.Status(); strings.Contains(got, "No background") {
+					t.Fatal("same-session compaction canceled worker")
+				}
+			} else {
+				if err := runtime.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if o.BackgroundPending() {
+					t.Fatal("late old result entered restored session")
+				}
+				if got := o.delegation.Status(); !strings.Contains(got, "No background") {
+					t.Fatalf("old task retained: %s", got)
+				}
+			}
+		})
+	}
+}

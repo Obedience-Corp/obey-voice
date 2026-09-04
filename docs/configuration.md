@@ -457,5 +457,5 @@ continuation recovery settings are described in [Context continuity](context-con
 ## Background tasks
 
 Ollama can delegate managed work to Obey with `delegation_enabled: true`. Setup,
-backend requirements, and next-turn result delivery are documented in
+backend requirements, and scheduled result delivery are documented in
 [Background tasks](delegation.md). The feature is off by default.

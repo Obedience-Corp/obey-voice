@@ -224,7 +224,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		p.Brain = b
 		// Persona switches replace p.Brain; teardown owns the current provider.
 		cleanups = append(cleanups, func() {
-			if err := brain.CloseProvider(p.Brain); err != nil {
+			if err := p.CloseBrains(); err != nil {
 				fmt.Fprintf(os.Stderr, "obey-voice: brain cleanup: %v\n", err)
 			}
 		})

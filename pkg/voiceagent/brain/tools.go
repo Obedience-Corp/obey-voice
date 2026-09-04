@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/ollama/ollama/api"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 

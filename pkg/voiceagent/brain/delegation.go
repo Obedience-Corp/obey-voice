@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -50,10 +51,12 @@ func (o *OllamaBrain) configureDelegation(cfg *config.Config) error {
 // Close cancels attached workers when the owning voice agent shuts down.
 // Barge-in only cancels ThinkStream and never calls this method.
 func (o *OllamaBrain) Close() error {
+	var err error
 	if o.delegation != nil {
-		return o.delegation.Close()
+		err = o.delegation.Close()
 	}
-	return nil
+	o.retiredDelegations.Wait()
+	return err
 }
 
 func (o *OllamaBrain) receiveDelegationResults(opts StreamOptions) {
@@ -139,7 +142,7 @@ func (s *toolSession) executeDelegation(call api.ToolCall) string {
 }
 
 func (o *OllamaBrain) delegationForTurn(opts StreamOptions) *delegation.Runtime {
-	if !opts.ToolsEnabled || opts.OmitTurnInstruction {
+	if !opts.ToolsEnabled || opts.OmitTurnInstruction || o.delegation == nil || !o.delegation.Enabled() {
 		return nil
 	}
 	return o.delegation
@@ -184,4 +187,42 @@ func (o *OllamaBrain) BackgroundPending() bool {
 	}
 	_, ok := o.delegation.Pending()
 	return ok
+}
+
+func (o *OllamaBrain) resetDelegation() {
+	o.backgroundDelivered = ""
+	if o.delegation == nil {
+		return
+	}
+	old := o.delegation
+	o.delegation = old.NewSession()
+	o.retiredDelegations.Add(1)
+	go func() {
+		defer o.retiredDelegations.Done()
+		if err := old.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "obey-voice: previous session task cleanup: %v\n", err)
+		}
+	}()
+}
+
+func (o *OllamaBrain) markBackgroundDelivered(messages []api.Message) {
+	if o.delegation == nil {
+		return
+	}
+	pending, ok := o.delegation.Pending()
+	if !ok {
+		return
+	}
+	for _, m := range messages {
+		if m.Role == "tool" && m.ToolCallID == pending.Ticket+"-result" {
+			o.backgroundDelivered = pending.Ticket
+			return
+		}
+	}
+}
+func (o *OllamaBrain) AckBackgroundDelivery() {
+	if o.delegation != nil && o.backgroundDelivered != "" {
+		o.delegation.Ack(o.backgroundDelivered)
+	}
+	o.backgroundDelivered = ""
 }
