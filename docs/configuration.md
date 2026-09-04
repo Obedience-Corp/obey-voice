@@ -207,6 +207,27 @@ rather than assuming:
 - Campaign: My_Tools (root: /Users/you/Dev/My_Tools)
 ```
 
+## Qwen persona voices
+
+When creating a persona with `tts_provider: qwen3-tts`, an explicit
+`qwen_tts_voice` is preserved. An unset Qwen voice inherits the provider default;
+the Kokoro `tts_voice` value is not copied into the new profile. Older configs
+that stored a recognized Qwen preset or shipped clone in `tts_voice` still copy
+that selection.
+
+Older versions could save a Qwen persona with a Kokoro voice such as `af_heart`
+or `af_sky`. That saved voice overrides `qwen_tts_voice`, so changing the global
+setting alone does not repair the persona. Existing profiles are kept intact.
+To repair one, replace `my-persona` below with its ID and select a Qwen voice:
+
+```bash
+obey-voice persona edit my-persona --tts-provider qwen3-tts --voice Ryan
+```
+
+Alternatively, `obey-voice persona edit my-persona --voice ""` clears its saved
+voice so it inherits `qwen_tts_voice` again. Ensure that global setting is empty
+or a valid Qwen voice, then start a new conversation.
+
 ## Chunk playback (Qwen Stage B)
 
 A Stage B `qwen3-tts-worker` emits PCM while it is still synthesizing, one
