@@ -1046,6 +1046,10 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	return p.runTextTurn(ctx, input, false)
+}
+
+func (p *Pipeline) runTextTurn(ctx context.Context, input string, background bool) error {
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.trackMetrics(metrics)()
@@ -1053,7 +1057,11 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 
 	turn.to(TurnThinking)
 	speakerID := p.currentSpeakerID()
-	p.emit(events.UserInput{Text: input, Speaker: speakerID})
+	if background {
+		speakerID = ""
+	} else {
+		p.emit(events.UserInput{Text: input, Speaker: speakerID})
+	}
 	if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -1075,7 +1083,8 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 
 	stream, err := p.Brain.ThinkStream(brainCtx, input, brain.StreamOptions{
 		Speaker:       speakerID,
-		ToolsEnabled:  p.VoiceToolsEnabled,
+		Background:    background,
+		ToolsEnabled:  p.VoiceToolsEnabled && !background,
 		OnToolStart:   p.toolStartHook(),
 		OnToolEnd:     p.toolEndHook(),
 		OnUsage:       p.usageHook(),

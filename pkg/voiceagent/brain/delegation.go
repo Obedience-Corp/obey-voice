@@ -171,3 +171,17 @@ func CloseProvider(provider Provider) error {
 	}
 	return nil
 }
+
+func (o *OllamaBrain) BackgroundReady() <-chan struct{} {
+	if o.delegation == nil {
+		return nil
+	}
+	return o.delegation.Ready()
+}
+func (o *OllamaBrain) BackgroundPending() bool {
+	if o.delegation == nil {
+		return false
+	}
+	_, ok := o.delegation.Pending()
+	return ok
+}
