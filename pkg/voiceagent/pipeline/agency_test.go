@@ -177,6 +177,133 @@ func TestStopPlaybackDoesNotAbortJob(t *testing.T) {
 	}
 }
 
+func TestQueuedJobSummariesFlushFIFOWhenIdle(t *testing.T) {
+	provider := &progressiveFakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+
+	worker := &seqWorker{replies: []string{"first job result", "second job result"}}
+	jobs := job.NewTable(context.Background())
+	p := &Pipeline{
+		TTS:    provider,
+		Player: player,
+		Events: events.NewBus(),
+	}
+	agency := NewAgency(p, jobs, worker, &config.Config{}, nil)
+	agency.Wire()
+
+	// A foreground turn blocks idle delivery the same way playback would.
+	p.incActiveTurn()
+
+	finished := make(chan struct{}, 2)
+	p.Events.SubscribeAll(func(e events.Event) {
+		if _, ok := e.(events.JobFinished); ok {
+			finished <- struct{}{}
+		}
+	})
+
+	ctx := context.Background()
+	spawn := func(task string) {
+		metrics := newTurnMetrics()
+		turn := p.newTurnConductor(metrics)
+		agency.HandleRoute(ctx, turn, metrics, RouteDecision{
+			Kind:       RouteSpawn,
+			Transcript: task,
+			Source:     "test",
+		})
+	}
+	spawn("first task")
+	spawn("second task")
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-finished:
+		case <-time.After(3 * time.Second):
+			t.Fatal("jobs did not finish while the foreground turn was held")
+		}
+	}
+
+	agency.mu.Lock()
+	nPending := len(agency.pending)
+	ids := make([]string, nPending)
+	texts := make([]string, nPending)
+	for i, d := range agency.pending {
+		ids[i] = d.JobID
+		texts[i] = d.Text
+	}
+	agency.mu.Unlock()
+	if nPending != 2 {
+		t.Fatalf("pending deliveries = %d (%v %v), want 2 (both held until AfterTurn)", nPending, ids, texts)
+	}
+	if texts[0] != "first job result" || texts[1] != "second job result" {
+		t.Fatalf("pending FIFO = %v, want [first job result second job result]", texts)
+	}
+	if ids[0] == "" || ids[1] == "" || ids[0] == ids[1] {
+		t.Fatalf("pending job ids = %v, want two distinct identities", ids)
+	}
+
+	for _, line := range provider.Calls() {
+		if strings.Contains(line, "first job result") || strings.Contains(line, "second job result") {
+			t.Fatalf("summary spoken before idle: %v", provider.Calls())
+		}
+	}
+
+	p.decActiveTurn()
+
+	deadline := time.After(3 * time.Second)
+	for {
+		var first, second int
+		for i, line := range provider.Calls() {
+			if strings.Contains(line, "first job result") {
+				first = i + 1
+			}
+			if strings.Contains(line, "second job result") {
+				second = i + 1
+			}
+		}
+		if first > 0 && second > 0 {
+			if first > second {
+				t.Fatalf("spoken order = %v, want first job before second", provider.Calls())
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("spoken = %v, want both job summaries in FIFO order", provider.Calls())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+type seqWorker struct {
+	mu      sync.Mutex
+	replies []string
+	i       int
+}
+
+func (w *seqWorker) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	text, err := w.ThinkFull(ctx, input, opts)
+	if err != nil {
+		return nil, err
+	}
+	return (&fakeBrain{chunks: []string{text}}).ThinkStream(ctx, input, opts)
+}
+
+func (w *seqWorker) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.i >= len(w.replies) {
+		return "", nil
+	}
+	text := w.replies[w.i]
+	w.i++
+	return text, nil
+}
+
+func (w *seqWorker) ClearHistory()             {}
+func (w *seqWorker) History() []brain.Turn     { return nil }
+func (w *seqWorker) LoadHistory([]brain.Turn) {}
+
 func TestJobEventsEmitOnStartAndDone(t *testing.T) {
 	bus := events.NewBus()
 	var kinds []string

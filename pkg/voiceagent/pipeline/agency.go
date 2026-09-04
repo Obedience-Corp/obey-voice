@@ -23,10 +23,18 @@ type Agency struct {
 	ack      string
 	narrator *Narrator
 
-	mu              sync.Mutex
-	pendingSummary  string
-	pendingFailure  string
-	workerInitErr   error
+	mu            sync.Mutex
+	pending       []pendingDelivery
+	workerInitErr error
+}
+
+// pendingDelivery is one completed job waiting to be spoken when the pipeline
+// is idle. A slice, not a single string: queued jobs finish sequentially, but
+// playback or a foreground turn can delay delivery, and a later completion
+// must not overwrite an earlier one.
+type pendingDelivery struct {
+	JobID string
+	Text  string
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction
@@ -183,27 +191,27 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	switch state {
 	case job.StateDone:
 		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result})
-		a.enqueueSummary(a.cleanSummary(result))
+		a.enqueueSummary(id, a.cleanSummary(result))
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
 			msg = truncateJobTask(err.Error())
 		}
 		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg})
-		a.enqueueSummary(msg)
+		a.enqueueSummary(id, msg)
 	case job.StateAborted:
 		// abort is silent unless the user asked for status.
 	}
 	a.tryFlushPending()
 }
 
-func (a *Agency) enqueueSummary(text string) {
+func (a *Agency) enqueueSummary(id, text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		text = "That finished with nothing to report."
 	}
 	a.mu.Lock()
-	a.pendingSummary = text
+	a.pending = append(a.pending, pendingDelivery{JobID: id, Text: text})
 	a.mu.Unlock()
 }
 
@@ -219,22 +227,23 @@ func (a *Agency) cleanSummary(raw string) string {
 }
 
 func (a *Agency) tryFlushPending() {
-	a.mu.Lock()
-	text := a.pendingSummary
-	a.pendingSummary = ""
-	a.mu.Unlock()
-	if text == "" {
-		return
-	}
-	if !a.canSpeakIdleSummary() {
+	for {
 		a.mu.Lock()
-		if a.pendingSummary == "" {
-			a.pendingSummary = text
+		if len(a.pending) == 0 {
+			a.mu.Unlock()
+			return
 		}
+		if !a.canSpeakIdleSummary() {
+			a.mu.Unlock()
+			return
+		}
+		next := a.pending[0]
+		a.pending = a.pending[1:]
 		a.mu.Unlock()
-		return
+		if err := a.pipeline.speakStandalone(context.Background(), nil, nil, next.Text); err != nil {
+			a.pipeline.emit(events.Info{Message: fmt.Sprintf("job %s summary speech failed: %v", next.JobID, err)})
+		}
 	}
-	a.pipeline.speakStandalone(context.Background(), nil, nil, text)
 }
 
 func (a *Agency) canSpeakIdleSummary() bool {
