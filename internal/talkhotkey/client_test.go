@@ -181,3 +181,67 @@ func TestSupportedFollowsThePlatform(t *testing.T) {
 		t.Errorf("Supported() = %v on %s", got, runtime.GOOS)
 	}
 }
+
+// Windows has no os.Interrupt for a child process, so the closed stdin has to
+// be the whole stop request. With the signal taken away the helper must still
+// leave at once — the alternative is a UI that waits out the stop timeout and
+// then kills the process holding a system-wide key.
+func TestStopWithoutASignalClosesStdin(t *testing.T) {
+	previous := signalInterrupt
+	signalInterrupt = false
+	t.Cleanup(func() { signalInterrupt = previous })
+
+	client := startBlockedHelper(t, 30*time.Second)
+	start := time.Now()
+	client.Stop()
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Stop took %s, want the closed stdin to end the helper long before the 30s timeout", elapsed)
+	}
+	select {
+	case <-client.Done():
+	default:
+		t.Fatal("Stop returned before the helper exited")
+	}
+}
+
+// Signal is what the UI's quit path calls: it asks and returns, so the update
+// loop is never parked behind a helper's exit.
+func TestSignalReturnsWithoutWaiting(t *testing.T) {
+	client := startBlockedHelper(t, 30*time.Second)
+	start := time.Now()
+	client.Signal()
+	client.Signal() // idempotent
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("Signal took %s, want it to return at once", elapsed)
+	}
+	select {
+	case <-client.Done():
+	case <-time.After(30 * time.Second):
+		t.Fatal("the helper never exited after Signal")
+	}
+	client.Stop()
+}
+
+// startBlockedHelper runs the fake helper that only leaves when it is told to,
+// and waits for it to report registration.
+func startBlockedHelper(t *testing.T, stopTimeout time.Duration) *Client {
+	t.Helper()
+	combo := mustParse(t, "ctrl+alt+f13")
+	client, err := Start(t.Context(), combo, Options{
+		Command:     fakeCommand("block"),
+		StopTimeout: stopTimeout,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(client.Stop)
+	select {
+	case event := <-client.Events():
+		if event.Kind != KindRegistered {
+			t.Fatalf("first event = %+v, want a registration", event)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("helper never reported registration")
+	}
+	return client
+}

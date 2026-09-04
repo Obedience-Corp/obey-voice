@@ -97,7 +97,12 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 		app.remote.stopAndWait(remoteStopTimeout)
 	}
 	// The talk-key helper holds a system-wide key; it must not outlive the
-	// conversation that owned it.
+	// conversation that owned it. Quit only asked it to leave — waiting is
+	// this side's job. final is the model the program ran, so it is the copy
+	// that holds the helper; app is the pre-run copy and cleans up nothing
+	// here, but it costs nothing and covers the day App becomes a pointer
+	// model. When the assertion above fails outright, the cancel below kills
+	// the helper's process group and closes the endpoint with runCtx.
 	final.stopTalkHotkey()
 	app.stopTalkHotkey()
 

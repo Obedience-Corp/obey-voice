@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -259,5 +260,83 @@ func TestTalkWithoutMicrophoneIsRefused(t *testing.T) {
 	m, cmd := m.Update(keyDown())
 	if cmd != nil || !strings.Contains(m.status, "Microphone unavailable") {
 		t.Fatalf("press without a mic: cmd=%v status=%q", cmd != nil, m.status)
+	}
+}
+
+// controlDown and controlUp are the same edges arriving from the control
+// endpoint instead of the native helper.
+func controlDown() talkHotkeyEventMsg {
+	return talkHotkeyEventMsg{ev: talkhotkey.Event{Kind: talkhotkey.KindDown}, fromControl: true}
+}
+
+func controlUp(held time.Duration) talkHotkeyEventMsg {
+	return talkHotkeyEventMsg{ev: talkhotkey.Event{Kind: talkhotkey.KindUp, HeldMS: held.Milliseconds()}, fromControl: true}
+}
+
+// A shortcut tool's down/up drives the same turn as a native key press: one
+// driver, one contract, whichever side delivered the edge.
+func TestTalkControlCommandsDriveTheSameTurn(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}, {block: true}}}
+	m, ends := talkConversation(t, runner, talkhotkey.ModeHold)
+	m = mutedIdle(t, m)
+
+	m, cmd := m.Update(controlDown())
+	if cmd == nil || m.turnState != turnVoiceListening {
+		t.Fatalf("talk down did not open a turn (cmd=%v state=%d)", cmd != nil, m.turnState)
+	}
+	go cmd() // the blocked RunTurn; released by the model's cancel at teardown
+
+	m, _ = m.Update(controlUp(800 * time.Millisecond))
+	if *ends != 1 {
+		t.Fatalf("talk up called endUtterance %d times, want 1", *ends)
+	}
+	if m.voiceEnabled {
+		t.Fatal("the control endpoint unmuted the session as a side effect")
+	}
+}
+
+// The endpoint is only useful if you can see where it is, so it is named in
+// the activity panel the moment it opens.
+func TestAttachTalkControlNamesTheEndpoint(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.startConversation(conversationDeps{runner: &fakeTurnRunner{}, bus: events.NewBus(), voice: true, ctx: t.Context()})
+	const address = "/run/user/501/obey-voice/talk.sock"
+	m.attachTalkControl(address, talkhotkey.Combo{}, talkhotkey.ModeHold)
+
+	if m.talk == nil || m.talk.driver == nil {
+		t.Fatal("the control endpoint left no driver, so its commands would go nowhere")
+	}
+	found := false
+	for _, entry := range m.activity {
+		if entry.stage == "talk control" && entry.detail == address {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("activity does not name the endpoint: %+v", m.activity)
+	}
+	// Nothing registered a combo, so the footer must not advertise one.
+	if hint := m.talkHint(); hint != "" {
+		t.Fatalf("talkHint = %q, want empty until something holds the key", hint)
+	}
+}
+
+// The endpoint closing is not a conversation event: the App drops it and the
+// key path that is still registered keeps working.
+func TestTalkControlClosedClearsTheEndpoint(t *testing.T) {
+	control, err := talkhotkey.ListenControl(t.Context())
+	if err != nil {
+		t.Skipf("no control endpoint on this host: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+
+	app := App{cfg: &config.Config{}, runCtx: t.Context(), control: control, width: 80, height: 24}
+	next, cmd := app.Update(talkControlClosedMsg{})
+	got := next.(App)
+	if got.control != nil {
+		t.Fatal("the closed endpoint is still attached")
+	}
+	if cmd != nil {
+		t.Fatal("a closed endpoint must not schedule more work")
 	}
 }

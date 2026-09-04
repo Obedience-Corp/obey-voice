@@ -31,15 +31,24 @@ type Event struct {
 	Detail string `json:"detail,omitempty"` // on error: human text
 }
 
-// ConflictCode is Carbon's eventHotKeyExistsErr: some other process already
-// owns this combo system-wide, so registration cannot succeed until it lets go.
-const ConflictCode = -9878
+// ConflictCode is Carbon's eventHotKeyExistsErr and ConflictCodeWindows is
+// ERROR_HOTKEY_ALREADY_REGISTERED: some other process already owns this combo
+// system-wide, so registration cannot succeed until it lets go. Two codes
+// because the helper reports its platform's own status verbatim rather than
+// translating it into a code no log or search would recognize.
+const (
+	ConflictCode        = -9878
+	ConflictCodeWindows = 1409
+)
 
 // Conflict reports the one error the UI must explain rather than just print:
 // the combo is taken, and the fix is to pick another one or quit the app
 // holding it.
 func (e Event) Conflict() bool {
-	return e.Kind == KindError && e.Code == ConflictCode
+	if e.Kind != KindError {
+		return false
+	}
+	return e.Code == ConflictCode || e.Code == ConflictCodeWindows
 }
 
 // Held is how long the key was down, on an up event.

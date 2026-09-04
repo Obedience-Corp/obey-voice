@@ -38,6 +38,7 @@ func init() {
 	rootCmd.AddCommand(newRenderCmd(runRenderPlan, config.Load))
 	rootCmd.AddCommand(newAudiobookCmd(runRenderPlan, config.Load))
 	rootCmd.AddCommand(newSceneCmd(runScenePlan))
+	rootCmd.AddCommand(newTalkCmd())
 	rootCmd.AddCommand(newNarrateCmd())
 	rootCmd.AddCommand(newMeetingCmd())
 	rootCmd.AddCommand(newSpeakerCmd())
