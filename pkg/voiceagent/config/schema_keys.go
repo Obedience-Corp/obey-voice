@@ -340,7 +340,7 @@ func meetingKeys() []KeySpec {
 }
 
 func toolKeys() []KeySpec {
-	return []KeySpec{
+	return append(delegationKeys(), []KeySpec{
 		{
 			Key: "voice_tools_enabled", Type: TypeBool, Default: true,
 			Group: GroupTools, Title: "Local tools",
@@ -381,7 +381,7 @@ func toolKeys() []KeySpec {
 			Group: GroupTools, Title: "Skill match cutoff",
 			Help: "How close a request must be to a skill before it is offered. Higher offers fewer, more relevant skills.",
 		},
-	}
+	}...)
 }
 
 func remoteKeys() []KeySpec {

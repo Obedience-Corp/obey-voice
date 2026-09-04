@@ -36,6 +36,7 @@ const (
 	opResume
 	opVoice
 	opPersona
+	opBackground
 )
 
 type personaResult struct {
@@ -98,23 +99,46 @@ func NewDispatcher(runner TurnRunner, bus *events.Bus, clearHistory func(), resu
 // exactly one goroutine.
 func (d *Dispatcher) Run(ctx context.Context) {
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+		// User operations already queued take priority over unsolicited results.
+		select {
+		case op := <-d.queue:
+			d.apply(ctx, op)
+			continue
+		default:
+		}
+		var ready <-chan struct{}
+		if runner, ok := d.runner.(backgroundRunner); ok {
+			ready = runner.BackgroundReady()
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case op := <-d.queue:
 			d.apply(ctx, op)
+		case <-ready:
+			d.apply(ctx, dispatchOp{kind: opBackground})
 		}
 	}
 }
 
 func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 	switch op.kind {
-	case opText:
+	case opText, opBackground:
 		turnCtx, cancel := context.WithCancel(ctx)
 		d.setCancel(cancel)
 		d.canceled.Store(false)
 		d.active.Store(true)
-		err := d.runner.RunTurnTextMode(turnCtx, op.text)
+		var err error
+		if op.kind == opBackground {
+			if runner, ok := d.runner.(backgroundRunner); ok {
+				err = runner.RunBackgroundTurn(turnCtx)
+			}
+		} else {
+			err = d.runner.RunTurnTextMode(turnCtx, op.text)
+		}
 		d.active.Store(false)
 		d.setCancel(nil)
 		cancel()
@@ -287,4 +311,9 @@ func (d *Dispatcher) enqueue(op dispatchOp) error {
 	default:
 		return ErrBusy
 	}
+}
+
+type backgroundRunner interface {
+	BackgroundReady() <-chan struct{}
+	RunBackgroundTurn(context.Context) error
 }

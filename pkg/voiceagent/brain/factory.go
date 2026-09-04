@@ -47,9 +47,25 @@ func NewProvider(cfg *config.Config) (Provider, error) {
 	if name == "" {
 		name = "ollama"
 	}
+	if cfg.DelegationEnabled && name != "ollama" {
+		return nil, fmt.Errorf("delegation requires the Ollama brain")
+	}
 	for _, e := range registry {
 		if e.spec.Name == name {
-			return e.new(cfg)
+			provider, err := e.new(cfg)
+			if err != nil {
+				return nil, err
+			}
+			if cfg.DelegationEnabled {
+				o, ok := provider.(*OllamaBrain)
+				if !ok {
+					return nil, fmt.Errorf("delegation requires the Ollama brain")
+				}
+				if err := o.configureDelegation(cfg); err != nil {
+					return nil, err
+				}
+			}
+			return provider, nil
 		}
 	}
 	return nil, unsupportedProviderError("brain_provider", cfg.BrainProvider, Providers())
