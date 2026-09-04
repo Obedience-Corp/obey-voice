@@ -70,8 +70,32 @@
       "value": null,
       "source": "default"
     },
+    "continuity_archive_enabled": {
+      "value": true,
+      "source": "default"
+    },
+    "continuity_compact_filler": {
+      "value": true,
+      "source": "default"
+    },
     "continuity_integrity_enabled": {
       "value": true,
+      "source": "default"
+    },
+    "continuity_num_ctx_ceil": {
+      "value": 8192,
+      "source": "default"
+    },
+    "continuity_projection_enabled": {
+      "value": true,
+      "source": "default"
+    },
+    "continuity_recovery_max": {
+      "value": 2,
+      "source": "default"
+    },
+    "continuity_soft_limit_ratio": {
+      "value": 0.8,
       "source": "default"
     },
     "cursor_model": {

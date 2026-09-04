@@ -230,6 +230,12 @@ func brainKeys() []KeySpec {
 			Group: GroupBrain, Title: "Context integrity checks",
 			Help: "Detect truncated Ollama completions and emit continuity events. Off restores pre-continuity behavior.",
 		},
+		{Key: "continuity_projection_enabled", Type: TypeBool, Default: true, Group: GroupBrain, Title: "Compact tool results", Help: "Bound model-visible Ollama tool results to 2048 bytes. Disabling restores raw output."},
+		{Key: "continuity_archive_enabled", Type: TypeBool, Default: true, Group: GroupBrain, Title: "Context archive", Help: "Retain bounded tool output and evicted notes in session memory."},
+		{Key: "continuity_soft_limit_ratio", Type: TypeFloat, Default: 0.80, Min: num(0), Max: num(0.9), Group: GroupBrain, Title: "Context compact threshold", Help: "Prompt estimate fraction that triggers compaction. Zero disables the budget trigger."},
+		{Key: "continuity_compact_filler", Type: TypeBool, Default: true, Group: GroupBrain, Title: "Speak before compacting", Help: "Say a brief filler before automatic conversation compaction."},
+		{Key: "continuity_recovery_max", Type: TypeInt, Default: 2, Min: num(0), Max: num(2), Group: GroupBrain, Title: "Continuation attempts", Help: "Maximum continuation requests after a truncated Ollama response. Zero disables recovery."},
+		{Key: "continuity_num_ctx_ceil", Type: TypeInt, Default: 8192, Min: num(8192), Max: num(32768), Group: GroupBrain, Title: "Adaptive context ceiling", Help: "Opt in to session context expansion up to 16384 or 32768 after budget pressure."},
 	}
 }
 

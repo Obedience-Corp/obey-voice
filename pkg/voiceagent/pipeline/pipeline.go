@@ -957,8 +957,13 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		}
 	}
 	p.emit(events.UserInput{Text: text, Speaker: speakerID})
-	if err := p.autoCompactIfNeeded(ctx); err != nil {
-		p.emit(events.Error{Stage: "compact", Message: err.Error()})
+	if err := p.prepareTurn(ctx, text, metrics, turn); err != nil {
+		if errors.Is(err, context.Canceled) {
+			turn.finish(TurnInterrupted)
+			return text, err
+		}
+		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
+		return text, nil
 	}
 	p.emit(events.ThinkingStarted{})
 
@@ -1049,8 +1054,13 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	turn.to(TurnThinking)
 	speakerID := p.currentSpeakerID()
 	p.emit(events.UserInput{Text: input, Speaker: speakerID})
-	if err := p.autoCompactIfNeeded(ctx); err != nil {
-		p.emit(events.Error{Stage: "compact", Message: err.Error()})
+	if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
+		if errors.Is(err, context.Canceled) {
+			turn.finish(TurnInterrupted)
+			return err
+		}
+		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
+		return nil
 	}
 	p.emit(events.ThinkingStarted{})
 	if metrics.sttFinal.IsZero() {
@@ -2242,13 +2252,32 @@ func compactTail(before []brain.Turn) []brain.Turn {
 }
 
 func (p *Pipeline) autoCompactIfNeeded(ctx context.Context) error {
-	if p.Brain == nil || p.CompactPrompt == "" || p.AutoCompactAfter <= 0 {
+	return p.prepareTurn(ctx, "", nil, nil)
+}
+
+// prepareTurn checks both incoming prompt size and the historical count. All
+// prepare work is bounded by the normal brain timeout, including filler speech.
+func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnMetrics, turn *turnConductor) error {
+	if p.Brain == nil || p.CompactPrompt == "" {
 		return nil
 	}
-	if len(p.Brain.History()) <= p.AutoCompactAfter {
+	compact := p.AutoCompactAfter > 0 && len(p.Brain.History()) > p.AutoCompactAfter
+	if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok {
+		compact = compact || budget.NeedsContinuityCompact(input)
+	}
+	if !compact {
 		return nil
 	}
+	ctx, cancel := p.withBrainTimeout(ctx)
+	defer cancel()
 	p.emit(events.Info{Message: "Compacting conversation."})
+	if filler, ok := p.Brain.(interface{ ContinuityCompactFiller() bool }); ok && filler.ContinuityCompactFiller() && metrics != nil && turn != nil {
+		p.speakBestEffort(ctx, "Give me a moment to gather my notes.", metrics, turn)
+		turn.to(TurnThinking)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return p.CompactConversation(ctx)
 }
 
