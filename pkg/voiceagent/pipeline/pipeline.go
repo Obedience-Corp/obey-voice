@@ -226,6 +226,13 @@ type Pipeline struct {
 	// the utterance was dropped. Wired only for speaker.live.mode=owner_verify
 	// — identity never gates turns by default, and text turns are never gated.
 	SpeakerGate func(label string) (rejectReason string)
+
+	// AddressGate, when set, may veto a voice turn after transcription because
+	// the utterance was not addressed to the agent. Evaluated before
+	// SpeakerGate. A non-empty reason drops the turn the same way SpeakerGate
+	// does. Installed per session by the TUI, never by serve: a remote client
+	// that sent voice_start addressed the agent by definition.
+	AddressGate func(text string) (rejectReason string)
 	// CurrentSpeaker returns the stable live speaker id (speaker-1) for the
 	// in-flight user turn when live labels are active. Optional; nil/empty
 	// means ordinary single-user attribution.
@@ -939,6 +946,15 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	if text == "" {
 		turn.finish(TurnTimedOut)
 		return "", nil
+	}
+	// Name summon (D5). Ahead of the backchannel on purpose: speech meant for
+	// someone else in the room must not even get an "mm-hm" back.
+	if p.AddressGate != nil {
+		if reason := p.AddressGate(text); reason != "" {
+			p.emit(events.Info{Message: reason})
+			turn.finish(TurnTimedOut)
+			return "", nil
+		}
 	}
 
 	turn.to(TurnThinking)

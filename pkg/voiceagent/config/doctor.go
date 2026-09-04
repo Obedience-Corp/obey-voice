@@ -310,6 +310,19 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 		})
 	}
 
+	// Name summon fails closed rather than warns (D5): barge-in without a
+	// front-end is a false interrupt, but name summon without one is the agent
+	// answering itself in a loop, so the conversation refuses to install the
+	// gate at all and this row is the only place that says why.
+	if NameSummonSelfTriggerRisk(cfg) {
+		diags = append(diags, Diagnostic{
+			Name:        "name-summon-echo",
+			Severity:    SeverityError,
+			Detail:      "name_summon_enabled with voice_frontend=off: the agent would hear its own name in playback and summon itself",
+			Remediation: "set voice_frontend to nlms or webrtc, or disable name_summon_enabled",
+		})
+	}
+
 	// An unrecognized barge_in_speakers value (typo) is a hard startup error
 	// for the same reason as voice_frontend: silently falling back to the
 	// more permissive "anyone" on a typo is exactly the direction D7's

@@ -196,9 +196,10 @@ const (
 	toolRowLocalTools    = 0
 	toolRowSkills        = 1
 	toolRowBargeIn       = 2
-	toolRowVoiceFrontend = 3
-	toolRowMouse         = 4
-	toolRowCount         = 5
+	toolRowNameSummon    = 3
+	toolRowVoiceFrontend = 4
+	toolRowMouse         = 5
+	toolRowCount         = 6
 )
 
 func (m *settingsModel) buildToolItems() {
@@ -216,8 +217,11 @@ func (m *settingsModel) buildToolItems() {
 	// Voice barge-in is opt-in (default off): without a solid AEC path the mic
 	// hears TTS playback and self-interrupts. Voice frontend is the AEC/NS/AGC
 	// chain doctor recommends when barge-in is on.
+	// Name summon needs the same front end for a sharper reason: without it the
+	// agent hears its own name in playback (D5). Aliases stay a config-file key.
 	m.toolItems = append(m.toolItems,
 		fmt.Sprintf("Voice barge-in — %s", enabledLabel(m.cfg.BargeInEnabled)),
+		fmt.Sprintf("Name summon — %s", enabledLabel(m.cfg.NameSummonEnabled)),
 		fmt.Sprintf("Voice frontend (AEC) — %s", enabledLabel(m.cfg.VoiceFrontendEnabled)),
 	)
 	// Off by default: the terminal keeps unmodified drag-select, and the wheel
@@ -228,6 +232,24 @@ func (m *settingsModel) buildToolItems() {
 	m.toolItems = append(m.toolItems,
 		fmt.Sprintf("Mouse scroll (claims mouse) — %s", enabledLabel(m.cfg.TUIMouseEnabled)),
 	)
+}
+
+// nameSummonWouldSelfTrigger answers the question the Tools row asks before it
+// saves: would turning name summon on leave the agent able to hear its own name
+// in playback (D5)? Same predicate the doctor and the conversation use, applied
+// to a copy that already has the toggle flipped.
+//
+// The extra clause covers the AEC row beneath it, which writes the legacy
+// voice_frontend_enabled bool — that only becomes a front end on the next load,
+// and ignoring it would refuse name summon to someone who just turned the front
+// end on in this very screen.
+func (m *settingsModel) nameSummonWouldSelfTrigger() bool {
+	next := *m.cfg
+	next.NameSummonEnabled = true
+	if next.VoiceFrontendEnabled && config.VoiceFrontendOf(&next) == config.VoiceFrontendOff {
+		next.VoiceFrontend = config.VoiceFrontendNLMS
+	}
+	return config.NameSummonSelfTriggerRisk(&next)
 }
 
 func enabledLabel(enabled bool) string {
@@ -267,6 +289,14 @@ func (m *settingsModel) selectToolItem() tea.Cmd {
 		key, label = "barge_in_enabled", "Voice barge-in"
 		value = !m.cfg.BargeInEnabled
 		field = &m.cfg.BargeInEnabled
+	case toolRowNameSummon:
+		if !m.cfg.NameSummonEnabled && m.nameSummonWouldSelfTrigger() {
+			m.message = "Name summon needs the voice front end on — enable Voice frontend (AEC) first — so playback of the name cannot summon the agent."
+			return nil
+		}
+		key, label = "name_summon_enabled", "Name summon"
+		value = !m.cfg.NameSummonEnabled
+		field = &m.cfg.NameSummonEnabled
 	case toolRowVoiceFrontend:
 		key, label = "voice_frontend_enabled", "Voice frontend (AEC)"
 		value = !m.cfg.VoiceFrontendEnabled

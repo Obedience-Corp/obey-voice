@@ -112,6 +112,10 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	if m.canCancelVoice == nil {
 		m.canCancelVoice = &atomic.Bool{}
 	}
+	if m.talkKeyTurn == nil {
+		m.talkKeyTurn = new(atomic.Bool)
+	}
+	m.talkKeyTurn.Store(false)
 	if deps.bus != nil {
 		gate := m.canCancelVoice
 		events.Subscribe(deps.bus, func(events.UserInput) {
@@ -521,6 +525,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	if m.canCancelVoice != nil {
 		m.canCancelVoice.Store(false)
 	}
+	m.keyOwnsTurn(false)
 	wasCanceling := m.turnState == turnVoiceCanceling
 	m.turnState = turnIdle
 
@@ -541,6 +546,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 		if talk {
 			// The key interrupted a reply and is still held: its turn opens
 			// now, and the driver keeps owning it until the release.
+			m.keyOwnsTurn(true)
 			return m.dispatchVoiceTurn()
 		}
 		m.talkTurnEnded()
@@ -589,6 +595,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 
 func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
+	m.keyOwnsTurn(false)
 	// Barge-in during a text turn (agent speaking after a prior typed message)
 	// sets turnVoiceCanceling + pendingText, then cancel drains here — same
 	// path as voice barge-in via handleVoiceTurnDone.
@@ -610,6 +617,7 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 			return m.submitText(pending)
 		}
 		if talk {
+			m.keyOwnsTurn(true)
 			return m.dispatchVoiceTurn()
 		}
 		m.talkTurnEnded()

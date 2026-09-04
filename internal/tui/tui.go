@@ -773,6 +773,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ctx:            a.runCtx,
 			wg:             a.wg,
 		})
+		a.installNameSummon(msg.rt)
 		return a, tea.Batch(cmd, a.startTalkHotkey())
 
 	case talkHotkeyEventMsg:

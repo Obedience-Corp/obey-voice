@@ -258,6 +258,9 @@ func (m *conversationModel) beginTalkTurn() tea.Cmd {
 		m.talk.driver.TurnEnded()
 		return nil
 	}
+	// The key is the address (D5): name summon stands down for the turn this
+	// opens, adopts, or queues behind an interrupt.
+	m.keyOwnsTurn(true)
 	switch m.turnState {
 	case turnIdle:
 		return m.dispatchVoiceTurn()

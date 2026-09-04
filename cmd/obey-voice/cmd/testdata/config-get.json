@@ -126,6 +126,14 @@
       "value": "/Users/lance/.cache/festival-voice/models",
       "source": "default"
     },
+    "name_summon_aliases": {
+      "value": [],
+      "source": "default"
+    },
+    "name_summon_enabled": {
+      "value": false,
+      "source": "default"
+    },
     "ollama_embedding_model": {
       "value": "nomic-embed-text",
       "source": "default"
