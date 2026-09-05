@@ -23,6 +23,34 @@ func TestTwoLocalOllamaWorkers(t *testing.T) {
 	}
 }
 
+func TestDistinctLocalOllamaModels(t *testing.T) {
+	same := &Config{
+		BrainProvider:       "ollama",
+		VoiceWorkerProvider: "ollama",
+		OllamaHost:          "http://localhost:11434",
+		OllamaModel:         "qwen3:8b",
+	}
+	if DistinctLocalOllamaModels(same) {
+		t.Fatal("same model must not be distinct")
+	}
+	same.VoiceWorkerModel = ""
+	if DistinctLocalOllamaModels(same) {
+		t.Fatal("empty worker model inherits live and is not distinct")
+	}
+	same.VoiceWorkerModel = "qwen3:8b:latest"
+	if DistinctLocalOllamaModels(same) {
+		t.Fatal(":latest suffix is the same model")
+	}
+	same.VoiceWorkerModel = "qwen3:30b"
+	if !DistinctLocalOllamaModels(same) {
+		t.Fatal("different worker model on the same host is distinct")
+	}
+	same.VoiceWorkerOllamaHost = "http://studio:11434"
+	if DistinctLocalOllamaModels(same) {
+		t.Fatal("different host is not a local distinct pair")
+	}
+}
+
 func TestWorkerBrainConfigGrokModelPin(t *testing.T) {
 	cfg := &Config{
 		VoiceWorkerProvider: "grok",

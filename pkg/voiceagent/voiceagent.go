@@ -81,6 +81,14 @@ type Options struct {
 	// speculative.
 	Capture pipeline.CaptureMonitor
 
+	// Worker replaces the async job brain New would construct from
+	// voice_worker_provider. Nil means NewWorkerProvider(cfg). When Worker is
+	// non-nil, WorkerErr is ignored. WorkerErr without a Worker records
+	// Agency's construction failure without calling NewWorkerProvider — tests
+	// and hosts that already failed construction.
+	Worker    brain.Provider
+	WorkerErr error
+
 	// TextOnly skips capture, VAD and STT: the agent reads text turns instead of
 	// listening. Silent skips TTS and playback: it thinks and writes but does not
 	// speak. Both are false for a full voice agent.
@@ -404,9 +412,17 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	}
 
 	jobs := job.NewTable(ctx)
-	worker, workerErr := brain.NewWorkerProvider(cfg)
-	if workerErr != nil {
-		logf("warning: worker provider: %v", workerErr)
+	var worker brain.Provider
+	var workerErr error
+	if opts.Worker != nil {
+		worker = opts.Worker
+	} else if opts.WorkerErr != nil {
+		workerErr = opts.WorkerErr
+	} else {
+		worker, workerErr = brain.NewWorkerProvider(cfg)
+		if workerErr != nil {
+			logf("warning: worker provider: %v", workerErr)
+		}
 	}
 	agency := pipeline.NewAgency(p, jobs, worker, cfg, workerErr)
 	agency.Wire()

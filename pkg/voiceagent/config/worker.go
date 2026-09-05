@@ -34,7 +34,9 @@ func WorkerBrainConfig(cfg *Config) *Config {
 }
 
 // TwoLocalOllamaWorkers reports when the live brain and worker are both local
-// Ollama on the same host — doctor warns but does not refuse (D5).
+// Ollama on the same host. Host matching is literal EqualFold on the URL
+// string (localhost vs 127.0.0.1 are different). Doctor and NewWorkerProvider
+// use DistinctLocalOllamaModels to decide whether that pair is one load or two.
 func TwoLocalOllamaWorkers(cfg *Config) bool {
 	if cfg == nil {
 		return false
@@ -56,6 +58,29 @@ func TwoLocalOllamaWorkers(cfg *Config) bool {
 		workerHost = liveHost
 	}
 	return strings.EqualFold(liveHost, workerHost)
+}
+
+// DistinctLocalOllamaModels reports a same-host Ollama live+worker pair that
+// would load two weight sets. Empty voice_worker_model inherits ollama_model,
+// so the local product (one model, two clients) returns false.
+func DistinctLocalOllamaModels(cfg *Config) bool {
+	if !TwoLocalOllamaWorkers(cfg) {
+		return false
+	}
+	live := strings.TrimSpace(cfg.OllamaModel)
+	worker := strings.TrimSpace(cfg.VoiceWorkerModel)
+	if worker == "" {
+		worker = live
+	}
+	return !ollamaModelEqual(live, worker)
+}
+
+func ollamaModelEqual(a, b string) bool {
+	norm := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		return strings.TrimSuffix(s, ":latest")
+	}
+	return norm(a) == norm(b)
 }
 
 // BrainModelFor returns the model configured for a brain provider. Claude has
