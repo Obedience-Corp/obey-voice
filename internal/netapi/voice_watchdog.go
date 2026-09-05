@@ -34,10 +34,16 @@ const (
 	defaultVoiceTurnMax = defaultVoiceSilence + maxVoiceUtterance
 )
 
-// voiceSilentReason labels a turn serve ended because its client stopped
-// feeding it audio, distinguishing it from the remote_interrupt a client-driven
-// barge-in reports.
-const voiceSilentReason = "client_silent"
+// The two reasons serve ends a turn on its own, each naming the bound that ran
+// out: the client stopped feeding a turn that was still open, or the turn hit
+// the cap on its whole length. A client that streamed for forty seconds without
+// ever sending voice_end was never silent, and telling it so sent it looking
+// for a network fault that was not there. Both are distinct from the
+// remote_interrupt a client-driven barge-in reports.
+const (
+	voiceSilentReason  = "client_silent"
+	voiceTurnCapReason = "turn_cap"
+)
 
 // voiceWatchdog is one connection's turn deadline. A single timer carries both
 // bounds — the silence window, which every frame pushes out, and the turn cap,
@@ -53,7 +59,7 @@ type voiceWatchdog struct {
 
 // arm starts the deadline for a turn that has just begun. fire runs at most
 // once per armed turn, on the timer goroutine, and never after disarm.
-func (w *voiceWatchdog) arm(silence, max time.Duration, fire func()) {
+func (w *voiceWatchdog) arm(silence, max time.Duration, fire func(reason string)) {
 	now := time.Now()
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -100,32 +106,41 @@ func (w *voiceWatchdog) left(now time.Time) time.Duration {
 	return left
 }
 
-// expire ends the turn the timer was armed for. gen pins it to that turn, and a
-// frame that landed while it waited on the lock rearms it rather than cutting a
-// turn that is still streaming.
-func (w *voiceWatchdog) expire(gen uint64, fire func()) {
+// expire ends the turn the timer was armed for, telling fire which of the two
+// bounds ran out. gen pins it to that turn, and a frame that landed while it
+// waited on the lock rearms it rather than cutting a turn that is still
+// streaming.
+func (w *voiceWatchdog) expire(gen uint64, fire func(reason string)) {
+	now := time.Now()
 	w.mu.Lock()
 	if w.timer == nil || w.gen != gen {
 		w.mu.Unlock()
 		return
 	}
-	if left := w.left(time.Now()); left > 0 {
+	if left := w.left(now); left > 0 {
 		w.timer.Reset(left)
 		w.mu.Unlock()
 		return
 	}
+	// The cap wins a tie: it is the bound frames cannot push out, so a turn
+	// that reached it was talking, not silent.
+	reason := voiceSilentReason
+	if !now.Before(w.hard) {
+		reason = voiceTurnCapReason
+	}
 	w.stop()
 	w.mu.Unlock()
-	fire()
+	fire(reason)
 }
 
 // armVoiceTurn starts the deadline for a turn this connection just opened.
 func (s *Server) armVoiceTurn(conn *streamConn) {
-	conn.watch.arm(s.voiceSilence, s.voiceTurnMax, func() { s.voiceTurnStalled(conn) })
+	conn.watch.arm(s.voiceSilence, s.voiceTurnMax, func(reason string) { s.voiceTurnStalled(conn, reason) })
 }
 
-// voiceTurnStalled ends a turn whose client stopped sending audio: the mic goes
-// back and anything the connection had queued is abandoned.
+// voiceTurnStalled ends a turn one of the two deadlines ran out on, reason
+// naming which: the mic goes back and anything the connection had queued is
+// abandoned.
 //
 // Who hears about it depends on what was actually lost. A live turn was in
 // flight for everyone — every client is waiting on that reply — so it is
@@ -138,7 +153,7 @@ func (s *Server) armVoiceTurn(conn *streamConn) {
 // back, never reported: that turn ran on audio the user really spoke and is
 // still producing its reply. Telling a client a turn ended that had already
 // ended is the same lie an idle interrupt refuses to tell.
-func (s *Server) voiceTurnStalled(conn *streamConn) {
+func (s *Server) voiceTurnStalled(conn *streamConn, reason string) {
 	queued := conn.voiceQueued.Swap(false)
 	conn.dropStaged()
 	live := s.hub.utteranceOpen(conn)
@@ -146,8 +161,8 @@ func (s *Server) voiceTurnStalled(conn *streamConn) {
 	switch {
 	case live:
 		s.dispatcher.Interrupt()
-		s.opts.Bus.Emit(events.TurnInterrupted{Reason: voiceSilentReason})
+		s.opts.Bus.Emit(events.TurnInterrupted{Reason: reason})
 	case queued:
-		s.sendEvent(conn, events.TurnInterrupted{Reason: voiceSilentReason})
+		s.sendEvent(conn, events.TurnInterrupted{Reason: reason})
 	}
 }

@@ -349,7 +349,7 @@ func TestVoiceTurnStalledUnderCancelledContext(t *testing.T) {
 		t.Fatal("dispatcher did not stop on context cancellation")
 	}
 
-	s.voiceTurnStalled(conn)
+	s.voiceTurnStalled(conn, voiceSilentReason)
 
 	if micClaimed(s.hub) {
 		t.Error("the claim survived the deadline under a cancelled context")
@@ -359,6 +359,42 @@ func TestVoiceTurnStalledUnderCancelledContext(t *testing.T) {
 	}
 	if got := log.all(); len(got) != 1 || got[0] != voiceSilentReason {
 		t.Errorf("turn_interrupted reasons = %v, want exactly one %q", got, voiceSilentReason)
+	}
+}
+
+// TestVoiceStallReasonNamesTheDeadline: both bounds used to report
+// client_silent, so a client that streamed audio for the whole forty-second cap
+// was told it had gone quiet — and went looking for a network fault instead of
+// simply starting another turn.
+func TestVoiceStallReasonNamesTheDeadline(t *testing.T) {
+	const quick = 20 * time.Millisecond
+
+	tests := []struct {
+		name    string
+		silence time.Duration
+		max     time.Duration
+		want    string
+	}{
+		{"the silence window ran out", quick, time.Hour, voiceSilentReason},
+		{"the turn cap ran out", time.Hour, quick, voiceTurnCapReason},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fired := make(chan string, 8)
+
+			var w voiceWatchdog
+			w.arm(tt.silence, tt.max, func(reason string) { fired <- reason })
+
+			select {
+			case got := <-fired:
+				if got != tt.want {
+					t.Errorf("stall reason = %q, want %q", got, tt.want)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("watchdog never fired")
+			}
+		})
 	}
 }
 
@@ -420,7 +456,7 @@ func TestVoiceWatchdogDeadlines(t *testing.T) {
 			fired := make(chan struct{}, 8)
 
 			var w voiceWatchdog
-			w.arm(tt.silence, tt.max, func() { fired <- struct{}{} })
+			w.arm(tt.silence, tt.max, func(string) { fired <- struct{}{} })
 			tt.after(&w)
 
 			if tt.wantFires == 0 {
