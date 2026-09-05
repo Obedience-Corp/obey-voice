@@ -74,17 +74,49 @@ func TestWorkerStreamOptions(t *testing.T) {
 	}
 }
 
-func TestNewWorkerProviderRefusesTwoLocalOllama(t *testing.T) {
+func TestNewWorkerProviderAllowsSameHostOllama(t *testing.T) {
+	t.Parallel()
+	// Construction will fail talking to a closed port; the point is we no
+	// longer refuse same-host Ollama before NewProvider.
 	_, err := NewWorkerProvider(&config.Config{
 		BrainProvider:       "ollama",
-		OllamaHost:          "http://localhost:11434",
 		VoiceWorkerProvider: "ollama",
+		OllamaHost:          "http://127.0.0.1:1",
+		OllamaModel:         "qwen3:8b",
 	})
 	if err == nil {
-		t.Fatal("expected error for two local Ollama workers")
+		t.Fatal("expected a connect error from NewProvider, not success")
 	}
-	if !strings.Contains(err.Error(), "second local model") {
-		t.Fatalf("err = %q, want second local model", err)
+	if strings.Contains(err.Error(), "second local model") {
+		t.Fatalf("same-host ollama still refused: %v", err)
+	}
+}
+
+func TestNewWorkerProviderAllowsDistinctSameHostOllama(t *testing.T) {
+	t.Parallel()
+	_, err := NewWorkerProvider(&config.Config{
+		BrainProvider:       "ollama",
+		VoiceWorkerProvider: "ollama",
+		OllamaHost:          "http://127.0.0.1:1",
+		OllamaModel:         "qwen3:8b",
+		VoiceWorkerModel:    "qwen3:30b",
+	})
+	if err == nil {
+		t.Fatal("expected a connect error from NewProvider, not success")
+	}
+	if strings.Contains(err.Error(), "second local model") {
+		t.Fatalf("distinct same-host ollama still refused: %v", err)
+	}
+}
+
+func TestNewWorkerProviderUnsupported(t *testing.T) {
+	t.Parallel()
+	_, err := NewWorkerProvider(&config.Config{VoiceWorkerProvider: "cursor"})
+	if err == nil {
+		t.Fatal("expected error for unsupported worker")
+	}
+	if !strings.Contains(err.Error(), "unsupported voice_worker_provider") {
+		t.Fatalf("err = %q, want unsupported", err)
 	}
 }
 

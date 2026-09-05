@@ -628,13 +628,6 @@ func diagnoseWorkerProvider(cfg *Config, lookPath func(string) (string, error)) 
 			}
 		}
 		detail := fmt.Sprintf("worker %s CLI (%s)", spec.CLIBinary, path)
-		if TwoLocalOllamaWorkers(cfg) {
-			return Diagnostic{
-				Name:     "voice-worker-provider",
-				Severity: SeverityWarn,
-				Detail:   detail + "; live and worker are both local Ollama on the same host — two models may not fit in RAM",
-			}
-		}
 		return Diagnostic{Name: "voice-worker-provider", Severity: SeverityOK, Detail: detail}
 	}
 	if provider == "ollama" {
@@ -655,11 +648,18 @@ func diagnoseWorkerProvider(cfg *Config, lookPath func(string) (string, error)) 
 			host = strings.TrimSpace(cfg.OllamaHost)
 		}
 		detail := fmt.Sprintf("worker ollama model %q at %s", model, host)
-		if TwoLocalOllamaWorkers(cfg) {
+		if DistinctLocalOllamaModels(cfg) {
 			return Diagnostic{
 				Name:     "voice-worker-provider",
 				Severity: SeverityWarn,
-				Detail:   detail + " — live and worker are both local Ollama on the same host; two models may not fit in RAM",
+				Detail:   fmt.Sprintf("%s — live model %q is also on this host; two weight sets may not fit in RAM", detail, strings.TrimSpace(cfg.OllamaModel)),
+			}
+		}
+		if TwoLocalOllamaWorkers(cfg) {
+			return Diagnostic{
+				Name:     "voice-worker-provider",
+				Severity: SeverityOK,
+				Detail:   fmt.Sprintf("live and worker share ollama model %q at %s — one load, two clients", model, host),
 			}
 		}
 		return Diagnostic{Name: "voice-worker-provider", Severity: SeverityOK, Detail: detail}

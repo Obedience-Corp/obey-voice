@@ -2,6 +2,7 @@ package voiceagent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -66,6 +67,89 @@ func TestNewRunsCleanupWhenAProviderFails(t *testing.T) {
 // The embedding contract: every provider can be supplied by the host, and when
 // all of them are, New must not touch a microphone, a speaker or a model file.
 // If this test ever needs hardware, the surface has stopped being embeddable.
+func TestNewUsesInjectedWorker(t *testing.T) {
+	worker := &recordingInjectedWorker{reply: "worker-done"}
+	started := make(chan struct{}, 1)
+	finished := make(chan events.JobFinished, 1)
+	bus := events.NewBus()
+	events.Subscribe(bus, func(events.JobStarted) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+	})
+	events.Subscribe(bus, func(e events.JobFinished) {
+		select {
+		case finished <- e:
+		default:
+		}
+	})
+
+	agent, cleanup, err := New(context.Background(), Options{
+		Config:   &config.Config{AgentName: "Test", VoiceToolsEnabled: true},
+		Events:   bus,
+		Brain:    &stubBrain{},
+		Worker:   worker,
+		TextOnly: true,
+		Silent:   true,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer cleanup()
+
+	if err := agent.SendText(context.Background(), "search the web for rust"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("JobStarted never fired")
+	}
+	select {
+	case got := <-finished:
+		if !strings.Contains(got.Summary, "worker-done") {
+			t.Fatalf("JobFinished.Summary = %q, want worker-done", got.Summary)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("JobFinished never fired")
+	}
+	if worker.calls == 0 {
+		t.Fatal("injected worker ThinkFull was not called")
+	}
+	if !worker.lastOpts.ToolsEnabled || worker.lastOpts.RouterToolsPolicy != brain.RouterToolsLegacy {
+		t.Fatalf("worker opts = %+v, want tools on and legacy", worker.lastOpts)
+	}
+}
+
+func TestNewIgnoresWorkerErrWhenWorkerIsSet(t *testing.T) {
+	worker := &recordingInjectedWorker{reply: "ok"}
+	agent, cleanup, err := New(context.Background(), Options{
+		Config:    &config.Config{AgentName: "Test", VoiceToolsEnabled: true},
+		Events:    events.NewBus(),
+		Brain:     &stubBrain{},
+		Worker:    worker,
+		WorkerErr: errInjectedWorker,
+		TextOnly:  true,
+		Silent:    true,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer cleanup()
+	if err := agent.SendText(context.Background(), "search the web for rust"); err != nil {
+		t.Fatalf("SendText: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if worker.calls > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("injected worker was not used; WorkerErr should have been ignored")
+}
+
 func TestNewAcceptsFullyInjectedProviders(t *testing.T) {
 	bus := events.NewBus()
 	fakeBrain := &stubBrain{}
@@ -159,6 +243,30 @@ func TestNilLogfIsSafe(t *testing.T) {
 }
 
 // --- stubs -----------------------------------------------------------------
+
+var errInjectedWorker = errors.New("stale worker construction error")
+
+type recordingInjectedWorker struct {
+	calls    int
+	lastOpts brain.StreamOptions
+	reply    string
+}
+
+func (w *recordingInjectedWorker) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	return (&stubBrain{}).ThinkStream(ctx, input, opts)
+}
+
+func (w *recordingInjectedWorker) ThinkFull(_ context.Context, _ string, opts brain.StreamOptions) (string, error) {
+	w.calls++
+	w.lastOpts = opts
+	return w.reply, nil
+}
+
+func (*recordingInjectedWorker) ClearHistory() {}
+func (*recordingInjectedWorker) History() []brain.Turn {
+	return nil
+}
+func (*recordingInjectedWorker) LoadHistory([]brain.Turn) {}
 
 type stubBrain struct{ history []brain.Turn }
 
