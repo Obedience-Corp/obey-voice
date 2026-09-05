@@ -18,9 +18,8 @@ const maxResolveSpansPerCluster = 3
 // keep their anonymous label, and spans that already carry a non-anonymous
 // label are never touched. Per-span model failures are best-effort skips;
 // context cancellation is propagated so Finalize never reports success on a
-// canceled pass. Identify may auto-register unmatched meeting voices into
-// the engine's in-memory manager; that state is scoped to this engine
-// instance and discarded with it.
+// canceled pass. Identify misses stay unknown; only enrolled Search hits
+// rename clusters.
 func (a *Analyzer) resolveEnrolledClusters(ctx context.Context, eng Engine, res EnrolledResolver, samples []float32, tl Timeline) (Timeline, error) {
 	clusters := map[string][]int{}
 	for i, obs := range tl.Observations {

@@ -53,6 +53,7 @@ type conversationModel struct {
 	activity   []activityEntry
 	status     string
 	statusErr  bool
+	jobStatus  string
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
@@ -1084,6 +1085,22 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			m.appendTranscript(dimStyle.Render("  ✓ " + msg))
 		}
 		m.appendActivity("tool", msg, 0)
+
+	case events.JobStarted:
+		m.jobStatus = "Working: " + truncateJobLine(e.Task)
+		m.appendActivity("job", "started "+e.Task, 0)
+
+	case events.JobFinished:
+		m.jobStatus = ""
+		m.appendActivity("job", "finished", 0)
+
+	case events.JobFailed:
+		m.jobStatus = ""
+		detail := e.Err
+		if detail == "" {
+			detail = "failed"
+		}
+		m.appendActivity("job", "failed: "+detail, 0)
 	}
 }
 
@@ -1242,6 +1259,9 @@ func (m conversationModel) View() string {
 		}
 	}
 	footerLeft := "  " + micChip + " " + outChip
+	if m.jobStatus != "" {
+		footerLeft += " " + chipStyle.Render(m.jobStatus)
+	}
 	if m.liveSpeakerStatsKnown {
 		footerLeft += " " + renderLiveSpeakerFooterNamed(m.liveSpeakerStats, m.displaySpeakerLabel(m.liveSpeakerStats.LastLabel))
 	}
@@ -1336,4 +1356,12 @@ func shortSessionID(id string) string {
 		return id
 	}
 	return id[:18]
+}
+
+func truncateJobLine(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= 48 {
+		return s
+	}
+	return s[:45] + "..."
 }

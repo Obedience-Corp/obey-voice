@@ -25,8 +25,6 @@ const (
 	// matchConfidence is the raw score returned for a manager Search hit so
 	// Analyzer.ApplyThreshold keeps the label (product threshold is separate).
 	matchConfidence = 0.95
-	// newSpeakerConfidence is used when auto-registering a provisional speaker.
-	newSpeakerConfidence = 0.9
 )
 
 // SherpaModelPaths are the resolved files used by offline diarization and live
@@ -73,8 +71,6 @@ type SherpaEngine struct {
 	manager   *sherpa.SpeakerEmbeddingManager
 	// searchThreshold is applied by the manager Search path.
 	searchThreshold float32
-	// nextSpeaker allocates speaker-N labels for unrecruited voices.
-	nextSpeaker int
 	// enrolled maps lower-cased seeded names to the embedding model revision
 	// their durable profile was produced with.
 	enrolled map[string]string
@@ -185,8 +181,7 @@ func (e *SherpaEngine) EmbeddingRev() string {
 }
 
 // SeedEnrolled registers a durable profile's embeddings into the manager so
-// Search resolves the enrolled name before anonymous registration invents a
-// speaker-N for that voice. Callers are responsible for skipping profiles
+// Search resolves the enrolled name on live Identify hits. Callers skip profiles
 // from a different embedding revision (SeedFromStore does).
 //
 // Seeding replaces in place. The manager refuses to add a name it already
@@ -326,8 +321,8 @@ func (e *SherpaEngine) Embed(ctx context.Context, samples []float32) ([]float32,
 	return out, nil
 }
 
-// Identify finds the best enrolled speaker or auto-registers a new speaker-N
-// label for indicator mode (no prior enrollment required).
+// Identify finds the best enrolled speaker. Search misses return LabelUnknown
+// without registering a new speaker-N — live labels must not explode on junk.
 func (e *SherpaEngine) Identify(ctx context.Context, embedding []float32) (string, float32, error) {
 	if err := ctx.Err(); err != nil {
 		return LabelUnknown, 0, err
@@ -346,14 +341,7 @@ func (e *SherpaEngine) Identify(ctx context.Context, embedding []float32) (strin
 		return name, matchConfidence, nil
 	}
 
-	// No match: allocate a stable provisional label and enroll it so subsequent
-	// turns can re-identify the same voice without a separate enrollment UI.
-	e.nextSpeaker++
-	name := fmt.Sprintf("%s%d", LabelSpeakerPrefix, e.nextSpeaker)
-	if !e.manager.Register(name, embedding) {
-		return LabelUnknown, 0, fmt.Errorf("speaker: failed to register %s", name)
-	}
-	return name, newSpeakerConfidence, nil
+	return LabelUnknown, 0, nil
 }
 
 // Verify checks whether embedding matches an enrolled name at threshold.

@@ -172,7 +172,7 @@ func TestFirstTokenSpeakableAdmitClocksAreDistinct(t *testing.T) {
 		done <- brain.StreamResult{}
 	}()
 
-	_, _, err := p.streamResponse(ctx, cancel, &brain.Stream{Chunks: chunks, Done: done}, false, metrics, p.newTurnConductor(metrics))
+	_, _, err := p.streamResponse(ctx, cancel, &brain.Stream{Chunks: chunks, Done: done}, false, metrics, p.newTurnConductor(metrics), nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestStreamResponseNoRaceOnFirstChunkCancel(t *testing.T) {
 
 		stream := scriptedStream(ctx, []string{"hello", "there"}, nil)
 		go cancel() // cancel concurrently with the first chunk
-		_, _, _ = p.streamResponse(ctx, cancel, stream, false, metrics, turn)
+		_, _, _ = p.streamResponse(ctx, cancel, stream, false, metrics, turn, nil)
 		_ = metrics.snapshot() // reads firstModelChunk after streamResponse returned
 	}
 }

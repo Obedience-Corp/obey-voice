@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,6 +44,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	var diags []Diagnostic
 
 	diags = append(diags, diagnoseBrainProvider(cfg, lookPath))
+	diags = append(diags, diagnoseWorkerProvider(cfg, lookPath))
 
 	if provider := strings.ToLower(strings.TrimSpace(cfg.BrainProvider)); provider == "" || provider == "ollama" {
 		if cfg.OllamaNumCtx == 0 {
@@ -603,6 +605,66 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 			Remediation: "set brain_provider to " + joinEnglish(brainProviderEnum(), "or"),
 		}
 	}
+}
+
+func diagnoseWorkerProvider(cfg *Config, lookPath func(string) (string, error)) Diagnostic {
+	provider := VoiceWorkerProviderOf(cfg)
+	if !slices.Contains(WorkerProviders, provider) {
+		return Diagnostic{
+			Name:        "voice-worker-provider",
+			Severity:    SeverityError,
+			Detail:      fmt.Sprintf("unsupported voice_worker_provider %q", cfg.VoiceWorkerProvider),
+			Remediation: "set voice_worker_provider to " + joinEnglish(WorkerProviders, "or"),
+		}
+	}
+	if spec, ok := lookupBrainProvider(provider); ok && spec.CLIBinary != "" {
+		path, err := lookPath(spec.CLIBinary)
+		if err != nil {
+			return Diagnostic{
+				Name:        "voice-worker-provider",
+				Severity:    SeverityWarn,
+				Detail:      fmt.Sprintf("worker %s CLI not found on PATH — spawn will fail until it is installed", spec.CLIBinary),
+				Remediation: fmt.Sprintf("install the %s CLI or choose another voice_worker_provider", spec.CLIBinary),
+			}
+		}
+		detail := fmt.Sprintf("worker %s CLI (%s)", spec.CLIBinary, path)
+		if TwoLocalOllamaWorkers(cfg) {
+			return Diagnostic{
+				Name:     "voice-worker-provider",
+				Severity: SeverityWarn,
+				Detail:   detail + "; live and worker are both local Ollama on the same host — two models may not fit in RAM",
+			}
+		}
+		return Diagnostic{Name: "voice-worker-provider", Severity: SeverityOK, Detail: detail}
+	}
+	if provider == "ollama" {
+		model := strings.TrimSpace(cfg.VoiceWorkerModel)
+		if model == "" {
+			model = strings.TrimSpace(cfg.OllamaModel)
+		}
+		if model == "" {
+			return Diagnostic{
+				Name:        "voice-worker-provider",
+				Severity:    SeverityWarn,
+				Detail:      "voice_worker_provider=ollama but no worker or live ollama_model is configured",
+				Remediation: "set voice_worker_model or ollama_model",
+			}
+		}
+		host := strings.TrimSpace(cfg.VoiceWorkerOllamaHost)
+		if host == "" {
+			host = strings.TrimSpace(cfg.OllamaHost)
+		}
+		detail := fmt.Sprintf("worker ollama model %q at %s", model, host)
+		if TwoLocalOllamaWorkers(cfg) {
+			return Diagnostic{
+				Name:     "voice-worker-provider",
+				Severity: SeverityWarn,
+				Detail:   detail + " — live and worker are both local Ollama on the same host; two models may not fit in RAM",
+			}
+		}
+		return Diagnostic{Name: "voice-worker-provider", Severity: SeverityOK, Detail: detail}
+	}
+	return Diagnostic{Name: "voice-worker-provider", Severity: SeverityOK, Detail: "worker " + provider}
 }
 
 // VoiceDeviceChecker probes audio hardware availability. Implementations must

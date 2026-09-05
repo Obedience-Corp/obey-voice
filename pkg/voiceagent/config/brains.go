@@ -70,6 +70,10 @@ func brainProviderEnum() []string {
 	return names
 }
 
+func workerProviderEnum() []string {
+	return slices.Clone(WorkerProviders)
+}
+
 func brainProviderHelp() string {
 	var local, clis []string
 	for _, spec := range RegisteredBrainProviders() {

@@ -376,7 +376,7 @@ func TestToolSessionKeepsAllToolsAfterSkillLoad(t *testing.T) {
 			AllowedTools: []string{"Read"},
 		},
 	}
-	sess := &toolSession{catalog: catalog}
+	sess := &toolSession{catalog: catalog, routerPolicy: RouterToolsLegacy}
 
 	// Before activation: all base tools + read_skill.
 	before := sess.tools()
@@ -427,7 +427,7 @@ func TestToolSessionIgnoresUnmappedAllowedTools(t *testing.T) {
 		Dir:          "/s",
 		AllowedTools: []string{"Browser"},
 	}}
-	sess := &toolSession{catalog: catalog}
+	sess := &toolSession{catalog: catalog, routerPolicy: RouterToolsLegacy}
 	got := sess.execute(context.Background(), "/work", skillCall("webonly"))
 	if !strings.Contains(got, "body") {
 		t.Fatalf("skill with unknown allowed-tools should still load: %q", got)
@@ -451,7 +451,7 @@ func TestToolSessionCanLoadMultipleSkills(t *testing.T) {
 			Dir:         "/skills/open",
 		},
 	}
-	sess := &toolSession{catalog: catalog}
+	sess := &toolSession{catalog: catalog, routerPolicy: RouterToolsLegacy}
 	_ = sess.execute(context.Background(), "/work", skillCall("restricted"))
 	got := sess.execute(context.Background(), "/work", skillCall("open"))
 	if !strings.Contains(got, "go") {
@@ -465,7 +465,7 @@ func TestToolSessionUnrestrictedWhenNoAllowedTools(t *testing.T) {
 	catalog := []skills.Skill{{
 		Name: "open", Description: "all tools", Body: "go", Dir: "/s",
 	}}
-	sess := &toolSession{catalog: catalog}
+	sess := &toolSession{catalog: catalog, routerPolicy: RouterToolsLegacy}
 	_ = sess.execute(context.Background(), "/work", skillCall("open"))
 	tools := sess.tools()
 	for _, name := range []string{"list_files", "read_file", "write_file", "run_command", "web_search", "fetch_url", "read_skill"} {

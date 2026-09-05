@@ -128,7 +128,7 @@ func TestProgressiveTTSSegmentsFeedWorker(t *testing.T) {
 	defer cancel()
 
 	stream := &brain.Stream{Chunks: chunks, Done: done}
-	response, interrupted, err := p.streamResponse(ctx, cancel, stream, false, metrics, turn)
+	response, interrupted, err := p.streamResponse(ctx, cancel, stream, false, metrics, turn, nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestProgressiveMetricsBrainDoneVsFirstSegment(t *testing.T) {
 	stream := scriptedStream(ctx, []string{
 		"Alpha sentence. ", "Beta sentence. ", "Gamma end.",
 	}, nil)
-	_, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, turn)
+	_, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, turn, nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}

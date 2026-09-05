@@ -112,7 +112,7 @@ func TestReasoningReplyReachesNoDestinationWithALabel(t *testing.T) {
 				t.Fatalf("ThinkStream: %v", err)
 			}
 			metrics := newTurnMetrics()
-			transcript, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, p.newTurnConductor(metrics))
+			transcript, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, p.newTurnConductor(metrics), nil)
 			if err != nil {
 				t.Fatalf("streamResponse: %v", err)
 			}
@@ -210,7 +210,7 @@ func TestStreamCloseDrainsThinkFilter(t *testing.T) {
 			defer cancel()
 
 			metrics := newTurnMetrics()
-			transcript, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, tt.chunks, nil), false, metrics, p.newTurnConductor(metrics))
+			transcript, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, tt.chunks, nil), false, metrics, p.newTurnConductor(metrics), nil)
 			if err != nil {
 				t.Fatalf("streamResponse: %v", err)
 			}

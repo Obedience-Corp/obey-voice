@@ -106,7 +106,7 @@ func TestSilentReasoningTaggedThinkIsNotSpoken(t *testing.T) {
 		t.Fatalf("ThinkStream: %v", err)
 	}
 	metrics := newTurnMetrics()
-	transcript, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, p.newTurnConductor(metrics))
+	transcript, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, p.newTurnConductor(metrics), nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestSilentReasoningThinkingFieldNotSynthesized(t *testing.T) {
 		t.Fatalf("ThinkStream: %v", err)
 	}
 	metrics := newTurnMetrics()
-	transcript, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, p.newTurnConductor(metrics))
+	transcript, _, err := p.streamResponse(ctx, cancel, stream, false, metrics, p.newTurnConductor(metrics), nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestSilentReasoningSynthQueueNeverCarriesThinkTags(t *testing.T) {
 	metrics := newTurnMetrics()
 	_, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, []string{
 		"<think>secret plan. More reasoning.</think>Hello there!",
-	}, nil), false, metrics, p.newTurnConductor(metrics))
+	}, nil), false, metrics, p.newTurnConductor(metrics), nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestSilentReasoningThinkingChannelNotSynthesizedWhenNotInThink(t *testing.T
 	defer cancel()
 	const thinkingBody = "The user just asked how it's going. I should greet them warmly."
 	metrics := newTurnMetrics()
-	_, _, err := p.streamResponse(ctx, cancel, scriptedStreamWithThinking(ctx, []string{"Hello there!"}, []string{thinkingBody}, nil), false, metrics, p.newTurnConductor(metrics))
+	_, _, err := p.streamResponse(ctx, cancel, scriptedStreamWithThinking(ctx, []string{"Hello there!"}, []string{thinkingBody}, nil), false, metrics, p.newTurnConductor(metrics), nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestSilentReasoningLeakFixtureNotSynthesized(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	metrics := newTurnMetrics()
-	_, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, []string{"<think>escaped tag still here</think>Hi there."}, nil), false, metrics, p.newTurnConductor(metrics))
+	_, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, []string{"<think>escaped tag still here</think>Hi there."}, nil), false, metrics, p.newTurnConductor(metrics), nil)
 	if err != nil {
 		t.Fatalf("streamResponse: %v", err)
 	}

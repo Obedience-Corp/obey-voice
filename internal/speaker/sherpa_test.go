@@ -91,6 +91,29 @@ func TestSherpaEngineHonorsCanceledContextBeforeNativeCall(t *testing.T) {
 	}
 }
 
+func TestSherpaIdentifyMissDoesNotRegister(t *testing.T) {
+	mgr := sherpa.NewSpeakerEmbeddingManager(4)
+	if mgr == nil {
+		t.Fatal("could not construct embedding manager")
+	}
+	engine := &SherpaEngine{manager: mgr, searchThreshold: 0.55, windowMS: 1500}
+	defer func() { _ = engine.Close() }()
+
+	misses := [][]float32{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}}
+	for i, emb := range misses {
+		label, conf, err := engine.Identify(context.Background(), emb)
+		if err != nil {
+			t.Fatalf("Identify miss %d: %v", i, err)
+		}
+		if label != LabelUnknown || conf != 0 {
+			t.Fatalf("Identify miss %d = (%q, %f), want (%q, 0)", i, label, conf, LabelUnknown)
+		}
+	}
+	if engine.EnrolledCount() != 0 {
+		t.Fatalf("EnrolledCount = %d after misses, want 0 (no speaker-1/speaker-2 minted)", engine.EnrolledCount())
+	}
+}
+
 // TestSeedEnrolledReplacesInPlace runs against the real sherpa embedding
 // manager, which needs an embedding dimension rather than a model file and so
 // constructs offline. It holds the contract the bug lived in: the manager

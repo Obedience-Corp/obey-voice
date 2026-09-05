@@ -33,3 +33,20 @@ Overrides:
 | `FORCE_FETCH=1` | Re-download even if cached |
 
 A copy under this directory (gitignored) is still accepted as a fallback.
+
+## zoom-call.wav
+
+First **~2 minutes** of a public Zoom-style tutorial call (multi-speaker English):
+
+- **Source:** [Example Zoom Meeting for Students](https://www.youtube.com/watch?v=DvO10dFJaFE)
+- **Format:** 16 kHz mono PCM WAV (`yt-dlp` + `ffmpeg`)
+- **Roster:** `tests/speakerflow/zoom-call-roster.json` (ground truth for 95% harness)
+- **Not committed** (large binary)
+
+```bash
+just fetch-zoom-fixture          # no-op if already cached
+FORCE_FETCH=1 just fetch-zoom-fixture   # re-download
+```
+
+Same cache directory as the marketing clip. Override with `OBEY_VOICE_ZOOM_FIXTURE` for an exact path.
+Zoom accuracy tests skip when the WAV is absent (CI stays green).

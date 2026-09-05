@@ -31,6 +31,8 @@ const defaultToolCommandTimeout = 30 * time.Second
 // whether tools are available at all.
 type toolSession struct {
 	catalog []skills.Skill
+	// routerPolicy selects live route_only vs legacy full tools. Workers use legacy.
+	routerPolicy RouterToolsPolicy
 	// commandTimeout bounds each run_command call in this session.
 	commandTimeout time.Duration
 	// Optional UI hooks (from StreamOptions).
@@ -41,9 +43,9 @@ type toolSession struct {
 // tools returns every enabled tool definition for the next model request.
 // Agent Skills allowed-tools metadata is intentionally not a runtime filter:
 // local Ollama should behave like a general harness and may load more than one
-// relevant skill without losing capabilities.
+// relevant skill without losing capabilities on the legacy worker path.
 func (s *toolSession) tools() api.Tools {
-	return voiceAssistantTools(s.catalog)
+	return RouterToolsForSession(s.routerPolicy, s.catalog)
 }
 
 // execute runs a tool call. read_skill returns instructions without changing
@@ -63,6 +65,9 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 	}()
 	if name == "read_skill" {
 		return s.executeReadSkill(call)
+	}
+	if s.routerPolicy == RouterToolsRouteOnly && name != "route" {
+		return fmt.Sprintf("error: tool %q is not available on the live router", name)
 	}
 	return executeToolWithTimeout(ctx, workDir, call, s.catalog, s.commandTimeout)
 }
@@ -93,6 +98,10 @@ func toolArgSummary(call api.ToolCall) string {
 	case "read_skill":
 		if n, _ := args["name"].(string); n != "" {
 			return n
+		}
+	case "route":
+		if k, _ := args["kind"].(string); k != "" {
+			return k
 		}
 	}
 	return ""
@@ -278,6 +287,55 @@ func voiceAssistantTools(catalog []skills.Skill) api.Tools {
 	return tools
 }
 
+// liveRouterTools returns the constrained route tool for the conversational model.
+func liveRouterTools() api.Tools {
+	props := func(fields map[string]api.ToolProperty) *api.ToolPropertiesMap {
+		m := api.NewToolPropertiesMap()
+		for k, v := range fields {
+			m.Set(k, v)
+		}
+		return m
+	}
+	return api.Tools{
+		{
+			Type: "function",
+			Function: api.ToolFunction{
+				Name:        "route",
+				Description: "Classify this user turn as chat, spawn (start async work), or narrate (read aloud). Use spawn when the user asks you to do something; use narrate for long reading; otherwise chat.",
+				Parameters: api.ToolFunctionParameters{
+					Type:     "object",
+					Required: []string{"kind"},
+					Properties: props(map[string]api.ToolProperty{
+						"kind": {
+							Type:        api.PropertyType{"string"},
+							Description: "One of: chat, spawn, narrate.",
+							Enum:        []any{"chat", "spawn", "narrate"},
+						},
+						"source": {
+							Type:        api.PropertyType{"string"},
+							Description: "Optional URL or file path when kind is narrate.",
+						},
+						"goal": {
+							Type:        api.PropertyType{"string"},
+							Description: "Optional summary of work when kind is spawn.",
+						},
+					}),
+				},
+			},
+		},
+	}
+}
+
+// ParseRouteKind normalizes a route tool kind. Invalid values fall through to chat.
+func ParseRouteKind(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "spawn", "narrate":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return "chat"
+	}
+}
+
 // executeTool runs a tool call and returns the result as a string.
 // catalog is used by read_skill; other tools ignore it.
 // Prefer toolSession.execute so skill activation and policy are tracked.
@@ -304,6 +362,8 @@ func executeToolWithTimeout(ctx context.Context, workDir string, call api.ToolCa
 	case "read_skill":
 		// Without a session, activation is not tracked (tests / legacy).
 		return toolReadSkill(catalog, args)
+	case "route":
+		return toolRoute(args)
 	default:
 		return fmt.Sprintf("unknown tool: %s", call.Function.Name)
 	}
@@ -328,6 +388,16 @@ func toolReadSkill(catalog []skills.Skill, args map[string]any) string {
 		return fmt.Sprintf("Skill %q (directory: %s)\n\n%s", s.Name, s.Dir, body)
 	}
 	return fmt.Sprintf("error: unknown skill %q", name)
+}
+
+func toolRoute(args map[string]any) string {
+	kind, _ := args["kind"].(string)
+	kind = ParseRouteKind(kind)
+	resp, err := json.Marshal(map[string]string{"route": kind})
+	if err != nil {
+		return `{"route":"chat"}`
+	}
+	return string(resp)
 }
 
 func resolvePath(workDir, path string) string {

@@ -892,3 +892,17 @@ func TestOrphanedThinkDoesNotFoldIntoTranscript(t *testing.T) {
 		t.Fatalf("thinking must not fold into transcript:\n%s", view)
 	}
 }
+
+func TestConversationJobStatusLine(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	m.handleEvent(events.JobStarted{ID: "job-1", Task: "filter design work items"})
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Working:") {
+		t.Fatalf("job status missing from view:\n%s", view)
+	}
+	m.handleEvent(events.JobFinished{ID: "job-1", Task: "filter design work items", Summary: "done"})
+	if m.jobStatus != "" {
+		t.Fatalf("jobStatus = %q after finish, want empty", m.jobStatus)
+	}
+}

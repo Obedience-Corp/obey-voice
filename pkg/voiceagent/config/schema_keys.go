@@ -173,6 +173,21 @@ func brainKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "voice_worker_provider", Type: TypeEnum, Default: "grok", Enum: workerProviderEnum(),
+			Group: GroupBrain, Title: "Worker provider",
+			Help: "Which model runs async jobs after a spawn. Defaults to Grok on Pocket-class devices; Ollama is supported when configured.",
+		},
+		{
+			Key: "voice_worker_model", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Worker model",
+			Help: "Model pin for the async worker. Empty uses that provider's usual default.",
+		},
+		{
+			Key: "voice_worker_ollama_host", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Worker Ollama server",
+			Help: "Ollama base URL for the async worker when voice_worker_provider is ollama. Empty inherits ollama_host.",
+		},
+		{
 			Key: "ollama_model", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Ollama model",
 			Help:               "The local model Ollama loads. Empty picks the first installed model.",
@@ -355,6 +370,16 @@ func toolKeys() []KeySpec {
 			Key: "voice_tools_enabled", Type: TypeBool, Default: true,
 			Group: GroupTools, Title: "Local tools",
 			Help: "Lets her read files and run commands on this Mac for you. Off makes tool-capable models look broken.",
+		},
+		{
+			Key: "voice_router_tools", Type: TypeEnum, Default: "route_only", Enum: []string{"route_only", "legacy"},
+			Group: GroupTools, Title: "Live router tools",
+			Help: "route_only exposes only the route tool on the microphone brain; legacy keeps the full tool list for comparison.",
+		},
+		{
+			Key: "voice_failed_route_repair", Type: TypeBool, Default: true,
+			Group: GroupTools, Title: "Failed route repair",
+			Help: "When the model speaks a tool promise without calling a tool, classify the turn as spawn instead of reading the promise aloud.",
 		},
 		{
 			Key: "tool_command_timeout", Type: TypeInt, Default: 30, Unit: "seconds", Min: num(1), Max: num(120),
