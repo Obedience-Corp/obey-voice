@@ -52,6 +52,7 @@ type term struct {
 // under the guards that keep real words untouched.
 type CustomWords struct {
 	threshold float64
+	band      float64
 	exact     map[string]*term
 	fuzzy     []*term
 }
@@ -62,7 +63,7 @@ func NewCustomWords(terms []Term, threshold float64) *CustomWords {
 	if threshold <= 0 {
 		threshold = DefaultThreshold
 	}
-	c := &CustomWords{threshold: threshold, exact: make(map[string]*term, 2*len(terms))}
+	c := &CustomWords{threshold: threshold, band: CandidateBand, exact: make(map[string]*term, 2*len(terms))}
 	for _, in := range terms {
 		k := Key(in.Text)
 		if k == "" {
@@ -86,6 +87,15 @@ func (c *CustomWords) addExact(key string, t *term) {
 	}
 	if _, dup := c.exact[key]; !dup {
 		c.exact[key] = t
+	}
+}
+
+// SetCandidateBand widens or narrows the score band in which a rejected
+// fuzzy match is still reported as a candidate. A band at or below the
+// threshold is ignored.
+func (c *CustomWords) SetCandidateBand(band float64) {
+	if c != nil && band > c.threshold {
+		c.band = band
 	}
 }
 
@@ -196,7 +206,7 @@ func (c *CustomWords) fuzzyAt(st *scanState, i int) match {
 		}
 		for _, t := range c.fuzzy {
 			sc, ok := st.score(i, n, t)
-			if !ok || sc >= CandidateBand {
+			if !ok || sc >= c.band {
 				continue
 			}
 			if n > 1 && !st.beatsSubspans(i, n, t, sc) {

@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,5 +219,88 @@ func TestSTTPreview(t *testing.T) {
 	cmd.SetErr(&out)
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "no correction stage is enabled") {
 		t.Fatalf("preview with nothing enabled: err = %v", err)
+	}
+}
+
+func TestSTTAuditWithModel(t *testing.T) {
+	cfg := writeSTTAuditFixtures(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]any{{"name": "small"}}})
+	})
+	mux.HandleFunc("/api/chat", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"done": true, "message": map[string]any{"role": "assistant", "content": `{"substitutions":[{"from":"coco row","to":"Kokoro"}]}`}})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	cfg.OllamaHost = srv.URL
+	cfg.STTPostprocessProvider = "ollama"
+	cfg.STTPostprocessModel = "small"
+	cfg.STTPostprocessTimeoutMS = 2000
+	cfg.PromptsDir = t.TempDir()
+
+	var res sttAuditResult
+	if err := json.Unmarshal([]byte(runSTTCmd(t, cfg, "audit", "--json", "--meetings", "--model")), &res); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(res.Stages, ",") != "custom_words,model" {
+		t.Fatalf("stages = %v", res.Stages)
+	}
+	if res.Postprocess == nil || res.Postprocess.Error != "" || res.Postprocess.Model != "small" || res.Postprocess.Mode != "patch" {
+		t.Fatalf("postprocess = %+v", res.Postprocess)
+	}
+	if s := res.Postprocess.Stats; s.Calls != 1 || s.Applied != 1 || s.Skipped != 2 {
+		t.Fatalf("stats = %+v", s)
+	}
+	if len(res.ModelChanges) != 1 || res.ModelChanges[0].Term != "use Kokoro for tts" || res.Changed != 2 {
+		t.Fatalf("model changes = %+v changed %d", res.ModelChanges, res.Changed)
+	}
+	text := runSTTCmd(t, cfg, "audit", "--meetings", "--model")
+	for _, want := range []string{"Model (ollama small, patch", "calls 1", "use Kokoro for tts"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text output lacks %q:\n%s", want, text)
+		}
+	}
+
+	cfg.OllamaHost = "http://127.0.0.1:9"
+	if err := json.Unmarshal([]byte(runSTTCmd(t, cfg, "audit", "--json", "--meetings", "--model")), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Postprocess == nil || !strings.Contains(res.Postprocess.Error, "cannot connect") || strings.Join(res.Stages, ",") != "custom_words" {
+		t.Fatalf("unreachable server should report, not fail: %+v stages %v", res.Postprocess, res.Stages)
+	}
+}
+
+func TestSTTPreviewRewriteWindows(t *testing.T) {
+	cfg := writeSTTAuditFixtures(t)
+	var users []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]any{{"name": "small"}}})
+	})
+	mux.HandleFunc("/api/chat", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		msgs := body["messages"].([]any)
+		user := msgs[len(msgs)-1].(map[string]any)["content"].(string)
+		users = append(users, user)
+		_ = json.NewEncoder(w).Encode(map[string]any{"done": true, "message": map[string]any{"role": "assistant", "content": "1. Use coco row for TTS.\n2. Tell Veronica about Ollama.\n3. We have 35 people and 5% churn."}})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	cfg.OllamaHost = srv.URL
+	cfg.STTPostprocessModel = "small"
+	cfg.STTPostprocessTimeoutMS = 2000
+	cfg.PromptsDir = t.TempDir()
+	bundle := filepath.Join(config.MeetingsDirFrom(cfg), "standup.meeting")
+
+	diff := runSTTCmd(t, cfg, "preview", "--diff", "--fillers", "--numbers", "--model", "--mode", "rewrite", bundle)
+	for _, want := range []string{"Use coco row for TTS.", "Tell Veronica about Ollama.", "3 utterance(s) changed", "model calls 1", "changed lines 2"} {
+		if !strings.Contains(diff, want) {
+			t.Fatalf("diff output lacks %q:\n%s", want, diff)
+		}
+	}
+	if len(users) != 1 || !strings.HasPrefix(users[0], "1. use coco row for tts\n2. tell Veronica about Ollama\n3. We have 35 people and 5% churn.") {
+		t.Fatalf("model saw %q", users)
 	}
 }

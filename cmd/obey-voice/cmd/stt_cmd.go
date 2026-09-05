@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -43,6 +44,11 @@ type sttStageOverrides struct {
 	threshold float64
 	fillers   bool
 	numbers   bool
+	model     bool
+	mode      string
+	modelName string
+	timeoutMS int
+	sample    int
 }
 
 func bindStageOverrides(f *pflag.FlagSet, p *sttStageOverrides) {
@@ -50,6 +56,11 @@ func bindStageOverrides(f *pflag.FlagSet, p *sttStageOverrides) {
 	f.Float64Var(&p.threshold, "threshold", 0, "Fuzzy threshold to try (default: the configured one)")
 	f.BoolVar(&p.fillers, "fillers", false, "Try filler removal on for this run")
 	f.BoolVar(&p.numbers, "numbers", false, "Try numbers as digits on for this run")
+	f.BoolVar(&p.model, "model", false, "Try the post-processing model on for this run, as configured")
+	f.StringVar(&p.mode, "mode", "", "Post-processing mode to try: patch or rewrite")
+	f.StringVar(&p.modelName, "model-name", "", "Post-processing model to try on the configured provider")
+	f.IntVar(&p.timeoutMS, "timeout-ms", 0, "Post-processing deadline to try (default: the configured one; rewrite runs off the loop get 120000)")
+	f.IntVar(&p.sample, "sample", 0, "Only the first N utterances (0 for all); keeps a rewrite run short")
 }
 
 // apply returns a copy of cfg with the overrides folded in.
@@ -63,6 +74,21 @@ func (o sttStageOverrides) apply(loaded *config.Config) *config.Config {
 	}
 	cfg.STTFillerRemoval = cfg.STTFillerRemoval || o.fillers
 	cfg.STTNumbers = cfg.STTNumbers || o.numbers
+	cfg.STTPostprocessEnabled = cfg.STTPostprocessEnabled || o.model
+	if o.mode != "" {
+		cfg.STTPostprocessMode = o.mode
+	}
+	if o.modelName != "" {
+		cfg.STTPostprocessModel = o.modelName
+	}
+	switch {
+	case o.timeoutMS > 0:
+		cfg.STTPostprocessTimeoutMS = o.timeoutMS
+	case strings.EqualFold(strings.TrimSpace(cfg.STTPostprocessMode), "rewrite"):
+		// Rewrite here runs off the loop over numbered windows; the talk-loop
+		// deadline would cut every window short.
+		cfg.STTPostprocessTimeoutMS = max(cfg.STTPostprocessTimeoutMS, 120000)
+	}
 	return &cfg
 }
 
@@ -125,21 +151,35 @@ type sttAuditCorpus struct {
 	SkippedMeetings   int `json:"skipped_meetings,omitempty"`
 }
 
+// sttAuditPostprocess describes the model stage as it ran, or why it did not.
+type sttAuditPostprocess struct {
+	Provider   string             `json:"provider"`
+	Model      string             `json:"model"`
+	Mode       string             `json:"mode"`
+	TimeoutMS  int64              `json:"timeout_ms"`
+	Prompt     string             `json:"prompt"`
+	KnownNames int                `json:"known_names"`
+	Error      string             `json:"error,omitempty"`
+	Stats      correct.ModelStats `json:"stats"`
+}
+
 type sttAuditResult struct {
-	Schema         string         `json:"schema"`
-	Stages         []string       `json:"stages"`
-	Threshold      float64        `json:"threshold"`
-	Terms          []string       `json:"terms"`
-	FuzzyTerms     []string       `json:"fuzzy_terms"`
-	IgnoredEntries []string       `json:"ignored_entries"`
-	DroppedTerms   int            `json:"dropped_terms"`
-	Corpus         sttAuditCorpus `json:"corpus"`
-	Utterances     int            `json:"utterances"`
-	Changed        int            `json:"changed_utterances"`
-	Replacements   []sttAuditRow  `json:"replacements"`
-	Candidates     []sttAuditRow  `json:"candidates"`
-	Fillers        []sttAuditRow  `json:"filler_removals"`
-	Numbers        []sttAuditRow  `json:"number_conversions"`
+	Schema         string               `json:"schema"`
+	Stages         []string             `json:"stages"`
+	Threshold      float64              `json:"threshold"`
+	Terms          []string             `json:"terms"`
+	FuzzyTerms     []string             `json:"fuzzy_terms"`
+	IgnoredEntries []string             `json:"ignored_entries"`
+	DroppedTerms   int                  `json:"dropped_terms"`
+	Corpus         sttAuditCorpus       `json:"corpus"`
+	Utterances     int                  `json:"utterances"`
+	Changed        int                  `json:"changed_utterances"`
+	Replacements   []sttAuditRow        `json:"replacements"`
+	Candidates     []sttAuditRow        `json:"candidates"`
+	Fillers        []sttAuditRow        `json:"filler_removals"`
+	Numbers        []sttAuditRow        `json:"number_conversions"`
+	Postprocess    *sttAuditPostprocess `json:"postprocess,omitempty"`
+	ModelChanges   []sttAuditRow        `json:"model_changes"`
 }
 
 func runSTTAudit(cmd *cobra.Command, loadConfig func() (*config.Config, error), opts sttAuditOptions) error {
@@ -163,7 +203,10 @@ func runSTTAudit(cmd *cobra.Command, loadConfig func() (*config.Config, error), 
 		}
 		corpus = append(corpus, fromMeetings...)
 	}
-	result := sttAuditRun(cfg, corpus, counts)
+	if opts.stages.sample > 0 && len(corpus) > opts.stages.sample {
+		corpus = corpus[:opts.stages.sample]
+	}
+	result := sttAuditRun(cmd.Context(), cfg, corpus, counts)
 	if opts.json {
 		return encodeJSON(cmd, result)
 	}
@@ -235,7 +278,10 @@ func meetingUtteranceTexts(events []meetinglog.Event) []string {
 	return live
 }
 
-func sttAuditRun(cfg *config.Config, corpus []sttAuditUtterance, counts sttAuditCorpus) sttAuditResult {
+func sttAuditRun(ctx context.Context, cfg *config.Config, corpus []sttAuditUtterance, counts sttAuditCorpus) sttAuditResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cw, report := stt.CustomWordsFromConfig(cfg)
 	_, stages := stt.StagesFromConfig(cfg)
 	res := sttAuditResult{
@@ -256,6 +302,11 @@ func sttAuditRun(cfg *config.Config, corpus []sttAuditUtterance, counts sttAudit
 	candidates := map[string]*sttAuditRow{}
 	fillers := map[string]*sttAuditRow{}
 	numbers := map[string]*sttAuditRow{}
+	modelRows := map[string]*sttAuditRow{}
+	if stages.Postprocess.Enabled {
+		pp := stages.Postprocess
+		res.Postprocess = &sttAuditPostprocess{Provider: pp.Provider, Model: pp.Model, Mode: string(pp.Mode), TimeoutMS: pp.Timeout.Milliseconds(), Prompt: pp.Prompt, KnownNames: pp.KnownNames, Error: pp.Error}
+	}
 	for _, u := range corpus {
 		text := u.text
 		if cfg.STTFillerRemoval {
@@ -275,6 +326,17 @@ func sttAuditRun(cfg *config.Config, corpus []sttAuditUtterance, counts sttAudit
 			}
 			text = out
 		}
+		if stages.Model != nil {
+			out, _ := stages.Model.Apply(ctx, text)
+			if out != text {
+				key := text + "\x00" + out
+				if modelRows[key] == nil {
+					modelRows[key] = &sttAuditRow{Phrase: sttAuditExample(text), Term: sttAuditExample(out), Kind: "model", Example: sttAuditExample(u.text)}
+				}
+				modelRows[key].Count++
+			}
+			text = out
+		}
 		if cfg.STTNumbers {
 			out, reps := correct.ScanNumbers(text)
 			for _, r := range reps {
@@ -290,6 +352,10 @@ func sttAuditRun(cfg *config.Config, corpus []sttAuditUtterance, counts sttAudit
 	res.Candidates = sttAuditRows(candidates)
 	res.Fillers = sttAuditRows(fillers)
 	res.Numbers = sttAuditRows(numbers)
+	res.ModelChanges = sttAuditRows(modelRows)
+	if stages.Model != nil && res.Postprocess != nil {
+		res.Postprocess.Stats = stages.Model.Stats()
+	}
 	return res
 }
 
@@ -380,7 +446,32 @@ func printSTTAudit(w io.Writer, res sttAuditResult, limit int) {
 	printSTTAuditRows(w, "Custom-word candidates (near misses, never applied)", res.Candidates, limit)
 	printSTTAuditRows(w, "Fillers removed", res.Fillers, limit)
 	printSTTAuditRows(w, "Numbers converted", res.Numbers, limit)
+	if res.Postprocess != nil {
+		printSTTAuditModel(w, res, limit)
+	}
 	fmt.Fprintln(w)
+}
+
+func printSTTAuditModel(w io.Writer, res sttAuditResult, limit int) {
+	pp := res.Postprocess
+	fmt.Fprintf(w, "\n  %s\n", titleStyle.Render(fmt.Sprintf("Model (%s %s, %s, deadline %d ms, prompt %s)", pp.Provider, pp.Model, pp.Mode, pp.TimeoutMS, pp.Prompt)))
+	if pp.Error != "" {
+		fmt.Fprintf(w, "    %s\n", dimStyle.Render("not running: "+pp.Error))
+		return
+	}
+	s := pp.Stats
+	fmt.Fprintf(w, "    %s\n", dimStyle.Render(fmt.Sprintf("calls %d · skipped %d · timeouts %d · errors %d · applied %d · rejected %d · changed lines %d · kept raw %d", s.Calls, s.Skipped, s.Timeouts, s.Errors, s.Applied, s.Rejected, s.ChangedLines, s.KeptRaw)))
+	if len(res.ModelChanges) == 0 {
+		fmt.Fprintln(w, dimStyle.Render("    no utterance changed"))
+		return
+	}
+	for i, r := range res.ModelChanges {
+		if limit > 0 && i >= limit {
+			fmt.Fprintln(w, dimStyle.Render(fmt.Sprintf("    … %d more", len(res.ModelChanges)-limit)))
+			return
+		}
+		fmt.Fprintf(w, "  %5d  %s %s\n         %s %s\n", r.Count, dimStyle.Render("-"), r.Phrase, keyStyle.Render("+"), r.Term)
+	}
 }
 
 func printSTTAuditRows(w io.Writer, title string, rows []sttAuditRow, limit int) {
@@ -454,7 +545,10 @@ func runSTTPreview(cmd *cobra.Command, loadConfig func() (*config.Config, error)
 	cfg := opts.stages.apply(loaded)
 	chain, report := stt.StagesFromConfig(cfg)
 	if chain.Len() == 0 {
-		return fmt.Errorf("no correction stage is enabled; turn one on in config or pass --fillers, --numbers or --terms")
+		return fmt.Errorf("no correction stage is enabled; turn one on in config or pass --fillers, --numbers, --terms or --model")
+	}
+	if report.Postprocess.Enabled && report.Postprocess.Error != "" {
+		return fmt.Errorf("post-processing model not running: %s", report.Postprocess.Error)
 	}
 	jsonlPath, err := meeting.ResolveMeetingFile(config.MeetingsDirFrom(cfg), path)
 	if err != nil {
@@ -475,26 +569,40 @@ func runSTTPreview(cmd *cobra.Command, loadConfig func() (*config.Config, error)
 			break
 		}
 	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var idx []int
+	var texts []string
 	for i := range events {
+		if events[i].Type == spoken && strings.TrimSpace(events[i].Text) != "" {
+			idx = append(idx, i)
+			texts = append(texts, events[i].Text)
+		}
+	}
+	cleaned, err := sttPreviewClean(ctx, cfg, report, chain, texts)
+	if err != nil {
+		return err
+	}
+	for k, i := range idx {
 		e := &events[i]
-		if e.Type != spoken || strings.TrimSpace(e.Text) == "" {
-			continue
-		}
-		cleaned, err := chain.Correct(cmd.Context(), e.Text)
-		if err != nil {
-			return err
-		}
-		if cleaned == e.Text {
+		if cleaned[k] == e.Text {
 			continue
 		}
 		changed++
 		if opts.diff {
-			fmt.Fprintf(out, "%s %s\n%s %s\n\n", dimStyle.Render("-"), e.Text, keyStyle.Render("+"), cleaned)
+			fmt.Fprintf(out, "%s %s\n%s %s\n\n", dimStyle.Render("-"), e.Text, keyStyle.Render("+"), cleaned[k])
 		}
-		e.Text = cleaned
+		e.Text = cleaned[k]
+	}
+	stagesLabel := strings.Join(report.Stages, " → ")
+	if report.Model != nil {
+		s := report.Model.Stats()
+		stagesLabel += fmt.Sprintf(" · model calls %d timeouts %d applied %d rejected %d changed lines %d kept raw %d", s.Calls, s.Timeouts, s.Applied, s.Rejected, s.ChangedLines, s.KeptRaw)
 	}
 	if opts.diff {
-		fmt.Fprintf(out, "%s\n", dimStyle.Render(fmt.Sprintf("%d utterance(s) changed · stages %s · %s", changed, strings.Join(report.Stages, " → "), jsonlPath)))
+		fmt.Fprintf(out, "%s\n", dimStyle.Render(fmt.Sprintf("%d utterance(s) changed · stages %s · %s", changed, stagesLabel, jsonlPath)))
 		return nil
 	}
 	summary, err := meeting.LoadSummaryFromJSONL(jsonlPath)
@@ -503,6 +611,52 @@ func runSTTPreview(cmd *cobra.Command, loadConfig func() (*config.Config, error)
 	}
 	note := meeting.RenderEvents(summary, events, meeting.BodyFull)
 	fmt.Fprint(out, note.Body)
-	fmt.Fprintf(out, "\n%s\n", dimStyle.Render(fmt.Sprintf("preview: %d utterance(s) changed · stages %s · nothing written", changed, strings.Join(report.Stages, " → "))))
+	fmt.Fprintf(out, "\n%s\n", dimStyle.Render(fmt.Sprintf("preview: %d utterance(s) changed · stages %s · nothing written", changed, stagesLabel)))
 	return nil
+}
+
+// sttPreviewWindow is how many utterances one rewrite call carries: enough to
+// amortize the prompt, few enough that a dropped line is caught by number.
+const sttPreviewWindow = 20
+
+// sttPreviewClean runs the stages over a meeting's utterances. Patch mode runs
+// the whole chain per utterance, as the live pipeline does. Rewrite mode runs
+// the deterministic stages per utterance and the model over numbered windows,
+// which is the off-loop path the stage was designed for.
+func sttPreviewClean(ctx context.Context, cfg *config.Config, report stt.StageReport, chain correct.Chain, texts []string) ([]string, error) {
+	out := make([]string, len(texts))
+	if report.Model == nil || report.Model.Mode != correct.ModeRewrite {
+		for i, t := range texts {
+			c, err := chain.Correct(ctx, t)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = c
+		}
+		return out, nil
+	}
+	pre := *cfg
+	pre.STTPostprocessEnabled = false
+	preChain, _ := stt.StagesFromConfig(&pre)
+	for i, t := range texts {
+		c, err := preChain.Correct(ctx, strings.ReplaceAll(t, "\n", " "))
+		if err != nil {
+			return nil, err
+		}
+		out[i] = c
+	}
+	for start := 0; start < len(out); start += sttPreviewWindow {
+		end := min(start+sttPreviewWindow, len(out))
+		window := strings.Join(out[start:end], "\n")
+		cleaned, err := report.Model.Apply(ctx, window)
+		if err != nil {
+			return nil, err
+		}
+		lines := strings.Split(cleaned, "\n")
+		if len(lines) != end-start {
+			continue
+		}
+		copy(out[start:end], lines)
+	}
+	return out, nil
 }

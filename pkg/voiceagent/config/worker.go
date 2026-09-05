@@ -25,12 +25,7 @@ func WorkerBrainConfig(cfg *Config) *Config {
 	w := *cfg
 	w.BrainProvider = VoiceWorkerProviderOf(cfg)
 	if model := strings.TrimSpace(cfg.VoiceWorkerModel); model != "" {
-		switch w.BrainProvider {
-		case "ollama":
-			w.OllamaModel = model
-		case "grok":
-			w.GrokModel = model
-		}
+		SetBrainModel(&w, w.BrainProvider, model)
 	}
 	if host := strings.TrimSpace(cfg.VoiceWorkerOllamaHost); host != "" && w.BrainProvider == "ollama" {
 		w.OllamaHost = host
@@ -61,4 +56,37 @@ func TwoLocalOllamaWorkers(cfg *Config) bool {
 		workerHost = liveHost
 	}
 	return strings.EqualFold(liveHost, workerHost)
+}
+
+// BrainModelFor returns the model configured for a brain provider. Claude has
+// no app-level model key, so it reports "".
+func BrainModelFor(cfg *Config, provider string) string {
+	if cfg == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama":
+		return strings.TrimSpace(cfg.OllamaModel)
+	case "grok":
+		return strings.TrimSpace(cfg.GrokModel)
+	case "cursor":
+		return strings.TrimSpace(cfg.CursorModel)
+	}
+	return ""
+}
+
+// SetBrainModel writes model into the provider's model field; providers
+// without a model key are left alone.
+func SetBrainModel(cfg *Config, provider, model string) {
+	if cfg == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama":
+		cfg.OllamaModel = model
+	case "grok":
+		cfg.GrokModel = model
+	case "cursor":
+		cfg.CursorModel = model
+	}
 }

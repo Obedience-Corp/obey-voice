@@ -140,6 +140,13 @@ when you select it.
 | `stt_word_correction_threshold` | `0.12` | | Fuzzy acceptance score, 0.01–0.45; lower is stricter. Raise it only after `obey-voice stt audit` shows no wrong replacements |
 | `stt_filler_removal` | `false` | | Drops um, uh and hmm from final transcripts before they are written down or answered. Answers such as `uh-huh` stay, and a lone `Hmm.` stays. See [Fillers and numbers](#fillers-and-numbers) |
 | `stt_numbers` | `false` | | Writes spoken numbers as digits where a reader would: `thirty five` → 35, `five percent` → 5%, `twenty thousand dollars` → $20,000, `twenty twenty two` → 2022. Small counts stay words |
+| `stt_postprocess_enabled` | `false` | | Runs a language model over each final transcript after the deterministic corrections. See [Post-processing model](#post-processing-model) |
+| `stt_postprocess_provider` | `ollama` | | Provider for that model: any registered brain provider, independent of `brain_provider` |
+| `stt_postprocess_model` | *(empty)* | | Model on that provider. Empty uses the provider's configured model (`ollama_model`, `grok_model`, `cursor_model`); a small local model such as `qwen3.5:0.8b` answers fastest |
+| `stt_postprocess_mode` | `patch` | | `patch` confirms near-miss names the custom words found, a few tokens per call and no call when there is nothing to ask; `rewrite` cleans the whole line under fidelity guards |
+| `stt_postprocess_timeout_ms` | `1000` | | Deadline per call; on timeout the transcript goes on without the model and the timeout is counted |
+| `stt_postprocess_keep_alive` | *(empty)* | | Ollama residency for this model, e.g. `10m` or `-1`; empty follows `ollama_keep_alive` |
+| `stt_postprocess_candidate_threshold` | `0.45` | | Upper fuzzy score for a phrase to be offered to the model as a possible name in patch mode |
 | `vad_enabled` | `true` | | Enable voice activity detection |
 | `vad_silence_duration` | `1.2` | | Seconds of silence before ending speech (raise to stop being cut off) |
 | `vad_threshold` | `0.6` | `VAD_THRESHOLD` | Speech-detection confidence (raise to ignore background noise) |
@@ -366,6 +373,70 @@ obey-voice stt audit --fillers --numbers          # over saved conversations and
 obey-voice stt preview --fillers --numbers --diff # the latest meeting, changed lines only
 obey-voice stt preview --fillers --numbers        # the latest meeting, rendered as meeting.md
 ```
+
+## Post-processing model
+
+An optional language model runs after the deterministic corrections, off by
+default. It has its own provider and model keys, so changing the conversation's
+brain never changes it, and its own editable instruction documents. It fails
+open: a timeout, a transport error or a reply that fails a guard keeps the
+transcript as it was, and every such event is counted.
+
+**Patch mode** (the default, for the talk loop) asks one question: of the
+near-miss names the custom words stage found but did not apply, which did the
+speaker mean? The model receives the transcript and the candidates, answers
+with a JSON substitution list, and only a substitution whose span and name
+were both offered is applied. When there are no candidates, which is nearly
+every turn, the model is not called at all.
+
+**Rewrite mode** (for stored transcripts) asks for a full cleanup: punctuation,
+casing, mis-heard names, spoken numbers, fillers and self-corrections. Lines
+are numbered; a reply that drops or merges lines keeps the whole window raw,
+and a line is kept raw when it changes length by more than half, shares fewer
+than half its words with the original, or gains more than one word that was
+not spoken (digits and known names excepted): that is writing, not cleaning. Small
+local models do less here than the deterministic stages: measured on real
+meetings, a 3B model removed 11 of 26 fillers and converted 1 of 46 numbers
+that `stt_filler_removal` and `stt_numbers` handle for free.
+
+```yaml
+stt_postprocess_enabled: true
+stt_postprocess_provider: ollama
+stt_postprocess_model: qwen3.5:0.8b   # empty means ollama_model
+stt_postprocess_mode: patch
+stt_postprocess_timeout_ms: 1000
+```
+
+If the model is not pulled, the stage does not run and `obey-voice stt audit
+--model` says which `ollama pull` to run. Thinking is turned off for this
+model's requests regardless of `ollama_think`, and Ollama is asked to load the
+model as soon as the stage is built, off the critical path, so the first
+transcript that needs it does not pay the load inside its deadline.
+
+The instructions are prompt documents of kind `postprocess`, seeded to
+`prompts/postprocess/patch.yaml` and `prompts/postprocess/rewrite.yaml` on
+first start. Edit the file; the next turn uses it. `{known_names}` is filled
+with the persona names and custom words, and the transcript is always the user
+message, never part of the instruction, so a transcript cannot rewrite it.
+`obey-voice prompts show postprocess` prints the one in use.
+
+Try it before turning it on, on what you have already said:
+
+```bash
+obey-voice stt audit --model --sessions                          # patch over saved conversations
+obey-voice stt audit --model --model-name qwen3:8b               # try another model on the provider
+obey-voice stt preview --model --mode rewrite --diff              # rewrite the latest meeting, changed lines only
+obey-voice stt audit --model --mode rewrite --sample 40           # rewrite 40 utterances, with the guard counts
+```
+
+Both commands report the model's counters: calls, turns skipped for want of
+candidates, timeouts, substitutions applied and rejected, lines changed and
+lines kept raw. Off the loop a rewrite run gets a 120 s deadline per window
+unless `--timeout-ms` says otherwise. Read the counters before turning the
+stage on: on one machine's saved transcripts an 8B general model confirmed two
+of three false candidates in patch mode, and in rewrite mode fixed stutters and
+casing the deterministic stages cannot, while inventing one sentence subject
+the guard now catches.
 
 ## transcribe.cpp (optional STT)
 

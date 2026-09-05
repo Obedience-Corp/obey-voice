@@ -71,16 +71,26 @@ type Config struct {
 	// STTFillerRemoval drops hesitation sounds (um, uh, hmm) from final transcripts.
 	STTFillerRemoval bool `mapstructure:"stt_filler_removal"`
 	// STTNumbers writes spoken numbers as digits where a reader would.
-	STTNumbers           bool   `mapstructure:"stt_numbers"`
-	SherpaStreamingModel string `mapstructure:"sherpa_streaming_model"`
-	WhisperModel         string `mapstructure:"whisper_model"`
-	ParakeetModel        string `mapstructure:"parakeet_model"`
-	WhisperQuantized     bool   `mapstructure:"whisper_quantized"`
-	WhisperCPPBinary     string `mapstructure:"whispercpp_binary"`
-	WhisperCPPModel      string `mapstructure:"whispercpp_model"`
-	WhisperCPPModelPath  string `mapstructure:"whispercpp_model_path"`
-	TranscribeCPPBinary  string `mapstructure:"transcribecpp_binary"`
-	TranscribeCPPModel   string `mapstructure:"transcribecpp_model"`
+	STTNumbers bool `mapstructure:"stt_numbers"`
+	// STTPostprocess* configure the optional post-processing model stage: its
+	// own provider and model, never the brain's, so changing one never changes
+	// the other. An empty model means the provider's configured model.
+	STTPostprocessEnabled            bool    `mapstructure:"stt_postprocess_enabled"`
+	STTPostprocessProvider           string  `mapstructure:"stt_postprocess_provider"`
+	STTPostprocessModel              string  `mapstructure:"stt_postprocess_model"`
+	STTPostprocessMode               string  `mapstructure:"stt_postprocess_mode"`
+	STTPostprocessTimeoutMS          int     `mapstructure:"stt_postprocess_timeout_ms"`
+	STTPostprocessKeepAlive          string  `mapstructure:"stt_postprocess_keep_alive"`
+	STTPostprocessCandidateThreshold float64 `mapstructure:"stt_postprocess_candidate_threshold"`
+	SherpaStreamingModel             string  `mapstructure:"sherpa_streaming_model"`
+	WhisperModel                     string  `mapstructure:"whisper_model"`
+	ParakeetModel                    string  `mapstructure:"parakeet_model"`
+	WhisperQuantized                 bool    `mapstructure:"whisper_quantized"`
+	WhisperCPPBinary                 string  `mapstructure:"whispercpp_binary"`
+	WhisperCPPModel                  string  `mapstructure:"whispercpp_model"`
+	WhisperCPPModelPath              string  `mapstructure:"whispercpp_model_path"`
+	TranscribeCPPBinary              string  `mapstructure:"transcribecpp_binary"`
+	TranscribeCPPModel               string  `mapstructure:"transcribecpp_model"`
 
 	// VAD
 	VADEnabled                bool    `mapstructure:"vad_enabled"`
@@ -465,6 +475,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("stt_word_correction_threshold", 0.12)
 	v.SetDefault("stt_filler_removal", false)
 	v.SetDefault("stt_numbers", false)
+	v.SetDefault("stt_postprocess_enabled", false)
+	v.SetDefault("stt_postprocess_provider", "ollama")
+	v.SetDefault("stt_postprocess_model", "")
+	v.SetDefault("stt_postprocess_mode", "patch")
+	v.SetDefault("stt_postprocess_timeout_ms", 1000)
+	v.SetDefault("stt_postprocess_keep_alive", "")
+	v.SetDefault("stt_postprocess_candidate_threshold", 0.45)
 	v.SetDefault("sherpa_streaming_model", "en-2023-06-26")
 	v.SetDefault("whisper_model", "small")
 	v.SetDefault("parakeet_model", DefaultParakeetModel)

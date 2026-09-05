@@ -36,7 +36,8 @@
             "style",
             "pronunciation",
             "turn",
-            "compact"
+            "compact",
+            "postprocess"
           ]
         },
         "system_prompt": {

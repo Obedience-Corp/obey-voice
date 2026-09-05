@@ -18,14 +18,16 @@ func TestSeedWritesDefaults(t *testing.T) {
 	// jarvis) sit beside obey. Samantha also still has turn and compact
 	// documents because a profile can reference those kinds by name.
 	want := map[string]bool{
-		filepath.Join("persona", "obey.yaml"):     true,
-		filepath.Join("persona", "samantha.yaml"): true,
-		filepath.Join("persona", "veronica.yaml"): true,
-		filepath.Join("persona", "jarvis.yaml"):   true,
-		filepath.Join("turn", "obey.yaml"):        true,
-		filepath.Join("turn", "samantha.yaml"):    true,
-		filepath.Join("compact", "obey.yaml"):     true,
-		filepath.Join("compact", "samantha.yaml"): true,
+		filepath.Join("persona", "obey.yaml"):        true,
+		filepath.Join("persona", "samantha.yaml"):    true,
+		filepath.Join("persona", "veronica.yaml"):    true,
+		filepath.Join("persona", "jarvis.yaml"):      true,
+		filepath.Join("turn", "obey.yaml"):           true,
+		filepath.Join("turn", "samantha.yaml"):       true,
+		filepath.Join("compact", "obey.yaml"):        true,
+		filepath.Join("compact", "samantha.yaml"):    true,
+		filepath.Join("postprocess", "patch.yaml"):   true,
+		filepath.Join("postprocess", "rewrite.yaml"): true,
 	}
 	for _, rel := range created {
 		delete(want, rel)
