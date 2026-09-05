@@ -518,9 +518,9 @@ func TestPersonasPromptStepTabCompletesPlaceholder(t *testing.T) {
 	}
 }
 
-// With nothing to complete, tab accepts the prompt and returns to the form.
-func TestPersonasPromptTabReturnsToTheForm(t *testing.T) {
-	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}
+// Tab with no open brace opens the variable catalog; it must not leave the editor.
+func TestPersonasPromptTabOpensVariableCatalog(t *testing.T) {
+	cfg := &config.Config{ActivePersona: "samantha", AgentName: "Samantha", UserDisplayName: "Lance"}
 	m := newPersonas(cfg)
 	m.listPersonas = func() ([]*persona.Profile, error) {
 		return []*persona.Profile{{ID: "samantha", DisplayName: "Samantha"}}, nil
@@ -533,16 +533,23 @@ func TestPersonasPromptTabReturnsToTheForm(t *testing.T) {
 	m, _ = m.openPrompt()
 
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyTab})
-	if m.promptOpen {
-		t.Fatal("tab with no open brace should leave the editor")
+	if !m.promptOpen {
+		t.Fatal("tab without brace left the prompt editor")
 	}
-	if m.formRow != formRowPrompt {
-		t.Fatalf("formRow = %d, want the prompt row after leaving the editor", m.formRow)
+	if !m.promptTA.phActive {
+		t.Fatal("tab without brace did not open the catalog")
 	}
-	if m.formMode != "create" {
-		t.Fatal("tab closed the whole form")
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "user_name") {
+		t.Fatalf("dropdown missing user_name:\n%s", view)
 	}
-	// Back on the form, tab keeps moving between rows.
+	if !strings.Contains(view, "Lance") {
+		t.Fatalf("dropdown missing resolved user name:\n%s", view)
+	}
+
+	m.promptTA.Blur()
+	m.promptOpen = false
+	m.setFormRow(formRowPrompt)
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyTab})
 	if m.formRow != formRowName {
 		t.Fatalf("formRow = %d, want a wrap to the name row", m.formRow)
@@ -702,12 +709,14 @@ func TestPersonasEscNeverDiscardsTheEdit(t *testing.T) {
 		{Type: tea.KeyRunes, Runes: []rune{'i'}},
 		{Type: tea.KeyRunes, Runes: []rune{'X'}},
 		{Type: tea.KeyEscape},
-		{Type: tea.KeyTab},
+		{Type: tea.KeyRunes, Runes: []rune{':'}},
+		{Type: tea.KeyRunes, Runes: []rune{'w'}},
+		{Type: tea.KeyEnter},
 	} {
 		m, _ = m.updateForm(k)
 	}
 	if m.promptOpen {
-		t.Fatal("tab did not hand the screen back to the form")
+		t.Fatal(":w did not hand the screen back to the form")
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
 	if m.formMode == "" {
@@ -749,16 +758,18 @@ func TestPersonasFormEscGuardsEditedPrompt(t *testing.T) {
 	m.beginEditAt(formRowName)
 	m, _ = m.openPrompt()
 
-	// Edit the prompt, drop to normal, shift+tab back to the form.
+	// Edit the prompt, drop to normal, :w back to the form.
 	for _, k := range []tea.KeyMsg{
 		{Type: tea.KeyRunes, Runes: []rune{'A'}},
 		{Type: tea.KeyEscape},
-		{Type: tea.KeyShiftTab},
+		{Type: tea.KeyRunes, Runes: []rune{':'}},
+		{Type: tea.KeyRunes, Runes: []rune{'w'}},
+		{Type: tea.KeyEnter},
 	} {
 		m, _ = m.updateForm(k)
 	}
 	if m.promptOpen {
-		t.Fatal("shift+tab did not leave the editor")
+		t.Fatal(":w did not leave the editor")
 	}
 	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyEscape})
 	if m.formMode == "" {

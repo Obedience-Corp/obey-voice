@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -9,7 +10,9 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 const personasCreateLabel = "+ Create new persona…"
@@ -60,6 +63,8 @@ type personasModel struct {
 	// See personas_models.go; brainModelInput stays the selected value.
 	brainModels personaModelPicker
 
+	preview voicePreview
+
 	listPersonas         func() ([]*persona.Profile, error)
 	usePersona           func(*config.Config, string) error
 	createPersona        func(*config.Config, persona.CreateOpts) (*persona.Profile, error)
@@ -92,6 +97,18 @@ func newPersonas(cfg *config.Config) personasModel {
 		nameInput:            newPersonaCreateInput(),
 		promptTA:             newPromptEditor(),
 		brainModelInput:      newPersonaStackInput("empty = provider default"),
+		preview: voicePreview{
+			newPreviewPlayer: func() audio.Engine {
+				if cfg == nil {
+					return audio.NewPlayer()
+				}
+				return audio.NewPlayerWithDevice(cfg.OutputDevice)
+			},
+			ensure: func(ctx context.Context, c *config.Config, onProgress func(string, float64)) error {
+				return config.EnsureRuntimeAssets(ctx, c, config.AssetRequest{NeedTTS: true}, onProgress)
+			},
+			newTTS: tts.NewProvider,
+		},
 	}
 	// The Model row picks from the same discovery Settings uses. It runs as a
 	// command on form open, never here: constructing the screen must not block
@@ -203,6 +220,11 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 
 	case personaModelsMsg:
 		m.applyBrainModels(msg)
+
+	case voicePreviewDoneMsg:
+		if m.preview.applyDone(msg) && msg.message != "" {
+			m.message = msg.message
+		}
 
 	case tea.KeyMsg:
 		if m.formMode != "" {

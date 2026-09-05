@@ -79,6 +79,17 @@ active persona).
 just demo-persona-switch
 ```
 
+## persona-form-ux.gif — voice preview and prompt variables
+
+Create-form UX that Settings already had, now on the persona form:
+
+1. **Voice row** — `p preview` in the help; `p` plays the selected (or inherited) voice
+2. **System prompt** — Tab in INSERT lists `{agent_name}`, `{user_name}`, `{date}`, `{os}` with resolved values
+
+```bash
+just demo-persona-form-ux
+```
+
 ## persona-create.gif — one-screen create form with the vim prompt editor
 
 The whole persona on one screen: a rounded box per field with the focused box

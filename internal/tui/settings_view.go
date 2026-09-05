@@ -166,7 +166,7 @@ func (m settingsModel) sectionListLines() []string {
 				active = " ✓"
 			}
 			preview := ""
-			if v.Name == m.previewing {
+			if v.Name == m.preview.previewing {
 				preview = " ♫ playing..."
 			}
 			label := fmt.Sprintf("%-16s %s / %s%s%s", v.Name, v.Gender, v.Locale, active, preview)
