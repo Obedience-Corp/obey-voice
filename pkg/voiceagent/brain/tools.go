@@ -301,7 +301,7 @@ func liveRouterTools() api.Tools {
 			Type: "function",
 			Function: api.ToolFunction{
 				Name:        "route",
-				Description: "Classify this user turn as chat, spawn (start async work), or narrate (read aloud). Use spawn when the user asks you to do something; use narrate for long reading; otherwise chat.",
+				Description: "Classify this user turn. Use spawn when the user asks you to do something: search the web, look something up, read or write files, run commands, or build. Spawn starts a worker that has those tools. Use narrate for long reading. Otherwise chat.",
 				Parameters: api.ToolFunctionParameters{
 					Type:     "object",
 					Required: []string{"kind"},

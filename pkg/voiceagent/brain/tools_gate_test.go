@@ -10,6 +10,21 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
+func TestLiveCLIToolsRouteOnlyDisablesNativeTools(t *testing.T) {
+	if liveCLITools(StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly}) {
+		t.Fatal("live route_only must not run Claude/Cursor/Grok native tools")
+	}
+	if !liveCLITools(StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsLegacy}) {
+		t.Fatal("worker legacy must keep native tools")
+	}
+	if !liveCLITools(StreamOptions{ToolsEnabled: true}) {
+		t.Fatal("empty policy (tests / embedders) keeps native tools")
+	}
+	if liveCLITools(StreamOptions{ToolsEnabled: false, RouterToolsPolicy: RouterToolsLegacy}) {
+		t.Fatal("ToolsEnabled=false must win")
+	}
+}
+
 func TestClaudeRunOptionsGateToolsOnVoiceToolsEnabled(t *testing.T) {
 	tests := []struct {
 		name         string

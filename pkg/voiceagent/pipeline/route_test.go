@@ -4,6 +4,33 @@ import (
 	"testing"
 )
 
+func TestClassifySpawnIntent(t *testing.T) {
+	t.Parallel()
+	spawns := []string{
+		"search the web for rust 1.90",
+		"look up the latest kernel CVE",
+		"create a file called notes.md",
+		"run this command",
+	}
+	for _, s := range spawns {
+		kind, source, ok := classifyTurn(s, RouteContext{})
+		if !ok || kind != RouteSpawn || source != "intent" {
+			t.Errorf("classifyTurn(%q) = %q %q %v, want spawn/intent", s, kind, source, ok)
+		}
+	}
+	chats := []string{
+		"how's it going",
+		"what's the capital of Australia",
+		"tell me a joke",
+		"search your feelings",
+	}
+	for _, s := range chats {
+		if classifySpawnIntent(s) {
+			t.Errorf("classifySpawnIntent(%q) = true, want chat", s)
+		}
+	}
+}
+
 func TestClassifyPhraseNarrateExamples(t *testing.T) {
 	t.Parallel()
 	ctx := RouteContext{}

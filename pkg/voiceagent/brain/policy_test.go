@@ -10,7 +10,7 @@ import (
 )
 
 func policyCfg() *config.Config {
-	return &config.Config{AgentName: "Samantha", EnvironmentContextEnabled: true}
+	return &config.Config{AgentName: "Samantha", EnvironmentContextEnabled: true, VoiceToolsEnabled: true}
 }
 
 // The defect this whole sequence exists to fix: the same persona behaved
@@ -32,7 +32,7 @@ func TestSystemPromptPolicyIsIdenticalAcrossProviders(t *testing.T) {
 
 		var universal []PromptElement
 		for _, e := range got {
-			if e != ElemSkills {
+			if e != ElemSkills && e != ElemTools {
 				universal = append(universal, e)
 			}
 		}
@@ -63,6 +63,29 @@ func TestSkillsMenuIsDeliberatelyOllamaOnly(t *testing.T) {
 				"duplicate that surface, compete with its native tool selection, and spend "+
 				"system-prompt budget on instructions it has a better mechanism for.",
 				provider, provider)
+		}
+	}
+}
+
+func TestToolSurfaceIsDeliberatelyOllamaOnly(t *testing.T) {
+	cfg := policyCfg()
+
+	if !slices.Contains(SystemPromptPolicy(providerOllama, cfg), ElemTools) {
+		t.Error("ollama must receive the tool surface — route_only vs worker tools is how it knows what it can call")
+	}
+
+	for _, provider := range []string{providerClaude, providerCursor, providerGrok} {
+		got := AssembleSystemPrompt(SystemPromptInput{
+			Provider: provider,
+			Persona:  "PERSONA",
+			WorkDir:  "/work",
+			Cfg:      cfg,
+		})
+		if slices.Contains(SystemPromptPolicy(provider, cfg), ElemTools) {
+			t.Errorf("provider %q must NOT receive Obey Voice's tool list", provider)
+		}
+		if strings.Contains(got, "web_search") || strings.Contains(got, "Live tool: route") {
+			t.Errorf("provider %q leaked ollama tool surface:\n%s", provider, got)
 		}
 	}
 }
@@ -121,20 +144,24 @@ func TestAssembledPromptFollowsPolicyOrder(t *testing.T) {
 
 	personaAt := strings.Index(got, "PERSONA_MARKER")
 	envAt := strings.Index(got, "Environment:")
+	toolsAt := strings.Index(got, "Live tool: route")
 	skillsAt := strings.Index(got, "Available skills")
 	turnAt := strings.Index(got, "TURN_MARKER")
 
 	for _, c := range []struct {
 		name string
 		idx  int
-	}{{"persona", personaAt}, {"environment", envAt}, {"skills", skillsAt}, {"turn", turnAt}} {
+	}{{"persona", personaAt}, {"environment", envAt}, {"tools", toolsAt}, {"skills", skillsAt}, {"turn", turnAt}} {
 		if c.idx < 0 {
 			t.Fatalf("assembled prompt is missing the %s element:\n%s", c.name, got)
 		}
 	}
-	if !(personaAt < envAt && envAt < skillsAt && skillsAt < turnAt) {
-		t.Errorf("elements out of policy order: persona=%d env=%d skills=%d turn=%d",
-			personaAt, envAt, skillsAt, turnAt)
+	if !(personaAt < envAt && envAt < toolsAt && toolsAt < skillsAt && skillsAt < turnAt) {
+		t.Errorf("elements out of policy order: persona=%d env=%d tools=%d skills=%d turn=%d",
+			personaAt, envAt, toolsAt, skillsAt, turnAt)
+	}
+	if strings.Contains(got, "You have tools available: list_files") {
+		t.Fatal("route_only ollama prompt must not advertise worker tools")
 	}
 }
 
@@ -163,6 +190,25 @@ func TestTurnInstructionPlacementIsProviderSpecific(t *testing.T) {
 
 	if !TurnGoesInSystemPrompt(providerOllama) {
 		t.Error("ollama rebuilds its system prompt per turn, so the instruction rides there")
+	}
+}
+
+func TestToolSurfaceContextMatchesRouterPolicy(t *testing.T) {
+	live := ToolSurfaceContext(&config.Config{VoiceToolsEnabled: true})
+	if !strings.Contains(live, "Live tool: route") {
+		t.Fatalf("route_only surface missing route:\n%s", live)
+	}
+	if strings.Contains(live, "You have tools available: list_files") {
+		t.Fatalf("route_only surface advertised worker tools:\n%s", live)
+	}
+
+	legacy := ToolSurfaceContext(&config.Config{VoiceToolsEnabled: true, VoiceRouterTools: string(RouterToolsLegacy)})
+	if !strings.Contains(legacy, "web_search") {
+		t.Fatalf("legacy surface missing web_search:\n%s", legacy)
+	}
+
+	if got := ToolSurfaceContext(&config.Config{VoiceToolsEnabled: false}); got != "" {
+		t.Fatalf("tools-disabled surface = %q, want empty", got)
 	}
 }
 

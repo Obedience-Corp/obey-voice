@@ -53,6 +53,9 @@ func TestEnvironmentContextNamesTheCampaign(t *testing.T) {
 			if !strings.Contains(got, "- Working directory: "+tt.workDir+"\n- Campaign: ") {
 				t.Errorf("campaign line is not next to the working directory:\n%s", got)
 			}
+			if strings.Contains(got, "web_search") {
+				t.Errorf("environment grounding must not advertise worker tools:\n%s", got)
+			}
 		})
 	}
 }

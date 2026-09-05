@@ -30,6 +30,48 @@ func TestRouterToolsForSessionRouteOnly(t *testing.T) {
 	}
 }
 
+func TestRouterToolsForSessionEmptyKeepsWorkerTools(t *testing.T) {
+	t.Parallel()
+	tools := RouterToolsForSession("", nil)
+	if !hasTool(tools, "web_search") || !hasTool(tools, "run_command") {
+		t.Fatalf("empty policy must keep worker tools: %#v", routerToolNames(tools))
+	}
+}
+
+func TestLiveRouterDecision(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		policy RouterToolsPolicy
+		call   string
+		kind   string
+		want   string
+	}{
+		{name: "route spawn", policy: RouterToolsRouteOnly, call: "route", kind: "spawn", want: "spawn"},
+		{name: "route narrate", policy: RouterToolsRouteOnly, call: "route", kind: "narrate", want: "narrate"},
+		{name: "route chat stays in turn", policy: RouterToolsRouteOnly, call: "route", kind: "chat", want: ""},
+		{name: "web_search becomes spawn", policy: RouterToolsRouteOnly, call: "web_search", want: "spawn"},
+		{name: "run_command becomes spawn", policy: RouterToolsRouteOnly, call: "run_command", want: "spawn"},
+		{name: "legacy ignores worker tools", policy: RouterToolsLegacy, call: "web_search", want: ""},
+		{name: "empty policy ignores worker tools", policy: "", call: "web_search", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			args := map[string]any{}
+			if tt.kind != "" {
+				args["kind"] = tt.kind
+			}
+			got := LiveRouterDecision(tt.policy, []api.ToolCall{{
+				Function: api.ToolCallFunction{Name: tt.call, Arguments: mustArgs(args)},
+			}})
+			if got != tt.want {
+				t.Fatalf("LiveRouterDecision = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRouterToolsForSessionLegacyKeepsWorkerTools(t *testing.T) {
 	t.Parallel()
 	tools := RouterToolsForSession(RouterToolsLegacy, nil)

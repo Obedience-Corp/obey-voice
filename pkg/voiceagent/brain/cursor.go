@@ -226,7 +226,7 @@ func (c *CursorBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOpt
 func (c *CursorBrain) askAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
 	prompt := c.buildPrompt(streamOpts.OmitTurnInstruction)
 
-	result, err := c.client.AskCtx(ctx, prompt, c.askOptions(streamOpts.ToolsEnabled))
+	result, err := c.client.AskCtx(ctx, prompt, c.askOptions(liveCLITools(streamOpts)))
 	if err != nil {
 		return "", wrapCursorAskError(err)
 	}

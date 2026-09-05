@@ -39,3 +39,16 @@ func TestIsToolPromiseSkipsWhenToolsFired(t *testing.T) {
 		t.Fatal("repair must not run when tools already fired")
 	}
 }
+
+func TestRouteKindFromBrain(t *testing.T) {
+	t.Parallel()
+	if got := routeKindFromBrain("spawn"); got != RouteSpawn {
+		t.Fatalf("spawn = %q", got)
+	}
+	if got := routeKindFromBrain("narrate"); got != RouteNarrate {
+		t.Fatalf("narrate = %q", got)
+	}
+	if got := routeKindFromBrain("chat"); got != RouteChat {
+		t.Fatalf("chat = %q", got)
+	}
+}

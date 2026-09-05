@@ -10,6 +10,9 @@ import (
 // NewWorkerProvider constructs the async job worker as a second Provider
 // instance from voice_worker_provider (default grok).
 func NewWorkerProvider(cfg *config.Config) (Provider, error) {
+	if config.TwoLocalOllamaWorkers(cfg) {
+		return nil, fmt.Errorf("voice_worker_provider=ollama on the live Ollama host would load a second local model and can evict the talking session; set voice_worker_provider to grok or claude, or voice_worker_ollama_host to another machine")
+	}
 	workerCfg := config.WorkerBrainConfig(cfg)
 	name := strings.TrimSpace(strings.ToLower(workerCfg.BrainProvider))
 	if !workerProviderAllowed(name) {
