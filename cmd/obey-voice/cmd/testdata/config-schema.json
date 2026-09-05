@@ -1745,6 +1745,32 @@
       "editable": true
     },
     {
+      "key": "stt_custom_words",
+      "type": "list\u003cstring\u003e",
+      "default": [],
+      "allows_empty": false,
+      "group": "models",
+      "title": "Custom words",
+      "help": "Names and jargon the transcriber should spell your way: `Samantha`; `Claude=clawed,cloud` to name misheard forms; `Ollama!` to also catch near-misses of a rare word. Config file only; `obey-voice stt audit` shows what a list would change.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "stt_custom_words_from_personas",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "models",
+      "title": "Correct persona names",
+      "help": "Adds every persona's display name to the custom words, so a misheard Veronica comes back spelled right.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "stt_mode",
       "type": "enum",
       "default": "",
@@ -1784,6 +1810,21 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "STT_PROVIDER",
+      "editable": true
+    },
+    {
+      "key": "stt_word_correction_threshold",
+      "type": "float",
+      "default": 0.12,
+      "allows_empty": false,
+      "group": "models",
+      "title": "Fuzzy match threshold",
+      "help": "How far a misheard word may be from a custom word and still be replaced. Lower is stricter; raise it only after the audit shows no wrong replacements.",
+      "min": 0.01,
+      "max": 0.45,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
       "editable": true
     },
     {

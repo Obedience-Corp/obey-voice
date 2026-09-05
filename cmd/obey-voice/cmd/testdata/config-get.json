@@ -346,12 +346,24 @@
       "value": 0.95,
       "source": "default"
     },
+    "stt_custom_words": {
+      "value": [],
+      "source": "default"
+    },
+    "stt_custom_words_from_personas": {
+      "value": true,
+      "source": "default"
+    },
     "stt_mode": {
       "value": "",
       "source": "default"
     },
     "stt_provider": {
       "value": "sherpa-parakeet",
+      "source": "default"
+    },
+    "stt_word_correction_threshold": {
+      "value": 0.12,
       "source": "default"
     },
     "talk_hotkey": {
