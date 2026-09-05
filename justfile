@@ -71,6 +71,18 @@ demo-qwen-voices: build
     just _optimize-demo-gif demos/qwen-voices.gif
     ls -lh demos/qwen-voices.gif
 
+# Conversation TUI: live thinking, then Ctrl+K to keep it in the thread.
+# Scripts bus events (no live mic/model). Unsets NO_COLOR so VHS paints color.
+demo-think-blocks: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/think-blocks.tape
+    just _optimize-demo-gif demos/think-blocks.gif
+    ls -lh demos/think-blocks.gif
+
 # Settings → Persona: list seeded agents and switch active persona.
 demo-persona-switch: build
     #!/usr/bin/env bash

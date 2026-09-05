@@ -121,6 +121,7 @@ commands are local — they do not cancel speech recognition or block the chat.
 | `Ctrl+J` | Insert a newline in the draft |
 | Mouse wheel / trackpad, `Page Up` / `Page Down` | Scroll the transcript or focused activity feed |
 | `Ctrl+T` | Focus/unfocus the activity timeline |
+| `Ctrl+K` | Show or hide model thinking blocks in the thread (`/think`) |
 | `Ctrl+Y` | Copy the last assistant reply to the clipboard |
 | `Ctrl+C` (empty composer, after a reply) | Copy the last assistant reply; press again within ~1.5s to quit (`/quit` also exits) |
 | `Ctrl+G` | Pause/resume voice input (capture may stay armed; listening stops) |
@@ -130,6 +131,7 @@ commands are local — they do not cancel speech recognition or block the chat.
 | `Ctrl+Home` / `Ctrl+End` | Always jump to the start/end of the focused feed |
 | `/copy` | Copy the last assistant reply |
 | `/copy all` | Copy the full plain-text conversation |
+| `/think` | Show or hide model thinking in the thread (`/think on`, `/think off`) |
 
 ### Talk key
 

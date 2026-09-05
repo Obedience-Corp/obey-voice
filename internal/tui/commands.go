@@ -24,6 +24,7 @@ const (
 	commandMic
 	commandAudio
 	commandActivity
+	commandThink
 	commandSettings
 	commandVoice
 	commandSpeakers
@@ -52,6 +53,7 @@ var slashCommands = []slashCommand{
 	{id: commandMic, name: "/mic", usage: "/mic", description: "Toggle voice input"},
 	{id: commandAudio, name: "/audio", usage: "/audio", description: "Toggle voice output", aliases: []string{"/speaker"}},
 	{id: commandActivity, name: "/activity", usage: "/activity", description: "Switch between chat and activity", aliases: []string{"/timeline"}},
+	{id: commandThink, name: "/think", usage: "/think [on|off]", description: "Show or hide model thinking in the thread", aliases: []string{"/thinking"}},
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
 	{id: commandVoice, name: "/voice", usage: "/voice", description: "Return to voice mode after fallback", aliases: []string{"/v"}},
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
@@ -154,7 +156,7 @@ func sharedPrefixLen(a, b string) int {
 }
 
 func (m *conversationModel) executeSlashCommand(command slashCommand, args []string) tea.Cmd {
-	if command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && len(args) > 0 {
+	if command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && len(args) > 0 {
 		m.commandError(fmt.Sprintf("%s does not take arguments", command.name))
 		return m.resumeListening()
 	}
@@ -185,6 +187,9 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		return m.resumeListening()
 	case commandActivity:
 		m.activityFocused = !m.activityFocused
+		return m.resumeListening()
+	case commandThink:
+		m.configureThink(args)
 		return m.resumeListening()
 	case commandSettings:
 		return func() tea.Msg { return switchScreenMsg(screenSettings) }
