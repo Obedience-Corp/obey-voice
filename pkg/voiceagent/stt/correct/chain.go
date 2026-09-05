@@ -7,8 +7,9 @@ import (
 	"fmt"
 )
 
-// Stage rewrites a transcript. Implementations must be pure: no I/O and no
-// shared mutable state, so a stage can run on every final transcript.
+// Stage rewrites a transcript. Implementations are pure — no I/O, no shared
+// mutable state — so a stage can run on every final transcript. The one
+// exception is Model, which calls out under its own deadline and fails open.
 type Stage interface {
 	Name() string
 	Apply(ctx context.Context, text string) (string, error)

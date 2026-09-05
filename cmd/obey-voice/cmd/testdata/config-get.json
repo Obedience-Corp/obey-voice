@@ -366,6 +366,34 @@
       "value": false,
       "source": "default"
     },
+    "stt_postprocess_candidate_threshold": {
+      "value": 0.45,
+      "source": "default"
+    },
+    "stt_postprocess_enabled": {
+      "value": false,
+      "source": "default"
+    },
+    "stt_postprocess_keep_alive": {
+      "value": "",
+      "source": "default"
+    },
+    "stt_postprocess_mode": {
+      "value": "patch",
+      "source": "default"
+    },
+    "stt_postprocess_model": {
+      "value": "",
+      "source": "default"
+    },
+    "stt_postprocess_provider": {
+      "value": "ollama",
+      "source": "default"
+    },
+    "stt_postprocess_timeout_ms": {
+      "value": 1000,
+      "source": "default"
+    },
     "stt_provider": {
       "value": "sherpa-parakeet",
       "source": "default"

@@ -105,6 +105,41 @@ func modelKeys() []KeySpec {
 			Help: "Writes spoken numbers the way a reader would: thirty five becomes 35, five percent 5%, twenty thousand dollars $20,000, twenty twenty two 2022. Small counts stay words.",
 		},
 		{
+			Key: "stt_postprocess_enabled", Type: TypeBool, Default: false,
+			Group: GroupModels, Title: "Post-processing model",
+			Help: "Runs a language model over each final transcript after the deterministic corrections. In patch mode it only confirms near-miss names the custom words found; in rewrite mode it cleans the whole line. Off keeps transcripts as the transcriber wrote them.",
+		},
+		{
+			Key: "stt_postprocess_provider", Type: TypeEnum, Default: "ollama", Enum: brainProviderEnum(),
+			Group: GroupModels, Title: "Post-processing provider",
+			Help: "Which provider the post-processing model runs on. Independent of the conversation's provider; a local one keeps the call under the deadline.",
+		},
+		{
+			Key: "stt_postprocess_model", Type: TypeString, Default: "",
+			Group: GroupModels, Title: "Post-processing model name",
+			Help: "The model on that provider. Empty uses the provider's configured model; a small local model such as qwen3.5:0.8b answers fastest.",
+		},
+		{
+			Key: "stt_postprocess_mode", Type: TypeEnum, Default: "patch", Enum: []string{"patch", "rewrite"},
+			Group: GroupModels, Title: "Post-processing mode",
+			Help: "Patch confirms near-miss names only and costs a few tokens; rewrite cleans punctuation, fillers, numbers and self-corrections but costs a full reply per line.",
+		},
+		{
+			Key: "stt_postprocess_timeout_ms", Type: TypeInt, Default: 1000, Unit: "ms", Min: num(50), Max: num(30000),
+			Group: GroupModels, Title: "Post-processing deadline",
+			Help: "How long the model may take before the transcript goes on without it. Timeouts are counted, never fatal.",
+		},
+		{
+			Key: "stt_postprocess_keep_alive", Type: TypeString, Default: "",
+			Group: GroupModels, Title: "Post-processing model residency",
+			Help: "How long Ollama keeps the post-processing model in memory, e.g. 10m or -1 for always. Empty follows the conversation model's setting.",
+		},
+		{
+			Key: "stt_postprocess_candidate_threshold", Type: TypeFloat, Default: 0.45, Min: num(0.12), Max: num(0.9),
+			Group: GroupModels, Title: "Near-miss band",
+			Help: "How far a phrase may be from a custom word and still be offered to the model as a possible name. Wider offers more, and the model decides.",
+		},
+		{
 			Key: "sherpa_streaming_model", Type: TypeString, Default: "en-2023-06-26",
 			Group: GroupModels, Title: "Streaming model",
 			Help: "The zipformer model used in streaming mode.",

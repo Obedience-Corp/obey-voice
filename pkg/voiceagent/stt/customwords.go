@@ -49,7 +49,9 @@ func CustomWordsFromConfig(cfg *config.Config) (*correct.CustomWords, TermReport
 			report.Fuzzy = append(report.Fuzzy, t.Text)
 		}
 	}
-	return correct.NewCustomWords(report.Terms, report.Threshold), report
+	cw := correct.NewCustomWords(report.Terms, report.Threshold)
+	cw.SetCandidateBand(cfg.STTPostprocessCandidateThreshold)
+	return cw, report
 }
 
 // StageReport says which correction stages config enabled.
@@ -57,12 +59,17 @@ type StageReport struct {
 	Fillers     bool
 	CustomWords TermReport
 	Numbers     bool
+	// Postprocess describes the optional model stage; Model is the running
+	// stage itself when it was built, for its counters.
+	Postprocess PostprocessReport
+	Model       *correct.Model
 	// Stages lists the enabled stages in the order they run.
 	Stages []string
 }
 
 // StagesFromConfig builds the correction chain: fillers first, so hesitation
-// sounds never split a name; then custom words; then numbers.
+// sounds never split a name; then custom words; then the optional model,
+// which patches from the candidates custom words found; then numbers.
 func StagesFromConfig(cfg *config.Config) (correct.Chain, StageReport) {
 	var stages []correct.Stage
 	report := StageReport{}
@@ -74,6 +81,14 @@ func StagesFromConfig(cfg *config.Config) (correct.Chain, StageReport) {
 	report.CustomWords = terms
 	if !cw.Empty() {
 		stages = append(stages, cw)
+	}
+	if cfg.STTPostprocessEnabled {
+		m, rep := PostprocessFromConfig(cfg, cw, terms.Terms)
+		report.Postprocess = rep
+		if m != nil {
+			stages = append(stages, m)
+			report.Model = m
+		}
 	}
 	if cfg.STTNumbers {
 		stages = append(stages, correct.Numbers{})

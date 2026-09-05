@@ -39,6 +39,11 @@ func promptNameForKind(cfg *config.Config, kind prompts.Kind) string {
 		return cfg.Persona
 	case prompts.KindTurn:
 		return cfg.TurnPrompt
+	case prompts.KindPostprocess:
+		if strings.EqualFold(strings.TrimSpace(cfg.STTPostprocessMode), "rewrite") {
+			return "rewrite"
+		}
+		return "patch"
 	default:
 		// Other kinds have no per-persona ref; empty selects the embedded
 		// default for that kind when one exists.
