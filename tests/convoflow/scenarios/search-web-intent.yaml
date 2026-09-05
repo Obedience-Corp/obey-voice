@@ -44,4 +44,3 @@ expect:
   - { metric: job_started, op: ">=", value: 1 }
   - { metric: live_tool_calls, op: "==", value: 0 }
   - { metric: spoken_leak_lines, op: "==", value: 0 }
-  - { metric: crackle_failing_wavs, op: "==", value: 0 }

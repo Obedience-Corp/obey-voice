@@ -93,6 +93,15 @@ func TestEvalRunMetricFail(t *testing.T) {
 	}
 }
 
+func TestEvalRunRejectsUnmeasuredCrackle(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	err := evalRunExpect(Expectation{Metric: "crackle_failing_wavs", Op: "==", Value: 0}, rec, collectMetrics(rec))
+	if err == nil {
+		t.Fatal("unmeasured crackle_failing_wavs must not pass")
+	}
+}
+
 func TestEvalRunMetricPass(t *testing.T) {
 	t.Parallel()
 	rec := &recorder{}
