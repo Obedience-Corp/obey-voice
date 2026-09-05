@@ -21,6 +21,9 @@ mod release '.justfiles/release.just'
 [doc('Latency benchmarks and the recorded utterance corpus')]
 mod bench '.justfiles/bench.just'
 
+[doc('Opt-in local conversation flow (real Ollama live+worker, kept artifacts)')]
+mod convoflow '.justfiles/convoflow.just'
+
 # Flat dev utilities
 import '.justfiles/dev.just'
 
