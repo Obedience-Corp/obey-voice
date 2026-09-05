@@ -138,6 +138,8 @@ when you select it.
 | `stt_custom_words` | *(empty)* | | Names and jargon the transcriber restores after decoding: `Samantha`; `Claude=clawed,cloud` names misheard forms that map to it exactly; `Ollama!` also catches near-misses when the word is rare (five or more letters and not an everyday word). Config file only, e.g. `["Samantha", "Claude=clawed,cloud", "Ollama!"]`. See [Custom words](#custom-words) |
 | `stt_custom_words_from_personas` | `true` | | Adds every persona's display name to the custom words; rare names also catch near-misses |
 | `stt_word_correction_threshold` | `0.12` | | Fuzzy acceptance score, 0.01–0.45; lower is stricter. Raise it only after `obey-voice stt audit` shows no wrong replacements |
+| `stt_filler_removal` | `false` | | Drops um, uh and hmm from final transcripts before they are written down or answered. Answers such as `uh-huh` stay, and a lone `Hmm.` stays. See [Fillers and numbers](#fillers-and-numbers) |
+| `stt_numbers` | `false` | | Writes spoken numbers as digits where a reader would: `thirty five` → 35, `five percent` → 5%, `twenty thousand dollars` → $20,000, `twenty twenty two` → 2022. Small counts stay words |
 | `vad_enabled` | `true` | | Enable voice activity detection |
 | `vad_silence_duration` | `1.2` | | Seconds of silence before ending speech (raise to stop being cut off) |
 | `vad_threshold` | `0.6` | `VAD_THRESHOLD` | Speech-detection confidence (raise to ignore background noise) |
@@ -333,6 +335,37 @@ should not change is a term to remove, to alias exactly, or to drop the `!`
 from. The word list behind the rare-word rule is derived from SCOWL; its
 notice ships with the binary's source under
 `pkg/voiceagent/stt/correct/SCOWL-COPYRIGHT.txt`.
+
+## Fillers and numbers
+
+Two further stages run in the same place as custom words, each behind its own
+key and off by default. They exist for meeting notes: the model you talk to
+tolerates "um" and "thirty five" perfectly well, but a transcript you read back
+does not.
+
+`stt_filler_removal` drops hesitation sounds — um, uh, uhm, hmm and their
+stretched spellings — and tidies what they leave behind: "Um, yeah, I think"
+becomes "Yeah, I think", "and, uh, we'll go" becomes "and we'll go". A word
+said three or more times in a row keeps one copy. Answers such as "uh-huh" and
+"mm-hmm" stay, "oh" and "ah" stay because they carry meaning, and "like" is
+never touched. A transcript is never emptied: a lone "Hmm." stays.
+
+`stt_numbers` writes numbers the way a reader would and leaves the rest as
+words. Compounds become digits ("thirty five" → 35), so do values of ten and
+above, decimals ("three point five" → 3.5), years ("twenty twenty two" → 2022,
+"nineteen ninety nine" → 1999), ordinals from the tenth ("twenty first" → 21st),
+and any percentage or amount of money ("five percent" → 5%, "twenty thousand
+dollars" → $20,000, "six million dollars" → $6 million). Small counts stay words
+("two years", "one thing"), and a run that does not read as one number is left
+alone ("one seventy to one ninety", "two three four", "a few hundred").
+
+See what either stage would do before turning it on:
+
+```bash
+obey-voice stt audit --fillers --numbers          # over saved conversations and meetings
+obey-voice stt preview --fillers --numbers --diff # the latest meeting, changed lines only
+obey-voice stt preview --fillers --numbers        # the latest meeting, rendered as meeting.md
+```
 
 ## transcribe.cpp (optional STT)
 

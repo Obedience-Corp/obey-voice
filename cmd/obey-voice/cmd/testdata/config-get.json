@@ -354,8 +354,16 @@
       "value": true,
       "source": "default"
     },
+    "stt_filler_removal": {
+      "value": false,
+      "source": "default"
+    },
     "stt_mode": {
       "value": "",
+      "source": "default"
+    },
+    "stt_numbers": {
+      "value": false,
       "source": "default"
     },
     "stt_provider": {

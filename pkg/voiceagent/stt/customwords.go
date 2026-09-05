@@ -52,12 +52,45 @@ func CustomWordsFromConfig(cfg *config.Config) (*correct.CustomWords, TermReport
 	return correct.NewCustomWords(report.Terms, report.Threshold), report
 }
 
-// withConfiguredCorrection wraps p with the custom-words stage when config
-// yields any term; otherwise p is returned as is.
+// StageReport says which correction stages config enabled.
+type StageReport struct {
+	Fillers     bool
+	CustomWords TermReport
+	Numbers     bool
+	// Stages lists the enabled stages in the order they run.
+	Stages []string
+}
+
+// StagesFromConfig builds the correction chain: fillers first, so hesitation
+// sounds never split a name; then custom words; then numbers.
+func StagesFromConfig(cfg *config.Config) (correct.Chain, StageReport) {
+	var stages []correct.Stage
+	report := StageReport{}
+	if cfg.STTFillerRemoval {
+		stages = append(stages, correct.Fillers{})
+		report.Fillers = true
+	}
+	cw, terms := CustomWordsFromConfig(cfg)
+	report.CustomWords = terms
+	if !cw.Empty() {
+		stages = append(stages, cw)
+	}
+	if cfg.STTNumbers {
+		stages = append(stages, correct.Numbers{})
+		report.Numbers = true
+	}
+	for _, s := range stages {
+		report.Stages = append(report.Stages, s.Name())
+	}
+	return correct.New(stages...), report
+}
+
+// withConfiguredCorrection wraps p with the configured stages; when none is
+// enabled, p is returned as is.
 func withConfiguredCorrection(p Provider, cfg *config.Config) Provider {
-	cw, _ := CustomWordsFromConfig(cfg)
-	if cw.Empty() {
+	chain, _ := StagesFromConfig(cfg)
+	if chain.Len() == 0 {
 		return p
 	}
-	return WithCorrection(p, correct.New(cw), nil)
+	return WithCorrection(p, chain, nil)
 }

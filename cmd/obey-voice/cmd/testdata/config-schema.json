@@ -1771,6 +1771,19 @@
       "editable": true
     },
     {
+      "key": "stt_filler_removal",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "models",
+      "title": "Drop hesitation sounds",
+      "help": "Removes um, uh and hmm from what you said before it is written down or answered. Answers such as uh-huh stay, and a lone Hmm stays.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "stt_mode",
       "type": "enum",
       "default": "",
@@ -1787,6 +1800,19 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "STT_MODE",
+      "editable": true
+    },
+    {
+      "key": "stt_numbers",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "models",
+      "title": "Numbers as digits",
+      "help": "Writes spoken numbers the way a reader would: thirty five becomes 35, five percent 5%, twenty thousand dollars $20,000, twenty twenty two 2022. Small counts stay words.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
       "editable": true
     },
     {
