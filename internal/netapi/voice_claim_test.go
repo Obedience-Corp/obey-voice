@@ -445,7 +445,7 @@ func TestClaimMicRefusesClosedConnection(t *testing.T) {
 				other := newTestConn(1, 1)
 				h.add(other)
 				h.add(c)
-				if err := h.claimMic(other); err != nil {
+				if err := h.claimMic(other, 1); err != nil {
 					panic(err)
 				}
 			},
@@ -466,7 +466,7 @@ func TestClaimMicRefusesClosedConnection(t *testing.T) {
 			c := newTestConn(1, 1)
 			tt.setup(h, c)
 
-			err := h.claimMic(c)
+			err := h.claimMic(c, 1)
 			switch {
 			case tt.wantErr == "" && err != nil:
 				t.Fatalf("claimMic = %v, want success", err)
@@ -568,7 +568,7 @@ func TestDisconnectOrderingLeavesNoClaim(t *testing.T) {
 		{
 			name: "claim granted just before the connection was removed",
 			claim: func(h *hub, c *streamConn) {
-				if err := h.claimMic(c); err != nil {
+				if err := h.claimMic(c, 1); err != nil {
 					t.Fatalf("claimMic: %v", err)
 				}
 			},
@@ -594,7 +594,7 @@ func TestDisconnectOrderingLeavesNoClaim(t *testing.T) {
 			if micClaimed(h) {
 				t.Error("a claim survived the disconnect")
 			}
-			if err := h.claimMic(c); err == nil {
+			if err := h.claimMic(c, 1); err == nil {
 				t.Error("a removed connection was granted the mic")
 			}
 		})

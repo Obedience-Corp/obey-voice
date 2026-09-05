@@ -28,11 +28,13 @@ type streamConn struct {
 	// interrupted. It stays set until the next turn starts, preventing tail
 	// chunks from the canceled turn from crossing the reset boundary.
 	audioBlocked atomic.Bool
-	// voiceQueued marks a voice turn this connection has queued behind
-	// another turn and that has not claimed the mic yet. Cleared when the
-	// turn is dequeued or when the connection goes away — a cleared flag
-	// abandons the queued turn.
-	voiceQueued atomic.Bool
+	// queuedTurn is the watchdog generation of a voice turn this connection
+	// has queued behind another turn and that has not claimed the mic yet;
+	// 0 when there is none. Cleared when the turn is dequeued or when the
+	// connection goes away — a cleared value abandons the queued turn. It
+	// carries the generation rather than a flag so a deadline firing for a
+	// turn that has already ended cannot abandon the one that replaced it.
+	queuedTurn atomic.Uint64
 
 	// watch bounds the voice turn this connection has open, so a client that
 	// stops sending audio without ever sending voice_end cannot hold the
@@ -47,6 +49,7 @@ type streamConn struct {
 	// whole utterance whenever the pipeline happened to be busy.
 	stagedMu    sync.Mutex
 	staged      []float32
+	stagedGen   uint64 // the turn the buffer belongs to
 	stagedFinal bool
 	stagingOpen bool
 }
@@ -65,11 +68,13 @@ func (c *streamConn) wantsAudio() bool {
 // cannot do without.
 const stagedMaxSamples = int(maxVoiceUtterance/time.Second) * audio.SampleRate
 
-// openStaging arms the buffer for a voice turn that is about to be queued.
-func (c *streamConn) openStaging() {
+// openStaging arms the buffer for the voice turn gen identifies, which is about
+// to be queued.
+func (c *streamConn) openStaging(gen uint64) {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
 	c.staged = nil
+	c.stagedGen = gen
 	c.stagedFinal = false
 	c.stagingOpen = true
 }
@@ -109,7 +114,7 @@ func (c *streamConn) closeStaging() (samples []float32, final bool) {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
 	samples, final = c.staged, c.stagedFinal
-	c.staged, c.stagedFinal, c.stagingOpen = nil, false, false
+	c.clearLocked()
 	return samples, final
 }
 
@@ -117,5 +122,21 @@ func (c *streamConn) closeStaging() (samples []float32, final bool) {
 func (c *streamConn) dropStaged() {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
-	c.staged, c.stagedFinal, c.stagingOpen = nil, false, false
+	c.clearLocked()
+}
+
+// dropStagedTurn discards the buffer only while it still belongs to the turn
+// gen identifies. A deadline that fires for a turn this connection has already
+// finished must not take the audio of the one that followed it.
+func (c *streamConn) dropStagedTurn(gen uint64) {
+	c.stagedMu.Lock()
+	defer c.stagedMu.Unlock()
+	if c.stagedGen != gen {
+		return
+	}
+	c.clearLocked()
+}
+
+func (c *streamConn) clearLocked() {
+	c.staged, c.stagedGen, c.stagedFinal, c.stagingOpen = nil, 0, false, false
 }

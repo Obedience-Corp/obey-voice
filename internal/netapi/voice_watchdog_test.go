@@ -338,7 +338,11 @@ func TestVoiceTurnStalledUnderCancelledContext(t *testing.T) {
 	if !s.hub.add(conn) {
 		t.Fatal("hub refused the connection")
 	}
-	if err := s.hub.claimMic(conn); err != nil {
+	// The claim is taken under the deadline's own generation, the way a real
+	// turn takes it.
+	gen := s.armVoiceTurn(conn)
+	t.Cleanup(conn.watch.disarm)
+	if err := s.hub.claimMic(conn, gen); err != nil {
 		t.Fatalf("claimMic: %v", err)
 	}
 
@@ -349,7 +353,7 @@ func TestVoiceTurnStalledUnderCancelledContext(t *testing.T) {
 		t.Fatal("dispatcher did not stop on context cancellation")
 	}
 
-	s.voiceTurnStalled(conn, voiceSilentReason)
+	s.voiceTurnStalled(conn, gen, voiceSilentReason)
 
 	if micClaimed(s.hub) {
 		t.Error("the claim survived the deadline under a cancelled context")
@@ -384,7 +388,7 @@ func TestVoiceStallReasonNamesTheDeadline(t *testing.T) {
 			fired := make(chan string, 8)
 
 			var w voiceWatchdog
-			w.arm(tt.silence, tt.max, func(reason string) { fired <- reason })
+			w.arm(tt.silence, tt.max, func(_ uint64, reason string) { fired <- reason })
 
 			select {
 			case got := <-fired:
@@ -456,7 +460,7 @@ func TestVoiceWatchdogDeadlines(t *testing.T) {
 			fired := make(chan struct{}, 8)
 
 			var w voiceWatchdog
-			w.arm(tt.silence, tt.max, func(string) { fired <- struct{}{} })
+			w.arm(tt.silence, tt.max, func(uint64, string) { fired <- struct{}{} })
 			tt.after(&w)
 
 			if tt.wantFires == 0 {
