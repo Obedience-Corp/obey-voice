@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Download a short multi-speaker Zoom-style call clip for speaker-id accuracy tests.
 #
-# Source: Example Zoom Meeting (student tutorial, multi-speaker English)
-#   https://www.youtube.com/watch?v=DvO10dFJaFE
+# Source: Zoom tutorial with two labeled speakers (Cristian / second talker).
+#   https://www.youtube.com/watch?v=DQlWDqosj0E
+# The original student-meeting URL (DvO10dFJaFE) went unavailable.
 #
-# Only the first ~2 minutes are downloaded. The WAV is stored in the shared
+# Default section is the two-speaker demo (4:00–5:30). WAV is stored in the shared
 # user cache (same scheme as scripts/fetch-meeting-fixture.sh):
 #
 #   ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings}
@@ -16,8 +17,8 @@ set -euo pipefail
 APP_SLUG="${APP_SLUG:-festival-voice}"
 
 STEM="zoom-call"
-URL="${ZOOM_FIXTURE_URL:-https://www.youtube.com/watch?v=DvO10dFJaFE}"
-SECTION="${ZOOM_FIXTURE_SECTION:-*0:00-2:00}"
+URL="${ZOOM_FIXTURE_URL:-https://www.youtube.com/watch?v=DQlWDqosj0E}"
+SECTION="${ZOOM_FIXTURE_SECTION:-*4:00-5:30}"
 
 if [[ -n "${OBEY_VOICE_FIXTURE_CACHE:-}" ]]; then
 	CACHE_DIR="${OBEY_VOICE_FIXTURE_CACHE}"
@@ -64,7 +65,7 @@ if [[ -z "$found" ]]; then
 	exit 1
 fi
 
-tmp_out="${OUT_WAV}.tmp.$$"
+tmp_out="${OUT_WAV}.tmp.$$.wav"
 ffmpeg -y -loglevel error -i "$found" -ac 1 -ar 16000 "$tmp_out"
 mv -f "$tmp_out" "$OUT_WAV"
 ls -lh "$OUT_WAV"

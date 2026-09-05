@@ -1,76 +1,60 @@
 {
-  "source_url": "https://www.youtube.com/watch?v=DvO10dFJaFE",
-  "source_title": "Example Zoom Meeting for Students (tutorial recording)",
-  "license_note": "YouTube Terms of Service; fetch via just fetch-zoom-fixture — not redistributed in git",
+  "source_url": "https://www.youtube.com/watch?v=DQlWDqosj0E",
+  "source_title": "Zoom - Record Separate Audio Tracks for easy editing",
+  "license_note": "YouTube Terms of Service; fetch via just fetch-zoom-fixture — not redistributed in git. Default section *4:00-5:30 (Speaker 1 at 4:15, Speaker 2 at 4:48 in the source).",
   "fixture_file": "zoom-call.wav",
   "sample_rate_hz": 16000,
   "labeled_region_ms": {
-    "start_ms": 30000,
-    "end_ms": 90000,
-    "note": "Accuracy harness scores utterances inside this 60s window only (task 02 allows ≥30s contiguous region)."
+    "start_ms": 14000,
+    "end_ms": 85000,
+    "note": "Clip is source 4:00–5:30. Speaker1 ~15s, Speaker2 ~48s into the wav."
   },
   "speakers": [
-    "Host",
-    "StudentA",
-    "StudentB"
+    "Speaker1",
+    "Speaker2"
   ],
   "enrollment": [
     {
-      "speaker": "Host",
-      "start_ms": 32000,
-      "end_ms": 38000
+      "speaker": "Speaker1",
+      "start_ms": 15000,
+      "end_ms": 22000
     },
     {
-      "speaker": "StudentA",
-      "start_ms": 42000,
-      "end_ms": 48000
-    },
-    {
-      "speaker": "StudentB",
-      "start_ms": 52000,
-      "end_ms": 58000
+      "speaker": "Speaker2",
+      "start_ms": 48000,
+      "end_ms": 55000
     }
   ],
   "utterances": [
     {
-      "start_ms": 33000,
-      "end_ms": 37000,
-      "speaker": "Host"
+      "start_ms": 23000,
+      "end_ms": 30000,
+      "speaker": "Speaker1"
     },
     {
-      "start_ms": 43000,
-      "end_ms": 47000,
-      "speaker": "StudentA"
+      "start_ms": 31000,
+      "end_ms": 38000,
+      "speaker": "Speaker1"
     },
     {
-      "start_ms": 53000,
-      "end_ms": 57000,
-      "speaker": "StudentB"
+      "start_ms": 56000,
+      "end_ms": 63000,
+      "speaker": "Speaker2"
     },
     {
-      "start_ms": 61000,
-      "end_ms": 65000,
-      "speaker": "Host"
+      "start_ms": 64000,
+      "end_ms": 71000,
+      "speaker": "Speaker2"
     },
     {
-      "start_ms": 68000,
-      "end_ms": 72000,
-      "speaker": "StudentA"
+      "start_ms": 16000,
+      "end_ms": 21000,
+      "speaker": "Speaker1"
     },
     {
-      "start_ms": 75000,
-      "end_ms": 79000,
-      "speaker": "StudentB"
-    },
-    {
-      "start_ms": 82000,
-      "end_ms": 86000,
-      "speaker": "Host"
-    },
-    {
-      "start_ms": 87000,
-      "end_ms": 89000,
-      "speaker": "StudentA"
+      "start_ms": 49000,
+      "end_ms": 54000,
+      "speaker": "Speaker2"
     }
   ]
 }

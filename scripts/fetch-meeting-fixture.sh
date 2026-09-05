@@ -70,7 +70,7 @@ if [[ -z "$found" ]]; then
 fi
 
 # Atomic write into the shared cache.
-tmp_out="${OUT_WAV}.tmp.$$"
+tmp_out="${OUT_WAV}.tmp.$$.wav"
 ffmpeg -y -loglevel error -i "$found" -ac 1 -ar 16000 "$tmp_out"
 mv -f "$tmp_out" "$OUT_WAV"
 ls -lh "$OUT_WAV"
