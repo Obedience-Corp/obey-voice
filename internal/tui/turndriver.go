@@ -141,6 +141,10 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		cmds = append(cmds, startDemoVoiceAnim(deps.bus), m.ensureVoiceTick())
 		return tea.Batch(cmds...)
 	}
+	if demoThinkEnabled() {
+		cmds = append(cmds, startDemoThink(deps.bus), m.ensureVoiceTick())
+		return tea.Batch(cmds...)
+	}
 	if m.voiceOn() {
 		cmds = append(cmds, m.dispatchVoiceTurn())
 	}

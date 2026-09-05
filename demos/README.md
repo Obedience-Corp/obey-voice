@@ -23,6 +23,26 @@ disposable `$HOME`, then applies the termcast-style 20fps/960px palette pass.
 
 Still frames: `demos/frames/launcher.png`, `demos/frames/chat-tools.png`
 
+## think-blocks.gif — show thinking in the thread
+
+Full Bubble Tea conversation UI with a scripted thinking turn (no live model):
+
+1. **Ask** — `Why is the sky blue?`
+2. **Live thinking** — dim `thinking` block streams in
+3. **Reply** — the thinking block leaves; only the spoken answer stays
+4. **Ctrl+K** — thinking returns above the reply as a thinking block
+5. **Ctrl+K** — hide it again
+
+`OBEY_VOICE_DEMO_THINK=1` emits the same `ThinkingDelta` / `ResponseReady`
+events production turns use. Default remains speakable-only; the shortcut
+is a session toggle (`/think` is the slash-command twin).
+
+```bash
+just demo-think-blocks
+```
+
+Still frames: `demos/frames/think-live.png`, `demos/frames/think-hidden.png`, `demos/frames/think-shown.png`
+
 ## voice-meter.gif — compact voice EQ (listen / hear / speak)
 
 Full Bubble Tea conversation UI with a calm equalizer strip (not flame art):

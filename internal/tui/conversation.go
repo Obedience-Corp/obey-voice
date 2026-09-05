@@ -50,15 +50,21 @@ type conversationModel struct {
 	input            textarea.Model
 
 	transcript []string
-	activity   []activityEntry
-	status     string
-	statusErr  bool
-	jobStatus  string
+	items      []chatItem
+	// showThink keeps finalized thinking blocks in the thread. Live streaming
+	// still paints thinking regardless; this flag only rebuilds stored turns.
+	showThink bool
+	activity  []activityEntry
+	status    string
+	statusErr bool
+	jobStatus string
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
 	// streamingThink accumulates ThinkingDelta text for the in-progress turn,
-	// painted dim and labeled "thinking". Never copied into the transcript.
+	// painted dim and labeled "thinking". Copied into the matching chatItem
+	// on ResponseReady; hidden in the thread until showThink is on. Never
+	// copied into clipboard yank or model history.
 	streamingThink string
 	// streamingAgent accumulates ResponseDelta text for the in-progress agent
 	// turn, rendered live beneath the transcript until ResponseReady finalizes
@@ -215,7 +221,7 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 		}
 		return m, voiceTickCmd()
 
-	case demoVoiceAnimStartedMsg:
+	case demoVoiceAnimStartedMsg, demoThinkStartedMsg:
 		return m, m.ensureVoiceTick()
 
 	case busEventMsg:
@@ -299,6 +305,9 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 			return m, nil
 		case "ctrl+t":
 			m.activityFocused = !m.activityFocused
+			return m, nil
+		case "ctrl+k":
+			m.toggleShowThink()
 			return m, nil
 		case "esc":
 			if m.vim.mode == vimVisual {
@@ -482,13 +491,16 @@ func (m conversationModel) updateScroll(msg tea.Msg) (conversationModel, tea.Cmd
 // when followChat is set. Sticky flags (not live AtBottom) own follow intent
 // so a prior reflow cannot freeze the chat mid-session.
 func (m *conversationModel) appendTranscript(lines ...string) {
-	m.transcript = append(m.transcript, lines...)
+	for _, line := range lines {
+		m.items = append(m.items, chatItem{kind: chatItemSys, sys: line})
+	}
 	m.refreshContent()
 	m.applyFollow()
 }
 
 func (m *conversationModel) clearTranscript() {
 	m.transcript = nil
+	m.items = nil
 	m.pendingUserEcho = ""
 	m.lastAssistantText = ""
 	m.plainTurns = nil
@@ -682,7 +694,14 @@ func (m *conversationModel) refreshContent() {
 	if !m.ready {
 		return
 	}
-	content := strings.Join(m.transcript, "\n")
+	parts := make([]string, 0, len(m.items))
+	for _, it := range m.items {
+		if s := it.render(m.showThink); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	m.transcript = parts
+	content := strings.Join(parts, "\n")
 	// Render the in-progress turn live beneath the finalized transcript so
 	// thinking and speakable stream in before ResponseReady lands.
 	if m.streamingThink != "" || m.streamingAgent != "" {
@@ -759,8 +778,11 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 			m.rememberUser(t.Content, m.displaySpeakerLabel(t.Speaker))
 			m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(t.Speaker), t.Content))
 		case "assistant":
-			m.rememberAssistant(t.Content)
-			m.appendTranscript(renderAgentTurn(m.agentName, t.Content), "")
+			item := agentItemFromStored(m.agentName, t.Content)
+			if item.spoken != "" {
+				m.rememberAssistant(item.spoken)
+			}
+			m.appendAgentTurn(item)
 		}
 	}
 }
@@ -970,22 +992,22 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			m.setStatus("", false)
 		}
 		// Finalize the streamed turn: clear the live buffers first so they are
-		// not rendered twice. Thinking stays off the transcript; the spoken
-		// bubble comes from e.Response only.
+		// not rendered twice. Thinking is stored on the agent item but hidden
+		// until showThink; the spoken bubble comes from e.Response only.
 		thought := m.streamingThink
 		m.streamingAgent = ""
 		m.streamingThink = ""
 		if e.Response != "" {
 			m.rememberAssistant(e.Response)
-			m.appendTranscript(renderAgentTurn(m.agentName, e.Response), "")
+			m.appendAgentTurn(chatItem{name: m.agentName, think: thought, spoken: e.Response})
 		} else if e.Interrupted {
 			m.refreshContent()
 			m.applyFollow()
 		} else if thought != "" {
-			// Thinking-only empty: the dim bubble already showed the thought.
+			// Thinking-only empty: keep the thought for Ctrl+K; stay off the
+			// thread while showThink is false so we do not paint a blank bubble.
 			m.appendActivity("model", fmt.Sprintf("thought %d chars", len(thought)), 0)
-			m.refreshContent()
-			m.applyFollow()
+			m.appendAgentTurn(chatItem{name: m.agentName, think: thought})
 		} else {
 			// Tool-only or empty model finishes must still leave a visible
 			// trail so "looking into it" never ends in total silence.
@@ -1013,15 +1035,14 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		// the viewport immediately, and leaving streamingAgent set would render
 		// the same text twice (transcript bubble + live buffer) with no later
 		// refresh on a bare interrupted metrics event.
-		hadThink := m.streamingThink != ""
+		thought := m.streamingThink
 		m.streamingThink = ""
 		if partial := m.streamingAgent; partial != "" {
 			m.streamingAgent = ""
 			m.rememberAssistant(partial)
-			m.appendTranscript(renderAgentTurn(m.agentName, partial), "")
-		} else if hadThink {
-			m.refreshContent()
-			m.applyFollow()
+			m.appendAgentTurn(chatItem{name: m.agentName, think: thought, spoken: partial})
+		} else if thought != "" {
+			m.appendAgentTurn(chatItem{name: m.agentName, think: thought})
 		}
 		// Idle no-speech timeouts restart listening every ~listen_timeout
 		// seconds. Logging each one floods Activity without helping the user.
@@ -1262,6 +1283,9 @@ func (m conversationModel) View() string {
 	if m.jobStatus != "" {
 		footerLeft += " " + chipStyle.Render(m.jobStatus)
 	}
+	if m.showThink {
+		footerLeft += " " + chipStyle.Render("think")
+	}
 	if m.liveSpeakerStatsKnown {
 		footerLeft += " " + renderLiveSpeakerFooterNamed(m.liveSpeakerStats, m.displaySpeakerLabel(m.liveSpeakerStats.LastLabel))
 	}
@@ -1286,13 +1310,13 @@ func (m conversationModel) View() string {
 	case m.width >= lipgloss.Width(footerLeft)+lipgloss.Width(footerHelp)+4:
 		footerText += strings.Repeat(" ", m.width-lipgloss.Width(footerLeft)-lipgloss.Width(footerHelp)) + dimStyle.Render(footerHelp)
 	case m.width >= 60:
-		compact := "  ·  ^G mic  ^O audio  ^T switch"
+		compact := "  ·  ^G mic  ^O audio  ^T switch  ^K think"
 		if hint := m.talkHint(); hint != "" {
-			compact = "  ·  " + hint + "  ^G mic  ^O audio  ^T switch"
+			compact = "  ·  " + hint + "  ^G mic  ^O audio  ^T switch  ^K think"
 		}
 		footerText += dimStyle.Render(compact)
 	default:
-		footerText += dimStyle.Render("  ^G  ^O  ^T")
+		footerText += dimStyle.Render("  ^G  ^O  ^T  ^K")
 	}
 	footer := ansi.Truncate(footerText, w, "…")
 
