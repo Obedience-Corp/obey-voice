@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
@@ -305,6 +306,8 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	switch {
 	case isPersonaFormSaveKey(key):
 		return m.submitForm()
+	case key == "p" && m.formRow == formRowVoice:
+		return m, m.startPersonaPreview()
 	case key == "esc":
 		// Only an untouched prompt may be abandoned by reflex; a real edit is
 		// discarded explicitly, with :q inside the editor.
@@ -335,6 +338,9 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 				delta = -1
 			}
 			m.cycleStackRow(delta)
+			if m.formRow == formRowVoice {
+				m.preview.cancel()
+			}
 			return m, nil
 		}
 	}
@@ -357,12 +363,6 @@ func (m personasModel) updatePromptEditor(msg tea.KeyMsg) (personasModel, tea.Cm
 	if isPersonaFormSaveKey(key) {
 		return m.submitForm()
 	}
-	// Tab is the placeholder-completion key whenever the editor has a `{…}` to
-	// complete — otherwise it means here what it means on the form: move on.
-	if (key == "tab" || key == "shift+tab") && !m.promptTA.completionActive() {
-		return m.closePrompt(promptAcceptedNote)
-	}
-
 	var cmd tea.Cmd
 	var ev promptEvent
 	m.promptTA, cmd, ev = m.promptTA.Update(msg)
@@ -387,6 +387,8 @@ const promptAcceptedNote = "Prompt accepted · ctrl+j saves the persona"
 // openPrompt hands the screen to the vim editor. The prompt is the one field
 // that needs a whole screen, so it is the one field that takes it.
 func (m personasModel) openPrompt() (personasModel, tea.Cmd) {
+	m.preview.cancel()
+	m.refreshPlaceholderValues()
 	m.promptOpen = true
 	m.nameInput.Blur()
 	m.brainModelInput.Blur()
@@ -532,6 +534,7 @@ func (m *personasModel) prefillStack(p *persona.Profile) {
 }
 
 func (m *personasModel) cancelForm() {
+	m.preview.close()
 	m.formMode = ""
 	m.formRow = formRowName
 	m.promptOpen = false
@@ -646,6 +649,40 @@ func (m *personasModel) loadEditPrompt(p *persona.Profile) (text, note string) {
 	// Empty body — never inject the embedded default identity into another
 	// persona's editor. Create form still seeds the default via beginCreate.
 	return "", note
+}
+
+func (m *personasModel) refreshPlaceholderValues() {
+	name := strings.TrimSpace(m.nameInput.Value())
+	if name == "" && m.cfg != nil {
+		name = strings.TrimSpace(m.cfg.AgentName)
+	}
+	user := ""
+	if m.cfg != nil {
+		user = m.cfg.UserDisplayName
+	}
+	m.promptTA.SetPlaceholderValues(prompts.PlaceholderValues(name, prompts.PlaceholderEnv{UserName: user}))
+}
+
+func (m *personasModel) startPersonaPreview() tea.Cmd {
+	if m.cfg == nil {
+		m.message = "No voice to preview"
+		return nil
+	}
+	provider := m.effectiveStackTTSProvider()
+	name := strings.TrimSpace(m.selectedVoice)
+	if name == "" {
+		name = config.TTSVoiceFor(m.cfg, provider)
+	}
+	if name == "" {
+		m.message = "No voice to preview"
+		return nil
+	}
+	m.message = "playing"
+	cfg := *m.cfg
+	if provider != "" {
+		cfg.TTSProvider = provider
+	}
+	return m.preview.start(cfg, tts.Voice{Name: name})
 }
 
 func (m personasModel) submitForm() (personasModel, tea.Cmd) {

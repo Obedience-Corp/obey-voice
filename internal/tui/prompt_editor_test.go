@@ -268,6 +268,73 @@ func TestPlaceholderTokensMatchResolverGrammar(t *testing.T) {
 	}
 }
 
+func TestPromptEditorTabWithoutBraceOpensCatalog(t *testing.T) {
+	p := newPromptEditor()
+	p.SetValue("Hello there")
+	p.StartInsert()
+	p.ed.SetCursorInsert(vim.Position{Line: 0, Col: 6})
+
+	before := p.Value()
+	p, ev := promptKeys(t, p, "tab")
+	if ev != promptEventNone {
+		t.Fatalf("tab opened a form event: %v", ev)
+	}
+	if !p.phActive {
+		t.Fatal("tab without brace did not open the catalog")
+	}
+	if got := len(p.phCandidates); got != 4 {
+		t.Fatalf("candidates = %d, want 4", got)
+	}
+	if p.Value() != before {
+		t.Fatalf("tab without brace mutated the buffer: %q → %q", before, p.Value())
+	}
+
+	p, ev = promptKeys(t, p, "enter")
+	if ev != promptEventNone {
+		t.Fatalf("enter event = %v", ev)
+	}
+	if p.Value() != "Hello {agent_name}there" {
+		t.Fatalf("insert at cursor = %q", p.Value())
+	}
+	if p.phActive {
+		t.Fatal("completion should clear after enter")
+	}
+}
+
+func TestPromptEditorShiftTabWalksCatalogBackward(t *testing.T) {
+	p := newPromptEditor()
+	p.StartInsert()
+	p, _ = promptKeys(t, p, "tab")
+	first := p.phCandidates[p.phIndex]
+	p, _ = promptKeys(t, p, "shift-tab")
+	if p.phIndex != len(p.phCandidates)-1 {
+		t.Fatalf("shift-tab index = %d, want last", p.phIndex)
+	}
+	if p.phCandidates[p.phIndex] == first && len(p.phCandidates) > 1 {
+		t.Fatal("shift-tab did not move")
+	}
+}
+
+func TestPromptEditorPrefixFiltersCatalog(t *testing.T) {
+	p := newPromptEditor()
+	p.StartInsert()
+	p, _ = promptKeys(t, p, "{", "u", "s", "tab")
+	if len(p.phCandidates) != 1 || p.phCandidates[0] != "user_name" {
+		t.Fatalf("filtered candidates = %v", p.phCandidates)
+	}
+}
+
+func TestPromptEditorDropdownShowsResolvedValue(t *testing.T) {
+	p := newPromptEditor()
+	p.SetPlaceholderValues(map[string]string{"user_name": "Lance", "agent_name": "Buddy"})
+	p.StartInsert()
+	p, _ = promptKeys(t, p, "tab")
+	view := stripANSI(p.View())
+	if !strings.Contains(view, "user_name") || !strings.Contains(view, "Lance") {
+		t.Fatalf("dropdown missing resolved user_name:\n%s", view)
+	}
+}
+
 func TestPromptEditorCompletionActiveGate(t *testing.T) {
 	p := newPromptEditor()
 	p.SetValue("plain text")

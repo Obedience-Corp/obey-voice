@@ -54,6 +54,8 @@ func (m personasModel) View() string {
 	switch {
 	case m.formMode != "" && m.promptOpen:
 		help = "  esc NORMAL • :w back to form • :wq save • ctrl+j save • :q discard"
+	case m.formMode != "" && m.formRow == formRowVoice:
+		help = "  ↑/↓ move • ←/→ change • p preview • enter edit prompt • ctrl+j save • esc cancel"
 	case m.formMode != "":
 		help = "  ↑/↓ move • ←/→ change • enter edit prompt • ctrl+j save • esc cancel"
 	case m.confirmDeleteID != "":

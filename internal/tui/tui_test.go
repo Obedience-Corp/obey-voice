@@ -15,7 +15,7 @@ import (
 func TestCtrlCCancelsPreview(t *testing.T) {
 	cancelled := false
 	app := App{cfg: &config.Config{}}
-	app.settings.previewCancel = func() { cancelled = true }
+	app.settings.preview.previewCancel = func() { cancelled = true }
 	app.remote.server = newRemoteServer()
 
 	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -38,13 +38,13 @@ func TestCtrlCCancelsPreview(t *testing.T) {
 func TestSwitchToSettingsCancelsPreview(t *testing.T) {
 	cancelled := false
 	app := App{cfg: &config.Config{}}
-	app.settings.previewCancel = func() { cancelled = true }
+	app.settings.preview.previewCancel = func() { cancelled = true }
 
 	model, _ := app.Update(switchScreenMsg(screenSettings))
 	if !cancelled {
 		t.Fatal("screen switch did not cancel in-flight preview")
 	}
-	if model.(App).settings.previewCancel != nil {
+	if model.(App).settings.preview.previewCancel != nil {
 		t.Fatal("settings model was not replaced on screen switch")
 	}
 }

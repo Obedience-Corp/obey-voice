@@ -103,8 +103,9 @@ Sleep 1200ms
 Escape
 Sleep 900ms
 
-# ── tab → Model & voice step: cycle brain provider with ←/→ ──────────
-Tab
+# ── :w → back to the form (Tab in the editor opens {variables}) ──────
+Type ":w"
+Enter
 Sleep 1400ms
 Right
 Sleep 800ms

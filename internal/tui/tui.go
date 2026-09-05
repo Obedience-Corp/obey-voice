@@ -268,6 +268,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.library.cancelPrepare()
 			}
 			a.settings.closePreview()
+			a.personas.preview.close()
 			a.settings.cancelEnroll()
 			a.remote.stop()
 			if err := a.stopMeetingRuntime(); err != nil {
@@ -315,6 +316,9 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.screen == screenSettings {
 			a.settings.closePreview()
 			a.settings.cancelEnroll()
+		}
+		if a.screen == screenPersonas && target != screenPersonas {
+			a.personas.preview.close()
 		}
 		if a.screen == screenRemote && target != screenRemote {
 			a.remote.stop()
@@ -375,6 +379,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Entering the screen replaces the model wholesale, so hand the
 			// outgoing one's in-flight model scan its cancel instead of
 			// dropping the func on the floor.
+			a.personas.preview.close()
 			a.personas.cancelBrainModels()
 			a.personas = newPersonas(a.cfg)
 			a.personas.width, a.personas.height = a.width, a.height

@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	ansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/tui/vim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
@@ -34,6 +35,7 @@ type promptEditor struct {
 	phCandidates []string
 	phIndex      int
 	phPartial    string // text typed after `{` before the first Tab
+	phValues     map[string]string
 }
 
 // promptEvent reports a form-level action the editor requested.
@@ -69,6 +71,11 @@ func (p *promptEditor) SetValue(s string) {
 
 func (p *promptEditor) Focus() { p.focused = true }
 func (p *promptEditor) Blur()  { p.focused = false }
+
+// SetPlaceholderValues supplies resolved catalog values for the dropdown.
+func (p *promptEditor) SetPlaceholderValues(values map[string]string) {
+	p.phValues = values
+}
 
 // StartInsert resets modal state for (re)entering the field; typing works
 // immediately, esc drops to normal mode.
@@ -112,7 +119,11 @@ func (p promptEditor) View() string {
 		cfg.CursorInsert = normalStyle
 		cfg.Selection = normalStyle
 	}
-	return p.ed.View(cfg)
+	body := p.ed.View(cfg)
+	if menu := p.placeholderMenu(); menu != "" {
+		return body + "\n" + menu
+	}
+	return body
 }
 
 // placeholderTokens reports the {name} spans on a line using the same grammar
@@ -188,7 +199,7 @@ func (p promptEditor) Update(msg tea.KeyMsg) (promptEditor, tea.Cmd, promptEvent
 
 func isPlaceholderNavKey(msg tea.KeyMsg) bool {
 	switch msg.Type {
-	case tea.KeyTab, tea.KeyShiftTab, tea.KeyEnter, tea.KeyEscape:
+	case tea.KeyTab, tea.KeyShiftTab, tea.KeyEnter, tea.KeyEscape, tea.KeyUp, tea.KeyDown:
 		return true
 	}
 	return false
@@ -200,6 +211,16 @@ func (p *promptEditor) handlePlaceholderKeys(msg tea.KeyMsg) (bool, promptEditor
 	switch msg.Type {
 	case tea.KeyTab, tea.KeyShiftTab:
 		return p.cyclePlaceholder(msg.Type == tea.KeyShiftTab), *p
+	case tea.KeyUp:
+		if !p.phActive {
+			return false, *p
+		}
+		return p.cyclePlaceholder(true), *p
+	case tea.KeyDown:
+		if !p.phActive {
+			return false, *p
+		}
+		return p.cyclePlaceholder(false), *p
 	case tea.KeyEnter:
 		if !p.phActive {
 			return false, *p
@@ -225,7 +246,7 @@ func (p *promptEditor) cyclePlaceholder(reverse bool) bool {
 	cur := p.ed.Cursor()
 	braceCol, partial, ok := openBracePrefix(line, cur.Col)
 	if !ok {
-		return false
+		return p.cycleCatalog(reverse)
 	}
 
 	sameCtx := p.phActive && p.phBraceLine == cur.Line && p.phBraceCol == braceCol && len(p.phCandidates) > 0
@@ -262,6 +283,35 @@ func (p *promptEditor) cyclePlaceholder(reverse bool) bool {
 	// (no closing brace yet — Enter commits `}`).
 	p.ed.ReplaceLineRange(braceCol+1, cur.Col, name)
 	p.ed.EnsureCursorVisible()
+	return true
+}
+
+func (p *promptEditor) cycleCatalog(reverse bool) bool {
+	names := prompts.PlaceholderNames()
+	if len(names) == 0 {
+		return false
+	}
+	same := p.phActive && p.phBraceCol < 0 && len(p.phCandidates) > 0
+	if !same {
+		p.phCandidates = names
+		p.phIndex = 0
+		if reverse {
+			p.phIndex = len(p.phCandidates) - 1
+		}
+		p.phActive = true
+		p.phBraceCol = -1
+		p.phBraceLine = p.ed.Cursor().Line
+		p.phPartial = ""
+		return true
+	}
+	if reverse {
+		p.phIndex--
+		if p.phIndex < 0 {
+			p.phIndex = len(p.phCandidates) - 1
+		}
+	} else {
+		p.phIndex = (p.phIndex + 1) % len(p.phCandidates)
+	}
 	return true
 }
 
@@ -449,6 +499,9 @@ func (p promptEditor) modeline() string {
 	if p.phActive && len(p.phCandidates) > 0 {
 		name := p.phCandidates[p.phIndex]
 		detail := fmt.Sprintf("%d/%d", p.phIndex+1, len(p.phCandidates))
+		if resolved := p.resolvedPlaceholder(name); resolved != "" {
+			detail += " · " + resolved
+		}
 		if help := prompts.PlaceholderDescription(name); help != "" {
 			detail += " · " + help
 		}
@@ -460,10 +513,41 @@ func (p promptEditor) modeline() string {
 	}
 	switch p.ed.Mode() {
 	case vim.ModeInsert:
-		return "-- INSERT -- · { tab variables · esc normal · :w back to form · :wq / ctrl+j save"
+		return "-- INSERT -- · Tab {variables} · { tab variables · esc normal · :w back to form · :wq / ctrl+j save"
 	case vim.ModeVisual, vim.ModeVisualLine:
 		return "-- VISUAL -- · y yank · d delete · c change · esc normal"
 	default:
 		return "NORMAL · i insert · v visual · u undo · p paste · :w back to form · :wq save · :q cancel"
 	}
+}
+
+func (p promptEditor) resolvedPlaceholder(name string) string {
+	if p.phValues == nil {
+		return ""
+	}
+	return strings.TrimSpace(p.phValues[name])
+}
+
+func (p promptEditor) placeholderMenu() string {
+	if !p.phActive || len(p.phCandidates) == 0 {
+		return ""
+	}
+	width := max(p.width, 1)
+	var b strings.Builder
+	for i, name := range p.phCandidates {
+		resolved := p.resolvedPlaceholder(name)
+		desc := prompts.PlaceholderDescription(name)
+		line := fmt.Sprintf("  %-14s %-18s %s", "{"+name+"}", resolved, desc)
+		line = ansi.Truncate(line, width, "…")
+		if i == p.phIndex {
+			line = selectedStyle.Render(line)
+		} else {
+			line = dimStyle.Render(line)
+		}
+		b.WriteString(line)
+		if i < len(p.phCandidates)-1 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }

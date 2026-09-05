@@ -18,19 +18,19 @@ import (
 // A preview completion that belongs to a superseded voice must not clear the
 // current "playing" indicator or overwrite its message.
 func TestVoicePreviewDoneGating(t *testing.T) {
-	m := settingsModel{previewing: "af_bella", previewID: 2, message: "playing"}
+	m := settingsModel{preview: voicePreview{previewing: "af_bella", previewID: 2}, message: "playing"}
 
 	m, _ = m.Update(voicePreviewDoneMsg{id: 1, voice: "af_heart", message: "Previewed af_heart"})
-	if m.previewing != "af_bella" {
-		t.Fatalf("stale completion cleared previewing: got %q", m.previewing)
+	if m.preview.previewing != "af_bella" {
+		t.Fatalf("stale completion cleared previewing: got %q", m.preview.previewing)
 	}
 	if m.message != "playing" {
 		t.Fatalf("stale completion overwrote message: got %q", m.message)
 	}
 
 	m, _ = m.Update(voicePreviewDoneMsg{id: 2, voice: "af_bella", message: "Previewed af_bella"})
-	if m.previewing != "" {
-		t.Fatalf("matching completion did not clear previewing: got %q", m.previewing)
+	if m.preview.previewing != "" {
+		t.Fatalf("matching completion did not clear previewing: got %q", m.preview.previewing)
 	}
 	if m.message != "Previewed af_bella" {
 		t.Fatalf("matching completion did not set message: got %q", m.message)
@@ -494,11 +494,11 @@ func TestSettingsQwenVoiceSectionExplainsUnavailableModes(t *testing.T) {
 }
 
 func TestVoicePreviewDoneGatingSameVoice(t *testing.T) {
-	m := settingsModel{previewing: "af_heart", previewID: 2, message: "playing"}
+	m := settingsModel{preview: voicePreview{previewing: "af_heart", previewID: 2}, message: "playing"}
 
 	m, _ = m.Update(voicePreviewDoneMsg{id: 1, voice: "af_heart", message: "Previewed af_heart"})
-	if m.previewing != "af_heart" {
-		t.Fatalf("stale same-voice completion cleared previewing: got %q", m.previewing)
+	if m.preview.previewing != "af_heart" {
+		t.Fatalf("stale same-voice completion cleared previewing: got %q", m.preview.previewing)
 	}
 	if m.message != "playing" {
 		t.Fatalf("stale same-voice completion overwrote message: got %q", m.message)
@@ -510,7 +510,7 @@ func TestCancelPreviewNilSafe(t *testing.T) {
 	m.cancelPreview()
 
 	called := false
-	m.previewCancel = func() { called = true }
+	m.preview.previewCancel = func() { called = true }
 	m.cancelPreview()
 	if !called {
 		t.Fatal("cancelPreview did not invoke previewCancel")
@@ -589,8 +589,10 @@ func TestClosePreviewReleasesPlayer(t *testing.T) {
 	player := newFakePreviewPlayer()
 	cancelled := false
 	m := settingsModel{
-		previewCancel: func() { cancelled = true },
-		previewPlayer: player,
+		preview: voicePreview{
+			previewCancel: func() { cancelled = true },
+			previewPlayer: player,
+		},
 	}
 
 	m.closePreview()
@@ -600,7 +602,7 @@ func TestClosePreviewReleasesPlayer(t *testing.T) {
 	if player.closeCount != 1 {
 		t.Fatalf("player close count = %d, want 1", player.closeCount)
 	}
-	if m.previewPlayer != nil {
+	if m.preview.previewPlayer != nil {
 		t.Fatal("closePreview did not clear previewPlayer")
 	}
 }
@@ -618,11 +620,13 @@ func newPreviewTestModel(player *fakePreviewPlayer, created *int) settingsModel 
 			{Name: "af_heart"},
 			{Name: "af_bella"},
 		},
-		newPreviewPlayer: func() audio.Engine {
-			if created != nil {
-				(*created)++
-			}
-			return player
+		preview: voicePreview{
+			newPreviewPlayer: func() audio.Engine {
+				if created != nil {
+					(*created)++
+				}
+				return player
+			},
 		},
 		ensureTTSAssets: func(context.Context, *config.Config, func(string, float64)) error {
 			return nil

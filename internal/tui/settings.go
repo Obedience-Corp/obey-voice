@@ -65,14 +65,8 @@ type settingsModel struct {
 	routeDestsErr     string
 	routeDestsSeq     int
 
-	// Preview playback state.
-	previewing       string
-	previewID        int64
-	previewCancel    context.CancelFunc
-	previewPlayer    audio.Engine
-	newPreviewPlayer func() audio.Engine
-	// ensureTTSAssets installs TTS assets; onProgress may be nil (preview) or
-	// feed the Settings install progress bridge.
+	// Preview playback. ensureTTSAssets is also the Qwen install seam.
+	preview         voicePreview
 	ensureTTSAssets func(ctx context.Context, cfg *config.Config, onProgress func(name string, pct float64)) error
 	newTTSProvider  func(*config.Config) (tts.Provider, func(), error)
 	saveConfig      func(string, any) error
@@ -116,19 +110,24 @@ type settingsModel struct {
 }
 
 func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) settingsModel {
+	ensure := func(ctx context.Context, cfg *config.Config, onProgress func(name string, pct float64)) error {
+		return config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedTTS: true}, onProgress)
+	}
 	m := settingsModel{
-		cfg:       cfg,
-		providers: providers,
-		newPreviewPlayer: func() audio.Engine {
-			return audio.NewPlayerWithDevice(cfg.OutputDevice)
-		},
+		cfg:           cfg,
+		providers:     providers,
 		deviceChecker: audio.NewDeviceChecker(),
-		ensureTTSAssets: func(ctx context.Context, cfg *config.Config, onProgress func(name string, pct float64)) error {
-			return config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedTTS: true}, onProgress)
+		preview: voicePreview{
+			newPreviewPlayer: func() audio.Engine {
+				return audio.NewPlayerWithDevice(cfg.OutputDevice)
+			},
+			ensure: ensure,
+			newTTS: tts.NewProvider,
 		},
-		newTTSProvider: tts.NewProvider,
-		saveConfig:     config.SetAndSave,
-		ensureQwen:     managedqwen.Ensure,
+		ensureTTSAssets: ensure,
+		newTTSProvider:  tts.NewProvider,
+		saveConfig:      config.SetAndSave,
+		ensureQwen:      managedqwen.Ensure,
 	}
 	m.initEnrollSeams(cfg)
 	m.refreshQwenStatus()
@@ -480,14 +479,7 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			return m, m.selectCurrent()
 		case "p":
 			if m.section == sectionVoice && m.cursor < len(m.voiceItems) {
-				m.cancelPreview()
-				voice := m.voiceItems[m.cursor]
-				m.previewing = voice.Name
-				m.previewID++
-				ctx, cancel := context.WithCancel(context.Background())
-				m.previewCancel = cancel
-				player := m.playerForPreview()
-				return m, m.previewVoice(ctx, m.previewID, voice, player)
+				return m, m.startSettingsPreview(m.voiceItems[m.cursor])
 			}
 		case "esc", "q":
 			m.cancelPreview()
@@ -499,13 +491,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		return m.updateEnroll(msg)
 
 	case voicePreviewDoneMsg:
-		// Ignore completions from a preview that's already been superseded.
-		if msg.id == m.previewID && msg.voice == m.previewing {
-			m.previewing = ""
-			m.previewCancel = nil
-			if msg.message != "" {
-				m.message = msg.message
-			}
+		if m.preview.applyDone(msg) && msg.message != "" {
+			m.message = msg.message
 		}
 
 	case qwenInstallDoneMsg:

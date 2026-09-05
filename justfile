@@ -99,6 +99,17 @@ demo-persona-switch: build
 duet scenario="crosstalk" *flags="": build
     go run ./tests/duet -scenario tests/duet/scenarios/{{scenario}}.yaml {{flags}}
 
+# Persona form: p previews the selected voice; Tab lists prompt variables.
+demo-persona-form-ux: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/persona-form-ux.tape
+    just _optimize-demo-gif demos/persona-form-ux.gif
+    ls -lh demos/persona-form-ux.gif
+
 # Personas → Create: boxed form wizard + vim system-prompt editor.
 demo-persona-create: build
     #!/usr/bin/env bash
