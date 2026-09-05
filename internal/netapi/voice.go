@@ -134,8 +134,7 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 	gen := s.armVoiceTurn(conn)
 	prepare := func() bool { return true }
 	if deferred {
-		conn.openStaging(gen)
-		conn.queuedTurn.Store(gen)
+		conn.openQueuedTurn(gen)
 		prepare = func() bool { return s.claimQueuedMic(conn) }
 	} else if err := s.hub.claimMic(conn, gen); err != nil {
 		// No turn was opened, and no live claim can be stranded by disarming:
@@ -146,7 +145,6 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 	}
 
 	if err := s.dispatcher.SubmitVoice(prepare); err != nil {
-		conn.queuedTurn.Store(0)
 		conn.dropStaged()
 		conn.watch.disarm()
 		if !deferred {
@@ -168,7 +166,7 @@ func (s *Server) writeVoiceAudio(conn *streamConn, samples []float32) error {
 	// A turn that is being fed is a turn its client has not abandoned,
 	// whether the frames are landing in the ingress or in staging.
 	conn.watch.refresh()
-	if conn.queuedTurn.Load() != 0 && conn.stage(samples) {
+	if conn.stage(samples) {
 		return nil
 	}
 	return s.hub.writeMic(conn, samples)
@@ -179,8 +177,12 @@ func (s *Server) writeVoiceAudio(conn *streamConn, samples []float32) error {
 // the mic. It abandons the turn rather than run it when the client is gone,
 // gave up, or lost the race for the mic to another client.
 func (s *Server) claimQueuedMic(conn *streamConn) bool {
-	if conn.queuedTurn.Swap(0) == 0 {
-		conn.dropStaged()
+	// The turn is taken whole, and first: its marker and its audio leave the
+	// connection in one step, so the deadline armed for it can only find it
+	// already gone. Taken apart, a stall landing between the two emptied the
+	// buffer this replay is about to write and said nothing to anyone.
+	staged, final, ok := conn.takeQueuedTurn()
+	if !ok {
 		conn.watch.disarm()
 		return false
 	}
@@ -190,17 +192,13 @@ func (s *Server) claimQueuedMic(conn *streamConn) bool {
 	// what the claim below records.
 	gen := s.armVoiceTurn(conn)
 	if err := s.hub.claimMic(conn, gen); err != nil {
-		conn.dropStaged()
 		conn.watch.disarm()
 		s.sendError(conn, err.Error())
 		return false
 	}
 
 	// claimMic just reset the ingress, so replay what the client streamed
-	// while it waited before any live frame can reach it. closeStaging is
-	// what makes that ordering safe: a frame either lands in this replay or
-	// is written live afterwards, never both and never neither.
-	staged, final := conn.closeStaging()
+	// while it waited before any live frame can reach it.
 	if len(staged) > 0 {
 		if err := s.hub.writeMic(conn, staged); err != nil {
 			s.sendError(conn, err.Error())
@@ -228,7 +226,7 @@ func (s *Server) claimQueuedMic(conn *streamConn) bool {
 // dequeued. The client therefore sees the same result whether or not the
 // pipeline happened to be busy when it started talking.
 func (s *Server) endVoiceTurn(conn *streamConn) error {
-	if !s.hub.isClaimant(conn) && conn.queuedTurn.Load() != 0 && conn.markStagedFinal() {
+	if !s.hub.isClaimant(conn) && conn.markStagedFinal() {
 		// The client is done talking; the dequeue finalizes for it.
 		conn.watch.disarm()
 		return nil
@@ -240,8 +238,7 @@ func (s *Server) endVoiceTurn(conn *streamConn) error {
 	}
 	// Anything this connection queued behind its own live turn has no audio
 	// of its own; drop it rather than let it dequeue and take the mic. The
-	// immediate-claim path never sets the flag, so a fast tap is unaffected.
-	conn.queuedTurn.Store(0)
+	// immediate-claim path stages nothing, so a fast tap is unaffected.
 	conn.dropStaged()
 	if err := s.hub.endMicUtterance(conn); err != nil {
 		return err

@@ -299,7 +299,6 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		// before the removal is still cleared. The other order leaves a window
 		// where a queued turn claims the mic after the release has run and
 		// nothing is left alive to give it back.
-		conn.queuedTurn.Store(0)
 		conn.dropStaged()
 		s.hub.remove(conn)
 		s.hub.releaseMic(conn)

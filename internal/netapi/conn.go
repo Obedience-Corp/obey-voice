@@ -28,14 +28,6 @@ type streamConn struct {
 	// interrupted. It stays set until the next turn starts, preventing tail
 	// chunks from the canceled turn from crossing the reset boundary.
 	audioBlocked atomic.Bool
-	// queuedTurn is the watchdog generation of a voice turn this connection
-	// has queued behind another turn and that has not claimed the mic yet;
-	// 0 when there is none. Cleared when the turn is dequeued or when the
-	// connection goes away — a cleared value abandons the queued turn. It
-	// carries the generation rather than a flag so a deadline firing for a
-	// turn that has already ended cannot abandon the one that replaced it.
-	queuedTurn atomic.Uint64
-
 	// watch bounds the voice turn this connection has open, so a client that
 	// stops sending audio without ever sending voice_end cannot hold the
 	// exclusive mic forever.
@@ -47,11 +39,15 @@ type streamConn struct {
 	// instant the turn starts. Without this a client that streams straight
 	// after voice_start — which the bundled web client does — would lose its
 	// whole utterance whenever the pipeline happened to be busy.
+	//
+	// stagedGen is the watchdog generation of the queued turn the buffer
+	// belongs to, and 0 when nothing is queued: generations start at 1, so it
+	// is the marker that the turn exists as well as its identity. Marker and
+	// audio live under one lock deliberately — see openQueuedTurn.
 	stagedMu    sync.Mutex
 	staged      []float32
-	stagedGen   uint64 // the turn the buffer belongs to
+	stagedGen   uint64
 	stagedFinal bool
-	stagingOpen bool
 }
 
 func (c *streamConn) evict(reason string) {
@@ -68,23 +64,27 @@ func (c *streamConn) wantsAudio() bool {
 // cannot do without.
 const stagedMaxSamples = int(maxVoiceUtterance/time.Second) * audio.SampleRate
 
-// openStaging arms the buffer for the voice turn gen identifies, which is about
-// to be queued.
-func (c *streamConn) openStaging(gen uint64) {
+// A queued turn is one thing under one lock: the marker that it is waiting, the
+// PCM it has streamed and its end-of-utterance flag are taken or dropped
+// together. Held apart, the deadline firing for that turn could clear the audio
+// after the dequeue had taken the marker and before it read the buffer, and the
+// promoted turn would start on silence with its owner told nothing.
+
+// openQueuedTurn arms the buffer for the voice turn gen identifies, which is
+// about to be queued.
+func (c *streamConn) openQueuedTurn(gen uint64) {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
-	c.staged = nil
-	c.stagedGen = gen
-	c.stagedFinal = false
-	c.stagingOpen = true
+	c.staged, c.stagedGen, c.stagedFinal = nil, gen, false
 }
 
-// stage buffers samples for a queued turn. It reports false once staging has
-// closed — the claim has been granted, so the caller must write live instead.
+// stage buffers samples for a queued turn. It reports false once that turn has
+// been taken or abandoned — the claim has been granted, so the caller must
+// write live instead.
 func (c *streamConn) stage(samples []float32) bool {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
-	if !c.stagingOpen {
+	if c.stagedGen == 0 {
 		return false
 	}
 	if room := stagedMaxSamples - len(c.staged); room > 0 {
@@ -97,46 +97,55 @@ func (c *streamConn) stage(samples []float32) bool {
 }
 
 // markStagedFinal records that the client ended its utterance while the turn
-// was still queued. False once staging has closed.
+// was still queued. False once that turn is gone.
 func (c *streamConn) markStagedFinal() bool {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
-	if !c.stagingOpen {
+	if c.stagedGen == 0 {
 		return false
 	}
 	c.stagedFinal = true
 	return true
 }
 
-// closeStaging hands back everything buffered and stops further staging, so
-// no frame can be written twice or land after the replay.
-func (c *streamConn) closeStaging() (samples []float32, final bool) {
+// takeQueuedTurn hands the whole queued turn to the dispatch goroutine that is
+// promoting it: marker, audio and final flag leave in one step, so a deadline
+// still in flight for that turn finds nothing left to take and reports nothing.
+// ok is false when there is no queued turn — it was abandoned, or already
+// taken. Taking also stops further staging, so a frame either lands in this
+// batch or is written live afterwards, never both and never neither.
+func (c *streamConn) takeQueuedTurn() (samples []float32, final, ok bool) {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
+	if c.stagedGen == 0 {
+		return nil, false, false
+	}
 	samples, final = c.staged, c.stagedFinal
 	c.clearLocked()
-	return samples, final
+	return samples, final, true
 }
 
-// dropStaged discards a queued turn's audio when that turn is abandoned.
+// abandonQueuedTurn drops the queued turn while it is still the one gen names,
+// and reports whether it was: the deadline that calls this may be firing for a
+// turn that has since been dequeued or replaced by another.
+func (c *streamConn) abandonQueuedTurn(gen uint64) bool {
+	c.stagedMu.Lock()
+	defer c.stagedMu.Unlock()
+	if c.stagedGen != gen {
+		return false
+	}
+	c.clearLocked()
+	return true
+}
+
+// dropStaged discards whatever is queued, whichever turn it belongs to: the
+// socket closed, or a live voice_end retired it.
 func (c *streamConn) dropStaged() {
 	c.stagedMu.Lock()
 	defer c.stagedMu.Unlock()
 	c.clearLocked()
 }
 
-// dropStagedTurn discards the buffer only while it still belongs to the turn
-// gen identifies. A deadline that fires for a turn this connection has already
-// finished must not take the audio of the one that followed it.
-func (c *streamConn) dropStagedTurn(gen uint64) {
-	c.stagedMu.Lock()
-	defer c.stagedMu.Unlock()
-	if c.stagedGen != gen {
-		return
-	}
-	c.clearLocked()
-}
-
 func (c *streamConn) clearLocked() {
-	c.staged, c.stagedGen, c.stagedFinal, c.stagingOpen = nil, 0, false, false
+	c.staged, c.stagedGen, c.stagedFinal = nil, 0, false
 }

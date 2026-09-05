@@ -174,8 +174,7 @@ func (s *Server) voiceTurnStalled(conn *streamConn, gen uint64, reason string) {
 	// unlock and these lines, and it must not be the one that gets abandoned,
 	// dropped, released or reported. Each check happens under the lock that
 	// guards the thing it protects.
-	queued := conn.queuedTurn.CompareAndSwap(gen, 0)
-	conn.dropStagedTurn(gen)
+	queued := conn.abandonQueuedTurn(gen)
 	live := s.hub.releaseTurnMic(conn, gen)
 	switch {
 	case live:
