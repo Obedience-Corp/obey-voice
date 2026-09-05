@@ -582,13 +582,13 @@ also emits, to **every** connected client:
 | `type` | Fields | When |
 |--------|--------|------|
 | `turn_interrupted` | `reason` (`remote_interrupt`), `since_playback_start_ms` | A turn was in flight when the `interrupt` arrived |
-| `turn_interrupted` | `reason` (`client_silent`), `since_playback_start_ms` | Not an `interrupt` at all: a voice turn was ended by the server because its client stopped sending audio (see The turn deadline). Treat any `reason` you do not know as "that turn is over" |
+| `turn_interrupted` | `reason` (`client_silent` \| `turn_cap`), `since_playback_start_ms` | Not an `interrupt` at all: a voice turn was ended by the server, because its client stopped sending audio (`client_silent`) or because the turn ran into the cap on its whole length (`turn_cap`) — see The turn deadline. Broadcast when that turn was **running**; sent to the stalled client **alone** when its turn was still queued, because nobody else's turn ended. Treat any `reason` you do not know as "that turn is over" |
 | `speaking_interrupted` | `reason` (`remote_interrupt`), `since_playback_start_ms` | …and that turn was in its TTS phase |
 
 `since_playback_start_ms` is how far into TTS playback the interrupt landed
 (integer milliseconds, from the turn's first playback start). Always present:
-`0` when not applicable — a keystroke, remote, or `client_silent` interrupt,
-which this field does not cover yet. Older serves omit the key.
+`0` when not applicable — a keystroke, remote, `client_silent` or `turn_cap`
+interrupt, which this field does not cover yet. Older serves omit the key.
 
 `reason` distinguishes these from the host mic's own barge-in, which uses the
 local reason string. An `interrupt` on an idle server emits neither — only
@@ -692,21 +692,25 @@ see: the claim used to stand for the life of the process, and every later turn
 queued behind it.
 
 - **No `audio_input` for `listen_timeout` (default 10 s)** ends the turn: the
-  mic is released, the utterance is finalized, and every client is sent
-  `turn_interrupted` with `reason: "client_silent"`.
+  mic is released, the utterance is finalized, and `turn_interrupted` with
+  `reason: "client_silent"` is sent — to every client when that turn was
+  running, and to the stalled client alone when its turn was still queued. A
+  queued turn ran for nobody, so nobody else's turn ended with it.
 - **Every `audio_input` pushes that deadline out**, whether the turn is live or
   still queued, so a client that is actually streaming is never cut off.
 - **A whole turn is capped** at `listen_timeout + phrase_time_limit`
   (default 40 s), for the client that streams forever without ever sending
   `voice_end`. Past it there is no utterance left to wait for: the recogniser's
-  own cap has already closed one.
+  own cap has already closed one. That end reports `reason: "turn_cap"`, with
+  the same delivery rule — a client that streamed for forty seconds was never
+  silent, and saying so sent it looking for a network fault.
 
 Both clocks come from serve's config (`listen_timeout`, `phrase_time_limit`) —
 the same ones the recogniser endpoints on — so `obey-voice config set
 listen_timeout 20` moves them together.
 
-A client that receives `client_silent` should return to idle and re-arm: its
-turn is gone, and the frames it sends afterwards are refused with
+A client that receives `client_silent` or `turn_cap` should return to idle and
+re-arm: its turn is gone, and the frames it sends afterwards are refused with
 `microphone not claimed by this client`.
 
 ## Capabilities

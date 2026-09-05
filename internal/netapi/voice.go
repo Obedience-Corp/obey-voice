@@ -20,7 +20,10 @@ func (h *hub) setIngress(ing *audio.Ingress) {
 	h.ingress = ing
 }
 
-func (h *hub) claimMic(c *streamConn) error {
+// claimMic grants the exclusive mic to the turn gen identifies. The generation
+// is recorded with the claim, under the same lock, so a deadline that fires for
+// an earlier turn cannot release what a later one was just granted.
+func (h *hub) claimMic(c *streamConn, gen uint64) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.ingress == nil {
@@ -35,7 +38,7 @@ func (h *hub) claimMic(c *streamConn) error {
 	if h.micClaimant != nil && h.micClaimant != c {
 		return errors.New("microphone claimed by another client")
 	}
-	h.micClaimant = c
+	h.micClaimant, h.micGen = c, gen
 	h.ingress.Reset()
 	return nil
 }
@@ -47,26 +50,46 @@ func (h *hub) isClaimant(c *streamConn) bool {
 	return h.micClaimant == c
 }
 
-// utteranceOpen reports whether the recogniser is still waiting on c's audio:
-// c owns the mic and its utterance has not been finalized. A claim whose
-// utterance is already closed belongs to a turn that has moved past STT.
-func (h *hub) utteranceOpen(c *streamConn) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.micClaimant == c && h.ingress != nil && !h.ingress.Finalized()
-}
-
 func (h *hub) releaseMic(c *streamConn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.micClaimant == c {
-		h.micClaimant = nil
-		// If the client disconnects mid-utterance, finalize so STT is not
-		// left blocked waiting for more frames.
-		if h.ingress != nil {
-			h.ingress.Finalize()
-		}
+	h.releaseLocked(c)
+}
+
+// releaseTurnMic takes the mic back for the turn gen identifies, and reports
+// whether the recogniser was still waiting on that turn's audio. A claim
+// granted to a *later* turn is left alone: the deadline that calls this can be
+// firing for a turn that ended while the next one was being dequeued, and
+// releasing then would cut off whoever is talking now.
+//
+// An older claim is this deadline's to take back. A connection has one
+// deadline, so arming for this turn already retired the earlier turn's, and
+// when the client goes quiet still holding that claim nothing else will ever
+// hand it back.
+func (h *hub) releaseTurnMic(c *streamConn, gen uint64) (utteranceOpen bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.micGen > gen {
+		return false
 	}
+	return h.releaseLocked(c)
+}
+
+// releaseLocked drops c's claim and reports whether the recogniser was still
+// waiting on its audio — a claim whose utterance is already closed belongs to a
+// turn that has moved past STT. Callers hold h.mu.
+func (h *hub) releaseLocked(c *streamConn) (utteranceOpen bool) {
+	if h.micClaimant != c {
+		return false
+	}
+	utteranceOpen = h.ingress != nil && !h.ingress.Finalized()
+	h.micClaimant, h.micGen = nil, 0
+	// If the client disconnects mid-utterance, finalize so STT is not left
+	// blocked waiting for more frames.
+	if h.ingress != nil {
+		h.ingress.Finalize()
+	}
+	return utteranceOpen
 }
 
 func (h *hub) writeMic(c *streamConn, samples []float32) error {
@@ -109,18 +132,26 @@ func (h *hub) endMicUtterance(c *streamConn) error {
 // hold the mic away from whoever is actually talking.
 func (s *Server) startVoiceTurn(conn *streamConn) error {
 	deferred := s.dispatcher.Pending()
+	// The turn is open from here: only voice_end, a disconnect, or this
+	// deadline will close it again. It is armed before anything is claimed or
+	// staged because its generation is the turn's identity, and the claim, the
+	// staging buffer and the queued marker all record it.
+	gen := s.armVoiceTurn(conn)
 	prepare := func() bool { return true }
 	if deferred {
-		conn.openStaging()
-		conn.voiceQueued.Store(true)
+		conn.openQueuedTurn(gen)
 		prepare = func() bool { return s.claimQueuedMic(conn) }
-	} else if err := s.hub.claimMic(conn); err != nil {
+	} else if err := s.hub.claimMic(conn, gen); err != nil {
+		// No turn was opened, and no live claim can be stranded by disarming:
+		// a connection that already held one would have been granted this
+		// claim too.
+		conn.watch.disarm()
 		return err
 	}
 
 	if err := s.dispatcher.SubmitVoice(prepare); err != nil {
-		conn.voiceQueued.Store(false)
 		conn.dropStaged()
+		conn.watch.disarm()
 		if !deferred {
 			// Release only what this call claimed. A deferred voice_start
 			// claimed nothing, and this connection may still be speaking into
@@ -129,9 +160,6 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 		}
 		return err
 	}
-	// The turn is open from here: only voice_end, a disconnect, or the
-	// deadline this arms will close it again.
-	s.armVoiceTurn(conn)
 	return nil
 }
 
@@ -143,7 +171,7 @@ func (s *Server) writeVoiceAudio(conn *streamConn, samples []float32) error {
 	// A turn that is being fed is a turn its client has not abandoned,
 	// whether the frames are landing in the ingress or in staging.
 	conn.watch.refresh()
-	if conn.voiceQueued.Load() && conn.stage(samples) {
+	if conn.stage(samples) {
 		return nil
 	}
 	return s.hub.writeMic(conn, samples)
@@ -154,23 +182,28 @@ func (s *Server) writeVoiceAudio(conn *streamConn, samples []float32) error {
 // the mic. It abandons the turn rather than run it when the client is gone,
 // gave up, or lost the race for the mic to another client.
 func (s *Server) claimQueuedMic(conn *streamConn) bool {
-	if !conn.voiceQueued.Swap(false) {
-		conn.dropStaged()
+	// The turn is taken whole, and first: its marker and its audio leave the
+	// connection in one step, so the deadline armed for it can only find it
+	// already gone. Taken apart, a stall landing between the two emptied the
+	// buffer this replay is about to write and said nothing to anyone.
+	staged, final, ok := conn.takeQueuedTurn()
+	if !ok {
 		conn.watch.disarm()
 		return false
 	}
-	if err := s.hub.claimMic(conn); err != nil {
-		conn.dropStaged()
+	// The turn starts here, so its deadline does too: a client is not charged
+	// for the time the pipeline kept it waiting. Re-arming also retires the
+	// deadline the queued turn was waiting under, and the fresh generation is
+	// what the claim below records.
+	gen := s.armVoiceTurn(conn)
+	if err := s.hub.claimMic(conn, gen); err != nil {
 		conn.watch.disarm()
 		s.sendError(conn, err.Error())
 		return false
 	}
 
 	// claimMic just reset the ingress, so replay what the client streamed
-	// while it waited before any live frame can reach it. closeStaging is
-	// what makes that ordering safe: a frame either lands in this replay or
-	// is written live afterwards, never both and never neither.
-	staged, final := conn.closeStaging()
+	// while it waited before any live frame can reach it.
 	if len(staged) > 0 {
 		if err := s.hub.writeMic(conn, staged); err != nil {
 			s.sendError(conn, err.Error())
@@ -186,9 +219,6 @@ func (s *Server) claimQueuedMic(conn *streamConn) bool {
 		conn.watch.disarm()
 		return true
 	}
-	// The turn starts here, so its deadline does too: a client is not charged
-	// for the time the pipeline kept it waiting.
-	s.armVoiceTurn(conn)
 	return true
 }
 
@@ -201,7 +231,7 @@ func (s *Server) claimQueuedMic(conn *streamConn) bool {
 // dequeued. The client therefore sees the same result whether or not the
 // pipeline happened to be busy when it started talking.
 func (s *Server) endVoiceTurn(conn *streamConn) error {
-	if !s.hub.isClaimant(conn) && conn.voiceQueued.Load() && conn.markStagedFinal() {
+	if !s.hub.isClaimant(conn) && conn.markStagedFinal() {
 		// The client is done talking; the dequeue finalizes for it.
 		conn.watch.disarm()
 		return nil
@@ -213,8 +243,7 @@ func (s *Server) endVoiceTurn(conn *streamConn) error {
 	}
 	// Anything this connection queued behind its own live turn has no audio
 	// of its own; drop it rather than let it dequeue and take the mic. The
-	// immediate-claim path never sets the flag, so a fast tap is unaffected.
-	conn.voiceQueued.Store(false)
+	// immediate-claim path stages nothing, so a fast tap is unaffected.
 	conn.dropStaged()
 	if err := s.hub.endMicUtterance(conn); err != nil {
 		return err

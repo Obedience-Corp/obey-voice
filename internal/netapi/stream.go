@@ -42,8 +42,11 @@ type hub struct {
 	// TTS pump can skip encode/marshal when nobody is listening.
 	streamers atomic.Int32
 
-	// micClaimant is the exclusive remote-mic owner (push-to-talk).
+	// micClaimant is the exclusive remote-mic owner (push-to-talk), and
+	// micGen is the watchdog generation of the turn it was granted for, so a
+	// deadline can tell its own turn's claim from its successor's.
 	micClaimant *streamConn
+	micGen      uint64
 	// ingress receives remote PCM when remote mic is enabled.
 	ingress *audio.Ingress
 
@@ -90,9 +93,8 @@ func (h *hub) evictAll(reason string) {
 	for c := range h.conns {
 		c.evict(reason)
 	}
-	if h.micClaimant != nil && h.ingress != nil {
-		h.ingress.Finalize()
-		h.micClaimant = nil
+	if h.micClaimant != nil {
+		h.releaseLocked(h.micClaimant)
 	}
 }
 
@@ -107,10 +109,7 @@ func (h *hub) evictToken(token, reason string) {
 	for c := range h.conns {
 		if c.token == token {
 			c.evict(reason)
-			if h.micClaimant == c && h.ingress != nil {
-				h.ingress.Finalize()
-				h.micClaimant = nil
-			}
+			h.releaseLocked(c)
 		}
 	}
 }
@@ -300,7 +299,6 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		// before the removal is still cleared. The other order leaves a window
 		// where a queued turn claims the mic after the release has run and
 		// nothing is left alive to give it back.
-		conn.voiceQueued.Store(false)
 		conn.dropStaged()
 		s.hub.remove(conn)
 		s.hub.releaseMic(conn)
@@ -462,7 +460,14 @@ func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name st
 // sendError delivers a per-connection error envelope (not broadcast — only
 // the offending client sees it).
 func (s *Server) sendError(conn *streamConn, text string) {
-	msg, err := marshalEvent(events.Error{Stage: "netapi", Message: text})
+	s.sendEvent(conn, events.Error{Stage: "netapi", Message: text})
+}
+
+// sendEvent delivers one event to a single connection, for the things only
+// that client is owed. Like broadcast it never blocks: a client that cannot
+// keep up on events is evicted rather than allowed to stall a live turn.
+func (s *Server) sendEvent(conn *streamConn, e events.Event) {
+	msg, err := marshalEvent(e)
 	if err != nil {
 		return
 	}

@@ -1,7 +1,9 @@
 package netapi
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -82,23 +84,58 @@ func TestBannerFixtureCarriesCapabilities(t *testing.T) {
 	}
 }
 
-// TestBannerFixtureHasNoLiveSecret guards the fixture itself: these files are
-// captured from a real serve, and a real bearer token must never land in git.
+// TestBannerFixtureHasNoLiveSecret guards the fixtures themselves: they are
+// captured from a real serve, and a real bearer must never land in git. It
+// walks every file under testdata/wire rather than the two banners, because the
+// captures that arrived later are .jsonl — a guard that covered only the
+// banners would wave through the first stream capture that carried a
+// credential. An extension it does not know how to read is a failure, not a
+// skip: a fixture nothing checks is exactly how one leaks.
 func TestBannerFixtureHasNoLiveSecret(t *testing.T) {
-	for _, name := range []string{"ready_banner.json", "status.json"} {
-		data, err := os.ReadFile(filepath.Join("testdata", "wire", name))
-		if err != nil {
-			t.Fatalf("read fixture: %v", err)
-		}
-		var doc map[string]any
-		if err := json.Unmarshal(data, &doc); err != nil {
-			t.Fatal(err)
-		}
-		for _, secret := range []string{"token", "fingerprint"} {
-			v, present := doc[secret]
-			if present && v != "REDACTED" {
-				t.Errorf("%s: %q = %v, want REDACTED", name, secret, v)
+	dir := filepath.Join("testdata", "wire")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read fixtures: %v", err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		t.Run(name, func(t *testing.T) {
+			ext := filepath.Ext(name)
+			if ext == ".md" {
+				t.Skip("prose, not a capture")
 			}
+			if ext != ".json" && ext != ".jsonl" {
+				t.Fatalf("fixture %s is not checked for secrets; teach this test how to read it", name)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			// .json is one document; .jsonl is one frame per line.
+			if ext == ".json" {
+				checkNoSecret(t, name, data)
+				return
+			}
+			line := 0
+			for raw := range bytes.SplitSeq(bytes.TrimSpace(data), []byte("\n")) {
+				line++
+				checkNoSecret(t, fmt.Sprintf("%s:%d", name, line), raw)
+			}
+		})
+	}
+}
+
+// checkNoSecret fails when one captured document carries a live credential.
+func checkNoSecret(t *testing.T, where string, data []byte) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("%s is not JSON: %v", where, err)
+	}
+	for _, secret := range []string{"token", "fingerprint"} {
+		if v, present := doc[secret]; present && v != "REDACTED" {
+			t.Errorf("%s: %q = %v, want REDACTED", where, secret, v)
 		}
 	}
 }

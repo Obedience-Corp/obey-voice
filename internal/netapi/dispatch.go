@@ -111,12 +111,9 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 	switch op.kind {
 	case opText:
 		turnCtx, cancel := context.WithCancel(ctx)
-		d.setCancel(cancel)
-		d.canceled.Store(false)
-		d.active.Store(true)
+		d.beginTurn(cancel)
 		err := d.runner.RunTurnTextMode(turnCtx, op.text)
-		d.active.Store(false)
-		d.setCancel(nil)
+		d.endTurn()
 		cancel()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			d.bus.Emit(events.Error{Stage: "turn", Message: err.Error()})
@@ -132,12 +129,9 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 			return
 		}
 		turnCtx, cancel := context.WithCancel(ctx)
-		d.setCancel(cancel)
-		d.canceled.Store(false)
-		d.active.Store(true)
+		d.beginTurn(cancel)
 		_, err := voice.RunTurn(turnCtx)
-		d.active.Store(false)
-		d.setCancel(nil)
+		d.endTurn()
 		cancel()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			d.bus.Emit(events.Error{Stage: "turn", Message: err.Error()})
@@ -174,10 +168,26 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 	}
 }
 
-func (d *Dispatcher) setCancel(cancel context.CancelFunc) {
+// beginTurn installs the in-flight turn's cancel and clears the interrupt flag
+// as one step, under the mutex Interrupt takes. As two steps it lost an
+// Interrupt that landed between them: the turn context was canceled and
+// Interrupted() still reported false, so the paths that gate turn_interrupted
+// on it told nobody the turn had ended.
+func (d *Dispatcher) beginTurn(cancel context.CancelFunc) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.cancelTurn = cancel
+	d.canceled.Store(false)
+	d.active.Store(true)
+}
+
+// endTurn retires the turn that just unwound: nothing left to cancel, and no
+// turn left to report as active.
+func (d *Dispatcher) endTurn() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.active.Store(false)
+	d.cancelTurn = nil
 }
 
 // SubmitText enqueues one text turn; ErrBusy when the queue is full.

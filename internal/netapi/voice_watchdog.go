@@ -34,10 +34,16 @@ const (
 	defaultVoiceTurnMax = defaultVoiceSilence + maxVoiceUtterance
 )
 
-// voiceSilentReason labels a turn serve ended because its client stopped
-// feeding it audio, distinguishing it from the remote_interrupt a client-driven
-// barge-in reports.
-const voiceSilentReason = "client_silent"
+// The two reasons serve ends a turn on its own, each naming the bound that ran
+// out: the client stopped feeding a turn that was still open, or the turn hit
+// the cap on its whole length. A client that streamed for forty seconds without
+// ever sending voice_end was never silent, and telling it so sent it looking
+// for a network fault that was not there. Both are distinct from the
+// remote_interrupt a client-driven barge-in reports.
+const (
+	voiceSilentReason  = "client_silent"
+	voiceTurnCapReason = "turn_cap"
+)
 
 // voiceWatchdog is one connection's turn deadline. A single timer carries both
 // bounds — the silence window, which every frame pushes out, and the turn cap,
@@ -51,9 +57,10 @@ type voiceWatchdog struct {
 	hard    time.Time // the turn cap, measured from voice_start
 }
 
-// arm starts the deadline for a turn that has just begun. fire runs at most
-// once per armed turn, on the timer goroutine, and never after disarm.
-func (w *voiceWatchdog) arm(silence, max time.Duration, fire func()) {
+// arm starts the deadline for a turn that has just begun and returns the
+// generation identifying it. fire runs at most once per armed turn, on the
+// timer goroutine, and never after disarm.
+func (w *voiceWatchdog) arm(silence, max time.Duration, fire func(gen uint64, reason string)) uint64 {
 	now := time.Now()
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -62,6 +69,7 @@ func (w *voiceWatchdog) arm(silence, max time.Duration, fire func()) {
 	gen := w.gen
 	w.silence, w.frame, w.hard = silence, now, now.Add(max)
 	w.timer = time.AfterFunc(w.left(now), func() { w.expire(gen, fire) })
+	return gen
 }
 
 // refresh pushes the silence window out on an inbound frame, never past the
@@ -100,48 +108,79 @@ func (w *voiceWatchdog) left(now time.Time) time.Duration {
 	return left
 }
 
-// expire ends the turn the timer was armed for. gen pins it to that turn, and a
-// frame that landed while it waited on the lock rearms it rather than cutting a
-// turn that is still streaming.
-func (w *voiceWatchdog) expire(gen uint64, fire func()) {
+// expire ends the turn the timer was armed for, telling fire which turn and
+// which of the two bounds ran out. gen pins it to that turn, and a frame that
+// landed while it waited on the lock rearms it rather than cutting a turn that
+// is still streaming.
+//
+// Lock order: w.mu is never held while another lock is taken. fire runs after
+// the unlock, so a stall callback reaches for the hub and staging locks holding
+// nothing, and an arm, refresh or disarm racing it on another goroutine is
+// never blocked behind those. That unlock is also why gen has to travel with
+// the callback: by the time it runs, this connection's next turn may already
+// have been dequeued, armed and granted the mic.
+func (w *voiceWatchdog) expire(gen uint64, fire func(gen uint64, reason string)) {
+	now := time.Now()
 	w.mu.Lock()
 	if w.timer == nil || w.gen != gen {
 		w.mu.Unlock()
 		return
 	}
-	if left := w.left(time.Now()); left > 0 {
+	if left := w.left(now); left > 0 {
 		w.timer.Reset(left)
 		w.mu.Unlock()
 		return
 	}
+	// The cap wins a tie: it is the bound frames cannot push out, so a turn
+	// that reached it was talking, not silent.
+	reason := voiceSilentReason
+	if !now.Before(w.hard) {
+		reason = voiceTurnCapReason
+	}
 	w.stop()
 	w.mu.Unlock()
-	fire()
+	fire(gen, reason)
 }
 
-// armVoiceTurn starts the deadline for a turn this connection just opened.
-func (s *Server) armVoiceTurn(conn *streamConn) {
-	conn.watch.arm(s.voiceSilence, s.voiceTurnMax, func() { s.voiceTurnStalled(conn) })
+// armVoiceTurn starts the deadline for a turn this connection just opened and
+// hands back the generation that identifies it. Everything the deadline can
+// later take away — the mic claim, the staged audio, the queued marker — is
+// recorded against this generation by the caller, so a deadline that fires for
+// a turn that has already ended cannot act on the one that replaced it.
+func (s *Server) armVoiceTurn(conn *streamConn) uint64 {
+	return conn.watch.arm(s.voiceSilence, s.voiceTurnMax, func(gen uint64, reason string) {
+		s.voiceTurnStalled(conn, gen, reason)
+	})
 }
 
-// voiceTurnStalled ends a turn whose client stopped sending audio: the mic goes
-// back, anything the connection had queued is abandoned, and every client is
-// told the turn is over so none of them waits on a reply that is not coming.
+// voiceTurnStalled ends a turn one of the two deadlines ran out on, reason
+// naming which: the mic goes back and anything the connection had queued is
+// abandoned.
+//
+// Who hears about it depends on what was actually lost. A live turn was in
+// flight for everyone — every client is waiting on that reply — so it is
+// interrupted and announced on the bus, exactly as a remote interrupt is. A
+// turn that only ever sat in the queue ran for nobody: announcing it would tell
+// clients that are mid-turn, and the local TUI listening on the same bus, that
+// a turn they can see running has ended. That one goes to its owner alone.
 //
 // A claim whose utterance the recogniser has already finalized is only taken
 // back, never reported: that turn ran on audio the user really spoke and is
 // still producing its reply. Telling a client a turn ended that had already
 // ended is the same lie an idle interrupt refuses to tell.
-func (s *Server) voiceTurnStalled(conn *streamConn) {
-	queued := conn.voiceQueued.Swap(false)
-	conn.dropStaged()
-	live := s.hub.utteranceOpen(conn)
-	s.hub.releaseMic(conn)
-	if !queued && !live {
-		return
-	}
-	if live {
+func (s *Server) voiceTurnStalled(conn *streamConn, gen uint64, reason string) {
+	// Every step here is scoped to the turn gen names. This connection's next
+	// turn can be dequeued, armed and granted the mic between the timer's
+	// unlock and these lines, and it must not be the one that gets abandoned,
+	// dropped, released or reported. Each check happens under the lock that
+	// guards the thing it protects.
+	queued := conn.abandonQueuedTurn(gen)
+	live := s.hub.releaseTurnMic(conn, gen)
+	switch {
+	case live:
 		s.dispatcher.Interrupt()
+		s.opts.Bus.Emit(events.TurnInterrupted{Reason: reason})
+	case queued:
+		s.sendEvent(conn, events.TurnInterrupted{Reason: reason})
 	}
-	s.opts.Bus.Emit(events.TurnInterrupted{Reason: voiceSilentReason})
 }
