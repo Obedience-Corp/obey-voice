@@ -14,6 +14,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 func main() {
@@ -33,12 +35,16 @@ func runMain(args []string) int {
 	ollamaHost := fs.String("ollama-host", "http://localhost:11434", "live Ollama URL")
 	runsDir := fs.String("runs-dir", "", "artifact root (default ~/.cache/obey-voice/convoflow)")
 	selfTest := fs.Bool("self-test", false, "run with a fake runner (no models)")
+	speakers := fs.Bool("speakers", false, "tee recorded PCM to real speakers")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
 	if *analyzeDir != "" {
-		fmt.Fprintf(os.Stderr, "convoflow: -analyze is wired in the audio PR\n")
-		return 1
+		if err := analyzeRunDir(*analyzeDir); err != nil {
+			fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	if *scenarioPath == "" {
 		fmt.Fprintf(os.Stderr, "convoflow: -scenario is required\n")
@@ -89,10 +95,17 @@ func runMain(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	rec := &recorder{}
+	player := newRecordingPlayer(nil)
+	if *speakers {
+		real := audio.NewPlayerWithDevice("")
+		defer func() { _ = real.Close() }()
+		player = newRecordingPlayer(real)
+	}
 	eng := &engine{
 		scn:    scn,
 		runDir: runDir,
 		rec:    rec,
+		player: player,
 		runner: &fakeRunner{rec: rec, live: "route_only", liveOn: true},
 	}
 	if err := eng.run(ctx); err != nil {

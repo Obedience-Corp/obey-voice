@@ -102,6 +102,17 @@ func TestEvalRunRejectsUnmeasuredCrackle(t *testing.T) {
 	}
 }
 
+func TestEvalRunAcceptsMeasuredCrackleZero(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	m := collectMetrics(rec)
+	m.crackleKnown = true
+	m.CrackleFailingWavs = 0
+	if err := evalRunExpect(Expectation{Metric: "crackle_failing_wavs", Op: "==", Value: 0}, rec, m); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEvalRunMetricPass(t *testing.T) {
 	t.Parallel()
 	rec := &recorder{}

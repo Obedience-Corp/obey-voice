@@ -23,6 +23,10 @@ This skeleton loads YAML, asserts turn **and** scenario-level expects, and
 wires the just module. Live `voiceagent.New` construction is a follow-up; until
 then `just convoflow run` exits 2 after writing the run dir.
 
+Playback is captured by a recording `audio.Engine` (no speakers unless
+`-speakers`). Each turn writes `audio/<nn>-<id>/playback.wav` and
+`analysis.json`. `just convoflow analyze RUN_DIR` rescores those WAVs.
+
 The no-model path is a dedicated fixture, not the stock gates:
 
 ```bash
@@ -31,4 +35,5 @@ go run ./tests/convoflow -self-test -scenario tests/convoflow/scenarios/self-tes
 
 `-self-test` refuses any other scenario. `go test ./tests/convoflow` needs no models.
 
-`crackle_failing_wavs` is not a gate metric in this skeleton; asserting it fails closed until playback WAVs are scored.
+Gate YAMLs assert `crackle_failing_wavs == 0` once playback WAVs are scored.
+Asserting that metric without a recording player still fails closed.

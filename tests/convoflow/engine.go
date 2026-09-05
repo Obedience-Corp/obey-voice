@@ -30,6 +30,7 @@ type engine struct {
 	runDir  string
 	rec     *recorder
 	runner  runner
+	player  *recordingPlayer
 	playing func() bool
 }
 
@@ -37,27 +38,38 @@ func (e *engine) run(ctx context.Context) error {
 	if err := os.MkdirAll(e.runDir, 0o700); err != nil {
 		return err
 	}
-	for _, turn := range e.scn.Turns {
-		if err := e.runTurn(ctx, turn); err != nil {
+	for i, turn := range e.scn.Turns {
+		if err := e.runTurn(ctx, i, turn); err != nil {
+			_ = writeReport(e)
 			return fmt.Errorf("turn %s: %w", turn.ID, err)
 		}
 	}
-	m := collectMetrics(e.rec)
+	if err := writeReport(e); err != nil {
+		return err
+	}
+	m := e.metrics()
 	for _, ex := range e.scn.Expect {
 		if err := evalRunExpect(ex, e.rec, m); err != nil {
 			return fmt.Errorf("run expect: %w", err)
 		}
 	}
-	return writeReport(e)
+	return nil
 }
 
-func (e *engine) runTurn(ctx context.Context, turn Turn) error {
+func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	timeout := turn.Timeout.Duration
 	if timeout == 0 {
 		timeout = 90 * time.Second
 	}
 	turnCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	if e.player != nil {
+		turnDir := filepath.Join(e.runDir, "audio", fmt.Sprintf("%02d-%s", i+1, turn.ID))
+		if err := e.player.BeginTurn(turnDir); err != nil {
+			return err
+		}
+	}
 
 	mark := len(e.rec.snapshot())
 	if turn.User != "" {
@@ -72,12 +84,13 @@ func (e *engine) runTurn(ctx context.Context, turn Turn) error {
 	if wait == "" {
 		wait = waitIdle
 	}
-	playing := e.playing
-	if playing == nil && e.runner != nil {
-		playing = e.runner.playing
-	}
-	if err := e.rec.waitFor(turnCtx, wait, playing); err != nil {
+	if err := e.rec.waitFor(turnCtx, wait, e.isPlaying); err != nil {
 		return fmt.Errorf("wait %s: %w", wait, err)
+	}
+	if e.player != nil {
+		if err := e.player.EndTurn(); err != nil {
+			return err
+		}
 	}
 
 	st := turnState{
@@ -98,6 +111,29 @@ func (e *engine) runTurn(ctx context.Context, turn Turn) error {
 		}
 	}
 	return nil
+}
+
+func (e *engine) isPlaying() bool {
+	if e.playing != nil {
+		return e.playing()
+	}
+	if e.player != nil {
+		return e.player.IsPlaying()
+	}
+	if e.runner != nil {
+		return e.runner.playing()
+	}
+	return false
+}
+
+func (e *engine) metrics() runMetrics {
+	m := collectMetrics(e.rec)
+	if e.player != nil {
+		m.crackleKnown = true
+		m.CrackleFailingWavs = e.player.failingCount()
+		m.PlaybackWavs = e.player.scoredCount()
+	}
+	return m
 }
 
 func defaultRunDir(root, name string) (string, error) {
