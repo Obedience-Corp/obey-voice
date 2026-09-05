@@ -1205,7 +1205,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	}
 
 	if background {
-		return p.finishBackgroundStream(ctx, brainCtx, brainCancel, stream, metrics, turn)
+		return p.finishBackgroundStream(ctx, brainCtx, brainCancel, stream, metrics, turn, repair)
 	}
 
 	// Stream the reply so the TUI can render it token-by-token, then fall back

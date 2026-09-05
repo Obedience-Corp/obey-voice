@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
-	"os"
 )
 
 type backgroundProvider interface {
@@ -38,8 +39,8 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 	return p.runTextTurn(ctx, "", true)
 }
 
-func (p *Pipeline) finishBackgroundStream(ctx context.Context, brainCtx context.Context, cancel context.CancelFunc, stream *brain.Stream, metrics *turnMetrics, turn *turnConductor) error {
-	response, interrupted, err := p.streamResponse(brainCtx, cancel, stream, true, metrics, turn)
+func (p *Pipeline) finishBackgroundStream(ctx context.Context, brainCtx context.Context, cancel context.CancelFunc, stream *brain.Stream, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) error {
+	response, interrupted, err := p.streamResponse(brainCtx, cancel, stream, true, metrics, turn, repair)
 	if interrupted {
 		p.keepCapture = true
 	}
