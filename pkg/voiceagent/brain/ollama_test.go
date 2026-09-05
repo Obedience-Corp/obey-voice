@@ -299,6 +299,79 @@ func TestThinkStreamThinkingOnlyEmptyDoesNotFallback(t *testing.T) {
 	}
 }
 
+func TestThinkStreamLiveRouterWebSearchSpawns(t *testing.T) {
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs++
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"web_search","arguments":{"query":"latest news"}}}]},"done":true}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	stream, err := o.ThinkStream(t.Context(), "search the web", StreamOptions{
+		ToolsEnabled:      true,
+		RouterToolsPolicy: RouterToolsRouteOnly,
+	})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	_, _ = drainStream(t, stream)
+	res := <-stream.Done
+	if res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+	if res.Route != "spawn" {
+		t.Fatalf("Route = %q, want spawn", res.Route)
+	}
+	if reqs != 1 {
+		t.Fatalf("requests = %d, want 1 (must not loop the rejected tool)", reqs)
+	}
+	if len(o.history) != 0 {
+		t.Fatalf("live history = %#v, want empty so work does not occupy the talking window", o.history)
+	}
+}
+
+func TestThinkStreamLiveRouterRouteSpawn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"route","arguments":{"kind":"spawn"}}}]},"done":true}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+
+	o := &OllamaBrain{
+		client:  api.NewClient(base, http.DefaultClient),
+		model:   "m",
+		workDir: t.TempDir(),
+		cfg:     &config.Config{MaxHistory: 10},
+	}
+
+	stream, err := o.ThinkStream(t.Context(), "create a file", StreamOptions{
+		ToolsEnabled:      true,
+		RouterToolsPolicy: RouterToolsRouteOnly,
+	})
+	if err != nil {
+		t.Fatalf("ThinkStream() error = %v", err)
+	}
+	_, _ = drainStream(t, stream)
+	res := <-stream.Done
+	if res.Err != nil {
+		t.Fatalf("stream done error = %v", res.Err)
+	}
+	if res.Route != "spawn" {
+		t.Fatalf("Route = %q, want spawn", res.Route)
+	}
+	if len(o.history) != 0 {
+		t.Fatalf("live history = %#v, want empty so work does not occupy the talking window", o.history)
+	}
+}
+
 func TestThinkStreamThinkingThenToolsEmptyFallsBack(t *testing.T) {
 	var reqs int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

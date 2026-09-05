@@ -8,16 +8,16 @@ import (
 type RouteKind string
 
 const (
-	RouteNone         RouteKind = ""
-	RouteChat         RouteKind = "chat"
-	RouteSpawn        RouteKind = "spawn"
-	RouteNarrate      RouteKind = "narrate"
-	RouteNarratePause RouteKind = "narrate.pause"
+	RouteNone          RouteKind = ""
+	RouteChat          RouteKind = "chat"
+	RouteSpawn         RouteKind = "spawn"
+	RouteNarrate       RouteKind = "narrate"
+	RouteNarratePause  RouteKind = "narrate.pause"
 	RouteNarrateResume RouteKind = "narrate.resume"
-	RouteNarrateSkip  RouteKind = "narrate.skip"
-	RouteNarrateStop  RouteKind = "narrate.stop"
-	RouteJobAbort     RouteKind = "job.abort"
-	RouteJobStatus    RouteKind = "job.status"
+	RouteNarrateSkip   RouteKind = "narrate.skip"
+	RouteNarrateStop   RouteKind = "narrate.stop"
+	RouteJobAbort      RouteKind = "job.abort"
+	RouteJobStatus     RouteKind = "job.status"
 )
 
 // RouteContext supplies mode guards for Layer 1 phrase routing.
@@ -82,6 +82,50 @@ var phraseRoutes = []phraseEntry{
 	{phrase: "what's happening", kind: RouteJobStatus, requireJob: true},
 	{phrase: "whats happening", kind: RouteJobStatus, requireJob: true},
 	{phrase: "status", kind: RouteJobStatus, requireJob: true},
+}
+
+// classifyTurn is Layer 1: exact phrases, then work-intent spawn. Work must
+// skip the live brain so the talking window is not spent on tool tasks.
+func classifyTurn(transcript string, ctx RouteContext) (RouteKind, string, bool) {
+	if kind, ok := classifyPhrase(transcript, ctx); ok {
+		return kind, "phrase", true
+	}
+	if classifySpawnIntent(transcript) {
+		return RouteSpawn, "intent", true
+	}
+	return RouteNone, "", false
+}
+
+// spawnIntents are user-utterance prefixes that mean "do this", not "talk".
+// Kept tight so trivia ("what's the capital of Australia") stays chat.
+var spawnIntents = []string{
+	"search the web",
+	"search web",
+	"search for",
+	"look up",
+	"look this up",
+	"google",
+	"create a file",
+	"write a file",
+	"write this to",
+	"run this command",
+	"run a command",
+	"build this",
+	"implement this",
+	"implement a",
+}
+
+func classifySpawnIntent(transcript string) bool {
+	s := normalizeUtterance(transcript)
+	if s == "" {
+		return false
+	}
+	for _, prefix := range spawnIntents {
+		if s == prefix || strings.HasPrefix(s, prefix+" ") || strings.HasPrefix(s, prefix+",") {
+			return true
+		}
+	}
+	return false
 }
 
 // classifyPhrase matches the whole utterance against Layer 1 phrases.
@@ -155,10 +199,12 @@ type promiseRepairState struct {
 	enabled    bool
 	toolsFired bool
 	spawn      bool
+	kind       RouteKind
+	source     string
 }
 
 func (r *promiseRepairState) shouldRepair(accumulated string) bool {
-	if r == nil || !r.enabled || r.toolsFired || r.spawn {
+	if r == nil || !r.enabled || r.toolsFired || r.spawn || routeKindSkipsBrain(r.kind) {
 		return false
 	}
 	cleaned := strings.TrimSpace(accumulated)
@@ -167,7 +213,49 @@ func (r *promiseRepairState) shouldRepair(accumulated string) bool {
 	}
 	if isToolPromise(cleaned) {
 		r.spawn = true
+		r.kind = RouteSpawn
+		r.source = "repair"
 		return true
 	}
 	return false
+}
+
+func (r *promiseRepairState) applyBrainRoute(route string) {
+	if r == nil {
+		return
+	}
+	kind := routeKindFromBrain(route)
+	if !routeKindSkipsBrain(kind) {
+		return
+	}
+	r.kind = kind
+	r.source = "router"
+}
+
+func (r *promiseRepairState) routedKind() (RouteKind, string, bool) {
+	if r == nil {
+		return RouteNone, "", false
+	}
+	if routeKindSkipsBrain(r.kind) {
+		source := r.source
+		if source == "" {
+			source = "router"
+		}
+		return r.kind, source, true
+	}
+	if r.spawn {
+		return RouteSpawn, "repair", true
+	}
+	return RouteNone, "", false
+}
+
+func routeKindFromBrain(route string) RouteKind {
+	switch strings.ToLower(strings.TrimSpace(route)) {
+	case "spawn":
+		return RouteSpawn
+	case "narrate":
+		return RouteNarrate
+	default:
+		return RouteChat
+	}
 }

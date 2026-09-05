@@ -39,9 +39,42 @@ func NormalizeRouterToolsPolicy(raw string) RouterToolsPolicy {
 }
 
 // RouterToolsForSession returns the tool definitions for one Think* turn.
+// Only an explicit route_only policy gets the constrained live tool; empty
+// and legacy both keep the full worker list so tests and workers do not
+// silently lose web_search / files / shell.
 func RouterToolsForSession(policy RouterToolsPolicy, catalog []skills.Skill) api.Tools {
-	if policy == RouterToolsLegacy {
-		return voiceAssistantTools(catalog)
+	if policy == RouterToolsRouteOnly {
+		return liveRouterTools()
 	}
-	return liveRouterTools()
+	return voiceAssistantTools(catalog)
+}
+
+// LiveRouterDecision reports whether live route_only tool calls should leave
+// the conversational loop. spawn/narrate from the route tool, or any worker
+// tool the live schema does not expose, become pipeline routes. Chat (or no
+// calls) stays in the turn.
+func LiveRouterDecision(policy RouterToolsPolicy, calls []api.ToolCall) string {
+	if policy != RouterToolsRouteOnly {
+		return ""
+	}
+	for _, call := range calls {
+		name := strings.TrimSpace(call.Function.Name)
+		if name == "route" {
+			kind := ParseRouteKind(toolCallArg(call, "kind"))
+			if kind == "spawn" || kind == "narrate" {
+				return kind
+			}
+			continue
+		}
+		if name != "" {
+			return "spawn"
+		}
+	}
+	return ""
+}
+
+func toolCallArg(call api.ToolCall, key string) string {
+	args := call.Function.Arguments.ToMap()
+	value, _ := args[key].(string)
+	return value
 }

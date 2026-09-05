@@ -18,6 +18,8 @@ const (
 	ElemEnvironment PromptElement = "environment"
 	// ElemSkills is the progressive-disclosure skills menu.
 	ElemSkills PromptElement = "skills"
+	// ElemTools is the ollama tool-surface instruction (live route vs worker list).
+	ElemTools PromptElement = "tools"
 	// ElemTurn is the per-reply voice instruction ("2-3 sentences, no markdown").
 	ElemTurn PromptElement = "turn"
 )
@@ -45,11 +47,14 @@ const (
 //	across providers. Elements that adapt to a provider's native capabilities
 //	are not, and each such exception must state its reason.
 //
-// There is exactly one exception today — see SkillMenuApplies.
+// There are two exceptions today — see SkillMenuApplies and ToolSurfaceApplies.
 func SystemPromptPolicy(provider string, cfg *config.Config) []PromptElement {
 	elems := []PromptElement{ElemPersona}
 	if environmentContextEnabled(cfg) {
 		elems = append(elems, ElemEnvironment)
+	}
+	if ToolSurfaceApplies(provider, cfg) {
+		elems = append(elems, ElemTools)
 	}
 	if SkillMenuApplies(provider) {
 		elems = append(elems, ElemSkills)
@@ -70,6 +75,20 @@ func SystemPromptPolicy(provider string, cfg *config.Config) []PromptElement {
 // If ollama's routing is ever replaced by native tool-calling, revisit this.
 func SkillMenuApplies(provider string) bool {
 	return normalizeProvider(provider) == providerOllama
+}
+
+// ToolSurfaceApplies reports whether a provider receives Obey Voice's tool list.
+//
+// **Deliberate asymmetry, not an oversight.** Claude, Cursor, and Grok run
+// native tools; listing list_files/web_search in their system prompt made
+// them invent harness calls they cannot make. Ollama's only tool surface is
+// this block plus the JSON schemas, so it has to be accurate: route_only
+// advertises route/spawn, legacy advertises the worker tools.
+func ToolSurfaceApplies(provider string, cfg *config.Config) bool {
+	if normalizeProvider(provider) != providerOllama {
+		return false
+	}
+	return cfg == nil || cfg.VoiceToolsEnabled
 }
 
 // environmentContextEnabled reports whether machine grounding is included.
@@ -113,6 +132,10 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 				}
 			}
 			b.WriteString(EnvironmentContextFrom(in.WorkDir, env))
+		case ElemTools:
+			if surface := ToolSurfaceContext(in.Cfg); surface != "" {
+				b.WriteString(surface)
+			}
 		case ElemSkills:
 			if sc := SkillContext(in.Skills); sc != "" {
 				b.WriteString(sc)

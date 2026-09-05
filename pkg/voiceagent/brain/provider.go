@@ -34,8 +34,9 @@ type StreamOptions struct {
 	// summarize turn — where the turn instruction's voice framing ("2–3
 	// sentences max") lands after the real instruction and starves it.
 	OmitTurnInstruction bool
-	// RouterToolsPolicy selects live route_only vs legacy full tools when
-	// ToolsEnabled is true. Empty defaults to route_only on the mic path.
+	// RouterToolsPolicy selects live route_only vs full worker tools when
+	// ToolsEnabled is true. Empty keeps the full worker list; the microphone
+	// path passes route_only explicitly.
 	RouterToolsPolicy RouterToolsPolicy
 }
 
@@ -62,6 +63,9 @@ type StreamResult struct {
 	// detected a probable truncation. S5 owns audible recovery; S1 emits
 	// events only.
 	Integrity IntegrityResult
+	// Route is set when the live router classified this turn as work instead
+	// of chat. Values are "spawn" or "narrate"; empty means the turn is chat.
+	Route string
 }
 
 // Stream carries a streamed model response and its terminal result.

@@ -91,6 +91,53 @@ func TestLayer1SpawnSkipsThinkStream(t *testing.T) {
 	}
 }
 
+func TestLiveRouterSpawnStopsTTSAndRoutes(t *testing.T) {
+	provider := &progressiveFakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+
+	var routed RouteDecision
+	var routedMu sync.Mutex
+
+	p := &Pipeline{
+		Brain:  &fakeBrain{chunks: []string{"Looking that up."}, route: "spawn"},
+		TTS:    provider,
+		Player: player,
+		Events: events.NewBus(),
+		OnRoute: func(d RouteDecision) {
+			routedMu.Lock()
+			routed = d
+			routedMu.Unlock()
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	repair := &promiseRepairState{}
+	stream, err := p.Brain.ThinkStream(ctx, "search the web for that", brain.StreamOptions{})
+	if err != nil {
+		t.Fatalf("ThinkStream: %v", err)
+	}
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	_, _, err = p.streamResponse(ctx, cancel, stream, false, metrics, turn, repair)
+	if err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+	kind, source, ok := repair.routedKind()
+	if !ok || kind != RouteSpawn || source != "router" {
+		t.Fatalf("routedKind = %q %q %v, want spawn/router", kind, source, ok)
+	}
+
+	p.completeRoutedTurn(ctx, turn, metrics, "search the web for that", kind, source)
+	routedMu.Lock()
+	defer routedMu.Unlock()
+	if routed.Kind != RouteSpawn || routed.Source != "router" {
+		t.Fatalf("OnRoute = %+v, want spawn/router", routed)
+	}
+}
+
 type countingFakeBrain struct {
 	fakeBrain
 	thinkCalls int

@@ -126,8 +126,35 @@ Environment:
 - Campaign: %s
 - Hostname: %s
 - OS: %s
-- You have tools available: list_files, read_file, write_file, run_command, web_search, fetch_url
 - All file paths are relative to the working directory unless absolute`, env.User, workDir, campaignLine(workDir), env.Hostname, env.OS)
+}
+
+const (
+	legacyToolSurface = `
+Tools:
+- You have tools available: list_files, read_file, write_file, run_command, web_search, fetch_url`
+	liveToolSurface = `
+Tools:
+- Live tool: route. kind=chat to talk. kind=spawn when the user asks you to do something (search the web, look something up, read or write files, run commands, build). kind=narrate to read aloud.
+- Spawn starts a worker that has web_search, files, and shell. Do not invent other tool names.`
+)
+
+// ToolSurfaceContext is the ollama-only tool list. Claude, Cursor, and Grok
+// have native tools; listing Obey Voice names there made them invent calls
+// they cannot make. On the live route_only path it must not advertise
+// web_search — that tool lives on the worker, reached by route(spawn).
+func ToolSurfaceContext(cfg *config.Config) string {
+	if cfg != nil && !cfg.VoiceToolsEnabled {
+		return ""
+	}
+	policy := RouterToolsRouteOnly
+	if cfg != nil {
+		policy = NormalizeRouterToolsPolicy(cfg.VoiceRouterTools)
+	}
+	if policy == RouterToolsLegacy {
+		return legacyToolSurface
+	}
+	return liveToolSurface
 }
 
 // campaignLine grounds the agent in the campaign its working directory belongs

@@ -381,6 +381,21 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// If model made tool calls, execute them and loop.
 			if len(toolCalls) > 0 {
 				hadTools = true
+				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
+					if sess.onStart != nil {
+						sess.onStart("route", kind)
+					}
+					if sess.onEnd != nil {
+						sess.onEnd("route", kind)
+					}
+					// Drop this turn from the talking window. Work belongs on
+					// the worker session, not the live KV cache.
+					if n := len(o.history); n > 0 {
+						o.history = o.history[:n-1]
+					}
+					done <- StreamResult{Route: kind}
+					return
+				}
 				// Add the assistant's tool-calling message to history.
 				o.history = append(o.history, api.Message{
 					Role:      "assistant",

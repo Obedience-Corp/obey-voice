@@ -324,7 +324,7 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 
 	// Partial (stream_event) messages are not requested: chunking is
 	// per-assistant-message, so deltas would be discarded anyway.
-	opts := b.runOptions(claude.StreamJSONOutput, streamOpts.ToolsEnabled)
+	opts := b.runOptions(claude.StreamJSONOutput, liveCLITools(streamOpts))
 
 	messages, errs := b.client.StreamPrompt(ctx, prompt, opts)
 
@@ -500,7 +500,7 @@ func (b *Brain) estimateSessionTokens() int {
 // populates ClaudeResult.SessionID when it parses a JSON transcript.
 func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
 	prompt := b.buildPrompt(streamOpts.OmitTurnInstruction)
-	opts := b.runOptions(claude.JSONOutput, streamOpts.ToolsEnabled)
+	opts := b.runOptions(claude.JSONOutput, liveCLITools(streamOpts))
 
 	result, err := b.client.RunPromptCtx(ctx, prompt, opts)
 	if err != nil {

@@ -192,7 +192,7 @@ type Pipeline struct {
 	// JobActive reports whether a worker job is running or queued.
 	JobActive func() bool
 	// Agency handles spawn/abort/status routes and async worker jobs.
-	Agency *Agency
+	Agency      *Agency
 	activeTurns atomic.Int32
 	// underrunOnce gates the "synthesis cannot keep up" notice to one per
 	// session; the condition holds on every turn once it holds at all.
@@ -1041,10 +1041,10 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	}
 	p.emit(events.ThinkingStarted{})
 
-	// Layer 1 — deterministic phrase routing before the small brain runs.
-	routeCtx := p.routeContext()
-	if kind, ok := classifyPhrase(text, routeCtx); ok && routeKindSkipsBrain(kind) {
-		p.completeRoutedTurn(ctx, turn, metrics, text, kind, "phrase")
+	// Layer 1 — deterministic phrase and work-intent routing before the live
+	// brain runs, so tool work never occupies the talking context window.
+	if kind, source, ok := classifyTurn(text, p.routeContext()); ok && routeKindSkipsBrain(kind) {
+		p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 		return text, nil
 	}
 
@@ -1054,13 +1054,13 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	turnCtx, turnCancel := p.withBrainTimeout(ctx)
 	defer turnCancel()
 
-	var toolsFired bool
+	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	streamOpts := brain.StreamOptions{
 		VoiceMode:         true,
 		Speaker:           speakerID,
 		ToolsEnabled:      p.VoiceToolsEnabled,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
-		OnToolStart:       p.toolStartHookTracked(&toolsFired),
+		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
 		OnToolEnd:         p.toolEndHook(),
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
@@ -1077,17 +1077,12 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		return text, nil
 	}
 
-	var repair *promiseRepairState
-	if p.VoiceFailedRouteRepair {
-		repair = &promiseRepairState{enabled: true, toolsFired: toolsFired}
-	}
-
 	fullResponse, interrupted, err := p.streamResponse(turnCtx, turnCancel, brainStream, true, metrics, turn, repair)
-	if repair != nil && repair.spawn {
+	if kind, source, ok := repair.routedKind(); ok {
 		if p.Player != nil {
 			p.Player.Stop()
 		}
-		p.completeRoutedTurn(ctx, turn, metrics, text, RouteSpawn, "repair")
+		p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 		return text, nil
 	}
 	if err != nil {
@@ -1167,19 +1162,26 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	}
 	thinkingStarted := metrics.sttFinal
 
+	if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
+		p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
+		return nil
+	}
+
 	// Bound model + tools so a hung Ollama chat after tool results cannot leave
 	// the TUI forever on "thinking" / last tool status.
 	brainCtx, brainCancel := p.withBrainTimeout(ctx)
 	defer brainCancel()
 
+	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	stream, err := p.Brain.ThinkStream(brainCtx, input, brain.StreamOptions{
-		Speaker:       speakerID,
-		ToolsEnabled:  p.VoiceToolsEnabled,
-		OnToolStart:   p.toolStartHook(),
-		OnToolEnd:     p.toolEndHook(),
-		OnUsage:       p.usageHook(),
-		OnSessionWarn: p.sessionWarnHook(),
-		OnPromptWarn:  p.promptWarnHook(),
+		Speaker:           speakerID,
+		ToolsEnabled:      p.VoiceToolsEnabled,
+		RouterToolsPolicy: p.liveRouterToolsPolicy(),
+		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
+		OnToolEnd:         p.toolEndHook(),
+		OnUsage:           p.usageHook(),
+		OnSessionWarn:     p.sessionWarnHook(),
+		OnPromptWarn:      p.promptWarnHook(),
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -1193,7 +1195,7 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	// Stream the reply so the TUI can render it token-by-token, then fall back
 	// to the existing whole-response synthesis path below. ResponseStreamingStarted
 	// and per-chunk ResponseDelta events are emitted inside observeStream.
-	response, err := p.collectTextStream(brainCtx, stream, metrics)
+	response, route, err := p.collectTextStream(brainCtx, stream, metrics)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -1204,6 +1206,12 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 		}
 		// Speak on the parent ctx: brainCtx is dead after a deadline stall.
 		p.recoverTurn(ctx, turn, metrics, response, err)
+		return nil
+	}
+	repair.applyBrainRoute(route)
+	_ = repair.shouldRepair(response)
+	if kind, source, ok := repair.routedKind(); ok {
+		p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		return nil
 	}
 
@@ -1638,6 +1646,12 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			modelFinished = true
 			metrics.modelComplete = time.Now()
 			p.emit(events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
+			if repair != nil && result.Route != "" {
+				repair.applyBrainRoute(result.Route)
+				if _, _, ok := repair.routedKind(); ok && p.Player != nil {
+					p.Player.Stop()
+				}
+			}
 			if result.Err != nil && !interrupted {
 				if result.Recovered {
 					// The brain already streamed a spoken recovery reply
@@ -2213,7 +2227,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 // ResponseDelta events along the way, and returns the full accumulated text.
 // It waits on stream.Done for the terminal error so a failed stream surfaces
 // even after partial chunks were displayed.
-func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, metrics *turnMetrics) (string, error) {
+func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, metrics *turnMetrics) (string, string, error) {
 	out, done := p.observeStream(ctx, stream, metrics)
 
 	var b strings.Builder
@@ -2231,16 +2245,16 @@ func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, 
 				metrics.degraded = true
 				p.emit(events.Error{Stage: "brain", Message: res.Err.Error()})
 				logDegradedTurn("brain", res.Err)
-				break
+				return strings.TrimSpace(b.String()), res.Route, nil
 			}
 			// Return any partial text so the caller's recovery path can keep
 			// it in the transcript alongside the recovery reply.
-			return strings.TrimSpace(b.String()), mapIdleDeadline(ctx, res.Err)
+			return strings.TrimSpace(b.String()), res.Route, mapIdleDeadline(ctx, res.Err)
 		}
+		return strings.TrimSpace(b.String()), res.Route, nil
 	case <-ctx.Done():
-		return strings.TrimSpace(b.String()), mapIdleDeadline(ctx, ctx.Err())
+		return strings.TrimSpace(b.String()), "", mapIdleDeadline(ctx, ctx.Err())
 	}
-	return strings.TrimSpace(b.String()), nil
 }
 
 func (p *Pipeline) resetEchoState() {

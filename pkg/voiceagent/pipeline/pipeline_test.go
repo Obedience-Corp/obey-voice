@@ -608,6 +608,7 @@ type fakeBrain struct {
 	chunks    []string
 	streamErr error
 	recovered bool // report streamErr as an already-recovered failure
+	route     string
 }
 
 func (f *fakeBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
@@ -624,7 +625,7 @@ func (f *fakeBrain) ThinkStream(ctx context.Context, input string, opts brain.St
 			case out <- chunk:
 			}
 		}
-		done <- brain.StreamResult{Err: f.streamErr, Recovered: f.recovered}
+		done <- brain.StreamResult{Err: f.streamErr, Recovered: f.recovered, Route: f.route}
 	}()
 	return &brain.Stream{Chunks: out, Done: done}, nil
 }

@@ -165,7 +165,7 @@ func (g *GrokBrain) streamAttempt(ctx context.Context, out chan<- string, stream
 	prompt := g.buildPrompt(streamOpts.OmitTurnInstruction)
 	strip := newLabelStripper(g.agentName())
 
-	events, errs := g.client.StreamPrompt(ctx, prompt, g.runOptions(grok.StreamingJSONOutput, streamOpts.ToolsEnabled))
+	events, errs := g.client.StreamPrompt(ctx, prompt, g.runOptions(grok.StreamingJSONOutput, liveCLITools(streamOpts)))
 
 	var fullResponse strings.Builder
 	streamedAny := false
@@ -255,7 +255,7 @@ func (g *GrokBrain) ThinkFull(ctx context.Context, input string, streamOpts Stre
 func (g *GrokBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) (string, error) {
 	prompt := g.buildPrompt(streamOpts.OmitTurnInstruction)
 
-	result, err := g.client.RunPromptCtx(ctx, prompt, g.runOptions(grok.JSONOutput, streamOpts.ToolsEnabled))
+	result, err := g.client.RunPromptCtx(ctx, prompt, g.runOptions(grok.JSONOutput, liveCLITools(streamOpts)))
 	if err != nil {
 		return "", fmt.Errorf("grok error: %w", err)
 	}

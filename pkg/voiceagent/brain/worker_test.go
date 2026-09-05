@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -22,9 +23,9 @@ func (r *recordingWorker) ThinkFull(ctx context.Context, input string, opts Stre
 	return r.reply, nil
 }
 
-func (r *recordingWorker) ClearHistory()            {}
-func (r *recordingWorker) History() []Turn        { return nil }
-func (r *recordingWorker) LoadHistory([]Turn)     {}
+func (r *recordingWorker) ClearHistory()      {}
+func (r *recordingWorker) History() []Turn    { return nil }
+func (r *recordingWorker) LoadHistory([]Turn) {}
 
 type fakeStreamBrain struct {
 	chunks []string
@@ -56,7 +57,7 @@ func (f *fakeStreamBrain) ThinkFull(context.Context, string, StreamOptions) (str
 	return f.chunks[0], nil
 }
 
-func (f *fakeStreamBrain) ClearHistory()        {}
+func (f *fakeStreamBrain) ClearHistory()      {}
 func (f *fakeStreamBrain) History() []Turn    { return nil }
 func (f *fakeStreamBrain) LoadHistory([]Turn) {}
 
@@ -73,6 +74,20 @@ func TestWorkerStreamOptions(t *testing.T) {
 	}
 }
 
+func TestNewWorkerProviderRefusesTwoLocalOllama(t *testing.T) {
+	_, err := NewWorkerProvider(&config.Config{
+		BrainProvider:       "ollama",
+		OllamaHost:          "http://localhost:11434",
+		VoiceWorkerProvider: "ollama",
+	})
+	if err == nil {
+		t.Fatal("expected error for two local Ollama workers")
+	}
+	if !strings.Contains(err.Error(), "second local model") {
+		t.Fatalf("err = %q, want second local model", err)
+	}
+}
+
 func TestWorkerConfigDefaultsToGrok(t *testing.T) {
 	cfg := &config.Config{}
 	got := config.WorkerBrainConfig(cfg)
@@ -83,8 +98,8 @@ func TestWorkerConfigDefaultsToGrok(t *testing.T) {
 
 func TestWorkerConfigModelOverride(t *testing.T) {
 	cfg := &config.Config{
-		VoiceWorkerProvider: "ollama",
-		VoiceWorkerModel:    "qwen3:30b",
+		VoiceWorkerProvider:   "ollama",
+		VoiceWorkerModel:      "qwen3:30b",
 		VoiceWorkerOllamaHost: "http://studio:11434",
 	}
 	got := config.WorkerBrainConfig(cfg)
