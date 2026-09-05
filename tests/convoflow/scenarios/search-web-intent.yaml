@@ -1,0 +1,46 @@
+name: search-web-intent
+description: PR #114 Layer-1 — "search the web" must spawn on the local worker, not chat unavailability
+duration: 5m
+input: text
+router_tools: route_only
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: chat
+    user: "how's it going"
+    timeout: 90s
+    wait: idle
+    expect:
+      - { event: response_ready }
+      - { no_event: job_started }
+      - { spoken_not_matches: "(?i)web search is unavailable" }
+      - { live_router_policy: route_only }
+
+  - id: search
+    user: "search the web for rust 1.90"
+    wait: job_terminal
+    timeout: 3m
+    expect:
+      - { event: job_started }
+      - { event: job_terminal }
+      - { spoken_matches: "(?i)working on it" }
+      - { spoken_not_matches: "(?i)web search is unavailable" }
+      - { no_event: tool_call_started }
+      - { live_history_excludes: "search the web" }
+      - { worker_tools_enabled: true }
+      - { worker_router_policy: legacy }
+      - { route_kind: spawn }
+      - { route_source: intent }
+
+  - id: followup
+    user: "what were we just talking about"
+    wait: idle
+    expect:
+      - { no_event: job_started }
+      - { live_history_excludes: "search the web" }
+
+expect:
+  - { metric: job_started, op: ">=", value: 1 }
+  - { metric: live_tool_calls, op: "==", value: 0 }
+  - { metric: spoken_leak_lines, op: "==", value: 0 }

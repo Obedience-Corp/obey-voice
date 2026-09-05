@@ -1,0 +1,16 @@
+name: self-test
+description: no-model harness fixture; not the product gate
+duration: 30s
+input: text
+
+turns:
+  - id: chat
+    user: "hello"
+    wait: idle
+    expect:
+      - { event: response_ready }
+
+expect:
+  - { metric: job_started, op: "==", value: 0 }
+  - { metric: live_tool_calls, op: "==", value: 0 }
+  - { metric: spoken_leak_lines, op: "==", value: 0 }

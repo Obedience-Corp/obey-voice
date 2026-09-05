@@ -1,0 +1,18 @@
+name: live-router-spawn
+description: soft — live brain may route(spawn) or chat; must not say search is unavailable
+duration: 5m
+input: text
+router_tools: route_only
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: ask
+    user: "what's the latest rust version online"
+    wait: idle
+    timeout: 3m
+    expect:
+      - { spoken_not_matches: "(?i)web search is unavailable" }
+
+expect:
+  - { metric: spoken_leak_lines, op: "==", value: 0 }

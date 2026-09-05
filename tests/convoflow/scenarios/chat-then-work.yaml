@@ -1,0 +1,46 @@
+name: chat-then-work
+description: live history keeps chat, drops the spawned work turn
+duration: 5m
+input: text
+router_tools: route_only
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: chat
+    user: "remember that my favorite color is blue"
+    timeout: 90s
+    wait: idle
+    expect:
+      - { event: response_ready }
+      - { no_event: job_started }
+      - { live_history_includes: "favorite color" }
+      - { live_router_policy: route_only }
+
+  - id: search
+    user: "look up the latest kernel CVE"
+    wait: job_terminal
+    timeout: 3m
+    expect:
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { route_source: intent }
+      - { spoken_matches: "(?i)working on it" }
+      - { spoken_not_matches: "(?i)web search is unavailable" }
+      - { no_event: tool_call_started }
+      - { live_history_excludes: "look up the latest" }
+      - { live_history_includes: "favorite color" }
+      - { worker_tools_enabled: true }
+      - { worker_router_policy: legacy }
+
+  - id: followup
+    user: "what is my favorite color"
+    wait: idle
+    expect:
+      - { no_event: job_started }
+      - { live_history_excludes: "look up the latest" }
+      - { live_history_includes: "favorite color" }
+
+expect:
+  - { metric: job_started, op: ">=", value: 1 }
+  - { metric: live_tool_calls, op: "==", value: 0 }

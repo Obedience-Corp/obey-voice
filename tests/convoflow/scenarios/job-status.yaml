@@ -1,0 +1,38 @@
+name: job-status
+description: Layer-1 status while the local worker is still running
+duration: 5m
+input: text
+router_tools: route_only
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: search
+    user: "search the web for rust 1.90"
+    wait: job_started
+    timeout: 90s
+    expect:
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { spoken_matches: "(?i)working on it" }
+      - { no_event: tool_call_started }
+
+  - id: status
+    user: "status"
+    wait: idle
+    timeout: 30s
+    expect:
+      - { route_kind: job.status }
+      - { spoken_matches: "(?i)still working on" }
+      - { no_event: job_started }
+
+  - id: drain
+    user: ""
+    wait: job_terminal
+    timeout: 3m
+    expect:
+      - { spoken_not_matches: "(?i)web search is unavailable" }
+
+expect:
+  - { metric: job_started, op: "==", value: 1 }
+  - { metric: live_tool_calls, op: "==", value: 0 }

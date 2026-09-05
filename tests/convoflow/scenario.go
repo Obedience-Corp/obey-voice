@@ -1,0 +1,143 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+type waitKind string
+
+const (
+	waitIdle        waitKind = "idle"
+	waitJobStarted  waitKind = "job_started"
+	waitJobTerminal waitKind = "job_terminal"
+)
+
+// Scenario is one scripted conversation. Unknown YAML keys are load errors.
+type Scenario struct {
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Duration    duration `yaml:"duration"`
+	Input       string   `yaml:"input"` // text | speech
+	RouterTools string   `yaml:"router_tools"`
+	TTS         struct {
+		Provider string `yaml:"provider"`
+		Voice    string `yaml:"voice"`
+	} `yaml:"tts"`
+	Capture struct {
+		Audio    bool `yaml:"audio"`
+		Speakers bool `yaml:"speakers"`
+	} `yaml:"capture"`
+	Turns  []Turn         `yaml:"turns"`
+	Expect []Expectation  `yaml:"expect"`
+	Brain  scenarioBrain  `yaml:"brain"`
+	Worker scenarioWorker `yaml:"worker"`
+}
+
+type scenarioBrain struct {
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`
+	Host     string `yaml:"host"`
+}
+
+type scenarioWorker struct {
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`
+	Host     string `yaml:"host"`
+}
+
+type Turn struct {
+	ID      string        `yaml:"id"`
+	User    string        `yaml:"user"`
+	Timeout duration      `yaml:"timeout"`
+	Wait    waitKind      `yaml:"wait"`
+	Expect  []Expectation `yaml:"expect"`
+	WAV     string        `yaml:"wav"`
+}
+
+type Expectation struct {
+	Event               string `yaml:"event"`
+	NoEvent             string `yaml:"no_event"`
+	SpokenMatches       string `yaml:"spoken_matches"`
+	SpokenNotMatches    string `yaml:"spoken_not_matches"`
+	LiveHistoryIncludes string `yaml:"live_history_includes"`
+	LiveHistoryExcludes string `yaml:"live_history_excludes"`
+	LiveRouterPolicy    string `yaml:"live_router_policy"`
+	WorkerRouterPolicy  string `yaml:"worker_router_policy"`
+	WorkerToolsEnabled  *bool  `yaml:"worker_tools_enabled"`
+	RouteKind           string `yaml:"route_kind"`
+	RouteSource         string `yaml:"route_source"`
+	Metric              string `yaml:"metric"`
+	Op                  string `yaml:"op"`
+	Value               int    `yaml:"value"`
+}
+
+type duration struct{ time.Duration }
+
+func (d *duration) UnmarshalYAML(node *yaml.Node) error {
+	var s string
+	if err := node.Decode(&s); err != nil {
+		return err
+	}
+	if s == "" {
+		d.Duration = 0
+		return nil
+	}
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("bad duration %q: %w", s, err)
+	}
+	d.Duration = v
+	return nil
+}
+
+func loadScenario(path string) (*Scenario, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return loadScenarioReader(path, f)
+}
+
+func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
+	dec := yaml.NewDecoder(r)
+	dec.KnownFields(true)
+	var scn Scenario
+	if err := dec.Decode(&scn); err != nil {
+		return nil, fmt.Errorf("load %s: %w", name, err)
+	}
+	if scn.Name == "" {
+		return nil, fmt.Errorf("load %s: name is required", name)
+	}
+	if scn.Input == "" {
+		scn.Input = "text"
+	}
+	if scn.Input != "text" && scn.Input != "speech" {
+		return nil, fmt.Errorf("load %s: input must be text or speech", name)
+	}
+	for i := range scn.Turns {
+		t := &scn.Turns[i]
+		if t.Wait == "" {
+			t.Wait = waitIdle
+		}
+		switch t.Wait {
+		case waitIdle, waitJobStarted, waitJobTerminal:
+		default:
+			return nil, fmt.Errorf("load %s: turn %q: unknown wait %q", name, t.ID, t.Wait)
+		}
+		if t.User == "" && t.Wait != waitJobTerminal && t.Wait != waitIdle {
+			return nil, fmt.Errorf("load %s: turn %q: empty user only allowed with wait idle or job_terminal", name, t.ID)
+		}
+	}
+	return &scn, nil
+}
+
+func loadScenarioString(name, body string) (*Scenario, error) {
+	return loadScenarioReader(name, strings.NewReader(body))
+}
