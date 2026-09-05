@@ -57,14 +57,19 @@ func (h *hub) releaseMic(c *streamConn) {
 }
 
 // releaseTurnMic takes the mic back for the turn gen identifies, and reports
-// whether the recogniser was still waiting on that turn's audio. A claim the
-// connection was granted for a *later* turn is left alone: the deadline that
-// calls this can be firing for a turn that ended while the next one was being
-// dequeued, and releasing then would cut off whoever is talking now.
+// whether the recogniser was still waiting on that turn's audio. A claim
+// granted to a *later* turn is left alone: the deadline that calls this can be
+// firing for a turn that ended while the next one was being dequeued, and
+// releasing then would cut off whoever is talking now.
+//
+// An older claim is this deadline's to take back. A connection has one
+// deadline, so arming for this turn already retired the earlier turn's, and
+// when the client goes quiet still holding that claim nothing else will ever
+// hand it back.
 func (h *hub) releaseTurnMic(c *streamConn, gen uint64) (utteranceOpen bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.micGen != gen {
+	if h.micGen > gen {
 		return false
 	}
 	return h.releaseLocked(c)

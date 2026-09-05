@@ -237,3 +237,32 @@ func TestQueuedTurnAbandonedBeforeItDequeues(t *testing.T) {
 		t.Errorf("bus turn_interrupted = %v, want none: the turn never ran", got)
 	}
 }
+
+// TestStallReleasesTheClaimBehindAQueuedTurn: a connection has exactly one
+// deadline, so queuing a second turn re-arms it and the live turn no longer has
+// one of its own. When that client goes quiet, the deadline firing for the
+// queued turn is the only thing left that can hand back the claim the live turn
+// is still holding — the half-open socket this watchdog exists for. Refusing to
+// release anything but an exact generation match would leak the mic for the
+// life of the process.
+func TestStallReleasesTheClaimBehindAQueuedTurn(t *testing.T) {
+	s, conn := stalledTurnServer(t)
+	log := recordInterrupts(s)
+
+	live := s.armVoiceTurn(conn)
+	if err := s.hub.claimMic(conn, live); err != nil {
+		t.Fatalf("claimMic: %v", err)
+	}
+	// A second voice_start queues behind it and re-arms the one deadline.
+	queued := s.armVoiceTurn(conn)
+	conn.openQueuedTurn(queued)
+
+	s.voiceTurnStalled(conn, queued, voiceSilentReason)
+
+	if micClaimed(s.hub) {
+		t.Error("the live claim outlived the deadline: the mic is held until the process restarts")
+	}
+	if got := log.all(); len(got) != 1 || got[0] != voiceSilentReason {
+		t.Errorf("bus turn_interrupted = %v, want exactly one %q: that turn really was running", got, voiceSilentReason)
+	}
+}
