@@ -31,7 +31,17 @@ func Providers() []ProviderSpec {
 }
 
 // NewProvider constructs the configured STT provider and its cleanup hook.
+// When config yields custom words, the provider is wrapped so every final
+// transcript is corrected before it is emitted; see CustomWordsFromConfig.
 func NewProvider(cfg *config.Config, capture audioSource, vad *audio.VAD) (Provider, func(), error) {
+	provider, cleanup, err := newBaseProvider(cfg, capture, vad)
+	if err != nil {
+		return nil, nil, err
+	}
+	return withConfiguredCorrection(provider, cfg), cleanup, nil
+}
+
+func newBaseProvider(cfg *config.Config, capture audioSource, vad *audio.VAD) (Provider, func(), error) {
 	norm, err := config.NormalizeSTTWithMode(cfg.STTProvider, cfg.STTMode)
 	if err != nil {
 		if _, ok := config.NormalizeSTT(cfg.STTProvider); !ok {

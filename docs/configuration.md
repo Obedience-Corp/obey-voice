@@ -135,6 +135,9 @@ when you select it.
 | `whispercpp_model_path` | `~/.cache/festival-voice/models/whispercpp/ggml-base.en.bin` | `WHISPERCPP_MODEL_PATH` | whisper.cpp model path |
 | `transcribecpp_binary` | `transcribe-cli` | `TRANSCRIBECPP_BINARY` | transcribe.cpp CLI executable. A path is used as given; a bare name is looked up on `PATH`, then in the copy `models ensure` manages |
 | `transcribecpp_model` | `parakeet-tdt-0.6b-v2` | `TRANSCRIBECPP_MODEL` | GGUF the `transcribecpp` provider loads. This is upstream's full model slug, so it is spelled longer than `parakeet_model`'s `tdt-0.6b-v2` — not a typo |
+| `stt_custom_words` | *(empty)* | | Names and jargon the transcriber restores after decoding: `Samantha`; `Claude=clawed,cloud` names misheard forms that map to it exactly; `Ollama!` also catches near-misses when the word is rare (five or more letters and not an everyday word). Config file only, e.g. `["Samantha", "Claude=clawed,cloud", "Ollama!"]`. See [Custom words](#custom-words) |
+| `stt_custom_words_from_personas` | `true` | | Adds every persona's display name to the custom words; rare names also catch near-misses |
+| `stt_word_correction_threshold` | `0.12` | | Fuzzy acceptance score, 0.01–0.45; lower is stricter. Raise it only after `obey-voice stt audit` shows no wrong replacements |
 | `vad_enabled` | `true` | | Enable voice activity detection |
 | `vad_silence_duration` | `1.2` | | Seconds of silence before ending speech (raise to stop being cut off) |
 | `vad_threshold` | `0.6` | `VAD_THRESHOLD` | Speech-detection confidence (raise to ignore background noise) |
@@ -284,6 +287,52 @@ brain dominate and the TTS win is invisible; any non-zero `Underruns` on the
 streamed run means that machine must not stream, whatever its TTFA says. The
 two-machine Topology B run (host here, CUDA worker over `speech-serve`) is the
 one that exercises the LAN default and needs both computers.
+
+## Custom words
+
+Speech-to-text spells names and jargon the way its training data did: a
+persona called Veronica comes back as "veronika", Ollama as "olama", a product
+name as two words. The correction runs after decoding, in the STT layer, on
+every path that produces a final transcript — the conversation, meetings, the
+remote pipeline and the benchmark — and it is deterministic: no model, no
+network, well under a millisecond.
+
+Terms come from `stt_custom_words` and, with `stt_custom_words_from_personas`
+on (the default), from every persona's display name. Each term matches its own
+spelling exactly however it was split, hyphenated or cased ("sam antha",
+"obey voice"), and each alias maps a misheard form to it exactly:
+
+```yaml
+stt_custom_words:
+  - Samantha
+  - Claude=clawed,cloud
+  - obey-voice
+  - Ollama!
+```
+
+A trailing `!` opts a term into fuzzy matching, which also catches spellings
+that were never listed. It is honored only for rare words — at least five
+letters and not an everyday English word or common name — because replacing
+real words is how a matcher turns "worked" into a product name. Persona names
+get the same treatment automatically: Samantha and Veronica catch near-misses;
+Santa and Joker match exactly. Fuzzy replacement never touches a span made only
+of everyday words, and `stt_word_correction_threshold` (default `0.12`) sets
+how close a near-miss must be.
+
+Before trusting a term, replay it over what you have already said:
+
+```bash
+obey-voice stt audit                      # saved conversations and meeting bundles
+obey-voice stt audit --terms 'Kokoro!'    # try an addition without editing config
+obey-voice stt audit --threshold 0.2 --json
+```
+
+The audit lists every replacement it would make as phrase → term × count with
+an example line, plus the near misses it would leave alone. A phrase that
+should not change is a term to remove, to alias exactly, or to drop the `!`
+from. The word list behind the rare-word rule is derived from SCOWL; its
+notice ships with the binary's source under
+`pkg/voiceagent/stt/correct/SCOWL-COPYRIGHT.txt`.
 
 ## transcribe.cpp (optional STT)
 

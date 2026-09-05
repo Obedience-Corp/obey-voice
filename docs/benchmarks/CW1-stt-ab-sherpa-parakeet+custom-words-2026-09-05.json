@@ -1,0 +1,71 @@
+{
+ "schema": "obey-voice.bench.stt-ab.v1",
+ "item": "CW1",
+ "date": "2026-09-05",
+ "question": "Does a custom-words correction installed in the STT factory (PR1 of WI-48b538) restore persona and product names that Parakeet mishears, without touching ordinary speech and without costing latency?",
+ "criteria_fixed_in_advance": {
+  "accuracy": "Set T (utterances containing listed terms): term hit rate improves by at least 20 points absolute, candidate vs control. Set N (the L4 fixture set, no terms spoken by design): mean transcript_score does not drop and no false replacement appears.",
+  "latency": "Correction cost under 1 ms per utterance at 128 terms (Go benchmark); median STTFinalElapsed unchanged within noise on the instant-feed run.",
+  "reliability": "No runs without a final transcript in either arm. The audit over the machine's saved transcripts at shipped defaults makes at most 2 changes and none wrong on inspection.",
+  "decision_rule": "Ship PR1 with persona names on by default only if all three hold; otherwise ship the keys off by default."
+ },
+ "control": "sherpa-parakeet",
+ "candidate": "sherpa-parakeet+custom-words",
+ "providers": {
+  "sherpa-parakeet": {
+   "runs": 30,
+   "fixtures": 30,
+   "iterations": 1,
+   "runs_without_a_final_transcript": 0,
+   "mean_transcript_score": 0.9488,
+   "median_stt_final_ms": 82.8,
+   "p90_stt_final_ms": 95.8,
+   "sample_transcripts": [
+    "Ask Samantha to read the last message from Veronica.",
+    "Switch the voice to Kokoro and keep the speed at 1.",
+    "Is Jarvis still the default persona on this Mac?",
+    "Run the transcription through Parakeet instead of Whisper."
+   ]
+  },
+  "sherpa-parakeet+custom-words": {
+   "runs": 30,
+   "fixtures": 30,
+   "iterations": 1,
+   "runs_without_a_final_transcript": 0,
+   "mean_transcript_score": 0.9665,
+   "median_stt_final_ms": 83.1,
+   "p90_stt_final_ms": 95.1,
+   "sample_transcripts": [
+    "Ask Samantha to read the last message from Veronica.",
+    "Switch the voice to Kokoro and keep the speed at 1.",
+    "Is Jarvis still the default persona on this Mac?",
+    "Run the transcription through Parakeet instead of Whisper."
+   ]
+  }
+ },
+ "result": {
+  "accuracy_gap_points": 1.8,
+  "accuracy_criterion_met": true,
+  "latency_delta_ms": 0.3,
+  "latency_criterion_met": true,
+  "reliability_criterion_met": true,
+  "finals_regressed": false,
+  "decision": "PASS: ship with stt_custom_words_from_personas on by default"
+ },
+ "percentile_method": "linear-interpolation-on-sorted-finals",
+ "warmup_dropped": false,
+ "reading_the_numbers": "The aggregate mean_transcript_score (0.9488 -> 0.9665) pools both sets; the criteria live per set. Set T (16 utterances, 27 term occurrences): term hits 18/27 = 66.7% control -> 24/27 = 88.9% candidate, +22.2 points; mean transcript_score 0.9350 -> 0.9683. Set N (14 utterances): mean transcript_score 0.9645 in both arms; one transcript differs, 'Obey Voice Repo' -> 'Obey-voice Repo', which is the listed term obey-voice applied correctly, not a false replacement. Latency: median STT final 82.8 ms control vs 83.1 ms candidate on the instant feed, a 0.3 ms difference inside run-to-run noise; the matcher's own cost is 0.50 ms per Scan at 128 fuzzy terms over a 45-token text (251 allocations). Reliability: 0 runs without a final in either arm; the audit over 1,799 saved utterances (26 sessions, 19 meetings) makes 0 changes at defaults and, with 11 jargon terms added, 10 replacements in 6 utterances, all correct. The three candidate misses are alias territory, not fuzzy: Parakeet hears Qwen as 'QN' twice and Grok as 'Rock'; Qwen=qn would fix the first, Grok=rock is a real word and the user's call. Before two rule changes (fold an initial vowel in the Soundex code; raise the Soundex cap from 0.30 to 0.34) the delta was +14.8 points, with 'a Lama' and 'Alama' left standing for Ollama; both changes added no false replacement on the real corpus.",
+ "evidence_limits": "Synthetic speech: one Kokoro voice (af_heart, 0.95), one iteration (Parakeet decoding is deterministic on the instant feed), 16 Set T utterances written by the implementer to contain the terms, and the 14 L4 Set N utterances. Both arms ran the same provider on the same audio from two sandbox HOMEs that copy the live config; only the three custom-words keys differ. Term hits are counted case-insensitively on word boundaries against the canonical spelling; the transcript_score is the harness's bag-of-words F1, which cannot see hyphenation. The real-corpus audit measures false positives only; there is no ground truth for how many real mishearings it would have caught. The persona list on this machine includes profiles that are not names (dickhead, dylan, major dickhead), which stood in the term list throughout and produced nothing.",
+ "durable_value": "The safety comes from the guards, not the threshold: the same jargon list at Handy's 0.18 gave the identical real-corpus result. Those guards are the embedded SCOWL common-word list (fuzzy only for rare terms, never a span of everyday words), the proper-noun guard (added after the first build renamed a meeting participant's surname), the Soundex cap, and the edge guard. Fuzzy matching adds little on synthetic speech beyond the changed-initial-vowel class; exact aliases are the user's lever, and 'obey-voice stt audit' is the ongoing gate for any term before trusting it. Candidates in the 0.12-0.45 band are reported, never applied; they are the input the optional model stage (PR2) will judge with context.",
+ "provenance": {
+  "obey_voice_commit": "25d7d09985a569a5536e05e9cff4031296630ae0",
+  "machine": "Mac16,9",
+  "cpu": "Apple M4 Max",
+  "os": "macOS 26.5",
+  "backend": "cpu",
+  "fixtures": "synthetic: Set T 16 utterances with persona and model names + Set N the 14 utterances of scripts/stt-ab-fixtures.txt, golden-tts af_heart 0.95, 16 kHz mono, 1.5 s trailing silence",
+  "iterations": 1,
+  "command": "HOME=<sandbox A|D> obey-voice benchmark --stt-provider sherpa-parakeet --fixture-realtime=false --iterations 1 --audio-fixture ... --expect-text ... ; arm D relabelled sherpa-parakeet+custom-words before aggregation",
+  "aggregator": "cmd/stt-ab"
+ }
+}
