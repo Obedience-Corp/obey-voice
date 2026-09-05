@@ -95,6 +95,16 @@ func modelKeys() []KeySpec {
 			Help: "How far a misheard word may be from a custom word and still be replaced. Lower is stricter; raise it only after the audit shows no wrong replacements.",
 		},
 		{
+			Key: "stt_filler_removal", Type: TypeBool, Default: false,
+			Group: GroupModels, Title: "Drop hesitation sounds",
+			Help: "Removes um, uh and hmm from what you said before it is written down or answered. Answers such as uh-huh stay, and a lone Hmm stays.",
+		},
+		{
+			Key: "stt_numbers", Type: TypeBool, Default: false,
+			Group: GroupModels, Title: "Numbers as digits",
+			Help: "Writes spoken numbers the way a reader would: thirty five becomes 35, five percent 5%, twenty thousand dollars $20,000, twenty twenty two 2022. Small counts stay words.",
+		},
+		{
 			Key: "sherpa_streaming_model", Type: TypeString, Default: "en-2023-06-26",
 			Group: GroupModels, Title: "Streaming model",
 			Help: "The zipformer model used in streaming mode.",

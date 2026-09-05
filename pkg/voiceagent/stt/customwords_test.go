@@ -2,6 +2,7 @@ package stt
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -63,5 +64,12 @@ func TestWithConfiguredCorrection(t *testing.T) {
 	}
 	if got := withConfiguredCorrection(p, &config.Config{STTCustomWordsFromPersonas: true, AgentName: "Obey"}); got == Provider(p) {
 		t.Fatal("the agent name should wrap the provider")
+	}
+	if got := withConfiguredCorrection(p, &config.Config{STTFillerRemoval: true}); got == Provider(p) {
+		t.Fatal("filler removal should wrap the provider")
+	}
+	chain, report := StagesFromConfig(&config.Config{STTFillerRemoval: true, STTNumbers: true, STTCustomWords: []string{"Samantha"}})
+	if chain.Len() != 3 || strings.Join(report.Stages, ",") != "fillers,custom_words,numbers" {
+		t.Fatalf("stages = %v", report.Stages)
 	}
 }

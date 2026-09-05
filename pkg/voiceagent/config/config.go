@@ -68,15 +68,19 @@ type Config struct {
 	STTCustomWordsFromPersonas bool `mapstructure:"stt_custom_words_from_personas"`
 	// STTWordCorrectionThreshold is the fuzzy acceptance score; lower is stricter.
 	STTWordCorrectionThreshold float64 `mapstructure:"stt_word_correction_threshold"`
-	SherpaStreamingModel       string  `mapstructure:"sherpa_streaming_model"`
-	WhisperModel               string  `mapstructure:"whisper_model"`
-	ParakeetModel              string  `mapstructure:"parakeet_model"`
-	WhisperQuantized           bool    `mapstructure:"whisper_quantized"`
-	WhisperCPPBinary           string  `mapstructure:"whispercpp_binary"`
-	WhisperCPPModel            string  `mapstructure:"whispercpp_model"`
-	WhisperCPPModelPath        string  `mapstructure:"whispercpp_model_path"`
-	TranscribeCPPBinary        string  `mapstructure:"transcribecpp_binary"`
-	TranscribeCPPModel         string  `mapstructure:"transcribecpp_model"`
+	// STTFillerRemoval drops hesitation sounds (um, uh, hmm) from final transcripts.
+	STTFillerRemoval bool `mapstructure:"stt_filler_removal"`
+	// STTNumbers writes spoken numbers as digits where a reader would.
+	STTNumbers           bool   `mapstructure:"stt_numbers"`
+	SherpaStreamingModel string `mapstructure:"sherpa_streaming_model"`
+	WhisperModel         string `mapstructure:"whisper_model"`
+	ParakeetModel        string `mapstructure:"parakeet_model"`
+	WhisperQuantized     bool   `mapstructure:"whisper_quantized"`
+	WhisperCPPBinary     string `mapstructure:"whispercpp_binary"`
+	WhisperCPPModel      string `mapstructure:"whispercpp_model"`
+	WhisperCPPModelPath  string `mapstructure:"whispercpp_model_path"`
+	TranscribeCPPBinary  string `mapstructure:"transcribecpp_binary"`
+	TranscribeCPPModel   string `mapstructure:"transcribecpp_model"`
 
 	// VAD
 	VADEnabled                bool    `mapstructure:"vad_enabled"`
@@ -459,6 +463,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("stt_custom_words", []string{})
 	v.SetDefault("stt_custom_words_from_personas", true)
 	v.SetDefault("stt_word_correction_threshold", 0.12)
+	v.SetDefault("stt_filler_removal", false)
+	v.SetDefault("stt_numbers", false)
 	v.SetDefault("sherpa_streaming_model", "en-2023-06-26")
 	v.SetDefault("whisper_model", "small")
 	v.SetDefault("parakeet_model", DefaultParakeetModel)
