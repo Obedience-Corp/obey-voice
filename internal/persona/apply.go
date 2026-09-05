@@ -76,7 +76,31 @@ func ensureMigrated(cfg *config.Config) error {
 	}
 
 	cfg.ActivePersona = resolveActive(cfg.ActivePersona, config.Declared("active_persona"), existing)
+	cfg.PersonaDisplayNames = displayNames(existing)
 	return nil
+}
+
+// displayNames lists the display names of profiles, in catalog order.
+func displayNames(profiles []*Profile) []string {
+	names := make([]string, 0, len(profiles))
+	for _, p := range profiles {
+		if p == nil || strings.TrimSpace(p.DisplayName) == "" {
+			continue
+		}
+		names = append(names, p.DisplayName)
+	}
+	return names
+}
+
+// fillDisplayNames gives a snapshot the persona names it lacks. A config
+// loaded without the after-load hook (LoadRaw) has none.
+func fillDisplayNames(cfg *config.Config) {
+	if len(cfg.PersonaDisplayNames) > 0 {
+		return
+	}
+	if all, err := List(); err == nil {
+		cfg.PersonaDisplayNames = displayNames(all)
+	}
 }
 
 // resolveActive picks the active persona id given the profiles on disk.

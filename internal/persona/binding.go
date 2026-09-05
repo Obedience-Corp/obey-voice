@@ -64,6 +64,7 @@ func ResolveBinding(cfg *config.Config, id string) (*SessionBinding, error) {
 	}
 
 	snap := *cfg
+	fillDisplayNames(&snap)
 	Apply(&snap, p)
 	return newBinding(p.ID, p.DisplayName, p.TTS, snap), nil
 }
@@ -77,6 +78,7 @@ func ResolveDefaultsBinding(cfg *config.Config) (*SessionBinding, error) {
 		return nil, fmt.Errorf("persona: config is nil")
 	}
 	snap := *cfg
+	fillDisplayNames(&snap)
 	p, err := Load(DefaultID)
 	if err != nil {
 		if !isNotExist(err) {

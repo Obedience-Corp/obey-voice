@@ -57,18 +57,26 @@ type Config struct {
 	TTSLanTimeoutMS int `mapstructure:"tts_lan_timeout_ms"`
 
 	// STT
-	STTProvider          string `mapstructure:"stt_provider"`
-	InputDevice          string `mapstructure:"input_device"`
-	STTMode              string `mapstructure:"stt_mode"`
-	SherpaStreamingModel string `mapstructure:"sherpa_streaming_model"`
-	WhisperModel         string `mapstructure:"whisper_model"`
-	ParakeetModel        string `mapstructure:"parakeet_model"`
-	WhisperQuantized     bool   `mapstructure:"whisper_quantized"`
-	WhisperCPPBinary     string `mapstructure:"whispercpp_binary"`
-	WhisperCPPModel      string `mapstructure:"whispercpp_model"`
-	WhisperCPPModelPath  string `mapstructure:"whispercpp_model_path"`
-	TranscribeCPPBinary  string `mapstructure:"transcribecpp_binary"`
-	TranscribeCPPModel   string `mapstructure:"transcribecpp_model"`
+	STTProvider string `mapstructure:"stt_provider"`
+	InputDevice string `mapstructure:"input_device"`
+	STTMode     string `mapstructure:"stt_mode"`
+	// STTCustomWords are spellings the transcriber restores after decoding:
+	// "Samantha", "Claude=clawed,cloud" (aliases), "Ollama!" (fuzzy when the
+	// word is rare). Config file only, like name_summon_aliases.
+	STTCustomWords []string `mapstructure:"stt_custom_words"`
+	// STTCustomWordsFromPersonas adds every persona display name to the list.
+	STTCustomWordsFromPersonas bool `mapstructure:"stt_custom_words_from_personas"`
+	// STTWordCorrectionThreshold is the fuzzy acceptance score; lower is stricter.
+	STTWordCorrectionThreshold float64 `mapstructure:"stt_word_correction_threshold"`
+	SherpaStreamingModel       string  `mapstructure:"sherpa_streaming_model"`
+	WhisperModel               string  `mapstructure:"whisper_model"`
+	ParakeetModel              string  `mapstructure:"parakeet_model"`
+	WhisperQuantized           bool    `mapstructure:"whisper_quantized"`
+	WhisperCPPBinary           string  `mapstructure:"whispercpp_binary"`
+	WhisperCPPModel            string  `mapstructure:"whispercpp_model"`
+	WhisperCPPModelPath        string  `mapstructure:"whispercpp_model_path"`
+	TranscribeCPPBinary        string  `mapstructure:"transcribecpp_binary"`
+	TranscribeCPPModel         string  `mapstructure:"transcribecpp_model"`
 
 	// VAD
 	VADEnabled                bool    `mapstructure:"vad_enabled"`
@@ -152,9 +160,9 @@ type Config struct {
 	VoiceWorkerModel string `mapstructure:"voice_worker_model"`
 	// VoiceWorkerOllamaHost overrides ollama_host for the worker when it is ollama.
 	VoiceWorkerOllamaHost string `mapstructure:"voice_worker_ollama_host"`
-	GrokModel     string `mapstructure:"grok_model"`
-	CursorModel   string `mapstructure:"cursor_model"`
-	OllamaModel   string `mapstructure:"ollama_model"`
+	GrokModel             string `mapstructure:"grok_model"`
+	CursorModel           string `mapstructure:"cursor_model"`
+	OllamaModel           string `mapstructure:"ollama_model"`
 	// OllamaEmbeddingModel routes user prompts to relevant Agent Skills. Empty
 	// disables harness-side semantic activation and leaves model-driven
 	// read_skill available as a fallback.
@@ -249,6 +257,11 @@ type Config struct {
 	RuntimeEnvUser     string `mapstructure:"-"`
 	RuntimeEnvHostname string `mapstructure:"-"`
 	RuntimeEnvOS       string `mapstructure:"-"`
+
+	// PersonaDisplayNames is every persona's display name, filled by the
+	// persona after-load hook and the session binders so the STT factory can
+	// spell them without importing the persona package. Not a config key.
+	PersonaDisplayNames []string `mapstructure:"-"`
 
 	// ActivePersona is the persona profile id under personas/<id>/.
 	// On Load it drives agent_name, persona prompt name, and tts_voice overlays.
@@ -443,6 +456,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("stt_provider", "sherpa-parakeet")
 	v.SetDefault("input_device", "")
 	v.SetDefault("stt_mode", "")
+	v.SetDefault("stt_custom_words", []string{})
+	v.SetDefault("stt_custom_words_from_personas", true)
+	v.SetDefault("stt_word_correction_threshold", 0.12)
 	v.SetDefault("sherpa_streaming_model", "en-2023-06-26")
 	v.SetDefault("whisper_model", "small")
 	v.SetDefault("parakeet_model", DefaultParakeetModel)

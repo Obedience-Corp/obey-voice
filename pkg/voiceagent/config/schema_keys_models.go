@@ -80,6 +80,21 @@ func modelKeys() []KeySpec {
 			Help: "Streaming transcribes as you speak; offline waits for the end of your turn and is more accurate.",
 		},
 		{
+			Key: "stt_custom_words", Type: TypeStringList, Default: []string{},
+			Group: GroupModels, Title: "Custom words",
+			Help: "Names and jargon the transcriber should spell your way: `Samantha`; `Claude=clawed,cloud` to name misheard forms; `Ollama!` to also catch near-misses of a rare word. Config file only; `obey-voice stt audit` shows what a list would change.",
+		},
+		{
+			Key: "stt_custom_words_from_personas", Type: TypeBool, Default: true,
+			Group: GroupModels, Title: "Correct persona names",
+			Help: "Adds every persona's display name to the custom words, so a misheard Veronica comes back spelled right.",
+		},
+		{
+			Key: "stt_word_correction_threshold", Type: TypeFloat, Default: 0.12, Min: num(0.01), Max: num(0.45),
+			Group: GroupModels, Title: "Fuzzy match threshold",
+			Help: "How far a misheard word may be from a custom word and still be replaced. Lower is stricter; raise it only after the audit shows no wrong replacements.",
+		},
+		{
 			Key: "sherpa_streaming_model", Type: TypeString, Default: "en-2023-06-26",
 			Group: GroupModels, Title: "Streaming model",
 			Help: "The zipformer model used in streaming mode.",
