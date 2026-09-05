@@ -113,6 +113,9 @@ var spawnIntents = []string{
 	"build this",
 	"implement this",
 	"implement a",
+	"filter design",
+	"filter the work",
+	"filter work items",
 }
 
 func classifySpawnIntent(transcript string) bool {

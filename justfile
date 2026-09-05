@@ -191,8 +191,8 @@ fetch-meeting-fixture:
     chmod +x scripts/fetch-meeting-fixture.sh
     ./scripts/fetch-meeting-fixture.sh
 
-# Download a multi-speaker Zoom-style call clip (first ~2 min, 16 kHz mono).
-# Source: https://www.youtube.com/watch?v=DvO10dFJaFE
+# Download a multi-speaker Zoom clip (source 4:00–5:30, 16 kHz mono).
+# Source: https://www.youtube.com/watch?v=DQlWDqosj0E
 # Roster: tests/speakerflow/zoom-call-roster.json
 fetch-zoom-fixture:
     #!/usr/bin/env bash

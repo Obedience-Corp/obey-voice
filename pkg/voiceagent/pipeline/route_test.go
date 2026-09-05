@@ -11,6 +11,7 @@ func TestClassifySpawnIntent(t *testing.T) {
 		"look up the latest kernel CVE",
 		"create a file called notes.md",
 		"run this command",
+		"filter design work items",
 	}
 	for _, s := range spawns {
 		kind, source, ok := classifyTurn(s, RouteContext{})
