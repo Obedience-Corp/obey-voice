@@ -19,9 +19,14 @@ just convoflow run worker_provider=grok   # comparison, not the gate
 Recordings land in `~/.cache/obey-voice/convoflow/<scenario>-<ts>/` (override
 `OBEY_VOICE_CONVOFLOW_DIR`).
 
-This skeleton loads YAML, asserts expects against a recorded event log, and
+This skeleton loads YAML, asserts turn **and** scenario-level expects, and
 wires the just module. Live `voiceagent.New` construction is a follow-up; until
-then `just convoflow run` exits 2 after writing the run dir unless you pass
-`-self-test`.
+then `just convoflow run` exits 2 after writing the run dir.
 
-`go test ./tests/convoflow` needs no models.
+The no-model path is a dedicated fixture, not the stock gates:
+
+```bash
+go run ./tests/convoflow -self-test -scenario tests/convoflow/scenarios/self-test.yaml
+```
+
+`-self-test` refuses any other scenario. `go test ./tests/convoflow` needs no models.

@@ -95,9 +95,103 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 			return fmt.Errorf("route_source = %q, want %q", d.Source, ex.RouteSource)
 		}
 	case ex.Metric != "":
-		return fmt.Errorf("run-level metric expects are evaluated after the conversation")
+		return fmt.Errorf("metric %q belongs on the scenario expect list", ex.Metric)
 	}
 	return nil
+}
+
+type runMetrics struct {
+	JobStarted         int
+	LiveToolCalls      int
+	SpokenLeakLines    int
+	CrackleFailingWAVs int
+}
+
+func collectMetrics(rec *recorder) runMetrics {
+	var m runMetrics
+	if rec == nil {
+		return m
+	}
+	for _, te := range rec.snapshot() {
+		switch e := te.event.(type) {
+		case events.JobStarted:
+			m.JobStarted++
+		case events.ToolCallStarted:
+			if e.Name != "route" {
+				m.LiveToolCalls++
+			}
+		}
+	}
+	m.SpokenLeakLines = leakLineCount(rec.spokenText())
+	return m
+}
+
+func leakLineCount(spoken string) int {
+	n := 0
+	for _, line := range strings.Split(spoken, "\n") {
+		if toolLeakLine(line) {
+			n++
+		}
+	}
+	return n
+}
+
+func toolLeakLine(line string) bool {
+	s := strings.ToLower(line)
+	if strings.Contains(s, "called the ") && strings.Contains(s, " tool") {
+		return true
+	}
+	if strings.Contains(s, "```") {
+		return true
+	}
+	return false
+}
+
+func evalRunExpect(ex Expectation, rec *recorder, m runMetrics) error {
+	if ex.Metric == "" {
+		st := turnState{spoken: rec.spokenText(), events: rec.snapshot()}
+		return evalExpect(ex, rec, st)
+	}
+	got, ok := metricValue(m, ex.Metric)
+	if !ok {
+		return fmt.Errorf("unknown metric %q", ex.Metric)
+	}
+	if !compareMetric(got, ex.Op, ex.Value) {
+		return fmt.Errorf("metric %s: got %d, want %s %d", ex.Metric, got, ex.Op, ex.Value)
+	}
+	return nil
+}
+
+func metricValue(m runMetrics, name string) (int, bool) {
+	switch name {
+	case "job_started":
+		return m.JobStarted, true
+	case "live_tool_calls":
+		return m.LiveToolCalls, true
+	case "spoken_leak_lines":
+		return m.SpokenLeakLines, true
+	case "crackle_failing_wavs":
+		return m.CrackleFailingWAVs, true
+	default:
+		return 0, false
+	}
+}
+
+func compareMetric(got int, op string, want int) bool {
+	switch op {
+	case "==", "":
+		return got == want
+	case ">=":
+		return got >= want
+	case "<=":
+		return got <= want
+	case ">":
+		return got > want
+	case "<":
+		return got < want
+	default:
+		return false
+	}
 }
 
 func hasNamedEvent(turnLog []timedEvent, rec *recorder, name string) bool {

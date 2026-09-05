@@ -30,3 +30,23 @@ func TestEngineFakeRunnerChatThenEmptyDrain(t *testing.T) {
 		t.Fatalf("history turns = %d, want 1 (empty user must not RunTurn)", len(fake.hist))
 	}
 }
+
+func TestEngineEnforcesRunLevelMetrics(t *testing.T) {
+	rec := &recorder{}
+	fake := &fakeRunner{rec: rec, live: "route_only", liveOn: true}
+	eng := &engine{
+		scn: &Scenario{
+			Name: "fail-metric",
+			Turns: []Turn{
+				{ID: "chat", User: "hi", Wait: waitIdle},
+			},
+			Expect: []Expectation{{Metric: "job_started", Op: ">=", Value: 1}},
+		},
+		runDir: t.TempDir(),
+		rec:    rec,
+		runner: fake,
+	}
+	if err := eng.run(context.Background()); err == nil {
+		t.Fatal("want run-level metric failure")
+	}
+}

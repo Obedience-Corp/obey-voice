@@ -78,8 +78,12 @@ func runMain(args []string) int {
 	fmt.Printf("convoflow %s → %s\n", scn.Name, runDir)
 
 	if !*selfTest {
-		fmt.Fprintf(os.Stderr, "convoflow: live agent wiring is not in this skeleton; YAML/just knobs are ready. Use -self-test for the fake runner.\n")
+		fmt.Fprintf(os.Stderr, "convoflow: live agent wiring is not in this skeleton; YAML/just knobs are ready. Use -self-test -scenario tests/convoflow/scenarios/self-test.yaml for the no-model path.\n")
 		return exitSkip
+	}
+	if scn.Name != "self-test" {
+		fmt.Fprintf(os.Stderr, "convoflow: -self-test only runs scenarios/self-test.yaml (got %q); stock gates need a live agent\n", scn.Name)
+		return 1
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -89,7 +93,7 @@ func runMain(args []string) int {
 		scn:    scn,
 		runDir: runDir,
 		rec:    rec,
-		runner: &fakeRunner{live: "route_only", worker: "legacy", tools: true, liveOn: true},
+		runner: &fakeRunner{rec: rec, live: "route_only", liveOn: true},
 	}
 	if err := eng.run(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {

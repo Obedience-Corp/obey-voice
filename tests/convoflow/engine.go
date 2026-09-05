@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
@@ -39,6 +40,12 @@ func (e *engine) run(ctx context.Context) error {
 	for _, turn := range e.scn.Turns {
 		if err := e.runTurn(ctx, turn); err != nil {
 			return fmt.Errorf("turn %s: %w", turn.ID, err)
+		}
+	}
+	m := collectMetrics(e.rec)
+	for _, ex := range e.scn.Expect {
+		if err := evalRunExpect(ex, e.rec, m); err != nil {
+			return fmt.Errorf("run expect: %w", err)
 		}
 	}
 	return writeReport(e)
@@ -132,6 +139,10 @@ func (f *fakeRunner) runTurn(_ context.Context, user string) error {
 		f.onTurn(user)
 	}
 	f.hist = append(f.hist, brain.Turn{Role: "user", Content: user})
+	f.liveOn = true
+	if f.rec != nil {
+		f.rec.add(events.ResponseReady{Response: "ok"})
+	}
 	return nil
 }
 func (f *fakeRunner) history() []brain.Turn { return f.hist }

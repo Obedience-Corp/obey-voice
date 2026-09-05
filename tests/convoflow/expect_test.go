@@ -1,17 +1,12 @@
 package main
 
 import (
-	"os"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
-
-func osWrite(path, body string) error {
-	return os.WriteFile(path, []byte(body), 0o644)
-}
 
 func TestEvalSpokenAndHistory(t *testing.T) {
 	t.Parallel()
@@ -85,5 +80,25 @@ func TestSkipRefusesStubOnGate(t *testing.T) {
 	got := skipReason(knobs{gate: true, workerProvider: "stub", liveModel: "qwen3:8b"})
 	if got == "" {
 		t.Fatal("gate must refuse stub")
+	}
+}
+
+func TestEvalRunMetricFail(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	m := collectMetrics(rec)
+	err := evalRunExpect(Expectation{Metric: "job_started", Op: ">=", Value: 1}, rec, m)
+	if err == nil {
+		t.Fatal("want metric failure when no JobStarted events")
+	}
+}
+
+func TestEvalRunMetricPass(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	rec.add(events.JobStarted{ID: "job-1"})
+	m := collectMetrics(rec)
+	if err := evalRunExpect(Expectation{Metric: "job_started", Op: ">=", Value: 1}, rec, m); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -100,20 +102,24 @@ func loadScenario(path string) (*Scenario, error) {
 		return nil, err
 	}
 	defer f.Close()
-	dec := yaml.NewDecoder(f)
+	return loadScenarioReader(path, f)
+}
+
+func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
+	dec := yaml.NewDecoder(r)
 	dec.KnownFields(true)
 	var scn Scenario
 	if err := dec.Decode(&scn); err != nil {
-		return nil, fmt.Errorf("load %s: %w", path, err)
+		return nil, fmt.Errorf("load %s: %w", name, err)
 	}
 	if scn.Name == "" {
-		return nil, fmt.Errorf("load %s: name is required", path)
+		return nil, fmt.Errorf("load %s: name is required", name)
 	}
 	if scn.Input == "" {
 		scn.Input = "text"
 	}
 	if scn.Input != "text" && scn.Input != "speech" {
-		return nil, fmt.Errorf("load %s: input must be text or speech", path)
+		return nil, fmt.Errorf("load %s: input must be text or speech", name)
 	}
 	for i := range scn.Turns {
 		t := &scn.Turns[i]
@@ -123,11 +129,15 @@ func loadScenario(path string) (*Scenario, error) {
 		switch t.Wait {
 		case waitIdle, waitJobStarted, waitJobTerminal:
 		default:
-			return nil, fmt.Errorf("load %s: turn %q: unknown wait %q", path, t.ID, t.Wait)
+			return nil, fmt.Errorf("load %s: turn %q: unknown wait %q", name, t.ID, t.Wait)
 		}
 		if t.User == "" && t.Wait != waitJobTerminal && t.Wait != waitIdle {
-			return nil, fmt.Errorf("load %s: turn %q: empty user only allowed with wait idle or job_terminal", path, t.ID)
+			return nil, fmt.Errorf("load %s: turn %q: empty user only allowed with wait idle or job_terminal", name, t.ID)
 		}
 	}
 	return &scn, nil
+}
+
+func loadScenarioString(name, body string) (*Scenario, error) {
+	return loadScenarioReader(name, strings.NewReader(body))
 }
