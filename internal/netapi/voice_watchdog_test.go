@@ -2,6 +2,7 @@ package netapi
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -164,6 +165,7 @@ func TestSilentQueuedVoiceTurnIsAbandoned(t *testing.T) {
 
 	a := dialStream(t, ctx, addr, creds)
 	b := dialStream(t, ctx, addr, creds)
+	bFrames := readFrames(t, ctx, b)
 
 	writeControl(t, ctx, a, controlMessage{Type: "text_input", Text: "hold the line"})
 	<-runner.textStart
@@ -171,11 +173,11 @@ func TestSilentQueuedVoiceTurnIsAbandoned(t *testing.T) {
 	// B queues a turn, streams one frame, then goes quiet for good.
 	writeControl(t, ctx, b, controlMessage{Type: "voice_start"})
 	writeControl(t, ctx, b, controlMessage{Type: "audio_input", Data: pcmFrame(160), SampleRate: 16000})
-	eventually(t, "the queued turn to be abandoned", func() bool {
-		return len(log.all()) == 1
-	})
-	if got := log.all(); got[0] != voiceSilentReason {
-		t.Fatalf("turn_interrupted reason = %q, want %q", got[0], voiceSilentReason)
+	if got := bFrames.await("turn_interrupted", 3*time.Second); !contains(got, "turn_interrupted") {
+		t.Fatalf("the queued turn was not reported to its owner; frames = %v", got)
+	}
+	if got := log.all(); len(got) != 0 {
+		t.Fatalf("bus turn_interrupted = %v, want none: a queued turn never ran", got)
 	}
 
 	// Freeing the pipeline must not hand the mic to the turn that was dropped.
@@ -185,6 +187,102 @@ func TestSilentQueuedVoiceTurnIsAbandoned(t *testing.T) {
 	})
 	if got := runner.voiceTurns(); got != 0 {
 		t.Errorf("voice turns run = %d, want 0 — an abandoned turn ran", got)
+	}
+}
+
+// feed streams audio_input on ws until the returned stop is called, keeping
+// that connection's own deadline pushed out while a test watches another one.
+func feed(t *testing.T, ctx context.Context, ws *websocket.Conn) (stop func()) {
+	t.Helper()
+	frame, err := json.Marshal(controlMessage{Type: "audio_input", Data: pcmFrame(160), SampleRate: 16000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, quit := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-quit:
+				return
+			case <-time.After(testSilence / 3):
+			}
+			if err := ws.Write(ctx, websocket.MessageText, frame); err != nil {
+				return
+			}
+		}
+	}()
+	return func() {
+		close(quit)
+		<-done
+	}
+}
+
+// TestQueuedStallIsReportedToItsOwnerOnly is the defect: a stalled turn that
+// was only ever queued was announced on the shared bus, so every other client —
+// and the local TUI, which listens on the same bus — was told a turn ended.
+// A client that was mid-turn flipped itself to idle for someone else's mistake.
+func TestQueuedStallIsReportedToItsOwnerOnly(t *testing.T) {
+	runner := &voiceRunner{block: true, voiceStart: make(chan struct{}, 1)}
+	s, _, addr, creds := startVoiceServerWith(t, runner, shortDeadlines)
+	log := recordInterrupts(s)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// A is mid-turn on its own live claim, streaming the whole time so its own
+	// deadline never fires.
+	a := dialStream(t, ctx, addr, creds)
+	aFrames := readFrames(t, ctx, a)
+	writeControl(t, ctx, a, controlMessage{Type: "voice_start"})
+	<-runner.voiceStart
+	eventually(t, "A's live claim", func() bool { return micClaimed(s.hub) })
+	stopFeeding := feed(t, ctx, a)
+	defer stopFeeding()
+
+	// B queues a turn behind it and then goes quiet.
+	b := dialStream(t, ctx, addr, creds)
+	bFrames := readFrames(t, ctx, b)
+	writeControl(t, ctx, b, controlMessage{Type: "voice_start"})
+
+	if got := bFrames.await("turn_interrupted", 3*time.Second); !contains(got, "turn_interrupted") {
+		t.Fatalf("the owner of the queued turn was not told it was dropped; frames = %v", got)
+	}
+	if got := aFrames.await("turn_interrupted", 300*time.Millisecond); contains(got, "turn_interrupted") {
+		t.Errorf("the client mid-turn was told its turn ended; frames = %v", got)
+	}
+	if got := log.all(); len(got) != 0 {
+		t.Errorf("bus turn_interrupted = %v, want none: the queued turn never ran", got)
+	}
+	if !micClaimed(s.hub) {
+		t.Error("A's live claim was released by another connection's queued stall")
+	}
+}
+
+// TestLiveStallIsBroadcast is the other half: a turn that really was running is
+// interrupted for everyone, exactly like a remote interrupt, because every
+// client was waiting on that turn's reply.
+func TestLiveStallIsBroadcast(t *testing.T) {
+	runner := &voiceRunner{block: true, voiceStart: make(chan struct{}, 1)}
+	s, _, addr, creds := startVoiceServerWith(t, runner, shortDeadlines)
+	log := recordInterrupts(s)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	a := dialStream(t, ctx, addr, creds)
+	watcher := dialStream(t, ctx, addr, creds)
+	frames := readFrames(t, ctx, watcher)
+
+	writeControl(t, ctx, a, controlMessage{Type: "voice_start"})
+	<-runner.voiceStart
+	eventually(t, "the live claim", func() bool { return micClaimed(s.hub) })
+
+	if got := frames.await("turn_interrupted", 3*time.Second); !contains(got, "turn_interrupted") {
+		t.Fatalf("a live stall was not broadcast; frames = %v", got)
+	}
+	if got := log.all(); len(got) != 1 || got[0] != voiceSilentReason {
+		t.Errorf("bus turn_interrupted reasons = %v, want exactly one %q", got, voiceSilentReason)
 	}
 }
 

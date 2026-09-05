@@ -462,7 +462,14 @@ func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name st
 // sendError delivers a per-connection error envelope (not broadcast — only
 // the offending client sees it).
 func (s *Server) sendError(conn *streamConn, text string) {
-	msg, err := marshalEvent(events.Error{Stage: "netapi", Message: text})
+	s.sendEvent(conn, events.Error{Stage: "netapi", Message: text})
+}
+
+// sendEvent delivers one event to a single connection, for the things only
+// that client is owed. Like broadcast it never blocks: a client that cannot
+// keep up on events is evicted rather than allowed to stall a live turn.
+func (s *Server) sendEvent(conn *streamConn, e events.Event) {
+	msg, err := marshalEvent(e)
 	if err != nil {
 		return
 	}

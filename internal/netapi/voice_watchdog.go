@@ -125,8 +125,14 @@ func (s *Server) armVoiceTurn(conn *streamConn) {
 }
 
 // voiceTurnStalled ends a turn whose client stopped sending audio: the mic goes
-// back, anything the connection had queued is abandoned, and every client is
-// told the turn is over so none of them waits on a reply that is not coming.
+// back and anything the connection had queued is abandoned.
+//
+// Who hears about it depends on what was actually lost. A live turn was in
+// flight for everyone — every client is waiting on that reply — so it is
+// interrupted and announced on the bus, exactly as a remote interrupt is. A
+// turn that only ever sat in the queue ran for nobody: announcing it would tell
+// clients that are mid-turn, and the local TUI listening on the same bus, that
+// a turn they can see running has ended. That one goes to its owner alone.
 //
 // A claim whose utterance the recogniser has already finalized is only taken
 // back, never reported: that turn ran on audio the user really spoke and is
@@ -137,11 +143,11 @@ func (s *Server) voiceTurnStalled(conn *streamConn) {
 	conn.dropStaged()
 	live := s.hub.utteranceOpen(conn)
 	s.hub.releaseMic(conn)
-	if !queued && !live {
-		return
-	}
-	if live {
+	switch {
+	case live:
 		s.dispatcher.Interrupt()
+		s.opts.Bus.Emit(events.TurnInterrupted{Reason: voiceSilentReason})
+	case queued:
+		s.sendEvent(conn, events.TurnInterrupted{Reason: voiceSilentReason})
 	}
-	s.opts.Bus.Emit(events.TurnInterrupted{Reason: voiceSilentReason})
 }

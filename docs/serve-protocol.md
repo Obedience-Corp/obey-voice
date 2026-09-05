@@ -582,7 +582,7 @@ also emits, to **every** connected client:
 | `type` | Fields | When |
 |--------|--------|------|
 | `turn_interrupted` | `reason` (`remote_interrupt`), `since_playback_start_ms` | A turn was in flight when the `interrupt` arrived |
-| `turn_interrupted` | `reason` (`client_silent`), `since_playback_start_ms` | Not an `interrupt` at all: a voice turn was ended by the server because its client stopped sending audio (see The turn deadline). Treat any `reason` you do not know as "that turn is over" |
+| `turn_interrupted` | `reason` (`client_silent`), `since_playback_start_ms` | Not an `interrupt` at all: a voice turn was ended by the server because its client stopped sending audio (see The turn deadline). Broadcast when that turn was **running**; sent to the stalled client **alone** when its turn was still queued, because nobody else's turn ended. Treat any `reason` you do not know as "that turn is over" |
 | `speaking_interrupted` | `reason` (`remote_interrupt`), `since_playback_start_ms` | …and that turn was in its TTS phase |
 
 `since_playback_start_ms` is how far into TTS playback the interrupt landed
@@ -692,8 +692,10 @@ see: the claim used to stand for the life of the process, and every later turn
 queued behind it.
 
 - **No `audio_input` for `listen_timeout` (default 10 s)** ends the turn: the
-  mic is released, the utterance is finalized, and every client is sent
-  `turn_interrupted` with `reason: "client_silent"`.
+  mic is released, the utterance is finalized, and `turn_interrupted` with
+  `reason: "client_silent"` is sent — to every client when that turn was
+  running, and to the stalled client alone when its turn was still queued. A
+  queued turn ran for nobody, so nobody else's turn ended with it.
 - **Every `audio_input` pushes that deadline out**, whether the turn is live or
   still queued, so a client that is actually streaming is never cut off.
 - **A whole turn is capped** at `listen_timeout + phrase_time_limit`
