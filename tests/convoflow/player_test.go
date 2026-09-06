@@ -76,6 +76,49 @@ func TestIsPlayingOnlyDuringDrain(t *testing.T) {
 	if p.IsPlaying() {
 		t.Fatal("IsPlaying true after Done")
 	}
+	if n := p.activeCancels(); n != 0 {
+		t.Fatalf("active cancels after Done = %d, want 0", n)
+	}
+}
+
+func TestCompletedPlaybacksReleaseCancels(t *testing.T) {
+	p := newRecordingPlayer(nil)
+	ctx := context.Background()
+	pcm := synthSine(24_000, 480, 440, 0.4)
+	for i := 0; i < 20; i++ {
+		if err := playPCM(ctx, p, 24_000, pcm); err != nil {
+			t.Fatalf("stream %d: %v", i, err)
+		}
+		if n := p.activeCancels(); n != 0 {
+			t.Fatalf("after stream %d: active cancels = %d, want 0", i+1, n)
+		}
+	}
+
+	stream := audio.NewPCMStream(ctx)
+	if err := stream.SetSampleRate(24_000); err != nil {
+		t.Fatal(err)
+	}
+	pb, err := p.PlayStream(ctx, stream)
+	if err != nil || pb == nil {
+		t.Fatalf("PlayStream = (%v, %v)", pb, err)
+	}
+	select {
+	case <-pb.Started():
+	case <-time.After(time.Second):
+		t.Fatal("Started() did not fire")
+	}
+	if n := p.activeCancels(); n != 1 {
+		t.Fatalf("in-flight cancels = %d, want 1 (only the active drain)", n)
+	}
+	stream.Close()
+	select {
+	case <-pb.Done():
+	case <-time.After(time.Second):
+		t.Fatal("Done() did not fire")
+	}
+	if n := p.activeCancels(); n != 0 {
+		t.Fatalf("after final Done: active cancels = %d, want 0", n)
+	}
 }
 
 func TestTwoPlayStreamsConcatenate(t *testing.T) {

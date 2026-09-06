@@ -26,12 +26,16 @@ type recordingPlayer struct {
 	closed   bool
 	inflight atomic.Int32
 	stopped  atomic.Bool
-	cancels  []context.CancelFunc
+	cancels  map[int]context.CancelFunc
+	nextID   int
 	scored   []wavAnalysis
 }
 
 func newRecordingPlayer(real audio.Engine) *recordingPlayer {
-	return &recordingPlayer{real: real}
+	return &recordingPlayer{
+		real:    real,
+		cancels: make(map[int]context.CancelFunc),
+	}
 }
 
 func (p *recordingPlayer) BeginTurn(dir string) error {
@@ -98,14 +102,15 @@ func (p *recordingPlayer) PlayStream(ctx context.Context, stream *audio.PCMStrea
 
 func (p *recordingPlayer) play(ctx context.Context, stream *audio.PCMStream, started chan struct{}, done chan audio.PlaybackResult) {
 	var result audio.PlaybackResult
+	drainCtx, cancel := context.WithCancel(ctx)
+	id := p.addCancel(cancel)
 	defer func() {
+		cancel()
+		p.removeCancel(id)
 		p.inflight.Add(-1)
 		done <- result
 		close(done)
 	}()
-	drainCtx, cancel := context.WithCancel(ctx)
-	p.addCancel(cancel)
-	defer cancel()
 
 	rate, err := stream.WaitReady(drainCtx)
 	if err != nil {
@@ -175,7 +180,7 @@ func (p *recordingPlayer) Stop() {
 	p.stopped.Store(true)
 	p.mu.Lock()
 	cs := p.cancels
-	p.cancels = nil
+	p.cancels = make(map[int]context.CancelFunc)
 	real := p.real
 	p.mu.Unlock()
 	for _, c := range cs {
@@ -233,10 +238,27 @@ func (p *recordingPlayer) scoredCount() int {
 	return n
 }
 
-func (p *recordingPlayer) addCancel(c context.CancelFunc) {
+func (p *recordingPlayer) addCancel(c context.CancelFunc) int {
 	p.mu.Lock()
-	p.cancels = append(p.cancels, c)
+	defer p.mu.Unlock()
+	if p.cancels == nil {
+		p.cancels = make(map[int]context.CancelFunc)
+	}
+	p.nextID++
+	p.cancels[p.nextID] = c
+	return p.nextID
+}
+
+func (p *recordingPlayer) removeCancel(id int) {
+	p.mu.Lock()
+	delete(p.cancels, id)
 	p.mu.Unlock()
+}
+
+func (p *recordingPlayer) activeCancels() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.cancels)
 }
 
 func (p *recordingPlayer) setRate(rate int) {
