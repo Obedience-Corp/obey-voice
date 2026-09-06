@@ -271,6 +271,10 @@ func (m personasModel) formRowHelp() string {
 			return "Type a model name · ←/→ leaves custom · ctrl+b/ctrl+f move the cursor"
 		}
 		return "Model · (default) lets the provider choose"
+	case formRowWorkerProvider:
+		return "Worker · the brain that runs spawned background jobs · (default) inherits Settings"
+	case formRowWorkerModel:
+		return "Worker model · (default) lets the worker's provider choose"
 	case formRowTTSProvider:
 		return "TTS provider · (default) inherits Settings"
 	case formRowVoice:
@@ -370,10 +374,10 @@ func (m personasModel) stackModelNote() string {
 // closing chevron, and the note vanished entirely behind the text field, which
 // pads itself out to its full Width.
 func (m personasModel) stackModelRowValue() string {
-	// formBox renders body lines at formBoxWidth()-4; stackLines spends 8 more
-	// columns on the row mark and the "Model " label. Everything below is laid
-	// out left to right against what is left of that.
-	remaining := max(m.formBoxWidth()-12, 12)
+	// formBox renders body lines at formBoxWidth()-4; stackLines spends the row
+	// mark, a padded label, and a separating space on top of that. Everything
+	// below is laid out left to right against what is left.
+	remaining := max(m.formBoxWidth()-(4+2+stackLabelWidth+1), 12)
 	note := m.stackModelNote()
 
 	// The chip is the row's primary content, but it yields half the row when

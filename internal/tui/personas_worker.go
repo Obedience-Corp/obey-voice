@@ -1,0 +1,120 @@
+package tui
+
+import (
+	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+)
+
+// The Worker rows are the second half of choosing this persona's brain: the
+// model that runs the background job a spawn starts, with full tools and no
+// one watching it. They sit directly under the brain rows so the pair is read
+// together, and they follow the same "(default) = inherit Settings" idiom as
+// every other stack row.
+
+// effectiveStackWorkerProvider is the provider the Worker model row describes:
+// the form selection, the app-level worker when the row is "(default)", and
+// finally whatever an unselected app worker resolves to.
+func (m personasModel) effectiveStackWorkerProvider() string {
+	if provider := providerAt(stackWorkerProviders(), m.workerProviderIdx); provider != "" {
+		return provider
+	}
+	if m.cfg == nil {
+		return ""
+	}
+	return config.VoiceWorkerProviderOf(m.cfg)
+}
+
+// stackWorkerModelList builds the Worker model row: (default) + the discovered
+// models for the effective worker provider, plus any current value the scan did
+// not list, so editing never drops a hand-written pin.
+func (m personasModel) stackWorkerModelList() []string {
+	out := []string{stackDefaultLabel}
+	models, _ := m.brainModelCatalog(m.effectiveStackWorkerProvider())
+	out = append(out, models...)
+	if v := strings.TrimSpace(m.workerModel); v != "" {
+		found := false
+		for _, item := range out[1:] {
+			if strings.EqualFold(item, v) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// workerModelIndex is the row's cursor: 0 when nothing is pinned.
+func (m personasModel) workerModelIndex() int {
+	v := strings.TrimSpace(m.workerModel)
+	if v == "" {
+		return 0
+	}
+	for i, item := range m.stackWorkerModelList() {
+		if strings.EqualFold(item, v) {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m *personasModel) cycleStackWorkerModel(delta int) {
+	list := m.stackWorkerModelList()
+	idx := (m.workerModelIndex() + delta + len(list)) % len(list)
+	if idx == 0 {
+		m.workerModel = ""
+		return
+	}
+	m.workerModel = list[idx]
+}
+
+// clampSelectedWorkerModel drops a pin the new backend does not offer. A scan
+// that has not finished reports "unknown", not "empty" — clamping on unknown
+// would wipe a perfectly good saved model.
+func (m *personasModel) clampSelectedWorkerModel() {
+	v := strings.TrimSpace(m.workerModel)
+	if v == "" {
+		return
+	}
+	models, ok := m.brainModelCatalog(m.effectiveStackWorkerProvider())
+	if !ok {
+		return
+	}
+	for _, name := range models {
+		if strings.EqualFold(name, v) {
+			return
+		}
+	}
+	m.workerModel = ""
+}
+
+// workerModelLabel is what the Worker model row shows.
+func (m personasModel) workerModelLabel() string {
+	if v := strings.TrimSpace(m.workerModel); v != "" {
+		return v
+	}
+	return stackDefaultLabel
+}
+
+// formWorker returns the stack step's worker selection ("" fields = inherit).
+func (m *personasModel) formWorker() persona.Worker {
+	return persona.Worker{
+		Provider: providerAt(stackWorkerProviders(), m.workerProviderIdx),
+		Model:    strings.TrimSpace(m.workerModel),
+	}
+}
+
+// prefillWorker seeds the Worker rows from a profile (nil = inherit).
+func (m *personasModel) prefillWorker(p *persona.Profile) {
+	if p == nil {
+		m.workerProviderIdx = 0
+		m.workerModel = ""
+		return
+	}
+	m.workerProviderIdx = providerIndex(stackWorkerProviders(), p.Brain.Worker.Provider)
+	m.workerModel = strings.TrimSpace(p.Brain.Worker.Model)
+}

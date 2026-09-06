@@ -17,7 +17,7 @@ func (m settingsModel) View() string {
 	var parts []string
 	parts = append(parts, headerStyle.Render("  Settings"))
 
-	tabs := []string{"Brain", "Brain model", "Tools", "TTS", "Qwen", "Voice", "Language", "STT", "Speakers", "Input", "Output", "Meeting"}
+	tabs := []string{"Brain", "Brain model", "Worker", "Tools", "TTS", "Qwen", "Voice", "Language", "STT", "Speakers", "Input", "Output", "Meeting"}
 	var tabLine strings.Builder
 	for i, tab := range tabs {
 		style := dimStyle
@@ -79,9 +79,13 @@ func (m settingsModel) View() string {
 		}
 		parts = append(parts, ansi.Truncate(footer, width, "…"))
 	} else {
-		if m.message != "" {
+		switch {
+		case m.message != "":
 			parts = append(parts, ansi.Truncate("  "+statusStyle.Render(m.message), width, "…"))
-		} else {
+		case m.section == sectionWorker:
+			// An unchosen worker is the thing worth saying out loud here.
+			parts = append(parts, ansi.Truncate("  "+dimStyle.Render(m.workerStatus()), width, "…"))
+		default:
 			parts = append(parts, " ")
 		}
 		parts = append(parts, dimStyle.Render(ansi.Truncate(help, width, "…")))
@@ -121,6 +125,9 @@ func (m settingsModel) sectionListLines() []string {
 			lines = append(lines, m.itemLine(i, item+active))
 		}
 		return lines
+
+	case sectionWorker:
+		return m.workerListLines()
 
 	case sectionTools:
 		start, end := m.visibleRange(len(m.toolItems))

@@ -178,19 +178,22 @@ func brainKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
-			Key: "voice_worker_provider", Type: TypeEnum, Default: "grok", Enum: workerProviderEnum(),
+			Key: "voice_worker_provider", Type: TypeEnum, Default: "", Enum: workerProviderEnum(),
 			Group: GroupBrain, Title: "Worker provider",
-			Help: "Which model runs async jobs after a spawn. Defaults to Grok on Pocket-class devices; Ollama is supported when configured.",
+			Help:               "Which model runs async jobs after a spawn. Chosen alongside the brain — empty means unselected, and inherits the live brain until you pick one.",
+			PersonaOverridable: true,
 		},
 		{
 			Key: "voice_worker_model", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Worker model",
-			Help: "Model pin for the async worker. Empty uses that provider's usual default.",
+			Help:               "Model pin for the async worker. Empty uses that provider's usual default.",
+			PersonaOverridable: true,
 		},
 		{
 			Key: "voice_worker_ollama_host", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Worker Ollama server",
-			Help: "Ollama base URL for the async worker when voice_worker_provider is ollama. Empty inherits ollama_host.",
+			Help:               "Ollama base URL for the async worker when voice_worker_provider is ollama. Empty inherits ollama_host.",
+			PersonaOverridable: true,
 		},
 		{
 			Key: "ollama_model", Type: TypeString, Default: "",

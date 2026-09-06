@@ -2,9 +2,37 @@ package config
 
 import "testing"
 
-func TestVoiceWorkerProviderDefaultsGrok(t *testing.T) {
-	if got := VoiceWorkerProviderOf(&Config{}); got != "grok" {
-		t.Fatalf("default worker = %q, want grok", got)
+// An unselected worker must never reach for a remote CLI on its own. It
+// inherits the live brain, and says so; the grok default it used to carry is
+// how a spawn ended up on a model the operator never chose.
+func TestUnselectedWorkerInheritsTheLiveBrain(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *Config
+		want string
+	}{
+		{"no config at all", nil, WorkerFallbackProvider},
+		{"empty config", &Config{}, WorkerFallbackProvider},
+		{"inherits ollama", &Config{BrainProvider: "ollama"}, "ollama"},
+		{"inherits claude", &Config{BrainProvider: "claude"}, "claude"},
+		{"cursor cannot work, so it falls back", &Config{BrainProvider: "cursor"}, WorkerFallbackProvider},
+		{"an explicit choice wins", &Config{BrainProvider: "ollama", VoiceWorkerProvider: "grok"}, "grok"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := VoiceWorkerProviderOf(tt.cfg); got != tt.want {
+				t.Fatalf("worker = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWorkerSelectedReportsTheOperatorsChoice(t *testing.T) {
+	if WorkerSelected(nil) || WorkerSelected(&Config{}) || WorkerSelected(&Config{BrainProvider: "ollama"}) {
+		t.Fatal("an unset voice_worker_provider must not read as selected")
+	}
+	if !WorkerSelected(&Config{VoiceWorkerProvider: "grok"}) {
+		t.Fatal("an explicit worker must read as selected")
 	}
 }
 
