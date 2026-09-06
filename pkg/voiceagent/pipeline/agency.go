@@ -14,6 +14,10 @@ import (
 
 const defaultSpawnAck = "Working on it."
 
+// spawnClarifier is what the assistant says instead of spawning on an assent
+// that has no conversation behind it.
+const spawnClarifier = "I did not catch what you would like me to work on. What should I do?"
+
 // Agency wires spawn/abort/status routes to the async job table and worker brain.
 type Agency struct {
 	pipeline *Pipeline
@@ -96,13 +100,28 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 
 func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	task := strings.TrimSpace(d.Transcript)
+	history := a.liveHistory()
+
+	// An assent with nothing behind it is not a task. Spawning on it hands a
+	// worker with shell tools a prompt like "Yes." and lets it decide what
+	// that meant — which is exactly how one went looking through the CLI's
+	// session store and acted on somebody else's thread.
+	if spawnLacksTask(history, task) {
+		a.speakSpawnClarifier(ctx, turn, metrics)
+		a.pipeline.emit(events.Info{Message: "spawn declined: no task in the utterance and no conversation behind it"})
+		return
+	}
+
 	if task == "" {
 		task = "background task"
 	}
 	a.speakAck(ctx, turn, metrics)
 	id, err := a.jobs.Start(ctx, job.Spec{
+		// Task is the label the user hears and sees; the brief is what the
+		// worker reads. They were the same string, which is why the worker
+		// only ever received one utterance.
 		Task: task,
-		Run:  a.workerRun(task),
+		Run:  a.workerRun(spawnBrief(history, d.Transcript)),
 	})
 	if err != nil {
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
@@ -111,7 +130,23 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	a.pipeline.emit(events.JobStarted{ID: id, Task: task})
 }
 
-func (a *Agency) workerRun(task string) func(context.Context) (string, error) {
+// liveHistory is the talking brain's conversation, or nil when there is no
+// brain to ask. A worker that gets nothing is handled by spawnLacksTask.
+func (a *Agency) liveHistory() []brain.Turn {
+	if a.pipeline == nil || a.pipeline.Brain == nil {
+		return nil
+	}
+	return a.pipeline.Brain.History()
+}
+
+// speakSpawnClarifier asks rather than guesses.
+func (a *Agency) speakSpawnClarifier(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
+	if err := a.pipeline.speakStandalone(ctx, turn, metrics, spawnClarifier); err != nil {
+		a.pipeline.emit(events.Info{Message: fmt.Sprintf("clarifier speech failed: %v", err)})
+	}
+}
+
+func (a *Agency) workerRun(brief string) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		worker, err := a.workerProvider()
 		if err != nil {
@@ -121,7 +156,7 @@ func (a *Agency) workerRun(task string) func(context.Context) (string, error) {
 		if a.cfg != nil {
 			tools = a.cfg.VoiceToolsEnabled
 		}
-		return worker.ThinkFull(ctx, task, brain.WorkerStreamOptions(tools))
+		return worker.ThinkFull(ctx, brief, brain.WorkerStreamOptions(tools))
 	}
 }
 
