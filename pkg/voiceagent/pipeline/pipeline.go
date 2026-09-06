@@ -164,9 +164,10 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
-	STT   stt.Provider
-	Brain brain.Provider
-	TTS   tts.Provider
+	retiredBrains sync.WaitGroup
+	STT           stt.Provider
+	Brain         brain.Provider
+	TTS           tts.Provider
 	// Utterance is nil when the audio source cannot be ended on demand.
 	Utterance UtteranceEnder
 	// TTSFallback is an optional, explicitly configured provider used for one
@@ -1138,6 +1139,10 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	return p.runTextTurn(ctx, input, false)
+}
+
+func (p *Pipeline) runTextTurn(ctx context.Context, input string, background bool) error {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	p.bindBrainInfo()
@@ -1147,7 +1152,11 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 
 	turn.to(TurnThinking)
 	speakerID := p.currentSpeakerID()
-	p.emit(events.UserInput{Text: input, Speaker: speakerID})
+	if background {
+		speakerID = ""
+	} else {
+		p.emit(events.UserInput{Text: input, Speaker: speakerID})
+	}
 	if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -1162,9 +1171,11 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	}
 	thinkingStarted := metrics.sttFinal
 
-	if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
-		p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
-		return nil
+	if !background {
+		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
+			p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
+			return nil
+		}
 	}
 
 	// Bound model + tools so a hung Ollama chat after tool results cannot leave
@@ -1175,7 +1186,8 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	stream, err := p.Brain.ThinkStream(brainCtx, input, brain.StreamOptions{
 		Speaker:           speakerID,
-		ToolsEnabled:      p.VoiceToolsEnabled,
+		Background:        background,
+		ToolsEnabled:      p.VoiceToolsEnabled && !background,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
 		OnToolEnd:         p.toolEndHook(),
@@ -1190,6 +1202,10 @@ func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
 		}
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("brain: %w", err))
 		return nil
+	}
+
+	if background {
+		return p.finishBackgroundStream(ctx, brainCtx, brainCancel, stream, metrics, turn, repair)
 	}
 
 	// Stream the reply so the TUI can render it token-by-token, then fall back

@@ -52,6 +52,9 @@ func TestLiveRouterDecision(t *testing.T) {
 		{name: "route chat stays in turn", policy: RouterToolsRouteOnly, call: "route", kind: "chat", want: ""},
 		{name: "web_search becomes spawn", policy: RouterToolsRouteOnly, call: "web_search", want: "spawn"},
 		{name: "run_command becomes spawn", policy: RouterToolsRouteOnly, call: "run_command", want: "spawn"},
+		{name: "agent_delegate stays in turn", policy: RouterToolsRouteOnly, call: "agent_delegate", want: ""},
+		{name: "agent_cancel stays in turn", policy: RouterToolsRouteOnly, call: "agent_cancel", want: ""},
+		{name: "agent_delegations stays in turn", policy: RouterToolsRouteOnly, call: "agent_delegations", want: ""},
 		{name: "legacy ignores worker tools", policy: RouterToolsLegacy, call: "web_search", want: ""},
 		{name: "empty policy ignores worker tools", policy: "", call: "web_search", want: ""},
 	}

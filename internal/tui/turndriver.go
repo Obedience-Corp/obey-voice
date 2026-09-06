@@ -123,7 +123,7 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		})
 	}
 
-	cmds := []tea.Cmd{m.bridge.wait(), textarea.Blink}
+	cmds := []tea.Cmd{m.bridge.wait(), textarea.Blink, m.waitBackground()}
 	m.appendActivity("session", shortSessionID(deps.sessionID), 0)
 	if deps.voice {
 		m.appendActivity("input", deviceLabel(deps.inputDevice), 0)
@@ -275,6 +275,12 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 // resumeListening restarts the background voice turn when nothing else owns
 // the pipeline.
 func (m *conversationModel) resumeListening() tea.Cmd {
+	if m.turnState == turnIdle && m.pendingBackground {
+		m.pendingBackground = false
+		if cmd := m.dispatchBackground(); cmd != nil {
+			return cmd
+		}
+	}
 	if m.turnState == turnIdle && m.voiceOn() {
 		return m.dispatchVoiceTurn()
 	}

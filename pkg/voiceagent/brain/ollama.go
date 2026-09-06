@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
@@ -29,8 +30,11 @@ const ollamaSpeakerSep = "\x1e"
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
-	client       *api.Client
-	continuityMu sync.Mutex
+	retiredDelegations  sync.WaitGroup
+	backgroundDelivered string
+	delegation          *delegation.Runtime
+	client              *api.Client
+	continuityMu        sync.Mutex
 	// continuitySink receives this instance's continuity events (integrity.go).
 	continuitySink func(events.Event)
 	infoMu         sync.Mutex
@@ -213,7 +217,13 @@ func loadSkillsCatalog(ctx context.Context, cfg *config.Config, workDir string) 
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	o.refreshSystemPrompt(opts.OnPromptWarn)
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
-	o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	if !opts.Background {
+		o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	}
+	o.receiveDelegationResults(opts)
+	if opts.Background {
+		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
+	}
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 
@@ -229,6 +239,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		sess := &toolSession{
 			catalog:        o.skills,
 			routerPolicy:   opts.effectiveRouterPolicy(),
+			delegation:     o.delegationForTurn(opts),
 			commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
 			onStart:        opts.OnToolStart,
 			onEnd:          opts.OnToolEnd,
@@ -489,6 +500,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				continue
 			}
 			o.history = append(o.history, api.Message{Role: "assistant", Content: response})
+			if !opts.Background {
+				o.ackDelegationResults(req.Messages)
+			} else {
+				o.markBackgroundDelivered(req.Messages)
+			}
 			o.trimHistory()
 			done <- StreamResult{Integrity: integrity}
 			return
@@ -527,12 +543,19 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	// ThinkStream — which records a recovery reply and keeps the turn — a failed
 	// ThinkFull answers nothing, so its input must not stay behind.
 	restore := append([]api.Message(nil), o.history...)
-	o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	if !opts.Background {
+		o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	}
+	o.receiveDelegationResults(opts)
+	if opts.Background {
+		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
+	}
 	o.ensureContextBudget(skillCtx)
 
 	sess := &toolSession{
 		catalog:        o.skills,
 		routerPolicy:   opts.effectiveRouterPolicy(),
+		delegation:     o.delegationForTurn(opts),
 		commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
 		onStart:        opts.OnToolStart,
 		onEnd:          opts.OnToolEnd,
@@ -606,6 +629,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			text = spokenOrFallback(text)
 		}
 		o.history = append(o.history, api.Message{Role: "assistant", Content: text})
+		if !opts.Background {
+			o.ackDelegationResults(req.Messages)
+		} else {
+			o.markBackgroundDelivered(req.Messages)
+		}
 		o.trimHistory()
 		return text, nil
 	}
@@ -926,6 +954,7 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 
 // ClearHistory wipes conversation history.
 func (o *OllamaBrain) ClearHistory() {
+	o.resetDelegation()
 	o.archive = continuity.Store{}
 	o.history = nil
 }
@@ -974,6 +1003,7 @@ func (o *OllamaBrain) History() []Turn {
 // saved by the prompt-based providers use role "samantha" for replies; map it
 // to ollama's native "assistant".
 func (o *OllamaBrain) LoadHistory(turns []Turn) {
+	o.resetDelegation()
 	// Restore starts a distinct session; never recall another session's archive.
 	o.archive = continuity.Store{}
 	o.contextHighWater = 0

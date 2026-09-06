@@ -102,6 +102,34 @@
       "value": "",
       "source": "default"
     },
+    "delegation_binary": {
+      "value": "obey",
+      "source": "default"
+    },
+    "delegation_campaign_id": {
+      "value": "",
+      "source": "default"
+    },
+    "delegation_enabled": {
+      "value": false,
+      "source": "default"
+    },
+    "delegation_parent_session_id": {
+      "value": "",
+      "source": "default"
+    },
+    "delegation_profile": {
+      "value": "",
+      "source": "default"
+    },
+    "delegation_socket": {
+      "value": "",
+      "source": "default"
+    },
+    "delegation_timeout": {
+      "value": 300,
+      "source": "default"
+    },
     "environment_context_enabled": {
       "value": true,
       "source": "default"
