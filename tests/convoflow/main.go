@@ -82,7 +82,10 @@ func runMain(args []string) int {
 	defer cancel()
 
 	// Probes run before anything is constructed: a missing daemon or model is
-	// a skip, and there is nothing to tear down yet.
+	// a skip, and there is nothing to tear down yet. They see the effective
+	// knobs — CLI over the scenario's brain / worker blocks — which is what
+	// resolveConfig builds the run from.
+	k = k.withScenario(scn)
 	if !*selfTest {
 		if reason := probeOllama(ctx, k); reason != "" {
 			fmt.Fprintf(os.Stderr, "convoflow: skip: %s\n", reason)

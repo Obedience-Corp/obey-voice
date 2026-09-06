@@ -38,24 +38,26 @@ type runProfile struct {
 func (p runProfile) silent() bool { return strings.EqualFold(p.TTSProvider, "none") }
 
 // resolveConfig overlays the run's knobs on a copy of the operator's config.
-// Precedence for the live brain: CLI knob > non-empty YAML > config. The two
-// worker fields take only knob > YAML: an empty value means "inherit the live
-// model / host", which is what probeOllama checked, and a pinned
-// voice_worker_model in the operator's file must not put a model into the
-// run that the probe never looked for.
+// The knobs are first made effective with withScenario (CLI > non-empty
+// YAML), the same values probeOllama was given; the live fields then fall
+// back to the operator's config. The two worker fields never do: an empty
+// value means "inherit the live model / host", which is what the probe
+// checked, and a pinned voice_worker_model in the operator's file must not
+// put a model into the run that the probe never looked for.
 func resolveConfig(base *config.Config, scn *Scenario, k knobs, runDir string) (*config.Config, runProfile, error) {
 	if base == nil {
 		return nil, runProfile{}, fmt.Errorf("resolveConfig: nil base config")
 	}
+	k = k.withScenario(scn)
 	local := *base
-	local.BrainProvider = firstNonEmpty(k.liveProvider, scn.Brain.Provider, local.BrainProvider)
-	local.OllamaModel = firstNonEmpty(k.liveModel, scn.Brain.Model, local.OllamaModel)
-	local.OllamaHost = firstNonEmpty(k.ollamaHost, scn.Brain.Host, local.OllamaHost)
+	local.BrainProvider = firstNonEmpty(k.liveProvider, local.BrainProvider)
+	local.OllamaModel = firstNonEmpty(k.liveModel, local.OllamaModel)
+	local.OllamaHost = firstNonEmpty(k.ollamaHost, local.OllamaHost)
 	if !k.workerIsStub() {
-		local.VoiceWorkerProvider = firstNonEmpty(k.workerProvider, scn.Worker.Provider, local.VoiceWorkerProvider)
+		local.VoiceWorkerProvider = firstNonEmpty(k.workerProvider, local.VoiceWorkerProvider)
 	}
-	local.VoiceWorkerModel = firstNonEmpty(k.workerModel, scn.Worker.Model)
-	local.VoiceWorkerOllamaHost = firstNonEmpty(k.workerOllamaHost, scn.Worker.Host)
+	local.VoiceWorkerModel = k.workerModel
+	local.VoiceWorkerOllamaHost = k.workerOllamaHost
 
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("VOICE_TOOLS_ENABLED")), "false") {
 		return nil, runProfile{}, skipError{"VOICE_TOOLS_ENABLED=false in the environment; the gate cannot prove legacy tools on the worker"}

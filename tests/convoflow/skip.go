@@ -29,6 +29,25 @@ func (e skipError) Error() string { return "skip: " + e.reason }
 
 func (k knobs) workerIsStub() bool { return strings.EqualFold(k.workerProvider, "stub") }
 
+// withScenario fills every knob the command line left empty from the
+// scenario's brain / worker blocks, so the probe and resolveConfig see one
+// effective set of values: a scenario that pins a worker model or host is
+// probed for that model on that host, not for the inherited live pair.
+func (k knobs) withScenario(scn *Scenario) knobs {
+	if scn == nil {
+		return k
+	}
+	k.liveProvider = firstNonEmpty(k.liveProvider, scn.Brain.Provider)
+	k.liveModel = firstNonEmpty(k.liveModel, scn.Brain.Model)
+	k.ollamaHost = firstNonEmpty(k.ollamaHost, scn.Brain.Host)
+	if !k.workerIsStub() {
+		k.workerProvider = firstNonEmpty(k.workerProvider, scn.Worker.Provider)
+	}
+	k.workerModel = firstNonEmpty(k.workerModel, scn.Worker.Model)
+	k.workerOllamaHost = firstNonEmpty(k.workerOllamaHost, scn.Worker.Host)
+	return k
+}
+
 func (k knobs) resolvedWorkerModel() string {
 	if m := strings.TrimSpace(k.workerModel); m != "" {
 		return m
@@ -65,8 +84,11 @@ func skipReason(k knobs) string {
 }
 
 // probeOllama runs before voiceagent.New: the daemon must answer and every
-// Ollama model the run needs must already be pulled. A stub worker has no
-// model to check. Distinct local models are allowed (NewWorkerProvider warns).
+// Ollama model the run needs must already be pulled. Pass the effective
+// knobs (withScenario) — the same values resolveConfig builds from — or a
+// scenario override reaches a target the probe never looked at. A stub
+// worker has no model to check. Distinct local models are allowed
+// (NewWorkerProvider warns).
 func probeOllama(ctx context.Context, k knobs) string {
 	tags := map[string][]string{}
 	fetch := func(host string) ([]string, string) {
