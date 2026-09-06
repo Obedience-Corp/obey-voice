@@ -70,6 +70,9 @@ type conversationModel struct {
 	// turn, rendered live beneath the transcript until ResponseReady finalizes
 	// it into transcript. Empty when no turn is streaming.
 	streamingAgent string
+	// liveThink splits <think> regions out of ResponseDelta when the brain
+	// leaked them onto the speakable stream instead of ThinkingDelta.
+	liveThink textclean.ThinkFilter
 	// pendingUserEcho is the last optimistically rendered user turn text. When
 	// the pipeline later emits matching UserInput, the transcript skip avoids
 	// a duplicate bubble (typed submit shows immediately; voice still waits
@@ -510,6 +513,9 @@ func (m *conversationModel) clearTranscript() {
 	m.pendingUserEcho = ""
 	m.lastAssistantText = ""
 	m.plainTurns = nil
+	m.streamingThink = ""
+	m.streamingAgent = ""
+	m.liveThink = textclean.ThinkFilter{}
 	m.refreshContent()
 	if m.followChat {
 		m.viewport.GotoBottom()
@@ -889,6 +895,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		// Start a fresh streaming buffer; a prior turn's leftover (e.g. after an
 		// interrupt that skipped ResponseReady) must not bleed into this reply.
 		// Re-render so any stale live partial leaves the viewport immediately.
+		m.liveThink = textclean.ThinkFilter{}
 		if m.streamingAgent != "" || m.streamingThink != "" {
 			m.streamingAgent = ""
 			m.streamingThink = ""
@@ -912,7 +919,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.appendStreamingThink(e.Text)
 
 	case events.ResponseDelta:
-		m.appendStreamingDelta(e.Text)
+		m.ingestSpeakableDelta(e.Text)
 
 	case events.ThinkingComplete:
 		m.appendActivity("model", "complete", e.Elapsed)
@@ -999,13 +1006,20 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 		// Finalize the streamed turn: clear the live buffers first so they are
 		// not rendered twice. Thinking is stored on the agent item but hidden
-		// until showThink; the spoken bubble comes from e.Response only.
-		thought := m.streamingThink
-		m.streamingAgent = ""
-		m.streamingThink = ""
-		if e.Response != "" {
-			m.rememberAssistant(e.Response)
-			m.appendAgentTurn(chatItem{name: m.agentName, think: thought, spoken: e.Response})
+		// until showThink; the spoken bubble comes from e.Response when present.
+		thought, liveSpoken := m.takeStreamingTurn()
+		spoken := strings.TrimSpace(e.Response)
+		if spoken == "" {
+			spoken = liveSpoken
+		} else if t, b := textclean.SplitThink(spoken); t != "" {
+			if thought == "" {
+				thought = t
+			}
+			spoken = b
+		}
+		if spoken != "" {
+			m.rememberAssistant(spoken)
+			m.appendAgentTurn(chatItem{name: m.agentName, think: thought, spoken: spoken})
 		} else if e.Interrupted {
 			m.refreshContent()
 			m.applyFollow()
@@ -1041,10 +1055,8 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		// the viewport immediately, and leaving streamingAgent set would render
 		// the same text twice (transcript bubble + live buffer) with no later
 		// refresh on a bare interrupted metrics event.
-		thought := m.streamingThink
-		m.streamingThink = ""
-		if partial := m.streamingAgent; partial != "" {
-			m.streamingAgent = ""
+		thought, partial := m.takeStreamingTurn()
+		if partial != "" {
 			m.rememberAssistant(partial)
 			m.appendAgentTurn(chatItem{name: m.agentName, think: thought, spoken: partial})
 		} else if thought != "" {
