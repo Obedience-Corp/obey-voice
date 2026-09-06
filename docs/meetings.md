@@ -152,13 +152,21 @@ the machine’s **owner** — the one Settings calls “your voice”, the profi
 (chat falls back to `speaker-1` until you register again; a conversation already
 running keeps the old voice until it restarts). The flag picks that subject, not
 an access level: `speaker.live.mode=owner_verify` and
-`barge_in_speakers=enrolled_only` accept any enrolled profile, including guests
-enrolled from the CLI.
+`barge_in_speakers=enrolled_only` accept any enrolled profile, including guests.
+
+**Enroll another speaker…** appears once anyone is in the store. It asks for a
+name, records the same three clips, and stores a **guest** — it never claims
+ownership, even if the owner was removed. Guest rows list every non-owner
+profile (including voices enrolled from the CLI or the Mac app). Enter
+re-enrolls that name; `d` then `y` removes it. Transcripts already written keep
+the name; an open conversation keeps the old live label until it restarts.
+`/speakers name` is still session-local and is not a voiceprint.
 
 Changing `speaker.live.window_ms` restamps the enrollment recipe: embeddings
 recorded at the old window are no longer comparable, so the row says
 *(re-enroll to refresh)*, `obey-voice speaker list` marks the profile, and live
-seeding skips it until it is recorded again.
+seeding skips it until it is recorded again. The Speakers tab warns when you
+cycle the window while voices are enrolled.
 
 The same store is used by the CLI, so a clip recorded elsewhere works too:
 

@@ -6,10 +6,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// Speakers settings row indices — keep in lockstep with speakerItems().
+// Speakers row kinds. The first speakerControlRowCount kinds are the fixed
+// control rows (indices 0–6). Enroll-another and guest rows are appended
+// after that prefix; their kind is not an index.
 const (
 	speakerRowName = iota
 	speakerRowLive
@@ -18,8 +21,16 @@ const (
 	speakerRowMeeting
 	speakerRowRegister
 	speakerRowRemove
-	speakerRowCount
+	speakerControlRowCount
+	speakerRowEnrollOther
+	speakerRowGuest
 )
+
+type speakerRow struct {
+	kind  int
+	name  string // guest profile name when kind == speakerRowGuest
+	label string
+}
 
 // liveThresholdChoices are the match cutoffs offered for chat labels. Lower
 // merges similar voices onto one label; higher splits a voice into a fresh
@@ -38,6 +49,15 @@ var liveWindowChoices = []int{1000, 1500, 2000, 3000}
 // someone looking for "speakers" sees both answers in one place instead of
 // concluding the chat toggle is missing.
 func (m settingsModel) speakerItems() []string {
+	rows := m.speakerRows()
+	items := make([]string, len(rows))
+	for i, row := range rows {
+		items[i] = row.label
+	}
+	return items
+}
+
+func (m settingsModel) speakerRows() []speakerRow {
 	sp := m.cfg.Speaker
 	liveOn := sp.Enabled && sp.Live.Enabled
 	meetingOn := sp.Enabled && sp.Meeting.Enabled
@@ -59,15 +79,43 @@ func (m settingsModel) speakerItems() []string {
 		name = "not set"
 	}
 
-	return []string{
-		fmt.Sprintf("Your name — %s", name),
-		fmt.Sprintf("Speaker labels in chat — %s", enabledLabel(liveOn)),
-		fmt.Sprintf("Match threshold: %.2f", threshold),
-		fmt.Sprintf("Analysis window: %d ms", window),
-		fmt.Sprintf("Meeting diarization — %s (set in the Meeting tab)", enabledLabel(meetingOn)),
-		m.registerRowLabel(),
-		m.removeRowLabel(),
+	rows := []speakerRow{
+		{kind: speakerRowName, label: fmt.Sprintf("Your name — %s", name)},
+		{kind: speakerRowLive, label: fmt.Sprintf("Speaker labels in chat — %s", enabledLabel(liveOn))},
+		{kind: speakerRowThreshold, label: fmt.Sprintf("Match threshold: %.2f", threshold)},
+		{kind: speakerRowWindow, label: fmt.Sprintf("Analysis window: %d ms", window)},
+		{kind: speakerRowMeeting, label: fmt.Sprintf("Meeting diarization — %s (set in the Meeting tab)", enabledLabel(meetingOn))},
+		{kind: speakerRowRegister, label: m.registerRowLabel()},
+		{kind: speakerRowRemove, label: m.removeRowLabel()},
 	}
+	if len(m.enrolledProfiles) == 0 {
+		return rows
+	}
+	rows = append(rows, speakerRow{kind: speakerRowEnrollOther, label: "Enroll another speaker…"})
+	expected := speaker.ExpectedLiveRev(speaker.FromAppConfig(m.cfg))
+	for _, p := range m.enrolledProfiles {
+		if p.Owner {
+			continue
+		}
+		label := p.Name
+		if p.ModelRev != expected {
+			label += " (re-enroll to refresh)"
+		}
+		rows = append(rows, speakerRow{kind: speakerRowGuest, name: p.Name, label: label})
+	}
+	return rows
+}
+
+func (m settingsModel) onGuestRow() bool {
+	rows := m.speakerRows()
+	if m.cursor < 0 || m.cursor >= len(rows) {
+		return false
+	}
+	return rows[m.cursor].kind == speakerRowGuest
+}
+
+func (m settingsModel) isOwnerName(name string) bool {
+	return m.enrolledOwnerOK && strings.EqualFold(m.enrolledOwner.Name, strings.TrimSpace(name))
 }
 
 // registerRowLabel names the enrollment action for the state the store is in.
@@ -92,11 +140,16 @@ func (m settingsModel) removeRowLabel() string {
 }
 
 func (m *settingsModel) selectSpeakerItem() tea.Cmd {
+	rows := m.speakerRows()
+	if m.cursor < 0 || m.cursor >= len(rows) {
+		return nil
+	}
+	row := rows[m.cursor]
 	saveConfig := m.saveConfig
 	if saveConfig == nil {
 		saveConfig = config.SetAndSave
 	}
-	switch m.cursor {
+	switch row.kind {
 	case speakerRowName:
 		return m.beginEdit(editUserDisplayName, "Your name", strings.TrimSpace(m.cfg.UserDisplayName))
 	case speakerRowLive:
@@ -117,12 +170,19 @@ func (m *settingsModel) selectSpeakerItem() tea.Cmd {
 		}
 		m.cfg.Speaker.Live.WindowMS = next
 		m.message = fmt.Sprintf("Analysis window %d ms", next)
+		if len(m.enrolledProfiles) > 0 {
+			m.message += " — enrolled voices go stale until you re-enroll"
+		}
 	case speakerRowMeeting:
 		m.message = "Meeting diarization is per-meeting — toggle it in Settings → Meeting"
 	case speakerRowRegister:
 		return m.beginEnroll()
 	case speakerRowRemove:
 		m.beginRemoveVoice()
+	case speakerRowEnrollOther:
+		return m.beginEdit(editSpeakerEnrollName, "Speaker name", "")
+	case speakerRowGuest:
+		return m.startEnroll(row.name, false)
 	}
 	return nil
 }
@@ -153,7 +213,7 @@ func (m *settingsModel) commitUserDisplayName(value string) tea.Cmd {
 	}
 	m.message = fmt.Sprintf("Your name is %s — new conversations use it in place of speaker-1", value)
 	if resume {
-		return m.startEnroll(value)
+		return m.startEnroll(value, true)
 	}
 	return nil
 }

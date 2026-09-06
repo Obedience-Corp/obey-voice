@@ -36,7 +36,8 @@ var errNoMicrophone = errors.New("microphone unavailable")
 
 const enrollNoMicMessage = "Microphone unavailable — open a conversation first, or check Settings → Input"
 
-// enrollSession is an in-flight "Register your voice". Zero value = idle.
+// enrollSession is an in-flight "Register your voice" or guest enrollment.
+// Zero value = idle.
 type enrollSession struct {
 	active bool
 	name   string
@@ -46,6 +47,9 @@ type enrollSession struct {
 	clip      int
 	elapsed   time.Duration
 	enrolling bool // clips are recorded; the model is embedding them
+	// claimOwner is set for Register your voice so an empty owner seat is
+	// claimed even when CLI guests already occupy the store.
+	claimOwner bool
 }
 
 type enrollProgressMsg struct {
@@ -79,7 +83,7 @@ func (m *settingsModel) initEnrollSeams(cfg *config.Config) {
 	m.speakerEngine = func(ctx context.Context) (speaker.Engine, func(), error) {
 		return newEnrollEngine(ctx, cfg)
 	}
-	m.refreshEnrolledOwner()
+	m.refreshEnrolledProfiles()
 }
 
 // newEnrollEngine ensures the managed embedding model and loads it, the same
@@ -100,15 +104,17 @@ func newEnrollEngine(ctx context.Context, cfg *config.Config) (speaker.Engine, f
 	return engine, func() { _ = engine.Close() }, nil
 }
 
-// refreshEnrolledOwner re-reads the store for the Speakers row labels.
+// refreshEnrolledProfiles re-reads the store for the Speakers row labels.
 // Read-only on purpose: LoadEnrollment never creates the directory, so opening
 // Settings on an install that never enrolled leaves the config dir untouched.
-func (m *settingsModel) refreshEnrolledOwner() {
+func (m *settingsModel) refreshEnrolledProfiles() {
+	m.enrolledProfiles = nil
 	m.enrolledOwner, m.enrolledOwnerOK = speaker.Profile{}, false
 	store, err := speaker.LoadEnrollment(speaker.EnrollmentDir(m.cfg))
 	if err != nil || store == nil {
 		return
 	}
+	m.enrolledProfiles = store.List()
 	m.enrolledOwner, m.enrolledOwnerOK = store.Owner()
 }
 
@@ -134,18 +140,19 @@ func (m *settingsModel) beginEnroll() tea.Cmd {
 		m.enrollAfterName = true
 		return m.beginEdit(editUserDisplayName, "Your name", "")
 	}
-	return m.startEnroll(name)
+	return m.startEnroll(name, true)
 }
 
 // startEnroll arms the session and launches the recorder off the update loop.
-func (m *settingsModel) startEnroll(name string) tea.Cmd {
+// claimOwner is true for Register your voice and false for guest enroll.
+func (m *settingsModel) startEnroll(name string, claimOwner bool) tea.Cmd {
 	if m.captureFor == nil {
 		m.message = enrollNoMicMessage
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	events := newEventBridge(16)
-	m.enroll = enrollSession{active: true, name: name, cancel: cancel, events: events, clip: 1}
+	m.enroll = enrollSession{active: true, name: name, cancel: cancel, events: events, clip: 1, claimOwner: claimOwner}
 	m.message = ""
 	return tea.Batch(events.wait(), m.recordEnrollment(ctx, name, events))
 }
@@ -202,6 +209,7 @@ func (m *settingsModel) finishEnroll(msg enrollDoneMsg) {
 		// re-entered): nothing to close, and no message to overwrite.
 		return
 	}
+	claimOwner := m.enroll.claimOwner
 	m.enroll = enrollSession{}
 	switch {
 	case errors.Is(msg.err, context.Canceled):
@@ -211,8 +219,12 @@ func (m *settingsModel) finishEnroll(msg enrollDoneMsg) {
 	case msg.err != nil:
 		m.message = fmt.Sprintf("Registration failed: %v", msg.err)
 	default:
-		m.refreshEnrolledOwner()
-		m.message = fmt.Sprintf("Registered %s — live labels will use it", msg.profile.Name)
+		m.refreshEnrolledProfiles()
+		verb := "Enrolled"
+		if msg.profile.Owner || claimOwner {
+			verb = "Registered"
+		}
+		m.message = fmt.Sprintf("%s %s — live labels will use it", verb, msg.profile.Name)
 		if msg.seedErr != nil {
 			m.message += fmt.Sprintf(" (the open conversation keeps its old labels: %v)", msg.seedErr)
 		} else if !msg.seeded {
@@ -221,13 +233,34 @@ func (m *settingsModel) finishEnroll(msg enrollDoneMsg) {
 	}
 }
 
-// beginRemoveVoice arms the removal confirmation. Nothing is deleted here.
+// beginRemoveVoice arms the owner removal confirmation. Nothing is deleted here.
 func (m *settingsModel) beginRemoveVoice() {
 	if !m.enrolledOwnerOK {
 		m.message = "Nothing registered yet — choose Register your voice"
 		return
 	}
-	m.confirmRemoveVoice = m.enrolledOwner.Name
+	m.beginRemoveVoiceNamed(m.enrolledOwner.Name)
+}
+
+// beginRemoveGuestAtCursor arms removal for the guest under the cursor.
+func (m *settingsModel) beginRemoveGuestAtCursor() {
+	rows := m.speakerRows()
+	if m.cursor < 0 || m.cursor >= len(rows) {
+		return
+	}
+	row := rows[m.cursor]
+	if row.kind != speakerRowGuest {
+		return
+	}
+	m.beginRemoveVoiceNamed(row.name)
+}
+
+func (m *settingsModel) beginRemoveVoiceNamed(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	m.confirmRemoveVoice = name
 	m.message = ""
 }
 
@@ -262,8 +295,16 @@ func (m *settingsModel) removeVoice(name string) {
 		m.message = fmt.Sprintf("Failed to remove %s: %v", name, err)
 		return
 	}
-	m.refreshEnrolledOwner()
-	m.message = fmt.Sprintf("Removed %s. Live labels will say speaker-1 until you register again.", name)
+	wasOwner := m.isOwnerName(name)
+	m.refreshEnrolledProfiles()
+	if maxIdx := m.currentListLen() - 1; m.cursor > maxIdx {
+		m.cursor = max(maxIdx, 0)
+	}
+	if wasOwner {
+		m.message = fmt.Sprintf("Removed %s. Live labels will say speaker-1 until you register again.", name)
+	} else {
+		m.message = fmt.Sprintf("Removed %s.", name)
+	}
 	if m.liveSeeder != nil && m.liveSeeder() != nil {
 		m.message += " The open conversation keeps the old voice until it restarts."
 	}
@@ -298,8 +339,23 @@ func (m settingsModel) enrollOverlayLines() []string {
 			dimStyle.Render("Esc cancels — nothing is saved until all three clips are recorded."),
 		}
 	}
-	box := formBoxStyled(headerStyle.Render("Register your voice"), body, m.settingsBoxWidth(), lipgloss.NewStyle().Foreground(colorAccent))
+	box := formBoxStyled(headerStyle.Render(m.enrollOverlayTitle()), body, m.settingsBoxWidth(), lipgloss.NewStyle().Foreground(colorAccent))
 	return append([]string{""}, box...)
+}
+
+func (m settingsModel) enrollOverlayTitle() string {
+	if m.enroll.claimOwner || m.isOwnerName(m.enroll.name) {
+		return "Register your voice"
+	}
+	for _, p := range m.enrolledProfiles {
+		if !p.Owner && strings.EqualFold(p.Name, m.enroll.name) {
+			return fmt.Sprintf("Re-enroll %s", p.Name)
+		}
+	}
+	if strings.TrimSpace(m.enroll.name) == "" {
+		return "Enroll a speaker"
+	}
+	return fmt.Sprintf("Enroll %s", m.enroll.name)
 }
 
 // enrollProgressBar renders elapsed against one clip's length.
@@ -316,14 +372,20 @@ func enrollProgressBar(elapsed time.Duration, width int) string {
 
 // confirmRemoveVoiceLines renders the removal prompt in place of the list.
 func (m settingsModel) confirmRemoveVoiceLines() []string {
+	name := m.confirmRemoveVoice
 	body := []string{
-		normalStyle.Render(fmt.Sprintf("Remove %s's voice?", m.confirmRemoveVoice)),
+		normalStyle.Render(fmt.Sprintf("Remove %s's voice?", name)),
 		"",
 		dimStyle.Render("Deletes the stored voiceprint and its embeddings."),
-		dimStyle.Render("Chat labels fall back to speaker-1 until you register again."),
-		"",
-		normalStyle.Render("Press ") + errorStyle.Render("y") + normalStyle.Render(" to remove · any other key keeps it"),
+		dimStyle.Render("Transcripts already written keep the name."),
 	}
+	if m.isOwnerName(name) {
+		body = append(body, dimStyle.Render("Chat labels fall back to speaker-1 until you register again."))
+	}
+	body = append(body,
+		"",
+		normalStyle.Render("Press ")+errorStyle.Render("y")+normalStyle.Render(" to remove · any other key keeps it"),
+	)
 	box := formBoxStyled(errorStyle.Render("Confirm remove"), body, m.settingsBoxWidth(), errorStyle)
 	return append([]string{""}, box...)
 }

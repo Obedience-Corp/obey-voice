@@ -2,6 +2,7 @@ package speaker
 
 import (
 	"fmt"
+	"maps"
 
 	"gopkg.in/yaml.v3"
 )
@@ -84,6 +85,36 @@ func (e *Enrollment) SetOwner(name string) error {
 		for key, p := range prev {
 			e.profiles[key] = p
 		}
+		return err
+	}
+	return nil
+}
+
+// ClearOwner drops the owner flag from every profile and persists. The seat
+// stays empty until SetOwner claims it. Guest enrollment uses this when Add
+// auto-owned an empty store — first-profile ownership is Register's job.
+func (e *Enrollment) ClearOwner() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	prev := maps.Clone(e.profiles)
+	changed := false
+	for key, p := range e.profiles {
+		if !p.Owner {
+			continue
+		}
+		p.Owner = false
+		e.profiles[key] = p
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	if err := e.saveLocked(); err != nil {
+		e.profiles = prev
 		return err
 	}
 	return nil

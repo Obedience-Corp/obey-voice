@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 )
 
 // settingsEditKind names the value being typed. editNone means the list has
@@ -14,6 +18,7 @@ const (
 	editWorkerURL
 	editWorkerToken
 	editUserDisplayName
+	editSpeakerEnrollName
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -58,6 +63,9 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		return m, nil
 	case "enter":
 		kind, value := m.edit.kind, m.edit.input.Value()
+		if kind == editSpeakerEnrollName {
+			return m.commitSpeakerEnrollName(value)
+		}
 		m.cancelEdit()
 		if kind == editUserDisplayName {
 			return m, m.commitUserDisplayName(value)
@@ -68,6 +76,22 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 	input, cmd := m.edit.input.Update(msg)
 	m.edit.input = input
 	return m, cmd
+}
+
+// commitSpeakerEnrollName starts a guest enrollment. Invalid names keep the
+// editor open so the user can fix the value without re-selecting the row.
+func (m settingsModel) commitSpeakerEnrollName(value string) (settingsModel, tea.Cmd) {
+	value = strings.TrimSpace(value)
+	if err := speaker.CheckEnrollmentName(value); err != nil {
+		m.message = strings.TrimPrefix(err.Error(), "speaker: ")
+		return m, nil
+	}
+	if m.isOwnerName(value) {
+		m.message = "That's your voice — use Re-enroll your voice"
+		return m, nil
+	}
+	m.cancelEdit()
+	return m, m.startEnroll(value, false)
 }
 
 // editorLine renders the open editor above the list.

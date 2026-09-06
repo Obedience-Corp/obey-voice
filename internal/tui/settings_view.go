@@ -60,6 +60,9 @@ func (m settingsModel) View() string {
 		help += " • p preview"
 	}
 	help += " • esc back"
+	if m.section == sectionSpeakers && m.onGuestRow() {
+		help = "  ←/→ section • ↑/↓ navigate • enter re-enroll • d remove • esc back"
+	}
 	if m.edit.kind != editNone {
 		help = "  type a value • enter save • esc cancel"
 	}
