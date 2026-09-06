@@ -70,6 +70,9 @@ type settingsModel struct {
 	ensureTTSAssets func(ctx context.Context, cfg *config.Config, onProgress func(name string, pct float64)) error
 	newTTSProvider  func(*config.Config) (tts.Provider, func(), error)
 	saveConfig      func(string, any) error
+	// onPlaybackVolume applies gain to the live conversation player. Nil when
+	// Settings is open without a running pipeline (launcher).
+	onPlaybackVolume func(float64)
 	// lookPath resolves external binaries for the recognizer rows; nil uses
 	// exec.LookPath. Tests inject a fake so a picker never depends on what
 	// happens to be installed on the machine running them.
@@ -119,7 +122,9 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 		deviceChecker: audio.NewDeviceChecker(),
 		preview: voicePreview{
 			newPreviewPlayer: func() audio.Engine {
-				return audio.NewPlayerWithDevice(cfg.OutputDevice)
+				p := audio.NewPlayerWithDevice(cfg.OutputDevice)
+				p.SetVolume(config.PlaybackVolumeOf(cfg))
+				return p
 			},
 			ensure: ensure,
 			newTTS: tts.NewProvider,
@@ -442,26 +447,20 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			return m.updateRemoveVoiceConfirm(msg)
 		}
 		switch msg.String() {
-		case "tab", "right", "l":
-			m.section = (m.section + 1) % settingsSectionCount
-			m.cursor = 0
-			m.offset = 0
-			m.message = ""
-			if m.section == sectionMeeting && !m.routeDestsLoading && m.routeDests == nil {
-				return m, m.loadRouteDestinations()
+		case "tab":
+			return m, m.switchSettingsSection(1)
+		case "shift+tab":
+			return m, m.switchSettingsSection(-1)
+		case "right", "l":
+			if m.nudgeVolume(playbackVolumeStep) {
+				break
 			}
-		case "shift+tab", "left", "h":
-			if m.section > 0 {
-				m.section--
-			} else {
-				m.section = settingsSectionCount - 1
+			return m, m.switchSettingsSection(1)
+		case "left", "h":
+			if m.nudgeVolume(-playbackVolumeStep) {
+				break
 			}
-			m.cursor = 0
-			m.offset = 0
-			m.message = ""
-			if m.section == sectionMeeting && !m.routeDestsLoading && m.routeDests == nil {
-				return m, m.loadRouteDestinations()
-			}
+			return m, m.switchSettingsSection(-1)
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
@@ -655,7 +654,10 @@ func (m *settingsModel) currentListLen() int {
 	case sectionInput:
 		return len(m.inputItems)
 	case sectionOutput:
-		return len(m.outputItems)
+		if m.devicesLoading {
+			return 1
+		}
+		return 1 + len(m.outputItems)
 	case sectionSpeakers:
 		return len(m.speakerItems())
 	case sectionMeeting:
@@ -798,8 +800,12 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 	case sectionMeeting:
 		m.selectMeetingItem()
 	case sectionOutput:
-		if m.cursor < len(m.outputItems) {
-			name := m.outputItems[m.cursor]
+		if m.cursor == outputRowVolume {
+			return nil
+		}
+		idx := m.cursor - 1
+		if idx >= 0 && idx < len(m.outputItems) {
+			name := m.outputItems[idx]
 			if err := config.SetAndSave("output_device", name); err != nil {
 				m.message = fmt.Sprintf("Failed to save output device: %v", err)
 				return nil

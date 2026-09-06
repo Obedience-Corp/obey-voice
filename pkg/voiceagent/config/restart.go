@@ -12,6 +12,7 @@ package config
 // like per-operation settings.
 var restartNotRequired = map[string]bool{
 	"tts_provider":      true, // applies to subsequent utterances
+	"playback_volume":   true, // applies in the player callback, including mid-utterance
 	"tui_mouse_enabled": true, // applies on next enter/leave of the conversation
 	"active_persona":    true, // a new conversation re-resolves the binding
 	"user_display_name": true, // NameMap seeds at conversation entry from loaded config
@@ -24,6 +25,7 @@ var restartNotRequired = map[string]bool{
 // that just restarts).
 var restartVerified = map[string]bool{
 	"tts_provider":           true,
+	"playback_volume":        true, // verified: Player.SetVolume is live in onData
 	"tui_mouse_enabled":      true,
 	"active_persona":         true,
 	"user_display_name":      true, // conversation entry re-seeds NameMap from loaded config

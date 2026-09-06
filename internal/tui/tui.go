@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
@@ -342,6 +343,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// the choice between the live capture graph and a fresh one.
 			a.settings.captureFor = a.settingsCaptureFor()
 			a.settings.liveSeeder = a.settingsLiveSeeder()
+			a.settings.onPlaybackVolume = a.applyPlaybackVolume
 			// Apply stored geometry immediately — Bubble Tea only re-emits
 			// WindowSize on actual resize, not on screen switches. Without
 			// this, the list falls back to a default height and 80-col width
@@ -889,6 +891,12 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return a, cmd
+}
+
+func (a App) applyPlaybackVolume(gain float64) {
+	if a.runtime != nil && a.runtime.Pipeline != nil {
+		audio.ApplyEngineVolume(a.runtime.Pipeline.Player, gain)
+	}
 }
 
 func voiceSettingsState(cfg *config.Config) string {

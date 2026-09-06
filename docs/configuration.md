@@ -108,6 +108,7 @@ when you select it.
 | `tts_lan_strict` | `false` | | Refuse to start a conversation when the speech worker is unreachable, instead of speaking with Kokoro here |
 | `tts_lan_timeout_ms` | `200` | | Dial and handshake budget for the speech worker. It never bounds the worker's model load |
 | `speech_speed` | `0.95` | | Playback speed |
+| `playback_volume` | `1` | | Linear playback gain. `1` is unchanged; `0` is silent; values up to `4` boost a quiet speaker. Settings → Output has a slider; takes effect immediately |
 | `qwen_tts_binary` | empty | `QWEN_TTS_BINARY` | Empty uses the native package worker under `models_dir/qwen3-tts`; set with `qwen_tts_model` for an explicit external worker |
 | `qwen_tts_model` | empty | `QWEN_TTS_MODEL` | Empty uses the native package model dir; otherwise an external worker model directory |
 | `qwen_tts_model_tier` | `0.6b` | `QWEN_TTS_MODEL_TIER` | Preferred native tier (`0.6b` or `1.7b` when present) |

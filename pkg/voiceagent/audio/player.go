@@ -145,6 +145,10 @@ type Player struct {
 	// depends on the ring geometry, so the request is no longer trusted as the
 	// truth. Written from the device callback, read when publishing the delay.
 	observedPeriodFrames atomic.Int32
+	// volumeHundredths is linear playback gain × 100, applied in onData on
+	// mono S16 before expand so a settings slider takes effect mid-utterance
+	// and AEC hears the same samples the speaker does. 100 is unity.
+	volumeHundredths atomic.Int32
 }
 
 // NewPlayer creates a new audio player.
@@ -155,7 +159,9 @@ func NewPlayer() *Player {
 // NewPlayerWithDevice creates a player routed to deviceName. An empty name
 // follows the operating-system default.
 func NewPlayerWithDevice(deviceName string) *Player {
-	return &Player{deviceName: deviceName, debugRoot: debugAudioDir()}
+	p := &Player{deviceName: deviceName, debugRoot: debugAudioDir()}
+	p.volumeHundredths.Store(defaultVolumeHundredths)
+	return p
 }
 
 // referenceDelaySamples estimates, in capture-rate samples, how long after
@@ -795,6 +801,7 @@ func playbackRateCandidates(sourceRate int, preferredRate uint32) []uint32 {
 func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 	clearBytes(outputSamples)
 	p.observedPeriodFrames.Store(int32(frameCount))
+	hundredths := p.volumeHundredths.Load()
 
 	p.mu.Lock()
 	channels := p.channels
@@ -822,6 +829,7 @@ func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 		if !active {
 			return
 		}
+		applyVolumeS16(monoBuf[:writtenFrames*2], writtenFrames, hundredths)
 		// Expand mono → device layout, then capture the exact multi-channel
 		// buffer handed to miniaudio.
 		expandMonoS16LE(monoBuf[:writtenFrames*2], writtenFrames, channels, outputSamples)

@@ -67,6 +67,11 @@ func voiceKeys() []KeySpec {
 			Help: "How fast she talks. Above about 1.3 the words start to slur.",
 		},
 		{
+			Key: "playback_volume", Type: TypeFloat, Default: DefaultPlaybackVolume, Unit: "×", Min: num(MinPlaybackVolume), Max: num(MaxPlaybackVolume),
+			Group: GroupVoice, Title: "Volume",
+			Help: "How loud she is. 1 is normal; 0 is silent; above 1 boosts a quiet speaker.",
+		},
+		{
 			Key: "output_device", Type: TypeString, Default: "",
 			Group: GroupVoice, Title: "Speaker",
 			Help: "Where her voice plays. Empty follows the system output device.",

@@ -54,7 +54,9 @@ func (m settingsModel) View() string {
 	parts = append(parts, listLines...)
 
 	help := "  ←/→ section • ↑/↓ navigate • enter select"
-	if m.section == sectionVoice {
+	if m.volumeRowFocused() {
+		help = "  ←/→ volume • tab section • ↑/↓ speakers"
+	} else if m.section == sectionVoice {
 		help += " • p preview"
 	}
 	help += " • esc back"
@@ -212,7 +214,7 @@ func (m settingsModel) sectionListLines() []string {
 		return m.deviceLines(m.inputItems, m.cfg.InputDevice)
 
 	case sectionOutput:
-		return m.deviceLines(m.outputItems, m.cfg.OutputDevice)
+		return m.outputLines()
 
 	case sectionSpeakers:
 		items := m.speakerItems()
