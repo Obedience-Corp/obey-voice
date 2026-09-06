@@ -159,6 +159,25 @@ func TestStreamingLoopNoSpeechTimesOut(t *testing.T) {
 // echo tail) marks speech, after which the start timeout can never fire. The
 // loop must handle the policy's TooShort by resetting to a fresh listening
 // window so the timeout recovers. Pre-fix this listened forever.
+func TestStreamingLoopSilentEOFGhostFinalizeIsNotATurn(t *testing.T) {
+	deps := streamingLoopDeps{
+		frames: &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600)}},
+		seg:    &fakeSegmenter{speech: true, flushSeg: make([]float32, minSpeechSamples)},
+		rec:    &fakeStreamingRec{finals: []string{"Yeah."}},
+		policy: endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond, StartTimeout: time.Second},
+	}
+
+	got := runStreaming(context.Background(), deps)
+	if _, ok := terminal(got).(Timeout); !ok {
+		t.Fatalf("terminal = %T, want Timeout (silent EOF must not finalize as a turn)", terminal(got))
+	}
+	for _, e := range got {
+		if ft, ok := e.(FinalTranscript); ok {
+			t.Fatalf("emitted FinalTranscript on silent EOF: %q", ft.Text)
+		}
+	}
+}
+
 func TestStreamingLoopYeahPartialOnSilenceIsNotATurn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

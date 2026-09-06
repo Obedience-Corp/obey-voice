@@ -52,6 +52,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 	lastPartial := ""
 	var levels levelEmitter
 	var gate noiseGate
+	var listenBuf []float32
 
 	// resetListening discards a rejected or false-positive utterance and opens a
 	// fresh listening window. It returns false when the loop should stop.
@@ -64,6 +65,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 		track.reset()
 		transcribing = false
 		lastPartial = ""
+		listenBuf = nil
 		return emitPhase("listening")
 	}
 
@@ -90,6 +92,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 				}
 				continue
 			}
+			listenBuf = append(listenBuf, read.frame.Samples...)
 			if track.observe(d.voice, frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
@@ -123,7 +126,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 
 		if eof {
 			deps.seg.Flush()
-			if deps.seg.HasSegments() {
+			if deps.seg.HasSegments() && audibleSpeech(listenBuf) {
 				track.markSpeech()
 			}
 		}
