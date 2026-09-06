@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -32,28 +33,84 @@ type engine struct {
 	runner  runner
 	player  *recordingPlayer
 	playing func() bool
+	profile runProfile
+	onClose []func()
+
+	started    time.Time
+	stopReason string
+	turns      []turnRecord
 }
 
+// turnRecord is the report's per-turn row.
+type turnRecord struct {
+	ID     string
+	User   string
+	Route  string
+	Spoken string
+	Err    string
+}
+
+const defaultScenarioWall = 5 * time.Minute
+
 func (e *engine) run(ctx context.Context) error {
+	defer e.closeAll()
 	if err := os.MkdirAll(e.runDir, 0o700); err != nil {
 		return err
 	}
+	wall := e.scn.Duration.Duration
+	if wall == 0 {
+		wall = defaultScenarioWall
+	}
+	ctx, cancel := context.WithTimeout(ctx, wall)
+	defer cancel()
+
+	e.started = time.Now()
+	e.stopReason = "completed"
 	for i, turn := range e.scn.Turns {
 		if err := e.runTurn(ctx, i, turn); err != nil {
+			e.stopReason = "turn_failed"
+			if ctx.Err() != nil {
+				e.stopReason = "timeout"
+			}
+			e.noteTurnError(turn.ID, err)
 			_ = writeReport(e)
 			return fmt.Errorf("turn %s: %w", turn.ID, err)
 		}
 	}
+	m := e.metrics()
+	var failures []error
+	for _, ex := range e.scn.Expect {
+		if err := evalRunExpect(ex, e.rec, m); err != nil {
+			failures = append(failures, fmt.Errorf("run expect: %w", err))
+		}
+	}
+	if len(failures) > 0 {
+		e.stopReason = "run_expect_failed"
+	}
 	if err := writeReport(e); err != nil {
 		return err
 	}
-	m := e.metrics()
-	for _, ex := range e.scn.Expect {
-		if err := evalRunExpect(ex, e.rec, m); err != nil {
-			return fmt.Errorf("run expect: %w", err)
-		}
+	if len(failures) > 0 {
+		return failures[0]
 	}
 	return nil
+}
+
+func (e *engine) closeAll() {
+	for i := len(e.onClose) - 1; i >= 0; i-- {
+		e.onClose[i]()
+	}
+	e.onClose = nil
+}
+
+func (e *engine) noteTurnError(id string, err error) {
+	for i := range e.turns {
+		if e.turns[i].ID == id {
+			e.turns[i].Err = err.Error()
+			return
+		}
+	}
+	e.turns = append(e.turns, turnRecord{ID: id, Err: err.Error()})
 }
 
 func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
@@ -72,6 +129,7 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	}
 
 	mark := len(e.rec.snapshot())
+	routeMark := e.rec.routeMark()
 	if turn.User != "" {
 		if e.runner == nil {
 			return fmt.Errorf("no runner (live agent not wired)")
@@ -97,6 +155,9 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		spoken: e.rec.spokenText(),
 		events: e.rec.snapshot()[mark:],
 	}
+	if d, ok := e.rec.lastRouteSince(routeMark); ok {
+		st.route = &d
+	}
 	if e.runner != nil {
 		st.history = e.runner.history()
 		st.liveRouterPolicy = e.runner.livePolicy()
@@ -105,12 +166,41 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		st.liveBrainCalled = e.runner.liveCalled()
 		st.workerCalled = e.runner.workerCalled()
 	}
+	e.turns = append(e.turns, e.recordTurn(turn, mark, st.route))
 	for _, ex := range turn.Expect {
 		if err := evalExpect(ex, e.rec, st); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (e *engine) recordTurn(turn Turn, mark int, route *pipeline.RouteDecision) turnRecord {
+	tr := turnRecord{ID: turn.ID, User: turn.User}
+	if route != nil {
+		tr.Route = string(route.Kind)
+		if route.Source != "" {
+			tr.Route += "/" + route.Source
+		}
+	}
+	var spoken []string
+	add := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" || (len(spoken) > 0 && spoken[len(spoken)-1] == text) {
+			return
+		}
+		spoken = append(spoken, text)
+	}
+	for _, te := range e.rec.snapshot()[mark:] {
+		switch v := te.event.(type) {
+		case events.SpeechSegmentReady:
+			add(v.Text)
+		case events.GeneratingVoice:
+			add(v.Sentence)
+		}
+	}
+	tr.Spoken = clip(strings.Join(spoken, " "), 160)
+	return tr
 }
 
 func (e *engine) isPlaying() bool {
@@ -159,7 +249,6 @@ func defaultRunDir(root, name string) (string, error) {
 // fakeRunner is the harness self-test: no models.
 type fakeRunner struct {
 	hist   []brain.Turn
-	routes []pipeline.RouteDecision
 	rec    *recorder
 	onTurn func(user string)
 	play   bool

@@ -11,15 +11,36 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
-// convoflowCrackle is looser than the CI Studio Display defaults. Neural TTS
-// is not callback-sized device audio.
+// convoflowCrackle gates clicks only. The package's mid-silence counters
+// were built for device-callback audio, where any near-zero run between
+// speech is a dropped buffer; a neural vocoder's output has a near-zero
+// run at every pause (Kokoro: ~150 per 5 s of speech), so those counts are
+// reported, not gated. What a recorded synthesized stream can actually show
+// is a click at a segment join, clipping, or a stretch of exact digital
+// zero inside speech from a stall or padding — see zeroHoles.
 var convoflowCrackle = audio.CrackleThresholds{
 	MaxImpulses:         8,
-	MaxMidSilenceRuns:   2,
-	MaxMidSilenceFrames: audio.SampleRate / 10, // 100ms of holes at capture rate
+	MaxMidSilenceRuns:   math.MaxInt32,
+	MaxMidSilenceFrames: math.MaxInt32,
 }
 
-const analysisSilenceAbs = 1.0 / 512.0
+const (
+	analysisSilenceAbs = 1.0 / 512.0
+	// clipAbs is the peak at which float PCM is treated as clipped.
+	clipAbs = 0.999
+	// maxZeroHoleMs is the longest exact-zero run allowed inside speech.
+	// Kokoro leads every synthesized segment with 65–75 ms of zeros, which
+	// a concatenated turn WAV shows at each join; a quarter second is a
+	// stall or a padded frame, never a lead.
+	maxZeroHoleMs = 250.0
+	// zeroHoleSpeechAbs is the amplitude that counts as speech on both
+	// sides of a zero run, so trailing silence is not a hole.
+	zeroHoleSpeechAbs = 1.0 / 64.0
+	// minZeroHoleMs is the shortest run that counts as a hole at all: 16-bit
+	// audio lands on exactly zero at zero crossings, and those single
+	// samples are not gaps.
+	minZeroHoleMs = 1.0
+)
 
 type wavAnalysis struct {
 	Path             string  `json:"path"`
@@ -33,6 +54,9 @@ type wavAnalysis struct {
 	ImpulseCount     int     `json:"impulse_count"`
 	MidSilenceRuns   int     `json:"mid_silence_runs"`
 	MidSilenceFrames int     `json:"mid_silence_frames"`
+	ZeroHoleRuns     int     `json:"zero_hole_runs"`
+	LongestZeroHole  float64 `json:"longest_zero_hole_ms"`
+	Clipped          bool    `json:"clipped"`
 	MaxAbsDelta      float64 `json:"max_abs_delta"`
 	P99AbsDelta      float64 `json:"p99_abs_delta"`
 	HasCrackle       bool    `json:"has_crackle"`
@@ -55,8 +79,52 @@ func scoreSamples(path string, samples []float32, rate int) wavAnalysis {
 	a.MidSilenceFrames = m.MidSilenceFrames
 	a.MaxAbsDelta = m.MaxAbsDelta
 	a.P99AbsDelta = m.P99AbsDelta
-	a.HasCrackle = m.HasCrackle(convoflowCrackle)
+	a.ZeroHoleRuns, a.LongestZeroHole = zeroHoles(samples, rate)
+	a.Clipped = a.Peak >= clipAbs
+	a.HasCrackle = m.ImpulseCount > convoflowCrackle.MaxImpulses || a.Clipped || a.LongestZeroHole >= maxZeroHoleMs
 	return a
+}
+
+// zeroHoles counts runs of exact zero that have speech on both sides and
+// returns the count and the longest run in milliseconds. Leading and
+// trailing silence are not holes.
+func zeroHoles(samples []float32, rate int) (runs int, longestMs float64) {
+	if rate <= 0 || len(samples) == 0 {
+		return 0, 0
+	}
+	seenSpeech := false
+	i := 0
+	for i < len(samples) {
+		if samples[i] != 0 {
+			if math.Abs(float64(samples[i])) >= zeroHoleSpeechAbs {
+				seenSpeech = true
+			}
+			i++
+			continue
+		}
+		j := i
+		for j < len(samples) && samples[j] == 0 {
+			j++
+		}
+		ms := float64(j-i) * 1000 / float64(rate)
+		if ms >= minZeroHoleMs && seenSpeech && speechFollows(samples, j) {
+			runs++
+			if ms > longestMs {
+				longestMs = ms
+			}
+		}
+		i = j
+	}
+	return runs, longestMs
+}
+
+func speechFollows(samples []float32, from int) bool {
+	for _, v := range samples[from:] {
+		if math.Abs(float64(v)) >= zeroHoleSpeechAbs {
+			return true
+		}
+	}
+	return false
 }
 
 func scoreWAVFile(path string) (wavAnalysis, error) {
@@ -128,8 +196,8 @@ func analyzeRunDir(runDir string) error {
 			status = "FAIL"
 			failing++
 		}
-		fmt.Printf("  %s  %.2fs  crackle=%s  impulses=%d  mid_silence_runs=%d\n",
-			a.Path, a.DurationS, status, a.ImpulseCount, a.MidSilenceRuns)
+		fmt.Printf("  %s  %.2fs  crackle=%s  impulses=%d  zero_holes=%d  longest_zero_hole=%.0fms  clipped=%t  pauses=%d\n",
+			a.Path, a.DurationS, status, a.ImpulseCount, a.ZeroHoleRuns, a.LongestZeroHole, a.Clipped, a.MidSilenceRuns)
 	}
 	fmt.Printf("  %d failing / %d wav\n", failing, len(scores))
 	if failing > 0 {

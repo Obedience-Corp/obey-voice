@@ -16,6 +16,8 @@ import (
 	"syscall"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 func main() {
@@ -29,12 +31,13 @@ func runMain(args []string) int {
 	analyzeDir := fs.String("analyze", "", "rescore an existing run directory")
 	liveProvider := fs.String("live-provider", "ollama", "live brain provider")
 	liveModel := fs.String("live-model", "qwen3:8b", "live model")
-	workerProvider := fs.String("worker-provider", "ollama", "worker provider")
+	workerProvider := fs.String("worker-provider", "ollama", "worker provider (ollama, grok, claude, or stub for the self-test)")
 	workerModel := fs.String("worker-model", "", "worker model; empty inherits live")
 	workerHost := fs.String("worker-ollama-host", "", "worker Ollama URL; empty inherits live host")
 	ollamaHost := fs.String("ollama-host", "http://localhost:11434", "live Ollama URL")
 	runsDir := fs.String("runs-dir", "", "artifact root (default ~/.cache/obey-voice/convoflow)")
 	selfTest := fs.Bool("self-test", false, "run with a fake runner (no models)")
+	gate := fs.Bool("gate", false, "gate mode: refuse the stub worker (set by `just convoflow gate`)")
 	speakers := fs.Bool("speakers", false, "tee recorded PCM to real speakers")
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -58,6 +61,7 @@ func runMain(args []string) int {
 		workerModel:      *workerModel,
 		workerOllamaHost: *workerHost,
 		ollamaHost:       *ollamaHost,
+		gate:             *gate,
 	}
 	if reason := skipReason(k); reason != "" && !*selfTest {
 		fmt.Fprintf(os.Stderr, "convoflow: skip: %s\n", reason)
@@ -69,6 +73,26 @@ func runMain(args []string) int {
 		fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
 		return 1
 	}
+	if *selfTest && scn.Name != "self-test" {
+		fmt.Fprintf(os.Stderr, "convoflow: -self-test only runs scenarios/self-test.yaml (got %q); stock gates need a live agent\n", scn.Name)
+		return 1
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	// Probes run before anything is constructed: a missing daemon or model is
+	// a skip, and there is nothing to tear down yet. They see the effective
+	// knobs — CLI over the scenario's brain / worker blocks — which is what
+	// resolveConfig builds the run from.
+	k = k.withScenario(scn)
+	if !*selfTest {
+		if reason := probeOllama(ctx, k); reason != "" {
+			fmt.Fprintf(os.Stderr, "convoflow: skip: %s\n", reason)
+			return exitSkip
+		}
+	}
+
 	runDir, err := defaultRunDir(*runsDir, scn.Name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
@@ -83,31 +107,26 @@ func runMain(args []string) int {
 	}
 	fmt.Printf("convoflow %s → %s\n", scn.Name, runDir)
 
-	if !*selfTest {
-		fmt.Fprintf(os.Stderr, "convoflow: live agent wiring is not in this skeleton; YAML/just knobs are ready. Use -self-test -scenario tests/convoflow/scenarios/self-test.yaml for the no-model path.\n")
-		return exitSkip
-	}
-	if scn.Name != "self-test" {
-		fmt.Fprintf(os.Stderr, "convoflow: -self-test only runs scenarios/self-test.yaml (got %q); stock gates need a live agent\n", scn.Name)
-		return 1
-	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	rec := &recorder{}
 	player := newRecordingPlayer(nil)
-	if *speakers {
+	if *speakers || scn.Capture.Speakers {
 		real := audio.NewPlayerWithDevice("")
 		defer func() { _ = real.Close() }()
 		player = newRecordingPlayer(real)
 	}
-	eng := &engine{
-		scn:    scn,
-		runDir: runDir,
-		rec:    rec,
-		player: player,
-		runner: &fakeRunner{rec: rec, live: "route_only", liveOn: true},
+	eng := &engine{scn: scn, runDir: runDir, rec: rec, player: player}
+
+	if *selfTest {
+		eng.runner = &fakeRunner{rec: rec, live: "route_only", liveOn: true}
+		eng.profile = runProfile{Profile: "self-test", LiveProvider: "fake", WorkerProvider: "fake", Input: scn.Input}
+	} else {
+		code := wireLiveAgent(ctx, eng, k)
+		if code != 0 {
+			return code
+		}
+		defer eng.runner.(*liveRunner).close()
 	}
+
 	if err := eng.run(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return 1
@@ -115,5 +134,62 @@ func runMain(args []string) int {
 		fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
 		return 1
 	}
+	fmt.Printf("convoflow %s: pass — %s\n", scn.Name, filepath.Join(runDir, "report.md"))
 	return 0
+}
+
+// wireLiveAgent builds the production agent onto eng. Returns a process exit
+// code: 0 wired, 2 skipped (missing TTS assets or tools forced off), 1 failed.
+func wireLiveAgent(ctx context.Context, eng *engine, k knobs) int {
+	base, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "convoflow: config: %v\n", err)
+		return 1
+	}
+	cfg, prof, err := resolveConfig(base, eng.scn, k, eng.runDir)
+	if err != nil {
+		return reportSetupError(err)
+	}
+	if err := writeResolvedConfig(eng.runDir, prof); err != nil {
+		fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
+		return 1
+	}
+
+	bus := events.NewBus()
+	bus.SubscribeAll(eng.rec.add)
+	evlog, err := openEventLog(filepath.Join(eng.runDir, "events.jsonl"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
+		return 1
+	}
+	bus.SubscribeAll(evlog.add)
+	eng.onClose = append(eng.onClose, func() { _ = evlog.Close() })
+
+	if prof.silent() {
+		eng.player = nil
+	}
+	logf := func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "convoflow: "+format+"\n", args...)
+	}
+	runner, err := newLiveRunner(ctx, cfg, k, bus, eng.rec, eng.player, prof.silent(), logf)
+	if err != nil {
+		return reportSetupError(err)
+	}
+	eng.runner = runner
+	eng.profile = prof
+	fmt.Printf("convoflow live=%s worker=%s tts=%s\n",
+		describeBrain(prof.LiveProvider, prof.LiveModel, ""),
+		describeBrain(prof.WorkerProvider, prof.WorkerModel, ""),
+		prof.TTSProvider)
+	return 0
+}
+
+func reportSetupError(err error) int {
+	var skip skipError
+	if errors.As(err, &skip) {
+		fmt.Fprintf(os.Stderr, "convoflow: skip: %s\n", skip.reason)
+		return exitSkip
+	}
+	fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
+	return 1
 }

@@ -38,8 +38,8 @@ func TestScoreCleanSineHasNoCrackle(t *testing.T) {
 func TestScoreSingleClickAllowedUnderBudget(t *testing.T) {
 	t.Parallel()
 	samples := synthSine(24_000, 4_000, 440, 0.4)
-	samples[2000] = 1
-	samples[2001] = -1
+	samples[2000] = 0.9 // a click, not a clipped peak
+	samples[2001] = -0.9
 	a := scoreSamples("click.wav", samples, 24_000)
 	if a.HasCrackle {
 		t.Fatalf("one click should sit under MaxImpulses=8: %+v", a)
@@ -54,8 +54,8 @@ func TestScoreManyClicksFails(t *testing.T) {
 	samples := synthSine(24_000, 8_000, 440, 0.4)
 	for i := 0; i < 12; i++ {
 		off := 400 + i*500
-		samples[off] = 1
-		samples[off+1] = -1
+		samples[off] = 0.9
+		samples[off+1] = -0.9
 	}
 	a := scoreSamples("clicks.wav", samples, 24_000)
 	if !a.HasCrackle {
@@ -63,21 +63,63 @@ func TestScoreManyClicksFails(t *testing.T) {
 	}
 }
 
-func TestScoreMidSilenceHoleFails(t *testing.T) {
+func TestScoreNaturalPausesAreReportedNotGated(t *testing.T) {
 	t.Parallel()
 	samples := synthSine(24_000, 8_000, 440, 0.5)
-	// Three interior holes → MidSilenceRuns > 2.
+	// Three short interior near-silences, the shape of a vocoder's pauses.
 	for _, start := range []int{1500, 3000, 4500} {
 		for i := start; i < start+64; i++ {
 			samples[i] = 0
 		}
 	}
-	a := scoreSamples("holes.wav", samples, 24_000)
-	if !a.HasCrackle {
-		t.Fatalf("three mid-speech holes should fail: %+v", a)
+	a := scoreSamples("pauses.wav", samples, 24_000)
+	if a.HasCrackle {
+		t.Fatalf("short pauses must not fail the gate: %+v", a)
 	}
-	if a.MidSilenceRuns < 3 {
-		t.Fatalf("MidSilenceRuns = %d, want ≥ 3", a.MidSilenceRuns)
+	if a.MidSilenceRuns < 3 || a.ZeroHoleRuns != 3 {
+		t.Fatalf("pauses must still be reported: mid=%d zero=%d", a.MidSilenceRuns, a.ZeroHoleRuns)
+	}
+}
+
+func TestScoreLongZeroHoleFails(t *testing.T) {
+	t.Parallel()
+	samples := synthSine(24_000, 24_000, 440, 0.5)
+	for i := 8_000; i < 8_000+7_200; i++ { // 300 ms of exact zero inside speech
+		samples[i] = 0
+	}
+	a := scoreSamples("stall.wav", samples, 24_000)
+	if !a.HasCrackle {
+		t.Fatalf("a 300 ms digital hole inside speech must fail: %+v", a)
+	}
+	if a.LongestZeroHole < 299 || a.LongestZeroHole > 301 {
+		t.Fatalf("longest_zero_hole_ms = %v, want ~300", a.LongestZeroHole)
+	}
+}
+
+func TestScoreSegmentLeadsAndTrailingSilenceAreNotHoles(t *testing.T) {
+	t.Parallel()
+	lead := make([]float32, 24_000*70/1000) // Kokoro-sized 70 ms lead
+	var samples []float32
+	samples = append(samples, lead...)
+	samples = append(samples, synthSine(24_000, 12_000, 440, 0.5)...)
+	samples = append(samples, lead...) // second segment's lead at the join
+	samples = append(samples, synthSine(24_000, 12_000, 440, 0.5)...)
+	samples = append(samples, make([]float32, 24_000)...) // a second of trailing zeros
+	a := scoreSamples("segments.wav", samples, 24_000)
+	if a.HasCrackle {
+		t.Fatalf("segment leads and trailing silence must pass: %+v", a)
+	}
+	if a.ZeroHoleRuns != 1 || a.LongestZeroHole < 69 || a.LongestZeroHole > 71 {
+		t.Fatalf("only the join counts as a run: runs=%d longest=%v", a.ZeroHoleRuns, a.LongestZeroHole)
+	}
+}
+
+func TestScoreClippingFails(t *testing.T) {
+	t.Parallel()
+	samples := synthSine(24_000, 8_000, 440, 1.0)
+	a := scoreSamples("clipped.wav", samples, 24_000)
+	if !a.HasCrackle || !a.Clipped {
+		t.Fatalf("a full-scale peak must fail as clipping: %+v", a)
 	}
 }
 

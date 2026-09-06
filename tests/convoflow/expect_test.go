@@ -67,10 +67,15 @@ func TestRouteKindFromRecorder(t *testing.T) {
 	t.Parallel()
 	rec := &recorder{}
 	rec.route(pipeline.RouteDecision{Kind: pipeline.RouteSpawn, Source: "intent"})
-	if err := evalExpect(Expectation{RouteKind: "spawn"}, rec, turnState{}); err != nil {
+	d, ok := rec.lastRoute()
+	if !ok {
+		t.Fatal("recorder lost the decision")
+	}
+	st := turnState{route: &d}
+	if err := evalExpect(Expectation{RouteKind: "spawn"}, rec, st); err != nil {
 		t.Fatal(err)
 	}
-	if err := evalExpect(Expectation{RouteSource: "intent"}, rec, turnState{}); err != nil {
+	if err := evalExpect(Expectation{RouteSource: "intent"}, rec, st); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -120,5 +125,75 @@ func TestEvalRunMetricPass(t *testing.T) {
 	m := collectMetrics(rec)
 	if err := evalRunExpect(Expectation{Metric: "job_started", Op: ">=", Value: 1}, rec, m); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The follow-up turn after a spawn asserts no_event: job_started. Its slice
+// starts after the spawn, so the earlier JobStarted must not leak in; and
+// the run-level view (nil slice) still sees it.
+func TestNamedEventsAreScopedToTheTurnSlice(t *testing.T) {
+	rec := &recorder{}
+	rec.add(events.JobStarted{ID: "job-1", Task: "search"})
+	rec.add(events.JobFinished{ID: "job-1", Task: "search"})
+	mark := len(rec.snapshot())
+	rec.add(events.ResponseReady{Response: "we were talking about rust"})
+	turn := turnState{events: rec.snapshot()[mark:]}
+
+	if err := evalExpect(Expectation{NoEvent: "job_started"}, rec, turn); err != nil {
+		t.Fatalf("no_event must not see the previous turn's JobStarted: %v", err)
+	}
+	if err := evalExpect(Expectation{Event: "job_started"}, rec, turn); err == nil {
+		t.Fatal("event: job_started must not be satisfied by the previous turn")
+	}
+	if err := evalExpect(Expectation{Event: "job_terminal"}, rec, turn); err == nil {
+		t.Fatal("event: job_terminal must not be satisfied by the previous turn")
+	}
+	if err := evalExpect(Expectation{Event: "response_ready"}, rec, turn); err != nil {
+		t.Fatalf("this turn's own event: %v", err)
+	}
+	if err := evalRunExpect(Expectation{Event: "job_started"}, rec, collectMetrics(rec)); err != nil {
+		t.Fatalf("run-level expect reads the whole run: %v", err)
+	}
+	if err := evalRunExpect(Expectation{Event: "job_terminal"}, rec, collectMetrics(rec)); err != nil {
+		t.Fatalf("run-level job_terminal: %v", err)
+	}
+}
+
+func TestSpokenTranscriptDedupesTheSameSentenceFromBothEvents(t *testing.T) {
+	rec := &recorder{}
+	rec.add(events.SpeechSegmentReady{Text: "Working on it."})
+	rec.add(events.GeneratingVoice{Sentence: "Working on it."})
+	rec.add(events.SpeechSegmentReady{Text: "done"})
+	rec.add(events.GeneratingVoice{Sentence: "done"})
+	rec.add(events.SpeechSegmentReady{Text: "done"})
+	if got := rec.spokenText(); got != "Working on it. done" {
+		t.Fatalf("spokenText = %q", got)
+	}
+}
+
+// A route decision belongs to the turn that made it. The follow-up after a
+// spawn has no route of its own, so route_kind must fail there and the
+// report row must not borrow the spawn's decision.
+func TestRouteExpectsAreScopedToTheTurn(t *testing.T) {
+	rec := &recorder{}
+	rec.route(pipeline.RouteDecision{Kind: pipeline.RouteSpawn, Source: "intent"})
+	mark := rec.routeMark()
+	if _, ok := rec.lastRouteSince(mark); ok {
+		t.Fatal("no route after the mark must report none")
+	}
+	if err := evalExpect(Expectation{RouteKind: "spawn"}, rec, turnState{}); err == nil {
+		t.Fatal("route_kind without a route this turn must fail")
+	}
+	d := pipeline.RouteDecision{Kind: pipeline.RouteJobStatus, Source: "phrase"}
+	rec.route(d)
+	got, ok := rec.lastRouteSince(mark)
+	if !ok || got != d {
+		t.Fatalf("lastRouteSince = %+v, %v", got, ok)
+	}
+	if err := evalExpect(Expectation{RouteKind: "job.status"}, rec, turnState{route: &got}); err != nil {
+		t.Fatal(err)
+	}
+	if err := evalRunExpect(Expectation{RouteSource: "phrase"}, rec, collectMetrics(rec)); err != nil {
+		t.Fatalf("run-level route reads the newest decision: %v", err)
 	}
 }

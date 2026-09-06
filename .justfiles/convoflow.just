@@ -3,18 +3,22 @@
 # Not part of `just test` / `just test full` / CI.
 #
 # Default is the local product: one Ollama daemon, live + worker as two
-# clients of the same model. Swap models here or on the CLI:
-#   just convoflow run live_model=qwen3.8:27b
-#   just convoflow run live_model=qwen3.8:27b worker_model=qwen3:30b
-#   just convoflow run worker_provider=grok          # comparison, not the gate
+# clients of the same model. The knobs below are the defaults; override one
+# with its CONVOFLOW_* environment variable, or pass harness flags after the
+# scenario name (the last flag wins). `just` has no named recipe arguments,
+# so `run live_model=x` is not a thing — the flag form is:
+#   just convoflow run search-web-intent -live-model=qwen3.8:27b
+#   just convoflow run search-web-intent -live-model=qwen3.8:27b -worker-model=qwen3:30b
+#   CONVOFLOW_LIVE_MODEL=qwen3.8:27b just convoflow gate
+#   just convoflow run search-web-intent -worker-provider=grok     # comparison, not the gate
 
-live_provider := "ollama"
-live_model := "qwen3:8b"
-worker_provider := "ollama"
-worker_model := ""
-worker_ollama_host := ""
-ollama_host := "http://localhost:11434"
-timeout_sec := "1200"
+live_provider := env("CONVOFLOW_LIVE_PROVIDER", "ollama")
+live_model := env("CONVOFLOW_LIVE_MODEL", "qwen3:8b")
+worker_provider := env("CONVOFLOW_WORKER_PROVIDER", "ollama")
+worker_model := env("CONVOFLOW_WORKER_MODEL", "")
+worker_ollama_host := env("CONVOFLOW_WORKER_OLLAMA_HOST", "")
+ollama_host := env("CONVOFLOW_OLLAMA_HOST", "http://localhost:11434")
+timeout_sec := env("CONVOFLOW_TIMEOUT_SEC", "1200")
 prune_days := "14"
 
 repo := justfile_directory()
@@ -23,12 +27,18 @@ repo := justfile_directory()
 default:
     @just --list --unsorted --justfile {{source_file()}}
 
+# One scenario by name. Anything after it is a harness flag and overrides the knobs.
 [no-cd]
-run scenario="search-web-intent" live_provider=live_provider live_model=live_model worker_provider=worker_provider worker_model=worker_model worker_ollama_host=worker_ollama_host ollama_host=ollama_host timeout_sec=timeout_sec *flags="":
+run scenario="search-web-intent" *flags="":
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{repo}}"
-    python3 tests/convoflow/watchdog.py "{{timeout_sec}}" go run ./tests/convoflow \
+    # Build, then exec: `go run` exits 1 for any non-zero child, which would
+    # turn every skip (exit 2) into a failure before gate could see it.
+    bin="$(mktemp -d)/convoflow"
+    trap 'rm -rf "$(dirname "$bin")"' EXIT
+    go build -o "$bin" ./tests/convoflow
+    python3 tests/convoflow/watchdog.py "{{timeout_sec}}" "$bin" \
       -scenario "tests/convoflow/scenarios/{{scenario}}.yaml" \
       -live-provider "{{live_provider}}" \
       -live-model "{{live_model}}" \
@@ -38,24 +48,17 @@ run scenario="search-web-intent" live_provider=live_provider live_model=live_mod
       -ollama-host "{{ollama_host}}" \
       {{flags}}
 
+# v1 success: three Layer-1 scenarios. Exit 1 fails fast; skips (exit 2) continue; all skipped exits 2; stub worker refused.
 [no-cd]
-gate live_provider=live_provider live_model=live_model worker_provider=worker_provider worker_model=worker_model worker_ollama_host=worker_ollama_host ollama_host=ollama_host timeout_sec=timeout_sec:
+gate *flags="":
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ "{{worker_provider}}" == "stub" ]]; then
-      echo "gate refuses stub worker; pass worker_provider=ollama" >&2
-      exit 2
-    fi
     ran=0
     skipped=0
     for scn in search-web-intent chat-then-work job-status; do
       set +e
       just --justfile "{{justfile()}}" --working-directory "{{justfile_directory()}}" \
-        convoflow run scenario="$scn" \
-        live_provider="{{live_provider}}" live_model="{{live_model}}" \
-        worker_provider="{{worker_provider}}" worker_model="{{worker_model}}" \
-        worker_ollama_host="{{worker_ollama_host}}" ollama_host="{{ollama_host}}" \
-        timeout_sec="{{timeout_sec}}"
+        convoflow run "$scn" -gate {{flags}}
       st=$?
       set -e
       case "$st" in
@@ -69,14 +72,11 @@ gate live_provider=live_provider live_model=live_model worker_provider=worker_pr
       exit 2
     fi
 
+# Soft: the live brain may route(spawn) or chat; only the unavailability phrase fails.
 [no-cd]
-live-router live_provider=live_provider live_model=live_model worker_provider=worker_provider worker_model=worker_model worker_ollama_host=worker_ollama_host ollama_host=ollama_host timeout_sec=timeout_sec *flags="":
+live-router *flags="":
     just --justfile "{{justfile()}}" --working-directory "{{justfile_directory()}}" \
-      convoflow run scenario=live-router-spawn \
-      live_provider="{{live_provider}}" live_model="{{live_model}}" \
-      worker_provider="{{worker_provider}}" worker_model="{{worker_model}}" \
-      worker_ollama_host="{{worker_ollama_host}}" ollama_host="{{ollama_host}}" \
-      timeout_sec="{{timeout_sec}}" {{flags}}
+      convoflow run live-router-spawn {{flags}}
 
 [no-cd]
 prune days=prune_days:

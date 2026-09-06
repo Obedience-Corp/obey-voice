@@ -4,9 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 func TestEngineFakeRunnerChatThenEmptyDrain(t *testing.T) {
@@ -137,4 +140,84 @@ func (r *pcmRunner) runTurn(ctx context.Context, user string) error {
 		return nil
 	}
 	return playPCM(ctx, r.player, r.rate, r.pcm)
+}
+
+// A scenario's duration is the whole-run wall: a runner that never returns
+// is cut off, the report is still written, and stop_reason says why.
+func TestEngineScenarioDurationIsTheWall(t *testing.T) {
+	rec := &recorder{}
+	runDir := t.TempDir()
+	eng := &engine{
+		scn: &Scenario{
+			Name:     "wall",
+			Duration: duration{50 * time.Millisecond},
+			Turns:    []Turn{{ID: "hang", User: "hi", Wait: waitIdle, Timeout: duration{time.Minute}}},
+		},
+		runDir: runDir,
+		rec:    rec,
+		runner: &blockingRunner{fakeRunner: fakeRunner{rec: rec}},
+	}
+	start := time.Now()
+	err := eng.run(context.Background())
+	if err == nil {
+		t.Fatal("want the wall to fail the run")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("run took %s; the wall did not cut it off", time.Since(start))
+	}
+	if eng.stopReason != "timeout" {
+		t.Fatalf("stop_reason = %q, want timeout", eng.stopReason)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "metrics.json"))
+	if err != nil {
+		t.Fatalf("metrics.json must be written on failure: %v", err)
+	}
+	if !strings.Contains(string(data), `"stop_reason": "timeout"`) {
+		t.Fatalf("metrics.json = %s", data)
+	}
+}
+
+func TestEngineReportsTurnsAndFailedRunExpects(t *testing.T) {
+	rec := &recorder{}
+	fake := &fakeRunner{rec: rec, live: "route_only", liveOn: true}
+	runDir := t.TempDir()
+	eng := &engine{
+		scn: &Scenario{
+			Name:   "rows",
+			Turns:  []Turn{{ID: "chat", User: "hi", Wait: waitIdle}},
+			Expect: []Expectation{{Metric: "job_started", Op: ">=", Value: 1}},
+		},
+		runDir:  runDir,
+		rec:     rec,
+		runner:  fake,
+		profile: runProfile{Profile: "stub", LiveProvider: "ollama", LiveModel: "qwen3:8b", WorkerProvider: "stub"},
+	}
+	fake.onTurn = func(string) {
+		rec.route(pipeline.RouteDecision{Kind: pipeline.RouteSpawn, Source: "intent"})
+		rec.add(events.SpeechSegmentReady{Text: "ok"})
+		rec.add(events.GeneratingVoice{Sentence: "ok"})
+		rec.add(events.SpeechSegmentReady{Text: "ok"})
+	}
+	if err := eng.run(context.Background()); err == nil {
+		t.Fatal("want run-level metric failure")
+	}
+	if eng.stopReason != "run_expect_failed" {
+		t.Fatalf("stop_reason = %q", eng.stopReason)
+	}
+	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"| chat | hi | spawn/intent | ok |", "live: ollama qwen3:8b", "stop_reason: run_expect_failed"} {
+		if !strings.Contains(string(report), want) {
+			t.Fatalf("report.md missing %q:\n%s", want, report)
+		}
+	}
+}
+
+type blockingRunner struct{ fakeRunner }
+
+func (b *blockingRunner) runTurn(ctx context.Context, _ string) error {
+	<-ctx.Done()
+	return ctx.Err()
 }

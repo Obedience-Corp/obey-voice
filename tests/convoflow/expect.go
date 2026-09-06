@@ -7,11 +7,13 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 type turnState struct {
 	spoken             string
 	events             []timedEvent
+	route              *pipeline.RouteDecision
 	history            []brain.Turn
 	liveRouterPolicy   string
 	workerRouterPolicy string
@@ -79,20 +81,18 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 			return fmt.Errorf("worker_tools_enabled = %v, want %v", *st.workerToolsEnabled, *ex.WorkerToolsEnabled)
 		}
 	case ex.RouteKind != "":
-		d, ok := rec.lastRoute()
-		if !ok {
-			return fmt.Errorf("route_kind: no OnRoute")
+		if st.route == nil {
+			return fmt.Errorf("route_kind: no OnRoute this turn")
 		}
-		if string(d.Kind) != ex.RouteKind {
-			return fmt.Errorf("route_kind = %q, want %q", d.Kind, ex.RouteKind)
+		if string(st.route.Kind) != ex.RouteKind {
+			return fmt.Errorf("route_kind = %q, want %q", st.route.Kind, ex.RouteKind)
 		}
 	case ex.RouteSource != "":
-		d, ok := rec.lastRoute()
-		if !ok {
-			return fmt.Errorf("route_source: no OnRoute")
+		if st.route == nil {
+			return fmt.Errorf("route_source: no OnRoute this turn")
 		}
-		if d.Source != ex.RouteSource {
-			return fmt.Errorf("route_source = %q, want %q", d.Source, ex.RouteSource)
+		if st.route.Source != ex.RouteSource {
+			return fmt.Errorf("route_source = %q, want %q", st.route.Source, ex.RouteSource)
 		}
 	case ex.Metric != "":
 		return fmt.Errorf("metric %q belongs on the scenario expect list", ex.Metric)
@@ -102,13 +102,22 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 
 type runMetrics struct {
 	JobStarted         int
+	JobFinished        int
+	JobFailed          int
 	LiveToolCalls      int
+	LiveRouterHit      int
+	LiveRouterMiss     int
 	SpokenLeakLines    int
 	CrackleFailingWavs int
 	PlaybackWavs       int
 	crackleKnown       bool
 }
 
+// collectMetrics reads the whole run. A ToolCallStarted named "route" is the
+// live router deciding, not a live tool; every other name is a tool the
+// talking brain ran itself. live_router_miss is set when the run never
+// routed or spawned at all — informational for the soft live-router
+// scenario, never a gate on its own.
 func collectMetrics(rec *recorder) runMetrics {
 	var m runMetrics
 	if rec == nil {
@@ -118,11 +127,20 @@ func collectMetrics(rec *recorder) runMetrics {
 		switch e := te.event.(type) {
 		case events.JobStarted:
 			m.JobStarted++
+		case events.JobFinished:
+			m.JobFinished++
+		case events.JobFailed:
+			m.JobFailed++
 		case events.ToolCallStarted:
-			if e.Name != "route" {
+			if e.Name == "route" {
+				m.LiveRouterHit++
+			} else {
 				m.LiveToolCalls++
 			}
 		}
+	}
+	if m.LiveRouterHit == 0 && m.JobStarted == 0 {
+		m.LiveRouterMiss = 1
 	}
 	m.SpokenLeakLines = leakLineCount(rec.spokenText())
 	return m
@@ -152,6 +170,9 @@ func toolLeakLine(line string) bool {
 func evalRunExpect(ex Expectation, rec *recorder, m runMetrics) error {
 	if ex.Metric == "" {
 		st := turnState{spoken: rec.spokenText(), events: rec.snapshot()}
+		if d, ok := rec.lastRoute(); ok {
+			st.route = &d
+		}
 		return evalExpect(ex, rec, st)
 	}
 	if ex.Metric == "crackle_failing_wavs" {
@@ -177,8 +198,16 @@ func metricValue(m runMetrics, name string) (int, bool) {
 	switch name {
 	case "job_started":
 		return m.JobStarted, true
+	case "job_finished":
+		return m.JobFinished, true
+	case "job_failed":
+		return m.JobFailed, true
 	case "live_tool_calls":
 		return m.LiveToolCalls, true
+	case "live_router_hit":
+		return m.LiveRouterHit, true
+	case "live_router_miss":
+		return m.LiveRouterMiss, true
 	case "spoken_leak_lines":
 		return m.SpokenLeakLines, true
 	default:
@@ -203,27 +232,21 @@ func compareMetric(got int, op string, want int) bool {
 	}
 }
 
+// hasNamedEvent looks in the turn's own slice of the log. A nil turnLog
+// means a run-level expect, which reads the whole run. There is no fallback
+// from a turn to the whole run: `no_event: job_started` on a follow-up turn
+// is exactly the assertion that the earlier spawn's JobStarted does not
+// belong to this turn, and a positive `event:` that only the previous turn
+// satisfied would be a false pass.
 func hasNamedEvent(turnLog []timedEvent, rec *recorder, name string) bool {
 	src := turnLog
 	if src == nil && rec != nil {
 		src = rec.snapshot()
 	}
-	if name == "job_terminal" {
-		for _, te := range src {
-			if jobTerminal(te.event) {
-				return true
-			}
-		}
-		return rec != nil && rec.hasEvent("job_terminal")
-	}
 	for _, te := range src {
 		if eventName(te.event) == name {
 			return true
 		}
-	}
-	if rec != nil && turnLog != nil {
-		// job_started may have arrived before this turn's slice
-		return rec.hasEvent(name)
 	}
 	return false
 }

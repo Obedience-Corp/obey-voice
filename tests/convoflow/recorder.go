@@ -31,14 +31,24 @@ func (r *recorder) add(e events.Event) {
 	r.events = append(r.events, timedEvent{at: time.Now(), event: e})
 	switch v := e.(type) {
 	case events.SpeechSegmentReady:
-		if strings.TrimSpace(v.Text) != "" {
-			r.spoken = append(r.spoken, v.Text)
-		}
+		r.addSpokenLocked(v.Text)
 	case events.GeneratingVoice:
-		if strings.TrimSpace(v.Sentence) != "" {
-			r.spoken = append(r.spoken, v.Sentence)
-		}
+		r.addSpokenLocked(v.Sentence)
 	}
+}
+
+// addSpokenLocked keeps one line per sentence: the pipeline announces the
+// same text as SpeechSegmentReady and again as GeneratingVoice, and a
+// doubled transcript would double-count leak lines and mislead the report.
+func (r *recorder) addSpokenLocked(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if n := len(r.spoken); n > 0 && r.spoken[n-1] == text {
+		return
+	}
+	r.spoken = append(r.spoken, text)
 }
 
 func (r *recorder) route(d pipeline.RouteDecision) {
@@ -62,9 +72,24 @@ func (r *recorder) spokenText() string {
 }
 
 func (r *recorder) lastRoute() (pipeline.RouteDecision, bool) {
+	return r.lastRouteSince(0)
+}
+
+// routeMark is the number of decisions so far; lastRouteSince(mark) returns
+// the newest decision made after it, so a turn only sees its own route.
+func (r *recorder) routeMark() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.routes) == 0 {
+	return len(r.routes)
+}
+
+func (r *recorder) lastRouteSince(mark int) (pipeline.RouteDecision, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if mark < 0 {
+		mark = 0
+	}
+	if len(r.routes) <= mark {
 		return pipeline.RouteDecision{}, false
 	}
 	return r.routes[len(r.routes)-1], true

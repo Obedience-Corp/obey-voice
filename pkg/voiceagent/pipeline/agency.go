@@ -69,7 +69,10 @@ func (a *Agency) Wire() {
 	}
 }
 
-// HandleRoute executes spawn, job.abort, and job.status routes.
+// HandleRoute executes spawn, job.abort, and job.status routes. OnRoute fires
+// exactly once per call, after the handler, for every kind — including
+// job.status and a spawn whose job failed to start — so an observer sees one
+// decision per routed turn.
 func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	if a == nil {
 		return
@@ -80,17 +83,14 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 	case RouteNarrate, RouteNarratePause, RouteNarrateResume, RouteNarrateSkip, RouteNarrateStop:
 		if a.narrator != nil {
 			a.narrator.HandleRoute(ctx, turn, metrics, d)
-		} else if a.pipeline.OnRoute != nil {
-			a.pipeline.OnRoute(d)
 		}
 	case RouteJobAbort:
-		a.handleAbort(d)
+		a.handleAbort()
 	case RouteJobStatus:
 		a.speakJobStatus(ctx, turn, metrics)
-	default:
-		if a.pipeline.OnRoute != nil {
-			a.pipeline.OnRoute(d)
-		}
+	}
+	if a.pipeline.OnRoute != nil {
+		a.pipeline.OnRoute(d)
 	}
 }
 
@@ -109,9 +109,6 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		return
 	}
 	a.pipeline.emit(events.JobStarted{ID: id, Task: task})
-	if a.pipeline.OnRoute != nil {
-		a.pipeline.OnRoute(d)
-	}
 }
 
 func (a *Agency) workerRun(task string) func(context.Context) (string, error) {
@@ -138,15 +135,12 @@ func (a *Agency) workerProvider() (brain.Provider, error) {
 	return nil, fmt.Errorf("worker provider is not configured")
 }
 
-func (a *Agency) handleAbort(d RouteDecision) {
+func (a *Agency) handleAbort() {
 	st := a.jobs.Status()
 	for _, info := range st {
 		if info.State == job.StateRunning || info.State == job.StateQueued {
 			a.jobs.Abort(info.ID)
 		}
-	}
-	if a.pipeline.OnRoute != nil {
-		a.pipeline.OnRoute(d)
 	}
 }
 
