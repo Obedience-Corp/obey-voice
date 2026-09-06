@@ -98,6 +98,19 @@ func enrollTestSettings(t *testing.T, capture speaker.CaptureSource) (*settingsM
 	return &m, live
 }
 
+func enrollNamed(t *testing.T, m *settingsModel, name string, claimOwner bool) enrollDoneMsg {
+	t.Helper()
+	m.enroll.claimOwner = claimOwner
+	msg, ok := m.recordEnrollment(t.Context(), name, newEventBridge(64))().(enrollDoneMsg)
+	if !ok {
+		t.Fatalf("recordEnrollment returned %T, want enrollDoneMsg", msg)
+	}
+	if msg.err != nil {
+		t.Fatalf("enroll %s (claimOwner=%v): %v", name, claimOwner, msg.err)
+	}
+	return msg
+}
+
 // TestRegisterRecordsThreeClipsAndSeedsTheRunningEngine is the slice: three
 // clips off the conversation's capture graph, one enrolled owner, and a live
 // engine that knows the name without a restart.
@@ -105,6 +118,7 @@ func TestRegisterRecordsThreeClipsAndSeedsTheRunningEngine(t *testing.T) {
 	capture := newEnrollCapture()
 	m, live := enrollTestSettings(t, capture)
 
+	m.enroll.claimOwner = true
 	msg, ok := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg)
 	if !ok {
 		t.Fatalf("recordEnrollment returned %T, want enrollDoneMsg", msg)
@@ -263,9 +277,7 @@ func TestRegisterWithoutNameAsksForItFirst(t *testing.T) {
 func TestRemoveVoiceNeedsAConfirmation(t *testing.T) {
 	capture := newEnrollCapture()
 	m, _ := enrollTestSettings(t, capture)
-	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
-		t.Fatalf("setup registration failed: %v", msg.err)
-	}
+	enrollNamed(t, m, "Lance", true)
 	m.refreshEnrolledProfiles()
 	if !m.enrolledOwnerOK {
 		t.Fatal("setup did not leave an enrolled owner")
@@ -376,15 +388,9 @@ func TestReEnrollSeedsTheRunningEngineAgain(t *testing.T) {
 	capture := newEnrollCapture()
 	m, live := enrollTestSettings(t, capture)
 
-	first, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg)
-	if first.err != nil {
-		t.Fatalf("first registration failed: %v", first.err)
-	}
+	_ = enrollNamed(t, m, "Lance", true)
 
-	again, ok := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg)
-	if !ok || again.err != nil {
-		t.Fatalf("re-enroll = %+v, want a successful registration", again)
-	}
+	again := enrollNamed(t, m, "Lance", true)
 	if !again.seeded || again.seedErr != nil {
 		t.Fatalf("re-enroll seeded=%v seedErr=%v, want the running engine to take it", again.seeded, again.seedErr)
 	}
@@ -504,16 +510,10 @@ func TestEnrollAnotherRejectsInvalidAndOwnerNames(t *testing.T) {
 func TestGuestEnrollDoesNotClaimOwnership(t *testing.T) {
 	capture := newEnrollCapture()
 	m, live := enrollTestSettings(t, capture)
-	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
-		t.Fatalf("owner setup: %v", msg.err)
-	}
+	enrollNamed(t, m, "Lance", true)
 	m.refreshEnrolledProfiles()
 
-	m.enroll.claimOwner = false
-	msg, ok := m.recordEnrollment(t.Context(), "Alex", newEventBridge(64))().(enrollDoneMsg)
-	if !ok || msg.err != nil {
-		t.Fatalf("guest enroll = %+v", msg)
-	}
+	msg := enrollNamed(t, m, "Alex", false)
 	if msg.profile.Owner {
 		t.Fatal("guest enroll must not become owner")
 	}
@@ -534,24 +534,15 @@ func TestGuestEnrollDoesNotClaimOwnership(t *testing.T) {
 
 func TestGuestEnrollAfterOwnerRemovedDoesNotClaimSeat(t *testing.T) {
 	m, _ := enrollTestSettings(t, newEnrollCapture())
-	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
-		t.Fatalf("owner setup: %v", msg.err)
-	}
-	m.enroll.claimOwner = false
-	if msg, _ := m.recordEnrollment(t.Context(), "Alex", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
-		t.Fatalf("guest setup: %v", msg.err)
-	}
+	enrollNamed(t, m, "Lance", true)
+	enrollNamed(t, m, "Alex", false)
 	m.refreshEnrolledProfiles()
 	m.removeVoice("Lance")
 	if m.enrolledOwnerOK {
 		t.Fatal("setup did not clear the owner")
 	}
 
-	m.enroll.claimOwner = false
-	msg, ok := m.recordEnrollment(t.Context(), "Dana", newEventBridge(64))().(enrollDoneMsg)
-	if !ok || msg.err != nil {
-		t.Fatalf("Dana enroll = %+v", msg)
-	}
+	msg := enrollNamed(t, m, "Dana", false)
 	if msg.profile.Owner {
 		t.Fatal("enroll another after owner-remove must not SetOwner")
 	}
@@ -564,15 +555,39 @@ func TestGuestEnrollAfterOwnerRemovedDoesNotClaimSeat(t *testing.T) {
 	}
 }
 
+// TestGuestEnrollAfterLastOwnerRemovedDoesNotClaimSeat is the hole Add's
+// empty-store first-profile rule opens: after the only owner is deleted the
+// map is empty again, so the next EnrollFromWAVs would auto-own unless
+// claimOwner=false clears it.
+func TestGuestEnrollAfterLastOwnerRemovedDoesNotClaimSeat(t *testing.T) {
+	m, _ := enrollTestSettings(t, newEnrollCapture())
+	enrollNamed(t, m, "Lance", true)
+	m.refreshEnrolledProfiles()
+	m.removeVoice("Lance")
+	if store, _ := speaker.LoadEnrollment(speaker.EnrollmentDir(m.cfg)); store != nil && len(store.List()) != 0 {
+		t.Fatalf("setup left profiles %+v", store.List())
+	}
+
+	msg := enrollNamed(t, m, "Alex", false)
+	if msg.profile.Owner {
+		t.Fatal("guest enroll into an emptied store must not inherit first-profile ownership")
+	}
+	store, err := speaker.LoadEnrollment(speaker.EnrollmentDir(m.cfg))
+	if err != nil || store == nil {
+		t.Fatalf("store: %v %v", store, err)
+	}
+	if _, owned := store.Owner(); owned {
+		t.Fatal("owner seat must stay empty after the last owner was removed")
+	}
+	if got := len(store.List()); got != 1 || store.List()[0].Name != "Alex" {
+		t.Fatalf("profiles = %+v, want only Alex", store.List())
+	}
+}
+
 func TestGuestRowReenrollAndRemove(t *testing.T) {
 	m, _ := enrollTestSettings(t, newEnrollCapture())
-	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
-		t.Fatalf("owner setup: %v", msg.err)
-	}
-	m.enroll.claimOwner = false
-	if msg, _ := m.recordEnrollment(t.Context(), "Alex", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
-		t.Fatalf("guest setup: %v", msg.err)
-	}
+	enrollNamed(t, m, "Lance", true)
+	enrollNamed(t, m, "Alex", false)
 	m.refreshEnrolledProfiles()
 
 	idx := speakerGuestIndex(*m, "Alex")

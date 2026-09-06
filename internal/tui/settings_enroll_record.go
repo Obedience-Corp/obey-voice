@@ -204,7 +204,11 @@ func enrollRecordedClips(
 	// "Register your voice" is a claim of ownership. A store whose owner was
 	// removed (or that only ever held guests enrolled from the CLI) gets one
 	// back here, so the rows do not read "nothing registered" immediately
-	// after a successful registration. Guest enroll never claims the seat.
+	// after a successful registration.
+	//
+	// Guest enroll never claims the seat. Add still auto-owns the first
+	// profile of an empty store, which is the case after the last owner is
+	// removed — ClearOwner puts that flag back down.
 	if claimOwner {
 		if _, owned := store.Owner(); !owned {
 			if err := store.SetOwner(profile.Name); err != nil {
@@ -212,6 +216,11 @@ func enrollRecordedClips(
 			}
 			profile.Owner = true
 		}
+	} else if profile.Owner {
+		if err := store.ClearOwner(); err != nil {
+			return profile, store, err
+		}
+		profile.Owner = false
 	}
 	return profile, store, nil
 }

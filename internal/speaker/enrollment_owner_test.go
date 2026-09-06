@@ -128,6 +128,36 @@ func TestRemoveOwnerPromotesNobody(t *testing.T) {
 	}
 }
 
+// TestClearOwnerEmptiesTheSeat is the primitive guest enrollment uses when Add
+// auto-owned an empty store: the flag comes off, persist, and stays off.
+func TestClearOwnerEmptiesTheSeat(t *testing.T) {
+	dir := t.TempDir()
+	store, err := OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ClearOwner(); err != nil {
+		t.Fatalf("ClearOwner on empty store: %v", err)
+	}
+	addProfile(t, store, "Lance")
+	if err := store.ClearOwner(); err != nil {
+		t.Fatal(err)
+	}
+	if owner, ok := store.Owner(); ok {
+		t.Fatalf("owner after ClearOwner = %+v, want none", owner)
+	}
+	reopened, err := OpenEnrollment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner, ok := reopened.Owner(); ok {
+		t.Fatalf("owner after reload = %+v, want none", owner)
+	}
+	if again := addProfile(t, store, "Lance"); again.Owner {
+		t.Fatal("re-enrolling after ClearOwner must not restore ownership")
+	}
+}
+
 // writeLegacyProfiles lays down a profiles.yaml as it was written before the
 // owner flag existed: no `owner:` key anywhere.
 func writeLegacyProfiles(t *testing.T, dir string, names ...string) {
