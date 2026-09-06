@@ -101,9 +101,12 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 }
 
 type runMetrics struct {
-	JobStarted      int
-	LiveToolCalls   int
-	SpokenLeakLines int
+	JobStarted         int
+	LiveToolCalls      int
+	SpokenLeakLines    int
+	CrackleFailingWavs int
+	PlaybackWavs       int
+	crackleKnown       bool
 }
 
 func collectMetrics(rec *recorder) runMetrics {
@@ -152,7 +155,13 @@ func evalRunExpect(ex Expectation, rec *recorder, m runMetrics) error {
 		return evalExpect(ex, rec, st)
 	}
 	if ex.Metric == "crackle_failing_wavs" {
-		return fmt.Errorf("metric crackle_failing_wavs is not measured until playback WAVs are scored")
+		if !m.crackleKnown {
+			return fmt.Errorf("metric crackle_failing_wavs is not measured until playback WAVs are scored")
+		}
+		if !compareMetric(m.CrackleFailingWavs, ex.Op, ex.Value) {
+			return fmt.Errorf("metric %s: got %d, want %s %d", ex.Metric, m.CrackleFailingWavs, ex.Op, ex.Value)
+		}
+		return nil
 	}
 	got, ok := metricValue(m, ex.Metric)
 	if !ok {
