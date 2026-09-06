@@ -247,6 +247,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 			p.Player = opts.Player
 		} else {
 			player := audio.NewPlayerWithDevice(cfg.OutputDevice)
+			player.SetVolume(config.PlaybackVolumeOf(cfg))
 			cleanups = append(cleanups, func() { _ = player.Close() })
 			p.Player = player
 		}

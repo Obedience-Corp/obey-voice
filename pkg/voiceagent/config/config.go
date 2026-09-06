@@ -29,6 +29,7 @@ type Config struct {
 	TTSVoice              string  `mapstructure:"tts_voice"`
 	Audio8Voice           string  `mapstructure:"audio8_voice"`
 	SpeechSpeed           float64 `mapstructure:"speech_speed"`
+	PlaybackVolume        float64 `mapstructure:"playback_volume"`
 	QwenTTSBinary         string  `mapstructure:"qwen_tts_binary"`
 	QwenTTSModel          string  `mapstructure:"qwen_tts_model"`
 	QwenTTSTimeout        int     `mapstructure:"qwen_tts_timeout"`
@@ -447,6 +448,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tts_voice", DefaultKokoroVoice)
 	v.SetDefault("audio8_voice", "")
 	v.SetDefault("speech_speed", 0.95)
+	v.SetDefault("playback_volume", DefaultPlaybackVolume)
 	// Empty selects Obey Voice's managed Qwen runtime. Set an explicit binary and
 	// model path only for the advanced external-worker compatibility path.
 	v.SetDefault("qwen_tts_binary", "")

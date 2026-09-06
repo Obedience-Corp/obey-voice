@@ -657,7 +657,9 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 
 	var local audio.Engine
 	if !muteHost {
-		local = audio.NewPlayerWithDevice(cfg.OutputDevice)
+		player := audio.NewPlayerWithDevice(cfg.OutputDevice)
+		player.SetVolume(config.PlaybackVolumeOf(cfg))
+		local = player
 	}
 	// Fanout owns local so Close is exactly once via cleanup. SinkKind is
 	// none until a Stage client opts into audio_output; the pipeline warns

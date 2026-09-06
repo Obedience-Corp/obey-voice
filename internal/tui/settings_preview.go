@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -34,7 +35,9 @@ func (m *settingsModel) startSettingsPreview(voice tts.Voice) tea.Cmd {
 	m.preview.newTTS = m.newTTSProvider
 	if m.preview.newPreviewPlayer == nil {
 		m.preview.newPreviewPlayer = func() audio.Engine {
-			return audio.NewPlayerWithDevice(m.cfg.OutputDevice)
+			p := audio.NewPlayerWithDevice(m.cfg.OutputDevice)
+			p.SetVolume(config.PlaybackVolumeOf(m.cfg))
+			return p
 		}
 	}
 	return m.preview.start(*m.cfg, voice)

@@ -69,6 +69,7 @@ func runSpeakerTest(ctx context.Context, cfg *config.Config) error {
 	}
 
 	player := audio.NewPlayerWithDevice(cfg.OutputDevice)
+	player.SetVolume(config.PlaybackVolumeOf(cfg))
 	defer func() { _ = player.Close() }()
 
 	// Speaker test uses the configured voice name so multi-provider previews
