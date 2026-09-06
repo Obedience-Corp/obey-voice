@@ -104,5 +104,8 @@ func TestNoiseGateSilentZerosAreNotAFanLatch(t *testing.T) {
 		if d.drop {
 			t.Fatalf("frame %d: digital silence must not look like latched noise", i)
 		}
+		if d.voice {
+			t.Fatalf("frame %d: digital silence must not count as a talker", i)
+		}
 	}
 }

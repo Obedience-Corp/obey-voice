@@ -17,6 +17,11 @@ const levelEmitMinInterval = 50 * time.Millisecond
 // speechRMSScale maps typical close-mic speech RMS (~0.02–0.15) into 0..1.
 const speechRMSScale = 0.12
 
+// minSpeechRMS is the lowest RMS that counts as a talker. Close-mic speech
+// is ~0.02–0.15; digital silence and STT-on-zeros is ~0. Below this we did
+// not hear anyone — Silero still false-marks, and the decoder invents "yeah".
+const minSpeechRMS = 0.008
+
 // sendEvent delivers an event, preferring a non-blocking send and falling back
 // to a cancellable blocking send when the channel is full.
 func sendEvent(ctx context.Context, events chan<- Event, event Event) bool {
@@ -40,6 +45,76 @@ func trySendEvent(events chan<- Event, event Event) {
 	default:
 	}
 }
+
+// audibleWindow is 100ms at capture rate: the shortest stretch judged for a
+// talker, and the only audio a stream has to keep to judge the next one.
+const audibleWindow = 1600
+
+// audibleSpeech reports whether samples contain a talker, not just enough
+// length for the decoder to run. Pre-roll silence can dilute whole-utterance
+// RMS, so any 100ms window above the floor counts.
+func audibleSpeech(samples []float32) bool {
+	var t audibleTracker
+	t.push(samples)
+	return t.audible()
+}
+
+// audibleTracker answers audibleSpeech's question over a stream that arrives
+// frame by frame, in constant space. A live capture runs for as long as the
+// user leaves it open, so the audio cannot be retained to be re-measured at the
+// endpoint: once a window clears the floor the verdict latches, and only the
+// window being filled plus the trailing 100ms are kept.
+type audibleTracker struct {
+	heard bool                   // a completed window already cleared the floor
+	sumSq float64                // energy of the window being filled
+	n     int                    // samples in the window being filled
+	tail  [audibleWindow]float32 // most recent 100ms, for the trailing window
+	i     int                    // next write index into tail
+	fill  int                    // samples held in tail
+}
+
+// push folds one frame into the verdict and discards the audio behind it.
+func (t *audibleTracker) push(samples []float32) {
+	if t.heard {
+		return
+	}
+	for _, s := range samples {
+		v := float64(s)
+		t.sumSq += v * v
+		t.n++
+		t.tail[t.i] = s
+		t.i = (t.i + 1) % audibleWindow
+		if t.fill < audibleWindow {
+			t.fill++
+		}
+		if t.n < audibleWindow {
+			continue
+		}
+		if math.Sqrt(t.sumSq/float64(audibleWindow)) >= minSpeechRMS {
+			t.heard = true
+			return
+		}
+		t.sumSq = 0
+		t.n = 0
+	}
+}
+
+// audible reports the verdict for everything pushed so far. The trailing window
+// is measured here rather than on the way in, so a word straddling a window
+// boundary at the end of the stream still counts. RMS ignores sample order, so
+// the ring needs no unwrapping.
+func (t *audibleTracker) audible() bool {
+	if t.heard {
+		return true
+	}
+	if t.fill == 0 {
+		return false
+	}
+	return frameRMS(t.tail[:t.fill]) >= minSpeechRMS
+}
+
+// reset drops the verdict and the retained window for a fresh utterance.
+func (t *audibleTracker) reset() { *t = audibleTracker{} }
 
 // frameRMS returns the root-mean-square amplitude of mono samples.
 func frameRMS(samples []float32) float64 {

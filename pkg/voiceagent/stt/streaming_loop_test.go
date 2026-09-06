@@ -82,7 +82,7 @@ func countPartials(events []Event) int {
 
 func TestStreamingLoopEOFFinalizesWithPartials(t *testing.T) {
 	deps := streamingLoopDeps{
-		frames: &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600), make([]float32, 1600)}},
+		frames: &scriptedFrames{chunks: [][]float32{speechFrame(), speechFrame(), speechFrame()}},
 		seg:    &fakeSegmenter{speech: true},
 		rec:    &fakeStreamingRec{partials: []string{"hello", "hello samantha", "hello samantha"}, finals: []string{"hello samantha"}},
 		policy: endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond},
@@ -103,7 +103,7 @@ func TestStreamingLoopEOFFinalizesWithPartials(t *testing.T) {
 
 func TestStreamingLoopProviderEndpointFinalizes(t *testing.T) {
 	deps := streamingLoopDeps{
-		frames: &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600), make([]float32, 1600), make([]float32, 1600), make([]float32, 1600)}},
+		frames: &scriptedFrames{chunks: [][]float32{speechFrame(), speechFrame(), speechFrame(), speechFrame(), speechFrame()}},
 		seg:    &fakeSegmenter{speech: true},
 		rec:    &fakeStreamingRec{partials: []string{"a", "ab"}, endpointAfter: 2, finals: []string{"done"}},
 		policy: endpoint.Policy{AllowProviderEnd: true, MinSpeech: 100 * time.Millisecond},
@@ -122,7 +122,7 @@ func TestStreamingLoopProviderEndpointFinalizes(t *testing.T) {
 func TestStreamingLoopPolicyTrailingSilenceFinalizes(t *testing.T) {
 	deps := streamingLoopDeps{
 		frames: &scriptedFrames{chunks: [][]float32{
-			make([]float32, 1600), // 100ms speech
+			speechFrame(),         // 100ms speech
 			make([]float32, 1600), // 100ms trailing silence
 		}},
 		seg:    &fakeSegmenter{speechSeq: []bool{true, false}},
@@ -159,12 +159,78 @@ func TestStreamingLoopNoSpeechTimesOut(t *testing.T) {
 // echo tail) marks speech, after which the start timeout can never fire. The
 // loop must handle the policy's TooShort by resetting to a fresh listening
 // window so the timeout recovers. Pre-fix this listened forever.
-func TestStreamingLoopSpuriousPartialResetsAndTimesOut(t *testing.T) {
+func TestStreamingLoopSilentEOFGhostFinalizeIsNotATurn(t *testing.T) {
+	deps := streamingLoopDeps{
+		frames: &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600)}},
+		seg:    &fakeSegmenter{speech: true, flushSeg: make([]float32, minSpeechSamples)},
+		rec:    &fakeStreamingRec{finals: []string{"Yeah."}},
+		policy: endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond, StartTimeout: time.Second},
+	}
+
+	got := runStreaming(context.Background(), deps)
+	if _, ok := terminal(got).(Timeout); !ok {
+		t.Fatalf("terminal = %T, want Timeout (silent EOF must not finalize as a turn)", terminal(got))
+	}
+	for _, e := range got {
+		if ft, ok := e.(FinalTranscript); ok {
+			t.Fatalf("emitted FinalTranscript on silent EOF: %q", ft.Text)
+		}
+	}
+}
+
+// A long stream cannot be buffered to be measured at EOF, so the audible
+// verdict is tracked incrementally. Speech at the start of a long capture must
+// still finalize once the audio behind it has been discarded.
+func TestStreamingLoopEOFFinalizesSpeechHeardLongBefore(t *testing.T) {
+	chunks := [][]float32{constFrame(1600, 0.08)}
+	for i := 0; i < 400; i++ { // 40s of silence after the word
+		chunks = append(chunks, make([]float32, 1600))
+	}
+	deps := streamingLoopDeps{
+		frames: &scriptedFrames{chunks: chunks},
+		// Silero never marked it live; only the EOF flush yields the segment.
+		seg:    &fakeSegmenter{flushSeg: make([]float32, minSpeechSamples)},
+		rec:    &fakeStreamingRec{finals: []string{"Hello there."}},
+		policy: endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond, StartTimeout: 30 * time.Second},
+	}
+
+	got := runStreaming(context.Background(), deps)
+	ft, ok := terminal(got).(FinalTranscript)
+	if !ok {
+		t.Fatalf("terminal = %T, want FinalTranscript (early speech must survive a long silence)", terminal(got))
+	}
+	if ft.Text != "Hello there." {
+		t.Fatalf("final = %q, want %q", ft.Text, "Hello there.")
+	}
+}
+
+func TestStreamingLoopYeahPartialOnSilenceIsNotATurn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	rec := &fakeStreamingRec{partials: []string{"x", ""}} // one spurious partial, then nothing
 	deps := streamingLoopDeps{
-		frames: busyFrames{}, // endless non-speech frames
+		frames: busyFrames{},
+		seg:    &fakeSegmenter{speech: true},
+		rec:    &fakeStreamingRec{partials: []string{"yeah"}, finals: []string{"Yeah."}},
+		policy: endpoint.Policy{StartTimeout: 150 * time.Millisecond, MinSpeech: 50 * time.Millisecond},
+	}
+
+	got := runStreaming(ctx, deps)
+	if _, ok := terminal(got).(Timeout); !ok {
+		t.Fatalf("terminal = %T, want Timeout (decoder ghost on silence is not a turn)", terminal(got))
+	}
+	for _, e := range got {
+		if ft, ok := e.(FinalTranscript); ok {
+			t.Fatalf("emitted FinalTranscript on silence: %q", ft.Text)
+		}
+	}
+}
+
+func TestStreamingLoopSpuriousPartialDoesNotStartATurn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	rec := &fakeStreamingRec{partials: []string{"x", ""}}
+	deps := streamingLoopDeps{
+		frames: busyFrames{},
 		seg:    &fakeSegmenter{speech: false},
 		rec:    rec,
 		policy: endpoint.Policy{
@@ -176,10 +242,12 @@ func TestStreamingLoopSpuriousPartialResetsAndTimesOut(t *testing.T) {
 
 	got := runStreaming(ctx, deps)
 	if _, ok := terminal(got).(Timeout); !ok {
-		t.Fatalf("terminal event = %T, want Timeout (TooShort must reset the false speech mark)", terminal(got))
+		t.Fatalf("terminal event = %T, want Timeout (ghost partial must not mark speech)", terminal(got))
 	}
-	if rec.resets < 1 {
-		t.Errorf("recognizer resets = %d, want >= 1 (spurious partial discarded)", rec.resets)
+	for _, e := range got {
+		if ft, ok := e.(FinalTranscript); ok {
+			t.Fatalf("emitted FinalTranscript from a ghost partial: %q", ft.Text)
+		}
 	}
 }
 
@@ -190,7 +258,7 @@ func TestStreamingLoopWedgedSourceMidSpeechStillEnds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	deps := streamingLoopDeps{
-		frames: &wedgedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600)}},
+		frames: &wedgedFrames{chunks: [][]float32{speechFrame(), speechFrame()}},
 		seg:    &fakeSegmenter{speech: true},
 		rec:    &fakeStreamingRec{partials: []string{"partial words"}, finals: []string{"partial words"}},
 		policy: endpoint.Policy{MinSpeech: 50 * time.Millisecond, MaxUtterance: 100 * time.Millisecond},
@@ -234,7 +302,7 @@ func TestStreamingLoopEmptyFinalizeResetsThenRecovers(t *testing.T) {
 		finals:        []string{"", "recovered"}, // first finalize empty -> reset, second succeeds
 	}
 	deps := streamingLoopDeps{
-		frames: &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600), make([]float32, 1600), make([]float32, 1600)}},
+		frames: &scriptedFrames{chunks: [][]float32{speechFrame(), speechFrame(), speechFrame(), speechFrame()}},
 		seg:    &fakeSegmenter{speech: true},
 		rec:    rec,
 		policy: endpoint.Policy{AllowProviderEnd: true, MinSpeech: 50 * time.Millisecond},
@@ -262,7 +330,7 @@ func TestStreamingLoopResetFailureEmitsFailure(t *testing.T) {
 		resetErr:      resetErr,
 	}
 	deps := streamingLoopDeps{
-		frames: &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600)}},
+		frames: &scriptedFrames{chunks: [][]float32{speechFrame(), speechFrame()}},
 		seg:    &fakeSegmenter{speech: true},
 		rec:    rec,
 		policy: endpoint.Policy{AllowProviderEnd: true, MinSpeech: 50 * time.Millisecond},

@@ -76,7 +76,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			samples = append(samples, seg...)
 		}
 
-		if len(samples) >= minSpeechSamples {
+		if len(samples) >= minSpeechSamples && audibleSpeech(samples) {
 			text, err := deps.transcribe(samples)
 			if err != nil {
 				sendEvent(ctx, events, Failure{Err: err})

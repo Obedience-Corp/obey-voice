@@ -150,11 +150,13 @@ func terminal(events []Event) Event {
 	return events[len(events)-1]
 }
 
-func longSpeech() []float32 { return make([]float32, minSpeechSamples) }
+func longSpeech() []float32 { return constFrame(minSpeechSamples, 0.08) }
+
+func speechFrame() []float32 { return constFrame(1600, 0.08) }
 
 func TestOfflineLoopFiniteEOFFinalizes(t *testing.T) {
 	deps := offlineLoopDeps{
-		frames:     &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600)}},
+		frames:     &scriptedFrames{chunks: [][]float32{speechFrame(), speechFrame()}},
 		seg:        &fakeSegmenter{speech: true, flushSeg: longSpeech()},
 		policy:     endpoint.Policy{},
 		transcribe: func([]float32) (string, error) { return "hello samantha", nil },
@@ -200,7 +202,7 @@ func TestOfflineLoopFiniteEOFNoSpeechTimesOut(t *testing.T) {
 
 func TestOfflineLoopMidStreamSegmentFinalizes(t *testing.T) {
 	deps := offlineLoopDeps{
-		frames:     &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600), make([]float32, 1600)}},
+		frames:     &scriptedFrames{chunks: [][]float32{speechFrame(), speechFrame(), speechFrame()}},
 		seg:        &fakeSegmenter{speech: true, segments: [][]float32{longSpeech()}}, // available immediately
 		policy:     endpoint.Policy{},
 		transcribe: func([]float32) (string, error) { return "what time is it", nil },
@@ -219,7 +221,7 @@ func TestOfflineLoopMidStreamSegmentFinalizes(t *testing.T) {
 func TestOfflineLoopPolicyTrailingSilenceFinalizes(t *testing.T) {
 	deps := offlineLoopDeps{
 		frames: &scriptedFrames{chunks: [][]float32{
-			make([]float32, 1600), // 100ms speech
+			speechFrame(),         // 100ms speech
 			make([]float32, 1600), // 100ms trailing silence
 		}},
 		seg:        &fakeSegmenter{speechSeq: []bool{true, false}, flushSeg: longSpeech()},
@@ -280,7 +282,7 @@ func TestOfflineLoopWedgedSourceMidSpeechStillEnds(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	deps := offlineLoopDeps{
-		frames: &wedgedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600)}},
+		frames: &wedgedFrames{chunks: [][]float32{speechFrame(), speechFrame()}},
 		seg:    &fakeSegmenter{speech: true, flushSeg: longSpeech()},
 		policy: endpoint.Policy{MinSpeech: 50 * time.Millisecond, MaxUtterance: 100 * time.Millisecond},
 		transcribe: func([]float32) (string, error) {
@@ -367,7 +369,7 @@ func TestOfflineLoopBusyNoSpeechStartTimeout(t *testing.T) {
 // would not have recognized this source's end — it would wait for a timeout.
 func TestOfflineLoopShortCommandFinalizesOnFrameEOF(t *testing.T) {
 	deps := offlineLoopDeps{
-		frames:     &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600), make([]float32, 1600)}},
+		frames:     &scriptedFrames{chunks: [][]float32{speechFrame(), speechFrame(), speechFrame()}},
 		seg:        &fakeSegmenter{speech: true, flushSeg: longSpeech()},
 		policy:     endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond},
 		transcribe: func([]float32) (string, error) { return "hello samantha", nil },
@@ -382,6 +384,23 @@ func TestOfflineLoopShortCommandFinalizesOnFrameEOF(t *testing.T) {
 	final, ok := terminal(got).(FinalTranscript)
 	if !ok || final.Text != "hello samantha" {
 		t.Fatalf("terminal = %v, want FinalTranscript{\"hello samantha\"}", terminal(got))
+	}
+}
+
+func TestOfflineLoopInaudibleSegmentIsNotATurn(t *testing.T) {
+	deps := offlineLoopDeps{
+		frames: &scriptedFrames{chunks: [][]float32{make([]float32, 1600), make([]float32, 1600)}},
+		seg:    &fakeSegmenter{speech: true, flushSeg: make([]float32, minSpeechSamples)},
+		policy: endpoint.Policy{},
+		transcribe: func([]float32) (string, error) {
+			t.Fatal("decoder must not run on inaudible audio")
+			return "yeah", nil
+		},
+	}
+
+	got := runLoop(context.Background(), deps)
+	if _, ok := terminal(got).(Timeout); !ok {
+		t.Fatalf("terminal = %T, want Timeout (silence is not a turn)", terminal(got))
 	}
 }
 
