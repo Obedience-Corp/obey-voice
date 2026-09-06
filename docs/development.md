@@ -58,6 +58,30 @@ just qwen-live                                   # real native Qwen voices + can
 obey-voice listen                                  # manual: speak a short command
 ```
 
+### Conversation flow gate (opt-in, local Ollama live + worker)
+
+`tests/convoflow` drives a production `voiceagent.Agent` through a scripted
+conversation and keeps the recording. It is the check that "search the web for
+X" spawns on the **local** worker instead of chatting that search is
+unavailable: one Ollama daemon, live brain and worker as two clients of the same
+model, real `legacy` tools on the worker, real TTS scored for crackle. Not part
+of `just test` or CI; it needs a running Ollama with the model pulled and the
+TTS assets installed, and exits 2 when they are missing.
+
+```bash
+just convoflow                                              # list the module
+just convoflow gate                                         # v1 success: three Layer-1 scenarios
+CONVOFLOW_LIVE_MODEL=qwen3.8:27b just convoflow gate        # same, bigger local model
+just convoflow run search-web-intent -live-model=qwen3.8:27b   # one scenario, flags override knobs
+just convoflow live-router                                  # soft: the live brain may route(spawn) or chat
+just convoflow run search-web-intent -worker-provider=stub  # self-test worker; gate refuses it
+just convoflow analyze RUN_DIR                              # rescore a kept run
+```
+
+Runs land in `~/.cache/obey-voice/convoflow/<scenario>-<ts>/` with the resolved
+knobs, every bus event, `metrics.json`, and a `report.md`. Knobs live at the top
+of `.justfiles/convoflow.just`; see `tests/convoflow/README.md`.
+
 ### Latency benchmarks (protect the sub-2s goal)
 
 The `obey-voice benchmark` command measures the perceived-latency milestones that

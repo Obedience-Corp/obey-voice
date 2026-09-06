@@ -31,14 +31,24 @@ func (r *recorder) add(e events.Event) {
 	r.events = append(r.events, timedEvent{at: time.Now(), event: e})
 	switch v := e.(type) {
 	case events.SpeechSegmentReady:
-		if strings.TrimSpace(v.Text) != "" {
-			r.spoken = append(r.spoken, v.Text)
-		}
+		r.addSpokenLocked(v.Text)
 	case events.GeneratingVoice:
-		if strings.TrimSpace(v.Sentence) != "" {
-			r.spoken = append(r.spoken, v.Sentence)
-		}
+		r.addSpokenLocked(v.Sentence)
 	}
+}
+
+// addSpokenLocked keeps one line per sentence: the pipeline announces the
+// same text as SpeechSegmentReady and again as GeneratingVoice, and a
+// doubled transcript would double-count leak lines and mislead the report.
+func (r *recorder) addSpokenLocked(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if n := len(r.spoken); n > 0 && r.spoken[n-1] == text {
+		return
+	}
+	r.spoken = append(r.spoken, text)
 }
 
 func (r *recorder) route(d pipeline.RouteDecision) {
