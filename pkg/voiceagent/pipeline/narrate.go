@@ -84,7 +84,8 @@ func (n *Narrator) IsActive() bool {
 	return n.active
 }
 
-// HandleRoute executes narrate control routes.
+// HandleRoute executes narrate control routes. Agency.HandleRoute owns the
+// OnRoute notification; nothing here fires it.
 func (n *Narrator) HandleRoute(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
 	if n == nil {
 		return
@@ -100,10 +101,6 @@ func (n *Narrator) HandleRoute(ctx context.Context, turn *turnConductor, metrics
 		n.handleSkip()
 	case RouteNarrateStop:
 		n.handleStop()
-	default:
-		if n.pipeline.OnRoute != nil {
-			n.pipeline.OnRoute(d)
-		}
 	}
 }
 
@@ -170,9 +167,6 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 		n.pipeline.emit(events.Info{Message: fmt.Sprintf("narrate ack failed: %v", err)})
 	}
 	n.tryStartNarration(ctx, source)
-	if n.pipeline.OnRoute != nil {
-		n.pipeline.OnRoute(d)
-	}
 }
 
 func (n *Narrator) startStoryJob(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
