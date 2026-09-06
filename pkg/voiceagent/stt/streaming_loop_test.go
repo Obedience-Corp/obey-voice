@@ -178,6 +178,32 @@ func TestStreamingLoopSilentEOFGhostFinalizeIsNotATurn(t *testing.T) {
 	}
 }
 
+// A long stream cannot be buffered to be measured at EOF, so the audible
+// verdict is tracked incrementally. Speech at the start of a long capture must
+// still finalize once the audio behind it has been discarded.
+func TestStreamingLoopEOFFinalizesSpeechHeardLongBefore(t *testing.T) {
+	chunks := [][]float32{constFrame(1600, 0.08)}
+	for i := 0; i < 400; i++ { // 40s of silence after the word
+		chunks = append(chunks, make([]float32, 1600))
+	}
+	deps := streamingLoopDeps{
+		frames: &scriptedFrames{chunks: chunks},
+		// Silero never marked it live; only the EOF flush yields the segment.
+		seg:    &fakeSegmenter{flushSeg: make([]float32, minSpeechSamples)},
+		rec:    &fakeStreamingRec{finals: []string{"Hello there."}},
+		policy: endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond, StartTimeout: 30 * time.Second},
+	}
+
+	got := runStreaming(context.Background(), deps)
+	ft, ok := terminal(got).(FinalTranscript)
+	if !ok {
+		t.Fatalf("terminal = %T, want FinalTranscript (early speech must survive a long silence)", terminal(got))
+	}
+	if ft.Text != "Hello there." {
+		t.Fatalf("final = %q, want %q", ft.Text, "Hello there.")
+	}
+}
+
 func TestStreamingLoopYeahPartialOnSilenceIsNotATurn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
