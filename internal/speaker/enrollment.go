@@ -346,6 +346,14 @@ func (e *Enrollment) saveLocked() error {
 	return atomicWrite(filepath.Join(e.dir, profilesFileName), raw)
 }
 
+// CheckEnrollmentName reports whether name may be stored as a speaker profile.
+// Callers that only need the rule (TUI name field, Mac SpeakerName mirror)
+// should use this rather than duplicating profileSlug.
+func CheckEnrollmentName(name string) error {
+	_, err := profileSlug(name)
+	return err
+}
+
 // profileSlug validates an enrollment name and derives its file-safe key.
 // Reserved labels (unknown, speaker-N) and path-unsafe names are rejected so
 // enrolled names can never collide with anonymous cluster labels.

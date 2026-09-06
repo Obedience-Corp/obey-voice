@@ -216,7 +216,7 @@ func TestRegisterCancelledMidRecordEnrollsNothing(t *testing.T) {
 func TestRegisterWithoutMicrophoneEnrollsNothing(t *testing.T) {
 	m, _ := enrollTestSettings(t, nil) // no captureFor
 
-	if cmd := m.startEnroll("Lance"); cmd != nil {
+	if cmd := m.startEnroll("Lance", true); cmd != nil {
 		t.Fatal("startEnroll must not launch a recorder without a microphone")
 	}
 	if m.enroll.active {
@@ -266,7 +266,7 @@ func TestRemoveVoiceNeedsAConfirmation(t *testing.T) {
 	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
 		t.Fatalf("setup registration failed: %v", msg.err)
 	}
-	m.refreshEnrolledOwner()
+	m.refreshEnrolledProfiles()
 	if !m.enrolledOwnerOK {
 		t.Fatal("setup did not leave an enrolled owner")
 	}
@@ -344,7 +344,7 @@ func TestSpeakerRegisterRowsFollowTheStore(t *testing.T) {
 func TestEnrollOverlayOwnsTheScreen(t *testing.T) {
 	m, _ := enrollTestSettings(t, newEnrollCapture())
 	m.width, m.height = 100, 24
-	m.enroll = enrollSession{active: true, name: "Lance", clip: 2, elapsed: 1500 * time.Millisecond}
+	m.enroll = enrollSession{active: true, name: "Lance", clip: 2, elapsed: 1500 * time.Millisecond, claimOwner: true}
 
 	view := stripANSI(m.View())
 	for _, want := range []string{"Register your voice", "Recording clip 2 of 3", "microphone is live", "Esc cancels"} {
@@ -412,5 +412,206 @@ func TestReEnrollSeedsTheRunningEngineAgain(t *testing.T) {
 		if strings.Contains(m.message, unwanted) {
 			t.Errorf("message = %q, must not claim %q after a seeded re-enroll", m.message, unwanted)
 		}
+	}
+}
+
+func seedEnrolledProfile(t *testing.T, m *settingsModel, name, rev string) speaker.Profile {
+	t.Helper()
+	store, err := speaker.OpenEnrollment(speaker.EnrollmentDir(m.cfg))
+	if err != nil {
+		t.Fatalf("OpenEnrollment: %v", err)
+	}
+	p, err := store.Add(t.Context(), name, rev, [][]float32{{1, 0, 0, 0}, {0, 1, 0, 0}})
+	if err != nil {
+		t.Fatalf("Add %s: %v", name, err)
+	}
+	m.refreshEnrolledProfiles()
+	return p
+}
+
+func speakerKindIndex(m settingsModel, kind int) int {
+	for i, row := range m.speakerRows() {
+		if row.kind == kind {
+			return i
+		}
+	}
+	return -1
+}
+
+func speakerGuestIndex(m settingsModel, name string) int {
+	for i, row := range m.speakerRows() {
+		if row.kind == speakerRowGuest && row.name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestEnrollAnotherOpensNameEditorWithoutTouchingDisplayName(t *testing.T) {
+	m, _ := enrollTestSettings(t, newEnrollCapture())
+	seedEnrolledProfile(t, m, "Lance", "fake-rev-w1500")
+
+	idx := speakerKindIndex(*m, speakerRowEnrollOther)
+	if idx < 0 {
+		t.Fatal("enroll another row missing after an owner is stored")
+	}
+	m.cursor = idx
+	if cmd := m.selectCurrent(); cmd == nil {
+		t.Fatal("enroll another must open the name editor")
+	}
+	if m.edit.kind != editSpeakerEnrollName {
+		t.Fatalf("edit kind = %v, want editSpeakerEnrollName", m.edit.kind)
+	}
+	next := commitTyped(*m, "Alex")
+	if next.cfg.UserDisplayName != "Lance" {
+		t.Fatalf("display name = %q, enroll another must not rewrite it", next.cfg.UserDisplayName)
+	}
+	if !next.enroll.active || next.enroll.name != "Alex" || next.enroll.claimOwner {
+		t.Fatalf("enroll session = %+v, want active guest session for Alex", next.enroll)
+	}
+	next.cancelEnroll()
+}
+
+func TestEnrollAnotherRejectsInvalidAndOwnerNames(t *testing.T) {
+	m, _ := enrollTestSettings(t, newEnrollCapture())
+	seedEnrolledProfile(t, m, "Lance", "fake-rev-w1500")
+	m.cursor = speakerKindIndex(*m, speakerRowEnrollOther)
+	m.selectCurrent()
+
+	kept := commitTyped(*m, "speaker-1")
+	if kept.edit.kind != editSpeakerEnrollName {
+		t.Fatalf("invalid name closed the editor (kind=%v)", kept.edit.kind)
+	}
+	if kept.enroll.active {
+		t.Fatal("reserved name must not start recording")
+	}
+	if !strings.Contains(kept.message, "reserved") {
+		t.Errorf("message = %q, want reserved", kept.message)
+	}
+
+	owner := commitTyped(kept, "Lance")
+	if owner.edit.kind != editSpeakerEnrollName {
+		t.Fatalf("owner name closed the editor (kind=%v)", owner.edit.kind)
+	}
+	if owner.enroll.active {
+		t.Fatal("owner name must not start a guest recording")
+	}
+	if !strings.Contains(owner.message, "Re-enroll your voice") {
+		t.Errorf("message = %q, want the re-enroll hint", owner.message)
+	}
+}
+
+func TestGuestEnrollDoesNotClaimOwnership(t *testing.T) {
+	capture := newEnrollCapture()
+	m, live := enrollTestSettings(t, capture)
+	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
+		t.Fatalf("owner setup: %v", msg.err)
+	}
+	m.refreshEnrolledProfiles()
+
+	m.enroll.claimOwner = false
+	msg, ok := m.recordEnrollment(t.Context(), "Alex", newEventBridge(64))().(enrollDoneMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("guest enroll = %+v", msg)
+	}
+	if msg.profile.Owner {
+		t.Fatal("guest enroll must not become owner")
+	}
+	if !msg.seeded || live.seeded[len(live.seeded)-1].name != "Alex" {
+		t.Fatalf("guest was not seeded: %+v", live.seeded)
+	}
+	store, err := speaker.LoadEnrollment(speaker.EnrollmentDir(m.cfg))
+	if err != nil || store == nil {
+		t.Fatalf("store: %v %v", store, err)
+	}
+	if got := len(store.List()); got != 2 {
+		t.Fatalf("profiles = %d, want 2", got)
+	}
+	if owner, ok := store.Owner(); !ok || owner.Name != "Lance" {
+		t.Fatalf("owner = %+v ok=%v, want Lance", owner, ok)
+	}
+}
+
+func TestGuestEnrollAfterOwnerRemovedDoesNotClaimSeat(t *testing.T) {
+	m, _ := enrollTestSettings(t, newEnrollCapture())
+	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
+		t.Fatalf("owner setup: %v", msg.err)
+	}
+	m.enroll.claimOwner = false
+	if msg, _ := m.recordEnrollment(t.Context(), "Alex", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
+		t.Fatalf("guest setup: %v", msg.err)
+	}
+	m.refreshEnrolledProfiles()
+	m.removeVoice("Lance")
+	if m.enrolledOwnerOK {
+		t.Fatal("setup did not clear the owner")
+	}
+
+	m.enroll.claimOwner = false
+	msg, ok := m.recordEnrollment(t.Context(), "Dana", newEventBridge(64))().(enrollDoneMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("Dana enroll = %+v", msg)
+	}
+	if msg.profile.Owner {
+		t.Fatal("enroll another after owner-remove must not SetOwner")
+	}
+	store, err := speaker.LoadEnrollment(speaker.EnrollmentDir(m.cfg))
+	if err != nil || store == nil {
+		t.Fatalf("store: %v %v", store, err)
+	}
+	if _, owned := store.Owner(); owned {
+		t.Fatal("store must still have an empty owner seat")
+	}
+}
+
+func TestGuestRowReenrollAndRemove(t *testing.T) {
+	m, _ := enrollTestSettings(t, newEnrollCapture())
+	if msg, _ := m.recordEnrollment(t.Context(), "Lance", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
+		t.Fatalf("owner setup: %v", msg.err)
+	}
+	m.enroll.claimOwner = false
+	if msg, _ := m.recordEnrollment(t.Context(), "Alex", newEventBridge(64))().(enrollDoneMsg); msg.err != nil {
+		t.Fatalf("guest setup: %v", msg.err)
+	}
+	m.refreshEnrolledProfiles()
+
+	idx := speakerGuestIndex(*m, "Alex")
+	if idx < 0 {
+		t.Fatal("Alex guest row missing")
+	}
+	m.cursor = idx
+	cmd := m.selectCurrent()
+	if cmd == nil || !m.enroll.active || m.enroll.name != "Alex" || m.enroll.claimOwner {
+		t.Fatalf("re-enroll session = %+v, want Alex guest", m.enroll)
+	}
+	if title := m.enrollOverlayTitle(); title != "Re-enroll Alex" {
+		t.Errorf("overlay title = %q, want Re-enroll Alex", title)
+	}
+	m.cancelEnroll()
+	m.enroll = enrollSession{}
+
+	m.cursor = idx
+	next, _ := m.Update(key("d"))
+	if next.confirmRemoveVoice != "Alex" {
+		t.Fatalf("confirmRemoveVoice = %q, want Alex", next.confirmRemoveVoice)
+	}
+	kept, _ := next.updateRemoveVoiceConfirm(key("n"))
+	if !strings.Contains(kept.message, "Kept Alex") {
+		t.Errorf("message = %q, want Kept Alex", kept.message)
+	}
+
+	m.confirmRemoveVoice = "Alex"
+	removed, _ := m.updateRemoveVoiceConfirm(key("y"))
+	if !strings.Contains(removed.message, "Removed Alex") {
+		t.Errorf("message = %q, want Removed Alex", removed.message)
+	}
+	if strings.Contains(removed.message, "speaker-1") {
+		t.Errorf("guest remove must not claim the speaker-1 fallback: %q", removed.message)
+	}
+	if speakerGuestIndex(removed, "Alex") >= 0 {
+		t.Fatal("Alex guest row still present after remove")
+	}
+	if !removed.enrolledOwnerOK || removed.enrolledOwner.Name != "Lance" {
+		t.Fatalf("owner after guest remove = %+v ok=%v", removed.enrolledOwner, removed.enrolledOwnerOK)
 	}
 }

@@ -76,8 +76,8 @@ type settingsModel struct {
 	lookPath func(string) (string, error)
 	message  string
 
-	// edit is the inline value editor (speech computer address / token). Only
-	// the Qwen tab opens it today; while it is active it owns every key.
+	// edit is the inline value editor (speech computer address / token /
+	// speaker name). While it is active it owns every key.
 	edit settingsEditor
 
 	// Voice registration (Speakers → Register your voice). captureFor yields
@@ -95,10 +95,11 @@ type settingsModel struct {
 	enrollAfterName bool
 	// confirmRemoveVoice holds the armed removal's subject ("" = not armed).
 	confirmRemoveVoice string
-	// enrolledOwner caches the store's owner for the row labels, so rendering
-	// the list never reads the filesystem.
-	enrolledOwner   speaker.Profile
-	enrolledOwnerOK bool
+	// enrolledProfiles is store.List() cached so rendering never hits disk.
+	// enrolledOwner is the Owner() profile when enrolledOwnerOK is true.
+	enrolledProfiles []speaker.Profile
+	enrolledOwner    speaker.Profile
+	enrolledOwnerOK  bool
 
 	qwenStatus        managedqwen.Status
 	nativeStatus      managedqwen.NativeStatus
@@ -480,6 +481,10 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		case "p":
 			if m.section == sectionVoice && m.cursor < len(m.voiceItems) {
 				return m, m.startSettingsPreview(m.voiceItems[m.cursor])
+			}
+		case "d", "delete":
+			if m.section == sectionSpeakers {
+				m.beginRemoveGuestAtCursor()
 			}
 		case "esc", "q":
 			m.cancelPreview()

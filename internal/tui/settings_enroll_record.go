@@ -37,6 +37,7 @@ func enrollClipSamples() int {
 func (m settingsModel) recordEnrollment(ctx context.Context, name string, events *eventBridge) tea.Cmd {
 	captureFor, openStore, newEngine := m.captureFor, m.enrollmentStore, m.speakerEngine
 	seeder, gap := m.liveSeeder, m.enrollGap
+	claimOwner := m.enroll.claimOwner
 	// Read the window from config on the update loop: the worker must embed at
 	// the same window live analysis verifies at, never a literal.
 	windowMS := speaker.FromAppConfig(m.cfg).LiveWindowMS()
@@ -55,7 +56,7 @@ func (m settingsModel) recordEnrollment(ctx context.Context, name string, events
 		}
 		events.send(enrollEnrollingMsg{})
 
-		profile, store, err := enrollRecordedClips(ctx, newEngine, openStore, name, windowMS, wavs)
+		profile, store, err := enrollRecordedClips(ctx, newEngine, openStore, name, windowMS, wavs, claimOwner)
 		if err != nil {
 			return enrollDoneMsg{err: err}
 		}
@@ -176,6 +177,7 @@ func enrollRecordedClips(
 	name string,
 	windowMS int,
 	wavs []string,
+	claimOwner bool,
 ) (speaker.Profile, *speaker.Enrollment, error) {
 	if newEngine == nil || openStore == nil {
 		return speaker.Profile{}, nil, fmt.Errorf("speaker enrollment is not wired on this screen")
@@ -202,12 +204,14 @@ func enrollRecordedClips(
 	// "Register your voice" is a claim of ownership. A store whose owner was
 	// removed (or that only ever held guests enrolled from the CLI) gets one
 	// back here, so the rows do not read "nothing registered" immediately
-	// after a successful registration.
-	if _, owned := store.Owner(); !owned {
-		if err := store.SetOwner(profile.Name); err != nil {
-			return profile, store, err
+	// after a successful registration. Guest enroll never claims the seat.
+	if claimOwner {
+		if _, owned := store.Owner(); !owned {
+			if err := store.SetOwner(profile.Name); err != nil {
+				return profile, store, err
+			}
+			profile.Owner = true
 		}
-		profile.Owner = true
 	}
 	return profile, store, nil
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -186,8 +187,8 @@ func TestSettingsSpeakersViewShowsState(t *testing.T) {
 // added without updating the constants would silently misroute Enter.
 func TestSpeakerItemsRowCountMatchesConstants(t *testing.T) {
 	m := newSettings(&config.Config{}, nil)
-	if got := len(m.speakerItems()); got != speakerRowCount {
-		t.Errorf("speakerItems() has %d rows, speakerRowCount = %d", got, speakerRowCount)
+	if got := len(m.speakerItems()); got != speakerControlRowCount {
+		t.Errorf("speakerItems() has %d rows, speakerControlRowCount = %d", got, speakerControlRowCount)
 	}
 }
 
@@ -211,6 +212,110 @@ func TestSettingsSpeakersNameOpensEditorAndSaves(t *testing.T) {
 	}
 	if !strings.Contains(next.message, "Lance") {
 		t.Fatalf("message = %q, want the saved name", next.message)
+	}
+}
+
+func TestSpeakerRowsHideEnrollAnotherOnEmptyStore(t *testing.T) {
+	m := newSettings(&config.Config{}, nil)
+	m.section = sectionSpeakers
+	rows := m.speakerRows()
+	if len(rows) != speakerControlRowCount {
+		t.Fatalf("empty store rows = %d, want %d", len(rows), speakerControlRowCount)
+	}
+	for _, row := range rows {
+		if row.kind == speakerRowEnrollOther || row.kind == speakerRowGuest {
+			t.Fatalf("empty store must not show roster rows: %+v", row)
+		}
+	}
+	view := stripANSI(m.View())
+	if strings.Contains(view, "Enroll another speaker") {
+		t.Fatalf("empty store showed enroll another:\n%s", view)
+	}
+}
+
+func TestSpeakerRowsShowGuestsAndEnrollAnother(t *testing.T) {
+	m := newSettings(&config.Config{}, nil)
+	m.section = sectionSpeakers
+	m.enrolledOwner = speaker.Profile{Name: "Lance", Owner: true, ModelRev: speaker.ExpectedLiveRev(speaker.FromAppConfig(m.cfg))}
+	m.enrolledOwnerOK = true
+	m.enrolledProfiles = []speaker.Profile{
+		m.enrolledOwner,
+		{Name: "Alex", ModelRev: m.enrolledOwner.ModelRev},
+		{Name: "Dana", ModelRev: "titanet-w9999"},
+	}
+
+	rows := m.speakerRows()
+	if got, want := len(rows), speakerControlRowCount+1+2; got != want {
+		t.Fatalf("rows = %d, want %d (controls + enroll another + 2 guests)", got, want)
+	}
+	if rows[speakerControlRowCount].kind != speakerRowEnrollOther {
+		t.Fatalf("row %d = %+v, want enroll another", speakerControlRowCount, rows[speakerControlRowCount])
+	}
+
+	var guests []speakerRow
+	for _, row := range rows {
+		if row.kind == speakerRowGuest {
+			guests = append(guests, row)
+		}
+	}
+	if len(guests) != 2 {
+		t.Fatalf("guest rows = %+v, want Alex and Dana", guests)
+	}
+	if guests[0].name != "Alex" || guests[1].name != "Dana" {
+		t.Fatalf("guest order = %+v", guests)
+	}
+	if strings.Contains(guests[0].label, "re-enroll to refresh") {
+		t.Errorf("fresh guest labelled stale: %q", guests[0].label)
+	}
+	if !strings.Contains(guests[1].label, "re-enroll to refresh") {
+		t.Errorf("stale guest missing refresh hint: %q", guests[1].label)
+	}
+	for _, row := range guests {
+		if row.name == "Lance" {
+			t.Fatal("owner must not appear as a guest row")
+		}
+	}
+
+	view := stripANSI(m.View())
+	for _, want := range []string{"Enroll another speaker…", "Alex", "Dana (re-enroll to refresh)", "Re-enroll your voice — Lance"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestSpeakerRowsAfterOwnerRemovedStillListGuests(t *testing.T) {
+	m := newSettings(&config.Config{}, nil)
+	m.section = sectionSpeakers
+	m.enrolledProfiles = []speaker.Profile{{Name: "Alex"}}
+
+	labels := strings.Join(m.speakerItems(), "\n")
+	if !strings.Contains(labels, "Register your voice") {
+		t.Errorf("owner-removed labels missing Register:\n%s", labels)
+	}
+	if !strings.Contains(labels, "nothing registered") {
+		t.Errorf("owner-removed labels missing empty owner copy:\n%s", labels)
+	}
+	if !strings.Contains(labels, "Enroll another speaker…") {
+		t.Errorf("owner-removed labels missing enroll another:\n%s", labels)
+	}
+	if !strings.Contains(labels, "Alex") {
+		t.Errorf("owner-removed labels missing guest:\n%s", labels)
+	}
+}
+
+func TestSettingsSpeakersWindowWarnsWhenVoicesEnrolled(t *testing.T) {
+	cfg := &config.Config{}
+	m, saved := newSpeakerSettings(t, cfg, speakerRowWindow)
+	m.enrolledProfiles = []speaker.Profile{{Name: "Lance", Owner: true}}
+
+	m.selectCurrent()
+
+	if saved["speaker.live.window_ms"] != 2000 {
+		t.Errorf("window_ms saved = %v, want 2000", saved["speaker.live.window_ms"])
+	}
+	if !strings.Contains(m.message, "stale") {
+		t.Errorf("message = %q, want a stale warning when voices are enrolled", m.message)
 	}
 }
 

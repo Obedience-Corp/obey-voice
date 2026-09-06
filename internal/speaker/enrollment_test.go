@@ -33,6 +33,9 @@ func TestProfileSlugRejectsInvalidNames(t *testing.T) {
 			if slug, err := profileSlug(tc.in); err == nil {
 				t.Fatalf("profileSlug(%q) = %q, want error", tc.in, slug)
 			}
+			if err := CheckEnrollmentName(tc.in); err == nil {
+				t.Fatalf("CheckEnrollmentName(%q) succeeded, want error", tc.in)
+			}
 		})
 	}
 }
@@ -51,6 +54,9 @@ func TestProfileSlugNormalizes(t *testing.T) {
 		}
 		if got != tc.want {
 			t.Fatalf("profileSlug(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+		if err := CheckEnrollmentName(tc.in); err != nil {
+			t.Fatalf("CheckEnrollmentName(%q): %v", tc.in, err)
 		}
 	}
 }
