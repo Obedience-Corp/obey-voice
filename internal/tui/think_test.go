@@ -169,6 +169,56 @@ func TestLiveThinkingStillStreamsWhenToggleOff(t *testing.T) {
 	}
 }
 
+func TestCtrlKRecoversThinkTagsLeakedOntoResponseDelta(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	m.ready = true
+
+	m.handleEvent(events.ThinkingStarted{})
+	m.handleEvent(events.ResponseDelta{Text: "<think>Rayleigh scattering in air.</think>\nBecause air scatters blue light."})
+	m.handleEvent(events.ResponseReady{Response: "Because air scatters blue light."})
+
+	hidden := stripANSI(m.View())
+	if strings.Contains(hidden, "Rayleigh scattering") {
+		t.Fatalf("leaked think visible while hidden:\n%s", hidden)
+	}
+	if strings.Contains(hidden, "<think>") {
+		t.Fatalf("raw think tags in the spoken bubble:\n%s", hidden)
+	}
+	if !strings.Contains(hidden, "Because air scatters blue light.") {
+		t.Fatalf("spoken reply missing:\n%s", hidden)
+	}
+
+	m.toggleShowThink()
+	shown := stripANSI(m.View())
+	if !strings.Contains(shown, "thinking") {
+		t.Fatalf("thinking label missing after ctrl+k:\n%s", shown)
+	}
+	if !strings.Contains(shown, "Rayleigh scattering in air.") {
+		t.Fatalf("think body missing after ctrl+k:\n%s", shown)
+	}
+	if strings.Contains(shown, "<think>") {
+		t.Fatalf("raw think tags after toggle:\n%s", shown)
+	}
+}
+
+func TestCtrlKRecoversThinkTagsOnResponseReadyOnly(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	m.ready = true
+
+	m.handleEvent(events.ResponseReady{Response: "<think>hidden plan</think>\nHello there."})
+	m.toggleShowThink()
+	shown := stripANSI(m.View())
+	if !strings.Contains(shown, "hidden plan") {
+		t.Fatalf("think missing from ResponseReady tags:\n%s", shown)
+	}
+	if strings.Contains(shown, "<think>") {
+		t.Fatalf("raw tags leaked:\n%s", shown)
+	}
+	if !strings.Contains(shown, "Hello there.") {
+		t.Fatalf("spoken reply missing:\n%s", shown)
+	}
+}
+
 func TestThinkToggleLeavesActivity(t *testing.T) {
 	m := sizedConversation(t, 100, 24)
 	m.activityFocused = true

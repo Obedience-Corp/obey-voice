@@ -96,3 +96,43 @@ func agentItemFromStored(name, text string) chatItem {
 	}
 	return item
 }
+
+// ingestSpeakableDelta pulls <think> regions off a ResponseDelta so leaked
+// markup becomes the thinking block Ctrl+K reveals, not spoken transcript.
+func (m *conversationModel) ingestSpeakableDelta(text string) {
+	speakable, think := m.liveThink.FeedSplit(text)
+	if think != "" {
+		m.appendStreamingThink(think)
+	}
+	if speakable != "" {
+		m.appendStreamingDelta(speakable)
+	}
+}
+
+// takeStreamingTurn drains live think/speakable buffers and recovers think
+// text that arrived as tagged content instead of ThinkingDelta.
+func (m *conversationModel) takeStreamingTurn() (thought, spoken string) {
+	heldSpeak, heldThink := m.liveThink.FlushSplit()
+	m.liveThink = textclean.ThinkFilter{}
+	if heldThink != "" {
+		m.streamingThink += heldThink
+	}
+	if heldSpeak != "" {
+		m.streamingAgent += heldSpeak
+	}
+	thought = strings.TrimSpace(m.streamingThink)
+	spoken = strings.TrimSpace(m.streamingAgent)
+	m.streamingThink = ""
+	m.streamingAgent = ""
+	if thought == "" {
+		if t, b := textclean.SplitThink(spoken); t != "" {
+			return t, b
+		}
+	} else if t, b := textclean.SplitThink(spoken); t != "" {
+		spoken = b
+		if !strings.Contains(thought, t) {
+			thought = strings.TrimSpace(thought + "\n" + t)
+		}
+	}
+	return thought, spoken
+}
