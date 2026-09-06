@@ -98,7 +98,9 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 
 			deps.rec.Accept(read.frame.Samples)
 			partial := normalizeTranscript(strings.TrimSpace(deps.rec.Partial()))
-			if partial != "" {
+			// A recognizer partial on silence is not speech. Marking it used
+			// to start a turn from decoder ghosts ("yeah") with no mic energy.
+			if partial != "" && d.voice {
 				if track.markSpeech() {
 					if !emitPhase("hearing") {
 						return

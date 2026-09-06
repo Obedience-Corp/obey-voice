@@ -17,6 +17,11 @@ const levelEmitMinInterval = 50 * time.Millisecond
 // speechRMSScale maps typical close-mic speech RMS (~0.02–0.15) into 0..1.
 const speechRMSScale = 0.12
 
+// minSpeechRMS is the lowest RMS that counts as a talker. Close-mic speech
+// is ~0.02–0.15; digital silence and STT-on-zeros is ~0. Below this we did
+// not hear anyone — Silero still false-marks, and the decoder invents "yeah".
+const minSpeechRMS = 0.008
+
 // sendEvent delivers an event, preferring a non-blocking send and falling back
 // to a cancellable blocking send when the channel is full.
 func sendEvent(ctx context.Context, events chan<- Event, event Event) bool {
@@ -39,6 +44,25 @@ func trySendEvent(events chan<- Event, event Event) {
 	case events <- event:
 	default:
 	}
+}
+
+// audibleSpeech reports whether samples contain a talker, not just enough
+// length for the decoder to run. Pre-roll silence can dilute whole-utterance
+// RMS, so any 100ms window above the floor counts.
+func audibleSpeech(samples []float32) bool {
+	const win = 1600 // 100ms at capture rate
+	if len(samples) == 0 {
+		return false
+	}
+	if len(samples) < win {
+		return frameRMS(samples) >= minSpeechRMS
+	}
+	for i := 0; i+win <= len(samples); i += win {
+		if frameRMS(samples[i:i+win]) >= minSpeechRMS {
+			return true
+		}
+	}
+	return frameRMS(samples[len(samples)-win:]) >= minSpeechRMS
 }
 
 // frameRMS returns the root-mean-square amplitude of mono samples.

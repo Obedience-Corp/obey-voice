@@ -42,6 +42,12 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 		return gateDecision{}
 	}
 
+	// Silero on digital silence is a false mark. Never start a turn from
+	// energy nobody could hear; the decoder will invent a word ("yeah").
+	if rms < minSpeechRMS {
+		return gateDecision{}
+	}
+
 	if g.floor > 0 && rms >= g.floor*gateSNR {
 		return gateDecision{voice: true}
 	}
