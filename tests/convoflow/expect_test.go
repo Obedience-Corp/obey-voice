@@ -67,10 +67,15 @@ func TestRouteKindFromRecorder(t *testing.T) {
 	t.Parallel()
 	rec := &recorder{}
 	rec.route(pipeline.RouteDecision{Kind: pipeline.RouteSpawn, Source: "intent"})
-	if err := evalExpect(Expectation{RouteKind: "spawn"}, rec, turnState{}); err != nil {
+	d, ok := rec.lastRoute()
+	if !ok {
+		t.Fatal("recorder lost the decision")
+	}
+	st := turnState{route: &d}
+	if err := evalExpect(Expectation{RouteKind: "spawn"}, rec, st); err != nil {
 		t.Fatal(err)
 	}
-	if err := evalExpect(Expectation{RouteSource: "intent"}, rec, turnState{}); err != nil {
+	if err := evalExpect(Expectation{RouteSource: "intent"}, rec, st); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -163,5 +168,32 @@ func TestSpokenTranscriptDedupesTheSameSentenceFromBothEvents(t *testing.T) {
 	rec.add(events.SpeechSegmentReady{Text: "done"})
 	if got := rec.spokenText(); got != "Working on it. done" {
 		t.Fatalf("spokenText = %q", got)
+	}
+}
+
+// A route decision belongs to the turn that made it. The follow-up after a
+// spawn has no route of its own, so route_kind must fail there and the
+// report row must not borrow the spawn's decision.
+func TestRouteExpectsAreScopedToTheTurn(t *testing.T) {
+	rec := &recorder{}
+	rec.route(pipeline.RouteDecision{Kind: pipeline.RouteSpawn, Source: "intent"})
+	mark := rec.routeMark()
+	if _, ok := rec.lastRouteSince(mark); ok {
+		t.Fatal("no route after the mark must report none")
+	}
+	if err := evalExpect(Expectation{RouteKind: "spawn"}, rec, turnState{}); err == nil {
+		t.Fatal("route_kind without a route this turn must fail")
+	}
+	d := pipeline.RouteDecision{Kind: pipeline.RouteJobStatus, Source: "phrase"}
+	rec.route(d)
+	got, ok := rec.lastRouteSince(mark)
+	if !ok || got != d {
+		t.Fatalf("lastRouteSince = %+v, %v", got, ok)
+	}
+	if err := evalExpect(Expectation{RouteKind: "job.status"}, rec, turnState{route: &got}); err != nil {
+		t.Fatal(err)
+	}
+	if err := evalRunExpect(Expectation{RouteSource: "phrase"}, rec, collectMetrics(rec)); err != nil {
+		t.Fatalf("run-level route reads the newest decision: %v", err)
 	}
 }

@@ -72,9 +72,24 @@ func (r *recorder) spokenText() string {
 }
 
 func (r *recorder) lastRoute() (pipeline.RouteDecision, bool) {
+	return r.lastRouteSince(0)
+}
+
+// routeMark is the number of decisions so far; lastRouteSince(mark) returns
+// the newest decision made after it, so a turn only sees its own route.
+func (r *recorder) routeMark() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.routes) == 0 {
+	return len(r.routes)
+}
+
+func (r *recorder) lastRouteSince(mark int) (pipeline.RouteDecision, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if mark < 0 {
+		mark = 0
+	}
+	if len(r.routes) <= mark {
 		return pipeline.RouteDecision{}, false
 	}
 	return r.routes[len(r.routes)-1], true

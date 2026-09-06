@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // runner is the conversation driver. PR 2 tests inject a fake; live
@@ -128,6 +129,7 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	}
 
 	mark := len(e.rec.snapshot())
+	routeMark := e.rec.routeMark()
 	if turn.User != "" {
 		if e.runner == nil {
 			return fmt.Errorf("no runner (live agent not wired)")
@@ -153,6 +155,9 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		spoken: e.rec.spokenText(),
 		events: e.rec.snapshot()[mark:],
 	}
+	if d, ok := e.rec.lastRouteSince(routeMark); ok {
+		st.route = &d
+	}
 	if e.runner != nil {
 		st.history = e.runner.history()
 		st.liveRouterPolicy = e.runner.livePolicy()
@@ -161,7 +166,7 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		st.liveBrainCalled = e.runner.liveCalled()
 		st.workerCalled = e.runner.workerCalled()
 	}
-	e.turns = append(e.turns, e.recordTurn(turn, mark))
+	e.turns = append(e.turns, e.recordTurn(turn, mark, st.route))
 	for _, ex := range turn.Expect {
 		if err := evalExpect(ex, e.rec, st); err != nil {
 			return err
@@ -170,21 +175,28 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	return nil
 }
 
-func (e *engine) recordTurn(turn Turn, mark int) turnRecord {
+func (e *engine) recordTurn(turn Turn, mark int, route *pipeline.RouteDecision) turnRecord {
 	tr := turnRecord{ID: turn.ID, User: turn.User}
-	if d, ok := e.rec.lastRoute(); ok && turn.User != "" {
-		tr.Route = string(d.Kind)
-		if d.Source != "" {
-			tr.Route += "/" + d.Source
+	if route != nil {
+		tr.Route = string(route.Kind)
+		if route.Source != "" {
+			tr.Route += "/" + route.Source
 		}
 	}
 	var spoken []string
+	add := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" || (len(spoken) > 0 && spoken[len(spoken)-1] == text) {
+			return
+		}
+		spoken = append(spoken, text)
+	}
 	for _, te := range e.rec.snapshot()[mark:] {
 		switch v := te.event.(type) {
 		case events.SpeechSegmentReady:
-			spoken = append(spoken, v.Text)
+			add(v.Text)
 		case events.GeneratingVoice:
-			spoken = append(spoken, v.Sentence)
+			add(v.Sentence)
 		}
 	}
 	tr.Spoken = clip(strings.Join(spoken, " "), 160)

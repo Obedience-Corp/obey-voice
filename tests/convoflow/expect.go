@@ -7,11 +7,13 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 type turnState struct {
 	spoken             string
 	events             []timedEvent
+	route              *pipeline.RouteDecision
 	history            []brain.Turn
 	liveRouterPolicy   string
 	workerRouterPolicy string
@@ -79,20 +81,18 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 			return fmt.Errorf("worker_tools_enabled = %v, want %v", *st.workerToolsEnabled, *ex.WorkerToolsEnabled)
 		}
 	case ex.RouteKind != "":
-		d, ok := rec.lastRoute()
-		if !ok {
-			return fmt.Errorf("route_kind: no OnRoute")
+		if st.route == nil {
+			return fmt.Errorf("route_kind: no OnRoute this turn")
 		}
-		if string(d.Kind) != ex.RouteKind {
-			return fmt.Errorf("route_kind = %q, want %q", d.Kind, ex.RouteKind)
+		if string(st.route.Kind) != ex.RouteKind {
+			return fmt.Errorf("route_kind = %q, want %q", st.route.Kind, ex.RouteKind)
 		}
 	case ex.RouteSource != "":
-		d, ok := rec.lastRoute()
-		if !ok {
-			return fmt.Errorf("route_source: no OnRoute")
+		if st.route == nil {
+			return fmt.Errorf("route_source: no OnRoute this turn")
 		}
-		if d.Source != ex.RouteSource {
-			return fmt.Errorf("route_source = %q, want %q", d.Source, ex.RouteSource)
+		if st.route.Source != ex.RouteSource {
+			return fmt.Errorf("route_source = %q, want %q", st.route.Source, ex.RouteSource)
 		}
 	case ex.Metric != "":
 		return fmt.Errorf("metric %q belongs on the scenario expect list", ex.Metric)
@@ -170,6 +170,9 @@ func toolLeakLine(line string) bool {
 func evalRunExpect(ex Expectation, rec *recorder, m runMetrics) error {
 	if ex.Metric == "" {
 		st := turnState{spoken: rec.spokenText(), events: rec.snapshot()}
+		if d, ok := rec.lastRoute(); ok {
+			st.route = &d
+		}
 		return evalExpect(ex, rec, st)
 	}
 	if ex.Metric == "crackle_failing_wavs" {

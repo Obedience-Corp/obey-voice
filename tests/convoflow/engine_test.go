@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 func TestEngineFakeRunnerChatThenEmptyDrain(t *testing.T) {
@@ -191,6 +192,12 @@ func TestEngineReportsTurnsAndFailedRunExpects(t *testing.T) {
 		runner:  fake,
 		profile: runProfile{Profile: "stub", LiveProvider: "ollama", LiveModel: "qwen3:8b", WorkerProvider: "stub"},
 	}
+	fake.onTurn = func(string) {
+		rec.route(pipeline.RouteDecision{Kind: pipeline.RouteSpawn, Source: "intent"})
+		rec.add(events.SpeechSegmentReady{Text: "ok"})
+		rec.add(events.GeneratingVoice{Sentence: "ok"})
+		rec.add(events.SpeechSegmentReady{Text: "ok"})
+	}
 	if err := eng.run(context.Background()); err == nil {
 		t.Fatal("want run-level metric failure")
 	}
@@ -201,7 +208,7 @@ func TestEngineReportsTurnsAndFailedRunExpects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"| chat | hi |", "live: ollama qwen3:8b", "stop_reason: run_expect_failed"} {
+	for _, want := range []string{"| chat | hi | spawn/intent | ok |", "live: ollama qwen3:8b", "stop_reason: run_expect_failed"} {
 		if !strings.Contains(string(report), want) {
 			t.Fatalf("report.md missing %q:\n%s", want, report)
 		}
