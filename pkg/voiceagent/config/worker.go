@@ -1,20 +1,46 @@
 package config
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // WorkerProviders are the backends allowed for voice_worker_provider.
 var WorkerProviders = []string{"ollama", "grok", "claude"}
 
-// VoiceWorkerProviderOf returns the configured worker brain, defaulting to grok.
+// WorkerFallbackProvider is where an unselected worker lands. It is the
+// last resort behind the live brain, not a default anyone is meant to reach:
+// Settings and the persona form both require a choice (D1).
+const WorkerFallbackProvider = "ollama"
+
+// WorkerSelected reports whether the operator has actually chosen a worker.
+// A voice turn that spawns work on a model nobody picked is the failure this
+// answers — the launcher and Settings render "not set" from it and ask.
+func WorkerSelected(cfg *Config) bool {
+	return cfg != nil && strings.TrimSpace(cfg.VoiceWorkerProvider) != ""
+}
+
+// VoiceWorkerProviderOf returns the worker brain. An unselected worker
+// inherits the live brain rather than reaching for a remote default: the
+// live model is already loaded, and local-first is the product. A live brain
+// that cannot be a worker (cursor) falls back to WorkerFallbackProvider.
 func VoiceWorkerProviderOf(cfg *Config) string {
 	if cfg == nil {
-		return "grok"
+		return WorkerFallbackProvider
 	}
-	name := strings.TrimSpace(strings.ToLower(cfg.VoiceWorkerProvider))
-	if name == "" {
-		return "grok"
+	if name := strings.TrimSpace(strings.ToLower(cfg.VoiceWorkerProvider)); name != "" {
+		return name
 	}
-	return name
+	live := strings.TrimSpace(strings.ToLower(cfg.BrainProvider))
+	if WorkerProviderAllowed(live) {
+		return live
+	}
+	return WorkerFallbackProvider
+}
+
+// WorkerProviderAllowed reports whether name can run async jobs.
+func WorkerProviderAllowed(name string) bool {
+	return slices.Contains(WorkerProviders, strings.TrimSpace(strings.ToLower(name)))
 }
 
 // WorkerBrainConfig clones cfg for a second brain.Provider worker instance.

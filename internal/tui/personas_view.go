@@ -8,6 +8,7 @@ import (
 	ansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func (m personasModel) View() string {
@@ -210,7 +211,7 @@ func (m personasModel) stackLines() []string {
 		if m.formRow == idx {
 			mark, labelStyle = selectedStyle.Render("▸ "), selectedStyle
 		}
-		return mark + labelStyle.Render(label) + " " + value
+		return mark + labelStyle.Render(fmt.Sprintf("%-*s", stackLabelWidth, label)) + " " + value
 	}
 	brainProvider := stackBrainProviders()[m.brainProviderIdx]
 	brainRow := row(formRowBrainProvider, "Brain", "‹ "+brainProvider+" ›")
@@ -234,12 +235,24 @@ func (m personasModel) stackLines() []string {
 		}
 		tierValue = "‹ " + tierLabel + " ›"
 	}
+	workerProvider := stackWorkerProviders()[m.workerProviderIdx]
+	workerRow := row(formRowWorkerProvider, "Worker", "‹ "+workerProvider+" ›")
+	if workerProvider == stackDefaultLabel && m.cfg != nil && !config.WorkerSelected(m.cfg) {
+		// "(default)" is only honest when Settings actually holds a choice.
+		workerRow += dimStyle.Render("  (Settings has no worker yet — inherits " + config.VoiceWorkerProviderOf(m.cfg) + ")")
+	}
+	workerModelRow := row(formRowWorkerModel, "Worker model", "‹ "+m.workerModelLabel()+" ›")
+	if strings.EqualFold(m.effectiveStackWorkerProvider(), "claude") && strings.TrimSpace(m.workerModel) != "" {
+		workerModelRow += dimStyle.Render("  (model saved, not routed for claude yet)")
+	}
 	return []string{
 		brainRow,
-		row(formRowBrainModel, "Model", m.stackModelRowValue()),
-		row(formRowTTSProvider, "TTS  ", "‹ "+ttsProvider+" ›"),
+		row(formRowBrainModel, "Brain model", m.stackModelRowValue()),
+		workerRow,
+		workerModelRow,
+		row(formRowTTSProvider, "TTS", "‹ "+ttsProvider+" ›"),
 		row(formRowVoice, "Voice", "‹ "+voiceLabel+" ›"),
-		row(formRowTier, "Tier ", tierValue),
+		row(formRowTier, "Tier", tierValue),
 	}
 }
 

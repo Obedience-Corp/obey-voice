@@ -198,11 +198,18 @@ func TestSettingsQwenLanguageSelectionPersists(t *testing.T) {
 	}
 }
 
-func TestSettingsTabCycleIncludesTools(t *testing.T) {
+// The worker is reached by tabbing off the brain model, not by hunting for it:
+// it is the second half of choosing a brain, so it sits between the model and
+// the tool switches.
+func TestSettingsTabCycleReachesWorkerThenTools(t *testing.T) {
 	m := settingsModel{cfg: &config.Config{}, section: sectionModel}
 	m, _ = updateSettingsWithKey(t, m, "tab")
+	if m.section != sectionWorker {
+		t.Fatalf("section after Model + Tab = %d, want Worker section %d", m.section, sectionWorker)
+	}
+	m, _ = updateSettingsWithKey(t, m, "tab")
 	if m.section != sectionTools {
-		t.Fatalf("section after Model + Tab = %d, want Tools section %d", m.section, sectionTools)
+		t.Fatalf("section after Worker + Tab = %d, want Tools section %d", m.section, sectionTools)
 	}
 }
 

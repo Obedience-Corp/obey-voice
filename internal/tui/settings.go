@@ -22,6 +22,10 @@ type settingsSection int
 const (
 	sectionProvider settingsSection = iota
 	sectionModel
+	// The worker sits beside the brain because it is chosen with the brain:
+	// picking what talks without picking what works is how a spawn ends up on
+	// a model nobody selected.
+	sectionWorker
 	sectionTools
 	sectionTTS
 	sectionQwen
@@ -48,6 +52,7 @@ type settingsModel struct {
 	// Derived lists for current section.
 	providerItems  []string
 	modelItems     []string
+	workerItems    []workerItem
 	toolItems      []string
 	ttsItems       []ttsSettingItem
 	qwenItems      []qwenOptionItem
@@ -139,6 +144,7 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 	m.refreshQwenStatus()
 	m.buildProviderItems()
 	m.buildModelItems()
+	m.buildWorkerItems()
 	m.buildToolItems()
 	m.buildTTSItems()
 	m.buildQwenItems()
@@ -644,6 +650,8 @@ func (m *settingsModel) currentListLen() int {
 		return len(m.providerItems)
 	case sectionModel:
 		return len(m.modelItems)
+	case sectionWorker:
+		return len(m.workerItems)
 	case sectionTools:
 		return len(m.toolItems)
 	case sectionTTS:
@@ -685,10 +693,19 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 			}
 			m.buildModelItems()
 			m.buildToolItems()
+			m.buildWorkerItems()
 			if strings.EqualFold(name, "ollama") && m.cfg.VoiceToolsEnabled {
 				m.message = fmt.Sprintf("Provider set to %s · local tools on (Settings → Tools to toggle)", name)
 			} else {
 				m.message = fmt.Sprintf("Provider set to %s", name)
+			}
+			// Choosing a brain is choosing a worker: land on the Worker
+			// section rather than leaving it to a default nobody picked.
+			if !config.WorkerSelected(m.cfg) {
+				m.section = sectionWorker
+				m.cursor = 0
+				m.offset = 0
+				m.message = fmt.Sprintf("Provider set to %s · now choose the worker that runs background jobs", name)
 			}
 		}
 	case sectionModel:
@@ -713,6 +730,8 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 			}
 			m.message = fmt.Sprintf("Model set to %s", model)
 		}
+	case sectionWorker:
+		m.selectWorkerItem()
 	case sectionTools:
 		return m.selectToolItem()
 	case sectionTTS:

@@ -59,6 +59,11 @@ type personasModel struct {
 	brainModelInput  textinput.Model
 	selectedVoice    string
 	selectedTier     string
+	// Worker rows: the brain that runs this persona's spawned background jobs.
+	// Chosen here rather than inherited silently — a persona that talks locally
+	// and works on a remote CLI is a decision, not a default.
+	workerProviderIdx int
+	workerModel       string
 	// Model row picker: discovered models per provider + async scan state.
 	// See personas_models.go; brainModelInput stays the selected value.
 	brainModels personaModelPicker

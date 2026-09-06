@@ -60,12 +60,25 @@ type Profile struct {
 //	brain:
 //	  provider: ollama          # or claude, grok; empty = app default
 //	  model: qwen2.5:14b        # provider-specific model id; empty = app default
+//	  worker:                   # the model that runs spawned background jobs
+//	    provider: ollama        # or claude, grok; empty = app default
+//	    model: qwen3:8b         # empty = that provider's usual default
 //
 // Profiles written before this field existed have the zero value and keep
 // using the app-level brain keys until edited.
 type Brain struct {
 	Provider string `yaml:"provider,omitempty" json:"provider"`
 	Model    string `yaml:"model,omitempty" json:"model"`
+	Worker   Worker `yaml:"worker,omitempty" json:"worker"`
+}
+
+// Worker is the persona's async job brain. It is a peer of the live brain,
+// not an afterthought: a persona that talks locally and works remotely is a
+// deliberate choice, and one nobody should make by accident.
+type Worker struct {
+	Provider   string `yaml:"provider,omitempty" json:"provider"`
+	Model      string `yaml:"model,omitempty" json:"model"`
+	OllamaHost string `yaml:"ollama_host,omitempty" json:"ollama_host"`
 }
 
 // TTS holds per-persona speech settings. Each persona may choose any supported
@@ -366,6 +379,7 @@ func applyBrain(cfg *config.Config, b Brain) {
 		// re-run the ollama auto-enable rules against the new provider.
 		config.ApplyOllamaDefaults(cfg)
 	}
+	applyWorker(cfg, b.Worker)
 	model := strings.TrimSpace(b.Model)
 	if model == "" {
 		return
@@ -379,6 +393,21 @@ func applyBrain(cfg *config.Config, b Brain) {
 		cfg.CursorModel = model
 		// claude has no app-level model key today; a persona model for it is
 		// recorded on the profile but not routed.
+	}
+}
+
+// applyWorker overlays the persona's async job brain onto the app-level
+// voice_worker_* keys. Empty fields inherit, so a persona that never named a
+// worker keeps whatever Settings chose.
+func applyWorker(cfg *config.Config, w Worker) {
+	if provider := strings.TrimSpace(w.Provider); provider != "" {
+		cfg.VoiceWorkerProvider = provider
+	}
+	if model := strings.TrimSpace(w.Model); model != "" {
+		cfg.VoiceWorkerModel = model
+	}
+	if host := strings.TrimSpace(w.OllamaHost); host != "" {
+		cfg.VoiceWorkerOllamaHost = host
 	}
 }
 

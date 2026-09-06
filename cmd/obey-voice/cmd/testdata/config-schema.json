@@ -162,6 +162,22 @@
       "editable": true
     },
     {
+      "key": "playback_volume",
+      "type": "float",
+      "default": 1,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Volume",
+      "help": "How loud she is. 1 is normal; 0 is silent; above 1 boosts a quiet speaker.",
+      "unit": "×",
+      "min": 0,
+      "max": 4,
+      "restart_required": false,
+      "restart_verified": true,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "speech_speed",
       "type": "float",
       "default": 0.95,
@@ -812,7 +828,7 @@
       "help": "Model pin for the async worker. Empty uses that provider's usual default.",
       "restart_required": true,
       "restart_verified": false,
-      "persona_overridable": false,
+      "persona_overridable": true,
       "editable": true
     },
     {
@@ -825,25 +841,25 @@
       "help": "Ollama base URL for the async worker when voice_worker_provider is ollama. Empty inherits ollama_host.",
       "restart_required": true,
       "restart_verified": false,
-      "persona_overridable": false,
+      "persona_overridable": true,
       "editable": true
     },
     {
       "key": "voice_worker_provider",
       "type": "enum",
-      "default": "grok",
+      "default": "",
       "enum": [
         "ollama",
         "grok",
         "claude"
       ],
-      "allows_empty": false,
+      "allows_empty": true,
       "group": "brain",
       "title": "Worker provider",
-      "help": "Which model runs async jobs after a spawn. Defaults to Grok on Pocket-class devices; Ollama is supported when configured.",
+      "help": "Which model runs async jobs after a spawn. Chosen alongside the brain — empty means unselected, and inherits the live brain until you pick one.",
       "restart_required": true,
       "restart_verified": false,
-      "persona_overridable": false,
+      "persona_overridable": true,
       "editable": true
     },
     {

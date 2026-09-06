@@ -230,6 +230,10 @@
       "value": 30,
       "source": "default"
     },
+    "playback_volume": {
+      "value": 1,
+      "source": "default"
+    },
     "prompts_dir": {
       "value": "",
       "source": "default"
@@ -547,7 +551,7 @@
       "source": "default"
     },
     "voice_worker_provider": {
-      "value": "grok",
+      "value": "",
       "source": "default"
     },
     "whisper_model": {

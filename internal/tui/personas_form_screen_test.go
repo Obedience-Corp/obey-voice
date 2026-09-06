@@ -56,8 +56,9 @@ func TestPersonasFormReachesVoiceWithArrowsOnly(t *testing.T) {
 	if m.nameInput.Value() != "Buddy" {
 		t.Fatalf("name = %q", m.nameInput.Value())
 	}
-	// ↓ ↓ ↓ lands on TTS, → picks a provider, ↓ → picks a voice.
-	for i := 0; i < 3; i++ {
+	// Down past brain provider/model and the two worker rows lands on TTS,
+	// → picks a provider, ↓ → picks a voice.
+	for i := 0; i < 5; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if m.formRow != formRowTTSProvider {

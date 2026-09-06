@@ -467,11 +467,11 @@ func modelRowLine(t *testing.T, m personasModel) string {
 	t.Helper()
 	view := stripANSI(m.View())
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "Model ‹") {
+		if strings.Contains(line, "Brain model") && strings.Contains(line, "‹") {
 			return line
 		}
 	}
-	t.Fatalf("no Model row in view:\n%s", view)
+	t.Fatalf("no Brain model row in view:\n%s", view)
 	return ""
 }
 

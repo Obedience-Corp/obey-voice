@@ -120,11 +120,17 @@ func TestNewWorkerProviderUnsupported(t *testing.T) {
 	}
 }
 
-func TestWorkerConfigDefaultsToGrok(t *testing.T) {
-	cfg := &config.Config{}
-	got := config.WorkerBrainConfig(cfg)
-	if got.BrainProvider != "grok" {
-		t.Fatalf("worker provider = %q, want grok", got.BrainProvider)
+// An unselected worker follows the brain the operator is actually talking to.
+// It used to reach for grok on its own, which is how a background job ran on a
+// remote CLI nobody chose.
+func TestWorkerConfigFollowsTheBrainUntilChosen(t *testing.T) {
+	cfg := &config.Config{BrainProvider: "ollama"}
+	if got := config.WorkerBrainConfig(cfg).BrainProvider; got != "ollama" {
+		t.Fatalf("worker provider = %q, want the live brain (ollama)", got)
+	}
+	cfg.VoiceWorkerProvider = "grok"
+	if got := config.WorkerBrainConfig(cfg).BrainProvider; got != "grok" {
+		t.Fatalf("worker provider = %q, want the chosen grok", got)
 	}
 }
 

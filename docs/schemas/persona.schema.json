@@ -4,7 +4,12 @@
   "title": "festival-voice.persona.v1",
   "description": "One voice agent persona: a name, prompt, brain-model, and TTS overlay. A persona carries no STT, VAD, tools, skills, meeting, or speaker settings; those are always inherited from app config. Generated from internal/persona.Profile and kept in step by TestPersonaSchemaMatchesProfile.",
   "type": "object",
-  "required": ["schema", "id", "display_name", "prompts"],
+  "required": [
+    "schema",
+    "id",
+    "display_name",
+    "prompts"
+  ],
   "additionalProperties": false,
   "properties": {
     "schema": {
@@ -36,6 +41,25 @@
         "model": {
           "type": "string",
           "description": "Provider-specific model id, routed to ollama_model, grok_model, or cursor_model. Claude has no app-level model key, so a persona-level Claude model is recorded but not routed."
+        },
+        "worker": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The model that runs spawned background jobs. Chosen alongside the brain: a persona that talks locally and works remotely is a deliberate choice. Empty fields inherit the app-level voice_worker_* keys.",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "description": "Worker backend (ollama, grok, claude). Empty keeps app-level voice_worker_provider."
+            },
+            "model": {
+              "type": "string",
+              "description": "Model pin routed to voice_worker_model. Empty uses that provider's usual default."
+            },
+            "ollama_host": {
+              "type": "string",
+              "description": "Ollama base URL for the worker, routed to voice_worker_ollama_host. Empty inherits ollama_host."
+            }
+          }
         }
       }
     },
@@ -54,14 +78,20 @@
         },
         "tier": {
           "type": "string",
-          "enum": ["", "0.6b", "1.7b"],
+          "enum": [
+            "",
+            "0.6b",
+            "1.7b"
+          ],
           "description": "Native Qwen3-TTS model tier: 0.6b for latency, 1.7b for quality. Only read when the effective provider is qwen3-tts; empty inherits qwen_tts_model_tier. Canonicalized on persist, so 1.7 is stored as 1.7b."
         }
       }
     },
     "prompts": {
       "type": "object",
-      "required": ["persona"],
+      "required": [
+        "persona"
+      ],
       "additionalProperties": false,
       "description": "Catalog refs for prompt documents. persona is the system identity; turn is an optional short per-reply voice instruction (empty = shared default). turn is not a conversation counter and is independent of tts.voice.",
       "properties": {

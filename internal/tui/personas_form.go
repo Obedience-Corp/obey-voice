@@ -23,6 +23,8 @@ const (
 	formRowName = iota
 	formRowBrainProvider
 	formRowBrainModel
+	formRowWorkerProvider
+	formRowWorkerModel
 	formRowTTSProvider
 	formRowVoice
 	formRowTier
@@ -39,12 +41,26 @@ func isStackRow(row int) bool {
 // stackDefaultLabel is provider index 0: inherit the app-level default.
 const stackDefaultLabel = "(default)"
 
+// stackLabelWidth is the column budget every stack row spends on its label.
+// The renderer pads to it and the Model row subtracts it when sizing its chip,
+// so widening a label cannot silently eat the closing chevron.
+const stackLabelWidth = 12
+
 // stackBrainProviders lists selectable brain providers for the form.
 func stackBrainProviders() []string {
 	out := []string{stackDefaultLabel}
 	for _, spec := range brain.Providers() {
 		out = append(out, spec.Name)
 	}
+	return out
+}
+
+// stackWorkerProviders lists the backends that can run this persona's async
+// jobs. It is the brain list narrowed to workers — cursor can talk but cannot
+// work, so offering it here would promise something Apply cannot deliver.
+func stackWorkerProviders() []string {
+	out := []string{stackDefaultLabel}
+	out = append(out, config.WorkerProviders...)
 	return out
 }
 
@@ -426,6 +442,14 @@ func (m *personasModel) cycleStackRow(delta int) {
 		m.clampSelectedModel()
 	case formRowBrainModel:
 		m.cycleStackModel(delta)
+	case formRowWorkerProvider:
+		list := stackWorkerProviders()
+		m.workerProviderIdx = (m.workerProviderIdx + delta + len(list)) % len(list)
+		// The worker's model catalog is its provider's: drop a pin the new
+		// backend does not offer.
+		m.clampSelectedWorkerModel()
+	case formRowWorkerModel:
+		m.cycleStackWorkerModel(delta)
 	case formRowTTSProvider:
 		list := stackTTSProviders()
 		m.ttsProviderIdx = (m.ttsProviderIdx + delta + len(list)) % len(list)
@@ -485,6 +509,7 @@ func (m *personasModel) formBrain() persona.Brain {
 	return persona.Brain{
 		Provider: providerAt(stackBrainProviders(), m.brainProviderIdx),
 		Model:    strings.TrimSpace(m.brainModelInput.Value()),
+		Worker:   m.formWorker(),
 	}
 }
 
@@ -502,6 +527,7 @@ func (m *personasModel) prefillStack(p *persona.Profile) {
 	// The Model row always opens on the picker; "(custom)" and anything typed
 	// under it are chosen per form, never inherited from the last one.
 	m.brainModels.clearCustom()
+	m.prefillWorker(p)
 	if p == nil {
 		m.brainProviderIdx = 0
 		m.ttsProviderIdx = 0
