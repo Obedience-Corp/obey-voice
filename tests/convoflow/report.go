@@ -21,7 +21,9 @@ type metricsFile struct {
 	JobStarted         int     `json:"job_started"`
 	JobFinished        int     `json:"job_finished"`
 	JobFailed          int     `json:"job_failed"`
+	JobAborted         int     `json:"job_aborted"`
 	LiveToolCalls      int     `json:"live_tool_calls"`
+	WorkerToolCalls    int     `json:"worker_tool_calls"`
 	LiveRouterHit      int     `json:"live_router_hit"`
 	LiveRouterMiss     int     `json:"live_router_miss"`
 	SpokenLeakLines    int     `json:"spoken_leak_lines"`
@@ -57,8 +59,8 @@ func writeReport(e *engine) error {
 	}
 	fmt.Fprintf(&b, "- turns: %d\n", len(e.scn.Turns))
 	fmt.Fprintf(&b, "- events: %d\n", len(e.rec.snapshot()))
-	fmt.Fprintf(&b, "- job_started: %d · job_finished: %d · job_failed: %d\n", m.JobStarted, m.JobFinished, m.JobFailed)
-	fmt.Fprintf(&b, "- live_tool_calls: %d · live_router_hit: %d · live_router_miss: %d\n", m.LiveToolCalls, m.LiveRouterHit, m.LiveRouterMiss)
+	fmt.Fprintf(&b, "- job_started: %d · job_finished: %d · job_failed: %d · job_aborted: %d\n", m.JobStarted, m.JobFinished, m.JobFailed, m.JobAborted)
+	fmt.Fprintf(&b, "- live_tool_calls: %d · worker_tool_calls: %d · live_router_hit: %d · live_router_miss: %d\n", m.LiveToolCalls, m.WorkerToolCalls, m.LiveRouterHit, m.LiveRouterMiss)
 	fmt.Fprintf(&b, "- spoken_leak_lines: %d\n", m.SpokenLeakLines)
 	if m.crackleKnown {
 		fmt.Fprintf(&b, "- crackle_failing_wavs: %d / %d scored\n", m.CrackleFailingWavs, m.PlaybackWavs)
@@ -122,7 +124,9 @@ func writeMetricsJSON(e *engine, m runMetrics) error {
 		JobStarted:      m.JobStarted,
 		JobFinished:     m.JobFinished,
 		JobFailed:       m.JobFailed,
+		JobAborted:      m.JobAborted,
 		LiveToolCalls:   m.LiveToolCalls,
+		WorkerToolCalls: m.WorkerToolCalls,
 		LiveRouterHit:   m.LiveRouterHit,
 		LiveRouterMiss:  m.LiveRouterMiss,
 		SpokenLeakLines: m.SpokenLeakLines,

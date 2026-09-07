@@ -104,7 +104,9 @@ type runMetrics struct {
 	JobStarted         int
 	JobFinished        int
 	JobFailed          int
+	JobAborted         int
 	LiveToolCalls      int
+	WorkerToolCalls    int
 	LiveRouterHit      int
 	LiveRouterMiss     int
 	SpokenLeakLines    int
@@ -113,9 +115,10 @@ type runMetrics struct {
 	crackleKnown       bool
 }
 
-// collectMetrics reads the whole run. A ToolCallStarted named "route" is the
-// live router deciding, not a live tool; every other name is a tool the
-// talking brain ran itself. live_router_miss is set when the run never
+// collectMetrics reads the whole run. A ToolCallStarted carrying a job id is
+// a spawned worker's tool and counts as worker_tool_calls; one named "route"
+// is the live router deciding, not a live tool; every other name is a tool
+// the talking brain ran itself. live_router_miss is set when the run never
 // routed or spawned at all — informational for the soft live-router
 // scenario, never a gate on its own.
 func collectMetrics(rec *recorder) runMetrics {
@@ -131,10 +134,15 @@ func collectMetrics(rec *recorder) runMetrics {
 			m.JobFinished++
 		case events.JobFailed:
 			m.JobFailed++
+		case events.JobAborted:
+			m.JobAborted++
 		case events.ToolCallStarted:
-			if e.Name == "route" {
+			switch {
+			case e.JobID != "":
+				m.WorkerToolCalls++
+			case e.Name == "route":
 				m.LiveRouterHit++
-			} else {
+			default:
 				m.LiveToolCalls++
 			}
 		}
@@ -202,8 +210,12 @@ func metricValue(m runMetrics, name string) (int, bool) {
 		return m.JobFinished, true
 	case "job_failed":
 		return m.JobFailed, true
+	case "job_aborted":
+		return m.JobAborted, true
 	case "live_tool_calls":
 		return m.LiveToolCalls, true
+	case "worker_tool_calls":
+		return m.WorkerToolCalls, true
 	case "live_router_hit":
 		return m.LiveRouterHit, true
 	case "live_router_miss":

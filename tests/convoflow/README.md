@@ -16,6 +16,7 @@ just convoflow run search-web-intent -live-model=qwen3.8:27b
 just convoflow run job-status -live-model=qwen3:8b -worker-model=qwen3:30b
 CONVOFLOW_LIVE_MODEL=qwen3.8:27b just convoflow gate  # three Layer-1 scenarios (v1 success)
 just convoflow live-router                            # soft live-brain spawn
+just convoflow run work-stream-gate                   # worker tool calls carry job ids; queued → started → terminal
 just convoflow run search-web-intent -worker-provider=grok   # comparison, not the gate
 ```
 
@@ -46,6 +47,13 @@ models, per-turn route and spoken lines, audio scores), and `work/`.
 Playback is captured by a recording `audio.Engine` (no speakers unless
 `-speakers`). Each turn writes `audio/<nn>-<id>/playback.wav` and
 `analysis.json`. `just convoflow analyze RUN_DIR` rescores those WAVs.
+
+Job lifecycle names in expects: `job_queued` (the table accepted the job),
+`job_started` (its run began), `job_terminal` (finished, failed, or aborted);
+`wait: job_terminal` ends on any of the three. A `tool_call_started` that
+carries a `job_id` is the worker's and counts in `worker_tool_calls`;
+`live_tool_calls` counts only the talking brain's own tools, and `route` is
+`live_router_hit`.
 
 Two no-model paths exist, neither is the gate:
 
