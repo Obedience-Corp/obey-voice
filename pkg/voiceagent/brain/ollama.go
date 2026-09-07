@@ -64,9 +64,11 @@ type OllamaBrain struct {
 	skills            []skills.Skill
 	skillRouter       *semanticSkillRouter
 	skillRouterWarned bool
-	budgetWarned      bool
-	archive           continuity.Store
-	contextHighWater  int
+	// skillCallSeq numbers synthesized activate_skill call ids for this brain.
+	skillCallSeq     int
+	budgetWarned     bool
+	archive          continuity.Store
+	contextHighWater int
 	// speakerNames resolves stable speaker ids when building chat messages.
 	speakerNames SpeakerNames
 }
@@ -393,11 +395,14 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if len(toolCalls) > 0 {
 				hadTools = true
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
-					if sess.onStart != nil {
-						sess.onStart("route", kind)
-					}
-					if sess.onEnd != nil {
-						sess.onEnd("route", kind)
+					if sess.onStart != nil || sess.onEnd != nil {
+						decision := sess.describe("route", kind, "")
+						if sess.onStart != nil {
+							sess.onStart(decision)
+						}
+						if sess.onEnd != nil {
+							sess.onEnd(ToolResult{ToolCall: decision, Preview: kind})
+						}
 					}
 					// Drop this turn from the talking window. Work belongs on
 					// the worker session, not the live KV cache.
@@ -1282,7 +1287,7 @@ func (o *OllamaBrain) promptBytes(skillCtx string) int {
 	return n
 }
 
-func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart, onEnd func(name, detail string)) string {
+func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart func(ToolCall), onEnd func(ToolResult)) string {
 	matched, err := o.skillRouter.Match(ctx, input)
 	if err != nil {
 		if !o.skillRouterWarned {
@@ -1296,11 +1301,21 @@ func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onSta
 		for i, skill := range matched {
 			names[i] = skill.Name
 		}
-		if onStart != nil {
-			onStart("activate_skill", strings.Join(names, ", "))
-		}
-		if onEnd != nil {
-			onEnd("activate_skill", fmt.Sprintf("injected %d skill(s): %s", len(names), strings.Join(names, ", ")))
+		if onStart != nil || onEnd != nil {
+			o.skillCallSeq++
+			call := ToolCall{
+				ID:      fmt.Sprintf("activate_skill#%d", o.skillCallSeq),
+				Name:    "activate_skill",
+				Kind:    KindSkill,
+				Summary: strings.Join(names, ", "),
+			}
+			if onStart != nil {
+				onStart(call)
+			}
+			if onEnd != nil {
+				preview := fmt.Sprintf("injected %d skill(s): %s", len(names), strings.Join(names, ", "))
+				onEnd(ToolResult{ToolCall: call, Preview: preview})
+			}
 		}
 	}
 	return ActivatedSkillContext(matched)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -68,6 +69,8 @@ func (a *Agency) Wire() {
 	a.pipeline.Agency = a
 	a.pipeline.JobActive = a.jobs.Active
 	a.jobs.OnDone(a.onJobDone)
+	a.jobs.OnQueued(a.onJobQueued)
+	a.jobs.OnStart(a.onJobStarted)
 	if a.narrator != nil {
 		a.narrator.Wire()
 	}
@@ -116,7 +119,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		task = "background task"
 	}
 	a.speakAck(ctx, turn, metrics)
-	id, err := a.jobs.Start(ctx, job.Spec{
+	_, err := a.jobs.Start(ctx, job.Spec{
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
@@ -125,8 +128,19 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	})
 	if err != nil {
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
-		return
 	}
+}
+
+// onJobQueued runs inside Table.Start, so JobQueued precedes everything the
+// job publishes. onJobStarted runs on the job's goroutine right before its run
+// function, so JobStarted follows the previous job's terminal event and
+// precedes this job's tool and terminal events. A spawn behind a running job
+// is therefore queued, not started, until that job is out of the way.
+func (a *Agency) onJobQueued(id, task string) {
+	a.pipeline.emit(events.JobQueued{ID: id, Task: task})
+}
+
+func (a *Agency) onJobStarted(id, task string) {
 	a.pipeline.emit(events.JobStarted{ID: id, Task: task})
 }
 
@@ -156,7 +170,9 @@ func (a *Agency) workerRun(brief string) func(context.Context) (string, error) {
 		if a.cfg != nil {
 			tools = a.cfg.VoiceToolsEnabled
 		}
-		return worker.ThinkFull(ctx, brief, brain.WorkerStreamOptions(tools))
+		opts := brain.WorkerStreamOptions(tools)
+		opts.OnToolStart, opts.OnToolEnd = a.pipeline.jobToolHooks(job.IDFromContext(ctx))
+		return worker.ThinkFull(ctx, brief, opts)
 	}
 }
 
@@ -211,25 +227,30 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		return
 	}
 	task := ""
+	var elapsed time.Duration
 	for _, info := range a.jobs.Status() {
 		if info.ID == id {
 			task = info.Task
+			elapsed = info.Elapsed()
 			break
 		}
 	}
+	// Enqueue before emitting: the terminal event is the signal that the job's
+	// bookkeeping is complete, and a consumer may read pending on seeing it.
 	switch state {
 	case job.StateDone:
-		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result})
 		a.enqueueSummary(id, a.cleanSummary(result))
+		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed})
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
 			msg = truncateJobTask(err.Error())
 		}
-		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg})
 		a.enqueueSummary(id, msg)
+		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 	case job.StateAborted:
-		// abort is silent unless the user asked for status.
+		// Visible on the bus; still silent in speech unless the user asks.
+		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed})
 	}
 	a.tryFlushPending()
 }

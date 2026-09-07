@@ -386,7 +386,7 @@ func (h *toolThenHangBrain) ThinkStream(ctx context.Context, input string, opts 
 		case <-time.After(50 * time.Millisecond):
 		}
 		if opts.OnToolStart != nil {
-			opts.OnToolStart("run_command", "working")
+			opts.OnToolStart(brain.ToolCall{ID: "run_command#1", Name: "run_command", Kind: brain.KindExecute, Summary: "working"})
 		}
 		<-ctx.Done()
 		h.waited = time.Since(h.started)

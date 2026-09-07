@@ -1,6 +1,9 @@
 package brain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
@@ -19,9 +22,9 @@ type StreamOptions struct {
 	// mid-save is worse than speaking with a slightly stale personality.
 	OnPromptWarn func(message string)
 	// OnToolStart is invoked just before a tool runs (optional; for UI).
-	OnToolStart func(name, summary string)
+	OnToolStart func(ToolCall)
 	// OnToolEnd is invoked after a tool returns (optional; for UI).
-	OnToolEnd func(name, preview string)
+	OnToolEnd func(ToolResult)
 	// OnUsage reports one model request's token accounting (optional; for
 	// UI). prefill is the prompt tokens the server actually processed — with
 	// a warm KV prefix cache it should track the size of the new turn, not
@@ -40,6 +43,25 @@ type StreamOptions struct {
 	// ToolsEnabled is true. Empty keeps the full worker list; the microphone
 	// path passes route_only explicitly.
 	RouterToolsPolicy RouterToolsPolicy
+}
+
+// ToolCall describes one tool invocation for the UI hooks.
+type ToolCall struct {
+	// ID is the model's own call id when it sent one, else "<name>#<n>"
+	// synthesized per session so consumers can pair start with end.
+	ID      string
+	Name    string
+	Kind    ToolKind
+	Summary string
+}
+
+// ToolResult describes a finished tool invocation for the UI hooks.
+type ToolResult struct {
+	ToolCall
+	Preview string
+	// Err is the tool's leading "error: …" line, empty on success.
+	Err     string
+	Elapsed time.Duration
 }
 
 // IntegrityResult reports whether a streamed completion may have been

@@ -306,10 +306,18 @@ func (w *seqWorker) LoadHistory([]brain.Turn) {}
 
 func TestJobEventsEmitOnStartAndDone(t *testing.T) {
 	bus := events.NewBus()
+	var mu sync.Mutex
 	var kinds []string
 	bus.SubscribeAll(func(e events.Event) {
+		mu.Lock()
 		kinds = append(kinds, events.EventType(e))
+		mu.Unlock()
 	})
+	snapshot := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), kinds...)
+	}
 
 	worker := &fakeBrain{chunks: []string{"all set"}}
 	jobs := job.NewTable(context.Background())
@@ -329,6 +337,7 @@ func TestJobEventsEmitOnStartAndDone(t *testing.T) {
 	deadline := time.After(3 * time.Second)
 	for {
 		hasStart, hasFinish := false, false
+		kinds := snapshot()
 		for _, k := range kinds {
 			if k == "job_started" {
 				hasStart = true

@@ -265,6 +265,16 @@ func TestLongStoryRouteSkipsLiveThinkStream(t *testing.T) {
 	if brainProvider.thinkCalls != 0 {
 		t.Fatalf("ThinkStream called %d times, want 0 for long story phrase", brainProvider.thinkCalls)
 	}
+	// The story job writes into WorkDir; let it end before TempDir cleanup
+	// races the write. The narrator consumes its done callback, so the
+	// table is the only place to watch.
+	deadline := time.Now().Add(3 * time.Second)
+	for jobs.Active() {
+		if time.Now().After(deadline) {
+			t.Fatal("story job did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 type storyFileWorker struct {

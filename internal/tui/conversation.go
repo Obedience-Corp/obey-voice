@@ -58,6 +58,11 @@ type conversationModel struct {
 	status    string
 	statusErr bool
 	jobStatus string
+	// jobs is what the chip knows about each queued or running job, keyed by
+	// id so a spawn queued behind a running worker cannot relabel it;
+	// jobOrder keeps them in queue order.
+	jobs     map[string]*jobView
+	jobOrder []string
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
@@ -1100,6 +1105,10 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.appendActivity("voice", fmt.Sprintf("gate stripped %d tool-syntax line(s) from speech", e.Lines), 0)
 
 	case events.ToolCallStarted:
+		if e.JobID != "" {
+			m.jobToolStarted(e)
+			break
+		}
 		msg := "tool " + e.Name
 		if e.Summary != "" {
 			msg += " (" + e.Summary + ")"
@@ -1109,6 +1118,10 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.appendTranscript(dimStyle.Render("  🔧 " + msg))
 
 	case events.ToolCallFinished:
+		if e.JobID != "" {
+			m.jobToolFinished(e)
+			break
+		}
 		msg := "tool " + e.Name + " done"
 		if e.Err != "" {
 			msg = "tool " + e.Name + " failed: " + e.Err
@@ -1125,21 +1138,24 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 		m.appendActivity("tool", msg, 0)
 
+	case events.JobQueued:
+		m.jobQueued(e)
+
 	case events.JobStarted:
-		m.jobStatus = "Working: " + truncateJobLine(e.Task)
-		m.appendActivity("job", "started "+e.Task, 0)
+		m.jobStarted(e)
 
 	case events.JobFinished:
-		m.jobStatus = ""
-		m.appendActivity("job", "finished", 0)
+		m.jobEnded(e.ID, "finished", e.Elapsed)
 
 	case events.JobFailed:
-		m.jobStatus = ""
 		detail := e.Err
 		if detail == "" {
 			detail = "failed"
 		}
-		m.appendActivity("job", "failed: "+detail, 0)
+		m.jobEnded(e.ID, "failed: "+detail, e.Elapsed)
+
+	case events.JobAborted:
+		m.jobEnded(e.ID, "killed after "+e.Elapsed.Round(time.Second).String(), 0)
 	}
 }
 
