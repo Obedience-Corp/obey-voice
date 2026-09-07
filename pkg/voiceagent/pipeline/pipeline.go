@@ -2300,20 +2300,51 @@ func (p *Pipeline) bindBrainInfo() {
 }
 
 // toolStartHook emits ToolCallStarted for UI (stdout + TUI).
-func (p *Pipeline) toolStartHook() func(name, summary string) {
-	return func(name, summary string) {
+func (p *Pipeline) toolStartHook() func(brain.ToolCall) {
+	return func(call brain.ToolCall) {
 		p.bumpBrainDeadline()
-		p.emit(events.ToolCallStarted{Name: name, Summary: summary})
+		p.emit(toolStartedEvent("", call))
 	}
 }
 
-func (p *Pipeline) toolStartHookTracked(toolsFired *bool) func(name, summary string) {
+func (p *Pipeline) toolStartHookTracked(toolsFired *bool) func(brain.ToolCall) {
 	base := p.toolStartHook()
-	return func(name, summary string) {
+	return func(call brain.ToolCall) {
 		if toolsFired != nil {
 			*toolsFired = true
 		}
-		base(name, summary)
+		base(call)
+	}
+}
+
+// jobToolHooks attributes a background worker's tool calls to jobID. Unlike the
+// live hooks it never bumps the brain deadline: a worker tool must not extend
+// the watchdog on the conversation the user is having.
+func (p *Pipeline) jobToolHooks(jobID string) (func(brain.ToolCall), func(brain.ToolResult)) {
+	start := func(call brain.ToolCall) { p.emit(toolStartedEvent(jobID, call)) }
+	end := func(res brain.ToolResult) { p.emit(toolFinishedEvent(jobID, res)) }
+	return start, end
+}
+
+func toolStartedEvent(jobID string, call brain.ToolCall) events.ToolCallStarted {
+	return events.ToolCallStarted{
+		ID:      call.ID,
+		JobID:   jobID,
+		Name:    call.Name,
+		Kind:    string(call.Kind),
+		Summary: call.Summary,
+	}
+}
+
+func toolFinishedEvent(jobID string, res brain.ToolResult) events.ToolCallFinished {
+	return events.ToolCallFinished{
+		ID:      res.ID,
+		JobID:   jobID,
+		Name:    res.Name,
+		Kind:    string(res.Kind),
+		Preview: res.Preview,
+		Err:     res.Err,
+		Elapsed: res.Elapsed,
 	}
 }
 
@@ -2357,10 +2388,10 @@ func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, 
 }
 
 // toolEndHook emits ToolCallFinished for UI.
-func (p *Pipeline) toolEndHook() func(name, preview string) {
-	return func(name, preview string) {
+func (p *Pipeline) toolEndHook() func(brain.ToolResult) {
+	return func(res brain.ToolResult) {
 		p.bumpBrainDeadline()
-		p.emit(events.ToolCallFinished{Name: name, Preview: preview})
+		p.emit(toolFinishedEvent("", res))
 	}
 }
 

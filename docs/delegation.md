@@ -96,6 +96,28 @@ three admission attempts are bounded at 45 seconds each, followed by a bounded
 cancel request. Unconfirmed admission retains its ticket and blocks further
 work until the operator checks Obey and restarts the voice session.
 
+## What the worker is doing
+
+A spawned worker's tool calls reach the bus like the live brain's, one
+`tool_call_started` / `tool_call_finished` pair each. Both carry the call `id`,
+the tool `name`, a coarse `kind` (`read`, `list_dir`, `write`, `execute`,
+`web_search`, `web_fetch`, `skill`, `task`, `route`, `other`), and the finish
+carries the result preview, the leading `error: …` line when the tool failed,
+and how long it took.
+
+A `job_id` on those events attributes the call to a background job; empty means
+the live conversation. The distinction is load-bearing: job-attributed tools
+update the `Working: {task} · {tool}` chip and the activity feed only, and never
+touch the status line, the orb, or the transcript, so a job running behind a
+turn cannot hijack the conversation. `job_started`, `job_finished`, `job_failed`
+and `job_aborted` bookend the work; the last three carry elapsed time. Abort
+stays silent in speech — the bus event is how it becomes visible.
+
+Without the TUI, worker tool lines are prefixed `[job-1]` and each job
+transition prints one dim line. The JSONL transcript records `id`, `kind`,
+`job_id` and `elapsed_s` on `tool_call` / `tool_result`, plus one `job` record
+per transition carrying `state` and `elapsed_s`.
+
 ## Remaining WI-ebe14b scope
 
 This implements managed worker admission, asynchronous acknowledgment, compact

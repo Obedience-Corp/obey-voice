@@ -303,3 +303,95 @@ func TestFitTranscriptQueueDropsNonDurableFirst(t *testing.T) {
 		t.Fatalf("expected user+error kept, got %+v", got)
 	}
 }
+
+func readRawRecords(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var out []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("bad line %q: %v", line, err)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	w.Attach(bus)
+
+	bus.Emit(events.JobStarted{ID: "job-1", Task: "read the readme"})
+	bus.Emit(events.ToolCallStarted{ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "README.md"})
+	bus.Emit(events.ToolCallFinished{
+		ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read",
+		Preview: "# obey", Elapsed: 1500 * time.Millisecond,
+	})
+	bus.Emit(events.JobFailed{ID: "job-1", Task: "read the readme", Err: "boom", Elapsed: 2 * time.Second})
+	bus.Emit(events.JobFinished{ID: "job-2", Task: "count files", Elapsed: 3 * time.Second})
+	bus.Emit(events.JobAborted{ID: "job-3", Task: "grep everything", Elapsed: 4 * time.Second})
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	recs := readRecords(t, path)
+	if len(recs) != 7 {
+		t.Fatalf("got %d records, want 7: %+v", len(recs), recs)
+	}
+	if r := recs[2]; r.Type != "tool_call" || r.ID != "call_1" || r.Kind != "read" || r.JobID != "job-1" {
+		t.Fatalf("tool_call = %+v, want the id, kind and job attribution", r)
+	}
+	if r := recs[3]; r.Type != "tool_result" || r.JobID != "job-1" || r.ElapsedS != 1.5 {
+		t.Fatalf("tool_result = %+v, want job attribution and elapsed", r)
+	}
+
+	jobs := map[string]record{}
+	for _, r := range recs {
+		if r.Type == "job" {
+			jobs[r.Name] = r
+		}
+	}
+	for _, tt := range []struct {
+		id      string
+		state   string
+		elapsed float64
+	}{
+		{"job-1", "failed", 2},
+		{"job-2", "finished", 3},
+		{"job-3", "aborted", 4},
+	} {
+		r, ok := jobs[tt.id]
+		if !ok {
+			t.Fatalf("no job record for %s: %+v", tt.id, recs)
+		}
+		if r.State != tt.state || r.ElapsedS != tt.elapsed {
+			t.Errorf("job %s = state %q elapsed %v, want %q / %v", tt.id, r.State, r.ElapsedS, tt.state, tt.elapsed)
+		}
+	}
+	if got := jobs["job-1"].Message; got != "boom" {
+		t.Errorf("failed job message = %q, want the error", got)
+	}
+	if got := jobs["job-1"].Text; got != "read the readme" {
+		t.Errorf("job text = %q, want the task", got)
+	}
+
+	raw := readRawRecords(t, path)
+	for _, key := range []string{"id", "kind", "job_id"} {
+		if _, ok := raw[2][key]; !ok {
+			t.Errorf("tool_call line missing %q key: %v", key, raw[2])
+		}
+	}
+	if _, ok := raw[3]["elapsed_s"]; !ok {
+		t.Errorf("tool_result line missing elapsed_s: %v", raw[3])
+	}
+}

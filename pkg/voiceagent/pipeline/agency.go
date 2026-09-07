@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -156,7 +157,9 @@ func (a *Agency) workerRun(brief string) func(context.Context) (string, error) {
 		if a.cfg != nil {
 			tools = a.cfg.VoiceToolsEnabled
 		}
-		return worker.ThinkFull(ctx, brief, brain.WorkerStreamOptions(tools))
+		opts := brain.WorkerStreamOptions(tools)
+		opts.OnToolStart, opts.OnToolEnd = a.pipeline.jobToolHooks(job.IDFromContext(ctx))
+		return worker.ThinkFull(ctx, brief, opts)
 	}
 }
 
@@ -211,25 +214,28 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		return
 	}
 	task := ""
+	var elapsed time.Duration
 	for _, info := range a.jobs.Status() {
 		if info.ID == id {
 			task = info.Task
+			elapsed = info.Elapsed()
 			break
 		}
 	}
 	switch state {
 	case job.StateDone:
-		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result})
+		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed})
 		a.enqueueSummary(id, a.cleanSummary(result))
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
 			msg = truncateJobTask(err.Error())
 		}
-		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg})
+		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 		a.enqueueSummary(id, msg)
 	case job.StateAborted:
-		// abort is silent unless the user asked for status.
+		// Visible on the bus; still silent in speech unless the user asks.
+		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed})
 	}
 	a.tryFlushPending()
 }

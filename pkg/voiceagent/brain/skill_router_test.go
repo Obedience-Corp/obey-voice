@@ -96,16 +96,23 @@ func TestRouteSkillContextReportsAutomaticActivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := &OllamaBrain{skillRouter: router}
-	var started, ended string
+	var start ToolCall
+	var end ToolResult
 	got := o.routeSkillContext(context.Background(), "navigate",
-		func(name, detail string) { started = name + ":" + detail },
-		func(name, detail string) { ended = name + ":" + detail },
+		func(c ToolCall) { start = c },
+		func(r ToolResult) { end = r },
 	)
 	if !strings.Contains(got, "Use camp go.") {
 		t.Fatalf("context = %q", got)
 	}
-	if started != "activate_skill:campaign-navigation" || !strings.Contains(ended, "injected 1 skill(s): campaign-navigation") {
-		t.Fatalf("hooks = %q / %q", started, ended)
+	if start.Name != "activate_skill" || start.Summary != "campaign-navigation" || start.Kind != KindSkill {
+		t.Fatalf("start hook = %+v", start)
+	}
+	if start.ID == "" || end.ID != start.ID {
+		t.Fatalf("ids = %q / %q, want a shared non-empty id", start.ID, end.ID)
+	}
+	if !strings.Contains(end.Preview, "injected 1 skill(s): campaign-navigation") {
+		t.Fatalf("end hook = %+v", end)
 	}
 }
 

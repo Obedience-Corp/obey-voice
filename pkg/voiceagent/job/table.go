@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // State is a job lifecycle phase.
@@ -16,6 +17,21 @@ const (
 	StateFailed  State = "failed"
 	StateAborted State = "aborted"
 )
+
+// idKey types the job id carried on a job's context.
+type idKey struct{}
+
+// WithID returns ctx carrying the job id, so work started by the table can
+// attribute what it does back to the job.
+func WithID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, idKey{}, id)
+}
+
+// IDFromContext returns the job id ctx carries, or "" outside a job.
+func IDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(idKey{}).(string)
+	return id
+}
 
 // Spec describes work the table should run asynchronously.
 type Spec struct {
@@ -30,6 +46,16 @@ type Info struct {
 	State  State
 	Result string
 	Err    string
+	// Started is when the run function began; zero while queued.
+	Started time.Time
+}
+
+// Elapsed reports how long the job has been running, or zero if it never started.
+func (i Info) Elapsed() time.Duration {
+	if i.Started.IsZero() {
+		return 0
+	}
+	return time.Since(i.Started)
 }
 
 // DoneCallback fires once per job when it reaches a terminal state.
@@ -84,7 +110,7 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	}
 	t.nextID++
 	id := fmt.Sprintf("job-%d", t.nextID)
-	jobCtx, cancel := context.WithCancel(context.WithoutCancel(t.lifetime))
+	jobCtx, cancel := context.WithCancel(WithID(context.WithoutCancel(t.lifetime), id))
 	e := &entry{
 		info:   Info{ID: id, Task: spec.Task, State: StateQueued},
 		spec:   spec,
@@ -197,6 +223,9 @@ func (t *Table) run(jobCtx context.Context, id string) {
 
 	t.mu.Lock()
 	e := t.jobs[id]
+	if e != nil && e.spec.Run != nil {
+		e.info.Started = time.Now()
+	}
 	t.mu.Unlock()
 	if e == nil || e.spec.Run == nil {
 		err = fmt.Errorf("job %s: no run function", id)

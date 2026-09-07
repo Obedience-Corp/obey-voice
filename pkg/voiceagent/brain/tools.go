@@ -38,8 +38,28 @@ type toolSession struct {
 	// commandTimeout bounds each run_command call in this session.
 	commandTimeout time.Duration
 	// Optional UI hooks (from StreamOptions).
-	onStart func(name, summary string)
-	onEnd   func(name, preview string)
+	onStart func(ToolCall)
+	onEnd   func(ToolResult)
+	// callSeq synthesizes ids per tool name for models that send none.
+	callSeq map[string]int
+}
+
+// nextCallID returns the next synthesized id for name ("read_file#2").
+func (s *toolSession) nextCallID(name string) string {
+	if s.callSeq == nil {
+		s.callSeq = make(map[string]int)
+	}
+	s.callSeq[name]++
+	return fmt.Sprintf("%s#%d", name, s.callSeq[name])
+}
+
+// describe builds the hook payload for one call, synthesizing an id when the
+// model did not send one.
+func (s *toolSession) describe(name, summary, id string) ToolCall {
+	if strings.TrimSpace(id) == "" {
+		id = s.nextCallID(name)
+	}
+	return ToolCall{ID: id, Name: name, Kind: KindFor(name), Summary: summary}
 }
 
 // tools returns every enabled tool definition for the next model request.
@@ -60,13 +80,19 @@ func (s *toolSession) tools() api.Tools {
 // stuck on "🔧 tool..." without a finish event.
 func (s *toolSession) execute(ctx context.Context, workDir string, call api.ToolCall) (result string) {
 	name := call.Function.Name
-	summary := toolArgSummary(call)
+	started := s.describe(name, toolArgSummary(call), call.ID)
 	if s.onStart != nil {
-		s.onStart(name, summary)
+		s.onStart(started)
 	}
+	begun := time.Now()
 	defer func() {
 		if s.onEnd != nil {
-			s.onEnd(name, toolResultPreview(result))
+			s.onEnd(ToolResult{
+				ToolCall: started,
+				Preview:  toolResultPreview(result),
+				Err:      toolResultError(result),
+				Elapsed:  time.Since(begun),
+			})
 		}
 	}()
 	if name == "agent_delegate" || name == "agent_cancel" || name == "agent_delegations" {
@@ -114,6 +140,20 @@ func toolArgSummary(call api.ToolCall) string {
 		}
 	}
 	return ""
+}
+
+// toolResultError returns the leading "error: …" line when a tool result is an
+// error, and "" otherwise. Tool handlers report failure in the result string,
+// so this is the only place the distinction exists.
+func toolResultError(result string) string {
+	result = strings.TrimSpace(result)
+	if !strings.HasPrefix(result, "error:") {
+		return ""
+	}
+	if i := strings.IndexByte(result, '\n'); i >= 0 {
+		result = result[:i]
+	}
+	return strings.TrimSpace(result)
 }
 
 func toolResultPreview(result string) string {

@@ -569,13 +569,13 @@ func measure(ctx context.Context, b *brain.OllamaBrain, p benchPrompt, tools boo
 			prefillAll += pf
 			gen += g
 		},
-		OnToolStart: func(name, detail string) {
-			if name == "activate_skill" {
+		OnToolStart: func(call brain.ToolCall) {
+			if call.Name == "activate_skill" {
 				skills++
 				return
 			}
 			toolCalls++
-			toolNames = append(toolNames, name+"("+truncate(detail, 120)+")")
+			toolNames = append(toolNames, call.Name+"("+truncate(call.Summary, 120)+")")
 		},
 	})
 	s.RouteMS = msSince(start)

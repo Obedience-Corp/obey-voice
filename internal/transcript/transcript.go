@@ -44,6 +44,9 @@ type record struct {
 
 	Text        string `json:"text,omitempty"`
 	Name        string `json:"name,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	JobID       string `json:"job_id,omitempty"`
 	Summary     string `json:"summary,omitempty"`
 	Preview     string `json:"preview,omitempty"`
 	Stage       string `json:"stage,omitempty"`
@@ -66,6 +69,9 @@ type record struct {
 	// playback. Per-segment speaking.complete records still use PlayElapsed.
 	SpokeS   float64 `json:"spoke_s,omitempty"`
 	BargeInS float64 `json:"barge_in_s,omitempty"`
+
+	// ElapsedS is one tool call's or one job's wall time.
+	ElapsedS float64 `json:"elapsed_s,omitempty"`
 
 	Prefill   int `json:"prefill,omitempty"`
 	Gen       int `json:"gen,omitempty"`
@@ -169,10 +175,25 @@ func (w *Writer) Attach(bus *events.Bus) {
 		w.enqueue(record{Type: "agent", Text: e.Response, Degraded: e.Degraded, Interrupted: e.Interrupted})
 	})
 	events.Subscribe(bus, func(e events.ToolCallStarted) {
-		w.enqueue(record{Type: "tool_call", Name: e.Name, Summary: e.Summary})
+		w.enqueue(record{Type: "tool_call", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID, Summary: e.Summary})
 	})
 	events.Subscribe(bus, func(e events.ToolCallFinished) {
-		w.enqueue(record{Type: "tool_result", Name: e.Name, Preview: e.Preview, Message: e.Err, IsError: e.Err != ""})
+		w.enqueue(record{
+			Type: "tool_result", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID,
+			Preview: e.Preview, Message: e.Err, IsError: e.Err != "", ElapsedS: e.Elapsed.Seconds(),
+		})
+	})
+	events.Subscribe(bus, func(e events.JobStarted) {
+		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "started"})
+	})
+	events.Subscribe(bus, func(e events.JobFinished) {
+		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "finished", ElapsedS: e.Elapsed.Seconds()})
+	})
+	events.Subscribe(bus, func(e events.JobFailed) {
+		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "failed", Message: e.Err, IsError: true, ElapsedS: e.Elapsed.Seconds()})
+	})
+	events.Subscribe(bus, func(e events.JobAborted) {
+		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "aborted", ElapsedS: e.Elapsed.Seconds()})
 	})
 	events.Subscribe(bus, func(e events.Error) {
 		w.enqueue(record{Type: "error", Stage: e.Stage, Message: e.Message})

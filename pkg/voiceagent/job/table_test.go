@@ -212,3 +212,63 @@ func TestFailedJobState(t *testing.T) {
 		t.Fatal("job did not finish")
 	}
 }
+
+func TestIDFromContextMissingIsEmpty(t *testing.T) {
+	t.Parallel()
+	if got := IDFromContext(context.Background()); got != "" {
+		t.Fatalf("IDFromContext(background) = %q, want empty", got)
+	}
+}
+
+func TestRunContextCarriesJobIDAndStart(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+
+	seen := make(chan string, 1)
+	release := make(chan struct{})
+	done := make(chan struct{})
+	table.OnDone(func(string, State, string, error) { close(done) })
+
+	id, err := table.Start(context.Background(), Spec{
+		Task: "look around",
+		Run: func(ctx context.Context) (string, error) {
+			seen <- IDFromContext(ctx)
+			<-release
+			return "ok", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	select {
+	case got := <-seen:
+		if got != id {
+			t.Fatalf("IDFromContext inside Run = %q, want %q", got, id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("job never ran")
+	}
+
+	st := table.Status()
+	if len(st) != 1 || st[0].Started.IsZero() {
+		t.Fatalf("running job Info = %+v, want a Started stamp", st)
+	}
+	if st[0].Elapsed() <= 0 {
+		t.Fatalf("Elapsed() = %v on a running job, want positive", st[0].Elapsed())
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("job did not finish")
+	}
+}
+
+func TestElapsedIsZeroBeforeStart(t *testing.T) {
+	t.Parallel()
+	if got := (Info{ID: "job-1"}).Elapsed(); got != 0 {
+		t.Fatalf("Elapsed() = %v on a never-started job, want 0", got)
+	}
+}

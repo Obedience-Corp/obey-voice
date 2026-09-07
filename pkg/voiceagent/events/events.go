@@ -426,8 +426,16 @@ func (e Info) eventType() string { return "info" }
 // ToolCallStarted signals the brain is invoking a tool (Ollama function call).
 // Name is the tool id (list_files, read_file, write_file, run_command, read_skill).
 // Summary is a short, non-sensitive arg preview for status UI.
+//
+// ID pairs a start with its finish. JobID attributes the call to a background
+// worker job; empty means the live brain, whose tools drive the orb and status
+// line. Kind is the brain's ToolKind carried as a plain string — this package
+// is the shared vocabulary and must not depend on brain.
 type ToolCallStarted struct {
+	ID      string
+	JobID   string
 	Name    string
+	Kind    string
 	Summary string
 }
 
@@ -436,9 +444,13 @@ func (e ToolCallStarted) eventType() string { return "tool_call_started" }
 // ToolCallFinished signals a tool finished. Preview is a short result snippet
 // for status/transcript (truncated; never secrets by design of tool handlers).
 type ToolCallFinished struct {
+	ID      string
+	JobID   string
 	Name    string
+	Kind    string
 	Preview string
 	Err     string // empty on success
+	Elapsed time.Duration
 }
 
 func (e ToolCallFinished) eventType() string { return "tool_call_finished" }
@@ -456,18 +468,30 @@ type JobFinished struct {
 	ID      string
 	Task    string
 	Summary string
+	Elapsed time.Duration
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }
 
 // JobFailed signals a worker job ended with an error.
 type JobFailed struct {
-	ID   string
-	Task string
-	Err  string
+	ID      string
+	Task    string
+	Err     string
+	Elapsed time.Duration
 }
 
 func (e JobFailed) eventType() string { return "job_failed" }
+
+// JobAborted signals a worker job was cancelled before it finished. Speech
+// stays silent on abort; this is how the abort becomes visible instead.
+type JobAborted struct {
+	ID      string
+	Task    string
+	Elapsed time.Duration
+}
+
+func (e JobAborted) eventType() string { return "job_aborted" }
 
 // VoiceGateStripped reports that the pipeline's voice gate removed tool-shaped
 // lines from a speech segment before TTS (WI-dc9e33 B4). The stripped text

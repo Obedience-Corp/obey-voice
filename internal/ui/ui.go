@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
@@ -62,6 +63,10 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onInfo)
 	events.Subscribe(bus, u.onToolCallStarted)
 	events.Subscribe(bus, u.onToolCallFinished)
+	events.Subscribe(bus, u.onJobStarted)
+	events.Subscribe(bus, u.onJobFinished)
+	events.Subscribe(bus, u.onJobFailed)
+	events.Subscribe(bus, u.onJobAborted)
 	events.Subscribe(bus, u.onVoiceGateStripped)
 
 	return u
@@ -253,7 +258,35 @@ func (u *UI) onToolCallStarted(e events.ToolCallStarted) {
 	if e.Summary != "" {
 		msg += " (" + e.Summary + ")"
 	}
-	fmt.Fprintf(u.out, "  %s\n", dimStyle.Render(msg))
+	u.dimLine(jobPrefix(e.JobID) + msg)
+}
+
+// jobPrefix marks a line as a background worker's rather than the live brain's.
+func jobPrefix(jobID string) string {
+	if jobID == "" {
+		return ""
+	}
+	return "[" + jobID + "] "
+}
+
+func (u *UI) dimLine(text string) {
+	fmt.Fprintf(u.out, "  %s\n", dimStyle.Render(text))
+}
+
+func (u *UI) onJobStarted(e events.JobStarted) {
+	u.dimLine(fmt.Sprintf("⚙ %s started: %s", e.ID, e.Task))
+}
+
+func (u *UI) onJobFinished(e events.JobFinished) {
+	u.dimLine(fmt.Sprintf("✓ %s finished (%s)", e.ID, e.Elapsed.Round(time.Second)))
+}
+
+func (u *UI) onJobFailed(e events.JobFailed) {
+	u.dimLine(fmt.Sprintf("✗ %s failed: %s", e.ID, e.Err))
+}
+
+func (u *UI) onJobAborted(e events.JobAborted) {
+	u.dimLine(fmt.Sprintf("■ %s killed after %s", e.ID, e.Elapsed.Round(time.Second)))
 }
 
 func (u *UI) onVoiceGateStripped(e events.VoiceGateStripped) {
@@ -267,5 +300,5 @@ func (u *UI) onToolCallFinished(e events.ToolCallFinished) {
 	} else if e.Preview != "" {
 		msg += " → " + e.Preview
 	}
-	fmt.Fprintf(u.out, "  %s\n", dimStyle.Render(msg))
+	u.dimLine(jobPrefix(e.JobID) + msg)
 }
