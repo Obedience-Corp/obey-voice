@@ -273,11 +273,12 @@ func TestElapsedIsZeroBeforeStart(t *testing.T) {
 	}
 }
 
-func TestOnStartPrecedesRun(t *testing.T) {
+func TestQueuedAndStartPrecedeRun(t *testing.T) {
 	t.Parallel()
 	table := NewTable(context.Background())
 	order := make(chan string, 4)
 	done := make(chan struct{})
+	table.OnQueued(func(id, task string) { order <- "queued:" + id + ":" + task })
 	table.OnStart(func(id, task string) { order <- "start:" + id + ":" + task })
 	table.OnDone(func(string, State, string, error) { close(done) })
 
@@ -298,15 +299,15 @@ func TestOnStartPrecedesRun(t *testing.T) {
 	}
 	close(order)
 	got := drainOrder(order)
-	want := "start:" + id + ":quick,run:" + id
+	want := "queued:" + id + ":quick,start:" + id + ":quick,run:" + id
 	if got != want {
-		t.Fatalf("order = %q, want %q: the start callback must run before the job can", got, want)
+		t.Fatalf("order = %q, want %q: queued, then start, then the job itself", got, want)
 	}
 }
 
-// A Start issued from inside another job's start callback must not let the
+// A Start issued from inside another job's queued callback must not let the
 // pump launch the outer job before its callback has returned, and FIFO holds.
-func TestStartFromWithinOnStartKeepsOrder(t *testing.T) {
+func TestStartFromWithinOnQueuedKeepsOrder(t *testing.T) {
 	t.Parallel()
 	table := NewTable(context.Background())
 	order := make(chan string, 8)
@@ -316,8 +317,9 @@ func TestStartFromWithinOnStartKeepsOrder(t *testing.T) {
 		order <- "run:" + IDFromContext(ctx)
 		return "ok", nil
 	}
-	table.OnStart(func(id, task string) {
-		order <- "start:" + id
+	table.OnStart(func(id, _ string) { order <- "start:" + id })
+	table.OnQueued(func(id, task string) {
+		order <- "queued:" + id
 		if task != "outer" {
 			return
 		}
@@ -338,10 +340,69 @@ func TestStartFromWithinOnStartKeepsOrder(t *testing.T) {
 	}
 	close(order)
 	got := drainOrder(order)
-	want := "start:job-1,start:job-2,run:job-1,run:job-2"
+	want := "queued:job-1,queued:job-2,start:job-1,run:job-1,start:job-2,run:job-2"
 	if got != want {
 		t.Fatalf("order = %q, want %q", got, want)
 	}
+}
+
+// awaitOrder pulls the next entry off an order channel and fails on anything
+// but want.
+func awaitOrder(t *testing.T, order <-chan string, want string) {
+	t.Helper()
+	select {
+	case got := <-order:
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %q", want)
+	}
+}
+
+// A job queued behind a running one is announced as queued at once, but its
+// start callback fires only after the previous job's done callback returned,
+// and still before its own run function.
+func TestQueuedJobStartsAfterPreviousDone(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	order := make(chan string, 16)
+	release := make(chan struct{})
+	table.OnQueued(func(id, _ string) { order <- "queued:" + id })
+	table.OnStart(func(id, _ string) { order <- "start:" + id })
+	table.OnDone(func(id string, _ State, _ string, _ error) { order <- "done:" + id })
+	hold := func(ctx context.Context) (string, error) {
+		order <- "run:" + IDFromContext(ctx)
+		<-release
+		return "ok", nil
+	}
+	quick := func(ctx context.Context) (string, error) {
+		order <- "run:" + IDFromContext(ctx)
+		return "ok", nil
+	}
+
+	if _, err := table.Start(context.Background(), Spec{Task: "first", Run: hold}); err != nil {
+		t.Fatalf("Start(first): %v", err)
+	}
+	awaitOrder(t, order, "queued:job-1")
+	awaitOrder(t, order, "start:job-1")
+	awaitOrder(t, order, "run:job-1")
+
+	if _, err := table.Start(context.Background(), Spec{Task: "second", Run: quick}); err != nil {
+		t.Fatalf("Start(second): %v", err)
+	}
+	awaitOrder(t, order, "queued:job-2")
+	select {
+	case got := <-order:
+		t.Fatalf("got %q while job-1 was still running, want job-2 held in the queue", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(release)
+	awaitOrder(t, order, "done:job-1")
+	awaitOrder(t, order, "start:job-2")
+	awaitOrder(t, order, "run:job-2")
+	awaitOrder(t, order, "done:job-2")
 }
 
 func drainOrder(ch <-chan string) string {
@@ -378,25 +439,14 @@ func TestDoneCallbackCompletesBeforeNextJobRuns(t *testing.T) {
 		}
 	}
 
-	next := func(want string) {
-		t.Helper()
-		select {
-		case got := <-order:
-			if got != want {
-				t.Fatalf("got %q, want %q", got, want)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatalf("timed out waiting for %q", want)
-		}
-	}
-	next("run:job-1")
-	next("done:job-1")
+	awaitOrder(t, order, "run:job-1")
+	awaitOrder(t, order, "done:job-1")
 	select {
 	case got := <-order:
 		t.Fatalf("job-2 produced %q while job-1's done callback was still running", got)
 	case <-time.After(50 * time.Millisecond):
 	}
 	close(release)
-	next("run:job-2")
-	next("done:job-2")
+	awaitOrder(t, order, "run:job-2")
+	awaitOrder(t, order, "done:job-2")
 }

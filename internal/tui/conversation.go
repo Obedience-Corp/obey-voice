@@ -58,9 +58,11 @@ type conversationModel struct {
 	status    string
 	statusErr bool
 	jobStatus string
-	// jobTask is the running job's label, kept so a worker's tool events can
-	// rewrite the chip without losing what the job is.
-	jobTask string
+	// jobs is what the chip knows about each queued or running job, keyed by
+	// id so a spawn queued behind a running worker cannot relabel it;
+	// jobOrder keeps them in queue order.
+	jobs     map[string]*jobView
+	jobOrder []string
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
@@ -1136,21 +1138,24 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 		m.appendActivity("tool", msg, 0)
 
+	case events.JobQueued:
+		m.jobQueued(e)
+
 	case events.JobStarted:
 		m.jobStarted(e)
 
 	case events.JobFinished:
-		m.jobEnded("finished", e.Elapsed)
+		m.jobEnded(e.ID, "finished", e.Elapsed)
 
 	case events.JobFailed:
 		detail := e.Err
 		if detail == "" {
 			detail = "failed"
 		}
-		m.jobEnded("failed: "+detail, e.Elapsed)
+		m.jobEnded(e.ID, "failed: "+detail, e.Elapsed)
 
 	case events.JobAborted:
-		m.jobEnded("killed after "+e.Elapsed.Round(time.Second).String(), 0)
+		m.jobEnded(e.ID, "killed after "+e.Elapsed.Round(time.Second).String(), 0)
 	}
 }
 

@@ -74,6 +74,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.ToolCallFinished](b, bus)
 	// Background job lifecycle drives the footer chip; without these the
 	// chip never appears.
+	forward[events.JobQueued](b, bus)
 	forward[events.JobStarted](b, bus)
 	forward[events.JobFinished](b, bus)
 	forward[events.JobFailed](b, bus)
@@ -93,7 +94,7 @@ func isDurableBridgeMsg(msg tea.Msg) bool {
 	switch be.event.(type) {
 	case events.UserInput, events.ResponseReady, events.ConversationCleared, events.Error,
 		events.ToolCallStarted, events.ToolCallFinished,
-		events.JobStarted, events.JobFinished, events.JobFailed, events.JobAborted:
+		events.JobQueued, events.JobStarted, events.JobFinished, events.JobFailed, events.JobAborted:
 		return true
 	default:
 		return false

@@ -109,9 +109,12 @@ A `job_id` on those events attributes the call to a background job; empty means
 the live conversation. The distinction is load-bearing: job-attributed tools
 update the `Working: {task} · {tool}` chip and the activity feed only, and never
 touch the status line, the orb, or the transcript, so a job running behind a
-turn cannot hijack the conversation. `job_started`, `job_finished`, `job_failed`
-and `job_aborted` bookend the work; the last three carry elapsed time. Abort
-stays silent in speech — the bus event is how it becomes visible.
+turn cannot hijack the conversation. `job_queued`, `job_started`, `job_finished`,
+`job_failed` and `job_aborted` bookend the work: queued when the table accepts
+the job, started when it actually begins (a spawn behind a running job waits
+for that job's terminal event), and the last three carry elapsed time. The chip
+names the running job and counts the ones queued behind it. Abort stays silent
+in speech — the bus event is how it becomes visible.
 
 Without the TUI, worker tool lines are prefixed `[job-1]` and each job
 transition prints one dim line. The JSONL transcript records `id`, `kind`,

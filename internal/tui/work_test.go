@@ -79,3 +79,47 @@ func TestJobAbortedClearsTheChip(t *testing.T) {
 		t.Fatalf("activity = %v, want a killed-after entry", details)
 	}
 }
+
+// A spawn queued behind a running job must neither relabel the chip nor clear
+// it when the running job ends: the chip names the running job, counts the
+// queued one, then hands over once it actually starts.
+func TestQueuedJobDoesNotRelabelTheRunningJob(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	step := func(e events.Event) { m, _ = m.Update(busEventMsg{event: e}) }
+
+	step(events.JobQueued{ID: "job-1", Task: "audit the config"})
+	step(events.JobStarted{ID: "job-1", Task: "audit the config"})
+	step(events.JobQueued{ID: "job-2", Task: "write the report"})
+	step(events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"})
+
+	if want := "Working: audit the config · read_file (+1 queued)"; m.jobStatus != want {
+		t.Fatalf("chip while job-2 waits = %q, want %q", m.jobStatus, want)
+	}
+
+	step(events.JobFinished{ID: "job-1", Task: "audit the config", Elapsed: 2 * time.Second})
+	if want := "Queued: write the report"; m.jobStatus != want {
+		t.Fatalf("chip after job-1 finished = %q, want %q: job-2 is still waiting", m.jobStatus, want)
+	}
+
+	step(events.JobStarted{ID: "job-2", Task: "write the report"})
+	if want := "Working: write the report"; m.jobStatus != want {
+		t.Fatalf("chip once job-2 runs = %q, want %q", m.jobStatus, want)
+	}
+
+	step(events.JobFinished{ID: "job-2", Task: "write the report", Elapsed: time.Second})
+	if m.jobStatus != "" {
+		t.Fatalf("chip after both jobs = %q, want empty", m.jobStatus)
+	}
+}
+
+// A tool event for a job the TUI never saw start (it attached mid-job) still
+// gets a chip, named by the id.
+func TestToolEventForUnknownJobStillShowsAChip(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c1", JobID: "job-4", Name: "run_command", Kind: "execute"}})
+	if want := "Working: job-4 · run_command"; m.jobStatus != want {
+		t.Fatalf("chip = %q, want %q", m.jobStatus, want)
+	}
+}

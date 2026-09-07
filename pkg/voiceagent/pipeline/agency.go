@@ -69,6 +69,7 @@ func (a *Agency) Wire() {
 	a.pipeline.Agency = a
 	a.pipeline.JobActive = a.jobs.Active
 	a.jobs.OnDone(a.onJobDone)
+	a.jobs.OnQueued(a.onJobQueued)
 	a.jobs.OnStart(a.onJobStarted)
 	if a.narrator != nil {
 		a.narrator.Wire()
@@ -130,8 +131,15 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	}
 }
 
-// onJobStarted runs inside Table.Start before the worker can begin, so
-// JobStarted always precedes the job's tool and terminal events.
+// onJobQueued runs inside Table.Start, so JobQueued precedes everything the
+// job publishes. onJobStarted runs on the job's goroutine right before its run
+// function, so JobStarted follows the previous job's terminal event and
+// precedes this job's tool and terminal events. A spawn behind a running job
+// is therefore queued, not started, until that job is out of the way.
+func (a *Agency) onJobQueued(id, task string) {
+	a.pipeline.emit(events.JobQueued{ID: id, Task: task})
+}
+
 func (a *Agency) onJobStarted(id, task string) {
 	a.pipeline.emit(events.JobStarted{ID: id, Task: task})
 }

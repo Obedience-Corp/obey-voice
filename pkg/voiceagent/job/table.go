@@ -61,9 +61,15 @@ func (i Info) Elapsed() time.Duration {
 // DoneCallback fires once per job when it reaches a terminal state.
 type DoneCallback func(id string, state State, result string, err error)
 
-// StartCallback fires once per job, on the goroutine that called Start and
-// before the job's run function can begin, so anything it publishes precedes
-// every event the job itself produces.
+// QueuedCallback fires once per job, on the goroutine that called Start and
+// before the job can run, so anything it publishes precedes every event the
+// job itself produces.
+type QueuedCallback func(id, task string)
+
+// StartCallback fires once per job, on the job's own goroutine after it has
+// left the queue and immediately before its run function. It therefore
+// follows the previous job's done callback and precedes the first thing this
+// job does.
 type StartCallback func(id, task string)
 
 // Table holds async jobs that outlive one conversational turn.
@@ -76,6 +82,7 @@ type Table struct {
 	queue    []string
 	running  string
 	onDone   DoneCallback
+	onQueued QueuedCallback
 	onStart  StartCallback
 }
 
@@ -84,8 +91,8 @@ type entry struct {
 	spec   Spec
 	ctx    context.Context
 	cancel context.CancelFunc
-	// announced is set once OnStart has run; the pump never launches a job
-	// before that, so a fast worker cannot get ahead of its own start event.
+	// announced is set once OnQueued has run; the pump never launches a job
+	// before that, so its start cannot be published ahead of its queued event.
 	announced bool
 }
 
@@ -108,7 +115,16 @@ func (t *Table) OnDone(cb DoneCallback) {
 	t.onDone = cb
 }
 
-// OnStart registers a callback that runs before each job can begin.
+// OnQueued registers a callback that runs inside Start, once the job is
+// accepted and before it can begin.
+func (t *Table) OnQueued(cb QueuedCallback) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.onQueued = cb
+}
+
+// OnStart registers a callback that runs on the job's goroutine right before
+// its run function.
 func (t *Table) OnStart(cb StartCallback) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -135,13 +151,13 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	}
 	t.jobs[id] = e
 	t.queue = append(t.queue, id)
-	onStart := t.onStart
+	onQueued := t.onQueued
 	t.mu.Unlock()
 
 	// Outside the lock: the callback publishes to the bus, and a subscriber may
 	// legitimately ask the table for status.
-	if onStart != nil {
-		onStart(id, spec.Task)
+	if onQueued != nil {
+		onQueued(id, spec.Task)
 	}
 
 	t.mu.Lock()
@@ -221,7 +237,7 @@ func (t *Table) pumpLocked() {
 	id := t.queue[0]
 	e := t.jobs[id]
 	if !e.announced {
-		return // its own Start pumps once the start callback has run
+		return // its own Start pumps once the queued callback has run
 	}
 	t.queue = t.queue[1:]
 	e.info.State = StateRunning
@@ -262,6 +278,7 @@ func (t *Table) run(jobCtx context.Context, id string) {
 
 	t.mu.Lock()
 	e := t.jobs[id]
+	onStart := t.onStart
 	if e != nil && e.spec.Run != nil {
 		e.info.Started = time.Now()
 	}
@@ -269,6 +286,11 @@ func (t *Table) run(jobCtx context.Context, id string) {
 	if e == nil || e.spec.Run == nil {
 		err = fmt.Errorf("job %s: no run function", id)
 		return
+	}
+	// Same goroutine as the run function: whatever the callback publishes is
+	// out before the job's first tool call can be.
+	if onStart != nil {
+		onStart(id, e.spec.Task)
 	}
 	result, err = e.spec.Run(jobCtx)
 }

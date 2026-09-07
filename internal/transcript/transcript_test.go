@@ -330,6 +330,7 @@ func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
 	bus := events.NewBus()
 	w.Attach(bus)
 
+	bus.Emit(events.JobQueued{ID: "job-1", Task: "read the readme"})
 	bus.Emit(events.JobStarted{ID: "job-1", Task: "read the readme"})
 	bus.Emit(events.ToolCallStarted{ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "README.md"})
 	bus.Emit(events.ToolCallFinished{
@@ -345,20 +346,26 @@ func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
 	}
 
 	recs := readRecords(t, path)
-	if len(recs) != 7 {
-		t.Fatalf("got %d records, want 7: %+v", len(recs), recs)
+	if len(recs) != 8 {
+		t.Fatalf("got %d records, want 8: %+v", len(recs), recs)
 	}
-	if r := recs[2]; r.Type != "tool_call" || r.ID != "call_1" || r.Kind != "read" || r.JobID != "job-1" {
+	if r := recs[1]; r.Type != "job" || r.State != "queued" || r.Name != "job-1" {
+		t.Fatalf("record after the header = %+v, want job-1 queued", r)
+	}
+	if r := recs[2]; r.Type != "job" || r.State != "started" || r.Name != "job-1" {
+		t.Fatalf("next record = %+v, want job-1 started", r)
+	}
+	if r := recs[3]; r.Type != "tool_call" || r.ID != "call_1" || r.Kind != "read" || r.JobID != "job-1" {
 		t.Fatalf("tool_call = %+v, want the id, kind and job attribution", r)
 	}
-	if r := recs[3]; r.Type != "tool_result" || r.JobID != "job-1" || r.ElapsedS != 1.5 {
+	if r := recs[4]; r.Type != "tool_result" || r.JobID != "job-1" || r.ElapsedS != 1.5 {
 		t.Fatalf("tool_result = %+v, want job attribution and elapsed", r)
 	}
 
 	jobs := map[string]record{}
 	for _, r := range recs {
 		if r.Type == "job" {
-			jobs[r.Name] = r
+			jobs[r.Name] = r // last transition wins
 		}
 	}
 	for _, tt := range []struct {
@@ -387,11 +394,11 @@ func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
 
 	raw := readRawRecords(t, path)
 	for _, key := range []string{"id", "kind", "job_id"} {
-		if _, ok := raw[2][key]; !ok {
-			t.Errorf("tool_call line missing %q key: %v", key, raw[2])
+		if _, ok := raw[3][key]; !ok {
+			t.Errorf("tool_call line missing %q key: %v", key, raw[3])
 		}
 	}
-	if _, ok := raw[3]["elapsed_s"]; !ok {
-		t.Errorf("tool_result line missing elapsed_s: %v", raw[3])
+	if _, ok := raw[4]["elapsed_s"]; !ok {
+		t.Errorf("tool_result line missing elapsed_s: %v", raw[4])
 	}
 }

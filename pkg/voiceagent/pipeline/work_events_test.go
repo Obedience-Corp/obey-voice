@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -137,10 +138,14 @@ func TestJobStartedPrecedesWorkerEvents(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	started, tool, done := -1, -1, -1
+	queued, started, tool, done := -1, -1, -1, -1
 	jobID := ""
 	for i, e := range seen {
 		switch ev := e.(type) {
+		case events.JobQueued:
+			if queued < 0 {
+				queued = i
+			}
 		case events.JobStarted:
 			if started < 0 {
 				started, jobID = i, ev.ID
@@ -156,10 +161,117 @@ func TestJobStartedPrecedesWorkerEvents(t *testing.T) {
 			done = i
 		}
 	}
-	if started < 0 || tool < 0 || done < 0 {
-		t.Fatalf("missing events: started=%d tool=%d finished=%d", started, tool, done)
+	if queued < 0 || started < 0 || tool < 0 || done < 0 {
+		t.Fatalf("missing events: queued=%d started=%d tool=%d finished=%d", queued, started, tool, done)
 	}
-	if !(started < tool && tool < done) {
-		t.Fatalf("order started=%d tool=%d finished=%d: JobStarted must precede every worker event", started, tool, done)
+	if !(queued < started && started < tool && tool < done) {
+		t.Fatalf("order queued=%d started=%d tool=%d finished=%d: JobQueued then JobStarted must precede every worker event", queued, started, tool, done)
+	}
+}
+
+// gatedHookWorker fires one tool hook, then holds until released, so a second
+// spawn has to wait behind it.
+type gatedHookWorker struct {
+	release <-chan struct{}
+}
+
+func (w gatedHookWorker) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	return (&fakeBrain{chunks: []string{"done"}}).ThinkStream(ctx, input, opts)
+}
+
+func (w gatedHookWorker) ThinkFull(ctx context.Context, _ string, opts brain.StreamOptions) (string, error) {
+	call := brain.ToolCall{ID: "call_1", Name: "list_files", Kind: brain.KindListDir, Summary: "."}
+	if opts.OnToolStart != nil {
+		opts.OnToolStart(call)
+	}
+	if opts.OnToolEnd != nil {
+		opts.OnToolEnd(brain.ToolResult{ToolCall: call, Preview: "README.md"})
+	}
+	select {
+	case <-w.release:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return "done", nil
+}
+
+func (gatedHookWorker) ClearHistory()            {}
+func (gatedHookWorker) History() []brain.Turn    { return nil }
+func (gatedHookWorker) LoadHistory([]brain.Turn) {}
+
+// A spawn while a job runs is queued, keeps its own id on every event, and
+// does not start until the running job's terminal event is out.
+func TestQueuedJobKeepsItsOwnIdentity(t *testing.T) {
+	provider := &progressiveFakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+
+	bus := events.NewBus()
+	var mu sync.Mutex
+	var trail []string
+	firstTool := make(chan struct{}, 1)
+	finished := make(chan struct{}, 2)
+	bus.SubscribeAll(func(e events.Event) {
+		var line string
+		switch ev := e.(type) {
+		case events.JobQueued:
+			line = "queued:" + ev.ID
+		case events.JobStarted:
+			line = "started:" + ev.ID
+		case events.ToolCallStarted:
+			if ev.JobID == "" {
+				return
+			}
+			line = "tool:" + ev.JobID
+			select {
+			case firstTool <- struct{}{}:
+			default:
+			}
+		case events.JobFinished:
+			line = "finished:" + ev.ID
+			finished <- struct{}{}
+		default:
+			return
+		}
+		mu.Lock()
+		trail = append(trail, line)
+		mu.Unlock()
+	})
+
+	release := make(chan struct{})
+	jobs := job.NewTable(context.Background())
+	p := &Pipeline{TTS: provider, Player: player, Events: bus}
+	agency := NewAgency(p, jobs, gatedHookWorker{release: release}, &config.Config{}, nil)
+	agency.Wire()
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	spawn := func(task string) {
+		agency.HandleRoute(context.Background(), turn, metrics, RouteDecision{
+			Kind: RouteSpawn, Transcript: task, Source: "test",
+		})
+	}
+	spawn("list the files here")
+	select {
+	case <-firstTool:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first job never called a tool")
+	}
+	spawn("read the readme")
+	close(release)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-finished:
+		case <-time.After(3 * time.Second):
+			t.Fatal("jobs did not finish")
+		}
+	}
+
+	mu.Lock()
+	got := strings.Join(trail, ",")
+	mu.Unlock()
+	want := "queued:job-1,started:job-1,tool:job-1,queued:job-2,finished:job-1,started:job-2,tool:job-2,finished:job-2"
+	if got != want {
+		t.Fatalf("event trail\n got %s\nwant %s", got, want)
 	}
 }

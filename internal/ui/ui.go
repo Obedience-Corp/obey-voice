@@ -63,6 +63,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onInfo)
 	events.Subscribe(bus, u.onToolCallStarted)
 	events.Subscribe(bus, u.onToolCallFinished)
+	events.Subscribe(bus, u.onJobQueued)
 	events.Subscribe(bus, u.onJobStarted)
 	events.Subscribe(bus, u.onJobFinished)
 	events.Subscribe(bus, u.onJobFailed)
@@ -271,6 +272,12 @@ func jobPrefix(jobID string) string {
 
 func (u *UI) dimLine(text string) {
 	fmt.Fprintf(u.out, "  %s\n", dimStyle.Render(text))
+}
+
+// A job prints once when accepted and once when it actually begins; the two
+// are back to back unless it had to wait behind another job.
+func (u *UI) onJobQueued(e events.JobQueued) {
+	u.dimLine(fmt.Sprintf("⚙ %s queued: %s", e.ID, e.Task))
 }
 
 func (u *UI) onJobStarted(e events.JobStarted) {

@@ -455,7 +455,18 @@ type ToolCallFinished struct {
 
 func (e ToolCallFinished) eventType() string { return "tool_call_finished" }
 
-// JobStarted signals an async worker job began (queued or running).
+// JobQueued signals the table accepted a worker job. It waits behind whatever
+// is running; JobStarted follows once it actually begins.
+type JobQueued struct {
+	ID   string
+	Task string
+}
+
+func (e JobQueued) eventType() string { return "job_queued" }
+
+// JobStarted signals a worker job's run began. It follows the job's own
+// JobQueued and the previous job's terminal event, and precedes every tool
+// event the job produces.
 type JobStarted struct {
 	ID   string
 	Task string

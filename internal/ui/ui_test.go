@@ -175,3 +175,31 @@ func TestIsConsole(t *testing.T) {
 		})
 	}
 }
+
+// Each job transition prints one dim line, so a queued job is visible as
+// queued before it starts.
+func TestJobTransitionsPrintOneLineEach(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	NewWithOutput(bus, "agent", &buf)
+
+	bus.Emit(events.JobQueued{ID: "job-1", Task: "audit the config"})
+	bus.Emit(events.JobStarted{ID: "job-1", Task: "audit the config"})
+	bus.Emit(events.JobQueued{ID: "job-2", Task: "write the report"})
+	bus.Emit(events.JobFinished{ID: "job-1", Task: "audit the config", Elapsed: 2 * time.Second})
+
+	got := buf.String()
+	for _, want := range []string{
+		"job-1 queued: audit the config",
+		"job-1 started: audit the config",
+		"job-2 queued: write the report",
+		"job-1 finished (2s)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "job-2 started") {
+		t.Errorf("job-2 printed as started while only queued:\n%s", got)
+	}
+}
