@@ -69,6 +69,7 @@ func (a *Agency) Wire() {
 	a.pipeline.Agency = a
 	a.pipeline.JobActive = a.jobs.Active
 	a.jobs.OnDone(a.onJobDone)
+	a.jobs.OnStart(a.onJobStarted)
 	if a.narrator != nil {
 		a.narrator.Wire()
 	}
@@ -117,7 +118,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		task = "background task"
 	}
 	a.speakAck(ctx, turn, metrics)
-	id, err := a.jobs.Start(ctx, job.Spec{
+	_, err := a.jobs.Start(ctx, job.Spec{
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
@@ -126,8 +127,12 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	})
 	if err != nil {
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
-		return
 	}
+}
+
+// onJobStarted runs inside Table.Start before the worker can begin, so
+// JobStarted always precedes the job's tool and terminal events.
+func (a *Agency) onJobStarted(id, task string) {
 	a.pipeline.emit(events.JobStarted{ID: id, Task: task})
 }
 
@@ -222,17 +227,19 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 			break
 		}
 	}
+	// Enqueue before emitting: the terminal event is the signal that the job's
+	// bookkeeping is complete, and a consumer may read pending on seeing it.
 	switch state {
 	case job.StateDone:
-		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed})
 		a.enqueueSummary(id, a.cleanSummary(result))
+		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed})
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
 			msg = truncateJobTask(err.Error())
 		}
-		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 		a.enqueueSummary(id, msg)
+		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 	case job.StateAborted:
 		// Visible on the bus; still silent in speech unless the user asks.
 		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed})

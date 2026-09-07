@@ -182,7 +182,6 @@ func (n *Narrator) startStoryJob(ctx context.Context, turn *turnConductor, metri
 	n.mu.Lock()
 	n.storyJobID = id
 	n.mu.Unlock()
-	n.pipeline.emit(events.JobStarted{ID: id, Task: "write a long story"})
 }
 
 func (n *Narrator) storyWriterRun() func(context.Context) (string, error) {

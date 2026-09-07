@@ -272,3 +272,131 @@ func TestElapsedIsZeroBeforeStart(t *testing.T) {
 		t.Fatalf("Elapsed() = %v on a never-started job, want 0", got)
 	}
 }
+
+func TestOnStartPrecedesRun(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	order := make(chan string, 4)
+	done := make(chan struct{})
+	table.OnStart(func(id, task string) { order <- "start:" + id + ":" + task })
+	table.OnDone(func(string, State, string, error) { close(done) })
+
+	id, err := table.Start(context.Background(), Spec{
+		Task: "quick",
+		Run: func(ctx context.Context) (string, error) {
+			order <- "run:" + IDFromContext(ctx)
+			return "ok", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("job did not finish")
+	}
+	close(order)
+	got := drainOrder(order)
+	want := "start:" + id + ":quick,run:" + id
+	if got != want {
+		t.Fatalf("order = %q, want %q: the start callback must run before the job can", got, want)
+	}
+}
+
+// A Start issued from inside another job's start callback must not let the
+// pump launch the outer job before its callback has returned, and FIFO holds.
+func TestStartFromWithinOnStartKeepsOrder(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	order := make(chan string, 8)
+	finished := make(chan struct{}, 2)
+	table.OnDone(func(string, State, string, error) { finished <- struct{}{} })
+	run := func(ctx context.Context) (string, error) {
+		order <- "run:" + IDFromContext(ctx)
+		return "ok", nil
+	}
+	table.OnStart(func(id, task string) {
+		order <- "start:" + id
+		if task != "outer" {
+			return
+		}
+		if _, err := table.Start(context.Background(), Spec{Task: "inner", Run: run}); err != nil {
+			t.Errorf("nested Start: %v", err)
+		}
+	})
+
+	if _, err := table.Start(context.Background(), Spec{Task: "outer", Run: run}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Fatal("jobs did not finish")
+		}
+	}
+	close(order)
+	got := drainOrder(order)
+	want := "start:job-1,start:job-2,run:job-1,run:job-2"
+	if got != want {
+		t.Fatalf("order = %q, want %q", got, want)
+	}
+}
+
+func drainOrder(ch <-chan string) string {
+	out := ""
+	for s := range ch {
+		if out != "" {
+			out += ","
+		}
+		out += s
+	}
+	return out
+}
+
+// The next queued job must not run until the previous job's done callback has
+// returned; otherwise its events can interleave with the earlier terminal one.
+func TestDoneCallbackCompletesBeforeNextJobRuns(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	order := make(chan string, 8)
+	release := make(chan struct{})
+	table.OnDone(func(id string, _ State, _ string, _ error) {
+		order <- "done:" + id
+		if id == "job-1" {
+			<-release
+		}
+	})
+	run := func(ctx context.Context) (string, error) {
+		order <- "run:" + IDFromContext(ctx)
+		return "ok", nil
+	}
+	for _, task := range []string{"first", "second"} {
+		if _, err := table.Start(context.Background(), Spec{Task: task, Run: run}); err != nil {
+			t.Fatalf("Start(%s): %v", task, err)
+		}
+	}
+
+	next := func(want string) {
+		t.Helper()
+		select {
+		case got := <-order:
+			if got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for %q", want)
+		}
+	}
+	next("run:job-1")
+	next("done:job-1")
+	select {
+	case got := <-order:
+		t.Fatalf("job-2 produced %q while job-1's done callback was still running", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	next("run:job-2")
+	next("done:job-2")
+}

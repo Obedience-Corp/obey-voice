@@ -61,6 +61,11 @@ func (i Info) Elapsed() time.Duration {
 // DoneCallback fires once per job when it reaches a terminal state.
 type DoneCallback func(id string, state State, result string, err error)
 
+// StartCallback fires once per job, on the goroutine that called Start and
+// before the job's run function can begin, so anything it publishes precedes
+// every event the job itself produces.
+type StartCallback func(id, task string)
+
 // Table holds async jobs that outlive one conversational turn.
 type Table struct {
 	mu       sync.Mutex
@@ -71,6 +76,7 @@ type Table struct {
 	queue    []string
 	running  string
 	onDone   DoneCallback
+	onStart  StartCallback
 }
 
 type entry struct {
@@ -78,6 +84,9 @@ type entry struct {
 	spec   Spec
 	ctx    context.Context
 	cancel context.CancelFunc
+	// announced is set once OnStart has run; the pump never launches a job
+	// before that, so a fast worker cannot get ahead of its own start event.
+	announced bool
 }
 
 // NewTable constructs a job table. lifetime scopes jobs past turn cancellation;
@@ -99,13 +108,20 @@ func (t *Table) OnDone(cb DoneCallback) {
 	t.onDone = cb
 }
 
+// OnStart registers a callback that runs before each job can begin.
+func (t *Table) OnStart(cb StartCallback) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.onStart = cb
+}
+
 // Start enqueues work. A second spawn while one is active queues behind it (Q2).
 // parent is ignored for cancellation — jobs use context.WithoutCancel(lifetime).
 func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	_ = parent
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.closed {
+		t.mu.Unlock()
 		return "", fmt.Errorf("job table closed")
 	}
 	t.nextID++
@@ -119,7 +135,19 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	}
 	t.jobs[id] = e
 	t.queue = append(t.queue, id)
+	onStart := t.onStart
+	t.mu.Unlock()
+
+	// Outside the lock: the callback publishes to the bus, and a subscriber may
+	// legitimately ask the table for status.
+	if onStart != nil {
+		onStart(id, spec.Task)
+	}
+
+	t.mu.Lock()
+	e.announced = true
 	t.pumpLocked()
+	t.mu.Unlock()
 	return id, nil
 }
 
@@ -147,6 +175,9 @@ func (t *Table) Abort(id string) {
 		if cb != nil {
 			cb(id, StateAborted, "", fmt.Errorf("aborted"))
 		}
+		t.mu.Lock()
+		t.pumpLocked()
+		t.mu.Unlock()
 		return
 	}
 	if e.cancel != nil {
@@ -188,8 +219,11 @@ func (t *Table) pumpLocked() {
 		return
 	}
 	id := t.queue[0]
-	t.queue = t.queue[1:]
 	e := t.jobs[id]
+	if !e.announced {
+		return // its own Start pumps once the start callback has run
+	}
+	t.queue = t.queue[1:]
 	e.info.State = StateRunning
 	t.running = id
 	go t.run(e.ctx, id)
@@ -219,6 +253,11 @@ func (t *Table) run(jobCtx context.Context, id string) {
 		if cb != nil {
 			cb(id, state, result, err)
 		}
+		// Pump only after the done callback has returned, so the next job
+		// cannot publish anything before this one's terminal event is out.
+		t.mu.Lock()
+		t.pumpLocked()
+		t.mu.Unlock()
 	}()
 
 	t.mu.Lock()
@@ -234,8 +273,9 @@ func (t *Table) run(jobCtx context.Context, id string) {
 	result, err = e.spec.Run(jobCtx)
 }
 
-// finishLocked marks a job terminal and starts the next queued job. Caller must hold t.mu.
-// It returns the done callback to invoke after releasing the lock.
+// finishLocked marks a job terminal. Caller must hold t.mu. It returns the
+// done callback to invoke after releasing the lock; the caller pumps the queue
+// only after that callback has returned.
 func (t *Table) finishLocked(id string, state State, result string, err error) DoneCallback {
 	e, ok := t.jobs[id]
 	if !ok {
@@ -249,7 +289,6 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 	if t.running == id {
 		t.running = ""
 	}
-	t.pumpLocked()
 	return t.onDone
 }
 

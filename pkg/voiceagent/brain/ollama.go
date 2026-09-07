@@ -65,10 +65,10 @@ type OllamaBrain struct {
 	skillRouter       *semanticSkillRouter
 	skillRouterWarned bool
 	// skillCallSeq numbers synthesized activate_skill call ids for this brain.
-	skillCallSeq int
-	budgetWarned      bool
-	archive           continuity.Store
-	contextHighWater  int
+	skillCallSeq     int
+	budgetWarned     bool
+	archive          continuity.Store
+	contextHighWater int
 	// speakerNames resolves stable speaker ids when building chat messages.
 	speakerNames SpeakerNames
 }
