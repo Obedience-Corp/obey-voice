@@ -600,3 +600,101 @@ func TestStatusListsRunningBeforeQueued(t *testing.T) {
 		t.Fatalf("status = %+v, want the running job first, then the queued one", st)
 	}
 }
+
+// The budget is the table's promise, not the worker's: a run function that
+// ignores its cancel is still ended at the budget, frees its slot, and its
+// late return is ignored.
+func TestBudgetEndsAJobThatIgnoresItsCancel(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background(), WithBudget(40*time.Millisecond))
+	var callbacks atomic.Int32
+	done := make(chan error, 4)
+	table.OnDone(func(_ string, _ State, _ string, err error) {
+		callbacks.Add(1)
+		done <- err
+	})
+	ran := make(chan struct{})
+	release := make(chan struct{})
+	if _, err := table.Start(context.Background(), Spec{Task: "stubborn", Run: func(context.Context) (string, error) {
+		close(ran)
+		<-release // never looks at ctx
+		return "late", nil
+	}}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	<-ran
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrBudget) {
+			t.Fatalf("err = %v, want ErrBudget", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the budget did not end the job while its run function ignored the cancel")
+	}
+	if table.Active() {
+		t.Fatal("the stopped job still holds its slot")
+	}
+
+	second := make(chan struct{})
+	if _, err := table.Start(context.Background(), Spec{Task: "next", Run: func(context.Context) (string, error) {
+		close(second)
+		return "ok", nil
+	}}); err != nil {
+		t.Fatalf("Start(next): %v", err)
+	}
+	select {
+	case <-second:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the slot was not freed for the next job")
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the next job did not finish")
+	}
+
+	close(release) // the stubborn run function finally returns
+	time.Sleep(40 * time.Millisecond)
+	if n := callbacks.Load(); n != 2 {
+		t.Fatalf("done callbacks = %d, want 2: the late return must not fire a third", n)
+	}
+	st := table.Status()
+	for _, info := range st {
+		if info.ID == "job-1" && (info.State != StateAborted || info.Result != "" || !strings.Contains(info.Err, "budget")) {
+			t.Fatalf("job-1 = %+v, want aborted by the budget with no result from the late return", info)
+		}
+	}
+}
+
+// A cancel ends the job the same way: at once, slot freed, late return ignored.
+func TestAbortEndsARunningJobWithoutWaiting(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	done := make(chan State, 2)
+	table.OnDone(func(_ string, state State, _ string, _ error) { done <- state })
+	ran := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	id, err := table.Start(context.Background(), Spec{Task: "stubborn", Run: func(context.Context) (string, error) {
+		close(ran)
+		<-release
+		return "late", nil
+	}})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	<-ran
+	table.Abort(id)
+	select {
+	case state := <-done:
+		if state != StateAborted {
+			t.Fatalf("state = %q, want aborted", state)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Abort waited on a run function that ignores its cancel")
+	}
+	if table.Active() {
+		t.Fatal("the aborted job still holds its slot")
+	}
+}

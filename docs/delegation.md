@@ -138,6 +138,13 @@ any one job may run: past it the job is stopped, `job_aborted` carries
 ran past its budget." A job you cancel yourself carries `reason: cancelled` and
 stays silent.
 
+Both stops are the job table's own act, not a request to the worker: at the
+budget, or on a cancel, the job is marked aborted, its slot goes to the next
+queued job, and the terminal event fires at once. The worker is told to stop
+through its context — Ollama requests, shell tools and CLI-backed providers all
+receive the cancel — and a worker that ignores it lingers on its own goroutine
+without counting against the limit; whatever it returns later is dropped.
+
 The JSONL transcript records `id`, `kind`, `job_id` and `elapsed_s` on
 `tool_call` / `tool_result`, plus one `job` record per transition carrying
 `state` and `elapsed_s`.

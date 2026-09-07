@@ -13,6 +13,9 @@ import (
 // a user's cancel with errors.Is.
 var ErrBudget = errors.New("job budget exceeded")
 
+// errAborted is the error a job ends with when Abort stopped it.
+var errAborted = errors.New("aborted")
+
 // State is a job lifecycle phase.
 type State string
 
@@ -106,10 +109,12 @@ type entry struct {
 	// announced is set once OnQueued has run; the pump never launches a job
 	// before that, so its start cannot be published ahead of its queued event.
 	announced bool
-	// budgetTimer fires the budget stop; overBudget records that it did, so
-	// the terminal state and error say so rather than "cancelled".
+	// budgetTimer fires the budget stop.
 	budgetTimer *time.Timer
-	overBudget  bool
+	// finished is set once the job reached a terminal state. A stop (cancel
+	// or budget) finishes the job without waiting for its run function, so
+	// a run function that returns late finds this set and changes nothing.
+	finished bool
 }
 
 // Option configures a Table.
@@ -125,8 +130,12 @@ func WithMaxConcurrent(n int) Option {
 	}
 }
 
-// WithBudget caps how long any one job may run. A breach aborts the job with
-// an error wrapping ErrBudget. Zero or less means no cap.
+// WithBudget caps how long any one job may run. At the budget the job is
+// ended by the table: marked aborted with an error wrapping ErrBudget, its
+// slot freed and the done callback fired, whether or not the run function
+// has returned. The run function is told to stop through its context; one
+// that ignores the cancel lingers on its own goroutine but no longer counts.
+// Zero or less means no cap.
 func WithBudget(d time.Duration) Option {
 	return func(t *Table) {
 		if d < 0 {
@@ -214,40 +223,38 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	return id, nil
 }
 
-// Abort cancels a queued or running job. Missing ids are a no-op.
+// Abort ends a queued or running job now: it is marked aborted, its slot is
+// freed, the done callback fires, and the run function is told to stop
+// through its context. Missing and finished ids are a no-op.
 func (t *Table) Abort(id string) {
+	t.stop(id, errAborted)
+}
+
+// stop is the one way a job ends before its run function returns; user
+// cancels and budget breaches share it, so neither waits on a run function
+// that may ignore its cancel. Pumps once the done callback has returned.
+func (t *Table) stop(id string, err error) {
 	t.mu.Lock()
 	e, ok := t.jobs[id]
-	if !ok {
-		t.mu.Unlock()
-		return
-	}
-	switch e.info.State {
-	case StateDone, StateFailed, StateAborted:
+	if !ok || e.finished {
 		t.mu.Unlock()
 		return
 	}
 	if e.info.State == StateQueued {
-		e.info.State = StateAborted
 		t.removeFromQueueLocked(id)
-		if e.cancel != nil {
-			e.cancel()
-		}
-		cb := t.finishLocked(id, StateAborted, "", fmt.Errorf("aborted"))
-		t.mu.Unlock()
-		if cb != nil {
-			cb(id, StateAborted, "", fmt.Errorf("aborted"))
-		}
-		t.mu.Lock()
-		t.pumpLocked()
-		t.mu.Unlock()
-		return
 	}
-	if e.cancel != nil {
-		e.cancel()
-	}
+	cb := t.finishLocked(id, StateAborted, "", err)
+	cancel := e.cancel
 	t.mu.Unlock()
-	// running: goroutine observes ctx cancel and marks aborted.
+	if cancel != nil {
+		cancel()
+	}
+	if cb != nil {
+		cb(id, StateAborted, "", err)
+	}
+	t.mu.Lock()
+	t.pumpLocked()
+	t.mu.Unlock()
 }
 
 // Status returns all known jobs: running first in start order, then queued in
@@ -312,14 +319,11 @@ func (t *Table) run(jobCtx context.Context, id string) {
 			}
 		}
 		t.mu.Lock()
-		if e, ok := t.jobs[id]; ok {
-			if e.info.State == StateAborted {
-				state = StateAborted
-			}
-			if e.overBudget {
-				state = StateAborted
-				err = fmt.Errorf("%w after %s", ErrBudget, t.budget)
-			}
+		if e, ok := t.jobs[id]; !ok || e.finished {
+			// A stop already ended this job without waiting for us; a late
+			// return changes nothing.
+			t.mu.Unlock()
+			return
 		}
 		cb := t.finishLocked(id, state, result, err)
 		t.mu.Unlock()
@@ -363,6 +367,7 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 	if !ok {
 		return nil
 	}
+	e.finished = true
 	e.info.State = state
 	e.info.Result = result
 	if err != nil {
@@ -381,22 +386,11 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 	return t.onDone
 }
 
-// exceedBudget stops a job that is still running when its budget timer
-// fires. The run goroutine sees the cancel, and its terminal state and error
-// name the budget rather than a cancel.
+// exceedBudget ends a job whose budget timer fired. A job that finished in
+// time has stopped its timer under the lock, and stop ignores a finished id,
+// so the race between the two is harmless.
 func (t *Table) exceedBudget(id string) {
-	t.mu.Lock()
-	e, ok := t.jobs[id]
-	if !ok || e.info.State != StateRunning {
-		t.mu.Unlock()
-		return
-	}
-	e.overBudget = true
-	cancel := e.cancel
-	t.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
+	t.stop(id, fmt.Errorf("%w after %s", ErrBudget, t.budget))
 }
 
 func (t *Table) removeFromQueueLocked(id string) {
