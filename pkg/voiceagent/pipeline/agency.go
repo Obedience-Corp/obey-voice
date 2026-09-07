@@ -6,14 +6,21 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 const defaultSpawnAck = "Working on it."
+
+// workNarrationMilestones is the voice_work_narration setting that speaks one
+// line per closed fold row. The default, status_only, speaks nothing until the
+// user asks what is happening.
+const workNarrationMilestones = "milestones"
 
 // spawnClarifier is what the assistant says instead of spawning on an assent
 // that has no conversation behind it.
@@ -27,6 +34,9 @@ type Agency struct {
 	cfg      *config.Config
 	ack      string
 	narrator *Narrator
+	// work folds a job's tool calls into rows: what "what's happening" answers
+	// with, and what milestone narration speaks one line of.
+	work *workfold.Tracker
 
 	mu            sync.Mutex
 	pending       []pendingDelivery
@@ -55,6 +65,7 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		worker:        worker,
 		cfg:           cfg,
 		ack:           ack,
+		work:          workfold.New(),
 		workerInitErr: workerErr,
 	}
 	a.narrator = NewNarrator(a)
@@ -171,9 +182,58 @@ func (a *Agency) workerRun(brief string) func(context.Context) (string, error) {
 			tools = a.cfg.VoiceToolsEnabled
 		}
 		opts := brain.WorkerStreamOptions(tools)
-		opts.OnToolStart, opts.OnToolEnd = a.pipeline.jobToolHooks(job.IDFromContext(ctx))
+		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
 		return worker.ThinkFull(ctx, brief, opts)
 	}
+}
+
+// foldingToolHooks emits the job's tool events and folds them on the way past.
+// Feeding the tracker here rather than from a bus subscription keeps the fold
+// in step with the emit — the closed row milestone narration speaks is the
+// return of the same Add — and needs no bus to exist.
+func (a *Agency) foldingToolHooks(jobID string) (func(brain.ToolCall), func(brain.ToolResult)) {
+	emitStart, emitEnd := a.pipeline.jobToolHooks(jobID)
+	start := func(call brain.ToolCall) {
+		emitStart(call)
+		if closed := a.work.Add(toolStartedEvent(jobID, call)); closed != nil {
+			a.narrateRow(jobID, *closed)
+		}
+	}
+	end := func(res brain.ToolResult) {
+		emitEnd(res)
+		a.work.Finish(toolFinishedEvent(jobID, res))
+	}
+	return start, end
+}
+
+// narrateRow speaks one short line for a row that just closed, under the same
+// idle gate as a job summary. Silent unless voice_work_narration is milestones.
+func (a *Agency) narrateRow(jobID string, row workfold.Row) {
+	if a.cfg == nil || a.cfg.VoiceWorkNarration != workNarrationMilestones {
+		return
+	}
+	a.enqueueSummary(jobID, capitalize(row.String())+".")
+	a.tryFlushPending()
+}
+
+// closeFold ends the job's fold, speaking its last row under milestones.
+// narrate is false for an abort: cancelling stays silent (D5), and what an
+// abort says is slice 3's to decide.
+func (a *Agency) closeFold(jobID string, narrate bool) {
+	rows := a.work.Close(jobID)
+	if !narrate || len(rows) == 0 {
+		return
+	}
+	a.narrateRow(jobID, rows[len(rows)-1])
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
 }
 
 func (a *Agency) workerProvider() (brain.Provider, error) {
@@ -211,6 +271,10 @@ func (a *Agency) speakJobStatus(ctx context.Context, turn *turnConductor, metric
 			line = fmt.Sprintf("Queued: %s.", truncateJobTask(active.Task))
 		default:
 			line = fmt.Sprintf("Still working on %s.", truncateJobTask(active.Task))
+			if done := a.work.Summary(active.ID); done != "" {
+				// The middle dot is a screen separator; spoken, it is a comma.
+				line += fmt.Sprintf(" So far: %s.", strings.ReplaceAll(done, " · ", ", "))
+			}
 		}
 	}
 	a.pipeline.speakStandalone(ctx, turn, metrics, line)
@@ -226,17 +290,13 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	if a.narrator != nil && a.narrator.handleJobDone(id, state, result, err) {
 		return
 	}
-	task := ""
-	var elapsed time.Duration
-	for _, info := range a.jobs.Status() {
-		if info.ID == id {
-			task = info.Task
-			elapsed = info.Elapsed()
-			break
-		}
-	}
-	// Enqueue before emitting: the terminal event is the signal that the job's
-	// bookkeeping is complete, and a consumer may read pending on seeing it.
+	task, elapsed := a.jobInfo(id)
+	// The fold closes and everything spoken is queued before the terminal
+	// event goes out: the queue is drained at the end of this function, and an
+	// observer that reacts to the event should see the delivery it announces.
+	// Milestones lead the result — what the worker was doing when it stopped
+	// is not an afterthought to its answer.
+	a.closeFold(id, state != job.StateAborted)
 	switch state {
 	case job.StateDone:
 		a.enqueueSummary(id, a.cleanSummary(result))
@@ -253,6 +313,16 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed})
 	}
 	a.tryFlushPending()
+}
+
+// jobInfo is the job's label and how long it ran.
+func (a *Agency) jobInfo(id string) (string, time.Duration) {
+	for _, info := range a.jobs.Status() {
+		if info.ID == id {
+			return info.Task, info.Elapsed()
+		}
+	}
+	return "", 0
 }
 
 func (a *Agency) enqueueSummary(id, text string) {

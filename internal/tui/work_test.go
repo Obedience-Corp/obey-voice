@@ -9,20 +9,32 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
+// jobLines returns the transcript lines belonging to background jobs, stripped
+// of styling.
+func jobLines(m conversationModel) []string {
+	var lines []string
+	for _, line := range m.transcript {
+		if plain := stripANSI(line); strings.Contains(plain, "⚙") {
+			lines = append(lines, plain)
+		}
+	}
+	return lines
+}
+
 func TestJobToolEventsLeaveTheLiveTurnAlone(t *testing.T) {
 	m := sizedConversation(t, 120, 24)
 	m.ready = true
 	m.setStatus("Listening...", false)
 	m.setVoiceMode(anim.ModeIdle)
-	transcriptLines := len(m.transcript)
+	items := len(m.items)
 
 	m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "audit the config"}})
 	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{
 		ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "config.yaml",
 	}})
 
-	if !strings.Contains(m.jobStatus, "audit the config") || !strings.HasSuffix(m.jobStatus, "· read_file") {
-		t.Fatalf("jobStatus = %q, want the task and the running tool", m.jobStatus)
+	if !strings.Contains(m.jobStatus, "audit the config") || !strings.HasSuffix(m.jobStatus, "· read 1 file") {
+		t.Fatalf("jobStatus = %q, want the task and the folded summary", m.jobStatus)
 	}
 	if m.status != "Listening..." {
 		t.Errorf("status = %q, want the live status line untouched", m.status)
@@ -30,16 +42,98 @@ func TestJobToolEventsLeaveTheLiveTurnAlone(t *testing.T) {
 	if m.voiceMode != anim.ModeIdle {
 		t.Errorf("voiceMode = %v, want the orb left idle by background work", m.voiceMode)
 	}
-	if len(m.transcript) != transcriptLines {
-		t.Errorf("transcript grew by %d lines, want worker tools kept out of it", len(m.transcript)-transcriptLines)
+	if len(m.items) != items+1 {
+		t.Errorf("thread grew by %d items, want exactly one for the job", len(m.items)-items)
 	}
 
 	m, _ = m.Update(busEventMsg{event: events.ToolCallFinished{
 		ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read", Preview: "key: value",
 		Elapsed: 40 * time.Millisecond,
 	}})
-	if m.status != "Listening..." || len(m.transcript) != transcriptLines {
-		t.Errorf("finish changed status %q / transcript %d, want both untouched", m.status, len(m.transcript))
+	if m.status != "Listening..." || len(m.items) != items+1 {
+		t.Errorf("finish changed status %q / thread %d, want both untouched", m.status, len(m.items))
+	}
+}
+
+func TestJobRowsRewriteOneItemInPlace(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "audit the config"}})
+	items := len(m.items)
+
+	calls := []events.Event{
+		events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"},
+		events.ToolCallFinished{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"},
+		events.ToolCallStarted{ID: "c2", JobID: "job-1", Name: "read_file", Kind: "read"},
+	}
+	for _, e := range calls {
+		m, _ = m.Update(busEventMsg{event: e})
+		if len(m.items) != items {
+			t.Fatalf("thread grew to %d items on %T, want the job's one item rewritten", len(m.items), e)
+		}
+	}
+
+	lines := jobLines(m)
+	if len(lines) != 1 {
+		t.Fatalf("job lines = %v, want exactly one", lines)
+	}
+	if !strings.Contains(lines[0], "job-1") || !strings.Contains(lines[0], "read 2 files") {
+		t.Fatalf("job line = %q, want the folded rows", lines[0])
+	}
+
+	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c3", JobID: "job-1", Name: "run_command", Kind: "execute"}})
+	if lines = jobLines(m); len(lines) != 1 || !strings.Contains(lines[0], "read 2 files · ran 1 command") {
+		t.Fatalf("job lines after a kind change = %v, want both rows on one line", lines)
+	}
+}
+
+func TestJobEndSealsTheJobLine(t *testing.T) {
+	cases := []struct {
+		name  string
+		event events.Event
+		want  string
+	}{
+		{
+			name:  "finished",
+			event: events.JobFinished{ID: "job-1", Task: "audit the config", Elapsed: 35 * time.Second},
+			want:  "done in 35s",
+		},
+		{
+			name:  "failed",
+			event: events.JobFailed{ID: "job-1", Task: "audit the config", Err: "worker exploded"},
+			want:  "failed: worker exploded",
+		},
+		{
+			name:  "aborted",
+			event: events.JobAborted{ID: "job-1", Task: "audit the config", Elapsed: 6*time.Minute + 5*time.Second},
+			want:  "killed after 6m5s",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sizedConversation(t, 120, 24)
+			m.ready = true
+			m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "audit the config"}})
+			m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"}})
+			items := len(m.items)
+
+			m, _ = m.Update(busEventMsg{event: tc.event})
+
+			if len(m.items) != items {
+				t.Fatalf("thread grew to %d items on the end event, want the job's line sealed in place", len(m.items))
+			}
+			lines := jobLines(m)
+			if len(lines) != 1 {
+				t.Fatalf("job lines = %v, want exactly one", lines)
+			}
+			if !strings.Contains(lines[0], "read 1 file") || !strings.Contains(lines[0], tc.want) {
+				t.Fatalf("sealed line = %q, want the rows and %q", lines[0], tc.want)
+			}
+			if m.jobStatus != "" {
+				t.Errorf("jobStatus = %q after the job ended, want empty", m.jobStatus)
+			}
+		})
 	}
 }
 
@@ -55,6 +149,9 @@ func TestLiveToolEventsStillDriveStatus(t *testing.T) {
 	}
 	if m.jobStatus != "" {
 		t.Errorf("jobStatus = %q, want empty for a live tool call", m.jobStatus)
+	}
+	if lines := jobLines(m); len(lines) != 0 {
+		t.Errorf("job lines = %v, want none for a live tool call", lines)
 	}
 }
 
@@ -93,8 +190,12 @@ func TestQueuedJobDoesNotRelabelTheRunningJob(t *testing.T) {
 	step(events.JobQueued{ID: "job-2", Task: "write the report"})
 	step(events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"})
 
-	if want := "Working: audit the config · read_file (+1 queued)"; m.jobStatus != want {
+	if want := "Working: audit the config · read 1 file (+1 queued)"; m.jobStatus != want {
 		t.Fatalf("chip while job-2 waits = %q, want %q", m.jobStatus, want)
+	}
+	lines := jobLines(m)
+	if len(lines) != 2 || !strings.Contains(lines[0], "job-1 · read 1 file") || !strings.Contains(lines[1], "job-2 · write the report · queued") {
+		t.Fatalf("job lines while job-2 waits = %v, want job-1's rows and job-2 marked queued", lines)
 	}
 
 	step(events.JobFinished{ID: "job-1", Task: "audit the config", Elapsed: 2 * time.Second})
@@ -105,6 +206,9 @@ func TestQueuedJobDoesNotRelabelTheRunningJob(t *testing.T) {
 	step(events.JobStarted{ID: "job-2", Task: "write the report"})
 	if want := "Working: write the report"; m.jobStatus != want {
 		t.Fatalf("chip once job-2 runs = %q, want %q", m.jobStatus, want)
+	}
+	if lines = jobLines(m); len(lines) != 2 || strings.Contains(lines[1], "queued") {
+		t.Fatalf("job lines once job-2 runs = %v, want its line rewritten without the queued mark", lines)
 	}
 
 	step(events.JobFinished{ID: "job-2", Task: "write the report", Elapsed: time.Second})
@@ -119,7 +223,7 @@ func TestToolEventForUnknownJobStillShowsAChip(t *testing.T) {
 	m := sizedConversation(t, 120, 24)
 	m.ready = true
 	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c1", JobID: "job-4", Name: "run_command", Kind: "execute"}})
-	if want := "Working: job-4 · run_command"; m.jobStatus != want {
+	if want := "Working: job-4 · ran 1 command"; m.jobStatus != want {
 		t.Fatalf("chip = %q, want %q", m.jobStatus, want)
 	}
 }

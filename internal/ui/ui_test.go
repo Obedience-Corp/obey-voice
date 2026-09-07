@@ -203,3 +203,96 @@ func TestJobTransitionsPrintOneLineEach(t *testing.T) {
 		t.Errorf("job-2 printed as started while only queued:\n%s", got)
 	}
 }
+
+// A worker's tool calls are folded on stdout the same way the TUI folds them:
+// a row prints when its kind gives way to another, and when the job ends.
+// Printing per call turned one background job into a wall of scrollback.
+func TestWorkerToolLinesFoldIntoRows(t *testing.T) {
+	call := func(id, name, kind string) []events.Event {
+		return []events.Event{
+			events.ToolCallStarted{ID: id, JobID: "job-1", Name: name, Kind: kind},
+			events.ToolCallFinished{ID: id, JobID: "job-1", Name: name, Kind: kind},
+		}
+	}
+
+	cases := []struct {
+		name   string
+		events []events.Event
+		want   []string
+		absent []string
+	}{
+		{
+			name: "consecutive calls print nothing until the kind changes",
+			events: concat(
+				call("c1", "read_file", "read"),
+				call("c2", "read_file", "read"),
+			),
+			absent: []string{"[job-1]"},
+		},
+		{
+			name: "a kind change closes the row",
+			events: concat(
+				call("c1", "read_file", "read"),
+				call("c2", "read_file", "read"),
+				call("c3", "run_command", "execute"),
+			),
+			want:   []string{"[job-1] read 2 files"},
+			absent: []string{"ran 1 command"},
+		},
+		{
+			name: "the job end closes the last row before the job line",
+			events: concat(
+				call("c1", "read_file", "read"),
+				[]events.Event{events.JobFinished{ID: "job-1", Task: "audit", Elapsed: 2 * time.Second}},
+			),
+			want: []string{"[job-1] read 1 file", "job-1 finished"},
+		},
+		{
+			name: "a failed call is counted in its row",
+			events: concat(
+				[]events.Event{
+					events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "run_command", Kind: "execute"},
+					events.ToolCallFinished{ID: "c1", JobID: "job-1", Name: "run_command", Kind: "execute", Err: "error: boom"},
+					events.JobFailed{ID: "job-1", Task: "audit", Err: "worker exploded"},
+				},
+			),
+			want: []string{"[job-1] ran 1 command (1 failed)", "job-1 failed: worker exploded"},
+		},
+		{
+			name:   "a live tool call still prints per call",
+			events: []events.Event{events.ToolCallStarted{ID: "c1", Name: "read_file", Kind: "read", Summary: "a.go"}},
+			want:   []string{"🔧 read_file (a.go)"},
+			absent: []string{"[job-1]"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bus := events.NewBus()
+			out := &bytes.Buffer{}
+			newUI(bus, "Samantha", out, true)
+			for _, e := range tc.events {
+				bus.Emit(e)
+			}
+			got := out.String()
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("stdout = %q, want it to contain %q", got, want)
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(got, absent) {
+					t.Errorf("stdout = %q, want it to omit %q", got, absent)
+				}
+			}
+		})
+	}
+}
+
+func concat(groups ...[]events.Event) []events.Event {
+	var all []events.Event
+	for _, g := range groups {
+		all = append(all, g...)
+	}
+	return all
+}

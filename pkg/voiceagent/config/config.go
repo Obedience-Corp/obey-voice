@@ -236,6 +236,10 @@ type Config struct {
 	// VoiceRouterTools selects the live-brain tool surface: route_only (default)
 	// or legacy (full worker tool list for A/B).
 	VoiceRouterTools string `mapstructure:"voice_router_tools"`
+	// VoiceWorkNarration is how much a background worker narrates itself:
+	// status_only (default) speaks only when asked, milestones speaks one short
+	// line each time the worker moves from one kind of work to another.
+	VoiceWorkNarration string `mapstructure:"voice_work_narration"`
 	// VoiceFailedRouteRepair enables Layer 3 spawn repair when the model speaks
 	// a tool promise with no tool_calls (design D3).
 	VoiceFailedRouteRepair bool `mapstructure:"voice_failed_route_repair"`
@@ -590,6 +594,9 @@ func setDefaults(v *viper.Viper) {
 	// via remote_tools_enabled.
 	v.SetDefault("voice_tools_enabled", true)
 	v.SetDefault("voice_router_tools", "route_only")
+	// Silence until asked: a worker that talks over the conversation is worse
+	// than one that is quiet about what it did.
+	v.SetDefault("voice_work_narration", "status_only")
 	v.SetDefault("voice_failed_route_repair", true)
 	v.SetDefault("continuity_integrity_enabled", true)
 	v.SetDefault("continuity_projection_enabled", true)
@@ -764,6 +771,7 @@ var envBindings = map[string]string{
 	"claude_session_warn_tokens":  "CLAUDE_SESSION_WARN_TOKENS",
 	"voice_tools_enabled":         "VOICE_TOOLS_ENABLED",
 	"voice_router_tools":          "VOICE_ROUTER_TOOLS",
+	"voice_work_narration":        "VOICE_WORK_NARRATION",
 	"voice_failed_route_repair":   "VOICE_FAILED_ROUTE_REPAIR",
 	"tool_command_timeout":        "TOOL_COMMAND_TIMEOUT",
 	"persona":                     "PERSONA",
