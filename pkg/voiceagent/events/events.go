@@ -494,13 +494,22 @@ type JobFailed struct {
 
 func (e JobFailed) eventType() string { return "job_failed" }
 
-// JobAborted signals a worker job was cancelled before it finished. Speech
-// stays silent on abort; this is how the abort becomes visible instead.
+// JobAborted signals a worker job was stopped before it finished. Reason is
+// "cancelled" when the user stopped it (speech stays silent; this event is
+// how the abort becomes visible) or "budget" when it ran past the configured
+// job budget (spoken once, since nobody asked for that stop).
 type JobAborted struct {
 	ID      string
 	Task    string
 	Elapsed time.Duration
+	Reason  string
 }
+
+// Abort reasons carried by JobAborted.Reason.
+const (
+	AbortCancelled = "cancelled"
+	AbortBudget    = "budget"
+)
 
 func (e JobAborted) eventType() string { return "job_aborted" }
 

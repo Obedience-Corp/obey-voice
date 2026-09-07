@@ -296,3 +296,18 @@ func concat(groups ...[]events.Event) []events.Event {
 	}
 	return all
 }
+
+func TestBudgetStopPrintsOverBudget(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	NewWithOutput(bus, "agent", &buf)
+	bus.Emit(events.JobStarted{ID: "job-1", Task: "audit"})
+	bus.Emit(events.JobAborted{ID: "job-1", Task: "audit", Elapsed: 10 * time.Minute, Reason: events.AbortBudget})
+	bus.Emit(events.JobAborted{ID: "job-2", Task: "tidy", Elapsed: 3 * time.Second, Reason: events.AbortCancelled})
+	got := buf.String()
+	for _, want := range []string{"job-1 over budget after 10m0s", "job-2 killed after 3s"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+}

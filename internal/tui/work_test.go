@@ -227,3 +227,41 @@ func TestToolEventForUnknownJobStillShowsAChip(t *testing.T) {
 		t.Fatalf("chip = %q, want %q", m.jobStatus, want)
 	}
 }
+
+// With room for more than one job, the chip names the first running job and
+// counts the others running alongside it and the ones still waiting.
+func TestChipCountsJobsRunningAlongside(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	step := func(e events.Event) { m, _ = m.Update(busEventMsg{event: e}) }
+
+	step(events.JobQueued{ID: "job-1", Task: "audit the config"})
+	step(events.JobStarted{ID: "job-1", Task: "audit the config"})
+	step(events.JobQueued{ID: "job-2", Task: "write the report"})
+	step(events.JobStarted{ID: "job-2", Task: "write the report"})
+	step(events.JobQueued{ID: "job-3", Task: "tidy the notes"})
+
+	if want := "Working: audit the config (+1 running, +1 queued)"; m.jobStatus != want {
+		t.Fatalf("chip = %q, want %q", m.jobStatus, want)
+	}
+	step(events.JobFinished{ID: "job-1", Task: "audit the config", Elapsed: time.Second})
+	if want := "Working: write the report (+1 queued)"; m.jobStatus != want {
+		t.Fatalf("chip after job-1 = %q, want %q", m.jobStatus, want)
+	}
+}
+
+func TestBudgetStopSealsTheLineAsOverBudget(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.ready = true
+	m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "audit the config"}})
+	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"}})
+	m, _ = m.Update(busEventMsg{event: events.JobAborted{ID: "job-1", Task: "audit the config", Elapsed: 10 * time.Minute, Reason: events.AbortBudget}})
+
+	lines := jobLines(m)
+	if len(lines) != 1 || !strings.Contains(lines[0], "read 1 file · over budget after 10m0s") {
+		t.Fatalf("job lines = %v, want the rows sealed with the budget stop", lines)
+	}
+	if m.jobStatus != "" {
+		t.Fatalf("chip = %q after a budget stop, want empty", m.jobStatus)
+	}
+}

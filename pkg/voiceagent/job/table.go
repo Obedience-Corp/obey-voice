@@ -2,10 +2,16 @@ package job
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// ErrBudget is the error a job ends with when it ran past the table's budget.
+// The done callback's err wraps it, so consumers can tell a budget stop from
+// a user's cancel with errors.Is.
+var ErrBudget = errors.New("job budget exceeded")
 
 // State is a job lifecycle phase.
 type State string
@@ -80,7 +86,13 @@ type Table struct {
 	nextID   int
 	jobs     map[string]*entry
 	queue    []string
-	running  string
+	// running holds the jobs whose run function is live; runOrder keeps them
+	// in the order they started, for status.
+	running       map[string]struct{}
+	runOrder      []string
+	maxConcurrent int
+	// budget is the longest a job may run; zero means no limit.
+	budget   time.Duration
 	onDone   DoneCallback
 	onQueued QueuedCallback
 	onStart  StartCallback
@@ -94,18 +106,52 @@ type entry struct {
 	// announced is set once OnQueued has run; the pump never launches a job
 	// before that, so its start cannot be published ahead of its queued event.
 	announced bool
+	// budgetTimer fires the budget stop; overBudget records that it did, so
+	// the terminal state and error say so rather than "cancelled".
+	budgetTimer *time.Timer
+	overBudget  bool
+}
+
+// Option configures a Table.
+type Option func(*Table)
+
+// WithMaxConcurrent sets how many jobs run at once. Values below one mean one.
+func WithMaxConcurrent(n int) Option {
+	return func(t *Table) {
+		if n < 1 {
+			n = 1
+		}
+		t.maxConcurrent = n
+	}
+}
+
+// WithBudget caps how long any one job may run. A breach aborts the job with
+// an error wrapping ErrBudget. Zero or less means no cap.
+func WithBudget(d time.Duration) Option {
+	return func(t *Table) {
+		if d < 0 {
+			d = 0
+		}
+		t.budget = d
+	}
 }
 
 // NewTable constructs a job table. lifetime scopes jobs past turn cancellation;
 // callers typically pass the pipeline or agent context.
-func NewTable(lifetime context.Context) *Table {
+func NewTable(lifetime context.Context, opts ...Option) *Table {
 	if lifetime == nil {
 		lifetime = context.Background()
 	}
-	return &Table{
-		lifetime: lifetime,
-		jobs:     make(map[string]*entry),
+	t := &Table{
+		lifetime:      lifetime,
+		jobs:          make(map[string]*entry),
+		running:       make(map[string]struct{}),
+		maxConcurrent: 1,
 	}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
 }
 
 // OnDone registers a callback for terminal job states.
@@ -131,8 +177,9 @@ func (t *Table) OnStart(cb StartCallback) {
 	t.onStart = cb
 }
 
-// Start enqueues work. A second spawn while one is active queues behind it (Q2).
-// parent is ignored for cancellation — jobs use context.WithoutCancel(lifetime).
+// Start enqueues work. A spawn beyond the concurrency limit queues in order
+// behind the running ones (Q2). parent is ignored for cancellation — jobs use
+// context.WithoutCancel(lifetime).
 func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	_ = parent
 	t.mu.Lock()
@@ -203,7 +250,8 @@ func (t *Table) Abort(id string) {
 	// running: goroutine observes ctx cancel and marks aborted.
 }
 
-// Status returns all known jobs in start order.
+// Status returns all known jobs: running first in start order, then queued in
+// queue order, then the rest.
 func (t *Table) Status() []Info {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -220,7 +268,7 @@ func (t *Table) Status() []Info {
 func (t *Table) Active() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.running != "" || len(t.queue) > 0
+	return len(t.running) > 0 || len(t.queue) > 0
 }
 
 // Close rejects new jobs. It does not cancel running work.
@@ -230,19 +278,22 @@ func (t *Table) Close() {
 	t.closed = true
 }
 
+// pumpLocked launches queued jobs while there is room. The head of the queue
+// is never skipped: if it is not announced yet, its own Start pumps once the
+// queued callback has run.
 func (t *Table) pumpLocked() {
-	if t.running != "" || len(t.queue) == 0 {
-		return
+	for len(t.running) < t.maxConcurrent && len(t.queue) > 0 {
+		id := t.queue[0]
+		e := t.jobs[id]
+		if !e.announced {
+			return
+		}
+		t.queue = t.queue[1:]
+		e.info.State = StateRunning
+		t.running[id] = struct{}{}
+		t.runOrder = append(t.runOrder, id)
+		go t.run(e.ctx, id)
 	}
-	id := t.queue[0]
-	e := t.jobs[id]
-	if !e.announced {
-		return // its own Start pumps once the queued callback has run
-	}
-	t.queue = t.queue[1:]
-	e.info.State = StateRunning
-	t.running = id
-	go t.run(e.ctx, id)
 }
 
 func (t *Table) run(jobCtx context.Context, id string) {
@@ -261,8 +312,14 @@ func (t *Table) run(jobCtx context.Context, id string) {
 			}
 		}
 		t.mu.Lock()
-		if e, ok := t.jobs[id]; ok && e.info.State == StateAborted {
-			state = StateAborted
+		if e, ok := t.jobs[id]; ok {
+			if e.info.State == StateAborted {
+				state = StateAborted
+			}
+			if e.overBudget {
+				state = StateAborted
+				err = fmt.Errorf("%w after %s", ErrBudget, t.budget)
+			}
 		}
 		cb := t.finishLocked(id, state, result, err)
 		t.mu.Unlock()
@@ -281,6 +338,9 @@ func (t *Table) run(jobCtx context.Context, id string) {
 	onStart := t.onStart
 	if e != nil && e.spec.Run != nil {
 		e.info.Started = time.Now()
+		if t.budget > 0 {
+			e.budgetTimer = time.AfterFunc(t.budget, func() { t.exceedBudget(id) })
+		}
 	}
 	t.mu.Unlock()
 	if e == nil || e.spec.Run == nil {
@@ -308,10 +368,35 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 	if err != nil {
 		e.info.Err = err.Error()
 	}
-	if t.running == id {
-		t.running = ""
+	if e.budgetTimer != nil {
+		e.budgetTimer.Stop()
+	}
+	delete(t.running, id)
+	for i, running := range t.runOrder {
+		if running == id {
+			t.runOrder = append(t.runOrder[:i], t.runOrder[i+1:]...)
+			break
+		}
 	}
 	return t.onDone
+}
+
+// exceedBudget stops a job that is still running when its budget timer
+// fires. The run goroutine sees the cancel, and its terminal state and error
+// name the budget rather than a cancel.
+func (t *Table) exceedBudget(id string) {
+	t.mu.Lock()
+	e, ok := t.jobs[id]
+	if !ok || e.info.State != StateRunning {
+		t.mu.Unlock()
+		return
+	}
+	e.overBudget = true
+	cancel := e.cancel
+	t.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (t *Table) removeFromQueueLocked(id string) {
@@ -323,27 +408,29 @@ func (t *Table) removeFromQueueLocked(id string) {
 	}
 }
 
+// orderedIDsLocked lists running jobs first so a status query names the job
+// that is actually working, not the one waiting behind it.
 func (t *Table) orderedIDsLocked() []string {
 	seen := make(map[string]struct{}, len(t.jobs))
 	var out []string
-	for _, id := range t.queue {
-		if _, ok := t.jobs[id]; ok {
-			if _, dup := seen[id]; !dup {
-				out = append(out, id)
-				seen[id] = struct{}{}
-			}
+	add := func(id string) {
+		if _, ok := t.jobs[id]; !ok {
+			return
 		}
+		if _, dup := seen[id]; dup {
+			return
+		}
+		out = append(out, id)
+		seen[id] = struct{}{}
 	}
-	if t.running != "" {
-		if _, ok := seen[t.running]; !ok {
-			out = append(out, t.running)
-			seen[t.running] = struct{}{}
-		}
+	for _, id := range t.runOrder {
+		add(id)
+	}
+	for _, id := range t.queue {
+		add(id)
 	}
 	for id := range t.jobs {
-		if _, ok := seen[id]; !ok {
-			out = append(out, id)
-		}
+		add(id)
 	}
 	return out
 }

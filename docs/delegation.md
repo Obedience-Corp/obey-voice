@@ -113,8 +113,8 @@ turn cannot hijack the conversation. `job_queued`, `job_started`, `job_finished`
 `job_failed` and `job_aborted` bookend the work: queued when the table accepts
 the job, started when it actually begins (a spawn behind a running job waits
 for that job's terminal event), and the last three carry elapsed time. The chip
-names the running job and counts the ones queued behind it. Abort stays silent
-in speech — the bus event is how it becomes visible.
+names the running job and counts the ones running alongside or queued behind
+it. A cancel stays silent in speech — the bus event is how it becomes visible.
 
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one thread line per job and
@@ -128,6 +128,15 @@ answers `Still working on {task}. So far: read 3 files · ran 1 command.`
 (default) stays quiet until asked; `milestones` speaks one short line ("Read 3
 files.") each time a row closes, through the same idle gate as a job summary.
 Never one line per call.
+
+Two limits bound spawned work. `voice_worker_max_concurrent` (default `1`) is
+how many jobs run at once; the rest wait in order, and "what's happening"
+names the running job first, then counts the others ("Also 1 more running and
+1 queued."). `voice_worker_job_budget` (default `600` seconds) is the longest
+any one job may run: past it the job is stopped, `job_aborted` carries
+`reason: budget`, and she says so once — "I stopped {task} after 10 minutes. It
+ran past its budget." A job you cancel yourself carries `reason: cancelled` and
+stays silent.
 
 The JSONL transcript records `id`, `kind`, `job_id` and `elapsed_s` on
 `tool_call` / `tool_result`, plus one `job` record per transition carrying

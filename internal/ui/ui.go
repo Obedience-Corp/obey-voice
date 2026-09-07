@@ -323,7 +323,11 @@ func (u *UI) onJobFailed(e events.JobFailed) {
 
 func (u *UI) onJobAborted(e events.JobAborted) {
 	u.closeFold(e.ID)
-	u.dimLine(fmt.Sprintf("■ %s killed after %s", e.ID, e.Elapsed.Round(time.Second)))
+	how := "killed"
+	if e.Reason == events.AbortBudget {
+		how = "over budget"
+	}
+	u.dimLine(fmt.Sprintf("■ %s %s after %s", e.ID, how, e.Elapsed.Round(time.Second)))
 }
 
 func (u *UI) onVoiceGateStripped(e events.VoiceGateStripped) {

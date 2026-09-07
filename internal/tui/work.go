@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -51,8 +52,11 @@ func (m *conversationModel) jobFailed(e events.JobFailed) {
 }
 
 func (m *conversationModel) jobAborted(e events.JobAborted) {
-	killed := "killed after " + roundSeconds(e.Elapsed)
-	m.jobEnded(e.ID, killed, " · "+killed, 0)
+	stopped := "killed after " + roundSeconds(e.Elapsed)
+	if e.Reason == events.AbortBudget {
+		stopped = "over budget after " + roundSeconds(e.Elapsed)
+	}
+	m.jobEnded(e.ID, stopped, " · "+stopped, 0)
 }
 
 // jobEnded logs the transition, seals the job's item with its outcome, and
@@ -136,20 +140,28 @@ func (m *conversationModel) runningJob() (string, *jobView) {
 	return "", nil
 }
 
-// refreshJobChip rewrites the footer chip from job state. Only a running job
-// names the chip, with its folded summary (or the tool it is on until the
-// fold has a row); the ones waiting behind it are counted.
+// refreshJobChip rewrites the footer chip from job state. The first running
+// job names the chip, with its folded summary (or the tool it is on until the
+// fold has a row); jobs running alongside it and jobs waiting are counted.
 func (m *conversationModel) refreshJobChip() {
 	runningID, running := m.runningJob()
-	queued := 0
+	moreRunning, queued := 0, 0
 	firstQueued := ""
 	for _, id := range m.jobOrder {
-		if v := m.jobs[id]; v != nil && !v.running {
-			if firstQueued == "" {
-				firstQueued = v.task
-			}
-			queued++
+		v := m.jobs[id]
+		if v == nil {
+			continue
 		}
+		if v.running {
+			if id != runningID {
+				moreRunning++
+			}
+			continue
+		}
+		if firstQueued == "" {
+			firstQueued = v.task
+		}
+		queued++
 	}
 	chip := ""
 	switch {
@@ -166,8 +178,15 @@ func (m *conversationModel) refreshJobChip() {
 		chip = "Queued: " + truncateJobLine(firstQueued)
 		queued--
 	}
+	var extras []string
+	if moreRunning > 0 {
+		extras = append(extras, fmt.Sprintf("+%d running", moreRunning))
+	}
 	if queued > 0 {
-		chip += fmt.Sprintf(" (+%d queued)", queued)
+		extras = append(extras, fmt.Sprintf("+%d queued", queued))
+	}
+	if len(extras) > 0 {
+		chip += " (" + strings.Join(extras, ", ") + ")"
 	}
 	m.jobStatus = chip
 }

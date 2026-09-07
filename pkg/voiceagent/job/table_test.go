@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -449,4 +450,153 @@ func TestDoneCallbackCompletesBeforeNextJobRuns(t *testing.T) {
 	close(release)
 	awaitOrder(t, order, "run:job-2")
 	awaitOrder(t, order, "done:job-2")
+}
+
+// With room for two, two jobs run at once and the third waits; Status lists
+// the running ones first, in start order.
+func TestMaxConcurrentRunsJobsTogether(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background(), WithMaxConcurrent(2))
+	started := make(chan string, 3)
+	release := make(chan struct{})
+	hold := func(ctx context.Context) (string, error) {
+		started <- IDFromContext(ctx)
+		select {
+		case <-release:
+			return "ok", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	for _, task := range []string{"a", "b", "c"} {
+		if _, err := table.Start(context.Background(), Spec{Task: task, Run: hold}); err != nil {
+			t.Fatalf("Start(%s): %v", task, err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("only %d job(s) ran, want 2 at once", i)
+		}
+	}
+	select {
+	case id := <-started:
+		t.Fatalf("%s ran beyond the limit of 2", id)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	st := table.Status()
+	if len(st) != 3 || st[0].ID != "job-1" || st[1].ID != "job-2" || st[2].ID != "job-3" {
+		t.Fatalf("status order = %+v, want job-1, job-2 running then job-3", st)
+	}
+	if st[0].State != StateRunning || st[1].State != StateRunning || st[2].State != StateQueued {
+		t.Fatalf("states = %s/%s/%s, want running/running/queued", st[0].State, st[1].State, st[2].State)
+	}
+
+	close(release)
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the queued job never ran once room opened")
+	}
+}
+
+// A job that outlives the budget is stopped with an error naming the budget,
+// which is how consumers tell it from a user's cancel.
+func TestBudgetStopsARunningJob(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background(), WithBudget(40*time.Millisecond))
+	type outcome struct {
+		state State
+		err   error
+	}
+	done := make(chan outcome, 1)
+	table.OnDone(func(_ string, state State, _ string, err error) { done <- outcome{state, err} })
+
+	id, err := table.Start(context.Background(), Spec{
+		Task: "endless",
+		Run: func(ctx context.Context) (string, error) {
+			<-ctx.Done()
+			return "", ctx.Err()
+		},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case got := <-done:
+		if got.state != StateAborted {
+			t.Fatalf("state = %q, want aborted", got.state)
+		}
+		if !errors.Is(got.err, ErrBudget) {
+			t.Fatalf("err = %v, want ErrBudget", got.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("budget never stopped the job")
+	}
+	st := table.Status()
+	if len(st) != 1 || st[0].ID != id || st[0].State != StateAborted || !strings.Contains(st[0].Err, "budget") {
+		t.Fatalf("status = %+v, want aborted with a budget error", st)
+	}
+}
+
+// A job that finishes inside its budget must not be touched when the timer
+// would have fired.
+func TestBudgetTimerDoesNotOutliveAFinishedJob(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background(), WithBudget(30*time.Millisecond))
+	var calls atomic.Int32
+	done := make(chan State, 2)
+	table.OnDone(func(_ string, state State, _ string, _ error) {
+		calls.Add(1)
+		done <- state
+	})
+	if _, err := table.Start(context.Background(), Spec{Task: "quick", Run: func(context.Context) (string, error) {
+		return "ok", nil
+	}}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case state := <-done:
+		if state != StateDone {
+			t.Fatalf("state = %q, want done", state)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("job did not finish")
+	}
+	time.Sleep(80 * time.Millisecond)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("done callbacks = %d, want exactly 1", n)
+	}
+	if st := table.Status(); st[0].State != StateDone || st[0].Err != "" {
+		t.Fatalf("status = %+v, want done and untouched by the budget timer", st)
+	}
+}
+
+// Status must name the running job before the one queued behind it, or a
+// status query answers with the wrong job.
+func TestStatusListsRunningBeforeQueued(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	ran := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	if _, err := table.Start(context.Background(), Spec{Task: "first", Run: func(ctx context.Context) (string, error) {
+		close(ran)
+		<-release
+		return "ok", nil
+	}}); err != nil {
+		t.Fatalf("Start(first): %v", err)
+	}
+	<-ran
+	if _, err := table.Start(context.Background(), Spec{Task: "second", Run: func(context.Context) (string, error) {
+		return "ok", nil
+	}}); err != nil {
+		t.Fatalf("Start(second): %v", err)
+	}
+	st := table.Status()
+	if len(st) != 2 || st[0].State != StateRunning || st[1].State != StateQueued {
+		t.Fatalf("status = %+v, want the running job first, then the queued one", st)
+	}
 }

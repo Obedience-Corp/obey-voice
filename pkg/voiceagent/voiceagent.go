@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/apmfrontend"
@@ -419,7 +420,10 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		p.STT = opts.STT
 	}
 
-	jobs := job.NewTable(ctx)
+	jobs := job.NewTable(ctx,
+		job.WithMaxConcurrent(cfg.VoiceWorkerMaxConcurrent),
+		job.WithBudget(time.Duration(cfg.VoiceWorkerJobBudget)*time.Second),
+	)
 	var worker brain.Provider
 	var workerErr error
 	if opts.Worker != nil {
