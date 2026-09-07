@@ -385,6 +385,11 @@ func toolKeys() []KeySpec {
 			Help: "route_only exposes only the route tool on the microphone brain; legacy keeps the full tool list for comparison.",
 		},
 		{
+			Key: "voice_work_narration", Type: TypeEnum, Default: "status_only", Enum: []string{"status_only", "milestones"},
+			Group: GroupTools, Title: "Work narration",
+			Help: "status_only stays quiet until you ask what's happening; milestones speaks a short line each time the worker moves from one kind of work to another.",
+		},
+		{
 			Key: "voice_failed_route_repair", Type: TypeBool, Default: true,
 			Group: GroupTools, Title: "Failed route repair",
 			Help: "When the model speaks a tool promise without calling a tool, classify the turn as spawn instead of reading the promise aloud.",

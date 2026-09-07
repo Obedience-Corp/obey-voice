@@ -19,6 +19,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 const conversationInputHeight = 3
@@ -63,6 +64,10 @@ type conversationModel struct {
 	// jobOrder keeps them in queue order.
 	jobs     map[string]*jobView
 	jobOrder []string
+	// work folds a job's per-call tool events into rows; jobItems maps a job
+	// to the one transcript item those rows rewrite. See work.go.
+	work     *workfold.Tracker
+	jobItems map[string]int
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
@@ -178,6 +183,8 @@ func newConversation(agentName string) conversationModel {
 		canCancelVoice: &atomic.Bool{},
 		followChat:     true,
 		followActivity: true,
+		work:           workfold.New(),
+		jobItems:       make(map[string]int),
 		startedAt:      time.Now(),
 		reducedMotion:  anim.ReducedMotion(),
 	}
@@ -515,6 +522,7 @@ func (m *conversationModel) appendTranscript(lines ...string) {
 func (m *conversationModel) clearTranscript() {
 	m.transcript = nil
 	m.items = nil
+	m.jobItems = nil
 	m.pendingUserEcho = ""
 	m.lastAssistantText = ""
 	m.plainTurns = nil
@@ -1145,17 +1153,13 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.jobStarted(e)
 
 	case events.JobFinished:
-		m.jobEnded(e.ID, "finished", e.Elapsed)
+		m.jobFinished(e)
 
 	case events.JobFailed:
-		detail := e.Err
-		if detail == "" {
-			detail = "failed"
-		}
-		m.jobEnded(e.ID, "failed: "+detail, e.Elapsed)
+		m.jobFailed(e)
 
 	case events.JobAborted:
-		m.jobEnded(e.ID, "killed after "+e.Elapsed.Round(time.Second).String(), 0)
+		m.jobAborted(e)
 	}
 }
 

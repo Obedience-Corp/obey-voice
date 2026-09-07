@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 // UI handles terminal output for the voice assistant.
@@ -15,6 +16,10 @@ type UI struct {
 	name  string
 	out   io.Writer
 	plain bool
+	// work folds a background job's tool calls into rows. Without the TUI a
+	// job's eleven reads were eleven lines scrolling past the conversation;
+	// one row prints when the kind changes or the job ends.
+	work *workfold.Tracker
 }
 
 // New creates a UI writing to stdout and subscribes it to the event bus.
@@ -42,7 +47,7 @@ func NewWithOutput(bus *events.Bus, agentName string, out io.Writer) *UI {
 // newUI is the shared constructor; plain is the console/file decision, taken
 // by the exported constructors and set explicitly by tests.
 func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
-	u := &UI{bus: bus, name: agentName, out: out, plain: plain}
+	u := &UI{bus: bus, name: agentName, out: out, plain: plain, work: workfold.New()}
 
 	events.Subscribe(bus, u.onSTTPhase)
 	events.Subscribe(bus, u.onTranscriptPartial)
@@ -255,11 +260,33 @@ func (u *UI) onInfo(e events.Info) {
 }
 
 func (u *UI) onToolCallStarted(e events.ToolCallStarted) {
+	if e.JobID != "" {
+		u.printRow(e.JobID, u.work.Add(e))
+		return
+	}
 	msg := "🔧 " + e.Name
 	if e.Summary != "" {
 		msg += " (" + e.Summary + ")"
 	}
-	u.dimLine(jobPrefix(e.JobID) + msg)
+	u.dimLine(msg)
+}
+
+// printRow prints a fold row that has just closed, if any.
+func (u *UI) printRow(jobID string, row *workfold.Row) {
+	if row == nil {
+		return
+	}
+	u.dimLine(jobPrefix(jobID) + row.String())
+}
+
+// closeFold prints the row the job was still on. Every earlier row printed as
+// it closed, so only the last one is unreported.
+func (u *UI) closeFold(jobID string) {
+	rows := u.work.Close(jobID)
+	if len(rows) == 0 {
+		return
+	}
+	u.printRow(jobID, &rows[len(rows)-1])
 }
 
 // jobPrefix marks a line as a background worker's rather than the live brain's.
@@ -285,14 +312,17 @@ func (u *UI) onJobStarted(e events.JobStarted) {
 }
 
 func (u *UI) onJobFinished(e events.JobFinished) {
+	u.closeFold(e.ID)
 	u.dimLine(fmt.Sprintf("✓ %s finished (%s)", e.ID, e.Elapsed.Round(time.Second)))
 }
 
 func (u *UI) onJobFailed(e events.JobFailed) {
+	u.closeFold(e.ID)
 	u.dimLine(fmt.Sprintf("✗ %s failed: %s", e.ID, e.Err))
 }
 
 func (u *UI) onJobAborted(e events.JobAborted) {
+	u.closeFold(e.ID)
 	u.dimLine(fmt.Sprintf("■ %s killed after %s", e.ID, e.Elapsed.Round(time.Second)))
 }
 
@@ -301,11 +331,15 @@ func (u *UI) onVoiceGateStripped(e events.VoiceGateStripped) {
 }
 
 func (u *UI) onToolCallFinished(e events.ToolCallFinished) {
+	if e.JobID != "" {
+		u.work.Finish(e)
+		return
+	}
 	msg := "✓ " + e.Name
 	if e.Err != "" {
 		msg = "✗ " + e.Name + ": " + e.Err
 	} else if e.Preview != "" {
 		msg += " → " + e.Preview
 	}
-	u.dimLine(jobPrefix(e.JobID) + msg)
+	u.dimLine(msg)
 }

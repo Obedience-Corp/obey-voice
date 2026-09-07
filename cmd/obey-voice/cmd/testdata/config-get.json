@@ -542,6 +542,10 @@
       "value": true,
       "source": "default"
     },
+    "voice_work_narration": {
+      "value": "status_only",
+      "source": "default"
+    },
     "voice_worker_model": {
       "value": "",
       "source": "default"

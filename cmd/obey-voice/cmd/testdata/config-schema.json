@@ -1271,6 +1271,24 @@
       "editable": true
     },
     {
+      "key": "voice_work_narration",
+      "type": "enum",
+      "default": "status_only",
+      "enum": [
+        "status_only",
+        "milestones"
+      ],
+      "allows_empty": false,
+      "group": "tools",
+      "title": "Work narration",
+      "help": "status_only stays quiet until you ask what's happening; milestones speaks a short line each time the worker moves from one kind of work to another.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "VOICE_WORK_NARRATION",
+      "editable": true
+    },
+    {
       "key": "work_dir",
       "type": "string",
       "default": "",

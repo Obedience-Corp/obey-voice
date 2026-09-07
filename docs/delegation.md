@@ -116,10 +116,22 @@ for that job's terminal event), and the last three carry elapsed time. The chip
 names the running job and counts the ones queued behind it. Abort stays silent
 in speech — the bus event is how it becomes visible.
 
-Without the TUI, worker tool lines are prefixed `[job-1]` and each job
-transition prints one dim line. The JSONL transcript records `id`, `kind`,
-`job_id` and `elapsed_s` on `tool_call` / `tool_result`, plus one `job` record
-per transition carrying `state` and `elapsed_s`.
+Those events are folded for display: consecutive calls of one kind become a
+row, a kind change opens the next. The TUI keeps one thread line per job and
+rewrites it in place — `⚙ job-1 · read 3 files · ran 1 command`, sealed with
+`· done in 35s`, `· failed: …` or `· killed after 6m5s` — and the chip reads
+`Working: {task} · {rows}`. Without the TUI each row prints once as `[job-1]
+read 3 files`, when its kind gives way or the job ends. "What's happening"
+answers `Still working on {task}. So far: read 3 files · ran 1 command.`
+
+`voice_work_narration` decides whether a job talks while it works: `status_only`
+(default) stays quiet until asked; `milestones` speaks one short line ("Read 3
+files.") each time a row closes, through the same idle gate as a job summary.
+Never one line per call.
+
+The JSONL transcript records `id`, `kind`, `job_id` and `elapsed_s` on
+`tool_call` / `tool_result`, plus one `job` record per transition carrying
+`state` and `elapsed_s`.
 
 ## Remaining WI-ebe14b scope
 
