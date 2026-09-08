@@ -107,6 +107,7 @@ type runMetrics struct {
 	JobAborted         int
 	LiveToolCalls      int
 	WorkerToolCalls    int
+	BoundaryRefusals   int
 	LiveRouterHit      int
 	LiveRouterMiss     int
 	SpokenLeakLines    int
@@ -144,6 +145,10 @@ func collectMetrics(rec *recorder) runMetrics {
 				m.LiveRouterHit++
 			default:
 				m.LiveToolCalls++
+			}
+		case events.ToolCallFinished:
+			if e.JobID != "" && strings.Contains(e.Err, "campaign boundary") {
+				m.BoundaryRefusals++
 			}
 		}
 	}
@@ -216,6 +221,8 @@ func metricValue(m runMetrics, name string) (int, bool) {
 		return m.LiveToolCalls, true
 	case "worker_tool_calls":
 		return m.WorkerToolCalls, true
+	case "boundary_refusals":
+		return m.BoundaryRefusals, true
 	case "live_router_hit":
 		return m.LiveRouterHit, true
 	case "live_router_miss":

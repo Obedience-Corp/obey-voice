@@ -819,6 +819,19 @@
       "editable": true
     },
     {
+      "key": "voice_worker_boundary",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Campaign boundary",
+      "help": "Keeps a spawned worker inside the campaign it was launched in: its file tools and shell refuse paths outside the campaign root, and its prompt says so.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "voice_worker_job_budget",
       "type": "int",
       "default": 600,

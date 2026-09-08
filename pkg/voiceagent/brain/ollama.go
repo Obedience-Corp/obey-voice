@@ -243,6 +243,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			routerPolicy:   opts.effectiveRouterPolicy(),
 			delegation:     o.delegationForTurn(opts),
 			commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
+			boundary:       NewBoundary(o.cfg.WorkerBoundary),
 			onStart:        opts.OnToolStart,
 			onEnd:          opts.OnToolEnd,
 		}
@@ -562,6 +563,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		routerPolicy:   opts.effectiveRouterPolicy(),
 		delegation:     o.delegationForTurn(opts),
 		commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
+		boundary:       NewBoundary(o.cfg.WorkerBoundary),
 		onStart:        opts.OnToolStart,
 		onEnd:          opts.OnToolEnd,
 	}

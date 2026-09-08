@@ -126,3 +126,41 @@ func TestExecuteSynthesizesIDWhenModelSendsNone(t *testing.T) {
 		}
 	}
 }
+
+func TestToolSessionRefusesOutsideTheBoundaryAndReportsIt(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "campaigns", "demo")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(home, ".grok", "sessions", "x.jsonl")
+	if err := os.MkdirAll(filepath.Dir(outside), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := &hookRecorder{}
+	sess := rec.session()
+	sess.boundary = Boundary{Root: root, home: home}
+
+	got := sess.execute(context.Background(), root, readCall("r1", outside))
+	if !strings.HasPrefix(got, "error:") || !strings.Contains(got, "outside the campaign boundary") || strings.Contains(got, "secret") {
+		t.Fatalf("read outside = %q, want a refusal and no contents", got)
+	}
+	if len(rec.ends) != 1 || rec.ends[0].Err == "" {
+		t.Fatalf("hooks = %+v, want the refusal reported as the tool error", rec.ends)
+	}
+
+	run := api.ToolCall{ID: "c1", Function: api.ToolCallFunction{Name: "run_command", Arguments: mustArgs(map[string]any{"command": "cat " + outside})}}
+	if got := sess.execute(context.Background(), root, run); !strings.Contains(got, "outside the campaign boundary") {
+		t.Fatalf("shell outside = %q, want refused", got)
+	}
+	inside := api.ToolCall{ID: "c2", Function: api.ToolCallFunction{Name: "run_command", Arguments: mustArgs(map[string]any{"command": "echo inside"})}}
+	if got := sess.execute(context.Background(), root, inside); !strings.Contains(got, "inside") || strings.Contains(got, "boundary") {
+		t.Fatalf("shell inside = %q, want it to run", got)
+	}
+	if got := sess.execute(context.Background(), root, readCall("r2", "README.md")); strings.Contains(got, "boundary") {
+		t.Fatalf("read inside = %q, want an ordinary result", got)
+	}
+}

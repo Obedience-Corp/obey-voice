@@ -229,3 +229,28 @@ func TestAssembleSystemPromptUsesDisplayName(t *testing.T) {
 		t.Fatalf("OS login leaked into environment:\n%s", got)
 	}
 }
+
+// A worker's boundary is grounding, so it is identical across providers and
+// absent from the live brain, which has no boundary to keep.
+func TestBoundaryElementIsForFencedWorkersOnly(t *testing.T) {
+	live := policyCfg()
+	worker := policyCfg()
+	worker.WorkerBoundary = "/camp/root"
+	for _, provider := range []string{providerOllama, providerClaude, providerCursor, providerGrok} {
+		if slices.Contains(SystemPromptPolicy(provider, live), ElemBoundary) {
+			t.Errorf("provider %q: live brain carries a boundary", provider)
+		}
+		got := SystemPromptPolicy(provider, worker)
+		env, boundary := slices.Index(got, ElemEnvironment), slices.Index(got, ElemBoundary)
+		if boundary < 0 || boundary != env+1 {
+			t.Errorf("provider %q: elements = %v, want boundary right after environment", provider, got)
+		}
+	}
+	prompt := AssembleSystemPrompt(SystemPromptInput{Provider: providerClaude, Persona: "You are Sam.", WorkDir: "/camp/root/sub", Cfg: worker})
+	if !strings.Contains(prompt, "Boundary:") || !strings.Contains(prompt, "stays under /camp/root") {
+		t.Fatalf("assembled worker prompt lacks the boundary:\n%s", prompt)
+	}
+	if strings.Contains(AssembleSystemPrompt(SystemPromptInput{Provider: providerClaude, Persona: "x", Cfg: live}), "Boundary:") {
+		t.Fatal("live prompt carries a boundary")
+	}
+}

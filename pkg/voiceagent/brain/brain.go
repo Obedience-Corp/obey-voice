@@ -180,6 +180,10 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		SystemPrompt:   b.systemPrompt,
 		PermissionMode: mode,
 		Tools:          tools,
+		// A worker's fence, as far as the CLI can hold it: the prompt names
+		// the boundary, and the one command that turns a boundary slip into
+		// another campaign's checkout is denied outright.
+		DisallowedTools: workerDeniedTools(b.cfg),
 		// The CLI owns its own tools, so the agent's working directory has to
 		// reach it as a real cwd — telling it in the prompt only would leave
 		// every Read/Bash rooted wherever this process happens to be.

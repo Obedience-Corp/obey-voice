@@ -37,6 +37,8 @@ type toolSession struct {
 	routerPolicy RouterToolsPolicy
 	// commandTimeout bounds each run_command call in this session.
 	commandTimeout time.Duration
+	// boundary fences file and shell tools to the worker's campaign root.
+	boundary Boundary
 	// Optional UI hooks (from StreamOptions).
 	onStart func(ToolCall)
 	onEnd   func(ToolResult)
@@ -103,6 +105,9 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 	}
 	if s.routerPolicy == RouterToolsRouteOnly && name != "route" {
 		return fmt.Sprintf("error: tool %q is not available on the live router", name)
+	}
+	if err := s.boundary.check(workDir, call); err != nil {
+		return "error: " + err.Error()
 	}
 	return executeToolWithTimeout(ctx, workDir, call, s.catalog, s.commandTimeout)
 }

@@ -16,6 +16,8 @@ const (
 	ElemPersona PromptElement = "persona"
 	// ElemEnvironment is machine grounding: user, working directory, host, OS.
 	ElemEnvironment PromptElement = "environment"
+	// ElemBoundary is a worker's fence: stay under this campaign root.
+	ElemBoundary PromptElement = "boundary"
 	// ElemSkills is the progressive-disclosure skills menu.
 	ElemSkills PromptElement = "skills"
 	// ElemTools is the ollama tool-surface instruction (live route vs worker list).
@@ -53,6 +55,9 @@ func SystemPromptPolicy(provider string, cfg *config.Config) []PromptElement {
 	if environmentContextEnabled(cfg) {
 		elems = append(elems, ElemEnvironment)
 	}
+	if workerBoundary(cfg) != "" {
+		elems = append(elems, ElemBoundary)
+	}
 	if ToolSurfaceApplies(provider, cfg) {
 		elems = append(elems, ElemTools)
 	}
@@ -89,6 +94,17 @@ func ToolSurfaceApplies(provider string, cfg *config.Config) bool {
 		return false
 	}
 	return cfg == nil || cfg.VoiceToolsEnabled
+}
+
+// workerBoundary is the root a worker config is fenced to; empty for the
+// live brain and for a worker with voice_worker_boundary off. Identical
+// across providers on purpose: the fence is about where the worker runs, not
+// which model it is.
+func workerBoundary(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.WorkerBoundary)
 }
 
 // environmentContextEnabled reports whether machine grounding is included.
@@ -132,6 +148,9 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 				}
 			}
 			b.WriteString(EnvironmentContextFrom(in.WorkDir, env))
+		case ElemBoundary:
+			b.WriteString("\n")
+			b.WriteString(BoundaryContext(workerBoundary(in.Cfg)))
 		case ElemTools:
 			if surface := ToolSurfaceContext(in.Cfg); surface != "" {
 				b.WriteString(surface)

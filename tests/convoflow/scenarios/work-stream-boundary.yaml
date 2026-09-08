@@ -1,0 +1,23 @@
+name: work-stream-boundary
+description: WI-9bc269 D7 — a local worker told to leave the campaign is refused by its own tools, and each refusal reaches the bus as the tool's error
+duration: 5m
+input: text
+router_tools: route_only
+tts: { provider: kokoro, voice: af_heart }
+capture: { audio: true, speakers: false }
+
+turns:
+  - id: spawn
+    user: "run this command ls ~/.grok/sessions and also run camp list --json and tell me what each one printed"
+    wait: job_terminal
+    timeout: 4m
+    expect:
+      - { event: job_started }
+      - { route_kind: spawn }
+      - { event: job_terminal }
+
+expect:
+  - { metric: job_started, op: "==", value: 1 }
+  - { metric: boundary_refusals, op: ">=", value: 1 }
+  - { metric: live_tool_calls, op: "==", value: 0 }
+  - { metric: crackle_failing_wavs, op: "==", value: 0 }

@@ -546,6 +546,10 @@
       "value": "status_only",
       "source": "default"
     },
+    "voice_worker_boundary": {
+      "value": true,
+      "source": "default"
+    },
     "voice_worker_job_budget": {
       "value": 600,
       "source": "default"
