@@ -12,13 +12,25 @@ import (
 )
 
 const (
-	outputRowVolume    = 0
 	playbackVolumeStep = 0.05
 	playbackVolumeBarW = 20
 )
 
+// volumeRow is the last row of the Output tab, below every speaker. Arriving
+// on the tab therefore lands on System default, and ←/→ keep switching
+// sections until the user goes down to the slider on purpose; with the slider
+// first, the same keys silently changed the volume instead of the tab.
+func (m settingsModel) volumeRow() int {
+	if m.devicesLoading {
+		return 0
+	}
+	return len(m.outputItems)
+}
+
+// volumeRowFocused is false while devices are still loading: the slider is
+// drawn, but ←/→ stay section keys until the list it sits under exists.
 func (m settingsModel) volumeRowFocused() bool {
-	return m.section == sectionOutput && m.cursor == outputRowVolume
+	return m.section == sectionOutput && !m.devicesLoading && m.cursor == m.volumeRow()
 }
 
 func (m settingsModel) playbackVolume() float64 {
@@ -62,14 +74,13 @@ func (m settingsModel) outputLines() []string {
 }
 
 func (m settingsModel) outputRowLabel(idx int) string {
-	if idx == outputRowVolume {
+	if idx == m.volumeRow() {
 		return m.volumeRowLabel()
 	}
-	itemIdx := idx - 1
-	if itemIdx < 0 || itemIdx >= len(m.outputItems) {
+	if m.devicesLoading || idx < 0 || idx >= len(m.outputItems) {
 		return ""
 	}
-	item := m.outputItems[itemIdx]
+	item := m.outputItems[idx]
 	label := deviceLabel(item)
 	if m.cfg != nil && item == m.cfg.OutputDevice {
 		label += " ✓"

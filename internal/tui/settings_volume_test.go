@@ -23,6 +23,62 @@ func TestOutputTabShowsVolumeSlider(t *testing.T) {
 	if !strings.Contains(view, "Desk Speakers") {
 		t.Fatalf("output tab dropped speaker list:\n%s", view)
 	}
+	// The slider sits below the speakers, so arriving on the tab does not
+	// land on it.
+	def, desk, vol := strings.Index(view, "System default"), strings.Index(view, "Desk Speakers"), strings.Index(view, "Volume")
+	if !(def < desk && desk < vol) {
+		t.Fatalf("output rows out of order (default %d, desk %d, volume %d):\n%s", def, desk, vol, view)
+	}
+}
+
+// Coming onto the Output tab with ←/→ lands on System default, and the next
+// ←/→ leaves the tab; the volume is untouched until the slider is chosen.
+func TestArrivingOnOutputLandsOnSpeakersNotVolume(t *testing.T) {
+	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
+	m.section = sectionInput
+	m.devicesLoading = false
+	m.outputItems = []string{"", "Desk Speakers"}
+	m.saveConfig = func(key string, value any) error {
+		t.Fatalf("crossing the Output tab wrote %s=%v", key, value)
+		return nil
+	}
+
+	m, _ = updateSettingsWithKey(t, m, "right")
+	if m.section != sectionOutput || m.cursor != 0 || m.volumeRowFocused() {
+		t.Fatalf("after right: section %v cursor %d volume focused %v; want Output, row 0, speakers", m.section, m.cursor, m.volumeRowFocused())
+	}
+	m, _ = updateSettingsWithKey(t, m, "right")
+	if m.section != sectionMeeting || m.cfg.PlaybackVolume != 1 {
+		t.Fatalf("second right: section %v volume %v; want Meeting and volume 1", m.section, m.cfg.PlaybackVolume)
+	}
+
+	m, _ = updateSettingsWithKey(t, m, "left")
+	for i := 0; i < len(m.outputItems); i++ {
+		m, _ = updateSettingsWithKey(t, m, "down")
+	}
+	if !m.volumeRowFocused() {
+		t.Fatalf("cursor %d after walking down is not the slider (want %d)", m.cursor, m.volumeRow())
+	}
+}
+
+// While devices are still being discovered the slider is drawn but ←/→ stay
+// section keys, so a fast keypress after opening Settings cannot change it.
+func TestVolumeRowWaitsForDevices(t *testing.T) {
+	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
+	m.section = sectionOutput
+	m.devicesLoading = true
+	m.cursor = 0
+	m.saveConfig = func(key string, value any) error {
+		t.Fatalf("wrote %s=%v while devices were loading", key, value)
+		return nil
+	}
+	if m.volumeRowFocused() {
+		t.Fatal("slider focused while devices load")
+	}
+	m, _ = updateSettingsWithKey(t, m, "left")
+	if m.section == sectionOutput {
+		t.Fatal("left while loading did not switch sections")
+	}
 }
 
 func TestVolumeSliderNudgesAndPersists(t *testing.T) {
@@ -30,7 +86,9 @@ func TestVolumeSliderNudgesAndPersists(t *testing.T) {
 	var applied []float64
 	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
 	m.section = sectionOutput
-	m.cursor = outputRowVolume
+	m.devicesLoading = false
+	m.outputItems = []string{"", "Desk Speakers"}
+	m.cursor = m.volumeRow()
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
 		return nil
@@ -72,7 +130,8 @@ func TestVolumeSliderNudgesAndPersists(t *testing.T) {
 func TestVolumeSliderTabStillChangesSection(t *testing.T) {
 	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
 	m.section = sectionOutput
-	m.cursor = outputRowVolume
+	m.devicesLoading = false
+	m.cursor = m.volumeRow()
 
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.section != sectionMeeting {
@@ -83,8 +142,9 @@ func TestVolumeSliderTabStillChangesSection(t *testing.T) {
 func TestVolumeSliderDoesNotStealLeftWhenOnSpeaker(t *testing.T) {
 	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
 	m.section = sectionOutput
+	m.devicesLoading = false
 	m.outputItems = []string{"", "Desk Speakers"}
-	m.cursor = 1 // system default device row
+	m.cursor = 0 // system default device row, where the tab is entered
 	m.saveConfig = func(string, any) error {
 		t.Fatal("left on a speaker row must not write volume")
 		return nil
@@ -103,7 +163,8 @@ func TestVolumeSliderClampsAtZero(t *testing.T) {
 	writes := 0
 	m := newSettings(&config.Config{PlaybackVolume: 0}, nil)
 	m.section = sectionOutput
-	m.cursor = outputRowVolume
+	m.devicesLoading = false
+	m.cursor = m.volumeRow()
 	m.saveConfig = func(string, any) error {
 		writes++
 		return nil
@@ -139,8 +200,9 @@ func TestVolumeBarFillsToUnity(t *testing.T) {
 func TestEnterOnVolumeRowDoesNotSelectSpeaker(t *testing.T) {
 	m := newSettings(&config.Config{PlaybackVolume: 1, OutputDevice: ""}, nil)
 	m.section = sectionOutput
-	m.cursor = outputRowVolume
+	m.devicesLoading = false
 	m.outputItems = []string{"", "Desk Speakers"}
+	m.cursor = m.volumeRow()
 	m.saveConfig = func(key string, value any) error {
 		t.Fatalf("enter on volume wrote %s=%v", key, value)
 		return nil
