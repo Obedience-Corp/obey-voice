@@ -3,11 +3,14 @@ package meeting
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
+	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -128,5 +131,97 @@ func TestLaunchCampaignSurvivesRegistryFailure(t *testing.T) {
 	router.LookPath = func(string) (string, error) { return "", os.ErrNotExist }
 	if available := router.AvailableDestinations(); len(available) != 0 {
 		t.Fatalf("campaign offered without camp: %+v", available)
+	}
+}
+
+func TestLaunchCampaignLegacyCaptureDelivery(t *testing.T) {
+	// Exercise FromConfig -> RouteByID -> the camp subprocess. The fixture
+	// models name-based routing through a missing or stale registry, and writes
+	// the supplied body into the chosen campaign so we verify delivery itself.
+	const fakeCamp = `#!/bin/sh
+if [ "$1" != idea ] || [ "$2" != add ]; then
+  exit 1 # older camp without import-meeting support
+fi
+shift 3
+target="$PWD"
+capture=intent
+tags=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --body-file) body="$2"; shift 2 ;;
+    -c) target="$TEST_STALE_CAMPAIGN_ROOT"; shift 2 ;;
+    --note) capture=note; shift ;;
+    --tag) tags="$tags $2"; shift 2 ;;
+    *) exit 2 ;;
+  esac
+done
+[ -n "$target" ] || exit 3
+cp "$body" "$target/delivered.md" || exit 4
+printf '%s|%s' "$capture" "$tags"
+`
+	for _, registry := range []string{"missing", "stale"} {
+		for _, capture := range []string{CaptureNote, CaptureIntent} {
+			for _, withBundle := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/bundle=%t", registry, capture, withBundle), func(t *testing.T) {
+					root := launchCampaignDir(t, t.TempDir(), "Local")
+					stale := launchCampaignDir(t, t.TempDir(), "Local")
+					registryRoot := ""
+					if registry == "stale" {
+						registryRoot = stale
+					}
+					t.Setenv("TEST_STALE_CAMPAIGN_ROOT", registryRoot)
+					campBin := filepath.Join(t.TempDir(), "camp")
+					if err := os.WriteFile(campBin, []byte(fakeCamp), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					cfg := &config.Config{WorkDir: root, Meeting: config.MeetingConfig{Route: config.MeetingRouteConfig{
+						Destinations: []config.MeetingDestinationConfig{{ID: "local-notes", Type: TypeCampaign,
+							Campaign: "Local", Capture: capture, Tags: []string{"team", "follow up"}}},
+					}}}
+					router := NewDefaultRouter(FromConfig(cfg))
+					router.LookPath = func(string) (string, error) { return campBin, nil }
+					note := RenderedNote{Title: "Launch meeting", Body: "# Notes\nKeep the transcript here.\n"}
+					if withBundle {
+						note.Summary = meetinglog.Summary{Bundle: t.TempDir()}
+					}
+					receipt, err := router.RouteByID(context.Background(), note, router.Cfg.Default)
+					if err != nil || receipt.Outcome != OutcomeRouted {
+						t.Fatalf("delivery = %+v, %v", receipt, err)
+					}
+					if receipt.Detail != capture+"| team follow up" {
+						t.Fatalf("capture/tags changed: %q", receipt.Detail)
+					}
+					body, err := os.ReadFile(filepath.Join(root, "delivered.md"))
+					if err != nil || string(body) != note.Body {
+						t.Fatalf("delivery in launch root = %q, %v", body, err)
+					}
+					if _, err := os.Stat(filepath.Join(stale, "delivered.md")); !os.IsNotExist(err) {
+						t.Fatalf("stale campaign received delivery: %v", err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestLegacyCaptureExplicitDefaultKeepsCampaignSelector(t *testing.T) {
+	root := launchCampaignDir(t, t.TempDir(), "Local")
+	cfg := &config.Config{WorkDir: root, Meeting: config.MeetingConfig{Route: config.MeetingRouteConfig{
+		Default: "chosen", Destinations: []config.MeetingDestinationConfig{
+			{ID: "chosen", Type: TypeCampaign, Campaign: "Local", Capture: CaptureNote},
+		},
+	}}}
+	router := NewDefaultRouter(FromConfig(cfg))
+	router.LookPath = func(string) (string, error) { return "camp", nil }
+	var called bool
+	router.Run = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		called = true
+		if !strings.Contains(strings.Join(args, " "), "-c Local --note") {
+			t.Fatalf("explicit campaign selector lost: %v", args)
+		}
+		return []byte("saved"), nil
+	}
+	if _, err := router.RouteByID(context.Background(), RenderedNote{Title: "Explicit", Body: "notes"}, "chosen"); err != nil || !called {
+		t.Fatalf("explicit route: called=%v err=%v", called, err)
 	}
 }
