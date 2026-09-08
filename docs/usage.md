@@ -125,7 +125,7 @@ commands are local — they do not cancel speech recognition or block the chat.
 | `Ctrl+Y` | Copy the last assistant reply to the clipboard |
 | `Ctrl+C` (empty composer, after a reply) | Copy the last assistant reply; press again within ~1.5s to quit (`/quit` also exits) |
 | `Ctrl+G` | Pause/resume voice input (capture may stay armed; listening stops) |
-| `⌥Space` (macOS) / `Ctrl+Alt+Space` (Windows), any app focused | Talk key: hold to talk and release to send, by default. On Linux, bind your own shortcut to `obey-voice talk` — see below |
+| `⌃Space` (macOS) / `Ctrl+Alt+Space` (Windows), any app focused | Talk key: hold to talk and release to send, by default. Rebind it in Settings → Tools. On Linux, bind your own shortcut to `obey-voice talk` — see below |
 | `Ctrl+O` | Mute/unmute spoken responses (also stops current playback) |
 | `Home` / `End` | Jump to the start/end of the focused feed (on Chat, only when the composer is empty) |
 | `Ctrl+Home` / `Ctrl+End` | Always jump to the start/end of the focused feed |
@@ -156,27 +156,34 @@ silence timeout.
 
 The mode is `talk_hotkey_mode`, the combo is `talk_hotkey` (empty means the
 platform default), and `talk_hotkey_enabled: false` turns the whole thing off.
-Changes apply to the next conversation.
+All three are rows in Settings → Tools: Enter toggles the key, cycles the mode,
+or opens a one-line editor for the combo (`ctrl+alt+t`, `f13`; empty returns
+to the default). Changes apply to the next conversation.
 
 #### macOS
 
-The conversation registers the combo itself — `talk_hotkey`, default ⌥Space —
-through Carbon's `RegisterEventHotKey`, which swallows it so it never types
-into the focused app and needs no accessibility permission.
+The conversation registers the combo itself — `talk_hotkey`, default ⌃Space,
+the same key as the Obey Voice Mac app — through Carbon's `RegisterEventHotKey`,
+which swallows it so it never types into the focused app and needs no
+accessibility permission. ⌃Space is also "select the previous input source"
+when more than one keyboard layout is enabled; pick another combo if you use
+that.
 
 macOS lets several apps hold the same hot key and fires every one of them. The
-Obey Voice Mac app registers ⌥Space for itself, so while it is running the TUI
+Obey Voice Mac app registers ⌃Space for itself, so while it is running the TUI
 leaves that combo to it and says so in the activity panel; `obey-voice doctor`
-reports the same. Give the TUI another combo (`talk_hotkey: ctrl+alt+space`)
-to use both at once. Raycast and Spotlight also default to a modifier plus
+reports the same. Give the TUI another combo (`talk_hotkey: ctrl+alt+space`,
+or Settings → Tools) to use both at once, or move the app's key in its own
+Settings → Hotkey. Raycast and Spotlight also default to a modifier plus
 space; if a press does two things, that is why. When registration itself fails,
 the conversation says so in its header and `Ctrl+G` keeps working.
 
 #### Windows
 
 The conversation registers the combo itself, through `RegisterHotKey`. The
-default is Ctrl+Alt+Space, not ⌥Space: Alt+Space opens the window menu in every
-Win32 app. Unlike macOS, a Windows hotkey belongs to one process — a combo
+default is Ctrl+Alt+Space, not Ctrl+Space: Ctrl+Space switches input methods
+on Windows, and Alt+Space opens the window menu in every Win32 app. Unlike
+macOS, a Windows hotkey belongs to one process — a combo
 another program already holds fails outright, and the conversation reports
 which combo is taken rather than silently doing nothing.
 

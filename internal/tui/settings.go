@@ -210,7 +210,10 @@ const (
 	toolRowNameSummon    = 3
 	toolRowVoiceFrontend = 4
 	toolRowMouse         = 5
-	toolRowCount         = 6
+	toolRowTalkKey       = 6
+	toolRowTalkMode      = 7
+	toolRowTalkCombo     = 8
+	toolRowCount         = 9
 )
 
 func (m *settingsModel) buildToolItems() {
@@ -242,6 +245,13 @@ func (m *settingsModel) buildToolItems() {
 	// Up/Down scroll either way.
 	m.toolItems = append(m.toolItems,
 		fmt.Sprintf("Mouse scroll (claims mouse) — %s", enabledLabel(m.cfg.TUIMouseEnabled)),
+	)
+	// The system-wide talk key. The conversation's own conflict message sends
+	// people here to rebind it, so here is where it is.
+	m.toolItems = append(m.toolItems,
+		fmt.Sprintf("Talk key — %s", enabledLabel(m.cfg.TalkHotkeyEnabled)),
+		fmt.Sprintf("Talk key mode — %s", config.TalkHotkeyModeOf(m.cfg)),
+		fmt.Sprintf("Talk key combo — %s", m.talkComboLabel()),
 	)
 }
 
@@ -277,6 +287,12 @@ func (m *settingsModel) selectToolItem() tea.Cmd {
 	if m.cursor < 0 || m.cursor >= len(m.toolItems) {
 		return nil
 	}
+	switch m.cursor {
+	case toolRowTalkMode:
+		return m.cycleTalkMode()
+	case toolRowTalkCombo:
+		return m.beginTalkComboEdit()
+	}
 	var (
 		key   string
 		value bool
@@ -284,6 +300,10 @@ func (m *settingsModel) selectToolItem() tea.Cmd {
 		field *bool
 	)
 	switch m.cursor {
+	case toolRowTalkKey:
+		key, label = "talk_hotkey_enabled", "Talk key"
+		value = !m.cfg.TalkHotkeyEnabled
+		field = &m.cfg.TalkHotkeyEnabled
 	case toolRowLocalTools:
 		key, label = "voice_tools_enabled", "Local tools"
 		value = !m.cfg.VoiceToolsEnabled
@@ -330,6 +350,8 @@ func (m *settingsModel) selectToolItem() tea.Cmd {
 	*field = value
 	m.buildToolItems()
 	switch m.cursor {
+	case toolRowTalkKey:
+		m.message = fmt.Sprintf("Talk key %s; applies to the next conversation", enabledLabel(value))
 	case toolRowMouse:
 		// Mouse claim is re-evaluated on conversation enter/leave — no full restart.
 		if value {

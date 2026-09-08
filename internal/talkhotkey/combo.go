@@ -11,6 +11,7 @@ package talkhotkey
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 )
 
@@ -33,13 +34,16 @@ type Combo struct {
 	Key       string
 }
 
-// DefaultCombo is the shipped default. Option+Space is free on a stock macOS
-// (Spotlight owns Cmd+Space) and reachable with one hand.
-const DefaultCombo = "alt+space"
+// DefaultCombo is the shipped default: the key the Obey Voice Mac app
+// registers, since its default moved off Option+Space (obey-voice-apple #52;
+// Fluid Voice takes ⌥Space). One key for both clients, so the TUI's hint
+// and the app's menu agree, and OtherOwner can tell when both hold it.
+const DefaultCombo = "ctrl+space"
 
 // DefaultComboFor is the shipped combo for one OS. Windows is the exception:
-// Alt+Space opens the window menu in every Win32 app, so taking it would
-// swallow a shortcut the whole desktop answers.
+// Ctrl+Space switches input methods and Alt+Space opens the window menu in
+// every Win32 app, so both are left alone. Linux gets the default only as a
+// name for hints; the key there is whatever the user binds to `obey-voice talk`.
 func DefaultComboFor(goos string) string {
 	if goos == "windows" {
 		return "ctrl+alt+space"
@@ -95,12 +99,12 @@ const (
 	carbonControlKey uint32 = 0x1000
 )
 
-// ParseCombo reads a combo spelled by a human: "alt+space", "Ctrl+Alt+T",
+// ParseCombo reads a combo spelled by a human: "ctrl+space", "Ctrl+Alt+T",
 // "f13", "⌘+⇧+return". Glyphs are accepted as parts, but every part is still
 // separated by "+" — this parses config values and CLI flags, not keystrokes.
 func ParseCombo(s string) (Combo, error) {
 	if s == "" {
-		return Combo{}, errors.New("hotkey is empty; want modifiers plus a key, like alt+space")
+		return Combo{}, errors.New("hotkey is empty; want modifiers plus a key, like ctrl+space")
 	}
 	var combo Combo
 	var keys []string
@@ -195,26 +199,54 @@ var keyTitles = map[string]string{
 	"leftbracket": "[", "rightbracket": "]",
 }
 
-// Display is the macOS spelling for a settings row or a hint line: glyphs in
-// Apple's order (⌃⌥⇧⌘) with no separator, then the key.
+// Display is the spelling for a settings row or a hint line on this OS.
 func (c Combo) Display() string {
+	return c.DisplayFor(runtime.GOOS)
+}
+
+// DisplayFor spells the combo the way goos does: Apple's glyphs in Apple's
+// order (⌃⌥⇧⌘) with no separator on macOS, and words joined with "+"
+// everywhere else. The TUI runs on Linux too, where ⌥ names nothing.
+func (c Combo) DisplayFor(goos string) string {
 	var b strings.Builder
+	if goos == "darwin" {
+		for _, m := range []struct {
+			bit   Modifier
+			glyph string
+		}{
+			{ModCtrl, "⌃"}, {ModAlt, "⌥"}, {ModShift, "⇧"}, {ModCmd, "⌘"},
+		} {
+			if c.Modifiers&m.bit != 0 {
+				b.WriteString(m.glyph)
+			}
+		}
+		b.WriteString(c.keyTitle())
+		return b.String()
+	}
+	super := "Super"
+	if goos == "windows" {
+		super = "Win"
+	}
 	for _, m := range []struct {
-		bit   Modifier
-		glyph string
+		bit  Modifier
+		name string
 	}{
-		{ModCtrl, "⌃"}, {ModAlt, "⌥"}, {ModShift, "⇧"}, {ModCmd, "⌘"},
+		{ModCtrl, "Ctrl"}, {ModAlt, "Alt"}, {ModShift, "Shift"}, {ModCmd, super},
 	} {
 		if c.Modifiers&m.bit != 0 {
-			b.WriteString(m.glyph)
+			b.WriteString(m.name)
+			b.WriteByte('+')
 		}
 	}
-	if title, ok := keyTitles[c.Key]; ok {
-		b.WriteString(title)
-	} else {
-		b.WriteString(strings.ToUpper(c.Key))
-	}
+	b.WriteString(c.keyTitle())
 	return b.String()
+}
+
+func (c Combo) keyTitle() string {
+	if title, ok := keyTitles[c.Key]; ok {
+		return title
+	}
+	return strings.ToUpper(c.Key)
 }
 
 // CarbonKeyCode reports the US-layout virtual key code RegisterEventHotKey

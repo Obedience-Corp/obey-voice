@@ -31,9 +31,10 @@ var ProcessRunning = func(name string) bool {
 // This exists because registration cannot tell: macOS lets several processes
 // register the same hot key and delivers each press to all of them (measured
 // 2026-09-03 on macOS 26; no eventHotKeyExistsErr, both holders fired). A TUI
-// and the Mac app both on ⌥Space would open two turns per press. The one
+// and the Mac app both on ⌃Space would open two turns per press. The one
 // collision that can be known is the Mac app, which registers the default
-// combo whenever it runs.
+// combo whenever it runs (its Settings → Hotkey can move it; then this
+// check is quiet and the doctor's probe is what tells).
 func OtherOwner(combo Combo) (string, bool) {
 	if !Supported() || combo.String() != DefaultCombo {
 		return "", false

@@ -39,7 +39,7 @@ func TestTalkHotkeyDiagsLeavesTheKeyToTheMacApp(t *testing.T) {
 	talkhotkey.ProcessRunning = func(name string) bool { return name == "Obey Voice" }
 	t.Cleanup(func() { talkhotkey.ProcessRunning = prev })
 
-	cfg := &config.Config{TalkHotkeyEnabled: true, TalkHotkey: "alt+space", TalkHotkeyMode: "hold"}
+	cfg := &config.Config{TalkHotkeyEnabled: true, TalkHotkey: talkhotkey.DefaultCombo, TalkHotkeyMode: "hold"}
 	got := talkHotkeyDiags(t.Context(), cfg)
 	if len(got) != 2 || got[0].Severity != config.SeverityWarn || !strings.Contains(got[0].Detail, "Mac app is running") {
 		t.Fatalf("diags = %+v, want a warn naming the Mac app, then the endpoint row", got)
