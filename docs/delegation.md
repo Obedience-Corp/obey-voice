@@ -153,6 +153,14 @@ through its context — Ollama requests, shell tools and CLI-backed providers al
 receive the cancel — and a worker that ignores it lingers on its own goroutine
 without counting against the limit; whatever it returns later is dropped.
 
+Each job is a conversation of its own. The worker starts with no history and
+no CLI session from the job before it, and two jobs running at once never
+write into the same one; the brief carries whatever context the job needs.
+A Claude worker also runs with session persistence off, so its transcripts
+never land in `~/.claude/projects` beside your own sessions for that
+directory. Grok has no such switch: a Grok worker's sessions still accumulate
+under `~/.grok/sessions` for the working directory, one per job.
+
 The JSONL transcript records `id`, `kind`, `job_id` and `elapsed_s` on
 `tool_call` / `tool_result`, plus one `job` record per transition carrying
 `state` and `elapsed_s`.

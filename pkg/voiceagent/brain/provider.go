@@ -109,6 +109,15 @@ type Stream struct {
 }
 
 // Provider is the interface for all brain backends (Claude, Ollama, etc.).
+// FreshProvider is a Provider that can hand out a sibling with no history
+// and no CLI session, sharing its client, prompts and catalog. A worker job
+// is one conversation; the job after it must not inherit that one, and two
+// jobs running at once must not write into the same one.
+type FreshProvider interface {
+	Provider
+	Fresh() Provider
+}
+
 type Provider interface {
 	ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error)
 	// ThinkFull runs a non-streaming turn. opts.ToolsEnabled is the sole

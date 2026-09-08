@@ -49,6 +49,7 @@ func WorkerBrainConfig(cfg *Config) *Config {
 		return nil
 	}
 	w := *cfg
+	w.IsWorker = true
 	w.BrainProvider = VoiceWorkerProviderOf(cfg)
 	if model := strings.TrimSpace(cfg.VoiceWorkerModel); model != "" {
 		SetBrainModel(&w, w.BrainProvider, model)

@@ -297,6 +297,11 @@ type Config struct {
 	RuntimeEnvHostname string `mapstructure:"-"`
 	RuntimeEnvOS       string `mapstructure:"-"`
 
+	// IsWorker marks the config WorkerBrainConfig hands to a spawned worker,
+	// so a brain can tell a background job from the live conversation.
+	// Runtime only, never persisted.
+	IsWorker bool `mapstructure:"-"`
+
 	// PersonaDisplayNames is every persona's display name, filled by the
 	// persona after-load hook and the session binders so the STT factory can
 	// spell them without importing the persona package. Not a config key.
