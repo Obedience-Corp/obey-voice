@@ -208,7 +208,14 @@ func (s CampaignSink) routeIdeaAdd(ctx context.Context, campBin, campaign, captu
 		title = IntentTitle(note.Summary)
 	}
 
-	args := []string{"idea", "add", title, "--body-file", tmpPath, "-c", campaign}
+	args := []string{"idea", "add", title, "--body-file", tmpPath}
+	// A launch default is pinned to a local root. With no -c override camp
+	// resolves the campaign from cwd; a name-based override would consult the
+	// registry again and could redirect this note to a stale same-name entry.
+	dir := s.Dest.CampaignRoot
+	if dir == "" {
+		args = append(args, "-c", campaign)
+	}
 	if capture == CaptureNote {
 		args = append(args, "--note")
 	}
@@ -218,7 +225,7 @@ func (s CampaignSink) routeIdeaAdd(ctx context.Context, campBin, campaign, captu
 		}
 	}
 
-	out, err := s.Run(ctx, campBin, args...)
+	out, err := s.runCamp(ctx, dir, campBin, args...)
 	if err != nil {
 		detail := strings.TrimSpace(string(out))
 		if detail != "" {

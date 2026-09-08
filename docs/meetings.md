@@ -218,6 +218,19 @@ Meeting routing accepts a `.meeting` bundle or its canonical `meeting.md`.
 
 ## Campaign routing (camp CI0009)
 
+When launched inside a campaign (including a project or worktree beneath it),
+Obey Voice uses that campaign as the meeting destination when
+`meeting.route.default` is empty. Detection follows the resolved working
+directory, so an explicit `work_dir` setting or `serve --work-dir` override
+also changes the campaign default. This is a session default and is never
+saved to your global settings.
+
+In `ask` mode the campaign is preselected; in `auto` mode it receives the
+meeting automatically. Explicit route choices and configured defaults take
+precedence, and `off` / `--no-route` still keep notes local. Outside a campaign,
+the existing routing behavior applies. The detected campaign does not need
+to appear in `camp list`; delivery uses its local root directly.
+
 When a meeting is routed to a **campaign** destination, Obey Voice defaults to
 `capture: meeting` and runs:
 

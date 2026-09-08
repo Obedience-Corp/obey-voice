@@ -107,10 +107,10 @@ func (m meetingSetupModel) Update(msg tea.Msg) (meetingSetupModel, tea.Cmd) {
 		} else {
 			m.err = ""
 		}
-		// Prefer configured default when present (cursor 2+ maps to dests).
+		// Prefer the effective default (configured or launch campaign).
 		m.cursor = 1 // default "ask when ends"
 		if m.cfg != nil {
-			def := strings.TrimSpace(m.cfg.Meeting.Route.Default)
+			def := strings.TrimSpace(meeting.FromConfig(m.cfg).Default)
 			if def != "" {
 				for i, d := range m.dests {
 					if d.ID == def {
@@ -157,12 +157,11 @@ func (m meetingSetupModel) afterTitleConfirm() (meetingSetupModel, tea.Cmd) {
 		}
 	case meeting.ModeAuto:
 		if m.cfg != nil {
-			def := strings.TrimSpace(m.cfg.Meeting.Route.Default)
+			routeCfg := meeting.FromConfig(m.cfg)
+			def := strings.TrimSpace(routeCfg.Default)
 			if def != "" {
-				// Prefer a full Destination from configured YAML when present.
-				// Normalize through meeting.FromConfig so empty capture becomes
-				// notes/meetings (import-meeting), not a raw unnormalized copy.
-				routeCfg := meeting.FromConfig(m.cfg)
+				// Configured and launch-campaign destinations are normalized
+				// through FromConfig so empty capture becomes notes/meetings.
 				if d, ok := routeCfg.DestinationByID(def); ok {
 					return m, func() tea.Msg {
 						return startMeetingMsg{
@@ -292,9 +291,10 @@ func (m meetingSetupModel) routeView(w int) string {
 		"keep local only",
 		"ask me when the meeting ends",
 	}
+	defaultID := meeting.FromConfig(m.cfg).Default
 	for _, d := range m.dests {
 		label := meeting.DestinationLabel(d)
-		if m.cfg != nil && d.ID == m.cfg.Meeting.Route.Default && d.ID != "" {
+		if d.ID == defaultID && d.ID != "" {
 			label += " (default)"
 		}
 		items = append(items, label)
