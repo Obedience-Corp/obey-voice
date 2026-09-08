@@ -115,6 +115,16 @@ type entry struct {
 	// or budget) finishes the job without waiting for its run function, so
 	// a run function that returns late finds this set and changes nothing.
 	finished bool
+	// started is closed by run once the start callback has returned (or was
+	// skipped); startAnnounced says the same under the lock. A stop that
+	// lands between the pump and that point waits on started, so the start
+	// event always precedes the terminal one.
+	started        chan struct{}
+	startAnnounced bool
+	// stopping is set by a stop that is waiting on started; run then yields
+	// the job to it instead of invoking the run function, so the stop owns
+	// the completion and the run function never starts for a job being ended.
+	stopping bool
 }
 
 // Option configures a Table.
@@ -232,13 +242,29 @@ func (t *Table) Abort(id string) {
 
 // stop is the one way a job ends before its run function returns; user
 // cancels and budget breaches share it, so neither waits on a run function
-// that may ignore its cancel. Pumps once the done callback has returned.
+// that may ignore its cancel. It does wait for an in-flight start
+// announcement, so it must not be called from the start callback itself.
+// Pumps once the done callback has returned.
 func (t *Table) stop(id string, err error) {
 	t.mu.Lock()
 	e, ok := t.jobs[id]
 	if !ok || e.finished {
 		t.mu.Unlock()
 		return
+	}
+	if e.info.State == StateRunning && !e.startAnnounced {
+		// run is between the pump and its start callback. Let it announce
+		// first: the start event then precedes the terminal one, and run
+		// yields to this stop instead of invoking the run function.
+		e.stopping = true
+		started := e.started
+		t.mu.Unlock()
+		<-started
+		t.mu.Lock()
+		if e.finished {
+			t.mu.Unlock()
+			return
+		}
 	}
 	if e.info.State == StateQueued {
 		t.removeFromQueueLocked(id)
@@ -297,6 +323,7 @@ func (t *Table) pumpLocked() {
 		}
 		t.queue = t.queue[1:]
 		e.info.State = StateRunning
+		e.started = make(chan struct{})
 		t.running[id] = struct{}{}
 		t.runOrder = append(t.runOrder, id)
 		go t.run(e.ctx, id)
@@ -306,7 +333,11 @@ func (t *Table) pumpLocked() {
 func (t *Table) run(jobCtx context.Context, id string) {
 	var result string
 	var err error
+	yielded := false
 	defer func() {
+		if yielded {
+			return // the waiting stop owns the completion
+		}
 		if r := recover(); r != nil {
 			err = fmt.Errorf("worker panic: %v", r)
 		}
@@ -339,24 +370,50 @@ func (t *Table) run(jobCtx context.Context, id string) {
 
 	t.mu.Lock()
 	e := t.jobs[id]
+	if e == nil {
+		t.mu.Unlock()
+		err = fmt.Errorf("job %s: unknown", id)
+		return
+	}
 	onStart := t.onStart
-	if e != nil && e.spec.Run != nil {
+	runFn := e.spec.Run
+	if runFn != nil {
 		e.info.Started = time.Now()
 		if t.budget > 0 {
 			e.budgetTimer = time.AfterFunc(t.budget, func() { t.exceedBudget(id) })
 		}
 	}
 	t.mu.Unlock()
-	if e == nil || e.spec.Run == nil {
+
+	// Same goroutine as the run function: whatever the callback publishes is
+	// out before the job's first tool call can be. A stop arriving now waits
+	// for it (see stop), so the start event always precedes the terminal one.
+	if runFn != nil && onStart != nil {
+		onStart(id, e.spec.Task)
+	}
+	t.mu.Lock()
+	e.startAnnounced = true
+	yielded = e.stopping
+	t.mu.Unlock()
+	close(e.started)
+	if yielded {
+		return // a stop landed during the announcement; it ends the job
+	}
+
+	if runFn == nil {
 		err = fmt.Errorf("job %s: no run function", id)
 		return
 	}
-	// Same goroutine as the run function: whatever the callback publishes is
-	// out before the job's first tool call can be.
-	if onStart != nil {
-		onStart(id, e.spec.Task)
+	// A stop that landed after the announcement has already ended the job:
+	// the run function is never invoked for it. One landing after this
+	// check hands the run function an already-cancelled context instead.
+	t.mu.Lock()
+	finished := e.finished
+	t.mu.Unlock()
+	if finished {
+		return
 	}
-	result, err = e.spec.Run(jobCtx)
+	result, err = runFn(jobCtx)
 }
 
 // finishLocked marks a job terminal. Caller must hold t.mu. It returns the

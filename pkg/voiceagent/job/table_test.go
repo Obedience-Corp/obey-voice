@@ -698,3 +698,90 @@ func TestAbortEndsARunningJobWithoutWaiting(t *testing.T) {
 		t.Fatal("the aborted job still holds its slot")
 	}
 }
+
+// A cancel that lands while the job is announcing itself waits for the
+// announcement: the start callback precedes the done callback, and the run
+// function is never invoked for a job that is already over.
+func TestAbortDuringStartKeepsOrderAndSkipsRun(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	order := make(chan string, 8)
+	hold := make(chan struct{})
+	inStart := make(chan struct{})
+	table.OnStart(func(id, _ string) {
+		close(inStart)
+		<-hold
+		order <- "start:" + id
+	})
+	table.OnDone(func(id string, state State, _ string, _ error) { order <- "done:" + id + ":" + string(state) })
+	var ran atomic.Bool
+	id, err := table.Start(context.Background(), Spec{Task: "x", Run: func(context.Context) (string, error) {
+		ran.Store(true)
+		return "ok", nil
+	}})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	<-inStart
+
+	aborted := make(chan struct{})
+	go func() {
+		table.Abort(id)
+		close(aborted)
+	}()
+	select {
+	case <-aborted:
+		t.Fatal("Abort returned while the start callback was still running")
+	case got := <-order:
+		t.Fatalf("got %q before the start callback returned", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(hold)
+	awaitOrder(t, order, "start:"+id)
+	awaitOrder(t, order, "done:"+id+":aborted")
+	select {
+	case <-aborted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Abort never returned")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if ran.Load() {
+		t.Fatal("the run function was invoked for a job stopped during its start")
+	}
+	if table.Active() {
+		t.Fatal("the stopped job is still active")
+	}
+}
+
+// The budget timer is armed before the start callback; one that fires during
+// it takes the same path.
+func TestBudgetFiringDuringStartKeepsOrder(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background(), WithBudget(time.Nanosecond))
+	order := make(chan string, 8)
+	table.OnStart(func(id, _ string) {
+		time.Sleep(30 * time.Millisecond) // long enough for the timer to fire
+		order <- "start:" + id
+	})
+	table.OnDone(func(id string, state State, _ string, err error) {
+		if !errors.Is(err, ErrBudget) {
+			t.Errorf("done err = %v, want ErrBudget", err)
+		}
+		order <- "done:" + id + ":" + string(state)
+	})
+	var ran atomic.Bool
+	id, err := table.Start(context.Background(), Spec{Task: "x", Run: func(context.Context) (string, error) {
+		ran.Store(true)
+		return "ok", nil
+	}})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	awaitOrder(t, order, "start:"+id)
+	awaitOrder(t, order, "done:"+id+":aborted")
+	time.Sleep(20 * time.Millisecond)
+	if ran.Load() {
+		t.Fatal("the run function was invoked for a job the budget ended during its start")
+	}
+}
