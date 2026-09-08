@@ -71,9 +71,14 @@ var phraseRoutes = []phraseEntry{
 	{phrase: "next chapter", kind: RouteNarrateSkip, requireNarration: true},
 	{phrase: "skip", kind: RouteNarrateSkip, requireNarration: true},
 
-	// job.abort
+	// job.abort — "cancel" and "kill" are the job's verbs; "stop" on its own
+	// is speech's, so it is not here.
 	{phrase: "stop doing that", kind: RouteJobAbort, requireJob: true},
 	{phrase: "cancel that", kind: RouteJobAbort, requireJob: true},
+	{phrase: "cancel it", kind: RouteJobAbort, requireJob: true},
+	{phrase: "cancel", kind: RouteJobAbort, requireJob: true},
+	{phrase: "kill it", kind: RouteJobAbort, requireJob: true},
+	{phrase: "kill that", kind: RouteJobAbort, requireJob: true},
 	{phrase: "never mind", kind: RouteJobAbort, requireJob: true},
 	{phrase: "abort", kind: RouteJobAbort, requireJob: true},
 
@@ -153,13 +158,16 @@ func classifyPhrase(transcript string, ctx RouteContext) (RouteKind, bool) {
 	return RouteNone, false
 }
 
+// normalizeUtterance folds case and whitespace and drops the punctuation a
+// transcriber or a typist puts at the ends: "Kill it." is "kill it".
 func normalizeUtterance(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
 	}
 	s = strings.ToLower(s)
-	return strings.Join(strings.Fields(s), " ")
+	s = strings.Join(strings.Fields(s), " ")
+	return strings.Trim(s, ".!?,;:")
 }
 
 // routeKindSkipsBrain reports whether a Layer 1 match should not call ThinkStream.

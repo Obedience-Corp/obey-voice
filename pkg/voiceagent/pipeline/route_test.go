@@ -103,6 +103,47 @@ func TestClassifyPhraseJobControlsRequireJob(t *testing.T) {
 	}
 }
 
+func TestClassifyPhraseCancelVerbsNeedAJob(t *testing.T) {
+	t.Parallel()
+	withJob := RouteContext{JobActive: true}
+	for _, phrase := range []string{"kill it", "kill that", "cancel", "cancel it", "Kill it.", "Cancel that!"} {
+		kind, ok := classifyPhrase(phrase, withJob)
+		if !ok || kind != RouteJobAbort {
+			t.Errorf("%q with job = %q, %v; want job.abort, true", phrase, kind, ok)
+		}
+		if kind, ok := classifyPhrase(phrase, RouteContext{}); ok {
+			t.Errorf("%q without job = %q, true; want fall through to chat", phrase, kind)
+		}
+	}
+	// "stop" on its own is speech's verb, never the job's.
+	if kind, ok := classifyPhrase("stop", withJob); ok {
+		t.Errorf("stop with job = %q, true; want no phrase match", kind)
+	}
+}
+
+func TestClassifyPhraseIgnoresEndPunctuation(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		ctx  RouteContext
+		want RouteKind
+	}{
+		{"What's happening?", RouteContext{JobActive: true}, RouteJobStatus},
+		{"Are you done?", RouteContext{JobActive: true}, RouteJobStatus},
+		{"Pause.", RouteContext{NarrationActive: true}, RouteNarratePause},
+		{"never mind...", RouteContext{JobActive: true}, RouteJobAbort},
+	}
+	for _, tc := range cases {
+		kind, ok := classifyPhrase(tc.in, tc.ctx)
+		if !ok || kind != tc.want {
+			t.Errorf("%q = %q, %v; want %q, true", tc.in, kind, ok, tc.want)
+		}
+	}
+	if !classifySpawnIntent("Google the weather.") {
+		t.Error("a trailing period must not hide a spawn intent")
+	}
+}
+
 func TestClassifyPhraseNonMatch(t *testing.T) {
 	t.Parallel()
 	if kind, ok := classifyPhrase("how's the weather", RouteContext{}); ok {

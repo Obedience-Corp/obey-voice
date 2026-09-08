@@ -114,7 +114,13 @@ turn cannot hijack the conversation. `job_queued`, `job_started`, `job_finished`
 the job, started when it actually begins (a spawn behind a running job waits
 for that job's terminal event), and the last three carry elapsed time. The chip
 names the running job and counts the ones running alongside or queued behind
-it. A cancel stays silent in speech — the bus event is how it becomes visible.
+it.
+
+"Cancel", "cancel that", "kill it" or "kill that" ends the work: every running
+and queued job is aborted, and she says so once for the lot — "Stopped after
+40 seconds.", or just "Stopped." inside the first second — adding "Dropped 1
+queued job." when something never got to start. "Stop" on its own only
+silences speech; the job keeps running.
 
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one thread line per job and
@@ -122,7 +128,9 @@ rewrites it in place — `⚙ job-1 · read 3 files · ran 1 command`, sealed wi
 `· done in 35s`, `· failed: …` or `· killed after 6m5s` — and the chip reads
 `Working: {task} · {rows}`. Without the TUI each row prints once as `[job-1]
 read 3 files`, when its kind gives way or the job ends. "What's happening"
-answers `Still working on {task}. So far: read 3 files · ran 1 command.`
+answers `Still working on {task}. So far: read 3 files · ran 1 command.` The
+spoken `{task}` is the request's first clause, at most ten words; the chip and
+the transcript keep the whole request.
 
 `voice_work_narration` decides whether a job talks while it works: `status_only`
 (default) stays quiet until asked; `milestones` speaks one short line ("Read 3
@@ -135,8 +143,8 @@ names the running job first, then counts the others ("Also 1 more running and
 1 queued."). `voice_worker_job_budget` (default `600` seconds) is the longest
 any one job may run: past it the job is stopped, `job_aborted` carries
 `reason: budget`, and she says so once — "I stopped {task} after 10 minutes. It
-ran past its budget." A job you cancel yourself carries `reason: cancelled` and
-stays silent.
+ran past its budget." A job you cancel yourself carries `reason: cancelled`;
+the cancel line above is spoken once for the batch, never once per job.
 
 Both stops are the job table's own act, not a request to the worker: at the
 budget, or on a cancel, the job is marked aborted, its slot goes to the next

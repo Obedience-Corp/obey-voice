@@ -88,7 +88,22 @@ func TestBudgetStopSpeaksOnceAndNamesTheReason(t *testing.T) {
 	}
 }
 
-func TestUserCancelStaysSilentAndSaysCancelled(t *testing.T) {
+func (h *budgetHarness) cancel(phrase string) {
+	h.agency.HandleRoute(context.Background(), h.turn, h.metrics, RouteDecision{Kind: RouteJobAbort, Transcript: phrase, Source: "phrase"})
+}
+
+func (h *budgetHarness) awaitAborted(t *testing.T) events.JobAborted {
+	t.Helper()
+	select {
+	case e := <-h.aborted:
+		return e
+	case <-time.After(3 * time.Second):
+		t.Fatal("abort never surfaced")
+		return events.JobAborted{}
+	}
+}
+
+func TestUserCancelSpeaksStoppedOnceAndSaysCancelled(t *testing.T) {
 	h := newBudgetHarness(t)
 	defer close(h.release)
 	h.spawn("list the files here")
@@ -98,19 +113,92 @@ func TestUserCancelStaysSilentAndSaysCancelled(t *testing.T) {
 		t.Fatal("worker never ran a tool")
 	}
 
-	h.agency.handleAbort()
-	var e events.JobAborted
-	select {
-	case e = <-h.aborted:
-	case <-time.After(3 * time.Second):
-		t.Fatal("abort never surfaced")
-	}
-	if e.Reason != events.AbortCancelled {
+	h.cancel("kill it")
+	if e := h.awaitAborted(t); e.Reason != events.AbortCancelled {
 		t.Fatalf("reason = %q, want %q", e.Reason, events.AbortCancelled)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if got := h.spoken(); strings.Contains(got, "stopped") || strings.Contains(got, "budget") {
-		t.Fatalf("spoken = %q, want a user cancel to stay silent", got)
+	got := h.spoken()
+	if strings.Count(got, "Stopped") != 1 {
+		t.Fatalf("spoken = %q, want one stop line", got)
+	}
+	if strings.Contains(got, "budget") || strings.Contains(got, "Dropped") {
+		t.Fatalf("spoken = %q, want no budget or queue talk for one running job", got)
+	}
+}
+
+func TestUserCancelDropsQueuedJobsInTheSameLine(t *testing.T) {
+	h := newBudgetHarness(t)
+	defer close(h.release)
+	h.spawn("audit the config")
+	select {
+	case <-h.tool:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker never ran a tool")
+	}
+	h.spawn("write the report")
+
+	h.cancel("cancel")
+	ids := map[string]string{}
+	for i := 0; i < 2; i++ {
+		e := h.awaitAborted(t)
+		ids[e.ID] = e.Reason
+	}
+	if len(ids) != 2 {
+		t.Fatalf("aborted ids = %v, want both jobs", ids)
+	}
+	for id, reason := range ids {
+		if reason != events.AbortCancelled {
+			t.Fatalf("%s reason = %q, want %q", id, reason, events.AbortCancelled)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	got := h.spoken()
+	if strings.Count(got, "Stopped") != 1 || strings.Count(got, "Dropped 1 queued job.") != 1 {
+		t.Fatalf("spoken = %q, want one stop line naming the dropped job", got)
+	}
+	if h.agency.jobs.Active() {
+		t.Fatal("jobs still active after cancel, want none")
+	}
+}
+
+func TestAbortLine(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		ran    []time.Duration
+		queued int
+		want   string
+	}{
+		{nil, 0, "No job is running."},
+		{[]time.Duration{12 * time.Second}, 0, "Stopped after 12 seconds."},
+		{[]time.Duration{12 * time.Second}, 2, "Stopped after 12 seconds. Dropped 2 queued jobs."},
+		{[]time.Duration{3 * time.Second, 90 * time.Second}, 1, "Stopped 2 jobs. The longest ran 1 minute 30 seconds. Dropped 1 queued job."},
+		{nil, 1, "Dropped 1 queued job."},
+		{[]time.Duration{300 * time.Millisecond}, 0, "Stopped."},
+		{[]time.Duration{0, 400 * time.Millisecond}, 1, "Stopped 2 jobs. Dropped 1 queued job."},
+	}
+	for _, tc := range cases {
+		if got := abortLine(tc.ran, tc.queued); got != tc.want {
+			t.Errorf("abortLine(%v, %d) = %q, want %q", tc.ran, tc.queued, got, tc.want)
+		}
+	}
+}
+
+func TestSpokenTaskLabel(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"audit the config", "audit the config"},
+		{"list the files here.", "list the files here"},
+		{"create a file called README.md with one line about this folder, then list the files here and read the README back",
+			"create a file called README.md with one line about this…"},
+		{"search the web for rust; summarize what you find", "search the web for rust"},
+		{"read the README and then tell me what it says", "read the README"},
+		{"", "that"},
+	}
+	for _, tc := range cases {
+		if got := spokenTaskLabel(tc.in); got != tc.want {
+			t.Errorf("spokenTaskLabel(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
