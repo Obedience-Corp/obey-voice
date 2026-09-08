@@ -22,6 +22,11 @@ type VoiceTurnRunner interface {
 	RunTurn(ctx context.Context) (string, error)
 }
 
+// TranscriptionRunner is optional and never dispatches the recognized text.
+type TranscriptionRunner interface {
+	RunTranscription(context.Context) (string, error)
+}
+
 // ErrBusy reports a full dispatch queue — the pipeline is saturated and the
 // client should retry rather than silently pile up turns.
 var ErrBusy = errors.New("dispatcher queue is full")
@@ -37,6 +42,7 @@ const (
 	opVoice
 	opPersona
 	opBackground
+	opTranscription
 )
 
 type personaResult struct {
@@ -45,6 +51,7 @@ type personaResult struct {
 }
 
 type dispatchOp struct {
+	transcribed func(string, error)
 	kind        opKind
 	text        string
 	id          string
@@ -161,6 +168,19 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 			d.bus.Emit(events.Error{Stage: "turn", Message: err.Error()})
 		}
 
+	case opTranscription:
+		if op.prepare != nil && !op.prepare() {
+			return
+		}
+		turnCtx, cancel := context.WithCancel(ctx)
+		d.beginTurn(cancel)
+		text, err := d.runner.(TranscriptionRunner).RunTranscription(turnCtx)
+		d.endTurn()
+		cancel()
+		if op.transcribed != nil {
+			op.transcribed(text, err)
+		}
+
 	case opClear:
 		if d.clearHistory != nil {
 			d.clearHistory()
@@ -228,6 +248,15 @@ func (d *Dispatcher) SubmitVoice(prepare func() bool) error {
 		return errors.New("remote mic is not enabled")
 	}
 	return d.enqueue(dispatchOp{kind: opVoice, prepare: prepare})
+}
+
+// SubmitTranscription uses the same exclusive ingress and serial queue as a
+// voice turn, but returns recognized text to its owner without invoking agents.
+func (d *Dispatcher) SubmitTranscription(prepare func() bool, done func(string, error)) error {
+	if _, ok := d.runner.(TranscriptionRunner); !ok {
+		return errors.New("transcription-only capture is not enabled")
+	}
+	return d.enqueue(dispatchOp{kind: opTranscription, prepare: prepare, transcribed: done})
 }
 
 // VoiceEnabled reports whether the runner can execute remote-mic turns.

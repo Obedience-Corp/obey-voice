@@ -76,7 +76,11 @@ func (s *ParakeetSTT) Start(ctx context.Context) (Session, error) {
 	}
 	go func() {
 		defer close(session.events)
-		runOfflineLoop(sessionCtx, deps, session.events)
+		if preview, _ := ctx.Value(livePreviewKey{}).(bool); preview {
+			runPreviewLoop(sessionCtx, deps, session.events)
+		} else {
+			runOfflineLoop(sessionCtx, deps, session.events)
+		}
 	}()
 	return session, nil
 }

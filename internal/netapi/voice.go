@@ -3,6 +3,7 @@ package netapi
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -131,6 +132,33 @@ func (h *hub) endMicUtterance(c *streamConn) error {
 // is dequeued: a false trigger, or a client that changes its mind, must not
 // hold the mic away from whoever is actually talking.
 func (s *Server) startVoiceTurn(conn *streamConn) error {
+	return s.startMicTurn(conn, s.dispatcher.SubmitVoice)
+}
+
+func (s *Server) startTranscription(conn *streamConn, id string) error {
+	if id == "" {
+		return errors.New("transcribe_start requires id")
+	}
+	return s.startMicTurn(conn, func(prepare func() bool) error {
+		return s.dispatcher.SubmitTranscription(prepare, func(text string, err error) {
+			result := map[string]string{"type": "transcription_result", "id": id, "text": text}
+			if err != nil {
+				result["error"] = err.Error()
+			}
+			data, marshalErr := json.Marshal(result)
+			if marshalErr != nil {
+				return
+			}
+			select {
+			case conn.out <- data:
+			default:
+				conn.evict("client too slow")
+			}
+		})
+	})
+}
+
+func (s *Server) startMicTurn(conn *streamConn, submit func(func() bool) error) error {
 	deferred := s.dispatcher.Pending()
 	// The turn is open from here: only voice_end, a disconnect, or this
 	// deadline will close it again. It is armed before anything is claimed or
@@ -149,7 +177,7 @@ func (s *Server) startVoiceTurn(conn *streamConn) error {
 		return err
 	}
 
-	if err := s.dispatcher.SubmitVoice(prepare); err != nil {
+	if err := submit(prepare); err != nil {
 		conn.dropStaged()
 		conn.watch.disarm()
 		if !deferred {

@@ -378,6 +378,10 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			}
 			s.hub.setConnAudio(conn, mode == "stream")
 			s.sendAudioOutputAck(conn, mode)
+		case "transcribe_start":
+			if err := s.startTranscription(conn, msg.ID); err != nil {
+				s.sendError(conn, dispatchErrText(err))
+			}
 		case "voice_start":
 			if err := s.startVoiceTurn(conn); err != nil {
 				s.sendError(conn, dispatchErrText(err))
