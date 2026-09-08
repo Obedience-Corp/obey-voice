@@ -699,9 +699,10 @@ func TestAbortEndsARunningJobWithoutWaiting(t *testing.T) {
 	}
 }
 
-// A cancel that lands while the job is announcing itself waits for the
-// announcement: the start callback precedes the done callback, and the run
-// function is never invoked for a job that is already over.
+// A cancel that lands while the job is announcing itself returns at once
+// and is applied after the announcement: the start callback precedes the
+// done callback, and the run function is never invoked for a job that is
+// already over.
 func TestAbortDuringStartKeepsOrderAndSkipsRun(t *testing.T) {
 	t.Parallel()
 	table := NewTable(context.Background())
@@ -731,7 +732,10 @@ func TestAbortDuringStartKeepsOrderAndSkipsRun(t *testing.T) {
 	}()
 	select {
 	case <-aborted:
-		t.Fatal("Abort returned while the start callback was still running")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Abort blocked on the start callback")
+	}
+	select {
 	case got := <-order:
 		t.Fatalf("got %q before the start callback returned", got)
 	case <-time.After(50 * time.Millisecond):
@@ -740,11 +744,6 @@ func TestAbortDuringStartKeepsOrderAndSkipsRun(t *testing.T) {
 	close(hold)
 	awaitOrder(t, order, "start:"+id)
 	awaitOrder(t, order, "done:"+id+":aborted")
-	select {
-	case <-aborted:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Abort never returned")
-	}
 	time.Sleep(20 * time.Millisecond)
 	if ran.Load() {
 		t.Fatal("the run function was invoked for a job stopped during its start")
@@ -754,14 +753,16 @@ func TestAbortDuringStartKeepsOrderAndSkipsRun(t *testing.T) {
 	}
 }
 
-// The budget timer is armed before the start callback; one that fires during
-// it takes the same path.
+// The budget timer is armed before the start callback, so it can fire during
+// the announcement; that stop takes the same non-blocking path as a cancel.
+// The timer is fired by hand from inside the callback so the test does not
+// depend on scheduling.
 func TestBudgetFiringDuringStartKeepsOrder(t *testing.T) {
 	t.Parallel()
-	table := NewTable(context.Background(), WithBudget(time.Nanosecond))
+	table := NewTable(context.Background(), WithBudget(time.Hour))
 	order := make(chan string, 8)
 	table.OnStart(func(id, _ string) {
-		time.Sleep(30 * time.Millisecond) // long enough for the timer to fire
+		table.exceedBudget(id)
 		order <- "start:" + id
 	})
 	table.OnDone(func(id string, state State, _ string, err error) {
@@ -783,5 +784,55 @@ func TestBudgetFiringDuringStartKeepsOrder(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	if ran.Load() {
 		t.Fatal("the run function was invoked for a job the budget ended during its start")
+	}
+	if table.Active() {
+		t.Fatal("the stopped job is still active")
+	}
+}
+
+// A start callback may abort its own job: Abort never waits on the callback
+// that is calling it, and the job still ends in order with no run.
+func TestStartCallbackCanAbortItsOwnJob(t *testing.T) {
+	t.Parallel()
+	table := NewTable(context.Background())
+	order := make(chan string, 8)
+	table.OnStart(func(id, _ string) {
+		order <- "start:" + id
+		table.Abort(id)
+		order <- "abort-returned:" + id
+	})
+	table.OnDone(func(id string, state State, _ string, _ error) { order <- "done:" + id + ":" + string(state) })
+	var ran atomic.Bool
+	id, err := table.Start(context.Background(), Spec{Task: "x", Run: func(context.Context) (string, error) {
+		ran.Store(true)
+		return "ok", nil
+	}})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	awaitOrder(t, order, "start:"+id)
+	awaitOrder(t, order, "abort-returned:"+id)
+	awaitOrder(t, order, "done:"+id+":aborted")
+	time.Sleep(20 * time.Millisecond)
+	if ran.Load() {
+		t.Fatal("the run function was invoked for a job its own start callback aborted")
+	}
+	if table.Active() {
+		t.Fatal("the aborted job is still active")
+	}
+
+	// The table keeps working afterwards.
+	next := make(chan struct{})
+	table.OnStart(nil)
+	if _, err := table.Start(context.Background(), Spec{Task: "next", Run: func(context.Context) (string, error) {
+		close(next)
+		return "ok", nil
+	}}); err != nil {
+		t.Fatalf("Start(next): %v", err)
+	}
+	select {
+	case <-next:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the next job never ran")
 	}
 }

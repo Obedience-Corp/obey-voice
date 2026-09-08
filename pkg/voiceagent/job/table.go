@@ -115,16 +115,13 @@ type entry struct {
 	// or budget) finishes the job without waiting for its run function, so
 	// a run function that returns late finds this set and changes nothing.
 	finished bool
-	// started is closed by run once the start callback has returned (or was
-	// skipped); startAnnounced says the same under the lock. A stop that
-	// lands between the pump and that point waits on started, so the start
-	// event always precedes the terminal one.
-	started        chan struct{}
+	// startAnnounced is set by run once the start callback has returned (or
+	// was skipped). A stop that lands before that point does not wait — the
+	// callback may be the caller — it leaves stopErr, and run applies it
+	// right after the announcement: the start event still precedes the
+	// terminal one, and the run function is never invoked.
 	startAnnounced bool
-	// stopping is set by a stop that is waiting on started; run then yields
-	// the job to it instead of invoking the run function, so the stop owns
-	// the completion and the run function never starts for a job being ended.
-	stopping bool
+	stopErr        error
 }
 
 // Option configures a Table.
@@ -233,18 +230,19 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	return id, nil
 }
 
-// Abort ends a queued or running job now: it is marked aborted, its slot is
+// Abort ends a queued or running job: it is marked aborted, its slot is
 // freed, the done callback fires, and the run function is told to stop
-// through its context. Missing and finished ids are a no-op.
+// through its context. Abort never blocks, so a start callback may abort its
+// own job; a stop that lands while the job is announcing itself is applied
+// by the job's goroutine right after the announcement. Missing and finished
+// ids are a no-op.
 func (t *Table) Abort(id string) {
 	t.stop(id, errAborted)
 }
 
 // stop is the one way a job ends before its run function returns; user
 // cancels and budget breaches share it, so neither waits on a run function
-// that may ignore its cancel. It does wait for an in-flight start
-// announcement, so it must not be called from the start callback itself.
-// Pumps once the done callback has returned.
+// that may ignore its cancel.
 func (t *Table) stop(id string, err error) {
 	t.mu.Lock()
 	e, ok := t.jobs[id]
@@ -253,30 +251,40 @@ func (t *Table) stop(id string, err error) {
 		return
 	}
 	if e.info.State == StateRunning && !e.startAnnounced {
-		// run is between the pump and its start callback. Let it announce
-		// first: the start event then precedes the terminal one, and run
-		// yields to this stop instead of invoking the run function.
-		e.stopping = true
-		started := e.started
-		t.mu.Unlock()
-		<-started
-		t.mu.Lock()
-		if e.finished {
-			t.mu.Unlock()
-			return
+		// Announcing. The caller may be the start callback itself, so never
+		// wait here: leave the stop for run to apply once the callback has
+		// returned. The first stop to land is the one that counts.
+		if e.stopErr == nil {
+			e.stopErr = err
 		}
+		t.mu.Unlock()
+		return
+	}
+	t.mu.Unlock()
+	t.complete(id, StateAborted, "", err)
+}
+
+// complete ends a job: terminal state under the lock, the context cancel,
+// the done callback, then a pump once the callback has returned. Every path
+// that ends a job goes through it, and a job already ended is left alone.
+func (t *Table) complete(id string, state State, result string, err error) {
+	t.mu.Lock()
+	e, ok := t.jobs[id]
+	if !ok || e.finished {
+		t.mu.Unlock()
+		return
 	}
 	if e.info.State == StateQueued {
 		t.removeFromQueueLocked(id)
 	}
-	cb := t.finishLocked(id, StateAborted, "", err)
+	cb := t.finishLocked(id, state, result, err)
 	cancel := e.cancel
 	t.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
 	if cb != nil {
-		cb(id, StateAborted, "", err)
+		cb(id, state, result, err)
 	}
 	t.mu.Lock()
 	t.pumpLocked()
@@ -323,7 +331,6 @@ func (t *Table) pumpLocked() {
 		}
 		t.queue = t.queue[1:]
 		e.info.State = StateRunning
-		e.started = make(chan struct{})
 		t.running[id] = struct{}{}
 		t.runOrder = append(t.runOrder, id)
 		go t.run(e.ctx, id)
@@ -331,50 +338,14 @@ func (t *Table) pumpLocked() {
 }
 
 func (t *Table) run(jobCtx context.Context, id string) {
-	var result string
-	var err error
-	yielded := false
 	defer func() {
-		if yielded {
-			return // the waiting stop owns the completion
-		}
 		if r := recover(); r != nil {
-			err = fmt.Errorf("worker panic: %v", r)
+			t.complete(id, StateFailed, "", fmt.Errorf("worker panic: %v", r))
 		}
-		state := StateDone
-		if err != nil {
-			if jobCtx.Err() != nil {
-				state = StateAborted
-			} else {
-				state = StateFailed
-			}
-		}
-		t.mu.Lock()
-		if e, ok := t.jobs[id]; !ok || e.finished {
-			// A stop already ended this job without waiting for us; a late
-			// return changes nothing.
-			t.mu.Unlock()
-			return
-		}
-		cb := t.finishLocked(id, state, result, err)
-		t.mu.Unlock()
-		if cb != nil {
-			cb(id, state, result, err)
-		}
-		// Pump only after the done callback has returned, so the next job
-		// cannot publish anything before this one's terminal event is out.
-		t.mu.Lock()
-		t.pumpLocked()
-		t.mu.Unlock()
 	}()
 
 	t.mu.Lock()
 	e := t.jobs[id]
-	if e == nil {
-		t.mu.Unlock()
-		err = fmt.Errorf("job %s: unknown", id)
-		return
-	}
 	onStart := t.onStart
 	runFn := e.spec.Run
 	if runFn != nil {
@@ -386,22 +357,24 @@ func (t *Table) run(jobCtx context.Context, id string) {
 	t.mu.Unlock()
 
 	// Same goroutine as the run function: whatever the callback publishes is
-	// out before the job's first tool call can be. A stop arriving now waits
-	// for it (see stop), so the start event always precedes the terminal one.
+	// out before the job's first tool call can be.
 	if runFn != nil && onStart != nil {
 		onStart(id, e.spec.Task)
 	}
+
 	t.mu.Lock()
 	e.startAnnounced = true
-	yielded = e.stopping
+	pending := e.stopErr
 	t.mu.Unlock()
-	close(e.started)
-	if yielded {
-		return // a stop landed during the announcement; it ends the job
+	if pending != nil {
+		// A stop landed during the announcement (possibly from the callback
+		// itself). Apply it here: the start event is out, the run function
+		// never begins.
+		t.complete(id, StateAborted, "", pending)
+		return
 	}
-
 	if runFn == nil {
-		err = fmt.Errorf("job %s: no run function", id)
+		t.complete(id, StateFailed, "", fmt.Errorf("job %s: no run function", id))
 		return
 	}
 	// A stop that landed after the announcement has already ended the job:
@@ -413,7 +386,19 @@ func (t *Table) run(jobCtx context.Context, id string) {
 	if finished {
 		return
 	}
-	result, err = runFn(jobCtx)
+
+	result, err := runFn(jobCtx)
+	state := StateDone
+	if err != nil {
+		if jobCtx.Err() != nil {
+			state = StateAborted
+		} else {
+			state = StateFailed
+		}
+	}
+	// A no-op when a stop ended the job while the run function ignored its
+	// cancel: the late return changes nothing.
+	t.complete(id, state, result, err)
 }
 
 // finishLocked marks a job terminal. Caller must hold t.mu. It returns the
