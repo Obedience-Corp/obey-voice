@@ -148,6 +148,9 @@ func (r *Router) sinkFor(dest Destination) (Sink, error) {
 			Run:      r.Run,
 			LookPath: r.LookPath,
 			ResolveCampaignDir: func(ctx context.Context, campaignName string) (string, error) {
+				if dest.CampaignRoot != "" {
+					return dest.CampaignRoot, nil
+				}
 				return resolveCampaignDir(ctx, r.Run, r.LookPath, campaignName)
 			},
 		}, nil

@@ -40,7 +40,7 @@ func (m settingsModel) meetingItems() []string {
 	}
 	def := m.cfg.Meeting.Route.Default
 	if def == "" {
-		def = "(none)"
+		def = "(launch campaign)"
 	}
 	body := m.cfg.Meeting.Route.Body
 	if body == "" {
@@ -377,7 +377,7 @@ func (m *settingsModel) cycleDefaultDestination() {
 	m.cfg.Meeting.Route.Default = next.id
 	label := next.id
 	if label == "" {
-		label = "(none)"
+		label = "(launch campaign)"
 	}
 	m.message = fmt.Sprintf("Default destination: %s", label)
 }

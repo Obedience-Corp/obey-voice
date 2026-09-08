@@ -45,13 +45,14 @@ const (
 
 // Destination is a named route target (config + picker identity).
 type Destination struct {
-	ID       string   // stable key for config + picker
-	Type     string   // campaign | file | apple-notes
-	Campaign string   // registry name or path (campaign)
-	Capture  string   // meeting | intent | note (campaign); default meeting
-	Tags     []string // optional camp idea tags
-	Path     string   // directory for file sink
-	Folder   string   // Apple Notes folder
+	ID           string   // stable key for config + picker
+	Type         string   // campaign | file | apple-notes
+	Campaign     string   // registry name or path (campaign)
+	CampaignRoot string   // runtime-only root detected from the launch workspace
+	Capture      string   // meeting | intent | note (campaign); default meeting
+	Tags         []string // optional camp idea tags
+	Path         string   // directory for file sink
+	Folder       string   // Apple Notes folder
 }
 
 // RenderedNote is the single markdown artifact fed to every sink.

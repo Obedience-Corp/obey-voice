@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +12,42 @@ import (
 	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+func TestMeetingSetupLaunchCampaignDefault(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".campaign"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".campaign", "campaign.yaml"), []byte("name: Launch\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{meeting.ModeAsk, meeting.ModeAuto, meeting.ModeOff} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := &config.Config{WorkDir: root, Meeting: config.MeetingConfig{Route: config.MeetingRouteConfig{Mode: mode}}}
+			m := newMeetingSetup(cfg)
+			m.input.SetValue("Standup")
+			m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if mode == meeting.ModeAsk {
+				if m.step != meetingSetupRoute || cmd == nil {
+					t.Fatal("ask mode did not open route picker")
+				}
+				m, _ = m.Update(meetingDestsMsg{seq: m.loadSeq, dests: meeting.FromConfig(cfg).Destinations})
+				if m.cursor != 2 || !strings.Contains(stripANSI(m.View()), "Launch [campaign/meetings] (default)") {
+					t.Fatalf("launch campaign not preselected/labeled: cursor=%d\n%s", m.cursor, m.View())
+				}
+				_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			}
+			msg := cmd().(startMeetingMsg)
+			if mode == meeting.ModeOff {
+				if msg.RoutePlan != routePlanLocal {
+					t.Fatalf("off plan = %+v", msg)
+				}
+			} else if msg.RoutePlan != routePlanDest || msg.Destination.CampaignRoot != root {
+				t.Fatalf("launch route plan = %+v", msg)
+			}
+		})
+	}
+}
 
 func bundledMeetingSummary() meetinglog.Summary {
 	return meetinglog.Summary{
