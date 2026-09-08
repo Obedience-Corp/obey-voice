@@ -17,6 +17,7 @@ just convoflow run job-status -live-model=qwen3:8b -worker-model=qwen3:30b
 CONVOFLOW_LIVE_MODEL=qwen3.8:27b just convoflow gate  # three Layer-1 scenarios (v1 success)
 just convoflow live-router                            # soft live-brain spawn
 just convoflow run work-stream-gate                   # worker tool calls carry job ids; queued → started → terminal
+just convoflow run work-stream-cancel                 # "kill it" aborts the running job; "Stopped after …" spoken once
 just convoflow run search-web-intent -worker-provider=grok   # comparison, not the gate
 ```
 

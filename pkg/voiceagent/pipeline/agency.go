@@ -104,7 +104,7 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 			a.narrator.HandleRoute(ctx, turn, metrics, d)
 		}
 	case RouteJobAbort:
-		a.handleAbort()
+		a.handleAbort(ctx, turn, metrics)
 	case RouteJobStatus:
 		a.speakJobStatus(ctx, turn, metrics)
 	}
@@ -218,8 +218,8 @@ func (a *Agency) narrateRow(jobID string, row workfold.Row) {
 }
 
 // closeFold ends the job's fold, speaking its last row under milestones.
-// narrate is false for an abort: cancelling stays silent (D5), and what an
-// abort says is slice 3's to decide.
+// narrate is false for an abort: the cancel line or the budget line is all
+// an abort says.
 func (a *Agency) closeFold(jobID string, narrate bool) {
 	rows := a.work.Close(jobID)
 	if !narrate || len(rows) == 0 {
@@ -247,13 +247,58 @@ func (a *Agency) workerProvider() (brain.Provider, error) {
 	return nil, fmt.Errorf("worker provider is not configured")
 }
 
-func (a *Agency) handleAbort() {
-	st := a.jobs.Status()
-	for _, info := range st {
-		if info.State == job.StateRunning || info.State == job.StateQueued {
-			a.jobs.Abort(info.ID)
+// handleAbort ends every running and queued job and says so once, here in
+// the turn that asked. The done callback stays silent for a cancel: three
+// jobs cancelled together are one act, and that callback also carries the
+// budget stop, which has its own line.
+func (a *Agency) handleAbort(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
+	var ran []time.Duration
+	var queued, running []string
+	for _, info := range a.jobs.Status() {
+		switch info.State {
+		case job.StateRunning:
+			running = append(running, info.ID)
+			ran = append(ran, info.Elapsed())
+		case job.StateQueued:
+			queued = append(queued, info.ID)
 		}
 	}
+	// Queued first, so the slot a running job frees has nothing to pump.
+	for _, id := range append(queued, running...) {
+		a.jobs.Abort(id)
+	}
+	if err := a.pipeline.speakStandalone(ctx, turn, metrics, abortLine(ran, len(queued))); err != nil {
+		a.pipeline.emit(events.Info{Message: fmt.Sprintf("cancel speech failed: %v", err)})
+	}
+}
+
+// abortLine is what a cancel says: how long the work ran, and what never got
+// to start.
+func abortLine(ran []time.Duration, queued int) string {
+	var parts []string
+	var longest time.Duration
+	for _, d := range ran {
+		if d > longest {
+			longest = d
+		}
+	}
+	switch n := len(ran); {
+	case n == 1 && longest < time.Second:
+		parts = append(parts, "Stopped.")
+	case n == 1:
+		parts = append(parts, fmt.Sprintf("Stopped after %s.", spokenDuration(longest)))
+	case n > 1 && longest < time.Second:
+		parts = append(parts, fmt.Sprintf("Stopped %d jobs.", n))
+	case n > 1:
+		parts = append(parts, fmt.Sprintf("Stopped %d jobs. The longest ran %s.", n, spokenDuration(longest)))
+	}
+	if queued > 0 {
+		parts = append(parts, fmt.Sprintf("Dropped %s.", plural(queued, "queued job")))
+	}
+	if len(parts) == 0 {
+		return "No job is running."
+	}
+	return strings.Join(parts, " ")
 }
 
 func (a *Agency) speakJobStatus(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
@@ -270,13 +315,13 @@ func (a *Agency) speakJobStatus(ctx context.Context, turn *turnConductor, metric
 	switch {
 	case len(running) > 0:
 		first := running[0]
-		line = fmt.Sprintf("Still working on %s.", truncateJobTask(first.Task))
+		line = fmt.Sprintf("Still working on %s.", spokenTaskLabel(first.Task))
 		if done := a.work.Summary(first.ID); done != "" {
 			// The middle dot is a screen separator; spoken, it is a comma.
 			line += fmt.Sprintf(" So far: %s.", strings.ReplaceAll(done, " · ", ", "))
 		}
 	case len(queued) > 0:
-		line = fmt.Sprintf("Queued: %s.", truncateJobTask(queued[0].Task))
+		line = fmt.Sprintf("Queued: %s.", spokenTaskLabel(queued[0].Task))
 		queued = queued[1:]
 	}
 	if more := jobCounts(len(running)-1, len(queued)); more != "" {
@@ -351,13 +396,14 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		a.enqueueSummary(id, msg)
 		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 	case job.StateAborted:
-		// A cancel is visible on the bus and silent in speech: the user did
-		// it. A budget stop is the one abort nobody asked for, so it speaks.
+		// A cancel was spoken once by handleAbort, in the turn that asked;
+		// saying it again here would be once per job. A budget stop is the
+		// one abort nobody asked for, so it speaks.
 		reason := events.AbortCancelled
 		if errors.Is(err, job.ErrBudget) {
 			reason = events.AbortBudget
 			a.enqueueSummary(id, fmt.Sprintf("I stopped %s after %s. It ran past its budget.",
-				truncateJobTask(task), spokenDuration(elapsed)))
+				spokenTaskLabel(task), spokenDuration(elapsed)))
 		}
 		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
 	}
@@ -444,6 +490,29 @@ func truncateJobTask(s string) string {
 		return s
 	}
 	return s[:117] + "..."
+}
+
+// spokenTaskWords caps how much of a task a status line repeats.
+const spokenTaskWords = 10
+
+// spokenTaskLabel is the task as speech names it: the first clause, at most
+// spokenTaskWords words. The chip keeps the whole request; a status line
+// that repeats twenty words verbatim takes longer to hear than the answer.
+func spokenTaskLabel(task string) string {
+	s := strings.TrimSpace(task)
+	for _, sep := range []string{",", ";", " and then ", " then ", " after that "} {
+		if i := strings.Index(s, sep); i > 0 {
+			s = s[:i]
+		}
+	}
+	words := strings.Fields(s)
+	if len(words) > spokenTaskWords {
+		return strings.Join(words[:spokenTaskWords], " ") + "…"
+	}
+	if label := strings.TrimRight(strings.Join(words, " "), ".!?:"); label != "" {
+		return label
+	}
+	return "that"
 }
 
 // activeTurns counts in-flight RunTurn / RunTurnTextMode calls for idle summary gating.
