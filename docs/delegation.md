@@ -176,10 +176,13 @@ there is none (`voice_worker_boundary`, default on). Two layers hold it:
   do not open other campaigns or any tool's session store, do not run
   `camp list`, never `git commit` or `git push` outside the root.
 - **The Ollama worker's tools refuse.** `read_file`, `write_file` and
-  `list_files` refuse any path outside the root. `run_command` refuses a
-  command that names a path under your home directory but outside the root,
-  a relative path that climbs out, or `camp list`; the rest of the machine
-  (`/usr`, `/opt`, `/tmp`) stays open. A refusal comes back to the model as
+  `list_files` refuse any path outside the root, judged where it really
+  points: a symlink under the root that leads out is out, for a file that
+  exists and for one that would be created. `run_command` refuses a command
+  that names a path under your home directory but outside the root (again by
+  where it points), a relative path that climbs out or goes through such a
+  link, or `camp list`; the rest of the machine (`/usr`, `/opt`, `/tmp`)
+  stays open. A refusal comes back to the model as
   the tool's error and reaches the bus as `tool_call_finished` with `err`, so
   the attempt is visible in the activity feed and the transcript. This reads
   the command's words; it is a fence, not a sandbox.

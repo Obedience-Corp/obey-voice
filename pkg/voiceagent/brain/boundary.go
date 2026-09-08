@@ -93,16 +93,35 @@ func (b Boundary) CheckCommand(workDir, command string) error {
 		expanded := b.expandHome(tok)
 		switch {
 		case filepath.IsAbs(expanded):
-			if b.underHome(expanded) && !b.inside(expanded) {
+			if b.leavesHome(expanded) {
 				return b.refuse(tok)
 			}
 		case climbs(expanded):
 			if !b.inside(b.absolute(workDir, expanded)) {
 				return b.refuse(tok)
 			}
+		default:
+			// A plain word is a path only if its first segment is one under
+			// the working directory: a symlink there that points out must
+			// not be a shorter way to say ~/.grok, for a file that exists or
+			// one the command would create.
+			first, _, _ := strings.Cut(expanded, "/")
+			if exists(filepath.Join(workDir, first)) && !b.inside(b.absolute(workDir, expanded)) {
+				return b.refuse(tok)
+			}
 		}
 	}
 	return nil
+}
+
+// leavesHome reports an absolute path that lands under the home directory
+// but outside the boundary, judged where it really points: a link under
+// /tmp into ~/.grok is ~/.grok.
+func (b Boundary) leavesHome(abs string) bool {
+	if b.inside(abs) {
+		return false
+	}
+	return b.underHome(abs) || b.underHome(canonical(abs))
 }
 
 func (b Boundary) refuse(path string) error {
@@ -133,25 +152,47 @@ func (b Boundary) absolute(workDir, path string) string {
 	return filepath.Clean(filepath.Join(workDir, path))
 }
 
-// inside is lexical first, then through symlinks for paths that exist, so a
-// root reached by a symlink does not refuse its own real files.
+// inside judges a path by where it really points, so a symlink under the
+// root that leads out is out, and a root reached through a symlink still
+// owns its real files. A path that does not exist yet is judged by the
+// nearest ancestor that does: where a new file would land.
 func (b Boundary) inside(abs string) bool {
-	if isUnder(abs, b.Root) {
-		return true
+	root := b.Root
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
 	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return false
-	}
-	realRoot, err := filepath.EvalSymlinks(b.Root)
-	if err != nil {
-		return false
-	}
-	return isUnder(real, realRoot)
+	return isUnder(canonical(abs), root)
 }
 
+// canonical resolves symlinks in the longest existing prefix of abs and
+// reattaches the rest. abs is already clean, so the rest has no "..".
+func canonical(abs string) string {
+	rest := ""
+	for cur := abs; ; {
+		if real, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return abs
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
+}
+
+func exists(abs string) bool {
+	_, err := os.Lstat(abs)
+	return err == nil
+}
+
+// underHome compares against home as given and as it really is, since a
+// home directory can itself sit behind a symlink (/var on macOS).
 func (b Boundary) underHome(abs string) bool {
-	return b.home != "" && isUnder(abs, b.home)
+	if b.home == "" {
+		return false
+	}
+	return isUnder(abs, b.home) || isUnder(abs, canonical(b.home))
 }
 
 func isUnder(path, root string) bool {
