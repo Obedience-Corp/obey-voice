@@ -196,7 +196,7 @@ func (w *Writer) Attach(bus *events.Bus) {
 		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "failed", Message: e.Err, IsError: true, ElapsedS: e.Elapsed.Seconds()})
 	})
 	events.Subscribe(bus, func(e events.JobAborted) {
-		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "aborted", ElapsedS: e.Elapsed.Seconds()})
+		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "aborted", Reason: e.Reason, ElapsedS: e.Elapsed.Seconds()})
 	})
 	events.Subscribe(bus, func(e events.Error) {
 		w.enqueue(record{Type: "error", Stage: e.Stage, Message: e.Message})

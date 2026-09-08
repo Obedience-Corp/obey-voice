@@ -546,6 +546,14 @@
       "value": "status_only",
       "source": "default"
     },
+    "voice_worker_job_budget": {
+      "value": 600,
+      "source": "default"
+    },
+    "voice_worker_max_concurrent": {
+      "value": 1,
+      "source": "default"
+    },
     "voice_worker_model": {
       "value": "",
       "source": "default"

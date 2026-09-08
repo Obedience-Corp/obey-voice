@@ -12,6 +12,13 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 )
 
+// Worker job limits (WI-41c322 D5). The budget is the guarantee: no spawned
+// job runs longer than it, and the user sets it.
+const (
+	DefaultVoiceWorkerMaxConcurrent = 1
+	DefaultVoiceWorkerJobBudget     = 600
+)
+
 // Config holds all application configuration.
 type Config struct {
 	// Delegation is opt-in and bound to an operator-selected Obey parent.
@@ -184,9 +191,13 @@ type Config struct {
 	VoiceWorkerModel string `mapstructure:"voice_worker_model"`
 	// VoiceWorkerOllamaHost overrides ollama_host for the worker when it is ollama.
 	VoiceWorkerOllamaHost string `mapstructure:"voice_worker_ollama_host"`
-	GrokModel             string `mapstructure:"grok_model"`
-	CursorModel           string `mapstructure:"cursor_model"`
-	OllamaModel           string `mapstructure:"ollama_model"`
+	// VoiceWorkerMaxConcurrent is how many spawned jobs run at once; the rest queue.
+	VoiceWorkerMaxConcurrent int `mapstructure:"voice_worker_max_concurrent"`
+	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds; zero means no cap.
+	VoiceWorkerJobBudget int    `mapstructure:"voice_worker_job_budget"`
+	GrokModel            string `mapstructure:"grok_model"`
+	CursorModel          string `mapstructure:"cursor_model"`
+	OllamaModel          string `mapstructure:"ollama_model"`
 	// OllamaEmbeddingModel routes user prompts to relevant Agent Skills. Empty
 	// disables harness-side semantic activation and leaves model-driven
 	// read_skill available as a fallback.
@@ -568,6 +579,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_worker_provider", "")
 	v.SetDefault("voice_worker_model", "")
 	v.SetDefault("voice_worker_ollama_host", "")
+	v.SetDefault("voice_worker_max_concurrent", DefaultVoiceWorkerMaxConcurrent)
+	v.SetDefault("voice_worker_job_budget", DefaultVoiceWorkerJobBudget)
 	v.SetDefault("grok_model", "")
 	v.SetDefault("cursor_model", "")
 	v.SetDefault("ollama_model", "")

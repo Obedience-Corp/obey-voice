@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -256,28 +257,69 @@ func (a *Agency) handleAbort() {
 }
 
 func (a *Agency) speakJobStatus(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
-	var active *job.Info
+	var running, queued []job.Info
 	for _, info := range a.jobs.Status() {
-		if info.State == job.StateRunning || info.State == job.StateQueued {
-			copy := info
-			active = &copy
-			break
+		switch info.State {
+		case job.StateRunning:
+			running = append(running, info)
+		case job.StateQueued:
+			queued = append(queued, info)
 		}
 	}
 	line := "No job is running."
-	if active != nil {
-		switch active.State {
-		case job.StateQueued:
-			line = fmt.Sprintf("Queued: %s.", truncateJobTask(active.Task))
-		default:
-			line = fmt.Sprintf("Still working on %s.", truncateJobTask(active.Task))
-			if done := a.work.Summary(active.ID); done != "" {
-				// The middle dot is a screen separator; spoken, it is a comma.
-				line += fmt.Sprintf(" So far: %s.", strings.ReplaceAll(done, " · ", ", "))
-			}
+	switch {
+	case len(running) > 0:
+		first := running[0]
+		line = fmt.Sprintf("Still working on %s.", truncateJobTask(first.Task))
+		if done := a.work.Summary(first.ID); done != "" {
+			// The middle dot is a screen separator; spoken, it is a comma.
+			line += fmt.Sprintf(" So far: %s.", strings.ReplaceAll(done, " · ", ", "))
 		}
+	case len(queued) > 0:
+		line = fmt.Sprintf("Queued: %s.", truncateJobTask(queued[0].Task))
+		queued = queued[1:]
+	}
+	if more := jobCounts(len(running)-1, len(queued)); more != "" {
+		line += " " + more
 	}
 	a.pipeline.speakStandalone(ctx, turn, metrics, line)
+}
+
+// jobCounts phrases what is working or waiting besides the job just named.
+func jobCounts(moreRunning, queued int) string {
+	var parts []string
+	if moreRunning > 0 {
+		parts = append(parts, fmt.Sprintf("%d more running", moreRunning))
+	}
+	if queued > 0 {
+		parts = append(parts, fmt.Sprintf("%d queued", queued))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Also " + strings.Join(parts, " and ") + "."
+}
+
+// spokenDuration phrases a duration for speech; "10m0s" is not a thing
+// anyone says.
+func spokenDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	secs := int(d.Seconds())
+	if secs < 60 {
+		return plural(secs, "second")
+	}
+	mins, rest := secs/60, secs%60
+	if rest == 0 {
+		return plural(mins, "minute")
+	}
+	return plural(mins, "minute") + " " + plural(rest, "second")
+}
+
+func plural(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }
 
 func (a *Agency) speakAck(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
@@ -309,8 +351,15 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		a.enqueueSummary(id, msg)
 		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 	case job.StateAborted:
-		// Visible on the bus; still silent in speech unless the user asks.
-		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed})
+		// A cancel is visible on the bus and silent in speech: the user did
+		// it. A budget stop is the one abort nobody asked for, so it speaks.
+		reason := events.AbortCancelled
+		if errors.Is(err, job.ErrBudget) {
+			reason = events.AbortBudget
+			a.enqueueSummary(id, fmt.Sprintf("I stopped %s after %s. It ran past its budget.",
+				truncateJobTask(task), spokenDuration(elapsed)))
+		}
+		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
 	}
 	a.tryFlushPending()
 }

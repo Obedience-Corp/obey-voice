@@ -2,10 +2,19 @@ package job
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// ErrBudget is the error a job ends with when it ran past the table's budget.
+// The done callback's err wraps it, so consumers can tell a budget stop from
+// a user's cancel with errors.Is.
+var ErrBudget = errors.New("job budget exceeded")
+
+// errAborted is the error a job ends with when Abort stopped it.
+var errAborted = errors.New("aborted")
 
 // State is a job lifecycle phase.
 type State string
@@ -80,7 +89,13 @@ type Table struct {
 	nextID   int
 	jobs     map[string]*entry
 	queue    []string
-	running  string
+	// running holds the jobs whose run function is live; runOrder keeps them
+	// in the order they started, for status.
+	running       map[string]struct{}
+	runOrder      []string
+	maxConcurrent int
+	// budget is the longest a job may run; zero means no limit.
+	budget   time.Duration
 	onDone   DoneCallback
 	onQueued QueuedCallback
 	onStart  StartCallback
@@ -94,18 +109,65 @@ type entry struct {
 	// announced is set once OnQueued has run; the pump never launches a job
 	// before that, so its start cannot be published ahead of its queued event.
 	announced bool
+	// budgetTimer fires the budget stop.
+	budgetTimer *time.Timer
+	// finished is set once the job reached a terminal state. A stop (cancel
+	// or budget) finishes the job without waiting for its run function, so
+	// a run function that returns late finds this set and changes nothing.
+	finished bool
+	// startAnnounced is set by run once the start callback has returned (or
+	// was skipped). A stop that lands before that point does not wait — the
+	// callback may be the caller — it leaves stopErr, and run applies it
+	// right after the announcement: the start event still precedes the
+	// terminal one, and the run function is never invoked.
+	startAnnounced bool
+	stopErr        error
+}
+
+// Option configures a Table.
+type Option func(*Table)
+
+// WithMaxConcurrent sets how many jobs run at once. Values below one mean one.
+func WithMaxConcurrent(n int) Option {
+	return func(t *Table) {
+		if n < 1 {
+			n = 1
+		}
+		t.maxConcurrent = n
+	}
+}
+
+// WithBudget caps how long any one job may run. At the budget the job is
+// ended by the table: marked aborted with an error wrapping ErrBudget, its
+// slot freed and the done callback fired, whether or not the run function
+// has returned. The run function is told to stop through its context; one
+// that ignores the cancel lingers on its own goroutine but no longer counts.
+// Zero or less means no cap.
+func WithBudget(d time.Duration) Option {
+	return func(t *Table) {
+		if d < 0 {
+			d = 0
+		}
+		t.budget = d
+	}
 }
 
 // NewTable constructs a job table. lifetime scopes jobs past turn cancellation;
 // callers typically pass the pipeline or agent context.
-func NewTable(lifetime context.Context) *Table {
+func NewTable(lifetime context.Context, opts ...Option) *Table {
 	if lifetime == nil {
 		lifetime = context.Background()
 	}
-	return &Table{
-		lifetime: lifetime,
-		jobs:     make(map[string]*entry),
+	t := &Table{
+		lifetime:      lifetime,
+		jobs:          make(map[string]*entry),
+		running:       make(map[string]struct{}),
+		maxConcurrent: 1,
 	}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
 }
 
 // OnDone registers a callback for terminal job states.
@@ -131,8 +193,9 @@ func (t *Table) OnStart(cb StartCallback) {
 	t.onStart = cb
 }
 
-// Start enqueues work. A second spawn while one is active queues behind it (Q2).
-// parent is ignored for cancellation — jobs use context.WithoutCancel(lifetime).
+// Start enqueues work. A spawn beyond the concurrency limit queues in order
+// behind the running ones (Q2). parent is ignored for cancellation — jobs use
+// context.WithoutCancel(lifetime).
 func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	_ = parent
 	t.mu.Lock()
@@ -167,43 +230,69 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	return id, nil
 }
 
-// Abort cancels a queued or running job. Missing ids are a no-op.
+// Abort ends a queued or running job: it is marked aborted, its slot is
+// freed, the done callback fires, and the run function is told to stop
+// through its context. Abort never blocks, so a start callback may abort its
+// own job; a stop that lands while the job is announcing itself is applied
+// by the job's goroutine right after the announcement. Missing and finished
+// ids are a no-op.
 func (t *Table) Abort(id string) {
+	t.stop(id, errAborted)
+}
+
+// stop is the one way a job ends before its run function returns; user
+// cancels and budget breaches share it, so neither waits on a run function
+// that may ignore its cancel.
+func (t *Table) stop(id string, err error) {
 	t.mu.Lock()
 	e, ok := t.jobs[id]
-	if !ok {
+	if !ok || e.finished {
 		t.mu.Unlock()
 		return
 	}
-	switch e.info.State {
-	case StateDone, StateFailed, StateAborted:
+	if e.info.State == StateRunning && !e.startAnnounced {
+		// Announcing. The caller may be the start callback itself, so never
+		// wait here: leave the stop for run to apply once the callback has
+		// returned. The first stop to land is the one that counts.
+		if e.stopErr == nil {
+			e.stopErr = err
+		}
+		t.mu.Unlock()
+		return
+	}
+	t.mu.Unlock()
+	t.complete(id, StateAborted, "", err)
+}
+
+// complete ends a job: terminal state under the lock, the context cancel,
+// the done callback, then a pump once the callback has returned. Every path
+// that ends a job goes through it, and a job already ended is left alone.
+func (t *Table) complete(id string, state State, result string, err error) {
+	t.mu.Lock()
+	e, ok := t.jobs[id]
+	if !ok || e.finished {
 		t.mu.Unlock()
 		return
 	}
 	if e.info.State == StateQueued {
-		e.info.State = StateAborted
 		t.removeFromQueueLocked(id)
-		if e.cancel != nil {
-			e.cancel()
-		}
-		cb := t.finishLocked(id, StateAborted, "", fmt.Errorf("aborted"))
-		t.mu.Unlock()
-		if cb != nil {
-			cb(id, StateAborted, "", fmt.Errorf("aborted"))
-		}
-		t.mu.Lock()
-		t.pumpLocked()
-		t.mu.Unlock()
-		return
 	}
-	if e.cancel != nil {
-		e.cancel()
-	}
+	cb := t.finishLocked(id, state, result, err)
+	cancel := e.cancel
 	t.mu.Unlock()
-	// running: goroutine observes ctx cancel and marks aborted.
+	if cancel != nil {
+		cancel()
+	}
+	if cb != nil {
+		cb(id, state, result, err)
+	}
+	t.mu.Lock()
+	t.pumpLocked()
+	t.mu.Unlock()
 }
 
-// Status returns all known jobs in start order.
+// Status returns all known jobs: running first in start order, then queued in
+// queue order, then the rest.
 func (t *Table) Status() []Info {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -220,7 +309,7 @@ func (t *Table) Status() []Info {
 func (t *Table) Active() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.running != "" || len(t.queue) > 0
+	return len(t.running) > 0 || len(t.queue) > 0
 }
 
 // Close rejects new jobs. It does not cancel running work.
@@ -230,69 +319,86 @@ func (t *Table) Close() {
 	t.closed = true
 }
 
+// pumpLocked launches queued jobs while there is room. The head of the queue
+// is never skipped: if it is not announced yet, its own Start pumps once the
+// queued callback has run.
 func (t *Table) pumpLocked() {
-	if t.running != "" || len(t.queue) == 0 {
-		return
+	for len(t.running) < t.maxConcurrent && len(t.queue) > 0 {
+		id := t.queue[0]
+		e := t.jobs[id]
+		if !e.announced {
+			return
+		}
+		t.queue = t.queue[1:]
+		e.info.State = StateRunning
+		t.running[id] = struct{}{}
+		t.runOrder = append(t.runOrder, id)
+		go t.run(e.ctx, id)
 	}
-	id := t.queue[0]
-	e := t.jobs[id]
-	if !e.announced {
-		return // its own Start pumps once the queued callback has run
-	}
-	t.queue = t.queue[1:]
-	e.info.State = StateRunning
-	t.running = id
-	go t.run(e.ctx, id)
 }
 
 func (t *Table) run(jobCtx context.Context, id string) {
-	var result string
-	var err error
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("worker panic: %v", r)
+			t.complete(id, StateFailed, "", fmt.Errorf("worker panic: %v", r))
 		}
-		state := StateDone
-		if err != nil {
-			if jobCtx.Err() != nil {
-				state = StateAborted
-			} else {
-				state = StateFailed
-			}
-		}
-		t.mu.Lock()
-		if e, ok := t.jobs[id]; ok && e.info.State == StateAborted {
-			state = StateAborted
-		}
-		cb := t.finishLocked(id, state, result, err)
-		t.mu.Unlock()
-		if cb != nil {
-			cb(id, state, result, err)
-		}
-		// Pump only after the done callback has returned, so the next job
-		// cannot publish anything before this one's terminal event is out.
-		t.mu.Lock()
-		t.pumpLocked()
-		t.mu.Unlock()
 	}()
 
 	t.mu.Lock()
 	e := t.jobs[id]
 	onStart := t.onStart
-	if e != nil && e.spec.Run != nil {
+	runFn := e.spec.Run
+	if runFn != nil {
 		e.info.Started = time.Now()
+		if t.budget > 0 {
+			e.budgetTimer = time.AfterFunc(t.budget, func() { t.exceedBudget(id) })
+		}
 	}
 	t.mu.Unlock()
-	if e == nil || e.spec.Run == nil {
-		err = fmt.Errorf("job %s: no run function", id)
-		return
-	}
+
 	// Same goroutine as the run function: whatever the callback publishes is
 	// out before the job's first tool call can be.
-	if onStart != nil {
+	if runFn != nil && onStart != nil {
 		onStart(id, e.spec.Task)
 	}
-	result, err = e.spec.Run(jobCtx)
+
+	t.mu.Lock()
+	e.startAnnounced = true
+	pending := e.stopErr
+	t.mu.Unlock()
+	if pending != nil {
+		// A stop landed during the announcement (possibly from the callback
+		// itself). Apply it here: the start event is out, the run function
+		// never begins.
+		t.complete(id, StateAborted, "", pending)
+		return
+	}
+	if runFn == nil {
+		t.complete(id, StateFailed, "", fmt.Errorf("job %s: no run function", id))
+		return
+	}
+	// A stop that landed after the announcement has already ended the job:
+	// the run function is never invoked for it. One landing after this
+	// check hands the run function an already-cancelled context instead.
+	t.mu.Lock()
+	finished := e.finished
+	t.mu.Unlock()
+	if finished {
+		return
+	}
+
+	result, err := runFn(jobCtx)
+	state := StateDone
+	if err != nil {
+		if jobCtx.Err() != nil {
+			state = StateAborted
+		} else {
+			state = StateFailed
+		}
+	}
+	// A no-op when a stop ended the job while the run function ignored its
+	// cancel: the late return changes nothing.
+	t.complete(id, state, result, err)
 }
 
 // finishLocked marks a job terminal. Caller must hold t.mu. It returns the
@@ -303,15 +409,30 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 	if !ok {
 		return nil
 	}
+	e.finished = true
 	e.info.State = state
 	e.info.Result = result
 	if err != nil {
 		e.info.Err = err.Error()
 	}
-	if t.running == id {
-		t.running = ""
+	if e.budgetTimer != nil {
+		e.budgetTimer.Stop()
+	}
+	delete(t.running, id)
+	for i, running := range t.runOrder {
+		if running == id {
+			t.runOrder = append(t.runOrder[:i], t.runOrder[i+1:]...)
+			break
+		}
 	}
 	return t.onDone
+}
+
+// exceedBudget ends a job whose budget timer fired. A job that finished in
+// time has stopped its timer under the lock, and stop ignores a finished id,
+// so the race between the two is harmless.
+func (t *Table) exceedBudget(id string) {
+	t.stop(id, fmt.Errorf("%w after %s", ErrBudget, t.budget))
 }
 
 func (t *Table) removeFromQueueLocked(id string) {
@@ -323,27 +444,29 @@ func (t *Table) removeFromQueueLocked(id string) {
 	}
 }
 
+// orderedIDsLocked lists running jobs first so a status query names the job
+// that is actually working, not the one waiting behind it.
 func (t *Table) orderedIDsLocked() []string {
 	seen := make(map[string]struct{}, len(t.jobs))
 	var out []string
-	for _, id := range t.queue {
-		if _, ok := t.jobs[id]; ok {
-			if _, dup := seen[id]; !dup {
-				out = append(out, id)
-				seen[id] = struct{}{}
-			}
+	add := func(id string) {
+		if _, ok := t.jobs[id]; !ok {
+			return
 		}
+		if _, dup := seen[id]; dup {
+			return
+		}
+		out = append(out, id)
+		seen[id] = struct{}{}
 	}
-	if t.running != "" {
-		if _, ok := seen[t.running]; !ok {
-			out = append(out, t.running)
-			seen[t.running] = struct{}{}
-		}
+	for _, id := range t.runOrder {
+		add(id)
+	}
+	for _, id := range t.queue {
+		add(id)
 	}
 	for id := range t.jobs {
-		if _, ok := seen[id]; !ok {
-			out = append(out, id)
-		}
+		add(id)
 	}
 	return out
 }

@@ -819,6 +819,37 @@
       "editable": true
     },
     {
+      "key": "voice_worker_job_budget",
+      "type": "int",
+      "default": 600,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Job time budget",
+      "help": "Longest a spawned job may run before it is stopped and you are told. Zero means no limit.",
+      "unit": "seconds",
+      "min": 0,
+      "max": 86400,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "voice_worker_max_concurrent",
+      "type": "int",
+      "default": 1,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Jobs at once",
+      "help": "How many spawned jobs run at the same time; the rest wait in order. Each is its own model session, so more than one on a local Ollama shares the machine.",
+      "min": 1,
+      "max": 8,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "voice_worker_model",
       "type": "string",
       "default": "",
