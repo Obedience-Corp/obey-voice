@@ -824,10 +824,10 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 	case sectionMeeting:
 		m.selectMeetingItem()
 	case sectionOutput:
-		if m.cursor == outputRowVolume {
+		if m.devicesLoading || m.volumeRowFocused() {
 			return nil
 		}
-		idx := m.cursor - 1
+		idx := m.cursor
 		if idx >= 0 && idx < len(m.outputItems) {
 			name := m.outputItems[idx]
 			if err := config.SetAndSave("output_device", name); err != nil {
