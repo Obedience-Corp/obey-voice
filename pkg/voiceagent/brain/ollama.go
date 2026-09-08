@@ -958,6 +958,35 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 }
 
 // ClearHistory wipes conversation history.
+// Fresh is a sibling with an empty conversation: the same daemon, prompts,
+// skills catalog and router, its own history and archive. One per worker job.
+func (o *OllamaBrain) Fresh() Provider {
+	o.continuityMu.Lock()
+	continuitySink := o.continuitySink
+	o.continuityMu.Unlock()
+	o.infoMu.Lock()
+	infoSink := o.infoSink
+	o.infoMu.Unlock()
+	return &OllamaBrain{
+		delegation:        o.delegation,
+		client:            o.client,
+		continuitySink:    continuitySink,
+		infoSink:          infoSink,
+		model:             o.model,
+		workDir:           o.workDir,
+		cfg:               o.cfg,
+		systemPrompt:      o.systemPrompt,
+		fullSystemPrompt:  o.fullSystemPrompt,
+		turnInstruction:   o.turnInstruction,
+		personaReloader:   o.personaReloader,
+		keepAlive:         o.keepAlive,
+		skills:            o.skills,
+		skillRouter:       o.skillRouter,
+		skillRouterWarned: o.skillRouterWarned,
+		speakerNames:      o.speakerNames,
+	}
+}
+
 func (o *OllamaBrain) ClearHistory() {
 	o.resetDelegation()
 	o.archive = continuity.Store{}

@@ -188,6 +188,10 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		// --resume so the CLI owns history server-side. The system prompt is still
 		// passed on resume (harmless; dropping flattened history is the win).
 		ResumeID: b.sessionID,
+		// A worker job is one conversation that nobody resumes, and its
+		// transcript has no business in ~/.claude/projects next to the
+		// user's own sessions for that directory.
+		NoSessionPersistence: b.cfg != nil && b.cfg.IsWorker,
 	}
 }
 
@@ -293,6 +297,20 @@ func (b *Brain) dropSession() {
 	b.sessionID = ""
 	b.promptTokens = 0
 	b.sessionWarned = false
+}
+
+// Fresh is a sibling with no history and no session to resume: the same CLI,
+// prompts and reloaders, a conversation of its own. One per worker job.
+func (b *Brain) Fresh() Provider {
+	return &Brain{
+		client:          b.client,
+		cfg:             b.cfg,
+		systemPrompt:    b.systemPrompt,
+		personaReloader: b.personaReloader,
+		turnReloader:    b.turnReloader,
+		turnInstruction: b.turnInstruction,
+		speakerNames:    b.speakerNames,
+	}
 }
 
 // warnSessionSize surfaces the replayed prompt size once per CLI session when

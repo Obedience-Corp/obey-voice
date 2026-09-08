@@ -89,3 +89,13 @@ func TestWorkerBrainConfigGrokModelPin(t *testing.T) {
 		t.Fatalf("GrokModel = %q, want grok-3", got.GrokModel)
 	}
 }
+
+func TestWorkerBrainConfigMarksTheWorker(t *testing.T) {
+	cfg := &Config{BrainProvider: "ollama"}
+	if !WorkerBrainConfig(cfg).IsWorker {
+		t.Fatal("the worker config must say it is a worker")
+	}
+	if cfg.IsWorker {
+		t.Fatal("the live config must not")
+	}
+}

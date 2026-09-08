@@ -280,6 +280,20 @@ func (g *GrokBrain) dropSession() {
 	g.sessionID = ""
 }
 
+// Fresh is a sibling with no history and no session to resume: the same CLI,
+// prompts and reloaders, a conversation of its own. One per worker job.
+func (g *GrokBrain) Fresh() Provider {
+	return &GrokBrain{
+		client:          g.client,
+		cfg:             g.cfg,
+		systemPrompt:    g.systemPrompt,
+		turnInstruction: g.turnInstruction,
+		personaReloader: g.personaReloader,
+		turnReloader:    g.turnReloader,
+		speakerNames:    g.speakerNames,
+	}
+}
+
 // runOptions builds the grok run options shared by the streaming and blocking
 // paths. Tool execution is gated by voice_tools_enabled: disabled removes all
 // built-in tools; enabled uses bypassPermissions — which the grok SDK gates

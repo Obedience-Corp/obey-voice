@@ -178,6 +178,7 @@ func (a *Agency) workerRun(brief string) func(context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		worker = a.freshWorker(worker)
 		tools := true
 		if a.cfg != nil {
 			tools = a.cfg.VoiceToolsEnabled
@@ -186,6 +187,26 @@ func (a *Agency) workerRun(brief string) func(context.Context) (string, error) {
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
 		return worker.ThinkFull(ctx, brief, opts)
 	}
+}
+
+// freshWorker gives a job a conversation of its own: no history and no CLI
+// session from the job before it, and nothing shared with a job running
+// alongside. A provider that cannot fork is cleared instead, and only while
+// it is the one job running, so a neighbour's turn is not wiped from under it.
+func (a *Agency) freshWorker(w brain.Provider) brain.Provider {
+	if f, ok := w.(brain.FreshProvider); ok {
+		return f.Fresh()
+	}
+	running := 0
+	for _, info := range a.jobs.Status() {
+		if info.State == job.StateRunning {
+			running++
+		}
+	}
+	if running <= 1 {
+		w.ClearHistory()
+	}
+	return w
 }
 
 // foldingToolHooks emits the job's tool events and folds them on the way past.
