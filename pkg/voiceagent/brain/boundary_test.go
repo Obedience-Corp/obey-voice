@@ -33,7 +33,7 @@ func TestBoundaryPathsStayUnderTheRoot(t *testing.T) {
 	refused := []string{"../../other/x", "/etc/hosts", filepath.Join(home, ".grok", "sessions"), filepath.Join(home, "campaigns", "other", "README.md"), "../.."}
 	for _, p := range refused {
 		err := b.CheckPath(work, p)
-		if err == nil || !strings.Contains(err.Error(), "outside the campaign boundary") {
+		if err == nil || !strings.Contains(err.Error(), "outside the work boundary") {
 			t.Errorf("CheckPath(%q) = %v, want refused", p, err)
 		}
 	}
@@ -107,11 +107,76 @@ func TestBoundaryFollowsASymlinkedRoot(t *testing.T) {
 	}
 }
 
-func TestBoundaryContextNamesTheRoot(t *testing.T) {
-	got := BoundaryContext("/camp/root")
-	for _, want := range []string{"Boundary:", "stays under /camp/root", "camp list", "git commit or git push outside /camp/root"} {
+// The prompt names the root and never mentions campaigns unless the root
+// is one: a user without festival is not told about a thing they lack.
+func TestBoundaryContextNamesTheRootAndMentionsCampaignsOnlyWhenThereIsOne(t *testing.T) {
+	plain := t.TempDir()
+	got := BoundaryContext(plain)
+	for _, want := range []string{"Boundary:", "stays under " + plain, "git commit or git push outside " + plain, "session store"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("boundary context lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "your campaign") || strings.Contains(got, "other campaigns") || strings.Contains(got, "camp list") {
+		t.Errorf("a plain directory's boundary talks about campaigns:\n%s", got)
+	}
+
+	camp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(camp, ".campaign"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(camp, ".campaign", "campaign.yaml"), []byte("name: demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got = BoundaryContext(camp)
+	if !strings.Contains(got, "your campaign") || !strings.Contains(got, "camp list") {
+		t.Errorf("a campaign root's boundary should name the campaign and camp list:\n%s", got)
+	}
+}
+
+// Links are judged where they land, in every shape the reviews found: an
+// escaping target, a dangling target, a link followed by "..", and a cycle.
+func TestBoundaryResolvesLinksLikeTheKernel(t *testing.T) {
+	b, home := fence(t)
+	other := filepath.Join(home, "other")
+	if err := os.MkdirAll(filepath.Join(other, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustLink := func(target, name string) {
+		t.Helper()
+		if err := os.Symlink(target, filepath.Join(b.Root, name)); err != nil {
+			t.Skipf("symlink: %v", err)
+		}
+	}
+	mustLink(filepath.Join(other, "sub"), "linked")
+	mustLink(filepath.Join(home, "new-outside-file"), "dangling")
+	mustLink(filepath.Join(b.Root, "notes", "new.md"), "inner")
+	mustLink("loop", "loop")
+	mustLink("../other", "rel")
+
+	refused := []string{
+		"dangling",
+		filepath.Join(b.Root, "dangling"),
+		b.Root + "/linked/../secret",
+		b.Root + "/linked/../newfile",
+		"loop",
+		"rel/secret",
+		b.Root + "/rel/../../.grok",
+	}
+	for _, p := range refused {
+		if err := b.CheckPath(b.Root, p); err == nil {
+			t.Errorf("CheckPath(%q) = nil, want refused", p)
+		}
+	}
+	allowed := []string{"inner", b.Root + "/notes/../README.md", filepath.Join(b.Root, "inner")}
+	for _, p := range allowed {
+		if err := b.CheckPath(b.Root, p); err != nil {
+			t.Errorf("CheckPath(%q) = %v, want allowed", p, err)
+		}
+	}
+	for _, c := range []string{"cat linked/../secret", "touch dangling", "ls rel/../../.grok"} {
+		if err := b.CheckCommand(b.Root, c); err == nil {
+			t.Errorf("CheckCommand(%q) = nil, want refused", c)
 		}
 	}
 }

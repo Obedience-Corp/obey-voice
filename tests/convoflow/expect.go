@@ -147,7 +147,7 @@ func collectMetrics(rec *recorder) runMetrics {
 				m.LiveToolCalls++
 			}
 		case events.ToolCallFinished:
-			if e.JobID != "" && strings.Contains(e.Err, "campaign boundary") {
+			if e.JobID != "" && strings.Contains(e.Err, "work boundary") {
 				m.BoundaryRefusals++
 			}
 		}

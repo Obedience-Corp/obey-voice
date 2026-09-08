@@ -12,8 +12,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// Boundary is the directory a worker must stay under: the campaign root it
-// was launched in, or the working directory when there is no campaign.
+// Boundary is the directory a worker must stay under: the working directory
+// it was launched in, or that directory's campaign root when it sits inside
+// one. No campaign is needed; the fence is the same either way.
 //
 // A worker starts in the right place and nothing kept it there. On 2026-09-06
 // one listed the CLI's session store under home, read another thread, and
@@ -61,13 +62,15 @@ func (b Boundary) check(workDir string, call api.ToolCall) error {
 	return nil
 }
 
-// CheckPath refuses a file-tool path outside the boundary. File tools have
-// no reason to leave it: a worker that needs /etc has the shell.
+// CheckPath refuses a file-tool path outside the boundary. It judges the
+// exact string the tool will open (resolvePath), walked the way the kernel
+// walks it, so the guard and the operation cannot disagree. File tools have
+// no reason to leave the boundary: a worker that needs /etc has the shell.
 func (b Boundary) CheckPath(workDir, path string) error {
 	if !b.Enabled() || strings.TrimSpace(path) == "" {
 		return nil
 	}
-	if b.inside(b.absolute(workDir, path)) {
+	if b.inside(resolvePath(workDir, path)) {
 		return nil
 	}
 	return b.refuse(path)
@@ -75,9 +78,9 @@ func (b Boundary) CheckPath(workDir, path string) error {
 
 // CheckCommand refuses a shell command that names a place a worker has no
 // business in: a path under the home directory but outside the boundary, a
-// relative path that climbs out, or the campaign registry. The rest of the
-// filesystem (/usr, /opt, /tmp) stays open. Other campaigns and every CLI's
-// session store live under home, and that is what the incident was.
+// relative path that climbs or links out, or the campaign registry. The rest
+// of the filesystem (/usr, /opt, /tmp) stays open. Other projects and every
+// CLI's session store live under home, and that is what the incident was.
 //
 // This reads the command's tokens; it is a fence, not a sandbox. A command
 // that hides a path from it still runs with the working directory as cwd.
@@ -88,7 +91,7 @@ func (b Boundary) CheckCommand(workDir, command string) error {
 	toks := commandTokens(command)
 	for i, tok := range toks {
 		if filepath.Base(tok) == "camp" && i+1 < len(toks) && toks[i+1] == "list" {
-			return fmt.Errorf("camp list is not available to a worker; this campaign is %s", b.Root)
+			return fmt.Errorf("camp list is not available to a worker; work under %s", b.Root)
 		}
 		expanded := b.expandHome(tok)
 		switch {
@@ -96,17 +99,12 @@ func (b Boundary) CheckCommand(workDir, command string) error {
 			if b.leavesHome(expanded) {
 				return b.refuse(tok)
 			}
-		case climbs(expanded):
-			if !b.inside(b.absolute(workDir, expanded)) {
-				return b.refuse(tok)
-			}
-		default:
+		case climbs(expanded), b.firstSegmentExists(workDir, expanded):
 			// A plain word is a path only if its first segment is one under
 			// the working directory: a symlink there that points out must
 			// not be a shorter way to say ~/.grok, for a file that exists or
 			// one the command would create.
-			first, _, _ := strings.Cut(expanded, "/")
-			if exists(filepath.Join(workDir, first)) && !b.inside(b.absolute(workDir, expanded)) {
+			if !b.inside(joinRaw(workDir, expanded)) {
 				return b.refuse(tok)
 			}
 		}
@@ -121,11 +119,15 @@ func (b Boundary) leavesHome(abs string) bool {
 	if b.inside(abs) {
 		return false
 	}
-	return b.underHome(abs) || b.underHome(canonical(abs))
+	real, ok := resolve(abs)
+	if !ok {
+		return true
+	}
+	return b.underHome(abs) || b.underHome(real)
 }
 
 func (b Boundary) refuse(path string) error {
-	return fmt.Errorf("%s is outside the campaign boundary %s", path, b.Root)
+	return fmt.Errorf("%s is outside the work boundary %s", path, b.Root)
 }
 
 func (b Boundary) expandHome(tok string) string {
@@ -136,7 +138,7 @@ func (b Boundary) expandHome(tok string) string {
 	case tok == "~":
 		return b.home
 	case strings.HasPrefix(tok, "~/"):
-		return filepath.Join(b.home, tok[2:])
+		return b.home + tok[1:]
 	case strings.HasPrefix(tok, "${HOME}"):
 		return b.home + strings.TrimPrefix(tok, "${HOME}")
 	case strings.HasPrefix(tok, "$HOME"):
@@ -145,45 +147,93 @@ func (b Boundary) expandHome(tok string) string {
 	return tok
 }
 
-func (b Boundary) absolute(workDir, path string) string {
-	if filepath.IsAbs(path) {
-		return filepath.Clean(path)
+func (b Boundary) firstSegmentExists(workDir, rel string) bool {
+	first, _, _ := strings.Cut(rel, "/")
+	if first == "" || first == "." {
+		return false
 	}
-	return filepath.Clean(filepath.Join(workDir, path))
-}
-
-// inside judges a path by where it really points, so a symlink under the
-// root that leads out is out, and a root reached through a symlink still
-// owns its real files. A path that does not exist yet is judged by the
-// nearest ancestor that does: where a new file would land.
-func (b Boundary) inside(abs string) bool {
-	root := b.Root
-	if real, err := filepath.EvalSymlinks(root); err == nil {
-		root = real
-	}
-	return isUnder(canonical(abs), root)
-}
-
-// canonical resolves symlinks in the longest existing prefix of abs and
-// reattaches the rest. abs is already clean, so the rest has no "..".
-func canonical(abs string) string {
-	rest := ""
-	for cur := abs; ; {
-		if real, err := filepath.EvalSymlinks(cur); err == nil {
-			return filepath.Join(real, rest)
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return abs
-		}
-		rest = filepath.Join(filepath.Base(cur), rest)
-		cur = parent
-	}
-}
-
-func exists(abs string) bool {
-	_, err := os.Lstat(abs)
+	_, err := os.Lstat(filepath.Join(workDir, first))
 	return err == nil
+}
+
+// joinRaw attaches a relative path to the working directory without cleaning
+// it: "linked/.." must reach resolve with the link still in front of the "..".
+func joinRaw(workDir, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return workDir + string(filepath.Separator) + path
+}
+
+// inside judges a path by where it really lands, so a symlink under the root
+// that leads out is out (dangling or not, with or without a ".." behind it),
+// and a root reached through a symlink still owns its real files.
+func (b Boundary) inside(p string) bool {
+	real, ok := resolve(p)
+	if !ok {
+		return false
+	}
+	root, ok := resolve(b.Root)
+	if !ok {
+		root = b.Root
+	}
+	return isUnder(real, root)
+}
+
+// maxLinks bounds symlink traversal in resolve, as the kernel's does.
+const maxLinks = 40
+
+// resolve walks an absolute path the way the kernel opens it: each symlink
+// is followed where it stands (a relative target against the link's own
+// directory), ".." applies to the directory reached so far rather than to
+// the text, and components that do not exist yet are kept as written, which
+// is where a new file would land. A dangling link is followed to its target.
+// It reports false on a link cycle or an unreadable link.
+func resolve(path string) (string, bool) {
+	if !filepath.IsAbs(path) {
+		return "", false
+	}
+	sep := string(filepath.Separator)
+	cur := sep
+	pending := splitPath(path)
+	links := 0
+	for len(pending) > 0 {
+		c := pending[0]
+		pending = pending[1:]
+		switch c {
+		case "", ".":
+			continue
+		case "..":
+			cur = filepath.Dir(cur)
+			continue
+		}
+		next := filepath.Join(cur, c)
+		fi, err := os.Lstat(next)
+		if err != nil {
+			return filepath.Join(append([]string{next}, pending...)...), true
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			cur = next
+			continue
+		}
+		links++
+		if links > maxLinks {
+			return "", false
+		}
+		target, err := os.Readlink(next)
+		if err != nil {
+			return "", false
+		}
+		if filepath.IsAbs(target) {
+			cur = sep
+		}
+		pending = append(splitPath(target), pending...)
+	}
+	return cur, true
+}
+
+func splitPath(p string) []string {
+	return strings.Split(p, string(filepath.Separator))
 }
 
 // underHome compares against home as given and as it really is, since a
@@ -192,7 +242,11 @@ func (b Boundary) underHome(abs string) bool {
 	if b.home == "" {
 		return false
 	}
-	return isUnder(abs, b.home) || isUnder(abs, canonical(b.home))
+	if isUnder(abs, b.home) {
+		return true
+	}
+	real, ok := resolve(b.home)
+	return ok && isUnder(abs, real)
 }
 
 func isUnder(path, root string) bool {
@@ -224,18 +278,24 @@ func commandTokens(command string) []string {
 
 // BoundaryContext is the prompt element every worker gets, whichever brain
 // runs it. The Ollama worker also has the fence; a CLI worker has only this.
+// The campaign line appears only when the root is one; a user without
+// campaigns is never told about them.
 func BoundaryContext(root string) string {
-	return fmt.Sprintf(`
-Boundary:
-- You are a background worker for this campaign only. Everything you read, write, or run stays under %s.
-- Do not open other campaigns, other folders under the home directory, or any tool's session store (~/.grok, ~/.claude, ~/.obey). Do not run camp list; this is your campaign.
-- Never run git commit or git push outside %s.
-- A task that needs anything past this boundary is refused: say what you could not do, and stop.`, root, root)
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nBoundary:\n- You are a background worker. Everything you read, write, or run stays under %s.\n", root)
+	if config.CampaignFor(root).Found() {
+		b.WriteString("- That directory is your campaign. Do not open other campaigns, and do not run camp list.\n")
+	}
+	b.WriteString("- Do not open other folders under the home directory or any tool's session store (~/.grok, ~/.claude, ~/.obey).\n")
+	fmt.Fprintf(&b, "- Never run git commit or git push outside %s.\n", root)
+	b.WriteString("- A task that needs anything past this boundary is refused: say what you could not do, and stop.")
+	return b.String()
 }
 
 // workerDeniedTools is the CLI-side half of the fence for a worker: the
-// campaign registry stays out of reach. Nil for the live brain and for a
-// worker whose boundary is off, so nothing changes there.
+// campaign registry stays out of reach, whether or not this root is a
+// campaign (the rule is inert where camp is not installed). Nil for the
+// live brain and for a worker whose boundary is off, so nothing changes there.
 func workerDeniedTools(cfg *config.Config) []string {
 	if cfg == nil || strings.TrimSpace(cfg.WorkerBoundary) == "" {
 		return nil

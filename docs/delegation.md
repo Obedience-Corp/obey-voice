@@ -167,29 +167,34 @@ The JSONL transcript records `id`, `kind`, `job_id` and `elapsed_s` on
 
 ## Where a worker may go
 
-A worker is launched in a campaign and stays in it. Its boundary is the
-campaign root the work directory sits in, or the work directory itself when
-there is none (`voice_worker_boundary`, default on). Two layers hold it:
+A worker stays under the directory it was launched in. When that directory
+sits inside a campaign, the boundary widens to the campaign root; when it
+does not, the working directory itself is the boundary, and nothing about
+campaigns or festival is needed (`voice_worker_boundary`, default on). Two
+layers hold it:
 
 - **The prompt says so.** Every worker, whichever brain runs it, gets a
-  `Boundary:` block after the environment block: work only under this root,
-  do not open other campaigns or any tool's session store, do not run
-  `camp list`, never `git commit` or `git push` outside the root.
+  `Boundary:` block after the environment block: work only under this
+  directory, do not open other folders under home or any tool's session
+  store, never `git commit` or `git push` outside it. Only a campaign root
+  adds the line about other campaigns and `camp list`.
 - **The Ollama worker's tools refuse.** `read_file`, `write_file` and
-  `list_files` refuse any path outside the root, judged where it really
-  points: a symlink under the root that leads out is out, for a file that
-  exists and for one that would be created. `run_command` refuses a command
-  that names a path under your home directory but outside the root (again by
-  where it points), a relative path that climbs out or goes through such a
-  link, or `camp list`; the rest of the machine (`/usr`, `/opt`, `/tmp`)
-  stays open. A refusal comes back to the model as
-  the tool's error and reaches the bus as `tool_call_finished` with `err`, so
-  the attempt is visible in the activity feed and the transcript. This reads
-  the command's words; it is a fence, not a sandbox.
+  `list_files` refuse any path outside the boundary, judged the way the
+  kernel would open it: each symlink followed where it stands, dangling or
+  not, `..` applied after the link rather than to the text, and a file that
+  does not exist yet judged by where it would land. `run_command` refuses a
+  command that names a path under your home directory but outside the
+  boundary (by the same rule), a relative path that climbs or links out, or
+  `camp list`; the rest of the machine (`/usr`, `/opt`, `/tmp`) stays open.
+  A refusal comes back to the model as the tool's error and reaches the bus
+  as `tool_call_finished` with `err`, so the attempt is visible in the
+  activity feed and the transcript. The shell check reads the command's
+  words; it is a fence, not a sandbox.
 
-A Claude worker also has `Bash(camp list)` denied through the CLI. Grok and
-Claude run their own file tools, so for them the boundary is the prompt; the
-Ollama worker, the local-first product, has both layers.
+A Claude worker also has `Bash(camp list)` denied through the CLI, a rule
+that is inert where `camp` is not installed. Grok and Claude run their own
+file tools, so for them the boundary is the prompt; the Ollama worker, the
+local-first product, has both layers.
 
 ## Remaining WI-ebe14b scope
 

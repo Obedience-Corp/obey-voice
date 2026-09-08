@@ -145,7 +145,7 @@ func TestToolSessionRefusesOutsideTheBoundaryAndReportsIt(t *testing.T) {
 	sess.boundary = Boundary{Root: root, home: home}
 
 	got := sess.execute(context.Background(), root, readCall("r1", outside))
-	if !strings.HasPrefix(got, "error:") || !strings.Contains(got, "outside the campaign boundary") || strings.Contains(got, "secret") {
+	if !strings.HasPrefix(got, "error:") || !strings.Contains(got, "outside the work boundary") || strings.Contains(got, "secret") {
 		t.Fatalf("read outside = %q, want a refusal and no contents", got)
 	}
 	if len(rec.ends) != 1 || rec.ends[0].Err == "" {
@@ -153,7 +153,7 @@ func TestToolSessionRefusesOutsideTheBoundaryAndReportsIt(t *testing.T) {
 	}
 
 	run := api.ToolCall{ID: "c1", Function: api.ToolCallFunction{Name: "run_command", Arguments: mustArgs(map[string]any{"command": "cat " + outside})}}
-	if got := sess.execute(context.Background(), root, run); !strings.Contains(got, "outside the campaign boundary") {
+	if got := sess.execute(context.Background(), root, run); !strings.Contains(got, "outside the work boundary") {
 		t.Fatalf("shell outside = %q, want refused", got)
 	}
 	inside := api.ToolCall{ID: "c2", Function: api.ToolCallFunction{Name: "run_command", Arguments: mustArgs(map[string]any{"command": "echo inside"})}}
@@ -162,5 +162,58 @@ func TestToolSessionRefusesOutsideTheBoundaryAndReportsIt(t *testing.T) {
 	}
 	if got := sess.execute(context.Background(), root, readCall("r2", "README.md")); strings.Contains(got, "boundary") {
 		t.Fatalf("read inside = %q, want an ordinary result", got)
+	}
+}
+
+// The two escapes the review reproduced through the tools themselves: a
+// dangling link that a write would follow, and a link with ".." behind it
+// that the OS resolves in order. Neither may touch or read the outside.
+func TestToolSessionCannotFollowADanglingOrParentLinkOutside(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "campaigns", "demo")
+	other := filepath.Join(home, "other")
+	if err := os.MkdirAll(filepath.Join(other, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "secret"), []byte("secret-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(home, "new-outside-file")
+	if err := os.Symlink(outside, filepath.Join(root, "dangling")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(other, "sub"), filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	rec := &hookRecorder{}
+	sess := rec.session()
+	sess.boundary = Boundary{Root: root, home: home}
+
+	write := func(id, path string) api.ToolCall {
+		return api.ToolCall{ID: id, Function: api.ToolCallFunction{Name: "write_file", Arguments: mustArgs(map[string]any{"path": path, "content": "escaped"})}}
+	}
+	if got := sess.execute(context.Background(), root, write("w1", "dangling")); !strings.Contains(got, "outside the work boundary") {
+		t.Fatalf("write through a dangling link = %q, want refused", got)
+	}
+	if _, err := os.Stat(outside); err == nil {
+		t.Fatal("the outside file was created through the dangling link")
+	}
+	got := sess.execute(context.Background(), root, readCall("r1", root+"/linked/../secret"))
+	if !strings.Contains(got, "outside the work boundary") || strings.Contains(got, "secret-content") {
+		t.Fatalf("read through link/.. = %q, want refused with no contents", got)
+	}
+	if got := sess.execute(context.Background(), root, write("w2", root+"/linked/../newfile")); !strings.Contains(got, "outside the work boundary") {
+		t.Fatalf("write through link/.. = %q, want refused", got)
+	}
+	if _, err := os.Stat(filepath.Join(other, "newfile")); err == nil {
+		t.Fatal("the outside file was created through link/..")
+	}
+	for _, r := range rec.ends {
+		if r.Err == "" {
+			t.Fatalf("hook for %s reported no error", r.ID)
+		}
 	}
 }

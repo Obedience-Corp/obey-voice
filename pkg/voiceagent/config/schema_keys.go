@@ -207,8 +207,8 @@ func brainKeys() []KeySpec {
 		},
 		{
 			Key: "voice_worker_boundary", Type: TypeBool, Default: true,
-			Group: GroupBrain, Title: "Campaign boundary",
-			Help: "Keeps a spawned worker inside the campaign it was launched in: its file tools and shell refuse paths outside the campaign root, and its prompt says so.",
+			Group: GroupBrain, Title: "Work boundary",
+			Help: "Keeps a spawned worker inside the directory it was launched in, or that directory's campaign when it is inside one: its file tools and shell refuse paths outside it, and its prompt says so.",
 		},
 		{
 			Key: "ollama_model", Type: TypeString, Default: "",
