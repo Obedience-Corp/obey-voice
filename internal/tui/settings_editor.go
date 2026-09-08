@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 )
 
 // settingsEditKind names the value being typed. editNone means the list has
@@ -19,6 +21,7 @@ const (
 	editWorkerToken
 	editUserDisplayName
 	editSpeakerEnrollName
+	editTalkHotkey
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -41,6 +44,9 @@ func (m *settingsModel) beginEdit(kind settingsEditKind, label, initial string) 
 	if kind == editWorkerToken {
 		input.EchoMode = textinput.EchoPassword
 		input.Placeholder = "paste the token from speech-serve"
+	}
+	if kind == editTalkHotkey {
+		input.Placeholder = talkhotkey.DefaultComboFor(runtime.GOOS) + " (default); e.g. ctrl+alt+t, f13"
 	}
 	input.Focus()
 	m.edit = settingsEditor{kind: kind, label: label, input: input}
@@ -65,6 +71,9 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		kind, value := m.edit.kind, m.edit.input.Value()
 		if kind == editSpeakerEnrollName {
 			return m.commitSpeakerEnrollName(value)
+		}
+		if kind == editTalkHotkey {
+			return m.commitTalkHotkey(value)
 		}
 		m.cancelEdit()
 		if kind == editUserDisplayName {

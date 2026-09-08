@@ -62,7 +62,7 @@ func newTalkHotkeyCmd() *cobra.Command {
 			return talkhotkey.Serve(ctx, combo, cmd.OutOrStdout(), talkHotkeyProbe)
 		},
 	}
-	cmd.Flags().StringVar(&talkHotkeyCombo, "combo", talkhotkey.DefaultComboFor(runtime.GOOS), "Combo to register, e.g. alt+space or ctrl+alt+f13")
+	cmd.Flags().StringVar(&talkHotkeyCombo, "combo", talkhotkey.DefaultComboFor(runtime.GOOS), "Combo to register, e.g. ctrl+space or ctrl+alt+f13")
 	cmd.Flags().BoolVar(&talkHotkeyProbe, "probe", false, "Register, report, and exit — availability check only")
 	return cmd
 }

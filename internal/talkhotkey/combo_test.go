@@ -98,10 +98,38 @@ func TestComboDisplay(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseCombo(%q): %v", tc.in, err)
 			}
-			if got := combo.Display(); got != tc.want {
+			if got := combo.DisplayFor("darwin"); got != tc.want {
 				t.Errorf("Display() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// The TUI runs on Linux and Windows, where Apple's glyphs name nothing.
+func TestComboDisplaySpellsForTheOS(t *testing.T) {
+	tests := []struct{ in, goos, want string }{
+		{"ctrl+space", "darwin", "⌃Space"},
+		{"ctrl+space", "linux", "Ctrl+Space"},
+		{"ctrl+space", "windows", "Ctrl+Space"},
+		{"ctrl+alt+t", "linux", "Ctrl+Alt+T"},
+		{"cmd+shift+return", "linux", "Shift+Super+Return"},
+		{"cmd+shift+return", "windows", "Shift+Win+Return"},
+		{"f13", "linux", "F13"},
+	}
+	for _, tc := range tests {
+		combo, err := ParseCombo(tc.in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := combo.DisplayFor(tc.goos); got != tc.want {
+			t.Errorf("%s on %s = %q, want %q", tc.in, tc.goos, got, tc.want)
+		}
+	}
+}
+
+func TestDefaultComboIsControlSpace(t *testing.T) {
+	if DefaultCombo != "ctrl+space" {
+		t.Fatalf("DefaultCombo = %q, want ctrl+space (the Mac app's key)", DefaultCombo)
 	}
 }
 

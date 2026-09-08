@@ -149,7 +149,7 @@ func voiceKeys() []KeySpec {
 		{
 			Key: "talk_hotkey", Type: TypeString, Default: "",
 			Group: GroupVoice, Title: "Talk hotkey combo",
-			Help: "Modifiers plus a key, like alt+space or ctrl+alt+t. Needs at least one of ctrl, alt or cmd, or a bare function key. Empty uses the platform default: ⌥Space on macOS, Ctrl+Alt+Space on Windows; on Linux the key is whatever you bind to `obey-voice talk`.",
+			Help: "Modifiers plus a key, like ctrl+space or ctrl+alt+t. Needs at least one of ctrl, alt or cmd, or a bare function key. Empty uses the platform default: Ctrl+Space on macOS (the Obey Voice Mac app's key), Ctrl+Alt+Space on Windows; on Linux the key is whatever you bind to `obey-voice talk`. Also in Settings → Tools.",
 		},
 		{
 			Key: "name_summon_enabled", Type: TypeBool, Default: false,

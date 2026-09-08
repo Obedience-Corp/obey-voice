@@ -231,13 +231,15 @@ func TestTalkAutomaticTapVersusHold(t *testing.T) {
 func TestTalkRegistrationAndConflictAreVisible(t *testing.T) {
 	runner := &fakeTurnRunner{voiceQueue: []voiceScript{{block: true}}}
 	m, _ := talkConversation(t, runner, talkhotkey.ModeHold)
-	if !strings.Contains(stripANSI(m.View()), "⌥Space talk") {
-		t.Fatalf("footer lacks the registered hint:\n%s", stripANSI(m.View()))
+	def, _ := talkhotkey.ParseCombo(talkhotkey.DefaultCombo)
+	hint := def.Display() + " talk"
+	if !strings.Contains(stripANSI(m.View()), hint) {
+		t.Fatalf("footer lacks the registered hint %q:\n%s", hint, stripANSI(m.View()))
 	}
 
-	m, _ = m.Update(talkHotkeyEventMsg{ev: talkhotkey.Event{Kind: talkhotkey.KindError, Code: talkhotkey.ConflictCode, Detail: "alt+space is already registered by another app"}})
+	m, _ = m.Update(talkHotkeyEventMsg{ev: talkhotkey.Event{Kind: talkhotkey.KindError, Code: talkhotkey.ConflictCode, Detail: talkhotkey.DefaultCombo + " is already registered by another app"}})
 	view := stripANSI(m.View())
-	if strings.Contains(view, "⌥Space talk") {
+	if strings.Contains(view, hint) {
 		t.Fatal("footer still advertises a key that failed to register")
 	}
 	if !strings.Contains(m.status, "taken by another app") {
