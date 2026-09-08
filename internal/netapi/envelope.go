@@ -150,7 +150,8 @@ func ms(d time.Duration) int64 { return d.Milliseconds() }
 
 // controlMessage is one client -> server message on /v1/stream.
 type controlMessage struct {
-	Type       string `json:"type"` // text_input | interrupt | clear_history | audio_output | voice_start | voice_end | audio_input | set_persona
+	ID         string `json:"id,omitempty"` // transcribe_start: client request identity
+	Type       string `json:"type"`         // text_input | interrupt | clear_history | audio_output | voice_start | voice_end | audio_input | set_persona
 	Text       string `json:"text,omitempty"`
 	Mode       string `json:"mode,omitempty"` // audio_output: "stream" | "local" | "off"
 	Data       string `json:"data,omitempty"` // audio_input: base64 pcm_s16le mono @ 16 kHz
