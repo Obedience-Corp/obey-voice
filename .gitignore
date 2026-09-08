@@ -62,3 +62,6 @@ ttft-proxy-capture*.jsonl
 # pkg/voiceagent/audio/apm and cmd/apmharness.
 /third_party/webrtc-audio-processing/
 /third_party/webrtc-apm-prefix/
+
+# go build ./tests/convoflow drops its binary here
+/convoflow

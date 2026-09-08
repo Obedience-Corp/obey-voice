@@ -106,9 +106,11 @@ func (r *recorder) hasEvent(name string) bool {
 
 func eventName(e events.Event) string {
 	switch e.(type) {
+	case events.JobQueued:
+		return "job_queued"
 	case events.JobStarted:
 		return "job_started"
-	case events.JobFinished, events.JobFailed:
+	case events.JobFinished, events.JobFailed, events.JobAborted:
 		return "job_terminal"
 	case events.ToolCallStarted:
 		return "tool_call_started"
@@ -125,7 +127,7 @@ func eventName(e events.Event) string {
 
 func jobTerminal(e events.Event) bool {
 	switch e.(type) {
-	case events.JobFinished, events.JobFailed:
+	case events.JobFinished, events.JobFailed, events.JobAborted:
 		return true
 	default:
 		return false

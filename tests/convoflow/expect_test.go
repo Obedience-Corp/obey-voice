@@ -197,3 +197,51 @@ func TestRouteExpectsAreScopedToTheTurn(t *testing.T) {
 		t.Fatalf("run-level route reads the newest decision: %v", err)
 	}
 }
+
+// A spawned worker's tool calls carry a job id and are the worker's, never
+// the talking brain's: they must not trip live_tool_calls.
+func TestWorkerToolCallsAreNotLive(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	rec.add(events.ToolCallStarted{ID: "route#1", Name: "route", Kind: "route"})
+	rec.add(events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"})
+	rec.add(events.ToolCallStarted{ID: "c2", JobID: "job-1", Name: "run_command", Kind: "execute"})
+	rec.add(events.ToolCallStarted{ID: "c3", Name: "list_files", Kind: "list_dir"})
+	m := collectMetrics(rec)
+	if m.LiveToolCalls != 1 || m.WorkerToolCalls != 2 || m.LiveRouterHit != 1 {
+		t.Fatalf("live=%d worker=%d router=%d, want 1/2/1", m.LiveToolCalls, m.WorkerToolCalls, m.LiveRouterHit)
+	}
+	if err := evalRunExpect(Expectation{Metric: "worker_tool_calls", Op: ">=", Value: 2}, rec, m); err != nil {
+		t.Fatal(err)
+	}
+	if err := evalRunExpect(Expectation{Metric: "live_tool_calls", Op: "==", Value: 1}, rec, m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// job_queued is the table accepting a job; an abort is as terminal as a
+// finish for wait: job_terminal and event: job_terminal.
+func TestQueuedAndAbortedJobsAreNamed(t *testing.T) {
+	t.Parallel()
+	rec := &recorder{}
+	rec.add(events.JobQueued{ID: "job-1", Task: "audit"})
+	turn := turnState{events: rec.snapshot()}
+	if err := evalExpect(Expectation{Event: "job_queued"}, rec, turn); err != nil {
+		t.Fatalf("job_queued: %v", err)
+	}
+	if rec.waitSatisfied(waitJobTerminal, func() bool { return false }) {
+		t.Fatal("a queued job must not satisfy job_terminal")
+	}
+
+	rec.add(events.JobAborted{ID: "job-1", Task: "audit"})
+	if !rec.waitSatisfied(waitJobTerminal, func() bool { return false }) {
+		t.Fatal("an aborted job must satisfy job_terminal")
+	}
+	m := collectMetrics(rec)
+	if err := evalRunExpect(Expectation{Event: "job_terminal"}, rec, m); err != nil {
+		t.Fatalf("event job_terminal after abort: %v", err)
+	}
+	if err := evalRunExpect(Expectation{Metric: "job_aborted", Op: "==", Value: 1}, rec, m); err != nil {
+		t.Fatal(err)
+	}
+}
