@@ -819,6 +819,19 @@
       "editable": true
     },
     {
+      "key": "voice_worker_boundary",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Work boundary",
+      "help": "Keeps a spawned worker inside the directory it was launched in, or that directory's campaign when it is inside one: its file tools and shell refuse paths outside it, and its prompt says so.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "voice_worker_job_budget",
       "type": "int",
       "default": 600,

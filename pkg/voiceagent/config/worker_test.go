@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // An unselected worker must never reach for a remote CLI on its own. It
 // inherits the live brain, and says so; the grok default it used to carry is
@@ -97,5 +101,33 @@ func TestWorkerBrainConfigMarksTheWorker(t *testing.T) {
 	}
 	if cfg.IsWorker {
 		t.Fatal("the live config must not")
+	}
+}
+
+// The boundary is the campaign root when the work directory sits in one,
+// the work directory itself otherwise, and nothing when switched off.
+func TestWorkerBrainConfigFencesTheWorkerToItsCampaign(t *testing.T) {
+	root := writeCampaignMarker(t, t.TempDir(), "name: demo\nid: c1\n")
+	inside := filepath.Join(root, "projects", "x")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{BrainProvider: "ollama", WorkDir: inside, VoiceWorkerBoundary: true}
+	if got := WorkerBrainConfig(cfg).WorkerBoundary; got != root {
+		t.Fatalf("boundary inside a campaign = %q, want %q", got, root)
+	}
+
+	plain := t.TempDir()
+	cfg = &Config{BrainProvider: "ollama", WorkDir: plain, VoiceWorkerBoundary: true}
+	if got := WorkerBrainConfig(cfg).WorkerBoundary; got != WorkDirFrom(cfg) {
+		t.Fatalf("boundary outside a campaign = %q, want the work dir %q", got, WorkDirFrom(cfg))
+	}
+
+	cfg = &Config{BrainProvider: "ollama", WorkDir: inside}
+	if got := WorkerBrainConfig(cfg).WorkerBoundary; got != "" {
+		t.Fatalf("boundary with voice_worker_boundary off = %q, want none", got)
+	}
+	if cfg.WorkerBoundary != "" {
+		t.Fatal("the live config must never carry a boundary")
 	}
 }

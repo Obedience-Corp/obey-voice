@@ -206,6 +206,11 @@ func brainKeys() []KeySpec {
 			Help: "Longest a spawned job may run before it is stopped and you are told. Zero means no limit.",
 		},
 		{
+			Key: "voice_worker_boundary", Type: TypeBool, Default: true,
+			Group: GroupBrain, Title: "Work boundary",
+			Help: "Keeps a spawned worker inside the directory it was launched in, or that directory's campaign when it is inside one: its file tools and shell refuse paths outside it, and its prompt says so.",
+		},
+		{
 			Key: "ollama_model", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Ollama model",
 			Help:               "The local model Ollama loads. Empty picks the first installed model.",

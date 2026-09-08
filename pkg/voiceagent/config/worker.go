@@ -57,7 +57,22 @@ func WorkerBrainConfig(cfg *Config) *Config {
 	if host := strings.TrimSpace(cfg.VoiceWorkerOllamaHost); host != "" && w.BrainProvider == "ollama" {
 		w.OllamaHost = host
 	}
+	w.WorkerBoundary = WorkerBoundaryFor(cfg)
 	return &w
+}
+
+// WorkerBoundaryFor is the directory a spawned worker must stay under: the
+// campaign root the work directory sits in, or the work directory itself when
+// there is none. Empty when voice_worker_boundary is off.
+func WorkerBoundaryFor(cfg *Config) string {
+	if cfg == nil || !cfg.VoiceWorkerBoundary {
+		return ""
+	}
+	workDir := WorkDirFrom(cfg)
+	if c := CampaignFor(workDir); c.Found() {
+		return c.Root
+	}
+	return workDir
 }
 
 // TwoLocalOllamaWorkers reports when the live brain and worker are both local

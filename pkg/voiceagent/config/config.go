@@ -194,10 +194,12 @@ type Config struct {
 	// VoiceWorkerMaxConcurrent is how many spawned jobs run at once; the rest queue.
 	VoiceWorkerMaxConcurrent int `mapstructure:"voice_worker_max_concurrent"`
 	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds; zero means no cap.
-	VoiceWorkerJobBudget int    `mapstructure:"voice_worker_job_budget"`
-	GrokModel            string `mapstructure:"grok_model"`
-	CursorModel          string `mapstructure:"cursor_model"`
-	OllamaModel          string `mapstructure:"ollama_model"`
+	VoiceWorkerJobBudget int `mapstructure:"voice_worker_job_budget"`
+	// VoiceWorkerBoundary fences a spawned worker to the campaign it was launched in.
+	VoiceWorkerBoundary bool   `mapstructure:"voice_worker_boundary"`
+	GrokModel           string `mapstructure:"grok_model"`
+	CursorModel         string `mapstructure:"cursor_model"`
+	OllamaModel         string `mapstructure:"ollama_model"`
 	// OllamaEmbeddingModel routes user prompts to relevant Agent Skills. Empty
 	// disables harness-side semantic activation and leaves model-driven
 	// read_skill available as a fallback.
@@ -301,6 +303,11 @@ type Config struct {
 	// so a brain can tell a background job from the live conversation.
 	// Runtime only, never persisted.
 	IsWorker bool `mapstructure:"-"`
+
+	// WorkerBoundary is the root a worker brain is fenced to, set by
+	// WorkerBrainConfig from voice_worker_boundary. Empty on the live brain.
+	// Runtime only: it is derived from the work directory, never persisted.
+	WorkerBoundary string `mapstructure:"-"`
 
 	// PersonaDisplayNames is every persona's display name, filled by the
 	// persona after-load hook and the session binders so the STT factory can
@@ -586,6 +593,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_worker_ollama_host", "")
 	v.SetDefault("voice_worker_max_concurrent", DefaultVoiceWorkerMaxConcurrent)
 	v.SetDefault("voice_worker_job_budget", DefaultVoiceWorkerJobBudget)
+	v.SetDefault("voice_worker_boundary", true)
 	v.SetDefault("grok_model", "")
 	v.SetDefault("cursor_model", "")
 	v.SetDefault("ollama_model", "")
