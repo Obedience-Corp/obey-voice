@@ -50,9 +50,8 @@ func TestChoosingABrainLandsOnTheWorkerSection(t *testing.T) {
 	m := newSettings(cfg, workerTestProviders())
 	m.saveConfig = func(k string, v any) error { saved[k] = v; return nil }
 	m.section = sectionProvider
-	m.cursor = 0 // ollama
 
-	m.selectCurrent()
+	m.selectProviderOption(0) // ollama
 
 	if m.section != sectionWorker {
 		t.Fatalf("section after choosing a brain = %d, want the Worker section %d", m.section, sectionWorker)
@@ -69,9 +68,8 @@ func TestChoosingABrainKeepsAnExistingWorkerChoice(t *testing.T) {
 	m := newSettings(cfg, workerTestProviders())
 	m.saveConfig = func(string, any) error { return nil }
 	m.section = sectionProvider
-	m.cursor = 0
 
-	m.selectCurrent()
+	m.selectProviderOption(0) // ollama
 
 	if m.section != sectionProvider {
 		t.Fatalf("section = %d, want to stay on Provider %d", m.section, sectionProvider)
@@ -83,9 +81,7 @@ func TestSelectingAWorkerPersistsItAndDropsAStaleModel(t *testing.T) {
 	saved := map[string]any{}
 	m := newWorkerSettings(t, cfg)
 	m.saveConfig = func(k string, v any) error { saved[k] = v; return nil }
-	m.cursor = 1 // grok
-
-	m.selectWorkerItem()
+	m.setWorkerProvider("grok")
 
 	if saved["voice_worker_provider"] != "grok" || cfg.VoiceWorkerProvider != "grok" {
 		t.Fatalf("worker not saved: saved=%v cfg=%q", saved["voice_worker_provider"], cfg.VoiceWorkerProvider)
@@ -103,17 +99,14 @@ func TestSelectingAWorkerModelPinsIt(t *testing.T) {
 	m := newWorkerSettings(t, cfg)
 	m.saveConfig = func(k string, v any) error { saved[k] = v; return nil }
 
-	// Rows are the three providers, a divider, "default", then the catalog.
-	m.cursor = len(config.WorkerProviders) + 2
-	m.selectWorkerItem()
+	m.setWorkerModel("qwen3:8b")
 
 	if cfg.VoiceWorkerModel != "qwen3:8b" || saved["voice_worker_model"] != "qwen3:8b" {
 		t.Fatalf("worker model = %q / saved %v, want qwen3:8b", cfg.VoiceWorkerModel, saved["voice_worker_model"])
 	}
 
 	// "default" clears the pin rather than writing the literal word.
-	m.cursor = len(config.WorkerProviders) + 1
-	m.selectWorkerItem()
+	m.setWorkerModel("default")
 	if cfg.VoiceWorkerModel != "" {
 		t.Fatalf("default did not clear the pin: %q", cfg.VoiceWorkerModel)
 	}
@@ -141,8 +134,17 @@ func TestWorkerStatusNamesTheInheritedBackend(t *testing.T) {
 // its rows intact — it is reached by tabbing, and a blank tab reads as broken.
 func TestWorkerSectionRenders(t *testing.T) {
 	m := newWorkerSettings(t, &config.Config{BrainProvider: "ollama"})
+	// The rows say what is chosen (nothing, inheriting ollama) and what the
+	// model pin is; the backends are in the picker.
 	view := stripANSI(m.View())
-	for _, want := range []string{"Worker", "ollama", "grok", "claude", "Worker model", "default"} {
+	for _, want := range []string{"Worker", "not set", "inheriting ollama", "Worker model", "default"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("worker section missing %q:\n%s", want, view)
+		}
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	view = stripANSI(m.View())
+	for _, want := range []string{"ollama", "grok", "claude"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("worker view missing %q:\n%s", want, view)
 		}
@@ -158,9 +160,7 @@ func TestWorkerSectionIgnoresUnavailableBackends(t *testing.T) {
 	m := newSettings(cfg, providers)
 	m.section = sectionWorker
 	m.saveConfig = func(string, any) error { return nil }
-	m.cursor = 1 // grok, not installed
-
-	m.selectWorkerItem()
+	m.setWorkerProvider("grok") // not installed
 
 	if cfg.VoiceWorkerProvider != "" {
 		t.Fatalf("selected an unavailable worker: %q", cfg.VoiceWorkerProvider)

@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	ansi "github.com/charmbracelet/x/ansi"
-
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func (m settingsModel) View() string {
@@ -35,13 +34,18 @@ func (m settingsModel) View() string {
 		parts = append(parts, dimStyle.Render(strings.Repeat("─", max(width, 1))))
 	}
 
-	listLines := m.sectionListLines()
+	var listLines []string
 	switch {
 	case m.enroll.active:
 		listLines = m.enrollOverlayLines()
 	case m.confirmRemoveVoice != "":
 		listLines = m.confirmRemoveVoiceLines()
-	case m.edit.kind != editNone:
+	case m.picker.active:
+		listLines = m.pickerLines()
+	default:
+		listLines = m.rowLines()
+	}
+	if m.edit.kind != editNone {
 		listLines = append([]string{m.editorLine(), ""}, listLines...)
 	}
 	// Fill the list region so short sections still expand with the terminal.
@@ -53,25 +57,7 @@ func (m settingsModel) View() string {
 	}
 	parts = append(parts, listLines...)
 
-	help := "  ←/→ section • ↑/↓ navigate • enter select"
-	if m.volumeRowFocused() {
-		help = "  ←/→ volume • tab section • ↑/↓ speakers"
-	} else if m.section == sectionVoice {
-		help += " • p preview"
-	}
-	help += " • esc back"
-	if m.section == sectionSpeakers && m.onGuestRow() {
-		help = "  ←/→ section • ↑/↓ navigate • enter re-enroll • d remove • esc back"
-	}
-	if m.edit.kind != editNone {
-		help = "  type a value • enter save • esc cancel"
-	}
-	if m.enroll.active {
-		help = "  recording your voice • esc cancel"
-	}
-	if m.confirmRemoveVoice != "" {
-		help = "  y remove • any other key keeps it"
-	}
+	help := m.footerHelp()
 	if compact {
 		footer := dimStyle.Render(help)
 		if m.message != "" {
@@ -82,11 +68,8 @@ func (m settingsModel) View() string {
 		switch {
 		case m.message != "":
 			parts = append(parts, ansi.Truncate("  "+statusStyle.Render(m.message), width, "…"))
-		case m.section == sectionWorker:
-			// An unchosen worker is the thing worth saying out loud here.
-			parts = append(parts, ansi.Truncate("  "+dimStyle.Render(m.workerStatus()), width, "…"))
 		default:
-			parts = append(parts, " ")
+			parts = append(parts, ansi.Truncate(m.detailLine(), width, "…"))
 		}
 		parts = append(parts, dimStyle.Render(ansi.Truncate(help, width, "…")))
 	}
@@ -98,164 +81,138 @@ func (m settingsModel) isCompact() bool {
 	return m.height > 0 && m.height < 12
 }
 
-func (m settingsModel) sectionListLines() []string {
-	switch m.section {
-	case sectionProvider:
-		start, end := m.visibleRange(len(m.providerItems))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			item := m.providerItems[i]
-			active := ""
-			if i < len(m.providers) && m.providers[i].Name == m.cfg.BrainProvider {
-				active = " ✓"
-			}
-			lines = append(lines, m.itemLine(i, item+active))
-		}
-		return lines
-
-	case sectionModel:
-		start, end := m.visibleRange(len(m.modelItems))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			item := m.modelItems[i]
-			active := ""
-			if item == m.activeModel() {
-				active = " ✓"
-			}
-			lines = append(lines, m.itemLine(i, item+active))
-		}
-		return lines
-
-	case sectionWorker:
-		return m.workerListLines()
-
-	case sectionTools:
-		start, end := m.visibleRange(len(m.toolItems))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			lines = append(lines, m.itemLine(i, m.toolItems[i]))
-		}
-		return lines
-
-	case sectionTTS:
-		activeProvider := activeTTSProvider(m.cfg)
-		start, end := m.visibleRange(len(m.ttsItems))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			item := m.ttsItems[i]
-			active := ""
-			if item.provider == activeProvider {
-				active = " ✓"
-			}
-			lines = append(lines, m.itemLine(i, item.provider+" — "+item.detail+active))
-		}
-		return lines
-
-	case sectionQwen:
-		if len(m.qwenItems) == 0 {
-			return []string{dimStyle.Render("  Qwen options load when Settings opens")}
-		}
-		start, end := m.visibleRange(len(m.qwenItems))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			lines = append(lines, m.itemLine(i, m.qwenItems[i].label))
-		}
-		return lines
-
-	case sectionVoice:
-		if len(m.voiceItems) == 0 {
-			return []string{dimStyle.Render("  " + ttsVoiceSelectionStatus(m.cfg))}
-		}
-		start, end := m.visibleRange(len(m.voiceItems))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			v := m.voiceItems[i]
-			active := ""
-			// An empty audio8_voice selects the packaged reference, so the
-			// tick lands on it rather than on nothing.
-			activeVoice := config.TTSVoiceFor(m.cfg, activeTTSProvider(m.cfg))
-			if strings.EqualFold(v.Name, activeVoice) {
-				active = " ✓"
-			}
-			preview := ""
-			if v.Name == m.preview.previewing {
-				preview = " ♫ playing..."
-			}
-			label := fmt.Sprintf("%-16s %s / %s%s%s", v.Name, v.Gender, v.Locale, active, preview)
-			lines = append(lines, m.itemLine(i, label))
-		}
-		return lines
-
-	case sectionLanguage:
-		if len(m.languageItems) == 0 {
-			return []string{dimStyle.Render("  Language selection is available for managed Qwen3-TTS")}
-		}
-		start, end := m.visibleRange(len(m.languageItems))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			language := m.languageItems[i]
-			active := ""
-			if strings.EqualFold(language, m.cfg.QwenTTSLanguage) ||
-				(m.cfg.QwenTTSLanguage == "" && language == "Auto") {
-				active = " ✓"
-			}
-			lines = append(lines, m.itemLine(i, language+active))
-		}
-		return lines
-
-	case sectionSTT:
-		active := activeSTTProvider(m.cfg)
-		start, end := m.visibleRange(len(m.sttItems))
-		lines := make([]string, 0, end-start+1)
-		for i := start; i < end; i++ {
-			item := m.sttItems[i]
-			label := item.label
-			if item.provider == active {
-				label += " ✓"
-			}
-			lines = append(lines, m.itemLine(i, label))
-		}
-		if note := sttConfiguredAliasNote(m.cfg); note != "" {
-			lines = append(lines, dimStyle.Render("  "+note))
-		}
-		return lines
-
-	case sectionInput:
-		return m.deviceLines(m.inputItems, m.cfg.InputDevice)
-
-	case sectionOutput:
-		return m.outputLines()
-
-	case sectionSpeakers:
-		items := m.speakerItems()
-		start, end := m.visibleRange(len(items))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			lines = append(lines, m.itemLine(i, items[i]))
-		}
-		return lines
-
-	case sectionMeeting:
-		items := m.meetingItems()
-		start, end := m.visibleRange(len(items))
-		lines := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			lines = append(lines, m.itemLine(i, items[i]))
-		}
-		return lines
+// rowLines draws the section: one line per setting, name then value, the
+// verb glyphs on the value saying what ←/→ and enter will do.
+func (m settingsModel) rowLines() []string {
+	rows := m.sectionRows()
+	if len(rows) == 0 {
+		return nil
 	}
-	return nil
+	nameWidth := 0
+	for _, row := range rows {
+		nameWidth = max(nameWidth, lipgloss.Width(row.name))
+	}
+	nameWidth = min(max(nameWidth, 12), 30) + 2
+	start, end := m.visibleRange(len(rows))
+	lines := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		lines = append(lines, m.rowLine(i, rows[i], nameWidth))
+	}
+	return lines
 }
 
-func (m settingsModel) itemLine(idx int, label string) string {
+func (m settingsModel) rowLine(idx int, row settingRow, nameWidth int) string {
 	cursor := "  "
-	style := normalStyle
+	nameStyle := normalStyle
+	if row.kind == rowInfo || row.disabled {
+		nameStyle = dimStyle
+	}
 	if idx == m.cursor {
 		cursor = "▸ "
-		style = selectedStyle
+		nameStyle = selectedStyle
 	}
-	line := "  " + cursor + style.Render(label)
+	name := row.name
+	if lipgloss.Width(name) > nameWidth-1 {
+		name = ansi.Truncate(name, nameWidth-2, "…")
+	}
+	pad := max(nameWidth-lipgloss.Width(name), 1)
+	line := "  " + cursor + nameStyle.Render(name) + strings.Repeat(" ", pad) + m.rowValue(row)
+	if row.detail != "" && !row.disabled {
+		line += "  " + dimStyle.Render(row.detail)
+	}
 	return ansi.Truncate(line, m.renderWidth(), "…")
+}
+
+// rowValue is the value column, drawn so the verb is legible before any key
+// is pressed: ‹ › means ←/→ step it, ON/OFF means it flips, a bar means it
+// slides, an ellipsis means enter opens something.
+func (m settingsModel) rowValue(row settingRow) string {
+	if row.disabled {
+		return dimStyle.Render("— " + row.reason)
+	}
+	switch row.kind {
+	case rowPick:
+		return dimStyle.Render("‹ ") + normalStyle.Render(row.value) + dimStyle.Render(" ›")
+	case rowToggle:
+		if row.value == "ON" {
+			return statusStyle.Render("ON")
+		}
+		return dimStyle.Render("OFF")
+	case rowSlider, rowText:
+		return normalStyle.Render(row.value)
+	case rowMenu:
+		return dimStyle.Render("…")
+	case rowAction:
+		return dimStyle.Render(row.value)
+	case rowInfo:
+		return dimStyle.Render(row.value)
+	}
+	return normalStyle.Render(row.value)
+}
+
+// detailLine is what the focused row does and when a change applies — facts
+// that stay on screen, unlike a status message.
+func (m settingsModel) detailLine() string {
+	row, ok := m.focusedRow()
+	if !ok || m.picker.active {
+		return " "
+	}
+	if row.disabled {
+		return "  " + warningStyle.Render(row.reason)
+	}
+	var parts []string
+	if row.help != "" {
+		parts = append(parts, row.help)
+	}
+	if row.applies != "" {
+		parts = append(parts, row.applies)
+	}
+	if len(parts) == 0 {
+		return " "
+	}
+	return "  " + dimStyle.Render(strings.Join(parts, " · "))
+}
+
+// footerHelp names the keys that apply right now.
+func (m settingsModel) footerHelp() string {
+	switch {
+	case m.enroll.active:
+		return "  recording your voice • esc cancel"
+	case m.confirmRemoveVoice != "":
+		return "  y remove • any other key keeps it"
+	case m.edit.kind != editNone:
+		return "  type a value • enter save • esc cancel"
+	case m.picker.active:
+		help := "  type to filter • ↑/↓ move • enter choose"
+		if m.picker.preview != nil {
+			help += " • tab preview"
+		}
+		return help + " • esc cancel"
+	}
+	parts := []string{"↑/↓ move"}
+	if row, ok := m.focusedRow(); ok && !row.disabled {
+		switch row.kind {
+		case rowPick:
+			parts = append(parts, "←/→ change", fmt.Sprintf("enter list (%d)", len(row.options)))
+			if row.preview != nil {
+				parts = append(parts, "p preview")
+			}
+		case rowToggle:
+			parts = append(parts, "←/→ or space toggle")
+		case rowSlider:
+			parts = append(parts, "←/→ adjust")
+		case rowText:
+			parts = append(parts, "enter edit")
+		case rowAction, rowMenu, rowInfo:
+			verb := row.verb
+			if verb == "" {
+				verb = "select"
+			}
+			parts = append(parts, "enter "+verb)
+		}
+	}
+	parts = append(parts, "tab section", "esc back")
+	return "  " + strings.Join(parts, " • ")
 }
 
 func (m settingsModel) renderWidth() int {
@@ -263,21 +220,4 @@ func (m settingsModel) renderWidth() int {
 		return 80
 	}
 	return m.width
-}
-
-func (m settingsModel) deviceLines(items []string, active string) []string {
-	if m.devicesLoading {
-		return []string{dimStyle.Render("  Discovering audio devices...")}
-	}
-	start, end := m.visibleRange(len(items))
-	lines := make([]string, 0, end-start)
-	for i := start; i < end; i++ {
-		item := items[i]
-		label := deviceLabel(item)
-		if item == active {
-			label += " ✓"
-		}
-		lines = append(lines, m.itemLine(i, label))
-	}
-	return lines
 }

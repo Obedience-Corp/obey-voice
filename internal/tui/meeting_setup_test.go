@@ -311,8 +311,8 @@ func TestSettingsMeetingNumSpeakersCycle(t *testing.T) {
 		lastKey, lastVal = key, value
 		return nil
 	}
-	// 0 (auto) → 2
-	m.selectCurrent()
+	// 0 (auto) → 2, stepped with →
+	m.adjustRow(1)
 	if lastKey != "speaker.meeting.num_speakers" || lastVal != 2 {
 		t.Fatalf("save = %s %#v, want num_speakers 2", lastKey, lastVal)
 	}
@@ -320,13 +320,13 @@ func TestSettingsMeetingNumSpeakersCycle(t *testing.T) {
 		t.Fatalf("cfg num_speakers = %d", cfg.Speaker.Meeting.NumSpeakers)
 	}
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "Expected speakers: 2") {
+	if !strings.Contains(view, "Expected speakers") || !strings.Contains(view, "‹ 2") {
 		t.Fatalf("view after set 2:\n%s", view)
 	}
 	// 2 → 3 → 4 → 0
-	m.selectCurrent()
-	m.selectCurrent()
-	m.selectCurrent()
+	m.adjustRow(1)
+	m.adjustRow(1)
+	m.adjustRow(1)
 	if cfg.Speaker.Meeting.NumSpeakers != 0 || lastVal != 0 {
 		t.Fatalf("cycle back to auto: cfg=%d saved=%v", cfg.Speaker.Meeting.NumSpeakers, lastVal)
 	}

@@ -115,11 +115,11 @@ func TestSettingsSelectingAnAudio8VoiceWritesItsOwnKey(t *testing.T) {
 	}
 	m.section = sectionVoice
 	m.buildVoiceItems()
-	m.cursor = slices.IndexFunc(m.voiceItems, func(v tts.Voice) bool { return v.Name == "alice" })
-	if m.cursor < 0 {
+	idx := slices.IndexFunc(m.voiceItems, func(v tts.Voice) bool { return v.Name == "alice" })
+	if idx < 0 {
 		t.Fatal("the registered voice is not selectable")
 	}
-	m.selectCurrent()
+	m.selectVoiceOption(idx)
 
 	if saved["audio8_voice"] != "alice" {
 		t.Errorf("saved = %v, want audio8_voice=alice", saved)

@@ -91,7 +91,7 @@ func TestSettingsSpeakersThresholdCycles(t *testing.T) {
 	cfg.Speaker.Live.Threshold = 0.55
 	m, saved := newSpeakerSettings(t, cfg, speakerRowThreshold)
 
-	m.selectCurrent()
+	m.adjustRow(1) // → steps the pick
 
 	got, ok := saved["speaker.live.threshold"].(float32)
 	if !ok {
@@ -112,7 +112,7 @@ func TestSettingsSpeakersThresholdCycleWraps(t *testing.T) {
 	cfg.Speaker.Live.Threshold = 0.7
 	m, saved := newSpeakerSettings(t, cfg, speakerRowThreshold)
 
-	m.selectCurrent()
+	m.adjustRow(1) // → steps the pick
 
 	if got := saved["speaker.live.threshold"]; got != float32(0.45) {
 		t.Errorf("threshold after 0.70 = %v, want 0.45", got)
@@ -126,7 +126,7 @@ func TestSettingsSpeakersThresholdInheritsRoot(t *testing.T) {
 	cfg.Speaker.Threshold = 0.7
 	m, saved := newSpeakerSettings(t, cfg, speakerRowThreshold)
 
-	m.selectCurrent()
+	m.adjustRow(1) // → steps the pick
 
 	if got := saved["speaker.live.threshold"]; got != float32(0.45) {
 		t.Errorf("threshold = %v, want 0.45 (cycled from inherited 0.70)", got)
@@ -138,7 +138,7 @@ func TestSettingsSpeakersWindowCycles(t *testing.T) {
 	m, saved := newSpeakerSettings(t, cfg, speakerRowWindow)
 
 	// Unset window is the 1500ms default, so one press moves to 2000.
-	m.selectCurrent()
+	m.adjustRow(1) // → steps the pick
 
 	if got := saved["speaker.live.window_ms"]; got != 2000 {
 		t.Errorf("window_ms saved = %v, want 2000", got)
@@ -277,7 +277,9 @@ func TestSpeakerRowsShowGuestsAndEnrollAnother(t *testing.T) {
 	}
 
 	view := stripANSI(m.View())
-	for _, want := range []string{"Enroll another speaker…", "Alex", "Dana (re-enroll to refresh)", "Re-enroll your voice — Lance"} {
+	// The stale hint and the owner's name are drawn beside the row, not
+	// inside its name.
+	for _, want := range []string{"Enroll another speaker…", "Alex", "Dana", "re-enroll to refresh", "Re-enroll your voice", "Lance"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view missing %q:\n%s", want, view)
 		}
@@ -309,7 +311,7 @@ func TestSettingsSpeakersWindowWarnsWhenVoicesEnrolled(t *testing.T) {
 	m, saved := newSpeakerSettings(t, cfg, speakerRowWindow)
 	m.enrolledProfiles = []speaker.Profile{{Name: "Lance", Owner: true}}
 
-	m.selectCurrent()
+	m.adjustRow(1) // → steps the pick
 
 	if saved["speaker.live.window_ms"] != 2000 {
 		t.Errorf("window_ms saved = %v, want 2000", saved["speaker.live.window_ms"])

@@ -65,9 +65,9 @@ func TestTalkKeyModeCyclesThroughEveryMode(t *testing.T) {
 	m := talkSettings(t, &config.Config{TalkHotkeyEnabled: true, TalkHotkeyMode: "hold"}, saved)
 	m.cursor = toolRowTalkMode
 	for _, want := range []string{"toggle", "automatic", "hold"} {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
 		if saved["talk_hotkey_mode"] != want || m.cfg.TalkHotkeyMode != want {
-			t.Fatalf("after enter: saved %v cfg %q, want %q", saved["talk_hotkey_mode"], m.cfg.TalkHotkeyMode, want)
+			t.Fatalf("after right: saved %v cfg %q, want %q", saved["talk_hotkey_mode"], m.cfg.TalkHotkeyMode, want)
 		}
 		if !strings.Contains(m.toolItems[toolRowTalkMode], want) {
 			t.Fatalf("row = %q, want %s", m.toolItems[toolRowTalkMode], want)

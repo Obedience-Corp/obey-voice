@@ -105,48 +105,48 @@ func (m settingsModel) workerStatus() string {
 	return fmt.Sprintf("Worker: %s · %s", config.VoiceWorkerProviderOf(m.cfg), m.activeWorkerModel())
 }
 
-// selectWorkerItem saves the row under the cursor. Like the brain rows, the
-// live config is mutated only after the save succeeds.
-func (m *settingsModel) selectWorkerItem() {
-	if m.cursor >= len(m.workerItems) {
+// setWorkerProvider saves the worker backend. Like the brain rows, the live
+// config is mutated only after the save succeeds.
+func (m *settingsModel) setWorkerProvider(name string) {
+	if !m.workerProviderAvailable(name) {
+		m.message = fmt.Sprintf("%s is not available on this machine", name)
 		return
 	}
-	item := m.workerItems[m.cursor]
 	save := m.saveConfig
 	if save == nil {
 		save = config.SetAndSave
 	}
-	switch item.kind {
-	case workerRowProvider:
-		if !m.workerProviderAvailable(item.value) {
-			m.message = fmt.Sprintf("%s is not available on this machine", item.value)
-			return
-		}
-		if err := save("voice_worker_provider", item.value); err != nil {
-			m.message = fmt.Sprintf("Failed to save worker: %v", err)
-			return
-		}
-		m.cfg.VoiceWorkerProvider = item.value
-		// A model pinned for the old backend is meaningless for the new one.
-		if strings.TrimSpace(m.cfg.VoiceWorkerModel) != "" {
-			if err := save("voice_worker_model", ""); err == nil {
-				m.cfg.VoiceWorkerModel = ""
-			}
-		}
-		m.buildWorkerItems()
-		m.message = fmt.Sprintf("Worker set to %s", item.value)
-	case workerRowModel:
-		value := item.value
-		if value == "default" {
-			value = ""
-		}
-		if err := save("voice_worker_model", value); err != nil {
-			m.message = fmt.Sprintf("Failed to save worker model: %v", err)
-			return
-		}
-		m.cfg.VoiceWorkerModel = value
-		m.message = fmt.Sprintf("Worker model set to %s", item.value)
+	if err := save("voice_worker_provider", name); err != nil {
+		m.message = fmt.Sprintf("Failed to save worker: %v", err)
+		return
 	}
+	m.cfg.VoiceWorkerProvider = name
+	// A model pinned for the old backend is meaningless for the new one.
+	if strings.TrimSpace(m.cfg.VoiceWorkerModel) != "" {
+		if err := save("voice_worker_model", ""); err == nil {
+			m.cfg.VoiceWorkerModel = ""
+		}
+	}
+	m.buildWorkerItems()
+	m.message = fmt.Sprintf("Worker set to %s", name)
+}
+
+// setWorkerModel pins a model for the chosen worker; "default" clears the pin.
+func (m *settingsModel) setWorkerModel(model string) {
+	save := m.saveConfig
+	if save == nil {
+		save = config.SetAndSave
+	}
+	value := model
+	if value == "default" {
+		value = ""
+	}
+	if err := save("voice_worker_model", value); err != nil {
+		m.message = fmt.Sprintf("Failed to save worker model: %v", err)
+		return
+	}
+	m.cfg.VoiceWorkerModel = value
+	m.message = fmt.Sprintf("Worker model set to %s", model)
 }
 
 func (m settingsModel) workerProviderAvailable(name string) bool {
@@ -156,31 +156,4 @@ func (m settingsModel) workerProviderAvailable(name string) bool {
 		}
 	}
 	return false
-}
-
-// workerListLines renders the Worker section: providers, a rule, then the
-// models of the chosen provider.
-func (m settingsModel) workerListLines() []string {
-	activeProvider := m.activeWorkerProvider()
-	activeModel := m.activeWorkerModel()
-	start, end := m.visibleRange(len(m.workerItems))
-	lines := make([]string, 0, end-start)
-	for i := start; i < end; i++ {
-		item := m.workerItems[i]
-		switch item.kind {
-		case workerRowDivider:
-			lines = append(lines, dimStyle.Render("  "+item.label))
-			continue
-		case workerRowProvider:
-			if activeProvider != "" && strings.EqualFold(item.value, activeProvider) {
-				item.label += " ✓"
-			}
-		case workerRowModel:
-			if config.WorkerSelected(m.cfg) && item.value == activeModel {
-				item.label += " ✓"
-			}
-		}
-		lines = append(lines, m.itemLine(i, item.label))
-	}
-	return lines
 }

@@ -32,6 +32,11 @@ const (
 type qwenOptionItem struct {
 	kind  qwenOptionKind
 	label string
+	// name, value and detail are the row as Settings draws it; label is the
+	// one-line form the older tests and messages still read.
+	name   string
+	value  string
+	detail string
 }
 
 func (m *settingsModel) refreshQwenStatus() {
@@ -91,26 +96,35 @@ func (m *settingsModel) buildQwenItems() {
 	cacheLabel := fmt.Sprintf("Embedding cache — %d file(s) · %s", cacheN, cachePath)
 
 	m.qwenItems = []qwenOptionItem{
-		{kind: qwenOptStatus, label: "Package — " + status},
+		{kind: qwenOptStatus, name: "Package", value: status, label: "Package — " + status},
 	}
 	m.qwenItems = append(m.qwenItems, m.qwenPlaceItems()...)
+	tierRowDetail := strings.TrimPrefix(strings.TrimPrefix(tierDetail, tier), " · ")
 	m.qwenItems = append(m.qwenItems,
-		qwenOptionItem{kind: qwenOptTier, label: "Model tier — " + tierDetail + " · enter to cycle"},
-		qwenOptionItem{kind: qwenOptConsent, label: "Clone consent — " + consent + " · required for reference voice"},
-		qwenOptionItem{kind: qwenOptCache, label: cacheLabel + " · enter clears"},
+		qwenOptionItem{kind: qwenOptTier, name: "Model tier", value: tier, detail: tierRowDetail,
+			label: "Model tier — " + tierDetail + " · enter to cycle"},
+		qwenOptionItem{kind: qwenOptConsent, name: "Clone consent", value: onOff(m.cfg.QwenTTSConsent), detail: "required for reference voice",
+			label: "Clone consent — " + consent + " · required for reference voice"},
+		qwenOptionItem{kind: qwenOptCache, name: "Clear embedding cache", value: fmt.Sprintf("%d file(s)", cacheN), detail: cachePath,
+			label: cacheLabel + " · enter clears"},
 	)
 	if !m.nativeStatus.Installed {
 		install := "Install / repair — native package (ensure) or legacy managed"
+		name, value := "Install / repair package", "native package (ensure) or legacy managed"
 		if m.cfg != nil && managedqwen.ResolveNativeURL(m.cfg.QwenTTSNativeURL) == "" {
 			install = managedqwen.UnavailableHint()
+			value = install
 		}
 		if m.qwenInstalling {
 			install = "Installing…"
+			value = "installing…"
 		}
-		m.qwenItems = append(m.qwenItems, qwenOptionItem{kind: qwenOptInstall, label: install})
+		m.qwenItems = append(m.qwenItems, qwenOptionItem{kind: qwenOptInstall, name: name, value: value, label: install})
 	} else {
 		m.qwenItems = append(m.qwenItems, qwenOptionItem{
 			kind:  qwenOptInstall,
+			name:  "Re-run ensure",
+			value: "verify the native package, download if a URL is set",
 			label: "Re-run ensure — verify native package / download if URL set",
 		})
 	}
@@ -152,12 +166,54 @@ func clearEmbeddingCache(dir string) (int, error) {
 	return n, nil
 }
 
+// selectQwenItem acts on the Qwen row under the cursor.
 func (m *settingsModel) selectQwenItem() tea.Cmd {
-	if m.cursor >= len(m.qwenItems) {
+	if m.cursor < 0 || m.cursor >= len(m.qwenItems) {
 		return nil
 	}
-	item := m.qwenItems[m.cursor]
-	if cmd, handled := m.selectQwenPlaceItem(item.kind); handled {
+	return m.selectQwenKind(m.qwenItems[m.cursor].kind)
+}
+
+// setQwenTier saves a model tier, fetching the package for a tier that is
+// not on disk first and saving the key when it lands (qwenInstallDoneMsg).
+func (m *settingsModel) setQwenTier(next string) tea.Cmd {
+	// A tier that is not in the installed package is an install job, not a
+	// config problem. Whether the source actually carries the tier is
+	// EnsureNative's call — the pinned release fails fast with its own
+	// remediation before any download, so the message here stays neutral
+	// about what the source contains.
+	if next == managedqwen.Tier1_7B {
+		st := managedqwen.InspectNative(config.ModelsDirFrom(m.cfg), next)
+		if !st.ModelReady {
+			if m.qwenInstalling {
+				m.message = "Qwen package install already running…"
+				return nil
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			m.qwenInstallCancel = cancel
+			m.qwenInstalling = true
+			m.qwenTierPending = next
+			m.qwenInstallEvents = newEventBridge(16)
+			m.message = fmt.Sprintf("Tier %s is not installed — fetching the native package for it…", next)
+			m.buildQwenItems()
+			return tea.Batch(m.qwenInstallEvents.wait(), m.installQwenAssets(ctx))
+		}
+	}
+	if err := m.save("qwen_tts_model_tier", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save tier: %v", err)
+		return nil
+	}
+	m.cfg.QwenTTSModelTier = next
+	m.buildQwenItems()
+	// Worker is started with QWEN3_TTS_TIER; warm process must be recreated.
+	m.message = fmt.Sprintf("Qwen model tier set to %s — restart voice / new conversation to apply", next)
+	return nil
+}
+
+// selectQwenKind performs a Qwen row's own verb: explain, cycle, toggle,
+// clear, install.
+func (m *settingsModel) selectQwenKind(kind qwenOptionKind) tea.Cmd {
+	if cmd, handled := m.selectQwenPlaceItem(kind); handled {
 		return cmd
 	}
 	save := m.saveConfig
@@ -165,7 +221,7 @@ func (m *settingsModel) selectQwenItem() tea.Cmd {
 		save = config.SetAndSave
 	}
 
-	switch item.kind {
+	switch kind {
 	case qwenOptStatus:
 		m.message = m.nativeStatus.Detail
 		if m.nativeStatus.Installed {
@@ -182,38 +238,7 @@ func (m *settingsModel) selectQwenItem() tea.Cmd {
 		if cur == managedqwen.DefaultModelTier || cur == "0.6b" {
 			next = managedqwen.Tier1_7B
 		}
-		// A tier that is not in the installed package is an install job, not a
-		// config problem: kick the package install targeted at that tier and
-		// save the key when it lands (qwenInstallDoneMsg). Whether the source
-		// actually carries the tier is EnsureNative's call — the pinned
-		// release fails fast with its own remediation before any download, so
-		// the message here stays neutral about what the source contains.
-		if next == managedqwen.Tier1_7B {
-			st := managedqwen.InspectNative(config.ModelsDirFrom(m.cfg), next)
-			if !st.ModelReady {
-				if m.qwenInstalling {
-					m.message = "Qwen package install already running…"
-					return nil
-				}
-				ctx, cancel := context.WithCancel(context.Background())
-				m.qwenInstallCancel = cancel
-				m.qwenInstalling = true
-				m.qwenTierPending = next
-				m.qwenInstallEvents = newEventBridge(16)
-				m.message = fmt.Sprintf("Tier %s is not installed — fetching the native package for it…", next)
-				m.buildQwenItems()
-				return tea.Batch(m.qwenInstallEvents.wait(), m.installQwenAssets(ctx))
-			}
-		}
-		if err := save("qwen_tts_model_tier", next); err != nil {
-			m.message = fmt.Sprintf("Failed to save tier: %v", err)
-			return nil
-		}
-		m.cfg.QwenTTSModelTier = next
-		m.buildQwenItems()
-		// Worker is started with QWEN3_TTS_TIER; warm process must be recreated.
-		m.message = fmt.Sprintf("Qwen model tier set to %s — restart voice / new conversation to apply", next)
-		return nil
+		return m.setQwenTier(next)
 
 	case qwenOptConsent:
 		next := !m.cfg.QwenTTSConsent

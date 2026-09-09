@@ -148,7 +148,7 @@ func TestSettingsMeetingDiarizerCycleWritesTheKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m, saved := meetingSettings(t, tt.from, "transcribe-cli")
 			m.cursor = meetingRowDiarizer
-			m.selectCurrent()
+			m.adjustRow(1)
 
 			if saved["speaker.meeting.diarizer"] != tt.want {
 				t.Fatalf("saved = %#v, want %q", saved["speaker.meeting.diarizer"], tt.want)
@@ -171,7 +171,7 @@ func TestSettingsMeetingDiarizerCycleIsARoundTrip(t *testing.T) {
 	m, _ := meetingSettings(t, config.DiarizerSherpa, "transcribe-cli")
 	m.cursor = meetingRowDiarizer
 	for range config.MeetingDiarizers() {
-		m.selectCurrent()
+		m.adjustRow(1)
 	}
 	if m.cfg.Speaker.Meeting.Diarizer != config.DiarizerSherpa {
 		t.Fatalf("after a full cycle = %q, want sherpa", m.cfg.Speaker.Meeting.Diarizer)
@@ -183,7 +183,7 @@ func TestSettingsMeetingDiarizerCycleIsARoundTrip(t *testing.T) {
 func TestSettingsMeetingDiarizerReportsAMissingInstall(t *testing.T) {
 	m, saved := meetingSettings(t, config.DiarizerSherpa)
 	m.cursor = meetingRowDiarizer
-	m.selectCurrent()
+	m.adjustRow(1)
 
 	if saved["speaker.meeting.diarizer"] != config.DiarizerSortformer {
 		t.Fatalf("saved = %#v, want sortformer saved despite the gap", saved["speaker.meeting.diarizer"])
@@ -206,7 +206,7 @@ func TestSettingsMeetingDiarizerNeverAsksForAnInstallItCannotPlan(t *testing.T) 
 	m, _ := meetingSettings(t, config.DiarizerSherpa)
 	m.cfg.Speaker.Meeting.Enabled = false
 	m.cursor = meetingRowDiarizer
-	m.selectCurrent()
+	m.adjustRow(1)
 
 	if m.cfg.Speaker.Meeting.Diarizer != config.DiarizerSortformer {
 		t.Fatalf("engine = %q, want the pick to save with diarization off", m.cfg.Speaker.Meeting.Diarizer)
@@ -263,7 +263,7 @@ func TestSettingsMeetingExpectedSpeakersNoteOnlyUnderSortformer(t *testing.T) {
 func TestSettingsMeetingNumSpeakersMessageUnderSortformer(t *testing.T) {
 	m, _ := meetingSettings(t, config.DiarizerSortformer, "transcribe-cli")
 	m.cursor = meetingRowNumSpeakers
-	m.selectCurrent()
+	m.adjustRow(1)
 
 	if !strings.Contains(m.message, "no effect") || !strings.Contains(m.message, config.DiarizerSherpa) {
 		t.Fatalf("message = %q, want the no-effect note and the way back to sherpa", m.message)
@@ -274,7 +274,7 @@ func TestSettingsMeetingNumSpeakersMessageUnderSortformer(t *testing.T) {
 func TestSettingsMeetingViewShowsTheDiarizerRow(t *testing.T) {
 	m, _ := meetingSettings(t, config.DiarizerSortformer, "transcribe-cli")
 	view := stripANSI(m.View())
-	for _, want := range []string{"Diarization engine: sortformer", "(optional)", "Expected speakers"} {
+	for _, want := range []string{"Diarization engine", "sortformer", "Expected speakers"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("meeting settings view missing %q:\n%s", want, view)
 		}

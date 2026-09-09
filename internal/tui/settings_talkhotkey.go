@@ -37,7 +37,19 @@ func talkModeCopy(mode talkhotkey.Mode) string {
 	}
 }
 
-// cycleTalkMode steps hold → toggle → automatic → hold and persists it.
+// setTalkMode persists a mode and says what it means.
+func (m *settingsModel) setTalkMode(next string) tea.Cmd {
+	if err := m.save("talk_hotkey_mode", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save talk key mode: %v", err)
+		return nil
+	}
+	m.cfg.TalkHotkeyMode = next
+	m.buildToolItems()
+	m.message = fmt.Sprintf("Talk key mode %s: %s; applies to the next conversation", next, talkModeCopy(talkhotkey.Mode(next)))
+	return nil
+}
+
+// cycleTalkMode steps hold → toggle → automatic → hold.
 func (m *settingsModel) cycleTalkMode() tea.Cmd {
 	modes := talkhotkey.Modes()
 	current := string(config.TalkHotkeyModeOf(m.cfg))
@@ -48,14 +60,7 @@ func (m *settingsModel) cycleTalkMode() tea.Cmd {
 			break
 		}
 	}
-	if err := m.save("talk_hotkey_mode", next); err != nil {
-		m.message = fmt.Sprintf("Failed to save talk key mode: %v", err)
-		return nil
-	}
-	m.cfg.TalkHotkeyMode = next
-	m.buildToolItems()
-	m.message = fmt.Sprintf("Talk key mode %s: %s; applies to the next conversation", next, talkModeCopy(talkhotkey.Mode(next)))
-	return nil
+	return m.setTalkMode(next)
 }
 
 // beginTalkComboEdit opens the one-line editor on the stored spelling; the

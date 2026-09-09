@@ -242,19 +242,6 @@ func (m *settingsModel) beginRemoveVoice() {
 	m.beginRemoveVoiceNamed(m.enrolledOwner.Name)
 }
 
-// beginRemoveGuestAtCursor arms removal for the guest under the cursor.
-func (m *settingsModel) beginRemoveGuestAtCursor() {
-	rows := m.speakerRows()
-	if m.cursor < 0 || m.cursor >= len(rows) {
-		return
-	}
-	row := rows[m.cursor]
-	if row.kind != speakerRowGuest {
-		return
-	}
-	m.beginRemoveVoiceNamed(row.name)
-}
-
 func (m *settingsModel) beginRemoveVoiceNamed(name string) {
 	name = strings.TrimSpace(name)
 	if name == "" {

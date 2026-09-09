@@ -605,8 +605,18 @@ func TestGuestRowReenrollAndRemove(t *testing.T) {
 	m.cancelEnroll()
 	m.enroll = enrollSession{}
 
-	m.cursor = idx
-	next, _ := m.Update(key("d"))
+	// Removal is a menu row at the end of the section, never a bare letter:
+	// enter opens the list of guests, enter again arms the confirmation.
+	rows := m.sectionRows()
+	m.cursor = len(rows) - 1
+	if rows[m.cursor].kind != rowMenu {
+		t.Fatalf("last Speakers row = %q, want the remove menu", rows[m.cursor].name)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !next.picker.active {
+		t.Fatal("enter on the remove menu did not open the guest list")
+	}
+	next, _ = next.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Alex is the only guest
 	if next.confirmRemoveVoice != "Alex" {
 		t.Fatalf("confirmRemoveVoice = %q, want Alex", next.confirmRemoveVoice)
 	}
