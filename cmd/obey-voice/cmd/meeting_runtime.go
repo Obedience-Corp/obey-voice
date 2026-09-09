@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,9 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	defer cancel()
 
 	progress := meetingAssetProgress(opts.JSON)
-	capture, provider, sttLabel, sttCleanup, err := buildSTTOnly(ctx, &cfgCopy, progress)
+	captureLogf, closeCaptureLog := meetingCaptureLogf(useMeetingRecordTUI(opts))
+	defer closeCaptureLog()
+	capture, provider, sttLabel, sttCleanup, err := buildSTTOnly(ctx, &cfgCopy, progress, captureLogf)
 	if err != nil {
 		return err
 	}
@@ -268,6 +271,29 @@ func foldSpeakerOutcome(summary *meetinglog.Summary, result meeting.AnalysisResu
 	summary.SpeakerError = result.Error
 }
 
+// meetingCaptureLogf picks where capture reopen diagnostics go on the
+// standalone `meeting record` path. That path runs its own Bubble Tea program
+// without redirecting file descriptor 2, so a line on stderr would be painted
+// over the recorder; those go to the same native-diagnostics log the launcher
+// uses. Without the TUI, stderr is free and log.Printf is the repo default. A
+// log file that cannot be opened yields a silent capture rather than a
+// corrupted screen.
+func meetingCaptureLogf(useTUI bool) (func(string, ...any), func()) {
+	if !useTUI {
+		return log.Printf, func() {}
+	}
+	path := appTUI.DiagnosticsLogPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, func() {}
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, func() {}
+	}
+	logger := log.New(file, "", log.LstdFlags)
+	return logger.Printf, func() { _ = file.Close() }
+}
+
 // useMeetingRecordTUI is true for an interactive terminal session that should
 // open the Bubble Tea recorder. --json and --no-tui keep the plain sinks so
 // scripts never hang on a full-screen UI.
@@ -313,7 +339,10 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 			}, nil
 		}
 
-		capture, provider, sttLabel, cleanup, err := buildSTTOnly(ctx, cfg, progress)
+		// The launcher redirects file descriptor 2 into the diagnostics log for
+		// the life of the program, so the standard logger is already off the
+		// terminal here.
+		capture, provider, sttLabel, cleanup, err := buildSTTOnly(ctx, cfg, progress, log.Printf)
 		if err != nil {
 			return nil, err
 		}
@@ -492,7 +521,10 @@ func meetingAssetProgress(jsonOutput bool) appTUI.BuildProgress {
 // with no Brain or TTS — the chain benchmark.go's runSingleSTTBenchmark
 // proves. VAD is required: every shipped STT backend rejects a nil VAD.
 // root.go's buildPipeline should eventually share this helper.
-func buildSTTOnly(ctx context.Context, cfg *config.Config, progress appTUI.BuildProgress) (capture *audio.Capture, provider stt.Provider, sttLabel string, cleanup func(), err error) {
+// captureLogf is where the capture device sends reopen diagnostics; nil is
+// silent. It is a parameter because the right destination depends on who owns
+// the terminal, which this helper cannot see.
+func buildSTTOnly(ctx context.Context, cfg *config.Config, progress appTUI.BuildProgress, captureLogf func(string, ...any)) (capture *audio.Capture, provider stt.Provider, sttLabel string, cleanup func(), err error) {
 	progress.Stage("Checking models")
 	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSTT: true, NeedVAD: true}, progress.Downloading); err != nil {
 		return nil, nil, "", nil, err
@@ -510,6 +542,13 @@ func buildSTTOnly(ctx context.Context, cfg *config.Config, progress appTUI.Build
 	}
 
 	capture = audio.NewCaptureWithDevice(cfg.InputDevice)
+	capture.Logf = captureLogf
+	// AGC only — no noise suppressor. NS over-gates far/quiet talkers, which is
+	// the opposite of what meeting notes need. Conversation barge-in keeps the
+	// full voice front-end; this path is STT-only.
+	gain := audio.NewListenGain()
+	capture.SetFrontend(gain)
+	cleanups = append(cleanups, func() { _ = gain.Close() })
 	if err := capture.Start(ctx); err != nil {
 		return fail(fmt.Errorf("start capture: %w", err))
 	}

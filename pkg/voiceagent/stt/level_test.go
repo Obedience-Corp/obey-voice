@@ -13,6 +13,9 @@ func TestAudibleSpeechRejectsSilenceAndAcceptsSpeech(t *testing.T) {
 	if !audibleSpeech(constFrame(minSpeechSamples, 0.08)) {
 		t.Fatal("close-mic speech must count as a talker")
 	}
+	if !audibleSpeech(constFrame(minSpeechSamples, 0.004)) {
+		t.Fatal("quiet room speech (~0.004 RMS) must count as a talker")
+	}
 	mixed := append(make([]float32, 4800), constFrame(1600, 0.08)...)
 	if !audibleSpeech(mixed) {
 		t.Fatal("speech after silent pre-roll must still count")

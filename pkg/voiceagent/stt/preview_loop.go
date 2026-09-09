@@ -43,6 +43,10 @@ func runPreviewLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	var pending []float32
 	var committed, lastPreview string
 	var heard bool
+	// loud judges "did anyone actually make a sound" on the frames as captured,
+	// before previewSamples multiplies them by up to 8. Measuring after that
+	// boost let room tone clear the floor and hand the decoder a ghost.
+	var loud audibleTracker
 	var levels levelEmitter
 	var sincePreview int
 	var lastDecode time.Time
@@ -51,7 +55,7 @@ func runPreviewLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	const preRoll = audio.SampleRate * 3 / 10
 	join := func(text string) string { return strings.TrimSpace(committed + " " + text) }
 	decode := func(samples []float32, finalPhrase bool) bool {
-		if len(samples) < minSpeechSamples || !audibleSpeech(samples) {
+		if len(samples) < minSpeechSamples || !loud.audible() {
 			return true
 		}
 		text, err := deps.transcribe(samples)
@@ -83,6 +87,8 @@ func runPreviewLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			return
 		}
 		if read.ready && len(read.frame.Samples) > 0 {
+			loud.floor = speechFloor(inputGain(deps.frames))
+			loud.push(read.frame.Samples)
 			samples := previewSamples(read.frame.Samples)
 			levels.maybeEmit(events, samples)
 			deps.seg.AcceptWaveform(samples)
@@ -110,12 +116,14 @@ func runPreviewLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			}
 			pending = nil
 			heard = false
+			loud.reset()
 		} else if heard && (read.eof || len(pending) >= maxPhrase) {
 			if !decode(pending, true) {
 				return
 			}
 			pending = nil
 			heard = false
+			loud.reset()
 			deps.seg.Reset()
 		} else if heard && sincePreview >= previewInterval && time.Since(lastDecode) >= 500*time.Millisecond {
 			if !decode(pending, false) {

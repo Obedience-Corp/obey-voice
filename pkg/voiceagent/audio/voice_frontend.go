@@ -91,6 +91,14 @@ func (f *VoiceFrontend) ProcessCapture(samples []float32) []float32 {
 	return out
 }
 
+// InputGain implements GainReporter: the multiplier the AGC stage is currently
+// applying to captured audio.
+func (f *VoiceFrontend) InputGain() float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.agc.Gain()
+}
+
 // SetReferenceDelay declares how far behind the push the far-end audio actually
 // becomes audible, in capture-rate samples. The player derives it from the
 // device buffer it configured; see Player.applyReferenceDelay.
@@ -259,6 +267,10 @@ const (
 func NewAGC(target, minGain, maxGain float64) AGC {
 	return newAutomaticGainControl(target, minGain, maxGain)
 }
+
+// Gain reports the multiplier the stage is currently applying, so a composed
+// front-end can satisfy GainReporter without reaching into the struct.
+func (a *automaticGainControl) Gain() float64 { return a.gain }
 
 func (a *automaticGainControl) Process(samples []float32) {
 	if len(samples) == 0 {

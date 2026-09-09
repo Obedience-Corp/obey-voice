@@ -5,6 +5,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -91,6 +92,7 @@ func runAECProbe(ctx context.Context, out interface{ Write([]byte) (int, error) 
 	player.SetFrontend(recorder)
 
 	capture := audio.NewCaptureWithDevice(cfg.InputDevice)
+	capture.Logf = log.Printf // plain CLI: nothing owns the terminal
 	capture.SetFrontend(recorder)
 	if err := capture.Start(ctx); err != nil {
 		return fmt.Errorf("start capture: %w", err)

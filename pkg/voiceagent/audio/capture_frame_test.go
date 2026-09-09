@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestCaptureReadFrameNoFrameReadyThenLive(t *testing.T) {
@@ -54,6 +55,34 @@ func TestCaptureCloseIsSafeWhenNotRunning(t *testing.T) {
 	c := NewCapture()
 	if err := c.Close(); err != nil {
 		t.Errorf("Close() error = %v, want nil", err)
+	}
+}
+
+func TestCaptureStalledAfterSilence(t *testing.T) {
+	t.Parallel()
+	c := NewCapture()
+	if c.stalled() {
+		t.Fatal("fresh capture must not look stalled")
+	}
+	c.lastData.Store(time.Now().Add(-3 * time.Second).UnixNano())
+	if !c.stalled() {
+		t.Fatal("want stalled after 3s without callbacks")
+	}
+	c.lastData.Store(time.Now().UnixNano())
+	if c.stalled() {
+		t.Fatal("fresh callback must clear stalled")
+	}
+}
+
+func TestCaptureRecoverIfStalledNoopsWhenStopped(t *testing.T) {
+	t.Parallel()
+	c := NewCapture()
+	c.lastData.Store(time.Now().Add(-time.Hour).UnixNano())
+	if err := c.recoverIfStalled(context.Background()); err != nil {
+		t.Fatalf("recoverIfStalled on a stopped capture: %v", err)
+	}
+	if c.IsRunning() {
+		t.Fatal("must not open a device from a stopped capture")
 	}
 }
 

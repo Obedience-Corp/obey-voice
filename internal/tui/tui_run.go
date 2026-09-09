@@ -33,6 +33,18 @@ func RunConversation(cfg *config.Config, build RuntimeBuilder) error {
 	return run(cfg, build, nil, true)
 }
 
+// DiagnosticsLogPath is the file this package redirects file descriptor 2 into
+// while a Bubble Tea program owns the terminal. Callers that run their own
+// program without that redirect (the standalone meeting recorder) send their
+// diagnostics to the same file rather than to a raw stderr.
+func DiagnosticsLogPath() string {
+	dir := filepath.Join(config.ConfigDir(), "logs")
+	if debugDir := audio.DebugAudioDir(); debugDir != "" {
+		dir = debugDir
+	}
+	return filepath.Join(dir, "native-diagnostics.log")
+}
+
 func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, startInConversation bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -56,11 +68,7 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 	// an unrecovered panic on a different goroutine (a pipeline or TTS worker,
 	// for instance) still crashes with fd 2 pointed at the log file — its
 	// stack trace lands in native-diagnostics.log instead of the terminal.
-	diagnosticsDir := filepath.Join(config.ConfigDir(), "logs")
-	if debugDir := audio.DebugAudioDir(); debugDir != "" {
-		diagnosticsDir = debugDir
-	}
-	restoreDiagnostics, err := redirectNativeDiagnostics(filepath.Join(diagnosticsDir, "native-diagnostics.log"))
+	restoreDiagnostics, err := redirectNativeDiagnostics(DiagnosticsLogPath())
 	if err != nil {
 		return fmt.Errorf("redirect native diagnostics: %w", err)
 	}

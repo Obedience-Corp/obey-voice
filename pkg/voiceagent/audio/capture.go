@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gen2brain/malgo"
 )
@@ -15,9 +17,20 @@ const (
 	Channels   = 1
 	// ChunkSize is the number of samples per read (100ms at 16kHz).
 	ChunkSize = 1600
+	// captureStallTimeout is how long callbacks may go missing before the
+	// capture device is reopened. Changing OS input volume on PipeWire/ALSA
+	// often restarts the graph and never resumes the old miniaudio stream.
+	captureStallTimeout = 2 * time.Second
 )
 
 // Capture handles microphone input using miniaudio.
+//
+// Two pieces of state answer two different questions. active is what the caller
+// asked for: it is set by Start and cleared only by Stop/Close. running is
+// whether a device is open right now. Recovery from a stalled stream closes and
+// reopens the device, so running goes false and true again without the caller
+// ever asking for it — and a reopen that fails must leave active set, or the
+// microphone is dead for the rest of the session with nothing left to retry it.
 type Capture struct {
 	mu         sync.Mutex
 	subsMu     sync.RWMutex
@@ -25,11 +38,30 @@ type Capture struct {
 	device     *malgo.Device
 	buf        *RingBuffer
 	frontend   Frontend
-	running    bool
+	active     bool          // the caller wants capture running
+	running    bool          // a device is open
+	watchDone  chan struct{} // closed by Stop so the cancellation watcher exits
 	subs       map[int]chan []float32
 	nextSub    int
 	frameSeq   int64
 	deviceName string
+	lastData   atomic.Int64 // unix nano of last onData; 0 until Start
+
+	// open and closeDevice are seams: production opens a malgo device, tests
+	// substitute a fake so reopen behavior is exercised without hardware.
+	open        func() error
+	closeDevice func()
+
+	// Logf reports device reopen attempts and their outcome. A microphone that
+	// silently stops delivering callbacks is otherwise undiagnosable.
+	//
+	// It is nil by default, which is silent. Recovery runs while a Bubble Tea
+	// program may own the terminal, and a line written to a raw stderr lands on
+	// top of that surface — exactly during the mixer move this recovers from.
+	// Callers pick a destination that suits their path: log.Printf where stderr
+	// is either free or already redirected into the diagnostics log, and an
+	// explicit file logger on a TUI path that does not redirect it.
+	Logf func(format string, args ...any)
 }
 
 // NewCapture creates a new mic capture instance.
@@ -40,27 +72,71 @@ func NewCapture() *Capture {
 // NewCaptureWithDevice creates a capture routed to deviceName. An empty name
 // follows the operating-system default.
 func NewCaptureWithDevice(deviceName string) *Capture {
-	return &Capture{
+	c := &Capture{
 		buf:        NewRingBuffer(SampleRate * 30), // 30 seconds buffer
 		subs:       make(map[int]chan []float32),
 		deviceName: deviceName,
 	}
+	c.open = c.openMalgoDevice
+	c.closeDevice = c.closeMalgoDevice
+	return c
 }
 
-// Start begins capturing audio from the default input device.
+func (c *Capture) logf(format string, args ...any) {
+	if c.Logf == nil {
+		return
+	}
+	c.Logf(format, args...)
+}
+
+// Start begins capturing audio from the configured input device.
 func (c *Capture) Start(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.running {
+		c.mu.Unlock()
 		return nil
 	}
+	if err := c.open(); err != nil {
+		c.mu.Unlock()
+		return err
+	}
+	c.running = true
+	c.active = true
+	c.lastData.Store(time.Now().UnixNano())
 
+	// One waiter per Start: recovery reopens the device without going through
+	// Start, so a mixer restart must not leak a goroutine — but a Start after a
+	// full Stop needs its own watcher, because the previous one has exited.
+	var done chan struct{}
+	if c.watchDone == nil {
+		done = make(chan struct{})
+		c.watchDone = done
+	}
+	c.mu.Unlock()
+
+	if done != nil {
+		go func() {
+			select {
+			case <-ctx.Done():
+				c.Stop()
+			case <-done:
+			}
+		}()
+	}
+	// A context cancelled while the device was opening would otherwise leave the
+	// new device running: the watcher above may already have observed Done.
+	if err := ctx.Err(); err != nil {
+		c.Stop()
+		return err
+	}
+	return nil
+}
+
+func (c *Capture) openMalgoDevice() error {
 	mctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
 		return fmt.Errorf("init audio context: %w", err)
 	}
-	c.ctx = mctx
 
 	deviceConfig := malgo.DefaultDeviceConfig(malgo.Capture)
 	deviceConfig.Capture.Format = malgo.FormatS16
@@ -75,6 +151,7 @@ func (c *Capture) Start(ctx context.Context) error {
 	defer releaseDeviceID()
 
 	onData := func(outputSamples, inputSamples []byte, frameCount uint32) {
+		c.lastData.Store(time.Now().UnixNano())
 		samples := bytesToFloat32(inputSamples)
 		if c.frontend != nil {
 			samples = c.frontend.ProcessCapture(samples)
@@ -99,31 +176,98 @@ func (c *Capture) Start(ctx context.Context) error {
 		return fmt.Errorf("start capture: %w", err)
 	}
 
+	c.ctx = mctx
 	c.device = device
-	c.running = true
-
-	// Stop when context is cancelled
-	go func() {
-		<-ctx.Done()
-		c.Stop()
-	}()
-
 	return nil
 }
 
-// Stop stops audio capture and releases resources.
+// Stop stops audio capture and releases resources. It is the caller's "I am
+// done": recovery will not reopen the device afterwards.
 func (c *Capture) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.active = false
+	if c.watchDone != nil {
+		close(c.watchDone)
+		c.watchDone = nil
+	}
 	if !c.running {
 		return
 	}
-
-	c.device.Uninit()
-	c.ctx.Uninit()
-	c.ctx.Free()
+	c.closeDevice()
 	c.running = false
+}
+
+func (c *Capture) closeMalgoDevice() {
+	if c.device != nil {
+		c.device.Uninit()
+		c.device = nil
+	}
+	if c.ctx != nil {
+		c.ctx.Uninit()
+		c.ctx.Free()
+		c.ctx = nil
+	}
+}
+
+// recoverIfStalled reopens the capture device when callbacks have gone missing
+// for captureStallTimeout (a mixer volume change often kills the stream). A
+// Capture the caller stopped is left alone.
+//
+// A failed reopen is not terminal: the device stays closed but the Capture
+// stays active, the stall stamp is refreshed, and the next stall window tries
+// again. The likely causes — a PipeWire graph restart, a USB mic unplugged —
+// resolve on their own, and a recorder that gave up after one attempt showed
+// "listening" against a dead microphone indefinitely.
+func (c *Capture) recoverIfStalled(ctx context.Context) error {
+	c.mu.Lock()
+	if !c.active || !c.stalled() {
+		c.mu.Unlock()
+		return nil
+	}
+	c.lastData.Store(time.Now().UnixNano())
+	if c.running {
+		c.closeDevice()
+		c.running = false
+	}
+	device := c.deviceName
+	err := c.open()
+	if err == nil {
+		c.running = true
+		c.lastData.Store(time.Now().UnixNano())
+	}
+	c.mu.Unlock()
+
+	if err != nil {
+		c.logf("obey-voice: capture from %q stalled for %s; reopen failed, retrying in %s: %v",
+			deviceLabel(device), captureStallTimeout, captureStallTimeout, err)
+		return err
+	}
+	c.logf("obey-voice: capture from %q stalled for %s; device reopened", deviceLabel(device), captureStallTimeout)
+
+	// Cancellation between the close and the reopen would otherwise leave the
+	// new device running: the watcher fired while no device was open.
+	if err := ctx.Err(); err != nil {
+		c.Stop()
+		return err
+	}
+	return nil
+}
+
+func deviceLabel(name string) string {
+	if name == "" {
+		return "system default"
+	}
+	return name
+}
+
+func (c *Capture) stalled() bool {
+	ns := c.lastData.Load()
+	if ns == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, ns)) >= captureStallTimeout
 }
 
 // Read returns the next chunk of audio samples.
@@ -142,6 +286,10 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 	}
 	samples := c.buf.Read(ChunkSize)
 	if samples == nil {
+		// A failed reopen is reported by recoverIfStalled and retried on the
+		// next stall window, so it must not end the STT session: the loop keeps
+		// polling and picks the microphone back up when it returns.
+		_ = c.recoverIfStalled(ctx)
 		return Frame{}, ErrNoFrameReady
 	}
 	c.frameSeq++
@@ -172,6 +320,20 @@ func (c *Capture) SetFrontend(frontend Frontend) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.frontend = frontend
+}
+
+// InputGain implements GainReporter by reporting the gain the installed
+// front-end has already applied to the frames this source hands out, so an
+// energy threshold downstream can be stated in microphone units. 1 when no
+// front-end is installed or it does not amplify.
+func (c *Capture) InputGain() float64 {
+	c.mu.Lock()
+	frontend := c.frontend
+	c.mu.Unlock()
+	if g, ok := frontend.(GainReporter); ok {
+		return g.InputGain()
+	}
+	return 1
 }
 
 // Subscribe registers a non-blocking listener for live capture chunks.

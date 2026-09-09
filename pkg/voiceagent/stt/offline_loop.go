@@ -58,6 +58,9 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	track := newSpeechTracker()
 	var levels levelEmitter
 	var gate noiseGate
+	// The capture front-end's gain moves while it adapts, so the floor is read
+	// per iteration rather than fixed at session start.
+	floor := func() float64 { return speechFloor(inputGain(deps.frames)) }
 
 	// finalize collects buffered segments and transcribes them. It returns true
 	// when the session is resolved (final transcript, timeout, or failure). When
@@ -76,7 +79,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			samples = append(samples, seg...)
 		}
 
-		if len(samples) >= minSpeechSamples && audibleSpeech(samples) {
+		if len(samples) >= minSpeechSamples && audibleSpeechAbove(samples, floor()) {
 			text, err := deps.transcribe(samples)
 			if err != nil {
 				sendEvent(ctx, events, Failure{Err: err})
@@ -111,6 +114,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		if read.ready && len(read.frame.Samples) > 0 {
 			levels.maybeEmit(events, read.frame.Samples)
 			deps.seg.AcceptWaveform(read.frame.Samples)
+			gate.minRMS = floor()
 			d := gate.decide(read.frame.Samples, deps.seg.IsSpeech())
 			if d.drop {
 				// Fan/AC latched Silero: discard the noise blob and wait for

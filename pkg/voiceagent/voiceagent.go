@@ -13,6 +13,7 @@ package voiceagent
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -334,6 +335,10 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		} else {
 			stage("Opening the microphone")
 			localCapture = audio.NewCaptureWithDevice(cfg.InputDevice)
+			// Every TUI entry point into the conversation goes through
+			// tui.Run, which redirects file descriptor 2 into the diagnostics
+			// log; the headless paths own stderr outright.
+			localCapture.Logf = log.Printf
 			if frontend != nil {
 				localCapture.SetFrontend(frontend)
 			}
