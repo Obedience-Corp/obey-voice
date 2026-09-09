@@ -7,6 +7,11 @@ and creates one timestamped `.meeting` bundle directory. Its canonical
 `meeting.md` and internal structured event stream are each synced so a crash
 never loses what was already captured.
 
+Meeting capture applies listen gain (AGC only — no noise suppressor) so quieter
+and farther talkers reach speech detection. Changing OS input volume while
+recording can restart the capture stream; Obey Voice reopens the mic if
+callbacks stop. Set the mixer where you want it before you start when you can.
+
 From the main `obey-voice` launcher choose **Record meeting**, or run
 `obey-voice meeting record` on a TTY (not `--json` / `--no-tui`) for the
 full-screen recorder:

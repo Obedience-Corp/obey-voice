@@ -17,10 +17,14 @@ const levelEmitMinInterval = 50 * time.Millisecond
 // speechRMSScale maps typical close-mic speech RMS (~0.02–0.15) into 0..1.
 const speechRMSScale = 0.12
 
-// minSpeechRMS is the lowest RMS that counts as a talker. Close-mic speech
-// is ~0.02–0.15; digital silence and STT-on-zeros is ~0. Below this we did
-// not hear anyone — Silero still false-marks, and the decoder invents "yeah".
-const minSpeechRMS = 0.008
+// minSpeechRMS is the lowest RMS that counts as a talker. Digital silence
+// and STT-on-zeros is ~0; below this we did not hear anyone — Silero still
+// false-marks, and the decoder invents "yeah".
+//
+// This is a not-silence floor, not a close-mic assumption. Desk speech is
+// ~0.02–0.15; a talker across a table on a laptop mic is often ~0.002–0.006.
+// 0.008 dropped those room voices. Stationary fans still fail the noise gate.
+const minSpeechRMS = 0.002
 
 // sendEvent delivers an event, preferring a non-blocking send and falling back
 // to a cancellable blocking send when the channel is full.

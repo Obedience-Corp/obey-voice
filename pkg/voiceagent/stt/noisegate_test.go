@@ -96,6 +96,80 @@ func TestNoiseGateDoesNotDropConstantAmplitudeFirstUtterance(t *testing.T) {
 	}
 }
 
+func TestNoiseGateAcceptsQuietRoomSpeech(t *testing.T) {
+	t.Parallel()
+	var g noiseGate
+	fan := constFrame(1600, 0.0015)
+	for i := 0; i < gateHist; i++ {
+		g.decide(fan, false)
+	}
+	var voiced int
+	off := 0
+	for i := 0; i < gateHist; i++ {
+		frame := modulatedFrame(1600, off, 0.004, 0.012)
+		off += 1600
+		if g.decide(frame, true).voice {
+			voiced++
+		}
+	}
+	if voiced < gateHist-2 {
+		t.Fatalf("quiet room speech frames treated as voice = %d, want most of %d", voiced, gateHist)
+	}
+}
+
+func TestNoiseGateReanchorsOnInputVolumeJump(t *testing.T) {
+	t.Parallel()
+	var g noiseGate
+	quiet := constFrame(1600, 0.01)
+	for i := 0; i < gateHist; i++ {
+		g.decide(quiet, false)
+	}
+	if g.floor == 0 {
+		t.Fatal("need a learned floor before the jump")
+	}
+	loud := constFrame(1600, 0.12) // 12× the learned level: mixer, not a syllable
+	d := g.decide(loud, true)
+	if !d.drop {
+		t.Fatal("OS volume-up must drop the Silero latch so hiss is not a talker")
+	}
+	if d.voice {
+		t.Fatal("the jump frame itself must not count as speech")
+	}
+	// After reanchor, a stationary hold at the new gain is still a fan.
+	var sawDrop bool
+	for i := 0; i < gateHist+2; i++ {
+		d := g.decide(loud, true)
+		if d.voice && i >= gateHist {
+			t.Fatalf("frame %d: still treating post-jump hiss as speech", i)
+		}
+		if d.drop {
+			sawDrop = true
+		}
+	}
+	if !sawDrop {
+		t.Fatal("after a gain jump, stationary noise must still drop the VAD latch")
+	}
+}
+
+func TestNoiseGateVolumeJumpDoesNotDropASyllable(t *testing.T) {
+	t.Parallel()
+	var g noiseGate
+	fan := constFrame(1600, 0.02)
+	for i := 0; i < gateHist; i++ {
+		g.decide(fan, false)
+	}
+	// Close-mic speech is a few × the floor, not 8×.
+	off := 0
+	frame := modulatedFrame(1600, off, 0.06, 0.16)
+	d := g.decide(frame, true)
+	if d.drop {
+		t.Fatal("a normal syllable must not look like an OS volume jump")
+	}
+	if !d.voice {
+		t.Fatal("a normal syllable must count as voice")
+	}
+}
+
 func TestNoiseGateSilentZerosAreNotAFanLatch(t *testing.T) {
 	var g noiseGate
 	z := constFrame(1600, 0)

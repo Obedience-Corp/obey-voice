@@ -15,6 +15,9 @@ const (
 	gateCV = 0.18
 	// gateSilent is below a quiet room; digital zeros are not a fan latch.
 	gateSilent = 1e-4
+	// gateGainJump is an OS mixer slam (~18 dB), not a syllable. Syllables
+	// sit around 2–4× the slow envelope; a volume slider often jumps 8×+.
+	gateGainJump = 8.0
 )
 
 // noiseGate is a second vote next to Silero. Neural VAD will happily latch on
@@ -26,6 +29,7 @@ type noiseGate struct {
 	n     int
 	i     int
 	floor float64
+	env   float64 // slow RMS; a mixer jump moves this, a word does not
 }
 
 type gateDecision struct {
@@ -36,6 +40,13 @@ type gateDecision struct {
 func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 	rms := frameRMS(samples)
 	g.push(rms)
+
+	if g.reanchorOnGainJump(rms, silero) {
+		if silero {
+			return gateDecision{drop: true}
+		}
+		return gateDecision{}
+	}
 
 	if !silero {
 		g.learn(rms, false)
@@ -58,6 +69,31 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 		return gateDecision{drop: true}
 	}
 	return gateDecision{voice: true}
+}
+
+// reanchorOnGainJump detects an OS input-volume change: the current frame is
+// many times louder or quieter than the slow envelope. A learned floor at the
+// old gain would then treat hiss as speech (volume up) or drop real talkers
+// (volume down). Re-learn from this level and ask the loop to drop a Silero
+// latch. Returns true when the caller should skip the rest of decide.
+func (g *noiseGate) reanchorOnGainJump(rms float64, silero bool) bool {
+	if g.env == 0 {
+		if rms > gateSilent {
+			g.env = rms
+		}
+		return false
+	}
+	jumped := rms > g.env*gateGainJump || (rms > gateSilent && rms < g.env/gateGainJump)
+	g.env = 0.9*g.env + 0.1*math.Max(rms, gateSilent)
+	if !jumped || g.floor == 0 {
+		return false
+	}
+	g.floor = math.Max(rms, gateSilent)
+	g.env = g.floor
+	if !silero {
+		g.learn(rms, false)
+	}
+	return true
 }
 
 func (g *noiseGate) push(rms float64) {

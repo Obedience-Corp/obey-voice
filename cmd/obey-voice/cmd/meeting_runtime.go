@@ -510,6 +510,12 @@ func buildSTTOnly(ctx context.Context, cfg *config.Config, progress appTUI.Build
 	}
 
 	capture = audio.NewCaptureWithDevice(cfg.InputDevice)
+	// AGC only — no noise suppressor. NS over-gates far/quiet talkers, which is
+	// the opposite of what meeting notes need. Conversation barge-in keeps the
+	// full voice front-end; this path is STT-only.
+	gain := audio.NewListenGain()
+	capture.SetFrontend(gain)
+	cleanups = append(cleanups, func() { _ = gain.Close() })
 	if err := capture.Start(ctx); err != nil {
 		return fail(fmt.Errorf("start capture: %w", err))
 	}

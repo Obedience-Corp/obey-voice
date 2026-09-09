@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gen2brain/malgo"
 )
@@ -15,21 +17,27 @@ const (
 	Channels   = 1
 	// ChunkSize is the number of samples per read (100ms at 16kHz).
 	ChunkSize = 1600
+	// captureStallTimeout is how long callbacks may go missing before the
+	// capture device is reopened. Changing OS input volume on PipeWire/ALSA
+	// often restarts the graph and never resumes the old miniaudio stream.
+	captureStallTimeout = 2 * time.Second
 )
 
 // Capture handles microphone input using miniaudio.
 type Capture struct {
-	mu         sync.Mutex
-	subsMu     sync.RWMutex
-	ctx        *malgo.AllocatedContext
-	device     *malgo.Device
-	buf        *RingBuffer
-	frontend   Frontend
-	running    bool
-	subs       map[int]chan []float32
-	nextSub    int
-	frameSeq   int64
-	deviceName string
+	mu           sync.Mutex
+	subsMu       sync.RWMutex
+	ctx          *malgo.AllocatedContext
+	device       *malgo.Device
+	buf          *RingBuffer
+	frontend     Frontend
+	running      bool
+	subs         map[int]chan []float32
+	nextSub      int
+	frameSeq     int64
+	deviceName   string
+	lastData     atomic.Int64 // unix nano of last onData; 0 until Start
+	watchStarted atomic.Bool
 }
 
 // NewCapture creates a new mic capture instance.
@@ -47,7 +55,7 @@ func NewCaptureWithDevice(deviceName string) *Capture {
 	}
 }
 
-// Start begins capturing audio from the default input device.
+// Start begins capturing audio from the configured input device.
 func (c *Capture) Start(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -55,12 +63,28 @@ func (c *Capture) Start(ctx context.Context) error {
 	if c.running {
 		return nil
 	}
+	if err := c.openDevice(); err != nil {
+		return err
+	}
+	c.running = true
+	c.lastData.Store(time.Now().UnixNano())
 
+	// One waiter per Capture: recoverIfStalled Stop+Start must not leak a
+	// goroutine on every mixer restart.
+	if c.watchStarted.CompareAndSwap(false, true) {
+		go func() {
+			<-ctx.Done()
+			c.Stop()
+		}()
+	}
+	return nil
+}
+
+func (c *Capture) openDevice() error {
 	mctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
 		return fmt.Errorf("init audio context: %w", err)
 	}
-	c.ctx = mctx
 
 	deviceConfig := malgo.DefaultDeviceConfig(malgo.Capture)
 	deviceConfig.Capture.Format = malgo.FormatS16
@@ -75,6 +99,7 @@ func (c *Capture) Start(ctx context.Context) error {
 	defer releaseDeviceID()
 
 	onData := func(outputSamples, inputSamples []byte, frameCount uint32) {
+		c.lastData.Store(time.Now().UnixNano())
 		samples := bytesToFloat32(inputSamples)
 		if c.frontend != nil {
 			samples = c.frontend.ProcessCapture(samples)
@@ -99,15 +124,8 @@ func (c *Capture) Start(ctx context.Context) error {
 		return fmt.Errorf("start capture: %w", err)
 	}
 
+	c.ctx = mctx
 	c.device = device
-	c.running = true
-
-	// Stop when context is cancelled
-	go func() {
-		<-ctx.Done()
-		c.Stop()
-	}()
-
 	return nil
 }
 
@@ -126,6 +144,30 @@ func (c *Capture) Stop() {
 	c.running = false
 }
 
+// recoverIfStalled reopens the capture device when the OS has gone quiet for
+// captureStallTimeout (a mixer volume change often kills the stream). A
+// stopped Capture is left alone. The lastData stamp is refreshed first so a
+// failed reopen does not retry on every ReadFrame.
+func (c *Capture) recoverIfStalled(ctx context.Context) error {
+	if !c.IsRunning() {
+		return nil
+	}
+	if !c.stalled() {
+		return nil
+	}
+	c.lastData.Store(time.Now().UnixNano())
+	c.Stop()
+	return c.Start(ctx)
+}
+
+func (c *Capture) stalled() bool {
+	ns := c.lastData.Load()
+	if ns == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, ns)) >= captureStallTimeout
+}
+
 // Read returns the next chunk of audio samples.
 // Returns nil if no data is available yet.
 func (c *Capture) Read() []float32 {
@@ -142,6 +184,9 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 	}
 	samples := c.buf.Read(ChunkSize)
 	if samples == nil {
+		if err := c.recoverIfStalled(ctx); err != nil {
+			return Frame{}, err
+		}
 		return Frame{}, ErrNoFrameReady
 	}
 	c.frameSeq++
