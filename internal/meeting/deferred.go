@@ -51,7 +51,11 @@ func (d *DeferredAnalyzer) Close() error {
 	if !d.built || d.inner == nil {
 		return nil
 	}
-	if closer, ok := d.inner.(interface{ Close() error }); ok {
+	inner := d.inner
+	// Dropped so a second Close is a no-op here rather than relying on the
+	// inner analyzer to guard itself.
+	d.inner = nil
+	if closer, ok := inner.(interface{ Close() error }); ok {
 		return closer.Close()
 	}
 	return nil

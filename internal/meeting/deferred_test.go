@@ -85,6 +85,27 @@ func TestDeferredAnalyzerBuildsOnceOnFinalize(t *testing.T) {
 	}
 }
 
+// SpeakerSession.Finalize closes the analyzer and runMeetingRecord's deferred
+// SpeakerSession.Close closes it again, so the double Close is the normal path.
+func TestDeferredAnalyzerCloseIsIdempotent(t *testing.T) {
+	inner := &countingAnalyzer{}
+	deferred := NewDeferredAnalyzer(func(context.Context) (SpeakerAnalyzer, error) {
+		return inner, nil
+	})
+	if _, err := deferred.Finalize(context.Background(), []float32{0.1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := deferred.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := deferred.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	if inner.closes.Load() != 1 {
+		t.Fatalf("inner Close count = %d, want 1", inner.closes.Load())
+	}
+}
+
 func TestDeferredAnalyzerSurfacesBuilderError(t *testing.T) {
 	want := errors.New("load pyannote")
 	deferred := NewDeferredAnalyzer(func(context.Context) (SpeakerAnalyzer, error) {

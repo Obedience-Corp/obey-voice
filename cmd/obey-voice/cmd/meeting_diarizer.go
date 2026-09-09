@@ -28,17 +28,25 @@ func meetingDiarizer(ctx context.Context, cfg *config.Config) (speaker.Diarizer,
 	return speaker.NewSortformerDiarizer(ctx, speaker.SortformerOptionsFromConfig(cfg, config.ModelsDirFrom(cfg)))
 }
 
-// meetingAnalyzer builds the review analyzer on engine with the configured
-// diarizer attached.
+// meetingAnalyzer resolves speaker.meeting.diarizer and builds the review
+// analyzer on engine with it attached.
 //
-// Every meeting path goes through here — `meeting record`, `meeting analyze`,
-// and the `serve` finish-a-remote-bundle pipeline — so the diarizer selection
-// cannot apply to some of them and silently not others. It takes the engine
-// rather than building one so the wiring is testable without native models.
+// Every meeting path goes through here or through meetingAnalyzerWith —
+// `meeting record`, `meeting analyze`, and the `serve` finish-a-remote-bundle
+// pipeline — so the diarizer selection cannot apply to some of them and
+// silently not others. It takes the engine rather than building one so the
+// wiring is testable without native models.
 func meetingAnalyzer(ctx context.Context, cfg *config.Config, sp speaker.Config, engine speaker.Engine) (*speaker.Analyzer, error) {
 	diarizer, err := meetingDiarizer(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
+	return meetingAnalyzerWith(sp, engine, diarizer)
+}
+
+// meetingAnalyzerWith is meetingAnalyzer for callers that already resolved the
+// diarizer. `meeting record` resolves it at start to fail fast, so re-resolving
+// it in the deferred builder would launch the Sortformer CLI probe twice.
+func meetingAnalyzerWith(sp speaker.Config, engine speaker.Engine, diarizer speaker.Diarizer) (*speaker.Analyzer, error) {
 	return speaker.NewAnalyzerWithDiarizer(sp, engine, diarizer)
 }
