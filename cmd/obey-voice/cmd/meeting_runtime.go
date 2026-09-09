@@ -406,18 +406,29 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSpeaker: true}, progress.Downloading); err != nil {
 		return nil, fmt.Errorf("prepare speaker models: %w", err)
 	}
-	engine, err := speaker.NewSherpaEngine(sp, config.ModelsDirFrom(cfg))
-	if err != nil {
+	// Sortformer (and unknown engine values) must fail here, not after the
+	// recording: a missing CLI or GGUF is still a start-time config error.
+	// The sherpa native graphs are not loaded yet — only paths are checked.
+	if _, err := meetingDiarizer(ctx, cfg); err != nil {
 		return nil, err
 	}
-	seedEnrolledProfiles(cfg, engine, nil)
-	// The engine stays whatever speaker.meeting.diarizer says: it still owns
-	// live labels, embeddings and enrollment even when review runs elsewhere.
-	analyzer, err := meetingAnalyzer(ctx, cfg, sp, engine)
-	if err != nil {
-		_ = engine.Close()
-		return nil, err
-	}
+	modelsDir := config.ModelsDirFrom(cfg)
+	// Live labels already hold one TitaNet session while recording. Offline
+	// pyannote + the review engine's embedding extractor wait until Finalize
+	// so a long take does not keep a second ONNX stack resident.
+	analyzer := meeting.NewDeferredAnalyzer(func(ctx context.Context) (meeting.SpeakerAnalyzer, error) {
+		engine, err := speaker.NewSherpaEngine(sp, modelsDir)
+		if err != nil {
+			return nil, err
+		}
+		seedEnrolledProfiles(cfg, engine, nil)
+		built, err := meetingAnalyzer(ctx, cfg, sp, engine)
+		if err != nil {
+			_ = engine.Close()
+			return nil, err
+		}
+		return built, nil
+	})
 	session, err := meeting.NewSpeakerSession(capture, analyzer, writer, bundlePath, sp.Meeting.RecordAudio)
 	if err != nil {
 		_ = analyzer.Close()

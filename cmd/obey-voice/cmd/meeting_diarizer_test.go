@@ -168,3 +168,34 @@ func TestNoMeetingPathBuildsItsOwnAnalyzer(t *testing.T) {
 		}
 	}
 }
+
+// Native sherpa graphs must not load at meeting start: live labels already
+// own TitaNet, and review only needs pyannote + the second extractor after
+// stop. Sortformer still fails in prepareMeetingSpeakers via meetingDiarizer.
+func TestPrepareMeetingSpeakersDefersSherpaEngine(t *testing.T) {
+	source, err := os.ReadFile("meeting_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	const marker = "func prepareMeetingSpeakers"
+	idx := strings.Index(text, marker)
+	if idx < 0 {
+		t.Fatal("prepareMeetingSpeakers not found")
+	}
+	fn := text[idx:]
+	if next := strings.Index(fn[len(marker):], "\nfunc "); next >= 0 {
+		fn = fn[:len(marker)+next]
+	}
+	if !strings.Contains(fn, "meeting.NewDeferredAnalyzer") {
+		t.Fatal("prepareMeetingSpeakers must defer native diarizer load with NewDeferredAnalyzer")
+	}
+	if !strings.Contains(fn, "meetingDiarizer(") {
+		t.Fatal("prepareMeetingSpeakers must still fail-fast sortformer/unknown engines at start")
+	}
+	load := strings.Index(fn, "speaker.NewSherpaEngine")
+	deferIdx := strings.Index(fn, "meeting.NewDeferredAnalyzer")
+	if load < 0 || load < deferIdx {
+		t.Fatal("NewSherpaEngine must run inside the deferred builder, not at meeting start")
+	}
+}
