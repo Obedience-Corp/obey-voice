@@ -29,10 +29,10 @@ Type "unset NO_COLOR; unset CLICOLOR; export CLICOLOR_FORCE=1 FORCE_COLOR=1" Ent
 Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export SAMANTHA_COLOR_PROFILE=ansi SAMANTHA_DEMO_MEETING=1" Enter
 Type "export HOME=/tmp/samantha-route-demo-$$" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/samantha/sessions $HOME/.obey/agents/voice/samantha/meetings" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions $HOME/.obey/agents/voice/festival-voice/meetings" Enter
 Type "chmod +x demos/fixtures/camp" Enter
 Type "export PATH=$PWD/demos/fixtures:$PWD/bin:$PATH" Enter
-Type "cat > $HOME/.obey/agents/voice/samantha/config.yaml <<'EOF'" Enter
+Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
 Type "ollama_model: demo-model" Enter
@@ -55,56 +55,31 @@ Show
 Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 2s
 
-# New conversation, Meeting, Remote, Library, Audiobook, Settings (5 downs)
-Down
-Sleep 250ms
-Down
-Sleep 250ms
-Down
-Sleep 250ms
-Down
-Sleep 250ms
-Down
+# New conversation, Personas, Meeting, Remote, Library, Audiobook, Settings
+# (six downs)
+Down@250ms 6
 Sleep 900ms
 Enter
 Sleep 1200ms
 
-# Settings opens on Brain — tab to Meeting (7 rights)
-Right
-Sleep 200ms
-Right
-Sleep 200ms
-Right
-Sleep 200ms
-Right
-Sleep 200ms
-Right
-Sleep 200ms
-Right
-Sleep 200ms
-Right
+# Settings opens on Brain — tab to Meeting (12 sections over).
+Tab@200ms 12
 Sleep 1400ms
 
-# Meeting tab: destinations discovery + refresh
-Down
-Sleep 300ms
-Down
-Sleep 300ms
-Down
-Sleep 300ms
-Down
-Sleep 300ms
-Down
+# Meeting section: destinations discovery + refresh (the last row).
+Down@200ms 10
 Sleep 700ms
 # Refresh destinations (camp list + config)
 Enter
 Sleep 1800ms
 
-# On Meeting tab: enable speaker diarization (first row)
+# Back to the first row: enable speaker diarization.
+Up@120ms 10
+Sleep 500ms
 Enter
 Sleep 900ms
-# Record audio for analysis
-Down
+# Record audio for analysis (row 5)
+Down@200ms 4
 Sleep 400ms
 Enter
 Sleep 1200ms

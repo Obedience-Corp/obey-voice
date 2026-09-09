@@ -1,7 +1,8 @@
 # Managed Qwen preset voices in Settings and per-book Audiobook controls.
 #
-# Deterministic: creates the same completion-marker/file layout inspected by
-# production code, without downloading the multi-GB model for a visual demo.
+# Deterministic: demos/fixtures/fake-qwen-native lays down the native package
+# layout production code inspects (worker, runtime libs, 0.6b GGUFs, presets,
+# a manifest with matching sha256s), without downloading the multi-GB model.
 # From repo root:
 #   just demo-qwen-voices
 
@@ -25,12 +26,8 @@ Type "export TERM=xterm-256color COLORFGBG=15\;0 SAMANTHA_COLOR_PROFILE=ansi" En
 Type "export PATH=$PWD/bin:$PATH" Enter
 Type "export HOME=/tmp/samantha-qwen-voices-demo-$$" Enter
 Type "export MODELS=$HOME/.cache/samantha/models" Enter
-Type "export QWEN_ROOT=$MODELS/qwen3-tts" Enter
-Type "export QWEN_REV=85e237c12c027371202489a0ec509ded67b5e4b5" Enter
-Type "export QWEN_MODEL=$QWEN_ROOT/models/customvoice-0.6b/$QWEN_REV" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions $QWEN_ROOT/runtime/qwen-tts-0.1.1/bin $QWEN_ROOT/worker $QWEN_MODEL/speech_tokenizer" Enter
-Type "touch $QWEN_ROOT/runtime/qwen-tts-0.1.1/bin/python $QWEN_ROOT/runtime/qwen-tts-0.1.1/.qwen-tts-0.1.1 $QWEN_ROOT/worker/qwen_worker.py $QWEN_MODEL/config.json $QWEN_MODEL/model.safetensors $QWEN_MODEL/speech_tokenizer/model.safetensors" Enter
-Type "echo eyJzY2hlbWEiOiJzYW1hbnRoYS5xd2VuLmluc3RhbGwudjEiLCJwYWNrYWdlIjoiMC4xLjEiLCJ3b3JrZXIiOiIyIiwibW9kZWxfaWQiOiJRd2VuL1F3ZW4zLVRUUy0xMkh6LTAuNkItQ3VzdG9tVm9pY2UiLCJtb2RlbF9yZXZpc2lvbiI6Ijg1ZTIzN2MxMmMwMjczNzEyMDI0ODlhMGVjNTA5ZGVkNjdiNWU0YjUiLCJpbnN0YWxsZWRfYXQiOiIyMDI2LTA3LTIxVDAwOjAwOjAwWiJ9 | base64 -d > $QWEN_ROOT/install.json" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions" Enter
+Type "demos/fixtures/fake-qwen-native $MODELS" Enter
 Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<EOF" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
@@ -43,51 +40,46 @@ Type "EOF" Enter
 Type "clear" Enter
 Show
 
-# Launcher → Settings (New conversation, Meeting, Remote, Library, Audiobook, Settings).
+# Launcher → Settings (New conversation, Personas, Meeting, Remote, Library,
+# Audiobook, Settings: six down).
 Type "obey-voice -t -n" Sleep 300ms Enter
 Sleep 1800ms
-Down
-Sleep 180ms
-Down
-Sleep 180ms
-Down
-Sleep 180ms
-Down
-Sleep 180ms
-Down
+Down@180ms 6
 Sleep 650ms
 Enter
 Sleep 1100ms
 
-# Brain → Brain model → Tools → TTS.
-Right
+# Brain → TTS: tab past Brain model, Worker and Tools.
+Tab
 Sleep 220ms
-Right
+Tab
 Sleep 220ms
-Right
+Tab
+Sleep 220ms
+Tab
 Sleep 1300ms
 
-# Qwen is installed but Kokoro remains active until explicit selection.
+# The engine row still says kokoro. enter lists the engines; the Qwen package
+# the fixture installed is chosen from the list (←/→ would step over an
+# engine whose choice starts a download).
+Enter
+Sleep 1200ms
 Down
-Sleep 1500ms
+Sleep 700ms
 Enter
 Sleep 1700ms
 
-# Voice now contains the nine model-native Qwen speakers.
-Right
+# Voice is two sections over (past Qwen): the row shows the Qwen default;
+# enter opens the nine model-native speakers, typing narrows them, enter
+# chooses.
+Tab
+Sleep 400ms
+Tab
 Sleep 2100ms
-
-# Select Ryan and hold the checked state.
-Down
-Sleep 180ms
-Down
-Sleep 180ms
-Down
-Sleep 180ms
-Down
-Sleep 180ms
-Down
-Sleep 700ms
+Enter
+Sleep 1200ms
+Type "ryan"
+Sleep 900ms
 Enter
 Sleep 1800ms
 

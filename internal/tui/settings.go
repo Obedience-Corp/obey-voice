@@ -48,6 +48,12 @@ type settingsModel struct {
 	width   int
 	height  int
 	offset  int
+	// cursors remembers the row each section was on, so leaving a section
+	// and coming back does not throw the place away.
+	cursors [settingsSectionCount]int
+	// picker is the option list behind a pick or menu row. While it is up
+	// it owns every key.
+	picker settingsPicker
 
 	// Derived lists for current section.
 	providerItems  []string
@@ -280,14 +286,14 @@ func enabledLabel(enabled bool) string {
 	return "OFF"
 }
 
-// selectToolItem toggles the focused Tools-tab row and persists it.
+// selectToolRow toggles a Tools row (by toolRow* index) and persists it.
 // Pipeline-level knobs (barge-in, voice frontend) only take effect after the
 // conversation is rebuilt; mouse claim applies on next enter/leave of chat.
-func (m *settingsModel) selectToolItem() tea.Cmd {
-	if m.cursor < 0 || m.cursor >= len(m.toolItems) {
+func (m *settingsModel) selectToolRow(row int) tea.Cmd {
+	if row < 0 || row >= len(m.toolItems) {
 		return nil
 	}
-	switch m.cursor {
+	switch row {
 	case toolRowTalkMode:
 		return m.cycleTalkMode()
 	case toolRowTalkCombo:
@@ -299,7 +305,7 @@ func (m *settingsModel) selectToolItem() tea.Cmd {
 		label string
 		field *bool
 	)
-	switch m.cursor {
+	switch row {
 	case toolRowTalkKey:
 		key, label = "talk_hotkey_enabled", "Talk key"
 		value = !m.cfg.TalkHotkeyEnabled
@@ -349,7 +355,7 @@ func (m *settingsModel) selectToolItem() tea.Cmd {
 	}
 	*field = value
 	m.buildToolItems()
-	switch m.cursor {
+	switch row {
 	case toolRowTalkKey:
 		m.message = fmt.Sprintf("Talk key %s; applies to the next conversation", enabledLabel(value))
 	case toolRowMouse:
@@ -364,13 +370,13 @@ func (m *settingsModel) selectToolItem() tea.Cmd {
 		// returns to a live conversation — only a new conversation or process
 		// restart rebuilds capture/VAD/frontend/BargeInVAD.
 		m.message = fmt.Sprintf("%s %s; restart app or start a new conversation to apply", label, enabledLabel(value))
-		if m.cursor == toolRowBargeIn && value && !m.cfg.VoiceFrontendEnabled {
+		if row == toolRowBargeIn && value && !m.cfg.VoiceFrontendEnabled {
 			m.message += " · enable Voice frontend (AEC) to reduce echo false-triggers"
 		}
-		if m.cursor == toolRowVoiceFrontend && value && !m.cfg.BargeInEnabled {
+		if row == toolRowVoiceFrontend && value && !m.cfg.BargeInEnabled {
 			m.message += " · can over-suppress normal speech; intended with barge-in"
 		}
-		if m.cursor == toolRowVoiceFrontend && !value && m.cfg.BargeInEnabled {
+		if row == toolRowVoiceFrontend && !value && m.cfg.BargeInEnabled {
 			m.message += " · barge-in is on; echo may self-interrupt without AEC"
 		}
 	}
@@ -468,56 +474,55 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		if m.edit.kind != editNone {
 			return m.updateEditor(msg)
 		}
-		// A registration or an armed removal owns every key while it is up.
+		// A registration, an armed removal, or an open picker owns every
+		// key while it is up.
 		if m.enroll.active {
 			return m.updateEnrollKey(msg)
 		}
 		if m.confirmRemoveVoice != "" {
 			return m.updateRemoveVoiceConfirm(msg)
 		}
+		if m.picker.active {
+			return m.updatePicker(msg)
+		}
+		// One key, one verb: ←/→ change the focused value and never switch
+		// section; tab and [ ] move between sections; enter opens; space
+		// toggles. Bare letters other than the vim motions and p do nothing.
+		var cmd tea.Cmd
 		switch msg.String() {
-		case "tab":
-			return m, m.switchSettingsSection(1)
-		case "shift+tab":
-			return m, m.switchSettingsSection(-1)
+		case "tab", "]":
+			cmd = m.switchSettingsSection(1)
+		case "shift+tab", "[":
+			cmd = m.switchSettingsSection(-1)
 		case "right", "l":
-			if m.nudgeVolume(playbackVolumeStep) {
-				break
-			}
-			return m, m.switchSettingsSection(1)
+			cmd = m.adjustRow(1)
 		case "left", "h":
-			if m.nudgeVolume(-playbackVolumeStep) {
-				break
-			}
-			return m, m.switchSettingsSection(-1)
+			cmd = m.adjustRow(-1)
 		case "up", "k":
+			// Moving on is reading the message; the next row's detail line
+			// must not stay hidden behind it.
+			m.message = ""
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case "down", "j":
-			max := m.currentListLen() - 1
-			if m.cursor < max {
+			m.message = ""
+			if max := m.currentListLen() - 1; m.cursor < max {
 				m.cursor++
 			}
 		case "enter":
-			if m.section == sectionMeeting && m.cursor == meetingRowRefresh {
-				m.selectMeetingItem()
-				return m, m.loadRouteDestinations()
-			}
-			return m, m.selectCurrent()
+			cmd = m.activateRow()
+		case " ":
+			cmd = m.toggleRow()
 		case "p":
-			if m.section == sectionVoice && m.cursor < len(m.voiceItems) {
-				return m, m.startSettingsPreview(m.voiceItems[m.cursor])
-			}
-		case "d", "delete":
-			if m.section == sectionSpeakers {
-				m.beginRemoveGuestAtCursor()
-			}
+			cmd = m.previewRow()
 		case "esc", "q":
 			m.cancelPreview()
 			return m, func() tea.Msg { return settingsDoneMsg{} }
 		}
+		m.clampCursor()
 		m.ensureCursorVisible()
+		return m, cmd
 
 	case enrollProgressMsg, enrollEnrollingMsg, enrollClosedMsg, enrollDoneMsg:
 		return m.updateEnroll(msg)
@@ -667,200 +672,189 @@ func (m settingsModel) visibleRows() int {
 }
 
 func (m *settingsModel) currentListLen() int {
-	switch m.section {
-	case sectionProvider:
-		return len(m.providerItems)
-	case sectionModel:
-		return len(m.modelItems)
-	case sectionWorker:
-		return len(m.workerItems)
-	case sectionTools:
-		return len(m.toolItems)
-	case sectionTTS:
-		return len(m.ttsItems)
-	case sectionQwen:
-		return len(m.qwenItems)
-	case sectionVoice:
-		return len(m.voiceItems)
-	case sectionLanguage:
-		return len(m.languageItems)
-	case sectionSTT:
-		return len(m.sttItems)
-	case sectionInput:
-		return len(m.inputItems)
-	case sectionOutput:
-		if m.devicesLoading {
-			return 1
-		}
-		return 1 + len(m.outputItems)
-	case sectionSpeakers:
-		return len(m.speakerItems())
-	case sectionMeeting:
-		return len(m.meetingItems())
-	}
-	return 0
+	return len(m.sectionRows())
 }
 
+// selectCurrent is enter on the focused row: open its list, flip it, edit
+// it, or run it — whatever the row said it would do.
 func (m *settingsModel) selectCurrent() tea.Cmd {
-	switch m.section {
-	case sectionProvider:
-		if m.cursor < len(m.providers) && m.providers[m.cursor].Available {
-			// Mutate the live config only after the save succeeds, so a
-			// failed save doesn't leave the running session on a provider
-			// that was never persisted.
-			name := m.providers[m.cursor].Name
-			if err := config.SetAndSaveBrainProvider(m.cfg, name); err != nil {
-				m.message = fmt.Sprintf("Failed to save provider: %v", err)
-				return nil
-			}
-			m.buildModelItems()
-			m.buildToolItems()
-			m.buildWorkerItems()
-			if strings.EqualFold(name, "ollama") && m.cfg.VoiceToolsEnabled {
-				m.message = fmt.Sprintf("Provider set to %s · local tools on (Settings → Tools to toggle)", name)
-			} else {
-				m.message = fmt.Sprintf("Provider set to %s", name)
-			}
-			// Choosing a brain is choosing a worker: land on the Worker
-			// section rather than leaving it to a default nobody picked.
-			if !config.WorkerSelected(m.cfg) {
-				m.section = sectionWorker
-				m.cursor = 0
-				m.offset = 0
-				m.message = fmt.Sprintf("Provider set to %s · now choose the worker that runs background jobs", name)
-			}
-		}
-	case sectionModel:
-		if m.cursor < len(m.modelItems) {
-			model := m.modelItems[m.cursor]
-			var field *string
-			var key string
-			switch m.cfg.BrainProvider {
-			case "ollama":
-				field, key = &m.cfg.OllamaModel, "ollama_model"
-			case "grok":
-				field, key = &m.cfg.GrokModel, "grok_model"
-			case "cursor":
-				field, key = &m.cfg.CursorModel, "cursor_model"
-			}
-			if field != nil {
-				if err := config.SetAndSave(key, model); err != nil {
-					m.message = fmt.Sprintf("Failed to save model: %v", err)
-					return nil
-				}
-				*field = model
-			}
-			m.message = fmt.Sprintf("Model set to %s", model)
-		}
-	case sectionWorker:
-		m.selectWorkerItem()
-	case sectionTools:
-		return m.selectToolItem()
-	case sectionTTS:
-		if m.cursor < len(m.ttsItems) {
-			provider := m.ttsItems[m.cursor].provider
-			if provider == managedqwen.ProviderName && !m.nativeStatus.Installed &&
-				managedqwen.UseManaged(m.cfg.QwenTTSBinary, m.cfg.QwenTTSModel) {
-				if m.qwenInstalling {
-					return nil
-				}
-				ctx, cancel := context.WithCancel(context.Background())
-				m.qwenInstallCancel = cancel
-				m.qwenInstalling = true
-				m.qwenInstallEvents = newEventBridge(16)
-				m.message = "Installing native Qwen3-TTS package (large download)…"
-				m.buildTTSItems()
-				m.buildQwenItems()
-				return tea.Batch(m.qwenInstallEvents.wait(), m.installQwenAssets(ctx))
-			}
-			saveConfig := m.saveConfig
-			if saveConfig == nil {
-				saveConfig = config.SetAndSave
-			}
-			if provider == managedqwen.ProviderName && m.nativeStatus.Installed {
-				if err := m.saveManagedQwenDefaults(); err != nil {
-					m.message = fmt.Sprintf("Failed to save Qwen voice defaults: %v", err)
-					return nil
-				}
-			}
-			// Settings writes global defaults only (WI-c8884d §5.2): a
-			// persona with its own tts stack keeps it — edit the persona
-			// under Personas to change a specific agent's voice.
-			if err := saveConfig("tts_provider", provider); err != nil {
-				m.message = fmt.Sprintf("Failed to save TTS provider: %v", err)
-				return nil
-			}
-			m.cfg.TTSProvider = provider
-			m.buildTTSItems()
-			m.buildQwenItems()
-			m.buildVoiceItems()
-			m.buildLanguageItems()
-			m.message = fmt.Sprintf("Default TTS provider set to %s; applies immediately unless the persona has its own voice (edit under Personas)", provider)
-		}
-	case sectionQwen:
-		return m.selectQwenItem()
-	case sectionSTT:
-		return m.selectSTTItem()
-	case sectionVoice:
-		if m.cursor < len(m.voiceItems) {
-			voice := m.voiceItems[m.cursor]
-			key := config.TTSVoiceKeyFor(activeTTSProvider(m.cfg))
-			saveConfig := m.saveConfig
-			if saveConfig == nil {
-				saveConfig = config.SetAndSave
-			}
-			// Global default only — persona voices are edited under Personas.
-			if err := saveConfig(key, voice.Name); err != nil {
-				m.message = fmt.Sprintf("Failed to save voice: %v", err)
-				return nil
-			}
-			config.SetTTSVoiceFor(m.cfg, activeTTSProvider(m.cfg), voice.Name)
-			m.message = fmt.Sprintf("Default voice set to %s · personas with their own voice keep it", voice.Name)
-		}
-	case sectionLanguage:
-		if m.cursor < len(m.languageItems) {
-			language := m.languageItems[m.cursor]
-			saveConfig := m.saveConfig
-			if saveConfig == nil {
-				saveConfig = config.SetAndSave
-			}
-			if err := saveConfig("qwen_tts_language", language); err != nil {
-				m.message = fmt.Sprintf("Failed to save language: %v", err)
-				return nil
-			}
-			m.cfg.QwenTTSLanguage = language
-			m.message = fmt.Sprintf("Qwen language set to %s", language)
-		}
-	case sectionInput:
-		if m.cursor < len(m.inputItems) {
-			name := m.inputItems[m.cursor]
-			if err := config.SetAndSave("input_device", name); err != nil {
-				m.message = fmt.Sprintf("Failed to save input device: %v", err)
-				return nil
-			}
-			m.cfg.InputDevice = name
-			m.message = "Microphone set to " + deviceLabel(name)
-		}
-	case sectionSpeakers:
-		return m.selectSpeakerItem()
-	case sectionMeeting:
-		m.selectMeetingItem()
-	case sectionOutput:
-		if m.devicesLoading || m.volumeRowFocused() {
+	return m.activateRow()
+}
+
+// selectProviderOption saves the brain provider at idx of the provider list
+// and, when no worker has been chosen yet, lands on the Worker section: that
+// is the picker's and enter's behaviour. stepProviderOption is the same save
+// without the jump, for ←/→ stepping through the list on the row.
+func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
+	return m.setProviderOption(idx, true)
+}
+
+func (m *settingsModel) stepProviderOption(idx int) tea.Cmd {
+	return m.setProviderOption(idx, false)
+}
+
+func (m *settingsModel) setProviderOption(idx int, landOnWorker bool) tea.Cmd {
+	if idx < 0 || idx >= len(m.providers) {
+		return nil
+	}
+	if !m.providers[idx].Available {
+		m.message = fmt.Sprintf("%s is not available on this machine", m.providers[idx].Name)
+		return nil
+	}
+	// Mutate the live config only after the save succeeds, so a failed save
+	// doesn't leave the running session on a provider that was never
+	// persisted.
+	name := m.providers[idx].Name
+	if err := config.SetAndSaveBrainProvider(m.cfg, name); err != nil {
+		m.message = fmt.Sprintf("Failed to save provider: %v", err)
+		return nil
+	}
+	m.buildModelItems()
+	m.buildToolItems()
+	m.buildWorkerItems()
+	if strings.EqualFold(name, "ollama") && m.cfg.VoiceToolsEnabled {
+		m.message = fmt.Sprintf("Provider set to %s · local tools on (Settings → Tools to toggle)", name)
+	} else {
+		m.message = fmt.Sprintf("Provider set to %s", name)
+	}
+	// Choosing a brain is choosing a worker: land on the Worker section
+	// rather than leaving it to a default nobody picked — but only when the
+	// choice was made, not on every step of ←/→ through the list.
+	if landOnWorker && !config.WorkerSelected(m.cfg) {
+		cmd := m.gotoSection(sectionWorker)
+		m.message = fmt.Sprintf("Provider set to %s · now choose the worker that runs background jobs", name)
+		return cmd
+	}
+	return nil
+}
+
+// selectModel saves a brain model for the current provider.
+func (m *settingsModel) selectModel(model string) tea.Cmd {
+	var field *string
+	var key string
+	switch m.cfg.BrainProvider {
+	case "ollama":
+		field, key = &m.cfg.OllamaModel, "ollama_model"
+	case "grok":
+		field, key = &m.cfg.GrokModel, "grok_model"
+	case "cursor":
+		field, key = &m.cfg.CursorModel, "cursor_model"
+	}
+	if field != nil {
+		if err := config.SetAndSave(key, model); err != nil {
+			m.message = fmt.Sprintf("Failed to save model: %v", err)
 			return nil
 		}
-		idx := m.cursor
-		if idx >= 0 && idx < len(m.outputItems) {
-			name := m.outputItems[idx]
-			if err := config.SetAndSave("output_device", name); err != nil {
-				m.message = fmt.Sprintf("Failed to save output device: %v", err)
-				return nil
-			}
-			m.closePreview()
-			m.cfg.OutputDevice = name
-			m.message = "Speaker set to " + deviceLabel(name)
+		*field = model
+	}
+	m.message = fmt.Sprintf("Model set to %s", model)
+	return nil
+}
+
+// ttsProviderInstalls reports whether choosing provider would start the
+// managed Qwen package install rather than just saving a key.
+func (m settingsModel) ttsProviderInstalls(provider string) bool {
+	return provider == managedqwen.ProviderName && !m.nativeStatus.Installed &&
+		managedqwen.UseManaged(m.cfg.QwenTTSBinary, m.cfg.QwenTTSModel)
+}
+
+// selectTTSProvider saves the TTS provider, installing the managed Qwen
+// package first when it is chosen and not yet on disk.
+func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
+	if m.ttsProviderInstalls(provider) {
+		if m.qwenInstalling {
+			return nil
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		m.qwenInstallCancel = cancel
+		m.qwenInstalling = true
+		m.qwenInstallEvents = newEventBridge(16)
+		m.message = "Installing native Qwen3-TTS package (large download)…"
+		m.buildTTSItems()
+		m.buildQwenItems()
+		return tea.Batch(m.qwenInstallEvents.wait(), m.installQwenAssets(ctx))
+	}
+	saveConfig := m.saveConfig
+	if saveConfig == nil {
+		saveConfig = config.SetAndSave
+	}
+	if provider == managedqwen.ProviderName && m.nativeStatus.Installed {
+		if err := m.saveManagedQwenDefaults(); err != nil {
+			m.message = fmt.Sprintf("Failed to save Qwen voice defaults: %v", err)
+			return nil
 		}
 	}
+	// Settings writes global defaults only (WI-c8884d §5.2): a persona with
+	// its own tts stack keeps it — edit the persona under Personas to change
+	// a specific agent's voice.
+	if err := saveConfig("tts_provider", provider); err != nil {
+		m.message = fmt.Sprintf("Failed to save TTS provider: %v", err)
+		return nil
+	}
+	m.cfg.TTSProvider = provider
+	m.buildTTSItems()
+	m.buildQwenItems()
+	m.buildVoiceItems()
+	m.buildLanguageItems()
+	m.message = fmt.Sprintf("Default TTS provider set to %s; applies immediately unless the persona has its own voice (edit under Personas)", provider)
+	return nil
+}
+
+// selectVoice saves a voice as the global default; persona voices are edited
+// under Personas.
+func (m *settingsModel) selectVoice(voice tts.Voice) tea.Cmd {
+	key := config.TTSVoiceKeyFor(activeTTSProvider(m.cfg))
+	saveConfig := m.saveConfig
+	if saveConfig == nil {
+		saveConfig = config.SetAndSave
+	}
+	if err := saveConfig(key, voice.Name); err != nil {
+		m.message = fmt.Sprintf("Failed to save voice: %v", err)
+		return nil
+	}
+	config.SetTTSVoiceFor(m.cfg, activeTTSProvider(m.cfg), voice.Name)
+	m.message = fmt.Sprintf("Default voice set to %s · personas with their own voice keep it", voice.Name)
+	return nil
+}
+
+func (m *settingsModel) selectLanguage(language string) tea.Cmd {
+	saveConfig := m.saveConfig
+	if saveConfig == nil {
+		saveConfig = config.SetAndSave
+	}
+	if err := saveConfig("qwen_tts_language", language); err != nil {
+		m.message = fmt.Sprintf("Failed to save language: %v", err)
+		return nil
+	}
+	m.cfg.QwenTTSLanguage = language
+	m.message = fmt.Sprintf("Qwen language set to %s", language)
+	return nil
+}
+
+func (m *settingsModel) selectInputDevice(name string) tea.Cmd {
+	if m.devicesLoading {
+		return nil
+	}
+	if err := m.save("input_device", name); err != nil {
+		m.message = fmt.Sprintf("Failed to save input device: %v", err)
+		return nil
+	}
+	m.cfg.InputDevice = name
+	m.message = "Microphone set to " + deviceLabel(name)
+	return nil
+}
+
+func (m *settingsModel) selectOutputDevice(name string) tea.Cmd {
+	if m.devicesLoading {
+		return nil
+	}
+	if err := m.save("output_device", name); err != nil {
+		m.message = fmt.Sprintf("Failed to save output device: %v", err)
+		return nil
+	}
+	m.closePreview()
+	m.cfg.OutputDevice = name
+	m.message = "Speaker set to " + deviceLabel(name)
 	return nil
 }
 

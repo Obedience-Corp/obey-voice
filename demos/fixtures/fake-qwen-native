@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Fake a native Qwen3-TTS package under a models dir, for demos.
+#
+# Mirrors the layout the TUI tests build (internal/tui/native_qwen_test_helpers_test.go):
+# an executable worker, the two runtime libraries, the 0.6b GGUF pair, the
+# presets catalogue, and an install.json whose sha256 fields match the files.
+# Settings then reports the package installed, so choosing the qwen3-tts
+# engine saves its defaults instead of starting a multi-GB download.
+#
+#   demos/fixtures/fake-qwen-native "$MODELS"
+set -euo pipefail
+
+models=${1:?models dir}
+root="$models/qwen3-tts"
+bin="$root/bin"
+mdir="$root/models"
+mkdir -p "$bin" "$mdir/presets"
+
+libext=.so
+[ "$(uname -s)" = Darwin ] && libext=.dylib
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+arch=$(uname -m)
+case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+
+printf '#!/bin/sh\n' > "$bin/qwen3-tts-worker"
+chmod 755 "$bin/qwen3-tts-worker"
+printf 'lib' > "$bin/libqwen3tts$libext"
+printf 'ggml' > "$bin/libggml$libext"
+printf 'tts' > "$mdir/qwen3-tts-0.6b-f16.gguf"
+printf 'tokenizer' > "$mdir/qwen3-tts-tokenizer-f16.gguf"
+printf '{"voices":[{"name":"Vivian"}]}' > "$mdir/presets/presets.json"
+# One preset file per CustomVoice, which is how the Voice list finds the nine
+# model-native speakers (pkg/voiceagent/qwen customVoices).
+for voice in Vivian Serena Uncle_Fu Dylan Eric Ryan Aiden Ono_Anna Sohee; do
+  printf 'preset' > "$mdir/presets/$voice.q3te"
+done
+
+sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+cat > "$root/install.json" <<JSON
+{"schema":"qwen3-tts-native.install.v1","os":"$os","arch":"$arch",
+ "tier_default":"0.6b","sample_rate":24000,"protocol":"qwen3-tts-worker/v1",
+ "bin":{"worker":"bin/qwen3-tts-worker","worker_sha256":"$(sha "$bin/qwen3-tts-worker")"},
+ "models":{"0.6b":{
+   "tts":{"path":"models/qwen3-tts-0.6b-f16.gguf","sha256":"$(sha "$mdir/qwen3-tts-0.6b-f16.gguf")"},
+   "tokenizer":{"path":"models/qwen3-tts-tokenizer-f16.gguf","sha256":"$(sha "$mdir/qwen3-tts-tokenizer-f16.gguf")"}}},
+ "presets":"models/presets/presets.json","presets_sha256":"$(sha "$mdir/presets/presets.json")"}
+JSON
+echo "faked native qwen3-tts under $root"

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,8 +54,7 @@ func sttRow(t *testing.T, m *settingsModel, provider string) (int, string) {
 func selectSTT(t *testing.T, m *settingsModel, provider string) {
 	t.Helper()
 	idx, _ := sttRow(t, m, provider)
-	m.cursor = idx
-	m.selectSTTItem()
+	m.selectSTTItem(m.sttItems[idx])
 }
 
 // Every recognizer this build has is offered, exactly once, under the name
@@ -336,20 +336,28 @@ func TestSTTSectionRendersRows(t *testing.T) {
 	m.section = sectionSTT
 	m.width, m.height = 120, 30
 
-	if got := m.currentListLen(); got != len(m.sttItems) {
-		t.Fatalf("list length = %d, want %d", got, len(m.sttItems))
+	// The recognizer is one row; its options live in the picker.
+	if got := m.currentListLen(); got != 1 {
+		t.Fatalf("list length = %d, want the one Recognizer row", got)
 	}
-	view := m.View()
+	view := stripANSI(m.View())
 	if !strings.Contains(view, "STT") {
 		t.Fatalf("the STT tab is not in the tab strip:\n%s", view)
 	}
-	for _, provider := range []string{config.STTProviderParakeet, config.STTProviderSherpa, config.STTProviderTranscribeCPP} {
-		if !strings.Contains(view, provider) {
-			t.Fatalf("view is missing %q:\n%s", provider, view)
+	// The row shows the active recognizer and explains the stored alias.
+	for _, want := range []string{"Recognizer", config.STTProviderSherpa, "sherpa-offline"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view is missing %q:\n%s", want, view)
 		}
 	}
-	// The active recognizer is marked, and the stored alias is explained.
-	if !strings.Contains(view, "✓") || !strings.Contains(view, "sherpa-offline") {
-		t.Fatalf("view does not report the active recognizer:\n%s", view)
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	view = stripANSI(next.View())
+	for _, provider := range []string{config.STTProviderParakeet, config.STTProviderSherpa, config.STTProviderTranscribeCPP} {
+		if !strings.Contains(view, provider) {
+			t.Fatalf("picker is missing %q:\n%s", provider, view)
+		}
+	}
+	if !strings.Contains(view, "✓") {
+		t.Fatalf("picker does not mark the active recognizer:\n%s", view)
 	}
 }

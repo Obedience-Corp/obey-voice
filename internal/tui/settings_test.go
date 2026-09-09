@@ -73,14 +73,17 @@ func TestSettingsListUsesAllAvailableRows(t *testing.T) {
 	if got := m.visibleRows(); got != 8 {
 		t.Fatalf("visible rows = %d, want 8 at a 13-row terminal", got)
 	}
+	// The Brain row's list opens as a picker that fills the list region:
+	// title, filter, rule and counter leave four rows for options.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	view := stripANSI(m.View())
-	for _, item := range items[:8] {
+	for _, item := range items[:4] {
 		if !strings.Contains(view, item) {
-			t.Errorf("expanded settings view missing %q:\n%s", item, view)
+			t.Errorf("picker missing %q:\n%s", item, view)
 		}
 	}
-	if strings.Contains(view, items[8]) {
-		t.Fatalf("settings rendered more choices than fit:\n%s", view)
+	if strings.Contains(view, items[4]) {
+		t.Fatalf("picker rendered more choices than fit:\n%s", view)
 	}
 	if got := len(strings.Split(view, "\n")); got != 13 {
 		t.Fatalf("settings view has %d rows, want exactly 13:\n%s", got, view)
@@ -92,6 +95,7 @@ func TestSettingsShowsEntireListWhenItFits(t *testing.T) {
 	m := settingsModel{cfg: &config.Config{}, section: sectionProvider, providerItems: items}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	view := stripANSI(m.View())
 	for _, item := range items {
 		if !strings.Contains(view, item) {
@@ -116,6 +120,7 @@ func TestSettingsResizesDynamicallyWithTerminal(t *testing.T) {
 	if got := m.visibleRows(); got != 7 {
 		t.Fatalf("visible rows at 12h = %d, want 7", got)
 	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // open the Brain list
 	small := stripANSI(m.View())
 	if got := len(strings.Split(small, "\n")); got != 12 {
 		t.Fatalf("small terminal view has %d rows, want 12:\n%s", got, small)
@@ -123,7 +128,7 @@ func TestSettingsResizesDynamicallyWithTerminal(t *testing.T) {
 	if !strings.Contains(small, strings.Repeat("─", 40)) {
 		t.Fatalf("small terminal missing full-width rule:\n%s", small)
 	}
-	if strings.Contains(small, "provider-07") {
+	if strings.Contains(small, "provider-03") {
 		t.Fatalf("small terminal showed more rows than fit:\n%s", small)
 	}
 
@@ -138,12 +143,12 @@ func TestSettingsResizesDynamicallyWithTerminal(t *testing.T) {
 	if !strings.Contains(large, strings.Repeat("─", 120)) {
 		t.Fatalf("large terminal missing full-width rule:\n%s", large)
 	}
-	for _, item := range items[:35] {
+	for _, item := range items[:31] {
 		if !strings.Contains(large, item) {
-			t.Errorf("expanded settings missing %q after resize", item)
+			t.Errorf("expanded picker missing %q after resize", item)
 		}
 	}
-	if strings.Contains(large, "provider-35") {
+	if strings.Contains(large, "provider-31") {
 		t.Fatalf("large terminal showed more rows than fit:\n%s", large)
 	}
 }
@@ -157,10 +162,19 @@ func TestSettingsTTSSectionShowsActiveProviderAndModel(t *testing.T) {
 	m.section = sectionTTS
 	m.width, m.height = 100, 20
 
+	// The row carries the active engine and its detail; the others are in
+	// the picker, marked.
 	view := stripANSI(m.View())
-	for _, want := range []string{"TTS", "kokoro", "managed model", "qwen3-tts", "model 1.7b", "qwen3-tts-cli", "✓"} {
+	for _, want := range []string{"TTS", "Voice engine", "qwen3-tts", "model 1.7b", "qwen3-tts-cli"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("TTS settings missing %q:\n%s", want, view)
+			t.Errorf("TTS row missing %q:\n%s", want, view)
+		}
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	view = stripANSI(m.View())
+	for _, want := range []string{"kokoro", "managed model", "qwen3-tts", "✓"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("TTS picker missing %q:\n%s", want, view)
 		}
 	}
 }
@@ -178,7 +192,7 @@ func TestSettingsQwenLanguageSelectionPersists(t *testing.T) {
 		t.Fatalf("Qwen language items = %v", m.languageItems)
 	}
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "Language") || !strings.Contains(view, "Auto ✓") {
+	if !strings.Contains(view, "Language") || !strings.Contains(view, "Auto") {
 		t.Fatalf("Qwen language view missing active language:\n%s", view)
 	}
 
@@ -188,8 +202,7 @@ func TestSettingsQwenLanguageSelectionPersists(t *testing.T) {
 		savedKey, savedValue = key, value
 		return nil
 	}
-	m.cursor = 2 // English in the pinned language registry.
-	m.selectCurrent()
+	m.selectLanguage("English") // in the pinned language registry
 	if savedKey != "qwen_tts_language" || savedValue != "English" {
 		t.Fatalf("saved language = %q/%v, want qwen_tts_language/English", savedKey, savedValue)
 	}
@@ -387,14 +400,13 @@ func TestSettingsSelectTTSProviderPersistsAndRefreshesVoices(t *testing.T) {
 	m := newSettings(cfg, nil)
 	m.buildTTSItems()
 	m.section = sectionTTS
-	m.cursor = 1 // qwen3-tts
 	saved := map[string]any{}
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
 		return nil
 	}
 
-	m.selectCurrent()
+	m.selectTTSProvider("qwen3-tts")
 
 	if saved["tts_provider"] != "qwen3-tts" || saved["qwen_tts_mode"] != "customvoice" || saved["qwen_tts_voice"] != managedqwen.DefaultVoice {
 		t.Fatalf("saved Qwen config = %v", saved)
@@ -422,14 +434,13 @@ func TestSettingsSelectTTSProviderWritesGlobalDefaultOnly(t *testing.T) {
 	m := newSettings(cfg, nil)
 	m.buildTTSItems()
 	m.section = sectionTTS
-	m.cursor = 1 // qwen3-tts
 	saved := map[string]any{}
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
 		return nil
 	}
 
-	m.selectCurrent()
+	m.selectTTSProvider("qwen3-tts")
 
 	if saved["tts_provider"] != "qwen3-tts" {
 		t.Fatalf("saved keys = %v, want global tts_provider write", saved)
@@ -446,7 +457,6 @@ func TestSettingsInstallsQwenBeforeActivatingProvider(t *testing.T) {
 	cfg := &config.Config{TTSProvider: "kokoro", QwenTTSBinary: "qwen3-tts-cli", ModelsDir: dir}
 	m := newSettings(cfg, nil)
 	m.section = sectionTTS
-	m.cursor = 1
 	saved := map[string]any{}
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
@@ -457,14 +467,14 @@ func TestSettingsInstallsQwenBeforeActivatingProvider(t *testing.T) {
 		return nil
 	}
 
-	cmd := m.selectCurrent()
+	cmd := m.selectTTSProvider("qwen3-tts")
 	if cmd == nil || !m.qwenInstalling {
 		t.Fatal("selecting an uninstalled Qwen provider did not start native setup")
 	}
 	if cfg.TTSProvider != "kokoro" || len(saved) != 0 {
 		t.Fatalf("provider changed before setup completed: cfg=%q saved=%v", cfg.TTSProvider, saved)
 	}
-	// Execute the install command directly; selectCurrent returns it batched
+	// Execute the install command directly; selectTTSProvider returns it batched
 	// with the progress-feed listener used by the live Bubble Tea program.
 	m, _ = m.Update(m.installManagedQwen(context.Background())())
 	if cfg.TTSProvider != "qwen3-tts" || saved["tts_provider"] != "qwen3-tts" {
@@ -529,16 +539,19 @@ func TestVoicePreviewReusesPlayerAcrossPreviews(t *testing.T) {
 	player := newFakePreviewPlayer()
 	m := newPreviewTestModel(player, &created)
 
+	// Previews play from the voice list: enter opens it, tab plays the
+	// highlighted voice without choosing it.
 	var cmd tea.Cmd
-	m, cmd = updateSettingsWithKey(t, m, "p")
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if cmd == nil {
 		t.Fatal("first preview did not return a command")
 	}
 	if msg := cmd(); msg == nil {
 		t.Fatal("first preview command returned nil message")
 	}
-	m.cursor = 1
-	m, cmd = updateSettingsWithKey(t, m, "p")
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if cmd == nil {
 		t.Fatal("second preview did not return a command")
 	}
@@ -563,7 +576,8 @@ func TestCancelledPreviewCommandDoesNotStopSharedPlayerAgain(t *testing.T) {
 	player.queueDone(done)
 	m := newPreviewTestModel(player, &created)
 
-	m, cmd := updateSettingsWithKey(t, m, "p")
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if cmd == nil {
 		t.Fatal("preview did not return a command")
 	}

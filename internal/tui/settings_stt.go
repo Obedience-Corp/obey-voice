@@ -150,11 +150,8 @@ func (m *settingsModel) binaryLookPath() func(string) (string, error) {
 	return exec.LookPath
 }
 
-func (m *settingsModel) selectSTTItem() tea.Cmd {
-	if m.cursor < 0 || m.cursor >= len(m.sttItems) {
-		return nil
-	}
-	item := m.sttItems[m.cursor]
+// selectSTTItem saves a recognizer row: provider and mode as a pair.
+func (m *settingsModel) selectSTTItem(item sttOptionItem) tea.Cmd {
 
 	// Provider and mode are written as a pair, so the result is always a pair
 	// this build can resolve. A refusal here would mean the table itself is

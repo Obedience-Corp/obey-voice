@@ -30,18 +30,25 @@ func (m *settingsModel) qwenPlaceItems() []qwenOptionItem {
 		}
 	}
 	items := []qwenOptionItem{
-		{kind: qwenOptPlace, label: "Speech runs on — " + where + " · enter to switch"},
-		{kind: qwenOptWorkerURL, label: "Speech computer address — " + speechURLLabel(m.cfg.TTSWorkerURL) + " · enter to edit"},
-		{kind: qwenOptWorkerToken, label: "Speech computer token — " + speechTokenLabel(m.cfg) + " · enter to replace"},
+		{kind: qwenOptPlace, name: "Speech runs on", value: where,
+			label: "Speech runs on — " + where + " · enter to switch"},
+		{kind: qwenOptWorkerURL, name: "Speech computer address", value: speechURLLabel(m.cfg.TTSWorkerURL),
+			label: "Speech computer address — " + speechURLLabel(m.cfg.TTSWorkerURL) + " · enter to edit"},
+		{kind: qwenOptWorkerToken, name: "Speech computer token", value: speechTokenLabel(m.cfg),
+			label: "Speech computer token — " + speechTokenLabel(m.cfg) + " · enter to replace"},
 	}
 	if !lan {
 		return items
 	}
 	strict := "OFF · speaks with Kokoro here when that computer is unreachable"
+	detail := "speaks with Kokoro here when that computer is unreachable"
 	if m.cfg.TTSLanStrict {
 		strict = "ON · will not start a conversation without that computer"
+		detail = "will not start a conversation without that computer"
 	}
-	return append(items, qwenOptionItem{kind: qwenOptLanStrict, label: "Require the speech computer — " + strict})
+	return append(items, qwenOptionItem{kind: qwenOptLanStrict, name: "Require the speech computer",
+		value: onOff(m.cfg.TTSLanStrict), detail: detail,
+		label: "Require the speech computer — " + strict})
 }
 
 // speechURLLabel keeps the row readable when nothing is configured yet.
@@ -96,9 +103,17 @@ func (m *settingsModel) selectQwenPlaceItem(kind qwenOptionKind) (tea.Cmd, bool)
 }
 
 func (m *settingsModel) togglePlace() tea.Cmd {
-	next := config.TTSPlaceLAN
-	if config.TTSPlaceOf(m.cfg) == config.TTSPlaceLAN {
-		next = config.TTSPlaceLocal
+	return m.setPlace(config.TTSPlaceOf(m.cfg) != config.TTSPlaceLAN)
+}
+
+// setPlace moves speech to another computer (lan) or back here.
+func (m *settingsModel) setPlace(lan bool) tea.Cmd {
+	next := config.TTSPlaceLocal
+	if lan {
+		next = config.TTSPlaceLAN
+	}
+	if next == config.TTSPlaceOf(m.cfg) {
+		return nil
 	}
 	// Validate the whole topology before writing it: switching to another
 	// computer with no address (or a plaintext one off this machine) would save

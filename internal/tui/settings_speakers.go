@@ -106,14 +106,6 @@ func (m settingsModel) speakerRows() []speakerRow {
 	return rows
 }
 
-func (m settingsModel) onGuestRow() bool {
-	rows := m.speakerRows()
-	if m.cursor < 0 || m.cursor >= len(rows) {
-		return false
-	}
-	return rows[m.cursor].kind == speakerRowGuest
-}
-
 func (m settingsModel) isOwnerName(name string) bool {
 	return m.enrolledOwnerOK && strings.EqualFold(m.enrolledOwner.Name, strings.TrimSpace(name))
 }
@@ -139,12 +131,31 @@ func (m settingsModel) removeRowLabel() string {
 	return fmt.Sprintf("Remove your voice — %s", m.enrolledOwner.Name)
 }
 
-func (m *settingsModel) selectSpeakerItem() tea.Cmd {
-	rows := m.speakerRows()
-	if m.cursor < 0 || m.cursor >= len(rows) {
-		return nil
+// setLiveThreshold saves a chat-label match cutoff.
+func (m *settingsModel) setLiveThreshold(next float32) {
+	if err := m.save("speaker.live.threshold", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save live threshold: %v", err)
+		return
 	}
-	row := rows[m.cursor]
+	m.cfg.Speaker.Live.Threshold = next
+	m.message = fmt.Sprintf("Match threshold %.2f — lower merges similar voices, higher splits them", next)
+}
+
+// setLiveWindow saves the analysis window and says what it costs.
+func (m *settingsModel) setLiveWindow(next int) {
+	if err := m.save("speaker.live.window_ms", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save live window: %v", err)
+		return
+	}
+	m.cfg.Speaker.Live.WindowMS = next
+	m.message = fmt.Sprintf("Analysis window %d ms", next)
+	if len(m.enrolledProfiles) > 0 {
+		m.message += " — enrolled voices go stale until you re-enroll"
+	}
+}
+
+// selectSpeakerRow performs a Speakers row's own verb.
+func (m *settingsModel) selectSpeakerRow(row speakerRow) tea.Cmd {
 	saveConfig := m.saveConfig
 	if saveConfig == nil {
 		saveConfig = config.SetAndSave
@@ -155,24 +166,9 @@ func (m *settingsModel) selectSpeakerItem() tea.Cmd {
 	case speakerRowLive:
 		m.toggleLiveSpeakers(saveConfig)
 	case speakerRowThreshold:
-		next := nextLiveThreshold(m.effectiveLiveThreshold())
-		if err := saveConfig("speaker.live.threshold", next); err != nil {
-			m.message = fmt.Sprintf("Failed to save live threshold: %v", err)
-			return nil
-		}
-		m.cfg.Speaker.Live.Threshold = next
-		m.message = fmt.Sprintf("Match threshold %.2f — lower merges similar voices, higher splits them", next)
+		m.setLiveThreshold(nextLiveThreshold(m.effectiveLiveThreshold()))
 	case speakerRowWindow:
-		next := nextLiveWindow(m.cfg.Speaker.Live.WindowMS)
-		if err := saveConfig("speaker.live.window_ms", next); err != nil {
-			m.message = fmt.Sprintf("Failed to save live window: %v", err)
-			return nil
-		}
-		m.cfg.Speaker.Live.WindowMS = next
-		m.message = fmt.Sprintf("Analysis window %d ms", next)
-		if len(m.enrolledProfiles) > 0 {
-			m.message += " — enrolled voices go stale until you re-enroll"
-		}
+		m.setLiveWindow(nextLiveWindow(m.cfg.Speaker.Live.WindowMS))
 	case speakerRowMeeting:
 		m.message = "Meeting diarization is per-meeting — toggle it in Settings → Meeting"
 	case speakerRowRegister:

@@ -9,61 +9,78 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-func TestOutputTabShowsVolumeSlider(t *testing.T) {
-	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
+// volumeRowIndex is the Volume slider's row in the Output section.
+func volumeRowIndex(m settingsModel) int {
+	for i, row := range m.sectionRows() {
+		if row.key == "playback_volume" {
+			return i
+		}
+	}
+	return -1
+}
+
+func outputSettings(t *testing.T, cfg *config.Config) settingsModel {
+	t.Helper()
+	m := newSettings(cfg, nil)
 	m.section = sectionOutput
-	m.width, m.height = 80, 20
 	m.devicesLoading = false
 	m.outputItems = []string{"", "Desk Speakers"}
+	return m
+}
+
+func TestOutputTabShowsVolumeSlider(t *testing.T) {
+	m := outputSettings(t, &config.Config{PlaybackVolume: 1})
+	m.width, m.height = 80, 20
 
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "Volume") || !strings.Contains(view, "100%") {
-		t.Fatalf("output tab missing volume slider:\n%s", view)
+	for _, want := range []string{"Speaker", "System default", "Volume", "100%"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("output tab missing %q:\n%s", want, view)
+		}
 	}
-	if !strings.Contains(view, "Desk Speakers") {
-		t.Fatalf("output tab dropped speaker list:\n%s", view)
+	// The slider is the second row, so arriving on the tab does not land on it.
+	if def, vol := strings.Index(view, "System default"), strings.Index(view, "Volume"); !(def < vol) {
+		t.Fatalf("output rows out of order (speaker %d, volume %d):\n%s", def, vol, view)
 	}
-	// The slider sits below the speakers, so arriving on the tab does not
-	// land on it.
-	def, desk, vol := strings.Index(view, "System default"), strings.Index(view, "Desk Speakers"), strings.Index(view, "Volume")
-	if !(def < desk && desk < vol) {
-		t.Fatalf("output rows out of order (default %d, desk %d, volume %d):\n%s", def, desk, vol, view)
+	// The other speakers live in the picker, not on the tab.
+	if strings.Contains(view, "Desk Speakers") {
+		t.Fatalf("output tab lists devices outside the picker:\n%s", view)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if view := stripANSI(m.View()); !strings.Contains(view, "Desk Speakers") || !strings.Contains(view, "System default ✓") {
+		t.Fatalf("speaker picker missing the devices or the mark:\n%s", view)
 	}
 }
 
-// Coming onto the Output tab with ←/→ lands on System default, and the next
-// ←/→ leaves the tab; the volume is untouched until the slider is chosen.
-func TestArrivingOnOutputLandsOnSpeakersNotVolume(t *testing.T) {
-	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
+// Coming onto the Output tab lands on the speaker row, and the section keys
+// never touch the slider or write anything.
+func TestArrivingOnOutputLandsOnTheSpeakerRow(t *testing.T) {
+	m := outputSettings(t, &config.Config{PlaybackVolume: 1})
 	m.section = sectionInput
-	m.devicesLoading = false
-	m.outputItems = []string{"", "Desk Speakers"}
 	m.saveConfig = func(key string, value any) error {
 		t.Fatalf("crossing the Output tab wrote %s=%v", key, value)
 		return nil
 	}
 
-	m, _ = updateSettingsWithKey(t, m, "right")
+	m, _ = updateSettingsWithKey(t, m, "tab")
 	if m.section != sectionOutput || m.cursor != 0 || m.volumeRowFocused() {
-		t.Fatalf("after right: section %v cursor %d volume focused %v; want Output, row 0, speakers", m.section, m.cursor, m.volumeRowFocused())
+		t.Fatalf("after tab: section %v cursor %d volume focused %v; want Output, row 0, speaker", m.section, m.cursor, m.volumeRowFocused())
 	}
-	m, _ = updateSettingsWithKey(t, m, "right")
+	m, _ = updateSettingsWithKey(t, m, "tab")
 	if m.section != sectionMeeting || m.cfg.PlaybackVolume != 1 {
-		t.Fatalf("second right: section %v volume %v; want Meeting and volume 1", m.section, m.cfg.PlaybackVolume)
+		t.Fatalf("second tab: section %v volume %v; want Meeting and volume 1", m.section, m.cfg.PlaybackVolume)
 	}
 
-	m, _ = updateSettingsWithKey(t, m, "left")
-	for i := 0; i < len(m.outputItems); i++ {
-		m, _ = updateSettingsWithKey(t, m, "down")
-	}
+	m, _ = updateSettingsWithKey(t, m, "shift+tab")
+	m, _ = updateSettingsWithKey(t, m, "down")
 	if !m.volumeRowFocused() {
-		t.Fatalf("cursor %d after walking down is not the slider (want %d)", m.cursor, m.volumeRow())
+		t.Fatalf("cursor %d after down is not the slider (want %d)", m.cursor, volumeRowIndex(m))
 	}
 }
 
-// While devices are still being discovered the slider is drawn but ←/→ stay
-// section keys, so a fast keypress after opening Settings cannot change it.
-func TestVolumeRowWaitsForDevices(t *testing.T) {
+// While devices are still being discovered the speaker row is disabled: ←/→
+// do nothing there — they no longer switch section, and they cannot write.
+func TestSpeakerRowWaitsForDevices(t *testing.T) {
 	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
 	m.section = sectionOutput
 	m.devicesLoading = true
@@ -76,19 +93,16 @@ func TestVolumeRowWaitsForDevices(t *testing.T) {
 		t.Fatal("slider focused while devices load")
 	}
 	m, _ = updateSettingsWithKey(t, m, "left")
-	if m.section == sectionOutput {
-		t.Fatal("left while loading did not switch sections")
+	if m.section != sectionOutput || m.cfg.PlaybackVolume != 1 {
+		t.Fatalf("left while loading: section %v volume %v; want Output untouched", m.section, m.cfg.PlaybackVolume)
 	}
 }
 
 func TestVolumeSliderNudgesAndPersists(t *testing.T) {
 	saved := map[string]any{}
 	var applied []float64
-	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
-	m.section = sectionOutput
-	m.devicesLoading = false
-	m.outputItems = []string{"", "Desk Speakers"}
-	m.cursor = m.volumeRow()
+	m := outputSettings(t, &config.Config{PlaybackVolume: 1})
+	m.cursor = volumeRowIndex(m)
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
 		return nil
@@ -128,10 +142,8 @@ func TestVolumeSliderNudgesAndPersists(t *testing.T) {
 }
 
 func TestVolumeSliderTabStillChangesSection(t *testing.T) {
-	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
-	m.section = sectionOutput
-	m.devicesLoading = false
-	m.cursor = m.volumeRow()
+	m := outputSettings(t, &config.Config{PlaybackVolume: 1})
+	m.cursor = volumeRowIndex(m)
 
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.section != sectionMeeting {
@@ -139,32 +151,38 @@ func TestVolumeSliderTabStillChangesSection(t *testing.T) {
 	}
 }
 
-func TestVolumeSliderDoesNotStealLeftWhenOnSpeaker(t *testing.T) {
-	m := newSettings(&config.Config{PlaybackVolume: 1}, nil)
-	m.section = sectionOutput
-	m.devicesLoading = false
-	m.outputItems = []string{"", "Desk Speakers"}
-	m.cursor = 0 // system default device row, where the tab is entered
-	m.saveConfig = func(string, any) error {
-		t.Fatal("left on a speaker row must not write volume")
+// ←/→ on the speaker row change the speaker — never the volume, never the
+// section.
+func TestArrowsOnTheSpeakerRowChangeTheSpeaker(t *testing.T) {
+	saved := map[string]any{}
+	m := outputSettings(t, &config.Config{PlaybackVolume: 1})
+	m.cursor = 0
+	m.saveConfig = func(key string, value any) error {
+		saved[key] = value
 		return nil
 	}
 
-	m, _ = updateSettingsWithKey(t, m, "left")
-	if m.section == sectionOutput {
-		t.Fatal("left on a speaker row should switch tabs")
+	m, _ = updateSettingsWithKey(t, m, "right")
+	if m.section != sectionOutput {
+		t.Fatal("right on the speaker row switched sections")
 	}
-	if m.cfg.PlaybackVolume != 1 {
-		t.Fatalf("volume changed to %v", m.cfg.PlaybackVolume)
+	if saved["output_device"] != "Desk Speakers" || m.cfg.OutputDevice != "Desk Speakers" {
+		t.Fatalf("right did not choose the next speaker: saved %v cfg %q", saved["output_device"], m.cfg.OutputDevice)
+	}
+	if _, wrote := saved["playback_volume"]; wrote || m.cfg.PlaybackVolume != 1 {
+		t.Fatalf("speaker row touched the volume: saved %v cfg %v", saved["playback_volume"], m.cfg.PlaybackVolume)
+	}
+
+	m, _ = updateSettingsWithKey(t, m, "left")
+	if m.cfg.OutputDevice != "" {
+		t.Fatalf("left did not step back to the system default: %q", m.cfg.OutputDevice)
 	}
 }
 
 func TestVolumeSliderClampsAtZero(t *testing.T) {
 	writes := 0
-	m := newSettings(&config.Config{PlaybackVolume: 0}, nil)
-	m.section = sectionOutput
-	m.devicesLoading = false
-	m.cursor = m.volumeRow()
+	m := outputSettings(t, &config.Config{PlaybackVolume: 0})
+	m.cursor = volumeRowIndex(m)
 	m.saveConfig = func(string, any) error {
 		writes++
 		return nil
@@ -198,11 +216,8 @@ func TestVolumeBarFillsToUnity(t *testing.T) {
 }
 
 func TestEnterOnVolumeRowDoesNotSelectSpeaker(t *testing.T) {
-	m := newSettings(&config.Config{PlaybackVolume: 1, OutputDevice: ""}, nil)
-	m.section = sectionOutput
-	m.devicesLoading = false
-	m.outputItems = []string{"", "Desk Speakers"}
-	m.cursor = m.volumeRow()
+	m := outputSettings(t, &config.Config{PlaybackVolume: 1, OutputDevice: ""})
+	m.cursor = volumeRowIndex(m)
 	m.saveConfig = func(key string, value any) error {
 		t.Fatalf("enter on volume wrote %s=%v", key, value)
 		return nil

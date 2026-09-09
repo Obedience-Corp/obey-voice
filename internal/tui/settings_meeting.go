@@ -152,12 +152,51 @@ func nextMeetingNumSpeakers(current int) int {
 	return meetingNumSpeakerChoices[(idx+1)%len(meetingNumSpeakerChoices)]
 }
 
-func (m *settingsModel) selectMeetingItem() {
+// setMeetingNumSpeakers saves the expected speaker count (0 = Auto).
+func (m *settingsModel) setMeetingNumSpeakers(next int) tea.Cmd {
+	if err := m.save("speaker.meeting.num_speakers", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save speaker.meeting.num_speakers: %v", err)
+		return nil
+	}
+	m.cfg.Speaker.Meeting.NumSpeakers = next
+	engine, _ := config.MeetingDiarizerFrom(m.cfg)
+	m.message = fmt.Sprintf("Expected speakers: %s", meetingNumSpeakersLabel(next, engine))
+	if engine == config.DiarizerSortformer {
+		m.message += fmt.Sprintf(" — it resolves up to %d on its own; set the engine back to %s and the count applies again",
+			config.SortformerMaxSpeakers, config.DiarizerSherpa)
+	}
+	return nil
+}
+
+// setRouteMode saves how notes are routed when a meeting ends.
+func (m *settingsModel) setRouteMode(next string) tea.Cmd {
+	if err := config.SetAndSave("meeting.route.mode", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save route mode: %v", err)
+		return nil
+	}
+	m.cfg.Meeting.Route.Mode = next
+	m.message = fmt.Sprintf("Meeting route mode: %s", next)
+	return nil
+}
+
+// setBodyScope saves what the routed body carries: the notes or the full text.
+func (m *settingsModel) setBodyScope(next string) tea.Cmd {
+	if err := config.SetAndSave("meeting.route.body", next); err != nil {
+		m.message = fmt.Sprintf("Failed to save body scope: %v", err)
+		return nil
+	}
+	m.cfg.Meeting.Route.Body = next
+	m.message = fmt.Sprintf("Meeting body scope: %s", next)
+	return nil
+}
+
+// selectMeetingRow performs a Meeting row's own verb, by meetingRow* index.
+func (m *settingsModel) selectMeetingRow(row int) {
 	saveConfig := m.saveConfig
 	if saveConfig == nil {
 		saveConfig = config.SetAndSave
 	}
-	switch m.cursor {
+	switch row {
 	case meetingRowDiarization:
 		// Toggle effective meeting diarization: turns master + meeting on together,
 		// or meeting off (master left as-is for live /speakers path).
@@ -209,18 +248,7 @@ func (m *settingsModel) selectMeetingItem() {
 	case meetingRowDiarizer:
 		m.cycleMeetingDiarizer(saveConfig)
 	case meetingRowNumSpeakers:
-		next := nextMeetingNumSpeakers(m.cfg.Speaker.Meeting.NumSpeakers)
-		if err := saveConfig("speaker.meeting.num_speakers", next); err != nil {
-			m.message = fmt.Sprintf("Failed to save speaker.meeting.num_speakers: %v", err)
-			return
-		}
-		m.cfg.Speaker.Meeting.NumSpeakers = next
-		engine, _ := config.MeetingDiarizerFrom(m.cfg)
-		m.message = fmt.Sprintf("Expected speakers: %s", meetingNumSpeakersLabel(next, engine))
-		if engine == config.DiarizerSortformer {
-			m.message += fmt.Sprintf(" — it resolves up to %d on its own; set the engine back to %s and the count applies again",
-				config.SortformerMaxSpeakers, config.DiarizerSherpa)
-		}
+		m.setMeetingNumSpeakers(nextMeetingNumSpeakers(m.cfg.Speaker.Meeting.NumSpeakers))
 	case meetingRowRecordAudio:
 		next := !m.cfg.Speaker.Meeting.RecordAudio
 		if err := saveConfig("speaker.meeting.record_audio", next); err != nil {
@@ -238,29 +266,15 @@ func (m *settingsModel) selectMeetingItem() {
 		if next == "" {
 			next = "ask"
 		}
-		if err := config.SetAndSave("meeting.route.mode", next); err != nil {
-			m.message = fmt.Sprintf("Failed to save route mode: %v", err)
-			return
-		}
-		m.cfg.Meeting.Route.Mode = next
-		m.message = fmt.Sprintf("Meeting route mode: %s", next)
+		m.setRouteMode(next)
 	case meetingRowDefault:
 		m.cycleDefaultDestination()
 	case meetingRowBody: // cycle body: notes ↔ full
-		cur := m.cfg.Meeting.Route.Body
-		if cur == "" {
-			cur = "notes"
-		}
 		next := "full"
-		if cur == "full" {
+		if m.cfg.Meeting.Route.Body == "full" {
 			next = "notes"
 		}
-		if err := config.SetAndSave("meeting.route.body", next); err != nil {
-			m.message = fmt.Sprintf("Failed to save body scope: %v", err)
-			return
-		}
-		m.cfg.Meeting.Route.Body = next
-		m.message = fmt.Sprintf("Meeting body scope: %s", next)
+		m.setBodyScope(next)
 	case meetingRowConfigured:
 		m.message = "Destinations in " + config.ConfigFile() + " (meeting.route.destinations); campaign default is notes/meetings via import-meeting"
 	case meetingRowPicker:
@@ -297,21 +311,26 @@ func (m *settingsModel) selectMeetingItem() {
 // sherpa path either way, and a meeting already recording keeps the engine it
 // started with.
 func (m *settingsModel) cycleMeetingDiarizer(saveConfig func(string, any) error) {
-	next := nextMeetingDiarizer(m.cfg.Speaker.Meeting.Diarizer)
+	m.setMeetingDiarizer(nextMeetingDiarizer(m.cfg.Speaker.Meeting.Diarizer))
+}
+
+// setMeetingDiarizer saves the engine behind the review pass and says what
+// it still needs on this computer.
+func (m *settingsModel) setMeetingDiarizer(next string) tea.Cmd {
 	// A refusal here would mean this screen's own table disagrees with the
 	// schema, which is worth saying rather than writing.
 	if _, err := config.NormalizeMeetingDiarizer(next); err != nil {
 		m.message = fmt.Sprintf("Not saved: %v", err)
-		return
+		return nil
 	}
-	if err := saveConfig("speaker.meeting.diarizer", next); err != nil {
+	if err := m.save("speaker.meeting.diarizer", next); err != nil {
 		m.message = fmt.Sprintf("Failed to save speaker.meeting.diarizer: %v", err)
-		return
+		return nil
 	}
 	m.cfg.Speaker.Meeting.Diarizer = next
 	if next != config.DiarizerSortformer {
 		m.message = "Diarization engine: sherpa — the managed pyannote + TitaNet review pass"
-		return
+		return nil
 	}
 	m.message = "Diarization engine: sortformer (optional) — labels the review pass only; live labels stay on sherpa"
 	if gap := m.meetingDiarizerGap(); gap.Missing() {
@@ -319,17 +338,20 @@ func (m *settingsModel) cycleMeetingDiarizer(saveConfig func(string, any) error)
 		// review pass being switched off, so the message states it as found.
 		m.message += fmt.Sprintf(" · %s — %s", gap.Detail, gap.Remediation)
 	}
+	return nil
 }
 
-// cycleDefaultDestination walks empty + configured + discovered IDs. When the
-// chosen ID is discovered-only, it is also persisted into
-// meeting.route.destinations so mode=auto / RouteByID can resolve it.
-func (m *settingsModel) cycleDefaultDestination() {
-	type choice struct {
-		id   string
-		dest *meeting.Destination // non-nil when we may need to persist
-	}
-	choices := []choice{{id: ""}}
+// destinationChoice is one entry of the default-destination list: the empty
+// id (launch campaign), then configured, then discovered destinations. dest
+// is non-nil when choosing it must also persist it.
+type destinationChoice struct {
+	id   string
+	dest *meeting.Destination
+}
+
+// defaultDestinationChoices walks empty + configured + discovered IDs.
+func (m settingsModel) defaultDestinationChoices() []destinationChoice {
+	choices := []destinationChoice{{id: ""}}
 	seen := map[string]struct{}{"": {}}
 	for _, d := range m.cfg.Meeting.Route.Destinations {
 		if d.ID == "" {
@@ -339,7 +361,7 @@ func (m *settingsModel) cycleDefaultDestination() {
 			continue
 		}
 		seen[d.ID] = struct{}{}
-		choices = append(choices, choice{id: d.ID})
+		choices = append(choices, destinationChoice{id: d.ID})
 	}
 	for i := range m.routeDests {
 		d := m.routeDests[i]
@@ -351,8 +373,14 @@ func (m *settingsModel) cycleDefaultDestination() {
 		}
 		seen[d.ID] = struct{}{}
 		dd := d
-		choices = append(choices, choice{id: d.ID, dest: &dd})
+		choices = append(choices, destinationChoice{id: d.ID, dest: &dd})
 	}
+	return choices
+}
+
+// cycleDefaultDestination steps to the next choice.
+func (m *settingsModel) cycleDefaultDestination() {
+	choices := m.defaultDestinationChoices()
 	cur := m.cfg.Meeting.Route.Default
 	idx := 0
 	for i, c := range choices {
@@ -361,18 +389,33 @@ func (m *settingsModel) cycleDefaultDestination() {
 			break
 		}
 	}
-	next := choices[(idx+1)%len(choices)]
+	m.setDefaultDestination((idx + 1) % len(choices))
+}
 
+// setDefaultDestination saves choice idx. When the chosen ID is discovered
+// only, it is also persisted into meeting.route.destinations so mode=auto /
+// RouteByID can resolve it.
+func (m *settingsModel) setDefaultDestination(idx int) tea.Cmd {
+	choices := m.defaultDestinationChoices()
+	if idx < 0 || idx >= len(choices) {
+		return nil
+	}
+	return m.setDefaultDestinationChoice(choices[idx])
+}
+
+// setDefaultDestinationChoice saves one choice — the one a row or picker
+// showed, whatever discovery has appended since.
+func (m *settingsModel) setDefaultDestinationChoice(next destinationChoice) tea.Cmd {
 	// Persist discovered destinations before setting them as default.
 	if next.dest != nil {
 		if err := m.ensureDestinationConfigured(*next.dest); err != nil {
 			m.message = fmt.Sprintf("Failed to save destination: %v", err)
-			return
+			return nil
 		}
 	}
 	if err := config.SetAndSave("meeting.route.default", next.id); err != nil {
 		m.message = fmt.Sprintf("Failed to save default destination: %v", err)
-		return
+		return nil
 	}
 	m.cfg.Meeting.Route.Default = next.id
 	label := next.id
@@ -380,6 +423,7 @@ func (m *settingsModel) cycleDefaultDestination() {
 		label = "(launch campaign)"
 	}
 	m.message = fmt.Sprintf("Default destination: %s", label)
+	return nil
 }
 
 // ensureDestinationConfigured appends dest to meeting.route.destinations when
