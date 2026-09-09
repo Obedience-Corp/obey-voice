@@ -54,7 +54,7 @@ func sttRow(t *testing.T, m *settingsModel, provider string) (int, string) {
 func selectSTT(t *testing.T, m *settingsModel, provider string) {
 	t.Helper()
 	idx, _ := sttRow(t, m, provider)
-	m.selectSTTOption(idx)
+	m.selectSTTItem(m.sttItems[idx])
 }
 
 // Every recognizer this build has is offered, exactly once, under the name

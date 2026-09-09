@@ -150,14 +150,6 @@ func (m *settingsModel) binaryLookPath() func(string) (string, error) {
 	return exec.LookPath
 }
 
-// selectSTTOption saves the recognizer at idx of the STT list.
-func (m *settingsModel) selectSTTOption(idx int) tea.Cmd {
-	if idx < 0 || idx >= len(m.sttItems) {
-		return nil
-	}
-	return m.selectSTTItem(m.sttItems[idx])
-}
-
 // selectSTTItem saves a recognizer row: provider and mode as a pair.
 func (m *settingsModel) selectSTTItem(item sttOptionItem) tea.Cmd {
 

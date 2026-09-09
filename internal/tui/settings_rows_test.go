@@ -206,3 +206,54 @@ func TestSettingsCursorMoveClearsTheMessage(t *testing.T) {
 		t.Fatalf("detail line for the next row is missing:\n%s", view)
 	}
 }
+
+// → on the Brain row changes the brain and stays put; only choosing from the
+// list lands on Worker. The brain writer is the real one, so it gets a
+// throwaway config root.
+func TestSettingsStepOnBrainStaysOnBrain(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	cfg := &config.Config{BrainProvider: "grok"}
+	m := newSettings(cfg, workerTestProviders())
+	m.section = sectionProvider
+	m.cursor = 0
+
+	m = pressSettingsKey(m, tea.KeyRight)
+	if m.section != sectionProvider {
+		t.Fatalf("→ on Brain moved to section %v, want to stay on Brain", m.section)
+	}
+	if cfg.BrainProvider == "grok" {
+		t.Fatal("→ on Brain did not change the brain")
+	}
+	if strings.Contains(m.message, "choose the worker") {
+		t.Fatalf("stepping asked for a worker: %q", m.message)
+	}
+
+	// The list still hands off to Worker when nothing is chosen there.
+	m = pressSettingsKey(m, tea.KeyEnter)
+	m = pressSettingsKey(m, tea.KeyEnter)
+	if m.section != sectionWorker {
+		t.Fatalf("choosing from the list landed on %v, want Worker", m.section)
+	}
+}
+
+// When every other option is one ←/→ must skip, the row says so instead of
+// re-saving what is already set.
+func TestSettingsStepSaysWhenThereIsNowhereToGo(t *testing.T) {
+	providers := []discovery.ProviderInfo{
+		{Name: "ollama", Available: true},
+		{Name: "grok", Available: false},
+	}
+	cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama"}
+	m := newSettings(cfg, providers)
+	saved := recordSaves(&m)
+	m.section = sectionWorker
+	m.cursor = 0
+
+	m = pressSettingsKey(m, tea.KeyRight)
+	if len(saved) != 0 {
+		t.Fatalf("→ with nowhere to go wrote %v", saved)
+	}
+	if !strings.Contains(m.message, "No other") {
+		t.Fatalf("message = %q, want it to say there is nowhere to step", m.message)
+	}
+}

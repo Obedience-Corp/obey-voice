@@ -202,7 +202,7 @@ func TestSettingsQwenLanguageSelectionPersists(t *testing.T) {
 		savedKey, savedValue = key, value
 		return nil
 	}
-	m.selectLanguageOption(2) // English in the pinned language registry.
+	m.selectLanguage("English") // in the pinned language registry
 	if savedKey != "qwen_tts_language" || savedValue != "English" {
 		t.Fatalf("saved language = %q/%v, want qwen_tts_language/English", savedKey, savedValue)
 	}
@@ -406,7 +406,7 @@ func TestSettingsSelectTTSProviderPersistsAndRefreshesVoices(t *testing.T) {
 		return nil
 	}
 
-	m.selectTTSOption(1) // qwen3-tts
+	m.selectTTSProvider("qwen3-tts")
 
 	if saved["tts_provider"] != "qwen3-tts" || saved["qwen_tts_mode"] != "customvoice" || saved["qwen_tts_voice"] != managedqwen.DefaultVoice {
 		t.Fatalf("saved Qwen config = %v", saved)
@@ -440,7 +440,7 @@ func TestSettingsSelectTTSProviderWritesGlobalDefaultOnly(t *testing.T) {
 		return nil
 	}
 
-	m.selectTTSOption(1) // qwen3-tts
+	m.selectTTSProvider("qwen3-tts")
 
 	if saved["tts_provider"] != "qwen3-tts" {
 		t.Fatalf("saved keys = %v, want global tts_provider write", saved)
@@ -467,14 +467,14 @@ func TestSettingsInstallsQwenBeforeActivatingProvider(t *testing.T) {
 		return nil
 	}
 
-	cmd := m.selectTTSOption(1) // qwen3-tts
+	cmd := m.selectTTSProvider("qwen3-tts")
 	if cmd == nil || !m.qwenInstalling {
 		t.Fatal("selecting an uninstalled Qwen provider did not start native setup")
 	}
 	if cfg.TTSProvider != "kokoro" || len(saved) != 0 {
 		t.Fatalf("provider changed before setup completed: cfg=%q saved=%v", cfg.TTSProvider, saved)
 	}
-	// Execute the install command directly; selectTTSOption returns it batched
+	// Execute the install command directly; selectTTSProvider returns it batched
 	// with the progress-feed listener used by the live Bubble Tea program.
 	m, _ = m.Update(m.installManagedQwen(context.Background())())
 	if cfg.TTSProvider != "qwen3-tts" || saved["tts_provider"] != "qwen3-tts" {

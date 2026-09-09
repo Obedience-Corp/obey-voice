@@ -119,7 +119,7 @@ func TestSettingsSelectingAnAudio8VoiceWritesItsOwnKey(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("the registered voice is not selectable")
 	}
-	m.selectVoiceOption(idx)
+	m.selectVoice(m.voiceItems[idx])
 
 	if saved["audio8_voice"] != "alice" {
 		t.Errorf("saved = %v, want audio8_voice=alice", saved)

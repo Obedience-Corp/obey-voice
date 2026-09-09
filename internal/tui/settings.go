@@ -751,14 +751,6 @@ func (m *settingsModel) selectModel(model string) tea.Cmd {
 	return nil
 }
 
-// selectTTSOption saves the TTS provider at idx of the engine list.
-func (m *settingsModel) selectTTSOption(idx int) tea.Cmd {
-	if idx < 0 || idx >= len(m.ttsItems) {
-		return nil
-	}
-	return m.selectTTSProvider(m.ttsItems[idx].provider)
-}
-
 // ttsProviderInstalls reports whether choosing provider would start the
 // managed Qwen package install rather than just saving a key.
 func (m settingsModel) ttsProviderInstalls(provider string) bool {
@@ -808,14 +800,6 @@ func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
 	return nil
 }
 
-// selectVoiceOption saves the voice at idx of the voice list.
-func (m *settingsModel) selectVoiceOption(idx int) tea.Cmd {
-	if idx < 0 || idx >= len(m.voiceItems) {
-		return nil
-	}
-	return m.selectVoice(m.voiceItems[idx])
-}
-
 // selectVoice saves a voice as the global default; persona voices are edited
 // under Personas.
 func (m *settingsModel) selectVoice(voice tts.Voice) tea.Cmd {
@@ -831,13 +815,6 @@ func (m *settingsModel) selectVoice(voice tts.Voice) tea.Cmd {
 	config.SetTTSVoiceFor(m.cfg, activeTTSProvider(m.cfg), voice.Name)
 	m.message = fmt.Sprintf("Default voice set to %s · personas with their own voice keep it", voice.Name)
 	return nil
-}
-
-func (m *settingsModel) selectLanguageOption(idx int) tea.Cmd {
-	if idx < 0 || idx >= len(m.languageItems) {
-		return nil
-	}
-	return m.selectLanguage(m.languageItems[idx])
 }
 
 func (m *settingsModel) selectLanguage(language string) tea.Cmd {

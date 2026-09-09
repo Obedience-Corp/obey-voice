@@ -181,7 +181,9 @@ func (m *settingsModel) adjustRow(delta int) tea.Cmd {
 		for tries := 0; tries < n && next < len(row.stepOver) && row.stepOver[next]; tries++ {
 			next = ((next+delta)%n + n) % n
 		}
-		if next < len(row.stepOver) && row.stepOver[next] {
+		if (next < len(row.stepOver) && row.stepOver[next]) || next == row.current {
+			// Nothing else a keypress may choose; the list still can.
+			m.message = fmt.Sprintf("No other %s to step to · enter lists all %d", strings.ToLower(row.name), n)
 			return nil
 		}
 		if row.step != nil {

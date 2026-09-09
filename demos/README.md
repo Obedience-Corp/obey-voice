@@ -118,17 +118,21 @@ just demo-persona-create
 
 Full Bubble Tea Settings flow for the managed Qwen provider:
 
-1. **Settings → TTS** — the pinned CustomVoice 0.6B installation is ready while
-   Kokoro remains active
-2. **Select Qwen3-TTS** — mode, default voice, and language are persisted
-3. **Settings → Voice** — all nine model-native Qwen speakers are visible
-4. **Select Ryan** — the active check and launcher badge update to Qwen,
-   CustomVoice, and Ryan
+1. **Settings → TTS** — the engine row reads kokoro while the native 0.6B
+   package is already on disk
+2. **enter → Qwen3-TTS** — the engine list opens; choosing Qwen persists the
+   mode, default voice, and language (`←/→` would step over an engine whose
+   choice starts a download)
+3. **Settings → Voice** — the row shows the Qwen default; `enter` lists all
+   nine model-native speakers
+4. **`ryan` → enter** — typing narrows the list to Ryan; the row and the
+   launcher badge update to Qwen, CustomVoice, and Ryan
 
-The tape creates a disposable completion-marker/file-layout fixture consumed by
-the real production `Inspect` path. It does not mock the TUI or download the
-multi-GB model; inference remains covered by provider fixtures and opt-in
-real-model testing.
+`demos/fixtures/fake-qwen-native` lays down the native package layout the
+production `InspectNative` path verifies — worker, runtime libraries, the
+0.6B GGUF pair, presets, and a manifest with matching sha256 sums — so nothing
+is downloaded and the TUI is not mocked; inference remains covered by provider
+fixtures and opt-in real-model testing.
 
 ```bash
 just demo-qwen-voices
