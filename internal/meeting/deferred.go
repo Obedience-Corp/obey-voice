@@ -70,6 +70,13 @@ func (d *DeferredAnalyzer) ensure(ctx context.Context) (SpeakerAnalyzer, error) 
 	if d.built {
 		return d.inner, d.err
 	}
+	// An interrupt that arrived before the review pass started must not pay
+	// for a model load it would only throw away: Ctrl+C at "Diarizing
+	// speakers…" skips the labels, as documented. The builder is left unrun so
+	// a later call with a live context still gets its analyzer.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	d.built = true
 	inner, err := d.build(ctx)
 	if err != nil {
