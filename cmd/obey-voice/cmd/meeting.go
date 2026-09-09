@@ -24,6 +24,7 @@ type meetingOptions struct {
 	StopPhrases []string
 	RouteTo     string // --route <destination-id>
 	NoRoute     bool   // --no-route
+	Resume      string // --resume last|<id>|<path>
 }
 
 // newMeetingCmd builds the `obey-voice meeting` command group.
@@ -67,6 +68,11 @@ utterance, note, bookmark, error, session_end) with offset_ms from the start.
 --no-tui and --json keep plain line-oriented console sinks while writing the
 same meeting bundle.
 
+--resume last (or a bundle id / path) appends to an existing meeting instead
+of creating a new one. Offsets continue from the last line; the coffee-break
+gap is not inserted as empty time. A meeting that already routed its notes
+is not auto-routed again — use obey-voice meeting route to refile.
+
 After recording, notes can be routed to a configured destination (campaign
 notes/meetings via camp idea notes import-meeting, filesystem path, or Apple
 Notes). Defaults live under meeting.route in config; --route / --no-route
@@ -87,11 +93,16 @@ Examples:
   obey-voice meeting record --description "Standup" --out-dir ~/notes/meetings --json
   obey-voice meeting record --description "CI log" --no-tui
   obey-voice meeting record --description "Sync" --route docs --no-tui
-  obey-voice meeting record --no-route`,
+  obey-voice meeting record --no-route
+  obey-voice meeting record --resume last
+  obey-voice meeting record --resume standup-20260722-090000.meeting`,
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if strings.TrimSpace(opts.Resume) != "" {
+				return runMeetingRecord(cmd, opts)
+			}
 			description, cancelled, err := resolveMeetingDescription(
 				opts.Description, opts.NoTUI,
 				isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd()),
@@ -116,6 +127,7 @@ Examples:
 	f.StringArrayVar(&opts.StopPhrases, "stop-phrase", nil, "Additional spoken phrase that stops the recording (repeatable)")
 	f.StringVar(&opts.RouteTo, "route", "", "Route notes to this destination id after recording")
 	f.BoolVar(&opts.NoRoute, "no-route", false, "Skip post-meeting routing prompt/auto-route")
+	f.StringVar(&opts.Resume, "resume", "", "Continue an existing meeting (last, a bundle id, or a .meeting path)")
 	return cmd
 }
 

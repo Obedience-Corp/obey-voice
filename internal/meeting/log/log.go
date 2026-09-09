@@ -13,6 +13,7 @@
 package log
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -158,6 +159,7 @@ type Writer struct {
 	description        string
 	sttLabel           string
 	started            time.Time
+	offsetOrigin       time.Time // wall clock that maps onto offset 0; resumed sessions skip the gap
 	utterances         int
 	notes              int
 	bookmarks          int
@@ -217,6 +219,7 @@ func createAt(path, jsonlPath, bundlePath, description, sttLabel, source string)
 		sttLabel:    sttLabel,
 		started:     time.Now(),
 	}
+	w.offsetOrigin = w.started
 	header := fmt.Sprintf("# Meeting: %s\n# Started: %s\n# STT: %s\n",
 		description, w.started.Format(time.RFC3339), sttLabel)
 	if source != "" {
@@ -239,12 +242,142 @@ func createAt(path, jsonlPath, bundlePath, description, sttLabel, source string)
 	return w, nil
 }
 
+// OpenBundle reopens an existing meeting directory for another recording
+// segment. Offsets continue from the last event without counting the wall-clock
+// gap. A resume marker is written so the document shows the break. session_end
+// may already be present (a clean stop); another one is written when this
+// writer Closes.
+func OpenBundle(bundlePath string) (*Writer, error) {
+	if !strings.HasSuffix(strings.ToLower(filepath.Base(strings.TrimSpace(bundlePath))), ".meeting") {
+		return nil, fmt.Errorf("meetinglog: %s is not a .meeting bundle", bundlePath)
+	}
+	documentPath := filepath.Join(bundlePath, BundleDocumentName)
+	eventsPath := filepath.Join(bundlePath, BundleInternalDirName, BundleEventsName)
+	events, err := ReadEvents(eventsPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) == 0 {
+		return nil, fmt.Errorf("meetinglog: empty event stream %s", eventsPath)
+	}
+
+	w := &Writer{
+		path:       documentPath,
+		jsonlPath:  eventsPath,
+		bundlePath: bundlePath,
+	}
+	for _, e := range events {
+		switch e.Type {
+		case TypeSessionStart:
+			w.description = e.Desc
+			w.sttLabel = e.STT
+			if t, err := parseEventTime(e.TS); err == nil {
+				w.started = t
+			}
+		case TypeUtterance:
+			w.utterances++
+			w.transcripts = append(w.transcripts, TranscriptRecord{
+				ID: e.ID, StartMS: e.StartMS, EndMS: e.EndMS, Text: e.Text,
+			})
+			if e.EndMS > w.lastUtteranceEndMS {
+				w.lastUtteranceEndMS = e.EndMS
+			}
+		case TypeNote:
+			w.notes++
+		case TypeBookmark:
+			w.bookmarks++
+		case TypeError:
+			w.errors++
+		}
+		if e.OffsetMs > w.lastUtteranceEndMS {
+			w.lastUtteranceEndMS = e.OffsetMs
+		}
+	}
+	if w.started.IsZero() {
+		return nil, fmt.Errorf("meetinglog: %s has no session_start", eventsPath)
+	}
+	if w.description == "" {
+		w.description = "meeting"
+	}
+
+	logF, err := os.OpenFile(documentPath, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("meetinglog: reopen log %s: %w", documentPath, err)
+	}
+	jsonlF, err := os.OpenFile(eventsPath, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		_ = logF.Close()
+		return nil, fmt.Errorf("meetinglog: reopen jsonl %s: %w", eventsPath, err)
+	}
+	w.log, w.jsonl = logF, jsonlF
+	w.offsetOrigin = time.Now().Add(-time.Duration(w.lastUtteranceEndMS) * time.Millisecond)
+
+	now := time.Now()
+	if err := w.writeLog(fmt.Sprintf("\n[%s] ▶ resumed\n", now.Format("15:04:05"))); err != nil {
+		_ = w.log.Close()
+		_ = w.jsonl.Close()
+		return nil, err
+	}
+	if err := w.writeEventAt(Event{
+		Type: TypeResume,
+		Text: "recording continued",
+		TS:   now.Format(time.RFC3339Nano),
+	}, w.lastUtteranceEndMS); err != nil {
+		_ = w.log.Close()
+		_ = w.jsonl.Close()
+		return nil, err
+	}
+	return w, nil
+}
+
+// ReadEvents loads the JSONL event stream. Unknown types are kept so older
+// readers and newer control events share one parser.
+func ReadEvents(path string) ([]Event, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("meetinglog: open events %s: %w", path, err)
+	}
+	defer f.Close()
+	var events []Event
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var e Event
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			return nil, fmt.Errorf("meetinglog: parse events %s: %w", path, err)
+		}
+		events = append(events, e)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("meetinglog: read events %s: %w", path, err)
+	}
+	return events, nil
+}
+
+func parseEventTime(ts string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, ts)
+}
+
 func (w *Writer) abortCreate() error {
 	_ = w.log.Close()
 	_ = w.jsonl.Close()
 	_ = os.Remove(w.path)
 	_ = os.Remove(w.jsonlPath)
 	return nil
+}
+
+// Description returns the meeting title from session_start (or the resume).
+func (w *Writer) Description() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.description
 }
 
 // Path returns the canonical human-readable meeting document.
@@ -274,7 +407,7 @@ func (w *Writer) Transcripts() []TranscriptRecord {
 func (w *Writer) OnUtterance(u listen.Utterance) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	endMS := u.At.Sub(w.started).Milliseconds()
+	endMS := u.At.Sub(w.origin()).Milliseconds()
 	if endMS < 0 {
 		endMS = 0
 	}
@@ -297,10 +430,10 @@ func (w *Writer) OnUtterance(u listen.Utterance) error {
 	if err := w.writeLog(fmt.Sprintf("[%s] %s\n", u.At.Format("15:04:05"), u.Text)); err != nil {
 		return err
 	}
-	if err := w.writeEvent(Event{
+	if err := w.writeEventAt(Event{
 		Type: TypeUtterance, ID: record.ID, Text: u.Text,
 		TS: u.At.Format(time.RFC3339), StartMS: startMS, EndMS: endMS, Timing: "estimated",
-	}); err != nil {
+	}, endMS); err != nil {
 		return err
 	}
 	w.transcripts = append(w.transcripts, record)
@@ -629,9 +762,12 @@ func (w *Writer) Close() (Summary, error) {
 		AudioFile:           w.speakerAnalysis.AudioFile,
 		SpeakerError:        w.speakerAnalysis.Error,
 	}
-	s.DurationSeconds = int64(s.Duration().Round(time.Second) / time.Second)
+	s.DurationSeconds = int64(s.EndedAt.Sub(w.origin()).Round(time.Second) / time.Second)
+	if s.DurationSeconds < 0 {
+		s.DurationSeconds = 0
+	}
 	trailer := fmt.Sprintf("\n# Ended: %s (duration %s, %d utterances, %d notes, %d bookmarks, %d errors)\n",
-		s.EndedAt.Format(time.RFC3339), s.Duration().Round(time.Second),
+		s.EndedAt.Format(time.RFC3339), (time.Duration(s.DurationSeconds) * time.Second),
 		s.Utterances, s.Notes, s.Bookmarks, s.Errors)
 	werr := w.writeLog(trailer)
 	jerr := w.writeEvent(Event{Type: TypeSessionEnd, TS: s.EndedAt.Format(time.RFC3339)})
@@ -675,7 +811,14 @@ func (w *Writer) writeEvent(e Event) error {
 	if t, err := time.Parse(time.RFC3339, e.TS); err == nil {
 		at = t
 	}
-	return w.writeEventAt(e, at.Sub(w.started).Milliseconds())
+	return w.writeEventAt(e, at.Sub(w.origin()).Milliseconds())
+}
+
+func (w *Writer) origin() time.Time {
+	if !w.offsetOrigin.IsZero() {
+		return w.offsetOrigin
+	}
+	return w.started
 }
 
 // writeEventAt appends one JSONL line at an explicit meeting-relative offset.

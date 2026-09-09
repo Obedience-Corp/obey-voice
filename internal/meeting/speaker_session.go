@@ -78,9 +78,9 @@ func NewSpeakerSession(capture captureSubscriber, analyzer SpeakerAnalyzer, writ
 	if err := os.MkdirAll(filepath.Dir(workingPath), 0o700); err != nil {
 		return nil, fmt.Errorf("meeting: prepare speaker audio dir: %w", err)
 	}
-	audioWriter, err := audio.NewWAVWriter(workingPath, audio.SampleRate)
+	audioWriter, err := openSpeakerAudio(workingPath)
 	if err != nil {
-		return nil, fmt.Errorf("meeting: open speaker audio file: %w", err)
+		return nil, err
 	}
 
 	id, chunks := capture.Subscribe(speakerCaptureQueue)
@@ -103,6 +103,21 @@ func NewSpeakerSession(capture captureSubscriber, analyzer SpeakerAnalyzer, writ
 		}
 	})
 	return s, nil
+}
+
+func openSpeakerAudio(workingPath string) (*audio.WAVWriter, error) {
+	if _, err := os.Stat(workingPath); err == nil {
+		w, err := audio.OpenWAVWriter(workingPath, audio.SampleRate)
+		if err != nil {
+			return nil, fmt.Errorf("meeting: append speaker audio file: %w", err)
+		}
+		return w, nil
+	}
+	w, err := audio.NewWAVWriter(workingPath, audio.SampleRate)
+	if err != nil {
+		return nil, fmt.Errorf("meeting: open speaker audio file: %w", err)
+	}
+	return w, nil
 }
 
 // StopCapture releases the PCM subscription without closing the analyzer, so

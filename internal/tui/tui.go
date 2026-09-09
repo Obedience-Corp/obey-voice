@@ -426,7 +426,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// mic opens before anything can be recorded.
 		tick := a.meeting.beginStartup(msg.Description)
 		return a, tea.Batch(tick, a.progress.wait(),
-			buildMeeting(a.meetingBuilder, a.runCtx, a.progress, a.meetingSlot, msg.Description))
+			buildMeeting(a.meetingBuilder, a.runCtx, a.progress, a.meetingSlot, MeetingSpec{
+				Description: msg.Description,
+				ResumePath:  msg.ResumePath,
+			}))
 
 	case meetingReadyMsg:
 		// Build finished after quit: the slot already owns the recorder's

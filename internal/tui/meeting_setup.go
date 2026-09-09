@@ -46,6 +46,8 @@ type meetingSetupModel struct {
 // startMeetingMsg asks the App to build STT resources and open the recorder.
 type startMeetingMsg struct {
 	Description string
+	// ResumePath continues an existing .meeting bundle instead of creating one.
+	ResumePath string
 	// RoutePlan is local | ask | dest.
 	RoutePlan string
 	// Destination is set when RoutePlan is dest (may be ephemeral from camp list).

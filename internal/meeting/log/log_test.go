@@ -131,6 +131,84 @@ func TestCreateBundleGroupsMeetingArtifacts(t *testing.T) {
 	}
 }
 
+func TestOpenBundleResumesOffsetsWithoutWallClockGap(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "standup-20260722-100000.meeting")
+	w, err := CreateBundle(bundle, "Standup", "fake", "mac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.OnUtterance(listen.Utterance{Text: "hello", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := OpenBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Description() != "Standup" {
+		t.Fatalf("description = %q", resumed.Description())
+	}
+	// Live capture stamps At=now. OpenBundle rebased the offset clock onto
+	// resume time, so a two-hour coffee break must not become a two-hour gap
+	// in offset_ms.
+	if err := resumed.OnUtterance(listen.Utterance{Text: "we are back", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := resumed.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Utterances != 2 {
+		t.Fatalf("utterances = %d, want 2", sum.Utterances)
+	}
+
+	events := readJSONL(t, sum.JSONLFile)
+	var sawResume bool
+	var firstEnd, secondOff int64 = -1, -1
+	for _, e := range events {
+		if e.Type == TypeResume {
+			sawResume = true
+		}
+		if e.Type == TypeUtterance && e.Text == "hello" {
+			firstEnd = e.EndMS
+		}
+		if e.Type == TypeUtterance && e.Text == "we are back" {
+			secondOff = e.OffsetMs
+		}
+	}
+	if !sawResume {
+		t.Fatal("missing resume event")
+	}
+	if firstEnd < 0 || secondOff < 0 {
+		t.Fatalf("missing utterances firstEnd=%d secondOff=%d", firstEnd, secondOff)
+	}
+	if secondOff < firstEnd {
+		t.Fatalf("resumed offset_ms = %d < first end %d", secondOff, firstEnd)
+	}
+	if secondOff-firstEnd > 30_000 {
+		t.Fatalf("resumed offset jumped %dms, want a continuation not a wall-clock gap", secondOff-firstEnd)
+	}
+	body, err := os.ReadFile(resumed.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "▶ resumed") || !strings.Contains(string(body), "we are back") {
+		t.Fatalf("document missing resume marker or new speech:\n%s", body)
+	}
+}
+
+func TestOpenBundleRejectsMissingBundle(t *testing.T) {
+	if _, err := OpenBundle(filepath.Join(t.TempDir(), "nope.meeting")); err == nil {
+		t.Fatal("expected error")
+	}
+	if _, err := OpenBundle(t.TempDir()); err == nil {
+		t.Fatal("plain directory must not open as a bundle")
+	}
+}
+
 func readJSONL(t *testing.T, path string) []Event {
 	t.Helper()
 	f, err := os.Open(path)
@@ -159,6 +237,7 @@ func TestSummaryJSONIncludesDurationSeconds(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.started = time.Now().Add(-92 * time.Second)
+	w.offsetOrigin = w.started
 	summary, err := w.Close()
 	if err != nil {
 		t.Fatal(err)

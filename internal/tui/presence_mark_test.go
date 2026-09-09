@@ -254,10 +254,10 @@ func TestMeetingBuildCancelsCleanupViaSlot(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	slot := newMeetingSlot()
-	build := func(context.Context, string, BuildProgress) (*MeetingRuntime, error) { return rt, nil }
+	build := func(context.Context, MeetingSpec, BuildProgress) (*MeetingRuntime, error) { return rt, nil }
 	cancel() // quit while the builder is still opening the mic
 
-	msg := buildMeeting(build, ctx, newEventBridge(4), slot, "Standup")()
+	msg := buildMeeting(build, ctx, newEventBridge(4), slot, MeetingSpec{Description: "Standup"})()
 	ready, ok := msg.(meetingReadyMsg)
 	if !ok {
 		t.Fatalf("buildMeeting returned %#v", msg)
@@ -279,8 +279,8 @@ func TestMeetingSlotReleasesAtExit(t *testing.T) {
 	slot := newMeetingSlot()
 
 	msg := buildMeeting(
-		func(context.Context, string, BuildProgress) (*MeetingRuntime, error) { return rt, nil },
-		context.Background(), newEventBridge(4), slot, "Standup",
+		func(context.Context, MeetingSpec, BuildProgress) (*MeetingRuntime, error) { return rt, nil },
+		context.Background(), newEventBridge(4), slot, MeetingSpec{Description: "Standup"},
 	)()
 	if ready := msg.(meetingReadyMsg); ready.err != nil || ready.rt != rt {
 		t.Fatalf("build did not deliver the runtime: %+v", ready)

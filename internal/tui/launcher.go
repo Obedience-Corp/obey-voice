@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	ansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -33,18 +35,20 @@ const (
 	actionStartPersona    // start a conversation bound to item.personaID
 	actionCreatePersona   // jump to the Personas editor to create one
 	actionMeetingStart    // today's meeting setup → record flow
+	actionMeetingResume   // continue the most recent .meeting bundle
 	actionMeetingSettings // Settings opened on the Meeting section
 )
 
 const defaultsPickerLabel = "Use defaults"
 
 type launcherItem struct {
-	label     string
-	hint      string
-	glyph     string
-	action    launcherAction
-	sessionID string
-	personaID string
+	label      string
+	hint       string
+	glyph      string
+	action     launcherAction
+	sessionID  string
+	personaID  string
+	resumePath string
 }
 
 type launcherModel struct {
@@ -227,6 +231,17 @@ func (m launcherModel) updateSubmenu(msg tea.KeyMsg) (launcherModel, tea.Cmd) {
 			return m, func() tea.Msg { return switchScreenMsg(screenPersonas) }
 		case actionMeetingStart:
 			return m, func() tea.Msg { return switchScreenMsg(screenMeetingSetup) }
+		case actionMeetingResume:
+			if item.resumePath == "" {
+				return m, nil
+			}
+			return m, func() tea.Msg {
+				return startMeetingMsg{
+					Description: item.hint,
+					ResumePath:  item.resumePath,
+					RoutePlan:   routePlanLocal,
+				}
+			}
 		case actionMeetingSettings:
 			return m, func() tea.Msg { return openSettingsSectionMsg{section: sectionMeeting} }
 		}
@@ -332,8 +347,20 @@ func startDefaultsMsg() startPipelineMsg {
 func (m launcherModel) openMeetingMenu() launcherModel {
 	m.submenuTitle = "Meeting"
 	m.submenuCursor = 0
+	resumeHint := "No previous meeting"
+	resumePath := ""
+	if m.cfg != nil {
+		if entry, ok := meeting.ResolveResumeRef(context.Background(), config.MeetingsDirFrom(m.cfg), "last"); ok {
+			resumeHint = entry.Description
+			if resumeHint == "" {
+				resumeHint = entry.ID
+			}
+			resumePath = entry.Bundle
+		}
+	}
 	m.submenu = []launcherItem{
 		{label: "Start meeting", hint: "Record · notes · ★ bookmarks", glyph: "◉", action: actionMeetingStart},
+		{label: "Resume last meeting", hint: resumeHint, glyph: "↺", action: actionMeetingResume, resumePath: resumePath},
 		{label: "Meeting settings", hint: "Note routing · destinations", glyph: "⚙", action: actionMeetingSettings},
 	}
 	return m

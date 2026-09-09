@@ -182,7 +182,7 @@ func TestLauncherMeetingSplitsStartAndSettings(t *testing.T) {
 	// Design WI-c8884d §2.6: Meeting is a submenu — Start meeting keeps the
 	// happy path, Meeting settings opens Settings on the Meeting section
 	// without starting a recording.
-	m := newLauncher(&config.Config{}, nil)
+	m := newLauncher(&config.Config{Meeting: config.MeetingConfig{Dir: t.TempDir()}}, nil)
 	for i, item := range m.items {
 		if item.action != actionMeeting {
 			continue
@@ -192,8 +192,11 @@ func TestLauncherMeetingSplitsStartAndSettings(t *testing.T) {
 		}
 		m.cursor = i
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		if len(m.submenu) != 2 {
-			t.Fatalf("meeting submenu = %d items, want start + settings", len(m.submenu))
+		if len(m.submenu) != 3 {
+			t.Fatalf("meeting submenu = %d items, want start + resume + settings", len(m.submenu))
+		}
+		if m.submenu[0].action != actionMeetingStart || m.submenu[1].action != actionMeetingResume || m.submenu[2].action != actionMeetingSettings {
+			t.Fatalf("meeting submenu actions = %v %v %v", m.submenu[0].action, m.submenu[1].action, m.submenu[2].action)
 		}
 
 		// Row 0: Start meeting → meeting setup (unchanged happy path).
@@ -208,8 +211,19 @@ func TestLauncherMeetingSplitsStartAndSettings(t *testing.T) {
 			t.Fatalf("start meeting message = %#v", msg)
 		}
 
-		// Row 1: Meeting settings → Settings landed on the Meeting section.
-		m.submenuCursor = 1
+		// Row 1 with no history: Resume is a no-op (tests do not plant a bundle).
+		resume := m
+		resume.submenuCursor = 1
+		resume, cmd = resume.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if resume.submenu != nil {
+			t.Fatal("submenu should close on selection")
+		}
+		if cmd != nil {
+			t.Fatalf("resume without a bundle should not start a recording: %#v", cmd())
+		}
+
+		// Row 2: Meeting settings → Settings landed on the Meeting section.
+		m.submenuCursor = 2
 		m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		open, ok := cmd().(openSettingsSectionMsg)
 		if !ok || open.section != sectionMeeting {

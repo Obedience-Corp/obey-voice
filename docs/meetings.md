@@ -7,9 +7,14 @@ and creates one timestamped `.meeting` bundle directory. Its canonical
 `meeting.md` and internal structured event stream are each synced so a crash
 never loses what was already captured.
 
-From the main `obey-voice` launcher choose **Record meeting**, or run
+From the main `obey-voice` launcher choose **Meeting → Start meeting**, or run
 `obey-voice meeting record` on a TTY (not `--json` / `--no-tui`) for the
-full-screen recorder:
+full-screen recorder. **Resume last meeting** (or `obey-voice meeting record
+--resume last`) appends to the same `.meeting` bundle: timestamps continue
+from the last line, the break is marked `▶ resumed`, and retained `audio.wav`
+is extended rather than replaced. A meeting that already routed its notes is
+not auto-filed a second time; `obey-voice meeting route` refiles if you want
+the extra transcript in the destination.
 
 | Control | Action |
 |---------|--------|
@@ -209,6 +214,7 @@ obey-voice meeting record
 obey-voice meeting record --description "Weekly planning sync"
 obey-voice meeting record --description "Standup" --out-dir ~/notes/meetings --json
 obey-voice meeting record --description "CI log" --no-tui
+obey-voice meeting record --resume last
 obey-voice meeting analyze meeting.wav --speakers 2
 ```
 

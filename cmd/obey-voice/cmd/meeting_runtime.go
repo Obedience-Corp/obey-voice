@@ -82,16 +82,17 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return fmt.Errorf("meeting record: create out dir: %w", err)
 	}
-	bundlePath := filepath.Join(outDir, meetingBundleName(opts.Description, time.Now()))
-
-	writer, err := meetinglog.CreateBundle(bundlePath, opts.Description, sttLabel, "mac")
+	writer, bundlePath, alreadyRouted, err := openMeetingWriter(ctx, outDir, sttLabel, opts)
 	if err != nil {
 		return err
 	}
+	opts.Description = writer.Description()
 	// Durable delivery intent: an auto destination known at start is recorded
 	// so the launcher's startup sweep can retry if this process never routes.
 	// A failed write voids that promise — say so instead of claiming durability.
-	if dest := cliAutoRouteDest(meeting.FromConfig(&cfgCopy), opts); dest != "" {
+	// Resume keeps the original plan; a meeting that already filed is not
+	// promised a second delivery unless --route is explicit.
+	if dest := cliAutoRouteDest(meeting.FromConfig(&cfgCopy), opts); dest != "" && opts.Resume == "" {
 		mode := "auto"
 		if opts.RouteTo != "" {
 			mode = "dest"
@@ -171,7 +172,7 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	} else {
 		autoDest = cliAutoRouteDest(meeting.FromConfig(routeCfg), opts)
 	}
-	if closeErr == nil && cfgErr == nil && autoDest != "" {
+	if closeErr == nil && cfgErr == nil && autoDest != "" && !(alreadyRouted && opts.RouteTo == "") {
 		routeErr = routeAfterRecordTo(cmd, routeCfg, summary, autoDest, opts.JSON)
 	}
 
@@ -180,7 +181,7 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 			fmt.Fprintf(cmd.ErrOrStderr(), "meeting review: %v\n", err)
 		}
 	}
-	if closeErr == nil && cfgErr == nil && autoDest == "" {
+	if closeErr == nil && cfgErr == nil && autoDest == "" && !alreadyRouted {
 		routeErr = maybeRouteAfterRecord(cmd, routeCfg, summary, opts)
 	}
 
@@ -278,9 +279,31 @@ func useMeetingRecordTUI(opts meetingOptions) bool {
 	return isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 }
 
+// openMeetingWriter creates a new bundle or reopens one for --resume.
+func openMeetingWriter(ctx context.Context, outDir, sttLabel string, opts meetingOptions) (*meetinglog.Writer, string, bool, error) {
+	if ref := strings.TrimSpace(opts.Resume); ref != "" {
+		entry, ok := meeting.ResolveResumeRef(ctx, outDir, ref)
+		if !ok {
+			return nil, "", false, fmt.Errorf("meeting record: no meeting matching %q", ref)
+		}
+		writer, err := meetinglog.OpenBundle(entry.Bundle)
+		if err != nil {
+			return nil, "", false, err
+		}
+		routed := entry.Route != nil && entry.Route.Status == meeting.RouteStatusRouted
+		return writer, entry.Bundle, routed, nil
+	}
+	bundlePath := filepath.Join(outDir, meetingBundleName(opts.Description, time.Now()))
+	writer, err := meetinglog.CreateBundle(bundlePath, opts.Description, sttLabel, "mac")
+	if err != nil {
+		return nil, "", false, err
+	}
+	return writer, bundlePath, false, nil
+}
+
 // meetingRuntimeBuilder powers the main launcher "Meeting" entry.
 func meetingRuntimeBuilder() appTUI.MeetingBuilder {
-	return func(ctx context.Context, description string, progress appTUI.BuildProgress) (*appTUI.MeetingRuntime, error) {
+	return func(ctx context.Context, spec appTUI.MeetingSpec, progress appTUI.BuildProgress) (*appTUI.MeetingRuntime, error) {
 		progress.Stage("Reading settings")
 		cfg, err := config.Load()
 		if err != nil {
@@ -290,12 +313,13 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 		if err := os.MkdirAll(outDir, 0o700); err != nil {
 			return nil, fmt.Errorf("meeting: create out dir: %w", err)
 		}
-		bundlePath := filepath.Join(outDir, meetingBundleName(description, time.Now()))
+		description := spec.Description
 
 		// VHS/demo path: skip real mic/models; the TUI scripts STT events.
 		if os.Getenv("OBEY_VOICE_DEMO_MEETING") == "1" ||
 			os.Getenv("OBEY_VOICE_DEMO_MEETING") == "true" ||
 			os.Getenv("OBEY_VOICE_DEMO_MEETING") == "yes" {
+			bundlePath := filepath.Join(outDir, meetingBundleName(description, time.Now()))
 			writer, err := meetinglog.CreateBundle(bundlePath, description, "demo", "mac")
 			if err != nil {
 				return nil, err
@@ -318,11 +342,15 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 			return nil, err
 		}
 		progress.Stage("Opening the meeting bundle")
-		writer, err := meetinglog.CreateBundle(bundlePath, description, sttLabel, "mac")
+		writer, bundlePath, _, err := openMeetingWriter(ctx, outDir, sttLabel, meetingOptions{
+			Description: description,
+			Resume:      spec.ResumePath,
+		})
 		if err != nil {
 			cleanup()
 			return nil, err
 		}
+		description = writer.Description()
 		speakerSession, speakerSetupErr := prepareMeetingSpeakers(ctx, cfg, capture, writer, bundlePath, progress)
 		if speakerSetupErr != nil {
 			_ = writer.WriteSpeakerAnalysis(meetinglog.SpeakerAnalysis{

@@ -57,6 +57,45 @@ func TestWAVWriterStreamsAndStaysReadableBeforeClose(t *testing.T) {
 	}
 }
 
+func TestOpenWAVWriterAppendsWithoutTruncating(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resume.wav")
+	w, err := NewWAVWriter(path, SampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Write([]float32{0.5, -0.5}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := OpenWAVWriter(path, SampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Samples() != 2 {
+		t.Fatalf("OpenWAVWriter samples = %d, want 2", again.Samples())
+	}
+	if err := again.Write([]float32{0.25}); err != nil {
+		t.Fatal(err)
+	}
+	if err := again.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, rate, err := ReadWAVFloat32(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rate != SampleRate || len(got) != 3 {
+		t.Fatalf("resumed wav = %d samples @ %d Hz, want 3 @ %d", len(got), rate, SampleRate)
+	}
+	if math.Abs(float64(got[0])-0.5) > 0.001 || math.Abs(float64(got[2])-0.25) > 0.001 {
+		t.Fatalf("samples = %v", got)
+	}
+}
+
 func TestWAVWriterMatchesOneShotBytes(t *testing.T) {
 	dir := t.TempDir()
 	samples := []float32{0, 0.1, -0.2, 0.9, -1.0, 1.0}

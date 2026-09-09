@@ -27,6 +27,23 @@ func ResolveBundle(ctx context.Context, meetingsDir, ref string) (BundleEntry, b
 	return readBundleEntry(bundle)
 }
 
+// ResolveResumeRef is ResolveBundle plus "last" / "latest" for the newest
+// meeting in meetingsDir. Empty or unknown refs report false.
+func ResolveResumeRef(ctx context.Context, meetingsDir, ref string) (BundleEntry, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return BundleEntry{}, false
+	}
+	if strings.EqualFold(ref, "last") || strings.EqualFold(ref, "latest") {
+		entries, _, err := Index(ctx, meetingsDir, IndexOptions{Limit: 1})
+		if err != nil || len(entries) == 0 {
+			return BundleEntry{}, false
+		}
+		return entries[0], true
+	}
+	return ResolveBundle(ctx, meetingsDir, ref)
+}
+
 // bundlePathForRef maps a reference onto a bundle directory, or "".
 func bundlePathForRef(meetingsDir, ref string) string {
 	if ref == "" {
