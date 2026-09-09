@@ -48,6 +48,22 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	ctx, cancel := signalContext()
 	defer cancel()
 
+	outDir := opts.OutDir
+	if outDir == "" {
+		outDir = config.MeetingsDir()
+	}
+	// 0o700: meeting filenames include description slugs; keep the directory
+	// private the same way auth/cert paths are.
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
+		return fmt.Errorf("meeting record: create out dir: %w", err)
+	}
+	// Resolve --resume first: a typo must not cost the user a full model
+	// preflight and a hot microphone before it is reported.
+	resume, err := resolveMeetingResume(ctx, outDir, opts.Resume)
+	if err != nil {
+		return err
+	}
+
 	progress := meetingAssetProgress(opts.JSON)
 	capture, provider, sttLabel, sttCleanup, err := buildSTTOnly(ctx, &cfgCopy, progress)
 	if err != nil {
@@ -73,26 +89,20 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	}
 	defer releaseCapture()
 
-	outDir := opts.OutDir
-	if outDir == "" {
-		outDir = config.MeetingsDir()
-	}
-	// 0o700: meeting filenames include description slugs; keep the directory
-	// private the same way auth/cert paths are.
-	if err := os.MkdirAll(outDir, 0o700); err != nil {
-		return fmt.Errorf("meeting record: create out dir: %w", err)
-	}
-	writer, bundlePath, alreadyRouted, err := openMeetingWriter(ctx, outDir, sttLabel, opts)
+	writer, bundlePath, err := openMeetingWriter(outDir, opts.Description, sttLabel, resume)
 	if err != nil {
 		return err
 	}
+	alreadyRouted := resume != nil && resume.alreadyRouted
 	opts.Description = writer.Description()
 	// Durable delivery intent: an auto destination known at start is recorded
 	// so the launcher's startup sweep can retry if this process never routes.
 	// A failed write voids that promise — say so instead of claiming durability.
-	// Resume keeps the original plan; a meeting that already filed is not
-	// promised a second delivery unless --route is explicit.
-	if dest := cliAutoRouteDest(meeting.FromConfig(&cfgCopy), opts); dest != "" && opts.Resume == "" {
+	// A resume keeps the plan the bundle already carries; a resume of a bundle
+	// with no plan writes one, so --resume last --route docs is as crash-proof
+	// as a fresh recording.
+	if dest := cliAutoRouteDest(meeting.FromConfig(&cfgCopy), opts); dest != "" &&
+		(resume == nil || !resume.hasRoutePlan) {
 		mode := "auto"
 		if opts.RouteTo != "" {
 			mode = "dest"
@@ -279,26 +289,48 @@ func useMeetingRecordTUI(opts meetingOptions) bool {
 	return isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 }
 
-// openMeetingWriter creates a new bundle or reopens one for --resume.
-func openMeetingWriter(ctx context.Context, outDir, sttLabel string, opts meetingOptions) (*meetinglog.Writer, string, bool, error) {
-	if ref := strings.TrimSpace(opts.Resume); ref != "" {
-		entry, ok := meeting.ResolveResumeRef(ctx, outDir, ref)
-		if !ok {
-			return nil, "", false, fmt.Errorf("meeting record: no meeting matching %q", ref)
-		}
-		writer, err := meetinglog.OpenBundle(entry.Bundle)
+// resumeTarget is a validated --resume reference: the bundle to append to,
+// plus what its event stream already promises about routing.
+type resumeTarget struct {
+	bundle        string
+	alreadyRouted bool
+	hasRoutePlan  bool
+}
+
+// resolveMeetingResume validates a --resume reference without touching models
+// or the microphone. A nil target with a nil error means no --resume was given.
+func resolveMeetingResume(ctx context.Context, outDir, ref string) (*resumeTarget, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, nil
+	}
+	entry, ok := meeting.ResolveResumeRef(ctx, outDir, ref)
+	if !ok {
+		return nil, fmt.Errorf("meeting record: no meeting matching %q", ref)
+	}
+	return &resumeTarget{
+		bundle:        entry.Bundle,
+		alreadyRouted: entry.Route != nil && entry.Route.Status == meeting.RouteStatusRouted,
+		hasRoutePlan:  entry.Route != nil && entry.Route.Status != meeting.RouteStatusNone,
+	}, nil
+}
+
+// openMeetingWriter creates a new bundle, or reopens the already-resolved
+// --resume target.
+func openMeetingWriter(outDir, description, sttLabel string, resume *resumeTarget) (*meetinglog.Writer, string, error) {
+	if resume != nil {
+		writer, err := meetinglog.OpenBundle(resume.bundle)
 		if err != nil {
-			return nil, "", false, err
+			return nil, "", err
 		}
-		routed := entry.Route != nil && entry.Route.Status == meeting.RouteStatusRouted
-		return writer, entry.Bundle, routed, nil
+		return writer, resume.bundle, nil
 	}
-	bundlePath := filepath.Join(outDir, meetingBundleName(opts.Description, time.Now()))
-	writer, err := meetinglog.CreateBundle(bundlePath, opts.Description, sttLabel, "mac")
+	bundlePath := filepath.Join(outDir, meetingBundleName(description, time.Now()))
+	writer, err := meetinglog.CreateBundle(bundlePath, description, sttLabel, "mac")
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", err
 	}
-	return writer, bundlePath, false, nil
+	return writer, bundlePath, nil
 }
 
 // meetingRuntimeBuilder powers the main launcher "Meeting" entry.
@@ -337,15 +369,17 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 			}, nil
 		}
 
+		resume, err := resolveMeetingResume(ctx, outDir, spec.ResumePath)
+		if err != nil {
+			return nil, err
+		}
+
 		capture, provider, sttLabel, cleanup, err := buildSTTOnly(ctx, cfg, progress)
 		if err != nil {
 			return nil, err
 		}
 		progress.Stage("Opening the meeting bundle")
-		writer, bundlePath, _, err := openMeetingWriter(ctx, outDir, sttLabel, meetingOptions{
-			Description: description,
-			Resume:      spec.ResumePath,
-		})
+		writer, bundlePath, err := openMeetingWriter(outDir, description, sttLabel, resume)
 		if err != nil {
 			cleanup()
 			return nil, err
