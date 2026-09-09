@@ -271,9 +271,6 @@ func foldSpeakerOutcome(summary *meetinglog.Summary, result meeting.AnalysisResu
 	summary.SpeakerError = result.Error
 }
 
-// useMeetingRecordTUI is true for an interactive terminal session that should
-// open the Bubble Tea recorder. --json and --no-tui keep the plain sinks so
-// scripts never hang on a full-screen UI.
 // meetingCaptureLogf picks where capture reopen diagnostics go on the
 // standalone `meeting record` path. That path runs its own Bubble Tea program
 // without redirecting file descriptor 2, so a line on stderr would be painted
@@ -297,6 +294,9 @@ func meetingCaptureLogf(useTUI bool) (func(string, ...any), func()) {
 	return logger.Printf, func() { _ = file.Close() }
 }
 
+// useMeetingRecordTUI is true for an interactive terminal session that should
+// open the Bubble Tea recorder. --json and --no-tui keep the plain sinks so
+// scripts never hang on a full-screen UI.
 func useMeetingRecordTUI(opts meetingOptions) bool {
 	if opts.JSON || opts.NoTUI {
 		return false
