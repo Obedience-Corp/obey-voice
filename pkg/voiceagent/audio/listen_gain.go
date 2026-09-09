@@ -40,6 +40,15 @@ func (g *ListenGain) ProcessCapture(samples []float32) []float32 {
 	return out
 }
 
+// InputGain implements GainReporter: the multiplier the AGC is currently
+// applying, so downstream energy thresholds can be read back in microphone
+// units.
+func (g *ListenGain) InputGain() float64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.agc.Gain()
+}
+
 // PushPlaybackReference is unused: meetings have no playback to cancel.
 func (g *ListenGain) PushPlaybackReference([]float32) {}
 

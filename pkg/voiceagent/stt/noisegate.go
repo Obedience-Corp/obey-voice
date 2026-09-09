@@ -18,6 +18,10 @@ const (
 	// gateGainJump is an OS mixer slam (~18 dB), not a syllable. Syllables
 	// sit around 2–4× the slow envelope; a volume slider often jumps 8×+.
 	gateGainJump = 8.0
+	// gateJumpFrames is how long the shifted level must hold before it counts
+	// as a mixer move: 300ms of 100ms frames. One frame at 8× the envelope is
+	// a syllable, a door, or a keyboard.
+	gateJumpFrames = 3
 )
 
 // noiseGate is a second vote next to Silero. Neural VAD will happily latch on
@@ -25,11 +29,14 @@ const (
 // noise floor and how much the level wobbles: Silero + modulation (or a jump
 // above the floor) is speech; Silero + a flat hold at the floor is noise.
 type noiseGate struct {
-	hist  [gateHist]float64
-	n     int
-	i     int
-	floor float64
-	env   float64 // slow RMS; a mixer jump moves this, a word does not
+	hist    [gateHist]float64
+	n       int
+	i       int
+	floor   float64
+	env     float64 // slow RMS of non-speech frames only: the room, not the talker
+	jumpDir int     // +1 louder, -1 quieter, 0 no run in progress
+	jumpN   int     // consecutive non-speech frames off the envelope
+	minRMS  float64 // not-silence floor for this path; 0 uses minSpeechRMS
 }
 
 type gateDecision struct {
@@ -41,21 +48,20 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 	rms := frameRMS(samples)
 	g.push(rms)
 
-	if g.reanchorOnGainJump(rms, silero) {
-		if silero {
+	// Only non-speech frames teach the gate about the room. A speech onset is
+	// 8×+ above any quiet floor, so reading one as a mixer move dropped the
+	// first frame of every utterance and reset the recognizer mid-sentence.
+	if !silero {
+		if g.reanchorOnGainJump(rms) {
 			return gateDecision{drop: true}
 		}
-		return gateDecision{}
-	}
-
-	if !silero {
 		g.learn(rms, false)
 		return gateDecision{}
 	}
 
 	// Silero on digital silence is a false mark. Never start a turn from
 	// energy nobody could hear; the decoder will invent a word ("yeah").
-	if rms < minSpeechRMS {
+	if rms < g.speechFloor() {
 		return gateDecision{}
 	}
 
@@ -71,28 +77,58 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 	return gateDecision{voice: true}
 }
 
-// reanchorOnGainJump detects an OS input-volume change: the current frame is
-// many times louder or quieter than the slow envelope. A learned floor at the
-// old gain would then treat hiss as speech (volume up) or drop real talkers
-// (volume down). Re-learn from this level and ask the loop to drop a Silero
-// latch. Returns true when the caller should skip the rest of decide.
-func (g *noiseGate) reanchorOnGainJump(rms float64, silero bool) bool {
+// speechFloor is the lowest RMS this path counts as somebody making a sound.
+func (g *noiseGate) speechFloor() float64 {
+	if g.minRMS > 0 {
+		return g.minRMS
+	}
+	return minSpeechRMS
+}
+
+// reanchorOnGainJump folds one non-speech frame into the mixer-move detector
+// and reports whether the room level was re-anchored. A learned floor at the
+// old gain treats hiss as speech (volume up) or drops real talkers (volume
+// down), so the floor is re-seeded once the shifted level has held for
+// gateJumpFrames. The envelope is frozen during a run so every frame in it is
+// compared against the pre-move level.
+//
+// Because only non-speech frames vote, a Silero latch that never releases (a
+// fan loud enough to hold the VAD through a volume change) is not recovered
+// here; the stationarity check remains its only guard.
+func (g *noiseGate) reanchorOnGainJump(rms float64) bool {
+	if rms <= gateSilent {
+		// A muted or disconnected mic is not a new room level to learn.
+		g.jumpDir, g.jumpN = 0, 0
+		return false
+	}
 	if g.env == 0 {
-		if rms > gateSilent {
-			g.env = rms
-		}
+		g.env = rms
 		return false
 	}
-	jumped := rms > g.env*gateGainJump || (rms > gateSilent && rms < g.env/gateGainJump)
-	g.env = 0.9*g.env + 0.1*math.Max(rms, gateSilent)
-	if !jumped || g.floor == 0 {
+
+	dir := 0
+	switch {
+	case rms > g.env*gateGainJump:
+		dir = 1
+	case rms < g.env/gateGainJump:
+		dir = -1
+	}
+	if dir == 0 {
+		g.jumpDir, g.jumpN = 0, 0
+		g.env = 0.9*g.env + 0.1*rms
 		return false
 	}
-	g.floor = math.Max(rms, gateSilent)
-	g.env = g.floor
-	if !silero {
-		g.learn(rms, false)
+	if dir != g.jumpDir {
+		g.jumpDir, g.jumpN = dir, 0
 	}
+	g.jumpN++
+	if g.jumpN < gateJumpFrames {
+		return false
+	}
+
+	g.jumpDir, g.jumpN = 0, 0
+	g.floor = rms
+	g.env = rms
 	return true
 }
 

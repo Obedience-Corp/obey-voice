@@ -17,6 +17,17 @@ type ReferenceDelayer interface {
 	SetReferenceDelay(samples int)
 }
 
+// GainReporter is optionally implemented by front-ends and capture sources
+// that amplify what the microphone heard. Energy thresholds downstream (the
+// not-silence floor that keeps decoder ghosts out of a transcript) are stated
+// in microphone units, so they have to be scaled by whatever gain has already
+// been applied: AGC lifts room tone and talkers alike, and a fixed post-gain
+// threshold either admits the noise or rejects the far talker. Sources that do
+// not amplify simply do not implement it.
+type GainReporter interface {
+	InputGain() float64
+}
+
 // FrontendStats is a diagnostics-only snapshot of a front-end's aggregate
 // health metrics. APM-backed front-ends update these roughly once a second —
 // far too coarse a signal to gate any per-frame decision, so nothing in the

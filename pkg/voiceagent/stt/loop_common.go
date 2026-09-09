@@ -17,14 +17,42 @@ const levelEmitMinInterval = 50 * time.Millisecond
 // speechRMSScale maps typical close-mic speech RMS (~0.02–0.15) into 0..1.
 const speechRMSScale = 0.12
 
-// minSpeechRMS is the lowest RMS that counts as a talker. Digital silence
-// and STT-on-zeros is ~0; below this we did not hear anyone — Silero still
-// false-marks, and the decoder invents "yeah".
+// minSpeechRMS is the lowest RMS that counts as a talker, measured at the
+// microphone. Digital silence and STT-on-zeros is ~0; below this we did not
+// hear anyone — Silero still false-marks, and the decoder invents "yeah".
 //
 // This is a not-silence floor, not a close-mic assumption. Desk speech is
 // ~0.02–0.15; a talker across a table on a laptop mic is often ~0.002–0.006.
 // 0.008 dropped those room voices. Stationary fans still fail the noise gate.
+//
+// It is a *pre-gain* number: apply it with speechFloor, never directly to
+// samples a front-end has already amplified.
 const minSpeechRMS = 0.002
+
+// speechFloor scales minSpeechRMS by the gain already applied to the samples
+// being measured. AGC lifts room tone and talkers by the same factor, so a
+// fixed post-gain floor has to choose between admitting noise and rejecting
+// the far talkers it exists to hear: meeting capture's 8× ListenGain reads
+// 0.001 room tone as 0.008 and a 0.002 far talker as 0.016. Scaling keeps the
+// question in microphone units, so the answer is the same with or without a
+// front-end. Gain below 1 (a close talker the AGC is cutting) never raises the
+// floor.
+func speechFloor(gain float64) float64 {
+	if gain <= 1 || math.IsNaN(gain) {
+		return minSpeechRMS
+	}
+	return minSpeechRMS * gain
+}
+
+// inputGain reports the gain a frame source has already applied to the frames
+// it hands out. Sources that do not amplify (files, fakes, a capture with no
+// front-end) report 1.
+func inputGain(frames audio.FrameSource) float64 {
+	if g, ok := frames.(audio.GainReporter); ok {
+		return g.InputGain()
+	}
+	return 1
+}
 
 // sendEvent delivers an event, preferring a non-blocking send and falling back
 // to a cancellable blocking send when the channel is full.
@@ -56,9 +84,15 @@ const audibleWindow = 1600
 
 // audibleSpeech reports whether samples contain a talker, not just enough
 // length for the decoder to run. Pre-roll silence can dilute whole-utterance
-// RMS, so any 100ms window above the floor counts.
+// RMS, so any 100ms window above the floor counts. Samples must be unamplified;
+// use audibleSpeechAbove with speechFloor for a gained path.
 func audibleSpeech(samples []float32) bool {
-	var t audibleTracker
+	return audibleSpeechAbove(samples, minSpeechRMS)
+}
+
+// audibleSpeechAbove is audibleSpeech against an explicit floor.
+func audibleSpeechAbove(samples []float32, floor float64) bool {
+	t := audibleTracker{floor: floor}
 	t.push(samples)
 	return t.audible()
 }
@@ -69,12 +103,21 @@ func audibleSpeech(samples []float32) bool {
 // endpoint: once a window clears the floor the verdict latches, and only the
 // window being filled plus the trailing 100ms are kept.
 type audibleTracker struct {
+	floor float64                // not-silence floor; 0 uses minSpeechRMS
 	heard bool                   // a completed window already cleared the floor
 	sumSq float64                // energy of the window being filled
 	n     int                    // samples in the window being filled
 	tail  [audibleWindow]float32 // most recent 100ms, for the trailing window
 	i     int                    // next write index into tail
 	fill  int                    // samples held in tail
+}
+
+// speechFloor is the floor this tracker judges against.
+func (t *audibleTracker) speechFloor() float64 {
+	if t.floor > 0 {
+		return t.floor
+	}
+	return minSpeechRMS
 }
 
 // push folds one frame into the verdict and discards the audio behind it.
@@ -94,7 +137,7 @@ func (t *audibleTracker) push(samples []float32) {
 		if t.n < audibleWindow {
 			continue
 		}
-		if math.Sqrt(t.sumSq/float64(audibleWindow)) >= minSpeechRMS {
+		if math.Sqrt(t.sumSq/float64(audibleWindow)) >= t.speechFloor() {
 			t.heard = true
 			return
 		}
@@ -114,11 +157,12 @@ func (t *audibleTracker) audible() bool {
 	if t.fill == 0 {
 		return false
 	}
-	return frameRMS(t.tail[:t.fill]) >= minSpeechRMS
+	return frameRMS(t.tail[:t.fill]) >= t.speechFloor()
 }
 
-// reset drops the verdict and the retained window for a fresh utterance.
-func (t *audibleTracker) reset() { *t = audibleTracker{} }
+// reset drops the verdict and the retained window for a fresh utterance. The
+// floor belongs to the path, not the utterance, so it survives.
+func (t *audibleTracker) reset() { *t = audibleTracker{floor: t.floor} }
 
 // frameRMS returns the root-mean-square amplitude of mono samples.
 func frameRMS(samples []float32) float64 {

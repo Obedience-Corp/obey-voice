@@ -106,6 +106,14 @@ func (f *Frontend) ProcessCapture(samples []float32) []float32 {
 	return out
 }
 
+// InputGain implements audio.GainReporter: the multiplier the composed AGC
+// stage is currently applying to captured audio.
+func (f *Frontend) InputGain() float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.agc.Gain()
+}
+
 // PushPlaybackReference reframes samples into APM's 10ms frames and feeds
 // each into the echo canceller's reverse stream. Errors are dropped rather
 // than surfaced — PushPlaybackReference has no error return on the Frontend
