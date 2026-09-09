@@ -58,14 +58,19 @@ type SpeakerSession struct {
 	finalize sync.Once
 	result   AnalysisResult
 	err      error
+
+	// prepare loads the native diarizer after capture has already started so
+	// meeting record is not stuck on "Checking speaker models" / speaker ID.
+	prepare   func(context.Context) (SpeakerAnalyzer, error)
+	prepMu    sync.Mutex
+	prepDone  chan struct{}
+	prepErr   error
+	abandoned bool
 }
 
 func NewSpeakerSession(capture captureSubscriber, analyzer SpeakerAnalyzer, writer *meetinglog.Writer, bundlePath string, recordAudio bool) (*SpeakerSession, error) {
 	if capture == nil {
 		return nil, fmt.Errorf("meeting: speaker capture is required")
-	}
-	if analyzer == nil {
-		return nil, fmt.Errorf("meeting: speaker analyzer is required")
 	}
 	if !strings.HasSuffix(strings.ToLower(filepath.Base(strings.TrimSpace(bundlePath))), ".meeting") {
 		return nil, fmt.Errorf("meeting: .meeting bundle path is required for speaker analysis")
@@ -89,8 +94,10 @@ func NewSpeakerSession(capture captureSubscriber, analyzer SpeakerAnalyzer, writ
 		bundlePath: bundlePath, recordAudio: recordAudio,
 		audioWriter: audioWriter, workingPath: workingPath,
 	}
-	if closer, ok := analyzer.(interface{ Close() error }); ok {
-		s.closer = closer
+	if analyzer != nil {
+		if closer, ok := analyzer.(interface{ Close() error }); ok {
+			s.closer = closer
+		}
 	}
 	s.wg.Go(func() {
 		for chunk := range chunks {
@@ -103,6 +110,65 @@ func NewSpeakerSession(capture captureSubscriber, analyzer SpeakerAnalyzer, writ
 		}
 	})
 	return s, nil
+}
+
+// StartPrepare loads the diarizer in the background. Finalize waits on it.
+// Capture is already running; this must not be called from the TUI startup
+// path as a blocking load.
+func (s *SpeakerSession) StartPrepare(ctx context.Context, prepare func(context.Context) (SpeakerAnalyzer, error)) {
+	if s == nil || prepare == nil {
+		return
+	}
+	s.prepMu.Lock()
+	if s.analyzer != nil || s.prepDone != nil {
+		s.prepMu.Unlock()
+		return
+	}
+	s.prepare = prepare
+	s.prepDone = make(chan struct{})
+	s.prepMu.Unlock()
+	go s.runPrepare(ctx)
+}
+
+func (s *SpeakerSession) runPrepare(ctx context.Context) {
+	defer close(s.prepDone)
+	a, err := s.prepare(ctx)
+	s.prepMu.Lock()
+	defer s.prepMu.Unlock()
+	if err != nil {
+		s.prepErr = err
+		return
+	}
+	if s.abandoned {
+		if closer, ok := a.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+		return
+	}
+	s.analyzer = a
+	if closer, ok := a.(interface{ Close() error }); ok {
+		s.closer = closer
+	}
+}
+
+func (s *SpeakerSession) waitAnalyzer(ctx context.Context) (SpeakerAnalyzer, error) {
+	s.prepMu.Lock()
+	a, err, done := s.analyzer, s.prepErr, s.prepDone
+	s.prepMu.Unlock()
+	if a != nil || err != nil {
+		return a, err
+	}
+	if done == nil {
+		return nil, fmt.Errorf("meeting: speaker analyzer is required")
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-done:
+	}
+	s.prepMu.Lock()
+	defer s.prepMu.Unlock()
+	return s.analyzer, s.prepErr
 }
 
 func openSpeakerAudio(workingPath string) (*audio.WAVWriter, error) {
@@ -150,6 +216,15 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 	}
 	s.finalize.Do(func() {
 		s.stopCapture()
+		if s.analyzer == nil {
+			a, err := s.waitAnalyzer(ctx)
+			if err != nil {
+				s.result = AnalysisResult{Status: AnalysisError, Error: err.Error()}
+				s.err = err
+				return
+			}
+			s.analyzer = a
+		}
 		artifact := speakerArtifactPath(s.bundlePath)
 		var persistErr error
 		if s.writeErr != nil {
@@ -292,8 +367,12 @@ func (s *SpeakerSession) Close() error {
 	// If the meeting aborted before Finalize and audio was not opted in, do not
 	// leave the streamed PCM behind.
 	s.discardWorkingAudio()
-	if s.closer != nil {
-		return s.closer.Close()
+	s.prepMu.Lock()
+	s.abandoned = true
+	closer := s.closer
+	s.prepMu.Unlock()
+	if closer != nil {
+		return closer.Close()
 	}
 	return nil
 }

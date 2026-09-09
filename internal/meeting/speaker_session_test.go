@@ -204,3 +204,38 @@ func TestSpeakerSessionRequiresMeetingBundle(t *testing.T) {
 		t.Fatalf("expected bundle validation error, got %v", err)
 	}
 }
+
+func TestSpeakerSessionLoadsAnalyzerAfterCaptureStarts(t *testing.T) {
+	bundlePath := filepath.Join(t.TempDir(), "planning.meeting")
+	writer, err := meetinglog.CreateBundle(bundlePath, "Planning", "fake", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := &fakeCaptureSubscriber{}
+	session, err := NewSpeakerSession(capture, nil, writer, bundlePath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	analyzer := &recordingSpeakerAnalyzer{timeline: speaker.Timeline{Observations: []speaker.Observation{{
+		SegmentID: "diarization-1", StartMS: 0, EndMS: 1000,
+		Label: "speaker-1", State: speaker.StateStable, Source: speaker.SourceRecording,
+	}}}}
+	session.StartPrepare(context.Background(), func(context.Context) (SpeakerAnalyzer, error) {
+		close(started)
+		return analyzer, nil
+	})
+	capture.publish([]float32{0.2, 0.1})
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prepare did not start after capture")
+	}
+	result, err := session.Finalize(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != AnalysisComplete || analyzer.sampleCount != 2 {
+		t.Fatalf("deferred analyzer result = %+v samples=%d", result, analyzer.sampleCount)
+	}
+}

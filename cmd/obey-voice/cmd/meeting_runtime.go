@@ -430,27 +430,30 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 	if !sp.MeetingActive() {
 		return nil, nil
 	}
+	// Download weights here (progress ticks). Do not load pyannote/TitaNet on
+	// this goroutine: NewSherpaEngine can sit for minutes on a handheld with
+	// no UI, which looks like a hang on "Preparing speaker identification".
 	progress.Stage("Checking speaker models")
 	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSpeaker: true}, progress.Downloading); err != nil {
 		return nil, fmt.Errorf("prepare speaker models: %w", err)
 	}
-	engine, err := speaker.NewSherpaEngine(sp, config.ModelsDirFrom(cfg))
+	session, err := meeting.NewSpeakerSession(capture, nil, writer, bundlePath, sp.Meeting.RecordAudio)
 	if err != nil {
 		return nil, err
 	}
-	seedEnrolledProfiles(cfg, engine, nil)
-	// The engine stays whatever speaker.meeting.diarizer says: it still owns
-	// live labels, embeddings and enrollment even when review runs elsewhere.
-	analyzer, err := meetingAnalyzer(ctx, cfg, sp, engine)
-	if err != nil {
-		_ = engine.Close()
-		return nil, err
-	}
-	session, err := meeting.NewSpeakerSession(capture, analyzer, writer, bundlePath, sp.Meeting.RecordAudio)
-	if err != nil {
-		_ = analyzer.Close()
-		return nil, err
-	}
+	session.StartPrepare(ctx, func(ctx context.Context) (meeting.SpeakerAnalyzer, error) {
+		engine, err := speaker.NewSherpaEngine(sp, config.ModelsDirFrom(cfg))
+		if err != nil {
+			return nil, err
+		}
+		seedEnrolledProfiles(cfg, engine, nil)
+		analyzer, err := meetingAnalyzer(ctx, cfg, sp, engine)
+		if err != nil {
+			_ = engine.Close()
+			return nil, err
+		}
+		return analyzer, nil
+	})
 	return session, nil
 }
 
