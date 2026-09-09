@@ -102,6 +102,10 @@ labels that segment's lines and leaves the labels the earlier stop already
 wrote exactly as they were. Nothing is relabelled from audio that no longer
 exists, and no line is dropped.
 
+The sidecar `speaker-analysis.json` is overwritten by each pass, so it
+describes the most recent one only; the bundle's event stream is the full
+record.
+
 The cost is that speaker numbering need not line up across the break: the
 `speaker-2` of the second segment is not necessarily the `speaker-2` of the
 first, because clustering starts fresh on each pass. Enrolled voices

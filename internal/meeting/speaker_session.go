@@ -256,13 +256,19 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 			s.discardWorkingAudio()
 		}
 
+		// Where this recording segment sits in the meeting: 0 on a fresh
+		// bundle, the resume baseline on a reopened one.
+		segmentStartMS := int64(0)
+		if s.writer != nil {
+			segmentStartMS = s.writer.SegmentStartMS()
+		}
 		// What the audio just read actually covers. With retention on it is the
 		// whole meeting; with it off the working PCM was discarded at the
 		// previous stop, so a resumed pass holds only its own segment and its
 		// timeline starts at that segment, not at the meeting.
 		windowStartMS := int64(0)
-		if !s.recordAudio && s.writer != nil {
-			windowStartMS = s.writer.SegmentStartMS()
+		if !s.recordAudio {
+			windowStartMS = segmentStartMS
 		}
 
 		result := AnalyzeRecording(ctx, analyzer, samples)
@@ -290,7 +296,9 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 			// the earlier speaker_utterance events are left standing, and
 			// readers collapse by id, so nothing is relabelled from audio that
 			// no longer exists.
-			analysis := logAnalysis(result, transcriptsFrom(s.writer.Transcripts(), windowStartMS))
+			analysis := logAnalysis(result,
+				transcriptsFrom(s.writer.Transcripts(), windowStartMS),
+				segmentIDPrefix(segmentStartMS))
 			if err := s.writer.WriteSpeakerAnalysis(analysis); err != nil {
 				persistErr = errors.Join(persistErr, err)
 				result.Error = joinErrorText(result.Error, err)
@@ -356,14 +364,29 @@ func joinErrorText(existing string, err error) string {
 	return errors.Join(errors.New(existing), err).Error()
 }
 
-func logAnalysis(result AnalysisResult, transcripts []meetinglog.TranscriptRecord) meetinglog.SpeakerAnalysis {
+// segmentIDPrefix namespaces one pass's diarization segment ids. Every pass's
+// diarizer numbers its own segments from 1, so a resumed bundle would hold two
+// diarization-1 events otherwise. The first pass keeps its bare ids, leaving
+// existing bundles untouched.
+func segmentIDPrefix(segmentStartMS int64) string {
+	if segmentStartMS <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("r%d-", segmentStartMS)
+}
+
+func logAnalysis(result AnalysisResult, transcripts []meetinglog.TranscriptRecord, segmentIDPrefix string) meetinglog.SpeakerAnalysis {
 	analysis := meetinglog.SpeakerAnalysis{
 		Status: string(result.Status), Error: result.Error,
 		Artifact: result.Artifact, AudioFile: result.AudioFile,
 	}
 	for _, obs := range result.Timeline.Observations {
+		id := obs.SegmentID
+		if id != "" {
+			id = segmentIDPrefix + id
+		}
 		analysis.Segments = append(analysis.Segments, meetinglog.SpeakerSegment{
-			ID: obs.SegmentID, StartMS: obs.StartMS, EndMS: obs.EndMS,
+			ID: id, StartMS: obs.StartMS, EndMS: obs.EndMS,
 			Label: obs.Label, Confidence: obs.Confidence, State: string(obs.State),
 		})
 	}

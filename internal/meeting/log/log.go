@@ -495,26 +495,61 @@ func RecordedOffset(eventType string) bool {
 	return false
 }
 
-// LatestByID collapses events that describe the same id, keeping the last
-// write in first-seen order. Each analysis pass of a resumed meeting re-emits
-// the whole speaker-attributed transcript, so readers would otherwise show
-// every pre-resume line once per pass.
-func LatestByID(events []Event) []Event {
-	out := make([]Event, 0, len(events))
-	at := make(map[string]int, len(events))
-	for _, e := range events {
-		if e.ID == "" {
-			out = append(out, e)
-			continue
-		}
-		if i, ok := at[e.ID]; ok {
-			out[i] = e
-			continue
-		}
-		at[e.ID] = len(out)
-		out = append(out, e)
+// transcriptKey identifies one transcript line across passes. The utterance id
+// is the real key; text at an offset covers hand-written fixtures and any
+// stream whose events predate ids.
+func transcriptKey(e Event) string {
+	if e.ID != "" {
+		return e.ID
 	}
-	return out
+	return fmt.Sprintf("\x00%d|%s", e.OffsetMs, e.Text)
+}
+
+// MergeAttributedTranscript overlays speaker attribution onto the plain
+// transcript rather than replacing it. Every utterance keeps its place and its
+// text; a line the latest analysis pass labelled is swapped for that
+// speaker_utterance, and a line no pass reached stays a plain utterance.
+//
+// Replacing wholesale loses real content. A resumed segment whose diarization
+// was skipped, cancelled, or failed has no speaker_utterance of its own, and
+// the earlier pass's events do not cover it, so the whole segment would vanish
+// from the routed note and the review while the header still counted it.
+//
+// Each pass of a resumed meeting re-emits the transcript it analyzed, so the
+// last event for a line is the current labelling.
+func MergeAttributedTranscript(utterances, attributed []Event) []Event {
+	if len(attributed) == 0 {
+		return utterances
+	}
+	latest := make(map[string]Event, len(attributed))
+	order := make([]string, 0, len(attributed))
+	for _, e := range attributed {
+		key := transcriptKey(e)
+		if _, seen := latest[key]; !seen {
+			order = append(order, key)
+		}
+		latest[key] = e
+	}
+	merged := make([]Event, 0, len(utterances)+len(attributed))
+	placed := make(map[string]struct{}, len(latest))
+	for _, e := range utterances {
+		key := transcriptKey(e)
+		if a, ok := latest[key]; ok {
+			merged = append(merged, a)
+			placed[key] = struct{}{}
+			continue
+		}
+		merged = append(merged, e)
+	}
+	// An attributed line with no plain utterance behind it still belongs in
+	// the transcript; dropping it would lose the only copy of that text.
+	for _, key := range order {
+		if _, done := placed[key]; done {
+			continue
+		}
+		merged = append(merged, latest[key])
+	}
+	return merged
 }
 
 func parseEventTime(ts string) (time.Time, error) {

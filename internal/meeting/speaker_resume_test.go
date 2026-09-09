@@ -196,3 +196,146 @@ func writeFixtureEvents(t *testing.T, bundle string, lines []string) string {
 	}
 	return jsonl
 }
+
+// A resumed segment whose diarization never ran — Ctrl+C during "Diarizing
+// speakers…", the setting off, or a model load failure — has no attributed
+// events of its own, and the earlier pass's do not cover it. The readers must
+// overlay attribution onto the transcript, not replace the transcript with it,
+// or the whole segment disappears from the routed note while the header still
+// counts its utterances.
+func TestResumedSegmentWithoutDiarizationStillRenders(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "gap.meeting")
+	writer, err := meetinglog.CreateBundle(bundle, "Gap", "fake", "mac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.OnUtterance(listen.Utterance{
+		Text: "before the break", At: writer.StartedAt().Add(time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	capture := &fakeCaptureSubscriber{}
+	analyzer := &recordingSpeakerAnalyzer{timeline: resumeTimeline("speaker-1")}
+	session, err := NewSpeakerSession(capture, analyzer, writer, bundle, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture.publish(make([]float32, 32000))
+	if _, err := session.Finalize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Resume and record, but never finalize a speaker session.
+	resumed, err := meetinglog.OpenBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resumed.OnUtterance(listen.Utterance{
+		Text: "after the break", At: time.Now().Add(2 * time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resumed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := LoadSummaryFromJSONL(bundleEventsPath(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := Render(summary, BodyNotes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(note.Body, "**speaker-1:** before the break") {
+		t.Fatalf("diarized line lost its label:\n%s", note.Body)
+	}
+	if !strings.Contains(note.Body, "after the break") {
+		t.Fatalf("the resumed segment's line is missing from the routed note:\n%s", note.Body)
+	}
+	if strings.Contains(note.Body, "**speaker-1:** after the break") {
+		t.Fatalf("an un-diarized line must stay plain, not borrow a label:\n%s", note.Body)
+	}
+	if summary.Utterances != 2 {
+		t.Fatalf("header counts %d utterances but the transcript must show both", summary.Utterances)
+	}
+}
+
+// Each pass's diarizer numbers its segments from 1, so a resumed bundle would
+// otherwise carry two diarization-1 events describing different audio.
+func TestResumedPassNamespacesItsSpeakerSegmentIDs(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "ids.meeting")
+	writer, err := meetinglog.CreateBundle(bundle, "Ids", "fake", "mac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.OnUtterance(listen.Utterance{
+		Text: "first", At: writer.StartedAt().Add(time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	capture := &fakeCaptureSubscriber{}
+	session, err := NewSpeakerSession(capture, &recordingSpeakerAnalyzer{timeline: resumeTimeline("speaker-1")}, writer, bundle, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture.publish(make([]float32, 32000))
+	if _, err := session.Finalize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_ = session.Close()
+
+	resumed, err := meetinglog.OpenBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resumed.OnUtterance(listen.Utterance{
+		Text: "second", At: time.Now().Add(2 * time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	capture2 := &fakeCaptureSubscriber{}
+	session2, err := NewSpeakerSession(capture2, &recordingSpeakerAnalyzer{timeline: resumeTimeline("speaker-2")}, resumed, bundle, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture2.publish(make([]float32, 16000))
+	if _, err := session2.Finalize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resumed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_ = session2.Close()
+
+	events, err := ReadEvents(bundleEventsPath(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, e := range events {
+		if e.Type == meetinglog.TypeSpeakerSegment {
+			seen[e.ID]++
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("speaker_segment ids = %v, want one per pass", seen)
+	}
+	if seen["diarization-speaker-1"] != 1 {
+		t.Fatalf("the first pass must keep its bare id, got %v", seen)
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("id %q appears %d times, want 1", id, n)
+		}
+	}
+}

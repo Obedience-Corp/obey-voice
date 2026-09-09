@@ -123,11 +123,9 @@ func (m meetingResultsModel) content() string {
 			attributed = append(attributed, event)
 		}
 	}
-	if len(attributed) > 0 {
-		// Each analysis pass of a resumed meeting re-emits the transcript it
-		// analyzed; the newest event for an id is the current labelling.
-		transcript = meetinglog.LatestByID(attributed)
-	}
+	// Overlay, never replace: a resumed segment that was never diarized has no
+	// attributed events and must still appear.
+	transcript = meetinglog.MergeAttributedTranscript(transcript, attributed)
 
 	var b strings.Builder
 	if len(notes) > 0 {

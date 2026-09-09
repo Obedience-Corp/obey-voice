@@ -85,11 +85,9 @@ func RenderEvents(summary meetinglog.Summary, events []meetinglog.Event, body st
 			attributed = append(attributed, e)
 		}
 	}
-	if len(attributed) > 0 {
-		// Each analysis pass of a resumed meeting re-emits the transcript it
-		// analyzed; the newest event for an id is the current labelling.
-		utterances = meetinglog.LatestByID(attributed)
-	}
+	// Overlay, never replace: a resumed segment that was never diarized has no
+	// attributed events and must still appear.
+	utterances = meetinglog.MergeAttributedTranscript(utterances, attributed)
 
 	if len(notes) > 0 {
 		b.WriteString("## Notes\n\n")
