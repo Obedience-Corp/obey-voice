@@ -547,6 +547,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 
 	case meetingResultsDoneMsg:
+		// This meeting is the new resume candidate.
+		a.launcher = a.launcher.forgetResumeCandidate()
 		// A dest plan already routed at capture end; leaving results just needs
 		// the launcher to carry the outcome (or the still-pending note).
 		if a.meetingRouteAuto {
@@ -582,6 +584,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case meetingRouteResultMsg:
 		a.meetingRouteBanner = msg.Banner
 		a.meetingRouteErr = msg.IsErr
+		// The resume candidate's route status just moved.
+		a.launcher = a.launcher.forgetResumeCandidate()
 		// Route finished while the user is still reviewing: show it on the
 		// results status line and keep them there; the launcher banner lands
 		// when they leave (meetingResultsDoneMsg).

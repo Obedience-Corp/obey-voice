@@ -382,19 +382,6 @@ func (m meetingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stickyLabel.Clear()
 		return m, nil
 
-	case tea.MouseMsg:
-		if m.startup.active {
-			return m, nil
-		}
-		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
-			// Same as chat: wheel scrolls the transcript. Strip shift so a
-			// selection-modifier terminal does not turn the wheel into a
-			// no-op horizontal step.
-			msg.Shift = false
-			return m.updateScroll(msg)
-		}
-		return m, nil
-
 	case tea.KeyMsg:
 		if m.startup.active {
 			// Nothing is recording yet; these keys act on a capture that does

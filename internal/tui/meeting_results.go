@@ -124,7 +124,9 @@ func (m meetingResultsModel) content() string {
 		}
 	}
 	if len(attributed) > 0 {
-		transcript = attributed
+		// Each analysis pass of a resumed meeting re-emits the transcript it
+		// analyzed; the newest event for an id is the current labelling.
+		transcript = meetinglog.LatestByID(attributed)
 	}
 
 	var b strings.Builder
