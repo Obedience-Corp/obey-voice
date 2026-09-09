@@ -167,6 +167,9 @@ func TestNoMeetingPathBuildsItsOwnAnalyzer(t *testing.T) {
 		if strings.Contains(string(source), "speaker.NewAnalyzer(") {
 			t.Errorf("%s constructs an analyzer directly; use meetingAnalyzer so speaker.meeting.diarizer applies", name)
 		}
+		if name != "meeting_diarizer.go" && strings.Contains(string(source), "speaker.NewAnalyzerWithDiarizer(") {
+			t.Errorf("%s attaches its own diarizer; use meetingAnalyzer or meetingAnalyzerWith so the selection is applied once", name)
+		}
 	}
 }
 
