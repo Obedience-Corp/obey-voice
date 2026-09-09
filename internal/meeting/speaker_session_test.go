@@ -146,9 +146,8 @@ func TestAnalyzeRecordingEnabledWithoutPCMIsVisibleError(t *testing.T) {
 }
 
 // record_audio off: the streamed PCM is still diarized (re-read from the
-// hidden working file) and no audio is retained as a bundle artifact. The
-// working file itself stays so a resumed pass can diarize the whole meeting.
-func TestSpeakerSessionKeepsOnlyWorkingAudioWhenNotRecording(t *testing.T) {
+// transient working file) but no audio is retained in the bundle afterward.
+func TestSpeakerSessionDiscardsAudioWhenNotRecording(t *testing.T) {
 	bundlePath := filepath.Join(t.TempDir(), "planning.meeting")
 	writer, err := meetinglog.CreateBundle(bundlePath, "Planning", "fake", "")
 	if err != nil {
@@ -176,12 +175,14 @@ func TestSpeakerSessionKeepsOnlyWorkingAudioWhenNotRecording(t *testing.T) {
 	if result.AudioFile != "" {
 		t.Fatalf("record_audio off must not retain audio, got %q", result.AudioFile)
 	}
-	if _, err := os.Stat(speakerAudioPath(bundlePath)); !os.IsNotExist(err) {
-		t.Fatalf("expected no retained bundle audio, stat err = %v", err)
-	}
-	working := filepath.Join(bundlePath, meetinglog.BundleInternalDirName, workingAudioPartName)
-	if _, err := os.Stat(working); err != nil {
-		t.Fatalf("working PCM must survive the stop for a resumed pass: %v", err)
+	// Neither the bundle audio nor the transient working file should remain.
+	for _, p := range []string{
+		speakerAudioPath(bundlePath),
+		filepath.Join(bundlePath, meetinglog.BundleInternalDirName, workingAudioPartName),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("expected %s absent, stat err = %v", p, err)
+		}
 	}
 }
 

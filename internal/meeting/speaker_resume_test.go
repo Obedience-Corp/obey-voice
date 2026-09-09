@@ -13,18 +13,22 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 )
 
-func resumeTimeline() speaker.Timeline {
+func resumeTimeline(label string) speaker.Timeline {
 	return speaker.Timeline{Observations: []speaker.Observation{{
-		SegmentID: "diarization-1", StartMS: 0, EndMS: 600000,
-		Label: "speaker-1", State: speaker.StateStable, Source: speaker.SourceRecording,
+		SegmentID: "diarization-" + label, StartMS: 0, EndMS: 600000,
+		Label: label, State: speaker.StateStable, Source: speaker.SourceRecording,
 	}}}
 }
 
-// A resumed meeting diarizes the whole recording again, so the second pass
-// re-attributes lines the first pass already wrote. The routed note and the
-// review must still show each line once, and — with record_audio off — the
-// second diarizer must see the whole recording, not just its own segment.
-func TestResumedMeetingKeepsOneTranscriptLineAndWholeAudio(t *testing.T) {
+func workingPCMPath(bundle string) string {
+	return filepath.Join(bundle, meetinglog.BundleInternalDirName, workingAudioPartName)
+}
+
+// With record_audio off the working PCM is discarded at every stop, so a
+// resumed pass holds only the segment it recorded. It must attribute just that
+// segment and leave the earlier pass's labels standing, and the routed note
+// must still show each line once.
+func TestResumedMeetingAttributesOnlyTheAnalyzedSegment(t *testing.T) {
 	bundle := filepath.Join(t.TempDir(), "standup.meeting")
 
 	writer, err := meetinglog.CreateBundle(bundle, "Standup", "fake", "mac")
@@ -37,7 +41,7 @@ func TestResumedMeetingKeepsOneTranscriptLineAndWholeAudio(t *testing.T) {
 		t.Fatal(err)
 	}
 	capture := &fakeCaptureSubscriber{}
-	first := &recordingSpeakerAnalyzer{timeline: resumeTimeline()}
+	first := &recordingSpeakerAnalyzer{timeline: resumeTimeline("speaker-1")}
 	session, err := NewSpeakerSession(capture, first, writer, bundle, false)
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +56,9 @@ func TestResumedMeetingKeepsOneTranscriptLineAndWholeAudio(t *testing.T) {
 	if err := session.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(workingPCMPath(bundle)); !os.IsNotExist(err) {
+		t.Fatalf("record_audio off must not keep the working PCM past a stop, stat err = %v", err)
+	}
 
 	resumed, err := meetinglog.OpenBundle(bundle)
 	if err != nil {
@@ -63,7 +70,7 @@ func TestResumedMeetingKeepsOneTranscriptLineAndWholeAudio(t *testing.T) {
 		t.Fatal(err)
 	}
 	capture2 := &fakeCaptureSubscriber{}
-	second := &recordingSpeakerAnalyzer{timeline: resumeTimeline()}
+	second := &recordingSpeakerAnalyzer{timeline: resumeTimeline("speaker-2")}
 	session2, err := NewSpeakerSession(capture2, second, resumed, bundle, false)
 	if err != nil {
 		t.Fatal(err)
@@ -78,23 +85,35 @@ func TestResumedMeetingKeepsOneTranscriptLineAndWholeAudio(t *testing.T) {
 	if err := session2.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(workingPCMPath(bundle)); !os.IsNotExist(err) {
+		t.Fatalf("resumed pass must not keep the working PCM either, stat err = %v", err)
+	}
 
-	if second.sampleCount != 48000 {
-		t.Fatalf("resumed diarizer saw %d samples, want the whole 48000-sample recording", second.sampleCount)
+	if second.sampleCount != 16000 {
+		t.Fatalf("resumed diarizer saw %d samples, want only its own 16000-sample segment", second.sampleCount)
 	}
 
 	events, err := ReadEvents(bundleEventsPath(bundle))
 	if err != nil {
 		t.Fatal(err)
 	}
+	labels := map[string][]string{}
 	attributed := 0
 	for _, e := range events {
-		if e.Type == meetinglog.TypeSpeakerUtterance {
-			attributed++
+		if e.Type != meetinglog.TypeSpeakerUtterance {
+			continue
 		}
+		attributed++
+		labels[e.ID] = append(labels[e.ID], e.Label)
 	}
 	if attributed != 2 {
-		t.Fatalf("speaker_utterance events = %d, want 2 (the second pass must not re-emit unchanged lines)", attributed)
+		t.Fatalf("speaker_utterance events = %d, want 2 — the resumed pass must not rewrite the earlier line", attributed)
+	}
+	if got := labels["utterance-1"]; len(got) != 1 || got[0] != "speaker-1" {
+		t.Fatalf("utterance-1 labels = %v, want the first pass's [speaker-1] untouched", got)
+	}
+	if got := labels["utterance-2"]; len(got) != 1 || got[0] != "speaker-2" {
+		t.Fatalf("utterance-2 labels = %v, want the resumed pass's [speaker-2]", got)
 	}
 
 	summary, err := LoadSummaryFromJSONL(bundleEventsPath(bundle))
@@ -105,7 +124,10 @@ func TestResumedMeetingKeepsOneTranscriptLineAndWholeAudio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"first segment line", "second segment line"} {
+	for _, line := range []string{
+		"**speaker-1:** first segment line",
+		"**speaker-2:** second segment line",
+	} {
 		if got := strings.Count(note.Body, line); got != 1 {
 			t.Fatalf("%q appears %d times in the routed note, want 1:\n%s", line, got, note.Body)
 		}

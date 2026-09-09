@@ -173,6 +173,7 @@ type Writer struct {
 	errors             int
 	transcripts        []TranscriptRecord
 	priorUtterances    map[string]SpeakerUtterance
+	segmentStartMS     int64 // meeting-relative offset this writer's segment begins at
 	lastUtteranceEndMS int64
 	speakerAnalysis    SpeakerAnalysis
 	speakerCount       int
@@ -335,6 +336,7 @@ func OpenBundle(bundlePath string) (*Writer, error) {
 		return nil, fmt.Errorf("meetinglog: reopen jsonl %s: %w", eventsPath, err)
 	}
 	w.log, w.jsonl = logF, jsonlF
+	w.segmentStartMS = w.lastUtteranceEndMS
 	w.offsetOrigin = time.Now().Add(-time.Duration(w.lastUtteranceEndMS) * time.Millisecond)
 
 	now := time.Now()
@@ -551,6 +553,16 @@ func (w *Writer) StartedAt() time.Time {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.started
+}
+
+// SegmentStartMS reports the meeting-relative offset where this writer's own
+// recording segment begins: 0 for a new bundle, the resume baseline for a
+// reopened one. Post-capture analysis needs it to know which part of the
+// meeting the audio it just read actually covers.
+func (w *Writer) SegmentStartMS() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.segmentStartMS
 }
 
 // Transcripts returns an owned snapshot for post-capture speaker attribution.

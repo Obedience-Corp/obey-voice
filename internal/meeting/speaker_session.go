@@ -18,13 +18,10 @@ import (
 
 const speakerCaptureQueue = 1024
 
-// workingAudioPartName is the streamed-PCM file used when the meeting is
-// diarized but audio retention (record_audio) is off. It lives inside the
-// bundle's hidden internal dir, mode 0600, and lasts as long as the bundle:
-// every stop re-diarizes the whole meeting, so a resumed pass that found only
-// its own segment would relabel the earlier transcript against the wrong
-// timeline. Deleting the bundle deletes it; it is never reported as bundle
-// audio, and `meeting analyze` still requires a retained audio.wav.
+// workingAudioPartName is the transient streamed-PCM file used when the meeting
+// is diarized but audio retention (record_audio) is off. It lives inside the
+// bundle's hidden internal dir and is removed once diarization has read it:
+// record_audio off means no audio survives the stop, resume included.
 const workingAudioPartName = "audio.wav.part"
 
 type captureSubscriber interface {
@@ -49,14 +46,15 @@ type SpeakerSession struct {
 	recordAudio bool
 
 	// audioWriter streams capture chunks to workingPath. workingPath is the
-	// final bundle audio.wav when record_audio is on, otherwise the hidden
-	// .part file that later passes re-read and append to.
+	// final bundle audio.wav when record_audio is on, otherwise a transient
+	// .part file that Finalize/Close remove after diarization.
 	audioWriter *audio.WAVWriter
 	workingPath string
 	writeErr    error
 
-	stop sync.Once
-	wg   sync.WaitGroup
+	stop        sync.Once
+	wg          sync.WaitGroup
+	discardOnce sync.Once
 
 	finalize sync.Once
 	result   AnalysisResult
@@ -175,8 +173,7 @@ func (s *SpeakerSession) waitAnalyzer(ctx context.Context) (SpeakerAnalyzer, err
 }
 
 // openSpeakerAudio continues an existing recording's PCM when one is already
-// there — the retained audio.wav or the hidden working .part alike — so a
-// resumed segment extends the file the next diarization pass will read.
+// there, so a resume extends a retained audio.wav rather than truncating it.
 func openSpeakerAudio(workingPath string) (*audio.WAVWriter, error) {
 	if _, err := os.Stat(workingPath); err == nil {
 		w, err := audio.OpenWAVWriter(workingPath, audio.SampleRate)
@@ -254,9 +251,22 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 			if err := os.Chmod(audioFile, 0o600); err != nil {
 				persistErr = errors.Join(persistErr, fmt.Errorf("secure meeting audio: %w", err))
 			}
+		} else {
+			// record_audio is off: keep the diarization result, not the audio.
+			s.discardWorkingAudio()
+		}
+
+		// What the audio just read actually covers. With retention on it is the
+		// whole meeting; with it off the working PCM was discarded at the
+		// previous stop, so a resumed pass holds only its own segment and its
+		// timeline starts at that segment, not at the meeting.
+		windowStartMS := int64(0)
+		if !s.recordAudio && s.writer != nil {
+			windowStartMS = s.writer.SegmentStartMS()
 		}
 
 		result := AnalyzeRecording(ctx, analyzer, samples)
+		result.Timeline = shiftTimeline(result.Timeline, windowStartMS)
 		result.Artifact = artifact
 		result.AudioFile = audioFile
 		result.SpeakerCount = distinctSpeakerCount(result.Timeline)
@@ -275,7 +285,12 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 		}
 
 		if s.writer != nil {
-			analysis := logAnalysis(result, s.writer.Transcripts())
+			// Only the utterances inside the analyzed window are re-attributed.
+			// Lines from before it keep the labels their own pass gave them:
+			// the earlier speaker_utterance events are left standing, and
+			// readers collapse by id, so nothing is relabelled from audio that
+			// no longer exists.
+			analysis := logAnalysis(result, transcriptsFrom(s.writer.Transcripts(), windowStartMS))
 			if err := s.writer.WriteSpeakerAnalysis(analysis); err != nil {
 				persistErr = errors.Join(persistErr, err)
 				result.Error = joinErrorText(result.Error, err)
@@ -293,6 +308,42 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 		}
 	})
 	return s.result, s.err
+}
+
+// discardWorkingAudio removes the streamed PCM when audio retention is off.
+// Safe to call from both Finalize and Close.
+func (s *SpeakerSession) discardWorkingAudio() {
+	if s == nil || s.recordAudio || s.workingPath == "" {
+		return
+	}
+	s.discardOnce.Do(func() { _ = os.Remove(s.workingPath) })
+}
+
+// shiftTimeline moves observations from analyzed-audio time into meeting time.
+func shiftTimeline(timeline speaker.Timeline, offsetMS int64) speaker.Timeline {
+	if offsetMS <= 0 {
+		return timeline
+	}
+	for i := range timeline.Observations {
+		timeline.Observations[i].StartMS += offsetMS
+		timeline.Observations[i].EndMS += offsetMS
+	}
+	return timeline
+}
+
+// transcriptsFrom keeps the records the analyzed audio covers. A line that
+// began before the window belongs to an earlier pass.
+func transcriptsFrom(records []meetinglog.TranscriptRecord, startMS int64) []meetinglog.TranscriptRecord {
+	if startMS <= 0 {
+		return records
+	}
+	kept := make([]meetinglog.TranscriptRecord, 0, len(records))
+	for _, record := range records {
+		if record.StartMS >= startMS {
+			kept = append(kept, record)
+		}
+	}
+	return kept
 }
 
 func joinErrorText(existing string, err error) string {
@@ -360,6 +411,9 @@ func (s *SpeakerSession) Close() error {
 		return nil
 	}
 	s.stopCapture()
+	// If the meeting aborted before Finalize and audio was not opted in, do not
+	// leave the streamed PCM behind.
+	s.discardWorkingAudio()
 	s.prepMu.Lock()
 	s.abandoned = true
 	closer := s.closer

@@ -354,9 +354,9 @@ func readBundleEntry(bundle string) (BundleEntry, bool) {
 }
 
 // retainedAudioPath reports the bundle's audio only when it was kept.
-// speaker.meeting.record_audio=false streams to a hidden audio.wav.part the
-// recorder owns for resume and re-diarization — reporting it would promise
-// a user-visible recording the setting says was never kept.
+// speaker.meeting.record_audio=false streams to a transient audio.wav.part
+// that is deleted after diarization — reporting it would promise a
+// re-analysis that cannot happen.
 func retainedAudioPath(bundle string) string {
 	path := filepath.Join(bundle, meetinglog.BundleAudioName)
 	info, err := os.Stat(path)
