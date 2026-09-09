@@ -499,10 +499,14 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		case "left", "h":
 			cmd = m.adjustRow(-1)
 		case "up", "k":
+			// Moving on is reading the message; the next row's detail line
+			// must not stay hidden behind it.
+			m.message = ""
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case "down", "j":
+			m.message = ""
 			if max := m.currentListLen() - 1; m.cursor < max {
 				m.cursor++
 			}
@@ -677,8 +681,19 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 	return m.activateRow()
 }
 
-// selectProviderOption saves the brain provider at idx of the provider list.
+// selectProviderOption saves the brain provider at idx of the provider list
+// and, when no worker has been chosen yet, lands on the Worker section: that
+// is the picker's and enter's behaviour. stepProviderOption is the same save
+// without the jump, for ←/→ stepping through the list on the row.
 func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
+	return m.setProviderOption(idx, true)
+}
+
+func (m *settingsModel) stepProviderOption(idx int) tea.Cmd {
+	return m.setProviderOption(idx, false)
+}
+
+func (m *settingsModel) setProviderOption(idx int, landOnWorker bool) tea.Cmd {
 	if idx < 0 || idx >= len(m.providers) {
 		return nil
 	}
@@ -703,8 +718,9 @@ func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
 		m.message = fmt.Sprintf("Provider set to %s", name)
 	}
 	// Choosing a brain is choosing a worker: land on the Worker section
-	// rather than leaving it to a default nobody picked.
-	if !config.WorkerSelected(m.cfg) {
+	// rather than leaving it to a default nobody picked — but only when the
+	// choice was made, not on every step of ←/→ through the list.
+	if landOnWorker && !config.WorkerSelected(m.cfg) {
 		cmd := m.gotoSection(sectionWorker)
 		m.message = fmt.Sprintf("Provider set to %s · now choose the worker that runs background jobs", name)
 		return cmd
@@ -712,12 +728,8 @@ func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
 	return nil
 }
 
-// selectModelOption saves the brain model at idx of the model list.
-func (m *settingsModel) selectModelOption(idx int) tea.Cmd {
-	if idx < 0 || idx >= len(m.modelItems) {
-		return nil
-	}
-	model := m.modelItems[idx]
+// selectModel saves a brain model for the current provider.
+func (m *settingsModel) selectModel(model string) tea.Cmd {
 	var field *string
 	var key string
 	switch m.cfg.BrainProvider {
@@ -739,15 +751,25 @@ func (m *settingsModel) selectModelOption(idx int) tea.Cmd {
 	return nil
 }
 
-// selectTTSOption saves the TTS provider at idx of the engine list, installing
-// the managed Qwen package first when it is chosen and not yet on disk.
+// selectTTSOption saves the TTS provider at idx of the engine list.
 func (m *settingsModel) selectTTSOption(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(m.ttsItems) {
 		return nil
 	}
-	provider := m.ttsItems[idx].provider
-	if provider == managedqwen.ProviderName && !m.nativeStatus.Installed &&
-		managedqwen.UseManaged(m.cfg.QwenTTSBinary, m.cfg.QwenTTSModel) {
+	return m.selectTTSProvider(m.ttsItems[idx].provider)
+}
+
+// ttsProviderInstalls reports whether choosing provider would start the
+// managed Qwen package install rather than just saving a key.
+func (m settingsModel) ttsProviderInstalls(provider string) bool {
+	return provider == managedqwen.ProviderName && !m.nativeStatus.Installed &&
+		managedqwen.UseManaged(m.cfg.QwenTTSBinary, m.cfg.QwenTTSModel)
+}
+
+// selectTTSProvider saves the TTS provider, installing the managed Qwen
+// package first when it is chosen and not yet on disk.
+func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
+	if m.ttsProviderInstalls(provider) {
 		if m.qwenInstalling {
 			return nil
 		}
@@ -786,13 +808,17 @@ func (m *settingsModel) selectTTSOption(idx int) tea.Cmd {
 	return nil
 }
 
-// selectVoiceOption saves the voice at idx of the voice list as the global
-// default; persona voices are edited under Personas.
+// selectVoiceOption saves the voice at idx of the voice list.
 func (m *settingsModel) selectVoiceOption(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(m.voiceItems) {
 		return nil
 	}
-	voice := m.voiceItems[idx]
+	return m.selectVoice(m.voiceItems[idx])
+}
+
+// selectVoice saves a voice as the global default; persona voices are edited
+// under Personas.
+func (m *settingsModel) selectVoice(voice tts.Voice) tea.Cmd {
 	key := config.TTSVoiceKeyFor(activeTTSProvider(m.cfg))
 	saveConfig := m.saveConfig
 	if saveConfig == nil {
@@ -811,7 +837,10 @@ func (m *settingsModel) selectLanguageOption(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(m.languageItems) {
 		return nil
 	}
-	language := m.languageItems[idx]
+	return m.selectLanguage(m.languageItems[idx])
+}
+
+func (m *settingsModel) selectLanguage(language string) tea.Cmd {
 	saveConfig := m.saveConfig
 	if saveConfig == nil {
 		saveConfig = config.SetAndSave
@@ -825,11 +854,10 @@ func (m *settingsModel) selectLanguageOption(idx int) tea.Cmd {
 	return nil
 }
 
-func (m *settingsModel) selectInputOption(idx int) tea.Cmd {
-	if m.devicesLoading || idx < 0 || idx >= len(m.inputItems) {
+func (m *settingsModel) selectInputDevice(name string) tea.Cmd {
+	if m.devicesLoading {
 		return nil
 	}
-	name := m.inputItems[idx]
 	if err := m.save("input_device", name); err != nil {
 		m.message = fmt.Sprintf("Failed to save input device: %v", err)
 		return nil
@@ -839,11 +867,10 @@ func (m *settingsModel) selectInputOption(idx int) tea.Cmd {
 	return nil
 }
 
-func (m *settingsModel) selectOutputOption(idx int) tea.Cmd {
-	if m.devicesLoading || idx < 0 || idx >= len(m.outputItems) {
+func (m *settingsModel) selectOutputDevice(name string) tea.Cmd {
+	if m.devicesLoading {
 		return nil
 	}
-	name := m.outputItems[idx]
 	if err := m.save("output_device", name); err != nil {
 		m.message = fmt.Sprintf("Failed to save output device: %v", err)
 		return nil

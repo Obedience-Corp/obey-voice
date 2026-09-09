@@ -194,7 +194,7 @@ func (m settingsModel) footerHelp() string {
 		switch row.kind {
 		case rowPick:
 			parts = append(parts, "←/→ change", fmt.Sprintf("enter list (%d)", len(row.options)))
-			if row.preview != nil {
+			if row.preview != nil && row.current >= 0 {
 				parts = append(parts, "p preview")
 			}
 		case rowToggle:

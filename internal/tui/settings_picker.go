@@ -103,6 +103,8 @@ func (m settingsModel) updatePicker(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 	p := &m.picker
 	switch msg.String() {
 	case "esc":
+		// Backing out of the list also stops a voice it was auditioning.
+		m.cancelPreview()
 		m.closePicker()
 		return m, nil
 	case "enter":

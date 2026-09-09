@@ -156,9 +156,10 @@ silence timeout.
 
 The mode is `talk_hotkey_mode`, the combo is `talk_hotkey` (empty means the
 platform default), and `talk_hotkey_enabled: false` turns the whole thing off.
-All three are rows in Settings → Tools: Enter toggles the key, cycles the mode,
-or opens a one-line editor for the combo (`ctrl+alt+t`, `f13`; empty returns
-to the default). Changes apply to the next conversation.
+All three are rows in Settings → Tools: `←/→` or `space` toggle the key, `←/→`
+step the mode (`enter` lists the three), and `enter` on the combo opens a
+one-line editor (`ctrl+alt+t`, `f13`; empty returns to the default). Changes
+apply to the next conversation.
 
 #### macOS
 
@@ -305,15 +306,18 @@ speaker…** for guests — three short clips recorded on the conversation’s
 microphone so live labels say a name instead of `speaker-1` (see
 [meetings.md](meetings.md#register-your-voice)).
 
-Microphone and speaker devices can be selected from the **Input** and
-**Output** sections in TUI Settings. The **TTS** section selects the active
-text-to-speech provider and shows its configured model context. Kokoro exposes
-the static voice picker. Selecting an uninstalled **Qwen3-TTS** row installs the
-native multi-tier package (worker binary + GGUF under `models_dir/qwen3-tts`)
-when a published platform tarball exists (macOS Apple Silicon Metal, or
-linux/amd64 CPU) or `qwen_tts_native_url` is set. After setup, the **Voice** section
-lists Qwen's nine CustomVoice-class preset speakers; press `p` to preview and
-`Enter` to select one. The **Language** section selects Qwen's synthesis language
+Microphone and speaker devices are rows in the **Input** and **Output**
+sections of TUI Settings: `←/→` step through the devices, `enter` opens the
+full list and typing filters it. The **TTS** section's engine row selects the
+active text-to-speech provider and shows its configured model context. Choosing
+an uninstalled **Qwen3-TTS** engine from that list installs the native
+multi-tier package (worker binary + GGUF under `models_dir/qwen3-tts`) when a
+published platform tarball exists (macOS Apple Silicon Metal, or linux/amd64
+CPU) or `qwen_tts_native_url` is set; `←/→` step over it rather than start the
+download. After setup, the **Voice** row lists Qwen's nine CustomVoice-class
+preset speakers: `←/→` step through them, `p` previews the current one, and
+`enter` opens the list — type to filter, `tab` to preview the highlighted
+voice, `enter` to select. The **Language** row selects Qwen's synthesis language
 (use **Auto** unless a book or conversation needs an explicit language). Returning
 from Settings replaces the provider used by subsequent utterances in an
 already-running conversation; no Obey Voice restart is required. The launcher

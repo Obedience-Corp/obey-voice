@@ -400,7 +400,12 @@ func (m *settingsModel) setDefaultDestination(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(choices) {
 		return nil
 	}
-	next := choices[idx]
+	return m.setDefaultDestinationChoice(choices[idx])
+}
+
+// setDefaultDestinationChoice saves one choice — the one a row or picker
+// showed, whatever discovery has appended since.
+func (m *settingsModel) setDefaultDestinationChoice(next destinationChoice) tea.Cmd {
 	// Persist discovered destinations before setting them as default.
 	if next.dest != nil {
 		if err := m.ensureDestinationConfigured(*next.dest); err != nil {

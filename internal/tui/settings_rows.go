@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -67,11 +68,19 @@ type settingRow struct {
 	help     string
 	// verb names what enter does on an action or menu row, for the footer.
 	verb string
-	// set applies option idx (pick, menu). run performs the row's own verb
+	// stepOver marks options ←/→ step over (index-aligned with options; nil
+	// means none): a backend that is not installed, an engine or tier whose
+	// choice starts a download. The picker still lists them, so choosing one
+	// deliberately explains itself or installs — a single keypress does not.
+	stepOver []bool
+	// set applies option idx (pick, menu). step is set's ←/→ form when the
+	// two differ (the Brain row lands on Worker only when chosen, not on
+	// every step); nil means step is set. run performs the row's own verb
 	// (toggle, text, action, info). nudge moves a slider by delta steps.
 	// preview plays option idx without choosing it. Each takes the model
 	// explicitly: a closure built on one copy must not mutate a stale one.
 	set     func(m *settingsModel, idx int) tea.Cmd
+	step    func(m *settingsModel, idx int) tea.Cmd
 	run     func(m *settingsModel) tea.Cmd
 	nudge   func(m *settingsModel, delta int) tea.Cmd
 	preview func(m *settingsModel, idx int) tea.Cmd
@@ -167,6 +176,17 @@ func (m *settingsModel) adjustRow(delta int) tea.Cmd {
 		if row.current >= 0 {
 			next = ((row.current+delta)%n + n) % n
 		}
+		// Step over options a keypress must not choose; if every option is
+		// one of those there is nothing to step to.
+		for tries := 0; tries < n && next < len(row.stepOver) && row.stepOver[next]; tries++ {
+			next = ((next+delta)%n + n) % n
+		}
+		if next < len(row.stepOver) && row.stepOver[next] {
+			return nil
+		}
+		if row.step != nil {
+			return row.step(m, next)
+		}
 		return row.set(m, next)
 	case rowToggle:
 		if row.run != nil {
@@ -249,10 +269,12 @@ func (m *settingsModel) gotoSection(s settingsSection) tea.Cmd {
 
 func (m settingsModel) providerRows() []settingRow {
 	current := -1
+	stepOver := make([]bool, len(m.providers))
 	for i, p := range m.providers {
 		if p.Name == m.cfg.BrainProvider {
 			current = i
 		}
+		stepOver[i] = !p.Available
 	}
 	value := strings.TrimSpace(m.cfg.BrainProvider)
 	if value == "" {
@@ -260,10 +282,11 @@ func (m settingsModel) providerRows() []settingRow {
 	}
 	return []settingRow{{
 		key: "brain_provider", name: "Brain", kind: rowPick,
-		value: value, options: m.providerItems, current: current,
+		value: value, options: m.providerItems, current: current, stepOver: stepOver,
 		applies: appliesNextConversation,
-		help:    "Which provider answers you.",
+		help:    "Which provider answers you. Choosing one lands on Worker if none is set.",
 		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectProviderOption(i) },
+		step:    func(m *settingsModel, i int) tea.Cmd { return m.stepProviderOption(i) },
 	}}
 }
 
@@ -278,12 +301,13 @@ func (m settingsModel) modelRows() []settingRow {
 		key = "cursor_model"
 	}
 	active := m.activeModel()
+	models := m.modelItems
 	row := settingRow{
 		key: key, name: "Brain model", kind: rowPick,
-		value: active, options: m.modelItems, current: indexOf(m.modelItems, active),
+		value: active, options: models, current: indexOf(models, active),
 		applies: appliesNextConversation,
 		help:    "Which model thinks for the brain provider.",
-		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectModelOption(i) },
+		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectModel(models[i]) },
 	}
 	if key == "" {
 		row.detail = "not routed for " + m.cfg.BrainProvider
@@ -295,6 +319,7 @@ func (m settingsModel) workerRows() []settingRow {
 	infos := m.workerProviderInfos()
 	names := make([]string, 0, len(infos))
 	labels := make([]string, 0, len(infos))
+	stepOver := make([]bool, 0, len(infos))
 	for _, p := range infos {
 		label := p.Name
 		if !p.Available {
@@ -302,11 +327,12 @@ func (m settingsModel) workerRows() []settingRow {
 		}
 		names = append(names, p.Name)
 		labels = append(labels, label)
+		stepOver = append(stepOver, !p.Available)
 	}
 	active := m.activeWorkerProvider()
 	provider := settingRow{
 		key: "voice_worker_provider", name: "Worker", kind: rowPick,
-		value: active, options: labels, current: indexOf(names, active),
+		value: active, options: labels, current: indexOf(names, active), stepOver: stepOver,
 		applies: appliesNextConversation,
 		help:    "The second brain: runs the background jobs a spawn starts, with full tools.",
 		set: func(m *settingsModel, i int) tea.Cmd {
@@ -408,20 +434,26 @@ func (m settingsModel) toolRows() []settingRow {
 
 func (m settingsModel) ttsRows() []settingRow {
 	active := activeTTSProvider(m.cfg)
-	options := make([]string, len(m.ttsItems))
+	items := m.ttsItems
+	options := make([]string, len(items))
+	stepOver := make([]bool, len(items))
 	current, detail := -1, ""
-	for i, it := range m.ttsItems {
+	for i, it := range items {
 		options[i] = it.provider + " — " + it.detail
 		if it.provider == active {
 			current, detail = i, it.detail
 		}
+		// Choosing the managed Qwen engine before its package is on disk
+		// starts a large download; that is a decision for the list, not
+		// for a keypress that was only stepping past it.
+		stepOver[i] = m.ttsProviderInstalls(it.provider)
 	}
 	return []settingRow{{
 		key: "tts_provider", name: "Voice engine", kind: rowPick,
-		value: active, detail: detail, options: options, current: current,
+		value: active, detail: detail, options: options, current: current, stepOver: stepOver,
 		applies: appliesUnlessPersona,
-		help:    "Which engine makes the sound. Choosing an uninstalled one installs it.",
-		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectTTSOption(i) },
+		help:    "Which engine makes the sound. Choosing an uninstalled one from the list installs it.",
+		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectTTSProvider(items[i].provider) },
 	}}
 }
 
@@ -474,6 +506,12 @@ func (m settingsModel) qwenRows() []settingRow {
 		case qwenOptTier:
 			row.key, row.kind = "qwen_tts_model_tier", rowPick
 			row.options, row.current = tiers, indexOf(tiers, tier)
+			row.stepOver = make([]bool, len(tiers))
+			for i, t := range tiers {
+				// setQwenTier fetches a tier that is not in the package;
+				// ←/→ must not be the keypress that starts that.
+				row.stepOver[i] = t == managedqwen.Tier1_7B && !slices.Contains(m.nativeStatus.TiersReady, t)
+			}
 			row.applies = appliesNextConversation
 			row.help = "0.6b is fast; 1.7b sounds better and is slower. A tier not in the package is downloaded."
 			row.set = func(m *settingsModel, i int) tea.Cmd { return m.setQwenTier(tiers[i]) }
@@ -513,9 +551,13 @@ func (m settingsModel) voiceRows() []settingRow {
 		return []settingRow{row}
 	}
 	active := config.TTSVoiceFor(m.cfg, provider)
-	options := make([]string, len(m.voiceItems))
+	// The closures act on the list this row showed, not on whatever the
+	// model holds when the key lands: a Qwen install finishing while the
+	// picker is open rebuilds voiceItems underneath it.
+	voices := m.voiceItems
+	options := make([]string, len(voices))
 	current := -1
-	for i, v := range m.voiceItems {
+	for i, v := range voices {
 		options[i] = voiceOptionLabel(v)
 		if strings.EqualFold(v.Name, active) {
 			current = i
@@ -524,19 +566,19 @@ func (m settingsModel) voiceRows() []settingRow {
 	row.options, row.current = options, current
 	row.value = active
 	if current >= 0 {
-		v := m.voiceItems[current]
+		v := voices[current]
 		row.value = v.Name
 		row.detail = v.Gender + " / " + v.Locale
 	}
 	if m.preview.previewing != "" {
 		row.detail = strings.TrimSpace(row.detail + "  ♫ playing " + m.preview.previewing + "…")
 	}
-	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectVoiceOption(i) }
+	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectVoice(voices[i]) }
 	row.preview = func(m *settingsModel, i int) tea.Cmd {
-		if i < 0 || i >= len(m.voiceItems) {
+		if i < 0 || i >= len(voices) {
 			return nil
 		}
-		return m.startSettingsPreview(m.voiceItems[i])
+		return m.startSettingsPreview(voices[i])
 	}
 	return []settingRow{row}
 }
@@ -552,27 +594,29 @@ func (m settingsModel) languageRows() []settingRow {
 		row.reason = "Language selection is available for managed Qwen3-TTS"
 		return []settingRow{row}
 	}
+	languages := m.languageItems
 	current := -1
-	for i, language := range m.languageItems {
+	for i, language := range languages {
 		if strings.EqualFold(language, m.cfg.QwenTTSLanguage) ||
 			(m.cfg.QwenTTSLanguage == "" && language == "Auto") {
 			current = i
 		}
 	}
-	row.options, row.current = m.languageItems, current
+	row.options, row.current = languages, current
 	row.value = m.cfg.QwenTTSLanguage
 	if current >= 0 {
-		row.value = m.languageItems[current]
+		row.value = languages[current]
 	}
-	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectLanguageOption(i) }
+	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectLanguage(languages[i]) }
 	return []settingRow{row}
 }
 
 func (m settingsModel) sttRows() []settingRow {
 	active := activeSTTProvider(m.cfg)
-	options := make([]string, len(m.sttItems))
+	items := m.sttItems
+	options := make([]string, len(items))
 	current := -1
-	for i, it := range m.sttItems {
+	for i, it := range items {
 		options[i] = it.label
 		if it.provider == active {
 			current = i
@@ -587,7 +631,7 @@ func (m settingsModel) sttRows() []settingRow {
 		value: value, detail: sttConfiguredAliasNote(m.cfg), options: options, current: current,
 		applies: "applies to a new conversation",
 		help:    "Which speech recognizer hears you.",
-		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectSTTOption(i) },
+		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectSTTItem(items[i]) },
 	}}
 }
 
@@ -754,10 +798,11 @@ func (m settingsModel) inputRows() []settingRow {
 		row.reason = "Discovering audio devices…"
 		return []settingRow{row}
 	}
+	devices := m.inputItems
 	row.value = deviceLabel(m.cfg.InputDevice)
-	row.options = deviceOptions(m.inputItems)
-	row.current = indexOf(m.inputItems, m.cfg.InputDevice)
-	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectInputOption(i) }
+	row.options = deviceOptions(devices)
+	row.current = indexOf(devices, m.cfg.InputDevice)
+	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectInputDevice(devices[i]) }
 	return []settingRow{row}
 }
 
@@ -771,10 +816,11 @@ func (m settingsModel) outputRows() []settingRow {
 		speaker.disabled = true
 		speaker.reason = "Discovering audio devices…"
 	} else {
+		devices := m.outputItems
 		speaker.value = deviceLabel(m.cfg.OutputDevice)
-		speaker.options = deviceOptions(m.outputItems)
-		speaker.current = indexOf(m.outputItems, m.cfg.OutputDevice)
-		speaker.set = func(m *settingsModel, i int) tea.Cmd { return m.selectOutputOption(i) }
+		speaker.options = deviceOptions(devices)
+		speaker.current = indexOf(devices, m.cfg.OutputDevice)
+		speaker.set = func(m *settingsModel, i int) tea.Cmd { return m.selectOutputDevice(devices[i]) }
 	}
 	volume := settingRow{
 		key: "playback_volume", name: "Volume", kind: rowSlider,
@@ -905,7 +951,7 @@ func (m settingsModel) meetingRows() []settingRow {
 			key: "meeting.route.default", name: "Default destination", kind: rowPick,
 			value: destValue, options: destLabels, current: destCurrent, applies: appliesNextMeeting,
 			help: "Where notes go when route mode is auto.",
-			set:  func(m *settingsModel, i int) tea.Cmd { return m.setDefaultDestination(i) },
+			set:  func(m *settingsModel, i int) tea.Cmd { return m.setDefaultDestinationChoice(dests[i]) },
 		},
 		{
 			key: "meeting.route.body", name: "Body scope", kind: rowPick,
