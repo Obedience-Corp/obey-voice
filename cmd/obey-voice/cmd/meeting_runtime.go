@@ -518,7 +518,7 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 	// pyannote + the review engine's embedding extractor wait until Finalize
 	// so a long take does not keep a second ONNX stack resident. The deferral
 	// is also what keeps the load off this goroutine, so a session — new or
-	// resumed — needs no background StartPrepare here.
+	// resumed — needs no background preload here.
 	analyzer := meeting.NewDeferredAnalyzer(func(context.Context) (meeting.SpeakerAnalyzer, error) {
 		engine, err := speaker.NewSherpaEngine(sp, modelsDir)
 		if err != nil {
