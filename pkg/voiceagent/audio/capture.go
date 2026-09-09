@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -55,6 +54,13 @@ type Capture struct {
 
 	// Logf reports device reopen attempts and their outcome. A microphone that
 	// silently stops delivering callbacks is otherwise undiagnosable.
+	//
+	// It is nil by default, which is silent. Recovery runs while a Bubble Tea
+	// program may own the terminal, and a line written to a raw stderr lands on
+	// top of that surface — exactly during the mixer move this recovers from.
+	// Callers pick a destination that suits their path: log.Printf where stderr
+	// is either free or already redirected into the diagnostics log, and an
+	// explicit file logger on a TUI path that does not redirect it.
 	Logf func(format string, args ...any)
 }
 
@@ -70,7 +76,6 @@ func NewCaptureWithDevice(deviceName string) *Capture {
 		buf:        NewRingBuffer(SampleRate * 30), // 30 seconds buffer
 		subs:       make(map[int]chan []float32),
 		deviceName: deviceName,
-		Logf:       log.Printf,
 	}
 	c.open = c.openMalgoDevice
 	c.closeDevice = c.closeMalgoDevice

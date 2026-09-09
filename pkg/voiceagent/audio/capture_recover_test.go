@@ -1,9 +1,11 @@
 package audio
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,6 +63,44 @@ func (f *fakeDevice) logged() []string {
 // starve makes the next ReadFrame see a stalled stream.
 func starve(c *Capture) {
 	c.lastData.Store(time.Now().Add(-2 * captureStallTimeout).UnixNano())
+}
+
+// A Capture nobody configured must not write anywhere: recovery runs while a
+// Bubble Tea program may own the terminal, and the standalone meeting recorder
+// leaves file descriptor 2 pointed at it.
+func TestCaptureDefaultLoggerIsSilent(t *testing.T) {
+	c := NewCapture()
+	if c.Logf != nil {
+		t.Fatal("a new Capture must have no logger until a caller picks one")
+	}
+	fail := false
+	c.open = func() error {
+		if fail {
+			return errors.New(`audio device "gone" is not available`)
+		}
+		return nil
+	}
+	c.closeDevice = func() {}
+
+	var stderr bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&stderr)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	ctx := context.Background()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer c.Stop()
+
+	fail = true
+	starve(c)
+	if _, err := c.ReadFrame(ctx); !errors.Is(err, ErrNoFrameReady) {
+		t.Fatalf("ReadFrame during a failed reopen = %v, want ErrNoFrameReady", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("an unconfigured Capture wrote %q", stderr.String())
+	}
 }
 
 func TestCaptureReadFrameReopensAfterStall(t *testing.T) {

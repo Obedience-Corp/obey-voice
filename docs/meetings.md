@@ -21,7 +21,10 @@ shared with conversation:
   still not mistaken for a voice.
 - The noise gate re-learns the room level after an input-volume change, and it
   now requires the shifted level to hold for about 300ms of non-speech audio.
-  A single loud frame is a syllable, not a mixer move.
+  A single loud frame is a syllable, not a mixer move. One consequence: if
+  turning the volume up leaves hiss loud enough for Silero to stay latched on
+  it, the gate keeps reading that hiss as a talker until Silero drops for three
+  consecutive frames and the re-learn can run.
 
 Changing OS input volume while recording can also restart the capture stream on
 PipeWire/ALSA. Obey Voice reopens the microphone when callbacks stop for two
