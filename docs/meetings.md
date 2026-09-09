@@ -7,6 +7,32 @@ and creates one timestamped `.meeting` bundle directory. Its canonical
 `meeting.md` and internal structured event stream are each synced so a crash
 never loses what was already captured.
 
+Meeting capture applies listen gain (AGC only — no noise suppressor) so quieter
+and farther talkers reach speech detection. That front-end is specific to this
+path; conversation keeps the full voice front-end, whose noise suppressor
+over-gates room speech.
+
+Two related changes are **not** meeting-specific, because speech detection is
+shared with conversation:
+
+- The floor below which audio counts as nobody talking is now stated at the
+  microphone rather than after gain, so a talker across a table (roughly
+  `0.002`–`0.006` RMS) is heard on every path while amplified room tone is
+  still not mistaken for a voice.
+- The noise gate re-learns the room level after an input-volume change, and it
+  now requires the shifted level to hold for about 300ms of non-speech audio.
+  A single loud frame is a syllable, not a mixer move. One consequence: if
+  turning the volume up leaves hiss loud enough for Silero to stay latched on
+  it, the gate keeps reading that hiss as a talker until Silero drops for three
+  consecutive frames and the re-learn can run.
+
+Changing OS input volume while recording can also restart the capture stream on
+PipeWire/ALSA. Obey Voice reopens the microphone when callbacks stop for two
+seconds, and keeps retrying on later stall windows if the device is not back
+yet, so an unplugged or restarted device recovers on its own. Reopen attempts
+and their outcome are logged. Set the mixer where you want it before you start
+when you can.
+
 From the main `obey-voice` launcher choose **Meeting → Start meeting**, or run
 `obey-voice meeting record` on a TTY (not `--json` / `--no-tui`) for the
 full-screen recorder. **Resume last meeting** (or `obey-voice meeting record

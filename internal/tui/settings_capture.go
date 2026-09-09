@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -31,6 +32,9 @@ func (a App) settingsCaptureFor() func() (speaker.CaptureSource, func(), error) 
 			device = cfg.InputDevice
 		}
 		capture := audio.NewCaptureWithDevice(device)
+		// Settings only exists inside Run, which has redirected file
+		// descriptor 2 into the diagnostics log for the life of the program.
+		capture.Logf = log.Printf
 		if err := capture.Start(context.Background()); err != nil {
 			return nil, nil, fmt.Errorf("open microphone: %w", err)
 		}

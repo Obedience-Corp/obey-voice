@@ -53,6 +53,9 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 	var levels levelEmitter
 	var gate noiseGate
 	var heard audibleTracker
+	// The capture front-end's gain moves while it adapts, so the floor is read
+	// per iteration rather than fixed at session start.
+	floor := func() float64 { return speechFloor(inputGain(deps.frames)) }
 
 	// resetListening discards a rejected or false-positive utterance and opens a
 	// fresh listening window. It returns false when the loop should stop.
@@ -85,6 +88,8 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 		if read.ready && len(read.frame.Samples) > 0 {
 			levels.maybeEmit(events, read.frame.Samples)
 			deps.seg.AcceptWaveform(read.frame.Samples)
+			gate.minRMS = floor()
+			heard.floor = gate.minRMS
 			d := gate.decide(read.frame.Samples, deps.seg.IsSpeech())
 			if d.drop {
 				if !resetListening() {
