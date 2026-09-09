@@ -33,9 +33,18 @@ yet, so an unplugged or restarted device recovers on its own. Reopen attempts
 and their outcome are logged. Set the mixer where you want it before you start
 when you can.
 
-From the main `obey-voice` launcher choose **Record meeting**, or run
+From the main `obey-voice` launcher choose **Meeting → Start meeting**, or run
 `obey-voice meeting record` on a TTY (not `--json` / `--no-tui`) for the
-full-screen recorder:
+full-screen recorder. **Resume last meeting** (or `obey-voice meeting record
+--resume last`) appends to the same `.meeting` bundle: timestamps continue
+from the last line, the break is marked `▶ resumed`, and retained `audio.wav`
+is extended rather than replaced. `last` means the **newest meeting by start
+time**, not the one most recently written to. The reported duration counts
+recorded minutes only, so a meeting split across a two-hour break still reads
+as the 40 minutes it captured. A meeting that already routed its notes is not
+auto-filed a second time — in the launcher and on the command line alike;
+every other resume follows `meeting.route.mode` exactly like a fresh
+recording, and `obey-voice meeting route` refiles on demand.
 
 | Control | Action |
 |---------|--------|
@@ -110,8 +119,29 @@ while analysis is still running prints `Diarizing speakers…` and a further
 **Ctrl+C** skips the labels (the transcript and any delivered route are
 already on disk). `--json` waits for the labels so the summary keeps its
 speaker fields — Ctrl+C skips there too. Re-running diarization on a past
-meeting needs retained audio (`speaker.meeting.record_audio` / **Record audio
-for analysis**); without it the working PCM is discarded after Finalize.
+meeting with `obey-voice meeting analyze` needs retained audio
+(`speaker.meeting.record_audio` / **Record audio for analysis**); without it
+the working PCM is discarded after Finalize.
+
+That discard decides how a **resumed** meeting is labelled. With
+`record_audio: true` the whole recording is still on disk, so each stop
+diarizes the meeting end to end and every line is labelled from the same
+pass. With retention off — the default — the audio of earlier segments is
+gone, so a resumed stop diarizes **only the segment it just recorded**: it
+labels that segment's lines and leaves the labels the earlier stop already
+wrote exactly as they were. Nothing is relabelled from audio that no longer
+exists, and no line is dropped.
+
+The sidecar `speaker-analysis.json` is overwritten by each pass, so it
+describes the most recent one only; the bundle's event stream is the full
+record.
+
+The cost is that speaker numbering need not line up across the break: the
+`speaker-2` of the second segment is not necessarily the `speaker-2` of the
+first, because clustering starts fresh on each pass. Enrolled voices
+(**Settings → Speakers**) resolve to names and do stay consistent. Turn on
+**Record audio for analysis** if you want one coherent numbering across a
+resumed meeting.
 
 A campaign/file destination chosen at meeting start is **durable**: the plan
 is written into the bundle and the route fires as soon as capture stops —
@@ -239,6 +269,7 @@ obey-voice meeting record
 obey-voice meeting record --description "Weekly planning sync"
 obey-voice meeting record --description "Standup" --out-dir ~/notes/meetings --json
 obey-voice meeting record --description "CI log" --no-tui
+obey-voice meeting record --resume last
 obey-voice meeting analyze meeting.wav --speakers 2
 ```
 

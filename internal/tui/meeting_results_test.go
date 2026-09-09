@@ -112,3 +112,63 @@ func TestMeetingResultsContinueAndStandaloneExit(t *testing.T) {
 		t.Fatalf("standalone continuation = %T", cmd())
 	}
 }
+
+// The review screen overlays attribution onto the transcript. A resumed
+// segment that was never diarized has no speaker_utterance of its own, and
+// replacing the transcript with the attributed events would drop it entirely.
+func TestMeetingResultsKeepsUnattributedResumedLines(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "gap.meeting")
+	w, err := meetinglog.CreateBundle(bundle, "Gap", "fake", "mac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.OnUtterance(listen.Utterance{
+		Text: "before the break", At: w.StartedAt().Add(time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	records := w.Transcripts()
+	if len(records) != 1 {
+		t.Fatalf("transcripts = %d, want 1", len(records))
+	}
+	if err := w.WriteSpeakerAnalysis(meetinglog.SpeakerAnalysis{
+		Status: "complete",
+		Segments: []meetinglog.SpeakerSegment{{
+			ID: "diarization-1", StartMS: 0, EndMS: 600000, Label: "speaker-1", State: "stable",
+		}},
+		Utterances: []meetinglog.SpeakerUtterance{{
+			TranscriptRecord: records[0], Speaker: "speaker-1", State: "stable",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Resume and record without ever running diarization on the new segment.
+	resumed, err := meetinglog.OpenBundle(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resumed.OnUtterance(listen.Utterance{
+		Text: "after the break", At: time.Now().Add(2 * time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := resumed.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := newMeetingResults(summary)
+	m.width, m.height = 100, 30
+	m.resize()
+	content := m.content()
+	if !strings.Contains(content, "speaker-1:") || !strings.Contains(content, "before the break") {
+		t.Fatalf("attributed line missing from review:\n%s", content)
+	}
+	if !strings.Contains(content, "after the break") {
+		t.Fatalf("the resumed segment's line is missing from review:\n%s", content)
+	}
+}

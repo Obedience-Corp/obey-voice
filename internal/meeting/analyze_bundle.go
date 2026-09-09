@@ -44,7 +44,8 @@ func AnalyzeBundleAudio(ctx context.Context, analyzer SpeakerAnalyzer, writer *m
 		persistErr = errors.Join(persistErr, err)
 	}
 	if writer != nil {
-		if err := writer.WriteSpeakerAnalysis(logAnalysis(result, writer.Transcripts())); err != nil {
+		analysis := logAnalysis(result, writer.Transcripts(), segmentIDPrefix(writer.SegmentStartMS()))
+		if err := writer.WriteSpeakerAnalysis(analysis); err != nil {
 			persistErr = errors.Join(persistErr, err)
 		}
 	}

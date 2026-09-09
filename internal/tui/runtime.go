@@ -121,11 +121,18 @@ type MeetingRuntime struct {
 	Cleanup        func()
 }
 
+// MeetingSpec is how the launcher (or CLI) starts or resumes a recording.
+type MeetingSpec struct {
+	Description string
+	// ResumePath is a .meeting bundle to append to. Empty starts a new bundle.
+	ResumePath string
+}
+
 // MeetingBuilder constructs meeting resources when the user starts recording
 // from the main launcher (assets + mic hot only after title confirm). Build
 // progress is reported through progress and rendered in-screen, the same way
 // the conversation reports its own.
-type MeetingBuilder func(ctx context.Context, description string, progress BuildProgress) (*MeetingRuntime, error)
+type MeetingBuilder func(ctx context.Context, spec MeetingSpec, progress BuildProgress) (*MeetingRuntime, error)
 
 // meetingReadyMsg delivers a built meeting runtime (or error) into Update.
 type meetingReadyMsg struct {
@@ -133,14 +140,14 @@ type meetingReadyMsg struct {
 	err error
 }
 
-func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot[*MeetingRuntime], description string) tea.Cmd {
+func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot[*MeetingRuntime], spec MeetingSpec) tea.Cmd {
 	if build == nil {
 		return func() tea.Msg {
 			return meetingReadyMsg{err: fmt.Errorf("meeting builder not configured")}
 		}
 	}
 	return func() tea.Msg {
-		rt, err := build(ctx, description, func(stage BuildStage) {
+		rt, err := build(ctx, spec, func(stage BuildStage) {
 			feed.send(buildStageMsg{stage: stage})
 		})
 		feed.send(progressClosedMsg{})

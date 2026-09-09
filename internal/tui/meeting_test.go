@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,39 @@ func sizedMeeting(t *testing.T, w, h int) meetingModel {
 		t.Fatal("not ready after resize")
 	}
 	return mm
+}
+
+func TestMeetingTranscriptScrollsWithPageAndEmptyNoteArrows(t *testing.T) {
+	m := sizedMeeting(t, 80, 16)
+	for i := 0; i < 40; i++ {
+		m.appendSystemLine(fmt.Sprintf("  line %02d of a long meeting", i))
+	}
+	m.viewport.GotoBottom()
+	bottom := m.viewport.YOffset
+	if bottom == 0 {
+		t.Fatal("expected a scrollable transcript")
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(meetingModel)
+	if m.viewport.YOffset >= bottom {
+		t.Fatalf("pgup YOffset = %d, want < %d", m.viewport.YOffset, bottom)
+	}
+
+	m.viewport.GotoBottom()
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(meetingModel)
+	if m.viewport.YOffset >= bottom {
+		t.Fatalf("empty-note up YOffset = %d, want < %d", m.viewport.YOffset, bottom)
+	}
+
+	m.note.SetValue("draft")
+	m.viewport.GotoBottom()
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(meetingModel)
+	if m.viewport.YOffset != bottom {
+		t.Fatalf("draft up must stay in the note, YOffset = %d want %d", m.viewport.YOffset, bottom)
+	}
 }
 
 func TestMeetingViewShowsDescriptionAndEQ(t *testing.T) {

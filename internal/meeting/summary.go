@@ -35,7 +35,11 @@ func summaryFromEvents(jsonlPath, bundle string, events []meetinglog.Event) meet
 		File:      filepath.Join(bundle, meetinglog.BundleDocumentName),
 		Bundle:    bundle,
 	}
+	var recordedMS int64
 	for _, e := range events {
+		if meetinglog.RecordedOffset(e.Type) && e.OffsetMs > recordedMS {
+			recordedMS = e.OffsetMs
+		}
 		switch e.Type {
 		case meetinglog.TypeSessionStart:
 			s.Description = e.Desc
@@ -65,8 +69,18 @@ func summaryFromEvents(jsonlPath, bundle string, events []meetinglog.Event) meet
 	if s.Description == "" {
 		s.Description = "meeting"
 	}
-	if !s.StartedAt.IsZero() && !s.EndedAt.IsZero() {
-		s.DurationSeconds = int64(s.Duration().Round(time.Second) / time.Second)
+	// Recorded time, not wall-clock span: a resumed meeting's session_start and
+	// last session_end bracket the break too, and the trailer the recorder
+	// wrote counts only what it captured. Every disk-derived surface (meeting
+	// list, the HTTP index, the routed note) reads this field.
+	switch {
+	case recordedMS > 0:
+		s.DurationSeconds = int64((time.Duration(recordedMS) * time.Millisecond).Round(time.Second) / time.Second)
+	case !s.StartedAt.IsZero() && !s.EndedAt.IsZero():
+		s.DurationSeconds = int64(s.EndedAt.Sub(s.StartedAt).Round(time.Second) / time.Second)
+	}
+	if s.DurationSeconds < 0 {
+		s.DurationSeconds = 0
 	}
 	return s
 }

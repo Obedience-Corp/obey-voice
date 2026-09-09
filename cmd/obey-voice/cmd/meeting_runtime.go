@@ -49,6 +49,22 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	ctx, cancel := signalContext()
 	defer cancel()
 
+	outDir := opts.OutDir
+	if outDir == "" {
+		outDir = config.MeetingsDir()
+	}
+	// 0o700: meeting filenames include description slugs; keep the directory
+	// private the same way auth/cert paths are.
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
+		return fmt.Errorf("meeting record: create out dir: %w", err)
+	}
+	// Resolve --resume first: a typo must not cost the user a full model
+	// preflight and a hot microphone before it is reported.
+	resume, err := resolveMeetingResume(ctx, outDir, opts.Resume)
+	if err != nil {
+		return err
+	}
+
 	progress := meetingAssetProgress(opts.JSON)
 	captureLogf, closeCaptureLog := meetingCaptureLogf(useMeetingRecordTUI(opts))
 	defer closeCaptureLog()
@@ -76,25 +92,20 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	}
 	defer releaseCapture()
 
-	outDir := opts.OutDir
-	if outDir == "" {
-		outDir = config.MeetingsDir()
-	}
-	// 0o700: meeting filenames include description slugs; keep the directory
-	// private the same way auth/cert paths are.
-	if err := os.MkdirAll(outDir, 0o700); err != nil {
-		return fmt.Errorf("meeting record: create out dir: %w", err)
-	}
-	bundlePath := filepath.Join(outDir, meetingBundleName(opts.Description, time.Now()))
-
-	writer, err := meetinglog.CreateBundle(bundlePath, opts.Description, sttLabel, "mac")
+	writer, bundlePath, err := openMeetingWriter(outDir, opts.Description, sttLabel, resume)
 	if err != nil {
 		return err
 	}
+	alreadyRouted := resume != nil && resume.alreadyRouted
+	opts.Description = writer.Description()
 	// Durable delivery intent: an auto destination known at start is recorded
 	// so the launcher's startup sweep can retry if this process never routes.
 	// A failed write voids that promise — say so instead of claiming durability.
-	if dest := cliAutoRouteDest(meeting.FromConfig(&cfgCopy), opts); dest != "" {
+	// A resume keeps the plan the bundle already carries; a resume of a bundle
+	// with no plan writes one, so --resume last --route docs is as crash-proof
+	// as a fresh recording.
+	if dest := cliAutoRouteDest(meeting.FromConfig(&cfgCopy), opts); dest != "" &&
+		(resume == nil || !resume.hasRoutePlan) {
 		mode := "auto"
 		if opts.RouteTo != "" {
 			mode = "dest"
@@ -174,7 +185,7 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 	} else {
 		autoDest = cliAutoRouteDest(meeting.FromConfig(routeCfg), opts)
 	}
-	if closeErr == nil && cfgErr == nil && autoDest != "" {
+	if closeErr == nil && cfgErr == nil && autoDest != "" && !(alreadyRouted && opts.RouteTo == "") {
 		routeErr = routeAfterRecordTo(cmd, routeCfg, summary, autoDest, opts.JSON)
 	}
 
@@ -183,7 +194,7 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 			fmt.Fprintf(cmd.ErrOrStderr(), "meeting review: %v\n", err)
 		}
 	}
-	if closeErr == nil && cfgErr == nil && autoDest == "" {
+	if closeErr == nil && cfgErr == nil && autoDest == "" && !alreadyRouted {
 		routeErr = maybeRouteAfterRecord(cmd, routeCfg, summary, opts)
 	}
 
@@ -304,9 +315,53 @@ func useMeetingRecordTUI(opts meetingOptions) bool {
 	return isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 }
 
+// resumeTarget is a validated --resume reference: the bundle to append to,
+// plus what its event stream already promises about routing.
+type resumeTarget struct {
+	bundle        string
+	alreadyRouted bool
+	hasRoutePlan  bool
+}
+
+// resolveMeetingResume validates a --resume reference without touching models
+// or the microphone. A nil target with a nil error means no --resume was given.
+func resolveMeetingResume(ctx context.Context, outDir, ref string) (*resumeTarget, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, nil
+	}
+	entry, ok := meeting.ResolveResumeRef(ctx, outDir, ref)
+	if !ok {
+		return nil, fmt.Errorf("meeting record: no meeting matching %q", ref)
+	}
+	return &resumeTarget{
+		bundle:        entry.Bundle,
+		alreadyRouted: entry.Route != nil && entry.Route.Status == meeting.RouteStatusRouted,
+		hasRoutePlan:  entry.Route != nil && entry.Route.Status != meeting.RouteStatusNone,
+	}, nil
+}
+
+// openMeetingWriter creates a new bundle, or reopens the already-resolved
+// --resume target.
+func openMeetingWriter(outDir, description, sttLabel string, resume *resumeTarget) (*meetinglog.Writer, string, error) {
+	if resume != nil {
+		writer, err := meetinglog.OpenBundle(resume.bundle)
+		if err != nil {
+			return nil, "", err
+		}
+		return writer, resume.bundle, nil
+	}
+	bundlePath := filepath.Join(outDir, meetingBundleName(description, time.Now()))
+	writer, err := meetinglog.CreateBundle(bundlePath, description, sttLabel, "mac")
+	if err != nil {
+		return nil, "", err
+	}
+	return writer, bundlePath, nil
+}
+
 // meetingRuntimeBuilder powers the main launcher "Meeting" entry.
 func meetingRuntimeBuilder() appTUI.MeetingBuilder {
-	return func(ctx context.Context, description string, progress appTUI.BuildProgress) (*appTUI.MeetingRuntime, error) {
+	return func(ctx context.Context, spec appTUI.MeetingSpec, progress appTUI.BuildProgress) (*appTUI.MeetingRuntime, error) {
 		progress.Stage("Reading settings")
 		cfg, err := config.Load()
 		if err != nil {
@@ -316,12 +371,13 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 		if err := os.MkdirAll(outDir, 0o700); err != nil {
 			return nil, fmt.Errorf("meeting: create out dir: %w", err)
 		}
-		bundlePath := filepath.Join(outDir, meetingBundleName(description, time.Now()))
+		description := spec.Description
 
 		// VHS/demo path: skip real mic/models; the TUI scripts STT events.
 		if os.Getenv("OBEY_VOICE_DEMO_MEETING") == "1" ||
 			os.Getenv("OBEY_VOICE_DEMO_MEETING") == "true" ||
 			os.Getenv("OBEY_VOICE_DEMO_MEETING") == "yes" {
+			bundlePath := filepath.Join(outDir, meetingBundleName(description, time.Now()))
 			writer, err := meetinglog.CreateBundle(bundlePath, description, "demo", "mac")
 			if err != nil {
 				return nil, err
@@ -339,6 +395,11 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 			}, nil
 		}
 
+		resume, err := resolveMeetingResume(ctx, outDir, spec.ResumePath)
+		if err != nil {
+			return nil, err
+		}
+
 		// The launcher redirects file descriptor 2 into the diagnostics log for
 		// the life of the program, so the standard logger is already off the
 		// terminal here.
@@ -347,11 +408,12 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 			return nil, err
 		}
 		progress.Stage("Opening the meeting bundle")
-		writer, err := meetinglog.CreateBundle(bundlePath, description, sttLabel, "mac")
+		writer, bundlePath, err := openMeetingWriter(outDir, description, sttLabel, resume)
 		if err != nil {
 			cleanup()
 			return nil, err
 		}
+		description = writer.Description()
 		speakerSession, speakerSetupErr := prepareMeetingSpeakers(ctx, cfg, capture, writer, bundlePath, progress)
 		if speakerSetupErr != nil {
 			_ = writer.WriteSpeakerAnalysis(meetinglog.SpeakerAnalysis{
@@ -431,6 +493,9 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 	if !sp.MeetingActive() {
 		return nil, nil
 	}
+	// Download weights here (progress ticks). Do not load pyannote/TitaNet on
+	// this goroutine: NewSherpaEngine can sit for minutes on a handheld with
+	// no UI, which looks like a hang on "Preparing speaker identification".
 	progress.Stage("Checking speaker models")
 	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSpeaker: true}, progress.Downloading); err != nil {
 		return nil, fmt.Errorf("prepare speaker models: %w", err)
@@ -451,7 +516,9 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 	}
 	// Live labels already hold one TitaNet session while recording. Offline
 	// pyannote + the review engine's embedding extractor wait until Finalize
-	// so a long take does not keep a second ONNX stack resident.
+	// so a long take does not keep a second ONNX stack resident. The deferral
+	// is also what keeps the load off this goroutine, so a session — new or
+	// resumed — needs no background preload here.
 	analyzer := meeting.NewDeferredAnalyzer(func(context.Context) (meeting.SpeakerAnalyzer, error) {
 		engine, err := speaker.NewSherpaEngine(sp, modelsDir)
 		if err != nil {

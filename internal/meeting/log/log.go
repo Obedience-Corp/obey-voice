@@ -13,6 +13,7 @@
 package log
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -144,8 +145,15 @@ type Summary struct {
 	SpeakerError        string    `json:"speaker_error,omitempty"`
 }
 
-// Duration reports the recording length.
-func (s Summary) Duration() time.Duration { return s.EndedAt.Sub(s.StartedAt) }
+// Duration reports the recording length. DurationSeconds wins when it is set
+// because a resumed meeting's wall-clock span includes the break, while the
+// recorded offsets do not.
+func (s Summary) Duration() time.Duration {
+	if s.DurationSeconds > 0 {
+		return time.Duration(s.DurationSeconds) * time.Second
+	}
+	return s.EndedAt.Sub(s.StartedAt)
+}
 
 // Writer is the crash-safe document/event sink for one meeting recording.
 type Writer struct {
@@ -158,11 +166,14 @@ type Writer struct {
 	description        string
 	sttLabel           string
 	started            time.Time
+	offsetOrigin       time.Time // wall clock that maps onto offset 0; resumed sessions skip the gap
 	utterances         int
 	notes              int
 	bookmarks          int
 	errors             int
 	transcripts        []TranscriptRecord
+	priorUtterances    map[string]SpeakerUtterance
+	segmentStartMS     int64 // meeting-relative offset this writer's segment begins at
 	lastUtteranceEndMS int64
 	speakerAnalysis    SpeakerAnalysis
 	speakerCount       int
@@ -217,6 +228,7 @@ func createAt(path, jsonlPath, bundlePath, description, sttLabel, source string)
 		sttLabel:    sttLabel,
 		started:     time.Now(),
 	}
+	w.offsetOrigin = w.started
 	header := fmt.Sprintf("# Meeting: %s\n# Started: %s\n# STT: %s\n",
 		description, w.started.Format(time.RFC3339), sttLabel)
 	if source != "" {
@@ -239,12 +251,327 @@ func createAt(path, jsonlPath, bundlePath, description, sttLabel, source string)
 	return w, nil
 }
 
+// OpenBundle reopens an existing meeting directory for another recording
+// segment. Offsets continue from the last event without counting the wall-clock
+// gap. A resume marker is written so the document shows the break. session_end
+// may already be present (a clean stop); another one is written when this
+// writer Closes.
+func OpenBundle(bundlePath string) (*Writer, error) {
+	if !strings.HasSuffix(strings.ToLower(filepath.Base(strings.TrimSpace(bundlePath))), ".meeting") {
+		return nil, fmt.Errorf("meetinglog: %s is not a .meeting bundle", bundlePath)
+	}
+	documentPath := filepath.Join(bundlePath, BundleDocumentName)
+	eventsPath := filepath.Join(bundlePath, BundleInternalDirName, BundleEventsName)
+	events, err := ReadEvents(eventsPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) == 0 {
+		return nil, fmt.Errorf("meetinglog: empty event stream %s", eventsPath)
+	}
+
+	w := &Writer{
+		path:       documentPath,
+		jsonlPath:  eventsPath,
+		bundlePath: bundlePath,
+	}
+	w.priorUtterances = make(map[string]SpeakerUtterance)
+	for _, e := range events {
+		switch e.Type {
+		case TypeSessionStart:
+			w.description = e.Desc
+			w.sttLabel = e.STT
+			if t, err := parseEventTime(e.TS); err == nil {
+				w.started = t
+			}
+		case TypeUtterance:
+			w.utterances++
+			w.transcripts = append(w.transcripts, TranscriptRecord{
+				ID: e.ID, StartMS: e.StartMS, EndMS: e.EndMS, Text: e.Text,
+			})
+			if e.EndMS > w.lastUtteranceEndMS {
+				w.lastUtteranceEndMS = e.EndMS
+			}
+		case TypeNote:
+			w.notes++
+		case TypeBookmark:
+			w.bookmarks++
+		case TypeError:
+			w.errors++
+		case TypeSpeakerUtterance:
+			if e.ID != "" {
+				w.priorUtterances[e.ID] = SpeakerUtterance{
+					TranscriptRecord: TranscriptRecord{
+						ID: e.ID, StartMS: e.StartMS, EndMS: e.EndMS, Text: e.Text,
+					},
+					Speaker: e.Label, Confidence: e.Confidence, State: e.State,
+				}
+			}
+		}
+		if RecordedOffset(e.Type) && e.OffsetMs > w.lastUtteranceEndMS {
+			w.lastUtteranceEndMS = e.OffsetMs
+		}
+	}
+	if w.started.IsZero() {
+		return nil, fmt.Errorf("meetinglog: %s has no session_start", eventsPath)
+	}
+	if w.description == "" {
+		w.description = "meeting"
+	}
+
+	logF, err := os.OpenFile(documentPath, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("meetinglog: reopen log %s: %w", documentPath, err)
+	}
+	// Drop a torn tail before appending: writing after a half-flushed line
+	// would glue this session's first event onto it and turn a tolerable
+	// broken tail into corruption in the middle of the stream.
+	if err := trimTornTail(eventsPath); err != nil {
+		_ = logF.Close()
+		return nil, err
+	}
+	jsonlF, err := os.OpenFile(eventsPath, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		_ = logF.Close()
+		return nil, fmt.Errorf("meetinglog: reopen jsonl %s: %w", eventsPath, err)
+	}
+	w.log, w.jsonl = logF, jsonlF
+	w.segmentStartMS = w.lastUtteranceEndMS
+	w.offsetOrigin = time.Now().Add(-time.Duration(w.lastUtteranceEndMS) * time.Millisecond)
+
+	now := time.Now()
+	if err := w.writeLog(fmt.Sprintf("\n[%s] ▶ resumed\n", now.Format("15:04:05"))); err != nil {
+		_ = w.log.Close()
+		_ = w.jsonl.Close()
+		return nil, err
+	}
+	if err := w.writeEventAt(Event{
+		Type: TypeResume,
+		Text: "recording continued",
+		TS:   now.Format(time.RFC3339Nano),
+	}, w.lastUtteranceEndMS); err != nil {
+		_ = w.log.Close()
+		_ = w.jsonl.Close()
+		return nil, err
+	}
+	return w, nil
+}
+
+// ReadEvents loads the JSONL event stream. Unknown types are kept so older
+// readers and newer control events share one parser.
+//
+// A final line with no terminating newline is a torn write from a recording
+// that died mid-append. It is dropped instead of failing the whole read, so an
+// interrupted bundle still lists and still resumes; a malformed line anywhere
+// else is a real corruption and still errors.
+func ReadEvents(path string) ([]Event, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("meetinglog: open events %s: %w", path, err)
+	}
+	defer f.Close()
+	terminated, err := endsWithNewline(f)
+	if err != nil {
+		return nil, fmt.Errorf("meetinglog: read events %s: %w", path, err)
+	}
+
+	var events []Event
+	appendLine := func(line string, tolerate bool) error {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			return nil
+		}
+		var e Event
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			if tolerate {
+				return nil
+			}
+			return fmt.Errorf("meetinglog: parse events %s: %w", path, err)
+		}
+		events = append(events, e)
+		return nil
+	}
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	// One line of lookahead: only the last line may be torn, and that is not
+	// known until the scan ends.
+	pending, havePending := "", false
+	for sc.Scan() {
+		if havePending {
+			if err := appendLine(pending, false); err != nil {
+				return nil, err
+			}
+		}
+		pending, havePending = sc.Text(), true
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("meetinglog: read events %s: %w", path, err)
+	}
+	if havePending {
+		if err := appendLine(pending, !terminated); err != nil {
+			return nil, err
+		}
+	}
+	return events, nil
+}
+
+// trimTornTail truncates a JSONL file back to its last complete line. A file
+// that already ends in a newline is left alone.
+func trimTornTail(path string) error {
+	f, err := os.OpenFile(path, os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("meetinglog: open events %s: %w", path, err)
+	}
+	defer f.Close()
+	terminated, err := endsWithNewline(f)
+	if err != nil {
+		return fmt.Errorf("meetinglog: read events %s: %w", path, err)
+	}
+	if terminated {
+		return nil
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("meetinglog: stat events %s: %w", path, err)
+	}
+	end := info.Size()
+	const window = 64 * 1024
+	buf := make([]byte, window)
+	for end > 0 {
+		start := end - window
+		if start < 0 {
+			start = 0
+		}
+		n, err := f.ReadAt(buf[:end-start], start)
+		if err != nil && n == 0 {
+			return fmt.Errorf("meetinglog: read events %s: %w", path, err)
+		}
+		for i := n - 1; i >= 0; i-- {
+			if buf[i] == '\n' {
+				if err := f.Truncate(start + int64(i) + 1); err != nil {
+					return fmt.Errorf("meetinglog: trim events %s: %w", path, err)
+				}
+				return nil
+			}
+		}
+		end = start
+	}
+	// No newline anywhere: the whole file is one torn line.
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("meetinglog: trim events %s: %w", path, err)
+	}
+	return nil
+}
+
+// endsWithNewline reports whether the last byte closes the final line. ReadAt
+// leaves the file offset alone, so the caller's scan still starts at byte 0.
+func endsWithNewline(f *os.File) (bool, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return false, err
+	}
+	if info.Size() == 0 {
+		return true, nil
+	}
+	var b [1]byte
+	if _, err := f.ReadAt(b[:], info.Size()-1); err != nil {
+		return false, err
+	}
+	return b[0] == '\n', nil
+}
+
+// RecordedOffset reports whether an event's offset_ms measures recorded time.
+// Diarization and routing append to a finished bundle at whatever offset the
+// wall clock had reached by then, so counting those would stretch the meeting
+// by the enrichment runtime — wrong for both the resume baseline and any
+// duration derived from the stream.
+func RecordedOffset(eventType string) bool {
+	switch eventType {
+	case TypeSessionStart, TypeSessionEnd, TypeUtterance, TypeNote, TypeBookmark,
+		TypeError, TypeResume, TypePause, TypeIdeaStart, TypeIdeaEnd, TypeSegmentGap:
+		return true
+	}
+	return false
+}
+
+// transcriptKey identifies one transcript line across passes. The utterance id
+// is the real key; text at an offset covers hand-written fixtures and any
+// stream whose events predate ids.
+func transcriptKey(e Event) string {
+	if e.ID != "" {
+		return e.ID
+	}
+	return fmt.Sprintf("\x00%d|%s", e.OffsetMs, e.Text)
+}
+
+// MergeAttributedTranscript overlays speaker attribution onto the plain
+// transcript rather than replacing it. Every utterance keeps its place and its
+// text; a line the latest analysis pass labelled is swapped for that
+// speaker_utterance, and a line no pass reached stays a plain utterance.
+//
+// Replacing wholesale loses real content. A resumed segment whose diarization
+// was skipped, cancelled, or failed has no speaker_utterance of its own, and
+// the earlier pass's events do not cover it, so the whole segment would vanish
+// from the routed note and the review while the header still counted it.
+//
+// Each pass of a resumed meeting re-emits the transcript it analyzed, so the
+// last event for a line is the current labelling.
+func MergeAttributedTranscript(utterances, attributed []Event) []Event {
+	if len(attributed) == 0 {
+		return utterances
+	}
+	latest := make(map[string]Event, len(attributed))
+	order := make([]string, 0, len(attributed))
+	for _, e := range attributed {
+		key := transcriptKey(e)
+		if _, seen := latest[key]; !seen {
+			order = append(order, key)
+		}
+		latest[key] = e
+	}
+	merged := make([]Event, 0, len(utterances)+len(attributed))
+	placed := make(map[string]struct{}, len(latest))
+	for _, e := range utterances {
+		key := transcriptKey(e)
+		if a, ok := latest[key]; ok {
+			merged = append(merged, a)
+			placed[key] = struct{}{}
+			continue
+		}
+		merged = append(merged, e)
+	}
+	// An attributed line with no plain utterance behind it still belongs in
+	// the transcript; dropping it would lose the only copy of that text.
+	for _, key := range order {
+		if _, done := placed[key]; done {
+			continue
+		}
+		merged = append(merged, latest[key])
+	}
+	return merged
+}
+
+func parseEventTime(ts string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, ts)
+}
+
 func (w *Writer) abortCreate() error {
 	_ = w.log.Close()
 	_ = w.jsonl.Close()
 	_ = os.Remove(w.path)
 	_ = os.Remove(w.jsonlPath)
 	return nil
+}
+
+// Description returns the meeting title from session_start (or the resume).
+func (w *Writer) Description() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.description
 }
 
 // Path returns the canonical human-readable meeting document.
@@ -263,6 +590,16 @@ func (w *Writer) StartedAt() time.Time {
 	return w.started
 }
 
+// SegmentStartMS reports the meeting-relative offset where this writer's own
+// recording segment begins: 0 for a new bundle, the resume baseline for a
+// reopened one. Post-capture analysis needs it to know which part of the
+// meeting the audio it just read actually covers.
+func (w *Writer) SegmentStartMS() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.segmentStartMS
+}
+
 // Transcripts returns an owned snapshot for post-capture speaker attribution.
 func (w *Writer) Transcripts() []TranscriptRecord {
 	w.mu.Lock()
@@ -274,7 +611,7 @@ func (w *Writer) Transcripts() []TranscriptRecord {
 func (w *Writer) OnUtterance(u listen.Utterance) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	endMS := u.At.Sub(w.started).Milliseconds()
+	endMS := u.At.Sub(w.origin()).Milliseconds()
 	if endMS < 0 {
 		endMS = 0
 	}
@@ -297,10 +634,10 @@ func (w *Writer) OnUtterance(u listen.Utterance) error {
 	if err := w.writeLog(fmt.Sprintf("[%s] %s\n", u.At.Format("15:04:05"), u.Text)); err != nil {
 		return err
 	}
-	if err := w.writeEvent(Event{
+	if err := w.writeEventAt(Event{
 		Type: TypeUtterance, ID: record.ID, Text: u.Text,
 		TS: u.At.Format(time.RFC3339), StartMS: startMS, EndMS: endMS, Timing: "estimated",
-	}); err != nil {
+	}, endMS); err != nil {
 		return err
 	}
 	w.transcripts = append(w.transcripts, record)
@@ -557,7 +894,15 @@ func (w *Writer) WriteSpeakerAnalysis(analysis SpeakerAnalysis) error {
 			return err
 		}
 	}
+	// A resumed meeting re-analyzes the whole recording, so most of these
+	// utterances are byte-identical to the ones the previous pass already
+	// wrote. Emitting only what changed keeps the stream from growing a full
+	// transcript per stop; readers still collapse by id (LatestByID) because
+	// an older bundle has the duplicates.
 	for _, utterance := range analysis.Utterances {
+		if prior, ok := w.priorUtterances[utterance.ID]; ok && utterance.ID != "" && prior == utterance {
+			continue
+		}
 		if err := w.writeEvent(Event{
 			Type: TypeSpeakerUtterance, ID: utterance.ID, Text: utterance.Text,
 			Label: utterance.Speaker, StartMS: utterance.StartMS, EndMS: utterance.EndMS,
@@ -565,6 +910,12 @@ func (w *Writer) WriteSpeakerAnalysis(analysis SpeakerAnalysis) error {
 			TS: w.started.Add(time.Duration(utterance.EndMS) * time.Millisecond).Format(time.RFC3339),
 		}); err != nil {
 			return err
+		}
+		if utterance.ID != "" {
+			if w.priorUtterances == nil {
+				w.priorUtterances = make(map[string]SpeakerUtterance)
+			}
+			w.priorUtterances[utterance.ID] = utterance
 		}
 	}
 	return nil
@@ -629,9 +980,12 @@ func (w *Writer) Close() (Summary, error) {
 		AudioFile:           w.speakerAnalysis.AudioFile,
 		SpeakerError:        w.speakerAnalysis.Error,
 	}
-	s.DurationSeconds = int64(s.Duration().Round(time.Second) / time.Second)
+	s.DurationSeconds = int64(s.EndedAt.Sub(w.origin()).Round(time.Second) / time.Second)
+	if s.DurationSeconds < 0 {
+		s.DurationSeconds = 0
+	}
 	trailer := fmt.Sprintf("\n# Ended: %s (duration %s, %d utterances, %d notes, %d bookmarks, %d errors)\n",
-		s.EndedAt.Format(time.RFC3339), s.Duration().Round(time.Second),
+		s.EndedAt.Format(time.RFC3339), (time.Duration(s.DurationSeconds) * time.Second),
 		s.Utterances, s.Notes, s.Bookmarks, s.Errors)
 	werr := w.writeLog(trailer)
 	jerr := w.writeEvent(Event{Type: TypeSessionEnd, TS: s.EndedAt.Format(time.RFC3339)})
@@ -675,7 +1029,14 @@ func (w *Writer) writeEvent(e Event) error {
 	if t, err := time.Parse(time.RFC3339, e.TS); err == nil {
 		at = t
 	}
-	return w.writeEventAt(e, at.Sub(w.started).Milliseconds())
+	return w.writeEventAt(e, at.Sub(w.origin()).Milliseconds())
+}
+
+func (w *Writer) origin() time.Time {
+	if !w.offsetOrigin.IsZero() {
+		return w.offsetOrigin
+	}
+	return w.started
 }
 
 // writeEventAt appends one JSONL line at an explicit meeting-relative offset.

@@ -396,9 +396,29 @@ func (m meetingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			return m.submitNote()
 		case "pgup", "pgdown", "ctrl+u", "ctrl+d":
-			var cmd tea.Cmd
-			m.viewport, cmd = m.viewport.Update(msg)
-			return m, cmd
+			return m.updateScroll(msg)
+		case "ctrl+home":
+			m.viewport.GotoTop()
+			return m, nil
+		case "ctrl+end":
+			m.viewport.GotoBottom()
+			return m, nil
+		case "home":
+			if strings.TrimSpace(m.note.Value()) == "" {
+				m.viewport.GotoTop()
+				return m, nil
+			}
+		case "end":
+			if strings.TrimSpace(m.note.Value()) == "" {
+				m.viewport.GotoBottom()
+				return m, nil
+			}
+		case "up", "down":
+			// Empty note: wheel-as-arrows and ↑/↓ scroll the transcript.
+			// A draft keeps the keys in the composer.
+			if strings.TrimSpace(m.note.Value()) == "" {
+				return m.updateScroll(msg)
+			}
 		case "esc":
 			// Clear draft note; do not stop recording.
 			if m.note.Value() != "" {
@@ -416,6 +436,12 @@ func (m meetingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.note, cmd = m.note.Update(msg)
 		return m, cmd
 	}
+}
+
+func (m meetingModel) updateScroll(msg tea.Msg) (meetingModel, tea.Cmd) {
+	var cmd tea.Cmd
+	m.viewport, cmd = m.viewport.Update(msg)
+	return m, cmd
 }
 
 // markStopping freezes the recording clock and moves into the Stopping session

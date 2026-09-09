@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	ansi "github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
+	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -33,18 +35,23 @@ const (
 	actionStartPersona    // start a conversation bound to item.personaID
 	actionCreatePersona   // jump to the Personas editor to create one
 	actionMeetingStart    // today's meeting setup → record flow
+	actionMeetingResume   // continue the most recent .meeting bundle
 	actionMeetingSettings // Settings opened on the Meeting section
 )
 
 const defaultsPickerLabel = "Use defaults"
 
 type launcherItem struct {
-	label     string
-	hint      string
-	glyph     string
-	action    launcherAction
-	sessionID string
-	personaID string
+	label      string
+	hint       string
+	glyph      string
+	action     launcherAction
+	sessionID  string
+	personaID  string
+	resumePath string
+	// resumeRouted marks a resume target whose notes already filed, the one
+	// case the CLI also declines to route a second time.
+	resumeRouted bool
 }
 
 type launcherModel struct {
@@ -65,6 +72,21 @@ type launcherModel struct {
 
 	// listPersonas feeds the New-conversation picker (injectable for tests).
 	listPersonas func() ([]*persona.Profile, error)
+
+	// Cached newest meeting for the Meeting submenu. Indexing walks every
+	// bundle in the meetings dir and runs on the Update goroutine, while the
+	// answer only moves when a meeting is recorded or routed.
+	resumeEntry  meeting.BundleEntry
+	resumeOK     bool
+	resumeLoaded bool
+}
+
+// forgetResumeCandidate drops the cached newest meeting so the next Meeting
+// submenu re-reads the index. Called where a bundle or its route status
+// changed.
+func (m launcherModel) forgetResumeCandidate() launcherModel {
+	m.resumeLoaded = false
+	return m
 }
 
 // withBanner returns a copy carrying a status banner shown above the menu.
@@ -227,6 +249,24 @@ func (m launcherModel) updateSubmenu(msg tea.KeyMsg) (launcherModel, tea.Cmd) {
 			return m, func() tea.Msg { return switchScreenMsg(screenPersonas) }
 		case actionMeetingStart:
 			return m, func() tea.Msg { return switchScreenMsg(screenMeetingSetup) }
+		case actionMeetingResume:
+			if item.resumePath == "" {
+				return m, nil
+			}
+			// Mirror the CLI: only a meeting that already filed skips routing.
+			// Anything else follows meeting.route.mode like a fresh recording,
+			// so ask/auto users still get their notes delivered after a resume.
+			plan := ""
+			if item.resumeRouted {
+				plan = routePlanLocal
+			}
+			return m, func() tea.Msg {
+				return startMeetingMsg{
+					Description: item.hint,
+					ResumePath:  item.resumePath,
+					RoutePlan:   plan,
+				}
+			}
 		case actionMeetingSettings:
 			return m, func() tea.Msg { return openSettingsSectionMsg{section: sectionMeeting} }
 		}
@@ -332,11 +372,38 @@ func startDefaultsMsg() startPipelineMsg {
 func (m launcherModel) openMeetingMenu() launcherModel {
 	m.submenuTitle = "Meeting"
 	m.submenuCursor = 0
+	resumeHint := "No previous meeting"
+	resumePath := ""
+	resumeRouted := false
+	if entry, ok := m.resumeCandidate(); ok {
+		resumeHint = entry.Description
+		if resumeHint == "" {
+			resumeHint = entry.ID
+		}
+		resumePath = entry.Bundle
+		resumeRouted = entry.Route != nil && entry.Route.Status == meeting.RouteStatusRouted
+	}
 	m.submenu = []launcherItem{
 		{label: "Start meeting", hint: "Record · notes · ★ bookmarks", glyph: "◉", action: actionMeetingStart},
+		{label: "Resume last meeting", hint: resumeHint, glyph: "↺", action: actionMeetingResume,
+			resumePath: resumePath, resumeRouted: resumeRouted},
 		{label: "Meeting settings", hint: "Note routing · destinations", glyph: "⚙", action: actionMeetingSettings},
 	}
 	return m
+}
+
+// resumeCandidate is the newest meeting, indexed once per change.
+func (m *launcherModel) resumeCandidate() (meeting.BundleEntry, bool) {
+	if m.resumeLoaded {
+		return m.resumeEntry, m.resumeOK
+	}
+	if m.cfg == nil {
+		return meeting.BundleEntry{}, false
+	}
+	m.resumeEntry, m.resumeOK = meeting.ResolveResumeRef(
+		context.Background(), config.MeetingsDirFrom(m.cfg), "last")
+	m.resumeLoaded = true
+	return m.resumeEntry, m.resumeOK
 }
 
 // visibleItems returns the list and cursor the views should render.

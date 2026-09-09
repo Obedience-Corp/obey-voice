@@ -135,3 +135,30 @@ func TestDeferredAnalyzerRejectsFinalizeAfterClose(t *testing.T) {
 		t.Fatal("Finalize after Close succeeded")
 	}
 }
+
+func TestDeferredAnalyzerSkipsTheLoadWhenAlreadyCancelled(t *testing.T) {
+	var builds atomic.Int32
+	inner := &countingAnalyzer{}
+	deferred := NewDeferredAnalyzer(func(context.Context) (SpeakerAnalyzer, error) {
+		builds.Add(1)
+		return inner, nil
+	})
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := deferred.Finalize(cancelled, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Finalize with a cancelled context = %v, want context.Canceled", err)
+	}
+	if builds.Load() != 0 {
+		t.Fatalf("a cancelled Finalize still loaded the models: %d builds", builds.Load())
+	}
+
+	// The interrupt did not consume the builder: a live call still gets its
+	// analyzer.
+	if _, err := deferred.Finalize(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if builds.Load() != 1 || inner.finalizes.Load() != 1 {
+		t.Fatalf("live Finalize after a cancelled one: builds=%d finalizes=%d, want 1 and 1", builds.Load(), inner.finalizes.Load())
+	}
+}

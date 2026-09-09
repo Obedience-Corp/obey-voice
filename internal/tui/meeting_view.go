@@ -208,6 +208,7 @@ func (m meetingModel) View() string {
 	actions := []string{
 		chipStyle.Render("Enter note"),
 		lipgloss.NewStyle().Foreground(colorBg).Background(colorSpeak).Bold(true).Padding(0, 1).Render("Ctrl+B important"),
+		chipMutedStyle.Render("PgUp/PgDn scroll"),
 		chipMutedStyle.Render("Ctrl+C stop"),
 	}
 	actionBar := "  " + strings.Join(actions, "  ")

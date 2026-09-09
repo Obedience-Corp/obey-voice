@@ -20,7 +20,8 @@ const speakerCaptureQueue = 1024
 
 // workingAudioPartName is the transient streamed-PCM file used when the meeting
 // is diarized but audio retention (record_audio) is off. It lives inside the
-// bundle's hidden internal dir and is removed once diarization has read it.
+// bundle's hidden internal dir and is removed once diarization has read it:
+// record_audio off means no audio survives the stop, resume included.
 const workingAudioPartName = "audio.wav.part"
 
 type captureSubscriber interface {
@@ -30,6 +31,9 @@ type captureSubscriber interface {
 
 // SpeakerSession owns the optional meeting PCM subscriber and post-capture
 // analysis. It never runs model work on the capture callback or STT goroutine.
+// The analyzer is supplied at construction; callers that must not load native
+// models before Finalize pass a DeferredAnalyzer, which superseded the
+// background preload this session once carried.
 //
 // Captured PCM is streamed straight to a WAV file on disk rather than buffered
 // in memory for the whole meeting: a multi-hour recording keeps process memory
@@ -78,9 +82,9 @@ func NewSpeakerSession(capture captureSubscriber, analyzer SpeakerAnalyzer, writ
 	if err := os.MkdirAll(filepath.Dir(workingPath), 0o700); err != nil {
 		return nil, fmt.Errorf("meeting: prepare speaker audio dir: %w", err)
 	}
-	audioWriter, err := audio.NewWAVWriter(workingPath, audio.SampleRate)
+	audioWriter, err := openSpeakerAudio(workingPath)
 	if err != nil {
-		return nil, fmt.Errorf("meeting: open speaker audio file: %w", err)
+		return nil, err
 	}
 
 	id, chunks := capture.Subscribe(speakerCaptureQueue)
@@ -103,6 +107,23 @@ func NewSpeakerSession(capture captureSubscriber, analyzer SpeakerAnalyzer, writ
 		}
 	})
 	return s, nil
+}
+
+// openSpeakerAudio continues an existing recording's PCM when one is already
+// there, so a resume extends a retained audio.wav rather than truncating it.
+func openSpeakerAudio(workingPath string) (*audio.WAVWriter, error) {
+	if _, err := os.Stat(workingPath); err == nil {
+		w, err := audio.OpenWAVWriter(workingPath, audio.SampleRate)
+		if err != nil {
+			return nil, fmt.Errorf("meeting: append speaker audio file: %w", err)
+		}
+		return w, nil
+	}
+	w, err := audio.NewWAVWriter(workingPath, audio.SampleRate)
+	if err != nil {
+		return nil, fmt.Errorf("meeting: open speaker audio file: %w", err)
+	}
+	return w, nil
 }
 
 // StopCapture releases the PCM subscription without closing the analyzer, so
@@ -135,6 +156,7 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 	}
 	s.finalize.Do(func() {
 		s.stopCapture()
+		analyzer := s.analyzer
 		artifact := speakerArtifactPath(s.bundlePath)
 		var persistErr error
 		if s.writeErr != nil {
@@ -164,7 +186,23 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 			s.discardWorkingAudio()
 		}
 
-		result := AnalyzeRecording(ctx, s.analyzer, samples)
+		// Where this recording segment sits in the meeting: 0 on a fresh
+		// bundle, the resume baseline on a reopened one.
+		segmentStartMS := int64(0)
+		if s.writer != nil {
+			segmentStartMS = s.writer.SegmentStartMS()
+		}
+		// What the audio just read actually covers. With retention on it is the
+		// whole meeting; with it off the working PCM was discarded at the
+		// previous stop, so a resumed pass holds only its own segment and its
+		// timeline starts at that segment, not at the meeting.
+		windowStartMS := int64(0)
+		if !s.recordAudio {
+			windowStartMS = segmentStartMS
+		}
+
+		result := AnalyzeRecording(ctx, analyzer, samples)
+		result.Timeline = shiftTimeline(result.Timeline, windowStartMS)
 		result.Artifact = artifact
 		result.AudioFile = audioFile
 		result.SpeakerCount = distinctSpeakerCount(result.Timeline)
@@ -183,7 +221,14 @@ func (s *SpeakerSession) Finalize(ctx context.Context) (AnalysisResult, error) {
 		}
 
 		if s.writer != nil {
-			analysis := logAnalysis(result, s.writer.Transcripts())
+			// Only the utterances inside the analyzed window are re-attributed.
+			// Lines from before it keep the labels their own pass gave them:
+			// the earlier speaker_utterance events are left standing, and
+			// readers collapse by id, so nothing is relabelled from audio that
+			// no longer exists.
+			analysis := logAnalysis(result,
+				transcriptsFrom(s.writer.Transcripts(), windowStartMS),
+				segmentIDPrefix(segmentStartMS))
 			if err := s.writer.WriteSpeakerAnalysis(analysis); err != nil {
 				persistErr = errors.Join(persistErr, err)
 				result.Error = joinErrorText(result.Error, err)
@@ -209,6 +254,33 @@ func (s *SpeakerSession) discardWorkingAudio() {
 	s.discardOnce.Do(func() { _ = os.Remove(s.workingPath) })
 }
 
+// shiftTimeline moves observations from analyzed-audio time into meeting time.
+func shiftTimeline(timeline speaker.Timeline, offsetMS int64) speaker.Timeline {
+	if offsetMS <= 0 {
+		return timeline
+	}
+	for i := range timeline.Observations {
+		timeline.Observations[i].StartMS += offsetMS
+		timeline.Observations[i].EndMS += offsetMS
+	}
+	return timeline
+}
+
+// transcriptsFrom keeps the records the analyzed audio covers. A line that
+// began before the window belongs to an earlier pass.
+func transcriptsFrom(records []meetinglog.TranscriptRecord, startMS int64) []meetinglog.TranscriptRecord {
+	if startMS <= 0 {
+		return records
+	}
+	kept := make([]meetinglog.TranscriptRecord, 0, len(records))
+	for _, record := range records {
+		if record.StartMS >= startMS {
+			kept = append(kept, record)
+		}
+	}
+	return kept
+}
+
 func joinErrorText(existing string, err error) string {
 	if err == nil {
 		return existing
@@ -219,14 +291,29 @@ func joinErrorText(existing string, err error) string {
 	return errors.Join(errors.New(existing), err).Error()
 }
 
-func logAnalysis(result AnalysisResult, transcripts []meetinglog.TranscriptRecord) meetinglog.SpeakerAnalysis {
+// segmentIDPrefix namespaces one pass's diarization segment ids. Every pass's
+// diarizer numbers its own segments from 1, so a resumed bundle would hold two
+// diarization-1 events otherwise. The first pass keeps its bare ids, leaving
+// existing bundles untouched.
+func segmentIDPrefix(segmentStartMS int64) string {
+	if segmentStartMS <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("r%d-", segmentStartMS)
+}
+
+func logAnalysis(result AnalysisResult, transcripts []meetinglog.TranscriptRecord, segmentIDPrefix string) meetinglog.SpeakerAnalysis {
 	analysis := meetinglog.SpeakerAnalysis{
 		Status: string(result.Status), Error: result.Error,
 		Artifact: result.Artifact, AudioFile: result.AudioFile,
 	}
 	for _, obs := range result.Timeline.Observations {
+		id := obs.SegmentID
+		if id != "" {
+			id = segmentIDPrefix + id
+		}
 		analysis.Segments = append(analysis.Segments, meetinglog.SpeakerSegment{
-			ID: obs.SegmentID, StartMS: obs.StartMS, EndMS: obs.EndMS,
+			ID: id, StartMS: obs.StartMS, EndMS: obs.EndMS,
 			Label: obs.Label, Confidence: obs.Confidence, State: string(obs.State),
 		})
 	}

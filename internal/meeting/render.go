@@ -1,10 +1,7 @@
 package meeting
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -27,38 +24,15 @@ func Render(summary meetinglog.Summary, body string) (RenderedNote, error) {
 	return RenderEvents(summary, events, body), nil
 }
 
-// ReadEvents parses a meeting JSONL file into events (skips blank lines).
+// ReadEvents parses a meeting JSONL file into events. One reader for the
+// whole product: blank lines are skipped and a torn trailing line from an
+// interrupted recording is dropped, so the index and a resume agree on which
+// bundles are readable.
 func ReadEvents(jsonlPath string) ([]meetinglog.Event, error) {
 	if strings.TrimSpace(jsonlPath) == "" {
 		return nil, fmt.Errorf("meeting: empty jsonl path")
 	}
-	f, err := os.Open(jsonlPath)
-	if err != nil {
-		return nil, fmt.Errorf("meeting: open jsonl: %w", err)
-	}
-	defer f.Close()
-
-	var events []meetinglog.Event
-	sc := bufio.NewScanner(f)
-	// Meeting transcripts can have long utterances; allow large lines.
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	lineNo := 0
-	for sc.Scan() {
-		lineNo++
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		var e meetinglog.Event
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			return nil, fmt.Errorf("meeting: jsonl line %d: %w", lineNo, err)
-		}
-		events = append(events, e)
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("meeting: read jsonl: %w", err)
-	}
-	return events, nil
+	return meetinglog.ReadEvents(jsonlPath)
 }
 
 // RenderEvents is the pure renderer (test-friendly).
@@ -111,9 +85,9 @@ func RenderEvents(summary meetinglog.Summary, events []meetinglog.Event, body st
 			attributed = append(attributed, e)
 		}
 	}
-	if len(attributed) > 0 {
-		utterances = attributed
-	}
+	// Overlay, never replace: a resumed segment that was never diarized has no
+	// attributed events and must still appear.
+	utterances = meetinglog.MergeAttributedTranscript(utterances, attributed)
 
 	if len(notes) > 0 {
 		b.WriteString("## Notes\n\n")

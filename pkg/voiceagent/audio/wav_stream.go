@@ -3,6 +3,7 @@ package audio
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"os"
 )
@@ -44,6 +45,47 @@ func NewWAVWriter(path string, sampleRate int) (*WAVWriter, error) {
 		return nil, err
 	}
 	return w, nil
+}
+
+// OpenWAVWriter appends to an existing mono 16-bit WAV written by WAVWriter.
+// Used to resume meeting audio into the same file instead of truncating it.
+func OpenWAVWriter(path string, sampleRate int) (*WAVWriter, error) {
+	if sampleRate <= 0 {
+		return nil, fmt.Errorf("wav: invalid sample rate %d", sampleRate)
+	}
+	f, err := os.OpenFile(path, os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	var hdr [wavHeaderSize]byte
+	if _, err := io.ReadFull(f, hdr[:]); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("wav: read header: %w", err)
+	}
+	if string(hdr[0:4]) != "RIFF" || string(hdr[8:12]) != "WAVE" {
+		_ = f.Close()
+		return nil, fmt.Errorf("wav: %s is not a PCM WAV", path)
+	}
+	if binary.LittleEndian.Uint16(hdr[22:24]) != 1 {
+		_ = f.Close()
+		return nil, fmt.Errorf("wav: %s is not mono", path)
+	}
+	gotRate := int(binary.LittleEndian.Uint32(hdr[24:28]))
+	if gotRate != sampleRate {
+		_ = f.Close()
+		return nil, fmt.Errorf("wav: sample rate %d, want %d", gotRate, sampleRate)
+	}
+	dataSize := binary.LittleEndian.Uint32(hdr[40:44])
+	if dataSize%2 != 0 {
+		_ = f.Close()
+		return nil, fmt.Errorf("wav: odd data size %d", dataSize)
+	}
+	end := int64(wavHeaderSize) + int64(dataSize)
+	if _, err := f.Seek(end, io.SeekStart); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("wav: seek data end: %w", err)
+	}
+	return &WAVWriter{f: f, sampleN: dataSize / 2}, nil
 }
 
 func (w *WAVWriter) writeHeader(sampleRate int) error {
