@@ -67,8 +67,12 @@ Meeting speaker analysis has two layers (both **on by default**):
 Live labels and offline results may disagree; that is expected. The live
 scrollback is left as-shown; review uses the offline timeline. The first
 session that needs models installs Obey Voice's managed packs (embedding for
-live; pyannote segmentation + NeMo TitaNet for offline), then captures 16 kHz
-PCM through a non-blocking subscriber so STT is never blocked.
+live; pyannote segmentation + NeMo TitaNet for offline). Live labels load only
+the embedding model while recording; the offline diarizer loads when capture
+stops, in the same background review pass. The model files are still checked at
+meeting start, so a `speaker.models.*` path that does not exist fails before the
+recording rather than after it. Capture itself is 16 kHz PCM through a
+non-blocking subscriber so STT is never blocked.
 
 **Expected speakers** (**Settings → Meeting → Expected speakers**, key
 `speaker.meeting.num_speakers`) applies to **offline clustering only**: cycle

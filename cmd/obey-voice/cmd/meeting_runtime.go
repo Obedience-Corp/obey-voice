@@ -435,18 +435,36 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSpeaker: true}, progress.Downloading); err != nil {
 		return nil, fmt.Errorf("prepare speaker models: %w", err)
 	}
-	engine, err := speaker.NewSherpaEngine(sp, config.ModelsDirFrom(cfg))
+	// Everything that can be known before capture must fail here, not after a
+	// recording the user cannot re-run: an unknown speaker.meeting.diarizer, a
+	// Sortformer selection without its CLI or GGUF, and a segmentation or
+	// embedding file that is missing at its configured path. The diarizer value
+	// is kept so the deferred builder does not probe the CLI a second time.
+	diarizer, err := meetingDiarizer(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	seedEnrolledProfiles(cfg, engine, nil)
-	// The engine stays whatever speaker.meeting.diarizer says: it still owns
-	// live labels, embeddings and enrollment even when review runs elsewhere.
-	analyzer, err := meetingAnalyzer(ctx, cfg, sp, engine)
-	if err != nil {
-		_ = engine.Close()
+	modelsDir := config.ModelsDirFrom(cfg)
+	// Paths only; the native graphs stay unloaded until Finalize.
+	if err := speaker.RequireSherpaModels(sp, modelsDir); err != nil {
 		return nil, err
 	}
+	// Live labels already hold one TitaNet session while recording. Offline
+	// pyannote + the review engine's embedding extractor wait until Finalize
+	// so a long take does not keep a second ONNX stack resident.
+	analyzer := meeting.NewDeferredAnalyzer(func(context.Context) (meeting.SpeakerAnalyzer, error) {
+		engine, err := speaker.NewSherpaEngine(sp, modelsDir)
+		if err != nil {
+			return nil, err
+		}
+		seedEnrolledProfiles(cfg, engine, nil)
+		built, err := meetingAnalyzerWith(sp, engine, diarizer)
+		if err != nil {
+			_ = engine.Close()
+			return nil, err
+		}
+		return built, nil
+	})
 	session, err := meeting.NewSpeakerSession(capture, analyzer, writer, bundlePath, sp.Meeting.RecordAudio)
 	if err != nil {
 		_ = analyzer.Close()
