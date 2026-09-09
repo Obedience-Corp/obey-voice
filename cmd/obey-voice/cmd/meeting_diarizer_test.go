@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -166,5 +167,97 @@ func TestNoMeetingPathBuildsItsOwnAnalyzer(t *testing.T) {
 		if strings.Contains(string(source), "speaker.NewAnalyzer(") {
 			t.Errorf("%s constructs an analyzer directly; use meetingAnalyzer so speaker.meeting.diarizer applies", name)
 		}
+		if name != "meeting_diarizer.go" && strings.Contains(string(source), "speaker.NewAnalyzerWithDiarizer(") {
+			t.Errorf("%s attaches its own diarizer; use meetingAnalyzer or meetingAnalyzerWith so the selection is applied once", name)
+		}
+	}
+}
+
+// Native sherpa graphs must not load at meeting start: live labels already
+// own TitaNet, and review only needs pyannote + the second extractor after
+// stop. Sortformer still fails in prepareMeetingSpeakers via meetingDiarizer.
+func TestPrepareMeetingSpeakersDefersSherpaEngine(t *testing.T) {
+	source, err := os.ReadFile("meeting_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	const marker = "func prepareMeetingSpeakers"
+	idx := strings.Index(text, marker)
+	if idx < 0 {
+		t.Fatal("prepareMeetingSpeakers not found")
+	}
+	fn := text[idx:]
+	if next := strings.Index(fn[len(marker):], "\nfunc "); next >= 0 {
+		fn = fn[:len(marker)+next]
+	}
+	if !strings.Contains(fn, "meeting.NewDeferredAnalyzer") {
+		t.Fatal("prepareMeetingSpeakers must defer native diarizer load with NewDeferredAnalyzer")
+	}
+	if !strings.Contains(fn, "meetingDiarizer(") {
+		t.Fatal("prepareMeetingSpeakers must still fail-fast sortformer/unknown engines at start")
+	}
+	load := strings.Index(fn, "speaker.NewSherpaEngine")
+	deferIdx := strings.Index(fn, "meeting.NewDeferredAnalyzer")
+	if load < 0 || load < deferIdx {
+		t.Fatal("NewSherpaEngine must run inside the deferred builder, not at meeting start")
+	}
+}
+
+// Deferring the engine must not defer the model-path check with it: a typo in
+// speaker.models.segmentation removes the managed asset from the manifest, so
+// EnsureRuntimeAssets sees nothing to verify and nothing else looks at the path.
+// Custom paths keep the manifest empty, so this test never downloads.
+func TestPrepareMeetingSpeakersRejectsMissingModelPathAtStart(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{ModelsDir: dir}
+	cfg.Speaker.Enabled = true
+	cfg.Speaker.Meeting.Enabled = true
+	cfg.Speaker.Models.Segmentation = filepath.Join(dir, "missing-seg.onnx")
+	cfg.Speaker.Models.Embedding = filepath.Join(dir, "missing-emb.onnx")
+
+	session, err := prepareMeetingSpeakers(
+		context.Background(), cfg, audio.NewCapture(), nil, filepath.Join(dir, "planning.meeting"), nil,
+	)
+	if err == nil {
+		if session != nil {
+			_ = session.Close()
+		}
+		t.Fatal("prepareMeetingSpeakers() error = nil; a missing model path must fail before the recording starts")
+	}
+	if !strings.Contains(err.Error(), cfg.Speaker.Models.Segmentation) {
+		t.Fatalf("error = %q, want it to name the missing segmentation model %q", err, cfg.Speaker.Models.Segmentation)
+	}
+}
+
+// The other half of the same guarantee: paths that resolve are accepted at
+// start without loading anything. These files are empty, so a session comes
+// back only because the native graphs were not opened.
+func TestPrepareMeetingSpeakersStartsWithoutLoadingModels(t *testing.T) {
+	dir := t.TempDir()
+	seg := filepath.Join(dir, "seg.onnx")
+	emb := filepath.Join(dir, "emb.onnx")
+	for _, path := range []string{seg, emb} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := &config.Config{ModelsDir: dir}
+	cfg.Speaker.Enabled = true
+	cfg.Speaker.Meeting.Enabled = true
+	cfg.Speaker.Models.Segmentation = seg
+	cfg.Speaker.Models.Embedding = emb
+
+	session, err := prepareMeetingSpeakers(
+		context.Background(), cfg, audio.NewCapture(), nil, filepath.Join(dir, "planning.meeting"), nil,
+	)
+	if err != nil {
+		t.Fatalf("prepareMeetingSpeakers() error = %v", err)
+	}
+	if session == nil {
+		t.Fatal("prepareMeetingSpeakers() session = nil with meeting analysis enabled")
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 }

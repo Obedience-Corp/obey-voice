@@ -81,19 +81,31 @@ type SherpaEngine struct {
 	closed bool
 }
 
-// NewSherpaEngine loads segmentation + embedding models for meeting diarization
-// and enables live Embed/Identify via a separate embedding extractor/manager.
-// Callers should run config.EnsureRuntimeAssets first when using managed defaults.
-func NewSherpaEngine(cfg Config, modelsDir string) (*SherpaEngine, error) {
+// RequireSherpaModels checks that the files NewSherpaEngine would load exist,
+// without loading the native graphs. Callers that build the engine lazily use
+// it to keep a bad path a start-time error rather than a post-recording one.
+func RequireSherpaModels(cfg Config, modelsDir string) error {
 	paths := ResolveSherpaModelPaths(cfg, modelsDir)
 	for _, model := range []struct{ label, path string }{
 		{"segmentation", paths.Segmentation},
 		{"embedding", paths.Embedding},
 	} {
 		if err := requireModelFile(model.label, model.path); err != nil {
-			return nil, err
+			return err
 		}
 	}
+	return nil
+}
+
+// NewSherpaEngine loads segmentation + embedding models for meeting diarization
+// and enables live Embed/Identify via a separate embedding extractor/manager.
+// Callers should run config.EnsureRuntimeAssets first when using managed defaults.
+func NewSherpaEngine(cfg Config, modelsDir string) (*SherpaEngine, error) {
+	// Same check the deferred meeting path runs at start, so the two cannot drift.
+	if err := RequireSherpaModels(cfg, modelsDir); err != nil {
+		return nil, err
+	}
+	paths := ResolveSherpaModelPaths(cfg, modelsDir)
 
 	threads := sherpaThreads()
 	native := sherpa.NewOfflineSpeakerDiarization(&sherpa.OfflineSpeakerDiarizationConfig{
