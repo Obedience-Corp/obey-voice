@@ -24,8 +24,8 @@ func TestTranscriptionWaitsForVoiceEndAndReturnsOnlyToOwner(t *testing.T) {
 	defer cancel()
 	owner := dialStream(t, ctx, addr, creds)
 	observer := dialStream(t, ctx, addr, creds)
-	defer owner.CloseNow()
-	defer observer.CloseNow()
+	defer func() { _ = owner.CloseNow() }() // Best-effort connection cleanup.
+	defer func() { _ = observer.CloseNow() }()
 	seen := readFrames(t, ctx, observer)
 	writeControl(t, ctx, owner, controlMessage{Type: "transcribe_start", ID: "ask-1"})
 	eventually(t, "mic claimed", func() bool { return micClaimed(server.hub) })
