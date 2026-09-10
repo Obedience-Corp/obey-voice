@@ -105,10 +105,11 @@ func (o *OllamaBrain) receiveProjectedDelegationResults(projector delegationProj
 
 func delegationTools() api.Tools {
 	def := func(name, description string, required []string, fields map[string]string) api.Tool {
-		props := api.NewToolPropertiesMap()
+		typed := make(map[string]api.ToolProperty, len(fields))
 		for key, help := range fields {
-			props.Set(key, api.ToolProperty{Type: api.PropertyType{"string"}, Description: help})
+			typed[key] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: help}
 		}
+		props := orderedProps(typed)
 		return api.Tool{Type: "function", Function: api.ToolFunction{Name: name, Description: description, Parameters: api.ToolFunctionParameters{Type: "object", Required: required, Properties: props}}}
 	}
 	return api.Tools{
