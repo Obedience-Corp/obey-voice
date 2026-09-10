@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -173,4 +174,20 @@ func fitBridgeQueue(q []tea.Msg, capacity int) []tea.Msg {
 // delivery so the model keeps draining the bus.
 func (b *eventBridge) wait() tea.Cmd {
 	return func() tea.Msg { return <-b.ch }
+}
+
+// waitContext releases the conversation's event pump when its runtime ends,
+// including when /menu opens another program in the same process.
+func (b *eventBridge) waitContext(ctx context.Context) tea.Cmd {
+	if ctx == nil {
+		return b.wait()
+	}
+	return func() tea.Msg {
+		select {
+		case msg := <-b.ch:
+			return msg
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }

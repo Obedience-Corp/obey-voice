@@ -13,10 +13,8 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// Run starts the TUI as one continuous program: launcher, settings, and the
-// live conversation all run inside it. The pipeline is built lazily on
-// entering the conversation screen (D2) and torn down here after the program
-// exits.
+// Run starts the launcher and live conversation. Returning to the menu drains
+// and saves the session before opening a fresh launcher in the same process.
 func Run(cfg *config.Config, build RuntimeBuilder) error {
 	return RunWithMeeting(cfg, build, nil)
 }
@@ -46,6 +44,24 @@ func DiagnosticsLogPath() string {
 }
 
 func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, startInConversation bool) error {
+	return runPrograms(cfg, build, meeting, startInConversation, func(app App) (tea.Model, error) {
+		return tea.NewProgram(app, tea.WithAltScreen()).Run()
+	})
+}
+
+// Each program owns one conversation lifetime. Reusing teardown between chats
+// keeps old turns, event pumps, and talk keys out of the next session.
+func runPrograms(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, startInConversation bool, program func(App) (tea.Model, error)) error {
+	for {
+		back, err := runProgram(cfg, build, meeting, startInConversation, program)
+		if err != nil || !back {
+			return err
+		}
+		startInConversation = false
+	}
+}
+
+func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, startInConversation bool, program func(App) (tea.Model, error)) (bool, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -70,7 +86,7 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 	// stack trace lands in native-diagnostics.log instead of the terminal.
 	restoreDiagnostics, err := redirectNativeDiagnostics(DiagnosticsLogPath())
 	if err != nil {
-		return fmt.Errorf("redirect native diagnostics: %w", err)
+		return false, fmt.Errorf("redirect native diagnostics: %w", err)
 	}
 	defer func() { _ = restoreDiagnostics() }()
 
@@ -96,8 +112,7 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 	// wheel events — App.Update takes it on entering that screen and releases
 	// it on leaving, so the launcher, settings and meeting screens are
 	// unaffected either way.
-	p := tea.NewProgram(app, tea.WithAltScreen())
-	m, runErr := p.Run()
+	m, runErr := program(app)
 	final, _ := m.(App)
 	if final.remote.server != nil {
 		final.remote.stopAndWait(remoteStopTimeout)
@@ -145,7 +160,7 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 	}
 
 	if runErr != nil {
-		return fmt.Errorf("TUI error: %w", runErr)
+		return false, fmt.Errorf("TUI error: %w", runErr)
 	}
-	return final.fatalErr
+	return final.returnToMenu, final.fatalErr
 }

@@ -205,6 +205,10 @@ func bindSession(cfg *config.Config, personaID string) (*persona.SessionBinding,
 // resume session seeds both the brain history and the viewport.
 func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBuilder {
 	return func(ctx context.Context, progress appTUI.BuildProgress, sessionID, personaID string) (*appTUI.ConversationRuntime, error) {
+		// CLI resume/continue seeds only the first chat. Later launcher choices
+		// must load their selected session, or start fresh for New conversation.
+		sess := resumeSession
+		resumeSession = nil
 		// Reload config in case settings changed inside the TUI.
 		progress.Stage("Reading settings")
 		cfg, err := loadConfigForSession(personaID)
@@ -256,7 +260,6 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			return nil, fmt.Errorf("init pipeline: %w", err)
 		}
 
-		sess := resumeSession
 		if sessionID != "" && (sess == nil || sess.ID != sessionID) {
 			progress.Stage("Loading the session")
 			sess, err = session.Load(sessionID)
