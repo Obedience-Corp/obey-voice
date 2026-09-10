@@ -11,6 +11,9 @@ import (
 // newSpeakerSettings builds a Speakers-section model with a recording saveConfig.
 func newSpeakerSettings(t *testing.T, cfg *config.Config, row int) (*settingsModel, map[string]any) {
 	t.Helper()
+	if cfg.Speaker.EnrollmentDir == "" {
+		cfg.Speaker.EnrollmentDir = t.TempDir()
+	}
 	m := newSettings(cfg, nil)
 	m.section = sectionSpeakers
 	m.cursor = row
@@ -167,6 +170,7 @@ func TestSettingsSpeakersMeetingRowIsReadOnly(t *testing.T) {
 // TestSettingsSpeakersViewShowsState is the discoverability check — the user
 // reported not finding any speakers setting in the TUI.
 func TestSettingsSpeakersViewShowsState(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	cfg := &config.Config{}
 	cfg.Speaker.Enabled = true
 	cfg.Speaker.Live.Enabled = true
@@ -186,6 +190,7 @@ func TestSettingsSpeakersViewShowsState(t *testing.T) {
 // TestSpeakerItemsRowCountMatchesConstants keeps the row indices honest; a row
 // added without updating the constants would silently misroute Enter.
 func TestSpeakerItemsRowCountMatchesConstants(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	m := newSettings(&config.Config{}, nil)
 	if got := len(m.speakerItems()); got != speakerControlRowCount {
 		t.Errorf("speakerItems() has %d rows, speakerControlRowCount = %d", got, speakerControlRowCount)
@@ -216,6 +221,7 @@ func TestSettingsSpeakersNameOpensEditorAndSaves(t *testing.T) {
 }
 
 func TestSpeakerRowsHideEnrollAnotherOnEmptyStore(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	m := newSettings(&config.Config{}, nil)
 	m.section = sectionSpeakers
 	rows := m.speakerRows()
@@ -234,6 +240,7 @@ func TestSpeakerRowsHideEnrollAnotherOnEmptyStore(t *testing.T) {
 }
 
 func TestSpeakerRowsShowGuestsAndEnrollAnother(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	m := newSettings(&config.Config{}, nil)
 	m.section = sectionSpeakers
 	m.enrolledOwner = speaker.Profile{Name: "Lance", Owner: true, ModelRev: speaker.ExpectedLiveRev(speaker.FromAppConfig(m.cfg))}
@@ -287,6 +294,7 @@ func TestSpeakerRowsShowGuestsAndEnrollAnother(t *testing.T) {
 }
 
 func TestSpeakerRowsAfterOwnerRemovedStillListGuests(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	m := newSettings(&config.Config{}, nil)
 	m.section = sectionSpeakers
 	m.enrolledProfiles = []speaker.Profile{{Name: "Alex"}}
