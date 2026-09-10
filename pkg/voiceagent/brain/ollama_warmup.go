@@ -21,12 +21,16 @@ func (o *OllamaBrain) warmupNumCtx() int {
 	return defaultWarmupNumCtx
 }
 
-// Warmup preloads the model into memory with a minimal request so the user's
-// first real turn doesn't pay the cold-start (model-load) cost. Best-effort:
-// it caps generation, sends no tools, and ignores all errors so it can never
-// block or disrupt startup.
+// Warmup preloads the model and primes the server's prompt cache with the
+// prefix the first real turn will send: the frozen system prompt and the same
+// tool schema the live path uses. Loading the model alone was not enough —
+// with a bare "hi" the cache held a 13-token prompt, so the first sentence
+// still paid a full read of the persona (about 5 s on qwen3.8). With the real
+// prefix in the cache the first turn restores a checkpoint and reads only the
+// user's words. Best-effort: it caps generation at one token and ignores all
+// errors so it can never block or disrupt startup.
 //
-// Always send an explicit num_ctx. A "hi" with no options inherits the
+// Always send an explicit num_ctx. A request with no options inherits the
 // model default (262k on current qwen/kimi tags) and is what filled RAM
 // when serve was being respawned.
 func (o *OllamaBrain) Warmup(ctx context.Context) {
@@ -50,14 +54,49 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 	// — pinned by TestWarmupMatchesChatOptions/window_unset_diverges, which is
 	// where to start if that reload is ever worth closing.
 	opts["num_ctx"] = o.warmupNumCtx()
-	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%v num_batch=%v\n", o.model, opts["num_ctx"], opts["num_batch"])
+	messages := o.warmupMessages()
+	tools := o.warmupTools()
+	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%v num_batch=%v prefix_chars=%d tools=%d\n", o.model, opts["num_ctx"], opts["num_batch"], len(messages[0].Content), len(tools))
 	req := &api.ChatRequest{
 		Model:     o.model,
-		Messages:  []api.Message{{Role: "user", Content: "hi"}},
+		Messages:  messages,
+		Tools:     tools,
 		Stream:    &stream,
 		Think:     o.resolvedThink(),
 		KeepAlive: o.keepAlive,
 		Options:   opts,
 	}
 	_ = o.client.Chat(ctx, req, func(api.ChatResponse) error { return nil })
+}
+
+// warmupMessages is the first turn's prefix followed by a throwaway user line.
+// The system message must be byte-identical to what buildMessages sends, or
+// the cache primed here is never hit. The user line is required: Ollama
+// rejects a chat with no user message (ollama#17778), and it sits after the
+// checkpoint the first real turn restores from, so its content is irrelevant.
+func (o *OllamaBrain) warmupMessages() []api.Message {
+	if o.fullSystemPrompt == "" {
+		return []api.Message{{Role: "user", Content: "hi"}}
+	}
+	return []api.Message{
+		{Role: "system", Content: o.fullSystemPrompt},
+		{Role: "user", Content: "hi"},
+	}
+}
+
+// warmupTools mirrors the live path's tool selection (pipeline
+// liveRouterToolsPolicy): Ollama renders the tool schema ahead of the system
+// prompt, so a warmup without it primes a prefix the first turn never matches.
+func (o *OllamaBrain) warmupTools() api.Tools {
+	if o.cfg == nil || !o.cfg.VoiceToolsEnabled {
+		return nil
+	}
+	sess := &toolSession{
+		catalog:      o.skills,
+		routerPolicy: NormalizeRouterToolsPolicy(o.cfg.VoiceRouterTools),
+	}
+	if o.delegation != nil && o.delegation.Enabled() {
+		sess.delegation = o.delegation
+	}
+	return sess.tools()
 }

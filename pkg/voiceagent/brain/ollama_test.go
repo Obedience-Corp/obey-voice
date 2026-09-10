@@ -803,13 +803,74 @@ func TestWarmupFiresMinimalRequest(t *testing.T) {
 	}
 	body := bodies[0]
 	if bytes.Contains(body, []byte(`"tools":`)) {
-		t.Errorf("warmup must not send tools; body=%s", body)
+		t.Errorf("warmup without a config must not send tools; body=%s", body)
 	}
 	if !bytes.Contains(body, []byte(`"num_predict":1`)) {
 		t.Errorf("warmup must cap generation with num_predict; body=%s", body)
 	}
 	if !bytes.Contains(body, []byte(`"num_ctx":8192`)) {
 		t.Errorf("warmup must pin a safe num_ctx, not the model default; body=%s", body)
+	}
+}
+
+// TestWarmupPrimesTheFirstTurnPrefix: the warmup request must carry the same
+// system prompt and the same tool schema as the first live turn, in the same
+// bytes, or the prompt cache it fills is never reused. On qwen3.8 that miss is
+// a ~5 s first sentence.
+func TestWarmupPrimesTheFirstTurnPrefix(t *testing.T) {
+	var count int
+	var bodies [][]byte
+	cfg := &config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128, VoiceToolsEnabled: true, VoiceRouterTools: "route_only", AgentName: "Samantha", MaxHistory: 10}
+	o := &OllamaBrain{
+		client:           recordingStub(t, &count, &bodies),
+		model:            "m",
+		cfg:              cfg,
+		fullSystemPrompt: "You are Samantha. Keep it short.",
+	}
+
+	o.Warmup(context.Background())
+
+	if count != 1 {
+		t.Fatalf("want 1 warmup request, got %d", count)
+	}
+	var sent struct {
+		Messages []api.Message   `json:"messages"`
+		Tools    json.RawMessage `json:"tools"`
+		Options  map[string]any  `json:"options"`
+	}
+	if err := json.Unmarshal(bodies[0], &sent); err != nil {
+		t.Fatalf("decode warmup body: %v", err)
+	}
+	firstTurn := o.buildMessages("")
+	if len(sent.Messages) < 2 || sent.Messages[0].Role != "system" || sent.Messages[0].Content != firstTurn[0].Content {
+		t.Fatalf("warmup system message = %+v, want the frozen system prompt %q", sent.Messages, firstTurn[0].Content)
+	}
+	if sent.Messages[len(sent.Messages)-1].Role != "user" {
+		t.Fatalf("warmup must end with a user message, got %+v", sent.Messages)
+	}
+	live := (&toolSession{catalog: o.skills, routerPolicy: RouterToolsRouteOnly}).tools()
+	want, _ := json.Marshal(live)
+	if string(sent.Tools) != string(want) {
+		t.Fatalf("warmup tools = %s\nwant the live route schema %s", sent.Tools, want)
+	}
+	if sent.Options["num_predict"] != float64(1) {
+		t.Fatalf("warmup must cap generation at one token, got %v", sent.Options["num_predict"])
+	}
+}
+
+// Tools off in config means the live turn sends none, so warmup must not either.
+func TestWarmupSendsNoToolsWhenVoiceToolsDisabled(t *testing.T) {
+	var count int
+	var bodies [][]byte
+	o := &OllamaBrain{
+		client:           recordingStub(t, &count, &bodies),
+		model:            "m",
+		cfg:              &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: false},
+		fullSystemPrompt: "You are Samantha.",
+	}
+	o.Warmup(context.Background())
+	if bytes.Contains(bodies[0], []byte(`"tools":`)) {
+		t.Fatalf("warmup sent tools with voice_tools_enabled=false; body=%s", bodies[0])
 	}
 }
 
