@@ -120,7 +120,8 @@ type App struct {
 	// startInConversation skips the launcher (resume/continue).
 	startInConversation bool
 
-	quitting bool
+	quitting     bool
+	returnToMenu bool
 }
 
 // NewApp creates the TUI application.
@@ -187,6 +188,10 @@ type startPipelineMsg struct {
 
 // quitMsg signals the app should exit.
 type quitMsg struct{}
+
+// returnToMenuMsg ends the current session through the normal teardown path.
+// run reopens the launcher after the session is saved and devices are released.
+type returnToMenuMsg struct{}
 
 // Update wraps the screen dispatch so the mouse claim follows the active
 // screen. Conversation is the only screen that routes wheel events, so it is
@@ -803,6 +808,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// endpoint simply stops answering.
 		a.control = nil
 		return a, nil
+
+	case returnToMenuMsg:
+		a.returnToMenu = true
+		return a.update(quitMsg{})
 
 	case quitMsg:
 		if a.screen == screenPickBook {

@@ -818,7 +818,7 @@ func (m conversationModel) rearm() tea.Cmd {
 	if m.bridge == nil {
 		return nil
 	}
-	return m.bridge.wait()
+	return m.bridge.waitContext(m.deps.ctx)
 }
 
 // handleEvent maps one bus event onto viewport/status state. The mapping
@@ -1348,9 +1348,9 @@ func (m conversationModel) View() string {
 	case m.width >= lipgloss.Width(footerLeft)+lipgloss.Width(footerHelp)+4:
 		footerText += strings.Repeat(" ", m.width-lipgloss.Width(footerLeft)-lipgloss.Width(footerHelp)) + dimStyle.Render(footerHelp)
 	case m.width >= 60:
-		compact := "  ·  ^G mic  ^O audio  ^T switch  ^K think"
+		compact := "  ·  /menu back  ^G mic  ^O audio  ^T switch  ^K think"
 		if hint := m.talkHint(); hint != "" {
-			compact = "  ·  " + hint + "  ^G mic  ^O audio  ^T switch  ^K think"
+			compact = "  ·  /menu back  " + hint + "  ^G mic  ^O audio  ^T switch  ^K think"
 		}
 		footerText += dimStyle.Render(compact)
 	default:

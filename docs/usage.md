@@ -115,6 +115,10 @@ the highlighted command (or `Tab` to complete it into the composer first).
 screen and returns to the conversation when you press `Esc` or `q`. Slash
 commands are local — they do not cancel speech recognition or block the chat.
 
+`/menu` (or `/back`) ends the current chat and returns to the main menu. The
+session is saved before the menu opens; choose **Continue** to resume it or
+**New conversation** to start fresh. `/quit` still exits Obey Voice.
+
 | Key | Action |
 |-----|--------|
 | `Enter` | Send the current draft |

@@ -123,7 +123,7 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		})
 	}
 
-	cmds := []tea.Cmd{m.bridge.wait(), textarea.Blink, m.waitBackground()}
+	cmds := []tea.Cmd{m.bridge.waitContext(deps.ctx), textarea.Blink, m.waitBackground()}
 	m.appendActivity("session", shortSessionID(deps.sessionID), 0)
 	if deps.voice {
 		m.appendActivity("input", deviceLabel(deps.inputDevice), 0)
