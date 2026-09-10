@@ -202,10 +202,8 @@ func TestStopClearsIsPlaying(t *testing.T) {
 	}
 	stream.Close()
 	select {
-	case res := <-pb.Done():
-		if !res.Interrupted && res.Err == nil {
-			// drain may finish as cancelled or interrupted; either is fine
-		}
+	case <-pb.Done():
+		// Drain may finish normally before Stop or report cancellation/interruption.
 	case <-time.After(time.Second):
 		t.Fatal("Stop did not finish the in-flight drain")
 	}

@@ -300,8 +300,8 @@ func (w *storyFileWorker) ThinkFull(ctx context.Context, input string, opts brai
 	return w.body, nil
 }
 
-func (w *storyFileWorker) ClearHistory()             {}
-func (w *storyFileWorker) History() []brain.Turn     { return nil }
+func (w *storyFileWorker) ClearHistory()            {}
+func (w *storyFileWorker) History() []brain.Turn    { return nil }
 func (w *storyFileWorker) LoadHistory([]brain.Turn) {}
 
 var errTurnCapUsed = errString("turn instruction must be omitted for story worker")

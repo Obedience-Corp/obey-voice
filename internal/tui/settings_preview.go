@@ -23,10 +23,6 @@ func (m *settingsModel) closePreview() {
 	}
 }
 
-func (m *settingsModel) playerForPreview() audio.Engine {
-	return m.preview.player()
-}
-
 func (m *settingsModel) startSettingsPreview(voice tts.Voice) tea.Cmd {
 	if m.cfg == nil {
 		return nil

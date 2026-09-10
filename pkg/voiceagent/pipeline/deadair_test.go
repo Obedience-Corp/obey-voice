@@ -104,6 +104,65 @@ func TestWarnIfSynthesisCannotKeepUpFiresOncePerSession(t *testing.T) {
 	}
 }
 
+func TestKokoroKeepUpAdviceIsSuppressedWithoutConsumingQwenNotice(t *testing.T) {
+	for _, provider := range []string{"kokoro", "qwen3-tts"} {
+		for _, symptom := range []string{"dead air", "underrun"} {
+			t.Run(provider+"/"+symptom, func(t *testing.T) {
+				bus := events.NewBus()
+				var infos []string
+				events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+				p := &Pipeline{Events: bus}
+				m := events.TurnMetrics{TTSProvider: provider}
+				if provider == "qwen3-tts" {
+					// The turn identity describes the primary, even when Kokoro
+					// supplied some or all of its audio.
+					m.TTSFallbacks = 1
+				}
+				if symptom == "dead air" {
+					m.DeadAirElapsed = 6 * time.Second
+					m.Segments = []events.SegmentMetric{{PlayElapsed: 6 * time.Second}}
+				} else {
+					m.Underruns = 1
+				}
+				p.warnIfSynthesisCannotKeepUp(m)
+				if len(infos) != 0 {
+					t.Fatalf("Kokoro turn received keep-up advice: %v", infos)
+				}
+
+				// A later, entirely Qwen turn still gets its one eligible notice.
+				m.TTSProvider, m.TTSFallbacks = "qwen3-tts", 0
+				p.warnIfSynthesisCannotKeepUp(m)
+				p.warnIfSynthesisCannotKeepUp(m)
+				if len(infos) != 1 || !strings.Contains(infos[0], "qwen3-tts") {
+					t.Fatalf("Qwen notice after Kokoro = %v, want one Qwen notice", infos)
+				}
+			})
+		}
+	}
+}
+
+func TestKokoroTurnStillPublishesGapMetrics(t *testing.T) {
+	bus := events.NewBus()
+	var metrics []events.TurnMetrics
+	var infos []string
+	events.Subscribe(bus, func(e events.TurnMetrics) { metrics = append(metrics, e) })
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	p := &Pipeline{Events: bus}
+	m := newTurnMetrics()
+	m.ttsEngine.provider = "kokoro"
+	m.deadAir = 6 * time.Second
+	m.underruns = 1
+	m.segments = []events.SegmentMetric{{PlayElapsed: 6 * time.Second, Underruns: 1}}
+	p.newTurnConductor(m).finish(TurnCompleted)
+
+	if len(metrics) != 1 || metrics[0].DeadAirElapsed != m.deadAir || metrics[0].Underruns != 1 || len(metrics[0].Segments) != 1 {
+		t.Fatalf("Kokoro gap metrics not retained: %+v", metrics)
+	}
+	if len(infos) != 0 {
+		t.Fatalf("Kokoro turn received keep-up advice: %v", infos)
+	}
+}
+
 func TestWarnIfSynthesisCannotKeepUpStaysQuietWhenItKeepsUp(t *testing.T) {
 	tests := []struct {
 		name string

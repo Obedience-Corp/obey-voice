@@ -21,8 +21,8 @@ const (
 )
 
 type zoomRoster struct {
-	SourceURL   string `json:"source_url"`
-	FixtureFile string `json:"fixture_file"`
+	SourceURL     string `json:"source_url"`
+	FixtureFile   string `json:"fixture_file"`
 	LabeledRegion struct {
 		StartMS int64  `json:"start_ms"`
 		EndMS   int64  `json:"end_ms"`

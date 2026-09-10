@@ -122,13 +122,15 @@ func (n *Narrator) handleJobDone(id string, state job.State, result string, err 
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
 			msg = truncateJobTask(err.Error())
 		}
-		n.pipeline.speakStandalone(context.Background(), nil, nil, msg)
+		// Standalone speech reports synthesis/playback errors on the event bus.
+		_ = n.pipeline.speakStandalone(context.Background(), nil, nil, msg)
 		return true
 	}
 
 	path := strings.TrimSpace(result)
 	if path == "" {
-		n.pipeline.speakStandalone(context.Background(), nil, nil, "That did not work.")
+		// Standalone speech reports synthesis/playback errors on the event bus.
+		_ = n.pipeline.speakStandalone(context.Background(), nil, nil, "That did not work.")
 		return true
 	}
 	n.tryStartNarration(context.Background(), path)
@@ -159,7 +161,8 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 
 	source := resolveNarrateSource(d.Transcript, n.workDir())
 	if source == "" {
-		n.pipeline.speakStandalone(ctx, turn, metrics, "I could not find anything to read.")
+		// Standalone speech reports synthesis/playback errors on the event bus.
+		_ = n.pipeline.speakStandalone(ctx, turn, metrics, "I could not find anything to read.")
 		return
 	}
 
@@ -262,7 +265,8 @@ func (n *Narrator) startPlayback(ctx context.Context, source string) {
 		if err != nil {
 			n.pipeline.emit(events.Error{Stage: "narrate", Message: err.Error()})
 		}
-		n.pipeline.speakStandalone(context.Background(), nil, nil, msg)
+		// Standalone speech reports synthesis/playback errors on the event bus.
+		_ = n.pipeline.speakStandalone(context.Background(), nil, nil, msg)
 		return
 	}
 
@@ -529,9 +533,7 @@ func extractNarratePath(transcript, workDir string) string {
 		return ""
 	}
 	candidates := []string{trimmed}
-	for _, tok := range strings.Fields(trimmed) {
-		candidates = append(candidates, tok)
-	}
+	candidates = append(candidates, strings.Fields(trimmed)...)
 	seen := make(map[string]struct{}, len(candidates))
 	for _, c := range candidates {
 		c = strings.Trim(c, "\"'")

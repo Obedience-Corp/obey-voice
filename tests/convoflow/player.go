@@ -157,16 +157,14 @@ func (p *recordingPlayer) startTee(ctx context.Context, stream *audio.PCMStream)
 
 func (p *recordingPlayer) recordFrames(ctx context.Context, stream, derived *audio.PCMStream, rate int) (bool, error) {
 	frames := stream.Frames()
-	interrupted := false
 	for {
 		select {
 		case <-ctx.Done():
-			interrupted = true
 			drainFrames(frames, p, derived, rate)
 			return true, ctx.Err()
 		case frame, ok := <-frames:
 			if !ok {
-				return interrupted, nil
+				return false, nil
 			}
 			p.append(frame, rate)
 			if derived != nil {

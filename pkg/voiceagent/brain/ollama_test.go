@@ -98,12 +98,6 @@ func ollamaStreamStub(t *testing.T, lines []string) *api.Client {
 	return api.NewClient(base, http.DefaultClient)
 }
 
-// optionCapturingStub records the options block of the request it receives, so
-// a test can compare what warmup asks for against what a real turn asks for.
-func optionCapturingStub(t *testing.T, into *map[string]any) *api.Client {
-	return chatCapturingStub(t, into, nil)
-}
-
 func chatCapturingStub(t *testing.T, into *map[string]any, think *any) *api.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
