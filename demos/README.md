@@ -72,7 +72,7 @@ Full Bubble Tea launcher flow for multi-persona voice agents:
 
 Uses a disposable `$HOME` with two pre-seeded profiles (no live mic or model
 download). Create clones the current TTS provider/voice onto the new profile.
-TTS fine-tuning stays in **Settings → TTS / Voice** (writes through to the
+TTS fine-tuning stays in **Settings → Voice** (writes through to the
 active persona).
 
 ```bash
@@ -118,15 +118,15 @@ just demo-persona-create
 
 Full Bubble Tea Settings flow for the managed Qwen provider:
 
-1. **Settings → TTS** — the engine row reads kokoro while the native 0.6B
-   package is already on disk
-2. **enter → Qwen3-TTS** — the engine list opens; choosing Qwen persists the
-   mode, default voice, and language (`←/→` would step over an engine whose
-   choice starts a download)
-3. **Settings → Voice** — the row shows the Qwen default; `enter` lists all
-   nine model-native speakers
-4. **`ryan` → enter** — typing narrows the list to Ryan; the row and the
-   launcher badge update to Qwen, CustomVoice, and Ryan
+1. **Settings → Voice** (`4`) — the Engine list marks kokoro while the native
+   0.6B package is already on disk
+2. **↓ enter → Qwen3-TTS** — choosing Qwen persists the mode, default voice,
+   and language (an engine that still needs a download is listed dim, and
+   only `enter` on it installs)
+3. **Voice list** — the nine model-native speakers appear under the engines
+   with the Qwen default marked ✓
+4. **↓ to Ryan → enter** — the ✓ moves, and the launcher badge updates to
+   Qwen, CustomVoice, and Ryan
 
 `demos/fixtures/fake-qwen-native` lays down the native package layout the
 production `InspectNative` path verifies — worker, runtime libraries, the

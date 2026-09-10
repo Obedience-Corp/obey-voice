@@ -65,9 +65,9 @@ func TestSwitchToSettingsAppliesTerminalGeometry(t *testing.T) {
 	if got.width != 120 || got.height != 40 {
 		t.Fatalf("settings geometry = %dx%d, want 120x40 from app", got.width, got.height)
 	}
-	// chrome is 5 rows in non-compact mode → 40 - 5 = 35 list rows
-	if rows := got.visibleRows(); rows != 35 {
-		t.Fatalf("visible rows = %d, want 35 for a 40-row terminal", rows)
+	// chrome is 4 rows beside the sidebar → 40 - 4 = 36 section rows
+	if rows := got.visibleRows(); rows != 36 {
+		t.Fatalf("visible rows = %d, want 36 for a 40-row terminal", rows)
 	}
 }
 

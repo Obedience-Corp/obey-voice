@@ -8,7 +8,7 @@ is no managed Python / uv / torch runtime on the product path after cutover
 
 ## Native package setup
 
-Settings → TTS → Qwen3-TTS (or CLI below) installs a release tarball when
+Settings → Voice → Engine → Qwen3-TTS (or CLI below) installs a release tarball when
 `qwen_tts_native_url` (or `OBEY_VOICE_QWEN_NATIVE_URL`) is set:
 
 - layout under `models_dir/qwen3-tts/` (`bin/qwen3-tts-worker`, `models/*.gguf`, presets);
@@ -42,8 +42,8 @@ package:
 Vivian  Serena  Uncle_Fu  Dylan  Eric  Ryan  Aiden  Ono_Anna  Sohee
 ```
 
-Settings → Voice lists presets when the native package is installed.
-Settings → Language exposes the supported language list. Preview and normal
+Settings → Voice lists the presets under the engines once the native package
+is installed, and the supported languages below them. Preview and normal
 synthesis send the selected speaker and language to the native worker JSONL
 protocol. Progressive sentence TTS is handled in the Go pipeline (chunk →
 synth queue); stage-A engine generation remains whole-utterance per sentence.

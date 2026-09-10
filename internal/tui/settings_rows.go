@@ -14,24 +14,27 @@ import (
 )
 
 // A row is a setting. Every section is a list of settingRow values built from
-// the live config each time it is drawn, so the name, the current value and
-// the verb that changes it are on the row — not spread across an option list,
-// a footer and a status message the next key erases.
+// the live config each time it is drawn. A row that chooses from a list draws
+// the whole list under a heading with ✓ on the current item, because seeing
+// the options is what a settings screen is for; the other kinds draw as one
+// line, name then value.
 //
 // The kind is the verb:
 //
-//	rowPick    one of a list — ←/→ step through it, enter opens the list
-//	rowToggle  on or off — ←/→, space or enter flip it
-//	rowSlider  a level — ←/→ nudge it
+//	rowPick    one of a list — the options are drawn; enter on one chooses it
+//	rowChoice  one of a few — drawn on the row with [current] marked; enter,
+//	           space or +/- move to the next
+//	rowToggle  on or off — enter or space flips it
+//	rowSlider  a level — +/- nudge it
 //	rowText    typed — enter opens the one-line editor
 //	rowAction  does something — enter runs it
-//	rowMenu    enter opens a list of things to act on; ←/→ do nothing,
-//	           because stepping past "remove X" must never act
+//	rowMenu    things to act on — drawn like a list; enter on one acts
 //	rowInfo    read-only; enter may explain
 type rowKind int
 
 const (
 	rowPick rowKind = iota
+	rowChoice
 	rowToggle
 	rowSlider
 	rowText
@@ -57,8 +60,8 @@ type settingRow struct {
 	// value is the current value as the row shows it; detail is a dim tail.
 	value  string
 	detail string
-	// options and current are the list behind a pick or menu row. current is
-	// -1 when nothing in the list is the current value.
+	// options and current are the list behind a pick, choice or menu row.
+	// current is -1 when nothing in the list is the current value.
 	options []string
 	current int
 	// A disabled row draws dim with its reason and ignores every verb.
@@ -68,19 +71,17 @@ type settingRow struct {
 	help     string
 	// verb names what enter does on an action or menu row, for the footer.
 	verb string
-	// stepOver marks options ←/→ step over (index-aligned with options; nil
-	// means none): a backend that is not installed, an engine or tier whose
-	// choice starts a download. The picker still lists them, so choosing one
-	// deliberately explains itself or installs — a single keypress does not.
-	stepOver []bool
-	// set applies option idx (pick, menu). step is set's ←/→ form when the
-	// two differ (the Brain row lands on Worker only when chosen, not on
-	// every step); nil means step is set. run performs the row's own verb
-	// (toggle, text, action, info). nudge moves a slider by delta steps.
-	// preview plays option idx without choosing it. Each takes the model
-	// explicitly: a closure built on one copy must not mutate a stale one.
+	// muted marks options drawn dim (index-aligned with options; nil means
+	// none): a backend that is not available, an engine or tier whose choice
+	// starts a download. They are still listed and can still be chosen; the
+	// row's help says what choosing one does.
+	muted []bool
+	// set applies option idx (pick, choice, menu). run performs the row's
+	// own verb (toggle, text, action, info). nudge moves a slider by delta
+	// steps. preview plays option idx without choosing it. Each takes the
+	// model explicitly: a closure built on one copy must not mutate a stale
+	// one.
 	set     func(m *settingsModel, idx int) tea.Cmd
-	step    func(m *settingsModel, idx int) tea.Cmd
 	run     func(m *settingsModel) tea.Cmd
 	nudge   func(m *settingsModel, delta int) tea.Cmd
 	preview func(m *settingsModel, idx int) tea.Cmd
@@ -102,167 +103,30 @@ func indexOf(options []string, value string) int {
 	return -1
 }
 
-// sectionRows is the current section as rows.
+// sectionRows is the current section as rows. A section is what you would
+// change together: the brain and its model, the voice engine and its voices,
+// the microphone and the speaker.
 func (m settingsModel) sectionRows() []settingRow {
 	switch m.section {
-	case sectionProvider:
-		return m.providerRows()
-	case sectionModel:
-		return m.modelRows()
+	case sectionBrain:
+		return append(m.providerRows(), m.modelRows()...)
 	case sectionWorker:
 		return m.workerRows()
 	case sectionTools:
 		return m.toolRows()
-	case sectionTTS:
-		return m.ttsRows()
+	case sectionVoice:
+		rows := append(m.ttsRows(), m.voiceRows()...)
+		return append(rows, m.languageRows()...)
 	case sectionQwen:
 		return m.qwenRows()
-	case sectionVoice:
-		return m.voiceRows()
-	case sectionLanguage:
-		return m.languageRows()
 	case sectionSTT:
 		return m.sttRows()
 	case sectionSpeakers:
 		return m.speakerSettingRows()
-	case sectionInput:
-		return m.inputRows()
-	case sectionOutput:
-		return m.outputRows()
+	case sectionAudio:
+		return append(m.inputRows(), m.outputRows()...)
 	case sectionMeeting:
 		return m.meetingRows()
-	}
-	return nil
-}
-
-func (m settingsModel) focusedRow() (settingRow, bool) {
-	rows := m.sectionRows()
-	if m.cursor < 0 || m.cursor >= len(rows) {
-		return settingRow{}, false
-	}
-	return rows[m.cursor], true
-}
-
-// clampCursor keeps the cursor on a row after a section's rows change shape
-// (a place switch hides the strictness row; a removal drops a guest).
-func (m *settingsModel) clampCursor() {
-	if n := len(m.sectionRows()); m.cursor >= n {
-		m.cursor = max(n-1, 0)
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
-}
-
-// ── the verbs ────────────────────────────────────────────────────────
-
-// adjustRow is ←/→: step a pick (wrapping, like the cycles it replaces),
-// flip a toggle, nudge a slider. It never switches section.
-func (m *settingsModel) adjustRow(delta int) tea.Cmd {
-	row, ok := m.focusedRow()
-	if !ok || row.disabled {
-		return nil
-	}
-	switch row.kind {
-	case rowPick:
-		n := len(row.options)
-		if n == 0 || row.set == nil {
-			return nil
-		}
-		next := 0
-		if delta < 0 {
-			next = n - 1
-		}
-		if row.current >= 0 {
-			next = ((row.current+delta)%n + n) % n
-		}
-		// Step over options a keypress must not choose; if every option is
-		// one of those there is nothing to step to.
-		for tries := 0; tries < n && next < len(row.stepOver) && row.stepOver[next]; tries++ {
-			next = ((next+delta)%n + n) % n
-		}
-		if (next < len(row.stepOver) && row.stepOver[next]) || next == row.current {
-			// Nothing else a keypress may choose; the list still can.
-			m.message = fmt.Sprintf("No other %s to step to · enter lists all %d", strings.ToLower(row.name), n)
-			return nil
-		}
-		if row.step != nil {
-			return row.step(m, next)
-		}
-		return row.set(m, next)
-	case rowToggle:
-		if row.run != nil {
-			return row.run(m)
-		}
-	case rowSlider:
-		if row.nudge != nil {
-			return row.nudge(m, delta)
-		}
-	}
-	return nil
-}
-
-// activateRow is enter: open a list, flip a toggle, edit a value, run an
-// action. One key, one verb, and the row said which before it was pressed.
-func (m *settingsModel) activateRow() tea.Cmd {
-	row, ok := m.focusedRow()
-	if !ok {
-		return nil
-	}
-	if row.disabled {
-		if row.reason != "" {
-			m.message = row.reason
-		}
-		return nil
-	}
-	switch row.kind {
-	case rowPick, rowMenu:
-		return m.openPicker(row)
-	default:
-		if row.run != nil {
-			return row.run(m)
-		}
-	}
-	return nil
-}
-
-// toggleRow is space: only a toggle answers it, so a stray space is safe.
-func (m *settingsModel) toggleRow() tea.Cmd {
-	row, ok := m.focusedRow()
-	if !ok || row.disabled || row.kind != rowToggle || row.run == nil {
-		return nil
-	}
-	return row.run(m)
-}
-
-// previewRow is p: play the focused row's current value where that means
-// something (a voice).
-func (m *settingsModel) previewRow() tea.Cmd {
-	row, ok := m.focusedRow()
-	if !ok || row.disabled || row.preview == nil || row.current < 0 {
-		return nil
-	}
-	return row.preview(m, row.current)
-}
-
-// switchSettingsSection moves delta sections, wrapping, and remembers where
-// the cursor was in the section it leaves.
-func (m *settingsModel) switchSettingsSection(delta int) tea.Cmd {
-	n := int(settingsSectionCount)
-	return m.gotoSection(settingsSection((int(m.section) + delta%n + n) % n))
-}
-
-func (m *settingsModel) gotoSection(s settingsSection) tea.Cmd {
-	if m.section >= 0 && int(m.section) < len(m.cursors) {
-		m.cursors[m.section] = m.cursor
-	}
-	m.section = s
-	m.cursor = m.cursors[s]
-	m.offset = 0
-	m.message = ""
-	m.clampCursor()
-	if s == sectionMeeting && !m.routeDestsLoading && m.routeDests == nil {
-		return m.loadRouteDestinations()
 	}
 	return nil
 }
@@ -271,24 +135,23 @@ func (m *settingsModel) gotoSection(s settingsSection) tea.Cmd {
 
 func (m settingsModel) providerRows() []settingRow {
 	current := -1
-	stepOver := make([]bool, len(m.providers))
+	muted := make([]bool, len(m.providers))
 	for i, p := range m.providers {
 		if p.Name == m.cfg.BrainProvider {
 			current = i
 		}
-		stepOver[i] = !p.Available
+		muted[i] = !p.Available
 	}
 	value := strings.TrimSpace(m.cfg.BrainProvider)
 	if value == "" {
 		value = "not set"
 	}
 	return []settingRow{{
-		key: "brain_provider", name: "Brain", kind: rowPick,
-		value: value, options: m.providerItems, current: current, stepOver: stepOver,
+		key: "brain_provider", name: "Provider", kind: rowPick,
+		value: value, options: m.providerItems, current: current, muted: muted,
 		applies: appliesNextConversation,
 		help:    "Which provider answers you. Choosing one lands on Worker if none is set.",
 		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectProviderOption(i) },
-		step:    func(m *settingsModel, i int) tea.Cmd { return m.stepProviderOption(i) },
 	}}
 }
 
@@ -305,7 +168,7 @@ func (m settingsModel) modelRows() []settingRow {
 	active := m.activeModel()
 	models := m.modelItems
 	row := settingRow{
-		key: key, name: "Brain model", kind: rowPick,
+		key: key, name: "Model", kind: rowPick,
 		value: active, options: models, current: indexOf(models, active),
 		applies: appliesNextConversation,
 		help:    "Which model thinks for the brain provider.",
@@ -321,7 +184,7 @@ func (m settingsModel) workerRows() []settingRow {
 	infos := m.workerProviderInfos()
 	names := make([]string, 0, len(infos))
 	labels := make([]string, 0, len(infos))
-	stepOver := make([]bool, 0, len(infos))
+	muted := make([]bool, 0, len(infos))
 	for _, p := range infos {
 		label := p.Name
 		if !p.Available {
@@ -329,12 +192,12 @@ func (m settingsModel) workerRows() []settingRow {
 		}
 		names = append(names, p.Name)
 		labels = append(labels, label)
-		stepOver = append(stepOver, !p.Available)
+		muted = append(muted, !p.Available)
 	}
 	active := m.activeWorkerProvider()
 	provider := settingRow{
-		key: "voice_worker_provider", name: "Worker", kind: rowPick,
-		value: active, options: labels, current: indexOf(names, active), stepOver: stepOver,
+		key: "voice_worker_provider", name: "Provider", kind: rowPick,
+		value: active, options: labels, current: indexOf(names, active), muted: muted,
 		applies: appliesNextConversation,
 		help:    "The second brain: runs the background jobs a spawn starts, with full tools.",
 		set: func(m *settingsModel, i int) tea.Cmd {
@@ -348,7 +211,7 @@ func (m settingsModel) workerRows() []settingRow {
 	}
 	models := m.workerModelChoices()
 	model := settingRow{
-		key: "voice_worker_model", name: "Worker model", kind: rowPick,
+		key: "voice_worker_model", name: "Model", kind: rowPick,
 		value: m.activeWorkerModel(), options: models, current: -1,
 		applies: appliesNextConversation,
 		help:    "Pin a model for the worker, or leave it on the provider's default.",
@@ -419,7 +282,7 @@ func (m settingsModel) toolRows() []settingRow {
 			run:  toggle(toolRowTalkKey),
 		},
 		{
-			key: "talk_hotkey_mode", name: "Talk key mode", kind: rowPick,
+			key: "talk_hotkey_mode", name: "Talk key mode", kind: rowChoice,
 			value: mode, options: modes, current: indexOf(modes, mode),
 			applies: appliesNextConversation,
 			help:    "hold: press to talk, release to send · toggle: tap to start, tap to send · automatic: both.",
@@ -438,21 +301,21 @@ func (m settingsModel) ttsRows() []settingRow {
 	active := activeTTSProvider(m.cfg)
 	items := m.ttsItems
 	options := make([]string, len(items))
-	stepOver := make([]bool, len(items))
-	current, detail := -1, ""
+	muted := make([]bool, len(items))
+	current := -1
 	for i, it := range items {
 		options[i] = it.provider + " — " + it.detail
 		if it.provider == active {
-			current, detail = i, it.detail
+			current = i
 		}
 		// Choosing the managed Qwen engine before its package is on disk
-		// starts a large download; that is a decision for the list, not
-		// for a keypress that was only stepping past it.
-		stepOver[i] = m.ttsProviderInstalls(it.provider)
+		// starts a large download; it is drawn dim so that is chosen
+		// knowingly, and the help says so.
+		muted[i] = m.ttsProviderInstalls(it.provider)
 	}
 	return []settingRow{{
-		key: "tts_provider", name: "Voice engine", kind: rowPick,
-		value: active, detail: detail, options: options, current: current, stepOver: stepOver,
+		key: "tts_provider", name: "Engine", kind: rowPick,
+		value: active, options: options, current: current, muted: muted,
 		applies: appliesUnlessPersona,
 		help:    "Which engine makes the sound. Choosing an uninstalled one from the list installs it.",
 		set:     func(m *settingsModel, i int) tea.Cmd { return m.selectTTSProvider(items[i].provider) },
@@ -481,7 +344,7 @@ func (m settingsModel) qwenRows() []settingRow {
 			row.help = "The native Qwen3-TTS package on this computer."
 			row.run = func(m *settingsModel) tea.Cmd { return m.selectQwenKind(qwenOptStatus) }
 		case qwenOptPlace:
-			row.key, row.kind = "tts_place", rowPick
+			row.key, row.kind = "tts_place", rowChoice
 			row.options, row.current = places, place
 			row.applies = appliesOnReturn
 			row.help = "Where speech is synthesized: here, or a speech worker on the network."
@@ -508,11 +371,11 @@ func (m settingsModel) qwenRows() []settingRow {
 		case qwenOptTier:
 			row.key, row.kind = "qwen_tts_model_tier", rowPick
 			row.options, row.current = tiers, indexOf(tiers, tier)
-			row.stepOver = make([]bool, len(tiers))
+			row.muted = make([]bool, len(tiers))
 			for i, t := range tiers {
-				// setQwenTier fetches a tier that is not in the package;
-				// ←/→ must not be the keypress that starts that.
-				row.stepOver[i] = t == managedqwen.Tier1_7B && !slices.Contains(m.nativeStatus.TiersReady, t)
+				// setQwenTier fetches a tier that is not in the package; it
+				// is drawn dim so the download is chosen knowingly.
+				row.muted[i] = t == managedqwen.Tier1_7B && !slices.Contains(m.nativeStatus.TiersReady, t)
 			}
 			row.applies = appliesNextConversation
 			row.help = "0.6b is fast; 1.7b sounds better and is slower. A tier not in the package is downloaded."
@@ -568,12 +431,10 @@ func (m settingsModel) voiceRows() []settingRow {
 	row.options, row.current = options, current
 	row.value = active
 	if current >= 0 {
-		v := voices[current]
-		row.value = v.Name
-		row.detail = v.Gender + " / " + v.Locale
+		row.value = voices[current].Name
 	}
 	if m.preview.previewing != "" {
-		row.detail = strings.TrimSpace(row.detail + "  ♫ playing " + m.preview.previewing + "…")
+		row.detail = "♫ playing " + m.preview.previewing + "…"
 	}
 	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectVoice(voices[i]) }
 	row.preview = func(m *settingsModel, i int) tea.Cmd {
@@ -674,7 +535,7 @@ func (m settingsModel) speakerSettingRows() []settingRow {
 		case speakerRowThreshold:
 			current := m.effectiveLiveThreshold()
 			row = settingRow{
-				key: "speaker.live.threshold", name: "Match threshold", kind: rowPick,
+				key: "speaker.live.threshold", name: "Match threshold", kind: rowChoice,
 				value: fmt.Sprintf("%.2f", current), options: thresholds, current: nearestIndex32(liveThresholdChoices, current),
 				applies: appliesNextConversation,
 				help:    "Lower merges similar voices onto one label; higher splits them.",
@@ -689,7 +550,7 @@ func (m settingsModel) speakerSettingRows() []settingRow {
 				window = 1500
 			}
 			row = settingRow{
-				key: "speaker.live.window_ms", name: "Analysis window", kind: rowPick,
+				key: "speaker.live.window_ms", name: "Analysis window", kind: rowChoice,
 				value: fmt.Sprintf("%d ms", window), options: windows, current: indexOf(windows, fmt.Sprintf("%d ms", window)),
 				applies: appliesNextConversation,
 				help:    "Shorter labels a turn sooner; longer gives the embedder more voice. Enrolled voices go stale.",
@@ -931,7 +792,7 @@ func (m settingsModel) meetingRows() []settingRow {
 		},
 		engineRow,
 		{
-			key: "speaker.meeting.num_speakers", name: "Expected speakers", kind: rowPick,
+			key: "speaker.meeting.num_speakers", name: "Expected speakers", kind: rowChoice,
 			value:   meetingNumSpeakersLabel(cfg.Speaker.Meeting.NumSpeakers, engine),
 			options: numLabels, current: numCurrent, applies: appliesNextMeeting,
 			help: "Fix the speaker count for 1:1 interviews and small groups; Auto can over-split.",
@@ -944,7 +805,7 @@ func (m settingsModel) meetingRows() []settingRow {
 			run:  run(meetingRowRecordAudio),
 		},
 		{
-			key: "meeting.route.mode", name: "Route mode", kind: rowPick,
+			key: "meeting.route.mode", name: "Route mode", kind: rowChoice,
 			value: mode, options: modes, current: indexOf(modes, mode), applies: appliesNextMeeting,
 			help: "ask: choose where notes go at the end · auto: send to the default · off: keep them here.",
 			set:  func(m *settingsModel, i int) tea.Cmd { return m.setRouteMode(modes[i]) },
@@ -956,7 +817,7 @@ func (m settingsModel) meetingRows() []settingRow {
 			set:  func(m *settingsModel, i int) tea.Cmd { return m.setDefaultDestinationChoice(dests[i]) },
 		},
 		{
-			key: "meeting.route.body", name: "Body scope", kind: rowPick,
+			key: "meeting.route.body", name: "Body scope", kind: rowChoice,
 			value: body, options: bodies, current: indexOf(bodies, body), applies: appliesNextMeeting,
 			help: "notes: the summary · full: the whole transcript.",
 			set:  func(m *settingsModel, i int) tea.Cmd { return m.setBodyScope(bodies[i]) },

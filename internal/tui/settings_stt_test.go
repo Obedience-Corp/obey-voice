@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"path/filepath"
 	"strings"
@@ -336,28 +335,20 @@ func TestSTTSectionRendersRows(t *testing.T) {
 	m.section = sectionSTT
 	m.width, m.height = 120, 30
 
-	// The recognizer is one row; its options live in the picker.
-	if got := m.currentListLen(); got != 1 {
-		t.Fatalf("list length = %d, want the one Recognizer row", got)
+	// The recognizer is one list, drawn whole.
+	if got := len(m.sectionRows()); got != 1 {
+		t.Fatalf("rows = %d, want the one Recognizer list", got)
 	}
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "STT") {
-		t.Fatalf("the STT tab is not in the tab strip:\n%s", view)
+		t.Fatalf("the STT section is not on the sidebar:\n%s", view)
 	}
-	// The row shows the active recognizer and explains the stored alias.
-	for _, want := range []string{"Recognizer", config.STTProviderSherpa, "sherpa-offline"} {
+	// The heading names the active recognizer and explains the stored
+	// alias; every recognizer is listed and the active one is marked.
+	for _, want := range []string{"Recognizer", config.STTProviderSherpa, "sherpa-offline",
+		config.STTProviderParakeet, config.STTProviderTranscribeCPP, "✓"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view is missing %q:\n%s", want, view)
 		}
-	}
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	view = stripANSI(next.View())
-	for _, provider := range []string{config.STTProviderParakeet, config.STTProviderSherpa, config.STTProviderTranscribeCPP} {
-		if !strings.Contains(view, provider) {
-			t.Fatalf("picker is missing %q:\n%s", provider, view)
-		}
-	}
-	if !strings.Contains(view, "✓") {
-		t.Fatalf("picker does not mark the active recognizer:\n%s", view)
 	}
 }

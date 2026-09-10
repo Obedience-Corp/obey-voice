@@ -49,7 +49,7 @@ func TestChoosingABrainLandsOnTheWorkerSection(t *testing.T) {
 	saved := map[string]any{}
 	m := newSettings(cfg, workerTestProviders())
 	m.saveConfig = func(k string, v any) error { saved[k] = v; return nil }
-	m.section = sectionProvider
+	m.section = sectionBrain
 
 	m.selectProviderOption(0) // ollama
 
@@ -67,12 +67,12 @@ func TestChoosingABrainKeepsAnExistingWorkerChoice(t *testing.T) {
 	cfg := &config.Config{BrainProvider: "grok", VoiceWorkerProvider: "ollama"}
 	m := newSettings(cfg, workerTestProviders())
 	m.saveConfig = func(string, any) error { return nil }
-	m.section = sectionProvider
+	m.section = sectionBrain
 
 	m.selectProviderOption(0) // ollama
 
-	if m.section != sectionProvider {
-		t.Fatalf("section = %d, want to stay on Provider %d", m.section, sectionProvider)
+	if m.section != sectionBrain {
+		t.Fatalf("section = %d, want to stay on Brain %d", m.section, sectionBrain)
 	}
 }
 
@@ -134,16 +134,14 @@ func TestWorkerStatusNamesTheInheritedBackend(t *testing.T) {
 // its rows intact — it is reached by tabbing, and a blank tab reads as broken.
 func TestWorkerSectionRenders(t *testing.T) {
 	m := newWorkerSettings(t, &config.Config{BrainProvider: "ollama"})
-	// The rows say what is chosen (nothing, inheriting ollama) and what the
-	// model pin is; the backends are in the picker.
+	// The lists say what is chosen (nothing, inheriting ollama), what the
+	// model pin is, and name every backend.
 	view := stripANSI(m.View())
-	for _, want := range []string{"Worker", "not set", "inheriting ollama", "Worker model", "default"} {
+	for _, want := range []string{"Worker", "not set", "inheriting ollama", "Model", "default"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("worker section missing %q:\n%s", want, view)
 		}
 	}
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	view = stripANSI(m.View())
 	for _, want := range []string{"ollama", "grok", "claude"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("worker view missing %q:\n%s", want, view)

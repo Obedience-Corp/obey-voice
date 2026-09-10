@@ -8,54 +8,58 @@ import (
 	ansi "github.com/charmbracelet/x/ansi"
 )
 
+// The screen is a sidebar of sections beside the section's lines. Every
+// section is on the sidebar, numbered, so the map of the screen is always in
+// view and any section is one keypress away. Lists draw whole, with ✓ on the
+// current item: seeing the options is what a settings screen is for.
+var sectionNames = [settingsSectionCount]string{
+	sectionBrain:    "Brain",
+	sectionWorker:   "Worker",
+	sectionTools:    "Tools",
+	sectionVoice:    "Voice",
+	sectionQwen:     "Qwen",
+	sectionSTT:      "STT",
+	sectionSpeakers: "Speakers",
+	sectionAudio:    "Audio",
+	sectionMeeting:  "Meeting",
+}
+
+// groupStyle heads a list inside a section.
+var groupStyle = lipgloss.NewStyle().Foreground(colorNormal).Bold(true)
+
 func (m settingsModel) View() string {
 	width := m.renderWidth()
 	compact := m.isCompact()
-	listRows := m.visibleRows()
+	rows := m.visibleRows()
 
 	var parts []string
 	parts = append(parts, headerStyle.Render("  Settings"))
-
-	tabs := []string{"Brain", "Brain model", "Worker", "Tools", "TTS", "Qwen", "Voice", "Language", "STT", "Speakers", "Input", "Output", "Meeting"}
-	var tabLine strings.Builder
-	for i, tab := range tabs {
-		style := dimStyle
-		if settingsSection(i) == m.section {
-			style = selectedStyle
-		}
-		if i > 0 {
-			tabLine.WriteString("  ")
-		}
-		tabLine.WriteString(style.Render(tab))
-	}
-	parts = append(parts, ansi.Truncate("  "+tabLine.String(), width, "…"))
 	if !compact {
 		// Full terminal width so the chrome tracks resizes/splits.
 		parts = append(parts, dimStyle.Render(strings.Repeat("─", max(width, 1))))
 	}
+	side := m.sidebarWidth()
+	if side == 0 {
+		parts = append(parts, ansi.Truncate(m.sectionStrip(), width, "…"))
+	}
 
-	var listLines []string
-	switch {
-	case m.enroll.active:
-		listLines = m.enrollOverlayLines()
-	case m.confirmRemoveVoice != "":
-		listLines = m.confirmRemoveVoiceLines()
-	case m.picker.active:
-		listLines = m.pickerLines()
-	default:
-		listLines = m.rowLines()
+	content := m.contentLines()
+	if len(content) > rows {
+		content = content[:rows]
 	}
-	if m.edit.kind != editNone {
-		listLines = append([]string{m.editorLine(), ""}, listLines...)
+	for len(content) < rows {
+		content = append(content, "")
 	}
-	// Fill the list region so short sections still expand with the terminal.
-	if len(listLines) > listRows {
-		listLines = listLines[:listRows]
+	if side > 0 {
+		bar := m.sidebarLines(rows)
+		for i := range content {
+			content[i] = padRight(bar[i], side) + dimStyle.Render("│ ") + content[i]
+		}
 	}
-	for len(listLines) < listRows {
-		listLines = append(listLines, "")
+	for i := range content {
+		content[i] = ansi.Truncate(content[i], width, "…")
 	}
-	parts = append(parts, listLines...)
+	parts = append(parts, content...)
 
 	help := m.footerHelp()
 	if compact {
@@ -81,33 +85,152 @@ func (m settingsModel) isCompact() bool {
 	return m.height > 0 && m.height < 12
 }
 
-// rowLines draws the section: one line per setting, name then value, the
-// verb glyphs on the value saying what ←/→ and enter will do.
-func (m settingsModel) rowLines() []string {
-	rows := m.sectionRows()
-	if len(rows) == 0 {
-		return nil
+// sidebarWidth is the sidebar's column, or 0 on a terminal too narrow to
+// give the section lines room beside it.
+func (m settingsModel) sidebarWidth() int {
+	if m.renderWidth() < 60 {
+		return 0
 	}
-	nameWidth := 0
-	for _, row := range rows {
-		nameWidth = max(nameWidth, lipgloss.Width(row.name))
+	longest := 0
+	for _, name := range sectionNames {
+		longest = max(longest, lipgloss.Width(name))
 	}
-	nameWidth = min(max(nameWidth, 12), 30) + 2
-	start, end := m.visibleRange(len(rows))
-	lines := make([]string, 0, end-start)
-	for i := start; i < end; i++ {
-		lines = append(lines, m.rowLine(i, rows[i], nameWidth))
+	digits := len(fmt.Sprint(int(settingsSectionCount)))
+	return 2 + digits + 1 + longest + 2
+}
+
+// contentWidth is the room a section line has.
+func (m settingsModel) contentWidth() int {
+	side := m.sidebarWidth()
+	if side == 0 {
+		return m.renderWidth()
+	}
+	return max(m.renderWidth()-side-2, 20)
+}
+
+// sidebarLines is the section list, one per content row, windowed around the
+// current section when the terminal is shorter than the list.
+func (m settingsModel) sidebarLines(rows int) []string {
+	n := int(settingsSectionCount)
+	start := 0
+	if n > rows {
+		start = min(max(int(m.section)-rows/2, 0), n-rows)
+	}
+	out := make([]string, rows)
+	for i := range out {
+		s := start + i
+		if s >= n {
+			continue
+		}
+		label := fmt.Sprintf("%d %s", s+1, sectionNames[s])
+		if settingsSection(s) == m.section {
+			out[i] = "  " + selectedStyle.Render(label)
+		} else {
+			out[i] = "  " + dimStyle.Render(label)
+		}
+	}
+	return out
+}
+
+// sectionStrip stands in for the sidebar on a narrow terminal.
+func (m settingsModel) sectionStrip() string {
+	n := int(settingsSectionCount)
+	return "  " + dimStyle.Render("‹ ") + selectedStyle.Render(sectionNames[m.section]) +
+		dimStyle.Render(fmt.Sprintf(" ›  %d/%d", int(m.section)+1, n))
+}
+
+func padRight(s string, width int) string {
+	return s + strings.Repeat(" ", max(width-lipgloss.Width(s), 0))
+}
+
+// contentLines is the section, or whatever has taken it over: a voice
+// registration, an armed removal, the value editor above the lines.
+func (m settingsModel) contentLines() []string {
+	var lines []string
+	switch {
+	case m.enroll.active:
+		lines = m.enrollOverlayLines()
+	case m.confirmRemoveVoice != "":
+		lines = m.confirmRemoveVoiceLines()
+	default:
+		lines = m.lineViews()
+	}
+	if m.edit.kind != editNone {
+		lines = append([]string{m.editorLine(), ""}, lines...)
 	}
 	return lines
 }
 
-func (m settingsModel) rowLine(idx int, row settingRow, nameWidth int) string {
+// lineViews draws the visible window of the section's lines.
+func (m settingsModel) lineViews() []string {
+	rows := m.sectionRows()
+	lines := linesFor(rows)
+	if len(lines) == 0 {
+		return nil
+	}
+	nameWidth := 0
+	for _, row := range rows {
+		if !row.expands() {
+			nameWidth = max(nameWidth, lipgloss.Width(row.name))
+		}
+	}
+	nameWidth = min(max(nameWidth, 12), 30) + 2
+	start, end := m.visibleRange(len(lines))
+	out := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		l := lines[i]
+		switch {
+		case l.blank:
+			out = append(out, "")
+		case l.header:
+			out = append(out, m.headerLine(rows[l.row]))
+		case l.option >= 0:
+			out = append(out, m.optionLine(rows[l.row], l.option, i == m.cursor))
+		default:
+			out = append(out, m.rowLine(rows[l.row], i == m.cursor, nameWidth))
+		}
+	}
+	return out
+}
+
+// headerLine heads a list: its name, its current value (the ✓ may be
+// scrolled away on a long list), and the row's detail.
+func (m settingsModel) headerLine(row settingRow) string {
+	line := "  " + groupStyle.Render(row.name)
+	if row.value != "" {
+		line += dimStyle.Render(" · " + row.value)
+	}
+	if row.detail != "" {
+		line += "  " + dimStyle.Render(row.detail)
+	}
+	return ansi.Truncate(line, m.contentWidth(), "…")
+}
+
+// optionLine is one option of a list: ✓ on the current one, dim when muted.
+func (m settingsModel) optionLine(row settingRow, idx int, focused bool) string {
+	cursor, style := "  ", normalStyle
+	if idx < len(row.muted) && row.muted[idx] {
+		style = dimStyle
+	}
+	if focused {
+		cursor, style = "▸ ", selectedStyle
+	}
+	mark := "  "
+	if idx == row.current {
+		mark = statusStyle.Render("✓ ")
+	}
+	return ansi.Truncate("  "+cursor+mark+style.Render(row.options[idx]), m.contentWidth(), "…")
+}
+
+// rowLine is a row that is its own value: name, then the value drawn so the
+// verb is legible before any key is pressed.
+func (m settingsModel) rowLine(row settingRow, focused bool, nameWidth int) string {
 	cursor := "  "
 	nameStyle := normalStyle
 	if row.kind == rowInfo || row.disabled {
 		nameStyle = dimStyle
 	}
-	if idx == m.cursor {
+	if focused {
 		cursor = "▸ "
 		nameStyle = selectedStyle
 	}
@@ -120,41 +243,52 @@ func (m settingsModel) rowLine(idx int, row settingRow, nameWidth int) string {
 	if row.detail != "" && !row.disabled {
 		line += "  " + dimStyle.Render(row.detail)
 	}
-	return ansi.Truncate(line, m.renderWidth(), "…")
+	return ansi.Truncate(line, m.contentWidth(), "…")
 }
 
-// rowValue is the value column, drawn so the verb is legible before any key
-// is pressed: ‹ › means ←/→ step it, ON/OFF means it flips, a bar means it
-// slides, an ellipsis means enter opens something.
+// rowValue is the value column: [current] among its few options for a
+// choice, ON/OFF for a toggle, a level with its keys for a slider, an
+// ellipsis where enter opens something.
 func (m settingsModel) rowValue(row settingRow) string {
 	if row.disabled {
 		return dimStyle.Render("— " + row.reason)
 	}
 	switch row.kind {
-	case rowPick:
-		return dimStyle.Render("‹ ") + normalStyle.Render(row.value) + dimStyle.Render(" ›")
+	case rowChoice:
+		parts := make([]string, 0, len(row.options)+1)
+		if row.current < 0 && row.value != "" {
+			parts = append(parts, normalStyle.Render(row.value)+dimStyle.Render(" ·"))
+		}
+		for i, option := range row.options {
+			if i == row.current {
+				parts = append(parts, statusStyle.Render("["+option+"]"))
+			} else {
+				parts = append(parts, dimStyle.Render(" "+option+" "))
+			}
+		}
+		return strings.Join(parts, " ")
+	case rowPick, rowMenu:
+		return dimStyle.Render("nothing to choose from")
 	case rowToggle:
 		if row.value == "ON" {
 			return statusStyle.Render("ON")
 		}
 		return dimStyle.Render("OFF")
-	case rowSlider, rowText:
+	case rowSlider:
+		return normalStyle.Render(row.value) + dimStyle.Render("  - / +")
+	case rowText:
 		return normalStyle.Render(row.value)
-	case rowMenu:
-		return dimStyle.Render("…")
-	case rowAction:
-		return dimStyle.Render(row.value)
-	case rowInfo:
+	case rowAction, rowInfo:
 		return dimStyle.Render(row.value)
 	}
 	return normalStyle.Render(row.value)
 }
 
-// detailLine is what the focused row does and when a change applies — facts
+// detailLine is what the focused line does and when a change applies — facts
 // that stay on screen, unlike a status message.
 func (m settingsModel) detailLine() string {
 	row, ok := m.focusedRow()
-	if !ok || m.picker.active {
+	if !ok {
 		return " "
 	}
 	if row.disabled {
@@ -182,36 +316,39 @@ func (m settingsModel) footerHelp() string {
 		return "  y remove • any other key keeps it"
 	case m.edit.kind != editNone:
 		return "  type a value • enter save • esc cancel"
-	case m.picker.active:
-		help := "  type to filter • ↑/↓ move • enter choose"
-		if m.picker.preview != nil {
-			help += " • tab preview"
-		}
-		return help + " • esc cancel"
 	}
-	parts := []string{"↑/↓ move"}
-	if row, ok := m.focusedRow(); ok && !row.disabled {
-		switch row.kind {
-		case rowPick:
-			parts = append(parts, "←/→ change", fmt.Sprintf("enter list (%d)", len(row.options)))
-			if row.preview != nil && row.current >= 0 {
-				parts = append(parts, "p preview")
-			}
-		case rowToggle:
-			parts = append(parts, "←/→ or space toggle")
-		case rowSlider:
-			parts = append(parts, "←/→ adjust")
-		case rowText:
-			parts = append(parts, "enter edit")
-		case rowAction, rowMenu, rowInfo:
-			verb := row.verb
-			if verb == "" {
-				verb = "select"
+	parts := []string{"↑/↓ move", "←/→ section"}
+	if row, line, ok := m.focused(); ok && !row.disabled {
+		switch {
+		case line.option >= 0:
+			verb := "choose"
+			if row.kind == rowMenu && row.verb != "" {
+				verb = row.verb
 			}
 			parts = append(parts, "enter "+verb)
+			if row.preview != nil {
+				parts = append(parts, "p preview")
+			}
+		default:
+			switch row.kind {
+			case rowChoice:
+				parts = append(parts, "enter next", "+/- step")
+			case rowToggle:
+				parts = append(parts, "enter or space toggle")
+			case rowSlider:
+				parts = append(parts, "+/- adjust")
+			case rowText:
+				parts = append(parts, "enter edit")
+			default:
+				verb := row.verb
+				if verb == "" {
+					verb = "select"
+				}
+				parts = append(parts, "enter "+verb)
+			}
 		}
 	}
-	parts = append(parts, "tab section", "esc back")
+	parts = append(parts, "esc back")
 	return "  " + strings.Join(parts, " • ")
 }
 

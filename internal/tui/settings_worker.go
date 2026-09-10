@@ -13,10 +13,8 @@ import (
 // not a buried key — an unchosen worker used to fall through to a remote
 // default nobody selected, and then acted on whatever it found on disk.
 //
-// Provider and model share one section rather than taking a tab each. The
-// worker has fewer knobs than the brain, and the tab strip has a width budget:
-// two more tabs pushed Speakers off the end of an 80-column strip, which is a
-// discoverability bug the settings screen has already been fixed for once.
+// Provider and model share one section, like the brain's: they are chosen
+// together.
 
 const (
 	workerRowProvider = iota

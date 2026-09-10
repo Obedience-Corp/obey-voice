@@ -20,21 +20,17 @@ import (
 type settingsSection int
 
 const (
-	sectionProvider settingsSection = iota
-	sectionModel
+	sectionBrain settingsSection = iota
 	// The worker sits beside the brain because it is chosen with the brain:
 	// picking what talks without picking what works is how a spawn ends up on
 	// a model nobody selected.
 	sectionWorker
 	sectionTools
-	sectionTTS
-	sectionQwen
 	sectionVoice
-	sectionLanguage
+	sectionQwen
 	sectionSTT
 	sectionSpeakers
-	sectionInput
-	sectionOutput
+	sectionAudio
 	sectionMeeting
 	settingsSectionCount
 )
@@ -48,12 +44,11 @@ type settingsModel struct {
 	width   int
 	height  int
 	offset  int
-	// cursors remembers the row each section was on, so leaving a section
-	// and coming back does not throw the place away.
+	// cursors remembers the line each section was on, so leaving a section
+	// and coming back does not throw the place away; visited says which
+	// sections have a remembered line rather than a home line.
 	cursors [settingsSectionCount]int
-	// picker is the option list behind a pick or menu row. While it is up
-	// it owns every key.
-	picker settingsPicker
+	visited [settingsSectionCount]bool
 
 	// Derived lists for current section.
 	providerItems  []string
@@ -159,6 +154,8 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 	m.buildSTTItems()
 	m.inputItems = []string{""}
 	m.outputItems = []string{""}
+	m.visited[m.section] = true
+	m.cursor = m.homeCursor()
 	return m
 }
 
@@ -400,7 +397,7 @@ func (m *settingsModel) buildTTSItems() {
 			case managed && m.nativeStatus.Installed:
 				detail = fmt.Sprintf("native worker · tier %s · presets ready", m.nativeStatus.DefaultTier)
 			case managed:
-				detail = "native package not installed · open Qwen tab or enter to install"
+				detail = "native package not installed · choosing it installs"
 			}
 		}
 		m.ttsItems = append(m.ttsItems, ttsSettingItem{
@@ -474,46 +471,54 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		if m.edit.kind != editNone {
 			return m.updateEditor(msg)
 		}
-		// A registration, an armed removal, or an open picker owns every
-		// key while it is up.
+		// A registration or an armed removal owns every key while it is
+		// up.
 		if m.enroll.active {
 			return m.updateEnrollKey(msg)
 		}
 		if m.confirmRemoveVoice != "" {
 			return m.updateRemoveVoiceConfirm(msg)
 		}
-		if m.picker.active {
-			return m.updatePicker(msg)
-		}
-		// One key, one verb: ←/→ change the focused value and never switch
-		// section; tab and [ ] move between sections; enter opens; space
-		// toggles. Bare letters other than the vim motions and p do nothing.
+		// One key, one verb: ←/→ (and the digits) move between sections,
+		// ↑/↓ move between lines, enter acts on the line, space flips,
+		// +/- adjust. Bare letters other than the vim motions and p do
+		// nothing.
 		var cmd tea.Cmd
-		switch msg.String() {
-		case "tab", "]":
+		switch key := msg.String(); key {
+		case "right", "l", "tab", "]":
 			cmd = m.switchSettingsSection(1)
-		case "shift+tab", "[":
+		case "left", "h", "shift+tab", "[":
 			cmd = m.switchSettingsSection(-1)
-		case "right", "l":
-			cmd = m.adjustRow(1)
-		case "left", "h":
-			cmd = m.adjustRow(-1)
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			cmd = m.gotoSection(settingsSection(key[0] - '1'))
 		case "up", "k":
-			// Moving on is reading the message; the next row's detail line
+			// Moving on is reading the message; the next line's detail
 			// must not stay hidden behind it.
 			m.message = ""
-			if m.cursor > 0 {
-				m.cursor--
-			}
+			m.moveCursor(-1)
 		case "down", "j":
 			m.message = ""
-			if max := m.currentListLen() - 1; m.cursor < max {
-				m.cursor++
-			}
+			m.moveCursor(1)
+		case "pgup":
+			m.message = ""
+			m.moveCursor(-m.contentRows())
+		case "pgdown":
+			m.message = ""
+			m.moveCursor(m.contentRows())
+		case "home":
+			m.message = ""
+			m.cursor = 0
+		case "end":
+			m.message = ""
+			m.cursor = len(m.sectionLines()) - 1
 		case "enter":
 			cmd = m.activateRow()
 		case " ":
 			cmd = m.toggleRow()
+		case "+", "=":
+			cmd = m.adjustRow(1)
+		case "-", "_":
+			cmd = m.adjustRow(-1)
 		case "p":
 			cmd = m.previewRow()
 		case "esc", "q":
@@ -588,7 +593,7 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		m.buildVoiceItems()
 		m.buildLanguageItems()
 		if m.nativeStatus.Installed {
-			m.message = "Native Qwen package ready; open Voice for presets, Qwen tab for tier/consent/cache"
+			m.message = "Native Qwen package ready; open Voice for presets, Qwen for tier/consent/cache"
 		} else if m.cfg != nil && managedqwen.ResolveNativeURL(m.cfg.QwenTTSNativeURL) == "" {
 			m.message = "Qwen activated, but " + managedqwen.UnavailableHint()
 		} else {
@@ -640,20 +645,36 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 }
 
 func (m *settingsModel) visibleRange(total int) (int, int) {
-	visible := m.visibleRows()
+	visible := m.contentRows()
 	start := min(max(m.offset, 0), max(total-visible, 0))
 	return start, min(start+visible, total)
 }
 
+// ensureCursorVisible scrolls the section so the cursor is on screen, with a
+// list's heading kept above its first option.
 func (m *settingsModel) ensureCursorVisible() {
-	visible := m.visibleRows()
-	if m.cursor < m.offset {
-		m.offset = m.cursor
+	visible := m.contentRows()
+	top := m.cursor
+	if lines := m.sectionLines(); top > 0 && top < len(lines) && lines[top-1].header {
+		top--
+	}
+	if top < m.offset {
+		m.offset = top
 	}
 	if m.cursor >= m.offset+visible {
 		m.offset = m.cursor - visible + 1
 	}
 	m.offset = max(m.offset, 0)
+}
+
+// contentRows is how many section lines fit: the list region less the two
+// lines the value editor takes above it while it is open.
+func (m settingsModel) contentRows() int {
+	rows := m.visibleRows()
+	if m.edit.kind != editNone {
+		rows -= 2
+	}
+	return max(rows, 1)
 }
 
 func (m settingsModel) visibleRows() int {
@@ -662,17 +683,17 @@ func (m settingsModel) visibleRows() int {
 		// No WindowSize yet — assume a normal terminal rather than a tiny list.
 		h = 24
 	}
-	// Compact: title, tabs, footer. Full: title, tabs, rule, status, footer.
-	// The list receives every remaining row so the body tracks terminal height.
-	chrome := 5
+	// Compact: title, footer. Full: title, rule, status, footer. A narrow
+	// terminal adds the section strip. The section receives every remaining
+	// row so the body tracks terminal height.
+	chrome := 4
 	if h < 12 {
-		chrome = 3
+		chrome = 2
+	}
+	if m.sidebarWidth() == 0 {
+		chrome++
 	}
 	return max(h-chrome, 1)
-}
-
-func (m *settingsModel) currentListLen() int {
-	return len(m.sectionRows())
 }
 
 // selectCurrent is enter on the focused row: open its list, flip it, edit
@@ -682,18 +703,8 @@ func (m *settingsModel) selectCurrent() tea.Cmd {
 }
 
 // selectProviderOption saves the brain provider at idx of the provider list
-// and, when no worker has been chosen yet, lands on the Worker section: that
-// is the picker's and enter's behaviour. stepProviderOption is the same save
-// without the jump, for ←/→ stepping through the list on the row.
+// and, when no worker has been chosen yet, lands on the Worker section.
 func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
-	return m.setProviderOption(idx, true)
-}
-
-func (m *settingsModel) stepProviderOption(idx int) tea.Cmd {
-	return m.setProviderOption(idx, false)
-}
-
-func (m *settingsModel) setProviderOption(idx int, landOnWorker bool) tea.Cmd {
 	if idx < 0 || idx >= len(m.providers) {
 		return nil
 	}
@@ -718,9 +729,8 @@ func (m *settingsModel) setProviderOption(idx int, landOnWorker bool) tea.Cmd {
 		m.message = fmt.Sprintf("Provider set to %s", name)
 	}
 	// Choosing a brain is choosing a worker: land on the Worker section
-	// rather than leaving it to a default nobody picked — but only when the
-	// choice was made, not on every step of ←/→ through the list.
-	if landOnWorker && !config.WorkerSelected(m.cfg) {
+	// rather than leaving it to a default nobody picked.
+	if !config.WorkerSelected(m.cfg) {
 		cmd := m.gotoSection(sectionWorker)
 		m.message = fmt.Sprintf("Provider set to %s · now choose the worker that runs background jobs", name)
 		return cmd
