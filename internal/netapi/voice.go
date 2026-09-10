@@ -327,7 +327,18 @@ func decodePCMS16LE(b64 string, sampleRate int) ([]float32, error) {
 	return decodePCMS16LEBytes(raw, sampleRate)
 }
 
-const maxBinaryUplinkBytes = 64 * 1024
+const (
+	// maxBinaryUplinkBytes is the PCM payload cap for one mic frame, binary
+	// or decoded from JSON audio_input. Larger frames get an error envelope
+	// and the socket stays open.
+	maxBinaryUplinkBytes = 64 * 1024
+	// MaxStreamReadBytes is the WebSocket per-message read limit. It is
+	// larger than maxBinaryUplinkBytes so a JSON audio_input envelope of a
+	// max-size PCM frame (~87 KiB base64) can be read and rejected by the
+	// PCM cap instead of closing the connection. coder/websocket's default
+	// is 32 KiB. Clients using that library should set the same limit.
+	MaxStreamReadBytes = 96 * 1024
+)
 
 func decodePCMS16LEBytes(raw []byte, sampleRate int) ([]float32, error) {
 	if len(raw) == 0 {

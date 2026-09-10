@@ -49,9 +49,8 @@ func TestAudioFanoutBinaryChunksWhenOptedIn(t *testing.T) {
 	binConn := newTestConn(16, 16)
 	h.add(jsonConn)
 	h.add(binConn)
-	h.setConnAudio(jsonConn, true)
-	h.setConnAudio(binConn, true)
-	binConn.audioBinary.Store(true)
+	h.setConnAudio(jsonConn, true, false)
+	h.setConnAudio(binConn, true, true)
 
 	fanout := NewAudioFanout(nil)
 	fanout.AttachHub(h)
@@ -78,6 +77,35 @@ func TestAudioFanoutBinaryChunksWhenOptedIn(t *testing.T) {
 	seg, rate, pcm, ok := ParseBinaryAudioChunk(binMsg)
 	if !ok || rate != 24000 || len(pcm) != 6 {
 		t.Fatalf("binary chunk ok=%v seg=%d rate=%d pcm=%d", ok, seg, rate, len(pcm))
+	}
+}
+
+func TestSetConnAudioOptsInBinaryAtomically(t *testing.T) {
+	h := newHub()
+	c := newTestConn(4, 4)
+	h.add(c)
+	h.setConnAudio(c, true, true)
+	if !c.wantsBinaryAudio() {
+		t.Fatal("stream+binary opt-in left wantsBinaryAudio false")
+	}
+
+	jsonMsg := []byte(`{"type":"audio_chunk"}`)
+	binMsg := marshalBinaryAudioChunk(1, 24000, []byte{0, 1})
+	if n := h.broadcastPCM(jsonMsg, binMsg); n != 1 {
+		t.Fatalf("accepted = %d, want 1", n)
+	}
+	got := <-c.audio
+	if !isBinaryAudioFrame(got) {
+		t.Fatalf("got %q, want OVA1", got[:min(8, len(got))])
+	}
+
+	h.setConnAudio(c, true, false)
+	if c.wantsBinaryAudio() || !c.wantsAudio() {
+		t.Fatal("re-opt-in without binary should keep stream and clear binary")
+	}
+	h.setConnAudio(c, false, true)
+	if c.wantsAudio() || c.wantsBinaryAudio() {
+		t.Fatal("stream off should clear binary even if binary was requested")
 	}
 }
 
@@ -113,6 +141,85 @@ func TestBinaryUplinkReachesIngress(t *testing.T) {
 	case <-runner.voiceDone:
 	case <-ctx.Done():
 		t.Fatal("voice turn never finished")
+	}
+	if got := runner.samplesConsumed(); got != samples {
+		t.Fatalf("consumed %d samples, want %d", got, samples)
+	}
+}
+
+func TestBinaryUplinkOverDefaultReadLimitReachesIngress(t *testing.T) {
+	runner := &voiceRunner{
+		drain:      true,
+		voiceStart: make(chan struct{}, 1),
+		voiceDone:  make(chan struct{}, 1),
+	}
+	_, _, addr, creds := startVoiceServer(t, runner)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ws := dialStream(t, ctx, addr, creds)
+
+	writeControl(t, ctx, ws, controlMessage{Type: "voice_start"})
+	select {
+	case <-runner.voiceStart:
+	case <-ctx.Done():
+		t.Fatal("voice turn never started")
+	}
+
+	// 40 KiB is above coder/websocket's 32 KiB default and below the PCM cap.
+	const samples = 40 * 1024 / 2
+	raw := make([]byte, samples*2)
+	if err := ws.Write(ctx, websocket.MessageBinary, raw); err != nil {
+		t.Fatal(err)
+	}
+	writeControl(t, ctx, ws, controlMessage{Type: "voice_end"})
+	select {
+	case <-runner.voiceDone:
+	case <-ctx.Done():
+		t.Fatal("voice turn never finished")
+	}
+	if got := runner.samplesConsumed(); got != samples {
+		t.Fatalf("consumed %d samples, want %d", got, samples)
+	}
+}
+
+func TestOversizedBinaryUplinkKeepsTheSocket(t *testing.T) {
+	runner := &voiceRunner{
+		drain:      true,
+		voiceStart: make(chan struct{}, 1),
+		voiceDone:  make(chan struct{}, 1),
+	}
+	_, _, addr, creds := startVoiceServer(t, runner)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ws := dialStream(t, ctx, addr, creds)
+	frames := readFrames(t, ctx, ws)
+
+	writeControl(t, ctx, ws, controlMessage{Type: "voice_start"})
+	select {
+	case <-runner.voiceStart:
+	case <-ctx.Done():
+		t.Fatal("voice turn never started")
+	}
+
+	huge := make([]byte, maxBinaryUplinkBytes+2)
+	if err := ws.Write(ctx, websocket.MessageBinary, huge); err != nil {
+		t.Fatal(err)
+	}
+	if got := frames.await("error", 2*time.Second); !contains(got, "error") {
+		t.Fatalf("oversize frames = %v, want error", got)
+	}
+
+	const samples = 160
+	raw := make([]byte, samples*2)
+	if err := ws.Write(ctx, websocket.MessageBinary, raw); err != nil {
+		t.Fatal(err)
+	}
+	writeControl(t, ctx, ws, controlMessage{Type: "voice_end"})
+	select {
+	case <-runner.voiceDone:
+	case <-ctx.Done():
+		t.Fatal("socket did not survive an oversize frame")
 	}
 	if got := runner.samplesConsumed(); got != samples {
 		t.Fatalf("consumed %d samples, want %d", got, samples)

@@ -94,6 +94,7 @@ func runConnect(addr string) error {
 		return fmt.Errorf("connect to %s: %w", addr, err)
 	}
 	defer ws.Close(websocket.StatusNormalClosure, "")
+	ws.SetReadLimit(int64(netapi.MaxStreamReadBytes))
 
 	var audioFile *os.File
 	if connectAudioOut != "" {

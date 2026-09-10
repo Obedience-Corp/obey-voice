@@ -530,7 +530,7 @@ LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bea
 | `clear_history` | | Wipe conversation history |
 | `audio_output` | `mode`: `stream` \| other, `binary` (optional bool) | Opt into TTS delivery (`stream` on). `binary: true` switches TTS chunks from JSON+base64 `audio_chunk` to OVA1 binary frames. JSON `audio_input` / `audio_chunk` stay valid. |
 | `voice_start` | | Exclusive mic claim + start remote STT turn. Queued (and **not** claimed) while another turn is in flight — see Barge-in and the mic claim |
-| `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz. Prefer a **binary WebSocket frame** of the same PCM (no header, 16 kHz implied) when `capabilities.binary_audio` is set. |
+| `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz, max 64 KiB decoded. Prefer a **binary WebSocket frame** of the same PCM (no header, 16 kHz implied) when `capabilities.binary_audio` is set. |
 | `voice_end` | | Finalize utterance; release mic claim. **Not optional** — a turn that goes quiet without one is ended by the server, see The turn deadline |
 | `set_persona` | `name`: persona id | Switch persona for **subsequent** turns (see below) |
 
@@ -616,7 +616,7 @@ another device speaking.
 |--------|--------|
 | `audio_chunk` | `data` (base64 pcm_s16le), `sample_rate`, `segment_id`. Default when the client did not set `audio_output.binary`. |
 | binary TTS frame | WebSocket **binary** message: `OVA1` (4 ASCII bytes) + `sample_rate` u32le + `segment_id` u64le + `pcm_s16le`. Sent instead of `audio_chunk` when the client set `audio_output.binary: true` and the serve advertises `capabilities.binary_audio`. |
-| mic uplink | WebSocket **binary** message: raw `pcm_s16le` mono @ 16 kHz, **no header**. Same claim rules as JSON `audio_input`. |
+| mic uplink | WebSocket **binary** message: raw `pcm_s16le` mono @ 16 kHz, **no header**. Same claim rules as JSON `audio_input`. PCM payload max **64 KiB** per message (`{"type":"error","message":"audio_input: pcm frame too large"}` if larger). The WebSocket message itself is capped at **96 KiB** so a JSON `audio_input` envelope of a max-size PCM frame can be read; above that the socket closes (1009). |
 | `audio_end` | `segment_id`, `reason` (`complete` / `interrupted` / …). Always JSON. |
 | `audio_reset` | Clear client playback after interrupt. Always JSON. |
 | `audio_output_ack` | `mode` applied; `binary: true` when binary TTS is on |
@@ -740,7 +740,7 @@ on how serve was configured, not on what the binary can do.
 | Direction | Format |
 |-----------|--------|
 | TTS → client | `pcm_s16le`, mono, sample rate in JSON `audio_chunk` or the OVA1 header (often 24 kHz from Kokoro) |
-| Mic → server | `pcm_s16le`, mono, **16000 Hz** (client resamples). JSON `audio_input` or a binary frame. |
+| Mic → server | `pcm_s16le`, mono, **16000 Hz** (client resamples). JSON `audio_input` or a binary frame. **64 KiB PCM per message**; WebSocket messages above **96 KiB** close the socket. |
 
 ## Security notes
 
