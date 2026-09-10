@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Obedience-Corp/obey-voice/internal/netapi"
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
 )
@@ -34,10 +35,10 @@ var connectCmd = &cobra.Command{
 type lines to send text turns, watch the live event stream come back.
 Commands: /interrupt, /clear, /audio on, /audio off, /quit.
 
-/audio on sends {"type":"audio_output","mode":"stream"} so the server pushes
-base64 PCM audio_chunk envelopes (Phase 3). With --audio-out FILE, raw
-pcm_s16le bytes are appended to FILE (and stream mode is enabled on connect)
-so you can verify the wire format, e.g.:
+/audio on sends {"type":"audio_output","mode":"stream","binary":true} so the
+server pushes OVA1 binary PCM chunks (JSON audio_chunk still works on older
+serves). With --audio-out FILE, stream mode is enabled on connect and raw
+pcm_s16le bytes are appended to FILE so you can verify the wire format, e.g.:
 
   obey-voice connect host:7262 --token … --audio-out /tmp/out.raw
   ffplay -f s16le -ar 24000 -ac 1 /tmp/out.raw
@@ -113,7 +114,7 @@ func runConnect(addr string) error {
 	// --audio-out implies stream mode so the file receives chunks without
 	// requiring an explicit /audio on.
 	if connectAudioOut != "" {
-		optIn, _ := json.Marshal(map[string]string{"type": "audio_output", "mode": "stream"})
+		optIn, _ := json.Marshal(map[string]any{"type": "audio_output", "mode": "stream", "binary": true})
 		if err := ws.Write(ctx, websocket.MessageText, optIn); err != nil {
 			return fmt.Errorf("enable audio stream: %w", err)
 		}
@@ -157,7 +158,7 @@ func runConnect(addr string) error {
 				continue
 			}
 
-			msg := map[string]string{"type": "text_input", "text": line}
+			var msg any = map[string]string{"type": "text_input", "text": line}
 			switch {
 			case line == "/quit" || line == "/q" || line == "/exit":
 				return nil
@@ -166,8 +167,8 @@ func runConnect(addr string) error {
 			case line == "/clear" || line == "/c":
 				msg = map[string]string{"type": "clear_history"}
 			case line == "/audio" || line == "/audio on" || line == "/stream":
-				msg = map[string]string{"type": "audio_output", "mode": "stream"}
-				fmt.Println(dimStyle.Render("  audio stream: on (server will push audio_chunk envelopes)"))
+				msg = map[string]any{"type": "audio_output", "mode": "stream", "binary": true}
+				fmt.Println(dimStyle.Render("  audio stream: on (binary PCM)"))
 			case line == "/audio off":
 				msg = map[string]string{"type": "audio_output", "mode": "off"}
 				fmt.Println(dimStyle.Render("  audio stream: off"))
@@ -189,12 +190,25 @@ func runConnect(addr string) error {
 func printStream(ctx context.Context, ws *websocket.Conn, audioFile *os.File) {
 	var audioMu sync.Mutex
 	for {
-		_, data, err := ws.Read(ctx)
+		typ, data, err := ws.Read(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
 				fmt.Println(dimStyle.Render("  disconnected"))
 			}
 			return
+		}
+		if typ == websocket.MessageBinary {
+			_, rate, raw, ok := netapi.ParseBinaryAudioChunk(data)
+			if !ok {
+				continue
+			}
+			if audioFile != nil {
+				audioMu.Lock()
+				_, _ = audioFile.Write(raw)
+				audioMu.Unlock()
+			}
+			fmt.Printf("  %s %d B @ %d Hz\n", dimStyle.Render("audio_chunk"), len(raw), rate)
+			continue
 		}
 		var env map[string]any
 		if err := json.Unmarshal(data, &env); err != nil {

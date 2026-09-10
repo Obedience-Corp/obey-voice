@@ -24,6 +24,10 @@ type streamConn struct {
 	// audioStream is a per-connection preference set by the audio_output
 	// control message. atomic so the hub hot path never takes a second lock.
 	audioStream atomic.Bool
+	// audioBinary is set with audio_output binary:true. The fanout then
+	// writes OVA1 binary TTS chunks instead of JSON+base64. Cleared when
+	// stream mode turns off.
+	audioBinary atomic.Bool
 	// audioBlocked is set for every stream client when the shared turn is
 	// interrupted. It stays set until the next turn starts, preventing tail
 	// chunks from the canceled turn from crossing the reset boundary.
@@ -56,6 +60,10 @@ func (c *streamConn) evict(reason string) {
 
 func (c *streamConn) wantsAudio() bool {
 	return c.audioStream.Load()
+}
+
+func (c *streamConn) wantsBinaryAudio() bool {
+	return c.audioStream.Load() && c.audioBinary.Load()
 }
 
 // stagedMaxSamples caps the PCM held for one queued voice turn at the same

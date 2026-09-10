@@ -19,6 +19,7 @@ func TestCapabilitiesAdvertiseThisBuild(t *testing.T) {
 		CapAudioLevelPayload,
 		CapInterruptEvents,
 		CapVoiceClaimOnDequeue,
+		CapBinaryAudio,
 	}
 
 	caps := Capabilities()

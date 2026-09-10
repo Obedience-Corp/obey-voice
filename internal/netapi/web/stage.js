@@ -404,17 +404,14 @@
     return mediaStream;
   }
 
-  function floatTo16BitPCM(float32) {
+  function floatTo16BitBytes(float32) {
     const buf = new ArrayBuffer(float32.length * 2);
     const view = new DataView(buf);
     for (let i = 0; i < float32.length; i++) {
       let s = Math.max(-1, Math.min(1, float32[i]));
       view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
     }
-    const bytes = new Uint8Array(buf);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
+    return new Uint8Array(buf);
   }
 
   function downsample(buffer, fromRate, toRate) {
@@ -453,11 +450,9 @@
       const rate = e.inputBuffer.sampleRate || audioCtx.sampleRate;
       const mono = downsample(input, rate, CAPTURE_RATE);
       if (mono.length === 0) return;
-      sendJSON({
-        type: "audio_input",
-        sample_rate: CAPTURE_RATE,
-        data: floatTo16BitPCM(mono),
-      });
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(floatTo16BitBytes(mono));
+      }
     };
     captureSource.connect(captureNode);
     const mute = audioCtx.createGain();
@@ -578,18 +573,15 @@
     nextPlayTime = audioCtx ? audioCtx.currentTime : 0;
   }
 
-  function playPCM(base64, sampleRate, segmentID) {
+  function playPCMBytes(bytes, sampleRate, segmentID) {
     const key = segmentKey(segmentID);
-    if (!base64 || audioSuppressed || canceledSegments.has(key)) return;
+    if (!bytes || bytes.length < 2 || audioSuppressed || canceledSegments.has(key)) return;
     if (!audioCtx) {
       ensureAudio().catch(() => {});
       if (!audioCtx) return;
     }
     if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const view = new DataView(bytes.buffer);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const n = Math.floor(bytes.length / 2);
     if (n === 0) return;
     const floats = new Float32Array(n);
@@ -624,6 +616,23 @@
     setState("speaking");
   }
 
+  function playPCM(base64, sampleRate, segmentID) {
+    if (!base64) return;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    playPCMBytes(bytes, sampleRate, segmentID);
+  }
+
+  function playBinaryChunk(buf) {
+    const bytes = new Uint8Array(buf);
+    if (bytes.length < 16) return;
+    const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+    if (magic !== "OVA1") return;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    playPCMBytes(bytes.subarray(16), view.getUint32(4, true), Number(view.getBigUint64(8, true)));
+  }
+
   function connectLive() {
     const token = $("token").value.trim() || localStorage.getItem(TOKEN_KEY) || "";
     if (!token) {
@@ -643,6 +652,7 @@
     const host = location.host || "127.0.0.1:8787";
     const url = proto + "//" + host + "/v1/stream?token=" + encodeURIComponent(token);
     const socket = new WebSocket(url);
+    socket.binaryType = "arraybuffer";
     ws = socket;
     pill.textContent = "connecting…";
     socket.onopen = () => {
@@ -651,7 +661,7 @@
       mode = "live";
       audioSuppressed = false;
       nextPlayTime = 0;
-      socket.send(JSON.stringify({ type: "audio_output", mode: "stream" }));
+      socket.send(JSON.stringify({ type: "audio_output", mode: "stream", binary: true }));
       setState("idle");
       pill.classList.add("live");
       closeSheet();
@@ -671,6 +681,10 @@
     };
     socket.onmessage = (ev) => {
       if (ws !== socket) return;
+      if (ev.data instanceof ArrayBuffer) {
+        playBinaryChunk(ev.data);
+        return;
+      }
       let env;
       try { env = JSON.parse(ev.data); } catch (_) { return; }
       switch (env.type) {

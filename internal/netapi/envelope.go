@@ -153,8 +153,9 @@ type controlMessage struct {
 	ID         string `json:"id,omitempty"` // transcribe_start: client request identity
 	Type       string `json:"type"`         // text_input | interrupt | clear_history | audio_output | voice_start | voice_end | audio_input | set_persona
 	Text       string `json:"text,omitempty"`
-	Mode       string `json:"mode,omitempty"` // audio_output: "stream" | "local" | "off"
-	Data       string `json:"data,omitempty"` // audio_input: base64 pcm_s16le mono @ 16 kHz
-	Name       string `json:"name,omitempty"` // set_persona: persona id
+	Mode       string `json:"mode,omitempty"`   // audio_output: "stream" | "local" | "off"
+	Binary     bool   `json:"binary,omitempty"` // audio_output: TTS chunks as OVA1 binary frames
+	Data       string `json:"data,omitempty"`   // audio_input: base64 pcm_s16le mono @ 16 kHz
+	Name       string `json:"name,omitempty"`   // set_persona: persona id
 	SampleRate int    `json:"sample_rate,omitempty"`
 }

@@ -320,12 +320,24 @@ func decodePCMS16LE(b64 string, sampleRate int) ([]float32, error) {
 	if b64 == "" {
 		return nil, errors.New("empty data")
 	}
-	if sampleRate != 0 && sampleRate != audio.SampleRate {
-		return nil, errors.New("sample_rate must be 16000 (resample on the client)")
-	}
 	raw, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return nil, errors.New("invalid base64")
+	}
+	return decodePCMS16LEBytes(raw, sampleRate)
+}
+
+const maxBinaryUplinkBytes = 64 * 1024
+
+func decodePCMS16LEBytes(raw []byte, sampleRate int) ([]float32, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("empty data")
+	}
+	if sampleRate != 0 && sampleRate != audio.SampleRate {
+		return nil, errors.New("sample_rate must be 16000 (resample on the client)")
+	}
+	if len(raw) > maxBinaryUplinkBytes {
+		return nil, errors.New("pcm frame too large")
 	}
 	if len(raw)%2 != 0 {
 		return nil, errors.New("odd pcm byte length")

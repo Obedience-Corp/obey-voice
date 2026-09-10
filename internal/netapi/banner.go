@@ -36,6 +36,11 @@ const (
 	// the mic when it is dequeued, not on arrival, so a queued client cannot
 	// lock another one out.
 	CapVoiceClaimOnDequeue = "voice_claim_on_dequeue"
+	// CapBinaryAudio: /v1/stream accepts raw PCM binary uplink (16 kHz
+	// s16le, no header) and, when a client opts in, sends TTS chunks as
+	// binary OVA1 frames instead of JSON+base64. JSON audio_input and
+	// audio_chunk stay valid.
+	CapBinaryAudio = "binary_audio"
 )
 
 // Capabilities is the flag set this build advertises, in the ready banner and
@@ -49,6 +54,7 @@ func Capabilities() map[string]bool {
 		CapAudioLevelPayload:    true,
 		CapInterruptEvents:      true,
 		CapVoiceClaimOnDequeue:  true,
+		CapBinaryAudio:          true,
 	}
 }
 
