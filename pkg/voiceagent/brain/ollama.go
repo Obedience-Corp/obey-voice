@@ -42,6 +42,12 @@ type OllamaBrain struct {
 	// the persona document actually changes. Per-turn skill activations are
 	// spliced onto the current user message instead.
 	fullSystemPrompt string
+	// stateMu guards the fields Warmup reads from its own goroutine while the
+	// conversation loop writes them: fullSystemPrompt (rebuilt when the
+	// persona document changes), delegation (reset when history is loaded)
+	// and contextHighWater (reset with history, raised when the context
+	// expands). Everything else Warmup touches is fixed at construction.
+	stateMu sync.Mutex
 	// turnInstruction is the per-reply voice instruction. R-P3 brought it to
 	// ollama, which previously received none — so the same persona produced
 	// longer, more markdown-shaped replies here than on Claude or Grok.

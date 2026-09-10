@@ -18,6 +18,7 @@ import (
 	"github.com/ollama/ollama/api"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 )
 
 func drainStream(t *testing.T, stream *Stream) (chunks, thinking string) {
@@ -803,7 +804,7 @@ func TestWarmupFiresMinimalRequest(t *testing.T) {
 	}
 	body := bodies[0]
 	if bytes.Contains(body, []byte(`"tools":`)) {
-		t.Errorf("warmup must not send tools; body=%s", body)
+		t.Errorf("warmup without a config must not send tools; body=%s", body)
 	}
 	if !bytes.Contains(body, []byte(`"num_predict":1`)) {
 		t.Errorf("warmup must cap generation with num_predict; body=%s", body)
@@ -811,6 +812,164 @@ func TestWarmupFiresMinimalRequest(t *testing.T) {
 	if !bytes.Contains(body, []byte(`"num_ctx":8192`)) {
 		t.Errorf("warmup must pin a safe num_ctx, not the model default; body=%s", body)
 	}
+}
+
+// TestWarmupPrimesTheFirstTurnPrefix: the warmup request must carry the same
+// system prompt and the same tool schema as the first live turn, in the same
+// bytes, or the prompt cache it fills is never reused. On qwen3.8 that miss is
+// a ~5 s first sentence.
+func TestWarmupPrimesTheFirstTurnPrefix(t *testing.T) {
+	var count int
+	var bodies [][]byte
+	cfg := &config.Config{OllamaNumCtx: 8192, OllamaNumBatch: 128, VoiceToolsEnabled: true, VoiceRouterTools: "route_only", AgentName: "Samantha", MaxHistory: 10}
+	o := &OllamaBrain{
+		client:           recordingStub(t, &count, &bodies),
+		model:            "m",
+		cfg:              cfg,
+		fullSystemPrompt: "You are Samantha. Keep it short.",
+	}
+
+	o.Warmup(context.Background())
+
+	if count != 1 {
+		t.Fatalf("want 1 warmup request, got %d", count)
+	}
+	var sent struct {
+		Messages []api.Message   `json:"messages"`
+		Tools    json.RawMessage `json:"tools"`
+		Options  map[string]any  `json:"options"`
+	}
+	if err := json.Unmarshal(bodies[0], &sent); err != nil {
+		t.Fatalf("decode warmup body: %v", err)
+	}
+	firstTurn := o.buildMessages("")
+	if len(sent.Messages) < 2 || sent.Messages[0].Role != "system" || sent.Messages[0].Content != firstTurn[0].Content {
+		t.Fatalf("warmup system message = %+v, want the frozen system prompt %q", sent.Messages, firstTurn[0].Content)
+	}
+	if sent.Messages[len(sent.Messages)-1].Role != "user" {
+		t.Fatalf("warmup must end with a user message, got %+v", sent.Messages)
+	}
+	live := (&toolSession{catalog: o.skills, routerPolicy: RouterToolsRouteOnly}).tools()
+	want, _ := json.Marshal(live)
+	if string(sent.Tools) != string(want) {
+		t.Fatalf("warmup tools = %s\nwant the live route schema %s", sent.Tools, want)
+	}
+	if sent.Options["num_predict"] != float64(1) {
+		t.Fatalf("warmup must cap generation at one token, got %v", sent.Options["num_predict"])
+	}
+}
+
+// Tools off in config means the live turn sends none, so warmup must not either.
+func TestWarmupSendsNoToolsWhenVoiceToolsDisabled(t *testing.T) {
+	var count int
+	var bodies [][]byte
+	o := &OllamaBrain{
+		client:           recordingStub(t, &count, &bodies),
+		model:            "m",
+		cfg:              &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: false},
+		fullSystemPrompt: "You are Samantha.",
+	}
+	o.Warmup(context.Background())
+	if bytes.Contains(bodies[0], []byte(`"tools":`)) {
+		t.Fatalf("warmup sent tools with voice_tools_enabled=false; body=%s", bodies[0])
+	}
+}
+
+// A model that rejects tools must still get loaded: warmup takes the same
+// retry-without-tools path a live turn does, instead of a bare 400 that
+// leaves the first turn colder than the old "hi" did.
+func TestWarmupRetriesWithoutToolsWhenTheModelRejectsThem(t *testing.T) {
+	var withTools, withoutTools int
+	o := &OllamaBrain{
+		client:           ollamaStub(t, &withTools, &withoutTools),
+		model:            "m",
+		cfg:              &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: true},
+		fullSystemPrompt: "You are Samantha.",
+	}
+	o.Warmup(context.Background())
+	if withTools != 1 || withoutTools != 1 {
+		t.Fatalf("want the tools request then a retry without; got withTools=%d withoutTools=%d", withTools, withoutTools)
+	}
+}
+
+// The schema follows the configured router policy and the delegation
+// runtime, exactly as the live turn's does.
+func TestWarmupToolsFollowThePolicyAndDelegation(t *testing.T) {
+	runtime, err := delegation.New(context.Background(), &delegationClientStub{started: make(chan struct{})}, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = runtime.Close() }()
+	tests := []struct {
+		name   string
+		policy string
+		rt     *delegation.Runtime
+		want   *toolSession
+	}{
+		{name: "legacy", policy: "legacy", want: &toolSession{routerPolicy: RouterToolsLegacy}},
+		{name: "route_only with delegation", policy: "route_only", rt: runtime, want: &toolSession{routerPolicy: RouterToolsRouteOnly, delegation: runtime}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var count int
+			var bodies [][]byte
+			o := &OllamaBrain{
+				client:           recordingStub(t, &count, &bodies),
+				model:            "m",
+				cfg:              &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: true, VoiceRouterTools: tt.policy},
+				fullSystemPrompt: "You are Samantha.",
+				delegation:       tt.rt,
+			}
+			o.Warmup(context.Background())
+			var sent struct {
+				Tools json.RawMessage `json:"tools"`
+			}
+			if err := json.Unmarshal(bodies[0], &sent); err != nil {
+				t.Fatalf("decode warmup body: %v", err)
+			}
+			want, _ := json.Marshal(tt.want.tools())
+			if string(sent.Tools) != string(want) {
+				t.Fatalf("warmup tools = %s\nwant %s", sent.Tools, want)
+			}
+		})
+	}
+}
+
+// Warmup runs on its own goroutine while startup may still be restoring a
+// session and the first turn may be rebuilding the prompt. Run under -race.
+func TestWarmupDoesNotRaceTheConversationLoop(t *testing.T) {
+	runtime, err := delegation.New(context.Background(), &delegationClientStub{started: make(chan struct{})}, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = runtime.Close() }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"hi"},"done":true,"done_reason":"stop"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{
+		client:           api.NewClient(base, http.DefaultClient),
+		model:            "m",
+		cfg:              &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: true},
+		fullSystemPrompt: "You are Samantha.",
+		delegation:       runtime,
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			o.Warmup(context.Background())
+		}()
+	}
+	for i := 0; i < 8; i++ {
+		o.LoadHistory(nil)
+		o.setFullSystemPrompt(fmt.Sprintf("You are Samantha, take %d.", i))
+	}
+	wg.Wait()
+	o.retiredDelegations.Wait()
 }
 
 func TestWarmupUsesConfiguredNumCtx(t *testing.T) {

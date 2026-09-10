@@ -148,7 +148,7 @@ func TestContinuityBudgetArchivesAndExpandsOnlyWhenOptedIn(t *testing.T) {
 	}
 	cfg.ContinuityNumCtxCeil = 32768
 	o.ensureContextBudget("")
-	if o.effectiveNumCtx() != 16384 || o.warmupNumCtx() != 16384 || o.requestOptions()["num_ctx"] != 16384 {
+	if o.effectiveNumCtx() != 16384 || o.warmupNumCtx(o.contextHighWater) != 16384 || o.requestOptions()["num_ctx"] != 16384 {
 		t.Fatal("sticky warmup/chat options diverge")
 	}
 	o.ClearHistory()

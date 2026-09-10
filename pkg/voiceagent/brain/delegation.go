@@ -196,7 +196,10 @@ func (o *OllamaBrain) resetDelegation() {
 		return
 	}
 	old := o.delegation
-	o.delegation = old.NewSession()
+	next := old.NewSession()
+	o.stateMu.Lock()
+	o.delegation = next
+	o.stateMu.Unlock()
 	o.retiredDelegations.Add(1)
 	go func() {
 		defer o.retiredDelegations.Done()

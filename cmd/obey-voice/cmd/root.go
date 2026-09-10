@@ -256,12 +256,6 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			return nil, fmt.Errorf("init pipeline: %w", err)
 		}
 
-		// Preload the model while the user reads the empty screen so their
-		// first turn isn't the cold one. Best-effort — failures are ignored.
-		if w, ok := p.Brain.(brain.Warmer); ok {
-			go w.Warmup(ctx)
-		}
-
 		sess := resumeSession
 		if sessionID != "" && (sess == nil || sess.ID != sessionID) {
 			progress.Stage("Loading the session")
@@ -278,6 +272,14 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			sess = session.New(cfg.BrainProvider, modelName(cfg))
 		} else {
 			p.Brain.LoadHistory(sess.Turns)
+		}
+
+		// Preload the model while the user reads the empty screen so their
+		// first turn isn't the cold one. Best-effort — failures are ignored.
+		// After the session is restored: LoadHistory resets the delegation
+		// runtime whose tools warmup sends.
+		if w, ok := p.Brain.(brain.Warmer); ok {
+			go w.Warmup(ctx)
 		}
 
 		var captureSrc speaker.CaptureSource
@@ -476,12 +478,6 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 	}
 	defer cleanup()
 
-	// Preload the model while the welcome/setup is shown so the user's first
-	// turn isn't the cold one. Best-effort — failures are ignored.
-	if w, ok := p.Brain.(brain.Warmer); ok {
-		go w.Warmup(ctx)
-	}
-
 	// Create or resume session.
 	sess := resumeSession
 	if sess == nil {
@@ -493,6 +489,14 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 		}
 		p.Brain.LoadHistory(sess.Turns)
 		fmt.Printf("  Resuming session %s (%d turns)\n", sess.ID, len(sess.Turns))
+	}
+
+	// Preload the model while the welcome/setup is shown so the user's first
+	// turn isn't the cold one. Best-effort — failures are ignored. After the
+	// session is restored: LoadHistory resets the delegation runtime whose
+	// tools warmup sends.
+	if w, ok := p.Brain.(brain.Warmer); ok {
+		go w.Warmup(ctx)
 	}
 
 	// Auto-save after each turn.

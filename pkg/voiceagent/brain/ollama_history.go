@@ -122,7 +122,7 @@ func (o *OllamaBrain) LoadHistory(turns []Turn) {
 	o.resetDelegation()
 	// Restore starts a distinct session; never recall another session's archive.
 	o.archive = continuity.Store{}
-	o.contextHighWater = 0
+	o.setContextHighWater(0)
 	o.loadHistory(turns)
 }
 

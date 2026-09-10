@@ -60,9 +60,15 @@ func (o *OllamaBrain) newChatRequest(messages []api.Message, tools api.Tools) *a
 // prompt repeats, and the context window knows neither.
 // See docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md.
 func (o *OllamaBrain) requestOptions() map[string]any {
+	return o.requestOptionsFor(o.contextHighWater)
+}
+
+// requestOptionsFor is requestOptions over a snapshot of the context
+// high-water mark, for a caller on another goroutine.
+func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 	opts := map[string]any{}
 	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
-		opts["num_ctx"] = o.effectiveNumCtx()
+		opts["num_ctx"] = o.numCtxFor(highWater)
 	}
 	if o.cfg != nil && o.cfg.OllamaNumBatch > 0 {
 		opts["num_batch"] = o.cfg.OllamaNumBatch
