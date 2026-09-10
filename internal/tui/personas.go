@@ -20,11 +20,13 @@ const personasCreateLabel = "+ Create new persona…"
 // personasModel is the main-menu screen for listing, switching, creating, and
 // editing voice agent personas (including system prompts).
 type personasModel struct {
-	cfg    *config.Config
-	width  int
-	height int
-	cursor int
-	offset int
+	// returnScreen keeps Esc/q tied to the screen that opened the manager.
+	returnScreen screen
+	cfg          *config.Config
+	width        int
+	height       int
+	cursor       int
+	offset       int
 
 	items   []*persona.Profile
 	loadErr string
@@ -260,7 +262,7 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 		case "d", "delete":
 			m.beginDelete()
 		case "esc", "q":
-			return m, func() tea.Msg { return switchScreenMsg(screenLauncher) }
+			return m, func() tea.Msg { return switchScreenMsg(m.returnScreen) }
 		}
 		m.ensureVisible()
 
@@ -296,5 +298,8 @@ func (m *personasModel) selectCurrent() tea.Cmd {
 		name = p.ID
 	}
 	m.message = fmt.Sprintf("Active persona: %s · press e to edit name/prompt", name)
+	if m.returnScreen == screenConversation {
+		m.message = fmt.Sprintf("Active persona: %s · start a new chat to use this persona", name)
+	}
 	return nil
 }
