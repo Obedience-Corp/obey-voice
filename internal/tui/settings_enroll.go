@@ -34,7 +34,7 @@ var enrollClipLength = 3 * time.Second
 // enrollNoMicMessage for it instead of the wrapped error text.
 var errNoMicrophone = errors.New("microphone unavailable")
 
-const enrollNoMicMessage = "Microphone unavailable — open a conversation first, or check Settings → Input"
+const enrollNoMicMessage = "Microphone unavailable — open a conversation first, or check Settings → Audio"
 
 // enrollSession is an in-flight "Register your voice" or guest enrollment.
 // Zero value = idle.
@@ -284,9 +284,7 @@ func (m *settingsModel) removeVoice(name string) {
 	}
 	wasOwner := m.isOwnerName(name)
 	m.refreshEnrolledProfiles()
-	if maxIdx := m.currentListLen() - 1; m.cursor > maxIdx {
-		m.cursor = max(maxIdx, 0)
-	}
+	m.clampCursor()
 	if wasOwner {
 		m.message = fmt.Sprintf("Removed %s. Live labels will say speaker-1 until you register again.", name)
 	} else {

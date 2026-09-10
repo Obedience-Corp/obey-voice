@@ -401,13 +401,9 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// pause), then land on the requested section.
 		model, cmd := a.Update(switchScreenMsg(screenSettings))
 		app := model.(App)
-		app.settings.section = msg.section
-		// Tab-into normally lazy-loads meeting route destinations; entering
-		// programmatically must trigger the same load.
-		if msg.section == sectionMeeting && !app.settings.routeDestsLoading && app.settings.routeDests == nil {
-			return app, tea.Batch(cmd, app.settings.loadRouteDestinations())
-		}
-		return app, cmd
+		// The same path a keypress takes, so Meeting's lazy destination load
+		// runs when it is entered programmatically too.
+		return app, tea.Batch(cmd, app.settings.gotoSection(msg.section))
 
 	case startMeetingMsg:
 		a.meetingRoutePlan = meetingRoutePlan{

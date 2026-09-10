@@ -182,7 +182,7 @@ func ttsVoiceSelectionStatus(cfg *config.Config) string {
 			return "Native package has no browsable presets on disk; open Qwen tab or re-run ensure"
 		}
 		if cfg == nil || managedqwen.UseManaged(cfg.QwenTTSBinary, cfg.QwenTTSModel) {
-			return "Qwen preset voices are not installed; open Settings → Qwen or TTS and install"
+			return "Qwen preset voices are not installed; open Settings → Voice or Qwen and install"
 		}
 		return "Qwen voice controls are not verified by this worker; leave qwen_tts_mode/voice/language/instruction/reference settings empty and use the model-native default."
 	}

@@ -49,37 +49,19 @@ Sleep 650ms
 Enter
 Sleep 1100ms
 
-# Brain → TTS: tab past Brain model, Worker and Tools.
-Tab
-Sleep 220ms
-Tab
-Sleep 220ms
-Tab
-Sleep 220ms
-Tab
+# Settings opens on Brain; 4 jumps to Voice. The Engine list marks kokoro,
+# and the Qwen package the fixture installed is the next line down.
+Type "4"
 Sleep 1300ms
-
-# The engine row still says kokoro. enter lists the engines; the Qwen package
-# the fixture installed is chosen from the list (←/→ would step over an
-# engine whose choice starts a download).
-Enter
-Sleep 1200ms
 Down
 Sleep 700ms
 Enter
 Sleep 1700ms
 
-# Voice is two sections over (past Qwen): the row shows the Qwen default;
-# enter opens the nine model-native speakers, typing narrows them, enter
-# chooses.
-Tab
-Sleep 400ms
-Tab
-Sleep 2100ms
-Enter
-Sleep 1200ms
-Type "ryan"
-Sleep 900ms
+# The nine model-native speakers now sit under the engines with the Qwen
+# default marked. Move down to Ryan and choose it.
+Down@220ms 7
+Sleep 1100ms
 Enter
 Sleep 1800ms
 

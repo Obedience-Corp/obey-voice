@@ -303,15 +303,15 @@ func TestSettingsMeetingDiarizationToggle(t *testing.T) {
 func TestSettingsMeetingNumSpeakersCycle(t *testing.T) {
 	cfg := &config.Config{}
 	m := newSettings(cfg, nil)
-	m.section = sectionMeeting
-	m.cursor = meetingRowNumSpeakers
+	m.gotoSection(sectionMeeting)
+	m.cursor = lineOf(m, "speaker.meeting.num_speakers", -1)
 	var lastKey string
 	var lastVal any
 	m.saveConfig = func(key string, value any) error {
 		lastKey, lastVal = key, value
 		return nil
 	}
-	// 0 (auto) → 2, stepped with →
+	// 0 (auto) → 2, stepped with +
 	m.adjustRow(1)
 	if lastKey != "speaker.meeting.num_speakers" || lastVal != 2 {
 		t.Fatalf("save = %s %#v, want num_speakers 2", lastKey, lastVal)
@@ -320,7 +320,7 @@ func TestSettingsMeetingNumSpeakersCycle(t *testing.T) {
 		t.Fatalf("cfg num_speakers = %d", cfg.Speaker.Meeting.NumSpeakers)
 	}
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "Expected speakers") || !strings.Contains(view, "‹ 2") {
+	if !strings.Contains(view, "Expected speakers") || !strings.Contains(view, "[2]") {
 		t.Fatalf("view after set 2:\n%s", view)
 	}
 	// 2 → 3 → 4 → 0

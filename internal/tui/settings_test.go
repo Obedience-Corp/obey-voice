@@ -55,7 +55,7 @@ func TestSettingsLoadsAudioDevices(t *testing.T) {
 
 func TestSettingsCompactsForSmallTerminal(t *testing.T) {
 	m := settingsModel{
-		cfg: &config.Config{}, section: sectionProvider,
+		cfg: &config.Config{}, section: sectionBrain,
 		providerItems: []string{"claude", "ollama", "grok", "other"},
 	}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 36, Height: 8})
@@ -67,23 +67,22 @@ func TestSettingsCompactsForSmallTerminal(t *testing.T) {
 
 func TestSettingsListUsesAllAvailableRows(t *testing.T) {
 	items := []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
-	m := settingsModel{cfg: &config.Config{}, section: sectionProvider, providerItems: items}
+	m := settingsModel{cfg: &config.Config{}, section: sectionBrain, providerItems: items}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 13})
 
-	if got := m.visibleRows(); got != 8 {
-		t.Fatalf("visible rows = %d, want 8 at a 13-row terminal", got)
+	if got := m.visibleRows(); got != 9 {
+		t.Fatalf("visible rows = %d, want 9 at a 13-row terminal", got)
 	}
-	// The Brain row's list opens as a picker that fills the list region:
-	// title, filter, rule and counter leave four rows for options.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	// The provider list fills the region under its heading: nine rows show
+	// the heading and eight providers.
 	view := stripANSI(m.View())
-	for _, item := range items[:4] {
+	for _, item := range items[:8] {
 		if !strings.Contains(view, item) {
-			t.Errorf("picker missing %q:\n%s", item, view)
+			t.Errorf("list missing %q:\n%s", item, view)
 		}
 	}
-	if strings.Contains(view, items[4]) {
-		t.Fatalf("picker rendered more choices than fit:\n%s", view)
+	if strings.Contains(view, items[8]) {
+		t.Fatalf("list rendered more providers than fit:\n%s", view)
 	}
 	if got := len(strings.Split(view, "\n")); got != 13 {
 		t.Fatalf("settings view has %d rows, want exactly 13:\n%s", got, view)
@@ -92,10 +91,9 @@ func TestSettingsListUsesAllAvailableRows(t *testing.T) {
 
 func TestSettingsShowsEntireListWhenItFits(t *testing.T) {
 	items := []string{"one", "two", "three", "four", "five", "six"}
-	m := settingsModel{cfg: &config.Config{}, section: sectionProvider, providerItems: items}
+	m := settingsModel{cfg: &config.Config{}, section: sectionBrain, providerItems: items}
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	view := stripANSI(m.View())
 	for _, item := range items {
 		if !strings.Contains(view, item) {
@@ -114,13 +112,12 @@ func TestSettingsResizesDynamicallyWithTerminal(t *testing.T) {
 	for i := range items {
 		items[i] = fmt.Sprintf("provider-%02d", i)
 	}
-	m := settingsModel{cfg: &config.Config{}, section: sectionProvider, providerItems: items}
+	m := settingsModel{cfg: &config.Config{}, section: sectionBrain, providerItems: items}
 
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
 	if got := m.visibleRows(); got != 7 {
 		t.Fatalf("visible rows at 12h = %d, want 7", got)
 	}
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // open the Brain list
 	small := stripANSI(m.View())
 	if got := len(strings.Split(small, "\n")); got != 12 {
 		t.Fatalf("small terminal view has %d rows, want 12:\n%s", got, small)
@@ -128,13 +125,13 @@ func TestSettingsResizesDynamicallyWithTerminal(t *testing.T) {
 	if !strings.Contains(small, strings.Repeat("─", 40)) {
 		t.Fatalf("small terminal missing full-width rule:\n%s", small)
 	}
-	if strings.Contains(small, "provider-03") {
+	if strings.Contains(small, "provider-06") {
 		t.Fatalf("small terminal showed more rows than fit:\n%s", small)
 	}
 
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	if got := m.visibleRows(); got != 35 {
-		t.Fatalf("visible rows at 40h = %d, want 35", got)
+	if got := m.visibleRows(); got != 36 {
+		t.Fatalf("visible rows at 40h = %d, want 36", got)
 	}
 	large := stripANSI(m.View())
 	if got := len(strings.Split(large, "\n")); got != 40 {
@@ -143,12 +140,12 @@ func TestSettingsResizesDynamicallyWithTerminal(t *testing.T) {
 	if !strings.Contains(large, strings.Repeat("─", 120)) {
 		t.Fatalf("large terminal missing full-width rule:\n%s", large)
 	}
-	for _, item := range items[:31] {
+	for _, item := range items[:35] {
 		if !strings.Contains(large, item) {
-			t.Errorf("expanded picker missing %q after resize", item)
+			t.Errorf("list missing %q after resize", item)
 		}
 	}
-	if strings.Contains(large, "provider-31") {
+	if strings.Contains(large, "provider-35") {
 		t.Fatalf("large terminal showed more rows than fit:\n%s", large)
 	}
 }
@@ -159,22 +156,15 @@ func TestSettingsTTSSectionShowsActiveProviderAndModel(t *testing.T) {
 		QwenTTSModel:  "/opt/qwen/models/1.7b",
 		QwenTTSBinary: "/opt/qwen/bin/qwen3-tts-cli",
 	}, nil)
-	m.section = sectionTTS
+	m.section = sectionVoice
 	m.width, m.height = 100, 20
 
-	// The row carries the active engine and its detail; the others are in
-	// the picker, marked.
+	// The engine list is on screen whole, the active engine marked with its
+	// detail beside the heading.
 	view := stripANSI(m.View())
-	for _, want := range []string{"TTS", "Voice engine", "qwen3-tts", "model 1.7b", "qwen3-tts-cli"} {
+	for _, want := range []string{"Voice", "Engine", "qwen3-tts", "model 1.7b", "qwen3-tts-cli", "kokoro", "managed model", "✓"} {
 		if !strings.Contains(view, want) {
-			t.Errorf("TTS row missing %q:\n%s", want, view)
-		}
-	}
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	view = stripANSI(m.View())
-	for _, want := range []string{"kokoro", "managed model", "qwen3-tts", "✓"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("TTS picker missing %q:\n%s", want, view)
+			t.Errorf("Voice section missing %q:\n%s", want, view)
 		}
 	}
 }
@@ -186,7 +176,7 @@ func TestSettingsQwenLanguageSelectionPersists(t *testing.T) {
 		ModelsDir: t.TempDir(),
 	}
 	m := newSettings(cfg, nil)
-	m.section = sectionLanguage
+	m.section = sectionVoice
 	m.width, m.height = 100, 24
 	if len(m.languageItems) < 3 || m.languageItems[0] != "Auto" {
 		t.Fatalf("Qwen language items = %v", m.languageItems)
@@ -211,14 +201,14 @@ func TestSettingsQwenLanguageSelectionPersists(t *testing.T) {
 	}
 }
 
-// The worker is reached by tabbing off the brain model, not by hunting for it:
-// it is the second half of choosing a brain, so it sits between the model and
+// The worker is the section after the brain, not something to hunt for: it
+// is the second half of choosing a brain, so it sits between the brain and
 // the tool switches.
 func TestSettingsTabCycleReachesWorkerThenTools(t *testing.T) {
-	m := settingsModel{cfg: &config.Config{}, section: sectionModel}
+	m := settingsModel{cfg: &config.Config{}, section: sectionBrain}
 	m, _ = updateSettingsWithKey(t, m, "tab")
 	if m.section != sectionWorker {
-		t.Fatalf("section after Model + Tab = %d, want Worker section %d", m.section, sectionWorker)
+		t.Fatalf("section after Brain + Tab = %d, want Worker section %d", m.section, sectionWorker)
 	}
 	m, _ = updateSettingsWithKey(t, m, "tab")
 	if m.section != sectionTools {
@@ -399,7 +389,7 @@ func TestSettingsSelectTTSProviderPersistsAndRefreshesVoices(t *testing.T) {
 	cfg := &config.Config{TTSProvider: "kokoro", ModelsDir: modelsDir}
 	m := newSettings(cfg, nil)
 	m.buildTTSItems()
-	m.section = sectionTTS
+	m.section = sectionVoice
 	saved := map[string]any{}
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
@@ -433,7 +423,7 @@ func TestSettingsSelectTTSProviderWritesGlobalDefaultOnly(t *testing.T) {
 	}
 	m := newSettings(cfg, nil)
 	m.buildTTSItems()
-	m.section = sectionTTS
+	m.section = sectionVoice
 	saved := map[string]any{}
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
@@ -456,7 +446,7 @@ func TestSettingsInstallsQwenBeforeActivatingProvider(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{TTSProvider: "kokoro", QwenTTSBinary: "qwen3-tts-cli", ModelsDir: dir}
 	m := newSettings(cfg, nil)
-	m.section = sectionTTS
+	m.section = sectionVoice
 	saved := map[string]any{}
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value
@@ -539,11 +529,11 @@ func TestVoicePreviewReusesPlayerAcrossPreviews(t *testing.T) {
 	player := newFakePreviewPlayer()
 	m := newPreviewTestModel(player, &created)
 
-	// Previews play from the voice list: enter opens it, tab plays the
-	// highlighted voice without choosing it.
+	// Previews play from the voice list: p plays the voice under the cursor
+	// without choosing it.
 	var cmd tea.Cmd
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.cursor = lineOfRow(m, "Voice", 0)
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	if cmd == nil {
 		t.Fatal("first preview did not return a command")
 	}
@@ -551,7 +541,7 @@ func TestVoicePreviewReusesPlayerAcrossPreviews(t *testing.T) {
 		t.Fatal("first preview command returned nil message")
 	}
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	if cmd == nil {
 		t.Fatal("second preview did not return a command")
 	}
@@ -576,8 +566,8 @@ func TestCancelledPreviewCommandDoesNotStopSharedPlayerAgain(t *testing.T) {
 	player.queueDone(done)
 	m := newPreviewTestModel(player, &created)
 
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.cursor = lineOfRow(m, "Voice", 0)
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	if cmd == nil {
 		t.Fatal("preview did not return a command")
 	}

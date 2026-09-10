@@ -130,7 +130,7 @@ func TestSettingsMeetingDiarizerRow(t *testing.T) {
 
 // Both engines are reachable from the row, and the value written is the one
 // the schema takes.
-func TestSettingsMeetingDiarizerCycleWritesTheKey(t *testing.T) {
+func TestSettingsMeetingDiarizerChoiceWritesTheKey(t *testing.T) {
 	tests := []struct {
 		name string
 		from string
@@ -139,16 +139,14 @@ func TestSettingsMeetingDiarizerCycleWritesTheKey(t *testing.T) {
 		{name: "sherpa to sortformer", from: config.DiarizerSherpa, want: config.DiarizerSortformer},
 		{name: "unset cycles off the default", from: "", want: config.DiarizerSortformer},
 		{name: "sortformer back to sherpa", from: config.DiarizerSortformer, want: config.DiarizerSherpa},
-		// Stepping past a typo would let it choose the engine that labels a
-		// meeting; an unreadable value lands on the default instead.
-		{name: "unknown value lands on the default", from: "pyannote", want: config.DefaultMeetingDiarizer},
+		// An unreadable value marks nothing; choosing the default repairs it.
+		{name: "unknown value repaired by choosing the default", from: "pyannote", want: config.DefaultMeetingDiarizer},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m, saved := meetingSettings(t, tt.from, "transcribe-cli")
-			m.cursor = meetingRowDiarizer
-			m.adjustRow(1)
+			chooseMeetingDiarizer(t, m, tt.want)
 
 			if saved["speaker.meeting.diarizer"] != tt.want {
 				t.Fatalf("saved = %#v, want %q", saved["speaker.meeting.diarizer"], tt.want)
@@ -182,8 +180,7 @@ func TestSettingsMeetingDiarizerCycleIsARoundTrip(t *testing.T) {
 // valid — but the message says what is missing and how to fix it.
 func TestSettingsMeetingDiarizerReportsAMissingInstall(t *testing.T) {
 	m, saved := meetingSettings(t, config.DiarizerSherpa)
-	m.cursor = meetingRowDiarizer
-	m.adjustRow(1)
+	chooseMeetingDiarizer(t, m, config.DiarizerSortformer)
 
 	if saved["speaker.meeting.diarizer"] != config.DiarizerSortformer {
 		t.Fatalf("saved = %#v, want sortformer saved despite the gap", saved["speaker.meeting.diarizer"])
@@ -205,8 +202,7 @@ func TestSettingsMeetingDiarizerReportsAMissingInstall(t *testing.T) {
 func TestSettingsMeetingDiarizerNeverAsksForAnInstallItCannotPlan(t *testing.T) {
 	m, _ := meetingSettings(t, config.DiarizerSherpa)
 	m.cfg.Speaker.Meeting.Enabled = false
-	m.cursor = meetingRowDiarizer
-	m.adjustRow(1)
+	chooseMeetingDiarizer(t, m, config.DiarizerSortformer)
 
 	if m.cfg.Speaker.Meeting.Diarizer != config.DiarizerSortformer {
 		t.Fatalf("engine = %q, want the pick to save with diarization off", m.cfg.Speaker.Meeting.Diarizer)
@@ -262,7 +258,8 @@ func TestSettingsMeetingExpectedSpeakersNoteOnlyUnderSortformer(t *testing.T) {
 // looking — the status line — and names the way back.
 func TestSettingsMeetingNumSpeakersMessageUnderSortformer(t *testing.T) {
 	m, _ := meetingSettings(t, config.DiarizerSortformer, "transcribe-cli")
-	m.cursor = meetingRowNumSpeakers
+	m.gotoSection(sectionMeeting)
+	m.cursor = lineOf(*m, "speaker.meeting.num_speakers", -1)
 	m.adjustRow(1)
 
 	if !strings.Contains(m.message, "no effect") || !strings.Contains(m.message, config.DiarizerSherpa) {
@@ -279,4 +276,17 @@ func TestSettingsMeetingViewShowsTheDiarizerRow(t *testing.T) {
 			t.Fatalf("meeting settings view missing %q:\n%s", want, view)
 		}
 	}
+}
+
+// chooseMeetingDiarizer puts the cursor on engine in the Diarization engine
+// list and chooses it with enter.
+func chooseMeetingDiarizer(t *testing.T, m *settingsModel, engine string) {
+	t.Helper()
+	m.gotoSection(sectionMeeting)
+	idx := slices.Index(config.MeetingDiarizers(), engine)
+	m.cursor = lineOf(*m, "speaker.meeting.diarizer", idx)
+	if idx < 0 || m.cursor < 0 {
+		t.Fatalf("no line for diarizer %q", engine)
+	}
+	m.activateRow()
 }

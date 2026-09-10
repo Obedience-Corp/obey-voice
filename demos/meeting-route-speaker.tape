@@ -62,24 +62,26 @@ Sleep 900ms
 Enter
 Sleep 1200ms
 
-# Settings opens on Brain — tab to Meeting (12 sections over).
-Tab@200ms 12
+# Settings opens on Brain; 9 jumps to Meeting.
+Type "9"
 Sleep 1400ms
 
-# Meeting section: destinations discovery + refresh (the last row).
-Down@200ms 10
+# Meeting section: destinations discovery + refresh (the last line; the
+# cursor stops at the end).
+Down@90ms 24
 Sleep 700ms
 # Refresh destinations (camp list + config)
 Enter
 Sleep 1800ms
 
-# Back to the first row: enable speaker diarization.
-Up@120ms 10
+# Back to the first line: enable speaker diarization.
+Up@90ms 24
 Sleep 500ms
 Enter
 Sleep 900ms
-# Record audio for analysis (row 5)
-Down@200ms 4
+# Record audio for analysis: past live labels, the two engines and the
+# expected-speakers row.
+Down@200ms 5
 Sleep 400ms
 Enter
 Sleep 1200ms

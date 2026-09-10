@@ -43,7 +43,7 @@ func volumeBar(gain float64, width int) string {
 
 // adjustVolume moves the playback gain by delta, clamped, saves it, and
 // applies it to the preview player and the live conversation. It is the
-// Volume row's ←/→ and nothing else: the row, not the key, decides.
+// Volume row's +/- and nothing else: the row, not the key, decides.
 func (m *settingsModel) adjustVolume(delta float64) {
 	if m.cfg == nil {
 		return
