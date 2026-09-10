@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -198,17 +200,25 @@ func (s *toolSession) executeReadSkill(call api.ToolCall) string {
 	return fmt.Sprintf("error: unknown skill %q", name)
 }
 
+// orderedProps builds a tool schema whose properties always serialize in the
+// same order. Ollama renders the tool JSON at the front of the prompt, and
+// api.ToolPropertiesMap keeps insertion order, so feeding it from a Go map
+// shuffled the schema on every request. On qwen3.8 that turned every turn
+// into a cold prompt (~5 s to first token) because the prefix no longer
+// matched the cached one.
+func orderedProps(fields map[string]api.ToolProperty) *api.ToolPropertiesMap {
+	m := api.NewToolPropertiesMap()
+	for _, k := range slices.Sorted(maps.Keys(fields)) {
+		m.Set(k, fields[k])
+	}
+	return m
+}
+
 // voiceAssistantTools returns the tool definitions for the Ollama agent.
 // When catalog is non-empty, read_skill is included so the model can load a
 // skill body on demand (progressive disclosure).
 func voiceAssistantTools(catalog []skills.Skill) api.Tools {
-	props := func(fields map[string]api.ToolProperty) *api.ToolPropertiesMap {
-		m := api.NewToolPropertiesMap()
-		for k, v := range fields {
-			m.Set(k, v)
-		}
-		return m
-	}
+	props := orderedProps
 
 	tools := api.Tools{
 		{
@@ -343,13 +353,7 @@ func voiceAssistantTools(catalog []skills.Skill) api.Tools {
 
 // liveRouterTools returns the constrained route tool for the conversational model.
 func liveRouterTools() api.Tools {
-	props := func(fields map[string]api.ToolProperty) *api.ToolPropertiesMap {
-		m := api.NewToolPropertiesMap()
-		for k, v := range fields {
-			m.Set(k, v)
-		}
-		return m
-	}
+	props := orderedProps
 	return api.Tools{
 		{
 			Type: "function",
