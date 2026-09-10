@@ -111,6 +111,11 @@ not lose space in wide terminals. The composer supports wrapped, multiline
 drafts and compacts to one row in short terminal splits. Type `/` to open the
 command palette, use the arrow keys to select a match, and press `Enter` to run
 the highlighted command (or `Tab` to complete it into the composer first).
+`/personas` opens the persona manager to browse, select, create, or edit
+personas. Voice input pauses while it is open; `Esc` or `q` returns to the
+same chat and restores its previous microphone state. Selecting a different
+persona applies to new chats; the current chat keeps its bound identity.
+
 `/help` lists every available command. `/settings` opens the TUI settings
 screen and returns to the conversation when you press `Esc` or `q`. Slash
 commands are local — they do not cancel speech recognition or block the chat.

@@ -116,6 +116,7 @@ type App struct {
 	settingsReturnScreen screen
 	settingsResumeVoice  bool
 	settingsVoiceState   string
+	personasResumeVoice  bool
 
 	// startInConversation skips the launcher (resume/continue).
 	startInConversation bool
@@ -311,6 +312,12 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.library.cancelPrepare()
 		}
 		var pauseVoice tea.Cmd
+		if target == screenPersonas && a.screen != screenPersonas {
+			a.personasResumeVoice = a.screen == screenConversation && a.conversation.voiceEnabled
+			if a.personasResumeVoice {
+				pauseVoice = a.conversation.setInputMuted(true)
+			}
+		}
 		if target == screenSettings {
 			a.settingsReturnScreen = a.screen
 			a.settingsResumeVoice = a.screen == screenConversation && a.conversation.voiceEnabled
@@ -325,6 +332,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.screen == screenPersonas && target != screenPersonas {
 			a.personas.preview.close()
+			a.personas.cancelBrainModels()
+			if target == screenConversation && a.personasResumeVoice {
+				pauseVoice = a.conversation.setInputMuted(false)
+			}
+			a.personasResumeVoice = false
 		}
 		if a.screen == screenRemote && target != screenRemote {
 			a.remote.stop()
@@ -389,6 +401,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.personas.preview.close()
 			a.personas.cancelBrainModels()
 			a.personas = newPersonas(a.cfg)
+			a.personas.returnScreen = prev
 			a.personas.width, a.personas.height = a.width, a.height
 			a.personas.ensureVisible()
 		case screenLauncher:
@@ -399,7 +412,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.launcher.width, a.launcher.height = a.width, a.height
 			}
 		}
-		return a, nil
+		return a, pauseVoice
 
 	case openSettingsSectionMsg:
 		// Reuse the full settings-entry path (model rebuild, geometry, voice
@@ -792,6 +805,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmd, a.startTalkHotkey())
 
 	case talkHotkeyEventMsg:
+		// Browsing personas pauses voice input. Keep draining the global key
+		// without allowing a press to reopen the mic behind the manager.
+		if a.screen == screenPersonas && (msg.ev.Kind == talkhotkey.KindDown || msg.ev.Kind == talkhotkey.KindUp) {
+			return a, a.rearmTalk(msg)
+		}
 		// The key is global by definition: deliver it to the conversation
 		// whichever screen is showing, then keep pumping.
 		var cmd tea.Cmd
