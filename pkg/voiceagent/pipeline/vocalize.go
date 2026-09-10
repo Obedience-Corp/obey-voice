@@ -119,10 +119,6 @@ func vocalPartsHaveSound(parts []vocalPart) bool {
 	return false
 }
 
-func vocalSpeechOnly(s string) string {
-	return stripVocalTags(s)
-}
-
 // vocalPhrases are what Qwen3-TTS renders as the sound, in the active voice.
 // Leading "h" adds breath. These are not English words to be read out —
 // they are the onomatopoeia the model was trained to vocalize.

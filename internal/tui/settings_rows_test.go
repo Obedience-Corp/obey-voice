@@ -265,6 +265,7 @@ func TestSettingsChoiceRowCyclesInPlace(t *testing.T) {
 
 // d does nothing: removal is a line, never a bare letter.
 func TestSettingsDIsUnbound(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
 	m := newSettings(&config.Config{}, nil)
 	m.gotoSection(sectionSpeakers)
 	m.enrolledProfiles = []speaker.Profile{{Name: "Lance", Owner: true}, {Name: "Alex"}}

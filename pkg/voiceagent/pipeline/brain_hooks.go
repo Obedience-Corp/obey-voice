@@ -1,0 +1,146 @@
+package pipeline
+
+import (
+	"context"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+)
+
+func (p *Pipeline) emit(event events.Event) {
+	if p.Events != nil {
+		p.Events.Emit(event)
+	}
+}
+
+func (p *Pipeline) bindBrainInfo() {
+	if is, ok := p.Brain.(interface{ SetInfoSink(func(events.Info)) }); ok {
+		is.SetInfoSink(func(info events.Info) { p.emit(info) })
+	}
+	if cs, ok := p.Brain.(interface{ SetContinuitySink(func(events.Event)) }); ok {
+		cs.SetContinuitySink(func(e events.Event) { p.emit(e) })
+	}
+}
+
+// toolStartHook emits ToolCallStarted for UI (stdout + TUI).
+func (p *Pipeline) toolStartHook() func(brain.ToolCall) {
+	return func(call brain.ToolCall) {
+		p.bumpBrainDeadline()
+		p.emit(toolStartedEvent("", call))
+	}
+}
+
+func (p *Pipeline) toolStartHookTracked(toolsFired *bool) func(brain.ToolCall) {
+	base := p.toolStartHook()
+	return func(call brain.ToolCall) {
+		if toolsFired != nil {
+			*toolsFired = true
+		}
+		base(call)
+	}
+}
+
+// jobToolHooks attributes a background worker's tool calls to jobID. Unlike the
+// live hooks it never bumps the brain deadline: a worker tool must not extend
+// the watchdog on the conversation the user is having.
+func (p *Pipeline) jobToolHooks(jobID string) (func(brain.ToolCall), func(brain.ToolResult)) {
+	start := func(call brain.ToolCall) { p.emit(toolStartedEvent(jobID, call)) }
+	end := func(res brain.ToolResult) { p.emit(toolFinishedEvent(jobID, res)) }
+	return start, end
+}
+
+func toolStartedEvent(jobID string, call brain.ToolCall) events.ToolCallStarted {
+	return events.ToolCallStarted{
+		ID:      call.ID,
+		JobID:   jobID,
+		Name:    call.Name,
+		Kind:    string(call.Kind),
+		Summary: call.Summary,
+	}
+}
+
+func toolFinishedEvent(jobID string, res brain.ToolResult) events.ToolCallFinished {
+	return events.ToolCallFinished{
+		ID:      res.ID,
+		JobID:   jobID,
+		Name:    res.Name,
+		Kind:    string(res.Kind),
+		Preview: res.Preview,
+		Err:     res.Err,
+		Elapsed: res.Elapsed,
+	}
+}
+
+func (p *Pipeline) liveRouterToolsPolicy() brain.RouterToolsPolicy {
+	if !p.VoiceToolsEnabled {
+		return ""
+	}
+	if p.RouterToolsPolicy != "" {
+		return p.RouterToolsPolicy
+	}
+	return brain.RouterToolsRouteOnly
+}
+
+func (p *Pipeline) routeContext() RouteContext {
+	ctx := RouteContext{}
+	if p.NarrationActive != nil {
+		ctx.NarrationActive = p.NarrationActive()
+	}
+	if p.JobActive != nil {
+		ctx.JobActive = p.JobActive()
+	}
+	return ctx
+}
+
+func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, transcript string, kind RouteKind, source string) {
+	decision := RouteDecision{Kind: kind, Transcript: transcript, Source: source}
+	if p.Agency != nil {
+		p.Agency.HandleRoute(ctx, turn, metrics, decision)
+	} else if p.OnRoute != nil {
+		p.OnRoute(decision)
+	}
+	p.emit(events.ResponseReady{
+		Response:    "",
+		Interrupted: false,
+		Degraded:    metrics.degraded,
+	})
+	turn.finish(TurnCompleted)
+	if p.OnTurn != nil {
+		p.OnTurn()
+	}
+}
+
+// toolEndHook emits ToolCallFinished for UI.
+func (p *Pipeline) toolEndHook() func(brain.ToolResult) {
+	return func(res brain.ToolResult) {
+		p.bumpBrainDeadline()
+		p.emit(toolFinishedEvent("", res))
+	}
+}
+
+// usageHook emits per-request token accounting so prefix-cache regressions
+// are visible in the activity feed, not vibes.
+func (p *Pipeline) usageHook() func(prefill, gen int) {
+	return func(prefill, gen int) {
+		p.emit(events.TokenUsage{Prefill: prefill, Gen: gen})
+	}
+}
+
+// sessionWarnHook emits SessionWarning so a growing harness session is visible
+// in the activity feed before it becomes a latency or cost problem.
+// promptWarnHook surfaces a non-fatal prompt-resolution failure. The turn keeps
+// speaking on its last good prompt, so this is reported as an error event for
+// visibility rather than failing the turn — a half-saved persona file must not
+// end a live conversation, but it must not be silent either, or the user is left
+// wondering why their edit did nothing.
+func (p *Pipeline) promptWarnHook() func(message string) {
+	return func(message string) {
+		p.emit(events.Error{Stage: "prompt", Message: message})
+	}
+}
+
+func (p *Pipeline) sessionWarnHook() func(promptTokens, threshold int) {
+	return func(promptTokens, threshold int) {
+		p.emit(events.SessionWarning{PromptTokens: promptTokens, Threshold: threshold})
+	}
+}

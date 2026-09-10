@@ -7,11 +7,14 @@ just              # Show available commands
 just build        # Vet and compile using the build dashboard
 just run -- --text
 just talk         # Full voice mode
-just lint         # go fmt and go vet
+just lint         # Format, vet, and run configured linters
 just deps         # Update and tidy dependencies
 ```
 
 The build dashboard is wired through `internal/buildutil` and the project keeps using that workflow.
+
+See [Voice runtime code layout](voice-runtime-layout.md) for the pipeline and
+Ollama provider's file responsibilities and state ownership.
 
 ## Testing
 

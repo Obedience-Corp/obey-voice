@@ -337,7 +337,7 @@ func (s *Server) pump() {
 // forwardPCM copies the raw f32le payload that follows a pcm_meta, plus the
 // Stage A trailing newline when the worker writes one, byte for byte.
 func (s *Server) forwardPCM(client *clientConn, samples int) error {
-	var sink io.Writer = io.Discard
+	sink := io.Discard
 	if client != nil {
 		sink = &clientWriter{client: client}
 	}

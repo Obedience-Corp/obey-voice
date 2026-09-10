@@ -198,9 +198,13 @@ func TestEnsureWAVRecipeIdentity(t *testing.T) {
 			wantSynth: true,
 		},
 		{
-			name:      "corrupt sidecar re-synthesizes",
-			recipe:    speechRecipe("hello"),
-			prepare:   func(t *testing.T) { os.WriteFile(sidecarPath(wav), []byte("deadbeef\n"), 0o644) },
+			name:   "corrupt sidecar re-synthesizes",
+			recipe: speechRecipe("hello"),
+			prepare: func(t *testing.T) {
+				if err := os.WriteFile(sidecarPath(wav), []byte("deadbeef\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
 			wantSynth: true,
 		},
 		{

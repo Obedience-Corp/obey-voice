@@ -135,13 +135,13 @@ func TestEvaluateStreamIntegrityHeuristicTable(t *testing.T) {
 
 func TestEndsMidSentence(t *testing.T) {
 	for text, want := range map[string]bool{
-		"hello":     true,
-		"hello.":    false,
-		"really?":   false,
-		"wow!":      false,
-		"wait…":     false,
-		"  trim  ":  true,
-		"":          false,
+		"hello":    true,
+		"hello.":   false,
+		"really?":  false,
+		"wow!":     false,
+		"wait…":    false,
+		"  trim  ": true,
+		"":         false,
 	} {
 		if got := endsMidSentence(text); got != want {
 			t.Errorf("endsMidSentence(%q) = %v, want %v", text, got, want)

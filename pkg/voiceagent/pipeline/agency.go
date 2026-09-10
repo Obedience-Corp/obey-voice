@@ -348,7 +348,8 @@ func (a *Agency) speakJobStatus(ctx context.Context, turn *turnConductor, metric
 	if more := jobCounts(len(running)-1, len(queued)); more != "" {
 		line += " " + more
 	}
-	a.pipeline.speakStandalone(ctx, turn, metrics, line)
+	// Standalone speech reports synthesis/playback errors on the event bus.
+	_ = a.pipeline.speakStandalone(ctx, turn, metrics, line)
 }
 
 // jobCounts phrases what is working or waiting besides the job just named.

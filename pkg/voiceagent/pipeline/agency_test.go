@@ -34,8 +34,8 @@ func (w *slowWorker) ThinkFull(ctx context.Context, input string, opts brain.Str
 	return w.reply, nil
 }
 
-func (w *slowWorker) ClearHistory()        {}
-func (w *slowWorker) History() []brain.Turn { return nil }
+func (w *slowWorker) ClearHistory()            {}
+func (w *slowWorker) History() []brain.Turn    { return nil }
 func (w *slowWorker) LoadHistory([]brain.Turn) {}
 
 func TestSpawnAckBeforeWorkerFinishes(t *testing.T) {
@@ -300,8 +300,8 @@ func (w *seqWorker) ThinkFull(context.Context, string, brain.StreamOptions) (str
 	return text, nil
 }
 
-func (w *seqWorker) ClearHistory()             {}
-func (w *seqWorker) History() []brain.Turn     { return nil }
+func (w *seqWorker) ClearHistory()            {}
+func (w *seqWorker) History() []brain.Turn    { return nil }
 func (w *seqWorker) LoadHistory([]brain.Turn) {}
 
 func TestJobEventsEmitOnStartAndDone(t *testing.T) {
