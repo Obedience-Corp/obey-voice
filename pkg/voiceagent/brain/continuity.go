@@ -71,10 +71,23 @@ func (o *OllamaBrain) ContinuityNotes() string {
 }
 
 func (o *OllamaBrain) effectiveNumCtx() int {
+	return o.numCtxFor(o.contextHighWater)
+}
+
+// numCtxFor is effectiveNumCtx over a snapshot of the high-water mark, for a
+// caller on another goroutine.
+func (o *OllamaBrain) numCtxFor(highWater int) int {
 	if o.cfg == nil {
 		return 0
 	}
-	return max(o.cfg.OllamaNumCtx, o.contextHighWater)
+	return max(o.cfg.OllamaNumCtx, highWater)
+}
+
+// setContextHighWater publishes the mark to a Warmup that may be reading it.
+func (o *OllamaBrain) setContextHighWater(n int) {
+	o.stateMu.Lock()
+	o.contextHighWater = n
+	o.stateMu.Unlock()
 }
 
 func (o *OllamaBrain) expandContext() bool {
@@ -86,7 +99,7 @@ func (o *OllamaBrain) expandContext() bool {
 	if to == from {
 		return false
 	}
-	o.contextHighWater = to
+	o.setContextHighWater(to)
 	o.emitContinuity(events.Info{Message: fmt.Sprintf("continuity.num_ctx_expand from=%d to=%d", from, to)})
 	return true
 }

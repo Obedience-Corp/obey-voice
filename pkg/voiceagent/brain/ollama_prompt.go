@@ -57,7 +57,15 @@ func (o *OllamaBrain) refreshSystemPrompt(onWarn func(message string)) {
 		return
 	}
 	o.systemPrompt = persona
-	o.fullSystemPrompt = assembleSystemPrompt(persona, o.workDir, o.skills, o.turnInstruction, o.cfg)
+	o.setFullSystemPrompt(assembleSystemPrompt(persona, o.workDir, o.skills, o.turnInstruction, o.cfg))
+}
+
+// setFullSystemPrompt publishes a rebuilt prompt to a Warmup that may be
+// reading it from its own goroutine.
+func (o *OllamaBrain) setFullSystemPrompt(prompt string) {
+	o.stateMu.Lock()
+	o.fullSystemPrompt = prompt
+	o.stateMu.Unlock()
 }
 
 // assembleSystemPrompt builds the session-stable system prompt: persona
