@@ -1,7 +1,7 @@
 # Voice runtime code layout
 
-The voice pipeline and Ollama provider use files grouped by responsibility within
-their existing Go packages. Their public interfaces and state ownership are
+The voice pipeline, Ollama provider and config package use files grouped by
+responsibility within their existing Go packages. Their public interfaces and state ownership are
 unchanged. This guide identifies where to make a change without tracing a single
 large implementation file.
 
@@ -57,6 +57,30 @@ the same request, history and context-budget helpers. Provider registration stay
 in `ollama.go`; moving files must not change initialization ordering or introduce
 new registration side effects.
 
+## Config
+
+All paths below are in [`pkg/voiceagent/config`](../pkg/voiceagent/config).
+
+| File | Responsibility |
+| --- | --- |
+| `config.go` | Package state (`configDir`, `configFile`, the viper instance, `mu`), viper init and the get/set/save accessor surface |
+| `types.go` | `Config` and its nested meeting and speaker structs |
+| `defaults.go` | Shipped defaults and the value bounds applied at load |
+| `env.go` | Environment bindings, aliases and the resolution order the loader honors |
+| `load.go` | Load/unmarshal lifecycle and the after-load persona hook |
+| `ollama_defaults.go` | Ollama capability auto-enable and the brain-provider switch |
+| `paths.go` | Install-root directory resolution (models, sessions, meetings, personas, prompts, skills) |
+
+Existing collaborators remain in their established files: the settings schema in
+`schema*.go`, surgical key writes in `set*.go`, and per-domain keys in `stt.go`,
+`worker.go`, `brains.go`, `workdir.go` and the rest. Consult those files before
+adding another implementation of the same responsibility.
+
+`mu` still guards the package's viper instance and not the fields of a `*Config`
+a caller already holds — the invariant is recorded on the `mu` declaration.
+Moving an accessor into a focused file does not change which lock its caller
+must hold.
+
 ## Maintaining the boundaries
 
 Put stage-specific behavior beside its existing owner. Keep lifecycle/locking
@@ -71,7 +95,7 @@ repository test suite:
 
 ```sh
 just lint
-go test -race ./pkg/voiceagent/pipeline ./pkg/voiceagent/brain
+go test -race ./pkg/voiceagent/pipeline ./pkg/voiceagent/brain ./pkg/voiceagent/config
 go test ./...
 ```
 
