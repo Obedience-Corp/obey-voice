@@ -769,6 +769,13 @@ func (p *Pipeline) warnIfSynthesisCannotKeepUp(m events.TurnMetrics) {
 	if m.Interrupted {
 		return
 	}
+	// Kokoro has no faster-voice remedy here. Keep its raw timing metrics,
+	// but do not turn gaps into this advice. Fallback turns also include
+	// Kokoro audio, even though TTSProvider still names the primary engine;
+	// their aggregate timings cannot justify advice about that primary.
+	if m.TTSProvider == "kokoro" || m.TTSFallbacks > 0 {
+		return
+	}
 	speaking := m.SpeakingWindow()
 	deadAirShare := m.DeadAirElapsed > 0 && speaking > 0 &&
 		float64(m.DeadAirElapsed)/float64(speaking) >= underrunDeadAirShare
