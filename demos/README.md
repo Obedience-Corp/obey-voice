@@ -138,6 +138,26 @@ fixtures and opt-in real-model testing.
 just demo-qwen-voices
 ```
 
+## settings-sidebar.gif — Settings: a sidebar of sections, lists drawn whole
+
+Walkthrough of the Settings screen:
+
+1. **Brain** — providers and models on one screen, `✓` on the current ones,
+   the sidebar naming all nine sections; `↓` moves through the lists and
+   skips the headings
+2. **`→` `→` `4`** — the next section twice, then a digit straight to Voice
+3. **Voice** — engines above the active engine's voices; choosing the
+   installed Qwen engine swaps in its presets, `↓` to Ryan, `enter` chooses
+4. **Audio** (`8`) — microphone and speaker lists, then the volume slider
+   nudged with `-` and `+`
+5. **Meeting** (`9`) — toggles, the engine list, choice rows with every
+   option on the row (`enter` moves one on), destinations
+6. **`←` `←`** — back through Audio to Speakers, then `esc` to the launcher
+
+```bash
+just demo-settings-sidebar
+```
+
 ## meeting.gif — main launcher + Meeting recorder
 
 Full Bubble Tea app (not a CLI stub):
