@@ -114,23 +114,28 @@ func (h *hub) evictToken(token, reason string) {
 	}
 }
 
-// setConnAudio updates a connection's stream preference and the hub streamer
-// count. Safe to call from the control reader while the hub is live.
-func (h *hub) setConnAudio(c *streamConn, on bool) {
+// setConnAudio updates a connection's stream preference and binary TTS flag
+// under the hub lock, so broadcastPCM cannot observe stream-on with binary
+// still false. Safe to call from the control reader while the hub is live.
+func (h *hub) setConnAudio(c *streamConn, on, binary bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.conns[c]; !ok {
 		return
 	}
 	was := c.audioStream.Load()
-	if was == on {
-		return
+	if was != on {
+		c.audioStream.Store(on)
+		if on {
+			h.streamers.Add(1)
+		} else {
+			h.streamers.Add(-1)
+		}
 	}
-	c.audioStream.Store(on)
 	if on {
-		h.streamers.Add(1)
+		c.audioBinary.Store(binary)
 	} else {
-		h.streamers.Add(-1)
+		c.audioBinary.Store(false)
 	}
 }
 
@@ -177,6 +182,29 @@ func (h *hub) broadcastAudio(msg []byte) int {
 			accepted++
 		default:
 			// Drop this chunk; keep the connection for events/control.
+		}
+	}
+	return accepted
+}
+
+// broadcastPCM delivers one TTS chunk, JSON+base64 to clients that did not
+// opt into binary, OVA1 binary to those that did.
+func (h *hub) broadcastPCM(jsonMsg, binMsg []byte) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	accepted := 0
+	for c := range h.conns {
+		if !c.wantsAudio() || c.audioBlocked.Load() {
+			continue
+		}
+		msg := jsonMsg
+		if c.wantsBinaryAudio() {
+			msg = binMsg
+		}
+		select {
+		case c.audio <- msg:
+			accepted++
+		default:
 		}
 	}
 	return accepted
@@ -278,6 +306,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	// coder/websocket defaults to 32 KiB; raise it so a max-size PCM frame
+	// (binary or JSON+base64) is rejected by decodePCMS16LEBytes instead of
+	// closing the socket with StatusMessageTooBig.
+	ws.SetReadLimit(int64(MaxStreamReadBytes))
 
 	conn := &streamConn{
 		out:   make(chan []byte, connQueueDepth),
@@ -322,7 +354,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case msg := <-conn.audio:
-				if err := ws.Write(ctx, websocket.MessageText, msg); err != nil {
+				typ := websocket.MessageText
+				if isBinaryAudioFrame(msg) {
+					typ = websocket.MessageBinary
+				}
+				if err := ws.Write(ctx, typ, msg); err != nil {
 					return
 				}
 			}
@@ -338,13 +374,25 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 // readControls decodes inbound control messages until the connection dies.
 func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *streamConn) {
 	for {
-		_, data, err := ws.Read(ctx)
+		typ, data, err := ws.Read(ctx)
 		if err != nil {
 			return
 		}
 		if !s.opts.Credentials.tokenActive() {
 			conn.evict("credentials revoked")
 			return
+		}
+
+		if typ == websocket.MessageBinary {
+			samples, err := decodePCMS16LEBytes(data, audio.SampleRate)
+			if err != nil {
+				s.sendError(conn, "audio_input: "+err.Error())
+				continue
+			}
+			if err := s.writeVoiceAudio(conn, samples); err != nil {
+				s.sendError(conn, err.Error())
+			}
+			continue
 		}
 
 		var msg controlMessage
@@ -376,8 +424,8 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			if msg.Mode == "stream" {
 				mode = "stream"
 			}
-			s.hub.setConnAudio(conn, mode == "stream")
-			s.sendAudioOutputAck(conn, mode)
+			s.hub.setConnAudio(conn, mode == "stream", msg.Binary)
+			s.sendAudioOutputAck(conn, mode, conn.audioBinary.Load())
 		case "transcribe_start":
 			if err := s.startTranscription(conn, msg.ID); err != nil {
 				s.sendError(conn, dispatchErrText(err))
@@ -409,11 +457,15 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 
 // sendAudioOutputAck confirms the applied stream preference on the event
 // channel so clients do not have to assume success.
-func (s *Server) sendAudioOutputAck(conn *streamConn, mode string) {
-	msg, err := json.Marshal(map[string]any{
+func (s *Server) sendAudioOutputAck(conn *streamConn, mode string, binary bool) {
+	ack := map[string]any{
 		"type": "audio_output_ack",
 		"mode": mode,
-	})
+	}
+	if binary {
+		ack["binary"] = true
+	}
+	msg, err := json.Marshal(ack)
 	if err != nil {
 		return
 	}

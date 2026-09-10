@@ -499,7 +499,7 @@ func TestHubAudioResetDropsCanceledTailUntilNextTurn(t *testing.T) {
 	if !h.add(c) {
 		t.Fatal("failed to add stream connection")
 	}
-	h.setConnAudio(c, true)
+	h.setConnAudio(c, true, false)
 
 	h.broadcastAudio([]byte(`{"type":"audio_chunk","segment_id":1}`))
 	h.resetAudio()
@@ -526,7 +526,7 @@ func TestHubAudioResetDropsCanceledTailUntilNextTurn(t *testing.T) {
 	if !h.add(late) {
 		t.Fatal("failed to add late stream connection")
 	}
-	h.setConnAudio(late, true)
+	h.setConnAudio(late, true, false)
 	h.broadcastAudio([]byte(`{"type":"audio_chunk","segment_id":1}`))
 	select {
 	case got := <-late.audio:
@@ -1341,7 +1341,7 @@ func TestAudioFanoutSinkKind(t *testing.T) {
 	h := newHub()
 	conn := newTestConn(4, 4)
 	h.add(conn)
-	h.setConnAudio(conn, true)
+	h.setConnAudio(conn, true, false)
 	stream := NewAudioFanout(nil)
 	stream.AttachHub(h)
 	if got := stream.SinkKind(); got != audio.SinkStreamClient {
@@ -1356,7 +1356,7 @@ func TestBroadcastAudioReturnsAcceptedCount(t *testing.T) {
 	}
 	conn := newTestConn(4, 4)
 	h.add(conn)
-	h.setConnAudio(conn, true)
+	h.setConnAudio(conn, true, false)
 	if n := h.broadcastAudio([]byte("chunk")); n != 1 {
 		t.Fatalf("accepted = %d, want 1", n)
 	}
@@ -1386,7 +1386,7 @@ func TestAudioFanoutStreamsWithoutLocalSpeaker(t *testing.T) {
 	h := newHub()
 	conn := newTestConn(16, 16)
 	h.add(conn)
-	h.setConnAudio(conn, true)
+	h.setConnAudio(conn, true, false)
 
 	fanout := NewAudioFanout(nil)
 	fanout.AttachHub(h)
@@ -1587,7 +1587,7 @@ func TestHubBroadcastAudioSkipsOptOut(t *testing.T) {
 	off := newTestConn(2, 2)
 	h.add(on)
 	h.add(off)
-	h.setConnAudio(on, true)
+	h.setConnAudio(on, true, false)
 
 	h.broadcastAudio([]byte(`{"type":"audio_chunk"}`))
 	h.broadcast([]byte(`{"type":"info"}`))
@@ -1617,7 +1617,7 @@ func TestAudioQueueDropDoesNotKick(t *testing.T) {
 	// Audio queue depth 1: second chunk drops without kicking.
 	c := newTestConn(4, 1)
 	h.add(c)
-	h.setConnAudio(c, true)
+	h.setConnAudio(c, true, false)
 
 	h.broadcastAudio([]byte("chunk-1"))
 	h.broadcastAudio([]byte("chunk-2")) // drop

@@ -268,11 +268,14 @@ func (a *AudioFanout) emitAudioChunks(segID uint64, sampleRate int, frames []flo
 			n = maxAudioChunkFrames
 		}
 		pcm := float32ToPCM16LE(frames[:n])
-		msg, err := marshalAudioChunk(segID, sampleRate, pcm)
-		if err == nil {
-			if accepted := a.hub.broadcastAudio(msg); accepted > 0 {
-				a.accepted.Add(int32(accepted))
-			}
+		jsonMsg, err := marshalAudioChunk(segID, sampleRate, pcm)
+		if err != nil {
+			frames = frames[n:]
+			continue
+		}
+		binMsg := marshalBinaryAudioChunk(segID, sampleRate, pcm)
+		if accepted := a.hub.broadcastPCM(jsonMsg, binMsg); accepted > 0 {
+			a.accepted.Add(int32(accepted))
 		}
 		frames = frames[n:]
 	}
@@ -373,4 +376,34 @@ func marshalAudioEnd(segID uint64, reason string) ([]byte, error) {
 		"segment_id": segID,
 		"reason":     reason,
 	})
+}
+
+// Binary TTS chunk: OVA1 + sample_rate u32le + segment_id u64le + pcm_s16le.
+const (
+	binaryAudioMagic      = "OVA1"
+	binaryAudioHeaderSize = 16
+)
+
+func isBinaryAudioFrame(msg []byte) bool {
+	return len(msg) >= 4 && string(msg[:4]) == binaryAudioMagic
+}
+
+func marshalBinaryAudioChunk(segID uint64, sampleRate int, pcm []byte) []byte {
+	out := make([]byte, binaryAudioHeaderSize+len(pcm))
+	copy(out[0:4], binaryAudioMagic)
+	binary.LittleEndian.PutUint32(out[4:8], uint32(sampleRate))
+	binary.LittleEndian.PutUint64(out[8:16], segID)
+	copy(out[16:], pcm)
+	return out
+}
+
+// ParseBinaryAudioChunk unpacks an OVA1 TTS frame. ok is false if the magic
+// or length is wrong.
+func ParseBinaryAudioChunk(raw []byte) (segID uint64, sampleRate int, pcm []byte, ok bool) {
+	if !isBinaryAudioFrame(raw) || len(raw) < binaryAudioHeaderSize {
+		return 0, 0, nil, false
+	}
+	sampleRate = int(binary.LittleEndian.Uint32(raw[4:8]))
+	segID = binary.LittleEndian.Uint64(raw[8:16])
+	return segID, sampleRate, raw[16:], true
 }

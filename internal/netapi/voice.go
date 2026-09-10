@@ -320,12 +320,35 @@ func decodePCMS16LE(b64 string, sampleRate int) ([]float32, error) {
 	if b64 == "" {
 		return nil, errors.New("empty data")
 	}
-	if sampleRate != 0 && sampleRate != audio.SampleRate {
-		return nil, errors.New("sample_rate must be 16000 (resample on the client)")
-	}
 	raw, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return nil, errors.New("invalid base64")
+	}
+	return decodePCMS16LEBytes(raw, sampleRate)
+}
+
+const (
+	// maxBinaryUplinkBytes is the PCM payload cap for one mic frame, binary
+	// or decoded from JSON audio_input. Larger frames get an error envelope
+	// and the socket stays open.
+	maxBinaryUplinkBytes = 64 * 1024
+	// MaxStreamReadBytes is the WebSocket per-message read limit. It is
+	// larger than maxBinaryUplinkBytes so a JSON audio_input envelope of a
+	// max-size PCM frame (~87 KiB base64) can be read and rejected by the
+	// PCM cap instead of closing the connection. coder/websocket's default
+	// is 32 KiB. Clients using that library should set the same limit.
+	MaxStreamReadBytes = 96 * 1024
+)
+
+func decodePCMS16LEBytes(raw []byte, sampleRate int) ([]float32, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("empty data")
+	}
+	if sampleRate != 0 && sampleRate != audio.SampleRate {
+		return nil, errors.New("sample_rate must be 16000 (resample on the client)")
+	}
+	if len(raw) > maxBinaryUplinkBytes {
+		return nil, errors.New("pcm frame too large")
 	}
 	if len(raw)%2 != 0 {
 		return nil, errors.New("odd pcm byte length")

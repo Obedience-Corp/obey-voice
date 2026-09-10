@@ -321,7 +321,7 @@ func TestHubSpeakingSurvivesHostPlaybackForStreamClients(t *testing.T) {
 
 			conn := newTestConn(4, 4)
 			h.add(conn)
-			h.setConnAudio(conn, tt.streamer)
+			h.setConnAudio(conn, tt.streamer, false)
 
 			bus.Emit(events.ThinkingStarted{})
 			bus.Emit(events.SpeakingStarted{Text: "a long reply"})

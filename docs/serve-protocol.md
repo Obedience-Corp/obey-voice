@@ -80,7 +80,7 @@ output moves to stderr. The first line is `ready`, written once the listener is
 bound:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
 ```
 
 | Field | Meaning |
@@ -99,7 +99,7 @@ bound:
 LAN mode with a trusted or self-signed cert omits `client_setup_url` entirely:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
 ```
 
 A `pairing_code` line (`{"event":"pairing_code","code":"…","expires_at":"…"}`)
@@ -528,9 +528,9 @@ LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bea
 | `text_input` | `text` | Enqueue a text turn |
 | `interrupt` | | Cancel in-flight turn; server sends `audio_reset`, plus `turn_interrupted` / `speaking_interrupted` when something was actually cancelled |
 | `clear_history` | | Wipe conversation history |
-| `audio_output` | `mode`: `stream` \| other | Opt into TTS `audio_chunk` delivery (`stream` on) |
+| `audio_output` | `mode`: `stream` \| other, `binary` (optional bool) | Opt into TTS delivery (`stream` on). `binary: true` switches TTS chunks from JSON+base64 `audio_chunk` to OVA1 binary frames. JSON `audio_input` / `audio_chunk` stay valid. |
 | `voice_start` | | Exclusive mic claim + start remote STT turn. Queued (and **not** claimed) while another turn is in flight — see Barge-in and the mic claim |
-| `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz |
+| `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz, max 64 KiB decoded. Prefer a **binary WebSocket frame** of the same PCM (no header, 16 kHz implied) when `capabilities.binary_audio` is set. |
 | `voice_end` | | Finalize utterance; release mic claim. **Not optional** — a turn that goes quiet without one is ended by the server, see The turn deadline |
 | `set_persona` | `name`: persona id | Switch persona for **subsequent** turns (see below) |
 
@@ -614,10 +614,12 @@ another device speaking.
 
 | `type` | Fields |
 |--------|--------|
-| `audio_chunk` | `data` (base64 pcm_s16le), `sample_rate`, `segment_id` |
-| `audio_end` | `segment_id`, `reason` (`complete` / `interrupted` / …) |
-| `audio_reset` | Clear client playback after interrupt |
-| `audio_output_ack` | `mode` applied |
+| `audio_chunk` | `data` (base64 pcm_s16le), `sample_rate`, `segment_id`. Default when the client did not set `audio_output.binary`. |
+| binary TTS frame | WebSocket **binary** message: `OVA1` (4 ASCII bytes) + `sample_rate` u32le + `segment_id` u64le + `pcm_s16le`. Sent instead of `audio_chunk` when the client set `audio_output.binary: true` and the serve advertises `capabilities.binary_audio`. |
+| mic uplink | WebSocket **binary** message: raw `pcm_s16le` mono @ 16 kHz, **no header**. Same claim rules as JSON `audio_input`. PCM payload max **64 KiB** per message (`{"type":"error","message":"audio_input: pcm frame too large"}` if larger). The WebSocket message itself is capped at **96 KiB** so a JSON `audio_input` envelope of a max-size PCM frame can be read; above that the socket closes (1009). |
+| `audio_end` | `segment_id`, `reason` (`complete` / `interrupted` / …). Always JSON. |
+| `audio_reset` | Clear client playback after interrupt. Always JSON. |
+| `audio_output_ack` | `mode` applied; `binary: true` when binary TTS is on |
 | `set_persona_ack` | `id`, `display_name`, `prompt_hash`, `applies_to` |
 
 ## Barge-in and the mic claim
@@ -726,6 +728,7 @@ it is absent, which is what an older serve looks like:
 | `audio_level_payload` | `audio_level` carries `source` and `level` |
 | `interrupt_events` | A remote `interrupt` emits `turn_interrupted` / `speaking_interrupted` |
 | `voice_claim_on_dequeue` | A queued `voice_start` does not hold the mic |
+| `binary_audio` | Binary WebSocket frames: mic uplink is raw `pcm_s16le` @ 16 kHz; TTS downlink is `OVA1` + rate u32le + `segment_id` u64le + PCM when the client set `audio_output.binary` |
 
 `protocol_version` is deliberately **not** bumped for these: this file's own
 rule is to feature-detect by status, because the version does not move for
@@ -736,8 +739,8 @@ on how serve was configured, not on what the binary can do.
 
 | Direction | Format |
 |-----------|--------|
-| TTS → client | `pcm_s16le`, mono, sample rate in envelope (often 24 kHz from Kokoro) |
-| Mic → server | `pcm_s16le`, mono, **16000 Hz** (client resamples) |
+| TTS → client | `pcm_s16le`, mono, sample rate in JSON `audio_chunk` or the OVA1 header (often 24 kHz from Kokoro) |
+| Mic → server | `pcm_s16le`, mono, **16000 Hz** (client resamples). JSON `audio_input` or a binary frame. **64 KiB PCM per message**; WebSocket messages above **96 KiB** close the socket. |
 
 ## Security notes
 
@@ -750,8 +753,8 @@ on how serve was configured, not on what the binary can do.
 1. Discover URL (MagicDNS banner, mDNS `_obey-voice._tcp`, or config).
 2. Pair once → persist token + optional cert fingerprint.
 3. Open WebSocket with token.
-4. Send `audio_output` `{mode:stream}` for playback.
-5. Text: `text_input`. Voice: `voice_start` → stream `audio_input` → `voice_end`.
+4. Send `audio_output` `{mode:stream}` for playback. If `capabilities.binary_audio` is set, add `binary:true` and play OVA1 frames; keep a JSON `audio_chunk` decoder for older serves.
+5. Text: `text_input`. Voice: `voice_start` → stream binary PCM (or JSON `audio_input`) → `voice_end`.
 6. On interrupt: stop local playback, send `interrupt`, wait for `audio_reset`;
    `turn_interrupted` tells you the turn really was cancelled (and one you did
    not ask for means another device barged in).
