@@ -71,7 +71,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"meetings": s.meetings != nil,
 		// capabilities are the build's /v1/stream contract flags; meetings
 		// stays separate because it depends on how serve was configured.
-		"capabilities": Capabilities(),
+		"capabilities": s.capabilities(),
 	})
 }
 

@@ -365,13 +365,17 @@ func runServe(cfg *config.Config) error {
 	}
 
 	dispatcher := netapi.NewDispatcher(p, bus, func() {
-		if err := p.ClearConversation(); err != nil {
+		err := switcher.clear(ctx)
+		if p.OnTurn != nil {
+			p.OnTurn()
+		}
+		if err != nil {
 			bus.Emit(events.Error{Stage: "work_clear", Message: err.Error()})
 			return
 		}
-		p.OnTurn()
 	}, func(id string) error { return switcher.resume(ctx, id) })
 	go dispatcher.Run(ctx)
+	currentSessionSnapshot := switcher.snapshotProvider()
 
 	bindHosts := resolveServeBindHosts()
 	addr := net.JoinHostPort(bindHosts[0], strconv.Itoa(servePort))
@@ -408,24 +412,25 @@ func runServe(cfg *config.Config) error {
 			}
 			return servePersonaList(cfg)()
 		},
-		Bind:                addr,
-		ExtraBinds:          extraBinds,
-		AllowPublic:         serveAllowPublic,
-		Credentials:         creds,
-		Bus:                 bus,
-		Dispatcher:          dispatcher,
-		Audio:               fanout,
-		Ingress:             ingress,
-		VoiceSilenceTimeout: turnClocks.StartTimeout,
-		VoiceTurnMax:        turnClocks.StartTimeout + turnClocks.MaxUtterance,
-		Meetings:            meetings,
-		RouteMeeting:        newServeMeetingRouter(cfg),
-		ListSessions:        listSessionSummaries,
-		DeleteSession:       serveDeleteSession(ref),
-		WorkDir:             cfg.WorkDir,
-		WorkDirSource:       string(serveWorkDirInfo.Source),
-		LoopbackHTTP:        serveOpen,
-		Campaign:            bannerCampaign(cfg.WorkDir),
+		Bind:                   addr,
+		ExtraBinds:             extraBinds,
+		AllowPublic:            serveAllowPublic,
+		Credentials:            creds,
+		Bus:                    bus,
+		Dispatcher:             dispatcher,
+		CurrentSessionSnapshot: currentSessionSnapshot,
+		Audio:                  fanout,
+		Ingress:                ingress,
+		VoiceSilenceTimeout:    turnClocks.StartTimeout,
+		VoiceTurnMax:           turnClocks.StartTimeout + turnClocks.MaxUtterance,
+		Meetings:               meetings,
+		RouteMeeting:           newServeMeetingRouter(cfg),
+		ListSessions:           listSessionSummaries,
+		DeleteSession:          serveDeleteSession(ref),
+		WorkDir:                cfg.WorkDir,
+		WorkDirSource:          string(serveWorkDirInfo.Source),
+		LoopbackHTTP:           serveOpen,
+		Campaign:               bannerCampaign(cfg.WorkDir),
 		Providers: netapi.Providers{
 			Brain: cfg.BrainProvider,
 			STT:   sttName,
@@ -449,7 +454,7 @@ func runServe(cfg *config.Config) error {
 			// tells clients where it listens instead of leaving them to parse url.
 			allBinds := append([]string{listenAddr}, extras...)
 			if serveBannerJSON {
-				emitServeBannerJSON(listenAddr, allBinds, creds)
+				emitServeBannerJSON(listenAddr, allBinds, creds, netapi.CapabilitiesForSnapshot(currentSessionSnapshot != nil))
 			} else {
 				printServeBanner(listenAddr, creds, cfg)
 				if len(extras) > 0 {
@@ -618,6 +623,72 @@ func (s *servePersonaSwitcher) applyContext(ctx context.Context, id string) (net
 		return netapi.PersonaAck{}, err
 	}
 	return netapi.PersonaAck{ID: selected.PersonaID, DisplayName: selected.DisplayName, PromptHash: selected.PromptHash}, nil
+}
+
+// clear starts a new conversation epoch while retaining the selected
+// responder. Selector publication must follow the work epoch transition so a
+// subsequent session snapshot cannot combine the old selection with new work.
+func (s *servePersonaSwitcher) clear(ctx context.Context) error {
+	if err := s.pipeline.ClearConversation(); err != nil {
+		return err
+	}
+	if s.selector == nil {
+		return nil
+	}
+	selected := s.selector.Snapshot()
+	s.selector.RestoreSession(s.sessions.id(), selected.PersonaID, selected.DisplayName, selected.PromptHash)
+	_, err := s.selector.Select(ctx, selected.PersonaID, "clear")
+	return err
+}
+
+// snapshotProvider advertises replay only when all snapshot authorities exist.
+// The legacy work-disabled serve path has no conversation epoch and must keep
+// its existing stream usable instead of advertising snapshots that always fail.
+func (s *servePersonaSwitcher) snapshotProvider() netapi.SnapshotProvider {
+	if s.selector == nil || !s.pipeline.WorkSnapshot().Scope.Valid() {
+		return nil
+	}
+	if _, ok := s.pipeline.Brain.(brain.CanonicalHistoryProvider); !ok {
+		return nil
+	}
+	return s.snapshot
+}
+
+// snapshot is called by netapi only at a dispatcher boundary. Canonical
+// history is the source for reconnect identity; provider projection History is
+// deliberately not used here.
+func (s *servePersonaSwitcher) snapshot(ctx context.Context) (netapi.SessionSnapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return netapi.SessionSnapshot{}, err
+	}
+	if s.selector == nil {
+		return netapi.SessionSnapshot{}, errors.New("shared-persona session snapshot is unavailable")
+	}
+	canonical, ok := s.pipeline.Brain.(brain.CanonicalHistoryProvider)
+	if !ok {
+		return netapi.SessionSnapshot{}, errors.New("canonical conversation history is unavailable")
+	}
+	selected := s.selector.Snapshot()
+	s.sessions.mu.Lock()
+	if s.sessions.sess == nil {
+		s.sessions.mu.Unlock()
+		return netapi.SessionSnapshot{}, errors.New("active session is unavailable")
+	}
+	sessionID := s.sessions.sess.ID
+	s.sessions.mu.Unlock()
+	scope := s.pipeline.WorkSnapshot().Scope
+	if sessionID == "" || scope.SessionID != sessionID || selected.SessionID != sessionID {
+		return netapi.SessionSnapshot{}, errors.New("session snapshot has mismatched session identity")
+	}
+	if scope.ConversationEpoch == "" || selected.ConversationEpoch != scope.ConversationEpoch {
+		return netapi.SessionSnapshot{}, errors.New("session snapshot has mismatched conversation epoch")
+	}
+	return netapi.SessionSnapshot{
+		SessionID:         sessionID,
+		ConversationEpoch: scope.ConversationEpoch,
+		Selection:         selected,
+		Transcript:        canonical.CanonicalHistory(),
+	}, nil
 }
 
 // resume is a conversation transition, separate from responder selection.

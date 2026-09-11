@@ -70,12 +70,29 @@ type hub struct {
 	// segment's speaking_complete: a multi-sentence reply is still speaking
 	// between its segments. Written only from the bus subscription.
 	speaking atomic.Bool
+	// bumpStateRevision advances the dispatcher-owned client state revision.
+	// It is set by Server after the hub is created; zero-value hubs used by
+	// focused audio tests remain valid.
+	bumpStateRevision func()
 }
 
 func newHub() *hub {
 	h := &hub{conns: make(map[*streamConn]struct{})}
 	h.audioGeneration.Store(1)
 	return h
+}
+
+func (h *hub) setStateRevision(bump func()) {
+	h.mu.Lock()
+	h.bumpStateRevision = bump
+	h.mu.Unlock()
+}
+
+func (h *hub) micStateLocked() string {
+	if h.micClaimant != nil {
+		return "claimed"
+	}
+	return "idle"
 }
 
 func (h *hub) audioGenerationSnapshot() uint64 {
@@ -385,10 +402,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		kick:  make(chan string, 1),
 		token: presentedToken(r),
 	}
-	if !s.hub.add(conn) {
-		ws.Close(websocket.StatusTryAgainLater, "too many clients")
-		return
-	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
 	defer func() {
 		// The deadline goes with the turn: a socket that really closed has
 		// already ended it, and a fire after this would report a turn that
@@ -403,9 +418,27 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		s.hub.remove(conn)
 		s.hub.releaseMic(conn)
 	}()
-
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
+	registered := false
+	if s.opts.CurrentSessionSnapshot != nil && s.dispatcher != nil {
+		err := s.dispatcher.Snapshot(ctx, s.opts.CurrentSessionSnapshot, func(installCtx context.Context, snapshot SessionSnapshot) error {
+			return s.installSnapshot(installCtx, conn, snapshot)
+		})
+		if err != nil {
+			status := websocket.StatusInternalError
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				status = websocket.StatusPolicyViolation
+			}
+			ws.Close(status, "session snapshot unavailable")
+			return
+		}
+		registered = true
+	} else {
+		registered = s.hub.add(conn)
+	}
+	if !registered {
+		ws.Close(websocket.StatusTryAgainLater, "too many clients")
+		return
+	}
 
 	writeDone := make(chan struct{})
 	go func() {

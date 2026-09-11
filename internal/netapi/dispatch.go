@@ -46,6 +46,7 @@ const (
 	opPersona
 	opBackground
 	opTranscription
+	opSnapshot
 )
 
 type personaResult struct {
@@ -62,6 +63,9 @@ type dispatchOp struct {
 	setPersona        func(id string) (PersonaAck, error)
 	setPersonaContext func(context.Context, string) (PersonaAck, error)
 	personaDone       chan personaResult
+	snapshot          SnapshotProvider
+	snapshotInstall   func(context.Context, SessionSnapshot) error
+	snapshotDone      chan error
 	// waitCtx is the caller's context for waitable ops (resume). If it is
 	// already canceled when the op reaches apply, the work is skipped so a
 	// timed-out client cannot still mutate session state later.
@@ -99,16 +103,23 @@ type Dispatcher struct {
 	// interrupt fences and cancels the turn under one mutex.
 	resumeAudio func() uint64
 	resetAudio  func()
+	// stateRevision is the single client-visible runtime revision. It covers
+	// serialized conversation transitions and out-of-band mic ownership; PCM
+	// audioGeneration remains a separate delivery fence.
+	stateRevision   atomic.Uint64
+	publishSnapshot func(context.Context)
 }
 
 func NewDispatcher(runner TurnRunner, bus *events.Bus, clearHistory func(), resume func(id string) error) *Dispatcher {
-	return &Dispatcher{
+	d := &Dispatcher{
 		runner:       runner,
 		bus:          bus,
 		clearHistory: clearHistory,
 		resume:       resume,
 		queue:        make(chan dispatchOp, dispatchQueueDepth),
 	}
+	d.stateRevision.Store(1)
+	return d
 }
 
 // Run processes control operations until ctx is canceled. It must run in
@@ -264,7 +275,9 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 		if d.clearHistory != nil {
 			d.clearHistory()
 		}
+		d.bumpStateRevision()
 		d.bus.Emit(events.ConversationCleared{})
+		d.publishCurrentSnapshot(ctx)
 
 	case opResume:
 		if op.waitCtx != nil && op.waitCtx.Err() != nil {
@@ -276,6 +289,10 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 		err := errors.New("resume is not supported")
 		if d.resume != nil {
 			err = d.resume(op.id)
+		}
+		if err == nil {
+			d.bumpStateRevision()
+			d.publishCurrentSnapshot(ctx)
 		}
 		if op.done != nil {
 			op.done <- err
@@ -303,6 +320,34 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 		}
 		cancel()
 		op.personaDone <- personaResult{ack: ack, err: err}
+		if err == nil {
+			d.bumpStateRevision()
+		}
+
+	case opSnapshot:
+		if op.waitCtx != nil {
+			if err := op.waitCtx.Err(); err != nil {
+				op.snapshotDone <- err
+				return
+			}
+		}
+		if op.snapshot == nil || op.snapshotInstall == nil {
+			op.snapshotDone <- errors.New("session snapshot is not configured")
+			return
+		}
+		snapshotCtx, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(op.waitCtx, cancel)
+		defer stop()
+		defer cancel()
+		snapshot, err := op.snapshot(snapshotCtx)
+		if err == nil && op.waitCtx != nil {
+			err = snapshotCtx.Err()
+		}
+		if err == nil {
+			snapshot.StateRevision = d.stateRevision.Load()
+			err = op.snapshotInstall(snapshotCtx, snapshot)
+		}
+		op.snapshotDone <- err
 	}
 }
 
@@ -314,6 +359,63 @@ func (d *Dispatcher) setAudioLifecycle(resume func() uint64, reset func()) {
 	d.resumeAudio = resume
 	d.resetAudio = reset
 	d.mu.Unlock()
+}
+
+// setSnapshotPublisher is installed by Server. It is called from the
+// dispatcher goroutine after clear/resume has changed the canonical host
+// state, so connected clients cannot retain the previous session identity.
+func (d *Dispatcher) setSnapshotPublisher(publish func(context.Context)) {
+	d.mu.Lock()
+	d.publishSnapshot = publish
+	d.mu.Unlock()
+}
+
+func (d *Dispatcher) publishCurrentSnapshot(ctx context.Context) {
+	d.mu.Lock()
+	publish := d.publishSnapshot
+	d.mu.Unlock()
+	if publish != nil {
+		publish(ctx)
+	}
+}
+
+func (d *Dispatcher) bumpStateRevision() uint64 {
+	return d.stateRevision.Add(1)
+}
+
+// StateRevision returns the one revision shared by snapshots and out-of-band
+// control transitions. It deliberately does not expose the PCM generation.
+func (d *Dispatcher) StateRevision() uint64 { return d.stateRevision.Load() }
+
+// Snapshot runs a host snapshot provider at the serialized dispatcher
+// boundary. install must add the connection and enqueue the snapshot before
+// returning; this closes the read/register gap where a next reply could beat
+// the initial snapshot.
+func (d *Dispatcher) Snapshot(ctx context.Context, provider SnapshotProvider, install func(context.Context, SessionSnapshot) error) error {
+	if provider == nil || install == nil {
+		return errors.New("session snapshot is not configured")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := make(chan error, 1)
+	if err := d.enqueue(dispatchOp{kind: opSnapshot, waitCtx: ctx, snapshot: provider, snapshotInstall: install, snapshotDone: done}); err != nil {
+		return err
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		// Prefer a completed install when cancellation raced its result. The
+		// install path checks cancellation under hub.mu, so this cannot leave a
+		// registered connection behind.
+		select {
+		case err := <-done:
+			return err
+		default:
+			return ctx.Err()
+		}
+	}
 }
 
 // beginTurn installs the in-flight turn's cancel and clears the interrupt flag
@@ -329,6 +431,7 @@ func (d *Dispatcher) beginTurn(ctx context.Context, cancel context.CancelFunc) c
 		}
 	}
 	d.cancelTurn = cancel
+	d.bumpStateRevision()
 	d.canceled.Store(false)
 	d.active.Store(true)
 	return ctx
@@ -437,6 +540,7 @@ func (d *Dispatcher) SetPersonaContext(ctx context.Context, id string, apply fun
 // does not queue — an interrupt behind the turn it targets is useless.
 func (d *Dispatcher) Interrupt() {
 	d.mu.Lock()
+	d.bumpStateRevision()
 	if d.resetAudio != nil {
 		d.resetAudio()
 	}

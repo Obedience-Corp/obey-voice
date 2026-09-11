@@ -88,6 +88,9 @@ func (h *hub) claimMicLocked(c *streamConn, gen uint64) error {
 		return errors.New("microphone claimed by another client")
 	}
 	h.micClaimant, h.micGen = c, gen
+	if h.bumpStateRevision != nil {
+		h.bumpStateRevision()
+	}
 	h.ingress.Reset()
 	return nil
 }
@@ -133,6 +136,9 @@ func (h *hub) releaseLocked(c *streamConn) (utteranceOpen bool) {
 	}
 	utteranceOpen = h.ingress != nil && !h.ingress.Finalized()
 	h.micClaimant, h.micGen = nil, 0
+	if h.bumpStateRevision != nil {
+		h.bumpStateRevision()
+	}
 	// If the client disconnects mid-utterance, finalize so STT is not left
 	// blocked waiting for more frames.
 	if h.ingress != nil {

@@ -80,7 +80,7 @@ output moves to stderr. The first line is `ready`, written once the listener is
 bound:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true,"shared_persona_session_snapshot":true,"response_id_dedupe":true}}
 ```
 
 | Field | Meaning |
@@ -99,7 +99,7 @@ bound:
 LAN mode with a trusted or self-signed cert omits `client_setup_url` entirely:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true,"shared_persona_session_snapshot":true,"response_id_dedupe":true}}
 ```
 
 A `pairing_code` line (`{"event":"pairing_code","code":"…","expires_at":"…"}`)
@@ -519,6 +519,36 @@ meetings per serve, and on-phone STT.
 
 Connect: `wss://host:port/v1/stream?token=...` (or Bearer on non-browser clients).
 On `--open` / LoopbackHTTP, Stage on loopback uses `ws://127.0.0.1:<port>/v1/stream?token=...`.
+
+### Current-session snapshot
+
+When the serve host has a canonical shared-persona session owner, the first
+text frame on a new stream is a `session_snapshot`, before any later reply or
+selection event:
+
+```json
+{"type":"session_snapshot","session_id":"…","conversation_epoch":"…",
+ "selection":{"session_id":"…","conversation_epoch":"…",
+  "persona_id":"santa","display_name":"Santa","binding_hash":"…",
+  "revision":7},"mic_state":"idle","state_revision":42,
+ "transcript":[{"role":"assistant","content":"…","response_id":"…"}]}
+```
+
+`transcript` is the canonical session history, including persisted assistant
+persona identity and `response_id`; clients must not rebuild it from stream
+events or relabel it from `set_persona_ack`. A reconnect seeds its transcript
+from this one message and ignores a later response event whose
+`response_envelope.response_id` is already present. `selection.revision` is
+monotonic for `persona_selected` events; clients discard an older selection.
+`state_revision` is a monotonic runtime revision covering conversation
+boundaries and mic ownership, separate from the PCM audio generation fence.
+
+The additive `shared_persona_session_snapshot` and `response_id_dedupe`
+capabilities are advertised together only when this canonical host path is
+available. A serve without that callback keeps the legacy stream ordering and
+does not claim attributed shared-persona support. Clear and resume publish a
+fresh snapshot to connected clients so an old session/epoch cannot remain the
+visible current state.
 LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bearer.
 
 ### Client → server (JSON text frames)
@@ -765,6 +795,8 @@ it is absent, which is what an older serve looks like:
 | `interrupt_events` | A remote `interrupt` emits `turn_interrupted` / `speaking_interrupted` |
 | `voice_claim_on_dequeue` | A queued `voice_start` does not hold the mic |
 | `binary_audio` | Binary WebSocket frames: mic uplink is raw `pcm_s16le` @ 16 kHz; TTS downlink is `OVA1` + rate u32le + `segment_id` u64le + PCM when the client set `audio_output.binary` |
+| `shared_persona_session_snapshot` | The stream begins with a canonical `session_snapshot` containing session/epoch, selected persona, mic state, state revision, and transcript |
+| `response_id_dedupe` | Canonical assistant turns and response envelopes carry stable IDs for reconnect deduplication |
 
 `protocol_version` is deliberately **not** bumped for these: this file's own
 rule is to feature-detect by status, because the version does not move for
