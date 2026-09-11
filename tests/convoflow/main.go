@@ -80,13 +80,13 @@ func runMain(args []string) int {
 		fmt.Fprintf(os.Stderr, "convoflow: -self-test only runs scenarios/self-test.yaml or persona-proof.yaml (got %q); stock gates need a live agent\n", scn.Name)
 		return 1
 	}
-	if scn.Name == "persona-proof" && *fixtureConfig != "" {
+	if *fixtureConfig != "" {
 		if _, err := os.Stat(*fixtureConfig); err != nil {
 			fmt.Fprintf(os.Stderr, "convoflow: fixture config %q: %v\n", *fixtureConfig, err)
 			return 1
 		}
 	}
-	if scn.Name == "persona-proof" && *personaDir != "" {
+	if *personaDir != "" {
 		if st, err := os.Stat(*personaDir); err != nil || !st.IsDir() {
 			if err == nil {
 				err = fmt.Errorf("not a directory")
@@ -172,7 +172,7 @@ func runMain(args []string) int {
 func wireLiveAgent(ctx context.Context, eng *engine, k knobs) int {
 	var base *config.Config
 	var err error
-	if eng.scn.Name == "persona-proof" {
+	if eng.fixtureConfig != "" {
 		base, err = loadFixtureConfig(eng.fixtureConfig)
 	} else {
 		base, err = config.Load()
@@ -188,9 +188,9 @@ func wireLiveAgent(ctx context.Context, eng *engine, k knobs) int {
 	resolvedBase := cfg
 	var catalog persona.Catalog
 	var initial *persona.SessionBinding
-	if eng.scn.Name == "persona-proof" {
-		if eng.personaDir == "" {
-			return reportSetupError(fmt.Errorf("persona proof requires -persona-dir"))
+	if eng.scn.Persona.Initial != "" {
+		if eng.fixtureConfig == "" || eng.personaDir == "" {
+			return reportSetupError(fmt.Errorf("persona scenario %q requires -fixture-config and -persona-dir", eng.scn.Name))
 		}
 		catalog = persona.Catalog{Dir: eng.personaDir}
 		initial, err = catalog.ResolveBinding(resolvedBase, eng.scn.Persona.Initial)

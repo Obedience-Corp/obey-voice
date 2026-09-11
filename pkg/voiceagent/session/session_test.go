@@ -618,3 +618,32 @@ func TestLoadRejectsFutureFormatVersion(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
+
+func TestSaveWorkSameRevisionWithRuntimeTimestamps(t *testing.T) {
+	store := NewStore(t.TempDir())
+	s := New("ollama", "model")
+	if err := store.Save(s, nil); err != nil {
+		t.Fatal(err)
+	}
+	scope := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime", ConversationEpoch: "conversation"}
+	snapshot := testSnapshot(1, scope)
+	started := time.Now() // Includes runtime monotonic data absent from JSON.
+	snapshot.Pending[0].Outcome.StartedAt = started
+	snapshot.Pending[0].Outcome.EndedAt = started.Add(time.Second)
+	snapshot.Pending[0].Outcome.Elapsed = time.Second
+	if err := store.BeginWork(s, snapshot, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveWork(s, snapshot); err != nil {
+		t.Fatalf("retry of identical persisted work = %v", err)
+	}
+	loaded, err := store.Load(s.ID)
+	if err != nil || !loaded.Work.Pending[0].Outcome.StartedAt.Equal(started) {
+		t.Fatalf("timestamp changed during checkpoint: session=%+v err=%v", loaded, err)
+	}
+	conflict := cloneSnapshot(&snapshot)
+	conflict.Pending[0].Outcome.EndedAt = started.Add(2 * time.Second)
+	if err := store.SaveWork(s, *conflict); !errors.Is(err, ErrWorkRevisionConflict) {
+		t.Fatalf("changed persisted timestamp accepted: %v", err)
+	}
+}

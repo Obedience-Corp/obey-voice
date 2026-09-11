@@ -94,6 +94,11 @@ type Dispatcher struct {
 	// still running until it unwinds — while a voice_start arriving right
 	// behind an interrupt still sees a free pipeline.
 	canceled atomic.Bool
+	// Audio boundaries belong to the serialized turn owner. The callbacks are
+	// installed by Server after it creates the hub; keeping them here means an
+	// interrupt fences and cancels the turn under one mutex.
+	resumeAudio func() uint64
+	resetAudio  func()
 }
 
 func NewDispatcher(runner TurnRunner, bus *events.Bus, clearHistory func(), resume func(id string) error) *Dispatcher {
@@ -209,7 +214,7 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 	switch op.kind {
 	case opText, opBackground:
 		turnCtx, cancel := context.WithCancel(ctx)
-		d.beginTurn(cancel)
+		turnCtx = d.beginTurn(turnCtx, cancel)
 		var err error
 		if op.kind == opBackground {
 			if runner, ok := d.runner.(backgroundRunner); ok {
@@ -234,7 +239,7 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 			return
 		}
 		turnCtx, cancel := context.WithCancel(ctx)
-		d.beginTurn(cancel)
+		turnCtx = d.beginTurn(turnCtx, cancel)
 		_, err := voice.RunTurn(turnCtx)
 		d.endTurn()
 		cancel()
@@ -247,7 +252,7 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 			return
 		}
 		turnCtx, cancel := context.WithCancel(ctx)
-		d.beginTurn(cancel)
+		turnCtx = d.beginTurn(turnCtx, cancel)
 		text, err := d.runner.(TranscriptionRunner).RunTranscription(turnCtx)
 		d.endTurn()
 		cancel()
@@ -301,17 +306,32 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 	}
 }
 
+// setAudioLifecycle gives the server ownership of the ordered audio boundary.
+// It is deliberately private: callers must not create a second resume or
+// interrupt authority beside the dispatcher.
+func (d *Dispatcher) setAudioLifecycle(resume func() uint64, reset func()) {
+	d.mu.Lock()
+	d.resumeAudio = resume
+	d.resetAudio = reset
+	d.mu.Unlock()
+}
+
 // beginTurn installs the in-flight turn's cancel and clears the interrupt flag
-// as one step, under the mutex Interrupt takes. As two steps it lost an
-// Interrupt that landed between them: the turn context was canceled and
-// Interrupted() still reported false, so the paths that gate turn_interrupted
-// on it told nobody the turn had ended.
-func (d *Dispatcher) beginTurn(cancel context.CancelFunc) {
+// under the same mutex Interrupt takes. It resumes the audio boundary and
+// carries the resulting generation in the immutable turn context before the
+// runner can admit PCM.
+func (d *Dispatcher) beginTurn(ctx context.Context, cancel context.CancelFunc) context.Context {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.resumeAudio != nil {
+		if generation := d.resumeAudio(); generation != 0 {
+			ctx = withAudioGeneration(ctx, generation)
+		}
+	}
 	d.cancelTurn = cancel
 	d.canceled.Store(false)
 	d.active.Store(true)
+	return ctx
 }
 
 // endTurn retires the turn that just unwound: nothing left to cancel, and no
@@ -417,17 +437,18 @@ func (d *Dispatcher) SetPersonaContext(ctx context.Context, id string, apply fun
 // does not queue — an interrupt behind the turn it targets is useless.
 func (d *Dispatcher) Interrupt() {
 	d.mu.Lock()
+	if d.resetAudio != nil {
+		d.resetAudio()
+	}
 	cancel := d.cancelTurn
 	if cancel != nil {
 		// The turn is dead from here even though it has not unwound yet, so
 		// the barge-in sequence (interrupt → voice_start) finds a free
 		// pipeline instead of queueing behind the turn it just killed.
 		d.canceled.Store(true)
-	}
-	d.mu.Unlock()
-	if cancel != nil {
 		cancel()
 	}
+	d.mu.Unlock()
 }
 
 // TurnActive reports whether a turn is running right now. A canceled turn is

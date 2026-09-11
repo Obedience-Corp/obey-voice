@@ -16,6 +16,7 @@ const (
 	waitIdle        waitKind = "idle"
 	waitJobStarted  waitKind = "job_started"
 	waitJobTerminal waitKind = "job_terminal"
+	waitWorkDurable waitKind = "work_durable"
 )
 
 // Scenario is one scripted conversation. Unknown YAML keys are load errors.
@@ -57,43 +58,55 @@ type scenarioWorker struct {
 }
 
 type Turn struct {
-	ID          string        `yaml:"id"`
-	User        string        `yaml:"user"`
-	Timeout     duration      `yaml:"timeout"`
-	Wait        waitKind      `yaml:"wait"`
-	Expect      []Expectation `yaml:"expect"`
-	WAV         string        `yaml:"wav"`
-	Op          string        `yaml:"op"`
-	Persona     string        `yaml:"persona"`
-	ExpectError string        `yaml:"expect_error"`
+	InterruptAfter duration      `yaml:"interrupt_after"`
+	ID             string        `yaml:"id"`
+	User           string        `yaml:"user"`
+	Timeout        duration      `yaml:"timeout"`
+	Duration       duration      `yaml:"duration"`
+	Wait           waitKind      `yaml:"wait"`
+	Expect         []Expectation `yaml:"expect"`
+	WAV            string        `yaml:"wav"`
+	Op             string        `yaml:"op"`
+	Persona        string        `yaml:"persona"`
+	ExpectError    string        `yaml:"expect_error"`
 }
 
 type Expectation struct {
-	Event               string `yaml:"event"`
-	NoEvent             string `yaml:"no_event"`
-	SpokenMatches       string `yaml:"spoken_matches"`
-	SpokenNotMatches    string `yaml:"spoken_not_matches"`
-	ResponseMatches     string `yaml:"response_matches"`
-	LiveHistoryIncludes string `yaml:"live_history_includes"`
-	LiveHistoryExcludes string `yaml:"live_history_excludes"`
-	LiveRouterPolicy    string `yaml:"live_router_policy"`
-	WorkerRouterPolicy  string `yaml:"worker_router_policy"`
-	WorkerToolsEnabled  *bool  `yaml:"worker_tools_enabled"`
-	RouteKind           string `yaml:"route_kind"`
-	RouteSource         string `yaml:"route_source"`
-	Metric              string `yaml:"metric"`
-	Op                  string `yaml:"op"`
-	Value               int    `yaml:"value"`
-	PersonaID           string `yaml:"persona_id"`
-	DisplayName         string `yaml:"display_name"`
-	ResponsePersonaID   string `yaml:"response_persona_id"`
-	ResponseID          string `yaml:"response_id"`
-	ResponseVoice       string `yaml:"response_voice"`
-	ResponseBrainModel  string `yaml:"response_brain_model"`
-	SessionID           string `yaml:"session_id"`
-	NoLiveBrainCall     bool   `yaml:"no_live_brain_call"`
-	BrainCalls          *int   `yaml:"brain_calls"`
-	CanonicalIncludes   string `yaml:"canonical_includes"`
+	Event                        string `yaml:"event"`
+	NoEvent                      string `yaml:"no_event"`
+	SpokenMatches                string `yaml:"spoken_matches"`
+	SpokenNotMatches             string `yaml:"spoken_not_matches"`
+	ResponseMatches              string `yaml:"response_matches"`
+	LiveHistoryIncludes          string `yaml:"live_history_includes"`
+	LiveHistoryExcludes          string `yaml:"live_history_excludes"`
+	LiveRouterPolicy             string `yaml:"live_router_policy"`
+	WorkerRouterPolicy           string `yaml:"worker_router_policy"`
+	WorkerToolsEnabled           *bool  `yaml:"worker_tools_enabled"`
+	WorkerCalls                  *int   `yaml:"worker_calls"`
+	RouteKind                    string `yaml:"route_kind"`
+	RouteSource                  string `yaml:"route_source"`
+	Metric                       string `yaml:"metric"`
+	Op                           string `yaml:"op"`
+	Value                        int    `yaml:"value"`
+	PersonaID                    string `yaml:"persona_id"`
+	DisplayName                  string `yaml:"display_name"`
+	ResponsePersonaID            string `yaml:"response_persona_id"`
+	ResponseID                   string `yaml:"response_id"`
+	ResponseVoice                string `yaml:"response_voice"`
+	ResponseBrainModel           string `yaml:"response_brain_model"`
+	SessionID                    string `yaml:"session_id"`
+	NoLiveBrainCall              bool   `yaml:"no_live_brain_call"`
+	BrainCalls                   *int   `yaml:"brain_calls"`
+	CanonicalIncludes            string `yaml:"canonical_includes"`
+	WorkOriginPersona            string `yaml:"work_origin_persona"`
+	WorkCurrentResponder         string `yaml:"work_current_responder"`
+	WorkState                    string `yaml:"work_state"`
+	WorkPending                  *bool  `yaml:"work_pending"`
+	WorkCommunicated             *bool  `yaml:"work_communicated"`
+	WorkReceipt                  *bool  `yaml:"work_receipt"`
+	WorkPersisted                *bool  `yaml:"work_persisted"`
+	WorkRunningAtSelection       *bool  `yaml:"work_running_at_selection"`
+	WorkCompletedBeforeSelection *bool  `yaml:"work_completed_before_selection"`
 }
 
 type duration struct{ time.Duration }
@@ -142,7 +155,10 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	}
 	for i := range scn.Turns {
 		t := &scn.Turns[i]
-		if t.Op != "" && t.Op != "select_persona" {
+		if t.InterruptAfter.Duration < 0 || (t.InterruptAfter.Duration > 0 && (t.User == "" || t.Op != "")) {
+			return nil, fmt.Errorf("load %s: turn %q: interrupt_after requires a user turn and positive duration", name, t.ID)
+		}
+		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" {
 			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)
 		}
 		if t.ExpectError != "" && t.Op != "select_persona" {
@@ -152,12 +168,12 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 			t.Wait = waitIdle
 		}
 		switch t.Wait {
-		case waitIdle, waitJobStarted, waitJobTerminal:
+		case waitIdle, waitJobStarted, waitJobTerminal, waitWorkDurable:
 		default:
 			return nil, fmt.Errorf("load %s: turn %q: unknown wait %q", name, t.ID, t.Wait)
 		}
-		if t.User == "" && t.Wait != waitJobTerminal && t.Wait != waitIdle {
-			return nil, fmt.Errorf("load %s: turn %q: empty user only allowed with wait idle or job_terminal", name, t.ID)
+		if t.User == "" && t.Op == "" && t.Wait != waitJobTerminal && t.Wait != waitIdle && t.Wait != waitWorkDurable {
+			return nil, fmt.Errorf("load %s: turn %q: empty user only allowed with wait idle, job_terminal, or work_durable", name, t.ID)
 		}
 	}
 	return &scn, nil

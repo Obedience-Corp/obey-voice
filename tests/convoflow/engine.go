@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // runner is the conversation driver. PR 2 tests inject a fake; live
@@ -24,6 +26,11 @@ type runner interface {
 	workerTools() *bool
 	liveCalled() bool
 	workerCalled() bool
+}
+
+type backgroundRunner interface {
+	runBackground(context.Context) error
+	waitWork(context.Context, bool) error
 }
 
 type engine struct {
@@ -54,12 +61,12 @@ type turnRecord struct {
 
 const defaultScenarioWall = 5 * time.Minute
 
-func (e *engine) run(ctx context.Context) error {
+func (e *engine) run(ctx context.Context) (runErr error) {
 	defer func() {
-		if p, ok := e.runner.(personaRunner); ok {
-			_ = p.writePersonaArtifacts(e.runDir)
-		}
 		e.closeAll()
+		if p, ok := e.runner.(personaRunner); ok {
+			runErr = errors.Join(runErr, p.writePersonaArtifacts(e.runDir), p.validatePersonaRun())
+		}
 	}()
 	if err := os.MkdirAll(e.runDir, 0o700); err != nil {
 		return err
@@ -146,6 +153,12 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	mark := len(e.rec.snapshot())
 	routeMark := e.rec.routeMark()
 	var selectionErr error
+	var workAtSelection work.Snapshot
+	if turn.Op == "select_persona" {
+		if wr, ok := e.runner.(interface{ workSnapshot() work.Snapshot }); ok {
+			workAtSelection = wr.workSnapshot()
+		}
+	}
 	if turn.Op == "select_persona" {
 		p, ok := e.runner.(personaRunner)
 		if !ok {
@@ -163,11 +176,40 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		} else if turn.ExpectError != "" {
 			return fmt.Errorf("turn %s: expected selection error containing %q", turn.ID, turn.ExpectError)
 		}
+	} else if turn.Op == "run_background" {
+		bg, ok := e.runner.(backgroundRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support background work", turn.ID)
+		}
+		if err := bg.runBackground(turnCtx); err != nil {
+			return err
+		}
+	} else if turn.Op == "quiet_gap" {
+		gap := turn.Duration.Duration
+		if gap <= 0 {
+			return fmt.Errorf("turn %s: quiet_gap requires a positive duration", turn.ID)
+		}
+		timer := time.NewTimer(gap)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-turnCtx.Done():
+			return turnCtx.Err()
+		}
 	} else if turn.User != "" {
 		if e.runner == nil {
 			return fmt.Errorf("no runner (live agent not wired)")
 		}
-		if err := e.runner.runTurn(turnCtx, turn.User); err != nil {
+		if turn.InterruptAfter.Duration > 0 {
+			control, ok := e.runner.(interface{ stopPlayback() })
+			if !ok {
+				return fmt.Errorf("turn %s: runner does not support playback interruption", turn.ID)
+			}
+			if err := runInterruptedTurn(turnCtx, e.rec, turn.InterruptAfter.Duration,
+				func(ctx context.Context) error { return e.runner.runTurn(ctx, turn.User) }, control.stopPlayback); err != nil {
+				return err
+			}
+		} else if err := e.runner.runTurn(turnCtx, turn.User); err != nil {
 			return err
 		}
 	}
@@ -175,7 +217,15 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	if wait == "" {
 		wait = waitIdle
 	}
-	if err := e.rec.waitFor(turnCtx, wait, e.isPlaying); err != nil {
+	if wait == waitWorkDurable {
+		bg, ok := e.runner.(backgroundRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support durable work wait", turn.ID)
+		}
+		if err := bg.waitWork(turnCtx, true); err != nil {
+			return fmt.Errorf("wait %s: %w", wait, err)
+		}
+	} else if err := e.rec.waitFor(turnCtx, wait, e.isPlaying); err != nil {
 		return fmt.Errorf("wait %s: %w", wait, err)
 	}
 	if e.player != nil {
@@ -206,6 +256,7 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	}
 	if p, ok := e.runner.(personaRunner); ok {
 		st.persona = p.personaState()
+		st.persona.WorkAtSelection = workAtSelection
 	}
 	e.turns = append(e.turns, e.recordTurn(turn, mark, st.route))
 	if selectionErr != nil {

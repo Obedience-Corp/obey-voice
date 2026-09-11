@@ -193,6 +193,9 @@ func New(opts Options) *Server {
 			setter.SetCompletionCapture(h.acquireCompletion)
 		}
 	}
+	if opts.Dispatcher != nil {
+		opts.Dispatcher.setAudioLifecycle(h.resumeAudio, h.resetAudio)
+	}
 	if opts.Audio != nil {
 		opts.Audio.AttachHub(h)
 	}

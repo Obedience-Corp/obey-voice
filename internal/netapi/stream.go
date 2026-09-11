@@ -39,6 +39,11 @@ type hub struct {
 	completionMu sync.Mutex
 	conns        map[*streamConn]struct{}
 	audioBlocked bool
+	// audioGeneration is the ordered PCM boundary. Reset advances it while
+	// blocking delivery; resume advances it again before reopening delivery.
+	// Producers carry the generation they observed at admission, so delayed
+	// chunks and end markers cannot cross a reset/resume boundary.
+	audioGeneration atomic.Uint64
 
 	// streamers counts connections with audio_output mode "stream" so the
 	// TTS pump can skip encode/marshal when nobody is listening.
@@ -68,7 +73,21 @@ type hub struct {
 }
 
 func newHub() *hub {
-	return &hub{conns: make(map[*streamConn]struct{})}
+	h := &hub{conns: make(map[*streamConn]struct{})}
+	h.audioGeneration.Store(1)
+	return h
+}
+
+func (h *hub) audioGenerationSnapshot() uint64 {
+	if g := h.audioGeneration.Load(); g != 0 {
+		return g
+	}
+	// Keep zero-value hubs used by narrow tests safe without making normal hub
+	// construction depend on a second initialization path.
+	if h.audioGeneration.CompareAndSwap(0, 1) {
+		return 1
+	}
+	return h.audioGeneration.Load()
 }
 
 func (h *hub) add(c *streamConn) bool {
@@ -127,6 +146,13 @@ func (h *hub) evictToken(token, reason string) {
 // under the hub lock, so broadcastPCM cannot observe stream-on with binary
 // still false. Safe to call from the control reader while the hub is live.
 func (h *hub) setConnAudio(c *streamConn, on, binary bool) {
+	h.setConnAudioProtocol(c, on, binary, "")
+}
+
+// setConnAudioProtocol is the protocol-aware form used by the WebSocket
+// control reader. The variadic wrapper above preserves the existing internal
+// test and helper call shape.
+func (h *hub) setConnAudioProtocol(c *streamConn, on, binary bool, protocol string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.conns[c]; !ok {
@@ -142,9 +168,19 @@ func (h *hub) setConnAudio(c *streamConn, on, binary bool) {
 		}
 	}
 	if on {
+		// A client may opt in while the shared boundary is blocked. Carry the
+		// hub fence onto it before exposing the stream preference so a delayed
+		// producer cannot use that control transition to bypass reset.
+		c.audioBlocked.Store(h.audioBlocked)
 		c.audioBinary.Store(binary)
+		if binary && strings.EqualFold(strings.TrimSpace(protocol), "ova2") {
+			c.audioProtocol.Store(audioProtocolOVA2)
+		} else {
+			c.audioProtocol.Store(audioProtocolOVA1)
+		}
 	} else {
 		c.audioBinary.Store(false)
+		c.audioProtocol.Store(0)
 	}
 }
 
@@ -178,9 +214,12 @@ func (h *hub) broadcast(msg []byte) {
 // broadcastAudio delivers TTS wire chunks only to clients that opted into
 // stream mode. A full audio queue drops the chunk; it never kicks the client.
 // The return value is how many clients accepted the send (TTFA only).
-func (h *hub) broadcastAudio(msg []byte) int {
+func (h *hub) broadcastAudio(msg []byte, generation ...uint64) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if len(generation) > 0 && generation[0] != 0 && generation[0] != h.audioGenerationSnapshot() {
+		return 0
+	}
 	accepted := 0
 	for c := range h.conns {
 		if !c.wantsAudio() || c.audioBlocked.Load() {
@@ -197,10 +236,20 @@ func (h *hub) broadcastAudio(msg []byte) int {
 }
 
 // broadcastPCM delivers one TTS chunk, JSON+base64 to clients that did not
-// opt into binary, OVA1 binary to those that did.
+// opt into binary, and legacy OVA1 binary to those that did. AudioFanout uses
+// broadcastPCMAt when it has the negotiated OVA2 identity frame available.
 func (h *hub) broadcastPCM(jsonMsg, binMsg []byte) int {
+	return h.broadcastPCMAt(jsonMsg, binMsg, nil, 0)
+}
+
+// broadcastPCMAt is the fenced form used by AudioFanout. OVA1 remains the
+// compatibility frame; OVA2 is selected only by clients that negotiated it.
+func (h *hub) broadcastPCMAt(jsonMsg, binMsg, binV2Msg []byte, generation uint64) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if generation != 0 && generation != h.audioGenerationSnapshot() {
+		return 0
+	}
 	accepted := 0
 	for c := range h.conns {
 		if !c.wantsAudio() || c.audioBlocked.Load() {
@@ -209,6 +258,9 @@ func (h *hub) broadcastPCM(jsonMsg, binMsg []byte) int {
 		msg := jsonMsg
 		if c.wantsBinaryAudio() {
 			msg = binMsg
+			if c.audioProtocol.Load() == audioProtocolOVA2 && len(binV2Msg) > 0 {
+				msg = binV2Msg
+			}
 		}
 		select {
 		case c.audio <- msg:
@@ -219,6 +271,9 @@ func (h *hub) broadcastPCM(jsonMsg, binMsg []byte) int {
 	return accepted
 }
 
+// Kept byte-for-byte compatible with existing clients. The client advances
+// its local generation when this marker arrives; the hub's private generation
+// still fences all producers while reset/resume are in flight.
 var audioResetEnvelope = []byte(`{"type":"audio_reset"}`)
 
 // resetAudio establishes an ordered cancellation boundary for every stream
@@ -232,6 +287,7 @@ func (h *hub) resetAudio() {
 	h.speaking.Store(false)
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.audioGeneration.Add(1)
 	h.audioBlocked = true
 	for c := range h.conns {
 		if !c.wantsAudio() {
@@ -261,8 +317,8 @@ func (h *hub) resetAudio() {
 // millisecond after it started. The client is still playing it. Trusting the
 // host's "playback complete" there would make every barge-in look like an
 // idle interrupt and emit no turn_interrupted at all — the one event the
-// barge-in exists to produce. For stream clients the flag is cleared by the
-// next thinking_started or by the interrupt itself (resetAudio), both of which
+// barge-in exists to produce. For stream clients the flag is cleared by
+// dispatcher turn admission or by the interrupt itself (resetAudio), both of which
 // really do mean the client stopped hearing the reply.
 func (h *hub) endOfHostPlayback() {
 	if !h.hasStreamClients() {
@@ -270,15 +326,19 @@ func (h *hub) endOfHostPlayback() {
 	}
 }
 
-// resumeAudio opens the next-turn side of the reset boundary. ThinkingStarted
-// is emitted before synthesis, so no new turn audio can race ahead of this.
-func (h *hub) resumeAudio() {
+// resumeAudio opens the next-turn side of the reset boundary. Dispatcher
+// beginTurn calls it before the runner can admit synthesis.
+func (h *hub) resumeAudio() uint64 {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.audioBlocked {
+		h.audioGeneration.Add(1)
+	}
 	h.audioBlocked = false
 	for c := range h.conns {
 		c.audioBlocked.Store(false)
 	}
+	return h.audioGenerationSnapshot()
 }
 
 func (h *hub) attachBus(bus *events.Bus) (detach func()) {
@@ -286,7 +346,6 @@ func (h *hub) attachBus(bus *events.Bus) (detach func()) {
 		switch e := e.(type) {
 		case events.ThinkingStarted:
 			h.speaking.Store(false)
-			h.resumeAudio()
 		case events.SpeakingStarted:
 			h.speaking.Store(true)
 		case events.SpeakingInterrupted:
@@ -433,8 +492,13 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			if msg.Mode == "stream" {
 				mode = "stream"
 			}
-			s.hub.setConnAudio(conn, mode == "stream", msg.Binary)
-			s.sendAudioOutputAck(conn, mode, conn.audioBinary.Load())
+			var audioOptions struct {
+				Protocol string `json:"protocol"`
+			}
+			_ = json.Unmarshal(data, &audioOptions)
+			protocol := audioOptions.Protocol
+			s.hub.setConnAudioProtocol(conn, mode == "stream", msg.Binary, protocol)
+			s.sendAudioOutputAck(conn, mode, conn.audioBinary.Load(), protocol)
 		case "transcribe_start":
 			if err := s.startTranscription(conn, msg.ID); err != nil {
 				s.sendError(conn, dispatchErrText(err))
@@ -466,13 +530,20 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 
 // sendAudioOutputAck confirms the applied stream preference on the event
 // channel so clients do not have to assume success.
-func (s *Server) sendAudioOutputAck(conn *streamConn, mode string, binary bool) {
+func (s *Server) sendAudioOutputAck(conn *streamConn, mode string, binary bool, requestedProtocol ...string) {
 	ack := map[string]any{
 		"type": "audio_output_ack",
 		"mode": mode,
 	}
 	if binary {
 		ack["binary"] = true
+		if conn.audioProtocol.Load() == audioProtocolOVA2 {
+			ack["protocol"] = "ova2"
+		} else if len(requestedProtocol) > 0 && strings.EqualFold(strings.TrimSpace(requestedProtocol[0]), "ova2") {
+			// Unsupported/disabled combinations remain legacy binary. Echoing
+			// no OVA2 claim keeps negotiation truthful.
+			ack["protocol"] = "ova1"
+		}
 	}
 	msg, err := json.Marshal(ack)
 	if err != nil {

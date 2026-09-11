@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func TestObservingRecordsOptionsPerEntryPoint(t *testing.T) {
@@ -63,5 +67,36 @@ func TestLiveRunnerReportsCallsSinceTurnMark(t *testing.T) {
 	}
 	if r.workerTools() != nil {
 		t.Fatal("workerTools must be nil when the worker was not called this turn")
+	}
+}
+
+func TestObservingFreshOllamaWorkerPreservesCallsAndIsolation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/chat" {
+			_, _ = io.WriteString(w, `{"message":{"role":"assistant","content":"Worker complete."},"done":true}`+"\n")
+			return
+		}
+		_, _ = io.WriteString(w, `{"models":[{"name":"fixture"}]}`)
+	}))
+	defer server.Close()
+	inner, err := brain.NewOllama(&config.Config{OllamaHost: server.URL, OllamaModel: "fixture", PromptsDir: t.TempDir(), WorkDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner.LoadHistory([]brain.Turn{{Role: "user", Content: "prior job context"}})
+	wrapped, observed := observeProvider(inner)
+	defer func() { _ = brain.CloseProvider(wrapped) }()
+	fresh := wrapped.(brain.FreshProvider).Fresh()
+	if len(fresh.History()) != 0 {
+		t.Fatal("new worker inherited previous job history")
+	}
+	if _, err := fresh.ThinkFull(t.Context(), "finish the fixture", brain.WorkerStreamOptions(false)); err != nil {
+		t.Fatal(err)
+	}
+	if _, calls := observed.calls(); calls != 1 {
+		t.Fatalf("fresh worker call count = %d, want 1", calls)
+	}
+	if got := wrapped.History(); len(got) != 1 || got[0].Content != "prior job context" {
+		t.Fatalf("fresh worker changed parent history: %+v", got)
 	}
 }

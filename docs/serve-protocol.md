@@ -528,7 +528,7 @@ LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bea
 | `text_input` | `text` | Enqueue a text turn |
 | `interrupt` | | Cancel in-flight turn; server sends `audio_reset`, plus `turn_interrupted` / `speaking_interrupted` when something was actually cancelled |
 | `clear_history` | | Wipe conversation history |
-| `audio_output` | `mode`: `stream` \| other, `binary` (optional bool) | Opt into TTS delivery (`stream` on). `binary: true` switches TTS chunks from JSON+base64 `audio_chunk` to OVA1 binary frames. JSON `audio_input` / `audio_chunk` stay valid. |
+| `audio_output` | `mode`: `stream` \| other, `binary` (optional bool), `protocol` (optional `ova2`) | Opt into TTS delivery (`stream` on). `binary: true` switches TTS chunks from JSON+base64 `audio_chunk` to OVA1 binary frames; adding `protocol: "ova2"` requests attributed OVA2 frames. JSON `audio_input` / `audio_chunk` stay valid. |
 | `voice_start` | | Exclusive mic claim + start remote STT turn. Queued (and **not** claimed) while another turn is in flight — see Barge-in and the mic claim |
 | `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz, max 64 KiB decoded. Prefer a **binary WebSocket frame** of the same PCM (no header, 16 kHz implied) when `capabilities.binary_audio` is set. |
 | `voice_end` | | Finalize utterance; release mic claim. **Not optional** — a turn that goes quiet without one is ended by the server, see The turn deadline |
@@ -632,13 +632,31 @@ another device speaking.
 
 | `type` | Fields |
 |--------|--------|
-| `audio_chunk` | `data` (base64 pcm_s16le), `sample_rate`, `segment_id`. Default when the client did not set `audio_output.binary`. |
+| `audio_chunk` | `data` (base64 pcm_s16le), `sample_rate`, `segment_id`, `generation`, `response_id`, `response_envelope`. Default when the client did not set `audio_output.binary`. |
 | binary TTS frame | WebSocket **binary** message: `OVA1` (4 ASCII bytes) + `sample_rate` u32le + `segment_id` u64le + `pcm_s16le`. Sent instead of `audio_chunk` when the client set `audio_output.binary: true` and the serve advertises `capabilities.binary_audio`. |
 | mic uplink | WebSocket **binary** message: raw `pcm_s16le` mono @ 16 kHz, **no header**. Same claim rules as JSON `audio_input`. PCM payload max **64 KiB** per message (`{"type":"error","message":"audio_input: pcm frame too large"}` if larger). The WebSocket message itself is capped at **96 KiB** so a JSON `audio_input` envelope of a max-size PCM frame can be read; above that the socket closes (1009). |
-| `audio_end` | `segment_id`, `reason` (`complete` / `interrupted` / …). Always JSON. |
+| `audio_end` | `segment_id`, `generation`, `response_id`, `response_envelope`, `reason` (`complete` / `interrupted` / …). Always JSON. |
 | `audio_reset` | Clear client playback after interrupt. Always JSON. |
-| `audio_output_ack` | `mode` applied; `binary: true` when binary TTS is on |
+| `audio_output_ack` | `mode` applied; `binary: true` when binary TTS is on; `protocol: "ova2"` when OVA2 was negotiated |
 | `set_persona_ack` | `id`, `display_name`, `prompt_hash`, `applies_to` |
+
+OVA2 is a negotiated WebSocket binary message. Its first 28 bytes are `OVA2`
+(4 ASCII bytes), sample rate (u32 little-endian), segment ID (u64), generation
+(u64), and response ID byte length (u32). The full UTF-8 response ID follows,
+then mono PCM s16le. OVA1 framing remains unchanged for legacy clients. Use the
+acknowledged protocol; an older server may accept binary output as OVA1 while
+ignoring the new protocol field.
+
+Each audio frame owns its response identity. A later control event must not
+relabel queued PCM. JSON carries the full immutable response envelope; OVA2
+carries its response ID for correlation with attributed control events. Segment
+IDs distinguish synthesis streams within a response. Generation marks an audio
+cancellation boundary, not a persona revision. The dispatcher admits the next
+turn before reopening delivery; late events from canceled turns cannot reopen
+it. Clients stop queued sources on `audio_reset`, discard older generations,
+and reset their server-generation state on reconnect. Server stream drain is
+not evidence that a remote speaker finished playing.
+
 
 ## Barge-in and the mic claim
 

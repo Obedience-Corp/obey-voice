@@ -52,3 +52,15 @@ func TestInterruptionRefusesAlreadyCompletedSpeech(t *testing.T) {
 		t.Fatalf("result = %v", err)
 	}
 }
+
+func TestInterruptScenarioRequiresUserTurn(t *testing.T) {
+	for _, turn := range []string{
+		"id: invalid\n    user: hello\n    interrupt_after: -1ms",
+		"id: invalid\n    op: select_persona\n    persona: santa\n    interrupt_after: 1ms",
+		"id: invalid\n    interrupt_after: 1ms",
+	} {
+		if _, err := loadScenarioString("invalid", "name: interruption\nturns:\n  - "+turn+"\n"); err == nil {
+			t.Fatalf("accepted invalid interruption: %s", turn)
+		}
+	}
+}

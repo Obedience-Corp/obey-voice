@@ -355,7 +355,6 @@ func (s *Server) interrupt() {
 	live := s.dispatcher.TurnActive() && !s.dispatcher.Interrupted()
 	interrupted := live || speaking
 
-	s.hub.resetAudio()
 	s.dispatcher.Interrupt()
 
 	if !interrupted {

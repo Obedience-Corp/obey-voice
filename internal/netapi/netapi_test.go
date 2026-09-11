@@ -534,7 +534,7 @@ func TestHubAudioResetDropsCanceledTailUntilNextTurn(t *testing.T) {
 	default:
 	}
 
-	bus.Emit(events.ThinkingStarted{})
+	h.resumeAudio()
 	h.broadcastAudio([]byte(`{"type":"audio_chunk","segment_id":2}`))
 	select {
 	case got := <-c.audio:
