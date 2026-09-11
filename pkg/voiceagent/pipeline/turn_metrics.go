@@ -94,6 +94,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		audible = audio.SinkNone
 	}
 	return events.TurnMetrics{
+		Timing:                  m.timing(),
 		Envelope:                responseEnvelopePtr(m.response),
 		Degraded:                m.degraded,
 		Interrupted:             m.interrupted,

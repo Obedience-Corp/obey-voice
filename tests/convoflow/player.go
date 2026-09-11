@@ -18,17 +18,18 @@ var _ audio.Engine = (*recordingPlayer)(nil)
 // IsPlaying is true only while a drain is in flight (or a --speakers tee is
 // still playing), never for the whole turn.
 type recordingPlayer struct {
-	mu       sync.Mutex
-	dir      string
-	samples  []float32
-	rate     int
-	real     audio.Engine
-	closed   bool
-	inflight atomic.Int32
-	stopped  atomic.Bool
-	cancels  map[int]context.CancelFunc
-	nextID   int
-	scored   []wavAnalysis
+	mu         sync.Mutex
+	dir        string
+	samples    []float32
+	rate       int
+	real       audio.Engine
+	closed     bool
+	inflight   atomic.Int32
+	stopped    atomic.Bool
+	cancels    map[int]context.CancelFunc
+	nextID     int
+	generation uint64
+	scored     []wavAnalysis
 }
 
 func newRecordingPlayer(real audio.Engine) *recordingPlayer {
@@ -38,12 +39,25 @@ func newRecordingPlayer(real audio.Engine) *recordingPlayer {
 	}
 }
 
+// SinkKind distinguishes a WAV recording from physical playback. A recording
+// alone must never satisfy an audible result-delivery receipt.
+func (p *recordingPlayer) SinkKind() string {
+	if p.real == nil {
+		return audio.SinkNone
+	}
+	if reporter, ok := p.real.(audio.SinkReporter); ok {
+		return reporter.SinkKind()
+	}
+	return audio.SinkLocalSpeaker
+}
+
 func (p *recordingPlayer) BeginTurn(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.generation++
 	p.dir = dir
 	p.samples = p.samples[:0]
 	p.rate = 0
@@ -85,30 +99,38 @@ func (p *recordingPlayer) PlayStream(ctx context.Context, stream *audio.PCMStrea
 		return failedPlayback(errors.New("nil pcm stream")), nil
 	}
 	p.mu.Lock()
-	closed := p.closed
-	p.mu.Unlock()
-	if closed {
+	if p.closed {
+		p.mu.Unlock()
 		go drainDiscard(stream)
 		return failedPlayback(errors.New("recording player is closed")), nil
 	}
+	// Register cancellation before launching the drain: Stop must see even a
+	// stream whose goroutine has not begun running yet.
+	drainCtx, cancel := context.WithCancel(ctx)
+	if p.cancels == nil {
+		p.cancels = make(map[int]context.CancelFunc)
+	}
+	p.nextID++
+	id := p.nextID
+	p.cancels[id] = cancel
+	generation := p.generation
+	p.stopped.Store(false)
+	p.inflight.Add(1)
+	p.mu.Unlock()
 
 	started := make(chan struct{})
 	done := make(chan audio.PlaybackResult, 1)
-	p.stopped.Store(false)
-	p.inflight.Add(1)
-	go p.play(ctx, stream, started, done)
+	go p.play(drainCtx, cancel, id, generation, stream, started, done)
 	return audio.NewPlayback(started, done), nil
 }
 
-func (p *recordingPlayer) play(ctx context.Context, stream *audio.PCMStream, started chan struct{}, done chan audio.PlaybackResult) {
+func (p *recordingPlayer) play(drainCtx context.Context, cancel context.CancelFunc, id int, generation uint64, stream *audio.PCMStream, started chan struct{}, done chan audio.PlaybackResult) {
 	var result audio.PlaybackResult
-	drainCtx, cancel := context.WithCancel(ctx)
-	id := p.addCancel(cancel)
 	defer func() {
 		cancel()
 		p.removeCancel(id)
 		p.inflight.Add(-1)
-		done <- result
+		done <- audio.PlaybackAttemptFromContext(drainCtx).Result(result)
 		close(done)
 	}()
 
@@ -119,54 +141,78 @@ func (p *recordingPlayer) play(ctx context.Context, stream *audio.PCMStream, sta
 		result = audio.PlaybackResult{Err: err}
 		return
 	}
-	p.setRate(rate)
-	close(started)
-
-	derived, realPB := p.startTee(drainCtx, stream)
-	interrupted, playErr := p.recordFrames(drainCtx, stream, derived, rate)
+	p.setRate(rate, generation)
+	derived, teeReady := p.startTee(drainCtx, stream, started)
+	interrupted, playErr := p.recordFrames(drainCtx, stream, derived, rate, generation)
 	if derived != nil {
 		derived.Close()
 	}
-	if realPB != nil {
-		res := <-realPB.Done()
-		if playErr == nil && res.Err != nil {
-			playErr = res.Err
-		}
-		if res.Interrupted {
-			interrupted = true
+	if teeReady != nil {
+		select {
+		case tee := <-teeReady:
+			playErr = errors.Join(playErr, tee.err)
+			if tee.playback != nil {
+				select {
+				case result = <-tee.playback.Done():
+				case <-drainCtx.Done():
+					result = audio.PlaybackResult{Interrupted: true, Err: drainCtx.Err()}
+				}
+			}
+		case <-drainCtx.Done():
+			playErr = errors.Join(playErr, drainCtx.Err())
 		}
 	}
-	result = audio.PlaybackResult{Err: playErr, Interrupted: interrupted}
+	result.Err = errors.Join(result.Err, playErr)
+	result.Interrupted = result.Interrupted || interrupted
 }
 
-func (p *recordingPlayer) startTee(ctx context.Context, stream *audio.PCMStream) (*audio.PCMStream, *audio.Playback) {
-	p.mu.Lock()
-	real := p.real
-	p.mu.Unlock()
-	if real == nil {
+type recordingTeeStart struct {
+	playback *audio.Playback
+	err      error
+}
+
+// A real player can wait for its initial PCM buffer before PlayStream returns.
+// Start it concurrently with recording so that buffer can actually be filled.
+func (p *recordingPlayer) startTee(ctx context.Context, stream *audio.PCMStream, started chan struct{}) (*audio.PCMStream, <-chan recordingTeeStart) {
+	if p.real == nil {
+		close(started)
 		return nil, nil
 	}
 	derived := stream.Derive(ctx)
-	pb, err := real.PlayStream(ctx, derived)
-	if err != nil || pb == nil {
-		derived.Close()
-		return nil, nil
-	}
-	return derived, pb
+	ready := make(chan recordingTeeStart, 1)
+	go func() {
+		defer close(started)
+		pb, err := p.real.PlayStream(ctx, derived)
+		if err == nil && pb == nil {
+			err = errors.New("speaker returned no playback handle")
+		}
+		if err != nil {
+			go drainDiscard(derived)
+		}
+		ready <- recordingTeeStart{playback: pb, err: err}
+		if pb != nil {
+			select {
+			case <-pb.Started():
+			case <-ctx.Done():
+			}
+		}
+	}()
+	return derived, ready
 }
 
-func (p *recordingPlayer) recordFrames(ctx context.Context, stream, derived *audio.PCMStream, rate int) (bool, error) {
+func (p *recordingPlayer) recordFrames(ctx context.Context, stream, derived *audio.PCMStream, rate int, generation uint64) (bool, error) {
 	frames := stream.Frames()
 	for {
 		select {
 		case <-ctx.Done():
-			drainFrames(frames, p, derived, rate)
+			for range frames {
+			}
 			return true, ctx.Err()
 		case frame, ok := <-frames:
 			if !ok {
 				return false, nil
 			}
-			p.append(frame, rate)
+			p.append(frame, rate, generation)
 			if derived != nil {
 				_ = derived.Write(frame)
 			}
@@ -177,6 +223,7 @@ func (p *recordingPlayer) recordFrames(ctx context.Context, stream, derived *aud
 func (p *recordingPlayer) Stop() {
 	p.stopped.Store(true)
 	p.mu.Lock()
+	p.generation++
 	cs := p.cancels
 	p.cancels = make(map[int]context.CancelFunc)
 	real := p.real
@@ -236,17 +283,6 @@ func (p *recordingPlayer) scoredCount() int {
 	return n
 }
 
-func (p *recordingPlayer) addCancel(c context.CancelFunc) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cancels == nil {
-		p.cancels = make(map[int]context.CancelFunc)
-	}
-	p.nextID++
-	p.cancels[p.nextID] = c
-	return p.nextID
-}
-
 func (p *recordingPlayer) removeCancel(id int) {
 	p.mu.Lock()
 	delete(p.cancels, id)
@@ -259,20 +295,26 @@ func (p *recordingPlayer) activeCancels() int {
 	return len(p.cancels)
 }
 
-func (p *recordingPlayer) setRate(rate int) {
+func (p *recordingPlayer) setRate(rate int, generation uint64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if generation != p.generation {
+		return
+	}
 	if p.rate == 0 && rate > 0 {
 		p.rate = rate
 	}
 }
 
-func (p *recordingPlayer) append(frame []float32, rate int) {
+func (p *recordingPlayer) append(frame []float32, rate int, generation uint64) {
 	if len(frame) == 0 {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if generation != p.generation {
+		return
+	}
 	if p.rate == 0 && rate > 0 {
 		p.rate = rate
 	}
@@ -296,15 +338,6 @@ func drainDiscard(stream *audio.PCMStream) {
 		return
 	}
 	for range stream.Frames() {
-	}
-}
-
-func drainFrames(frames <-chan []float32, p *recordingPlayer, derived *audio.PCMStream, rate int) {
-	for frame := range frames {
-		p.append(frame, rate)
-		if derived != nil {
-			_ = derived.Write(frame)
-		}
 	}
 }
 

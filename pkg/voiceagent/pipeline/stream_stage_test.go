@@ -204,20 +204,31 @@ func TestFirstTokenSpeakableAdmitClocksAreDistinct(t *testing.T) {
 	}
 }
 
-func TestRunTurnTextModeStampsSTTFinalAtThinkingStarted(t *testing.T) {
+func TestRunTurnTextModeIncludesAdmissionInInputLatency(t *testing.T) {
 	bus := events.NewBus()
 	var metricsEvt events.TurnMetrics
 	events.Subscribe(bus, func(e events.TurnMetrics) { metricsEvt = e })
 
 	p := &Pipeline{Brain: &fakeBrain{chunks: []string{"Hello there."}}, Events: bus}
+	var preparation time.Duration
+	p.AdmitInput = func(ctx context.Context, input string, _ bool) (ResponseAdmission, error) {
+		start := time.Now()
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			return ResponseAdmission{}, ctx.Err()
+		}
+		preparation = time.Since(start)
+		return ResponseAdmission{Request: input}, nil
+	}
 	if err := p.RunTurnTextMode(context.Background(), "hi"); err != nil {
 		t.Fatalf("RunTurnTextMode: %v", err)
 	}
-	if metricsEvt.STTFinalElapsed <= 0 {
-		t.Fatalf("STTFinalElapsed = %v, want stamped at ThinkingStarted in text mode", metricsEvt.STTFinalElapsed)
+	if metricsEvt.Timing == nil || metricsEvt.Timing.Origin != "finalized_input" || metricsEvt.Timing.Raw.FinalizedInputMS == nil || *metricsEvt.Timing.Raw.FinalizedInputMS != 0 {
+		t.Fatalf("typed input must be final at turn admission: %+v", metricsEvt.Timing)
 	}
-	if metricsEvt.FirstTokenElapsed < 0 {
-		t.Fatalf("FirstTokenElapsed = %v", metricsEvt.FirstTokenElapsed)
+	if metricsEvt.FirstTokenElapsed < preparation {
+		t.Fatalf("input-to-token %v omitted admission preparation %v", metricsEvt.FirstTokenElapsed, preparation)
 	}
 }
 

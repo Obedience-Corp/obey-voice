@@ -69,6 +69,8 @@ func (e ThinkingComplete) eventType() string { return "thinking_complete" }
 
 // TurnMetrics captures per-turn latency milestones for benchmarking.
 type TurnMetrics struct {
+	Timing *TurnTiming `json:"timing,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	// Outcome is the turn's terminal state as decided by the turn state

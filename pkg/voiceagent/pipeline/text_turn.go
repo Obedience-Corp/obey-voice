@@ -33,6 +33,11 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	defer p.decActiveTurn()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
+	if !background {
+		// Typed input is final when admitted to this host turn, before persona
+		// preparation or compaction. Include that work in user-visible latency.
+		metrics.sttFinal = metrics.start
+	}
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics)
 
@@ -62,10 +67,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		return nil
 	}
 	p.emitResponse(metrics, events.ThinkingStarted{})
-	if metrics.sttFinal.IsZero() {
-		metrics.sttFinal = time.Now()
-	}
-	thinkingStarted := metrics.sttFinal
+	thinkingStarted := metrics.tEOU()
 
 	if !background {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {

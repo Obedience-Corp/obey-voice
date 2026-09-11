@@ -1375,14 +1375,39 @@ func (m *conversationModel) handleEvent(e events.Event) {
 // listening state almost immediately, so timings live in the transcript).
 func formatTurnMetrics(e events.TurnMetrics) string {
 	var parts []string
-	if e.ModelCompleteElapsed > 0 {
-		parts = append(parts, "model "+formatSeconds(e.ModelCompleteElapsed))
+	origin := "since turn start"
+	model, ready, complete := e.ModelCompleteElapsed, e.FirstAudioReadyElapsed, e.PlaybackCompleteElapsed
+	if e.STTFinalElapsed > 0 {
+		origin = "since input"
+		model = max(0, model-e.STTFinalElapsed)
+		ready = max(0, ready-e.STTFinalElapsed)
 	}
-	if e.FirstAudioReadyElapsed > 0 {
-		parts = append(parts, "voice "+formatSeconds(e.FirstAudioReadyElapsed))
+	if e.Timing != nil {
+		origin = "since turn start"
+		if e.Timing.Origin == "finalized_input" {
+			origin = "since input"
+		}
+		duration := func(ms *float64) time.Duration {
+			if ms == nil {
+				return 0
+			}
+			return time.Duration(*ms * float64(time.Millisecond))
+		}
+		model = duration(e.Timing.Normalized.ModelCompleteMS)
+		ready = duration(e.Timing.Normalized.FirstAudioReadyMS)
+		complete = duration(e.Timing.Normalized.PlaybackCompleteMS)
 	}
-	if e.PlaybackCompleteElapsed > 0 && e.AudibleSink != "none" && e.AudibleSink != "stream_client" {
-		parts = append(parts, "spoke "+formatSeconds(e.PlaybackCompleteElapsed))
+	if model > 0 {
+		parts = append(parts, "model "+formatSeconds(model))
+	}
+	if ready > 0 {
+		parts = append(parts, "first audio "+formatSeconds(ready))
+	}
+	if complete > 0 && e.AudibleSink != "none" && e.AudibleSink != "stream_client" {
+		parts = append(parts, "playback done "+formatSeconds(complete))
+	}
+	if len(parts) > 0 {
+		parts = append([]string{origin}, parts...)
 	}
 	if e.Degraded {
 		parts = append(parts, "degraded")

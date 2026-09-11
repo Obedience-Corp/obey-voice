@@ -573,6 +573,24 @@ in `GET /v1/status`:
 
 `playback_complete_ms` is local-speaker Done only. It is `0` for `stream_client` and `none` — fanout drain is not playback.
 
+New engines also include `timing` on `turn_metrics`. `timing.raw_turn_start`
+retains measured offsets from turn start; `timing.normalized` uses the single
+origin declared by `timing.origin`: `finalized_input` when available, otherwise
+`turn_start`. `origin_offset_ms` locates that origin relative to turn start.
+Both objects use millisecond fields (`finalized_input_ms`, `first_model_chunk_ms`,
+`model_complete_ms`, `first_audio_ready_ms`, `playback_start_ms`,
+`playback_complete_ms`, `stream_drain_ms`, `barge_in_ms`). An unobserved boundary
+is `null`; an observed zero is `0`. Negative offsets are retained for events
+before finalized input, so ordering evidence is not silently clamped.
+
+These are milestones, not durations to add together. Streaming can make first
+audio precede model completion. Playback start/completion is reported only for
+`local_speaker`; `stream_drain_ms` records host transport completion for
+`stream_client`, without claiming the remote device played it. The legacy
+flat fields retain their existing meanings for compatibility. Clients should
+use the normalized object for comparable displayed timings; the TUI labels its
+origin and normalizes legacy fields when reading older events.
+
 A client that needs sub-100 ms meter response should measure locally;
 `audio_level` crosses the network and is throttled at the source.
 

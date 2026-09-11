@@ -39,6 +39,9 @@ func encodeEvent(e events.Event) map[string]any {
 		env["response"] = e.Response
 		env["elapsed_ms"] = ms(e.Elapsed)
 	case events.TurnMetrics:
+		if e.Timing != nil {
+			env["timing"] = e.Timing
+		}
 		env["outcome"] = e.Outcome
 		env["interrupted"] = e.Interrupted
 		env["stt_final_ms"] = ms(e.STTFinalElapsed)
