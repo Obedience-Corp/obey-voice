@@ -282,7 +282,7 @@ func runServe(cfg *config.Config) error {
 	// The event mirror is human output, so it follows serveHumanOut: under
 	// --banner-json a conversation's transcript lines would otherwise land in
 	// the middle of the caller's JSON stream on stdout.
-	ui.NewWithOutput(bus, cfg.AgentName, serveHumanOut)
+	display := ui.NewWithOutput(bus, cfg.AgentName, serveHumanOut)
 
 	// Remote turns are gated by remote_tools_enabled only. The pipeline is
 	// the sole runtime tools gate (ThinkStream and ThinkFull both take
@@ -297,11 +297,20 @@ func runServe(cfg *config.Config) error {
 		return fmt.Errorf("init serve pipeline: %w", err)
 	}
 	defer cleanup()
+	display.SetWorkSnapshot(p.WorkSnapshot)
 
 	// Keep pipeline streaming options in lockstep with the serve policy.
 	p.VoiceToolsEnabled = cfg.RemoteToolsEnabled
 
 	ref := &sessionRef{sess: session.New(cfg.BrainProvider, serveModelName(cfg))}
+	if err := ref.bindWork(p, &serveCfg, ref.sess); err != nil {
+		return err
+	}
+	defer func() {
+		if err := ref.closeWork(p); err != nil {
+			fmt.Fprintf(serveHumanOut, "  warning: work cleanup: %v\n", err)
+		}
+	}()
 	p.OnTurn = func() {
 		if err := ref.save(p.Brain.History()); err != nil {
 			bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
@@ -341,15 +350,13 @@ func runServe(cfg *config.Config) error {
 		return err
 	}
 
-	dispatcher := netapi.NewDispatcher(p, bus, func() { p.Brain.ClearHistory() }, func(id string) error {
-		sess, err := session.Load(id)
-		if err != nil {
-			return fmt.Errorf("load session: %w", err)
+	dispatcher := netapi.NewDispatcher(p, bus, func() {
+		if err := p.ClearConversation(); err != nil {
+			bus.Emit(events.Error{Stage: "work_clear", Message: err.Error()})
+			return
 		}
-		p.Brain.LoadHistory(sess.Turns)
-		ref.swap(sess)
-		return nil
-	})
+		p.OnTurn()
+	}, func(id string) error { return ref.resume(p, cfg, id) })
 	go dispatcher.Run(ctx)
 
 	bindHosts := resolveServeBindHosts()
@@ -597,17 +604,36 @@ func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
 		nextTTS.Close()
 		return netapi.PersonaAck{}, fmt.Errorf("save previous persona session: %w", err)
 	}
-	if !s.tts.ReplaceAndClose(s.pipeline, nextTTS) {
+	previousID := s.sessions.id()
+	if err := s.sessions.closeWork(s.pipeline); err != nil {
 		nextTTS.Close()
-		return netapi.PersonaAck{}, errors.New("serve runtime is shutting down")
+		return netapi.PersonaAck{}, fmt.Errorf("close previous persona work: %w", err)
 	}
-
 	oldBrain := s.pipeline.Brain
 	s.pipeline.Brain = nextBrain
+	// Prepare the new durable conversation before publishing the new voice.
+	// A failed checkpoint restores the prior selection with its outcomes held.
+	rollback := func(cause error) error {
+		closeErr := s.sessions.closeWork(s.pipeline)
+		s.pipeline.Brain = oldBrain
+		previous, restoreErr := session.Load(previousID)
+		if restoreErr == nil {
+			restoreErr = s.sessions.bindWork(s.pipeline, s.cfg, previous)
+		}
+		return errors.Join(cause, closeErr, restoreErr)
+	}
+	if err := s.sessions.bindWork(s.pipeline, nextCfg, session.New(nextCfg.BrainProvider, serveModelName(nextCfg))); err != nil {
+		nextTTS.Close()
+		return netapi.PersonaAck{}, rollback(fmt.Errorf("prepare new persona session: %w", err))
+	}
+	if !s.tts.ReplaceAndClose(s.pipeline, nextTTS) {
+		nextTTS.Close()
+		return netapi.PersonaAck{}, rollback(errors.New("serve runtime is shutting down"))
+	}
+
 	installed = true
 	s.pipeline.RetireBrain(oldBrain)
 	*s.cfg = *nextCfg
-	s.sessions.swap(session.New(nextCfg.BrainProvider, serveModelName(nextCfg)))
 	if warmer, ok := nextBrain.(brain.Warmer); ok {
 		go warmer.Warmup(context.Background())
 	}
@@ -845,14 +871,69 @@ func bindsReachLoopback(hosts []string) bool {
 // sessionRef holds the session remote turns save into; resume swaps it while
 // the dispatcher guarantees no turn is mid-flight.
 type sessionRef struct {
-	mu   sync.Mutex
-	sess *session.Session
+	mu         sync.Mutex
+	sess       *session.Session
+	checkpoint *workCheckpoint
 }
 
 func (r *sessionRef) save(turns []brain.Turn) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.checkpoint.retry()
 	return r.sess.Save(turns)
+}
+
+func (r *sessionRef) bindWork(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session) error {
+	checkpoint, err := bindWorkSession(p, cfg, sess, session.DefaultStore())
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.sess, r.checkpoint = sess, checkpoint
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *sessionRef) closeWork(p *pipeline.Pipeline) error {
+	r.mu.Lock()
+	checkpoint := r.checkpoint
+	r.mu.Unlock()
+	return closeWorkSession(p, checkpoint)
+}
+
+// resume runs at a dispatcher boundary, after the current turn is joined.
+// Checkpoint callbacks retain their own session; none follows this ref into
+// the newly selected conversation.
+func (r *sessionRef) resume(p *pipeline.Pipeline, cfg *config.Config, id string) error {
+	next, err := session.Load(id)
+	if err != nil {
+		return fmt.Errorf("load session: %w", err)
+	}
+	previousID := r.id()
+	history := p.Brain.History()
+	if err := r.save(history); err != nil {
+		return fmt.Errorf("save previous session: %w", err)
+	}
+	if err := r.closeWork(p); err != nil {
+		return fmt.Errorf("close previous conversation work: %w", err)
+	}
+	// Resuming the current session must include its final work checkpoint.
+	if id == previousID {
+		next, err = session.Load(id)
+		if err != nil {
+			return err
+		}
+	}
+	p.Brain.LoadHistory(next.Turns)
+	if err := r.bindWork(p, cfg, next); err != nil {
+		p.Brain.LoadHistory(history)
+		previous, loadErr := session.Load(previousID)
+		if loadErr == nil {
+			loadErr = r.bindWork(p, cfg, previous)
+		}
+		return errors.Join(fmt.Errorf("resume conversation work: %w", err), loadErr)
+	}
+	return nil
 }
 
 func (r *sessionRef) swap(sess *session.Session) {

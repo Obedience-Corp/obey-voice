@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 func TestEncodeToolOutcomeRoundTripPreservesTypedFacts(t *testing.T) {
@@ -62,5 +63,13 @@ func TestEncodeToolOutcomeRoundTripPreservesTypedFacts(t *testing.T) {
 	unknown := encodeEvent(events.ToolCallFinished{ID: "unknown", Preview: "old", Elapsed: time.Second})
 	if unknown["status"] != string(events.ToolOutcomeUnknown) {
 		t.Fatalf("absent legacy error status=%v, want unknown", unknown["status"])
+	}
+}
+
+func TestEncodeScopedToolEventPreservesWorkScope(t *testing.T) {
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+	got := encodeEvent(events.ToolCallStarted{ID: "call", JobID: "job", WorkScope: scope})
+	if got["work_scope"] != scope {
+		t.Fatalf("work_scope = %#v, want %+v", got["work_scope"], scope)
 	}
 }

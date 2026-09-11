@@ -9,10 +9,12 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -73,6 +75,225 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 				t.Errorf("metadata = (%s, %s, %s), want (%s, claude, claude)", got.ID, got.Provider, got.Model, s.ID)
 			}
 		})
+	}
+}
+
+func testSnapshot(revision uint64, scope work.WorkScope) work.Snapshot {
+	return work.Snapshot{
+		Scope: scope, Revision: revision,
+		Jobs:    []work.JobView{{Key: work.JobKey{Scope: scope, JobID: "job-1"}, Task: "weather", Origin: "user", State: work.JobTerminal}},
+		Pending: []work.ResultView{{State: work.Held, Outcome: work.Outcome{ResultID: "result-1", Scope: scope, JobID: "job-1", Status: work.OutcomeSucceeded, Text: "sunny", PreviousSession: true}}},
+	}
+}
+
+func TestSaveWorkRoundTripAndPreservesTurns(t *testing.T) {
+	store := NewStore(t.TempDir())
+	s := New("ollama", "model")
+	turns := []brain.Turn{{Role: "user", Content: "hello"}, {Role: "assistant", Content: "hi"}}
+	if err := store.Save(s, turns); err != nil {
+		t.Fatal(err)
+	}
+	scope := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime-1", ConversationEpoch: "conversation-1"}
+	snap := testSnapshot(2, scope)
+	if err := store.BeginWork(s, snap, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Turns, turns) {
+		t.Fatalf("turns changed during work save: got %+v want %+v", got.Turns, turns)
+	}
+	if got.Work == nil || got.Work.Revision != 2 || got.Work.PersistedRevision != 2 || got.Work.Scope != scope {
+		t.Fatalf("work snapshot = %+v", got.Work)
+	}
+}
+
+func TestWorkSnapshotRetiredIDsAreCopiedAtSessionBoundaries(t *testing.T) {
+	store := NewStore(t.TempDir())
+	s := New("ollama", "model")
+	if err := store.Save(s, nil); err != nil {
+		t.Fatal(err)
+	}
+	scope := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime-copy", ConversationEpoch: "conversation-copy"}
+	snap := testSnapshot(1, scope)
+	snap.RetiredJobIDs = []string{"retired-1"}
+	if err := store.BeginWork(s, snap, nil); err != nil {
+		t.Fatal(err)
+	}
+	snap.RetiredJobIDs[0] = "caller-mutated"
+	if s.Work == nil || len(s.Work.RetiredJobIDs) != 1 || s.Work.RetiredJobIDs[0] != "retired-1" {
+		t.Fatalf("in-memory snapshot aliased caller: %+v", s.Work)
+	}
+	loaded, err := store.Load(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Work == nil || loaded.Work.RetiredJobIDs[0] != "retired-1" {
+		t.Fatalf("durable snapshot aliased caller: %+v", loaded.Work)
+	}
+
+	next := testSnapshot(2, scope)
+	next.RetiredJobIDs = []string{"retired-2"}
+	if err := store.SaveWork(s, next); err != nil {
+		t.Fatal(err)
+	}
+	next.RetiredJobIDs[0] = "caller-mutated-again"
+	if s.Work.RetiredJobIDs[0] != "retired-2" {
+		t.Fatalf("SaveWork mutated in-memory snapshot: %+v", s.Work)
+	}
+	loaded, err = store.Load(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Work.RetiredJobIDs[0] != "retired-2" {
+		t.Fatalf("SaveWork mutated durable snapshot: %+v", loaded.Work)
+	}
+}
+
+func TestSaveWorkRejectsStaleRevisionAndScope(t *testing.T) {
+	store := NewStore(t.TempDir())
+	s := New("ollama", "model")
+	if err := store.Save(s, nil); err != nil {
+		t.Fatal(err)
+	}
+	scope := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime-1", ConversationEpoch: "conversation-1"}
+	if err := store.BeginWork(s, testSnapshot(3, scope), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveWork(s, testSnapshot(2, scope)); !errors.Is(err, ErrWorkRevisionStale) {
+		t.Fatalf("stale SaveWork error = %v", err)
+	}
+	other := scope
+	other.ConversationEpoch = "conversation-2"
+	if err := store.SaveWork(s, testSnapshot(4, other)); !errors.Is(err, ErrWorkScopeConflict) {
+		t.Fatalf("scope SaveWork error = %v", err)
+	}
+	got, err := store.Load(s.ID)
+	if err != nil || got.Work.Revision != 3 {
+		t.Fatalf("durable snapshot changed after rejected writes: got=%+v err=%v", got.Work, err)
+	}
+}
+
+func TestBeginWorkScopeCASAndRejectsLateOldWrite(t *testing.T) {
+	store := NewStore(t.TempDir())
+	s := New("ollama", "model")
+	if err := store.Save(s, []brain.Turn{{Role: "user", Content: "hello"}}); err != nil {
+		t.Fatal(err)
+	}
+	old := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime-1", ConversationEpoch: "conversation-1"}
+	if err := store.BeginWork(s, testSnapshot(4, old), nil); err != nil {
+		t.Fatal(err)
+	}
+	next := old
+	next.RuntimeEpoch = "runtime-2"
+	next.ConversationEpoch = "conversation-2"
+	if err := store.BeginWork(s, testSnapshot(1, next), &old); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveWork(s, testSnapshot(99, old)); !errors.Is(err, ErrWorkScopeConflict) {
+		t.Fatalf("late old SaveWork error = %v", err)
+	}
+	wrongPrior := old
+	wrongPrior.RuntimeEpoch = "runtime-wrong"
+	if err := store.BeginWork(s, testSnapshot(2, old), &wrongPrior); !errors.Is(err, ErrWorkScopeConflict) {
+		t.Fatalf("failed CAS error = %v", err)
+	}
+	got, err := store.Load(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Work.Scope != next || got.Work.Revision != 1 {
+		t.Fatalf("failed transition changed durable work: %+v", got.Work)
+	}
+}
+
+func TestBeginWorkCreatesNewSessionFile(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	s := New("ollama", "model")
+	scope := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime-new", ConversationEpoch: "conversation-new"}
+	if err := store.BeginWork(s, testSnapshot(1, scope), nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load(s.ID)
+	if err != nil || got.Work == nil || got.Work.Scope != scope {
+		t.Fatalf("new session work = %+v err=%v", got, err)
+	}
+}
+
+func TestSaveWorkSameRevisionConflictLeavesFileUnchanged(t *testing.T) {
+	store := NewStore(t.TempDir())
+	s := New("ollama", "model")
+	if err := store.Save(s, nil); err != nil {
+		t.Fatal(err)
+	}
+	scope := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime-1", ConversationEpoch: "conversation-1"}
+	first := testSnapshot(1, scope)
+	if err := store.BeginWork(s, first, nil); err != nil {
+		t.Fatal(err)
+	}
+	conflict := first
+	conflict.Pending[0].Outcome.Text = "different"
+	if err := store.SaveWork(s, conflict); !errors.Is(err, ErrWorkRevisionConflict) {
+		t.Fatalf("same-revision conflict error = %v", err)
+	}
+	got, err := store.Load(s.ID)
+	if err != nil || got.Work.Pending[0].Outcome.Text != "sunny" {
+		t.Fatalf("same-revision conflict changed file: %+v err=%v", got.Work, err)
+	}
+}
+
+func TestSaveCorruptSessionReturnsErrorAndLeavesFile(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	s := New("ollama", "model")
+	path := filepath.Join(dir, s.ID+".json")
+	const corrupt = "{not valid json"
+	if err := os.WriteFile(path, []byte(corrupt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(s, []brain.Turn{{Role: "user", Content: "do not overwrite"}}); err == nil {
+		t.Fatal("Save() on corrupt session returned nil")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != corrupt {
+		t.Fatalf("corrupt session changed: %q err=%v", got, err)
+	}
+}
+
+func TestConcurrentTurnAndWorkSavesPreserveBoth(t *testing.T) {
+	store := NewStore(t.TempDir())
+	s := New("ollama", "model")
+	base := []brain.Turn{{Role: "user", Content: "first"}}
+	if err := store.Save(s, base); err != nil {
+		t.Fatal(err)
+	}
+	scope := work.WorkScope{SessionID: s.ID, RuntimeEpoch: "runtime-1", ConversationEpoch: "conversation-1"}
+	turns := append(append([]brain.Turn(nil), base...), brain.Turn{Role: "assistant", Content: "second"})
+	snapshot := testSnapshot(2, scope)
+	if err := store.BeginWork(s, testSnapshot(1, scope), nil); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	var saveErr, workErr error
+	wg.Add(2)
+	go func() { defer wg.Done(); saveErr = store.Save(s, turns) }()
+	go func() { defer wg.Done(); workErr = store.SaveWork(s, snapshot) }()
+	wg.Wait()
+	if saveErr != nil || workErr != nil {
+		t.Fatalf("concurrent saves failed: turn=%v work=%v", saveErr, workErr)
+	}
+	got, err := store.Load(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Turns) != 2 || got.Turns[1].Content != "second" {
+		t.Fatalf("turn history lost: %+v", got.Turns)
+	}
+	if got.Work == nil || got.Work.Revision != 2 {
+		t.Fatalf("work snapshot lost: %+v", got.Work)
 	}
 }
 

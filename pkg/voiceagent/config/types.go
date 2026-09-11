@@ -165,6 +165,10 @@ type Config struct {
 
 	// Brain
 	BrainProvider string `mapstructure:"brain_provider"`
+	// VoiceWorkEnabled keeps background outcomes with the conversation. This
+	// experimental loop is opt-in; paid worker dispatch is unavailable.
+	VoiceWorkEnabled bool `mapstructure:"voice_work_enabled"`
+
 	// VoiceWorkerProvider selects the async job worker brain (ollama/grok/claude).
 	// Empty defaults to grok.
 	VoiceWorkerProvider string `mapstructure:"voice_worker_provider"`

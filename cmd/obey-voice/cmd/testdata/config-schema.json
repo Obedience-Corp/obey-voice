@@ -1605,6 +1605,20 @@
       "editable": true
     },
     {
+      "key": "voice_work_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "advanced",
+      "title": "Experimental work inbox",
+      "help": "Keep background results with the conversation and save pending updates. Experimental; paid worker dispatch is unavailable.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "VOICE_WORK_ENABLED",
+      "editable": true
+    },
+    {
       "key": "models_dir",
       "type": "string",
       "default": "/Users/lance/.cache/festival-voice/models",

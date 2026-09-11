@@ -277,6 +277,14 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			p.Brain.LoadHistory(sess.Turns)
 		}
 
+		checkpoint, err := bindWorkSession(p, cfg, sess, session.DefaultStore())
+		if err != nil {
+			liveTTS.Close()
+			cleanup()
+			closeTap()
+			return nil, err
+		}
+
 		// Preload the model while the user reads the empty screen so their
 		// first turn isn't the cold one. Best-effort — failures are ignored.
 		// After the session is restored: LoadHistory resets the delegation
@@ -332,6 +340,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		}
 
 		p.OnTurn = func() {
+			checkpoint.retry()
 			if err := sess.Save(p.Brain.History()); err != nil {
 				bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 			}
@@ -406,6 +415,9 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				return nil
 			},
 			Cleanup: func() {
+				if err := closeWorkSession(p, checkpoint); err != nil {
+					fmt.Fprintf(os.Stderr, "  warning: work cleanup: %v\n", err)
+				}
 				// stopLive closes feed, adapter, and analyzer/engine.
 				if stopLive != nil {
 					stopLive()
@@ -480,6 +492,7 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 		return fmt.Errorf("init pipeline: %w", err)
 	}
 	defer cleanup()
+	display.SetWorkSnapshot(p.WorkSnapshot)
 
 	// Create or resume session.
 	sess := resumeSession
@@ -494,6 +507,16 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 		fmt.Printf("  Resuming session %s (%d turns)\n", sess.ID, len(sess.Turns))
 	}
 
+	checkpoint, err := bindWorkSession(p, cfg, sess, session.DefaultStore())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := closeWorkSession(p, checkpoint); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "  warning: work cleanup: %v\n", closeErr)
+		}
+	}()
+
 	// Preload the model while the welcome/setup is shown so the user's first
 	// turn isn't the cold one. Best-effort — failures are ignored. After the
 	// session is restored: LoadHistory resets the delegation runtime whose
@@ -504,6 +527,7 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 
 	// Auto-save after each turn.
 	p.OnTurn = func() {
+		checkpoint.retry()
 		if err := sess.Save(p.Brain.History()); err != nil {
 			bus.Emit(events.Error{Stage: "session", Message: fmt.Sprintf("save session: %v", err)})
 		}

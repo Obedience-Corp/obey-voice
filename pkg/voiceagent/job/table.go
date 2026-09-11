@@ -44,6 +44,9 @@ func IDFromContext(ctx context.Context) string {
 
 // Spec describes work the table should run asynchronously.
 type Spec struct {
+	// ID optionally supplies a caller-owned stable identity. Empty preserves
+	// the table's sequential legacy IDs.
+	ID   string
 	Task string
 	Run  func(ctx context.Context) (result string, err error)
 }
@@ -57,12 +60,21 @@ type Info struct {
 	Err    string
 	// Started is when the run function began; zero while queued.
 	Started time.Time
+	// Ended is the monotonic timestamp at which the job became terminal.
+	// It is zero while queued or running.
+	Ended time.Time
+	// TerminalElapsed is frozen when the job ends. Running jobs calculate their
+	// current elapsed time from Started instead.
+	TerminalElapsed time.Duration
 }
 
 // Elapsed reports how long the job has been running, or zero if it never started.
 func (i Info) Elapsed() time.Duration {
 	if i.Started.IsZero() {
 		return 0
+	}
+	if !i.Ended.IsZero() {
+		return i.TerminalElapsed
 	}
 	return time.Since(i.Started)
 }
@@ -203,8 +215,19 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		t.mu.Unlock()
 		return "", fmt.Errorf("job table closed")
 	}
-	t.nextID++
-	id := fmt.Sprintf("job-%d", t.nextID)
+	id := spec.ID
+	if id == "" {
+		for {
+			t.nextID++
+			id = fmt.Sprintf("job-%d", t.nextID)
+			if _, exists := t.jobs[id]; !exists {
+				break
+			}
+		}
+	} else if _, exists := t.jobs[id]; exists {
+		t.mu.Unlock()
+		return "", fmt.Errorf("job %q already exists", id)
+	}
 	jobCtx, cancel := context.WithCancel(WithID(context.WithoutCancel(t.lifetime), id))
 	e := &entry{
 		info:   Info{ID: id, Task: spec.Task, State: StateQueued},
@@ -412,6 +435,10 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 	e.finished = true
 	e.info.State = state
 	e.info.Result = result
+	e.info.Ended = time.Now()
+	if !e.info.Started.IsZero() {
+		e.info.TerminalElapsed = e.info.Ended.Sub(e.info.Started)
+	}
 	if err != nil {
 		e.info.Err = err.Error()
 	}

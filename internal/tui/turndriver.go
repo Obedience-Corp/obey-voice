@@ -16,6 +16,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // brainSessionReporter adapts an optional brain.SessionReporter into the
@@ -67,6 +68,7 @@ type conversationDeps struct {
 	runner       turnRunner
 	bus          *events.Bus
 	clearHistory func()
+	workScope    func() work.WorkScope
 	// compact runs the pipeline's conversation compaction; nil when the
 	// runtime did not wire it (e.g. prompt resolution failed).
 	compact func(ctx context.Context) error

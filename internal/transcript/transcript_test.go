@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 func readRecords(t *testing.T, path string) []record {
@@ -332,10 +333,12 @@ func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
 
 	bus.Emit(events.JobQueued{ID: "job-1", Task: "read the readme"})
 	bus.Emit(events.JobStarted{ID: "job-1", Task: "read the readme"})
-	bus.Emit(events.ToolCallStarted{ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "README.md"})
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+	bus.Emit(events.ToolCallStarted{ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "README.md", WorkScope: scope})
 	bus.Emit(events.ToolCallFinished{
 		ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read",
 		Preview: "# obey", Elapsed: 1500 * time.Millisecond,
+		WorkScope: scope,
 	})
 	bus.Emit(events.JobFailed{ID: "job-1", Task: "read the readme", Err: "boom", Elapsed: 2 * time.Second})
 	bus.Emit(events.JobFinished{ID: "job-2", Task: "count files", Elapsed: 3 * time.Second})
@@ -357,6 +360,12 @@ func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
 	}
 	if r := recs[3]; r.Type != "tool_call" || r.ID != "call_1" || r.Kind != "read" || r.JobID != "job-1" {
 		t.Fatalf("tool_call = %+v, want the id, kind and job attribution", r)
+	}
+	if r := recs[3]; r.WorkScope == nil || *r.WorkScope != scope {
+		t.Fatalf("tool_call scope = %+v, want %+v", r.WorkScope, scope)
+	}
+	if r := recs[4]; r.WorkScope == nil || *r.WorkScope != scope {
+		t.Fatalf("tool_result scope = %+v, want %+v", r.WorkScope, scope)
 	}
 	if r := recs[4]; r.Type != "tool_result" || r.JobID != "job-1" || r.ElapsedS != 1.5 {
 		t.Fatalf("tool_result = %+v, want job attribution and elapsed", r)

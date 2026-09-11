@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
@@ -19,7 +22,32 @@ type UI struct {
 	// work folds a background job's tool calls into rows. Without the TUI a
 	// job's eleven reads were eleven lines scrolling past the conversation;
 	// one row prints when the kind changes or the job ends.
-	work *workfold.Tracker
+	work                 *workfold.Tracker
+	workScope            work.WorkScope
+	workRevision         uint64
+	workResults          map[string]string
+	allowWorkScopeChange bool
+	authorityMu          sync.Mutex
+	authoritativeWork    func() work.Snapshot
+}
+
+// SetWorkSnapshot binds the display to the host's current work authority.
+// The getter is copied under the UI lock and invoked after unlocking because
+// it may read pipeline/coordinator state and must never call back into UI.
+func (u *UI) SetWorkSnapshot(get func() work.Snapshot) {
+	u.authorityMu.Lock()
+	u.authoritativeWork = get
+	u.authorityMu.Unlock()
+}
+
+func (u *UI) authoritativeSnapshot() work.Snapshot {
+	u.authorityMu.Lock()
+	get := u.authoritativeWork
+	u.authorityMu.Unlock()
+	if get == nil {
+		return work.Snapshot{}
+	}
+	return get()
 }
 
 // New creates a UI writing to stdout and subscribes it to the event bus.
@@ -47,7 +75,7 @@ func NewWithOutput(bus *events.Bus, agentName string, out io.Writer) *UI {
 // newUI is the shared constructor; plain is the console/file decision, taken
 // by the exported constructors and set explicitly by tests.
 func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
-	u := &UI{bus: bus, name: agentName, out: out, plain: plain, work: workfold.New()}
+	u := &UI{bus: bus, name: agentName, out: out, plain: plain, work: workfold.New(), workResults: make(map[string]string)}
 
 	events.Subscribe(bus, u.onSTTPhase)
 	events.Subscribe(bus, u.onTranscriptPartial)
@@ -75,6 +103,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onJobFailed)
 	events.Subscribe(bus, u.onJobAborted)
 	events.Subscribe(bus, u.onVoiceGateStripped)
+	events.Subscribe(bus, u.onWorkStateChanged)
 
 	return u
 }
@@ -245,7 +274,64 @@ func (u *UI) onResponseReady(e events.ResponseReady) {
 }
 
 func (u *UI) onCleared(_ events.ConversationCleared) {
+	u.workScope = work.WorkScope{}
+	u.workRevision = 0
+	u.workResults = make(map[string]string)
+	u.allowWorkScopeChange = true
 	fmt.Fprintln(u.out, dimStyle.Render("  Conversation cleared."))
+}
+
+// onWorkStateChanged is a text-only projection. It never claims or speaks a
+// result; the coordinator remains the sole delivery authority.
+func (u *UI) onWorkStateChanged(e events.WorkStateChanged) {
+	s := e.Snapshot
+	if !s.Scope.Valid() {
+		return
+	}
+	authoritative := u.authoritativeSnapshot()
+	if u.workScope.Valid() {
+		if s.Scope != u.workScope {
+			if (!authoritative.Scope.Valid() || authoritative.Scope != s.Scope) && !u.allowWorkScopeChange {
+				return
+			}
+			u.workResults = make(map[string]string)
+			u.workRevision = 0
+			u.allowWorkScopeChange = false
+		}
+	} else {
+		if authoritative.Scope.Valid() && authoritative.Scope != s.Scope {
+			return
+		}
+		u.workScope = s.Scope
+		u.allowWorkScopeChange = false
+	}
+	if s.Scope == u.workScope && s.Revision < u.workRevision {
+		return
+	}
+	u.workScope = s.Scope
+	u.workRevision = s.Revision
+	for _, pending := range s.Pending {
+		id := pending.Outcome.ResultID
+		if id == "" {
+			continue
+		}
+		text := strings.TrimSpace(pending.Outcome.Text)
+		if text == "" {
+			text = string(pending.Outcome.Status)
+		}
+		prefix := "Background result"
+		if pending.Outcome.PreviousSession {
+			prefix = "Previous session update"
+		} else if pending.State == work.Held {
+			prefix = "Background result (held)"
+		}
+		line := prefix + ": " + text
+		if u.workResults[id] == line {
+			continue
+		}
+		u.workResults[id] = line
+		u.dimLine(line)
+	}
 }
 
 func (u *UI) onError(e events.Error) {
@@ -271,6 +357,9 @@ func (u *UI) onSpeechDiagnostic(e events.SpeechDiagnostic) {
 }
 
 func (u *UI) onToolCallStarted(e events.ToolCallStarted) {
+	if !u.acceptWorkScope(e.WorkScope) {
+		return
+	}
 	if e.JobID != "" {
 		u.printRow(e.JobID, u.work.Add(e))
 		return
@@ -346,6 +435,9 @@ func (u *UI) onVoiceGateStripped(e events.VoiceGateStripped) {
 }
 
 func (u *UI) onToolCallFinished(e events.ToolCallFinished) {
+	if !u.acceptWorkScope(e.WorkScope) {
+		return
+	}
 	if e.JobID != "" {
 		u.work.Finish(e)
 		return
@@ -376,6 +468,14 @@ func (u *UI) onToolCallFinished(e events.ToolCallFinished) {
 		msg += " in " + elapsed.String()
 	}
 	u.dimLine(msg)
+}
+
+func (u *UI) acceptWorkScope(scope work.WorkScope) bool {
+	if !scope.Valid() {
+		return true
+	}
+	authoritative := u.authoritativeSnapshot()
+	return authoritative.Scope.Valid() && authoritative.Scope == scope
 }
 
 func toolOutcomeLabel(status events.ToolOutcomeStatus) string {

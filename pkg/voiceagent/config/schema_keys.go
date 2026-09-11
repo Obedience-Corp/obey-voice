@@ -178,6 +178,11 @@ func brainKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "voice_work_enabled", Type: TypeBool, Default: false,
+			Group: GroupAdvanced, Title: "Experimental work inbox",
+			Help: "Keep background results with the conversation and save pending updates. Experimental; paid worker dispatch is unavailable.",
+		},
+		{
 			Key: "voice_worker_provider", Type: TypeEnum, Default: "", Enum: workerProviderEnum(),
 			Group: GroupBrain, Title: "Worker provider",
 			Help:               "Which model runs async jobs after a spawn. Chosen alongside the brain — empty means unselected, and inherits the live brain until you pick one.",

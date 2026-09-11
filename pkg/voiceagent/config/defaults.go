@@ -145,6 +145,7 @@ func setDefaults(v *viper.Viper) {
 	// with no ollama_model fails with an actionable message from NewOllama rather
 	// than silently routing to a cloud CLI.
 	v.SetDefault("brain_provider", "ollama")
+	v.SetDefault("voice_work_enabled", false)
 	v.SetDefault("voice_worker_provider", "")
 	v.SetDefault("voice_worker_model", "")
 	v.SetDefault("voice_worker_ollama_host", "")

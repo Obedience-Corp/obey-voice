@@ -49,23 +49,28 @@ func (o *OllamaBrain) Fresh() Provider {
 	o.infoMu.Lock()
 	infoSink := o.infoSink
 	o.infoMu.Unlock()
+	o.stateMu.Lock()
+	delegationRuntime := o.delegation
+	delegationBorrowed := o.delegationBorrowed
+	o.stateMu.Unlock()
 	return &OllamaBrain{
-		delegation:        o.delegation,
-		client:            o.client,
-		continuitySink:    continuitySink,
-		infoSink:          infoSink,
-		model:             o.model,
-		workDir:           o.workDir,
-		cfg:               o.cfg,
-		systemPrompt:      o.systemPrompt,
-		fullSystemPrompt:  o.fullSystemPrompt,
-		turnInstruction:   o.turnInstruction,
-		personaReloader:   o.personaReloader,
-		keepAlive:         o.keepAlive,
-		skills:            o.skills,
-		skillRouter:       o.skillRouter,
-		skillRouterWarned: o.skillRouterWarned,
-		speakerNames:      o.speakerNames,
+		delegation:         delegationRuntime,
+		delegationBorrowed: delegationBorrowed,
+		client:             o.client,
+		continuitySink:     continuitySink,
+		infoSink:           infoSink,
+		model:              o.model,
+		workDir:            o.workDir,
+		cfg:                o.cfg,
+		systemPrompt:       o.systemPrompt,
+		fullSystemPrompt:   o.fullSystemPrompt,
+		turnInstruction:    o.turnInstruction,
+		personaReloader:    o.personaReloader,
+		keepAlive:          o.keepAlive,
+		skills:             o.skills,
+		skillRouter:        o.skillRouter,
+		skillRouterWarned:  o.skillRouterWarned,
+		speakerNames:       o.speakerNames,
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // queueCapacity bounds the writer queue. Bus handlers run synchronously on
@@ -35,9 +36,11 @@ const Version = 2
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
 type record struct {
-	Type string `json:"type"`
-	TS   string `json:"ts,omitempty"`
-	Seq  int64  `json:"seq,omitempty"`
+	Work      *work.Snapshot  `json:"work,omitempty"`
+	WorkScope *work.WorkScope `json:"work_scope,omitempty"`
+	Type      string          `json:"type"`
+	TS        string          `json:"ts,omitempty"`
+	Seq       int64           `json:"seq,omitempty"`
 
 	V   int `json:"v,omitempty"`   // header
 	PID int `json:"pid,omitempty"` // header
@@ -223,7 +226,12 @@ func (w *Writer) Attach(bus *events.Bus) {
 		w.enqueue(record{Type: "agent", Text: e.Response, Degraded: e.Degraded, Interrupted: e.Interrupted})
 	})
 	events.Subscribe(bus, func(e events.ToolCallStarted) {
-		w.enqueue(record{Type: "tool_call", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID, Summary: e.Summary})
+		var scope *work.WorkScope
+		if e.WorkScope.Valid() {
+			s := e.WorkScope
+			scope = &s
+		}
+		w.enqueue(record{Type: "tool_call", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID, Summary: e.Summary, WorkScope: scope})
 	})
 	events.Subscribe(bus, func(e events.ToolCallFinished) {
 		status := string(e.OutcomeStatus())
@@ -237,12 +245,21 @@ func (w *Writer) Attach(bus *events.Bus) {
 			signal, reason, inputSummary, outputRef = o.Signal, o.Reason, o.InputSummary, o.OutputRef
 			outputBytes, truncated = o.OutputBytes, o.Truncated
 		}
+		var scope *work.WorkScope
+		if e.WorkScope.Valid() {
+			s := e.WorkScope
+			scope = &s
+		}
 		w.enqueue(record{
 			Type: "tool_result", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID,
-			Preview: e.ResultPreview(), Message: e.ResultReason(), IsError: status == string(events.ToolOutcomeFailed) || status == string(events.ToolOutcomeTimedOut) || status == string(events.ToolOutcomeCanceled), ElapsedS: elapsed.Seconds(),
+			WorkScope: scope,
+			Preview:   e.ResultPreview(), Message: e.ResultReason(), IsError: status == string(events.ToolOutcomeFailed) || status == string(events.ToolOutcomeTimedOut) || status == string(events.ToolOutcomeCanceled), ElapsedS: elapsed.Seconds(),
 			Status: status, ExitCode: exitCode, HTTPStatus: httpStatus, Signal: signal, Reason: reason,
 			InputSummary: inputSummary, OutputRef: outputRef, OutputBytes: outputBytes, Truncated: truncated,
 		})
+	})
+	events.Subscribe(bus, func(e events.WorkStateChanged) {
+		w.enqueue(record{Type: "work_state_changed", Work: &e.Snapshot})
 	})
 	events.Subscribe(bus, func(e events.JobQueued) {
 		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "queued"})

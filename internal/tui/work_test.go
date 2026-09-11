@@ -7,7 +7,22 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
+
+func TestScopedToolEventsRejectDelayedOldScope(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	current := work.WorkScope{SessionID: "s", RuntimeEpoch: "new", ConversationEpoch: "c"}
+	m.deps.workScope = func() work.WorkScope { return current }
+	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "old", JobID: "job-old", Name: "read_file", Kind: "read", WorkScope: work.WorkScope{SessionID: "s", RuntimeEpoch: "old", ConversationEpoch: "c"}}})
+	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "new", JobID: "job-new", Name: "read_file", Kind: "read", WorkScope: current}})
+	m, _ = m.Update(busEventMsg{event: events.ToolCallFinished{ID: "new", JobID: "job-new", Name: "read_file", Kind: "read", WorkScope: current}})
+	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "newer", JobID: "job-new", Name: "run_command", Kind: "execute", WorkScope: current}})
+	view := stripANSI(m.View())
+	if strings.Contains(view, "old") || !strings.Contains(view, "job-new") {
+		t.Fatalf("scoped TUI tool output = %q", view)
+	}
+}
 
 // jobLines returns the transcript lines belonging to background jobs, stripped
 // of styling.

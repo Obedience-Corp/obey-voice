@@ -17,6 +17,9 @@ type delegationClientStub struct {
 }
 
 func (s *delegationClientStub) Probe(context.Context) error { return nil }
+func (*delegationClientStub) ExecutionCapability() delegation.ExecutionCapability {
+	return delegation.ExecutionCapability{Local: true}
+}
 func (s *delegationClientStub) Start(context.Context, delegation.Request) (delegation.Snapshot, error) {
 	close(s.started)
 	return delegation.Snapshot{ID: "durable-id", State: "working"}, nil
@@ -131,6 +134,71 @@ func TestReadyDelegationSurvivesBudgetAndFailedDelivery(t *testing.T) {
 	if _, ok := runtime.Pending(); ok {
 		t.Fatal("successfully included result remains pending")
 	}
+}
+
+func TestReplacingBrainDetachesManagedRuntimeAndPreservesResult(t *testing.T) {
+	client := &delegationClientStub{started: make(chan struct{}), completed: true}
+	runtime, err := delegation.New(context.Background(), client, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Start("survive provider replacement"); err != nil {
+		t.Fatal(err)
+	}
+	<-client.started
+	brain := &OllamaBrain{}
+	if err := brain.AttachDelegation(runtime); err != nil {
+		t.Fatal(err)
+	}
+	if got := brain.DetachDelegation(); got != runtime {
+		t.Fatal("detach did not return the conversation runtime")
+	}
+	if err := brain.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		if delivery, ok := runtime.Pending(); ok {
+			if delivery.Brief != "The task is finished." {
+				t.Fatalf("delivery=%+v", delivery)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("detached runtime did not retain completed result")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBorrowedRuntimeSurvivesProviderHistoryReset(t *testing.T) {
+	client := &delegationClientStub{started: make(chan struct{})}
+	runtime, err := delegation.New(context.Background(), client, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brain := &OllamaBrain{}
+	if err := brain.AttachDelegation(runtime); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.Start("keep running across history reset"); err != nil {
+		t.Fatal(err)
+	}
+	<-client.started
+	brain.ClearHistory()
+	if brain.delegation != runtime || !brain.delegationBorrowed {
+		t.Fatal("history reset replaced borrowed runtime")
+	}
+	if err := brain.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := runtime.Status(); strings.Contains(got, "No background") {
+		t.Fatal("provider close stopped borrowed runtime")
+	}
+	_ = runtime.Close()
 }
 
 func TestSessionRestoreDropsWorkerAndKeepsReadySubscription(t *testing.T) {

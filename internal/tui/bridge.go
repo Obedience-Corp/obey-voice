@@ -71,6 +71,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.Error](b, bus)
 	forward[events.Info](b, bus)
 	forward[events.SpeechDiagnostic](b, bus)
+	forward[events.WorkStateChanged](b, bus)
 	// Tool call visibility for Ollama (and any future tool-using brain).
 	forward[events.ToolCallStarted](b, bus)
 	forward[events.ToolCallFinished](b, bus)

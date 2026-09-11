@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // The event mirror is the busiest writer in a serve process. It must follow
@@ -234,6 +235,89 @@ func TestJobTransitionsPrintOneLineEach(t *testing.T) {
 	}
 	if strings.Contains(got, "job-2 started") {
 		t.Errorf("job-2 printed as started while only queued:\n%s", got)
+	}
+}
+
+func TestWorkStateChangedPrintsHeldResultOnceAndFencesOldRevision(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "agent", &buf, true)
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r1", ConversationEpoch: "c1"}
+	e := events.WorkStateChanged{Snapshot: work.Snapshot{
+		Scope: scope, Revision: 2,
+		Pending: []work.ResultView{{State: work.Held, Outcome: work.Outcome{ResultID: "result-1", Scope: scope, JobID: "job-1", Status: work.OutcomeSucceeded, Text: "sunny", PreviousSession: true}}},
+	}}
+	bus.Emit(e)
+	bus.Emit(e)
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 1, Pending: []work.ResultView{{State: work.Held, Outcome: work.Outcome{ResultID: "result-1", Scope: scope, JobID: "job-1", Status: work.OutcomeSucceeded, Text: "stale"}}}}})
+	got := buf.String()
+	if strings.Count(got, "Previous session update: sunny") != 1 || strings.Contains(got, "stale") {
+		t.Fatalf("work projection = %q", got)
+	}
+}
+
+func TestWorkStateChangedCurrentHeldResultKeepsCurrentSessionLabel(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "agent", &buf, true)
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 1, Pending: []work.ResultView{{State: work.Held, Outcome: work.Outcome{ResultID: "held", Scope: scope, Text: "held now"}}}}})
+	got := buf.String()
+	if !strings.Contains(got, "Background result (held): held now") || strings.Contains(got, "Previous session update: held now") {
+		t.Fatalf("held output = %q", got)
+	}
+}
+
+func TestScopedToolEventsRejectDelayedOldScope(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	u := newUI(bus, "agent", &buf, true)
+	old := work.WorkScope{SessionID: "s", RuntimeEpoch: "old", ConversationEpoch: "c"}
+	current := work.WorkScope{SessionID: "s", RuntimeEpoch: "new", ConversationEpoch: "c"}
+	u.SetWorkSnapshot(func() work.Snapshot { return work.Snapshot{Scope: current} })
+	bus.Emit(events.ToolCallStarted{ID: "old", JobID: "job-old", Name: "read_file", Kind: "read", WorkScope: old})
+	bus.Emit(events.ToolCallFinished{ID: "old", JobID: "job-old", Name: "read_file", Kind: "read", WorkScope: old})
+	bus.Emit(events.ToolCallStarted{ID: "new", JobID: "job-new", Name: "read_file", Kind: "read", WorkScope: current})
+	bus.Emit(events.ToolCallFinished{ID: "new", JobID: "job-new", Name: "read_file", Kind: "read", WorkScope: current})
+	bus.Emit(events.ToolCallStarted{ID: "newer", JobID: "job-new", Name: "run_command", Kind: "execute", WorkScope: current})
+	got := buf.String()
+	if strings.Contains(got, "job-old") || !strings.Contains(got, "job-new") {
+		t.Fatalf("scoped tool output = %q", got)
+	}
+}
+
+func TestWorkStateChangedScopeRequiresClear(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "agent", &buf, true)
+	first := work.WorkScope{SessionID: "s", RuntimeEpoch: "r1", ConversationEpoch: "c1"}
+	second := work.WorkScope{SessionID: "s", RuntimeEpoch: "r2", ConversationEpoch: "c2"}
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: first, Revision: 1, Pending: []work.ResultView{{Outcome: work.Outcome{ResultID: "old", Scope: first, Text: "old"}}}}})
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: second, Revision: 1, Pending: []work.ResultView{{Outcome: work.Outcome{ResultID: "late", Scope: second, Text: "late"}}}}})
+	bus.Emit(events.ConversationCleared{})
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: second, Revision: 1, Pending: []work.ResultView{{Outcome: work.Outcome{ResultID: "new", Scope: second, Text: "new"}}}}})
+	got := buf.String()
+	if strings.Contains(got, "late") || !strings.Contains(got, "new") {
+		t.Fatalf("scope projection = %q", got)
+	}
+}
+
+func TestWorkStateChangedUsesAuthoritativeNewRuntimeScope(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	u := newUI(bus, "agent", &buf, true)
+	first := work.WorkScope{SessionID: "s", RuntimeEpoch: "r1", ConversationEpoch: "c1"}
+	second := work.WorkScope{SessionID: "s", RuntimeEpoch: "r2", ConversationEpoch: "c2"}
+	authoritative := work.Snapshot{Scope: first}
+	u.SetWorkSnapshot(func() work.Snapshot { return authoritative })
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: first, Revision: 1, Pending: []work.ResultView{{Outcome: work.Outcome{ResultID: "old", Scope: first, Text: "old"}}}}})
+	authoritative.Scope = second
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: second, Revision: 1, Pending: []work.ResultView{{Outcome: work.Outcome{ResultID: "new", Scope: second, Text: "new"}}}}})
+	// A delayed event from the retired runtime must not repaint the output.
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: first, Revision: 99, Pending: []work.ResultView{{Outcome: work.Outcome{ResultID: "late", Scope: first, Text: "late"}}}}})
+	got := buf.String()
+	if !strings.Contains(got, "old") || !strings.Contains(got, "new") || strings.Contains(got, "late") {
+		t.Fatalf("authoritative scope projection = %q", got)
 	}
 }
 
