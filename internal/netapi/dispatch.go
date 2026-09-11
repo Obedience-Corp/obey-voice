@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
@@ -32,6 +33,8 @@ type TranscriptionRunner interface {
 var ErrBusy = errors.New("dispatcher queue is full")
 
 const dispatchQueueDepth = 16
+
+const backgroundRecoveryInterval = time.Second
 
 type opKind int
 
@@ -105,6 +108,9 @@ func NewDispatcher(runner TurnRunner, bus *events.Bus, clearHistory func(), resu
 // Run processes control operations until ctx is canceled. It must run in
 // exactly one goroutine.
 func (d *Dispatcher) Run(ctx context.Context) {
+	timer := time.NewTimer(backgroundRecoveryInterval)
+	defer timer.Stop()
+	backgroundAttempted := false
 	for {
 		if ctx.Err() != nil {
 			return
@@ -113,11 +119,24 @@ func (d *Dispatcher) Run(ctx context.Context) {
 		select {
 		case op := <-d.queue:
 			d.apply(ctx, op)
+			if isUserTurn(op.kind) {
+				backgroundAttempted = false
+			}
+			resetBackgroundTimer(timer)
 			continue
 		default:
 		}
+		runner, canBackground := d.runner.(backgroundRunner)
+		pendingRunner, hasPending := d.runner.(backgroundPendingRunner)
+		if canBackground && hasPending && !backgroundAttempted && pendingRunner.BackgroundPending() && !d.hasCapturedInput() {
+			d.apply(ctx, dispatchOp{kind: opBackground})
+			backgroundAttempted = true
+			drainBackgroundReady(runner.BackgroundReady())
+			resetBackgroundTimer(timer)
+			continue
+		}
 		var ready <-chan struct{}
-		if runner, ok := d.runner.(backgroundRunner); ok {
+		if canBackground {
 			ready = runner.BackgroundReady()
 		}
 		select {
@@ -125,10 +144,64 @@ func (d *Dispatcher) Run(ctx context.Context) {
 			return
 		case op := <-d.queue:
 			d.apply(ctx, op)
+			if isUserTurn(op.kind) {
+				backgroundAttempted = false
+			}
+			resetBackgroundTimer(timer)
 		case <-ready:
+			// A ready channel is a wake hint. A previously attempted, unchanged
+			// level must not spin the dispatcher; the recovery timer remains the
+			// next opportunity to reconcile it.
+			if backgroundAttempted {
+				drainBackgroundReady(ready)
+				continue
+			}
+			if hasPending && (!pendingRunner.BackgroundPending() || d.hasCapturedInput()) {
+				backgroundAttempted = true
+				drainBackgroundReady(ready)
+				continue
+			}
 			d.apply(ctx, dispatchOp{kind: opBackground})
+			backgroundAttempted = true
+			drainBackgroundReady(ready)
+			resetBackgroundTimer(timer)
+		case <-timer.C:
+			backgroundAttempted = false
+			resetBackgroundTimer(timer)
 		}
 	}
+}
+
+func isUserTurn(kind opKind) bool {
+	return kind == opText || kind == opVoice || kind == opTranscription
+}
+
+func resetBackgroundTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(backgroundRecoveryInterval)
+}
+
+func drainBackgroundReady(ready <-chan struct{}) {
+	if ready == nil {
+		return
+	}
+	for {
+		select {
+		case <-ready:
+		default:
+			return
+		}
+	}
+}
+
+func (d *Dispatcher) hasCapturedInput() bool {
+	owner, ok := d.runner.(interface{ HasCapturedInput() bool })
+	return ok && owner.HasCapturedInput()
 }
 
 func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
@@ -355,4 +428,8 @@ func (d *Dispatcher) enqueue(op dispatchOp) error {
 type backgroundRunner interface {
 	BackgroundReady() <-chan struct{}
 	RunBackgroundTurn(context.Context) error
+}
+
+type backgroundPendingRunner interface {
+	BackgroundPending() bool
 }

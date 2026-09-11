@@ -115,9 +115,14 @@ type conversationModel struct {
 	// pipeline goroutine so Enter cannot race the async bridge drain of
 	// UserInput into turnVoiceResponding. Pointer so Bubble Tea model copies
 	// share one gate with the bus subscription.
-	canCancelVoice    *atomic.Bool
-	pendingText       string
-	pendingBackground bool
+	canCancelVoice            *atomic.Bool
+	pendingText               string
+	pendingBackground         bool
+	pendingPause              bool
+	backgroundPauseGeneration uint64
+	// backgroundPauseAcknowledged keeps recovery from requesting the same
+	// capture pause repeatedly while the ordinary voice turn drains.
+	backgroundPauseAcknowledged bool
 	// pendingCompact queues a /compact requested while a cancelable turn was
 	// in flight; drained by the turn-done handlers, winning over pendingText.
 	pendingCompact  bool
@@ -258,6 +263,17 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 		// canceling it here could discard an utterance that is just beginning.
 		m.pendingBackground = true
 		return m, tea.Batch(m.resumeListening(), m.waitBackground())
+	case backgroundRecoveryMsg:
+		return m, tea.Batch(m.reconcileBackground(), m.backgroundRecoveryCmd())
+	case backgroundPauseDoneMsg:
+		if msg.generation != m.backgroundPauseGeneration {
+			return m, nil
+		}
+		m.pendingPause = false
+		if msg.err == nil && msg.acknowledged {
+			m.backgroundPauseAcknowledged = true
+		}
+		return m, nil
 	case voiceTurnDoneMsg:
 		return m, tea.Batch(m.handleVoiceTurnDone(msg), m.ensureVoiceTick())
 

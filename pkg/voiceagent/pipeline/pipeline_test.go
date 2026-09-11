@@ -282,7 +282,7 @@ func TestRunTurnBargeInInterruptsPlayback(t *testing.T) {
 	if capture.ResetCount() != 1 {
 		t.Fatalf("capture.Reset() count = %d, want 1 (listen drain only)", capture.ResetCount())
 	}
-	if !p.keepCapture {
+	if !p.keepCapture.Load() {
 		t.Fatal("barge-in should arm keepCapture so the next turn preserves the user's audio")
 	}
 }
@@ -307,14 +307,14 @@ func TestTranscribeTurnDrainsCaptureExceptAfterBargeIn(t *testing.T) {
 	}
 
 	// Simulate a prior barge-in: the next listen must preserve the buffer.
-	p.keepCapture = true
+	p.keepCapture.Store(true)
 	if _, err := p.RunTurn(context.Background()); err != nil {
 		t.Fatalf("RunTurn() error = %v", err)
 	}
 	if capture.ResetCount() != 1 {
 		t.Fatalf("capture.Reset() count = %d, want 1 (drain skipped after barge-in)", capture.ResetCount())
 	}
-	if p.keepCapture {
+	if p.keepCapture.Load() {
 		t.Fatal("keepCapture should clear after the preserved turn")
 	}
 }

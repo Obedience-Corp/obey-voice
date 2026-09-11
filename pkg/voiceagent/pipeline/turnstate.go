@@ -41,6 +41,8 @@ const (
 	TurnFailed
 	// TurnTimedOut is terminal: no usable speech was captured.
 	TurnTimedOut
+	// TurnYielded gives passive capture to a completion without fake input.
+	TurnYielded
 )
 
 func (s TurnState) String() string {
@@ -61,6 +63,8 @@ func (s TurnState) String() string {
 		return "completed"
 	case TurnFailed:
 		return "failed"
+	case TurnYielded:
+		return "yielded_for_completion"
 	case TurnTimedOut:
 		return "timed_out"
 	default:
@@ -71,7 +75,7 @@ func (s TurnState) String() string {
 // IsTerminal reports whether s is a final outcome with no legal successor.
 func (s TurnState) IsTerminal() bool {
 	switch s {
-	case TurnInterrupted, TurnCompleted, TurnFailed, TurnTimedOut:
+	case TurnInterrupted, TurnCompleted, TurnFailed, TurnTimedOut, TurnYielded:
 		return true
 	default:
 		return false
@@ -82,7 +86,7 @@ func (s TurnState) IsTerminal() bool {
 // terminal state) has no outgoing transitions.
 var turnTransitions = map[TurnState][]TurnState{
 	TurnIdle:         {TurnListening, TurnThinking},
-	TurnListening:    {TurnTranscribing, TurnThinking, TurnTimedOut, TurnFailed, TurnInterrupted},
+	TurnListening:    {TurnYielded, TurnTranscribing, TurnThinking, TurnTimedOut, TurnFailed, TurnInterrupted},
 	TurnTranscribing: {TurnThinking, TurnTimedOut, TurnFailed, TurnInterrupted},
 	TurnThinking:     {TurnSpeaking, TurnCompleted, TurnFailed, TurnInterrupted},
 	TurnSpeaking:     {TurnCompleted, TurnFailed, TurnInterrupted},

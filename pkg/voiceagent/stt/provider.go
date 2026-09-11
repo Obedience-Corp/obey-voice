@@ -1,6 +1,59 @@
 package stt
 
-import "context"
+import (
+	"context"
+	"errors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+)
+
+var ErrCompletionPauseUnsupported = errors.New("STT adapter cannot yield capture for completion")
+
+// PauseDecision describes the result of asking the capture owner to yield an
+// idle completion. A denial is a normal race, not an STT failure: the owner
+// keeps the current utterance (or its finalization) intact.
+type PauseDecision string
+
+const (
+	PauseAcknowledged  PauseDecision = "acknowledged"
+	PauseUserSpeaking  PauseDecision = "user_speaking"
+	PauseCapturedInput PauseDecision = "captured_input"
+	PauseFinalizing    PauseDecision = "finalizing"
+)
+
+// PauseToken identifies one acknowledged completion pause. Epoch is owned by
+// the capture owner and changes when speech arrives after acknowledgement;
+// callers must present the token unchanged when resuming or claiming work.
+type PauseToken struct {
+	Scope     work.WorkScope
+	RequestID string
+	Epoch     uint64
+	Permit    work.CapturePermit
+}
+
+// PauseResult is returned for both accepted and denied pause requests.
+type PauseResult struct {
+	Token    PauseToken
+	Decision PauseDecision
+}
+
+// CompletionCapture is the serialized capture-owner boundary used by the
+// background completion scheduler. Implementations keep the same source and
+// ring alive after acknowledgement. Resume transfers retained frames to the
+// next STT session; it must not reset or drain the source.
+type CompletionCapture interface {
+	BindCompletionCoordinator(*work.Coordinator)
+	PauseForCompletion(ctx context.Context, scope work.WorkScope, requestID string) (PauseResult, error)
+	ResumeCapture(ctx context.Context, token PauseToken) error
+	HasCapturedInput() bool
+}
+
+// CompletionSession is implemented by providers that can keep one STT loop
+// alive across a yielded completion. It is optional so finite/test sessions
+// implementing Session remain source-compatible.
+type CompletionSession interface {
+	Session
+	CompletionCapture
+}
 
 // Event is the base interface for STT session events.
 type Event interface {

@@ -76,6 +76,8 @@ func (s *SherpaStreamingSTT) Start(ctx context.Context) (Session, error) {
 	session := &sherpaSession{
 		cancel: cancel,
 		events: make(chan Event, 16),
+		done:   make(chan struct{}),
+		pause:  newPauseController("stt"),
 	}
 
 	finite := sourceKind(s.capture) != audio.SourceLive
@@ -83,6 +85,8 @@ func (s *SherpaStreamingSTT) Start(ctx context.Context) (Session, error) {
 	policy.AllowProviderEnd = true // the streaming recognizer self-endpoints
 
 	go func() {
+		defer session.pause.stop()
+		defer close(session.done)
 		defer close(session.events)
 
 		stream := sherpa.NewOnlineStream(s.recognizer)
@@ -100,6 +104,7 @@ func (s *SherpaStreamingSTT) Start(ctx context.Context) (Session, error) {
 			seg:    newVADSegmenter(s.vad, 0),
 			rec:    rec,
 			policy: policy,
+			pause:  session.pause,
 		}, session.events)
 	}()
 	return session, nil

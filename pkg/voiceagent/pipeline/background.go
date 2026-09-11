@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 type backgroundProvider interface {
@@ -18,12 +19,26 @@ type backgroundProvider interface {
 // BackgroundReady exposes a signal for a host-owned serialized turn driver.
 // The host must not run a background turn concurrently with a user turn.
 func (p *Pipeline) BackgroundReady() <-chan struct{} {
+	if c := p.WorkCoordinator(); c != nil {
+		return c.Ready()
+	}
 	if b, ok := p.Brain.(backgroundProvider); ok {
 		return b.BackgroundReady()
 	}
 	return nil
 }
 func (p *Pipeline) BackgroundPending() bool {
+	if c := p.WorkCoordinator(); c != nil {
+		if p.OutputMuted() {
+			return false
+		}
+		for _, r := range c.Pending(c.Scope()) {
+			if r.State == work.Pending || r.State == work.Ready {
+				return true
+			}
+		}
+		return false
+	}
 	if b, ok := p.Brain.(backgroundProvider); ok {
 		return b.BackgroundPending()
 	}
@@ -36,13 +51,18 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 	if !p.BackgroundPending() || p.HasCapturedInput() || ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if p.WorkCoordinator() != nil {
+		return p.withCompletionLease(ctx, func(attemptCtx context.Context, _ work.CompletionLease, _ []work.ResultView) error {
+			return p.runTextTurn(attemptCtx, "", true)
+		})
+	}
 	return p.runTextTurn(ctx, "", true)
 }
 
 func (p *Pipeline) finishBackgroundStream(ctx context.Context, brainCtx context.Context, cancel context.CancelFunc, stream *brain.Stream, metrics *turnMetrics, turn *turnConductor, repair *promiseRepairState) error {
 	response, interrupted, err := p.streamResponse(brainCtx, cancel, stream, true, metrics, turn, repair)
 	if interrupted {
-		p.keepCapture = true
+		p.keepCapture.Store(true)
 	}
 	if err != nil {
 		err = mapIdleDeadline(brainCtx, err)
@@ -60,7 +80,7 @@ func (p *Pipeline) finishBackgroundStream(ctx context.Context, brainCtx context.
 	if interrupted {
 		turn.finish(TurnInterrupted)
 	} else {
-		if b, ok := p.Brain.(interface{ AckBackgroundDelivery() }); ok {
+		if b, ok := p.Brain.(interface{ AckBackgroundDelivery() }); ok && p.WorkCoordinator() == nil {
 			b.AckBackgroundDelivery()
 		}
 		turn.finish(TurnCompleted)
@@ -91,4 +111,15 @@ func (p *Pipeline) CloseBrains() error {
 
 // HasCapturedInput is read by the serialized host only between turns. A
 // barge-in's retained audio takes priority over every unsolicited notification.
-func (p *Pipeline) HasCapturedInput() bool { return p.keepCapture }
+func (p *Pipeline) HasCapturedInput() bool {
+	if p.keepCapture.Load() {
+		return true
+	}
+	p.captureMu.Lock()
+	session := p.captureSession
+	p.captureMu.Unlock()
+	if owner, ok := session.(interface{ HasCapturedInput() bool }); ok {
+		return owner.HasCapturedInput()
+	}
+	return false
+}

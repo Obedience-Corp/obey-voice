@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // defaultBrainTurnTimeout is the idle bound on model + tool work for one
@@ -164,7 +165,14 @@ type Pipeline struct {
 	// keepCapture preserves the capture buffer into the next turn after a
 	// barge-in — or a near-miss, speech heard during a playback pause that
 	// never tripped — where the buffered audio is the user mid-utterance.
-	keepCapture bool
+	keepCapture               atomic.Bool
+	captureMu                 sync.Mutex
+	captureSession            stt.Session
+	captureToken              stt.PauseToken
+	captureYielded            bool
+	captureDeferral           string
+	captureRequests           atomic.Uint64
+	externalCompletionCapture func(context.Context, *work.Coordinator, string) (work.CapturePermit, error)
 
 	// outputMuted is toggled by interactive clients while a turn may be active.
 	outputMuted atomic.Bool
@@ -187,6 +195,11 @@ func (p *Pipeline) currentSpeakerID() string {
 // pipeline. Muting immediately stops any audio already in flight.
 func (p *Pipeline) SetOutputMuted(muted bool) {
 	p.outputMuted.Store(muted)
+	if muted {
+		if c := p.WorkCoordinator(); c != nil {
+			_ = c.RevokeBinding(c.Scope())
+		}
+	}
 	if muted && p.Player != nil {
 		p.Player.Stop()
 	}

@@ -95,6 +95,9 @@ type conversationDeps struct {
 // first turn. The returned Cmd must be handed to the program.
 func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	m.deps = deps
+	m.backgroundPauseGeneration++
+	m.pendingPause = false
+	m.backgroundPauseAcknowledged = false
 	m.startedAt = time.Now()
 	m.activity = nil
 	m.voiceEnabled = deps.voice
@@ -125,7 +128,7 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		})
 	}
 
-	cmds := []tea.Cmd{m.bridge.waitContext(deps.ctx), textarea.Blink, m.waitBackground()}
+	cmds := []tea.Cmd{m.bridge.waitContext(deps.ctx), textarea.Blink, m.waitBackground(), m.backgroundRecoveryCmd()}
 	m.appendActivity("session", shortSessionID(deps.sessionID), 0)
 	if deps.voice {
 		m.appendActivity("input", deviceLabel(deps.inputDevice), 0)
@@ -204,7 +207,7 @@ func (m *conversationModel) setInputMuted(muted bool) tea.Cmd {
 	m.voiceEnabled = true
 	m.voiceFailures = 0
 	m.emit(events.Info{Message: "Voice input resumed."})
-	return m.resumeListening()
+	return m.reconcileBackground()
 }
 
 func (m *conversationModel) toggleOutputMuted() {
@@ -230,6 +233,8 @@ func (m *conversationModel) dispatchVoiceTurn() tea.Cmd {
 	ctx, cancel := context.WithCancel(m.deps.ctx)
 	m.turnCancel = cancel
 	m.turnState = turnVoiceListening
+	m.backgroundPauseGeneration++
+	m.backgroundPauseAcknowledged = false
 	if m.canCancelVoice != nil {
 		m.canCancelVoice.Store(true)
 	}
@@ -277,9 +282,47 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 // resumeListening restarts the background voice turn when nothing else owns
 // the pipeline.
 func (m *conversationModel) resumeListening() tea.Cmd {
-	if m.turnState == turnIdle && m.pendingBackground {
-		m.pendingBackground = false
+	// BackgroundReady is only a prompt. Every idle decision reads the current
+	// inbox level so a lost edge, or a stale edge after another claimant, cannot
+	// strand or replay work.
+	if runner, ok := m.deps.runner.(backgroundRunner); ok {
+		m.pendingBackground = runner.BackgroundPending()
+	}
+	if m.turnState == turnVoiceListening {
+		// A canceled turn may have queued typed input or a talk-key turn. Its
+		// done handler normally drains these first; do not ask capture to yield
+		// while one of those user-owned turns is queued.
+		if m.pendingText != "" || m.pendingCompact || (m.talk != nil && m.talk.pendingTurn) {
+			return nil
+		}
+		if m.pendingBackground && !m.backgroundPauseAcknowledged {
+			return m.requestBackgroundPause()
+		}
+		return nil
+	}
+	if m.turnState != turnIdle {
+		return nil
+	}
+	// Captured speech owns the next pipeline turn even when typed input was
+	// queued behind an earlier cancellation. Keep that text queued until the
+	// retained voice turn completes.
+	if m.voiceOn() {
+		if m.hasCapturedInput() {
+			return m.dispatchVoiceTurn()
+		}
+	}
+	if m.pendingCompact {
+		m.pendingCompact = false
+		return m.dispatchCompact()
+	}
+	if m.pendingText != "" {
+		text := m.pendingText
+		m.pendingText = ""
+		return m.submitText(text)
+	}
+	if m.pendingBackground {
 		if cmd := m.dispatchBackground(); cmd != nil {
+			m.pendingBackground = false
 			return cmd
 		}
 	}
@@ -506,7 +549,7 @@ func (m *conversationModel) submitText(text string) tea.Cmd {
 		if cmd != nil {
 			return cmd
 		}
-		return m.resumeListening()
+		return m.reconcileBackground()
 	}
 
 	cmd := app.NormalizeCommand(text)
@@ -534,6 +577,9 @@ func (m *conversationModel) submitText(text string) tea.Cmd {
 
 func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	m.turnCancel = nil
+	m.pendingPause = false
+	m.backgroundPauseGeneration++
+	m.backgroundPauseAcknowledged = false
 	if m.canCancelVoice != nil {
 		m.canCancelVoice.Store(false)
 	}
@@ -552,6 +598,11 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 			return m.dispatchCompact()
 		}
 		if text != "" {
+			if m.voiceOn() && m.hasCapturedInput() {
+				m.pendingText = text
+				m.talkTurnEnded()
+				return m.resumeListening()
+			}
 			m.talkTurnEnded()
 			return m.submitText(text)
 		}
@@ -586,7 +637,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 
 	m.voiceFailures = 0
 	if msg.text == "" {
-		return m.resumeListening() // silence — keep listening
+		return m.reconcileBackground() // silence — keep listening
 	}
 
 	// Voice commands match post-turn, identical to today: a spoken "goodbye"
@@ -602,7 +653,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 		}
 		m.emit(events.ConversationCleared{})
 	}
-	return m.resumeListening()
+	return m.reconcileBackground()
 }
 
 func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
@@ -625,6 +676,11 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 			return m.dispatchCompact()
 		}
 		if pending != "" {
+			if m.voiceOn() && m.hasCapturedInput() {
+				m.pendingText = pending
+				m.talkTurnEnded()
+				return m.resumeListening()
+			}
 			m.talkTurnEnded()
 			return m.submitText(pending)
 		}
@@ -633,14 +689,14 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 			return m.dispatchVoiceTurn()
 		}
 		m.talkTurnEnded()
-		return m.resumeListening()
+		return m.reconcileBackground()
 	}
 	m.talkTurnEnded()
 
 	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
 		m.emit(events.Error{Message: msg.err.Error()})
 	}
-	return m.resumeListening()
+	return m.reconcileBackground()
 }
 
 // requestCompact runs /compact when the pipeline is free, or cancels a

@@ -447,3 +447,161 @@ func TestRestoreInterruptedIDDoesNotOverwriteCustomResultID(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletionLeaseHasOneOwnerAndDuplicateClaimLoses(t *testing.T) {
+	c := NewCoordinator(testScope())
+	k, err := c.Register(testScope(), Admission{Task: "completion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.Publish(k, Outcome{Scope: testScope(), JobID: k.JobID, Status: OutcomeSucceeded, Text: "done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := c.AcquireCapturePermit(testScope(), "capture-a", 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := ResultRef{Scope: testScope(), JobID: k.JobID, ResultID: r.Outcome.ResultID, Revision: r.Outcome.TerminalRevision}
+	lease, err := c.Claim(testScope(), "attempt-a", "turn-a", []ResultRef{ref}, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lease.Valid() || !p.Valid() || c.ValidateCompletionLease(lease) != nil {
+		t.Fatal("claimed lease is not valid")
+	}
+	if _, err := c.Claim(testScope(), "attempt-b", "turn-b", []ResultRef{ref}, p); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate claim = %v", err)
+	}
+	if got := c.Pending(testScope()); len(got) != 1 || got[0].State != Pending {
+		t.Fatalf("claim consumed result: %+v", got)
+	}
+	if err := c.RevokeCompletionLease(lease); err != nil {
+		t.Fatal(err)
+	}
+	if lease.Valid() || p.Valid() {
+		t.Fatal("revocation left fence valid")
+	}
+	if _, err := c.Claim(testScope(), "attempt-c", "turn-c", []ResultRef{ref}, p); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale permit claim = %v", err)
+	}
+}
+
+func TestCapturePermitWriteIsFencedByRevoke(t *testing.T) {
+	c := NewCoordinator(testScope())
+	p, err := c.AcquireCapturePermit(testScope(), "capture", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	if !p.Write(func() { called = true }) || !called {
+		t.Fatal("active permit rejected write")
+	}
+	if err := c.RevokeCapturePermit(p); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.Done():
+	default:
+		t.Fatal("revoked permit did not close Done")
+	}
+	called = false
+	if p.Write(func() { called = true }) || called {
+		t.Fatal("revoked permit accepted write")
+	}
+}
+
+func TestCompletionLeaseStaleAfterReset(t *testing.T) {
+	c := NewCoordinator(testScope())
+	k, _ := c.Register(testScope(), Admission{Task: "completion"})
+	r, _ := c.Publish(k, Outcome{Scope: testScope(), JobID: k.JobID, Status: OutcomeSucceeded, Text: "done"})
+	p, _ := c.AcquireCapturePermit(testScope(), "capture", 1)
+	lease, err := c.Claim(testScope(), "attempt", "turn", []ResultRef{{Scope: testScope(), JobID: k.JobID, ResultID: r.Outcome.ResultID, Revision: r.Outcome.TerminalRevision}}, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := WorkScope{"session-1", "runtime-next", "conversation-next"}
+	if err := c.Reset(next); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ValidateCompletionLease(lease); !errors.Is(err, ErrStaleScope) {
+		t.Fatalf("old lease validation = %v", err)
+	}
+	if lease.Valid() || p.Valid() {
+		t.Fatal("reset left old fence valid")
+	}
+	if _, err := c.AcquireCapturePermit(next, "new-capture", 2); err != nil {
+		t.Fatalf("new scope permit = %v", err)
+	}
+}
+
+func TestCompletionLeaseMetadataMutationIsRejected(t *testing.T) {
+	c := NewCoordinator(testScope())
+	k, _ := c.Register(testScope(), Admission{Task: "completion"})
+	r, _ := c.Publish(k, Outcome{Scope: testScope(), JobID: k.JobID, Status: OutcomeSucceeded, Text: "done"})
+	p, _ := c.AcquireCapturePermit(testScope(), "capture", 1)
+	lease, err := c.Claim(testScope(), "attempt", "turn", []ResultRef{{Scope: testScope(), JobID: k.JobID, ResultID: r.Outcome.ResultID, Revision: r.Outcome.TerminalRevision}}, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.AttemptID = "forged-attempt"
+	lease.Results[0].ResultID = "forged-result"
+	if lease.Valid() || lease.Write(func() {}) {
+		t.Fatal("mutated lease remained usable")
+	}
+	if err := c.ValidateCompletionLease(lease); !errors.Is(err, ErrConflict) {
+		t.Fatalf("mutated lease validation = %v", err)
+	}
+	select {
+	case <-lease.Done():
+	default:
+		t.Fatal("mutated lease exposed live Done channel")
+	}
+	if !p.Valid() {
+		t.Fatal("lease metadata mutation revoked the permit")
+	}
+	p.PermitID = "forged-permit"
+	if p.Valid() || p.Write(func() {}) {
+		t.Fatal("mutated permit remained usable")
+	}
+}
+
+func TestRevokeBindingPreservesResultsAndWaitsForWrite(t *testing.T) {
+	c := NewCoordinator(testScope())
+	k, _ := c.Register(testScope(), Admission{Task: "completion"})
+	r, _ := c.Publish(k, Outcome{Scope: testScope(), JobID: k.JobID, Status: OutcomeSucceeded, Text: "done"})
+	p, _ := c.AcquireCapturePermit(testScope(), "capture", 1)
+	lease, err := c.Claim(testScope(), "attempt", "turn", []ResultRef{{Scope: testScope(), JobID: k.JobID, ResultID: r.Outcome.ResultID, Revision: r.Outcome.TerminalRevision}}, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release, revoked := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		if !lease.Write(func() { close(entered); <-release }) {
+			t.Error("active lease rejected write")
+		}
+	}()
+	<-entered
+	go func() {
+		if err := c.RevokeBinding(testScope()); err != nil {
+			t.Error(err)
+		}
+		close(revoked)
+	}()
+	select {
+	case <-revoked:
+		t.Fatal("binding revoked while write callback was still running")
+	default:
+	}
+	close(release)
+	<-revoked
+	if lease.Valid() || p.Valid() {
+		t.Fatal("binding revoke left lease or permit valid")
+	}
+	if got := c.Pending(testScope()); len(got) != 1 || got[0].Outcome.ResultID != r.Outcome.ResultID {
+		t.Fatalf("binding revoke changed results: %+v", got)
+	}
+	if _, err := c.AcquireCapturePermit(testScope(), "replacement", 2); err != nil {
+		t.Fatalf("replacement permit = %v", err)
+	}
+}

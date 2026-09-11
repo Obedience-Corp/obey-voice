@@ -13,6 +13,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // connQueueDepth bounds each connection's outbound *event* queue. Bus.Emit runs
@@ -35,6 +36,7 @@ const maxStreamClients = 8
 // connections attach and detach here, never on the bus itself.
 type hub struct {
 	mu           sync.Mutex
+	completionMu sync.Mutex
 	conns        map[*streamConn]struct{}
 	audioBlocked bool
 
@@ -49,6 +51,13 @@ type hub struct {
 	micGen      uint64
 	// ingress receives remote PCM when remote mic is enabled.
 	ingress *audio.Ingress
+	// completion permit ownership is serialized separately from mu. Audio
+	// fences may hold a permit lock while taking mu to broadcast PCM; no
+	// coordinator operation may therefore run while mu is held.
+	completionCoord  *work.Coordinator
+	completionPermit work.CapturePermit
+	completionEpoch  uint64
+	completionQueued func() bool
 
 	// speaking reports whether the shared turn is in its TTS phase, so a
 	// remote interrupt can say what it interrupted. Set on the first

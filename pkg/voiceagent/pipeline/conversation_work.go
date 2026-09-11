@@ -37,6 +37,7 @@ func (p *Pipeline) ClearConversation() error {
 	if p == nil {
 		return fmt.Errorf("pipeline: nil pipeline")
 	}
+	p.closeCompletionCapture()
 	var err error
 	if p.Agency != nil {
 		err = p.Agency.ClearConversation()
@@ -47,6 +48,9 @@ func (p *Pipeline) ClearConversation() error {
 	return err
 }
 func (p *Pipeline) CloseWork() error {
+	if p != nil {
+		p.closeCompletionCapture()
+	}
 	if p == nil || p.Agency == nil {
 		return nil
 	}
@@ -77,6 +81,11 @@ func (p *Pipeline) ReplaceConversationBrain(next brain.Provider, worker brain.Pr
 			return work.ErrRetired
 		}
 		if err := p.Agency.attachManaged(next, c, scope, cfg); err != nil {
+			return err
+		}
+	}
+	if c != nil {
+		if err := c.RevokeBinding(scope); err != nil {
 			return err
 		}
 	}

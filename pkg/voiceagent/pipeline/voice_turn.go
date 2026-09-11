@@ -32,6 +32,10 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	if p.Utterance != nil {
 		p.Utterance.Clear()
 	}
+	if errors.Is(err, errYieldedForCompletion) {
+		turn.finish(TurnYielded)
+		return "", nil
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -142,7 +146,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	// keep that audio instead of draining it when the next listen begins. A
 	// near-miss (F3.3) may already have set keepCapture inside streamResponse.
 	if interrupted {
-		p.keepCapture = true
+		p.keepCapture.Store(true)
 	}
 
 	p.emit(events.ResponseReady{
@@ -168,20 +172,12 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 		return "", errors.New("STT provider is not configured")
 	}
 
-	// Drain echo and silence captured while Samantha spoke — including the tail
-	// that keeps hitting the mic after playback stops — so this turn hears live
-	// speech, not stale audio. Skip right after a barge-in, where the buffered
-	// audio is the user already mid-utterance.
-	if p.Capture != nil && !p.keepCapture {
-		p.Capture.Reset()
-	}
-	p.keepCapture = false
-
-	session, err := p.STT.Start(ctx)
+	session, err := p.startCaptureSession(ctx)
 	if err != nil {
 		return "", fmt.Errorf("STT: %w", err)
 	}
-	defer session.Close()
+	yielded := false
+	defer func() { p.finishCaptureSession(session, yielded) }()
 
 	for {
 		select {
@@ -216,6 +212,16 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 			case stt.KindFinalTranscript:
 				metrics.sttFinal = time.Now()
 				return te.Text, nil
+			case stt.KindYieldedForCompletion:
+				if event, ok := event.(stt.YieldedForCompletion); ok {
+					p.captureMu.Lock()
+					if p.captureSession == session {
+						p.captureToken = event.Token
+					}
+					p.captureMu.Unlock()
+				}
+				yielded = true
+				return "", errYieldedForCompletion
 			case stt.KindTimeout:
 				return "", nil
 			case stt.KindFailure:

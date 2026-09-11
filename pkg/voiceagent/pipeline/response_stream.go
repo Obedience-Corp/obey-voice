@@ -389,7 +389,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// buffer — keep it so the next listen transcribes it instead of
 		// Reset()ing it away.
 		if ctrl != nil && ctrl.sawPauseSpeechWithin(bargeInNearMissWindow) {
-			p.keepCapture = true
+			p.keepCapture.Store(true)
 		}
 		p.resetEchoState()
 	}

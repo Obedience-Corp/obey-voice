@@ -133,19 +133,22 @@ func WithPendingLimit(n int) Option {
 func WithChangeCallback(fn func(Snapshot)) Option { return func(c *Coordinator) { c.onChange = fn } }
 
 type Coordinator struct {
-	mu                  sync.Mutex
-	scope               WorkScope
-	retired             bool
-	revision, persisted uint64
-	nextID              uint64
-	jobs                map[string]*job
-	results             map[string]*result
-	pendingLimit        int
-	reserved            int
-	onChange            func(Snapshot)
-	ready               chan struct{}
-	tombstones          map[string]struct{}
-	tombstoneOrder      []string
+	mu                    sync.Mutex
+	scope                 WorkScope
+	retired               bool
+	revision, persisted   uint64
+	nextID                uint64
+	jobs                  map[string]*job
+	results               map[string]*result
+	pendingLimit          int
+	reserved              int
+	onChange              func(Snapshot)
+	ready                 chan struct{}
+	tombstones            map[string]struct{}
+	tombstoneOrder        []string
+	permit                *activePermit
+	activeLease           *leaseState
+	nextPermit, nextLease uint64
 }
 type job struct{ view JobView }
 type result struct{ view ResultView }
@@ -340,6 +343,11 @@ func (c *Coordinator) setPending(scope WorkScope, id string, state PendingState,
 		c.mu.Unlock()
 		return ErrConflict
 	}
+	if c.activeLease != nil && r.view.State != state && leaseContainsResult(c.activeLease, id) {
+		// A disposition change invalidates an attempt that selected this result.
+		// The result itself remains governed by the requested disposition.
+		c.invalidateCaptureLocked()
+	}
 	r.view.State = state
 	if previous {
 		r.view.Outcome.PreviousSession = true
@@ -365,6 +373,18 @@ func (c *Coordinator) setPending(scope WorkScope, id string, state PendingState,
 		notifyReady(c)
 	}
 	return nil
+}
+
+func leaseContainsResult(l *leaseState, resultID string) bool {
+	if l == nil {
+		return false
+	}
+	for _, ref := range l.refs {
+		if ref.ResultID == resultID {
+			return true
+		}
+	}
+	return false
 }
 
 func notifyReady(c *Coordinator) {
@@ -496,6 +516,7 @@ func (c *Coordinator) Restore(s Snapshot, destination WorkScope) error {
 		c.mu.Unlock()
 		return ErrConflict
 	}
+	c.invalidateCaptureLocked()
 	c.scope, c.retired = destination, false
 	c.revision, c.persisted = s.Revision, s.PersistedRevision
 	c.jobs, c.results, c.reserved = jobs, results, len(results)+live
@@ -526,6 +547,7 @@ func (c *Coordinator) Retire(scope WorkScope) error {
 		c.mu.Unlock()
 		return err
 	}
+	c.invalidateCaptureLocked()
 	for id, j := range c.jobs {
 		if j.view.State == JobTerminal {
 			continue
@@ -560,6 +582,7 @@ func (c *Coordinator) Reset(next WorkScope) error {
 		c.mu.Unlock()
 		return ErrConflict
 	}
+	c.invalidateCaptureLocked()
 	c.scope, c.retired, c.revision, c.persisted = next, false, 0, 0
 	c.jobs, c.results = make(map[string]*job), make(map[string]*result)
 	c.reserved, c.nextID = 0, 0
