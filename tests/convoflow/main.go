@@ -150,12 +150,6 @@ func runMain(args []string) int {
 			return code
 		}
 	}
-	defer func() {
-		if c, ok := eng.runner.(interface{ close() }); ok {
-			c.close()
-		}
-	}()
-
 	if err := eng.run(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return 1

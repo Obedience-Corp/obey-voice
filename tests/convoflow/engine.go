@@ -119,6 +119,11 @@ func (e *engine) run(ctx context.Context) (runErr error) {
 }
 
 func (e *engine) closeAll() {
+	// Retire and persist the runner before closing event capture or exporting
+	// the final disk snapshot. Shutdown errors belong to this run's result.
+	if c, ok := e.runner.(interface{ close() }); ok {
+		c.close()
+	}
 	for i := len(e.onClose) - 1; i >= 0; i-- {
 		e.onClose[i]()
 	}
