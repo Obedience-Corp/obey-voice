@@ -158,7 +158,8 @@ func (o *OllamaBrain) receiveProjectedDelegationResultsFrom(runtime *delegation.
 	// Record a paired tool exchange for the asynchronous runtime observation.
 	// It is data at tool authority, not a system instruction or user utterance.
 	call := api.ToolCall{ID: result.Ticket + "-result", Function: api.ToolCallFunction{Name: "agent_delegations"}}
-	o.history = append(o.history, api.Message{Role: "assistant", ToolCalls: []api.ToolCall{call}}, toolResultMessage(call, note))
+	o.appendMessage(api.Message{Role: "assistant", ToolCalls: []api.ToolCall{call}}, nil)
+	o.appendMessage(toolResultMessage(call, note), nil)
 
 }
 

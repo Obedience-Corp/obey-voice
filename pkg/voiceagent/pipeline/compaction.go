@@ -32,27 +32,35 @@ const maxCompactTail = 4
 // loop ends on tool/assistant turns, so a fixed pair can miss the user turn
 // that started the exchange entirely.
 //
-// Tool turns never survive the reseed: brain.Turn carries no tool-call id, so a
-// tool result cannot be seeded together with the assistant message that
-// requested it — a stranded one is a malformed messages[] for the next request.
-// Empty turns (a tool-call-only assistant message) go with them.
+// Keep complete native tool groups, or drop the entire exchange when it
+// exceeds the view budget. Old sessions without call metadata retain ordinary
+// text, but their unpaired tool records cannot be sent back to the provider.
 func compactTail(before []brain.Turn) []brain.Turn {
-	start := len(before)
-	for i := len(before) - 1; i >= 0 && len(before)-i <= maxCompactTail; i-- {
-		start = i
+	start := -1
+	for i := len(before) - 1; i >= 0; i-- {
 		if before[i].Role == "user" {
+			start = i
 			break
 		}
 	}
-
+	if start < 0 {
+		return nil
+	}
 	tail := make([]brain.Turn, 0, len(before)-start)
+	paired := false
 	for _, t := range before[start:] {
-		if t.Role == "tool" || strings.TrimSpace(t.Content) == "" {
+		if t.Role == "tool" && !paired {
+			continue
+		}
+		if t.Role != "tool" {
+			paired = len(t.ToolCalls) > 0
+		}
+		if strings.TrimSpace(t.Content) == "" && len(t.ToolCalls) == 0 {
 			continue
 		}
 		tail = append(tail, t)
 	}
-	return tail
+	return brain.HistoryWindow(tail, maxCompactTail)
 }
 
 func (p *Pipeline) autoCompactIfNeeded(ctx context.Context) error {
@@ -65,7 +73,11 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if p.Brain == nil || p.CompactPrompt == "" {
 		return nil
 	}
-	compact := p.AutoCompactAfter > 0 && len(p.Brain.History()) > p.AutoCompactAfter
+	history := p.Brain.History()
+	if view, ok := p.Brain.(brain.ContextHistoryProvider); ok {
+		history = view.ContextHistory()
+	}
+	compact := p.AutoCompactAfter > 0 && len(history) > p.AutoCompactAfter
 	if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok {
 		compact = compact || budget.NeedsContinuityCompact(input)
 	}
@@ -97,7 +109,11 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	// Snapshot before the summarize turn appends to history (History may
 	// alias the provider's live slice).
 	before := append([]brain.Turn(nil), history...)
-	tail := compactTail(before)
+	tailSource := before
+	if view, ok := p.Brain.(brain.ContextHistoryProvider); ok {
+		tailSource = view.ContextHistory()
+	}
+	tail := compactTail(tailSource)
 	if p.OnCompactBackup != nil {
 		p.OnCompactBackup(before)
 	}
@@ -108,7 +124,7 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	// the per-turn voice instruction ("2–3 sentences max") would otherwise land
 	// after it as the model's last word. Tools stay off — this turn only reads
 	// the conversation it already has.
-	summary, err := p.Brain.ThinkFull(ctx, p.CompactPrompt, brain.StreamOptions{OmitTurnInstruction: true})
+	summary, err := p.Brain.ThinkFull(ctx, p.CompactPrompt, brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true})
 	if err != nil {
 		// Providers roll their own appended input back on failure, so history is
 		// already the pre-compact transcript here — no LoadHistory (it would
@@ -116,6 +132,9 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 		return fmt.Errorf("compact summarize turn: %w", err)
 	}
 
+	if strings.TrimSpace(summary) == "" {
+		return errors.New("compact summarize turn: empty summary")
+	}
 	seed := append([]brain.Turn{{Role: "assistant", Content: summary}}, tail...)
 	if reseed, ok := p.Brain.(interface{ ReseedContinuity([]brain.Turn) }); ok {
 		reseed.ReseedContinuity(seed)

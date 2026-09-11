@@ -35,6 +35,7 @@ type OllamaBrain struct {
 	model        string
 	workDir      string
 	history      []api.Message
+	canonical    []Turn
 	cfg          *config.Config
 	systemPrompt string
 	// fullSystemPrompt is the assembled prompt (persona + environment + skills

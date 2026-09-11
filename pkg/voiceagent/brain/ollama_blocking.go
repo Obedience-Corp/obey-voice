@@ -18,10 +18,16 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	// ThinkStream — which records a recovery reply and keeps the turn — a failed
 	// ThinkFull answers nothing, so its input must not stay behind.
 	restore := append([]api.Message(nil), o.history...)
-	if !opts.Background {
-		o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+	restoreCanonical := deepCopyTurns(o.canonical)
+	if opts.TransientHistory {
+		defer func() { o.history = restore; o.canonical = restoreCanonical }()
 	}
-	o.receiveDelegationResults(opts)
+	if !opts.Background {
+		o.appendMessage(api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)}, nil)
+	}
+	if !opts.TransientHistory {
+		o.receiveDelegationResults(opts)
+	}
 	if opts.Background {
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
@@ -48,6 +54,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 		if err := o.contextBudgetError(skillCtx, tools); err != nil {
 			o.history = restore
+			o.canonical = restoreCanonical
 			return "", err
 		}
 		messages := o.buildMessages(skillCtx)
@@ -67,11 +74,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		})
 		if err != nil {
 			o.history = restore
+			o.canonical = restoreCanonical
 			return "", fmt.Errorf("ollama error: %w", err)
 		}
 
 		if doneReason == "length" {
 			o.history = restore
+			o.canonical = restoreCanonical
 			return "", fmt.Errorf("ollama full response truncated")
 		}
 
@@ -79,11 +88,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if len(response.ToolCalls) > 0 {
 			hadTools = true
 			hadThinking = hadThinking || messageHadThinking(response)
-			o.history = append(o.history, api.Message{
+			o.appendMessage(api.Message{
 				Role:      "assistant",
 				Content:   stripReplyConventions(o.cfg.AgentName, response.Content),
 				ToolCalls: response.ToolCalls,
-			})
+			}, opts.Identity)
 
 			for _, tc := range response.ToolCalls {
 				result := sess.execute(ctx, o.workDir, tc)
@@ -92,7 +101,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
 					skillCtx += "\n" + result
 				}
-				o.history = append(o.history, o.projectedToolResult(tc, result))
+				o.appendProjectedToolResult(tc, result)
 			}
 			o.ensureContextBudget(skillCtx)
 			continue
@@ -105,10 +114,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if fallbackEmptyContent(text, hadTools, hadThinking) {
 			text = spokenOrFallback(text)
 		}
-		o.history = append(o.history, api.Message{Role: "assistant", Content: text})
-		if !opts.Background {
+		o.appendMessage(api.Message{Role: "assistant", Content: text}, opts.Identity)
+		if !opts.Background && !opts.TransientHistory {
 			o.ackDelegationResults(req.Messages)
-		} else {
+		} else if !opts.TransientHistory {
 			o.markBackgroundDelivered(req.Messages)
 		}
 		o.trimHistory()

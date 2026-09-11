@@ -90,7 +90,7 @@ func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill,
 // turn instead of the whole transcript.
 func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 	msgs := make([]api.Message, 0, len(o.history)+1)
-	msgs = append(msgs, api.Message{Role: "system", Content: o.fullSystemPrompt})
+	msgs = append(msgs, api.Message{Role: "system", Content: o.fullSystemPrompt + historicalIdentityGuidance})
 	recall := o.recallNotes()
 	lastUser := lastUserIndex(o.history)
 	for i, m := range o.history {

@@ -33,7 +33,7 @@ func (o *OllamaBrain) Complete(ctx context.Context, req CompletionRequest) (Comp
 	format := json.RawMessage(`{"type":"object","required":["answer","updates"],"properties":{"answer":{"type":"string"},"updates":{"type":"array","maxItems":3,"items":{"type":"object","required":["result_id","text"],"properties":{"result_id":{"type":"string"},"text":{"type":"string"}},"additionalProperties":false}}},"additionalProperties":false}`)
 	request := &api.ChatRequest{
 		Model:    model,
-		Messages: []api.Message{{Role: "system", Content: system}, {Role: "user", Content: completionPrompt(req)}},
+		Messages: []api.Message{{Role: "system", Content: system + historicalIdentityGuidance}, {Role: "user", Content: completionPrompt(req)}},
 		Tools:    nil, Stream: &stream, Format: format, Options: options, KeepAlive: keepAlive, Think: think,
 	}
 	var raw string
@@ -64,7 +64,19 @@ func (o *OllamaBrain) AppendAssistantResponse(text string) error {
 	if text == "" {
 		return fmt.Errorf("brain: empty assistant response")
 	}
-	o.history = append(o.history, api.Message{Role: "assistant", Content: text})
+	o.appendMessage(api.Message{Role: "assistant", Content: text}, nil)
+	if o.cfg != nil && o.cfg.MaxHistory > 0 {
+		o.trimHistory()
+	}
+	return nil
+}
+
+func (o *OllamaBrain) AppendAssistantResponseWithIdentity(text string, identity TurnIdentity) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return fmt.Errorf("brain: empty assistant response")
+	}
+	o.appendMessage(api.Message{Role: "assistant", Content: text}, &identity)
 	if o.cfg != nil && o.cfg.MaxHistory > 0 {
 		o.trimHistory()
 	}

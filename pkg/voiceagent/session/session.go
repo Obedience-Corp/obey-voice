@@ -24,6 +24,10 @@ import (
 // a 404) without string-matching an error message.
 var ErrSessionNotFound = errors.New("session: not found")
 
+const CurrentFormatVersion = 2
+
+var ErrUnsupportedSessionVersion = errors.New("session: unsupported future format version")
+
 // ErrWorkRevisionStale means a work snapshot was older than the durable
 // snapshot already stored for the session.
 var ErrWorkRevisionStale = errors.New("session: stale work revision")
@@ -35,26 +39,31 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
-	ID        string       `json:"id"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
-	Provider  string       `json:"provider"`
-	Model     string       `json:"model"`
-	Turns     []brain.Turn `json:"turns"`
-	Summary   string       `json:"summary"` // first user message, for display
+	FormatVersion int          `json:"format_version,omitempty"`
+	ID            string       `json:"id"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
+	Provider      string       `json:"provider"`
+	Model         string       `json:"model"`
+	Turns         []brain.Turn `json:"turns"`
+	Summary       string       `json:"summary"` // first user message, for display
 	// Work is the canonical durable background-work snapshot. It is optional so
 	// sessions written before work persistence was introduced remain compatible.
-	Work *work.Snapshot `json:"work,omitempty"`
+	Work                       *work.Snapshot `json:"work,omitempty"`
+	SelectedPersonaID          string         `json:"selected_persona_id,omitempty"`
+	SelectedPersonaDisplayName string         `json:"selected_persona_display_name,omitempty"`
+	SelectedPersonaPromptHash  string         `json:"selected_persona_prompt_hash,omitempty"`
 }
 
 // New creates a new session with a generated ID.
 func New(provider, model string) *Session {
 	return &Session{
-		ID:        generateID(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Provider:  provider,
-		Model:     model,
+		FormatVersion: CurrentFormatVersion,
+		ID:            generateID(),
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		Provider:      provider,
+		Model:         model,
 	}
 }
 
@@ -71,11 +80,15 @@ func (s *Session) SaveBackup(turns []brain.Turn) error {
 }
 
 func (s *Session) saveBackupTo(dir string, turns []brain.Turn) error {
+	if s.FormatVersion > CurrentFormatVersion {
+		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, s.FormatVersion)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create sessions dir: %w", err)
 	}
 	// Copy so the backup never mutates the live session's Turns/UpdatedAt.
 	backup := *s
+	backup.FormatVersion = CurrentFormatVersion
 	backup.Turns = normalizeTurns(turns)
 	backup.UpdatedAt = time.Now()
 	data, err := json.MarshalIndent(&backup, "", "  ")
@@ -111,6 +124,10 @@ func (s *Session) saveTo(dir string, turns []brain.Turn) error {
 // rename succeeds, so a failed checkpoint cannot advance its state.
 func saveSession(dir string, s *Session, turns []brain.Turn, snapshot *work.Snapshot) error {
 	next := *s
+	if next.FormatVersion > CurrentFormatVersion {
+		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, next.FormatVersion)
+	}
+	next.FormatVersion = CurrentFormatVersion
 	next.Turns = normalizeTurns(turns)
 	next.UpdatedAt = time.Now()
 	if snapshot != nil {
@@ -188,6 +205,7 @@ func normalizeTurns(turns []brain.Turn) []brain.Turn {
 		if t.Role == "samantha" {
 			t.Role = "assistant"
 		}
+		t.ToolCalls = append([]brain.TurnToolCall(nil), t.ToolCalls...)
 		out[i] = t
 	}
 	return out
@@ -208,6 +226,12 @@ func loadFrom(dir, id string) (*Session, error) {
 	var s Session
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse session %s: %w", id, err)
+	}
+	if s.FormatVersion > CurrentFormatVersion {
+		return nil, fmt.Errorf("%w: %d (current %d)", ErrUnsupportedSessionVersion, s.FormatVersion, CurrentFormatVersion)
+	}
+	if s.FormatVersion == 0 {
+		s.FormatVersion = 1
 	}
 	return &s, nil
 }
@@ -331,6 +355,31 @@ type Store struct {
 	dir string
 }
 
+// SaveSelection atomically publishes the selected responder metadata while
+// retaining the newest durable turns and work snapshot. The caller's Session
+// is changed only after the candidate has been durably renamed.
+func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string) error {
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
+	current, err := loadFrom(st.dir, s.ID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("load session before selection save: %w", err)
+	}
+	candidate := *s
+	if err == nil {
+		candidate = *current
+	}
+	candidate.Turns = normalizeTurns(turns)
+	candidate.SelectedPersonaID = personaID
+	candidate.SelectedPersonaDisplayName = displayName
+	candidate.SelectedPersonaPromptHash = promptHash
+	if err := saveSession(st.dir, &candidate, candidate.Turns, candidate.Work); err != nil {
+		return err
+	}
+	*s = candidate
+	return nil
+}
+
 // Session checkpoints are infrequent and short. A package-wide lock keeps
 // independently-created Store values safe without retaining Session pointers
 // or allowing path aliases to bypass a per-session lock.
@@ -354,6 +403,12 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 		return fmt.Errorf("load session before save: %w", err)
 	}
 	snapshot := s.Work
+	candidate := *s
+	if err == nil {
+		candidate.SelectedPersonaID = current.SelectedPersonaID
+		candidate.SelectedPersonaDisplayName = current.SelectedPersonaDisplayName
+		candidate.SelectedPersonaPromptHash = current.SelectedPersonaPromptHash
+	}
 	if err == nil && current.Work != nil {
 		if s.Work != nil && s.Work.Scope != current.Work.Scope {
 			return fmt.Errorf("%w: durable=%+v incoming=%+v", ErrWorkScopeConflict, current.Work.Scope, s.Work.Scope)
@@ -362,7 +417,11 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 			snapshot = current.Work
 		}
 	}
-	return saveSession(st.dir, s, turns, snapshot)
+	if err := saveSession(st.dir, &candidate, turns, snapshot); err != nil {
+		return err
+	}
+	*s = candidate
+	return nil
 }
 
 // SaveWork durably checkpoints canonical background-work state without

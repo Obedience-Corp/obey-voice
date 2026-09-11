@@ -17,10 +17,14 @@ import (
 // Implements an agent loop: if the model returns tool calls, executes them
 // and re-requests until the model produces a text response.
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
+	if opts.Identity != nil {
+		copied := *opts.Identity
+		opts.Identity = &copied
+	}
 	o.refreshSystemPrompt(opts.OnPromptWarn)
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
 	if !opts.Background {
-		o.history = append(o.history, api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)})
+		o.appendMessage(api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)}, nil)
 	}
 	o.receiveDelegationResults(opts)
 	if opts.Background {
@@ -74,7 +78,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					done <- StreamResult{Err: budgetErr}
 					return
 				}
-				o.history = append(o.history, api.Message{Role: "assistant", Content: RecoveryReply})
+				o.appendMessage(api.Message{Role: "assistant", Content: RecoveryReply}, opts.Identity)
 				o.trimHistory()
 				done <- StreamResult{Err: budgetErr, Recovered: true}
 				return
@@ -176,7 +180,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, textBuf.String())); partial != "" {
 					reply = partial + "\n\n" + RecoveryReply
 				}
-				o.history = append(o.history, api.Message{Role: "assistant", Content: reply})
+				o.appendMessage(api.Message{Role: "assistant", Content: reply}, opts.Identity)
 				o.trimHistory()
 				done <- StreamResult{Err: err, Recovered: true}
 				return
@@ -187,7 +191,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					done <- StreamResult{Err: err}
 					return
 				}
-				o.history = append(o.history, api.Message{Role: "assistant", Content: continuityFallback})
+				o.appendMessage(api.Message{Role: "assistant", Content: continuityFallback}, opts.Identity)
 				o.trimHistory()
 				done <- StreamResult{Err: fmt.Errorf("continuation returned tool calls"), Recovered: true}
 				return
@@ -210,16 +214,19 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					// the worker session, not the live KV cache.
 					if n := len(o.history); n > 0 {
 						o.history = o.history[:n-1]
+						if len(o.canonical) > 0 {
+							o.canonical = o.canonical[:len(o.canonical)-1]
+						}
 					}
 					done <- StreamResult{Route: kind}
 					return
 				}
 				// Add the assistant's tool-calling message to history.
-				o.history = append(o.history, api.Message{
+				o.appendMessage(api.Message{
 					Role:      "assistant",
 					Content:   stripReplyConventions(o.cfg.AgentName, textBuf.String()),
 					ToolCalls: toolCalls,
-				})
+				}, opts.Identity)
 
 				// Execute each tool and add results (skills + full CLI tools).
 				for _, tc := range toolCalls {
@@ -229,7 +236,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
 						skillCtx += "\n" + result
 					}
-					o.history = append(o.history, o.projectedToolResult(tc, result))
+					o.appendProjectedToolResult(tc, result)
 				}
 				// Re-budget after tools: a large result can push the user
 				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s
@@ -274,13 +281,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					done <- StreamResult{Err: ctx.Err(), Integrity: integrity}
 					return
 				}
-				o.history = append(o.history, api.Message{Role: "assistant", Content: "[incomplete response] " + response})
+				o.appendMessage(api.Message{Role: "assistant", Content: "[incomplete response] " + response}, opts.Identity)
 				if recoveryAttempts >= min(o.cfg.ContinuityRecoveryMax, 2) {
 					if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
 						done <- StreamResult{Err: err}
 						return
 					}
-					o.history = append(o.history, api.Message{Role: "assistant", Content: continuityFallback})
+					o.appendMessage(api.Message{Role: "assistant", Content: continuityFallback}, opts.Identity)
 					o.trimHistory()
 					done <- StreamResult{Integrity: integrity, Err: fmt.Errorf("continuation attempts exhausted"), Recovered: true}
 					return
@@ -306,7 +313,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				o.ensureContextBudget(skillCtx + continuation)
 				continue
 			}
-			o.history = append(o.history, api.Message{Role: "assistant", Content: response})
+			o.appendMessage(api.Message{Role: "assistant", Content: response}, opts.Identity)
 			if !opts.Background {
 				o.ackDelegationResults(req.Messages)
 			} else {
@@ -321,10 +328,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			done <- StreamResult{Err: err}
 			return
 		}
-		o.history = append(o.history, api.Message{
+		o.appendMessage(api.Message{
 			Role:    "assistant",
 			Content: "I seem to be going in circles with my tools. Let me just answer directly.",
-		})
+		}, opts.Identity)
 		o.trimHistory()
 		done <- StreamResult{}
 	}()

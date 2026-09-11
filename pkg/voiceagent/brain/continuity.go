@@ -259,5 +259,5 @@ func recallMessages(notes string) []api.Message {
 // LoadHistory (session restore), this intentionally keeps the session archive.
 func (o *OllamaBrain) ReseedContinuity(turns []Turn) {
 	o.archiveMessages(o.history)
-	o.loadHistory(turns)
+	o.loadHistoryProjection(turns, false)
 }
