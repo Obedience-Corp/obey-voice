@@ -1,6 +1,10 @@
 package events
 
-import "time"
+import (
+	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+)
 
 // Event is the base interface all events implement.
 type Event interface {
@@ -506,6 +510,9 @@ type ToolCallStarted struct {
 	Name    string
 	Kind    string
 	Summary string
+	// WorkScope is set only for experimental background-worker calls. A zero
+	// scope preserves legacy live-tool events.
+	WorkScope work.WorkScope
 }
 
 func (e ToolCallStarted) eventType() string { return "tool_call_started" }
@@ -521,6 +528,8 @@ type ToolCallFinished struct {
 	Err     string // legacy error detail; absence does not establish success
 	Elapsed time.Duration
 	Outcome *ToolOutcome
+	// WorkScope is set only for experimental background-worker calls.
+	WorkScope work.WorkScope
 }
 
 func (e ToolCallFinished) eventType() string { return "tool_call_finished" }

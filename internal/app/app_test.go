@@ -9,10 +9,50 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
+
+type appTestBrain struct{ history []brain.Turn }
+
+func (*appTestBrain) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
+	return nil, errors.New("unused")
+}
+func (*appTestBrain) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
+	return "", nil
+}
+func (b *appTestBrain) ClearHistory()                  { b.history = nil }
+func (b *appTestBrain) History() []brain.Turn          { return b.history }
+func (b *appTestBrain) LoadHistory(turns []brain.Turn) { b.history = turns }
+
+type appPauseSession struct {
+	events chan stt.Event
+	calls  chan struct{}
+}
+
+func (s *appPauseSession) Events() <-chan stt.Event                            { return s.events }
+func (s *appPauseSession) Close() error                                        { return nil }
+func (s *appPauseSession) BindCompletionCoordinator(*work.Coordinator)         {}
+func (s *appPauseSession) HasCapturedInput() bool                              { return false }
+func (s *appPauseSession) ResumeCapture(context.Context, stt.PauseToken) error { return nil }
+func (s *appPauseSession) PauseForCompletion(context.Context, work.WorkScope, string) (stt.PauseResult, error) {
+	select {
+	case s.calls <- struct{}{}:
+	default:
+	}
+	s.events <- stt.YieldedForCompletion{}
+	return stt.PauseResult{Decision: stt.PauseAcknowledged}, nil
+}
+
+type appPauseSTT struct{ session *appPauseSession }
+
+func (s appPauseSTT) Start(context.Context) (stt.Session, error) { return s.session, nil }
+func (s appPauseSTT) Available() bool                            { return true }
 
 func TestClassifyVoiceFailure(t *testing.T) {
 	transient := errors.New("STT: stream reset failed")
@@ -139,6 +179,107 @@ func TestLineReaderNextCancels(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("lineReader.next did not return within 2s after context cancellation")
+	}
+}
+
+func TestLineReaderBackgroundPollKeepsQueuedLinePriority(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	lr := &lineReader{lines: make(chan string, 1)}
+	lr.lines <- "user line"
+	called := false
+	line, ok := lr.nextWithBackground(ctx, func() error {
+		called = true
+		return nil
+	})
+	if !ok || line != "user line" || called {
+		t.Fatalf("line=%q ok=%v backgroundCalled=%v", line, ok, called)
+	}
+}
+
+func TestLineReaderBackgroundPollsWhileIdle(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lr := &lineReader{lines: make(chan string)}
+	called := make(chan struct{}, 1)
+	go func() {
+		_, _ = lr.nextWithBackground(ctx, func() error {
+			select {
+			case called <- struct{}{}:
+			default:
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-called:
+		cancel()
+	case <-time.After(1500 * time.Millisecond):
+		cancel()
+		t.Fatal("background poll did not run")
+	}
+}
+
+func TestRunClearUsesConversationAuthorityAndCheckpoints(t *testing.T) {
+	p := &pipeline.Pipeline{Brain: &appTestBrain{}, Events: events.NewBus()}
+	jobs := job.NewTable(context.Background())
+	t.Cleanup(jobs.Close)
+	t.Cleanup(func() { _ = p.CloseWork() })
+	a := pipeline.NewAgency(p, jobs, nil, &config.Config{}, nil)
+	a.Wire()
+	if err := p.EnableConversationWork("app-session", nil, &config.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	old := p.WorkCoordinator().Scope()
+	key, err := p.WorkCoordinator().Register(old, work.Admission{Task: "old", Origin: "agency"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.WorkCoordinator().Publish(key, work.Outcome{Scope: old, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: "old result"}); err != nil {
+		t.Fatal(err)
+	}
+	checkpoints := 0
+	p.OnTurn = func() { checkpoints++ }
+	if err := Run(context.Background(), p, strings.NewReader("/clear\nexit\n"), true, false); err != nil {
+		t.Fatal(err)
+	}
+	now := p.WorkCoordinator().Scope()
+	if now == old || len(p.WorkCoordinator().Pending(now)) != 0 {
+		t.Fatalf("clear retained old scope/results: old=%+v now=%+v pending=%v", old, now, p.WorkCoordinator().Pending(now))
+	}
+	if checkpoints != 1 {
+		t.Fatalf("OnTurn checkpoints=%d, want 1", checkpoints)
+	}
+}
+
+func TestRunVoiceTurnMonitorsReadyWorkWithoutCancelingTurn(t *testing.T) {
+	p := &pipeline.Pipeline{Brain: &appTestBrain{}, Events: events.NewBus()}
+	jobs := job.NewTable(context.Background())
+	t.Cleanup(jobs.Close)
+	t.Cleanup(func() { _ = p.CloseWork() })
+	a := pipeline.NewAgency(p, jobs, nil, &config.Config{}, nil)
+	a.Wire()
+	if err := p.EnableConversationWork("voice-session", nil, &config.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	scope := p.WorkCoordinator().Scope()
+	key, err := p.WorkCoordinator().Register(scope, work.Admission{Task: "ready", Origin: "agency"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.WorkCoordinator().Publish(key, work.Outcome{Scope: scope, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	session := &appPauseSession{events: make(chan stt.Event, 2), calls: make(chan struct{}, 1)}
+	p.STT = appPauseSTT{session: session}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, err := runVoiceTurn(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-session.calls:
+	case <-time.After(time.Second):
+		t.Fatal("ready work did not invoke capture pause")
 	}
 }
 

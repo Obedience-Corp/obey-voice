@@ -8,18 +8,30 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // ErrSessionNotFound is returned by Store.Delete when no session with the
 // given id exists, so both the CLI and the serve handler can map it (e.g. to
 // a 404) without string-matching an error message.
 var ErrSessionNotFound = errors.New("session: not found")
+
+// ErrWorkRevisionStale means a work snapshot was older than the durable
+// snapshot already stored for the session.
+var ErrWorkRevisionStale = errors.New("session: stale work revision")
+var ErrWorkRevisionConflict = errors.New("session: conflicting work revision")
+
+// ErrWorkScopeConflict means a snapshot attempted to replace a different
+// runtime/conversation scope in the same normal session.
+var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
@@ -30,6 +42,9 @@ type Session struct {
 	Model     string       `json:"model"`
 	Turns     []brain.Turn `json:"turns"`
 	Summary   string       `json:"summary"` // first user message, for display
+	// Work is the canonical durable background-work snapshot. It is optional so
+	// sessions written before work persistence was introduced remain compatible.
+	Work *work.Snapshot `json:"work,omitempty"`
 }
 
 // New creates a new session with a generated ID.
@@ -88,14 +103,26 @@ func (s *Session) saveBackupTo(dir string, turns []brain.Turn) error {
 }
 
 func (s *Session) saveTo(dir string, turns []brain.Turn) error {
-	s.Turns = normalizeTurns(turns)
-	s.UpdatedAt = time.Now()
+	return saveSession(dir, s, turns, nil)
+}
+
+// saveSession writes turns and, when supplied, a work snapshot as one normal
+// session checkpoint. The caller's Session is updated only after the durable
+// rename succeeds, so a failed checkpoint cannot advance its state.
+func saveSession(dir string, s *Session, turns []brain.Turn, snapshot *work.Snapshot) error {
+	next := *s
+	next.Turns = normalizeTurns(turns)
+	next.UpdatedAt = time.Now()
+	if snapshot != nil {
+		next.Work = cloneSnapshot(snapshot)
+		next.Work.PersistedRevision = next.Work.Revision
+	}
 
 	// Set summary from first user message.
-	if s.Summary == "" {
-		for _, t := range s.Turns {
+	if next.Summary == "" {
+		for _, t := range next.Turns {
 			if t.Role == "user" {
-				s.Summary = truncate(t.Content, 80)
+				next.Summary = truncate(t.Content, 80)
 				break
 			}
 		}
@@ -105,14 +132,14 @@ func (s *Session) saveTo(dir string, turns []brain.Turn) error {
 		return fmt.Errorf("create sessions dir: %w", err)
 	}
 
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := json.MarshalIndent(&next, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal session: %w", err)
 	}
 
 	// Write to a temp file and rename so a crash mid-write can't corrupt an
 	// existing session.
-	tmp, err := os.CreateTemp(dir, s.ID+".tmp-*")
+	tmp, err := os.CreateTemp(dir, next.ID+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("create session temp file: %w", err)
 	}
@@ -121,14 +148,32 @@ func (s *Session) saveTo(dir string, turns []brain.Turn) error {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("write session: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return fmt.Errorf("sync session: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("close session temp file: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, s.ID+".json")); err != nil {
+	if err := os.Rename(tmp.Name(), filepath.Join(dir, next.ID+".json")); err != nil {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("save session: %w", err)
 	}
+	// Sync the containing directory so the rename itself is durable where the
+	// platform exposes directory fsync. Some platforms reject opening a
+	// directory; the atomic rename remains the compatibility fallback there.
+	d, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("open sessions directory for sync: %w", err)
+	}
+	err = d.Sync()
+	_ = d.Close()
+	if err != nil {
+		return fmt.Errorf("sync sessions directory: %w", err)
+	}
+	*s = next
 	return nil
 }
 
@@ -226,6 +271,55 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+func cloneSnapshot(in *work.Snapshot) *work.Snapshot {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Jobs = append([]work.JobView(nil), in.Jobs...)
+	out.Pending = append([]work.ResultView(nil), in.Pending...)
+	out.Communicated = append([]work.ResultView(nil), in.Communicated...)
+	out.RetiredJobIDs = append([]string(nil), in.RetiredJobIDs...)
+	for i := range out.Jobs {
+		out.Jobs[i].Config = cloneStringMap(in.Jobs[i].Config)
+		if in.Jobs[i].Outcome != nil {
+			o := *in.Jobs[i].Outcome
+			o.Config = cloneStringMap(in.Jobs[i].Outcome.Config)
+			o.Limitations = in.Jobs[i].Outcome.Limitations
+			out.Jobs[i].Outcome = &o
+		}
+	}
+	for i := range out.Pending {
+		out.Pending[i] = cloneWorkResult(in.Pending[i])
+	}
+	for i := range out.Communicated {
+		out.Communicated[i] = cloneWorkResult(in.Communicated[i])
+	}
+	return &out
+}
+
+func cloneWorkResult(in work.ResultView) work.ResultView {
+	out := in
+	out.Outcome.Config = cloneStringMap(in.Outcome.Config)
+	if in.LastAttempt != nil {
+		e := *in.LastAttempt
+		e.Receipt.Scope = in.LastAttempt.Receipt.Scope
+		out.LastAttempt = &e
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 // Store persists sessions under an explicit directory.
 //
 // The package-level Save/Load/List/Latest resolve their directory from global
@@ -237,6 +331,11 @@ type Store struct {
 	dir string
 }
 
+// Session checkpoints are infrequent and short. A package-wide lock keeps
+// independently-created Store values safe without retaining Session pointers
+// or allowing path aliases to bypass a per-session lock.
+var sessionWriteMu sync.Mutex
+
 // NewStore returns a Store rooted at dir.
 func NewStore(dir string) *Store { return &Store{dir: dir} }
 
@@ -244,11 +343,116 @@ func NewStore(dir string) *Store { return &Store{dir: dir} }
 // This is what the CLI uses, and what the package-level helpers delegate to.
 func DefaultStore() *Store { return NewStore(config.SessionsDir()) }
 
-// Save writes the session's turns.
-func (st *Store) Save(s *Session, turns []brain.Turn) error { return s.saveTo(st.dir, turns) }
+// Save writes the session's turns while preserving the newest durable work
+// snapshot. It uses the same keyed lock as SaveWork so a result arriving
+// between user turns cannot be overwritten by a stale turn save.
+func (st *Store) Save(s *Session, turns []brain.Turn) error {
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
+	current, err := loadFrom(st.dir, s.ID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("load session before save: %w", err)
+	}
+	snapshot := s.Work
+	if err == nil && current.Work != nil {
+		if s.Work != nil && s.Work.Scope != current.Work.Scope {
+			return fmt.Errorf("%w: durable=%+v incoming=%+v", ErrWorkScopeConflict, current.Work.Scope, s.Work.Scope)
+		}
+		if s.Work == nil || current.Work.Revision >= s.Work.Revision {
+			snapshot = current.Work
+		}
+	}
+	return saveSession(st.dir, s, turns, snapshot)
+}
+
+// SaveWork durably checkpoints canonical background-work state without
+// changing the session's turns. The snapshot's persisted watermark is set to
+// the revision successfully written; callers should acknowledge that revision
+// in coordinator memory only after this method returns nil.
+func (st *Store) SaveWork(s *Session, snapshot work.Snapshot) error {
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
+	if !snapshot.Scope.Valid() || snapshot.Scope.SessionID != s.ID {
+		return fmt.Errorf("%w: invalid incoming scope %+v", ErrWorkScopeConflict, snapshot.Scope)
+	}
+	current, err := loadFrom(st.dir, s.ID)
+	if err != nil {
+		return fmt.Errorf("load session for work checkpoint: %w", err)
+	}
+	if current.Work == nil || current.Work.Scope != snapshot.Scope {
+		return fmt.Errorf("%w: durable=%+v incoming=%+v", ErrWorkScopeConflict, current.Work, snapshot.Scope)
+	}
+	if snapshot.Revision < current.Work.Revision {
+		return fmt.Errorf("%w: durable=%d incoming=%d", ErrWorkRevisionStale, current.Work.Revision, snapshot.Revision)
+	}
+	if snapshot.Revision == current.Work.Revision {
+		candidate := cloneSnapshot(&snapshot)
+		candidate.PersistedRevision = current.Work.PersistedRevision
+		if !reflect.DeepEqual(candidate, current.Work) {
+			return fmt.Errorf("%w: revision=%d", ErrWorkRevisionConflict, snapshot.Revision)
+		}
+		s.Work = cloneSnapshot(current.Work)
+		return nil
+	}
+	copy := cloneSnapshot(&snapshot)
+	copy.PersistedRevision = copy.Revision
+	base := s
+	if err == nil {
+		base = current
+	}
+	if err := saveSession(st.dir, base, base.Turns, copy); err != nil {
+		return err
+	}
+	s.Work = cloneSnapshot(copy)
+	return nil
+}
+
+// BeginWork atomically starts a runtime/conversation scope for a normal
+// session. expectedPriorScope must be nil when no work snapshot is expected,
+// or point to the exact durable scope being replaced. This is the only API
+// that may transition scope; SaveWork is intentionally same-scope only.
+func (st *Store) BeginWork(s *Session, snapshot work.Snapshot, expectedPriorScope *work.WorkScope) error {
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
+	if !snapshot.Scope.Valid() || snapshot.Scope.SessionID != s.ID {
+		return fmt.Errorf("%w: invalid incoming scope %+v", ErrWorkScopeConflict, snapshot.Scope)
+	}
+	current, err := loadFrom(st.dir, s.ID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("load session for work scope transition: %w", err)
+	}
+	var currentScope *work.WorkScope
+	if err == nil && current.Work != nil {
+		scope := current.Work.Scope
+		currentScope = &scope
+	}
+	if !sameScope(currentScope, expectedPriorScope) {
+		return fmt.Errorf("%w: durable=%v expected=%v", ErrWorkScopeConflict, currentScope, expectedPriorScope)
+	}
+	copy := cloneSnapshot(&snapshot)
+	copy.PersistedRevision = copy.Revision
+	base := s
+	if err == nil {
+		base = current
+	}
+	if err := saveSession(st.dir, base, base.Turns, copy); err != nil {
+		return err
+	}
+	s.Work = cloneSnapshot(copy)
+	return nil
+}
+
+func sameScope(a, b *work.WorkScope) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
 
 // SaveBackup writes a backup copy, used before a destructive operation.
 func (st *Store) SaveBackup(s *Session, turns []brain.Turn) error {
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
 	return s.saveBackupTo(st.dir, turns)
 }
 
@@ -278,6 +482,8 @@ func (st *Store) Delete(id string) error {
 	if err := validateSessionID(id); err != nil {
 		return err
 	}
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
 
 	path := filepath.Join(st.dir, id+".json")
 	if err := os.Remove(path); err != nil {

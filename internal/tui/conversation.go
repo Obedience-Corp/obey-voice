@@ -19,6 +19,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
@@ -66,8 +67,13 @@ type conversationModel struct {
 	jobOrder []string
 	// work folds a job's per-call tool events into rows; jobItems maps a job
 	// to the one transcript item those rows rewrite. See work.go.
-	work     *workfold.Tracker
-	jobItems map[string]int
+	work              *workfold.Tracker
+	jobItems          map[string]int
+	completedJobItems map[string]int
+	workScope         work.WorkScope
+	workRevision      uint64
+	workResultItems   map[string]int
+	workResultJobs    map[string]string
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
@@ -109,9 +115,14 @@ type conversationModel struct {
 	// pipeline goroutine so Enter cannot race the async bridge drain of
 	// UserInput into turnVoiceResponding. Pointer so Bubble Tea model copies
 	// share one gate with the bus subscription.
-	canCancelVoice    *atomic.Bool
-	pendingText       string
-	pendingBackground bool
+	canCancelVoice            *atomic.Bool
+	pendingText               string
+	pendingBackground         bool
+	pendingPause              bool
+	backgroundPauseGeneration uint64
+	// backgroundPauseAcknowledged keeps recovery from requesting the same
+	// capture pause repeatedly while the ordinary voice turn drains.
+	backgroundPauseAcknowledged bool
 	// pendingCompact queues a /compact requested while a cancelable turn was
 	// in flight; drained by the turn-done handlers, winning over pendingText.
 	pendingCompact  bool
@@ -178,15 +189,18 @@ func newConversation(agentName string) conversationModel {
 	input.Focus()
 
 	return conversationModel{
-		agentName:      agentName,
-		input:          input,
-		canCancelVoice: &atomic.Bool{},
-		followChat:     true,
-		followActivity: true,
-		work:           workfold.New(),
-		jobItems:       make(map[string]int),
-		startedAt:      time.Now(),
-		reducedMotion:  anim.ReducedMotion(),
+		agentName:         agentName,
+		input:             input,
+		canCancelVoice:    &atomic.Bool{},
+		followChat:        true,
+		followActivity:    true,
+		work:              workfold.New(),
+		jobItems:          make(map[string]int),
+		completedJobItems: make(map[string]int),
+		workResultItems:   make(map[string]int),
+		workResultJobs:    make(map[string]string),
+		startedAt:         time.Now(),
+		reducedMotion:     anim.ReducedMotion(),
 	}
 }
 
@@ -249,6 +263,17 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 		// canceling it here could discard an utterance that is just beginning.
 		m.pendingBackground = true
 		return m, tea.Batch(m.resumeListening(), m.waitBackground())
+	case backgroundRecoveryMsg:
+		return m, tea.Batch(m.reconcileBackground(), m.backgroundRecoveryCmd())
+	case backgroundPauseDoneMsg:
+		if msg.generation != m.backgroundPauseGeneration {
+			return m, nil
+		}
+		m.pendingPause = false
+		if msg.err == nil && msg.acknowledged {
+			m.backgroundPauseAcknowledged = true
+		}
+		return m, nil
 	case voiceTurnDoneMsg:
 		return m, tea.Batch(m.handleVoiceTurnDone(msg), m.ensureVoiceTick())
 
@@ -523,6 +548,11 @@ func (m *conversationModel) clearTranscript() {
 	m.transcript = nil
 	m.items = nil
 	m.jobItems = nil
+	m.completedJobItems = nil
+	m.workResultItems = nil
+	m.workResultJobs = nil
+	m.workScope = work.WorkScope{}
+	m.workRevision = 0
 	m.pendingUserEcho = ""
 	m.lastAssistantText = ""
 	m.plainTurns = nil
@@ -1051,6 +1081,9 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.clearTranscript()
 		m.followChat = true
 		m.appendTranscript(dimStyle.Render("  Conversation cleared."))
+
+	case events.WorkStateChanged:
+		m.workStateChanged(e)
 
 	case events.ConversationCompacted:
 		// Annotate, don't clear: the scrollback stays for the user, but the

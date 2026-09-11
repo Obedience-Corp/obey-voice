@@ -5,6 +5,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 func (p *Pipeline) emit(event events.Event) {
@@ -43,24 +44,28 @@ func (p *Pipeline) toolStartHookTracked(toolsFired *bool) func(brain.ToolCall) {
 // jobToolHooks attributes a background worker's tool calls to jobID. Unlike the
 // live hooks it never bumps the brain deadline: a worker tool must not extend
 // the watchdog on the conversation the user is having.
-func (p *Pipeline) jobToolHooks(jobID string) (func(brain.ToolCall), func(brain.ToolResult)) {
-	start := func(call brain.ToolCall) { p.emit(toolStartedEvent(jobID, call)) }
-	end := func(res brain.ToolResult) { p.emit(toolFinishedEvent(jobID, res)) }
+func (p *Pipeline) jobToolHooks(jobID string, scopes ...work.WorkScope) (func(brain.ToolCall), func(brain.ToolResult)) {
+	start := func(call brain.ToolCall) { p.emit(toolStartedEvent(jobID, call, scopes...)) }
+	end := func(res brain.ToolResult) { p.emit(toolFinishedEvent(jobID, res, scopes...)) }
 	return start, end
 }
 
-func toolStartedEvent(jobID string, call brain.ToolCall) events.ToolCallStarted {
-	return events.ToolCallStarted{
+func toolStartedEvent(jobID string, call brain.ToolCall, scopes ...work.WorkScope) events.ToolCallStarted {
+	e := events.ToolCallStarted{
 		ID:      call.ID,
 		JobID:   jobID,
 		Name:    call.Name,
 		Kind:    string(call.Kind),
 		Summary: call.Summary,
 	}
+	if len(scopes) > 0 {
+		e.WorkScope = scopes[0]
+	}
+	return e
 }
 
-func toolFinishedEvent(jobID string, res brain.ToolResult) events.ToolCallFinished {
-	return events.ToolCallFinished{
+func toolFinishedEvent(jobID string, res brain.ToolResult, scopes ...work.WorkScope) events.ToolCallFinished {
+	e := events.ToolCallFinished{
 		ID:      res.ID,
 		JobID:   jobID,
 		Name:    res.Name,
@@ -70,6 +75,10 @@ func toolFinishedEvent(jobID string, res brain.ToolResult) events.ToolCallFinish
 		Elapsed: res.Elapsed,
 		Outcome: res.Outcome,
 	}
+	if len(scopes) > 0 {
+		e.WorkScope = scopes[0]
+	}
+	return e
 }
 
 func (p *Pipeline) liveRouterToolsPolicy() brain.RouterToolsPolicy {

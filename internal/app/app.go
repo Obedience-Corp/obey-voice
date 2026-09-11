@@ -107,7 +107,12 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 				input = newLineReader(ctx, in)
 			}
 			fmt.Print("  You: ")
-			line, ok := input.next(ctx)
+			line, ok := input.nextWithBackground(ctx, func() error {
+				if err := runPendingBackground(ctx, p); err != nil && !errors.Is(err, context.Canceled) {
+					p.Events.Emit(events.Error{Message: err.Error()})
+				}
+				return nil
+			})
 			if !ok {
 				return nil
 			}
@@ -116,7 +121,10 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 				continue
 			}
 		} else {
-			turnText, err := p.RunTurn(ctx)
+			if err := runPendingBackground(ctx, p); err != nil && !errors.Is(err, context.Canceled) {
+				p.Events.Emit(events.Error{Message: err.Error()})
+			}
+			turnText, err := runVoiceTurn(ctx, p)
 			if err != nil {
 				switch ClassifyVoiceFailure(err, ctx.Err(), voiceFailures+1) {
 				case VoiceShutdown:
@@ -162,7 +170,13 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 
 		// Clear check
 		if IsClearCommand(cmd) {
-			p.Brain.ClearHistory()
+			if err := p.ClearConversation(); err != nil {
+				p.Events.Emit(events.Error{Message: err.Error()})
+				continue
+			}
+			if p.OnTurn != nil {
+				p.OnTurn()
+			}
 			p.Events.Emit(events.ConversationCleared{})
 			continue
 		}
@@ -174,6 +188,43 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 			}
 		}
 	}
+}
+
+func runPendingBackground(ctx context.Context, p *pipeline.Pipeline) error {
+	if p.WorkCoordinator() == nil || !p.BackgroundPending() || p.HasCapturedInput() || !p.BackgroundCaptureReady() {
+		return nil
+	}
+	return p.RunBackgroundTurn(ctx)
+}
+
+func runVoiceTurn(ctx context.Context, p *pipeline.Pipeline) (string, error) {
+	if p.WorkCoordinator() == nil {
+		return p.RunTurn(ctx)
+	}
+	done := make(chan struct{})
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		ready := p.BackgroundReady()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ready:
+				_, _ = p.PauseForCompletion(ctx)
+			case <-ticker.C:
+				_, _ = p.PauseForCompletion(ctx)
+			}
+		}
+	}()
+	text, err := p.RunTurn(ctx)
+	close(done)
+	<-monitorDone
+	return text, err
 }
 
 // lineReader reads lines in a background goroutine so the loop can wait on input
@@ -207,5 +258,40 @@ func (lr *lineReader) next(ctx context.Context) (string, bool) {
 		return "", false
 	case line, ok := <-lr.lines:
 		return line, ok
+	}
+}
+
+func (lr *lineReader) nextWithBackground(ctx context.Context, background func() error) (string, bool) {
+	// A queued line always wins over an unsolicited completion.
+	select {
+	case line, ok := <-lr.lines:
+		return line, ok
+	default:
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case line, ok := <-lr.lines:
+			return line, ok
+		case <-ctx.Done():
+			return "", false
+		case <-ticker.C:
+			select {
+			case line, ok := <-lr.lines:
+				return line, ok
+			default:
+			}
+			if background != nil {
+				if err := background(); err != nil && !errors.Is(err, context.Canceled) {
+					return "", false
+				}
+			}
+		}
+		select {
+		case line, ok := <-lr.lines:
+			return line, ok
+		default:
+		}
 	}
 }

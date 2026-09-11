@@ -24,6 +24,7 @@ type OllamaBrain struct {
 	retiredDelegations  sync.WaitGroup
 	backgroundDelivered string
 	delegation          *delegation.Runtime
+	delegationBorrowed  bool
 	client              *api.Client
 	continuityMu        sync.Mutex
 	// continuitySink receives this instance's continuity events (integrity.go).

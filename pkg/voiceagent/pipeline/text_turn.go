@@ -15,6 +15,7 @@ import (
 // for session auto-save. Every degraded and mute short-circuit must use this
 // so finish logic cannot drift across early returns.
 func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, response string) {
+	p.finishOrdinaryCompletion(metrics, response, false)
 	p.emit(events.ResponseReady{Response: response, Degraded: metrics.degraded})
 	turn.finish(TurnCompleted)
 	if p.OnTurn != nil {
@@ -63,13 +64,22 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		}
 	}
 
-	// Bound model + tools so a hung Ollama chat after tool results cannot leave
-	// the TUI forever on "thinking" / last tool status.
+	requestCtx, ordinary, _ := p.beginOrdinaryCompletion(ctx, input, speakerID)
+	if ordinary != nil {
+		defer ordinary.close()
+		metrics.ordinary = ordinary
+		if p.completionNeedsVoice() {
+			metrics.delivery = &completionPlayback{lease: ordinary.lease}
+		}
+		ctx = requestCtx
+	}
+	// The model deadline is separate from output playback, while both inherit
+	// the completion lease fence when this turn carries an update.
 	brainCtx, brainCancel := p.withBrainTimeout(ctx)
 	defer brainCancel()
 
 	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
-	stream, err := p.Brain.ThinkStream(brainCtx, input, brain.StreamOptions{
+	streamOpts := brain.StreamOptions{
 		Speaker:           speakerID,
 		Background:        background,
 		ToolsEnabled:      p.VoiceToolsEnabled && !background,
@@ -79,7 +89,11 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
-	})
+	}
+	if ordinary != nil {
+		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
+	}
+	stream, err := p.Brain.ThinkStream(brainCtx, input, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -96,6 +110,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	// Stream the reply so the TUI can render it token-by-token, then fall back
 	// to the existing whole-response synthesis path below. ResponseStreamingStarted
 	// and per-chunk ResponseDelta events are emitted inside observeStream.
+	if ordinary != nil {
+		stream = ordinary.wrap(stream)
+	}
 	response, route, err := p.collectTextStream(brainCtx, stream, metrics)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -241,6 +258,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 		// PlayStream returned, so the utterance is fully synthesized and
 		// buffered: everything after this point is playback, not the engine.
+		if metrics.delivery != nil {
+			metrics.delivery.queued++
+		}
 		p.handlePlaybackLifecycle(speakable, usedFallback, observation, playback, metrics)
 	}
 

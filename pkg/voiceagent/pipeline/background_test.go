@@ -69,8 +69,8 @@ func TestBackgroundSpeechBargeInPreservesCaptureAndPendingDelivery(t *testing.T)
 	case <-time.After(2 * time.Second):
 		t.Fatal("background ignored barge-in")
 	}
-	if player.StopCount() == 0 || !p.keepCapture || capture.ResetCount() != 0 {
-		t.Fatalf("stop=%d keepCapture=%v reset=%d", player.StopCount(), p.keepCapture, capture.ResetCount())
+	if player.StopCount() == 0 || !p.keepCapture.Load() || capture.ResetCount() != 0 {
+		t.Fatalf("stop=%d keepCapture=%v reset=%d", player.StopCount(), p.keepCapture.Load(), capture.ResetCount())
 	}
 	if b.acked != 0 {
 		t.Fatal("interrupted brief acknowledged before playback completed")

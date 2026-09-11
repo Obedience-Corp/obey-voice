@@ -38,6 +38,9 @@ func previewSamples(samples []float32) []float32 {
 // VAD endpoints commit phrases to the preview, not to conversation history;
 // only the client's EOF emits FinalTranscript.
 func runPreviewLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Event) {
+	if deps.pause != nil {
+		defer deps.pause.stop()
+	}
 	deps.seg.Reset()
 	sendEvent(ctx, events, PhaseEvent{Phase: "listening"})
 	var pending []float32
@@ -101,6 +104,18 @@ func runPreviewLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		}
 		if read.eof {
 			deps.seg.Flush()
+		}
+		if deps.pause != nil {
+			yielded, _, event := deps.pause.boundary(heard || deps.seg.IsSpeech(), deps.seg.HasSegments(), false)
+			if event.Scope.Valid() {
+				sendEvent(ctx, events, event)
+			}
+			if yielded && !read.eof {
+				if !read.ready {
+					time.Sleep(noFramePoll)
+				}
+				continue
+			}
 		}
 		var finalized []float32
 		for {

@@ -23,6 +23,9 @@ func newFake() *fakeClient {
 	return &fakeClient{started: make(chan Request, 1), results: make(chan Snapshot, 1), canceled: make(chan string, 3)}
 }
 func (f *fakeClient) Probe(context.Context) error { return f.probeErr }
+func (*fakeClient) ExecutionCapability() ExecutionCapability {
+	return ExecutionCapability{Local: true}
+}
 func (f *fakeClient) Start(ctx context.Context, r Request) (Snapshot, error) {
 	f.started <- r
 	if f.admit != nil {
@@ -168,6 +171,41 @@ func TestSessionCloseCancelsAfterAdmission(t *testing.T) {
 		t.Fatal("closed runtime admitted work")
 	}
 }
+
+func TestSessionCloseDuringAdmissionPublishesUnknownInterruptedOutcome(t *testing.T) {
+	f := newFake()
+	f.admit = make(chan struct{})
+	r := newRuntime(t, f, time.Minute)
+	finished := make(chan TerminalOutcome, 1)
+	if err := r.AttachConversation(ConversationObserver{
+		Admitted: func(string, string) error { return nil },
+		Finished: func(outcome TerminalOutcome) error { finished <- outcome; return nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Start("blocked admission"); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	closed := make(chan error, 1)
+	go func() { closed <- r.Close() }()
+	select {
+	case outcome := <-finished:
+		if outcome.State != "interrupted" || outcome.Termination != "unknown" || !strings.Contains(outcome.Err, "admission") {
+			t.Fatalf("outcome=%+v", outcome)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("close did not publish admission uncertainty")
+	}
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("close blocked on canceled admission")
+	}
+}
 func TestTimeoutCancelsExactlyOnce(t *testing.T) {
 	f := newFake()
 	r := newRuntime(t, f, time.Millisecond)
@@ -185,6 +223,26 @@ func TestCapabilityFailureDoesNotOfferRuntime(t *testing.T) {
 	f.probeErr = errors.New("missing cancellation API")
 	if r, err := New(context.Background(), f, time.Minute, nil); err == nil || r != nil {
 		t.Fatalf("runtime=%v err=%v", r, err)
+	}
+}
+
+type unverifiedClient struct{ fakeClient }
+
+func (*unverifiedClient) ExecutionCapability() ExecutionCapability {
+	return ExecutionCapability{Reason: "paid policy is not verified"}
+}
+
+func TestUnverifiedManagedExecutionFailsClosed(t *testing.T) {
+	f := unverifiedClient{fakeClient: *newFake()}
+	r, err := New(context.Background(), &f, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AttachConversation(ConversationObserver{Admitted: func(string, string) error { return nil }, Finished: func(TerminalOutcome) error { return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Start("must be refused"); err == nil || !strings.Contains(err.Error(), "paid policy is not verified") {
+		t.Fatalf("start err=%v", err)
 	}
 }
 func TestBriefNeverFallsBackToRawArtifacts(t *testing.T) {
@@ -212,6 +270,75 @@ func TestMismatchedResultCannotEnterConversation(t *testing.T) {
 	d := awaitDelivery(t, r)
 	if strings.Contains(d.Brief, "Do not speak") {
 		t.Fatal("cross-task result delivered")
+	}
+}
+
+func TestTerminalObserverReceivesFrozenOutcomeOnceOutsideRuntimeLock(t *testing.T) {
+	f := newFake()
+	r := newRuntime(t, f, time.Minute)
+	outcomes := make(chan TerminalOutcome, 2)
+	r.SetTerminalObserver(func(outcome TerminalOutcome) {
+		// Pending must be callable here: observers are never invoked under the
+		// runtime mutex.
+		if _, ok := r.Pending(); !ok {
+			t.Errorf("terminal outcome was published before pending delivery")
+		}
+		outcomes <- outcome
+	})
+	if _, err := r.Start("retain this original task"); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	f.results <- Snapshot{ID: "obey-42", State: "completed", Text: "done"}
+	select {
+	case outcome := <-outcomes:
+		if outcome.Task != "retain this original task" || outcome.SourceRef != "obey-42" || outcome.State != "completed" || outcome.Brief != "done" || outcome.Termination != "confirmed" {
+			t.Fatalf("outcome=%+v", outcome)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("terminal observer was not called")
+	}
+	select {
+	case duplicate := <-outcomes:
+		t.Fatalf("duplicate terminal outcome: %+v", duplicate)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
+func TestConversationAttachmentOwnsOutcomeWithoutLegacyProjection(t *testing.T) {
+	f := newFake()
+	r := newRuntime(t, f, time.Minute)
+	finished := make(chan TerminalOutcome, 1)
+	if err := r.AttachConversation(ConversationObserver{
+		Admitted: func(ticket, task string) error {
+			if ticket == "" || task != "attached task" {
+				t.Errorf("admission=%q %q", ticket, task)
+			}
+			return nil
+		},
+		Started: func(string) {},
+		Finished: func(outcome TerminalOutcome) error {
+			finished <- outcome
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Start("attached task"); err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	f.results <- Snapshot{ID: "obey-42", State: "completed", Text: "attached result"}
+	select {
+	case outcome := <-finished:
+		if outcome.Brief != "attached result" || outcome.Elapsed <= 0 || outcome.Ended.Before(outcome.Started) {
+			t.Fatalf("outcome=%+v", outcome)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("conversation outcome not published")
+	}
+	if _, ok := r.Pending(); ok {
+		t.Fatal("attached runtime exposed legacy pending projection")
 	}
 }
 

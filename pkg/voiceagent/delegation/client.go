@@ -41,11 +41,31 @@ type Client interface {
 	Cancel(context.Context, string, string) (Snapshot, error)
 }
 
+// ExecutionCapability is an explicit admission fact for managed work.
+// Local must be verified by the adapter; profile or binary names are not
+// evidence. Managed dispatch remains disabled when this capability is absent.
+type ExecutionCapability struct {
+	Local  bool
+	Reason string
+}
+
+// CapabilityProvider is optional to preserve the transport Client boundary.
+// Runtime.New requires it to fail closed for unverified or paid dispatch.
+type CapabilityProvider interface {
+	ExecutionCapability() ExecutionCapability
+}
+
 // CLIConfig names an operator-selected existing Obey parent session and profile.
 // Its daemon must expose schema version 1 of the delegation CLI contract.
 type CLIConfig struct{ Binary, Socket, CampaignID, ParentSessionID, Profile string }
 
 type CLI struct{ cfg CLIConfig }
+
+// ExecutionCapability deliberately stays disabled until the CLI exposes a
+// verified local execution policy. A configured profile is not proof of one.
+func (*CLI) ExecutionCapability() ExecutionCapability {
+	return ExecutionCapability{Reason: "managed execution capability is not verified by the delegation CLI"}
+}
 
 func NewCLI(cfg CLIConfig) (*CLI, error) {
 	if cfg.Binary == "" {

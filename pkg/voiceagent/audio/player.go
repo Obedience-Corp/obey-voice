@@ -54,8 +54,10 @@ const (
 
 // PlaybackResult reports the terminal state of a queued playback segment.
 type PlaybackResult struct {
-	Err         error
-	Interrupted bool
+	AttemptID    string
+	CaptureEpoch uint64
+	Err          error
+	Interrupted  bool
 	// AudioSeconds is the duration of the audio the synthesizer produced for
 	// this segment, measured at the stream's own sample rate before any
 	// resampling. It is the denominator of the realtime factor, so it reports
@@ -248,6 +250,7 @@ func (p *Player) PlayStream(ctx context.Context, stream *PCMStream) (*Playback, 
 	}
 
 	segment := newPlaybackSegment()
+	segment.attempt = PlaybackAttemptFromContext(ctx)
 	go runPlaybackWorker(ctx, segment, stream, func() {
 		p.pumpSegment(ctx, segment, stream)
 	})
@@ -263,6 +266,10 @@ func (p *Player) PlayStream(ctx context.Context, stream *PCMStream) (*Playback, 
 		return nil, errors.New("audio player is closed")
 	}
 
+	if ctx.Err() != nil || !segment.attempt.Valid() {
+		segment.interrupt()
+		return nil, context.Canceled
+	}
 	p.queue = append(p.queue, segment)
 	return segment.playback(), nil
 }
@@ -829,10 +836,6 @@ func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 		if !active {
 			return
 		}
-		applyVolumeS16(monoBuf[:writtenFrames*2], writtenFrames, hundredths)
-		// Expand mono → device layout, then capture the exact multi-channel
-		// buffer handed to miniaudio.
-		expandMonoS16LE(monoBuf[:writtenFrames*2], writtenFrames, channels, outputSamples)
 		if debug != nil {
 			debug.captureCallback(outputSamples, int(frameCount), writtenFrames)
 		}
@@ -851,7 +854,16 @@ func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 		}
 		active = true
 
-		written, finished := segment.writeTo(monoBuf[monoOffset:], framesRemaining)
+		var written int
+		var finished bool
+		if !segment.attempt.Write(func() {
+			written, finished = segment.writeTo(monoBuf[monoOffset:], framesRemaining)
+			applyVolumeS16(monoBuf[monoOffset:monoOffset+written*2], written, hundredths)
+			expandMonoS16LE(monoBuf[monoOffset:monoOffset+written*2], written, channels, outputSamples[writtenFrames*channels*2:])
+		}) {
+			segment.interrupt()
+			finished = true
+		}
 		if written == 0 {
 			if finished {
 				p.finishSegment(segment)
@@ -929,6 +941,7 @@ func (p *Player) finishSegment(segment *playbackSegment) {
 }
 
 type playbackSegment struct {
+	attempt      PlaybackAttempt
 	mu           sync.Mutex
 	audioSeconds float64
 	samples      []int16
@@ -1037,13 +1050,13 @@ func (s *playbackSegment) markInputEndedLocked() {
 // Every exit path goes through it so an interrupted or failed segment still
 // reports what synthesis cost.
 func (s *playbackSegment) resultLocked(err error, interrupted bool) PlaybackResult {
-	return PlaybackResult{
+	return s.attempt.Result(PlaybackResult{
 		Err:              err,
 		Interrupted:      interrupted,
 		AudioSeconds:     s.audioSeconds,
 		Underruns:        s.underruns,
 		SynthesisEndedAt: s.inputEndedAt,
-	}
+	})
 }
 
 func (s *playbackSegment) append(samples []int16) {
@@ -1181,6 +1194,9 @@ func (s *playbackSegment) maybeReadyLocked() {
 }
 
 func (s *playbackSegment) finish(result PlaybackResult) {
+	if !s.attempt.Valid() {
+		result.Interrupted = true
+	}
 	s.done.Do(func() {
 		s.doneCh <- result
 		close(s.doneCh)

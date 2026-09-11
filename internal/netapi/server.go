@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // Options configures a Server. All fields except AllowPublic are required.
@@ -181,6 +182,14 @@ type Server struct {
 
 func New(opts Options) *Server {
 	h := newHub()
+	if opts.Dispatcher != nil && opts.Ingress != nil {
+		h.completionQueued = func() bool { return len(opts.Dispatcher.queue) > 0 }
+		if setter, ok := opts.Dispatcher.runner.(interface {
+			SetCompletionCapture(func(context.Context, *work.Coordinator, string) (work.CapturePermit, error))
+		}); ok {
+			setter.SetCompletionCapture(h.acquireCompletion)
+		}
+	}
 	if opts.Audio != nil {
 		opts.Audio.AttachHub(h)
 	}

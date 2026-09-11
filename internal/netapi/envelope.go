@@ -158,6 +158,9 @@ func encodeEvent(e events.Event) map[string]any {
 		env["name"] = e.Name
 		env["kind"] = e.Kind
 		env["summary"] = e.Summary
+		if e.WorkScope.Valid() {
+			env["work_scope"] = e.WorkScope
+		}
 	case events.ToolCallFinished:
 		env["id"] = e.ID
 		env["job_id"] = e.JobID
@@ -167,6 +170,9 @@ func encodeEvent(e events.Event) map[string]any {
 		env["message"] = e.ResultReason()
 		env["elapsed_ms"] = ms(e.ResultElapsed())
 		env["status"] = string(e.OutcomeStatus())
+		if e.WorkScope.Valid() {
+			env["work_scope"] = e.WorkScope
+		}
 		env["exit_code"] = nil
 		env["http_status"] = nil
 		if o := e.Outcome; o != nil {
@@ -184,6 +190,10 @@ func encodeEvent(e events.Event) map[string]any {
 		env["message"] = e.Message
 	case events.Info:
 		env["message"] = e.Message
+	case events.WorkStateChanged:
+		env["work"] = e.Snapshot
+	case events.WorkDelivery:
+		env["delivery"] = e
 	case events.SpeechDiagnostic:
 		env["symptom"] = e.Symptom
 		env["cause"] = e.Cause

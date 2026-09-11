@@ -210,7 +210,12 @@ func (a *AudioFanout) pump(
 		}
 	}
 
+	attempt := audio.PlaybackAttemptFromContext(ctx)
 	finish := func(result audio.PlaybackResult) {
+		result = attempt.Result(result)
+		if !attempt.Valid() {
+			result.Interrupted = true
+		}
 		if hadAudio {
 			a.emitAudioEnd(segID, result)
 		}
@@ -240,7 +245,13 @@ func (a *AudioFanout) pump(
 			}
 
 			// Wire side-effect: skip all encode work when no stream clients.
-			a.emitAudioChunks(segID, sampleRate, frames)
+			if !attempt.Write(func() { a.emitAudioChunks(segID, sampleRate, frames) }) {
+				if local != nil {
+					local.CloseWithError(context.Canceled)
+				}
+				finish(audio.PlaybackResult{Interrupted: true, Err: context.Canceled})
+				return
+			}
 
 			if local != nil && !localFailed {
 				if err := local.Write(frames); err != nil && ctx.Err() == nil {

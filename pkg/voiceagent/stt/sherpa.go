@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // SherpaOfflineSTT implements utterance-final STT using sherpa-onnx whisper.
@@ -25,15 +26,47 @@ type SherpaOfflineSTT struct {
 type sherpaSession struct {
 	cancel context.CancelFunc
 	events chan Event
+	done   chan struct{}
+	pause  *pauseController
 }
 
 func (s *sherpaSession) Events() <-chan Event {
 	return s.events
 }
 
+func (s *sherpaSession) BindCompletionCoordinator(c *work.Coordinator) {
+	if s.pause != nil {
+		s.pause.BindCompletionCoordinator(c)
+	}
+}
+
+func (s *sherpaSession) PauseForCompletion(ctx context.Context, scope work.WorkScope, requestID string) (PauseResult, error) {
+	if s.pause == nil {
+		return PauseResult{}, ErrCompletionPauseUnsupported
+	}
+	return s.pause.request(ctx, scope, requestID)
+}
+
+func (s *sherpaSession) ResumeCapture(ctx context.Context, token PauseToken) error {
+	if s.pause == nil {
+		return ErrCompletionPauseUnsupported
+	}
+	return s.pause.resume(ctx, token)
+}
+
+func (s *sherpaSession) HasCapturedInput() bool {
+	return s.pause != nil && s.pause.hasCapturedInput()
+}
+
 func (s *sherpaSession) Close() error {
+	if s.pause != nil {
+		s.pause.stop()
+	}
 	if s.cancel != nil {
 		s.cancel()
+	}
+	if s.done != nil {
+		<-s.done
 	}
 	return nil
 }
@@ -88,6 +121,8 @@ func (s *SherpaOfflineSTT) Start(ctx context.Context) (Session, error) {
 	session := &sherpaSession{
 		cancel: cancel,
 		events: make(chan Event, 8),
+		done:   make(chan struct{}),
+		pause:  newPauseController("stt"),
 	}
 
 	finite := sourceKind(s.capture) != audio.SourceLive
@@ -99,7 +134,10 @@ func (s *SherpaOfflineSTT) Start(ctx context.Context) (Session, error) {
 	}
 
 	go func() {
+		defer session.pause.stop()
+		defer close(session.done)
 		defer close(session.events)
+		deps.pause = session.pause
 		runOfflineLoop(sessionCtx, deps, session.events)
 	}()
 	return session, nil

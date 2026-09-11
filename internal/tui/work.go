@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
@@ -21,8 +22,25 @@ import (
 // or running job.
 type jobView struct {
 	task    string
+	origin  string
 	running bool
 	tool    string // the tool the worker is on, until the fold has a row
+}
+
+func (m *conversationModel) canonicalJob(v work.JobView) {
+	id := v.Key.JobID
+	if id == "" {
+		return
+	}
+	job := m.trackJob(id, v.Task)
+	job.origin = v.Origin
+	job.running = v.State == work.JobRunning
+	if v.State == work.JobQueued {
+		m.renderJobItem(id, " · queued")
+	} else if v.State == work.JobRunning {
+		m.renderJobItem(id, "")
+	}
+	m.refreshJobChip()
 }
 
 func (m *conversationModel) jobQueued(e events.JobQueued) {
@@ -77,13 +95,30 @@ func (m *conversationModel) jobEnded(id, detail, suffix string, elapsed time.Dur
 	if label == "" {
 		label = m.jobLabel(id)
 	}
-	m.renderJobItemLabel(id, label, suffix)
+	if !m.hasCanonicalJob(id) {
+		m.renderJobItemLabel(id, label, suffix)
+		if idx, ok := m.jobItems[id]; ok {
+			if m.completedJobItems == nil {
+				m.completedJobItems = make(map[string]int)
+			}
+			m.completedJobItems[id] = idx
+			if len(m.completedJobItems) > 256 {
+				for old := range m.completedJobItems {
+					delete(m.completedJobItems, old)
+					break
+				}
+			}
+		}
+	}
 	delete(m.jobItems, id)
 	m.forgetJob(id)
 	m.refreshJobChip()
 }
 
 func (m *conversationModel) jobToolStarted(e events.ToolCallStarted) {
+	if !m.acceptWorkScope(e.WorkScope) {
+		return
+	}
 	m.workTracker().Add(e)
 	m.noteJobTool(e.JobID, e.Name)
 	m.appendActivity("job", jobToolDetail(e.Name, e.Summary), 0)
@@ -91,6 +126,9 @@ func (m *conversationModel) jobToolStarted(e events.ToolCallStarted) {
 }
 
 func (m *conversationModel) jobToolFinished(e events.ToolCallFinished) {
+	if !m.acceptWorkScope(e.WorkScope) {
+		return
+	}
 	if _, ok := m.jobs[e.JobID]; !ok {
 		return
 	}
@@ -98,6 +136,17 @@ func (m *conversationModel) jobToolFinished(e events.ToolCallFinished) {
 	m.noteJobTool(e.JobID, e.Name)
 	m.appendActivity("job", toolOutcomeDetail(e), e.ResultElapsed())
 	m.renderJobItem(e.JobID, "")
+}
+
+func (m *conversationModel) acceptWorkScope(scope work.WorkScope) bool {
+	if !scope.Valid() {
+		return true
+	}
+	if m.deps.workScope == nil {
+		return false
+	}
+	authoritative := m.deps.workScope()
+	return authoritative.Valid() && authoritative == scope
 }
 
 func toolOutcomeLabel(status events.ToolOutcomeStatus) string {
@@ -249,7 +298,11 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	if id == "" {
 		return
 	}
-	line := dimStyle.Render("  ⚙ " + id + " · " + label + suffix)
+	origin := ""
+	if job := m.jobs[id]; job != nil && job.origin != "" {
+		origin = " [" + job.origin + "]"
+	}
+	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
 	idx, ok := m.jobItems[id]
 	if !ok || idx >= len(m.items) {
 		if m.jobItems == nil {

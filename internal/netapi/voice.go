@@ -1,6 +1,7 @@
 package netapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // Remote push-to-talk and client-driven barge-in: who owns the mic, when the
@@ -21,10 +23,56 @@ func (h *hub) setIngress(ing *audio.Ingress) {
 	h.ingress = ing
 }
 
+func (h *hub) acquireCompletion(ctx context.Context, c *work.Coordinator, requestID string) (work.CapturePermit, error) {
+	if err := ctx.Err(); err != nil {
+		return work.CapturePermit{}, err
+	}
+	if c == nil || requestID == "" {
+		return work.CapturePermit{}, errors.New("completion capture is unavailable")
+	}
+	h.completionMu.Lock()
+	defer h.completionMu.Unlock()
+	if h.completionQueued != nil && h.completionQueued() {
+		return work.CapturePermit{}, work.ErrConflict
+	}
+	h.mu.Lock()
+	claimed := h.micClaimant != nil
+	h.mu.Unlock()
+	if claimed {
+		return work.CapturePermit{}, work.ErrConflict
+	}
+	h.completionEpoch++
+	permit, err := c.AcquireCapturePermit(c.Scope(), "remote-completion", h.completionEpoch)
+	if err != nil {
+		return work.CapturePermit{}, err
+	}
+	h.completionCoord = c
+	h.completionPermit = permit
+	return permit, nil
+}
+
+// revokeCompletion invalidates the current remote completion binding before a
+// microphone claimant is granted. It never holds h.mu while touching work.
+func (h *hub) revokeCompletionLocked() {
+	coord, permit := h.completionCoord, h.completionPermit
+	h.completionCoord = nil
+	h.completionPermit = work.CapturePermit{}
+	if coord != nil {
+		_ = coord.RevokeCapturePermit(permit)
+	}
+}
+
 // claimMic grants the exclusive mic to the turn gen identifies. The generation
 // is recorded with the claim, under the same lock, so a deadline that fires for
 // an earlier turn cannot release what a later one was just granted.
 func (h *hub) claimMic(c *streamConn, gen uint64) error {
+	h.completionMu.Lock()
+	defer h.completionMu.Unlock()
+	return h.claimMicLocked(c, gen)
+}
+
+func (h *hub) claimMicLocked(c *streamConn, gen uint64) error {
+	h.revokeCompletionLocked()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.ingress == nil {
@@ -95,9 +143,9 @@ func (h *hub) releaseLocked(c *streamConn) (utteranceOpen bool) {
 
 func (h *hub) writeMic(c *streamConn, samples []float32) error {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	ing := h.ingress
 	claim := h.micClaimant
-	h.mu.Unlock()
 	if ing == nil {
 		return errors.New("remote mic is not enabled")
 	}
@@ -109,9 +157,9 @@ func (h *hub) writeMic(c *streamConn, samples []float32) error {
 
 func (h *hub) endMicUtterance(c *streamConn) error {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	ing := h.ingress
 	claim := h.micClaimant
-	h.mu.Unlock()
 	if ing == nil {
 		return errors.New("remote mic is not enabled")
 	}
@@ -159,6 +207,11 @@ func (s *Server) startTranscription(conn *streamConn, id string) error {
 }
 
 func (s *Server) startMicTurn(conn *streamConn, submit func(func() bool) error) error {
+	// Any new user utterance wins over an unsolicited completion, including
+	// one that will wait behind an already active turn.
+	s.hub.completionMu.Lock()
+	defer s.hub.completionMu.Unlock()
+	s.hub.revokeCompletionLocked()
 	deferred := s.dispatcher.Pending()
 	// The turn is open from here: only voice_end, a disconnect, or this
 	// deadline will close it again. It is armed before anything is claimed or
@@ -169,7 +222,7 @@ func (s *Server) startMicTurn(conn *streamConn, submit func(func() bool) error) 
 	if deferred {
 		conn.openQueuedTurn(gen)
 		prepare = func() bool { return s.claimQueuedMic(conn) }
-	} else if err := s.hub.claimMic(conn, gen); err != nil {
+	} else if err := s.hub.claimMicLocked(conn, gen); err != nil {
 		// No turn was opened, and no live claim can be stranded by disarming:
 		// a connection that already held one would have been granted this
 		// claim too.

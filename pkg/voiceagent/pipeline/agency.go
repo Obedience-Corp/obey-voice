@@ -11,8 +11,10 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
@@ -39,9 +41,18 @@ type Agency struct {
 	// with, and what milestone narration speaks one line of.
 	work *workfold.Tracker
 
-	mu            sync.Mutex
-	pending       []pendingDelivery
-	workerInitErr error
+	mu             sync.Mutex
+	pending        []pendingDelivery
+	workerInitErr  error
+	workMu         sync.RWMutex
+	coordinator    *work.Coordinator
+	workScope      work.WorkScope
+	workObserver   func(work.Snapshot)
+	jobScopes      map[string]work.WorkScope
+	managed        map[*delegation.Runtime]struct{}
+	managedJobs    map[string]*delegation.Runtime
+	managedCurrent *delegation.Runtime
+	managedClosing map[*delegation.Runtime]bool
 }
 
 // pendingDelivery is one completed job waiting to be spoken when the pipeline
@@ -61,13 +72,17 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		ack = "Working on it, sir."
 	}
 	a := &Agency{
-		pipeline:      p,
-		jobs:          jobs,
-		worker:        worker,
-		cfg:           cfg,
-		ack:           ack,
-		work:          workfold.New(),
-		workerInitErr: workerErr,
+		pipeline:       p,
+		jobs:           jobs,
+		worker:         worker,
+		cfg:            cloneConfig(cfg),
+		ack:            ack,
+		work:           workfold.New(),
+		workerInitErr:  workerErr,
+		jobScopes:      make(map[string]work.WorkScope),
+		managed:        make(map[*delegation.Runtime]struct{}),
+		managedJobs:    make(map[string]*delegation.Runtime),
+		managedClosing: make(map[*delegation.Runtime]bool),
 	}
 	a.narrator = NewNarrator(a)
 	return a
@@ -100,6 +115,10 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 	case RouteSpawn:
 		a.handleSpawn(ctx, turn, metrics, d)
 	case RouteNarrate, RouteNarratePause, RouteNarrateResume, RouteNarrateSkip, RouteNarrateStop:
+		if a.workEnabled() && d.Kind == RouteNarrate && isLongStoryPhrase(d.Transcript) {
+			a.pipeline.emit(events.Error{Stage: "job", Message: "Story-writing narration is unavailable with the experimental work inbox. Existing files can still be read aloud."})
+			return
+		}
 		if a.narrator != nil {
 			a.narrator.HandleRoute(ctx, turn, metrics, d)
 		}
@@ -130,16 +149,57 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if task == "" {
 		task = "background task"
 	}
-	a.speakAck(ctx, turn, metrics)
+	experimental := a.workEnabled()
+	if !experimental {
+		a.speakAck(ctx, turn, metrics)
+	}
+	worker, jobCfg, workerErr := a.workerAdmission()
+	if experimental && providerName(jobCfg) != "ollama" {
+		a.pipeline.emit(events.Error{Stage: "job", Message: "Experimental work requires a local worker; paid and unknown providers are disabled."})
+		return
+	}
+	jobID := ""
+	var key work.JobKey
+	if c, scope := a.workAuthority(); c != nil {
+		jobID = newWorkID()
+		var err error
+		key, err = c.Register(scope, work.Admission{JobID: jobID, Task: task, Origin: "agency", Provider: providerName(jobCfg), Model: modelName(jobCfg), Config: frozenConfig(jobCfg)})
+		if err != nil {
+			a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
+			return
+		}
+		a.workMu.Lock()
+		a.jobScopes[jobID] = scope
+		a.workMu.Unlock()
+	}
+	if workerErr != nil && experimental {
+		if c, _ := a.workAuthority(); c != nil && key.JobID != "" {
+			_, _ = c.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeFailed, Text: truncateJobTask(workerErr.Error()), Termination: "known"})
+		}
+		a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
+		return
+	}
+	run := a.workerRun(spawnBrief(history, d.Transcript), worker, jobCfg)
+	if workerErr != nil {
+		run = func(context.Context) (string, error) { return "", workerErr }
+	}
 	_, err := a.jobs.Start(ctx, job.Spec{
+		ID: jobID,
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
 		Task: task,
-		Run:  a.workerRun(spawnBrief(history, d.Transcript)),
+		Run:  run,
 	})
 	if err != nil {
+		if c, _ := a.workAuthority(); c != nil && key.JobID != "" {
+			_, _ = c.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeFailed, Text: truncateJobTask(err.Error()), Termination: "known"})
+		}
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
+		return
+	}
+	if experimental {
+		a.speakAck(ctx, turn, metrics)
 	}
 }
 
@@ -149,10 +209,22 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 // precedes this job's tool and terminal events. A spawn behind a running job
 // is therefore queued, not started, until that job is out of the way.
 func (a *Agency) onJobQueued(id, task string) {
+	if a.workEnabled() {
+		// Register already published the canonical scoped admission.
+		return
+	}
 	a.pipeline.emit(events.JobQueued{ID: id, Task: task})
 }
 
 func (a *Agency) onJobStarted(id, task string) {
+	c, key, accepted := a.callbackKey(id)
+	if !accepted {
+		return
+	}
+	if c != nil {
+		_ = c.Started(key)
+		return // The canonical snapshot carries the admitted scope.
+	}
 	a.pipeline.emit(events.JobStarted{ID: id, Task: task})
 }
 
@@ -172,16 +244,18 @@ func (a *Agency) speakSpawnClarifier(ctx context.Context, turn *turnConductor, m
 	}
 }
 
-func (a *Agency) workerRun(brief string) func(context.Context) (string, error) {
+func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Config) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
-		worker, err := a.workerProvider()
-		if err != nil {
-			return "", err
+		if a.workEnabled() && !a.acceptJobCallback(job.IDFromContext(ctx)) {
+			return "", context.Canceled
+		}
+		if worker == nil {
+			return "", errors.New("worker provider is not configured")
 		}
 		worker = a.freshWorker(worker)
 		tools := true
-		if a.cfg != nil {
-			tools = a.cfg.VoiceToolsEnabled
+		if cfg != nil {
+			tools = cfg.VoiceToolsEnabled
 		}
 		opts := brain.WorkerStreamOptions(tools)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
@@ -214,16 +288,26 @@ func (a *Agency) freshWorker(w brain.Provider) brain.Provider {
 // in step with the emit — the closed row milestone narration speaks is the
 // return of the same Add — and needs no bus to exist.
 func (a *Agency) foldingToolHooks(jobID string) (func(brain.ToolCall), func(brain.ToolResult)) {
-	emitStart, emitEnd := a.pipeline.jobToolHooks(jobID)
+	_, key, _ := a.callbackKey(jobID)
 	start := func(call brain.ToolCall) {
-		emitStart(call)
-		if closed := a.work.Add(toolStartedEvent(jobID, call)); closed != nil {
+		if a.workEnabled() && !a.acceptJobCallback(jobID) {
+			return
+		}
+		event := toolStartedEvent(jobID, call)
+		event.WorkScope = key.Scope
+		a.pipeline.emit(event)
+		if closed := a.work.Add(event); closed != nil {
 			a.narrateRow(jobID, *closed)
 		}
 	}
 	end := func(res brain.ToolResult) {
-		emitEnd(res)
-		a.work.Finish(toolFinishedEvent(jobID, res))
+		if a.workEnabled() && !a.acceptJobCallback(jobID) {
+			return
+		}
+		event := toolFinishedEvent(jobID, res)
+		event.WorkScope = key.Scope
+		a.pipeline.emit(event)
+		a.work.Finish(event)
 	}
 	return start, end
 }
@@ -231,7 +315,11 @@ func (a *Agency) foldingToolHooks(jobID string) (func(brain.ToolCall), func(brai
 // narrateRow speaks one short line for a row that just closed, under the same
 // idle gate as a job summary. Silent unless voice_work_narration is milestones.
 func (a *Agency) narrateRow(jobID string, row workfold.Row) {
-	if a.cfg == nil || a.cfg.VoiceWorkNarration != workNarrationMilestones {
+	if a.workEnabled() {
+		return
+	}
+	cfg := a.currentConfig()
+	if cfg == nil || cfg.VoiceWorkNarration != workNarrationMilestones {
 		return
 	}
 	a.enqueueSummary(jobID, capitalize(row.String())+".")
@@ -259,6 +347,12 @@ func capitalize(s string) string {
 }
 
 func (a *Agency) workerProvider() (brain.Provider, error) {
+	experimental := a.workEnabled()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if experimental && providerName(a.cfg) != "ollama" {
+		return nil, errors.New("experimental work requires a local worker")
+	}
 	if a.worker != nil {
 		return a.worker, nil
 	}
@@ -268,11 +362,41 @@ func (a *Agency) workerProvider() (brain.Provider, error) {
 	return nil, fmt.Errorf("worker provider is not configured")
 }
 
+func (a *Agency) currentConfig() *config.Config {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return cloneConfig(a.cfg)
+}
+
+func (a *Agency) workerAdmission() (brain.Provider, *config.Config, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	err := a.workerInitErr
+	if a.worker == nil && err == nil {
+		err = errors.New("worker provider is not configured")
+	}
+	return a.worker, cloneConfig(a.cfg), err
+}
+
 // handleAbort ends every running and queued job and says so once, here in
 // the turn that asked. The done callback stays silent for a cancel: three
 // jobs cancelled together are one act, and that callback also carries the
 // budget stop, which has its own line.
 func (a *Agency) handleAbort(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
+	if a.workEnabled() {
+		var cancellationErrors []error
+		for _, item := range a.WorkSnapshot().Jobs {
+			if item.State != work.JobTerminal {
+				cancellationErrors = append(cancellationErrors, a.CancelWork(item.Key.JobID))
+			}
+		}
+		text := "Cancellation requested. Completed results remain in the work inbox."
+		if err := errors.Join(cancellationErrors...); err != nil {
+			text = "Some work could not be cancelled: " + err.Error()
+		}
+		_ = a.pipeline.speakStandalone(ctx, turn, metrics, text)
+		return
+	}
 	var ran []time.Duration
 	var queued, running []string
 	for _, info := range a.jobs.Status() {
@@ -396,7 +520,11 @@ func (a *Agency) speakAck(ctx context.Context, turn *turnConductor, metrics *tur
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
-	if a.narrator != nil && a.narrator.handleJobDone(id, state, result, err) {
+	c, key, accepted := a.callbackKey(id)
+	if !accepted {
+		return
+	}
+	if !a.workEnabled() && a.narrator != nil && a.narrator.handleJobDone(id, state, result, err) {
 		return
 	}
 	task, elapsed := a.jobInfo(id)
@@ -405,7 +533,34 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	// observer that reacts to the event should see the delivery it announces.
 	// Milestones lead the result — what the worker was doing when it stopped
 	// is not an afterthought to its answer.
-	a.closeFold(id, state != job.StateAborted)
+	a.closeFold(id, state != job.StateAborted && !a.workEnabled())
+	if c != nil {
+		status := work.OutcomeSucceeded
+		text := a.cleanSummary(result)
+		termination := "known"
+		startedAt, endedAt, terminalElapsed := a.jobTiming(id)
+		switch state {
+		case job.StateFailed:
+			status, text = work.OutcomeFailed, truncateJobTask(errorText(err, result))
+		case job.StateAborted:
+			status, text, termination = work.OutcomeCancelled, "Work was cancelled.", "unknown"
+			if errors.Is(err, job.ErrBudget) {
+				status, text = work.OutcomeTimedOut, fmt.Sprintf("Work stopped after %s.", spokenDuration(terminalElapsed))
+			}
+		}
+		_, publishErr := c.Publish(key, work.Outcome{Scope: key.Scope, JobID: id, Status: status, Text: text, Termination: termination, StartedAt: startedAt, EndedAt: endedAt, Elapsed: terminalElapsed})
+		if publishErr != nil {
+			return
+		}
+		// Experimental work owns the inbox; it must never consume results by
+		// speaking summaries from the legacy pending slice.
+		if a.workEnabled() {
+			a.workMu.Lock()
+			delete(a.jobScopes, id)
+			a.workMu.Unlock()
+			return
+		}
+	}
 	switch state {
 	case job.StateDone:
 		a.enqueueSummary(id, a.cleanSummary(result))
@@ -432,6 +587,13 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	a.tryFlushPending()
 }
 
+func errorText(err error, fallback string) string {
+	if err != nil && strings.TrimSpace(err.Error()) != "" {
+		return err.Error()
+	}
+	return fallback
+}
+
 // jobInfo is the job's label and how long it ran.
 func (a *Agency) jobInfo(id string) (string, time.Duration) {
 	for _, info := range a.jobs.Status() {
@@ -440,6 +602,15 @@ func (a *Agency) jobInfo(id string) (string, time.Duration) {
 		}
 	}
 	return "", 0
+}
+
+func (a *Agency) jobTiming(id string) (time.Time, time.Time, time.Duration) {
+	for _, info := range a.jobs.Status() {
+		if info.ID == id {
+			return info.Started, info.Ended, info.TerminalElapsed
+		}
+	}
+	return time.Time{}, time.Time{}, 0
 }
 
 func (a *Agency) enqueueSummary(id, text string) {
@@ -464,6 +635,9 @@ func (a *Agency) cleanSummary(raw string) string {
 }
 
 func (a *Agency) tryFlushPending() {
+	if a.workEnabled() {
+		return
+	}
 	for {
 		a.mu.Lock()
 		if len(a.pending) == 0 {

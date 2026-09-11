@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // defaultBrainTurnTimeout is the idle bound on model + tool work for one
@@ -57,10 +58,14 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
-	retiredBrains sync.WaitGroup
-	STT           stt.Provider
-	Brain         brain.Provider
-	TTS           tts.Provider
+	// The serialized host remembers omitted coverage until the next safe
+	// boundary, where one deterministic brief replaces a model retry.
+	completionFallback map[string]bool
+	completionScope    work.WorkScope
+	retiredBrains      sync.WaitGroup
+	STT                stt.Provider
+	Brain              brain.Provider
+	TTS                tts.Provider
 	// Utterance is nil when the audio source cannot be ended on demand.
 	Utterance UtteranceEnder
 	// TTSFallback is an optional, explicitly configured provider used for one
@@ -164,7 +169,15 @@ type Pipeline struct {
 	// keepCapture preserves the capture buffer into the next turn after a
 	// barge-in — or a near-miss, speech heard during a playback pause that
 	// never tripped — where the buffered audio is the user mid-utterance.
-	keepCapture bool
+	keepCapture               atomic.Bool
+	captureMu                 sync.Mutex
+	captureSession            stt.Session
+	captureGeneration         uint64
+	captureToken              stt.PauseToken
+	captureYielded            bool
+	captureDeferral           string
+	captureRequests           atomic.Uint64
+	externalCompletionCapture func(context.Context, *work.Coordinator, string) (work.CapturePermit, error)
 
 	// outputMuted is toggled by interactive clients while a turn may be active.
 	outputMuted atomic.Bool
@@ -187,8 +200,16 @@ func (p *Pipeline) currentSpeakerID() string {
 // pipeline. Muting immediately stops any audio already in flight.
 func (p *Pipeline) SetOutputMuted(muted bool) {
 	p.outputMuted.Store(muted)
+	if muted {
+		if c := p.WorkCoordinator(); c != nil {
+			_ = c.RevokeBinding(c.Scope())
+		}
+	}
 	if muted && p.Player != nil {
 		p.Player.Stop()
+	}
+	if !muted {
+		p.RecoverCompletionOutput()
 	}
 }
 
@@ -203,6 +224,7 @@ func (p *Pipeline) ReplaceTTS(primary, fallback tts.Provider) {
 	p.TTS = primary
 	p.TTSFallback = fallback
 	p.ttsMu.Unlock()
+	p.RecoverCompletionOutput()
 }
 
 // HasTTS reports whether a primary voice provider is configured.

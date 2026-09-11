@@ -108,6 +108,24 @@ func TestStartAfterCloseErrors(t *testing.T) {
 	}
 }
 
+func TestCallerAssignedIDAndCollision(t *testing.T) {
+	table := NewTable(context.Background())
+	first, err := table.Start(context.Background(), Spec{ID: "stable-1", Task: "x", Run: func(context.Context) (string, error) { return "ok", nil }})
+	if err != nil || first != "stable-1" {
+		t.Fatalf("assigned id = %q, %v", first, err)
+	}
+	if _, err := table.Start(context.Background(), Spec{ID: "stable-1", Task: "duplicate"}); err == nil {
+		t.Fatal("duplicate assigned id accepted")
+	}
+	third, err := table.Start(context.Background(), Spec{Task: "legacy", Run: func(context.Context) (string, error) { return "ok", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third == "stable-1" {
+		t.Fatal("legacy id collided with assigned id")
+	}
+}
+
 func TestSecondSpawnQueues(t *testing.T) {
 	t.Parallel()
 	table := NewTable(context.Background())

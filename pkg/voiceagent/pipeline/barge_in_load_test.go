@@ -97,7 +97,7 @@ func TestBargeInResponsiveUnderSynthAndQueueLoad(t *testing.T) {
 	if capture.ResetCount() != 1 {
 		t.Fatalf("capture.Reset() count = %d, want 1 (listen drain only)", capture.ResetCount())
 	}
-	if !p.keepCapture {
+	if !p.keepCapture.Load() {
 		t.Fatal("barge-in should preserve the capture buffer for the next listen")
 	}
 }
@@ -189,7 +189,7 @@ func TestRunTurnBargeInDuringPlaybackPause(t *testing.T) {
 	if player.StopCount() == 0 {
 		t.Fatal("playback stop was not requested on pause barge-in")
 	}
-	if !p.keepCapture {
+	if !p.keepCapture.Load() {
 		t.Fatal("pause barge-in should preserve the capture buffer for the next listen")
 	}
 }

@@ -26,6 +26,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	if opts.Background {
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
+	skillCtx += WorkResultsPrompt(opts.WorkResults)
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 

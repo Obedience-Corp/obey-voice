@@ -58,6 +58,7 @@ var envBindings = map[string]string{
 	"claude_session_warn_tokens":  "CLAUDE_SESSION_WARN_TOKENS",
 	"voice_tools_enabled":         "VOICE_TOOLS_ENABLED",
 	"voice_router_tools":          "VOICE_ROUTER_TOOLS",
+	"voice_work_enabled":          "VOICE_WORK_ENABLED",
 	"voice_work_narration":        "VOICE_WORK_NARRATION",
 	"voice_failed_route_repair":   "VOICE_FAILED_ROUTE_REPAIR",
 	"tool_command_timeout":        "TOOL_COMMAND_TIMEOUT",

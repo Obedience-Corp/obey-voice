@@ -435,6 +435,8 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		worker = opts.Worker
 	} else if opts.WorkerErr != nil {
 		workerErr = opts.WorkerErr
+	} else if cfg.VoiceWorkEnabled && config.VoiceWorkerProviderOf(cfg) != "ollama" {
+		workerErr = fmt.Errorf("experimental voice work refuses paid worker provider %q", config.VoiceWorkerProviderOf(cfg))
 	} else {
 		worker, workerErr = brain.NewWorkerProvider(cfg)
 		if workerErr != nil {
@@ -444,6 +446,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	agency := pipeline.NewAgency(p, jobs, worker, cfg, workerErr)
 	agency.Wire()
 	cleanups = append(cleanups, jobs.Close)
+	cleanups = append(cleanups, func() { _ = agency.CloseWork() })
 
 	return &Agent{Pipeline: p}, cleanup, nil
 }

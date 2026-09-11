@@ -17,7 +17,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 type screen int
@@ -784,9 +786,18 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.conversation.setStatus("", false)
 		a.conversation.seedTranscript(msg.rt.Seed)
 		cmd := a.conversation.startConversation(conversationDeps{
-			runner:         msg.rt.Pipeline,
-			bus:            msg.rt.Bus,
-			clearHistory:   msg.rt.Pipeline.Brain.ClearHistory,
+			runner: msg.rt.Pipeline,
+			bus:    msg.rt.Bus,
+			clearHistory: func() {
+				if err := msg.rt.Pipeline.ClearConversation(); err != nil {
+					msg.rt.Bus.Emit(events.Error{Stage: "work", Message: err.Error()})
+					return
+				}
+				if msg.rt.Pipeline.OnTurn != nil {
+					msg.rt.Pipeline.OnTurn()
+				}
+			},
+			workScope:      func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
 			brainSession:   brainSessionReporter(msg.rt.Pipeline.Brain),
 			compact:        msg.rt.Pipeline.CompactConversation,
 			voice:          msg.rt.Voice,
@@ -801,6 +812,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ctx:            a.runCtx,
 			wg:             a.wg,
 		})
+		// Seed the visible projection from durable/live coordinator state. This
+		// is display-only; restored results remain held and are never spoken or
+		// acknowledged merely because the TUI started.
+		a.conversation.handleEvent(events.WorkStateChanged{Snapshot: msg.rt.Pipeline.WorkSnapshot()})
 		a.installNameSummon(msg.rt)
 		return a, tea.Batch(cmd, a.startTalkHotkey())
 

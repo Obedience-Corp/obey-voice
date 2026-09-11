@@ -26,6 +26,7 @@ type streamingLoopDeps struct {
 	seg    segmenter
 	rec    streamingRecognizer
 	policy endpoint.Policy
+	pause  *pauseController
 }
 
 // runStreamingLoop drives streaming STT over the typed frame contract. It emits
@@ -40,6 +41,9 @@ type streamingLoopDeps struct {
 // a false-positive speech mark (a spurious partial with no real speech) is
 // reset by TooShort instead of suppressing the timeouts forever.
 func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<- Event) {
+	if deps.pause != nil {
+		defer deps.pause.stop()
+	}
 	emitPhase := newPhaseEmitter(ctx, events)
 
 	deps.seg.Reset()
@@ -133,6 +137,22 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 			deps.seg.Flush()
 			if deps.seg.HasSegments() && heard.audible() {
 				track.markSpeech()
+			}
+		}
+
+		if deps.pause != nil {
+			yielded, _, event := deps.pause.boundary(track.detected, transcribing || deps.seg.HasSegments(), false)
+			if event.Scope.Valid() {
+				sendEvent(ctx, events, event)
+			}
+			if yielded && !read.eof {
+				if !read.ready {
+					time.Sleep(noFramePoll)
+				}
+				continue
+			}
+			if deps.pause.consumeResumed() {
+				track.listenStart = time.Now()
 			}
 		}
 

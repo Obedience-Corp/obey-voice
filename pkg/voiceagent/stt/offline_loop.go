@@ -38,6 +38,7 @@ type offlineLoopDeps struct {
 	seg        segmenter
 	policy     endpoint.Policy
 	transcribe transcribeFunc
+	pause      *pauseController
 }
 
 // runOfflineLoop drives utterance-final STT over the typed frame contract and
@@ -48,6 +49,9 @@ type offlineLoopDeps struct {
 // iterations where the source has no frame ready — so the start timeout and
 // the utterance cap are enforced even when a live source stalls mid-utterance.
 func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Event) {
+	if deps.pause != nil {
+		defer deps.pause.stop()
+	}
 	emitPhase := newPhaseEmitter(ctx, events)
 
 	deps.seg.Reset()
@@ -130,6 +134,22 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 				if !emitPhase("hearing") {
 					return
 				}
+			}
+		}
+
+		if deps.pause != nil {
+			yielded, _, event := deps.pause.boundary(track.detected, deps.seg.HasSegments(), false)
+			if event.Scope.Valid() {
+				sendEvent(ctx, events, event)
+			}
+			if yielded && !read.eof {
+				if !read.ready {
+					time.Sleep(noFramePoll)
+				}
+				continue
+			}
+			if deps.pause.consumeResumed() {
+				track.listenStart = time.Now()
 			}
 		}
 

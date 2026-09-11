@@ -14,30 +14,65 @@ import (
 // Obey delegation ID, so conversation compaction cannot change its identity.
 type Delivery struct{ Ticket, SourceRef, Brief string }
 
+// TerminalOutcome is the immutable runtime observation of a terminal worker.
+// It is deliberately independent of a provider or turn. Task is the original
+// submitted task, retained so provider replacement cannot change its identity.
+type TerminalOutcome struct {
+	Ticket    string
+	SourceRef string
+	Task      string
+	State     string
+	Brief     string
+	Err       string
+	Started   time.Time
+	Ended     time.Time
+	Elapsed   time.Duration
+	// Termination describes uncertainty when a local stop cannot prove the
+	// remote worker ended (for example, "unknown" or "confirmed").
+	Termination string
+}
+
+// TerminalObserver receives a frozen terminal outcome. Runtime invokes it
+// after releasing its state lock and at most once for each job.
+type TerminalObserver func(TerminalOutcome)
+
+// ConversationObserver transfers admission and terminal ownership to the
+// host conversation authority. Callbacks run outside Runtime's mutex.
+type ConversationObserver struct {
+	Admitted func(ticket, task string) error
+	Started  func(ticket string)
+	Finished func(TerminalOutcome) error
+}
+
 type job struct {
 	deadline     time.Time
 	ticket       string
+	task         string
+	started      time.Time
 	snapshot     Snapshot
 	cancelReason string
 	done         bool
 	err          string
+	observed     bool
 }
 
 // Runtime isolates worker waiting from individual voice turns. The host owns
 // Close; it must not pass a turn or speech context as the lifetime context.
 // Only one unacknowledged job is admitted, bounding both work and delivery.
 type Runtime struct {
-	client    Client
-	summarize Summarizer
-	timeout   time.Duration
-	ctx       context.Context
-	stop      context.CancelFunc
-	mu        sync.Mutex
-	job       *job
-	pending   *Delivery
-	closed    bool
-	ready     chan struct{}
-	wg        sync.WaitGroup
+	client       Client
+	summarize    Summarizer
+	timeout      time.Duration
+	ctx          context.Context
+	stop         context.CancelFunc
+	mu           sync.Mutex
+	job          *job
+	pending      *Delivery
+	closed       bool
+	ready        chan struct{}
+	wg           sync.WaitGroup
+	observer     TerminalObserver
+	conversation *ConversationObserver
 }
 
 // New verifies the complete backend before the model can see delegation tools.
@@ -57,6 +92,18 @@ func New(ctx context.Context, client Client, timeout time.Duration, summarize Su
 	return &Runtime{client: client, summarize: summarize, timeout: timeout, ctx: lifetime, stop: stop, ready: make(chan struct{}, 1)}, nil
 }
 
+// AttachConversation enables host-owned admission and terminal publication.
+// Legacy Pending/Ack projection is suppressed while attached.
+func (r *Runtime) AttachConversation(observer ConversationObserver) error {
+	if observer.Admitted == nil || observer.Finished == nil {
+		return errors.New("conversation observer requires admission and finished callbacks")
+	}
+	r.mu.Lock()
+	r.conversation = &observer
+	r.mu.Unlock()
+	return nil
+}
+
 // Start queues dispatch and returns immediately. A ticket acknowledges the
 // local queue only; it never claims that Obey has admitted a child yet.
 func (r *Runtime) Start(task string) (string, error) {
@@ -65,19 +112,84 @@ func (r *Runtime) Start(task string) (string, error) {
 		return "", fmt.Errorf("task must contain between 1 and %d bytes", MaxTaskBytes)
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.closed {
+		r.mu.Unlock()
 		return "", errors.New("delegation session is closed")
 	}
 	if r.job != nil {
+		r.mu.Unlock()
 		return "", errors.New("a background task is already running or awaiting delivery")
 	}
 	ticket := fmt.Sprintf("voice-%x", randomID())
-	j := &job{ticket: ticket, deadline: time.Now().Add(r.timeout)}
+	conversation := r.conversation
+	if conversation != nil {
+		capability, ok := r.client.(CapabilityProvider)
+		if !ok {
+			r.mu.Unlock()
+			return "", errors.New("managed delegation disabled: client has no verified execution capability")
+		}
+		if verified := capability.ExecutionCapability(); !verified.Local {
+			reason := verified.Reason
+			if reason == "" {
+				reason = "client did not verify local execution"
+			}
+			r.mu.Unlock()
+			return "", fmt.Errorf("managed delegation disabled: %s", reason)
+		}
+	}
+	j := &job{ticket: ticket, task: task, deadline: time.Now().Add(r.timeout)}
 	r.job = j
+	r.mu.Unlock()
+	admitted := conversation == nil
+	if conversation != nil {
+		if err := conversation.Admitted(ticket, task); err != nil {
+			r.mu.Lock()
+			if r.job == j {
+				r.job = nil
+			}
+			r.mu.Unlock()
+			return "", err
+		}
+		admitted = true
+	}
+	r.mu.Lock()
+	if r.job != j || r.closed {
+		if r.job == j {
+			r.job = nil
+		}
+		r.mu.Unlock()
+		if admitted {
+			r.finishLocal(j, "interrupted", "Session closed during admission; remote execution is unknown.", "session closed during admission", "unknown")
+		}
+		return "", errors.New("delegation session closed during admission")
+	}
 	r.wg.Add(1)
 	go r.run(j, Request{Task: task + workerInstruction, Key: ticket})
+	r.mu.Unlock()
+	if conversation != nil && conversation.Started != nil {
+		conversation.Started(ticket)
+	}
 	return ticket, nil
+}
+
+// SetTerminalObserver attaches the conversation's work authority callback.
+// The callback is never invoked while Runtime's mutex is held. Replacing the
+// callback is safe before a later job is started; a job's terminal outcome is
+// emitted only once.
+func (r *Runtime) SetTerminalObserver(observer TerminalObserver) {
+	r.mu.Lock()
+	r.observer = observer
+	r.mu.Unlock()
+}
+
+// Task returns the original task for the currently owned job, if any.
+func (r *Runtime) Task() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.job == nil {
+		return ""
+	}
+	return r.job.task
 }
 
 func randomID() [16]byte {
@@ -145,7 +257,7 @@ func (r *Runtime) Close() error {
 	r.wg.Wait()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.job != nil && r.job.err != "" {
+	if r.job != nil && r.job.err != "" && r.job.snapshot.State != "interrupted" {
 		return fmt.Errorf("%s (ticket %s)", r.job.err, r.job.ticket)
 	}
 	return nil
@@ -153,6 +265,9 @@ func (r *Runtime) Close() error {
 
 func (r *Runtime) run(j *job, req Request) {
 	defer r.wg.Done()
+	r.mu.Lock()
+	j.started = time.Now()
+	r.mu.Unlock()
 	// Admission is allowed to finish independently of barge-in and shutdown so
 	// its returned durable ID can always be used for an explicit cancel.
 	var snapshot Snapshot
@@ -160,15 +275,22 @@ func (r *Runtime) run(j *job, req Request) {
 	// The daemon may continue provisioning after an RPC disconnect. Reuse the
 	// same idempotency key on every retry so uncertainty cannot spawn duplicates.
 	for attempt := 0; attempt < 3; attempt++ {
-		startCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		startCtx, cancel := context.WithTimeout(r.ctx, 45*time.Second)
 		snapshot, err = r.client.Start(startCtx, req)
 		cancel()
 		if err == nil {
 			break
 		}
+		if r.ctx.Err() != nil {
+			break
+		}
 	}
 	if err != nil {
-		r.finishError(j, "Obey admission could not be confirmed. Check Obey before retrying this task.")
+		if r.ctx.Err() != nil {
+			r.finishLocal(j, "interrupted", "Session stopped before admission was confirmed; remote execution is unknown.", "admission status unknown", "unknown")
+		} else {
+			r.finishError(j, "Obey admission could not be confirmed. Check Obey before retrying this task.")
+		}
 		return
 	}
 	r.update(j, snapshot)
@@ -196,6 +318,7 @@ func (r *Runtime) run(j *job, req Request) {
 			// Acceptance of cancel is not proof of terminal cancellation. A normal
 			// session keeps awaiting proof; shutdown returns the truthful observation.
 			if r.ctx.Err() != nil && !snapshot.Terminal() {
+				r.finishLocal(j, "interrupted", "Cancellation was requested, but remote termination was not confirmed.", "remote worker may still be running", "unknown")
 				return
 			}
 			r.mu.Lock()
@@ -207,6 +330,7 @@ func (r *Runtime) run(j *job, req Request) {
 			break
 		}
 		if cancellationSent && r.ctx.Err() != nil {
+			r.finishLocal(j, "interrupted", "Cancellation was requested, but remote termination was not confirmed.", "remote worker may still be running", "unknown")
 			return
 		}
 		// A short RPC deadline makes explicit cancel responsive while Await's
@@ -237,6 +361,14 @@ func (r *Runtime) run(j *job, req Request) {
 			timer.Stop()
 		}
 	}
+	if r.ctx.Err() != nil {
+		brief := snapshot.Text
+		if brief == "" {
+			brief = "The task ended with state: " + snapshot.State + "."
+		}
+		r.finishLocal(j, snapshot.State, brief, "", "confirmed")
+		return
+	}
 	briefCtx, stop := context.WithTimeout(r.ctx, 30*time.Second)
 	brief, err := makeBrief(briefCtx, snapshot, r.summarize)
 	stop()
@@ -245,10 +377,27 @@ func (r *Runtime) run(j *job, req Request) {
 		return
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	j.done = true
-	r.pending = &Delivery{Ticket: j.ticket, SourceRef: snapshot.ID, Brief: brief}
+	if r.conversation == nil {
+		r.pending = &Delivery{Ticket: j.ticket, SourceRef: snapshot.ID, Brief: brief}
+	}
+	outcome, observer := r.terminalLocked(j, brief, "")
+	outcome.Termination = "confirmed"
+	conversation := r.conversation
 	r.signalReady()
+	r.mu.Unlock()
+	// Do not call external work authority code while holding Runtime state.
+	if observer != nil {
+		observer(outcome)
+	}
+	if conversation != nil {
+		_ = conversation.Finished(outcome)
+		r.mu.Lock()
+		if r.job == j {
+			r.job = nil
+		}
+		r.mu.Unlock()
+	}
 }
 func (r *Runtime) update(j *job, s Snapshot) { r.mu.Lock(); j.snapshot = s; r.mu.Unlock() }
 func (r *Runtime) finishError(j *job, message string) {
@@ -264,11 +413,63 @@ func (r *Runtime) finishError(j *job, message string) {
 		}
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	snapshot = j.snapshot
+	r.mu.Unlock()
+	state, termination := snapshot.State, "unknown"
+	if state == "" {
+		state = "failed"
+	}
+	if snapshot.Terminal() {
+		termination = "confirmed"
+	} else {
+		state = "cleanup_failed"
+	}
+	r.finishLocal(j, state, message, message, termination)
+}
+
+func (r *Runtime) finishLocal(j *job, state, brief, errText, termination string) {
+	r.mu.Lock()
 	j.done = true
-	j.err = message
-	r.pending = &Delivery{Ticket: j.ticket, SourceRef: j.snapshot.ID, Brief: message}
+	j.err = errText
+	j.snapshot.State = state
+	if r.conversation == nil {
+		r.pending = &Delivery{Ticket: j.ticket, SourceRef: j.snapshot.ID, Brief: brief}
+	}
+	outcome, observer := r.terminalLocked(j, brief, errText)
+	outcome.Termination = termination
+	conversation := r.conversation
 	r.signalReady()
+	r.mu.Unlock()
+	// The observer belongs to the host/work authority and may perform I/O.
+	if observer != nil {
+		observer(outcome)
+	}
+	if conversation != nil {
+		_ = conversation.Finished(outcome)
+		r.mu.Lock()
+		if r.job == j {
+			r.job = nil
+		}
+		r.mu.Unlock()
+	}
+}
+
+// terminalLocked freezes the terminal observation and consumes the observer
+// slot. The returned callback must run after the mutex is released.
+func (r *Runtime) terminalLocked(j *job, brief, errText string) (TerminalOutcome, TerminalObserver) {
+	ended := time.Now()
+	started := j.started
+	var elapsed time.Duration
+	if !started.IsZero() {
+		elapsed = ended.Sub(started)
+	}
+	outcome := TerminalOutcome{Ticket: j.ticket, SourceRef: j.snapshot.ID, Task: j.task, State: j.snapshot.State, Brief: brief, Err: errText, Started: started, Ended: ended, Elapsed: elapsed}
+	if r.observer == nil || j.observed {
+		return outcome, nil
+	}
+	observer := r.observer
+	j.observed = true
+	return outcome, observer
 }
 
 // Ready wakes a host-owned serialized turn driver. It never starts a turn.
