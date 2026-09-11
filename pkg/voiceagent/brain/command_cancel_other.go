@@ -2,8 +2,13 @@
 
 package brain
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+)
 
 // configureCommandCancellation keeps os/exec's default single-process
 // cancellation on platforms without POSIX process groups.
 func configureCommandCancellation(*exec.Cmd) {}
+
+func commandSignal(*os.ProcessState) string { return "" }

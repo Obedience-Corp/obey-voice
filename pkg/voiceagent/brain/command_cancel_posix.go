@@ -27,3 +27,10 @@ func configureCommandCancellation(cmd *exec.Cmd) {
 		return err
 	}
 }
+
+func commandSignal(state *os.ProcessState) string {
+	if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		return status.Signal().String()
+	}
+	return ""
+}

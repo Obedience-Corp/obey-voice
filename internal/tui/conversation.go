@@ -1107,6 +1107,15 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		m.appendActivity("info", e.Message, 0)
 		m.appendTranscript(dimStyle.Render("  " + e.Message))
 
+	case events.SpeechDiagnostic:
+		// Diagnostics are routine Activity records. Only an applicable action
+		// is rendered into the transcript, and it is emitted once per actual
+		// provider configuration by the pipeline's bounded advice window.
+		m.appendActivity("voice", e.Message, 0)
+		if e.ActionCode != "" && e.Message != "" {
+			m.appendTranscript(dimStyle.Render("  " + e.Message))
+		}
+
 	case events.VoiceGateStripped:
 		// Voice-only filter: the raw text is already in the transcript above;
 		// this entry records that it was not spoken.
@@ -1130,20 +1139,41 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			m.jobToolFinished(e)
 			break
 		}
-		msg := "tool " + e.Name + " done"
-		if e.Err != "" {
-			msg = "tool " + e.Name + " failed: " + e.Err
+		msg := "tool " + toolOutcomeLabel(e.OutcomeStatus())
+		if e.Name != "" {
+			msg = "tool " + e.Name + " " + toolOutcomeLabel(e.OutcomeStatus())
+		}
+		if preview := e.ResultPreview(); preview != "" {
+			msg += " → " + preview
+		}
+		if reason := e.ResultReason(); reason != "" {
+			msg += ": " + reason
+		}
+		if e.Outcome != nil {
+			if e.Outcome.ExitCode != nil {
+				msg += fmt.Sprintf(" (exit code %d)", *e.Outcome.ExitCode)
+			}
+			if e.Outcome.Signal != "" {
+				msg += " (signal " + e.Outcome.Signal + ")"
+			}
+		}
+		if elapsed := e.ResultElapsed(); elapsed > 0 {
+			msg += " in " + elapsed.String()
+		}
+		if status := e.OutcomeStatus(); status == events.ToolOutcomeFailed || status == events.ToolOutcomeTimedOut || status == events.ToolOutcomeCanceled {
 			m.setVoiceMode(anim.ModeError)
 			m.setStatus("✗ "+msg, true)
-			m.appendTranscript(dimStyle.Render("  ✗ " + msg))
 		} else {
-			if e.Preview != "" {
-				msg += " → " + e.Preview
-			}
 			m.setVoiceMode(anim.ModeThinking)
 			m.setStatus(m.agentName+" thinking", false)
-			m.appendTranscript(dimStyle.Render("  ✓ " + msg))
 		}
+		prefix := "✓ "
+		if e.OutcomeStatus() == events.ToolOutcomeFailed || e.OutcomeStatus() == events.ToolOutcomeTimedOut || e.OutcomeStatus() == events.ToolOutcomeCanceled {
+			prefix = "✗ "
+		} else if e.OutcomeStatus() == events.ToolOutcomeUnknown {
+			prefix = "? "
+		}
+		m.appendTranscript(dimStyle.Render("  " + prefix + msg))
 		m.appendActivity("tool", msg, 0)
 
 	case events.JobQueued:

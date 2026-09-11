@@ -1,7 +1,6 @@
 package workfold
 
 import (
-	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -15,7 +14,11 @@ func start(jobID, id, kind string) events.ToolCallStarted {
 }
 
 func finish(jobID, id, kind, errText string, elapsed time.Duration) events.ToolCallFinished {
-	return events.ToolCallFinished{ID: id, JobID: jobID, Name: kind, Kind: kind, Err: errText, Elapsed: elapsed}
+	e := events.ToolCallFinished{ID: id, JobID: jobID, Name: kind, Kind: kind, Err: errText, Elapsed: elapsed}
+	if errText == "" {
+		e.Outcome = &events.ToolOutcome{Status: events.ToolOutcomeSucceeded, Elapsed: elapsed}
+	}
+	return e
 }
 
 func TestLiveBrainCallsAreIgnored(t *testing.T) {
@@ -76,7 +79,7 @@ func TestFoldingRuns(t *testing.T) {
 				t.Fatalf("rows = %+v, want %+v", got, tc.want)
 			}
 			for i := range got {
-				if got[i].Kind != tc.want[i].Kind || got[i].Count != tc.want[i].Count {
+				if got[i].Kind != tc.want[i].Kind || got[i].Started != tc.want[i].Count {
 					t.Errorf("row %d = %+v, want %+v", i, got[i], tc.want[i])
 				}
 			}
@@ -102,8 +105,8 @@ func TestKindChangeReturnsTheClosedRow(t *testing.T) {
 	if closed.Kind != "read" || closed.Count != 2 || closed.Elapsed != 20*time.Millisecond {
 		t.Fatalf("closed row = %+v, want read/2/20ms", *closed)
 	}
-	if closed.String() != "read 2 files" {
-		t.Errorf("closed.String() = %q, want %q", closed.String(), "read 2 files")
+	if closed.String() != "read 2 files (2 succeeded)" {
+		t.Errorf("closed.String() = %q, want %q", closed.String(), "read 2 files (2 succeeded)")
 	}
 }
 
@@ -149,29 +152,20 @@ func TestSummaryPhrasing(t *testing.T) {
 		{name: "route falls back", rows: []Row{{Kind: "route", Count: 1}}, want: "1 tool call"},
 		{name: "unknown kind falls back", rows: []Row{{Kind: "lsp", Count: 4}}, want: "4 tool calls"},
 		{
-			name: "failures are appended",
-			rows: []Row{{Kind: "execute", Count: 2, Failed: 1}},
-			want: "ran 2 commands (1 failed)",
+			name: "terminal outcomes are explicit",
+			rows: []Row{{Kind: "execute", Count: 2, Started: 2, Succeeded: 1, Failed: 1}},
+			want: "ran 2 commands (1 succeeded, 1 failed)",
 		},
 		{
 			name: "rows join in order",
-			rows: []Row{{Kind: "read", Count: 11}, {Kind: "execute", Count: 2, Failed: 1}},
-			want: "read 11 files · ran 2 commands (1 failed)",
+			rows: []Row{{Kind: "read", Count: 11, Started: 11, Succeeded: 11}, {Kind: "execute", Count: 2, Started: 2, Failed: 1, Unknown: 1}},
+			want: "read 11 files (11 succeeded) · ran 2 commands (1 failed, 1 unknown)",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tr := New()
-			for i, row := range tc.rows {
-				for c := 0; c < row.Count; c++ {
-					tr.Add(start("job-1", fmt.Sprintf("r%d-%d", i, c), row.Kind))
-				}
-				for c := 0; c < row.Failed; c++ {
-					tr.Finish(finish("job-1", fmt.Sprintf("r%d-%d", i, c), row.Kind, "error: no", 0))
-				}
-			}
-			if got := tr.Summary("job-1"); got != tc.want {
+			if got := RowsSummary(tc.rows); got != tc.want {
 				t.Fatalf("Summary = %q, want %q", got, tc.want)
 			}
 		})
@@ -184,10 +178,10 @@ func TestJobsAreIsolated(t *testing.T) {
 	tr.Add(start("job-2", "b1", "execute"))
 	tr.Add(start("job-1", "a2", "read"))
 
-	if got := tr.Summary("job-1"); got != "read 2 files" {
-		t.Errorf("job-1 summary = %q, want read 2 files", got)
+	if got := tr.Summary("job-1"); got != "2 files running" {
+		t.Errorf("job-1 summary = %q, want 2 files running", got)
 	}
-	if got := tr.Summary("job-2"); got != "ran 1 command" {
+	if got := tr.Summary("job-2"); got != "1 command running" {
 		t.Errorf("job-2 summary = %q, want ran 1 command", got)
 	}
 }
@@ -231,5 +225,72 @@ func TestConcurrentJobsDoNotRace(t *testing.T) {
 		if len(rows) != 1 || rows[0].Count != 200 {
 			t.Fatalf("%s rows = %+v, want one read row of 200", jobID, rows)
 		}
+	}
+}
+
+func TestTerminalAccountingDeduplicatesAndReconcilesUnknown(t *testing.T) {
+	tr := New()
+	tr.Add(start("job-1", "same", "execute"))
+	tr.Add(start("job-1", "same", "execute")) // duplicate start
+	tr.Finish(events.ToolCallFinished{JobID: "job-1", ID: "same", Kind: "execute", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	tr.Finish(events.ToolCallFinished{JobID: "job-1", ID: "same", Kind: "execute", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	tr.Add(start("job-1", "left-open", "execute"))
+	rows := tr.Close("job-1")
+	if len(rows) != 1 || rows[0].Count != 2 || rows[0].Started != 2 || rows[0].Succeeded != 1 || rows[0].Unknown != 1 {
+		t.Fatalf("rows = %+v, want two calls, one success and one reconciled unknown", rows)
+	}
+	if got := rows[0].Active; got != 0 {
+		t.Errorf("active = %d after close, want 0", got)
+	}
+}
+
+func TestUnmatchedCallIDDoesNotCloseAnotherCall(t *testing.T) {
+	tr := New()
+	tr.Add(start("job-1", "known", "execute"))
+	tr.Finish(events.ToolCallFinished{JobID: "job-1", ID: "wrong", Kind: "execute", Err: "wrong call"})
+	rows := tr.Close("job-1")
+	if len(rows) != 1 || rows[0].Failed != 0 || rows[0].Unknown != 1 {
+		t.Fatalf("rows = %+v, want unmatched finish left unknown", rows)
+	}
+}
+
+func TestSummaryDistinguishesActiveAndUnknown(t *testing.T) {
+	tr := New()
+	tr.Add(start("job-1", "active", "execute"))
+	if got := tr.Summary("job-1"); got != "1 command running" {
+		t.Fatalf("start-only summary = %q, want active wording", got)
+	}
+	tr.Add(start("job-1", "done", "execute"))
+	tr.Finish(finish("job-1", "done", "execute", "", 0))
+	if got := tr.Summary("job-1"); got != "ran 1 command (1 succeeded, 1 active)" {
+		t.Fatalf("partial summary = %q, want success plus active", got)
+	}
+	rows := tr.Close("job-1")
+	if got := RowsSummary(rows); got != "ran 2 commands (1 succeeded, 1 unknown)" {
+		t.Fatalf("close summary = %q, want unknown reconciliation", got)
+	}
+}
+
+func TestSameRawCallIDIsScopedByJob(t *testing.T) {
+	tr := New()
+	tr.Add(start("job-1", "call", "read"))
+	tr.Add(start("job-2", "call", "read"))
+	tr.Finish(finish("job-1", "call", "read", "", 0))
+	tr.Finish(events.ToolCallFinished{JobID: "job-2", ID: "call", Kind: "read", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeFailed}})
+	if got := tr.Rows("job-1")[0].Succeeded; got != 1 {
+		t.Errorf("job-1 succeeded = %d, want 1", got)
+	}
+	if got := tr.Rows("job-2")[0].Failed; got != 1 {
+		t.Errorf("job-2 failed = %d, want 1", got)
+	}
+}
+
+func TestFoldUsesTypedFactsWhenLegacyFieldsConflict(t *testing.T) {
+	tr := New()
+	tr.Add(start("j", "c", "execute"))
+	tr.Finish(events.ToolCallFinished{JobID: "j", ID: "c", Kind: "execute", Err: "old error", Preview: "old preview", Elapsed: time.Second, Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded, OutputPreview: "observed", Elapsed: 25 * time.Millisecond}})
+	rows := tr.Rows("j")
+	if len(rows) != 1 || rows[0].Last != "observed" || rows[0].Elapsed != 25*time.Millisecond || rows[0].Succeeded != 1 || rows[0].Failed != 0 {
+		t.Fatalf("conflicting legacy fields changed folded facts: %+v", rows)
 	}
 }

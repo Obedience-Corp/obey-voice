@@ -63,10 +63,21 @@ func (m *conversationModel) jobAborted(e events.JobAborted) {
 // forgets the job before the chip is recomputed for whatever is left.
 func (m *conversationModel) jobEnded(id, detail, suffix string, elapsed time.Duration) {
 	m.appendActivity("job", detail, elapsed)
-	// Seal the line before the job is forgotten: a job that ran no tools has
-	// nothing but its task to name it.
-	m.renderJobItem(id, suffix)
-	m.workTracker().Close(id)
+	// Reconcile missing end hooks before sealing the line. Unknown calls must
+	// remain visible and cannot be rendered as successful work.
+	rows := m.workTracker().Close(id)
+	unknown := 0
+	for _, row := range rows {
+		unknown += row.Unknown
+	}
+	if unknown > 0 {
+		m.appendActivity("job", fmt.Sprintf("%d tool outcome(s) unknown", unknown), 0)
+	}
+	label := workfold.RowsSummary(rows)
+	if label == "" {
+		label = m.jobLabel(id)
+	}
+	m.renderJobItemLabel(id, label, suffix)
 	delete(m.jobItems, id)
 	m.forgetJob(id)
 	m.refreshJobChip()
@@ -80,16 +91,50 @@ func (m *conversationModel) jobToolStarted(e events.ToolCallStarted) {
 }
 
 func (m *conversationModel) jobToolFinished(e events.ToolCallFinished) {
+	if _, ok := m.jobs[e.JobID]; !ok {
+		return
+	}
 	m.workTracker().Finish(e)
 	m.noteJobTool(e.JobID, e.Name)
-	detail := e.Name + " done"
-	if e.Err != "" {
-		detail = e.Name + " failed: " + e.Err
-	} else if e.Preview != "" {
-		detail += " → " + e.Preview
-	}
-	m.appendActivity("job", detail, e.Elapsed)
+	m.appendActivity("job", toolOutcomeDetail(e), e.ResultElapsed())
 	m.renderJobItem(e.JobID, "")
+}
+
+func toolOutcomeLabel(status events.ToolOutcomeStatus) string {
+	switch status {
+	case events.ToolOutcomeSucceeded:
+		return "completed"
+	case events.ToolOutcomeFailed:
+		return "failed"
+	case events.ToolOutcomeTimedOut:
+		return "timed out"
+	case events.ToolOutcomeCanceled:
+		return "canceled"
+	default:
+		return "outcome unknown"
+	}
+}
+
+func toolOutcomeDetail(e events.ToolCallFinished) string {
+	detail := e.Name + " " + toolOutcomeLabel(e.OutcomeStatus())
+	if preview := e.ResultPreview(); preview != "" {
+		detail += " → " + preview
+	}
+	if reason := e.ResultReason(); reason != "" {
+		detail += ": " + reason
+	}
+	if e.Outcome != nil {
+		if e.Outcome.ExitCode != nil {
+			detail += fmt.Sprintf(" (exit code %d)", *e.Outcome.ExitCode)
+		}
+		if e.Outcome.Signal != "" {
+			detail += " (signal " + e.Outcome.Signal + ")"
+		}
+	}
+	if elapsed := e.ResultElapsed(); elapsed > 0 {
+		detail += " in " + elapsed.String()
+	}
+	return detail
 }
 
 // trackJob returns the job's view, creating it on first sight so a stream
@@ -197,7 +242,14 @@ func (m *conversationModel) renderJobItem(id, suffix string) {
 	if id == "" {
 		return
 	}
-	line := dimStyle.Render("  ⚙ " + id + " · " + m.jobLabel(id) + suffix)
+	m.renderJobItemLabel(id, m.jobLabel(id), suffix)
+}
+
+func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
+	if id == "" {
+		return
+	}
+	line := dimStyle.Render("  ⚙ " + id + " · " + label + suffix)
 	idx, ok := m.jobItems[id]
 	if !ok || idx >= len(m.items) {
 		if m.jobItems == nil {

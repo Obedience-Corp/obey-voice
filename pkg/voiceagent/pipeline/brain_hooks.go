@@ -68,6 +68,7 @@ func toolFinishedEvent(jobID string, res brain.ToolResult) events.ToolCallFinish
 		Preview: res.Preview,
 		Err:     res.Err,
 		Elapsed: res.Elapsed,
+		Outcome: res.Outcome,
 	}
 }
 

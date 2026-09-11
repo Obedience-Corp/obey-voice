@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -114,11 +115,12 @@ func TestNewUsesInjectedWorker(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("JobFinished never fired")
 	}
-	if worker.calls == 0 {
+	calls, opts := worker.snapshot()
+	if calls == 0 {
 		t.Fatal("injected worker ThinkFull was not called")
 	}
-	if !worker.lastOpts.ToolsEnabled || worker.lastOpts.RouterToolsPolicy != brain.RouterToolsLegacy {
-		t.Fatalf("worker opts = %+v, want tools on and legacy", worker.lastOpts)
+	if !opts.ToolsEnabled || opts.RouterToolsPolicy != brain.RouterToolsLegacy {
+		t.Fatalf("worker opts = %+v, want tools on and legacy", opts)
 	}
 }
 
@@ -142,7 +144,8 @@ func TestNewIgnoresWorkerErrWhenWorkerIsSet(t *testing.T) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if worker.calls > 0 {
+		calls, _ := worker.snapshot()
+		if calls > 0 {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -247,6 +250,7 @@ func TestNilLogfIsSafe(t *testing.T) {
 var errInjectedWorker = errors.New("stale worker construction error")
 
 type recordingInjectedWorker struct {
+	mu       sync.Mutex
 	calls    int
 	lastOpts brain.StreamOptions
 	reply    string
@@ -257,9 +261,17 @@ func (w *recordingInjectedWorker) ThinkStream(ctx context.Context, input string,
 }
 
 func (w *recordingInjectedWorker) ThinkFull(_ context.Context, _ string, opts brain.StreamOptions) (string, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.calls++
 	w.lastOpts = opts
 	return w.reply, nil
+}
+
+func (w *recordingInjectedWorker) snapshot() (int, brain.StreamOptions) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.calls, w.lastOpts
 }
 
 func (*recordingInjectedWorker) ClearHistory() {}

@@ -34,7 +34,7 @@ func (w *toolWorker) ThinkFull(ctx context.Context, _ string, opts brain.StreamO
 			opts.OnToolStart(call)
 		}
 		if opts.OnToolEnd != nil {
-			opts.OnToolEnd(brain.ToolResult{ToolCall: call, Elapsed: 10 * time.Millisecond})
+			opts.OnToolEnd(successfulToolResult(call, 10*time.Millisecond))
 		}
 	}
 	w.once.Do(func() { close(w.ran) })
@@ -94,7 +94,7 @@ func TestJobStatusSpeaksTheFoldSummary(t *testing.T) {
 	if !strings.Contains(spoken, "Still working on audit the config.") {
 		t.Fatalf("spoken = %q, want the task", spoken)
 	}
-	if !strings.Contains(spoken, "So far: read 2 files, ran 1 command.") {
+	if !strings.Contains(spoken, "So far: read 2 files (2 succeeded), ran 1 command (1 succeeded).") {
 		t.Fatalf("spoken = %q, want the folded summary", spoken)
 	}
 }
@@ -150,8 +150,8 @@ func TestWorkNarrationSpeaksOncePerClosedRow(t *testing.T) {
 		{
 			name:      "milestones speaks one line per closed row",
 			narration: "milestones",
-			midJob:    []string{"Read 2 files."},
-			want:      []string{"Read 2 files.", "Ran 1 command."},
+			midJob:    []string{"Read 2 files (2 succeeded)."},
+			want:      []string{"Read 2 files (2 succeeded).", "Ran 1 command (1 succeeded)."},
 		},
 	}
 
@@ -174,7 +174,7 @@ func TestWorkNarrationSpeaksOncePerClosedRow(t *testing.T) {
 			start, end := agency.foldingToolHooks("job-1")
 			for _, call := range calls {
 				start(call)
-				end(brain.ToolResult{ToolCall: call, Elapsed: 5 * time.Millisecond})
+				end(successfulToolResult(call, 5*time.Millisecond))
 			}
 			if got := pendingTexts(agency); !slices.Equal(got, tc.midJob) {
 				t.Fatalf("mid-job pending = %v, want %v: only the closed row speaks", got, tc.midJob)
@@ -209,6 +209,22 @@ func TestAbortSpeaksNothingUnderMilestones(t *testing.T) {
 	}
 }
 
+func TestOpaqueCompletionIsNarratedAsUnknown(t *testing.T) {
+	p := &Pipeline{Events: events.NewBus()}
+	jobs := job.NewTable(context.Background())
+	agency := NewAgency(p, jobs, nil, &config.Config{VoiceWorkNarration: "milestones"}, nil)
+	agency.Wire()
+	p.incActiveTurn()
+	start, end := agency.foldingToolHooks("job-opaque")
+	call := brain.ToolCall{ID: "opaque-1", Name: "run_command", Kind: brain.KindExecute}
+	start(call)
+	end(brain.ToolResult{ToolCall: call})
+	agency.closeFold("job-opaque", true)
+	if got := pendingTexts(agency); !slices.Equal(got, []string{"Ran 1 command (1 unknown)."}) {
+		t.Fatalf("pending = %v, want unknown outcome", got)
+	}
+}
+
 func pendingTexts(a *Agency) []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -217,4 +233,12 @@ func pendingTexts(a *Agency) []string {
 		texts = append(texts, d.Text)
 	}
 	return texts
+}
+
+func successfulToolResult(call brain.ToolCall, elapsed time.Duration) brain.ToolResult {
+	return brain.ToolResult{
+		ToolCall: call,
+		Elapsed:  elapsed,
+		Outcome:  &events.ToolOutcome{Status: events.ToolOutcomeSucceeded, Elapsed: elapsed},
+	}
 }

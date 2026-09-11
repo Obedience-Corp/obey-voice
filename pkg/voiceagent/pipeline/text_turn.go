@@ -155,13 +155,33 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.emit(events.GeneratingVoice{Sentence: speakable})
 
 		synthStarted := time.Now()
-		stream, usedFallback, err := p.synthUtterance(ctx, speakable, nil)
+		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil)
 		if err != nil {
 			// Voice is best-effort in text mode: the text response still
 			// completed, so the turn is completed (degraded), not failed.
+			metrics.degraded = true
+			if observation.synthStarted.IsZero() {
+				observation.synthStarted = synthStarted
+			}
+			observation.queuedAt = synthStarted
+			observation.textReady = synthStarted
+			if observation.stream == nil {
+				observation.stream = stream
+			}
+			failure := synthesisFailureEvent(speakable, 0, observation, err)
+			failure.fallback = usedFallback
+			metrics.recordSegment(*failure)
 			p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
 			p.completeTextTurn(turn, metrics, response)
 			return nil
+		}
+		if observation.synthStarted.IsZero() {
+			observation.synthStarted = synthStarted
+		}
+		observation.queuedAt = synthStarted
+		observation.textReady = synthStarted
+		if observation.stream == nil {
+			observation.stream = stream
 		}
 		if p.OutputMuted() {
 			// Drop the stream so the synth producer is not left blocked on a
@@ -174,7 +194,13 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		playback, err := p.Player.PlayStream(ctx, stream)
 		if err != nil {
 			if !usedFallback {
-				playback, usedFallback, err = p.playFallback(ctx, speakable, err, nil)
+				var fallbackObservation synthesisObservation
+				var fallbackUsed bool
+				playback, fallbackUsed, fallbackObservation, err = p.playFallbackObserved(ctx, speakable, err, nil)
+				if fallbackUsed {
+					usedFallback = true
+					observation = fallbackObservation
+				}
 			}
 			if err == nil {
 				// The fallback playback is ready; continue through the normal
@@ -182,10 +208,27 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 			} else {
 				// Engine.PlayStream owns the stream once called (even on error) and
 				// must drain it; the pipeline does not discard here.
+				metrics.degraded = true
+				if observation.synthStarted.IsZero() {
+					observation.synthStarted = synthStarted
+				}
+				observation.queuedAt = synthStarted
+				observation.textReady = synthStarted
+				failure := synthesisFailureEvent(speakable, 0, observation, err)
+				failure.fallback = usedFallback
+				metrics.recordSegment(*failure)
 				p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", err)})
 				p.completeTextTurn(turn, metrics, response)
 				return nil
 			}
+		}
+		if observation.synthStarted.IsZero() {
+			observation.synthStarted = synthStarted
+		}
+		observation.queuedAt = synthStarted
+		observation.textReady = synthStarted
+		if observation.stream == nil {
+			observation.stream = stream
 		}
 		// PlayStream waits for the complete sentence buffer. Output may have
 		// been muted while it was waiting, after SetOutputMuted's first Stop
@@ -198,7 +241,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 		// PlayStream returned, so the utterance is fully synthesized and
 		// buffered: everything after this point is playback, not the engine.
-		p.handlePlaybackLifecycle(speakable, usedFallback, synthStarted, time.Since(synthStarted), playback, metrics)
+		p.handlePlaybackLifecycle(speakable, usedFallback, observation, playback, metrics)
 	}
 
 	p.completeTextTurn(turn, metrics, response)

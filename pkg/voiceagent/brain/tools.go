@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
@@ -46,6 +47,10 @@ type toolSession struct {
 	onEnd   func(ToolResult)
 	// callSeq synthesizes ids per tool name for models that send none.
 	callSeq map[string]int
+	// hookIDs contains ids already exposed through the UI hooks. Provider call
+	// ids are allowed to repeat across malformed/retried tool calls, while hook
+	// ids must remain unique so folding cannot merge distinct invocations.
+	hookIDs map[string]struct{}
 }
 
 // nextCallID returns the next synthesized id for name ("read_file#2").
@@ -53,17 +58,47 @@ func (s *toolSession) nextCallID(name string) string {
 	if s.callSeq == nil {
 		s.callSeq = make(map[string]int)
 	}
-	s.callSeq[name]++
-	return fmt.Sprintf("%s#%d", name, s.callSeq[name])
+	for {
+		s.callSeq[name]++
+		candidate := fmt.Sprintf("%s#%d", name, s.callSeq[name])
+		if s.reserveHookID(candidate) {
+			return candidate
+		}
+	}
+}
+
+func (s *toolSession) reserveHookID(candidate string) bool {
+	if s.hookIDs == nil {
+		s.hookIDs = make(map[string]struct{})
+	}
+	if _, exists := s.hookIDs[candidate]; exists {
+		return false
+	}
+	s.hookIDs[candidate] = struct{}{}
+	return true
+}
+
+func (s *toolSession) uniqueProviderHookID(name, raw string) string {
+	base := strings.TrimSpace(raw)
+	if base == "" {
+		return s.nextCallID(name)
+	}
+	if s.reserveHookID(base) {
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s#%d", base, suffix)
+		if s.reserveHookID(candidate) {
+			return candidate
+		}
+	}
 }
 
 // describe builds the hook payload for one call, synthesizing an id when the
 // model did not send one.
 func (s *toolSession) describe(name, summary, id string) ToolCall {
-	if strings.TrimSpace(id) == "" {
-		id = s.nextCallID(name)
-	}
-	return ToolCall{ID: id, Name: name, Kind: KindFor(name), Summary: summary}
+	id = s.uniqueProviderHookID(name, id)
+	return ToolCall{ID: id, Name: name, Kind: KindFor(name), Summary: redactToolText(summary, 80)}
 }
 
 // tools returns every enabled tool definition for the next model request.
@@ -89,13 +124,25 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 		s.onStart(started)
 	}
 	begun := time.Now()
+	var observed *events.ToolOutcome
 	defer func() {
+		elapsed := time.Since(begun)
+		preview, errText := toolResultPreview(result), toolResultError(result)
+		if observed != nil {
+			observed.Elapsed = elapsed
+			preview = observed.OutputPreview
+			errText = ""
+			if observed.Status == events.ToolOutcomeFailed || observed.Status == events.ToolOutcomeTimedOut || observed.Status == events.ToolOutcomeCanceled {
+				errText = "error: " + observed.Reason
+			}
+		}
 		if s.onEnd != nil {
 			s.onEnd(ToolResult{
 				ToolCall: started,
-				Preview:  toolResultPreview(result),
-				Err:      toolResultError(result),
-				Elapsed:  time.Since(begun),
+				Preview:  preview,
+				Err:      errText,
+				Elapsed:  elapsed,
+				Outcome:  observed,
 			})
 		}
 	}()
@@ -106,12 +153,15 @@ func (s *toolSession) execute(ctx context.Context, workDir string, call api.Tool
 		return s.executeReadSkill(call)
 	}
 	if s.routerPolicy == RouterToolsRouteOnly && name != "route" {
+		observed = failedToolOutcome(started.Summary, fmt.Sprintf("tool %q is not available on the live router", name))
 		return fmt.Sprintf("error: tool %q is not available on the live router", name)
 	}
 	if err := s.boundary.check(workDir, call); err != nil {
+		observed = failedToolOutcome(started.Summary, err.Error())
 		return "error: " + err.Error()
 	}
-	return executeToolWithTimeout(ctx, workDir, call, s.catalog, s.commandTimeout)
+	result, observed = executeToolWithOutcome(ctx, workDir, call, s.catalog, s.commandTimeout)
+	return result
 }
 
 // toolArgSummary is a short, non-sensitive description of tool arguments.
@@ -124,10 +174,7 @@ func toolArgSummary(call api.ToolCall) string {
 		}
 	case "run_command":
 		if c, _ := args["command"].(string); c != "" {
-			if len(c) > 60 {
-				return c[:60] + "…"
-			}
-			return c
+			return redactToolText(c, 80)
 		}
 	case "web_search":
 		if q, _ := args["query"].(string); q != "" {
@@ -172,10 +219,23 @@ func toolResultPreview(result string) string {
 	if i := strings.IndexByte(result, '\n'); i >= 0 {
 		result = result[:i] + "…"
 	}
-	if len(result) > 80 {
-		return result[:80] + "…"
-	}
-	return result
+	return skills.TruncateRunes(redactToolText(result, 240), 240)
+}
+
+var sensitiveToolText = regexp.MustCompile(`(?i)\b(password|passwd|secret|token|api[_-]?key)(["']?\s*[:=]\s*|\s+)("[^"]*"|'[^']*'|[^\s,;&}]+)`)
+var toolAuthorization = regexp.MustCompile(`(?i)(authorization["']?\s*[:=]\s*["']?(?:bearer|basic)\s+)[^\s"',;}]+`)
+
+// redactToolText bounds user-visible diagnostics and removes common
+// key/value credentials. Tool output is still arbitrary provider data; this
+// is a bounded best-effort redaction, not a secret-free guarantee.
+func redactToolText(text string, maxRunes int) string {
+	text = sensitiveToolText.ReplaceAllString(text, `$1$2[redacted]`)
+	text = toolAuthorization.ReplaceAllString(text, `$1[redacted]`)
+	return skills.TruncateRunes(text, maxRunes)
+}
+
+func failedToolOutcome(input, reason string) *events.ToolOutcome {
+	return &events.ToolOutcome{Status: events.ToolOutcomeFailed, InputSummary: redactToolText(input, 80), Reason: reason}
 }
 
 func (s *toolSession) executeReadSkill(call api.ToolCall) string {
@@ -402,28 +462,33 @@ func executeTool(ctx context.Context, workDir string, call api.ToolCall, catalog
 }
 
 func executeToolWithTimeout(ctx context.Context, workDir string, call api.ToolCall, catalog []skills.Skill, commandTimeout time.Duration) string {
+	result, _ := executeToolWithOutcome(ctx, workDir, call, catalog, commandTimeout)
+	return result
+}
+
+func executeToolWithOutcome(ctx context.Context, workDir string, call api.ToolCall, catalog []skills.Skill, commandTimeout time.Duration) (string, *events.ToolOutcome) {
 	args := call.Function.Arguments.ToMap()
 
 	switch call.Function.Name {
 	case "list_files":
-		return toolListFiles(workDir, args)
+		return toolListFiles(workDir, args), nil
 	case "read_file":
-		return toolReadFile(workDir, args)
+		return toolReadFile(workDir, args), nil
 	case "write_file":
-		return toolWriteFile(workDir, args)
+		return toolWriteFile(workDir, args), nil
 	case "run_command":
-		return toolRunCommandWithTimeout(ctx, workDir, args, commandTimeout)
+		return toolRunCommandWithTimeoutOutcome(ctx, workDir, args, commandTimeout)
 	case "web_search":
-		return toolWebSearch(ctx, args)
+		return toolWebSearch(ctx, args), nil
 	case "fetch_url":
-		return toolFetchURL(ctx, args)
+		return toolFetchURL(ctx, args), nil
 	case "read_skill":
 		// Without a session, activation is not tracked (tests / legacy).
-		return toolReadSkill(catalog, args)
+		return toolReadSkill(catalog, args), nil
 	case "route":
-		return toolRoute(args)
+		return toolRoute(args), nil
 	default:
-		return fmt.Sprintf("unknown tool: %s", call.Function.Name)
+		return fmt.Sprintf("unknown tool: %s", call.Function.Name), nil
 	}
 }
 
@@ -525,44 +590,6 @@ func toolWriteFile(workDir string, args map[string]any) string {
 		return fmt.Sprintf("error: %v", err)
 	}
 	return fmt.Sprintf("wrote %d bytes to %s", len(content), path)
-}
-
-func toolRunCommandWithTimeout(ctx context.Context, workDir string, args map[string]any, timeout time.Duration) string {
-	command, _ := args["command"].(string)
-	if command == "" {
-		return "error: command is required"
-	}
-
-	timeout = clampCommandTimeout(timeout)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Dir = workDir
-	configureCommandCancellation(cmd)
-	// Bound pipe draining if a descendant escapes cancellation. On Unix the
-	// process-group cancellation handles the normal shell-and-children case;
-	// WaitDelay is the portable final guard.
-	cmd.WaitDelay = 100 * time.Millisecond
-
-	output, err := cmd.CombinedOutput()
-	result := string(output)
-	if err != nil {
-		result += fmt.Sprintf("\nexit error: %v", err)
-	}
-
-	// Limit output.
-	const maxBytes = 16 * 1024
-	if len(result) > maxBytes {
-		result = result[:maxBytes] + "\n... (truncated)"
-	}
-
-	// Return as JSON for structured parsing.
-	resp, _ := json.Marshal(map[string]string{
-		"output":  result,
-		"command": command,
-	})
-	return string(resp)
 }
 
 // clampCommandTimeout caps one run_command at 120s. Zero/negative fall back to

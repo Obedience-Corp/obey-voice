@@ -60,6 +60,29 @@ type TopologyDescriber interface {
 	WorkerStreaming() bool
 }
 
+// WarmDescriber is implemented by providers that can verify whether the
+// session used for a measurement was already warm. Absence is deliberately
+// treated as unknown; callers must not manufacture warmness from a successful
+// request or from a short elapsed time.
+type WarmDescriber interface {
+	SpeechWarm() bool
+}
+
+// WarmStateDescriber reports the pre-request session state. Providers that
+// cannot prove a prior successful request must return "unknown" or "cold";
+// callers must not infer warmness from the request that is about to run.
+type WarmStateDescriber interface {
+	SpeechWarmState() string
+}
+
+// AdviceCapability describes remedies the provider has actually verified.
+// WholeSentencePlayback means the provider can honor a whole-sentence mode
+// when streaming is causing interruptions; it does not promise that mode is
+// currently selected or that it will be faster.
+type AdviceCapability interface {
+	WholeSentencePlayback() bool
+}
+
 // Where synthesis ran, as recorded on a turn's metrics. These mirror the
 // tts_place config values; they are repeated as provider-facing constants so
 // nothing on the metrics path has to depend on the config package.

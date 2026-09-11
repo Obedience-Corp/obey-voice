@@ -118,6 +118,39 @@ func TestClockLabelsNeverSayPlaybackForNoSink(t *testing.T) {
 	}
 }
 
+func TestSpeechDiagnosticOnlyPrintsVerifiedAction(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "Obey", &buf, true)
+
+	// Routine measurements remain available to the transcript/activity log,
+	// but do not become ordinary CLI chatter.
+	bus.Emit(events.SpeechDiagnostic{
+		Provider: "kokoro", Symptom: "synthesis_starvation", Cause: "unknown",
+		Message: "routine measurement", Confidence: "low",
+	})
+	// An unknown/no-action observation is also neutral even if it has text.
+	bus.Emit(events.SpeechDiagnostic{Cause: "unknown", Message: "insufficient evidence"})
+	// A classifier-approved remedy follows the same Info output path exactly
+	// once for the one emitted event.
+	bus.Emit(events.SpeechDiagnostic{
+		ActionCode: "kokoro_speech_recovery", Message: "Try the Kokoro fallback voice.",
+	})
+	// Existing real errors retain their current visible output.
+	bus.Emit(events.Error{Stage: "tts", Message: "worker exited"})
+
+	got := buf.String()
+	if strings.Contains(got, "routine measurement") || strings.Contains(got, "insufficient evidence") {
+		t.Fatalf("routine/unknown diagnostics leaked to CLI: %q", got)
+	}
+	if count := strings.Count(got, "Try the Kokoro fallback voice."); count != 1 {
+		t.Fatalf("actionable diagnostic count = %d, want 1: %q", count, got)
+	}
+	if !strings.Contains(got, "Error: [tts] worker exited") {
+		t.Fatalf("real error missing: %q", got)
+	}
+}
+
 func TestIsConsole(t *testing.T) {
 	cases := []struct {
 		name string
@@ -288,6 +321,47 @@ func TestWorkerToolLinesFoldIntoRows(t *testing.T) {
 		})
 	}
 }
+
+func TestLiveToolOutcomeLinesUseObservedStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		e    events.ToolCallFinished
+		want []string
+	}{
+		{name: "typed failed without legacy error", e: events.ToolCallFinished{
+			Name: "run_command", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeFailed, ExitCode: intPtr(7), Reason: "process failed"},
+		}, want: []string{"✗ run_command failed", "process failed", "exit code 7"}},
+		{name: "unknown legacy completion", e: events.ToolCallFinished{Name: "read_file"}, want: []string{"? read_file outcome unknown"}},
+		{name: "typed timeout", e: events.ToolCallFinished{
+			Name: "run_command", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeTimedOut, Reason: "deadline exceeded"},
+		}, want: []string{"✗ run_command timed out", "deadline exceeded"}},
+		{name: "typed cancellation", e: events.ToolCallFinished{
+			Name: "run_command", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeCanceled, Signal: "TERM"},
+		}, want: []string{"✗ run_command canceled", "signal TERM"}},
+		{name: "successful zero", e: events.ToolCallFinished{
+			Name: "run_command", Err: "stale legacy error", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded, ExitCode: intPtr(0)},
+		}, want: []string{"✓ run_command completed", "exit code 0"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bus := events.NewBus()
+			out := &bytes.Buffer{}
+			newUI(bus, "Samantha", out, true)
+			bus.Emit(tc.e)
+			got := out.String()
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("stdout = %q, want %q", got, want)
+				}
+			}
+			if tc.name == "successful zero" && strings.Contains(got, "stale legacy error") {
+				t.Fatalf("typed outcome rendered stale legacy error: %q", got)
+			}
+		})
+	}
+}
+
+func intPtr(n int) *int { return &n }
 
 func concat(groups ...[]events.Event) []events.Event {
 	var all []events.Event

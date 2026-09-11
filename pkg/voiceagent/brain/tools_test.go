@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ollama/ollama/api"
 )
@@ -127,6 +128,122 @@ func TestExecuteSynthesizesIDWhenModelSendsNone(t *testing.T) {
 	}
 }
 
+func TestExecuteNormalizesRepeatedProviderIDsWithoutChangingProtocolCall(t *testing.T) {
+	t.Parallel()
+	h := &hookRecorder{}
+	sess := h.session()
+	raw := runCommandCall("provider-call", "printf ok")
+	sess.execute(context.Background(), t.TempDir(), raw)
+	sess.execute(context.Background(), t.TempDir(), raw)
+	// This raw id intentionally collides with the synthesized id that would be
+	// produced for a model call with no id.
+	collision := runCommandCall("run_command#1", "printf ok")
+	sess.execute(context.Background(), t.TempDir(), collision)
+	sess.execute(context.Background(), t.TempDir(), api.ToolCall{
+		Function: api.ToolCallFunction{Name: "run_command", Arguments: mustArgs(map[string]any{"command": "printf ok"})},
+	})
+	if raw.ID != "provider-call" || collision.ID != "run_command#1" {
+		t.Fatalf("protocol ids mutated: raw=%q collision=%q", raw.ID, collision.ID)
+	}
+	if len(h.starts) != 4 || len(h.ends) != 4 {
+		t.Fatalf("hooks fired %d/%d, want four starts and ends", len(h.starts), len(h.ends))
+	}
+	seen := make(map[string]bool)
+	for i := range h.starts {
+		if h.starts[i].ID == "" || seen[h.starts[i].ID] {
+			t.Fatalf("start %d id=%q, want unique non-empty hook ids (%v)", i, h.starts[i].ID, h.starts)
+		}
+		seen[h.starts[i].ID] = true
+		if h.ends[i].ID != h.starts[i].ID {
+			t.Fatalf("call %d start/end ids=%q/%q, want matching", i, h.starts[i].ID, h.ends[i].ID)
+		}
+	}
+	if h.starts[0].ID != "provider-call" || h.starts[1].ID != "provider-call#2" {
+		t.Fatalf("repeated provider ids=%q,%q, want provider-call/provider-call#2", h.starts[0].ID, h.starts[1].ID)
+	}
+	if h.starts[2].ID != "run_command#1" || h.starts[3].ID == "run_command#1" {
+		t.Fatalf("collision ids=%q,%q, want distinct", h.starts[2].ID, h.starts[3].ID)
+	}
+}
+
+func runCommandCall(id, command string) api.ToolCall {
+	return api.ToolCall{ID: id, Function: api.ToolCallFunction{
+		Name: "run_command", Arguments: mustArgs(map[string]any{"command": command}),
+	}}
+}
+
+func TestExecuteCommandPublishesObservedOutcome(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		command    string
+		timeout    time.Duration
+		status     string
+		exit       *int
+		wantErr    bool
+		wantOutput string
+	}{
+		{name: "success", command: "printf 'héllo'", status: "succeeded", exit: intPtr(0), wantOutput: "héllo"},
+		{name: "failure wrapped in json", command: "printf 'bad'; exit 7", status: "failed", exit: intPtr(7), wantErr: true, wantOutput: "bad"},
+		{name: "timeout", command: "sleep 1", timeout: 10 * time.Millisecond, status: "timed_out", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &hookRecorder{}
+			sess := h.session()
+			sess.commandTimeout = tt.timeout
+			result := sess.execute(context.Background(), t.TempDir(), runCommandCall("cmd-1", tt.command))
+			if len(h.ends) != 1 || h.ends[0].Outcome == nil {
+				t.Fatalf("result=%q ends=%+v, want one typed outcome", result, h.ends)
+			}
+			outcome := h.ends[0].Outcome
+			if string(outcome.Status) != tt.status {
+				t.Fatalf("status=%q, want %q", outcome.Status, tt.status)
+			}
+			if tt.exit == nil && outcome.ExitCode != nil {
+				t.Fatalf("exit code=%v, want nil", *outcome.ExitCode)
+			}
+			if tt.exit != nil && (outcome.ExitCode == nil || *outcome.ExitCode != *tt.exit) {
+				t.Fatalf("exit code=%v, want %v", outcome.ExitCode, *tt.exit)
+			}
+			if tt.wantErr && h.ends[0].Err == "" {
+				t.Fatal("legacy Err empty for observed failure")
+			}
+			if tt.wantOutput != "" && !strings.Contains(outcome.OutputPreview, tt.wantOutput) {
+				t.Fatalf("output preview=%q, want %q", outcome.OutputPreview, tt.wantOutput)
+			}
+			if strings.Contains(h.ends[0].Preview, `"command"`) {
+				t.Fatalf("hook preview exposed JSON envelope: %q", h.ends[0].Preview)
+			}
+		})
+	}
+}
+
+func TestExecuteCommandPreservesCancellationAndSignalFacts(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	h := &hookRecorder{}
+	sess := h.session()
+	sess.execute(ctx, t.TempDir(), runCommandCall("cancel-1", "sleep 1"))
+	if got := h.ends[0].Outcome.Status; got != "canceled" {
+		t.Fatalf("canceled status=%q, want canceled", got)
+	}
+	if h.ends[0].Outcome.ExitCode != nil {
+		t.Fatalf("canceled exit code=%v, want nil", *h.ends[0].Outcome.ExitCode)
+	}
+
+	h = &hookRecorder{}
+	sess = h.session()
+	sess.execute(context.Background(), t.TempDir(), runCommandCall("signal-1", "kill -TERM $$"))
+	if got := h.ends[0].Outcome.Status; got != "failed" {
+		t.Fatalf("signal status=%q, want failed", got)
+	}
+	if h.ends[0].Outcome.Signal == "" {
+		t.Fatal("signal fact empty, want observed termination signal")
+	}
+}
+
 func TestToolSessionRefusesOutsideTheBoundaryAndReportsIt(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(home, "campaigns", "demo")
@@ -148,8 +265,8 @@ func TestToolSessionRefusesOutsideTheBoundaryAndReportsIt(t *testing.T) {
 	if !strings.HasPrefix(got, "error:") || !strings.Contains(got, "outside the work boundary") || strings.Contains(got, "secret") {
 		t.Fatalf("read outside = %q, want a refusal and no contents", got)
 	}
-	if len(rec.ends) != 1 || rec.ends[0].Err == "" {
-		t.Fatalf("hooks = %+v, want the refusal reported as the tool error", rec.ends)
+	if len(rec.ends) != 1 || rec.ends[0].Err == "" || rec.ends[0].Outcome == nil || rec.ends[0].Outcome.Status != "failed" || rec.ends[0].Outcome.ExitCode != nil {
+		t.Fatalf("hooks = %+v, want typed refusal without claimed process exit", rec.ends)
 	}
 
 	run := api.ToolCall{ID: "c1", Function: api.ToolCallFunction{Name: "run_command", Arguments: mustArgs(map[string]any{"command": "cat " + outside})}}

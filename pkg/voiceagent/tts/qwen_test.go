@@ -303,6 +303,13 @@ func TestQwenFirstAudioGraceCPUUsesHighRTF(t *testing.T) {
 	}
 }
 
+func TestQwenWarmStateIsUnknownWithoutPersistentSession(t *testing.T) {
+	q := newQwen3TTS("legacy-qwen", t.TempDir(), 0, nil)
+	if got := q.SpeechWarmState(); got != "unknown" {
+		t.Fatalf("SpeechWarmState() = %q, want unknown without persistent session", got)
+	}
+}
+
 func TestQwenFirstAudioGraceChargesColdStartOnlyWhenNoWorkerIsUp(t *testing.T) {
 	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 	qn.native = true

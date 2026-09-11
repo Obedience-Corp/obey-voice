@@ -3,6 +3,8 @@ package brain
 import (
 	"context"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // StreamOptions controls how a streamed brain response should behave.
@@ -59,9 +61,13 @@ type ToolCall struct {
 type ToolResult struct {
 	ToolCall
 	Preview string
-	// Err is the tool's leading "error: …" line, empty on success.
+	// Err is legacy error detail when available; absence does not establish
+	// success. Use Outcome for observed status.
 	Err     string
 	Elapsed time.Duration
+	// Outcome contains observed execution facts when the provider can establish
+	// them. Opaque providers and synthetic route/skill hooks leave it unknown.
+	Outcome *events.ToolOutcome
 }
 
 // IntegrityResult reports whether a streamed completion may have been

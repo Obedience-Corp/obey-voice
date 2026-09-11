@@ -30,13 +30,28 @@ const (
 
 // Row is one run of consecutive same-kind tool calls in a job.
 type Row struct {
-	Kind    string
+	Kind string
+	// Count is the terminal call count. Started is retained for active display.
 	Count   int
-	Failed  int
-	Elapsed time.Duration
+	Started int
+	// Active is the number of calls whose terminal hook has not arrived.
+	Active int
+	// Succeeded, Failed, and Unknown are terminal observations. Unknown is
+	// deliberately separate from success: a missing end hook cannot prove it.
+	Succeeded int
+	Failed    int
+	Unknown   int
+	// ReconciledUnknown is a missing terminal hook discovered when a job closes.
+	ReconciledUnknown int
+	Elapsed           time.Duration
 	// Last is the newest finished call's preview, or its error line when the
 	// call failed without one.
 	Last string
+}
+
+// Counts is the terminal/active view of a job's calls.
+type Counts struct {
+	Active, Completed, Succeeded, Failed, Unknown int
 }
 
 // phrasing is how a kind reads out loud: "read" + "3 files".
@@ -60,10 +75,17 @@ func (r Row) String() string {
 		p = phrasing{one: "tool call", many: "tool calls"}
 	}
 	noun := p.many
-	if r.Count == 1 {
+	if r.Count == 1 || (r.Count == 0 && r.Active == 1) {
 		noun = p.one
 	}
 	var b strings.Builder
+	if r.Count == 0 && r.Active > 0 {
+		b.WriteString(strconv.Itoa(r.Active))
+		b.WriteString(" ")
+		b.WriteString(noun)
+		b.WriteString(" running")
+		return b.String()
+	}
 	if p.verb != "" {
 		b.WriteString(p.verb)
 		b.WriteString(" ")
@@ -71,10 +93,23 @@ func (r Row) String() string {
 	b.WriteString(strconv.Itoa(r.Count))
 	b.WriteString(" ")
 	b.WriteString(noun)
+	parts := make([]string, 0, 4)
+	if r.Succeeded > 0 {
+		parts = append(parts, strconv.Itoa(r.Succeeded)+" succeeded")
+	}
 	if r.Failed > 0 {
+		parts = append(parts, strconv.Itoa(r.Failed)+" failed")
+	}
+	if r.Unknown > 0 {
+		parts = append(parts, strconv.Itoa(r.Unknown)+" unknown")
+	}
+	if r.Active > 0 {
+		parts = append(parts, strconv.Itoa(r.Active)+" active")
+	}
+	if len(parts) > 0 {
 		b.WriteString(" (")
-		b.WriteString(strconv.Itoa(r.Failed))
-		b.WriteString(" failed)")
+		b.WriteString(strings.Join(parts, ", "))
+		b.WriteString(")")
 	}
 	return b.String()
 }
@@ -93,7 +128,8 @@ type fold struct {
 	open int
 	// byCall maps a call id to the row it opened, so a finish lands on the
 	// right row even if a later kind has already opened another.
-	byCall map[string]int
+	byCall   map[string]int
+	finished map[string]bool
 }
 
 // New constructs an empty Tracker.
@@ -110,15 +146,21 @@ func (t *Tracker) Add(e events.ToolCallStarted) *Row {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	f := t.foldFor(e.JobID)
+	if e.ID != "" {
+		if _, exists := f.byCall[e.ID]; exists || f.finished[e.ID] {
+			return nil
+		}
+	}
 	var closed *Row
 	if f.open >= 0 && f.rows[f.open].Kind == e.Kind {
-		f.rows[f.open].Count++
+		f.rows[f.open].Started++
+		f.rows[f.open].Active++
 	} else {
 		if f.open >= 0 {
 			row := f.rows[f.open]
 			closed = &row
 		}
-		f.rows = append(f.rows, Row{Kind: e.Kind, Count: 1})
+		f.rows = append(f.rows, Row{Kind: e.Kind, Started: 1, Active: 1})
 		f.open = len(f.rows) - 1
 	}
 	if e.ID != "" {
@@ -140,20 +182,33 @@ func (t *Tracker) Finish(e events.ToolCallFinished) {
 	}
 	idx, ok := f.byCall[e.ID]
 	if !ok {
-		if idx, ok = f.lastOfKind(e.Kind); !ok {
-			return
-		}
+		// Never guess a non-empty ID onto the latest same-kind row: that can
+		// close a different call. Missing IDs are reconciled as unknown at job
+		// close unless an exact identity was observed.
+		return
 	}
-	delete(f.byCall, e.ID)
+	if e.ID != "" {
+		delete(f.byCall, e.ID)
+		f.finished[e.ID] = true
+	}
 	row := &f.rows[idx]
-	if e.Err != "" {
-		row.Failed++
+	if row.Active > 0 {
+		row.Active--
 	}
-	row.Elapsed += e.Elapsed
-	if e.Preview != "" {
-		row.Last = e.Preview
-	} else if e.Err != "" {
-		row.Last = e.Err
+	switch e.OutcomeStatus() {
+	case events.ToolOutcomeSucceeded:
+		row.Succeeded++
+	case events.ToolOutcomeFailed, events.ToolOutcomeTimedOut, events.ToolOutcomeCanceled:
+		row.Failed++
+	default:
+		row.Unknown++
+	}
+	row.Count++
+	row.Elapsed += e.ResultElapsed()
+	if preview := e.ResultPreview(); preview != "" {
+		row.Last = preview
+	} else if reason := e.ResultReason(); reason != "" {
+		row.Last = reason
 	}
 }
 
@@ -174,7 +229,11 @@ func (t *Tracker) Rows(jobID string) []Row {
 // Summary is the job's rows as one spoken-and-printed phrase, empty when the
 // job has done nothing yet.
 func (t *Tracker) Summary(jobID string) string {
-	rows := t.Rows(jobID)
+	return RowsSummary(t.Rows(jobID))
+}
+
+// RowsSummary renders rows returned by Close after terminal reconciliation.
+func RowsSummary(rows []Row) string {
 	if len(rows) == 0 {
 		return ""
 	}
@@ -183,6 +242,19 @@ func (t *Tracker) Summary(jobID string) string {
 		parts = append(parts, row.String())
 	}
 	return strings.Join(parts, " · ")
+}
+
+// Counts reports the calls in a job without collapsing unknown into success.
+func (t *Tracker) Counts(jobID string) Counts {
+	var out Counts
+	for _, row := range t.Rows(jobID) {
+		out.Active += row.Active
+		out.Completed += row.Count
+		out.Succeeded += row.Succeeded
+		out.Failed += row.Failed
+		out.Unknown += row.Unknown
+	}
+	return out
 }
 
 // Close ends the job's open row, returns every row, and forgets the job.
@@ -201,6 +273,16 @@ func (t *Tracker) Close(jobID string) []Row {
 	if len(f.rows) == 0 {
 		return nil
 	}
+	// A provider can omit terminal hooks. Reconcile those calls as unknown at
+	// job close so the row never renders an implied success.
+	for i := range f.rows {
+		if f.rows[i].Active > 0 {
+			f.rows[i].Unknown += f.rows[i].Active
+			f.rows[i].Count += f.rows[i].Active
+			f.rows[i].ReconciledUnknown += f.rows[i].Active
+			f.rows[i].Active = 0
+		}
+	}
 	return append([]Row(nil), f.rows...)
 }
 
@@ -210,19 +292,8 @@ func (t *Tracker) foldFor(jobID string) *fold {
 	}
 	f := t.jobs[jobID]
 	if f == nil {
-		f = &fold{open: -1, byCall: make(map[string]int)}
+		f = &fold{open: -1, byCall: make(map[string]int), finished: make(map[string]bool)}
 		t.jobs[jobID] = f
 	}
 	return f
-}
-
-// lastOfKind finds the newest row of a kind, for a finish whose call id was
-// never seen (a provider that omits ids on one side).
-func (f *fold) lastOfKind(kind string) (int, bool) {
-	for i := len(f.rows) - 1; i >= 0; i-- {
-		if f.rows[i].Kind == kind {
-			return i, true
-		}
-	}
-	return 0, false
 }

@@ -54,6 +54,26 @@ func TestJobToolHooksAttributeToTheJob(t *testing.T) {
 	}
 }
 
+func TestJobToolHooksCarryObservedOutcome(t *testing.T) {
+	bus := events.NewBus()
+	var finished []events.ToolCallFinished
+	events.Subscribe(bus, func(e events.ToolCallFinished) { finished = append(finished, e) })
+	p := &Pipeline{Events: bus}
+	onStart, onEnd := p.jobToolHooks("job-outcome")
+	call := brain.ToolCall{ID: "call-1", Name: "run_command", Kind: brain.KindExecute}
+	code := 7
+	onStart(call)
+	onEnd(brain.ToolResult{ToolCall: call, Err: "error: exit status 7", Outcome: &events.ToolOutcome{
+		Status: events.ToolOutcomeFailed, ExitCode: &code, OutputPreview: "bad", OutputBytes: 3,
+	}})
+	if len(finished) != 1 || finished[0].Outcome == nil {
+		t.Fatalf("finished=%+v, want one event with outcome", finished)
+	}
+	if finished[0].Outcome.Status != events.ToolOutcomeFailed || finished[0].Outcome.ExitCode == nil || *finished[0].Outcome.ExitCode != 7 {
+		t.Fatalf("outcome=%+v, want failed exit 7", finished[0].Outcome)
+	}
+}
+
 func TestLiveToolHooksKeepEmptyJobIDAndBump(t *testing.T) {
 	bus := events.NewBus()
 	var started []events.ToolCallStarted

@@ -66,6 +66,7 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onCleared)
 	events.Subscribe(bus, u.onError)
 	events.Subscribe(bus, u.onInfo)
+	events.Subscribe(bus, u.onSpeechDiagnostic)
 	events.Subscribe(bus, u.onToolCallStarted)
 	events.Subscribe(bus, u.onToolCallFinished)
 	events.Subscribe(bus, u.onJobQueued)
@@ -259,6 +260,16 @@ func (u *UI) onInfo(e events.Info) {
 	fmt.Fprintf(u.out, "  %s\n", dimStyle.Render(e.Message))
 }
 
+// onSpeechDiagnostic keeps measurements and uncertainty out of ordinary CLI
+// output. The classifier owns deduplication and only supplies ActionCode when
+// the evidence supports a user-facing remedy.
+func (u *UI) onSpeechDiagnostic(e events.SpeechDiagnostic) {
+	if e.ActionCode == "" || e.Message == "" {
+		return
+	}
+	u.onInfo(events.Info{Message: e.Message})
+}
+
 func (u *UI) onToolCallStarted(e events.ToolCallStarted) {
 	if e.JobID != "" {
 		u.printRow(e.JobID, u.work.Add(e))
@@ -339,11 +350,45 @@ func (u *UI) onToolCallFinished(e events.ToolCallFinished) {
 		u.work.Finish(e)
 		return
 	}
-	msg := "✓ " + e.Name
-	if e.Err != "" {
-		msg = "✗ " + e.Name + ": " + e.Err
-	} else if e.Preview != "" {
-		msg += " → " + e.Preview
+	label := "?"
+	switch e.OutcomeStatus() {
+	case events.ToolOutcomeSucceeded:
+		label = "✓"
+	case events.ToolOutcomeFailed, events.ToolOutcomeTimedOut, events.ToolOutcomeCanceled:
+		label = "✗"
+	}
+	msg := label + " " + e.Name + " " + toolOutcomeLabel(e.OutcomeStatus())
+	if preview := e.ResultPreview(); preview != "" {
+		msg += " → " + preview
+	}
+	if reason := e.ResultReason(); reason != "" {
+		msg += ": " + reason
+	}
+	if e.Outcome != nil {
+		if e.Outcome.ExitCode != nil {
+			msg += fmt.Sprintf(" (exit code %d)", *e.Outcome.ExitCode)
+		}
+		if e.Outcome.Signal != "" {
+			msg += " (signal " + e.Outcome.Signal + ")"
+		}
+	}
+	if elapsed := e.ResultElapsed(); elapsed > 0 {
+		msg += " in " + elapsed.String()
 	}
 	u.dimLine(msg)
+}
+
+func toolOutcomeLabel(status events.ToolOutcomeStatus) string {
+	switch status {
+	case events.ToolOutcomeSucceeded:
+		return "completed"
+	case events.ToolOutcomeFailed:
+		return "failed"
+	case events.ToolOutcomeTimedOut:
+		return "timed out"
+	case events.ToolOutcomeCanceled:
+		return "canceled"
+	default:
+		return "outcome unknown"
+	}
 }

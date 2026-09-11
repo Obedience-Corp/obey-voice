@@ -63,24 +63,45 @@ func encodeEvent(e events.Event) map[string]any {
 		env["tts_tier"] = e.TTSTier
 		env["tts_place"] = e.TTSPlace
 		env["tts_streaming"] = e.TTSWorkerStreaming
+		env["tts_warm"] = e.TTSWarm
 		env["tts_fallbacks"] = e.TTSFallbacks
 		env["first_audio_grace_ms"] = ms(e.FirstAudioGrace)
 		env["stall_watchdog_fired"] = e.StallWatchdogFired
 		env["dead_air_ms"] = ms(e.DeadAirElapsed)
+		env["underruns"] = e.Underruns
 		if len(e.Segments) > 0 {
 			segments := make([]map[string]any, 0, len(e.Segments))
 			for _, seg := range e.Segments {
 				segments = append(segments, map[string]any{
-					"i":           seg.Index,
-					"chars":       seg.Chars,
-					"engine_ms":   ms(seg.EngineElapsed),
-					"queue_ms":    ms(seg.QueueElapsed()),
-					"synth_ms":    ms(seg.SynthElapsed),
-					"audio_ms":    int64(seg.AudioSeconds * 1000),
-					"rtf":         seg.RealtimeFactor(),
-					"play_ms":     ms(seg.PlayElapsed),
-					"fallback":    seg.Fallback,
-					"interrupted": seg.Interrupted,
+					"i":                       seg.Index,
+					"chars":                   seg.Chars,
+					"engine_ms":               ms(seg.EngineElapsed),
+					"queue_ms":                ms(seg.QueueElapsed()),
+					"synth_ms":                ms(seg.SynthElapsed),
+					"audio_ms":                int64(seg.AudioSeconds * 1000),
+					"rtf":                     seg.RealtimeFactor(),
+					"play_ms":                 ms(seg.PlayElapsed),
+					"fallback":                seg.Fallback,
+					"interrupted":             seg.Interrupted,
+					"provider":                seg.Provider,
+					"tier":                    seg.Tier,
+					"place":                   seg.Place,
+					"streaming":               seg.WorkerStreaming,
+					"text_ready_ms":           ms(seg.TextReadyElapsed),
+					"warm_state":              seg.WarmState,
+					"error":                   seg.Error,
+					"exclusions":              append([]string(nil), seg.Exclusions...),
+					"whole_sentence_playback": seg.WholeSentencePlayback,
+					"underruns":               seg.Underruns,
+					"gap_ms":                  ms(seg.GapElapsed),
+					"gap_cause":               seg.GapCause,
+					"gaps":                    encodeSpeechGaps(seg.Gaps),
+					"synth_queued_ms":         ms(seg.SynthQueuedElapsed),
+					"synth_started_ms":        ms(seg.SynthStartedElapsed),
+					"synth_first_pcm_ms":      ms(seg.SynthFirstPCMElapsed),
+					"synth_ended_ms":          ms(seg.SynthEndedElapsed),
+					"playback_started_ms":     ms(seg.PlaybackStartedElapsed),
+					"playback_ended_ms":       ms(seg.PlaybackEndedElapsed),
 				})
 			}
 			env["segments"] = segments
@@ -131,15 +152,73 @@ func encodeEvent(e events.Event) map[string]any {
 	case events.ResponseReady:
 		env["response"] = e.Response
 		env["interrupted"] = e.Interrupted
+	case events.ToolCallStarted:
+		env["id"] = e.ID
+		env["job_id"] = e.JobID
+		env["name"] = e.Name
+		env["kind"] = e.Kind
+		env["summary"] = e.Summary
+	case events.ToolCallFinished:
+		env["id"] = e.ID
+		env["job_id"] = e.JobID
+		env["name"] = e.Name
+		env["kind"] = e.Kind
+		env["preview"] = e.ResultPreview()
+		env["message"] = e.ResultReason()
+		env["elapsed_ms"] = ms(e.ResultElapsed())
+		env["status"] = string(e.OutcomeStatus())
+		env["exit_code"] = nil
+		env["http_status"] = nil
+		if o := e.Outcome; o != nil {
+			env["exit_code"] = o.ExitCode
+			env["http_status"] = o.HTTPStatus
+			env["signal"] = o.Signal
+			env["reason"] = o.Reason
+			env["input_summary"] = o.InputSummary
+			env["output_ref"] = o.OutputRef
+			env["output_bytes"] = o.OutputBytes
+			env["truncated"] = o.Truncated
+		}
 	case events.Error:
 		env["stage"] = e.Stage
 		env["message"] = e.Message
 	case events.Info:
 		env["message"] = e.Message
+	case events.SpeechDiagnostic:
+		env["symptom"] = e.Symptom
+		env["cause"] = e.Cause
+		env["confidence"] = e.Confidence
+		env["provider"] = e.Provider
+		env["scope"] = e.Scope
+		env["action_code"] = e.ActionCode
+		env["dedupe_key"] = e.DedupeKey
+		env["message"] = e.Message
+		env["engine_rtf"] = e.EngineRTF
+		env["gap_ms"] = ms(e.Gap)
+		env["sample_count"] = e.SampleCount
+		env["audio_seconds"] = e.AudioSeconds
+		if len(e.Exclusions) > 0 {
+			env["exclusions"] = append([]string(nil), e.Exclusions...)
+		}
 	}
 	// ThinkingStarted and ConversationCleared carry no fields.
 
 	return env
+}
+
+func encodeSpeechGaps(in []events.SpeechGap) []map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(in))
+	for _, g := range in {
+		out = append(out, map[string]any{
+			"start_ms": ms(g.StartElapsed),
+			"end_ms":   ms(g.EndElapsed),
+			"cause":    g.Cause,
+		})
+	}
+	return out
 }
 
 func marshalEvent(e events.Event) ([]byte, error) {
