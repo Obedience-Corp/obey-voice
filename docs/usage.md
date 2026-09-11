@@ -113,12 +113,16 @@ command palette, use the arrow keys to select a match, and press `Enter` to run
 the highlighted command (or `Tab` to complete it into the composer first).
 `/personas` opens the persona manager to browse, select, create, or edit
 personas. Voice input pauses while it is open; `Esc` or `q` returns to the
-same chat and restores its previous microphone state. Selecting a different
-persona applies to new chats; the current chat keeps its bound identity.
+same chat and restores its previous microphone state. In a supported shared
+conversation, selecting another persona changes the responder for the next turn
+and keeps the current session, history and running work. Opening or cancelling
+the manager does not change the responder. Selection from the launcher sets the
+default for a new conversation instead.
 
 `/help` lists every available command. `/settings` opens the TUI settings
 screen and returns to the conversation when you press `Esc` or `q`. Slash
-commands are local — they do not cancel speech recognition or block the chat.
+commands are local. Opening a manager pauses listening; leaving it restores
+the previous microphone state.
 
 `/menu` (or `/back`) ends the current chat and returns to the main menu. The
 session is saved before the menu opens; choose **Continue** to resume it or
@@ -357,9 +361,10 @@ empty inherits the app default — an empty `brain:` uses the app-level
 Starting a new conversation opens a persona picker: **Use defaults** is always
 the first option (the models, providers, and voice from Settings). Named
 personas follow, with the active one marked, and `+ Create persona…` clones the
-current global stack into a new profile. A conversation binds its identity —
-name, prompt, brain, and voice — at start, so editing a persona or switching the
-active one never affects a session already in flight.
+current global stack into a new profile. Each admitted response snapshots its
+persona, prompt and voice. Switching changes subsequent responses without
+retargeting the reply already in flight or relabeling earlier replies. Profile
+edits are resolved at the next response boundary.
 
 In the Personas list, `d` deletes the persona under the cursor. It always asks
 first — only `y` confirms, any other key cancels — and it removes
@@ -387,6 +392,60 @@ in INSERT opens a dropdown of `{agent_name}`, `{user_name}`, `{date}`, and
 `{os}` (type `{` first to filter); Enter inserts the token at the cursor; `:w`
 returns to the form; `:wq` (or normal-mode `enter`) saves the persona; `:q`
 discards the whole edit.
+
+### Shared conversations
+
+With a supported local Ollama persona, address another configured persona to
+select it: `Santa.` gives a short acknowledgement in Santa's voice; `Santa,
+what do you think?` selects Santa and answers the request. Santa remains the
+responder for ordinary follow-ups without another name, including after quiet
+gaps, microphone pause/resume or editing. Use the Talk persona control or TUI
+`/personas` for explicit selection. `/speakers` still manages human speaker
+labels; it does not choose the responding persona.
+
+Incidental mentions such as `Santa is a persona` do not select Santa. Unknown
+explicit targets, conflicting aliases and failed prompt/model/voice preparation
+leave the old responder selected and report an error. Shared-history projection
+is currently verified for Ollama. An unsupported provider is refused rather
+than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices
+`af_heart` and `am_michael`; it does not establish parity for every provider.
+
+Conversation identity and reconnect snapshots do not require
+`voice_work_enabled`. That setting remains a separate opt-in for experimental
+conversation-scoped work, with its existing provider/admission restrictions.
+Switching a responder never changes that setting. The internal selection flow
+is embedded and validated; editable persona profiles do not replace it.
+
+### Saved history and recovery
+
+The selected responder is saved with the session, separately from the default
+for future conversations. Use `obey-voice sessions list`,
+`obey-voice sessions show <id> --json`, and `obey-voice resume <id>` to inspect
+and resume existing conversations. Changing a profile's display name preserves
+old reply labels. If a saved profile is missing, the transcript remains readable
+but a valid explicit selection is required before another response.
+
+Session format2 retains canonical turns and immutable assistant identity.
+Older sessions remain readable; missing identity stays unknown, including old
+assistant-role names. A future unsupported format is refused. Compaction keeps
+the canonical transcript and a `<id>.pre-compact.json` backup while producing
+a bounded model context with complete tool groups and attributed source facts.
+A stored transcript alone does not prove a model received all of it: its
+configured history/context limits still govern the projection.
+
+Before downgrading, stop processes that write the session and preserve the raw
+session directory reported by `obey-voice paths --json`. Keep the original JSON
+and any pre-compaction backup; an older binary may discard fields it does not
+understand. The `sessions show --json` output is for inspection, not a raw-store
+restore format. Restore raw backups only with writers stopped and a compatible
+version. Clear starts a fresh conversation epoch; it is not persona selection.
+
+The speech-routing proof includes actual installed STT on recorded input:
+`Santa.` was normalized to `Santa` and still selected Santa, with and without
+a custom-word hint. It does not measure physical microphone recognition.
+Timing values for model completion, first audio and playback are milestones
+from their named origin; do not add them as stage durations. The small local
+proof sample is not a latency guarantee.
 
 ## Turn recovery and token usage
 
