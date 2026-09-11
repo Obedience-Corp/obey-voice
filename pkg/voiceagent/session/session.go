@@ -28,6 +28,22 @@ const CurrentFormatVersion = 2
 
 var ErrUnsupportedSessionVersion = errors.New("session: unsupported future format version")
 
+// WriteCommittedError reports that the target file was atomically replaced,
+// but the containing-directory durability check failed.
+type WriteCommittedError struct{ Err error }
+
+func (e *WriteCommittedError) Error() string {
+	return "session: write committed with durability uncertainty: " + e.Err.Error()
+}
+func (e *WriteCommittedError) Unwrap() error { return e.Err }
+
+// WriteCommitted distinguishes an installed file from a failed replacement.
+// Callers must still surface the error: directory durability is unconfirmed.
+func WriteCommitted(err error) bool {
+	var e *WriteCommittedError
+	return errors.As(err, &e)
+}
+
 // ErrWorkRevisionStale means a work snapshot was older than the durable
 // snapshot already stored for the session.
 var ErrWorkRevisionStale = errors.New("session: stale work revision")
@@ -116,13 +132,22 @@ func (s *Session) saveBackupTo(dir string, turns []brain.Turn) error {
 }
 
 func (s *Session) saveTo(dir string, turns []brain.Turn) error {
-	return saveSession(dir, s, turns, nil)
+	candidate := *s
+	if err := saveSession(dir, &candidate, turns, nil); err != nil {
+		return err
+	}
+	*s = candidate
+	return nil
 }
 
 // saveSession writes turns and, when supplied, a work snapshot as one normal
-// session checkpoint. The caller's Session is updated only after the durable
-// rename succeeds, so a failed checkpoint cannot advance its state.
+// session checkpoint. The private candidate is updated at the rename commit
+// point. Public callers decide whether to publish it on durability errors.
 func saveSession(dir string, s *Session, turns []brain.Turn, snapshot *work.Snapshot) error {
+	return saveSessionWithFailures(dir, s, turns, snapshot, nil, nil)
+}
+
+func saveSessionWithFailures(dir string, s *Session, turns []brain.Turn, snapshot *work.Snapshot, beforeRename, afterRename error) error {
 	next := *s
 	if next.FormatVersion > CurrentFormatVersion {
 		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, next.FormatVersion)
@@ -174,23 +199,32 @@ func saveSession(dir string, s *Session, turns []brain.Turn, snapshot *work.Snap
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("close session temp file: %w", err)
 	}
+	if beforeRename != nil {
+		_ = os.Remove(tmp.Name())
+		return beforeRename
+	}
 	if err := os.Rename(tmp.Name(), filepath.Join(dir, next.ID+".json")); err != nil {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("save session: %w", err)
 	}
-	// Sync the containing directory so the rename itself is durable where the
-	// platform exposes directory fsync. Some platforms reject opening a
-	// directory; the atomic rename remains the compatibility fallback there.
+	*s = next
+	if afterRename != nil {
+		return &WriteCommittedError{Err: afterRename}
+	}
+	return syncSessionDirectory(dir)
+}
+
+// A failed directory sync cannot roll back a rename that already succeeded.
+func syncSessionDirectory(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
-		return fmt.Errorf("open sessions directory for sync: %w", err)
+		return &WriteCommittedError{Err: fmt.Errorf("open sessions directory for sync: %w", err)}
 	}
 	err = d.Sync()
 	_ = d.Close()
 	if err != nil {
-		return fmt.Errorf("sync sessions directory: %w", err)
+		return &WriteCommittedError{Err: fmt.Errorf("sync sessions directory: %w", err)}
 	}
-	*s = next
 	return nil
 }
 
@@ -217,6 +251,9 @@ func Load(id string) (*Session, error) {
 }
 
 func loadFrom(dir, id string) (*Session, error) {
+	if err := validateSessionID(id); err != nil {
+		return nil, err
+	}
 	path := filepath.Join(dir, id+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -352,12 +389,19 @@ func cloneStringMap(in map[string]string) map[string]string {
 // path the process last loaded. Store is the injectable form; the package-level
 // functions delegate to it so both paths share one implementation.
 type Store struct {
-	dir string
+	dir              string
+	failBeforeRename error
+	failAfterRename  error
+}
+
+// injectWriteFailures is a private per-store test seam.
+func (st *Store) injectWriteFailures(before, after error) {
+	st.failBeforeRename, st.failAfterRename = before, after
 }
 
 // SaveSelection atomically publishes the selected responder metadata while
-// retaining the newest durable turns and work snapshot. The caller's Session
-// is changed only after the candidate has been durably renamed.
+// retaining the newest durable work snapshot. On WriteCommittedError the
+// caller also receives the installed selection, with durability unconfirmed.
 func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string) error {
 	sessionWriteMu.Lock()
 	defer sessionWriteMu.Unlock()
@@ -373,7 +417,10 @@ func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displa
 	candidate.SelectedPersonaID = personaID
 	candidate.SelectedPersonaDisplayName = displayName
 	candidate.SelectedPersonaPromptHash = promptHash
-	if err := saveSession(st.dir, &candidate, candidate.Turns, candidate.Work); err != nil {
+	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
+		if WriteCommitted(err) {
+			*s = candidate
+		}
 		return err
 	}
 	*s = candidate
@@ -417,7 +464,7 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 			snapshot = current.Work
 		}
 	}
-	if err := saveSession(st.dir, &candidate, turns, snapshot); err != nil {
+	if err := saveSessionWithFailures(st.dir, &candidate, turns, snapshot, st.failBeforeRename, st.failAfterRename); err != nil {
 		return err
 	}
 	*s = candidate
@@ -450,16 +497,25 @@ func (st *Store) SaveWork(s *Session, snapshot work.Snapshot) error {
 		if !reflect.DeepEqual(candidate, current.Work) {
 			return fmt.Errorf("%w: revision=%d", ErrWorkRevisionConflict, snapshot.Revision)
 		}
+		// A previous attempt may have renamed this exact revision and then
+		// failed directory sync. Reconfirm durability before acknowledging it.
+		if st.failAfterRename != nil {
+			return &WriteCommittedError{Err: st.failAfterRename}
+		}
+		if err := syncSessionDirectory(st.dir); err != nil {
+			return err
+		}
 		s.Work = cloneSnapshot(current.Work)
 		return nil
 	}
 	copy := cloneSnapshot(&snapshot)
 	copy.PersistedRevision = copy.Revision
-	base := s
+	baseCopy := *s
+	base := &baseCopy
 	if err == nil {
 		base = current
 	}
-	if err := saveSession(st.dir, base, base.Turns, copy); err != nil {
+	if err := saveSessionWithFailures(st.dir, base, base.Turns, copy, st.failBeforeRename, st.failAfterRename); err != nil {
 		return err
 	}
 	s.Work = cloneSnapshot(copy)
@@ -490,11 +546,12 @@ func (st *Store) BeginWork(s *Session, snapshot work.Snapshot, expectedPriorScop
 	}
 	copy := cloneSnapshot(&snapshot)
 	copy.PersistedRevision = copy.Revision
-	base := s
+	baseCopy := *s
+	base := &baseCopy
 	if err == nil {
 		base = current
 	}
-	if err := saveSession(st.dir, base, base.Turns, copy); err != nil {
+	if err := saveSessionWithFailures(st.dir, base, base.Turns, copy, st.failBeforeRename, st.failAfterRename); err != nil {
 		return err
 	}
 	s.Work = cloneSnapshot(copy)

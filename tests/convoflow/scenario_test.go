@@ -8,7 +8,7 @@ import (
 func TestLoadStockScenarios(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join("scenarios")
-	for _, name := range []string{"search-web-intent.yaml", "chat-then-work.yaml", "job-status.yaml", "live-router-spawn.yaml", "self-test.yaml"} {
+	for _, name := range []string{"search-web-intent.yaml", "chat-then-work.yaml", "job-status.yaml", "live-router-spawn.yaml", "self-test.yaml", "persona-proof.yaml"} {
 		scn, err := loadScenario(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -16,6 +16,16 @@ func TestLoadStockScenarios(t *testing.T) {
 		if scn.Name == "" || len(scn.Turns) == 0 {
 			t.Fatalf("%s: empty", name)
 		}
+	}
+}
+
+func TestScenarioSelectionSchemaRejectsUnknownOpAndMisplacedError(t *testing.T) {
+	t.Parallel()
+	if _, err := loadScenarioString("bad-op.yaml", "name: x\nturns:\n  - id: a\n    op: select_santa\n"); err == nil {
+		t.Fatal("expected unknown op error")
+	}
+	if _, err := loadScenarioString("bad-error.yaml", "name: x\nturns:\n  - id: a\n    expect_error: nope\n"); err == nil {
+		t.Fatal("expected misplaced expect_error error")
 	}
 }
 

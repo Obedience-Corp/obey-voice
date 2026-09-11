@@ -193,6 +193,55 @@ func (m *LiveTTSManager) ReplaceAndClose(p *pipeline.Pipeline, set *TTSSet) bool
 	return m.swap(p, set, 0)
 }
 
+// CommitPrepared runs a host selection transaction while holding the manager
+// lifetime fence, then publishes the new voice before allowing Close to run.
+// The callback should invoke PreparedBrainReplacement.Commit with the durable
+// session persistence function. Keeping this lock across that callback means a
+// successful persistence cannot be followed by a closed-manager TTS install.
+// The callback must not call this manager recursively.
+// Ownership transfers only on success. On error the caller still owns set
+// and must close it, matching Install and ReplaceAndClose.
+func (m *LiveTTSManager) CommitPrepared(p *pipeline.Pipeline, set *TTSSet, commit func() error) error {
+	if m == nil {
+		return errors.New("tts manager is unavailable")
+	}
+	if p == nil {
+		return errors.New("tts pipeline is unavailable")
+	}
+	if set == nil || set.Primary == nil {
+		return errors.New("prepared TTS set is incomplete")
+	}
+	if commit == nil {
+		return errors.New("prepared selection commit is required")
+	}
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return errors.New("tts manager is closed")
+	}
+	m.ensureDone()
+	if err := commit(); err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	retired, done := m.swapLocked(p, set)
+	delay := m.retireDelay()
+	m.mu.Unlock()
+	if delay <= 0 {
+		m.finishRetire(retired)
+	} else {
+		go m.retireAfter(retired, delay, done)
+	}
+	return nil
+}
+
+// ReplaceTransaction is the host-facing name for CommitPrepared. It keeps
+// the selection callback and voice publication under one LiveTTSManager
+// lifetime fence.
+func (m *LiveTTSManager) ReplaceTransaction(p *pipeline.Pipeline, set *TTSSet, commit func() error) error {
+	return m.CommitPrepared(p, set, commit)
+}
+
 func (m *LiveTTSManager) swap(p *pipeline.Pipeline, set *TTSSet, delay time.Duration) bool {
 	m.mu.Lock()
 	if m.closed {
@@ -200,11 +249,7 @@ func (m *LiveTTSManager) swap(p *pipeline.Pipeline, set *TTSSet, delay time.Dura
 		return false
 	}
 	m.ensureDone()
-	retired := m.sets
-	m.sets = []*TTSSet{set}
-	m.retiring = append(m.retiring, retired...)
-	p.ReplaceTTS(set.Primary, set.Fallback)
-	done := m.done
+	retired, done := m.swapLocked(p, set)
 	m.mu.Unlock()
 
 	if delay <= 0 {
@@ -213,6 +258,20 @@ func (m *LiveTTSManager) swap(p *pipeline.Pipeline, set *TTSSet, delay time.Dura
 	}
 	go m.retireAfter(retired, delay, done)
 	return true
+}
+
+func (m *LiveTTSManager) swapLocked(p *pipeline.Pipeline, set *TTSSet) ([]*TTSSet, <-chan struct{}) {
+	var retired []*TTSSet
+	for _, previous := range m.sets {
+		if previous != set {
+			retired = append(retired, previous)
+		}
+	}
+	m.sets = []*TTSSet{set}
+	m.retiring = append(m.retiring, retired...)
+	p.ReplaceTTS(set.Primary, set.Fallback)
+	done := m.done
+	return retired, done
 }
 
 func (m *LiveTTSManager) retireAfter(sets []*TTSSet, delay time.Duration, done <-chan struct{}) {

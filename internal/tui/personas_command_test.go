@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -134,6 +135,16 @@ func TestPersonasSwitchExplainsNewChatBinding(t *testing.T) {
 	}
 	cfg := &config.Config{AgentName: "Original"}
 	app := App{cfg: cfg, screen: screenConversation, conversation: newConversation("Original")}
+	var selected string
+	app.runtime = &ConversationRuntime{
+		SelectPersona: func(_ context.Context, id string) (events.PersonaSelection, *config.Config, error) {
+			selected = id
+			return events.PersonaSelection{PersonaID: id, DisplayName: "Research", Revision: 1}, &config.Config{AgentName: "Research"}, nil
+		},
+	}
+	app.conversation.deps.ctx = context.Background()
+	app.conversation.sessionID = "session"
+	app.conversation.configureSelection(app.runtime)
 	model, _ := app.Update(switchScreenMsg(screenPersonas))
 	app = model.(App)
 	for i, item := range app.personas.items {
@@ -141,13 +152,19 @@ func TestPersonasSwitchExplainsNewChatBinding(t *testing.T) {
 			app.personas.cursor = i
 		}
 	}
-	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	app = model.(App)
-	if cfg.ActivePersona != p.ID || app.conversation.agentName != "Original" || !strings.Contains(app.personas.message, "start a new chat") {
-		t.Fatalf("persona switch changed the live identity or omitted guidance: %s", app.personas.message)
+	if cmd == nil {
+		t.Fatal("in-chat persona choice did not invoke the shared selector")
 	}
-	saved, err := config.Load()
-	if err != nil || saved.ActivePersona != p.ID {
-		t.Fatalf("persona choice not persisted: config=%+v error=%v", saved, err)
+	model, cmd = app.Update(cmd())
+	app = model.(App)
+	if cmd == nil {
+		t.Fatal("shared selector request did not start")
+	}
+	model, _ = app.Update(cmd())
+	app = model.(App)
+	if selected != p.ID || cfg.ActivePersona != "" || app.conversation.agentName != "Research" || !strings.Contains(app.personas.message, "Active persona") {
+		t.Fatalf("in-chat selection did not publish session state: id=%q cfg=%+v agent=%q message=%q", selected, cfg, app.conversation.agentName, app.personas.message)
 	}
 }

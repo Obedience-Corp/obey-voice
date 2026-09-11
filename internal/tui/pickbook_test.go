@@ -99,7 +99,7 @@ func TestPickBookMOBIOnlyShowsError(t *testing.T) {
 }
 
 func TestPickBookConversionErrorReturnsToPicker(t *testing.T) {
-	app := NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app := newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.screen = screenPickBook
 	app.pickBook.requestID = 7
 	app.pickBook.loadPhase = pickPreparing
@@ -114,7 +114,7 @@ func TestPickBookConversionErrorReturnsToPicker(t *testing.T) {
 }
 
 func TestBookPickedMsgFillsAudiobookInput(t *testing.T) {
-	app := NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app := newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.screen = screenPickBook
 	app.pickBook.requestID = 3
 	app.audiobook.input = ""
@@ -132,7 +132,7 @@ func TestBookPickedMsgFillsAudiobookInput(t *testing.T) {
 }
 
 func TestBookPickedMsgIgnoresStaleRequest(t *testing.T) {
-	app := NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app := newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.screen = screenPickBook
 	app.pickBook.requestID = 5
 	app.audiobook.input = "keep-me"
@@ -144,7 +144,7 @@ func TestBookPickedMsgIgnoresStaleRequest(t *testing.T) {
 }
 
 func TestBookPickedMsgIgnoresWhenLeftScreen(t *testing.T) {
-	app := NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app := newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.screen = screenAudiobook
 	app.pickBook.requestID = 1
 	app.pickBook.loadPhase = pickPreparing
@@ -201,7 +201,7 @@ func TestPickBookPreparingShowsPreparationStatus(t *testing.T) {
 
 func TestLeavingPickBookCancelsResolve(t *testing.T) {
 	cancelled := false
-	app := NewApp(&config.Config{CalibreEnabled: true})
+	app := newApp(&config.Config{CalibreEnabled: true}, nil, nil)
 	app.screen = screenPickBook
 	app.pickBook.loadPhase = pickPreparing
 	app.pickBook.resolveCancel = func() { cancelled = true }

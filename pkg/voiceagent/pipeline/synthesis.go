@@ -89,8 +89,8 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 			seg.Elapsed = m.elapsedFromEOU(m.firstAdmit)
 		}
 	}
-	p.emit(seg)
-	p.emit(events.GeneratingVoice{Sentence: sentence})
+	p.emitResponseContext(ctx, seg)
+	p.emitResponseContext(ctx, events.GeneratingVoice{Sentence: sentence})
 
 	synthStarted := time.Now()
 	stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, sentence, stickFallback)
@@ -220,7 +220,7 @@ func (p *Pipeline) synthesizeWithFallback(ctx context.Context, text string, stic
 }
 
 func (p *Pipeline) synthesizeWithFallbackObserved(ctx context.Context, text string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
-	primary, fallback := p.ttsProviders()
+	primary, fallback := p.responseTTS(ctx)
 	if primary == nil {
 		return nil, false, synthesisObservation{warmState: events.WarmStateUnknown}, errors.New("TTS provider is not configured")
 	}
@@ -290,7 +290,7 @@ func (p *Pipeline) playFallback(ctx context.Context, text string, primaryErr err
 }
 
 func (p *Pipeline) playFallbackObserved(ctx context.Context, text string, primaryErr error, stickFallback *bool) (*audio.Playback, bool, synthesisObservation, error) {
-	primary, fallback := p.ttsProviders()
+	primary, fallback := p.responseTTS(ctx)
 	if !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(primaryErr) {
 		return nil, false, p.observeProvider(primary), primaryErr
 	}

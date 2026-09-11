@@ -68,33 +68,11 @@ func (p *Pipeline) ReplaceConversationBrain(next brain.Provider, worker brain.Pr
 	if p == nil || p.Agency == nil {
 		return fmt.Errorf("pipeline: work agency is unavailable")
 	}
-	if next == nil {
-		return fmt.Errorf("pipeline: replacement brain is required")
+	prepared, err := p.PrepareConversationBrain(next, worker, cfg, workerErr)
+	if err != nil {
+		return err
 	}
-	old := p.Brain
-	if old == next {
-		return nil
-	}
-	c, scope := p.Agency.workAuthority()
-	if c != nil {
-		if c.Snapshot(scope).Retired {
-			return work.ErrRetired
-		}
-		if err := p.Agency.attachManaged(next, c, scope, cfg); err != nil {
-			return err
-		}
-	}
-	if c != nil {
-		if err := c.RevokeBinding(scope); err != nil {
-			return err
-		}
-	}
-	p.Brain = next
-	p.Agency.ReplaceWorker(worker, cfg, workerErr)
-	if old != nil {
-		p.RetireBrain(old)
-	}
-	return nil
+	return prepared.Commit(nil)
 }
 
 func (p *Pipeline) emitWorkSnapshot(snapshot work.Snapshot) {

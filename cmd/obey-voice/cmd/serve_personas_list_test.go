@@ -10,11 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
 func findPersonaRow(t *testing.T, rows []netapi.PersonaSummary, id string) netapi.PersonaSummary {
@@ -126,21 +122,17 @@ func TestServePersonaListActiveFollowsRuntimeSwitch(t *testing.T) {
 		t.Fatal("samantha is not active before the switch")
 	}
 
-	manager := &voiceagent.LiveTTSManager{}
-	t.Cleanup(manager.Close)
-	switcher := &servePersonaSwitcher{
-		cfg:      cfg,
-		pipeline: &pipeline.Pipeline{Brain: &servePersonaTestBrain{}},
-		tts:      manager,
-		sessions: &sessionRef{sess: session.New(cfg.BrainProvider, cfg.OllamaModel)},
-		newBrain: func(*config.Config) (brain.Provider, error) { return &servePersonaTestBrain{}, nil },
-		newTTS:   func(*config.Config) (*voiceagent.TTSSet, error) { return &voiceagent.TTSSet{}, nil },
+	for _, id := range []string{"samantha", "pirate"} {
+		if err := persona.WriteSystemPrompt(id, "You are "+id+"."); err != nil {
+			t.Fatal(err)
+		}
 	}
+	switcher := newSwitcherForTest(t, cfg)
 	if _, err := switcher.apply("pirate"); err != nil {
 		t.Fatalf("apply() error = %v", err)
 	}
 
-	rows, err = list()
+	rows, err = servePersonaList(switcher.selector.Config())()
 	if err != nil {
 		t.Fatalf("servePersonaList() error = %v", err)
 	}

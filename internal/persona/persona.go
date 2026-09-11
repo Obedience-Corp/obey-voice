@@ -48,6 +48,7 @@ type Profile struct {
 	Schema      string     `yaml:"schema" json:"schema"`
 	ID          string     `yaml:"id" json:"id"`
 	DisplayName string     `yaml:"display_name" json:"display_name"`
+	Aliases     []string   `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 	Builtin     bool       `yaml:"builtin,omitempty" json:"builtin"`
 	Brain       Brain      `yaml:"brain,omitempty" json:"brain"`
 	TTS         TTS        `yaml:"tts" json:"tts"`
@@ -336,7 +337,7 @@ func applyIdentity(cfg *config.Config, p *Profile) {
 	if name := strings.TrimSpace(p.DisplayName); name != "" {
 		cfg.AgentName = name
 	}
-	if ref := effectivePersonaRef(p); ref != "" {
+	if ref := effectivePersonaRefFrom(p, config.PromptsDirFrom(cfg)); ref != "" {
 		cfg.Persona = ref
 	}
 	// Turn prompt is independent of the persona system-prompt name. Empty
@@ -354,6 +355,10 @@ func applyIdentity(cfg *config.Config, p *Profile) {
 // to the embedded default document. The editor heals the file on disk; this
 // keeps the running process working before anyone opens it.
 func effectivePersonaRef(p *Profile) string {
+	return effectivePersonaRefFrom(p, promptsDir())
+}
+
+func effectivePersonaRefFrom(p *Profile, promptDir string) string {
 	ref := strings.TrimSpace(p.Prompts.Persona)
 	id := strings.TrimSpace(p.ID)
 	if id == "" || ref == id {
@@ -362,7 +367,7 @@ func effectivePersonaRef(p *Profile) string {
 	// Only a real user document at prompts/persona/<id>.yaml wins. Checking via
 	// LoadSystemPrompt would also match the embedded fallback, which would
 	// override a deliberate shared ref on the samantha profile.
-	entry, err := prompts.Describe(promptsDir(), prompts.KindPersona, id)
+	entry, err := prompts.Describe(promptDir, prompts.KindPersona, id)
 	if err != nil || entry.Source != prompts.SourceUser {
 		return ref
 	}

@@ -122,6 +122,9 @@ type App struct {
 
 	// startInConversation skips the launcher (resume/continue).
 	startInConversation bool
+	// startingSessionID survives a recoverable persona-binding failure so the
+	// chooser retries the same resumed session rather than creating a new one.
+	startingSessionID string
 
 	quitting     bool
 	returnToMenu bool
@@ -129,8 +132,12 @@ type App struct {
 
 // NewApp creates the TUI application.
 func NewApp(cfg *config.Config) App {
-	providers := discovery.DiscoverProviders(cfg)
-	savedSessions := resumableSessions(session.List())
+	return newApp(cfg, discovery.DiscoverProviders(cfg), session.List())
+}
+
+// newApp initializes the UI from supplied discovery and session snapshots.
+func newApp(cfg *config.Config, providers []discovery.ProviderInfo, saved []session.Session) App {
+	savedSessions := resumableSessions(saved)
 	conversation := newConversation(cfg.AgentName)
 	conversation.cfg = cfg
 
@@ -307,6 +314,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case switchScreenMsg:
 		target := screen(msg)
+		if target == screenSettings && a.conversation.selectionPending() && (a.screen == screenConversation || a.screen == screenPersonas) {
+			a.conversation.setStatus("Persona selection in progress", true)
+			return a, nil
+		}
 		if a.screen == screenPickBook && target != screenPickBook {
 			a.pickBook.cancelResolve()
 		}
@@ -404,6 +415,14 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.personas.cancelBrainModels()
 			a.personas = newPersonas(a.cfg)
 			a.personas.returnScreen = prev
+			if prev == screenConversation && a.runtime != nil {
+				a.personas.requestSelection = func(id string) tea.Cmd {
+					return func() tea.Msg { return personaSelectionRequestMsg{id: id} }
+				}
+				if a.runtime.SelectionSnapshot != nil {
+					a.conversation.applySelectionSnapshot(a.runtime.SelectionSnapshot())
+				}
+			}
 			a.personas.width, a.personas.height = a.width, a.height
 			a.personas.ensureVisible()
 		case screenLauncher:
@@ -743,6 +762,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.screen = screenConversation
+		a.startingSessionID = msg.sessionID
 		// The build takes seconds to minutes; the screen says so until it lands.
 		tick := a.conversation.beginStartup(msg.personaName)
 		return a, tea.Batch(tick, a.progress.wait(),
@@ -763,6 +783,35 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runtimeReadyMsg:
 		if msg.err != nil {
+			var bindingErr *PersonaBindingError
+			if !errors.As(msg.err, &bindingErr) {
+				var bindingValue PersonaBindingError
+				if errors.As(msg.err, &bindingValue) {
+					bindingErr = &bindingValue
+				}
+			}
+			if bindingErr != nil {
+				// A bad/deleted persona is recoverable before the runtime has
+				// opened capture. Return to the chooser and let the next valid
+				// selection start the normal conversation build.
+				a.fatalErr = nil
+				a.screen = screenPersonas
+				a.personas = newPersonas(a.cfg)
+				a.personas.returnScreen = screenLauncher
+				a.personas.message = bindingErr.Error()
+				sessionID := a.startingSessionID
+				if bindingErr.SessionID != "" {
+					sessionID = bindingErr.SessionID
+				}
+				a.personas.startPersona = func(id, name string) tea.Cmd {
+					return func() tea.Msg {
+						return startPipelineMsg{sessionID: sessionID, personaID: id, personaName: name}
+					}
+				}
+				a.personas.width, a.personas.height = a.width, a.height
+				a.personas.ensureVisible()
+				return a, nil
+			}
 			a.fatalErr = msg.err
 			a.quitting = true
 			return a, tea.Quit
@@ -816,8 +865,70 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// is display-only; restored results remain held and are never spoken or
 		// acknowledged merely because the TUI started.
 		a.conversation.handleEvent(events.WorkStateChanged{Snapshot: msg.rt.Pipeline.WorkSnapshot()})
+		a.conversation.configureSelection(msg.rt)
+		if msg.rt.SelectionSnapshot != nil {
+			a.conversation.applySelectionSnapshot(msg.rt.SelectionSnapshot())
+		}
 		a.installNameSummon(msg.rt)
 		return a, tea.Batch(cmd, a.startTalkHotkey())
+
+	case personaSelectionRequestMsg:
+		if a.screen != screenPersonas || a.personas.returnScreen != screenConversation {
+			return a, nil
+		}
+		cmd := a.conversation.enqueuePersonaSelection(msg.id)
+		if cmd == nil && (a.conversation.selectionRuntime == nil || a.conversation.selectionRuntime.SelectPersona == nil) {
+			a.personas.message = "Persona switching is unavailable for this conversation"
+		} else if a.conversation.selectionBusy || len(a.conversation.selectionQueue) > 1 {
+			a.personas.message = "Persona selection queued"
+		} else {
+			a.personas.message = "Preparing persona…"
+		}
+		return a, cmd
+
+	case personaSelectionResultMsg:
+		// Selection publication belongs to this update thread. A failed
+		// preparation leaves the old runtime/config/display untouched.
+		accepted, next := a.conversation.finishPersonaSelection(msg)
+		if !accepted {
+			return a, nil
+		}
+		if msg.err != nil {
+			a.personas.message = fmt.Sprintf("Failed to switch persona: %v", msg.err)
+		} else {
+			name := msg.selection.DisplayName
+			if name == "" {
+				name = msg.selection.PersonaID
+			}
+			a.personas.message = fmt.Sprintf("Active persona: %s", name)
+		}
+		if msg.err == nil {
+			if msg.cfg != nil {
+				a.conversation.cfg = msg.cfg
+				if a.runtime != nil {
+					a.runtime.SessionCfg = msg.cfg
+				}
+			}
+			if a.runtime != nil {
+				if msg.selection.PersonaID != "" {
+					a.runtime.PersonaID = msg.selection.PersonaID
+				}
+				if msg.selection.DisplayName != "" {
+					a.runtime.AgentName = msg.selection.DisplayName
+				}
+			}
+			a.conversation.applySelectionSnapshot(msg.selection)
+			// The shared admission route owns name addressing for a live
+			// session. Keep the independent frontend/self-echo protection,
+			// but do not leave the old per-turn gate installed.
+			if a.runtime != nil && a.runtime.Pipeline != nil && a.runtime.Pipeline.AdmitInput != nil {
+				a.runtime.Pipeline.AddressGate = nil
+			}
+		}
+		if next == nil && a.screen == screenConversation {
+			next = a.conversation.resumeListening()
+		}
+		return a, next
 
 	case talkHotkeyEventMsg:
 		// Browsing personas pauses voice input. Keep draining the global key
@@ -854,6 +965,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.library.cancelPrepare()
 		}
 		a.remote.stop()
+		a.conversation.cancelSelection()
 		// Ask, do not wait: this is the update loop.
 		a.signalTalkHotkey()
 		a.quitting = true
@@ -868,6 +980,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg:
 			var convCmd tea.Cmd
 			a.conversation, convCmd = a.conversation.Update(msg)
+			if eventMsg, ok := msg.(busEventMsg); ok {
+				if event, ok := eventMsg.event.(events.PersonaSelection); ok {
+					a.syncRuntimeSelection(event)
+				}
+			}
 			// Still deliver the message to the active screen below; batch cmds.
 			var cmd tea.Cmd
 			switch a.screen {
@@ -911,6 +1028,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.settings, cmd = a.settings.Update(msg)
 	case screenConversation:
 		a.conversation, cmd = a.conversation.Update(msg)
+		if eventMsg, ok := msg.(busEventMsg); ok {
+			if event, ok := eventMsg.event.(events.PersonaSelection); ok {
+				a.syncRuntimeSelection(event)
+			}
+		}
 	case screenSessions:
 		a.sessions, cmd = a.sessions.Update(msg)
 	case screenMeetingSetup:
@@ -941,6 +1063,32 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a App) applyPlaybackVolume(gain float64) {
 	if a.runtime != nil && a.runtime.Pipeline != nil {
 		audio.ApplyEngineVolume(a.runtime.Pipeline.Player, gain)
+	}
+}
+
+// syncRuntimeSelection applies a published control event only after the
+// conversation model accepted its revision. SelectionSnapshot/SelectionConfig
+// are read on the update thread; the event bridge never touches runtime
+// identity or config directly.
+func (a *App) syncRuntimeSelection(event events.PersonaSelection) {
+	if a.runtime == nil || a.conversation.selectionRevision != event.Revision || a.conversation.selection.PersonaID != event.PersonaID {
+		return
+	}
+	if a.runtime.SelectionSnapshot != nil {
+		snapshot := a.runtime.SelectionSnapshot()
+		if snapshot.Revision < event.Revision || snapshot.PersonaID != event.PersonaID {
+			return
+		}
+	}
+	a.runtime.PersonaID = event.PersonaID
+	if event.DisplayName != "" {
+		a.runtime.AgentName = event.DisplayName
+	}
+	if a.runtime.SelectionConfig != nil {
+		if cfg := a.runtime.SelectionConfig(); cfg != nil {
+			a.runtime.SessionCfg = cfg
+			a.conversation.cfg = cfg
+		}
 	}
 }
 

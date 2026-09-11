@@ -16,7 +16,7 @@ import (
 // so finish logic cannot drift across early returns.
 func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, response string) {
 	p.finishOrdinaryCompletion(metrics, response, false)
-	p.emit(events.ResponseReady{Response: response, Degraded: metrics.degraded})
+	p.emitResponse(metrics, events.ResponseReady{Response: response, Degraded: metrics.degraded})
 	turn.finish(TurnCompleted)
 	if p.OnTurn != nil {
 		p.OnTurn()
@@ -43,6 +43,16 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	} else {
 		p.emit(events.UserInput{Text: input, Speaker: speakerID})
 	}
+	original := input
+	ctx, admission, err := p.admitInput(ctx, input, background, metrics)
+	if err != nil {
+		turn.finish(TurnFailed)
+		return fmt.Errorf("admit response: %w", err)
+	}
+	if admission.LocalReply != "" {
+		return p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
+	}
+	input = admission.Request
 	if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -51,7 +61,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
 		return nil
 	}
-	p.emit(events.ThinkingStarted{})
+	p.emitResponse(metrics, events.ThinkingStarted{})
 	if metrics.sttFinal.IsZero() {
 		metrics.sttFinal = time.Now()
 	}
@@ -80,6 +90,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	streamOpts := brain.StreamOptions{
+		Identity:          metrics.responseIdentity(),
+		OriginalInput:     original,
 		Speaker:           speakerID,
 		Background:        background,
 		ToolsEnabled:      p.VoiceToolsEnabled && !background,
@@ -134,7 +146,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	}
 
 	metrics.modelComplete = time.Now()
-	p.emit(events.ThinkingComplete{
+	p.emitResponse(metrics, events.ThinkingComplete{
 		Response: response,
 		Elapsed:  time.Since(thinkingStarted),
 	})
@@ -168,8 +180,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		if !metrics.firstSpeakable.IsZero() && !metrics.firstAdmit.Equal(metrics.firstSpeakable) {
 			seg.Elapsed = metrics.elapsedFromEOU(metrics.firstAdmit)
 		}
-		p.emit(seg)
-		p.emit(events.GeneratingVoice{Sentence: speakable})
+		p.emitResponse(metrics, seg)
+		p.emitResponse(metrics, events.GeneratingVoice{Sentence: speakable})
 
 		synthStarted := time.Now()
 		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil)

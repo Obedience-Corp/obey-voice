@@ -33,6 +33,8 @@ type runProfile struct {
 	TTSProvider    string `yaml:"tts_provider" json:"tts_provider"`
 	TTSVoice       string `yaml:"tts_voice,omitempty" json:"tts_voice,omitempty"`
 	WorkDir        string `yaml:"work_dir" json:"work_dir"`
+	FixtureConfig  string `yaml:"fixture_config,omitempty" json:"fixture_config,omitempty"`
+	PersonaDir     string `yaml:"persona_dir,omitempty" json:"persona_dir,omitempty"`
 }
 
 func (p runProfile) silent() bool { return strings.EqualFold(p.TTSProvider, "none") }
@@ -141,12 +143,18 @@ func writeResolvedConfig(runDir string, prof runProfile) error {
 // the TTS set (checked here — Available is a method on a built provider),
 // then New with everything injected.
 type liveRunner struct {
-	agent   *voiceagent.Agent
-	cleanup func()
-	tts     *voiceagent.TTSSet
-	live    *observing
-	worker  *observing
-	player  *recordingPlayer
+	agent          *voiceagent.Agent
+	cleanup        func()
+	tts            *voiceagent.TTSSet
+	voices         *voiceagent.LiveTTSManager
+	live           *observing
+	liveProvider   brain.Provider
+	worker         *observing
+	workerProvider brain.Provider
+	player         *recordingPlayer
+	persona        *personaRuntime
+	observations   []*observing
+	workerFactory  func(*config.Config) (brain.Provider, error)
 
 	mu         sync.Mutex
 	markStream int
@@ -158,7 +166,8 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 	if err != nil {
 		return nil, fmt.Errorf("live brain: %w", err)
 	}
-	r := &liveRunner{live: &observing{inner: liveInner}, player: player}
+	live, liveObs := observeProvider(liveInner)
+	r := &liveRunner{live: liveObs, liveProvider: live, player: player, observations: []*observing{liveObs}}
 
 	var workerInner brain.Provider
 	if k.workerIsStub() {
@@ -170,13 +179,13 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 			return nil, fmt.Errorf("worker brain: %w", err)
 		}
 	}
-	r.worker = &observing{inner: workerInner}
+	r.workerProvider, r.worker = observeProvider(workerInner)
 
 	opts := voiceagent.Options{
 		Config:   cfg,
 		Events:   bus,
-		Brain:    r.live,
-		Worker:   r.worker,
+		Brain:    r.liveProvider,
+		Worker:   r.workerProvider,
 		TextOnly: true,
 		Silent:   silent,
 		Logf:     logf,
@@ -205,16 +214,30 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 	}
 	r.agent = agent
 	r.cleanup = cleanup
+	if r.tts != nil {
+		r.voices = &voiceagent.LiveTTSManager{RetireDelay: -1}
+		if !r.voices.Adopt(r.tts) {
+			r.close()
+			return nil, fmt.Errorf("persona TTS manager is closed")
+		}
+	}
 	agent.OnRoute = rec.route
 	return r, nil
 }
 
 func (r *liveRunner) close() {
+	if r.persona != nil {
+		r.persona.selector.Close()
+	}
 	if r.cleanup != nil {
 		r.cleanup()
 		r.cleanup = nil
 	}
-	if r.tts != nil {
+	if r.voices != nil {
+		r.voices.Close()
+		r.voices = nil
+		r.tts = nil
+	} else if r.tts != nil {
 		r.tts.Close()
 		r.tts = nil
 	}
@@ -222,11 +245,11 @@ func (r *liveRunner) close() {
 }
 
 func (r *liveRunner) closeBrains() {
-	if r.live != nil {
-		_ = r.live.Close()
+	if r.liveProvider != nil {
+		_ = brain.CloseProvider(r.liveProvider)
 	}
-	if r.worker != nil {
-		_ = r.worker.Close()
+	if r.workerProvider != nil {
+		_ = brain.CloseProvider(r.workerProvider)
 	}
 }
 
@@ -247,7 +270,12 @@ func (r *liveRunner) runTurn(ctx context.Context, user string) error {
 	return r.agent.RunTurnTextMode(ctx, user)
 }
 
-func (r *liveRunner) history() []brain.Turn { return r.live.History() }
+func (r *liveRunner) history() []brain.Turn {
+	if r.agent != nil && r.agent.Pipeline != nil && r.agent.Pipeline.Brain != nil {
+		return r.agent.Pipeline.Brain.History()
+	}
+	return r.liveProvider.History()
+}
 
 func (r *liveRunner) playing() bool { return r.player != nil && r.player.IsPlaying() }
 
@@ -279,4 +307,37 @@ func (r *liveRunner) workerCalled() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return f > r.markFull
+}
+
+func (r *liveRunner) selectPersona(ctx context.Context, id string) error {
+	if r.persona == nil {
+		return fmt.Errorf("persona selector is not configured")
+	}
+	s, err := r.persona.selector.Select(ctx, id, "ui")
+	if err == nil {
+		r.persona.recordSelection(s)
+	}
+	return err
+}
+func (r *liveRunner) personaState() personaTurnState {
+	if r.persona == nil {
+		return personaTurnState{}
+	}
+	s, _ := r.live.calls()
+	provider := r.liveProvider
+	if r.agent != nil && r.agent.Pipeline != nil && r.agent.Pipeline.Brain != nil {
+		provider = r.agent.Pipeline.Brain
+	}
+	return r.persona.state(provider, s)
+}
+func (r *liveRunner) writePersonaArtifacts(dir string) error {
+	if r.persona == nil {
+		return nil
+	}
+	s, _ := r.live.calls()
+	provider := r.liveProvider
+	if r.agent != nil && r.agent.Pipeline != nil && r.agent.Pipeline.Brain != nil {
+		provider = r.agent.Pipeline.Brain
+	}
+	return r.persona.writeArtifacts(dir, provider, []map[string]any{{"calls": s}})
 }

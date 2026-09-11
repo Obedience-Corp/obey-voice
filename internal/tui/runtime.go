@@ -29,8 +29,9 @@ type ConversationRuntime struct {
 	Voice    bool // STT is configured; voice turns may run
 	Output   bool // TTS and playback are configured
 	// PersonaID and AgentName identify the session binding this runtime was
-	// built from. The conversation renders this identity for its lifetime —
-	// later persona switches or edits must not relabel an in-flight session.
+	// built from. AgentName is updated on the Bubble Tea thread after a
+	// successful in-chat selection; finalized replies retain their envelope
+	// identity independently.
 	PersonaID string
 	AgentName string
 	// SessionCfg is the binding-derived config snapshot (provider, voice, model
@@ -49,7 +50,37 @@ type ConversationRuntime struct {
 	SpeakerNames *speaker.NameMap
 	Seed         []brain.Turn                // resumed history to pre-populate the viewport
 	ReloadVoice  func(context.Context) error // applies Settings to subsequent utterances
-	Cleanup      func()                      // tears down pipeline resources and saves the session
+	// SelectPersona is the host-owned, serialized selection boundary. The TUI
+	// invokes it for an in-chat /personas choice; it never writes the global
+	// active-persona preference for that choice.
+	SelectPersona func(context.Context, string) (events.PersonaSelection, *config.Config, error)
+	// SelectionSnapshot supplies the current session binding to the TUI when a
+	// manager is opened or a runtime is restored.
+	SelectionSnapshot func() events.PersonaSelection
+	// SelectionConfig lets a published selection event update the runtime's
+	// session config on the Bubble Tea thread without exposing mutable selector
+	// state to the event bridge.
+	SelectionConfig func() *config.Config
+	Cleanup         func() // tears down pipeline resources and saves the session
+}
+
+// PersonaBindingError identifies a startup failure caused by an unavailable
+// or invalid persona binding. App can return to the chooser while preserving
+// the fatal handling for unrelated runtime construction failures.
+type PersonaBindingError struct {
+	Err       error
+	SessionID string // includes CLI resumes consumed inside the runtime builder
+}
+
+func (e PersonaBindingError) Error() string {
+	if e.Err == nil {
+		return "persona binding failed"
+	}
+	return "persona binding failed: " + e.Err.Error()
+}
+
+func (e PersonaBindingError) Unwrap() error {
+	return e.Err
 }
 
 // BuildStage is one step of the conversation build, reported so the starting

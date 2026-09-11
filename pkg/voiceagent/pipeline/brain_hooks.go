@@ -109,7 +109,7 @@ func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, 
 	} else if p.OnRoute != nil {
 		p.OnRoute(decision)
 	}
-	p.emit(events.ResponseReady{
+	p.emitResponse(metrics, events.ResponseReady{
 		Response:    "",
 		Interrupted: false,
 		Degraded:    metrics.degraded,

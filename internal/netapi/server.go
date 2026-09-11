@@ -43,6 +43,9 @@ type Options struct {
 	// identity for its whole life, so an ack claiming the current turn changed
 	// would be a lie the client acts on.
 	SetPersona func(id string) (PersonaAck, error)
+	// SetPersonaContext is preferred by hosts with cancellable selection.
+	// It changes the responder within the existing conversation.
+	SetPersonaContext func(context.Context, string) (PersonaAck, error)
 
 	// ListPersonas, when set, enables GET /v1/personas. It is a callback for
 	// the same reason SetPersona is: netapi must not own persona resolution.

@@ -24,6 +24,7 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
+	response         events.ResponseEnvelope
 	ordinary         *ordinaryCompletion
 	delivery         *completionPlayback
 	start            time.Time
@@ -93,6 +94,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		audible = audio.SinkNone
 	}
 	return events.TurnMetrics{
+		Envelope:                responseEnvelopePtr(m.response),
 		Degraded:                m.degraded,
 		Interrupted:             m.interrupted,
 		STTFinalElapsed:         m.elapsed(m.sttFinal),
@@ -364,4 +366,11 @@ func (p *Pipeline) maybeStampLateTTFA(metrics *turnMetrics) {
 		at = metrics.playbackStart
 	}
 	p.stampTTFA(metrics, at)
+}
+
+func responseEnvelopePtr(e events.ResponseEnvelope) *events.ResponseEnvelope {
+	if e.ResponseID == "" {
+		return nil
+	}
+	return &e
 }

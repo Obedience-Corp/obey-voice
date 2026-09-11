@@ -58,6 +58,9 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
+	// AdmitInput runs after finalized input and speaker validation, before
+	// compaction/model/speech. The host serializes it with selection controls.
+	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
 	// The serialized host remembers omitted coverage until the next safe
 	// boundary, where one deterministic brief replaces a model retry.
 	completionFallback map[string]bool

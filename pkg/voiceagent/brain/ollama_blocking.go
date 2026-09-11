@@ -23,7 +23,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		defer func() { o.history = restore; o.canonical = restoreCanonical }()
 	}
 	if !opts.Background {
-		o.appendMessage(api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)}, nil)
+		o.appendUserInput(input, opts)
 	}
 	if !opts.TransientHistory {
 		o.receiveDelegationResults(opts)

@@ -177,6 +177,11 @@ func (o *OllamaBrain) SetInfoSink(fn func(events.Info)) {
 	o.infoMu.Unlock()
 }
 
+func (o *OllamaBrain) FreezePersonaPrompt() string {
+	o.personaReloader = nil
+	return shortPromptHash(o.systemPrompt)
+}
+
 func (o *OllamaBrain) emitInfo(info events.Info) {
 	o.infoMu.Lock()
 	sink := o.infoSink

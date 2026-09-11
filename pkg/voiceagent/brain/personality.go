@@ -19,6 +19,16 @@ func personaSystemPrompt(cfg *config.Config) (string, error) {
 	return resolvePrompt(cfg, prompts.KindPersona, cfg.Persona)
 }
 
+// PersonaPromptHash identifies the resolved identity text, including display
+// placeholders, that a freshly constructed provider will receive.
+func PersonaPromptHash(cfg *config.Config) (string, error) {
+	text, err := personaSystemPrompt(cfg)
+	if err != nil {
+		return "", err
+	}
+	return shortPromptHash(text), nil
+}
+
 // turnInstruction resolves the per-turn instruction appended to each user
 // message on the Claude, Cursor, and Grok prompt paths.
 //

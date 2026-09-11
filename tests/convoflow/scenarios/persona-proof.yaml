@@ -1,0 +1,76 @@
+name: persona-proof
+description: production selector and pipeline proof with one session across persona switches
+duration: 20m
+input: text
+persona: {initial: samantha}
+
+turns:
+  - id: initial
+    user: "Remember the blue comet."
+    wait: idle
+    expect:
+      - {persona_id: samantha}
+      - {response_persona_id: samantha}
+      - {response_id: "*"}
+      - {session_id: "*"}
+      - {brain_calls: 1}
+      - {canonical_includes: "blue comet"}
+      - {response_matches: "(?i)blue comet"}
+  - id: gap
+    wait: idle
+  - id: bare-switch
+    user: "Santa."
+    wait: idle
+    expect:
+      - {persona_id: santa}
+      - {response_persona_id: santa}
+      - {no_live_brain_call: true}
+  - id: santa-followup
+    user: "What fact did I mention?"
+    wait: idle
+    expect:
+      - {persona_id: santa}
+      - {response_persona_id: santa}
+      - {brain_calls: 1}
+      - {canonical_includes: "blue comet"}
+      - {response_matches: "(?i)blue comet"}
+  - id: return-switch
+    user: "Samantha."
+    wait: idle
+    expect:
+      - {persona_id: samantha}
+      - {response_persona_id: samantha}
+      - {no_live_brain_call: true}
+  - id: return-followup
+    user: "What fact did I mention?"
+    wait: idle
+    expect:
+      - {persona_id: samantha}
+      - {response_persona_id: samantha}
+      - {brain_calls: 1}
+      - {canonical_includes: "blue comet"}
+      - {response_matches: "(?i)blue comet"}
+  - id: ui-switch
+    op: select_persona
+    persona: santa
+    wait: idle
+    expect:
+      - {persona_id: santa}
+      - {session_id: "*"}
+      - {no_live_brain_call: true}
+  - id: ui-followup
+    user: "What fact did I mention?"
+    wait: idle
+    expect:
+      - {persona_id: santa}
+      - {response_persona_id: santa}
+      - {brain_calls: 1}
+      - {response_matches: "(?i)blue comet"}
+  - id: missing-target
+    op: select_persona
+    persona: missing-persona
+    expect_error: 'resolve persona "missing-persona"'
+    expect:
+      - {persona_id: santa}
+      - {session_id: "*"}
+      - {canonical_includes: "blue comet"}

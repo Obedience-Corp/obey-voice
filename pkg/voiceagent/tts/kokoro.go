@@ -93,7 +93,7 @@ type KokoroTTS struct {
 func NewKokoroTTS(cfg *config.Config) (*KokoroTTS, error) {
 	// Prefer thewh1teagle v1.0 English pack (same weights as Python
 	// samantha-cli) when present; else multi-lang pack at models root.
-	modelsDir := config.KokoroDir()
+	modelsDir := config.KokoroDirFrom(cfg)
 
 	lang := config.LanguageCode(cfg.Language) // "en-US" -> "en"
 	lexicon := filepath.Join(modelsDir, "lexicon-us-en.txt")

@@ -24,7 +24,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	o.refreshSystemPrompt(opts.OnPromptWarn)
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
 	if !opts.Background {
-		o.appendMessage(api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)}, nil)
+		o.appendUserInput(input, opts)
 	}
 	o.receiveDelegationResults(opts)
 	if opts.Background {

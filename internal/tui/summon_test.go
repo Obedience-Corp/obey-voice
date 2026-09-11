@@ -8,6 +8,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 const unaddressedUtterance = "what's for dinner?"
@@ -173,6 +174,27 @@ func TestNameSummonOffInstallsNothing(t *testing.T) {
 	}
 	if len(*infos) != 0 {
 		t.Errorf("unexpected messages: %v", *infos)
+	}
+}
+
+func TestNameSummonSkipsLegacyGateWhenAdmissionOwnsAddressing(t *testing.T) {
+	rt, infos := nameSummonRuntime(t, &config.Config{
+		NameSummonEnabled: true,
+		NameSummonAliases: []string{"computer"},
+		VoiceFrontend:     config.VoiceFrontendNLMS,
+	})
+	rt.Pipeline.AdmitInput = func(context.Context, string, bool) (pipeline.ResponseAdmission, error) {
+		return pipeline.ResponseAdmission{}, nil
+	}
+	app := startSession(t, rt)
+	if rt.Pipeline.AddressGate != nil {
+		t.Fatal("legacy address gate remained with shared admission routing")
+	}
+	if _, ok := activityDetail(app.conversation, "name summon"); ok {
+		t.Fatal("legacy name-summon activity appeared for shared admission routing")
+	}
+	if len(*infos) != 0 {
+		t.Fatalf("unexpected warning: %v", *infos)
 	}
 }
 

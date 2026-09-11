@@ -54,6 +54,12 @@ func writeReport(e *engine) error {
 		fmt.Fprintf(&b, "- live: %s\n", describeBrain(e.profile.LiveProvider, e.profile.LiveModel, e.profile.LiveHost))
 		fmt.Fprintf(&b, "- worker: %s\n", describeBrain(e.profile.WorkerProvider, e.profile.WorkerModel, e.profile.WorkerHost))
 		fmt.Fprintf(&b, "- profile: %s · input: %s · router_tools: %s · tts: %s\n", e.profile.Profile, e.profile.Input, e.profile.RouterTools, e.profile.TTSProvider)
+		if e.profile.FixtureConfig != "" {
+			fmt.Fprintf(&b, "- fixture_config: `%s`\n", e.profile.FixtureConfig)
+		}
+		if e.profile.PersonaDir != "" {
+			fmt.Fprintf(&b, "- persona_dir: `%s`\n", e.profile.PersonaDir)
+		}
 	}
 	if e.stopReason != "" {
 		fmt.Fprintf(&b, "- stop_reason: %s (%.1fs)\n", e.stopReason, e.wallSeconds())
@@ -70,7 +76,9 @@ func writeReport(e *engine) error {
 		fmt.Fprintf(&b, "\n## turns\n\n| turn | user | route | spoken | result |\n|---|---|---|---|---|\n")
 		for _, tr := range e.turns {
 			result := "ok"
-			if tr.Err != "" {
+			if strings.HasPrefix(tr.Err, "expected error: ") {
+				result = "expected: " + strings.TrimPrefix(tr.Err, "expected error: ")
+			} else if tr.Err != "" {
 				result = "FAIL: " + tr.Err
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", tr.ID, cell(tr.User), cell(tr.Route), cell(tr.Spoken), cell(result))

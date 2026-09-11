@@ -27,14 +27,16 @@ type runner interface {
 }
 
 type engine struct {
-	scn     *Scenario
-	runDir  string
-	rec     *recorder
-	runner  runner
-	player  *recordingPlayer
-	playing func() bool
-	profile runProfile
-	onClose []func()
+	scn           *Scenario
+	runDir        string
+	rec           *recorder
+	runner        runner
+	player        *recordingPlayer
+	fixtureConfig string
+	personaDir    string
+	playing       func() bool
+	profile       runProfile
+	onClose       []func()
 
 	started    time.Time
 	stopReason string
@@ -53,7 +55,12 @@ type turnRecord struct {
 const defaultScenarioWall = 5 * time.Minute
 
 func (e *engine) run(ctx context.Context) error {
-	defer e.closeAll()
+	defer func() {
+		if p, ok := e.runner.(personaRunner); ok {
+			_ = p.writePersonaArtifacts(e.runDir)
+		}
+		e.closeAll()
+	}()
 	if err := os.MkdirAll(e.runDir, 0o700); err != nil {
 		return err
 	}
@@ -75,6 +82,14 @@ func (e *engine) run(ctx context.Context) error {
 			e.noteTurnError(turn.ID, err)
 			_ = writeReport(e)
 			return fmt.Errorf("turn %s: %w", turn.ID, err)
+		}
+	}
+	if p, ok := e.runner.(personaRunner); ok {
+		if err := p.writePersonaArtifacts(e.runDir); err != nil {
+			return err
+		}
+		if err := p.validatePersonaRun(); err != nil {
+			return err
 		}
 	}
 	m := e.metrics()
@@ -130,7 +145,25 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 
 	mark := len(e.rec.snapshot())
 	routeMark := e.rec.routeMark()
-	if turn.User != "" {
+	var selectionErr error
+	if turn.Op == "select_persona" {
+		p, ok := e.runner.(personaRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support persona selection", turn.ID)
+		}
+		if turn.Persona == "" {
+			return fmt.Errorf("turn %s: persona is required", turn.ID)
+		}
+		if err := p.selectPersona(turnCtx, turn.Persona); err != nil {
+			if turn.ExpectError != "" && strings.Contains(err.Error(), turn.ExpectError) {
+				selectionErr = err
+			} else {
+				return err
+			}
+		} else if turn.ExpectError != "" {
+			return fmt.Errorf("turn %s: expected selection error containing %q", turn.ID, turn.ExpectError)
+		}
+	} else if turn.User != "" {
 		if e.runner == nil {
 			return fmt.Errorf("no runner (live agent not wired)")
 		}
@@ -155,6 +188,11 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		spoken: e.rec.spokenText(),
 		events: e.rec.snapshot()[mark:],
 	}
+	for _, te := range st.events {
+		if ev, ok := te.event.(events.ResponseReady); ok {
+			st.response = ev.Response
+		}
+	}
 	if d, ok := e.rec.lastRouteSince(routeMark); ok {
 		st.route = &d
 	}
@@ -166,7 +204,13 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		st.liveBrainCalled = e.runner.liveCalled()
 		st.workerCalled = e.runner.workerCalled()
 	}
+	if p, ok := e.runner.(personaRunner); ok {
+		st.persona = p.personaState()
+	}
 	e.turns = append(e.turns, e.recordTurn(turn, mark, st.route))
+	if selectionErr != nil {
+		e.turns[len(e.turns)-1].Err = "expected error: " + selectionErr.Error()
+	}
 	for _, ex := range turn.Expect {
 		if err := evalExpect(ex, e.rec, st); err != nil {
 			return err

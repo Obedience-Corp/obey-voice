@@ -83,6 +83,14 @@ type personasModel struct {
 	loadPromptForProfile func(*persona.Profile) (string, error)
 	defaultPrompt        func() (string, error)
 	starterPrompt        func() (string, error)
+
+	// In a conversation the manager submits to the live session owner. The
+	// launcher keeps usePersona below, which is the persistent default path.
+	requestSelection func(string) tea.Cmd
+	// startPersona is used only when a failed conversation startup returns to
+	// the chooser. It starts a fresh build for the chosen existing profile and
+	// does not mutate the global active-persona preference.
+	startPersona func(string, string) tea.Cmd
 }
 
 func newPersonas(cfg *config.Config) personasModel {
@@ -284,6 +292,20 @@ func (m *personasModel) selectCurrent() tea.Cmd {
 	if p == nil {
 		return nil
 	}
+	if m.startPersona != nil {
+		name := displayName(p)
+		m.message = fmt.Sprintf("Starting conversation with %s…", name)
+		start := m.startPersona
+		return start(p.ID, name)
+	}
+	if m.returnScreen == screenConversation {
+		if m.requestSelection == nil {
+			m.message = "Persona switching is unavailable for this conversation"
+			return nil
+		}
+		m.message = fmt.Sprintf("Queued persona: %s", displayName(p))
+		return m.requestSelection(p.ID)
+	}
 	use := m.usePersona
 	if use == nil {
 		use = persona.Use
@@ -293,13 +315,17 @@ func (m *personasModel) selectCurrent() tea.Cmd {
 		return nil
 	}
 	m.reload()
-	name := p.DisplayName
-	if name == "" {
-		name = p.ID
-	}
+	name := displayName(p)
 	m.message = fmt.Sprintf("Active persona: %s · press e to edit name/prompt", name)
-	if m.returnScreen == screenConversation {
-		m.message = fmt.Sprintf("Active persona: %s · start a new chat to use this persona", name)
-	}
 	return nil
+}
+
+func displayName(p *persona.Profile) string {
+	if p == nil {
+		return ""
+	}
+	if p.DisplayName != "" {
+		return p.DisplayName
+	}
+	return p.ID
 }

@@ -78,6 +78,35 @@ live-router *flags="":
     just --justfile "{{justfile()}}" --working-directory "{{justfile_directory()}}" \
       convoflow run live-router-spawn {{flags}}
 
+# Shared-persona proof. The fixture config and catalog are explicit inputs so
+# the proof never consults process-global config state or the operator's home.
+[no-cd]
+persona-proof *flags="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{repo}}"
+    : "${CONVOFLOW_FIXTURE_CONFIG:?set CONVOFLOW_FIXTURE_CONFIG to an isolated config file}"
+    : "${CONVOFLOW_PERSONA_DIR:?set CONVOFLOW_PERSONA_DIR to the fixture persona catalog}"
+    runs="${CONVOFLOW_PERSONA_RUNS_DIR:-${TMPDIR:-/tmp}/convoflow-persona-$(date +%Y%m%dT%H%M%S)}"
+    mkdir -p "$runs"
+    bin_dir="$(mktemp -d)"
+    trap 'rm -rf "$bin_dir"; echo "persona-proof artifacts: $runs"' EXIT
+    bin="$bin_dir/convoflow"
+    go build -o "$bin" ./tests/convoflow
+    shasum -a 256 "$bin" > "$runs/binary.sha256"
+    python3 tests/convoflow/watchdog.py "{{timeout_sec}}" "$bin" \
+      -scenario tests/convoflow/scenarios/persona-proof.yaml \
+      -fixture-config "$CONVOFLOW_FIXTURE_CONFIG" \
+      -persona-dir "$CONVOFLOW_PERSONA_DIR" \
+      -runs-dir "$runs" \
+      -live-provider "{{live_provider}}" \
+      -live-model "{{live_model}}" \
+      -worker-provider "{{worker_provider}}" \
+      -worker-model "{{worker_model}}" \
+      -worker-ollama-host "{{worker_ollama_host}}" \
+      -ollama-host "{{ollama_host}}" \
+      {{flags}}
+
 [no-cd]
 prune days=prune_days:
     #!/usr/bin/env bash

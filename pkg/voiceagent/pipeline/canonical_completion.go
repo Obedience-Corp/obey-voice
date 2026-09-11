@@ -17,10 +17,11 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 	defer p.decActiveTurn()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
+	metrics.response = events.ResponseFromContext(ctx)
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics)
 	turn.to(TurnThinking)
-	p.emit(events.ThinkingStarted{})
+	p.emitResponse(metrics, events.ThinkingStarted{})
 	c, provider := p.WorkCoordinator(), p.Brain
 	if p.completionScope != lease.Scope {
 		p.completionScope = lease.Scope
@@ -120,8 +121,8 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 		return context.Canceled
 	}
 	committed := false
-	if appender, ok := provider.(brain.HistoryAppender); ok && strings.TrimSpace(response) != "" {
-		if appendErr := appender.AppendAssistantResponse(response); appendErr == nil {
+	if strings.TrimSpace(response) != "" {
+		if appendErr := appendResponse(provider, response, metrics.responseIdentity()); appendErr == nil {
 			committed = true
 		} else {
 			p.emit(events.Error{Stage: "completion", Message: fmt.Sprintf("record background reply: %v", appendErr)})
@@ -152,7 +153,7 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 		}
 		p.emitCompletion(lease, "audio.delivery", addressed, reason, mode, receipt.Segments)
 	}
-	p.emit(events.ResponseReady{Response: response, Degraded: reason != "" || err != nil})
+	p.emitResponse(metrics, events.ResponseReady{Response: response, Degraded: reason != "" || err != nil})
 	if reason != "" {
 		if holdErr := c.HoldAttempt(lease, reason); holdErr == nil {
 			p.emitCompletion(lease, "announcement.held", ids, reason, mode, receipt.Segments)

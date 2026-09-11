@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -30,7 +31,7 @@ func (b *stubBrain) History() []brain.Turn    { return nil }
 func (b *stubBrain) LoadHistory([]brain.Turn) {}
 
 func wiredApp(build RuntimeBuilder) App {
-	app := NewApp(&config.Config{})
+	app := newApp(&config.Config{}, nil, nil)
 	app.builder = build
 	app.runCtx = context.Background()
 	app.wg = &sync.WaitGroup{}
@@ -134,6 +135,29 @@ func TestRuntimeBuildReceivesSelectedPersona(t *testing.T) {
 	_ = buildRuntime(app.builder, app.runCtx, app.progress, app.slot, "", "research-buddy")()
 	if selected != "research-buddy" {
 		t.Fatalf("builder persona = %q, want research-buddy", selected)
+	}
+}
+
+func TestPersonaBindingFailureReturnsChooserWithResumeSession(t *testing.T) {
+	app := wiredApp(func(context.Context, BuildProgress, string, string) (*ConversationRuntime, error) {
+		return nil, nil
+	})
+	model, _ := app.Update(startPipelineMsg{sessionID: "resume-session", personaID: "missing"})
+	app = model.(App)
+	model, _ = app.Update(runtimeReadyMsg{err: &PersonaBindingError{Err: errors.New("missing persona")}})
+	app = model.(App)
+	if app.screen != screenPersonas || app.personas.startPersona == nil {
+		t.Fatalf("binding failure did not return to chooser: screen=%v start=%v", app.screen, app.personas.startPersona != nil)
+	}
+	app.personas.items = []*persona.Profile{{ID: "santa", DisplayName: "Santa"}}
+	app.personas.cursor = 0
+	cmd := app.personas.selectCurrent()
+	if cmd == nil {
+		t.Fatal("chooser did not offer a retry")
+	}
+	start, ok := cmd().(startPipelineMsg)
+	if !ok || start.sessionID != "resume-session" || start.personaID != "santa" {
+		t.Fatalf("retry start = %#v, want resumed session and selected persona", start)
 	}
 }
 
@@ -345,7 +369,7 @@ func TestInitStartsConversationWhenResuming(t *testing.T) {
 		t.Fatal("Init cmd did not produce startPipelineMsg")
 	}
 
-	if NewApp(&config.Config{}).Init() != nil {
+	if newApp(&config.Config{}, nil, nil).Init() != nil {
 		t.Fatal("launcher entry must keep a nil Init")
 	}
 }

@@ -13,8 +13,13 @@ import (
 // nanoseconds, which no client wants.
 func encodeEvent(e events.Event) map[string]any {
 	env := map[string]any{"type": events.EventType(e)}
+	if identity := events.ResponseIdentity(e); identity != nil {
+		env["response_envelope"] = identity
+	}
 
 	switch e := e.(type) {
+	case events.PersonaSelection:
+		env["selection"] = e
 	case events.STTPhase:
 		env["phase"] = e.Phase
 		env["elapsed_ms"] = ms(e.Elapsed)

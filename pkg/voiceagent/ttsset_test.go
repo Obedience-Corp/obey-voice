@@ -1,6 +1,8 @@
 package voiceagent
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 // Conversation path may attach Kokoro as fallback when primary is qwen3-tts.
@@ -155,5 +159,86 @@ func TestLiveTTSManagerReplaceAndCloseIgnoresDrain(t *testing.T) {
 	}
 	if !closed.Load() {
 		t.Fatal("persona-switch path left the previous worker loaded")
+	}
+}
+
+type transactionTTS struct{}
+
+func (transactionTTS) Synthesize(ctx context.Context, _ string) (*audio.PCMStream, error) {
+	stream := audio.NewPCMStream(ctx)
+	stream.Close()
+	return stream, nil
+}
+func (transactionTTS) Available() bool                       { return true }
+func (transactionTTS) ListVoices(string, string) []tts.Voice { return nil }
+
+func TestLiveTTSManagerReplaceTransactionPublishesOnlyAfterCommit(t *testing.T) {
+	p := &pipeline.Pipeline{}
+	m := &LiveTTSManager{RetireDelay: -1}
+	oldProvider := transactionTTS{}
+	newProvider := transactionTTS{}
+	oldSet := &TTSSet{Primary: oldProvider}
+	newSet := &TTSSet{Primary: newProvider}
+	if !m.Install(p, oldSet) {
+		t.Fatal("initial Install")
+	}
+	wantErr := errors.New("persist failed")
+	called := false
+	if err := m.ReplaceTransaction(p, newSet, func() error { called = true; return wantErr }); !errors.Is(err, wantErr) {
+		t.Fatalf("ReplaceTransaction error = %v, want %v", err, wantErr)
+	}
+	if !called {
+		t.Fatal("transaction callback was not called")
+	}
+	if p.TTS != oldProvider {
+		t.Fatal("voice changed after failed transaction")
+	}
+
+	if err := m.ReplaceTransaction(p, newSet, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if p.TTS != newProvider {
+		t.Fatal("voice was not published after successful transaction")
+	}
+}
+
+func TestLiveTTSManagerReplaceTransactionRejectsClosedBeforeCallback(t *testing.T) {
+	p := &pipeline.Pipeline{}
+	m := &LiveTTSManager{RetireDelay: -1}
+	oldProvider := transactionTTS{}
+	newProvider := transactionTTS{}
+	if !m.Install(p, &TTSSet{Primary: oldProvider}) {
+		t.Fatal("initial Install")
+	}
+	m.Close()
+	called := false
+	if err := m.ReplaceTransaction(p, &TTSSet{Primary: newProvider}, func() error { called = true; return nil }); err == nil {
+		t.Fatal("closed manager accepted transaction")
+	}
+	if called {
+		t.Fatal("closed manager ran transaction callback")
+	}
+	if p.TTS != oldProvider {
+		t.Fatal("closed manager changed voice")
+	}
+}
+
+func TestLiveTTSManagerSameSetRemainsUsable(t *testing.T) {
+	p := &pipeline.Pipeline{}
+	m := &LiveTTSManager{RetireDelay: -1}
+	var closed atomic.Int32
+	set := &TTSSet{Primary: transactionTTS{}, cleanups: []func(){func() { closed.Add(1) }}}
+	if !m.Install(p, set) {
+		t.Fatal("install")
+	}
+	if err := m.ReplaceTransaction(p, set, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if closed.Load() != 0 {
+		t.Fatal("same-set transaction closed live voice")
+	}
+	m.Close()
+	if closed.Load() != 1 {
+		t.Fatal("voice not closed exactly once on shutdown")
 	}
 }

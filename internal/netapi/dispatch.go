@@ -54,13 +54,14 @@ type personaResult struct {
 }
 
 type dispatchOp struct {
-	transcribed func(string, error)
-	kind        opKind
-	text        string
-	id          string
-	done        chan error // non-nil for ops whose caller waits on the result
-	setPersona  func(id string) (PersonaAck, error)
-	personaDone chan personaResult
+	transcribed       func(string, error)
+	kind              opKind
+	text              string
+	id                string
+	done              chan error // non-nil for ops whose caller waits on the result
+	setPersona        func(id string) (PersonaAck, error)
+	setPersonaContext func(context.Context, string) (PersonaAck, error)
+	personaDone       chan personaResult
 	// waitCtx is the caller's context for waitable ops (resume). If it is
 	// already canceled when the op reaches apply, the work is skipped so a
 	// timed-out client cannot still mutate session state later.
@@ -280,7 +281,22 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 			op.personaDone <- personaResult{err: op.waitCtx.Err()}
 			return
 		}
-		ack, err := op.setPersona(op.id)
+		selectionCtx, cancel := context.WithCancel(ctx)
+		var stop func() bool
+		if op.waitCtx != nil {
+			stop = context.AfterFunc(op.waitCtx, cancel)
+		}
+		var ack PersonaAck
+		var err error
+		if op.setPersonaContext != nil {
+			ack, err = op.setPersonaContext(selectionCtx, op.id)
+		} else {
+			ack, err = op.setPersona(op.id)
+		}
+		if stop != nil {
+			stop()
+		}
+		cancel()
 		op.personaDone <- personaResult{ack: ack, err: err}
 	}
 }
@@ -369,6 +385,24 @@ func (d *Dispatcher) SetPersona(ctx context.Context, id string, apply func(strin
 	done := make(chan personaResult, 1)
 	op := dispatchOp{kind: opPersona, id: id, setPersona: apply, personaDone: done, waitCtx: ctx}
 	if err := d.enqueue(op); err != nil {
+		return PersonaAck{}, err
+	}
+	select {
+	case result := <-done:
+		return result.ack, result.err
+	case <-ctx.Done():
+		return PersonaAck{}, ctx.Err()
+	}
+}
+
+// SetPersonaContext retains FIFO ordering while cancellation reaches resource
+// preparation. A late constructor cannot publish after its caller has left.
+func (d *Dispatcher) SetPersonaContext(ctx context.Context, id string, apply func(context.Context, string) (PersonaAck, error)) (PersonaAck, error) {
+	if apply == nil {
+		return PersonaAck{}, errors.New("set_persona is not enabled")
+	}
+	done := make(chan personaResult, 1)
+	if err := d.enqueue(dispatchOp{kind: opPersona, id: id, setPersonaContext: apply, personaDone: done, waitCtx: ctx}); err != nil {
 		return PersonaAck{}, err
 	}
 	select {

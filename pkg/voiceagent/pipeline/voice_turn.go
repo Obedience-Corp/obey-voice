@@ -62,7 +62,6 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	// The wait a backchannel covers starts here: the user has stopped talking
 	// and nothing will be heard until the brain and TTS finish. No-op unless
 	// enabled and unless recent turns were actually slow.
-	p.playBackchannel(ctx)
 	speakerID := p.currentSpeakerID()
 	if p.SpeakerGate != nil {
 		if reason := p.SpeakerGate(speakerID); reason != "" {
@@ -74,21 +73,32 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		}
 	}
 	p.emit(events.UserInput{Text: text, Speaker: speakerID})
+	original := text
+	ctx, admission, err := p.admitInput(ctx, text, false, metrics)
+	if err != nil {
+		turn.finish(TurnFailed)
+		return original, fmt.Errorf("admit response: %w", err)
+	}
+	if admission.LocalReply != "" {
+		return original, p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
+	}
+	text = admission.Request
+	p.playBackchannel(ctx)
 	if err := p.prepareTurn(ctx, text, metrics, turn); err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
-			return text, err
+			return original, err
 		}
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
-		return text, nil
+		return original, nil
 	}
-	p.emit(events.ThinkingStarted{})
+	p.emitResponse(metrics, events.ThinkingStarted{})
 
 	// Layer 1 — deterministic phrase and work-intent routing before the live
 	// brain runs, so tool work never occupies the talking context window.
 	if kind, source, ok := classifyTurn(text, p.routeContext()); ok && routeKindSkipsBrain(kind) {
 		p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
-		return text, nil
+		return original, nil
 	}
 
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain
@@ -108,6 +118,8 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 
 	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	streamOpts := brain.StreamOptions{
+		Identity:          metrics.responseIdentity(),
+		OriginalInput:     original,
 		VoiceMode:         true,
 		Speaker:           speakerID,
 		ToolsEnabled:      p.VoiceToolsEnabled,
@@ -126,10 +138,10 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
-			return text, fmt.Errorf("brain: %w", err)
+			return original, fmt.Errorf("brain: %w", err)
 		}
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("brain: %w", err))
-		return text, nil
+		return original, nil
 	}
 
 	if ordinary != nil {
@@ -141,12 +153,12 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 			p.Player.Stop()
 		}
 		p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
-		return text, nil
+		return original, nil
 	}
 	if err != nil {
 		if interrupted || errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
-			return text, err
+			return original, err
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			// Model/tool stall — distinct from STT timed_out (no speech).
@@ -154,7 +166,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		}
 		// Speak on the parent ctx: turnCtx is dead after a deadline stall.
 		p.recoverTurn(ctx, turn, metrics, fullResponse, err)
-		return text, nil
+		return original, nil
 	}
 	p.finishOrdinaryCompletion(metrics, fullResponse, interrupted)
 
@@ -165,7 +177,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		p.keepCapture.Store(true)
 	}
 
-	p.emit(events.ResponseReady{
+	p.emitResponse(metrics, events.ResponseReady{
 		Response:    fullResponse,
 		Interrupted: interrupted,
 		Degraded:    metrics.degraded,
@@ -180,7 +192,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		p.OnTurn()
 	}
 
-	return text, nil
+	return original, nil
 }
 
 func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, turn *turnConductor) (string, error) {

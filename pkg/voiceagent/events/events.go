@@ -50,12 +50,16 @@ type AudioLevel struct {
 func (e AudioLevel) eventType() string { return "audio_level" }
 
 // ThinkingStarted signals Claude has begun processing.
-type ThinkingStarted struct{}
+type ThinkingStarted struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+}
 
 func (e ThinkingStarted) eventType() string { return "thinking_started" }
 
 // ThinkingComplete signals Claude has finished.
 type ThinkingComplete struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Response     string
 	FullResponse string
 	Elapsed      time.Duration
@@ -65,6 +69,8 @@ func (e ThinkingComplete) eventType() string { return "thinking_complete" }
 
 // TurnMetrics captures per-turn latency milestones for benchmarking.
 type TurnMetrics struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	// Outcome is the turn's terminal state as decided by the turn state
 	// machine: completed, interrupted, failed, or timed_out.
 	Outcome string
@@ -351,6 +357,8 @@ func (e ConversationCompacted) eventType() string { return "conversation_compact
 
 // ResponseStreamingStarted signals the first token on either brain channel.
 type ResponseStreamingStarted struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Elapsed time.Duration
 }
 
@@ -359,6 +367,8 @@ func (e ResponseStreamingStarted) eventType() string { return "response_streamin
 // ResponseSpeakableStarted is T_eou to the first non-whitespace Chunks byte.
 // Emitted only when that instant differs from the first token.
 type ResponseSpeakableStarted struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Elapsed time.Duration
 }
 
@@ -369,6 +379,8 @@ func (e ResponseSpeakableStarted) eventType() string { return "response_speakabl
 // and droppable under UI back-pressure; ResponseReady always follows with the
 // complete, canonical text.
 type ResponseDelta struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Text string
 }
 
@@ -377,6 +389,8 @@ func (e ResponseDelta) eventType() string { return "response_delta" }
 // ThinkingDelta carries one incremental piece of operator-facing reasoning.
 // It is never spoken. Advisory and droppable like ResponseDelta.
 type ThinkingDelta struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Text string
 }
 
@@ -384,6 +398,8 @@ func (e ThinkingDelta) eventType() string { return "thinking_delta" }
 
 // SpeechSegmentReady signals a sentence is ready for voice synthesis.
 type SpeechSegmentReady struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Text string
 	// Elapsed is FirstAdmitElapsed on the opening segment when it differs
 	// from first speakable; zero otherwise.
@@ -394,6 +410,8 @@ func (e SpeechSegmentReady) eventType() string { return "speech_segment_ready" }
 
 // GeneratingVoice signals TTS generation has started.
 type GeneratingVoice struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Sentence string
 }
 
@@ -401,6 +419,8 @@ func (e GeneratingVoice) eventType() string { return "generating_voice" }
 
 // VoiceGenerated signals TTS generation is complete.
 type VoiceGenerated struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Sentence string
 	Elapsed  time.Duration
 	// Index is the segment's position in the turn, from 0.
@@ -414,6 +434,8 @@ func (e VoiceGenerated) eventType() string { return "voice_generated" }
 
 // SpeakingStarted signals audio playback has begun.
 type SpeakingStarted struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Text        string
 	AudibleSink string
 	// Elapsed is TTFA from T_eou when an audible sink accepted; zero otherwise.
@@ -424,6 +446,8 @@ func (e SpeakingStarted) eventType() string { return "speaking_started" }
 
 // SpeakingComplete signals audio playback is done.
 type SpeakingComplete struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Elapsed     time.Duration
 	Interrupted bool
 	AudibleSink string
@@ -433,6 +457,8 @@ func (e SpeakingComplete) eventType() string { return "speaking_complete" }
 
 // SpeakingInterrupted signals playback was cut short.
 type SpeakingInterrupted struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Reason string
 	// SincePlaybackStart is how long TTS had been audible — from the turn's
 	// first playbackStarted event to this interrupt — when a mic barge-in cut
@@ -445,6 +471,8 @@ func (e SpeakingInterrupted) eventType() string { return "speaking_interrupted" 
 
 // TurnInterrupted signals the active assistant turn was canceled.
 type TurnInterrupted struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Reason string
 	// SincePlaybackStart mirrors SpeakingInterrupted's field of the same
 	// name — see there.
@@ -455,6 +483,8 @@ func (e TurnInterrupted) eventType() string { return "turn_interrupted" }
 
 // ResponseReady carries the final display text.
 type ResponseReady struct {
+	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
+
 	Response    string
 	Interrupted bool
 	// Degraded marks a recovery reply emitted after a hard brain/tool failure;

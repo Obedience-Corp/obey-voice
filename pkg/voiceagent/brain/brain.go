@@ -92,8 +92,11 @@ func (u claudeUsage) prompt() int {
 
 // Turn represents a single conversation exchange.
 type Turn struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	// RoutedInput is the request sent to the model after a direct address was
+	// removed. Content retains the original finalized input for the transcript.
+	RoutedInput string `json:"routed_input,omitempty"`
+	Role        string `json:"role"`
+	Content     string `json:"content"`
 	// Speaker is the stable live label for user turns (speaker-1). Empty for
 	// assistant turns and unlabeled single-user chat. Optional on disk so
 	// older sessions load unchanged.

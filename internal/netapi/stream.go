@@ -491,7 +491,7 @@ func (s *Server) sendAudioOutputAck(conn *streamConn, mode string, binary bool) 
 // the runtime swap after that turn, starts a fresh persona-bound session, and
 // only then returns the ack, so applies_to=next_turn is an enforceable contract.
 func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name string) {
-	if s.opts.SetPersona == nil {
+	if s.opts.SetPersona == nil && s.opts.SetPersonaContext == nil {
 		s.sendError(conn, "set_persona is not enabled on this server")
 		return
 	}
@@ -500,7 +500,13 @@ func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name st
 		s.sendError(conn, "set_persona requires a name")
 		return
 	}
-	ack, err := s.dispatcher.SetPersona(ctx, name, s.opts.SetPersona)
+	var ack PersonaAck
+	var err error
+	if s.opts.SetPersonaContext != nil {
+		ack, err = s.dispatcher.SetPersonaContext(ctx, name, s.opts.SetPersonaContext)
+	} else {
+		ack, err = s.dispatcher.SetPersona(ctx, name, s.opts.SetPersona)
+	}
 	if err != nil {
 		s.sendError(conn, err.Error())
 		return

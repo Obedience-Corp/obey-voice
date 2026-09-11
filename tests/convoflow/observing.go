@@ -22,20 +22,65 @@ type observing struct {
 	lastFull    brain.StreamOptions
 }
 
+// observingOllama embeds the production provider so its optional interfaces
+// remain visible to personaruntime.Selector. A wrapper that only implements Provider
+// would silently make a production provider look incapable of history
+// projection and prompt freezing.
+type observingOllama struct {
+	*observing
+	*brain.OllamaBrain
+}
+
+var _ brain.HistoryProjectionProvider = (*observingOllama)(nil)
+var _ brain.PersonaPromptFreezer = (*observingOllama)(nil)
+var _ brain.CanonicalHistoryProvider = (*observingOllama)(nil)
+var _ brain.ContextHistoryProvider = (*observingOllama)(nil)
+var _ brain.IdentityHistoryAppender = (*observingOllama)(nil)
+var _ brain.CompletionProvider = (*observingOllama)(nil)
+var _ brain.DelegationBinding = (*observingOllama)(nil)
+
+func (o *observingOllama) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
+	o.observeStream(opts)
+	return o.OllamaBrain.ThinkStream(ctx, input, opts)
+}
+func (o *observingOllama) ThinkFull(ctx context.Context, input string, opts brain.StreamOptions) (string, error) {
+	o.observeFull(opts)
+	return o.OllamaBrain.ThinkFull(ctx, input, opts)
+}
+func (o *observingOllama) History() []brain.Turn      { return o.OllamaBrain.History() }
+func (o *observingOllama) ClearHistory()              { o.OllamaBrain.ClearHistory() }
+func (o *observingOllama) LoadHistory(t []brain.Turn) { o.OllamaBrain.LoadHistory(t) }
+func (o *observingOllama) Close() error               { return o.OllamaBrain.Close() }
+
+func observeProvider(inner brain.Provider) (brain.Provider, *observing) {
+	core := &observing{inner: inner}
+	if b, ok := inner.(*brain.OllamaBrain); ok {
+		return &observingOllama{observing: core, OllamaBrain: b}, core
+	}
+	return core, core
+}
+
 func (o *observing) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
-	o.mu.Lock()
-	o.streamCalls++
-	o.lastStream = opts
-	o.mu.Unlock()
+	o.observeStream(opts)
 	return o.inner.ThinkStream(ctx, input, opts)
 }
 
 func (o *observing) ThinkFull(ctx context.Context, input string, opts brain.StreamOptions) (string, error) {
+	o.observeFull(opts)
+	return o.inner.ThinkFull(ctx, input, opts)
+}
+
+func (o *observing) observeStream(opts brain.StreamOptions) {
+	o.mu.Lock()
+	o.streamCalls++
+	o.lastStream = opts
+	o.mu.Unlock()
+}
+func (o *observing) observeFull(opts brain.StreamOptions) {
 	o.mu.Lock()
 	o.fullCalls++
 	o.lastFull = opts
 	o.mu.Unlock()
-	return o.inner.ThinkFull(ctx, input, opts)
 }
 
 func (o *observing) ClearHistory()                  { o.inner.ClearHistory() }

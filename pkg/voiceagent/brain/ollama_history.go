@@ -183,7 +183,11 @@ func (o *OllamaBrain) loadHistoryProjection(turns []Turn, archiveProjection bool
 			content = attributedAssistantContent(t.PersonaDisplayName, t.ResponseID, content)
 		}
 		if role == "user" && strings.TrimSpace(t.Speaker) != "" {
-			content = encodeOllamaUser(t.Speaker, t.Content)
+			input := t.Content
+			if t.RoutedInput != "" {
+				input = t.RoutedInput
+			}
+			content = encodeOllamaUser(t.Speaker, input)
 		}
 		m := api.Message{
 			Role:       role,
@@ -261,6 +265,14 @@ func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity) {
 func (o *OllamaBrain) appendProjectedToolResult(tc api.ToolCall, raw string) {
 	o.history = append(o.history, o.projectedToolResult(tc, raw))
 	o.canonical = append(o.canonical, Turn{Role: "tool", Content: raw, ToolName: tc.Function.Name, ToolCallID: tc.ID, At: time.Now().UTC()})
+}
+
+func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) {
+	o.appendMessage(api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)}, nil)
+	if opts.OriginalInput != "" && opts.OriginalInput != input {
+		t := &o.canonical[len(o.canonical)-1]
+		t.Content, t.RoutedInput = opts.OriginalInput, input
+	}
 }
 
 func toolResultMessage(tc api.ToolCall, result string) api.Message {

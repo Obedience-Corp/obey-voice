@@ -33,10 +33,15 @@ type Scenario struct {
 		Audio    bool `yaml:"audio"`
 		Speakers bool `yaml:"speakers"`
 	} `yaml:"capture"`
-	Turns  []Turn         `yaml:"turns"`
-	Expect []Expectation  `yaml:"expect"`
-	Brain  scenarioBrain  `yaml:"brain"`
-	Worker scenarioWorker `yaml:"worker"`
+	Turns   []Turn          `yaml:"turns"`
+	Expect  []Expectation   `yaml:"expect"`
+	Brain   scenarioBrain   `yaml:"brain"`
+	Worker  scenarioWorker  `yaml:"worker"`
+	Persona scenarioPersona `yaml:"persona"`
+}
+
+type scenarioPersona struct {
+	Initial string `yaml:"initial"`
 }
 
 type scenarioBrain struct {
@@ -52,12 +57,15 @@ type scenarioWorker struct {
 }
 
 type Turn struct {
-	ID      string        `yaml:"id"`
-	User    string        `yaml:"user"`
-	Timeout duration      `yaml:"timeout"`
-	Wait    waitKind      `yaml:"wait"`
-	Expect  []Expectation `yaml:"expect"`
-	WAV     string        `yaml:"wav"`
+	ID          string        `yaml:"id"`
+	User        string        `yaml:"user"`
+	Timeout     duration      `yaml:"timeout"`
+	Wait        waitKind      `yaml:"wait"`
+	Expect      []Expectation `yaml:"expect"`
+	WAV         string        `yaml:"wav"`
+	Op          string        `yaml:"op"`
+	Persona     string        `yaml:"persona"`
+	ExpectError string        `yaml:"expect_error"`
 }
 
 type Expectation struct {
@@ -65,6 +73,7 @@ type Expectation struct {
 	NoEvent             string `yaml:"no_event"`
 	SpokenMatches       string `yaml:"spoken_matches"`
 	SpokenNotMatches    string `yaml:"spoken_not_matches"`
+	ResponseMatches     string `yaml:"response_matches"`
 	LiveHistoryIncludes string `yaml:"live_history_includes"`
 	LiveHistoryExcludes string `yaml:"live_history_excludes"`
 	LiveRouterPolicy    string `yaml:"live_router_policy"`
@@ -75,6 +84,16 @@ type Expectation struct {
 	Metric              string `yaml:"metric"`
 	Op                  string `yaml:"op"`
 	Value               int    `yaml:"value"`
+	PersonaID           string `yaml:"persona_id"`
+	DisplayName         string `yaml:"display_name"`
+	ResponsePersonaID   string `yaml:"response_persona_id"`
+	ResponseID          string `yaml:"response_id"`
+	ResponseVoice       string `yaml:"response_voice"`
+	ResponseBrainModel  string `yaml:"response_brain_model"`
+	SessionID           string `yaml:"session_id"`
+	NoLiveBrainCall     bool   `yaml:"no_live_brain_call"`
+	BrainCalls          *int   `yaml:"brain_calls"`
+	CanonicalIncludes   string `yaml:"canonical_includes"`
 }
 
 type duration struct{ time.Duration }
@@ -123,6 +142,12 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	}
 	for i := range scn.Turns {
 		t := &scn.Turns[i]
+		if t.Op != "" && t.Op != "select_persona" {
+			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)
+		}
+		if t.ExpectError != "" && t.Op != "select_persona" {
+			return nil, fmt.Errorf("load %s: turn %q: expect_error requires op select_persona", name, t.ID)
+		}
 		if t.Wait == "" {
 			t.Wait = waitIdle
 		}

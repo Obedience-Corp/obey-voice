@@ -22,7 +22,13 @@ var kokoroRequired = []string{
 // Python samantha-cli / kokoro-onnx); otherwise the legacy multi-lang pack
 // installed at the models root.
 func KokoroDir() string {
-	root := ModelsDir()
+	return KokoroDirFrom(nil)
+}
+
+// KokoroDirFrom honors an explicit runtime's model directory while retaining
+// the installed pack preference used by the command-line configuration.
+func KokoroDirFrom(cfg *Config) string {
+	root := ModelsDirFrom(cfg)
 	v1 := filepath.Join(root, KokoroV1Subdir)
 	if kokoroPackReady(v1) {
 		return v1

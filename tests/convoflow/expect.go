@@ -12,6 +12,7 @@ import (
 
 type turnState struct {
 	spoken             string
+	response           string
 	events             []timedEvent
 	route              *pipeline.RouteDecision
 	history            []brain.Turn
@@ -20,6 +21,7 @@ type turnState struct {
 	workerToolsEnabled *bool
 	liveBrainCalled    bool
 	workerCalled       bool
+	persona            personaTurnState
 }
 
 func evalExpect(ex Expectation, rec *recorder, st turnState) error {
@@ -50,6 +52,14 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		}
 		if re.MatchString(st.spoken) {
 			return fmt.Errorf("spoken matched forbidden %s", ex.SpokenNotMatches)
+		}
+	case ex.ResponseMatches != "":
+		re, err := regexp.Compile(ex.ResponseMatches)
+		if err != nil {
+			return err
+		}
+		if !re.MatchString(st.response) {
+			return fmt.Errorf("response %q does not match %s", clip(st.response, 120), ex.ResponseMatches)
 		}
 	case ex.LiveHistoryIncludes != "":
 		if !historyContains(st.history, ex.LiveHistoryIncludes) {
@@ -96,6 +106,46 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		}
 	case ex.Metric != "":
 		return fmt.Errorf("metric %q belongs on the scenario expect list", ex.Metric)
+	case ex.PersonaID != "":
+		if st.persona.Selection.PersonaID != ex.PersonaID {
+			return fmt.Errorf("persona_id = %q, want %q", st.persona.Selection.PersonaID, ex.PersonaID)
+		}
+	case ex.DisplayName != "":
+		if st.persona.Selection.DisplayName != ex.DisplayName {
+			return fmt.Errorf("display_name = %q, want %q", st.persona.Selection.DisplayName, ex.DisplayName)
+		}
+	case ex.ResponsePersonaID != "":
+		if st.persona.Envelope.PersonaID != ex.ResponsePersonaID {
+			return fmt.Errorf("response_persona_id = %q, want %q", st.persona.Envelope.PersonaID, ex.ResponsePersonaID)
+		}
+	case ex.ResponseID != "":
+		if st.persona.Envelope.ResponseID == "" || (ex.ResponseID != "*" && st.persona.Envelope.ResponseID != ex.ResponseID) {
+			return fmt.Errorf("response_id = %q, want %q", st.persona.Envelope.ResponseID, ex.ResponseID)
+		}
+	case ex.ResponseVoice != "":
+		if st.persona.Envelope.Voice != ex.ResponseVoice {
+			return fmt.Errorf("response_voice = %q, want %q", st.persona.Envelope.Voice, ex.ResponseVoice)
+		}
+	case ex.ResponseBrainModel != "":
+		if st.persona.Selection.BrainModel != ex.ResponseBrainModel {
+			return fmt.Errorf("response_brain_model = %q, want %q", st.persona.Selection.BrainModel, ex.ResponseBrainModel)
+		}
+	case ex.SessionID != "":
+		if st.persona.Selection.SessionID == "" || (ex.SessionID != "*" && st.persona.Selection.SessionID != ex.SessionID) {
+			return fmt.Errorf("session_id = %q, want %q", st.persona.Selection.SessionID, ex.SessionID)
+		}
+	case ex.NoLiveBrainCall:
+		if st.persona.BrainCalls != 0 {
+			return fmt.Errorf("live brain calls = %d, want 0", st.persona.BrainCalls)
+		}
+	case ex.BrainCalls != nil:
+		if st.persona.BrainCalls != *ex.BrainCalls {
+			return fmt.Errorf("brain calls = %d, want %d", st.persona.BrainCalls, *ex.BrainCalls)
+		}
+	case ex.CanonicalIncludes != "":
+		if !historyContains(st.persona.History, ex.CanonicalIncludes) {
+			return fmt.Errorf("canonical history missing %q", ex.CanonicalIncludes)
+		}
 	}
 	return nil
 }

@@ -9,6 +9,9 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	// OriginalInput preserves finalized user text when the host routes a
+	// stripped request. It changes canonical storage, not the model request.
+	OriginalInput string
 	// TransientHistory keeps an internal summary request and response out of
 	// canonical history. Projection-owning providers restore both histories
 	// after this request; the host then installs the successful summary view.
@@ -56,6 +59,13 @@ type StreamOptions struct {
 	// ToolsEnabled is true. Empty keeps the full worker list; the microphone
 	// path passes route_only explicitly.
 	RouterToolsPolicy RouterToolsPolicy
+}
+
+// PersonaPromptFreezer pins a newly built responder's resolved identity text.
+// Call before admitting responses; the returned hash describes that text.
+// Shared-persona hosts resolve edits at the next response boundary themselves.
+type PersonaPromptFreezer interface {
+	FreezePersonaPrompt() string
 }
 
 // ToolCall describes one tool invocation for the UI hooks.
