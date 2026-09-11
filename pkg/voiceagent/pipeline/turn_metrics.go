@@ -24,6 +24,8 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
+	ordinary         *ordinaryCompletion
+	delivery         *completionPlayback
 	start            time.Time
 	sttFinal         time.Time
 	firstModelChunk  time.Time

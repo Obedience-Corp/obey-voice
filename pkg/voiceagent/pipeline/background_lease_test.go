@@ -43,6 +43,19 @@ func (b *canonicalLeaseBrain) ThinkStream(ctx context.Context, _ string, opts br
 
 func (b *canonicalLeaseBrain) AckBackgroundDelivery() { b.acknowledged.Add(1) }
 
+func (b *canonicalLeaseBrain) Complete(ctx context.Context, req brain.CompletionRequest) (brain.CompletionEnvelope, error) {
+	stream, err := b.ThinkStream(ctx, "", brain.StreamOptions{Background: true})
+	if err != nil {
+		return brain.CompletionEnvelope{}, err
+	}
+	for range stream.Chunks {
+	}
+	<-stream.Done
+	return brain.CompletionEnvelope{Updates: []brain.CompletionUpdate{{ResultID: req.Results[0].ResultID, Text: req.Results[0].Brief}}}, nil
+}
+
+func (*canonicalLeaseBrain) AppendAssistantResponse(string) error { return nil }
+
 func (b *canonicalLeaseBrain) observed() (brain.StreamOptions, audio.PlaybackAttempt) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -82,8 +95,8 @@ func TestRunBackgroundTurnUsesCanonicalLeaseContextAndRetainsPending(t *testing.
 		t.Fatal("canonical path used legacy AckBackgroundDelivery")
 	}
 	got := c.Pending(scope)
-	if len(got) != 1 || got[0].State != work.Pending {
-		t.Fatalf("successful canonical turn consumed pending result: %+v", got)
+	if len(got) != 1 || got[0].State != work.Held {
+		t.Fatalf("playback without an identified receipt must hold its result: %+v", got)
 	}
 }
 

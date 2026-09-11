@@ -52,8 +52,8 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 		return ctx.Err()
 	}
 	if p.WorkCoordinator() != nil {
-		return p.withCompletionLease(ctx, func(attemptCtx context.Context, _ work.CompletionLease, _ []work.ResultView) error {
-			return p.runTextTurn(attemptCtx, "", true)
+		return p.withCompletionLease(ctx, func(attemptCtx context.Context, lease work.CompletionLease, selected []work.ResultView) error {
+			return p.runCanonicalCompletion(attemptCtx, lease, selected)
 		})
 	}
 	return p.runTextTurn(ctx, "", true)

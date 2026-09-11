@@ -278,6 +278,7 @@ func cloneSnapshot(in *work.Snapshot) *work.Snapshot {
 	out := *in
 	out.Jobs = append([]work.JobView(nil), in.Jobs...)
 	out.Pending = append([]work.ResultView(nil), in.Pending...)
+	out.Communicated = append([]work.ResultView(nil), in.Communicated...)
 	out.RetiredJobIDs = append([]string(nil), in.RetiredJobIDs...)
 	for i := range out.Jobs {
 		out.Jobs[i].Config = cloneStringMap(in.Jobs[i].Config)
@@ -289,11 +290,23 @@ func cloneSnapshot(in *work.Snapshot) *work.Snapshot {
 		}
 	}
 	for i := range out.Pending {
-		out.Pending[i].Outcome.Config = cloneStringMap(in.Pending[i].Outcome.Config)
-		out.Pending[i].Outcome.Limitations = in.Pending[i].Outcome.Limitations
-		out.Pending[i].DeliveryKey = in.Pending[i].DeliveryKey
+		out.Pending[i] = cloneWorkResult(in.Pending[i])
+	}
+	for i := range out.Communicated {
+		out.Communicated[i] = cloneWorkResult(in.Communicated[i])
 	}
 	return &out
+}
+
+func cloneWorkResult(in work.ResultView) work.ResultView {
+	out := in
+	out.Outcome.Config = cloneStringMap(in.Outcome.Config)
+	if in.LastAttempt != nil {
+		e := *in.LastAttempt
+		e.Receipt.Scope = in.LastAttempt.Receipt.Scope
+		out.LastAttempt = &e
+	}
+	return out
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

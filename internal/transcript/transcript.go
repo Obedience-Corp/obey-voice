@@ -36,11 +36,12 @@ const Version = 2
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
 type record struct {
-	Work      *work.Snapshot  `json:"work,omitempty"`
-	WorkScope *work.WorkScope `json:"work_scope,omitempty"`
-	Type      string          `json:"type"`
-	TS        string          `json:"ts,omitempty"`
-	Seq       int64           `json:"seq,omitempty"`
+	Delivery  *events.WorkDelivery `json:"delivery,omitempty"`
+	Work      *work.Snapshot       `json:"work,omitempty"`
+	WorkScope *work.WorkScope      `json:"work_scope,omitempty"`
+	Type      string               `json:"type"`
+	TS        string               `json:"ts,omitempty"`
+	Seq       int64                `json:"seq,omitempty"`
 
 	V   int `json:"v,omitempty"`   // header
 	PID int `json:"pid,omitempty"` // header
@@ -261,6 +262,9 @@ func (w *Writer) Attach(bus *events.Bus) {
 	events.Subscribe(bus, func(e events.WorkStateChanged) {
 		w.enqueue(record{Type: "work_state_changed", Work: &e.Snapshot})
 	})
+	events.Subscribe(bus, func(e events.WorkDelivery) {
+		w.enqueue(record{Type: "work_delivery", Delivery: &e})
+	})
 	events.Subscribe(bus, func(e events.JobQueued) {
 		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "queued"})
 	})
@@ -417,7 +421,7 @@ func isDurableRecord(r record) bool {
 	switch r.Type {
 	case "header", "user", "agent", "error", "tool_call", "tool_result",
 		"metrics", "tokens", "session_warning", "compacted", "cleared",
-		"turn_interrupted", "dropped":
+		"turn_interrupted", "work_state_changed", "work_delivery", "dropped":
 		return true
 	default:
 		return false

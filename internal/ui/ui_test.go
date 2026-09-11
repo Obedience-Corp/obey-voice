@@ -268,6 +268,57 @@ func TestWorkStateChangedCurrentHeldResultKeepsCurrentSessionLabel(t *testing.T)
 	}
 }
 
+func TestCanonicalAdmissionAndResultAreKeyedWithoutLegacyDuplicates(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "agent", &buf, true)
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+	job := work.JobView{Key: work.JobKey{Scope: scope, JobID: "job-1"}, Task: "inspect files", Origin: "spawn", State: work.JobQueued}
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 1, Jobs: []work.JobView{job}}})
+	job.State = work.JobRunning
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 2, Jobs: []work.JobView{job}}})
+	// Canonical mode suppresses the legacy lifecycle projection even if the
+	// compatibility events arrive afterward.
+	bus.Emit(events.JobQueued{ID: "job-1", Task: "inspect files"})
+	bus.Emit(events.JobStarted{ID: "job-1", Task: "inspect files"})
+	job.State = work.JobTerminal
+	result := work.ResultView{State: work.Pending, DeliveryKey: job.Key, Outcome: work.Outcome{ResultID: "result-1", Scope: scope, JobID: "job-1", Text: "done", Status: work.OutcomeSucceeded}}
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 3, Jobs: []work.JobView{job}, Pending: []work.ResultView{result}}})
+	bus.Emit(events.JobFinished{ID: "job-1", Task: "inspect files"})
+	got := buf.String()
+	if strings.Count(got, "job-1") != 2 || strings.Count(got, "Background result: done") != 1 {
+		t.Fatalf("canonical projection = %q", got)
+	}
+	if !strings.Contains(got, "[spawn] running: inspect files") || !strings.Contains(got, "Background result: done") {
+		t.Fatalf("canonical title/origin/result missing: %q", got)
+	}
+}
+
+func TestCommunicatedWorkResultRemainsReadableAndDeduped(t *testing.T) {
+	var buf bytes.Buffer
+	bus := events.NewBus()
+	newUI(bus, "agent", &buf, true)
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+	outcome := work.Outcome{ResultID: "result-1", Scope: scope, JobID: "job-1", Text: "done", Status: work.OutcomeSucceeded}
+	pending := work.ResultView{State: work.Ready, AnnouncementState: work.AnnouncementPending, Outcome: outcome, DeliveryKey: work.JobKey{Scope: scope, JobID: "job-1"}}
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 1, Pending: []work.ResultView{pending}}})
+	pending.Task = "daily brief"
+	pending.Outcome.Origin = "agency"
+	pending.Outcome.Config = map[string]string{"persona": "Samantha"}
+	pending.Outcome.SourceRef = "calendar"
+	pending.Outcome.Limitations = "two items omitted"
+	communicated := pending
+	communicated.State = work.Communicated
+	communicated.AnnouncementState = work.AnnouncementCommunicated
+	communicated.LastAttempt = &work.DeliveryEvidence{AttemptID: "attempt-1", Mode: "text"}
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 2, Communicated: []work.ResultView{communicated}}})
+	bus.Emit(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 3, Communicated: []work.ResultView{communicated}}})
+	got := buf.String()
+	if strings.Count(got, "Background result: done") != 1 || strings.Count(got, "Background result (communicated): done") != 1 || !strings.Contains(got, "task: daily brief") || !strings.Contains(got, "persona: Samantha") || !strings.Contains(got, "source: calendar") || !strings.Contains(got, "limitations: two items omitted") || !strings.Contains(got, "attempt: attempt-1 (text)") {
+		t.Fatalf("communicated projection = %q", got)
+	}
+}
+
 func TestScopedToolEventsRejectDelayedOldScope(t *testing.T) {
 	var buf bytes.Buffer
 	bus := events.NewBus()

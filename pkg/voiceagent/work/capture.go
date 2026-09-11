@@ -263,20 +263,20 @@ func (c *Coordinator) ReleaseCapturePermit(p CapturePermit) error {
 
 func (c *Coordinator) RevokeCapturePermit(p CapturePermit) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if !c.permitMatchesLocked(p) {
 		if p.Scope != c.scope {
+			c.mu.Unlock()
 			return ErrStaleScope
 		}
+		c.mu.Unlock()
 		return ErrConflict
 	}
-	if c.activeLease != nil {
-		c.activeLease = nil
-	}
-	p.state.mu.Lock()
-	closeFenceLocked(p.state, fenceRevoked)
-	p.state.mu.Unlock()
-	c.permit = nil
+	c.recordAbandonedLeaseLocked("lease_revoked")
+	c.closeLeaseLocked(fenceRevoked)
+	c.revision++
+	s, cb := c.snapshotLocked(), c.onChange
+	c.mu.Unlock()
+	notify(cb, s)
 	return nil
 }
 
@@ -285,48 +285,65 @@ func (c *Coordinator) RevokeCapturePermit(p CapturePermit) error {
 // runtime/provider binding is replaced.
 func (c *Coordinator) RevokeBinding(scope WorkScope) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if err := c.checkScopeLocked(scope); err != nil {
+		c.mu.Unlock()
 		return err
 	}
+	changed := c.activeLease != nil
+	c.recordAbandonedLeaseLocked("lease_revoked")
 	c.invalidateCaptureLocked()
+	if changed {
+		c.revision++
+		s, cb := c.snapshotLocked(), c.onChange
+		c.mu.Unlock()
+		notify(cb, s)
+		return nil
+	}
+	c.mu.Unlock()
 	return nil
 }
 
 // Claim validates refs against the current inbox and reserves one completion
-// attempt. It leaves result state unchanged; FinishAttempt is a later task.
+// attempt. The selected results are marked scheduled, but remain pending until
+// a validated delivery receipt consumes them.
 func (c *Coordinator) Claim(scope WorkScope, attemptID, turnID string, refs []ResultRef, p CapturePermit) (CompletionLease, error) {
 	if attemptID == "" || turnID == "" || len(refs) == 0 {
 		return CompletionLease{}, fmt.Errorf("%w: incomplete completion claim", ErrInvalid)
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if err := c.checkScopeLocked(scope); err != nil {
+		c.mu.Unlock()
 		return CompletionLease{}, err
 	}
 	if c.activeLease != nil || !c.permitMatchesLocked(p) {
+		c.mu.Unlock()
 		return CompletionLease{}, ErrConflict
 	}
 	seen := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
 		if ref.Scope != scope || ref.JobID == "" || ref.ResultID == "" {
+			c.mu.Unlock()
 			return CompletionLease{}, ErrStaleScope
 		}
 		if _, duplicate := seen[ref.ResultID]; duplicate {
+			c.mu.Unlock()
 			return CompletionLease{}, ErrConflict
 		}
 		seen[ref.ResultID] = struct{}{}
 		r, ok := c.results[ref.ResultID]
 		if !ok || r.view.Outcome.JobID != ref.JobID || r.view.DeliveryKey != (JobKey{Scope: scope, JobID: ref.JobID}) || (r.view.State != Pending && r.view.State != Ready) {
+			c.mu.Unlock()
 			return CompletionLease{}, ErrConflict
 		}
 		if ref.Revision == 0 || ref.Revision != r.view.Outcome.TerminalRevision {
+			c.mu.Unlock()
 			return CompletionLease{}, ErrConflict
 		}
 	}
 	p.state.mu.Lock()
 	if p.state.state != fenceActive {
 		p.state.mu.Unlock()
+		c.mu.Unlock()
 		return CompletionLease{}, ErrConflict
 	}
 	p.state.state = fenceClaimed
@@ -335,6 +352,13 @@ func (c *Coordinator) Claim(scope WorkScope, attemptID, turnID string, refs []Re
 	lease := CompletionLease{Scope: scope, AttemptID: attemptID, TurnID: turnID, CaptureEpoch: p.CaptureEpoch, PermitID: p.PermitID, Results: append([]ResultRef(nil), refs...), permit: p.state}
 	c.activeLease = &leaseState{id: fmt.Sprintf("lease-%d", c.nextLease), permit: p.state, scope: scope, attemptID: attemptID, turnID: turnID, captureEpoch: p.CaptureEpoch, permitID: p.PermitID, refs: append([]ResultRef(nil), refs...)}
 	lease.lease = c.activeLease
+	for _, ref := range refs {
+		c.results[ref.ResultID].view.AnnouncementState = AnnouncementScheduled
+	}
+	c.revision++
+	s, cb := c.snapshotLocked(), c.onChange
+	c.mu.Unlock()
+	notify(cb, s)
 	return lease, nil
 }
 
@@ -360,19 +384,46 @@ func (c *Coordinator) RevokeCompletionLease(l CompletionLease) error {
 
 func (c *Coordinator) finishLease(l CompletionLease, state fenceState) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if err := c.checkScopeLocked(l.Scope); err != nil {
+		c.mu.Unlock()
 		return err
 	}
 	if c.activeLease != l.lease || !leaseIdentityMatchesLocked(l) || !c.permitMatchesLocked(CapturePermit{Scope: l.Scope, PermitID: l.PermitID, CaptureEpoch: l.CaptureEpoch, state: l.permit}) {
+		c.mu.Unlock()
 		return ErrConflict
 	}
-	l.permit.mu.Lock()
-	closeFenceLocked(l.permit, state)
-	l.permit.mu.Unlock()
+	for _, ref := range l.Results {
+		if r := c.results[ref.ResultID]; r != nil {
+			r.view.AnnouncementState = AnnouncementPending
+			r.view.LastAttempt = &DeliveryEvidence{Scope: l.Scope, AttemptID: l.AttemptID, TurnID: l.TurnID, CaptureEpoch: l.CaptureEpoch, ResultID: ref.ResultID, Reason: leaseFenceReason(state)}
+		}
+	}
+	c.closeLeaseLocked(state)
+	c.revision++
+	s, cb := c.snapshotLocked(), c.onChange
+	c.mu.Unlock()
+	notify(cb, s)
+	return nil
+}
+
+func leaseFenceReason(state fenceState) string {
+	if state == fenceRevoked {
+		return "lease_revoked"
+	}
+	return "lease_released"
+}
+
+// closeLeaseLocked closes the runtime fence and clears the authority. Caller
+// must hold c.mu; no user callback is made here.
+func (c *Coordinator) closeLeaseLocked(state fenceState) {
+	if c.permit != nil {
+		p := c.permit.state
+		p.mu.Lock()
+		closeFenceLocked(p, state)
+		p.mu.Unlock()
+	}
 	c.activeLease = nil
 	c.permit = nil
-	return nil
 }
 
 func (c *Coordinator) invalidateCaptureLocked() {

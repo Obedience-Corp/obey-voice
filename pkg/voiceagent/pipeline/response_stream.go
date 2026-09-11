@@ -136,6 +136,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			return
 		}
 		pending++
+		if metrics.delivery != nil {
+			metrics.delivery.queued++
+		}
 		queuedAt := time.Now()
 		synthQueue <- synthWork{sentence: strings.Join(voiceBatch, " "), textReady: batchTextReady, queuedAt: queuedAt}
 		voiceBatch = voiceBatch[:0]
@@ -178,6 +181,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		}
 
 		if interrupted || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
+			if metrics.delivery != nil && strings.TrimSpace(text) != "" {
+				metrics.delivery.skipped = true
+			}
 			return
 		}
 
@@ -187,6 +193,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// same code (SpeechProjection).
 		speakable, ok := proj.admit(voiceText)
 		if !ok {
+			if metrics.delivery != nil && strings.TrimSpace(text) != "" {
+				metrics.delivery.skipped = true
+			}
 			return
 		}
 
@@ -271,6 +280,11 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				continue
 			}
 			interrupted = true
+			if metrics.delivery != nil {
+				if c := p.WorkCoordinator(); c != nil {
+					_ = c.RevokeCompletionLease(metrics.delivery.lease)
+				}
+			}
 			metrics.interrupted = true
 			metrics.markBargeIn(req.At)
 			turn.to(TurnInterrupted)

@@ -26,6 +26,8 @@ type UI struct {
 	workScope            work.WorkScope
 	workRevision         uint64
 	workResults          map[string]string
+	canonicalJobs        map[string]work.JobState
+	canonicalJobViews    map[string]work.JobView
 	allowWorkScopeChange bool
 	authorityMu          sync.Mutex
 	authoritativeWork    func() work.Snapshot
@@ -75,7 +77,7 @@ func NewWithOutput(bus *events.Bus, agentName string, out io.Writer) *UI {
 // newUI is the shared constructor; plain is the console/file decision, taken
 // by the exported constructors and set explicitly by tests.
 func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
-	u := &UI{bus: bus, name: agentName, out: out, plain: plain, work: workfold.New(), workResults: make(map[string]string)}
+	u := &UI{bus: bus, name: agentName, out: out, plain: plain, work: workfold.New(), workResults: make(map[string]string), canonicalJobs: make(map[string]work.JobState), canonicalJobViews: make(map[string]work.JobView)}
 
 	events.Subscribe(bus, u.onSTTPhase)
 	events.Subscribe(bus, u.onTranscriptPartial)
@@ -277,6 +279,8 @@ func (u *UI) onCleared(_ events.ConversationCleared) {
 	u.workScope = work.WorkScope{}
 	u.workRevision = 0
 	u.workResults = make(map[string]string)
+	u.canonicalJobs = make(map[string]work.JobState)
+	u.canonicalJobViews = make(map[string]work.JobView)
 	u.allowWorkScopeChange = true
 	fmt.Fprintln(u.out, dimStyle.Render("  Conversation cleared."))
 }
@@ -295,6 +299,8 @@ func (u *UI) onWorkStateChanged(e events.WorkStateChanged) {
 				return
 			}
 			u.workResults = make(map[string]string)
+			u.canonicalJobs = make(map[string]work.JobState)
+			u.canonicalJobViews = make(map[string]work.JobView)
 			u.workRevision = 0
 			u.allowWorkScopeChange = false
 		}
@@ -310,7 +316,39 @@ func (u *UI) onWorkStateChanged(e events.WorkStateChanged) {
 	}
 	u.workScope = s.Scope
 	u.workRevision = s.Revision
-	for _, pending := range s.Pending {
+	pendingJobs := make(map[string]struct{}, len(s.Pending))
+	results := make([]work.ResultView, 0, len(s.Pending)+len(s.Communicated))
+	results = append(results, s.Pending...)
+	results = append(results, s.Communicated...)
+	for _, pending := range results {
+		if pending.Outcome.JobID != "" {
+			pendingJobs[pending.Outcome.JobID] = struct{}{}
+		}
+	}
+	for _, job := range s.Jobs {
+		id := job.Key.JobID
+		if id == "" {
+			continue
+		}
+		previous, exists := u.canonicalJobs[id]
+		u.canonicalJobs[id] = job.State
+		u.canonicalJobViews[id] = job
+		if job.State == work.JobTerminal {
+			if _, pending := pendingJobs[id]; pending {
+				continue
+			}
+		}
+		if exists && previous == job.State {
+			continue
+		}
+		label := fmt.Sprintf("⚙ %s", id)
+		if job.Origin != "" {
+			label += " [" + job.Origin + "]"
+		}
+		label += " " + string(job.State) + ": " + job.Task
+		u.dimLine(label)
+	}
+	for _, pending := range results {
 		id := pending.Outcome.ResultID
 		if id == "" {
 			continue
@@ -324,6 +362,52 @@ func (u *UI) onWorkStateChanged(e events.WorkStateChanged) {
 			prefix = "Previous session update"
 		} else if pending.State == work.Held {
 			prefix = "Background result (held)"
+		} else if pending.State == work.Communicated || pending.AnnouncementState == work.AnnouncementCommunicated {
+			prefix = "Background result (communicated)"
+		} else if pending.AnnouncementState == work.AnnouncementScheduled {
+			prefix = "Background result (scheduled)"
+		}
+		if pending.HoldReason != "" && pending.State == work.Held {
+			text += " (" + pending.HoldReason + ")"
+		}
+		meta := make([]string, 0, 6)
+		task := pending.Task
+		job := u.canonicalJobViews[pending.Outcome.JobID]
+		if task == "" {
+			task = job.Task
+		}
+		if task != "" {
+			meta = append(meta, "task: "+task)
+		}
+		origin := pending.Outcome.Origin
+		if origin == "" {
+			origin = job.Origin
+		}
+		if origin != "" {
+			meta = append(meta, "origin: "+origin)
+		}
+		persona := pending.Outcome.Config["persona"]
+		if persona == "" {
+			persona = job.Config["persona"]
+		}
+		if persona != "" {
+			meta = append(meta, "persona: "+persona)
+		}
+		if pending.Outcome.SourceRef != "" {
+			meta = append(meta, "source: "+pending.Outcome.SourceRef)
+		}
+		if pending.Outcome.Limitations != "" {
+			meta = append(meta, "limitations: "+pending.Outcome.Limitations)
+		}
+		if pending.LastAttempt != nil && pending.LastAttempt.AttemptID != "" {
+			attempt := "attempt: " + pending.LastAttempt.AttemptID
+			if pending.LastAttempt.Mode != "" {
+				attempt += " (" + pending.LastAttempt.Mode + ")"
+			}
+			meta = append(meta, attempt)
+		}
+		if len(meta) > 0 {
+			text += " · " + strings.Join(meta, " · ")
 		}
 		line := prefix + ": " + text
 		if u.workResults[id] == line {
@@ -404,24 +488,39 @@ func (u *UI) dimLine(text string) {
 // A job prints once when accepted and once when it actually begins; the two
 // are back to back unless it had to wait behind another job.
 func (u *UI) onJobQueued(e events.JobQueued) {
+	if _, ok := u.canonicalJobs[e.ID]; ok {
+		return
+	}
 	u.dimLine(fmt.Sprintf("⚙ %s queued: %s", e.ID, e.Task))
 }
 
 func (u *UI) onJobStarted(e events.JobStarted) {
+	if _, ok := u.canonicalJobs[e.ID]; ok {
+		return
+	}
 	u.dimLine(fmt.Sprintf("⚙ %s started: %s", e.ID, e.Task))
 }
 
 func (u *UI) onJobFinished(e events.JobFinished) {
+	if _, ok := u.canonicalJobs[e.ID]; ok {
+		return
+	}
 	u.closeFold(e.ID)
 	u.dimLine(fmt.Sprintf("✓ %s finished (%s)", e.ID, e.Elapsed.Round(time.Second)))
 }
 
 func (u *UI) onJobFailed(e events.JobFailed) {
+	if _, ok := u.canonicalJobs[e.ID]; ok {
+		return
+	}
 	u.closeFold(e.ID)
 	u.dimLine(fmt.Sprintf("✗ %s failed: %s", e.ID, e.Err))
 }
 
 func (u *UI) onJobAborted(e events.JobAborted) {
+	if _, ok := u.canonicalJobs[e.ID]; ok {
+		return
+	}
 	u.closeFold(e.ID)
 	how := "killed"
 	if e.Reason == events.AbortBudget {

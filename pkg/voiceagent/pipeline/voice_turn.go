@@ -96,6 +96,15 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	// bounded so a hung model after tools cannot wedge the conversation loop.
 	turnCtx, turnCancel := p.withBrainTimeout(ctx)
 	defer turnCancel()
+	requestCtx, ordinary, leaseErr := p.beginOrdinaryCompletion(turnCtx, text, speakerID)
+	if leaseErr != nil {
+		requestCtx = turnCtx
+	}
+	if ordinary != nil {
+		defer ordinary.close()
+		metrics.ordinary = ordinary
+		metrics.delivery = &completionPlayback{lease: ordinary.lease}
+	}
 
 	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	streamOpts := brain.StreamOptions{
@@ -109,8 +118,11 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
 	}
+	if ordinary != nil {
+		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
+	}
 
-	brainStream, err := p.Brain.ThinkStream(turnCtx, text, streamOpts)
+	brainStream, err := p.Brain.ThinkStream(requestCtx, text, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -120,7 +132,10 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		return text, nil
 	}
 
-	fullResponse, interrupted, err := p.streamResponse(turnCtx, turnCancel, brainStream, true, metrics, turn, repair)
+	if ordinary != nil {
+		brainStream = ordinary.wrap(brainStream)
+	}
+	fullResponse, interrupted, err := p.streamResponse(requestCtx, turnCancel, brainStream, true, metrics, turn, repair)
 	if kind, source, ok := repair.routedKind(); ok {
 		if p.Player != nil {
 			p.Player.Stop()
@@ -141,6 +156,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		p.recoverTurn(ctx, turn, metrics, fullResponse, err)
 		return text, nil
 	}
+	p.finishOrdinaryCompletion(metrics, fullResponse, interrupted)
 
 	// On a barge-in the user is already speaking their next turn into the mic;
 	// keep that audio instead of draining it when the next listen begins. A
@@ -172,12 +188,12 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 		return "", errors.New("STT provider is not configured")
 	}
 
-	session, err := p.startCaptureSession(ctx)
+	session, generation, err := p.startCaptureSession(ctx)
 	if err != nil {
 		return "", fmt.Errorf("STT: %w", err)
 	}
 	yielded := false
-	defer func() { p.finishCaptureSession(session, yielded) }()
+	defer func() { p.finishCaptureSession(session, generation, yielded) }()
 
 	for {
 		select {
@@ -215,7 +231,7 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 			case stt.KindYieldedForCompletion:
 				if event, ok := event.(stt.YieldedForCompletion); ok {
 					p.captureMu.Lock()
-					if p.captureSession == session {
+					if p.captureSession != nil && p.captureGeneration == generation {
 						p.captureToken = event.Token
 					}
 					p.captureMu.Unlock()

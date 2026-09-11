@@ -58,10 +58,14 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
-	retiredBrains sync.WaitGroup
-	STT           stt.Provider
-	Brain         brain.Provider
-	TTS           tts.Provider
+	// The serialized host remembers omitted coverage until the next safe
+	// boundary, where one deterministic brief replaces a model retry.
+	completionFallback map[string]bool
+	completionScope    work.WorkScope
+	retiredBrains      sync.WaitGroup
+	STT                stt.Provider
+	Brain              brain.Provider
+	TTS                tts.Provider
 	// Utterance is nil when the audio source cannot be ended on demand.
 	Utterance UtteranceEnder
 	// TTSFallback is an optional, explicitly configured provider used for one
@@ -168,6 +172,7 @@ type Pipeline struct {
 	keepCapture               atomic.Bool
 	captureMu                 sync.Mutex
 	captureSession            stt.Session
+	captureGeneration         uint64
 	captureToken              stt.PauseToken
 	captureYielded            bool
 	captureDeferral           string
@@ -203,6 +208,9 @@ func (p *Pipeline) SetOutputMuted(muted bool) {
 	if muted && p.Player != nil {
 		p.Player.Stop()
 	}
+	if !muted {
+		p.RecoverCompletionOutput()
+	}
 }
 
 // OutputMuted reports whether spoken responses are currently disabled.
@@ -216,6 +224,7 @@ func (p *Pipeline) ReplaceTTS(primary, fallback tts.Provider) {
 	p.TTS = primary
 	p.TTSFallback = fallback
 	p.ttsMu.Unlock()
+	p.RecoverCompletionOutput()
 }
 
 // HasTTS reports whether a primary voice provider is configured.

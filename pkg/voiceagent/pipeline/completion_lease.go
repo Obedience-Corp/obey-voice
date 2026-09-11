@@ -83,6 +83,7 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 		case <-lease.Done():
 			cancel()
 		case <-attemptCtx.Done():
+			_ = c.RevokeCompletionLease(lease)
 		case <-done:
 		}
 	}()

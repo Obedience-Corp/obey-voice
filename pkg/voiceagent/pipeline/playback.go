@@ -66,6 +66,9 @@ type playbackObservation struct {
 // the event marks a finished playback so the caller can decrement its pending
 // count.
 func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics, armAt *atomic.Int64) (finished bool) {
+	if metrics.delivery != nil {
+		metrics.delivery.observe(event, p.sinkKind())
+	}
 	switch event.kind {
 	case playbackNotEnqueued:
 		if event.error != "" {
@@ -221,6 +224,9 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 		}
 		p.emit(started)
 	case result := <-playback.Done():
+		if metrics.delivery != nil {
+			metrics.delivery.observe(playbackEvent{kind: playbackFinished, index: index, result: result}, p.sinkKind())
+		}
 		if result.Err != nil && !result.Interrupted && !errors.Is(result.Err, context.Canceled) {
 			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", result.Err)})
 		}
@@ -253,6 +259,9 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 	}
 
 	result := <-playback.Done()
+	if metrics.delivery != nil {
+		metrics.delivery.observe(playbackEvent{kind: playbackFinished, index: index, result: result}, p.sinkKind())
+	}
 	elapsed := time.Duration(0)
 	if !startedAt.IsZero() {
 		elapsed = time.Since(startedAt)

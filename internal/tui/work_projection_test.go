@@ -79,3 +79,67 @@ func TestWorkProjectionClearsOnScopeTransition(t *testing.T) {
 		t.Fatalf("stale work projection survived scope transition: %q", view)
 	}
 }
+
+func TestCanonicalAdmissionCardUpdatesAndReplacesWithResult(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	scope := projectionScope("runtime-1", "conversation-1")
+	job := work.JobView{Key: scopeJob(scope, "job-1"), Task: "read the weather", Origin: "spawn"}
+	m.handleEvent(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 1, Jobs: []work.JobView{{Key: job.Key, Task: job.Task, Origin: job.Origin, State: work.JobQueued}}}})
+	view := stripANSI(m.View())
+	if strings.Count(view, "job-1") != 1 || !strings.Contains(view, "read the weather") {
+		t.Fatalf("queued canonical card = %q", view)
+	}
+	if m.jobs["job-1"].origin != "spawn" {
+		t.Fatalf("canonical origin = %q, want spawn", m.jobs["job-1"].origin)
+	}
+	m.handleEvent(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 2, Jobs: []work.JobView{{Key: job.Key, Task: job.Task, Origin: job.Origin, State: work.JobRunning}}}})
+	view = stripANSI(m.View())
+	if strings.Count(view, "job-1") != 1 || !strings.Contains(view, "Working: read the weather") {
+		t.Fatalf("running canonical card = %q", view)
+	}
+	result := projectionSnapshot(scope, work.Ready, false, "Rain later")
+	result.Revision = 3
+	result.Pending[0].Task = "read the weather"
+	result.Pending[0].Outcome.Origin = "spawn"
+	result.Pending[0].Outcome.Config = map[string]string{"persona": "Samantha"}
+	result.Jobs = []work.JobView{{Key: job.Key, Task: job.Task, Origin: job.Origin, State: work.JobTerminal, Outcome: &result.Pending[0].Outcome}}
+	m.handleEvent(events.WorkStateChanged{Snapshot: result})
+	view = stripANSI(m.View())
+	if strings.Count(view, "Rain later") != 1 || !strings.Contains(view, "task: read the weather") || !strings.Contains(view, "persona: Samantha") || strings.Contains(view, "queued") || strings.Contains(view, "Working:") {
+		t.Fatalf("result card did not replace admission card: %q", view)
+	}
+}
+
+func TestCanonicalAdmissionDedupesLegacyLifecycleLine(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	scope := projectionScope("runtime-1", "conversation-1")
+	m.handleEvent(events.JobQueued{ID: "job-1", Task: "inspect files"})
+	m.handleEvent(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 1, Jobs: []work.JobView{{Key: scopeJob(scope, "job-1"), Task: "inspect files", Origin: "spawn", State: work.JobQueued}}}})
+	view := stripANSI(m.View())
+	if strings.Count(view, "job-1") != 1 {
+		t.Fatalf("canonical/legacy admission duplicated card: %q", view)
+	}
+}
+
+func TestWorkProjectionRetainsCommunicatedResultAndShowsHoldReason(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	scope := projectionScope("runtime-1", "conversation-1")
+	held := projectionSnapshot(scope, work.Held, false, "waiting")
+	held.Revision = 1
+	held.Pending[0].AnnouncementState = work.AnnouncementHeld
+	held.Pending[0].HoldReason = "tts_failed"
+	held.Pending[0].Task = "weather check"
+	m.handleEvent(events.WorkStateChanged{Snapshot: held})
+	if got := stripANSI(m.View()); !strings.Contains(got, "Background result (held): waiting (tts_failed)") {
+		t.Fatalf("held result = %q", got)
+	}
+	communicated := work.Snapshot{Scope: scope, Revision: 2, Communicated: []work.ResultView{{
+		State: work.Communicated, AnnouncementState: work.AnnouncementCommunicated,
+		Outcome: held.Pending[0].Outcome, DeliveryKey: held.Pending[0].DeliveryKey, Task: held.Pending[0].Task,
+	}}}
+	m.handleEvent(events.WorkStateChanged{Snapshot: communicated})
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Background result (communicated): waiting") || !strings.Contains(view, "task: weather check") || strings.Count(view, "waiting") != 1 {
+		t.Fatalf("communicated result was duplicated or disappeared: %q", view)
+	}
+}

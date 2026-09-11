@@ -22,7 +22,7 @@ func (p *Pipeline) PauseForCompletion(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	p.captureMu.Lock()
-	session := p.captureSession
+	session, generation := p.captureSession, p.captureGeneration
 	p.captureMu.Unlock()
 	owner, ok := session.(stt.CompletionCapture)
 	if !ok {
@@ -43,7 +43,7 @@ func (p *Pipeline) PauseForCompletion(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	p.captureMu.Lock()
-	if p.captureSession == session && p.WorkCoordinator() == c {
+	if p.captureSession != nil && p.captureGeneration == generation && p.WorkCoordinator() == c {
 		if p.captureToken.Epoch <= result.Token.Epoch {
 			p.captureToken = result.Token
 		}
@@ -63,6 +63,7 @@ func (p *Pipeline) closeCompletionCapture() {
 	}
 	p.captureMu.Lock()
 	session := p.captureSession
+	p.captureGeneration++
 	p.captureSession = nil
 	p.captureToken = stt.PauseToken{}
 	p.captureYielded = false
@@ -73,9 +74,9 @@ func (p *Pipeline) closeCompletionCapture() {
 	}
 }
 
-func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, error) {
+func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64, error) {
 	p.captureMu.Lock()
-	session, token := p.captureSession, p.captureToken
+	session, token, generation := p.captureSession, p.captureToken, p.captureGeneration
 	resuming := session != nil && p.captureYielded
 	if resuming {
 		p.captureYielded = false
@@ -85,18 +86,18 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, error)
 		if owner, ok := session.(stt.CompletionCapture); ok {
 			if err := owner.ResumeCapture(ctx, token); err != nil {
 				p.captureMu.Lock()
-				if p.captureSession == session {
+				if p.captureSession != nil && p.captureGeneration == generation {
 					p.captureYielded = true
 				}
 				p.captureMu.Unlock()
-				return nil, fmt.Errorf("resume capture: %w", err)
+				return nil, 0, fmt.Errorf("resume capture: %w", err)
 			}
 		}
 		// Resume transferred the retained utterance from the yielded owner;
 		// consume the one-turn keep flag so a later fresh session does not
 		// replay the same retained audio.
 		p.keepCapture.Store(false)
-		return session, nil
+		return session, generation, nil
 	}
 	preserve := p.keepCapture.Swap(false)
 	if p.Capture != nil && !preserve {
@@ -111,20 +112,22 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, error)
 	}
 	session, err := p.STT.Start(startCtx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if binder, ok := session.(interface{ BindCompletionCoordinator(*work.Coordinator) }); ok {
 		binder.BindCompletionCoordinator(coordinator)
 	}
 	p.captureMu.Lock()
 	p.captureSession = session
+	p.captureGeneration++
+	generation = p.captureGeneration
 	p.captureMu.Unlock()
-	return session, nil
+	return session, generation, nil
 }
 
-func (p *Pipeline) finishCaptureSession(session stt.Session, yielded bool) {
+func (p *Pipeline) finishCaptureSession(session stt.Session, generation uint64, yielded bool) {
 	p.captureMu.Lock()
-	if p.captureSession == session {
+	if p.captureSession != nil && p.captureGeneration == generation {
 		p.captureYielded = yielded
 		if !yielded {
 			p.captureSession = nil

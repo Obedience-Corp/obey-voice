@@ -38,17 +38,24 @@ func (m *conversationModel) workStateChanged(e events.WorkStateChanged) {
 	if m.workResultJobs == nil {
 		m.workResultJobs = make(map[string]string)
 	}
+	for _, job := range s.Jobs {
+		m.canonicalJob(job)
+	}
 
-	seen := make(map[string]struct{}, len(s.Pending))
-	for _, result := range s.Pending {
+	results := make([]work.ResultView, 0, len(s.Pending)+len(s.Communicated))
+	results = append(results, s.Pending...)
+	results = append(results, s.Communicated...)
+	seen := make(map[string]struct{}, len(results))
+	for _, result := range results {
 		id := result.Outcome.ResultID
 		if id == "" {
 			continue
 		}
 		seen[id] = struct{}{}
-		line := renderWorkResult(result)
+		line := m.renderWorkResult(result)
 		if idx, ok := m.workResultItems[id]; ok && idx < len(m.items) {
 			m.items[idx].sys = line
+			m.items[idx].workResultID = id
 			continue
 		}
 		// Replace the provisional JobFinished line when lifecycle and canonical
@@ -82,7 +89,7 @@ func (m *conversationModel) workStateChanged(e events.WorkStateChanged) {
 	m.applyFollow()
 }
 
-func renderWorkResult(v work.ResultView) string {
+func (m *conversationModel) renderWorkResult(v work.ResultView) string {
 	text := strings.TrimSpace(v.Outcome.Text)
 	if text == "" {
 		text = string(v.Outcome.Status)
@@ -92,6 +99,45 @@ func renderWorkResult(v work.ResultView) string {
 		prefix = "  Previous session update"
 	} else if v.State == work.Held {
 		prefix = "  Background result (held)"
+	} else if v.State == work.Communicated || v.AnnouncementState == work.AnnouncementCommunicated {
+		prefix = "  Background result (communicated)"
+	} else if v.AnnouncementState == work.AnnouncementScheduled {
+		prefix = "  Background result (scheduled)"
+	}
+	if v.HoldReason != "" && v.State == work.Held {
+		text += " (" + v.HoldReason + ")"
+	}
+	meta := make([]string, 0, 6)
+	task := v.Task
+	if task == "" {
+		if job := m.jobs[v.Outcome.JobID]; job != nil {
+			task = job.task
+		}
+	}
+	if task != "" {
+		meta = append(meta, "task: "+task)
+	}
+	if v.Outcome.Origin != "" {
+		meta = append(meta, "origin: "+v.Outcome.Origin)
+	}
+	if persona := v.Outcome.Config["persona"]; persona != "" {
+		meta = append(meta, "persona: "+persona)
+	}
+	if v.Outcome.SourceRef != "" {
+		meta = append(meta, "source: "+v.Outcome.SourceRef)
+	}
+	if v.Outcome.Limitations != "" {
+		meta = append(meta, "limitations: "+v.Outcome.Limitations)
+	}
+	if v.LastAttempt != nil && v.LastAttempt.AttemptID != "" {
+		attempt := "attempt: " + v.LastAttempt.AttemptID
+		if v.LastAttempt.Mode != "" {
+			attempt += " (" + v.LastAttempt.Mode + ")"
+		}
+		meta = append(meta, attempt)
+	}
+	if len(meta) > 0 {
+		text += " · " + strings.Join(meta, " · ")
 	}
 	return dimStyle.Render(prefix + ": " + text)
 }

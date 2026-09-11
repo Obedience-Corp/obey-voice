@@ -22,8 +22,25 @@ import (
 // or running job.
 type jobView struct {
 	task    string
+	origin  string
 	running bool
 	tool    string // the tool the worker is on, until the fold has a row
+}
+
+func (m *conversationModel) canonicalJob(v work.JobView) {
+	id := v.Key.JobID
+	if id == "" {
+		return
+	}
+	job := m.trackJob(id, v.Task)
+	job.origin = v.Origin
+	job.running = v.State == work.JobRunning
+	if v.State == work.JobQueued {
+		m.renderJobItem(id, " · queued")
+	} else if v.State == work.JobRunning {
+		m.renderJobItem(id, "")
+	}
+	m.refreshJobChip()
 }
 
 func (m *conversationModel) jobQueued(e events.JobQueued) {
@@ -281,7 +298,11 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	if id == "" {
 		return
 	}
-	line := dimStyle.Render("  ⚙ " + id + " · " + label + suffix)
+	origin := ""
+	if job := m.jobs[id]; job != nil && job.origin != "" {
+		origin = " [" + job.origin + "]"
+	}
+	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
 	idx, ok := m.jobItems[id]
 	if !ok || idx >= len(m.items) {
 		if m.jobItems == nil {

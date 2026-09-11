@@ -192,6 +192,8 @@ func encodeEvent(e events.Event) map[string]any {
 		env["message"] = e.Message
 	case events.WorkStateChanged:
 		env["work"] = e.Snapshot
+	case events.WorkDelivery:
+		env["delivery"] = e
 	case events.SpeechDiagnostic:
 		env["symptom"] = e.Symptom
 		env["cause"] = e.Cause

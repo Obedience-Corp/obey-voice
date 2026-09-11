@@ -9,6 +9,9 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	// WorkResults is request-private canonical result context. Providers may
+	// include it in the next prompt, but must never append it to history.
+	WorkResults []CompletionResult
 	// Background marks a host-scheduled result notification, not a user utterance.
 	Background   bool
 	VoiceMode    bool

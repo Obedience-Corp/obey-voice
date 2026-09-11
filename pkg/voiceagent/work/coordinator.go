@@ -99,16 +99,56 @@ type Outcome struct {
 type PendingState string
 
 const (
-	Pending   PendingState = "pending"
-	Held      PendingState = "held"
-	Ready     PendingState = "ready"
-	Dismissed PendingState = "dismissed"
+	Pending      PendingState = "pending"
+	Held         PendingState = "held"
+	Ready        PendingState = "ready"
+	Dismissed    PendingState = "dismissed"
+	Communicated PendingState = "communicated"
+)
+
+// DeliveryReceipt is the host's observation of one completion attempt. It is
+// accepted only when its identity exactly matches the claimed lease.
+type DeliveryReceipt struct {
+	Scope             WorkScope `json:"scope"`
+	AttemptID         string    `json:"attempt_id"`
+	TurnID            string    `json:"turn_id"`
+	CaptureEpoch      uint64    `json:"capture_epoch"`
+	Mode              string    `json:"mode"`
+	ResponseCommitted bool      `json:"response_committed"`
+	PlaybackComplete  bool      `json:"playback_complete"`
+	Audible           bool      `json:"audible"`
+	Interrupted       bool      `json:"interrupted"`
+	Segments          int       `json:"segments"`
+}
+
+type DeliveryEvidence struct {
+	Scope        WorkScope       `json:"scope"`
+	AttemptID    string          `json:"attempt_id"`
+	TurnID       string          `json:"turn_id"`
+	CaptureEpoch uint64          `json:"capture_epoch"`
+	Mode         string          `json:"mode"`
+	ResultID     string          `json:"result_id"`
+	Addressed    bool            `json:"addressed"`
+	Reason       string          `json:"reason,omitempty"`
+	Receipt      DeliveryReceipt `json:"receipt"`
+}
+
+const (
+	AnnouncementPending      = "pending"
+	AnnouncementScheduled    = "scheduled"
+	AnnouncementHeld         = "held"
+	AnnouncementCommunicated = "communicated"
 )
 
 type ResultView struct {
-	Outcome     Outcome      `json:"outcome"`
-	State       PendingState `json:"state"`
-	DeliveryKey JobKey       `json:"delivery_key"`
+	ReceivedRevision  uint64            `json:"received_revision,omitempty"`
+	Outcome           Outcome           `json:"outcome"`
+	Task              string            `json:"task,omitempty"`
+	State             PendingState      `json:"state"`
+	DeliveryKey       JobKey            `json:"delivery_key"`
+	AnnouncementState string            `json:"announcement_state"`
+	HoldReason        string            `json:"hold_reason,omitempty"`
+	LastAttempt       *DeliveryEvidence `json:"last_attempt,omitempty"`
 }
 
 type Snapshot struct {
@@ -118,6 +158,7 @@ type Snapshot struct {
 	Retired           bool         `json:"retired"`
 	Jobs              []JobView    `json:"jobs"`
 	Pending           []ResultView `json:"pending"`
+	Communicated      []ResultView `json:"communicated,omitempty"`
 	RetiredJobIDs     []string     `json:"retired_job_ids,omitempty"`
 }
 
@@ -140,6 +181,8 @@ type Coordinator struct {
 	nextID                uint64
 	jobs                  map[string]*job
 	results               map[string]*result
+	communicated          map[string]ResultView
+	communicatedOrder     []string
 	pendingLimit          int
 	reserved              int
 	onChange              func(Snapshot)
@@ -154,7 +197,7 @@ type job struct{ view JobView }
 type result struct{ view ResultView }
 
 func NewCoordinator(scope WorkScope, opts ...Option) *Coordinator {
-	c := &Coordinator{scope: scope, jobs: make(map[string]*job), results: make(map[string]*result), pendingLimit: 32, ready: make(chan struct{}, 1), tombstones: make(map[string]struct{})}
+	c := &Coordinator{scope: scope, jobs: make(map[string]*job), results: make(map[string]*result), communicated: make(map[string]ResultView), pendingLimit: 32, ready: make(chan struct{}, 1), tombstones: make(map[string]struct{})}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -185,7 +228,7 @@ func (c *Coordinator) Register(scope WorkScope, a Admission) (JobKey, error) {
 			if _, exists := c.jobs[id]; exists {
 				continue
 			}
-			if _, retired := c.tombstones[id]; retired {
+			if _, retired := c.tombstones[id]; retired || c.communicatedJobLocked(id) {
 				continue
 			}
 			break
@@ -195,7 +238,7 @@ func (c *Coordinator) Register(scope WorkScope, a Admission) (JobKey, error) {
 		c.mu.Unlock()
 		return JobKey{}, fmt.Errorf("job %q already exists", id)
 	}
-	if _, ok := c.tombstones[id]; ok {
+	if _, ok := c.tombstones[id]; ok || c.communicatedJobLocked(id) {
 		c.mu.Unlock()
 		return JobKey{}, fmt.Errorf("job %q was recently retired", id)
 	}
@@ -262,6 +305,10 @@ func (c *Coordinator) Publish(key JobKey, o Outcome) (ResultView, error) {
 	if o.ResultID == "" {
 		o.ResultID = fmt.Sprintf("%s-result-%d", key.JobID, o.TerminalRevision)
 	}
+	if _, exists := c.communicated[o.ResultID]; exists {
+		c.mu.Unlock()
+		return ResultView{}, ErrConflict
+	}
 	if prior, exists := c.results[o.ResultID]; exists && prior.view.Outcome.JobID != key.JobID {
 		c.mu.Unlock()
 		return ResultView{}, ErrConflict
@@ -282,7 +329,7 @@ func (c *Coordinator) Publish(key JobKey, o Outcome) (ResultView, error) {
 		o.Elapsed = o.EndedAt.Sub(o.StartedAt)
 	}
 	j.view.State, j.view.TerminalRevision, j.view.Outcome = JobTerminal, o.TerminalRevision, ptrOutcome(o)
-	rv := ResultView{Outcome: o, State: Pending, DeliveryKey: key}
+	rv := ResultView{Outcome: o, Task: j.view.Task, State: Pending, DeliveryKey: key, AnnouncementState: AnnouncementPending, ReceivedRevision: c.revision + 1}
 	c.results[o.ResultID] = &result{view: rv}
 	c.revision++
 	s := c.snapshotLocked()
@@ -304,7 +351,16 @@ func (c *Coordinator) Pending(scope WorkScope) []ResultView {
 	for id := range c.results {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	sort.SliceStable(ids, func(i, j int) bool {
+		a, b := c.results[ids[i]].view, c.results[ids[j]].view
+		if a.ReceivedRevision != b.ReceivedRevision {
+			return a.ReceivedRevision < b.ReceivedRevision
+		}
+		if !a.Outcome.EndedAt.Equal(b.Outcome.EndedAt) {
+			return a.Outcome.EndedAt.Before(b.Outcome.EndedAt)
+		}
+		return ids[i] < ids[j]
+	})
 	for _, id := range ids {
 		r := c.results[id]
 		if r.view.State != Dismissed {
@@ -315,7 +371,7 @@ func (c *Coordinator) Pending(scope WorkScope) []ResultView {
 }
 
 func (c *Coordinator) Hold(scope WorkScope, resultID string) error {
-	return c.setPending(scope, resultID, Held, false)
+	return c.HoldWithReason(scope, resultID, "user_requested")
 }
 func (c *Coordinator) Resume(scope WorkScope, resultID string) error {
 	return c.setPending(scope, resultID, Ready, false)
@@ -346,9 +402,15 @@ func (c *Coordinator) setPending(scope WorkScope, id string, state PendingState,
 	if c.activeLease != nil && r.view.State != state && leaseContainsResult(c.activeLease, id) {
 		// A disposition change invalidates an attempt that selected this result.
 		// The result itself remains governed by the requested disposition.
+		c.recordAbandonedLeaseLocked("disposition_changed")
 		c.invalidateCaptureLocked()
 	}
 	r.view.State = state
+	if state == Held {
+		r.view.AnnouncementState, r.view.HoldReason = AnnouncementHeld, "user_requested"
+	} else if state == Ready {
+		r.view.AnnouncementState, r.view.HoldReason = AnnouncementPending, ""
+	}
 	if previous {
 		r.view.Outcome.PreviousSession = true
 	}
@@ -359,11 +421,7 @@ func (c *Coordinator) setPending(scope WorkScope, id string, state PendingState,
 		delete(c.jobs, jobID)
 		c.tombstones[jobID] = struct{}{}
 		c.tombstoneOrder = append(c.tombstoneOrder, jobID)
-		if len(c.tombstoneOrder) > c.pendingLimit {
-			old := c.tombstoneOrder[0]
-			c.tombstoneOrder = c.tombstoneOrder[1:]
-			delete(c.tombstones, old)
-		}
+		c.trimTombstonesLocked()
 	}
 	c.revision++
 	s, cb := c.snapshotLocked(), c.onChange
@@ -373,6 +431,14 @@ func (c *Coordinator) setPending(scope WorkScope, id string, state PendingState,
 		notifyReady(c)
 	}
 	return nil
+}
+
+func (c *Coordinator) trimTombstonesLocked() {
+	for len(c.tombstoneOrder) > c.pendingLimit {
+		old := c.tombstoneOrder[0]
+		c.tombstoneOrder = c.tombstoneOrder[1:]
+		delete(c.tombstones, old)
+	}
 }
 
 func leaseContainsResult(l *leaseState, resultID string) bool {
@@ -425,7 +491,7 @@ func (c *Coordinator) Restore(s Snapshot, destination WorkScope) error {
 	if !destination.Valid() || !s.Scope.Valid() || destination.SessionID != s.Scope.SessionID || s.PersistedRevision > s.Revision {
 		return ErrInvalid
 	}
-	if len(s.RetiredJobIDs) > c.pendingLimit {
+	if len(s.RetiredJobIDs) > c.pendingLimit || len(s.Communicated) > c.pendingLimit {
 		return ErrOverflow
 	}
 	retiredIDs := make(map[string]struct{}, len(s.RetiredJobIDs))
@@ -450,8 +516,24 @@ func (c *Coordinator) Restore(s Snapshot, destination WorkScope) error {
 		}
 		incomingResultIDs[v.Outcome.ResultID] = struct{}{}
 	}
+	communicatedJobs := make(map[string]bool)
+	communicated := make([]ResultView, 0, len(s.Communicated))
+	for _, v := range s.Communicated {
+		if communicatedJobs[v.Outcome.JobID] || !validCommunicatedEvidence(v, s.Scope.SessionID) {
+			return ErrInvalid
+		}
+		communicatedJobs[v.Outcome.JobID] = true
+		if v.Outcome.ResultID == "" || v.Outcome.JobID == "" || v.DeliveryKey.Scope != s.Scope || v.DeliveryKey.JobID != v.Outcome.JobID || !v.Outcome.Scope.Valid() || v.Outcome.Scope.SessionID != s.Scope.SessionID || !validOutcomeStatus(v.Outcome.Status) || v.State != Communicated || v.AnnouncementState != AnnouncementCommunicated {
+			return ErrInvalid
+		}
+		if _, exists := incomingResultIDs[v.Outcome.ResultID]; exists {
+			return ErrInvalid
+		}
+		incomingResultIDs[v.Outcome.ResultID] = struct{}{}
+		communicated = append(communicated, cloneResult(v))
+	}
 	for _, j := range s.Jobs {
-		if j.Key.JobID == "" || j.Key.Scope != s.Scope || jobs[j.Key.JobID] != nil || !validJobState(j.State) {
+		if j.Key.JobID == "" || j.Key.Scope != s.Scope || jobs[j.Key.JobID] != nil || communicatedJobs[j.Key.JobID] || !validJobState(j.State) {
 			return ErrInvalid
 		}
 		j.Key.Scope = destination
@@ -480,9 +562,9 @@ func (c *Coordinator) Restore(s Snapshot, destination WorkScope) error {
 				}
 				resultID = fmt.Sprintf("%s-interrupted-%d", j.Key.JobID, n)
 			}
-			o := Outcome{ResultID: resultID, Scope: s.Scope, JobID: j.Key.JobID, Status: OutcomeInterrupted, Text: "Work was interrupted by the previous session.", Termination: "unknown", PreviousSession: true}
+			o := Outcome{ResultID: resultID, Scope: s.Scope, JobID: j.Key.JobID, TerminalRevision: 1, Status: OutcomeInterrupted, Text: "Work was interrupted by the previous session.", Origin: j.Origin, Provider: j.Provider, Model: j.Model, Config: cloneMap(j.Config), Termination: "unknown", PreviousSession: true}
 			j.State, j.TerminalRevision, j.Outcome = JobTerminal, 1, &o
-			results[o.ResultID] = &result{view: ResultView{Outcome: o, State: Held, DeliveryKey: JobKey{Scope: destination, JobID: j.Key.JobID}}}
+			results[o.ResultID] = &result{view: ResultView{Outcome: o, Task: j.Task, State: Held, DeliveryKey: JobKey{Scope: destination, JobID: j.Key.JobID}, AnnouncementState: AnnouncementHeld, HoldReason: "previous_session"}}
 		}
 		jobs[j.Key.JobID] = &job{view: j}
 	}
@@ -496,8 +578,11 @@ func (c *Coordinator) Restore(s Snapshot, destination WorkScope) error {
 		if v.Outcome.JobID == "" || v.DeliveryKey.JobID != v.Outcome.JobID || results[v.Outcome.ResultID] != nil || v.DeliveryKey.Scope != s.Scope || jobs[v.Outcome.JobID] == nil || jobs[v.Outcome.JobID].view.State != JobTerminal || jobs[v.Outcome.JobID].view.Outcome == nil || !samePersistedOutcome(*jobs[v.Outcome.JobID].view.Outcome, v.Outcome) || !v.Outcome.Scope.Valid() || v.Outcome.Scope.SessionID != s.Scope.SessionID || !validOutcomeStatus(v.Outcome.Status) {
 			return ErrInvalid
 		}
+		v.Task = jobs[v.Outcome.JobID].view.Task
 		v.DeliveryKey = JobKey{Scope: destination, JobID: v.Outcome.JobID}
 		v.State = Held
+		v.AnnouncementState = AnnouncementHeld
+		v.HoldReason = "previous_session"
 		v.Outcome.PreviousSession = true
 		jobs[v.Outcome.JobID].view.Outcome.PreviousSession = true
 		results[v.Outcome.ResultID] = &result{view: v}
@@ -520,6 +605,15 @@ func (c *Coordinator) Restore(s Snapshot, destination WorkScope) error {
 	c.scope, c.retired = destination, false
 	c.revision, c.persisted = s.Revision, s.PersistedRevision
 	c.jobs, c.results, c.reserved = jobs, results, len(results)+live
+	c.communicated = make(map[string]ResultView, len(communicated))
+	c.communicatedOrder = nil
+	for _, v := range communicated {
+		v = cloneResult(v)
+		v.DeliveryKey = JobKey{Scope: destination, JobID: v.Outcome.JobID}
+		c.communicated[v.Outcome.ResultID] = v
+		c.communicatedOrder = append(c.communicatedOrder, v.Outcome.ResultID)
+	}
+	c.trimCommunicatedLocked()
 	c.tombstones = make(map[string]struct{}, len(s.RetiredJobIDs))
 	c.tombstoneOrder = append([]string(nil), s.RetiredJobIDs...)
 	for _, id := range s.RetiredJobIDs {
@@ -547,6 +641,7 @@ func (c *Coordinator) Retire(scope WorkScope) error {
 		c.mu.Unlock()
 		return err
 	}
+	c.recordAbandonedLeaseLocked("conversation_retired")
 	c.invalidateCaptureLocked()
 	for id, j := range c.jobs {
 		if j.view.State == JobTerminal {
@@ -562,7 +657,7 @@ func (c *Coordinator) Retire(scope WorkScope) error {
 		}
 		o := Outcome{ResultID: resultID, Scope: scope, JobID: id, TerminalRevision: revision, Status: OutcomeInterrupted, Text: "Conversation ended before work completion was confirmed.", Origin: j.view.Origin, Provider: j.view.Provider, Model: j.view.Model, Config: cloneMap(j.view.Config), Termination: "unknown"}
 		j.view.State, j.view.TerminalRevision, j.view.Outcome = JobTerminal, revision, ptrOutcome(o)
-		c.results[resultID] = &result{view: ResultView{Outcome: o, State: Pending, DeliveryKey: JobKey{Scope: scope, JobID: id}}}
+		c.results[resultID] = &result{view: ResultView{Outcome: o, Task: j.view.Task, ReceivedRevision: c.revision + 1, State: Pending, DeliveryKey: JobKey{Scope: scope, JobID: id}, AnnouncementState: AnnouncementPending}}
 	}
 	c.retired = true
 	c.revision++
@@ -585,6 +680,7 @@ func (c *Coordinator) Reset(next WorkScope) error {
 	c.invalidateCaptureLocked()
 	c.scope, c.retired, c.revision, c.persisted = next, false, 0, 0
 	c.jobs, c.results = make(map[string]*job), make(map[string]*result)
+	c.communicated, c.communicatedOrder = make(map[string]ResultView), nil
 	c.reserved, c.nextID = 0, 0
 	c.tombstones, c.tombstoneOrder = make(map[string]struct{}), nil
 	s, cb := c.snapshotLocked(), c.onChange
@@ -605,7 +701,7 @@ func (c *Coordinator) checkScopeLocked(s WorkScope) error {
 
 func (c *Coordinator) sameScopeLocked(s WorkScope) bool { return s == c.scope }
 func (c *Coordinator) snapshotLocked() Snapshot {
-	s := Snapshot{Scope: c.scope, Revision: c.revision, PersistedRevision: c.persisted, Retired: c.retired, Jobs: make([]JobView, 0, len(c.jobs)), Pending: make([]ResultView, 0, len(c.results))}
+	s := Snapshot{Scope: c.scope, Revision: c.revision, PersistedRevision: c.persisted, Retired: c.retired, Jobs: make([]JobView, 0, len(c.jobs)), Pending: make([]ResultView, 0, len(c.results)), Communicated: make([]ResultView, 0, len(c.communicated))}
 	jobIDs := make([]string, 0, len(c.jobs))
 	for id := range c.jobs {
 		jobIDs = append(jobIDs, id)
@@ -631,6 +727,14 @@ func (c *Coordinator) snapshotLocked() Snapshot {
 		r := c.results[id]
 		s.Pending = append(s.Pending, cloneResult(r.view))
 	}
+	communicatedIDs := make([]string, 0, len(c.communicated))
+	for id := range c.communicated {
+		communicatedIDs = append(communicatedIDs, id)
+	}
+	sort.Strings(communicatedIDs)
+	for _, id := range communicatedIDs {
+		s.Communicated = append(s.Communicated, cloneResult(c.communicated[id]))
+	}
 	s.RetiredJobIDs = append([]string(nil), c.tombstoneOrder...)
 	return s
 }
@@ -648,7 +752,13 @@ func ptrOutcome(o Outcome) *Outcome { return &o }
 func cloneResult(v ResultView) ResultView {
 	o := v.Outcome
 	o.Config = cloneMap(o.Config)
-	return ResultView{Outcome: o, State: v.State, DeliveryKey: v.DeliveryKey}
+	out := v
+	out.Outcome = o
+	if v.LastAttempt != nil {
+		e := *v.LastAttempt
+		out.LastAttempt = &e
+	}
+	return out
 }
 func sameOutcome(a, b Outcome) bool {
 	if a.ResultID != b.ResultID || a.Scope != b.Scope || a.JobID != b.JobID || a.TerminalRevision != b.TerminalRevision || a.Status != b.Status || a.Text != b.Text || a.Origin != b.Origin || a.Provider != b.Provider || a.Model != b.Model || a.SourceRef != b.SourceRef || a.Limitations != b.Limitations || a.Termination != b.Termination || !mapsEqual(a.Config, b.Config) {
