@@ -254,6 +254,11 @@ func isolatedServeConfig(t *testing.T, root string) *config.Config {
 		}
 	}
 	v := viper.New()
+	// Match the owning config default: zero would erase provider history after
+	// every turn even though the canonical transcript remains complete.
+	if spec, ok := config.SpecFor("max_history"); ok {
+		v.SetDefault(spec.Key, spec.Default)
+	}
 	v.SetConfigFile(filepath.Join(root, "config.yaml"))
 	v.SetConfigType("yaml")
 	if err := v.ReadInConfig(); err != nil {
@@ -384,4 +389,19 @@ func writeIsolatedReady(path string, addr net.Addr, creds *netapi.Credentials) e
 		return err
 	}
 	return os.Chmod(path, 0o600)
+}
+
+func TestIsolatedServeConfigRetainsDefaultHistory(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"personas", "prompts", "models"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("brain_provider: ollama\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := isolatedServeConfig(t, root); cfg.MaxHistory != 10 {
+		t.Fatalf("max_history=%d, want normal history retention", cfg.MaxHistory)
+	}
 }

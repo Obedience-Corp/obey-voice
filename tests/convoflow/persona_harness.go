@@ -32,6 +32,11 @@ func loadFixtureConfig(path string) (*config.Config, error) {
 		return nil, fmt.Errorf("fixture config path is required")
 	}
 	v := viper.New()
+	// Match the owning config default: zero would erase provider history after
+	// every turn even though the canonical transcript remains complete.
+	if spec, ok := config.SpecFor("max_history"); ok {
+		v.SetDefault(spec.Key, spec.Default)
+	}
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read fixture config %s: %w", path, err)
