@@ -642,10 +642,11 @@ func (s *servePersonaSwitcher) clear(ctx context.Context) error {
 }
 
 // snapshotProvider advertises replay only when all snapshot authorities exist.
-// The legacy work-disabled serve path has no conversation epoch and must keep
-// its existing stream usable instead of advertising snapshots that always fail.
+// Conversation identity is host-owned in ordinary sessions and coordinator-
+// owned when optional work is enabled; neither mode needs a worker to replay
+// canonical history.
 func (s *servePersonaSwitcher) snapshotProvider() netapi.SnapshotProvider {
-	if s.selector == nil || !s.pipeline.WorkSnapshot().Scope.Valid() {
+	if s.selector == nil || !s.pipeline.ConversationScope().Valid() || s.pipeline.ConversationRetired() {
 		return nil
 	}
 	if _, ok := s.pipeline.Brain.(brain.CanonicalHistoryProvider); !ok {
@@ -676,7 +677,7 @@ func (s *servePersonaSwitcher) snapshot(ctx context.Context) (netapi.SessionSnap
 	}
 	sessionID := s.sessions.sess.ID
 	s.sessions.mu.Unlock()
-	scope := s.pipeline.WorkSnapshot().Scope
+	scope := s.pipeline.ConversationScope()
 	if sessionID == "" || scope.SessionID != sessionID || selected.SessionID != sessionID {
 		return netapi.SessionSnapshot{}, errors.New("session snapshot has mismatched session identity")
 	}

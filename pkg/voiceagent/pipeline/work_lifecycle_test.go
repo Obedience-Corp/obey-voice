@@ -34,6 +34,9 @@ func TestWorkAgencyClearFencesLateTerminalCallback(t *testing.T) {
 	}
 	c := a.WorkCoordinator()
 	old := a.WorkSnapshot().Scope
+	if got := p.ConversationScope(); got != old {
+		t.Fatalf("pipeline identity = %+v, coordinator = %+v", got, old)
+	}
 	key, err := c.Register(old, work.Admission{JobID: "stable-job", Task: "task", Origin: "agency"})
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +46,9 @@ func TestWorkAgencyClearFencesLateTerminalCallback(t *testing.T) {
 	}
 	if got := a.WorkSnapshot().Scope; got == old {
 		t.Fatal("clear did not advance conversation scope")
+	}
+	if got := p.ConversationScope(); got != a.WorkSnapshot().Scope {
+		t.Fatalf("pipeline identity after clear = %+v, coordinator = %+v", got, a.WorkSnapshot().Scope)
 	}
 	if _, err := c.Publish(key, work.Outcome{Scope: old, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: "late"}); !errors.Is(err, work.ErrStaleScope) {
 		t.Fatalf("late publish = %v", err)
