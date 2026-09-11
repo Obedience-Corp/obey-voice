@@ -39,6 +39,9 @@ type Scenario struct {
 	Brain   scenarioBrain   `yaml:"brain"`
 	Worker  scenarioWorker  `yaml:"worker"`
 	Persona scenarioPersona `yaml:"persona"`
+	// HistoryFixture seeds the owning provider through ImportHistory before
+	// scripted turns. Compaction itself remains Pipeline-owned.
+	HistoryFixture string `yaml:"history_fixture"`
 }
 
 type scenarioPersona struct {
@@ -158,7 +161,7 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		if t.InterruptAfter.Duration < 0 || (t.InterruptAfter.Duration > 0 && (t.User == "" || t.Op != "")) {
 			return nil, fmt.Errorf("load %s: turn %q: interrupt_after requires a user turn and positive duration", name, t.ID)
 		}
-		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" {
+		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" {
 			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)
 		}
 		if t.ExpectError != "" && t.Op != "select_persona" {
