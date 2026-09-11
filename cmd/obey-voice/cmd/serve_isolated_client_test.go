@@ -77,6 +77,7 @@ func TestVS0001IsolatedClient(t *testing.T) {
 	}
 	defer func() { _ = log.Close() }()
 	control := os.Getenv("VS0001_SERVE_CLIENT_CONTROL")
+	expectedError := os.Getenv("VS0001_SERVE_CLIENT_EXPECT_ERROR")
 	var request struct {
 		Type string `json:"type"`
 	}
@@ -144,8 +145,14 @@ func TestVS0001IsolatedClient(t *testing.T) {
 		}
 		if event.Type == "error" {
 			t.Logf("stream error stage=%s: %s", event.Stage, event.Message)
+			if expectedError != "" && strings.Contains(event.Message, expectedError) {
+				return
+			}
 		}
 		if control != "" && ((request.Type == "set_persona" && event.Type == "set_persona_ack") || (request.Type == "text_input" && event.Type == "response_ready")) {
+			if expectedError != "" {
+				t.Fatal("response succeeded instead of expected refusal")
+			}
 			return
 		}
 	}
