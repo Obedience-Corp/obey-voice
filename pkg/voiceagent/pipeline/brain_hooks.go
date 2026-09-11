@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -102,22 +103,39 @@ func (p *Pipeline) routeContext() RouteContext {
 	return ctx
 }
 
-func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, transcript string, kind RouteKind, source string) {
+func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, transcript string, kind RouteKind, source string) error {
 	decision := RouteDecision{Kind: kind, Transcript: transcript, Source: source}
+	var replyParts []string
+	metrics.routedSpeech = &replyParts
 	if p.Agency != nil {
 		p.Agency.HandleRoute(ctx, turn, metrics, decision)
 	} else if p.OnRoute != nil {
 		p.OnRoute(decision)
 	}
+	metrics.routedSpeech = nil
+	response := strings.Join(replyParts, " ")
+	err := p.appendRoutedHistory(metrics, transcript, response)
+	if err != nil {
+		metrics.degraded = true
+		p.emit(events.Error{Stage: "history", Message: err.Error()})
+	}
 	p.emitResponse(metrics, events.ResponseReady{
-		Response:    "",
-		Interrupted: false,
+		Response:    response,
+		Interrupted: ctx.Err() != nil,
 		Degraded:    metrics.degraded,
 	})
-	turn.finish(TurnCompleted)
+	if err != nil {
+		turn.finish(TurnFailed)
+	} else if ctx.Err() != nil {
+		turn.finish(TurnInterrupted)
+		err = ctx.Err()
+	} else {
+		turn.finish(TurnCompleted)
+	}
 	if p.OnTurn != nil {
 		p.OnTurn()
 	}
+	return err
 }
 
 // toolEndHook emits ToolCallFinished for UI.

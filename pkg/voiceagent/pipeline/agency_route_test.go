@@ -116,7 +116,9 @@ func TestCompleteRoutedTurnWithoutAgencyNotifiesOnce(t *testing.T) {
 	p.OnRoute = func(d RouteDecision) { routed = append(routed, d) }
 	metrics := newTurnMetrics()
 	turn := p.newTurnConductor(metrics)
-	p.completeRoutedTurn(context.Background(), turn, metrics, "search the web for rust", RouteSpawn, "intent")
+	if err := p.completeRoutedTurn(context.Background(), turn, metrics, "search the web for rust", RouteSpawn, "intent"); err != nil {
+		t.Fatal(err)
+	}
 	if len(routed) != 1 {
 		t.Fatalf("OnRoute calls = %d, want 1", len(routed))
 	}

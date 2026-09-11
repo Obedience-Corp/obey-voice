@@ -71,8 +71,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	if !background {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
-			p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
-			return nil
+			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
 	}
 
@@ -143,8 +142,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	repair.applyBrainRoute(route)
 	_ = repair.shouldRepair(response)
 	if kind, source, ok := repair.routedKind(); ok {
-		p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
-		return nil
+		return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 	}
 
 	metrics.modelComplete = time.Now()
