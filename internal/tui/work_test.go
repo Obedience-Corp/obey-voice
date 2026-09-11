@@ -33,7 +33,7 @@ func TestJobToolEventsLeaveTheLiveTurnAlone(t *testing.T) {
 		ID: "call_1", JobID: "job-1", Name: "read_file", Kind: "read", Summary: "config.yaml",
 	}})
 
-	if !strings.Contains(m.jobStatus, "audit the config") || !strings.HasSuffix(m.jobStatus, "· read 1 file") {
+	if !strings.Contains(m.jobStatus, "audit the config") || !strings.HasSuffix(m.jobStatus, "· 1 file running") {
 		t.Fatalf("jobStatus = %q, want the task and the folded summary", m.jobStatus)
 	}
 	if m.status != "Listening..." {
@@ -77,12 +77,12 @@ func TestJobRowsRewriteOneItemInPlace(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("job lines = %v, want exactly one", lines)
 	}
-	if !strings.Contains(lines[0], "job-1") || !strings.Contains(lines[0], "read 2 files") {
+	if !strings.Contains(lines[0], "job-1") || !strings.Contains(lines[0], "read 1 file (1 unknown, 1 active)") {
 		t.Fatalf("job line = %q, want the folded rows", lines[0])
 	}
 
 	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c3", JobID: "job-1", Name: "run_command", Kind: "execute"}})
-	if lines = jobLines(m); len(lines) != 1 || !strings.Contains(lines[0], "read 2 files · ran 1 command") {
+	if lines = jobLines(m); len(lines) != 1 || !strings.Contains(lines[0], "read 1 file (1 unknown, 1 active) · 1 command running") {
 		t.Fatalf("job lines after a kind change = %v, want both rows on one line", lines)
 	}
 }
@@ -155,6 +155,46 @@ func TestLiveToolEventsStillDriveStatus(t *testing.T) {
 	}
 }
 
+func TestLiveToolOutcomeRenderingUsesObservedStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		e    events.ToolCallFinished
+		want []string
+	}{
+		{name: "typed failed without legacy error", e: events.ToolCallFinished{
+			Name: "run_command", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeFailed, ExitCode: intPtr(7), Reason: "process failed"},
+		}, want: []string{"failed", "process failed", "exit code 7"}},
+		{name: "unknown legacy completion", e: events.ToolCallFinished{Name: "read_file"}, want: []string{"outcome unknown"}},
+		{name: "typed timeout", e: events.ToolCallFinished{
+			Name: "run_command", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeTimedOut, Reason: "deadline exceeded"},
+		}, want: []string{"timed out", "deadline exceeded"}},
+		{name: "typed cancellation", e: events.ToolCallFinished{
+			Name: "run_command", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeCanceled, Signal: "TERM"},
+		}, want: []string{"canceled", "signal TERM"}},
+		{name: "successful zero", e: events.ToolCallFinished{
+			Name: "run_command", Err: "stale legacy error", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded, ExitCode: intPtr(0)},
+		}, want: []string{"completed", "exit code 0"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sizedConversation(t, 120, 24)
+			m.handleEvent(tc.e)
+			view := stripANSI(m.View())
+			activity := stripANSI(m.activityViewport.View())
+			for _, want := range tc.want {
+				if !strings.Contains(view, want) && !strings.Contains(activity, want) {
+					t.Fatalf("view/activity missing %q:\nview=%s\nactivity=%s", want, view, activity)
+				}
+			}
+			if tc.name == "successful zero" && strings.Contains(view, "stale legacy error") {
+				t.Fatalf("typed outcome rendered stale legacy error:\n%s", view)
+			}
+		})
+	}
+}
+
+func intPtr(n int) *int { return &n }
+
 func TestJobAbortedClearsTheChip(t *testing.T) {
 	m := sizedConversation(t, 120, 24)
 	m.ready = true
@@ -190,11 +230,11 @@ func TestQueuedJobDoesNotRelabelTheRunningJob(t *testing.T) {
 	step(events.JobQueued{ID: "job-2", Task: "write the report"})
 	step(events.ToolCallStarted{ID: "c1", JobID: "job-1", Name: "read_file", Kind: "read"})
 
-	if want := "Working: audit the config · read 1 file (+1 queued)"; m.jobStatus != want {
+	if want := "Working: audit the config · 1 file running (+1 queued)"; m.jobStatus != want {
 		t.Fatalf("chip while job-2 waits = %q, want %q", m.jobStatus, want)
 	}
 	lines := jobLines(m)
-	if len(lines) != 2 || !strings.Contains(lines[0], "job-1 · read 1 file") || !strings.Contains(lines[1], "job-2 · write the report · queued") {
+	if len(lines) != 2 || !strings.Contains(lines[0], "job-1 · 1 file running") || !strings.Contains(lines[1], "job-2 · write the report · queued") {
 		t.Fatalf("job lines while job-2 waits = %v, want job-1's rows and job-2 marked queued", lines)
 	}
 
@@ -223,7 +263,7 @@ func TestToolEventForUnknownJobStillShowsAChip(t *testing.T) {
 	m := sizedConversation(t, 120, 24)
 	m.ready = true
 	m, _ = m.Update(busEventMsg{event: events.ToolCallStarted{ID: "c1", JobID: "job-4", Name: "run_command", Kind: "execute"}})
-	if want := "Working: job-4 · ran 1 command"; m.jobStatus != want {
+	if want := "Working: job-4 · 1 command running"; m.jobStatus != want {
 		t.Fatalf("chip = %q, want %q", m.jobStatus, want)
 	}
 }
@@ -258,7 +298,7 @@ func TestBudgetStopSealsTheLineAsOverBudget(t *testing.T) {
 	m, _ = m.Update(busEventMsg{event: events.JobAborted{ID: "job-1", Task: "audit the config", Elapsed: 10 * time.Minute, Reason: events.AbortBudget}})
 
 	lines := jobLines(m)
-	if len(lines) != 1 || !strings.Contains(lines[0], "read 1 file · over budget after 10m0s") {
+	if len(lines) != 1 || !strings.Contains(lines[0], "read 1 file (1 unknown) · over budget after 10m0s") {
 		t.Fatalf("job lines = %v, want the rows sealed with the budget stop", lines)
 	}
 	if m.jobStatus != "" {

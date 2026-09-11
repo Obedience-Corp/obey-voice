@@ -40,6 +40,7 @@ func TestPCMStreamHasNoUndeclaredProperties(t *testing.T) {
 	own := map[string]bool{
 		"mu": true, "ctx": true, "props": true,
 		"err": true, "closed": true, "written": true,
+		"firstWrittenAt": true, "closedAt": true, "synthesisWarmState": true,
 		"ready": true, "frames": true,
 	}
 	typ := reflect.TypeOf(PCMStream{})
@@ -49,6 +50,19 @@ func TestPCMStreamHasNoUndeclaredProperties(t *testing.T) {
 			t.Errorf("PCMStream.%s is new. If it describes how the stream must be consumed it belongs in "+
 				"streamProperties so Derive carries it; if it is this stream's own lifecycle, add it here.", name)
 		}
+	}
+}
+
+func TestDeriveDoesNotCopySynthesisWarmEvidence(t *testing.T) {
+	source := NewPCMStream(context.Background())
+	source.SetSynthesisWarmState("warm")
+	derived := source.Derive(context.Background())
+	if got := derived.SynthesisWarmState(); got != "" {
+		t.Fatalf("derived SynthesisWarmState() = %q, want empty request evidence", got)
+	}
+	derived.SetSynthesisWarmState("cold")
+	if got := source.SynthesisWarmState(); got != "warm" {
+		t.Fatalf("source SynthesisWarmState() = %q after derived mutation, want warm", got)
 	}
 }
 

@@ -120,7 +120,7 @@ func findBinary() (string, error) {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	binaryPath := filepath.Join(projectRoot, "bin", "linux", "samantha")
+	binaryPath := filepath.Join(projectRoot, "bin", "linux", "obey-voice")
 	if _, err := os.Stat(binaryPath); err != nil {
 		// Fallback: try building it.
 		return "", fmt.Errorf(
@@ -161,7 +161,7 @@ func (tc *TestContainer) RunObeyVoice(args ...string) (string, error) {
 
 	exitCode, reader, err := tc.container.Exec(tc.ctx, cmd)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute samantha: %w", err)
+		return "", fmt.Errorf("failed to execute obey-voice: %w", err)
 	}
 
 	rawOutput, err := io.ReadAll(reader)
@@ -172,7 +172,7 @@ func (tc *TestContainer) RunObeyVoice(args ...string) (string, error) {
 	output := demuxDockerOutput(rawOutput)
 
 	if exitCode != 0 {
-		return string(output), fmt.Errorf("samantha exited with code %d: %s", exitCode, output)
+		return string(output), fmt.Errorf("obey-voice exited with code %d: %s", exitCode, output)
 	}
 
 	return string(output), nil

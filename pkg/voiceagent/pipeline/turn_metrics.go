@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -50,7 +51,9 @@ type turnMetrics struct {
 	toolLeakLines int
 	// segments accumulates per-segment synthesis cost in playback order.
 	// Written only from the turn loop goroutine, in applyPlaybackEvent.
-	segments []events.SegmentMetric
+	segments        []events.SegmentMetric
+	gaps            map[int]gapObservation
+	segmentWarmSeen bool
 	// ttsFallbacks counts segments the Kokoro fallback spoke after the
 	// configured provider failed.
 	ttsFallbacks int
@@ -59,6 +62,7 @@ type turnMetrics struct {
 	// produced it, where it ran, and the stall budget it ran under.
 	ttsEngine       ttsEngineIdentity
 	firstAudioGrace time.Duration
+	ttsWarm         atomic.Bool
 	// stallWatchdogFired marks a turn the playback-stall watchdog cut short.
 	stallWatchdogFired bool
 	// lastPlaybackEnd is when the player last went idle mid-turn, and deadAir
@@ -74,7 +78,7 @@ type turnMetrics struct {
 }
 
 func newTurnMetrics() *turnMetrics {
-	return &turnMetrics{start: time.Now()}
+	return &turnMetrics{start: time.Now(), gaps: make(map[int]gapObservation)}
 }
 
 func (m *turnMetrics) snapshot() events.TurnMetrics {
@@ -110,6 +114,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		TTSTier:                 m.ttsEngine.tier,
 		TTSPlace:                m.ttsEngine.place,
 		TTSWorkerStreaming:      m.ttsEngine.workerStreaming,
+		TTSWarm:                 m.ttsWarm.Load(),
 		TTSFallbacks:            m.ttsFallbacks,
 		FirstAudioGrace:         m.firstAudioGrace,
 		StallWatchdogFired:      m.stallWatchdogFired,
@@ -122,21 +127,68 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 // recordSegment appends one finished segment's synthesis cost. Called only
 // from the turn loop goroutine, which is the sole writer of metrics.segments.
 func (m *turnMetrics) recordSegment(event playbackEvent) {
+	if len(m.segments) == 0 && event.engine.provider != "" {
+		// The configured primary may fail before playback and the fallback may
+		// produce the first audible segment. Turn identity must name the actual
+		// first attempted/recorded engine, not the configured preference.
+		m.ttsEngine = event.engine
+	}
+	gap := gapObservation{elapsed: event.gapElapsed, cause: event.gapCause}
+	if m.gaps != nil {
+		if observed, ok := m.gaps[event.index]; ok {
+			gap = observed
+			delete(m.gaps, event.index)
+		}
+	}
+	segmentError := event.error
+	if segmentError == "" && event.result.Err != nil {
+		segmentError = event.result.Err.Error()
+	}
 	m.segments = append(m.segments, events.SegmentMetric{
-		Index:         event.index,
-		Chars:         len(event.sentence),
-		EngineElapsed: event.engineElapsed,
-		SynthElapsed:  event.synthElapsed,
-		AudioSeconds:  event.result.AudioSeconds,
-		PlayElapsed:   event.playElapsed,
-		Fallback:      event.fallback,
-		Interrupted:   event.result.Interrupted,
-		Underruns:     event.result.Underruns,
+		Index:                  event.index,
+		Chars:                  len(event.sentence),
+		EngineElapsed:          event.engineElapsed,
+		SynthElapsed:           event.synthElapsed,
+		AudioSeconds:           event.result.AudioSeconds,
+		PlayElapsed:            event.playElapsed,
+		Fallback:               event.fallback,
+		Interrupted:            event.result.Interrupted,
+		Underruns:              event.result.Underruns,
+		Provider:               event.engine.provider,
+		Tier:                   event.engine.tier,
+		Place:                  event.engine.place,
+		WorkerStreaming:        event.engine.workerStreaming,
+		TextReadyElapsed:       m.elapsed(event.textReady),
+		WarmState:              event.warmState,
+		Error:                  segmentError,
+		Exclusions:             append([]string(nil), event.exclusions...),
+		WholeSentencePlayback:  event.wholeSentence,
+		Gaps:                   append([]events.SpeechGap(nil), gap.gaps...),
+		GapElapsed:             gap.elapsed,
+		GapCause:               gap.cause,
+		SynthQueuedElapsed:     m.elapsed(event.queuedAt),
+		SynthStartedElapsed:    m.elapsed(event.synthStarted),
+		SynthFirstPCMElapsed:   m.elapsed(event.synthFirstPCM),
+		SynthEndedElapsed:      m.elapsed(event.synthEnded),
+		PlaybackStartedElapsed: m.elapsed(event.playStarted),
+		PlaybackEndedElapsed:   m.elapsed(event.playEnded),
 	})
+	if !m.segmentWarmSeen {
+		m.ttsWarm.Store(event.warmState == events.WarmStateWarm)
+		m.segmentWarmSeen = true
+	} else if event.warmState != events.WarmStateWarm {
+		m.ttsWarm.Store(false)
+	}
 	m.underruns += event.result.Underruns
 	if event.fallback {
 		m.ttsFallbacks++
 	}
+}
+
+type gapObservation struct {
+	elapsed time.Duration
+	cause   string
+	gaps    []events.SpeechGap
 }
 
 // ttsEngineIdentity is everything a latency artifact needs to say which engine
@@ -149,20 +201,41 @@ type ttsEngineIdentity struct {
 	workerStreaming bool
 }
 
+func ttsIdentityFor(provider tts.Provider) ttsEngineIdentity {
+	id := ttsEngineIdentity{place: tts.SpeechPlaceOf(provider), workerStreaming: tts.WorkerStreamingOf(provider)}
+	if d, ok := provider.(tts.Describer); ok {
+		id.provider, id.tier = d.ProviderName(), d.ModelTier()
+	}
+	return id
+}
+
+func ttsWarmStateOf(provider tts.Provider) string {
+	if provider == nil {
+		return events.WarmStateUnknown
+	}
+	if d, ok := provider.(tts.WarmStateDescriber); ok {
+		state := d.SpeechWarmState()
+		switch state {
+		case events.WarmStateWarm, events.WarmStateCold, events.WarmStateUnknown:
+			return state
+		}
+	}
+	if d, ok := provider.(tts.WarmDescriber); ok {
+		if d.SpeechWarm() {
+			return events.WarmStateWarm
+		}
+		return events.WarmStateCold
+	}
+	return events.WarmStateUnknown
+}
+
 // ttsIdentity names the primary provider, its model tier and its topology for
 // the turn's metrics. A provider that does not describe itself leaves provider
 // and tier empty rather than guessing, so an artifact never claims an engine it
 // did not confirm.
 func (p *Pipeline) ttsIdentity() ttsEngineIdentity {
 	primary, _ := p.ttsProviders()
-	id := ttsEngineIdentity{
-		place:           tts.SpeechPlaceOf(primary),
-		workerStreaming: tts.WorkerStreamingOf(primary),
-	}
-	if d, ok := primary.(tts.Describer); ok {
-		id.provider, id.tier = d.ProviderName(), d.ModelTier()
-	}
-	return id
+	return ttsIdentityFor(primary)
 }
 
 // markBargeIn stamps the first barge-in moment; later marks are ignored.

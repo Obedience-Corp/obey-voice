@@ -107,3 +107,73 @@ func TestMetricsRecordOmitsSegmentsWhenThereAreNone(t *testing.T) {
 		t.Errorf("segmentRecords(nil) = %v, want nil", got)
 	}
 }
+
+func TestWriterPersistsSegmentEvidenceAndDiagnostic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	w.Attach(bus)
+
+	bus.Emit(events.TurnMetrics{
+		Underruns: 3,
+		Segments: []events.SegmentMetric{{
+			Index: 2, Chars: 17, Provider: "kokoro", Tier: "fallback", Place: "remote",
+			WorkerStreaming: true, TextReadyElapsed: 1250 * time.Millisecond,
+			WarmState: events.WarmStateUnknown, Error: "provider timeout",
+			Exclusions: []string{"warm comparison unavailable"}, WholeSentencePlayback: true,
+			Fallback:  true,
+			Underruns: 2, EngineElapsed: 2 * time.Second, SynthElapsed: 2500 * time.Millisecond,
+			AudioSeconds: 1.5, GapElapsed: 400 * time.Millisecond, GapCause: "unknown",
+			Gaps:               []events.SpeechGap{{StartElapsed: 3 * time.Second, EndElapsed: 3400 * time.Millisecond, Cause: "unknown"}},
+			SynthQueuedElapsed: 100 * time.Millisecond, SynthStartedElapsed: 200 * time.Millisecond,
+			SynthFirstPCMElapsed: 1250 * time.Millisecond, SynthEndedElapsed: 2 * time.Second,
+			PlaybackStartedElapsed: 3 * time.Second, PlaybackEndedElapsed: 4500 * time.Millisecond,
+		}},
+	})
+	bus.Emit(events.SpeechDiagnostic{
+		Symptom: "synthesis_starvation", Cause: "unknown", Confidence: "low", Provider: "kokoro",
+		Scope: "segment", ActionCode: "", DedupeKey: "kokoro|unknown", Message: "insufficient evidence",
+		EngineRTF: 1.333, Gap: 400 * time.Millisecond, SampleCount: 1, AudioSeconds: 1.5,
+		Exclusions: []string{"cold start not observed"},
+	})
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	var metrics, diagnostic *record
+	for _, r := range readRecords(t, path) {
+		switch r.Type {
+		case "metrics":
+			m := r
+			metrics = &m
+		case "speech_diagnostic":
+			d := r
+			diagnostic = &d
+		}
+	}
+	if metrics == nil || diagnostic == nil {
+		t.Fatalf("records missing metrics/diagnostic: metrics=%v diagnostic=%v", metrics != nil, diagnostic != nil)
+	}
+	if metrics.Underruns != 3 || len(metrics.Segments) != 1 {
+		t.Fatalf("metrics = %+v, want turn underruns and one segment", metrics)
+	}
+	s := metrics.Segments[0]
+	if s.Provider != "kokoro" || s.Tier != "fallback" || s.Place != "remote" || !s.Streaming || !s.Fallback || !s.WholeSentence {
+		t.Errorf("segment identity = %+v", s)
+	}
+	if s.TextReadyS != 1.25 || s.WarmState != events.WarmStateUnknown || s.Error != "provider timeout" {
+		t.Errorf("segment readiness/error = %+v", s)
+	}
+	if s.Underruns != 2 || s.GapS != 0.4 || s.GapCause != "unknown" || len(s.Gaps) != 1 {
+		t.Errorf("segment gap evidence = %+v", s)
+	}
+	if s.Gaps[0].StartS != 3 || s.Gaps[0].EndS != 3.4 || s.Gaps[0].Cause != "unknown" {
+		t.Errorf("gap interval = %+v", s.Gaps[0])
+	}
+	if diagnostic.Cause != "unknown" || diagnostic.Confidence != "low" || diagnostic.ActionCode != "" || len(diagnostic.Exclusions) != 1 {
+		t.Errorf("diagnostic evidence = %+v", diagnostic)
+	}
+}

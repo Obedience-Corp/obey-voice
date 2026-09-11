@@ -135,6 +135,74 @@ func TestTurnMetricsClockKeysArePresentAtZero(t *testing.T) {
 	}
 }
 
+func TestSpeechDiagnosticEnvelopeCarriesAttribution(t *testing.T) {
+	env := encodeEvent(events.SpeechDiagnostic{
+		Symptom: "synthesis_starvation", Cause: "synthesis", Confidence: "high",
+		Provider: "qwen3-tts", Scope: "session", ActionCode: "qwen_speech_recovery",
+		DedupeKey: "qwen3-tts|0.6b|local|stream=false|synthesis", Message: "advice",
+		EngineRTF: 1.4, Gap: 2 * time.Second, SampleCount: 3, AudioSeconds: 6,
+		Exclusions: []string{"none"},
+	})
+	for key, want := range map[string]any{
+		"type": "speech_diagnostic", "cause": "synthesis", "provider": "qwen3-tts",
+		"action_code": "qwen_speech_recovery", "gap_ms": int64(2000), "sample_count": 3,
+	} {
+		if env[key] != want {
+			t.Errorf("envelope[%q] = %v, want %v", key, env[key], want)
+		}
+	}
+}
+
+func TestMarshalTurnMetricsCarriesSegmentEvidence(t *testing.T) {
+	data, err := marshalEvent(events.TurnMetrics{
+		Underruns: 3,
+		Segments: []events.SegmentMetric{{
+			Index: 2, Provider: "kokoro", Tier: "fallback", Place: "remote", WorkerStreaming: true,
+			TextReadyElapsed: 1250 * time.Millisecond, WarmState: events.WarmStateUnknown,
+			Error: "provider timeout", Exclusions: []string{"warm comparison unavailable"},
+			WholeSentencePlayback: true, Fallback: true, Underruns: 2, GapElapsed: 400 * time.Millisecond,
+			GapCause: "unknown", Gaps: []events.SpeechGap{{
+				StartElapsed: 3 * time.Second, EndElapsed: 3400 * time.Millisecond, Cause: "unknown",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshalEvent: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["underruns"] != float64(3) {
+		t.Fatalf("turn underruns = %v, want 3", got["underruns"])
+	}
+	segments, ok := got["segments"].([]any)
+	if !ok || len(segments) != 1 {
+		t.Fatalf("segments = %v, want one segment", got["segments"])
+	}
+	seg := segments[0].(map[string]any)
+	for key, want := range map[string]any{
+		"i": 2., "provider": "kokoro", "tier": "fallback", "place": "remote", "streaming": true,
+		"text_ready_ms": 1250., "warm_state": "unknown", "error": "provider timeout",
+		"whole_sentence_playback": true, "fallback": true, "underruns": 2., "gap_ms": 400., "gap_cause": "unknown",
+	} {
+		if seg[key] != want {
+			t.Errorf("segment[%q] = %v, want %v", key, seg[key], want)
+		}
+	}
+	if got, ok := seg["exclusions"].([]any); !ok || len(got) != 1 || got[0] != "warm comparison unavailable" {
+		t.Errorf("segment exclusions = %v", seg["exclusions"])
+	}
+	gaps, ok := seg["gaps"].([]any)
+	if !ok || len(gaps) != 1 {
+		t.Fatalf("segment gaps = %v, want one interval", seg["gaps"])
+	}
+	gap := gaps[0].(map[string]any)
+	if gap["start_ms"] != float64(3000) || gap["end_ms"] != float64(3400) || gap["cause"] != "unknown" {
+		t.Errorf("gap = %v", gap)
+	}
+}
+
 // TestEncodeEventLeavesOtherShapesAlone guards the E1 blast radius: adding two
 // cases to a closed switch must not change any other event's envelope.
 func TestEncodeEventLeavesOtherShapesAlone(t *testing.T) {

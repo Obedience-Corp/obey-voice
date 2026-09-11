@@ -85,9 +85,12 @@ func TestTalkHoldWhileMutedIsOneBoundedTurn(t *testing.T) {
 	if m.voiceEnabled || m.turnState != turnIdle {
 		t.Fatalf("after the bounded turn: voiceEnabled=%v turnState=%d, want still muted and idle", m.voiceEnabled, m.turnState)
 	}
-	if runner.voiceCalls-before != 0 {
+	runner.mu.Lock()
+	called := runner.voiceCalls - before
+	runner.mu.Unlock()
+	if called != 0 {
 		// The Cmd ran on our goroutine; the count moves when it executes.
-		t.Logf("runner saw %d call(s) from the bounded turn", runner.voiceCalls-before)
+		t.Logf("runner saw %d call(s) from the bounded turn", called)
 	}
 }
 

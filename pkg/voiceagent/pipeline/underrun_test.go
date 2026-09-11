@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"context"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -44,29 +43,30 @@ func TestUnderrunsReachTheTurnMetrics(t *testing.T) {
 // One break-up inside a sentence is worse than a quarter of the turn spent in
 // silence between them, so it says so on its own rather than waiting for a
 // share threshold that measures a different symptom.
-func TestWarnIfSynthesisCannotKeepUpSpeaksForASingleUnderrun(t *testing.T) {
+func TestWarnIfSynthesisCannotKeepUpDoesNotInferFromAnUnderrunCount(t *testing.T) {
 	bus := events.NewBus()
-	var infos []string
-	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	var diagnostics []events.SpeechDiagnostic
+	events.Subscribe(bus, func(e events.SpeechDiagnostic) { diagnostics = append(diagnostics, e) })
 	p := &Pipeline{Events: bus}
 
 	p.warnIfSynthesisCannotKeepUp(events.TurnMetrics{
+		Outcome:                 "completed",
 		TTSProvider:             "qwen3-tts",
 		TTSTier:                 "0.6b",
 		Underruns:               1,
 		PlaybackStartElapsed:    time.Second,
 		PlaybackCompleteElapsed: 9 * time.Second,
+		Segments:                []events.SegmentMetric{{Provider: "qwen3-tts", AudioSeconds: 1, EngineElapsed: 2 * time.Second, Underruns: 1}},
 	})
 
-	if len(infos) != 1 {
-		t.Fatalf("got %d notices, want 1: %v", len(infos), infos)
+	var observed events.SpeechDiagnostic
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Symptom == "playback_gap" {
+			observed = diagnostic
+		}
 	}
-	if !strings.Contains(infos[0], "broke up 1 time") {
-		t.Errorf("notice = %q, want it to describe the break-up", infos[0])
-	}
-	// It has to name the way out, and for streaming that is the config key.
-	if !strings.Contains(infos[0], "qwen_tts_stream") {
-		t.Errorf("notice = %q, want it to name the setting that stops it", infos[0])
+	if observed.Cause != speechGapUnknown || observed.ActionCode != "" {
+		t.Errorf("diagnostic = %+v, want unknown observation without advice", diagnostics)
 	}
 }
 

@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -79,28 +78,34 @@ func TestDeadAirIsZeroWhenPlaybackIsContinuous(t *testing.T) {
 	}
 }
 
-func TestWarnIfSynthesisCannotKeepUpFiresOncePerSession(t *testing.T) {
+func TestWarnIfSynthesisCannotKeepUpRequiresSustainedComparableEvidence(t *testing.T) {
 	bus := events.NewBus()
-	var infos []string
-	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	var diagnostics []events.SpeechDiagnostic
+	events.Subscribe(bus, func(e events.SpeechDiagnostic) { diagnostics = append(diagnostics, e) })
 	p := &Pipeline{Events: bus}
 
-	// 6s of silence in a 12s reply: half the speaking window (play + dead air).
+	// Three warm, completed, comparable Qwen turns cross the policy gate. The
+	// gap is explicitly attributed to synthesis; dead-air share alone is not.
 	bad := events.TurnMetrics{
-		TTSProvider:    "qwen3-tts",
-		TTSTier:        "1.7b",
-		DeadAirElapsed: 6 * time.Second,
-		Segments:       []events.SegmentMetric{{PlayElapsed: 6 * time.Second}},
+		Outcome: "completed", TTSWarm: true,
+		Segments: []events.SegmentMetric{{Provider: "qwen3-tts", Tier: "1.7b", Place: "local", WorkerStreaming: true, WarmState: events.WarmStateWarm, WholeSentencePlayback: true, SynthStartedElapsed: time.Second, SynthEndedElapsed: 5 * time.Second, EngineElapsed: 4 * time.Second, AudioSeconds: 2, GapElapsed: time.Second, GapCause: speechGapSynthesis, Gaps: []events.SpeechGap{{StartElapsed: 5 * time.Second, EndElapsed: 6 * time.Second, Cause: speechGapSynthesis}}}},
 	}
-	p.warnIfSynthesisCannotKeepUp(bad)
-	p.warnIfSynthesisCannotKeepUp(bad)
+	for range 3 {
+		p.warnIfSynthesisCannotKeepUp(bad)
+	}
 
-	if len(infos) != 1 {
-		t.Fatalf("got %d notices, want exactly 1 per session: %v", len(infos), infos)
+	var advice []events.SpeechDiagnostic
+	for _, diagnostic := range diagnostics {
+		if diagnostic.ActionCode != "" {
+			advice = append(advice, diagnostic)
+		}
+	}
+	if len(advice) != 1 {
+		t.Fatalf("got %d applicable notices, want exactly 1: %v", len(advice), diagnostics)
 	}
 	// The message has to name the engine, or it is not actionable.
-	if want := "qwen3-tts 1.7b"; !strings.Contains(infos[0], want) {
-		t.Errorf("notice = %q, want it to name %q", infos[0], want)
+	if want := "qwen3-tts"; advice[0].Provider != want {
+		t.Errorf("diagnostic = %+v, want provider %q", advice[0], want)
 	}
 }
 
@@ -109,10 +114,10 @@ func TestKokoroKeepUpAdviceIsSuppressedWithoutConsumingQwenNotice(t *testing.T) 
 		for _, symptom := range []string{"dead air", "underrun"} {
 			t.Run(provider+"/"+symptom, func(t *testing.T) {
 				bus := events.NewBus()
-				var infos []string
-				events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+				var diagnostics []events.SpeechDiagnostic
+				events.Subscribe(bus, func(e events.SpeechDiagnostic) { diagnostics = append(diagnostics, e) })
 				p := &Pipeline{Events: bus}
-				m := events.TurnMetrics{TTSProvider: provider}
+				m := events.TurnMetrics{Outcome: "completed", TTSProvider: provider, TTSWarm: true}
 				if provider == "qwen3-tts" {
 					// The turn identity describes the primary, even when Kokoro
 					// supplied some or all of its audio.
@@ -120,21 +125,32 @@ func TestKokoroKeepUpAdviceIsSuppressedWithoutConsumingQwenNotice(t *testing.T) 
 				}
 				if symptom == "dead air" {
 					m.DeadAirElapsed = 6 * time.Second
-					m.Segments = []events.SegmentMetric{{PlayElapsed: 6 * time.Second}}
+					m.Segments = []events.SegmentMetric{{Provider: provider, WorkerStreaming: true, WarmState: events.WarmStateWarm, WholeSentencePlayback: true, SynthStartedElapsed: time.Second, SynthEndedElapsed: 5 * time.Second, EngineElapsed: 4 * time.Second, AudioSeconds: 2, GapElapsed: 6 * time.Second, GapCause: speechGapSynthesis, Gaps: []events.SpeechGap{{StartElapsed: 5 * time.Second, EndElapsed: 11 * time.Second, Cause: speechGapSynthesis}}}}
 				} else {
 					m.Underruns = 1
+					m.Segments = []events.SegmentMetric{{Provider: provider, EngineElapsed: 4 * time.Second, AudioSeconds: 2, GapCause: speechGapUnknown, Underruns: 1}}
 				}
 				p.warnIfSynthesisCannotKeepUp(m)
-				if len(infos) != 0 {
-					t.Fatalf("Kokoro turn received keep-up advice: %v", infos)
+				for _, d := range diagnostics {
+					if d.ActionCode != "" {
+						t.Fatalf("%s turn received applicable advice: %+v", provider, d)
+					}
 				}
 
-				// A later, entirely Qwen turn still gets its one eligible notice.
+				// Three later, entirely Qwen turns still get one applicable notice.
 				m.TTSProvider, m.TTSFallbacks = "qwen3-tts", 0
-				p.warnIfSynthesisCannotKeepUp(m)
-				p.warnIfSynthesisCannotKeepUp(m)
-				if len(infos) != 1 || !strings.Contains(infos[0], "qwen3-tts") {
-					t.Fatalf("Qwen notice after Kokoro = %v, want one Qwen notice", infos)
+				m.Segments = []events.SegmentMetric{{Provider: "qwen3-tts", Tier: "0.6b", Place: "local", WorkerStreaming: true, WarmState: events.WarmStateWarm, WholeSentencePlayback: true, SynthStartedElapsed: time.Second, SynthEndedElapsed: 5 * time.Second, EngineElapsed: 4 * time.Second, AudioSeconds: 2, GapElapsed: time.Second, GapCause: speechGapSynthesis, Gaps: []events.SpeechGap{{StartElapsed: 5 * time.Second, EndElapsed: 6 * time.Second, Cause: speechGapSynthesis}}}}
+				for range 3 {
+					p.warnIfSynthesisCannotKeepUp(m)
+				}
+				count := 0
+				for _, d := range diagnostics {
+					if d.ActionCode != "" {
+						count++
+					}
+				}
+				if count != 1 {
+					t.Fatalf("Qwen notice after Kokoro = %v, want one applicable notice", diagnostics)
 				}
 			})
 		}
@@ -229,7 +245,7 @@ func TestWarnIfSynthesisCannotKeepUpIgnoresFanoutDrainDeadAir(t *testing.T) {
 		Underruns:   1,
 		Segments:    []events.SegmentMetric{{PlayElapsed: time.Millisecond, Underruns: 1}},
 	})
-	if len(infos) != 1 {
-		t.Fatalf("underrun on stream_client: got %d notices, want 1: %v", len(infos), infos)
+	if len(infos) != 0 {
+		t.Fatalf("underrun on stream_client produced chat info: %v", infos)
 	}
 }

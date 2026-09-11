@@ -95,11 +95,17 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 		metrics.ttsEngine = p.ttsIdentity()
 	}
 	synthStarted := time.Now()
-	stream, usedFallback, err := p.synthesizeWithFallback(ctx, sentence, nil)
+	stream, usedFallback, observation, err := p.synthesizeWithFallbackObserved(ctx, sentence, nil)
 	if err != nil {
 		p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
 		return
 	}
+	if observation.synthStarted.IsZero() {
+		observation.synthStarted = synthStarted
+	}
+	observation.queuedAt = synthStarted
+	observation.textReady = synthStarted
+	observation.stream = stream
 	if p.OutputMuted() {
 		discardPCMStream(stream)
 		return
@@ -109,7 +115,7 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 		p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", err)})
 		return
 	}
-	p.handlePlaybackLifecycle(sentence, usedFallback, synthStarted, time.Since(synthStarted), playback, metrics)
+	p.handlePlaybackLifecycle(sentence, usedFallback, observation, playback, metrics)
 }
 
 // speakStandalone synthesizes one short utterance outside the streaming path.
@@ -128,11 +134,18 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 	p.emit(events.SpeechSegmentReady{Text: sentence})
 	p.emit(events.GeneratingVoice{Sentence: sentence})
 
-	stream, usedFallback, err := p.synthesizeWithFallback(ctx, sentence, nil)
+	synthStarted := time.Now()
+	stream, usedFallback, observation, err := p.synthesizeWithFallbackObserved(ctx, sentence, nil)
 	if err != nil {
 		p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
 		return err
 	}
+	if observation.synthStarted.IsZero() {
+		observation.synthStarted = synthStarted
+	}
+	observation.queuedAt = synthStarted
+	observation.textReady = synthStarted
+	observation.stream = stream
 	if p.OutputMuted() {
 		discardPCMStream(stream)
 		return nil
@@ -146,8 +159,7 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 		if metrics.ttsEngine.provider == "" {
 			metrics.ttsEngine = p.ttsIdentity()
 		}
-		synthStarted := time.Now()
-		p.handlePlaybackLifecycle(sentence, usedFallback, synthStarted, time.Since(synthStarted), playback, metrics)
+		p.handlePlaybackLifecycle(sentence, usedFallback, observation, playback, metrics)
 	} else {
 		<-playback.Done()
 	}

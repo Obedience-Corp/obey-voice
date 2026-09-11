@@ -619,6 +619,89 @@ func TestReconnectRedeclaresIncrementalForTheReplacementSession(t *testing.T) {
 	}
 }
 
+func TestNativeRequestWarmEvidenceTracksSessionLifecycle(t *testing.T) {
+	q := newQwen3TTS("", "", time.Minute, nil)
+	q.native = true
+	q.alive.Store(true)
+	q.startSpeech = func(context.Context) (qwenSpeechSession, error) {
+		return &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}}, nil
+	}
+
+	run := func(want string) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		stream := audio.NewPCMStream(ctx)
+		go func() {
+			for range stream.Frames() {
+			}
+		}()
+		if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err != nil {
+			t.Fatalf("synthesizeNativeStream: %v", err)
+		}
+		if got := stream.SynthesisWarmState(); got != want {
+			t.Fatalf("SynthesisWarmState() = %q, want %q", got, want)
+		}
+		stream.Close()
+	}
+
+	run("cold")
+	run("warm")
+}
+
+func TestNativeReconnectDowngradesWarmEvidenceToCold(t *testing.T) {
+	q := newQwen3TTS("", "", time.Minute, nil)
+	q.native = true
+	q.alive.Store(true)
+	dead := &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}, fail: true}
+	live := &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}}
+	q.speech = dead
+	var current qwenSpeechSession = dead
+	q.speechRef.Store(&current)
+	q.speechCompleted.Store(true)
+	q.startSpeech = func(context.Context) (qwenSpeechSession, error) { return live, nil }
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	stream := audio.NewPCMStream(ctx)
+	go func() {
+		for range stream.Frames() {
+		}
+	}()
+	if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err != nil {
+		t.Fatalf("synthesizeNativeStream: %v", err)
+	}
+	if got := stream.SynthesisWarmState(); got != "cold" {
+		t.Fatalf("restarted request state = %q, want cold", got)
+	}
+	if !q.speechCompleted.Load() {
+		t.Fatal("successful replacement request did not publish current-session success")
+	}
+	stream.Close()
+}
+
+func TestNativeCanceledRequestDoesNotPublishSuccessEvidence(t *testing.T) {
+	q := newQwen3TTS("", "", time.Minute, nil)
+	q.native = true
+	q.alive.Store(true)
+	q.speech = &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}, fail: true}
+	current := q.speech
+	q.speechRef.Store(&current)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stream := audio.NewPCMStream(ctx)
+	if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err == nil {
+		t.Fatal("canceled request unexpectedly succeeded")
+	}
+	if q.speechCompleted.Load() {
+		t.Fatal("canceled request published success evidence")
+	}
+	if got := stream.SynthesisWarmState(); got != "cold" {
+		t.Fatalf("canceled first request state = %q, want cold", got)
+	}
+	stream.Close()
+}
+
 // Nothing is retried once the listener has heard part of the sentence: a
 // second pass would append a duplicate to the same stream.
 func TestNoReconnectAfterSamplesHavePlayed(t *testing.T) {

@@ -109,7 +109,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// remaining sentences stay on Kokoro so a flaky Qwen worker cannot flip
 	// mid-reply between persona voice and the fallback voice.
 	var stickFallback bool
-	synthQueue := make(chan string, voiceQueueDepth)
+	synthQueue := make(chan synthWork, voiceQueueDepth)
 	var synthQueueOnce sync.Once
 	closeSynthQueue := func() { synthQueueOnce.Do(func() { close(synthQueue) }) }
 	defer closeSynthQueue()
@@ -129,14 +129,17 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// emitted chunks instead of audible ones spent the opening's budget on
 	// silence whenever a reply began with a suppressed tool line.
 	var voiceBatch []string
+	var batchTextReady time.Time
 	openingSpoken := false
 	flushVoiceBatch := func() {
 		if len(voiceBatch) == 0 {
 			return
 		}
 		pending++
-		synthQueue <- strings.Join(voiceBatch, " ")
+		queuedAt := time.Now()
+		synthQueue <- synthWork{sentence: strings.Join(voiceBatch, " "), textReady: batchTextReady, queuedAt: queuedAt}
 		voiceBatch = voiceBatch[:0]
+		batchTextReady = time.Time{}
 		openingSpoken = true
 	}
 	// routeSegment sends one think-filtered segment to the transcript and, if it
@@ -210,6 +213,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		}
 
 		voiceBatch = append(voiceBatch, speakable)
+		if batchTextReady.IsZero() {
+			batchTextReady = now
+		}
 		target := laterBatchSegments
 		if !openingSpoken {
 			target = openingBatchSegments
@@ -222,11 +228,16 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// Segments are numbered in playback order by the single ordered synth
 		// worker, so the index is the position a listener hears.
 		index := 0
-		for sentence := range synthQueue {
-			if !p.synthesizeSegment(streamCtx, loopDone, sentence, index, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued) {
+		for work := range synthQueue {
+			outcome := p.synthesizeSegmentObserved(streamCtx, loopDone, work, index, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued)
+			if !outcome.enqueued {
 				// No playback was enqueued: release the pending slot so the
 				// loop's accounting and the intake gate stay correct.
-				sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: sentence, index: index})
+				if outcome.failure != nil {
+					sendPlaybackEvent(loopDone, playbackEvents, *outcome.failure)
+				} else {
+					sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: work.sentence, index: index})
+				}
 			}
 			index++
 		}

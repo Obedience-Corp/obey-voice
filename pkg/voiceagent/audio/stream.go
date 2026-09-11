@@ -41,11 +41,14 @@ type PCMStream struct {
 	props streamProperties
 	// The rest is this stream's own lifecycle and payload — never derived,
 	// because a derived stream carries its own.
-	err     error
-	closed  bool
-	written int
-	ready   chan struct{}
-	frames  chan []float32
+	err                error
+	closed             bool
+	written            int
+	firstWrittenAt     time.Time
+	closedAt           time.Time
+	synthesisWarmState string
+	ready              chan struct{}
+	frames             chan []float32
 }
 
 // SetStallBudget bounds how long a consumer should wait for the next frame
@@ -190,14 +193,30 @@ func (s *PCMStream) Write(samples []float32) error {
 		s.mu.Unlock()
 		return errors.New("sample rate must be set before writing frames")
 	}
-	s.mu.Unlock()
-
 	if len(samples) == 0 {
+		s.mu.Unlock()
 		return nil
 	}
 
 	chunk := make([]float32, len(samples))
 	copy(chunk, samples)
+	if s.firstWrittenAt.IsZero() {
+		// The first send is made while holding mu so a consumer that receives
+		// this frame cannot observe it before its publication timestamp. A new
+		// stream has an empty buffered channel, so this first send cannot block;
+		// later writes release mu before a potentially blocking send.
+		select {
+		case s.frames <- chunk:
+			s.written += len(chunk)
+			s.firstWrittenAt = time.Now()
+			s.mu.Unlock()
+			return nil
+		case <-s.ctx.Done():
+			s.mu.Unlock()
+			return s.ctx.Err()
+		}
+	}
+	s.mu.Unlock()
 
 	select {
 	case s.frames <- chunk:
@@ -220,6 +239,14 @@ func (s *PCMStream) Written() int {
 	return s.written
 }
 
+// FirstWrittenAt reports when the first non-empty PCM batch was handed to the
+// stream consumer. A zero value means no PCM has been observed.
+func (s *PCMStream) FirstWrittenAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.firstWrittenAt
+}
+
 // Close marks the stream complete.
 func (s *PCMStream) Close() {
 	s.CloseWithError(nil)
@@ -234,11 +261,38 @@ func (s *PCMStream) CloseWithError(err error) {
 	}
 	s.closed = true
 	s.err = err
+	s.closedAt = time.Now()
 	if s.props.sampleRate == 0 {
 		close(s.ready)
 	}
 	close(s.frames)
 	s.mu.Unlock()
+}
+
+// ClosedAt reports when the producer closed the stream. It is an observed
+// synthesis boundary; callers must leave it unknown when the stream is not
+// available rather than deriving it from a requested duration.
+func (s *PCMStream) ClosedAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closedAt
+}
+
+// SetSynthesisWarmState records the provider's request-specific warmness
+// evidence. It is lifecycle metadata owned by this stream and is not copied
+// by Derive. Empty means the provider did not publish request evidence.
+func (s *PCMStream) SetSynthesisWarmState(state string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.synthesisWarmState = state
+}
+
+// SynthesisWarmState reports request-specific warmness evidence, or empty when
+// the provider did not publish it.
+func (s *PCMStream) SynthesisWarmState() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.synthesisWarmState
 }
 
 // Err returns the terminal stream error, if any.

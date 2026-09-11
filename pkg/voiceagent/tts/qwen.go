@@ -161,6 +161,9 @@ type Qwen3TTS struct {
 	session             *managedQwenSession // legacy tests only; product never sets managed
 	speech              qwenSpeechSession
 	speechRef           atomic.Pointer[qwenSpeechSession]
+	// A live session is not warm evidence until it has completed a prior
+	// request on that same session.
+	speechCompleted atomic.Bool
 	// startSpeech opens the transport this provider speaks through: the local
 	// child process, or a speech-serve connection when tts_place is lan.
 	startSpeech func(context.Context) (qwenSpeechSession, error)
@@ -374,6 +377,27 @@ func (q *Qwen3TTS) SpeechPlace() string {
 func (q *Qwen3TTS) WorkerStreaming() bool {
 	return streamRequestedOn(q.liveSession())
 }
+
+// SpeechWarm reports only a current session that completed a prior request.
+func (q *Qwen3TTS) SpeechWarm() bool { return q.hasLiveSession() && q.speechCompleted.Load() }
+
+func (q *Qwen3TTS) SpeechWarmState() string {
+	if q == nil || (!q.native && !q.managed) {
+		return "unknown"
+	}
+	if !q.hasLiveSession() {
+		return "cold"
+	}
+	if q.speechCompleted.Load() {
+		return "warm"
+	}
+	return "cold"
+}
+
+// WholeSentencePlayback is supported by Qwen's stream=false policy (including
+// workers that do not advertise incremental PCM). The diagnostic uses this as
+// a capability fact and never treats it as a promise of faster speech.
+func (q *Qwen3TTS) WholeSentencePlayback() bool { return true }
 
 // applyStreamPolicy tells a freshly-opened session whether to ask for chunks.
 // It runs after every handshake — a worker restart re-decides rather than
@@ -776,6 +800,9 @@ func (q *Qwen3TTS) synthesize(ctx context.Context, req SynthesisRequest, stream 
 	}
 
 	q.streamWorkerWAV(ctx, outputPath, stream)
+	if stream.Err() == nil {
+		q.speechCompleted.Store(true)
+	}
 }
 
 // synthesizeNativeStream serializes the product native worker and restarts once
@@ -790,6 +817,11 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req SynthesisRequ
 	if err := q.ensureSpeechSessionLocked(ctx); err != nil {
 		return err
 	}
+	if q.speechCompleted.Load() {
+		stream.SetSynthesisWarmState("warm")
+	} else {
+		stream.SetSynthesisWarmState("cold")
+	}
 
 	// Declared before the first frame: the player reads it once, when it takes
 	// the segment. A session that is not streaming leaves it false, so the
@@ -798,12 +830,14 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req SynthesisRequ
 
 	err := q.speech.SynthesizeToStream(ctx, req, stream)
 	if err == nil {
+		q.speechCompleted.Store(true)
 		return nil
 	}
 	q.discardSpeechSessionLocked()
 	if ctx.Err() != nil || !managedWorkerRestartable(err) {
 		return err
 	}
+	stream.SetSynthesisWarmState("cold")
 	// Retrying is only free while nothing has been heard. Once samples have
 	// been handed to the player, part of the sentence is already in front of
 	// the listener, and synthesizing it again from the top would append a
@@ -828,6 +862,7 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req SynthesisRequ
 		q.discardSpeechSessionLocked()
 		return fmt.Errorf("%s failed after one reconnect: %w", q.speechLabel(), retryErr)
 	}
+	q.speechCompleted.Store(true)
 	return nil
 }
 
@@ -860,6 +895,7 @@ func (q *Qwen3TTS) ensureSpeechSessionLocked(ctx context.Context) error {
 }
 
 func (q *Qwen3TTS) discardSpeechSessionLocked() {
+	q.speechCompleted.Store(false)
 	if q.speech == nil {
 		return
 	}
@@ -884,15 +920,22 @@ func (q *Qwen3TTS) synthesizeManagedStream(ctx context.Context, req SynthesisReq
 	if err := q.ensureManagedSessionLocked(ctx); err != nil {
 		return err
 	}
+	if q.speechCompleted.Load() {
+		stream.SetSynthesisWarmState("warm")
+	} else {
+		stream.SetSynthesisWarmState("cold")
+	}
 
 	err := q.session.SynthesizeToStream(ctx, req, stream)
 	if err == nil {
+		q.speechCompleted.Store(true)
 		return nil
 	}
 	q.discardManagedSessionLocked()
 	if ctx.Err() != nil || !managedWorkerRestartable(err) {
 		return err
 	}
+	stream.SetSynthesisWarmState("cold")
 
 	if restartErr := q.ensureManagedSessionLocked(ctx); restartErr != nil {
 		return fmt.Errorf("managed worker failed (%v); restart failed: %w", err, restartErr)
@@ -901,6 +944,7 @@ func (q *Qwen3TTS) synthesizeManagedStream(ctx context.Context, req SynthesisReq
 		q.discardManagedSessionLocked()
 		return fmt.Errorf("managed worker failed after one restart: %w", retryErr)
 	}
+	q.speechCompleted.Store(true)
 	return nil
 }
 
@@ -921,6 +965,7 @@ func (q *Qwen3TTS) ensureManagedSessionLocked(ctx context.Context) error {
 }
 
 func (q *Qwen3TTS) discardManagedSessionLocked() {
+	q.speechCompleted.Store(false)
 	if q.session == nil {
 		return
 	}

@@ -88,9 +88,11 @@ type Pipeline struct {
 	// Agency handles spawn/abort/status routes and async worker jobs.
 	Agency      *Agency
 	activeTurns atomic.Int32
-	// underrunOnce gates the "synthesis cannot keep up" notice to one per
-	// session; the condition holds on every turn once it holds at all.
-	underrunOnce sync.Once
+	// speechAdviceMu protects the bounded provider-configuration comparison
+	// windows used by speech diagnostics. It is separate from turn metrics so
+	// advice can survive turn completion without a lifetime-wide once flag.
+	speechAdviceMu sync.Mutex
+	speechAdvice   map[string]*speechAdviceWindow
 	// backchannel is nil unless config.BackchannelEnabled; see backchannel.go.
 	backchannel       *backchannel
 	backchannelMu     sync.Mutex

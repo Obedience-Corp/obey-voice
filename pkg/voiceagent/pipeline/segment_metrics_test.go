@@ -78,6 +78,12 @@ func TestTurnMetricsRecordEverySegment(t *testing.T) {
 		if seg.Chars == 0 {
 			t.Errorf("segment %d Chars = 0, want the spoken text length", i)
 		}
+		if seg.Provider != "qwen3-tts" || seg.Tier != "1.7b" || seg.Place != tts.PlaceLocal {
+			t.Errorf("segment %d identity = %q/%q/%q, want qwen3-tts/1.7b/local", i, seg.Provider, seg.Tier, seg.Place)
+		}
+		if seg.SynthQueuedElapsed <= 0 || seg.SynthStartedElapsed <= 0 || seg.SynthEndedElapsed <= 0 || seg.PlaybackStartedElapsed <= 0 || seg.PlaybackEndedElapsed <= 0 {
+			t.Errorf("segment %d missing monotonic boundaries: %+v", i, seg)
+		}
 		if rtf := seg.RealtimeFactor(); rtf <= 0 {
 			t.Errorf("segment %d RealtimeFactor() = %v, want it derivable", i, rtf)
 		}

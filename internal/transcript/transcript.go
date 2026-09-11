@@ -42,22 +42,35 @@ type record struct {
 	V   int `json:"v,omitempty"`   // header
 	PID int `json:"pid,omitempty"` // header
 
-	Text        string `json:"text,omitempty"`
-	Name        string `json:"name,omitempty"`
-	ID          string `json:"id,omitempty"`
-	Kind        string `json:"kind,omitempty"`
-	JobID       string `json:"job_id,omitempty"`
-	Summary     string `json:"summary,omitempty"`
-	Preview     string `json:"preview,omitempty"`
-	Stage       string `json:"stage,omitempty"`
-	Message     string `json:"message,omitempty"`
-	Phase       string `json:"phase,omitempty"`
-	State       string `json:"state,omitempty"`
-	Reason      string `json:"reason,omitempty"`
-	Outcome     string `json:"outcome,omitempty"`
-	Degraded    bool   `json:"degraded,omitempty"`
-	Interrupted bool   `json:"interrupted,omitempty"`
-	IsError     bool   `json:"is_error,omitempty"`
+	Text         string   `json:"text,omitempty"`
+	Name         string   `json:"name,omitempty"`
+	ID           string   `json:"id,omitempty"`
+	Kind         string   `json:"kind,omitempty"`
+	JobID        string   `json:"job_id,omitempty"`
+	Summary      string   `json:"summary,omitempty"`
+	Preview      string   `json:"preview,omitempty"`
+	Stage        string   `json:"stage,omitempty"`
+	Message      string   `json:"message,omitempty"`
+	Phase        string   `json:"phase,omitempty"`
+	State        string   `json:"state,omitempty"`
+	Reason       string   `json:"reason,omitempty"`
+	Outcome      string   `json:"outcome,omitempty"`
+	Symptom      string   `json:"symptom,omitempty"`
+	Cause        string   `json:"cause,omitempty"`
+	Confidence   string   `json:"confidence,omitempty"`
+	Provider     string   `json:"provider,omitempty"`
+	Scope        string   `json:"scope,omitempty"`
+	ActionCode   string   `json:"action_code,omitempty"`
+	DedupeKey    string   `json:"dedupe_key,omitempty"`
+	EngineRTF    float64  `json:"engine_rtf,omitempty"`
+	GapS         float64  `json:"gap_s,omitempty"`
+	SampleCount  int      `json:"sample_count,omitempty"`
+	AudioSeconds float64  `json:"audio_seconds,omitempty"`
+	Exclusions   []string `json:"exclusions,omitempty"`
+	Underruns    int      `json:"underruns,omitempty"`
+	Degraded     bool     `json:"degraded,omitempty"`
+	Interrupted  bool     `json:"interrupted,omitempty"`
+	IsError      bool     `json:"is_error,omitempty"`
 
 	STTFinalS      float64 `json:"stt_s,omitempty"`
 	ModelFirstS    float64 `json:"model_first_s,omitempty"`
@@ -72,6 +85,15 @@ type record struct {
 
 	// ElapsedS is one tool call's or one job's wall time.
 	ElapsedS float64 `json:"elapsed_s,omitempty"`
+	// Tool outcome facts are additive to the legacy preview/message fields.
+	Status       string `json:"status,omitempty"`
+	ExitCode     *int   `json:"exit_code,omitempty"`
+	HTTPStatus   *int   `json:"http_status,omitempty"`
+	Signal       string `json:"signal,omitempty"`
+	OutputRef    string `json:"output_ref,omitempty"`
+	OutputBytes  int64  `json:"output_bytes,omitempty"`
+	Truncated    bool   `json:"truncated,omitempty"`
+	InputSummary string `json:"input_summary,omitempty"`
 
 	Prefill   int `json:"prefill,omitempty"`
 	Gen       int `json:"gen,omitempty"`
@@ -96,6 +118,7 @@ type record struct {
 	// crossed a LAN.
 	TTSPlace           string    `json:"tts_place,omitempty"`
 	TTSStreaming       bool      `json:"tts_streaming,omitempty"`
+	TTSWarm            bool      `json:"tts_warm,omitempty"`
 	TTSFallbacks       int       `json:"tts_fallbacks,omitempty"`
 	FirstAudioGraceS   float64   `json:"first_audio_grace_s,omitempty"`
 	StallWatchdogFired bool      `json:"stall_watchdog_fired,omitempty"`
@@ -112,14 +135,39 @@ type segment struct {
 	// EngineS is synthesis alone; SynthS also covers waiting behind whatever
 	// was already playing. Only the first segment's SynthS is a delay a
 	// listener experienced.
-	EngineS     float64 `json:"engine_s"`
-	SynthS      float64 `json:"synth_s"`
-	QueueS      float64 `json:"queue_s,omitempty"`
-	AudioS      float64 `json:"audio_s"`
-	RTF         float64 `json:"rtf,omitempty"`
-	PlayS       float64 `json:"play_s,omitempty"`
-	Fallback    bool    `json:"fallback,omitempty"`
-	Interrupted bool    `json:"interrupted,omitempty"`
+	EngineS          float64  `json:"engine_s"`
+	SynthS           float64  `json:"synth_s"`
+	QueueS           float64  `json:"queue_s,omitempty"`
+	AudioS           float64  `json:"audio_s"`
+	RTF              float64  `json:"rtf,omitempty"`
+	PlayS            float64  `json:"play_s,omitempty"`
+	Fallback         bool     `json:"fallback,omitempty"`
+	Interrupted      bool     `json:"interrupted,omitempty"`
+	Provider         string   `json:"provider,omitempty"`
+	Tier             string   `json:"tier,omitempty"`
+	Place            string   `json:"place,omitempty"`
+	Streaming        bool     `json:"streaming,omitempty"`
+	TextReadyS       float64  `json:"text_ready_s,omitempty"`
+	WarmState        string   `json:"warm_state,omitempty"`
+	Error            string   `json:"error,omitempty"`
+	Exclusions       []string `json:"exclusions,omitempty"`
+	WholeSentence    bool     `json:"whole_sentence_playback"`
+	Underruns        int      `json:"underruns,omitempty"`
+	GapS             float64  `json:"gap_s,omitempty"`
+	GapCause         string   `json:"gap_cause,omitempty"`
+	Gaps             []gap    `json:"gaps,omitempty"`
+	SynthQueuedS     float64  `json:"synth_queued_s,omitempty"`
+	SynthStartedS    float64  `json:"synth_started_s,omitempty"`
+	SynthFirstPCMS   float64  `json:"synth_first_pcm_s,omitempty"`
+	SynthEndedS      float64  `json:"synth_ended_s,omitempty"`
+	PlaybackStartedS float64  `json:"playback_started_s,omitempty"`
+	PlaybackEndedS   float64  `json:"playback_ended_s,omitempty"`
+}
+
+type gap struct {
+	StartS float64 `json:"start_s"`
+	EndS   float64 `json:"end_s"`
+	Cause  string  `json:"cause,omitempty"`
 }
 
 // Writer subscribes to a bus and appends one record per event.
@@ -178,9 +226,22 @@ func (w *Writer) Attach(bus *events.Bus) {
 		w.enqueue(record{Type: "tool_call", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID, Summary: e.Summary})
 	})
 	events.Subscribe(bus, func(e events.ToolCallFinished) {
+		status := string(e.OutcomeStatus())
+		var exitCode, httpStatus *int
+		var signal, reason, inputSummary, outputRef string
+		var outputBytes int64
+		var truncated bool
+		elapsed := e.ResultElapsed()
+		if o := e.Outcome; o != nil {
+			exitCode, httpStatus = o.ExitCode, o.HTTPStatus
+			signal, reason, inputSummary, outputRef = o.Signal, o.Reason, o.InputSummary, o.OutputRef
+			outputBytes, truncated = o.OutputBytes, o.Truncated
+		}
 		w.enqueue(record{
 			Type: "tool_result", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID,
-			Preview: e.Preview, Message: e.Err, IsError: e.Err != "", ElapsedS: e.Elapsed.Seconds(),
+			Preview: e.ResultPreview(), Message: e.ResultReason(), IsError: status == string(events.ToolOutcomeFailed) || status == string(events.ToolOutcomeTimedOut) || status == string(events.ToolOutcomeCanceled), ElapsedS: elapsed.Seconds(),
+			Status: status, ExitCode: exitCode, HTTPStatus: httpStatus, Signal: signal, Reason: reason,
+			InputSummary: inputSummary, OutputRef: outputRef, OutputBytes: outputBytes, Truncated: truncated,
 		})
 	})
 	events.Subscribe(bus, func(e events.JobQueued) {
@@ -203,6 +264,15 @@ func (w *Writer) Attach(bus *events.Bus) {
 	})
 	events.Subscribe(bus, func(e events.Info) {
 		w.enqueue(record{Type: "info", Message: e.Message})
+	})
+	events.Subscribe(bus, func(e events.SpeechDiagnostic) {
+		w.enqueue(record{
+			Type: "speech_diagnostic", Message: e.Message, Symptom: e.Symptom,
+			Cause: e.Cause, Confidence: e.Confidence, Provider: e.Provider,
+			Scope: e.Scope, ActionCode: e.ActionCode, DedupeKey: e.DedupeKey,
+			EngineRTF: e.EngineRTF, GapS: e.Gap.Seconds(), SampleCount: e.SampleCount,
+			AudioSeconds: e.AudioSeconds, Exclusions: append([]string(nil), e.Exclusions...),
+		})
 	})
 	events.Subscribe(bus, func(e events.STTPhase) {
 		w.enqueue(record{Type: "stt", Phase: e.Phase})
@@ -241,10 +311,12 @@ func (w *Writer) Attach(bus *events.Bus) {
 			TTSTier:            e.TTSTier,
 			TTSPlace:           e.TTSPlace,
 			TTSStreaming:       e.TTSWorkerStreaming,
+			TTSWarm:            e.TTSWarm,
 			TTSFallbacks:       e.TTSFallbacks,
 			FirstAudioGraceS:   e.FirstAudioGrace.Seconds(),
 			StallWatchdogFired: e.StallWatchdogFired,
 			DeadAirS:           e.DeadAirElapsed.Seconds(),
+			Underruns:          e.Underruns,
 			Segments:           segmentRecords(e.Segments),
 		})
 	})
@@ -277,17 +349,47 @@ func segmentRecords(in []events.SegmentMetric) []segment {
 	out := make([]segment, 0, len(in))
 	for _, s := range in {
 		out = append(out, segment{
-			Index:       s.Index,
-			Chars:       s.Chars,
-			EngineS:     s.EngineElapsed.Seconds(),
-			QueueS:      s.QueueElapsed().Seconds(),
-			SynthS:      s.SynthElapsed.Seconds(),
-			AudioS:      s.AudioSeconds,
-			RTF:         s.RealtimeFactor(),
-			PlayS:       s.PlayElapsed.Seconds(),
-			Fallback:    s.Fallback,
-			Interrupted: s.Interrupted,
+			Index:            s.Index,
+			Chars:            s.Chars,
+			EngineS:          s.EngineElapsed.Seconds(),
+			QueueS:           s.QueueElapsed().Seconds(),
+			SynthS:           s.SynthElapsed.Seconds(),
+			AudioS:           s.AudioSeconds,
+			RTF:              s.RealtimeFactor(),
+			PlayS:            s.PlayElapsed.Seconds(),
+			Fallback:         s.Fallback,
+			Interrupted:      s.Interrupted,
+			Provider:         s.Provider,
+			Tier:             s.Tier,
+			Place:            s.Place,
+			Streaming:        s.WorkerStreaming,
+			TextReadyS:       s.TextReadyElapsed.Seconds(),
+			WarmState:        s.WarmState,
+			Error:            s.Error,
+			Exclusions:       append([]string(nil), s.Exclusions...),
+			WholeSentence:    s.WholeSentencePlayback,
+			Underruns:        s.Underruns,
+			GapS:             s.GapElapsed.Seconds(),
+			GapCause:         s.GapCause,
+			Gaps:             speechGaps(s.Gaps),
+			SynthQueuedS:     s.SynthQueuedElapsed.Seconds(),
+			SynthStartedS:    s.SynthStartedElapsed.Seconds(),
+			SynthFirstPCMS:   s.SynthFirstPCMElapsed.Seconds(),
+			SynthEndedS:      s.SynthEndedElapsed.Seconds(),
+			PlaybackStartedS: s.PlaybackStartedElapsed.Seconds(),
+			PlaybackEndedS:   s.PlaybackEndedElapsed.Seconds(),
 		})
+	}
+	return out
+}
+
+func speechGaps(in []events.SpeechGap) []gap {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]gap, 0, len(in))
+	for _, g := range in {
+		out = append(out, gap{StartS: g.StartElapsed.Seconds(), EndS: g.EndElapsed.Seconds(), Cause: g.Cause})
 	}
 	return out
 }

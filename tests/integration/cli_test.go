@@ -19,8 +19,8 @@ func TestCLI_Help(t *testing.T) {
 		t.Fatalf("obey-voice --help failed: %v", err)
 	}
 
-	if !strings.Contains(output, "samantha") && !strings.Contains(output, "Samantha") {
-		t.Errorf("help output should mention samantha, got: %s", output)
+	if !strings.Contains(output, "obey-voice") {
+		t.Errorf("help output should mention obey-voice, got: %s", output)
 	}
 }
 

@@ -120,6 +120,10 @@ type TurnMetrics struct {
 	// finishes no matter what the rest of the pipeline does. It is recorded
 	// beside the timings because it is what makes them explicable.
 	TTSWorkerStreaming bool
+	// TTSWarm reports that every recorded segment supplied explicit warm-session
+	// evidence. False means at least one segment was cold/unknown; callers must
+	// not infer warmness from elapsed time or from a successful synthesis.
+	TTSWarm bool
 	// TTSFallbacks counts segments the configured provider failed to
 	// synthesize, which the Kokoro fallback spoke instead. A turn that fell
 	// back is not a measurement of the configured provider.
@@ -157,15 +161,59 @@ type TurnMetrics struct {
 
 func (e TurnMetrics) eventType() string { return "turn_metrics" }
 
+// SpeechDiagnostic is an attributed speech observation. Measurements are
+// emitted for Activity/log consumers; ActionCode is populated only when the
+// evidence supports a user-facing remedy. Message is intentionally concise
+// and does not imply that a setting was changed.
+type SpeechDiagnostic struct {
+	Symptom      string
+	Cause        string
+	Confidence   string
+	Provider     string
+	Scope        string
+	ActionCode   string
+	DedupeKey    string
+	Message      string
+	EngineRTF    float64
+	Gap          time.Duration
+	SampleCount  int
+	AudioSeconds float64
+	Exclusions   []string
+}
+
+func (e SpeechDiagnostic) eventType() string { return "speech_diagnostic" }
+
 // SegmentMetric is one synthesized speech segment's cost inside a turn.
 //
-// RealtimeFactor (SynthElapsed / AudioSeconds) is the quantity that decides
-// whether synthesis keeps up with playback: above 1.0 the synthesizer produces
-// audio more slowly than the speaker consumes it, so a streaming path would
-// underrun and a progressive path opens a gap between sentences.
+// RealtimeFactor (EngineElapsed / AudioSeconds) is a supporting performance
+// measurement. It does not prove the cause of a playback gap; stage attribution
+// requires the observed, non-overlapping Gaps intervals below.
 type SegmentMetric struct {
 	Index int
 	Chars int
+	// Provider, Tier, Place and WorkerStreaming identify the provider that
+	// actually produced this segment. They may differ from turn-level TTS
+	// identity when synthesis or playback falls back.
+	Provider         string
+	Tier             string
+	Place            string
+	WorkerStreaming  bool
+	TextReadyElapsed time.Duration
+	// WarmState is evidence captured before this segment's provider request.
+	// Unknown/cold segments exclude a turn from warm-session comparisons.
+	WarmState             string
+	Error                 string
+	Exclusions            []string
+	WholeSentencePlayback bool
+	Gaps                  []SpeechGap
+	// Boundary elapsed values are measured on one monotonic clock relative to
+	// the turn start. Zero means that stage was not observed.
+	SynthQueuedElapsed     time.Duration
+	SynthStartedElapsed    time.Duration
+	SynthFirstPCMElapsed   time.Duration
+	SynthEndedElapsed      time.Duration
+	PlaybackStartedElapsed time.Duration
+	PlaybackEndedElapsed   time.Duration
 	// EngineElapsed is synthesis alone: the segment handed to the provider
 	// through the complete utterance being buffered for playback. This is the
 	// numerator of the realtime factor.
@@ -197,7 +245,28 @@ type SegmentMetric struct {
 	// before it is audible — and one is enough to say streaming is running
 	// dry on this machine.
 	Underruns int
+	// GapElapsed is the raw observed interval immediately before this segment's
+	// audible start (when one exists). GapCause is populated only when the
+	// boundary evidence identifies one non-overlapping stage. Gaps retains the
+	// partition when a raw interval spans multiple stages or unknown time.
+	GapElapsed time.Duration
+	GapCause   string
 }
+
+// SpeechGap is one non-overlapping observed interval in a segment's raw
+// playback gap. Unknown intervals are retained instead of being assigned to a
+// provider stage by inference.
+type SpeechGap struct {
+	StartElapsed time.Duration
+	EndElapsed   time.Duration
+	Cause        string
+}
+
+const (
+	WarmStateWarm    = "warm"
+	WarmStateCold    = "cold"
+	WarmStateUnknown = "unknown"
+)
 
 // RealtimeFactor reports engine wall time divided by audio duration, or 0
 // when no audio was produced.
@@ -449,8 +518,9 @@ type ToolCallFinished struct {
 	Name    string
 	Kind    string
 	Preview string
-	Err     string // empty on success
+	Err     string // legacy error detail; absence does not establish success
 	Elapsed time.Duration
+	Outcome *ToolOutcome
 }
 
 func (e ToolCallFinished) eventType() string { return "tool_call_finished" }

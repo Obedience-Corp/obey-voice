@@ -367,8 +367,9 @@ func TestRunTurnTextModeBrainTimeoutRecovers(t *testing.T) {
 // loop that is still working. The idle deadline must reset on the tool hook
 // so wall-clock 3 minutes does not kill a busy 27b turn.
 type toolThenHangBrain struct {
-	started time.Time
-	waited  time.Duration
+	started  time.Time
+	waited   time.Duration
+	finished chan struct{}
 }
 
 func (h *toolThenHangBrain) ThinkStream(ctx context.Context, input string, opts brain.StreamOptions) (*brain.Stream, error) {
@@ -376,6 +377,7 @@ func (h *toolThenHangBrain) ThinkStream(ctx context.Context, input string, opts 
 	out := make(chan string)
 	done := make(chan brain.StreamResult, 1)
 	go func() {
+		defer close(h.finished)
 		defer close(out)
 		defer close(done)
 		select {
@@ -403,7 +405,7 @@ func (h *toolThenHangBrain) LoadHistory([]brain.Turn) {}
 
 func TestRunTurnTextModeToolActivityExtendsBrainTimeout(t *testing.T) {
 	bus := events.NewBus()
-	h := &toolThenHangBrain{}
+	h := &toolThenHangBrain{finished: make(chan struct{})}
 	p := &Pipeline{
 		Brain:            h,
 		Events:           bus,
@@ -411,6 +413,13 @@ func TestRunTurnTextModeToolActivityExtendsBrainTimeout(t *testing.T) {
 	}
 
 	_ = p.RunTurnTextMode(context.Background(), "look into this")
+	// The timeout wrapper may return before the canceled fake has published
+	// its result. Observe that completion before inspecting its timing.
+	select {
+	case <-h.finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled brain did not finish")
+	}
 	if h.waited < 120*time.Millisecond {
 		t.Fatalf("brain waited %v, want the 80ms idle bound to reset on tool start", h.waited)
 	}

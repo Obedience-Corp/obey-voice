@@ -64,6 +64,27 @@ func TestBridgePreservesOrder(t *testing.T) {
 	}
 }
 
+func TestBridgeDeliversSpeechDiagnosticToActivity(t *testing.T) {
+	bus := events.NewBus()
+	bridge := newEventBridge(8)
+	bridge.attach(bus)
+	m := sizedConversation(t, 100, 24)
+
+	bus.Emit(events.SpeechDiagnostic{Symptom: "synthesis_starvation", Cause: "synthesis", Message: "Speech generation is falling behind playback."})
+	msg := (<-bridge.ch).(busEventMsg)
+	m, _ = m.Update(msg)
+
+	found := false
+	for _, entry := range m.activity {
+		if entry.stage == "voice" && strings.Contains(entry.detail, "falling behind playback") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("speech diagnostic did not reach Activity: %+v", m.activity)
+	}
+}
+
 // Under pressure the bridge drops the oldest messages: the newest event must
 // always survive.
 func TestBridgeDropsOldestUnderPressure(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // EnableVocals installs the optional recorded-sound bank. Empty dir is fine:
@@ -54,12 +55,12 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 	return stream
 }
 
-func (p *Pipeline) synthUtterance(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, error) {
+func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
 	parts := splitVocalizations(sentence)
 	// Recorded WAVs (persona sounds/) splice in. Otherwise expand tags to the
 	// onomatopoeia Qwen vocalizes in this speaker — one take, same throat.
 	if p.vocals != nil && p.vocals.allSoundsRecorded(parts) {
-		return p.renderVocalized(ctx, parts, stickFallback)
+		return p.renderVocalizedObserved(ctx, parts, stickFallback)
 	}
 	pick := firstVocalPhrase
 	if p.vocals != nil {
@@ -67,19 +68,21 @@ func (p *Pipeline) synthUtterance(ctx context.Context, sentence string, stickFal
 	}
 	text := expandVocalTags(sentence, pick)
 	if text == "" {
-		return nil, false, errors.New("nothing to synthesize")
+		return nil, false, synthesisObservation{warmState: events.WarmStateUnknown}, errors.New("nothing to synthesize")
 	}
-	return p.synthesizeWithFallback(ctx, text, stickFallback)
+	return p.synthesizeWithFallbackObserved(ctx, text, stickFallback)
 }
 
-// renderVocalized stitches sound clips and synthesized speech into one stream
+// renderVocalizedObserved stitches sound clips and synthesized speech into one stream
 // so a reply like "[moan] that's it" is a moan then words, not the word "moan".
-func (p *Pipeline) renderVocalized(ctx context.Context, parts []vocalPart, stickFallback *bool) (*audio.PCMStream, bool, error) {
+
+func (p *Pipeline) renderVocalizedObserved(ctx context.Context, parts []vocalPart, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
 	var chunks [][]float32
 	usedFallback := false
+	observation := synthesisObservation{warmState: events.WarmStateUnknown}
 	for _, part := range parts {
 		if err := ctx.Err(); err != nil {
-			return nil, usedFallback, err
+			return nil, usedFallback, observation, err
 		}
 		if part.sound != "" {
 			clip, ok := p.vocals.pick(part.sound)
@@ -93,16 +96,17 @@ func (p *Pipeline) renderVocalized(ctx context.Context, parts []vocalPart, stick
 		if text == "" {
 			continue
 		}
-		stream, fb, err := p.synthesizeWithFallback(ctx, text, stickFallback)
+		stream, fb, partObservation, err := p.synthesizeWithFallbackObserved(ctx, text, stickFallback)
 		if err != nil {
-			return nil, fb, err
+			return nil, fb, partObservation, err
 		}
+		observation = partObservation
 		if fb {
 			usedFallback = true
 		}
 		samples, rate, err := collectPCM(ctx, stream)
 		if err != nil {
-			return nil, usedFallback, err
+			return nil, usedFallback, observation, err
 		}
 		if rate != vocalSampleRate && rate > 0 {
 			samples = resampleLinear(samples, rate, vocalSampleRate)
@@ -111,7 +115,8 @@ func (p *Pipeline) renderVocalized(ctx context.Context, parts []vocalPart, stick
 	}
 	mixed := crossfadeConcat(chunks, vocalSampleRate)
 	if len(mixed) == 0 {
-		return nil, usedFallback, errors.New("vocalized segment produced no audio")
+		return nil, usedFallback, observation, errors.New("vocalized segment produced no audio")
 	}
-	return pcmStreamFromSamples(ctx, mixed, vocalSampleRate), usedFallback, nil
+	observation.wholeSentence = true
+	return pcmStreamFromSamples(ctx, mixed, vocalSampleRate), usedFallback, observation, nil
 }
