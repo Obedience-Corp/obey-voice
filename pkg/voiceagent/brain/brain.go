@@ -112,7 +112,19 @@ type Turn struct {
 	// that predates this field or came from a provider that does not stamp
 	// it (ollama, for now); session.go's own JSON consumers treat a zero
 	// time as "no timestamp" explicitly rather than trusting omitempty here.
-	At time.Time `json:"at,omitempty"`
+	At                 time.Time `json:"at,omitempty"`
+	PersonaID          string    `json:"persona_id,omitempty"`
+	PersonaDisplayName string    `json:"persona_display_name,omitempty"`
+	PromptHash         string    `json:"prompt_hash,omitempty"`
+	ResponseID         string    `json:"response_id,omitempty"`
+}
+
+// TurnIdentity is immutable historical assistant identity.
+type TurnIdentity struct {
+	PersonaID          string `json:"persona_id,omitempty"`
+	PersonaDisplayName string `json:"persona_display_name,omitempty"`
+	PromptHash         string `json:"prompt_hash,omitempty"`
+	ResponseID         string `json:"response_id,omitempty"`
 }
 
 // TurnToolCall is the persistable form of an Ollama assistant tool call.

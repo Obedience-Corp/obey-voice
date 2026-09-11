@@ -213,8 +213,8 @@ func TestCompactTailBounds(t *testing.T) {
 	for range 8 {
 		assistantOnly = append(assistantOnly, brain.Turn{Role: "assistant", Content: "reply"})
 	}
-	if got := compactTail(assistantOnly); len(got) != maxCompactTail {
-		t.Fatalf("tail length = %d, want %d (bounded)", len(got), maxCompactTail)
+	if got := compactTail(assistantOnly); len(got) != 0 {
+		t.Fatalf("tail without a user boundary = %+v, want summary-only reseed", got)
 	}
 
 	// Everything filtered out is an empty tail, not a panic: the summary alone

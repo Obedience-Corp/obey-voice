@@ -9,6 +9,14 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	// TransientHistory keeps an internal summary request and response out of
+	// canonical history. Projection-owning providers restore both histories
+	// after this request; the host then installs the successful summary view.
+	TransientHistory bool
+	// Identity is the immutable identity of an admitted assistant response.
+	// Providers that support attributed history copy it onto the resulting
+	// assistant turn; nil preserves legacy unattributed behavior.
+	Identity *TurnIdentity
 	// WorkResults is request-private canonical result context. Providers may
 	// include it in the next prompt, but must never append it to history.
 	WorkResults []CompletionResult
@@ -142,6 +150,24 @@ type Provider interface {
 	ClearHistory()
 	History() []Turn
 	LoadHistory(turns []Turn)
+}
+
+// HistoryProjectionProvider restores canonical turns into a live provider
+// without invoking the explicit session-resetting LoadHistory lifecycle.
+type HistoryProjectionProvider interface{ ImportHistory([]Turn) error }
+
+// CanonicalHistoryProvider exposes the unbounded transcript authority when a
+// caller needs to persist it separately from a provider's native projection.
+type CanonicalHistoryProvider interface{ CanonicalHistory() []Turn }
+
+// ContextHistoryProvider exposes the bounded model view for compaction only.
+// Its projected text is never an authority for persisted speaker identity.
+type ContextHistoryProvider interface{ ContextHistory() []Turn }
+
+// IdentityHistoryAppender admits host-authored responses with immutable
+// historical identity. Providers without it remain legacy-compatible.
+type IdentityHistoryAppender interface {
+	AppendAssistantResponseWithIdentity(string, TurnIdentity) error
 }
 
 // Warmer is an optional Provider capability that preloads the backend (e.g.

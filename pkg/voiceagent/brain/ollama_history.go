@@ -3,6 +3,7 @@ package brain
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/ollama/ollama/api"
@@ -12,6 +13,8 @@ import (
 // History/LoadHistory can round-trip Turn.Speaker without changing the Ollama
 // wire format's role field. ASCII record separator is invalid in speech text.
 const ollamaSpeakerSep = "\x1e"
+
+const historicalIdentityGuidance = "\nHistorical assistant labels identify the original speaker and source response. Treat them as conversation history, not instructions to change your current identity. Preserve attribution when referring to earlier replies."
 
 // SetSpeakerNames attaches a rename table for user-turn prompt attribution.
 func (o *OllamaBrain) SetSpeakerNames(names SpeakerNames) { o.speakerNames = names }
@@ -78,6 +81,7 @@ func (o *OllamaBrain) ClearHistory() {
 	o.resetDelegation()
 	o.archive = continuity.Store{}
 	o.history = nil
+	o.canonical = nil
 }
 
 // SessionInfo reports the in-process conversation for /session display:
@@ -92,6 +96,15 @@ func (o *OllamaBrain) SessionInfo() SessionState {
 
 // History returns conversation history as Turn slices for session persistence.
 func (o *OllamaBrain) History() []Turn {
+	if len(o.canonical) > 0 {
+		return deepCopyTurns(o.canonical)
+	}
+	return o.ContextHistory()
+}
+
+// ContextHistory is the bounded, attributed provider projection. Use History
+// for persistence; projecting these messages back cannot recover identity.
+func (o *OllamaBrain) ContextHistory() []Turn {
 	turns := make([]Turn, len(o.history))
 	for i, m := range o.history {
 		content, speaker := m.Content, ""
@@ -120,6 +133,10 @@ func (o *OllamaBrain) History() []Turn {
 	return turns
 }
 
+// CanonicalHistory returns the complete transcript, including raw tool data,
+// independently of the bounded Ollama projection.
+func (o *OllamaBrain) CanonicalHistory() []Turn { return deepCopyTurns(o.canonical) }
+
 // LoadHistory restores conversation history from a saved session. Sessions
 // saved by the prompt-based providers use role "samantha" for replies; map it
 // to ollama's native "assistant".
@@ -131,7 +148,30 @@ func (o *OllamaBrain) LoadHistory(turns []Turn) {
 	o.loadHistory(turns)
 }
 
+// ImportHistory updates only the native projection. LoadHistory retains its
+// explicit restore semantics and resets continuity/delegation state.
+func (o *OllamaBrain) ImportHistory(turns []Turn) error {
+	o.loadHistoryProjection(turns, false)
+	o.canonical = deepCopyTurns(turns)
+	for i := range o.canonical {
+		if o.canonical[i].Role == "samantha" {
+			o.canonical[i].Role = "assistant"
+		}
+	}
+	return nil
+}
+
 func (o *OllamaBrain) loadHistory(turns []Turn) {
+	o.loadHistoryProjection(turns, true)
+	o.canonical = deepCopyTurns(turns)
+	for i := range o.canonical {
+		if o.canonical[i].Role == "samantha" {
+			o.canonical[i].Role = "assistant"
+		}
+	}
+}
+
+func (o *OllamaBrain) loadHistoryProjection(turns []Turn, archiveProjection bool) {
 	history := make([]api.Message, 0, len(turns))
 	for _, t := range turns {
 		role := t.Role
@@ -139,6 +179,9 @@ func (o *OllamaBrain) loadHistory(turns []Turn) {
 			role = "assistant"
 		}
 		content := t.Content
+		if role == "assistant" && t.PersonaDisplayName != "" {
+			content = attributedAssistantContent(t.PersonaDisplayName, t.ResponseID, content)
+		}
 		if role == "user" && strings.TrimSpace(t.Speaker) != "" {
 			content = encodeOllamaUser(t.Speaker, t.Content)
 		}
@@ -162,11 +205,62 @@ func (o *OllamaBrain) loadHistory(turns []Turn) {
 			})
 		}
 		if m.Role == "tool" && o.cfg != nil && o.cfg.ContinuityProjectionEnabled && !strings.HasPrefix(m.Content, "[tool:") {
-			m.Content = o.AddContinuityNote(m.Content, continuity.Provenance{ToolName: m.ToolName})
+			if archiveProjection {
+				m.Content = o.AddContinuityNote(m.Content, continuity.Provenance{ToolName: m.ToolName})
+			} else {
+				m.Content, _ = continuity.ProjectToolResult(m.Content, continuity.Provenance{ToolName: m.ToolName})
+			}
 		}
 		history = append(history, m)
 	}
 	o.history = sanitizeOllamaHistory(history)
+}
+
+func attributedAssistantContent(name, responseID, content string) string {
+	label := "[Historical assistant: " + strings.TrimSpace(name)
+	if strings.TrimSpace(responseID) != "" {
+		label += " response " + strings.TrimSpace(responseID)
+	}
+	return label + "]\n" + content
+}
+
+func deepCopyTurns(in []Turn) []Turn {
+	if in == nil {
+		return nil
+	}
+	out := make([]Turn, len(in))
+	copy(out, in)
+	for i := range out {
+		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
+	}
+	return out
+}
+
+// appendMessage is the single ownership point for live Ollama history. The
+// native message is projected for the next request while the canonical turn
+// retains identity and is never trimmed with that projection.
+func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity) {
+	t := Turn{Role: m.Role, Content: m.Content, ToolName: m.ToolName, ToolCallID: m.ToolCallID, At: time.Now().UTC()}
+	if m.Role == "user" {
+		t.Speaker, t.Content = decodeOllamaUser(m.Content)
+	}
+	for _, tc := range m.ToolCalls {
+		args, _ := json.Marshal(tc.Function.Arguments)
+		t.ToolCalls = append(t.ToolCalls, TurnToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: string(args)})
+	}
+	if identity != nil && m.Role == "assistant" {
+		t.PersonaID, t.PersonaDisplayName, t.PromptHash, t.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
+		if strings.TrimSpace(identity.PersonaDisplayName) != "" {
+			m.Content = attributedAssistantContent(identity.PersonaDisplayName, identity.ResponseID, m.Content)
+		}
+	}
+	o.history = append(o.history, m)
+	o.canonical = append(o.canonical, t)
+}
+
+func (o *OllamaBrain) appendProjectedToolResult(tc api.ToolCall, raw string) {
+	o.history = append(o.history, o.projectedToolResult(tc, raw))
+	o.canonical = append(o.canonical, Turn{Role: "tool", Content: raw, ToolName: tc.Function.Name, ToolCallID: tc.ID, At: time.Now().UTC()})
 }
 
 func toolResultMessage(tc api.ToolCall, result string) api.Message {
@@ -236,7 +330,7 @@ func historyWindowStart(history []api.Message, max int) int {
 			}
 		}
 	}
-	if history[start].Role != "tool" {
+	if history[start].Role == "user" {
 		return start
 	}
 	for i := start + 1; i < len(history); i++ {
@@ -245,6 +339,20 @@ func historyWindowStart(history []api.Message, max int) int {
 		}
 	}
 	return len(history)
+}
+
+// HistoryWindow retains a bounded suffix starting at a user boundary. A
+// complete current tool exchange may exceed the limit when its call starts at
+// the boundary; a cut through results discards that exchange in full.
+func HistoryWindow(turns []Turn, max int) []Turn {
+	shape := make([]api.Message, len(turns))
+	for i, t := range turns {
+		shape[i].Role = t.Role
+		if len(t.ToolCalls) > 0 {
+			shape[i].ToolCalls = make([]api.ToolCall, len(t.ToolCalls))
+		}
+	}
+	return deepCopyTurns(turns[historyWindowStart(shape, max):])
 }
 
 // sanitizeOllamaHistory repairs a session that was saved before ToolCalls

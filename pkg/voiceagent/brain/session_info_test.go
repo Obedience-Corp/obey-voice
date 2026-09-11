@@ -52,8 +52,8 @@ func TestSessionInfoPerProvider(t *testing.T) {
 				fullSystemPrompt: "0123",
 				history:          []api.Message{{Role: "user", Content: "0123456789ab"}},
 			},
-			// (4 + 12 + 16) / 4 = 8
-			want: SessionState{Kind: "chat", PromptTokens: 8, Turns: 1},
+			// System, stable attribution guidance, user content and message overhead.
+			want: SessionState{Kind: "chat", PromptTokens: (32 + len(historicalIdentityGuidance)) / 4, Turns: 1},
 		},
 	}
 	for _, tt := range tests {

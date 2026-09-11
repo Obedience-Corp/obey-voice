@@ -65,9 +65,11 @@ func TestToolProjectionBothLoopsAndSessionRoundtrip(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			saved, _ := json.Marshal(o.History())
-			if strings.Contains(string(saved), strings.Repeat("payload", 100)) {
-				t.Fatal("raw payload persisted")
+			// The canonical transcript intentionally retains raw tool data;
+			// the captured requests above assert the bounded native projection.
+			saved, _ := json.Marshal(o.CanonicalHistory())
+			if !strings.Contains(string(saved), strings.Repeat("payload", 100)) {
+				t.Fatal("raw payload missing from canonical transcript")
 			}
 			var turns []Turn
 			if err := json.Unmarshal(saved, &turns); err != nil {
@@ -279,9 +281,9 @@ func TestReadSkillPreservesFullInstructionsOnlyForActiveTurn(t *testing.T) {
 	if res := <-stream.Done; res.Err != nil {
 		t.Fatal(res.Err)
 	}
-	history, _ := json.Marshal(o.History())
-	if strings.Contains(string(history), tail) {
-		t.Fatal("full skill body persisted instead of projection")
+	history, _ := json.Marshal(o.CanonicalHistory())
+	if !strings.Contains(string(history), tail) {
+		t.Fatal("full skill body missing from canonical transcript")
 	}
 }
 

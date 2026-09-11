@@ -582,3 +582,39 @@ func TestSaveLoadRoundTripPreservesAt(t *testing.T) {
 		t.Fatalf("loaded turns = %+v, want At = %v", loaded.Turns, stamped)
 	}
 }
+
+func TestSelectionAndIdentityRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	s := New("ollama", "m")
+	turns := []brain.Turn{{Role: "assistant", Content: "hello", PersonaID: "santa", PersonaDisplayName: "Santa", PromptHash: "p", ResponseID: "r"}}
+	if err := store.Save(s, turns); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSelection(s, s.Turns, "santa", "Santa", "p"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SelectedPersonaID != "santa" || len(loaded.Turns) != 1 || loaded.Turns[0].ResponseID != "r" {
+		t.Fatalf("loaded = %+v", loaded)
+	}
+}
+
+func TestLoadRejectsFutureFormatVersion(t *testing.T) {
+	dir := t.TempDir()
+	id := "future"
+	data, err := json.Marshal(map[string]any{"id": id, "format_version": CurrentFormatVersion + 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewStore(dir).Load(id)
+	if !errors.Is(err, ErrUnsupportedSessionVersion) {
+		t.Fatalf("Load() error = %v", err)
+	}
+}

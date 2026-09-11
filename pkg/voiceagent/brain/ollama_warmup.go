@@ -66,7 +66,7 @@ func (o *OllamaBrain) Warmup(ctx context.Context) {
 	// — pinned by TestWarmupMatchesChatOptions/window_unset_diverges, which is
 	// where to start if that reload is ever worth closing.
 	opts["num_ctx"] = o.warmupNumCtx(highWater)
-	messages := warmupMessages(prompt)
+	messages := warmupMessages(prompt + historicalIdentityGuidance)
 	tools := o.warmupTools(delegation)
 	fmt.Fprintf(os.Stderr, "obey-voice: warmup model=%s num_ctx=%v num_batch=%v prefix_chars=%d tools=%d\n", o.model, opts["num_ctx"], opts["num_batch"], len(messages[0].Content), len(tools))
 	req := &api.ChatRequest{
