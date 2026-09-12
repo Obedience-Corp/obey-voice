@@ -508,7 +508,7 @@ func runServe(cfg *config.Config) error {
 // run with rather than a profile's inherit-me blanks.
 func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error) {
 	return func() ([]netapi.PersonaSummary, error) {
-		profiles, err := persona.List()
+		profiles, issues, err := persona.ListWithIssues()
 		if err != nil {
 			return nil, err
 		}
@@ -535,6 +535,15 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 					Tier:     activeTierFor(snap),
 				},
 			})
+		}
+		if len(issues) > 0 {
+			warnings := &netapi.PersonaListIssues{}
+			for _, issue := range issues {
+				warnings.Issues = append(warnings.Issues, netapi.PersonaListIssue{
+					ID: issue.ID, Message: "Repair persona.yaml: " + issue.Err.Error(),
+				})
+			}
+			return out, warnings
 		}
 		return out, nil
 	}

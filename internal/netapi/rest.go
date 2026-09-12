@@ -34,6 +34,18 @@ type PersonaSummary struct {
 	TTS     PersonaTTS   `json:"tts"`
 }
 
+// PersonaListIssue identifies a profile omitted from a partial catalog result.
+type PersonaListIssue struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
+}
+
+// PersonaListIssues accompanies usable rows returned by ListPersonas when
+// individual profiles need repair. Other errors still fail the whole request.
+type PersonaListIssues struct{ Issues []PersonaListIssue }
+
+func (e *PersonaListIssues) Error() string { return "some persona profiles are unavailable" }
+
 // PersonaBrain is a persona's effective model routing.
 type PersonaBrain struct {
 	Provider string `json:"provider"`
@@ -87,14 +99,19 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // mutates nothing, and the route is absent unless serve supplied the resolver.
 func (s *Server) handlePersonas(w http.ResponseWriter, r *http.Request) {
 	personas, err := s.opts.ListPersonas()
-	if err != nil {
+	var issues *PersonaListIssues
+	if err != nil && !errors.As(err, &issues) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	if personas == nil {
 		personas = []PersonaSummary{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"personas": personas})
+	body := map[string]any{"personas": personas}
+	if issues != nil && len(issues.Issues) > 0 {
+		body["warnings"] = issues.Issues
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // safeSessionIDPattern is the shape a session id may have before it is allowed

@@ -46,8 +46,11 @@ Each run leaves `scenario.yaml`, `config.resolved.yaml`, `events.jsonl` (every
 bus event, written as it happens), `metrics.json`, `report.md` (resolved
 models, per-turn route and spoken lines, audio scores), and `work/`.
 
-Playback is captured by a recording `audio.Engine` (no speakers unless
-`-speakers`). Each turn writes `audio/<nn>-<id>/playback.wav` and
+Playback is captured by a recording `audio.Engine`. Real playback is enabled by
+`-speakers` or the scenario setting `capture.speakers: true`. The `work-survival`
+scenario enables speakers because its communicated-result and receipt expectations
+require an audible sink; recording alone leaves the result pending as
+`audio_unavailable`. Each turn writes `audio/<nn>-<id>/playback.wav` and
 `analysis.json`. `just convoflow analyze RUN_DIR` rescores those WAVs.
 
 Job lifecycle names in expects: `job_queued` (the table accepted the job),

@@ -56,7 +56,8 @@ type Options struct {
 	// The implementation must report the persona the runtime is using, not the
 	// persisted one: a set_persona changes the live config without writing
 	// config.yaml, and a list that disagreed with the running agent would be
-	// worse than no list.
+	// worse than no list. Return usable rows with *PersonaListIssues when only
+	// individual profiles are unavailable; the route includes their warnings.
 	ListPersonas func() ([]PersonaSummary, error)
 
 	// WorkDir is the directory the agent's file and shell tools operate in.
