@@ -345,3 +345,23 @@ func TestWireFixtureDeltasReconstructTheReply(t *testing.T) {
 		t.Errorf("deltas joined = %q, want %q", got, final)
 	}
 }
+
+func TestResponseIdentitySurvivesWireEncoding(t *testing.T) {
+	identity := events.ResponseEnvelope{SessionID: "conversation", ConversationEpoch: "epoch", ResponseID: "reply-1", PersonaID: "santa", DisplayName: "Santa", PromptHash: "hash", VoiceProvider: "kokoro", Voice: "am_michael"}
+	encoded := encodeEvent(events.ResponseReady{Response: "Hello", Envelope: &identity})
+	data, err := json.Marshal(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Response string                  `json:"response"`
+		Envelope events.ResponseEnvelope `json:"response_envelope"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	identity.DisplayName = "Later rename"
+	if got.Response != "Hello" || got.Envelope.ResponseID != "reply-1" || got.Envelope.DisplayName != "Santa" || got.Envelope.Voice != "am_michael" {
+		t.Fatalf("wire attribution lost: %+v", got)
+	}
+}

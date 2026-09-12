@@ -52,6 +52,13 @@ func (p *Pipeline) RunBackgroundTurn(ctx context.Context) error {
 		return ctx.Err()
 	}
 	if p.WorkCoordinator() != nil {
+		var err error
+		// Refresh selection before acquiring the completion lease: replacing a
+		// responder revokes the previous binding's capture permission.
+		ctx, _, err = p.admitInput(ctx, "", true, newTurnMetrics())
+		if err != nil {
+			return err
+		}
 		return p.withCompletionLease(ctx, func(attemptCtx context.Context, lease work.CompletionLease, selected []work.ResultView) error {
 			return p.runCanonicalCompletion(attemptCtx, lease, selected)
 		})
@@ -76,7 +83,7 @@ func (p *Pipeline) finishBackgroundStream(ctx context.Context, brainCtx context.
 		p.recoverTurn(ctx, turn, metrics, response, err)
 		return nil
 	}
-	p.emit(events.ResponseReady{Response: response, Interrupted: interrupted, Degraded: metrics.degraded})
+	p.emitResponse(metrics, events.ResponseReady{Response: response, Interrupted: interrupted, Degraded: metrics.degraded})
 	if interrupted {
 		turn.finish(TurnInterrupted)
 	} else {

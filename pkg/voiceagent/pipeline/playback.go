@@ -131,7 +131,7 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 			metrics.gaps[event.index] = gapObservation{elapsed: event.gapElapsed, cause: event.gapCause, gaps: event.gaps}
 			metrics.lastPlaybackEnd = time.Time{}
 		}
-		p.emit(events.VoiceGenerated{
+		p.emitResponse(metrics, events.VoiceGenerated{
 			Sentence: event.sentence,
 			Elapsed:  event.synthElapsed,
 			Index:    event.index,
@@ -141,7 +141,7 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 		if !metrics.ttfa.IsZero() {
 			started.Elapsed = metrics.elapsedFromEOU(metrics.ttfa)
 		}
-		p.emit(started)
+		p.emitResponse(metrics, started)
 		return false
 
 	case playbackFinished:
@@ -164,13 +164,13 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 			AudibleSink: metrics.audibleSink,
 		}
 		if event.result.Interrupted {
-			p.emit(complete)
+			p.emitResponse(metrics, complete)
 			return true
 		}
 		if event.result.Err != nil && !errors.Is(event.result.Err, context.Canceled) {
 			p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", event.result.Err)})
 		}
-		p.emit(complete)
+		p.emitResponse(metrics, complete)
 		return true
 	}
 	return false
@@ -212,7 +212,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 			metrics.playbackStart = startedAt
 		}
 		p.stampTTFA(metrics, startedAt)
-		p.emit(events.VoiceGenerated{
+		p.emitResponse(metrics, events.VoiceGenerated{
 			Sentence: sentence,
 			Elapsed:  synthElapsed,
 			Index:    index,
@@ -222,7 +222,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 		if !metrics.ttfa.IsZero() {
 			started.Elapsed = metrics.elapsedFromEOU(metrics.ttfa)
 		}
-		p.emit(started)
+		p.emitResponse(metrics, started)
 	case result := <-playback.Done():
 		if metrics.delivery != nil {
 			metrics.delivery.observe(playbackEvent{kind: playbackFinished, index: index, result: result}, p.sinkKind())
@@ -254,7 +254,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 			exclusions:    append([]string(nil), observation.exclusions...),
 			error:         playbackResultError(result),
 		})
-		p.emit(events.SpeakingComplete{Interrupted: result.Interrupted, AudibleSink: metrics.audibleSink})
+		p.emitResponse(metrics, events.SpeakingComplete{Interrupted: result.Interrupted, AudibleSink: metrics.audibleSink})
 		return
 	}
 
@@ -291,14 +291,14 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 		p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", result.Err)})
 	}
 	if result.Interrupted {
-		p.emit(events.SpeakingInterrupted{Reason: "stopped"})
+		p.emitResponse(metrics, events.SpeakingInterrupted{Reason: "stopped"})
 	}
 	metrics.playbackComplete = time.Now()
 	p.maybeStampLateTTFA(metrics)
 	if metrics.audibleSink == audio.SinkNone {
 		p.emit(events.Info{Message: "synth drain (no sink)"})
 	}
-	p.emit(events.SpeakingComplete{
+	p.emitResponse(metrics, events.SpeakingComplete{
 		Elapsed:     elapsed,
 		Interrupted: result.Interrupted,
 		AudibleSink: metrics.audibleSink,

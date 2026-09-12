@@ -1,0 +1,53 @@
+name: work-survival
+description: >-
+  Start one harmless local worker task as Samantha, change the responder to
+  Santa while the real Qwen worker is in flight, then deliver and reload its
+  durable attributed result through real speaker playback.
+input: text
+router_tools: route_only
+brain:
+  provider: ollama
+  model: qwen3:8b
+worker:
+  provider: ollama
+  model: qwen3:8b
+tts:
+  provider: kokoro
+  voice: af_heart
+capture:
+  audio: true
+  # A recording-only sink cannot produce the audible delivery receipt below.
+  speakers: true
+persona:
+  initial: samantha
+turns:
+  - id: start-local-work
+    user: "Create a file called worker-proof.txt in the current working directory containing exactly blue comet. Do not inspect or modify any other files. Confirm completion."
+    wait: job_started
+    expect:
+      - event: job_started
+  - id: select-santa-while-running
+    op: select_persona
+    persona: santa
+    wait: idle
+    expect:
+      - persona_id: santa
+      - work_running_at_selection: true
+      - work_completed_before_selection: false
+      - work_current_responder: santa
+  - id: await-worker
+    wait: job_terminal
+    expect:
+      - event: job_finished
+  - id: deliver-result
+    op: run_background
+    wait: work_durable
+    expect:
+      - work_pending: false
+      - work_communicated: true
+      - work_state: communicated
+      - work_receipt: true
+      - work_persisted: true
+      - worker_calls: 1
+      - work_origin_persona: samantha
+      - work_current_responder: santa

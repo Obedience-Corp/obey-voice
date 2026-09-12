@@ -16,7 +16,7 @@ import (
 // so finish logic cannot drift across early returns.
 func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, response string) {
 	p.finishOrdinaryCompletion(metrics, response, false)
-	p.emit(events.ResponseReady{Response: response, Degraded: metrics.degraded})
+	p.emitResponse(metrics, events.ResponseReady{Response: response, Degraded: metrics.degraded})
 	turn.finish(TurnCompleted)
 	if p.OnTurn != nil {
 		p.OnTurn()
@@ -33,6 +33,11 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	defer p.decActiveTurn()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
+	if !background {
+		// Typed input is final when admitted to this host turn, before persona
+		// preparation or compaction. Include that work in user-visible latency.
+		metrics.sttFinal = metrics.start
+	}
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics)
 
@@ -43,6 +48,16 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	} else {
 		p.emit(events.UserInput{Text: input, Speaker: speakerID})
 	}
+	original := input
+	ctx, admission, err := p.admitInput(ctx, input, background, metrics)
+	if err != nil {
+		turn.finish(TurnFailed)
+		return fmt.Errorf("admit response: %w", err)
+	}
+	if admission.LocalReply != "" {
+		return p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
+	}
+	input = admission.Request
 	if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -51,16 +66,12 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
 		return nil
 	}
-	p.emit(events.ThinkingStarted{})
-	if metrics.sttFinal.IsZero() {
-		metrics.sttFinal = time.Now()
-	}
-	thinkingStarted := metrics.sttFinal
+	p.emitResponse(metrics, events.ThinkingStarted{})
+	thinkingStarted := metrics.tEOU()
 
 	if !background {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
-			p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
-			return nil
+			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
 	}
 
@@ -80,6 +91,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	streamOpts := brain.StreamOptions{
+		Identity:          metrics.responseIdentity(),
+		OriginalInput:     original,
 		Speaker:           speakerID,
 		Background:        background,
 		ToolsEnabled:      p.VoiceToolsEnabled && !background,
@@ -129,12 +142,11 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	repair.applyBrainRoute(route)
 	_ = repair.shouldRepair(response)
 	if kind, source, ok := repair.routedKind(); ok {
-		p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
-		return nil
+		return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 	}
 
 	metrics.modelComplete = time.Now()
-	p.emit(events.ThinkingComplete{
+	p.emitResponse(metrics, events.ThinkingComplete{
 		Response: response,
 		Elapsed:  time.Since(thinkingStarted),
 	})
@@ -168,8 +180,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		if !metrics.firstSpeakable.IsZero() && !metrics.firstAdmit.Equal(metrics.firstSpeakable) {
 			seg.Elapsed = metrics.elapsedFromEOU(metrics.firstAdmit)
 		}
-		p.emit(seg)
-		p.emit(events.GeneratingVoice{Sentence: speakable})
+		p.emitResponse(metrics, seg)
+		p.emitResponse(metrics, events.GeneratingVoice{Sentence: speakable})
 
 		synthStarted := time.Now()
 		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil)

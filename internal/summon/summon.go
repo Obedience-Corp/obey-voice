@@ -44,7 +44,7 @@ func NewMatcher(agentName string, aliases []string) Matcher {
 
 	var names []string
 	for _, candidate := range candidates {
-		name := strings.Join(strings.Fields(strings.ToLower(candidate)), " ")
+		name := normalizeName(candidate)
 		if name == "" || slices.Contains(names, name) {
 			continue
 		}
@@ -54,6 +54,13 @@ func NewMatcher(agentName string, aliases []string) Matcher {
 		return cmp.Or(cmp.Compare(len(b), len(a)), cmp.Compare(a, b))
 	})
 	return Matcher{names: names}
+}
+
+// normalizeName is the spelling used by both the single-persona matcher and
+// the roster resolver. Names are deliberately normalized only for comparison;
+// the resolver always returns the transcript's original remainder.
+func normalizeName(name string) string {
+	return strings.Join(strings.Fields(strings.ToLower(name)), " ")
 }
 
 // Names reports the wake words in match order (longest first), for the activity
@@ -84,11 +91,7 @@ func (m Matcher) Addressed(text string) bool {
 
 func (m Matcher) startsWithName(body string) bool {
 	for _, name := range m.names {
-		rest, ok := strings.CutPrefix(body, name)
-		if !ok {
-			continue
-		}
-		if rest == "" || closesName(rest) {
+		if _, ok := matchPrefix(body, name); ok {
 			return true
 		}
 	}
@@ -99,11 +102,11 @@ func (m Matcher) startsWithName(body string) bool {
 // must be a word of its own — "hidden" does not begin with the filler "hi".
 func cutFiller(body string) (string, bool) {
 	for _, filler := range Fillers {
-		rest, ok := strings.CutPrefix(body, filler)
-		if !ok || rest == "" || !closesName(rest) {
+		consumed, ok := matchPrefix(body, normalizeName(filler))
+		if !ok || consumed == len(body) {
 			continue
 		}
-		return trimLead(rest), true
+		return trimLead(body[consumed:]), true
 	}
 	return "", false
 }
@@ -112,7 +115,13 @@ func cutFiller(body string) (string, bool) {
 // before it.
 func closesName(rest string) bool {
 	r, _ := utf8.DecodeRuneInString(rest)
-	return unicode.IsSpace(r) || strings.ContainsRune(nameBoundary, r)
+	if unicode.IsSpace(r) || strings.ContainsRune(nameBoundary, r) {
+		return true
+	}
+	// Keep apostrophes attached to a word ("Santa's" is not an address), but
+	// accept the other Unicode punctuation that speech transcripts commonly
+	// use as a vocative boundary, such as an em dash or full-width comma.
+	return unicode.IsPunct(r) && r != '\'' && r != '’' && r != 'ʼ'
 }
 
 // trimLead drops leading space, punctuation and symbols — quotes, dashes, the

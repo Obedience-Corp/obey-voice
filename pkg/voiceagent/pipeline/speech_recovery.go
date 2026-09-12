@@ -58,7 +58,7 @@ func (p *Pipeline) recoverTurn(ctx context.Context, turn *turnConductor, metrics
 			response = partial + "\n\n" + brain.RecoveryReply
 		}
 	}
-	p.emit(events.ResponseReady{Response: response, Degraded: true})
+	p.emitResponse(metrics, events.ResponseReady{Response: response, Degraded: true})
 
 	if speak && ctx.Err() == nil {
 		p.speakBestEffort(ctx, brain.RecoveryReply, metrics, turn)
@@ -88,8 +88,8 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	if metrics.firstSegment.IsZero() {
 		metrics.firstSegment = time.Now()
 	}
-	p.emit(events.SpeechSegmentReady{Text: sentence})
-	p.emit(events.GeneratingVoice{Sentence: sentence})
+	p.emitResponse(metrics, events.SpeechSegmentReady{Text: sentence})
+	p.emitResponse(metrics, events.GeneratingVoice{Sentence: sentence})
 
 	if metrics.ttsEngine.provider == "" {
 		metrics.ttsEngine = p.ttsIdentity()
@@ -122,6 +122,9 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 // turn may be nil for idle job summaries.
 func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, metrics *turnMetrics, sentence string) error {
 	sentence = strings.TrimSpace(sentence)
+	if sentence != "" && metrics != nil && metrics.routedSpeech != nil {
+		*metrics.routedSpeech = append(*metrics.routedSpeech, sentence)
+	}
 	if sentence == "" || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
 		return nil
 	}
@@ -131,8 +134,8 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 	if metrics != nil && metrics.firstSegment.IsZero() {
 		metrics.firstSegment = time.Now()
 	}
-	p.emit(events.SpeechSegmentReady{Text: sentence})
-	p.emit(events.GeneratingVoice{Sentence: sentence})
+	p.emitResponse(metrics, events.SpeechSegmentReady{Text: sentence})
+	p.emitResponse(metrics, events.GeneratingVoice{Sentence: sentence})
 
 	synthStarted := time.Now()
 	stream, usedFallback, observation, err := p.synthesizeWithFallbackObserved(ctx, sentence, nil)

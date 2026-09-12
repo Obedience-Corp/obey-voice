@@ -1,0 +1,10 @@
+[
+  {"role":"user","content":"Remember the first fact: cobalt.","speaker":"speaker-1"},
+  {"role":"assistant","content":"Samantha recorded cobalt.","persona_id":"samantha","persona_display_name":"Samantha","response_id":"response-a1"},
+  {"role":"user","content":"Santa, remember the second fact: amber.","speaker":"speaker-1"},
+  {"role":"assistant","content":"Santa recorded amber.","persona_id":"santa","persona_display_name":"Santa","response_id":"response-b1"},
+  {"role":"user","content":"Read the local fixture.","speaker":"speaker-1"},
+  {"role":"assistant","content":"I will inspect the fixture.","persona_id":"samantha","persona_display_name":"Samantha","response_id":"response-a2","tool_calls":[{"id":"call-fixture","name":"read_file","arguments":"{\"path\":\"fixture.txt\"}"}]},
+  {"role":"tool","tool_name":"read_file","tool_call_id":"call-fixture","content":"cobalt and amber"},
+  {"role":"assistant","content":"The fixture contains cobalt and amber.","persona_id":"samantha","persona_display_name":"Samantha","response_id":"response-a3"}
+]

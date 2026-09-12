@@ -1,0 +1,17 @@
+version: 1
+start: start
+states:
+  start:
+    action: resolve
+    success: resolved
+    error: failed
+  resolved:
+    action: prepare
+    success: prepared
+    error: failed
+  prepared:
+    action: commit
+    success: committed
+    error: failed
+  committed: {}
+  failed: {}

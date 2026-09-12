@@ -385,7 +385,7 @@ func TestMeetingDoneJoinsCloseErrorOntoLauncherBanner(t *testing.T) {
 	if _, err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	app := NewApp(&config.Config{})
+	app := newApp(&config.Config{}, nil, nil)
 	app.launcher.width, app.launcher.height = 80, 24
 	app.meetingRT = &MeetingRuntime{Writer: w, Cleanup: func() {}}
 	app.screen = screenMeeting
@@ -408,7 +408,7 @@ func TestMeetingDoneShowsCompletedSpeakerAnalysis(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Meeting.Route.Mode = meeting.ModeOff
-	app := NewApp(cfg)
+	app := newApp(cfg, nil, nil)
 	app.width, app.height = 80, 24
 	app.launcher.width, app.launcher.height = 80, 24
 	app.meetingRT = &MeetingRuntime{Writer: w, Cleanup: func() {}}

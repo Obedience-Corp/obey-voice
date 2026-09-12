@@ -242,11 +242,58 @@ func (a *Agency) attachManaged(provider brain.Provider, c *work.Coordinator, sco
 	if err := binding.AttachDelegation(runtime); err != nil {
 		return errors.Join(err, runtime.Close())
 	}
+	observer := a.managedObserver(c, scope, runtime, cfg)
+	if err := runtime.AttachConversation(observer); err != nil {
+		_ = binding.DetachDelegation()
+		return errors.Join(err, runtime.Close())
+	}
+	a.workMu.Lock()
+	a.managed[runtime] = struct{}{}
+	a.workMu.Unlock()
+	a.selectManaged(runtime)
+	return nil
+}
+
+// prepareManaged attaches the candidate runtime and its host observer without
+// publishing it in the Agency registry. The caller owns cleanup until commit.
+func (a *Agency) prepareManaged(provider brain.Provider, c *work.Coordinator, scope work.WorkScope, cfg *config.Config, prepared *PreparedBrainReplacement) error {
+	binding, ok := provider.(brain.DelegationBinding)
+	if !ok {
+		return nil
+	}
+	runtime := binding.DetachDelegation()
+	if runtime == nil {
+		return nil
+	}
+	// A stopped candidate cannot safely be revived as part of a selection
+	// transaction. Clear/restore retains their explicit legacy rotation path;
+	// responder selection must leave the old owner untouched on this failure.
+	if !runtime.Enabled() {
+		_ = runtime.Close()
+		return errors.New("replacement managed runtime is closed")
+	}
+	if runtime.Task() != "" {
+		_ = binding.AttachDelegation(runtime)
+		return errors.New("cannot change ownership of an already admitted managed task")
+	}
+	if err := binding.AttachDelegation(runtime); err != nil {
+		return errors.Join(err, runtime.Close())
+	}
+	prepared.binding = binding
+	if err := runtime.AttachConversation(a.managedObserver(c, scope, runtime, cfg)); err != nil {
+		_ = binding.DetachDelegation()
+		return errors.Join(err, runtime.Close())
+	}
+	prepared.runtime = runtime
+	return nil
+}
+
+func (a *Agency) managedObserver(c *work.Coordinator, scope work.WorkScope, runtime *delegation.Runtime, cfg *config.Config) delegation.ConversationObserver {
 	metadata := map[string]string{}
 	if cfg != nil {
 		metadata = map[string]string{"profile": cfg.DelegationProfile, "summarizer_provider": cfg.BrainProvider, "summarizer_model": config.BrainModelFor(cfg, cfg.BrainProvider), "persona": cfg.ActivePersona}
 	}
-	observer := delegation.ConversationObserver{
+	return delegation.ConversationObserver{
 		Admitted: func(ticket, task string) error {
 			_, err := c.Register(scope, work.Admission{JobID: ticket, Task: task, Origin: "managed", Provider: "obey", Config: metadata})
 			if err == nil {
@@ -295,14 +342,6 @@ func (a *Agency) attachManaged(provider brain.Provider, c *work.Coordinator, sco
 			return err
 		},
 	}
-	if err := runtime.AttachConversation(observer); err != nil {
-		return err
-	}
-	a.workMu.Lock()
-	a.managed[runtime] = struct{}{}
-	a.workMu.Unlock()
-	a.selectManaged(runtime)
-	return nil
 }
 
 func (a *Agency) selectManaged(current *delegation.Runtime) {

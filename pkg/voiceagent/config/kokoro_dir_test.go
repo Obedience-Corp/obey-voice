@@ -6,6 +6,24 @@ import (
 	"testing"
 )
 
+func TestKokoroDirFromKeepsExplicitRuntimeAssetsIsolated(t *testing.T) {
+	first, second := t.TempDir(), t.TempDir()
+	v1 := filepath.Join(first, KokoroV1Subdir)
+	if err := os.MkdirAll(v1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range append(append([]string(nil), kokoroRequired...), ".kokoro-v1-en-source") {
+		if err := os.WriteFile(filepath.Join(v1, name), []byte("fixture"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct{ root, want string }{{first, v1}, {second, second}, {first, v1}} {
+		if got := KokoroDirFrom(&Config{ModelsDir: tc.root}); got != tc.want {
+			t.Fatalf("runtime models %q selected %q, want %q", tc.root, got, tc.want)
+		}
+	}
+}
+
 func TestKokoroDirPrefersV1Pack(t *testing.T) {
 	root := t.TempDir()
 	// Point ModelsDir at temp via viper defaults is hard; set env + Load.

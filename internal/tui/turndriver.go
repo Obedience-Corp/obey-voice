@@ -282,6 +282,15 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 // resumeListening restarts the background voice turn when nothing else owns
 // the pipeline.
 func (m *conversationModel) resumeListening() tea.Cmd {
+	// A queued or preparing persona selection owns the next pipeline boundary.
+	// Do not let background capture, pending text, or compaction start around
+	// it; the completion path calls resumeListening again after publication.
+	if m.selectionPending() {
+		if m.turnState == turnIdle {
+			return m.startNextPersonaSelection()
+		}
+		return nil
+	}
 	// BackgroundReady is only a prompt. Every idle decision reads the current
 	// inbox level so a lost edge, or a stale edge after another claimant, cannot
 	// strand or replay work.
@@ -374,6 +383,10 @@ func (m *conversationModel) handleSubmit() tea.Cmd {
 	// Local slash commands never require canceling the voice pipeline.
 	if cmd, handled := m.submitLocalSlash(text); handled {
 		return cmd
+	}
+	if m.selectionPending() {
+		m.commandError("persona selection in progress")
+		return nil
 	}
 
 	switch m.turnState {
@@ -559,6 +572,10 @@ func (m *conversationModel) submitText(text string) tea.Cmd {
 		return tea.Quit
 
 	case app.IsClearCommand(cmd):
+		if m.selectionPending() {
+			m.commandError("persona selection in progress")
+			return m.resumeListening()
+		}
 		if m.deps.clearHistory != nil {
 			m.deps.clearHistory()
 		}
@@ -592,12 +609,22 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 		m.pendingText = ""
 		talk := m.takeTalkTurn()
 		if m.pendingCompact {
+			if m.selectionPending() {
+				m.pendingText = text
+				m.talkTurnEnded()
+				return m.startNextPersonaSelection()
+			}
 			m.pendingCompact = false
 			m.discardDraft(text)
 			m.talkTurnEnded()
 			return m.dispatchCompact()
 		}
 		if text != "" {
+			if m.selectionPending() {
+				m.pendingText = text
+				m.talkTurnEnded()
+				return m.startNextPersonaSelection()
+			}
 			if m.voiceOn() && m.hasCapturedInput() {
 				m.pendingText = text
 				m.talkTurnEnded()
@@ -607,6 +634,10 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 			return m.submitText(text)
 		}
 		if talk {
+			if m.selectionPending() {
+				m.talkTurnEnded()
+				return m.startNextPersonaSelection()
+			}
 			// The key interrupted a reply and is still held: its turn opens
 			// now, and the driver keeps owning it until the release.
 			m.keyOwnsTurn(true)
@@ -627,7 +658,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 			m.voiceEnabled = false
 			m.emit(events.Error{Message: msg.err.Error()})
 			m.emit(events.Info{Message: "Voice input keeps failing — switching to text. Type /voice to switch back."})
-			return nil
+			return m.resumeListening()
 		default: // app.VoiceRetry
 			m.voiceFailures++
 			m.emit(events.Error{Message: msg.err.Error()})
@@ -648,6 +679,10 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 		m.quitting = true
 		return tea.Quit
 	case app.IsClearCommand(cmd):
+		if m.selectionPending() {
+			m.commandError("persona selection in progress")
+			return m.resumeListening()
+		}
 		if m.deps.clearHistory != nil {
 			m.deps.clearHistory()
 		}
@@ -670,12 +705,22 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 	if wasCanceling {
 		talk := m.takeTalkTurn()
 		if m.pendingCompact {
+			if m.selectionPending() {
+				m.pendingText = pending
+				m.talkTurnEnded()
+				return m.startNextPersonaSelection()
+			}
 			m.pendingCompact = false
 			m.discardDraft(pending)
 			m.talkTurnEnded()
 			return m.dispatchCompact()
 		}
 		if pending != "" {
+			if m.selectionPending() {
+				m.pendingText = pending
+				m.talkTurnEnded()
+				return m.startNextPersonaSelection()
+			}
 			if m.voiceOn() && m.hasCapturedInput() {
 				m.pendingText = pending
 				m.talkTurnEnded()
@@ -685,6 +730,10 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 			return m.submitText(pending)
 		}
 		if talk {
+			if m.selectionPending() {
+				m.talkTurnEnded()
+				return m.startNextPersonaSelection()
+			}
 			m.keyOwnsTurn(true)
 			return m.dispatchVoiceTurn()
 		}
@@ -704,6 +753,10 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 // drains. Compaction rebuilds the provider's context, so it never runs
 // mid-turn; while a reply is in flight the user is asked to retry.
 func (m *conversationModel) requestCompact() tea.Cmd {
+	if m.selectionPending() {
+		m.commandError("persona selection in progress")
+		return nil
+	}
 	if m.deps.compact == nil {
 		m.commandError("/compact is unavailable")
 		return m.resumeListening()

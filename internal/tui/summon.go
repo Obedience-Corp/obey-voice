@@ -76,6 +76,12 @@ func (a *App) installNameSummon(rt *ConversationRuntime) {
 		a.conversation.emit(events.Info{Message: nameSummonOffMessage})
 		return
 	}
+	// Persistent sessions route finalized input through the shared selector.
+	// Its admission path owns addressing and response identity, so an old
+	// per-turn gate would reject nameless follow-ups after a selection.
+	if rt.Pipeline.AdmitInput != nil {
+		return
+	}
 	gate := a.conversation.addressGate(cfg)
 	if gate == nil {
 		return

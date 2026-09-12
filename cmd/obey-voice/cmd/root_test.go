@@ -81,8 +81,15 @@ func TestLoadConfigForSessionDefaultsSkipsPersonaOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if overlaid.BrainProvider != "ollama" {
-		t.Fatalf("active overlay = %q, want ollama from the persona", overlaid.BrainProvider)
+	if overlaid.BrainProvider != "grok" {
+		t.Fatalf("stable base = %q, want grok from Settings", overlaid.BrainProvider)
+	}
+	binding, err := bindSession(overlaid, "research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.Config().BrainProvider != "ollama" {
+		t.Fatal("explicit persona binding did not apply its provider")
 	}
 
 	settings, err := loadConfigForSession(appTUI.StartDefaultsID)

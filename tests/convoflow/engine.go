@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // runner is the conversation driver. PR 2 tests inject a fake; live
@@ -26,15 +28,30 @@ type runner interface {
 	workerCalled() bool
 }
 
+type backgroundRunner interface {
+	runBackground(context.Context) error
+	waitWork(context.Context, bool) error
+}
+
+type recoveryRunner interface {
+	compact(context.Context) error
+}
+
+type recoveryHistoryRunner interface {
+	importCanonicalHistory(string) error
+}
+
 type engine struct {
-	scn     *Scenario
-	runDir  string
-	rec     *recorder
-	runner  runner
-	player  *recordingPlayer
-	playing func() bool
-	profile runProfile
-	onClose []func()
+	scn           *Scenario
+	runDir        string
+	rec           *recorder
+	runner        runner
+	player        *recordingPlayer
+	fixtureConfig string
+	personaDir    string
+	playing       func() bool
+	profile       runProfile
+	onClose       []func()
 
 	started    time.Time
 	stopReason string
@@ -52,8 +69,13 @@ type turnRecord struct {
 
 const defaultScenarioWall = 5 * time.Minute
 
-func (e *engine) run(ctx context.Context) error {
-	defer e.closeAll()
+func (e *engine) run(ctx context.Context) (runErr error) {
+	defer func() {
+		e.closeAll()
+		if p, ok := e.runner.(personaRunner); ok {
+			runErr = errors.Join(runErr, p.writePersonaArtifacts(e.runDir), p.validatePersonaRun())
+		}
+	}()
 	if err := os.MkdirAll(e.runDir, 0o700); err != nil {
 		return err
 	}
@@ -66,6 +88,15 @@ func (e *engine) run(ctx context.Context) error {
 
 	e.started = time.Now()
 	e.stopReason = "completed"
+	if e.scn.HistoryFixture != "" {
+		seed, ok := e.runner.(recoveryHistoryRunner)
+		if !ok {
+			return fmt.Errorf("history fixture: runner does not support canonical import")
+		}
+		if err := seed.importCanonicalHistory(e.scn.HistoryFixture); err != nil {
+			return err
+		}
+	}
 	for i, turn := range e.scn.Turns {
 		if err := e.runTurn(ctx, i, turn); err != nil {
 			e.stopReason = "turn_failed"
@@ -75,6 +106,14 @@ func (e *engine) run(ctx context.Context) error {
 			e.noteTurnError(turn.ID, err)
 			_ = writeReport(e)
 			return fmt.Errorf("turn %s: %w", turn.ID, err)
+		}
+	}
+	if p, ok := e.runner.(personaRunner); ok {
+		if err := p.writePersonaArtifacts(e.runDir); err != nil {
+			return err
+		}
+		if err := p.validatePersonaRun(); err != nil {
+			return err
 		}
 	}
 	m := e.metrics()
@@ -97,6 +136,11 @@ func (e *engine) run(ctx context.Context) error {
 }
 
 func (e *engine) closeAll() {
+	// Retire and persist the runner before closing event capture or exporting
+	// the final disk snapshot. Shutdown errors belong to this run's result.
+	if c, ok := e.runner.(interface{ close() }); ok {
+		c.close()
+	}
 	for i := len(e.onClose) - 1; i >= 0; i-- {
 		e.onClose[i]()
 	}
@@ -130,11 +174,72 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 
 	mark := len(e.rec.snapshot())
 	routeMark := e.rec.routeMark()
-	if turn.User != "" {
+	var selectionErr error
+	var workAtSelection work.Snapshot
+	if turn.Op == "select_persona" {
+		if wr, ok := e.runner.(interface{ workSnapshot() work.Snapshot }); ok {
+			workAtSelection = wr.workSnapshot()
+		}
+	}
+	if turn.Op == "select_persona" {
+		p, ok := e.runner.(personaRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support persona selection", turn.ID)
+		}
+		if turn.Persona == "" {
+			return fmt.Errorf("turn %s: persona is required", turn.ID)
+		}
+		if err := p.selectPersona(turnCtx, turn.Persona); err != nil {
+			if turn.ExpectError != "" && strings.Contains(err.Error(), turn.ExpectError) {
+				selectionErr = err
+			} else {
+				return err
+			}
+		} else if turn.ExpectError != "" {
+			return fmt.Errorf("turn %s: expected selection error containing %q", turn.ID, turn.ExpectError)
+		}
+	} else if turn.Op == "run_background" {
+		bg, ok := e.runner.(backgroundRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support background work", turn.ID)
+		}
+		if err := bg.runBackground(turnCtx); err != nil {
+			return err
+		}
+	} else if turn.Op == "compact" {
+		recovery, ok := e.runner.(recoveryRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support compaction", turn.ID)
+		}
+		if err := recovery.compact(turnCtx); err != nil {
+			return err
+		}
+	} else if turn.Op == "quiet_gap" {
+		gap := turn.Duration.Duration
+		if gap <= 0 {
+			return fmt.Errorf("turn %s: quiet_gap requires a positive duration", turn.ID)
+		}
+		timer := time.NewTimer(gap)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-turnCtx.Done():
+			return turnCtx.Err()
+		}
+	} else if turn.User != "" {
 		if e.runner == nil {
 			return fmt.Errorf("no runner (live agent not wired)")
 		}
-		if err := e.runner.runTurn(turnCtx, turn.User); err != nil {
+		if turn.InterruptAfter.Duration > 0 {
+			control, ok := e.runner.(interface{ stopPlayback() })
+			if !ok {
+				return fmt.Errorf("turn %s: runner does not support playback interruption", turn.ID)
+			}
+			if err := runInterruptedTurn(turnCtx, e.rec, turn.InterruptAfter.Duration,
+				func(ctx context.Context) error { return e.runner.runTurn(ctx, turn.User) }, control.stopPlayback); err != nil {
+				return err
+			}
+		} else if err := e.runner.runTurn(turnCtx, turn.User); err != nil {
 			return err
 		}
 	}
@@ -142,7 +247,15 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 	if wait == "" {
 		wait = waitIdle
 	}
-	if err := e.rec.waitFor(turnCtx, wait, e.isPlaying); err != nil {
+	if wait == waitWorkDurable {
+		bg, ok := e.runner.(backgroundRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support durable work wait", turn.ID)
+		}
+		if err := bg.waitWork(turnCtx, true); err != nil {
+			return fmt.Errorf("wait %s: %w", wait, err)
+		}
+	} else if err := e.rec.waitFor(turnCtx, wait, e.isPlaying); err != nil {
 		return fmt.Errorf("wait %s: %w", wait, err)
 	}
 	if e.player != nil {
@@ -155,6 +268,11 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		spoken: e.rec.spokenText(),
 		events: e.rec.snapshot()[mark:],
 	}
+	for _, te := range st.events {
+		if ev, ok := te.event.(events.ResponseReady); ok {
+			st.response = ev.Response
+		}
+	}
 	if d, ok := e.rec.lastRouteSince(routeMark); ok {
 		st.route = &d
 	}
@@ -166,7 +284,14 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		st.liveBrainCalled = e.runner.liveCalled()
 		st.workerCalled = e.runner.workerCalled()
 	}
+	if p, ok := e.runner.(personaRunner); ok {
+		st.persona = p.personaState()
+		st.persona.WorkAtSelection = workAtSelection
+	}
 	e.turns = append(e.turns, e.recordTurn(turn, mark, st.route))
+	if selectionErr != nil {
+		e.turns[len(e.turns)-1].Err = "expected error: " + selectionErr.Error()
+	}
 	for _, ex := range turn.Expect {
 		if err := evalExpect(ex, e.rec, st); err != nil {
 			return err

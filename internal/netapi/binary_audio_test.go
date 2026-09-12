@@ -340,3 +340,84 @@ func TestBinaryDownlinkOnOptIn(t *testing.T) {
 	}
 	t.Fatal("binary-opted client never received an OVA1 frame")
 }
+
+func TestOVA2DownlinkNegotiationWritesBinaryWebSocketFrame(t *testing.T) {
+	bus := events.NewBus()
+	creds, err := LoadOrCreateCredentials(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fanout := NewAudioFanout(nil)
+	d := NewDispatcher(&scriptedRunner{runs: make(chan struct{}, 1)}, bus, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go d.Run(ctx)
+	s := New(Options{Bind: "127.0.0.1:0", Credentials: creds, Bus: bus, Dispatcher: d, Audio: fanout})
+	go func() { _ = s.ListenAndServe(ctx) }()
+	deadline := time.After(2 * time.Second)
+	for s.Addr() == nil {
+		select {
+		case <-deadline:
+			t.Fatal("server never bound")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+creds.Token)
+	ws, _, err := websocket.Dial(ctx, "wss://"+s.Addr().String()+"/v1/stream", &websocket.DialOptions{HTTPClient: insecureClient(), HTTPHeader: header})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close(websocket.StatusNormalClosure, "")
+	optIn, _ := json.Marshal(map[string]any{"type": "audio_output", "mode": "stream", "binary": true, "protocol": "ova2"})
+	if err := ws.Write(ctx, websocket.MessageText, optIn); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		readCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+		typ, data, readErr := ws.Read(readCtx)
+		stop()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if typ != websocket.MessageText {
+			t.Fatalf("ack type = %v, want text", typ)
+		}
+		var env map[string]any
+		if err := json.Unmarshal(data, &env); err != nil {
+			t.Fatal(err)
+		}
+		if env["type"] == "audio_output_ack" {
+			if env["protocol"] != "ova2" || env["binary"] != true {
+				t.Fatalf("OVA2 ack = %v", env)
+			}
+			break
+		}
+	}
+	ctx = events.WithResponse(ctx, events.ResponseEnvelope{ResponseID: "wire-response-ova2"})
+	pcmStream := bufferedPCM(t, ctx, 24000, []float32{0.9, -0.9})
+	if _, err := fanout.PlayStream(ctx, pcmStream); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		readCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+		typ, data, readErr := ws.Read(readCtx)
+		stop()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if typ != websocket.MessageBinary {
+			var env map[string]any
+			_ = json.Unmarshal(data, &env)
+			if env["type"] == "audio_chunk" {
+				t.Fatal("OVA2 audio_chunk was sent as JSON text")
+			}
+			continue
+		}
+		_, rate, generation, responseID, pcm, ok := ParseBinaryAudioChunkV2(data)
+		if !ok || rate != 24000 || generation == 0 || responseID != "wire-response-ova2" || len(pcm) != 4 {
+			t.Fatalf("OVA2 frame ok=%v rate=%d generation=%d responseID=%q pcm=%d", ok, rate, generation, responseID, len(pcm))
+		}
+		return
+	}
+}

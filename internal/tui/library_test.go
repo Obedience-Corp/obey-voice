@@ -179,7 +179,7 @@ func TestLibrarySendToAudiobook(t *testing.T) {
 }
 
 func TestLibraryAudiobookMsgFillsForm(t *testing.T) {
-	app := NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app := newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.screen = screenLibrary
 	app.library.requestID = 7
 	app.library.preparing = true
@@ -197,7 +197,7 @@ func TestLibraryAudiobookMsgFillsForm(t *testing.T) {
 }
 
 func TestLibraryAudiobookMsgIgnoresStaleOrWrongScreen(t *testing.T) {
-	app := NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app := newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.screen = screenLauncher
 	app.library.requestID = 3
 	model, _ := app.Update(libraryAudiobookMsg{path: "/lib/book.epub", requestID: 3})
@@ -206,7 +206,7 @@ func TestLibraryAudiobookMsgIgnoresStaleOrWrongScreen(t *testing.T) {
 		t.Fatalf("stale success changed screen to %v", a.screen)
 	}
 
-	app = NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app = newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.screen = screenLibrary
 	app.library.requestID = 9
 	app.library.preparing = true
@@ -239,7 +239,7 @@ func TestLibraryMOBIOnlyShowsError(t *testing.T) {
 		t.Fatalf("msg = %#v, want error", msg)
 	}
 	// Apply like the App handler would.
-	app := NewApp(&config.Config{CalibreEnabled: true})
+	app := newApp(&config.Config{CalibreEnabled: true}, nil, nil)
 	app.screen = screenLibrary
 	app.library = m
 	model, _ := app.Update(got)
@@ -370,7 +370,7 @@ func TestLibraryIgnoresDetailAfterBack(t *testing.T) {
 }
 
 func TestLibrarySwitchFromAppLoadsBrowse(t *testing.T) {
-	app := NewApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"})
+	app := newApp(&config.Config{CalibreEnabled: true, TTSVoice: "af_heart"}, nil, nil)
 	app.width, app.height = 80, 24
 	// switchScreen rebuilds library from config; InitCmd probes + browses when enabled.
 	model, cmd := app.Update(switchScreenMsg(screenLibrary))

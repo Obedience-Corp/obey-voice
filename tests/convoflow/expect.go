@@ -8,10 +8,12 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 type turnState struct {
 	spoken             string
+	response           string
 	events             []timedEvent
 	route              *pipeline.RouteDecision
 	history            []brain.Turn
@@ -20,6 +22,7 @@ type turnState struct {
 	workerToolsEnabled *bool
 	liveBrainCalled    bool
 	workerCalled       bool
+	persona            personaTurnState
 }
 
 func evalExpect(ex Expectation, rec *recorder, st turnState) error {
@@ -51,6 +54,14 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		if re.MatchString(st.spoken) {
 			return fmt.Errorf("spoken matched forbidden %s", ex.SpokenNotMatches)
 		}
+	case ex.ResponseMatches != "":
+		re, err := regexp.Compile(ex.ResponseMatches)
+		if err != nil {
+			return err
+		}
+		if !re.MatchString(st.response) {
+			return fmt.Errorf("response %q does not match %s", clip(st.response, 120), ex.ResponseMatches)
+		}
 	case ex.LiveHistoryIncludes != "":
 		if !historyContains(st.history, ex.LiveHistoryIncludes) {
 			return fmt.Errorf("live history missing %q", ex.LiveHistoryIncludes)
@@ -80,6 +91,10 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		if *st.workerToolsEnabled != *ex.WorkerToolsEnabled {
 			return fmt.Errorf("worker_tools_enabled = %v, want %v", *st.workerToolsEnabled, *ex.WorkerToolsEnabled)
 		}
+	case ex.WorkerCalls != nil:
+		if st.persona.WorkerCalls != *ex.WorkerCalls {
+			return fmt.Errorf("worker_calls = %d, want %d", st.persona.WorkerCalls, *ex.WorkerCalls)
+		}
 	case ex.RouteKind != "":
 		if st.route == nil {
 			return fmt.Errorf("route_kind: no OnRoute this turn")
@@ -96,8 +111,148 @@ func evalExpect(ex Expectation, rec *recorder, st turnState) error {
 		}
 	case ex.Metric != "":
 		return fmt.Errorf("metric %q belongs on the scenario expect list", ex.Metric)
+	case ex.PersonaID != "":
+		if st.persona.Selection.PersonaID != ex.PersonaID {
+			return fmt.Errorf("persona_id = %q, want %q", st.persona.Selection.PersonaID, ex.PersonaID)
+		}
+	case ex.DisplayName != "":
+		if st.persona.Selection.DisplayName != ex.DisplayName {
+			return fmt.Errorf("display_name = %q, want %q", st.persona.Selection.DisplayName, ex.DisplayName)
+		}
+	case ex.ResponsePersonaID != "":
+		if st.persona.Envelope.PersonaID != ex.ResponsePersonaID {
+			return fmt.Errorf("response_persona_id = %q, want %q", st.persona.Envelope.PersonaID, ex.ResponsePersonaID)
+		}
+	case ex.ResponseID != "":
+		if st.persona.Envelope.ResponseID == "" || (ex.ResponseID != "*" && st.persona.Envelope.ResponseID != ex.ResponseID) {
+			return fmt.Errorf("response_id = %q, want %q", st.persona.Envelope.ResponseID, ex.ResponseID)
+		}
+	case ex.ResponseVoice != "":
+		if st.persona.Envelope.Voice != ex.ResponseVoice {
+			return fmt.Errorf("response_voice = %q, want %q", st.persona.Envelope.Voice, ex.ResponseVoice)
+		}
+	case ex.ResponseBrainModel != "":
+		if st.persona.Selection.BrainModel != ex.ResponseBrainModel {
+			return fmt.Errorf("response_brain_model = %q, want %q", st.persona.Selection.BrainModel, ex.ResponseBrainModel)
+		}
+	case ex.SessionID != "":
+		if st.persona.Selection.SessionID == "" || (ex.SessionID != "*" && st.persona.Selection.SessionID != ex.SessionID) {
+			return fmt.Errorf("session_id = %q, want %q", st.persona.Selection.SessionID, ex.SessionID)
+		}
+	case ex.NoLiveBrainCall:
+		if st.persona.BrainCalls != 0 {
+			return fmt.Errorf("live brain calls = %d, want 0", st.persona.BrainCalls)
+		}
+	case ex.BrainCalls != nil:
+		if st.persona.BrainCalls != *ex.BrainCalls {
+			return fmt.Errorf("brain calls = %d, want %d", st.persona.BrainCalls, *ex.BrainCalls)
+		}
+	case ex.CanonicalIncludes != "":
+		if !historyContains(st.persona.History, ex.CanonicalIncludes) {
+			return fmt.Errorf("canonical history missing %q", ex.CanonicalIncludes)
+		}
+	case ex.WorkOriginPersona != "":
+		if got := workOriginPersona(st.persona.Work); got != ex.WorkOriginPersona {
+			return fmt.Errorf("work_origin_persona = %q, want %q", got, ex.WorkOriginPersona)
+		}
+	case ex.WorkCurrentResponder != "":
+		if st.persona.Selection.PersonaID != ex.WorkCurrentResponder {
+			return fmt.Errorf("work_current_responder = %q, want %q", st.persona.Selection.PersonaID, ex.WorkCurrentResponder)
+		}
+	case ex.WorkState != "":
+		if got := workState(st.persona.Work); got != ex.WorkState {
+			return fmt.Errorf("work_state = %q, want %q", got, ex.WorkState)
+		}
+	case ex.WorkPending != nil:
+		if got := len(st.persona.Work.Pending) > 0; got != *ex.WorkPending {
+			return fmt.Errorf("work_pending = %v, want %v", got, *ex.WorkPending)
+		}
+	case ex.WorkCommunicated != nil:
+		if got := len(st.persona.Work.Communicated) > 0; got != *ex.WorkCommunicated {
+			return fmt.Errorf("work_communicated = %v, want %v", got, *ex.WorkCommunicated)
+		}
+	case ex.WorkReceipt != nil:
+		if got := workHasReceipt(st.persona.Work); got != *ex.WorkReceipt {
+			return fmt.Errorf("work_receipt = %v, want %v", got, *ex.WorkReceipt)
+		}
+	case ex.WorkPersisted != nil:
+		if got := st.persona.Work.Revision <= st.persona.Work.PersistedRevision; got != *ex.WorkPersisted {
+			return fmt.Errorf("work_persisted = %v, want %v", got, *ex.WorkPersisted)
+		}
+	case ex.WorkRunningAtSelection != nil:
+		atSelection := st.persona.WorkAtSelection
+		if !atSelection.Scope.Valid() {
+			atSelection = st.persona.Work
+		}
+		if got := workHasRunningJob(atSelection); got != *ex.WorkRunningAtSelection {
+			return fmt.Errorf("work_running_at_selection = %v, want %v", got, *ex.WorkRunningAtSelection)
+		}
+	case ex.WorkCompletedBeforeSelection != nil:
+		atSelection := st.persona.WorkAtSelection
+		if !atSelection.Scope.Valid() {
+			atSelection = st.persona.Work
+		}
+		if got := !workHasRunningJob(atSelection) && workHasTerminalJob(atSelection); got != *ex.WorkCompletedBeforeSelection {
+			return fmt.Errorf("work_completed_before_selection = %v, want %v", got, *ex.WorkCompletedBeforeSelection)
+		}
 	}
 	return nil
+}
+
+func workOriginPersona(snapshot work.Snapshot) string {
+	for _, result := range append(append([]work.ResultView(nil), snapshot.Pending...), snapshot.Communicated...) {
+		if persona := result.Outcome.Config["persona"]; persona != "" {
+			return persona
+		}
+		if result.Outcome.Origin != "" {
+			return result.Outcome.Origin
+		}
+	}
+	return ""
+}
+
+func workState(snapshot work.Snapshot) string {
+	if len(snapshot.Communicated) > 0 {
+		return "communicated"
+	}
+	if len(snapshot.Pending) > 0 {
+		return "pending"
+	}
+	if workHasRunningJob(snapshot) {
+		return "running"
+	}
+	return ""
+}
+
+func workHasReceipt(snapshot work.Snapshot) bool {
+	for _, result := range append(append([]work.ResultView(nil), snapshot.Pending...), snapshot.Communicated...) {
+		if result.LastAttempt != nil && voiceReceiptComplete(result.LastAttempt.Receipt) {
+			return true
+		}
+	}
+	return false
+}
+
+func voiceReceiptComplete(receipt work.DeliveryReceipt) bool {
+	return receipt.Mode == "voice" && receipt.ResponseCommitted && receipt.PlaybackComplete && receipt.Audible && !receipt.Interrupted && receipt.Segments > 0
+}
+
+func workHasRunningJob(snapshot work.Snapshot) bool {
+	for _, job := range snapshot.Jobs {
+		if job.State == work.JobRunning {
+			return true
+		}
+	}
+	return false
+}
+
+func workHasTerminalJob(snapshot work.Snapshot) bool {
+	for _, job := range snapshot.Jobs {
+		if job.State == work.JobTerminal {
+			return true
+		}
+	}
+	return false
 }
 
 type runMetrics struct {
@@ -127,8 +282,34 @@ func collectMetrics(rec *recorder) runMetrics {
 	if rec == nil {
 		return m
 	}
+	canonicalStates := make(map[work.JobKey]map[work.JobState]bool)
 	for _, te := range rec.snapshot() {
 		switch e := te.event.(type) {
+		case events.WorkStateChanged:
+			for _, job := range e.Snapshot.Jobs {
+				key := job.Key
+				seen := canonicalStates[key]
+				if seen == nil {
+					seen = make(map[work.JobState]bool)
+					canonicalStates[key] = seen
+				}
+				if !seen[job.State] {
+					switch {
+					case job.State == work.JobRunning:
+						m.JobStarted++
+					case job.State == work.JobTerminal:
+						switch canonicalOutcomeKind(job.Outcome) {
+						case "finished":
+							m.JobFinished++
+						case "failed":
+							m.JobFailed++
+						case "aborted":
+							m.JobAborted++
+						}
+					}
+				}
+				seen[job.State] = true
+			}
 		case events.JobStarted:
 			m.JobStarted++
 		case events.JobFinished:
@@ -263,7 +444,7 @@ func hasNamedEvent(turnLog []timedEvent, rec *recorder, name string) bool {
 		src = rec.snapshot()
 	}
 	for _, te := range src {
-		if eventName(te.event) == name {
+		if eventMatchesName(te.event, name) {
 			return true
 		}
 	}

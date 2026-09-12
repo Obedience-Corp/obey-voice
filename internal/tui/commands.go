@@ -160,6 +160,10 @@ func sharedPrefixLen(a, b string) int {
 }
 
 func (m *conversationModel) executeSlashCommand(command slashCommand, args []string) tea.Cmd {
+	if m.selectionPending() && (command.id == commandClear || command.id == commandCompact || command.id == commandSettings) {
+		m.commandError("persona selection in progress")
+		return nil
+	}
 	if command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && len(args) > 0 {
 		m.commandError(fmt.Sprintf("%s does not take arguments", command.name))
 		return m.resumeListening()

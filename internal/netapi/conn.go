@@ -25,9 +25,13 @@ type streamConn struct {
 	// control message. atomic so the hub hot path never takes a second lock.
 	audioStream atomic.Bool
 	// audioBinary is set with audio_output binary:true. The fanout then
-	// writes OVA1 binary TTS chunks instead of JSON+base64. Cleared when
-	// stream mode turns off.
+	// writes the negotiated binary TTS chunks instead of JSON+base64. Cleared
+	// when stream mode turns off.
 	audioBinary atomic.Bool
+	// audioProtocol selects the binary TTS framing negotiated by audio_output.
+	// OVA1 is the legacy binary:true format; OVA2 carries response identity and
+	// the hub audio generation fence.
+	audioProtocol atomic.Uint32
 	// audioBlocked is set for every stream client when the shared turn is
 	// interrupted. It stays set until the next turn starts, preventing tail
 	// chunks from the canceled turn from crossing the reset boundary.

@@ -36,6 +36,7 @@ func TestRuntimeBuilderResumesOnlyTheRequestedChat(t *testing.T) {
 	if _, err := prompts.Seed(config.PromptsDir()); err != nil {
 		t.Fatal(err)
 	}
+	writeAckTestPersona(t, "obey", "You are Obey.")
 	initial := session.New("ollama", "test")
 	if err := initial.Save([]brain.Turn{{Role: "user", Content: "Original history"}}); err != nil {
 		t.Fatal(err)

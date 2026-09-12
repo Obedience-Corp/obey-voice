@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	personaruntime "github.com/Obedience-Corp/obey-voice/internal/persona/runtime"
 	"github.com/Obedience-Corp/obey-voice/internal/ui"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -323,6 +323,20 @@ func runServe(cfg *config.Config) error {
 		}
 	}()
 
+	base, err := config.LoadRaw()
+	if err != nil {
+		return fmt.Errorf("load base persona settings: %w", err)
+	}
+	base.WorkDir = serveCfg.WorkDir
+	base.VoiceToolsEnabled = serveCfg.VoiceToolsEnabled
+	switcher := &servePersonaSwitcher{base: base, cfg: &serveCfg, pipeline: p, tts: liveTTS, sessions: ref}
+	if _, supported := p.Brain.(brain.HistoryProjectionProvider); supported {
+		if err := switcher.initialize(); err != nil {
+			return err
+		}
+		defer switcher.selector.Close()
+	}
+
 	credsDir := filepath.Join(config.ConfigDir(), "serve")
 	var creds *netapi.Credentials
 	if serveTLSCert != "" || serveTLSKey != "" {
@@ -351,13 +365,17 @@ func runServe(cfg *config.Config) error {
 	}
 
 	dispatcher := netapi.NewDispatcher(p, bus, func() {
-		if err := p.ClearConversation(); err != nil {
+		err := switcher.clear(ctx)
+		if p.OnTurn != nil {
+			p.OnTurn()
+		}
+		if err != nil {
 			bus.Emit(events.Error{Stage: "work_clear", Message: err.Error()})
 			return
 		}
-		p.OnTurn()
-	}, func(id string) error { return ref.resume(p, cfg, id) })
+	}, func(id string) error { return switcher.resume(ctx, id) })
 	go dispatcher.Run(ctx)
+	currentSessionSnapshot := switcher.snapshotProvider()
 
 	bindHosts := resolveServeBindHosts()
 	addr := net.JoinHostPort(bindHosts[0], strconv.Itoa(servePort))
@@ -387,26 +405,32 @@ func runServe(cfg *config.Config) error {
 	turnClocks := endpoint.FromConfig(cfg, false)
 
 	server := netapi.New(netapi.Options{
-		SetPersona:          serveSetPersona(cfg, p, liveTTS, ref),
-		ListPersonas:        servePersonaList(cfg),
-		Bind:                addr,
-		ExtraBinds:          extraBinds,
-		AllowPublic:         serveAllowPublic,
-		Credentials:         creds,
-		Bus:                 bus,
-		Dispatcher:          dispatcher,
-		Audio:               fanout,
-		Ingress:             ingress,
-		VoiceSilenceTimeout: turnClocks.StartTimeout,
-		VoiceTurnMax:        turnClocks.StartTimeout + turnClocks.MaxUtterance,
-		Meetings:            meetings,
-		RouteMeeting:        newServeMeetingRouter(cfg),
-		ListSessions:        listSessionSummaries,
-		DeleteSession:       serveDeleteSession(ref),
-		WorkDir:             cfg.WorkDir,
-		WorkDirSource:       string(serveWorkDirInfo.Source),
-		LoopbackHTTP:        serveOpen,
-		Campaign:            bannerCampaign(cfg.WorkDir),
+		SetPersonaContext: switcher.applyContext,
+		ListPersonas: func() ([]netapi.PersonaSummary, error) {
+			if switcher.selector != nil {
+				return servePersonaList(switcher.selector.Config())()
+			}
+			return servePersonaList(cfg)()
+		},
+		Bind:                   addr,
+		ExtraBinds:             extraBinds,
+		AllowPublic:            serveAllowPublic,
+		Credentials:            creds,
+		Bus:                    bus,
+		Dispatcher:             dispatcher,
+		CurrentSessionSnapshot: currentSessionSnapshot,
+		Audio:                  fanout,
+		Ingress:                ingress,
+		VoiceSilenceTimeout:    turnClocks.StartTimeout,
+		VoiceTurnMax:           turnClocks.StartTimeout + turnClocks.MaxUtterance,
+		Meetings:               meetings,
+		RouteMeeting:           newServeMeetingRouter(cfg),
+		ListSessions:           listSessionSummaries,
+		DeleteSession:          serveDeleteSession(ref),
+		WorkDir:                cfg.WorkDir,
+		WorkDirSource:          string(serveWorkDirInfo.Source),
+		LoopbackHTTP:           serveOpen,
+		Campaign:               bannerCampaign(cfg.WorkDir),
 		Providers: netapi.Providers{
 			Brain: cfg.BrainProvider,
 			STT:   sttName,
@@ -430,7 +454,7 @@ func runServe(cfg *config.Config) error {
 			// tells clients where it listens instead of leaving them to parse url.
 			allBinds := append([]string{listenAddr}, extras...)
 			if serveBannerJSON {
-				emitServeBannerJSON(listenAddr, allBinds, creds)
+				emitServeBannerJSON(listenAddr, allBinds, creds, netapi.CapabilitiesForSnapshot(currentSessionSnapshot != nil))
 			} else {
 				printServeBanner(listenAddr, creds, cfg)
 				if len(extras) > 0 {
@@ -476,17 +500,15 @@ func runServe(cfg *config.Config) error {
 // no double Close between serve and buildPipeline.
 // servePersonaList backs GET /v1/personas.
 //
-// It closes over the same *config.Config that servePersonaSwitcher.apply
-// overwrites, so `active` reports the persona a runtime set_persona selected
-// even though nothing was persisted — a client that saw config.yaml's answer
-// would show the wrong persona for the rest of the session.
+// The caller supplies the current selected binding snapshot so active reflects
+// session selection without consulting the configured default.
 //
 // Each row's stack is resolved through persona.ResolveBinding, the same call
 // that binds a conversation, so the list reports what a turn would actually
 // run with rather than a profile's inherit-me blanks.
 func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error) {
 	return func() ([]netapi.PersonaSummary, error) {
-		profiles, err := persona.List()
+		profiles, issues, err := persona.ListWithIssues()
 		if err != nil {
 			return nil, err
 		}
@@ -514,17 +536,24 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 				},
 			})
 		}
+		if len(issues) > 0 {
+			warnings := &netapi.PersonaListIssues{}
+			for _, issue := range issues {
+				warnings.Issues = append(warnings.Issues, netapi.PersonaListIssue{
+					ID: issue.ID, Message: "Repair persona.yaml: " + issue.Err.Error(),
+				})
+			}
+			return out, warnings
+		}
 		return out, nil
 	}
 }
 
-// serveSetPersona backs the set_persona control message.
-//
-// It validates and resolves the persona, then constructs the complete runtime
-// the next turn will use. It deliberately does not persist: a remote client
-// switching persona for a session should not rewrite the host's config.yaml,
-// the same rule --persona follows locally.
+// servePersonaSwitcher binds the shared selection operation to serve's
+// serialized dispatcher. Selection persists in the normal session file.
 type servePersonaSwitcher struct {
+	base     *config.Config
+	selector *personaruntime.Selector
 	cfg      *config.Config
 	pipeline *pipeline.Pipeline
 	tts      *voiceagent.LiveTTSManager
@@ -554,94 +583,148 @@ func serveDeleteSession(ref *sessionRef) func(id string) error {
 	}
 }
 
-func serveSetPersona(cfg *config.Config, p *pipeline.Pipeline, liveTTS *voiceagent.LiveTTSManager, ref *sessionRef) func(string) (netapi.PersonaAck, error) {
-	switcher := &servePersonaSwitcher{
-		cfg: cfg, pipeline: p, tts: liveTTS, sessions: ref,
-		newBrain: brain.NewProvider,
-		newTTS:   voiceagent.NewTTSSet,
+// initialize binds the shared operation to the existing session and work owner.
+func (s *servePersonaSwitcher) initialize() error {
+	if s.selector != nil {
+		return nil
 	}
-	return switcher.apply
+	base := s.base
+	if base == nil {
+		snap := *s.cfg
+		base = &snap
+	}
+	binding, err := persona.ResolveBinding(s.cfg, persona.ActiveID(s.cfg))
+	if err != nil {
+		return err
+	}
+	opts := personaruntime.SelectionOptions{Base: base, Pipeline: s.pipeline, Voices: s.tts,
+		SessionID: s.sessions.id(), Initial: binding,
+		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
+			s.sessions.mu.Lock()
+			defer s.sessions.mu.Unlock()
+			return session.DefaultStore().SaveSelection(s.sessions.sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+		},
+	}
+	if s.newBrain != nil {
+		opts.NewBrain = func(_ context.Context, cfg *config.Config) (brain.Provider, error) { return s.newBrain(cfg) }
+	}
+	if s.newTTS != nil {
+		opts.NewVoice = func(_ context.Context, cfg *config.Config) (*voiceagent.TTSSet, error) { return s.newTTS(cfg) }
+	}
+	s.selector, err = personaruntime.NewSelector(opts)
+	if err != nil {
+		return err
+	}
+	s.pipeline.AdmitInput = s.selector.Route
+	return nil
 }
 
-// apply replaces the complete persona-bound runtime. The dispatcher invokes
-// it only after the current turn has finished, so the acknowledged next turn
-// uses the new brain prompt/model and TTS voice as one atomic transition.
 func (s *servePersonaSwitcher) apply(id string) (netapi.PersonaAck, error) {
-	binding, err := persona.ResolveBinding(s.cfg, id)
+	return s.applyContext(context.Background(), id)
+}
+
+func (s *servePersonaSwitcher) applyContext(ctx context.Context, id string) (netapi.PersonaAck, error) {
+	if err := s.initialize(); err != nil {
+		return netapi.PersonaAck{}, err
+	}
+	selected, err := s.selector.Select(ctx, id, "ui")
 	if err != nil {
 		return netapi.PersonaAck{}, err
 	}
-	// The ack carries the hash of the identity text the next turn will see, so
-	// a client that just edited a prompt can tell whether the model picked it
-	// up. An unresolvable document leaves it empty rather than failing a switch
-	// whose brain and voice did install — the ack's other fields are still true.
-	promptHash, hashErr := persona.PromptHashFor(binding.PromptRef)
-	if hashErr != nil {
-		promptHash = ""
-	}
-	nextCfg := binding.Config()
-	nextBrain, err := s.newBrain(nextCfg)
-	if err != nil {
-		return netapi.PersonaAck{}, fmt.Errorf("init persona brain: %w", err)
-	}
-	installed := false
-	defer func() {
-		if !installed {
-			if closeErr := brain.CloseProvider(nextBrain); closeErr != nil {
-				fmt.Fprintf(os.Stderr, "obey-voice: unused persona brain cleanup: %v\n", closeErr)
-			}
-		}
-	}()
-	nextTTS, err := s.newTTS(nextCfg)
-	if err != nil {
-		return netapi.PersonaAck{}, fmt.Errorf("init persona TTS: %w", err)
-	}
+	return netapi.PersonaAck{ID: selected.PersonaID, DisplayName: selected.DisplayName, PromptHash: selected.PromptHash}, nil
+}
 
-	// Save the completed old conversation before starting a fresh identity.
-	// A persona is session-bound; carrying its history into the new brain would
-	// make the switch work technically while violating that contract.
-	if err := s.sessions.save(s.pipeline.Brain.History()); err != nil {
-		nextTTS.Close()
-		return netapi.PersonaAck{}, fmt.Errorf("save previous persona session: %w", err)
+// clear starts a new conversation epoch while retaining the selected
+// responder. Selector publication must follow the work epoch transition so a
+// subsequent session snapshot cannot combine the old selection with new work.
+func (s *servePersonaSwitcher) clear(ctx context.Context) error {
+	if err := s.pipeline.ClearConversation(); err != nil {
+		return err
 	}
-	previousID := s.sessions.id()
-	if err := s.sessions.closeWork(s.pipeline); err != nil {
-		nextTTS.Close()
-		return netapi.PersonaAck{}, fmt.Errorf("close previous persona work: %w", err)
+	if s.selector == nil {
+		return nil
 	}
-	oldBrain := s.pipeline.Brain
-	s.pipeline.Brain = nextBrain
-	// Prepare the new durable conversation before publishing the new voice.
-	// A failed checkpoint restores the prior selection with its outcomes held.
-	rollback := func(cause error) error {
-		closeErr := s.sessions.closeWork(s.pipeline)
-		s.pipeline.Brain = oldBrain
-		previous, restoreErr := session.Load(previousID)
-		if restoreErr == nil {
-			restoreErr = s.sessions.bindWork(s.pipeline, s.cfg, previous)
-		}
-		return errors.Join(cause, closeErr, restoreErr)
-	}
-	if err := s.sessions.bindWork(s.pipeline, nextCfg, session.New(nextCfg.BrainProvider, serveModelName(nextCfg))); err != nil {
-		nextTTS.Close()
-		return netapi.PersonaAck{}, rollback(fmt.Errorf("prepare new persona session: %w", err))
-	}
-	if !s.tts.ReplaceAndClose(s.pipeline, nextTTS) {
-		nextTTS.Close()
-		return netapi.PersonaAck{}, rollback(errors.New("serve runtime is shutting down"))
-	}
+	selected := s.selector.Snapshot()
+	s.selector.RestoreSession(s.sessions.id(), selected.PersonaID, selected.DisplayName, selected.PromptHash)
+	_, err := s.selector.Select(ctx, selected.PersonaID, "clear")
+	return err
+}
 
-	installed = true
-	s.pipeline.RetireBrain(oldBrain)
-	*s.cfg = *nextCfg
-	if warmer, ok := nextBrain.(brain.Warmer); ok {
-		go warmer.Warmup(context.Background())
+// snapshotProvider advertises replay only when all snapshot authorities exist.
+// Conversation identity is host-owned in ordinary sessions and coordinator-
+// owned when optional work is enabled; neither mode needs a worker to replay
+// canonical history.
+func (s *servePersonaSwitcher) snapshotProvider() netapi.SnapshotProvider {
+	if s.selector == nil || !s.pipeline.ConversationScope().Valid() || s.pipeline.ConversationRetired() {
+		return nil
 	}
-	return netapi.PersonaAck{
-		ID:          binding.PersonaID,
-		DisplayName: binding.DisplayName,
-		PromptHash:  promptHash,
+	if _, ok := s.pipeline.Brain.(brain.CanonicalHistoryProvider); !ok {
+		return nil
+	}
+	return s.snapshot
+}
+
+// snapshot is called by netapi only at a dispatcher boundary. Canonical
+// history is the source for reconnect identity; provider projection History is
+// deliberately not used here.
+func (s *servePersonaSwitcher) snapshot(ctx context.Context) (netapi.SessionSnapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return netapi.SessionSnapshot{}, err
+	}
+	if s.selector == nil {
+		return netapi.SessionSnapshot{}, errors.New("shared-persona session snapshot is unavailable")
+	}
+	canonical, ok := s.pipeline.Brain.(brain.CanonicalHistoryProvider)
+	if !ok {
+		return netapi.SessionSnapshot{}, errors.New("canonical conversation history is unavailable")
+	}
+	selected := s.selector.Snapshot()
+	s.sessions.mu.Lock()
+	if s.sessions.sess == nil {
+		s.sessions.mu.Unlock()
+		return netapi.SessionSnapshot{}, errors.New("active session is unavailable")
+	}
+	sessionID := s.sessions.sess.ID
+	s.sessions.mu.Unlock()
+	scope := s.pipeline.ConversationScope()
+	if sessionID == "" || scope.SessionID != sessionID || selected.SessionID != sessionID {
+		return netapi.SessionSnapshot{}, errors.New("session snapshot has mismatched session identity")
+	}
+	if scope.ConversationEpoch == "" || selected.ConversationEpoch != scope.ConversationEpoch {
+		return netapi.SessionSnapshot{}, errors.New("session snapshot has mismatched conversation epoch")
+	}
+	return netapi.SessionSnapshot{
+		SessionID:         sessionID,
+		ConversationEpoch: scope.ConversationEpoch,
+		Selection:         selected,
+		Transcript:        canonical.CanonicalHistory(),
 	}, nil
+}
+
+// resume is a conversation transition, separate from responder selection.
+// A missing saved profile does not hide the restored transcript: responses
+// remain disabled until the client explicitly selects a valid persona.
+func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
+	cfg := s.cfg
+	if s.selector != nil {
+		cfg = s.selector.Config()
+	}
+	if err := s.sessions.resume(s.pipeline, cfg, id); err != nil {
+		return err
+	}
+	s.sessions.mu.Lock()
+	restored := *s.sessions.sess
+	s.sessions.mu.Unlock()
+	wireCompact(s.pipeline, cfg, s.sessions.sess, s.pipeline.Events)
+	if s.selector == nil {
+		return nil
+	}
+	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash)
+	_, err := s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
+	if err != nil && s.pipeline.Events != nil {
+		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})
+	}
+	return nil
 }
 
 // buildServePipeline builds serve's pipeline through voiceagent.Options.

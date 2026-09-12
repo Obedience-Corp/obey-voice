@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -273,4 +274,102 @@ func playPCM(ctx context.Context, p *recordingPlayer, rate int, samples []float3
 		return res.Err
 	}
 	return nil
+}
+
+func TestRecordingSinkDoesNotClaimSpeakerReceipt(t *testing.T) {
+	if got := newRecordingPlayer(nil).SinkKind(); got != audio.SinkNone {
+		t.Fatalf("recording sink = %s", got)
+	}
+	if got := newRecordingPlayer(&countingEngine{}).SinkKind(); got != audio.SinkLocalSpeaker {
+		t.Fatalf("speaker sink = %s", got)
+	}
+}
+
+type bufferedStartEngine struct {
+	countingEngine
+	fail bool
+}
+
+func (e *bufferedStartEngine) PlayStream(ctx context.Context, stream *audio.PCMStream) (*audio.Playback, error) {
+	if e.fail {
+		return nil, errors.New("speaker unavailable")
+	}
+	select {
+	case <-stream.Frames(): // A real player may need input before returning.
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	started, done := make(chan struct{}), make(chan audio.PlaybackResult, 1)
+	close(started)
+	go func() {
+		for range stream.Frames() {
+		}
+		done <- audio.PlaybackResult{AudioSeconds: 0.02, Underruns: 2}
+		close(done)
+	}()
+	return audio.NewPlayback(started, done), nil
+}
+
+func TestSpeakerTeeFeedsBeforeWaitingForStartAndPreservesResult(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	p := newRecordingPlayer(&bufferedStartEngine{})
+	stream := audio.NewPCMStream(ctx)
+	_ = stream.SetSampleRate(24000)
+	pb, err := p.PlayStream(ctx, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.Write(make([]float32, 480))
+	stream.Close()
+	select {
+	case result := <-pb.Done():
+		if result.Err != nil || result.AudioSeconds != .02 || result.Underruns != 2 {
+			t.Fatalf("speaker result lost: %+v", result)
+		}
+	case <-ctx.Done():
+		t.Fatal("tee waited for player before feeding PCM")
+	}
+}
+
+func TestSpeakerTeeFailureDoesNotBecomeSuccessfulRecording(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	p := newRecordingPlayer(&bufferedStartEngine{fail: true})
+	if err := playPCM(ctx, p, 24000, make([]float32, 480)); err == nil || !strings.Contains(err.Error(), "speaker unavailable") {
+		t.Fatalf("speaker failure = %v", err)
+	}
+}
+
+func TestLateInterruptedPCMDoesNotEnterNextRecording(t *testing.T) {
+	p := newRecordingPlayer(nil)
+	if err := p.BeginTurn(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	old := audio.NewPCMStream(context.Background())
+	_ = old.SetSampleRate(24000)
+	pb, err := p.PlayStream(context.Background(), old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-pb.Started()
+	p.Stop()
+	if err := p.BeginTurn(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	_ = old.Write([]float32{.9, .9, .9}) // Delayed producer ignores cancellation.
+	old.Close()
+	select {
+	case <-pb.Done():
+	case <-time.After(time.Second):
+		t.Fatal("old PCM did not drain")
+	}
+	if err := playPCM(context.Background(), p, 24000, []float32{.1, .2}); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.samples) != 2 || p.samples[0] != .1 || p.samples[1] != .2 {
+		t.Fatalf("old PCM crossed recording boundary: %v", p.samples)
+	}
 }

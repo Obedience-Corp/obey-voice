@@ -9,6 +9,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // recorder is the process-start event log. waitFor polls it; it never arms a
@@ -97,7 +98,7 @@ func (r *recorder) lastRouteSince(mark int) (pipeline.RouteDecision, bool) {
 
 func (r *recorder) hasEvent(name string) bool {
 	for _, te := range r.snapshot() {
-		if eventName(te.event) == name {
+		if eventMatchesName(te.event, name) {
 			return true
 		}
 	}
@@ -125,13 +126,76 @@ func eventName(e events.Event) string {
 	}
 }
 
+// eventMatchesName preserves the legacy event names while interpreting the
+// coordinator's canonical WorkStateChanged snapshots. Experimental work
+// deliberately suppresses JobStarted/JobFinished; the snapshot is the one
+// authoritative lifecycle signal in that mode.
+func eventMatchesName(e events.Event, name string) bool {
+	if eventName(e) == name {
+		return true
+	}
+	changed, ok := e.(events.WorkStateChanged)
+	if !ok {
+		return false
+	}
+	for _, job := range changed.Snapshot.Jobs {
+		if canonicalJobMatches(job, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalJobMatches(job work.JobView, name string) bool {
+	switch name {
+	case "job_queued":
+		return job.State == work.JobQueued
+	case "job_started":
+		return job.State == work.JobRunning
+	case "job_terminal":
+		return job.State == work.JobTerminal
+	case "job_finished":
+		return job.State == work.JobTerminal && canonicalOutcomeKind(job.Outcome) == "finished"
+	case "job_failed":
+		return job.State == work.JobTerminal && canonicalOutcomeKind(job.Outcome) == "failed"
+	case "job_aborted":
+		return job.State == work.JobTerminal && canonicalOutcomeKind(job.Outcome) == "aborted"
+	default:
+		return false
+	}
+}
+
+func canonicalOutcomeKind(outcome *work.Outcome) string {
+	if outcome == nil {
+		return ""
+	}
+	switch outcome.Status {
+	case work.OutcomeSucceeded, work.OutcomePartial:
+		return "finished"
+	case work.OutcomeFailed, work.OutcomeTimedOut:
+		return "failed"
+	case work.OutcomeCancelled, work.OutcomeInterrupted:
+		return "aborted"
+	default:
+		return ""
+	}
+}
+
 func jobTerminal(e events.Event) bool {
 	switch e.(type) {
 	case events.JobFinished, events.JobFailed, events.JobAborted:
 		return true
-	default:
+	}
+	changed, ok := e.(events.WorkStateChanged)
+	if !ok {
 		return false
 	}
+	for _, job := range changed.Snapshot.Jobs {
+		if job.State == work.JobTerminal {
+			return true
+		}
+	}
+	return false
 }
 
 // waitFor polls the existing log until the predicate is true or ctx dies.

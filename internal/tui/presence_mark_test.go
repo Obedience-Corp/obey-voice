@@ -95,7 +95,7 @@ func TestLauncherMarkIsStatic(t *testing.T) {
 // The recorder waits on the same kind of build as a conversation — models and
 // a microphone — and used to show one static status line while it did.
 func TestMeetingStartShowsTheWaitingScreen(t *testing.T) {
-	app := NewApp(&config.Config{})
+	app := newApp(&config.Config{}, nil, nil)
 	app.runCtx = t.Context()
 	app.progress = newEventBridge(16)
 	app.width, app.height = 90, 30
@@ -125,7 +125,7 @@ func TestMeetingStartShowsTheWaitingScreen(t *testing.T) {
 
 // Stages go to whichever screen is waiting.
 func TestMeetingBuildStagesReachTheRecorder(t *testing.T) {
-	app := NewApp(&config.Config{})
+	app := newApp(&config.Config{}, nil, nil)
 	app.runCtx = t.Context()
 	app.progress = newEventBridge(16)
 	app.width, app.height = 90, 30
@@ -151,7 +151,7 @@ func TestMeetingBuildStagesReachTheRecorder(t *testing.T) {
 
 // A build that fails returns to setup; the waiting screen must not survive it.
 func TestMeetingWaitingScreenClearsOnError(t *testing.T) {
-	app := NewApp(&config.Config{})
+	app := newApp(&config.Config{}, nil, nil)
 	app.runCtx = t.Context()
 	app.progress = newEventBridge(16)
 	model, _ := app.Update(startMeetingMsg{Description: "Standup"})
@@ -220,7 +220,7 @@ var errFakeBuild = errors.New("no microphone")
 // recorder owns ctrl+c as "stop recording", but there is nothing to stop while
 // it is still being built.
 func TestCtrlCQuitsWhileTheRecorderIsStarting(t *testing.T) {
-	app := NewApp(&config.Config{})
+	app := newApp(&config.Config{}, nil, nil)
 	app.runCtx = t.Context()
 	app.progress = newEventBridge(16)
 	model, _ := app.Update(startMeetingMsg{Description: "Standup"})
@@ -233,7 +233,7 @@ func TestCtrlCQuitsWhileTheRecorderIsStarting(t *testing.T) {
 	}
 
 	// Once recording, ctrl+c goes back to meaning "stop", not "quit".
-	running := NewApp(&config.Config{})
+	running := newApp(&config.Config{}, nil, nil)
 	running.runCtx = t.Context()
 	running.progress = newEventBridge(16)
 	running.screen = screenMeeting

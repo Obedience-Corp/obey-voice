@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -178,10 +179,8 @@ func (o *ordinaryCompletion) commitFallback(response string) error {
 	if !o.fallbackSent.Load() || strings.TrimSpace(response) == "" {
 		return fmt.Errorf("ordinary completion: no update was rendered")
 	}
-	if a, ok := o.provider.(brain.HistoryAppender); ok {
-		return a.AppendAssistantResponse(o.fallback)
-	}
-	return fmt.Errorf("ordinary completion: provider cannot append canonical update")
+	metrics := &turnMetrics{response: events.ResponseFromContext(o.ctx)}
+	return appendResponse(o.provider, o.fallback, metrics.responseIdentity())
 }
 
 func (p *Pipeline) finishOrdinaryCompletion(metrics *turnMetrics, response string, interrupted bool) {

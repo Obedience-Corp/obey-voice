@@ -105,6 +105,13 @@
           "description": "Optional catalog name of the kind=turn per-reply instruction. Empty uses the shared embedded default. Not the conversation turn counter; not a TTS voice id."
         }
       }
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Additional names that select this persona in a conversation."
     }
   }
 }

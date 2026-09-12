@@ -423,7 +423,7 @@ func stripANSI(s string) string {
 }
 
 func TestOpenSettingsSectionLandsOnMeeting(t *testing.T) {
-	app := NewApp(&config.Config{})
+	app := newApp(&config.Config{}, nil, nil)
 	model, _ := app.Update(openSettingsSectionMsg{section: sectionMeeting})
 	got := model.(App)
 	if got.screen != screenSettings {

@@ -191,9 +191,11 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// Cleaning, the speakability predicate and this turn's repeat
 		// suppression, all of which the bench harness replays through the
 		// same code (SpeechProjection).
-		speakable, ok := proj.admit(voiceText)
-		if !ok {
-			if metrics.delivery != nil && strings.TrimSpace(text) != "" {
+		speakable, admission := proj.admit(voiceText)
+		if admission != speechAdmitted {
+			// Duplicate prose is already represented by an earlier queued
+			// segment. Its actual playback receipt still governs delivery.
+			if metrics.delivery != nil && admission != speechAlreadyAdmitted && strings.TrimSpace(text) != "" {
 				metrics.delivery.skipped = true
 			}
 			return
@@ -300,8 +302,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				p.Player.Stop()
 			}
 			sincePlayback := metrics.sincePlaybackStart(req.At)
-			p.emit(events.SpeakingInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
-			p.emit(events.TurnInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
+			p.emitResponse(metrics, events.SpeakingInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
+			p.emitResponse(metrics, events.TurnInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
 
 		case result, ok := <-modelDone:
 			if !ok {
@@ -311,7 +313,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			modelDone = nil
 			modelFinished = true
 			metrics.modelComplete = time.Now()
-			p.emit(events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
+			p.emitResponse(metrics, events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
 			if repair != nil && result.Route != "" {
 				repair.applyBrainRoute(result.Route)
 				if _, _, ok := repair.routedKind(); ok && p.Player != nil {
@@ -390,7 +392,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 
 	if !modelFinished {
 		metrics.modelComplete = time.Now()
-		p.emit(events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
+		p.emitResponse(metrics, events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
 	}
 
 	if !interrupted {
@@ -439,7 +441,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 			}
 			if metrics.firstToken.IsZero() {
 				metrics.firstToken = now
-				p.emit(events.ResponseStreamingStarted{Elapsed: metrics.elapsedFromEOU(now)})
+				p.emitResponse(metrics, events.ResponseStreamingStarted{Elapsed: metrics.elapsedFromEOU(now)})
 			}
 		}
 		for chunks != nil || thinking != nil {
@@ -460,7 +462,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 				if metrics.firstThink.IsZero() {
 					metrics.firstThink = now
 				}
-				p.emit(events.ThinkingDelta{Text: t})
+				p.emitResponse(metrics, events.ThinkingDelta{Text: t})
 			case c, ok := <-chunks:
 				if !ok {
 					chunks = nil
@@ -475,10 +477,10 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 				if metrics.firstSpeakable.IsZero() && strings.TrimSpace(c) != "" {
 					metrics.firstSpeakable = now
 					if !metrics.firstSpeakable.Equal(metrics.firstToken) {
-						p.emit(events.ResponseSpeakableStarted{Elapsed: metrics.elapsedFromEOU(now)})
+						p.emitResponse(metrics, events.ResponseSpeakableStarted{Elapsed: metrics.elapsedFromEOU(now)})
 					}
 				}
-				p.emit(events.ResponseDelta{Text: c})
+				p.emitResponse(metrics, events.ResponseDelta{Text: c})
 				select {
 				case <-ctx.Done():
 					return

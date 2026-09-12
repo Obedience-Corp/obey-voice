@@ -58,7 +58,9 @@ func TestFailedPromiseRepairRoutesSpawnWithoutTTS(t *testing.T) {
 		}
 	}
 
-	p.completeRoutedTurn(ctx, turn, metrics, "filter design work items", RouteSpawn, "repair")
+	if err := p.completeRoutedTurn(ctx, turn, metrics, "filter design work items", RouteSpawn, "repair"); err != nil {
+		t.Fatal(err)
+	}
 	routedMu.Lock()
 	defer routedMu.Unlock()
 	if routed.Kind != RouteSpawn || routed.Source != "repair" {
@@ -84,7 +86,9 @@ func TestLayer1SpawnSkipsThinkStream(t *testing.T) {
 	if !ok || !routeKindSkipsBrain(kind) {
 		t.Fatal("expected narrate phrase match")
 	}
-	p.completeRoutedTurn(context.Background(), turn, metrics, "tell me a long story", kind, "phrase")
+	if err := p.completeRoutedTurn(context.Background(), turn, metrics, "tell me a long story", kind, "phrase"); err != nil {
+		t.Fatal(err)
+	}
 
 	if brainProvider.thinkCalls != 0 {
 		t.Fatalf("ThinkStream called %d times, want 0", brainProvider.thinkCalls)
@@ -130,7 +134,9 @@ func TestLiveRouterSpawnStopsTTSAndRoutes(t *testing.T) {
 		t.Fatalf("routedKind = %q %q %v, want spawn/router", kind, source, ok)
 	}
 
-	p.completeRoutedTurn(ctx, turn, metrics, "search the web for that", kind, source)
+	if err := p.completeRoutedTurn(ctx, turn, metrics, "search the web for that", kind, source); err != nil {
+		t.Fatal(err)
+	}
 	routedMu.Lock()
 	defer routedMu.Unlock()
 	if routed.Kind != RouteSpawn || routed.Source != "router" {

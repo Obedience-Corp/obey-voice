@@ -9,11 +9,8 @@ import (
 
 // SessionBinding is the identity snapshot a conversation session runs with:
 // persona id, display/agent name, system prompt reference, and voice. It is
-// resolved once at conversation start and never tracks later edits to persona
-// profiles on disk or to the live global config — switching or editing
-// persona B must not change the identity of an in-flight session bound to
-// persona A. Restarting a conversation picks up disk changes by resolving a
-// fresh binding.
+// resolved at a response boundary. Later profile edits or global preferences
+// cannot mutate an admitted response; the next boundary resolves a fresh copy.
 type SessionBinding struct {
 	PersonaID   string
 	DisplayName string
@@ -113,6 +110,5 @@ func newBinding(id, display string, tts TTS, snap config.Config) *SessionBinding
 // Config returns a fresh copy of the binding-derived config, so no caller can
 // mutate the snapshot the session was bound to.
 func (b *SessionBinding) Config() *config.Config {
-	c := b.cfg
-	return &c
+	return b.cfg.Clone()
 }

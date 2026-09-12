@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/app"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	personaruntime "github.com/Obedience-Corp/obey-voice/internal/persona/runtime"
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/internal/transcript"
 	appTUI "github.com/Obedience-Corp/obey-voice/internal/tui"
@@ -181,10 +182,7 @@ func modelName(cfg *config.Config) string {
 // reads Settings without the active-persona overlay so the models and
 // providers from Settings actually take effect.
 func loadConfigForSession(personaID string) (*config.Config, error) {
-	if personaID == appTUI.StartDefaultsID {
-		return config.LoadRaw()
-	}
-	return config.Load()
+	return config.LoadRaw()
 }
 
 // bindSession resolves the conversation identity for a start. StartDefaultsID
@@ -209,6 +207,16 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		// must load their selected session, or start fresh for New conversation.
 		sess := resumeSession
 		resumeSession = nil
+		if sessionID != "" && (sess == nil || sess.ID != sessionID) {
+			var err error
+			sess, err = session.Load(sessionID)
+			if err != nil {
+				return nil, fmt.Errorf("load session: %w", err)
+			}
+		}
+		if sess != nil && sess.SelectedPersonaID != "" && personaID == "" {
+			personaID = sess.SelectedPersonaID
+		}
 		// Reload config in case settings changed inside the TUI.
 		progress.Stage("Reading settings")
 		cfg, err := loadConfigForSession(personaID)
@@ -216,22 +224,27 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			return nil, fmt.Errorf("reload config: %w", err)
 		}
 		stampWorkDir(cfg)
+		baseCfg := *cfg
 
-		// Bind the session's identity now: the runtime is built from this
-		// snapshot, so later persona switches/edits (Settings, Personas, other
-		// sessions) cannot mutate this conversation's prompt, name, or voice.
-		//
-		// The *document body* behind that identity is re-read each turn, so an
-		// edit to the bound persona lands on the next reply (R-P2). Those are
-		// two different axes and only the first is pinned: switching to another
-		// persona mid-session still cannot retarget this conversation. See
-		// internal/brain/reresolve.go.
+		// Resolve the initial responder before constructing capture/model work.
+		// Shared selection refreshes this immutable binding at response boundaries.
 		sessionBindID := personaID
 		binding, err := bindSession(cfg, personaID)
 		if err != nil {
-			return nil, fmt.Errorf("resolve persona: %w", err)
+			failedSessionID := sessionID
+			if sess != nil {
+				failedSessionID = sess.ID
+			}
+			return nil, &appTUI.PersonaBindingError{Err: fmt.Errorf("resolve persona: %w", err), SessionID: failedSessionID}
 		}
 		cfg = binding.Config()
+		if _, err := brain.PersonaPromptHash(cfg); err != nil {
+			failedSessionID := sessionID
+			if sess != nil {
+				failedSessionID = sess.ID
+			}
+			return nil, &appTUI.PersonaBindingError{Err: err, SessionID: failedSessionID}
+		}
 
 		spCfg := speaker.FromAppConfig(cfg)
 		req := config.AssetRequest{
@@ -260,16 +273,6 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			return nil, fmt.Errorf("init pipeline: %w", err)
 		}
 
-		if sessionID != "" && (sess == nil || sess.ID != sessionID) {
-			progress.Stage("Loading the session")
-			sess, err = session.Load(sessionID)
-			if err != nil {
-				liveTTS.Close()
-				cleanup()
-				closeTap()
-				return nil, fmt.Errorf("load session: %w", err)
-			}
-		}
 		resumed := sess != nil
 		if sess == nil {
 			sess = session.New(cfg.BrainProvider, modelName(cfg))
@@ -339,6 +342,39 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			}
 		}
 
+		var selector *personaruntime.Selector
+		if _, supported := p.Brain.(brain.HistoryProjectionProvider); supported {
+			var voices *voiceagent.LiveTTSManager
+			if !noVoice {
+				voices = liveTTS
+			}
+			selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
+				Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
+				UseDefaults: sessionBindID == appTUI.StartDefaultsID,
+				Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
+					return session.DefaultStore().SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+				},
+				NewBrain: func(_ context.Context, next *config.Config) (brain.Provider, error) {
+					provider, err := brain.NewProvider(next)
+					if err == nil {
+						brain.AttachSpeakerNames(provider, speakerNames)
+					}
+					return provider, err
+				},
+			})
+			if err != nil {
+				_ = closeWorkSession(p, checkpoint)
+				if stopLive != nil {
+					stopLive()
+				}
+				liveTTS.Close()
+				cleanup()
+				closeTap()
+				return nil, err
+			}
+			p.AdmitInput = selector.Route
+		}
+
 		p.OnTurn = func() {
 			checkpoint.retry()
 			if err := sess.Save(p.Brain.History()); err != nil {
@@ -375,15 +411,27 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				if noVoice {
 					return nil
 				}
-				reloaded, err := loadConfigForSession(sessionBindID)
+				reloadID := sessionBindID
+				if selector != nil {
+					reloadID = selector.Snapshot().PersonaID
+				}
+				reloaded, err := loadConfigForSession(reloadID)
 				if err != nil {
 					return fmt.Errorf("reload config: %w", err)
+				}
+				if selector != nil {
+					stampWorkDir(reloaded)
+					if err := selector.Reload(reloadCtx, reloaded); err != nil {
+						return err
+					}
+					rt.SessionCfg = selector.Config()
+					return nil
 				}
 				// Re-apply the session persona on top of the reloaded app config
 				// so device/settings changes take effect without replacing the
 				// bound voice identity. Defaults sessions re-bind Settings, not
 				// the default persona's saved TTS.
-				rebound, err := bindSession(reloaded, sessionBindID)
+				rebound, err := bindSession(reloaded, reloadID)
 				if err != nil {
 					return fmt.Errorf("resolve session persona: %w", err)
 				}
@@ -415,6 +463,9 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				return nil
 			},
 			Cleanup: func() {
+				if selector != nil {
+					selector.Close()
+				}
 				if err := closeWorkSession(p, checkpoint); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: work cleanup: %v\n", err)
 				}
@@ -429,6 +480,14 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				cleanup()
 				closeTap()
 			},
+		}
+		if selector != nil {
+			rt.SelectPersona = func(ctx context.Context, id string) (events.PersonaSelection, *config.Config, error) {
+				selected, err := selector.Select(ctx, id, "ui")
+				return selected, selector.Config(), err
+			}
+			rt.SelectionSnapshot = selector.Snapshot
+			rt.SelectionConfig = selector.Config
 		}
 		if resumed {
 			rt.Seed = sess.Turns
