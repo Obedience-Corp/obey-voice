@@ -545,7 +545,9 @@ boundaries and mic ownership, separate from the PCM audio generation fence.
 
 The additive `shared_persona_session_snapshot` and `response_id_dedupe`
 capabilities are advertised together only when this canonical host path is
-available. A serve without that callback keeps the legacy stream ordering and
+available. The ordinary conversation lifecycle supplies its session/epoch even
+when `voice_work_enabled` is false; enabling background work is not a
+prerequisite. A serve without that callback keeps the legacy stream ordering and
 does not claim attributed shared-persona support. Clear and resume publish a
 fresh snapshot to connected clients so an old session/epoch cannot remain the
 visible current state. Snapshot admission uses the same serialized dispatcher
@@ -567,7 +569,7 @@ LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bea
 | `voice_start` | | Exclusive mic claim + start remote STT turn. Queued (and **not** claimed) while another turn is in flight — see Barge-in and the mic claim |
 | `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz, max 64 KiB decoded. Prefer a **binary WebSocket frame** of the same PCM (no header, 16 kHz implied) when `capabilities.binary_audio` is set. |
 | `voice_end` | | Finalize utterance; release mic claim. **Not optional** — a turn that goes quiet without one is ended by the server, see The turn deadline |
-| `set_persona` | `name`: persona id | Switch persona for **subsequent** turns (see below) |
+| `set_persona` | `name`: persona id; optional `request_id` | Switch persona for **subsequent** turns (see below) |
 
 ### Server → client
 
@@ -673,7 +675,7 @@ another device speaking.
 | `audio_end` | `segment_id`, `generation`, `response_id`, `response_envelope`, `reason` (`complete` / `interrupted` / …). Always JSON. |
 | `audio_reset` | Clear client playback after interrupt. Always JSON. |
 | `audio_output_ack` | `mode` applied; `binary: true` when binary TTS is on; `protocol: "ova2"` when OVA2 was negotiated |
-| `set_persona_ack` | `id`, `display_name`, `prompt_hash`, `applies_to` |
+| `set_persona_ack` | `id`, `display_name`, `prompt_hash`, `applies_to`; optional echoed `request_id` |
 
 OVA2 is a negotiated WebSocket binary message. Its first 28 bytes are `OVA2`
 (4 ASCII bytes), sample rate (u32 little-endian), segment ID (u64), generation
@@ -847,6 +849,29 @@ Ack:
  "prompt_hash": "a1b2c3d4e5f6", "applies_to": "next_turn"}
 ```
 
+Clients that need a confirmed result send a unique, nonempty `request_id`:
+
+```json
+{"type":"set_persona","name":"pirate","request_id":"switch-42"}
+```
+
+The requesting connection receives that ID on its `set_persona_ack`, or on
+an `error` if selection is refused:
+
+```json
+{"type":"error","stage":"netapi","message":"selection refused","request_id":"switch-42"}
+```
+
+Only a matching result completes that request. Generic turn errors and another
+request's result must not settle it. `persona_selected` remains the broadcast
+of current server selection; it is separate from a request's completion. Sending
+a frame alone does not confirm application. Disconnect, cancellation or a client
+timeout ends the local wait; a timeout means the result is unconfirmed because
+the server may still apply the queued operation. Reconcile current selection
+from server events or a reconnect snapshot. Frames without `request_id` keep
+the legacy acknowledgement/error shape; an older server cannot confirm a
+correlated request.
+
 `prompt_hash` is the first 12 hex characters of the sha256 of the **assembled
 prompt text** (placeholders unresolved) — the same digest
 `obey-voice persona show --json --with-prompt` reports. It changes whenever the
@@ -855,17 +880,17 @@ prompt the model now sees". It is not a document name and must not be compared
 to one. Empty means serve could not resolve the document.
 
 **`applies_to` is always `next_turn`, and that is a guarantee rather than a
-limitation.** A conversation binds its identity — persona, prompt, voice, brain
-routing — when it starts, and keeps it for its whole life. A switch therefore
-cannot retarget a turn already in flight, and the ack says so explicitly rather
-than leaving the client to assume otherwise.
+limitation.** Each admitted response snapshots its persona, prompt, voice and
+brain binding. A switch preserves the conversation and its history while changing
+the responder for later turns; it cannot retarget a reply already in flight.
 
 Editing the *document* behind the persona a session is already bound to does
 take effect on the next turn; that is a different axis from switching identity.
 
-The change is not persisted: a remote client selecting a persona does not
-rewrite the host's `config.yaml`. `obey-voice persona use` remains the persisting
-path.
+The selected responder is persisted with the conversation. A remote selection
+does not rewrite the host's default in `config.yaml`; `obey-voice persona use`
+remains the default-setting path. Historical labels come from each response
+envelope, independently of the most recent selection.
 
 An unknown name returns an error envelope naming the personas that do exist.
 Per-connection personas are out of scope — the pipeline is single-brained, so

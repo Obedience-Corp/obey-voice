@@ -31,9 +31,11 @@ import (
 // process-wide store/path helper: every input and every write is below the
 // root named by VS0001_SERVE_PROOF_ROOT.
 //
-// The test starts the real pipeline, selector, work checkpoint, dispatcher,
-// and TLS server, then waits for root/stop or SIGINT/SIGTERM. It does not
-// submit a turn, so an Ollama model run is outside this proof's scope.
+// The test starts the real pipeline, selector, optional work checkpoint,
+// dispatcher, and TLS server, then waits for root/stop or SIGINT/SIGTERM. It
+// does not submit a turn, so an Ollama model run is outside this proof's
+// scope. Both work-enabled and ordinary work-disabled fixture configs are
+// supported; the latter exercises the host-owned identity path.
 func TestVS0001IsolatedServeProof(t *testing.T) {
 	root := os.Getenv("VS0001_SERVE_PROOF_ROOT")
 	if root == "" {
@@ -65,9 +67,6 @@ func TestVS0001IsolatedServeProof(t *testing.T) {
 	}
 	cfg = binding.Config()
 	confineServeFixturePaths(t, root, cfg)
-	if !cfg.VoiceWorkEnabled {
-		t.Fatal("fixture config must set voice_work_enabled=true for the work checkpoint proof")
-	}
 
 	ctx, stopSignal := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignal()

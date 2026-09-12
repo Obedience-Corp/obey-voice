@@ -58,6 +58,14 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
+	// identityMu protects the host-owned conversation identity used when the
+	// optional work coordinator is disabled. Work-enabled conversations copy
+	// the coordinator scope here so selection and snapshots use one identity
+	// contract in both modes; this is not a second work ledger.
+	identityMu      sync.RWMutex
+	identityScope   work.WorkScope
+	identityRetired bool
+
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)

@@ -45,9 +45,17 @@ type checkpointRequest struct {
 }
 
 // Bind starts one coalescing persistence adapter for a conversation work
-// scope. A disabled config deliberately preserves the command's no-op path.
+// scope. A disabled config still establishes the host-owned conversation
+// identity, but deliberately does not construct a coordinator, worker, or
+// persistence queue.
 func Bind(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session, store *session.Store) (*Checkpoint, error) {
+	if p == nil || sess == nil {
+		return nil, errors.New("conversation identity requires pipeline and session")
+	}
 	if cfg == nil || !cfg.VoiceWorkEnabled {
+		if err := p.BeginConversationIdentity(sess.ID); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}
 	var prior *work.WorkScope

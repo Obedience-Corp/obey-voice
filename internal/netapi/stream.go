@@ -554,7 +554,7 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 				s.sendError(conn, err.Error())
 			}
 		case "set_persona":
-			s.handleSetPersona(ctx, conn, msg.Name)
+			s.handleSetPersona(ctx, conn, msg.Name, msg.RequestID)
 		default:
 			s.sendError(conn, "unknown control message type: "+msg.Type)
 		}
@@ -592,16 +592,20 @@ func (s *Server) sendAudioOutputAck(conn *streamConn, mode string, binary bool, 
 // handleSetPersona switches the persona used by subsequent turns.
 //
 // It deliberately does not touch the turn in flight. The dispatcher applies
-// the runtime swap after that turn, starts a fresh persona-bound session, and
-// only then returns the ack, so applies_to=next_turn is an enforceable contract.
-func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name string) {
+// the runtime swap after that turn and only then returns the ack, so
+// applies_to=next_turn is an enforceable contract.
+func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name, requestID string) {
+	correlationID := ""
+	if requestID != "" {
+		correlationID = requestID
+	}
 	if s.opts.SetPersona == nil && s.opts.SetPersonaContext == nil {
-		s.sendError(conn, "set_persona is not enabled on this server")
+		s.sendControlError(conn, correlationID, "set_persona is not enabled on this server")
 		return
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		s.sendError(conn, "set_persona requires a name")
+		s.sendControlError(conn, correlationID, "set_persona requires a name")
 		return
 	}
 	var ack PersonaAck
@@ -612,16 +616,20 @@ func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name st
 		ack, err = s.dispatcher.SetPersona(ctx, name, s.opts.SetPersona)
 	}
 	if err != nil {
-		s.sendError(conn, err.Error())
+		s.sendControlError(conn, correlationID, err.Error())
 		return
 	}
-	msg, err := json.Marshal(map[string]any{
+	ackEnvelope := map[string]any{
 		"type":         "set_persona_ack",
 		"id":           ack.ID,
 		"display_name": ack.DisplayName,
 		"prompt_hash":  ack.PromptHash,
 		"applies_to":   "next_turn",
-	})
+	}
+	if correlationID != "" {
+		ackEnvelope["request_id"] = correlationID
+	}
+	msg, err := json.Marshal(ackEnvelope)
 	if err != nil {
 		return
 	}
@@ -636,6 +644,30 @@ func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name st
 // the offending client sees it).
 func (s *Server) sendError(conn *streamConn, text string) {
 	s.sendEvent(conn, events.Error{Stage: "netapi", Message: text})
+}
+
+// sendControlError is the correlated form of a control failure. Generic bus
+// errors deliberately remain uncorrelated: a client must never settle a
+// pending selection from an unrelated turn or transport diagnostic.
+func (s *Server) sendControlError(conn *streamConn, requestID, text string) {
+	if requestID == "" {
+		s.sendError(conn, text)
+		return
+	}
+	msg, err := json.Marshal(map[string]any{
+		"type":       "error",
+		"stage":      "netapi",
+		"message":    text,
+		"request_id": requestID,
+	})
+	if err != nil {
+		return
+	}
+	select {
+	case conn.out <- msg:
+	default:
+		conn.evict("client too slow")
+	}
 }
 
 // sendEvent delivers one event to a single connection, for the things only

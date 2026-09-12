@@ -435,4 +435,11 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	if loaded.SelectedPersonaID != "santa" || len(loaded.Turns) < 4 || !foundSamanthaSeed || !foundSantaReply {
 		t.Fatalf("durable terminal session = %+v", loaded)
 	}
+	// handleTextDone resumes listening by returning a command that increments
+	// the shared wait group before Bubble Tea executes it. Wait for that final
+	// command to enter the runner so cleanup cannot observe a queued command
+	// whose wait-group slot has no goroutine to release it.
+	if got := awaitPauseProof(t, runner.voiceStarts, "post-turn listening"); got != 7 {
+		t.Fatalf("post-turn voice call = %d, want 7", got)
+	}
 }

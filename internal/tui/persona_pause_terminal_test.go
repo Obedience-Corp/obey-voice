@@ -468,4 +468,11 @@ func TestPersonaPauseResumeTerminalProof(t *testing.T) {
 	if voiceEnd < 0 || textStart < 0 || voiceEnd > textStart {
 		t.Fatalf("typed turn started before listening drained: %v", ordered)
 	}
+	// The completed text turn schedules the next listening command and adds
+	// its wait-group slot before Bubble Tea executes it. Observe that command
+	// entering the runner before cleanup can cancel and quit the program; this
+	// avoids a queued command leaving an unreleased wait-group slot.
+	if got := awaitPauseProof(t, runner.voiceStarts, "post-turn listening"); got != 4 {
+		t.Fatalf("post-turn voice call = %d, want 4", got)
+	}
 }

@@ -1677,7 +1677,7 @@ func TestSetPersonaDisabledReportsClearly(t *testing.T) {
 	s := &Server{}
 	conn := &streamConn{out: make(chan []byte, 4)}
 
-	s.handleSetPersona(context.Background(), conn, "pirate")
+	s.handleSetPersona(context.Background(), conn, "pirate", "")
 
 	select {
 	case raw := <-conn.out:
@@ -1698,7 +1698,7 @@ func TestSetPersonaRejectsEmptyName(t *testing.T) {
 	}}}
 	conn := &streamConn{out: make(chan []byte, 4)}
 
-	s.handleSetPersona(context.Background(), conn, "   ")
+	s.handleSetPersona(context.Background(), conn, "   ", "")
 
 	select {
 	case raw := <-conn.out:
@@ -1720,7 +1720,7 @@ func TestSetPersonaSurfacesResolverError(t *testing.T) {
 	}}}
 	conn := &streamConn{out: make(chan []byte, 4)}
 
-	s.handleSetPersona(context.Background(), conn, "ghost")
+	s.handleSetPersona(context.Background(), conn, "ghost", "")
 
 	select {
 	case raw := <-conn.out:
@@ -1743,7 +1743,7 @@ func TestSetPersonaAckSaysItAppliesToTheNextTurn(t *testing.T) {
 	}}}
 	conn := &streamConn{out: make(chan []byte, 4)}
 
-	s.handleSetPersona(context.Background(), conn, "pirate")
+	s.handleSetPersona(context.Background(), conn, "pirate", "")
 
 	select {
 	case raw := <-conn.out:
@@ -1762,6 +1762,56 @@ func TestSetPersonaAckSaysItAppliesToTheNextTurn(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected an ack envelope")
+	}
+}
+
+func TestSetPersonaCorrelationIsEchoedOnlyForTheRequestingControl(t *testing.T) {
+	d := NewDispatcher(&scriptedRunner{}, events.NewBus(), nil, nil)
+	go d.Run(t.Context())
+	s := &Server{dispatcher: d, opts: Options{SetPersona: func(id string) (PersonaAck, error) {
+		return PersonaAck{ID: id, DisplayName: "Pirate", PromptHash: "abc123"}, nil
+	}}}
+	conn := &streamConn{out: make(chan []byte, 4)}
+
+	s.handleSetPersona(context.Background(), conn, "pirate", "select-1")
+	var ack map[string]any
+	if err := json.Unmarshal(<-conn.out, &ack); err != nil {
+		t.Fatal(err)
+	}
+	if got := ack["request_id"]; got != "select-1" {
+		t.Fatalf("ack request_id = %v, want select-1", got)
+	}
+
+	failing := &Server{dispatcher: d, opts: Options{SetPersona: func(string) (PersonaAck, error) {
+		return PersonaAck{}, errors.New("unsupported provider")
+	}}}
+	failing.handleSetPersona(context.Background(), conn, "grok", "select-2")
+	var refusal map[string]any
+	if err := json.Unmarshal(<-conn.out, &refusal); err != nil {
+		t.Fatal(err)
+	}
+	if got := refusal["request_id"]; got != "select-2" {
+		t.Fatalf("refusal request_id = %v, want select-2", got)
+	}
+	if refusal["type"] != "error" || refusal["message"] != "unsupported provider" {
+		t.Fatalf("unexpected refusal envelope: %v", refusal)
+	}
+}
+
+func TestSetPersonaLegacyFramesRemainUncorrelated(t *testing.T) {
+	d := NewDispatcher(&scriptedRunner{}, events.NewBus(), nil, nil)
+	go d.Run(t.Context())
+	s := &Server{dispatcher: d, opts: Options{SetPersona: func(id string) (PersonaAck, error) {
+		return PersonaAck{ID: id}, nil
+	}}}
+	conn := &streamConn{out: make(chan []byte, 4)}
+	s.handleSetPersona(context.Background(), conn, "pirate", "")
+	var got map[string]any
+	if err := json.Unmarshal(<-conn.out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["request_id"]; ok {
+		t.Fatalf("legacy ack unexpectedly carried request_id: %v", got)
 	}
 }
 

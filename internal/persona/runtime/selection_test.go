@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -439,5 +440,40 @@ func TestSelectorCancellationClosesLateFactoryAndLaterSelectionSucceeds(t *testi
 	}
 	if _, err := f.selector.Select(context.Background(), "santa", "retry"); err != nil {
 		t.Fatalf("later selection failed: %v", err)
+	}
+}
+
+func TestSelectorRejectsPreparationAfterConversationEpochChanges(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("samantha", "Samantha", "samantha"), testProfile("santa", "Santa", "santa"))
+	defer f.close(t)
+	if err := f.pipeline.BeginConversationIdentity(f.session.ID); err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	f.selector.opts.NewBrain = func(_ context.Context, cfg *config.Config) (brain.Provider, error) {
+		close(started)
+		<-release
+		hash, err := brain.PersonaPromptHash(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return newSelectorTestBrain(hash, nil), nil
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, err := f.selector.Select(context.Background(), "santa", "ui")
+		result <- err
+	}()
+	<-started
+	if err := f.pipeline.BeginConversationIdentity(f.session.ID); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	err := <-result
+	if err == nil || !strings.Contains(err.Error(), "retired conversation boundary") {
+		t.Fatalf("selection after epoch change = %v, want boundary error", err)
+	}
+	if got := f.selector.Snapshot().PersonaID; got != "samantha" {
+		t.Fatalf("stale selection changed responder to %q", got)
 	}
 }
