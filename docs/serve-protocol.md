@@ -548,7 +548,12 @@ capabilities are advertised together only when this canonical host path is
 available. A serve without that callback keeps the legacy stream ordering and
 does not claim attributed shared-persona support. Clear and resume publish a
 fresh snapshot to connected clients so an old session/epoch cannot remain the
-visible current state.
+visible current state. Snapshot admission uses the same serialized dispatcher
+boundary as turns and control operations. If a turn is already in flight, a
+new connection waits for that boundary before receiving its first frame,
+preserving the ordering that puts the snapshot before later replies and events.
+A full client set or a full dispatcher queue closes the connection with a
+retryable status.
 LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bearer.
 
 ### Client → server (JSON text frames)

@@ -121,6 +121,14 @@ func (h *hub) add(c *streamConn) bool {
 func (h *hub) remove(c *streamConn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.removeLocked(c)
+}
+
+// removeLocked detaches c and releases the per-hub accounting that belongs to
+// it. Callers hold h.mu. Keeping this in one path matters because a slow
+// connection can be evicted by a broadcast or snapshot publish before its
+// handler reaches the deferred remove call.
+func (h *hub) removeLocked(c *streamConn) {
 	if _, ok := h.conns[c]; !ok {
 		return
 	}
@@ -218,12 +226,7 @@ func (h *hub) broadcast(msg []byte) {
 		case c.out <- msg:
 		default:
 			c.evict("client too slow")
-			// If this client was streaming, drop the streamer count now —
-			// remove() will also run later, so clear the flag first.
-			if c.audioStream.Swap(false) {
-				h.streamers.Add(-1)
-			}
-			delete(h.conns, c)
+			h.removeLocked(c)
 		}
 	}
 }
@@ -424,11 +427,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			return s.installSnapshot(installCtx, conn, snapshot)
 		})
 		if err != nil {
-			status := websocket.StatusInternalError
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				status = websocket.StatusPolicyViolation
-			}
-			ws.Close(status, "session snapshot unavailable")
+			status, reason := snapshotConnectClose(err)
+			ws.Close(status, reason)
 			return
 		}
 		registered = true
@@ -650,6 +650,19 @@ func (s *Server) sendEvent(conn *streamConn, e events.Event) {
 	case conn.out <- msg:
 	default:
 		conn.evict("client too slow")
+	}
+}
+
+func snapshotConnectClose(err error) (websocket.StatusCode, string) {
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return websocket.StatusPolicyViolation, "session snapshot unavailable"
+	case errors.Is(err, ErrBusy):
+		return websocket.StatusTryAgainLater, "server busy — try again shortly"
+	case errors.Is(err, errTooManyStreamClients):
+		return websocket.StatusTryAgainLater, "too many clients"
+	default:
+		return websocket.StatusInternalError, "session snapshot unavailable"
 	}
 }
 

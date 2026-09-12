@@ -118,6 +118,191 @@ func TestInstallSnapshotCanceledDoesNotRegister(t *testing.T) {
 	}
 }
 
+func TestPublishSnapshotEvictionReclaimsStreamingClient(t *testing.T) {
+	h := newHub()
+	s := &Server{
+		hub: h,
+		opts: Options{CurrentSessionSnapshot: func(context.Context) (SessionSnapshot, error) {
+			return testSnapshot(), nil
+		}},
+	}
+	conn := &streamConn{
+		out: make(chan []byte, connQueueDepth), audio: make(chan []byte, audioQueueDepth), kick: make(chan string, 1),
+	}
+	if err := s.installSnapshot(context.Background(), conn, testSnapshot()); err != nil {
+		t.Fatal(err)
+	}
+	h.setConnAudio(conn, true, false)
+	for range connQueueDepth - 1 {
+		conn.out <- []byte("queued")
+	}
+	if !h.hasStreamClients() {
+		t.Fatal("streaming client was not counted")
+	}
+
+	s.publishSnapshot(context.Background())
+
+	if len(h.conns) != 0 {
+		t.Fatalf("connections after eviction = %d, want 0", len(h.conns))
+	}
+	if h.hasStreamClients() {
+		t.Fatal("evicted streaming client kept the streamer count alive")
+	}
+	select {
+	case reason := <-conn.kick:
+		if reason != "client too slow" {
+			t.Fatalf("eviction reason = %q, want client too slow", reason)
+		}
+	default:
+		t.Fatal("snapshot eviction did not kick the slow client")
+	}
+
+	// The handler's deferred cleanup runs after the publish path. It must be a
+	// no-op for the already detached client and must not decrement twice.
+	h.remove(conn)
+	if h.streamers.Load() != 0 {
+		t.Fatalf("streamers after deferred cleanup = %d, want 0", h.streamers.Load())
+	}
+
+	replacement := &streamConn{
+		out: make(chan []byte, connQueueDepth), audio: make(chan []byte, audioQueueDepth), kick: make(chan string, 1),
+	}
+	if !h.add(replacement) {
+		t.Fatal("hub did not reclaim capacity after snapshot eviction")
+	}
+	h.setConnAudio(replacement, true, false)
+	if h.streamers.Load() != 1 {
+		t.Fatalf("replacement streamer count = %d, want 1", h.streamers.Load())
+	}
+	h.remove(replacement)
+	if h.streamers.Load() != 0 {
+		t.Fatalf("streamers after replacement cleanup = %d, want 0", h.streamers.Load())
+	}
+}
+
+func TestSnapshotConnectCapacityErrorsAreRetryable(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		reason string
+	}{
+		{name: "dispatcher queue", err: ErrBusy, reason: "server busy — try again shortly"},
+		{name: "connection cap", err: errTooManyStreamClients, reason: "too many clients"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, reason := snapshotConnectClose(tt.err)
+			if status != websocket.StatusTryAgainLater {
+				t.Fatalf("status = %v, want %v", status, websocket.StatusTryAgainLater)
+			}
+			if reason != tt.reason {
+				t.Fatalf("reason = %q, want %q", reason, tt.reason)
+			}
+		})
+	}
+}
+
+func TestSnapshotConnectCapacityClosesWebSocketRetryably(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	creds, err := LoadOrCreateCredentials(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := NewDispatcher(snapshotTestRunner{}, events.NewBus(), nil, nil)
+	srv := New(Options{
+		Bind:        "127.0.0.1:0",
+		Credentials: creds,
+		Bus:         events.NewBus(),
+		Dispatcher:  d,
+		CurrentSessionSnapshot: func(context.Context) (SessionSnapshot, error) {
+			return testSnapshot(), nil
+		},
+	})
+	for range maxStreamClients {
+		if !srv.hub.add(&streamConn{
+			out: make(chan []byte, connQueueDepth), audio: make(chan []byte, audioQueueDepth), kick: make(chan string, 1),
+		}) {
+			t.Fatal("could not fill stream client capacity")
+		}
+	}
+	go d.Run(ctx)
+	done := make(chan error, 1)
+	go func() { done <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("server exit: %v", err)
+		}
+	})
+	addr := waitAddr(t, srv)
+	ws, _, err := websocket.Dial(ctx, "wss://"+addr+"/v1/stream", &websocket.DialOptions{
+		HTTPClient: insecureClient(),
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + creds.Token}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	_, _, err = ws.Read(ctx)
+	var closeErr websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		t.Fatalf("read error = %v, want websocket close", err)
+	}
+	if closeErr.Code != websocket.StatusTryAgainLater {
+		t.Fatalf("close status = %v, want %v", closeErr.Code, websocket.StatusTryAgainLater)
+	}
+}
+
+func TestSnapshotConnectDispatchQueueClosesWebSocketRetryably(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	creds, err := LoadOrCreateCredentials(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := NewDispatcher(snapshotTestRunner{}, events.NewBus(), nil, nil)
+	for range dispatchQueueDepth {
+		if err := d.SubmitText("queued"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := New(Options{
+		Bind:        "127.0.0.1:0",
+		Credentials: creds,
+		Bus:         events.NewBus(),
+		Dispatcher:  d,
+		CurrentSessionSnapshot: func(context.Context) (SessionSnapshot, error) {
+			return testSnapshot(), nil
+		},
+	})
+	done := make(chan error, 1)
+	go func() { done <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("server exit: %v", err)
+		}
+	})
+	addr := waitAddr(t, srv)
+	ws, _, err := websocket.Dial(ctx, "wss://"+addr+"/v1/stream", &websocket.DialOptions{
+		HTTPClient: insecureClient(),
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + creds.Token}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	_, _, err = ws.Read(ctx)
+	var closeErr websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		t.Fatalf("read error = %v, want websocket close", err)
+	}
+	if closeErr.Code != websocket.StatusTryAgainLater {
+		t.Fatalf("close status = %v, want %v", closeErr.Code, websocket.StatusTryAgainLater)
+	}
+}
+
 func TestDispatcherPublishesBoundarySnapshots(t *testing.T) {
 	bus := events.NewBus()
 	var published atomic.Int32
