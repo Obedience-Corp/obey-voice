@@ -45,6 +45,10 @@ func (m personasModel) View() string {
 		}
 	}
 
+	if m.loadWarning != "" {
+		b.WriteString(ansi.Truncate("  "+statusStyle.Render(m.loadWarning), width, "…"))
+		b.WriteString("\n")
+	}
 	if m.message != "" {
 		b.WriteString(ansi.Truncate("  "+statusStyle.Render(m.message), width, "…"))
 		b.WriteString("\n")

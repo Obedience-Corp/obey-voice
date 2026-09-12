@@ -170,3 +170,25 @@ func TestPersonasRouteEmptyList(t *testing.T) {
 		t.Fatalf("personas = %v, want an empty array", body["personas"])
 	}
 }
+
+func TestPersonasRouteKeepsHealthyRowsWithRepairWarnings(t *testing.T) {
+	addr, creds := startPersonaServer(t, func() ([]PersonaSummary, error) {
+		return samplePersonas(), &PersonaListIssues{Issues: []PersonaListIssue{{ID: "broken", Message: "Repair persona.yaml: malformed profile"}}}
+	})
+	status, body := getPersonas(t, addr, creds.Token)
+	if status != http.StatusOK {
+		t.Fatalf("status=%d body=%v", status, body)
+	}
+	rows, ok := body["personas"].([]any)
+	if !ok || len(rows) != 2 {
+		t.Fatalf("healthy rows=%v", body["personas"])
+	}
+	warnings, ok := body["warnings"].([]any)
+	if !ok || len(warnings) != 1 {
+		t.Fatalf("warnings=%v", body["warnings"])
+	}
+	warning := warnings[0].(map[string]any)
+	if warning["id"] != "broken" || warning["message"] != "Repair persona.yaml: malformed profile" {
+		t.Fatalf("warning=%v", warning)
+	}
+}
