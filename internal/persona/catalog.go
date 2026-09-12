@@ -2,7 +2,6 @@ package persona
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +12,18 @@ import (
 // lets an embedded host or proof fixture avoid the operator's configuration.
 // The zero value reads the application's existing persona directory.
 type Catalog struct{ Dir string }
+
+// ProfileLoadError marks failure loading the explicitly requested profile.
+// Unrelated malformed entries are returned as CatalogIssue values instead.
+type ProfileLoadError struct {
+	ID  string
+	Err error
+}
+
+func (e *ProfileLoadError) Error() string {
+	return fmt.Sprintf("persona %q is unavailable until repaired: %v", e.ID, e.Err)
+}
+func (e *ProfileLoadError) Unwrap() error { return e.Err }
 
 func (c Catalog) root() string {
 	if c.Dir != "" {
@@ -29,46 +40,44 @@ func (c Catalog) Load(id string) (*Profile, error) {
 }
 
 func (c Catalog) List() ([]*Profile, error) {
-	entries, err := os.ReadDir(c.root())
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("listing personas: %w", err)
-	}
-	var profiles []*Profile
-	for _, entry := range entries {
-		if !entry.IsDir() || ValidateID(entry.Name()) != nil {
-			continue
-		}
-		p, err := c.Load(entry.Name())
-		if err != nil {
-			return nil, err
-		}
-		profiles = append(profiles, p)
-	}
-	return profiles, nil
+	profiles, _, err := c.ListWithIssues()
+	return profiles, err
+}
+
+// ListWithIssues keeps healthy profiles available when another profile is
+// malformed. The issue list lets a session surface a repair warning without
+// turning an unrelated edit into a routing failure.
+func (c Catalog) ListWithIssues() ([]*Profile, []CatalogIssue, error) {
+	return listProfilesWithIssues(c.root(), c.Load)
 }
 
 // ResolveBinding always overlays a profile on the supplied base settings.
 // It performs no migration, preference write, or asset installation.
 func (c Catalog) ResolveBinding(base *config.Config, id string) (*SessionBinding, error) {
+	binding, _, err := c.ResolveBindingWithIssues(base, id)
+	return binding, err
+}
+
+// ResolveBindingWithIssues resolves the requested profile and returns any
+// unrelated unloadable profiles discovered while assembling display names.
+// The requested profile itself remains a hard failure.
+func (c Catalog) ResolveBindingWithIssues(base *config.Config, id string) (*SessionBinding, []CatalogIssue, error) {
 	if base == nil {
-		return nil, fmt.Errorf("persona: config is nil")
+		return nil, nil, fmt.Errorf("persona: config is nil")
 	}
 	if strings.TrimSpace(id) == "" {
 		id = ActiveID(base)
 	}
 	p, err := c.Load(id)
 	if err != nil {
-		return nil, fmt.Errorf("resolve persona %q: %w", id, err)
+		return nil, nil, fmt.Errorf("resolve persona %q: %w", id, &ProfileLoadError{ID: id, Err: err})
 	}
 	snap := base.Clone()
-	profiles, err := c.List()
+	profiles, issues, err := c.ListWithIssues()
 	if err != nil {
-		return nil, err
+		return nil, issues, err
 	}
 	snap.PersonaDisplayNames = displayNames(profiles)
 	Apply(snap, p)
-	return newBinding(p.ID, p.DisplayName, p.TTS, *snap), nil
+	return newBinding(p.ID, p.DisplayName, p.TTS, *snap), issues, nil
 }

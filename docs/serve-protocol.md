@@ -550,7 +550,12 @@ when `voice_work_enabled` is false; enabling background work is not a
 prerequisite. A serve without that callback keeps the legacy stream ordering and
 does not claim attributed shared-persona support. Clear and resume publish a
 fresh snapshot to connected clients so an old session/epoch cannot remain the
-visible current state.
+visible current state. Snapshot admission uses the same serialized dispatcher
+boundary as turns and control operations. If a turn is already in flight, a
+new connection waits for that boundary before receiving its first frame,
+preserving the ordering that puts the snapshot before later replies and events.
+A full client set or a full dispatcher queue closes the connection with a
+retryable status.
 LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bearer.
 
 ### Client → server (JSON text frames)
@@ -893,6 +898,13 @@ this is per-instance.
 
 
 ## `GET /v1/personas`
+
+Malformed individual profiles are omitted from `personas` while healthy rows
+remain available (HTTP 200). An optional `warnings` array reports each omitted
+profile's `id` and repair `message`; selecting an unavailable profile still fails.
+A catalog-directory error still returns HTTP 500. CLI `persona list` reports
+profile warnings on stderr (leaving its JSON array unchanged), and the TUI persona
+manager displays a repair warning alongside the healthy entries.
 
 The read side of `set_persona`: which personas this serve can switch to, and
 which one it is using right now.

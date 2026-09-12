@@ -28,9 +28,10 @@ type personasModel struct {
 	cursor       int
 	offset       int
 
-	items   []*persona.Profile
-	loadErr string
-	message string
+	items       []*persona.Profile
+	loadErr     string
+	loadWarning string
+	message     string
 
 	// formMode: "" | "create" | "edit"
 	formMode string
@@ -96,7 +97,6 @@ type personasModel struct {
 func newPersonas(cfg *config.Config) personasModel {
 	m := personasModel{
 		cfg:           cfg,
-		listPersonas:  persona.List,
 		usePersona:    persona.Use,
 		createPersona: persona.CreateAndUseWithOpts,
 		savePrompt:    persona.UpdateSystemPrompt,
@@ -182,12 +182,22 @@ func personaListLabel(p *persona.Profile) string {
 }
 
 func (m *personasModel) reload() {
-	m.loadErr = ""
-	list := m.listPersonas
-	if list == nil {
-		list = persona.List
+	m.loadErr, m.loadWarning = "", ""
+	var items []*persona.Profile
+	var err error
+	if m.listPersonas != nil {
+		items, err = m.listPersonas()
+	} else {
+		var issues []persona.CatalogIssue
+		items, issues, err = persona.ListWithIssues()
+		if len(issues) > 0 {
+			ids := make([]string, 0, len(issues))
+			for _, issue := range issues {
+				ids = append(ids, issue.ID)
+			}
+			m.loadWarning = "Unavailable: " + strings.Join(ids, ", ") + "; repair persona.yaml."
+		}
 	}
-	items, err := list()
 	if err != nil {
 		m.loadErr = err.Error()
 		m.items = nil
@@ -220,10 +230,14 @@ func (m personasModel) visibleRows() int {
 	if h <= 0 {
 		h = 24
 	}
-	if h < 10 {
-		return max(h-2, 1)
+	warningRows := 0
+	if m.loadWarning != "" {
+		warningRows = 1
 	}
-	return max(h-6, 1)
+	if h < 10 {
+		return max(h-2-warningRows, 1)
+	}
+	return max(h-6-warningRows, 1)
 }
 
 func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {

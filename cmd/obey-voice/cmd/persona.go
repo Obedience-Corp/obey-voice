@@ -54,9 +54,12 @@ func personaListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			list, err := persona.List()
+			list, issues, err := persona.ListWithIssues()
 			if err != nil {
 				return err
+			}
+			for _, issue := range issues {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: persona %q is unavailable; repair its persona.yaml: %v\n", issue.ID, issue.Err)
 			}
 			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 				type row struct {

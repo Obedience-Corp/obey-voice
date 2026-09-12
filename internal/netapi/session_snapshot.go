@@ -51,6 +51,8 @@ func marshalSessionSnapshot(snapshot SessionSnapshot) ([]byte, error) {
 // the dispatcher goroutine, at a serialized boundary.
 type SnapshotProvider func(context.Context) (SessionSnapshot, error)
 
+var errTooManyStreamClients = errors.New("too many stream clients")
+
 func (s *Server) installSnapshot(ctx context.Context, conn *streamConn, snapshot SessionSnapshot) error {
 	s.hub.mu.Lock()
 	defer s.hub.mu.Unlock()
@@ -66,7 +68,7 @@ func (s *Server) installSnapshot(ctx context.Context, conn *streamConn, snapshot
 		return err
 	}
 	if len(s.hub.conns) >= maxStreamClients {
-		return errors.New("too many stream clients")
+		return errTooManyStreamClients
 	}
 	conn.audioBlocked.Store(s.hub.audioBlocked)
 	s.hub.conns[conn] = struct{}{}
@@ -104,7 +106,7 @@ func (s *Server) publishSnapshot(ctx context.Context) {
 			case conn.out <- data:
 			default:
 				conn.evict("client too slow")
-				delete(s.hub.conns, conn)
+				s.hub.removeLocked(conn)
 			}
 		}
 	}

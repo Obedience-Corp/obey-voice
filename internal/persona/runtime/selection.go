@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
@@ -17,6 +18,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // SelectionOptions connects persona selection to the existing conversation
@@ -165,21 +167,51 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 	}()
 	err = RunSelectionFlow(ctx, SelectionActions{
 		Resolve: func(ctx context.Context) error {
+			previous = s.Snapshot()
+			currentScope := s.opts.Pipeline.ConversationScope()
 			if s.opts.UseDefaults && reason == "response_boundary" && id == s.opts.Initial.PersonaID {
 				binding, err = persona.ResolveDefaultsBinding(s.opts.Base)
+				if err != nil {
+					err = fmt.Errorf("resolve persona %q: %w", id, &persona.ProfileLoadError{ID: id, Err: err})
+				}
 			} else {
-				binding, err = s.opts.Catalog.ResolveBinding(s.opts.Base, id)
+				var issues []persona.CatalogIssue
+				binding, issues, err = s.opts.Catalog.ResolveBindingWithIssues(s.opts.Base, id)
+				s.warnCatalogIssues(issues)
 			}
 			if err != nil {
+				// A malformed edit to the currently live profile must not brick
+				// nameless turns. A missing profile is different: restored or
+				// deleted identities stay fail-closed until explicitly selected.
+				if reason == "response_boundary" && id == previous.PersonaID && canKeepLastGood(s, previous, currentScope, err) {
+					s.warnCatalogIssues([]persona.CatalogIssue{{ID: id, Err: err}})
+					binding = s.binding
+					cfg = binding.Config()
+					hash = previous.PromptHash
+					next = previous
+					unchanged = true
+					return nil
+				}
 				return err
 			}
 			cfg = binding.Config()
 			hash, err = brain.PersonaPromptHash(cfg)
 			if err != nil {
+				// Persona prompt edits use the same last-good rule as the
+				// profile reloader. This branch is before preparation and
+				// therefore cannot hide a persistence or publication failure.
+				if reason == "response_boundary" && id == previous.PersonaID && canKeepLastGoodBoundary(s, previous, currentScope) {
+					s.warnCatalogIssues([]persona.CatalogIssue{{ID: id, Err: err}})
+					binding = s.binding
+					cfg = binding.Config()
+					hash = previous.PromptHash
+					next = previous
+					unchanged = true
+					return nil
+				}
 				return err
 			}
 			next = s.snapshotFor(binding, hash, generation, reason)
-			previous = s.Snapshot()
 			if !s.requiresSelection && next.SessionID == previous.SessionID && next.BindingHash == previous.BindingHash && next.ConversationEpoch == previous.ConversationEpoch {
 				unchanged = true
 				return nil
@@ -296,6 +328,27 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 	return next, nil
 }
 
+func canKeepLastGood(s *Selector, previous events.PersonaSelection, currentScope work.WorkScope, err error) bool {
+	var profileErr *persona.ProfileLoadError
+	if !errors.As(err, &profileErr) || errors.Is(profileErr, fs.ErrNotExist) {
+		return false
+	}
+	return canKeepLastGoodBoundary(s, previous, currentScope)
+}
+
+func canKeepLastGoodBoundary(s *Selector, previous events.PersonaSelection, currentScope work.WorkScope) bool {
+	if s.binding == nil || s.requiresSelection {
+		return false
+	}
+	if s.opts.Pipeline.ConversationRetired() || previous.SessionID != s.opts.SessionID || previous.PersonaID != s.binding.PersonaID {
+		return false
+	}
+	if currentScope.Valid() {
+		return previous.ConversationEpoch != "" && previous.ConversationEpoch == currentScope.ConversationEpoch
+	}
+	return previous.ConversationEpoch == currentScope.ConversationEpoch
+}
+
 func (s *Selector) warnPersistence(err error) {
 	if err != nil && s.opts.Pipeline.Events != nil {
 		s.opts.Pipeline.Events.Emit(events.Error{Stage: "session_durability", Message: fmt.Sprintf("Persona selection applied, but its persistence could not be confirmed: %v", err)})
@@ -321,10 +374,12 @@ func (s *Selector) Reload(ctx context.Context, base *config.Config) error {
 
 // Admit refreshes edited profiles and returns an immutable response identity.
 func (s *Selector) Admit(ctx context.Context) (events.ResponseEnvelope, error) {
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
 	if s.requiresSelection {
 		return events.ResponseEnvelope{}, errors.New("restored conversation requires a valid persona selection")
 	}
-	selected, err := s.Select(ctx, s.Snapshot().PersonaID, "response_boundary")
+	selected, err := s.selectAtBoundary(ctx, s.Snapshot().PersonaID, "response_boundary")
 	if err != nil {
 		return events.ResponseEnvelope{}, err
 	}
