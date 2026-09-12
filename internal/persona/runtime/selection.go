@@ -114,8 +114,9 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 		Prompt string
 	}{cfg, hash})
 	digest := sha256.Sum256(encoded)
+	scope := s.opts.Pipeline.ConversationScope()
 	return events.PersonaSelection{
-		SessionID: s.opts.SessionID, ConversationEpoch: s.opts.Pipeline.WorkSnapshot().Scope.ConversationEpoch,
+		SessionID: s.opts.SessionID, ConversationEpoch: scope.ConversationEpoch,
 		PersonaID: b.PersonaID, DisplayName: b.DisplayName, PromptHash: hash, BindingHash: hex.EncodeToString(digest[:]),
 		Generation: generation, BrainProvider: b.BrainProvider, BrainModel: b.BrainModel,
 		VoiceProvider: cfg.TTSProvider, Voice: config.TTSVoiceFor(cfg, cfg.TTSProvider), Reason: reason,
@@ -140,8 +141,8 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 	s.generation++
 	generation := s.generation
 	p := s.opts.Pipeline
-	oldBrain, scope := p.Brain, p.WorkSnapshot().Scope
-	if p.WorkSnapshot().Retired {
+	oldBrain, scope := p.Brain, p.ConversationScope()
+	if p.ConversationRetired() {
 		return events.PersonaSelection{}, errors.New("persona selection belongs to a closed conversation")
 	}
 	var binding *persona.SessionBinding
@@ -167,7 +168,7 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 	err = RunSelectionFlow(ctx, SelectionActions{
 		Resolve: func(ctx context.Context) error {
 			previous = s.Snapshot()
-			currentScope := s.opts.Pipeline.WorkSnapshot().Scope
+			currentScope := s.opts.Pipeline.ConversationScope()
 			if s.opts.UseDefaults && reason == "response_boundary" && id == s.opts.Initial.PersonaID {
 				binding, err = persona.ResolveDefaultsBinding(s.opts.Base)
 				if err != nil {
@@ -281,7 +282,7 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				if generation != s.generation || oldBrain != p.Brain || scope != p.WorkSnapshot().Scope || p.WorkSnapshot().Retired {
+				if generation != s.generation || oldBrain != p.Brain || scope != p.ConversationScope() || p.ConversationRetired() {
 					return errors.New("persona selection belongs to a retired conversation boundary")
 				}
 				err := s.opts.Persist(turns, next)
@@ -339,7 +340,7 @@ func canKeepLastGoodBoundary(s *Selector, previous events.PersonaSelection, curr
 	if s.binding == nil || s.requiresSelection {
 		return false
 	}
-	if s.opts.Pipeline.WorkSnapshot().Retired || previous.SessionID != s.opts.SessionID || previous.PersonaID != s.binding.PersonaID {
+	if s.opts.Pipeline.ConversationRetired() || previous.SessionID != s.opts.SessionID || previous.PersonaID != s.binding.PersonaID {
 		return false
 	}
 	if currentScope.Valid() {
@@ -405,7 +406,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.requiresSelection = true
 	s.mu.Lock()
 	s.selected = events.PersonaSelection{
-		SessionID: sessionID, ConversationEpoch: s.opts.Pipeline.WorkSnapshot().Scope.ConversationEpoch,
+		SessionID: sessionID, ConversationEpoch: s.opts.Pipeline.ConversationScope().ConversationEpoch,
 		PersonaID: personaID, DisplayName: displayName, PromptHash: promptHash,
 		Revision: s.selected.Revision + 1, Generation: s.generation, Reason: "restore_requires_selection",
 	}

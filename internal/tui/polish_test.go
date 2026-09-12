@@ -50,7 +50,7 @@ func TestTurnMetricsRenderAsDimTrailingLine(t *testing.T) {
 	})
 
 	view := m.View()
-	for _, want := range []string{"model 0.4s", "voice 0.6s", "spoke 2.3s"} {
+	for _, want := range []string{"model 0.4s", "first audio 0.6s", "playback done 2.3s", "since turn start"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("metrics line missing %q", want)
 		}

@@ -228,7 +228,7 @@ func printServeWorkDir() {
 // pairing_code line when a code is minted) to stdout, one JSON object per
 // line. The supervising process reads the ready line to learn the URL,
 // credentials, and fingerprint instead of scraping the human banner.
-func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Credentials) {
+func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Credentials, capabilitySets ...map[string]bool) {
 	host, port := hostPortFromAddr(listenAddr)
 	pageHost := servePublicHost
 	if pageHost == "" {
@@ -236,6 +236,10 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 	}
 
 	workDir := serveBannerWorkDir()
+	capabilities := netapi.Capabilities()
+	if len(capabilitySets) > 0 && capabilitySets[0] != nil {
+		capabilities = capabilitySets[0]
+	}
 	urlHost := net.JoinHostPort(pageHost, strconv.Itoa(port))
 	emitBannerLine(netapi.ReadyBanner{
 		Event:           "ready",
@@ -252,7 +256,7 @@ func emitServeBannerJSON(listenAddr string, allBinds []string, creds *netapi.Cre
 		WorkDirSource:   string(workDir.Source),
 		Campaign:        bannerCampaign(workDir.Dir),
 		ClientSetupURL:  serveClientSetupURL,
-		Capabilities:    netapi.Capabilities(),
+		Capabilities:    capabilities,
 	})
 
 	if creds.Pairing != nil {

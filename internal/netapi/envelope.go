@@ -39,6 +39,9 @@ func encodeEvent(e events.Event) map[string]any {
 		env["response"] = e.Response
 		env["elapsed_ms"] = ms(e.Elapsed)
 	case events.TurnMetrics:
+		if e.Timing != nil {
+			env["timing"] = e.Timing
+		}
 		env["outcome"] = e.Outcome
 		env["interrupted"] = e.Interrupted
 		env["stt_final_ms"] = ms(e.STTFinalElapsed)
@@ -247,9 +250,10 @@ type controlMessage struct {
 	ID         string `json:"id,omitempty"` // transcribe_start: client request identity
 	Type       string `json:"type"`         // text_input | interrupt | clear_history | audio_output | voice_start | voice_end | audio_input | set_persona
 	Text       string `json:"text,omitempty"`
-	Mode       string `json:"mode,omitempty"`   // audio_output: "stream" | "local" | "off"
-	Binary     bool   `json:"binary,omitempty"` // audio_output: TTS chunks as OVA1 binary frames
-	Data       string `json:"data,omitempty"`   // audio_input: base64 pcm_s16le mono @ 16 kHz
-	Name       string `json:"name,omitempty"`   // set_persona: persona id
+	Mode       string `json:"mode,omitempty"`       // audio_output: "stream" | "local" | "off"
+	Binary     bool   `json:"binary,omitempty"`     // audio_output: TTS chunks as OVA1 binary frames
+	Data       string `json:"data,omitempty"`       // audio_input: base64 pcm_s16le mono @ 16 kHz
+	Name       string `json:"name,omitempty"`       // set_persona: persona id
+	RequestID  string `json:"request_id,omitempty"` // set_persona: optional response correlation
 	SampleRate int    `json:"sample_rate,omitempty"`
 }

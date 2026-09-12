@@ -47,6 +47,15 @@ func (o *observingOllama) ThinkFull(ctx context.Context, input string, opts brai
 	o.observeFull(opts)
 	return o.OllamaBrain.ThinkFull(ctx, input, opts)
 }
+
+// Fresh preserves the production job isolation while sharing only observer
+// counters. Without this override the embedded method returns a raw provider,
+// so every real worker call bypasses the harness's call/options evidence.
+func (o *observingOllama) Fresh() brain.Provider {
+	fresh := o.OllamaBrain.Fresh().(*brain.OllamaBrain)
+	return &observingOllama{observing: o.observing, OllamaBrain: fresh}
+}
+
 func (o *observingOllama) History() []brain.Turn      { return o.OllamaBrain.History() }
 func (o *observingOllama) ClearHistory()              { o.OllamaBrain.ClearHistory() }
 func (o *observingOllama) LoadHistory(t []brain.Turn) { o.OllamaBrain.LoadHistory(t) }

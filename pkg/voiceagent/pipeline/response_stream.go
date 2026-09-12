@@ -191,9 +191,11 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// Cleaning, the speakability predicate and this turn's repeat
 		// suppression, all of which the bench harness replays through the
 		// same code (SpeechProjection).
-		speakable, ok := proj.admit(voiceText)
-		if !ok {
-			if metrics.delivery != nil && strings.TrimSpace(text) != "" {
+		speakable, admission := proj.admit(voiceText)
+		if admission != speechAdmitted {
+			// Duplicate prose is already represented by an earlier queued
+			// segment. Its actual playback receipt still governs delivery.
+			if metrics.delivery != nil && admission != speechAlreadyAdmitted && strings.TrimSpace(text) != "" {
 				metrics.delivery.skipped = true
 			}
 			return

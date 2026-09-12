@@ -11,7 +11,22 @@ import (
 	"sync/atomic"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
+
+type audioGenerationContextKey struct{}
+
+func withAudioGeneration(ctx context.Context, generation uint64) context.Context {
+	return context.WithValue(ctx, audioGenerationContextKey{}, generation)
+}
+
+func audioGenerationFromContext(ctx context.Context) uint64 {
+	if ctx == nil {
+		return 0
+	}
+	generation, _ := ctx.Value(audioGenerationContextKey{}).(uint64)
+	return generation
+}
 
 // Audio format constants for the WebSocket wire protocol. PCM s16le mono is
 // the smallest common denominator a phone browser or ffplay can play without
@@ -98,6 +113,19 @@ func (a *AudioFanout) PlayStream(ctx context.Context, stream *audio.PCMStream) (
 
 	a.accepted.Store(0)
 
+	// Resolve the admitted response before waiting for PCM readiness. The
+	// stream can be delayed while a selection changes; that must not make its
+	// later chunks inherit the current selection. The hub generation is the
+	// matching reset/resume boundary for this PlayStream call.
+	identity := events.ResponseFromContext(ctx)
+	// Dispatcher-admitted turns carry an immutable boundary token. Keep the
+	// hub snapshot fallback for direct AudioFanout users and narrow tests; the
+	// serve path always supplies the token before the runner can synthesize.
+	generation := audioGenerationFromContext(ctx)
+	if generation == 0 && a.hub != nil {
+		generation = a.hub.audioGenerationSnapshot()
+	}
+
 	sampleRate, err := stream.WaitReady(ctx)
 	if err != nil {
 		return nil, err
@@ -130,7 +158,7 @@ func (a *AudioFanout) PlayStream(ctx context.Context, stream *audio.PCMStream) (
 	done := make(chan audio.PlaybackResult, 1)
 	seg := &fanoutSegment{started: started, done: done}
 
-	go a.pump(ctx, stream, localStream, localReady, sampleRate, segID, seg)
+	go a.pump(ctx, stream, localStream, localReady, sampleRate, segID, generation, identity, seg)
 
 	select {
 	case <-ctx.Done():
@@ -163,6 +191,8 @@ func (a *AudioFanout) pump(
 	localReady <-chan localStart,
 	sampleRate int,
 	segID uint64,
+	generation uint64,
+	identity events.ResponseEnvelope,
 	seg *fanoutSegment,
 ) {
 	var (
@@ -217,7 +247,7 @@ func (a *AudioFanout) pump(
 			result.Interrupted = true
 		}
 		if hadAudio {
-			a.emitAudioEnd(segID, result)
+			a.emitAudioEnd(segID, generation, identity, result)
 		}
 		seg.finish(result, hadAudio)
 	}
@@ -245,7 +275,7 @@ func (a *AudioFanout) pump(
 			}
 
 			// Wire side-effect: skip all encode work when no stream clients.
-			if !attempt.Write(func() { a.emitAudioChunks(segID, sampleRate, frames) }) {
+			if !attempt.Write(func() { a.emitAudioChunks(segID, sampleRate, generation, identity, frames) }) {
 				if local != nil {
 					local.CloseWithError(context.Canceled)
 				}
@@ -269,7 +299,7 @@ func (a *AudioFanout) pump(
 	}
 }
 
-func (a *AudioFanout) emitAudioChunks(segID uint64, sampleRate int, frames []float32) {
+func (a *AudioFanout) emitAudioChunks(segID uint64, sampleRate int, generation uint64, identity events.ResponseEnvelope, frames []float32) {
 	if a.hub == nil || !a.hub.hasStreamClients() {
 		return
 	}
@@ -279,20 +309,21 @@ func (a *AudioFanout) emitAudioChunks(segID uint64, sampleRate int, frames []flo
 			n = maxAudioChunkFrames
 		}
 		pcm := float32ToPCM16LE(frames[:n])
-		jsonMsg, err := marshalAudioChunk(segID, sampleRate, pcm)
+		jsonMsg, err := marshalAudioChunk(segID, sampleRate, pcm, audioWireIdentity{generation: generation, envelope: identity})
 		if err != nil {
 			frames = frames[n:]
 			continue
 		}
 		binMsg := marshalBinaryAudioChunk(segID, sampleRate, pcm)
-		if accepted := a.hub.broadcastPCM(jsonMsg, binMsg); accepted > 0 {
+		binV2Msg := marshalBinaryAudioChunkV2(segID, sampleRate, generation, identity.ResponseID, pcm)
+		if accepted := a.hub.broadcastPCMAt(jsonMsg, binMsg, binV2Msg, generation); accepted > 0 {
 			a.accepted.Add(int32(accepted))
 		}
 		frames = frames[n:]
 	}
 }
 
-func (a *AudioFanout) emitAudioEnd(segID uint64, result audio.PlaybackResult) {
+func (a *AudioFanout) emitAudioEnd(segID uint64, generation uint64, identity events.ResponseEnvelope, result audio.PlaybackResult) {
 	if a.hub == nil || !a.hub.hasStreamClients() {
 		return
 	}
@@ -302,9 +333,9 @@ func (a *AudioFanout) emitAudioEnd(segID uint64, result audio.PlaybackResult) {
 	} else if result.Err != nil {
 		reason = "error"
 	}
-	msg, err := marshalAudioEnd(segID, reason)
+	msg, err := marshalAudioEnd(segID, reason, audioWireIdentity{generation: generation, envelope: identity})
 	if err == nil {
-		a.hub.broadcastAudio(msg)
+		a.hub.broadcastAudio(msg, generation)
 	}
 }
 
@@ -370,33 +401,57 @@ func float32ToPCM16LE(samples []float32) []byte {
 	return out
 }
 
-func marshalAudioChunk(segID uint64, sampleRate int, pcm []byte) ([]byte, error) {
-	return json.Marshal(map[string]any{
+type audioWireIdentity struct {
+	generation uint64
+	envelope   events.ResponseEnvelope
+}
+
+func addAudioIdentity(env map[string]any, identity []audioWireIdentity) {
+	if len(identity) == 0 {
+		return
+	}
+	env["generation"] = identity[0].generation
+	if identity[0].envelope.ResponseID != "" {
+		env["response_id"] = identity[0].envelope.ResponseID
+		env["response_envelope"] = identity[0].envelope
+	}
+}
+
+func marshalAudioChunk(segID uint64, sampleRate int, pcm []byte, identity ...audioWireIdentity) ([]byte, error) {
+	env := map[string]any{
 		"type":        "audio_chunk",
 		"segment_id":  segID,
 		"format":      audioWireFormat,
 		"sample_rate": sampleRate,
 		"channels":    audioWireChannels,
 		"data":        base64.StdEncoding.EncodeToString(pcm),
-	})
+	}
+	addAudioIdentity(env, identity)
+	return json.Marshal(env)
 }
 
-func marshalAudioEnd(segID uint64, reason string) ([]byte, error) {
-	return json.Marshal(map[string]any{
+func marshalAudioEnd(segID uint64, reason string, identity ...audioWireIdentity) ([]byte, error) {
+	env := map[string]any{
 		"type":       "audio_end",
 		"segment_id": segID,
 		"reason":     reason,
-	})
+	}
+	addAudioIdentity(env, identity)
+	return json.Marshal(env)
 }
 
 // Binary TTS chunk: OVA1 + sample_rate u32le + segment_id u64le + pcm_s16le.
 const (
-	binaryAudioMagic      = "OVA1"
-	binaryAudioHeaderSize = 16
+	binaryAudioMagic               = "OVA1"
+	binaryAudioHeaderSize          = 16
+	binaryAudioV2Magic             = "OVA2"
+	binaryAudioV2HeaderSize        = 28 // magic + rate + segment + generation + id length
+	audioProtocolOVA1       uint32 = 1
+	audioProtocolOVA2       uint32 = 2
 )
 
 func isBinaryAudioFrame(msg []byte) bool {
-	return len(msg) >= 4 && string(msg[:4]) == binaryAudioMagic
+	return len(msg) >= 4 && (string(msg[:4]) == binaryAudioMagic || string(msg[:4]) == binaryAudioV2Magic)
 }
 
 func marshalBinaryAudioChunk(segID uint64, sampleRate int, pcm []byte) []byte {
@@ -408,13 +463,46 @@ func marshalBinaryAudioChunk(segID uint64, sampleRate int, pcm []byte) []byte {
 	return out
 }
 
+// marshalBinaryAudioChunkV2 is the negotiated identity-carrying frame:
+// OVA2 + sample_rate u32le + segment_id u64le + generation u64le +
+// response_id_len u32le + response_id UTF-8 + pcm_s16le. The identity is a
+// full string; it is deliberately not hashed or truncated.
+func marshalBinaryAudioChunkV2(segID uint64, sampleRate int, generation uint64, responseID string, pcm []byte) []byte {
+	id := []byte(responseID)
+	out := make([]byte, binaryAudioV2HeaderSize+len(id)+len(pcm))
+	copy(out[0:4], binaryAudioV2Magic)
+	binary.LittleEndian.PutUint32(out[4:8], uint32(sampleRate))
+	binary.LittleEndian.PutUint64(out[8:16], segID)
+	binary.LittleEndian.PutUint64(out[16:24], generation)
+	binary.LittleEndian.PutUint32(out[24:28], uint32(len(id)))
+	copy(out[28:28+len(id)], id)
+	copy(out[28+len(id):], pcm)
+	return out
+}
+
 // ParseBinaryAudioChunk unpacks an OVA1 TTS frame. ok is false if the magic
 // or length is wrong.
 func ParseBinaryAudioChunk(raw []byte) (segID uint64, sampleRate int, pcm []byte, ok bool) {
-	if !isBinaryAudioFrame(raw) || len(raw) < binaryAudioHeaderSize {
+	if len(raw) < binaryAudioHeaderSize || string(raw[:4]) != binaryAudioMagic {
 		return 0, 0, nil, false
 	}
 	sampleRate = int(binary.LittleEndian.Uint32(raw[4:8]))
 	segID = binary.LittleEndian.Uint64(raw[8:16])
 	return segID, sampleRate, raw[16:], true
+}
+
+// ParseBinaryAudioChunkV2 unpacks an OVA2 identity-carrying frame.
+func ParseBinaryAudioChunkV2(raw []byte) (segID uint64, sampleRate int, generation uint64, responseID string, pcm []byte, ok bool) {
+	if len(raw) < binaryAudioV2HeaderSize || string(raw[:4]) != binaryAudioV2Magic {
+		return 0, 0, 0, "", nil, false
+	}
+	idLen := int(binary.LittleEndian.Uint32(raw[24:28]))
+	if idLen < 0 || binaryAudioV2HeaderSize+idLen > len(raw) {
+		return 0, 0, 0, "", nil, false
+	}
+	sampleRate = int(binary.LittleEndian.Uint32(raw[4:8]))
+	segID = binary.LittleEndian.Uint64(raw[8:16])
+	generation = binary.LittleEndian.Uint64(raw[16:24])
+	responseID = string(raw[28 : 28+idLen])
+	return segID, sampleRate, generation, responseID, raw[28+idLen:], true
 }

@@ -62,6 +62,7 @@
   let captureSource = null;
   let nextPlayTime = 0;
   let audioSuppressed = true;
+  let audioGeneration = 0;
   const sourcesBySegment = new Map();
   const canceledSegments = new Set();
   let playbackAnalyser = null;
@@ -573,8 +574,20 @@
     nextPlayTime = audioCtx ? audioCtx.currentTime : 0;
   }
 
-  function playPCMBytes(bytes, sampleRate, segmentID) {
-    const key = segmentKey(segmentID);
+  function acceptAudioIdentity(generation) {
+    const gen = Number(generation || 0);
+    if (gen > 0 && gen < audioGeneration) return false;
+    if (gen > audioGeneration) {
+      stopAudio(false);
+      canceledSegments.clear();
+      audioGeneration = gen;
+    }
+    return true;
+  }
+
+  function playPCMBytes(bytes, sampleRate, segmentID, responseID, generation) {
+    if (!acceptAudioIdentity(generation)) return;
+    const key = (responseID || "unknown") + ":" + segmentKey(segmentID);
     if (!bytes || bytes.length < 2 || audioSuppressed || canceledSegments.has(key)) return;
     if (!audioCtx) {
       ensureAudio().catch(() => {});
@@ -616,21 +629,30 @@
     setState("speaking");
   }
 
-  function playPCM(base64, sampleRate, segmentID) {
+  function playPCM(base64, sampleRate, segmentID, responseID, generation) {
     if (!base64) return;
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    playPCMBytes(bytes, sampleRate, segmentID);
+    playPCMBytes(bytes, sampleRate, segmentID, responseID, generation);
   }
 
   function playBinaryChunk(buf) {
     const bytes = new Uint8Array(buf);
     if (bytes.length < 16) return;
     const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+    if (magic === "OVA2") {
+      if (bytes.length < 28) return;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const idLen = view.getUint32(24, true);
+      if (28 + idLen > bytes.length) return;
+      const responseID = new TextDecoder().decode(bytes.subarray(28, 28 + idLen));
+      playPCMBytes(bytes.subarray(28 + idLen), view.getUint32(4, true), Number(view.getBigUint64(8, true)), responseID, Number(view.getBigUint64(16, true)));
+      return;
+    }
     if (magic !== "OVA1") return;
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    playPCMBytes(bytes.subarray(16), view.getUint32(4, true), Number(view.getBigUint64(8, true)));
+    playPCMBytes(bytes.subarray(16), view.getUint32(4, true), Number(view.getBigUint64(8, true)), "", 0);
   }
 
   function connectLive() {
@@ -643,6 +665,7 @@
     $("token").value = token;
     stopAudio(true);
     canceledSegments.clear();
+    audioGeneration = 0;
     if (ws) {
       const prev = ws;
       ws = null;
@@ -661,7 +684,7 @@
       mode = "live";
       audioSuppressed = false;
       nextPlayTime = 0;
-      socket.send(JSON.stringify({ type: "audio_output", mode: "stream", binary: true }));
+      socket.send(JSON.stringify({ type: "audio_output", mode: "stream", binary: true, protocol: "ova2" }));
       setState("idle");
       pill.classList.add("live");
       closeSheet();
@@ -713,11 +736,16 @@
           if (env.source === "output") energyOut = env.level || 0;
           break;
         case "audio_chunk":
-          playPCM(env.data, env.sample_rate, env.segment_id);
+          playPCM(env.data, env.sample_rate, env.segment_id, env.response_id || (env.response_envelope && env.response_envelope.response_id), env.generation);
+          break;
+        case "audio_end":
+          if (!acceptAudioIdentity(env.generation)) break;
+          if (env.reason === "interrupted" || env.reason === "error") stopSegment((env.response_id || (env.response_envelope && env.response_envelope.response_id) || "unknown") + ":" + segmentKey(env.segment_id), true);
           break;
         case "audio_reset":
           stopAudio(false);
           canceledSegments.clear();
+          audioGeneration += 1;
           audioSuppressed = false;
           break;
         case "turn_interrupted":

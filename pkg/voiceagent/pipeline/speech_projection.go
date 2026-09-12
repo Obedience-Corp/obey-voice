@@ -77,7 +77,7 @@ func (p *SpeechProjection) project(text string) SpokenSegment {
 	}
 	voiceText, stripped := p.gateSegment(text)
 	seg.Suppressed = stripped
-	if speakable, ok := p.admit(voiceText); ok {
+	if speakable, status := p.admit(voiceText); status == speechAdmitted {
 		seg.Speakable = speakable
 	}
 	return seg
@@ -102,24 +102,32 @@ func (p *SpeechProjection) gateSegment(text string) (string, int) {
 	return p.gate.filter(text)
 }
 
+type speechAdmissionStatus uint8
+
+const (
+	speechNotSpeakable speechAdmissionStatus = iota
+	speechAdmitted
+	speechAlreadyAdmitted
+)
+
 // admit reduces a gated segment to the text handed to the synthesizer,
-// reporting false when nothing of it is heard.
-func (p *SpeechProjection) admit(voiceText string) (string, bool) {
+// distinguishing suppressed content from text already queued in this turn.
+func (p *SpeechProjection) admit(voiceText string) (string, speechAdmissionStatus) {
 	speakable := brain.CleanForVoice(voiceText)
 	// Not just != "": stripping a filler from "Umm." leaves a bare ".", which
 	// is non-empty, unpronounceable, and would be glued onto the front of a
 	// real sentence inside one synthesis call. A tag-only beat ([moan]) has no
 	// speakable prose and must still reach the synth queue so the sound plays.
 	if !speakableSegment(speakable) && !hasVocalTag(speakable) {
-		return "", false
+		return "", speechNotSpeakable
 	}
 	// Sound-only beats ([moan]) may repeat in one turn on purpose. Restated
 	// prose after a phantom tool still drops.
 	if speakableSegment(stripVocalTags(speakable)) {
 		if _, dup := p.spoken[speakable]; dup {
-			return "", false
+			return "", speechAlreadyAdmitted
 		}
 		p.spoken[speakable] = struct{}{}
 	}
-	return speakable, true
+	return speakable, speechAdmitted
 }

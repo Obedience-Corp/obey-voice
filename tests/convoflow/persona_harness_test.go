@@ -16,6 +16,9 @@ func TestLoadFixtureConfigUsesExplicitFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.MaxHistory != 10 {
+		t.Fatalf("fixture max_history = %d; zero erases context after each turn", cfg.MaxHistory)
+	}
 	if cfg.BrainProvider != "ollama" || cfg.OllamaModel != "fixture-model" || cfg.ActivePersona != "samantha" {
 		t.Fatalf("fixture config = %+v", cfg)
 	}

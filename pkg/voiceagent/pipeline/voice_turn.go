@@ -97,8 +97,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	// Layer 1 — deterministic phrase and work-intent routing before the live
 	// brain runs, so tool work never occupies the talking context window.
 	if kind, source, ok := classifyTurn(text, p.routeContext()); ok && routeKindSkipsBrain(kind) {
-		p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
-		return original, nil
+		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 	}
 
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain
@@ -152,8 +151,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		if p.Player != nil {
 			p.Player.Stop()
 		}
-		p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
-		return original, nil
+		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 	}
 	if err != nil {
 		if interrupted || errors.Is(err, context.Canceled) {

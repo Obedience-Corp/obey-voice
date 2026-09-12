@@ -24,25 +24,30 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
-	response         events.ResponseEnvelope
-	ordinary         *ordinaryCompletion
-	delivery         *completionPlayback
-	start            time.Time
-	sttFinal         time.Time
-	firstModelChunk  time.Time
-	modelComplete    time.Time
-	firstSegment     time.Time
-	firstAudioReady  time.Time
-	playbackStart    time.Time
-	playbackComplete time.Time
-	firstToken       time.Time
-	firstThink       time.Time
-	firstSpeakable   time.Time
-	firstAdmit       time.Time
-	synthFirstFrame  time.Time
-	ttfa             time.Time
-	audibleSink      string
-	sinkAtArm        string
+	// Host-routed turns may never call the brain. Retain their input boundary
+	// and intended reply independently of whether audio output is enabled.
+	originalInput      string
+	historyAtAdmission int
+	routedSpeech       *[]string
+	response           events.ResponseEnvelope
+	ordinary           *ordinaryCompletion
+	delivery           *completionPlayback
+	start              time.Time
+	sttFinal           time.Time
+	firstModelChunk    time.Time
+	modelComplete      time.Time
+	firstSegment       time.Time
+	firstAudioReady    time.Time
+	playbackStart      time.Time
+	playbackComplete   time.Time
+	firstToken         time.Time
+	firstThink         time.Time
+	firstSpeakable     time.Time
+	firstAdmit         time.Time
+	synthFirstFrame    time.Time
+	ttfa               time.Time
+	audibleSink        string
+	sinkAtArm          string
 	// bargeInMu guards bargeIn: the voice watcher stamps it from the turn
 	// goroutine, keystroke barge-in from the TUI goroutine.
 	bargeInMu   sync.Mutex
@@ -94,6 +99,7 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		audible = audio.SinkNone
 	}
 	return events.TurnMetrics{
+		Timing:                  m.timing(),
 		Envelope:                responseEnvelopePtr(m.response),
 		Degraded:                m.degraded,
 		Interrupted:             m.interrupted,

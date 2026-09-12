@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // runProfile is what the run actually used: the report header and
@@ -228,6 +230,13 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 func (r *liveRunner) close() {
 	if r.persona != nil {
 		r.persona.selector.Close()
+		if r.agent != nil && r.agent.Pipeline != nil {
+			r.persona.recordSaveError(r.agent.Pipeline.CloseWork())
+		}
+		if r.persona.checkpoint != nil {
+			r.persona.recordSaveError(r.persona.checkpoint.Close())
+			r.persona.checkpoint = nil
+		}
 	}
 	if r.cleanup != nil {
 		r.cleanup()
@@ -242,6 +251,38 @@ func (r *liveRunner) close() {
 		r.tts = nil
 	}
 	r.closeBrains()
+}
+
+// runBackground runs the host-owned delivery turn on the serialized engine
+// host. The worker itself has already run asynchronously; this call only
+// claims a durable terminal result after flushing the current checkpoint.
+func (r *liveRunner) runBackground(ctx context.Context) error {
+	if r.agent == nil || r.agent.Pipeline == nil {
+		return fmt.Errorf("background work: agent is not configured")
+	}
+	if r.persona != nil && r.persona.checkpoint != nil {
+		if err := r.persona.checkpoint.Wait(ctx); err != nil {
+			return fmt.Errorf("background checkpoint before claim: %w", err)
+		}
+	}
+	return r.agent.Pipeline.RunBackgroundTurn(ctx)
+}
+
+func (r *liveRunner) waitWork(ctx context.Context, durable bool) error {
+	if !durable || r.persona == nil || r.persona.checkpoint == nil {
+		return nil
+	}
+	if err := r.persona.checkpoint.Wait(ctx); err != nil {
+		return fmt.Errorf("background checkpoint after delivery: %w", err)
+	}
+	return nil
+}
+
+func (r *liveRunner) workSnapshot() work.Snapshot {
+	if r.agent == nil {
+		return work.Snapshot{}
+	}
+	return r.agent.WorkSnapshot()
 }
 
 func (r *liveRunner) closeBrains() {
@@ -313,7 +354,12 @@ func (r *liveRunner) selectPersona(ctx context.Context, id string) error {
 	if r.persona == nil {
 		return fmt.Errorf("persona selector is not configured")
 	}
+	before := r.persona.selector.Snapshot()
+	workBefore := r.workSnapshot()
+	started := time.Now()
 	s, err := r.persona.selector.Select(ctx, id, "ui")
+	after := r.persona.selector.Snapshot()
+	r.persona.recordSelectionTiming(started, before, after, "ui", err, workBefore)
 	if err == nil {
 		r.persona.recordSelection(s)
 	}
@@ -328,7 +374,10 @@ func (r *liveRunner) personaState() personaTurnState {
 	if r.agent != nil && r.agent.Pipeline != nil && r.agent.Pipeline.Brain != nil {
 		provider = r.agent.Pipeline.Brain
 	}
-	return r.persona.state(provider, s)
+	state := r.persona.state(provider, s)
+	_, state.WorkerCalls = r.worker.calls()
+	state.Work = r.agent.WorkSnapshot()
+	return state
 }
 func (r *liveRunner) writePersonaArtifacts(dir string) error {
 	if r.persona == nil {
@@ -340,4 +389,9 @@ func (r *liveRunner) writePersonaArtifacts(dir string) error {
 		provider = r.agent.Pipeline.Brain
 	}
 	return r.persona.writeArtifacts(dir, provider, []map[string]any{{"calls": s}})
+}
+
+// stopPlayback invokes the owning host cancellation control.
+func (r *liveRunner) stopPlayback() {
+	r.agent.Pipeline.StopPlayback()
 }

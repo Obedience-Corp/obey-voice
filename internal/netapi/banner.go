@@ -41,6 +41,12 @@ const (
 	// binary OVA1 frames instead of JSON+base64. JSON audio_input and
 	// audio_chunk stay valid.
 	CapBinaryAudio = "binary_audio"
+	// CapSharedPersonaSnapshot means this serve has a host-owned canonical
+	// session provider and sends session_snapshot before a new reply.
+	CapSharedPersonaSnapshot = "shared_persona_session_snapshot"
+	// CapResponseIDDedupe means canonical turns and response envelopes carry
+	// stable response IDs clients may use to deduplicate reconnect replay.
+	CapResponseIDDedupe = "response_id_dedupe"
 )
 
 // Capabilities is the flag set this build advertises, in the ready banner and
@@ -56,6 +62,18 @@ func Capabilities() map[string]bool {
 		CapVoiceClaimOnDequeue:  true,
 		CapBinaryAudio:          true,
 	}
+}
+
+// CapabilitiesForSnapshot returns the static wire flags plus the optional
+// canonical session contract. The latter is configuration-dependent: a serve
+// without a host snapshot callback must not claim shared-persona support.
+func CapabilitiesForSnapshot(enabled bool) map[string]bool {
+	caps := Capabilities()
+	if enabled {
+		caps[CapSharedPersonaSnapshot] = true
+		caps[CapResponseIDDedupe] = true
+	}
+	return caps
 }
 
 // ReadyBanner is the single JSON line `serve --banner-json` writes to stdout

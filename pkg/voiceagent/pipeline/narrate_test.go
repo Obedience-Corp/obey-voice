@@ -260,7 +260,9 @@ func TestLongStoryRouteSkipsLiveThinkStream(t *testing.T) {
 	if !ok || kind != RouteNarrate {
 		t.Fatalf("route = %q, %v; want narrate", kind, ok)
 	}
-	p.completeRoutedTurn(context.Background(), turn, metrics, "tell me a long story", kind, "phrase")
+	if err := p.completeRoutedTurn(context.Background(), turn, metrics, "tell me a long story", kind, "phrase"); err != nil {
+		t.Fatal(err)
+	}
 
 	if brainProvider.thinkCalls != 0 {
 		t.Fatalf("ThinkStream called %d times, want 0 for long story phrase", brainProvider.thinkCalls)

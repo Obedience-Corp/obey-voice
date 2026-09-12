@@ -168,3 +168,48 @@ func TestSelectorUseDefaultsKeepsMalformedLiveProfileForForegroundAndBackground(
 		t.Fatal("explicit malformed default selection succeeded")
 	}
 }
+
+func TestMalformedProfileRespectsWorkDisabledConversationBoundary(t *testing.T) {
+	for _, state := range []string{"live", "cleared", "restored", "closed", "deleted"} {
+		t.Run(state, func(t *testing.T) {
+			f := newSelectorTestFixture(t, testProfile("samantha", "Samantha", "samantha"))
+			defer f.close(t)
+			if err := f.pipeline.BeginConversationIdentity(f.session.ID); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			f.selector, err = NewSelector(f.selector.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := f.selector.Snapshot()
+			if before.ConversationEpoch == "" || f.pipeline.Agency != nil {
+				t.Fatal("fixture must have a normal conversation identity without background work")
+			}
+			writeMalformedPersona(t, f.catalog.Dir, "samantha")
+			switch state {
+			case "cleared":
+				err = f.pipeline.ClearConversation()
+			case "restored":
+				f.selector.RestoreSession(f.session.ID, "samantha", "Samantha", before.PromptHash)
+			case "closed":
+				err = f.pipeline.CloseWork()
+			case "deleted":
+				err = os.Remove(filepath.Join(f.catalog.Dir, "samantha", "persona.yaml"))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, background := range []bool{false, true} {
+				admitted, err := f.selector.Route(context.Background(), "continue the conversation", background)
+				if state == "live" {
+					if err != nil || admitted.Envelope.ConversationEpoch != before.ConversationEpoch || f.selector.Snapshot() != before {
+						t.Fatalf("live last-good admission background=%v: %+v, %v", background, admitted, err)
+					}
+				} else if err == nil {
+					t.Fatalf("%s identity admitted background=%v with a broken profile", state, background)
+				}
+			}
+		})
+	}
+}

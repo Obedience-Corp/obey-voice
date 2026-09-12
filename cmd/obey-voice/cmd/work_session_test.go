@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -201,13 +202,33 @@ func TestWorkCheckpointFailureStaysDirtyAndRetries(t *testing.T) {
 	if s := p.WorkSnapshot(); s.PersistedRevision >= s.Revision || len(s.Pending) != 1 {
 		t.Fatalf("failed save acknowledged or lost result: %+v", s)
 	}
+	dirty := p.WorkSnapshot()
+	waitCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	waitErr := cp.inner.Wait(waitCtx)
+	contextErr := waitCtx.Err()
+	cancel()
+	if waitErr == nil {
+		t.Fatal("Wait returned nil after the checkpoint save failed")
+	}
+	var pathErr *os.PathError
+	if contextErr != nil || !errors.As(waitErr, &pathErr) {
+		t.Fatalf("Wait must return the disk error before caller cancellation: error=%v context=%v", waitErr, contextErr)
+	}
+	if got := p.WorkSnapshot(); got.Revision != dirty.Revision || got.PersistedRevision != dirty.PersistedRevision {
+		t.Fatalf("failed Wait changed watermark: before=%+v after=%+v", dirty, got)
+	}
 	if err := os.Remove(dir); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(dir+".saved", dir); err != nil {
 		t.Fatal(err)
 	}
-	cp.retry()
+	retryCtx, retryCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	if err := cp.inner.Wait(retryCtx); err != nil {
+		retryCancel()
+		t.Fatalf("retry Wait = %v", err)
+	}
+	retryCancel()
 	waitCheckpoint(t, p)
 	if err := closeWorkSession(p, cp); err != nil {
 		t.Fatal(err)

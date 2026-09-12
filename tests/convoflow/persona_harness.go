@@ -8,17 +8,20 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	personaruntime "github.com/Obedience-Corp/obey-voice/internal/persona/runtime"
+	"github.com/Obedience-Corp/obey-voice/internal/worksession"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 // loadFixtureConfig deliberately uses a fresh Viper instance. Persona proof
@@ -29,6 +32,11 @@ func loadFixtureConfig(path string) (*config.Config, error) {
 		return nil, fmt.Errorf("fixture config path is required")
 	}
 	v := viper.New()
+	// Match the owning config default: zero would erase provider history after
+	// every turn even though the canonical transcript remains complete.
+	if spec, ok := config.SpecFor("max_history"); ok {
+		v.SetDefault(spec.Key, spec.Default)
+	}
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read fixture config %s: %w", path, err)
@@ -41,10 +49,13 @@ func loadFixtureConfig(path string) (*config.Config, error) {
 }
 
 type personaTurnState struct {
-	Selection  events.PersonaSelection `json:"selection"`
-	Envelope   events.ResponseEnvelope `json:"envelope"`
-	History    []brain.Turn            `json:"history"`
-	BrainCalls int                     `json:"brain_calls"`
+	Selection       events.PersonaSelection `json:"selection"`
+	Envelope        events.ResponseEnvelope `json:"envelope"`
+	History         []brain.Turn            `json:"history"`
+	BrainCalls      int                     `json:"brain_calls"`
+	WorkerCalls     int                     `json:"worker_calls"`
+	Work            work.Snapshot           `json:"work"`
+	WorkAtSelection work.Snapshot           `json:"work_at_selection,omitempty"`
 }
 
 type personaRunner interface {
@@ -65,14 +76,19 @@ type personaRuntime struct {
 	selector           *personaruntime.Selector
 	store              *session.Store
 	session            *session.Session
+	checkpoint         *worksession.Checkpoint
 	mu                 sync.Mutex
 	selections         []events.PersonaSelection
 	envelopes          []events.ResponseEnvelope
 	responses          []map[string]any
+	selectionTimings   []map[string]any
 	callCount          func() int
 	lastCalls          int
 	invocationSnapshot func() any
 	saveErr            error
+	sessionDir         string
+	recovery           []recoveryArtifact
+	backupFn           func([]brain.Turn) error
 }
 
 func (r *personaRuntime) state(p brain.Provider, calls int) personaTurnState {
@@ -122,6 +138,7 @@ func (r *personaRuntime) writeArtifacts(dir string, p brain.Provider, calls []ma
 	selections := append([]events.PersonaSelection(nil), r.selections...)
 	envelopes := append([]events.ResponseEnvelope(nil), r.envelopes...)
 	responses := append([]map[string]any(nil), r.responses...)
+	selectionTimings := append([]map[string]any(nil), r.selectionTimings...)
 	r.mu.Unlock()
 	history := p.History()
 	write := func(name string, v any) error {
@@ -144,10 +161,57 @@ func (r *personaRuntime) writeArtifacts(dir string, p brain.Provider, calls []ma
 	if err := write("response-records.json", responses); err != nil {
 		return err
 	}
-	if r.invocationSnapshot != nil {
-		return write("brain-invocations.json", r.invocationSnapshot())
+	if err := write("selection-timings.json", selectionTimings); err != nil {
+		return err
 	}
-	return write("brain-invocations.json", calls)
+	if r.checkpoint != nil {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := r.checkpoint.Wait(flushCtx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("flush work checkpoint: %w", err)
+		}
+	}
+	if r.store != nil && r.session != nil {
+		reloaded, err := r.store.Load(r.session.ID)
+		if err != nil {
+			return fmt.Errorf("reload session artifact: %w", err)
+		}
+		if err := write("session-reloaded.json", reloaded); err != nil {
+			return err
+		}
+	}
+	if r.invocationSnapshot != nil {
+		if err := write("brain-invocations.json", r.invocationSnapshot()); err != nil {
+			return err
+		}
+	} else if err := write("brain-invocations.json", calls); err != nil {
+		return err
+	}
+	return r.writeRecoveryArtifacts(write)
+}
+
+func (r *personaRuntime) recordSelectionTiming(start time.Time, before, after events.PersonaSelection, source string, err error, workAtSelection work.Snapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row := map[string]any{
+		"source":                          source,
+		"started_at":                      start.UTC().Format(time.RFC3339Nano),
+		"ended_at":                        time.Now().UTC().Format(time.RFC3339Nano),
+		"duration_ns":                     time.Since(start).Nanoseconds(),
+		"prior_persona":                   before.PersonaID,
+		"selected_persona":                after.PersonaID,
+		"session_id":                      after.SessionID,
+		"conversation_epoch":              after.ConversationEpoch,
+		"work_revision":                   workAtSelection.Revision,
+		"work_persisted":                  workAtSelection.PersistedRevision,
+		"work_running_at_selection":       workHasRunningJob(workAtSelection),
+		"work_completed_before_selection": !workHasRunningJob(workAtSelection) && workHasTerminalJob(workAtSelection),
+	}
+	if err != nil {
+		row["error"] = err.Error()
+	}
+	r.selectionTimings = append(r.selectionTimings, row)
 }
 
 func (r *personaRuntime) validate() error {
@@ -194,13 +258,21 @@ func configurePersonaWithFactory(r *liveRunner, base *config.Config, catalog per
 	if err := store.SaveSelection(sess, r.liveProvider.History(), initial.PersonaID, initial.DisplayName, ""); err != nil {
 		return fmt.Errorf("save initial selection: %w", err)
 	}
-	if err := r.agent.EnableConversationWork(sess.ID, nil, initial.Config()); err != nil {
-		return fmt.Errorf("enable conversation work: %w", err)
+	rt := &personaRuntime{store: store, session: sess, sessionDir: filepath.Join(runDir, "sessions")}
+	// The task02 selector fixture historically enabled the work authority even
+	// when the operator config omitted the feature flag. Keep that authority for
+	// persona proof while the production adapter retains its disabled no-op path.
+	workCfg := initial.Config()
+	if workCfg != nil && !workCfg.VoiceWorkEnabled {
+		copy := *workCfg
+		copy.VoiceWorkEnabled = true
+		workCfg = &copy
 	}
-	if err := store.BeginWork(sess, r.agent.WorkSnapshot(), nil); err != nil {
-		return fmt.Errorf("begin conversation work: %w", err)
+	checkpoint, err := worksession.Bind(r.agent.Pipeline, workCfg, sess, store)
+	if err != nil {
+		return err
 	}
-	rt := &personaRuntime{store: store, session: sess}
+	rt.checkpoint = checkpoint
 	selector, err := personaruntime.NewSelector(personaruntime.SelectionOptions{
 		Base: base, Catalog: catalog, Pipeline: r.agent.Pipeline, Voices: r.voices,
 		SessionID: sess.ID, Initial: initial,
@@ -216,6 +288,8 @@ func configurePersonaWithFactory(r *liveRunner, base *config.Config, catalog per
 		},
 	})
 	if err != nil {
+		_ = r.agent.Pipeline.CloseWork()
+		_ = checkpoint.Close()
 		return err
 	}
 	rt.selector = selector
@@ -237,21 +311,26 @@ func configurePersonaWithFactory(r *liveRunner, base *config.Config, catalog per
 	}
 	rt.recordSelection(selector.Snapshot())
 	r.persona = rt
-	// Task 02 has no worker proof: checkpoint work at the serialized turn
-	// boundary. Async worker checkpointing is covered by the later work proof.
 	r.agent.Pipeline.OnTurn = func() {
 		rt.recordSaveError(store.Save(sess, r.agent.Pipeline.Brain.History()))
-		rt.recordSaveError(store.SaveWork(sess, r.agent.WorkSnapshot()))
 	}
 	r.agent.AdmitInput = func(ctx context.Context, input string, background bool) (pipeline.ResponseAdmission, error) {
 		before := selector.Snapshot()
+		workBefore := r.workSnapshot()
+		started := time.Now()
 		ad, err := selector.Route(ctx, input, background)
 		if err == nil {
 			after := selector.Snapshot()
 			if after.BindingHash != before.BindingHash {
 				rt.recordSelection(after)
+				rt.recordSelectionTiming(started, before, after, "route", nil, workBefore)
 			}
 			rt.recordEnvelope(ad.Envelope)
+		} else {
+			after := selector.Snapshot()
+			if after.BindingHash != before.BindingHash {
+				rt.recordSelectionTiming(started, before, after, "route", err, workBefore)
+			}
 		}
 		return ad, err
 	}

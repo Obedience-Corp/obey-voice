@@ -80,7 +80,7 @@ output moves to stderr. The first line is `ready`, written once the listener is
 bound:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://mac.tailnet.ts.net:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":false,"tailscale":true,"pid":41233,"binds":["100.64.0.7:7262","127.0.0.1:7262"],"work_dir":"/Users/lance/Dev/project","client_setup_url":"https://login.tailscale.com/admin/dns","capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true,"shared_persona_session_snapshot":true,"response_id_dedupe":true}}
 ```
 
 | Field | Meaning |
@@ -99,7 +99,7 @@ bound:
 LAN mode with a trusted or self-signed cert omits `client_setup_url` entirely:
 
 ```json
-{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true}}
+{"event":"ready","protocol_version":3,"url":"https://192.168.1.24:7262","port":7262,"fingerprint":"9f3c…","token":"…","mdns":true,"tailscale":false,"pid":41233,"binds":["192.168.1.24:7262","127.0.0.1:7262"],"capabilities":{"audio_level_payload":true,"binary_audio":true,"interrupt_events":true,"response_delta_payload":true,"thinking_delta_payload":true,"voice_claim_on_dequeue":true,"shared_persona_session_snapshot":true,"response_id_dedupe":true}}
 ```
 
 A `pairing_code` line (`{"event":"pairing_code","code":"…","expires_at":"…"}`)
@@ -519,6 +519,43 @@ meetings per serve, and on-phone STT.
 
 Connect: `wss://host:port/v1/stream?token=...` (or Bearer on non-browser clients).
 On `--open` / LoopbackHTTP, Stage on loopback uses `ws://127.0.0.1:<port>/v1/stream?token=...`.
+
+### Current-session snapshot
+
+When the serve host has a canonical shared-persona session owner, the first
+text frame on a new stream is a `session_snapshot`, before any later reply or
+selection event:
+
+```json
+{"type":"session_snapshot","session_id":"…","conversation_epoch":"…",
+ "selection":{"session_id":"…","conversation_epoch":"…",
+  "persona_id":"santa","display_name":"Santa","binding_hash":"…",
+  "revision":7},"mic_state":"idle","state_revision":42,
+ "transcript":[{"role":"assistant","content":"…","response_id":"…"}]}
+```
+
+`transcript` is the canonical session history, including persisted assistant
+persona identity and `response_id`; clients must not rebuild it from stream
+events or relabel it from `set_persona_ack`. A reconnect seeds its transcript
+from this one message and ignores a later response event whose
+`response_envelope.response_id` is already present. `selection.revision` is
+monotonic for `persona_selected` events; clients discard an older selection.
+`state_revision` is a monotonic runtime revision covering conversation
+boundaries and mic ownership, separate from the PCM audio generation fence.
+
+The additive `shared_persona_session_snapshot` and `response_id_dedupe`
+capabilities are advertised together only when this canonical host path is
+available. The ordinary conversation lifecycle supplies its session/epoch even
+when `voice_work_enabled` is false; enabling background work is not a
+prerequisite. A serve without that callback keeps the legacy stream ordering and
+does not claim attributed shared-persona support. Clear and resume publish a
+fresh snapshot to connected clients so an old session/epoch cannot remain the
+visible current state. Snapshot admission uses the same serialized dispatcher
+boundary as turns and control operations. If a turn is already in flight, a
+new connection waits for that boundary before receiving its first frame,
+preserving the ordering that puts the snapshot before later replies and events.
+A full client set or a full dispatcher queue closes the connection with a
+retryable status.
 LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bearer.
 
 ### Client → server (JSON text frames)
@@ -528,11 +565,11 @@ LAN and Tailscale stay `wss://`. Auth is still the query token (browsers) or Bea
 | `text_input` | `text` | Enqueue a text turn |
 | `interrupt` | | Cancel in-flight turn; server sends `audio_reset`, plus `turn_interrupted` / `speaking_interrupted` when something was actually cancelled |
 | `clear_history` | | Wipe conversation history |
-| `audio_output` | `mode`: `stream` \| other, `binary` (optional bool) | Opt into TTS delivery (`stream` on). `binary: true` switches TTS chunks from JSON+base64 `audio_chunk` to OVA1 binary frames. JSON `audio_input` / `audio_chunk` stay valid. |
+| `audio_output` | `mode`: `stream` \| other, `binary` (optional bool), `protocol` (optional `ova2`) | Opt into TTS delivery (`stream` on). `binary: true` switches TTS chunks from JSON+base64 `audio_chunk` to OVA1 binary frames; adding `protocol: "ova2"` requests attributed OVA2 frames. JSON `audio_input` / `audio_chunk` stay valid. |
 | `voice_start` | | Exclusive mic claim + start remote STT turn. Queued (and **not** claimed) while another turn is in flight — see Barge-in and the mic claim |
 | `audio_input` | `data` base64, `sample_rate` 16000 | PCM s16le mono @ 16 kHz, max 64 KiB decoded. Prefer a **binary WebSocket frame** of the same PCM (no header, 16 kHz implied) when `capabilities.binary_audio` is set. |
 | `voice_end` | | Finalize utterance; release mic claim. **Not optional** — a turn that goes quiet without one is ended by the server, see The turn deadline |
-| `set_persona` | `name`: persona id | Switch persona for **subsequent** turns (see below) |
+| `set_persona` | `name`: persona id; optional `request_id` | Switch persona for **subsequent** turns (see below) |
 
 ### Server → client
 
@@ -572,6 +609,24 @@ in `GET /v1/status`:
 | `think_leak` | count of think tags that hit the speech filter after the brain split; must be 0 |
 
 `playback_complete_ms` is local-speaker Done only. It is `0` for `stream_client` and `none` — fanout drain is not playback.
+
+New engines also include `timing` on `turn_metrics`. `timing.raw_turn_start`
+retains measured offsets from turn start; `timing.normalized` uses the single
+origin declared by `timing.origin`: `finalized_input` when available, otherwise
+`turn_start`. `origin_offset_ms` locates that origin relative to turn start.
+Both objects use millisecond fields (`finalized_input_ms`, `first_model_chunk_ms`,
+`model_complete_ms`, `first_audio_ready_ms`, `playback_start_ms`,
+`playback_complete_ms`, `stream_drain_ms`, `barge_in_ms`). An unobserved boundary
+is `null`; an observed zero is `0`. Negative offsets are retained for events
+before finalized input, so ordering evidence is not silently clamped.
+
+These are milestones, not durations to add together. Streaming can make first
+audio precede model completion. Playback start/completion is reported only for
+`local_speaker`; `stream_drain_ms` records host transport completion for
+`stream_client`, without claiming the remote device played it. The legacy
+flat fields retain their existing meanings for compatibility. Clients should
+use the normalized object for comparable displayed timings; the TUI labels its
+origin and normalizes legacy fields when reading older events.
 
 A client that needs sub-100 ms meter response should measure locally;
 `audio_level` crosses the network and is throttled at the source.
@@ -614,13 +669,31 @@ another device speaking.
 
 | `type` | Fields |
 |--------|--------|
-| `audio_chunk` | `data` (base64 pcm_s16le), `sample_rate`, `segment_id`. Default when the client did not set `audio_output.binary`. |
+| `audio_chunk` | `data` (base64 pcm_s16le), `sample_rate`, `segment_id`, `generation`, `response_id`, `response_envelope`. Default when the client did not set `audio_output.binary`. |
 | binary TTS frame | WebSocket **binary** message: `OVA1` (4 ASCII bytes) + `sample_rate` u32le + `segment_id` u64le + `pcm_s16le`. Sent instead of `audio_chunk` when the client set `audio_output.binary: true` and the serve advertises `capabilities.binary_audio`. |
 | mic uplink | WebSocket **binary** message: raw `pcm_s16le` mono @ 16 kHz, **no header**. Same claim rules as JSON `audio_input`. PCM payload max **64 KiB** per message (`{"type":"error","message":"audio_input: pcm frame too large"}` if larger). The WebSocket message itself is capped at **96 KiB** so a JSON `audio_input` envelope of a max-size PCM frame can be read; above that the socket closes (1009). |
-| `audio_end` | `segment_id`, `reason` (`complete` / `interrupted` / …). Always JSON. |
+| `audio_end` | `segment_id`, `generation`, `response_id`, `response_envelope`, `reason` (`complete` / `interrupted` / …). Always JSON. |
 | `audio_reset` | Clear client playback after interrupt. Always JSON. |
-| `audio_output_ack` | `mode` applied; `binary: true` when binary TTS is on |
-| `set_persona_ack` | `id`, `display_name`, `prompt_hash`, `applies_to` |
+| `audio_output_ack` | `mode` applied; `binary: true` when binary TTS is on; `protocol: "ova2"` when OVA2 was negotiated |
+| `set_persona_ack` | `id`, `display_name`, `prompt_hash`, `applies_to`; optional echoed `request_id` |
+
+OVA2 is a negotiated WebSocket binary message. Its first 28 bytes are `OVA2`
+(4 ASCII bytes), sample rate (u32 little-endian), segment ID (u64), generation
+(u64), and response ID byte length (u32). The full UTF-8 response ID follows,
+then mono PCM s16le. OVA1 framing remains unchanged for legacy clients. Use the
+acknowledged protocol; an older server may accept binary output as OVA1 while
+ignoring the new protocol field.
+
+Each audio frame owns its response identity. A later control event must not
+relabel queued PCM. JSON carries the full immutable response envelope; OVA2
+carries its response ID for correlation with attributed control events. Segment
+IDs distinguish synthesis streams within a response. Generation marks an audio
+cancellation boundary, not a persona revision. The dispatcher admits the next
+turn before reopening delivery; late events from canceled turns cannot reopen
+it. Clients stop queued sources on `audio_reset`, discard older generations,
+and reset their server-generation state on reconnect. Server stream drain is
+not evidence that a remote speaker finished playing.
+
 
 ## Barge-in and the mic claim
 
@@ -729,6 +802,8 @@ it is absent, which is what an older serve looks like:
 | `interrupt_events` | A remote `interrupt` emits `turn_interrupted` / `speaking_interrupted` |
 | `voice_claim_on_dequeue` | A queued `voice_start` does not hold the mic |
 | `binary_audio` | Binary WebSocket frames: mic uplink is raw `pcm_s16le` @ 16 kHz; TTS downlink is `OVA1` + rate u32le + `segment_id` u64le + PCM when the client set `audio_output.binary` |
+| `shared_persona_session_snapshot` | The stream begins with a canonical `session_snapshot` containing session/epoch, selected persona, mic state, state revision, and transcript |
+| `response_id_dedupe` | Canonical assistant turns and response envelopes carry stable IDs for reconnect deduplication |
 
 `protocol_version` is deliberately **not** bumped for these: this file's own
 rule is to feature-detect by status, because the version does not move for
@@ -774,6 +849,29 @@ Ack:
  "prompt_hash": "a1b2c3d4e5f6", "applies_to": "next_turn"}
 ```
 
+Clients that need a confirmed result send a unique, nonempty `request_id`:
+
+```json
+{"type":"set_persona","name":"pirate","request_id":"switch-42"}
+```
+
+The requesting connection receives that ID on its `set_persona_ack`, or on
+an `error` if selection is refused:
+
+```json
+{"type":"error","stage":"netapi","message":"selection refused","request_id":"switch-42"}
+```
+
+Only a matching result completes that request. Generic turn errors and another
+request's result must not settle it. `persona_selected` remains the broadcast
+of current server selection; it is separate from a request's completion. Sending
+a frame alone does not confirm application. Disconnect, cancellation or a client
+timeout ends the local wait; a timeout means the result is unconfirmed because
+the server may still apply the queued operation. Reconcile current selection
+from server events or a reconnect snapshot. Frames without `request_id` keep
+the legacy acknowledgement/error shape; an older server cannot confirm a
+correlated request.
+
 `prompt_hash` is the first 12 hex characters of the sha256 of the **assembled
 prompt text** (placeholders unresolved) — the same digest
 `obey-voice persona show --json --with-prompt` reports. It changes whenever the
@@ -782,17 +880,17 @@ prompt the model now sees". It is not a document name and must not be compared
 to one. Empty means serve could not resolve the document.
 
 **`applies_to` is always `next_turn`, and that is a guarantee rather than a
-limitation.** A conversation binds its identity — persona, prompt, voice, brain
-routing — when it starts, and keeps it for its whole life. A switch therefore
-cannot retarget a turn already in flight, and the ack says so explicitly rather
-than leaving the client to assume otherwise.
+limitation.** Each admitted response snapshots its persona, prompt, voice and
+brain binding. A switch preserves the conversation and its history while changing
+the responder for later turns; it cannot retarget a reply already in flight.
 
 Editing the *document* behind the persona a session is already bound to does
 take effect on the next turn; that is a different axis from switching identity.
 
-The change is not persisted: a remote client selecting a persona does not
-rewrite the host's `config.yaml`. `obey-voice persona use` remains the persisting
-path.
+The selected responder is persisted with the conversation. A remote selection
+does not rewrite the host's default in `config.yaml`; `obey-voice persona use`
+remains the default-setting path. Historical labels come from each response
+envelope, independently of the most recent selection.
 
 An unknown name returns an error envelope naming the personas that do exist.
 Per-connection personas are out of scope — the pipeline is single-brained, so

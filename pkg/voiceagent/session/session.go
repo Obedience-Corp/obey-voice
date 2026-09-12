@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -8,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -494,7 +494,18 @@ func (st *Store) SaveWork(s *Session, snapshot work.Snapshot) error {
 	if snapshot.Revision == current.Work.Revision {
 		candidate := cloneSnapshot(&snapshot)
 		candidate.PersistedRevision = current.Work.PersistedRevision
-		if !reflect.DeepEqual(candidate, current.Work) {
+		// Compare the persisted representation. Runtime time.Time values carry
+		// monotonic/location metadata that JSON cannot retain; an identical
+		// worker checkpoint must remain idempotent after a disk round trip.
+		candidateJSON, err := json.Marshal(candidate)
+		if err != nil {
+			return fmt.Errorf("encode work checkpoint: %w", err)
+		}
+		currentJSON, err := json.Marshal(current.Work)
+		if err != nil {
+			return fmt.Errorf("encode durable work checkpoint: %w", err)
+		}
+		if !bytes.Equal(candidateJSON, currentJSON) {
 			return fmt.Errorf("%w: revision=%d", ErrWorkRevisionConflict, snapshot.Revision)
 		}
 		// A previous attempt may have renamed this exact revision and then

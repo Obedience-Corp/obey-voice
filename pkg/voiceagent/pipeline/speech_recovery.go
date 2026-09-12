@@ -122,6 +122,9 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 // turn may be nil for idle job summaries.
 func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, metrics *turnMetrics, sentence string) error {
 	sentence = strings.TrimSpace(sentence)
+	if sentence != "" && metrics != nil && metrics.routedSpeech != nil {
+		*metrics.routedSpeech = append(*metrics.routedSpeech, sentence)
+	}
 	if sentence == "" || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
 		return nil
 	}
