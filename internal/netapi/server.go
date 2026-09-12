@@ -70,10 +70,14 @@ type Options struct {
 	WorkDirSource string
 	Campaign      CampaignInfo
 
-	Credentials  *Credentials
-	Bus          *events.Bus
-	Dispatcher   *Dispatcher
-	ListSessions func() []SessionSummary
+	Credentials *Credentials
+	Bus         *events.Bus
+	Dispatcher  *Dispatcher
+	// CurrentSessionSnapshot is the host-owned canonical session view. It is
+	// invoked only at a serialized dispatcher boundary; nil preserves the
+	// legacy stream contract without a snapshot.
+	CurrentSessionSnapshot SnapshotProvider
+	ListSessions           func() []SessionSummary
 	// DeleteSession, when set, enables DELETE /v1/sessions/{id}. nil leaves
 	// the route unregistered, so an older or limited serve 404s rather than
 	// pretending — the same gate Meetings uses. The implementation must
@@ -184,6 +188,10 @@ type Server struct {
 	addrs []net.Addr
 }
 
+func (s *Server) capabilities() map[string]bool {
+	return CapabilitiesForSnapshot(s.opts.CurrentSessionSnapshot != nil && s.dispatcher != nil)
+}
+
 func New(opts Options) *Server {
 	h := newHub()
 	if opts.Dispatcher != nil && opts.Ingress != nil {
@@ -203,7 +211,7 @@ func New(opts Options) *Server {
 	if opts.Ingress != nil {
 		h.setIngress(opts.Ingress)
 	}
-	return &Server{
+	s := &Server{
 		opts:           opts,
 		dispatcher:     opts.Dispatcher,
 		listSessions:   opts.ListSessions,
@@ -217,6 +225,15 @@ func New(opts Options) *Server {
 		voiceSilence:   positiveOr(opts.VoiceSilenceTimeout, defaultVoiceSilence),
 		voiceTurnMax:   positiveOr(opts.VoiceTurnMax, defaultVoiceTurnMax),
 	}
+	if opts.Dispatcher != nil {
+		opts.Dispatcher.setSnapshotPublisher(s.publishSnapshot)
+	}
+	h.setStateRevision(func() {
+		if opts.Dispatcher != nil {
+			opts.Dispatcher.bumpStateRevision()
+		}
+	})
+	return s
 }
 
 // positiveOr falls back when a duration option was left unset.

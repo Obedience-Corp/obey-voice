@@ -33,6 +33,14 @@ type backgroundRunner interface {
 	waitWork(context.Context, bool) error
 }
 
+type recoveryRunner interface {
+	compact(context.Context) error
+}
+
+type recoveryHistoryRunner interface {
+	importCanonicalHistory(string) error
+}
+
 type engine struct {
 	scn           *Scenario
 	runDir        string
@@ -80,6 +88,15 @@ func (e *engine) run(ctx context.Context) (runErr error) {
 
 	e.started = time.Now()
 	e.stopReason = "completed"
+	if e.scn.HistoryFixture != "" {
+		seed, ok := e.runner.(recoveryHistoryRunner)
+		if !ok {
+			return fmt.Errorf("history fixture: runner does not support canonical import")
+		}
+		if err := seed.importCanonicalHistory(e.scn.HistoryFixture); err != nil {
+			return err
+		}
+	}
 	for i, turn := range e.scn.Turns {
 		if err := e.runTurn(ctx, i, turn); err != nil {
 			e.stopReason = "turn_failed"
@@ -187,6 +204,14 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 			return fmt.Errorf("turn %s: runner does not support background work", turn.ID)
 		}
 		if err := bg.runBackground(turnCtx); err != nil {
+			return err
+		}
+	} else if turn.Op == "compact" {
+		recovery, ok := e.runner.(recoveryRunner)
+		if !ok {
+			return fmt.Errorf("turn %s: runner does not support compaction", turn.ID)
+		}
+		if err := recovery.compact(turnCtx); err != nil {
 			return err
 		}
 	} else if turn.Op == "quiet_gap" {

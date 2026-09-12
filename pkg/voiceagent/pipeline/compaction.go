@@ -124,7 +124,7 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	// the per-turn voice instruction ("2–3 sentences max") would otherwise land
 	// after it as the model's last word. Tools stay off — this turn only reads
 	// the conversation it already has.
-	summary, err := p.Brain.ThinkFull(ctx, p.CompactPrompt, brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true})
+	summary, err := p.Brain.ThinkFull(ctx, p.compactionInstruction(), brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true})
 	if err != nil {
 		// Providers roll their own appended input back on failure, so history is
 		// already the pre-compact transcript here — no LoadHistory (it would
@@ -146,4 +146,20 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 		p.OnTurn()
 	}
 	return nil
+}
+
+// Attribution is part of the shared conversation contract even when a user
+// customizes the compact document. Keep these instructions out of ordinary
+// legacy compaction where no historical identities are known.
+func (p *Pipeline) compactionInstruction() string {
+	canonical, ok := p.Brain.(brain.CanonicalHistoryProvider)
+	if !ok {
+		return p.CompactPrompt
+	}
+	for _, turn := range canonical.CanonicalHistory() {
+		if turn.PersonaID != "" || turn.ResponseID != "" {
+			return p.CompactPrompt + "\n\nHistorical attribution requirements: This is a continuity summary of a shared conversation, not a new reply by the current persona. For each retained fact or decision from an assistant, preserve its historical persona name and exact source response ID from the [Historical assistant: ... response ...] marker. Keep user-provided facts attributed to the user; cite the historical assistant and source response ID when recording who acknowledged them. Preserve different personas separately, including their disagreements. Never infer missing identities or invent source IDs. Retain these source references in later summaries as well."
+		}
+	}
+	return p.CompactPrompt
 }

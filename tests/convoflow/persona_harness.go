@@ -32,6 +32,11 @@ func loadFixtureConfig(path string) (*config.Config, error) {
 		return nil, fmt.Errorf("fixture config path is required")
 	}
 	v := viper.New()
+	// Match the owning config default: zero would erase provider history after
+	// every turn even though the canonical transcript remains complete.
+	if spec, ok := config.SpecFor("max_history"); ok {
+		v.SetDefault(spec.Key, spec.Default)
+	}
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read fixture config %s: %w", path, err)
@@ -81,6 +86,9 @@ type personaRuntime struct {
 	lastCalls          int
 	invocationSnapshot func() any
 	saveErr            error
+	sessionDir         string
+	recovery           []recoveryArtifact
+	backupFn           func([]brain.Turn) error
 }
 
 func (r *personaRuntime) state(p brain.Provider, calls int) personaTurnState {
@@ -174,9 +182,13 @@ func (r *personaRuntime) writeArtifacts(dir string, p brain.Provider, calls []ma
 		}
 	}
 	if r.invocationSnapshot != nil {
-		return write("brain-invocations.json", r.invocationSnapshot())
+		if err := write("brain-invocations.json", r.invocationSnapshot()); err != nil {
+			return err
+		}
+	} else if err := write("brain-invocations.json", calls); err != nil {
+		return err
 	}
-	return write("brain-invocations.json", calls)
+	return r.writeRecoveryArtifacts(write)
 }
 
 func (r *personaRuntime) recordSelectionTiming(start time.Time, before, after events.PersonaSelection, source string, err error, workAtSelection work.Snapshot) {
@@ -246,7 +258,7 @@ func configurePersonaWithFactory(r *liveRunner, base *config.Config, catalog per
 	if err := store.SaveSelection(sess, r.liveProvider.History(), initial.PersonaID, initial.DisplayName, ""); err != nil {
 		return fmt.Errorf("save initial selection: %w", err)
 	}
-	rt := &personaRuntime{store: store, session: sess}
+	rt := &personaRuntime{store: store, session: sess, sessionDir: filepath.Join(runDir, "sessions")}
 	// The task02 selector fixture historically enabled the work authority even
 	// when the operator config omitted the feature flag. Keep that authority for
 	// persona proof while the production adapter retains its disabled no-op path.

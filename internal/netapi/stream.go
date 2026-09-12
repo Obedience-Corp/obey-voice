@@ -70,12 +70,29 @@ type hub struct {
 	// segment's speaking_complete: a multi-sentence reply is still speaking
 	// between its segments. Written only from the bus subscription.
 	speaking atomic.Bool
+	// bumpStateRevision advances the dispatcher-owned client state revision.
+	// It is set by Server after the hub is created; zero-value hubs used by
+	// focused audio tests remain valid.
+	bumpStateRevision func()
 }
 
 func newHub() *hub {
 	h := &hub{conns: make(map[*streamConn]struct{})}
 	h.audioGeneration.Store(1)
 	return h
+}
+
+func (h *hub) setStateRevision(bump func()) {
+	h.mu.Lock()
+	h.bumpStateRevision = bump
+	h.mu.Unlock()
+}
+
+func (h *hub) micStateLocked() string {
+	if h.micClaimant != nil {
+		return "claimed"
+	}
+	return "idle"
 }
 
 func (h *hub) audioGenerationSnapshot() uint64 {
@@ -104,6 +121,14 @@ func (h *hub) add(c *streamConn) bool {
 func (h *hub) remove(c *streamConn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.removeLocked(c)
+}
+
+// removeLocked detaches c and releases the per-hub accounting that belongs to
+// it. Callers hold h.mu. Keeping this in one path matters because a slow
+// connection can be evicted by a broadcast or snapshot publish before its
+// handler reaches the deferred remove call.
+func (h *hub) removeLocked(c *streamConn) {
 	if _, ok := h.conns[c]; !ok {
 		return
 	}
@@ -201,12 +226,7 @@ func (h *hub) broadcast(msg []byte) {
 		case c.out <- msg:
 		default:
 			c.evict("client too slow")
-			// If this client was streaming, drop the streamer count now —
-			// remove() will also run later, so clear the flag first.
-			if c.audioStream.Swap(false) {
-				h.streamers.Add(-1)
-			}
-			delete(h.conns, c)
+			h.removeLocked(c)
 		}
 	}
 }
@@ -385,10 +405,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		kick:  make(chan string, 1),
 		token: presentedToken(r),
 	}
-	if !s.hub.add(conn) {
-		ws.Close(websocket.StatusTryAgainLater, "too many clients")
-		return
-	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
 	defer func() {
 		// The deadline goes with the turn: a socket that really closed has
 		// already ended it, and a fire after this would report a turn that
@@ -403,9 +421,24 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		s.hub.remove(conn)
 		s.hub.releaseMic(conn)
 	}()
-
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
+	registered := false
+	if s.opts.CurrentSessionSnapshot != nil && s.dispatcher != nil {
+		err := s.dispatcher.Snapshot(ctx, s.opts.CurrentSessionSnapshot, func(installCtx context.Context, snapshot SessionSnapshot) error {
+			return s.installSnapshot(installCtx, conn, snapshot)
+		})
+		if err != nil {
+			status, reason := snapshotConnectClose(err)
+			ws.Close(status, reason)
+			return
+		}
+		registered = true
+	} else {
+		registered = s.hub.add(conn)
+	}
+	if !registered {
+		ws.Close(websocket.StatusTryAgainLater, "too many clients")
+		return
+	}
 
 	writeDone := make(chan struct{})
 	go func() {
@@ -521,7 +554,7 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 				s.sendError(conn, err.Error())
 			}
 		case "set_persona":
-			s.handleSetPersona(ctx, conn, msg.Name)
+			s.handleSetPersona(ctx, conn, msg.Name, msg.RequestID)
 		default:
 			s.sendError(conn, "unknown control message type: "+msg.Type)
 		}
@@ -559,16 +592,20 @@ func (s *Server) sendAudioOutputAck(conn *streamConn, mode string, binary bool, 
 // handleSetPersona switches the persona used by subsequent turns.
 //
 // It deliberately does not touch the turn in flight. The dispatcher applies
-// the runtime swap after that turn, starts a fresh persona-bound session, and
-// only then returns the ack, so applies_to=next_turn is an enforceable contract.
-func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name string) {
+// the runtime swap after that turn and only then returns the ack, so
+// applies_to=next_turn is an enforceable contract.
+func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name, requestID string) {
+	correlationID := ""
+	if requestID != "" {
+		correlationID = requestID
+	}
 	if s.opts.SetPersona == nil && s.opts.SetPersonaContext == nil {
-		s.sendError(conn, "set_persona is not enabled on this server")
+		s.sendControlError(conn, correlationID, "set_persona is not enabled on this server")
 		return
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		s.sendError(conn, "set_persona requires a name")
+		s.sendControlError(conn, correlationID, "set_persona requires a name")
 		return
 	}
 	var ack PersonaAck
@@ -579,16 +616,20 @@ func (s *Server) handleSetPersona(ctx context.Context, conn *streamConn, name st
 		ack, err = s.dispatcher.SetPersona(ctx, name, s.opts.SetPersona)
 	}
 	if err != nil {
-		s.sendError(conn, err.Error())
+		s.sendControlError(conn, correlationID, err.Error())
 		return
 	}
-	msg, err := json.Marshal(map[string]any{
+	ackEnvelope := map[string]any{
 		"type":         "set_persona_ack",
 		"id":           ack.ID,
 		"display_name": ack.DisplayName,
 		"prompt_hash":  ack.PromptHash,
 		"applies_to":   "next_turn",
-	})
+	}
+	if correlationID != "" {
+		ackEnvelope["request_id"] = correlationID
+	}
+	msg, err := json.Marshal(ackEnvelope)
 	if err != nil {
 		return
 	}
@@ -605,6 +646,30 @@ func (s *Server) sendError(conn *streamConn, text string) {
 	s.sendEvent(conn, events.Error{Stage: "netapi", Message: text})
 }
 
+// sendControlError is the correlated form of a control failure. Generic bus
+// errors deliberately remain uncorrelated: a client must never settle a
+// pending selection from an unrelated turn or transport diagnostic.
+func (s *Server) sendControlError(conn *streamConn, requestID, text string) {
+	if requestID == "" {
+		s.sendError(conn, text)
+		return
+	}
+	msg, err := json.Marshal(map[string]any{
+		"type":       "error",
+		"stage":      "netapi",
+		"message":    text,
+		"request_id": requestID,
+	})
+	if err != nil {
+		return
+	}
+	select {
+	case conn.out <- msg:
+	default:
+		conn.evict("client too slow")
+	}
+}
+
 // sendEvent delivers one event to a single connection, for the things only
 // that client is owed. Like broadcast it never blocks: a client that cannot
 // keep up on events is evicted rather than allowed to stall a live turn.
@@ -617,6 +682,19 @@ func (s *Server) sendEvent(conn *streamConn, e events.Event) {
 	case conn.out <- msg:
 	default:
 		conn.evict("client too slow")
+	}
+}
+
+func snapshotConnectClose(err error) (websocket.StatusCode, string) {
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return websocket.StatusPolicyViolation, "session snapshot unavailable"
+	case errors.Is(err, ErrBusy):
+		return websocket.StatusTryAgainLater, "server busy — try again shortly"
+	case errors.Is(err, errTooManyStreamClients):
+		return websocket.StatusTryAgainLater, "too many clients"
+	default:
+		return websocket.StatusInternalError, "session snapshot unavailable"
 	}
 }
 

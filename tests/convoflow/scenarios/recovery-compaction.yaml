@@ -1,0 +1,14 @@
+name: recovery-compaction
+description: Seed a task-local attributed/tool transcript, compact through the owning pipeline, then continue it.
+input: text
+router_tools: route_only
+history_fixture: tests/convoflow/scenarios/recovery-canonical-history.json
+persona:
+  initial: samantha
+turns:
+  - id: compact-seeded-history
+    op: compact
+    wait: idle
+  - id: continue-after-compact
+    user: "What facts do you retain from the seeded conversation?"
+    wait: idle

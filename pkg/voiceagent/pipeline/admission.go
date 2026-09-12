@@ -31,6 +31,10 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 		}
 	}
 	metrics.response = admitted.Envelope
+	metrics.originalInput = input
+	if p.Brain != nil {
+		metrics.historyAtAdmission = len(p.Brain.History())
+	}
 	primary, fallback := p.ttsProviders()
 	ctx = context.WithValue(events.WithResponse(ctx, admitted.Envelope), responseVoicesKey{}, responseVoices{primary, fallback})
 	p.bindBrainInfo()
