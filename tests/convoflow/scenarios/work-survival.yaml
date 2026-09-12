@@ -2,7 +2,7 @@ name: work-survival
 description: >-
   Start one harmless local worker task as Samantha, change the responder to
   Santa while the real Qwen worker is in flight, then deliver and reload its
-  durable attributed result.
+  durable attributed result through real speaker playback.
 input: text
 router_tools: route_only
 brain:
@@ -16,7 +16,8 @@ tts:
   voice: af_heart
 capture:
   audio: true
-  speakers: false
+  # A recording-only sink cannot produce the audible delivery receipt below.
+  speakers: true
 persona:
   initial: samantha
 turns:
