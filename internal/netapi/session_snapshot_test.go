@@ -243,7 +243,7 @@ func TestSnapshotConnectCapacityClosesWebSocketRetryably(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
+	defer func() { _ = ws.CloseNow() }()
 	_, _, err = ws.Read(ctx)
 	var closeErr websocket.CloseError
 	if !errors.As(err, &closeErr) {
@@ -292,7 +292,7 @@ func TestSnapshotConnectDispatchQueueClosesWebSocketRetryably(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
+	defer func() { _ = ws.CloseNow() }()
 	_, _, err = ws.Read(ctx)
 	var closeErr websocket.CloseError
 	if !errors.As(err, &closeErr) {
