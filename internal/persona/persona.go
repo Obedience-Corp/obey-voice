@@ -56,6 +56,14 @@ type Profile struct {
 	Path        string     `yaml:"-" json:"path"` // absolute path of persona.yaml when loaded
 }
 
+// CatalogIssue identifies a profile that could not be loaded while building
+// a roster. A bad edit must not hide healthy profiles from a running session,
+// but callers that own a user-facing surface can report the issue.
+type CatalogIssue struct {
+	ID  string
+	Err error
+}
+
 // Brain holds per-persona model routing.
 //
 //	brain:
@@ -223,15 +231,31 @@ func Load(id string) (*Profile, error) {
 
 // List returns profiles found under personas/, sorted by id.
 func List() ([]*Profile, error) {
-	root := Dir()
+	return listProfiles(Dir(), Load)
+}
+
+// ListWithIssues returns every valid profile and records unloadable profile
+// directories separately. Directory/read errors still fail the listing; an
+// individual malformed profile is recoverable by repairing that profile.
+func ListWithIssues() ([]*Profile, []CatalogIssue, error) {
+	return listProfilesWithIssues(Dir(), Load)
+}
+
+func listProfiles(root string, load func(string) (*Profile, error)) ([]*Profile, error) {
+	profiles, _, err := listProfilesWithIssues(root, load)
+	return profiles, err
+}
+
+func listProfilesWithIssues(root string, load func(string) (*Profile, error)) ([]*Profile, []CatalogIssue, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("listing personas: %w", err)
+		return nil, nil, fmt.Errorf("listing personas: %w", err)
 	}
 	var out []*Profile
+	var issues []CatalogIssue
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -240,13 +264,14 @@ func List() ([]*Profile, error) {
 		if err := ValidateID(id); err != nil {
 			continue
 		}
-		p, err := Load(id)
+		p, err := load(id)
 		if err != nil {
-			return nil, err
+			issues = append(issues, CatalogIssue{ID: id, Err: err})
+			continue
 		}
 		out = append(out, p)
 	}
-	return out, nil
+	return out, issues, nil
 }
 
 // Write writes profile to personas/<id>/persona.yaml. It does not overwrite

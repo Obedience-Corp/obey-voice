@@ -72,6 +72,34 @@ func TestWriteLoadListApply(t *testing.T) {
 	}
 }
 
+func TestListSkipsMalformedProfileAndReportsIssue(t *testing.T) {
+	dir := t.TempDir()
+	setConfigDir(t, dir)
+	valid := &Profile{
+		Schema: Schema, ID: "healthy", DisplayName: "Healthy",
+		Prompts: PromptRefs{Persona: "healthy"},
+	}
+	if err := Write(valid, false); err != nil {
+		t.Fatal(err)
+	}
+	brokenPath := filepath.Join(dir, "personas", "broken", "persona.yaml")
+	if err := os.MkdirAll(filepath.Dir(brokenPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(brokenPath, []byte("schema: [broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profiles, err := List()
+	if err != nil || len(profiles) != 1 || profiles[0].ID != "healthy" {
+		t.Fatalf("List() = %v, %v; want healthy profile only", profiles, err)
+	}
+	profiles, issues, err := ListWithIssues()
+	if err != nil || len(profiles) != 1 || len(issues) != 1 || issues[0].ID != "broken" {
+		t.Fatalf("ListWithIssues() = %v, %+v, %v", profiles, issues, err)
+	}
+}
+
 func TestApplyQwenProviderAndVoice(t *testing.T) {
 	cfg := &config.Config{
 		TTSProvider:  "kokoro",

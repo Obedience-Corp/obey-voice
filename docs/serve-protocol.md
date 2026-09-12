@@ -801,6 +801,13 @@ this is per-instance.
 
 ## `GET /v1/personas`
 
+Malformed individual profiles are omitted from `personas` while healthy rows
+remain available (HTTP 200). An optional `warnings` array reports each omitted
+profile's `id` and repair `message`; selecting an unavailable profile still fails.
+A catalog-directory error still returns HTTP 500. CLI `persona list` reports
+profile warnings on stderr (leaving its JSON array unchanged), and the TUI persona
+manager displays a repair warning alongside the healthy entries.
+
 The read side of `set_persona`: which personas this serve can switch to, and
 which one it is using right now.
 

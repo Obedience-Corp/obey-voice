@@ -396,7 +396,9 @@ func (d *Dispatcher) SetPersona(ctx context.Context, id string, apply func(strin
 }
 
 // SetPersonaContext retains FIFO ordering while cancellation reaches resource
-// preparation. A late constructor cannot publish after its caller has left.
+// preparation. Cancellation before the persistence fence aborts selection;
+// once the durable write commits, its selection remains authoritative even
+// if the caller disconnects while that write is in flight.
 func (d *Dispatcher) SetPersonaContext(ctx context.Context, id string, apply func(context.Context, string) (PersonaAck, error)) (PersonaAck, error) {
 	if apply == nil {
 		return PersonaAck{}, errors.New("set_persona is not enabled")
