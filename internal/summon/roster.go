@@ -29,12 +29,13 @@ type Address struct {
 }
 
 const (
-	ReasonNoAddress      = "no-address"
-	ReasonBareName       = "bare-name"
-	ReasonVocative       = "vocative"
-	ReasonImperative     = "punctuationless-imperative"
-	ReasonExplicitSwitch = "explicit-switch"
-	ReasonUnknownTarget  = "unknown-target"
+	ReasonNoAddress       = "no-address"
+	ReasonBareName        = "bare-name"
+	ReasonVocative        = "vocative"
+	ReasonImperative      = "punctuationless-imperative"
+	ReasonExplicitSwitch  = "explicit-switch"
+	ReasonUnknownTarget   = "unknown-target"
+	ReasonAmbiguousTarget = "ambiguous-target"
 )
 
 // UnknownTargetError reports an explicit switch request for a persona that is
@@ -48,6 +49,17 @@ func (e *UnknownTargetError) Error() string {
 	return fmt.Sprintf("unknown persona %q", e.Target)
 }
 
+// AmbiguousTargetError refuses an addressed name shared by multiple personas.
+// The conflicting IDs are sorted, independent of catalog input order.
+type AmbiguousTargetError struct {
+	Target     string
+	PersonaIDs []string
+}
+
+func (e *AmbiguousTargetError) Error() string {
+	return fmt.Sprintf("persona name %q is ambiguous between %s; use a unique full name or select a persona in /personas", e.Target, strings.Join(e.PersonaIDs, ", "))
+}
+
 type rosterName struct {
 	value       string
 	personaID   string
@@ -58,15 +70,16 @@ type rosterName struct {
 // Roster values are immutable after construction and safe for concurrent
 // Resolve calls.
 type Roster struct {
-	names  []rosterName
-	byName map[string]rosterName
+	names     []rosterName
+	byName    map[string]rosterName
+	ambiguous map[string][]string
 }
 
-// NewRoster validates and builds a deterministic address table. A normalized
-// name may belong to only one identity. This includes generated first-word
-// names, so a collision is rejected rather than resolved by input order.
+// NewRoster validates and builds a deterministic address table. Shared names,
+// including generated first words, are recorded as ambiguous. Resolve refuses
+// only an address using that name, keeping unrelated conversation available.
 func NewRoster(identities []Identity) (*Roster, error) {
-	roster := &Roster{byName: make(map[string]rosterName)}
+	roster := &Roster{byName: make(map[string]rosterName), ambiguous: make(map[string][]string)}
 	ids := make(map[string]struct{}, len(identities))
 	for i, identity := range identities {
 		id := strings.TrimSpace(identity.ID)
@@ -95,13 +108,22 @@ func NewRoster(identities []Identity) (*Roster, error) {
 			entry := rosterName{value: name, personaID: id, orderLength: len(name)}
 			if prior, exists := roster.byName[name]; exists {
 				if prior.personaID != id {
-					return nil, fmt.Errorf("name %q is used by personas %q and %q", name, prior.personaID, id)
+					ids := roster.ambiguous[name]
+					if len(ids) == 0 {
+						ids = append(ids, prior.personaID)
+					}
+					if !slices.Contains(ids, id) {
+						roster.ambiguous[name] = append(ids, id)
+					}
 				}
 				continue
 			}
 			roster.byName[name] = entry
 			roster.names = append(roster.names, entry)
 		}
+	}
+	for _, ids := range roster.ambiguous {
+		slices.Sort(ids)
 	}
 	slices.SortFunc(roster.names, func(a, b rosterName) int {
 		return cmp.Or(cmp.Compare(b.orderLength, a.orderLength), cmp.Compare(a.value, b.value))
@@ -139,13 +161,13 @@ func (r *Roster) Resolve(text string) (Address, error) {
 	}
 
 	if remainder == "" || trimLead(remainder) == "" {
-		return Address{PersonaID: entry.personaID, Reason: ReasonBareName, Bare: true}, nil
+		return r.address(entry, text, "", ReasonBareName, true)
 	}
 
 	punctuated := startsWithBoundary(remainder)
 	cleanRemainder := trimLead(remainder)
 	if cleanRemainder == "" {
-		return Address{PersonaID: entry.personaID, Reason: ReasonBareName, Bare: true}, nil
+		return r.address(entry, text, "", ReasonBareName, true)
 	}
 	if !punctuated && !requestLead(cleanRemainder) {
 		return noAddress, nil
@@ -154,7 +176,16 @@ func (r *Roster) Resolve(text string) (Address, error) {
 	if punctuated {
 		reason = ReasonVocative
 	}
-	return Address{PersonaID: entry.personaID, Remainder: cleanRemainder, Reason: reason}, nil
+	return r.address(entry, text, cleanRemainder, reason, false)
+}
+
+func (r *Roster) address(entry rosterName, original, remainder, reason string, bare bool) (Address, error) {
+	if ids := r.ambiguous[entry.value]; len(ids) > 0 {
+		return Address{Remainder: original, Reason: ReasonAmbiguousTarget}, &AmbiguousTargetError{
+			Target: entry.value, PersonaIDs: slices.Clone(ids),
+		}
+	}
+	return Address{PersonaID: entry.personaID, Remainder: remainder, Reason: reason, Bare: bare}, nil
 }
 
 // resolveSwitch handles only the explicit, anchored "switch to …" grammar.
@@ -171,7 +202,8 @@ func (r *Roster) resolveSwitch(original, lead string) (Address, bool, error) {
 	}
 	entry, targetRemainder, ok := r.matchOpening(targetText)
 	if ok && strings.TrimSpace(trimLead(targetRemainder)) == "" {
-		return Address{PersonaID: entry.personaID, Reason: ReasonExplicitSwitch, Bare: true}, true, nil
+		address, err := r.address(entry, original, "", ReasonExplicitSwitch, true)
+		return address, true, err
 	}
 	// Explicit switch targets end at a separator. This lets "switch to
 	// Unknown, please" report Unknown while keeping ordinary unknown first

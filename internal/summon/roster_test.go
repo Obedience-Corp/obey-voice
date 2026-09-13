@@ -3,6 +3,7 @@ package summon
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -74,13 +75,42 @@ func TestRosterUnknownExplicitSwitch(t *testing.T) {
 	}
 }
 
-func TestNewRosterRejectsAliasCollision(t *testing.T) {
-	_, err := NewRoster([]Identity{
-		{ID: "santa", DisplayName: "Santa"},
-		{ID: "samantha", DisplayName: "Samantha", Aliases: []string{"SANTA"}},
-	})
-	if err == nil {
-		t.Fatal("NewRoster accepted a normalized alias collision")
+func TestRosterRefusesOnlyAddressedCollisions(t *testing.T) {
+	identities := []Identity{
+		{ID: "veronica", DisplayName: "Veronica"},
+		{ID: "veronica-hype", DisplayName: "Veronica Hype"},
+		{ID: "samantha", DisplayName: "Samantha", Aliases: []string{"VERONICA", "Veronica"}},
+	}
+	for _, reverse := range []bool{false, true} {
+		if reverse {
+			slices.Reverse(identities)
+		}
+		r, err := NewRoster(identities)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, text := range []string{"Veronica", "VERONICA!", "Hey, Veronica, help", "Veronica tell me a joke", "switch to Veronica"} {
+			got, err := r.Resolve(text)
+			var ambiguous *AmbiguousTargetError
+			if !errors.As(err, &ambiguous) || ambiguous.Target != "veronica" || !reflect.DeepEqual(ambiguous.PersonaIDs, []string{"samantha", "veronica", "veronica-hype"}) {
+				t.Fatalf("Resolve(%q) = %+v, %v; want deterministic ambiguity", text, got, err)
+			}
+			if got.PersonaID != "" || got.Remainder != text || got.Reason != ReasonAmbiguousTarget {
+				t.Fatalf("ambiguous address = %+v", got)
+			}
+		}
+		for _, text := range []string{"tell me a joke", "Veronica is a persona", "I told Veronica earlier", "Veronica's story"} {
+			got, err := r.Resolve(text)
+			if err != nil || got.PersonaID != "" || got.Remainder != text {
+				t.Fatalf("unaddressed Resolve(%q) = %+v, %v", text, got, err)
+			}
+		}
+		for text, id := range map[string]string{"Samantha, hello": "samantha", "Veronica Hype, hello": "veronica-hype", "switch to Veronica Hype": "veronica-hype"} {
+			got, err := r.Resolve(text)
+			if err != nil || got.PersonaID != id {
+				t.Fatalf("unique Resolve(%q) = %+v, %v; want %s", text, got, err, id)
+			}
+		}
 	}
 }
 

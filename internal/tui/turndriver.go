@@ -649,7 +649,12 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	m.talkTurnEnded()
 
 	if msg.err != nil {
-		switch app.ClassifyVoiceFailure(msg.err, m.deps.ctx.Err(), m.voiceFailures+1) {
+		if strings.TrimSpace(msg.text) != "" {
+			// STT captured speech successfully; response-stage errors must
+			// not inherit earlier input-failure strikes.
+			m.voiceFailures = 0
+		}
+		switch app.ClassifyVoiceTurnFailure(msg.err, m.deps.ctx.Err(), msg.text, m.voiceFailures+1) {
 		case app.VoiceShutdown:
 			m.quitting = true
 			return tea.Quit
@@ -660,7 +665,9 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 			m.emit(events.Info{Message: "Voice input keeps failing — switching to text. Type /voice to switch back."})
 			return m.resumeListening()
 		default: // app.VoiceRetry
-			m.voiceFailures++
+			if strings.TrimSpace(msg.text) == "" {
+				m.voiceFailures++
+			}
 			m.emit(events.Error{Message: msg.err.Error()})
 			return tea.Tick(app.RetryBackoff, func(time.Time) tea.Msg { return voiceRetryMsg{} })
 		}

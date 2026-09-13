@@ -33,8 +33,19 @@ const (
 // ClassifyVoiceFailure decides whether a failed voice turn should retry,
 // fall back to text input, or shut the loop down.
 func ClassifyVoiceFailure(err, ctxErr error, consecutiveFailures int) VoiceFailureAction {
+	return ClassifyVoiceTurnFailure(err, ctxErr, "", consecutiveFailures)
+}
+
+// ClassifyVoiceTurnFailure applies the voice fallback policy with the result
+// of the capture step. RunTurn returns the recognized transcript when a later
+// admission or response stage fails, so that error proves the microphone and
+// STT path succeeded and must not consume an input-failure retry.
+func ClassifyVoiceTurnFailure(err, ctxErr error, transcript string, consecutiveFailures int) VoiceFailureAction {
 	if errors.Is(err, context.Canceled) || ctxErr != nil {
 		return VoiceShutdown
+	}
+	if strings.TrimSpace(transcript) != "" {
+		return VoiceRetry
 	}
 	if consecutiveFailures >= maxVoiceFailures {
 		return VoiceFallback
@@ -126,7 +137,12 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 			}
 			turnText, err := runVoiceTurn(ctx, p)
 			if err != nil {
-				switch ClassifyVoiceFailure(err, ctx.Err(), voiceFailures+1) {
+				if strings.TrimSpace(turnText) != "" {
+					// STT captured speech successfully; response-stage errors
+					// must not inherit earlier input-failure strikes.
+					voiceFailures = 0
+				}
+				switch ClassifyVoiceTurnFailure(err, ctx.Err(), turnText, voiceFailures+1) {
 				case VoiceShutdown:
 					return nil
 				case VoiceFallback:
@@ -136,7 +152,9 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 					voiceFailures = 0
 					continue
 				case VoiceRetry:
-					voiceFailures++
+					if strings.TrimSpace(turnText) == "" {
+						voiceFailures++
+					}
 					p.Events.Emit(events.Error{Message: err.Error()})
 					select {
 					case <-ctx.Done():

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -626,6 +627,118 @@ func TestVoiceErrorSurfacesOnBus(t *testing.T) {
 		t.Fatalf("voice failure not emitted as events.Error: %v", errMsgs)
 	}
 }
+
+func TestRecognizedVoiceResponseErrorsRetryWithoutDisablingVoice(t *testing.T) {
+	runner := &fakeTurnRunner{}
+	bus := events.NewBus()
+	var errMsgs []string
+	events.Subscribe(bus, func(e events.Error) { errMsgs = append(errMsgs, e.Message) })
+	m := sizedConversation(t, 80, 24)
+	m.startConversation(conversationDeps{runner: runner, bus: bus, voice: true, ctx: context.Background()})
+	m.voiceFailures = 2 // a prior pair of genuine input failures
+
+	for i := 0; i < 3; i++ {
+		var cmd tea.Cmd
+		m, cmd = m.Update(voiceTurnDoneMsg{text: "Veronica", err: errors.New("admit response: roster collision")})
+		if cmd == nil {
+			t.Fatalf("response failure %d did not schedule a retry", i+1)
+		}
+		if !m.voiceEnabled || m.voiceFailures != 0 {
+			t.Fatalf("response failure %d changed input fallback state: enabled=%v failures=%d", i+1, m.voiceEnabled, m.voiceFailures)
+		}
+		m.turnState = turnVoiceListening // simulate the retry dispatch
+	}
+	if len(errMsgs) != 3 || !strings.Contains(errMsgs[0], "roster collision") {
+		t.Fatalf("response errors were not surfaced on the event bus: %v", errMsgs)
+	}
+}
+
+// TestVoiceFailurePolicyTerminalProof drives the real Bubble Tea program and
+// event bridge. Response failures retain listening, while empty transcripts
+// consume the bounded input-failure budget and switch to text.
+func TestVoiceFailurePolicyTerminalProof(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		text         string
+		wantEnabled  bool
+		wantFallback bool
+	}{
+		{name: "response failure keeps voice", text: "Veronica", wantEnabled: true},
+		{name: "input failure falls back", wantFallback: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			bus := events.NewBus()
+			model := sizedConversation(t, 120, 30)
+			failure := errors.New("admit response: roster collision")
+			if tc.wantFallback {
+				failure = errors.New("STT: microphone unavailable")
+			}
+			runner := &fakeTurnRunner{voiceQueue: []voiceScript{
+				{text: tc.text, err: failure}, {text: tc.text, err: failure}, {text: tc.text, err: failure},
+			}}
+			model.deps = conversationDeps{runner: runner, bus: bus, voice: true, ctx: ctx}
+			harness := &voiceFailureTerminalHarness{model: model, wantFallback: tc.wantFallback}
+			var terminal bytes.Buffer
+			program := tea.NewProgram(harness, tea.WithInput(nil), tea.WithOutput(&terminal), tea.WithContext(ctx), tea.WithoutSignalHandler())
+			if _, err := program.Run(); err != nil {
+				t.Fatal(err)
+			}
+			if harness.model.voiceEnabled != tc.wantEnabled {
+				t.Fatalf("voice enabled=%v, want %v", harness.model.voiceEnabled, tc.wantEnabled)
+			}
+			rendered := stripANSI(terminal.String())
+			if !strings.Contains(rendered, "admit response: roster collision") && !tc.wantFallback {
+				t.Fatalf("response error missing from terminal:\n%s", rendered)
+			}
+			if tc.wantFallback != strings.Contains(rendered, "switching to text") {
+				t.Fatalf("fallback notice mismatch in terminal:\n%s", rendered)
+			}
+			runner.mu.Lock()
+			calls := runner.voiceCalls
+			runner.mu.Unlock()
+			if calls != 3 {
+				t.Fatalf("voice attempts = %d, want 3", calls)
+			}
+			t.Logf("terminal output:\n%s", rendered)
+		})
+	}
+}
+
+type voiceFailureTerminalHarness struct {
+	model        conversationModel
+	wantFallback bool
+	errors       int
+}
+
+func (h *voiceFailureTerminalHarness) Init() tea.Cmd {
+	return h.model.startConversation(h.model.deps)
+}
+
+func (h *voiceFailureTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	h.model, cmd = h.model.Update(msg)
+	bridged, ok := msg.(busEventMsg)
+	if !ok {
+		return h, cmd
+	}
+	if _, ok := bridged.event.(events.Error); ok {
+		h.errors++
+	}
+	if h.wantFallback {
+		if info, ok := bridged.event.(events.Info); ok && strings.Contains(info.Message, "switching to text") {
+			h.model, _ = h.model.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+			return h, tea.Quit
+		}
+	} else if h.errors == 3 {
+		h.model, _ = h.model.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+		return h, tea.Quit
+	}
+	return h, cmd
+}
+
+func (h *voiceFailureTerminalHarness) View() string { return h.model.View() }
 
 func TestShutdownClassificationQuits(t *testing.T) {
 	runner := &fakeTurnRunner{}

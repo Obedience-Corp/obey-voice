@@ -404,8 +404,13 @@ gaps, microphone pause/resume or editing. Use the Talk persona control or TUI
 labels; it does not choose the responding persona.
 
 Incidental mentions such as `Santa is a persona` do not select Santa. Unknown
-explicit targets, conflicting aliases and failed prompt/model/voice preparation
-leave the old responder selected and report an error. Shared-history projection
+explicit targets, ambiguous addressed names and failed prompt/model/voice preparation
+leave the old responder selected and report an error. A shared alias or generated
+short name (for example, `Veronica` and `Veronica Hype`) does not block ordinary
+follow-ups or requests addressed to another persona. Use a unique full name or
+`/personas` when a spoken name is ambiguous. Response errors after speech was
+recognized keep voice input enabled; only repeated input failures switch to text.
+Shared-history projection
 is currently verified for Ollama. An unsupported provider is refused rather
 than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices
 `af_heart` and `am_michael`; it does not establish parity for every provider.
