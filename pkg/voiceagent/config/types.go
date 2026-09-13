@@ -2,6 +2,10 @@ package config
 
 // Config holds all application configuration.
 type Config struct {
+	// VoiceWorkers is nil for an installation that has not explicitly migrated
+	// from the singleton worker. A non-nil value is the complete versioned
+	// tier configuration and is authoritative over the legacy fields below.
+	VoiceWorkers *VoiceWorkers `mapstructure:"voice_workers" yaml:"voice_workers,omitempty" json:"voice_workers,omitempty"`
 	// Delegation is opt-in and bound to an operator-selected Obey parent.
 	DelegationEnabled         bool   `mapstructure:"delegation_enabled"`
 	DelegationBinary          string `mapstructure:"delegation_binary"`

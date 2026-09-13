@@ -31,6 +31,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
+	skillCtx += WorkerFactsPrompt(opts.WorkerFacts)
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 
@@ -46,6 +47,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		sess := &toolSession{
 			catalog:        o.skills,
 			routerPolicy:   opts.effectiveRouterPolicy(),
+			workerTiers:    opts.WorkerTiers,
 			delegation:     o.delegationForTurn(opts),
 			commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
 			boundary:       NewBoundary(o.cfg.WorkerBoundary),
@@ -212,6 +214,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if len(toolCalls) > 0 {
 				hadTools = true
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
+					tier, reason := routeMetadata(toolCalls)
 					if sess.onStart != nil || sess.onEnd != nil {
 						decision := sess.describe("route", kind, "")
 						if sess.onStart != nil {
@@ -229,7 +232,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							o.canonical = o.canonical[:len(o.canonical)-1]
 						}
 					}
-					done <- StreamResult{Route: kind}
+					done <- StreamResult{Route: kind, RouteTier: tier, RouteReasonCode: reason}
 					return
 				}
 				// Add the assistant's tool-calling message to history.

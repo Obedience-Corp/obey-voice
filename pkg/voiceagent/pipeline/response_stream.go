@@ -315,6 +315,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			metrics.modelComplete = time.Now()
 			p.emitResponse(metrics, events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
 			if repair != nil && result.Route != "" {
+				metrics.route.Tier, metrics.route.ReasonCode = result.RouteTier, result.RouteReasonCode
 				repair.applyBrainRoute(result.Route)
 				if _, _, ok := repair.routedKind(); ok && p.Player != nil {
 					p.Player.Stop()
@@ -509,6 +510,7 @@ func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, 
 
 	select {
 	case res := <-stream.Done:
+		metrics.route.Tier, metrics.route.ReasonCode = res.RouteTier, res.RouteReasonCode
 		if res.Err != nil {
 			if res.Recovered {
 				// The streamed text already ends with the brain's recovery

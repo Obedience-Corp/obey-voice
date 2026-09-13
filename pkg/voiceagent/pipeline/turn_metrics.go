@@ -29,6 +29,7 @@ type turnMetrics struct {
 	originalInput      string
 	historyAtAdmission int
 	routedSpeech       *[]string
+	route              RouteDecision
 	response           events.ResponseEnvelope
 	ordinary           *ordinaryCompletion
 	delivery           *completionPlayback

@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -74,6 +75,16 @@ type OllamaBrain struct {
 
 // NewOllama creates an Ollama brain provider.
 func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
+	return newOllama(context.Background(), cfg)
+}
+
+// newOllama is the context-aware constructor used when a provider is created
+// on a job goroutine. All catalog and optional skill work remains bounded by
+// the caller's cancellation and deadline.
+func newOllama(parent context.Context, cfg *config.Config) (*OllamaBrain, error) {
+	if parent == nil {
+		return nil, errors.New("nil context")
+	}
 	if cfg.OllamaModel == "" {
 		return nil, fmt.Errorf("ollama_model not configured — run: obey-voice config ollama_model <model>")
 	}
@@ -89,9 +100,9 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 	// reachable-but-hung host can't block startup; chat requests keep the
 	// untimed default client since generations can run long.
 	probe := api.NewClient(base, &http.Client{Timeout: 10 * time.Second})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	models, err := probe.List(ctx)
+	probeCtx, cancel := context.WithTimeout(parent, 5*time.Second)
+	models, err := probe.List(probeCtx)
+	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to ollama at %s: %w", cfg.OllamaHost, err)
 	}
@@ -120,13 +131,16 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 		return nil, err
 	}
 
-	catalog, err := loadSkillsCatalog(context.Background(), cfg, workDir)
+	catalog, err := loadSkillsCatalog(parent, cfg, workDir)
 	if err != nil {
 		return nil, err
 	}
-	embedCtx, embedCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	embedCtx, embedCancel := context.WithTimeout(parent, 10*time.Second)
 	router, routerErr := newSemanticSkillRouter(embedCtx, client, cfg.OllamaEmbeddingModel, cfg.SkillsSimilarityThreshold, catalog)
 	embedCancel()
+	if err := parent.Err(); err != nil {
+		return nil, fmt.Errorf("initialize ollama: %w", err)
+	}
 	if routerErr != nil {
 		fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing unavailable (%v); continuing with the Agent Skills catalog\n", routerErr)
 	}

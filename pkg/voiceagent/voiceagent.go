@@ -431,7 +431,9 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	)
 	var worker brain.Provider
 	var workerErr error
-	if opts.Worker != nil {
+	if cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+		// Each tiered job constructs its own provider from its frozen assignment.
+	} else if opts.Worker != nil {
 		worker = opts.Worker
 	} else if opts.WorkerErr != nil {
 		workerErr = opts.WorkerErr

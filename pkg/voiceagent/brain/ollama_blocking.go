@@ -32,11 +32,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
+	skillCtx += WorkerFactsPrompt(opts.WorkerFacts)
 	o.ensureContextBudget(skillCtx)
 
 	sess := &toolSession{
 		catalog:        o.skills,
 		routerPolicy:   opts.effectiveRouterPolicy(),
+		workerTiers:    opts.WorkerTiers,
 		delegation:     o.delegationForTurn(opts),
 		commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
 		boundary:       NewBoundary(o.cfg.WorkerBoundary),
