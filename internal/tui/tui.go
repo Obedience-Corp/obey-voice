@@ -1081,7 +1081,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// turnState cannot wedge on turnVoiceCanceling forever after /settings.
 	if a.screen != screenConversation {
 		switch msg.(type) {
-		case voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
+		// Conversation ticks belong to the conversation even while hidden.
+		// Dropping one leaves voiceTicking set but no timer scheduled.
+		// Meeting animation uses the separate meetingTickMsg lifecycle.
+		case voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
 			compactDoneMsg, backgroundReadyMsg, backgroundRecoveryMsg, backgroundPauseDoneMsg:
 			var convCmd tea.Cmd
 			a.conversation, convCmd = a.conversation.Update(msg)
