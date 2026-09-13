@@ -1,7 +1,8 @@
-package audio
+package playback
 
 import (
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"math/rand"
 	"testing"
@@ -17,7 +18,7 @@ import (
 const (
 	// erleCaptureChunk is one capture callback: miniaudio's low-latency default
 	// period is 10ms, and Capture does not override it.
-	erleCaptureChunk = SampleRate / 100
+	erleCaptureChunk = audio.SampleRate / 100
 	// erleEchoGain is how loud the speaker is at the mic.
 	erleEchoGain = 0.5
 )
@@ -30,7 +31,7 @@ func farEndSpeech(n int, seed int64) []float32 {
 	var lp float64
 	for i := range out {
 		lp = 0.85*lp + 0.15*rng.NormFloat64()
-		env := 0.5 + 0.5*math.Sin(2*math.Pi*float64(i)/float64(SampleRate)*3)
+		env := 0.5 + 0.5*math.Sin(2*math.Pi*float64(i)/float64(audio.SampleRate)*3)
 		out[i] = float32(lp * env * 0.3)
 	}
 	return out
@@ -45,11 +46,11 @@ func erleThroughFrontend(t *testing.T, refDelay, echoLag int) float64 {
 	t.Helper()
 
 	const seconds = 8
-	total := SampleRate * seconds
+	total := audio.SampleRate * seconds
 	far := farEndSpeech(total+echoLag, 1)
 
 	run := func(feedRef bool) float64 {
-		f := NewVoiceFrontend()
+		f := audio.NewVoiceFrontend()
 		f.SetReferenceDelay(refDelay)
 
 		var energy float64
@@ -87,7 +88,7 @@ func erleThroughFrontend(t *testing.T, refDelay, echoLag int) float64 {
 // while referenceDelaySamples under-counts by design. A suite that only
 // covered 48kHz stayed green while the preferred path cancelled ~1dB.
 func TestEchoCancellerERLEAcrossDeviceLatency(t *testing.T) {
-	ms := func(d int) int { return d * 1000 / SampleRate }
+	ms := func(d int) int { return d * 1000 / audio.SampleRate }
 	// Thresholds sit a couple of dB under measured so platform float
 	// differences do not flake, while a real regression — a dropped delay
 	// offset, a shortened filter, a slower step — falls well through:
@@ -106,16 +107,16 @@ func TestEchoCancellerERLEAcrossDeviceLatency(t *testing.T) {
 		t.Run(fmt.Sprintf("%dHz", rate), func(t *testing.T) {
 			refDelay := referenceDelaySamples(rate, playbackPeriodFrames)
 			// The whole ring must drain before the first frame is audible.
-			ring := playbackPeriods * playbackPeriodFrames * SampleRate / rate
+			ring := playbackPeriods * playbackPeriodFrames * audio.SampleRate / rate
 
 			for _, tc := range extras {
 				t.Run(tc.name, func(t *testing.T) {
-					echoLag := ring + tc.extraMs*SampleRate/1000
+					echoLag := ring + tc.extraMs*audio.SampleRate/1000
 					erle := erleThroughFrontend(t, refDelay, echoLag)
 					t.Logf("rate %dHz: echo lag %dms, reference delay %dms, residual %dms, "+
 						"%d taps (%dms) → ERLE %+.2f dB",
 						rate, ms(echoLag), ms(refDelay), ms(echoLag-refDelay),
-						echoCancellerTaps, ms(echoCancellerTaps), erle)
+						audio.EchoCancellerTaps(), ms(audio.EchoCancellerTaps()), erle)
 					if erle < tc.minERLE {
 						t.Errorf("ERLE = %+.2f dB, want >= %+.2f dB — self-echo at this "+
 							"latency will reach VAD and trip barge-in", erle, tc.minERLE)
@@ -136,12 +137,12 @@ func TestEchoCancellerTapsCoverWorstRateResidual(t *testing.T) {
 	const extraMs = 16
 
 	for _, rate := range []int{24000, 44100, 48000} {
-		ring := playbackPeriods * playbackPeriodFrames * SampleRate / rate
-		residual := ring + extraMs*SampleRate/1000 - referenceDelaySamples(rate, playbackPeriodFrames)
-		if residual > echoCancellerTaps {
+		ring := playbackPeriods * playbackPeriodFrames * audio.SampleRate / rate
+		residual := ring + extraMs*audio.SampleRate/1000 - referenceDelaySamples(rate, playbackPeriodFrames)
+		if residual > audio.EchoCancellerTaps() {
 			t.Errorf("rate %dHz: residual echo %dms exceeds the %dms tap window; "+
 				"cancellation falls off a cliff past the last tap",
-				rate, residual*1000/SampleRate, echoCancellerTaps*1000/SampleRate)
+				rate, residual*1000/audio.SampleRate, audio.EchoCancellerTaps()*1000/audio.SampleRate)
 		}
 	}
 }
@@ -158,7 +159,7 @@ func TestEchoCancellerTapsCoverWorstRateResidual(t *testing.T) {
 // thing that brings the echo inside the window.
 func TestEchoCancellerNeedsReferenceDelay(t *testing.T) {
 	const rate = 24000
-	echoLag := playbackPeriods*playbackPeriodFrames*SampleRate/rate + 8*SampleRate/1000
+	echoLag := playbackPeriods*playbackPeriodFrames*audio.SampleRate/rate + 8*audio.SampleRate/1000
 
 	compensated := erleThroughFrontend(t, referenceDelaySamples(rate, playbackPeriodFrames), echoLag)
 	uncompensated := erleThroughFrontend(t, 0, echoLag)
@@ -180,14 +181,14 @@ func TestEchoCancellerNeedsReferenceDelay(t *testing.T) {
 // playback, their voice must still dominate the front-end's output.
 func TestEchoCancellerPreservesNearEndDuringDoubleTalk(t *testing.T) {
 	const (
-		echoLag = 40 * SampleRate / 1000
-		total   = SampleRate * 8
+		echoLag = 40 * audio.SampleRate / 1000
+		total   = audio.SampleRate * 8
 	)
 	refDelay := referenceDelaySamples(48000, playbackPeriodFrames)
 	far := farEndSpeech(total+echoLag, 1)
 	near := farEndSpeech(total, 99) // the user, uncorrelated with playback
 
-	f := NewVoiceFrontend()
+	f := audio.NewVoiceFrontend()
 	f.SetReferenceDelay(refDelay)
 
 	var outEnergy, nearEnergy float64
@@ -224,7 +225,7 @@ func TestEchoCancellerPreservesNearEndDuringDoubleTalk(t *testing.T) {
 // to empty between utterances, and without re-priming every sentence after the
 // first would be uncompensated.
 func TestReferenceDelayRePrimesAfterSilence(t *testing.T) {
-	f := NewVoiceFrontend()
+	f := audio.NewVoiceFrontend()
 	f.SetReferenceDelay(320)
 
 	push := make([]float32, 160)
@@ -235,7 +236,7 @@ func TestReferenceDelayRePrimesAfterSilence(t *testing.T) {
 	// First burst: the offset is primed, so the first pops are the silent
 	// device-buffer window rather than far-end audio.
 	f.PushPlaybackReference(push)
-	if out := f.refsSnapshot(); len(out) != 320+160 {
+	if out := f.RefsSnapshot(); len(out) != 320+160 {
 		t.Fatalf("queue depth after first push = %d, want 320 delay + 160 pushed", len(out))
 	}
 
@@ -243,13 +244,13 @@ func TestReferenceDelayRePrimesAfterSilence(t *testing.T) {
 	for range 10 {
 		f.ProcessCapture(make([]float32, 160))
 	}
-	if got := len(f.refsSnapshot()); got != 0 {
+	if got := len(f.RefsSnapshot()); got != 0 {
 		t.Fatalf("queue depth after silence = %d, want 0 (drained)", got)
 	}
 
 	// Next burst re-primes rather than pairing immediately.
 	f.PushPlaybackReference(push)
-	if out := f.refsSnapshot(); len(out) != 320+160 {
+	if out := f.RefsSnapshot(); len(out) != 320+160 {
 		t.Fatalf("queue depth after second burst = %d, want the offset re-primed", len(out))
 	}
 }

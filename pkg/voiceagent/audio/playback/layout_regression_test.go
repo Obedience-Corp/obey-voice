@@ -1,8 +1,9 @@
-package audio
+package playback
 
 import (
 	"encoding/binary"
 	"encoding/json"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ import (
 
 // studioDisplayFormats mirrors the shared-mode formats enumerated for
 // "Studio Display Speakers" on the affected machine (format type omitted;
-// only rate/channels matter for pickPlaybackFormat).
+// only rate/channels matter for audio.PickPlaybackFormat).
 func studioDisplayFormats() []malgo.DataFormat {
 	return []malgo.DataFormat{
 		{Channels: 8, SampleRate: 44100},
@@ -35,15 +36,15 @@ func studioDisplayFormats() []malgo.DataFormat {
 // TestStudioDisplayClientLayoutIsStereo pins: multi-channel native ads →
 // choosePlaybackChannels returns a stereo client format, never mono.
 func TestStudioDisplayClientLayoutIsStereo(t *testing.T) {
-	_, nativeCh := pickPlaybackFormat(studioDisplayFormats(), 24_000)
+	_, nativeCh := audio.PickPlaybackFormat(studioDisplayFormats(), 24_000)
 	if nativeCh != 8 {
-		t.Fatalf("pickPlaybackFormat channels = %d, want 8 (advertised)", nativeCh)
+		t.Fatalf("audio.PickPlaybackFormat channels = %d, want 8 (advertised)", nativeCh)
 	}
-	client := choosePlaybackChannels(nativeCh)
+	client := audio.ChoosePlaybackChannels(nativeCh)
 	if client != 2 {
 		t.Fatalf("choosePlaybackChannels(%d) = %d, want 2 — mono client on multi-channel hardware is the crackle regression", nativeCh, client)
 	}
-	if got := choosePlaybackChannels(0); got != 2 {
+	if got := audio.ChoosePlaybackChannels(0); got != 2 {
 		t.Fatalf("choosePlaybackChannels(0) = %d, want 2", got)
 	}
 }

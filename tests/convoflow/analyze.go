@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"io/fs"
 	"math"
 	"os"
@@ -18,7 +19,7 @@ import (
 // reported, not gated. What a recorded synthesized stream can actually show
 // is a click at a segment join, clipping, or a stretch of exact digital
 // zero inside speech from a stall or padding — see zeroHoles.
-var convoflowCrackle = audio.CrackleThresholds{
+var convoflowCrackle = playback.CrackleThresholds{
 	MaxImpulses:         8,
 	MaxMidSilenceRuns:   math.MaxInt32,
 	MaxMidSilenceFrames: math.MaxInt32,
@@ -73,7 +74,7 @@ func scoreSamples(path string, samples []float32, rate int) wavAnalysis {
 	}
 	a.RMS, a.Peak = rmsPeak(samples)
 	a.LeadingSilenceS, a.TrailingSilenceS = edgeSilence(samples, rate, analysisSilenceAbs)
-	m := audio.AnalyzeFloat32(samples, convoflowCrackle)
+	m := playback.AnalyzeFloat32(samples, convoflowCrackle)
 	a.ImpulseCount = m.ImpulseCount
 	a.MidSilenceRuns = m.MidSilenceRuns
 	a.MidSilenceFrames = m.MidSilenceFrames

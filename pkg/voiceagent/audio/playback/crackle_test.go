@@ -1,7 +1,8 @@
-package audio
+package playback
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"testing"
 	"time"
@@ -39,20 +40,20 @@ func TestExpandMonoS16LEMultiChannelFrontOnly(t *testing.T) {
 }
 
 func TestChoosePlaybackChannelsPrefersStereo(t *testing.T) {
-	if got := choosePlaybackChannels(8); got != 2 {
+	if got := audio.ChoosePlaybackChannels(8); got != 2 {
 		t.Fatalf("choosePlaybackChannels(8) = %d, want 2", got)
 	}
-	if got := choosePlaybackChannels(2); got != 2 {
+	if got := audio.ChoosePlaybackChannels(2); got != 2 {
 		t.Fatalf("choosePlaybackChannels(2) = %d, want 2", got)
 	}
-	if got := choosePlaybackChannels(1); got != 1 {
+	if got := audio.ChoosePlaybackChannels(1); got != 1 {
 		t.Fatalf("choosePlaybackChannels(1) = %d, want 1", got)
 	}
 }
 
 func TestPickPlaybackFormatPrefersStereo44100(t *testing.T) {
 	// Among advertised rates, 44.1 beats 48 after the 48 kHz path regressed.
-	rate, ch := pickPlaybackFormat([]malgo.DataFormat{
+	rate, ch := audio.PickPlaybackFormat([]malgo.DataFormat{
 		{Channels: 8, SampleRate: 44100},
 		{Channels: 8, SampleRate: 48000},
 	}, 24_000)
@@ -62,12 +63,12 @@ func TestPickPlaybackFormatPrefersStereo44100(t *testing.T) {
 	if ch != 8 {
 		t.Fatalf("channels = %d, want 8 from advertised formats", ch)
 	}
-	rate, ch = pickPlaybackFormat([]malgo.DataFormat{
+	rate, ch = audio.PickPlaybackFormat([]malgo.DataFormat{
 		{Channels: 8, SampleRate: 44100},
 		{Channels: 2, SampleRate: 44100},
 	}, 24_000)
 	if rate != 44100 || ch != 2 {
-		t.Fatalf("pickPlaybackFormat = %d/%d, want 44100/2", rate, ch)
+		t.Fatalf("audio.PickPlaybackFormat = %d/%d, want 44100/2", rate, ch)
 	}
 }
 
@@ -207,7 +208,7 @@ func TestChunkBoundaryGlitchIsDetected(t *testing.T) {
 	)
 	src := synthSpeechLike(inRate, chunk*chunks)
 	// Whole-utterance resample is the production path and must stay clean.
-	good := resampleLinear(src, inRate, outRate)
+	good := audio.ResampleLinear(src, inRate, outRate)
 	if m := AnalyzeFloat32(good, CrackleThresholds{}); m.HasCrackle(CrackleThresholds{}) {
 		t.Fatalf("reference whole-utterance resample is unclean: %+v", m)
 	}
@@ -221,7 +222,7 @@ func TestChunkBoundaryGlitchIsDetected(t *testing.T) {
 		if end > len(src) {
 			end = len(src)
 		}
-		piece := resampleLinear(src[off:end], inRate, outRate)
+		piece := audio.ResampleLinear(src[off:end], inRate, outRate)
 		if len(bad) > 0 && len(piece) > 1 {
 			piece[0] = 1
 			piece[1] = -1
@@ -368,7 +369,7 @@ func TestPumpSegmentFullBufferPreventsCallbackCrackle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(24_000); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
 	}

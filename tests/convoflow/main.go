@@ -10,13 +10,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
@@ -128,7 +128,7 @@ func runMain(args []string) int {
 	rec := &recorder{}
 	player := newRecordingPlayer(nil)
 	if *speakers || scn.Capture.Speakers {
-		real := audio.NewPlayerWithDevice("")
+		real := playback.NewPlayerWithDevice("")
 		defer func() { _ = real.Close() }()
 		player = newRecordingPlayer(real)
 	}

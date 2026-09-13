@@ -1,4 +1,4 @@
-package audio
+package playback
 
 func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 	clearBytes(outputSamples)

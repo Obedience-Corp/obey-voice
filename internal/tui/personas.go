@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 
@@ -118,9 +119,9 @@ func newPersonas(cfg *config.Config) personasModel {
 		preview: voicePreview{
 			newPreviewPlayer: func() audio.Engine {
 				if cfg == nil {
-					return audio.NewPlayer()
+					return playback.NewPlayer()
 				}
-				return audio.NewPlayerWithDevice(cfg.OutputDevice)
+				return playback.NewPlayerWithDevice(cfg.OutputDevice)
 			},
 			ensure: func(ctx context.Context, c *config.Config, onProgress func(string, float64)) error {
 				return config.EnsureRuntimeAssets(ctx, c, config.AssetRequest{NeedTTS: true}, onProgress)

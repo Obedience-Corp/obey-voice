@@ -13,6 +13,7 @@ package voiceagent
 import (
 	"context"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"log"
 	"os"
 	"path/filepath"
@@ -248,7 +249,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		if opts.Player != nil {
 			p.Player = opts.Player
 		} else {
-			player := audio.NewPlayerWithDevice(cfg.OutputDevice)
+			player := playback.NewPlayerWithDevice(cfg.OutputDevice)
 			player.SetVolume(config.PlaybackVolumeOf(cfg))
 			cleanups = append(cleanups, func() { _ = player.Close() })
 			p.Player = player
@@ -351,7 +352,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		}
 
 		if !opts.Silent && frontend != nil {
-			if player, ok := p.Player.(*audio.Player); ok {
+			if player, ok := p.Player.(*playback.Player); ok {
 				player.SetFrontend(frontend)
 			}
 		}

@@ -1,7 +1,8 @@
-package audio
+package playback
 
 import (
 	"encoding/binary"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"sync/atomic"
 )
@@ -35,7 +36,7 @@ type aecRefSlot struct {
 
 // aecRefIngress is the callback-safe → worker handoff for AEC reference audio.
 type aecRefIngress struct {
-	frontend Frontend
+	frontend audio.Frontend
 	free     chan *aecRefSlot
 	ready    chan *aecRefSlot
 	stop     chan struct{}
@@ -54,7 +55,7 @@ type aecRefIngress struct {
 	dropped    atomic.Uint64
 }
 
-func newAECRefIngress(frontend Frontend) *aecRefIngress {
+func newAECRefIngress(frontend audio.Frontend) *aecRefIngress {
 	in := &aecRefIngress{
 		frontend: frontend,
 		free:     make(chan *aecRefSlot, aecRefPoolSlots),
@@ -82,7 +83,7 @@ func (in *aecRefIngress) TryEnqueueS16(monoS16 []byte, deviceRate int) {
 		return
 	}
 	if deviceRate <= 0 {
-		deviceRate = SampleRate
+		deviceRate = audio.SampleRate
 	}
 
 	total := len(monoS16) / 2
@@ -134,7 +135,7 @@ func (in *aecRefIngress) enqueueBlock(monoS16 []byte, frames, deviceRate int) bo
 // must replace with silence.
 func (in *aecRefIngress) recordGap(frames, deviceRate int) {
 	in.dropped.Add(1)
-	in.pendingGap.Add(int64(frames) * int64(SampleRate) / int64(deviceRate))
+	in.pendingGap.Add(int64(frames) * int64(audio.SampleRate) / int64(deviceRate))
 }
 
 // droppedBlocks reports how many far-end blocks the device callback could not
@@ -149,7 +150,7 @@ func (in *aecRefIngress) droppedBlocks() uint64 {
 
 func (in *aecRefIngress) loop() {
 	defer close(in.done)
-	var resamp streamResampler
+	var resamp audio.StreamResampler
 	outScratch := make([]float32, aecOutScratchCap)
 	silence := make([]float32, aecOutScratchCap)
 
@@ -179,7 +180,7 @@ func (in *aecRefIngress) fillGap(gap int, silence []float32) {
 	}
 	// Beyond the FIFO cap the queue drops from the front anyway, so a longer
 	// fill buys nothing and costs a full re-walk of the backlog.
-	gap = min(gap, frontendMaxRefQueue)
+	gap = min(gap, audio.FrontendMaxRefQueue)
 	for gap > 0 {
 		n := min(gap, len(silence))
 		in.frontend.PushPlaybackReference(silence[:n])
@@ -187,22 +188,22 @@ func (in *aecRefIngress) fillGap(gap int, silence []float32) {
 	}
 }
 
-func (in *aecRefIngress) process(slot *aecRefSlot, resamp *streamResampler, outScratch []float32) {
+func (in *aecRefIngress) process(slot *aecRefSlot, resamp *audio.StreamResampler, outScratch []float32) {
 	if slot.n <= 0 || in.frontend == nil {
 		return
 	}
 	src := slot.samples[:slot.n]
 	rate := slot.rate
 	if rate <= 0 {
-		rate = SampleRate
+		rate = audio.SampleRate
 	}
-	if rate == SampleRate {
+	if rate == audio.SampleRate {
 		in.frontend.PushPlaybackReference(src)
 		return
 	}
-	resamp.Configure(rate, SampleRate)
+	resamp.Configure(rate, audio.SampleRate)
 	// Worst-case output length for this block (ceil) plus a couple of samples.
-	maxOut := (slot.n*SampleRate)/rate + 3
+	maxOut := (slot.n*audio.SampleRate)/rate + 3
 	if maxOut > len(outScratch) {
 		maxOut = len(outScratch)
 	}

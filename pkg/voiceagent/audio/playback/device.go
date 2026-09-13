@@ -1,8 +1,9 @@
-package audio
+package playback
 
 import (
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 
 	"github.com/gen2brain/malgo"
 )
@@ -37,7 +38,7 @@ func referenceDelaySamples(deviceRate, periodFrames int) int {
 		periodFrames = playbackPeriodFrames
 	}
 	queuedFrames := (playbackPeriods - 1) * periodFrames
-	return queuedFrames * SampleRate / deviceRate
+	return queuedFrames * audio.SampleRate / deviceRate
 }
 
 // applyReferenceDelay tells the front-end the current device's reference
@@ -51,7 +52,7 @@ func (p *Player) applyReferenceDelay() {
 	deviceRate := p.sampleRate
 	p.mu.Unlock()
 
-	delayer, ok := frontend.(ReferenceDelayer)
+	delayer, ok := frontend.(audio.ReferenceDelayer)
 	if !ok || deviceRate <= 0 {
 		return
 	}
@@ -88,14 +89,14 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	// the frames are audible (see applyReferenceDelay).
 	deviceConfig.PeriodSizeInFrames = playbackPeriodFrames
 	deviceConfig.Periods = playbackPeriods
-	releaseDeviceID, err := selectDevice(ctx.Context, malgo.Playback, p.deviceName, &deviceConfig.Playback)
+	releaseDeviceID, err := audio.SelectDevice(ctx.Context, malgo.Playback, p.deviceName, &deviceConfig.Playback)
 	if err != nil {
 		_ = ctx.Uninit()
 		ctx.Free()
 		return 0, fmt.Errorf("select playback device: %w", err)
 	}
 	defer releaseDeviceID()
-	actualDeviceName, preferredRate, nativeChannels, err := playbackDeviceDetails(ctx.Context, p.deviceName, sampleRate)
+	actualDeviceName, preferredRate, nativeChannels, err := audio.PlaybackDeviceDetails(ctx.Context, p.deviceName, sampleRate)
 	if err != nil {
 		_ = ctx.Uninit()
 		ctx.Free()
@@ -103,7 +104,7 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	}
 	// Never hard-code mono here: multi-channel devices (Studio Display Speakers
 	// advertise 8ch) crackled when CoreAudio invented a mono upmix.
-	channels := choosePlaybackChannels(nativeChannels)
+	channels := audio.ChoosePlaybackChannels(nativeChannels)
 
 	device, openedRate, openedChannels, err := openPlaybackDevice(ctx.Context, deviceConfig, channels, nativeChannels, sampleRate, preferredRate, p.onData)
 	if err != nil {

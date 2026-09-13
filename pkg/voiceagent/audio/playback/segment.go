@@ -1,15 +1,16 @@
-package audio
+package playback
 
 import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"sync"
 	"time"
 )
 
 type playbackSegment struct {
-	attempt      PlaybackAttempt
+	attempt      audio.PlaybackAttempt
 	mu           sync.Mutex
 	audioSeconds float64
 	samples      []int16
@@ -21,7 +22,7 @@ type playbackSegment struct {
 	done         sync.Once
 	ready        chan struct{}
 	startedCh    chan struct{}
-	doneCh       chan PlaybackResult
+	doneCh       chan audio.PlaybackResult
 	readyClosed  bool
 	interrupted  bool
 	// audible latches once the device has taken frames from this segment.
@@ -41,15 +42,12 @@ func newPlaybackSegment() *playbackSegment {
 	return &playbackSegment{
 		ready:     make(chan struct{}),
 		startedCh: make(chan struct{}),
-		doneCh:    make(chan PlaybackResult, 1),
+		doneCh:    make(chan audio.PlaybackResult, 1),
 	}
 }
 
-func (s *playbackSegment) playback() *Playback {
-	return &Playback{
-		started: s.startedCh,
-		done:    s.doneCh,
-	}
+func (s *playbackSegment) playback() *audio.Playback {
+	return audio.NewPlayback(s.startedCh, s.doneCh)
 }
 
 func (s *playbackSegment) setReadyFrames(frames int) {
@@ -117,8 +115,8 @@ func (s *playbackSegment) markInputEndedLocked() {
 // resultLocked builds a terminal result carrying the synthesized duration.
 // Every exit path goes through it so an interrupted or failed segment still
 // reports what synthesis cost.
-func (s *playbackSegment) resultLocked(err error, interrupted bool) PlaybackResult {
-	return s.attempt.Result(PlaybackResult{
+func (s *playbackSegment) resultLocked(err error, interrupted bool) audio.PlaybackResult {
+	return s.attempt.Result(audio.PlaybackResult{
 		Err:              err,
 		Interrupted:      interrupted,
 		AudioSeconds:     s.audioSeconds,
@@ -261,7 +259,7 @@ func (s *playbackSegment) maybeReadyLocked() {
 	}
 }
 
-func (s *playbackSegment) finish(result PlaybackResult) {
+func (s *playbackSegment) finish(result audio.PlaybackResult) {
 	if !s.attempt.Valid() {
 		result.Interrupted = true
 	}

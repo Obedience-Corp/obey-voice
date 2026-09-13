@@ -12,7 +12,7 @@ const (
 	// misalignment, so the cap bounds how far out of alignment the canceller
 	// can drift if the playback and capture clocks disagree. Steady state is
 	// refs.delay (tens of ms); 2s is pure slack.
-	frontendMaxRefQueue = SampleRate * 2
+	FrontendMaxRefQueue = SampleRate * 2
 	// echoCancellerTaps must span the residual echo delay left after
 	// refs.delay removes the bulk device-buffer latency — room reflections,
 	// driver latency beyond the ring buffer, and error in the delay estimate.
@@ -62,7 +62,7 @@ func NewVoiceFrontend() *VoiceFrontend {
 		ns:  newNoiseSuppressor(noiseSuppressorFloor, noiseSuppressorTarget),
 		agc: newAutomaticGainControl(frontendTargetRMS, agcMinGain, agcMaxGain),
 		refs: sampleQueue{
-			capacity: frontendMaxRefQueue,
+			capacity: FrontendMaxRefQueue,
 		},
 	}
 }
@@ -375,9 +375,11 @@ func clampFloat(value, low, high float64) float64 {
 	return value
 }
 
-// refsSnapshot exposes the pending reference queue for tests that assert on
-// the delay offset. Not part of the Frontend contract.
-func (f *VoiceFrontend) refsSnapshot() []float64 {
+// RefsSnapshot exposes the pending reference queue for tests that assert on
+// the delay offset. Not part of the Frontend contract, and exported only
+// because the delay test moved to the playback package with the reference-delay
+// constants it checks.
+func (f *VoiceFrontend) RefsSnapshot() []float64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]float64(nil), f.refs.samples...)

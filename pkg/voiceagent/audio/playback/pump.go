@@ -1,9 +1,10 @@
-package audio
+package playback
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"time"
 )
 
@@ -11,7 +12,7 @@ import (
 // stream pump from tearing down the TUI while Bubble Tea owns the terminal's
 // raw and alternate-screen state. PlayStream owns stream, so the recovery path
 // also drains it until the producer finishes or the preview is cancelled.
-func runPlaybackWorker(ctx context.Context, segment *playbackSegment, stream *PCMStream, pump func()) {
+func runPlaybackWorker(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, pump func()) {
 	defer func() {
 		recovered := recover()
 		if recovered == nil {
@@ -34,7 +35,7 @@ func runPlaybackWorker(ctx context.Context, segment *playbackSegment, stream *PC
 	pump()
 }
 
-func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stream *PCMStream) {
+func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream) {
 	// A stalled engine has to surface as a segment failure rather than an
 	// unbounded wait: the pipeline can only switch to the fallback voice if
 	// this call returns. The budget measures the gap between frame batches,
@@ -51,7 +52,7 @@ func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stre
 	inputRate, err := stream.WaitReady(readyCtx)
 	if err != nil {
 		if budget > 0 && ctx.Err() == nil && errors.Is(readyCtx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("%w after %s", ErrStreamStalled, budget)
+			err = fmt.Errorf("%w after %s", audio.ErrStreamStalled, budget)
 		}
 		segment.fail(err)
 		return
@@ -93,7 +94,7 @@ func (p *Player) pumpSegment(ctx context.Context, segment *playbackSegment, stre
 			segment.fail(ctx.Err())
 			return
 		case <-silence.C():
-			segment.fail(fmt.Errorf("%w after %s", ErrStreamStalled, budget))
+			segment.fail(fmt.Errorf("%w after %s", audio.ErrStreamStalled, budget))
 			return
 		case frames, ok := <-stream.Frames():
 			if !ok {
@@ -175,10 +176,10 @@ func (s *silenceTimer) stop() {
 // A worker that is slow but still emitting chunks resets the timer on every one
 // of them and keeps its segment — which is precisely the engine this path
 // exists for.
-func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *PCMStream, debug *playerDebugRecorder, inputRate, outputRate int, budget time.Duration) {
+func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, debug *playerDebugRecorder, inputRate, outputRate int, budget time.Duration) {
 	segment.setReadyFrames(preRollFrames(outputRate))
 
-	var resampler streamResampler
+	var resampler audio.StreamResampler
 	resampler.Configure(inputRate, outputRate)
 	var converted []float32
 
@@ -202,7 +203,7 @@ func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *PCMS
 			segment.fail(ctx.Err())
 			return
 		case <-silence.C():
-			segment.fail(fmt.Errorf("%w after %s", ErrStreamStalled, budget))
+			segment.fail(fmt.Errorf("%w after %s", audio.ErrStreamStalled, budget))
 			return
 		case frames, ok := <-stream.Frames():
 			if !ok {
@@ -247,7 +248,7 @@ func preRollFrames(outputRate int) int {
 // reusing buf. Whatever cannot be interpolated yet (at most one sample, needed
 // as the left neighbour of the next chunk's first output) stays in the
 // resampler's carry rather than being flushed with a duplicated edge.
-func resampleChunk(resampler *streamResampler, frames, buf []float32, inputRate, outputRate int) []float32 {
+func resampleChunk(resampler *audio.StreamResampler, frames, buf []float32, inputRate, outputRate int) []float32 {
 	need := len(frames)*outputRate/inputRate + 2
 	if cap(buf) < need {
 		buf = make([]float32, need)

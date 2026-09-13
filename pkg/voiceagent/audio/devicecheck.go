@@ -83,7 +83,7 @@ func malgoDeviceNames(kind malgo.DeviceType) ([]string, error) {
 	return names, nil
 }
 
-// selectDevice configures sub with the named device from ctx and returns a
+// SelectDevice configures sub with the named device from ctx and returns a
 // release function for the temporary C-owned device ID. The caller must keep
 // the allocation alive until malgo.InitDevice returns; miniaudio copies the ID
 // during initialization.
@@ -93,7 +93,7 @@ func malgoDeviceNames(kind malgo.DeviceType) ([]string, error) {
 // IDs are backend-specific and can change across boots; a missing configured
 // name is reported instead of silently routing private audio to a different
 // device.
-func selectDevice(ctx malgo.Context, kind malgo.DeviceType, name string, sub *malgo.SubConfig) (func(), error) {
+func SelectDevice(ctx malgo.Context, kind malgo.DeviceType, name string, sub *malgo.SubConfig) (func(), error) {
 	if name == "" {
 		return func() {}, nil
 	}
@@ -126,7 +126,7 @@ func copyDeviceIDToC(id malgo.DeviceID) (unsafe.Pointer, func()) {
 	}
 }
 
-// playbackDeviceDetails returns the selected device's display name, a preferred
+// PlaybackDeviceDetails returns the selected device's display name, a preferred
 // native sample rate, and the channel count advertised by its shared-mode
 // formats. sourceRate is the TTS stream rate (Kokoro is 24 kHz): when the
 // device offers an integer multiple of that rate (e.g. 48 kHz), we prefer it
@@ -138,7 +138,7 @@ func copyDeviceIDToC(id malgo.DeviceID) (unsafe.Pointer, func()) {
 // conversion to the backend; on Studio Display Speakers (8 ch @ 44.1/48 kHz)
 // that path produced audible crackle. Obey Voice opens at a preferred device
 // rate with a stereo client layout and expands mono TTS before the callback.
-func playbackDeviceDetails(ctx malgo.Context, name string, sourceRate int) (string, uint32, uint32, error) {
+func PlaybackDeviceDetails(ctx malgo.Context, name string, sourceRate int) (string, uint32, uint32, error) {
 	infos, err := ctx.Devices(malgo.Playback)
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("enumerate playback devices: %w", err)
@@ -165,11 +165,11 @@ func playbackDeviceDetails(ctx malgo.Context, name string, sourceRate int) (stri
 	if err != nil {
 		return selected.Name(), 0, 0, fmt.Errorf("query playback device %q: %w", selected.Name(), err)
 	}
-	rate, channels := pickPlaybackFormat(full.Formats, sourceRate)
+	rate, channels := PickPlaybackFormat(full.Formats, sourceRate)
 	return selected.Name(), rate, channels, nil
 }
 
-// pickPlaybackFormat chooses a sample rate and channel count from the device's
+// PickPlaybackFormat chooses a sample rate and channel count from the device's
 // shared-mode formats. sourceRate is the TTS PCM rate (0 if unknown).
 //
 // Used as a *hint* for openPlaybackDevice's fallback order. Actual open order
@@ -177,7 +177,7 @@ func playbackDeviceDetails(ctx malgo.Context, name string, sourceRate int) (stri
 // formats, prefer 44.1 kHz over 48 kHz: the 24→48 cubic path was worse on the
 // affected Studio Display, and 44.1 is the first clock Apple lists for that
 // device.
-func pickPlaybackFormat(formats []malgo.DataFormat, sourceRate int) (rate uint32, channels uint32) {
+func PickPlaybackFormat(formats []malgo.DataFormat, sourceRate int) (rate uint32, channels uint32) {
 	bestScore := -1
 	for _, format := range formats {
 		if format.SampleRate == 0 || format.Channels == 0 {
@@ -217,13 +217,13 @@ func pickPlaybackFormat(formats []malgo.DataFormat, sourceRate int) (rate uint32
 	return rate, channels
 }
 
-// choosePlaybackChannels picks the client layout Obey Voice opens on the device.
+// ChoosePlaybackChannels picks the client layout Obey Voice opens on the device.
 // Voice is mono; we open stereo when the device allows a 2ch client format so
 // L/R carry the same signal. When the device only advertises multi-channel
 // layouts (Studio Display Speakers lists 8ch), open at that count and map mono
 // onto the front L/R pair with silence on the remaining channels — leaving
 // CoreAudio to invent a mono→8ch conversion has been a crackle source.
-func choosePlaybackChannels(nativeChannels uint32) uint32 {
+func ChoosePlaybackChannels(nativeChannels uint32) uint32 {
 	switch {
 	case nativeChannels == 0:
 		return 2

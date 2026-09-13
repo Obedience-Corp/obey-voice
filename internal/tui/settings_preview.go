@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -31,7 +32,7 @@ func (m *settingsModel) startSettingsPreview(voice tts.Voice) tea.Cmd {
 	m.preview.newTTS = m.newTTSProvider
 	if m.preview.newPreviewPlayer == nil {
 		m.preview.newPreviewPlayer = func() audio.Engine {
-			p := audio.NewPlayerWithDevice(m.cfg.OutputDevice)
+			p := playback.NewPlayerWithDevice(m.cfg.OutputDevice)
 			p.SetVolume(config.PlaybackVolumeOf(m.cfg))
 			return p
 		}

@@ -5,6 +5,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	appTUI "github.com/Obedience-Corp/obey-voice/internal/tui"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
@@ -69,7 +69,7 @@ func runSpeakerTest(ctx context.Context, cfg *config.Config) error {
 		defer cleanup()
 	}
 
-	player := audio.NewPlayerWithDevice(cfg.OutputDevice)
+	player := playback.NewPlayerWithDevice(cfg.OutputDevice)
 	player.SetVolume(config.PlaybackVolumeOf(cfg))
 	defer func() { _ = player.Close() }()
 
