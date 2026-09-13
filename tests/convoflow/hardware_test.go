@@ -74,3 +74,14 @@ func TestAcousticEnvelopeCorrelationSeparatesRecordedFixtures(t *testing.T) {
 		}
 	}
 }
+
+func TestAcousticTranscriptNumberFormattingPreservesMeaning(t *testing.T) {
+	if normalizeAcousticText("What is two plus two?") != normalizeAcousticText("What is 2 plus 2?") {
+		t.Fatal("equivalent spoken numbers differ")
+	}
+	for _, wrong := range []string{"What is two plus three?", "What is not two plus two?", "What is two?"} {
+		if normalizeAcousticText(wrong) == normalizeAcousticText("What is two plus two?") {
+			t.Fatalf("changed meaning accepted: %q", wrong)
+		}
+	}
+}

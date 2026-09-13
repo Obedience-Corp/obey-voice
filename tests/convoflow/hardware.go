@@ -291,7 +291,16 @@ func normalizeAcousticText(text string) string {
 			lastSpace = true
 		}
 	}
-	return strings.TrimSpace(b.String())
+	words := strings.Fields(b.String())
+	// STT may render the same spoken number as a numeral or an English word.
+	// Preserve every other word, including negation and units.
+	numbers := map[string]string{"zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"}
+	for i, word := range words {
+		if numeral, ok := numbers[word]; ok {
+			words[i] = numeral
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func acousticDeviceLabel(name string) string {

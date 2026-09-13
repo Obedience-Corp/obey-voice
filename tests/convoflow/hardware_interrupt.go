@@ -243,6 +243,7 @@ ready:
 					return fmt.Errorf("unexpected interruption reason %q", ev.Reason)
 				}
 				report.InterruptedAfter = observation.at.Sub(report.StimulusStarted)
+				report.PlaybackStoppedAfter = report.InterruptedAfter
 			}
 			if ev, ok := observation.event.(events.TurnMetrics); ok {
 				report.ProductionInterrupted = ev.Interrupted
@@ -261,6 +262,7 @@ ready:
 				report.ProductionInterrupted = ev.Interrupted
 			case events.SpeakingInterrupted:
 				report.InterruptedAfter = observation.at.Sub(report.StimulusStarted)
+				report.PlaybackStoppedAfter = report.InterruptedAfter
 			}
 		default:
 			goto drained
@@ -268,7 +270,8 @@ ready:
 	}
 drained:
 	report.InitialTranscript = first.text
-	report.PlaybackStoppedAfter = time.Since(report.StimulusStarted)
+	// SpeakingInterrupted is emitted synchronously after Player.Stop returns.
+	// The stored delay is its observation boundary, not turn cleanup time.
 	if real.IsPlaying() || !report.ProductionInterrupted || report.InterruptedAfter <= 0 {
 		return fmt.Errorf("production interruption not proven: interrupted=%t detector=%s playing=%t turn_error=%v", report.ProductionInterrupted, report.InterruptedAfter, real.IsPlaying(), first.err)
 	}
