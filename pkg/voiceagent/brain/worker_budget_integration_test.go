@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -156,5 +157,37 @@ func TestWorkerBudgetZeroRetriesDoesOneToolsRejectionRequest(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
+func TestWorkerToolBudgetFailureRestoresCompactedWorkingHistory(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"message":{"role":"assistant","tool_calls":[{"function":{"name":"list_files","arguments":{"path":"."}}},{"function":{"name":"list_files","arguments":{"path":"."}}}]},"done":true,"eval_count":1}`)
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{client: api.NewClient(u, http.DefaultClient), model: "m", workDir: t.TempDir(), cfg: &config.Config{MaxHistory: 10, OllamaNumCtx: 8192}}
+	snapshot := ContinuitySnapshot{
+		Canonical: []Turn{{Role: "user", Content: "old request"}, {Role: "assistant", Content: "old answer"}, {Role: "user", Content: "recent request"}},
+		Working:   []Turn{{Role: "assistant", Content: "Earlier context summary."}, {Role: "user", Content: "recent request"}},
+	}
+	if err := o.ImportContinuity(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	before := o.ContinuitySnapshot()
+	nativeBefore := append([]api.Message(nil), o.history...)
+	budget := NewWorkerBudget(BudgetLimits{MaxRequests: 2, MaxToolCalls: 1})
+	if _, err := o.ThinkFull(t.Context(), "new worker request", StreamOptions{ToolsEnabled: true, WorkerBudget: budget}); !errors.Is(err, ErrWorkerBudgetExceeded) {
+		t.Fatalf("error=%v, want tool quota refusal", err)
+	}
+	after := o.ContinuitySnapshot()
+	if !reflect.DeepEqual(before.Canonical, after.Canonical) {
+		t.Fatal("failed worker changed canonical transcript")
+	}
+	if !reflect.DeepEqual(before.Working, after.Working) {
+		t.Fatalf("failed worker changed compacted working history: %+v", after.Working)
+	}
+	if !reflect.DeepEqual(nativeBefore, o.history) {
+		t.Fatal("failed worker changed native model messages")
 	}
 }

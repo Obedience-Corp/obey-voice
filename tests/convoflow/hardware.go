@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"math"
 	"os"
 	"path/filepath"
@@ -96,7 +97,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	var captured []float32
 	transcript := ""
 	var capture *audio.Capture
-	var player, response *audio.Player
+	var player, response *playback.Player
 	report := acousticReport{Stimulus: path, ExpectedTranscript: strings.TrimSpace(expected), InputDevice: acousticDeviceLabel(r.cfg.InputDevice), OutputDevice: acousticDeviceLabel(r.cfg.OutputDevice), StimulusRate: rate}
 	defer func() {
 		capturedMu.Lock()
@@ -149,7 +150,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	}()
 
 	capture = audio.NewCaptureWithDevice(r.cfg.InputDevice)
-	player = audio.NewPlayerWithDevice(r.cfg.OutputDevice)
+	player = playback.NewPlayerWithDevice(r.cfg.OutputDevice)
 	defer capture.Stop()
 	defer player.Close()
 
@@ -176,7 +177,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	if r.player == nil {
 		return errors.New("acoustic run: physical response player missing")
 	}
-	real, ok := r.player.real.(*audio.Player)
+	real, ok := r.player.real.(*playback.Player)
 	if !ok {
 		return errors.New("acoustic run: physical response player required")
 	}
@@ -408,11 +409,11 @@ func acousticDeviceLabel(name string) string {
 	return name
 }
 
-func playAcousticStimulus(ctx context.Context, player *audio.Player, samples []float32, rate int) error {
+func playAcousticStimulus(ctx context.Context, player *playback.Player, samples []float32, rate int) error {
 	return playAcousticStimulusObserved(ctx, player, samples, rate, nil)
 }
 
-func playAcousticStimulusObserved(ctx context.Context, player *audio.Player, samples []float32, rate int, started func(time.Time)) error {
+func playAcousticStimulusObserved(ctx context.Context, player *playback.Player, samples []float32, rate int, started func(time.Time)) error {
 	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(rate); err != nil {
 		return err

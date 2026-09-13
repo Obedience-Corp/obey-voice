@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,8 +66,8 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	var mic []float32
 	var micMu sync.Mutex
 	var capture *audio.Capture
-	var stimulus *audio.Player
-	var response *audio.Player
+	var stimulus *playback.Player
+	var response *playback.Player
 	defer func() {
 		if runErr != nil {
 			report.Error = runErr.Error()
@@ -121,7 +122,7 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	rawFrontend = newRawCaptureFrontend(frontend)
 	rawFrontend.EnableTrace(true)
 	capture.SetFrontend(rawFrontend)
-	real, ok := r.player.real.(*audio.Player)
+	real, ok := r.player.real.(*playback.Player)
 	if !ok {
 		return errors.New("acoustic completion: physical response player required")
 	}
@@ -166,7 +167,7 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	defer func() {
 		p.Capture, p.VAD, p.BargeInVAD, p.STT, p.Utterance = oldCapture, oldVAD, oldBarge, oldSTT, oldEnd
 	}()
-	stimulus = audio.NewPlayerWithDevice(r.cfg.OutputDevice)
+	stimulus = playback.NewPlayerWithDevice(r.cfg.OutputDevice)
 	defer stimulus.Close()
 	before := r.workSnapshot()
 	known := map[string]struct{}{}

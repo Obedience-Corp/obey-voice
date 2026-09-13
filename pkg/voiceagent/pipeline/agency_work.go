@@ -20,7 +20,12 @@ func newWorkID() string {
 
 func providerName(cfg *config.Config) string { return config.VoiceWorkerProviderOf(cfg) }
 func modelName(cfg *config.Config) string {
-	return config.BrainModelFor(config.WorkerBrainConfig(cfg), providerName(cfg))
+	effective := config.WorkerBrainConfig(cfg)
+	model := config.BrainModelFor(effective, providerName(cfg))
+	if strings.TrimSpace(model) == "" && effective != nil {
+		model = effective.VoiceWorkerModel
+	}
+	return model
 }
 func frozenConfig(cfg *config.Config) map[string]string {
 	if cfg == nil {

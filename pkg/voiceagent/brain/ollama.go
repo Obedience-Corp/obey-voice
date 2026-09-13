@@ -37,6 +37,7 @@ type OllamaBrain struct {
 	workDir      string
 	history      []api.Message
 	canonical    []Turn
+	working      []Turn
 	cfg          *config.Config
 	systemPrompt string
 	// fullSystemPrompt is the assembled prompt (persona + environment + skills
@@ -70,7 +71,9 @@ type OllamaBrain struct {
 	archive          continuity.Store
 	contextHighWater int
 	// speakerNames resolves stable speaker ids when building chat messages.
-	speakerNames SpeakerNames
+	speakerNames      SpeakerNames
+	groupParticipants []GroupParticipant // guarded by stateMu
+	groupHistory      bool               // foreign canonical speakers; guarded by stateMu
 }
 
 // NewOllama creates an Ollama brain provider.

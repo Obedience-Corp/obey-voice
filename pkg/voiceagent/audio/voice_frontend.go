@@ -12,7 +12,7 @@ const (
 	// misalignment, so the cap bounds how far out of alignment the canceller
 	// can drift if the playback and capture clocks disagree. Steady state is
 	// refs.delay (tens of ms); 2s is pure slack.
-	frontendMaxRefQueue = SampleRate * 2
+	FrontendMaxRefQueue = SampleRate * 2
 	// echoCancellerTaps must span the echo delay remaining after the reference
 	// FIFO's device-buffer offset. Recorded Studio Display playback at 24kHz
 	// still had 85–90ms of microphone/reference delay after that offset;
@@ -61,7 +61,7 @@ func NewVoiceFrontend() *VoiceFrontend {
 		ns:  newNoiseSuppressor(initialNoiseFloor, noiseSuppressorTarget),
 		agc: newAutomaticGainControl(frontendTargetRMS, agcMinGain, agcMaxGain),
 		refs: sampleQueue{
-			capacity: frontendMaxRefQueue,
+			capacity: FrontendMaxRefQueue,
 		},
 	}
 }

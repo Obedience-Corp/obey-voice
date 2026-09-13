@@ -3,6 +3,7 @@ package audio
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -12,9 +13,11 @@ import (
 func TestEchoCancellerCoversMeasuredDisplayResidualDelay(t *testing.T) {
 	const total = SampleRate * 8
 	const residual = 90 * SampleRate / 1000
-	refDelay := referenceDelaySamples(24000, playbackPeriodFrames)
+	// Recorded reference FIFO offset; playback package tests separately cover
+	// how each device configuration derives its offset.
+	const refDelay = 682
 	echoLag := refDelay + residual
-	far := farEndSpeech(total, 7)
+	far := delayedEchoFixture(total, 7)
 
 	for _, chunkSize := range []int{SampleRate / 100, SampleRate * 60 / 1000} {
 		t.Run(fmt.Sprintf("%dsamples", chunkSize), func(t *testing.T) {
@@ -32,7 +35,7 @@ func TestEchoCancellerCoversMeasuredDisplayResidualDelay(t *testing.T) {
 					mic := make([]float32, chunkSize)
 					for i := range mic {
 						if src := start + i - echoLag; src >= 0 {
-							mic[i] = erleEchoGain * far[src]
+							mic[i] = 0.5 * far[src]
 						}
 					}
 					out := f.ProcessCapture(mic)
@@ -55,4 +58,18 @@ func TestEchoCancellerCoversMeasuredDisplayResidualDelay(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Band-limited noise under a syllable envelope avoids a white-noise fixture
+// that makes adaptive cancellation unrealistically easy.
+func delayedEchoFixture(n int, seed int64) []float32 {
+	rng := rand.New(rand.NewSource(seed))
+	out := make([]float32, n)
+	var lowPass float64
+	for i := range out {
+		lowPass = 0.85*lowPass + 0.15*rng.NormFloat64()
+		envelope := 0.5 + 0.5*math.Sin(2*math.Pi*float64(i)/SampleRate*3)
+		out[i] = float32(lowPass * envelope * 0.3)
+	}
+	return out
 }

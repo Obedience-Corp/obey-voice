@@ -401,8 +401,23 @@ func (c *Capture) Close() error {
 
 // Reset drains the ring buffer to discard stale audio between turns.
 func (c *Capture) Reset() {
-	for c.buf.Read(ChunkSize) != nil {
+	// Read returns nil when fewer than ChunkSize samples remain, so repeatedly
+	// reading whole frames leaves a partial tail in the ring. Clear the ring
+	// atomically instead; a stale tail must not become the first frame of the
+	// next listening scope.
+	c.buf.Clear()
+}
+
+// ResetKeeping discards stale audio while retaining at most the newest
+// duration of the current capture. It is used only for a listen handoff where
+// the retained tail may contain the onset of the next utterance.
+func (c *Capture) ResetKeeping(duration time.Duration) {
+	if duration <= 0 {
+		c.buf.Clear()
+		return
 	}
+	samples := int(duration * SampleRate / time.Second)
+	c.buf.KeepLast(samples)
 }
 
 // SetFrontend installs an audio front-end for live capture processing.

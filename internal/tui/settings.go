@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 	"time"
@@ -143,7 +144,7 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 		deviceChecker: audio.NewDeviceChecker(),
 		preview: voicePreview{
 			newPreviewPlayer: func() audio.Engine {
-				p := audio.NewPlayerWithDevice(cfg.OutputDevice)
+				p := playback.NewPlayerWithDevice(cfg.OutputDevice)
 				p.SetVolume(config.PlaybackVolumeOf(cfg))
 				return p
 			},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -64,7 +65,7 @@ func (p *voicePreview) player() audio.Engine {
 		p.previewPlayer = p.newPreviewPlayer()
 		return p.previewPlayer
 	}
-	p.previewPlayer = audio.NewPlayer()
+	p.previewPlayer = playback.NewPlayer()
 	return p.previewPlayer
 }
 

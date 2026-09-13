@@ -1,7 +1,8 @@
-package audio
+package playback
 
 import (
 	"encoding/binary"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"sync"
 	"testing"
@@ -56,7 +57,7 @@ func TestFinalizeSegmentStillDeliversAudio(t *testing.T) {
 func TestReferenceDelayStaysUnderDeviceBuffer(t *testing.T) {
 	for _, deviceRate := range []int{44100, 48000} {
 		got := referenceDelaySamples(deviceRate, playbackPeriodFrames)
-		ringSamples := playbackPeriods * playbackPeriodFrames * SampleRate / deviceRate
+		ringSamples := playbackPeriods * playbackPeriodFrames * audio.SampleRate / deviceRate
 		if got <= 0 {
 			t.Fatalf("referenceDelaySamples(%d) = %d, want > 0", deviceRate, got)
 		}
@@ -64,9 +65,9 @@ func TestReferenceDelayStaysUnderDeviceBuffer(t *testing.T) {
 			t.Fatalf("referenceDelaySamples(%d) = %d, must stay under the %d-sample ring buffer",
 				deviceRate, got, ringSamples)
 		}
-		if got >= echoCancellerTaps*2 {
+		if got >= audio.EchoCancellerTaps()*2 {
 			t.Fatalf("referenceDelaySamples(%d) = %d; residual would exceed the %d-tap window",
-				deviceRate, got, echoCancellerTaps)
+				deviceRate, got, audio.EchoCancellerTaps())
 		}
 	}
 	if got := referenceDelaySamples(0, playbackPeriodFrames); got != 0 {
@@ -144,7 +145,7 @@ func TestReferenceDelayFollowsObservedDevicePeriod(t *testing.T) {
 		t.Fatalf("delay with a %d-frame period = %d, want %d",
 			playbackPeriodFrames/2, small, want)
 	}
-	if ring := playbackPeriods * (playbackPeriodFrames / 2) * SampleRate / 48000; small >= ring {
+	if ring := playbackPeriods * (playbackPeriodFrames / 2) * audio.SampleRate / 48000; small >= ring {
 		t.Fatalf("delay %d must stay under the %d-sample ring it estimates", small, ring)
 	}
 
@@ -161,7 +162,7 @@ func TestReferenceDelayFollowsObservedDevicePeriod(t *testing.T) {
 // A front-end that does not implement ReferenceDelayer (passthrough, doubles)
 // must not be a problem for the player.
 func TestReferenceDelaySkipsNonDelayerFrontend(t *testing.T) {
-	p := &Player{frontend: NewPassthroughFrontend(), sampleRate: 48000}
+	p := &Player{frontend: audio.NewPassthroughFrontend(), sampleRate: 48000}
 	p.applyReferenceDelay() // must not panic
 }
 
@@ -225,7 +226,7 @@ func TestStreamResamplerPreservesPhaseAcrossCallbacks(t *testing.T) {
 	// Contrast: stateless per-callback resample drifts hard.
 	stateless := 0
 	for range callbacks {
-		stateless += len(resampleLinear(in, srcRate, dstRate))
+		stateless += len(audio.ResampleLinear(in, srcRate, dstRate))
 	}
 	if math.Abs(float64(stateless)-want) <= 2 {
 		t.Fatalf("stateless resample unexpectedly aligned (got %d, want drift vs %.1f); test is not discriminating", stateless, want)
@@ -251,7 +252,7 @@ func TestAECRefIngressTryEnqueueIsNonBlocking(t *testing.T) {
 	go func() {
 		// Flood the pool; must return promptly even if worker is stuck on Push.
 		for range aecRefPoolSlots * 4 {
-			in.TryEnqueueS16(mono, SampleRate)
+			in.TryEnqueueS16(mono, audio.SampleRate)
 		}
 		close(done)
 	}()
@@ -293,7 +294,7 @@ func TestAECRefIngressGapFillPreservesTimeline(t *testing.T) {
 	// are dropped at the callback.
 	const flood = aecRefPoolSlots * 4
 	for range flood {
-		in.TryEnqueueS16(mono, SampleRate)
+		in.TryEnqueueS16(mono, audio.SampleRate)
 	}
 	if in.droppedBlocks() == 0 {
 		t.Fatal("precondition: expected the flood to starve the pool")
@@ -304,7 +305,7 @@ func TestAECRefIngressGapFillPreservesTimeline(t *testing.T) {
 	close(gate)
 	const tail = 8
 	for range tail {
-		in.TryEnqueueS16(mono, SampleRate)
+		in.TryEnqueueS16(mono, audio.SampleRate)
 		time.Sleep(5 * time.Millisecond)
 	}
 
@@ -333,7 +334,7 @@ func TestAECRefIngressSplitsOversizedCallback(t *testing.T) {
 	for i := range frames {
 		binary.LittleEndian.PutUint16(mono[i*2:], 0x0800)
 	}
-	in.TryEnqueueS16(mono, SampleRate)
+	in.TryEnqueueS16(mono, audio.SampleRate)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

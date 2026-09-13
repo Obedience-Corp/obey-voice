@@ -62,7 +62,7 @@ func TestThinkStreamFiltersHistoricalMarkersButKeepsCanonicalEvidence(t *testing
 
 	messages := o.buildMessages("")
 	last := messages[len(messages)-1]
-	if last.Role != "user" || !strings.Contains(last.Content, "Samantha said:") || strings.Contains(last.Content, "OLDRESPONSE1") {
+	if last.Role != "user" || !strings.Contains(last.Content, "Samantha agent:") || strings.Contains(last.Content, "OLDRESPONSE1") {
 		t.Fatalf("next request gave contaminated output assistant authority: %+v", last)
 	}
 	canonical := o.CanonicalHistory()
@@ -89,7 +89,7 @@ func TestThinkFullFiltersHistoricalMarkersButKeepsCanonicalEvidence(t *testing.T
 	}
 	messages := o.buildMessages("")
 	last := messages[len(messages)-1]
-	if last.Role != "user" || !strings.Contains(last.Content, "Samantha said:") || strings.Contains(last.Content, "OLDRESPONSE1") {
+	if last.Role != "user" || !strings.Contains(last.Content, "Samantha agent:") || strings.Contains(last.Content, "OLDRESPONSE1") {
 		t.Fatalf("next request gave contaminated output assistant authority: %+v", last)
 	}
 	canonical := o.CanonicalHistory()

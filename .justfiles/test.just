@@ -61,7 +61,7 @@ speakerflow:
 # underrun/impulse metrics. Also covered by CI: go test -race ./...
 [no-cd]
 audio-crackle:
-    go test -race ./pkg/voiceagent/audio/ -count=1 -run 'Crackle|Expand|Choose|Pick|StudioDisplay|CallbackExpand|MultiChannelExpand|Whole|Chunk|FinalizeSegmentThen|Early|Pump|Analyze|Layout|DebugMetadataRecords'
+    go test -race ./pkg/voiceagent/audio/... -count=1 -run 'Crackle|Expand|Choose|Pick|StudioDisplay|CallbackExpand|MultiChannelExpand|Whole|Chunk|FinalizeSegmentThen|Early|Pump|Analyze|Layout|DebugMetadataRecords'
 
 # Live Kokoro regression: real model, real WAV sample counts for contractions.
 # Requires Kokoro assets under models_dir (config.yaml / MODELS_DIR). Skips if missing.
@@ -95,7 +95,7 @@ work-latency-compare BASELINE WORKER:
 audio-hardware:
     #!/usr/bin/env bash
     set -euo pipefail
-    OBEY_VOICE_HARDWARE_AUDIO=1 go test -race ./pkg/voiceagent/audio/ -count=1 -run 'Hardware' -v -timeout 60s
+    OBEY_VOICE_HARDWARE_AUDIO=1 go test -race ./pkg/voiceagent/audio/... -count=1 -run 'Hardware' -v -timeout 60s
 
 # Build a pinned harness and reproducible local Kokoro fixtures/scenarios.
 # Explicit model directory; does not read or change the installed user config.

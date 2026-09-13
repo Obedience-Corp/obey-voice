@@ -156,7 +156,7 @@ func TestSynthesizeSegmentRetriesWhenProviderStreamFailsBeforeReady(t *testing.T
 }
 
 // bufferingPlayer lets a test mute output after PlayStream begins but before
-// it returns, matching the complete-sentence buffering window in audio.Player.
+// it returns, matching the complete-sentence buffering window in playback.Player.
 type bufferingPlayer struct {
 	entered chan struct{}
 	release chan struct{}

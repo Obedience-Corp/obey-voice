@@ -59,13 +59,23 @@ func TestWorkCommandsRemainLocalAndKeepDetailFocus(t *testing.T) {
 	}
 }
 
-func TestWorkInspectorExitRestoresTimelineForToggleAndClear(t *testing.T) {
-	for _, name := range []string{"ctrl+t", "/activity", "/clear"} {
+func TestWorkInspectorClearRemovesSelection(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	m.handleEvent(events.WorkStateChanged{Snapshot: stripSnapshot()})
+	m.runWorkCommand([]string{"weather"})
+	m.executeSlashCommand(slashCommand{id: commandClear}, nil)
+	if m.workActivity || m.workFilter != "" {
+		t.Fatalf("clear left work selection active: work=%v filter=%q", m.workActivity, m.workFilter)
+	}
+}
+
+func TestWorkInspectorExitRestoresTimelineAndDoesNotConsumeLaterEscape(t *testing.T) {
+	for _, name := range []string{"ctrl+t", "/activity"} {
 		t.Run(name, func(t *testing.T) {
 			m := sizedConversation(t, 100, 24)
 			m.handleEvent(events.WorkStateChanged{Snapshot: stripSnapshot()})
-			m.runWorkCommand([]string{"all"})
-			if !m.workActivity || !m.activityFocused {
+			m.runWorkCommand([]string{"weather"})
+			if !m.workActivity || !m.activityFocused || m.workFilter != "weather" {
 				t.Fatal("work inspection did not take focus")
 			}
 
@@ -74,14 +84,21 @@ func TestWorkInspectorExitRestoresTimelineForToggleAndClear(t *testing.T) {
 				m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
 			case "/activity":
 				m.executeSlashCommand(slashCommand{id: commandActivity}, nil)
-			case "/clear":
-				m.executeSlashCommand(slashCommand{id: commandClear}, nil)
 			}
-			if m.workActivity {
-				t.Fatalf("%s left work inspector active", name)
+			if m.workActivity || m.workFilter != "" {
+				t.Fatalf("%s left work inspector active: work=%v filter=%q", name, m.workActivity, m.workFilter)
 			}
-			if name != "/clear" && m.activityViewport.TotalLineCount() == 0 {
+			if m.activityViewport.TotalLineCount() == 0 {
 				t.Fatalf("%s did not restore the activity timeline", name)
+			}
+
+			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+			if !m.activityFocused {
+				t.Fatalf("%s did not reopen the restored Activity timeline", name)
+			}
+			m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			if m.activityFocused {
+				t.Fatalf("%s caused later Activity Escape to be consumed", name)
 			}
 		})
 	}

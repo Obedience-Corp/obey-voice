@@ -1,8 +1,9 @@
-package audio
+package playback
 
 import (
 	"context"
 	"errors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"sync"
 	"testing"
@@ -28,7 +29,7 @@ func (s *playbackSegment) underrunCount() int {
 // terminal result is delivered. A segment with audio still buffered is not
 // finished, whatever the synthesizer has done — that is the player's contract,
 // not a test detail.
-func drainSegment(t *testing.T, s *playbackSegment) PlaybackResult {
+func drainSegment(t *testing.T, s *playbackSegment) audio.PlaybackResult {
 	t.Helper()
 	out := make([]byte, 2*playbackPeriodFrames)
 	for {
@@ -43,7 +44,7 @@ func drainSegment(t *testing.T, s *playbackSegment) PlaybackResult {
 		return result
 	case <-time.After(2 * time.Second):
 		t.Fatal("segment never delivered a terminal result")
-		return PlaybackResult{}
+		return audio.PlaybackResult{}
 	}
 }
 
@@ -61,7 +62,7 @@ func chunkSamples(start, n, rate int) []float32 {
 // time, returning once the pump has finished with the closed stream.
 func feedIncremental(t *testing.T, ctx context.Context, segment *playbackSegment, inputRate, outputRate int, chunks [][]float32) {
 	t.Helper()
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	stream.SetIncremental(true)
 	if err := stream.SetSampleRate(inputRate); err != nil {
 		t.Fatal(err)
@@ -88,7 +89,7 @@ func TestIncrementalSegmentIsAudibleBeforeTheStreamCloses(t *testing.T) {
 	const rate = 24000
 	ctx := context.Background()
 	segment := newPlaybackSegment()
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	stream.SetIncremental(true)
 	if err := stream.SetSampleRate(rate); err != nil {
 		t.Fatal(err)
@@ -117,7 +118,7 @@ func TestWholeUtteranceSegmentWaitsForTheStreamToClose(t *testing.T) {
 	const rate = 24000
 	ctx := context.Background()
 	segment := newPlaybackSegment()
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(rate); err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +268,7 @@ func TestIncrementalPumpFailsTheSegmentOnCancel(t *testing.T) {
 	const rate = 24000
 	ctx, cancel := context.WithCancel(context.Background())
 	segment := newPlaybackSegment()
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	stream.SetIncremental(true)
 	if err := stream.SetSampleRate(rate); err != nil {
 		t.Fatal(err)
@@ -299,7 +300,7 @@ func TestIncrementalPumpStallBudgetIsSilenceNotDuration(t *testing.T) {
 	const rate = 24000
 	ctx := context.Background()
 	segment := newPlaybackSegment()
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	stream.SetIncremental(true)
 	stream.SetStallBudget(120 * time.Millisecond)
 	if err := stream.SetSampleRate(rate); err != nil {
@@ -321,7 +322,7 @@ func TestIncrementalPumpStallBudgetIsSilenceNotDuration(t *testing.T) {
 	stream.Close()
 	<-done
 	result := drainSegment(t, segment)
-	if errors.Is(result.Err, ErrStreamStalled) {
+	if errors.Is(result.Err, audio.ErrStreamStalled) {
 		t.Fatal("a slow but steadily streaming worker was judged stalled")
 	}
 	if result.Err != nil {
@@ -335,7 +336,7 @@ func TestIncrementalPumpFailsOnSilencePastTheBudget(t *testing.T) {
 	const rate = 24000
 	ctx := context.Background()
 	segment := newPlaybackSegment()
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	stream.SetIncremental(true)
 	if err := stream.SetSampleRate(rate); err != nil {
 		t.Fatal(err)
@@ -354,7 +355,7 @@ func TestIncrementalPumpFailsOnSilencePastTheBudget(t *testing.T) {
 		t.Fatal("pumpIncremental never gave up on a silent worker")
 	}
 	result := <-segment.playback().Done()
-	if !errors.Is(result.Err, ErrStreamStalled) {
+	if !errors.Is(result.Err, audio.ErrStreamStalled) {
 		t.Fatalf("result.Err=%v, want ErrStreamStalled", result.Err)
 	}
 	stream.Close()
@@ -366,7 +367,7 @@ func TestIncrementalPumpRacesTheDeviceCallback(t *testing.T) {
 	const rate = 24000
 	ctx := context.Background()
 	segment := newPlaybackSegment()
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	stream.SetIncremental(true)
 	if err := stream.SetSampleRate(rate); err != nil {
 		t.Fatal(err)
