@@ -19,16 +19,21 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	// ThinkFull answers nothing, so its input must not stay behind.
 	restore := append([]api.Message(nil), o.history...)
 	restoreCanonical := deepCopyTurns(o.canonical)
+	restoreWorking := deepCopyTurns(o.working)
 	if opts.TransientHistory {
-		defer func() { o.history = restore; o.canonical = restoreCanonical }()
+		defer func() {
+			o.history = restore
+			o.canonical = restoreCanonical
+			o.working = restoreWorking
+		}()
 	}
-	if !opts.Background {
+	if !opts.Background && !opts.AgentContinuation {
 		o.appendUserInput(input, opts)
 	}
-	if !opts.TransientHistory {
+	if !opts.TransientHistory && !opts.AgentContinuation {
 		o.receiveDelegationResults(opts)
 	}
-	if opts.Background {
+	if opts.Background && !opts.AgentContinuation {
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
@@ -57,9 +62,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if err := o.contextBudgetError(skillCtx, tools); err != nil {
 			o.history = restore
 			o.canonical = restoreCanonical
+			o.working = restoreWorking
 			return "", err
 		}
-		messages := o.buildMessages(skillCtx)
+		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation)
 		if opts.OmitTurnInstruction {
 			messages = o.compactionMessages(skillCtx)
 		}
@@ -77,12 +83,14 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if err != nil {
 			o.history = restore
 			o.canonical = restoreCanonical
+			o.working = restoreWorking
 			return "", fmt.Errorf("ollama error: %w", err)
 		}
 
 		if doneReason == "length" {
 			o.history = restore
 			o.canonical = restoreCanonical
+			o.working = restoreWorking
 			return "", fmt.Errorf("ollama full response truncated")
 		}
 
@@ -122,9 +130,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			recorded = raw
 		}
 		o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
-		if !opts.Background && !opts.TransientHistory {
+		if !opts.Background && !opts.AgentContinuation && !opts.TransientHistory {
 			o.ackDelegationResults(req.Messages)
-		} else if !opts.TransientHistory {
+		} else if opts.Background && !opts.TransientHistory {
 			o.markBackgroundDelivered(req.Messages)
 		}
 		o.trimHistory()

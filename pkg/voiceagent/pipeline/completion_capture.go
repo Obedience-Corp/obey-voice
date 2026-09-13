@@ -69,6 +69,11 @@ func (p *Pipeline) closeCompletionCapture() {
 	p.captureYielded = false
 	p.captureDeferral = ""
 	p.captureMu.Unlock()
+	p.keepCapture.Store(false)
+	p.clearPreparedCapture()
+	if p.Capture != nil {
+		p.Capture.Reset()
+	}
 	if session != nil {
 		_ = session.Close()
 	}
@@ -99,10 +104,21 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 		p.keepCapture.Store(false)
 		return session, generation, nil
 	}
+	if err := ctx.Err(); err != nil {
+		p.clearPreparedCapture()
+		if p.Capture != nil {
+			p.Capture.Reset()
+		}
+		return nil, 0, err
+	}
 	preserve := p.keepCapture.Swap(false)
-	if p.Capture != nil && !preserve {
+	prepared := p.preparedCapture.Swap(false)
+	if p.Capture != nil && !preserve && !prepared {
 		p.Capture.Reset()
 	}
+	// A prepared scope was already trimmed at the response boundary. Keep
+	// everything captured since then, including speech during classification.
+
 	startCtx := ctx
 	coordinator := p.WorkCoordinator()
 	if coordinator != nil {

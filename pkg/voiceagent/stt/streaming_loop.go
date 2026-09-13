@@ -101,11 +101,17 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 				}
 				continue
 			}
-			heard.push(read.frame.Samples)
 			if track.observe(d.voice, frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
 				}
+			}
+			// Only retain audio that passed the same admission vote used to
+			// mark speech. Raw RMS is intentionally not enough here: a
+			// stationary fan can be loud enough to make a decoder invent
+			// "yeah", and EOF must not promote that noise into a turn.
+			if d.voice {
+				heard.push(read.frame.Samples)
 			}
 
 			deps.rec.Accept(read.frame.Samples)

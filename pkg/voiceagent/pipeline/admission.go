@@ -30,6 +30,10 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 			return ctx, admitted, err
 		}
 	}
+	return p.bindAdmission(ctx, input, admitted, metrics), admitted, nil
+}
+
+func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted ResponseAdmission, metrics *turnMetrics) context.Context {
 	metrics.response = admitted.Envelope
 	metrics.originalInput = input
 	if p.Brain != nil {
@@ -38,7 +42,7 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 	primary, fallback := p.ttsProviders()
 	ctx = context.WithValue(events.WithResponse(ctx, admitted.Envelope), responseVoicesKey{}, responseVoices{primary, fallback})
 	p.bindBrainInfo()
-	return ctx, admitted, nil
+	return ctx
 }
 
 func (p *Pipeline) responseTTS(ctx context.Context) (tts.Provider, tts.Provider) {

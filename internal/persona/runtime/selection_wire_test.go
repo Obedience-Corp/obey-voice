@@ -25,6 +25,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	var mu sync.Mutex
 	var requests []struct {
 		Messages []struct{ Role, Content string }
+		Format   json.RawMessage
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -38,9 +39,27 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		}
 		var request struct {
 			Messages []struct{ Role, Content string }
+			Format   json.RawMessage
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
+			return
+		}
+		if len(request.Format) > 0 {
+			var input brain.AddressRequest
+			if err := json.Unmarshal([]byte(request.Messages[len(request.Messages)-1].Content), &input); err != nil {
+				t.Error(err)
+				return
+			}
+			decision := brain.Addressee{Kind: "none"}
+			switch input.Text {
+			case "Santa.":
+				decision = brain.Addressee{Kind: "address", Name: "Santa", Bare: true}
+			case "Samantha, what is it?":
+				decision = brain.Addressee{Kind: "address", Name: "Samantha"}
+			}
+			raw, _ := json.Marshal(decision)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"role": "assistant", "content": string(raw)}, "done": true})
 			return
 		}
 		mu.Lock()
@@ -133,7 +152,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		}
 	}
 	lastInput := loaded.Turns[6]
-	if lastInput.Content != "Samantha, what is it?" || lastInput.RoutedInput != "what is it?" {
+	if lastInput.Content != "Samantha, what is it?" || lastInput.RoutedInput != "" {
 		t.Fatalf("original/routed input: %+v", lastInput)
 	}
 	mu.Lock()
@@ -142,7 +161,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		t.Fatalf("model calls=%d", len(requests))
 	}
 	last := requests[2].Messages
-	if last[len(last)-1].Content != "what is it?" {
+	if last[len(last)-1].Content != "Unknown user:\nSamantha, what is it?" {
 		t.Fatalf("routed request missing: %+v", last)
 	}
 	found := false
