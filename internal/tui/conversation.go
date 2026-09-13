@@ -527,6 +527,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		case "ctrl+t":
 			if m.workActivity {
 				m.workActivity = false
+				m.workFilter = ""
 			}
 			m.activityFocused = !m.activityFocused
 			m.refreshActivity()
