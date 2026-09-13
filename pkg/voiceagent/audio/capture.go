@@ -3,6 +3,7 @@ package audio
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -130,6 +131,67 @@ func (c *Capture) Start(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// SetDevice rebinds a running capture to name. An empty name selects the
+// operating-system default. The Capture itself, including its ring buffer and
+// subscriptions, remains unchanged.
+func (c *Capture) SetDevice(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.running && c.deviceName == name {
+		return nil
+	}
+	if !c.active {
+		return fmt.Errorf("capture is stopped")
+	}
+
+	previousName := c.deviceName
+	if c.running {
+		c.closeDevice()
+	}
+	c.running = false
+	c.buf.Clear()
+	c.deviceName = name
+
+	if err := ctx.Err(); err != nil {
+		return c.restoreDeviceLocked(previousName, err)
+	}
+
+	if err := c.open(); err != nil {
+		return c.restoreDeviceLocked(previousName, err)
+	}
+	if err := ctx.Err(); err != nil {
+		c.closeDevice()
+		c.running = false
+		return c.restoreDeviceLocked(previousName, err)
+	}
+
+	c.running = true
+	c.lastData.Store(time.Now().UnixNano())
+	return nil
+}
+
+// restoreDeviceLocked restores the device that was active before SetDevice.
+// c.mu must be held. On rollback failure, the Capture remains active but
+// closed so normal recovery can retry the previous device.
+func (c *Capture) restoreDeviceLocked(name string, original error) error {
+	c.deviceName = name
+	if err := c.open(); err != nil {
+		c.running = false
+		return errors.Join(original, fmt.Errorf("restore capture device %q: %w", deviceLabel(name), err))
+	}
+	c.running = true
+	c.lastData.Store(time.Now().UnixNano())
+	return original
 }
 
 func (c *Capture) openMalgoDevice() error {

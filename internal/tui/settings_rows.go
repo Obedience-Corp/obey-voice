@@ -839,7 +839,7 @@ func deviceOptions(items []string) []string {
 func (m settingsModel) inputRows() []settingRow {
 	row := settingRow{
 		key: "input_device", name: "Microphone", kind: rowPick,
-		applies: appliesNextConversation,
+		applies: "applies when returning to the conversation",
 		help:    "Which microphone it listens to.",
 	}
 	if m.devicesLoading {

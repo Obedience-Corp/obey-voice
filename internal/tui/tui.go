@@ -743,11 +743,43 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.conversation.recoverTurnState()
 		voiceChanged := a.settingsVoiceState != voiceSettingsState(a.cfg)
 		a.settingsVoiceState = ""
+		if target == screenConversation && a.runtime != nil && a.runtime.Voice && a.cfg != nil &&
+			a.cfg.InputDevice != a.runtime.InputDevice {
+			a.conversation.setStatus("Switching microphone…", false)
+			return a, switchMicrophone(a.runCtx, a.runtime, a.cfg.InputDevice, resumeVoice, voiceChanged)
+		}
 		if target == screenConversation && voiceChanged && a.runtime != nil && a.runtime.ReloadVoice != nil {
 			a.conversation.setStatus("Applying voice settings…", false)
 			return a, reloadVoice(a.runCtx, a.runtime.ReloadVoice, resumeVoice)
 		}
 		if resumeVoice {
+			return a, a.conversation.setInputMuted(false)
+		}
+		return a, nil
+
+	case microphoneSwitchedMsg:
+		if a.runtime != msg.runtime {
+			return a, nil
+		}
+		if msg.err != nil {
+			a.conversation.setStatus("Microphone change failed: "+msg.err.Error()+". Voice input remains paused.", true)
+			return a, nil
+		}
+		a.runtime.InputDevice = msg.name
+		if a.runtime.SessionCfg != nil {
+			updated := *a.runtime.SessionCfg
+			updated.InputDevice = msg.name
+			a.runtime.SessionCfg = &updated
+			a.conversation.cfg = &updated
+		}
+		a.conversation.inputDevice = msg.name
+		a.conversation.deps.inputDevice = msg.name
+		a.conversation.appendActivity("input", deviceLabel(msg.name), 0)
+		if msg.reloadVoice && a.runtime.ReloadVoice != nil {
+			return a, reloadVoice(a.runCtx, a.runtime.ReloadVoice, msg.resumeVoice)
+		}
+		a.conversation.setStatus("Microphone switched to "+deviceLabel(msg.name), false)
+		if msg.resumeVoice {
 			return a, a.conversation.setInputMuted(false)
 		}
 		return a, nil
