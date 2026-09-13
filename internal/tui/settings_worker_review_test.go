@@ -120,7 +120,7 @@ func TestWorkerSettingsShowCapabilityScopeAndExistingBounds(t *testing.T) {
 		view := stripANSI(m.View())
 		wants := []string{"1 concurrent", "32 queued"}
 		if tier == "" {
-			wants = append(wants, "tiered", "legacy singleton controls are inactive")
+			wants = append(wants, "tiered", "tiered draft; Save applies these limits")
 		}
 		if tier != "" {
 			wants = append(wants, "local request/tool/output quotas")
