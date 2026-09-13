@@ -3,6 +3,7 @@ package workjournal
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -176,10 +177,12 @@ func Follow(ctx context.Context, dir string, opts FollowOptions, emit func(Follo
 	checkpointMTime := map[string]time.Time{}
 	retentionMTime := time.Time{}
 	order := []string{}
+	seenPayload := map[string]string{}
+	segmentRanges := map[string]segmentRange{}
 	t := time.NewTicker(250 * time.Millisecond)
 	defer t.Stop()
 	for {
-		if err := followOnce(ctx, dir, opts, emit, offsets, partial, watermark, results, known, notified, checkpointMTime, &retentionMTime, &order); err != nil {
+		if err := followOnce(ctx, dir, opts, emit, offsets, partial, watermark, results, known, notified, checkpointMTime, &retentionMTime, &order, seenPayload, segmentRanges); err != nil {
 			return err
 		}
 		select {
@@ -190,7 +193,12 @@ func Follow(ctx context.Context, dir string, opts FollowOptions, emit func(Follo
 	}
 }
 
-func followOnce(ctx context.Context, dir string, opts FollowOptions, emit func(FollowEvent) error, offsets map[string]int64, partial map[string][]byte, watermark map[string]uint64, results map[string]string, known, notified map[string]bool, checkpointMTime map[string]time.Time, retentionMTime *time.Time, order *[]string) error {
+type segmentRange struct {
+	runtime     string
+	first, last uint64
+}
+
+func followOnce(ctx context.Context, dir string, opts FollowOptions, emit func(FollowEvent) error, offsets map[string]int64, partial map[string][]byte, watermark map[string]uint64, results map[string]string, known, notified map[string]bool, checkpointMTime map[string]time.Time, retentionMTime *time.Time, order *[]string, seenPayload map[string]string, segmentRanges map[string]segmentRange) error {
 	if len(notified) > 4096 || len(checkpointMTime) > 4096 {
 		clear(notified)
 		clear(checkpointMTime)
@@ -285,7 +293,7 @@ func followOnce(ctx context.Context, dir string, opts FollowOptions, emit func(F
 	present := map[string]bool{}
 	for _, path := range files {
 		present[path] = true
-		if err := followFile(ctx, path, opts, emit, offsets, partial, watermark, results, order); err != nil {
+		if err := followFile(ctx, path, opts, emit, offsets, partial, watermark, results, order, seenPayload, segmentRanges); err != nil {
 			return err
 		}
 		known[path] = true
@@ -295,12 +303,17 @@ func followOnce(ctx context.Context, dir string, opts FollowOptions, emit func(F
 			continue
 		}
 		runtime := runtimeFromPath(path)
-		if err := emit(FollowEvent{Notice: &FollowNotice{Schema: Schema, Type: "journal.gap", RuntimeID: runtime, From: watermark[runtime] + 1, Reason: "segment_pruned"}}); err != nil {
+		notice := FollowNotice{Schema: Schema, Type: "journal.gap", RuntimeID: runtime, Reason: "segment_pruned"}
+		if r, ok := segmentRanges[path]; ok {
+			notice.RuntimeID, notice.From, notice.To = r.runtime, r.first, r.last
+		}
+		if err := emit(FollowEvent{Notice: &notice}); err != nil {
 			return err
 		}
 		delete(known, path)
 		delete(offsets, path)
 		delete(partial, path)
+		delete(segmentRanges, path)
 	}
 	if st, err := os.Stat(filepath.Join(dir, "retention.json")); err == nil && !st.ModTime().Equal(*retentionMTime) {
 		*retentionMTime = st.ModTime()
@@ -312,7 +325,7 @@ func followOnce(ctx context.Context, dir string, opts FollowOptions, emit func(F
 	return nil
 }
 
-func followFile(ctx context.Context, path string, opts FollowOptions, emit func(FollowEvent) error, offsets map[string]int64, partial map[string][]byte, watermark map[string]uint64, results map[string]string, order *[]string) error {
+func followFile(ctx context.Context, path string, opts FollowOptions, emit func(FollowEvent) error, offsets map[string]int64, partial map[string][]byte, watermark map[string]uint64, results map[string]string, order *[]string, seenPayload map[string]string, segmentRanges map[string]segmentRange) error {
 	st, err := os.Lstat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -361,8 +374,23 @@ func followFile(ctx context.Context, path string, opts FollowOptions, emit func(
 		if runtime, ok := segmentRuntime(path); !ok || r.RuntimeID != runtime || r.Seq == 0 {
 			return fmt.Errorf("%s line %d: missing runtime/sequence", filepath.Base(path), i+1)
 		}
+		key := r.RuntimeID + "\x00" + fmt.Sprint(r.Seq)
+		hash := recordPayloadHash(r)
 		if r.Seq <= watermark[r.RuntimeID] {
+			prior, ok := seenPayload[key]
+			if !ok || prior != hash {
+				if err = emit(FollowEvent{Notice: &FollowNotice{Schema: Schema, Type: "journal.gap", RuntimeID: r.RuntimeID, From: r.Seq, To: r.Seq, Reason: "conflicting_duplicate"}}); err != nil {
+					return err
+				}
+			}
 			continue
+		}
+		rememberPayloadHash(seenPayload, key, hash)
+		if sr, ok := segmentRanges[path]; !ok || sr.first == 0 {
+			segmentRanges[path] = segmentRange{runtime: r.RuntimeID, first: r.Seq, last: r.Seq}
+		} else if r.Seq > sr.last {
+			sr.last = r.Seq
+			segmentRanges[path] = sr
 		}
 		learnJobResults(r, results)
 		if err := trimJobResults(results, emit); err != nil {
@@ -388,6 +416,12 @@ func followFile(ctx context.Context, path string, opts FollowOptions, emit func(
 			old := (*order)[0]
 			*order = (*order)[1:]
 			delete(watermark, old)
+			prefix := old + "\x00"
+			for key := range seenPayload {
+				if strings.HasPrefix(key, prefix) {
+					delete(seenPayload, key)
+				}
+			}
 			if err = emit(FollowEvent{Notice: &FollowNotice{Schema: Schema, Type: "journal.gap", RuntimeID: old, Reason: "watermark_evicted"}}); err != nil {
 				return err
 			}
@@ -405,6 +439,23 @@ func followFile(ctx context.Context, path string, opts FollowOptions, emit func(
 	partial[path] = tail
 	offsets[path] = start + int64(len(b))
 	return ctx.Err()
+}
+
+func recordPayloadHash(r Record) string {
+	b, _ := json.Marshal(r)
+	return fmt.Sprintf("%x", sha256.Sum256(b))
+}
+
+// Keep duplicate evidence bounded. Once an entry is evicted, a later replay
+// is reported as unverifiable rather than silently accepted.
+func rememberPayloadHash(seen map[string]string, key, hash string) {
+	if len(seen) >= 4096 {
+		for old := range seen {
+			delete(seen, old)
+			break
+		}
+	}
+	seen[key] = hash
 }
 
 func runtimeFromPath(path string) string {

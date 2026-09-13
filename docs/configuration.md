@@ -94,8 +94,8 @@ when you select it.
 | `tool_command_timeout` | `30` (clamped 1–120) | `TOOL_COMMAND_TIMEOUT` | Maximum seconds for one local `run_command` invocation. The whole brain turn has its own timeout. |
 | `voice_work_enabled` | `false` | `VOICE_WORK_ENABLED` | Opt into the experimental conversation work inbox. Saves pending background results with the conversation; paid tiers require explicit advisory uncapped consent in Workers Settings; story-writing narration is unavailable. Restored updates remain held until explicitly resumed. Reading existing files aloud remains available. |
 | `voice_work_narration` | `status_only` | `VOICE_WORK_NARRATION` | How much a spawned worker narrates itself. `status_only` stays quiet until you ask what's happening; `milestones` speaks one short line each time the worker moves from one kind of work to another (a closed fold row), gated on the mic being idle. Never one line per tool call. See [delegation](delegation.md#what-the-worker-is-doing). |
-| `voice_worker_max_concurrent` | `1` (1–8) | `VOICE_WORKER_MAX_CONCURRENT` | How many spawned jobs run at the same time; the rest wait in order. Each is its own model session, so more than one on a local Ollama shares the machine. |
-| `voice_worker_job_budget` | `600` (0–86400) | `VOICE_WORKER_JOB_BUDGET` | Longest a spawned job may run, in seconds, before it is stopped and you are told once. Zero means no limit. See [delegation](delegation.md#what-the-worker-is-doing). |
+| `voice_worker_max_concurrent` | `1` (1–8) | `VOICE_WORKER_MAX_CONCURRENT` | **Legacy mode only.** How many spawned jobs run at the same time; the rest wait in order. Tiered Workers Settings use `voice_workers.policy.concurrent_workers` instead. |
+| `voice_worker_job_budget` | `600` (0–86400) | `VOICE_WORKER_JOB_BUDGET` | **Legacy mode only.** Longest a spawned job may run, in seconds, before it is stopped and you are told once. Tiered Workers Settings use each tier's `runtime_seconds` instead. Zero means no limit. See [delegation](delegation.md#what-the-worker-is-doing). |
 | `voice_worker_boundary` | `true` | `VOICE_WORKER_BOUNDARY` | Keeps a spawned worker inside the directory it was launched in, or that directory's campaign root when it is inside one: its prompt says so, and the Ollama worker's file tools and shell refuse paths outside it. No campaign is needed. See [delegation](delegation.md#where-a-worker-may-go). |
 | `remote_tools_enabled` | `false` | | Allow network-triggered turns from `obey-voice serve` to invoke tools; keep off unless remote clients are trusted. |
 | `calibre_enabled` | `false` | `CALIBRE_ENABLED` | Opt in to Calibre library browse/search, TUI Library + picker, and `--from-library` |
@@ -620,3 +620,14 @@ continuation recovery settings are described in [Context continuity](context-con
 Ollama can delegate managed work to Obey with `delegation_enabled: true`. Setup,
 backend requirements, and scheduled result delivery are documented in
 [Background tasks](delegation.md). The feature is off by default.
+
+When Workers Settings are in **tiered** mode, the saved
+`voice_workers.policy.concurrent_workers` / `queued_workers` and each tier's
+`runtime_seconds` are the effective scheduling and runtime limits. The legacy
+`voice_worker_max_concurrent` and `voice_worker_job_budget` keys remain
+available for legacy mode only; enabling tiered mode does not silently migrate
+or reinterpret those explicit singleton values.
+
+Existing saved `queued_workers: 1` remains an explicit one-job queue bound.
+Increase it in Workers Settings if desired; loading an older policy does not
+silently replace that saved value with a newer default.
