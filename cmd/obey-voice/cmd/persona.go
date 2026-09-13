@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func init() {
@@ -27,6 +26,8 @@ func newPersonaCmd() *cobra.Command {
 	cmd.AddCommand(personaCreateCmd())
 	cmd.AddCommand(personaEditCmd())
 	cmd.AddCommand(personaDeleteCmd())
+	cmd.AddCommand(personaSetInactiveCmd(false))
+	cmd.AddCommand(personaSetInactiveCmd(true))
 	return cmd
 }
 
@@ -50,7 +51,7 @@ func personaListCmd() *cobra.Command {
 		Short: "List installed persona profiles",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadPersonaManagementConfig()
 			if err != nil {
 				return err
 			}
@@ -70,6 +71,7 @@ func personaListCmd() *cobra.Command {
 					Prompt      string `json:"prompt"`
 					Builtin     bool   `json:"builtin"`
 					Active      bool   `json:"active"`
+					Inactive    bool   `json:"inactive"`
 					Path        string `json:"path"`
 				}
 				active := persona.ActiveID(cfg)
@@ -83,6 +85,7 @@ func personaListCmd() *cobra.Command {
 						Prompt:      p.Prompts.Persona,
 						Builtin:     p.Builtin,
 						Active:      p.ID == active,
+						Inactive:    p.Inactive,
 						Path:        p.Path,
 					})
 				}
@@ -97,14 +100,18 @@ func personaListCmd() *cobra.Command {
 			}
 			active := persona.ActiveID(cfg)
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 2, 2, ' ', 0)
-			fmt.Fprintln(w, "  ID\tNAME\tPROVIDER\tVOICE\tPROMPT\tACTIVE")
+			fmt.Fprintln(w, "  ID\tNAME\tPROVIDER\tVOICE\tPROMPT\tSTATUS")
 			for _, p := range list {
 				mark := ""
 				if p.ID == active {
 					mark = "*"
 				}
+				status := mark
+				if p.Inactive {
+					status = "inactive"
+				}
 				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n",
-					p.ID, p.DisplayName, p.TTS.Provider, p.TTS.Voice, p.Prompts.Persona, mark)
+					p.ID, p.DisplayName, p.TTS.Provider, p.TTS.Voice, p.Prompts.Persona, status)
 			}
 			_ = w.Flush()
 			fmt.Fprintf(cmd.OutOrStdout(), "\n  Profiles dir: %s\n", persona.Dir())
@@ -149,7 +156,7 @@ func runPersonaShow(cmd *cobra.Command, args []string) error {
 // the identity body an editor needs to load the text without ever parsing
 // obey-voice.prompt.v1 itself.
 func describePersona(cmd *cobra.Command, args []string) (*personaResultJSON, error) {
-	cfg, err := config.Load()
+	cfg, err := loadPersonaManagementConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -191,6 +198,7 @@ func printPersonaShow(cmd *cobra.Command, r *personaResultJSON) {
 	fmt.Fprintf(out, "\n  %s\n", titleStyle.Render("Persona: "+p.ID))
 	fmt.Fprintf(out, "  display_name    %s\n", p.DisplayName)
 	fmt.Fprintf(out, "  builtin         %v\n", p.Builtin)
+	fmt.Fprintf(out, "  inactive        %v\n", p.Inactive)
 	fmt.Fprintf(out, "  active          %v\n", r.Active)
 	if p.Brain.Provider != "" || p.Brain.Model != "" {
 		fmt.Fprintf(out, "  brain.provider  %s\n", p.Brain.Provider)

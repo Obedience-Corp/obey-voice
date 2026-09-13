@@ -9,6 +9,7 @@
 package persona
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,10 +51,27 @@ type Profile struct {
 	DisplayName string     `yaml:"display_name" json:"display_name"`
 	Aliases     []string   `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 	Builtin     bool       `yaml:"builtin,omitempty" json:"builtin"`
+	Inactive    bool       `yaml:"inactive,omitempty" json:"inactive"`
 	Brain       Brain      `yaml:"brain,omitempty" json:"brain"`
 	TTS         TTS        `yaml:"tts" json:"tts"`
 	Prompts     PromptRefs `yaml:"prompts" json:"prompts"`
 	Path        string     `yaml:"-" json:"path"` // absolute path of persona.yaml when loaded
+}
+
+// ErrInactive marks a profile that is present on disk but unavailable for
+// selection or execution.
+var ErrInactive = errors.New("persona is inactive")
+
+// RequireEnabled rejects an inactive profile with the command needed to make
+// it selectable again.
+func RequireEnabled(p *Profile) error {
+	if p == nil {
+		return fmt.Errorf("persona profile: nil")
+	}
+	if p.Inactive {
+		return fmt.Errorf("persona %q is inactive; run 'persona enable %s': %w", p.ID, p.ID, ErrInactive)
+	}
+	return nil
 }
 
 // CatalogIssue identifies a profile that could not be loaded while building

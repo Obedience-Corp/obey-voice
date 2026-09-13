@@ -43,6 +43,9 @@ func EnsureAndApply(cfg *config.Config) error {
 		}
 		return err
 	}
+	if err := RequireEnabled(p); err != nil {
+		return err
+	}
 
 	Apply(cfg, p)
 	return nil
@@ -118,6 +121,9 @@ func resolveActive(id string, chosen bool, existing []*Profile) string {
 		id, chosen = DefaultID, false
 	}
 	if p := findProfile(existing, id); p != nil {
+		if p.Inactive && !chosen {
+			return pickFallbackID(existing)
+		}
 		if chosen || Owned(p) {
 			return id
 		}
@@ -157,11 +163,16 @@ func pickFallbackID(profiles []*Profile) string {
 		return DefaultID
 	}
 	for _, want := range ShippedIDs() {
-		if p := findProfile(profiles, want); Owned(p) {
+		if p := findProfile(profiles, want); Owned(p) && !p.Inactive {
 			return want
 		}
 	}
-	return profiles[0].ID
+	for _, p := range profiles {
+		if p != nil && !p.Inactive {
+			return p.ID
+		}
+	}
+	return DefaultID
 }
 
 // ResolveActiveID reports the persona id a config load settles on, including
@@ -189,6 +200,9 @@ func Use(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
+	if err := RequireEnabled(p); err != nil {
+		return err
+	}
 	if err := config.SetAndSave("active_persona", id); err != nil {
 		return fmt.Errorf("saving active_persona: %w", err)
 	}
@@ -202,6 +216,30 @@ func Use(cfg *config.Config, id string) error {
 	}
 	Apply(cfg, p)
 	return nil
+}
+
+// SetInactive changes only a profile's inactive marker and persists the full
+// profile unchanged. The configured active persona must be moved first when
+// disabling it, so a subsequent load cannot be left without a usable default.
+func SetInactive(cfg *config.Config, id string, inactive bool) (*Profile, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("persona: config is nil")
+	}
+	if err := ValidateID(id); err != nil {
+		return nil, err
+	}
+	p, err := Load(id)
+	if err != nil {
+		return nil, err
+	}
+	if inactive && ActiveID(cfg) == id {
+		return nil, fmt.Errorf("cannot disable active persona %q; choose another default first", id)
+	}
+	p.Inactive = inactive
+	if err := Write(p, false); err != nil {
+		return nil, fmt.Errorf("saving persona inactive state: %w", err)
+	}
+	return p, nil
 }
 
 // UpdateStack persists brain + TTS choices onto one persona profile. This is

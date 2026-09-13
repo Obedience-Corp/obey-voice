@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 func personaDeleteCmd() *cobra.Command {
@@ -50,7 +49,7 @@ func runPersonaDelete(cmd *cobra.Command, args []string) error {
 }
 
 func deletePersona(cmd *cobra.Command, id string) (*personaDeleteJSON, error) {
-	cfg, err := config.Load()
+	cfg, err := loadPersonaManagementConfig()
 	if err != nil {
 		return nil, err
 	}

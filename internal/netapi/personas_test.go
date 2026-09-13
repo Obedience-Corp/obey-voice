@@ -97,7 +97,7 @@ func TestPersonasRouteShape(t *testing.T) {
 		t.Fatalf("personas = %v, want two rows", body["personas"])
 	}
 	first := rows[0].(map[string]any)
-	for _, key := range []string{"id", "display_name", "active", "builtin", "brain", "tts"} {
+	for _, key := range []string{"id", "display_name", "active", "builtin", "inactive", "brain", "tts"} {
 		if _, ok := first[key]; !ok {
 			t.Errorf("row missing %q (got %v)", key, first)
 		}
@@ -117,6 +117,22 @@ func TestPersonasRouteShape(t *testing.T) {
 	// distinguish absent from empty.
 	if got := rows[0].(map[string]any)["tts"].(map[string]any)["tier"]; got != "" {
 		t.Errorf("kokoro tier = %v, want an empty string", got)
+	}
+}
+
+func TestPersonasRouteIncludesInactiveRows(t *testing.T) {
+	addr, creds := startPersonaServer(t, func() ([]PersonaSummary, error) {
+		rows := samplePersonas()
+		rows[0].Inactive = true
+		return rows, nil
+	})
+	status, body := getPersonas(t, addr, creds.Token)
+	if status != http.StatusOK {
+		t.Fatalf("status=%d body=%v", status, body)
+	}
+	rows := body["personas"].([]any)
+	if rows[0].(map[string]any)["inactive"] != true {
+		t.Fatalf("inactive row = %v", rows[0])
 	}
 }
 

@@ -515,19 +515,35 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 		active := persona.ActiveID(cfg)
 		out := make([]netapi.PersonaSummary, 0, len(profiles))
 		for _, p := range profiles {
-			binding, err := persona.ResolveBinding(cfg, p.ID)
-			if err != nil {
-				return nil, err
+			var binding *persona.SessionBinding
+			var snap *config.Config
+			if p.Inactive {
+				snap = cfg.Clone()
+				persona.Apply(snap, p)
+			} else {
+				var err error
+				binding, err = persona.ResolveBinding(cfg, p.ID)
+				if err != nil {
+					return nil, err
+				}
+				snap = binding.Config()
 			}
-			snap := binding.Config()
+			id, displayName := p.ID, p.DisplayName
+			brainModel := persona.ModelForProvider(snap, snap.BrainProvider)
+			brainProvider := snap.BrainProvider
+			if binding != nil {
+				id, displayName, brainModel = binding.PersonaID, binding.DisplayName, binding.BrainModel
+				brainProvider = binding.BrainProvider
+			}
 			out = append(out, netapi.PersonaSummary{
-				ID:          binding.PersonaID,
-				DisplayName: binding.DisplayName,
-				Active:      binding.PersonaID == active,
+				ID:          id,
+				DisplayName: displayName,
+				Active:      id == active,
 				Builtin:     p.Builtin,
+				Inactive:    p.Inactive,
 				Brain: netapi.PersonaBrain{
-					Provider: binding.BrainProvider,
-					Model:    binding.BrainModel,
+					Provider: brainProvider,
+					Model:    brainModel,
 				},
 				TTS: netapi.PersonaTTS{
 					Provider: snap.TTSProvider,

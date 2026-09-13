@@ -416,6 +416,12 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.personas = newPersonas(a.cfg)
 			a.personas.returnScreen = prev
 			if prev == screenConversation && a.runtime != nil {
+				if snapshot := a.runtime.SelectionSnapshot; snapshot != nil {
+					a.personas.selectedPersona = func() string { return snapshot().PersonaID }
+				} else {
+					id := a.runtime.PersonaID
+					a.personas.selectedPersona = func() string { return id }
+				}
 				a.personas.requestSelection = func(id string) tea.Cmd {
 					return func() tea.Msg { return personaSelectionRequestMsg{id: id} }
 				}

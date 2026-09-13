@@ -29,9 +29,10 @@ type PersonaSummary struct {
 	Active bool `json:"active"`
 	// Builtin is additive beyond the ADR-004 shape: a list UI needs it to lock
 	// Delete on the shipped persona. Clients decode it as optional.
-	Builtin bool         `json:"builtin"`
-	Brain   PersonaBrain `json:"brain"`
-	TTS     PersonaTTS   `json:"tts"`
+	Builtin  bool         `json:"builtin"`
+	Inactive bool         `json:"inactive"`
+	Brain    PersonaBrain `json:"brain"`
+	TTS      PersonaTTS   `json:"tts"`
 }
 
 // PersonaListIssue identifies a profile omitted from a partial catalog result.

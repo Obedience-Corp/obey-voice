@@ -59,6 +59,9 @@ func ResolveBinding(cfg *config.Config, id string) (*SessionBinding, error) {
 		}
 		return nil, err
 	}
+	if err := RequireEnabled(p); err != nil {
+		return nil, err
+	}
 
 	snap := *cfg
 	fillDisplayNames(&snap)
@@ -89,6 +92,9 @@ func ResolveDefaultsBinding(cfg *config.Config) (*SessionBinding, error) {
 		}
 		snap.ActivePersona = DefaultID
 		return newBinding(DefaultID, DefaultDisplayName, TTS{}, snap), nil
+	}
+	if err := RequireEnabled(p); err != nil {
+		return nil, err
 	}
 	applyIdentity(&snap, p)
 	return newBinding(p.ID, p.DisplayName, TTS{}, snap), nil

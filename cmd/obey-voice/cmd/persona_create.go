@@ -39,7 +39,7 @@ func runPersonaUse(cmd *cobra.Command, args []string) error {
 }
 
 func usePersona(id string) (*config.Config, error) {
-	cfg, err := config.Load()
+	cfg, err := loadPersonaManagementConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func runPersonaCreate(cmd *cobra.Command, args []string) error {
 }
 
 func createPersona(cmd *cobra.Command, args []string) (*personaCreateJSON, error) {
-	cfg, err := config.Load()
+	cfg, err := loadPersonaManagementConfig()
 	if err != nil {
 		return nil, err
 	}

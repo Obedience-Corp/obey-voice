@@ -330,7 +330,7 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 
 func canKeepLastGood(s *Selector, previous events.PersonaSelection, currentScope work.WorkScope, err error) bool {
 	var profileErr *persona.ProfileLoadError
-	if !errors.As(err, &profileErr) || errors.Is(profileErr, fs.ErrNotExist) {
+	if !errors.As(err, &profileErr) || errors.Is(profileErr, fs.ErrNotExist) || errors.Is(err, persona.ErrInactive) {
 		return false
 	}
 	return canKeepLastGoodBoundary(s, previous, currentScope)
