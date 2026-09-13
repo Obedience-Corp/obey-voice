@@ -45,7 +45,7 @@ func DiagnosticsLogPath() string {
 
 func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, startInConversation bool) error {
 	return runPrograms(cfg, build, meeting, startInConversation, func(app App) (tea.Model, error) {
-		return tea.NewProgram(app, tea.WithAltScreen()).Run()
+		return tea.NewProgram(app, tea.WithAltScreen(), tea.WithReportFocus()).Run()
 	})
 }
 

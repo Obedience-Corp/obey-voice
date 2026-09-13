@@ -29,7 +29,26 @@ read/delete only — they never load a session into a running agent.`,
 	cmd.AddCommand(newSessionsListCmd())
 	cmd.AddCommand(newSessionsShowCmd())
 	cmd.AddCommand(newSessionsRmCmd())
+	for _, readOnly := range []*cobra.Command{newSessionsInspectCmd(), newSessionsEventsCmd(), newSessionsExportCmd()} {
+		readOnly.PersistentPreRunE = readOnlySessionPreRun
+		readOnly.Args = func(c *cobra.Command, args []string) error {
+			if err := cobra.ExactArgs(1)(c, args); err != nil {
+				return usageError("%v", err)
+			}
+			return nil
+		}
+		readOnly.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError("%v", err) })
+		cmd.AddCommand(readOnly)
+	}
 	return cmd
+}
+
+// Inspection bypasses the interactive root hook, which applies personas and
+// seeds prompt files. Resolving saved paths must never migrate/select a persona
+// or initialize audio while reading diagnostic evidence.
+func readOnlySessionPreRun(_ *cobra.Command, _ []string) error {
+	_, err := config.LoadRaw()
+	return err
 }
 
 // --- list ---

@@ -904,6 +904,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			},
 			workScope:      func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
+			workSnapshot:   func() work.Snapshot { return msg.rt.Pipeline.WorkSnapshot() },
+			journalHealth:  msg.rt.Pipeline.JournalHealth,
 			brainSession:   brainSessionReporter(msg.rt.Pipeline.Brain),
 			compact:        msg.rt.Pipeline.CompactConversation,
 			voice:          msg.rt.Voice,
@@ -998,6 +1000,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		a.conversation, cmd = a.conversation.Update(msg)
 		return a, tea.Batch(cmd, a.rearmTalk(msg))
+
+	case workProjectionPollMsg, tea.FocusMsg:
+		var cmd tea.Cmd
+		a.conversation, cmd = a.conversation.Update(msg)
+		return a, cmd
 
 	case talkHotkeyExitedMsg:
 		a.hotkey = nil

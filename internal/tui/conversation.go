@@ -79,13 +79,16 @@ type conversationModel struct {
 	jobOrder []string
 	// work folds a job's per-call tool events into rows; jobItems maps a job
 	// to the one transcript item those rows rewrite. See work.go.
-	work              *workfold.Tracker
-	jobItems          map[string]int
-	completedJobItems map[string]int
-	workScope         work.WorkScope
-	workRevision      uint64
-	workResultItems   map[string]int
-	workResultJobs    map[string]string
+	work               *workfold.Tracker
+	jobItems           map[string]int
+	completedJobItems  map[string]int
+	workScope          work.WorkScope
+	workRevision       uint64
+	lastWorkPoll       time.Time
+	workPollGeneration uint64
+	journalIncomplete  bool
+	workResultItems    map[string]int
+	workResultJobs     map[string]string
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
@@ -365,6 +368,15 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.setSize(msg.Width, msg.Height)
 		return m, m.ensureVoiceTick()
+	case tea.FocusMsg:
+		m.recoverWork(time.Now(), true)
+		return m, nil
+	case workProjectionPollMsg:
+		if msg.generation != m.workPollGeneration {
+			return m, nil
+		}
+		m.recoverWork(time.Now(), false)
+		return m, m.workProjectionPollCmd()
 
 	case startupTickMsg:
 		if !m.startup.tick() {
@@ -373,6 +385,7 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 		return m, startupTickCmd(m.reducedMotion)
 
 	case voiceTickMsg:
+		m.recoverWork(time.Time(msg), false)
 		m.voiceFrame++
 		// Decay mic energy so the meter settles when speech pauses.
 		m.inputLevel *= 0.82
@@ -1552,6 +1565,9 @@ func (m conversationModel) View() string {
 		}
 	}
 	footerLeft := "  " + micChip + " " + outChip
+	if m.journalIncomplete {
+		footerLeft += " " + chipMutedStyle.Render("Diagnostic history incomplete")
+	}
 	if m.jobStatus != "" {
 		footerLeft += " " + chipStyle.Render(m.jobStatus)
 	}

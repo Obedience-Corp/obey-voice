@@ -65,10 +65,12 @@ type voiceRetryMsg struct{}
 
 // conversationDeps wires the live pipeline into the conversation model.
 type conversationDeps struct {
-	runner       turnRunner
-	bus          *events.Bus
-	clearHistory func()
-	workScope    func() work.WorkScope
+	runner        turnRunner
+	bus           *events.Bus
+	clearHistory  func()
+	workScope     func() work.WorkScope
+	workSnapshot  func() work.Snapshot
+	journalHealth func() events.WorkJournalHealth
 	// compact runs the pipeline's conversation compaction; nil when the
 	// runtime did not wire it (e.g. prompt resolution failed).
 	compact func(ctx context.Context) error
@@ -95,6 +97,7 @@ type conversationDeps struct {
 // first turn. The returned Cmd must be handed to the program.
 func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	m.deps = deps
+	m.workPollGeneration++
 	m.backgroundPauseGeneration++
 	m.pendingPause = false
 	m.backgroundPauseAcknowledged = false
@@ -136,6 +139,8 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	if deps.output {
 		m.appendActivity("output", deviceLabel(deps.outputDevice), 0)
 	}
+	m.recoverWork(time.Now(), true)
+	cmds = append(cmds, m.workProjectionPollCmd())
 	if deps.liveSpeaker != nil {
 		m.liveSpeakerStats = deps.liveSpeaker.Stats()
 		m.liveSpeakerStatsKnown = true

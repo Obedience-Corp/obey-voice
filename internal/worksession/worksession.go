@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/internal/workjournal"
 	"sync"
 	"time"
 
@@ -34,6 +35,8 @@ type Checkpoint struct {
 	stop                    chan struct{}
 	done                    chan struct{}
 	once                    sync.Once
+	journal                 *workjournal.Journal
+	detachJournal           func()
 }
 
 // checkpointRequest carries the Wait generation through the coalescing queue.
@@ -77,6 +80,22 @@ func Bind(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session, store
 	}
 	w := &Checkpoint{pipeline: p, store: store, session: sess, scope: snapshot.Scope,
 		wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{})}
+	dir, err := store.WorkDir(sess.ID)
+	if err != nil {
+		return nil, errors.Join(err, p.CloseWork())
+	}
+	warned := false
+	coordinator := p.WorkCoordinator()
+	w.journal = workjournal.New(dir, coordinator, cfg, workjournal.Options{}, func(h workjournal.Health) {
+		p.SetJournalHealth(events.WorkJournalHealth{Scope: coordinator.Scope(), Incomplete: h.Incomplete, Dropped: h.Dropped, LastError: h.LastError, PersistedSeq: h.PersistedSeq, PersistedAt: h.PersistedAt})
+		if h.Incomplete && !warned && p.Events != nil {
+			warned = true
+			p.Events.Emit(events.Info{Message: "Diagnostic history incomplete; live results remain available."})
+		}
+	})
+	if p.Events != nil {
+		w.detachJournal = p.Events.ObserveBeforeFanout(w.journal.Observe)
+	}
 	p.SetWorkObserver(w.Submit)
 	go w.run()
 	return w, nil
@@ -235,7 +254,13 @@ func (w *Checkpoint) Close() error {
 		close(w.stop)
 	})
 	<-w.done
+	if w.detachJournal != nil {
+		w.detachJournal()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	journalErr := w.journal.Close(ctx)
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.err
+	return errors.Join(w.err, journalErr)
 }

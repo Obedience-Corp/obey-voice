@@ -58,6 +58,8 @@ type UtteranceEnder interface {
 
 // Pipeline orchestrates the voice conversation loop.
 type Pipeline struct {
+	journalMu     sync.RWMutex
+	journalHealth events.WorkJournalHealth
 	// identityMu protects the host-owned conversation identity used when the
 	// optional work coordinator is disabled. Work-enabled conversations copy
 	// the coordinator scope here so selection and snapshots use one identity
