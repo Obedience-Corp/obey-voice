@@ -701,15 +701,20 @@ func TestVoiceFailurePolicyTerminalProof(t *testing.T) {
 			if calls != 3 {
 				t.Fatalf("voice attempts = %d, want 3", calls)
 			}
+			if !tc.wantFallback && !harness.retryScheduled {
+				t.Fatal("third response error did not schedule another voice attempt")
+			}
 			t.Logf("terminal output:\n%s", rendered)
 		})
 	}
 }
 
 type voiceFailureTerminalHarness struct {
-	model        conversationModel
-	wantFallback bool
-	errors       int
+	model          conversationModel
+	wantFallback   bool
+	errors         int
+	completed      int
+	retryScheduled bool
 }
 
 func (h *voiceFailureTerminalHarness) Init() tea.Cmd {
@@ -719,6 +724,15 @@ func (h *voiceFailureTerminalHarness) Init() tea.Cmd {
 func (h *voiceFailureTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	h.model, cmd = h.model.Update(msg)
+	if _, ok := msg.(voiceTurnDoneMsg); ok {
+		h.completed++
+		if h.completed == 3 && !h.wantFallback {
+			// Observe the third retry without executing a fourth fixture turn while
+			// the event bridge catches up with the third error for rendering.
+			h.retryScheduled = cmd != nil
+			return h, nil
+		}
+	}
 	bridged, ok := msg.(busEventMsg)
 	if !ok {
 		return h, cmd

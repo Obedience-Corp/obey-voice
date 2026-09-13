@@ -49,14 +49,14 @@ func IDFromContext(ctx context.Context) string {
 type Spec struct {
 	// ID optionally supplies a caller-owned stable identity. Empty preserves
 	// the table's sequential legacy IDs.
+	ID       string
+	Task     string
+	Provider string
+	Model    string
+	Run      func(ctx context.Context) (result string, err error)
 	// RuntimeBudget overrides the table default for this admitted job.
 	// Zero keeps the legacy default. It limits local scheduling, not remote termination.
 	RuntimeBudget time.Duration
-	ID            string
-	Task          string
-	Provider      string
-	Model         string
-	Run           func(ctx context.Context) (result string, err error)
 	// OnAccepted publishes caller metadata after enqueue succeeds, before
 	// queued/start callbacks or execution. It runs outside the table lock.
 	OnAccepted func(id string)
@@ -230,13 +230,13 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		t.mu.Unlock()
 		return "", fmt.Errorf("job table closed")
 	}
-	if t.maxQueued > 0 && len(t.running) >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
-		t.mu.Unlock()
-		return "", errors.New("worker queue limit reached")
-	}
 	if t.disabled {
 		t.mu.Unlock()
 		return "", ErrDisabled
+	}
+	if t.maxQueued > 0 && len(t.running) >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
+		t.mu.Unlock()
+		return "", errors.New("worker queue limit reached")
 	}
 	id := spec.ID
 	if id == "" {

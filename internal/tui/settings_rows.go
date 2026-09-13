@@ -249,11 +249,11 @@ func (m settingsModel) legacyWorkerRows() []settingRow {
 	rows = append(rows, settingRow{key: "worker_migration", name: "Use current worker for all tiers", kind: rowAction,
 		detail: "preview", applies: appliesNextConversation, help: "Create a tiered draft from the resolved legacy worker. Nothing is saved until Save.",
 		run: func(m *settingsModel) tea.Cmd { return m.previewWorkerMigration() }})
-	rows = append(rows, permission)
 	rows = append(rows, settingRow{key: "worker_effective_bounds", name: "Effective worker limits", kind: rowInfo,
 		value:  fmt.Sprintf("legacy: %d concurrent · %s/job", max(1, m.cfg.VoiceWorkerMaxConcurrent), legacyWorkerBudgetLabel(m.cfg.VoiceWorkerJobBudget)),
 		detail: "legacy singleton controls; tier policy is not active",
 		help:   "These singleton settings control jobs until an explicit tiered worker policy is saved."})
+	rows = append(rows, permission)
 	return rows
 }
 
