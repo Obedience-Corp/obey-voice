@@ -157,8 +157,8 @@ func (p *Pipeline) compactionInstruction() string {
 		return p.CompactPrompt
 	}
 	for _, turn := range canonical.CanonicalHistory() {
-		if turn.PersonaID != "" || turn.ResponseID != "" {
-			return p.CompactPrompt + "\n\nHistorical attribution requirements: This is a continuity summary of a shared conversation, not a new reply by the current persona. For each retained fact or decision from an assistant, preserve its historical persona name and exact source response ID from the [Historical assistant: ... response ...] marker. Keep user-provided facts attributed to the user; cite the historical assistant and source response ID when recording who acknowledged them. Preserve different personas separately, including their disagreements. Never infer missing identities or invent source IDs. Retain these source references in later summaries as well."
+		if turn.PersonaID != "" || turn.PersonaDisplayName != "" {
+			return p.CompactPrompt + "\n\nHistorical attribution requirements: This is a continuity summary of a shared conversation, not a new reply by the current persona. Preserve the historical persona name for each retained fact or decision from an assistant. Keep user-provided facts attributed to the user. Preserve different personas separately, including their disagreements. Do not imitate historical assistant labels in the summary or present internal metadata as user-facing text."
 		}
 	}
 	return p.CompactPrompt

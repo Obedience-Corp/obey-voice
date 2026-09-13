@@ -101,7 +101,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
 					skillCtx += "\n" + result
 				}
-				o.appendProjectedToolResult(tc, result)
+				o.appendProjectedToolResult(tc, result, opts.Identity)
 			}
 			o.ensureContextBudget(skillCtx)
 			continue

@@ -236,7 +236,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
 						skillCtx += "\n" + result
 					}
-					o.appendProjectedToolResult(tc, result)
+					o.appendProjectedToolResult(tc, result, opts.Identity)
 				}
 				// Re-budget after tools: a large result can push the user
 				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s

@@ -144,7 +144,7 @@ func (o *OllamaBrain) estimateTokens(skillCtx string) int {
 }
 
 func (o *OllamaBrain) promptBytes(skillCtx string) int {
-	n := len(o.fullSystemPrompt) + len(historicalIdentityGuidance) + len(skillCtx)
+	n := len(o.fullSystemPrompt) + len(o.conversationIdentityGuidance()) + len(skillCtx)
 	if recall := o.recallNotes(); recall != "" {
 		n += len(recall) + 256
 	}

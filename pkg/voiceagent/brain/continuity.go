@@ -204,7 +204,7 @@ func (o *OllamaBrain) compactForContinuation(ctx context.Context) error {
 		start = len(before)
 	}
 	o.archiveMessages(before[:start])
-	o.history = append([]api.Message{{Role: "assistant", Content: "Conversation notes: " + continuity.Clip(summary, 4096)}}, before[start:]...)
+	o.history = append([]api.Message{{Role: "user", Content: "Shared conversation notes: " + continuity.Clip(summary, 4096)}}, before[start:]...)
 	return nil
 }
 
@@ -259,5 +259,7 @@ func recallMessages(notes string) []api.Message {
 // LoadHistory (session restore), this intentionally keeps the session archive.
 func (o *OllamaBrain) ReseedContinuity(turns []Turn) {
 	o.archiveMessages(o.history)
-	o.loadHistoryProjection(turns, false)
+	// The synthetic summary is shared context, not a reply authored by the
+	// currently active persona. Keep the durable canonical transcript intact.
+	o.loadHistoryProjectionForPersona(turns, false, true)
 }
