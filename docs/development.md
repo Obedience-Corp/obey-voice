@@ -13,8 +13,9 @@ just deps         # Update and tidy dependencies
 
 The build dashboard is wired through `internal/buildutil` and the project keeps using that workflow.
 
-See [Voice runtime code layout](voice-runtime-layout.md) for the pipeline,
-Ollama provider and config package file responsibilities and state ownership.
+See [Voice runtime code layout](voice-runtime-layout.md) for file responsibilities
+and state ownership across the pipeline, Ollama provider, config package, Qwen TTS
+provider, audio player, meeting log and benchmark command.
 
 ## Testing
 
