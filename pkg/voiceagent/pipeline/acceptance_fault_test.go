@@ -242,11 +242,51 @@ func TestAcceptanceRestoreHeldActionThenHostDelivery(t *testing.T) {
 	if err != nil || durable.Work == nil || len(durable.Work.Communicated) != 1 {
 		t.Fatalf("durable delivered session=%+v err=%v", durable, err)
 	}
+	firstAttempt := finalAttemptID(p.WorkSnapshot())
+	if err := p.WorkResultAction(current, result.Outcome.ResultID, "replay"); err != nil {
+		t.Fatal("replay communicated result:", err)
+	}
+	if err := p.RunBackgroundTurn(context.Background()); err != nil {
+		t.Fatal("deliver replayed result:", err)
+	}
+	if err := store.SaveWork(loaded, p.WorkSnapshot()); err != nil {
+		t.Fatal("persist replayed work:", err)
+	}
+	durable, err = store.Load(sess.ID)
+	if err != nil || durable.Work == nil || len(durable.Work.Communicated) != 1 {
+		t.Fatalf("durable replayed work=%+v err=%v", durable, err)
+	}
 	final := p.WorkSnapshot()
-	if len(final.Pending) != 0 || len(final.Communicated) != 1 || final.Communicated[0].Outcome.Text != "unexpected worker execution" {
+	if len(final.Pending) != 0 || len(final.Communicated) != 1 || final.Communicated[0].Outcome.ResultID != result.Outcome.ResultID || final.Communicated[0].Outcome.Text != "unexpected worker execution" {
 		t.Fatalf("restored delivery=%+v", final)
 	}
-	if worker.calls.Load() != 1 || worker.tools.Load() != 1 || completion.requestCount() != 1 {
-		t.Fatalf("rerun/provider calls worker=%d tools=%d completion=%d", worker.calls.Load(), worker.tools.Load(), completion.requestCount())
+	if firstAttempt == "" || finalAttemptID(final) == firstAttempt || worker.calls.Load() != 1 || worker.tools.Load() != 1 || completion.requestCount() != 2 {
+		t.Fatalf("replay identity/calls first=%q final=%q worker=%d tools=%d completion=%d", firstAttempt, finalAttemptID(final), worker.calls.Load(), worker.tools.Load(), completion.requestCount())
+	}
+}
+
+func finalAttemptID(s work.Snapshot) string {
+	if len(s.Communicated) == 0 || s.Communicated[len(s.Communicated)-1].LastAttempt == nil {
+		return ""
+	}
+	return s.Communicated[len(s.Communicated)-1].LastAttempt.Receipt.AttemptID
+}
+
+func TestAcceptanceExplicitPaidWorkerIsRejectedBeforeAgencyExecution(t *testing.T) {
+	jobs := job.NewTable(context.Background())
+	t.Cleanup(jobs.Close)
+	cfg := &config.Config{VoiceWorkerProvider: "claude", VoiceWorkerModel: "paid-model"}
+	worker := &acceptanceWorker{}
+	p := &Pipeline{Brain: &handoffCompletionBrain{lifecycleWorker: &lifecycleWorker{}}, Events: events.NewBus()}
+	a := NewAgency(p, jobs, worker, cfg, nil)
+	a.Wire()
+	p.Agency = a
+	if err := p.EnableConversationWork("paid-worker", nil, cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.CloseWork() })
+	a.handleSpawn(context.Background(), nil, nil, RouteDecision{Kind: RouteSpawn, Transcript: "paid worker must be rejected"})
+	if worker.calls.Load() != 0 || len(p.Workers()) != 0 {
+		t.Fatalf("explicit paid worker executed or admitted: calls=%d workers=%+v", worker.calls.Load(), p.Workers())
 	}
 }

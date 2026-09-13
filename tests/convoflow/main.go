@@ -203,6 +203,14 @@ func wireLiveAgent(ctx context.Context, eng *engine, k knobs) int {
 	if err != nil {
 		return reportSetupError(err)
 	}
+	// Playback must honor the same resolved output as the acoustic stimulus.
+	// No device has been opened yet; the runner takes ownership below.
+	if eng.player != nil && eng.player.real != nil && cfg.OutputDevice != "" {
+		if err := eng.player.real.Close(); err != nil {
+			return reportSetupError(err)
+		}
+		eng.player.real = audio.NewPlayerWithDevice(cfg.OutputDevice)
+	}
 	resolvedBase := cfg
 	var catalog persona.Catalog
 	var initial *persona.SessionBinding

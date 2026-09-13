@@ -42,6 +42,7 @@ type recoveryHistoryRunner interface {
 }
 
 type engine struct {
+	latencyWorkerID   string
 	latencyProvenance string
 	latencySamples    []workLatencySample
 	scn               *Scenario
@@ -212,6 +213,39 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		} else if turn.ExpectError != "" {
 			return fmt.Errorf("turn %s: expected selection error containing %q", turn.ID, turn.ExpectError)
 		}
+	} else if turn.Op == "acoustic_interrupt" {
+		probe, ok := e.runner.(interface {
+			runAcousticInterruption(context.Context, string, string, string, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support acoustic interruption")
+		}
+		if err := probe.runAcousticInterruption(turnCtx, turn.WAV, turn.InterruptWAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
+			return err
+		}
+	} else if turn.Op == "start_latency_worker" {
+		loader, ok := e.runner.(interface {
+			startLatencyWorker(context.Context, string) (string, error)
+		})
+		if !ok || e.latencyWorkerID != "" {
+			return fmt.Errorf("latency worker: unsupported runner or previous worker not stopped")
+		}
+		id, err := loader.startLatencyWorker(ctx, turn.User)
+		if err != nil {
+			return err
+		}
+		e.latencyWorkerID = id
+	} else if turn.Op == "stop_latency_worker" {
+		loader, ok := e.runner.(interface {
+			stopLatencyWorker(context.Context, string) error
+		})
+		if !ok || e.latencyWorkerID == "" {
+			return fmt.Errorf("latency worker: no managed workload")
+		}
+		if err := loader.stopLatencyWorker(turnCtx, e.latencyWorkerID); err != nil {
+			return err
+		}
+		e.latencyWorkerID = ""
 	} else if turn.Op == "run_background" {
 		bg, ok := e.runner.(backgroundRunner)
 		if !ok {
@@ -239,6 +273,17 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		case <-timer.C:
 		case <-turnCtx.Done():
 			return turnCtx.Err()
+		}
+	} else if turn.WAV != "" && e.scn.Capture.Microphone {
+		acoustic, ok := e.runner.(interface {
+			runAcoustic(context.Context, string, string, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support physical microphone input")
+		}
+		artifactDir := filepath.Join(e.runDir, "acoustic", fmt.Sprintf("%02d-%s", i+1, turn.ID))
+		if err := acoustic.runAcoustic(turnCtx, turn.WAV, turn.ExpectedTranscript, artifactDir); err != nil {
+			return err
 		}
 	} else if turn.WAV != "" {
 		replay, ok := e.runner.(interface {

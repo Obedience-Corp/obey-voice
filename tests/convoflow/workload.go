@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -18,8 +19,18 @@ func (r *liveRunner) startLatencyWorker(ctx context.Context, task string) (strin
 	if r == nil || r.agent == nil || r.agent.Pipeline == nil || r.agent.Pipeline.Agency == nil {
 		return "", fmt.Errorf("latency worker: Agency is not configured")
 	}
-	if r.cfg == nil || (!strings.EqualFold(r.cfg.VoiceWorkerProvider, "ollama") && !strings.EqualFold(r.cfg.BrainProvider, "ollama")) {
+	if r.cfg == nil {
 		return "", fmt.Errorf("latency worker: requires a local Ollama worker")
+	}
+	workerProvider := strings.TrimSpace(r.cfg.VoiceWorkerProvider)
+	if workerProvider == "" {
+		workerProvider = r.cfg.BrainProvider
+	}
+	if !strings.EqualFold(workerProvider, "ollama") {
+		return "", fmt.Errorf("latency worker: requires a local Ollama worker")
+	}
+	if r.cfg.VoiceWorkers != nil && r.cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+		return "", fmt.Errorf("latency worker: tiered worker assignment is not deterministic")
 	}
 	if strings.TrimSpace(task) == "" {
 		return "", fmt.Errorf("latency worker: task is empty")
@@ -55,9 +66,43 @@ func (r *liveRunner) startLatencyWorker(ctx context.Context, task string) (strin
 	}
 }
 
-func (r *liveRunner) stopLatencyWorkers() error {
+func (r *liveRunner) stopLatencyWorker(ctx context.Context, id string) error {
 	if r == nil || r.agent == nil || r.agent.Pipeline == nil {
 		return nil
 	}
-	return r.agent.Pipeline.StopWorkers()
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("latency worker: job id is empty")
+	}
+	if err := r.agent.Pipeline.CancelWork(id); err != nil {
+		return fmt.Errorf("latency worker %s cancel: %w", id, err)
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		s := r.workSnapshot()
+		terminal := false
+		for _, j := range s.Jobs {
+			if j.Key.JobID == id {
+				terminal = j.State == work.JobTerminal
+				break
+			}
+		}
+		if terminal {
+			// Remove only this workload's terminal result. Other results remain
+			// available for the next measurement or host delivery.
+			for _, v := range s.Pending {
+				if v.Outcome.JobID == id {
+					if err := r.agent.Pipeline.WorkResultAction(s.Scope, v.Outcome.ResultID, "dismiss"); err != nil {
+						return fmt.Errorf("latency worker %s dismiss: %w", id, err)
+					}
+				}
+			}
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }

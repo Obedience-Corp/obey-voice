@@ -13,6 +13,7 @@ import (
 const exitSkip = 2
 
 type knobs struct {
+	sustainedWorker  bool
 	liveProvider     string
 	liveModel        string
 	workerProvider   string
@@ -37,6 +38,7 @@ func (k knobs) withScenario(scn *Scenario) knobs {
 	if scn == nil {
 		return k
 	}
+	k.sustainedWorker = scn.Worker.SustainedLoad
 	k.liveProvider = firstNonEmpty(k.liveProvider, scn.Brain.Provider)
 	k.liveModel = firstNonEmpty(k.liveModel, scn.Brain.Model)
 	k.ollamaHost = firstNonEmpty(k.ollamaHost, scn.Brain.Host)

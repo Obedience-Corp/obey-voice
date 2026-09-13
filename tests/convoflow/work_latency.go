@@ -58,6 +58,9 @@ func (e *engine) collectLatency(turn Turn, start time.Time, mark int, before wor
 		return nil
 	}
 	s := workLatencySample{Condition: e.scn.LatencyCondition, Iteration: turn.LatencyIteration, Warmup: turn.LatencyWarmup, Provenance: e.latencyProvenance, Input: e.scn.Input, StartedAt: start, Elapsed: time.Since(start), PendingAtStart: len(before.Pending)}
+	if e.scn.Capture.Microphone {
+		s.Input = "microphone"
+	}
 	for _, j := range before.Jobs {
 		if j.State == work.JobRunning {
 			s.WorkersAtStart++
@@ -104,11 +107,12 @@ func (e *engine) collectLatency(turn Turn, start time.Time, mark int, before wor
 }
 
 func validateWorkLatency(samples []workLatencySample) (workLatencyReport, error) {
-	out := workLatencyReport{Schema: workLatencySchema, Samples: append([]workLatencySample(nil), samples...), Conditions: map[string]workLatencySummary{}, Notes: []string{"Measures finalized recorded input to local playback start. Human hearing, microphone capture, safe-yield and barge-in acceptance remain separate.", "Warmup is an explicit label, not evidence of a cold model. Shared and separate endpoints must be collected as separate pairs."}}
+	out := workLatencyReport{Schema: workLatencySchema, Samples: append([]workLatencySample(nil), samples...), Conditions: map[string]workLatencySummary{}, Notes: []string{"Measures finalized recorded input to local playback start. Physical microphone runs retain separate acoustic evidence. Safe-yield and barge-in acceptance remain separate.", "Warmup is an explicit label, not evidence of a cold model. Shared and separate endpoints must be collected as separate pairs."}}
 	seen := map[string]bool{}
 	groups := map[string][]time.Duration{}
 	provenance := ""
 	engine := ""
+	input := ""
 	for _, s := range samples {
 		if s.Condition != "baseline" && s.Condition != "worker" {
 			return out, fmt.Errorf("latency: invalid condition %q", s.Condition)
@@ -124,9 +128,13 @@ func validateWorkLatency(samples []workLatencySample) (workLatencyReport, error)
 			return out, errors.New("latency: mixed actual TTS providers/tiers")
 		}
 		engine = actual
-		if s.Input != "speech" || s.Sink != "local_speaker" {
+		if (s.Input != "speech" && s.Input != "microphone") || s.Sink != "local_speaker" {
 			return out, fmt.Errorf("latency: recorded speech with local speaker observation required (input=%q sink=%q)", s.Input, s.Sink)
 		}
+		if input != "" && input != s.Input {
+			return out, errors.New("latency: mixed recorded and physical microphone inputs")
+		}
+		input = s.Input
 		if s.Fixture == "" || s.Iteration < 1 || s.Provenance == "" {
 			return out, errors.New("latency: missing fixture, iteration or provenance")
 		}

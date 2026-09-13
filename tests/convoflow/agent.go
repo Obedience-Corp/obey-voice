@@ -188,6 +188,16 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 			return nil, fmt.Errorf("worker brain: %w", err)
 		}
 	}
+	r.workerProvider = workerInner
+	if k.sustainedWorker {
+		workerInner, err = newSustainedLocalWorker(cfg, workerInner, func(n int) {
+			bus.Emit(events.Info{Message: fmt.Sprintf("convoflow sustained local workload completed request %d", n)})
+		})
+		if err != nil {
+			r.closeBrains()
+			return nil, err
+		}
+	}
 	r.workerProvider, r.worker = observeProvider(workerInner)
 
 	opts := voiceagent.Options{

@@ -46,6 +46,7 @@ func TestValidateWorkLatencyRejectsInvalidEvidence(t *testing.T) {
 		},
 		"duplicate":                  func(s []workLatencySample) []workLatencySample { s[1] = s[0]; return s },
 		"failed warmup":              func(s []workLatencySample) []workLatencySample { s[0].Warmup = true; s[0].Error = "timeout"; return s },
+		"mixed acoustic input":       func(s []workLatencySample) []workLatencySample { s[0].Input = "microphone"; return s },
 		"text":                       func(s []workLatencySample) []workLatencySample { s[0].Input = "text"; return s },
 		"recording only":             func(s []workLatencySample) []workLatencySample { s[0].Sink = "none"; return s },
 		"no actual worker":           func(s []workLatencySample) []workLatencySample { s[30].WorkersAtStart = 0; return s },
@@ -199,5 +200,30 @@ func TestFailedReplayFinalizesPartialAudioAndClosesRecorder(t *testing.T) {
 	player.mu.Unlock()
 	if !closed {
 		t.Fatal("recording player not closed")
+	}
+}
+
+func TestMicrophoneScenarioRequiresPhysicalOutputAndKnownTranscript(t *testing.T) {
+	valid := `name: acoustic
+input: speech
+capture: {microphone: true, speakers: true}
+turns:
+- id: one
+  wav: known.wav
+  expected_transcript: Hello there
+`
+	if _, err := loadScenarioString("valid", valid); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"no speakers":   strings.Replace(valid, "speakers: true", "speakers: false", 1),
+		"no transcript": strings.Replace(valid, "  expected_transcript: Hello there", "", 1),
+		"text input":    strings.Replace(valid, "input: speech", "input: text", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadScenarioString(name, body); err == nil {
+				t.Fatal("invalid physical run accepted")
+			}
+		})
 	}
 }

@@ -1,0 +1,325 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"unicode"
+
+	"github.com/Obedience-Corp/obey-voice/internal/aecprobe"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
+)
+
+type acousticReport struct {
+	Stimulus            string  `json:"stimulus"`
+	ExpectedTranscript  string  `json:"expected_transcript,omitempty"`
+	Transcript          string  `json:"transcript"`
+	InputDevice         string  `json:"input_device"`
+	OutputDevice        string  `json:"output_device"`
+	StimulusRate        int     `json:"stimulus_rate"`
+	CapturedSamples     int     `json:"captured_samples"`
+	CapturedRMS         float64 `json:"captured_rms"`
+	CapturedPeak        float64 `json:"captured_peak"`
+	DelaySamples        int     `json:"delay_samples"`
+	DelayMS             float64 `json:"delay_ms"`
+	Correlation         float64 `json:"correlation_confidence"`
+	EnvelopeCorrelation float64 `json:"envelope_correlation"`
+	Error               string  `json:"error,omitempty"`
+}
+
+const (
+	acousticMinRMS = 0.005
+	// A same-recording speech envelope measured on the reference hardware was
+	// about .84; .70 leaves room for room noise while rejecting the closest
+	// wrong-fixture match (.54 in the local benchmark set).
+	acousticMinEnvelopeCorrelation = 0.7
+)
+
+// runAcoustic feeds a known speech recording through real speakers and lets
+// the real microphone/STT path recognize the acoustic result. The stimulus
+// player is intentionally separate from the pipeline player and has no AEC
+// frontend, so the user signal is never presented to the echo canceller as a
+// far-end response reference.
+func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDir string) (runErr error) {
+	if ctx == nil {
+		return errors.New("acoustic run: nil context")
+	}
+	if r == nil || r.agent == nil || r.agent.Pipeline == nil {
+		return errors.New("acoustic run: agent is not configured")
+	}
+	if r.cfg == nil {
+		return errors.New("acoustic run: config is not configured")
+	}
+	if strings.TrimSpace(path) == "" {
+		return errors.New("acoustic run: stimulus path is empty")
+	}
+	if strings.TrimSpace(artifactDir) == "" {
+		return errors.New("acoustic run: artifact directory is empty")
+	}
+	samples, rate, err := audio.ReadWAVFloat32(path)
+	if err != nil {
+		return fmt.Errorf("acoustic stimulus %q: %w", path, err)
+	}
+	if len(samples) == 0 || rate <= 0 {
+		return fmt.Errorf("acoustic stimulus %q: empty audio", path)
+	}
+	correlationSamples := samples
+	if rate != audio.SampleRate {
+		resampled, err := audio.NewFixtureSourceFromWAV(path, audio.ChunkSize, false)
+		if err != nil {
+			return fmt.Errorf("acoustic stimulus %q: correlation source: %w", path, err)
+		}
+		correlationSamples = nil
+		for chunk := resampled.Read(); len(chunk) > 0; chunk = resampled.Read() {
+			correlationSamples = append(correlationSamples, chunk...)
+		}
+		_ = resampled.Close()
+	}
+	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
+		return fmt.Errorf("acoustic artifacts: %w", err)
+	}
+	var capturedMu sync.Mutex
+	var captured []float32
+	transcript := ""
+	report := acousticReport{Stimulus: path, ExpectedTranscript: strings.TrimSpace(expected), InputDevice: acousticDeviceLabel(r.cfg.InputDevice), OutputDevice: acousticDeviceLabel(r.cfg.OutputDevice), StimulusRate: rate}
+	defer func() {
+		capturedMu.Lock()
+		mic := append([]float32(nil), captured...)
+		capturedMu.Unlock()
+		report.Transcript = transcript
+		report.CapturedSamples = len(mic)
+		report.CapturedRMS = aecprobe.SegmentRMS(mic)
+		report.CapturedPeak = aecprobe.PeakLevel(mic)
+		if runErr != nil {
+			report.Error = runErr.Error()
+		}
+		var artifactErrs []error
+		if err := audio.WriteWAVFloat32(filepath.Join(artifactDir, "stimulus.wav"), rate, samples); err != nil {
+			artifactErrs = append(artifactErrs, fmt.Errorf("write acoustic stimulus: %w", err))
+		}
+		if len(mic) > 0 {
+			if err := audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-in.wav"), audio.SampleRate, mic); err != nil {
+				artifactErrs = append(artifactErrs, fmt.Errorf("write acoustic microphone recording: %w", err))
+			}
+		}
+		if data, err := json.MarshalIndent(report, "", "  "); err == nil {
+			if err := os.WriteFile(filepath.Join(artifactDir, "metrics.json"), append(data, '\n'), 0o600); err != nil {
+				artifactErrs = append(artifactErrs, fmt.Errorf("write acoustic metrics: %w", err))
+			}
+		} else {
+			artifactErrs = append(artifactErrs, fmt.Errorf("encode acoustic metrics: %w", err))
+		}
+		if len(artifactErrs) > 0 {
+			runErr = errors.Join(runErr, errors.Join(artifactErrs...))
+		}
+	}()
+
+	capture := audio.NewCaptureWithDevice(r.cfg.InputDevice)
+	player := audio.NewPlayerWithDevice(r.cfg.OutputDevice)
+	defer capture.Stop()
+	defer player.Close()
+
+	vad, err := audio.NewVAD(r.cfg)
+	if err != nil {
+		return fmt.Errorf("acoustic VAD: %w", err)
+	}
+	defer vad.Delete()
+	endable := audio.NewFinalizable(capture)
+	recognizer, recognizerCleanup, err := stt.NewProvider(r.cfg, endable, vad)
+	if err != nil {
+		return fmt.Errorf("acoustic STT: %w", err)
+	}
+	if recognizerCleanup != nil {
+		defer recognizerCleanup()
+	}
+	capture.SetFrontend(audio.NewPassthroughFrontend())
+	streamID, stream := capture.Subscribe(512)
+	collectorDone := make(chan struct{})
+	go func() {
+		defer close(collectorDone)
+		for chunk := range stream {
+			capturedMu.Lock()
+			captured = append(captured, chunk...)
+			capturedMu.Unlock()
+		}
+	}()
+	defer func() {
+		capture.Unsubscribe(streamID)
+		<-collectorDone
+	}()
+	if err := capture.Start(ctx); err != nil {
+		return fmt.Errorf("acoustic capture: %w", err)
+	}
+
+	p := r.agent.Pipeline
+	oldSTT, oldVAD, oldUtterance := p.STT, p.VAD, p.Utterance
+	p.STT, p.VAD, p.Utterance = recognizer, vad, endable
+	defer func() { p.STT, p.VAD, p.Utterance = oldSTT, oldVAD, oldUtterance }()
+
+	turnDone := make(chan struct {
+		text string
+		err  error
+	}, 1)
+	go func() {
+		text, err := p.RunTurn(ctx)
+		turnDone <- struct {
+			text string
+			err  error
+		}{text, err}
+	}()
+
+	playErr := playAcousticStimulus(ctx, player, samples, rate)
+	turn := <-turnDone
+	transcript = strings.TrimSpace(turn.text)
+	capturedMu.Lock()
+	mic := append([]float32(nil), captured...)
+	capturedMu.Unlock()
+	if len(mic) > 0 {
+		report.CapturedSamples = len(mic)
+		report.CapturedRMS = aecprobe.SegmentRMS(mic)
+		report.CapturedPeak = aecprobe.PeakLevel(mic)
+		if len(mic) >= audio.SampleRate/4 {
+			lag, rawConfidence := aecprobe.MeasureDelay(correlationSamples, mic, audio.SampleRate*2)
+			report.DelaySamples = lag
+			report.DelayMS = float64(lag) * 1000 / float64(audio.SampleRate)
+			report.Correlation = rawConfidence
+			report.EnvelopeCorrelation = acousticEnvelopeCorrelation(correlationSamples, mic, audio.SampleRate/100, 200)
+		}
+	}
+	if playErr != nil {
+		return fmt.Errorf("acoustic stimulus playback: %w", playErr)
+	}
+	if turn.err != nil {
+		return fmt.Errorf("acoustic turn: %w", turn.err)
+	}
+	if transcript == "" {
+		return errors.New("acoustic turn produced no transcript")
+	}
+	if expected = strings.TrimSpace(expected); expected != "" && normalizeAcousticText(transcript) != normalizeAcousticText(expected) {
+		return fmt.Errorf("acoustic transcript %q does not match expected %q", transcript, expected)
+	}
+
+	if len(mic) < audio.SampleRate/4 {
+		return fmt.Errorf("acoustic capture too short: %d samples", len(mic))
+	}
+	if report.CapturedRMS < acousticMinRMS {
+		return fmt.Errorf("acoustic capture is silent: rms %.4f", report.CapturedRMS)
+	}
+	if report.CapturedPeak >= 0.999 {
+		return fmt.Errorf("acoustic capture clipped: peak %.4f", report.CapturedPeak)
+	}
+	if report.EnvelopeCorrelation < acousticMinEnvelopeCorrelation {
+		return fmt.Errorf("acoustic stimulus envelope correlation too weak: %.3f", report.EnvelopeCorrelation)
+	}
+	return nil
+}
+
+// acousticEnvelopeCorrelation compares 10 ms RMS envelopes over the complete
+// stimulus window while allowing up to maxLagFrames of acoustic delay. It is
+// deliberately separate from raw waveform correlation, which is sensitive to
+// room reflections and independent playback/capture clocks.
+func acousticEnvelopeCorrelation(stimulus, mic []float32, frameSize, maxLagFrames int) float64 {
+	if frameSize <= 0 || len(stimulus) < frameSize || len(mic) < frameSize {
+		return 0
+	}
+	stimulusEnv := rmsEnvelope(stimulus, frameSize)
+	micEnv := rmsEnvelope(mic, frameSize)
+	best := 0.0
+	for lag := 0; lag <= maxLagFrames && lag+len(stimulusEnv) <= len(micEnv); lag++ {
+		if score := pearson(stimulusEnv, micEnv[lag:lag+len(stimulusEnv)]); score > best {
+			best = score
+		}
+	}
+	return best
+}
+
+func rmsEnvelope(samples []float32, frameSize int) []float64 {
+	n := len(samples) / frameSize
+	out := make([]float64, n)
+	for i := range n {
+		var sum float64
+		for _, sample := range samples[i*frameSize : (i+1)*frameSize] {
+			sum += float64(sample) * float64(sample)
+		}
+		out[i] = math.Sqrt(sum / float64(frameSize))
+	}
+	return out
+}
+
+func pearson(a, b []float64) float64 {
+	if len(a) != len(b) || len(a) < 2 {
+		return 0
+	}
+	var ma, mb float64
+	for i := range a {
+		ma += a[i]
+		mb += b[i]
+	}
+	ma /= float64(len(a))
+	mb /= float64(len(b))
+	var num, aa, bb float64
+	for i := range a {
+		x, y := a[i]-ma, b[i]-mb
+		num += x * y
+		aa += x * x
+		bb += y * y
+	}
+	if aa == 0 || bb == 0 {
+		return 0
+	}
+	return num / (math.Sqrt(aa) * math.Sqrt(bb))
+}
+
+func normalizeAcousticText(text string) string {
+	var b strings.Builder
+	lastSpace := false
+	for _, r := range strings.ToLower(text) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if lastSpace {
+				b.WriteByte(' ')
+			}
+			b.WriteRune(r)
+			lastSpace = false
+		} else if b.Len() > 0 {
+			lastSpace = true
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func acousticDeviceLabel(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return "(system default)"
+	}
+	return name
+}
+
+func playAcousticStimulus(ctx context.Context, player *audio.Player, samples []float32, rate int) error {
+	stream := audio.NewPCMStream(ctx)
+	if err := stream.SetSampleRate(rate); err != nil {
+		return err
+	}
+	go func() {
+		for start := 0; start < len(samples); start += audio.ChunkSize {
+			end := min(start+audio.ChunkSize, len(samples))
+			if err := stream.Write(samples[start:end]); err != nil {
+				stream.CloseWithError(err)
+				return
+			}
+		}
+		stream.Close()
+	}()
+	playback, err := player.PlayStream(ctx, stream)
+	if err != nil {
+		return err
+	}
+	result := <-playback.Done()
+	return result.Err
+}
