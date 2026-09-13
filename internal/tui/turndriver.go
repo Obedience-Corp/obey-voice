@@ -65,12 +65,13 @@ type voiceRetryMsg struct{}
 
 // conversationDeps wires the live pipeline into the conversation model.
 type conversationDeps struct {
-	runner        turnRunner
-	bus           *events.Bus
-	clearHistory  func()
-	workScope     func() work.WorkScope
-	workSnapshot  func() work.Snapshot
-	journalHealth func() events.WorkJournalHealth
+	runner         turnRunner
+	bus            *events.Bus
+	clearHistory   func()
+	workScope      func() work.WorkScope
+	workSnapshot   func() work.Snapshot
+	journalHealth  func() events.WorkJournalHealth
+	workersSummary func() string
 	// compact runs the pipeline's conversation compaction; nil when the
 	// runtime did not wire it (e.g. prompt resolution failed).
 	compact func(ctx context.Context) error

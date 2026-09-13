@@ -106,15 +106,14 @@ carries the result preview, the leading `error: …` line when the tool failed,
 and how long it took.
 
 A `job_id` on those events attributes the call to a background job; empty means
-the live conversation. The distinction is load-bearing: job-attributed tools
-update the `Working: {task} · {tool}` chip and the activity feed only, and never
-touch the status line, the orb, or the transcript, so a job running behind a
+the live conversation. Job-attributed tools update the job's activity and
+transcript card, while the footer shows compact worker counts. They never
+touch the live turn's status line or orb, so a job running behind a
 turn cannot hijack the conversation. `job_queued`, `job_started`, `job_finished`,
 `job_failed` and `job_aborted` bookend the work: queued when the table accepts
 the job, started when it actually begins (a spawn behind a running job waits
-for that job's terminal event), and the last three carry elapsed time. The chip
-names the running job and counts the ones running alongside or queued behind
-it.
+for that job's terminal event), and the last three carry elapsed time. The
+footer reads `Workers: 1 running · 2 queued · /workers`.
 
 "Cancel", "cancel that", "kill it" or "kill that" ends the work: every running
 and queued job is aborted, and she says so once for the lot — "Stopped after
@@ -125,12 +124,24 @@ silences speech; the job keeps running.
 Those events are folded for display: consecutive calls of one kind become a
 row, a kind change opens the next. The TUI keeps one thread line per job and
 rewrites it in place — `⚙ job-1 · read 3 files · ran 1 command`, sealed with
-`· done in 35s`, `· failed: …` or `· killed after 6m5s` — and the chip reads
-`Working: {task} · {rows}`. Without the TUI each row prints once as `[job-1]
+`· done in 35s`, `· failed: …` or `· killed after 6m5s`. The `/workers`
+manager shows each task's provider/model, elapsed time, activity and output.
+Without the TUI each row prints once as `[job-1]
 read 3 files`, when its kind gives way or the job ends. "What's happening"
 answers `Still working on {task}. So far: read 3 files · ran 1 command.` The
-spoken `{task}` is the request's first clause, at most ten words; the chip and
-the transcript keep the whole request.
+spoken `{task}` is the request's first clause, at most ten words; the manager
+and transcript keep the whole request.
+
+In the TUI, `/workers` provides **Stop task** (`s`), **Stop all** (`x`, then
+`y`), and **Allow background workers** (`t`). The permission is global, not
+persona-specific, and is saved as `voice_workers_disabled` (default `false`).
+Turning workers off rejects new spawned and managed jobs but lets already
+admitted running and queued work finish. Stop all cancels those existing jobs
+without changing admission permission. A managed cancellation is a request;
+the detail view reports the runtime's termination evidence, including
+`unknown` when a stop cannot prove execution ended. No worker control requires
+a spoken request or a model turn. These controls are independent of the
+experimental `voice_work_enabled` result inbox.
 
 `voice_work_narration` decides whether a job talks while it works: `status_only`
 (default) stays quiet until asked; `milestones` speaks one short line ("Read 3

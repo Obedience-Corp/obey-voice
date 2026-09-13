@@ -183,6 +183,11 @@ func brainKeys() []KeySpec {
 			Help: "Keep background results with the conversation and save pending updates. Experimental; paid worker dispatch is unavailable.",
 		},
 		{
+			Key: "voice_workers_disabled", Type: TypeBool, Default: false,
+			Group: GroupBrain, Title: "Disable background workers",
+			Help: "Reject new background jobs. Existing running and queued jobs may finish; use /workers to stop them. The TUI applies it live; serve reads it when it builds the pipeline.",
+		},
+		{
 			Key: "voice_worker_provider", Type: TypeEnum, Default: "", Enum: workerProviderEnum(),
 			Group: GroupBrain, Title: "Worker provider",
 			Help:               "Which model runs async jobs after a spawn. Chosen alongside the brain — empty means unselected, and inherits the live brain until you pick one.",
