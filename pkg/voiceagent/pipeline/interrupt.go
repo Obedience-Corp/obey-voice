@@ -271,6 +271,17 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				completed := queued && !segmentQueued
 				segmentQueued = queued
 				admit := audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)
+				if completed {
+					// Consume evaluated native segments, including quiet rejected
+					// ones, so later completions can use their own speech run.
+					// Clear would also erase the next onset's detector state.
+					if consumer, ok := c.vad.(interface{ Pop() }); ok {
+						consumer.Pop()
+						segmentQueued = false
+					}
+					// Detectors without Pop retain the rising-edge guard: their
+					// stale queue level cannot authorize unrelated speech.
+				}
 				if !speech {
 					consecutiveSpeech = 0
 					audibility.Reset()

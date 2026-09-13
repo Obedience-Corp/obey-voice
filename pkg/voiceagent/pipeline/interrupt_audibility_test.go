@@ -32,6 +32,33 @@ func (v *audibilityVAD) IsSpeech() bool         { return v.current.speech }
 func (v *audibilityVAD) IsSpeechDetected() bool { return v.current.queued }
 func (v *audibilityVAD) Clear()                 { v.current = audibilityVerdict{} }
 
+// queuedAudibilityVAD models the native queue: completed remains visible across
+// later callbacks until Pop consumes it. A scripted queued=true adds a segment;
+// queued=false means this callback did not complete another segment.
+type queuedAudibilityVAD struct {
+	*audibilityVAD
+	queued int
+	pops   int
+}
+
+func (v *queuedAudibilityVAD) AcceptWaveform(samples []float32) {
+	v.audibilityVAD.AcceptWaveform(samples)
+	if v.current.queued {
+		v.queued++
+	}
+}
+func (v *queuedAudibilityVAD) IsSpeechDetected() bool { return v.queued > 0 }
+func (v *queuedAudibilityVAD) Pop() {
+	if v.queued > 0 {
+		v.queued--
+		v.pops++
+	}
+}
+func (v *queuedAudibilityVAD) Clear() {
+	v.audibilityVAD.Clear()
+	v.queued = 0
+}
+
 type audibilityHarness struct {
 	t       *testing.T
 	ctx     context.Context
@@ -44,12 +71,21 @@ type audibilityHarness struct {
 
 func newAudibilityHarness(t *testing.T, playing bool) *audibilityHarness {
 	t.Helper()
+	return newAudibilityHarnessWithDetector(t, playing, nil)
+}
+
+func newAudibilityHarnessWithDetector(t *testing.T, playing bool, wrap func(*audibilityVAD) VoiceDetector) *audibilityHarness {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	capture := &audibilityCapture{newFakeCapture()}
 	vad := &audibilityVAD{verdicts: make(chan audibilityVerdict, 1), accepted: make(chan struct{}, 1)}
 	playback := &alwaysPlaying{}
 	playback.playing.Store(playing)
-	control := newTestController(capture, vad, playback, bargeInMinSpeechChunks)
+	var detector VoiceDetector = vad
+	if wrap != nil {
+		detector = wrap(vad)
+	}
+	control := newTestController(capture, detector, playback, bargeInMinSpeechChunks)
 	h := &audibilityHarness{t: t, ctx: ctx, cancel: cancel, capture: capture, vad: vad, control: control}
 	h.watch = control.watchWithDone(ctx, armedNow())
 	t.Cleanup(func() {
@@ -163,6 +199,27 @@ func TestInterruptAudibilityResetsAtNeuralSilence(t *testing.T) {
 }
 
 func TestInterruptAudibilityGatesQueuedSegments(t *testing.T) {
+	t.Run("consumed_quiet_segment_does_not_hide_later_audible_segment", func(t *testing.T) {
+		var detector *queuedAudibilityVAD
+		h := newAudibilityHarnessWithDetector(t, true, func(base *audibilityVAD) VoiceDetector {
+			detector = &queuedAudibilityVAD{audibilityVAD: base}
+			return detector
+		})
+		h.feed(.006, true, false)
+		h.feed(.006, true, false)
+		h.feed(0, false, true)
+		// A separate audible utterance also ends before six neural votes.
+		// Native IsSpeechDetected stays true here unless the rejected first
+		// segment was popped; its replacement must be judged independently.
+		h.feed(.018, true, false)
+		h.feed(.018, true, false)
+		h.feed(0, false, true)
+		h.expectTrip()
+		<-h.watch.done
+		if detector.pops != 2 {
+			t.Fatalf("consumed completed segments=%d, want rejected and accepted segments", detector.pops)
+		}
+	})
 	t.Run("audible_segment_may_finish_on_silent_callback", func(t *testing.T) {
 		h := newAudibilityHarness(t, true)
 		h.feed(.018, true, false)
