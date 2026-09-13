@@ -52,7 +52,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	if deps.pause != nil {
 		defer deps.pause.stop()
 	}
-	emitPhase := newPhaseEmitter(ctx, events)
+	emitPhase := newPauseAwarePhaseEmitter(ctx, events, deps.pause)
 
 	deps.seg.Reset()
 	if !emitPhase("listening") {

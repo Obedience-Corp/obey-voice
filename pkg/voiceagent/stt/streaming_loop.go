@@ -44,7 +44,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 	if deps.pause != nil {
 		defer deps.pause.stop()
 	}
-	emitPhase := newPhaseEmitter(ctx, events)
+	emitPhase := newPauseAwarePhaseEmitter(ctx, events, deps.pause)
 
 	deps.seg.Reset()
 	if !emitPhase("listening") {
@@ -131,7 +131,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 					}
 				}
 				if partial != lastPartial {
-					if !sendEvent(ctx, events, PartialTranscript{Text: partial}) {
+					if !sendPauseAwareAdvisoryEvent(ctx, deps.pause, events, PartialTranscript{Text: partial}) {
 						return
 					}
 					lastPartial = partial

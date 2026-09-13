@@ -208,19 +208,30 @@ func (e *levelEmitter) maybeEmit(events chan<- Event, samples []float32) {
 	trySendEvent(events, InputLevel{Level: normalizeInputLevel(frameRMS(samples))})
 }
 
-// newPhaseEmitter returns a phase-event emitter that stamps the elapsed time
+// newPauseAwarePhaseEmitter stamps the elapsed time
 // between phases. It returns false when the context is cancelled mid-send, so
-// loops can stop promptly.
-func newPhaseEmitter(ctx context.Context, events chan<- Event) func(string) bool {
+// loops can stop promptly. A yielded owner must keep processing capture even
+// when its consumer has stopped draining advisory phase events.
+func newPauseAwarePhaseEmitter(ctx context.Context, events chan<- Event, pause *pauseController) func(string) bool {
 	lastPhaseAt := time.Now()
 	return func(phase string) bool {
 		now := time.Now()
-		if !sendEvent(ctx, events, PhaseEvent{Phase: phase, Elapsed: now.Sub(lastPhaseAt).Nanoseconds()}) {
+		if !sendPauseAwareAdvisoryEvent(ctx, pause, events, PhaseEvent{Phase: phase, Elapsed: now.Sub(lastPhaseAt).Nanoseconds()}) {
 			return false
 		}
 		lastPhaseAt = now
 		return true
 	}
+}
+
+// sendPauseAwareAdvisoryEvent keeps capture arbitration live when the STT
+// consumer has intentionally stopped draining its advisory event stream.
+func sendPauseAwareAdvisoryEvent(ctx context.Context, pause *pauseController, events chan<- Event, event Event) bool {
+	if pause != nil && pause.advisoryBackpressured() {
+		trySendEvent(events, event)
+		return true
+	}
+	return sendEvent(ctx, events, event)
 }
 
 // frameRead is the triaged result of one FrameSource read, shared by the
