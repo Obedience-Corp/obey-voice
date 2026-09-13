@@ -1,10 +1,10 @@
 # Voice runtime code layout
 
-The voice pipeline, Ollama provider, config package, Qwen TTS provider, audio
-player, meeting log and benchmark command use files grouped by responsibility
-within their existing Go packages. Their public interfaces and state ownership are
-unchanged. This guide identifies where to make a change without tracing a single
-large implementation file.
+The voice pipeline, Ollama provider, config package, audio player, meeting log and
+benchmark command use files grouped by responsibility within their existing Go
+packages; the Qwen TTS provider went further and became its own package. This guide
+identifies where to make a change without tracing a single large implementation
+file, and records the contracts a file boundary could otherwise hide.
 
 ## Pipeline
 
