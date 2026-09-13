@@ -15,12 +15,12 @@ const (
 	gateCV = 0.18
 	// gateSilent is below a quiet room; digital zeros are not a fan latch.
 	gateSilent = 1e-4
-	// gateGainJump is an OS mixer slam (~18 dB), not a syllable. Syllables
-	// sit around 2–4× the slow envelope; a volume slider often jumps 8×+.
+	// gateGainJump detects a large level shift (~18 dB). A mixer change
+	// or speech beginning in a quiet room can both exceed this ratio.
 	gateGainJump = 8.0
 	// gateJumpFrames is how long the shifted level must hold before it counts
-	// as a mixer move: 300ms of 100ms frames. One frame at 8× the envelope is
-	// a syllable, a door, or a keyboard.
+	// as a new floor: 300ms of 100ms frames. This heuristic cannot prove
+	// that pending neural input is noise, so it must not discard that input.
 	gateJumpFrames = 3
 )
 

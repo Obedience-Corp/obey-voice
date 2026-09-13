@@ -138,16 +138,11 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			deps.seg.AcceptWaveform(read.frame.Samples)
 			gate.minRMS = floor()
 			d := gate.decide(read.frame.Samples, deps.seg.IsSpeech())
-			if d.drop {
-				// Fan/AC latched Silero: discard the noise blob and wait for
-				// a real onset instead of holding the turn open forever.
+			if d.drop && !track.detected {
+				// Discard a pure noise latch. Once speech is admitted, retain
+				// its PCM and count the rejected tail as silence below; the
+				// endpoint policy must decide when the utterance is complete.
 				deps.seg.Reset()
-				if track.detected {
-					track.reset()
-					if !emitPhase("listening") {
-						return
-					}
-				}
 			} else if track.observe(d.voice, frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return

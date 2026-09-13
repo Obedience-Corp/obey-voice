@@ -95,7 +95,10 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 			gate.minRMS = floor()
 			heard.floor = gate.minRMS
 			d := gate.decide(read.frame.Samples, deps.seg.IsSpeech())
-			if d.drop {
+			// A pure noise latch can reset, but a rejected tail after admitted
+			// speech must preserve decoder context and accrue silence below.
+			// The endpoint policy still allows a brief pause before more speech.
+			if d.drop && !track.detected {
 				if !resetListening() {
 					return
 				}
