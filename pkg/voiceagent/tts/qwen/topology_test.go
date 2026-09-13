@@ -1,6 +1,7 @@
-package tts
+package qwen
 
 import (
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"testing"
 )
 
@@ -10,14 +11,14 @@ import (
 func TestQwenReportsItsSpeechPlace(t *testing.T) {
 	local := newQwen3TTS("", "", 0, nil)
 	local.native = true
-	if got := local.SpeechPlace(); got != PlaceLocal {
-		t.Errorf("local SpeechPlace() = %q, want %q", got, PlaceLocal)
+	if got := local.SpeechPlace(); got != tts.PlaceLocal {
+		t.Errorf("local SpeechPlace() = %q, want %q", got, tts.PlaceLocal)
 	}
 	if local.WorkerStreaming() {
 		t.Error("a provider with no live session must not claim its worker streams")
 	}
-	if got := SpeechPlaceOf(local); got != PlaceLocal {
-		t.Errorf("SpeechPlaceOf() = %q, want %q", got, PlaceLocal)
+	if got := tts.SpeechPlaceOf(local); got != tts.PlaceLocal {
+		t.Errorf("SpeechPlaceOf() = %q, want %q", got, tts.PlaceLocal)
 	}
 
 	srv := startFakeSpeechServer(t, &fakeSpeechServer{token: "s3cret"})
@@ -28,16 +29,16 @@ func TestQwenReportsItsSpeechPlace(t *testing.T) {
 	}
 	defer remote.Delete()
 
-	if got := remote.SpeechPlace(); got != PlaceLAN {
-		t.Errorf("remote SpeechPlace() = %q, want %q", got, PlaceLAN)
+	if got := remote.SpeechPlace(); got != tts.PlaceLAN {
+		t.Errorf("remote SpeechPlace() = %q, want %q", got, tts.PlaceLAN)
 	}
-	if got := SpeechPlaceOf(remote); got != PlaceLAN {
-		t.Errorf("SpeechPlaceOf() = %q, want %q", got, PlaceLAN)
+	if got := tts.SpeechPlaceOf(remote); got != tts.PlaceLAN {
+		t.Errorf("SpeechPlaceOf() = %q, want %q", got, tts.PlaceLAN)
 	}
 	// Stage A: the ready frame says streaming=false, so first audio cannot
 	// arrive before the whole utterance is generated. Recording that beside
 	// the timings is what makes them explicable.
-	if remote.WorkerStreaming() || WorkerStreamingOf(remote) {
+	if remote.WorkerStreaming() || tts.WorkerStreamingOf(remote) {
 		t.Error("stage A ready must not read as a streaming worker")
 	}
 }

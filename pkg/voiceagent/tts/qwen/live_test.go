@@ -1,12 +1,13 @@
 //go:build integration
 
-package tts
+package qwen
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"math"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestLiveManagedQwenVoiceMatrix(t *testing.T) {
 	cfg.TTSProvider = managedqwen.ProviderName
 	cfg.QwenTTSBinary = ""
 	cfg.QwenTTSModel = ""
-	cfg.QwenTTSMode = string(VoiceModeCustomVoice)
+	cfg.QwenTTSMode = string(tts.VoiceModeCustomVoice)
 	cfg.QwenTTSLanguage = managedqwen.DefaultLanguage
 	if cfg.QwenTTSTimeout < 300 {
 		cfg.QwenTTSTimeout = 300
@@ -55,8 +56,8 @@ func TestLiveManagedQwenVoiceMatrix(t *testing.T) {
 
 	hashes := make(map[string][sha256.Size]byte)
 	for _, voice := range []string{"Vivian", "Ryan"} {
-		result, err := provider.SynthesizeRequest(context.Background(), SynthesisRequest{
-			Text: "Samantha managed voice verification.", Mode: VoiceModeCustomVoice,
+		result, err := provider.SynthesizeRequest(context.Background(), tts.SynthesisRequest{
+			Text: "Samantha managed voice verification.", Mode: tts.VoiceModeCustomVoice,
 			Voice: voice, Language: managedqwen.DefaultLanguage,
 		})
 		if err != nil {
@@ -93,8 +94,8 @@ func TestLiveManagedQwenVoiceMatrix(t *testing.T) {
 		t.Fatal("provider became unavailable after cancellation")
 	}
 
-	recovered, err := provider.SynthesizeRequest(context.Background(), SynthesisRequest{
-		Text: "Samantha recovered after cancellation.", Mode: VoiceModeCustomVoice,
+	recovered, err := provider.SynthesizeRequest(context.Background(), tts.SynthesisRequest{
+		Text: "Samantha recovered after cancellation.", Mode: tts.VoiceModeCustomVoice,
 		Voice: "Ryan", Language: "English",
 	})
 	if err != nil {

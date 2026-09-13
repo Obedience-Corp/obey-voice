@@ -5,6 +5,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"io"
 	"os/exec"
 	"path/filepath"
@@ -202,7 +203,7 @@ func newSceneSynth(ctx context.Context, cast []scene.CastRuntime) (scene.Synthes
 			cleanup()
 			return nil, nil, fmt.Errorf("scene: %s assets: %w", member.Key, err)
 		}
-		provider, done, err := tts.NewProvider(member.Cast.Config)
+		provider, done, err := ttsproviders.NewProvider(member.Cast.Config)
 		if err != nil {
 			cleanup()
 			return nil, nil, fmt.Errorf("scene: init %s: %w", member.Key, err)

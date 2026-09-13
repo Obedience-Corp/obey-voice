@@ -1,4 +1,4 @@
-package tts
+package qwen
 
 import (
 	"bufio"
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"math"
 	"os"
 	"path/filepath"
@@ -96,8 +97,8 @@ done
 	}
 	defer session.Close()
 	// Legacy file path still works when worker only sends complete (no chunks).
-	if err := session.Synthesize(context.Background(), SynthesisRequest{
-		Text: "hello", Mode: VoiceModeCustomVoice, Voice: "Vivian", Language: "English",
+	if err := session.Synthesize(context.Background(), tts.SynthesisRequest{
+		Text: "hello", Mode: tts.VoiceModeCustomVoice, Voice: "Vivian", Language: "English",
 	}, filepath.Join(t.TempDir(), "speech.wav")); err != nil {
 		t.Fatalf("Synthesize() error = %v", err)
 	}
@@ -138,8 +139,8 @@ done
 	}
 	defer session.Close()
 	stream := audio.NewPCMStream(context.Background())
-	if err := session.SynthesizeToStream(context.Background(), SynthesisRequest{
-		Text: "hello", Mode: VoiceModeCustomVoice, Voice: "Vivian", Language: "English",
+	if err := session.SynthesizeToStream(context.Background(), tts.SynthesisRequest{
+		Text: "hello", Mode: tts.VoiceModeCustomVoice, Voice: "Vivian", Language: "English",
 	}, stream); err != nil {
 		t.Fatalf("SynthesizeToStream: %v", err)
 	}
@@ -228,7 +229,7 @@ func TestManagedQwenProviderRecoversOnRequestAfterCancellation(t *testing.T) {
 	cancel()
 	for range stream.Frames() {
 	}
-	if err := stream.Err(); err == nil || !IsProviderErrorKind(err, ProviderErrorCanceled) {
+	if err := stream.Err(); err == nil || !tts.IsProviderErrorKind(err, tts.ProviderErrorCanceled) {
 		t.Fatalf("canceled stream error = %v, want canceled provider error", err)
 	}
 	if !q.Available() {
@@ -254,7 +255,7 @@ func newManagedSessionTestProvider(t *testing.T) *Qwen3TTS {
 	q.managed = true
 	q.workerScript = "-test.run=^TestManagedQwenSessionHelper$"
 	q.startupTimeout = 2 * time.Second
-	q.mode = VoiceModeCustomVoice
+	q.mode = tts.VoiceModeCustomVoice
 	q.voice = "Vivian"
 	q.language = "Auto"
 	q.alive.Store(true)

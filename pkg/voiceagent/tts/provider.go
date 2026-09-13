@@ -121,6 +121,27 @@ type FirstAudioGracer interface {
 	FirstAudioGrace() time.Duration
 }
 
+// SpeechCharsPerSecond converts a segment's length into expected audio
+// duration.
+//
+// Measured 11.9–18.2 chars/s over real replies on both engines. 10 sits
+// below the observed minimum on purpose: the estimate must over-predict
+// audio, because under-predicting shortens the budget on exactly the
+// segments that need it most. A slow-speaking segment at the observed
+// floor would otherwise have left only 12% margin.
+//
+// TypicalSegmentChars sizes the budget when the caller does not say how long
+// the segment is. It is the measured median segment length, so the
+// length-blind path lands on an ordinary sentence rather than a worst-case
+// one.
+//
+// Both are exported because every provider that implements SegmentGracer
+// needs them, and providers no longer all live in this package.
+const (
+	SpeechCharsPerSecond = 10.0
+	TypicalSegmentChars  = 120
+)
+
 // SegmentGracer refines FirstAudioGracer with the length of the segment about
 // to be synthesized.
 //

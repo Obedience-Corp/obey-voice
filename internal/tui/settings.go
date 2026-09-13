@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 	"time"
 
@@ -142,10 +143,10 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 				return p
 			},
 			ensure: ensure,
-			newTTS: tts.NewProvider,
+			newTTS: ttsproviders.NewProvider,
 		},
 		ensureTTSAssets:       ensure,
-		newTTSProvider:        tts.NewProvider,
+		newTTSProvider:        ttsproviders.NewProvider,
 		saveConfig:            config.SetAndSave,
 		ensureQwen:            managedqwen.Ensure,
 		saveWorkers:           config.CommitVoiceWorkersCAS,

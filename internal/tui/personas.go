@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -12,7 +13,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 const personasCreateLabel = "+ Create new persona…"
@@ -125,7 +125,7 @@ func newPersonas(cfg *config.Config) personasModel {
 			ensure: func(ctx context.Context, c *config.Config, onProgress func(string, float64)) error {
 				return config.EnsureRuntimeAssets(ctx, c, config.AssetRequest{NeedTTS: true}, onProgress)
 			},
-			newTTS: tts.NewProvider,
+			newTTS: ttsproviders.NewProvider,
 		},
 	}
 	// The Model row picks from the same discovery Settings uses. It runs as a

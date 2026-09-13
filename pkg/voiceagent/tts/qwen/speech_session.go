@@ -1,10 +1,11 @@
-package tts
+package qwen
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,7 +17,7 @@ import (
 // qwenSpeechSession is one warm Qwen speech transport: the local child process
 // or a speech-serve connection. The provider drives both through this.
 type qwenSpeechSession interface {
-	SynthesizeToStream(ctx context.Context, req SynthesisRequest, stream *audio.PCMStream) error
+	SynthesizeToStream(ctx context.Context, req tts.SynthesisRequest, stream *audio.PCMStream) error
 	CancelActive() error
 	Presets() []string
 	Streaming() bool
@@ -88,7 +89,7 @@ func (s *speechSession) beginClose() bool {
 }
 
 // SynthesizeToStream runs one request and writes float32 PCM into stream.
-func (s *speechSession) SynthesizeToStream(ctx context.Context, req SynthesisRequest, stream *audio.PCMStream) error {
+func (s *speechSession) SynthesizeToStream(ctx context.Context, req tts.SynthesisRequest, stream *audio.PCMStream) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
