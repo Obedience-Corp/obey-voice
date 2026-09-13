@@ -931,11 +931,9 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msg.rt.Pipeline.OnTurn()
 				}
 			},
-
-			workScope:     func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
 			workSnapshot:  func() work.Snapshot { return msg.rt.Pipeline.WorkSnapshot() },
 			journalHealth: msg.rt.Pipeline.JournalHealth,
-
+			workScope:     func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
 			workersSummary: func() string {
 				running, queued := 0, 0
 				for _, item := range msg.rt.Pipeline.Workers() {
@@ -947,7 +945,6 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return workersCountLabel(running, queued, msg.rt.Pipeline.WorkersEnabled())
 			},
-
 			brainSession:   brainSessionReporter(msg.rt.Pipeline.Brain),
 			compact:        msg.rt.Pipeline.CompactConversation,
 			voice:          msg.rt.Voice,

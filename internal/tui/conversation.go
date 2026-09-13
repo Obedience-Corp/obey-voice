@@ -1635,7 +1635,6 @@ func (m conversationModel) View() string {
 	}
 	if hint := m.talkHint(); hint != "" && !m.vim.enabled {
 		footerLeft += " " + dimStyle.Render(hint)
-
 	}
 	workers := m.jobStatus
 	if m.deps.workersSummary != nil {
