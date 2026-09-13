@@ -247,6 +247,14 @@ func (n *noiseSuppressor) Process(samples []float32, duplex bool) {
 		gate = math.Max(noiseFloor*0.1, 0.0015)
 	}
 
+	// Duplex suppression already applies the conservative frame gain above.
+	// Applying another sample-wise gate to that attenuated waveform removes
+	// quiet speech structure and prevents VAD from recognizing a near-end user.
+	// Keep its waveform intact while still attenuating the whole frame.
+	if duplex {
+		gate = 0
+	}
+
 	for i, sample := range samples {
 		value := float64(sample) * gain
 		if math.Abs(value) < gate {

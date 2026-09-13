@@ -77,7 +77,7 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 	defer cancel()
 	done := make(chan struct{})
 	joined := make(chan struct{})
-	go func() {
+	go func(attemptCtx context.Context) {
 		defer close(joined)
 		select {
 		case <-lease.Done():
@@ -86,7 +86,7 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 			_ = c.RevokeCompletionLease(lease)
 		case <-done:
 		}
-	}()
+	}(attemptCtx)
 	defer func() { close(done); <-joined }()
 	attemptCtx = audio.WithPlaybackAttempt(attemptCtx, audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease})
 	if !lease.Valid() || p.HasCapturedInput() {

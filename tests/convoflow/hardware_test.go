@@ -2,14 +2,133 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/aecprobe"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
+
+type acousticReadinessSTT struct {
+	events   chan stt.Event
+	started  chan struct{}
+	closed   atomic.Bool
+	startErr error
+}
+
+func (*acousticReadinessSTT) Available() bool { return true }
+func (s *acousticReadinessSTT) Start(context.Context) (stt.Session, error) {
+	close(s.started)
+	if s.startErr != nil {
+		return nil, s.startErr
+	}
+	return s, nil
+}
+func (s *acousticReadinessSTT) Events() <-chan stt.Event { return s.events }
+func (s *acousticReadinessSTT) Close() error             { s.closed.Store(true); return nil }
+
+func TestAcousticTurnWaitsForProductionListeningBeforePlayback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	s := &acousticReadinessSTT{events: make(chan stt.Event, 2), started: make(chan struct{})}
+	p := &pipeline.Pipeline{STT: s, Events: events.NewBus()}
+	var listening, played atomic.Bool
+	remove := p.Events.SubscribeAll(func(e events.Event) {
+		if phase, ok := e.(events.STTPhase); ok && phase.Phase == "listening" {
+			listening.Store(true)
+		}
+	})
+	defer remove()
+	done := make(chan error, 1)
+	go func() {
+		_, err := runAcousticTurn(ctx, p.Events, p.RunTurn, func(context.Context) error {
+			if !listening.Load() {
+				return errors.New("playback preceded production listening event")
+			}
+			played.Store(true)
+			s.events <- stt.Timeout{}
+			return nil
+		})
+		done <- err
+	}()
+	select {
+	case <-s.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if played.Load() {
+		t.Error("stimulus played while STT had not reported listening")
+	}
+	// Only STT input is controlled. Pipeline.RunTurn must consume and forward
+	// the phase to its actual bus before the physical-playback callback runs.
+	s.events <- stt.PhaseEvent{Phase: "listening"}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if !played.Load() || !s.closed.Load() {
+		t.Fatal("playback or joined STT cleanup missing")
+	}
+}
+
+func TestAcousticTurnDoesNotPlayAfterEarlyFailureOrCancellation(t *testing.T) {
+	for _, mode := range []string{"early_failure", "cancel_before_listening", "playback_failure"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			expected := errors.New("fixture failure")
+			s := &acousticReadinessSTT{events: make(chan stt.Event, 1), started: make(chan struct{})}
+			if mode == "early_failure" {
+				s.startErr = expected
+			}
+			if mode == "playback_failure" {
+				s.events <- stt.PhaseEvent{Phase: "listening"}
+			}
+			p := &pipeline.Pipeline{STT: s, Events: events.NewBus()}
+			var played atomic.Bool
+			done := make(chan error, 1)
+			go func() {
+				_, err := runAcousticTurn(ctx, p.Events, p.RunTurn, func(context.Context) error { played.Store(true); return expected })
+				done <- err
+			}()
+			select {
+			case <-s.started:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			if mode == "cancel_before_listening" {
+				cancel()
+				expected = context.Canceled
+			}
+			select {
+			case err := <-done:
+				if !errors.Is(err, expected) {
+					t.Fatalf("error=%v, want %v", err, expected)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("readiness failure did not cancel and join turn")
+			}
+			if played.Load() != (mode == "playback_failure") {
+				t.Fatalf("unexpected playback=%t", played.Load())
+			}
+			if mode != "early_failure" && !s.closed.Load() {
+				t.Fatal("returned before STT session closed")
+			}
+		})
+	}
+}
 
 func TestNormalizeAcousticTextIgnoresCaseAndPunctuation(t *testing.T) {
 	if got := normalizeAcousticText("  Hello, Samantha! "); got != "hello samantha" {

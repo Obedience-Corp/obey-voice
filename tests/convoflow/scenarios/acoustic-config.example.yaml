@@ -13,7 +13,7 @@ models_dir: /path/to/installed/models
 stt_provider: parakeet
 parakeet_model: tdt-0.6b-v2
 vad_enabled: true
-vad_silence_duration: 0.5
+vad_silence_duration: 1.2
 vad_threshold: 0.6
 vad_min_speech_duration: 0.25
 vad_pre_roll_ms: 300

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/aecprobe"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
@@ -210,21 +211,10 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	p.STT, p.VAD, p.Utterance = recognizer, vad, endable
 	defer func() { p.STT, p.VAD, p.Utterance = oldSTT, oldVAD, oldUtterance }()
 
-	turnDone := make(chan struct {
-		text string
-		err  error
-	}, 1)
-	go func() {
-		text, err := p.RunTurn(ctx)
-		turnDone <- struct {
-			text string
-			err  error
-		}{text, err}
-	}()
-
-	playErr := playAcousticStimulus(ctx, player, samples, rate)
-	turn := <-turnDone
-	transcript = strings.TrimSpace(turn.text)
+	text, turnErr := runAcousticTurn(ctx, p.Events, p.RunTurn, func(playCtx context.Context) error {
+		return playAcousticStimulus(playCtx, player, samples, rate)
+	})
+	transcript = strings.TrimSpace(text)
 	// Playback completion precedes arrival of the final acoustic/device tail.
 	// Freeze the collector before scoring so metrics and retained WAV describe
 	// exactly the same samples, including the reference recording's tail.
@@ -249,11 +239,8 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 			report.EnvelopeCorrelation = acousticEnvelopeCorrelation(correlationSamples, mic, audio.SampleRate/100, 200)
 		}
 	}
-	if playErr != nil {
-		return fmt.Errorf("acoustic stimulus playback: %w", playErr)
-	}
-	if turn.err != nil {
-		return fmt.Errorf("acoustic turn: %w", turn.err)
+	if turnErr != nil {
+		return turnErr
 	}
 	if transcript == "" {
 		return errors.New("acoustic turn produced no transcript")
@@ -275,6 +262,61 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		return fmt.Errorf("acoustic stimulus envelope correlation too weak: %.3f", report.EnvelopeCorrelation)
 	}
 	return nil
+}
+
+// runAcousticTurn subscribes before starting the real pipeline, and permits
+// speaker playback only after that pipeline forwards STT's listening phase.
+// Every return cancels and joins the turn before its caller restores providers.
+func runAcousticTurn(ctx context.Context, bus *events.Bus, runTurn func(context.Context) (string, error), play func(context.Context) error) (string, error) {
+	ready, err := newHardwareReadiness(bus)
+	if err != nil {
+		return "", err
+	}
+	defer ready.close()
+	runCtx, cancel := context.WithCancel(ctx)
+	type result struct {
+		text string
+		err  error
+	}
+	done := make(chan result, 1)
+	joined := make(chan struct{})
+	go func() {
+		defer close(joined)
+		text, err := runTurn(runCtx)
+		done <- result{text, err}
+	}()
+	defer func() { cancel(); <-joined }()
+	endedBeforePlayback := func(turn result) (string, error) {
+		return turn.text, fmt.Errorf("acoustic turn ended before stimulus playback: %w", errors.Join(errors.New("STT did not remain listening"), turn.err))
+	}
+	select {
+	case <-runCtx.Done():
+		return "", runCtx.Err()
+	case turn := <-done:
+		return endedBeforePlayback(turn)
+	case <-ready.ready:
+	}
+	// A session can report listening then immediately fail. Do not play a
+	// fixture when its completed turn is already waiting at this boundary.
+	select {
+	case <-runCtx.Done():
+		return "", runCtx.Err()
+	case turn := <-done:
+		return endedBeforePlayback(turn)
+	default:
+	}
+	if err := play(runCtx); err != nil {
+		return "", fmt.Errorf("acoustic stimulus playback: %w", err)
+	}
+	select {
+	case <-runCtx.Done():
+		return "", runCtx.Err()
+	case turn := <-done:
+		if turn.err != nil {
+			return turn.text, fmt.Errorf("acoustic turn: %w", turn.err)
+		}
+		return turn.text, nil
+	}
 }
 
 // acousticEnvelopeCorrelation compares 10 ms RMS envelopes over the complete

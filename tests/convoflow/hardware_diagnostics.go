@@ -16,7 +16,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-const diagnosticChunk = 160 // the production capture callback is 10ms/160 samples
+const diagnosticChunk = 160 // default for legacy WAV-only diagnostics without a callback trace
 
 type vadDiagnosticSpan struct {
 	Start       float64
@@ -39,11 +39,11 @@ type vadDiagnostic struct {
 	Spans       []vadDiagnosticSpan
 }
 
-// replayBargeVAD feeds exactly the same 160-sample cadence used by the
-// hardware capture path.  A span is a run of positive IsSpeech observations;
+// replayBargeVAD uses supplied capture callback sizes when available, or
+// a 160-sample diagnostic cadence for legacy WAV-only replays.  A span is a run of positive IsSpeech observations;
 // reporting these raw spans makes a threshold comparison reproducible without
 // turning this diagnostic into another barge-in policy.
-func replayBargeVAD(cfg *config.Config, path string, threshold, armOffset float64) (vadDiagnostic, error) {
+func replayBargeVAD(cfg *config.Config, path string, threshold, armOffset float64, captureSizes ...int) (vadDiagnostic, error) {
 	var out vadDiagnostic
 	samples, rate, err := audio.ReadWAVFloat32(path)
 	if err != nil {
@@ -63,13 +63,29 @@ func replayBargeVAD(cfg *config.Config, path string, threshold, armOffset float6
 	}
 	defer vad.Delete()
 	out = vadDiagnostic{Path: path, Rate: rate, Seconds: float64(len(samples)) / float64(rate), Threshold: config.BargeInVADThresholdOf(&copyCfg)}
+	if len(captureSizes) == 0 {
+		for remaining := len(samples); remaining > 0; {
+			size := min(diagnosticChunk, remaining)
+			captureSizes = append(captureSizes, size)
+			remaining -= size
+		}
+	} else {
+		var total int
+		for _, size := range captureSizes {
+			if size <= 0 || size > len(samples)-total {
+				return out, fmt.Errorf("invalid capture callback size %d at sample %d", size, total)
+			}
+			total += size
+		}
+		if total != len(samples) {
+			return out, fmt.Errorf("capture callback sizes cover %d samples, WAV contains %d", total, len(samples))
+		}
+	}
 	var sum float64
 	var current *vadDiagnosticSpan
-	for i := 0; i < len(samples); i += diagnosticChunk {
-		end := i + diagnosticChunk
-		if end > len(samples) {
-			end = len(samples)
-		}
+	i := 0
+	for _, size := range captureSizes {
+		end := i + size
 		chunk := samples[i:end]
 		for _, sample := range chunk {
 			v := math.Abs(float64(sample))
@@ -101,6 +117,7 @@ func replayBargeVAD(cfg *config.Config, path string, threshold, armOffset float6
 			out.Spans = append(out.Spans, *current)
 			current = nil
 		}
+		i = end
 	}
 	if current != nil {
 		out.Spans = append(out.Spans, *current)

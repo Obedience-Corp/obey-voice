@@ -168,6 +168,10 @@ does not establish comparable provider latency. Set the intended input/output de
 Ollama endpoints, Parakeet model path, and frontend in the explicit fixture
 config. Use a separate suite or retain the old binary before rebuilding;
 comparisons reject mismatched executable or configuration fingerprints.
+Start from `scenarios/acoustic-config.example.yaml`, which explicitly pins
+the production 300 ms speech pre-roll and 1.2-second end-of-utterance silence.
+The isolated fixture loader does not populate every application default;
+omitting these values can clip words and invalidate a population.
 
 An existing recorded fixture cache can instead be used without synthesis:
 
@@ -184,6 +188,7 @@ Saved interruption audio can be diagnosed without reopening devices:
 
 ```sh
 just test acoustic-vad /path/to/run/acoustic/interruption /path/to/isolated-config.yaml ARM_SECONDS STIMULUS_SECONDS
+just test acoustic-reprocess /path/to/run /path/to/isolated-config.yaml
 ```
 
 Both offsets are relative to the microphone file, not the scenario start.
@@ -191,6 +196,22 @@ The command replays raw and processed capture through the production Silero
 barge detector at three supported thresholds, skipping pre-arm input. Its
 success means replay completed; the logged speech windows are diagnostic
 evidence, and the physical interruption assertion remains the acceptance gate.
+The reprocess command uses the saved ordered capture/reference trace to produce
+a candidate frontend WAV and compares its production detector behavior with raw
+and original processed capture. It derives approximate capture-relative offsets
+from the saved events and reports that timing uncertainty.
+
+Host scheduling has a separate repeatable check:
+
+```sh
+just test work-host-timing
+```
+
+It records 30 samples each for actual Agency admission to the next production
+STT start and canonical result publication to the host's background-turn
+invocation. Controlled STT isolates host overhead; the quiet test uses real
+capture permits, the pipeline yield protocol, and Bubble Tea dispatch. These
+checks do not substitute for hardware capture or audible delivery evidence.
 
 
 Physical acceptance uses `capture.microphone: true` and a recorded speech WAV.

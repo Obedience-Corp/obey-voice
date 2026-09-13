@@ -152,3 +152,15 @@ acoustic-smoke CONFIG SUITE_DIR:
 [no-cd]
 acoustic-vad ARTIFACT CONFIG ARM STIMULUS:
     OBEY_VOICE_VAD_CAPTURE="{{ARTIFACT}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" OBEY_VOICE_VAD_ARM_OFFSET="{{ARM}}" OBEY_VOICE_VAD_STIMULUS_OFFSET="{{STIMULUS}}" go test ./tests/convoflow -run '^TestReplaySavedBargeVAD$' -count=1 -v
+
+# Replay saved ordered capture/reference operations through the current frontend.
+# Reports detector behavior; does not replace the physical interruption gate.
+[no-cd]
+acoustic-reprocess RUN_DIR CONFIG:
+    OBEY_VOICE_FRONTEND_REPROCESS_RUN="{{RUN_DIR}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" go test ./tests/convoflow -run '^TestReprocessSavedFrontendTrace$' -count=1 -v
+
+# Real Bubble Tea/pipeline host boundaries with controlled STT, 30 samples each.
+# Hardware capture, inference and spoken acknowledgement are separate gates.
+[no-cd]
+work-host-timing:
+    go test -race ./internal/tui -run '^TestWork(AdmissionToNextCaptureHostOverhead|QuietCompletionHostOverhead)$' -count=1 -v -timeout=60s
