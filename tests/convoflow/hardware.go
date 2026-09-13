@@ -87,6 +87,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
 		return fmt.Errorf("acoustic artifacts: %w", err)
 	}
+	var rawFrontend *rawCaptureFrontend
 	var capturedMu sync.Mutex
 	var captured []float32
 	transcript := ""
@@ -95,6 +96,10 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		capturedMu.Lock()
 		mic := append([]float32(nil), captured...)
 		capturedMu.Unlock()
+		processed := mic
+		if rawFrontend != nil {
+			mic = rawFrontend.RawSnapshot()
+		}
 		report.Transcript = transcript
 		report.CapturedSamples = len(mic)
 		report.CapturedRMS = aecprobe.SegmentRMS(mic)
@@ -105,6 +110,11 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		var artifactErrs []error
 		if err := audio.WriteWAVFloat32(filepath.Join(artifactDir, "stimulus.wav"), rate, samples); err != nil {
 			artifactErrs = append(artifactErrs, fmt.Errorf("write acoustic stimulus: %w", err))
+		}
+		if len(processed) > 0 {
+			if err := audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-processed.wav"), audio.SampleRate, processed); err != nil {
+				artifactErrs = append(artifactErrs, err)
+			}
 		}
 		if len(mic) > 0 {
 			if err := audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-in.wav"), audio.SampleRate, mic); err != nil {
@@ -141,7 +151,22 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	if recognizerCleanup != nil {
 		defer recognizerCleanup()
 	}
-	capture.SetFrontend(audio.NewPassthroughFrontend())
+	frontend, err := interruptionFrontend(r.cfg)
+	if err != nil {
+		return err
+	}
+	defer frontend.Close()
+	rawFrontend = newRawCaptureFrontend(frontend)
+	capture.SetFrontend(rawFrontend)
+	if r.player == nil {
+		return errors.New("acoustic run: physical response player missing")
+	}
+	real, ok := r.player.real.(*audio.Player)
+	if !ok {
+		return errors.New("acoustic run: physical response player required")
+	}
+	real.SetFrontend(frontend)
+	defer real.SetFrontend(nil)
 	streamID, stream := capture.Subscribe(512)
 	collectorDone := make(chan struct{})
 	go func() {
@@ -193,9 +218,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		return ctx.Err()
 	}
 	finishCapture()
-	capturedMu.Lock()
-	mic := append([]float32(nil), captured...)
-	capturedMu.Unlock()
+	mic := rawFrontend.RawSnapshot()
 	if len(mic) > 0 {
 		report.CapturedSamples = len(mic)
 		report.CapturedRMS = aecprobe.SegmentRMS(mic)
@@ -326,6 +349,10 @@ func acousticDeviceLabel(name string) string {
 }
 
 func playAcousticStimulus(ctx context.Context, player *audio.Player, samples []float32, rate int) error {
+	return playAcousticStimulusObserved(ctx, player, samples, rate, nil)
+}
+
+func playAcousticStimulusObserved(ctx context.Context, player *audio.Player, samples []float32, rate int, started func(time.Time)) error {
 	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(rate); err != nil {
 		return err
@@ -343,6 +370,16 @@ func playAcousticStimulus(ctx context.Context, player *audio.Player, samples []f
 	playback, err := player.PlayStream(ctx, stream)
 	if err != nil {
 		return err
+	}
+	if started != nil {
+		select {
+		case <-playback.Started():
+			started(time.Now())
+		case result := <-playback.Done():
+			return errors.Join(errors.New("acoustic stimulus ended before observed playback start"), result.Err)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	result := <-playback.Done()
 	return result.Err

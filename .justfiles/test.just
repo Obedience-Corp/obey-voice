@@ -96,3 +96,48 @@ audio-hardware:
     #!/usr/bin/env bash
     set -euo pipefail
     OBEY_VOICE_HARDWARE_AUDIO=1 go test -race ./pkg/voiceagent/audio/ -count=1 -run 'Hardware' -v -timeout 60s
+
+# Build a pinned harness and reproducible local Kokoro fixtures/scenarios.
+# Explicit model directory; does not read or change the installed user config.
+[no-cd]
+acoustic-prepare MODELS_DIR SUITE_DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    mkdir -p "$suite/bin" "$suite/fixtures"
+    go build -tags "${CONVOFLOW_GO_TAGS:-}" -o "$suite/bin/convoflow" ./tests/convoflow
+    go build -o "$suite/bin/golden-tts" ./cmd/golden-tts
+    texts=("What is the capital of France? Answer in one word." "What is two plus two? Answer with just the number." "Say hello in exactly three words." "Count from one to one hundred slowly and say every number.")
+    names=(synth-01 synth-02 synth-03 counting)
+    for i in 0 1 2 3; do
+        "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1 -text "${texts[$i]}" -out "$suite/fixtures/${names[$i]}.wav"
+    done
+    "$suite/bin/convoflow" -prepare-acoustic-suite "$suite/scenarios" -fixture-dir "$suite/fixtures"
+    shasum -a 256 "$suite/bin/convoflow" > "$suite/binary.sha256"
+
+# Collect 3 warmups + 30 physical turns per condition, serially, then compare.
+# Use a different explicit CONFIG for each shared/independent endpoint pair.
+[no-cd]
+acoustic-pair CONFIG SUITE_DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    mkdir -p "$suite/runs"
+    pair="$(mktemp -d "$suite/runs/pair.XXXXXX")"
+    trap 'echo "Acoustic pair artifacts: $pair"' EXIT
+    "$suite/bin/convoflow" -scenario "$suite/scenarios/baseline-33.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$pair/baseline"
+    "$suite/bin/convoflow" -scenario "$suite/scenarios/worker-33.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$pair/worker"
+    baseline=("$pair"/baseline/*/metrics.json)
+    worker=("$pair"/worker/*/metrics.json)
+    "$suite/bin/convoflow" -compare "${baseline[0]},${worker[0]}" > "$pair/comparison.json"
+    cat "$pair/comparison.json"
+
+# Completion handoff and production barge-in using the prepared fixtures.
+[no-cd]
+acoustic-controls CONFIG SUITE_DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in completion interruption; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/controls"
+    done

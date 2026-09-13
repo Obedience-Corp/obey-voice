@@ -64,6 +64,29 @@ func TestVoiceFrontendSuppressesLowLevelNoise(t *testing.T) {
 	}
 }
 
+func TestVoiceFrontendDuplexFloorExpiresAfterReferenceTail(t *testing.T) {
+	frontend := NewVoiceFrontend()
+	ref := make([]float32, ChunkSize)
+	for i := range ref {
+		ref[i] = voicedSample(i, 0.4)
+	}
+	frontend.SetReferenceDelay(64)
+	frontend.PushPlaybackReference(ref)
+	frontend.ProcessCapture(append([]float32(nil), ref...))
+	quiet := make([]float32, ChunkSize)
+	for range 25 {
+		frontend.ProcessCapture(quiet)
+	}
+	speech := make([]float32, ChunkSize)
+	for i := range speech {
+		speech[i] = voicedSample(i, 0.03)
+	}
+	out := frontend.ProcessCapture(append([]float32(nil), speech...))
+	if got := frameRMS(out) / frameRMS(speech); got <= 0.2 {
+		t.Fatalf("speech after reference tail survived %.2fx, want > 0.2x", got)
+	}
+}
+
 func meanAbs(samples []float32) float64 {
 	sum := 0.0
 	for _, sample := range samples {

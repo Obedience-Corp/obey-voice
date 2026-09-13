@@ -223,6 +223,16 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		if err := probe.runAcousticInterruption(turnCtx, turn.WAV, turn.InterruptWAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
 			return err
 		}
+	} else if turn.Op == "acoustic_completion" {
+		probe, ok := e.runner.(interface {
+			runAcousticCompletion(context.Context, string, string, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support acoustic completion")
+		}
+		if err := probe.runAcousticCompletion(turnCtx, turn.WAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
+			return err
+		}
 	} else if turn.Op == "start_latency_worker" {
 		loader, ok := e.runner.(interface {
 			startLatencyWorker(context.Context, string) (string, error)

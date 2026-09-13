@@ -83,3 +83,18 @@ func TestEmptyUserRequiresTerminalOrIdleWait(t *testing.T) {
 		t.Fatal("expected empty-user wait error")
 	}
 }
+
+func TestScenarioAcousticCompletion(t *testing.T) {
+	const scenario = `name: physical-completion
+input: speech
+capture: {audio: true, speakers: true, microphone: true}
+turns:
+  - id: completion
+    op: acoustic_completion
+    wav: /fixture.wav
+    expected_transcript: Say hello.
+`
+	if _, err := loadScenarioString("completion.yaml", scenario); err != nil {
+		t.Fatal(err)
+	}
+}

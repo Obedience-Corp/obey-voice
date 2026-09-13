@@ -1,0 +1,32 @@
+# Copy outside the repository and set the installed model directory/devices.
+# Tests run in fresh sessions; this file is never installed as user config.
+agent_name: Samantha
+brain_provider: ollama
+ollama_model: qwen3:8b
+ollama_host: http://localhost:11434
+ollama_think: "off"
+voice_worker_provider: ollama
+voice_worker_model: qwen3:8b
+voice_worker_job_budget: 120
+voice_work_enabled: true
+models_dir: /path/to/installed/models
+stt_provider: parakeet
+parakeet_model: tdt-0.6b-v2
+vad_enabled: true
+vad_silence_duration: 0.5
+vad_threshold: 0.6
+vad_min_speech_duration: 0.25
+listen_timeout: 10
+language: en-US
+tts_provider: kokoro
+tts_voice: af_heart
+tts_speed: 1
+voice_tools_enabled: true
+max_history: 100
+# Empty device names select the system defaults. Silence fails acceptance.
+input_device: ""
+output_device: ""
+barge_in_enabled: true
+voice_frontend: nlms
+# For independent endpoints, set both this URL and the intended worker model.
+# voice_worker_ollama_host: http://127.0.0.1:11435

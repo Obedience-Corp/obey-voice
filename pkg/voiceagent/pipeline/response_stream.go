@@ -302,7 +302,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				p.Player.Stop()
 			}
 			sincePlayback := metrics.sincePlaybackStart(req.At)
-			p.emitResponse(metrics, events.SpeakingInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
+			p.emitResponse(metrics, events.SpeakingInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback, DetectionToPlaybackStop: time.Since(req.At)})
 			p.emitResponse(metrics, events.TurnInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
 
 		case result, ok := <-modelDone:

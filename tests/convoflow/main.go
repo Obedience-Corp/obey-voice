@@ -35,6 +35,8 @@ func runMain(args []string) int {
 	scenarioPath := fs.String("scenario", "", "scenario YAML (required)")
 	analyzeDir := fs.String("analyze", "", "rescore an existing run directory")
 	compare := fs.String("compare", "", "compare two latency report JSON files separated by comma")
+	prepareSuite := fs.String("prepare-acoustic-suite", "", "generate repeatable acoustic scenarios into OUTPUTDIR")
+	fixtureDir := fs.String("fixture-dir", "", "recorded acoustic fixture cache containing synth-01..03 and counting WAV/JSON pairs")
 	liveProvider := fs.String("live-provider", "ollama", "live brain provider")
 	liveModel := fs.String("live-model", "qwen3:8b", "live model")
 	workerProvider := fs.String("worker-provider", "ollama", "worker provider (ollama, grok, claude, or stub for the self-test)")
@@ -64,6 +66,13 @@ func runMain(args []string) int {
 		}
 		fmt.Println(string(data))
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if *prepareSuite != "" {
+		if err := prepareAcousticSuite(*prepareSuite, *fixtureDir); err != nil {
 			fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
 			return 1
 		}

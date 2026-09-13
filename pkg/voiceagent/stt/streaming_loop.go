@@ -153,6 +153,11 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 			}
 			if deps.pause.consumeResumed() {
 				track.listenStart = time.Now()
+				if !track.detected && !deps.seg.HasSegments() {
+					if !emitPhase("listening") {
+						return
+					}
+				}
 			}
 		}
 

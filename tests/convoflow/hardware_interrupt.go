@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/apmfrontend"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
@@ -26,6 +26,7 @@ type interruptionReport struct {
 	StimulusStarted       time.Time     `json:"stimulus_started,omitempty"`
 	InterruptedAfter      time.Duration `json:"stimulus_to_interrupt_ns"`
 	PlaybackStoppedAfter  time.Duration `json:"stimulus_to_playback_stopped_ns"`
+	DetectionToStop       time.Duration `json:"detection_to_playback_stopped_ns"`
 	ProductionInterrupted bool          `json:"production_interrupted"`
 	InitialTranscript     string        `json:"initial_transcript"`
 	Transcript            string        `json:"transcript,omitempty"`
@@ -65,6 +66,7 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 		return err
 	}
 	report := interruptionReport{InitialWAV: initialWAV, InterruptWAV: interruptWAV, Expected: expected}
+	var rawFrontend *rawCaptureFrontend
 	var mic []float32
 	var micMu sync.Mutex
 	defer func() {
@@ -78,7 +80,12 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 		errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "initial.wav"), initialRate, initial))
 		errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "interrupt.wav"), interruptRate, interrupt))
 		if len(captured) > 0 {
-			errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-in.wav"), audio.SampleRate, captured))
+			errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-processed.wav"), audio.SampleRate, captured))
+		}
+		if rawFrontend != nil {
+			if raw := rawFrontend.RawSnapshot(); len(raw) > 0 {
+				errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-in.wav"), audio.SampleRate, raw))
+			}
 		}
 		b, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -102,7 +109,8 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 		return err
 	}
 	defer frontend.Close()
-	capture.SetFrontend(frontend)
+	rawFrontend = newRawCaptureFrontend(frontend)
+	capture.SetFrontend(rawFrontend)
 	real.SetFrontend(frontend)
 	defer real.SetFrontend(nil)
 	vad, err := audio.NewVAD(r.cfg)
@@ -171,7 +179,15 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 			<-done
 		}
 	}()
+	readyInput, err := newHardwareReadiness(p.Events)
+	if err != nil {
+		return err
+	}
+	defer readyInput.close()
 	go func() { text, err := p.RunTurn(runCtx); done <- outcome{text, err} }()
+	if err := readyInput.wait(runCtx); err != nil {
+		return err
+	}
 	stimulus := audio.NewPlayerWithDevice(r.cfg.OutputDevice)
 	defer stimulus.Close()
 	if err := playAcousticStimulus(runCtx, stimulus, initial, initialRate); err != nil {
@@ -199,8 +215,9 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 			}
 		}
 	}
-	// A short quiet interval catches self-interruption before external speech.
-	quiet := time.NewTimer(150 * time.Millisecond)
+	// Wait beyond the production 600ms arm delay to reject self-interruption
+	// before external speech can be mistaken for the cause.
+	quiet := time.NewTimer(900 * time.Millisecond)
 	defer quiet.Stop()
 	select {
 	case <-runCtx.Done():
@@ -221,9 +238,11 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 		}
 	}
 ready:
-	report.StimulusStarted = time.Now()
 	stimulusDone := make(chan error, 1)
-	go func() { stimulusDone <- playAcousticStimulus(runCtx, stimulus, interrupt, interruptRate) }()
+	stimulusStarted := make(chan time.Time, 1)
+	go func() {
+		stimulusDone <- playAcousticStimulusObserved(runCtx, stimulus, interrupt, interruptRate, func(at time.Time) { stimulusStarted <- at })
+	}()
 	stimulusRunning := true
 	defer func() {
 		if stimulusRunning {
@@ -231,6 +250,14 @@ ready:
 			<-stimulusDone
 		}
 	}()
+	select {
+	case report.StimulusStarted = <-stimulusStarted:
+	case err := <-stimulusDone:
+		stimulusRunning = false
+		return fmt.Errorf("interrupt stimulus did not start: %v", err)
+	case <-runCtx.Done():
+		return runCtx.Err()
+	}
 	var first outcome
 	gotFirst := false
 	for !gotFirst {
@@ -244,6 +271,7 @@ ready:
 				}
 				report.InterruptedAfter = observation.at.Sub(report.StimulusStarted)
 				report.PlaybackStoppedAfter = report.InterruptedAfter
+				report.DetectionToStop = ev.DetectionToPlaybackStop
 			}
 			if ev, ok := observation.event.(events.TurnMetrics); ok {
 				report.ProductionInterrupted = ev.Interrupted
@@ -263,6 +291,7 @@ ready:
 			case events.SpeakingInterrupted:
 				report.InterruptedAfter = observation.at.Sub(report.StimulusStarted)
 				report.PlaybackStoppedAfter = report.InterruptedAfter
+				report.DetectionToStop = ev.DetectionToPlaybackStop
 			}
 		default:
 			goto drained
@@ -272,14 +301,14 @@ drained:
 	report.InitialTranscript = first.text
 	// SpeakingInterrupted is emitted synchronously after Player.Stop returns.
 	// The stored delay is its observation boundary, not turn cleanup time.
-	if real.IsPlaying() || !report.ProductionInterrupted || report.InterruptedAfter <= 0 {
-		return fmt.Errorf("production interruption not proven: interrupted=%t detector=%s playing=%t turn_error=%v", report.ProductionInterrupted, report.InterruptedAfter, real.IsPlaying(), first.err)
-	}
 	if err := <-stimulusDone; err != nil {
 		stimulusRunning = false
 		return err
 	}
 	stimulusRunning = false
+	if real.IsPlaying() || !report.ProductionInterrupted || report.InterruptedAfter <= 0 || report.DetectionToStop <= 0 {
+		return fmt.Errorf("production interruption not proven: interrupted=%t detector=%s playing=%t turn_error=%v", report.ProductionInterrupted, report.InterruptedAfter, real.IsPlaying(), first.err)
+	}
 	// No capture reset or synthesized transcript: RunTurn consumes keepCapture.
 	text, err := p.RunTurn(runCtx)
 	report.Transcript = text

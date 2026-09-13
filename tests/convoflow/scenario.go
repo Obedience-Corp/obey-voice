@@ -183,17 +183,20 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		if scn.Input == "speech" && t.User != "" && t.Op == "" && t.WAV == "" {
 			return nil, fmt.Errorf("load %s: speech turn %q requires WAV", name, t.ID)
 		}
-		if t.WAV != "" && (scn.Input != "speech" || (t.Op != "" && t.Op != "acoustic_interrupt") || t.InterruptAfter.Duration != 0) {
+		if t.WAV != "" && (scn.Input != "speech" || (t.Op != "" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion") || t.InterruptAfter.Duration != 0) {
 			return nil, fmt.Errorf("load %s: WAV turn requires speech input without control operation", name)
 		}
 		if t.InterruptAfter.Duration < 0 || (t.InterruptAfter.Duration > 0 && (t.User == "" || t.Op != "")) {
 			return nil, fmt.Errorf("load %s: turn %q: interrupt_after requires a user turn and positive duration", name, t.ID)
 		}
-		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" {
+		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" {
 			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)
 		}
 		if t.Op == "acoustic_interrupt" && (!scn.Capture.Microphone || t.WAV == "" || t.InterruptWAV == "" || t.ExpectedTranscript == "") {
 			return nil, fmt.Errorf("load %s: acoustic_interrupt needs physical capture, initial and interrupt WAVs, and expected transcript", name)
+		}
+		if t.Op == "acoustic_completion" && (!scn.Capture.Microphone || t.WAV == "" || t.ExpectedTranscript == "") {
+			return nil, fmt.Errorf("load %s: acoustic_completion needs physical capture, fixture WAV, and expected transcript", name)
 		}
 		if t.InterruptWAV != "" && t.Op != "acoustic_interrupt" {
 			return nil, fmt.Errorf("load %s: interrupt_wav requires acoustic_interrupt", name)

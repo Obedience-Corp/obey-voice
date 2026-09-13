@@ -263,6 +263,9 @@ func TestBargeInEmitsSincePlaybackStart(t *testing.T) {
 		t.Fatal("RunTurn did not return after barge-in")
 	}
 
+	if speakingInterrupted.DetectionToPlaybackStop <= 0 {
+		t.Fatalf("missing detector-to-stop timing: %v", speakingInterrupted.DetectionToPlaybackStop)
+	}
 	if speakingInterrupted.SincePlaybackStart <= 0 {
 		t.Fatalf("SpeakingInterrupted.SincePlaybackStart = %v, want > 0", speakingInterrupted.SincePlaybackStart)
 	}
