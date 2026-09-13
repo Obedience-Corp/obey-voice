@@ -211,9 +211,9 @@ local-first product, has both layers.
 
 This implements managed worker admission, asynchronous acknowledgment, compact
 briefs, host-serialized unsolicited delivery, status, explicit cancellation,
-timeouts, and session cleanup. Immediate preemption of an idle local STT listen
-is deferred: without an atomic capture handoff it can discard speech just
-starting, so the existing listen timeout defines that turn boundary.
+timeouts, and session cleanup. The legacy path waits for an existing listen boundary. The opt-in canonical
+inbox uses the capture-owner handoff described below; it does not cancel capture
+and assume the microphone is free.
 
 Remote A2A targets, worker continuation/input-required UX, and recovery of voice
 tickets after process restart remain outside this first managed integration.
@@ -264,3 +264,59 @@ Storage failures block paid admission. No current adapter has authoritative
 reconciliation or a supported user-adjustment command; unknown records remain
 unresolved. The JSONL transcript records `worker.usage`, `worker.limit_reached`
 and `worker.charge`; unknown counts or costs are explicit null values.
+
+## Inspecting and delivering retained results
+
+With `voice_work_enabled: true`, `/work` opens the current conversation's work
+summary. `/work JOB_ID` shows the frozen tier/provider, originating persona,
+observed state and delivery disposition. `/work logs` shows saved diagnostic
+locations. The selected responder can change while a job keeps its original
+assignment. Naming Santa selects Santa for subsequent conversation; the job's
+origin does not require repeating a persona name for each reply.
+
+The work strip stays visible while work is active or an update remains
+uncommunicated. Reading a card clears its local unseen indicator; it does not
+consume the pending update. A held result names its reason, such as muted or
+unavailable audio. Use these commands with a retained job or result ID:
+
+| Command | Effect |
+| --- | --- |
+| `/work cancel JOB_ID` | Requests cancellation of execution. |
+| `/work cancel all` | Requests cancellation of current workers. |
+| `/work dismiss JOB_ID` | Dismisses a retained result; does not cancel its worker. |
+| `/work speak JOB_ID` | Makes a held result eligible for the host's next safe delivery boundary. Output must be available. |
+| `/work replay JOB_ID` | Explicitly delivers a previously communicated retained result again, without rerunning tools. |
+
+`/workers` retains the worker manager, admission switch and stop controls.
+Opening either inspection view preserves the conversation draft. Escape leaves
+selected work details, then returns from Activity to Chat. Copying chat includes
+readable outcomes once, without progress chatter or hidden reasoning. Saved-file
+inspection and export are described in [Background-work diagnostics](work-diagnostics.md).
+
+## Experimental rollout and rollback
+
+The conversation inbox remains opt-in (`voice_work_enabled` defaults to `false`)
+while live audio acceptance is pending. Deterministic tests and a recorded-audio
+run do not establish microphone behavior, interruption latency or human hearing.
+The capture owner now supports a frame-boundary completion handoff; hosts whose
+adapter cannot acknowledge it defer delivery explicitly. The legacy path's
+listen-timeout boundary is not the scheduler guarantee for the new inbox.
+
+Simple, Medium and Complex are effort labels, not fixed model names or automatic
+price levels. Configure each assignment in Workers Settings. No missing tier
+silently selects a paid model. Changing an assignment applies to new jobs;
+queued jobs retain their plan, while the current paid-disable switch is checked
+again before dispatch. Migration previews the effective legacy assignment,
+including persona overrides, and saves the tier document atomically. Returning
+to legacy mode preserves the tier document and original singleton settings.
+
+For a code rollback, explicitly select legacy mode before using an older build.
+Keep the complete session files, `<session-id>.work` directories and
+`worker-usage.sqlite` together in a backup. Current work-disabled binding and
+session saving preserve sidecars and pending canonical data. An older binary's
+reader may ignore newer fields and its writer may omit them on save; the
+compatibility tests do not certify every historical binary. Diagnostic sidecars
+are never restore inputs and must not be used to rerun jobs. Restored outcomes
+remain held until an explicit resume or delivery action. No migration promises
+exactly-once physical hearing across a crash between playback and saving its
+receipt.

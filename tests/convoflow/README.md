@@ -78,3 +78,69 @@ of 250 ms or longer inside speech (a stall or padded frame). The package's
 near-silence counters are reported as `mid_silence_runs` but do not gate: a
 vocoder's output goes near zero at every pause, so that count is a property
 of speech, not a defect.
+
+## Recorded speech and paired latency artifacts
+
+A speech scenario uses `input: speech` and a `wav` path on each spoken turn.
+The harness opens a finite WAV source in real time, runs the configured local
+VAD/STT, and passes that input through the same long-lived production pipeline.
+The brain, worker coordinator and history survive between fixtures. It never
+opens a microphone. Paths are relative to the invocation's working directory;
+use absolute paths for external fixtures. WAV playback is recorded; `-speakers`
+explicitly enables the real output tee. Fixture playback does not exercise the
+microphone ring buffer or measure barge-in.
+
+For an isolated measurement, add `latency_condition: baseline` or `worker` to
+the scenario and `latency_iteration: 1` (then 2, 3, …) to each measured WAV turn.
+Label warmup turns with `latency_warmup: true`; this is not a claim that the
+model was cold. Use an explicit `-fixture-config` for every latency run. The
+ordinary `user` string is not substituted for recorded speech.
+
+```yaml
+name: recorded-latency
+input: speech
+latency_condition: baseline
+capture: {audio: true, speakers: false}
+turns:
+  - id: warmup
+    wav: /absolute/path/to/recorded-question.wav
+    latency_iteration: 1
+    latency_warmup: true
+  - id: measured
+    wav: /absolute/path/to/recorded-question.wav
+    latency_iteration: 2
+```
+
+`metrics.json` retains raw production turn offsets, wall time for correlation,
+WAV content hash, actual worker/pending counts at admission, input/sink kind,
+errors and a fingerprint of the effective configuration, running executable,
+OS, architecture and host. The fingerprint excludes only the run's working
+directory; it stores no credentials. Timings use monotonic duration fields,
+not subtraction of serialized wall-clock times. Failed turns retain partial
+playback WAVs, analysis and their timing/error record. Non-completed production
+turns fail the measured run even when the pipeline's no-speech return has no Go
+error.
+
+Compare two generated `metrics.json` files with the same built harness and
+pinned configuration:
+
+```sh
+go run ./tests/convoflow -compare /path/to/baseline/metrics.json,/path/to/worker/metrics.json
+```
+
+Comparison requires at least 30 non-warmup samples per condition and matching
+WAV/iteration populations, provenance and warmup labels. Baseline samples must
+start with no running jobs; worker samples must observe at least one running
+canonical job. Both exclude pre-existing pending updates. Run an actual worker
+scenario before the measured WAVs; the condition label does not create a worker
+or invent contention. Keep shared-endpoint and independent-endpoint experiments
+as separate pairs. Changing the executable or pinned configuration requires a
+new pair.
+
+The report calculates nearest-rank p50/p95 from finalized input to local
+playback start. It rejects missing/out-of-order milestones, failed samples,
+text input, recording-only output and incomplete runs. A successful comparison
+establishes comparable timing evidence only: it does not enforce the 10% release
+regression decision or certify hearing, UI handoff, safe yield, lost audio or
+barge-in. Those require separate observed evidence. There is no automatic
+30-turn workload generator or fabricated microphone baseline.

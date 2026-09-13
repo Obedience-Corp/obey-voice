@@ -21,12 +21,13 @@ const (
 
 // Scenario is one scripted conversation. Unknown YAML keys are load errors.
 type Scenario struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Duration    duration `yaml:"duration"`
-	Input       string   `yaml:"input"` // text | speech
-	RouterTools string   `yaml:"router_tools"`
-	TTS         struct {
+	LatencyCondition string   `yaml:"latency_condition"`
+	Name             string   `yaml:"name"`
+	Description      string   `yaml:"description"`
+	Duration         duration `yaml:"duration"`
+	Input            string   `yaml:"input"` // text | speech
+	RouterTools      string   `yaml:"router_tools"`
+	TTS              struct {
 		Provider string `yaml:"provider"`
 		Voice    string `yaml:"voice"`
 	} `yaml:"tts"`
@@ -61,17 +62,19 @@ type scenarioWorker struct {
 }
 
 type Turn struct {
-	InterruptAfter duration      `yaml:"interrupt_after"`
-	ID             string        `yaml:"id"`
-	User           string        `yaml:"user"`
-	Timeout        duration      `yaml:"timeout"`
-	Duration       duration      `yaml:"duration"`
-	Wait           waitKind      `yaml:"wait"`
-	Expect         []Expectation `yaml:"expect"`
-	WAV            string        `yaml:"wav"`
-	Op             string        `yaml:"op"`
-	Persona        string        `yaml:"persona"`
-	ExpectError    string        `yaml:"expect_error"`
+	LatencyIteration int           `yaml:"latency_iteration"`
+	LatencyWarmup    bool          `yaml:"latency_warmup"`
+	InterruptAfter   duration      `yaml:"interrupt_after"`
+	ID               string        `yaml:"id"`
+	User             string        `yaml:"user"`
+	Timeout          duration      `yaml:"timeout"`
+	Duration         duration      `yaml:"duration"`
+	Wait             waitKind      `yaml:"wait"`
+	Expect           []Expectation `yaml:"expect"`
+	WAV              string        `yaml:"wav"`
+	Op               string        `yaml:"op"`
+	Persona          string        `yaml:"persona"`
+	ExpectError      string        `yaml:"expect_error"`
 }
 
 type Expectation struct {
@@ -156,8 +159,20 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	if scn.Input != "text" && scn.Input != "speech" {
 		return nil, fmt.Errorf("load %s: input must be text or speech", name)
 	}
+	if scn.LatencyCondition != "" && scn.LatencyCondition != "baseline" && scn.LatencyCondition != "worker" {
+		return nil, fmt.Errorf("load %s: invalid latency_condition", name)
+	}
 	for i := range scn.Turns {
 		t := &scn.Turns[i]
+		if t.LatencyIteration < 0 || (t.LatencyIteration > 0 && (scn.LatencyCondition == "" || t.WAV == "" || scn.Input != "speech" || t.Op != "" || t.InterruptAfter.Duration != 0)) {
+			return nil, fmt.Errorf("load %s: measured turn %q requires speech WAV, condition, and no control operation", name, t.ID)
+		}
+		if scn.Input == "speech" && t.User != "" && t.Op == "" && t.WAV == "" {
+			return nil, fmt.Errorf("load %s: speech turn %q requires WAV", name, t.ID)
+		}
+		if t.WAV != "" && (scn.Input != "speech" || t.Op != "" || t.InterruptAfter.Duration != 0) {
+			return nil, fmt.Errorf("load %s: WAV turn requires speech input without control operation", name)
+		}
 		if t.InterruptAfter.Duration < 0 || (t.InterruptAfter.Duration > 0 && (t.User == "" || t.Op != "")) {
 			return nil, fmt.Errorf("load %s: turn %q: interrupt_after requires a user turn and positive duration", name, t.ID)
 		}

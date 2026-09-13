@@ -7,12 +7,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
@@ -30,6 +34,7 @@ func runMain(args []string) int {
 	fs.SetOutput(os.Stderr)
 	scenarioPath := fs.String("scenario", "", "scenario YAML (required)")
 	analyzeDir := fs.String("analyze", "", "rescore an existing run directory")
+	compare := fs.String("compare", "", "compare two latency report JSON files separated by comma")
 	liveProvider := fs.String("live-provider", "ollama", "live brain provider")
 	liveModel := fs.String("live-model", "qwen3:8b", "live model")
 	workerProvider := fs.String("worker-provider", "ollama", "worker provider (ollama, grok, claude, or stub for the self-test)")
@@ -37,13 +42,32 @@ func runMain(args []string) int {
 	workerHost := fs.String("worker-ollama-host", "", "worker Ollama URL; empty inherits live host")
 	ollamaHost := fs.String("ollama-host", "http://localhost:11434", "live Ollama URL")
 	runsDir := fs.String("runs-dir", "", "artifact root (default ~/.cache/obey-voice/convoflow)")
-	fixtureConfig := fs.String("fixture-config", "", "explicit isolated config file for persona proof")
+	fixtureConfig := fs.String("fixture-config", "", "explicit isolated config file (required for persona and latency runs)")
 	personaDir := fs.String("persona-dir", "", "explicit persona catalog directory for persona proof")
 	selfTest := fs.Bool("self-test", false, "run with a fake runner (no models)")
 	gate := fs.Bool("gate", false, "gate mode: refuse the stub worker (set by `just convoflow gate`)")
 	speakers := fs.Bool("speakers", false, "tee recorded PCM to real speakers")
 	if err := fs.Parse(args); err != nil {
 		return 1
+	}
+	if *compare != "" {
+		parts := strings.Split(*compare, ",")
+		if len(parts) != 2 {
+			fmt.Fprintln(os.Stderr, "convoflow: -compare requires two comma-separated metrics files")
+			return 2
+		}
+		report, err := compareWorkLatencyFiles(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+		data, marshalErr := json.MarshalIndent(report, "", "  ")
+		if marshalErr != nil {
+			fmt.Fprintln(os.Stderr, marshalErr)
+			return 1
+		}
+		fmt.Println(string(data))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	if *analyzeDir != "" {
 		if err := analyzeRunDir(*analyzeDir); err != nil {
@@ -195,6 +219,27 @@ func wireLiveAgent(ctx context.Context, eng *engine, k knobs) int {
 		prof.FixtureConfig = eng.fixtureConfig
 		prof.PersonaDir = eng.personaDir
 	}
+	if scn := eng.scn; scn.LatencyCondition != "" {
+		if eng.fixtureConfig == "" {
+			return reportSetupError(fmt.Errorf("latency run requires explicit isolated -fixture-config"))
+		}
+		pinned := *cfg
+		pinned.WorkDir = ""
+		data, err := json.Marshal(pinned)
+		if err != nil {
+			return reportSetupError(err)
+		}
+		host, _ := os.Hostname()
+		executable, err := os.Executable()
+		if err != nil {
+			return reportSetupError(err)
+		}
+		binary, err := os.ReadFile(executable)
+		if err != nil {
+			return reportSetupError(err)
+		}
+		eng.latencyProvenance = fmt.Sprintf("%x/%x/%s/%s/%s", sha256.Sum256(data), sha256.Sum256(binary), runtime.GOOS, runtime.GOARCH, host)
+	}
 	if err := writeResolvedConfig(eng.runDir, prof); err != nil {
 		fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
 		return 1
@@ -222,6 +267,12 @@ func wireLiveAgent(ctx context.Context, eng *engine, k knobs) int {
 	}
 	eng.runner = runner
 	eng.profile = prof
+	if initial == nil && cfg.VoiceWorkEnabled {
+		if err := runner.agent.EnableConversationWork(filepath.Base(eng.runDir), nil, cfg); err != nil {
+			runner.close()
+			return reportSetupError(err)
+		}
+	}
 	if initial != nil {
 		if err := configurePersona(runner, resolvedBase, catalog, initial, eng.runDir); err != nil {
 			runner.close()

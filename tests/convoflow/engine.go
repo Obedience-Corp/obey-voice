@@ -42,16 +42,18 @@ type recoveryHistoryRunner interface {
 }
 
 type engine struct {
-	scn           *Scenario
-	runDir        string
-	rec           *recorder
-	runner        runner
-	player        *recordingPlayer
-	fixtureConfig string
-	personaDir    string
-	playing       func() bool
-	profile       runProfile
-	onClose       []func()
+	latencyProvenance string
+	latencySamples    []workLatencySample
+	scn               *Scenario
+	runDir            string
+	rec               *recorder
+	runner            runner
+	player            *recordingPlayer
+	fixtureConfig     string
+	personaDir        string
+	playing           func() bool
+	profile           runProfile
+	onClose           []func()
 
 	started    time.Time
 	stopReason string
@@ -71,7 +73,7 @@ const defaultScenarioWall = 5 * time.Minute
 
 func (e *engine) run(ctx context.Context) (runErr error) {
 	defer func() {
-		e.closeAll()
+		runErr = errors.Join(runErr, e.closeAll())
 		if p, ok := e.runner.(personaRunner); ok {
 			runErr = errors.Join(runErr, p.writePersonaArtifacts(e.runDir), p.validatePersonaRun())
 		}
@@ -135,7 +137,7 @@ func (e *engine) run(ctx context.Context) (runErr error) {
 	return nil
 }
 
-func (e *engine) closeAll() {
+func (e *engine) closeAll() error {
 	// Retire and persist the runner before closing event capture or exporting
 	// the final disk snapshot. Shutdown errors belong to this run's result.
 	if c, ok := e.runner.(interface{ close() }); ok {
@@ -145,6 +147,10 @@ func (e *engine) closeAll() {
 		e.onClose[i]()
 	}
 	e.onClose = nil
+	if e.player != nil {
+		return e.player.Close()
+	}
+	return nil
 }
 
 func (e *engine) noteTurnError(id string, err error) {
@@ -157,7 +163,14 @@ func (e *engine) noteTurnError(id string, err error) {
 	e.turns = append(e.turns, turnRecord{ID: id, Err: err.Error()})
 }
 
-func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
+func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
+	start := time.Now()
+	latencyMark := len(e.rec.snapshot())
+	var before work.Snapshot
+	if wr, ok := e.runner.(interface{ workSnapshot() work.Snapshot }); ok {
+		before = wr.workSnapshot()
+	}
+	defer func() { runErr = errors.Join(runErr, e.collectLatency(turn, start, latencyMark, before, runErr)) }()
 	timeout := turn.Timeout.Duration
 	if timeout == 0 {
 		timeout = 90 * time.Second
@@ -170,6 +183,7 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		if err := e.player.BeginTurn(turnDir); err != nil {
 			return err
 		}
+		defer func() { runErr = errors.Join(runErr, e.player.EndTurn()) }()
 	}
 
 	mark := len(e.rec.snapshot())
@@ -226,6 +240,18 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		case <-turnCtx.Done():
 			return turnCtx.Err()
 		}
+	} else if turn.WAV != "" {
+		replay, ok := e.runner.(interface {
+			runWAV(context.Context, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support recorded speech")
+		}
+		if err := replay.runWAV(turnCtx, turn.WAV); err != nil {
+			return err
+		}
+	} else if e.scn.Input == "speech" && turn.User != "" {
+		return fmt.Errorf("speech input requires WAV")
 	} else if turn.User != "" {
 		if e.runner == nil {
 			return fmt.Errorf("no runner (live agent not wired)")
@@ -257,11 +283,6 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) error {
 		}
 	} else if err := e.rec.waitFor(turnCtx, wait, e.isPlaying); err != nil {
 		return fmt.Errorf("wait %s: %w", wait, err)
-	}
-	if e.player != nil {
-		if err := e.player.EndTurn(); err != nil {
-			return err
-		}
 	}
 
 	st := turnState{

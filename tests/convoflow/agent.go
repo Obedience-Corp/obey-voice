@@ -145,7 +145,11 @@ func writeResolvedConfig(runDir string, prof runProfile) error {
 // the TTS set (checked here — Available is a method on a built provider),
 // then New with everything injected.
 type liveRunner struct {
-	agent          *voiceagent.Agent
+	agent *voiceagent.Agent
+	// cfg is the run's private snapshot. WAV replay must use the same resolved
+	// provider/model settings even if the caller's config is subsequently
+	// changed while the long-lived agent is running.
+	cfg            *config.Config
 	cleanup        func()
 	tts            *voiceagent.TTSSet
 	voices         *voiceagent.LiveTTSManager
@@ -169,7 +173,8 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 		return nil, fmt.Errorf("live brain: %w", err)
 	}
 	live, liveObs := observeProvider(liveInner)
-	r := &liveRunner{live: liveObs, liveProvider: live, player: player, observations: []*observing{liveObs}}
+	configSnapshot := *cfg
+	r := &liveRunner{cfg: &configSnapshot, live: liveObs, liveProvider: live, player: player, observations: []*observing{liveObs}}
 
 	var workerInner brain.Provider
 	if k.workerIsStub() {
