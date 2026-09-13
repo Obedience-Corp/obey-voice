@@ -22,7 +22,7 @@ func (p *Pipeline) workerTierAvailability() *brain.WorkerTierAvailability {
 }
 
 func (p *Pipeline) workerFacts() []brain.WorkerFact {
-	if p.Agency == nil || p.workerTierAvailability() == nil {
+	if p.Agency == nil || !tieredWorkers(p.Agency.currentConfig()) {
 		return nil
 	}
 	var facts []brain.WorkerFact
@@ -104,6 +104,10 @@ func (a *Agency) admitWorker(tier config.WorkerTierName) (brain.Provider, *confi
 func frozenWorkerConfig(cfg *config.Config, plan *config.WorkerPlan) map[string]string {
 	values := frozenConfig(cfg)
 	if plan != nil {
+		// A tiered worker is admitted with its complete tool surface even when
+		// live conversation tools are disabled. Keep persisted provenance
+		// truthful about the options used by plannedWorkerRun.
+		values["tools"] = "true"
 		encoded, _ := json.Marshal(plan) // plan contains only schema scalar values
 		values["worker_plan"] = string(encoded)
 		values["worker_tier"] = string(plan.Tier)

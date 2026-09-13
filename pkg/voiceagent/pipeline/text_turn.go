@@ -89,7 +89,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	brainCtx, brainCancel := p.withBrainTimeout(ctx)
 	defer brainCancel()
 
-	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
+	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),

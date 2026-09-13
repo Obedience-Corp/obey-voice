@@ -71,7 +71,7 @@ type WorkerPolicy struct {
 	Escalation          string `mapstructure:"escalation" yaml:"escalation" json:"escalation"`
 }
 
-// VoiceWorkers mirrors contracts/voice-workers.schema.json exactly.
+// VoiceWorkers is the versioned worker assignment and policy document.
 type VoiceWorkers struct {
 	SchemaVersion int        `mapstructure:"schema_version" yaml:"schema_version" json:"schema_version"`
 	Revision      int64      `mapstructure:"revision" yaml:"revision" json:"revision"`
@@ -334,6 +334,9 @@ func ResolveWorkerPlan(cfg *Config, name WorkerTierName, capabilities WorkerCapa
 	}
 	// usage_policy has not yet qualified chargeable adapters. Keep every paid
 	// assignment editable and visible, but refuse to produce a runnable plan.
+	if t.Assignment.Billing == WorkerBillingUnknown {
+		return nil, fmt.Errorf("worker tier %s needs an explicit billing label", name)
+	}
 	if t.Assignment.Billing != WorkerBillingLocal {
 		return nil, errors.New("paid worker dispatch is unavailable until usage policy is enforced")
 	}

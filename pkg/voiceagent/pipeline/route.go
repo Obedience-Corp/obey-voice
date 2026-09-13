@@ -225,6 +225,14 @@ type promiseRepairState struct {
 	source     string
 }
 
+// failedRouteRepairEnabled is intentionally false for tiered workers. Their
+// live route tool is required to create an explicitly tiered spawn; guessing a
+// spawn from spoken promise text would lose that required admission data.
+func (p *Pipeline) failedRouteRepairEnabled() bool {
+	tiered := p.Agency != nil && tieredWorkers(p.Agency.currentConfig())
+	return p.VoiceFailedRouteRepair && !tiered
+}
+
 func (r *promiseRepairState) shouldRepair(accumulated string) bool {
 	if r == nil || !r.enabled || r.toolsFired || r.spawn || routeKindSkipsBrain(r.kind) {
 		return false

@@ -14,7 +14,8 @@ func tieredSettingsFixture() *config.Config {
 	w := config.DefaultVoiceWorkers()
 	w.Mode = config.WorkerModeTiered
 	w.Tiers.Simple.Enabled = true
-	w.Tiers.Simple.Assignment = &config.WorkerAssignment{Provider: "ollama", Model: "qwen3:8b", Billing: config.WorkerBillingLocal}
+	endpoint := "http://localhost:11434"
+	w.Tiers.Simple.Assignment = &config.WorkerAssignment{EndpointRef: &endpoint, Provider: "ollama", Model: "qwen3:8b", Billing: config.WorkerBillingLocal}
 	return &config.Config{VoiceWorkers: w}
 }
 

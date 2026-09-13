@@ -255,8 +255,14 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 			t = d.Tiers.Complex
 		}
 		value := "Disabled"
+		if t.Enabled && t.Assignment == nil {
+			value = "Unassigned — choose provider/model"
+		}
 		if t.Enabled && t.Assignment != nil {
 			value = t.Assignment.Provider + " / " + t.Assignment.Model
+			if reason := workerTierUnavailable(d, name); reason != "" {
+				value += " — unavailable: " + reason
+			}
 		}
 		rowName := workerTierTitle(string(name))
 		rows = append(rows, settingRow{key: "worker_" + string(name), name: rowName, kind: rowAction, value: value,
@@ -284,7 +290,7 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 				return m.beginWorkerLimitEdit(name, "transport_retries", t.Limits.TransportRetries)
 			}},
 			settingRow{key: "worker_" + string(name) + "_output", name: rowName + " output tokens", kind: rowAction, value: workerIntPtr(t.Limits.OutputTokens), run: func(m *settingsModel) tea.Cmd {
-				return m.beginWorkerLimitEdit(name, "output_tokens", workerIntValue(t.Limits.OutputTokens))
+				return m.beginWorkerLimitTextEdit(name, "output_tokens", workerIntPtr(t.Limits.OutputTokens))
 			}},
 			settingRow{key: "worker_" + string(name) + "_charge", name: rowName + " charge cap", kind: rowAction, value: workerBudget(t.Limits.ChargeMicroUSD), run: func(m *settingsModel) tea.Cmd {
 				return m.beginWorkerLimitTextEdit(name, "charge_micro_usd", workerBudget(t.Limits.ChargeMicroUSD))
@@ -313,7 +319,31 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 		}},
 		settingRow{key: "worker_escalation", name: "Automatic escalation", kind: rowInfo, value: "Never", detail: "fixed policy"},
 		settingRow{key: "worker_save", name: "Save worker settings", kind: rowAction, run: func(m *settingsModel) tea.Cmd { return m.saveWorkerDraft() }},
+		settingRow{key: "worker_reload", name: "Reload saved worker settings", kind: rowAction, detail: "discards draft edits", run: func(m *settingsModel) tea.Cmd { return m.reloadWorkerDraft() }},
 		settingRow{key: "worker_cancel", name: "Cancel worker edits", kind: rowAction, run: func(m *settingsModel) tea.Cmd { m.cancelWorkerDraft(); return nil }})
+	for i := range rows {
+		row := &rows[i]
+		pending := false
+		for _, suffix := range []string{"_uncapped", "_limits", "_runtime", "_requests", "_tools", "_retries", "_output", "_charge"} {
+			if strings.HasSuffix(row.key, suffix) {
+				pending = true
+			}
+		}
+		switch row.key {
+		case "worker_charge_policy", "worker_daily_budget", "worker_timezone", "worker_queued", "worker_concurrent":
+			pending = true
+		}
+		if pending {
+			row.detail = "not yet enforced"
+			row.applies = "saved for future enforcement"
+		}
+		if row.key == "worker_paid_enabled" {
+			row.detail = "paid dispatch unavailable"
+		}
+	}
+	rows = append(rows, settingRow{key: "worker_current_bounds", name: "Current configured bounds", kind: rowInfo,
+		value:  fmt.Sprintf("%d concurrent · %s runtime", max(1, m.cfg.VoiceWorkerMaxConcurrent), workerRuntimeBudget(m.cfg.VoiceWorkerJobBudget)),
+		detail: "legacy settings; captured when the conversation starts"})
 	if m.workerEditingTier == "" {
 		filtered := rows[:0]
 		for _, row := range rows {
@@ -327,7 +357,7 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 		prefix := "worker_" + string(m.workerEditingTier)
 		filtered := rows[:0]
 		for _, row := range rows {
-			if strings.HasPrefix(row.key, prefix) || row.key == "worker_save" || row.key == "worker_cancel" {
+			if strings.HasPrefix(row.key, prefix) || row.key == "worker_save" || row.key == "worker_cancel" || row.key == "worker_reload" || row.key == "worker_current_bounds" {
 				filtered = append(filtered, row)
 			}
 		}
@@ -346,7 +376,8 @@ func workerBillingRow(name config.WorkerTierName, rowName string, a *config.Work
 	return settingRow{key: "worker_" + string(name) + "_billing", name: rowName + " billing", kind: rowChoice, value: current, options: options, current: indexOf(options, current), set: func(m *settingsModel, i int) tea.Cmd {
 		t := m.tierDraft(name)
 		if t.Assignment == nil {
-			t.Assignment = &config.WorkerAssignment{}
+			m.message = "Choose a provider/model before editing billing"
+			return nil
 		}
 		t.Assignment.Billing = config.WorkerBilling(options[i])
 		return nil
@@ -379,12 +410,6 @@ func workerIntPtr(v *int) string {
 		return "uncapped"
 	}
 	return fmt.Sprint(*v)
-}
-func workerIntValue(v *int) int {
-	if v == nil {
-		return 1
-	}
-	return *v
 }
 
 func (m settingsModel) toolRows() []settingRow {
@@ -1005,4 +1030,11 @@ func (m settingsModel) meetingRows() []settingRow {
 			},
 		},
 	}
+}
+
+func workerRuntimeBudget(seconds int) string {
+	if seconds <= 0 {
+		return "uncapped"
+	}
+	return fmt.Sprintf("%ds", seconds)
 }

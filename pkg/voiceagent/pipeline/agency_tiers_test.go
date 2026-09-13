@@ -10,6 +10,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 func tierTestConfig() *config.Config {
@@ -152,5 +153,69 @@ func TestWorkerSettingsPublicationClonesAndRejectsStaleEditors(t *testing.T) {
 	}
 	if err := a.ApplyWorkerSettings(tierTestConfig().VoiceWorkers); !errors.Is(err, config.ErrWorkerRevisionConflict) {
 		t.Fatalf("stale revision = %v", err)
+	}
+}
+
+type tierToolOptionsWorker struct {
+	opts chan brain.StreamOptions
+}
+
+func (w *tierToolOptionsWorker) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
+	return nil, errors.New("unused")
+}
+func (w *tierToolOptionsWorker) ThinkFull(_ context.Context, _ string, opts brain.StreamOptions) (string, error) {
+	w.opts <- opts
+	return "done", nil
+}
+func (w *tierToolOptionsWorker) ClearHistory()            {}
+func (w *tierToolOptionsWorker) History() []brain.Turn    { return nil }
+func (w *tierToolOptionsWorker) LoadHistory([]brain.Turn) {}
+
+func TestTieredPlannedWorkerRunsWithToolsWhenConversationToolsDisabled(t *testing.T) {
+	cfg := tierTestConfig()
+	cfg.VoiceToolsEnabled = false
+	jobs := job.NewTable(context.Background())
+	defer jobs.Close()
+	a := NewAgency(nil, jobs, nil, cfg, nil)
+	worker := &tierToolOptionsWorker{opts: make(chan brain.StreamOptions, 1)}
+	a.planFactory = func(_ context.Context, got *config.Config, _ *config.WorkerPlan) (brain.Provider, error) {
+		if got.VoiceToolsEnabled {
+			t.Fatal("planned worker factory received conversation tools enabled")
+		}
+		return worker, nil
+	}
+	_, admitted, plan, err := a.admitWorker(config.WorkerTierSimple)
+	if err != nil || admitted == nil || plan == nil {
+		t.Fatalf("admitWorker = %v, cfg=%+v, plan=%+v", err, admitted, plan)
+	}
+	if got := frozenWorkerConfig(admitted, plan)["tools"]; got != "true" {
+		t.Fatalf("frozen tools = %q, want true", got)
+	}
+	if _, err := a.plannedWorkerRun("do the task", admitted, plan)(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case opts := <-worker.opts:
+		if !opts.ToolsEnabled {
+			t.Fatal("planned worker ran without tools")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("planned worker did not execute")
+	}
+}
+
+func TestTieredManagedAdmissionGuardRejectsUntieredTask(t *testing.T) {
+	cfg := tierTestConfig()
+	scope := work.WorkScope{SessionID: "session", RuntimeEpoch: "runtime", ConversationEpoch: "conversation"}
+	coordinator := work.NewCoordinator(scope)
+	jobs := job.NewTable(context.Background())
+	defer jobs.Close()
+	a := NewAgency(nil, jobs, nil, cfg, nil)
+	observer := a.managedObserver(coordinator, scope, nil, cfg)
+	if err := observer.Admitted("managed-1", "run this"); err == nil {
+		t.Fatal("tiered managed admission unexpectedly succeeded")
+	}
+	if got := coordinator.Snapshot(scope); len(got.Jobs) != 0 {
+		t.Fatalf("guard registered managed task: %+v", got.Jobs)
 	}
 }

@@ -115,7 +115,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		metrics.delivery = &completionPlayback{lease: ordinary.lease}
 	}
 
-	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
+	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),

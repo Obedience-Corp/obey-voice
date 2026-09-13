@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -48,7 +50,7 @@ func (m *settingsModel) previewWorkerMigration() tea.Cmd {
 	if m.cfg.VoiceWorkers != nil {
 		draft.Policy = m.cfg.VoiceWorkers.Clone().Policy
 	}
-	m.message = "Tiered worker draft ready — review it, then Save"
+	m.message = "Tiered draft ready — choose billing for each enabled tier, then Save"
 	return nil
 }
 
@@ -112,8 +114,6 @@ func (m *settingsModel) commitWorkerAssignment(tier, value string) {
 		m.message = "Worker provider/model is not available: " + provider + "/" + model
 		return
 	}
-	// The editor stores its tier in the label; this keeps the existing one-line
-	// editor small while still making the whole assignment atomic.
 	name := config.WorkerTierName(tier)
 	t := m.tierDraft(name)
 	billing := config.WorkerBillingUnknown
@@ -124,9 +124,20 @@ func (m *settingsModel) commitWorkerAssignment(tier, value string) {
 	if t.Assignment != nil {
 		assignment = *t.Assignment
 	}
-	assignment.Provider, assignment.Model, assignment.Billing = provider, model, billing
+	if t.Assignment == nil {
+		assignment.Billing = billing
+		if strings.EqualFold(provider, "ollama") {
+			host := m.cfg.VoiceWorkerOllamaHost
+			if host == "" {
+				host = m.cfg.OllamaHost
+			}
+			if host != "" {
+				assignment.EndpointRef = &host
+			}
+		}
+	}
+	assignment.Provider, assignment.Model = provider, model
 	t.Assignment = &assignment
-	t.Enabled = true
 	m.message = workerTierTitle(string(name)) + " draft updated"
 }
 
@@ -142,7 +153,8 @@ func (m *settingsModel) beginWorkerReferenceEdit(name config.WorkerTierName, fie
 func (m *settingsModel) commitWorkerReference(tier, field, value string) {
 	t := m.tierDraft(config.WorkerTierName(tier))
 	if t.Assignment == nil {
-		t.Assignment = &config.WorkerAssignment{Billing: config.WorkerBillingUnknown}
+		m.message = "Choose a provider/model before editing references"
+		return
 	}
 	v := strings.TrimSpace(value)
 	var dst **string
@@ -172,8 +184,14 @@ func (m *settingsModel) beginWorkerLimitTextEdit(name config.WorkerTierName, fie
 }
 
 func (m *settingsModel) commitWorkerLimit(tier, field, value string) {
-	if field == "charge_micro_usd" && (strings.TrimSpace(value) == "" || strings.EqualFold(strings.TrimSpace(value), "uncapped")) {
-		m.tierDraft(config.WorkerTierName(tier)).Limits.ChargeMicroUSD = nil
+	if (field == "charge_micro_usd" || field == "output_tokens") && (strings.TrimSpace(value) == "" || strings.EqualFold(strings.TrimSpace(value), "uncapped")) {
+		t := m.tierDraft(config.WorkerTierName(tier))
+		if field == "output_tokens" {
+			t.Limits.OutputTokens = nil
+		} else {
+			t.Limits.ChargeMicroUSD = nil
+		}
+		m.message = workerTierTitle(tier) + " " + field + " draft updated"
 		return
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(value))
@@ -254,6 +272,12 @@ func (m *settingsModel) saveWorkerDraft() tea.Cmd {
 		m.message = "Worker settings invalid: " + err.Error()
 		return nil
 	}
+	for _, name := range []config.WorkerTierName{config.WorkerTierSimple, config.WorkerTierMedium, config.WorkerTierComplex} {
+		if reason := workerTierUnavailable(draft, name); reason != "" {
+			m.message = "Cannot save " + workerTierTitle(string(name)) + ": " + reason
+			return nil
+		}
+	}
 	save := m.saveWorkers
 	if save == nil {
 		save = config.CommitVoiceWorkersCAS
@@ -261,6 +285,9 @@ func (m *settingsModel) saveWorkerDraft() tea.Cmd {
 	saved, err := save(draft, m.workerOpenRevision)
 	if err != nil {
 		m.message = "Failed to save worker settings: " + err.Error()
+		if errors.Is(err, config.ErrWorkerRevisionConflict) {
+			m.message += "; draft kept. Use Reload saved worker settings to discard edits and load the latest revision."
+		}
 		return nil
 	}
 	if saved == nil {
@@ -272,6 +299,42 @@ func (m *settingsModel) saveWorkerDraft() tea.Cmd {
 	m.workerOpenRevision = saved.Revision
 	m.message = "Worker settings saved"
 	return func() tea.Msg { return workerSettingsSavedMsg{workers: saved.Clone()} }
+}
+
+// Disabled tiers may retain incomplete setup without blocking other assignments.
+func workerTierUnavailable(w *config.VoiceWorkers, name config.WorkerTierName) string {
+	t := w.Tiers.Simple
+	switch name {
+	case config.WorkerTierMedium:
+		t = w.Tiers.Medium
+	case config.WorkerTierComplex:
+		t = w.Tiers.Complex
+	}
+	if !t.Enabled {
+		return ""
+	}
+	_, err := config.ResolveWorkerPlan(&config.Config{VoiceWorkers: w}, name, brain.LocalWorkerCapabilities{})
+	if err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+func (m *settingsModel) reloadWorkerDraft() tea.Cmd {
+	loaded, err := config.LoadWithoutHooks()
+	if err != nil {
+		m.message = "Cannot reload worker settings: " + err.Error()
+		return nil
+	}
+	m.cfg.VoiceWorkers = loaded.VoiceWorkers.Clone()
+	m.workerDraft = nil
+	m.workerOpenRevision = 0
+	if loaded.VoiceWorkers != nil {
+		m.workerOpenRevision = loaded.VoiceWorkers.Revision
+	}
+	m.workerEditingTier = ""
+	m.message = "Saved worker settings reloaded; draft edits discarded"
+	return nil
 }
 
 func (m *settingsModel) cancelWorkerDraft() {

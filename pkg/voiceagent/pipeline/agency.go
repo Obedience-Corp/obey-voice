@@ -256,9 +256,12 @@ func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Conf
 			return "", errors.New("worker provider is not configured")
 		}
 		worker = a.freshWorker(worker)
+		// Tiered admissions always run the full worker tool surface. The
+		// conversation flag controls the live turn/router; it must not disable
+		// tools for a worker that was explicitly admitted to a tier.
 		tools := true
 		if cfg != nil {
-			tools = cfg.VoiceToolsEnabled
+			tools = cfg.VoiceToolsEnabled || tieredWorkers(cfg)
 		}
 		opts := brain.WorkerStreamOptions(tools)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
