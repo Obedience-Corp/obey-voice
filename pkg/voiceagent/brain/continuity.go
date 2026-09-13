@@ -212,6 +212,12 @@ func (o *OllamaBrain) compactForContinuation(ctx context.Context) error {
 	}
 	o.archiveMessages(before[:start])
 	o.history = append([]api.Message{{Role: ollamaSharedRole, Content: "Shared conversation notes: " + continuity.Clip(summary, 4096)}}, before[start:]...)
+	workingStart := start
+	if workingStart > len(o.working) {
+		workingStart = len(o.working)
+	}
+	working := append([]Turn{{Role: "assistant", Content: "Shared conversation notes: " + continuity.Clip(summary, 4096)}}, o.working[workingStart:]...)
+	o.working = working
 	return nil
 }
 

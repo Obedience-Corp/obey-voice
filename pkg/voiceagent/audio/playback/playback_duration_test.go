@@ -1,6 +1,7 @@
-package audio
+package playback
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"testing"
 )
@@ -109,4 +110,4 @@ var errTestSynth = testSynthError{}
 
 // Done is a test-only accessor: the production path reads the result through
 // Playback, which is built from the same channel.
-func (s *playbackSegment) Done() <-chan PlaybackResult { return s.doneCh }
+func (s *playbackSegment) Done() <-chan audio.PlaybackResult { return s.doneCh }

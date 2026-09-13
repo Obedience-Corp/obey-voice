@@ -171,7 +171,7 @@ func TestLivePersonaThreadHandoff(t *testing.T) {
 			history := p.Brain.History()
 			reply := history[len(history)-1]
 			t.Logf("Samantha resumed (compacted=%v): %s", compact, reply.Content)
-			if !strings.Contains(reply.Content, check.want) || strings.Contains(reply.Content, "Historical assistant:") || strings.Contains(reply.Content, "OLDRESPONSE") {
+			if !strings.Contains(strings.ToLower(reply.Content), strings.ToLower(check.want)) || strings.Contains(reply.Content, "Historical assistant:") || strings.Contains(reply.Content, "OLDRESPONSE") {
 				t.Fatalf("resumed identity/context failed: %+v", reply)
 			}
 			if history[legacyIndex].Content != legacy {
@@ -179,4 +179,19 @@ func TestLivePersonaThreadHandoff(t *testing.T) {
 			}
 		}
 	}
+	// A real model-generated question hands the floor to the other persona.
+	// No new human input is invented between the two assistant replies.
+	p.RouteHandoff = selector.RouteHandoff
+	before := len(p.Brain.History())
+	if err := p.RunTurnTextMode(ctx, "Samantha, ask Obey what he thinks about our code. Ask him directly by name and let him answer."); err != nil {
+		t.Fatal(err)
+	}
+	floor := p.Brain.History()[before:]
+	for _, reply := range floor {
+		t.Logf("group floor %s %s: %s", reply.Role, reply.PersonaDisplayName, reply.Content)
+	}
+	if len(floor) != 3 || floor[0].Role != "user" || floor[1].PersonaID != "samantha" || floor[2].PersonaID != "obey" || !strings.Contains(strings.ToLower(floor[2].Content), "cobalt") {
+		t.Fatalf("agent floor/context failed: %+v", floor)
+	}
+
 }

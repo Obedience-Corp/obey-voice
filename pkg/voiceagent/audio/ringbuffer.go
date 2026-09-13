@@ -83,3 +83,28 @@ func (rb *RingBuffer) Clear() {
 	rb.tail = 0
 	rb.full = false
 }
+
+// KeepLast discards all but the newest n samples currently buffered.
+//
+// The operation is atomic with respect to Write and Read. It is intentionally
+// bounded to the unread portion of the ring: samples already handed to a
+// consumer cannot be recovered or replayed as a new utterance.
+func (rb *RingBuffer) KeepLast(n int) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if n <= 0 {
+		rb.head = 0
+		rb.tail = 0
+		rb.full = false
+		return
+	}
+	available := rb.available()
+	if available <= n {
+		return
+	}
+
+	drop := available - n
+	rb.tail = (rb.tail + drop) % rb.size
+	rb.full = false
+}

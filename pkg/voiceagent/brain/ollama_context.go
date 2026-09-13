@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/ollama/ollama/api"
@@ -61,6 +62,11 @@ func (o *OllamaBrain) dropOldestBeforeLastUser(skillCtx string, limit int) bool 
 		}
 		o.archiveMessages(o.history[:start])
 		o.history = append([]api.Message(nil), o.history[start:]...)
+		if start < len(o.working) {
+			o.working = append([]Turn(nil), o.working[start:]...)
+		} else {
+			o.working = []Turn{}
+		}
 		trimmed = true
 	}
 	return trimmed
@@ -74,7 +80,30 @@ func (o *OllamaBrain) shrinkToolsToTokenLimit(skillCtx string, limit int) bool {
 		return false
 	}
 	remaining := limit*4 - (o.promptBytes(skillCtx) - toolContentBytes(o.history))
-	return shrinkToolResults(o.history, remaining)
+	changed := shrinkToolResults(o.history, remaining)
+	if changed {
+		for i, m := range o.history {
+			if i >= len(o.working) || !isToolContentRole(m.Role) {
+				continue
+			}
+			content := m.Content
+			if m.Role == ollamaSharedToolRole {
+				t := o.working[i]
+				name := t.PersonaDisplayName
+				if t.PersonaID == "" {
+					_, name, _ = precedingToolOwner(o.working, i)
+				}
+				prefix := attributedToolContent(name, t.ToolName, "")
+				if strings.HasPrefix(content, prefix) {
+					content = strings.TrimPrefix(content, prefix)
+				} else {
+					content = ""
+				}
+			}
+			o.working[i].Content = content
+		}
+	}
+	return changed
 }
 
 func shrinkToolResults(history []api.Message, remainingBytes int) bool {

@@ -16,20 +16,33 @@ import (
 func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
+	return p.runVoiceWithContinuations(ctx)
+}
+
+func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
+	p.incActiveTurn()
+	defer p.decActiveTurn()
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.trackMetrics(metrics)()
 	turn := p.newTurnConductor(metrics)
 
-	if p.Player != nil {
+	continuation, isContinuation := continuationFromContext(ctx)
+	if !isContinuation && p.Player != nil {
 		p.Player.Stop()
 	}
 
-	turn.to(TurnListening)
-	text, err := p.transcribeTurn(ctx, metrics, turn)
+	var text string
+	var err error
+	if isContinuation {
+		text = continuation.admission.Request
+	} else {
+		turn.to(TurnListening)
+		text, err = p.transcribeTurn(ctx, metrics, turn)
+	}
 	// An EndUtterance that arrived after listening stopped was meant for this
 	// turn; dropping it keeps it from cutting the next one short.
-	if p.Utterance != nil {
+	if !isContinuation && p.Utterance != nil {
 		p.Utterance.Clear()
 	}
 	if errors.Is(err, errYieldedForCompletion) {
@@ -44,13 +57,13 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
-	if text == "" {
+	if !isContinuation && text == "" {
 		turn.finish(TurnTimedOut)
 		return "", nil
 	}
 	// Name summon (D5). Ahead of the backchannel on purpose: speech meant for
 	// someone else in the room must not even get an "mm-hm" back.
-	if p.AddressGate != nil {
+	if !isContinuation && p.AddressGate != nil {
 		if reason := p.AddressGate(text); reason != "" {
 			p.emit(events.Info{Message: reason})
 			turn.finish(TurnTimedOut)
@@ -63,7 +76,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	// and nothing will be heard until the brain and TTS finish. No-op unless
 	// enabled and unless recent turns were actually slow.
 	speakerID := p.currentSpeakerID()
-	if p.SpeakerGate != nil {
+	if !isContinuation && p.SpeakerGate != nil {
 		if reason := p.SpeakerGate(speakerID); reason != "" {
 			// Reuses TurnTimedOut's "no usable speech" terminal semantics;
 			// the Info event carries the actual veto reason.
@@ -72,18 +85,29 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 			return "", nil
 		}
 	}
-	p.emit(events.UserInput{Text: text, Speaker: speakerID})
-	original := text
-	ctx, admission, err := p.admitInput(ctx, text, false, metrics)
-	if err != nil {
-		turn.finish(TurnFailed)
-		return original, fmt.Errorf("admit response: %w", err)
+	if !isContinuation {
+		p.emit(events.UserInput{Text: text, Speaker: speakerID})
 	}
-	if admission.LocalReply != "" {
+	original := text
+	var admission ResponseAdmission
+	if isContinuation {
+		admission = continuation.admission
+		ctx = p.bindAdmission(ctx, "", admission, metrics)
+		speakerID = ""
+	} else {
+		ctx, admission, err = p.admitInput(ctx, text, false, metrics)
+		if err != nil {
+			turn.finish(TurnFailed)
+			return original, fmt.Errorf("admit response: %w", err)
+		}
+	}
+	if !isContinuation && admission.LocalReply != "" {
 		return original, p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	text = admission.Request
-	p.playBackchannel(ctx)
+	if !isContinuation {
+		p.playBackchannel(ctx)
+	}
 	if err := p.prepareTurn(ctx, text, metrics, turn); err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -96,7 +120,7 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 
 	// Layer 1 — deterministic phrase and work-intent routing before the live
 	// brain runs, so tool work never occupies the talking context window.
-	if kind, source, ok := classifyTurn(text, p.routeContext()); ok && routeKindSkipsBrain(kind) {
+	if kind, source, ok := classifyTurn(text, p.routeContext()); !isContinuation && ok && routeKindSkipsBrain(kind) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 	}
 
@@ -105,7 +129,12 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	// bounded so a hung model after tools cannot wedge the conversation loop.
 	turnCtx, turnCancel := p.withBrainTimeout(ctx)
 	defer turnCancel()
-	requestCtx, ordinary, leaseErr := p.beginOrdinaryCompletion(turnCtx, text, speakerID)
+	requestCtx := turnCtx
+	var ordinary *ordinaryCompletion
+	var leaseErr error
+	if !isContinuation {
+		requestCtx, ordinary, leaseErr = p.beginOrdinaryCompletion(turnCtx, text, speakerID)
+	}
 	if leaseErr != nil {
 		requestCtx = turnCtx
 	}
@@ -121,9 +150,10 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 		WorkerFacts:       p.workerFacts(),
 		Identity:          metrics.responseIdentity(),
 		OriginalInput:     original,
+		AgentContinuation: isContinuation,
 		VoiceMode:         true,
 		Speaker:           speakerID,
-		ToolsEnabled:      p.VoiceToolsEnabled || p.workerTierAvailability() != nil,
+		ToolsEnabled:      !isContinuation && (p.VoiceToolsEnabled || p.workerTierAvailability() != nil),
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
 		OnToolEnd:         p.toolEndHook(),
@@ -175,8 +205,15 @@ func (p *Pipeline) RunTurn(ctx context.Context) (string, error) {
 	// near-miss (F3.3) may already have set keepCapture inside streamResponse.
 	if interrupted {
 		p.keepCapture.Store(true)
+		p.clearPreparedCapture()
+	} else {
+		// Establish the next listen scope before handoff classification starts.
+		// Audio arriving while the classifier runs is then appended to this
+		// bounded tail instead of being lost to the next unconditional reset.
+		p.prepareNextListen()
 	}
 
+	p.completeAgentResponse(ctx, fullResponse, metrics, interrupted)
 	p.emitResponse(metrics, events.ResponseReady{
 		Response:    fullResponse,
 		Interrupted: interrupted,

@@ -35,6 +35,13 @@ type CaptureMonitor interface {
 	Reset()
 }
 
+// CaptureRetention is an optional extension implemented by local capture.
+// Keeping it optional preserves the small CaptureMonitor contract for remote
+// and test sources, which have no shared ring to trim.
+type CaptureRetention interface {
+	ResetKeeping(time.Duration)
+}
+
 // VoiceDetector decides when the user is speaking.
 //
 // Four methods, and each has a caller: AcceptWaveform feeds it, IsSpeech gates
@@ -69,6 +76,10 @@ type Pipeline struct {
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
+	// RouteHandoff classifies an intentional handoff without changing selection.
+	// The pipeline commits the proposal after joining the speech interrupt watch.
+	// It never invokes this callback for background or degraded work.
+	RouteHandoff func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
 	// The serialized host remembers omitted coverage until the next safe
 	// boundary, where one deterministic brief replaces a model retry.
 	completionFallback map[string]bool
@@ -180,7 +191,11 @@ type Pipeline struct {
 	// keepCapture preserves the capture buffer into the next turn after a
 	// barge-in — or a near-miss, speech heard during a playback pause that
 	// never tripped — where the buffered audio is the user mid-utterance.
-	keepCapture               atomic.Bool
+	keepCapture     atomic.Bool
+	preparedCapture atomic.Bool
+	// CapturePreRoll bounds audio retained across a successful response
+	// boundary. It is wired from config.vad_pre_roll_ms.
+	CapturePreRoll            time.Duration
 	captureMu                 sync.Mutex
 	captureSession            stt.Session
 	captureGeneration         uint64
@@ -285,12 +300,44 @@ func (p *Pipeline) EndUtterance() bool {
 }
 
 func (p *Pipeline) resetEchoState() {
-	// The capture buffer is drained at the start of the next listen (see
-	// transcribeTurn), which also catches echo arriving after playback stops.
+	// Reset VAD state after joining the interrupt watcher. Capture retention
+	// for the next listen is managed separately at the response boundary.
 	if p.VAD != nil {
 		p.VAD.Clear()
 	}
 	if p.BargeInVAD != nil {
 		p.BargeInVAD.Clear()
 	}
+}
+
+func (p *Pipeline) capturePreRoll() time.Duration {
+	return max(0, min(p.CapturePreRoll, 2*time.Second))
+}
+
+// prepareNextListen trims already buffered audio to the configured onset
+// window and marks it as a prepared listen scope. This is distinct from
+// keepCapture: the latter is evidence that the user actually interrupted and
+// must not make HasCapturedInput true for every ordinary continuation.
+func (p *Pipeline) prepareNextListen() {
+	if p.Capture == nil {
+		return
+	}
+	// Near-miss detection may have already marked a real in-progress
+	// utterance. Do not trim that utterance down to the ordinary onset window.
+	if p.keepCapture.Load() {
+		p.clearPreparedCapture()
+		return
+	}
+	if retained, ok := p.Capture.(CaptureRetention); ok {
+		retained.ResetKeeping(p.capturePreRoll())
+		p.preparedCapture.Store(true)
+		return
+	}
+	// Non-ring sources cannot provide bounded retention. Their existing Reset
+	// semantics remain authoritative.
+	p.preparedCapture.Store(false)
+}
+
+func (p *Pipeline) clearPreparedCapture() {
+	p.preparedCapture.Store(false)
 }

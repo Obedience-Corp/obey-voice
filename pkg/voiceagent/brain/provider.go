@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -34,9 +35,13 @@ type StreamOptions struct {
 	// include it in the next prompt, but must never append it to history.
 	WorkResults []CompletionResult
 	// Background marks a host-scheduled result notification, not a user utterance.
-	Background   bool
-	VoiceMode    bool
-	ToolsEnabled bool
+	Background bool
+	// AgentContinuation means the latest agent in shared canonical history is
+	// handing the floor to this persona. The provider must not append input as
+	// a fabricated user turn; it records only the resulting assistant reply.
+	AgentContinuation bool
+	VoiceMode         bool
+	ToolsEnabled      bool
 	// Speaker is the stable live speaker id for this user turn (speaker-1),
 	// when live labels are active. Empty means ordinary single-user "User".
 	// Stored on history turns and used for prompt attribution.
@@ -210,6 +215,24 @@ type CanonicalHistoryProvider interface{ CanonicalHistory() []Turn }
 // ContextHistoryProvider exposes the bounded model view for compaction only.
 // Its projected text is never an authority for persisted speaker identity.
 type ContextHistoryProvider interface{ ContextHistory() []Turn }
+
+// ContinuitySnapshot is the provider's durable transcript together with the
+// bounded view currently retained for model requests. The working view may
+// contain a compact seed and must not be expanded back to Canonical.
+type ContinuitySnapshot struct {
+	Canonical        []Turn
+	Working          []Turn
+	Archive          []continuity.Entry
+	ContextHighWater int
+}
+
+// ContinuityTransferProvider moves an active conversation between persona
+// providers without discarding compaction. Implementations must reproject the
+// working view for their own persona.
+type ContinuityTransferProvider interface {
+	ContinuitySnapshot() ContinuitySnapshot
+	ImportContinuity(ContinuitySnapshot) error
+}
 
 // IdentityHistoryAppender admits host-authored responses with immutable
 // historical identity. Providers without it remain legacy-compatible.
