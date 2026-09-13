@@ -32,7 +32,7 @@ func TestOllamaHistoryProjectionOmitsResponseIDs(t *testing.T) {
 	if len(o.history) != len(turns) {
 		t.Fatalf("initial projection length = %d: %#v", len(o.history), o.history)
 	}
-	if got := o.history[0].Content; got != "Shared conversation — Santa said:\nhello" {
+	if got := o.history[0].Content; got != "Santa agent:\nhello" {
 		t.Fatalf("projected history = %q", got)
 	}
 	if got := o.canonical[0].ResponseID; got != "internal-response-42" {
@@ -72,7 +72,7 @@ func TestOllamaPersonaProjectionSwitchesNativeAssistantOwnership(t *testing.T) {
 	if o.history[1].Role != ollamaSharedRole || o.history[3].Role != "assistant" {
 		t.Fatalf("Santa projection = %#v", o.history)
 	}
-	if got := o.history[1].Content; got != "Shared conversation — Samantha said:\nSamantha answer" {
+	if got := o.history[1].Content; got != "Samantha agent:\nSamantha answer" {
 		t.Fatalf("foreign assistant context = %q", got)
 	}
 	cfg.ActivePersona = "samantha"
@@ -127,6 +127,70 @@ func TestOllamaReseedSummaryIsSharedContext(t *testing.T) {
 	}
 }
 
+func TestOllamaContinuityTransferKeepsCompactViewAndReprojectsIdentity(t *testing.T) {
+	canonical := []Turn{
+		{Role: "user", Content: "old fact"},
+		{Role: "assistant", Content: "Obey's answer", PersonaID: "obey", PersonaDisplayName: "Obey"},
+		{Role: "user", Content: "latest question"},
+		{Role: "assistant", Content: "Santa's answer", PersonaID: "santa", PersonaDisplayName: "Santa"},
+	}
+	source := &OllamaBrain{cfg: &config.Config{ActivePersona: "obey", AgentName: "Obey"}}
+	if err := source.ImportHistory(canonical); err != nil {
+		t.Fatal(err)
+	}
+	source.ReseedContinuity([]Turn{
+		{Role: "assistant", Content: "The compacted conversation summary."},
+		canonical[2],
+		canonical[3],
+	})
+	snapshot := source.ContinuitySnapshot()
+
+	target := &OllamaBrain{cfg: &config.Config{ActivePersona: "santa", AgentName: "Santa"}}
+	if err := target.ImportContinuity(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(target.CanonicalHistory(), canonical) {
+		t.Fatalf("canonical history = %#v, want %#v", target.CanonicalHistory(), canonical)
+	}
+	if len(target.history) != 3 || target.history[0].Role != ollamaSharedRole {
+		t.Fatalf("working projection = %#v, want compact seed plus retained tail", target.history)
+	}
+	if target.history[1].Role != "user" || target.history[2].Role != "assistant" {
+		t.Fatalf("native target identity was not restored: %#v", target.history)
+	}
+	if strings.Contains(target.history[2].Content, "Santa agent:") {
+		t.Fatalf("target's own reply was quoted: %#v", target.history[2])
+	}
+}
+
+func TestOllamaContinuityTransferPreservesBudgetPolicy(t *testing.T) {
+	working := []Turn{
+		{Role: "assistant", Content: strings.Repeat("summary ", 120)},
+		{Role: "user", Content: strings.Repeat("request ", 120)},
+	}
+	source := &OllamaBrain{cfg: &config.Config{ActivePersona: "obey"}}
+	if err := source.ImportHistory(working); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := source.ContinuitySnapshot()
+
+	fits := &OllamaBrain{cfg: &config.Config{ActivePersona: "santa", OllamaNumCtx: 4096, ContinuitySoftLimitRatio: 0.8}}
+	if err := fits.ImportContinuity(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if fits.NeedsContinuityCompact("new message") {
+		t.Fatal("compact working view requested another summary when it fits")
+	}
+
+	narrow := &OllamaBrain{cfg: &config.Config{ActivePersona: "santa", OllamaNumCtx: 128, ContinuitySoftLimitRatio: 0.8}}
+	if err := narrow.ImportContinuity(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !narrow.NeedsContinuityCompact("new message") {
+		t.Fatal("narrow receiving window did not retain required compaction policy")
+	}
+}
+
 func TestLegacyStackedHeadersAreNotReintroducedAfterResumeOrCompaction(t *testing.T) {
 	legacy := "[Historical assistant: Obey response internal-1]\n[Historical assistant: Obey response internal-2]\nI am Obey."
 	turns := []Turn{
@@ -163,7 +227,7 @@ func TestLegacyStackedHeadersAreNotReintroducedAfterResumeOrCompaction(t *testin
 func TestCompletionRetainsSpeakersWithoutHistoricalResponseIDs(t *testing.T) {
 	turns := []Turn{{Role: "assistant", Content: "[Historical assistant: Obey response internal-response]\nI chose cobalt.", PersonaID: "obey", PersonaDisplayName: "Obey", ResponseID: "internal-response"}}
 	text := completionPrompt(BuildCompletionRequest("What did Obey choose?", "", turns, nil))
-	if !strings.Contains(text, "Obey said:") || !strings.Contains(text, "cobalt") || strings.Contains(text, "internal-response") || strings.Contains(text, "Historical assistant:") {
+	if !strings.Contains(text, "Obey agent:") || !strings.Contains(text, "cobalt") || strings.Contains(text, "internal-response") || strings.Contains(text, "Historical assistant:") {
 		t.Fatalf("completion attribution = %s", text)
 	}
 }
@@ -222,7 +286,7 @@ func TestMidReplyLegacyMarkerIsQuotedOnImportAndLiveAppend(t *testing.T) {
 		}
 		messages := o.buildMessages("")
 		m := messages[len(messages)-1]
-		if m.Role != "user" || !strings.Contains(m.Content, "Samantha said:") || !strings.Contains(m.Content, "I am Obey.") || strings.Contains(m.Content, "OLDRESPONSE1") || strings.Contains(m.Content, "Historical assistant:") {
+		if m.Role != "user" || !strings.Contains(m.Content, "Samantha agent:") || !strings.Contains(m.Content, "I am Obey.") || strings.Contains(m.Content, "OLDRESPONSE1") || strings.Contains(m.Content, "Historical assistant:") {
 			t.Fatalf("live=%v: contaminated reply gained assistant authority: %+v", live, m)
 		}
 		if o.CanonicalHistory()[0].Content != contaminated {
@@ -261,7 +325,7 @@ func TestForeignToolRestoreArchivesRawAndPreservesProjectedNotes(t *testing.T) {
 		} else if err := o.ImportHistory(turns); err != nil {
 			t.Fatal(err)
 		}
-		if want := attributedToolContent("obey", "lookup", note); o.history[2].Content != want {
+		if want := attributedToolContent("", "lookup", note); o.history[2].Content != want {
 			t.Fatalf("restore=%v: already-projected note changed: %q", restore, o.history[2].Content)
 		}
 	}

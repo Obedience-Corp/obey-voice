@@ -223,6 +223,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		VoiceFailedRouteRepair:      cfg.VoiceFailedRouteRepair,
 		BargeInTailGuard:            config.BargeInTailGuardOf(cfg),
 		BargeInSpeakerVerdictMaxAge: config.BargeInSpeakerVerdictMaxAgeOf(cfg),
+		CapturePreRoll:              time.Duration(cfg.VADPreRollMS) * time.Millisecond,
 	}
 
 	// Brain — injected, or selected by config.

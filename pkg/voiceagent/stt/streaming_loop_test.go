@@ -188,8 +188,10 @@ func TestStreamingLoopEOFFinalizesSpeechHeardLongBefore(t *testing.T) {
 	}
 	deps := streamingLoopDeps{
 		frames: &scriptedFrames{chunks: chunks},
-		// Silero never marked it live; only the EOF flush yields the segment.
-		seg:    &fakeSegmenter{flushSeg: make([]float32, minSpeechSamples)},
+		// The VAD confirms the onset, but the final segment is only available
+		// after EOF. The gate-approved frame must keep the utterance admissible
+		// even though the VAD segment itself is not available yet.
+		seg:    &fakeSegmenter{speech: true, flushSeg: make([]float32, minSpeechSamples)},
 		rec:    &fakeStreamingRec{finals: []string{"Hello there."}},
 		policy: endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond, StartTimeout: 30 * time.Second},
 	}
@@ -201,6 +203,35 @@ func TestStreamingLoopEOFFinalizesSpeechHeardLongBefore(t *testing.T) {
 	}
 	if ft.Text != "Hello there." {
 		t.Fatalf("final = %q, want %q", ft.Text, "Hello there.")
+	}
+}
+
+func TestStreamingLoopStationaryNoiseAtEOFFailsAdmission(t *testing.T) {
+	// A non-zero fan/room tone must not pass the EOF fallback merely because
+	// its RMS is above the absolute audible floor. The gate learns the tone
+	// while Silero is false, then rejects its stationary latch.
+	chunks := make([][]float32, gateHist+2)
+	for i := range chunks {
+		chunks[i] = constFrame(1600, 0.01)
+	}
+	speech := make([]bool, len(chunks))
+	speech[gateHist] = true
+	speech[gateHist+1] = true
+	deps := streamingLoopDeps{
+		frames: &scriptedFrames{chunks: chunks},
+		seg:    &fakeSegmenter{speechSeq: speech, flushSeg: make([]float32, minSpeechSamples)},
+		rec:    &fakeStreamingRec{finals: []string{"Yeah."}},
+		policy: endpoint.Policy{FinalizeOnEOF: true, MinSpeech: 200 * time.Millisecond},
+	}
+
+	got := runStreaming(context.Background(), deps)
+	if _, ok := terminal(got).(Timeout); !ok {
+		t.Fatalf("terminal = %T, want Timeout (stationary noise is not speech)", terminal(got))
+	}
+	for _, e := range got {
+		if final, ok := e.(FinalTranscript); ok {
+			t.Fatalf("emitted FinalTranscript from stationary noise: %q", final.Text)
+		}
 	}
 }
 

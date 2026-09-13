@@ -23,9 +23,18 @@ separately from this bounded working context.
 The session owns one complete shared transcript, with the original persona and
 response metadata on each reply. Each selected persona gets its own Ollama
 conversation projection: its own replies are native assistant messages, while
-other personas' contributions are attributed shared context. Switching back
-reconstructs that persona's thread from the saved transcript, so its earlier
-replies remain its own and it can still refer to the intervening discussion.
+other personas' contributions are attributed shared context. Switching transfers the current working context, including an existing
+summary and newer messages, and reprojects ownership for the receiving persona.
+The full transcript remains available for persistence; a switch does not replay
+compacted-away history or request a fresh summary. Compaction still runs when
+the receiving model's context budget or configured message-count limit requires
+it.
+
+In a group chat, the system prompt identifies the current persona and available
+agents. Other speakers use compact labels such as `Santa agent:`, `Lance user:`,
+and `Unknown user:`. The human speaker-name table supplies user names; persona
+aliases are not human identities. Own prior replies keep their native assistant
+role.
 
 Response IDs stay in application metadata. They are not inserted into model
 conversation text. Resuming and compacting use the same ownership rules; a
@@ -49,6 +58,46 @@ The default test model is `qwen3.8:latest`; set
 `OBEY_VOICE_LIVE_PERSONA_MODEL` to use another installed model. The test fixes
 sampling at temperature 0 and seed 42. It covers switching, restored legacy
 markers, and compaction; normal model responses remain generative.
+
+## Addressing and handing over the floor
+
+The Ollama persona runtime classifies the finalized utterance before selecting
+its responder. Names may occur anywhere: both “Santa, what do you think?” and
+“What do you think, Santa?” can select Santa. The classifier uses the sentence
+and recent conversation, not an invocation phrase list. Ordinary mentions,
+quotations, and questions about a persona leave the current responder selected.
+The user's original words remain unchanged in the transcript and model input.
+Unknown or ambiguous targets, unavailable personas, and classifier failures are
+reported without silently choosing another persona.
+
+This private structured request uses the current Ollama model, public names and
+aliases, and up to eight recent conversational messages. It has no tools or
+conversation-history side effects and a 15-second deadline. It adds a model
+request before the reply; its latency depends on the installed model.
+
+After a successfully completed response containing a persona name, the same
+classifier can recognize an
+agent's deliberate question or invitation to another agent. The receiving agent
+answers the shared thread without a fabricated user message. These follow-up
+responses have tools disabled. Each user turn permits at most three additional
+responses and no repeat responder, so agents cannot sustain a conversation loop.
+Background notifications, failed or interrupted replies, and local greeting
+acknowledgements do not initiate handoffs. User interruption retains priority.
+
+Voice responses prepare the next listening buffer before classifying a handoff.
+They retain up to `vad_pre_roll_ms` of recent processed microphone audio and keep
+new samples arriving during classification. This prevents the next listen from
+erasing the start of an utterance. Detected barge-in retains the in-progress
+utterance; explicit close/cancel clears the retired listening scope. Both offline
+and streaming STT require admitted speech evidence, so a noise-only VAD segment
+cannot become a transcript through an RMS-only fallback.
+
+An opt-in check for the local model's addressing decisions:
+
+```sh
+OBEY_VOICE_LIVE_ADDRESS_MODEL='<installed-model>' go test -tags=integration \
+  ./pkg/voiceagent/brain -run TestLiveGroupAddressee -count=1 -v
+```
 
 ## Context budgets
 

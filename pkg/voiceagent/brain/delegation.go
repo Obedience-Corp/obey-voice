@@ -143,19 +143,7 @@ func (o *OllamaBrain) receiveProjectedDelegationResultsFrom(runtime *delegation.
 	// Re-delivery after an interrupted/failed turn replaces the old paired
 	// observation rather than reusing its tool-call ID twice in one request.
 	id := result.Ticket + "-result"
-	kept := o.history[:0]
-	for _, message := range o.history {
-		duplicate := message.ToolCallID == id
-		for _, call := range message.ToolCalls {
-			if call.ID == id {
-				duplicate = true
-			}
-		}
-		if !duplicate {
-			kept = append(kept, message)
-		}
-	}
-	o.history = kept
+	o.removeDelegationPair(id)
 	note := projector.AddDelegationNote(result.Brief, result.SourceRef)
 	if note == "" {
 		return
@@ -166,6 +154,56 @@ func (o *OllamaBrain) receiveProjectedDelegationResultsFrom(runtime *delegation.
 	o.appendMessage(api.Message{Role: "assistant", ToolCalls: []api.ToolCall{call}}, nil)
 	o.appendMessage(toolResultMessage(call, note), nil)
 
+}
+
+// removeDelegationPair removes a previously projected asynchronous result
+// from every live view. Re-delivery must not leave a native message without
+// its canonical/working source turn, especially across persona switches.
+func (o *OllamaBrain) removeDelegationPair(id string) {
+	o.history = filterMessages(o.history, func(message api.Message) bool {
+		if message.ToolCallID == id {
+			return false
+		}
+		for _, call := range message.ToolCalls {
+			if call.ID == id {
+				return false
+			}
+		}
+		return true
+	})
+	keepTurn := func(turn Turn) bool {
+		if turn.ToolCallID == id {
+			return false
+		}
+		for _, call := range turn.ToolCalls {
+			if call.ID == id {
+				return false
+			}
+		}
+		return true
+	}
+	o.canonical = filterTurns(o.canonical, keepTurn)
+	o.working = filterTurns(o.working, keepTurn)
+}
+
+func filterMessages(messages []api.Message, keep func(api.Message) bool) []api.Message {
+	filtered := messages[:0]
+	for _, message := range messages {
+		if keep(message) {
+			filtered = append(filtered, message)
+		}
+	}
+	return filtered
+}
+
+func filterTurns(turns []Turn, keep func(Turn) bool) []Turn {
+	filtered := turns[:0]
+	for _, turn := range turns {
+		if keep(turn) {
+			filtered = append(filtered, turn)
+		}
+	}
+	return filtered
 }
 
 func delegationTools() api.Tools {

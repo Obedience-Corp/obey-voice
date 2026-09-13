@@ -1467,7 +1467,7 @@ func TestEnsureContextBudgetShrinksToolResultsToKeepUser(t *testing.T) {
 }
 
 func TestEnsureContextBudgetShrinksSharedToolAndKeepsCurrentUser(t *testing.T) {
-	const prefix = "Shared tool result (lookup) from Santa:\n"
+	const prefix = "Santa tool (lookup):\n"
 	shared := prefix + strings.Repeat("foreign tool evidence ", 400)
 	o := &OllamaBrain{
 		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 400},
