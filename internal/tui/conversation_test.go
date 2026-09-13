@@ -898,7 +898,7 @@ func TestConversationJobStatusLine(t *testing.T) {
 	m.ready = true
 	m.handleEvent(events.JobStarted{ID: "job-1", Task: "filter design work items"})
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "Working:") {
+	if !strings.Contains(view, "Workers: 1 running · 0 queued · /workers") {
 		t.Fatalf("job status missing from view:\n%s", view)
 	}
 	m.handleEvent(events.JobFinished{ID: "job-1", Task: "filter design work items", Summary: "done"})

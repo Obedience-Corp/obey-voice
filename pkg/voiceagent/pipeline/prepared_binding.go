@@ -161,6 +161,7 @@ func (r *PreparedBrainReplacement) publish() {
 	}
 	r.pipeline.Brain = r.next
 	if r.agency != nil {
+		r.agency.bindConversationWorkers(r.next)
 		r.agency.ReplaceWorker(r.worker, r.cfg, r.workerErr)
 	}
 	if r.agency != nil && r.runtime != nil {

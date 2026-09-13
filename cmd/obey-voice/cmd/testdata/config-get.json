@@ -574,6 +574,10 @@
       "value": "",
       "source": "default"
     },
+    "voice_workers_disabled": {
+      "value": false,
+      "source": "default"
+    },
     "whisper_model": {
       "value": "small",
       "source": "default"
