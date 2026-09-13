@@ -15,7 +15,42 @@ Explicit references to `WI-…` or `job-…`, or requests containing “earlier�
 “previous”, or “what did we”, can recall matching summaries as paired tool data.
 Compaction also consumes recent archived notes when they fit the request budget.
 This is bounded recall, not semantic search or durable memory. Clearing the
-conversation clears the archive; session files contain only hot history.
+conversation clears the archive. The shared canonical transcript is persisted
+separately from this bounded working context.
+
+## Persona threads and shared conversation
+
+The session owns one complete shared transcript, with the original persona and
+response metadata on each reply. Each selected persona gets its own Ollama
+conversation projection: its own replies are native assistant messages, while
+other personas' contributions are attributed shared context. Switching back
+reconstructs that persona's thread from the saved transcript, so its earlier
+replies remain its own and it can still refer to the intervening discussion.
+
+Response IDs stay in application metadata. They are not inserted into model
+conversation text. Resuming and compacting use the same ownership rules; a
+continuity summary is shared context, not a new statement by the selected
+persona. Existing saved transcript content is retained for review.
+
+Older replies without persona metadata remain shared context when a named
+persona is selected. Their authorship is unknown, so they are not assigned to
+that persona. Legacy tool exchanges remain readable context, with their
+original call pairing preserved in the saved transcript.
+
+To exercise an installed local model through the real selector, pipeline, and
+session persistence without microphone capture or playback:
+
+```sh
+OBEY_VOICE_LIVE_PERSONA=1 go test -tags=integration ./internal/persona/runtime \
+  -run TestLivePersonaThreadHandoff -count=1 -v -timeout 5m
+```
+
+The default test model is `qwen3.8:latest`; set
+`OBEY_VOICE_LIVE_PERSONA_MODEL` to use another installed model. The test fixes
+sampling at temperature 0 and seed 42. It covers switching, restored legacy
+markers, and compaction; normal model responses remain generative.
+
+## Context budgets
 
 `read_skill` is special: its full instructions remain in the existing transient
 skill splice for the active turn, while its persisted tool result is projected.

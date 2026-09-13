@@ -206,6 +206,46 @@ func TestCompactConversationSeedsPastToolTurns(t *testing.T) {
 	}, "seed after a tool-loop tail")
 }
 
+type projectedCompactBrain struct {
+	compactBrain
+	canonical []brain.Turn
+	projected []brain.Turn
+}
+
+func (b *projectedCompactBrain) ContextHistory() []brain.Turn { return b.projected }
+func (b *projectedCompactBrain) CanonicalHistory() []brain.Turn {
+	return b.canonical
+}
+
+func TestAutoCompactAfterPersonaSwitchKeepsCanonicalUserAndForeignToolExchange(t *testing.T) {
+	call := brain.TurnToolCall{ID: "lookup-1", Name: "lookup", Arguments: `{}`}
+	canonical := []brain.Turn{
+		{Role: "user", Content: "remember the cobalt fact"},
+		{Role: "assistant", Content: "I will look that up.", PersonaID: "santa", PersonaDisplayName: "Santa", ToolCalls: []brain.TurnToolCall{call}},
+		{Role: "tool", Content: "cobalt is in the fixture", ToolCallID: "lookup-1", ToolName: "lookup", PersonaID: "santa", PersonaDisplayName: "Santa"},
+		{Role: "assistant", Content: "The fixture contains cobalt.", PersonaID: "santa", PersonaDisplayName: "Santa"},
+	}
+	b := &projectedCompactBrain{
+		compactBrain: compactBrain{history: append([]brain.Turn(nil), canonical...), summary: "lossy summary"},
+		canonical:    canonical,
+		projected: []brain.Turn{
+			{Role: "user", Content: "remember the cobalt fact"},
+			{Role: "user", Content: "Shared conversation — Santa said:\nI will look that up."},
+			{Role: "shared_tool", Content: "Shared tool result (lookup) from Santa:\ncobalt is in the fixture"},
+			{Role: "user", Content: "Shared conversation — Santa said:\nThe fixture contains cobalt."},
+		},
+	}
+	p := &Pipeline{Brain: b, CompactPrompt: "SUMMARIZE", AutoCompactAfter: 3}
+
+	// This is the first turn after switching persona: compaction runs before
+	// the new persona's next user input is appended.
+	if err := p.autoCompactIfNeeded(context.Background()); err != nil {
+		t.Fatalf("autoCompactIfNeeded: %v", err)
+	}
+
+	assertTurns(t, b.history, append([]brain.Turn{{Role: "assistant", Content: "lossy summary"}}, canonical...), "reseeded canonical tail")
+}
+
 func TestCompactTailBounds(t *testing.T) {
 	// No user turn within the bound: the tail is capped instead of walking the
 	// whole transcript back, so the seed still fits the ≤6-turn flatten window.
