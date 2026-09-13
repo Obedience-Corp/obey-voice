@@ -69,6 +69,8 @@ obey-voice config migrate --write         # Apply STT config migration with back
 obey-voice persona list                   # List voice agent personas
 obey-voice persona show                   # Show the active persona profile
 obey-voice persona use samantha           # Switch active persona (persists)
+obey-voice persona enable veronica-hype   # Allow an experimental persona to be selected
+obey-voice persona disable veronica-hype  # Exclude its names and aliases from routing
 obey-voice voices                         # List available Kokoro voices
 obey-voice voices --locale en-US          # Filter voices by locale
 obey-voice voices --json -p qwen3-tts     # Qwen presets from the static catalog (no model load)
@@ -98,6 +100,13 @@ obey-voice serve --tailscale              # Remote voice for Tailscale clients
 obey-voice serve --revoke-tokens          # Rotate serve bearer token
 obey-voice serve --log-file serve.log     # Append human/diagnostic output to a file (0600)
 ```
+
+Disabled personas remain listed and editable, but their names and aliases are
+excluded from selection. They cannot be selected until enabled again. The
+saved default persona cannot be disabled, and ambiguity among enabled names or
+aliases remains an error. In `/personas`, select a row and press **x** to toggle
+its state. Inactive rows remain editable and show an `[inactive]` badge. Choose
+another saved default or conversation responder before disabling that persona.
 
 ## TUI controls
 

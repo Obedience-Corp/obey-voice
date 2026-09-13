@@ -72,6 +72,9 @@ func (c Catalog) ResolveBindingWithIssues(base *config.Config, id string) (*Sess
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve persona %q: %w", id, &ProfileLoadError{ID: id, Err: err})
 	}
+	if err := RequireEnabled(p); err != nil {
+		return nil, nil, fmt.Errorf("resolve persona %q: %w", id, &ProfileLoadError{ID: id, Err: err})
+	}
 	snap := base.Clone()
 	profiles, issues, err := c.ListWithIssues()
 	if err != nil {

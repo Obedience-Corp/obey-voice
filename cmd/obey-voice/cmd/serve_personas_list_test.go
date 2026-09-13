@@ -79,6 +79,17 @@ func TestServePersonaListReportsEffectiveStack(t *testing.T) {
 	if uncle.Brain.Model != "qwen2.5:14b" {
 		t.Fatalf("uncle-fu brain = %+v, want its own model", uncle.Brain)
 	}
+	if _, err := persona.SetInactive(cfg, "uncle-fu", true); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = servePersonaList(cfg)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := findPersonaRow(t, rows, "uncle-fu")
+	if !disabled.Inactive || disabled.Active || disabled.Brain != uncle.Brain || disabled.TTS != uncle.TTS {
+		t.Fatalf("inactive management row lost its state/stack: %+v", disabled)
+	}
 }
 
 // The whole point of the route: a runtime set_persona changes nothing on disk,

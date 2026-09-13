@@ -307,7 +307,7 @@ func (m launcherModel) openPersonaPicker() (launcherModel, tea.Cmd) {
 		action: actionStartDefaults,
 	}}
 	for _, p := range profiles {
-		if p == nil {
+		if p == nil || p.Inactive {
 			continue
 		}
 		label := p.DisplayName

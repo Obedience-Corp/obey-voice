@@ -73,6 +73,14 @@ func Delete(cfg *config.Config, id string) (*DeleteResult, error) {
 	if len(remaining) == 0 {
 		return nil, fmt.Errorf("persona %q: %w", id, ErrLastPersona)
 	}
+	active := ActiveID(cfg) == id
+	var next string
+	if active {
+		next = pickFallbackID(remaining)
+		if replacement := findProfile(remaining, next); replacement == nil || replacement.Inactive {
+			return nil, fmt.Errorf("cannot delete active persona %q: no enabled replacement", id)
+		}
+	}
 
 	owned, shared := promptOwnership(p)
 	res := &DeleteResult{ID: id, Removed: []string{}, Kept: []string{}, ActivePersona: ActiveID(cfg)}
@@ -95,10 +103,9 @@ func Delete(cfg *config.Config, id string) (*DeleteResult, error) {
 		res.Kept = append(res.Kept, shared)
 	}
 
-	if ActiveID(cfg) != id {
+	if !active {
 		return res, nil
 	}
-	next := pickFallbackID(remaining)
 	if err := Use(cfg, next); err != nil {
 		return res, fmt.Errorf("reactivating persona %q after deleting %q: %w", next, id, err)
 	}

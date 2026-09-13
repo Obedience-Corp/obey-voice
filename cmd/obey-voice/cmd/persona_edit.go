@@ -78,7 +78,7 @@ func runPersonaEdit(cmd *cobra.Command, args []string) error {
 // prompt. Each writer validates, so a failure part-way reports which steps
 // already landed instead of pretending the whole edit rolled back.
 func applyPersonaEdit(cmd *cobra.Command, id string) (*personaResultJSON, error) {
-	cfg, err := config.Load()
+	cfg, err := loadPersonaManagementConfig()
 	if err != nil {
 		return nil, err
 	}

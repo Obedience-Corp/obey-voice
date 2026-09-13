@@ -80,6 +80,8 @@ type personasModel struct {
 	saveName             func(id, displayName string) (*persona.Profile, error)
 	saveStack            func(id string, b persona.Brain, t persona.TTS) (*persona.Profile, error)
 	deletePersona        func(*config.Config, string) (*persona.DeleteResult, error)
+	setInactive          func(*config.Config, string, bool) (*persona.Profile, error)
+	selectedPersona      func() string
 	loadPrompt           func(name string) (string, error)
 	loadPromptForProfile func(*persona.Profile) (string, error)
 	defaultPrompt        func() (string, error)
@@ -103,6 +105,7 @@ func newPersonas(cfg *config.Config) personasModel {
 		saveName:      persona.UpdateDisplayName,
 		saveStack:     persona.UpdateStack,
 		deletePersona: persona.Delete,
+		setInactive:   persona.SetInactive,
 		loadPrompt:    persona.LoadSystemPrompt,
 		// Prefer profile-aware load so a private prompts/persona/<id>.yaml wins
 		// over a stale prompts.persona ref (e.g. TTS voice name as the ref).
@@ -155,6 +158,9 @@ func personaListLabel(p *persona.Profile) string {
 	}
 	if p.ID != "" && p.DisplayName != "" && !strings.EqualFold(p.DisplayName, p.ID) {
 		label = fmt.Sprintf("%s (%s)", p.DisplayName, p.ID)
+	}
+	if p.Inactive {
+		label += " [inactive]"
 	}
 	detail := strings.TrimSpace(p.TTS.Provider)
 	if v := strings.TrimSpace(p.TTS.Voice); v != "" {
@@ -283,6 +289,8 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 			return m, m.beginEditAt(formRowBrainProvider)
 		case "d", "delete":
 			m.beginDelete()
+		case "x":
+			m.toggleInactive()
 		case "esc", "q":
 			return m, func() tea.Msg { return switchScreenMsg(m.returnScreen) }
 		}
@@ -304,6 +312,10 @@ func (m *personasModel) selectCurrent() tea.Cmd {
 	}
 	p := m.items[m.cursor]
 	if p == nil {
+		return nil
+	}
+	if p.Inactive {
+		m.message = fmt.Sprintf("%s is inactive; press x to enable it", displayName(p))
 		return nil
 	}
 	if m.startPersona != nil {

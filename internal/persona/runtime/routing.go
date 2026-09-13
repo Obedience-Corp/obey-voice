@@ -24,6 +24,9 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 		s.warnCatalogIssues(issues)
 		identities := make([]summon.Identity, 0, len(profiles))
 		for _, p := range profiles {
+			if p.Inactive {
+				continue
+			}
 			aliases := append([]string(nil), p.Aliases...)
 			if p.ID == s.opts.Initial.PersonaID {
 				aliases = append(aliases, s.opts.Base.NameSummonAliases...)

@@ -29,6 +29,10 @@
       "type": "boolean",
       "description": "True for shipped product personas (the YAML catalog under internal/persona/shipped/), which cannot be deleted."
     },
+    "inactive": {
+      "type": "boolean",
+      "description": "When true, the persona remains saved but cannot be selected or used until enabled."
+    },
     "brain": {
       "type": "object",
       "additionalProperties": false,

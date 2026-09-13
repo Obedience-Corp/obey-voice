@@ -55,7 +55,7 @@ func (m personasModel) View() string {
 	} else {
 		b.WriteString("\n")
 	}
-	help := "  ↑/↓ • enter switch • n create • e edit • m model & voice • d delete • esc back"
+	help := "  ↑/↓ • enter switch • x enable/disable • e edit • n create • m model • d delete • esc back"
 	switch {
 	case m.formMode != "" && m.promptOpen:
 		help = "  esc NORMAL • :w back to form • :wq save • ctrl+j save • :q discard"
