@@ -5,8 +5,8 @@ import "strings"
 const historicalAssistantMarkerOpen = "[Historical assistant: "
 
 // historicalAssistantMarkerFilter removes only complete legacy attribution
-// markers. It holds a possible marker across stream chunks, but releases it
-// unchanged when the candidate becomes invalid or the stream ends.
+// markers and their optional newline across stream chunks. Incomplete or
+// invalid marker candidates are preserved.
 type historicalAssistantMarkerFilter struct {
 	hold string
 }
@@ -22,7 +22,7 @@ func (f *historicalAssistantMarkerFilter) Feed(chunk string) string {
 func (f *historicalAssistantMarkerFilter) Flush() string {
 	hold := f.hold
 	f.hold = ""
-	return hold
+	return stripLegacyHistoricalHeader(hold)
 }
 
 func (f *historicalAssistantMarkerFilter) scan(s string) string {
@@ -59,6 +59,19 @@ func (f *historicalAssistantMarkerFilter) scan(s string) string {
 			out.WriteString(candidate[:end+1])
 		}
 		s = candidate[end+1:]
+		if end > len(historicalAssistantMarkerOpen) {
+			// The marker includes one optional LF or CRLF, even when the
+			// next chunk starts the newline or completes its CRLF pair.
+			if s == "" || s == "\r" {
+				f.hold = candidate
+				return out.String()
+			}
+			if strings.HasPrefix(s, "\r\n") {
+				s = s[2:]
+			} else {
+				s = strings.TrimPrefix(s, "\n")
+			}
+		}
 	}
 	return out.String()
 }

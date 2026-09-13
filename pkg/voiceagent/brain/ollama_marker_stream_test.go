@@ -119,7 +119,23 @@ func TestHistoricalMarkerFilterEveryChunkBoundary(t *testing.T) {
 		{"[Historical assistant: ]", "[Historical assistant: ]"},
 		{"Before [Historical assistant: ordinary\nquotation] after.", "Before [Historical assistant: ordinary\nquotation] after."},
 		{"[Historical assistant: Obey response ID1][Historical assistant: Obey response ID2]Hi", "Hi"},
+		{"[Historical assistant: Obey response ID1]\n[Historical assistant: Obey response ID2]\nYeah…", "Yeah…"},
+		{"[Historical assistant: Obey response ID1]\r\n[Historical assistant: Obey response ID2]\r\nYeah…", "Yeah…"},
+		{"[Historical assistant: Obey response ID1]\r", "\r"},
+		{"[Historical assistant: Obey response ID1]\rYeah…", "\rYeah…"},
+		{"[Historical assistant: Obey response ID1]\n\nYeah…", "\nYeah…"},
+		{"[Historical assistant: Obey response ID1]", ""},
+		{"[Historical assistant: ]\nYeah…", "[Historical assistant: ]\nYeah…"},
 	} {
+		var byteFilter historicalAssistantMarkerFilter
+		var byteOutput strings.Builder
+		for i := range len(tc.input) {
+			byteOutput.WriteString(byteFilter.Feed(tc.input[i : i+1]))
+		}
+		byteOutput.WriteString(byteFilter.Flush())
+		if got := byteOutput.String(); got != tc.want {
+			t.Fatalf("byte chunks of %q: got %q, want %q", tc.input, got, tc.want)
+		}
 		for split := 0; split <= len(tc.input); split++ {
 			var filter historicalAssistantMarkerFilter
 			got := filter.Feed(tc.input[:split]) + filter.Feed(tc.input[split:]) + filter.Flush()
@@ -127,5 +143,26 @@ func TestHistoricalMarkerFilterEveryChunkBoundary(t *testing.T) {
 				t.Fatalf("split %d of %q: got %q, want %q", split, tc.input, got, tc.want)
 			}
 		}
+	}
+}
+
+func TestThinkStreamConsumesStackedMarkerNewlines(t *testing.T) {
+	client := markerStreamClient(t, []string{
+		`{"model":"m","message":{"role":"assistant","content":"[Historical assistant: Obey response ID1]"},"done":false}`,
+		`{"model":"m","message":{"role":"assistant","content":"\r"},"done":false}`,
+		`{"model":"m","message":{"role":"assistant","content":"\n[Historical assistant: Obey response ID2]"},"done":false}`,
+		`{"model":"m","message":{"role":"assistant","content":"\nYeah…"},"done":true,"done_reason":"stop"}`,
+	})
+	o := &OllamaBrain{client: client, model: "m", cfg: &config.Config{MaxHistory: 10}}
+	stream, err := o.ThinkStream(context.Background(), "hello", StreamOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spoken, _ := drainStream(t, stream)
+	if result := <-stream.Done; result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if spoken != "Yeah…" {
+		t.Fatalf("speech received marker whitespace: %q", spoken)
 	}
 }
