@@ -130,28 +130,40 @@ Moving each provider out means relocating what the core reads from it first.
 
 ## Audio player
 
-All paths below are in [`pkg/voiceagent/audio`](../pkg/voiceagent/audio).
+The device-backed player is its own package: [`pkg/voiceagent/audio/playback`](../pkg/voiceagent/audio/playback).
+`audio` keeps the playback *contract* — `Engine`, `Playback`, `PlaybackResult`, `PlaybackAttempt` —
+so the code that implements or consumes it (the netapi fanout, the convoflow recorder, the
+pipeline) stays where it is; only code constructing a concrete `Player` imports `playback`.
+Measured with `go/types`, nothing in `audio` references `playback`.
 
 | File | Responsibility |
 | --- | --- |
-| `player.go` | Tuning constants, `Playback`/`Engine` types, `Player` state and its lock docs, public control surface |
-| `player_pump.go` | Producer goroutine, buffered and incremental pump loops, stall silence timer |
-| `player_segment.go` | `playbackSegment` ring buffer, the `s.mu` contract, readiness gating, underrun accounting |
-| `player_device.go` | Device open, channel and rate negotiation, AEC reference-delay estimate |
-| `player_callback.go` | The miniaudio callback thread: `onData`, queue advance, channel expand |
-| `player_pcm.go` | Stateless PCM buffer helpers |
+| `player.go` | Tuning constants, `Player` state and its lock docs, constructors, public control surface |
+| `pump.go` | Producer goroutine, buffered and incremental pump loops, stall silence timer |
+| `segment.go` | `playbackSegment` ring buffer, the `s.mu` contract, readiness gating, underrun accounting |
+| `device.go` | Device open, channel and rate negotiation, AEC reference-delay estimate |
+| `callback.go` | The miniaudio callback thread: `onData`, queue advance, channel expand |
+| `pcm.go` | PCM conversion helpers |
+| `aec_ref.go` | AEC reference ingress for the frontend tap |
+| `volume.go` | Playback volume, applied in the callback |
+| `debug.go` | The player's debug recorder and WAV writer |
+| `crackle.go` | Crackle/underrun analysis of playback output |
 
-This package is the one place where a file boundary can hide a thread contract, so
-some groupings are deliberate and should not be split further. `player_callback.go`
-holds the callback thread together with the only two functions that take `p.mu` from
-it. `playbackSegment` stays whole because its `…Locked` family is only correct read
-beside the callers that hold `s.mu`, and its writers span threads: `writeTo` on the
-callback, `append`/`finishInput` on the pump, and `interrupt` on *both* — the caller
-through `PlayStream`/`Stop`, and the callback itself when `PlaybackAttempt.Write`
-fails on an invalidated attempt. Do not record `interrupt` as caller-only; that the
-callback can interrupt a segment it is mid-write on is the sharpest reason these
-declarations belong in one file. `startPlaybackDevice` stays beside `ensureDevice` because `Device.Start` can
-invoke `onData` synchronously, so holding `p.mu` across it deadlocks.
+This package is the one place where a file boundary can hide a thread contract, so some
+groupings are deliberate and should not be split further. `callback.go` holds the callback
+thread together with the only two functions that take `p.mu` from it. `playbackSegment` stays
+whole because its `…Locked` family is only correct read beside the callers that hold `s.mu`,
+and its writers span threads: `writeTo` on the callback, `append`/`finishInput` on the pump,
+and `interrupt` on *both* — the caller through `PlayStream`/`Stop`, and the callback itself
+when `PlaybackAttempt.Write` fails on an invalidated attempt. Do not record `interrupt` as
+caller-only; that the callback can interrupt a segment it is mid-write on is the sharpest
+reason these declarations belong together. `startPlaybackDevice` stays beside `ensureDevice`
+because `Device.Start` can invoke `onData` synchronously, so holding `p.mu` across it deadlocks.
+
+Six helpers are exported from `audio` because capture and playback genuinely share them:
+`SelectDevice`, `ChoosePlaybackChannels`, `PlaybackDeviceDetails`, `PickPlaybackFormat`,
+`ResampleLinear` and `StreamResampler`. Reach for those before adding a second implementation
+on either side of the boundary.
 
 ## Meeting log
 
