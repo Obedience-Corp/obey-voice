@@ -7,7 +7,11 @@ import (
 )
 
 var secretPattern = regexp.MustCompile(`(?i)(["']?(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|password|secret|private[_-]?key)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^&\s,;}]+)`)
-var authorizationPattern = regexp.MustCompile(`(?im)(\b(?:proxy-authorization|authorization|cookie|set-cookie)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\r\n,;]+)`)
+var authorizationPattern = regexp.MustCompile(`(?im)(\b(?:proxy-authorization|authorization)["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\r\n,;]+)`)
+
+// Cookie headers contain a list of name=value pairs. Redact the complete
+// value, rather than stopping at the first semicolon and leaking later pairs.
+var cookiePattern = regexp.MustCompile(`(?im)(\b(?:cookie|set-cookie)["']?\s*[:=]\s*)[^\r\n]*`)
 var bearerPattern = regexp.MustCompile(`(?i)(\bbearer\s+)[^\s,"']+`)
 var pemPattern = regexp.MustCompile(`(?s)-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|\z)`)
 var urlPattern = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
@@ -33,6 +37,7 @@ func redactText(s string, limit int) string {
 		u.RawQuery = q.Encode()
 		return u.String()
 	})
+	s = cookiePattern.ReplaceAllString(s, "${1}[REDACTED]")
 	s = authorizationPattern.ReplaceAllString(s, "${1}[REDACTED]")
 	s = secretPattern.ReplaceAllString(s, "${1}[REDACTED]")
 	s = bearerPattern.ReplaceAllString(s, "${1}[REDACTED]")
