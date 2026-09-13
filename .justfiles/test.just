@@ -70,6 +70,25 @@ audio-crackle:
 kokoro-contractions:
     go test -tags=integration ./pkg/voiceagent/tts/ -count=1 -run 'LiveKokoro' -timeout 5m -v
 
+# Physical speaker → microphone acceptance. Requires a prebuilt convoflow
+# binary and a scenario whose capture.microphone path is enabled. Runs are
+# intentionally serial: two acoustic measurements cannot share a room.
+[no-cd]
+acoustic SCENARIO CONFIG RUNS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin="${CONVOFLOW_BIN:-bin/convoflow}"
+    [[ -x "$bin" ]] || { echo "error: $bin is not executable (set CONVOFLOW_BIN to the pinned convoflow binary)" >&2; exit 1; }
+    for i in $(seq 1 {{RUNS}}); do
+        "$bin" -scenario "{{SCENARIO}}" -fixture-config "{{CONFIG}}"
+    done
+
+# Compare two completed acoustic/work latency conditions. This is reported
+# evidence only; the harness itself applies the population/provenance checks.
+[no-cd]
+work-latency-compare BASELINE WORKER:
+    go run ./tests/convoflow -compare "{{BASELINE}},{{WORKER}}"
+
 # Opt-in hardware playback on the real default device (Studio Display, etc.).
 # Requires speakers; plays a short tone. Use after any pkg/voiceagent/audio change.
 [no-cd]

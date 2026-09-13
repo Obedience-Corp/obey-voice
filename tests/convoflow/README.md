@@ -144,3 +144,54 @@ establishes comparable timing evidence only: it does not enforce the 10% release
 regression decision or certify hearing, UI handoff, safe yield, lost audio or
 barge-in. Those require separate observed evidence. There is no automatic
 30-turn workload generator or fabricated microphone baseline.
+
+## Physical acoustic acceptance
+
+Physical acceptance uses `capture.microphone: true` and a recorded speech WAV.
+The harness plays the WAV through the selected speaker and recognizes what the
+microphone actually receives through the production capture, VAD, and STT
+pipeline. Set `expected_transcript`; comparison is strict after Unicode
+case-folding and punctuation/whitespace normalization. A run is accepted only
+when the transcript is non-empty and matches, microphone RMS is at least 0.005,
+the peak is below 0.999, and the 10 ms RMS-envelope identity score is at least
+0.60. Raw waveform correlation is retained for diagnostics but is not the
+acceptance identity metric because room reflections and independent device
+clocks make it unstable.
+
+Every attempt retains `stimulus.wav`, `mic-in.wav` when any capture arrived, and
+`metrics.json`. Failed attempts retain the same artifacts where possible and
+include an `error` field; missing transcript, silence, clipping, weak envelope
+identity, playback failure, and cancellation are failures. The artifacts are
+diagnostic evidence only: they do not claim human audibility or prove a
+particular room, speaker placement, or acoustic path will generalize.
+
+For a latency pair, use the same built harness and fixture config for every
+run, with three warmups followed by at least 30 measured turns per condition.
+Run the baseline and worker conditions serially, never concurrently, and use
+separate endpoint resource identities when comparing independent endpoints.
+The baseline has no active worker; the worker condition sets
+`worker.sustained_load: true` and explicitly starts a latency worker before
+each measured user task and stops it immediately afterward. A scenario must
+use the acoustic production watcher with `wav` and `interrupt_wav` for an
+interruption turn; do not inject a manual cancel. Human attendance is useful
+for setup but is not a gate.
+
+The generic recipes are:
+
+```bash
+just test acoustic SCENARIO CONFIG RUNS
+just test work-latency-compare BASELINE WORKER
+```
+
+`CONFIG` is the saved fixture config used for the whole pair. `RUNS` is the
+number of complete scenario executions; the recipe requires an already-built
+`CONVOFLOW_BIN` so every run uses the same executable. The comparison command
+requires matching provenance, WAV populations, and warmup labels and reports
+the evidence without making a release decision.
+
+Envelope correlation checks the acoustic path, not phrase identity: different
+short utterances can have similar volume patterns. The transcript must also
+match every word after case, punctuation and zero-through-ten normalization.
+The initial physical calibration matched the reference phrase at correlations
+of 0.68–0.88; failed calibration runs remain retained with their original
+threshold and measurements.

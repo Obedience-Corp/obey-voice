@@ -36,10 +36,11 @@ type acousticReport struct {
 
 const (
 	acousticMinRMS = 0.005
-	// A same-recording speech envelope measured on the reference hardware was
-	// about .84; .70 leaves room for room noise while rejecting the closest
-	// wrong-fixture match (.54 in the local benchmark set).
-	acousticMinEnvelopeCorrelation = 0.7
+	// Envelope correlation verifies the acoustic signal path; the exact
+	// normalized transcript establishes fixture identity. Different short
+	// utterances can have similar envelopes. Calibrated physical recordings
+	// on this device scored .68-.88 for the matching stimulus.
+	acousticMinEnvelopeCorrelation = 0.6
 )
 
 // runAcoustic feeds a known speech recording through real speakers and lets
