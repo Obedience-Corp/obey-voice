@@ -235,6 +235,10 @@ func (m settingsModel) legacyWorkerRows() []settingRow {
 	rows = append(rows, settingRow{key: "worker_migration", name: "Use current worker for all tiers", kind: rowAction,
 		detail: "preview", applies: appliesNextConversation, help: "Create a tiered draft from the resolved legacy worker. Nothing is saved until Save.",
 		run: func(m *settingsModel) tea.Cmd { return m.previewWorkerMigration() }})
+	rows = append(rows, settingRow{key: "worker_effective_bounds", name: "Effective worker limits", kind: rowInfo,
+		value:  fmt.Sprintf("legacy: %d concurrent · %s/job", max(1, m.cfg.VoiceWorkerMaxConcurrent), legacyWorkerBudgetLabel(m.cfg.VoiceWorkerJobBudget)),
+		detail: "legacy singleton controls; tier policy is not active",
+		help:   "These singleton settings control jobs until an explicit tiered worker policy is saved."})
 	return rows
 }
 
@@ -345,8 +349,9 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 		value: m.workerAllowanceValue(), detail: "Enter to inspect; unknown charges remain unknown",
 		run: func(m *settingsModel) tea.Cmd { return m.inspectWorkerAllowance() }})
 	rows = append(rows, settingRow{key: "worker_current_bounds", name: "Current configured bounds", kind: rowInfo,
-		value:  fmt.Sprintf("%d concurrent · %d queued · per-tier runtime", d.Policy.ConcurrentWorkers, d.Policy.QueuedWorkers),
-		detail: "local scheduling; remote termination may remain unknown"})
+		value:  fmt.Sprintf("tiered: %d concurrent · %d queued · per-tier runtime", d.Policy.ConcurrentWorkers, d.Policy.QueuedWorkers),
+		detail: "tiered draft; Save applies these limits",
+		help:   "Tiered mode replaces legacy singleton controls. Admitted jobs retain their tier limits; remote termination may remain unknown."})
 	if m.workerEditingTier == "" {
 		filtered := rows[:0]
 		for _, row := range rows {
@@ -368,6 +373,13 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 		rows = filtered
 	}
 	return rows
+}
+
+func legacyWorkerBudgetLabel(seconds int) string {
+	if seconds <= 0 {
+		return "uncapped"
+	}
+	return fmt.Sprintf("%ds", seconds)
 }
 
 func workerCapabilityScope(a *config.WorkerAssignment) (string, string) {

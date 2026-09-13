@@ -1,6 +1,8 @@
 package brain
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -56,6 +58,45 @@ func TestClaudeRunOptionsGateToolsOnVoiceToolsEnabled(t *testing.T) {
 	}
 }
 
+func TestClaudeWorkerRunOptionsPinAssignedModel(t *testing.T) {
+	dir := t.TempDir()
+	// The constructor probes PATH but must not run a paid CLI request in this test.
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	base := &config.Config{VoiceWorkerModel: "mutable-model", PromptsDir: t.TempDir(), WorkDir: t.TempDir()}
+	plan := &config.WorkerPlan{Assignment: config.WorkerAssignment{Provider: "claude", Model: "claude-sonnet-4-20250514", Billing: config.WorkerBillingSubscription, AccountRef: strptr("default")}}
+	worker, err := NewPlannedWorker(t.Context(), base, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, ok := worker.(*Brain)
+	if !ok {
+		t.Fatalf("worker=%T", worker)
+	}
+	// Mutating installation settings after admission cannot repin the worker.
+	base.VoiceWorkerModel = "changed-model"
+
+	fake := &fakeClaudeClient{}
+	b.client = fake
+	if _, err := b.ThinkFull(t.Context(), "Return a short result", StreamOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.runOpts) != 1 {
+		t.Fatalf("SDK calls=%d, want 1", len(fake.runOpts))
+	}
+	opts := fake.runOpts[0]
+	if opts.Model != "claude-sonnet-4-20250514" {
+		t.Fatalf("Model = %q, want pinned worker model", opts.Model)
+	}
+	args := claude.BuildArgs("work", opts)
+	i := slices.Index(args, "--model")
+	if i < 0 || i+1 >= len(args) || args[i+1] != "claude-sonnet-4-20250514" {
+		t.Fatalf("args = %#v, want --model with pinned worker model", args)
+	}
+}
+
 func TestGrokRunOptionsGateToolsOnVoiceToolsEnabled(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -99,5 +140,12 @@ func assertToolsArg(t *testing.T, args []string, wantDisabled bool) {
 	}
 	if i < 0 || i+1 >= len(args) || args[i+1] != "" {
 		t.Fatalf("disabled mode args = %#v, want --tools followed by an empty value", args)
+	}
+}
+
+func TestClaudeLiveRunOptionsDoNotUseWorkerModel(t *testing.T) {
+	b := &Brain{cfg: &config.Config{VoiceWorkerModel: "worker-model"}}
+	if got := b.runOptions(claude.JSONOutput, true).Model; got != "" {
+		t.Fatalf("live model=%q", got)
 	}
 }
