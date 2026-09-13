@@ -100,11 +100,17 @@ type latencyReplayRunner struct {
 	fakeRunner
 	called bool
 	fail   bool
+	silent bool
 }
 
 func (r *latencyReplayRunner) runWAV(_ context.Context, _ string) error {
 	r.called = true
-	r.rec.add(events.TurnMetrics{TTSProvider: "kokoro", Outcome: "completed", STTFinalElapsed: 50 * time.Millisecond, FirstModelChunkElapsed: 60 * time.Millisecond, FirstAudioReadyElapsed: 75 * time.Millisecond, PlaybackStartElapsed: 100 * time.Millisecond, AudibleSink: "none"})
+	sink := "local_speaker"
+	if r.silent {
+		sink = "none"
+	}
+	time.Sleep(110 * time.Millisecond) // complete the fake turn's 100ms playback milestone
+	r.rec.add(events.TurnMetrics{TTSProvider: "kokoro", Outcome: "completed", STTFinalElapsed: 50 * time.Millisecond, FirstModelChunkElapsed: 60 * time.Millisecond, FirstAudioReadyElapsed: 75 * time.Millisecond, PlaybackStartElapsed: 100 * time.Millisecond, AudibleSink: sink})
 	if r.fail {
 		return errors.New("controlled replay failure")
 	}
@@ -147,7 +153,7 @@ func TestEngineRoutesWAVAndRetainsFailedRawSample(t *testing.T) {
 				t.Fatalf("lost failure: %+v", s)
 			}
 			if _, err := validateWorkLatency(m.Latency.Samples); err == nil {
-				t.Fatal("recording-only fixture accepted as live acceptance")
+				t.Fatal("single sample accepted as a 30-turn comparison")
 			}
 		})
 	}
@@ -225,5 +231,30 @@ turns:
 				t.Fatal("invalid physical run accepted")
 			}
 		})
+	}
+}
+
+func TestMeasuredTurnWithoutAudibleReplyFailsDuringCollection(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "speech.wav")
+	if err := os.WriteFile(fixture, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{}
+	runner := &latencyReplayRunner{fakeRunner: fakeRunner{rec: rec}, silent: true}
+	e := &engine{scn: &Scenario{Name: "silent-number", Input: "speech", LatencyCondition: "baseline", Turns: []Turn{{ID: "number", WAV: fixture, LatencyIteration: 1, LatencyWarmup: true}}}, runDir: dir, rec: rec, runner: runner, latencyProvenance: "fixed"}
+	if err := e.run(context.Background()); err == nil || !strings.Contains(err.Error(), "actual local playback") {
+		t.Fatalf("inaudible completed turn accepted: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "metrics.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metrics metricsFile
+	if err := json.Unmarshal(raw, &metrics); err != nil {
+		t.Fatal(err)
+	}
+	if metrics.Latency == nil || len(metrics.Latency.Samples) != 1 || metrics.Latency.Samples[0].Error == "" {
+		t.Fatal("failed warmup evidence missing")
 	}
 }

@@ -98,12 +98,30 @@ func (e *engine) collectLatency(turn Turn, start time.Time, mark int, before wor
 	}
 	if count != 1 {
 		errs = append(errs, fmt.Errorf("expected one production turn metrics record, got %d", count))
+	} else if err := validateAudibleLatencySample(s); err != nil {
+		errs = append(errs, err)
 	}
 	if err := errors.Join(errs...); err != nil {
 		s.Error = err.Error()
 	}
 	e.latencySamples = append(e.latencySamples, s)
 	return errors.Join(errs...)
+}
+
+// Reject incomplete voice evidence immediately, including warmups. A turn
+// marked completed can still have no audible response (for example a gate
+// incorrectly suppressing a numeric reply); that must fail the collection.
+func validateAudibleLatencySample(s workLatencySample) error {
+	if s.TTSProvider == "" || s.TTSFallbacks != 0 {
+		return fmt.Errorf("latency: missing TTS identity or fallback (provider=%q fallbacks=%d)", s.TTSProvider, s.TTSFallbacks)
+	}
+	if (s.Input != "speech" && s.Input != "microphone") || s.Sink != "local_speaker" {
+		return fmt.Errorf("latency: speech with actual local playback required (input=%q sink=%q)", s.Input, s.Sink)
+	}
+	if s.STTFinal <= 0 || s.FirstModel < s.STTFinal || s.FirstAudio < s.FirstModel || s.PlaybackStart < s.FirstAudio || s.PlaybackStart <= s.STTFinal || s.Elapsed < s.PlaybackStart {
+		return fmt.Errorf("latency: invalid STT/audio/playback ordering for %s/%d", s.Condition, s.Iteration)
+	}
+	return nil
 }
 
 func validateWorkLatency(samples []workLatencySample) (workLatencyReport, error) {
