@@ -407,6 +407,15 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			OutputDevice: cfg.OutputDevice,
 			LiveSpeaker:  liveSpeaker,
 			SpeakerNames: speakerNames,
+			SetInputDevice: func(deviceCtx context.Context, name string) error {
+				capture, ok := p.Capture.(interface {
+					SetDevice(context.Context, string) error
+				})
+				if !ok {
+					return fmt.Errorf("this conversation has no local microphone to switch")
+				}
+				return capture.SetDevice(deviceCtx, name)
+			},
 			ReloadVoice: func(reloadCtx context.Context) error {
 				if noVoice {
 					return nil

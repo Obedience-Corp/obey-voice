@@ -491,7 +491,9 @@ func TestDiagnoseNeverRequiresMicrophone(t *testing.T) {
 	}
 	for _, d := range diags {
 		for _, banned := range []string{"mic", "microphone", "audio-device"} {
-			if strings.Contains(d.Name, banned) || strings.Contains(d.Detail, banned) {
+			// Details include user-controlled paths, which may contain "mic".
+			// The diagnostic name identifies whether a device check ran.
+			if strings.Contains(d.Name, banned) {
 				t.Errorf("doctor must not require a microphone, found diagnostic %+v", d)
 			}
 		}
