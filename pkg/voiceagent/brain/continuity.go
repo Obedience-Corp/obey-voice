@@ -45,7 +45,14 @@ func (o *OllamaBrain) archiveMessages(messages []api.Message) {
 	}
 	var b strings.Builder
 	for _, m := range messages {
-		b.WriteString(m.Role + ": " + continuity.Clip(m.Content, 512) + "\n")
+		role := m.Role
+		if role == ollamaSharedRole {
+			role = "shared conversation"
+		}
+		if role == ollamaSharedToolRole {
+			role = "shared tool result"
+		}
+		b.WriteString(role + ": " + continuity.Clip(m.Content, 512) + "\n")
 		if b.Len() >= continuity.NoteBytes {
 			break
 		}
@@ -204,7 +211,7 @@ func (o *OllamaBrain) compactForContinuation(ctx context.Context) error {
 		start = len(before)
 	}
 	o.archiveMessages(before[:start])
-	o.history = append([]api.Message{{Role: "user", Content: "Shared conversation notes: " + continuity.Clip(summary, 4096)}}, before[start:]...)
+	o.history = append([]api.Message{{Role: ollamaSharedRole, Content: "Shared conversation notes: " + continuity.Clip(summary, 4096)}}, before[start:]...)
 	return nil
 }
 

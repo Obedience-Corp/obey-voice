@@ -100,15 +100,13 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 		if m.Role == "user" {
 			m.Content = o.formatStoredUser(m.Content)
 		}
-		msgs = append(msgs, m)
-	}
-	if skillCtx != "" {
-		for i := len(msgs) - 1; i > 0; i-- {
-			if msgs[i].Role == "user" {
-				msgs[i].Content += "\n" + skillCtx
-				break
-			}
+		if i == lastUser && skillCtx != "" {
+			m.Content += "\n" + skillCtx
 		}
+		if m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
+			m.Role = "user"
+		}
+		msgs = append(msgs, m)
 	}
 	return msgs
 }
@@ -117,7 +115,7 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 func (o *OllamaBrain) conversationIdentityGuidance() string {
 	identity := historicalIdentityGuidance
 	if o.cfg != nil && o.cfg.AgentName != "" {
-		identity += " The current speaker is " + o.cfg.AgentName + "."
+		identity += " The current assistant persona is " + o.cfg.AgentName + "."
 	}
 	return identity
 }

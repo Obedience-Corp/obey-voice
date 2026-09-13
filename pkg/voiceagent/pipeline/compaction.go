@@ -110,8 +110,8 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	// alias the provider's live slice).
 	before := append([]brain.Turn(nil), history...)
 	tailSource := before
-	if view, ok := p.Brain.(brain.ContextHistoryProvider); ok {
-		tailSource = view.ContextHistory()
+	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
+		tailSource = canonical.CanonicalHistory()
 	}
 	tail := compactTail(tailSource)
 	if p.OnCompactBackup != nil {

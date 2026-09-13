@@ -62,14 +62,14 @@ func TestOllamaPersonaProjectionSwitchesNativeAssistantOwnership(t *testing.T) {
 	if err := o.ImportHistory(turns); err != nil {
 		t.Fatal(err)
 	}
-	if o.history[1].Role != "assistant" || o.history[3].Role != "user" {
+	if o.history[1].Role != "assistant" || o.history[3].Role != ollamaSharedRole {
 		t.Fatalf("Samantha projection = %#v", o.history)
 	}
 	cfg.ActivePersona = "santa"
 	if err := o.ImportHistory(turns); err != nil {
 		t.Fatal(err)
 	}
-	if o.history[1].Role != "user" || o.history[3].Role != "assistant" {
+	if o.history[1].Role != ollamaSharedRole || o.history[3].Role != "assistant" {
 		t.Fatalf("Santa projection = %#v", o.history)
 	}
 	if got := o.history[1].Content; got != "Shared conversation — Samantha said:\nSamantha answer" {
@@ -100,7 +100,7 @@ func TestOllamaPersonaProjectionOwnsToolGroupsAndStripsLegacyHeaders(t *testing.
 	if err := o.ImportHistory(turns); err != nil {
 		t.Fatal(err)
 	}
-	if o.history[1].Role != "user" || o.history[1].ToolCalls != nil || o.history[2].Role != "user" {
+	if o.history[1].Role != ollamaSharedRole || o.history[1].ToolCalls != nil || o.history[2].Role != ollamaSharedToolRole {
 		t.Fatalf("foreign tool group was native: %#v", o.history)
 	}
 	if o.history[3].Role != "assistant" || len(o.history[3].ToolCalls) != 1 || o.history[4].Role != "tool" {
@@ -119,7 +119,7 @@ func TestOllamaReseedSummaryIsSharedContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	o.ReseedContinuity([]Turn{{Role: "assistant", Content: "summary"}, {Role: "user", Content: "next"}})
-	if o.history[0].Role != "user" || !strings.Contains(o.history[0].Content, "Shared conversation context") {
+	if o.history[0].Role != ollamaSharedRole || !strings.Contains(o.history[0].Content, "Shared conversation context") {
 		t.Fatalf("summary projection = %#v", o.history)
 	}
 	if !reflect.DeepEqual(o.CanonicalHistory(), original) {
@@ -176,7 +176,7 @@ func TestBoundPersonaKeepsUnattributedLegacyToolExchangeAsSharedContext(t *testi
 	}
 	o := &OllamaBrain{cfg: &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}}
 	o.LoadHistory(turns)
-	for _, m := range o.history {
+	for _, m := range o.buildMessages("")[1:] {
 		if m.Role != "user" || len(m.ToolCalls) != 0 || m.ToolCallID != "" {
 			t.Fatalf("unknown ownership assigned to Samantha or orphaned protocol: %+v", m)
 		}
@@ -186,5 +186,83 @@ func TestBoundPersonaKeepsUnattributedLegacyToolExchangeAsSharedContext(t *testi
 	}
 	if !reflect.DeepEqual(o.History(), turns) {
 		t.Fatal("legacy shared transcript changed or acquired invented ownership")
+	}
+}
+
+func TestUnboundPersonaQuotesAttributedHistoryConsistently(t *testing.T) {
+	turns := []Turn{
+		{Role: "user", Content: "check cobalt"},
+		{Role: "assistant", Content: "checking", PersonaID: "obey", ToolCalls: []TurnToolCall{{ID: "lookup-1", Name: "lookup"}}},
+		{Role: "tool", Content: "cobalt", ToolName: "lookup", ToolCallID: "lookup-1"},
+		{Role: "assistant", Content: "I am Obey.", PersonaID: "obey"},
+	}
+	for _, cfg := range []*config.Config{nil, {}, {ActivePersona: "  "}} {
+		o := &OllamaBrain{cfg: cfg}
+		o.LoadHistory(turns)
+		for _, m := range o.buildMessages("")[1:] {
+			if m.Role != "user" || len(m.ToolCalls) != 0 || m.ToolCallID != "" {
+				t.Fatalf("unbound provider claimed attributed history: %+v", m)
+			}
+		}
+		if !reflect.DeepEqual(o.History(), turns) {
+			t.Fatal("projection changed canonical authorship")
+		}
+	}
+}
+
+func TestMidReplyLegacyMarkerIsQuotedOnImportAndLiveAppend(t *testing.T) {
+	contaminated := "Sure thing. [Historical assistant: Obey response OLDRESPONSE1] I am Obey."
+	identity := &TurnIdentity{PersonaID: "samantha", PersonaDisplayName: "Samantha"}
+	for _, live := range []bool{false, true} {
+		o := &OllamaBrain{cfg: &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}}
+		if live {
+			o.appendMessage(api.Message{Role: "assistant", Content: contaminated}, identity)
+		} else {
+			o.LoadHistory([]Turn{{Role: "assistant", Content: contaminated, PersonaID: "samantha", PersonaDisplayName: "Samantha"}})
+		}
+		messages := o.buildMessages("")
+		m := messages[len(messages)-1]
+		if m.Role != "user" || !strings.Contains(m.Content, "Samantha said:") || !strings.Contains(m.Content, "I am Obey.") || strings.Contains(m.Content, "OLDRESPONSE1") || strings.Contains(m.Content, "Historical assistant:") {
+			t.Fatalf("live=%v: contaminated reply gained assistant authority: %+v", live, m)
+		}
+		if o.CanonicalHistory()[0].Content != contaminated {
+			t.Fatalf("live=%v: canonical evidence changed", live)
+		}
+	}
+}
+
+func TestForeignToolRestoreArchivesRawAndPreservesProjectedNotes(t *testing.T) {
+	raw := strings.Repeat("raw lookup result cobalt ", 300)
+	cfg := &config.Config{ActivePersona: "samantha", ContinuityProjectionEnabled: true, ContinuityArchiveEnabled: true}
+	o := &OllamaBrain{cfg: cfg}
+	turns := []Turn{
+		{Role: "user", Content: "lookup"},
+		{Role: "assistant", PersonaID: "obey", ToolCalls: []TurnToolCall{{ID: "c1", Name: "lookup"}}},
+		{Role: "tool", Content: raw, ToolName: "lookup", ToolCallID: "c1"},
+	}
+	o.LoadHistory(turns)
+	archive := o.ContinuityArchive()
+	if len(archive) != 1 || archive[0].Raw != raw {
+		t.Fatalf("foreign result missing from recall archive: %+v", archive)
+	}
+	if o.history[2].Role != ollamaSharedToolRole || !strings.Contains(o.history[2].Content, "[tool:lookup]") {
+		t.Fatalf("foreign result was not projected: %+v", o.history[2])
+	}
+	if !reflect.DeepEqual(o.History(), turns) {
+		t.Fatal("tool projection changed canonical raw result")
+	}
+	// A worker brief already carries a bounded note and its provenance. Restoring
+	// or switching personas must not add another envelope or clip that note again.
+	note := o.AddDelegationNote(strings.Repeat("worker fact ", 300), "job-42")
+	turns[2].Content = note
+	for _, restore := range []bool{true, false} {
+		if restore {
+			o.LoadHistory(turns)
+		} else if err := o.ImportHistory(turns); err != nil {
+			t.Fatal(err)
+		}
+		if want := attributedToolContent("obey", "lookup", note); o.history[2].Content != want {
+			t.Fatalf("restore=%v: already-projected note changed: %q", restore, o.history[2].Content)
+		}
 	}
 }

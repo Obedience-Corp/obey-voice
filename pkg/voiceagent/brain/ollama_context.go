@@ -83,7 +83,7 @@ func shrinkToolResults(history []api.Message, remainingBytes int) bool {
 	}
 	var tools []int
 	for i, m := range history {
-		if m.Role == "tool" {
+		if isToolContentRole(m.Role) {
 			tools = append(tools, i)
 		}
 	}
@@ -129,11 +129,15 @@ func truncateToBytes(s string, n int) string {
 func toolContentBytes(history []api.Message) int {
 	n := 0
 	for _, m := range history {
-		if m.Role == "tool" {
+		if isToolContentRole(m.Role) {
 			n += len(m.Content)
 		}
 	}
 	return n
+}
+
+func isToolContentRole(role string) bool {
+	return role == "tool" || role == ollamaSharedToolRole
 }
 
 // estimateTokens coarsely sizes the next request (≈4 bytes per token plus

@@ -41,7 +41,7 @@ func TestOllamaCompleteUsesPrivateStructuredRequest(t *testing.T) {
 	if !strings.Contains(body, `"format":{"type":"object"`) || !strings.Contains(body, `"num_predict":256`) {
 		t.Fatalf("request missing constraints: %s", body)
 	}
-	if !strings.Contains(body, "The current speaker is Samantha.") {
+	if !strings.Contains(body, "The current assistant persona is Samantha.") {
 		t.Fatalf("worker completion lost current identity: %s", body)
 	}
 	if strings.Contains(body, `"tools":[`) {

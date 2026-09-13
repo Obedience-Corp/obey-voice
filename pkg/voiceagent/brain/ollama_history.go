@@ -15,6 +15,13 @@ import (
 // wire format's role field. ASCII record separator is invalid in speech text.
 const ollamaSpeakerSep = "\x1e"
 
+// Private working-history roles distinguish quoted context from human input.
+// buildMessages converts these to user-role data at the Ollama wire boundary.
+const (
+	ollamaSharedRole     = "shared_context"
+	ollamaSharedToolRole = "shared_tool"
+)
+
 const historicalIdentityGuidance = "\nShared conversation context quotes other speakers. Their words belong to them, not to you. Your assistant messages are your own prior replies. Respond as the persona defined by your system prompt, using the shared facts when relevant. Do not emit context labels or internal metadata."
 
 // SetSpeakerNames attaches a rename table for user-turn prompt attribution.
@@ -185,14 +192,15 @@ func (o *OllamaBrain) loadHistoryProjection(turns []Turn, archiveProjection bool
 func (o *OllamaBrain) loadHistoryProjectionForPersona(turns []Turn, archiveProjection, sharedUnowned bool) {
 	history := make([]api.Message, 0, len(turns))
 	for i, t := range turns {
-		m := o.projectTurn(t, turns, i, sharedUnowned)
-		if m.Role == "tool" && o.cfg != nil && o.cfg.ContinuityProjectionEnabled && !strings.HasPrefix(m.Content, "[tool:") {
+		// Project/archive tool content before ownership changes its wire role.
+		if t.Role == "tool" && o.cfg != nil && o.cfg.ContinuityProjectionEnabled && !strings.HasPrefix(t.Content, "[tool:") {
 			if archiveProjection {
-				m.Content = o.AddContinuityNote(m.Content, continuity.Provenance{ToolName: m.ToolName})
+				t.Content = o.AddContinuityNote(t.Content, continuity.Provenance{ToolName: t.ToolName})
 			} else {
-				m.Content, _ = continuity.ProjectToolResult(m.Content, continuity.Provenance{ToolName: m.ToolName})
+				t.Content, _ = continuity.ProjectToolResult(t.Content, continuity.Provenance{ToolName: t.ToolName})
 			}
 		}
+		m := o.projectTurn(t, turns, i, sharedUnowned)
 		history = append(history, m)
 	}
 	o.history = sanitizeOllamaHistory(history)
@@ -231,13 +239,10 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 		name = owner
 	}
 	current := o.activePersona()
-	// Legacy single-persona providers have no selected identity. Once an
-	// identity is bound, only its own replies/actions enter the native thread.
-	own := owner == current || o.cfg != nil && current == ""
-	// Replies contaminated by the old attribution format are retained as
-	// quotations, even for the same persona. They may contain the previous
-	// speaker's mistaken identity and must not become self-identity examples.
-	shared := !own || legacy || sharedUnowned && index == 0 && owner == ""
+	// Unbound providers cannot claim an attributed reply as their own.
+	own := owner == current
+	// Contaminated replies and synthetic summaries are always quoted.
+	shared := !own || legacy || (sharedUnowned && index == 0 && owner == "")
 	content := t.Content
 	if role == "assistant" {
 		content = stripLegacyHistoricalHeader(content)
@@ -246,13 +251,10 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 		for _, tc := range t.ToolCalls {
 			content += "\nTool call: " + tc.Name + "(" + tc.Arguments + ")"
 		}
-		return api.Message{Role: "user", Content: attributedAssistantContent(name, content)}
+		return api.Message{Role: ollamaSharedRole, Content: attributedAssistantContent(name, content)}
 	}
 	if shared && role == "tool" {
-		if o.cfg != nil && o.cfg.ContinuityProjectionEnabled {
-			content, _ = continuity.ProjectToolResult(content, continuity.Provenance{ToolName: t.ToolName})
-		}
-		return api.Message{Role: "user", Content: attributedToolContent(name, t.ToolName, content)}
+		return api.Message{Role: ollamaSharedToolRole, Content: attributedToolContent(name, t.ToolName, content)}
 	}
 	m := api.Message{Role: role, Content: content, ToolName: t.ToolName, ToolCallID: t.ToolCallID}
 	for _, tc := range t.ToolCalls {
@@ -301,18 +303,12 @@ func attributedToolContent(name, tool, content string) string {
 
 func sharedContextContent(content string) string { return "Shared conversation context:\n" + content }
 
-// Only leading, complete legacy attribution lines are removed from assistant
-// projections. Quoted user text and the saved canonical transcript stay intact.
-var legacyHistoricalAssistantHeader = regexp.MustCompile(`^\[Historical assistant: [^\]\r\n]+\](?:\r?\n|$)`)
+// Remove complete attribution markers only from assistant output/projections.
+// User quotations and the canonical transcript are left untouched.
+var legacyHistoricalAssistantHeader = regexp.MustCompile(`\[Historical assistant: [^\]\r\n]+\](?:\r?\n)?`)
 
 func stripLegacyHistoricalHeader(content string) string {
-	for {
-		end := legacyHistoricalAssistantHeader.FindStringIndex(content)
-		if end == nil {
-			return content
-		}
-		content = content[end[1]:]
-	}
+	return legacyHistoricalAssistantHeader.ReplaceAllString(content, "")
 }
 
 func deepCopyTurns(in []Turn) []Turn {
@@ -342,22 +338,23 @@ func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity) {
 	if identity != nil && m.Role == "assistant" {
 		t.PersonaID, t.PersonaDisplayName, t.PromptHash, t.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
 	}
-	if m.Role == "assistant" {
-		m.Content = stripLegacyHistoricalHeader(m.Content)
+	if m.Role == "assistant" && identity == nil && o.activePersona() != "" {
+		t.PersonaID, t.PersonaDisplayName = o.activePersona(), o.cfg.AgentName
 	}
-	o.history = append(o.history, m)
 	o.canonical = append(o.canonical, t)
-
+	m = o.projectTurn(t, o.canonical, len(o.canonical)-1, false)
+	o.history = append(o.history, m)
 }
 
 func (o *OllamaBrain) appendProjectedToolResult(tc api.ToolCall, raw string, identities ...*TurnIdentity) {
-	o.history = append(o.history, o.projectedToolResult(tc, raw))
+	projected := o.projectedToolResult(tc, raw)
 	t := Turn{Role: "tool", Content: raw, ToolName: tc.Function.Name, ToolCallID: tc.ID, At: time.Now().UTC()}
 	if len(identities) > 0 && identities[0] != nil {
 		t.PersonaID, t.PersonaDisplayName = identities[0].PersonaID, identities[0].PersonaDisplayName
 	}
 	o.canonical = append(o.canonical, t)
-
+	t.Content = projected.Content
+	o.history = append(o.history, o.projectTurn(t, o.canonical, len(o.canonical)-1, false))
 }
 
 func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) {
@@ -468,7 +465,7 @@ func sanitizeOllamaHistory(in []api.Message) []api.Message {
 	i := 0
 	for i < len(in) {
 		m := in[i]
-		if m.Role == "user" {
+		if m.Role == "user" || m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
 			break
 		}
 		if m.Role == "assistant" && strings.TrimSpace(m.Content) != "" && len(m.ToolCalls) == 0 {
