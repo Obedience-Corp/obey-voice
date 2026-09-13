@@ -104,6 +104,30 @@ func TestWorkerBrainConfigMarksTheWorker(t *testing.T) {
 	}
 }
 
+func TestWorkerBrainConfigDisablesLegacyOllamaEmbeddings(t *testing.T) {
+	cfg := &Config{
+		BrainProvider:        "ollama",
+		OllamaEmbeddingModel: "embeddinggemma",
+		VoiceWorkEnabled:     true,
+		VoiceWorkerProvider:  "ollama",
+	}
+	got := WorkerBrainConfig(cfg)
+	if got.OllamaEmbeddingModel != "" {
+		t.Fatalf("legacy worker embedding model = %q, want empty", got.OllamaEmbeddingModel)
+	}
+	if cfg.OllamaEmbeddingModel != "embeddinggemma" {
+		t.Fatalf("live embedding model changed to %q", cfg.OllamaEmbeddingModel)
+	}
+}
+
+func TestWorkerBrainConfigPreservesEmbeddingsWhenWorkDisabled(t *testing.T) {
+	cfg := &Config{BrainProvider: "ollama", OllamaEmbeddingModel: "embeddinggemma"}
+	got := WorkerBrainConfig(cfg)
+	if got.OllamaEmbeddingModel != cfg.OllamaEmbeddingModel {
+		t.Fatalf("feature-disabled worker embedding model = %q, want %q", got.OllamaEmbeddingModel, cfg.OllamaEmbeddingModel)
+	}
+}
+
 // The boundary is the campaign root when the work directory sits in one,
 // the work directory itself otherwise, and nothing when switched off.
 func TestWorkerBrainConfigFencesTheWorkerToItsCampaign(t *testing.T) {
