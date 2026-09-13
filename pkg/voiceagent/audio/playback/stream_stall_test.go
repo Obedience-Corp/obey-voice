@@ -1,8 +1,9 @@
-package audio
+package playback
 
 import (
 	"context"
 	"errors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ func TestPumpSegmentFailsStalledStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	stream.SetStallBudget(30 * time.Millisecond)
 
 	segment := newPlaybackSegment()
@@ -30,7 +31,7 @@ func TestPumpSegmentFailsStalledStream(t *testing.T) {
 
 	select {
 	case result := <-segment.playback().Done():
-		if !errors.Is(result.Err, ErrStreamStalled) {
+		if !errors.Is(result.Err, audio.ErrStreamStalled) {
 			t.Fatalf("result.Err = %v, want ErrStreamStalled so the pipeline can fail over to the fallback voice", result.Err)
 		}
 	case <-time.After(2 * time.Second):

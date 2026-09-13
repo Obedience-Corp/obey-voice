@@ -1,8 +1,9 @@
-package audio
+package playback
 
 import (
 	"context"
 	"errors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"strings"
 	"sync"
 	"testing"
@@ -44,8 +45,8 @@ func TestPlaybackWorkerRecoversPanicAndDrainsStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := NewPCMStream(ctx)
-	if err := stream.SetSampleRate(SampleRate); err != nil {
+	stream := audio.NewPCMStream(ctx)
+	if err := stream.SetSampleRate(audio.SampleRate); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
 	}
 	if err := stream.Write([]float32{0.25}); err != nil {

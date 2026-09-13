@@ -2,10 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"math"
 	"strings"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -57,7 +57,7 @@ func (m *settingsModel) adjustVolume(delta float64) {
 		return
 	}
 	m.cfg.PlaybackVolume = next
-	audio.ApplyEngineVolume(m.preview.previewPlayer, next)
+	playback.ApplyEngineVolume(m.preview.previewPlayer, next)
 	if m.onPlaybackVolume != nil {
 		m.onPlaybackVolume(next)
 	}

@@ -27,6 +27,68 @@ const historicalIdentityGuidance = "\nShared conversation context quotes other s
 // SetSpeakerNames attaches a rename table for user-turn prompt attribution.
 func (o *OllamaBrain) SetSpeakerNames(names SpeakerNames) { o.speakerNames = names }
 
+// SetGroupParticipants replaces the group roster with a defensive copy.
+func (o *OllamaBrain) SetGroupParticipants(participants []GroupParticipant) {
+	o.stateMu.Lock()
+	o.groupParticipants = cloneGroupParticipants(participants)
+	o.stateMu.Unlock()
+}
+
+func cloneGroupParticipants(in []GroupParticipant) []GroupParticipant {
+	if in == nil {
+		return nil
+	}
+	out := make([]GroupParticipant, len(in))
+	for i, participant := range in {
+		out[i] = participant
+		out[i].Aliases = append([]string(nil), participant.Aliases...)
+	}
+	return out
+}
+
+func (o *OllamaBrain) groupRoster() []GroupParticipant {
+	o.stateMu.Lock()
+	defer o.stateMu.Unlock()
+	return cloneGroupParticipants(o.groupParticipants)
+}
+
+func (o *OllamaBrain) groupModeEnabled() bool {
+	o.stateMu.Lock()
+	defer o.stateMu.Unlock()
+	active := 0
+	for _, p := range o.groupParticipants {
+		if strings.TrimSpace(p.Name) != "" {
+			active++
+		}
+	}
+	return active > 1 || o.groupHistory
+}
+
+// Warmup reads group guidance concurrently. Cache only the fact it needs;
+// never let its goroutine scan mutable canonical history.
+func (o *OllamaBrain) refreshGroupHistory(turns []Turn) {
+	foreign := false
+	for _, turn := range turns {
+		if (turn.Role == "assistant" || turn.Role == "samantha") && strings.TrimSpace(turn.PersonaID) != "" && strings.TrimSpace(turn.PersonaID) != o.activePersona() {
+			foreign = true
+			break
+		}
+	}
+	o.stateMu.Lock()
+	o.groupHistory = foreign
+	o.stateMu.Unlock()
+}
+
+func (o *OllamaBrain) groupUserName(speakerID string) string {
+	speakerID = strings.TrimSpace(speakerID)
+	if speakerID != "" && o.speakerNames != nil {
+		if name := strings.TrimSpace(o.speakerNames.Display(speakerID)); name != "" && name != speakerID {
+			return name
+		}
+	}
+	return "Unknown"
+}
+
 func encodeOllamaUser(speakerID, content string) string {
 	speakerID = strings.TrimSpace(speakerID)
 	if speakerID == "" {
@@ -44,6 +106,10 @@ func decodeOllamaUser(stored string) (speakerID, content string) {
 
 func (o *OllamaBrain) formatStoredUser(stored string) string {
 	speakerID, content := decodeOllamaUser(stored)
+	if o.groupModeEnabled() {
+		name := o.groupUserName(speakerID)
+		return name + " user:\n" + content
+	}
 	if speakerID == "" {
 		return content
 	}
@@ -82,14 +148,17 @@ func (o *OllamaBrain) Fresh() Provider {
 		skillRouter:        o.skillRouter,
 		skillRouterWarned:  o.skillRouterWarned,
 		speakerNames:       o.speakerNames,
+		groupParticipants:  o.groupRoster(),
 	}
 }
 
 func (o *OllamaBrain) ClearHistory() {
+	o.refreshGroupHistory(nil)
 	o.resetDelegation()
 	o.archive = continuity.Store{}
 	o.history = nil
 	o.canonical = nil
+	o.working = nil
 }
 
 // SessionInfo reports the in-process conversation for /session display:
@@ -151,6 +220,29 @@ func (o *OllamaBrain) ContextHistory() []Turn {
 // independently of the bounded Ollama projection.
 func (o *OllamaBrain) CanonicalHistory() []Turn { return deepCopyTurns(o.canonical) }
 
+// ContinuitySnapshot returns persistence history separately from the bounded
+// model view. The latter is the compacted seed plus its retained tail when
+// compaction has occurred.
+func (o *OllamaBrain) ContinuitySnapshot() ContinuitySnapshot {
+	canonical := o.canonical
+	if len(canonical) == 0 {
+		canonical = o.ContextHistory()
+	}
+	working := o.working
+	if working == nil {
+		working = canonical
+	}
+	o.stateMu.Lock()
+	contextHighWater := o.contextHighWater
+	o.stateMu.Unlock()
+	return ContinuitySnapshot{
+		Canonical:        deepCopyTurns(canonical),
+		Working:          deepCopyTurns(working),
+		Archive:          append([]continuity.Entry(nil), o.archive.Snapshot()...),
+		ContextHighWater: contextHighWater,
+	}
+}
+
 // LoadHistory restores conversation history from a saved session. Sessions
 // saved by the prompt-based providers use role "samantha" for replies; map it
 // to ollama's native "assistant".
@@ -165,6 +257,7 @@ func (o *OllamaBrain) LoadHistory(turns []Turn) {
 // ImportHistory updates only the native projection. LoadHistory retains its
 // explicit restore semantics and resets continuity/delegation state.
 func (o *OllamaBrain) ImportHistory(turns []Turn) error {
+	o.refreshGroupHistory(turns)
 	o.loadHistoryProjection(turns, false)
 	o.canonical = deepCopyTurns(turns)
 	for i := range o.canonical {
@@ -176,6 +269,7 @@ func (o *OllamaBrain) ImportHistory(turns []Turn) error {
 }
 
 func (o *OllamaBrain) loadHistory(turns []Turn) {
+	o.refreshGroupHistory(turns)
 	o.loadHistoryProjection(turns, true)
 	o.canonical = deepCopyTurns(turns)
 	for i := range o.canonical {
@@ -185,12 +279,40 @@ func (o *OllamaBrain) loadHistory(turns []Turn) {
 	}
 }
 
+// ImportContinuity restores the active model view without expanding a
+// compacted conversation back to its canonical transcript.
+func (o *OllamaBrain) ImportContinuity(snapshot ContinuitySnapshot) error {
+	o.refreshGroupHistory(snapshot.Canonical)
+	working := snapshot.Working
+	if working == nil {
+		working = snapshot.Canonical
+	}
+	o.loadHistoryProjectionForPersona(working, false, true)
+	o.canonical = deepCopyTurns(snapshot.Canonical)
+	o.archive = continuity.Store{}
+	for _, entry := range snapshot.Archive {
+		o.archive.Add(entry)
+	}
+	if o.cfg != nil {
+		ceiling := o.cfg.ContinuityNumCtxCeil
+		ceiling = max(o.cfg.OllamaNumCtx, min(ceiling, 32768))
+		o.setContextHighWater(min(max(snapshot.ContextHighWater, o.cfg.OllamaNumCtx), ceiling))
+	}
+	for i := range o.canonical {
+		if o.canonical[i].Role == "samantha" {
+			o.canonical[i].Role = "assistant"
+		}
+	}
+	return nil
+}
+
 func (o *OllamaBrain) loadHistoryProjection(turns []Turn, archiveProjection bool) {
 	o.loadHistoryProjectionForPersona(turns, archiveProjection, false)
 }
 
 func (o *OllamaBrain) loadHistoryProjectionForPersona(turns []Turn, archiveProjection, sharedUnowned bool) {
 	history := make([]api.Message, 0, len(turns))
+	working := make([]Turn, 0, len(turns))
 	for i, t := range turns {
 		// Project/archive tool content before ownership changes its wire role.
 		if t.Role == "tool" && o.cfg != nil && o.cfg.ContinuityProjectionEnabled && !strings.HasPrefix(t.Content, "[tool:") {
@@ -202,8 +324,12 @@ func (o *OllamaBrain) loadHistoryProjectionForPersona(turns []Turn, archiveProje
 		}
 		m := o.projectTurn(t, turns, i, sharedUnowned)
 		history = append(history, m)
+		working = append(working, t)
 	}
 	o.history = sanitizeOllamaHistory(history)
+	// Sanitization removes a prefix; keep the same source indices so later
+	// pruning never transfers a discarded tool or drops the wrong user turn.
+	o.working = deepCopyTurns(working[len(history)-len(o.history):])
 }
 
 func (o *OllamaBrain) activePersona() string {
@@ -235,12 +361,12 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 	} else if role == "tool" {
 		_, _, legacy = precedingToolOwner(all, index)
 	}
-	if name == "" {
-		name = owner
-	}
 	current := o.activePersona()
 	// Unbound providers cannot claim an attributed reply as their own.
 	own := owner == current
+	if current == "" && o.groupModeEnabled() {
+		own = false
+	}
 	// Contaminated replies and synthetic summaries are always quoted.
 	shared := !own || legacy || (sharedUnowned && index == 0 && owner == "")
 	content := t.Content
@@ -250,6 +376,9 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 	if shared && role == "assistant" {
 		for _, tc := range t.ToolCalls {
 			content += "\nTool call: " + tc.Name + "(" + tc.Arguments + ")"
+		}
+		if sharedUnowned && owner == "" {
+			return api.Message{Role: ollamaSharedRole, Content: sharedContextContent(content)}
 		}
 		return api.Message{Role: ollamaSharedRole, Content: attributedAssistantContent(name, content)}
 	}
@@ -285,18 +414,21 @@ func precedingToolOwner(turns []Turn, index int) (string, string, bool) {
 
 func attributedAssistantContent(name, content string) string {
 	if strings.TrimSpace(name) == "" {
-		return sharedContextContent(content)
+		return "Unknown agent:\n" + content
 	}
-	return "Shared conversation — " + strings.TrimSpace(name) + " said:\n" + content
+	return strings.TrimSpace(name) + " agent:\n" + content
 }
 
 func attributedToolContent(name, tool, content string) string {
-	prefix := "Shared tool result"
+	prefix := "Unknown agent tool"
 	if tool != "" {
 		prefix += " (" + tool + ")"
 	}
-	if name != "" {
-		prefix += " from " + name
+	if strings.TrimSpace(name) != "" {
+		prefix = strings.TrimSpace(name) + " tool"
+		if tool != "" {
+			prefix += " (" + tool + ")"
+		}
 	}
 	return prefix + ":\n" + content
 }
@@ -342,6 +474,12 @@ func (o *OllamaBrain) appendMessage(m api.Message, identity *TurnIdentity) {
 		t.PersonaID, t.PersonaDisplayName = o.activePersona(), o.cfg.AgentName
 	}
 	o.canonical = append(o.canonical, t)
+	if t.Role == "assistant" && t.PersonaID != "" && t.PersonaID != o.activePersona() {
+		o.stateMu.Lock()
+		o.groupHistory = true
+		o.stateMu.Unlock()
+	}
+	o.working = append(o.working, t)
 	m = o.projectTurn(t, o.canonical, len(o.canonical)-1, false)
 	o.history = append(o.history, m)
 }
@@ -353,6 +491,12 @@ func (o *OllamaBrain) appendProjectedToolResult(tc api.ToolCall, raw string, ide
 		t.PersonaID, t.PersonaDisplayName = identities[0].PersonaID, identities[0].PersonaDisplayName
 	}
 	o.canonical = append(o.canonical, t)
+	if t.Role == "assistant" && t.PersonaID != "" && t.PersonaID != o.activePersona() {
+		o.stateMu.Lock()
+		o.groupHistory = true
+		o.stateMu.Unlock()
+	}
+	o.working = append(o.working, t)
 	t.Content = projected.Content
 	o.history = append(o.history, o.projectTurn(t, o.canonical, len(o.canonical)-1, false))
 }
@@ -362,6 +506,10 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) {
 	if opts.OriginalInput != "" && opts.OriginalInput != input {
 		t := &o.canonical[len(o.canonical)-1]
 		t.Content, t.RoutedInput = opts.OriginalInput, input
+		if len(o.working) > 0 {
+			w := &o.working[len(o.working)-1]
+			w.Content, w.RoutedInput = opts.OriginalInput, input
+		}
 	}
 }
 
@@ -402,6 +550,9 @@ func (o *OllamaBrain) trimHistory() {
 	if start := historyWindowStart(o.history, low); start > 0 {
 		o.archiveMessages(o.history[:start])
 		o.history = append([]api.Message(nil), o.history[start:]...)
+		if start <= len(o.working) {
+			o.working = deepCopyTurns(o.working[start:])
+		}
 	}
 }
 

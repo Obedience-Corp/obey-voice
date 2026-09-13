@@ -24,11 +24,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	}
 	o.refreshSystemPrompt(opts.OnPromptWarn)
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
-	if !opts.Background {
+	if !opts.Background && !opts.AgentContinuation {
 		o.appendUserInput(input, opts)
 	}
-	o.receiveDelegationResults(opts)
-	if opts.Background {
+	if !opts.Background && !opts.AgentContinuation {
+		o.receiveDelegationResults(opts)
+	}
+	if opts.Background && !opts.AgentContinuation {
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
@@ -72,7 +74,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = sess.tools()
 			}
 
-			messages := o.buildMessages(skillCtx)
+			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation)
 			if continuation != "" {
 				messages = append(messages, api.Message{Role: "user", Content: continuation})
 				tools = nil
@@ -249,6 +251,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 						if len(o.canonical) > 0 {
 							o.canonical = o.canonical[:len(o.canonical)-1]
 						}
+						if len(o.working) > 0 {
+							o.working = o.working[:len(o.working)-1]
+						}
 					}
 					done <- StreamResult{Route: kind, RouteTier: tier, RouteReasonCode: reason}
 					return
@@ -354,9 +359,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				continue
 			}
 			o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
-			if !opts.Background {
+			if !opts.Background && !opts.AgentContinuation {
 				o.ackDelegationResults(req.Messages)
-			} else {
+			} else if opts.Background {
 				o.markBackgroundDelivered(req.Messages)
 			}
 			o.trimHistory()

@@ -1,4 +1,4 @@
-package audio
+package playback
 
 import (
 	"encoding/binary"

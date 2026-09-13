@@ -11,14 +11,16 @@ import (
 // projection used by persona acknowledgements. It never imports event history
 // or changes the conversation/work lifetime.
 func (p *Pipeline) appendRoutedHistory(metrics *turnMetrics, request, reply string) error {
-	projection, ok := p.Brain.(brain.HistoryProjectionProvider)
-	if !ok {
+	projection, hasProjection := p.Brain.(brain.HistoryProjectionProvider)
+	continuity, hasContinuity := p.Brain.(brain.ContinuityTransferProvider)
+	if !hasProjection && !hasContinuity {
 		if metrics.responseIdentity() != nil {
 			return fmt.Errorf("routed reply requires canonical history projection")
 		}
 		return nil // Legacy providers retain their existing history ownership.
 	}
 	turns := p.Brain.History()
+	var additions []brain.Turn
 	now := time.Now().UTC()
 	// A route chosen after a model turn already owns its input. A deterministic
 	// route has no new user turn, even when the preceding input was identical.
@@ -34,16 +36,22 @@ func (p *Pipeline) appendRoutedHistory(metrics *turnMetrics, request, reply stri
 		if request != input.Content {
 			input.RoutedInput = request
 		}
-		turns = append(turns, input)
+		additions = append(additions, input)
 	}
 	if reply != "" {
 		response := brain.Turn{Role: "assistant", Content: reply, At: now}
 		if identity := metrics.responseIdentity(); identity != nil {
 			response.PersonaID, response.PersonaDisplayName, response.PromptHash, response.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
 		}
-		turns = append(turns, response)
+		additions = append(additions, response)
 	}
-	if err := projection.ImportHistory(turns); err != nil {
+	var err error
+	if hasContinuity {
+		err = appendContinuityHistory(continuity, additions)
+	} else {
+		err = projection.ImportHistory(append(turns, additions...))
+	}
+	if err != nil {
 		return fmt.Errorf("record routed reply: %w", err)
 	}
 	return nil

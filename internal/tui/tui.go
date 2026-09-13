@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
@@ -1170,7 +1170,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a App) applyPlaybackVolume(gain float64) {
 	if a.runtime != nil && a.runtime.Pipeline != nil {
-		audio.ApplyEngineVolume(a.runtime.Pipeline.Player, gain)
+		playback.ApplyEngineVolume(a.runtime.Pipeline.Player, gain)
 	}
 }
 

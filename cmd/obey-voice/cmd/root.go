@@ -373,6 +373,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				return nil, err
 			}
 			p.AdmitInput = selector.Route
+			p.RouteHandoff = selector.RouteHandoff
 		}
 
 		p.OnTurn = func() {

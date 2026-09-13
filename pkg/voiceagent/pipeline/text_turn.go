@@ -25,7 +25,9 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
-	return p.runTextTurn(ctx, input, false)
+	p.incActiveTurn()
+	defer p.decActiveTurn()
+	return p.runTextWithContinuations(ctx, input)
 }
 
 func (p *Pipeline) runTextTurn(ctx context.Context, input string, background bool) error {
@@ -42,19 +44,30 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	turn := p.newTurnConductor(metrics)
 
 	turn.to(TurnThinking)
+	continuation, isContinuation := continuationFromContext(ctx)
 	speakerID := p.currentSpeakerID()
-	if background {
+	if isContinuation {
+		input = continuation.admission.Request
+		speakerID = ""
+	} else if background {
 		speakerID = ""
 	} else {
 		p.emit(events.UserInput{Text: input, Speaker: speakerID})
 	}
 	original := input
-	ctx, admission, err := p.admitInput(ctx, input, background, metrics)
-	if err != nil {
-		turn.finish(TurnFailed)
-		return fmt.Errorf("admit response: %w", err)
+	var admission ResponseAdmission
+	if isContinuation {
+		admission = continuation.admission
+		ctx = p.bindAdmission(ctx, "", admission, metrics)
+	} else {
+		var err error
+		ctx, admission, err = p.admitInput(ctx, input, background, metrics)
+		if err != nil {
+			turn.finish(TurnFailed)
+			return fmt.Errorf("admit response: %w", err)
+		}
 	}
-	if admission.LocalReply != "" {
+	if !isContinuation && admission.LocalReply != "" {
 		return p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	input = admission.Request
@@ -69,13 +82,17 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	p.emitResponse(metrics, events.ThinkingStarted{})
 	thinkingStarted := metrics.tEOU()
 
-	if !background {
+	if !background && !isContinuation {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
 			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
 	}
 
-	requestCtx, ordinary, _ := p.beginOrdinaryCompletion(ctx, input, speakerID)
+	requestCtx := ctx
+	var ordinary *ordinaryCompletion
+	if !isContinuation {
+		requestCtx, ordinary, _ = p.beginOrdinaryCompletion(ctx, input, speakerID)
+	}
 	if ordinary != nil {
 		defer ordinary.close()
 		metrics.ordinary = ordinary
@@ -97,7 +114,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		OriginalInput:     original,
 		Speaker:           speakerID,
 		Background:        background,
-		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background,
+		AgentContinuation: isContinuation,
+		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background && !isContinuation,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
 		OnToolEnd:         p.toolEndHook(),
@@ -278,6 +296,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.handlePlaybackLifecycle(speakable, usedFallback, observation, playback, metrics)
 	}
 
+	p.completeAgentResponse(ctx, response, metrics, false)
 	p.completeTextTurn(turn, metrics, response)
 	return nil
 }

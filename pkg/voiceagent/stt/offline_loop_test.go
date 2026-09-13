@@ -404,10 +404,29 @@ func TestOfflineLoopInaudibleSegmentIsNotATurn(t *testing.T) {
 	}
 }
 
+func TestOfflineLoopVADSegmentWithoutAdmittedSpeechIsNotATurn(t *testing.T) {
+	deps := offlineLoopDeps{
+		frames: &scriptedFrames{chunks: [][]float32{constFrame(1600, 0.08)}},
+		// The fake models a VAD false positive: it exposes a decoder-sized
+		// segment but never reports the current frame as admitted voice.
+		seg:    &fakeSegmenter{speech: false, flushSeg: longSpeech()},
+		policy: endpoint.Policy{},
+		transcribe: func([]float32) (string, error) {
+			t.Fatal("offline fallback must not decode a segment without admitted speech")
+			return "", nil
+		},
+	}
+
+	got := runLoop(context.Background(), deps)
+	if _, ok := terminal(got).(Timeout); !ok {
+		t.Fatalf("terminal = %T, want Timeout (VAD-only noise is not a turn)", terminal(got))
+	}
+}
+
 func TestOfflineLoopTranscribeErrorFails(t *testing.T) {
 	wantErr := errors.New("decode failed")
 	deps := offlineLoopDeps{
-		frames:     &scriptedFrames{chunks: [][]float32{make([]float32, 1600)}},
+		frames:     &scriptedFrames{chunks: [][]float32{speechFrame()}},
 		seg:        &fakeSegmenter{speech: true, flushSeg: longSpeech()},
 		policy:     endpoint.Policy{},
 		transcribe: func([]float32) (string, error) { return "", wantErr },
