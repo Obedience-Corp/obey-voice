@@ -38,13 +38,14 @@ type ConversationRuntime struct {
 	// routing). Conversation chrome such as the TTS badge must read this, not
 	// the live global app config — starting uncle-fu while the active persona
 	// is still samantha must not show kokoro/af_heart.
-	// Updated only from ReloadVoice after a successful TTS install; consumed on
-	// the Bubble Tea update thread after voiceReloadedMsg (no concurrent readers).
-	SessionCfg   *config.Config
-	SessionID    string
-	InputDevice  string
-	OutputDevice string
-	LiveSpeaker  LiveSpeakerController
+	// Published after successful voice reloads or microphone changes; consumed
+	// on the Bubble Tea update thread (no concurrent readers).
+	SessionCfg     *config.Config
+	SessionID      string
+	SetInputDevice func(context.Context, string) error // rebinds the existing local capture
+	InputDevice    string
+	OutputDevice   string
+	LiveSpeaker    LiveSpeakerController
 	// SpeakerNames maps speaker-N → display name for bubbles and model prompts.
 	// Session-local; shared with the brain via brain.AttachSpeakerNames.
 	SpeakerNames *speaker.NameMap

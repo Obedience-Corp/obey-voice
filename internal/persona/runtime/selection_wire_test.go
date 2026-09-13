@@ -46,7 +46,11 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		mu.Lock()
 		requests = append(requests, request)
 		mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": "The code is cobalt."}, "done": true, "done_reason": "stop"})
+		name := "Santa"
+		if len(request.Messages) > 0 && strings.Contains(request.Messages[0].Content, "You are Samantha.") {
+			name = "Samantha"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": "I am " + name + ". The code is cobalt."}, "done": true, "done_reason": "stop"})
 	}))
 	defer server.Close()
 	root := t.TempDir()
@@ -142,12 +146,24 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		t.Fatalf("routed request missing: %+v", last)
 	}
 	found := false
+	own := false
 	for _, message := range last {
-		if message.Role == "assistant" && strings.Contains(message.Content, "Historical assistant: Santa") {
+		if message.Role != "assistant" && message.Role != "system" && strings.Contains(message.Content, "Santa") && strings.Contains(message.Content, "cobalt") {
 			found = true
 		}
+		if message.Role == "assistant" {
+			own = true
+			if strings.Contains(message.Content, "I am Santa.") || strings.Contains(message.Content, "Historical assistant:") {
+				t.Fatalf("another persona's identity leaked into Samantha's own thread: %+v", message)
+			}
+		}
+		for _, response := range identities {
+			if strings.Contains(message.Content, response.ResponseID) {
+				t.Fatalf("internal response id exposed to model: %+v", message)
+			}
+		}
 	}
-	if !found {
-		t.Fatalf("Santa attribution missing from actual request: %+v", last)
+	if !found || !own || !strings.Contains(last[0].Content, "You are Samantha.") {
+		t.Fatalf("Samantha's own thread/shared Santa context/current identity missing: %+v", last)
 	}
 }

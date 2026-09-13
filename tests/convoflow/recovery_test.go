@@ -56,7 +56,7 @@ func TestOllamaRecoveryCompactionPreservesCanonicalToolIdentityAndDiskReload(t *
 	defer server.Close()
 
 	root := t.TempDir()
-	cfg := &config.Config{BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: "fixture", AgentName: "Samantha", PromptsDir: filepath.Join(root, "prompts"), WorkDir: root, MaxHistory: 20}
+	cfg := &config.Config{ActivePersona: "samantha", BrainProvider: "ollama", OllamaHost: server.URL, OllamaModel: "fixture", AgentName: "Samantha", PromptsDir: filepath.Join(root, "prompts"), WorkDir: root, MaxHistory: 20}
 	o, err := brain.NewOllama(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -107,12 +107,18 @@ func TestOllamaRecoveryCompactionPreservesCanonicalToolIdentityAndDiskReload(t *
 	messages, _ := requests[0]["messages"].([]any)
 	last, _ := messages[len(messages)-1].(map[string]any)
 	instruction, _ := last["content"].(string)
-	if !strings.Contains(instruction, "exact source response ID") || !strings.Contains(instruction, "Never infer missing identities") {
+	if !strings.Contains(instruction, "Preserve the historical persona name") || !strings.Contains(instruction, "including their disagreements") {
 		t.Fatalf("actual compact request omitted historical attribution contract: %q", instruction)
 	}
 
 	for _, raw := range messages {
 		message, _ := raw.(map[string]any)
+		content, _ := message["content"].(string)
+		for _, turn := range original {
+			if turn.ResponseID != "" && strings.Contains(content, turn.ResponseID) {
+				t.Fatalf("internal response id exposed in compaction prompt: %s", content)
+			}
+		}
 		if message["role"] == "assistant" {
 			calls, _ := message["tool_calls"].([]any)
 			for _, rawCall := range calls {

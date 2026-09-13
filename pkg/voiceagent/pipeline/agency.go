@@ -31,12 +31,13 @@ const spawnClarifier = "I did not catch what you would like me to work on. What 
 
 // Agency wires spawn/abort/status routes to the async job table and worker brain.
 type Agency struct {
-	pipeline *Pipeline
-	jobs     *job.Table
-	worker   brain.Provider
-	cfg      *config.Config
-	ack      string
-	narrator *Narrator
+	pipeline    *Pipeline
+	jobs        *job.Table
+	worker      brain.Provider
+	cfg         *config.Config
+	ack         string
+	planFactory func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error)
+	narrator    *Narrator
 	// work folds a job's tool calls into rows: what "what's happening" answers
 	// with, and what milestone narration speaks one line of.
 	work *workfold.Tracker
@@ -77,6 +78,7 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		worker:         worker,
 		cfg:            cloneConfig(cfg),
 		ack:            ack,
+		planFactory:    brain.NewPlannedWorker,
 		work:           workfold.New(),
 		workerInitErr:  workerErr,
 		jobScopes:      make(map[string]work.WorkScope),
@@ -111,6 +113,9 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 	if a == nil {
 		return
 	}
+	if d.Kind != RouteSpawn {
+		a.emitRouteDecision(d, "handled", "", "")
+	}
 	switch d.Kind {
 	case RouteSpawn:
 		a.handleSpawn(ctx, turn, metrics, d)
@@ -141,6 +146,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	// that meant — which is exactly how one went looking through the CLI's
 	// session store and acted on somebody else's thread.
 	if spawnLacksTask(history, task) {
+		a.emitRouteDecision(d, "rejected", "", spawnClarifier)
 		a.speakSpawnClarifier(ctx, turn, metrics)
 		a.pipeline.emit(events.Info{Message: "spawn declined: no task in the utterance and no conversation behind it"})
 		return
@@ -150,11 +156,14 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		task = "background task"
 	}
 	experimental := a.workEnabled()
-	if !experimental {
-		a.speakAck(ctx, turn, metrics)
+	worker, jobCfg, plan, workerErr := a.admitWorker(d.Tier)
+	if workerErr != nil {
+		a.emitRouteDecision(d, "rejected", "", workerErr.Error())
+		a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
+		return
 	}
-	worker, jobCfg, workerErr := a.workerAdmission()
 	if experimental && providerName(jobCfg) != "ollama" {
+		a.emitRouteDecision(d, "rejected", "", "Experimental work requires a local worker; paid and unknown providers are disabled.")
 		a.pipeline.emit(events.Error{Stage: "job", Message: "Experimental work requires a local worker; paid and unknown providers are disabled."})
 		return
 	}
@@ -163,8 +172,9 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if c, scope := a.workAuthority(); c != nil {
 		jobID = newWorkID()
 		var err error
-		key, err = c.Register(scope, work.Admission{JobID: jobID, Task: task, Origin: "agency", Provider: providerName(jobCfg), Model: modelName(jobCfg), Config: frozenConfig(jobCfg)})
+		key, err = c.Register(scope, work.Admission{JobID: jobID, Task: task, Origin: "agency", Provider: providerName(jobCfg), Model: modelName(jobCfg), Config: frozenWorkerConfig(jobCfg, plan)})
 		if err != nil {
+			a.emitRouteDecision(d, "rejected", "", err.Error())
 			a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 			return
 		}
@@ -172,19 +182,13 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		a.jobScopes[jobID] = scope
 		a.workMu.Unlock()
 	}
-	if workerErr != nil && experimental {
-		if c, _ := a.workAuthority(); c != nil && key.JobID != "" {
-			_, _ = c.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeFailed, Text: truncateJobTask(workerErr.Error()), Termination: "known"})
-		}
-		a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
-		return
-	}
 	run := a.workerRun(spawnBrief(history, d.Transcript), worker, jobCfg)
-	if workerErr != nil {
-		run = func(context.Context) (string, error) { return "", workerErr }
+	if plan != nil {
+		run = a.plannedWorkerRun(spawnBrief(history, d.Transcript), jobCfg, plan)
 	}
 	_, err := a.jobs.Start(ctx, job.Spec{
-		ID: jobID,
+		ID:         jobID,
+		OnAccepted: func(id string) { a.emitRouteDecision(d, "accepted", id, "") },
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
@@ -192,15 +196,14 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		Run:  run,
 	})
 	if err != nil {
+		a.emitRouteDecision(d, "rejected", jobID, err.Error())
 		if c, _ := a.workAuthority(); c != nil && key.JobID != "" {
 			_, _ = c.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeFailed, Text: truncateJobTask(err.Error()), Termination: "known"})
 		}
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
 	}
-	if experimental {
-		a.speakAck(ctx, turn, metrics)
-	}
+	a.speakAck(ctx, turn, metrics)
 }
 
 // onJobQueued runs inside Table.Start, so JobQueued precedes everything the
@@ -253,9 +256,12 @@ func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Conf
 			return "", errors.New("worker provider is not configured")
 		}
 		worker = a.freshWorker(worker)
+		// Tiered admissions always run the full worker tool surface. The
+		// conversation flag controls the live turn/router; it must not disable
+		// tools for a worker that was explicitly admitted to a tier.
 		tools := true
 		if cfg != nil {
-			tools = cfg.VoiceToolsEnabled
+			tools = cfg.VoiceToolsEnabled || tieredWorkers(cfg)
 		}
 		opts := brain.WorkerStreamOptions(tools)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))

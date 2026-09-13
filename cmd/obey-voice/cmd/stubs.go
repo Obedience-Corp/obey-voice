@@ -5,6 +5,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 	"time"
 
@@ -60,7 +61,7 @@ func runSpeakerTest(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	ttsProvider, cleanup, err := tts.NewProvider(cfg)
+	ttsProvider, cleanup, err := ttsproviders.NewProvider(cfg)
 	if err != nil {
 		return err
 	}

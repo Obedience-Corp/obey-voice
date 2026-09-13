@@ -3,6 +3,7 @@ package voiceagent
 import (
 	"errors"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ const qwenProviderName = "qwen3-tts"
 
 // TTSSet is the selected provider plus its explicitly configured
 // conversational fallback. Preview/test/batch paths intentionally continue to
-// use tts.NewProvider directly so they prove the selected voice instead of
+// use ttsproviders.NewProvider directly so they prove the selected voice instead of
 // silently producing a different one.
 type TTSSet struct {
 	Primary         tts.Provider
@@ -32,7 +33,7 @@ type TTSSet struct {
 }
 
 func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
-	primary, primaryCleanup, err := tts.NewProvider(cfg)
+	primary, primaryCleanup, err := ttsproviders.NewProvider(cfg)
 	if err != nil {
 		if set, ok := speechPlaceFallbackSet(cfg, err); ok {
 			return set, nil
@@ -48,7 +49,7 @@ func NewTTSSet(cfg *config.Config) (*TTSSet, error) {
 		!strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "kokoro") {
 		fallbackCfg := *cfg
 		fallbackCfg.TTSProvider = "kokoro"
-		fallback, fallbackCleanup, fallbackErr := tts.NewProvider(&fallbackCfg)
+		fallback, fallbackCleanup, fallbackErr := ttsproviders.NewProvider(&fallbackCfg)
 		if fallbackErr != nil {
 			set.FallbackWarning = fmt.Errorf("fallback TTS (Kokoro) unavailable: %w", fallbackErr)
 		} else {
@@ -81,7 +82,7 @@ func speechPlaceFallbackSet(cfg *config.Config, cause error) (*TTSSet, bool) {
 	fallbackCfg := *cfg
 	fallbackCfg.TTSProvider = "kokoro"
 	fallbackCfg.TTSPlace = config.TTSPlaceLocal
-	kokoro, cleanup, err := tts.NewProvider(&fallbackCfg)
+	kokoro, cleanup, err := ttsproviders.NewProvider(&fallbackCfg)
 	if err != nil {
 		// No voice at all: report the speech worker, which is what broke.
 		return nil, false

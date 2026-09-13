@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -123,7 +124,7 @@ func playVoicePreview(
 			return voicePreviewDoneMsg{id: id, voice: voice.Name, message: fmt.Sprintf("Asset error: %v", err)}
 		}
 		if newTTS == nil {
-			newTTS = tts.NewProvider
+			newTTS = ttsproviders.NewProvider
 		}
 		ttsProvider, cleanup, err := newTTS(cfg)
 		if err != nil {

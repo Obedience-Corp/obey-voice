@@ -22,6 +22,10 @@ const (
 	editUserDisplayName
 	editSpeakerEnrollName
 	editTalkHotkey
+	editWorkerAssignment
+	editWorkerReference
+	editWorkerLimit
+	editWorkerPolicy
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -29,9 +33,11 @@ const (
 // editor starts empty and masks what is typed, so no stored token is readable
 // from this screen.
 type settingsEditor struct {
-	kind  settingsEditKind
-	label string
-	input textinput.Model
+	kind        settingsEditKind
+	label       string
+	workerTier  string
+	workerField string
+	input       textinput.Model
 }
 
 func (m *settingsModel) beginEdit(kind settingsEditKind, label, initial string) tea.Cmd {
@@ -74,6 +80,30 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		}
 		if kind == editTalkHotkey {
 			return m.commitTalkHotkey(value)
+		}
+		if kind == editWorkerAssignment {
+			tier := m.edit.workerTier
+			m.cancelEdit()
+			m.commitWorkerAssignment(tier, value)
+			return m, nil
+		}
+		if kind == editWorkerReference {
+			tier, field := m.edit.workerTier, m.edit.label
+			m.cancelEdit()
+			m.commitWorkerReference(tier, field, value)
+			return m, nil
+		}
+		if kind == editWorkerLimit {
+			tier, field := m.edit.workerTier, m.edit.workerField
+			m.cancelEdit()
+			m.commitWorkerLimit(tier, field, value)
+			return m, nil
+		}
+		if kind == editWorkerPolicy {
+			field := m.edit.workerField
+			m.cancelEdit()
+			m.commitWorkerPolicy(field, value)
+			return m, nil
 		}
 		m.cancelEdit()
 		if kind == editUserDisplayName {

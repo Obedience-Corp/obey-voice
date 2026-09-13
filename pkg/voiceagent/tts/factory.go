@@ -33,44 +33,47 @@ func Providers() []ProviderSpec {
 	return out
 }
 
-// NewProvider constructs the configured TTS provider and its cleanup hook.
-func NewProvider(cfg *config.Config) (Provider, func(), error) {
-	switch strings.TrimSpace(strings.ToLower(cfg.TTSProvider)) {
-	case "", "kokoro":
-		provider, err := NewKokoroTTS(cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		return provider, provider.Delete, nil
-	case "qwen3-tts":
-		provider, err := NewQwen3TTS(cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		return provider, provider.Delete, nil
-	case audio8ProviderName:
-		modelDir := audio8ModelDir(cfg)
-		tok, err := NewAudio8Tokenizer(modelDir)
-		if err != nil {
-			// Before the manifest and the graphs: a missing or malformed
-			// tokenizer.json means this provider can never speak, and saying so
-			// costs nothing instead of seconds and gigabytes.
-			return nil, nil, err
-		}
-		provider, err := NewAudio8TTS(Audio8Options{
-			ModelDir:  modelDir,
-			ModelsDir: config.ModelsDirFrom(cfg),
-			Voice:     cfg.Audio8Voice,
-			Tokenizer: tok,
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		return provider, provider.Delete, nil
-	default:
-		return nil, nil, unsupportedProviderError(cfg.TTSProvider)
+// NewKokoroProvider constructs Kokoro and its cleanup hook.
+func NewKokoroProvider(cfg *config.Config) (Provider, func(), error) {
+	provider, err := NewKokoroTTS(cfg)
+	if err != nil {
+		return nil, nil, err
 	}
+	return provider, provider.Delete, nil
 }
+
+// NewAudio8Provider constructs Audio8 and its cleanup hook.
+//
+// Audio8 is the one provider whose construction needs more than a config: a
+// tokenizer read from its model directory. That layout is this package's
+// business, so the assembly lives here rather than in whatever code selects a
+// provider by name.
+func NewAudio8Provider(cfg *config.Config) (Provider, func(), error) {
+	modelDir := audio8ModelDir(cfg)
+	tok, err := NewAudio8Tokenizer(modelDir)
+	if err != nil {
+		// Before the manifest and the graphs: a missing or malformed
+		// tokenizer.json means this provider can never speak, and saying so
+		// costs nothing instead of seconds and gigabytes.
+		return nil, nil, err
+	}
+	provider, err := NewAudio8TTS(Audio8Options{
+		ModelDir:  modelDir,
+		ModelsDir: config.ModelsDirFrom(cfg),
+		Voice:     cfg.Audio8Voice,
+		Tokenizer: tok,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return provider, provider.Delete, nil
+}
+
+// UnsupportedProvider reports a provider name this build cannot construct.
+func UnsupportedProvider(name string) error { return unsupportedProviderError(name) }
+
+// Audio8ProviderName is the configured name of the Audio8 provider.
+const Audio8ProviderName = audio8ProviderName
 
 // StaticVoices returns the compile-time voice catalog for providerName,
 // filtered by locale/gender. Every provider's live ListVoices is built from

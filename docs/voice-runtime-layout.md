@@ -1,9 +1,10 @@
 # Voice runtime code layout
 
-The voice pipeline, Ollama provider and config package use files grouped by
-responsibility within their existing Go packages. Their public interfaces and state ownership are
-unchanged. This guide identifies where to make a change without tracing a single
-large implementation file.
+The voice pipeline, Ollama provider, config package, audio player, meeting log and
+benchmark command use files grouped by responsibility within their existing Go
+packages; the Qwen TTS provider went further and became its own package. This guide
+identifies where to make a change without tracing a single large implementation
+file, and records the contracts a file boundary could otherwise hide.
 
 ## Pipeline
 
@@ -71,6 +72,17 @@ All paths below are in [`pkg/voiceagent/config`](../pkg/voiceagent/config).
 | `ollama_defaults.go` | Ollama capability auto-enable and the brain-provider switch |
 | `paths.go` | Install-root directory resolution (models, sessions, meetings, personas, prompts, skills) |
 
+Model-asset install is the package's other large surface, grouped the same way:
+
+| File | Responsibility |
+| --- | --- |
+| `models.go` | Asset descriptor types, phase vocabulary, progress arithmetic |
+| `download.go` | HTTP fetch, stall-timeout guard, checksum copy core |
+| `extract.go` | Tar extraction, prefix stripping, path-traversal rejection |
+| `archive_marker.go` | On-disk verification and the install-marker record |
+| `ensure.go` | Public `Ensure*` surface and the manifest walk |
+| `ensure_native.go` | Native Qwen3-TTS tier install, stage to phase mapping |
+
 Existing collaborators remain in their established files: the settings schema in
 `schema*.go`, surgical key writes in `set*.go`, and per-domain keys in `stt.go`,
 `worker.go`, `brains.go`, `workdir.go` and the rest. Consult those files before
@@ -80,6 +92,93 @@ adding another implementation of the same responsibility.
 a caller already holds — the invariant is recorded on the `mu` declaration.
 Moving an accessor into a focused file does not change which lock its caller
 must hold.
+
+## Qwen TTS provider
+
+The Qwen provider is its own package: [`pkg/voiceagent/tts/qwen`](../pkg/voiceagent/tts/qwen).
+It imports the contract in `pkg/voiceagent/tts`, and nothing in `tts` imports it back, so the
+boundary is checked by the compiler instead of by convention.
+
+| File | Responsibility |
+| --- | --- |
+| `qwen.go` | Tuning constants, the worker process seam, `Qwen3TTS` state, constructors and lifecycle |
+| `policy.go` | Speech place, model tier, streaming and warm-state policy |
+| `grace.go` | First-audio grace window and its ceilings |
+| `request.go` | `Synthesize`, `SynthesizeRequest`, `SoftCancel`, reference validation |
+| `stream.go` | Native and managed stream synthesis, session ensure/discard under `sessionMu` |
+| `worker.go` | Synthesis dispatch, external CLI path, WAV streaming, argument building |
+| `capabilities.go` | `ListVoices`, `Capabilities`, `Status`, shipped-clone binding |
+| `conn.go`, `session.go`, `native_session.go`, `remote_session.go`, `speech_session.go` | Transport and session plumbing, unchanged by the move |
+
+Selection lives in [`pkg/voiceagent/tts/providers`](../pkg/voiceagent/tts/providers), above
+both. It has to: a provider package imports the contract, so the contract cannot import
+providers back. Putting `NewProvider` in its own package means a provider can only go missing
+by editing that file — not by forgetting a blank import, which would compile and then fail at
+runtime on a machine that had the model installed. Add a provider there or it does not exist.
+
+Two consequences worth knowing before moving anything else:
+
+- `SpeechCharsPerSecond` and `TypicalSegmentChars` are exported from `provider.go`. They sit
+  beside the `SegmentGracer` interface because every provider implementing it needs them, and
+  providers no longer share a package.
+- `NewAudio8Provider` owns Audio8's model-directory assembly. The selector used to know that
+  layout; now only the package that owns Audio8 does.
+
+Kokoro and Audio8 are still in `pkg/voiceagent/tts` itself. They cannot move the same way yet:
+the core reads Kokoro's unexported `voiceNames`, `genderMap` and `langMap` from three files.
+Moving each provider out means relocating what the core reads from it first.
+
+## Audio player
+
+All paths below are in [`pkg/voiceagent/audio`](../pkg/voiceagent/audio).
+
+| File | Responsibility |
+| --- | --- |
+| `player.go` | Tuning constants, `Playback`/`Engine` types, `Player` state and its lock docs, public control surface |
+| `player_pump.go` | Producer goroutine, buffered and incremental pump loops, stall silence timer |
+| `player_segment.go` | `playbackSegment` ring buffer, the `s.mu` contract, readiness gating, underrun accounting |
+| `player_device.go` | Device open, channel and rate negotiation, AEC reference-delay estimate |
+| `player_callback.go` | The miniaudio callback thread: `onData`, queue advance, channel expand |
+| `player_pcm.go` | Stateless PCM buffer helpers |
+
+This package is the one place where a file boundary can hide a thread contract, so
+some groupings are deliberate and should not be split further. `player_callback.go`
+holds the callback thread together with the only two functions that take `p.mu` from
+it. `playbackSegment` stays whole because its `…Locked` family is only correct read
+beside the callers that hold `s.mu`, and its writers span threads: `writeTo` on the
+callback, `append`/`finishInput` on the pump, and `interrupt` on *both* — the caller
+through `PlayStream`/`Stop`, and the callback itself when `PlaybackAttempt.Write`
+fails on an invalidated attempt. Do not record `interrupt` as caller-only; that the
+callback can interrupt a segment it is mid-write on is the sharpest reason these
+declarations belong in one file. `startPlaybackDevice` stays beside `ensureDevice` because `Device.Start` can
+invoke `onData` synchronously, so holding `p.mu` across it deadlocks.
+
+## Meeting log
+
+All paths below are in [`internal/meeting/log`](../internal/meeting/log).
+
+| File | Responsibility |
+| --- | --- |
+| `log.go` | `Writer` state, bundle create/abort, accessors, `Close`, the append primitives |
+| `events.go` | `ReadEvents`, torn-tail recovery, attributed-transcript merge |
+| `speakers.go` | Speaker analysis writing, offset formatting, post-`Close` reopen |
+| `types.go` | Event kinds, bundle filenames, `Event`, `TranscriptRecord`, `Summary` |
+| `capture.go` | `listen.Sink` implementation, notes and bookmarks |
+| `resume.go` | `OpenBundle` and event-time parsing |
+| `control.go` | Control symbols, `AppendControl`, route-plan writing |
+
+## Benchmark command
+
+All paths below are in [`cmd/obey-voice/cmd`](../cmd/obey-voice/cmd). Every file carries
+the `//go:build !integration` constraint the command has always had.
+
+| File | Responsibility |
+| --- | --- |
+| `benchmark.go` | Flag variables and their value types, TTS place, output resolution, the cobra command and `init()` |
+| `benchmark_pipeline.go` | Text-prompt and full-turn fixture modes, which both build a pipeline |
+| `benchmark_stt.go` | STT fixture mode, which builds VAD and the STT provider directly |
+| `benchmark_result.go` | Result model, event-bus drain, thresholds, exit status, transcript scoring |
+| `benchmark_report.go` | Console summary and JSON artifact |
 
 ## Maintaining the boundaries
 
@@ -95,10 +194,13 @@ repository test suite:
 
 ```sh
 just lint
-go test -race ./pkg/voiceagent/pipeline ./pkg/voiceagent/brain ./pkg/voiceagent/config
+go test -race ./pkg/voiceagent/pipeline ./pkg/voiceagent/brain ./pkg/voiceagent/config \
+  ./pkg/voiceagent/tts ./pkg/voiceagent/audio ./internal/meeting/log ./cmd/...
 go test ./...
 ```
 
 Real microphone/model smoke checks remain opt-in as described in
 [Development](development.md). A same-package file split does not establish new
-audio-performance or concurrency guarantees.
+audio-performance or concurrency guarantees. For `pkg/voiceagent/audio` and the TTS
+providers that means the hardware pass is still owed separately: the default lane
+never opens a real device and never starts a real Qwen worker.
