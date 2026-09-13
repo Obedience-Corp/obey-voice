@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"io"
 	"os"
 	"os/exec"
@@ -298,7 +299,7 @@ func newRenderSynth(ctx context.Context, opts *render.Options) (render.Synthesiz
 	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedTTS: true}, nil); err != nil {
 		return nil, nil, fmt.Errorf("render: TTS assets: %w", err)
 	}
-	provider, cleanup, err := tts.NewProvider(cfg)
+	provider, cleanup, err := ttsproviders.NewProvider(cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("render: init TTS: %w", err)
 	}

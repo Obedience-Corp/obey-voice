@@ -2,6 +2,7 @@ package speechserve
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/qwen"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func hostConfig(addr string) *config.Config {
 
 func speakThrough(t *testing.T, addr, text string) int {
 	t.Helper()
-	provider, err := tts.NewQwen3TTS(hostConfig(addr))
+	provider, err := qwen.NewQwen3TTS(hostConfig(addr))
 	if err != nil {
 		t.Fatalf("NewQwen3TTS: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestHostClientRejectedWithoutTheToken(t *testing.T) {
 	cfg := hostConfig(bridge.Addr())
 	cfg.TTSWorkerToken = "not-the-token"
 
-	_, err := tts.NewQwen3TTS(cfg)
+	_, err := qwen.NewQwen3TTS(cfg)
 	if !tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) {
 		t.Fatalf("err=%v want an unavailable provider error", err)
 	}

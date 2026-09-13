@@ -25,6 +25,7 @@ type jobView struct {
 	running  bool
 	terminal bool
 	tool     string // the tool the worker is on, until the fold has a row
+	tier     string
 }
 
 func (m *conversationModel) canonicalJob(v work.JobView) {
@@ -35,6 +36,9 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 	job := m.trackJob(id, v.Task)
 	job.terminal = v.State == work.JobTerminal
 	job.origin = v.Origin
+	if v.Config != nil {
+		job.tier = v.Config["worker_tier"]
+	}
 	job.running = v.State == work.JobRunning
 	if v.State == work.JobQueued {
 		m.renderJobItem(id, " · queued")
@@ -49,6 +53,29 @@ func (m *conversationModel) jobQueued(e events.JobQueued) {
 	m.appendActivity("job", "queued "+e.Task, 0)
 	m.refreshJobChip()
 	m.renderJobItem(e.ID, " · queued")
+}
+
+func (m *conversationModel) routeDecided(e events.RouteDecided) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	if e.State == "rejected" {
+		msg := e.Message
+		if msg == "" {
+			msg = "routing rejected"
+		}
+		m.setStatus("Worker rejected: "+msg, true)
+		m.appendTranscript(dimStyle.Render("  Worker rejected · " + msg))
+		return
+	}
+	if e.State != "accepted" || e.JobID == "" {
+		return
+	}
+	v := m.trackJob(e.JobID, e.Task)
+	v.tier = e.Tier
+	m.appendActivity("job", "handed off · "+e.Tier+" · "+e.Task, 0)
+	m.renderJobItem(e.JobID, " · handed off · "+e.Tier)
+	m.setStatus("Handed off · "+e.Tier+" · "+e.Task, false)
 }
 
 func (m *conversationModel) jobStarted(e events.JobStarted) {
@@ -285,7 +312,11 @@ func (m *conversationModel) jobLabel(id string) string {
 		return summary
 	}
 	if v := m.jobs[id]; v != nil {
-		return truncateJobLine(v.task)
+		label := truncateJobLine(v.task)
+		if v.tier != "" {
+			label = v.tier + " · " + label
+		}
+		return label
 	}
 	return id
 }

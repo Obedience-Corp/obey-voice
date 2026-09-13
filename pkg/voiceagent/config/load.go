@@ -78,10 +78,24 @@ func loadLocked() (*Config, error) {
 			}
 		}
 	}
+	if raw, err := os.ReadFile(configFile); err == nil {
+		if doc, parseErr := migrationYAMLDocument(raw); parseErr == nil {
+			if node := mappingValue(doc.Content[0], "voice_workers"); node != nil {
+				if err := validateWorkerYAML(node); err != nil {
+					return nil, fmt.Errorf("parsing voice_workers: %w", err)
+				}
+			}
+		}
+	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	if cfg.VoiceWorkers != nil {
+		if err := cfg.VoiceWorkers.Validate(); err != nil {
+			return nil, fmt.Errorf("parsing voice_workers: %w", err)
+		}
 	}
 	applyOllamaDefaults(&cfg, v, ollamaChosen(v))
 	cfg.ToolCommandTimeout = ClampToolCommandTimeout(cfg.ToolCommandTimeout)

@@ -280,7 +280,7 @@ func (k *KokoroTTS) Available() bool {
 
 // FirstAudioGrace reports the stall budget for a segment of unstated length.
 func (k *KokoroTTS) FirstAudioGrace() time.Duration {
-	return k.FirstAudioGraceForChars(typicalSegmentChars)
+	return k.FirstAudioGraceForChars(TypicalSegmentChars)
 }
 
 // FirstAudioGraceForChars is how long the playback-stall watchdog should wait
@@ -288,9 +288,9 @@ func (k *KokoroTTS) FirstAudioGrace() time.Duration {
 // any PCM, so this is the synthesis, not a streaming warmup.
 func (k *KokoroTTS) FirstAudioGraceForChars(chars int) time.Duration {
 	if chars <= 0 {
-		chars = typicalSegmentChars
+		chars = TypicalSegmentChars
 	}
-	expectedAudio := float64(chars) / speechCharsPerSecond
+	expectedAudio := float64(chars) / SpeechCharsPerSecond
 	grace := time.Duration(kokoroRTFCeiling * expectedAudio * float64(time.Second))
 	if grace < kokoroMinFirstAudioGrace {
 		return kokoroMinFirstAudioGrace

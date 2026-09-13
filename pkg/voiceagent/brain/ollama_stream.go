@@ -31,6 +31,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
+	skillCtx += WorkerFactsPrompt(opts.WorkerFacts)
 	o.ensureContextBudget(skillCtx)
 	o.maybeEmitContinuityBudget(skillCtx)
 
@@ -46,6 +47,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		sess := &toolSession{
 			catalog:        o.skills,
 			routerPolicy:   opts.effectiveRouterPolicy(),
+			workerTiers:    opts.WorkerTiers,
 			delegation:     o.delegationForTurn(opts),
 			commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
 			boundary:       NewBoundary(o.cfg.WorkerBoundary),
@@ -91,6 +93,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			var prefillTokens, genTokens int
 			var doneReason string
 			strip := newLabelStripper(o.cfg.AgentName)
+			markers := new(historicalAssistantMarkerFilter)
 			var split textclean.ThinkFilter
 
 			err := o.chat(ctx, req, func(resp api.ChatResponse) error {
@@ -115,7 +118,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					// tool-calling iteration emits streams too; the final answer
 					// continues the same reply after tools run — unless it is
 					// the same reply, which we swallow.
-					emit := strip.Feed(speakable)
+					emit := strip.Feed(markers.Feed(speakable))
 					if restatementSkip(spoken.String(), textBuf.String()) {
 						return nil
 					}
@@ -143,7 +146,17 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 			}
 			if heldSpeak != "" {
-				emit := strip.Feed(heldSpeak)
+				emit := strip.Feed(markers.Feed(heldSpeak))
+				if emit != "" && !restatementSkip(spoken.String(), textBuf.String()) {
+					if sendErr := sendChunk(ctx, out, emit); sendErr != nil && err == nil {
+						err = sendErr
+					} else if sendErr == nil {
+						spoken.WriteString(emit)
+					}
+				}
+			}
+			if held := markers.Flush(); held != "" {
+				emit := strip.Feed(held)
 				if emit != "" && !restatementSkip(spoken.String(), textBuf.String()) {
 					if sendErr := sendChunk(ctx, out, emit); sendErr != nil && err == nil {
 						err = sendErr
@@ -201,6 +214,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if len(toolCalls) > 0 {
 				hadTools = true
 				if kind := LiveRouterDecision(sess.routerPolicy, toolCalls); kind != "" {
+					tier, reason := routeMetadata(toolCalls)
 					if sess.onStart != nil || sess.onEnd != nil {
 						decision := sess.describe("route", kind, "")
 						if sess.onStart != nil {
@@ -218,7 +232,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							o.canonical = o.canonical[:len(o.canonical)-1]
 						}
 					}
-					done <- StreamResult{Route: kind}
+					done <- StreamResult{Route: kind, RouteTier: tier, RouteReasonCode: reason}
 					return
 				}
 				// Add the assistant's tool-calling message to history.
@@ -236,7 +250,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
 						skillCtx += "\n" + result
 					}
-					o.appendProjectedToolResult(tc, result)
+					o.appendProjectedToolResult(tc, result, opts.Identity)
 				}
 				// Re-budget after tools: a large result can push the user
 				// query out of num_ctx. qwen3.8 on Ollama 0.32.14 then 500s
@@ -251,16 +265,20 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// empty so the operator-facing thought is not replaced by a
 			// spoken recovery line.
 			raw := stripReplyConventions(o.cfg.AgentName, textBuf.String())
-			cleaned := cleanForVoice(raw)
+			cleaned := cleanForVoice(stripHistoricalAssistantMarkers(raw))
 			var response string
 			if fallbackEmptyContent(cleaned, hadTools, hadThinking) || hasSpeakableContent(cleaned) {
-				response, err = finalizeStreamedText(ctx, out, raw)
+				response, err = finalizeStreamedText(ctx, out, stripHistoricalAssistantMarkers(raw))
 				if err != nil {
 					done <- StreamResult{Err: err}
 					return
 				}
 			} else {
 				response = cleaned
+			}
+			recorded := response
+			if legacyHistoricalAssistantHeader.MatchString(raw) && hasSpeakableContent(cleaned) {
+				recorded = raw
 			}
 
 			var integrity IntegrityResult
@@ -281,7 +299,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					done <- StreamResult{Err: ctx.Err(), Integrity: integrity}
 					return
 				}
-				o.appendMessage(api.Message{Role: "assistant", Content: "[incomplete response] " + response}, opts.Identity)
+				o.appendMessage(api.Message{Role: "assistant", Content: "[incomplete response] " + recorded}, opts.Identity)
 				if recoveryAttempts >= min(o.cfg.ContinuityRecoveryMax, 2) {
 					if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
 						done <- StreamResult{Err: err}
@@ -313,7 +331,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				o.ensureContextBudget(skillCtx + continuation)
 				continue
 			}
-			o.appendMessage(api.Message{Role: "assistant", Content: response}, opts.Identity)
+			o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
 			if !opts.Background {
 				o.ackDelegationResults(req.Messages)
 			} else {

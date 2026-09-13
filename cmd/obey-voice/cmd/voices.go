@@ -5,6 +5,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -25,7 +26,7 @@ type voiceStackDeps struct {
 }
 
 var voiceStack = voiceStackDeps{
-	newProvider:   tts.NewProvider,
+	newProvider:   ttsproviders.NewProvider,
 	missingAssets: missingTTSAssets,
 	ensureAssets:  config.EnsureRuntimeAssets,
 }

@@ -999,6 +999,8 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	}
 
 	switch e := e.(type) {
+	case events.RouteDecided:
+		m.routeDecided(e)
 	case events.PersonaSelection:
 		m.applySelectionSnapshot(e)
 	case events.AudioLevel:

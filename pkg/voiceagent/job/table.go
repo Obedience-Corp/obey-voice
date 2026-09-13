@@ -54,6 +54,9 @@ type Spec struct {
 	Provider string
 	Model    string
 	Run      func(ctx context.Context) (result string, err error)
+	// OnAccepted publishes caller metadata after enqueue succeeds, before
+	// queued/start callbacks or execution. It runs outside the table lock.
+	OnAccepted func(id string)
 }
 
 // Info is a point-in-time job snapshot for status UI.
@@ -254,6 +257,9 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 
 	// Outside the lock: the callback publishes to the bus, and a subscriber may
 	// legitimately ask the table for status.
+	if spec.OnAccepted != nil {
+		spec.OnAccepted(id)
+	}
 	if onQueued != nil {
 		onQueued(id, spec.Task)
 	}

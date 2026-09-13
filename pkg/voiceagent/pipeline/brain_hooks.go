@@ -83,6 +83,9 @@ func toolFinishedEvent(jobID string, res brain.ToolResult, scopes ...work.WorkSc
 }
 
 func (p *Pipeline) liveRouterToolsPolicy() brain.RouterToolsPolicy {
+	if p.Agency != nil && tieredWorkers(p.Agency.currentConfig()) {
+		return brain.RouterToolsRouteOnly
+	}
 	if !p.VoiceToolsEnabled {
 		return ""
 	}
@@ -100,11 +103,17 @@ func (p *Pipeline) routeContext() RouteContext {
 	if p.JobActive != nil {
 		ctx.JobActive = p.JobActive()
 	}
+	if p.Agency != nil {
+		ctx.TieredWorkers = tieredWorkers(p.Agency.currentConfig())
+	}
 	return ctx
 }
 
 func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, transcript string, kind RouteKind, source string) error {
 	decision := RouteDecision{Kind: kind, Transcript: transcript, Source: source}
+	if metrics != nil {
+		decision.Tier, decision.ReasonCode = metrics.route.Tier, metrics.route.ReasonCode
+	}
 	var replyParts []string
 	metrics.routedSpeech = &replyParts
 	if p.Agency != nil {

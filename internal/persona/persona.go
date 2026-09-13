@@ -448,6 +448,9 @@ func applyBrain(cfg *config.Config, b Brain) {
 // voice_worker_* keys. Empty fields inherit, so a persona that never named a
 // worker keeps whatever Settings chose.
 func applyWorker(cfg *config.Config, w Worker) {
+	if cfg.VoiceWorkers != nil && cfg.VoiceWorkers.Mode == config.WorkerModeTiered {
+		return
+	}
 	if provider := strings.TrimSpace(w.Provider); provider != "" {
 		cfg.VoiceWorkerProvider = provider
 	}

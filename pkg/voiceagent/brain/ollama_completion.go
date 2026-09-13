@@ -33,7 +33,7 @@ func (o *OllamaBrain) Complete(ctx context.Context, req CompletionRequest) (Comp
 	format := json.RawMessage(`{"type":"object","required":["answer","updates"],"properties":{"answer":{"type":"string"},"updates":{"type":"array","maxItems":3,"items":{"type":"object","required":["result_id","text"],"properties":{"result_id":{"type":"string"},"text":{"type":"string"}},"additionalProperties":false}}},"additionalProperties":false}`)
 	request := &api.ChatRequest{
 		Model:    model,
-		Messages: []api.Message{{Role: "system", Content: system + historicalIdentityGuidance}, {Role: "user", Content: completionPrompt(req)}},
+		Messages: []api.Message{{Role: "system", Content: system + o.conversationIdentityGuidance()}, {Role: "user", Content: completionPrompt(req)}},
 		Tools:    nil, Stream: &stream, Format: format, Options: options, KeepAlive: keepAlive, Think: think,
 	}
 	var raw string
