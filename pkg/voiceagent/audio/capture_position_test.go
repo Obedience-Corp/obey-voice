@@ -58,7 +58,7 @@ func TestCapturePositionedSubscribeUnsubscribeDuringPublish(t *testing.T) {
 		for i := 0; i < 1000; i++ {
 			id, ch := c.SubscribeFrames(1)
 			c.Unsubscribe(id)
-			_, _ = <-ch
+			<-ch
 		}
 	}()
 	<-started
