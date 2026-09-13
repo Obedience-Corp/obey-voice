@@ -100,19 +100,29 @@ audio-hardware:
 # Build a pinned harness and reproducible local Kokoro fixtures/scenarios.
 # Explicit model directory; does not read or change the installed user config.
 [no-cd]
-acoustic-prepare MODELS_DIR SUITE_DIR:
+acoustic-prepare MODELS_DIR SUITE_DIR PROFILE="full":
     #!/usr/bin/env bash
     set -euo pipefail
+    profile="{{PROFILE}}"
+    case "$profile" in
+        full|latency-brief) ;;
+        *) echo "error: unknown acoustic fixture profile: $profile (expected full or latency-brief)" >&2; exit 2 ;;
+    esac
     suite="{{SUITE_DIR}}"
     mkdir -p "$suite/bin" "$suite/fixtures"
     go build -tags "${CONVOFLOW_GO_TAGS:-}" -o "$suite/bin/convoflow" ./tests/convoflow
     go build -o "$suite/bin/golden-tts" ./cmd/golden-tts
-    texts=("What is the capital of France? Answer in one word." "What is two plus two? Answer with just the number." "Say hello in exactly three words." "Count from one to one hundred slowly and say every number.")
+    math_text="What is two plus two? Answer with just the number."
+    if [[ "$profile" == latency-brief ]]; then
+        math_text="What is two plus two?"
+    fi
+    texts=("What is the capital of France? Answer in one word." "$math_text" "Say hello in exactly three words." "Count from one to one hundred slowly and say every number.")
     names=(synth-01 synth-02 synth-03 counting)
     for i in 0 1 2 3; do
         "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1 -text "${texts[$i]}" -out "$suite/fixtures/${names[$i]}.wav"
     done
     "$suite/bin/convoflow" -prepare-acoustic-suite "$suite/scenarios" -fixture-dir "$suite/fixtures"
+    printf '%s\n' "$profile" > "$suite/bin/fixture-profile.txt"
     shasum -a 256 "$suite/bin/convoflow" > "$suite/binary.sha256"
 
 # Collect 3 warmups + 30 physical turns per condition, serially, then compare.
