@@ -24,7 +24,7 @@ func NewFixtureSourceFromWAV(path string, chunkSize int, realtime bool) (*Fixtur
 		return nil, err
 	}
 	if sampleRate != SampleRate {
-		samples = resampleLinear(samples, sampleRate, SampleRate)
+		samples = ResampleLinear(samples, sampleRate, SampleRate)
 	}
 	if chunkSize <= 0 {
 		chunkSize = ChunkSize

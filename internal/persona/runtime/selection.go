@@ -25,6 +25,8 @@ import (
 // owner. Persist must atomically save the candidate selection and turns in
 // that owner's normal session. It must not publish UI state itself.
 type SelectionOptions struct {
+	// AddressResolver overrides the current provider classifier (for alternate hosts/tests).
+	AddressResolver brain.AddresseeResolver
 	// UseDefaults preserves the launcher's Settings stack until an explicit
 	// persona selection; the default profile still supplies identity/prompt.
 	UseDefaults bool
@@ -252,7 +254,18 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 				return errors.New("persona prompt changed while preparing; retry selection")
 			}
 			turns = oldBrain.History()
-			if err := projection.ImportHistory(turns); err != nil {
+			if canonical, ok := oldBrain.(brain.CanonicalHistoryProvider); ok {
+				turns = canonical.CanonicalHistory()
+			}
+			if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
+				if target, ok := nextBrain.(brain.ContinuityTransferProvider); ok {
+					if err := target.ImportContinuity(source.ContinuitySnapshot()); err != nil {
+						return fmt.Errorf("transfer conversation continuity: %w", err)
+					}
+				} else if err := projection.ImportHistory(turns); err != nil {
+					return fmt.Errorf("project conversation: %w", err)
+				}
+			} else if err := projection.ImportHistory(turns); err != nil {
 				return fmt.Errorf("project conversation: %w", err)
 			}
 			if s.opts.Voices != nil {
@@ -398,11 +411,28 @@ func (s *Selector) Admit(ctx context.Context) (events.ResponseEnvelope, error) {
 	if err != nil {
 		return events.ResponseEnvelope{}, err
 	}
+	if _, participants, err := s.conversationRoster(); err == nil {
+		s.setGroupParticipants(participants)
+	} else {
+		return events.ResponseEnvelope{}, err
+	}
+	return responseEnvelope(selected), nil
+}
+
+func (s *Selector) setGroupParticipants(participants []brain.GroupParticipant) {
+	if group, ok := s.opts.Pipeline.Brain.(interface {
+		SetGroupParticipants([]brain.GroupParticipant)
+	}); ok {
+		group.SetGroupParticipants(participants)
+	}
+}
+
+func responseEnvelope(selected events.PersonaSelection) events.ResponseEnvelope {
 	return events.ResponseEnvelope{
 		SessionID: selected.SessionID, ConversationEpoch: selected.ConversationEpoch, ResponseID: rand.Text(),
 		PersonaID: selected.PersonaID, DisplayName: selected.DisplayName, PromptHash: selected.PromptHash,
 		BindingHash: selected.BindingHash, SelectionRevision: selected.Revision, VoiceProvider: selected.VoiceProvider, Voice: selected.Voice,
-	}, nil
+	}
 }
 
 // RestoreSession adopts history and work that the host has explicitly restored.

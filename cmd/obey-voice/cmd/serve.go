@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -782,7 +783,7 @@ func buildServePipeline(ctx context.Context, cfg *config.Config, bus *events.Bus
 
 	var local audio.Engine
 	if !muteHost {
-		player := audio.NewPlayerWithDevice(cfg.OutputDevice)
+		player := playback.NewPlayerWithDevice(cfg.OutputDevice)
 		player.SetVolume(config.PlaybackVolumeOf(cfg))
 		local = player
 	}
