@@ -20,6 +20,7 @@ import (
 )
 
 func main() {
+	modelRoot := flag.String("models-dir", "", "explicit installed model directory; bypasses user configuration")
 	text := flag.String("text", "", "text to synthesize")
 	voice := flag.String("voice", "af_heart", "kokoro voice id")
 	speed := flag.Float64("speed", 0.95, "speech speed")
@@ -31,9 +32,15 @@ func main() {
 		os.Exit(2)
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		fail(err)
+	var cfg *config.Config
+	if *modelRoot != "" {
+		cfg = &config.Config{ModelsDir: *modelRoot, Language: "en-US"}
+	} else {
+		var err error
+		cfg, err = config.Load()
+		if err != nil {
+			fail(err)
+		}
 	}
 	cfg.TTSProvider = "kokoro"
 	cfg.TTSVoice = *voice
@@ -41,7 +48,7 @@ func main() {
 
 	k, err := tts.NewKokoroTTS(cfg)
 	if err != nil {
-		fail(fmt.Errorf("NewKokoroTTS: %w (models_dir=%s)", err, config.ModelsDir()))
+		fail(fmt.Errorf("NewKokoroTTS: %w (models_dir=%s)", err, config.ModelsDirFrom(cfg)))
 	}
 	defer k.Delete()
 
@@ -76,7 +83,11 @@ func main() {
 		fail(err)
 	}
 
-	modelsDir := config.KokoroDir()
+	modelsDir := config.KokoroDirFrom(cfg)
+	pack := "sherpa-multi-lang-v1_0"
+	if filepath.Base(modelsDir) == config.KokoroV1Subdir {
+		pack = "thewh1teagle-v1.0-en"
+	}
 	modelPath := filepath.Join(modelsDir, "model.onnx")
 	voicesPath := filepath.Join(modelsDir, "voices.bin")
 	dur := 0.0
@@ -94,7 +105,7 @@ func main() {
 		"sample_rate":    sr,
 		"num_samples":    len(samples),
 		"duration_s":     dur,
-		"kokoro_pack":    config.KokoroPack(),
+		"kokoro_pack":    pack,
 		"models_dir":     modelsDir,
 		"model_path":     modelPath,
 		"voices_path":    voicesPath,

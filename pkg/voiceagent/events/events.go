@@ -467,6 +467,9 @@ type SpeakingInterrupted struct {
 	// it off. Zero when not applicable (e.g. a keystroke, remote, or
 	// client-silent interrupt, which this field does not cover yet).
 	SincePlaybackStart time.Duration
+	// DetectionToPlaybackStop measures monotonic time from the production
+	// speech detector request through Player.Stop returning. Zero when unknown.
+	DetectionToPlaybackStop time.Duration
 }
 
 func (e SpeakingInterrupted) eventType() string { return "speaking_interrupted" }

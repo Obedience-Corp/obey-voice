@@ -51,6 +51,12 @@ func WorkerBrainConfig(cfg *Config) *Config {
 	w := *cfg
 	w.IsWorker = true
 	w.BrainProvider = VoiceWorkerProviderOf(cfg)
+	// Legacy Ollama workers are admitted before the paid-work plan is known.
+	// Do not let semantic skill routing perform an embedding request during
+	// construction; tiered workers already arrive with this field cleared.
+	if w.VoiceWorkEnabled && w.BrainProvider == "ollama" {
+		w.OllamaEmbeddingModel = ""
+	}
 	if model := strings.TrimSpace(cfg.VoiceWorkerModel); model != "" {
 		SetBrainModel(&w, w.BrainProvider, model)
 	}

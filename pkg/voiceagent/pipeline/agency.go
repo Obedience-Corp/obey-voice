@@ -87,6 +87,9 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		managedJobs:    make(map[string]*delegation.Runtime),
 		managedClosing: make(map[*delegation.Runtime]bool),
 	}
+	if jobs != nil && tieredWorkers(cfg) {
+		jobs.SetWorkerLimits(cfg.VoiceWorkers.Policy.ConcurrentWorkers, cfg.VoiceWorkers.Policy.QueuedWorkers)
+	}
 	a.narrator = NewNarrator(a)
 	if jobs != nil && cfg != nil {
 		jobs.SetEnabled(!cfg.VoiceWorkersDisabled)
@@ -171,7 +174,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		a.pipeline.emit(events.Error{Stage: "job", Message: workerErr.Error()})
 		return
 	}
-	if experimental && providerName(jobCfg) != "ollama" {
+	if experimental && plan == nil && providerName(jobCfg) != "ollama" {
 		a.emitRouteDecision(d, "rejected", "", "Experimental work requires a local worker; paid and unknown providers are disabled.")
 		a.pipeline.emit(events.Error{Stage: "job", Message: "Experimental work requires a local worker; paid and unknown providers are disabled."})
 		return
@@ -195,9 +198,14 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if plan != nil {
 		run = a.plannedWorkerRun(spawnBrief(history, d.Transcript), jobCfg, plan)
 	}
+	var runtimeBudget time.Duration
+	if plan != nil {
+		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
+	}
 	_, err := a.jobs.Start(ctx, job.Spec{
-		ID:         jobID,
-		OnAccepted: func(id string) { a.emitRouteDecision(d, "accepted", id, "") },
+		RuntimeBudget: runtimeBudget,
+		ID:            jobID,
+		OnAccepted:    func(id string) { a.emitRouteDecision(d, "accepted", id, "") },
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
@@ -259,6 +267,10 @@ func (a *Agency) speakSpawnClarifier(ctx context.Context, turn *turnConductor, m
 }
 
 func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Config) func(context.Context) (string, error) {
+	return a.workerRunWithBudget(brief, worker, cfg, legacyWorkerBudget(a.workEnabled(), cfg))
+}
+
+func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *config.Config, budget *brain.WorkerBudget) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		if a.workEnabled() && !a.acceptJobCallback(job.IDFromContext(ctx)) {
 			return "", context.Canceled
@@ -267,6 +279,13 @@ func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Conf
 			return "", errors.New("worker provider is not configured")
 		}
 		worker = a.freshWorker(worker)
+		if a.workEnabled() && !tieredWorkers(cfg) && providerName(cfg) == "ollama" {
+			if validator, ok := worker.(brain.LegacyWorkerValidator); ok {
+				if err := validator.ValidateLegacyWorker(ctx); err != nil {
+					return "", fmt.Errorf("validate local worker: %w", err)
+				}
+			}
+		}
 		a.bindWorkerAdmission(worker)
 		// Tiered admissions always run the full worker tool surface. The
 		// conversation flag controls the live turn/router; it must not disable
@@ -276,6 +295,8 @@ func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Conf
 			tools = cfg.VoiceToolsEnabled || tieredWorkers(cfg)
 		}
 		opts := brain.WorkerStreamOptions(tools)
+		opts.WorkerBudget = budget
+		opts.OnWorkerUsage = a.workerUsageHook(job.IDFromContext(ctx), budget)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
 		return worker.ThinkFull(ctx, brief, opts)
 	}
@@ -542,6 +563,9 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	if !accepted {
 		return
 	}
+	if errors.Is(err, brain.ErrWorkerBudgetExceeded) || errors.Is(err, job.ErrBudget) || errors.Is(err, context.DeadlineExceeded) {
+		a.pipeline.emit(events.WorkerLimitReached{Scope: key.Scope, JobID: id, Message: errorText(err, "Worker limit reached"), Termination: "unknown"})
+	}
 	if !a.workEnabled() && a.narrator != nil && a.narrator.handleJobDone(id, state, result, err) {
 		return
 	}
@@ -565,6 +589,9 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 			if errors.Is(err, job.ErrBudget) {
 				status, text = work.OutcomeTimedOut, fmt.Sprintf("Work stopped after %s.", spokenDuration(terminalElapsed))
 			}
+		}
+		if errors.Is(err, brain.ErrWorkerBudgetExceeded) || errors.Is(err, job.ErrBudget) || errors.Is(err, context.DeadlineExceeded) {
+			termination = "unknown"
 		}
 		_, publishErr := c.Publish(key, work.Outcome{Scope: key.Scope, JobID: id, Status: status, Text: text, Termination: termination, StartedAt: startedAt, EndedAt: endedAt, Elapsed: terminalElapsed})
 		if publishErr != nil {

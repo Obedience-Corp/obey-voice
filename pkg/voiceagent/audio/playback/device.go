@@ -142,6 +142,9 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	p.mu.Lock()
 	p.ctx = ctx
 	p.device = device
+	p.actualDeviceName = actualDeviceName
+	p.clientRate = sampleRate
+	p.clientChannels = int(channels)
 	p.sampleRate = deviceRate
 	p.channels = deviceChannels
 	p.debug = debug

@@ -33,20 +33,23 @@ const (
 // ever asking for it — and a reopen that fails must leave active set, or the
 // microphone is dead for the rest of the session with nothing left to retry it.
 type Capture struct {
-	mu         sync.Mutex
-	subsMu     sync.RWMutex
-	ctx        *malgo.AllocatedContext
-	device     *malgo.Device
-	buf        *RingBuffer
-	frontend   Frontend
-	active     bool          // the caller wants capture running
-	running    bool          // a device is open
-	watchDone  chan struct{} // closed by Stop so the cancellation watcher exits
-	subs       map[int]chan []float32
-	nextSub    int
-	frameSeq   int64
-	deviceName string
-	lastData   atomic.Int64 // unix nano of last onData; 0 until Start
+	mu               sync.Mutex
+	subsMu           sync.RWMutex
+	ctx              *malgo.AllocatedContext
+	device           *malgo.Device
+	buf              *RingBuffer
+	frontend         Frontend
+	active           bool          // the caller wants capture running
+	running          bool          // a device is open
+	watchDone        chan struct{} // closed by Stop so the cancellation watcher exits
+	subs             map[int]chan []float32
+	nextSub          int
+	frameSeq         int64
+	deviceName       string
+	actualDeviceName string
+	deviceRate       int
+	deviceChannels   int
+	lastData         atomic.Int64 // unix nano of last onData; 0 until Start
 
 	// open and closeDevice are seams: production opens a malgo device, tests
 	// substitute a fake so reopen behavior is exercised without hardware.
@@ -63,6 +66,26 @@ type Capture struct {
 	// is either free or already redirected into the diagnostics log, and an
 	// explicit file logger on a TUI path that does not redirect it.
 	Logf func(format string, args ...any)
+}
+
+// NegotiatedDevice describes the opened stream separately from the requested
+// client format. Backend resampling means this is not necessarily the native
+// hardware format. Unknown device identity remains explicitly unknown.
+type NegotiatedDevice struct {
+	RequestedName    string `json:"requested_name"`
+	Name             string `json:"name"`
+	IdentityKnown    bool   `json:"identity_known"`
+	SampleRate       int    `json:"sample_rate"`
+	Channels         int    `json:"channels"`
+	ClientSampleRate int    `json:"client_sample_rate"`
+	ClientChannels   int    `json:"client_channels"`
+}
+
+// NegotiatedDevice returns the last successfully opened capture device.
+func (c *Capture) NegotiatedDevice() NegotiatedDevice {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return NegotiatedDevice{RequestedName: c.deviceName, Name: c.actualDeviceName, IdentityKnown: c.actualDeviceName != "", SampleRate: c.deviceRate, Channels: c.deviceChannels, ClientSampleRate: SampleRate, ClientChannels: Channels}
 }
 
 // NewCapture creates a new mic capture instance.
@@ -240,6 +263,11 @@ func (c *Capture) openMalgoDevice() error {
 
 	c.ctx = mctx
 	c.device = device
+	// selectDevice requires an exact enumerated name and opens its DeviceID;
+	// it never falls back for an explicit name. The OS default remains unknown.
+	c.actualDeviceName = c.deviceName
+	c.deviceRate = int(device.SampleRate())
+	c.deviceChannels = int(device.CaptureChannels())
 	return nil
 }
 

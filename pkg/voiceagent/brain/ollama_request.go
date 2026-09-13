@@ -84,18 +84,59 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 // of failing the turn. The degradation is logged so "tools silently vanished"
 // is never invisible.
 func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
-	err := o.client.Chat(ctx, req, fn)
-	if err != nil && req.Tools != nil && modelRejectedTools(err) {
-		fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected tools (%v); continuing without tool calling — file read/write will not run\n", o.model, err)
-		req.Tools = nil
-		err = o.client.Chat(ctx, req, fn)
+	budget := workerBudgetFromContext(ctx)
+	for {
+		if err := budget.AcquireRequest(ctx); err != nil {
+			return err
+		}
+		if err := o.applyOutputBudget(req, budget); err != nil {
+			return err
+		}
+		var input, output int
+		err := o.client.Chat(ctx, req, func(resp api.ChatResponse) error {
+			if resp.Done {
+				input, output = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
+			}
+			return fn(resp)
+		})
+		rejectedTools := err != nil && req.Tools != nil && modelRejectedTools(err)
+		rejectedThink := err != nil && thinkEnabled(req.Think) && modelRejectedThink(err)
+		if !rejectedTools && !rejectedThink {
+			budget.RecordUsage(input, output)
+			if limitErr := budget.Err(); limitErr != nil {
+				return limitErr
+			}
+			return err
+		}
+		budget.rejectedRequest()
+		if err := budget.AcquireRetry(ctx); err != nil {
+			return err
+		}
+		if rejectedTools {
+			fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected tools (%v); continuing without tool calling — file read/write will not run\n", o.model, err)
+			req.Tools = nil
+		} else {
+			fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected think (%v); continuing with think=false\n", o.model, err)
+			req.Think = ollamaThinkValue("false")
+		}
 	}
-	if err != nil && thinkEnabled(req.Think) && modelRejectedThink(err) {
-		fmt.Fprintf(os.Stderr, "obey-voice: ollama model %q rejected think (%v); continuing with think=false\n", o.model, err)
-		req.Think = ollamaThinkValue("false")
-		return o.client.Chat(ctx, req, fn)
+}
+
+func (o *OllamaBrain) applyOutputBudget(req *api.ChatRequest, budget *WorkerBudget) error {
+	if budget == nil {
+		return nil
 	}
-	return err
+	if remaining := budget.RemainingOutput(); remaining > 0 {
+		if req.Options == nil {
+			req.Options = map[string]any{}
+		}
+		if existing, ok := req.Options["num_predict"].(int); !ok || existing <= 0 || remaining < existing {
+			req.Options["num_predict"] = remaining
+		}
+	} else if budget.Snapshot().Limits.MaxOutputTokens > 0 {
+		return ErrWorkerBudgetExceeded
+	}
+	return nil
 }
 
 func modelRejectedTools(err error) bool {

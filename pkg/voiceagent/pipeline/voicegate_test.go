@@ -281,6 +281,55 @@ func TestVoiceGateSpeaksOrdinaryConversation(t *testing.T) {
 	}
 }
 
+func TestVoiceGateSpeaksStandaloneNumericReply(t *testing.T) {
+	for _, line := range []string{"4.", "+4", "-4.5", "$5", "12.5%", "+25%", "12:30", "1:23:45", "1000", "1,000"} {
+		g := &voiceGate{}
+		kept, dropped := g.filter(line)
+		if kept != line || dropped != 0 {
+			t.Errorf("numeric speech was filtered: %q -> kept %q, dropped %d", line, kept, dropped)
+		}
+	}
+	g := &voiceGate{}
+	if kept, _ := g.filter("```\n4.\n```"); kept != "" {
+		t.Fatalf("numeric fenced payload leaked: %q", kept)
+	}
+	g = &voiceGate{}
+	if kept, _ := g.filter("Called the Bash tool\n4.\nThat is all I have."); strings.Contains(kept, "4.") {
+		t.Fatalf("numeric tool payload leaked: %q", kept)
+	}
+	for _, line := range []string{"4...", "1:2", "12..5"} {
+		if kept, _ := (&voiceGate{}).filter(line); kept != "" {
+			t.Errorf("malformed numeric output was spoken: %q -> %q", line, kept)
+		}
+	}
+}
+
+func TestRunTurnVoiceGateSpeaksStandaloneNumericReply(t *testing.T) {
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	tts := &fakeTTS{}
+	p := &Pipeline{STT: &fakeSTT{text: "choose"}, Brain: &fakeBrain{chunks: []string{"4."}}, TTS: tts, Player: player, Capture: newFakeCapture(), VAD: &fakeVAD{}, Events: events.NewBus()}
+	if _, err := p.RunTurn(context.Background()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if got := strings.Join(tts.Texts(), " "); !strings.Contains(got, "4.") {
+		t.Fatalf("voice numeric reply was not synthesized: %q", got)
+	}
+}
+
+func TestRunTurnTextModeVoiceGateSpeaksStandaloneNumericReply(t *testing.T) {
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	tts := &fakeTTS{}
+	p := &Pipeline{Brain: &fakeBrain{chunks: []string{"4."}}, TTS: tts, Player: player, Events: events.NewBus()}
+	if err := p.RunTurnTextMode(context.Background(), "choose"); err != nil {
+		t.Fatalf("RunTurnTextMode() error = %v", err)
+	}
+	if got := strings.Join(tts.Texts(), " "); !strings.Contains(got, "4.") {
+		t.Fatalf("text-mode numeric reply was not synthesized: %q", got)
+	}
+}
+
 // TestRunTurnVoiceGateKeepsPayloadOutOfTTS is the B4 invariant end-to-end over
 // the real streaming path: a multi-line tool transcript and a fenced block are
 // narrated into the reply, and none of their payload may reach TTS while the

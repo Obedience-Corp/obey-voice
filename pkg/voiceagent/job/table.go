@@ -54,6 +54,9 @@ type Spec struct {
 	Provider string
 	Model    string
 	Run      func(ctx context.Context) (result string, err error)
+	// RuntimeBudget overrides the table default for this admitted job.
+	// Zero keeps the legacy default. It limits local scheduling, not remote termination.
+	RuntimeBudget time.Duration
 	// OnAccepted publishes caller metadata after enqueue succeeds, before
 	// queued/start callbacks or execution. It runs outside the table lock.
 	OnAccepted func(id string)
@@ -117,6 +120,7 @@ type Table struct {
 	running       map[string]struct{}
 	runOrder      []string
 	maxConcurrent int
+	maxQueued     int
 	// budget is the longest a job may run; zero means no limit.
 	budget   time.Duration
 	onDone   DoneCallback
@@ -229,6 +233,10 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	if t.disabled {
 		t.mu.Unlock()
 		return "", ErrDisabled
+	}
+	if t.maxQueued > 0 && len(t.running) >= t.maxConcurrent && len(t.queue) >= t.maxQueued {
+		t.mu.Unlock()
+		return "", errors.New("worker queue limit reached")
 	}
 	id := spec.ID
 	if id == "" {
@@ -426,8 +434,12 @@ func (t *Table) run(jobCtx context.Context, id string) {
 	runFn := e.spec.Run
 	if runFn != nil {
 		e.info.Started = time.Now()
-		if t.budget > 0 {
-			e.budgetTimer = time.AfterFunc(t.budget, func() { t.exceedBudget(id) })
+		budget := t.budget
+		if e.spec.RuntimeBudget > 0 {
+			budget = e.spec.RuntimeBudget
+		}
+		if budget > 0 {
+			e.budgetTimer = time.AfterFunc(budget, func() { t.exceedBudget(id) })
 		}
 	}
 	t.mu.Unlock()
@@ -512,7 +524,13 @@ func (t *Table) finishLocked(id string, state State, result string, err error) D
 // time has stopped its timer under the lock, and stop ignores a finished id,
 // so the race between the two is harmless.
 func (t *Table) exceedBudget(id string) {
-	t.stop(id, fmt.Errorf("%w after %s", ErrBudget, t.budget))
+	t.mu.Lock()
+	budget := t.budget
+	if e := t.jobs[id]; e != nil && e.spec.RuntimeBudget > 0 {
+		budget = e.spec.RuntimeBudget
+	}
+	t.mu.Unlock()
+	t.stop(id, fmt.Errorf("%w after %s", ErrBudget, budget))
 }
 
 func (t *Table) removeFromQueueLocked(id string) {
@@ -549,4 +567,15 @@ func (t *Table) orderedIDsLocked() []string {
 		add(id)
 	}
 	return out
+}
+
+// SetWorkerLimits changes future admission/scheduling bounds. Running work
+// retains its slot until completion; lowering concurrency never cancels it.
+// A zero queue limit preserves legacy unbounded queuing.
+func (t *Table) SetWorkerLimits(concurrent, queued int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.maxConcurrent = max(1, concurrent)
+	t.maxQueued = max(0, queued)
+	t.pumpLocked()
 }

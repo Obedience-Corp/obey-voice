@@ -303,7 +303,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 		t.Fatalf("completion view omitted help command:\n%s", completed.view)
 	}
 	program.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	help := awaitTerminalSnapshot(t, h.updates, "help output", func(s terminalPersonaSnapshot) bool { return strings.Contains(s.view, "Slash commands:") })
+	help := awaitTerminalSnapshot(t, h.updates, "help output", func(s terminalPersonaSnapshot) bool {
+		return strings.Contains(strings.Join(s.transcript, "\n"), "Slash commands:") && strings.Contains(s.view, "/personas") && strings.Contains(s.view, "/vim")
+	})
 	if !strings.Contains(help.view, "/personas") || !strings.Contains(help.view, "/vim") {
 		t.Fatalf("help output missing registered commands:\n%s", help.view)
 	}

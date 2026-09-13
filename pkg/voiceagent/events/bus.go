@@ -13,7 +13,30 @@ type Bus struct {
 	mu          sync.RWMutex
 	handlers    map[reflect.Type][]Handler
 	allHandlers []allEntry
+	observers   []allEntry
 	nextAllID   int
+}
+
+// ObserveBeforeFanout registers a detachable, memory-only diagnostic observer.
+// It runs before typed consumers. Observers must not perform I/O or emit events
+// recursively; they may sequence and enqueue copied diagnostics without waiting
+// for their writer. SubscribeAll retains its existing after-typed ordering.
+func (b *Bus) ObserveBeforeFanout(handler Handler) (remove func()) {
+	b.mu.Lock()
+	id := b.nextAllID
+	b.nextAllID++
+	b.observers = append(b.observers, allEntry{id: id, h: handler})
+	b.mu.Unlock()
+	return func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		for i, e := range b.observers {
+			if e.id == id {
+				b.observers = append(b.observers[:i], b.observers[i+1:]...)
+				return
+			}
+		}
+	}
 }
 
 type allEntry struct {
@@ -70,7 +93,10 @@ func (b *Bus) SubscribeAll(handler Handler) (remove func()) {
 func (b *Bus) Emit(event Event) {
 	b.mu.RLock()
 	t := reflect.TypeOf(event)
-	handlers := make([]Handler, 0, len(b.handlers[t])+len(b.allHandlers))
+	handlers := make([]Handler, 0, len(b.observers)+len(b.handlers[t])+len(b.allHandlers))
+	for _, e := range b.observers {
+		handlers = append(handlers, e.h)
+	}
 	handlers = append(handlers, b.handlers[t]...)
 	for _, e := range b.allHandlers {
 		handlers = append(handlers, e.h)

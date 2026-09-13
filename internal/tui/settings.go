@@ -17,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/usage"
 )
 
 type settingsSection int
@@ -85,8 +86,11 @@ type settingsModel struct {
 	// lookPath resolves external binaries for the recognizer rows; nil uses
 	// exec.LookPath. Tests inject a fake so a picker never depends on what
 	// happens to be installed on the machine running them.
-	lookPath func(string) (string, error)
-	message  string
+	lookPath               func(string) (string, error)
+	message                string
+	workerAllowance        *usage.Snapshot
+	workerAllowanceLoading bool
+	workerAllowanceErr     string
 
 	// edit is the inline value editor (speech computer address / token /
 	// speaker name). While it is active it owns every key.
@@ -637,6 +641,18 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		}
 		m.inputItems = append([]string{""}, msg.inputs...)
 		m.outputItems = append([]string{""}, msg.outputs...)
+
+	case workerAllowanceMsg:
+		m.workerAllowanceLoading = false
+		if msg.err != nil {
+			m.workerAllowance = nil
+			m.workerAllowanceErr = msg.err.Error()
+			m.message = fmt.Sprintf("Worker allowance inspection failed: %v", msg.err)
+			break
+		}
+		m.workerAllowance = &msg.snapshot
+		m.workerAllowanceErr = ""
+		m.message = "Worker allowance refreshed"
 
 	case meetingRouteDestsMsg:
 		if msg.seq != m.routeDestsSeq {

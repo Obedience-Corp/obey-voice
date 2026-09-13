@@ -7,11 +7,13 @@ import (
 )
 
 type testWorkerCaps struct {
-	err error
-	got WorkerAssignment
+	err    error
+	got    WorkerAssignment
+	report WorkerCapabilities
 }
 
-func (c *testWorkerCaps) ValidateWorkerAssignment(a WorkerAssignment) error { c.got = a; return c.err }
+func (c *testWorkerCaps) ValidateWorkerAssignment(a WorkerAssignment) error      { c.got = a; return c.err }
+func (c *testWorkerCaps) WorkerCapabilities(WorkerAssignment) WorkerCapabilities { return c.report }
 
 func validTierWorkers() *VoiceWorkers {
 	w := DefaultVoiceWorkers()
@@ -53,6 +55,42 @@ func TestWorkerPlanRejectsSpoofedBillingThroughTrustedCapabilities(t *testing.T)
 	caps := &testWorkerCaps{err: errors.New("billing label not trusted")}
 	if _, err := ResolveWorkerPlan(&Config{VoiceWorkers: w}, WorkerTierSimple, caps); err == nil {
 		t.Fatal("spoofed paid billing resolved")
+	}
+}
+
+func TestWorkerPlanPaidRequiresExplicitOptInAndAccount(t *testing.T) {
+	w := validTierWorkers()
+	w.Tiers.Simple.Assignment = &WorkerAssignment{Provider: "claude", Model: "sonnet", Billing: WorkerBillingSubscription}
+	cfg := &Config{VoiceWorkers: w}
+	caps := &testWorkerCaps{}
+	if _, err := ResolveWorkerPlan(cfg, WorkerTierSimple, caps); err == nil {
+		t.Fatal("paid worker bypassed disabled policy")
+	}
+	w.Policy.PaidEnabled = true
+	w.Tiers.Simple.AllowUncapped = true
+	if _, err := ResolveWorkerPlan(cfg, WorkerTierSimple, caps); err == nil {
+		t.Fatal("paid worker without account resolved")
+	}
+	a := "default"
+	w.Tiers.Simple.Assignment.AccountRef = &a
+	p, err := ResolveWorkerPlan(cfg, WorkerTierSimple, caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Assignment.AccountRef == nil || *p.Assignment.AccountRef != "default" {
+		t.Fatalf("account=%v", p.Assignment.AccountRef)
+	}
+}
+
+func TestWorkerPlanStrictRejectsUnboundedPaidAdapter(t *testing.T) {
+	w := validTierWorkers()
+	a := "default"
+	w.Tiers.Simple.Assignment = &WorkerAssignment{Provider: "grok", Model: "grok-3", Billing: WorkerBillingMetered, AccountRef: &a}
+	w.Policy.PaidEnabled = true
+	w.Policy.ChargePolicy = "strict"
+	w.Tiers.Simple.AllowUncapped = true
+	if _, err := ResolveWorkerPlan(&Config{VoiceWorkers: w}, WorkerTierSimple, &testWorkerCaps{}); err == nil {
+		t.Fatal("strict unbounded adapter resolved")
 	}
 }
 

@@ -439,6 +439,16 @@ func NewStore(dir string) *Store { return &Store{dir: dir} }
 // This is what the CLI uses, and what the package-level helpers delegate to.
 func DefaultStore() *Store { return NewStore(config.SessionsDir()) }
 
+// WorkDir resolves diagnostic sidecars beneath this store without creating
+// files or changing the canonical session. Callers must validate schemas before
+// writing existing diagnostic files.
+func (st *Store) WorkDir(id string) (string, error) {
+	if err := validateSessionID(id); err != nil {
+		return "", err
+	}
+	return filepath.Join(st.dir, id+".work"), nil
+}
+
 // Save writes the session's turns while preserving the newest durable work
 // snapshot. It uses the same keyed lock as SaveWork so a result arriving
 // between user turns cannot be overwritten by a stale turn save.

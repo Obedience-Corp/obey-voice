@@ -168,6 +168,11 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			}
 			if deps.pause.consumeResumed() {
 				track.listenStart = time.Now()
+				if !track.detected && !deps.seg.HasSegments() {
+					if !emitPhase("listening") {
+						return
+					}
+				}
 			}
 		}
 

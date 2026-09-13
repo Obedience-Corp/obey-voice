@@ -22,8 +22,27 @@ type LocalWorkerCapabilities struct{}
 // ValidateWorkerAssignment checks the parts of an assignment that can be
 // trusted without contacting a provider.
 func (LocalWorkerCapabilities) ValidateWorkerAssignment(a config.WorkerAssignment) error {
-	if strings.ToLower(strings.TrimSpace(a.Provider)) != "ollama" {
-		return fmt.Errorf("provider %q is not an approved local adapter", a.Provider)
+	provider := strings.ToLower(strings.TrimSpace(a.Provider))
+	if provider == "claude" || provider == "grok" {
+		if a.EndpointRef != nil {
+			return errors.New("endpoint_ref is unsupported for CLI workers")
+		}
+		if a.Billing == config.WorkerBillingLocal {
+			return fmt.Errorf("CLI provider %q cannot use local billing", provider)
+		}
+		if a.Billing != config.WorkerBillingSubscription && a.Billing != config.WorkerBillingMetered {
+			return fmt.Errorf("CLI provider %q requires explicit subscription or metered billing", provider)
+		}
+		if a.AccountRef == nil || strings.TrimSpace(*a.AccountRef) != "default" {
+			return fmt.Errorf("CLI provider %q requires account_ref=default", provider)
+		}
+		if strings.TrimSpace(a.Model) == "" {
+			return errors.New("model is required")
+		}
+		return nil
+	}
+	if provider != "ollama" {
+		return fmt.Errorf("provider %q is not an approved worker adapter", a.Provider)
 	}
 	if a.Billing != config.WorkerBillingLocal {
 		return fmt.Errorf("billing %q is not approved for local dispatch", a.Billing)
@@ -52,6 +71,10 @@ func ValidateWorkerPlan(ctx context.Context, plan *config.WorkerPlan) error {
 	}
 	if err := (LocalWorkerCapabilities{}).ValidateWorkerAssignment(plan.Assignment); err != nil {
 		return fmt.Errorf("worker assignment rejected: %w", err)
+	}
+	provider := strings.ToLower(strings.TrimSpace(plan.Assignment.Provider))
+	if provider == "claude" || provider == "grok" {
+		return nil
 	}
 	endpoint, _ := approvedLoopbackEndpoint(*plan.Assignment.EndpointRef)
 	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -108,6 +131,19 @@ func NewPlannedWorker(ctx context.Context, base *config.Config, plan *config.Wor
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	provider := strings.ToLower(strings.TrimSpace(plan.Assignment.Provider))
+	if provider == "claude" || provider == "grok" {
+		cfg := base.Clone()
+		cfg.VoiceWorkerProvider = provider
+		cfg.VoiceWorkerModel = strings.TrimSpace(plan.Assignment.Model)
+		config.SetBrainModel(cfg, provider, cfg.VoiceWorkerModel)
+		workerCfg := config.WorkerBrainConfig(cfg)
+		workerCfg.DelegationEnabled = false
+		if provider == "claude" {
+			return New(workerCfg)
+		}
+		return NewGrok(workerCfg)
+	}
 	cfg := base.Clone()
 	a := plan.Assignment
 	cfg.VoiceWorkerProvider = strings.TrimSpace(strings.ToLower(a.Provider))
@@ -152,4 +188,30 @@ func approvedLoopbackEndpoint(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("endpoint_ref host %q is not an approved loopback address", u.Hostname())
 	}
 	return u, nil
+}
+
+func (LocalWorkerCapabilities) WorkerCapabilities(a config.WorkerAssignment) config.WorkerCapabilities {
+	return WorkerCapabilitiesFor(a.Provider)
+}
+
+// WorkerCapabilitiesFor describes enforcing adapter paths, not model pricing.
+func WorkerCapabilitiesFor(provider string) config.WorkerCapabilities {
+	if !strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+		return CLIWorkerCapabilities(provider)
+	}
+	return config.WorkerCapabilities{
+		Provider: "ollama", Adapter: "obey-voice Ollama worker", Version: "ollama-go/v0.32.3; worker-limits/v1",
+		RequestBoundary:       supported("brain.chat", "every attempt acquires the job-shared request quota"),
+		OutputTokenCeiling:    supported("Ollama num_predict", "remaining generation allowance on every request; missing usage blocks continuation"),
+		ToolCallMediation:     supported("toolSession.execute", "acquires quota before each tool; strict policy refuses unmediated shell/network/delegation"),
+		RetryLimit:            supported("brain.chat", "compatibility retries consume both retry and request quotas; zero forbids retries"),
+		RuntimeLimit:          supported("job table/context", "pinned task deadline bounds local scheduling; provider and tool contexts cancel"),
+		Usage:                 supported("Ollama response metrics", "full and stream paths report observed counts; missing fields remain unknown"),
+		AuthoritativeBilling:  unsupported("local assignment only; no provider billing authority"),
+		ChargeBound:           unsupported("no metered upper-bound certification; strict local tools exclude external execution"),
+		ProcessExit:           unsupported("Ollama HTTP cancellation does not observe server process exit"),
+		DescendantExit:        unsupported("arbitrary tool descendants are not observed"),
+		CancellationRequested: supported("context", "cancellation sent to HTTP/tool calls; not proof of remote termination"),
+		ResumablePreemption:   unsupported("running model requests cannot be safely preempted/resumed"),
+	}
 }

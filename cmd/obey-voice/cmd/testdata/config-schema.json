@@ -913,7 +913,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Disable background workers",
-      "help": "Reject new background jobs. Existing running and queued jobs may finish; use /workers to stop them. Applies immediately and to future chats.",
+      "help": "Reject new background jobs. Existing running and queued jobs may finish; use /workers to stop them. The TUI applies it live; serve reads it when it builds the pipeline.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

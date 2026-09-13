@@ -30,6 +30,7 @@ func (m *conversationModel) workStateChanged(e events.WorkStateChanged) {
 		m.clearWorkProjection()
 		m.clearJobProjection()
 	}
+	m.observeWorkDisplay(s)
 	m.workScope = s.Scope
 	m.workRevision = s.Revision
 	if m.workResultItems == nil {
@@ -85,7 +86,7 @@ func (m *conversationModel) workStateChanged(e events.WorkStateChanged) {
 		}
 		delete(m.workResultItems, id)
 	}
-	m.refreshContent()
+	m.reflow()
 	m.applyFollow()
 }
 
@@ -122,6 +123,9 @@ func (m *conversationModel) renderWorkResult(v work.ResultView) string {
 	}
 	if persona := v.Outcome.Config["persona"]; persona != "" {
 		meta = append(meta, "persona: "+persona)
+	}
+	if tier := v.Outcome.Config["worker_tier"]; tier != "" {
+		meta = append(meta, "tier: "+workTierLabel(tier))
 	}
 	if v.Outcome.SourceRef != "" {
 		meta = append(meta, "source: "+v.Outcome.SourceRef)

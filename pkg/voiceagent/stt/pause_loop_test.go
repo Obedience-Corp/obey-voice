@@ -94,3 +94,62 @@ gotYield:
 		t.Fatal("offline loop did not stop")
 	}
 }
+
+func TestPauseResumeEmitsListeningReadinessForBothLoops(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		run  func(context.Context, *pauseController, chan<- Event)
+	}{
+		{name: "offline", run: func(ctx context.Context, p *pauseController, out chan<- Event) {
+			runOfflineLoop(ctx, offlineLoopDeps{frames: noFrames{}, seg: &fakeSegmenter{}, pause: p, policy: endpoint.Policy{StartTimeout: time.Second}, transcribe: func([]float32) (string, error) { return "", nil }}, out)
+		}},
+		{name: "streaming", run: func(ctx context.Context, p *pauseController, out chan<- Event) {
+			runStreamingLoop(ctx, streamingLoopDeps{frames: noFrames{}, seg: &fakeSegmenter{}, rec: &fakeStreamingRec{}, pause: p, policy: endpoint.Policy{StartTimeout: time.Second}}, out)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scope := pauseTestScope()
+			pause := newPauseController("ready-" + tc.name)
+			pause.BindCompletionCoordinator(work.NewCoordinator(scope))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			out := make(chan Event, 32)
+			done := make(chan struct{})
+			go func() { tc.run(ctx, pause, out); close(done) }()
+			requestCtx, requestCancel := context.WithTimeout(ctx, time.Second)
+			result, err := pause.request(requestCtx, scope, "ready")
+			requestCancel()
+			if err != nil || result.Decision != PauseAcknowledged {
+				t.Fatalf("pause = %+v, %v", result, err)
+			}
+			deadline := time.After(time.Second)
+			for {
+				select {
+				case event := <-out:
+					if yielded, ok := event.(YieldedForCompletion); ok && yielded.RequestID == "ready" {
+						if err := pause.resume(context.Background(), result.Token); err != nil {
+							t.Fatal(err)
+						}
+						goto resumed
+					}
+				case <-deadline:
+					t.Fatal("timed out waiting for yielded event")
+				}
+			}
+		resumed:
+			deadline = time.After(time.Second)
+			for {
+				select {
+				case event := <-out:
+					if phase, ok := event.(PhaseEvent); ok && phase.Phase == "listening" {
+						cancel()
+						<-done
+						return
+					}
+				case <-deadline:
+					t.Fatal("timed out waiting for resumed listening phase")
+				}
+			}
+		})
+	}
+}

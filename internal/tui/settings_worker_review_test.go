@@ -109,7 +109,7 @@ func TestWorkerDraftEditsPreserveExplicitChoices(t *testing.T) {
 	}
 }
 
-func TestWorkerSettingsShowUnenforcedLimitsAndExistingBounds(t *testing.T) {
+func TestWorkerSettingsShowCapabilityScopeAndExistingBounds(t *testing.T) {
 	cfg := tieredSettingsFixture()
 	cfg.VoiceWorkerMaxConcurrent = 2
 	cfg.VoiceWorkerJobBudget = 75
@@ -118,15 +118,36 @@ func TestWorkerSettingsShowUnenforcedLimitsAndExistingBounds(t *testing.T) {
 	for _, tier := range []config.WorkerTierName{"", config.WorkerTierSimple} {
 		m.workerEditingTier = tier
 		view := stripANSI(m.View())
-		for _, want := range []string{"not yet enforced", "2 concurrent", "75s runtime"} {
+		wants := []string{"1 concurrent", "32 queued"}
+		if tier == "" {
+			wants = append(wants, "tiered", "tiered draft; Save applies these limits")
+		}
+		if tier != "" {
+			wants = append(wants, "local request/tool/output quotas")
+		}
+		for _, want := range wants {
 			if !strings.Contains(view, want) {
 				t.Fatalf("%s view lacks %q: %s", tier, want, view)
 			}
 		}
-		for _, row := range m.tierWorkerRows() {
-			if row.detail == "not yet enforced" && row.applies == "new jobs after Save" {
-				t.Fatalf("%s implies enforcement", row.key)
-			}
+	}
+}
+
+func TestLegacyWorkerSettingsShowEffectiveSingletonLimits(t *testing.T) {
+	cfg := &config.Config{
+		BrainProvider:            "ollama",
+		OllamaModel:              "qwen3:8b",
+		VoiceWorkerProvider:      "ollama",
+		VoiceWorkerModel:         "qwen3:8b",
+		VoiceWorkerMaxConcurrent: 3,
+		VoiceWorkerJobBudget:     75,
+	}
+	m := newSettings(cfg, nil)
+	m.section, m.width, m.height = sectionWorker, 180, 40
+	view := stripANSI(m.View())
+	for _, want := range []string{"legacy: 3 concurrent · 75s/job", "legacy singleton controls"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("legacy view lacks %q: %s", want, view)
 		}
 	}
 }

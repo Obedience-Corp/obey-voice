@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 func TestWorkersControlsManagedDelegationWithoutExperimentalInbox(t *testing.T) {
@@ -94,6 +95,95 @@ func TestWorkersControlLegacyAndCanonicalAdmissions(t *testing.T) {
 		if p.WorkersEnabled() || p.Workers()[0].Model != "original-model" {
 			t.Fatal("replacement changed permission or previous job metadata")
 		}
+	}
+}
+
+func TestWorkerModelHandoffUsesPinnedModelInStatusAndFrozenAdmission(t *testing.T) {
+	tests := []struct {
+		name      string
+		canonical bool
+		cfg       config.Config
+		provider  string
+		model     string
+	}{
+		{
+			name:     "inherited claude",
+			cfg:      config.Config{BrainProvider: "claude", VoiceWorkerModel: "claude-sonnet"},
+			provider: "claude",
+			model:    "claude-sonnet",
+		},
+		{
+			name:     "explicit claude",
+			cfg:      config.Config{VoiceWorkerProvider: "claude", VoiceWorkerModel: "claude-opus"},
+			provider: "claude",
+			model:    "claude-opus",
+		},
+		{
+			name:     "grok",
+			cfg:      config.Config{VoiceWorkerProvider: "grok", VoiceWorkerModel: "grok-4"},
+			provider: "grok",
+			model:    "grok-4",
+		},
+		{
+			name:      "ollama",
+			canonical: true,
+			cfg:       config.Config{VoiceWorkerProvider: "ollama", VoiceWorkerModel: "qwen3:8b"},
+			provider:  "ollama",
+			model:     "qwen3:8b",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg
+			p := &Pipeline{Events: events.NewBus(), Brain: &lifecycleWorker{reply: "live"}}
+			jobs := job.NewTable(t.Context())
+			t.Cleanup(jobs.Close)
+			a := NewAgency(p, jobs, &lifecycleWorker{reply: "worker result"}, &cfg, nil)
+			a.Wire()
+			if tt.canonical {
+				if err := p.EnableConversationWork("model-handoff", nil, &cfg); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = p.CloseWork() })
+			}
+
+			a.handleSpawn(t.Context(), nil, nil, RouteDecision{Kind: RouteSpawn, Transcript: "inspect the source"})
+			if tt.canonical {
+				scope := p.WorkSnapshot().Scope
+				deadline := time.Now().Add(2 * time.Second)
+				var pending []work.ResultView
+				for time.Now().Before(deadline) {
+					pending = p.WorkCoordinator().Pending(scope)
+					if len(pending) >= 1 {
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+				if len(pending) == 0 {
+					t.Fatalf("frozen admission did not finish: jobs=%+v snapshot=%+v", jobs.Status(), p.WorkSnapshot())
+				}
+				result := pending[0].Outcome
+				if result.Provider != tt.provider || result.Model != tt.model || result.Config["model"] != tt.model {
+					t.Fatalf("frozen worker provenance = %+v, want provider=%q model=%q", result, tt.provider, tt.model)
+				}
+				return
+			}
+
+			deadline := time.Now().Add(2 * time.Second)
+			for {
+				items := jobs.Status()
+				if len(items) == 1 && items[0].State != job.StateQueued && items[0].State != job.StateRunning {
+					if items[0].Provider != tt.provider || items[0].Model != tt.model {
+						t.Fatalf("job status = %+v, want provider=%q model=%q", items[0], tt.provider, tt.model)
+					}
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("job did not finish: %+v", items)
+				}
+				time.Sleep(time.Millisecond)
+			}
+		})
 	}
 }
 

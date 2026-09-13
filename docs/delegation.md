@@ -148,14 +148,15 @@ experimental `voice_work_enabled` result inbox.
 files.") each time a row closes, through the same idle gate as a job summary.
 Never one line per call.
 
-Two limits bound spawned work. `voice_worker_max_concurrent` (default `1`) is
-how many jobs run at once; the rest wait in order, and "what's happening"
-names the running job first, then counts the others ("Also 1 more running and
-1 queued."). `voice_worker_job_budget` (default `600` seconds) is the longest
-any one job may run: past it the job is stopped, `job_aborted` carries
-`reason: budget`, and she says so once — "I stopped {task} after 10 minutes. It
-ran past its budget." A job you cancel yourself carries `reason: cancelled`;
-the cancel line above is spoken once for the batch, never once per job.
+In legacy mode, two singleton limits bound spawned work.
+`voice_worker_max_concurrent` (default `1`) is how many jobs run at once; the
+rest wait in order, and "what's happening" names the running job first, then
+counts the others ("Also 1 more running and 1 queued.").
+`voice_worker_job_budget` (default `600` seconds) is the longest any one job
+may run: past it the job is stopped, `job_aborted` carries `reason: budget`,
+and she says so once — "I stopped {task} after 10 minutes. It ran past its
+budget." A job you cancel yourself carries `reason: cancelled`; the cancel
+line above is spoken once for the batch, never once per job.
 
 Both stops are the job table's own act, not a request to the worker: at the
 budget, or on a cancel, the job is marked aborted, its slot goes to the next
@@ -211,17 +212,118 @@ local-first product, has both layers.
 
 This implements managed worker admission, asynchronous acknowledgment, compact
 briefs, host-serialized unsolicited delivery, status, explicit cancellation,
-timeouts, and session cleanup. Immediate preemption of an idle local STT listen
-is deferred: without an atomic capture handoff it can discard speech just
-starting, so the existing listen timeout defines that turn boundary.
+timeouts, and session cleanup. The legacy path waits for an existing listen boundary. The opt-in canonical
+inbox uses the capture-owner handoff described below; it does not cancel capture
+and assume the microphone is free.
 
 Remote A2A targets, worker continuation/input-required UX, and recovery of voice
 tickets after process restart remain outside this first managed integration.
-Obey's durable results remain available independently of this process. Live
-microphone/provider validation is still required for the hardware acceptance
-gate; unit tests exercise scripted capture/playback and the real CLI process
-boundary, not an actual paid worker.
+Obey's durable results remain available independently of this process. Automated microphone/provider validation is still required for the acoustic acceptance
+gate; use the default system devices in a fresh isolated process and retain device
+identity, negotiated rates, measured signal correlation and transcription. Unit tests
+exercise scripted capture/playback and the real CLI process boundary, not an actual
+paid worker.
 
 The original seed's one-tool restriction is revised: explicit cancellation and
 cached status need model-callable controls. All three names already belong to
 Obey's vocabulary; no blocking wait is exposed.
+
+
+## Tiered worker limits and accounting
+
+Workers Settings can save separate Simple, Medium and Complex assignments.
+Queued jobs retain the assignment and limits they were admitted with. Tiered
+mode uses the shared concurrency and queue limits in `voice_workers.policy`
+(defaults: one running, 32 queued) and each tier's runtime limit (120 seconds by
+default), instead of the legacy singleton limits above. Switching to tiered
+mode does not silently migrate or reinterpret the legacy singleton keys; use
+the explicit migration preview in Settings if you want to copy the current
+worker into all three tiers.
+
+Local Ollama workers enforce request, tool, retry and optional output-token
+allowances across the job. Missing generated-token usage blocks another
+output-bounded request. Strict policy excludes shell, network and delegation
+tools whose billable effects cannot be bounded. Runtime and concurrency limits
+cover local scheduling; cancellation does not prove remote or descendant exit.
+
+Paid work defaults off. Current Claude and Grok CLI adapters have no certified
+hard charge cap. To use one, explicitly choose its billing label and
+`account_ref=default`, enable paid workers, select advisory global policy, and
+allow uncapped use for that tier. Strict global policy blocks these adapters
+even when a tier allows uncapped use. Their request, tool and output ceilings
+remain unavailable; a saved number does not enforce an opaque CLI's internals.
+Legacy paid assignments do not bypass the conversation inbox's policy.
+
+The installation's `worker-usage.sqlite` is local accounting, not a billing API.
+All personas and sessions share it. A durable reservation and dispatch marker
+precede paid execution. CLI-reported costs are observations and cannot settle
+an unknown charge. Cancellation, timeout and uncertain provider termination
+retain the record. Worker result preparation belongs to this scope; the host
+voice-model turn and TTS have their own provider billing.
+
+Choose **Worker allowance** in Settings to inspect known reserved and settled
+micro-USD, unresolved unknown bounds and any strict-dispatch freeze. Advisory
+mode does not promise a hard remaining allowance. Unresolved reservations carry
+across midnight; changing timezone takes effect after the active period.
+Storage failures block paid admission. No current adapter has authoritative
+reconciliation or a supported user-adjustment command; unknown records remain
+unresolved. The JSONL transcript records `worker.usage`, `worker.limit_reached`
+and `worker.charge`; unknown counts or costs are explicit null values.
+
+## Inspecting and delivering retained results
+
+With `voice_work_enabled: true`, `/work` opens the current conversation's work
+summary. `/work JOB_ID` shows the frozen tier/provider, originating persona,
+observed state and delivery disposition. `/work logs` shows saved diagnostic
+locations. The selected responder can change while a job keeps its original
+assignment. Naming Santa selects Santa for subsequent conversation; the job's
+origin does not require repeating a persona name for each reply.
+
+The work strip stays visible while work is active or an update remains
+uncommunicated. Reading a card clears its local unseen indicator; it does not
+consume the pending update. A held result names its reason, such as muted or
+unavailable audio. Use these commands with a retained job or result ID:
+
+| Command | Effect |
+| --- | --- |
+| `/work cancel JOB_ID` | Requests cancellation of execution. |
+| `/work cancel all` | Requests cancellation of current workers. |
+| `/work dismiss JOB_ID` | Dismisses a retained result; does not cancel its worker. |
+| `/work speak JOB_ID` | Makes a held result eligible for the host's next safe delivery boundary. Output must be available. |
+| `/work replay JOB_ID` | Explicitly delivers a previously communicated retained result again, without rerunning tools. |
+
+`/workers` retains the worker manager, admission switch and stop controls.
+Opening either inspection view preserves the conversation draft. Escape leaves
+selected work details, then returns from Activity to Chat. Copying chat includes
+readable outcomes once, without progress chatter or hidden reasoning. Saved-file
+inspection and export are described in [Background-work diagnostics](work-diagnostics.md).
+
+## Experimental rollout and rollback
+
+The conversation inbox remains opt-in (`voice_work_enabled` defaults to `false`)
+while automated acoustic acceptance is pending. Deterministic tests and a recorded-audio
+run do not establish physical microphone behavior or interruption latency; the gate requires
+measured speaker-to-microphone signal correlation, known-phrase transcription and 30
+comparable baseline/worker turns using the default system devices.
+The capture owner now supports a frame-boundary completion handoff; hosts whose
+adapter cannot acknowledge it defer delivery explicitly. The legacy path's
+listen-timeout boundary is not the scheduler guarantee for the new inbox.
+
+Simple, Medium and Complex are effort labels, not fixed model names or automatic
+price levels. Configure each assignment in Workers Settings. No missing tier
+silently selects a paid model. Changing an assignment applies to new jobs;
+queued jobs retain their plan, while the current paid-disable switch is checked
+again before dispatch. Migration previews the effective legacy assignment,
+including persona overrides, and saves the tier document atomically. Returning
+to legacy mode preserves the tier document and original singleton settings.
+
+For a code rollback, explicitly select legacy mode before using an older build.
+Keep the complete session files, `<session-id>.work` directories and
+`worker-usage.sqlite` together in a backup. Current work-disabled binding and
+session saving preserve sidecars and pending canonical data. An older binary's
+reader may ignore newer fields and its writer may omit them on save; the
+compatibility tests do not certify every historical binary. Diagnostic sidecars
+are never restore inputs and must not be used to rerun jobs. Restored outcomes
+remain held until an explicit resume or delivery action. No migration promises
+exactly-once physical hearing across a crash between playback and saving its
+receipt.

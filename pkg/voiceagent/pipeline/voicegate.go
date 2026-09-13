@@ -49,6 +49,11 @@ var notSpeechRE = regexp.MustCompile(`(?i)([{}|\\]` +
 	`|^tool\s+result\s*:` +
 	`|^running\s*:)`)
 
+// numericSpeechRE covers concise spoken answers that contain no letters:
+// list numbers, decimals, prices, and clock-like values. Machine-shaped
+// records are still rejected above before this expression is considered.
+var numericSpeechRE = regexp.MustCompile(`^[+-]?(?:[\$€£¥]\s*)?(?:\d{1,2}:\d{2}(?::\d{2})?|(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?)(?:%|[.!?])?$`)
+
 // regionLineCap bounds any suppressed region. Prose resumption is the normal
 // exit; this is the backstop so a tool transcript that never returns to
 // conversation — or a fenced block the model never closes — cannot mute the
@@ -151,7 +156,7 @@ func looksLikeSpeech(line string) bool {
 	if notSpeechRE.MatchString(s) {
 		return false
 	}
-	return strings.ContainsFunc(s, unicode.IsLetter)
+	return strings.ContainsFunc(s, unicode.IsLetter) || numericSpeechRE.MatchString(s)
 }
 
 // isSpeakableProse reports whether a line inside a region looks like the model

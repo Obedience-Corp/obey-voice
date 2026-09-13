@@ -35,8 +35,11 @@ const (
 	// the |err| > 2.5*|estimated| guard in Process is what keeps the user's own
 	// voice from being adapted away, and it still fires at this rate. Well
 	// inside NLMS stability (step < 2).
-	echoCancellerStep     = 0.4
-	echoCancellerLeak     = 0.9995
+	echoCancellerStep = 0.4
+	echoCancellerLeak = 0.9995
+	// initialNoiseFloor is an RMS estimate in normalized microphone units. It
+	// must describe room noise, not the minimum NS gain (0.12).
+	initialNoiseFloor     = 0.002
 	noiseSuppressorFloor  = 0.12
 	noiseSuppressorTarget = 0.22
 	agcMinGain            = 0.8
@@ -53,13 +56,14 @@ type VoiceFrontend struct {
 	ns       noiseSuppressor
 	agc      automaticGainControl
 	refs     sampleQueue
+	refTail  int // remaining capture samples of acoustic tail
 }
 
 // NewVoiceFrontend creates the default local audio front-end.
 func NewVoiceFrontend() *VoiceFrontend {
 	return &VoiceFrontend{
 		aec: newNLMSEchoCanceller(echoCancellerTaps, echoCancellerStep, echoCancellerLeak),
-		ns:  newNoiseSuppressor(noiseSuppressorFloor, noiseSuppressorTarget),
+		ns:  newNoiseSuppressor(initialNoiseFloor, noiseSuppressorTarget),
 		agc: newAutomaticGainControl(frontendTargetRMS, agcMinGain, agcMaxGain),
 		refs: sampleQueue{
 			capacity: FrontendMaxRefQueue,
@@ -78,6 +82,11 @@ func (f *VoiceFrontend) ProcessCapture(samples []float32) []float32 {
 	defer f.mu.Unlock()
 
 	refs := f.refs.pop(len(samples))
+	if f.refs.delay > 0 && frameRMSFloat64(refs) > 1e-6 {
+		f.refTail = SampleRate / 5 // 200ms independent of callback frame size
+	} else if f.refTail > 0 {
+		f.refTail = max(0, f.refTail-len(samples))
+	}
 	out := make([]float32, len(samples))
 
 	for i, sample := range samples {
@@ -86,7 +95,10 @@ func (f *VoiceFrontend) ProcessCapture(samples []float32) []float32 {
 		out[i] = float32(echoFree)
 	}
 
-	f.ns.Process(out)
+	// Actual playback reference and its bounded acoustic tail select residual
+	// echo suppression. Idle capture keeps the measured room-noise floor;
+	// device delay configuration alone must not suppress later user speech.
+	f.ns.Process(out, f.refTail > 0)
 	f.agc.Process(out)
 	return out
 }
@@ -207,7 +219,7 @@ func newNoiseSuppressor(initialFloor, targetSNR float64) noiseSuppressor {
 	}
 }
 
-func (n *noiseSuppressor) Process(samples []float32) {
+func (n *noiseSuppressor) Process(samples []float32, duplex bool) {
 	if len(samples) == 0 {
 		return
 	}
@@ -220,10 +232,28 @@ func (n *noiseSuppressor) Process(samples []float32) {
 	}
 
 	signal := rms
-	noise := math.Max(n.noiseFloor, 1e-4)
+	noiseFloor := n.noiseFloor
+	if duplex {
+		noiseFloor = math.Max(noiseFloor, 0.06)
+	}
+	noise := math.Max(noiseFloor, 1e-4)
 	snr := signal / noise
 	gain := clampFloat((snr-1.0)/math.Max(n.targetSNR, 1.0), noiseSuppressorFloor, 1.0)
-	gate := math.Max(n.noiseFloor*1.6, 0.0015)
+	gate := math.Max(noiseFloor*1.6, 0.0015)
+	// A strong near-end signal during duplex speech is double-talk, not room
+	// noise. Keep the conservative echo floor for weak residual playback, but
+	// do not gate the user's stronger voice at the same threshold.
+	if rms > 0.01 {
+		gate = math.Max(noiseFloor*0.1, 0.0015)
+	}
+
+	// Duplex suppression already applies the conservative frame gain above.
+	// Applying another sample-wise gate to that attenuated waveform removes
+	// quiet speech structure and prevents VAD from recognizing a near-end user.
+	// Keep its waveform intact while still attenuating the whole frame.
+	if duplex {
+		gate = 0
+	}
 
 	for i, sample := range samples {
 		value := float64(sample) * gain
@@ -361,6 +391,17 @@ func frameRMS(samples []float32) float64 {
 	for _, sample := range samples {
 		value := float64(sample)
 		sum += value * value
+	}
+	return math.Sqrt(sum / float64(len(samples)))
+}
+
+func frameRMSFloat64(samples []float64) float64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, sample := range samples {
+		sum += sample * sample
 	}
 	return math.Sqrt(sum / float64(len(samples)))
 }

@@ -21,18 +21,20 @@ const (
 
 // Scenario is one scripted conversation. Unknown YAML keys are load errors.
 type Scenario struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Duration    duration `yaml:"duration"`
-	Input       string   `yaml:"input"` // text | speech
-	RouterTools string   `yaml:"router_tools"`
-	TTS         struct {
+	LatencyCondition string   `yaml:"latency_condition"`
+	Name             string   `yaml:"name"`
+	Description      string   `yaml:"description"`
+	Duration         duration `yaml:"duration"`
+	Input            string   `yaml:"input"` // text | speech
+	RouterTools      string   `yaml:"router_tools"`
+	TTS              struct {
 		Provider string `yaml:"provider"`
 		Voice    string `yaml:"voice"`
 	} `yaml:"tts"`
 	Capture struct {
-		Audio    bool `yaml:"audio"`
-		Speakers bool `yaml:"speakers"`
+		Microphone bool `yaml:"microphone"`
+		Audio      bool `yaml:"audio"`
+		Speakers   bool `yaml:"speakers"`
 	} `yaml:"capture"`
 	Turns   []Turn          `yaml:"turns"`
 	Expect  []Expectation   `yaml:"expect"`
@@ -55,23 +57,28 @@ type scenarioBrain struct {
 }
 
 type scenarioWorker struct {
-	Provider string `yaml:"provider"`
-	Model    string `yaml:"model"`
-	Host     string `yaml:"host"`
+	SustainedLoad bool   `yaml:"sustained_load"`
+	Provider      string `yaml:"provider"`
+	Model         string `yaml:"model"`
+	Host          string `yaml:"host"`
 }
 
 type Turn struct {
-	InterruptAfter duration      `yaml:"interrupt_after"`
-	ID             string        `yaml:"id"`
-	User           string        `yaml:"user"`
-	Timeout        duration      `yaml:"timeout"`
-	Duration       duration      `yaml:"duration"`
-	Wait           waitKind      `yaml:"wait"`
-	Expect         []Expectation `yaml:"expect"`
-	WAV            string        `yaml:"wav"`
-	Op             string        `yaml:"op"`
-	Persona        string        `yaml:"persona"`
-	ExpectError    string        `yaml:"expect_error"`
+	LatencyIteration   int           `yaml:"latency_iteration"`
+	LatencyWarmup      bool          `yaml:"latency_warmup"`
+	InterruptAfter     duration      `yaml:"interrupt_after"`
+	ID                 string        `yaml:"id"`
+	User               string        `yaml:"user"`
+	Timeout            duration      `yaml:"timeout"`
+	Duration           duration      `yaml:"duration"`
+	Wait               waitKind      `yaml:"wait"`
+	Expect             []Expectation `yaml:"expect"`
+	WAV                string        `yaml:"wav"`
+	InterruptWAV       string        `yaml:"interrupt_wav"`
+	ExpectedTranscript string        `yaml:"expected_transcript"`
+	Op                 string        `yaml:"op"`
+	Persona            string        `yaml:"persona"`
+	ExpectError        string        `yaml:"expect_error"`
 }
 
 type Expectation struct {
@@ -156,13 +163,46 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	if scn.Input != "text" && scn.Input != "speech" {
 		return nil, fmt.Errorf("load %s: input must be text or speech", name)
 	}
+	if scn.LatencyCondition != "" && scn.LatencyCondition != "baseline" && scn.LatencyCondition != "worker" {
+		return nil, fmt.Errorf("load %s: invalid latency_condition", name)
+	}
+	if scn.Worker.SustainedLoad && scn.LatencyCondition == "" {
+		return nil, fmt.Errorf("load %s: sustained worker load requires latency condition", name)
+	}
+	if scn.Capture.Microphone && (scn.Input != "speech" || !scn.Capture.Speakers) {
+		return nil, fmt.Errorf("load %s: microphone capture requires speech input and capture.speakers", name)
+	}
 	for i := range scn.Turns {
 		t := &scn.Turns[i]
+		if scn.Capture.Microphone && t.WAV != "" && strings.TrimSpace(t.ExpectedTranscript) == "" {
+			return nil, fmt.Errorf("load %s: microphone turn %q requires expected_transcript", name, t.ID)
+		}
+		if t.LatencyIteration < 0 || (t.LatencyIteration > 0 && (scn.LatencyCondition == "" || t.WAV == "" || scn.Input != "speech" || t.Op != "" || t.InterruptAfter.Duration != 0)) {
+			return nil, fmt.Errorf("load %s: measured turn %q requires speech WAV, condition, and no control operation", name, t.ID)
+		}
+		if scn.Input == "speech" && t.User != "" && t.Op == "" && t.WAV == "" {
+			return nil, fmt.Errorf("load %s: speech turn %q requires WAV", name, t.ID)
+		}
+		if t.WAV != "" && (scn.Input != "speech" || (t.Op != "" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion") || t.InterruptAfter.Duration != 0) {
+			return nil, fmt.Errorf("load %s: WAV turn requires speech input without control operation", name)
+		}
 		if t.InterruptAfter.Duration < 0 || (t.InterruptAfter.Duration > 0 && (t.User == "" || t.Op != "")) {
 			return nil, fmt.Errorf("load %s: turn %q: interrupt_after requires a user turn and positive duration", name, t.ID)
 		}
-		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" {
+		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" {
 			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)
+		}
+		if t.Op == "acoustic_interrupt" && (!scn.Capture.Microphone || t.WAV == "" || t.InterruptWAV == "" || t.ExpectedTranscript == "") {
+			return nil, fmt.Errorf("load %s: acoustic_interrupt needs physical capture, initial and interrupt WAVs, and expected transcript", name)
+		}
+		if t.Op == "acoustic_completion" && (!scn.Capture.Microphone || t.WAV == "" || t.ExpectedTranscript == "") {
+			return nil, fmt.Errorf("load %s: acoustic_completion needs physical capture, fixture WAV, and expected transcript", name)
+		}
+		if t.InterruptWAV != "" && t.Op != "acoustic_interrupt" {
+			return nil, fmt.Errorf("load %s: interrupt_wav requires acoustic_interrupt", name)
+		}
+		if t.Op == "start_latency_worker" && (scn.LatencyCondition != "worker" || strings.TrimSpace(t.User) == "") {
+			return nil, fmt.Errorf("load %s: start_latency_worker requires worker condition and explicit task", name)
 		}
 		if t.ExpectError != "" && t.Op != "select_persona" {
 			return nil, fmt.Errorf("load %s: turn %q: expect_error requires op select_persona", name, t.ID)

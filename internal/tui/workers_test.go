@@ -49,7 +49,7 @@ func workersKey(m workersModel, key string) workersModel {
 
 func TestWorkersCommandIsLocalDuringAnyTurn(t *testing.T) {
 	for _, state := range []turnState{turnIdle, turnVoiceListening, turnVoiceResponding, turnTextRunning} {
-		for _, input := range []string{"/workers", "/work"} {
+		for _, input := range []string{"/workers"} {
 			runner := &fakeTurnRunner{}
 			m, _ := startedConversation(t, runner, false)
 			m.turnState = state

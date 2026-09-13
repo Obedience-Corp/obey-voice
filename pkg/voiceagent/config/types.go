@@ -170,7 +170,7 @@ type Config struct {
 	// Brain
 	BrainProvider string `mapstructure:"brain_provider"`
 	// VoiceWorkEnabled keeps background outcomes with the conversation. This
-	// experimental loop is opt-in; paid worker dispatch is unavailable.
+	// experimental loop is opt-in; paid tiers require saved advisory uncapped consent.
 	VoiceWorkEnabled bool `mapstructure:"voice_work_enabled"`
 
 	// VoiceWorkersDisabled rejects new background jobs without stopping existing

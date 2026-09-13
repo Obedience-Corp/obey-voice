@@ -273,8 +273,22 @@ func (m *settingsModel) saveWorkerDraft() tea.Cmd {
 		return nil
 	}
 	for _, name := range []config.WorkerTierName{config.WorkerTierSimple, config.WorkerTierMedium, config.WorkerTierComplex} {
-		if reason := workerTierUnavailable(draft, name); reason != "" {
-			m.message = "Cannot save " + workerTierTitle(string(name)) + ": " + reason
+		t := draft.Tiers.Simple
+		switch name {
+		case config.WorkerTierMedium:
+			t = draft.Tiers.Medium
+		case config.WorkerTierComplex:
+			t = draft.Tiers.Complex
+		}
+		if !t.Enabled {
+			continue
+		}
+		if t.Assignment == nil {
+			m.message = "Cannot save " + workerTierTitle(string(name)) + ": enabled tier has no assignment"
+			return nil
+		}
+		if err := (brain.LocalWorkerCapabilities{}).ValidateWorkerAssignment(*t.Assignment); err != nil {
+			m.message = "Cannot save " + workerTierTitle(string(name)) + ": " + err.Error()
 			return nil
 		}
 	}

@@ -174,6 +174,9 @@ func WithPendingLimit(n int) Option {
 func WithChangeCallback(fn func(Snapshot)) Option { return func(c *Coordinator) { c.onChange = fn } }
 
 type Coordinator struct {
+	diagnosticMu          sync.Mutex
+	diagnosticSeq         uint64
+	diagnosticStart       time.Time
 	mu                    sync.Mutex
 	scope                 WorkScope
 	retired               bool

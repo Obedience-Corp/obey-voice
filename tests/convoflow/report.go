@@ -10,28 +10,29 @@ import (
 )
 
 type metricsFile struct {
-	Scenario           string  `json:"scenario"`
-	Profile            string  `json:"profile,omitempty"`
-	LiveProvider       string  `json:"live_provider,omitempty"`
-	LiveModel          string  `json:"live_model,omitempty"`
-	WorkerProvider     string  `json:"worker_provider,omitempty"`
-	WorkerModel        string  `json:"worker_model,omitempty"`
-	Input              string  `json:"input,omitempty"`
-	StopReason         string  `json:"stop_reason,omitempty"`
-	JobStarted         int     `json:"job_started"`
-	JobFinished        int     `json:"job_finished"`
-	JobFailed          int     `json:"job_failed"`
-	JobAborted         int     `json:"job_aborted"`
-	LiveToolCalls      int     `json:"live_tool_calls"`
-	WorkerToolCalls    int     `json:"worker_tool_calls"`
-	BoundaryRefusals   int     `json:"boundary_refusals"`
-	LiveRouterHit      int     `json:"live_router_hit"`
-	LiveRouterMiss     int     `json:"live_router_miss"`
-	SpokenLeakLines    int     `json:"spoken_leak_lines"`
-	CrackleFailingWavs *int    `json:"crackle_failing_wavs,omitempty"`
-	PlaybackWavs       int     `json:"playback_wavs,omitempty"`
-	Turns              int     `json:"turns"`
-	WallS              float64 `json:"wall_s"`
+	Latency            *workLatencyReport `json:"latency,omitempty"`
+	Scenario           string             `json:"scenario"`
+	Profile            string             `json:"profile,omitempty"`
+	LiveProvider       string             `json:"live_provider,omitempty"`
+	LiveModel          string             `json:"live_model,omitempty"`
+	WorkerProvider     string             `json:"worker_provider,omitempty"`
+	WorkerModel        string             `json:"worker_model,omitempty"`
+	Input              string             `json:"input,omitempty"`
+	StopReason         string             `json:"stop_reason,omitempty"`
+	JobStarted         int                `json:"job_started"`
+	JobFinished        int                `json:"job_finished"`
+	JobFailed          int                `json:"job_failed"`
+	JobAborted         int                `json:"job_aborted"`
+	LiveToolCalls      int                `json:"live_tool_calls"`
+	WorkerToolCalls    int                `json:"worker_tool_calls"`
+	BoundaryRefusals   int                `json:"boundary_refusals"`
+	LiveRouterHit      int                `json:"live_router_hit"`
+	LiveRouterMiss     int                `json:"live_router_miss"`
+	SpokenLeakLines    int                `json:"spoken_leak_lines"`
+	CrackleFailingWavs *int               `json:"crackle_failing_wavs,omitempty"`
+	PlaybackWavs       int                `json:"playback_wavs,omitempty"`
+	Turns              int                `json:"turns"`
+	WallS              float64            `json:"wall_s"`
 }
 
 func (e *engine) wallSeconds() float64 {
@@ -143,6 +144,9 @@ func writeMetricsJSON(e *engine, m runMetrics) error {
 		PlaybackWavs:     m.PlaybackWavs,
 		Turns:            len(e.scn.Turns),
 		WallS:            e.wallSeconds(),
+	}
+	if e.scn.LatencyCondition != "" {
+		out.Latency = &workLatencyReport{Schema: workLatencySchema, Samples: e.latencySamples, Notes: []string{"Raw production turn offsets; zero means unobserved. Recording-only playback is not audible delivery. Compare separately pinned baseline/worker runs with -compare."}}
 	}
 	if m.crackleKnown {
 		n := m.CrackleFailingWavs

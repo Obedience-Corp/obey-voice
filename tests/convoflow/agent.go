@@ -145,7 +145,11 @@ func writeResolvedConfig(runDir string, prof runProfile) error {
 // the TTS set (checked here — Available is a method on a built provider),
 // then New with everything injected.
 type liveRunner struct {
-	agent          *voiceagent.Agent
+	agent *voiceagent.Agent
+	// cfg is the run's private snapshot. WAV replay must use the same resolved
+	// provider/model settings even if the caller's config is subsequently
+	// changed while the long-lived agent is running.
+	cfg            *config.Config
 	cleanup        func()
 	tts            *voiceagent.TTSSet
 	voices         *voiceagent.LiveTTSManager
@@ -157,6 +161,8 @@ type liveRunner struct {
 	persona        *personaRuntime
 	observations   []*observing
 	workerFactory  func(*config.Config) (brain.Provider, error)
+	wavVADFactory  wavVADFactory
+	wavSTTFactory  wavSTTFactory
 
 	mu         sync.Mutex
 	markStream int
@@ -169,7 +175,8 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 		return nil, fmt.Errorf("live brain: %w", err)
 	}
 	live, liveObs := observeProvider(liveInner)
-	r := &liveRunner{live: liveObs, liveProvider: live, player: player, observations: []*observing{liveObs}}
+	configSnapshot := *cfg
+	r := &liveRunner{cfg: &configSnapshot, live: liveObs, liveProvider: live, player: player, observations: []*observing{liveObs}}
 
 	var workerInner brain.Provider
 	if k.workerIsStub() {
@@ -179,6 +186,16 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 		if err != nil {
 			r.closeBrains()
 			return nil, fmt.Errorf("worker brain: %w", err)
+		}
+	}
+	r.workerProvider = workerInner
+	if k.sustainedWorker {
+		workerInner, err = newSustainedLocalWorker(cfg, workerInner, func(n int) {
+			bus.Emit(events.Info{Message: fmt.Sprintf("convoflow sustained local workload completed request %d", n)})
+		})
+		if err != nil {
+			r.closeBrains()
+			return nil, err
 		}
 	}
 	r.workerProvider, r.worker = observeProvider(workerInner)

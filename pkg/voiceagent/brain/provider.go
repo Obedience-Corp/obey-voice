@@ -11,6 +11,9 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	// WorkerBudget is the job-shared operational budget for this worker job.
+	WorkerBudget  *WorkerBudget
+	OnWorkerUsage func(WorkerUsage)
 	// WorkerTiers is the live, policy-only availability snapshot for the route
 	// tool. It contains no provider, model, or pricing information.
 	WorkerTiers *WorkerTierAvailability
@@ -71,6 +74,16 @@ type StreamOptions struct {
 	// ToolsEnabled is true. Empty keeps the full worker list; the microphone
 	// path passes route_only explicitly.
 	RouterToolsPolicy RouterToolsPolicy
+}
+
+func (o StreamOptions) workerBudget() *WorkerBudget {
+	return o.WorkerBudget
+}
+
+type WorkerUsage struct {
+	InputTokens    *int
+	OutputTokens   *int
+	ChargeMicroUSD *int64
 }
 
 // PersonaPromptFreezer pins a newly built responder's resolved identity text.

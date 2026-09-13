@@ -210,6 +210,7 @@ type returnToMenuMsg struct{}
 // screen. Conversation is the only screen that routes wheel events, so it is
 // the only one that should cost the user native text selection.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	a.conversation.workDisplayHidden = a.screen != screenConversation
 	from := a.screen
 	model, cmd := a.update(msg)
 	next, ok := model.(App)
@@ -930,7 +931,9 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msg.rt.Pipeline.OnTurn()
 				}
 			},
-			workScope: func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
+			workSnapshot:  func() work.Snapshot { return msg.rt.Pipeline.WorkSnapshot() },
+			journalHealth: msg.rt.Pipeline.JournalHealth,
+			workScope:     func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
 			workersSummary: func() string {
 				running, queued := 0, 0
 				for _, item := range msg.rt.Pipeline.Workers() {
@@ -1037,6 +1040,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		a.conversation, cmd = a.conversation.Update(msg)
 		return a, tea.Batch(cmd, a.rearmTalk(msg))
+
+	case workProjectionPollMsg, tea.FocusMsg:
+		var cmd tea.Cmd
+		a.conversation, cmd = a.conversation.Update(msg)
+		return a, cmd
 
 	case talkHotkeyExitedMsg:
 		a.hotkey = nil

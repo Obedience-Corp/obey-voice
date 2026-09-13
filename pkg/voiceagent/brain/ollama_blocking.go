@@ -10,7 +10,8 @@ import (
 )
 
 // ThinkFull sends input and waits for the complete response.
-func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (string, error) {
+func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (answer string, resultErr error) {
+	ctx = opts.workerBudget().Context(ctx)
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
 	// A failed turn rolls back to this snapshot rather than truncating: the tool
 	// loop appends assistant/tool turns and the context budget can trim the
@@ -20,6 +21,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	restore := append([]api.Message(nil), o.history...)
 	restoreCanonical := deepCopyTurns(o.canonical)
 	restoreWorking := deepCopyTurns(o.working)
+	defer func() {
+		if resultErr != nil {
+			o.history = restore
+			o.canonical = restoreCanonical
+			o.working = restoreWorking
+		}
+	}()
 	if opts.TransientHistory {
 		defer func() {
 			o.history = restore
@@ -41,6 +49,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	o.ensureContextBudget(skillCtx)
 
 	sess := &toolSession{
+		budget:         opts.workerBudget(),
 		catalog:        o.skills,
 		routerPolicy:   opts.effectiveRouterPolicy(),
 		workerTiers:    opts.WorkerTiers,
@@ -72,12 +81,30 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		req := o.newChatRequest(messages, tools)
 		stream := false
 		req.Stream = &stream
+		if err := o.applyOutputBudget(req, opts.workerBudget()); err != nil {
+			return "", err
+		}
 
 		var response api.Message
 		var doneReason string
 		err := o.chat(ctx, req, func(resp api.ChatResponse) error {
 			response = resp.Message
 			doneReason = resp.DoneReason
+			if opts.OnUsage != nil {
+				opts.OnUsage(resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount)
+			}
+			if opts.OnWorkerUsage != nil {
+				u := WorkerUsage{}
+				if resp.Metrics.PromptEvalCount > 0 {
+					in := resp.Metrics.PromptEvalCount
+					u.InputTokens = &in
+				}
+				if resp.Metrics.EvalCount > 0 {
+					out := resp.Metrics.EvalCount
+					u.OutputTokens = &out
+				}
+				opts.OnWorkerUsage(u)
+			}
 			return nil
 		})
 		if err != nil {
@@ -106,6 +133,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 			for _, tc := range response.ToolCalls {
 				result := sess.execute(ctx, o.workDir, tc)
+				if sess.limitErr != nil {
+					return "", sess.limitErr
+				}
 				// read_skill is the established instruction-loading path. Preserve its
 				// full body in this turn's transient skill splice, not persisted history.
 				if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {

@@ -38,7 +38,7 @@ func (o *OllamaBrain) Complete(ctx context.Context, req CompletionRequest) (Comp
 	}
 	var raw string
 	var prefill, generated int
-	err := o.client.Chat(ctx, request, func(response api.ChatResponse) error {
+	err := o.chat(ctx, request, func(response api.ChatResponse) error {
 		raw = response.Message.Content
 		prefill, generated = response.Metrics.PromptEvalCount, response.Metrics.EvalCount
 		return nil

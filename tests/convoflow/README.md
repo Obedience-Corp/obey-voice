@@ -78,3 +78,204 @@ of 250 ms or longer inside speech (a stall or padded frame). The package's
 near-silence counters are reported as `mid_silence_runs` but do not gate: a
 vocoder's output goes near zero at every pause, so that count is a property
 of speech, not a defect.
+
+## Recorded speech and paired latency artifacts
+
+A speech scenario uses `input: speech` and a `wav` path on each spoken turn.
+The harness opens a finite WAV source in real time, runs the configured local
+VAD/STT, and passes that input through the same long-lived production pipeline.
+The brain, worker coordinator and history survive between fixtures. It never
+opens a microphone. Paths are relative to the invocation's working directory;
+use absolute paths for external fixtures. WAV playback is recorded; `-speakers`
+explicitly enables the real output tee. Fixture playback does not exercise the
+microphone ring buffer or measure barge-in.
+
+For an isolated measurement, add `latency_condition: baseline` or `worker` to
+the scenario and `latency_iteration: 1` (then 2, 3, …) to each measured WAV turn.
+Label warmup turns with `latency_warmup: true`; this is not a claim that the
+model was cold. Use an explicit `-fixture-config` for every latency run. The
+ordinary `user` string is not substituted for recorded speech.
+
+```yaml
+name: recorded-latency
+input: speech
+latency_condition: baseline
+capture: {audio: true, speakers: true}
+turns:
+  - id: warmup
+    wav: /absolute/path/to/recorded-question.wav
+    latency_iteration: 1
+    latency_warmup: true
+  - id: measured
+    wav: /absolute/path/to/recorded-question.wav
+    latency_iteration: 2
+```
+
+`metrics.json` retains raw production turn offsets, wall time for correlation,
+WAV content hash, actual worker/pending counts at admission, input/sink kind,
+errors and a fingerprint of the effective configuration, running executable,
+OS, architecture and host. The fingerprint excludes only the run's working
+directory; it stores no credentials. Timings use monotonic duration fields,
+not subtraction of serialized wall-clock times. Failed turns retain partial
+playback WAVs, analysis and their timing/error record. Non-completed production
+turns fail the measured run even when the pipeline's no-speech return has no Go
+error.
+
+Compare two generated `metrics.json` files with the same built harness and
+pinned configuration:
+
+```sh
+go run ./tests/convoflow -compare /path/to/baseline/metrics.json,/path/to/worker/metrics.json
+```
+
+Comparison requires at least 30 non-warmup samples per condition and matching
+WAV/iteration populations, provenance and warmup labels. Baseline samples must
+start with no running jobs; worker samples must observe at least one running
+canonical job. Both exclude pre-existing pending updates. Run an actual worker
+scenario before the measured WAVs; the condition label does not create a worker
+or invent contention. Keep shared-endpoint and independent-endpoint experiments
+as separate pairs. Changing the executable or pinned configuration requires a
+new pair.
+
+The report calculates nearest-rank p50/p95 from finalized input to local
+playback start. It rejects missing/out-of-order milestones, failed samples,
+text input, recording-only output and incomplete runs. A successful comparison
+establishes comparable timing evidence only: it does not enforce the 10% release
+regression decision or certify hearing, UI handoff, safe yield, lost audio or
+barge-in. Those require separate observed evidence. The suite generator below provides the recorded fixture population and real
+worker admission operations; measurements always come from executed turns.
+
+## Physical acoustic acceptance
+
+Prepare and repeat the suite with repository recipes:
+
+```sh
+just test acoustic-prepare /path/to/installed/models /path/to/suite
+just test acoustic-pair /path/to/isolated-config.yaml /path/to/suite
+just test acoustic-controls /path/to/isolated-barge-config.yaml /path/to/suite
+just test acoustic-smoke /path/to/isolated-provider-config.yaml /path/to/suite
+```
+
+Preparation builds the harness once, generates four Kokoro WAV/JSON fixtures
+from explicitly selected installed models, and writes scenarios plus a hash
+manifest. It does not download models or read the user's live configuration.
+The pair recipe runs three warmups and 30 measured turns per condition in
+sequence, then compares the retained reports. The controls recipe exercises
+quiet completion and interruption. The smoke recipe checks one physical turn
+with the configured TTS provider; native Qwen can be checked using
+`tts_provider: qwen3-tts` and the installed `qwen_tts_model_tier`. A smoke pass
+does not establish comparable provider latency. Set the intended input/output devices,
+Ollama endpoints, Parakeet model path, and frontend in the explicit fixture
+config. Use a separate suite or retain the old binary before rebuilding;
+comparisons reject mismatched executable or configuration fingerprints.
+Start from `scenarios/acoustic-config.example.yaml`, which explicitly pins
+the production 300 ms speech pre-roll and 1.2-second end-of-utterance silence.
+The isolated fixture loader does not populate every application default;
+omitting these values can clip words and invalidate a population.
+
+An existing recorded fixture cache can instead be used without synthesis:
+
+```sh
+bin/convoflow -prepare-acoustic-suite /path/to/scenarios -fixture-dir /path/to/fixtures
+```
+
+The fixture directory contains `synth-01.wav` through `synth-03.wav`,
+`counting.wav`, and matching JSON files with the spoken `text`. Generated
+scenarios are portable by regeneration; raw audio and machine-specific
+configurations stay in the selected artifact directory.
+
+Saved interruption audio can be diagnosed without reopening devices:
+
+```sh
+just test acoustic-vad /path/to/run/acoustic/interruption /path/to/isolated-config.yaml ARM_SECONDS STIMULUS_SECONDS
+just test acoustic-reprocess /path/to/run /path/to/isolated-config.yaml
+```
+
+Both offsets are relative to the microphone file, not the scenario start.
+The command replays raw and processed capture through the production Silero
+barge detector at three supported thresholds, skipping pre-arm input. Its
+success means replay completed; the logged speech windows are diagnostic
+evidence, and the physical interruption assertion remains the acceptance gate.
+The reprocess command uses the saved ordered capture/reference trace to produce
+a candidate frontend WAV and compares its production detector behavior with raw
+and original processed capture. It derives approximate capture-relative offsets
+from the saved events and reports that timing uncertainty.
+
+Host scheduling has a separate repeatable check:
+
+```sh
+just test work-host-timing
+```
+
+It records 30 samples each for actual Agency admission to the next production
+STT start and canonical result publication to the host's background-turn
+invocation. Controlled STT isolates host overhead; the quiet test uses real
+capture permits, the pipeline yield protocol, and Bubble Tea dispatch. These
+checks do not substitute for hardware capture or audible delivery evidence.
+
+
+Physical acceptance uses `capture.microphone: true` and a recorded speech WAV.
+The harness plays the WAV through the selected speaker and recognizes what the
+microphone actually receives through the production capture, VAD, and STT
+pipeline. Set `expected_transcript`; comparison is strict after Unicode
+case-folding and punctuation/whitespace normalization. A run is accepted only
+when the transcript is non-empty and matches, microphone RMS is at least 0.005,
+the peak is below 0.999, and the 10 ms RMS-envelope correlation is at least
+0.60. Raw waveform correlation is retained for diagnostics but is not the
+signal-path metric because room reflections and independent device
+clocks make it unstable.
+
+Every attempt retains `stimulus.wav`, `mic-in.wav` when any capture arrived, and
+`metrics.json`. Failed attempts retain the same artifacts where possible and
+include an `error` field; missing transcript, silence, clipping, weak envelope
+correlation, playback failure, and cancellation are failures. The artifacts are
+evidence for the recorded device, frontend, and room configuration.
+
+For a latency pair, use the same built harness and fixture config for every
+run, with three warmups followed by at least 30 measured turns per condition.
+Run the baseline and worker conditions serially, never concurrently, and use
+separate endpoint resource identities when comparing independent endpoints.
+The baseline has no active worker; the worker condition sets
+`worker.sustained_load: true` and explicitly starts a latency worker before
+each measured user task and stops it immediately afterward. A scenario must
+use the acoustic production watcher with `wav` and `interrupt_wav` for an
+interruption turn; do not inject a manual cancel. No human attendance is required.
+
+The generic recipes are:
+
+```bash
+just test acoustic SCENARIO CONFIG RUNS
+just test work-latency-compare BASELINE WORKER
+```
+
+`CONFIG` is the saved fixture config used for the whole pair. `RUNS` is the
+number of complete scenario executions; the recipe requires an already-built
+`CONVOFLOW_BIN` so every run uses the same executable. The comparison command
+requires matching provenance, WAV populations, and warmup labels and reports
+the evidence without making a release decision.
+
+Envelope correlation checks the acoustic path, not phrase identity: different
+short utterances can have similar volume patterns. The transcript must also
+match every word after case, punctuation and zero-through-ten normalization.
+The initial physical calibration matched the reference phrase at correlations
+of 0.68–0.88; failed calibration runs remain retained with their original
+threshold and measurements.
+
+`op: acoustic_completion` admits a real local worker, asks the production
+capture owner to yield quiet listening, delivers the pending result, checks
+one completed audible voice receipt, and resumes real listening for `wav`.
+The yielded turn must contain no transcript and resumed speech must match
+`expected_transcript`. `worker.sustained_load` must be disabled for this test.
+
+`op: acoustic_interrupt` uses `wav` for the initial question and
+`interrupt_wav` for speech played during the real response. It waits for
+production listening before the first fixture, checks a quiet interval beyond
+the barge-in arm delay, and observes actual stimulus playback start. Only the
+production detector stops the response. The next turn must recover the full
+interrupting phrase. Reports distinguish stimulus-to-stop from the monotonic
+production detector-to-stop duration.
+
+Completion/interruption artifacts retain both `mic-in.wav` before frontend
+processing and `mic-processed.wav` after AEC/NS/AGC. A low processed RMS alone
+cannot establish physical input attenuation. Failures retain their reports
+and available audio; they do not become passing latency samples.
