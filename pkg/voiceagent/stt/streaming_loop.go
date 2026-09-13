@@ -147,11 +147,21 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 		}
 
 		if deps.pause != nil {
-			yielded, _, event := deps.pause.boundary(track.detected, transcribing || deps.seg.HasSegments(), false)
+			// Queued neural noise is not an admitted endpoint. Use the
+			// same speech admission required by finalization below.
+			yielded, _, event := deps.pause.boundary(track.detected, transcribing || (deps.seg.HasSegments() && track.detected), false)
 			if event.Scope.Valid() {
 				sendEvent(ctx, events, event)
 			}
 			if yielded && !read.eof {
+				if !track.detected {
+					// An old noise segment must not finalize the next real word.
+					for {
+						if _, ok := deps.seg.NextSegment(); !ok {
+							break
+						}
+					}
+				}
 				if !read.ready {
 					time.Sleep(noFramePoll)
 				}

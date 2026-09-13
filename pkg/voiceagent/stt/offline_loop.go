@@ -156,11 +156,22 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		}
 
 		if deps.pause != nil {
-			yielded, _, event := deps.pause.boundary(track.detected, deps.seg.HasSegments(), false)
+			// Match finalize's admission: a neural segment alone can be
+			// inaudible noise and must not revoke a completion permit.
+			yielded, _, event := deps.pause.boundary(track.detected, deps.seg.HasSegments() && track.detected, false)
 			if event.Scope.Valid() {
 				sendEvent(ctx, events, event)
 			}
 			if yielded && !read.eof {
+				if !track.detected {
+					// Remove rejected endpoints before real speech arrives.
+					// Preserve the detector and its in-progress onset window.
+					for {
+						if _, ok := deps.seg.NextSegment(); !ok {
+							break
+						}
+					}
+				}
 				if !read.ready {
 					time.Sleep(noFramePoll)
 				}
