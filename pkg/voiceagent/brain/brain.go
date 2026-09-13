@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
@@ -371,6 +372,8 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 	streamedAny := false
 	var streamErr error
 	var resultErr error
+	var usageInputTotal, usageOutputTotal int
+	var haveInput, haveOutput bool
 
 	for msg := range messages {
 		// The CLI stamps session_id on its init and result messages; capture it
@@ -406,6 +409,9 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 					if streamOpts.OnUsage != nil && prefill+u.OutputTokens > 0 {
 						streamOpts.OnUsage(prefill, u.OutputTokens)
 					}
+					usageInputTotal += u.prompt()
+					usageOutputTotal += u.OutputTokens
+					haveInput, haveOutput = usageInputTotal > 0, usageOutputTotal > 0
 				}
 				for _, c := range content.Content {
 					if c.Type == "text" && c.Text != "" {
@@ -423,6 +429,19 @@ func (b *Brain) streamAttempt(ctx context.Context, out chan<- string, streamOpts
 
 		// Check for final result
 		if msg.Type == "result" {
+			if streamOpts.OnWorkerUsage != nil {
+				var input, output *int
+				if haveInput {
+					v := usageInputTotal
+					input = &v
+				}
+				if haveOutput {
+					v := usageOutputTotal
+					output = &v
+				}
+				charge := chargeMicroUSD(msg.CostUSD)
+				streamOpts.OnWorkerUsage(WorkerUsage{InputTokens: input, OutputTokens: output, ChargeMicroUSD: charge})
+			}
 			// The CLI can report failure with exit 0 and is_error on the result
 			// (max turns, execution error, some session rejections). Without this
 			// the error text would be spoken as the reply and a stale --resume
@@ -552,12 +571,26 @@ func (b *Brain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptions) 
 	// Same exit-0 failure shape as the streaming path: never speak the CLI's
 	// error text, and let a rejected --resume fall through to the flatten retry.
 	if result.IsError {
+		if streamOpts.OnWorkerUsage != nil {
+			streamOpts.OnWorkerUsage(WorkerUsage{ChargeMicroUSD: chargeMicroUSD(result.CostUSD)})
+		}
 		return "", resultError("claude", result.Subtype, result.Result)
+	}
+	if streamOpts.OnWorkerUsage != nil {
+		streamOpts.OnWorkerUsage(WorkerUsage{ChargeMicroUSD: chargeMicroUSD(result.CostUSD)})
 	}
 
 	// Strip the label and think block, clean, then fall back, so the fallback
 	// is spoken verbatim.
 	return spokenOrFallback(cleanForVoice(stripReplyConventions(b.agentName(), result.Result))), nil
+}
+
+func chargeMicroUSD(cost float64) *int64 {
+	if cost <= 0 || math.IsNaN(cost) || math.IsInf(cost, 0) || math.Ceil(cost*1e6) >= float64(math.MaxInt64) {
+		return nil
+	}
+	v := int64(math.Ceil(cost * 1e6))
+	return &v
 }
 
 // buildPrompt renders the next turn for the CLI. omitTurnInstruction leaves off

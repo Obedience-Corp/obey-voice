@@ -36,12 +36,15 @@ const Version = 2
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
 type record struct {
-	Delivery  *events.WorkDelivery `json:"delivery,omitempty"`
-	Work      *work.Snapshot       `json:"work,omitempty"`
-	WorkScope *work.WorkScope      `json:"work_scope,omitempty"`
-	Type      string               `json:"type"`
-	TS        string               `json:"ts,omitempty"`
-	Seq       int64                `json:"seq,omitempty"`
+	WorkerUsage  *events.WorkerUsageRecorded `json:"worker_usage,omitempty"`
+	WorkerLimit  *events.WorkerLimitReached  `json:"worker_limit,omitempty"`
+	WorkerCharge *events.WorkerChargeState   `json:"worker_charge,omitempty"`
+	Delivery     *events.WorkDelivery        `json:"delivery,omitempty"`
+	Work         *work.Snapshot              `json:"work,omitempty"`
+	WorkScope    *work.WorkScope             `json:"work_scope,omitempty"`
+	Type         string                      `json:"type"`
+	TS           string                      `json:"ts,omitempty"`
+	Seq          int64                       `json:"seq,omitempty"`
 
 	V   int `json:"v,omitempty"`   // header
 	PID int `json:"pid,omitempty"` // header
@@ -264,6 +267,9 @@ func (w *Writer) Attach(bus *events.Bus) {
 	events.Subscribe(bus, func(e events.WorkStateChanged) {
 		w.enqueue(record{Type: "work_state_changed", Work: &e.Snapshot})
 	})
+	events.Subscribe(bus, func(e events.WorkerUsageRecorded) { w.enqueue(record{Type: "worker.usage", WorkerUsage: &e}) })
+	events.Subscribe(bus, func(e events.WorkerLimitReached) { w.enqueue(record{Type: "worker.limit_reached", WorkerLimit: &e}) })
+	events.Subscribe(bus, func(e events.WorkerChargeState) { w.enqueue(record{Type: "worker.charge", WorkerCharge: &e}) })
 	events.Subscribe(bus, func(e events.RouteDecided) {
 		w.enqueue(record{Type: "route.decided", WorkScope: &e.Scope, Kind: e.Kind, Tier: e.Tier, ReasonCode: e.ReasonCode, State: e.State, JobID: e.JobID, Text: e.Task, Message: e.Message})
 	})

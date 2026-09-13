@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -72,6 +73,9 @@ func (a *Agency) ApplyWorkerSettings(settings *config.VoiceWorkers) error {
 		}
 	}
 	a.cfg.VoiceWorkers = next
+	if a.jobs != nil && next.Mode == config.WorkerModeTiered {
+		a.jobs.SetWorkerLimits(next.Policy.ConcurrentWorkers, next.Policy.QueuedWorkers)
+	}
 	return nil
 }
 
@@ -117,24 +121,46 @@ func frozenWorkerConfig(cfg *config.Config, plan *config.WorkerPlan) map[string]
 }
 
 func (a *Agency) plannedWorkerRun(brief string, cfg *config.Config, plan *config.WorkerPlan) func(context.Context) (string, error) {
+	requestID := newWorkID()
 	return func(ctx context.Context) (string, error) {
 		if a.workEnabled() && !a.acceptJobCallback(job.IDFromContext(ctx)) {
 			return "", context.Canceled
 		}
-		// Paid/unknown work is disabled until the usage-policy task supplies
-		// enforcing adapters. A saved billing label cannot bypass validation.
 		if plan.Assignment.Billing != config.WorkerBillingLocal {
-			current := a.WorkerSettings()
-			if current == nil || !current.Policy.PaidEnabled {
-				return "", fmt.Errorf("%w: paid workers are disabled", ErrWorkerPolicyChanged)
+			if err := a.recheckWorkerPolicy(plan); err != nil {
+				return "", err
 			}
-			return "", errors.New("paid worker dispatch is unavailable until usage policy is enforced")
 		}
+		ctx, cancel := context.WithTimeout(ctx, time.Duration(plan.Limits.RuntimeSeconds)*time.Second)
+		defer cancel()
+		limits := brain.BudgetLimits{StrictTools: plan.Policy.ChargePolicy == "strict", MaxRequests: plan.Limits.ModelRequests, MaxToolCalls: plan.Limits.ToolCalls, MaxRetries: plan.Limits.TransportRetries, MaxRuntime: time.Duration(plan.Limits.RuntimeSeconds) * time.Second}
+		if plan.Limits.OutputTokens != nil {
+			limits.MaxOutputTokens = *plan.Limits.OutputTokens
+		}
+		budget := brain.NewWorkerBudget(limits)
+		budget.BeforeRequest = func() error { return a.recheckWorkerPolicy(plan) }
+		ctx = budget.Context(ctx)
 		factory := a.planFactory
 		worker, err := factory(ctx, cfg.Clone(), plan)
 		if err != nil {
 			return "", fmt.Errorf("prepare worker: %w", err)
 		}
-		return a.workerRun(brief, worker, cfg)(ctx)
+		if plan.Assignment.Billing != config.WorkerBillingLocal {
+			return a.paidWorkerRun(ctx, brief, worker, cfg, plan, requestID)
+		}
+		return a.workerRunWithBudget(brief, worker, cfg, budget)(ctx)
 	}
+}
+
+// Rechecked immediately before every provider request; pinned assignments never
+// grant permission to ignore a later installation-wide paid disable.
+func (a *Agency) recheckWorkerPolicy(plan *config.WorkerPlan) error {
+	if plan.Assignment.Billing == config.WorkerBillingLocal {
+		return nil
+	}
+	current := a.WorkerSettings()
+	if current == nil || !current.Policy.PaidEnabled {
+		return fmt.Errorf("%w: paid workers are disabled", ErrWorkerPolicyChanged)
+	}
+	return nil
 }

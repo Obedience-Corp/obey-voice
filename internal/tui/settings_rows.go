@@ -268,9 +268,10 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 		rows = append(rows, settingRow{key: "worker_" + string(name), name: rowName, kind: rowAction, value: value,
 			applies: "new jobs after Save", help: "Enter to edit provider, model, references, and limits.",
 			run: func(m *settingsModel) tea.Cmd { return m.beginTierEdit(name) }})
+		scope, scopeDetail := workerCapabilityScope(t.Assignment)
 		rows = append(rows,
 			settingRow{key: "worker_" + string(name) + "_enabled", name: rowName + " enabled", kind: rowToggle, value: onOff(t.Enabled), run: func(m *settingsModel) tea.Cmd { t := m.tierDraft(name); t.Enabled = !t.Enabled; return nil }},
-			settingRow{key: "worker_" + string(name) + "_uncapped", name: rowName + " uncapped", kind: rowToggle, value: onOff(t.AllowUncapped), detail: "policy permitting", run: func(m *settingsModel) tea.Cmd { t := m.tierDraft(name); t.AllowUncapped = !t.AllowUncapped; return nil }},
+			settingRow{key: "worker_" + string(name) + "_uncapped", name: rowName + " uncapped", kind: rowToggle, value: onOff(t.AllowUncapped), detail: "explicit opt-in; charge cap unavailable", run: func(m *settingsModel) tea.Cmd { t := m.tierDraft(name); t.AllowUncapped = !t.AllowUncapped; return nil }},
 			workerBillingRow(name, rowName, t.Assignment),
 			settingRow{key: "worker_" + string(name) + "_endpoint", name: rowName + " endpoint reference", kind: rowAction, value: workerRef(t.Assignment, true), run: func(m *settingsModel) tea.Cmd {
 				return m.beginWorkerReferenceEdit(name, "endpoint reference", workerRef(t.Assignment, true))
@@ -278,6 +279,7 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 			settingRow{key: "worker_" + string(name) + "_account", name: rowName + " account reference", kind: rowAction, value: workerRef(t.Assignment, false), run: func(m *settingsModel) tea.Cmd {
 				return m.beginWorkerReferenceEdit(name, "account reference", workerRef(t.Assignment, false))
 			}},
+			settingRow{key: "worker_" + string(name) + "_capabilities", name: rowName + " enforcing scope", kind: rowInfo, value: scope, detail: scopeDetail},
 			settingRow{key: "worker_" + string(name) + "_limits", name: rowName + " limits", kind: rowInfo, value: fmt.Sprintf("%ds · %d requests · %d tools", t.Limits.RuntimeSeconds, t.Limits.ModelRequests, t.Limits.ToolCalls)},
 			settingRow{key: "worker_" + string(name) + "_runtime", name: rowName + " runtime seconds", kind: rowAction, value: fmt.Sprint(t.Limits.RuntimeSeconds), run: func(m *settingsModel) tea.Cmd {
 				return m.beginWorkerLimitEdit(name, "runtime_seconds", t.Limits.RuntimeSeconds)
@@ -292,7 +294,7 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 			settingRow{key: "worker_" + string(name) + "_output", name: rowName + " output tokens", kind: rowAction, value: workerIntPtr(t.Limits.OutputTokens), run: func(m *settingsModel) tea.Cmd {
 				return m.beginWorkerLimitTextEdit(name, "output_tokens", workerIntPtr(t.Limits.OutputTokens))
 			}},
-			settingRow{key: "worker_" + string(name) + "_charge", name: rowName + " charge cap", kind: rowAction, value: workerBudget(t.Limits.ChargeMicroUSD), run: func(m *settingsModel) tea.Cmd {
+			settingRow{key: "worker_" + string(name) + "_charge", name: rowName + " charge cap", kind: rowAction, value: workerBudget(t.Limits.ChargeMicroUSD), detail: "charge cap unavailable", run: func(m *settingsModel) tea.Cmd {
 				return m.beginWorkerLimitTextEdit(name, "charge_micro_usd", workerBudget(t.Limits.ChargeMicroUSD))
 			}},
 		)
@@ -323,27 +325,28 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 		settingRow{key: "worker_cancel", name: "Cancel worker edits", kind: rowAction, run: func(m *settingsModel) tea.Cmd { m.cancelWorkerDraft(); return nil }})
 	for i := range rows {
 		row := &rows[i]
-		pending := false
-		for _, suffix := range []string{"_uncapped", "_limits", "_runtime", "_requests", "_tools", "_retries", "_output", "_charge"} {
-			if strings.HasSuffix(row.key, suffix) {
-				pending = true
-			}
+		if row.key == "worker_paid_enabled" {
+			row.detail = "requires explicit account and policy opt-in"
 		}
 		switch row.key {
-		case "worker_charge_policy", "worker_daily_budget", "worker_timezone", "worker_queued", "worker_concurrent":
-			pending = true
-		}
-		if pending {
-			row.detail = "not yet enforced"
-			row.applies = "saved for future enforcement"
-		}
-		if row.key == "worker_paid_enabled" {
-			row.detail = "paid dispatch unavailable"
+		case "worker_charge_policy":
+			if d.Policy.ChargePolicy == "strict" {
+				row.detail = "strict paid dispatch blocked: charge cap unavailable"
+			} else {
+				row.detail = "advisory daily cap; actual charge may be unknown"
+			}
+		case "worker_daily_budget":
+			row.detail = "usage ledger at installation scope; unknown charges remain unknown"
+		case "worker_timezone":
+			row.detail = "usage ledger bucket timezone"
 		}
 	}
+	rows = append(rows, settingRow{key: "worker_allowance", name: "Worker allowance", kind: rowAction,
+		value: m.workerAllowanceValue(), detail: "Enter to inspect; unknown charges remain unknown",
+		run: func(m *settingsModel) tea.Cmd { return m.inspectWorkerAllowance() }})
 	rows = append(rows, settingRow{key: "worker_current_bounds", name: "Current configured bounds", kind: rowInfo,
-		value:  fmt.Sprintf("%d concurrent · %s runtime", max(1, m.cfg.VoiceWorkerMaxConcurrent), workerRuntimeBudget(m.cfg.VoiceWorkerJobBudget)),
-		detail: "legacy settings; captured when the conversation starts"})
+		value:  fmt.Sprintf("%d concurrent · %d queued · per-tier runtime", d.Policy.ConcurrentWorkers, d.Policy.QueuedWorkers),
+		detail: "local scheduling; remote termination may remain unknown"})
 	if m.workerEditingTier == "" {
 		filtered := rows[:0]
 		for _, row := range rows {
@@ -365,6 +368,16 @@ func (m settingsModel) tierWorkerRows() []settingRow {
 		rows = filtered
 	}
 	return rows
+}
+
+func workerCapabilityScope(a *config.WorkerAssignment) (string, string) {
+	if a == nil {
+		return "provider not assigned", "capability scope appears after choosing a provider"
+	}
+	if strings.EqualFold(strings.TrimSpace(a.Provider), "ollama") {
+		return "local request/tool/output quotas", "host runtime caps local scheduling; remote termination may remain unknown"
+	}
+	return "CLI request/tool/output quotas unavailable", "host runtime only; charge cap unavailable and nested CLI calls remain unknown"
 }
 
 func workerBillingRow(name config.WorkerTierName, rowName string, a *config.WorkerAssignment) settingRow {
@@ -1030,11 +1043,4 @@ func (m settingsModel) meetingRows() []settingRow {
 			},
 		},
 	}
-}
-
-func workerRuntimeBudget(seconds int) string {
-	if seconds <= 0 {
-		return "uncapped"
-	}
-	return fmt.Sprintf("%ds", seconds)
 }

@@ -1,10 +1,14 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -18,30 +22,55 @@ const (
 	keptBackups = 5
 )
 
+var errLockGuardBusy = errors.New("config lock guard is held")
+
 // acquireConfigLock takes an advisory lock on the config file and returns the
 // release function. The TUI, the CLI and the Mac app are three writers of one
 // file; without this, two read-modify-writes interleave and one set silently
 // disappears.
 func acquireConfigLock(path string) (func(), error) {
+	guardRelease, err := acquireLockGuard(path + ".guard")
+	if err != nil {
+		if errors.Is(err, errLockGuardBusy) {
+			return nil, &SetError{Code: CodeLocked, Message: "another writer is saving settings right now; try again", cause: err}
+		}
+		return nil, writeFailed("", "acquiring config lock guard", err)
+	}
 	lockPath := path + ".lock"
 	for attempt := 0; attempt < 2; attempt++ {
 		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			fmt.Fprintf(file, "%d\n", os.Getpid())
 			_ = file.Close()
-			return func() { _ = os.Remove(lockPath) }, nil
+			return func() {
+				_ = os.Remove(lockPath)
+				guardRelease()
+			}, nil
 		}
 		if !os.IsExist(err) {
+			guardRelease()
 			return nil, writeFailed("", "creating config lock", err)
 		}
 		info, statErr := os.Stat(lockPath)
 		if statErr != nil || time.Since(info.ModTime()) <= configLockStale {
 			break
 		}
+		// A ledger transaction or suspended process can outlive the normal
+		// write duration. Age alone is never permission to steal its lock.
+		if data, err := os.ReadFile(lockPath); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid > 0 {
+				if proc, err := os.FindProcess(pid); err == nil {
+					if err := proc.Signal(syscall.Signal(0)); err == nil || errors.Is(err, syscall.EPERM) {
+						break
+					}
+				}
+			}
+		}
 		if removeErr := os.Remove(lockPath); removeErr != nil {
 			break
 		}
 	}
+	guardRelease()
 	return nil, &SetError{
 		Code:    CodeLocked,
 		Message: "another writer is saving settings right now; try again",

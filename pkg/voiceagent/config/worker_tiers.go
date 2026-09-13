@@ -90,7 +90,7 @@ func defaultWorkerTier() WorkerTier {
 
 // DefaultVoiceWorkers is safe for new installs: no tier is enabled or assigned.
 func DefaultVoiceWorkers() *VoiceWorkers {
-	w := &VoiceWorkers{SchemaVersion: 1, Mode: WorkerModeLegacy, Policy: WorkerPolicy{PaidEnabled: false, ChargePolicy: "advisory", Timezone: "UTC", ConcurrentWorkers: 1, QueuedWorkers: 1, Escalation: "never"}}
+	w := &VoiceWorkers{SchemaVersion: 1, Mode: WorkerModeLegacy, Policy: WorkerPolicy{PaidEnabled: false, ChargePolicy: "advisory", Timezone: "UTC", ConcurrentWorkers: 1, QueuedWorkers: 32, Escalation: "never"}}
 	w.Tiers.Simple, w.Tiers.Medium, w.Tiers.Complex = defaultWorkerTier(), defaultWorkerTier(), defaultWorkerTier()
 	return w
 }
@@ -302,7 +302,12 @@ func validBilling(b WorkerBilling) bool {
 type WorkerCapabilityResolver interface {
 	ValidateWorkerAssignment(WorkerAssignment) error
 }
+type WorkerCapabilityReporter interface {
+	WorkerCapabilities(WorkerAssignment) WorkerCapabilities
+}
+
 type WorkerPlan struct {
+	Capabilities   WorkerCapabilities
 	Tier           WorkerTierName
 	ConfigRevision int64
 	Revision       int64
@@ -332,13 +337,8 @@ func ResolveWorkerPlan(cfg *Config, name WorkerTierName, capabilities WorkerCapa
 	if !t.Enabled || t.Assignment == nil {
 		return nil, fmt.Errorf("worker tier %s is disabled", name)
 	}
-	// usage_policy has not yet qualified chargeable adapters. Keep every paid
-	// assignment editable and visible, but refuse to produce a runnable plan.
 	if t.Assignment.Billing == WorkerBillingUnknown {
 		return nil, fmt.Errorf("worker tier %s needs an explicit billing label", name)
-	}
-	if t.Assignment.Billing != WorkerBillingLocal {
-		return nil, errors.New("paid worker dispatch is unavailable until usage policy is enforced")
 	}
 	if capabilities == nil {
 		return nil, errors.New("worker capabilities were not supplied")
@@ -350,6 +350,23 @@ func ResolveWorkerPlan(cfg *Config, name WorkerTierName, capabilities WorkerCapa
 	policy := cfg.VoiceWorkers.Policy
 	policy.DailyChargeMicroUSD = cloneInt64(policy.DailyChargeMicroUSD)
 	p := &WorkerPlan{Tier: name, ConfigRevision: cfg.VoiceWorkers.Revision, Revision: clonedTier.Revision, Assignment: *clonedTier.Assignment, Limits: clonedTier.Limits, Policy: policy, AllowUncapped: clonedTier.AllowUncapped}
+	if reporter, ok := capabilities.(WorkerCapabilityReporter); ok {
+		p.Capabilities = reporter.WorkerCapabilities(p.Assignment)
+	}
+	if t.Assignment.Billing != WorkerBillingLocal {
+		if cfg.VoiceWorkers.Policy.ChargePolicy == "strict" {
+			return nil, errors.New("strict charge cap unavailable: adapter cannot bound all billable requests and tools")
+		}
+		if !cfg.VoiceWorkers.Policy.PaidEnabled {
+			return nil, errors.New("paid worker dispatch is disabled; enable paid workers explicitly")
+		}
+		if !t.AllowUncapped {
+			return nil, errors.New("paid adapter has no certified charge bound; enable allow_uncapped explicitly")
+		}
+		if t.Assignment.AccountRef == nil || strings.TrimSpace(*t.Assignment.AccountRef) == "" {
+			return nil, errors.New("paid worker assignment requires account_ref")
+		}
+	}
 	p.Assignment.EndpointRef = cloneString(p.Assignment.EndpointRef)
 	p.Assignment.AccountRef = cloneString(p.Assignment.AccountRef)
 	return p, nil

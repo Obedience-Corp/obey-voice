@@ -214,3 +214,42 @@ boundary, not an actual paid worker.
 The original seed's one-tool restriction is revised: explicit cancellation and
 cached status need model-callable controls. All three names already belong to
 Obey's vocabulary; no blocking wait is exposed.
+
+
+## Tiered worker limits and accounting
+
+Workers Settings can save separate Simple, Medium and Complex assignments.
+Queued jobs retain the assignment and limits they were admitted with. Tiered
+mode uses the shared concurrency and queue limits in `voice_workers.policy`
+(defaults: one running, 32 queued) and each tier's runtime limit (120 seconds by
+default), instead of the legacy singleton limits above.
+
+Local Ollama workers enforce request, tool, retry and optional output-token
+allowances across the job. Missing generated-token usage blocks another
+output-bounded request. Strict policy excludes shell, network and delegation
+tools whose billable effects cannot be bounded. Runtime and concurrency limits
+cover local scheduling; cancellation does not prove remote or descendant exit.
+
+Paid work defaults off. Current Claude and Grok CLI adapters have no certified
+hard charge cap. To use one, explicitly choose its billing label and
+`account_ref=default`, enable paid workers, select advisory global policy, and
+allow uncapped use for that tier. Strict global policy blocks these adapters
+even when a tier allows uncapped use. Their request, tool and output ceilings
+remain unavailable; a saved number does not enforce an opaque CLI's internals.
+Legacy paid assignments do not bypass the conversation inbox's policy.
+
+The installation's `worker-usage.sqlite` is local accounting, not a billing API.
+All personas and sessions share it. A durable reservation and dispatch marker
+precede paid execution. CLI-reported costs are observations and cannot settle
+an unknown charge. Cancellation, timeout and uncertain provider termination
+retain the record. Worker result preparation belongs to this scope; the host
+voice-model turn and TTS have their own provider billing.
+
+Choose **Worker allowance** in Settings to inspect known reserved and settled
+micro-USD, unresolved unknown bounds and any strict-dispatch freeze. Advisory
+mode does not promise a hard remaining allowance. Unresolved reservations carry
+across midnight; changing timezone takes effect after the active period.
+Storage failures block paid admission. No current adapter has authoritative
+reconciliation or a supported user-adjustment command; unknown records remain
+unresolved. The JSONL transcript records `worker.usage`, `worker.limit_reached`
+and `worker.charge`; unknown counts or costs are explicit null values.

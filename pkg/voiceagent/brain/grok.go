@@ -206,6 +206,11 @@ func (g *GrokBrain) streamAttempt(ctx context.Context, out chan<- string, stream
 			streamErr = fmt.Errorf("grok stream: %w", err)
 		}
 	}
+	if streamOpts.OnWorkerUsage != nil {
+		// Streaming events contain no token or cost fields: report the
+		// observation explicitly with nil components rather than zeroes.
+		streamOpts.OnWorkerUsage(WorkerUsage{})
+	}
 
 	// Release a short reply the label check still holds — but only on success.
 	// On a failed attempt nothing was emitted, so streamedAny stays false and
@@ -269,7 +274,13 @@ func (g *GrokBrain) thinkFullAttempt(ctx context.Context, streamOpts StreamOptio
 	// session rejections included). Never speak the error text, and let a
 	// rejected --resume fall through to the flatten retry.
 	if result.IsError {
+		if streamOpts.OnWorkerUsage != nil {
+			streamOpts.OnWorkerUsage(WorkerUsage{ChargeMicroUSD: chargeMicroUSD(result.CostUSD)})
+		}
 		return "", resultError("grok", result.Subtype, result.Text)
+	}
+	if streamOpts.OnWorkerUsage != nil {
+		streamOpts.OnWorkerUsage(WorkerUsage{ChargeMicroUSD: chargeMicroUSD(result.CostUSD)})
 	}
 
 	// Strip the label and think block, clean, then fall back, so the fallback

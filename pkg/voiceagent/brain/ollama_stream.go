@@ -17,6 +17,7 @@ import (
 // Implements an agent loop: if the model returns tool calls, executes them
 // and re-requests until the model produces a text response.
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
+	ctx = opts.workerBudget().Context(ctx)
 	if opts.Identity != nil {
 		copied := *opts.Identity
 		opts.Identity = &copied
@@ -45,6 +46,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 		// Per-turn tool session: exposes skills through progressive disclosure.
 		sess := &toolSession{
+			budget:         opts.workerBudget(),
 			catalog:        o.skills,
 			routerPolicy:   opts.effectiveRouterPolicy(),
 			workerTiers:    opts.WorkerTiers,
@@ -86,6 +88,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 			req := o.newChatRequest(messages, tools)
+			if err := o.applyOutputBudget(req, opts.workerBudget()); err != nil {
+				done <- StreamResult{Err: err}
+				return
+			}
 
 			// Accumulate the full response (text + tool calls).
 			var textBuf strings.Builder
@@ -174,8 +180,20 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					spoken.WriteString(held)
 				}
 			}
-			if opts.OnUsage != nil && prefillTokens+genTokens > 0 {
+			if opts.OnUsage != nil {
 				opts.OnUsage(prefillTokens, genTokens)
+			}
+			if opts.OnWorkerUsage != nil {
+				u := WorkerUsage{}
+				if prefillTokens > 0 {
+					in := prefillTokens
+					u.InputTokens = &in
+				}
+				if genTokens > 0 {
+					out := genTokens
+					u.OutputTokens = &out
+				}
+				opts.OnWorkerUsage(u)
 			}
 			if err != nil {
 				err = fmt.Errorf("ollama stream: %w", err)
@@ -245,6 +263,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Execute each tool and add results (skills + full CLI tools).
 				for _, tc := range toolCalls {
 					result := sess.execute(ctx, o.workDir, tc)
+					if sess.limitErr != nil {
+						done <- StreamResult{Err: sess.limitErr}
+						return
+					}
 					// read_skill is the established instruction-loading path. Preserve its
 					// full body in this turn's transient skill splice, not persisted history.
 					if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
