@@ -16,6 +16,7 @@ vad_enabled: true
 vad_silence_duration: 0.5
 vad_threshold: 0.6
 vad_min_speech_duration: 0.25
+vad_pre_roll_ms: 300
 listen_timeout: 10
 language: en-US
 tts_provider: kokoro
