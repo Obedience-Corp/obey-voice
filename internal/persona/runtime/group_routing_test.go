@@ -3,6 +3,9 @@ package personaruntime
 import (
 	"context"
 	"errors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"os"
 	"reflect"
 	"testing"
 
@@ -98,8 +101,15 @@ func TestAgentHandoffPreservesTranscriptAndRefusesRepeat(t *testing.T) {
 	if err != nil || ok || f.selector.Snapshot().PersonaID != initial.PersonaID {
 		t.Fatalf("repeat ok=%v err=%v", ok, err)
 	}
-	admitted, ok, err := f.selector.RouteHandoff(t.Context(), response, []string{initial.PersonaID})
-	if err != nil || !ok || admitted.Envelope.PersonaID != "santa" || admitted.Request != "" {
+	proposal, ok, err := f.selector.RouteHandoff(t.Context(), response, []string{initial.PersonaID})
+	if err != nil || !ok {
+		t.Fatalf("proposal=%+v ok=%v err=%v", proposal, ok, err)
+	}
+	if f.selector.Snapshot() != initial {
+		t.Fatal("classification changed selection")
+	}
+	admitted, err := proposal.Commit(t.Context())
+	if err != nil || admitted.Envelope.PersonaID != "santa" || admitted.Request != "" {
 		t.Fatalf("handoff=%+v ok=%v err=%v", admitted, ok, err)
 	}
 	if !reflect.DeepEqual(before, f.pipeline.Brain.History()) {
@@ -149,5 +159,94 @@ func TestPersonaRoundTripTransfersCompactedWorkingView(t *testing.T) {
 	}
 	if got := last.history; len(got) != len(canonical)+1 || got[len(got)-1].Content != "new message" {
 		t.Fatalf("canonical history after round trip = %#v", got)
+	}
+}
+
+func TestHandoffProposalFailuresLeaveSelectionAndDiskUnchanged(t *testing.T) {
+	for _, failure := range []string{"canceled", "roster", "prepare", "persist"} {
+		t.Run(failure, func(t *testing.T) {
+			f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+			defer f.close(t)
+			initial := f.selector.Snapshot()
+			f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+				return brain.Addressee{Kind: "address", Name: "Santa"}, nil
+			})
+			proposal, accepted, err := f.selector.RouteHandoff(t.Context(), brain.Turn{Role: "assistant", PersonaID: initial.PersonaID, Content: "Santa, your thoughts?"}, nil)
+			if err != nil || !accepted {
+				t.Fatalf("accepted=%v err=%v", accepted, err)
+			}
+			if len(f.factories) != 0 || f.selector.Snapshot() != initial {
+				t.Fatal("classification prepared or selected persona")
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			switch failure {
+			case "canceled":
+				cancel()
+			case "roster":
+				if err := os.RemoveAll(f.catalog.Dir); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f.catalog.Dir, []byte("not a directory"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "prepare":
+				f.selector.opts.NewBrain = func(context.Context, *config.Config) (brain.Provider, error) { return nil, errors.New("unavailable") }
+			case "persist":
+				f.selector.opts.Persist = func([]brain.Turn, events.PersonaSelection) error { return errors.New("disk full") }
+			}
+			if _, err := proposal.Commit(ctx); err == nil {
+				t.Fatal("expected failed admission")
+			}
+			if f.selector.Snapshot() != initial || f.pipeline.Brain != f.old {
+				t.Fatal("failed handoff changed active persona")
+			}
+			saved, err := f.store.Load(f.session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if saved.SelectedPersonaID != initial.PersonaID {
+				t.Fatalf("persisted persona=%s", saved.SelectedPersonaID)
+			}
+		})
+	}
+}
+
+func TestBareNameSwitchAcknowledgementKeepsTransferredCompaction(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+	defer f.close(t)
+	canonical := []brain.Turn{{Role: "user", Content: "old request"}, {Role: "assistant", Content: "old reply"}, {Role: "user", Content: "recent request"}}
+	working := []brain.Turn{{Role: "assistant", Content: "Earlier context summary."}, canonical[2]}
+	f.old.history, f.old.working = cloneTestTurns(canonical), cloneTestTurns(working)
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		return brain.Addressee{Kind: "address", Name: "Santa", Bare: true}, nil
+	})
+	f.pipeline.AdmitInput = f.selector.Route
+	f.pipeline.SetOutputMuted(true)
+	f.pipeline.Events = events.NewBus()
+	f.pipeline.OnTurn = func() {
+		if err := f.store.Save(f.session, f.pipeline.Brain.History()); err != nil {
+			t.Error(err)
+		}
+	}
+	if err := f.pipeline.RunTurnTextMode(t.Context(), "Santa."); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := f.pipeline.Brain.(brain.ContinuityTransferProvider).ContinuitySnapshot()
+	if len(snapshot.Canonical) != len(canonical)+2 || !reflect.DeepEqual(snapshot.Canonical[:len(canonical)], canonical) {
+		t.Fatalf("canonical=%+v", snapshot.Canonical)
+	}
+	if len(snapshot.Working) != len(working)+2 || !reflect.DeepEqual(snapshot.Working[:len(working)], working) {
+		t.Fatalf("working=%+v", snapshot.Working)
+	}
+	if last := snapshot.Working[len(snapshot.Working)-1]; last.Role != "assistant" || last.PersonaID != "santa" {
+		t.Fatalf("ack=%+v", last)
+	}
+	saved, err := f.store.Load(f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Turns) != len(canonical)+2 || saved.SelectedPersonaID != "santa" {
+		t.Fatalf("saved=%+v", saved)
 	}
 }

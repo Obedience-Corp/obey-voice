@@ -114,30 +114,47 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 	}
 }
 
-// RouteHandoff runs only after a successfully delivered agent response at the
-// same serialized boundary as user admission. Mentions in passing do not route.
-func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.ResponseAdmission, bool, error) {
-	var admitted pipeline.ResponseAdmission
+// RouteHandoff classifies a delivered response without loading or selecting a
+// persona. The pipeline may discard the proposal when user speech arrives.
+func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {
+	var proposal pipeline.HandoffProposal
 	if response.PersonaID == "" || response.PersonaID != s.Snapshot().PersonaID || strings.TrimSpace(response.Content) == "" {
-		return admitted, false, nil
+		return proposal, false, nil
 	}
 	roster, participants, err := s.conversationRoster()
 	if err != nil {
-		return admitted, false, err
+		return proposal, false, err
 	}
 	if len(participants) < 2 {
-		return admitted, false, nil
+		return proposal, false, nil
 	}
 	address, err := s.resolveAddress(ctx, response.Content, "agent", response.PersonaDisplayName, roster, participants)
 	if err != nil {
-		return admitted, false, err
+		return proposal, false, err
 	}
 	if address.PersonaID == "" || address.PersonaID == response.PersonaID || slices.Contains(visited, address.PersonaID) {
-		return admitted, false, nil
+		return proposal, false, nil
 	}
-	if _, err := s.Select(ctx, address.PersonaID, "agent-handoff"); err != nil {
-		return admitted, false, err
+	expected := s.Snapshot()
+	proposal.PersonaID = address.PersonaID
+	proposal.Commit = func(ctx context.Context) (pipeline.ResponseAdmission, error) {
+		s.transitionMu.Lock()
+		defer s.transitionMu.Unlock()
+		if s.Snapshot() != expected {
+			return pipeline.ResponseAdmission{}, fmt.Errorf("agent handoff belongs to a changed persona selection")
+		}
+		// Resolve the roster before durable publication. No fallible Admit or
+		// profile reload may follow a successful selection and strand its target.
+		_, participants, err := s.conversationRoster()
+		if err != nil {
+			return pipeline.ResponseAdmission{}, err
+		}
+		selected, err := s.selectAtBoundary(ctx, address.PersonaID, "agent-handoff")
+		if err != nil {
+			return pipeline.ResponseAdmission{}, err
+		}
+		s.setGroupParticipants(participants)
+		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected)}, nil
 	}
-	admitted.Envelope, err = s.Admit(ctx)
-	return admitted, err == nil, err
+	return proposal, true, nil
 }

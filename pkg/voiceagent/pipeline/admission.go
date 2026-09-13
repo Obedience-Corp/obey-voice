@@ -84,19 +84,38 @@ func appendResponse(provider brain.Provider, response string, identity *brain.Tu
 	return fmt.Errorf("provider cannot append canonical reply")
 }
 
-func (p *Pipeline) completeLocalReply(ctx context.Context, input, reply string, metrics *turnMetrics, turn *turnConductor) error {
-	projection, ok := p.Brain.(brain.HistoryProjectionProvider)
-	if !ok {
-		return fmt.Errorf("local acknowledgement requires canonical history projection")
+func appendContinuityHistory(provider brain.ContinuityTransferProvider, additions []brain.Turn) error {
+	snapshot := provider.ContinuitySnapshot()
+	canonical := append([]brain.Turn(nil), snapshot.Canonical...)
+	working := append([]brain.Turn(nil), snapshot.Working...)
+	if snapshot.Working == nil {
+		working = append([]brain.Turn(nil), canonical...)
 	}
+	snapshot.Canonical = append(canonical, additions...)
+	snapshot.Working = append(working, additions...)
+	return provider.ImportContinuity(snapshot)
+}
+
+func (p *Pipeline) completeLocalReply(ctx context.Context, input, reply string, metrics *turnMetrics, turn *turnConductor) error {
 	now := time.Now().UTC()
 	response := brain.Turn{Role: "assistant", Content: reply, At: now}
 	if identity := metrics.responseIdentity(); identity != nil {
 		response.PersonaID, response.PersonaDisplayName, response.PromptHash, response.ResponseID = identity.PersonaID, identity.PersonaDisplayName, identity.PromptHash, identity.ResponseID
 	}
-	turns := append(p.Brain.History(), brain.Turn{Role: "user", Content: input, Speaker: p.currentSpeakerID(), At: now}, response)
-	if err := projection.ImportHistory(turns); err != nil {
-		return err
+	additions := []brain.Turn{{Role: "user", Content: input, Speaker: p.currentSpeakerID(), At: now}, response}
+	if continuity, ok := p.Brain.(brain.ContinuityTransferProvider); ok {
+		if err := appendContinuityHistory(continuity, additions); err != nil {
+			return err
+		}
+	} else {
+		projection, ok := p.Brain.(brain.HistoryProjectionProvider)
+		if !ok {
+			return fmt.Errorf("local acknowledgement requires canonical history projection")
+		}
+		turns := append(p.Brain.History(), additions...)
+		if err := projection.ImportHistory(turns); err != nil {
+			return err
+		}
 	}
 	if err := p.speakStandalone(ctx, turn, metrics, reply); err != nil {
 		metrics.degraded = true

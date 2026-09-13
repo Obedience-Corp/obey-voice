@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -75,15 +76,15 @@ func TestTextContinuationUsesImmutableAdmissionAndNoFakeUser(t *testing.T) {
 		result.Request = input
 		return result, nil
 	}
-	p.RouteHandoff = func(_ context.Context, completed brain.Turn, prior []string) (ResponseAdmission, bool, error) {
+	p.RouteHandoff = func(_ context.Context, completed brain.Turn, prior []string) (HandoffProposal, bool, error) {
 		visited = append(visited, append([]string(nil), prior...))
 		if len(visited) == 1 {
 			if completed.PersonaID != "one" {
 				t.Fatalf("completed persona = %q, want one", completed.PersonaID)
 			}
-			return admission("two"), true, nil
+			return handoff("two"), true, nil
 		}
-		return ResponseAdmission{}, false, nil
+		return HandoffProposal{}, false, nil
 	}
 
 	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
@@ -108,9 +109,9 @@ func TestContinuationLimitIsThreeAdditionalResponses(t *testing.T) {
 		return admission("one"), nil
 	}
 	var handoffs int
-	p.RouteHandoff = func(context.Context, brain.Turn, []string) (ResponseAdmission, bool, error) {
+	p.RouteHandoff = func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
 		handoffs++
-		return admission(string(rune('a' + handoffs + 1))), true, nil
+		return handoff(string(rune('a' + handoffs + 1))), true, nil
 	}
 
 	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
@@ -132,9 +133,9 @@ func TestContinuationRefusesRepeatedPersona(t *testing.T) {
 		return admission("one"), nil
 	}
 	var handoffs int
-	p.RouteHandoff = func(context.Context, brain.Turn, []string) (ResponseAdmission, bool, error) {
+	p.RouteHandoff = func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
 		handoffs++
-		return admission("one"), true, nil
+		return handoff("one"), true, nil
 	}
 	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
 		t.Fatalf("RunTurnTextMode() error = %v", err)
@@ -158,9 +159,9 @@ func TestContinuationSkipsDegradedResponses(t *testing.T) {
 		return admission("one"), nil
 	}
 	var handoffs int
-	p.RouteHandoff = func(context.Context, brain.Turn, []string) (ResponseAdmission, bool, error) {
+	p.RouteHandoff = func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
 		handoffs++
-		return admission("two"), true, nil
+		return handoff("two"), true, nil
 	}
 	if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
 		t.Fatalf("RunTurnTextMode() error = %v", err)
@@ -178,8 +179,8 @@ func TestContinuationStopsWhenContextCancels(t *testing.T) {
 	p.AdmitInput = func(context.Context, string, bool) (ResponseAdmission, error) {
 		return admission("one"), nil
 	}
-	p.RouteHandoff = func(context.Context, brain.Turn, []string) (ResponseAdmission, bool, error) {
-		return admission("two"), true, nil
+	p.RouteHandoff = func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
+		return handoff("two"), true, nil
 	}
 	cancel()
 	if err := p.RunTurnTextMode(ctx, "hello"); !errors.Is(err, context.Canceled) {
@@ -189,9 +190,9 @@ func TestContinuationStopsWhenContextCancels(t *testing.T) {
 
 func TestBackgroundTurnDoesNotInvokeHandoff(t *testing.T) {
 	b := &continuationBrain{chunks: []string{"Background result."}}
-	p := &Pipeline{Brain: b, Events: events.NewBus(), RouteHandoff: func(context.Context, brain.Turn, []string) (ResponseAdmission, bool, error) {
+	p := &Pipeline{Brain: b, Events: events.NewBus(), RouteHandoff: func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
 		t.Fatal("background turn invoked handoff")
-		return ResponseAdmission{}, false, nil
+		return HandoffProposal{}, false, nil
 	}}
 	if err := p.runTextTurn(t.Context(), "", true); err != nil {
 		t.Fatalf("runTextTurn(background) error = %v", err)
@@ -214,9 +215,9 @@ func TestVoiceInterruptDoesNotStartHandoff(t *testing.T) {
 		},
 	}
 	var handoffs int
-	p.RouteHandoff = func(context.Context, brain.Turn, []string) (ResponseAdmission, bool, error) {
+	p.RouteHandoff = func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
 		handoffs++
-		return admission("two"), true, nil
+		return handoff("two"), true, nil
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -232,5 +233,51 @@ func TestVoiceInterruptDoesNotStartHandoff(t *testing.T) {
 	<-done
 	if handoffs != 0 {
 		t.Fatalf("handoffs = %d, want zero after voice interruption", handoffs)
+	}
+}
+
+func handoff(persona string) HandoffProposal {
+	return HandoffProposal{PersonaID: persona, Commit: func(context.Context) (ResponseAdmission, error) { return admission(persona), nil }}
+}
+
+func TestOptionalHandoffFailurePreservesCompletedReply(t *testing.T) {
+	for _, voice := range []bool{false, true} {
+		for _, failure := range []string{"classifier unavailable", "classifier canceled", "admission failed"} {
+			t.Run(fmt.Sprintf("voice=%v/%s", voice, failure), func(t *testing.T) {
+				b := &continuationBrain{chunks: []string{"Completed answer."}}
+				p := &Pipeline{Brain: b, Events: events.NewBus()}
+				if voice {
+					player := newFakePlayer(time.Millisecond)
+					defer player.Close()
+					p.STT, p.TTS, p.Player = &fakeSTT{text: "hello"}, &fakeTTS{}, player
+				}
+				saved, ready, failures := 0, 0, 0
+				p.OnTurn = func() { saved++ }
+				events.Subscribe(p.Events, func(events.ResponseReady) { ready++ })
+				events.Subscribe(p.Events, func(events.Error) { failures++ })
+				p.RouteHandoff = func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error) {
+					if failure == "admission failed" {
+						return HandoffProposal{PersonaID: "santa", Commit: func(context.Context) (ResponseAdmission, error) { return ResponseAdmission{}, errors.New(failure) }}, true, nil
+					}
+					if failure == "classifier canceled" {
+						return HandoffProposal{}, false, context.Canceled
+					}
+					return HandoffProposal{}, false, errors.New(failure)
+				}
+				var err error
+				if voice {
+					_, err = p.RunTurn(t.Context())
+				} else {
+					err = p.RunTurnTextMode(t.Context(), "hello")
+				}
+				if err != nil || saved != 1 || ready != 1 || failures != 0 {
+					t.Fatalf("err=%v saved=%d ready=%d failures=%d", err, saved, ready, failures)
+				}
+				inputs, _ := b.calls()
+				if len(inputs) != 1 {
+					t.Fatalf("unexpected retry/continuation: %v", inputs)
+				}
+			})
+		}
 	}
 }

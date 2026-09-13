@@ -2,12 +2,22 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
+
+// HandoffProposal is a side-effect-free addressing decision. Commit runs once,
+// at the serialized response boundary after pending user speech has priority.
+// A failed Commit must leave the previous selection intact.
+type HandoffProposal struct {
+	PersonaID string
+	Commit    func(context.Context) (ResponseAdmission, error)
+}
 
 const maxAgentContinuations = 3
 
@@ -65,16 +75,16 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 	}
 
 	type handoffResult struct {
-		admission ResponseAdmission
-		accepted  bool
-		err       error
+		proposal HandoffProposal
+		accepted bool
+		err      error
 	}
 	resultCh := make(chan handoffResult, 1)
 	classifyCtx, cancelClassify := context.WithCancel(ctx)
 	defer cancelClassify()
 	go func() {
-		admission, accepted, err := p.RouteHandoff(classifyCtx, state.turn, append([]string(nil), visited...))
-		resultCh <- handoffResult{admission: admission, accepted: accepted, err: err}
+		proposal, accepted, err := p.RouteHandoff(classifyCtx, state.turn, append([]string(nil), visited...))
+		resultCh <- handoffResult{proposal: proposal, accepted: accepted, err: err}
 	}()
 
 	var result handoffResult
@@ -117,7 +127,26 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 	if interrupted {
 		return ResponseAdmission{}, false, nil
 	}
-	return result.admission, result.accepted, result.err
+	if err := ctx.Err(); err != nil {
+		return ResponseAdmission{}, false, err
+	}
+	if result.err != nil {
+		p.emit(events.Info{Message: fmt.Sprintf("Agent handoff skipped: %v", result.err)})
+		return ResponseAdmission{}, false, nil
+	}
+	proposal := result.proposal
+	if !result.accepted || proposal.Commit == nil || proposal.PersonaID == "" || personaAlreadyVisited(proposal.PersonaID, visited) || p.HasCapturedInput() {
+		return ResponseAdmission{}, false, nil
+	}
+	admission, err := proposal.Commit(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ResponseAdmission{}, false, ctx.Err()
+		}
+		p.emit(events.Info{Message: fmt.Sprintf("Agent handoff skipped: %v", err)})
+		return ResponseAdmission{}, false, nil
+	}
+	return admission, true, nil
 }
 
 func personaAlreadyVisited(persona string, visited []string) bool {
@@ -166,12 +195,6 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 		if !accepted {
 			return firstInput, nil
 		}
-		if p.HasCapturedInput() {
-			return firstInput, nil
-		}
-		if personaAlreadyVisited(admission.Envelope.PersonaID, visited) {
-			return firstInput, nil
-		}
 		if admission.Envelope.PersonaID != "" {
 			visited = append(visited, admission.Envelope.PersonaID)
 		}
@@ -198,12 +221,6 @@ func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) e
 			return err
 		}
 		if !accepted {
-			return nil
-		}
-		if p.HasCapturedInput() {
-			return nil
-		}
-		if personaAlreadyVisited(admission.Envelope.PersonaID, visited) {
 			return nil
 		}
 		if admission.Envelope.PersonaID != "" {

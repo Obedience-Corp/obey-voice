@@ -412,19 +412,27 @@ func (s *Selector) Admit(ctx context.Context) (events.ResponseEnvelope, error) {
 		return events.ResponseEnvelope{}, err
 	}
 	if _, participants, err := s.conversationRoster(); err == nil {
-		if group, ok := s.opts.Pipeline.Brain.(interface {
-			SetGroupParticipants([]brain.GroupParticipant)
-		}); ok {
-			group.SetGroupParticipants(participants)
-		}
+		s.setGroupParticipants(participants)
 	} else {
 		return events.ResponseEnvelope{}, err
 	}
+	return responseEnvelope(selected), nil
+}
+
+func (s *Selector) setGroupParticipants(participants []brain.GroupParticipant) {
+	if group, ok := s.opts.Pipeline.Brain.(interface {
+		SetGroupParticipants([]brain.GroupParticipant)
+	}); ok {
+		group.SetGroupParticipants(participants)
+	}
+}
+
+func responseEnvelope(selected events.PersonaSelection) events.ResponseEnvelope {
 	return events.ResponseEnvelope{
 		SessionID: selected.SessionID, ConversationEpoch: selected.ConversationEpoch, ResponseID: rand.Text(),
 		PersonaID: selected.PersonaID, DisplayName: selected.DisplayName, PromptHash: selected.PromptHash,
 		BindingHash: selected.BindingHash, SelectionRevision: selected.Revision, VoiceProvider: selected.VoiceProvider, Voice: selected.Voice,
-	}, nil
+	}
 }
 
 // RestoreSession adopts history and work that the host has explicitly restored.

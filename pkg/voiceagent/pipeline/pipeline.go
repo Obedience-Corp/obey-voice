@@ -76,10 +76,10 @@ type Pipeline struct {
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
-	// RouteHandoff classifies and admits an intentional handoff from the
-	// completed assistant response. The pipeline invokes it only at the
-	// serialized response boundary, never for background or degraded work.
-	RouteHandoff func(context.Context, brain.Turn, []string) (ResponseAdmission, bool, error)
+	// RouteHandoff classifies an intentional handoff without changing selection.
+	// The pipeline commits the proposal after joining the speech interrupt watch.
+	// It never invokes this callback for background or degraded work.
+	RouteHandoff func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
 	// The serialized host remembers omitted coverage until the next safe
 	// boundary, where one deterministic brief replaces a model retry.
 	completionFallback map[string]bool
