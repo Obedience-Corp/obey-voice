@@ -32,11 +32,13 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		skillCtx += "\nReport the newly arrived background task result briefly. Do not answer earlier requests again or start more tools."
 	}
 	skillCtx += WorkResultsPrompt(opts.WorkResults)
+	skillCtx += WorkerFactsPrompt(opts.WorkerFacts)
 	o.ensureContextBudget(skillCtx)
 
 	sess := &toolSession{
 		catalog:        o.skills,
 		routerPolicy:   opts.effectiveRouterPolicy(),
+		workerTiers:    opts.WorkerTiers,
 		delegation:     o.delegationForTurn(opts),
 		commandTimeout: time.Duration(config.ClampToolCommandTimeout(o.cfg.ToolCommandTimeout)) * time.Second,
 		boundary:       NewBoundary(o.cfg.WorkerBoundary),
@@ -101,7 +103,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 				if tc.Function.Name == "read_skill" && o.cfg.ContinuityProjectionEnabled {
 					skillCtx += "\n" + result
 				}
-				o.appendProjectedToolResult(tc, result)
+				o.appendProjectedToolResult(tc, result, opts.Identity)
 			}
 			o.ensureContextBudget(skillCtx)
 			continue
@@ -110,11 +112,16 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		hadThinking = hadThinking || messageHadThinking(response)
 		// Same empty-content table as ThinkStream: thinking-only empty stays
 		// empty so /compact is not replaced by the recovery line.
-		text := cleanForVoice(stripReplyConventions(o.cfg.AgentName, response.Content))
+		raw := stripReplyConventions(o.cfg.AgentName, response.Content)
+		text := cleanForVoice(stripHistoricalAssistantMarkers(raw))
 		if fallbackEmptyContent(text, hadTools, hadThinking) {
 			text = spokenOrFallback(text)
 		}
-		o.appendMessage(api.Message{Role: "assistant", Content: text}, opts.Identity)
+		recorded := text
+		if legacyHistoricalAssistantHeader.MatchString(raw) && hasSpeakableContent(text) {
+			recorded = raw
+		}
+		o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
 		if !opts.Background && !opts.TransientHistory {
 			o.ackDelegationResults(req.Messages)
 		} else if !opts.TransientHistory {

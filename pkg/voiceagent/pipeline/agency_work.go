@@ -30,12 +30,7 @@ func frozenConfig(cfg *config.Config) map[string]string {
 	return map[string]string{"provider": providerName(cfg), "model": modelName(cfg), "tools": fmt.Sprint(cfg.VoiceToolsEnabled), "persona": cfg.ActivePersona, "work_dir": cfg.WorkDir}
 }
 func cloneConfig(cfg *config.Config) *config.Config {
-	if cfg == nil {
-		return nil
-	}
-	c := *cfg
-	c.SkillsDisabled = append([]string(nil), cfg.SkillsDisabled...)
-	return &c
+	return cfg.Clone()
 }
 
 func (a *Agency) workAuthority() (*work.Coordinator, work.WorkScope) {
@@ -97,7 +92,9 @@ func (a *Agency) EnableConversationWork(sessionID string, saved *work.Snapshot, 
 	if !reflect.DeepEqual(a.currentConfig(), cfg) {
 		var worker brain.Provider
 		var workerErr error
-		if providerName(cfg) != "ollama" {
+		if tieredWorkers(cfg) {
+			// Tiered providers are constructed from an admitted plan at dispatch.
+		} else if providerName(cfg) != "ollama" {
 			workerErr = errors.New("experimental work requires a local worker")
 		} else if cfg != nil {
 			worker, workerErr = brain.NewWorkerProvider(cfg)
@@ -105,7 +102,6 @@ func (a *Agency) EnableConversationWork(sessionID string, saved *work.Snapshot, 
 		a.ReplaceWorker(worker, cfg, workerErr)
 	}
 	a.mu.Lock()
-	a.cfg = cloneConfig(cfg)
 	a.pending = nil
 	a.mu.Unlock()
 	a.workMu.Lock()
@@ -214,7 +210,14 @@ func (a *Agency) closeManaged() error {
 
 func (a *Agency) ReplaceWorker(worker brain.Provider, cfg *config.Config, workerErr error) {
 	a.mu.Lock()
-	a.worker, a.cfg, a.workerInitErr = worker, cloneConfig(cfg), workerErr
+	next := cloneConfig(cfg)
+	// A persona binding may have been prepared from an older settings snapshot.
+	// Installation policy is updated by its own atomic save, never by selection.
+	if a.cfg != nil && a.cfg.VoiceWorkers != nil && next != nil &&
+		(next.VoiceWorkers == nil || next.VoiceWorkers.Revision <= a.cfg.VoiceWorkers.Revision) {
+		next.VoiceWorkers = a.cfg.VoiceWorkers.Clone()
+	}
+	a.worker, a.cfg, a.workerInitErr = worker, next, workerErr
 	a.mu.Unlock()
 }
 
@@ -295,6 +298,9 @@ func (a *Agency) managedObserver(c *work.Coordinator, scope work.WorkScope, runt
 	}
 	return delegation.ConversationObserver{
 		Admitted: func(ticket, task string) error {
+			if tieredWorkers(a.currentConfig()) {
+				return errors.New("managed delegation cannot bypass tier assignment and worker policy")
+			}
 			_, err := c.Register(scope, work.Admission{JobID: ticket, Task: task, Origin: "managed", Provider: "obey", Config: metadata})
 			if err == nil {
 				a.workMu.Lock()

@@ -90,7 +90,7 @@ func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill,
 // turn instead of the whole transcript.
 func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 	msgs := make([]api.Message, 0, len(o.history)+1)
-	msgs = append(msgs, api.Message{Role: "system", Content: o.fullSystemPrompt + historicalIdentityGuidance})
+	msgs = append(msgs, api.Message{Role: "system", Content: o.fullSystemPrompt + o.conversationIdentityGuidance()})
 	recall := o.recallNotes()
 	lastUser := lastUserIndex(o.history)
 	for i, m := range o.history {
@@ -100,17 +100,24 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 		if m.Role == "user" {
 			m.Content = o.formatStoredUser(m.Content)
 		}
+		if i == lastUser && skillCtx != "" {
+			m.Content += "\n" + skillCtx
+		}
+		if m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
+			m.Role = "user"
+		}
 		msgs = append(msgs, m)
 	}
-	if skillCtx != "" {
-		for i := len(msgs) - 1; i > 0; i-- {
-			if msgs[i].Role == "user" {
-				msgs[i].Content += "\n" + skillCtx
-				break
-			}
-		}
-	}
 	return msgs
+}
+
+// Warmup and live requests must share the same stable identity prefix.
+func (o *OllamaBrain) conversationIdentityGuidance() string {
+	identity := historicalIdentityGuidance
+	if o.cfg != nil && o.cfg.AgentName != "" {
+		identity += " The current assistant persona is " + o.cfg.AgentName + "."
+	}
+	return identity
 }
 
 func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart func(ToolCall), onEnd func(ToolResult)) string {

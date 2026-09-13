@@ -1466,6 +1466,32 @@ func TestEnsureContextBudgetShrinksToolResultsToKeepUser(t *testing.T) {
 	}
 }
 
+func TestEnsureContextBudgetShrinksSharedToolAndKeepsCurrentUser(t *testing.T) {
+	const prefix = "Shared tool result (lookup) from Santa:\n"
+	shared := prefix + strings.Repeat("foreign tool evidence ", 400)
+	o := &OllamaBrain{
+		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 400},
+		fullSystemPrompt: "sys",
+		history: []api.Message{
+			{Role: "user", Content: "current real user request"},
+			{Role: "shared_tool", Content: shared},
+		},
+	}
+
+	o.ensureContextBudget("")
+
+	if idx := lastUserIndex(o.history); idx != 0 || o.history[idx].Content != "current real user request" {
+		t.Fatalf("current real user = index %d, history=%+v; want preserved user at index 0", idx, o.history)
+	}
+	if len(o.history[1].Content) >= len(shared) {
+		t.Fatalf("shared tool was not shrunk: %d bytes, want less than %d", len(o.history[1].Content), len(shared))
+	}
+	if !strings.HasPrefix(o.history[1].Content, prefix) {
+		t.Fatalf("shared tool attribution prefix = %q, want %q", o.history[1].Content, prefix)
+	}
+	assertWithinContextBudget(t, o, "")
+}
+
 func TestEnsureContextBudgetFitsSmallNumCtx(t *testing.T) {
 	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
 	o := &OllamaBrain{

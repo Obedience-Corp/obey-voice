@@ -11,6 +11,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/ollama/ollama/api"
 )
 
@@ -24,7 +25,7 @@ func TestOllamaCompleteUsesPrivateStructuredRequest(t *testing.T) {
 	}))
 	defer server.Close()
 	endpoint, _ := url.Parse(server.URL)
-	o := &OllamaBrain{client: api.NewClient(endpoint, http.DefaultClient), model: "fake", fullSystemPrompt: "persona", history: []api.Message{{Role: "user", Content: "unchanged"}}}
+	o := &OllamaBrain{cfg: &config.Config{ActivePersona: "samantha", AgentName: "Samantha"}, client: api.NewClient(endpoint, http.DefaultClient), model: "fake", fullSystemPrompt: "persona", history: []api.Message{{Role: "user", Content: "unchanged"}}}
 	request := BuildCompletionRequest("", "", nil, []CompletionResult{{ResultID: "r1", Brief: "72F"}})
 	before := len(o.history)
 	envelope, err := o.Complete(context.Background(), request)
@@ -39,6 +40,9 @@ func TestOllamaCompleteUsesPrivateStructuredRequest(t *testing.T) {
 	}
 	if !strings.Contains(body, `"format":{"type":"object"`) || !strings.Contains(body, `"num_predict":256`) {
 		t.Fatalf("request missing constraints: %s", body)
+	}
+	if !strings.Contains(body, "The current assistant persona is Samantha.") {
+		t.Fatalf("worker completion lost current identity: %s", body)
 	}
 	if strings.Contains(body, `"tools":[`) {
 		t.Fatalf("request enabled tools: %s", body)

@@ -1,10 +1,22 @@
 package persona
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+func TestTieredPolicySurvivesPersonaWorkerOverrides(t *testing.T) {
+	w := config.DefaultVoiceWorkers()
+	w.Mode, w.Revision = config.WorkerModeTiered, 4
+	cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "rollback-model", VoiceWorkers: w}
+	want := w.Clone()
+	Apply(cfg, &Profile{ID: "santa", Brain: Brain{Worker: Worker{Provider: "grok", Model: "persona-paid"}}})
+	if !reflect.DeepEqual(cfg.VoiceWorkers, want) || cfg.VoiceWorkerModel != "rollback-model" || cfg.VoiceWorkerProvider != "ollama" {
+		t.Fatal("persona overwrote installation tier policy or rollback keys")
+	}
+}
 
 // A persona that talks on one model and works on another is the case this
 // exists for: the worker is part of the persona's brain, not an app-wide

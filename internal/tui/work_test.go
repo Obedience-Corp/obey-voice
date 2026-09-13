@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,44 @@ func TestScopedToolEventsRejectDelayedOldScope(t *testing.T) {
 	view := stripANSI(m.View())
 	if strings.Contains(view, "old") || !strings.Contains(view, "job-new") {
 		t.Fatalf("scoped TUI tool output = %q", view)
+	}
+}
+
+func TestRouteDecidedAcceptedReusesCanonicalJob(t *testing.T) {
+	for _, canonicalFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint(canonicalFirst), func(t *testing.T) {
+			m := sizedConversation(t, 100, 24)
+			scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+			m.deps.workScope = func() work.WorkScope { return scope }
+			route := events.RouteDecided{Scope: scope, State: "accepted", Tier: "medium", JobID: "job-1", Task: "inspect files"}
+			canonical := events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 1, Jobs: []work.JobView{{Key: work.JobKey{Scope: scope, JobID: "job-1"}, Task: "inspect files", Origin: "agency", State: work.JobQueued, Config: map[string]string{"worker_tier": "medium"}}}}}
+			if canonicalFirst {
+				m, _ = m.Update(busEventMsg{event: canonical})
+			}
+			m, _ = m.Update(busEventMsg{event: route})
+			if !canonicalFirst {
+				m, _ = m.Update(busEventMsg{event: canonical})
+			}
+			m, _ = m.Update(busEventMsg{event: events.JobQueued{ID: "job-1", Task: "inspect files"}})
+			if len(jobLines(m)) != 1 || !strings.Contains(jobLines(m)[0], "medium") {
+				t.Fatalf("job lines after route+queue=%v", jobLines(m))
+			}
+		})
+	}
+}
+
+func TestRouteDecidedRejectedCreatesNoJob(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+	m.deps.workScope = func() work.WorkScope { return scope }
+	m, _ = m.Update(busEventMsg{event: events.RouteDecided{Scope: scope, State: "rejected", Message: "tier disabled", JobID: "phantom"}})
+	if _, ok := m.jobs["phantom"]; ok || strings.Contains(strings.Join(jobLines(m), "\n"), "phantom") {
+		t.Fatal("rejected route created phantom job")
+	}
+	old := len(m.items)
+	m, _ = m.Update(busEventMsg{event: events.RouteDecided{Scope: work.WorkScope{SessionID: "s", RuntimeEpoch: "old", ConversationEpoch: "c"}, State: "accepted", Tier: "simple", JobID: "old", Task: "stale"}})
+	if len(m.items) != old {
+		t.Fatal("stale route changed transcript")
 	}
 }
 

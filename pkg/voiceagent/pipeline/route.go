@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // RouteKind is the agency router outcome for one user turn.
@@ -24,11 +26,14 @@ const (
 type RouteContext struct {
 	NarrationActive bool
 	JobActive       bool
+	TieredWorkers   bool
 }
 
 // RouteDecision records how a turn was classified.
 type RouteDecision struct {
 	Kind       RouteKind
+	Tier       config.WorkerTierName // required for tiered spawn admission
+	ReasonCode string
 	Transcript string
 	Source     string // "phrase", "repair"
 }
@@ -87,6 +92,12 @@ var phraseRoutes = []phraseEntry{
 	{phrase: "what's happening", kind: RouteJobStatus, requireJob: true},
 	{phrase: "whats happening", kind: RouteJobStatus, requireJob: true},
 	{phrase: "status", kind: RouteJobStatus, requireJob: true},
+	{phrase: "any update", kind: RouteJobStatus, requireJob: true},
+	{phrase: "is it done yet", kind: RouteJobStatus, requireJob: true},
+	{phrase: "hurry up", kind: RouteJobStatus, requireJob: true},
+	{phrase: "try again", kind: RouteJobStatus, requireJob: true},
+	{phrase: "retry", kind: RouteJobStatus, requireJob: true},
+	{phrase: "do it now", kind: RouteJobStatus, requireJob: true},
 }
 
 // classifyTurn is Layer 1: exact phrases, then work-intent spawn. Work must
@@ -95,7 +106,7 @@ func classifyTurn(transcript string, ctx RouteContext) (RouteKind, string, bool)
 	if kind, ok := classifyPhrase(transcript, ctx); ok {
 		return kind, "phrase", true
 	}
-	if classifySpawnIntent(transcript) {
+	if !ctx.TieredWorkers && classifySpawnIntent(transcript) {
 		return RouteSpawn, "intent", true
 	}
 	return RouteNone, "", false
@@ -212,6 +223,14 @@ type promiseRepairState struct {
 	spawn      bool
 	kind       RouteKind
 	source     string
+}
+
+// failedRouteRepairEnabled is intentionally false for tiered workers. Their
+// live route tool is required to create an explicitly tiered spawn; guessing a
+// spawn from spoken promise text would lose that required admission data.
+func (p *Pipeline) failedRouteRepairEnabled() bool {
+	tiered := p.Agency != nil && tieredWorkers(p.Agency.currentConfig())
+	return p.VoiceFailedRouteRepair && !tiered
 }
 
 func (r *promiseRepairState) shouldRepair(accumulated string) bool {

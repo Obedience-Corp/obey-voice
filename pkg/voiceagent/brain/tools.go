@@ -34,8 +34,9 @@ const defaultToolCommandTimeout = 30 * time.Second
 // voice_tools_enabled / remote_tools_enabled gates remain the authority for
 // whether tools are available at all.
 type toolSession struct {
-	delegation *delegation.Runtime
-	catalog    []skills.Skill
+	delegation  *delegation.Runtime
+	catalog     []skills.Skill
+	workerTiers *WorkerTierAvailability
 	// routerPolicy selects live route_only vs legacy full tools. Workers use legacy.
 	routerPolicy RouterToolsPolicy
 	// commandTimeout bounds each run_command call in this session.
@@ -106,8 +107,8 @@ func (s *toolSession) describe(name, summary, id string) ToolCall {
 // local Ollama should behave like a general harness and may load more than one
 // relevant skill without losing capabilities on the legacy worker path.
 func (s *toolSession) tools() api.Tools {
-	tools := RouterToolsForSession(s.routerPolicy, s.catalog)
-	if s.delegation != nil {
+	tools := routerToolsForSession(s.routerPolicy, s.catalog, s.workerTiers)
+	if s.delegation != nil && !(s.routerPolicy == RouterToolsRouteOnly && s.workerTiers != nil) {
 		tools = append(tools, delegationTools()...)
 	}
 	return tools
@@ -119,6 +120,9 @@ func (s *toolSession) tools() api.Tools {
 // stuck on "🔧 tool..." without a finish event.
 func (s *toolSession) execute(ctx context.Context, workDir string, call api.ToolCall) (result string) {
 	name := call.Function.Name
+	if (name == "agent_delegate" || name == "agent_cancel" || name == "agent_delegations") && s.routerPolicy == RouterToolsRouteOnly && s.workerTiers != nil {
+		return "error: delegation is unavailable on the tiered live router"
+	}
 	started := s.describe(name, toolArgSummary(call), call.ID)
 	if s.onStart != nil {
 		s.onStart(started)
@@ -412,32 +416,35 @@ func voiceAssistantTools(catalog []skills.Skill) api.Tools {
 }
 
 // liveRouterTools returns the constrained route tool for the conversational model.
-func liveRouterTools() api.Tools {
+func liveRouterTools(availability ...*WorkerTierAvailability) api.Tools {
 	props := orderedProps
+	var tiers *WorkerTierAvailability
+	if len(availability) > 0 {
+		tiers = availability[0]
+	}
+	required := []string{"kind"}
+	properties := map[string]api.ToolProperty{
+		"kind":   {Type: api.PropertyType{"string"}, Description: "One of: chat, spawn, narrate.", Enum: []any{"chat", "spawn", "narrate"}},
+		"source": {Type: api.PropertyType{"string"}, Description: "Optional URL or file path when kind is narrate."},
+		"goal":   {Type: api.PropertyType{"string"}, Description: "Optional summary of work when kind is spawn."},
+	}
+	description := "Classify this user turn. Use spawn when the user asks you to do something: search the web, look something up, read or write files, run commands, or build. Spawn starts a worker that has those tools. Use narrate for long reading. Otherwise chat."
+	if tiers != nil {
+		required = append(required, "tier")
+		description = "Classify this user turn using this effort rubric: simple for one bounded action, medium for a few dependent steps, complex for broad or multi-stage work. Choose the effort tier that fits the request; the host will reject unavailable tiers and never substitute another tier. Use spawn when the user asks you to do something; narrate for long reading; otherwise chat."
+		properties["tier"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: fmt.Sprintf("Required effort tier. Availability now: simple=%t, medium=%t, complex=%t.", tiers.Simple, tiers.Medium, tiers.Complex), Enum: []any{"simple", "medium", "complex"}}
+		properties["reason_code"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: "Optional reason for the selected tier.", Enum: []any{"bounded_action", "dependent_steps", "broad_scope", "explicit_request"}}
+	}
 	return api.Tools{
 		{
 			Type: "function",
 			Function: api.ToolFunction{
 				Name:        "route",
-				Description: "Classify this user turn. Use spawn when the user asks you to do something: search the web, look something up, read or write files, run commands, or build. Spawn starts a worker that has those tools. Use narrate for long reading. Otherwise chat.",
+				Description: description,
 				Parameters: api.ToolFunctionParameters{
-					Type:     "object",
-					Required: []string{"kind"},
-					Properties: props(map[string]api.ToolProperty{
-						"kind": {
-							Type:        api.PropertyType{"string"},
-							Description: "One of: chat, spawn, narrate.",
-							Enum:        []any{"chat", "spawn", "narrate"},
-						},
-						"source": {
-							Type:        api.PropertyType{"string"},
-							Description: "Optional URL or file path when kind is narrate.",
-						},
-						"goal": {
-							Type:        api.PropertyType{"string"},
-							Description: "Optional summary of work when kind is spawn.",
-						},
-					}),
+					Type:       "object",
+					Required:   required,
+					Properties: props(properties),
 				},
 			},
 		},

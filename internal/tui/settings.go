@@ -90,6 +90,14 @@ type settingsModel struct {
 	// speaker name). While it is active it owns every key.
 	edit settingsEditor
 
+	// Worker tier settings are edited as one in-memory snapshot. The live
+	// Config is replaced only after a successful CAS save.
+	workerDraft           *config.VoiceWorkers
+	workerEditingTier     config.WorkerTierName
+	workerOpenRevision    int64
+	saveWorkers           func(*config.VoiceWorkers, int64) (*config.VoiceWorkers, error)
+	workerMigrationConfig func() *config.Config
+
 	// Voice registration (Speakers → Register your voice). captureFor yields
 	// the conversation's own capture graph when one is running — enrollment
 	// records on the graph live analysis verifies on, never a second mic
@@ -137,10 +145,12 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 			ensure: ensure,
 			newTTS: ttsproviders.NewProvider,
 		},
-		ensureTTSAssets: ensure,
-		newTTSProvider:  ttsproviders.NewProvider,
-		saveConfig:      config.SetAndSave,
-		ensureQwen:      managedqwen.Ensure,
+		ensureTTSAssets:       ensure,
+		newTTSProvider:        ttsproviders.NewProvider,
+		saveConfig:            config.SetAndSave,
+		ensureQwen:            managedqwen.Ensure,
+		saveWorkers:           config.CommitVoiceWorkersCAS,
+		workerMigrationConfig: func() *config.Config { return cfg },
 	}
 	m.initEnrollSeams(cfg)
 	m.refreshQwenStatus()

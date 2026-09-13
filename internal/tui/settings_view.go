@@ -14,7 +14,7 @@ import (
 // current item: seeing the options is what a settings screen is for.
 var sectionNames = [settingsSectionCount]string{
 	sectionBrain:    "Brain",
-	sectionWorker:   "Worker",
+	sectionWorker:   "Workers",
 	sectionTools:    "Tools",
 	sectionVoice:    "Voice",
 	sectionQwen:     "Qwen",

@@ -4,11 +4,18 @@ import (
 	"context"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	// WorkerTiers is the live, policy-only availability snapshot for the route
+	// tool. It contains no provider, model, or pricing information.
+	WorkerTiers *WorkerTierAvailability
+	// WorkerFacts are bounded identifiers for existing jobs, supplied for
+	// grounded status references. They contain no task text or provider data.
+	WorkerFacts []WorkerFact
 	// OriginalInput preserves finalized user text when the host routes a
 	// stripped request. It changes canonical storage, not the model request.
 	OriginalInput string
@@ -117,6 +124,23 @@ type StreamResult struct {
 	// Route is set when the live router classified this turn as work instead
 	// of chat. Values are "spawn" or "narrate"; empty means the turn is chat.
 	Route string
+	// RouteTier and RouteReasonCode carry the route tool's bounded metadata.
+	RouteTier       config.WorkerTierName
+	RouteReasonCode string
+}
+
+// WorkerTierAvailability is the only worker policy exposed to the live
+// classifier. A nil pointer preserves the legacy route schema.
+type WorkerTierAvailability struct {
+	Simple  bool
+	Medium  bool
+	Complex bool
+}
+
+type WorkerFact struct {
+	ID    string
+	Tier  config.WorkerTierName
+	State string
 }
 
 // Stream carries a streamed model response and its terminal result.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
 func TestFailedPromiseRepairRoutesSpawnWithoutTTS(t *testing.T) {
@@ -65,6 +66,36 @@ func TestFailedPromiseRepairRoutesSpawnWithoutTTS(t *testing.T) {
 	defer routedMu.Unlock()
 	if routed.Kind != RouteSpawn || routed.Source != "repair" {
 		t.Fatalf("OnRoute = %+v, want spawn/repair", routed)
+	}
+}
+
+func TestTieredTurnDoesNotRepairSpokenPromiseIntoUntypedSpawn(t *testing.T) {
+	cfg := tierTestConfig()
+	cfg.VoiceToolsEnabled = false
+	p := &Pipeline{
+		Brain:                  &fakeBrain{chunks: []string{"I am invoking the tool now."}},
+		Events:                 events.NewBus(),
+		VoiceFailedRouteRepair: true,
+	}
+	var routes []events.RouteDecided
+	var response events.ResponseReady
+	events.Subscribe(p.Events, func(e events.RouteDecided) { routes = append(routes, e) })
+	events.Subscribe(p.Events, func(e events.ResponseReady) { response = e })
+	jobs := job.NewTable(context.Background())
+	defer jobs.Close()
+	a := NewAgency(p, jobs, nil, cfg, nil)
+	a.Wire()
+
+	if err := p.RunTurnTextMode(context.Background(), "look into this"); err != nil {
+		t.Fatalf("RunTurnTextMode: %v", err)
+	}
+	for _, route := range routes {
+		if route.Kind == string(RouteSpawn) && (route.State == "accepted" || route.State == "rejected") {
+			t.Fatalf("tiered spoken promise emitted spawn route: %+v", route)
+		}
+	}
+	if response.Response != "I am invoking the tool now." {
+		t.Fatalf("ResponseReady.Response = %q, want chat response", response.Response)
 	}
 }
 

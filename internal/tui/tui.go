@@ -368,7 +368,18 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Replacing the model must not orphan an in-flight preview or player.
 			a.settings.closePreview()
 			a.settings.cancelEnroll()
+			freshWorkers, workerLoadErr := config.LoadWithoutHooks()
+			if workerLoadErr == nil && a.cfg != nil {
+				a.cfg.VoiceWorkers = freshWorkers.VoiceWorkers.Clone()
+			}
 			a.settings = newSettings(a.cfg, a.providers)
+			if workerLoadErr != nil {
+				a.settings.message = "Could not refresh worker settings: " + workerLoadErr.Error()
+			}
+			if a.runtime != nil && a.runtime.Pipeline != nil && a.runtime.Pipeline.Agency != nil {
+				agency := a.runtime.Pipeline.Agency
+				a.settings.workerMigrationConfig = agency.WorkerMigrationConfig
+			}
 			// Only the App knows whether a conversation is running, so it owns
 			// the choice between the live capture graph and a fresh one.
 			a.settings.captureFor = a.settingsCaptureFor()
@@ -707,6 +718,14 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.audiobook.message = "Filled input from Calibre library"
 		a.audiobook.command = ""
 		a.screen = screenAudiobook
+		return a, nil
+
+	case workerSettingsSavedMsg:
+		if a.runtime != nil && a.runtime.Pipeline != nil && a.runtime.Pipeline.Agency != nil {
+			if err := a.runtime.Pipeline.Agency.ApplyWorkerSettings(msg.workers); err != nil {
+				a.settings.message = "Worker settings saved; runtime update failed: " + err.Error()
+			}
+		}
 		return a, nil
 
 	case settingsDoneMsg:
