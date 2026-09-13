@@ -213,6 +213,17 @@ invocation. Controlled STT isolates host overhead; the quiet test uses real
 capture permits, the pipeline yield protocol, and Bubble Tea dispatch. These
 checks do not substitute for hardware capture or audible delivery evidence.
 
+The native detector's reset behavior has an offline regression using installed
+Silero assets and a prepared speech fixture:
+
+```sh
+just test vad-reset /path/to/installed/models /path/to/suite/fixtures/synth-02.wav
+```
+
+It feeds the same stream twice and requires identical segment offsets and PCM
+after `VAD.Clear`. This catches native queue clearing being mistaken for a full
+stream reset, which otherwise misaligns the next turn's speech pre-roll.
+
 
 Physical acceptance uses `capture.microphone: true` and a recorded speech WAV.
 The harness plays the WAV through the selected speaker and recognizes what the

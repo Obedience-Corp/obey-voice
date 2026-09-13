@@ -110,8 +110,8 @@ func (s *vadSegmenter) NextSegment() ([]float32, bool) {
 
 func (s *vadSegmenter) Reset() {
 	s.vad.Clear()
-	// The detector restarts its segment-offset counter on Clear, so drop the
-	// retained window and reset the sample counter to keep offsets aligned.
+	// The audio.VAD Clear wrapper resets the native segment-offset counter.
+	// Drop the retained window and reset the counter to keep offsets aligned.
 	s.window = s.window[:0]
 	s.windowBase = 0
 	s.fed = 0

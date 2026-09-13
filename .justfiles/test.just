@@ -164,3 +164,8 @@ acoustic-reprocess RUN_DIR CONFIG:
 [no-cd]
 work-host-timing:
     go test -race ./internal/tui -run '^TestWork(AdmissionToNextCaptureHostOverhead|QuietCompletionHostOverhead)$' -count=1 -v -timeout=60s
+
+# Real native Silero reset across two streams, without devices or transcription.
+[no-cd]
+vad-reset MODELS_DIR FIXTURE:
+    OBEY_VOICE_VAD_RESET_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_VAD_RESET_FIXTURE="{{FIXTURE}}" go test -race ./pkg/voiceagent/audio -run '^TestVADClearRestartsNativeTimeline$' -count=1 -v

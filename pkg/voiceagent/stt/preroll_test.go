@@ -164,3 +164,56 @@ func TestVADSegmenterResetRealignsOffsets(t *testing.T) {
 		t.Fatalf("NextSegment() = %v (ok=%v), want %v", got, ok, fresh[2:10])
 	}
 }
+
+// timelineVAD models audio.VAD's full-reset Clear contract. Native Clear only
+// removes queued segments; the wrapper must also reset the sample timeline.
+// The opt-in native test in audio/vad_reset_test.go verifies that mapping.
+// Each input chunk is an utterance with its first six samples trimmed by VAD.
+type timelineVAD struct {
+	fakeVAD
+	fed int
+}
+
+func (v *timelineVAD) AcceptWaveform(samples []float32) {
+	v.segStart = v.fed + 6
+	v.segSamples = append([]float32(nil), samples[6:]...)
+	v.hasSeg = true
+	v.fed += len(samples)
+}
+func (v *timelineVAD) Clear() {
+	v.hasSeg = false
+	v.segSamples = nil
+	v.fed = 0
+}
+
+func TestVADSegmenterRetainsDistinctSecondTurnPrefix(t *testing.T) {
+	for _, freshSegmenter := range []bool{false, true} {
+		name := "reused_segmenter"
+		if freshSegmenter {
+			name = "new_segmenter_shared_detector"
+		}
+		t.Run(name, func(t *testing.T) {
+			detector := &timelineVAD{}
+			segmenter := newVADSegmenter(detector, 4)
+			segmenter.Reset()
+			first := ramp(0, 24)
+			segmenter.AcceptWaveform(first)
+			if got, ok := segmenter.NextSegment(); !ok || !floatsEqual(got, first[2:]) {
+				t.Fatalf("first utterance = %v, want %v", got, first[2:])
+			}
+			// Production STT constructs a new segmenter on the same VAD at
+			// the next RunTurn. A queue-only Clear would leave native offsets
+			// starting at 24 while the new pre-roll buffer starts at zero.
+			if freshSegmenter {
+				segmenter = newVADSegmenter(detector, 4)
+			}
+			segmenter.Reset()
+			second := ramp(500, 12)
+			segmenter.AcceptWaveform(second)
+			got, ok := segmenter.NextSegment()
+			if !ok || !floatsEqual(got, second[2:]) {
+				t.Fatalf("second utterance = %v, want distinct onset+body %v", got, second[2:])
+			}
+		})
+	}
+}
