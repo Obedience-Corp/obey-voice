@@ -55,7 +55,8 @@ func TestSettingsCommandRequestsSettingsScreen(t *testing.T) {
 }
 
 func TestSlashCommandPaletteShowsEverythingThatFits(t *testing.T) {
-	m := sizedConversation(t, 100, 30)
+	height := len(slashCommands) + 12
+	m := sizedConversation(t, 100, height)
 	m.input.SetValue("/")
 	m.syncComposer("")
 
@@ -65,8 +66,8 @@ func TestSlashCommandPaletteShowsEverythingThatFits(t *testing.T) {
 			t.Errorf("large command palette missing %q:\n%s", command.usage, view)
 		}
 	}
-	if got := len(strings.Split(view, "\n")); got != 30 {
-		t.Fatalf("command palette view has %d rows, want 30:\n%s", got, view)
+	if got := len(strings.Split(view, "\n")); got != height {
+		t.Fatalf("command palette view has %d rows, want %d:\n%s", got, height, view)
 	}
 }
 

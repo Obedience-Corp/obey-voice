@@ -128,6 +128,19 @@ and keeps the current session, history and running work. Opening or cancelling
 the manager does not change the responder. Selection from the launcher sets the
 default for a new conversation instead.
 
+`/workers` opens the background task manager (also available as **Workers**
+on the main menu). Select a task and press `Enter` for its status,
+provider/model, elapsed time, activity and output. Press `s` to stop the
+selected task, or `x` then `y` to stop all running and queued tasks.
+`Esc` returns from details to the list, then to the same chat or menu.
+Voice input pauses while browsing and returns to its previous state.
+
+**Allow background workers** (`t`) controls new jobs immediately and is saved
+for future chats. Turning it Off does not cancel already-running or queued
+tasks; use **Stop all** for that. The same toggle is in **Settings → Worker**.
+Task details report when termination is unconfirmed. The chat footer shows
+compact counts and a `/workers` hint instead of the task and tool summary.
+
 `/help` lists every available command. `/settings` opens the TUI settings
 screen and returns to the conversation when you press `Esc` or `q`. Slash
 commands are local. Opening a manager pauses listening; leaving it restores
