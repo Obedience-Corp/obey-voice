@@ -106,8 +106,26 @@ func newUI(bus *events.Bus, agentName string, out io.Writer, plain bool) *UI {
 	events.Subscribe(bus, u.onJobAborted)
 	events.Subscribe(bus, u.onVoiceGateStripped)
 	events.Subscribe(bus, u.onWorkStateChanged)
+	events.Subscribe(bus, u.onRouteDecided)
 
 	return u
+}
+
+func (u *UI) onRouteDecided(e events.RouteDecided) {
+	if !e.Scope.Valid() {
+		return
+	}
+	if e.State == "rejected" {
+		msg := e.Message
+		if msg == "" {
+			msg = "routing rejected"
+		}
+		u.status("Worker rejected: " + msg)
+		return
+	}
+	if e.State == "accepted" && e.JobID != "" {
+		u.status("Handed off · " + e.Tier + " · " + e.Task)
+	}
 }
 
 // isConsole reports whether w is a character device — a terminal that can act

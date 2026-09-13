@@ -91,11 +91,13 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	repair := &promiseRepairState{enabled: p.VoiceFailedRouteRepair}
 	streamOpts := brain.StreamOptions{
+		WorkerTiers:       p.workerTierAvailability(),
+		WorkerFacts:       p.workerFacts(),
 		Identity:          metrics.responseIdentity(),
 		OriginalInput:     original,
 		Speaker:           speakerID,
 		Background:        background,
-		ToolsEnabled:      p.VoiceToolsEnabled && !background,
+		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
 		OnToolEnd:         p.toolEndHook(),

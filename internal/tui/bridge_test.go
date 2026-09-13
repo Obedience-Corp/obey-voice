@@ -43,6 +43,18 @@ func TestBridgeEmitNeverBlocks(t *testing.T) {
 	}
 }
 
+func TestBridgeForwardsRouteDecided(t *testing.T) {
+	bus := events.NewBus()
+	bridge := newEventBridge(4)
+	bridge.attach(bus)
+	want := events.RouteDecided{State: "accepted", Tier: "simple", JobID: "j", Task: "weather"}
+	bus.Emit(want)
+	got := (<-bridge.ch).(busEventMsg).event
+	if got != want {
+		t.Fatalf("route event=%#v, want %#v", got, want)
+	}
+}
+
 func TestBridgePreservesOrder(t *testing.T) {
 	bus := events.NewBus()
 	bridge := newEventBridge(64)

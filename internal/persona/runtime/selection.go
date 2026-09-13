@@ -108,11 +108,15 @@ func (s *Selector) Config() *config.Config {
 
 func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generation uint64, reason string) events.PersonaSelection {
 	cfg := b.Config()
+	// Installation worker tiers have their own revision and admission lifetime.
+	// Saving them must not trigger a responder brain/voice reload next turn.
+	responseCfg := cfg.Clone()
+	responseCfg.VoiceWorkers = nil
 	// Only the digest is exposed; credential-bearing config is never logged.
 	encoded, _ := json.Marshal(struct {
 		Config *config.Config
 		Prompt string
-	}{cfg, hash})
+	}{responseCfg, hash})
 	digest := sha256.Sum256(encoded)
 	scope := s.opts.Pipeline.ConversationScope()
 	return events.PersonaSelection{
@@ -167,6 +171,12 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 	}()
 	err = RunSelectionFlow(ctx, SelectionActions{
 		Resolve: func(ctx context.Context) error {
+			if p.Agency != nil {
+				if workers := p.Agency.WorkerSettings(); workers != nil {
+					s.opts.Base = s.opts.Base.Clone()
+					s.opts.Base.VoiceWorkers = workers
+				}
+			}
 			previous = s.Snapshot()
 			currentScope := s.opts.Pipeline.ConversationScope()
 			if s.opts.UseDefaults && reason == "response_boundary" && id == s.opts.Initial.PersonaID {
@@ -258,7 +268,12 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 				}
 			}
 			if p.Agency != nil {
-				worker, workerErr = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewWorker(ctx, cfg) }, closeBrain)
+				if workers := p.Agency.WorkerSettings(); workers != nil {
+					cfg.VoiceWorkers = workers
+				}
+				if cfg.VoiceWorkers == nil || cfg.VoiceWorkers.Mode != config.WorkerModeTiered {
+					worker, workerErr = prepareResource(ctx, func() (brain.Provider, error) { return s.opts.NewWorker(ctx, cfg) }, closeBrain)
+				}
 			}
 			if err := ctx.Err(); err != nil {
 				return err

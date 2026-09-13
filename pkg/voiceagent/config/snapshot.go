@@ -6,6 +6,7 @@ func (cfg *Config) Clone() *Config {
 		return nil
 	}
 	c := *cfg
+	c.VoiceWorkers = cfg.VoiceWorkers.Clone()
 	c.STTCustomWords = append([]string(nil), cfg.STTCustomWords...)
 	c.NameSummonAliases = append([]string(nil), cfg.NameSummonAliases...)
 	c.PersonaDisplayNames = append([]string(nil), cfg.PersonaDisplayNames...)

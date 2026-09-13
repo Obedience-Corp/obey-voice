@@ -101,6 +101,9 @@ func SetKeyFileValue(key string, value any) (SetResult, error) {
 // enforceEditable is set by the string CLI path only; see SetKeyFileValue.
 func resolveSpec(key string, enforceEditable bool) (KeySpec, error) {
 	key = strings.ToLower(strings.TrimSpace(key))
+	if key == "voice_workers" || strings.HasPrefix(key, "voice_workers.") {
+		return KeySpec{}, &SetError{Code: CodeNotEditable, Key: key, Message: "voice_workers is managed as one atomic object"}
+	}
 	spec, ok := SpecFor(key)
 	if !ok {
 		return KeySpec{}, &SetError{

@@ -100,12 +100,20 @@ func warmupMessages(prompt string) []api.Message {
 // liveRouterToolsPolicy): Ollama renders the tool schema ahead of the system
 // prompt, so a warmup without it primes a prefix the first turn never matches.
 func (o *OllamaBrain) warmupTools(delegation *delegation.Runtime) api.Tools {
-	if o.cfg == nil || !o.cfg.VoiceToolsEnabled {
+	if o.cfg == nil {
+		return nil
+	}
+	tiers := workerTierAvailability(o.cfg)
+	if !o.cfg.VoiceToolsEnabled && tiers == nil {
 		return nil
 	}
 	sess := &toolSession{
 		catalog:      o.skills,
 		routerPolicy: NormalizeRouterToolsPolicy(o.cfg.VoiceRouterTools),
+		workerTiers:  tiers,
+	}
+	if tiers != nil {
+		sess.routerPolicy = RouterToolsRouteOnly
 	}
 	if delegation != nil && delegation.Enabled() {
 		sess.delegation = delegation

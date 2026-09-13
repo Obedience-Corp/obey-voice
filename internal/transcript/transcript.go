@@ -50,6 +50,8 @@ type record struct {
 	Name         string   `json:"name,omitempty"`
 	ID           string   `json:"id,omitempty"`
 	Kind         string   `json:"kind,omitempty"`
+	Tier         string   `json:"tier,omitempty"`
+	ReasonCode   string   `json:"reason_code,omitempty"`
 	JobID        string   `json:"job_id,omitempty"`
 	Summary      string   `json:"summary,omitempty"`
 	Preview      string   `json:"preview,omitempty"`
@@ -261,6 +263,9 @@ func (w *Writer) Attach(bus *events.Bus) {
 	})
 	events.Subscribe(bus, func(e events.WorkStateChanged) {
 		w.enqueue(record{Type: "work_state_changed", Work: &e.Snapshot})
+	})
+	events.Subscribe(bus, func(e events.RouteDecided) {
+		w.enqueue(record{Type: "route.decided", WorkScope: &e.Scope, Kind: e.Kind, Tier: e.Tier, ReasonCode: e.ReasonCode, State: e.State, JobID: e.JobID, Text: e.Task, Message: e.Message})
 	})
 	events.Subscribe(bus, func(e events.WorkDelivery) {
 		w.enqueue(record{Type: "work_delivery", Delivery: &e})

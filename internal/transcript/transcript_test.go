@@ -120,6 +120,34 @@ func TestWriterRecordsConversationFlow(t *testing.T) {
 	}
 }
 
+func TestWriterRecordsRouteDecided(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "route.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	w.Attach(bus)
+	scope := work.WorkScope{SessionID: "s", RuntimeEpoch: "r", ConversationEpoch: "c"}
+	bus.Emit(events.RouteDecided{Scope: scope, Kind: "spawn", Tier: "medium", ReasonCode: "multi_step", State: "accepted", JobID: "j1", Task: "compare files", Message: "queued"})
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var found *record
+	for _, r := range readRecords(t, path) {
+		if r.Type == "route.decided" {
+			copy := r
+			found = &copy
+		}
+	}
+	if found == nil || found.Tier != "medium" || found.ReasonCode != "multi_step" || found.JobID != "j1" || found.Text != "compare files" || found.State != "accepted" {
+		t.Fatalf("route record=%+v", found)
+	}
+	if found.WorkScope == nil || *found.WorkScope != scope {
+		t.Fatalf("scope=%+v", found.WorkScope)
+	}
+}
+
 func TestWriterNeverBlocksAndCountsDrops(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "transcript.jsonl")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
