@@ -105,7 +105,7 @@ func TestCanonicalAdmissionCardUpdatesAndReplacesWithResult(t *testing.T) {
 	result.Jobs = []work.JobView{{Key: job.Key, Task: job.Task, Origin: job.Origin, State: work.JobTerminal, Outcome: &result.Pending[0].Outcome}}
 	m.handleEvent(events.WorkStateChanged{Snapshot: result})
 	view = stripANSI(m.View())
-	if strings.Count(view, "Rain later") != 1 || !strings.Contains(view, "task: read the weather") || !strings.Contains(view, "persona: Samantha") || strings.Contains(view, "queued") || strings.Contains(view, "Working:") {
+	if strings.Count(view, "Rain later") != 1 || !strings.Contains(view, "task: read the weather") || !strings.Contains(view, "persona: Samantha") || strings.Contains(strings.Join(m.transcript, "\n"), "queued") || strings.Contains(strings.Join(m.transcript, "\n"), "Working:") {
 		t.Fatalf("result card did not replace admission card: %q", view)
 	}
 }

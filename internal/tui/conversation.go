@@ -83,6 +83,10 @@ type conversationModel struct {
 	jobItems           map[string]int
 	completedJobItems  map[string]int
 	workScope          work.WorkScope
+	workDisplayHidden  bool
+	workDisplay        workDisplayState
+	workActivity       bool
+	workFilter         string
 	workRevision       uint64
 	lastWorkPoll       time.Time
 	workPollGeneration uint64
@@ -515,6 +519,11 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 				m.editor.clearSelection()
 				return m, nil
 			}
+			if m.activityFocused && m.workFilter != "" {
+				m.workFilter = ""
+				m.refreshActivity()
+				return m, nil
+			}
 			if m.activityFocused {
 				m.activityFocused = false
 				return m, nil
@@ -614,7 +623,7 @@ func (m *conversationModel) reflow() {
 	// addition to the textarea's own height. An active voice panel adds a few
 	// more. Command matches consume only the rows currently available above
 	// the composer.
-	chrome := 6
+	chrome := 6 + m.workStripRows()
 	if m.voiceMode != anim.ModeIdle && m.height >= 14 {
 		chrome += voicePanelRows
 	}
@@ -662,6 +671,7 @@ func (m *conversationModel) applyFollow() {
 	if m.followActivity {
 		m.activityViewport.GotoBottom()
 	}
+	m.markVisibleWorkResults()
 }
 
 func (m *conversationModel) activeViewport() *viewport.Model {
@@ -681,6 +691,7 @@ func (m conversationModel) updateScroll(msg tea.Msg) (conversationModel, tea.Cmd
 	// Manual scroll owns follow: pgup freezes the tail; jumping to bottom
 	// (End / ctrl+end) re-enables auto-follow for new messages.
 	m.syncFollowFromViewports()
+	m.markVisibleWorkResults()
 	return m, cmd
 }
 
@@ -743,7 +754,10 @@ func (m *conversationModel) rememberUser(text string, speaker ...string) {
 // copyLastAssistant writes the latest agent reply to the system clipboard.
 // When fromIdleCtrlC is true, arm a second Ctrl+C within idleCopyQuitWindow as quit.
 func (m *conversationModel) copyLastAssistant(fromIdleCtrlC ...bool) {
-	text := strings.TrimSpace(m.lastAssistantText)
+	text := m.latestReadableWorkResult()
+	if text == "" {
+		text = strings.TrimSpace(m.lastAssistantText)
+	}
 	if text == "" {
 		text = strings.TrimSpace(m.streamingAgent)
 	}
@@ -769,7 +783,7 @@ const idleCopyQuitWindow = 1500 * time.Millisecond
 
 // copyPlainChat writes the full plain-text conversation to the clipboard.
 func (m *conversationModel) copyPlainChat() {
-	if len(m.plainTurns) == 0 {
+	if len(m.plainTurns) == 0 && len(m.workResultItems) == 0 {
 		// Fall back to last reply alone when history was not tracked (edge).
 		m.copyLastAssistant()
 		return
@@ -796,6 +810,12 @@ func (m *conversationModel) copyPlainChat() {
 			}
 		}
 		b.WriteString(turn.text)
+	}
+	for _, text := range m.readableWorkResults() {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(text)
 	}
 	text := b.String()
 	if err := m.clipboard().WriteAll(text); err != nil {
@@ -953,6 +973,10 @@ func (m *conversationModel) appendActivity(stage, detail string, elapsed time.Du
 
 func (m *conversationModel) refreshActivity() {
 	if !m.ready {
+		return
+	}
+	if m.workActivity {
+		m.activityViewport.SetContent(lipgloss.NewStyle().Width(max(m.activityViewport.Width, 1)).Render(m.renderWorkActivity()))
 		return
 	}
 	var lines []string
@@ -1503,6 +1527,9 @@ func (m conversationModel) View() string {
 		return "\n  " + headerStyle.Render("Preparing conversation…") + "\n"
 	}
 
+	if m.width < 20 || m.height < 6 {
+		return "Resize to 20×6 or larger"
+	}
 	styles := m.animStyles()
 	w := max(m.width, 1)
 
@@ -1651,6 +1678,7 @@ func (m conversationModel) View() string {
 	return header + "\n" + rule + "\n" +
 		voiceStrip +
 		content + "\n" +
+		m.renderWorkStrip(time.Now()) +
 		ansi.Truncate(inputLabel, w, "…") + "\n" +
 		inputBox + "\n" +
 		footer

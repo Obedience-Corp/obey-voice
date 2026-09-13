@@ -28,6 +28,7 @@ const (
 	commandSettings
 	commandPersonas
 	commandWorkers
+	commandWork
 	commandVoice
 	commandSpeakers
 	commandCopy
@@ -59,6 +60,7 @@ var slashCommands = []slashCommand{
 	{id: commandThink, name: "/think", usage: "/think [on|off]", description: "Show or hide model thinking in the thread", aliases: []string{"/thinking"}},
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
 	{id: commandPersonas, name: "/personas", usage: "/personas", description: "Browse, select, create, or edit personas"},
+	{id: commandWork, name: "/work", usage: "/work [job|all|cancel job|dismiss job|speak job|replay job|logs]", description: "Inspect work and control result delivery"},
 	{id: commandWorkers, name: "/workers", usage: "/workers", description: "View background tasks, stop work, or turn workers on/off"},
 	{id: commandVoice, name: "/voice", usage: "/voice", description: "Return to voice mode after fallback", aliases: []string{"/v"}},
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
@@ -166,7 +168,7 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		m.commandError("persona selection in progress")
 		return nil
 	}
-	if command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && len(args) > 0 {
+	if command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && len(args) > 0 {
 		m.commandError(fmt.Sprintf("%s does not take arguments", command.name))
 		return m.resumeListening()
 	}
@@ -205,6 +207,8 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		return func() tea.Msg { return switchScreenMsg(screenSettings) }
 	case commandPersonas:
 		return func() tea.Msg { return switchScreenMsg(screenPersonas) }
+	case commandWork:
+		return m.runWorkCommand(args)
 	case commandWorkers:
 		return func() tea.Msg { return switchScreenMsg(screenWorkers) }
 	case commandVoice:

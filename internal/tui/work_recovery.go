@@ -41,7 +41,10 @@ func (m *conversationModel) recoverWork(now time.Time, force bool) {
 	}
 	if s.Scope != m.workScope || s.Revision > m.workRevision {
 		m.handleEvent(events.WorkStateChanged{Snapshot: s})
+	} else if s.PersistedRevision > m.workDisplay.snapshot.PersistedRevision {
+		m.workDisplay.snapshot.PersistedRevision = s.PersistedRevision
 	}
+	m.reflow()
 	if m.deps.journalHealth != nil {
 		h := m.deps.journalHealth()
 		if h.Scope == s.Scope && h.Incomplete {

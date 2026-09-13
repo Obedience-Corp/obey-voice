@@ -122,3 +122,38 @@ Retention preserves the active segment and other unsealed runtime evidence.
 Consequently, a session can temporarily exceed its retention target when no
 older segment is eligible for removal. Global cleanup applies to sealed event
 and detail evidence, not canonical session files or retained checkpoints.
+
+## Conversation work controls
+
+`/work` opens work status in the existing Activity pane. `/work JOB_ID` opens
+that job's results and tool evidence; `/work all` clears the selection. Escape
+clears the detail first, then returns to Chat. The composer draft is preserved.
+`/workers` remains the execution manager, including its background-work toggle
+and confirmed Stop all action.
+
+The reserved Work strip stays above the composer while execution or delivery is
+outstanding. `updates` counts uncommunicated results and `new` counts result
+cards not yet visible in Chat or explicitly opened. Seeing a card does not
+fulfil speech delivery. Narrow layouts abbreviate running, queued, updates and
+new as `r`, `q`, `u`, `n`. A held update stays visible after it has been seen.
+Below 20 columns or 6 rows the terminal asks to resize.
+
+- `/work cancel JOB_ID` requests execution cancellation; termination may remain
+  unknown. `/work cancel all` applies it to current workers.
+- `/work dismiss JOB_ID` removes the pending delivery obligation. It does not
+  cancel execution. A completed, already communicated result has no pending
+  obligation to dismiss.
+- `/work speak JOB_ID` resumes a held result, or requests replay of a retained
+  communicated result. `/work replay JOB_ID` explicitly requests the same
+  delivery action. Audio must be available and enabled. Neither reruns the
+  worker. Captured input and the foreground turn retain priority.
+- `/work logs` shows local paths and CLI inspection examples.
+
+Explicit replay preserves the immutable outcome and result ID, creates a new
+pending delivery attempt, and requires a fresh matching receipt before it is
+communicated again. Restoring a session holds an unfinished replay; merely
+opening the session or result does not request another announcement.
+
+`/copy` includes the latest readable result when it follows the last assistant
+reply. `/copy all` includes each retained result once with its task and source;
+progress rewrites and hidden reasoning are excluded.

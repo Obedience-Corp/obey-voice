@@ -210,6 +210,7 @@ type returnToMenuMsg struct{}
 // screen. Conversation is the only screen that routes wheel events, so it is
 // the only one that should cost the user native text selection.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	a.conversation.workDisplayHidden = a.screen != screenConversation
 	from := a.screen
 	model, cmd := a.update(msg)
 	next, ok := model.(App)
