@@ -4,6 +4,9 @@ import (
 	"context"
 	"sync/atomic"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
 const (
@@ -20,10 +23,9 @@ const (
 	bargeInArmDelay = 600 * time.Millisecond
 	// bargeInMinSpeechChunks requires sustained speech before interrupting, so a
 	// brief burst of residual echo isn't mistaken for the user. One chunk is one
-	// capture callback: Capture takes miniaudio's low-latency default period of
-	// 10ms, so 6 chunks ≈ 60ms of consecutive speech energy, not the ~0.6s an
-	// earlier comment here claimed. Short enough for "stop"/"no"; residual echo
-	// is the AEC path's job, not this counter's.
+	// capture callback, whose negotiated size varies by device (for example,
+	// 10ms or 60ms). Neural speech must also pass STT's audibility check; quiet
+	// residual echo can sustain neural votes without containing audible speech.
 	bargeInMinSpeechChunks = 6
 	// bargeInBufferSize is the capture subscription depth for the controller.
 	bargeInBufferSize = 8
@@ -205,6 +207,8 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 		defer c.vad.Clear()
 
 		consecutiveSpeech := 0
+		var audibility stt.SpeechAudibility
+		segmentQueued := false
 		var gapStart time.Time
 		for {
 			select {
@@ -222,6 +226,8 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				at := armAt.Load()
 				if at == 0 || time.Now().UnixNano() < at {
 					consecutiveSpeech = 0
+					audibility.Reset()
+					segmentQueued = false
 					c.vad.Clear()
 					continue
 				}
@@ -244,16 +250,33 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				}
 
 				c.vad.AcceptWaveform(samples)
-				if c.vad.IsSpeech() {
+				speech := c.vad.IsSpeech()
+				if speech {
 					consecutiveSpeech++
-					if !gapStart.IsZero() {
+					gain := 1.0
+					if reporter, ok := c.capture.(audio.GainReporter); ok {
+						gain = reporter.InputGain()
+					}
+					audibility.Observe(samples, gain)
+					if audibility.Audible() && !gapStart.IsZero() {
 						c.lastPauseSpeech.Store(time.Now().UnixNano())
 					}
-				} else {
-					consecutiveSpeech = 0
 				}
 
-				if c.vad.IsSpeechDetected() || consecutiveSpeech >= c.minSpeech {
+				// A completed segment can arrive on the first non-speech frame.
+				// Judge it using its originating run before clearing that run.
+				// A queued segment remains latched in the detector: only its
+				// arrival may use this shortcut, never a later unrelated run.
+				queued := c.vad.IsSpeechDetected()
+				completed := queued && !segmentQueued
+				segmentQueued = queued
+				admit := audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)
+				if !speech {
+					consecutiveSpeech = 0
+					audibility.Reset()
+				}
+
+				if admit {
 					if !c.allowsInterrupt() {
 						// Confident non-enrolled speaker under
 						// barge_in_speakers=enrolled_only: withhold this
