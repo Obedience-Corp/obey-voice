@@ -95,21 +95,38 @@ must hold.
 
 ## Qwen TTS provider
 
-All paths below are in [`pkg/voiceagent/tts`](../pkg/voiceagent/tts).
+The Qwen provider is its own package: [`pkg/voiceagent/tts/qwen`](../pkg/voiceagent/tts/qwen).
+It imports the contract in `pkg/voiceagent/tts`, and nothing in `tts` imports it back, so the
+boundary is checked by the compiler instead of by convention.
 
 | File | Responsibility |
 | --- | --- |
 | `qwen.go` | Tuning constants, the worker process seam, `Qwen3TTS` state, constructors and lifecycle |
-| `qwen_policy.go` | Speech place, model tier, streaming and warm-state policy |
-| `qwen_grace.go` | First-audio grace window and its ceilings |
-| `qwen_request.go` | `Synthesize`, `SynthesizeRequest`, `SoftCancel`, reference validation |
-| `qwen_stream.go` | Native and managed stream synthesis, session ensure/discard under `sessionMu` |
-| `qwen_worker.go` | Synthesis dispatch, external CLI path, WAV streaming, argument building |
-| `qwen_capabilities.go` | `ListVoices`, `Capabilities`, `Status`, shipped-clone binding |
+| `policy.go` | Speech place, model tier, streaming and warm-state policy |
+| `grace.go` | First-audio grace window and its ceilings |
+| `request.go` | `Synthesize`, `SynthesizeRequest`, `SoftCancel`, reference validation |
+| `stream.go` | Native and managed stream synthesis, session ensure/discard under `sessionMu` |
+| `worker.go` | Synthesis dispatch, external CLI path, WAV streaming, argument building |
+| `capabilities.go` | `ListVoices`, `Capabilities`, `Status`, shipped-clone binding |
+| `conn.go`, `session.go`, `native_session.go`, `remote_session.go`, `speech_session.go` | Transport and session plumbing, unchanged by the move |
 
-The other providers keep their own files: `kokoro.go`, `audio8.go`, and construction
-stays in `factory.go`. `Qwen3TTS` remains the state owner and `sessionMu` still guards
-the streaming session.
+Selection lives in [`pkg/voiceagent/tts/providers`](../pkg/voiceagent/tts/providers), above
+both. It has to: a provider package imports the contract, so the contract cannot import
+providers back. Putting `NewProvider` in its own package means a provider can only go missing
+by editing that file — not by forgetting a blank import, which would compile and then fail at
+runtime on a machine that had the model installed. Add a provider there or it does not exist.
+
+Two consequences worth knowing before moving anything else:
+
+- `SpeechCharsPerSecond` and `TypicalSegmentChars` are exported from `provider.go`. They sit
+  beside the `SegmentGracer` interface because every provider implementing it needs them, and
+  providers no longer share a package.
+- `NewAudio8Provider` owns Audio8's model-directory assembly. The selector used to know that
+  layout; now only the package that owns Audio8 does.
+
+Kokoro and Audio8 are still in `pkg/voiceagent/tts` itself. They cannot move the same way yet:
+the core reads Kokoro's unexported `voiceNames`, `genderMap` and `langMap` from three files.
+Moving each provider out means relocating what the core reads from it first.
 
 ## Audio player
 
