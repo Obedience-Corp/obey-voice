@@ -138,8 +138,8 @@ func TestNoiseGateReanchorsOnInputVolumeJump(t *testing.T) {
 		}
 	}
 	d := g.decide(loud, false)
-	if !d.drop {
-		t.Fatalf("a level held %d frames above the room must re-anchor and drop the VAD latch", gateJumpFrames)
+	if d.drop || d.voice {
+		t.Fatalf("a level held %d non-speech frames must re-anchor without clearing pending VAD input or admitting speech: %+v", gateJumpFrames, d)
 	}
 	if g.floor < 0.1 {
 		t.Fatalf("floor after re-anchor = %v, want the new room level", g.floor)
@@ -177,8 +177,8 @@ func TestNoiseGateReanchorsOnInputVolumeCut(t *testing.T) {
 			t.Fatalf("frame %d: one quiet frame is a pause, not a volume change", i)
 		}
 	}
-	if d := g.decide(quiet, false); !d.drop {
-		t.Fatalf("a cut held %d frames below the room must re-anchor the floor", gateJumpFrames)
+	if d := g.decide(quiet, false); d.drop || d.voice {
+		t.Fatalf("a cut held %d non-speech frames must re-anchor without clearing pending VAD input or admitting speech: %+v", gateJumpFrames, d)
 	}
 	if g.floor > 0.01 {
 		t.Fatalf("floor after a volume cut = %v, want the new quiet room", g.floor)

@@ -53,7 +53,10 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 	// first frame of every utterance and reset the recognizer mid-sentence.
 	if !silero {
 		if g.reanchorOnGainJump(rms) {
-			return gateDecision{drop: true}
+			// Silero can still be accumulating its minimum speech duration.
+			// Re-anchor the floor without deleting that pending onset or its
+			// pre-roll: a false neural verdict has no speech latch to clear.
+			return gateDecision{}
 		}
 		g.learn(rms, false)
 		return gateDecision{}
