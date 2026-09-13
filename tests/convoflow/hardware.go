@@ -19,20 +19,23 @@ import (
 )
 
 type acousticReport struct {
-	Stimulus            string  `json:"stimulus"`
-	ExpectedTranscript  string  `json:"expected_transcript,omitempty"`
-	Transcript          string  `json:"transcript"`
-	InputDevice         string  `json:"input_device"`
-	OutputDevice        string  `json:"output_device"`
-	StimulusRate        int     `json:"stimulus_rate"`
-	CapturedSamples     int     `json:"captured_samples"`
-	CapturedRMS         float64 `json:"captured_rms"`
-	CapturedPeak        float64 `json:"captured_peak"`
-	DelaySamples        int     `json:"delay_samples"`
-	DelayMS             float64 `json:"delay_ms"`
-	Correlation         float64 `json:"correlation_confidence"`
-	EnvelopeCorrelation float64 `json:"envelope_correlation"`
-	Error               string  `json:"error,omitempty"`
+	Stimulus            string                 `json:"stimulus"`
+	ExpectedTranscript  string                 `json:"expected_transcript,omitempty"`
+	Transcript          string                 `json:"transcript"`
+	InputDevice         string                 `json:"input_device"`
+	OutputDevice        string                 `json:"output_device"`
+	NegotiatedCapture   audio.NegotiatedDevice `json:"negotiated_capture"`
+	NegotiatedResponse  audio.NegotiatedDevice `json:"negotiated_response"`
+	NegotiatedStimulus  audio.NegotiatedDevice `json:"negotiated_stimulus"`
+	StimulusRate        int                    `json:"stimulus_rate"`
+	CapturedSamples     int                    `json:"captured_samples"`
+	CapturedRMS         float64                `json:"captured_rms"`
+	CapturedPeak        float64                `json:"captured_peak"`
+	DelaySamples        int                    `json:"delay_samples"`
+	DelayMS             float64                `json:"delay_ms"`
+	Correlation         float64                `json:"correlation_confidence"`
+	EnvelopeCorrelation float64                `json:"envelope_correlation"`
+	Error               string                 `json:"error,omitempty"`
 }
 
 const (
@@ -91,6 +94,8 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	var capturedMu sync.Mutex
 	var captured []float32
 	transcript := ""
+	var capture *audio.Capture
+	var player, response *audio.Player
 	report := acousticReport{Stimulus: path, ExpectedTranscript: strings.TrimSpace(expected), InputDevice: acousticDeviceLabel(r.cfg.InputDevice), OutputDevice: acousticDeviceLabel(r.cfg.OutputDevice), StimulusRate: rate}
 	defer func() {
 		capturedMu.Lock()
@@ -106,6 +111,15 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		report.CapturedPeak = aecprobe.PeakLevel(mic)
 		if runErr != nil {
 			report.Error = runErr.Error()
+		}
+		if capture != nil {
+			report.NegotiatedCapture = capture.NegotiatedDevice()
+		}
+		if response != nil {
+			report.NegotiatedResponse = response.NegotiatedDevice()
+		}
+		if player != nil {
+			report.NegotiatedStimulus = player.NegotiatedDevice()
 		}
 		var artifactErrs []error
 		if err := audio.WriteWAVFloat32(filepath.Join(artifactDir, "stimulus.wav"), rate, samples); err != nil {
@@ -133,8 +147,8 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		}
 	}()
 
-	capture := audio.NewCaptureWithDevice(r.cfg.InputDevice)
-	player := audio.NewPlayerWithDevice(r.cfg.OutputDevice)
+	capture = audio.NewCaptureWithDevice(r.cfg.InputDevice)
+	player = audio.NewPlayerWithDevice(r.cfg.OutputDevice)
 	defer capture.Stop()
 	defer player.Close()
 
@@ -165,6 +179,10 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	if !ok {
 		return errors.New("acoustic run: physical response player required")
 	}
+	response = real
+	report.NegotiatedCapture = capture.NegotiatedDevice()
+	report.NegotiatedResponse = response.NegotiatedDevice()
+	report.NegotiatedStimulus = player.NegotiatedDevice()
 	real.SetFrontend(frontend)
 	defer real.SetFrontend(nil)
 	streamID, stream := capture.Subscribe(512)

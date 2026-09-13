@@ -18,16 +18,19 @@ import (
 )
 
 type completionReport struct {
-	Fixture           string  `json:"fixture"`
-	Expected          string  `json:"expected"`
-	PauseMS           float64 `json:"pause_ms"`
-	CompletionMS      float64 `json:"completion_ms"`
-	Acknowledged      bool    `json:"acknowledged"`
-	Yielded           bool    `json:"yielded"`
-	Communicated      bool    `json:"communicated"`
-	InitialTranscript string  `json:"initial_transcript"`
-	Transcript        string  `json:"transcript,omitempty"`
-	Error             string  `json:"error,omitempty"`
+	Fixture            string                 `json:"fixture"`
+	Expected           string                 `json:"expected"`
+	PauseMS            float64                `json:"pause_ms"`
+	CompletionMS       float64                `json:"completion_ms"`
+	Acknowledged       bool                   `json:"acknowledged"`
+	Yielded            bool                   `json:"yielded"`
+	Communicated       bool                   `json:"communicated"`
+	InitialTranscript  string                 `json:"initial_transcript"`
+	Transcript         string                 `json:"transcript,omitempty"`
+	Error              string                 `json:"error,omitempty"`
+	NegotiatedCapture  audio.NegotiatedDevice `json:"negotiated_capture"`
+	NegotiatedResponse audio.NegotiatedDevice `json:"negotiated_response"`
+	NegotiatedStimulus audio.NegotiatedDevice `json:"negotiated_stimulus"`
 }
 
 // runAcousticCompletion proves the passive completion handoff over the real
@@ -61,9 +64,21 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	var rawFrontend *rawCaptureFrontend
 	var mic []float32
 	var micMu sync.Mutex
+	var capture *audio.Capture
+	var stimulus *audio.Player
+	var response *audio.Player
 	defer func() {
 		if runErr != nil {
 			report.Error = runErr.Error()
+		}
+		if capture != nil {
+			report.NegotiatedCapture = capture.NegotiatedDevice()
+		}
+		if response != nil {
+			report.NegotiatedResponse = response.NegotiatedDevice()
+		}
+		if stimulus != nil {
+			report.NegotiatedStimulus = stimulus.NegotiatedDevice()
 		}
 		micMu.Lock()
 		captured := append([]float32(nil), mic...)
@@ -74,6 +89,7 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 			errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-processed.wav"), audio.SampleRate, captured))
 		}
 		if rawFrontend != nil {
+			errs = append(errs, rawFrontend.WriteTrace(filepath.Join(artifactDir, "frontend.jsonl")))
 			if raw := rawFrontend.RawSnapshot(); len(raw) > 0 {
 				errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-in.wav"), audio.SampleRate, raw))
 			}
@@ -96,19 +112,21 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 			return errors.New("acoustic completion: sustained worker is not valid for completion acceptance")
 		}
 	}
-	capture := audio.NewCaptureWithDevice(r.cfg.InputDevice)
+	capture = audio.NewCaptureWithDevice(r.cfg.InputDevice)
 	frontend, err := interruptionFrontend(r.cfg)
 	if err != nil {
 		return err
 	}
 	defer frontend.Close()
 	rawFrontend = newRawCaptureFrontend(frontend)
+	rawFrontend.EnableTrace(true)
 	capture.SetFrontend(rawFrontend)
 	real, ok := r.player.real.(*audio.Player)
 	if !ok {
 		return errors.New("acoustic completion: physical response player required")
 	}
-	real.SetFrontend(frontend)
+	response = real
+	real.SetFrontend(rawFrontend)
 	defer real.SetFrontend(nil)
 	vad, err := audio.NewVAD(r.cfg)
 	if err != nil {
@@ -148,7 +166,7 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	defer func() {
 		p.Capture, p.VAD, p.BargeInVAD, p.STT, p.Utterance = oldCapture, oldVAD, oldBarge, oldSTT, oldEnd
 	}()
-	stimulus := audio.NewPlayerWithDevice(r.cfg.OutputDevice)
+	stimulus = audio.NewPlayerWithDevice(r.cfg.OutputDevice)
 	defer stimulus.Close()
 	before := r.workSnapshot()
 	known := map[string]struct{}{}

@@ -19,18 +19,21 @@ import (
 )
 
 type interruptionReport struct {
-	InitialWAV            string        `json:"initial_wav"`
-	InterruptWAV          string        `json:"interrupt_wav"`
-	Expected              string        `json:"expected_interrupt"`
-	ResponseStarted       time.Time     `json:"response_started,omitempty"`
-	StimulusStarted       time.Time     `json:"stimulus_started,omitempty"`
-	InterruptedAfter      time.Duration `json:"stimulus_to_interrupt_ns"`
-	PlaybackStoppedAfter  time.Duration `json:"stimulus_to_playback_stopped_ns"`
-	DetectionToStop       time.Duration `json:"detection_to_playback_stopped_ns"`
-	ProductionInterrupted bool          `json:"production_interrupted"`
-	InitialTranscript     string        `json:"initial_transcript"`
-	Transcript            string        `json:"transcript,omitempty"`
-	Error                 string        `json:"error,omitempty"`
+	InitialWAV            string                 `json:"initial_wav"`
+	InterruptWAV          string                 `json:"interrupt_wav"`
+	Expected              string                 `json:"expected_interrupt"`
+	ResponseStarted       time.Time              `json:"response_started,omitempty"`
+	StimulusStarted       time.Time              `json:"stimulus_started,omitempty"`
+	InterruptedAfter      time.Duration          `json:"stimulus_to_interrupt_ns"`
+	PlaybackStoppedAfter  time.Duration          `json:"stimulus_to_playback_stopped_ns"`
+	DetectionToStop       time.Duration          `json:"detection_to_playback_stopped_ns"`
+	ProductionInterrupted bool                   `json:"production_interrupted"`
+	InitialTranscript     string                 `json:"initial_transcript"`
+	Transcript            string                 `json:"transcript,omitempty"`
+	Error                 string                 `json:"error,omitempty"`
+	NegotiatedCapture     audio.NegotiatedDevice `json:"negotiated_capture"`
+	NegotiatedResponse    audio.NegotiatedDevice `json:"negotiated_response"`
+	NegotiatedStimulus    audio.NegotiatedDevice `json:"negotiated_stimulus"`
 }
 
 // runAcousticInterruption exercises the production capture/VAD/barge-in path.
@@ -68,6 +71,9 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	report := interruptionReport{InitialWAV: initialWAV, InterruptWAV: interruptWAV, Expected: expected}
 	var rawFrontend *rawCaptureFrontend
 	var mic []float32
+	var capture *audio.Capture
+	var stimulus *audio.Player
+	var response *audio.Player
 	var micMu sync.Mutex
 	defer func() {
 		if runErr != nil {
@@ -83,9 +89,19 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 			errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-processed.wav"), audio.SampleRate, captured))
 		}
 		if rawFrontend != nil {
+			errs = append(errs, rawFrontend.WriteTrace(filepath.Join(artifactDir, "frontend.jsonl")))
 			if raw := rawFrontend.RawSnapshot(); len(raw) > 0 {
 				errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-in.wav"), audio.SampleRate, raw))
 			}
+		}
+		if capture != nil {
+			report.NegotiatedCapture = capture.NegotiatedDevice()
+		}
+		if response != nil {
+			report.NegotiatedResponse = response.NegotiatedDevice()
+		}
+		if stimulus != nil {
+			report.NegotiatedStimulus = stimulus.NegotiatedDevice()
 		}
 		b, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -103,15 +119,17 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	if !ok {
 		return errors.New("acoustic interruption: physical response player required")
 	}
-	capture := audio.NewCaptureWithDevice(r.cfg.InputDevice)
+	response = real
+	capture = audio.NewCaptureWithDevice(r.cfg.InputDevice)
 	frontend, err := interruptionFrontend(r.cfg)
 	if err != nil {
 		return err
 	}
 	defer frontend.Close()
 	rawFrontend = newRawCaptureFrontend(frontend)
+	rawFrontend.EnableTrace(true)
 	capture.SetFrontend(rawFrontend)
-	real.SetFrontend(frontend)
+	real.SetFrontend(rawFrontend)
 	defer real.SetFrontend(nil)
 	vad, err := audio.NewVAD(r.cfg)
 	if err != nil {
@@ -188,7 +206,7 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	if err := readyInput.wait(runCtx); err != nil {
 		return err
 	}
-	stimulus := audio.NewPlayerWithDevice(r.cfg.OutputDevice)
+	stimulus = audio.NewPlayerWithDevice(r.cfg.OutputDevice)
 	defer stimulus.Close()
 	if err := playAcousticStimulus(runCtx, stimulus, initial, initialRate); err != nil {
 		return err

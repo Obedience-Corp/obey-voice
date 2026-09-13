@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,42 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+func TestFixtureConfigPrecedenceAndProbeUseSelectedWorker(t *testing.T) {
+	live := tagsServer(t, "qwen3:8b")
+	worker := tagsServer(t, "vw0001-worker-cpu")
+	base := &config.Config{BrainProvider: "ollama", OllamaModel: "qwen3:8b", OllamaHost: live.URL, VoiceWorkerProvider: "ollama", VoiceWorkerModel: "vw0001-worker-cpu", VoiceWorkerOllamaHost: worker.URL}
+	scn, err := loadScenarioString("acoustic", "name: acoustic\nlatency_condition: worker\nworker: { sustained_load: true }\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective := (knobs{}).withFixtureConfig(base, scn).withDefaults()
+	if got := effective.resolvedWorkerModel(); got != "vw0001-worker-cpu" || effective.resolvedWorkerHost() != worker.URL {
+		t.Fatalf("fixture worker = %q @ %q", got, effective.resolvedWorkerHost())
+	}
+	if reason := probeOllama(context.Background(), effective); reason != "" {
+		t.Fatalf("fixture worker probe skipped: %s", reason)
+	}
+	cfg, prof, err := resolveConfig(base, scn, effective, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.VoiceWorkerModel != "vw0001-worker-cpu" || prof.WorkerHost != worker.URL {
+		t.Fatalf("resolved worker = %q @ %q", cfg.VoiceWorkerModel, prof.WorkerHost)
+	}
+
+	cli := knobs{workerProvider: "ollama", workerModel: "cli-worker", workerOllamaHost: worker.URL}
+	effectiveCLI := cli.withFixtureConfig(base, scn).withDefaults()
+	if effectiveCLI.resolvedWorkerModel() != "cli-worker" {
+		t.Fatalf("CLI worker was shadowed: %q", effectiveCLI.resolvedWorkerModel())
+	}
+	missing := tagsServer(t, "qwen3:8b")
+	missingBase := &config.Config{BrainProvider: "ollama", OllamaModel: "qwen3:8b", OllamaHost: missing.URL, VoiceWorkerProvider: "ollama", VoiceWorkerModel: "vw0001-worker-cpu", VoiceWorkerOllamaHost: missing.URL}
+	missingEffective := (knobs{}).withFixtureConfig(missingBase, scn).withDefaults()
+	if reason := probeOllama(context.Background(), missingEffective); reason == "" {
+		t.Fatal("unavailable selected worker was accepted")
+	}
+}
 
 func TestResolveConfigForcesTheGateKnobs(t *testing.T) {
 	base := &config.Config{

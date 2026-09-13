@@ -131,14 +131,17 @@ type Player struct {
 	frontend   Frontend
 	// aecIngress receives clock-aligned mono PCM from onData and pushes the
 	// capture-rate far-end reference on a worker (callback-safe).
-	aecIngress *aecRefIngress
-	current    *playbackSegment
-	queue      []*playbackSegment
-	playing    atomic.Bool
-	closed     bool
-	deviceName string
-	debugRoot  string
-	debug      *playerDebugRecorder
+	aecIngress       *aecRefIngress
+	current          *playbackSegment
+	queue            []*playbackSegment
+	playing          atomic.Bool
+	closed           bool
+	deviceName       string
+	actualDeviceName string
+	clientRate       int
+	clientChannels   int
+	debugRoot        string
+	debug            *playerDebugRecorder
 	// monoScratch holds one callback period of mono S16 while onData expands
 	// into the multi-channel device buffer. Sized lazily under the callback.
 	monoScratch []byte
@@ -151,6 +154,14 @@ type Player struct {
 	// mono S16 before expand so a settings slider takes effect mid-utterance
 	// and AEC hears the same samples the speaker does. 100 is unity.
 	volumeHundredths atomic.Int32
+}
+
+// NegotiatedDevice returns the stream format from the last opened playback
+// device, separately from the requested and client formats.
+func (p *Player) NegotiatedDevice() NegotiatedDevice {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return NegotiatedDevice{RequestedName: p.deviceName, Name: p.actualDeviceName, IdentityKnown: p.actualDeviceName != "", SampleRate: p.sampleRate, Channels: p.channels, ClientSampleRate: p.clientRate, ClientChannels: p.clientChannels}
 }
 
 // NewPlayer creates a new audio player.
@@ -701,6 +712,9 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	p.mu.Lock()
 	p.ctx = ctx
 	p.device = device
+	p.actualDeviceName = actualDeviceName
+	p.clientRate = sampleRate
+	p.clientChannels = int(channels)
 	p.sampleRate = deviceRate
 	p.channels = deviceChannels
 	p.debug = debug

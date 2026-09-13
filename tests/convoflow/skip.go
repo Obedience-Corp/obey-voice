@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 const exitSkip = 2
@@ -47,6 +49,30 @@ func (k knobs) withScenario(scn *Scenario) knobs {
 	}
 	k.workerModel = firstNonEmpty(k.workerModel, scn.Worker.Model)
 	k.workerOllamaHost = firstNonEmpty(k.workerOllamaHost, scn.Worker.Host)
+	return k
+}
+
+// withFixtureConfig applies an explicitly supplied isolated config beneath
+// command-line and scenario values. It is used before probing so the probe
+// and the eventual runner resolve the same endpoint and model.
+func (k knobs) withFixtureConfig(base *config.Config, scn *Scenario) knobs {
+	k = k.withScenario(scn)
+	if base != nil {
+		k.liveProvider = firstNonEmpty(k.liveProvider, base.BrainProvider)
+		k.liveModel = firstNonEmpty(k.liveModel, base.OllamaModel)
+		k.ollamaHost = firstNonEmpty(k.ollamaHost, base.OllamaHost)
+		k.workerProvider = firstNonEmpty(k.workerProvider, base.VoiceWorkerProvider)
+		k.workerModel = firstNonEmpty(k.workerModel, base.VoiceWorkerModel)
+		k.workerOllamaHost = firstNonEmpty(k.workerOllamaHost, base.VoiceWorkerOllamaHost)
+	}
+	return k
+}
+
+func (k knobs) withDefaults() knobs {
+	k.liveProvider = firstNonEmpty(k.liveProvider, "ollama")
+	k.liveModel = firstNonEmpty(k.liveModel, "qwen3:8b")
+	k.workerProvider = firstNonEmpty(k.workerProvider, "ollama")
+	k.ollamaHost = firstNonEmpty(k.ollamaHost, "http://localhost:11434")
 	return k
 }
 

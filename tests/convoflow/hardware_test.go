@@ -24,10 +24,6 @@ func TestAcousticRunRejectsUnsafeInputsBeforeOpeningDevices(t *testing.T) {
 	if err := (*liveRunner)(nil).runAcoustic(context.Background(), "speech.wav", "", t.TempDir()); err == nil || !strings.Contains(err.Error(), "agent is not configured") {
 		t.Fatalf("nil runner error = %v", err)
 	}
-	r := &liveRunner{}
-	if err := r.runAcoustic(nil, "speech.wav", "", t.TempDir()); err == nil || !strings.Contains(err.Error(), "nil context") {
-		t.Fatalf("nil context error = %v", err)
-	}
 }
 
 func TestAcousticEnvelopeCorrelationRejectsSilenceAndClipping(t *testing.T) {

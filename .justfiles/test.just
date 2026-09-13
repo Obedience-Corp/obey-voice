@@ -141,3 +141,14 @@ acoustic-controls CONFIG SUITE_DIR:
     for scenario in completion interruption; do
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/controls"
     done
+
+# One physical turn with the explicitly configured TTS provider (e.g. native Qwen).
+[no-cd]
+acoustic-smoke CONFIG SUITE_DIR:
+    "{{SUITE_DIR}}/bin/convoflow" -scenario "{{SUITE_DIR}}/scenarios/smoke.yaml" -fixture-config "{{CONFIG}}" -runs-dir "{{SUITE_DIR}}/runs/smoke"
+
+# Offline detector diagnostics; offsets are seconds from the start of mic-in.wav.
+# A successful command means replay completed, not that interruption passed.
+[no-cd]
+acoustic-vad ARTIFACT CONFIG ARM STIMULUS:
+    OBEY_VOICE_VAD_CAPTURE="{{ARTIFACT}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" OBEY_VOICE_VAD_ARM_OFFSET="{{ARM}}" OBEY_VOICE_VAD_STIMULUS_OFFSET="{{STIMULUS}}" go test ./tests/convoflow -run '^TestReplaySavedBargeVAD$' -count=1 -v

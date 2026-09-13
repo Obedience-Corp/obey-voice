@@ -37,12 +37,12 @@ func runMain(args []string) int {
 	compare := fs.String("compare", "", "compare two latency report JSON files separated by comma")
 	prepareSuite := fs.String("prepare-acoustic-suite", "", "generate repeatable acoustic scenarios into OUTPUTDIR")
 	fixtureDir := fs.String("fixture-dir", "", "recorded acoustic fixture cache containing synth-01..03 and counting WAV/JSON pairs")
-	liveProvider := fs.String("live-provider", "ollama", "live brain provider")
-	liveModel := fs.String("live-model", "qwen3:8b", "live model")
-	workerProvider := fs.String("worker-provider", "ollama", "worker provider (ollama, grok, claude, or stub for the self-test)")
+	liveProvider := fs.String("live-provider", "", "live brain provider (default ollama)")
+	liveModel := fs.String("live-model", "", "live model (default qwen3:8b)")
+	workerProvider := fs.String("worker-provider", "", "worker provider (default ollama; grok, claude, or stub for self-test)")
 	workerModel := fs.String("worker-model", "", "worker model; empty inherits live")
 	workerHost := fs.String("worker-ollama-host", "", "worker Ollama URL; empty inherits live host")
-	ollamaHost := fs.String("ollama-host", "http://localhost:11434", "live Ollama URL")
+	ollamaHost := fs.String("ollama-host", "", "live Ollama URL (default http://localhost:11434)")
 	runsDir := fs.String("runs-dir", "", "artifact root (default ~/.cache/obey-voice/convoflow)")
 	fixtureConfig := fs.String("fixture-config", "", "explicit isolated config file (required for persona and latency runs)")
 	personaDir := fs.String("persona-dir", "", "explicit persona catalog directory for persona proof")
@@ -99,10 +99,6 @@ func runMain(args []string) int {
 		ollamaHost:       *ollamaHost,
 		gate:             *gate,
 	}
-	if reason := skipReason(k); reason != "" && !*selfTest {
-		fmt.Fprintf(os.Stderr, "convoflow: skip: %s\n", reason)
-		return exitSkip
-	}
 
 	scn, err := loadScenario(*scenarioPath)
 	if err != nil {
@@ -116,6 +112,14 @@ func runMain(args []string) int {
 	if *fixtureConfig != "" {
 		if _, err := os.Stat(*fixtureConfig); err != nil {
 			fmt.Fprintf(os.Stderr, "convoflow: fixture config %q: %v\n", *fixtureConfig, err)
+			return 1
+		}
+	}
+	var probeBase *config.Config
+	if *fixtureConfig != "" {
+		probeBase, err = loadFixtureConfig(*fixtureConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "convoflow: config: %v\n", err)
 			return 1
 		}
 	}
@@ -136,7 +140,11 @@ func runMain(args []string) int {
 	// a skip, and there is nothing to tear down yet. They see the effective
 	// knobs — CLI over the scenario's brain / worker blocks — which is what
 	// resolveConfig builds the run from.
-	k = k.withScenario(scn)
+	k = k.withFixtureConfig(probeBase, scn).withDefaults()
+	if reason := skipReason(k); reason != "" && !*selfTest {
+		fmt.Fprintf(os.Stderr, "convoflow: skip: %s\n", reason)
+		return exitSkip
+	}
 	if !*selfTest {
 		if reason := probeOllama(ctx, k); reason != "" {
 			fmt.Fprintf(os.Stderr, "convoflow: skip: %s\n", reason)

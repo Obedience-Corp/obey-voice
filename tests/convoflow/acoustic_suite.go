@@ -124,6 +124,9 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 	if err := write("baseline-33", "baseline", turns()); err != nil {
 		return err
 	}
+	if err := write("smoke", "baseline", []map[string]any{{"id": "smoke", "latency_iteration": 1, "latency_warmup": true, "timeout": "120s", "wav": fixtures[0].Path, "expected_transcript": fixtures[0].Text}}); err != nil {
+		return err
+	}
 	workerTurns := make([]map[string]any, 0, 99)
 	for _, measured := range turns() {
 		id := measured["id"].(string)

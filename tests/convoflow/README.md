@@ -153,6 +153,7 @@ Prepare and repeat the suite with repository recipes:
 just test acoustic-prepare /path/to/installed/models /path/to/suite
 just test acoustic-pair /path/to/isolated-config.yaml /path/to/suite
 just test acoustic-controls /path/to/isolated-barge-config.yaml /path/to/suite
+just test acoustic-smoke /path/to/isolated-provider-config.yaml /path/to/suite
 ```
 
 Preparation builds the harness once, generates four Kokoro WAV/JSON fixtures
@@ -160,7 +161,10 @@ from explicitly selected installed models, and writes scenarios plus a hash
 manifest. It does not download models or read the user's live configuration.
 The pair recipe runs three warmups and 30 measured turns per condition in
 sequence, then compares the retained reports. The controls recipe exercises
-quiet completion and interruption. Set the intended input/output devices,
+quiet completion and interruption. The smoke recipe checks one physical turn
+with the configured TTS provider; native Qwen can be checked using
+`tts_provider: qwen3-tts` and the installed `qwen_tts_model_tier`. A smoke pass
+does not establish comparable provider latency. Set the intended input/output devices,
 Ollama endpoints, Parakeet model path, and frontend in the explicit fixture
 config. Use a separate suite or retain the old binary before rebuilding;
 comparisons reject mismatched executable or configuration fingerprints.
@@ -175,6 +179,18 @@ The fixture directory contains `synth-01.wav` through `synth-03.wav`,
 `counting.wav`, and matching JSON files with the spoken `text`. Generated
 scenarios are portable by regeneration; raw audio and machine-specific
 configurations stay in the selected artifact directory.
+
+Saved interruption audio can be diagnosed without reopening devices:
+
+```sh
+just test acoustic-vad /path/to/run/acoustic/interruption /path/to/isolated-config.yaml ARM_SECONDS STIMULUS_SECONDS
+```
+
+Both offsets are relative to the microphone file, not the scenario start.
+The command replays raw and processed capture through the production Silero
+barge detector at three supported thresholds, skipping pre-arm input. Its
+success means replay completed; the logged speech windows are diagnostic
+evidence, and the physical interruption assertion remains the acceptance gate.
 
 
 Physical acceptance uses `capture.microphone: true` and a recorded speech WAV.
