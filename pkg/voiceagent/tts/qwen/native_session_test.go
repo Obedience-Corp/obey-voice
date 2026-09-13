@@ -1,4 +1,4 @@
-package tts
+package qwen
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"math"
 	"os"
 	"path/filepath"
@@ -173,7 +174,7 @@ done
 	stream := audio.NewPCMStream(ctx)
 	errCh := make(chan error, 1)
 	go func() {
-		err := session.SynthesizeToStream(ctx, SynthesisRequest{Text: "hi", Voice: "Vivian"}, stream)
+		err := session.SynthesizeToStream(ctx, tts.SynthesisRequest{Text: "hi", Voice: "Vivian"}, stream)
 		if err != nil {
 			stream.CloseWithError(err)
 		} else {
@@ -320,7 +321,7 @@ done
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	result, err := q.SynthesizeRequest(ctx, SynthesisRequest{Text: "hello", Voice: "Vivian"})
+	result, err := q.SynthesizeRequest(ctx, tts.SynthesisRequest{Text: "hello", Voice: "Vivian"})
 	if err != nil {
 		t.Fatalf("SynthesizeRequest: %v", err)
 	}

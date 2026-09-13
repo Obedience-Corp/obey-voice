@@ -1,8 +1,9 @@
-package tts
+package qwen
 
 import (
 	"context"
 	"errors"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"os"
 	"path/filepath"
 	"strings"
@@ -253,7 +254,7 @@ func TestSynthesizeRequestCarriesStreamOnlyForACapableWorker(t *testing.T) {
 				for range stream.Frames() {
 				}
 			}()
-			if err := session.SynthesizeToStream(ctx, SynthesisRequest{Text: "hi"}, stream); err != nil {
+			if err := session.SynthesizeToStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream); err != nil {
 				t.Fatalf("SynthesizeToStream: %v", err)
 			}
 			stream.Close()
@@ -396,7 +397,7 @@ func TestLocalWorkerStreamsOnlyOnACUDAPackage(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			result, err := q.SynthesizeRequest(ctx, SynthesisRequest{Text: "hello there"})
+			result, err := q.SynthesizeRequest(ctx, tts.SynthesisRequest{Text: "hello there"})
 			if err != nil {
 				t.Fatalf("SynthesizeRequest: %v", err)
 			}
@@ -454,7 +455,7 @@ func TestRemoteProviderStreamsChunksAndMarksTheStream(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	result, err := remote.SynthesizeRequest(ctx, SynthesisRequest{Text: "hello there"})
+	result, err := remote.SynthesizeRequest(ctx, tts.SynthesisRequest{Text: "hello there"})
 	if err != nil {
 		t.Fatalf("SynthesizeRequest: %v", err)
 	}
@@ -511,7 +512,7 @@ func TestRemoteProviderPinsStageAWhenStreamingIsOff(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	result, err := remote.SynthesizeRequest(ctx, SynthesisRequest{Text: "hello there"})
+	result, err := remote.SynthesizeRequest(ctx, tts.SynthesisRequest{Text: "hello there"})
 	if err != nil {
 		t.Fatalf("SynthesizeRequest: %v", err)
 	}
@@ -550,9 +551,9 @@ type stubSpeechSession struct {
 	wrote int
 }
 
-func (s *stubSpeechSession) SynthesizeToStream(_ context.Context, _ SynthesisRequest, stream *audio.PCMStream) error {
+func (s *stubSpeechSession) SynthesizeToStream(_ context.Context, _ tts.SynthesisRequest, stream *audio.PCMStream) error {
 	if s.fail {
-		return &ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: ProviderErrorWorker, Err: errors.New("worker died")}
+		return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: tts.ProviderErrorWorker, Err: errors.New("worker died")}
 	}
 	if err := stream.SetSampleRate(qwen3TTSSampleRate); err != nil {
 		return err
@@ -604,7 +605,7 @@ func TestReconnectRedeclaresIncrementalForTheReplacementSession(t *testing.T) {
 				for range stream.Frames() {
 				}
 			}()
-			if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err != nil {
+			if err := q.synthesizeNativeStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream); err != nil {
 				t.Fatalf("synthesizeNativeStream: %v", err)
 			}
 			stream.Close()
@@ -635,7 +636,7 @@ func TestNativeRequestWarmEvidenceTracksSessionLifecycle(t *testing.T) {
 			for range stream.Frames() {
 			}
 		}()
-		if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err != nil {
+		if err := q.synthesizeNativeStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream); err != nil {
 			t.Fatalf("synthesizeNativeStream: %v", err)
 		}
 		if got := stream.SynthesisWarmState(); got != want {
@@ -667,7 +668,7 @@ func TestNativeReconnectDowngradesWarmEvidenceToCold(t *testing.T) {
 		for range stream.Frames() {
 		}
 	}()
-	if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err != nil {
+	if err := q.synthesizeNativeStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream); err != nil {
 		t.Fatalf("synthesizeNativeStream: %v", err)
 	}
 	if got := stream.SynthesisWarmState(); got != "cold" {
@@ -690,7 +691,7 @@ func TestNativeCanceledRequestDoesNotPublishSuccessEvidence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	stream := audio.NewPCMStream(ctx)
-	if err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream); err == nil {
+	if err := q.synthesizeNativeStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream); err == nil {
 		t.Fatal("canceled request unexpectedly succeeded")
 	}
 	if q.speechCompleted.Load() {
@@ -724,7 +725,7 @@ func TestNoReconnectAfterSamplesHavePlayed(t *testing.T) {
 		return session, nil
 	}
 
-	err := q.synthesizeNativeStream(ctx, SynthesisRequest{Text: "hi"}, stream)
+	err := q.synthesizeNativeStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream)
 	if err == nil {
 		t.Fatal("a worker that died after playing audio was silently retried")
 	}
@@ -741,14 +742,14 @@ func TestNoReconnectAfterSamplesHavePlayed(t *testing.T) {
 // the shape a mid-stream worker death takes.
 type partialThenFailSession struct{ *speechSession }
 
-func (s *partialThenFailSession) SynthesizeToStream(_ context.Context, _ SynthesisRequest, stream *audio.PCMStream) error {
+func (s *partialThenFailSession) SynthesizeToStream(_ context.Context, _ tts.SynthesisRequest, stream *audio.PCMStream) error {
 	if err := stream.SetSampleRate(qwen3TTSSampleRate); err != nil {
 		return err
 	}
 	if err := stream.Write([]float32{0.1, 0.2}); err != nil {
 		return err
 	}
-	return &ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: ProviderErrorWorker, Err: errors.New("worker died mid-utterance")}
+	return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: tts.ProviderErrorWorker, Err: errors.New("worker died mid-utterance")}
 }
 
 func (*partialThenFailSession) Close() {}

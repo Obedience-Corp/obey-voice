@@ -1,9 +1,10 @@
-package tts
+package qwen
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"net"
 	"strings"
 	"time"
@@ -40,9 +41,9 @@ func newRemoteQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	q.modelTier = managedqwen.NormalizeModelTier(cfg.QwenTTSModelTier)
 	q.modelsDir = config.ModelsDirFrom(cfg)
 	q.consent = cfg.QwenTTSConsent
-	q.mode = VoiceMode(strings.TrimSpace(cfg.QwenTTSMode))
-	if q.mode == "" || q.mode == VoiceModeStatic {
-		q.mode = VoiceModeCustomVoice
+	q.mode = tts.VoiceMode(strings.TrimSpace(cfg.QwenTTSMode))
+	if q.mode == "" || q.mode == tts.VoiceModeStatic {
+		q.mode = tts.VoiceModeCustomVoice
 	}
 	q.voice = remoteVoice(cfg.QwenTTSVoice)
 	q.language = managedqwen.DefaultLanguage
@@ -224,10 +225,10 @@ func (s *remoteQwenSession) Close() {
 }
 
 func speechUnavailable(operation string, err error) error {
-	return &ProviderError{
+	return &tts.ProviderError{
 		Provider:  qwen3TTSProviderName,
 		Operation: operation,
-		Kind:      ProviderErrorUnavailable,
+		Kind:      tts.ProviderErrorUnavailable,
 		Err:       err,
 	}
 }

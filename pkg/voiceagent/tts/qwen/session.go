@@ -1,4 +1,4 @@
-package tts
+package qwen
 
 import (
 	"bufio"
@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"io"
 	"math"
 	"os"
@@ -137,7 +138,7 @@ func startManagedQwenSessionContext(ctx context.Context, binary, workerScript, m
 // SynthesizeToStream runs one managed synthesis and writes float32 PCM frames
 // as audio_chunk messages arrive. Generation is still whole-utterance at the
 // model layer; chunks avoid temp-WAV I/O and feed the player immediately after.
-func (s *managedQwenSession) SynthesizeToStream(ctx context.Context, req SynthesisRequest, stream *audio.PCMStream) error {
+func (s *managedQwenSession) SynthesizeToStream(ctx context.Context, req tts.SynthesisRequest, stream *audio.PCMStream) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -209,7 +210,7 @@ func (s *managedQwenSession) SynthesizeToStream(ctx context.Context, req Synthes
 }
 
 // Synthesize is the legacy whole-file path kept for one-shot CLI / fixtures.
-func (s *managedQwenSession) Synthesize(ctx context.Context, req SynthesisRequest, outputPath string) error {
+func (s *managedQwenSession) Synthesize(ctx context.Context, req tts.SynthesisRequest, outputPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -365,20 +366,20 @@ func managedWorkerError(err error) error {
 		return nil
 	}
 	if errors.Is(err, context.Canceled) {
-		return &ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: ProviderErrorCanceled, Err: err}
+		return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: tts.ProviderErrorCanceled, Err: err}
 	}
 	var responseErr *managedQwenResponseError
 	if errors.As(err, &responseErr) {
 		switch strings.ToLower(strings.TrimSpace(responseErr.kind)) {
 		case "unsupported_input", "invalid_request":
-			return &ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: ProviderErrorInput, Err: err}
+			return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: tts.ProviderErrorInput, Err: err}
 		case "canceled", "cancelled":
-			return &ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: ProviderErrorCanceled, Err: err}
+			return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: tts.ProviderErrorCanceled, Err: err}
 		}
 	}
-	kind := ProviderErrorWorker
+	kind := tts.ProviderErrorWorker
 	if strings.Contains(err.Error(), "malformed") {
-		kind = ProviderErrorMalformed
+		kind = tts.ProviderErrorMalformed
 	}
-	return &ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: kind, Err: err}
+	return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "run managed worker", Kind: kind, Err: err}
 }

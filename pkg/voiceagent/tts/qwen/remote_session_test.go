@@ -1,4 +1,4 @@
-package tts
+package qwen
 
 import (
 	"bufio"
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"math"
 	"net"
 	"strings"
@@ -211,7 +212,7 @@ func TestDialRemoteQwenSessionErrors(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err=%v want %q", err, tc.want)
 			}
-			if !IsProviderErrorKind(err, ProviderErrorUnavailable) {
+			if !tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) {
 				t.Fatalf("err=%v is not an unavailable provider error", err)
 			}
 		})
@@ -252,7 +253,7 @@ func TestRemoteQwenSessionSynthesizes(t *testing.T) {
 		t.Fatalf("tier=%q", session.Tier())
 	}
 
-	got := collectSynthesis(t, session, SynthesisRequest{Text: "hi", Voice: "Vivian", ReferenceAudio: "/tmp/throat.wav"})
+	got := collectSynthesis(t, session, tts.SynthesisRequest{Text: "hi", Voice: "Vivian", ReferenceAudio: "/tmp/throat.wav"})
 	if len(got) != 3 {
 		t.Fatalf("samples=%v want 3", got)
 	}
@@ -283,7 +284,7 @@ func TestRemoteQwenSessionCancelMidStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	stream := audio.NewPCMStream(context.Background())
-	if err := session.SynthesizeToStream(ctx, SynthesisRequest{Text: "hi"}, stream); !errors.Is(err, context.Canceled) {
+	if err := session.SynthesizeToStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err=%v want context.Canceled", err)
 	}
 }
@@ -307,11 +308,11 @@ func TestNewQwen3TTSLanUsesTheSpeechWorker(t *testing.T) {
 	if q.Capabilities().SupportsReferenceAudio {
 		t.Fatal("the LAN wire carries no ref_wav; it must not be advertised")
 	}
-	if _, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{Text: "hi", ReferenceAudio: "/tmp/throat.wav"}); !IsProviderErrorKind(err, ProviderErrorInput) {
+	if _, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: "hi", ReferenceAudio: "/tmp/throat.wav"}); !tts.IsProviderErrorKind(err, tts.ProviderErrorInput) {
 		t.Fatalf("ref_wav over lan: err=%v want an input error", err)
 	}
 
-	result, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{Text: "hello there"})
+	result, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: "hello there"})
 	if err != nil {
 		t.Fatalf("SynthesizeRequest: %v", err)
 	}
@@ -337,7 +338,7 @@ func TestNewQwen3TTSLanUnreachableIsUnavailable(t *testing.T) {
 	_ = srv.listener.Close()
 
 	_, err := NewQwen3TTS(lanConfig(url, "s3cret"))
-	if !IsProviderErrorKind(err, ProviderErrorUnavailable) {
+	if !tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) {
 		t.Fatalf("err=%v want an unavailable provider error", err)
 	}
 	// No local worker was resolved: the host needs no binary or GGUF.
@@ -346,7 +347,7 @@ func TestNewQwen3TTSLanUnreachableIsUnavailable(t *testing.T) {
 	}
 }
 
-func collectSynthesis(t *testing.T, session qwenSpeechSession, req SynthesisRequest) []float32 {
+func collectSynthesis(t *testing.T, session qwenSpeechSession, req tts.SynthesisRequest) []float32 {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

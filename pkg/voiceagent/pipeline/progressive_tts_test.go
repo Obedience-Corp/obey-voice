@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/qwen"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -240,4 +241,4 @@ func TestSoftCancelOnBargeIn(t *testing.T) {
 }
 
 // Compile-time: Qwen3TTS implements SoftCanceler (native warm worker).
-var _ tts.SoftCanceler = (*tts.Qwen3TTS)(nil)
+var _ tts.SoftCanceler = (*qwen.Qwen3TTS)(nil)

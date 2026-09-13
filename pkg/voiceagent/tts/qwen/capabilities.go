@@ -1,7 +1,8 @@
-package tts
+package qwen
 
 import (
 	"context"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"strings"
 
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
@@ -9,13 +10,13 @@ import (
 
 // ListVoices reports speakers advertised by the managed/native handshake.
 // The external CLI contract has no verified voice discovery mechanism.
-func (q *Qwen3TTS) ListVoices(locale, gender string) []Voice {
+func (q *Qwen3TTS) ListVoices(locale, gender string) []tts.Voice {
 	if !q.managed && !q.native {
 		return nil
 	}
-	var voices []Voice
+	var voices []tts.Voice
 	for _, mode := range q.Capabilities().Modes {
-		if mode.ID != VoiceModeCustomVoice {
+		if mode.ID != tts.VoiceModeCustomVoice {
 			continue
 		}
 		for _, voice := range mode.Voices {
@@ -33,8 +34,8 @@ func (q *Qwen3TTS) ListVoices(locale, gender string) []Voice {
 
 // Capabilities reports the managed/native worker handshake or the baseline
 // guarantees of the external CLI adapter.
-func (q *Qwen3TTS) Capabilities() ProviderCapabilities {
-	caps := ProviderCapabilities{
+func (q *Qwen3TTS) Capabilities() tts.ProviderCapabilities {
+	caps := tts.ProviderCapabilities{
 		Provider:               qwen3TTSProviderName,
 		Model:                  q.model,
 		ModelReady:             q.model != "" && q.Available(),
@@ -73,7 +74,7 @@ func (q *Qwen3TTS) Capabilities() ProviderCapabilities {
 		// Advertising one here would promise a voice the session cannot speak.
 		voiceNames = appendShippedVoiceNames(voiceNames)
 	}
-	voices := make([]Voice, 0, len(voiceNames))
+	voices := make([]tts.Voice, 0, len(voiceNames))
 	for _, name := range voiceNames {
 		voice := managedqwen.Voice{Name: name}
 		for _, candidate := range registry {
@@ -86,13 +87,13 @@ func (q *Qwen3TTS) Capabilities() ProviderCapabilities {
 		if friendly == "" {
 			friendly = name
 		}
-		voices = append(voices, Voice{
+		voices = append(voices, tts.Voice{
 			Name: voice.Name, FriendlyName: friendly,
 			Gender: "preset", Locale: voice.NativeLanguage,
 		})
 	}
-	caps.Modes = []VoiceModeCapability{{
-		ID: VoiceModeCustomVoice, Voices: voices, SupportsInstruction: false,
+	caps.Modes = []tts.VoiceModeCapability{{
+		ID: tts.VoiceModeCustomVoice, Voices: voices, SupportsInstruction: false,
 		RequiresReferenceAudio: false,
 	}}
 	if q.managed && q.session != nil && len(q.session.languages) > 0 {
@@ -108,7 +109,7 @@ func (q *Qwen3TTS) Capabilities() ProviderCapabilities {
 	return caps
 }
 
-func (q *Qwen3TTS) Status() ProviderStatus {
+func (q *Qwen3TTS) Status() tts.ProviderStatus {
 	available := q.Available()
 	detail := "external native CLI and model configured"
 	if q.remote {
@@ -138,10 +139,10 @@ func (q *Qwen3TTS) Status() ProviderStatus {
 			detail = "managed worker stopped; it will restart on the next request"
 		}
 	}
-	return ProviderStatus{Provider: qwen3TTSProviderName, Available: available, ModelReady: q.model != "" && available, Detail: detail}
+	return tts.ProviderStatus{Provider: qwen3TTSProviderName, Available: available, ModelReady: q.model != "" && available, Detail: detail}
 }
 
-func bindShippedOnRequest(ctx context.Context, req *SynthesisRequest, modelsDir string) error {
+func bindShippedOnRequest(ctx context.Context, req *tts.SynthesisRequest, modelsDir string) error {
 	if req == nil {
 		return nil
 	}

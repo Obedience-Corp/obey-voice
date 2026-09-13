@@ -1,9 +1,10 @@
-package tts
+package qwen
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -11,12 +12,12 @@ import (
 
 // synthesizeNativeStream serializes the product native worker and restarts once
 // on unexpected process/protocol failure (same policy as managed).
-func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req SynthesisRequest, stream *audio.PCMStream) error {
+func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req tts.SynthesisRequest, stream *audio.PCMStream) error {
 	q.sessionMu.Lock()
 	defer q.sessionMu.Unlock()
 
 	if !q.alive.Load() {
-		return &ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: ProviderErrorUnavailable, Err: errors.New("provider is closed")}
+		return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: tts.ProviderErrorUnavailable, Err: errors.New("provider is closed")}
 	}
 	if err := q.ensureSpeechSessionLocked(ctx); err != nil {
 		return err
@@ -114,12 +115,12 @@ func (q *Qwen3TTS) discardSpeechSessionLocked() {
 // Unexpected worker/protocol failures receive one immediate restart + retry so
 // conversational callers reach their configured fallback only after Qwen has
 // had a chance to recover itself.
-func (q *Qwen3TTS) synthesizeManagedStream(ctx context.Context, req SynthesisRequest, stream *audio.PCMStream) error {
+func (q *Qwen3TTS) synthesizeManagedStream(ctx context.Context, req tts.SynthesisRequest, stream *audio.PCMStream) error {
 	q.sessionMu.Lock()
 	defer q.sessionMu.Unlock()
 
 	if !q.alive.Load() {
-		return &ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: ProviderErrorUnavailable, Err: errors.New("provider is closed")}
+		return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: tts.ProviderErrorUnavailable, Err: errors.New("provider is closed")}
 	}
 	if err := q.ensureManagedSessionLocked(ctx); err != nil {
 		return err

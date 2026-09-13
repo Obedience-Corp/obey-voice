@@ -36,7 +36,7 @@ func TestKokoroFirstAudioGraceScalesWithSegmentLength(t *testing.T) {
 
 func TestKokoroFirstAudioGraceDefaultMatchesTypicalSegment(t *testing.T) {
 	k := &KokoroTTS{}
-	if got, want := k.FirstAudioGrace(), k.FirstAudioGraceForChars(typicalSegmentChars); got != want {
+	if got, want := k.FirstAudioGrace(), k.FirstAudioGraceForChars(TypicalSegmentChars); got != want {
 		t.Errorf("FirstAudioGrace() = %v, want typical-segment %v", got, want)
 	}
 }

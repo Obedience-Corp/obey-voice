@@ -1,4 +1,4 @@
-package tts
+package qwen
 
 import (
 	"crypto/sha256"
@@ -73,7 +73,8 @@ func TestSourceTreeHasNoEmbeddedQwenWorkerPy(t *testing.T) {
 		t.Fatal("runtime.Caller failed")
 	}
 	// pkg/voiceagent/tts → repo root
-	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
+	// this file now lives one directory deeper, in pkg/voiceagent/tts/qwen
+	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", "..", ".."))
 	forbidden := []string{
 		"//go:embed worker.py",
 		"//go:embed qwen_worker.py",

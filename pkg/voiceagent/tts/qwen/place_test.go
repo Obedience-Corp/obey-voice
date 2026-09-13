@@ -1,8 +1,9 @@
-package tts
+package qwen
 
 import (
 	"context"
 	"errors"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,9 +57,9 @@ func TestNewQwen3TTSPlace(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), tc.want) {
 					t.Fatalf("err=%v want %q", err, tc.want)
 				}
-				var provErr *ProviderError
-				if errors.As(err, &provErr) && provErr.Kind != ProviderErrorUnavailable {
-					t.Fatalf("kind=%q want %q", provErr.Kind, ProviderErrorUnavailable)
+				var provErr *tts.ProviderError
+				if errors.As(err, &provErr) && provErr.Kind != tts.ProviderErrorUnavailable {
+					t.Fatalf("kind=%q want %q", provErr.Kind, tts.ProviderErrorUnavailable)
 				}
 				return
 			}

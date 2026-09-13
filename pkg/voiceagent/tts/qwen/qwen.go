@@ -1,9 +1,10 @@
-package tts
+package qwen
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,22 +60,6 @@ const (
 	// margin after a warm worker; 8s is the Metal/CUDA scheduler floor.
 	minFirstAudioGraceCPU = 24 * time.Second
 
-	// speechCharsPerSecond converts a segment's length into expected audio
-	// duration.
-	//
-	// Measured 11.9–18.2 chars/s over real replies on both engines. 10 sits
-	// below the observed minimum on purpose: the estimate must over-predict
-	// audio, because under-predicting shortens the budget on exactly the
-	// segments that need it most. A slow-speaking segment at the observed
-	// floor would otherwise have left only 12% margin.
-	speechCharsPerSecond = 10.0
-
-	// typicalSegmentChars sizes the budget when the caller does not say how
-	// long the segment is. It is the measured median segment length, so the
-	// length-blind path lands on an ordinary sentence rather than a
-	// worst-case one.
-	typicalSegmentChars = 120
-
 	// minFirstAudioGrace floors every computed budget for the 0.6b worker
 	// (and as the scheduler/device floor for every native tier). Isolated
 	// 0.6b short sentences synthesize in ~2.7s, so 8s is still plenty of
@@ -116,7 +101,7 @@ type Qwen3TTS struct {
 	timeoutSet          bool // true when cfg.QwenTTSTimeout was explicitly set
 	command             qwenCommand
 	alive               atomic.Bool
-	mode                VoiceMode
+	mode                tts.VoiceMode
 	voice               string
 	language            string
 	instruction         string
@@ -240,7 +225,7 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	q := newQwen3TTS(binaryPath, model, timeout, exec.CommandContext)
 	q.timeoutSet = timeoutSet
 	q.modelTier = modelTier
-	q.mode = VoiceMode(strings.TrimSpace(cfg.QwenTTSMode))
+	q.mode = tts.VoiceMode(strings.TrimSpace(cfg.QwenTTSMode))
 	q.voice = strings.TrimSpace(cfg.QwenTTSVoice)
 	q.language = strings.TrimSpace(cfg.QwenTTSLanguage)
 	q.instruction = cfg.QwenTTSInstruction
@@ -254,8 +239,8 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 	q.streamMode = config.QwenTTSStreamOf(cfg)
 	q.backendHint = backendHint
 	if managed || native {
-		if q.mode == "" || q.mode == VoiceModeStatic {
-			q.mode = VoiceModeCustomVoice
+		if q.mode == "" || q.mode == tts.VoiceModeStatic {
+			q.mode = tts.VoiceModeCustomVoice
 		}
 		if q.voice == "" || strings.EqualFold(q.voice, "default") {
 			q.voice = managedqwen.DefaultVoice

@@ -1,8 +1,9 @@
-package tts
+package qwen
 
 import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 // ModelTier reports the normalized model size (0.6b / 1.7b) so an artifact
@@ -28,9 +29,9 @@ func (q *Qwen3TTS) ModelTier() string {
 // SpeechPlace reports which computer synthesizes for this provider.
 func (q *Qwen3TTS) SpeechPlace() string {
 	if q != nil && q.remote {
-		return PlaceLAN
+		return tts.PlaceLAN
 	}
-	return PlaceLocal
+	return tts.PlaceLocal
 }
 
 // WorkerStreaming reports whether this session's PCM actually arrives during

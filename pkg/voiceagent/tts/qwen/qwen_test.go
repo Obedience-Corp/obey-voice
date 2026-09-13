@@ -1,9 +1,10 @@
-package tts
+package qwen
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"math"
 	"os"
 	"os/exec"
@@ -105,7 +106,7 @@ func TestQwenSynthesizeRequestRunsNativeWorkerAndStreamsWAV(t *testing.T) {
 	q := newQwen3TTS("fake-qwen3-tts", model, 5*time.Second, fakeQwenCommand(&gotArgs, ""))
 	q.alive.Store(true)
 
-	result, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{
+	result, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{
 		Text:       "hello native worker",
 		Voice:      "default",
 		SampleRate: qwen3TTSSampleRate,
@@ -154,11 +155,11 @@ func TestQwenSynthesizeRequestRejectsUnsupportedControls(t *testing.T) {
 
 	tests := []struct {
 		name string
-		req  SynthesisRequest
+		req  tts.SynthesisRequest
 		want string
 	}{
-		{name: "voice", req: SynthesisRequest{Text: "hi", Voice: "af_heart"}, want: "voice"},
-		{name: "speed", req: SynthesisRequest{Text: "hi", Speed: 1.1}, want: "speech speed"},
+		{name: "voice", req: tts.SynthesisRequest{Text: "hi", Voice: "af_heart"}, want: "voice"},
+		{name: "speed", req: tts.SynthesisRequest{Text: "hi", Speed: 1.1}, want: "speech speed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -176,8 +177,8 @@ func TestManagedQwenMapsPresetVoiceControlsToWorker(t *testing.T) {
 	q.workerScript = "/managed/qwen_worker.py"
 	q.alive.Store(true)
 
-	req := SynthesisRequest{
-		Text: "hello managed voice", Mode: VoiceModeCustomVoice,
+	req := tts.SynthesisRequest{
+		Text: "hello managed voice", Mode: tts.VoiceModeCustomVoice,
 		Voice: "Ryan", Language: "English",
 	}
 	textPath := filepath.Join(t.TempDir(), "text.txt")
@@ -203,7 +204,7 @@ func TestQwenSynthesizeRequestPropagatesWorkerFailure(t *testing.T) {
 	q := newQwen3TTS("fake-qwen3-tts", t.TempDir(), time.Second, fakeQwenCommand(nil, "fail"))
 	q.alive.Store(true)
 
-	result, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{Text: "fail"})
+	result, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: "fail"})
 	if err != nil {
 		t.Fatalf("SynthesizeRequest() error = %v", err)
 	}
@@ -212,7 +213,7 @@ func TestQwenSynthesizeRequestPropagatesWorkerFailure(t *testing.T) {
 	if result.Stream.Err() == nil || !strings.Contains(result.Stream.Err().Error(), "deterministic fake worker failure") {
 		t.Fatalf("stream error = %v, want worker stderr", result.Stream.Err())
 	}
-	if !IsProviderErrorKind(result.Stream.Err(), ProviderErrorWorker) || !errors.Is(result.Stream.Err(), ErrWorkerFailure) {
+	if !tts.IsProviderErrorKind(result.Stream.Err(), tts.ProviderErrorWorker) || !errors.Is(result.Stream.Err(), tts.ErrWorkerFailure) {
 		t.Fatalf("stream error = %v, want worker failure classification", result.Stream.Err())
 	}
 }
@@ -222,13 +223,13 @@ func TestQwenSynthesizeRequestRejectsMalformedAndEmptyWAV(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			q := newQwen3TTS("fake-qwen3-tts", t.TempDir(), 5*time.Second, fakeQwenCommand(nil, mode))
 			q.alive.Store(true)
-			result, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{Text: mode})
+			result, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: mode})
 			if err != nil {
 				t.Fatalf("SynthesizeRequest() error = %v", err)
 			}
 			for range result.Stream.Frames() {
 			}
-			if err := result.Stream.Err(); err == nil || !IsProviderErrorKind(err, ProviderErrorMalformed) || !errors.Is(err, ErrMalformedOutput) {
+			if err := result.Stream.Err(); err == nil || !tts.IsProviderErrorKind(err, tts.ProviderErrorMalformed) || !errors.Is(err, tts.ErrMalformedOutput) {
 				t.Fatalf("stream error = %v, want malformed-output classification", err)
 			}
 		})
@@ -262,7 +263,7 @@ func TestQwenFirstAudioGraceScalesWithSegmentLength(t *testing.T) {
 // matters here: the grace asks whether a session exists, never what it does.
 type fakeSpeechSession struct{}
 
-func (fakeSpeechSession) SynthesizeToStream(context.Context, SynthesisRequest, *audio.PCMStream) error {
+func (fakeSpeechSession) SynthesizeToStream(context.Context, tts.SynthesisRequest, *audio.PCMStream) error {
 	return nil
 }
 func (fakeSpeechSession) CancelActive() error { return nil }
@@ -435,7 +436,7 @@ func TestQwenFirstAudioGraceInterfaces(t *testing.T) {
 	qn := newQwen3TTS("qwen3-tts-worker", t.TempDir(), 0, nil)
 	qn.native = true
 	qn.speechRef.Store(liveSession(t))
-	if got, want := qn.FirstAudioGrace(), qn.FirstAudioGraceForChars(typicalSegmentChars); got != want {
+	if got, want := qn.FirstAudioGrace(), qn.FirstAudioGraceForChars(tts.TypicalSegmentChars); got != want {
 		t.Errorf("FirstAudioGrace() = %v, want the typical-segment budget %v", got, want)
 	}
 
@@ -446,8 +447,8 @@ func TestQwenFirstAudioGraceInterfaces(t *testing.T) {
 	}
 
 	// Compile-time checks: pipeline stallTimeout type-asserts both.
-	var _ FirstAudioGracer = (*Qwen3TTS)(nil)
-	var _ SegmentGracer = (*Qwen3TTS)(nil)
+	var _ tts.FirstAudioGracer = (*Qwen3TTS)(nil)
+	var _ tts.SegmentGracer = (*Qwen3TTS)(nil)
 }
 
 func TestNativeSoftCancelKeepsSession(t *testing.T) {
@@ -479,7 +480,7 @@ done
 		t.Fatalf("SoftCancel: %v", err)
 	}
 	ctx := context.Background()
-	result, err := q.SynthesizeRequest(ctx, SynthesisRequest{Text: "after cancel"})
+	result, err := q.SynthesizeRequest(ctx, tts.SynthesisRequest{Text: "after cancel"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +522,7 @@ done
 	defer q.Delete()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	result, err := q.SynthesizeRequest(ctx, SynthesisRequest{Text: "cancel me"})
+	result, err := q.SynthesizeRequest(ctx, tts.SynthesisRequest{Text: "cancel me"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +576,7 @@ func TestQwenSynthesizeRequestTimesOutAndCancelsWorker(t *testing.T) {
 	q := newQwen3TTS("fake-qwen3-tts", t.TempDir(), 25*time.Millisecond, fakeQwenCommand(nil, "sleep"))
 	q.alive.Store(true)
 
-	result, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{Text: "slow"})
+	result, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: "slow"})
 	if err != nil {
 		t.Fatalf("SynthesizeRequest() error = %v", err)
 	}
@@ -591,7 +592,7 @@ func TestQwenSynthesizeRequestHonorsCallerCancellation(t *testing.T) {
 	q.alive.Store(true)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	result, err := q.SynthesizeRequest(ctx, SynthesisRequest{Text: "cancel"})
+	result, err := q.SynthesizeRequest(ctx, tts.SynthesisRequest{Text: "cancel"})
 	if err != nil {
 		t.Fatalf("SynthesizeRequest() error = %v", err)
 	}
@@ -608,7 +609,7 @@ func TestQwenSynthesizeRequestRejectsUnsupportedSampleRate(t *testing.T) {
 	q := newQwen3TTS("fake-qwen3-tts", t.TempDir(), time.Second, nil)
 	q.alive.Store(true)
 
-	_, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{Text: "hi", SampleRate: 16000})
+	_, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: "hi", SampleRate: 16000})
 	if err == nil || !strings.Contains(err.Error(), "cannot resample") {
 		t.Fatalf("SynthesizeRequest() error = %v, want sample-rate rejection", err)
 	}
@@ -619,13 +620,13 @@ func TestQwenSynthesizeRequestValidatesReferenceBeforeWorker(t *testing.T) {
 	q := newQwen3TTS("fake-qwen3-tts", t.TempDir(), time.Second, fakeQwenCommand(&gotArgs, ""))
 	q.alive.Store(true)
 
-	_, err := q.SynthesizeRequest(context.Background(), SynthesisRequest{
+	_, err := q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{
 		Text:                "hello",
-		Mode:                VoiceModeApprovedClone,
+		Mode:                tts.VoiceModeApprovedClone,
 		ReferenceAudio:      filepath.Join(t.TempDir(), "missing.wav"),
 		ReferenceTranscript: "hello",
 	})
-	if err == nil || !IsProviderErrorKind(err, ProviderErrorInput) || !strings.Contains(err.Error(), "voice mode") {
+	if err == nil || !tts.IsProviderErrorKind(err, tts.ProviderErrorInput) || !strings.Contains(err.Error(), "voice mode") {
 		t.Fatalf("unsupported reference mode error = %v, want actionable input error before reference decode", err)
 	}
 	if len(gotArgs) != 0 {
@@ -636,7 +637,7 @@ func TestQwenSynthesizeRequestValidatesReferenceBeforeWorker(t *testing.T) {
 	if err := audio.WriteWAVFloat32(ref, qwen3TTSSampleRate, make([]float32, qwen3TTSSampleRate)); err != nil {
 		t.Fatal(err)
 	}
-	_, err = q.SynthesizeRequest(context.Background(), SynthesisRequest{Text: "hello", ReferenceAudio: ref})
+	_, err = q.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: "hello", ReferenceAudio: ref})
 	if err == nil || !strings.Contains(err.Error(), "reference voice") {
 		t.Fatalf("unsupported reference error = %v, want early unsupported-control rejection", err)
 	}
@@ -675,5 +676,5 @@ func fakeQwenCommand(gotArgs *[]string, mode string) qwenCommand {
 	}
 }
 
-var _ Provider = (*Qwen3TTS)(nil)
-var _ RequestProvider = (*Qwen3TTS)(nil)
+var _ tts.Provider = (*Qwen3TTS)(nil)
+var _ tts.RequestProvider = (*Qwen3TTS)(nil)

@@ -1,6 +1,7 @@
-package tts
+package qwen
 
 import (
+	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"strings"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 // FirstAudioGrace reports the stall budget for a segment of unstated length.
 // See FirstAudioGraceForChars, which is what the pipeline calls when it knows.
 func (q *Qwen3TTS) FirstAudioGrace() time.Duration {
-	return q.FirstAudioGraceForChars(typicalSegmentChars)
+	return q.FirstAudioGraceForChars(tts.TypicalSegmentChars)
 }
 
 // FirstAudioGraceForChars reports how long the pipeline's playback-stall
@@ -46,10 +47,10 @@ func (q *Qwen3TTS) FirstAudioGraceForChars(chars int) time.Duration {
 	}
 
 	if chars <= 0 {
-		chars = typicalSegmentChars
+		chars = tts.TypicalSegmentChars
 	}
 	ceiling := q.rtfCeiling()
-	expectedAudio := float64(chars) / speechCharsPerSecond
+	expectedAudio := float64(chars) / tts.SpeechCharsPerSecond
 	grace := time.Duration(ceiling * expectedAudio * float64(time.Second))
 
 	// The cold-ready allowance is paid when a worker has to come up, not on
