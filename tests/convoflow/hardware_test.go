@@ -85,3 +85,30 @@ func TestAcousticTranscriptNumberFormattingPreservesMeaning(t *testing.T) {
 		}
 	}
 }
+
+// An opt-in offline check verifies that the saved audio reproduces the gate's
+// score. It never opens a device or starts an inference provider.
+func TestAcousticSavedCaptureReproducesScore(t *testing.T) {
+	dir := os.Getenv("OBEY_VOICE_ACOUSTIC_CAPTURE")
+	if dir == "" {
+		t.Skip("set OBEY_VOICE_ACOUSTIC_CAPTURE to an acoustic artifact directory")
+	}
+	source, err := audio.NewFixtureSourceFromWAV(filepath.Join(dir, "stimulus.wav"), audio.ChunkSize, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	var reference []float32
+	for chunk := source.Read(); len(chunk) > 0; chunk = source.Read() {
+		reference = append(reference, chunk...)
+	}
+	mic, rate, err := audio.ReadWAVFloat32(filepath.Join(dir, "mic-in.wav"))
+	if err != nil || rate != audio.SampleRate {
+		t.Fatalf("microphone rate=%d err=%v", rate, err)
+	}
+	score := acousticEnvelopeCorrelation(reference, mic, audio.SampleRate/100, 200)
+	t.Logf("saved microphone envelope correlation %.6f", score)
+	if score < acousticMinEnvelopeCorrelation {
+		t.Fatalf("saved capture confidence %.6f below %.2f", score, acousticMinEnvelopeCorrelation)
+	}
+}

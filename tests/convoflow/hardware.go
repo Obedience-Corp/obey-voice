@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/internal/aecprobe"
@@ -151,10 +152,12 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 			capturedMu.Unlock()
 		}
 	}()
-	defer func() {
+	finishCapture := sync.OnceFunc(func() {
+		capture.Stop()
 		capture.Unsubscribe(streamID)
 		<-collectorDone
-	}()
+	})
+	defer finishCapture()
 	if err := capture.Start(ctx); err != nil {
 		return fmt.Errorf("acoustic capture: %w", err)
 	}
@@ -179,6 +182,17 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	playErr := playAcousticStimulus(ctx, player, samples, rate)
 	turn := <-turnDone
 	transcript = strings.TrimSpace(turn.text)
+	// Playback completion precedes arrival of the final acoustic/device tail.
+	// Freeze the collector before scoring so metrics and retained WAV describe
+	// exactly the same samples, including the reference recording's tail.
+	tail := time.NewTimer(400 * time.Millisecond)
+	defer tail.Stop()
+	select {
+	case <-tail.C:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	finishCapture()
 	capturedMu.Lock()
 	mic := append([]float32(nil), captured...)
 	capturedMu.Unlock()
