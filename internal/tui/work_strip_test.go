@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/charmbracelet/lipgloss"
@@ -25,8 +27,9 @@ func TestWorkStripRowsLayoutBoundaries(t *testing.T) {
 				m.vim.enabled = vim
 				m.input.SetValue("draft")
 				m.handleEvent(events.WorkStateChanged{Snapshot: stripSnapshot()})
-				if m.workStripRows() != tc.rows {
-					t.Fatalf("rows=%d want%d", m.workStripRows(), tc.rows)
+				now := time.Now()
+				if m.workStripRows(now) != tc.rows {
+					t.Fatalf("rows=%d want%d", m.workStripRows(now), tc.rows)
 				}
 				strip := m.renderWorkStrip(time.Now())
 				if strings.Count(strip, "\n") != tc.rows {
@@ -60,7 +63,7 @@ func TestSeenResultRemainsUncommunicatedAndDuplicateSafe(t *testing.T) {
 	}
 	m.workDisplay.seen["forecast"] = true
 	after := m.workCounts()
-	if after.unseen != 0 || after.updates != 1 || after.held != 1 || m.workStripRows() == 0 {
+	if after.unseen != 0 || after.updates != 1 || after.held != 1 || m.workStripRows(time.Now()) == 0 {
 		t.Fatalf("seen result lost obligation: %+v", after)
 	}
 	if len(m.workResultItems) != 1 {
@@ -109,12 +112,61 @@ func TestWorkStripCollapseAndNoFalseResponding(t *testing.T) {
 	snap.Revision++
 	m.observeWorkDisplay(snap)
 	m.workDisplay.seen[result.Outcome.ResultID] = true
-	if m.workStripRows() == 0 {
+	if m.workStripRows(time.Now()) == 0 {
 		t.Fatal("terminal summary collapsed immediately")
 	}
 	m.workDisplay.terminalUntil = time.Now().Add(-time.Second)
-	if m.workStripRows() != 0 || m.renderWorkStrip(time.Now()) != "" {
+	if m.workStripRows(time.Now()) != 0 || m.renderWorkStrip(time.Now()) != "" {
 		t.Fatal("completed seen strip did not collapse")
+	}
+}
+
+func TestWorkStripExpiryUpdatesThroughAppAndKeepsStaleScopeIgnored(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	snap := stripSnapshot()
+	snap.Pending = nil
+	snap.Jobs = nil
+	result := stripSnapshot().Pending[0]
+	result.State = work.Communicated
+	result.AnnouncementState = work.AnnouncementCommunicated
+	snap.Communicated = []work.ResultView{result}
+	m.observeWorkDisplay(snap)
+	m.workDisplay.seen[result.Outcome.ResultID] = true
+	scope := snap.Scope
+	deadline := time.Now().Add(-time.Second)
+	m.workDisplay.terminalUntil = deadline
+	m.reflowAt(deadline.Add(-time.Second))
+	before := m.viewport.Height
+
+	app := newApp(&config.Config{AgentName: "Samantha"}, nil, nil)
+	app.screen = screenConversation
+	app.width, app.height = 100, 24
+	app.conversation = m
+	if got := stripANSI(app.View()); !strings.Contains(got, "Work ") {
+		t.Fatalf("reserved strip disappeared before expiry update: %q", got)
+	}
+
+	appModel, _ := app.Update(workStripExpiryMsg{
+		scope:    scope,
+		deadline: deadline,
+	})
+	app = appModel.(App)
+	if app.conversation.viewport.Height <= before {
+		t.Fatalf("viewport did not reflow after strip expiry: before=%d after=%d", before, app.conversation.viewport.Height)
+	}
+	if got := stripANSI(app.View()); strings.Contains(got, "Work ") {
+		t.Fatalf("expired strip still rendered: %q", got)
+	}
+
+	stale := app
+	stale.conversation.workDisplay.terminalUntil = time.Now().Add(time.Hour)
+	staleModel, _ := stale.Update(workStripExpiryMsg{
+		scope:    work.WorkScope{SessionID: "old", RuntimeEpoch: "old", ConversationEpoch: "old"},
+		deadline: deadline,
+	})
+	stale = staleModel.(App)
+	if got := stripANSI(stale.View()); !strings.Contains(got, "Work ") {
+		t.Fatalf("stale expiry changed current layout: %q", got)
 	}
 }
 
@@ -129,5 +181,33 @@ func TestHiddenConversationDoesNotMarkResultSeen(t *testing.T) {
 	m.markVisibleWorkResults()
 	if !m.workDisplay.seen["forecast"] {
 		t.Fatal("visible conversation result not seen")
+	}
+}
+
+func TestWorkStripExpirySchedulesOnceAndCancelsWithConversation(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m.deps.ctx = ctx
+	snap := stripSnapshot()
+	r := snap.Pending[0]
+	r.State = work.Communicated
+	snap.Pending = nil
+	snap.Communicated = []work.ResultView{r}
+	next, _ := m.Update(busEventMsg{event: events.WorkStateChanged{Snapshot: snap}})
+	if next.workStripExpiryDeadline.IsZero() || next.workStripExpiryScope != snap.Scope {
+		t.Fatal("deadline scheduling not retained in Update state")
+	}
+	if next.scheduleWorkStripExpiry() != nil {
+		t.Fatal("duplicate expiry timer")
+	}
+	next.workDisplay.terminalUntil = next.workDisplay.terminalUntil.Add(time.Second)
+	expiry := next.scheduleWorkStripExpiry()
+	if expiry == nil {
+		t.Fatal("new completion did not schedule expiry")
+	}
+	cancel()
+	if got := expiry(); got != nil {
+		t.Fatalf("retired timer emitted %T", got)
 	}
 }

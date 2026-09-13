@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -80,5 +81,34 @@ func TestWorkResultActionSpeakResumesWithoutRunningWorkerAndDismissRemoves(t *te
 	}
 	if err := p.WorkResultAction(work.WorkScope{SessionID: scope.SessionID, RuntimeEpoch: "stale", ConversationEpoch: scope.ConversationEpoch}, resultID, "speak"); !errors.Is(err, work.ErrStaleScope) {
 		t.Fatalf("stale action error=%v", err)
+	}
+}
+
+func TestWorkResultActionDismissRejectsCommunicatedResult(t *testing.T) {
+	p, c, scope, resultID := actionPipeline(t, true)
+	permit, err := c.AcquireCapturePermit(scope, "owner", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := c.Claim(scope, "attempt", "turn", []work.ResultRef{{
+		Scope: scope, JobID: "action-job", ResultID: resultID,
+		Revision: c.Pending(scope)[0].Outcome.TerminalRevision,
+	}}, permit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.FinishAttempt(lease, []string{resultID}, work.DeliveryReceipt{
+		Scope: scope, AttemptID: lease.AttemptID, TurnID: lease.TurnID,
+		CaptureEpoch: lease.CaptureEpoch, Mode: "text", ResponseCommitted: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err = p.WorkResultAction(scope, resultID, "dismiss")
+	if err == nil || !strings.Contains(err.Error(), "already communicated") {
+		t.Fatalf("dismiss communicated error=%v", err)
+	}
+	if got := c.Snapshot(scope).Communicated; len(got) != 1 || got[0].Outcome.ResultID != resultID {
+		t.Fatalf("dismiss changed communicated history: %+v", got)
 	}
 }

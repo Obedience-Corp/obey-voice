@@ -40,6 +40,7 @@ func (c *Coordinator) Replay(scope WorkScope, resultID string) error {
 	v.State = Ready
 	v.AnnouncementState = AnnouncementPending
 	v.HoldReason = ""
+	v.LastAttempt = nil
 	v.DeliveryKey = JobKey{Scope: scope, JobID: jobID}
 	v.ReceivedRevision = c.revision + 1
 	c.results[resultID] = &result{view: v}

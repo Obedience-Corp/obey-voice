@@ -51,8 +51,39 @@ func TestWorkCommandsRemainLocalAndKeepDetailFocus(t *testing.T) {
 		}
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 		if m.activityFocused {
-			t.Fatal("second escape shouldreturnChat")
+			t.Fatal("second escape should return Chat")
 		}
+		if m.workActivity {
+			t.Fatal("second escape left the work inspector sticky")
+		}
+	}
+}
+
+func TestWorkInspectorExitRestoresTimelineForToggleAndClear(t *testing.T) {
+	for _, name := range []string{"ctrl+t", "/activity", "/clear"} {
+		t.Run(name, func(t *testing.T) {
+			m := sizedConversation(t, 100, 24)
+			m.handleEvent(events.WorkStateChanged{Snapshot: stripSnapshot()})
+			m.runWorkCommand([]string{"all"})
+			if !m.workActivity || !m.activityFocused {
+				t.Fatal("work inspection did not take focus")
+			}
+
+			switch name {
+			case "ctrl+t":
+				m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+			case "/activity":
+				m.executeSlashCommand(slashCommand{id: commandActivity}, nil)
+			case "/clear":
+				m.executeSlashCommand(slashCommand{id: commandClear}, nil)
+			}
+			if m.workActivity {
+				t.Fatalf("%s left work inspector active", name)
+			}
+			if name != "/clear" && m.activityViewport.TotalLineCount() == 0 {
+				t.Fatalf("%s did not restore the activity timeline", name)
+			}
+		})
 	}
 }
 func TestWorkCommandShowsOriginAndCanonicalDisposition(t *testing.T) {

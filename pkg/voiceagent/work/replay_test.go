@@ -46,6 +46,9 @@ func TestReplayReAdmitsCommunicatedResultWithoutProviderRun(t *testing.T) {
 	if got := c.Pending(scope)[0].Outcome; !samePersistedOutcome(got, old.Outcome) {
 		t.Fatalf("replay mutated immutable outcome: got=%+v want=%+v", got, old.Outcome)
 	}
+	if got := c.Pending(scope)[0].LastAttempt; got != nil {
+		t.Fatalf("replay retained stale delivery evidence: %+v", got)
+	}
 	if err := c.Replay(scope, old.Outcome.ResultID); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate replay error=%v", err)
 	}

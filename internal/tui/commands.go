@@ -178,6 +178,9 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		m.showCommandHelp(args)
 		return m.resumeListening()
 	case commandClear:
+		m.workActivity = false
+		m.workFilter = ""
+		m.refreshActivity()
 		if m.deps.clearHistory != nil {
 			m.deps.clearHistory()
 		}
@@ -198,6 +201,10 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		m.toggleOutputMuted()
 		return m.resumeListening()
 	case commandActivity:
+		if m.workActivity {
+			m.workActivity = false
+			m.refreshActivity()
+		}
 		m.activityFocused = !m.activityFocused
 		return m.resumeListening()
 	case commandThink:

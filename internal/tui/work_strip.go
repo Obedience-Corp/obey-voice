@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -17,6 +19,11 @@ type workDisplayState struct {
 	observedAt    map[string]time.Time
 	terminalUntil time.Time
 	lastTerminal  string
+}
+
+type workStripExpiryMsg struct {
+	scope    work.WorkScope
+	deadline time.Time
 }
 
 func (m *conversationModel) observeWorkDisplay(s work.Snapshot) {
@@ -104,9 +111,9 @@ func (m conversationModel) workCounts() workCounts {
 	}
 	return c
 }
-func (m conversationModel) workStripRows() int {
+func (m conversationModel) workStripRows(now time.Time) int {
 	c := m.workCounts()
-	if c.running+c.queued+c.updates+c.unseen == 0 && !time.Now().Before(m.workDisplay.terminalUntil) {
+	if c.running+c.queued+c.updates+c.unseen == 0 && !now.Before(m.workDisplay.terminalUntil) {
 		return 0
 	}
 	if m.width >= 80 && m.height >= 20 {
@@ -117,8 +124,39 @@ func (m conversationModel) workStripRows() int {
 	}
 	return 1
 }
+
+func (m *conversationModel) scheduleWorkStripExpiry() tea.Cmd {
+	deadline := m.workDisplay.terminalUntil
+	scope := m.workDisplay.snapshot.Scope
+	if deadline.IsZero() {
+		return nil
+	}
+	if deadline.Equal(m.workStripExpiryDeadline) && scope == m.workStripExpiryScope {
+		return nil
+	}
+	m.workStripExpiryDeadline = deadline
+	m.workStripExpiryScope = scope
+	ctx := m.deps.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return func() tea.Msg {
+		delay := time.Until(deadline)
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				return nil
+			}
+		}
+		return workStripExpiryMsg{scope: scope, deadline: deadline}
+	}
+}
+
 func (m conversationModel) renderWorkStrip(now time.Time) string {
-	rows := m.workStripRows()
+	rows := m.workStripRows(now)
 	if rows == 0 {
 		return ""
 	}
