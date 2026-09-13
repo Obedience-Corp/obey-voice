@@ -128,9 +128,12 @@ This package is the one place where a file boundary can hide a thread contract, 
 some groupings are deliberate and should not be split further. `player_callback.go`
 holds the callback thread together with the only two functions that take `p.mu` from
 it. `playbackSegment` stays whole because its `…Locked` family is only correct read
-beside the callers that hold `s.mu`, and its three writers run on three threads:
-`writeTo` on the callback, `append`/`finishInput` on the pump, `interrupt` on the
-caller. `startPlaybackDevice` stays beside `ensureDevice` because `Device.Start` can
+beside the callers that hold `s.mu`, and its writers span threads: `writeTo` on the
+callback, `append`/`finishInput` on the pump, and `interrupt` on *both* — the caller
+through `PlayStream`/`Stop`, and the callback itself when `PlaybackAttempt.Write`
+fails on an invalidated attempt. Do not record `interrupt` as caller-only; that the
+callback can interrupt a segment it is mid-write on is the sharpest reason these
+declarations belong in one file. `startPlaybackDevice` stays beside `ensureDevice` because `Device.Start` can
 invoke `onData` synchronously, so holding `p.mu` across it deadlocks.
 
 ## Meeting log
