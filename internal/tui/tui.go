@@ -975,8 +975,9 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, next
 
 	case talkHotkeyEventMsg:
-		// Browsing personas pauses voice input. Keep draining the global key
-		// without allowing a press to reopen the mic behind the manager.
+		// Browsing personas or the workers manager pauses voice input. Keep
+		// draining the global key without allowing a press to reopen the mic
+		// behind either screen.
 		if (a.screen == screenPersonas || a.screen == screenWorkers) && (msg.ev.Kind == talkhotkey.KindDown || msg.ev.Kind == talkhotkey.KindUp) {
 			return a, a.rearmTalk(msg)
 		}

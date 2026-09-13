@@ -225,8 +225,9 @@ func (m *conversationModel) noteJobTool(id, name string) {
 	m.refreshJobChip()
 }
 
-// refreshJobChip keeps prose in the transcript and /workers details, leaving
-// the footer for bounded counts. Live runtime snapshots include managed work.
+// refreshJobChip counts only the jobs this conversation tracks, and must not
+// reach for managed work: View prefers deps.workersSummary when it is set, and
+// that is the source which sees the runtime's managed jobs.
 func (m *conversationModel) refreshJobChip() {
 	running, queued := 0, 0
 	for _, v := range m.jobs {
