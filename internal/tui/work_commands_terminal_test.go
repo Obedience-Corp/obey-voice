@@ -54,14 +54,14 @@ func TestWorkCommandsTerminalShowsStripHeldResultAndPreservesDraft(t *testing.T)
 		return strings.Contains(v, "Work · s · revision") && strings.Contains(v, "Origin persona: samantha")
 	})
 	sendTerminalText(p, "draft text")
-	p.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	p.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	await("Chat with preserved draft", func(v string) bool {
-		return strings.Contains(v, "draft text") && strings.Contains(v, "Background result (held)")
-	})
 	p.Send(tea.KeyMsg{Type: tea.KeyCtrlT})
 	await("restored activity timeline", func(v string) bool {
 		return strings.Contains(v, "Activity") && !strings.Contains(v, "Work · s · revision")
+	})
+	p.Send(tea.KeyMsg{Type: tea.KeyCtrlT})
+	p.Send(tea.KeyMsg{Type: tea.KeyEsc})
+	await("Chat after later Activity Escape", func(v string) bool {
+		return strings.Contains(v, "draft text") && strings.Contains(v, "Background result (held)")
 	})
 	p.Quit()
 	err := <-done
@@ -69,7 +69,7 @@ func TestWorkCommandsTerminalShowsStripHeldResultAndPreservesDraft(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.model.input.Value() != "draft text" || !h.model.activityFocused || h.model.workActivity || h.model.workFilter != "" {
+	if h.model.input.Value() != "draft text" || h.model.activityFocused || h.model.workActivity || h.model.workFilter != "" {
 		t.Fatalf("lost draft/focus: draft=%q activity=%v filter=%q", h.model.input.Value(), h.model.activityFocused, h.model.workFilter)
 	}
 	terminal := stripANSI(output.String())

@@ -203,6 +203,7 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 	case commandActivity:
 		if m.workActivity {
 			m.workActivity = false
+			m.workFilter = ""
 			m.refreshActivity()
 		}
 		m.activityFocused = !m.activityFocused
