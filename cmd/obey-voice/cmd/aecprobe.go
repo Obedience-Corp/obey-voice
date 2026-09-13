@@ -5,6 +5,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"log"
 	"os"
 	"path/filepath"
@@ -87,7 +88,7 @@ func runAECProbe(ctx context.Context, out interface{ Write([]byte) (int, error) 
 	recorder := aecprobe.NewRecorder(frontend)
 	defer func() { _ = recorder.Close() }()
 
-	player := audio.NewPlayerWithDevice(cfg.OutputDevice)
+	player := playback.NewPlayerWithDevice(cfg.OutputDevice)
 	defer func() { _ = player.Close() }()
 	player.SetFrontend(recorder)
 
@@ -196,7 +197,7 @@ func runAECProbe(ctx context.Context, out interface{ Write([]byte) (int, error) 
 // playThrough pushes samples into the real playback path and waits for the
 // audio to finish. Writes run on their own goroutine because PCMStream's frame
 // channel is small and PlayStream is what drains it.
-func playThrough(ctx context.Context, player *audio.Player, samples []float32, rate int) error {
+func playThrough(ctx context.Context, player *playback.Player, samples []float32, rate int) error {
 	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(rate); err != nil {
 		return err

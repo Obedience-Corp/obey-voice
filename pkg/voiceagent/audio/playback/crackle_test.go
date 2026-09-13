@@ -1,7 +1,8 @@
-package audio
+package playback
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"testing"
 	"time"
@@ -207,7 +208,7 @@ func TestChunkBoundaryGlitchIsDetected(t *testing.T) {
 	)
 	src := synthSpeechLike(inRate, chunk*chunks)
 	// Whole-utterance resample is the production path and must stay clean.
-	good := resampleLinear(src, inRate, outRate)
+	good := audio.ResampleLinear(src, inRate, outRate)
 	if m := AnalyzeFloat32(good, CrackleThresholds{}); m.HasCrackle(CrackleThresholds{}) {
 		t.Fatalf("reference whole-utterance resample is unclean: %+v", m)
 	}
@@ -221,7 +222,7 @@ func TestChunkBoundaryGlitchIsDetected(t *testing.T) {
 		if end > len(src) {
 			end = len(src)
 		}
-		piece := resampleLinear(src[off:end], inRate, outRate)
+		piece := audio.ResampleLinear(src[off:end], inRate, outRate)
 		if len(bad) > 0 && len(piece) > 1 {
 			piece[0] = 1
 			piece[1] = -1
@@ -368,7 +369,7 @@ func TestPumpSegmentFullBufferPreventsCallbackCrackle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(24_000); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
 	}

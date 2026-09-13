@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,8 +73,8 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	var rawFrontend *rawCaptureFrontend
 	var mic []float32
 	var capture *audio.Capture
-	var stimulus *audio.Player
-	var response *audio.Player
+	var stimulus *playback.Player
+	var response *playback.Player
 	var micMu sync.Mutex
 	defer func() {
 		if runErr != nil {
@@ -115,7 +116,7 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	if p.Events == nil {
 		return errors.New("acoustic interruption: event bus unavailable")
 	}
-	real, ok := r.player.real.(*audio.Player)
+	real, ok := r.player.real.(*playback.Player)
 	if !ok {
 		return errors.New("acoustic interruption: physical response player required")
 	}
@@ -206,7 +207,7 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	if err := readyInput.wait(runCtx); err != nil {
 		return err
 	}
-	stimulus = audio.NewPlayerWithDevice(r.cfg.OutputDevice)
+	stimulus = playback.NewPlayerWithDevice(r.cfg.OutputDevice)
 	defer stimulus.Close()
 	if err := playAcousticStimulus(runCtx, stimulus, initial, initialRate); err != nil {
 		return err

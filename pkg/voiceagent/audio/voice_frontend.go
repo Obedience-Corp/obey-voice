@@ -12,7 +12,7 @@ const (
 	// misalignment, so the cap bounds how far out of alignment the canceller
 	// can drift if the playback and capture clocks disagree. Steady state is
 	// refs.delay (tens of ms); 2s is pure slack.
-	frontendMaxRefQueue = SampleRate * 2
+	FrontendMaxRefQueue = SampleRate * 2
 	// echoCancellerTaps must span the residual echo delay left after
 	// refs.delay removes the bulk device-buffer latency — room reflections,
 	// driver latency beyond the ring buffer, and error in the delay estimate.
@@ -66,7 +66,7 @@ func NewVoiceFrontend() *VoiceFrontend {
 		ns:  newNoiseSuppressor(initialNoiseFloor, noiseSuppressorTarget),
 		agc: newAutomaticGainControl(frontendTargetRMS, agcMinGain, agcMaxGain),
 		refs: sampleQueue{
-			capacity: frontendMaxRefQueue,
+			capacity: FrontendMaxRefQueue,
 		},
 	}
 }

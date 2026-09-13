@@ -1,7 +1,8 @@
-package audio
+package playback
 
 import (
 	"encoding/binary"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 )
 
@@ -33,7 +34,7 @@ func (p *Player) Volume() float64 {
 // ApplyEngineVolume sets gain on engines that support it. Unknown engines
 // are ignored so fakes and remote fanouts without a local speaker stay quiet
 // about a TUI slider they cannot honor.
-func ApplyEngineVolume(eng Engine, gain float64) {
+func ApplyEngineVolume(eng audio.Engine, gain float64) {
 	if vc, ok := eng.(interface{ SetVolume(float64) }); ok {
 		vc.SetVolume(gain)
 	}

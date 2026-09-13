@@ -1,6 +1,7 @@
-package audio
+package playback
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"sync"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestPlaybackAttemptFencesDeviceCallback(t *testing.T) {
 		t.Run(map[bool]string{true: "before_first", false: "during_playback"}[beforeFirst], func(t *testing.T) {
 			fence := &testPlaybackFence{done: make(chan struct{})}
 			segment := newPlaybackSegment()
-			segment.attempt = PlaybackAttempt{ID: "attempt-original", CaptureEpoch: 7, Fence: fence}
+			segment.attempt = audio.PlaybackAttempt{ID: "attempt-original", CaptureEpoch: 7, Fence: fence}
 			segment.append([]int16{4000, 4000, 4000, 4000})
 			segment.finishInput(nil)
 			player := NewPlayer()

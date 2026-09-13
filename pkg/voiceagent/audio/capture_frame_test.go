@@ -51,6 +51,20 @@ func TestCaptureReadFrameCancellation(t *testing.T) {
 	}
 }
 
+func TestCaptureResetClearsPartialFrame(t *testing.T) {
+	c := NewCapture()
+	c.buf.Write(make([]float32, ChunkSize/2))
+
+	c.Reset()
+
+	if got := c.buf.Available(); got != 0 {
+		t.Fatalf("buffered samples after Reset = %d, want 0", got)
+	}
+	if _, err := c.ReadFrame(context.Background()); !errors.Is(err, ErrNoFrameReady) {
+		t.Fatalf("ReadFrame after partial reset = %v, want ErrNoFrameReady", err)
+	}
+}
+
 func TestCaptureCloseIsSafeWhenNotRunning(t *testing.T) {
 	c := NewCapture()
 	if err := c.Close(); err != nil {

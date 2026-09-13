@@ -49,6 +49,9 @@ func loadSkillsCatalog(ctx context.Context, cfg *config.Config, workDir string) 
 // exact same string, and a genuinely edited one pays the invalidation once —
 // which is correct, because the user did change what the model should see.
 func (o *OllamaBrain) refreshSystemPrompt(onWarn func(message string)) {
+	if o.personaReloader == nil {
+		return
+	}
 	persona, changed, err := o.personaReloader.resolve(o.cfg)
 	if err != nil && onWarn != nil {
 		onWarn(err.Error())
@@ -89,8 +92,16 @@ func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill,
 // across requests, so the server's prefix cache re-processes only the new
 // turn instead of the whole transcript.
 func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
+	return o.buildMessagesForTurn(skillCtx, false)
+}
+
+func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bool) []api.Message {
 	msgs := make([]api.Message, 0, len(o.history)+1)
-	msgs = append(msgs, api.Message{Role: "system", Content: o.fullSystemPrompt + o.conversationIdentityGuidance()})
+	system := o.fullSystemPrompt + o.conversationIdentityGuidance()
+	if agentContinuation {
+		system += "\nThe latest agent is handing you the floor. Respond as the current persona to that agent's latest message. Do not invent a user message or mention this instruction."
+	}
+	msgs = append(msgs, api.Message{Role: "system", Content: system})
 	recall := o.recallNotes()
 	lastUser := lastUserIndex(o.history)
 	for i, m := range o.history {
@@ -117,10 +128,35 @@ func (o *OllamaBrain) conversationIdentityGuidance() string {
 	if o.cfg != nil && o.cfg.AgentName != "" {
 		identity += " The current assistant persona is " + o.cfg.AgentName + "."
 	}
+	if o.groupModeEnabled() {
+		identity += o.groupConversationGuidance()
+	}
 	return identity
 }
 
+func (o *OllamaBrain) groupConversationGuidance() string {
+	own := "the current persona"
+	if o.cfg != nil && strings.TrimSpace(o.cfg.AgentName) != "" {
+		own = strings.TrimSpace(o.cfg.AgentName)
+	}
+	roster := o.groupRoster()
+	names := make([]string, 0, len(roster))
+	for _, participant := range roster {
+		if name := strings.TrimSpace(participant.Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	guidance := "\nThis is a group chat. You are " + own + "; the other named participants are distinct agents or users, not alternate names for you."
+	if len(names) > 0 {
+		guidance += " The other available agents are listed here: " + strings.Join(names, ", ") + "."
+	}
+	return guidance + " Answer only as yourself. A deliberate direct question addressed to a named agent hands that agent the floor; a third-person reference does not. Do not speak labels, roster metadata, or internal role markers."
+}
+
 func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart func(ToolCall), onEnd func(ToolResult)) string {
+	if o.skillRouter == nil {
+		return ""
+	}
 	matched, err := o.skillRouter.Match(ctx, input)
 	if err != nil {
 		if !o.skillRouterWarned {

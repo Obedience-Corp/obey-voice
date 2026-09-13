@@ -24,6 +24,7 @@ import (
 type selectorTestBrain struct {
 	mu         sync.Mutex
 	history    []brain.Turn
+	working    []brain.Turn
 	imports    [][]brain.Turn
 	promptHash string
 	thinkCalls int
@@ -33,7 +34,7 @@ type selectorTestBrain struct {
 }
 
 func newSelectorTestBrain(promptHash string, turns []brain.Turn) *selectorTestBrain {
-	return &selectorTestBrain{promptHash: promptHash, history: cloneTestTurns(turns), closed: make(chan struct{})}
+	return &selectorTestBrain{promptHash: promptHash, history: cloneTestTurns(turns), working: cloneTestTurns(turns), closed: make(chan struct{})}
 }
 
 func (b *selectorTestBrain) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
@@ -74,7 +75,29 @@ func (b *selectorTestBrain) ImportHistory(turns []brain.Turn) error {
 		return b.importErr
 	}
 	b.history = cloneTestTurns(turns)
+	b.working = cloneTestTurns(turns)
 	b.imports = append(b.imports, cloneTestTurns(turns))
+	return nil
+}
+
+func (b *selectorTestBrain) ContinuitySnapshot() brain.ContinuitySnapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return brain.ContinuitySnapshot{
+		Canonical: cloneTestTurns(b.history),
+		Working:   cloneTestTurns(b.working),
+	}
+}
+
+func (b *selectorTestBrain) ImportContinuity(snapshot brain.ContinuitySnapshot) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.importErr != nil {
+		return b.importErr
+	}
+	b.history = cloneTestTurns(snapshot.Canonical)
+	b.working = cloneTestTurns(snapshot.Working)
+	b.imports = append(b.imports, cloneTestTurns(snapshot.Working))
 	return nil
 }
 

@@ -1,8 +1,9 @@
-package audio
+package playback
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,10 +53,10 @@ func TestHardwarePlayStreamNoSoftwareCrackle(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if err := SetDebugAudioDir(root); err != nil {
+	if err := audio.SetDebugAudioDir(root); err != nil {
 		t.Fatalf("SetDebugAudioDir: %v", err)
 	}
-	t.Cleanup(func() { _ = SetDebugAudioDir("") })
+	t.Cleanup(func() { _ = audio.SetDebugAudioDir("") })
 
 	player := NewPlayer()
 	t.Cleanup(func() { _ = player.Close() })
@@ -70,7 +71,7 @@ func TestHardwarePlayStreamNoSoftwareCrackle(t *testing.T) {
 	)
 	src := synthSpeechLike(inRate, inRate*seconds)
 
-	stream := NewPCMStream(ctx)
+	stream := audio.NewPCMStream(ctx)
 	if err := stream.SetSampleRate(inRate); err != nil {
 		t.Fatalf("SetSampleRate: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestHardwarePlayStreamNoSoftwareCrackle(t *testing.T) {
 	}
 	t.Logf("debug capture device wav: %s", deviceWAV)
 
-	samples, rate, err := ReadWAVFloat32(deviceWAV)
+	samples, rate, err := audio.ReadWAVFloat32(deviceWAV)
 	if err != nil {
 		t.Fatalf("ReadWAVFloat32(%s): %v", deviceWAV, err)
 	}

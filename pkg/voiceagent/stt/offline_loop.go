@@ -70,6 +70,24 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	// when the session is resolved (final transcript, timeout, or failure). When
 	// final is false (mid-stream, too short, or empty), it returns to listening.
 	finalize := func(final bool) bool {
+		// A VAD segment is not sufficient admission on this offline path:
+		// Silero can emit a segment for stationary noise, while noiseGate has
+		// rejected every frame as non-voice. Do not let the RMS fallback below
+		// turn that segment into a Parakeet transcript.
+		if !track.detected {
+			for {
+				if _, ok := deps.seg.NextSegment(); !ok {
+					break
+				}
+			}
+			if final {
+				sendEvent(ctx, events, Timeout{})
+				return true
+			}
+			track.reset()
+			return !emitPhase("listening")
+		}
+
 		if !emitPhase("transcribing") {
 			return true
 		}

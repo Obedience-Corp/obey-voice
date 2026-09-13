@@ -1,6 +1,10 @@
-package audio
+package playback
 
-import "math"
+import (
+	"math"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+)
 
 // streamResampler performs multi-callback linear resampling while preserving
 // fractional phase across calls. Stateless per-callback resample drifts (e.g.
@@ -23,10 +27,10 @@ type streamResampler struct {
 // Configure sets rates and resets stream state when either rate changes.
 func (r *streamResampler) Configure(srcRate, dstRate int) {
 	if srcRate <= 0 {
-		srcRate = SampleRate
+		srcRate = audio.SampleRate
 	}
 	if dstRate <= 0 {
-		dstRate = SampleRate
+		dstRate = audio.SampleRate
 	}
 	if r.srcRate == srcRate && r.dstRate == dstRate {
 		return
@@ -44,7 +48,7 @@ func (r *streamResampler) Resample(in, out []float32) int {
 		return 0
 	}
 	if r.srcRate <= 0 || r.dstRate <= 0 {
-		r.Configure(SampleRate, SampleRate)
+		r.Configure(audio.SampleRate, audio.SampleRate)
 	}
 	if r.srcRate == r.dstRate {
 		return r.copySameRate(in, out)

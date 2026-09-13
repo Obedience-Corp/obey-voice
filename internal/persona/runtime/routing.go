@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
-	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -17,34 +16,11 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 	admitted := pipeline.ResponseAdmission{Request: input}
 	bare := false
 	if !background {
-		profiles, issues, err := s.opts.Catalog.ListWithIssues()
+		roster, participants, err := s.conversationRoster()
 		if err != nil {
 			return admitted, err
 		}
-		s.warnCatalogIssues(issues)
-		identities := make([]summon.Identity, 0, len(profiles))
-		for _, p := range profiles {
-			if p.Inactive {
-				continue
-			}
-			aliases := append([]string(nil), p.Aliases...)
-			if p.ID == s.opts.Initial.PersonaID {
-				aliases = append(aliases, s.opts.Base.NameSummonAliases...)
-			}
-			identities = append(identities, summon.Identity{ID: p.ID, DisplayName: p.DisplayName, Aliases: aliases})
-		}
-		for _, issue := range issues {
-			// The directory ID is the only stable identity available for a
-			// malformed document. Keeping it in the same roster makes an
-			// explicit broken target fail, and makes collisions with healthy
-			// aliases fail closed instead of falling through to the responder.
-			identities = append(identities, summon.Identity{ID: issue.ID, DisplayName: issue.ID})
-		}
-		roster, err := summon.NewRoster(identities)
-		if err != nil {
-			return admitted, err
-		}
-		address, err := roster.Resolve(input)
+		address, err := s.resolveAddress(ctx, input, "user", "Unknown", roster, participants)
 		if err != nil {
 			return admitted, err
 		}
