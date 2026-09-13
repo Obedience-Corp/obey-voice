@@ -83,6 +83,73 @@ func TestClassifyVoiceFailure(t *testing.T) {
 	}
 }
 
+func TestClassifyVoiceTurnFailureDoesNotCountResponseErrorsAsInputFailures(t *testing.T) {
+	responseErr := errors.New("admit response: roster collision")
+	if got := ClassifyVoiceTurnFailure(responseErr, nil, "Veronica", maxVoiceFailures); got != VoiceRetry {
+		t.Fatalf("recognized transcript at the fallback threshold classified as %d, want retry", got)
+	}
+	if got := ClassifyVoiceTurnFailure(responseErr, context.Canceled, "Veronica", maxVoiceFailures); got != VoiceShutdown {
+		t.Fatalf("canceled response failure classified as %d, want shutdown", got)
+	}
+}
+
+type fallbackTestSTT struct {
+	attempts      int
+	inputFailures int
+}
+
+func (s *fallbackTestSTT) Available() bool { return true }
+func (s *fallbackTestSTT) Start(context.Context) (stt.Session, error) {
+	s.attempts++
+	if s.attempts <= s.inputFailures {
+		return nil, errors.New("microphone unavailable")
+	}
+	events := make(chan stt.Event, 1)
+	events <- stt.FinalTranscript{Text: "Veronica"}
+	close(events)
+	return &appPauseSession{events: events}, nil
+}
+
+func TestRunVoiceFallbackCountsOnlyConsecutiveInputFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		inputFailures int
+		wantErrors    int
+		wantFallback  bool
+	}{
+		{name: "successful capture resets two failures", inputFailures: 2, wantErrors: 5},
+		{name: "three input failures switch to text", inputFailures: 3, wantErrors: 3, wantFallback: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			source := &fallbackTestSTT{inputFailures: tc.inputFailures}
+			bus := events.NewBus()
+			var surfaced int
+			var fallback bool
+			events.Subscribe(bus, func(events.Error) {
+				surfaced++
+				if !tc.wantFallback && surfaced == tc.wantErrors {
+					cancel()
+				}
+			})
+			events.Subscribe(bus, func(info events.Info) {
+				fallback = fallback || strings.Contains(info.Message, "switching to text")
+			})
+			p := &pipeline.Pipeline{Brain: &appTestBrain{}, STT: source, Events: bus}
+			p.AdmitInput = func(context.Context, string, bool) (pipeline.ResponseAdmission, error) {
+				return pipeline.ResponseAdmission{}, errors.New("ambiguous persona")
+			}
+			if err := Run(ctx, p, strings.NewReader(""), false, true); err != nil {
+				t.Fatal(err)
+			}
+			if fallback != tc.wantFallback || surfaced != tc.wantErrors || source.attempts != tc.wantErrors {
+				t.Fatalf("fallback=%v, errors=%d, attempts=%d; want fallback=%v and %d errors/attempts", fallback, surfaced, source.attempts, tc.wantFallback, tc.wantErrors)
+			}
+		})
+	}
+}
+
 func TestNormalizeCommand(t *testing.T) {
 	for _, tt := range []struct {
 		in, want string

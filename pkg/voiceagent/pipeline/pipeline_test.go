@@ -108,6 +108,26 @@ func TestRunTurnFillerOnlyStreamSpeaksRecoveryInstead(t *testing.T) {
 	}
 }
 
+func TestRunTurnPreservesRecognizedTranscriptWhenAdmissionRefuses(t *testing.T) {
+	const refusal = "roster collision: Veronica and Veronica Hype"
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "Veronica"},
+		Brain:  &fakeBrain{},
+		Events: events.NewBus(),
+	}
+	p.AdmitInput = func(context.Context, string, bool) (ResponseAdmission, error) {
+		return ResponseAdmission{}, errors.New(refusal)
+	}
+
+	text, err := p.RunTurn(context.Background())
+	if text != "Veronica" {
+		t.Fatalf("RunTurn() text = %q, want recognized transcript preserved", text)
+	}
+	if err == nil || !strings.Contains(err.Error(), refusal) {
+		t.Fatalf("RunTurn() error = %v, want admission refusal", err)
+	}
+}
+
 // A tool loop that restates the spoken line must not queue it for TTS again.
 func TestRunTurnDoesNotSpeakRestatedSentence(t *testing.T) {
 	const line = "Stay right there, baby."
