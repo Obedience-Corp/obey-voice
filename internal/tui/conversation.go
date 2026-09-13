@@ -79,20 +79,24 @@ type conversationModel struct {
 	jobOrder []string
 	// work folds a job's per-call tool events into rows; jobItems maps a job
 	// to the one transcript item those rows rewrite. See work.go.
-	work               *workfold.Tracker
-	jobItems           map[string]int
-	completedJobItems  map[string]int
-	workScope          work.WorkScope
-	workDisplayHidden  bool
-	workDisplay        workDisplayState
-	workActivity       bool
-	workFilter         string
-	workRevision       uint64
-	lastWorkPoll       time.Time
-	workPollGeneration uint64
-	journalIncomplete  bool
-	workResultItems    map[string]int
-	workResultJobs     map[string]string
+	work                    *workfold.Tracker
+	jobItems                map[string]int
+	completedJobItems       map[string]int
+	workScope               work.WorkScope
+	workDisplayHidden       bool
+	workDisplay             workDisplayState
+	workStripExpiryDeadline time.Time
+	workStripExpiryScope    work.WorkScope
+	workActivity            bool
+	workFilter              string
+	workStripReservedRows   int
+	workStripRenderAt       time.Time
+	workRevision            uint64
+	lastWorkPoll            time.Time
+	workPollGeneration      uint64
+	journalIncomplete       bool
+	workResultItems         map[string]int
+	workResultJobs          map[string]string
 	// startup is the waiting state while the runtime is built; see
 	// conversation_startup.go.
 	startup startupState
@@ -367,7 +371,14 @@ type plainChatTurn struct {
 	speaker string // optional display label for multi-speaker user turns
 }
 
-func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
+func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.Cmd) {
+	// Schedule only after the returned state has captured its current scope and
+	// deadline, including snapshots recovered while voice animation is idle.
+	defer func() {
+		if expiry := next.scheduleWorkStripExpiry(); expiry != nil {
+			cmd = tea.Batch(cmd, expiry)
+		}
+	}()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.setSize(msg.Width, msg.Height)
@@ -412,6 +423,15 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 	case busEventMsg:
 		m.handleEvent(msg.event)
 		return m, tea.Batch(m.rearm(), m.ensureVoiceTick())
+
+	case workStripExpiryMsg:
+		if msg.scope != m.workDisplay.snapshot.Scope ||
+			msg.deadline != m.workDisplay.terminalUntil ||
+			time.Now().Before(msg.deadline) {
+			return m, nil
+		}
+		m.reflowAt(msg.deadline)
+		return m, nil
 
 	case backgroundReadyMsg:
 		// Listening remains owned by STT until its reply or no-speech timeout;
@@ -505,7 +525,11 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 			m.toggleOutputMuted()
 			return m, nil
 		case "ctrl+t":
+			if m.workActivity {
+				m.workActivity = false
+			}
 			m.activityFocused = !m.activityFocused
+			m.refreshActivity()
 			return m, nil
 		case "ctrl+k":
 			m.toggleShowThink()
@@ -526,6 +550,8 @@ func (m conversationModel) Update(msg tea.Msg) (conversationModel, tea.Cmd) {
 			}
 			if m.activityFocused {
 				m.activityFocused = false
+				m.workActivity = false
+				m.refreshActivity()
 				return m, nil
 			}
 		case "pgup", "pgdown", "ctrl+u", "ctrl+d":
@@ -610,6 +636,10 @@ func (m *conversationModel) setSize(width, height int) {
 }
 
 func (m *conversationModel) reflow() {
+	m.reflowAt(time.Now())
+}
+
+func (m *conversationModel) reflowAt(now time.Time) {
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
@@ -623,7 +653,9 @@ func (m *conversationModel) reflow() {
 	// addition to the textarea's own height. An active voice panel adds a few
 	// more. Command matches consume only the rows currently available above
 	// the composer.
-	chrome := 6 + m.workStripRows()
+	m.workStripReservedRows = m.workStripRows(now)
+	m.workStripRenderAt = now
+	chrome := 6 + m.workStripReservedRows
 	if m.voiceMode != anim.ModeIdle && m.height >= 14 {
 		chrome += voicePanelRows
 	}
@@ -1261,6 +1293,8 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.ConversationCleared:
+		m.workActivity = false
+		m.workFilter = ""
 		m.clearTranscript()
 		m.followChat = true
 		m.appendTranscript(dimStyle.Render("  Conversation cleared."))
@@ -1530,6 +1564,10 @@ func (m conversationModel) View() string {
 	if m.width < 20 || m.height < 6 {
 		return "Resize to 20×6 or larger"
 	}
+	now := m.workStripRenderAt
+	if now.IsZero() {
+		now = time.Now()
+	}
 	styles := m.animStyles()
 	w := max(m.width, 1)
 
@@ -1678,7 +1716,7 @@ func (m conversationModel) View() string {
 	return header + "\n" + rule + "\n" +
 		voiceStrip +
 		content + "\n" +
-		m.renderWorkStrip(time.Now()) +
+		m.renderWorkStrip(now) +
 		ansi.Truncate(inputLabel, w, "…") + "\n" +
 		inputBox + "\n" +
 		footer

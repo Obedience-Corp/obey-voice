@@ -1,6 +1,7 @@
 package workjournal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -207,7 +208,7 @@ func TestFollowReportsPrunedSegmentAndCancellationIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	notice := waitFollow(t, events).Notice
-	if notice == nil || notice.Type != "journal.gap" || notice.Reason != "segment_pruned" {
+	if notice == nil || notice.Type != "journal.gap" || notice.Reason != "segment_pruned" || notice.From != 1 || notice.To != 1 {
 		t.Fatalf("prune notice=%+v", notice)
 	}
 	started := time.Now()
@@ -217,5 +218,37 @@ func TestFollowReportsPrunedSegmentAndCancellationIsBounded(t *testing.T) {
 	}
 	if time.Since(started) > time.Second {
 		t.Fatal("cancellation was not bounded")
+	}
+}
+
+func TestFollowReportsConflictingDuplicate(t *testing.T) {
+	d := t.TempDir()
+	path := filepath.Join(d, "events-r1-000001.jsonl")
+	if err := os.WriteFile(path, followRecord(1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := make(chan FollowEvent, 8)
+	done := make(chan error, 1)
+	go func() {
+		done <- Follow(ctx, d, FollowOptions{}, func(ev FollowEvent) error { events <- ev; return nil })
+	}()
+	if ev := waitFollow(t, events); ev.Record == nil || ev.Record.Seq != 1 {
+		t.Fatalf("initial event=%+v", ev)
+	}
+	// A rotated segment repeats the identity with a different payload.
+	changed := followRecord(1)
+	changed = bytes.Replace(changed, []byte("job.started"), []byte("job.finished"), 1)
+	if err := os.WriteFile(filepath.Join(d, "events-r1-000002.jsonl"), changed, 0600); err != nil {
+		t.Fatal(err)
+	}
+	n := waitFollow(t, events).Notice
+	if n == nil || n.Reason != "conflicting_duplicate" || n.From != 1 || n.To != 1 {
+		t.Fatalf("duplicate notice=%+v", n)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("follow error=%v", err)
 	}
 }

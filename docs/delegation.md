@@ -148,14 +148,15 @@ experimental `voice_work_enabled` result inbox.
 files.") each time a row closes, through the same idle gate as a job summary.
 Never one line per call.
 
-Two limits bound spawned work. `voice_worker_max_concurrent` (default `1`) is
-how many jobs run at once; the rest wait in order, and "what's happening"
-names the running job first, then counts the others ("Also 1 more running and
-1 queued."). `voice_worker_job_budget` (default `600` seconds) is the longest
-any one job may run: past it the job is stopped, `job_aborted` carries
-`reason: budget`, and she says so once — "I stopped {task} after 10 minutes. It
-ran past its budget." A job you cancel yourself carries `reason: cancelled`;
-the cancel line above is spoken once for the batch, never once per job.
+In legacy mode, two singleton limits bound spawned work.
+`voice_worker_max_concurrent` (default `1`) is how many jobs run at once; the
+rest wait in order, and "what's happening" names the running job first, then
+counts the others ("Also 1 more running and 1 queued.").
+`voice_worker_job_budget` (default `600` seconds) is the longest any one job
+may run: past it the job is stopped, `job_aborted` carries `reason: budget`,
+and she says so once — "I stopped {task} after 10 minutes. It ran past its
+budget." A job you cancel yourself carries `reason: cancelled`; the cancel
+line above is spoken once for the batch, never once per job.
 
 Both stops are the job table's own act, not a request to the worker: at the
 budget, or on a cancel, the job is marked aborted, its slot goes to the next
@@ -233,7 +234,10 @@ Workers Settings can save separate Simple, Medium and Complex assignments.
 Queued jobs retain the assignment and limits they were admitted with. Tiered
 mode uses the shared concurrency and queue limits in `voice_workers.policy`
 (defaults: one running, 32 queued) and each tier's runtime limit (120 seconds by
-default), instead of the legacy singleton limits above.
+default), instead of the legacy singleton limits above. Switching to tiered
+mode does not silently migrate or reinterpret the legacy singleton keys; use
+the explicit migration preview in Settings if you want to copy the current
+worker into all three tiers.
 
 Local Ollama workers enforce request, tool, retry and optional output-token
 allowances across the job. Missing generated-token usage blocks another

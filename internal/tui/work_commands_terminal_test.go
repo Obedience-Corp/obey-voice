@@ -59,18 +59,22 @@ func TestWorkCommandsTerminalShowsStripHeldResultAndPreservesDraft(t *testing.T)
 	await("Chat with preserved draft", func(v string) bool {
 		return strings.Contains(v, "draft text") && strings.Contains(v, "Background result (held)")
 	})
+	p.Send(tea.KeyMsg{Type: tea.KeyCtrlT})
+	await("restored activity timeline", func(v string) bool {
+		return strings.Contains(v, "Activity") && !strings.Contains(v, "Work · s · revision")
+	})
 	p.Quit()
 	err := <-done
 	finished = true
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.model.input.Value() != "draft text" || h.model.activityFocused || h.model.workFilter != "" {
+	if h.model.input.Value() != "draft text" || !h.model.activityFocused || h.model.workActivity || h.model.workFilter != "" {
 		t.Fatalf("lost draft/focus: draft=%q activity=%v filter=%q", h.model.input.Value(), h.model.activityFocused, h.model.workFilter)
 	}
 	terminal := stripANSI(output.String())
-	if !strings.Contains(terminal, "Background result (held)") || !strings.Contains(terminal, "1 held") {
-		t.Fatalf("actual renderer omitted held state: %q", terminal)
+	if !strings.Contains(terminal, "Activity") {
+		t.Fatalf("actual renderer omitted restored activity timeline: %q", terminal)
 	}
 	if h.model.workCounts().updates != 1 {
 		t.Fatal("terminal inspection consumed pending delivery")

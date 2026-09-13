@@ -18,6 +18,16 @@ func TestRedactTextAdversarialCredentialsAndUTF8(t *testing.T) {
 	}
 }
 
+func TestRedactTextRedactsEveryCookiePair(t *testing.T) {
+	in := "Cookie: harmless=one; session=second-secret; csrf=third-secret\nSet-Cookie: sid=fourth-secret; theme=dark"
+	got := redactText(in, 4096)
+	for _, leak := range []string{"one", "second-secret", "third-secret", "fourth-secret", "dark"} {
+		if contains(got, leak) {
+			t.Fatalf("cookie value leaked %q: %q", leak, got)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

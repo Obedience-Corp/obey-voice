@@ -192,8 +192,14 @@ func (b *Brain) runOptions(format claude.OutputFormat, toolsEnabled bool) *claud
 		// a nil/empty slice would omit the flag and leave all tools available.
 		tools = []string{""}
 	}
+	// Worker assignments pin the CLI model; live conversations use CLI defaults.
+	var model string
+	if b.cfg != nil && b.cfg.IsWorker {
+		model = strings.TrimSpace(b.cfg.VoiceWorkerModel)
+	}
 	return &claude.RunOptions{
 		Format:         format,
+		Model:          model,
 		SystemPrompt:   b.systemPrompt,
 		PermissionMode: mode,
 		Tools:          tools,

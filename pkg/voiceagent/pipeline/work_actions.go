@@ -36,6 +36,9 @@ func (p *Pipeline) WorkResultAction(scope work.WorkScope, id, action string) err
 	var err error
 	switch action {
 	case "dismiss":
+		if selected.State == work.Communicated || selected.State == work.Dismissed {
+			return fmt.Errorf("result %s is already %s; nothing to dismiss", result, selected.State)
+		}
 		err = c.Dismiss(scope, result)
 	case "speak", "replay":
 		if p.OutputMuted() {
