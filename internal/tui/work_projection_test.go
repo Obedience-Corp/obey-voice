@@ -94,7 +94,7 @@ func TestCanonicalAdmissionCardUpdatesAndReplacesWithResult(t *testing.T) {
 	}
 	m.handleEvent(events.WorkStateChanged{Snapshot: work.Snapshot{Scope: scope, Revision: 2, Jobs: []work.JobView{{Key: job.Key, Task: job.Task, Origin: job.Origin, State: work.JobRunning}}}})
 	view = stripANSI(m.View())
-	if strings.Count(view, "job-1") != 1 || !strings.Contains(view, "Working: read the weather") {
+	if strings.Count(view, "job-1") != 1 || !strings.Contains(view, "Workers: 1 running") || !strings.Contains(view, "read the weather") {
 		t.Fatalf("running canonical card = %q", view)
 	}
 	result := projectionSnapshot(scope, work.Ready, false, "Rain later")

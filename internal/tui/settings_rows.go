@@ -223,7 +223,21 @@ func (m settingsModel) workerRows() []settingRow {
 	if config.WorkerSelected(m.cfg) {
 		model.current = indexOf(models, m.activeWorkerModel())
 	}
-	return []settingRow{provider, model}
+	permission := settingRow{
+		key: "voice_workers_disabled", name: "Allow background workers", kind: rowToggle,
+		value: onOff(!m.cfg.VoiceWorkersDisabled), applies: appliesNow,
+		help: "Off blocks new background jobs. Existing tasks may finish; /workers has Stop task and Stop all.",
+		run: func(m *settingsModel) tea.Cmd {
+			enabled := m.cfg.VoiceWorkersDisabled
+			if err := saveWorkersEnabled(m.cfg, enabled, m.saveConfig, m.onWorkersEnabled); err != nil {
+				m.message = "Failed to save worker preference: " + err.Error()
+			} else {
+				m.message = workersPermissionMessage(enabled)
+			}
+			return nil
+		},
+	}
+	return []settingRow{provider, model, permission}
 }
 
 func (m settingsModel) toolRows() []settingRow {

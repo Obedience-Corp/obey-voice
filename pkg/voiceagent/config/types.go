@@ -169,6 +169,10 @@ type Config struct {
 	// experimental loop is opt-in; paid worker dispatch is unavailable.
 	VoiceWorkEnabled bool `mapstructure:"voice_work_enabled"`
 
+	// VoiceWorkersDisabled rejects new background jobs without stopping existing
+	// work. This global preference is independent of the experimental inbox.
+	VoiceWorkersDisabled bool `mapstructure:"voice_workers_disabled"`
+
 	// VoiceWorkerProvider selects the async job worker brain (ollama/grok/claude).
 	// Empty defaults to grok.
 	VoiceWorkerProvider string `mapstructure:"voice_worker_provider"`

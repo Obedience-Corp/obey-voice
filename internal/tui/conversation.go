@@ -1550,9 +1550,17 @@ func (m conversationModel) View() string {
 		}
 	}
 	footerLeft := "  " + micChip + " " + outChip
-	if m.jobStatus != "" {
-		footerLeft += " " + chipStyle.Render(m.jobStatus)
+	if hint := m.talkHint(); hint != "" && !m.vim.enabled {
+		footerLeft += " " + dimStyle.Render(hint)
 	}
+	workers := m.jobStatus
+	if m.deps.workersSummary != nil {
+		workers = m.deps.workersSummary()
+	}
+	if workers == "" {
+		workers = workersCountLabel(0, 0, m.cfg == nil || !m.cfg.VoiceWorkersDisabled)
+	}
+	footerLeft += " " + dimStyle.Render(workerFooterLabel(workers, max(0, w-lipgloss.Width(footerLeft)-1)))
 	if m.showThink {
 		footerLeft += " " + chipStyle.Render("think")
 	}
@@ -1564,8 +1572,8 @@ func (m conversationModel) View() string {
 		footerLeft += " " + chipMutedStyle.Render(fmt.Sprintf("%d%%", int(activeViewport.ScrollPercent()*100)))
 	}
 	footerHelp := m.vimFooterHelp()
-	if hint := m.talkHint(); hint != "" && !m.vim.enabled {
-		footerHelp = hint + "  " + footerHelp
+	if !m.vim.enabled {
+		footerHelp = strings.ReplaceAll(footerHelp, "/menu back  ", "")
 	}
 	footerText := footerLeft
 	switch {
@@ -1580,10 +1588,7 @@ func (m conversationModel) View() string {
 	case m.width >= lipgloss.Width(footerLeft)+lipgloss.Width(footerHelp)+4:
 		footerText += strings.Repeat(" ", m.width-lipgloss.Width(footerLeft)-lipgloss.Width(footerHelp)) + dimStyle.Render(footerHelp)
 	case m.width >= 60:
-		compact := "  ·  /menu back  ^G mic  ^O audio  ^T switch  ^K think"
-		if hint := m.talkHint(); hint != "" {
-			compact = "  ·  /menu back  " + hint + "  ^G mic  ^O audio  ^T switch  ^K think"
-		}
+		compact := "  ·  ^G mic  ^O audio  ^T switch  ^K think"
 		footerText += dimStyle.Render(compact)
 	default:
 		footerText += dimStyle.Render("  ^G  ^O  ^T  ^K")

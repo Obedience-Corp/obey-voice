@@ -53,6 +53,7 @@ type Agency struct {
 	managedJobs    map[string]*delegation.Runtime
 	managedCurrent *delegation.Runtime
 	managedClosing map[*delegation.Runtime]bool
+	liveManaged    func() *delegation.Runtime // guarded by mu; provider accessor is concurrency-safe
 }
 
 // pendingDelivery is one completed job waiting to be spoken when the pipeline
@@ -85,6 +86,9 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		managedClosing: make(map[*delegation.Runtime]bool),
 	}
 	a.narrator = NewNarrator(a)
+	if jobs != nil && cfg != nil {
+		jobs.SetEnabled(!cfg.VoiceWorkersDisabled)
+	}
 	return a
 }
 
@@ -94,6 +98,7 @@ func (a *Agency) Wire() {
 		return
 	}
 	a.pipeline.Agency = a
+	a.bindConversationWorkers(a.pipeline.Brain)
 	a.pipeline.JobActive = a.jobs.Active
 	a.jobs.OnDone(a.onJobDone)
 	a.jobs.OnQueued(a.onJobQueued)
@@ -133,6 +138,10 @@ func (a *Agency) HandleRoute(ctx context.Context, turn *turnConductor, metrics *
 }
 
 func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *turnMetrics, d RouteDecision) {
+	if err := a.jobs.CheckAdmission(); err != nil {
+		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
+		return
+	}
 	task := strings.TrimSpace(d.Transcript)
 	history := a.liveHistory()
 
@@ -188,8 +197,10 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
-		Task: task,
-		Run:  run,
+		Task:     task,
+		Provider: providerName(jobCfg),
+		Model:    modelName(jobCfg),
+		Run:      run,
 	})
 	if err != nil {
 		if c, _ := a.workAuthority(); c != nil && key.JobID != "" {
@@ -253,6 +264,7 @@ func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Conf
 			return "", errors.New("worker provider is not configured")
 		}
 		worker = a.freshWorker(worker)
+		a.bindWorkerAdmission(worker)
 		tools := true
 		if cfg != nil {
 			tools = cfg.VoiceToolsEnabled

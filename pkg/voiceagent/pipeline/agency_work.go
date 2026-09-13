@@ -11,7 +11,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -154,18 +153,7 @@ func (a *Agency) ClearConversation() error {
 }
 
 func (a *Agency) abortAll() {
-	var queued, running []string
-	for _, info := range a.jobs.Status() {
-		switch info.State {
-		case job.StateQueued:
-			queued = append(queued, info.ID)
-		case job.StateRunning:
-			running = append(running, info.ID)
-		}
-	}
-	for _, id := range append(queued, running...) {
-		a.jobs.Abort(id)
-	}
+	a.jobs.AbortAll()
 }
 
 func (a *Agency) CloseWork() error {
@@ -243,6 +231,7 @@ func (a *Agency) attachManaged(provider brain.Provider, c *work.Coordinator, sco
 		return errors.Join(err, runtime.Close())
 	}
 	observer := a.managedObserver(c, scope, runtime, cfg)
+	runtime.SetAdmissionCheck(a.jobs.CheckAdmission)
 	if err := runtime.AttachConversation(observer); err != nil {
 		_ = binding.DetachDelegation()
 		return errors.Join(err, runtime.Close())
@@ -280,6 +269,7 @@ func (a *Agency) prepareManaged(provider brain.Provider, c *work.Coordinator, sc
 		return errors.Join(err, runtime.Close())
 	}
 	prepared.binding = binding
+	runtime.SetAdmissionCheck(a.jobs.CheckAdmission)
 	if err := runtime.AttachConversation(a.managedObserver(c, scope, runtime, cfg)); err != nil {
 		_ = binding.DetachDelegation()
 		return errors.Join(err, runtime.Close())
@@ -396,6 +386,13 @@ func (a *Agency) CancelWork(id string) error {
 	a.workMu.RUnlock()
 	if runtime != nil {
 		return runtime.Cancel(id)
+	}
+	if runtime := a.currentManagedRuntime(); runtime != nil {
+		for _, task := range runtime.Tasks() {
+			if task.Ticket == id && task.Ended.IsZero() {
+				return runtime.Cancel(id)
+			}
+		}
 	}
 	for _, item := range a.jobs.Status() {
 		if item.ID == id {

@@ -13,6 +13,9 @@ import (
 // a user's cancel with errors.Is.
 var ErrBudget = errors.New("job budget exceeded")
 
+// ErrDisabled means the user has turned off new background work.
+var ErrDisabled = errors.New("background workers are off; enable them in /workers")
+
 // errAborted is the error a job ends with when Abort stopped it.
 var errAborted = errors.New("aborted")
 
@@ -46,18 +49,22 @@ func IDFromContext(ctx context.Context) string {
 type Spec struct {
 	// ID optionally supplies a caller-owned stable identity. Empty preserves
 	// the table's sequential legacy IDs.
-	ID   string
-	Task string
-	Run  func(ctx context.Context) (result string, err error)
+	ID       string
+	Task     string
+	Provider string
+	Model    string
+	Run      func(ctx context.Context) (result string, err error)
 }
 
 // Info is a point-in-time job snapshot for status UI.
 type Info struct {
-	ID     string
-	Task   string
-	State  State
-	Result string
-	Err    string
+	ID       string
+	Task     string
+	State    State
+	Result   string
+	Err      string
+	Provider string
+	Model    string
 	// Started is when the run function began; zero while queued.
 	Started time.Time
 	// Ended is the monotonic timestamp at which the job became terminal.
@@ -98,6 +105,7 @@ type Table struct {
 	mu       sync.Mutex
 	lifetime context.Context
 	closed   bool
+	disabled bool
 	nextID   int
 	jobs     map[string]*entry
 	queue    []string
@@ -215,6 +223,10 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 		t.mu.Unlock()
 		return "", fmt.Errorf("job table closed")
 	}
+	if t.disabled {
+		t.mu.Unlock()
+		return "", ErrDisabled
+	}
 	id := spec.ID
 	if id == "" {
 		for {
@@ -230,7 +242,7 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 	}
 	jobCtx, cancel := context.WithCancel(WithID(context.WithoutCancel(t.lifetime), id))
 	e := &entry{
-		info:   Info{ID: id, Task: spec.Task, State: StateQueued},
+		info:   Info{ID: id, Task: spec.Task, State: StateQueued, Provider: spec.Provider, Model: spec.Model},
 		spec:   spec,
 		ctx:    jobCtx,
 		cancel: cancel,
@@ -261,6 +273,41 @@ func (t *Table) Start(parent context.Context, spec Spec) (string, error) {
 // ids are a no-op.
 func (t *Table) Abort(id string) {
 	t.stop(id, errAborted)
+}
+
+// SetEnabled controls admission only. Already queued work can still run.
+func (t *Table) SetEnabled(enabled bool) {
+	t.mu.Lock()
+	t.disabled = !enabled
+	t.mu.Unlock()
+}
+
+// CheckAdmission is also used by managed delegation's admission boundary.
+func (t *Table) CheckAdmission() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed || t.disabled {
+		return ErrDisabled
+	}
+	return nil
+}
+
+// AbortAll removes the entire waiting queue under one lock before freeing any
+// running slots. No queued run function can slip through between cancellations.
+func (t *Table) AbortAll() {
+	t.mu.Lock()
+	ids := t.orderedIDsLocked()
+	for _, id := range ids {
+		e := t.jobs[id]
+		if !e.finished && e.stopErr == nil {
+			e.stopErr = errAborted
+		}
+	}
+	t.queue = nil
+	t.mu.Unlock()
+	for _, id := range ids {
+		t.Abort(id)
+	}
 }
 
 // stop is the one way a job ends before its run function returns; user
