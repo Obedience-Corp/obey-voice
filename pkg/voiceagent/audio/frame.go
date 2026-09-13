@@ -27,14 +27,8 @@ type Frame struct {
 	StartedAt  time.Time
 	Duration   time.Duration
 	Sequence   int64
-	// SampleOffset is the absolute sample index in the capture buffer lifetime.
-	// It is not a hardware timestamp or device-clock position.
-	SampleOffset uint64
-	// SamplePositionKnown reports whether SampleOffset came from positioned
-	// capture storage. Legacy sources and unpositioned test seams leave it false.
-	SamplePositionKnown bool
-	SourceKind          SourceKind
-	Final               bool
+	SourceKind SourceKind
+	Final      bool
 }
 
 // Empty reports whether the frame carries no samples.

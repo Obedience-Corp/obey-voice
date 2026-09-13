@@ -43,7 +43,6 @@ type Capture struct {
 	running          bool          // a device is open
 	watchDone        chan struct{} // closed by Stop so the cancellation watcher exits
 	subs             map[int]chan []float32
-	frameSubs        map[int]chan Frame
 	nextSub          int
 	frameSeq         int64
 	deviceName       string
@@ -100,7 +99,6 @@ func NewCaptureWithDevice(deviceName string) *Capture {
 	c := &Capture{
 		buf:        NewRingBuffer(SampleRate * 30), // 30 seconds buffer
 		subs:       make(map[int]chan []float32),
-		frameSubs:  make(map[int]chan Frame),
 		deviceName: deviceName,
 	}
 	c.open = c.openMalgoDevice
@@ -243,8 +241,8 @@ func (c *Capture) openMalgoDevice() error {
 		if c.frontend != nil {
 			samples = c.frontend.ProcessCapture(samples)
 		}
-		offset := c.buf.WriteWithPosition(samples)
-		c.publishFrame(Frame{Samples: samples, SampleRate: SampleRate, Channels: Channels, Duration: SamplesDuration(len(samples)), SampleOffset: offset, SamplePositionKnown: true, SourceKind: SourceLive})
+		c.buf.Write(samples)
+		c.publish(samples)
 	}
 
 	device, err := malgo.InitDevice(mctx.Context, deviceConfig, malgo.DeviceCallbacks{
@@ -376,7 +374,7 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 	if err := ctx.Err(); err != nil {
 		return Frame{}, err
 	}
-	samples, offset := c.buf.ReadWithPosition(ChunkSize)
+	samples := c.buf.Read(ChunkSize)
 	if samples == nil {
 		// A failed reopen is reported by recoverIfStalled and retried on the
 		// next stall window, so it must not end the STT session: the loop keeps
@@ -386,14 +384,12 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 	}
 	c.frameSeq++
 	return Frame{
-		Samples:             samples,
-		SampleRate:          SampleRate,
-		Channels:            Channels,
-		Duration:            SamplesDuration(len(samples)),
-		Sequence:            c.frameSeq,
-		SampleOffset:        offset,
-		SamplePositionKnown: true,
-		SourceKind:          SourceLive,
+		Samples:    samples,
+		SampleRate: SampleRate,
+		Channels:   Channels,
+		Duration:   SamplesDuration(len(samples)),
+		Sequence:   c.frameSeq,
+		SourceKind: SourceLive,
 	}, nil
 }
 
@@ -423,10 +419,6 @@ func (c *Capture) ResetKeeping(duration time.Duration) {
 	samples := int(duration * SampleRate / time.Second)
 	c.buf.KeepLast(samples)
 }
-
-// KeepFrom retains unread capture samples at and after an absolute sample
-// offset. It never replays samples already handed to a consumer.
-func (c *Capture) KeepFrom(sampleOffset uint64) { c.buf.KeepFrom(sampleOffset) }
 
 // SetFrontend installs an audio front-end for live capture processing.
 func (c *Capture) SetFrontend(frontend Frontend) {
@@ -485,10 +477,6 @@ func (c *Capture) Unsubscribe(id int) {
 		delete(c.subs, id)
 		close(ch)
 	}
-	if ch, ok := c.frameSubs[id]; ok {
-		delete(c.frameSubs, id)
-		close(ch)
-	}
 }
 
 // IsRunning returns whether capture is active.
@@ -499,28 +487,6 @@ func (c *Capture) IsRunning() bool {
 }
 
 func (c *Capture) publish(samples []float32) {
-	c.publishFrame(Frame{Samples: samples, SampleRate: SampleRate, Channels: Channels, Duration: SamplesDuration(len(samples)), SourceKind: SourceLive})
-}
-
-// SubscribeFrames registers a non-blocking listener for positioned capture
-// frames. The frame sample slice is shared and read-only, like Subscribe.
-func (c *Capture) SubscribeFrames(buffer int) (int, <-chan Frame) {
-	if buffer <= 0 {
-		buffer = 1
-	}
-	c.subsMu.Lock()
-	defer c.subsMu.Unlock()
-	if c.frameSubs == nil {
-		c.frameSubs = make(map[int]chan Frame)
-	}
-	id := c.nextSub
-	c.nextSub++
-	ch := make(chan Frame, buffer)
-	c.frameSubs[id] = ch
-	return id, ch
-}
-
-func (c *Capture) publishFrame(frame Frame) {
 	// Every subscriber receives the SAME samples slice (no per-subscriber copy):
 	// the read-only contract on Subscribe is what keeps that safe. Copying here
 	// would add an allocation per subscriber on the real-time malgo callback
@@ -534,13 +500,7 @@ func (c *Capture) publishFrame(frame Frame) {
 
 	for _, ch := range c.subs {
 		select {
-		case ch <- frame.Samples:
-		default:
-		}
-	}
-	for _, ch := range c.frameSubs {
-		select {
-		case ch <- frame:
+		case ch <- samples:
 		default:
 		}
 	}
