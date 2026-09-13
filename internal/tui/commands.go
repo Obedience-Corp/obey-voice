@@ -27,6 +27,7 @@ const (
 	commandThink
 	commandSettings
 	commandPersonas
+	commandWorkers
 	commandVoice
 	commandSpeakers
 	commandCopy
@@ -58,6 +59,7 @@ var slashCommands = []slashCommand{
 	{id: commandThink, name: "/think", usage: "/think [on|off]", description: "Show or hide model thinking in the thread", aliases: []string{"/thinking"}},
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
 	{id: commandPersonas, name: "/personas", usage: "/personas", description: "Browse, select, create, or edit personas"},
+	{id: commandWorkers, name: "/workers", usage: "/workers", description: "View background tasks, stop work, or turn workers on/off"},
 	{id: commandVoice, name: "/voice", usage: "/voice", description: "Return to voice mode after fallback", aliases: []string{"/v"}},
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
 	{id: commandCopy, name: "/copy", usage: "/copy [all]", description: "Copy last reply (or full chat) to the clipboard", aliases: []string{"/yank"}},
@@ -203,6 +205,8 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		return func() tea.Msg { return switchScreenMsg(screenSettings) }
 	case commandPersonas:
 		return func() tea.Msg { return switchScreenMsg(screenPersonas) }
+	case commandWorkers:
+		return func() tea.Msg { return switchScreenMsg(screenWorkers) }
 	case commandVoice:
 		if m.deps.voice && !m.voiceEnabled {
 			m.voiceEnabled = true

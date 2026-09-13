@@ -94,6 +94,11 @@ func (o *OllamaBrain) delegationRuntime() *delegation.Runtime {
 	return runtime
 }
 
+// ManagedRuntime exposes cached worker controls without transferring ownership.
+func (o *OllamaBrain) ManagedRuntime() *delegation.Runtime {
+	return o.delegationRuntime()
+}
+
 // Close cancels attached workers when the owning voice agent shuts down.
 // Barge-in only cancels ThinkStream and never calls this method.
 func (o *OllamaBrain) Close() error {

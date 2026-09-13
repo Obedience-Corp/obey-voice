@@ -60,19 +60,21 @@ type job struct {
 // Close; it must not pass a turn or speech context as the lifetime context.
 // Only one unacknowledged job is admitted, bounding both work and delivery.
 type Runtime struct {
-	client       Client
-	summarize    Summarizer
-	timeout      time.Duration
-	ctx          context.Context
-	stop         context.CancelFunc
-	mu           sync.Mutex
-	job          *job
-	pending      *Delivery
-	closed       bool
-	ready        chan struct{}
-	wg           sync.WaitGroup
-	observer     TerminalObserver
-	conversation *ConversationObserver
+	client         Client
+	summarize      Summarizer
+	timeout        time.Duration
+	ctx            context.Context
+	stop           context.CancelFunc
+	mu             sync.Mutex
+	job            *job
+	pending        *Delivery
+	closed         bool
+	ready          chan struct{}
+	wg             sync.WaitGroup
+	observer       TerminalObserver
+	conversation   *ConversationObserver
+	admissionCheck func() error
+	history        []TerminalOutcome
 }
 
 // New verifies the complete backend before the model can see delegation tools.
@@ -115,6 +117,12 @@ func (r *Runtime) Start(task string) (string, error) {
 	if r.closed {
 		r.mu.Unlock()
 		return "", errors.New("delegation session is closed")
+	}
+	if r.admissionCheck != nil {
+		if err := r.admissionCheck(); err != nil {
+			r.mu.Unlock()
+			return "", err
+		}
 	}
 	if r.job != nil {
 		r.mu.Unlock()
@@ -190,6 +198,34 @@ func (r *Runtime) Task() string {
 		return ""
 	}
 	return r.job.task
+}
+
+// SetAdmissionCheck installs the host's fast, non-blocking permission check.
+// It runs under the runtime lock and must not call back into this runtime.
+func (r *Runtime) SetAdmissionCheck(check func() error) {
+	r.mu.Lock()
+	r.admissionCheck = check
+	r.mu.Unlock()
+}
+
+// Tasks returns cached live and terminal observations without backend I/O.
+// Terminal history is bounded; durable conversation history is host-owned.
+func (r *Runtime) Tasks() []TerminalOutcome {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := append([]TerminalOutcome(nil), r.history...)
+	if j := r.job; j != nil && !j.done {
+		state := "running"
+		if j.snapshot.ID == "" {
+			state = "queued"
+		}
+		if j.cancelReason != "" {
+			state = "stopping"
+		}
+		out = append(out, TerminalOutcome{Ticket: j.ticket, SourceRef: j.snapshot.ID,
+			Task: j.task, State: state, Started: j.started, Err: j.err})
+	}
+	return out
 }
 
 func randomID() [16]byte {
@@ -437,6 +473,10 @@ func (r *Runtime) finishLocal(j *job, state, brief, errText, termination string)
 	}
 	outcome, observer := r.terminalLocked(j, brief, errText)
 	outcome.Termination = termination
+	r.history = append(r.history, outcome)
+	if len(r.history) > 50 {
+		r.history = append([]TerminalOutcome(nil), r.history[len(r.history)-50:]...)
+	}
 	conversation := r.conversation
 	r.signalReady()
 	r.mu.Unlock()
@@ -486,8 +526,11 @@ func (r *Runtime) signalReady() {
 // host drops the old runtime's pending view and closes it asynchronously.
 func (r *Runtime) NewSession() *Runtime {
 	r.Stop()
+	r.mu.Lock()
+	check := r.admissionCheck
+	r.mu.Unlock()
 	lifetime, stop := context.WithCancel(context.Background())
-	return &Runtime{client: r.client, summarize: r.summarize, timeout: r.timeout, ctx: lifetime, stop: stop, ready: r.ready}
+	return &Runtime{client: r.client, summarize: r.summarize, timeout: r.timeout, ctx: lifetime, stop: stop, ready: r.ready, admissionCheck: check}
 }
 func (r *Runtime) Stop() {
 	r.mu.Lock()

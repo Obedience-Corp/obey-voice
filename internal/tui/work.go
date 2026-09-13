@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -21,11 +20,12 @@ import (
 // jobView is what the chip and the job's thread item know about one queued
 // or running job.
 type jobView struct {
-	task    string
-	origin  string
-	running bool
-	tool    string // the tool the worker is on, until the fold has a row
-	tier    string
+	task     string
+	origin   string
+	running  bool
+	terminal bool
+	tool     string // the tool the worker is on, until the fold has a row
+	tier     string
 }
 
 func (m *conversationModel) canonicalJob(v work.JobView) {
@@ -34,6 +34,7 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 		return
 	}
 	job := m.trackJob(id, v.Task)
+	job.terminal = v.State == work.JobTerminal
 	job.origin = v.Origin
 	if v.Config != nil {
 		job.tier = v.Config["worker_tier"]
@@ -251,65 +252,25 @@ func (m *conversationModel) noteJobTool(id, name string) {
 	m.refreshJobChip()
 }
 
-// runningJob is the job the chip names: the earliest one that has started.
-func (m *conversationModel) runningJob() (string, *jobView) {
-	for _, id := range m.jobOrder {
-		if v := m.jobs[id]; v != nil && v.running {
-			return id, v
-		}
-	}
-	return "", nil
-}
-
-// refreshJobChip rewrites the footer chip from job state. The first running
-// job names the chip, with its folded summary (or the tool it is on until the
-// fold has a row); jobs running alongside it and jobs waiting are counted.
+// refreshJobChip counts only the jobs this conversation tracks, and must not
+// reach for managed work: View prefers deps.workersSummary when it is set, and
+// that is the source which sees the runtime's managed jobs.
 func (m *conversationModel) refreshJobChip() {
-	runningID, running := m.runningJob()
-	moreRunning, queued := 0, 0
-	firstQueued := ""
-	for _, id := range m.jobOrder {
-		v := m.jobs[id]
-		if v == nil {
+	running, queued := 0, 0
+	for _, v := range m.jobs {
+		if v.terminal {
 			continue
 		}
 		if v.running {
-			if id != runningID {
-				moreRunning++
-			}
-			continue
+			running++
+		} else {
+			queued++
 		}
-		if firstQueued == "" {
-			firstQueued = v.task
-		}
-		queued++
 	}
-	chip := ""
-	switch {
-	case running != nil:
-		chip = "Working: " + truncateJobLine(running.task)
-		detail := m.workTracker().Summary(runningID)
-		if detail == "" {
-			detail = running.tool
-		}
-		if detail != "" {
-			chip += " · " + truncateJobLine(detail)
-		}
-	case queued > 0:
-		chip = "Queued: " + truncateJobLine(firstQueued)
-		queued--
+	m.jobStatus = ""
+	if running+queued > 0 {
+		m.jobStatus = workersCountLabel(running, queued, m.cfg == nil || !m.cfg.VoiceWorkersDisabled)
 	}
-	var extras []string
-	if moreRunning > 0 {
-		extras = append(extras, fmt.Sprintf("+%d running", moreRunning))
-	}
-	if queued > 0 {
-		extras = append(extras, fmt.Sprintf("+%d queued", queued))
-	}
-	if len(extras) > 0 {
-		chip += " (" + strings.Join(extras, ", ") + ")"
-	}
-	m.jobStatus = chip
 }
 
 // renderJobItem writes the job's single transcript item, appending it the first

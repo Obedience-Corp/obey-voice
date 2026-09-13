@@ -38,6 +38,7 @@ const (
 	screenLibrary
 	screenRemote
 	screenPersonas
+	screenWorkers
 )
 
 // meetingRoutePlan is the per-session routing choice from the start picker.
@@ -74,6 +75,7 @@ type App struct {
 	library        libraryModel
 	remote         remoteModel
 	personas       personasModel
+	workers        workersModel
 
 	// Conversation runtime wiring, set by Run before the program starts.
 	builder  RuntimeBuilder
@@ -119,6 +121,7 @@ type App struct {
 	settingsResumeVoice  bool
 	settingsVoiceState   string
 	personasResumeVoice  bool
+	workersResumeVoice   bool
 
 	// startInConversation skips the launcher (resume/continue).
 	startInConversation bool
@@ -307,6 +310,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.library, _ = a.library.Update(msg)
 		a.remote, _ = a.remote.Update(msg)
 		a.personas, _ = a.personas.Update(msg)
+		a.workers, _ = a.workers.Update(msg)
 		if a.screen != screenConversation {
 			a.conversation, _ = a.conversation.Update(msg)
 		}
@@ -325,6 +329,18 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.library.cancelPrepare()
 		}
 		var pauseVoice tea.Cmd
+		if target == screenWorkers && a.screen != screenWorkers {
+			a.workersResumeVoice = a.screen == screenConversation && a.conversation.voiceEnabled
+			if a.workersResumeVoice {
+				pauseVoice = a.conversation.setInputMuted(true)
+			}
+		}
+		if a.screen == screenWorkers && target != screenWorkers {
+			if target == screenConversation && a.workersResumeVoice {
+				pauseVoice = a.conversation.setInputMuted(false)
+			}
+			a.workersResumeVoice = false
+		}
 		if target == screenPersonas && a.screen != screenPersonas {
 			a.personasResumeVoice = a.screen == screenConversation && a.conversation.voiceEnabled
 			if a.personasResumeVoice {
@@ -385,6 +401,7 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.settings.captureFor = a.settingsCaptureFor()
 			a.settings.liveSeeder = a.settingsLiveSeeder()
 			a.settings.onPlaybackVolume = a.applyPlaybackVolume
+			a.settings.onWorkersEnabled = a.applyWorkersEnabled
 			// Apply stored geometry immediately — Bubble Tea only re-emits
 			// WindowSize on actual resize, not on screen switches. Without
 			// this, the list falls back to a default height and 80-col width
@@ -393,6 +410,16 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.settings.width, a.settings.height = a.width, a.height
 			a.settings.ensureCursorVisible()
 			return a, tea.Batch(a.settings.loadDevices(), pauseVoice)
+		case screenWorkers:
+			var controller workerController
+			if a.runtime != nil && a.runtime.Pipeline != nil {
+				controller = a.runtime.Pipeline
+			}
+			a.workers = newWorkers(a.cfg, controller)
+			a.workers.returnScreen = prev
+			a.workers.width, a.workers.height = a.width, a.height
+			a.workers.refresh()
+			return a, tea.Batch(a.workers.tick(), pauseVoice)
 		case screenSessions:
 			// Apply stored geometry immediately — Bubble Tea only re-emits
 			// WindowSize on actual resize, not on screen switches.
@@ -903,7 +930,18 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msg.rt.Pipeline.OnTurn()
 				}
 			},
-			workScope:      func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
+			workScope: func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
+			workersSummary: func() string {
+				running, queued := 0, 0
+				for _, item := range msg.rt.Pipeline.Workers() {
+					if item.State == "queued" {
+						queued++
+					} else if item.Active() {
+						running++
+					}
+				}
+				return workersCountLabel(running, queued, msg.rt.Pipeline.WorkersEnabled())
+			},
 			brainSession:   brainSessionReporter(msg.rt.Pipeline.Brain),
 			compact:        msg.rt.Pipeline.CompactConversation,
 			voice:          msg.rt.Voice,
@@ -988,9 +1026,10 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, next
 
 	case talkHotkeyEventMsg:
-		// Browsing personas pauses voice input. Keep draining the global key
-		// without allowing a press to reopen the mic behind the manager.
-		if a.screen == screenPersonas && (msg.ev.Kind == talkhotkey.KindDown || msg.ev.Kind == talkhotkey.KindUp) {
+		// Browsing personas or the workers manager pauses voice input. Keep
+		// draining the global key without allowing a press to reopen the mic
+		// behind either screen.
+		if (a.screen == screenPersonas || a.screen == screenWorkers) && (msg.ev.Kind == talkhotkey.KindDown || msg.ev.Kind == talkhotkey.KindUp) {
 			return a, a.rearmTalk(msg)
 		}
 		// The key is global by definition: deliver it to the conversation
@@ -1034,7 +1073,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// turnState cannot wedge on turnVoiceCanceling forever after /settings.
 	if a.screen != screenConversation {
 		switch msg.(type) {
-		case voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg:
+		case voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
+			compactDoneMsg, backgroundReadyMsg, backgroundRecoveryMsg, backgroundPauseDoneMsg:
 			var convCmd tea.Cmd
 			a.conversation, convCmd = a.conversation.Update(msg)
 			if eventMsg, ok := msg.(busEventMsg); ok {
@@ -1071,6 +1111,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.remote, cmd = a.remote.Update(msg)
 			case screenPersonas:
 				a.personas, cmd = a.personas.Update(msg)
+			case screenWorkers:
+				a.workers, cmd = a.workers.Update(msg)
 			}
 			return a, tea.Batch(convCmd, cmd)
 		}
@@ -1112,6 +1154,8 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.remote, cmd = a.remote.Update(msg)
 	case screenPersonas:
 		a.personas, cmd = a.personas.Update(msg)
+	case screenWorkers:
+		a.workers, cmd = a.workers.Update(msg)
 	}
 
 	return a, cmd
@@ -1120,6 +1164,12 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a App) applyPlaybackVolume(gain float64) {
 	if a.runtime != nil && a.runtime.Pipeline != nil {
 		audio.ApplyEngineVolume(a.runtime.Pipeline.Player, gain)
+	}
+}
+
+func (a App) applyWorkersEnabled(enabled bool) {
+	if a.runtime != nil && a.runtime.Pipeline != nil {
+		a.runtime.Pipeline.SetWorkersEnabled(enabled)
 	}
 }
 
@@ -1202,6 +1252,8 @@ func (a App) View() string {
 		return a.remote.View()
 	case screenPersonas:
 		return a.personas.View()
+	case screenWorkers:
+		return a.workers.View()
 	default:
 		return ""
 	}

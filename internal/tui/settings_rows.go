@@ -231,6 +231,20 @@ func (m settingsModel) legacyWorkerRows() []settingRow {
 	if config.WorkerSelected(m.cfg) {
 		model.current = indexOf(models, m.activeWorkerModel())
 	}
+	permission := settingRow{
+		key: "voice_workers_disabled", name: "Allow background workers", kind: rowToggle,
+		value: onOff(!m.cfg.VoiceWorkersDisabled), applies: appliesNow,
+		help: "Off blocks new background jobs. Existing tasks may finish; /workers has Stop task and Stop all.",
+		run: func(m *settingsModel) tea.Cmd {
+			enabled := m.cfg.VoiceWorkersDisabled
+			if err := saveWorkersEnabled(m.cfg, enabled, m.saveConfig, m.onWorkersEnabled); err != nil {
+				m.message = "Failed to save worker preference: " + err.Error()
+			} else {
+				m.message = workersPermissionMessage(enabled)
+			}
+			return nil
+		},
+	}
 	rows := []settingRow{provider, model}
 	rows = append(rows, settingRow{key: "worker_migration", name: "Use current worker for all tiers", kind: rowAction,
 		detail: "preview", applies: appliesNextConversation, help: "Create a tiered draft from the resolved legacy worker. Nothing is saved until Save.",
@@ -239,6 +253,7 @@ func (m settingsModel) legacyWorkerRows() []settingRow {
 		value:  fmt.Sprintf("legacy: %d concurrent · %s/job", max(1, m.cfg.VoiceWorkerMaxConcurrent), legacyWorkerBudgetLabel(m.cfg.VoiceWorkerJobBudget)),
 		detail: "legacy singleton controls; tier policy is not active",
 		help:   "These singleton settings control jobs until an explicit tiered worker policy is saved."})
+	rows = append(rows, permission)
 	return rows
 }
 

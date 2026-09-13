@@ -28,6 +28,7 @@ const (
 	actionLibrary
 	actionAudiobook
 	actionPersonas
+	actionWorkers
 	actionSettings
 	actionQuit
 	// Submenu actions (design WI-c8884d §2.4/§2.6).
@@ -146,6 +147,10 @@ func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved .
 			action: actionPersonas,
 		},
 		launcherItem{
+			label: "Workers", hint: "View tasks · stop work · allow or disable", glyph: "◈",
+			action: actionWorkers,
+		},
+		launcherItem{
 			label: "Meeting", hint: "Record · notes · ★ bookmarks", glyph: "◉",
 			action: actionMeeting,
 		},
@@ -210,6 +215,8 @@ func (m launcherModel) Update(msg tea.Msg) (launcherModel, tea.Cmd) {
 				return m, func() tea.Msg { return switchScreenMsg(screenAudiobook) }
 			case actionPersonas:
 				return m, func() tea.Msg { return switchScreenMsg(screenPersonas) }
+			case actionWorkers:
+				return m, func() tea.Msg { return switchScreenMsg(screenWorkers) }
 			case actionSettings:
 				return m, func() tea.Msg { return switchScreenMsg(screenSettings) }
 			case actionQuit:

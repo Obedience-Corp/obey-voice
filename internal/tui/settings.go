@@ -81,6 +81,7 @@ type settingsModel struct {
 	// onPlaybackVolume applies gain to the live conversation player. Nil when
 	// Settings is open without a running pipeline (launcher).
 	onPlaybackVolume func(float64)
+	onWorkersEnabled func(bool)
 	// lookPath resolves external binaries for the recognizer rows; nil uses
 	// exec.LookPath. Tests inject a fake so a picker never depends on what
 	// happens to be installed on the machine running them.
