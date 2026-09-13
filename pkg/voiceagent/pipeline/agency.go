@@ -256,7 +256,7 @@ func (a *Agency) speakSpawnClarifier(ctx context.Context, turn *turnConductor, m
 }
 
 func (a *Agency) workerRun(brief string, worker brain.Provider, cfg *config.Config) func(context.Context) (string, error) {
-	return a.workerRunWithBudget(brief, worker, cfg, nil)
+	return a.workerRunWithBudget(brief, worker, cfg, legacyWorkerBudget(a.workEnabled(), cfg))
 }
 
 func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *config.Config, budget *brain.WorkerBudget) func(context.Context) (string, error) {
@@ -268,6 +268,13 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 			return "", errors.New("worker provider is not configured")
 		}
 		worker = a.freshWorker(worker)
+		if a.workEnabled() && !tieredWorkers(cfg) && providerName(cfg) == "ollama" {
+			if validator, ok := worker.(brain.LegacyWorkerValidator); ok {
+				if err := validator.ValidateLegacyWorker(ctx); err != nil {
+					return "", fmt.Errorf("validate local worker: %w", err)
+				}
+			}
+		}
 		// Tiered admissions always run the full worker tool surface. The
 		// conversation flag controls the live turn/router; it must not disable
 		// tools for a worker that was explicitly admitted to a tier.
