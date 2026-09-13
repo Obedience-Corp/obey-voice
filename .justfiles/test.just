@@ -169,6 +169,12 @@ acoustic-vad ARTIFACT CONFIG ARM STIMULUS:
 acoustic-reprocess RUN_DIR CONFIG:
     OBEY_VOICE_FRONTEND_REPROCESS_RUN="{{RUN_DIR}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" go test ./tests/convoflow -run '^TestReprocessSavedFrontendTrace$' -count=1 -v
 
+# Decode a complete saved WAV with local Parakeet, bypassing VAD/endpointing.
+# Successful execution is diagnostic, not an acoustic acceptance pass.
+[no-cd]
+acoustic-transcribe MODELS_DIR WAV MODEL="tdt-0.6b-v2":
+    OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+
 # Real Bubble Tea/pipeline host boundaries with controlled STT, 30 samples each.
 # Hardware capture, inference and spoken acknowledgement are separate gates.
 [no-cd]

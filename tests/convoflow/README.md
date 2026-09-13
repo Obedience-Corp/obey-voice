@@ -220,6 +220,26 @@ a candidate frontend WAV and compares its production detector behavior with raw
 and original processed capture. It derives approximate capture-relative offsets
 from the saved events and reports that timing uncertainty.
 
+For an incorrect or truncated transcript, compare the clean fixture with the
+complete raw and processed microphone recordings using the installed local
+Parakeet model:
+
+```sh
+just test acoustic-transcribe /path/to/installed/models /path/to/artifact/stimulus.wav
+just test acoustic-transcribe /path/to/installed/models /path/to/artifact/mic-in.wav
+just test acoustic-transcribe /path/to/installed/models /path/to/artifact/mic-processed.wav
+```
+
+This decodes the whole WAV without VAD or endpoint segmentation and logs JSON
+with the file fingerprint, model, sample information and transcript. It opens
+no audio device and does not read the installed user configuration. The optional
+third argument selects the Parakeet model (default `tdt-0.6b-v2`). Successful
+execution means decoding completed; it does not assert fixture identity or
+physical acceptance. An intact whole-file decode alongside a truncated live
+transcript supports investigating segmentation. Incorrect whole-file decoding
+requires checking the acoustic signal and recognition before attributing loss
+to segmentation. ASR alone cannot identify the source of competing speech.
+
 Host scheduling has a separate repeatable check:
 
 ```sh
