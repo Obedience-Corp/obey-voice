@@ -1,12 +1,16 @@
-package audio
+package playback
 
-import "math"
+import (
+	"math"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+)
 
 // streamResampler performs multi-callback linear resampling while preserving
 // fractional phase across calls. Stateless per-callback resample drifts (e.g.
 // 512 frames @ 48 kHz → 171 samples instead of 170⅔ every time), which
 // misaligns the AEC far-end reference over a long utterance.
-type StreamResampler struct {
+type streamResampler struct {
 	srcRate int
 	dstRate int
 	// phase is the input-sample index of the next output sample within the
@@ -21,12 +25,12 @@ type StreamResampler struct {
 }
 
 // Configure sets rates and resets stream state when either rate changes.
-func (r *StreamResampler) Configure(srcRate, dstRate int) {
+func (r *streamResampler) Configure(srcRate, dstRate int) {
 	if srcRate <= 0 {
-		srcRate = SampleRate
+		srcRate = audio.SampleRate
 	}
 	if dstRate <= 0 {
-		dstRate = SampleRate
+		dstRate = audio.SampleRate
 	}
 	if r.srcRate == srcRate && r.dstRate == dstRate {
 		return
@@ -39,12 +43,12 @@ func (r *StreamResampler) Configure(srcRate, dstRate int) {
 
 // Resample converts in (srcRate) into out (dstRate capacity) and returns how
 // many samples were written. Leftover input stays in carry for the next call.
-func (r *StreamResampler) Resample(in, out []float32) int {
+func (r *streamResampler) Resample(in, out []float32) int {
 	if len(out) == 0 {
 		return 0
 	}
 	if r.srcRate <= 0 || r.dstRate <= 0 {
-		r.Configure(SampleRate, SampleRate)
+		r.Configure(audio.SampleRate, audio.SampleRate)
 	}
 	if r.srcRate == r.dstRate {
 		return r.copySameRate(in, out)
@@ -82,7 +86,7 @@ func (r *StreamResampler) Resample(in, out []float32) int {
 	return produced
 }
 
-func (r *StreamResampler) copySameRate(in, out []float32) int {
+func (r *streamResampler) copySameRate(in, out []float32) int {
 	// Drain carry first so a prior rate-change leftover is not dropped silently.
 	n := 0
 	if len(r.carry) > 0 {
@@ -99,14 +103,14 @@ func (r *StreamResampler) copySameRate(in, out []float32) int {
 	return n
 }
 
-func (r *StreamResampler) at(in []float32, idx int) float32 {
+func (r *streamResampler) at(in []float32, idx int) float32 {
 	if idx < len(r.carry) {
 		return r.carry[idx]
 	}
 	return in[idx-len(r.carry)]
 }
 
-func (r *StreamResampler) compactCarry(in []float32, keepFrom, total int) {
+func (r *streamResampler) compactCarry(in []float32, keepFrom, total int) {
 	need := total - keepFrom
 	if need <= 0 {
 		r.carry = r.carry[:0]

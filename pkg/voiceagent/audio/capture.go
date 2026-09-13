@@ -204,7 +204,7 @@ func (c *Capture) openMalgoDevice() error {
 	deviceConfig.Capture.Format = malgo.FormatS16
 	deviceConfig.Capture.Channels = Channels
 	deviceConfig.SampleRate = SampleRate
-	releaseDeviceID, err := SelectDevice(mctx.Context, malgo.Capture, c.deviceName, &deviceConfig.Capture)
+	releaseDeviceID, err := selectDevice(mctx.Context, malgo.Capture, c.deviceName, &deviceConfig.Capture)
 	if err != nil {
 		_ = mctx.Uninit()
 		mctx.Free()

@@ -375,11 +375,9 @@ func clampFloat(value, low, high float64) float64 {
 	return value
 }
 
-// RefsSnapshot exposes the pending reference queue for tests that assert on
-// the delay offset. Not part of the Frontend contract, and exported only
-// because the delay test moved to the playback package with the reference-delay
-// constants it checks.
-func (f *VoiceFrontend) RefsSnapshot() []float64 {
+// refsSnapshot exposes the pending reference queue for tests that assert on
+// the delay offset. Not part of the Frontend contract.
+func (f *VoiceFrontend) refsSnapshot() []float64 {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]float64(nil), f.refs.samples...)

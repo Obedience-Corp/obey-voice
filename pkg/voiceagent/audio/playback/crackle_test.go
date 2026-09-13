@@ -40,20 +40,20 @@ func TestExpandMonoS16LEMultiChannelFrontOnly(t *testing.T) {
 }
 
 func TestChoosePlaybackChannelsPrefersStereo(t *testing.T) {
-	if got := audio.ChoosePlaybackChannels(8); got != 2 {
+	if got := choosePlaybackChannels(8); got != 2 {
 		t.Fatalf("choosePlaybackChannels(8) = %d, want 2", got)
 	}
-	if got := audio.ChoosePlaybackChannels(2); got != 2 {
+	if got := choosePlaybackChannels(2); got != 2 {
 		t.Fatalf("choosePlaybackChannels(2) = %d, want 2", got)
 	}
-	if got := audio.ChoosePlaybackChannels(1); got != 1 {
+	if got := choosePlaybackChannels(1); got != 1 {
 		t.Fatalf("choosePlaybackChannels(1) = %d, want 1", got)
 	}
 }
 
 func TestPickPlaybackFormatPrefersStereo44100(t *testing.T) {
 	// Among advertised rates, 44.1 beats 48 after the 48 kHz path regressed.
-	rate, ch := audio.PickPlaybackFormat([]malgo.DataFormat{
+	rate, ch := pickPlaybackFormat([]malgo.DataFormat{
 		{Channels: 8, SampleRate: 44100},
 		{Channels: 8, SampleRate: 48000},
 	}, 24_000)
@@ -63,12 +63,12 @@ func TestPickPlaybackFormatPrefersStereo44100(t *testing.T) {
 	if ch != 8 {
 		t.Fatalf("channels = %d, want 8 from advertised formats", ch)
 	}
-	rate, ch = audio.PickPlaybackFormat([]malgo.DataFormat{
+	rate, ch = pickPlaybackFormat([]malgo.DataFormat{
 		{Channels: 8, SampleRate: 44100},
 		{Channels: 2, SampleRate: 44100},
 	}, 24_000)
 	if rate != 44100 || ch != 2 {
-		t.Fatalf("audio.PickPlaybackFormat = %d/%d, want 44100/2", rate, ch)
+		t.Fatalf("pickPlaybackFormat = %d/%d, want 44100/2", rate, ch)
 	}
 }
 

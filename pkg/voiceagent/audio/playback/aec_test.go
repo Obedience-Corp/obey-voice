@@ -202,7 +202,7 @@ func TestStreamResamplerPreservesPhaseAcrossCallbacks(t *testing.T) {
 		cbFrames  = 512
 		callbacks = 100 // ~1.067s of device audio
 	)
-	var r audio.StreamResampler
+	var r streamResampler
 	r.Configure(srcRate, dstRate)
 
 	in := make([]float32, cbFrames)

@@ -89,14 +89,14 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	// the frames are audible (see applyReferenceDelay).
 	deviceConfig.PeriodSizeInFrames = playbackPeriodFrames
 	deviceConfig.Periods = playbackPeriods
-	releaseDeviceID, err := audio.SelectDevice(ctx.Context, malgo.Playback, p.deviceName, &deviceConfig.Playback)
+	releaseDeviceID, err := audio.SelectPlaybackDevice(ctx.Context, p.deviceName, &deviceConfig.Playback)
 	if err != nil {
 		_ = ctx.Uninit()
 		ctx.Free()
 		return 0, fmt.Errorf("select playback device: %w", err)
 	}
 	defer releaseDeviceID()
-	actualDeviceName, preferredRate, nativeChannels, err := audio.PlaybackDeviceDetails(ctx.Context, p.deviceName, sampleRate)
+	actualDeviceName, preferredRate, nativeChannels, err := playbackDeviceDetails(ctx.Context, p.deviceName, sampleRate)
 	if err != nil {
 		_ = ctx.Uninit()
 		ctx.Free()
@@ -104,7 +104,7 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	}
 	// Never hard-code mono here: multi-channel devices (Studio Display Speakers
 	// advertise 8ch) crackled when CoreAudio invented a mono upmix.
-	channels := audio.ChoosePlaybackChannels(nativeChannels)
+	channels := choosePlaybackChannels(nativeChannels)
 
 	device, openedRate, openedChannels, err := openPlaybackDevice(ctx.Context, deviceConfig, channels, nativeChannels, sampleRate, preferredRate, p.onData)
 	if err != nil {

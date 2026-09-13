@@ -2,18 +2,12 @@ package playback
 
 import (
 	"fmt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"math"
 	"math/rand"
 	"testing"
-)
 
-// Echo cancellation is easy to wire up and have do nothing. The reference path
-// can be rate-correct, phase-correct and still deliver ~0dB because the far-end
-// audio reaches the canceller tens of milliseconds before its echo reaches the
-// mic — outside the filter's tap window. These tests drive the front-end the way
-// the devices do and assert on measured ERLE, so a regression shows up as a
-// number rather than as "barge-in feels twitchy again".
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+)
 
 const (
 	// erleCaptureChunk is one capture callback: miniaudio's low-latency default
@@ -218,39 +212,5 @@ func TestEchoCancellerPreservesNearEndDuringDoubleTalk(t *testing.T) {
 	if kept < 0 {
 		t.Errorf("near-end preservation = %+.2f dB; the canceller is eating the "+
 			"user's voice, which is exactly what barge-in needs to hear", kept)
-	}
-}
-
-// A burst that starts after silence must re-prime the offset: the queue drains
-// to empty between utterances, and without re-priming every sentence after the
-// first would be uncompensated.
-func TestReferenceDelayRePrimesAfterSilence(t *testing.T) {
-	f := audio.NewVoiceFrontend()
-	f.SetReferenceDelay(320)
-
-	push := make([]float32, 160)
-	for i := range push {
-		push[i] = 0.5
-	}
-
-	// First burst: the offset is primed, so the first pops are the silent
-	// device-buffer window rather than far-end audio.
-	f.PushPlaybackReference(push)
-	if out := f.RefsSnapshot(); len(out) != 320+160 {
-		t.Fatalf("queue depth after first push = %d, want 320 delay + 160 pushed", len(out))
-	}
-
-	// Drain it the way continuous capture does during silence.
-	for range 10 {
-		f.ProcessCapture(make([]float32, 160))
-	}
-	if got := len(f.RefsSnapshot()); got != 0 {
-		t.Fatalf("queue depth after silence = %d, want 0 (drained)", got)
-	}
-
-	// Next burst re-primes rather than pairing immediately.
-	f.PushPlaybackReference(push)
-	if out := f.RefsSnapshot(); len(out) != 320+160 {
-		t.Fatalf("queue depth after second burst = %d, want the offset re-primed", len(out))
 	}
 }

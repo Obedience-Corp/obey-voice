@@ -158,7 +158,7 @@ func TestIncrementalResampleIsContinuousAcrossChunks(t *testing.T) {
 	whole := chunkSamples(0, 4800, inputRate)
 	want := resample(append([]float32(nil), whole...), inputRate, outputRate)
 
-	var resampler audio.StreamResampler
+	var resampler streamResampler
 	resampler.Configure(inputRate, outputRate)
 	var got []float32
 	var buf []float32

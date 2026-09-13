@@ -150,7 +150,7 @@ func (in *aecRefIngress) droppedBlocks() uint64 {
 
 func (in *aecRefIngress) loop() {
 	defer close(in.done)
-	var resamp audio.StreamResampler
+	var resamp streamResampler
 	outScratch := make([]float32, aecOutScratchCap)
 	silence := make([]float32, aecOutScratchCap)
 
@@ -188,7 +188,7 @@ func (in *aecRefIngress) fillGap(gap int, silence []float32) {
 	}
 }
 
-func (in *aecRefIngress) process(slot *aecRefSlot, resamp *audio.StreamResampler, outScratch []float32) {
+func (in *aecRefIngress) process(slot *aecRefSlot, resamp *streamResampler, outScratch []float32) {
 	if slot.n <= 0 || in.frontend == nil {
 		return
 	}

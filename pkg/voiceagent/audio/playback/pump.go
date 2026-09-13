@@ -179,7 +179,7 @@ func (s *silenceTimer) stop() {
 func pumpIncremental(ctx context.Context, segment *playbackSegment, stream *audio.PCMStream, debug *playerDebugRecorder, inputRate, outputRate int, budget time.Duration) {
 	segment.setReadyFrames(preRollFrames(outputRate))
 
-	var resampler audio.StreamResampler
+	var resampler streamResampler
 	resampler.Configure(inputRate, outputRate)
 	var converted []float32
 
@@ -248,7 +248,7 @@ func preRollFrames(outputRate int) int {
 // reusing buf. Whatever cannot be interpolated yet (at most one sample, needed
 // as the left neighbour of the next chunk's first output) stays in the
 // resampler's carry rather than being flushed with a duplicated edge.
-func resampleChunk(resampler *audio.StreamResampler, frames, buf []float32, inputRate, outputRate int) []float32 {
+func resampleChunk(resampler *streamResampler, frames, buf []float32, inputRate, outputRate int) []float32 {
 	need := len(frames)*outputRate/inputRate + 2
 	if cap(buf) < need {
 		buf = make([]float32, need)
