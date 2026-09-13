@@ -119,6 +119,9 @@ func TestWorkerSettingsShowCapabilityScopeAndExistingBounds(t *testing.T) {
 		m.workerEditingTier = tier
 		view := stripANSI(m.View())
 		wants := []string{"1 concurrent", "32 queued"}
+		if tier == "" {
+			wants = append(wants, "tiered", "tiered draft; Save applies these limits")
+		}
 		if tier != "" {
 			wants = append(wants, "local request/tool/output quotas")
 		}
@@ -126,6 +129,25 @@ func TestWorkerSettingsShowCapabilityScopeAndExistingBounds(t *testing.T) {
 			if !strings.Contains(view, want) {
 				t.Fatalf("%s view lacks %q: %s", tier, want, view)
 			}
+		}
+	}
+}
+
+func TestLegacyWorkerSettingsShowEffectiveSingletonLimits(t *testing.T) {
+	cfg := &config.Config{
+		BrainProvider:            "ollama",
+		OllamaModel:              "qwen3:8b",
+		VoiceWorkerProvider:      "ollama",
+		VoiceWorkerModel:         "qwen3:8b",
+		VoiceWorkerMaxConcurrent: 3,
+		VoiceWorkerJobBudget:     75,
+	}
+	m := newSettings(cfg, nil)
+	m.section, m.width, m.height = sectionWorker, 180, 40
+	view := stripANSI(m.View())
+	for _, want := range []string{"legacy: 3 concurrent · 75s/job", "legacy singleton controls"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("legacy view lacks %q: %s", want, view)
 		}
 	}
 }
