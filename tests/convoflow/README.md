@@ -100,7 +100,7 @@ ordinary `user` string is not substituted for recorded speech.
 name: recorded-latency
 input: speech
 latency_condition: baseline
-capture: {audio: true, speakers: false}
+capture: {audio: true, speakers: true}
 turns:
   - id: warmup
     wav: /absolute/path/to/recorded-question.wav

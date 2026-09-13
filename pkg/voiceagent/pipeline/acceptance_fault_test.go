@@ -17,7 +17,10 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
-type acceptanceWorker struct{ calls atomic.Int32 }
+type acceptanceWorker struct {
+	calls atomic.Int32
+	tools atomic.Int32
+}
 
 type acceptanceCompletion struct {
 	*handoffCompletionBrain
@@ -39,8 +42,16 @@ func (b *acceptanceCompletion) Complete(ctx context.Context, req brain.Completio
 func (w *acceptanceWorker) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
 	return nil, errors.New("worker inference was not expected")
 }
-func (w *acceptanceWorker) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
+func (w *acceptanceWorker) ThinkFull(_ context.Context, _ string, opts brain.StreamOptions) (string, error) {
 	w.calls.Add(1)
+	if opts.OnToolStart != nil {
+		call := brain.ToolCall{ID: "acceptance-tool", Name: "list_files", Kind: brain.KindListDir, Summary: "."}
+		opts.OnToolStart(call)
+		w.tools.Add(1)
+		if opts.OnToolEnd != nil {
+			opts.OnToolEnd(brain.ToolResult{ToolCall: call, Preview: "fixture"})
+		}
+	}
 	return "unexpected worker execution", nil
 }
 func (w *acceptanceWorker) ClearHistory()            {}
@@ -145,8 +156,8 @@ func TestAcceptanceConcurrentPublishedResultsDeliverOnce(t *testing.T) {
 			t.Fatalf("result %s history count=%d", r.Outcome.JobID, count)
 		}
 	}
-	if completion.requestCount() != 2 || worker.calls.Load() != 0 {
-		t.Fatalf("completion calls=%d worker calls=%d", completion.requestCount(), worker.calls.Load())
+	if completion.requestCount() != 2 || worker.calls.Load() != 0 || worker.tools.Load() != 0 {
+		t.Fatalf("completion calls=%d worker calls=%d tool calls=%d", completion.requestCount(), worker.calls.Load(), worker.tools.Load())
 	}
 }
 
@@ -169,13 +180,25 @@ func TestAcceptanceRestoreHeldActionThenHostDelivery(t *testing.T) {
 	}
 	source := p.WorkSnapshot().Scope
 	c := p.WorkCoordinator()
-	key, err := c.Register(source, work.Admission{JobID: "restored-job", Task: "restore task"})
-	if err != nil {
-		t.Fatal(err)
+	// Route through Agency so the worker really runs and produces the
+	// canonical result that is later restored. A direct Register/Publish pair
+	// would only test coordinator persistence and could miss worker reruns.
+	a.handleSpawn(context.Background(), nil, nil, RouteDecision{Kind: RouteSpawn, Transcript: "restore task"})
+	deadline := time.Now().Add(time.Second)
+	var result work.ResultView
+	for {
+		pending := c.Pending(source)
+		if len(pending) == 1 && pending[0].Outcome.Text == "unexpected worker execution" {
+			result = pending[0]
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("agency worker did not publish result: %+v", pending)
+		}
+		time.Sleep(time.Millisecond)
 	}
-	result, err := c.Publish(key, work.Outcome{Scope: source, JobID: key.JobID, Status: work.OutcomeSucceeded, Text: "restored answer"})
-	if err != nil {
-		t.Fatal(err)
+	if worker.calls.Load() != 1 {
+		t.Fatalf("agency worker calls=%d, want one execution", worker.calls.Load())
 	}
 	saved := p.WorkSnapshot()
 	if err := store.BeginWork(sess, saved, nil); err != nil {
@@ -206,7 +229,7 @@ func TestAcceptanceRestoreHeldActionThenHostDelivery(t *testing.T) {
 	if completion.requestCount() != 0 || len(p.WorkCoordinator().Pending(current)) != 1 {
 		t.Fatal("restored result auto-delivered before explicit action")
 	}
-	if err := p.WorkResultAction(current, result.Outcome.ResultID, "speak"); err != nil {
+	if err := p.WorkResultAction(current, result.Outcome.ResultID, "replay"); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.RunBackgroundTurn(context.Background()); err != nil {
@@ -220,10 +243,10 @@ func TestAcceptanceRestoreHeldActionThenHostDelivery(t *testing.T) {
 		t.Fatalf("durable delivered session=%+v err=%v", durable, err)
 	}
 	final := p.WorkSnapshot()
-	if len(final.Pending) != 0 || len(final.Communicated) != 1 || final.Communicated[0].Outcome.Text != "restored answer" {
+	if len(final.Pending) != 0 || len(final.Communicated) != 1 || final.Communicated[0].Outcome.Text != "unexpected worker execution" {
 		t.Fatalf("restored delivery=%+v", final)
 	}
-	if worker.calls.Load() != 0 || completion.requestCount() != 1 {
-		t.Fatalf("rerun/provider calls worker=%d completion=%d", worker.calls.Load(), completion.requestCount())
+	if worker.calls.Load() != 1 || worker.tools.Load() != 1 || completion.requestCount() != 1 {
+		t.Fatalf("rerun/provider calls worker=%d tools=%d completion=%d", worker.calls.Load(), worker.tools.Load(), completion.requestCount())
 	}
 }

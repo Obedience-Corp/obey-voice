@@ -161,6 +161,8 @@ type liveRunner struct {
 	persona        *personaRuntime
 	observations   []*observing
 	workerFactory  func(*config.Config) (brain.Provider, error)
+	wavVADFactory  wavVADFactory
+	wavSTTFactory  wavSTTFactory
 
 	mu         sync.Mutex
 	markStream int
