@@ -1,10 +1,11 @@
 # Voice runtime code layout
 
 The voice pipeline, Ollama provider, config package, audio player, meeting log,
-benchmark command and conversation screen use files grouped by responsibility within their existing Go
-packages; the Qwen TTS provider went further and became its own package. This guide
-identifies where to make a change without tracing a single large implementation
-file, and records the contracts a file boundary could otherwise hide.
+benchmark command and conversation screen use files grouped by responsibility
+within their existing Go packages; the Qwen TTS provider went further and became
+its own package. This guide identifies where to make a change without tracing a
+single large implementation file, and records the contracts a file boundary
+could otherwise hide.
 
 ## Pipeline
 
@@ -200,16 +201,19 @@ predates the split and keeps the startup handshake.
 
 | File | Responsibility |
 | --- | --- |
-| `conversation.go` | Layout constants, `voiceTickMsg`, the `conversationModel` struct, `newConversation`, `activityEntry`, `plainChatTurn` |
-| `conversation_update.go` | `Update`, the voice tick command and the arm/rearm helpers only it drives |
-| `conversation_events.go` | `handleEvent`, the pipeline event switch, with `setStatus` and `setVoiceMode`, which only it calls |
-| `conversation_transcript.go` | Transcript and activity content: append, clear, remember, streaming deltas, refresh, seeding, clipboard copy |
+| `conversation.go` | Layout and tick constants, `voiceTickMsg`, the `conversationModel` struct, `newConversation`, `activityEntry`, `plainChatTurn` |
+| `conversation_update.go` | `Update`, `voiceTickCmd`, `rearm`, `shouldAnimateVoice`, `ensureVoiceTick` (also armed from `startConversation` in `turndriver.go`) |
+| `conversation_events.go` | `handleEvent`, the pipeline event switch, with `setStatus` and `setVoiceMode`; it is their main caller, but `tui.go`, `turndriver.go`, `talkhotkey.go` and `work.go` call them too |
+| `conversation_transcript.go` | Transcript and activity content: append, clear, remember, streaming deltas, refresh, seeding, clipboard copy and the `composerIdle` gate it uses |
 | `conversation_scroll.go` | Size, reflow, viewport follow and scroll |
 | `conversation_selection.go` | Persona selection request/result messages and the selection queue |
-| `conversation_view.go` | `View`, tabs, turn and bubble rendering, metric and activity formatting, animation styles |
+| `conversation_view.go` | `View`, tabs, turn and bubble rendering, metric and activity formatting, animation styles, and `truncateJobLine`, whose only caller is `work.go` |
 
-`handleEvent` moved whole. It is 384 lines and the largest remaining declaration in the
-package; cutting it is a decomposition, not a move, and is tracked with the `App.update` work.
+`handleEvent` moved whole. At 382 lines it is the largest declaration in the conversation
+model and the second largest in the package after `App.update` (928); cutting it is a
+decomposition, not a move, and is tracked with the `App.update` work. The activity feed spans
+two files: its content lives in `conversation_transcript.go`, its formatting in
+`conversation_view.go`.
 
 ## Maintaining the boundaries
 
