@@ -191,6 +191,15 @@ func (p *pauseController) consumeResumed() bool {
 	return true
 }
 
+// advisoryBackpressured remains true after speech revokes a pause until the
+// owner resumes the retained session. During that interval the loop still
+// consumes capture, while its event consumer may remain stopped.
+func (p *pauseController) advisoryBackpressured() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.paused || p.captured
+}
+
 func (p *pauseController) stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

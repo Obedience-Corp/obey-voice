@@ -304,7 +304,13 @@ func (p *Pipeline) EndUtterance() bool {
 func (p *Pipeline) resetEchoState() {
 	// Reset VAD state after joining the interrupt watcher. Capture retention
 	// for the next listen is managed separately at the response boundary.
-	if p.VAD != nil {
+	// A yielded completion session still consumes capture and owns the STT
+	// detector. Resetting it here would race that owner and change native sample
+	// offsets without resetting the segmenter's retained onset window.
+	p.captureMu.Lock()
+	captureActive := p.captureSession != nil
+	p.captureMu.Unlock()
+	if p.VAD != nil && !captureActive {
 		p.VAD.Clear()
 	}
 	if p.BargeInVAD != nil {

@@ -100,19 +100,29 @@ audio-hardware:
 # Build a pinned harness and reproducible local Kokoro fixtures/scenarios.
 # Explicit model directory; does not read or change the installed user config.
 [no-cd]
-acoustic-prepare MODELS_DIR SUITE_DIR:
+acoustic-prepare MODELS_DIR SUITE_DIR PROFILE="full":
     #!/usr/bin/env bash
     set -euo pipefail
+    profile="{{PROFILE}}"
+    case "$profile" in
+        full|latency-brief) ;;
+        *) echo "error: unknown acoustic fixture profile: $profile (expected full or latency-brief)" >&2; exit 2 ;;
+    esac
     suite="{{SUITE_DIR}}"
     mkdir -p "$suite/bin" "$suite/fixtures"
     go build -tags "${CONVOFLOW_GO_TAGS:-}" -o "$suite/bin/convoflow" ./tests/convoflow
     go build -o "$suite/bin/golden-tts" ./cmd/golden-tts
-    texts=("What is the capital of France? Answer in one word." "What is two plus two? Answer with just the number." "Say hello in exactly three words." "Count from one to one hundred slowly and say every number.")
+    math_text="What is two plus two? Answer with just the number."
+    if [[ "$profile" == latency-brief ]]; then
+        math_text="What is two plus two?"
+    fi
+    texts=("What is the capital of France? Answer in one word." "$math_text" "Say hello in exactly three words." "Count from one to one hundred slowly and say every number.")
     names=(synth-01 synth-02 synth-03 counting)
     for i in 0 1 2 3; do
         "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1 -text "${texts[$i]}" -out "$suite/fixtures/${names[$i]}.wav"
     done
     "$suite/bin/convoflow" -prepare-acoustic-suite "$suite/scenarios" -fixture-dir "$suite/fixtures"
+    printf '%s\n' "$profile" > "$suite/bin/fixture-profile.txt"
     shasum -a 256 "$suite/bin/convoflow" > "$suite/binary.sha256"
 
 # Collect 3 warmups + 30 physical turns per condition, serially, then compare.
@@ -159,8 +169,19 @@ acoustic-vad ARTIFACT CONFIG ARM STIMULUS:
 acoustic-reprocess RUN_DIR CONFIG:
     OBEY_VOICE_FRONTEND_REPROCESS_RUN="{{RUN_DIR}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" go test ./tests/convoflow -run '^TestReprocessSavedFrontendTrace$' -count=1 -v
 
+# Decode a complete saved WAV with local Parakeet, bypassing VAD/endpointing.
+# Successful execution is diagnostic, not an acoustic acceptance pass.
+[no-cd]
+acoustic-transcribe MODELS_DIR WAV MODEL="tdt-0.6b-v2":
+    OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+
 # Real Bubble Tea/pipeline host boundaries with controlled STT, 30 samples each.
 # Hardware capture, inference and spoken acknowledgement are separate gates.
 [no-cd]
 work-host-timing:
     go test -race ./internal/tui -run '^TestWork(AdmissionToNextCaptureHostOverhead|QuietCompletionHostOverhead)$' -count=1 -v -timeout=60s
+
+# Real native Silero reset across two streams, without devices or transcription.
+[no-cd]
+vad-reset MODELS_DIR FIXTURE:
+    OBEY_VOICE_VAD_RESET_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_VAD_RESET_FIXTURE="{{FIXTURE}}" go test -race ./pkg/voiceagent/audio -run '^TestVADClearRestartsNativeTimeline$' -count=1 -v

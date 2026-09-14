@@ -153,7 +153,10 @@ func TestEchoCancellerTapsCoverWorstRateResidual(t *testing.T) {
 // thing that brings the echo inside the window.
 func TestEchoCancellerNeedsReferenceDelay(t *testing.T) {
 	const rate = 24000
-	echoLag := playbackPeriods*playbackPeriodFrames*audio.SampleRate/rate + 8*audio.SampleRate/1000
+	// Keep the total echo path outside the filter window, while the residual
+	// after the device offset fits inside it. A 72ms path no longer exposes
+	// missing compensation now that the filter spans 96ms.
+	echoLag := referenceDelaySamples(rate, playbackPeriodFrames) + 90*audio.SampleRate/1000
 
 	compensated := erleThroughFrontend(t, referenceDelaySamples(rate, playbackPeriodFrames), echoLag)
 	uncompensated := erleThroughFrontend(t, 0, echoLag)

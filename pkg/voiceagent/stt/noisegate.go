@@ -15,12 +15,12 @@ const (
 	gateCV = 0.18
 	// gateSilent is below a quiet room; digital zeros are not a fan latch.
 	gateSilent = 1e-4
-	// gateGainJump is an OS mixer slam (~18 dB), not a syllable. Syllables
-	// sit around 2–4× the slow envelope; a volume slider often jumps 8×+.
+	// gateGainJump detects a large level shift (~18 dB). A mixer change
+	// or speech beginning in a quiet room can both exceed this ratio.
 	gateGainJump = 8.0
 	// gateJumpFrames is how long the shifted level must hold before it counts
-	// as a mixer move: 300ms of 100ms frames. One frame at 8× the envelope is
-	// a syllable, a door, or a keyboard.
+	// as a new floor: 300ms of 100ms frames. This heuristic cannot prove
+	// that pending neural input is noise, so it must not discard that input.
 	gateJumpFrames = 3
 )
 
@@ -53,7 +53,10 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 	// first frame of every utterance and reset the recognizer mid-sentence.
 	if !silero {
 		if g.reanchorOnGainJump(rms) {
-			return gateDecision{drop: true}
+			// Silero can still be accumulating its minimum speech duration.
+			// Re-anchor the floor without deleting that pending onset or its
+			// pre-roll: a false neural verdict has no speech latch to clear.
+			return gateDecision{}
 		}
 		g.learn(rms, false)
 		return gateDecision{}

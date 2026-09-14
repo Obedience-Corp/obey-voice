@@ -23,6 +23,16 @@ func NewFinalizable(src FrameSource) *Finalizable {
 	return &Finalizable{src: src}
 }
 
+// InputGain preserves the source's current amplification for STT's microphone
+// audibility floor. Read it on demand because front-end gain can change while
+// an utterance is being captured.
+func (f *Finalizable) InputGain() float64 {
+	if reporter, ok := f.src.(GainReporter); ok {
+		return reporter.InputGain()
+	}
+	return 1
+}
+
 // Finalize asks for the current utterance to end. The next ReadFrame returns a
 // Final frame; frames the source already buffered are dropped, which is what
 // "I have finished speaking" means.
@@ -71,3 +81,4 @@ func (f *Finalizable) Close() error {
 }
 
 var _ FrameSource = (*Finalizable)(nil)
+var _ GainReporter = (*Finalizable)(nil)

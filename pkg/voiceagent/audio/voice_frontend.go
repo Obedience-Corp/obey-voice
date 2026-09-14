@@ -13,21 +13,16 @@ const (
 	// can drift if the playback and capture clocks disagree. Steady state is
 	// refs.delay (tens of ms); 2s is pure slack.
 	FrontendMaxRefQueue = SampleRate * 2
-	// echoCancellerTaps must span the residual echo delay left after
-	// refs.delay removes the bulk device-buffer latency — room reflections,
-	// driver latency beyond the ring buffer, and error in the delay estimate.
-	// Cancellation falls off a cliff the moment the true lag exceeds the tap
-	// window (see TestEchoCancellerERLEAcrossDeviceLatency), so this is sized
-	// for margin, not for the nominal case: 768 taps = 48ms @16kHz.
-	//
-	// 512 (32ms) covered 48kHz but not the rate the player actually prefers.
-	// playbackRateCandidates tries the TTS rate first, so the common device is
-	// 24kHz, where the same 3x512-frame ring is 64ms of output latency and the
-	// delay estimate necessarily under-counts. Measured residual ERLE at 24kHz
-	// with 16ms of driver/acoustic lag: +1.8dB at 512 taps, +7.5dB at 768.
-	// 1024 is slightly worse than 768 (more taps, more gradient noise) and
-	// costs more, so 768 is the knee. Cost is ~190us per 10ms capture chunk.
-	echoCancellerTaps = 768
+	// echoCancellerTaps must span the echo delay remaining after the reference
+	// FIFO's device-buffer offset. Recorded Studio Display playback at 24kHz
+	// still had 85–90ms of microphone/reference delay after that offset;
+	// the previous 768-tap (48ms) window could not represent that echo path.
+	// 1536 taps cover 96ms at 16kHz, including the measured residual delay.
+	// Keep the device offset conservative: extending the filter can accommodate
+	// a late echo without making an earlier echo precede the reference window.
+	// See TestEchoCancellerCoversMeasuredDisplayResidualDelay. This capacity
+	// check complements physical echo rejection and interruption controls.
+	echoCancellerTaps = 1536
 	// echoCancellerStep is the NLMS adaptation rate. 0.08 converged too slowly
 	// to be useful on utterance-length audio once the filter grew long enough
 	// to span the real echo delay (~6dB ERLE); 0.4 reaches ~10dB on the same

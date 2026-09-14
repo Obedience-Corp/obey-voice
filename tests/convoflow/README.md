@@ -150,7 +150,7 @@ worker admission operations; measurements always come from executed turns.
 Prepare and repeat the suite with repository recipes:
 
 ```sh
-just test acoustic-prepare /path/to/installed/models /path/to/suite
+just test acoustic-prepare /path/to/installed/models /path/to/suite full
 just test acoustic-pair /path/to/isolated-config.yaml /path/to/suite
 just test acoustic-controls /path/to/isolated-barge-config.yaml /path/to/suite
 just test acoustic-smoke /path/to/isolated-provider-config.yaml /path/to/suite
@@ -158,7 +158,12 @@ just test acoustic-smoke /path/to/isolated-provider-config.yaml /path/to/suite
 
 Preparation builds the harness once, generates four Kokoro WAV/JSON fixtures
 from explicitly selected installed models, and writes scenarios plus a hash
-manifest. It does not download models or read the user's live configuration.
+manifest. The optional profile defaults to `full`, preserving the existing
+full-question fixture. `latency-brief` changes only the math fixture to the
+short phrase `What is two plus two?`; the other three fixtures remain the same.
+The selected profile is recorded in `bin/fixture-profile.txt` beside the
+prepared harness binary. Unknown profiles are rejected before either build or
+synthesis. It does not download models or read the user's live configuration.
 The pair recipe runs three warmups and 30 measured turns per condition in
 sequence, then compares the retained reports. The controls recipe exercises
 quiet completion and interruption. The smoke recipe checks one physical turn
@@ -172,6 +177,20 @@ Start from `scenarios/acoustic-config.example.yaml`, which explicitly pins
 the production 300 ms speech pre-roll and 1.2-second end-of-utterance silence.
 The isolated fixture loader does not populate every application default;
 omitting these values can clip words and invalidate a population.
+
+Use a fresh suite when measuring orchestration latency with the short math
+fixture, so its 33-turn baseline and 33-turn worker populations are never
+pooled with a different fixture profile:
+
+```sh
+just test acoustic-prepare /path/to/installed/models /tmp/acoustic-latency-brief latency-brief
+just test acoustic-pair /path/to/isolated-config.yaml /tmp/acoustic-latency-brief
+```
+
+Use a separate `full` suite for the full-question controls and regression
+phrase. Do not replace failed samples or combine populations from the two
+profiles; each comparison must retain one profile and its matching fixture
+metadata throughout.
 
 An existing recorded fixture cache can instead be used without synthesis:
 
@@ -201,6 +220,26 @@ a candidate frontend WAV and compares its production detector behavior with raw
 and original processed capture. It derives approximate capture-relative offsets
 from the saved events and reports that timing uncertainty.
 
+For an incorrect or truncated transcript, compare the clean fixture with the
+complete raw and processed microphone recordings using the installed local
+Parakeet model:
+
+```sh
+just test acoustic-transcribe /path/to/installed/models /path/to/artifact/stimulus.wav
+just test acoustic-transcribe /path/to/installed/models /path/to/artifact/mic-in.wav
+just test acoustic-transcribe /path/to/installed/models /path/to/artifact/mic-processed.wav
+```
+
+This decodes the whole WAV without VAD or endpoint segmentation and logs JSON
+with the file fingerprint, model, sample information and transcript. It opens
+no audio device and does not read the installed user configuration. The optional
+third argument selects the Parakeet model (default `tdt-0.6b-v2`). Successful
+execution means decoding completed; it does not assert fixture identity or
+physical acceptance. An intact whole-file decode alongside a truncated live
+transcript supports investigating segmentation. Incorrect whole-file decoding
+requires checking the acoustic signal and recognition before attributing loss
+to segmentation. ASR alone cannot identify the source of competing speech.
+
 Host scheduling has a separate repeatable check:
 
 ```sh
@@ -212,6 +251,17 @@ STT start and canonical result publication to the host's background-turn
 invocation. Controlled STT isolates host overhead; the quiet test uses real
 capture permits, the pipeline yield protocol, and Bubble Tea dispatch. These
 checks do not substitute for hardware capture or audible delivery evidence.
+
+The native detector's reset behavior has an offline regression using installed
+Silero assets and a prepared speech fixture:
+
+```sh
+just test vad-reset /path/to/installed/models /path/to/suite/fixtures/synth-02.wav
+```
+
+It feeds the same stream twice and requires identical segment offsets and PCM
+after `VAD.Clear`. This catches native queue clearing being mistaken for a full
+stream reset, which otherwise misaligns the next turn's speech pre-roll.
 
 
 Physical acceptance uses `capture.microphone: true` and a recorded speech WAV.

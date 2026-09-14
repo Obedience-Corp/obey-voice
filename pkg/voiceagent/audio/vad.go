@@ -101,8 +101,8 @@ func (v *VAD) Front() []float32 {
 }
 
 // FrontSegment returns the first detected speech segment's samples together
-// with its start offset, measured in samples from the point the detector last
-// cleared its buffer. Callers use the offset to prepend pre-trigger audio the
+// with its start offset, measured in samples since the last Clear. Callers use
+// the offset to prepend pre-trigger audio the
 // VAD trimmed from the onset.
 func (v *VAD) FrontSegment() (samples []float32, start int) {
 	seg := v.detector.Front()
@@ -114,9 +114,11 @@ func (v *VAD) Pop() {
 	v.detector.Pop()
 }
 
-// Clear resets the VAD state.
+// Clear resets the detector for a new stream, including its sample offsets.
+// Native Clear only removes queued speech segments; the wrapper's reset
+// contract requires native Reset so detector state and pre-roll stay aligned.
 func (v *VAD) Clear() {
-	v.detector.Clear()
+	v.detector.Reset()
 }
 
 // Flush signals the VAD that the audio stream has ended.

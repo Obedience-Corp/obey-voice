@@ -52,7 +52,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	if deps.pause != nil {
 		defer deps.pause.stop()
 	}
-	emitPhase := newPhaseEmitter(ctx, events)
+	emitPhase := newPauseAwarePhaseEmitter(ctx, events, deps.pause)
 
 	deps.seg.Reset()
 	if !emitPhase("listening") {
@@ -138,16 +138,11 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			deps.seg.AcceptWaveform(read.frame.Samples)
 			gate.minRMS = floor()
 			d := gate.decide(read.frame.Samples, deps.seg.IsSpeech())
-			if d.drop {
-				// Fan/AC latched Silero: discard the noise blob and wait for
-				// a real onset instead of holding the turn open forever.
+			if d.drop && !track.detected {
+				// Discard a pure noise latch. Once speech is admitted, retain
+				// its PCM and count the rejected tail as silence below; the
+				// endpoint policy must decide when the utterance is complete.
 				deps.seg.Reset()
-				if track.detected {
-					track.reset()
-					if !emitPhase("listening") {
-						return
-					}
-				}
 			} else if track.observe(d.voice, frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
@@ -156,11 +151,22 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		}
 
 		if deps.pause != nil {
-			yielded, _, event := deps.pause.boundary(track.detected, deps.seg.HasSegments(), false)
+			// Match finalize's admission: a neural segment alone can be
+			// inaudible noise and must not revoke a completion permit.
+			yielded, _, event := deps.pause.boundary(track.detected, deps.seg.HasSegments() && track.detected, false)
 			if event.Scope.Valid() {
 				sendEvent(ctx, events, event)
 			}
 			if yielded && !read.eof {
+				if !track.detected {
+					// Remove rejected endpoints before real speech arrives.
+					// Preserve the detector and its in-progress onset window.
+					for {
+						if _, ok := deps.seg.NextSegment(); !ok {
+							break
+						}
+					}
+				}
 				if !read.ready {
 					time.Sleep(noFramePoll)
 				}

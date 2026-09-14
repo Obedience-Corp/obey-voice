@@ -44,7 +44,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 	if deps.pause != nil {
 		defer deps.pause.stop()
 	}
-	emitPhase := newPhaseEmitter(ctx, events)
+	emitPhase := newPauseAwarePhaseEmitter(ctx, events, deps.pause)
 
 	deps.seg.Reset()
 	if !emitPhase("listening") {
@@ -95,7 +95,10 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 			gate.minRMS = floor()
 			heard.floor = gate.minRMS
 			d := gate.decide(read.frame.Samples, deps.seg.IsSpeech())
-			if d.drop {
+			// A pure noise latch can reset, but a rejected tail after admitted
+			// speech must preserve decoder context and accrue silence below.
+			// The endpoint policy still allows a brief pause before more speech.
+			if d.drop && !track.detected {
 				if !resetListening() {
 					return
 				}
@@ -131,7 +134,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 					}
 				}
 				if partial != lastPartial {
-					if !sendEvent(ctx, events, PartialTranscript{Text: partial}) {
+					if !sendPauseAwareAdvisoryEvent(ctx, deps.pause, events, PartialTranscript{Text: partial}) {
 						return
 					}
 					lastPartial = partial
@@ -147,11 +150,21 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 		}
 
 		if deps.pause != nil {
-			yielded, _, event := deps.pause.boundary(track.detected, transcribing || deps.seg.HasSegments(), false)
+			// Queued neural noise is not an admitted endpoint. Use the
+			// same speech admission required by finalization below.
+			yielded, _, event := deps.pause.boundary(track.detected, transcribing || (deps.seg.HasSegments() && track.detected), false)
 			if event.Scope.Valid() {
 				sendEvent(ctx, events, event)
 			}
 			if yielded && !read.eof {
+				if !track.detected {
+					// An old noise segment must not finalize the next real word.
+					for {
+						if _, ok := deps.seg.NextSegment(); !ok {
+							break
+						}
+					}
+				}
 				if !read.ready {
 					time.Sleep(noFramePoll)
 				}
