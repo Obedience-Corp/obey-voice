@@ -1,7 +1,7 @@
 # Voice runtime code layout
 
-The voice pipeline, Ollama provider, config package, audio player, meeting log and
-benchmark command use files grouped by responsibility within their existing Go
+The voice pipeline, Ollama provider, config package, audio player, meeting log,
+benchmark command and conversation screen use files grouped by responsibility within their existing Go
 packages; the Qwen TTS provider went further and became its own package. This guide
 identifies where to make a change without tracing a single large implementation
 file, and records the contracts a file boundary could otherwise hide.
@@ -191,6 +191,25 @@ the `//go:build !integration` constraint the command has always had.
 | `benchmark_stt.go` | STT fixture mode, which builds VAD and the STT provider directly |
 | `benchmark_result.go` | Result model, event-bus drain, thresholds, exit status, transcript scoring |
 | `benchmark_report.go` | Console summary and JSON artifact |
+
+## Conversation screen
+
+All paths below are in [`internal/tui`](../internal/tui). The conversation screen is one Bubble
+Tea model, `conversationModel`, spread across the files below. `conversation_startup.go`
+predates the split and keeps the startup handshake.
+
+| File | Responsibility |
+| --- | --- |
+| `conversation.go` | Layout constants, `voiceTickMsg`, the `conversationModel` struct, `newConversation`, `activityEntry`, `plainChatTurn` |
+| `conversation_update.go` | `Update`, the voice tick command and the arm/rearm helpers only it drives |
+| `conversation_events.go` | `handleEvent`, the pipeline event switch, with `setStatus` and `setVoiceMode`, which only it calls |
+| `conversation_transcript.go` | Transcript and activity content: append, clear, remember, streaming deltas, refresh, seeding, clipboard copy |
+| `conversation_scroll.go` | Size, reflow, viewport follow and scroll |
+| `conversation_selection.go` | Persona selection request/result messages and the selection queue |
+| `conversation_view.go` | `View`, tabs, turn and bubble rendering, metric and activity formatting, animation styles |
+
+`handleEvent` moved whole. It is 384 lines and the largest remaining declaration in the
+package; cutting it is a decomposition, not a move, and is tracked with the `App.update` work.
 
 ## Maintaining the boundaries
 
