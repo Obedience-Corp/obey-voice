@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/meeting"
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
@@ -243,6 +242,8 @@ func (a App) mouseClaimCmd(from screen) tea.Cmd {
 func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// A false third result means fall through to delegate; cmd is nil on
+		// every such path and would be dropped here if that ever changed.
 		next, cmd, done := a.onKey(msg)
 		if done {
 			return next, cmd

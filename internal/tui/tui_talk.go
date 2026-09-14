@@ -82,6 +82,7 @@ func (a App) onTalkHotkeyEvent(msg talkHotkeyEventMsg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmd, a.rearmTalk(msg))
 }
 
+// onWorkProjectionPoll takes tea.Msg because its case matches two types.
 func (a App) onWorkProjectionPoll(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	a.conversation, cmd = a.conversation.Update(msg)
