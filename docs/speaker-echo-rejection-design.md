@@ -161,8 +161,14 @@ models, configuration, device identities and negotiated rates. Record raw,
 processed and rendered audio plus timing and final persisted delivery state.
 Use varied fixtures and declared volume/device conditions; do not change a live
 session or global audio settings implicitly. Human listening is not a gate.
-Compare detection-to-stop with the existing contract's 50ms regression allowance
-and report stimulus-to-stop separately, including any waiting before admission.
+Report detector-to-stop and stimulus-to-stop separately, including waiting
+before admission. VW0001's external campaign acceptance criterion is “no
+regression >50 ms against baseline; absolute result reported,” recorded in
+`workflow/design/.dungeon/completed/2026-09-10/obey-voice-background-work-contract/EXECUTION-CONTRACT.md`,
+under the “Barge-in” row of the acceptance table. This is a campaign release
+criterion, not a threshold currently enforced by the repository's convoflow
+harness. The implementation must record comparable baseline/candidate timing
+populations and explicitly evaluate that criterion in the acceptance task.
 
 Preserve failed samples and classify contaminated recordings separately. First
 pass full-phrase completion/interruption controls, then collect fresh 3-warmup +
