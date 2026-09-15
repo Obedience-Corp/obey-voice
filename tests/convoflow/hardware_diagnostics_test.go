@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // TestReplaySavedBargeVAD is opt-in because it needs the installed Silero
@@ -97,6 +98,16 @@ func TestDiagnosticEnvFloat(t *testing.T) {
 	t.Setenv(key, "bad")
 	if _, err := diagnosticEnvFloat(key, 0); err == nil {
 		t.Fatal("diagnosticEnvFloat accepted invalid input")
+	}
+}
+
+func TestStimulusOutputDeviceOverrideIsExplicit(t *testing.T) {
+	cfg := &config.Config{OutputDevice: "response-device"}
+	if got := stimulusOutputDevice(cfg, ""); got != "response-device" {
+		t.Fatalf("default stimulus device = %q", got)
+	}
+	if got := stimulusOutputDevice(cfg, "  separate-stimulus-device "); got != "separate-stimulus-device" {
+		t.Fatalf("override stimulus device = %q", got)
 	}
 }
 

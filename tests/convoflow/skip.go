@@ -16,6 +16,7 @@ const exitSkip = 2
 
 type knobs struct {
 	sustainedWorker  bool
+	stimulusDevice   string
 	liveProvider     string
 	liveModel        string
 	workerProvider   string

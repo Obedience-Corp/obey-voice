@@ -203,6 +203,13 @@ The fixture directory contains `synth-01.wav` through `synth-03.wav`,
 scenarios are portable by regeneration; raw audio and machine-specific
 configurations stay in the selected artifact directory.
 
+For physical acoustic scenarios, pass `-stimulus-device "Device Name"` to
+`convoflow` to route only the known fixture playback to a separate output;
+capture and the assistant response continue using the explicitly configured
+devices. An invalid named device fails when playback opens rather than falling
+back silently. The default remains the configured output device, and each
+acoustic report records the requested stimulus device separately.
+
 Saved interruption audio can be diagnosed without reopening devices:
 
 ```sh
@@ -223,8 +230,9 @@ artifact directory containing `frontend.jsonl`, `interruption.json`, and
 `mic-in.wav`. It uses the saved ordered capture/reference trace to produce a
 candidate frontend WAV and compares its production detector behavior with raw
 and original processed capture. Response/stimulus timestamps from
-`interruption.json` are mapped to the first saved listening event, or to the
-first frontend capture `observed_at` for a direct artifact. These are host
+`interruption.json` map to the start sample of the first recorded capture
+callback observed at or after each event. Legacy untimed traces instead use
+the first saved listening event and explicitly report that approximation. These are host
 observations, not microphone ADC or speaker presentation timestamps; a
 stimulus before the 600ms arm point remains a diagnosable pre-arm window.
 New control traces also persist `observed_at` and monotonic `elapsed_ns` for

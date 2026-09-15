@@ -49,6 +49,7 @@ type interruptionReport struct {
 	NegotiatedCapture               audio.NegotiatedDevice `json:"negotiated_capture"`
 	NegotiatedResponse              audio.NegotiatedDevice `json:"negotiated_response"`
 	NegotiatedStimulus              audio.NegotiatedDevice `json:"negotiated_stimulus"`
+	StimulusDevice                  string                 `json:"stimulus_device"`
 }
 
 // runAcousticInterruption exercises the production capture/VAD/barge-in path.
@@ -86,11 +87,13 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
 		return err
 	}
+	stimulusDevice := stimulusOutputDevice(r.cfg, r.stimulusDevice)
 	report := interruptionReport{
 		InitialWAV: initialWAV, InterruptWAV: interruptWAV, Expected: expected,
 		RequestedStimulusDelay:          options.delay,
 		RequestedStimulusCompleteWithin: options.completeWithin,
 		StimulusFixtureDuration:         time.Duration(len(interrupt)) * time.Second / time.Duration(interruptRate),
+		StimulusDevice:                  acousticDeviceLabel(stimulusDevice),
 	}
 	var rawFrontend *rawCaptureFrontend
 	var mic []float32
@@ -229,7 +232,7 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	if err := readyInput.wait(runCtx); err != nil {
 		return err
 	}
-	stimulus = playback.NewPlayerWithDevice(r.cfg.OutputDevice)
+	stimulus = playback.NewPlayerWithDevice(stimulusDevice)
 	defer stimulus.Close()
 	if err := playAcousticStimulus(runCtx, stimulus, initial, initialRate); err != nil {
 		return err

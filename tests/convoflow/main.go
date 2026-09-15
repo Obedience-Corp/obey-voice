@@ -49,6 +49,7 @@ func runMain(args []string) int {
 	selfTest := fs.Bool("self-test", false, "run with a fake runner (no models)")
 	gate := fs.Bool("gate", false, "gate mode: refuse the stub worker (set by `just convoflow gate`)")
 	speakers := fs.Bool("speakers", false, "tee recorded PCM to real speakers")
+	stimulusDevice := fs.String("stimulus-device", "", "explicit playback device for acoustic fixture stimulus only")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
@@ -92,6 +93,7 @@ func runMain(args []string) int {
 
 	k := knobs{
 		liveProvider:     *liveProvider,
+		stimulusDevice:   *stimulusDevice,
 		liveModel:        *liveModel,
 		workerProvider:   *workerProvider,
 		workerModel:      *workerModel,

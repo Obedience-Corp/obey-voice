@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/aecprobe"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
@@ -26,6 +27,7 @@ type acousticReport struct {
 	Transcript          string                 `json:"transcript"`
 	InputDevice         string                 `json:"input_device"`
 	OutputDevice        string                 `json:"output_device"`
+	StimulusDevice      string                 `json:"stimulus_device"`
 	NegotiatedCapture   audio.NegotiatedDevice `json:"negotiated_capture"`
 	NegotiatedResponse  audio.NegotiatedDevice `json:"negotiated_response"`
 	NegotiatedStimulus  audio.NegotiatedDevice `json:"negotiated_stimulus"`
@@ -48,6 +50,16 @@ const (
 	// on this device scored .68-.88 for the matching stimulus.
 	acousticMinEnvelopeCorrelation = 0.6
 )
+
+func stimulusOutputDevice(cfg *config.Config, override string) string {
+	if device := strings.TrimSpace(override); device != "" {
+		return device
+	}
+	if cfg == nil {
+		return ""
+	}
+	return cfg.OutputDevice
+}
 
 // runAcoustic feeds a known speech recording through real speakers and lets
 // the real microphone/STT path recognize the acoustic result. The stimulus
@@ -98,7 +110,8 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	transcript := ""
 	var capture *audio.Capture
 	var player, response *playback.Player
-	report := acousticReport{Stimulus: path, ExpectedTranscript: strings.TrimSpace(expected), InputDevice: acousticDeviceLabel(r.cfg.InputDevice), OutputDevice: acousticDeviceLabel(r.cfg.OutputDevice), StimulusRate: rate}
+	stimulusDevice := stimulusOutputDevice(r.cfg, r.stimulusDevice)
+	report := acousticReport{Stimulus: path, ExpectedTranscript: strings.TrimSpace(expected), InputDevice: acousticDeviceLabel(r.cfg.InputDevice), OutputDevice: acousticDeviceLabel(r.cfg.OutputDevice), StimulusDevice: acousticDeviceLabel(stimulusDevice), StimulusRate: rate}
 	defer func() {
 		capturedMu.Lock()
 		mic := append([]float32(nil), captured...)
@@ -150,7 +163,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	}()
 
 	capture = audio.NewCaptureWithDevice(r.cfg.InputDevice)
-	player = playback.NewPlayerWithDevice(r.cfg.OutputDevice)
+	player = playback.NewPlayerWithDevice(stimulusDevice)
 	defer capture.Stop()
 	defer player.Close()
 
