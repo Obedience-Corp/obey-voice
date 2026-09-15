@@ -2,7 +2,9 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -18,6 +20,51 @@ func TestLoadStockScenarios(t *testing.T) {
 		if scn.Name == "" || len(scn.Turns) == 0 {
 			t.Fatalf("%s: empty", name)
 		}
+	}
+}
+
+func TestScenarioInterruptionStimulusDelay(t *testing.T) {
+	const base = `name: interrupt
+input: speech
+capture: {audio: true, speakers: true, microphone: true}
+turns:
+  - id: interrupt
+    op: acoustic_interrupt
+    wav: /initial.wav
+    interrupt_wav: /interrupt.wav
+    expected_transcript: Stop now.
+`
+	for _, tc := range []struct {
+		name, field string
+		want        time.Duration
+		explicit    bool
+	}{
+		{"omitted", "", 900 * time.Millisecond, false},
+		{"zero", "    stimulus_delay: 0s\n", 0, true},
+		{"numeric-zero", "    stimulus_delay: 0\n", 0, true},
+		{"custom", "    stimulus_delay: 125ms\n", 125 * time.Millisecond, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scn, err := loadScenarioString("interrupt.yaml", base+tc.field)
+			if err != nil {
+				t.Fatal(err)
+			}
+			turn := scn.Turns[0]
+			if got := turn.interruptionStimulusDelay(); got != tc.want || (turn.StimulusDelay != nil) != tc.explicit {
+				t.Fatalf("delay=%s explicit=%t, want %s explicit=%t", got, turn.StimulusDelay != nil, tc.want, tc.explicit)
+			}
+		})
+	}
+	for name, body := range map[string]string{
+		"negative":   base + "    stimulus_delay: -1ms\n",
+		"completion": strings.Replace(strings.Replace(base, "acoustic_interrupt", "acoustic_completion", 1), "    interrupt_wav: /interrupt.wav\n", "", 1) + "    stimulus_delay: 0s\n",
+		"ordinary":   "name: chat\nturns:\n  - id: chat\n    user: hello\n    stimulus_delay: 0s\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadScenarioString("bad.yaml", body); err == nil || !strings.Contains(err.Error(), "stimulus_delay requires") {
+				t.Fatalf("expected stimulus_delay validation error, got %v", err)
+			}
+		})
 	}
 }
 
@@ -96,5 +143,24 @@ turns:
 `
 	if _, err := loadScenarioString("completion.yaml", scenario); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestScenarioInterruptionCompletionWindow(t *testing.T) {
+	const base = "name: bounded\ninput: speech\ncapture: {microphone: true, speakers: true}\nturns:\n  - id: early\n    op: acoustic_interrupt\n    wav: /initial.wav\n    interrupt_wav: /wait.wav\n    expected_transcript: Wait.\n"
+	scn, err := loadScenarioString("bounded.yaml", base+"    stimulus_complete_within: 600ms\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scn.Turns[0].interruptionStimulusOptions().completeWithin != 600*time.Millisecond {
+		t.Fatal("completion window not retained")
+	}
+	for _, value := range []string{"0s", "-1ms"} {
+		if _, err := loadScenarioString("bad.yaml", base+"    stimulus_complete_within: "+value+"\n"); err == nil {
+			t.Fatalf("accepted invalid window %s", value)
+		}
+	}
+	if _, err := loadScenarioString("misplaced.yaml", "name: x\nturns:\n  - id: x\n    user: hello\n    stimulus_complete_within: 600ms\n"); err == nil {
+		t.Fatal("accepted completion window on ordinary turn")
 	}
 }

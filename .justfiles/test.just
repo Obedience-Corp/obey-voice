@@ -121,6 +121,7 @@ acoustic-prepare MODELS_DIR SUITE_DIR PROFILE="full":
     for i in 0 1 2 3; do
         "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1 -text "${texts[$i]}" -out "$suite/fixtures/${names[$i]}.wav"
     done
+    "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1.25 -text "Wait." -out "$suite/fixtures/startup-short.wav"
     "$suite/bin/convoflow" -prepare-acoustic-suite "$suite/scenarios" -fixture-dir "$suite/fixtures"
     printf '%s\n' "$profile" > "$suite/bin/fixture-profile.txt"
     shasum -a 256 "$suite/bin/convoflow" > "$suite/binary.sha256"
@@ -150,6 +151,22 @@ acoustic-controls CONFIG SUITE_DIR:
     suite="{{SUITE_DIR}}"
     for scenario in completion interruption; do
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/controls"
+    done
+
+# Run both immediate-onset controls with the prepared binary and explicit config.
+[no-cd]
+acoustic-startup CONFIG SUITE_DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in startup-full startup-short; do
+        if [[ ! -f "$suite/scenarios/$scenario.yaml" ]]; then
+            echo "error: missing $scenario.yaml; run just test acoustic-prepare MODELS_DIR '$suite' to prepare startup controls" >&2
+            exit 2
+        fi
+    done
+    for scenario in startup-full startup-short; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/startup"
     done
 
 # One physical turn with the explicitly configured TTS provider (e.g. native Qwen).

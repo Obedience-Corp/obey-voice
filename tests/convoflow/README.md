@@ -323,13 +323,44 @@ The yielded turn must contain no transcript and resumed speech must match
 
 `op: acoustic_interrupt` uses `wav` for the initial question and
 `interrupt_wav` for speech played during the real response. It waits for
-production listening before the first fixture, checks a quiet interval beyond
-the barge-in arm delay, and observes actual stimulus playback start. Only the
+production listening before the first fixture, then waits `stimulus_delay`
+after observing response playback start (default `900ms`). Set this per-turn
+field to `0s` for startup speech. Optional `stimulus_complete_within: 600ms`
+requires observed stimulus completion within that interval after response start;
+late, canceled or unstarted playback fails even if the transcript matches.
+The bound must be positive. Negative delays and use on other operations
+are rejected. The omitted default keeps the quiet interval beyond the existing
+600ms barge-in arm delay. Only the
 production detector stops the response. The next turn must recover the full
 interrupting phrase. Reports distinguish stimulus-to-stop from the monotonic
 production detector-to-stop duration.
+
+`interruption.json` retains `requested_stimulus_delay_ns`, the fixture's PCM
+duration (`stimulus_fixture_duration_ns`), `stimulus_started`, `stimulus_ended`,
+`response_to_stimulus_start_ns`, `response_to_stimulus_end_ns`, and
+`stimulus_playback_duration_ns`. These are host observations of playback start
+and completion, not speaker or ADC timestamps. A startup-short case needs
+`stimulus_complete_within: 600ms`, which enforces `stimulus_completed: true`
+and an observed interval wholly within 600ms of
+`response_started`; setting `stimulus_delay: 0s` alone does not establish this.
+Errors/cancellation retain available timing with `stimulus_completed: false`
+and `stimulus_error`. Timing coverage alone does not prove interruption or
+full transcript retention, which remain required independently.
 
 Completion/interruption artifacts retain both `mic-in.wav` before frontend
 processing and `mic-processed.wav` after AEC/NS/AGC. A low processed RMS alone
 cannot establish physical input attenuation. Failures retain their reports
 and available audio; they do not become passing latency samples.
+
+Prepare and run repeatable immediate-onset controls with:
+
+```sh
+just test acoustic-prepare MODELS_DIR SUITE_DIR
+just test acoustic-startup CONFIG SUITE_DIR
+```
+
+`startup-full` overlaps the full math question with response onset.
+`startup-short` uses “Wait.” (Kokoro af_heart, speed 1.25) with a 600ms observed
+completion deadline. Both retain the ordinary production interruption and exact
+transcript checks. Older fixture directories without `startup-short.wav` remain
+loadable; the startup recipe requires both scenarios before opening devices.

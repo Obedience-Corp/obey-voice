@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,27 +13,42 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/apmfrontend"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
+type interruptionStimulusOptions struct {
+	delay          time.Duration
+	completeWithin time.Duration
+}
+
 type interruptionReport struct {
-	InitialWAV            string                 `json:"initial_wav"`
-	InterruptWAV          string                 `json:"interrupt_wav"`
-	Expected              string                 `json:"expected_interrupt"`
-	ResponseStarted       time.Time              `json:"response_started,omitempty"`
-	StimulusStarted       time.Time              `json:"stimulus_started,omitempty"`
-	InterruptedAfter      time.Duration          `json:"stimulus_to_interrupt_ns"`
-	PlaybackStoppedAfter  time.Duration          `json:"stimulus_to_playback_stopped_ns"`
-	DetectionToStop       time.Duration          `json:"detection_to_playback_stopped_ns"`
-	ProductionInterrupted bool                   `json:"production_interrupted"`
-	InitialTranscript     string                 `json:"initial_transcript"`
-	Transcript            string                 `json:"transcript,omitempty"`
-	Error                 string                 `json:"error,omitempty"`
-	NegotiatedCapture     audio.NegotiatedDevice `json:"negotiated_capture"`
-	NegotiatedResponse    audio.NegotiatedDevice `json:"negotiated_response"`
-	NegotiatedStimulus    audio.NegotiatedDevice `json:"negotiated_stimulus"`
+	InitialWAV                      string                 `json:"initial_wav"`
+	InterruptWAV                    string                 `json:"interrupt_wav"`
+	Expected                        string                 `json:"expected_interrupt"`
+	ResponseStarted                 time.Time              `json:"response_started,omitempty"`
+	StimulusStarted                 time.Time              `json:"stimulus_started,omitempty"`
+	StimulusEnded                   time.Time              `json:"stimulus_ended,omitempty"`
+	RequestedStimulusDelay          time.Duration          `json:"requested_stimulus_delay_ns"`
+	RequestedStimulusCompleteWithin time.Duration          `json:"requested_stimulus_complete_within_ns,omitempty"`
+	StimulusFixtureDuration         time.Duration          `json:"stimulus_fixture_duration_ns"`
+	StimulusStartAfterResponse      time.Duration          `json:"response_to_stimulus_start_ns"`
+	StimulusEndAfterResponse        time.Duration          `json:"response_to_stimulus_end_ns"`
+	StimulusPlaybackDuration        time.Duration          `json:"stimulus_playback_duration_ns"`
+	StimulusCompleted               bool                   `json:"stimulus_completed"`
+	StimulusError                   string                 `json:"stimulus_error,omitempty"`
+	InterruptedAfter                time.Duration          `json:"stimulus_to_interrupt_ns"`
+	PlaybackStoppedAfter            time.Duration          `json:"stimulus_to_playback_stopped_ns"`
+	DetectionToStop                 time.Duration          `json:"detection_to_playback_stopped_ns"`
+	ProductionInterrupted           bool                   `json:"production_interrupted"`
+	InitialTranscript               string                 `json:"initial_transcript"`
+	Transcript                      string                 `json:"transcript,omitempty"`
+	Error                           string                 `json:"error,omitempty"`
+	NegotiatedCapture               audio.NegotiatedDevice `json:"negotiated_capture"`
+	NegotiatedResponse              audio.NegotiatedDevice `json:"negotiated_response"`
+	NegotiatedStimulus              audio.NegotiatedDevice `json:"negotiated_stimulus"`
 }
 
 // runAcousticInterruption exercises the production capture/VAD/barge-in path.
@@ -42,9 +56,12 @@ type interruptionReport struct {
 // is played by a separate player with no AEC reference. Production RunTurn's
 // watcher owns interruption and keepCapture; this helper never calls
 // StopPlayback or cancels the turn on detected speech.
-func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, interruptWAV, expected, artifactDir string) (runErr error) {
+func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, interruptWAV, expected, artifactDir string, options interruptionStimulusOptions) (runErr error) {
 	if ctx == nil {
 		return errors.New("acoustic interruption: nil context")
+	}
+	if options.delay < 0 || options.completeWithin < 0 {
+		return errors.New("acoustic interruption: negative stimulus timing option")
 	}
 	if r == nil || r.agent == nil || r.agent.Pipeline == nil {
 		return errors.New("acoustic interruption: agent is not configured")
@@ -69,7 +86,12 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
 		return err
 	}
-	report := interruptionReport{InitialWAV: initialWAV, InterruptWAV: interruptWAV, Expected: expected}
+	report := interruptionReport{
+		InitialWAV: initialWAV, InterruptWAV: interruptWAV, Expected: expected,
+		RequestedStimulusDelay:          options.delay,
+		RequestedStimulusCompleteWithin: options.completeWithin,
+		StimulusFixtureDuration:         time.Duration(len(interrupt)) * time.Second / time.Duration(interruptRate),
+	}
 	var rawFrontend *rawCaptureFrontend
 	var mic []float32
 	var capture *audio.Capture
@@ -234,9 +256,9 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 			}
 		}
 	}
-	// Wait beyond the production 600ms arm delay to reject self-interruption
-	// before external speech can be mistaken for the cause.
-	quiet := time.NewTimer(900 * time.Millisecond)
+	// The default waits beyond the 600ms arm delay. Explicit shorter delays
+	// exercise startup speech without changing the production guard.
+	quiet := time.NewTimer(options.delay)
 	defer quiet.Stop()
 	select {
 	case <-runCtx.Done():
@@ -257,23 +279,36 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 		}
 	}
 ready:
-	stimulusDone := make(chan error, 1)
+	stimulusDone := make(chan interruptionStimulusObservation, 1)
 	stimulusStarted := make(chan time.Time, 1)
 	go func() {
-		stimulusDone <- playAcousticStimulusObserved(runCtx, stimulus, interrupt, interruptRate, func(at time.Time) { stimulusStarted <- at })
+		stimulusDone <- observeInterruptionStimulus(func(started func(time.Time)) error {
+			return playAcousticStimulusObserved(runCtx, stimulus, interrupt, interruptRate, started)
+		}, stimulusStarted)
 	}()
 	stimulusRunning := true
+	var stimulusResult interruptionStimulusObservation
+	joinStimulus := func() {
+		if stimulusRunning {
+			stimulusResult = <-stimulusDone
+			stimulusRunning = false
+		}
+		report.recordStimulus(stimulusResult)
+	}
 	defer func() {
 		if stimulusRunning {
 			cancel()
-			<-stimulusDone
 		}
+		joinStimulus()
 	}()
 	select {
 	case report.StimulusStarted = <-stimulusStarted:
-	case err := <-stimulusDone:
+	case stimulusResult = <-stimulusDone:
 		stimulusRunning = false
-		return fmt.Errorf("interrupt stimulus did not start: %v", err)
+		report.recordStimulus(stimulusResult)
+		if stimulusResult.started.IsZero() || stimulusResult.err != nil {
+			return fmt.Errorf("interrupt stimulus did not complete: %v", stimulusResult.err)
+		}
 	case <-runCtx.Done():
 		return runCtx.Err()
 	}
@@ -320,11 +355,13 @@ drained:
 	report.InitialTranscript = first.text
 	// SpeakingInterrupted is emitted synchronously after Player.Stop returns.
 	// The stored delay is its observation boundary, not turn cleanup time.
-	if err := <-stimulusDone; err != nil {
-		stimulusRunning = false
+	joinStimulus()
+	if stimulusResult.err != nil {
+		return stimulusResult.err
+	}
+	if err := report.validateStimulusWindow(); err != nil {
 		return err
 	}
-	stimulusRunning = false
 	if real.IsPlaying() || !report.ProductionInterrupted || report.InterruptedAfter <= 0 || report.DetectionToStop <= 0 {
 		return fmt.Errorf("production interruption not proven: interrupted=%t detector=%s playing=%t turn_error=%v", report.ProductionInterrupted, report.InterruptedAfter, real.IsPlaying(), first.err)
 	}
@@ -336,6 +373,54 @@ drained:
 	}
 	if normalizeAcousticText(text) != normalizeAcousticText(expected) {
 		return fmt.Errorf("retained transcript %q does not match %q", text, expected)
+	}
+	return nil
+}
+
+// These are host observations of the player's start callback and completion,
+// not speaker/ADC timestamps. Preserve them even when the turn fails later.
+type interruptionStimulusObservation struct {
+	started time.Time
+	ended   time.Time
+	err     error
+}
+
+func observeInterruptionStimulus(play func(func(time.Time)) error, started chan<- time.Time) interruptionStimulusObservation {
+	var observation interruptionStimulusObservation
+	observation.err = play(func(at time.Time) {
+		observation.started = at
+		started <- at
+	})
+	observation.ended = time.Now()
+	return observation
+}
+
+func (r *interruptionReport) recordStimulus(observation interruptionStimulusObservation) {
+	r.StimulusStarted = observation.started
+	r.StimulusEnded = observation.ended
+	r.StimulusCompleted = !observation.started.IsZero() && observation.err == nil
+	if observation.err != nil {
+		r.StimulusError = observation.err.Error()
+	}
+	if !observation.started.IsZero() {
+		r.StimulusPlaybackDuration = observation.ended.Sub(observation.started)
+		if !r.ResponseStarted.IsZero() {
+			r.StimulusStartAfterResponse = observation.started.Sub(r.ResponseStarted)
+			r.StimulusEndAfterResponse = observation.ended.Sub(r.ResponseStarted)
+		}
+	}
+}
+
+// validateStimulusWindow checks observed delivery, not the requested schedule or
+// fixture duration. A canceled or late stimulus cannot count as startup coverage.
+func (r *interruptionReport) validateStimulusWindow() error {
+	if r.RequestedStimulusCompleteWithin == 0 {
+		return nil
+	}
+	if !r.StimulusCompleted || r.ResponseStarted.IsZero() || r.StimulusStarted.IsZero() ||
+		r.StimulusStarted.Before(r.ResponseStarted) || r.StimulusEnded.Before(r.StimulusStarted) ||
+		r.StimulusEndAfterResponse > r.RequestedStimulusCompleteWithin {
+		return fmt.Errorf("stimulus did not complete within %s of response start: completed=%t start=%s end=%s", r.RequestedStimulusCompleteWithin, r.StimulusCompleted, r.StimulusStartAfterResponse, r.StimulusEndAfterResponse)
 	}
 	return nil
 }

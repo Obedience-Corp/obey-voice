@@ -215,12 +215,12 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		}
 	} else if turn.Op == "acoustic_interrupt" {
 		probe, ok := e.runner.(interface {
-			runAcousticInterruption(context.Context, string, string, string, string) error
+			runAcousticInterruption(context.Context, string, string, string, string, interruptionStimulusOptions) error
 		})
 		if !ok {
 			return fmt.Errorf("runner does not support acoustic interruption")
 		}
-		if err := probe.runAcousticInterruption(turnCtx, turn.WAV, turn.InterruptWAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
+		if err := probe.runAcousticInterruption(turnCtx, turn.WAV, turn.InterruptWAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID), turn.interruptionStimulusOptions()); err != nil {
 			return err
 		}
 	} else if turn.Op == "acoustic_completion" {
