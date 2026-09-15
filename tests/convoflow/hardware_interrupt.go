@@ -366,8 +366,13 @@ drained:
 		return fmt.Errorf("production interruption not proven: interrupted=%t detector=%s playing=%t turn_error=%v", report.ProductionInterrupted, report.InterruptedAfter, real.IsPlaying(), first.err)
 	}
 	// No capture reset or synthesized transcript: RunTurn consumes keepCapture.
-	text, err := p.RunTurn(runCtx)
+	// Guard only this retained turn so a known-wrong acoustic input does not
+	// wait for a full provider response before the report records it.
+	text, err, mismatched := runRetainedTurn(runCtx, p.Events, expected, p.RunTurn)
 	report.Transcript = text
+	if mismatched {
+		return errors.Join(fmt.Errorf("retained transcript %q does not match %q", text, expected), err)
+	}
 	if err != nil {
 		return fmt.Errorf("retained turn: %w", err)
 	}
