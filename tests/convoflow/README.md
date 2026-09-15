@@ -219,7 +219,7 @@ Muted effective response gain, including a small configured gain that rounds
 to zero, is rejected before opening devices. Nonzero post-volume response
 reference samples are required as well as successful playback events.
 Any new admitted speech or user transcript fails. Early STT termination,
-provider/device errors, outer timeouts, capture overflow and insufficient
+provider/device errors, outer timeouts, listening-time capture overflow and insufficient
 captured frames also fail; they cannot count as silence. Only completion of
 the declared observation window authorizes the harness to cancel and join
 that otherwise-active listening turn. The configured STT start timeout must
@@ -233,6 +233,13 @@ and the ordered render-reference trace remain with the report. This proves
 only the recorded response and observation window, not indefinite echo
 rejection. `acoustic-controls` now runs response, completion and interruption
 in order; regenerate older suites to obtain the new scenario.
+
+A long response can overwrite the ordinary capture ring while STT is closed.
+The first next-listen frame records this historical overflow separately only
+when the pipeline intentionally discarded response history, device generation
+is unchanged, and timestamped retained PCM predates the explicit next-listen
+boundary. Missing evidence or any later overflow fails. Render sample counts
+are retained even when the control fails at the next listen.
 
 Acoustic reports retain whole-recording levels, but the audibility gate scores
 only the complete raw microphone window aligned to the fixture. It uses the

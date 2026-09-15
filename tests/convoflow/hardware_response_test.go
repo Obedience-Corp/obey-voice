@@ -76,6 +76,76 @@ func TestEchoOnlyResponseCaptureRejectsLossAndReopen(t *testing.T) {
 	}
 }
 
+func TestEchoOnlyResponseSeparatesHistoricalPlaybackOverflowFromListeningLoss(t *testing.T) {
+	for _, mode := range []string{"historical_then_quiet_loss", "not_handoff", "no_reset", "no_discard", "no_timestamp", "post_boundary_pcm", "unknown_generation", "reopened_device"} {
+		t.Run(mode, func(t *testing.T) {
+			boundary := time.Now()
+			initial := audio.Frame{Samples: []float32{.1}, CaptureSpans: []audio.CaptureSpan{{DeviceGeneration: 1}}}
+			handoff := audio.Frame{
+				Samples:      []float32{.2},
+				CaptureSpans: []audio.CaptureSpan{{DeviceGeneration: 1, CallbackAt: boundary.Add(-100 * time.Millisecond)}},
+				CaptureGap:   audio.CaptureGap{Reset: true, DiscardedSamples: 475200, OverflowSamples: 704640},
+			}
+			switch mode {
+			case "no_reset":
+				handoff.CaptureGap.Reset = false
+			case "no_discard":
+				handoff.CaptureGap.DiscardedSamples = 0
+			case "no_timestamp":
+				handoff.CaptureSpans[0].CallbackAt = time.Time{}
+			case "post_boundary_pcm":
+				handoff.CaptureSpans[0].CallbackAt = boundary.Add(time.Second)
+			case "unknown_generation":
+				initial.CaptureSpans = nil
+			case "reopened_device":
+				handoff.CaptureSpans[0].DeviceGeneration = 2
+			}
+			// Even another frame with reset metadata and an old timestamp must
+			// not reuse the first-handoff exception for subsequent listening loss.
+			later := handoff
+			later.CaptureGap.OverflowSamples = 1600
+			frames := &responseTestFrames{frames: []audio.Frame{initial, handoff, later}}
+			source := &responseCaptureSource{FrameSource: frames, gain: frames}
+			if _, err := source.ReadFrame(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if mode != "not_handoff" {
+				source.beginNextListen(boundary)
+			}
+			_, err := source.ReadFrame(t.Context())
+			if mode != "historical_then_quiet_loss" {
+				if err == nil || source.playbackOverflow != 0 {
+					t.Fatalf("unidentified loss accepted: err=%v historical=%d", err, source.playbackOverflow)
+				}
+				return
+			}
+			if err != nil || source.playbackOverflow != 704640 || source.readSamples.Load() != 2 {
+				t.Fatalf("intentional response-boundary retention rejected: err=%v historical=%d read=%d", err, source.playbackOverflow, source.readSamples.Load())
+			}
+			if _, err := source.ReadFrame(t.Context()); err == nil {
+				t.Fatal("later quiet-window overflow accepted")
+			}
+			if source.playbackOverflow != 704640 || source.readSamples.Load() != 2 {
+				t.Fatal("later listening loss counted as historical playback overflow")
+			}
+		})
+	}
+}
+
+func TestEchoOnlyResponseRenderEvidenceExcludesMicrophoneAndSilentReference(t *testing.T) {
+	raw := newRawCaptureFrontend(nil)
+	raw.EnableTrace(true)
+	raw.ProcessCapture([]float32{.5, .4})
+	raw.PushPlaybackReference([]float32{0, 0})
+	if got := nonzeroResponseReferenceSamples(raw); got != 0 {
+		t.Fatalf("microphone or silence counted as response rendering: %d", got)
+	}
+	raw.PushPlaybackReference([]float32{0, .1, -.1})
+	if got := nonzeroResponseReferenceSamples(raw); got != 2 {
+		t.Fatalf("render evidence missing: %d", got)
+	}
+}
+
 func TestEchoOnlyResponseRequiresCompletedPlaybackAndHealthyNextListen(t *testing.T) {
 	for _, mode := range []string{"pass", "wrong_initial", "self_interrupt", "missing_completion", "missing_metrics", "degraded", "playback_failure", "provider_error", "early_stt_timeout", "quiet_user_input", "quiet_admission", "quiet_hardware_error", "quiet_deadline", "quiet_stall", "cancel_and_hardware_error"} {
 		t.Run(mode, func(t *testing.T) {

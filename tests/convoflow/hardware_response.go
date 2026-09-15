@@ -26,6 +26,8 @@ type acousticResponseReport struct {
 	ResponseSegments     int                    `json:"response_segments"`
 	ResponseGain         float64                `json:"effective_response_gain"`
 	NonzeroRenderSamples int                    `json:"nonzero_render_reference_samples"`
+	PlaybackRingOverflow uint64                 `json:"historical_playback_ring_overflow_samples"`
+	NextListenBoundary   time.Time              `json:"next_listen_boundary"`
 	QuietStarted         time.Time              `json:"quiet_started"`
 	QuietEnded           time.Time              `json:"quiet_ended"`
 	QuietDuration        time.Duration          `json:"requested_quiet_duration_ns"`
@@ -70,6 +72,7 @@ func (r *liveRunner) runAcousticResponse(ctx context.Context, initialWAV, expect
 	capture := audio.NewCaptureWithDevice(r.cfg.InputDevice)
 	stimulus := playback.NewPlayerWithDevice(device)
 	var raw *rawCaptureFrontend
+	var frames *responseCaptureSource
 	var mic []float32
 	var micMu sync.Mutex
 	defer func() {
@@ -85,10 +88,15 @@ func (r *liveRunner) runAcousticResponse(ctx context.Context, initialWAV, expect
 			errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-processed.wav"), audio.SampleRate, processed))
 		}
 		if raw != nil {
+			report.NonzeroRenderSamples = nonzeroResponseReferenceSamples(raw)
 			errs = append(errs, raw.WriteTrace(filepath.Join(artifactDir, "frontend.jsonl")))
 			if samples := raw.RawSnapshot(); len(samples) > 0 {
 				errs = append(errs, audio.WriteWAVFloat32(filepath.Join(artifactDir, "mic-in.wav"), audio.SampleRate, samples))
 			}
+		}
+		if frames != nil {
+			report.PlaybackRingOverflow = frames.playbackOverflow
+			report.NextListenBoundary = frames.nextListenAt
 		}
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err == nil {
@@ -120,7 +128,7 @@ func (r *liveRunner) runAcousticResponse(ctx context.Context, initialWAV, expect
 		return err
 	}
 	defer barge.Delete()
-	frames := &responseCaptureSource{FrameSource: capture, gain: capture}
+	frames = &responseCaptureSource{FrameSource: capture, gain: capture}
 	endable := audio.NewFinalizable(frames)
 	recognizer, cleanup, err := stt.NewProvider(r.cfg, endable, vad)
 	if err != nil {
@@ -149,7 +157,17 @@ func (r *liveRunner) runAcousticResponse(ctx context.Context, initialWAV, expect
 	defer func() {
 		p.Capture, p.VAD, p.BargeInVAD, p.STT, p.Utterance = oldCapture, oldVAD, oldBarge, oldSTT, oldEnd
 	}()
-	if err := runEchoOnlyResponse(ctx, p.Events, p.RunTurn, func(playCtx context.Context) error {
+	turns := 0
+	run := func(turnCtx context.Context) (string, error) {
+		// runEchoOnlyResponse joins the response before starting this next
+		// turn. Mark the handoff before STT can consume its first frame.
+		turns++
+		if turns == 2 {
+			frames.beginNextListen(time.Now())
+		}
+		return p.RunTurn(turnCtx)
+	}
+	if err := runEchoOnlyResponse(ctx, p.Events, run, func(playCtx context.Context) error {
 		return playAcousticStimulus(playCtx, stimulus, initial, rate)
 	}, frames.readSamples.Load, &report); err != nil {
 		return err
@@ -157,20 +175,31 @@ func (r *liveRunner) runAcousticResponse(ctx context.Context, initialWAV, expect
 	// The player references the callback's post-volume PCM. Initial fixture
 	// playback has no reference, so nonzero reference here must come from the
 	// response. Device events alone would also succeed for all-zero playback.
-	for _, event := range raw.TraceSnapshot() {
-		if event.Op == "reference" {
-			for _, sample := range event.Samples {
-				if sample != 0 {
-					report.NonzeroRenderSamples++
-				}
-			}
-		}
-	}
+	report.NonzeroRenderSamples = nonzeroResponseReferenceSamples(raw)
 	if report.NonzeroRenderSamples == 0 {
 		report.NoEchoObserved = false
 		return errors.New("acoustic response: no nonzero rendered response samples")
 	}
 	return nil
+}
+
+func nonzeroResponseReferenceSamples(raw *rawCaptureFrontend) int {
+	if raw == nil {
+		return 0
+	}
+	raw.mu.Lock()
+	defer raw.mu.Unlock()
+	count := 0
+	for _, event := range raw.trace {
+		if event.Op == "reference" {
+			for _, sample := range event.Samples {
+				if sample != 0 {
+					count++
+				}
+			}
+		}
+	}
+	return count
 }
 
 func requireEchoResponseVolume(response *playback.Player) error {
@@ -182,12 +211,20 @@ func requireEchoResponseVolume(response *playback.Player) error {
 
 // Count actual STT reads, retaining the source's gain and metadata. Known ring
 // overflow or a reopened device invalidates this control instead of looking
-// like silence. Deliberate pipeline reset/preroll retention remains ordinary.
+// like silence. The first ordinary handoff may separately report historical
+// playback overflow discarded by the pipeline's intentional preroll reset.
 type responseCaptureSource struct {
 	audio.FrameSource
-	gain        audio.GainReporter
-	readSamples atomic.Int64
-	generation  uint64 // accessed only by the joined, sequential STT reader
+	gain             audio.GainReporter
+	readSamples      atomic.Int64
+	generation       uint64 // accessed only by the joined, sequential STT reader
+	nextListenAt     time.Time
+	firstNextListen  bool
+	playbackOverflow uint64
+}
+
+func (s *responseCaptureSource) beginNextListen(at time.Time) {
+	s.nextListenAt, s.firstNextListen = at, true
 }
 
 func (s *responseCaptureSource) ReadFrame(ctx context.Context) (audio.Frame, error) {
@@ -195,14 +232,32 @@ func (s *responseCaptureSource) ReadFrame(ctx context.Context) (audio.Frame, err
 	if err != nil {
 		return frame, err
 	}
-	if frame.CaptureGap.OverflowSamples > 0 {
-		return frame, fmt.Errorf("acoustic response: capture overflow lost %d samples", frame.CaptureGap.OverflowSamples)
+	firstNext := s.firstNextListen && len(frame.Samples) > 0
+	if len(frame.Samples) > 0 {
+		s.firstNextListen = false
 	}
+	knownGeneration := s.generation != 0
 	for _, span := range frame.CaptureSpans {
 		if s.generation != 0 && span.DeviceGeneration != s.generation {
 			return frame, errors.New("acoustic response: capture device changed generation")
 		}
 		s.generation = span.DeviceGeneration
+	}
+	if lost := frame.CaptureGap.OverflowSamples; lost > 0 {
+		// Overflow accumulated while STT was closed during a long response.
+		// Require the first handoff frame to contain pre-handoff retained PCM
+		// from the known device, following an actual discard/reset. If capture
+		// overflows after this boundary, its retained oldest sample advances
+		// beyond the boundary; that loss cannot take this exception.
+		historical := firstNext && knownGeneration && frame.CaptureGap.Reset && frame.CaptureGap.DiscardedSamples > 0 && len(frame.CaptureSpans) > 0 && !s.nextListenAt.IsZero()
+		if historical {
+			span := frame.CaptureSpans[0]
+			historical = span.DeviceGeneration != 0 && !span.DeviceDiscontinuity && !span.CallbackAt.IsZero() && !span.CallbackAt.After(s.nextListenAt)
+		}
+		if !historical {
+			return frame, fmt.Errorf("acoustic response: capture overflow lost %d samples", lost)
+		}
+		s.playbackOverflow += lost
 	}
 	s.readSamples.Add(int64(len(frame.Samples)))
 	return frame, nil
