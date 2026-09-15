@@ -1,11 +1,11 @@
 # Voice runtime code layout
 
 The voice pipeline, Ollama provider, config package, audio player, meeting log,
-benchmark command and settings rows use files grouped by responsibility within
-their existing Go packages; the Qwen TTS provider went further and became its
-own package. This guide identifies where to make a change without tracing a
-single large implementation file, and records the contracts a file boundary
-could otherwise hide.
+benchmark command, settings rows and the TUI's App update loop use files grouped
+by responsibility within their existing Go packages; the Qwen TTS provider went
+further and became its own package. This guide identifies where to make a change
+without tracing a single large implementation file, and records the contracts a
+file boundary could otherwise hide.
 
 ## Pipeline
 
@@ -212,6 +212,27 @@ beside their single caller.
 | `settings_rows_speech.go` | STT and Speakers sections, with `nearestIndex32` |
 | `settings_rows_audio.go` | Audio section: input and output device rows, the playback volume slider, `deviceOptions` |
 | `settings_rows_meeting.go` | Meeting section |
+
+## App update loop
+
+All paths below are in [`internal/tui`](../internal/tui). `App.update` in `tui.go` is the single
+dispatch point: a `switch msg := msg.(type)` whose every arm calls one named `on…` handler, then
+`return a.delegate(msg)`. Handlers are methods on `App` with the same value receiver as `update`,
+so each one returns the `App` it mutated. Two handlers fall through rather than return: `onKey`
+returns `(App, tea.Cmd, bool)` with the bool meaning "returned", and `onWindowSize` returns the
+`App`; both are visible as such at their `case`. Keep the switch as the only dispatch: no handler
+map, no interface, and `returnToMenuMsg` still re-enters through `a.update(quitMsg{})`.
+
+| File | Responsibility |
+| --- | --- |
+| `tui.go` | `App`, constructors, message types, `Update`/`update` dispatch, runtime selection sync, `View` |
+| `tui_screens.go` | Key and resize handling, screen switches, book/library transitions, quit, and `delegate`: the hidden-conversation delivery block and the per-screen `Update` fan-out |
+| `tui_meeting.go` | Meeting lifecycle messages: start, ready, done, results, route, analysis, sweep |
+| `tui_runtime.go` | Pipeline build and runtime-ready, settings saved, microphone switch, voice reload |
+| `tui_talk.go` | Persona selection, talk hotkey, and work-projection polling |
+
+`delegate` is the fall-through target and must stay after the switch, not inside a handler: a
+handler that ends by delegating would hide which arms reach the active screen's `Update`.
 
 ## Maintaining the boundaries
 
