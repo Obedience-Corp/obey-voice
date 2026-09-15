@@ -240,6 +240,21 @@ each serialized frontend invocation. These locate frontend processing relative
 to run events; they are not microphone ADC or speaker presentation timestamps.
 Historical traces without these fields retain their original timing uncertainty.
 
+To diagnose early endpointing in a processed recording, run the production
+STT loop with explicit gain metadata and read size:
+
+```sh
+just test acoustic-stt /path/to/models /path/to/mic-processed.wav /new/output-directory 6 1600
+```
+
+The gain describes amplification already applied to the WAV; samples are not
+amplified again. Live capture reads 1600-sample STT frames even when device
+callbacks have a different size. Outputs retain exact decoder input, transcript,
+and segment operations. The gate/policy trace is a parallel evaluation of the
+production functions, with assumed constant gain and accelerated pacing clearly
+recorded; it does not reconstruct unsaved live gain changes, backlog or wall-clock
+caps. An existing output directory is rejected to preserve prior evidence.
+
 For an incorrect or truncated transcript, compare the clean fixture with the
 complete raw and processed microphone recordings using the installed local
 Parakeet model:

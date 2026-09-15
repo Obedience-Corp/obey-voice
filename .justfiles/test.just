@@ -193,6 +193,12 @@ acoustic-reprocess RUN_DIR CONFIG:
 acoustic-transcribe MODELS_DIR WAV MODEL="tdt-0.6b-v2":
     OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
 
+# Replay processed WAV through production STT admission, endpointing and decoding.
+# GAIN describes amplification already applied; OUTPUT_DIR must be a new directory.
+[no-cd]
+acoustic-stt MODELS_DIR WAV OUTPUT_DIR GAIN="1" CHUNK_SAMPLES="1600":
+    OBEY_VOICE_STT_REPLAY_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_STT_REPLAY_WAV="{{WAV}}" OBEY_VOICE_STT_REPLAY_OUTPUT_DIR="{{OUTPUT_DIR}}" OBEY_VOICE_STT_REPLAY_GAIN="{{GAIN}}" OBEY_VOICE_STT_REPLAY_CHUNK_SAMPLES="{{CHUNK_SAMPLES}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestReplaySavedSTTLoop$' -count=1 -v
+
 # Real Bubble Tea/pipeline host boundaries with controlled STT, 30 samples each.
 # Hardware capture, inference and spoken acknowledgement are separate gates.
 [no-cd]
