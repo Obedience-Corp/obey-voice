@@ -28,16 +28,17 @@ func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 	writtenFrames := 0
 	active := false
 	defer func() {
-		if !active {
-			return
-		}
-		if debug != nil {
+		if active && debug != nil {
 			debug.captureCallback(outputSamples, int(frameCount), writtenFrames)
 		}
 		// Callback-safe AEC handoff: copy into a pooled slot only (no alloc,
 		// no Frontend mutex). Worker resamples with preserved phase and pushes.
-		if ingress != nil && writtenFrames > 0 {
-			ingress.TryEnqueueS16(monoBuf[:writtenFrames*2], deviceRate)
+		// The complete callback buffer is the render timeline: it includes
+		// silence when idle and the zero-padded tail after a short segment. AEC
+		// must advance through those intervals or its reference clock falls
+		// behind the capture stream between spoken segments.
+		if ingress != nil {
+			ingress.TryEnqueueS16(monoBuf, deviceRate)
 		}
 	}()
 
