@@ -181,6 +181,7 @@ acoustic-vad ARTIFACT CONFIG ARM STIMULUS:
     OBEY_VOICE_VAD_CAPTURE="{{ARTIFACT}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" OBEY_VOICE_VAD_ARM_OFFSET="{{ARM}}" OBEY_VOICE_VAD_STIMULUS_OFFSET="{{STIMULUS}}" go test ./tests/convoflow -run '^TestReplaySavedBargeVAD$' -count=1 -v
 
 # Replay saved ordered capture/reference operations through the current frontend.
+# RUN_DIR may be a legacy run root or a direct acoustic artifact directory.
 # Reports detector behavior; does not replace the physical interruption gate.
 [no-cd]
 acoustic-reprocess RUN_DIR CONFIG:

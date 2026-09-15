@@ -207,7 +207,7 @@ Saved interruption audio can be diagnosed without reopening devices:
 
 ```sh
 just test acoustic-vad /path/to/run/acoustic/interruption /path/to/isolated-config.yaml ARM_SECONDS STIMULUS_SECONDS
-just test acoustic-reprocess /path/to/run /path/to/isolated-config.yaml
+just test acoustic-reprocess /path/to/run-or-acoustic-artifact /path/to/isolated-config.yaml
 ```
 
 Both offsets are relative to the microphone file, not the scenario start.
@@ -218,10 +218,15 @@ sizes and rejects malformed or incomplete traces. Older WAV-only artifacts use
 an explicitly logged 160-sample cadence. This diagnostic does not reproduce the
 full gain-aware interruption policy. Its success means replay completed; the logged speech windows are diagnostic
 evidence, and the physical interruption assertion remains the acceptance gate.
-The reprocess command uses the saved ordered capture/reference trace to produce
-a candidate frontend WAV and compares its production detector behavior with raw
-and original processed capture. It derives approximate capture-relative offsets
-from the saved events and reports that timing uncertainty.
+The reprocess command accepts either the legacy run root or a direct acoustic
+artifact directory containing `frontend.jsonl`, `interruption.json`, and
+`mic-in.wav`. It uses the saved ordered capture/reference trace to produce a
+candidate frontend WAV and compares its production detector behavior with raw
+and original processed capture. Response/stimulus timestamps from
+`interruption.json` are mapped to the first saved listening event, or to the
+first frontend capture `observed_at` for a direct artifact. These are host
+observations, not microphone ADC or speaker presentation timestamps; a
+stimulus before the 600ms arm point remains a diagnosable pre-arm window.
 New control traces also persist `observed_at` and monotonic `elapsed_ns` for
 each serialized frontend invocation. These locate frontend processing relative
 to run events; they are not microphone ADC or speaker presentation timestamps.
