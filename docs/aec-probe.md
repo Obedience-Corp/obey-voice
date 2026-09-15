@@ -1,5 +1,10 @@
 # AEC probe: measuring echo cancellation on real hardware
 
+For the proposed completion/interrupt ownership changes and paired acceptance
+criteria, see [Speaker echo rejection and retained interruption](speaker-echo-rejection-design.md).
+That proposal is separate from this probe's signal diagnostics and is not a
+claim that the runtime echo failures are fixed.
+
 `obey-voice aec-probe` plays a known signal through the real playback path,
 records what the microphone actually hears, and reports how much of it the echo
 canceller removed.
