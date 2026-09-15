@@ -234,11 +234,11 @@ func (s *savedLoopSegmenter) AcceptWaveform(samples []float32) {
 	s.gate.minRMS = speechFloor(s.frames.gain)
 	d := s.gate.decide(samples, neural)
 	if !d.drop || s.track.detected {
-		s.track.observe(d.voice, audio.SamplesDuration(len(samples)))
+		s.track.observe(d.speech(s.track.detected), audio.SamplesDuration(len(samples)))
 	}
 	observation := s.track.observation(false, false)
 	decision := s.policy.Decide(observation)
-	s.record(map[string]any{"op": "frame", "start_sample": s.frames.pos - len(samples), "end_sample": s.frames.pos, "rms": frameRMS(samples), "gain": s.frames.gain, "floor": s.gate.minRMS, "neural": neural, "queued_segment": s.segmenter.HasSegments(), "shadow_voice": d.voice, "shadow_drop": d.drop, "shadow_has_speech": s.track.detected, "shadow_speech_ns": observation.SpeechSeen, "shadow_silence_ns": observation.TrailingSilence, "shadow_policy": decision.Kind.String(), "shadow_reason": decision.Reason})
+	s.record(map[string]any{"op": "frame", "start_sample": s.frames.pos - len(samples), "end_sample": s.frames.pos, "rms": frameRMS(samples), "gain": s.frames.gain, "floor": s.gate.minRMS, "neural": neural, "queued_segment": s.segmenter.HasSegments(), "shadow_voice": d.voice, "shadow_continuation": d.continuation, "shadow_drop": d.drop, "shadow_has_speech": s.track.detected, "shadow_speech_ns": observation.SpeechSeen, "shadow_silence_ns": observation.TrailingSilence, "shadow_policy": decision.Kind.String(), "shadow_reason": decision.Reason})
 }
 
 func (s *savedLoopSegmenter) Reset() {

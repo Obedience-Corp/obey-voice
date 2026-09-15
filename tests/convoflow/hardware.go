@@ -35,6 +35,11 @@ type acousticReport struct {
 	CapturedSamples     int                    `json:"captured_samples"`
 	CapturedRMS         float64                `json:"captured_rms"`
 	CapturedPeak        float64                `json:"captured_peak"`
+	StimulusWindowStart int                    `json:"stimulus_window_start_sample"`
+	StimulusWindowEnd   int                    `json:"stimulus_window_end_sample"`
+	StimulusWindowRMS   float64                `json:"stimulus_window_rms"`
+	StimulusWindowValid bool                   `json:"stimulus_window_valid"`
+	StimulusAudible     bool                   `json:"stimulus_audible"`
 	DelaySamples        int                    `json:"delay_samples"`
 	DelayMS             float64                `json:"delay_ms"`
 	Correlation         float64                `json:"correlation_confidence"`
@@ -43,7 +48,6 @@ type acousticReport struct {
 }
 
 const (
-	acousticMinRMS = 0.005
 	// Envelope correlation verifies the acoustic signal path; the exact
 	// normalized transcript establishes fixture identity. Different short
 	// utterances can have similar envelopes. Calibrated physical recordings
@@ -241,18 +245,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	}
 	finishCapture()
 	mic := rawFrontend.RawSnapshot()
-	if len(mic) > 0 {
-		report.CapturedSamples = len(mic)
-		report.CapturedRMS = aecprobe.SegmentRMS(mic)
-		report.CapturedPeak = aecprobe.PeakLevel(mic)
-		if len(mic) >= audio.SampleRate/4 {
-			lag, rawConfidence := aecprobe.MeasureDelay(correlationSamples, mic, audio.SampleRate*2)
-			report.DelaySamples = lag
-			report.DelayMS = float64(lag) * 1000 / float64(audio.SampleRate)
-			report.Correlation = rawConfidence
-			report.EnvelopeCorrelation = acousticEnvelopeCorrelation(correlationSamples, mic, audio.SampleRate/100, 200)
-		}
-	}
+	scoreErr := scoreAcousticCapture(&report, correlationSamples, mic)
 	if turnErr != nil {
 		return turnErr
 	}
@@ -263,17 +256,51 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		return fmt.Errorf("acoustic transcript %q does not match expected %q", transcript, expected)
 	}
 
+	return scoreErr
+}
+
+// scoreAcousticCapture keeps whole-recording telemetry, but tests audibility
+// only over the complete fixture window, using STT's existing microphone
+// audibility semantics instead of the legacy .005 whole-capture RMS gate.
+// Model wait time and subsequent assistant playback are outside that window. Bounds are capture-rate sample
+// indices; the end is exclusive. Alignment retains the existing 10ms envelope
+// search and its maximum two-second starting offset.
+func scoreAcousticCapture(report *acousticReport, stimulus, mic []float32) error {
+	report.CapturedSamples = len(mic)
+	report.CapturedRMS = aecprobe.SegmentRMS(mic)
+	report.CapturedPeak = aecprobe.PeakLevel(mic)
 	if len(mic) < audio.SampleRate/4 {
 		return fmt.Errorf("acoustic capture too short: %d samples", len(mic))
 	}
-	if report.CapturedRMS < acousticMinRMS {
-		return fmt.Errorf("acoustic capture is silent: rms %.4f", report.CapturedRMS)
+	lag, rawConfidence := aecprobe.MeasureDelay(stimulus, mic, audio.SampleRate*2)
+	report.DelaySamples = lag
+	report.DelayMS = float64(lag) * 1000 / float64(audio.SampleRate)
+	report.Correlation = rawConfidence
+	start, score := acousticEnvelopeAlignment(stimulus, mic, audio.SampleRate/100, 200)
+	report.EnvelopeCorrelation = score
+	if start < 0 {
+		return errors.New("acoustic stimulus window could not be located")
 	}
-	if report.CapturedPeak >= 0.999 {
-		return fmt.Errorf("acoustic capture clipped: peak %.4f", report.CapturedPeak)
+	report.StimulusWindowStart = start
+	report.StimulusWindowEnd = start + len(stimulus)
+	if report.StimulusWindowEnd > len(mic) {
+		return fmt.Errorf("acoustic stimulus window incomplete: end %d exceeds capture %d", report.StimulusWindowEnd, len(mic))
 	}
 	if report.EnvelopeCorrelation < acousticMinEnvelopeCorrelation {
 		return fmt.Errorf("acoustic stimulus envelope correlation too weak: %.3f", report.EnvelopeCorrelation)
+	}
+	report.StimulusWindowValid = true
+	window := mic[start:report.StimulusWindowEnd]
+	report.StimulusWindowRMS = aecprobe.SegmentRMS(window)
+	var audibility stt.SpeechAudibility
+	// Raw capture has no frontend gain. A completed audible 100ms window
+	// survives pauses; the wrapper also preserves STT's trailing-window check.
+	report.StimulusAudible = audibility.Observe(window, 1)
+	if !report.StimulusAudible {
+		return fmt.Errorf("acoustic stimulus window is not audible: rms %.4f", report.StimulusWindowRMS)
+	}
+	if report.CapturedPeak >= 0.999 {
+		return fmt.Errorf("acoustic capture clipped: peak %.4f", report.CapturedPeak)
 	}
 	return nil
 }
@@ -338,18 +365,25 @@ func runAcousticTurn(ctx context.Context, bus *events.Bus, runTurn func(context.
 // deliberately separate from raw waveform correlation, which is sensitive to
 // room reflections and independent playback/capture clocks.
 func acousticEnvelopeCorrelation(stimulus, mic []float32, frameSize, maxLagFrames int) float64 {
+	_, score := acousticEnvelopeAlignment(stimulus, mic, frameSize, maxLagFrames)
+	return score
+}
+
+func acousticEnvelopeAlignment(stimulus, mic []float32, frameSize, maxLagFrames int) (int, float64) {
 	if frameSize <= 0 || len(stimulus) < frameSize || len(mic) < frameSize {
-		return 0
+		return -1, 0
 	}
 	stimulusEnv := rmsEnvelope(stimulus, frameSize)
 	micEnv := rmsEnvelope(mic, frameSize)
 	best := 0.0
+	start := -1
 	for lag := 0; lag <= maxLagFrames && lag+len(stimulusEnv) <= len(micEnv); lag++ {
 		if score := pearson(stimulusEnv, micEnv[lag:lag+len(stimulusEnv)]); score > best {
 			best = score
+			start = lag * frameSize
 		}
 	}
-	return best
+	return start, best
 }
 
 func rmsEnvelope(samples []float32, frameSize int) []float64 {

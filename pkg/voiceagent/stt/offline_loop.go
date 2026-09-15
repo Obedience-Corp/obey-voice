@@ -143,7 +143,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 				// its PCM and count the rejected tail as silence below; the
 				// endpoint policy must decide when the utterance is complete.
 				deps.seg.Reset()
-			} else if track.observe(d.voice, frameDur(read.frame)) {
+			} else if track.observe(d.speech(track.detected), frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
 				}

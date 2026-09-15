@@ -203,6 +203,14 @@ The fixture directory contains `synth-01.wav` through `synth-03.wav`,
 scenarios are portable by regeneration; raw audio and machine-specific
 configurations stay in the selected artifact directory.
 
+Acoustic reports retain whole-recording levels, but the audibility gate scores
+only the complete raw microphone window aligned to the fixture. It uses the
+same short-window audibility criterion as production STT; the former 0.005
+whole-recording RMS cutoff could reject a valid word after a long model wait
+or count later assistant energy. Exact transcript, envelope correlation and
+clipping checks still apply. Reports record the selected sample bounds and
+window RMS so the score is reproducible.
+
 For physical acoustic scenarios, pass `-stimulus-device "Device Name"` to
 `convoflow` to route only the known fixture playback to a separate output;
 capture and the assistant response continue using the explicitly configured

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,6 +159,118 @@ func TestAcousticEnvelopeCorrelationRejectsSilenceAndClipping(t *testing.T) {
 	}
 }
 
+func acousticScoringFixture() []float32 {
+	// A varying envelope gives alignment a unique maximum. Include a partial
+	// final 10ms frame so completeness cannot be inferred from envelope length.
+	samples := make([]float32, 80*(audio.SampleRate/100)+79)
+	for i := range samples {
+		frame := i / (audio.SampleRate / 100)
+		value := float32((frame*frame+3*frame)%17+1) * 0.004
+		if i%2 == 1 {
+			value = -value
+		}
+		samples[i] = value
+	}
+	return samples
+}
+
+func TestAcousticStimulusWindowIgnoresTrailingQuiet(t *testing.T) {
+	fixture := acousticScoringFixture()
+	delay := audio.SampleRate / 2
+	short := append(make([]float32, delay), fixture...)
+	long := append(append([]float32(nil), short...), make([]float32, 30*audio.SampleRate)...)
+	var a, b acousticReport
+	if err := scoreAcousticCapture(&a, fixture, short); err != nil {
+		t.Fatal(err)
+	}
+	if err := scoreAcousticCapture(&b, fixture, long); err != nil {
+		t.Fatal(err)
+	}
+	if a.StimulusWindowStart != delay || a.StimulusWindowEnd != len(short) || !a.StimulusWindowValid {
+		t.Fatalf("unexpected fixture window: %+v", a)
+	}
+	if b.StimulusWindowStart != a.StimulusWindowStart || b.StimulusWindowEnd != a.StimulusWindowEnd || b.StimulusWindowRMS != a.StimulusWindowRMS {
+		t.Fatalf("trailing silence changed window: short=%+v long=%+v", a, b)
+	}
+	if math.Abs(a.StimulusWindowRMS-aecprobe.SegmentRMS(fixture)) > 1e-9 || b.CapturedRMS >= a.CapturedRMS || !b.StimulusAudible {
+		t.Fatalf("fixture RMS not preserved independently of whole capture: %+v", b)
+	}
+}
+
+func TestAcousticStimulusWindowRejectsQuietFixtureDespiteLaterResponse(t *testing.T) {
+	fixture := acousticScoringFixture()
+	delay := audio.SampleRate / 2
+	mic := make([]float32, 6*audio.SampleRate)
+	for i, sample := range fixture {
+		mic[delay+i] = sample / 32
+	}
+	// The response is later than the allowed two-second fixture onset search.
+	// Even a loud response with the same envelope must not satisfy audibility.
+	for i, sample := range fixture {
+		mic[4*audio.SampleRate+i] = sample * 4
+	}
+	var report acousticReport
+	err := scoreAcousticCapture(&report, fixture, mic)
+	if err == nil || !strings.Contains(err.Error(), "stimulus window is not audible") {
+		t.Fatalf("quiet fixture accepted: report=%+v error=%v", report, err)
+	}
+	if report.CapturedRMS <= report.StimulusWindowRMS || report.StimulusAudible || report.StimulusWindowStart != delay {
+		t.Fatalf("wrong audio supplied stimulus score: %+v", report)
+	}
+}
+
+func TestAcousticStimulusWindowUsesProductionAudibilityAcrossPauses(t *testing.T) {
+	fixture := make([]float32, audio.SampleRate)
+	for i := audio.SampleRate / 10; i < 2*audio.SampleRate/10; i++ {
+		fixture[i] = 0.003
+		if i%2 == 1 {
+			fixture[i] = -fixture[i]
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		gain float32
+		want bool
+	}{
+		{"audible_word_survives_pause", 1, true},
+		{"entire_window_below_microphone_floor", 0.5, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mic := make([]float32, len(fixture))
+			for i, sample := range fixture {
+				mic[i] = sample * tc.gain
+			}
+			var report acousticReport
+			err := scoreAcousticCapture(&report, fixture, mic)
+			if (err == nil) != tc.want || report.StimulusAudible != tc.want {
+				t.Fatalf("audibility=%t want=%t error=%v", report.StimulusAudible, tc.want, err)
+			}
+			if report.StimulusWindowRMS >= 0.002 {
+				t.Fatalf("fixture must demonstrate dilution below STT's microphone floor: %+v", report)
+			}
+		})
+	}
+}
+
+func TestAcousticStimulusWindowRejectsIncompleteOrUnlocatableCapture(t *testing.T) {
+	fixture := acousticScoringFixture()
+	for _, tc := range []struct {
+		name string
+		mic  []float32
+	}{
+		{"missing_partial_frame_tail", fixture[:len(fixture)-1]},
+		{"silence", make([]float32, len(fixture))},
+		{"after_onset_search", append(make([]float32, 3*audio.SampleRate), fixture...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var report acousticReport
+			if err := scoreAcousticCapture(&report, fixture, tc.mic); err == nil || report.StimulusWindowValid {
+				t.Fatalf("invalid fixture window accepted: report=%+v error=%v", report, err)
+			}
+		})
+	}
+}
+
 func TestAcousticEnvelopeCorrelationSeparatesRecordedFixtures(t *testing.T) {
 	root := os.Getenv("OBEY_VOICE_BENCH_FIXTURES")
 	if root == "" {
@@ -221,9 +334,10 @@ func TestAcousticSavedCaptureReproducesScore(t *testing.T) {
 	if err != nil || rate != audio.SampleRate {
 		t.Fatalf("microphone rate=%d err=%v", rate, err)
 	}
-	score := acousticEnvelopeCorrelation(reference, mic, audio.SampleRate/100, 200)
-	t.Logf("saved microphone envelope correlation %.6f", score)
-	if score < acousticMinEnvelopeCorrelation {
-		t.Fatalf("saved capture confidence %.6f below %.2f", score, acousticMinEnvelopeCorrelation)
+	var report acousticReport
+	err = scoreAcousticCapture(&report, reference, mic)
+	t.Logf("saved capture: whole_rms=%.6f window=[%d,%d) window_rms=%.6f audible=%t envelope_correlation=%.6f", report.CapturedRMS, report.StimulusWindowStart, report.StimulusWindowEnd, report.StimulusWindowRMS, report.StimulusAudible, report.EnvelopeCorrelation)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
