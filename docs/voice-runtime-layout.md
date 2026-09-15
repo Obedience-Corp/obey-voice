@@ -1,10 +1,11 @@
 # Voice runtime code layout
 
-The voice pipeline, Ollama provider, config package, audio player, meeting log and
-benchmark command use files grouped by responsibility within their existing Go
-packages; the Qwen TTS provider went further and became its own package. This guide
-identifies where to make a change without tracing a single large implementation
-file, and records the contracts a file boundary could otherwise hide.
+The voice pipeline, Ollama provider, config package, audio player, meeting log,
+benchmark command and settings rows use files grouped by responsibility within
+their existing Go packages; the Qwen TTS provider went further and became its
+own package. This guide identifies where to make a change without tracing a
+single large implementation file, and records the contracts a file boundary
+could otherwise hide.
 
 ## Pipeline
 
@@ -191,6 +192,26 @@ the `//go:build !integration` constraint the command has always had.
 | `benchmark_stt.go` | STT fixture mode, which builds VAD and the STT provider directly |
 | `benchmark_result.go` | Result model, event-bus drain, thresholds, exit status, transcript scoring |
 | `benchmark_report.go` | Console summary and JSON artifact |
+
+## Settings rows
+
+All paths below are in [`internal/tui`](../internal/tui). Every settings section is a list of
+`settingRow` values rebuilt from the live config each draw; `sectionRows` in `settings_rows.go`
+dispatches by section to one file per settings domain. The kinds, `settingRow`, the `applies*`
+constants, `indexOf` (used by every domain) and `onOff` (used package-wide, from `settings_place.go`,
+`settings_qwen.go` and `workers.go` too) stay in `settings_rows.go`. Domain-only helpers sit
+beside their single caller.
+
+| File | Responsibility |
+| --- | --- |
+| `settings_rows.go` | `rowKind` and its docs, the `applies*` constants, `settingRow`, `onOff`, `indexOf`, `sectionRows` |
+| `settings_rows_brain.go` | Brain section: provider and model rows |
+| `settings_rows_tools.go` | Tools section: skills, voice tools, barge-in, name summon, AEC front end, mouse and talk-key rows |
+| `settings_rows_worker.go` | Worker section: legacy and tier rows with the budget, billing and ref helpers only they use |
+| `settings_rows_voice.go` | Voice and Qwen sections: TTS provider, voice, language and Qwen rows |
+| `settings_rows_speech.go` | STT and Speakers sections, with `nearestIndex32` |
+| `settings_rows_audio.go` | Audio section: input and output device rows, the playback volume slider, `deviceOptions` |
+| `settings_rows_meeting.go` | Meeting section |
 
 ## Maintaining the boundaries
 
