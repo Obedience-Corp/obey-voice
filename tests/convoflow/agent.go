@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -224,6 +225,7 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 		r.tts = set
 		opts.TTS = set.Primary
 		opts.TTSFallback = set.Fallback
+		configureResponseVolume(player, cfg)
 		opts.Player = player
 	}
 
@@ -243,6 +245,14 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 	}
 	agent.OnRoute = rec.route
 	return r, nil
+}
+
+// configureResponseVolume reaches the physical response sink behind the WAV
+// recorder. Acoustic fixture players are independent and stay at unity.
+func configureResponseVolume(player *recordingPlayer, cfg *config.Config) {
+	if player != nil {
+		playback.ApplyEngineVolume(player.real, config.PlaybackVolumeOf(cfg))
+	}
 }
 
 func (r *liveRunner) close() {

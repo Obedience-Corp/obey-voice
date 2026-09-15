@@ -213,6 +213,16 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		} else if turn.ExpectError != "" {
 			return fmt.Errorf("turn %s: expected selection error containing %q", turn.ID, turn.ExpectError)
 		}
+	} else if turn.Op == "acoustic_response" {
+		probe, ok := e.runner.(interface {
+			runAcousticResponse(context.Context, string, string, string, time.Duration) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support acoustic response")
+		}
+		if err := probe.runAcousticResponse(turnCtx, turn.WAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID), turn.Duration.Duration); err != nil {
+			return err
+		}
 	} else if turn.Op == "acoustic_interrupt" {
 		probe, ok := e.runner.(interface {
 			runAcousticInterruption(context.Context, string, string, string, string, interruptionStimulusOptions) error

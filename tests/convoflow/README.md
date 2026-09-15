@@ -203,6 +203,37 @@ The fixture directory contains `synth-01.wav` through `synth-03.wav`,
 scenarios are portable by regeneration; raw audio and machine-specific
 configurations stay in the selected artifact directory.
 
+The generated `response.yaml` uses the counting fixture for an echo-only
+ordinary response control. Run it independently with:
+
+```sh
+just test acoustic-response /path/to/isolated-config.yaml /path/to/suite "Mac Studio Speakers"
+```
+
+The optional last argument selects only the initial fixture's speaker. The
+control attaches real capture, STT and barge-in to the same microphone, requires
+the exact initial transcript and a completed, nondegraded local-speaker
+response, and plays no interruption stimulus. It immediately opens the
+production next listen for the scenario's `duration` (generated as 3 seconds).
+Muted effective response gain, including a small configured gain that rounds
+to zero, is rejected before opening devices. Nonzero post-volume response
+reference samples are required as well as successful playback events.
+Any new admitted speech or user transcript fails. Early STT termination,
+provider/device errors, outer timeouts, capture overflow and insufficient
+captured frames also fail; they cannot count as silence. Only completion of
+the declared observation window authorizes the harness to cancel and join
+that otherwise-active listening turn. The configured STT start timeout must
+exceed this observation window.
+
+`acoustic/response/response.json` records response and next-listen boundaries,
+actual STT sample reads, negotiated devices, effective response gain, nonzero
+render count and the result. Frame coverage
+allows one buffered 100ms read at the window boundary. Raw/processed capture
+and the ordered render-reference trace remain with the report. This proves
+only the recorded response and observation window, not indefinite echo
+rejection. `acoustic-controls` now runs response, completion and interruption
+in order; regenerate older suites to obtain the new scenario.
+
 Acoustic reports retain whole-recording levels, but the audibility gate scores
 only the complete raw microphone window aligned to the fixture. It uses the
 same short-window audibility criterion as production STT; the former 0.005

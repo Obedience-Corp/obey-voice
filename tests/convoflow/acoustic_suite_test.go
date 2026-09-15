@@ -19,7 +19,7 @@ func TestPrepareAcousticSuiteRequiresRecordedMetadataAndGeneratesScenarios(t *te
 	if err := prepareAcousticSuite(out, fixtures); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"manifest.json", "baseline-33.yaml", "worker-33.yaml", "completion.yaml", "interruption.yaml", "startup-full.yaml"} {
+	for _, name := range []string{"manifest.json", "baseline-33.yaml", "worker-33.yaml", "completion.yaml", "response.yaml", "interruption.yaml", "startup-full.yaml"} {
 		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
 			t.Fatalf("missing %s: %v", name, err)
 		}
@@ -68,6 +68,14 @@ func TestPrepareAcousticSuiteRequiresRecordedMetadataAndGeneratesScenarios(t *te
 	}
 	if completion.Turns[0].WAV != filepath.Join(fixtures, "synth-02.wav") || completion.Turns[0].ExpectedTranscript != "known phrase 2" {
 		t.Fatalf("completion fixture and expected phrase differ: %+v", completion.Turns[0])
+	}
+	response, err := loadScenario(filepath.Join(out, "response.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := response.Turns[0]
+	if turn.Op != "acoustic_response" || turn.WAV != filepath.Join(fixtures, "counting.wav") || turn.ExpectedTranscript != "counting phrase" || turn.InterruptWAV != "" || turn.Duration.Duration != 3*time.Second {
+		t.Fatalf("response control changed fixture or echo-only semantics: %+v", turn)
 	}
 	manifestData, err := os.ReadFile(filepath.Join(out, "manifest.json"))
 	if err != nil {
