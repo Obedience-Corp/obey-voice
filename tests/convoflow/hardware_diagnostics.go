@@ -5,6 +5,8 @@ package main
 // it does not exercise a device, playback, or a provider.
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -17,6 +19,8 @@ import (
 )
 
 const diagnosticChunk = 160 // default for legacy WAV-only diagnostics without a callback trace
+
+const legacyDiagnosticCadence = "legacy fixed 160-sample callbacks (no frontend trace)"
 
 type vadDiagnosticSpan struct {
 	Start       float64
@@ -37,6 +41,58 @@ type vadDiagnostic struct {
 	Chunks      int
 	MaxPositive int
 	Spans       []vadDiagnosticSpan
+}
+
+// captureCallbackSizes reads the original capture callback boundaries from a
+// saved frontend trace. A trace that exists but is malformed is an error: the
+// caller must not silently replace recorded boundaries with the legacy cadence.
+func captureCallbackSizes(tracePath string, sampleCount int) ([]int, error) {
+	file, err := os.Open(tracePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("open frontend trace %s: %w", tracePath, err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	var expected uint64
+	var sizes []int
+	for scanner.Scan() {
+		var event frontendTraceEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return nil, fmt.Errorf("decode frontend trace %s: %w", tracePath, err)
+		}
+		if event.Seq != expected+1 {
+			return nil, fmt.Errorf("frontend trace %s sequence %d after %d", tracePath, event.Seq, expected)
+		}
+		expected = event.Seq
+		switch event.Op {
+		case "capture":
+			if len(event.Samples) == 0 {
+				return nil, fmt.Errorf("frontend trace %s capture event %d has no samples", tracePath, event.Seq)
+			}
+			sizes = append(sizes, len(event.Samples))
+		case "reference", "delay", "close":
+		default:
+			return nil, fmt.Errorf("frontend trace %s unknown operation %q", tracePath, event.Op)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read frontend trace %s: %w", tracePath, err)
+	}
+	if len(sizes) == 0 {
+		return nil, fmt.Errorf("frontend trace %s contains no capture events", tracePath)
+	}
+	var total int
+	for _, size := range sizes {
+		total += size
+	}
+	if total != sampleCount {
+		return nil, fmt.Errorf("frontend trace %s captures %d samples, WAV contains %d", tracePath, total, sampleCount)
+	}
+	return sizes, nil
 }
 
 // replayBargeVAD uses supplied capture callback sizes when available, or

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
 // TestReplaySavedBargeVAD is opt-in because it needs the installed Silero
@@ -40,10 +43,24 @@ func TestReplaySavedBargeVAD(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wavDir, "mic-in.wav")); err != nil {
 		wavDir = filepath.Join(dir, "acoustic", "interruption")
 	}
+	samples, _, err := audio.ReadWAVFloat32(filepath.Join(wavDir, "mic-in.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracePath := filepath.Join(wavDir, "frontend.jsonl")
+	captureSizes, err := captureCallbackSizes(tracePath, len(samples))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cadenceSource := legacyDiagnosticCadence
+	if captureSizes != nil {
+		cadenceSource = fmt.Sprintf("recorded frontend trace %s (%d callbacks)", tracePath, len(captureSizes))
+	}
+	t.Logf("replay callback cadence source=%s", cadenceSource)
 	for _, name := range []string{"mic-in.wav", "mic-processed.wav"} {
 		path := filepath.Join(wavDir, name)
 		for _, threshold := range []float64{0.85, 0.60, 0.30} {
-			d, replayErr := replayBargeVAD(cfg, path, threshold, arm)
+			d, replayErr := replayBargeVAD(cfg, path, threshold, arm, captureSizes...)
 			if replayErr != nil {
 				t.Fatal(replayErr)
 			}
@@ -80,5 +97,70 @@ func TestDiagnosticEnvFloat(t *testing.T) {
 	t.Setenv(key, "bad")
 	if _, err := diagnosticEnvFloat(key, 0); err == nil {
 		t.Fatal("diagnosticEnvFloat accepted invalid input")
+	}
+}
+
+func TestCaptureCallbackSizesReadsRecordedBoundaries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frontend.jsonl")
+	body := `{"seq":1,"op":"capture","samples":[0,0,0]}
+{"seq":2,"op":"reference","samples":[1]}
+{"seq":3,"op":"capture","samples":[0,0]}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sizes, err := captureCallbackSizes(path, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fmt.Sprint(sizes), "[3 2]"; got != want {
+		t.Fatalf("capture callback sizes = %s, want %s", got, want)
+	}
+}
+
+func TestCaptureCallbackSizesRejectsMalformedExistingTrace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frontend.jsonl")
+	if err := os.WriteFile(path, []byte(`{"seq":1,"op":"capture","samples":[0]}
+not-json
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureCallbackSizes(path, 1); err == nil {
+		t.Fatal("malformed existing frontend trace was accepted")
+	}
+}
+
+func TestCaptureCallbackSizesRejectsSequenceGap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frontend.jsonl")
+	body := `{"seq":1,"op":"capture","samples":[0]}
+{"seq":3,"op":"capture","samples":[0]}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureCallbackSizes(path, 2); err == nil {
+		t.Fatal("frontend trace sequence gap was accepted")
+	}
+}
+
+func TestCaptureCallbackSizesRejectsSampleCountMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "frontend.jsonl")
+	body := `{"seq":1,"op":"capture","samples":[0,0]}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureCallbackSizes(path, 3); err == nil {
+		t.Fatal("frontend trace sample count mismatch was accepted")
+	}
+}
+
+func TestCaptureCallbackSizesMissingTraceUsesExplicitFallback(t *testing.T) {
+	sizes, err := captureCallbackSizes(filepath.Join(t.TempDir(), "missing.jsonl"), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sizes != nil {
+		t.Fatalf("missing trace sizes = %v, want nil for explicit legacy fallback", sizes)
 	}
 }

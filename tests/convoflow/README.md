@@ -212,8 +212,11 @@ just test acoustic-reprocess /path/to/run /path/to/isolated-config.yaml
 
 Both offsets are relative to the microphone file, not the scenario start.
 The command replays raw and processed capture through the production Silero
-barge detector at three supported thresholds, skipping pre-arm input. Its
-success means replay completed; the logged speech windows are diagnostic
+barge detector at three supported thresholds, skipping pre-arm input. When
+`frontend.jsonl` is beside the WAVs, it preserves the recorded capture callback
+sizes and rejects malformed or incomplete traces. Older WAV-only artifacts use
+an explicitly logged 160-sample cadence. This diagnostic does not reproduce the
+full gain-aware interruption policy. Its success means replay completed; the logged speech windows are diagnostic
 evidence, and the physical interruption assertion remains the acceptance gate.
 The reprocess command uses the saved ordered capture/reference trace to produce
 a candidate frontend WAV and compares its production detector behavior with raw
