@@ -44,7 +44,8 @@ type Capture struct {
 	watchDone        chan struct{} // closed by Stop so the cancellation watcher exits
 	subs             map[int]chan []float32
 	nextSub          int
-	frameSeq         int64
+	frameSeq         atomic.Int64
+	deviceGeneration atomic.Uint64
 	deviceName       string
 	actualDeviceName string
 	deviceRate       int
@@ -120,7 +121,7 @@ func (c *Capture) Start(ctx context.Context) error {
 		c.mu.Unlock()
 		return nil
 	}
-	if err := c.open(); err != nil {
+	if err := c.openDeviceLocked(); err != nil {
 		c.mu.Unlock()
 		return err
 	}
@@ -189,7 +190,7 @@ func (c *Capture) SetDevice(ctx context.Context, name string) error {
 		return c.restoreDeviceLocked(previousName, err)
 	}
 
-	if err := c.open(); err != nil {
+	if err := c.openDeviceLocked(); err != nil {
 		return c.restoreDeviceLocked(previousName, err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -208,13 +209,22 @@ func (c *Capture) SetDevice(ctx context.Context, name string) error {
 // closed so normal recovery can retry the previous device.
 func (c *Capture) restoreDeviceLocked(name string, original error) error {
 	c.deviceName = name
-	if err := c.open(); err != nil {
+	if err := c.openDeviceLocked(); err != nil {
 		c.running = false
 		return errors.Join(original, fmt.Errorf("restore capture device %q: %w", deviceLabel(name), err))
 	}
 	c.running = true
 	c.lastData.Store(time.Now().UnixNano())
 	return original
+}
+
+// openDeviceLocked advances the physical device generation before Start can
+// invoke a callback. The caller has closed/joined the previous device and holds
+// c.mu. Failed opens may consume a generation; positions never imply that the
+// unknown interval between devices contained silence.
+func (c *Capture) openDeviceLocked() error {
+	c.deviceGeneration.Add(1)
+	return c.open()
 }
 
 func (c *Capture) openMalgoDevice() error {
@@ -235,14 +245,13 @@ func (c *Capture) openMalgoDevice() error {
 	}
 	defer releaseDeviceID()
 
+	generation := c.deviceGeneration.Load()
 	onData := func(outputSamples, inputSamples []byte, frameCount uint32) {
-		c.lastData.Store(time.Now().UnixNano())
-		samples := bytesToFloat32(inputSamples)
-		if c.frontend != nil {
-			samples = c.frontend.ProcessCapture(samples)
-		}
-		c.buf.Write(samples)
-		c.publish(samples)
+		// Observe arrival before conversion, frontend work or ring locking.
+		// malgo supplies no ADC timestamp; retain this limitation explicitly.
+		callbackAt := time.Now()
+		c.lastData.Store(callbackAt.UnixNano())
+		c.ingestCapture(bytesToFloat32(inputSamples), callbackAt, generation)
 	}
 
 	device, err := malgo.InitDevice(mctx.Context, deviceConfig, malgo.DeviceCallbacks{
@@ -269,6 +278,17 @@ func (c *Capture) openMalgoDevice() error {
 	c.deviceRate = int(device.SampleRate())
 	c.deviceChannels = int(device.CaptureChannels())
 	return nil
+}
+
+// ingestCapture is shared by the real callback and deterministic ordering
+// tests. Arrival and device identity are supplied by the callback, never by a
+// later ring reader. The subscription path keeps its existing PCM-only API.
+func (c *Capture) ingestCapture(samples []float32, callbackAt time.Time, generation uint64) {
+	if c.frontend != nil {
+		samples = c.frontend.ProcessCapture(samples)
+	}
+	c.buf.writeCapture(samples, callbackAt, generation)
+	c.publish(samples)
 }
 
 // Stop stops audio capture and releases resources. It is the caller's "I am
@@ -322,7 +342,7 @@ func (c *Capture) recoverIfStalled(ctx context.Context) error {
 		c.running = false
 	}
 	device := c.deviceName
-	err := c.open()
+	err := c.openDeviceLocked()
 	if err == nil {
 		c.running = true
 		c.lastData.Store(time.Now().UnixNano())
@@ -374,7 +394,7 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 	if err := ctx.Err(); err != nil {
 		return Frame{}, err
 	}
-	samples := c.buf.Read(ChunkSize)
+	samples, spans, gap := c.buf.readCapture(ChunkSize)
 	if samples == nil {
 		// A failed reopen is reported by recoverIfStalled and retried on the
 		// next stall window, so it must not end the STT session: the loop keeps
@@ -382,14 +402,20 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 		_ = c.recoverIfStalled(ctx)
 		return Frame{}, ErrNoFrameReady
 	}
-	c.frameSeq++
+	var startedAt time.Time
+	if len(spans) > 0 {
+		startedAt = spans[0].EstimatedStart
+	}
 	return Frame{
-		Samples:    samples,
-		SampleRate: SampleRate,
-		Channels:   Channels,
-		Duration:   SamplesDuration(len(samples)),
-		Sequence:   c.frameSeq,
-		SourceKind: SourceLive,
+		Samples:      samples,
+		SampleRate:   SampleRate,
+		Channels:     Channels,
+		Duration:     SamplesDuration(len(samples)),
+		Sequence:     c.frameSeq.Add(1),
+		StartedAt:    startedAt,
+		SourceKind:   SourceLive,
+		CaptureSpans: spans,
+		CaptureGap:   gap,
 	}, nil
 }
 

@@ -219,6 +219,10 @@ The reprocess command uses the saved ordered capture/reference trace to produce
 a candidate frontend WAV and compares its production detector behavior with raw
 and original processed capture. It derives approximate capture-relative offsets
 from the saved events and reports that timing uncertainty.
+New control traces also persist `observed_at` and monotonic `elapsed_ns` for
+each serialized frontend invocation. These locate frontend processing relative
+to run events; they are not microphone ADC or speaker presentation timestamps.
+Historical traces without these fields retain their original timing uncertainty.
 
 For an incorrect or truncated transcript, compare the clean fixture with the
 complete raw and processed microphone recordings using the installed local

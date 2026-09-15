@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
@@ -31,6 +33,7 @@ var _ audio.ReferenceDelayer = (*traceFrontendFake)(nil)
 func TestRawCaptureFrontendTracePreservesOrderAndCopies(t *testing.T) {
 	fake := &traceFrontendFake{}
 	wrapped := newRawCaptureFrontend(fake)
+	before := time.Now()
 	wrapped.EnableTrace(true)
 	capture := []float32{1, 2}
 	ref := []float32{3, 4}
@@ -38,7 +41,9 @@ func TestRawCaptureFrontendTracePreservesOrderAndCopies(t *testing.T) {
 	wrapped.SetReferenceDelay(160)
 	wrapped.PushPlaybackReference(ref)
 	capture[0], ref[0] = 99, 98
-	if err := wrapped.WriteTrace(t.TempDir() + "/trace.jsonl"); err != nil {
+	after := time.Now()
+	path := t.TempDir() + "/trace.jsonl"
+	if err := wrapped.WriteTrace(path); err != nil {
 		t.Fatal(err)
 	}
 	trace := wrapped.TraceSnapshot()
@@ -47,6 +52,25 @@ func TestRawCaptureFrontendTracePreservesOrderAndCopies(t *testing.T) {
 	}
 	if !reflect.DeepEqual(trace[0].Samples, []float32{1, 2}) || !reflect.DeepEqual(trace[2].Samples, []float32{3, 4}) {
 		t.Fatalf("trace did not copy samples: %+v", trace)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	var previousElapsed int64
+	for _, expected := range trace {
+		var persisted frontendTraceEvent
+		if err := decoder.Decode(&persisted); err != nil {
+			t.Fatal(err)
+		}
+		if persisted.ObservedAt.Before(before) || persisted.ObservedAt.After(after) ||
+			!persisted.ObservedAt.Equal(expected.ObservedAt) || persisted.ElapsedNS != expected.ElapsedNS ||
+			persisted.ElapsedNS < previousElapsed {
+			t.Fatalf("lost frontend timing in persisted trace: %+v", persisted)
+		}
+		previousElapsed = persisted.ElapsedNS
 	}
 }
 
