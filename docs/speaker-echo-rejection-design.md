@@ -163,9 +163,12 @@ Use varied fixtures and declared volume/device conditions; do not change a live
 session or global audio settings implicitly. Human listening is not a gate.
 Report detector-to-stop and stimulus-to-stop separately, including waiting
 before admission. VW0001's external campaign acceptance criterion is “no
-regression >50 ms against baseline; absolute result reported,” recorded in
-`workflow/design/.dungeon/completed/2026-09-10/obey-voice-background-work-contract/EXECUTION-CONTRACT.md`,
-under the “Barge-in” row of the acceptance table. This is a campaign release
+regression >50 ms against baseline; absolute result reported,” recorded in the
+external My_Tools campaign's
+[execution contract, “Barge-in” row](https://github.com/lancekrogers/TOOLS_PLANNING_REPO/blob/370362d536224373057c1ef109a4dcf4156957b6/workflow/design/.dungeon/completed/2026-09-10/obey-voice-background-work-contract/EXECUTION-CONTRACT.md#L106).
+That immutable source is in a separate repository; its actual archive directory
+is `.dungeon`. Older `dungeon` references in this repository describe historical
+campaign layouts, not the location of this contract. This is a campaign release
 criterion, not a threshold currently enforced by the repository's convoflow
 harness. The implementation must record comparable baseline/candidate timing
 populations and explicitly evaluate that criterion in the acceptance task.
