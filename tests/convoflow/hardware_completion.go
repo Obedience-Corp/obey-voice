@@ -21,6 +21,7 @@ import (
 type completionReport struct {
 	Fixture            string                 `json:"fixture"`
 	Expected           string                 `json:"expected"`
+	StimulusDevice     string                 `json:"stimulus_device"`
 	PauseMS            float64                `json:"pause_ms"`
 	CompletionMS       float64                `json:"completion_ms"`
 	Acknowledged       bool                   `json:"acknowledged"`
@@ -61,7 +62,8 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
 		return err
 	}
-	report := completionReport{Fixture: fixtureWAV, Expected: expected}
+	stimulusDevice := stimulusOutputDevice(r.cfg, r.stimulusDevice)
+	report := completionReport{Fixture: fixtureWAV, Expected: expected, StimulusDevice: acousticDeviceLabel(stimulusDevice)}
 	var rawFrontend *rawCaptureFrontend
 	var mic []float32
 	var micMu sync.Mutex
@@ -167,7 +169,7 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	defer func() {
 		p.Capture, p.VAD, p.BargeInVAD, p.STT, p.Utterance = oldCapture, oldVAD, oldBarge, oldSTT, oldEnd
 	}()
-	stimulus = playback.NewPlayerWithDevice(r.cfg.OutputDevice)
+	stimulus = playback.NewPlayerWithDevice(stimulusDevice)
 	defer stimulus.Close()
 	before := r.workSnapshot()
 	known := map[string]struct{}{}

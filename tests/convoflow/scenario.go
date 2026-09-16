@@ -64,21 +64,23 @@ type scenarioWorker struct {
 }
 
 type Turn struct {
-	LatencyIteration   int           `yaml:"latency_iteration"`
-	LatencyWarmup      bool          `yaml:"latency_warmup"`
-	InterruptAfter     duration      `yaml:"interrupt_after"`
-	ID                 string        `yaml:"id"`
-	User               string        `yaml:"user"`
-	Timeout            duration      `yaml:"timeout"`
-	Duration           duration      `yaml:"duration"`
-	Wait               waitKind      `yaml:"wait"`
-	Expect             []Expectation `yaml:"expect"`
-	WAV                string        `yaml:"wav"`
-	InterruptWAV       string        `yaml:"interrupt_wav"`
-	ExpectedTranscript string        `yaml:"expected_transcript"`
-	Op                 string        `yaml:"op"`
-	Persona            string        `yaml:"persona"`
-	ExpectError        string        `yaml:"expect_error"`
+	LatencyIteration       int           `yaml:"latency_iteration"`
+	LatencyWarmup          bool          `yaml:"latency_warmup"`
+	InterruptAfter         duration      `yaml:"interrupt_after"`
+	StimulusDelay          *duration     `yaml:"stimulus_delay"`
+	StimulusCompleteWithin *duration     `yaml:"stimulus_complete_within"`
+	ID                     string        `yaml:"id"`
+	User                   string        `yaml:"user"`
+	Timeout                duration      `yaml:"timeout"`
+	Duration               duration      `yaml:"duration"`
+	Wait                   waitKind      `yaml:"wait"`
+	Expect                 []Expectation `yaml:"expect"`
+	WAV                    string        `yaml:"wav"`
+	InterruptWAV           string        `yaml:"interrupt_wav"`
+	ExpectedTranscript     string        `yaml:"expected_transcript"`
+	Op                     string        `yaml:"op"`
+	Persona                string        `yaml:"persona"`
+	ExpectError            string        `yaml:"expect_error"`
 }
 
 type Expectation struct {
@@ -120,6 +122,22 @@ type Expectation struct {
 }
 
 type duration struct{ time.Duration }
+
+// interruptionStimulusDelay keeps omission distinct from an explicit zero.
+func (t Turn) interruptionStimulusDelay() time.Duration {
+	if t.StimulusDelay == nil {
+		return 900 * time.Millisecond
+	}
+	return t.StimulusDelay.Duration
+}
+
+func (t Turn) interruptionStimulusOptions() interruptionStimulusOptions {
+	options := interruptionStimulusOptions{delay: t.interruptionStimulusDelay()}
+	if t.StimulusCompleteWithin != nil {
+		options.completeWithin = t.StimulusCompleteWithin.Duration
+	}
+	return options
+}
 
 func (d *duration) UnmarshalYAML(node *yaml.Node) error {
 	var s string
@@ -188,6 +206,12 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		}
 		if t.InterruptAfter.Duration < 0 || (t.InterruptAfter.Duration > 0 && (t.User == "" || t.Op != "")) {
 			return nil, fmt.Errorf("load %s: turn %q: interrupt_after requires a user turn and positive duration", name, t.ID)
+		}
+		if t.StimulusDelay != nil && (t.StimulusDelay.Duration < 0 || t.Op != "acoustic_interrupt") {
+			return nil, fmt.Errorf("load %s: turn %q: stimulus_delay requires acoustic_interrupt and a nonnegative duration", name, t.ID)
+		}
+		if t.StimulusCompleteWithin != nil && (t.StimulusCompleteWithin.Duration <= 0 || t.Op != "acoustic_interrupt") {
+			return nil, fmt.Errorf("load %s: turn %q: stimulus_complete_within requires acoustic_interrupt and a positive duration", name, t.ID)
 		}
 		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" {
 			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)

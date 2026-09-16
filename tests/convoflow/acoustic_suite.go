@@ -90,6 +90,29 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 	manifest := struct {
 		Fixtures []acousticFixture `json:"fixtures"`
 	}{append(fixtures, acousticFixture{Path: counting, Text: countingText, SHA256: hex.EncodeToString(countingHash[:])})}
+	var short *acousticFixture
+	shortPath := filepath.Join(fixtureDir, "startup-short.wav")
+	if _, err := os.Stat(shortPath); err == nil {
+		text, err := readAcousticMetadata(filepath.Join(fixtureDir, "startup-short.json"))
+		if err != nil {
+			return fmt.Errorf("startup-short fixture: %w", err)
+		}
+		if text != "Wait." {
+			return fmt.Errorf("startup-short fixture: expected metadata text %q, got %q", "Wait.", text)
+		}
+		if _, _, err := audio.ReadWAVFloat32(shortPath); err != nil {
+			return fmt.Errorf("startup-short fixture: %w", err)
+		}
+		data, err := os.ReadFile(shortPath)
+		if err != nil {
+			return fmt.Errorf("startup-short fixture: %w", err)
+		}
+		hash := sha256.Sum256(data)
+		short = &acousticFixture{Path: shortPath, Text: text, SHA256: hex.EncodeToString(hash[:])}
+		manifest.Fixtures = append(manifest.Fixtures, *short)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("startup-short fixture: %w", err)
+	}
 	var generated []struct {
 		name string
 		data []byte
@@ -143,8 +166,21 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 	if err := write("interruption", "", []map[string]any{{"id": "interruption", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text}}); err != nil {
 		return err
 	}
+	if err := write("startup-full", "", []map[string]any{{"id": "startup-full", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text, "stimulus_delay": "0s"}}); err != nil {
+		return err
+	}
+	if short != nil {
+		if err := write("startup-short", "", []map[string]any{{"id": "startup-short", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": short.Path, "expected_transcript": short.Text, "stimulus_delay": "0s", "stimulus_complete_within": "600ms"}}); err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(outputDir, 0o700); err != nil {
 		return err
+	}
+	if short == nil {
+		if err := os.Remove(filepath.Join(outputDir, "startup-short.yaml")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale startup-short scenario: %w", err)
+		}
 	}
 	b, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

@@ -203,26 +203,57 @@ The fixture directory contains `synth-01.wav` through `synth-03.wav`,
 scenarios are portable by regeneration; raw audio and machine-specific
 configurations stay in the selected artifact directory.
 
+For physical acoustic scenarios, pass `-stimulus-device "Device Name"` to
+`convoflow` to route only the known fixture playback to a separate output;
+capture and the assistant response continue using the explicitly configured
+devices. An invalid named device fails when playback opens rather than falling
+back silently. The default remains the configured output device, and each
+acoustic report records the requested stimulus device separately.
+
 Saved interruption audio can be diagnosed without reopening devices:
 
 ```sh
 just test acoustic-vad /path/to/run/acoustic/interruption /path/to/isolated-config.yaml ARM_SECONDS STIMULUS_SECONDS
-just test acoustic-reprocess /path/to/run /path/to/isolated-config.yaml
+just test acoustic-reprocess /path/to/run-or-acoustic-artifact /path/to/isolated-config.yaml
 ```
 
 Both offsets are relative to the microphone file, not the scenario start.
 The command replays raw and processed capture through the production Silero
-barge detector at three supported thresholds, skipping pre-arm input. Its
-success means replay completed; the logged speech windows are diagnostic
+barge detector at three supported thresholds, skipping pre-arm input. When
+`frontend.jsonl` is beside the WAVs, it preserves the recorded capture callback
+sizes and rejects malformed or incomplete traces. Older WAV-only artifacts use
+an explicitly logged 160-sample cadence. This diagnostic does not reproduce the
+full gain-aware interruption policy. Its success means replay completed; the logged speech windows are diagnostic
 evidence, and the physical interruption assertion remains the acceptance gate.
-The reprocess command uses the saved ordered capture/reference trace to produce
-a candidate frontend WAV and compares its production detector behavior with raw
-and original processed capture. It derives approximate capture-relative offsets
-from the saved events and reports that timing uncertainty.
+The reprocess command accepts either the legacy run root or a direct acoustic
+artifact directory containing `frontend.jsonl`, `interruption.json`, and
+`mic-in.wav`. It uses the saved ordered capture/reference trace to produce a
+candidate frontend WAV and compares its production detector behavior with raw
+and original processed capture. Response/stimulus timestamps from
+`interruption.json` map to the start sample of the first recorded capture
+callback observed at or after each event. Legacy untimed traces instead use
+the first saved listening event and explicitly report that approximation. These are host
+observations, not microphone ADC or speaker presentation timestamps; a
+stimulus before the 600ms arm point remains a diagnosable pre-arm window.
 New control traces also persist `observed_at` and monotonic `elapsed_ns` for
 each serialized frontend invocation. These locate frontend processing relative
 to run events; they are not microphone ADC or speaker presentation timestamps.
 Historical traces without these fields retain their original timing uncertainty.
+
+To diagnose early endpointing in a processed recording, run the production
+STT loop with explicit gain metadata and read size:
+
+```sh
+just test acoustic-stt /path/to/models /path/to/mic-processed.wav /new/output-directory 6 1600
+```
+
+The gain describes amplification already applied to the WAV; samples are not
+amplified again. Live capture reads 1600-sample STT frames even when device
+callbacks have a different size. Outputs retain exact decoder input, transcript,
+and segment operations. The gate/policy trace is a parallel evaluation of the
+production functions, with assumed constant gain and accelerated pacing clearly
+recorded; it does not reconstruct unsaved live gain changes, backlog or wall-clock
+caps. An existing output directory is rejected to preserve prior evidence.
 
 For an incorrect or truncated transcript, compare the clean fixture with the
 complete raw and processed microphone recordings using the installed local
@@ -323,13 +354,44 @@ The yielded turn must contain no transcript and resumed speech must match
 
 `op: acoustic_interrupt` uses `wav` for the initial question and
 `interrupt_wav` for speech played during the real response. It waits for
-production listening before the first fixture, checks a quiet interval beyond
-the barge-in arm delay, and observes actual stimulus playback start. Only the
+production listening before the first fixture, then waits `stimulus_delay`
+after observing response playback start (default `900ms`). Set this per-turn
+field to `0s` for startup speech. Optional `stimulus_complete_within: 600ms`
+requires observed stimulus completion within that interval after response start;
+late, canceled or unstarted playback fails even if the transcript matches.
+The bound must be positive. Negative delays and use on other operations
+are rejected. The omitted default keeps the quiet interval beyond the existing
+600ms barge-in arm delay. Only the
 production detector stops the response. The next turn must recover the full
 interrupting phrase. Reports distinguish stimulus-to-stop from the monotonic
 production detector-to-stop duration.
+
+`interruption.json` retains `requested_stimulus_delay_ns`, the fixture's PCM
+duration (`stimulus_fixture_duration_ns`), `stimulus_started`, `stimulus_ended`,
+`response_to_stimulus_start_ns`, `response_to_stimulus_end_ns`, and
+`stimulus_playback_duration_ns`. These are host observations of playback start
+and completion, not speaker or ADC timestamps. A startup-short case needs
+`stimulus_complete_within: 600ms`, which enforces `stimulus_completed: true`
+and an observed interval wholly within 600ms of
+`response_started`; setting `stimulus_delay: 0s` alone does not establish this.
+Errors/cancellation retain available timing with `stimulus_completed: false`
+and `stimulus_error`. Timing coverage alone does not prove interruption or
+full transcript retention, which remain required independently.
 
 Completion/interruption artifacts retain both `mic-in.wav` before frontend
 processing and `mic-processed.wav` after AEC/NS/AGC. A low processed RMS alone
 cannot establish physical input attenuation. Failures retain their reports
 and available audio; they do not become passing latency samples.
+
+Prepare and run repeatable immediate-onset controls with:
+
+```sh
+just test acoustic-prepare MODELS_DIR SUITE_DIR
+just test acoustic-startup CONFIG SUITE_DIR
+```
+
+`startup-full` overlaps the full math question with response onset.
+`startup-short` uses “Wait.” (Kokoro af_heart, speed 1.25) with a 600ms observed
+completion deadline. Both retain the ordinary production interruption and exact
+transcript checks. Older fixture directories without `startup-short.wav` remain
+loadable; the startup recipe requires both scenarios before opening devices.

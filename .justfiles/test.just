@@ -121,6 +121,7 @@ acoustic-prepare MODELS_DIR SUITE_DIR PROFILE="full":
     for i in 0 1 2 3; do
         "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1 -text "${texts[$i]}" -out "$suite/fixtures/${names[$i]}.wav"
     done
+    "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1.25 -text "Wait." -out "$suite/fixtures/startup-short.wav"
     "$suite/bin/convoflow" -prepare-acoustic-suite "$suite/scenarios" -fixture-dir "$suite/fixtures"
     printf '%s\n' "$profile" > "$suite/bin/fixture-profile.txt"
     shasum -a 256 "$suite/bin/convoflow" > "$suite/binary.sha256"
@@ -152,6 +153,22 @@ acoustic-controls CONFIG SUITE_DIR:
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/controls"
     done
 
+# Run both immediate-onset controls with the prepared binary and explicit config.
+[no-cd]
+acoustic-startup CONFIG SUITE_DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in startup-full startup-short; do
+        if [[ ! -f "$suite/scenarios/$scenario.yaml" ]]; then
+            echo "error: missing $scenario.yaml; run just test acoustic-prepare MODELS_DIR '$suite' to prepare startup controls" >&2
+            exit 2
+        fi
+    done
+    for scenario in startup-full startup-short; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/startup"
+    done
+
 # One physical turn with the explicitly configured TTS provider (e.g. native Qwen).
 [no-cd]
 acoustic-smoke CONFIG SUITE_DIR:
@@ -164,6 +181,7 @@ acoustic-vad ARTIFACT CONFIG ARM STIMULUS:
     OBEY_VOICE_VAD_CAPTURE="{{ARTIFACT}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" OBEY_VOICE_VAD_ARM_OFFSET="{{ARM}}" OBEY_VOICE_VAD_STIMULUS_OFFSET="{{STIMULUS}}" go test ./tests/convoflow -run '^TestReplaySavedBargeVAD$' -count=1 -v
 
 # Replay saved ordered capture/reference operations through the current frontend.
+# RUN_DIR may be a legacy run root or a direct acoustic artifact directory.
 # Reports detector behavior; does not replace the physical interruption gate.
 [no-cd]
 acoustic-reprocess RUN_DIR CONFIG:
@@ -174,6 +192,12 @@ acoustic-reprocess RUN_DIR CONFIG:
 [no-cd]
 acoustic-transcribe MODELS_DIR WAV MODEL="tdt-0.6b-v2":
     OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+
+# Replay processed WAV through production STT admission, endpointing and decoding.
+# GAIN describes amplification already applied; OUTPUT_DIR must be a new directory.
+[no-cd]
+acoustic-stt MODELS_DIR WAV OUTPUT_DIR GAIN="1" CHUNK_SAMPLES="1600":
+    OBEY_VOICE_STT_REPLAY_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_STT_REPLAY_WAV="{{WAV}}" OBEY_VOICE_STT_REPLAY_OUTPUT_DIR="{{OUTPUT_DIR}}" OBEY_VOICE_STT_REPLAY_GAIN="{{GAIN}}" OBEY_VOICE_STT_REPLAY_CHUNK_SAMPLES="{{CHUNK_SAMPLES}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestReplaySavedSTTLoop$' -count=1 -v
 
 # Real Bubble Tea/pipeline host boundaries with controlled STT, 30 samples each.
 # Hardware capture, inference and spoken acknowledgement are separate gates.

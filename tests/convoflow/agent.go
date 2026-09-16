@@ -158,6 +158,7 @@ type liveRunner struct {
 	worker         *observing
 	workerProvider brain.Provider
 	player         *recordingPlayer
+	stimulusDevice string
 	persona        *personaRuntime
 	observations   []*observing
 	workerFactory  func(*config.Config) (brain.Provider, error)
@@ -176,7 +177,7 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 	}
 	live, liveObs := observeProvider(liveInner)
 	configSnapshot := *cfg
-	r := &liveRunner{cfg: &configSnapshot, live: liveObs, liveProvider: live, player: player, observations: []*observing{liveObs}}
+	r := &liveRunner{cfg: &configSnapshot, live: liveObs, liveProvider: live, player: player, stimulusDevice: k.stimulusDevice, observations: []*observing{liveObs}}
 
 	var workerInner brain.Provider
 	if k.workerIsStub() {
