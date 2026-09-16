@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -542,6 +543,12 @@ func validateCompletionStimulus(a acousticReport) error {
 // text removed by voice projection, so it cannot stand in for spoken content.
 // This is a conservative fixture assertion, not general weather fact checking
 // or verification that a TTS engine pronounced each word correctly.
+// Match units immediately attached to the fixture temperature. Normalization
+// turns sixty-two into "sixty 2" and the degree symbol into a word boundary.
+// The trailing boundary prevents the F abbreviation from matching "forecast".
+var completionFahrenheit = regexp.MustCompile(`(?:^| )(?:62|sixty 2) *(?:degrees? )?(?:fahrenheit|f)(?: |$)`)
+var completionWrongTemperatureUnit = regexp.MustCompile(`(?:^| )(?:62|sixty 2) *(?:degrees? )?(?:celsius|c|kelvins?|k)(?: |$)`)
+
 func validateCompletionWeatherSpeech(p completionBoundaryPhase) error {
 	if len(p.Responses) != 1 || len(p.SpokenSegments) != p.SpeakingStarted || p.SpeakingStarted == 0 || p.SpeakingComplete != p.SpeakingStarted || p.SpeakingInterrupted != 0 {
 		return errors.New("weather update lacks a completed response and matching spoken segments")
@@ -549,8 +556,11 @@ func validateCompletionWeatherSpeech(p completionBoundaryPhase) error {
 	for _, item := range []struct{ name, text string }{{"public response", p.Responses[0].Response}, {"spoken segments", strings.Join(p.SpokenSegments, " ")}} {
 		text := " " + normalizeAcousticText(item.text) + " "
 		has := func(phrase string) bool { return strings.Contains(text, " "+phrase+" ") }
-		if !has("denver") || !has("clear") || (!has("62") && !has("sixty 2")) {
+		if !has("denver") || !has("clear") || (!has("62") && !has("sixty 2") && !completionFahrenheit.MatchString(text)) {
 			return fmt.Errorf("weather %s omitted or changed Denver, clear, or 62 degrees", item.name)
+		}
+		if !completionFahrenheit.MatchString(text) || completionWrongTemperatureUnit.MatchString(text) {
+			return fmt.Errorf("weather %s lacks unambiguous 62 degrees Fahrenheit source-unit evidence", item.name)
 		}
 		if !has("recorded") && !has("snapshot") && !has("historical") && !has("2024") && !has("twenty twenty 4") {
 			return fmt.Errorf("weather %s omitted recorded/historical qualification", item.name)

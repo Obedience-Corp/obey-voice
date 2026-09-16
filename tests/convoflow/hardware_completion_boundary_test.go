@@ -524,7 +524,7 @@ func TestCompletionBoundaryWeatherFactsRequirePublicAndSpokenAgreement(t *testin
 	valid := func() completionBoundaryPhase {
 		return completionBoundaryPhase{
 			Responses:      []events.ResponseReady{{Response: "The recorded Denver snapshot says clear skies and 62 degrees Fahrenheit; not a current network forecast."}},
-			SpokenSegments: []string{"Historical Denver weather was sixty-two degrees.", "The sky was clear."}, SpeakingStarted: 2, SpeakingComplete: 2,
+			SpokenSegments: []string{"Historical Denver weather was sixty-two degrees Fahrenheit.", "The sky was clear."}, SpeakingStarted: 2, SpeakingComplete: 2,
 		}
 	}
 	if err := validateCompletionWeatherSpeech(valid()); err != nil {
@@ -532,7 +532,7 @@ func TestCompletionBoundaryWeatherFactsRequirePublicAndSpokenAgreement(t *testin
 	}
 	for _, qualification := range []string{"recorded", "snapshot", "historical", "from 2024", "from twenty twenty-four"} {
 		p := valid()
-		p.Responses[0].Response = "Denver was clear and 62 degrees, " + qualification + "."
+		p.Responses[0].Response = "Denver was clear and 62 degrees Fahrenheit, " + qualification + "."
 		if err := validateCompletionWeatherSpeech(p); err != nil {
 			t.Errorf("valid qualification %q: %v", qualification, err)
 		}
@@ -541,7 +541,7 @@ func TestCompletionBoundaryWeatherFactsRequirePublicAndSpokenAgreement(t *testin
 		for _, channel := range []string{"public", "spoken"} {
 			t.Run("disclaimer_"+disclaimer+"_"+channel, func(t *testing.T) {
 				p := valid()
-				text := "The recorded Denver snapshot says clear and 62 degrees; this is " + disclaimer + "."
+				text := "The recorded Denver snapshot says clear and 62 degrees Fahrenheit; this is " + disclaimer + "."
 				if channel == "public" {
 					p.Responses[0].Response = text
 				} else {
@@ -564,17 +564,17 @@ func TestCompletionBoundaryWeatherFactsRequirePublicAndSpokenAgreement(t *testin
 	}
 	for _, bad := range []struct{ name, text string }{
 		{"generic_done", "Done."},
-		{"missing_city", "Recorded weather was clear and 62 degrees."},
-		{"wrong_city", "The historical Boston weather was clear and 62 degrees."},
-		{"wrong_condition", "The Denver snapshot says cloudy and 62 degrees."},
-		{"wrong_temperature", "The Denver snapshot says clear and 63 degrees."},
-		{"number_substring", "The Denver snapshot says clear and 162 degrees."},
-		{"no_qualification", "Denver is clear and sixty-two degrees."},
-		{"current_claim", "Denver is currently clear and 62 degrees according to this recorded snapshot."},
-		{"today_claim", "The 2024 Denver snapshot says today is clear and 62 degrees."},
-		{"negated_condition", "Recorded Denver weather was not clear and was 62 degrees."},
-		{"negated_digits", "Recorded Denver weather was clear but not 62 degrees; this is not current."},
-		{"negated_spoken_number", "Recorded Denver weather was clear but not sixty-two degrees; this is not a current forecast."},
+		{"missing_city", "Recorded weather was clear and 62 degrees Fahrenheit."},
+		{"wrong_city", "The historical Boston weather was clear and 62 degrees Fahrenheit."},
+		{"wrong_condition", "The Denver snapshot says cloudy and 62 degrees Fahrenheit."},
+		{"wrong_temperature", "The Denver snapshot says clear and 63 degrees Fahrenheit."},
+		{"number_substring", "The Denver snapshot says clear and 162 degrees Fahrenheit."},
+		{"no_qualification", "Denver is clear and sixty-two degrees Fahrenheit."},
+		{"current_claim", "Denver is currently clear and 62 degrees Fahrenheit according to this recorded snapshot."},
+		{"today_claim", "The 2024 Denver snapshot says today is clear and 62 degrees Fahrenheit."},
+		{"negated_condition", "Recorded Denver weather was not clear and was 62 degrees Fahrenheit."},
+		{"negated_digits", "Recorded Denver weather was clear but not 62 degrees Fahrenheit; this is not current."},
+		{"negated_spoken_number", "Recorded Denver weather was clear but not sixty-two degrees Fahrenheit; this is not a current forecast."},
 	} {
 		for _, channel := range []string{"public", "spoken"} {
 			t.Run(bad.name+"_"+channel, func(t *testing.T) {
@@ -634,4 +634,46 @@ func TestCompletionBoundaryRejectsGenericSpokenReceipt(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestCompletionBoundaryWeatherTemperatureUnits(t *testing.T) {
+	for _, sample := range []struct {
+		text string
+		want bool
+	}{
+		{"62 degrees Fahrenheit", true},
+		{"sixty-two degrees Fahrenheit", true},
+		{"62 F", true},
+		{"62°F", true},
+		{"62F", true},
+		{"62 degree F", true},
+		{"62 degrees Celsius", false},
+		{"62 C", false},
+		{"62 kelvin", false},
+		{"62 K", false},
+		{"62 degrees", false},
+		{"sixty-two degrees", false},
+		{"62 with a Fahrenheit unit mentioned elsewhere", false},
+		{"62 forecast", false},
+		{"62 fahrenheitish", false},
+		{"63 degrees Fahrenheit and 62 degrees Celsius", false},
+		{"62 degrees Fahrenheit and 62 degrees Kelvin", false},
+	} {
+		for _, channel := range []string{"public", "spoken"} {
+			t.Run(sample.text+"_"+channel, func(t *testing.T) {
+				valid := "The recorded Denver snapshot was clear at 62 degrees Fahrenheit."
+				p := completionBoundaryPhase{Responses: []events.ResponseReady{{Response: valid}}, SpokenSegments: []string{valid}, SpeakingStarted: 1, SpeakingComplete: 1}
+				text := "The recorded Denver snapshot was clear at " + sample.text + "."
+				if channel == "public" {
+					p.Responses[0].Response = text
+				} else {
+					p.SpokenSegments[0] = text
+				}
+				err := validateCompletionWeatherSpeech(p)
+				if (err == nil) != sample.want {
+					t.Fatalf("unit assertion passed=%t want=%t: %v", err == nil, sample.want, err)
+				}
+			})
+		}
+	}
 }
