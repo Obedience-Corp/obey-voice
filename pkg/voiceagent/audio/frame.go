@@ -57,13 +57,22 @@ type CaptureSpan struct {
 	DeviceDiscontinuity bool
 }
 
-// CaptureGap reports loss from the unread ring since its last metadata read.
+// CaptureGap reports known loss on the frame delivery path. ReadFrame reports
+// unread ring loss; SubscribeFrames reports its own subscription loss. These
+// counters are independent: a ring reset does not discard subscription frames.
 // Intentional retention/reset is separate from capacity overflow. It describes
 // known buffered samples only, not an estimate of missing hardware callbacks.
 type CaptureGap struct {
 	OverflowSamples  uint64
 	DiscardedSamples uint64
 	Reset            bool
+	// Subscription fields count only callbacks dropped by this subscriber's
+	// full channel since its previous delivered frame. Unknown device downtime
+	// is not assigned a sample count. A lost generation transition is latched
+	// here without rewriting the delivered callback's original CaptureSpan.
+	SubscriptionDroppedSamples      uint64
+	SubscriptionDroppedCallbacks    uint64
+	SubscriptionDeviceDiscontinuity bool
 }
 
 // Empty reports whether the frame carries no samples.

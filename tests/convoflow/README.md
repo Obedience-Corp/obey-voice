@@ -442,6 +442,29 @@ completion deadline. Both retain the ordinary production interruption and exact
 transcript checks. Older fixture directories without `startup-short.wav` remain
 loadable; the startup recipe requires both scenarios before opening devices.
 
+### Near-only fixture calibration
+
+Prepared suites with `startup-short.wav` also include `calibration.yaml`: two
+ordinary microphone turns, first the suite's `synth-02.wav` question, then “Wait.”.
+Use the `full` fixture profile to calibrate the complete question; generation
+preserves the supplied fixture and metadata, including a brief profile if used.
+Neither turn overlaps assistant playback or enters a latency population.
+
+```sh
+just test acoustic-calibrate CONFIG SUITE_DIR "Studio Display Speakers"
+```
+
+The optional device selects fixture playback only. The recipe uses the suite's
+existing pinned binary and explicit config without rebuilding, synthesizing,
+changing gain or retrying. Each invocation retains a fresh artifact directory,
+including failed runs. Both exact transcripts and the existing raw
+capture checks—aligned audibility/correlation and capture clipping—must pass; “Wade” does not
+satisfy “Wait.”. The scenario stops on the first failure. Passing establishes
+isolated fixture capture and recognition, not audibility during overlap or
+correct interruption ownership. Missing short fixtures omit the combined
+scenario, and the recipe fails before opening devices; regenerate scenarios
+from complete recorded fixtures or prepare a new suite first.
+
 ### Physical mute and provider recovery
 
 Newly prepared suites include `mute.yaml` and `failure.yaml`:

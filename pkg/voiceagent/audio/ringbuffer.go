@@ -36,11 +36,13 @@ func (rb *RingBuffer) Write(samples []float32) {
 
 // writeCapture is the callback ingestion seam. Legacy Write retains exact
 // sample positions but leaves callback timing and device identity unknown.
-func (rb *RingBuffer) writeCapture(samples []float32, callbackAt time.Time, generation uint64) {
+// The returned span describes the entire callback, even if ring capacity prunes
+// its retained copy. Returning under the lock keeps subscription offsets exact.
+func (rb *RingBuffer) writeCapture(samples []float32, callbackAt time.Time, generation uint64) CaptureSpan {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 	if len(samples) == 0 {
-		return
+		return CaptureSpan{}
 	}
 	span := CaptureSpan{SampleOffset: rb.written, SampleCount: len(samples), DeviceGeneration: generation, CallbackAt: callbackAt}
 	if !callbackAt.IsZero() {
@@ -54,7 +56,7 @@ func (rb *RingBuffer) writeCapture(samples []float32, callbackAt time.Time, gene
 	overflow := max(0, rb.available()+len(samples)-rb.size)
 	rb.gap.OverflowSamples += uint64(overflow)
 	if rb.size == 0 {
-		return
+		return span
 	}
 
 	for _, s := range samples {
@@ -70,6 +72,7 @@ func (rb *RingBuffer) writeCapture(samples []float32, callbackAt time.Time, gene
 	}
 	rb.spans = append(rb.spans, span)
 	rb.pruneSpansLocked()
+	return span
 }
 
 // Read returns up to n samples from the buffer.

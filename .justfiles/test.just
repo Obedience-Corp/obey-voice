@@ -158,6 +158,21 @@ acoustic-controls CONFIG SUITE_DIR:
 acoustic-response CONFIG SUITE_DIR STIMULUS_DEVICE="":
     "{{SUITE_DIR}}/bin/convoflow" -scenario "{{SUITE_DIR}}/scenarios/response.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "{{SUITE_DIR}}/runs/response"
 
+# One near-only full-question/short-word calibration; no synthesis or retries.
+[no-cd]
+acoustic-calibrate CONFIG SUITE_DIR STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    if [[ ! -f "$suite/scenarios/calibration.yaml" ]]; then
+        echo "error: missing calibration.yaml; prepare a suite with startup-short.wav and matching Wait. metadata using just test acoustic-prepare MODELS_DIR NEW_SUITE, or regenerate scenarios from complete retained fixtures" >&2
+        exit 2
+    fi
+    mkdir -p "$suite/runs/calibration"
+    attempt="$(mktemp -d "$suite/runs/calibration/attempt.XXXXXX")"
+    trap 'echo "Calibration artifacts: $attempt"' EXIT
+    "$suite/bin/convoflow" -scenario "$suite/scenarios/calibration.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$attempt"
+
 # Run both immediate-onset controls with the prepared binary and explicit config.
 [no-cd]
 acoustic-startup CONFIG SUITE_DIR:

@@ -34,6 +34,7 @@ const (
 // microphone is dead for the rest of the session with nothing left to retry it.
 type Capture struct {
 	mu               sync.Mutex
+	ingestMu         sync.Mutex // serialize callback processing, ring assignment and publication
 	subsMu           sync.RWMutex
 	ctx              *malgo.AllocatedContext
 	device           *malgo.Device
@@ -43,6 +44,8 @@ type Capture struct {
 	running          bool          // a device is open
 	watchDone        chan struct{} // closed by Stop so the cancellation watcher exits
 	subs             map[int]chan []float32
+	frameSubs        map[int]*captureFrameSubscription
+	callbackSeq      int64
 	nextSub          int
 	frameSeq         atomic.Int64
 	deviceGeneration atomic.Uint64
@@ -100,6 +103,7 @@ func NewCaptureWithDevice(deviceName string) *Capture {
 	c := &Capture{
 		buf:        NewRingBuffer(SampleRate * 30), // 30 seconds buffer
 		subs:       make(map[int]chan []float32),
+		frameSubs:  make(map[int]*captureFrameSubscription),
 		deviceName: deviceName,
 	}
 	c.open = c.openMalgoDevice
@@ -282,13 +286,20 @@ func (c *Capture) openMalgoDevice() error {
 
 // ingestCapture is shared by the real callback and deterministic ordering
 // tests. Arrival and device identity are supplied by the callback, never by a
-// later ring reader. The subscription path keeps its existing PCM-only API.
+// later ring reader. Both subscriptions retain the original processed callback
+// PCM; frame subscriptions additionally preserve the ring source position.
 func (c *Capture) ingestCapture(samples []float32, callbackAt time.Time, generation uint64) {
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
 	if c.frontend != nil {
 		samples = c.frontend.ProcessCapture(samples)
 	}
-	c.buf.writeCapture(samples, callbackAt, generation)
+	span := c.buf.writeCapture(samples, callbackAt, generation)
 	c.publish(samples)
+	if len(samples) > 0 {
+		c.callbackSeq++
+		c.publishFrame(samples, span, c.callbackSeq)
+	}
 }
 
 // Stop stops audio capture and releases resources. It is the caller's "I am
@@ -490,7 +501,63 @@ func (c *Capture) Subscribe(buffer int) (int, <-chan []float32) {
 	return id, ch
 }
 
-// Unsubscribe removes a capture listener.
+type captureFrameSubscription struct {
+	channel chan Frame
+	gap     CaptureGap
+}
+
+// SubscribeFrames registers a non-blocking listener for original capture
+// callbacks, not the fixed-size chunks returned by ReadFrame. Each frame has
+// one complete CaptureSpan assigned by the same ring write as its PCM.
+// Sequence counts nonempty callbacks in this Capture's lifetime, independently
+// of ReadFrame's read sequence. Ring reads/resets do not drain this channel.
+//
+// Samples share backing storage with legacy and other frame subscribers. The
+// one-span CaptureSpans slice is also shared across frame subscribers. Both
+// must be treated as read-only; copy before modifying. Frame scalar fields and
+// CaptureGap are subscriber-local values. A full channel drops the new callback
+// and reports that subscriber's accumulated loss
+// in CaptureGap on its next successful delivery. Unsubscribe uses the same IDs
+// as Subscribe; Stop/Close preserve subscriptions just as for the legacy API.
+func (c *Capture) SubscribeFrames(buffer int) (int, <-chan Frame) {
+	if buffer <= 0 {
+		buffer = 1
+	}
+	c.subsMu.Lock()
+	defer c.subsMu.Unlock()
+	id := c.nextSub
+	c.nextSub++
+	ch := make(chan Frame, buffer)
+	if c.frameSubs == nil {
+		c.frameSubs = make(map[int]*captureFrameSubscription)
+	}
+	c.frameSubs[id] = &captureFrameSubscription{channel: ch}
+	return id, ch
+}
+
+func (c *Capture) publishFrame(samples []float32, span CaptureSpan, sequence int64) {
+	// The write lock protects subscriber-local loss accounting as well as sends
+	// against Unsubscribe. All sends are nonblocking.
+	c.subsMu.Lock()
+	defer c.subsMu.Unlock()
+	if len(c.frameSubs) == 0 {
+		return
+	}
+	frame := Frame{Samples: samples, SampleRate: SampleRate, Channels: Channels, StartedAt: span.EstimatedStart, Duration: SamplesDuration(len(samples)), Sequence: sequence, SourceKind: SourceLive, CaptureSpans: []CaptureSpan{span}}
+	for _, sub := range c.frameSubs {
+		frame.CaptureGap = sub.gap
+		select {
+		case sub.channel <- frame:
+			sub.gap = CaptureGap{}
+		default:
+			sub.gap.SubscriptionDroppedSamples += uint64(len(samples))
+			sub.gap.SubscriptionDroppedCallbacks++
+			sub.gap.SubscriptionDeviceDiscontinuity = sub.gap.SubscriptionDeviceDiscontinuity || span.DeviceDiscontinuity
+		}
+	}
+}
+
+// Unsubscribe removes either kind of capture listener.
 func (c *Capture) Unsubscribe(id int) {
 	// Close while holding the write lock: publish sends under the read lock, so
 	// the close cannot interleave with a send. Closing outside the lock let the
@@ -502,6 +569,10 @@ func (c *Capture) Unsubscribe(id int) {
 	if ch, ok := c.subs[id]; ok {
 		delete(c.subs, id)
 		close(ch)
+	}
+	if sub, ok := c.frameSubs[id]; ok {
+		delete(c.frameSubs, id)
+		close(sub.channel)
 	}
 }
 
