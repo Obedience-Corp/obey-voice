@@ -1,11 +1,11 @@
 # Voice runtime code layout
 
 The voice pipeline, Ollama provider, config package, audio player, meeting log,
-benchmark command, settings rows and the TUI's App update loop use files grouped
-by responsibility within their existing Go packages; the Qwen TTS provider went
-further and became its own package. This guide identifies where to make a change
-without tracing a single large implementation file, and records the contracts a
-file boundary could otherwise hide.
+benchmark command, settings rows, the TUI's App update loop and the conversation
+screen use files grouped by responsibility within their existing Go packages;
+the Qwen TTS provider went further and became its own package. This guide
+identifies where to make a change without tracing a single large implementation
+file, and records the contracts a file boundary could otherwise hide.
 
 ## Pipeline
 
@@ -233,6 +233,26 @@ map, no interface, and `returnToMenuMsg` still re-enters through `a.update(quitM
 
 `delegate` is the fall-through target and must stay after the switch, not inside a handler: a
 handler that ends by delegating would hide which arms reach the active screen's `Update`.
+
+## Conversation screen
+
+All paths below are in [`internal/tui`](../internal/tui). The conversation screen is one Bubble
+Tea model, `conversationModel`, spread across the files below. `conversation_startup.go`
+predates the split and keeps the startup handshake.
+
+| File | Responsibility |
+| --- | --- |
+| `conversation.go` | Layout and tick constants, `voiceTickMsg`, the `conversationModel` struct, `newConversation`, `activityEntry`, `plainChatTurn` |
+| `conversation_update.go` | `Update`, `voiceTickCmd`, `rearm`, `shouldAnimateVoice`, `ensureVoiceTick` (also armed from `startConversation` in `turndriver.go`) |
+| `conversation_events.go` | `handleEvent`, the pipeline event switch, with `setStatus` and `setVoiceMode`; it is their main caller, but `setStatus` is also called from `tui_runtime.go`, `tui_screens.go`, `turndriver.go`, `talkhotkey.go` and `work.go`, and `setVoiceMode` from `turndriver.go` |
+| `conversation_transcript.go` | Transcript and activity content: append, clear, remember, streaming deltas, refresh, seeding, clipboard copy and the `composerIdle` gate it uses |
+| `conversation_scroll.go` | Size, reflow, viewport follow and scroll |
+| `conversation_selection.go` | Persona selection request/result messages and the selection queue |
+| `conversation_view.go` | `View`, tabs, turn and bubble rendering, metric and activity formatting, animation styles, and `truncateJobLine`, whose only caller is `work.go` |
+
+`handleEvent` is the largest declaration in the conversation model and stays whole; changes to
+how an event is handled go there, not into a new file. The activity feed spans two files: its
+content lives in `conversation_transcript.go`, its formatting in `conversation_view.go`.
 
 ## Maintaining the boundaries
 
