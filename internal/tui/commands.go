@@ -237,7 +237,7 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		return m.resumeListening()
 	case commandQuit:
 		m.quitting = true
-		return tea.Quit
+		return quitCmd()
 	case commandMenu:
 		return func() tea.Msg { return returnToMenuMsg{} }
 	default:

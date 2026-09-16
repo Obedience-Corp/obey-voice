@@ -166,8 +166,7 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.fatalErr = msg.err
-		a.quitting = true
-		return a, tea.Quit
+		return a.onQuit(quitMsg{})
 	}
 	// Build finished after quit: slot already cleaned (or will be in run).
 	if a.quitting || a.runCtx.Err() != nil {

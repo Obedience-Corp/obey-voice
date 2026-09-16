@@ -472,6 +472,11 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				}
 				return nil
 			},
+			Persist: func() {
+				if err := sess.Save(p.Brain.History()); err != nil {
+					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)
+				}
+			},
 			Cleanup: func() {
 				if selector != nil {
 					selector.Close()
@@ -483,6 +488,8 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				if stopLive != nil {
 					stopLive()
 				}
+				// Final flush after drain: a turn that finished during shutdown
+				// is kept even if Persist ran before it landed.
 				if err := sess.Save(p.Brain.History()); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)
 				}
