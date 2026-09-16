@@ -70,23 +70,91 @@ func TestPlaybackWorkerRecoversPanicAndDrainsStream(t *testing.T) {
 }
 
 func TestPlayerDeviceStartAllowsSynchronousCallback(t *testing.T) {
-	player := NewPlayer()
-	done := make(chan error, 1)
+	for _, tc := range []struct {
+		name     string
+		rate     int
+		channels int
+		wantRef  int
+	}{
+		{"stereo24k", 24000, 2, 320},
+		{"multichannel48k", 48000, 8, 160},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			player := NewPlayer()
+			rec := &delayFrontend{}
+			player.SetFrontend(rec)
+			defer player.SetFrontend(nil)
+			done := make(chan error, 1)
+			var atStart audio.NegotiatedDevice
+			var delayAtStart int
 
-	go func() {
-		done <- player.startPlaybackDevice(2, func() error {
-			player.onData(make([]byte, 512*2*2), nil, 512)
-			return nil
+			go func() {
+				done <- player.startPlaybackDevice(tc.rate, tc.channels, func() error {
+					atStart = player.NegotiatedDevice()
+					delayAtStart, _ = rec.snapshot()
+					// A real priming callback has no queued speech, but its silence
+					// must still reach AEC with the correct duration.
+					player.onData(make([]byte, 480*tc.channels*2), nil, 480)
+					return nil
+				})
+			}()
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("startPlaybackDevice: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("device start deadlocked when miniaudio invoked onData synchronously")
+			}
+			if atStart.SampleRate != tc.rate || atStart.Channels != tc.channels {
+				t.Fatalf("callback format = %d Hz/%d channels, want %d/%d", atStart.SampleRate, atStart.Channels, tc.rate, tc.channels)
+			}
+			if want := referenceDelaySamples(tc.rate, playbackPeriodFrames); delayAtStart != want {
+				t.Fatalf("callback reference delay = %d, want %d", delayAtStart, want)
+			}
+			refs := waitReferenceSamples(t, &rec.recordingFrontend, tc.wantRef)
+			if len(refs) != tc.wantRef {
+				t.Fatalf("priming reference has %d samples, want %d", len(refs), tc.wantRef)
+			}
+			for i, sample := range refs {
+				if sample != 0 {
+					t.Fatalf("priming reference[%d] = %v, want silence", i, sample)
+				}
+			}
 		})
-	}()
+	}
+}
 
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("startPlaybackDevice: %v", err)
+func TestPlayerDeviceStartFailureClearsCallbackFormat(t *testing.T) {
+	player := NewPlayer()
+	rec := &delayFrontend{}
+	player.SetFrontend(rec)
+	defer player.SetFrontend(nil)
+	wantErr := errors.New("device start failed")
+	err := player.startPlaybackDevice(24000, 2, func() error {
+		player.onData(make([]byte, 480*2*2), nil, 480)
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("start error = %v, want %v", err, wantErr)
+	}
+	if got := player.NegotiatedDevice(); got.SampleRate != 0 || got.Channels != 0 {
+		t.Fatalf("failed start retained callback format: %+v", got)
+	}
+	if delay, _ := rec.snapshot(); delay != 0 || player.observedPeriodFrames.Load() != 0 {
+		t.Fatalf("failed start retained delay %d or observed period %d", delay, player.observedPeriodFrames.Load())
+	}
+	if err := player.startPlaybackDevice(48000, 8, func() error {
+		if delay, _ := rec.snapshot(); delay != referenceDelaySamples(48000, playbackPeriodFrames) {
+			t.Errorf("retry inherited stale reference delay: %d", delay)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("device start deadlocked when miniaudio invoked onData synchronously")
+		return nil
+	}); err != nil {
+		t.Fatalf("retry start: %v", err)
+	}
+	if got := player.NegotiatedDevice(); got.SampleRate != 48000 || got.Channels != 8 {
+		t.Fatalf("retry callback format: %+v", got)
 	}
 }
 
