@@ -19,6 +19,7 @@ import (
 )
 
 type completionReport struct {
+	Mode               string                 `json:"mode,omitempty"`
 	Fixture            string                 `json:"fixture"`
 	Expected           string                 `json:"expected"`
 	StimulusDevice     string                 `json:"stimulus_device"`
@@ -39,9 +40,23 @@ type completionReport struct {
 // capture path. The worker is admitted through the owning Agency; pause,
 // yield, completion, receipt and resumed listening all remain production API
 // operations. No synthetic user event or manual cancellation is used.
-func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expected, artifactDir string) (runErr error) {
+func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expected, artifactDir string) error {
+	return r.runAcousticCompletionMode(ctx, fixtureWAV, expected, artifactDir, "")
+}
+
+func (r *liveRunner) runAcousticCompletionBoundary(ctx context.Context, mode, fixtureWAV, expected, artifactDir string) error {
+	if mode != "acoustic_completion_mute" && mode != "acoustic_completion_speech" {
+		return fmt.Errorf("unknown completion boundary %q", mode)
+	}
+	return r.runAcousticCompletionMode(ctx, fixtureWAV, expected, artifactDir, mode)
+}
+
+func (r *liveRunner) runAcousticCompletionMode(ctx context.Context, fixtureWAV, expected, artifactDir, mode string) (runErr error) {
 	if ctx == nil {
 		return errors.New("acoustic completion: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if r == nil || r.agent == nil || r.agent.Pipeline == nil {
 		return errors.New("acoustic completion: agent is not configured")
@@ -59,11 +74,18 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	if len(samples) == 0 || rate <= 0 {
 		return errors.New("acoustic completion: fixture is empty")
 	}
-	if err := os.MkdirAll(artifactDir, 0o700); err != nil {
+	if mode != "" {
+		if err := os.MkdirAll(filepath.Dir(artifactDir), 0o700); err != nil {
+			return err
+		}
+		if err := os.Mkdir(artifactDir, 0o700); err != nil {
+			return err
+		}
+	} else if err := os.MkdirAll(artifactDir, 0o700); err != nil {
 		return err
 	}
 	stimulusDevice := stimulusOutputDevice(r.cfg, r.stimulusDevice)
-	report := completionReport{Fixture: fixtureWAV, Expected: expected, StimulusDevice: acousticDeviceLabel(stimulusDevice)}
+	report := completionReport{Mode: mode, Fixture: fixtureWAV, Expected: expected, StimulusDevice: acousticDeviceLabel(stimulusDevice)}
 	var rawFrontend *rawCaptureFrontend
 	var mic []float32
 	var micMu sync.Mutex
@@ -129,6 +151,11 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 		return errors.New("acoustic completion: physical response player required")
 	}
 	response = real
+	if mode != "" {
+		if err := requireEchoResponseVolume(real); err != nil {
+			return err
+		}
+	}
 	real.SetFrontend(rawFrontend)
 	defer real.SetFrontend(nil)
 	vad, err := audio.NewVAD(r.cfg)
@@ -141,7 +168,12 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 		return err
 	}
 	defer barge.Delete()
-	endable := audio.NewFinalizable(capture)
+	frames := &responseCaptureSource{FrameSource: capture, gain: capture}
+	var source audio.FrameSource = capture
+	if mode != "" {
+		source = frames
+	}
+	endable := audio.NewFinalizable(source)
 	recognizer, cleanup, err := stt.NewProvider(r.cfg, endable, vad)
 	if err != nil {
 		return err
@@ -171,6 +203,49 @@ func (r *liveRunner) runAcousticCompletion(ctx context.Context, fixtureWAV, expe
 	}()
 	stimulus = playback.NewPlayerWithDevice(stimulusDevice)
 	defer stimulus.Close()
+	if mode != "" {
+		runErr = runCompletionBoundary(ctx, p, mode, expected, artifactDir, frames.readSamples.Load,
+			func() int { return nonzeroResponseReferenceSamples(rawFrontend) },
+			func(playCtx context.Context) (acousticReport, error) {
+				start := len(rawFrontend.RawSnapshot())
+				reads := frames.readSamples.Load()
+				var started time.Time
+				err := playAcousticStimulusObserved(playCtx, stimulus, samples, rate, func(at time.Time) { started = at })
+				completed := time.Now()
+				if err != nil {
+					return acousticReport{}, err
+				}
+				// Include the acoustic tail after the source player finishes; the original
+				// capture remains live and its callback/read health is checked separately.
+				timer := time.NewTimer(300 * time.Millisecond)
+				defer timer.Stop()
+				select {
+				case <-playCtx.Done():
+					return acousticReport{}, playCtx.Err()
+				case <-timer.C:
+				}
+				raw := rawFrontend.RawSnapshot()
+				if start > len(raw) {
+					return acousticReport{}, errors.New("capture trace reset during stimulus")
+				}
+				correlation, e := audio.NewFixtureSourceFromWAV(fixtureWAV, audio.ChunkSize, false)
+				if e != nil {
+					return acousticReport{}, e
+				}
+				var reference []float32
+				for chunk := correlation.Read(); len(chunk) > 0; chunk = correlation.Read() {
+					reference = append(reference, chunk...)
+				}
+				if e := correlation.Close(); e != nil {
+					return acousticReport{}, e
+				}
+				scored := acousticReport{Stimulus: fixtureWAV, ExpectedTranscript: expected, CaptureReadSamples: frames.readSamples.Load() - reads, CaptureExcerptStart: start, StimulusStarted: started, StimulusCompleted: completed}
+				err = scoreAcousticCapture(&scored, reference, raw[start:])
+				return scored, err
+			})
+		report.Communicated = runErr == nil
+		return runErr
+	}
 	before := r.workSnapshot()
 	known := map[string]struct{}{}
 	for _, job := range before.Jobs {

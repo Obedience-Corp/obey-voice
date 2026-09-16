@@ -163,6 +163,15 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 	if err := write("completion", "", []map[string]any{{"id": "completion", "op": "acoustic_completion", "timeout": "120s", "wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text}}); err != nil {
 		return err
 	}
+	for _, boundary := range []string{"completion-mute", "completion-speech"} {
+		op := "acoustic_completion_mute"
+		if boundary == "completion-speech" {
+			op = "acoustic_completion_speech"
+		}
+		if err := write(boundary, "", []map[string]any{{"id": boundary, "op": op, "timeout": "180s", "wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text}}); err != nil {
+			return err
+		}
+	}
 	for _, boundary := range []string{"mute", "failure"} {
 		if err := write(boundary, "", []map[string]any{{"id": boundary, "op": "acoustic_" + boundary, "timeout": "180s", "wav": fixtures[0].Path, "expected_transcript": fixtures[0].Text}}); err != nil {
 			return err

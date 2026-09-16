@@ -243,6 +243,16 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		if err := probe.runAcousticInterruption(turnCtx, turn.WAV, turn.InterruptWAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID), turn.interruptionStimulusOptions()); err != nil {
 			return err
 		}
+	} else if turn.Op == "acoustic_completion_mute" || turn.Op == "acoustic_completion_speech" {
+		probe, ok := e.runner.(interface {
+			runAcousticCompletionBoundary(context.Context, string, string, string, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support completion boundaries")
+		}
+		if err := probe.runAcousticCompletionBoundary(turnCtx, turn.Op, turn.WAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
+			return err
+		}
 	} else if turn.Op == "acoustic_completion" {
 		probe, ok := e.runner.(interface {
 			runAcousticCompletion(context.Context, string, string, string) error

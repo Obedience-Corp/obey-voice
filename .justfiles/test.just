@@ -231,3 +231,14 @@ acoustic-boundaries CONFIG SUITE_DIR STIMULUS_DEVICE="":
     for scenario in mute failure; do
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$suite/runs/boundaries"
     done
+
+# Pending recorded result held while muted, then real microphone speech revoking
+# completion generation. Retains source provenance, scoped receipts and no replay.
+[no-cd]
+acoustic-completion-boundaries CONFIG SUITE_DIR STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in completion-mute completion-speech; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$suite/runs/completion-boundaries"
+    done

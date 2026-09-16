@@ -502,3 +502,32 @@ The low-level mode is `-control-population NEW_OUTPUT` with `-scenario`,
 Put provider settings in the pinned config; this mode rejects provider CLI
 overrides instead of silently discarding them. Interrupting the parent cancels
 and joins the owned child, retaining the incomplete attempt.
+
+### Pending results, mute and speech during completion
+
+```sh
+just test acoustic-completion-boundaries /absolute/config.yaml /absolute/suite
+```
+
+`completion-mute.yaml` publishes one explicitly recorded weather result through
+the coordinator, holds it while output is muted and microphone reads remain
+healthy, then unmutes and requires one completed audible scoped receipt.
+`completion-speech.yaml` holds completion generation until real microphone STT
+revokes that attempt's capture lease. It requires exact retained input and one
+eventual delivery. The resumed ordinary response may legitimately communicate
+the result; if still pending, a fresh background turn must deliver it. No manual
+lease revocation or synthetic speech-admission event is used.
+
+Both cases play another unrelated known utterance and ensure the original receipt
+stays unchanged with no result projection or replay. The first result-delivery
+phase must convey Denver, clear weather, 62 degrees and its historical/recorded
+qualification in both the public response and actual completed playback segment
+text. A generic “Done” receipt or presenting the fixture as current weather fails.
+
+`completion-boundary.json` retains phases, public events, generation entry/cancel
+times, exact scoped pending/communicated evidence and failures. `weather-source.json`
+retains immutable recorded data and its source timestamp/hash separately from
+actual admission/publication times. Raw/processed microphone WAVs, ordered
+frontend callbacks and per-stimulus timing/alignment remain beside the report.
+These are controlled coordinator-boundary injections, not evidence of live
+weather retrieval, worker inference, or current external forecast accuracy.
