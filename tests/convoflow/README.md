@@ -531,3 +531,39 @@ actual admission/publication times. Raw/processed microphone WAVs, ordered
 frontend callbacks and per-stimulus timing/alignment remain beside the report.
 These are controlled coordinator-boundary injections, not evidence of live
 weather retrieval, worker inference, or current external forecast accuracy.
+
+### Interruption with real worker load
+
+`interruption-worker.yaml` surrounds the same physical interruption control with
+an actual sustained local Agency worker and scoped cancellation/join. Successful
+provider requests must occur before the stimulus and overlap the interruption
+window; a running job label or a stalled HTTP call cannot establish worker load.
+Request content is not recorded. Readiness and post-measurement progress have
+30-second bounds, followed by 10-second cleanup. These are measurement availability
+limits, separate from detector-to-stop latency.
+
+Use the same explicit config for both conditions, with the worker's independent
+Ollama endpoint/model selected in that file. Prepare and verify the owned worker
+endpoint before this recipe; it never starts or changes a daemon. No build,
+other model diagnostic, or competing hardware owner may overlap collection.
+
+```sh
+just test acoustic-interruption-pair CONFIG SUITE RUNTIME_JSON NEW_OUTPUT
+```
+
+`RUNTIME_JSON` is a JSON object mapping descriptive asset names to absolute file
+paths. Include the selected STT/TTS model files and loaded native libraries. The
+runner hashes these declared assets and checks them before/after every child;
+undeclared environment state is outside its fingerprint. The same binary,
+config, fixture content, control timing, actual voice engine and negotiated
+routes must be present in both populations. Both require three excluded warmups
+and 30 measured observations. Fresh processes do not prove model coldness.
+
+The comparison revalidates retained child artifacts and computes absolute
+nearest-rank p50/p95 from measured detector-to-stop durations. It also reports
+worker-minus-baseline deltas. To avoid treating the contract's 50ms allowance as
+p95-only, its conservative gate uses the slowest measured worker stop minus the
+fastest measured baseline stop. Passing bounds every observed cross-condition
+difference; it does not guarantee future latency or measure speech-onset delay.
+Any failed attempt stops the population and retains its artifacts without passing
+quantiles, retries, or sample replacement.

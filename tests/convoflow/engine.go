@@ -74,6 +74,15 @@ const defaultScenarioWall = 5 * time.Minute
 
 func (e *engine) run(ctx context.Context) (runErr error) {
 	defer func() {
+		if e.latencyWorkerID != "" {
+			if loader, ok := e.runner.(interface {
+				stopLatencyWorker(context.Context, string) error
+			}); ok {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				runErr = errors.Join(runErr, loader.stopLatencyWorker(cleanupCtx, e.latencyWorkerID))
+				cancel()
+			}
+		}
 		runErr = errors.Join(runErr, e.closeAll())
 		if p, ok := e.runner.(personaRunner); ok {
 			runErr = errors.Join(runErr, p.writePersonaArtifacts(e.runDir), p.validatePersonaRun())

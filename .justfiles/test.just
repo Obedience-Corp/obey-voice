@@ -242,3 +242,14 @@ acoustic-completion-boundaries CONFIG SUITE_DIR STIMULUS_DEVICE="":
     for scenario in completion-mute completion-speech; do
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$suite/runs/completion-boundaries"
     done
+
+# A new directory per condition; no retry/replacement of failed observations.
+acoustic-interruption-pair CONFIG SUITE_DIR RUNTIME_MANIFEST NEW_OUTPUT STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    output="{{NEW_OUTPUT}}"
+    mkdir "$output"
+    "$suite/bin/convoflow" -control-population "$output/baseline" -scenario "$suite/scenarios/interruption.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+    "$suite/bin/convoflow" -control-population "$output/worker" -scenario "$suite/scenarios/interruption-worker.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+    "$suite/bin/convoflow" -compare-control-populations "$output/baseline,$output/worker" > "$output/comparison.json"

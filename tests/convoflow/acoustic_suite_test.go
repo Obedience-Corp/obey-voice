@@ -257,3 +257,33 @@ func TestPrepareAcousticSuiteRejectsInvalidStartupShort(t *testing.T) {
 		})
 	}
 }
+
+func TestPrepareAcousticSuiteWorkerInterruptionUsesSameFixtures(t *testing.T) {
+	fixtures, out := acousticSuiteTestFixtures(t), t.TempDir()
+	if err := prepareAcousticSuite(out, fixtures); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := loadScenario(filepath.Join(out, "interruption.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := loadScenario(filepath.Join(out, "interruption-worker.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worker.LatencyCondition != "worker" || !worker.Worker.SustainedLoad || len(worker.Turns) != 3 {
+		t.Fatalf("worker scenario=%+v", worker)
+	}
+	if worker.Turns[0].Op != "start_latency_worker" || worker.Turns[2].Op != "stop_latency_worker" {
+		t.Fatal("worker lifetime not bounded")
+	}
+	a, b := baseline.Turns[0], worker.Turns[1]
+	if b.Op != "acoustic_interrupt" || b.ID != a.ID || b.WAV != a.WAV || b.InterruptWAV != a.InterruptWAV || b.ExpectedTranscript != a.ExpectedTranscript || b.interruptionStimulusDelay() != a.interruptionStimulusDelay() {
+		t.Fatalf("control inputs differ: baseline=%+v worker=%+v", a, b)
+	}
+	for _, turn := range worker.Turns {
+		if turn.LatencyIteration != 0 {
+			t.Fatal("control would enter ordinary reply collector")
+		}
+	}
+}

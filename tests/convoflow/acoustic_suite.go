@@ -183,6 +183,13 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 	if err := write("interruption", "", []map[string]any{{"id": "interruption", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text}}); err != nil {
 		return err
 	}
+	if err := write("interruption-worker", "worker", []map[string]any{
+		{"id": "interruption-start", "op": "start_latency_worker", "timeout": "30s", "user": "report one short local worker result"},
+		{"id": "interruption", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text},
+		{"id": "interruption-stop", "op": "stop_latency_worker", "timeout": "30s"},
+	}); err != nil {
+		return err
+	}
 	if err := write("startup-full", "", []map[string]any{{"id": "startup-full", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text, "stimulus_delay": "0s"}}); err != nil {
 		return err
 	}
