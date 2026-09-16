@@ -175,14 +175,18 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 }
 
 func armProcessForceQuit() func() {
+	// Read the package-level knobs here, on the caller's goroutine, so tests
+	// that override them for one run never race the timer goroutine of the
+	// previous run, which may not have started yet when the next test writes.
+	after, exit := processForceQuitAfter, processForceExit
 	done := make(chan struct{})
 	var once sync.Once
 	go func() {
-		timer := time.NewTimer(processForceQuitAfter)
+		timer := time.NewTimer(after)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			processForceExit(130)
+			exit(130)
 		case <-done:
 		}
 	}()
