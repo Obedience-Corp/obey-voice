@@ -104,16 +104,15 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 				}
 				continue
 			}
-			if track.observe(d.voice, frameDur(read.frame)) {
+			voice := d.speech(track.detected)
+			if track.observe(voice, frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
 				}
 			}
-			// Only retain audio that passed the same admission vote used to
-			// mark speech. Raw RMS is intentionally not enough here: a
-			// stationary fan can be loud enough to make a decoder invent
-			// "yeah", and EOF must not promote that noise into a turn.
-			if d.voice {
+			// Retain admitted speech and its softer continuation. Continuation
+			// alone cannot start a turn or promote a decoder ghost at EOF.
+			if voice {
 				heard.push(read.frame.Samples)
 			}
 
@@ -121,7 +120,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 			partial := normalizeTranscript(strings.TrimSpace(deps.rec.Partial()))
 			// A recognizer partial on silence is not speech. Marking it used
 			// to start a turn from decoder ghosts ("yeah") with no mic energy.
-			if partial != "" && d.voice {
+			if partial != "" && voice {
 				if track.markSpeech() {
 					if !emitPhase("hearing") {
 						return

@@ -40,8 +40,13 @@ type noiseGate struct {
 }
 
 type gateDecision struct {
-	voice bool // count this frame as speech for endpointing
-	drop  bool // Silero latched on stationary noise; reset the VAD
+	voice        bool // sufficient evidence to admit a new utterance
+	continuation bool // softer speech can continue an already-admitted utterance
+	drop         bool // Silero latched on stationary noise; reset the VAD
+}
+
+func (d gateDecision) speech(admitted bool) bool {
+	return d.voice || (admitted && d.continuation)
 }
 
 func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
@@ -62,10 +67,17 @@ func (g *noiseGate) decide(samples []float32, silero bool) gateDecision {
 		return gateDecision{}
 	}
 
-	// Silero on digital silence is a false mark. Never start a turn from
-	// energy nobody could hear; the decoder will invent a word ("yeah").
+	// Keep the admission floor: quiet echo must not begin a turn. Once a real
+	// utterance was admitted, however, softer neural speech is not silence.
+	// Preserve the existing digital-silence and learned stationary-noise tests
+	// for that continuation. Both amplitude floors use the same gain units.
 	if rms < g.speechFloor() {
-		return gateDecision{}
+		silentFloor := gateSilent * g.speechFloor() / minSpeechRMS
+		// Without a measured room floor, a flat below-admission tail has
+		// no modulation or relative-energy evidence to keep speech alive.
+		// A measured lower floor still preserves a held soft vowel above it.
+		stationaryNoise := g.stationary() && (g.floor == 0 || rms < g.floor*gateSNR)
+		return gateDecision{continuation: rms >= silentFloor && !stationaryNoise}
 	}
 
 	if g.floor > 0 && rms >= g.floor*gateSNR {
