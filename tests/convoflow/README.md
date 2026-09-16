@@ -465,6 +465,38 @@ correct interruption ownership. Missing short fixtures omit the combined
 scenario, and the recipe fails before opening devices; regenerate scenarios
 from complete recorded fixtures or prepare a new suite first.
 
+To retain the exact audio submitted to an offline decoder, use the optional
+fourth argument:
+
+```sh
+just test acoustic-calibrate CONFIG SUITE_DIR "Studio Display Speakers" true
+```
+
+This selects `calibration-decodes.yaml`, with `capture.stt_decodes: true`.
+Each turn writes `acoustic/<turn>/stt-decodes/decode-NNN.f32le`, a convenience
+WAV, and JSON with sample count, hashes, transcript/error and decoder timestamps.
+The float32 file preserves the exact input bits; the WAV is quantized and cannot
+prove bit-for-bit equality. The observation runs synchronously after inference
+and before the input can be reused. Recording failure or zero observed decodes
+fails the run, including a provider using an unsupported streaming path.
+
+This opt-in is restricted to ordinary microphone WAV turns outside timing
+populations. It adds local disk work, so its timing is diagnostic. Normal runs
+do not install the observer or record decoder input. These files capture what
+the recognizer received; they do not establish an exact source position or
+correct transcription by themselves.
+
+Replay a recorded input without WAV conversion using the same model assets:
+
+```sh
+just test acoustic-transcribe-exact MODELS_DIR /path/to/stt-decodes/decode-001.f32le
+```
+
+The exact mode requires nonempty finite float32 little-endian mono samples at
+16kHz. It rejects malformed input and reports the input fingerprint and transcript.
+Compare its fingerprint with the recording JSON before comparing transcripts.
+This bypasses VAD and endpointing; successful execution is a diagnostic result.
+
 ### Physical mute and provider recovery
 
 Newly prepared suites include `mute.yaml` and `failure.yaml`:

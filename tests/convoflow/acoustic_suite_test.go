@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -307,6 +308,16 @@ func TestPrepareAcousticSuiteNearOnlyCalibration(t *testing.T) {
 			t.Fatalf("calibration turn %d changed fixture or admission semantics: %+v", i, turn)
 		}
 	}
+	if calibration.Capture.STTDecodes {
+		t.Fatal("default calibration unexpectedly records decoder inputs")
+	}
+	traced, err := loadScenario(filepath.Join(out, "calibration-decodes.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !traced.Capture.STTDecodes || traced.LatencyCondition != "" || !traced.Capture.Microphone || !traced.Capture.Speakers || !reflect.DeepEqual(traced.Turns, calibration.Turns) {
+		t.Fatalf("decoder variant changed fixture or ordinary-turn semantics: %+v", traced)
+	}
 	// A reused output directory must not advertise combined coverage after its
 	// optional short fixture has been removed.
 	if err := os.Remove(filepath.Join(fixtures, "startup-short.wav")); err != nil {
@@ -315,8 +326,10 @@ func TestPrepareAcousticSuiteNearOnlyCalibration(t *testing.T) {
 	if err := prepareAcousticSuite(out, fixtures); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(out, "calibration.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("combined calibration survived missing short fixture: %v", err)
+	for _, name := range []string{"calibration.yaml", "calibration-decodes.yaml"} {
+		if _, err := os.Stat(filepath.Join(out, name)); !os.IsNotExist(err) {
+			t.Fatalf("combined %s survived missing short fixture: %v", name, err)
+		}
 	}
 	if _, err := loadScenario(filepath.Join(out, "startup-full.yaml")); err != nil {
 		t.Fatalf("full-only suite compatibility: %v", err)
