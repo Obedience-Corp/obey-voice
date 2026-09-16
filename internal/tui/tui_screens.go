@@ -48,21 +48,8 @@ func (a App) onKey(msg tea.KeyMsg) (App, tea.Cmd, bool) {
 		return a, nil, false // fall through to screen Update
 	}
 	if msg.String() == "ctrl+c" {
-		if a.screen == screenPickBook {
-			a.pickBook.cancelResolve()
-		}
-		if a.screen == screenLibrary {
-			a.library.cancelPrepare()
-		}
-		a.settings.closePreview()
-		a.personas.preview.close()
-		a.settings.cancelEnroll()
-		a.remote.stop()
-		if err := a.stopMeetingRuntime(); err != nil {
-			a.fatalErr = errors.Join(a.fatalErr, err)
-		}
-		a.quitting = true
-		return a, tea.Quit, true
+		next, cmd := a.onQuit(quitMsg{})
+		return next.(App), cmd, true
 	}
 	return a, nil, false
 }
@@ -321,10 +308,22 @@ func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
 	if a.screen == screenLibrary {
 		a.library.cancelPrepare()
 	}
+	a.settings.closePreview()
+	a.personas.preview.close()
+	a.settings.cancelEnroll()
 	a.remote.stop()
+	if err := a.stopMeetingRuntime(); err != nil {
+		a.fatalErr = errors.Join(a.fatalErr, err)
+	}
 	a.conversation.cancelSelection()
+	if a.conversation.turnCancel != nil {
+		a.conversation.turnCancel()
+	}
 	// Ask, do not wait: this is the update loop.
 	a.signalTalkHotkey()
+	if a.runCancel != nil {
+		a.runCancel()
+	}
 	a.quitting = true
 	return a, tea.Quit
 }

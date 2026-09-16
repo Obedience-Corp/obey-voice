@@ -575,7 +575,7 @@ func (m *conversationModel) submitText(text string) tea.Cmd {
 	switch {
 	case app.IsExitCommand(cmd):
 		m.quitting = true
-		return tea.Quit
+		return quitCmd()
 
 	case app.IsClearCommand(cmd):
 		if m.selectionPending() {
@@ -663,7 +663,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 		switch app.ClassifyVoiceTurnFailure(msg.err, m.deps.ctx.Err(), msg.text, m.voiceFailures+1) {
 		case app.VoiceShutdown:
 			m.quitting = true
-			return tea.Quit
+			return quitCmd()
 		case app.VoiceFallback:
 			m.voiceFailures = 0
 			m.voiceEnabled = false
@@ -690,7 +690,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 	switch {
 	case app.IsExitCommand(cmd):
 		m.quitting = true
-		return tea.Quit
+		return quitCmd()
 	case app.IsClearCommand(cmd):
 		if m.selectionPending() {
 			m.commandError("persona selection in progress")

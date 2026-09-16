@@ -535,8 +535,8 @@ func TestSpokenExitPhraseQuits(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("no quit cmd returned")
 	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatal("exit did not produce tea.QuitMsg")
+	if _, ok := cmd().(quitMsg); !ok {
+		t.Fatal("exit did not produce quitMsg")
 	}
 }
 
