@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -255,5 +256,82 @@ func TestPrepareAcousticSuiteRejectsInvalidStartupShort(t *testing.T) {
 				t.Fatalf("invalid short fixture error=%v", err)
 			}
 		})
+	}
+}
+
+func TestPrepareAcousticSuiteWorkerInterruptionUsesSameFixtures(t *testing.T) {
+	fixtures, out := acousticSuiteTestFixtures(t), t.TempDir()
+	if err := prepareAcousticSuite(out, fixtures); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := loadScenario(filepath.Join(out, "interruption.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := loadScenario(filepath.Join(out, "interruption-worker.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worker.LatencyCondition != "worker" || !worker.Worker.SustainedLoad || len(worker.Turns) != 3 {
+		t.Fatalf("worker scenario=%+v", worker)
+	}
+	if worker.Turns[0].Op != "start_latency_worker" || worker.Turns[2].Op != "stop_latency_worker" {
+		t.Fatal("worker lifetime not bounded")
+	}
+	a, b := baseline.Turns[0], worker.Turns[1]
+	if b.Op != "acoustic_interrupt" || b.ID != a.ID || b.WAV != a.WAV || b.InterruptWAV != a.InterruptWAV || b.ExpectedTranscript != a.ExpectedTranscript || b.interruptionStimulusDelay() != a.interruptionStimulusDelay() {
+		t.Fatalf("control inputs differ: baseline=%+v worker=%+v", a, b)
+	}
+	for _, turn := range worker.Turns {
+		if turn.LatencyIteration != 0 {
+			t.Fatal("control would enter ordinary reply collector")
+		}
+	}
+}
+
+func TestPrepareAcousticSuiteNearOnlyCalibration(t *testing.T) {
+	fixtures, out := acousticSuiteTestFixtures(t), t.TempDir()
+	writeAcousticSuiteTestFixture(t, fixtures, "startup-short", "Wait.")
+	if err := prepareAcousticSuite(out, fixtures); err != nil {
+		t.Fatal(err)
+	}
+	calibration, err := loadScenario(filepath.Join(out, "calibration.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calibration.Turns) != 2 || calibration.LatencyCondition != "" || calibration.Worker.SustainedLoad || calibration.Input != "speech" || !calibration.Capture.Microphone || !calibration.Capture.Speakers {
+		t.Fatalf("calibration is not two ordinary physical turns: %+v", calibration)
+	}
+	for i, want := range []struct{ name, text string }{{"synth-02.wav", "known phrase 2"}, {"startup-short.wav", "Wait."}} {
+		turn := calibration.Turns[i]
+		if turn.WAV != filepath.Join(fixtures, want.name) || turn.ExpectedTranscript != want.text || turn.Op != "" || turn.InterruptWAV != "" || turn.StimulusDelay != nil || turn.StimulusCompleteWithin != nil || turn.LatencyIteration != 0 || turn.LatencyWarmup || turn.Timeout.Duration != 120*time.Second {
+			t.Fatalf("calibration turn %d changed fixture or admission semantics: %+v", i, turn)
+		}
+	}
+	if calibration.Capture.STTDecodes {
+		t.Fatal("default calibration unexpectedly records decoder inputs")
+	}
+	traced, err := loadScenario(filepath.Join(out, "calibration-decodes.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !traced.Capture.STTDecodes || traced.LatencyCondition != "" || !traced.Capture.Microphone || !traced.Capture.Speakers || !reflect.DeepEqual(traced.Turns, calibration.Turns) {
+		t.Fatalf("decoder variant changed fixture or ordinary-turn semantics: %+v", traced)
+	}
+	// A reused output directory must not advertise combined coverage after its
+	// optional short fixture has been removed.
+	if err := os.Remove(filepath.Join(fixtures, "startup-short.wav")); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareAcousticSuite(out, fixtures); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"calibration.yaml", "calibration-decodes.yaml"} {
+		if _, err := os.Stat(filepath.Join(out, name)); !os.IsNotExist(err) {
+			t.Fatalf("combined %s survived missing short fixture: %v", name, err)
+		}
+	}
+	if _, err := loadScenario(filepath.Join(out, "startup-full.yaml")); err != nil {
+		t.Fatalf("full-only suite compatibility: %v", err)
 	}
 }

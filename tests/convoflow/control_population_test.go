@@ -284,6 +284,7 @@ func TestControlPopulationInterruptRequiresCorrectInitialSpeech(t *testing.T) {
 				d := audio.NegotiatedDevice{Name: "Selected", IdentityKnown: true, SampleRate: 48000, Channels: 1, ClientSampleRate: 16000, ClientChannels: 1}
 				start := time.Now()
 				r := interruptionReport{InitialTranscript: "Count from one to one hundred.", Expected: "What is two plus two?", Transcript: "What is two plus two?", ProductionInterrupted: true, StimulusCompleted: true, ResponseStarted: start, StimulusStarted: start.Add(time.Second), StimulusEnded: start.Add(2 * time.Second), InterruptedAfter: time.Second, PlaybackStoppedAfter: time.Second, DetectionToStop: time.Microsecond, NegotiatedCapture: d, NegotiatedResponse: d, NegotiatedStimulus: d}
+				r.Workload = interruptionWorkloadReport{Condition: "baseline", Scope: validInterruptionWorkload().Scope, StartedAt: start, StimulusOffset: time.Second, StoppedOffset: 2 * time.Second}
 				if wrong {
 					r.InitialTranscript = "What country is this?"
 				}

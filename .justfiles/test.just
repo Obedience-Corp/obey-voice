@@ -158,6 +158,27 @@ acoustic-controls CONFIG SUITE_DIR:
 acoustic-response CONFIG SUITE_DIR STIMULUS_DEVICE="":
     "{{SUITE_DIR}}/bin/convoflow" -scenario "{{SUITE_DIR}}/scenarios/response.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "{{SUITE_DIR}}/runs/response"
 
+# One near-only full-question/short-word calibration; no synthesis or retries.
+[no-cd]
+acoustic-calibrate CONFIG SUITE_DIR STIMULUS_DEVICE="" DECODE_INPUTS="false":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    scenario=calibration
+    case "{{DECODE_INPUTS}}" in
+        false) ;;
+        true) scenario=calibration-decodes ;;
+        *) echo "error: DECODE_INPUTS must be true or false" >&2; exit 2 ;;
+    esac
+    if [[ ! -f "$suite/scenarios/$scenario.yaml" ]]; then
+        echo "error: missing $scenario.yaml; prepare a suite with startup-short.wav and matching Wait. metadata using just test acoustic-prepare MODELS_DIR NEW_SUITE, or regenerate scenarios from complete retained fixtures" >&2
+        exit 2
+    fi
+    mkdir -p "$suite/runs/calibration"
+    attempt="$(mktemp -d "$suite/runs/calibration/attempt.XXXXXX")"
+    trap 'echo "Calibration artifacts: $attempt"' EXIT
+    "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$attempt"
+
 # Run both immediate-onset controls with the prepared binary and explicit config.
 [no-cd]
 acoustic-startup CONFIG SUITE_DIR:
@@ -196,7 +217,12 @@ acoustic-reprocess RUN_DIR CONFIG:
 # Successful execution is diagnostic, not an acoustic acceptance pass.
 [no-cd]
 acoustic-transcribe MODELS_DIR WAV MODEL="tdt-0.6b-v2":
-    OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+    env -u OBEY_VOICE_DECODE_F32LE OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+
+# Replay exact 16kHz mono float32 decoder input without WAV quantization.
+[no-cd]
+acoustic-transcribe-exact MODELS_DIR PCM MODEL="tdt-0.6b-v2":
+    env -u OBEY_VOICE_DECODE_WAV OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_F32LE="{{PCM}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
 
 # Replay processed WAV through production STT admission, endpointing and decoding.
 # GAIN describes amplification already applied; OUTPUT_DIR must be a new directory.
@@ -242,3 +268,14 @@ acoustic-completion-boundaries CONFIG SUITE_DIR STIMULUS_DEVICE="":
     for scenario in completion-mute completion-speech; do
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$suite/runs/completion-boundaries"
     done
+
+# A new directory per condition; no retry/replacement of failed observations.
+acoustic-interruption-pair CONFIG SUITE_DIR RUNTIME_MANIFEST NEW_OUTPUT STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    output="{{NEW_OUTPUT}}"
+    mkdir "$output"
+    "$suite/bin/convoflow" -control-population "$output/baseline" -scenario "$suite/scenarios/interruption.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+    "$suite/bin/convoflow" -control-population "$output/worker" -scenario "$suite/scenarios/interruption-worker.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+    "$suite/bin/convoflow" -compare-control-populations "$output/baseline,$output/worker" > "$output/comparison.json"

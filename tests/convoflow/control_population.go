@@ -24,22 +24,29 @@ import (
 
 type controlPopulationOptions struct {
 	Output, Scenario, Config, Stimulus, Binary string
+	RuntimeManifest                            string
 	Samples, Warmups                           int
 	Timeout                                    time.Duration
 }
 
 type controlPopulationPlan struct {
-	Schema    string            `json:"schema"`
-	Created   time.Time         `json:"created"`
-	Scenario  string            `json:"scenario"`
-	Operation string            `json:"operation"`
-	Samples   int               `json:"measured_samples"`
-	Warmups   int               `json:"warmups"`
-	Timeout   time.Duration     `json:"sample_timeout_ns"`
-	Inputs    map[string]string `json:"input_sha256"`
-	Build     *debug.BuildInfo  `json:"build"`
-	Stimulus  string            `json:"stimulus_device_override"`
-	Warmth    string            `json:"warmth_scope"`
+	Schema       string            `json:"schema"`
+	Created      time.Time         `json:"created"`
+	Scenario     string            `json:"scenario"`
+	ScenarioPath string            `json:"scenario_path"`
+	Operation    string            `json:"operation"`
+	Samples      int               `json:"measured_samples"`
+	Warmups      int               `json:"warmups"`
+	Timeout      time.Duration     `json:"sample_timeout_ns"`
+	Inputs       map[string]string `json:"input_sha256"`
+	Build        *debug.BuildInfo  `json:"build"`
+	Stimulus     string            `json:"stimulus_device_override"`
+	Warmth       string            `json:"warmth_scope"`
+	Condition    string            `json:"condition"`
+	Roles        map[string]string `json:"input_roles"`
+	Runtime      map[string]string `json:"runtime_sha256,omitempty"`
+	ControlSpec  string            `json:"control_spec_sha256"`
+	ScenarioSpec string            `json:"scenario_spec_sha256"`
 }
 
 type controlVoiceIdentity struct {
@@ -49,18 +56,19 @@ type controlVoiceIdentity struct {
 }
 
 type controlPopulationSample struct {
-	Voice     controlVoiceIdentity     `json:"actual_voice"`
-	Index     int                      `json:"index"`
-	Warmup    bool                     `json:"warmup"`
-	Command   []string                 `json:"command"`
-	Started   time.Time                `json:"started"`
-	Finished  time.Time                `json:"finished"`
-	Run       string                   `json:"run,omitempty"`
-	Error     string                   `json:"error,omitempty"`
-	Artifacts map[string]string        `json:"artifact_sha256,omitempty"`
-	Timings   map[string]time.Duration `json:"timings_ns,omitempty"`
-	Profile   runProfile               `json:"profile"`
-	Devices   []audio.NegotiatedDevice `json:"devices,omitempty"`
+	Workload  *interruptionWorkloadReport `json:"workload,omitempty"`
+	Voice     controlVoiceIdentity        `json:"actual_voice"`
+	Index     int                         `json:"index"`
+	Warmup    bool                        `json:"warmup"`
+	Command   []string                    `json:"command"`
+	Started   time.Time                   `json:"started"`
+	Finished  time.Time                   `json:"finished"`
+	Run       string                      `json:"run,omitempty"`
+	Error     string                      `json:"error,omitempty"`
+	Artifacts map[string]string           `json:"artifact_sha256,omitempty"`
+	Timings   map[string]time.Duration    `json:"timings_ns,omitempty"`
+	Profile   runProfile                  `json:"profile"`
+	Devices   []audio.NegotiatedDevice    `json:"devices,omitempty"`
 }
 
 type controlTimingSummary struct {
@@ -87,6 +95,27 @@ func runControlPopulation(ctx context.Context, o controlPopulationOptions) (runE
 
 type controlChild func(context.Context, string, []string, string) error
 
+// A loaded worker condition is an explicit, bounded lifecycle around one
+// interruption. Other multi-turn scenarios are not comparable controls.
+func populationControl(scn *Scenario) (Turn, string, error) {
+	if scn == nil {
+		return Turn{}, "", errors.New("control population: missing scenario")
+	}
+	if len(scn.Turns) == 1 && !scn.Worker.SustainedLoad && scn.LatencyCondition != "worker" {
+		t := scn.Turns[0]
+		if (t.Op == "acoustic_interrupt" || t.Op == "acoustic_completion") && t.LatencyIteration == 0 {
+			return t, "baseline", nil
+		}
+	}
+	if len(scn.Turns) == 3 && scn.Worker.SustainedLoad && scn.LatencyCondition == "worker" {
+		a, t, z := scn.Turns[0], scn.Turns[1], scn.Turns[2]
+		if a.Op == "start_latency_worker" && strings.TrimSpace(a.User) != "" && t.Op == "acoustic_interrupt" && z.Op == "stop_latency_worker" && a.LatencyIteration == 0 && t.LatencyIteration == 0 && z.LatencyIteration == 0 {
+			return t, "worker", nil
+		}
+	}
+	return Turn{}, "", errors.New("control population: require one unloaded completion/interruption or one sustained-worker start/interruption/stop lifecycle")
+}
+
 func runControlPopulationWith(ctx context.Context, o controlPopulationOptions, child controlChild) (runErr error) {
 	if ctx == nil || child == nil || o.Output == "" || o.Config == "" || o.Scenario == "" || o.Binary == "" {
 		return errors.New("control population: context, runner, new output directory, config, scenario and binary are required")
@@ -98,15 +127,15 @@ func runControlPopulationWith(ctx context.Context, o controlPopulationOptions, c
 	if err != nil {
 		return err
 	}
-	if len(scn.Turns) != 1 || (scn.Turns[0].Op != "acoustic_interrupt" && scn.Turns[0].Op != "acoustic_completion") || scn.Worker.SustainedLoad {
-		return errors.New("control population: requires one acoustic_interrupt or acoustic_completion turn, without sustained worker load")
+	turn, condition, err := populationControl(scn)
+	if err != nil {
+		return err
 	}
-	turn := scn.Turns[0]
 	if turn.ID == "" || filepath.Base(turn.ID) != turn.ID || turn.ID == "." || turn.ID == ".." {
 		return errors.New("control population: turn ID must be a single path component")
 	}
 	inputs := make(map[string]string)
-	paths := []string{o.Binary, o.Scenario, o.Config, turn.WAV, turn.InterruptWAV}
+	paths := []string{o.Binary, o.Scenario, o.Config, turn.WAV, turn.InterruptWAV, scn.HistoryFixture}
 	if turn.Op == "acoustic_interrupt" {
 		metadata := strings.TrimSuffix(turn.WAV, filepath.Ext(turn.WAV)) + ".json"
 		if _, err := readAcousticMetadata(metadata); err != nil {
@@ -128,6 +157,36 @@ func runControlPopulationWith(ctx context.Context, o controlPopulationOptions, c
 		}
 		inputs[absolute] = hash
 	}
+	runtimeHashes := make(map[string]string)
+	if o.RuntimeManifest != "" {
+		data, err := os.ReadFile(o.RuntimeManifest)
+		if err != nil {
+			return err
+		}
+		var assets map[string]string
+		if err := json.Unmarshal(data, &assets); err != nil {
+			return err
+		}
+		if len(assets) == 0 {
+			return errors.New("control runtime manifest has no assets")
+		}
+		for role, path := range assets {
+			if role == "" || !filepath.IsAbs(path) {
+				return errors.New("control runtime assets require named absolute paths")
+			}
+			hash, err := controlFileHash(path)
+			if err != nil {
+				return err
+			}
+			runtimeHashes[role] = hash
+			inputs[path] = hash
+		}
+		absolute, err := filepath.Abs(o.RuntimeManifest)
+		if err != nil {
+			return err
+		}
+		inputs[absolute] = fmt.Sprintf("%x", sha256.Sum256(data))
+	}
 	o.Output, err = filepath.Abs(o.Output)
 	if err != nil {
 		return err
@@ -145,6 +204,21 @@ func runControlPopulationWith(ctx context.Context, o controlPopulationOptions, c
 	}
 	build, _ := debug.ReadBuildInfo()
 	plan := controlPopulationPlan{Schema: "acoustic-control-population.v1", Created: time.Now().UTC(), Scenario: scn.Name, Operation: turn.Op, Samples: o.Samples, Warmups: o.Warmups, Timeout: o.Timeout, Inputs: inputs, Build: build, Stimulus: o.Stimulus, Warmth: "Fresh process for every attempt; initial warmups excluded. Model-cache coldness is not measured or inferred."}
+	plan.Condition = condition
+	plan.ControlSpec = controlSpecHash(turn)
+	plan.ScenarioSpec = controlScenarioHash(scn, turn)
+	plan.ScenarioPath = o.Scenario
+	plan.Runtime = runtimeHashes
+	plan.Roles = make(map[string]string)
+	for role, path := range map[string]string{"binary": o.Binary, "config": o.Config, "fixture": turn.WAV, "interrupt_fixture": turn.InterruptWAV, "history": scn.HistoryFixture} {
+		if path != "" {
+			absolute, err := filepath.Abs(path)
+			if err != nil {
+				return err
+			}
+			plan.Roles[role] = inputs[absolute]
+		}
+	}
 	if err := writeControlJSON(filepath.Join(o.Output, "plan.json"), plan); err != nil {
 		return err
 	}
@@ -286,6 +360,10 @@ func readControlJSON(path string, v any, hashes map[string]string) error {
 	return nil
 }
 func readControlSample(root string, scn *Scenario, sample *controlPopulationSample) error {
+	turn, condition, err := populationControl(scn)
+	if err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return err
@@ -303,7 +381,7 @@ func readControlSample(root string, scn *Scenario, sample *controlPopulationSamp
 	if m.CrackleFailingWavs != nil && *m.CrackleFailingWavs != 0 {
 		return errors.New("playback quality score failed")
 	}
-	if m.StopReason != "completed" || m.Scenario != scn.Name || m.Turns != 1 {
+	if m.StopReason != "completed" || m.Scenario != scn.Name || m.Turns != len(scn.Turns) {
 		return errors.New("child metrics did not record the complete expected control")
 	}
 	profilePath := filepath.Join(run, "config.resolved.yaml")
@@ -318,12 +396,11 @@ func readControlSample(root string, scn *Scenario, sample *controlPopulationSamp
 	if sample.Profile.TTSProvider == "" || sample.Profile.silent() || sample.Profile.LiveProvider == "" {
 		return errors.New("missing live/voice profile")
 	}
-	voice, err := readControlVoice(filepath.Join(run, "events.jsonl"), sample.Profile.TTSProvider, scn.Turns[0].Op, sample.Artifacts)
+	voice, err := readControlVoice(filepath.Join(run, "events.jsonl"), sample.Profile.TTSProvider, turn.Op, sample.Artifacts)
 	if err != nil {
 		return err
 	}
 	sample.Voice = voice
-	turn := scn.Turns[0]
 	dir := filepath.Join(run, "acoustic", turn.ID)
 	switch turn.Op {
 	case "acoustic_interrupt":
@@ -331,6 +408,16 @@ func readControlSample(root string, scn *Scenario, sample *controlPopulationSamp
 		if err := readControlJSON(filepath.Join(dir, "interruption.json"), &r, sample.Artifacts); err != nil {
 			return err
 		}
+		if err := validateInterruptionWorkload(r.Workload, condition); err != nil {
+			return err
+		}
+		if condition == "worker" {
+			expectedHost := strings.TrimRight(firstNonEmpty(sample.Profile.WorkerHost, sample.Profile.LiveHost), "/")
+			if r.Workload.Provider != firstNonEmpty(sample.Profile.WorkerProvider, sample.Profile.LiveProvider) || r.Workload.Model != firstNonEmpty(sample.Profile.WorkerModel, sample.Profile.LiveModel) || r.Workload.Host != expectedHost {
+				return errors.New("interruption workload provider differs from resolved profile")
+			}
+		}
+		sample.Workload = &r.Workload
 		if r.Error != "" || r.StimulusError != "" || !r.StimulusCompleted || !r.ProductionInterrupted || r.InitialTranscript == "" || r.Expected != turn.ExpectedTranscript || normalizeAcousticText(r.Transcript) != normalizeAcousticText(turn.ExpectedTranscript) {
 			return errors.New("interruption control did not retain the expected speech and production interruption")
 		}

@@ -100,7 +100,7 @@ func (p *Pipeline) beginOrdinaryCompletion(ctx context.Context, input, speaker s
 		case <-o.stop:
 		}
 	}()
-	return audio.WithPlaybackAttempt(attempt, audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease}), o, nil
+	return audio.WithPlaybackAttempt(attempt, audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease, Render: &audio.FirstRenderBoundary{}}), o, nil
 }
 func (o *ordinaryCompletion) close() {
 	if o == nil {

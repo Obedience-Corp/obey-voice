@@ -25,31 +25,32 @@ type interruptionStimulusOptions struct {
 }
 
 type interruptionReport struct {
-	InitialWAV                      string                 `json:"initial_wav"`
-	InterruptWAV                    string                 `json:"interrupt_wav"`
-	Expected                        string                 `json:"expected_interrupt"`
-	ResponseStarted                 time.Time              `json:"response_started,omitempty"`
-	StimulusStarted                 time.Time              `json:"stimulus_started,omitempty"`
-	StimulusEnded                   time.Time              `json:"stimulus_ended,omitempty"`
-	RequestedStimulusDelay          time.Duration          `json:"requested_stimulus_delay_ns"`
-	RequestedStimulusCompleteWithin time.Duration          `json:"requested_stimulus_complete_within_ns,omitempty"`
-	StimulusFixtureDuration         time.Duration          `json:"stimulus_fixture_duration_ns"`
-	StimulusStartAfterResponse      time.Duration          `json:"response_to_stimulus_start_ns"`
-	StimulusEndAfterResponse        time.Duration          `json:"response_to_stimulus_end_ns"`
-	StimulusPlaybackDuration        time.Duration          `json:"stimulus_playback_duration_ns"`
-	StimulusCompleted               bool                   `json:"stimulus_completed"`
-	StimulusError                   string                 `json:"stimulus_error,omitempty"`
-	InterruptedAfter                time.Duration          `json:"stimulus_to_interrupt_ns"`
-	PlaybackStoppedAfter            time.Duration          `json:"stimulus_to_playback_stopped_ns"`
-	DetectionToStop                 time.Duration          `json:"detection_to_playback_stopped_ns"`
-	ProductionInterrupted           bool                   `json:"production_interrupted"`
-	InitialTranscript               string                 `json:"initial_transcript"`
-	Transcript                      string                 `json:"transcript,omitempty"`
-	Error                           string                 `json:"error,omitempty"`
-	NegotiatedCapture               audio.NegotiatedDevice `json:"negotiated_capture"`
-	NegotiatedResponse              audio.NegotiatedDevice `json:"negotiated_response"`
-	NegotiatedStimulus              audio.NegotiatedDevice `json:"negotiated_stimulus"`
-	StimulusDevice                  string                 `json:"stimulus_device"`
+	Workload                        interruptionWorkloadReport `json:"workload"`
+	InitialWAV                      string                     `json:"initial_wav"`
+	InterruptWAV                    string                     `json:"interrupt_wav"`
+	Expected                        string                     `json:"expected_interrupt"`
+	ResponseStarted                 time.Time                  `json:"response_started,omitempty"`
+	StimulusStarted                 time.Time                  `json:"stimulus_started,omitempty"`
+	StimulusEnded                   time.Time                  `json:"stimulus_ended,omitempty"`
+	RequestedStimulusDelay          time.Duration              `json:"requested_stimulus_delay_ns"`
+	RequestedStimulusCompleteWithin time.Duration              `json:"requested_stimulus_complete_within_ns,omitempty"`
+	StimulusFixtureDuration         time.Duration              `json:"stimulus_fixture_duration_ns"`
+	StimulusStartAfterResponse      time.Duration              `json:"response_to_stimulus_start_ns"`
+	StimulusEndAfterResponse        time.Duration              `json:"response_to_stimulus_end_ns"`
+	StimulusPlaybackDuration        time.Duration              `json:"stimulus_playback_duration_ns"`
+	StimulusCompleted               bool                       `json:"stimulus_completed"`
+	StimulusError                   string                     `json:"stimulus_error,omitempty"`
+	InterruptedAfter                time.Duration              `json:"stimulus_to_interrupt_ns"`
+	PlaybackStoppedAfter            time.Duration              `json:"stimulus_to_playback_stopped_ns"`
+	DetectionToStop                 time.Duration              `json:"detection_to_playback_stopped_ns"`
+	ProductionInterrupted           bool                       `json:"production_interrupted"`
+	InitialTranscript               string                     `json:"initial_transcript"`
+	Transcript                      string                     `json:"transcript,omitempty"`
+	Error                           string                     `json:"error,omitempty"`
+	NegotiatedCapture               audio.NegotiatedDevice     `json:"negotiated_capture"`
+	NegotiatedResponse              audio.NegotiatedDevice     `json:"negotiated_response"`
+	NegotiatedStimulus              audio.NegotiatedDevice     `json:"negotiated_stimulus"`
+	StimulusDevice                  string                     `json:"stimulus_device"`
 }
 
 // runAcousticInterruption exercises the production capture/VAD/barge-in path.
@@ -137,6 +138,17 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 		}
 		runErr = errors.Join(runErr, errors.Join(errs...))
 	}()
+	workload, workloadErr := r.beginInterruptionWorkload(ctx)
+	if workload != nil {
+		defer func() {
+			var finishErr error
+			report.Workload, finishErr = workload.finish(runErr == nil)
+			runErr = errors.Join(runErr, finishErr)
+		}()
+	}
+	if workloadErr != nil {
+		return workloadErr
+	}
 	p := r.agent.Pipeline
 	if p.Events == nil {
 		return errors.New("acoustic interruption: event bus unavailable")
@@ -203,8 +215,12 @@ func (r *liveRunner) runAcousticInterruption(ctx context.Context, initialWAV, in
 	remove := p.Events.SubscribeAll(func(e events.Event) {
 		switch e.(type) {
 		case events.SpeakingStarted, events.SpeakingInterrupted, events.TurnMetrics:
+			at := time.Now()
+			if _, interrupted := e.(events.SpeakingInterrupted); interrupted {
+				workload.observe(at, true)
+			}
 			select {
-			case observedCh <- observed{time.Now(), e}:
+			case observedCh <- observed{at, e}:
 			default:
 			}
 		}
@@ -286,7 +302,10 @@ ready:
 	stimulusStarted := make(chan time.Time, 1)
 	go func() {
 		stimulusDone <- observeInterruptionStimulus(func(started func(time.Time)) error {
-			return playAcousticStimulusObserved(runCtx, stimulus, interrupt, interruptRate, started)
+			return playAcousticStimulusObserved(runCtx, stimulus, interrupt, interruptRate, func(at time.Time) {
+				workload.observe(at, false)
+				started(at)
+			})
 		}, stimulusStarted)
 	}()
 	stimulusRunning := true

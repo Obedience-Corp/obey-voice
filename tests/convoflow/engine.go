@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -74,6 +75,15 @@ const defaultScenarioWall = 5 * time.Minute
 
 func (e *engine) run(ctx context.Context) (runErr error) {
 	defer func() {
+		if e.latencyWorkerID != "" {
+			if loader, ok := e.runner.(interface {
+				stopLatencyWorker(context.Context, string) error
+			}); ok {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				runErr = errors.Join(runErr, loader.stopLatencyWorker(cleanupCtx, e.latencyWorkerID))
+				cancel()
+			}
+		}
 		runErr = errors.Join(runErr, e.closeAll())
 		if p, ok := e.runner.(personaRunner); ok {
 			runErr = errors.Join(runErr, p.writePersonaArtifacts(e.runDir), p.validatePersonaRun())
@@ -322,8 +332,21 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 			return fmt.Errorf("runner does not support physical microphone input")
 		}
 		artifactDir := filepath.Join(e.runDir, "acoustic", fmt.Sprintf("%02d-%s", i+1, turn.ID))
-		if err := acoustic.runAcoustic(turnCtx, turn.WAV, turn.ExpectedTranscript, artifactDir); err != nil {
-			return err
+		var decoder *decodeRecorder
+		if e.scn.Capture.STTDecodes {
+			var err error
+			decoder, err = newDecodeRecorder(filepath.Join(artifactDir, "stt-decodes"))
+			if err != nil {
+				return err
+			}
+			turnCtx = stt.WithDecodeObserver(turnCtx, decoder.observe)
+		}
+		runErr := acoustic.runAcoustic(turnCtx, turn.WAV, turn.ExpectedTranscript, artifactDir)
+		if decoder != nil {
+			runErr = errors.Join(runErr, decoder.verify())
+		}
+		if runErr != nil {
+			return runErr
 		}
 	} else if turn.WAV != "" {
 		replay, ok := e.runner.(interface {
