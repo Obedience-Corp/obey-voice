@@ -213,6 +213,16 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		} else if turn.ExpectError != "" {
 			return fmt.Errorf("turn %s: expected selection error containing %q", turn.ID, turn.ExpectError)
 		}
+	} else if turn.Op == "acoustic_mute" || turn.Op == "acoustic_failure" {
+		probe, ok := e.runner.(interface {
+			runAcousticBoundary(context.Context, string, string, string, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support acoustic boundary")
+		}
+		if err := probe.runAcousticBoundary(turnCtx, turn.Op, turn.WAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
+			return err
+		}
 	} else if turn.Op == "acoustic_response" {
 		probe, ok := e.runner.(interface {
 			runAcousticResponse(context.Context, string, string, string, time.Duration) error

@@ -214,3 +214,20 @@ work-host-timing:
 [no-cd]
 vad-reset MODELS_DIR FIXTURE:
     OBEY_VOICE_VAD_RESET_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_VAD_RESET_FIXTURE="{{FIXTURE}}" go test -race ./pkg/voiceagent/audio -run '^TestVADClearRestartsNativeTimeline$' -count=1 -v
+
+# Repeated physical completion or interruption controls, using the existing pinned
+# binary. NEW_OUTPUT must not exist; failures stop and retain the population.
+[no-cd]
+acoustic-control-population CONFIG SUITE_DIR SCENARIO NEW_OUTPUT STIMULUS_DEVICE="":
+    "{{SUITE_DIR}}/bin/convoflow" -control-population "{{NEW_OUTPUT}}" -scenario "{{SUITE_DIR}}/scenarios/{{SCENARIO}}.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+
+# Ordinary muted input/unmute and injected provider error/recovery, with real
+# microphone and speaker evidence. These do not simulate a remote outage.
+[no-cd]
+acoustic-boundaries CONFIG SUITE_DIR STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in mute failure; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$suite/runs/boundaries"
+    done

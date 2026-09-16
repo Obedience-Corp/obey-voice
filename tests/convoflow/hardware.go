@@ -22,29 +22,31 @@ import (
 )
 
 type acousticReport struct {
-	Stimulus            string                 `json:"stimulus"`
-	ExpectedTranscript  string                 `json:"expected_transcript,omitempty"`
-	Transcript          string                 `json:"transcript"`
-	InputDevice         string                 `json:"input_device"`
-	OutputDevice        string                 `json:"output_device"`
-	StimulusDevice      string                 `json:"stimulus_device"`
-	NegotiatedCapture   audio.NegotiatedDevice `json:"negotiated_capture"`
-	NegotiatedResponse  audio.NegotiatedDevice `json:"negotiated_response"`
-	NegotiatedStimulus  audio.NegotiatedDevice `json:"negotiated_stimulus"`
-	StimulusRate        int                    `json:"stimulus_rate"`
-	CapturedSamples     int                    `json:"captured_samples"`
-	CapturedRMS         float64                `json:"captured_rms"`
-	CapturedPeak        float64                `json:"captured_peak"`
-	StimulusWindowStart int                    `json:"stimulus_window_start_sample"`
-	StimulusWindowEnd   int                    `json:"stimulus_window_end_sample"`
-	StimulusWindowRMS   float64                `json:"stimulus_window_rms"`
-	StimulusWindowValid bool                   `json:"stimulus_window_valid"`
-	StimulusAudible     bool                   `json:"stimulus_audible"`
-	DelaySamples        int                    `json:"delay_samples"`
-	DelayMS             float64                `json:"delay_ms"`
-	Correlation         float64                `json:"correlation_confidence"`
-	EnvelopeCorrelation float64                `json:"envelope_correlation"`
-	Error               string                 `json:"error,omitempty"`
+	CaptureReadSamples      int64                  `json:"capture_read_samples,omitempty"`
+	NonzeroReferenceSamples int                    `json:"nonzero_reference_samples,omitempty"`
+	Stimulus                string                 `json:"stimulus"`
+	ExpectedTranscript      string                 `json:"expected_transcript,omitempty"`
+	Transcript              string                 `json:"transcript"`
+	InputDevice             string                 `json:"input_device"`
+	OutputDevice            string                 `json:"output_device"`
+	StimulusDevice          string                 `json:"stimulus_device"`
+	NegotiatedCapture       audio.NegotiatedDevice `json:"negotiated_capture"`
+	NegotiatedResponse      audio.NegotiatedDevice `json:"negotiated_response"`
+	NegotiatedStimulus      audio.NegotiatedDevice `json:"negotiated_stimulus"`
+	StimulusRate            int                    `json:"stimulus_rate"`
+	CapturedSamples         int                    `json:"captured_samples"`
+	CapturedRMS             float64                `json:"captured_rms"`
+	CapturedPeak            float64                `json:"captured_peak"`
+	StimulusWindowStart     int                    `json:"stimulus_window_start_sample"`
+	StimulusWindowEnd       int                    `json:"stimulus_window_end_sample"`
+	StimulusWindowRMS       float64                `json:"stimulus_window_rms"`
+	StimulusWindowValid     bool                   `json:"stimulus_window_valid"`
+	StimulusAudible         bool                   `json:"stimulus_audible"`
+	DelaySamples            int                    `json:"delay_samples"`
+	DelayMS                 float64                `json:"delay_ms"`
+	Correlation             float64                `json:"correlation_confidence"`
+	EnvelopeCorrelation     float64                `json:"envelope_correlation"`
+	Error                   string                 `json:"error,omitempty"`
 }
 
 const (
@@ -70,9 +72,18 @@ func stimulusOutputDevice(cfg *config.Config, override string) string {
 // player is intentionally separate from the pipeline player and has no AEC
 // frontend, so the user signal is never presented to the echo canceller as a
 // far-end response reference.
-func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDir string) (runErr error) {
+func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDir string) error {
+	return r.runAcousticCapture(ctx, path, expected, artifactDir, false)
+}
+
+// strict wires all live pipeline dependencies to one healthy capture owner and
+// retains ordered response references for boundary acceptance.
+func (r *liveRunner) runAcousticCapture(ctx context.Context, path, expected, artifactDir string, strict bool) (runErr error) {
 	if ctx == nil {
 		return errors.New("acoustic run: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if r == nil || r.agent == nil || r.agent.Pipeline == nil {
 		return errors.New("acoustic run: agent is not configured")
@@ -109,6 +120,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		return fmt.Errorf("acoustic artifacts: %w", err)
 	}
 	var rawFrontend *rawCaptureFrontend
+	var frames *responseCaptureSource
 	var capturedMu sync.Mutex
 	var captured []float32
 	transcript := ""
@@ -125,6 +137,12 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 			mic = rawFrontend.RawSnapshot()
 		}
 		report.Transcript = transcript
+		if frames != nil {
+			report.CaptureReadSamples = frames.readSamples.Load()
+		}
+		if strict && rawFrontend != nil {
+			report.NonzeroReferenceSamples = nonzeroResponseReferenceSamples(rawFrontend)
+		}
 		report.CapturedSamples = len(mic)
 		report.CapturedRMS = aecprobe.SegmentRMS(mic)
 		report.CapturedPeak = aecprobe.PeakLevel(mic)
@@ -141,6 +159,9 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 			report.NegotiatedStimulus = player.NegotiatedDevice()
 		}
 		var artifactErrs []error
+		if strict && rawFrontend != nil {
+			artifactErrs = append(artifactErrs, rawFrontend.WriteTrace(filepath.Join(artifactDir, "frontend.jsonl")))
+		}
 		if err := audio.WriteWAVFloat32(filepath.Join(artifactDir, "stimulus.wav"), rate, samples); err != nil {
 			artifactErrs = append(artifactErrs, fmt.Errorf("write acoustic stimulus: %w", err))
 		}
@@ -176,7 +197,12 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 		return fmt.Errorf("acoustic VAD: %w", err)
 	}
 	defer vad.Delete()
-	endable := audio.NewFinalizable(capture)
+	var frameSource audio.FrameSource = capture
+	if strict {
+		frames = &responseCaptureSource{FrameSource: capture, gain: capture}
+		frameSource = frames
+	}
+	endable := audio.NewFinalizable(frameSource)
 	recognizer, recognizerCleanup, err := stt.NewProvider(r.cfg, endable, vad)
 	if err != nil {
 		return fmt.Errorf("acoustic STT: %w", err)
@@ -190,6 +216,7 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	}
 	defer frontend.Close()
 	rawFrontend = newRawCaptureFrontend(frontend)
+	rawFrontend.EnableTrace(strict)
 	capture.SetFrontend(rawFrontend)
 	if r.player == nil {
 		return errors.New("acoustic run: physical response player missing")
@@ -202,7 +229,11 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 	report.NegotiatedCapture = capture.NegotiatedDevice()
 	report.NegotiatedResponse = response.NegotiatedDevice()
 	report.NegotiatedStimulus = player.NegotiatedDevice()
-	real.SetFrontend(frontend)
+	if strict {
+		real.SetFrontend(rawFrontend)
+	} else {
+		real.SetFrontend(frontend)
+	}
 	defer real.SetFrontend(nil)
 	streamID, stream := capture.Subscribe(512)
 	collectorDone := make(chan struct{})
@@ -226,6 +257,16 @@ func (r *liveRunner) runAcoustic(ctx context.Context, path, expected, artifactDi
 
 	p := r.agent.Pipeline
 	oldSTT, oldVAD, oldUtterance := p.STT, p.VAD, p.Utterance
+	oldCapture, oldBarge := p.Capture, p.BargeInVAD
+	if strict {
+		barge, err := audio.NewBargeInVAD(r.cfg)
+		if err != nil {
+			return err
+		}
+		defer barge.Delete()
+		p.Capture, p.BargeInVAD = capture, barge
+		defer func() { p.Capture, p.BargeInVAD = oldCapture, oldBarge }()
+	}
 	p.STT, p.VAD, p.Utterance = recognizer, vad, endable
 	defer func() { p.STT, p.VAD, p.Utterance = oldSTT, oldVAD, oldUtterance }()
 
