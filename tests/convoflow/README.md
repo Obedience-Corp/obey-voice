@@ -543,7 +543,12 @@ inferred from a fresh process or the warmup label.
 Completion `pause` measures the call to `PauseForCompletion` through acknowledgement;
 `completion` measures the entire `RunBackgroundTurn`, including inference,
 synthesis and playback. These are not the UI dispatch or result-ready host-only
-targets. Interruption `detection_to_stopped` is the production detector-to-stop
+targets. The completion control waits for its worker result before starting the
+isolated listening turn, so a cold worker cannot exhaust that turn's input timeout.
+Its report records `worker_readiness_ms` separately; the 300ms pause bound starts
+after this wait and is unchanged. The separate completion-speech control tests
+input during completion generation.
+Interruption `detection_to_stopped` is the production detector-to-stop
 duration. `stimulus_to_interrupt` and `stimulus_to_stopped` are the same post-stop
 event observation relative to the independent stimulus player start; they are
 not two independently measured timestamps or proof of acoustic onset. The 50ms

@@ -23,6 +23,7 @@ type completionReport struct {
 	Fixture            string                 `json:"fixture"`
 	Expected           string                 `json:"expected"`
 	StimulusDevice     string                 `json:"stimulus_device"`
+	WorkerReadinessMS  float64                `json:"worker_readiness_ms"`
 	PauseMS            float64                `json:"pause_ms"`
 	CompletionMS       float64                `json:"completion_ms"`
 	Acknowledged       bool                   `json:"acknowledged"`
@@ -277,10 +278,9 @@ func (r *liveRunner) runAcousticCompletionMode(ctx context.Context, fixtureWAV, 
 		err  error
 	}
 	turnDone := make(chan turnResult, 1)
-	turnCtx, cancelTurn := context.WithTimeout(ctx, 45*time.Second)
+	var turnCtx context.Context
+	cancelTurn := func() {}
 	var tasks sync.WaitGroup
-	tasks.Add(1)
-	go func() { defer tasks.Done(); text, e := p.RunTurn(turnCtx); turnDone <- turnResult{text, e} }()
 	// Join all capture users before restoring or closing their providers.
 	defer func() {
 		cancelTurn()
@@ -291,16 +291,14 @@ func (r *liveRunner) runAcousticCompletionMode(ctx context.Context, fixtureWAV, 
 			runErr = errors.Join(runErr, p.CloseWork())
 		}
 	}()
-	deadline := time.NewTimer(30 * time.Second)
-	defer deadline.Stop()
-	for !p.BackgroundPending() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadline.C:
-			return errors.New("background result did not become pending")
-		case <-time.After(10 * time.Millisecond):
-		}
+	readiness, err := beginCompletionListenAfterWorker(ctx, p.BackgroundPending, func() {
+		turnCtx, cancelTurn = context.WithTimeout(ctx, 45*time.Second)
+		tasks.Add(1)
+		go func() { defer tasks.Done(); text, e := p.RunTurn(turnCtx); turnDone <- turnResult{text, e} }()
+	})
+	report.WorkerReadinessMS = float64(readiness.Microseconds()) / 1000
+	if err != nil {
+		return err
 	}
 	startPause := time.Now()
 	pauseCtx, cancelPause := context.WithTimeout(ctx, 300*time.Millisecond)
@@ -423,4 +421,34 @@ func (r *liveRunner) runAcousticCompletionMode(ctx context.Context, fixtureWAV, 
 		return errors.New("unrelated speech changed communicated result count")
 	}
 	return nil
+}
+
+// beginCompletionListenAfterWorker keeps cold worker readiness outside the
+// isolated listen lifetime and the subsequent 300ms pause measurement. This
+// control measures completion playback/next-input retention; the separate
+// completion-speech control exercises speech during completion generation.
+// start must only launch the listening turn, without waiting for it to finish.
+func beginCompletionListenAfterWorker(ctx context.Context, pending func() bool, start func()) (time.Duration, error) {
+	began := time.Now()
+	deadline := time.NewTimer(30 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return time.Since(began), err
+		}
+		if pending() {
+			waited := time.Since(began)
+			start()
+			return waited, nil
+		}
+		select {
+		case <-ctx.Done():
+			return time.Since(began), ctx.Err()
+		case <-deadline.C:
+			return time.Since(began), errors.New("background result did not become pending")
+		case <-ticker.C:
+		}
+	}
 }
