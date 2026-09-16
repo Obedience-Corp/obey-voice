@@ -244,7 +244,7 @@ predates the split and keeps the startup handshake.
 | --- | --- |
 | `conversation.go` | Layout and tick constants, `voiceTickMsg`, the `conversationModel` struct, `newConversation`, `activityEntry`, `plainChatTurn` |
 | `conversation_update.go` | `Update`, `voiceTickCmd`, `rearm`, `shouldAnimateVoice`, `ensureVoiceTick` (also armed from `startConversation` in `turndriver.go`) |
-| `conversation_events.go` | `handleEvent`, the pipeline event switch, with `setStatus` and `setVoiceMode`; it is their main caller, but `tui.go`, `turndriver.go`, `talkhotkey.go` and `work.go` call them too |
+| `conversation_events.go` | `handleEvent`, the pipeline event switch, with `setStatus` and `setVoiceMode`; it is their main caller, but `setStatus` is also called from `tui_runtime.go`, `tui_screens.go`, `turndriver.go`, `talkhotkey.go` and `work.go`, and `setVoiceMode` from `turndriver.go` |
 | `conversation_transcript.go` | Transcript and activity content: append, clear, remember, streaming deltas, refresh, seeding, clipboard copy and the `composerIdle` gate it uses |
 | `conversation_scroll.go` | Size, reflow, viewport follow and scroll |
 | `conversation_selection.go` | Persona selection request/result messages and the selection queue |
