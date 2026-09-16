@@ -1,3 +1,44 @@
+# Completion playback admission — revised implementation decision
+
+Status: ordinary-policy parity selected for the authorized implementation in
+`vw0001-completion-owner`, based on PR198 (`e55a78af`). This revision supersedes
+the earlier unresolved terminal-policy proposal below. It does not mark physical
+acceptance or the festival complete.
+
+The earlier proposal demanded proof that an interval was user-only or that an
+unqualified candidate was echo. Ordinary replies do not supply that oracle:
+they accept the established barge decision, preserve recent audible pause speech,
+and otherwise reset STT and keep bounded next-listen pre-roll. Completion playback
+will use those same operational rules. Not accepted by barge policy does not mean
+proven echo. This retains full-duplex capture and the current interruption policy;
+no half-duplex fallback or changed threshold is adopted.
+
+The selected implementation binds the original pause token, attempt and first
+render boundary before generation. Pre-render speech stays ordinary and can revoke
+immediately. Once a frame is wholly after render, with no earlier admitted speech,
+the sole STT owner parks that frame and leaves subsequent PCM in the existing bounded
+capture ring while microphone/AEC and the ordinary barge watcher continue. No
+playback-period detector/decoder state can independently revoke or leak a transcript.
+
+Qualified interruption resumes parked/buffered input once; qualification position
+is not a crop boundary. Natural completion and failure both preserve existing
+near-miss speech, or reset the detector/recognizer and atomically keep configured
+pre-roll across parked and unread audio. No-render failure preserves original
+state. Missing/straddling capture timing stays conservative ordinary input. Actual
+loss when retaining accepted input is an explicit failure, not complete retention.
+Sources without atomic retention defer completion before generation.
+
+Token/attempt-scoped commands, cleanup after cancellation, finalization before
+cleanup, exact PCM/pre-roll retention and offline/streaming parity require permanent
+regressions. Fresh completion echo-only and pre-generation physical controls plus
+populations remain required. This does not fix the independent early short-command
+failure or prove residual assistant speech is absent from all retained input.
+
+## Earlier proposal and diagnostic record
+
+The following text is retained as historical rationale. Its statements that an
+unknown terminal policy remains unresolved are superseded by the decision above.
+
 # Completion playback admission — design for review
 
 Status: design only against `206cba2f`. The user has already authorized implementation. This design does not yet define complete safe runtime behavior: unknown disposition and source coverage remain unresolved under the current full-duplex contract. A question about an explicit half-duplex fallback is pending; no answer has changed that contract. Silent discard, automatic promotion, and a blocked-capture flow each change observable behavior and do not resolve these technical gaps.
