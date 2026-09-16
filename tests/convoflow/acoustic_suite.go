@@ -117,8 +117,11 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 		name string
 		data []byte
 	}
-	write := func(name, condition string, turns []map[string]any) error {
+	write := func(name, condition string, turns []map[string]any, decoderEvidence ...bool) error {
 		doc := map[string]any{"name": name, "description": "Generated repeatable acoustic latency suite", "input": "speech", "latency_condition": condition, "duration": "30m", "capture": map[string]any{"microphone": true, "audio": true, "speakers": true}, "turns": turns}
+		if len(decoderEvidence) > 0 && decoderEvidence[0] {
+			doc["capture"].(map[string]any)["stt_decodes"] = true
+		}
 		if condition == "worker" {
 			doc["worker"] = map[string]any{"sustained_load": true}
 		}
@@ -194,6 +197,16 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 		return err
 	}
 	if short != nil {
+		calibrationTurns := []map[string]any{
+			{"id": "calibration-full", "timeout": "120s", "wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text},
+			{"id": "calibration-short", "timeout": "120s", "wav": short.Path, "expected_transcript": short.Text},
+		}
+		if err := write("calibration", "", calibrationTurns); err != nil {
+			return err
+		}
+		if err := write("calibration-decodes", "", calibrationTurns, true); err != nil {
+			return err
+		}
 		if err := write("startup-short", "", []map[string]any{{"id": "startup-short", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": short.Path, "expected_transcript": short.Text, "stimulus_delay": "0s", "stimulus_complete_within": "600ms"}}); err != nil {
 			return err
 		}
@@ -202,8 +215,10 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 		return err
 	}
 	if short == nil {
-		if err := os.Remove(filepath.Join(outputDir, "startup-short.yaml")); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove stale startup-short scenario: %w", err)
+		for _, name := range []string{"startup-short", "calibration", "calibration-decodes"} {
+			if err := os.Remove(filepath.Join(outputDir, name+".yaml")); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove stale %s scenario: %w", name, err)
+			}
 		}
 	}
 	b, err := json.MarshalIndent(manifest, "", "  ")

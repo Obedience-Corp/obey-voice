@@ -17,6 +17,9 @@ type PlaybackAttempt struct {
 	ID           string
 	CaptureEpoch uint64
 	Fence        PlaybackFence
+	// Render is optional for legacy callers. All segments of an attempt share
+	// it; consumers must use ID/CaptureEpoch to match its authority.
+	Render *FirstRenderBoundary
 }
 
 type playbackAttemptKey struct{}

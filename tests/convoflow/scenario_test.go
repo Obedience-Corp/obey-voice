@@ -164,3 +164,34 @@ func TestScenarioInterruptionCompletionWindow(t *testing.T) {
 		t.Fatal("accepted completion window on ordinary turn")
 	}
 }
+
+func TestScenarioDecodeEvidenceRequiresUntimedOrdinaryMicrophoneWAV(t *testing.T) {
+	const valid = `name: decoder-evidence
+input: speech
+capture: {audio: true, speakers: true, microphone: true, stt_decodes: true}
+turns:
+  - id: near
+    wav: /fixture.wav
+    expected_transcript: Wait.
+`
+	scenario, err := loadScenarioString("valid", valid)
+	if err != nil || !scenario.Capture.STTDecodes {
+		t.Fatalf("valid decoder scenario: %+v %v", scenario, err)
+	}
+	for name, body := range map[string]string{
+		"no microphone":     strings.Replace(valid, "microphone: true", "microphone: false", 1),
+		"baseline latency":  valid + "latency_condition: baseline\n",
+		"worker latency":    valid + "latency_condition: worker\n",
+		"control operation": valid + "    op: acoustic_completion\n",
+		"missing WAV":       strings.Replace(valid, "    wav: /fixture.wav\n", "", 1),
+		"interrupt timer":   valid + "    interrupt_after: 1s\n",
+		"latency iteration": valid + "    latency_iteration: 1\n",
+		"excluded warmup":   valid + "    latency_warmup: true\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadScenarioString(name, body); err == nil || !strings.Contains(err.Error(), "stt_decodes") {
+				t.Fatalf("invalid decoder scenario accepted/wrong rejection: %v", err)
+			}
+		})
+	}
+}

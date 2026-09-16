@@ -35,6 +35,7 @@ type Scenario struct {
 		Microphone bool `yaml:"microphone"`
 		Audio      bool `yaml:"audio"`
 		Speakers   bool `yaml:"speakers"`
+		STTDecodes bool `yaml:"stt_decodes"` // explicit offline decoder evidence; excludes timing populations
 	} `yaml:"capture"`
 	Turns   []Turn          `yaml:"turns"`
 	Expect  []Expectation   `yaml:"expect"`
@@ -190,8 +191,14 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	if scn.Capture.Microphone && (scn.Input != "speech" || !scn.Capture.Speakers) {
 		return nil, fmt.Errorf("load %s: microphone capture requires speech input and capture.speakers", name)
 	}
+	if scn.Capture.STTDecodes && (!scn.Capture.Microphone || scn.LatencyCondition != "") {
+		return nil, fmt.Errorf("load %s: stt_decodes requires ordinary microphone turns outside latency populations", name)
+	}
 	for i := range scn.Turns {
 		t := &scn.Turns[i]
+		if scn.Capture.STTDecodes && (t.Op != "" || t.WAV == "" || t.InterruptAfter.Duration != 0 || t.LatencyIteration != 0 || t.LatencyWarmup) {
+			return nil, fmt.Errorf("load %s: stt_decodes turn %q requires an ordinary untimed WAV", name, t.ID)
+		}
 		if scn.Capture.Microphone && t.WAV != "" && strings.TrimSpace(t.ExpectedTranscript) == "" {
 			return nil, fmt.Errorf("load %s: microphone turn %q requires expected_transcript", name, t.ID)
 		}

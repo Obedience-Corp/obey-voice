@@ -442,6 +442,61 @@ completion deadline. Both retain the ordinary production interruption and exact
 transcript checks. Older fixture directories without `startup-short.wav` remain
 loadable; the startup recipe requires both scenarios before opening devices.
 
+### Near-only fixture calibration
+
+Prepared suites with `startup-short.wav` also include `calibration.yaml`: two
+ordinary microphone turns, first the suite's `synth-02.wav` question, then “Wait.”.
+Use the `full` fixture profile to calibrate the complete question; generation
+preserves the supplied fixture and metadata, including a brief profile if used.
+Neither turn overlaps assistant playback or enters a latency population.
+
+```sh
+just test acoustic-calibrate CONFIG SUITE_DIR "Studio Display Speakers"
+```
+
+The optional device selects fixture playback only. The recipe uses the suite's
+existing pinned binary and explicit config without rebuilding, synthesizing,
+changing gain or retrying. Each invocation retains a fresh artifact directory,
+including failed runs. Both exact transcripts and the existing raw
+capture checks—aligned audibility/correlation and capture clipping—must pass; “Wade” does not
+satisfy “Wait.”. The scenario stops on the first failure. Passing establishes
+isolated fixture capture and recognition, not audibility during overlap or
+correct interruption ownership. Missing short fixtures omit the combined
+scenario, and the recipe fails before opening devices; regenerate scenarios
+from complete recorded fixtures or prepare a new suite first.
+
+To retain the exact audio submitted to an offline decoder, use the optional
+fourth argument:
+
+```sh
+just test acoustic-calibrate CONFIG SUITE_DIR "Studio Display Speakers" true
+```
+
+This selects `calibration-decodes.yaml`, with `capture.stt_decodes: true`.
+Each turn writes `acoustic/<turn>/stt-decodes/decode-NNN.f32le`, a convenience
+WAV, and JSON with sample count, hashes, transcript/error and decoder timestamps.
+The float32 file preserves the exact input bits; the WAV is quantized and cannot
+prove bit-for-bit equality. The observation runs synchronously after inference
+and before the input can be reused. Recording failure or zero observed decodes
+fails the run, including a provider using an unsupported streaming path.
+
+This opt-in is restricted to ordinary microphone WAV turns outside timing
+populations. It adds local disk work, so its timing is diagnostic. Normal runs
+do not install the observer or record decoder input. These files capture what
+the recognizer received; they do not establish an exact source position or
+correct transcription by themselves.
+
+Replay a recorded input without WAV conversion using the same model assets:
+
+```sh
+just test acoustic-transcribe-exact MODELS_DIR /path/to/stt-decodes/decode-001.f32le
+```
+
+The exact mode requires nonempty finite float32 little-endian mono samples at
+16kHz. It rejects malformed input and reports the input fingerprint and transcript.
+Compare its fingerprint with the recording JSON before comparing transcripts.
+This bypasses VAD and endpointing; successful execution is a diagnostic result.
+
 ### Physical mute and provider recovery
 
 Newly prepared suites include `mute.yaml` and `failure.yaml`:

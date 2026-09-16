@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -82,6 +83,58 @@ type SpeakerVerdict struct {
 type interruptRequest struct {
 	Reason string
 	At     time.Time
+	Source interruptSourceEvidence
+}
+
+// interruptSourceEvidence describes the callback that qualified a request,
+// not a speech onset or a verified user interval. Gap and discontinuity state
+// cover every frame observed by this watcher, including unarmed/skipped frames.
+// CallbackSpans is copied only when emitting the request and is then immutable.
+type interruptSourceEvidence struct {
+	CallbackSequence    int64
+	CallbackSamples     int
+	CallbackSpans       []audio.CaptureSpan
+	CallbackKnown       bool
+	UnknownObserved     bool
+	Gap                 audio.CaptureGap
+	DeviceDiscontinuity bool
+}
+
+// frameCaptureMonitor is optional: remote and legacy capture monitors keep
+// their PCM subscription and report unknown source coverage.
+type frameCaptureMonitor interface {
+	SubscribeFrames(buffer int) (int, <-chan audio.Frame)
+}
+
+// observe accumulates metadata only. It never changes the interruption policy
+// or copies callback PCM/spans. A gap cannot be hidden by a later intact frame.
+func (e *interruptSourceEvidence) observe(frame audio.Frame, typed bool) {
+	e.CallbackSequence = frame.Sequence
+	e.CallbackSamples = len(frame.Samples)
+	gap := frame.CaptureGap
+	e.Gap.OverflowSamples += gap.OverflowSamples
+	e.Gap.DiscardedSamples += gap.DiscardedSamples
+	e.Gap.Reset = e.Gap.Reset || gap.Reset
+	e.Gap.SubscriptionDroppedSamples += gap.SubscriptionDroppedSamples
+	e.Gap.SubscriptionDroppedCallbacks += gap.SubscriptionDroppedCallbacks
+	e.Gap.SubscriptionDeviceDiscontinuity = e.Gap.SubscriptionDeviceDiscontinuity || gap.SubscriptionDeviceDiscontinuity
+	e.DeviceDiscontinuity = e.DeviceDiscontinuity || gap.SubscriptionDeviceDiscontinuity
+	known := typed && frame.Sequence > 0 && len(frame.Samples) > 0 && len(frame.CaptureSpans) > 0
+	remaining := len(frame.Samples)
+	var nextOffset, generation uint64
+	for i, span := range frame.CaptureSpans {
+		e.DeviceDiscontinuity = e.DeviceDiscontinuity || span.DeviceDiscontinuity
+		if span.SampleCount <= 0 || span.SampleCount > remaining || span.DeviceGeneration == 0 ||
+			span.CallbackAt.IsZero() || span.EstimatedStart.IsZero() ||
+			(i > 0 && (span.SampleOffset != nextOffset || span.DeviceGeneration != generation)) {
+			known = false
+		}
+		remaining -= span.SampleCount
+		nextOffset = span.SampleOffset + uint64(max(0, span.SampleCount))
+		generation = span.DeviceGeneration
+	}
+	e.CallbackKnown = known && remaining == 0
+	e.UnknownObserved = e.UnknownObserved || !e.CallbackKnown
 }
 
 // playbackState is the narrow view of playback the interrupt controller needs —
@@ -199,7 +252,15 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 
 	out := make(chan interruptRequest, 1)
 	done := make(chan struct{})
-	subscriptionID, chunks := c.capture.Subscribe(c.bufferSize)
+	var subscriptionID int
+	var chunks <-chan []float32
+	var frames <-chan audio.Frame
+	typed, hasFrames := c.capture.(frameCaptureMonitor)
+	if hasFrames {
+		subscriptionID, frames = typed.SubscribeFrames(c.bufferSize)
+	} else {
+		subscriptionID, chunks = c.capture.Subscribe(c.bufferSize)
+	}
 
 	go func() {
 		defer close(done)
@@ -210,100 +271,108 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 		var audibility stt.SpeechAudibility
 		segmentQueued := false
 		var gapStart time.Time
+		var source interruptSourceEvidence
 		for {
+			var frame audio.Frame
+			var ok bool
 			select {
 			case <-ctx.Done():
 				return
-			case samples, ok := <-chunks:
-				if !ok {
-					return
-				}
+			case frame, ok = <-frames:
+			case samples, received := <-chunks:
+				frame.Samples, ok = samples, received
+			}
+			if !ok {
+				return
+			}
+			samples := frame.Samples
+			source.observe(frame, hasFrames)
 
-				// Unarmed: the turn's first playback hasn't happened (armAt
-				// zero — thinking-phase barge-in is a separate product call,
-				// F3.4) or we're still inside the once-per-turn arm delay.
-				// Reset so residual echo never accumulates toward a trip.
-				at := armAt.Load()
-				if at == 0 || time.Now().UnixNano() < at {
-					consecutiveSpeech = 0
-					audibility.Reset()
-					segmentQueued = false
-					c.vad.Clear()
+			// Unarmed: the turn's first playback hasn't happened (armAt
+			// zero — thinking-phase barge-in is a separate product call,
+			// F3.4) or we're still inside the once-per-turn arm delay.
+			// Reset so residual echo never accumulates toward a trip.
+			at := armAt.Load()
+			if at == 0 || time.Now().UnixNano() < at {
+				consecutiveSpeech = 0
+				audibility.Reset()
+				segmentQueued = false
+				c.vad.Clear()
+				continue
+			}
+
+			// Armed for the rest of the turn. Playback pauses no longer
+			// disarm (WI-dc9e33 B3): an utterance spanning a queue-drain
+			// gap keeps its streak instead of restarting from zero. Only
+			// the brief echo tail right after playback stops is skipped —
+			// skipped, not cleared, so a spanning streak survives it.
+			if c.playback.IsPlaying() {
+				gapStart = time.Time{}
+			} else {
+				now := time.Now()
+				if gapStart.IsZero() {
+					gapStart = now
+				}
+				if now.Sub(gapStart) < c.tailGuard {
 					continue
 				}
+			}
 
-				// Armed for the rest of the turn. Playback pauses no longer
-				// disarm (WI-dc9e33 B3): an utterance spanning a queue-drain
-				// gap keeps its streak instead of restarting from zero. Only
-				// the brief echo tail right after playback stops is skipped —
-				// skipped, not cleared, so a spanning streak survives it.
-				if c.playback.IsPlaying() {
-					gapStart = time.Time{}
-				} else {
-					now := time.Now()
-					if gapStart.IsZero() {
-						gapStart = now
-					}
-					if now.Sub(gapStart) < c.tailGuard {
-						continue
-					}
+			c.vad.AcceptWaveform(samples)
+			speech := c.vad.IsSpeech()
+			if speech {
+				consecutiveSpeech++
+				gain := 1.0
+				if reporter, ok := c.capture.(audio.GainReporter); ok {
+					gain = reporter.InputGain()
 				}
+				audibility.Observe(samples, gain)
+				if audibility.Audible() && !gapStart.IsZero() {
+					c.lastPauseSpeech.Store(time.Now().UnixNano())
+				}
+			}
 
-				c.vad.AcceptWaveform(samples)
-				speech := c.vad.IsSpeech()
-				if speech {
-					consecutiveSpeech++
-					gain := 1.0
-					if reporter, ok := c.capture.(audio.GainReporter); ok {
-						gain = reporter.InputGain()
-					}
-					audibility.Observe(samples, gain)
-					if audibility.Audible() && !gapStart.IsZero() {
-						c.lastPauseSpeech.Store(time.Now().UnixNano())
-					}
+			// A completed segment can arrive on the first non-speech frame.
+			// Judge it using its originating run before clearing that run.
+			// A queued segment remains latched in the detector: only its
+			// arrival may use this shortcut, never a later unrelated run.
+			queued := c.vad.IsSpeechDetected()
+			completed := queued && !segmentQueued
+			segmentQueued = queued
+			admit := audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)
+			if completed {
+				// Consume evaluated native segments, including quiet rejected
+				// ones, so later completions can use their own speech run.
+				// Clear would also erase the next onset's detector state.
+				if consumer, ok := c.vad.(interface{ Pop() }); ok {
+					consumer.Pop()
+					segmentQueued = false
 				}
+				// Detectors without Pop retain the rising-edge guard: their
+				// stale queue level cannot authorize unrelated speech.
+			}
+			if !speech {
+				consecutiveSpeech = 0
+				audibility.Reset()
+			}
 
-				// A completed segment can arrive on the first non-speech frame.
-				// Judge it using its originating run before clearing that run.
-				// A queued segment remains latched in the detector: only its
-				// arrival may use this shortcut, never a later unrelated run.
-				queued := c.vad.IsSpeechDetected()
-				completed := queued && !segmentQueued
-				segmentQueued = queued
-				admit := audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)
-				if completed {
-					// Consume evaluated native segments, including quiet rejected
-					// ones, so later completions can use their own speech run.
-					// Clear would also erase the next onset's detector state.
-					if consumer, ok := c.vad.(interface{ Pop() }); ok {
-						consumer.Pop()
-						segmentQueued = false
-					}
-					// Detectors without Pop retain the rising-edge guard: their
-					// stale queue level cannot authorize unrelated speech.
+			if admit {
+				if !c.allowsInterrupt() {
+					// Confident non-enrolled speaker under
+					// barge_in_speakers=enrolled_only: withhold this
+					// trip but keep watching — the streak is left
+					// alone, so an enrolled speaker joining a moment
+					// later still trips immediately, and the same
+					// stranger continuing to talk is re-checked on
+					// every subsequent chunk.
+					continue
 				}
-				if !speech {
-					consecutiveSpeech = 0
-					audibility.Reset()
+				source.CallbackSpans = slices.Clone(frame.CaptureSpans)
+				select {
+				case out <- interruptRequest{Reason: "barge_in", At: time.Now(), Source: source}:
+				default:
 				}
-
-				if admit {
-					if !c.allowsInterrupt() {
-						// Confident non-enrolled speaker under
-						// barge_in_speakers=enrolled_only: withhold this
-						// trip but keep watching — the streak is left
-						// alone, so an enrolled speaker joining a moment
-						// later still trips immediately, and the same
-						// stranger continuing to talk is re-checked on
-						// every subsequent chunk.
-						continue
-					}
-					select {
-					case out <- interruptRequest{Reason: "barge_in", At: time.Now()}:
-					default:
-					}
-					return
-				}
+				return
 			}
 		}
 	}()

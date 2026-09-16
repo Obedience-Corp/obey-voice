@@ -1,5 +1,7 @@
 package playback
 
+import "time"
+
 func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 	clearBytes(outputSamples)
 	p.observedPeriodFrames.Store(int32(frameCount))
@@ -56,6 +58,9 @@ func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 			written, finished = segment.writeTo(monoBuf[monoOffset:], framesRemaining)
 			applyVolumeS16(monoBuf[monoOffset:monoOffset+written*2], written, hundredths)
 			expandMonoS16LE(monoBuf[monoOffset:monoOffset+written*2], written, channels, outputSamples[writtenFrames*channels*2:])
+			if written > 0 && segment.attempt.Render != nil {
+				segment.attempt.Render.Observe(time.Now())
+			}
 		}) {
 			segment.interrupt()
 			finished = true
