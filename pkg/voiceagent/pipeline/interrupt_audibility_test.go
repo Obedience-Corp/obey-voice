@@ -103,7 +103,12 @@ func (h *audibilityHarness) feed(amplitude float32, speech, queued bool) {
 	h.t.Helper()
 	// 160 samples at 16kHz model one 10ms callback. Values are already gained:
 	// .006 represents raw .001 echo, .018 represents raw .003 quiet speech.
-	samples := make([]float32, 160)
+	h.feedCallback(amplitude, speech, queued, 160)
+}
+
+func (h *audibilityHarness) feedCallback(amplitude float32, speech, queued bool, sampleCount int) {
+	h.t.Helper()
+	samples := make([]float32, sampleCount)
 	for i := range samples {
 		samples[i] = amplitude
 	}

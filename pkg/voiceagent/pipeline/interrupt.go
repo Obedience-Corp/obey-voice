@@ -22,8 +22,9 @@ const (
 	// the window uninterruptible and kept barge-in permanently disarmed across
 	// back-to-back short sentences (WI-dc9e33 B3 / F3.2).
 	bargeInArmDelay = 600 * time.Millisecond
-	// bargeInMinSpeechChunks requires sustained speech before interrupting, so a
-	// brief burst of residual echo isn't mistaken for the user. One chunk is one
+	// bargeInMinSpeechChunks requires sustained neural speech beginning at the
+	// run's first audible callback. Earlier inaudible votes cannot let a single
+	// later burst qualify immediately. One chunk is one
 	// capture callback, whose negotiated size varies by device (for example,
 	// 10ms or 60ms). Neural speech must also pass STT's audibility check; quiet
 	// residual echo can sustain neural votes without containing audible speech.
@@ -322,12 +323,17 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 			c.vad.AcceptWaveform(samples)
 			speech := c.vad.IsSpeech()
 			if speech {
-				consecutiveSpeech++
 				gain := 1.0
 				if reporter, ok := c.capture.(audio.GainReporter); ok {
 					gain = reporter.InputGain()
 				}
 				audibility.Observe(samples, gain)
+				// Begin qualification at first audibility, then count softer
+				// neural continuation too. Keep the current audibility check
+				// below: starting the count is not a permanent audible verdict.
+				if consecutiveSpeech > 0 || audibility.Audible() {
+					consecutiveSpeech++
+				}
 				if audibility.Audible() && !gapStart.IsZero() {
 					c.lastPauseSpeech.Store(time.Now().UnixNano())
 				}

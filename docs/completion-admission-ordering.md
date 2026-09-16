@@ -92,6 +92,16 @@ their existing capture behavior.
 
 ## Verification boundary
 
+Ordinary barge-in starts its sustained-speech callback count only when the
+current neural speech run first passes the existing audibility check. Earlier
+inaudible callbacks cannot make a single later audible burst satisfy that count.
+Softer neural continuation still counts after that audible start, and completed
+short segments retain their existing acceptance path. Neither qualification
+point trims captured PCM. The callback count, arm delay and audibility thresholds
+are unchanged; native detector activity is stateful, not an instantaneous speech
+probability. This rule alone does not guarantee echo rejection or early-command
+retention.
+
 Deterministic tests exercise pre-render speech, post-render parking, qualified
 retention, normal and near-miss finish, stale commands, cancellation, source loss
 and exact pre-roll preservation in both offline and streaming loops. Pipeline
