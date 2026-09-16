@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
@@ -20,6 +21,7 @@ type rawCaptureFrontend struct {
 	raw          []float32
 	traceEnabled bool
 	trace        []frontendTraceEvent
+	traceStarted time.Time
 }
 
 type frontendTraceEvent struct {
@@ -27,6 +29,12 @@ type frontendTraceEvent struct {
 	Op      string    `json:"op"`
 	Samples []float32 `json:"samples,omitempty"`
 	Delay   int       `json:"delay,omitempty"`
+	// ObservedAt is the serialized frontend invocation, not ADC capture or
+	// speaker presentation time. ElapsedNS uses Go's monotonic clock so wall
+	// clock adjustments cannot change intervals within a trace. Old traces
+	// have neither field and retain their original timing uncertainty.
+	ObservedAt time.Time `json:"observed_at,omitzero"`
+	ElapsedNS  int64     `json:"elapsed_ns,omitempty"`
 }
 
 func newRawCaptureFrontend(inner audio.Frontend) *rawCaptureFrontend {
@@ -54,6 +62,9 @@ func (f *rawCaptureFrontend) EnableTrace(enabled bool) {
 		return
 	}
 	f.mu.Lock()
+	if enabled && !f.traceEnabled {
+		f.traceStarted = time.Now()
+	}
 	f.traceEnabled = enabled
 	if !enabled {
 		f.trace = nil
@@ -65,7 +76,12 @@ func (f *rawCaptureFrontend) recordLocked(op string, samples []float32, delay in
 	if !f.traceEnabled {
 		return
 	}
-	f.trace = append(f.trace, frontendTraceEvent{Seq: uint64(len(f.trace) + 1), Op: op, Samples: append([]float32(nil), samples...), Delay: delay})
+	observedAt := time.Now()
+	f.trace = append(f.trace, frontendTraceEvent{
+		Seq: uint64(len(f.trace) + 1), Op: op,
+		ObservedAt: observedAt, ElapsedNS: observedAt.Sub(f.traceStarted).Nanoseconds(),
+		Samples: append([]float32(nil), samples...), Delay: delay,
+	})
 }
 
 // WriteTrace writes JSONL with copied sample payloads and monotonic sequence
