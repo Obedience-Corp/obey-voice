@@ -101,9 +101,16 @@ type playbackLoopHarness struct {
 	rec     *playbackTestRecognizer
 }
 
-func newPlaybackLoopHarness(t *testing.T, streaming bool) *playbackLoopHarness {
+func newPlaybackLoopHarness(t *testing.T, streaming bool, policies ...endpoint.Policy) *playbackLoopHarness {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	policy := endpoint.Policy{FinalizeOnEOF: streaming}
+	if len(policies) > 1 {
+		t.Fatal("playback harness accepts at most one endpoint policy")
+	}
+	if len(policies) == 1 {
+		policy = policies[0]
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), max(3*time.Second, policy.StartTimeout+3*time.Second))
 	h := &playbackLoopHarness{ctx: ctx, cancel: cancel, frames: &playbackTestFrames{reads: make(chan audio.Frame, 32)}, done: make(chan struct{}), events: make(chan Event, 64), rec: &playbackTestRecognizer{}}
 	scope := work.WorkScope{SessionID: "test", RuntimeEpoch: "r", ConversationEpoch: "c"}
 	p := newPauseController("test")
@@ -113,9 +120,9 @@ func newPlaybackLoopHarness(t *testing.T, streaming bool) *playbackLoopHarness {
 	go func() {
 		defer close(h.done)
 		if streaming {
-			runStreamingLoop(ctx, streamingLoopDeps{frames: h.frames, seg: seg, rec: h.rec, pause: p, policy: endpoint.Policy{FinalizeOnEOF: true}}, h.events)
+			runStreamingLoop(ctx, streamingLoopDeps{frames: h.frames, seg: seg, rec: h.rec, pause: p, policy: policy}, h.events)
 		} else {
-			runOfflineLoop(ctx, offlineLoopDeps{frames: h.frames, seg: seg, pause: p, transcribe: func(pcm []float32) (string, error) { h.decoded = slices.Clone(pcm); return "retained", nil }}, h.events)
+			runOfflineLoop(ctx, offlineLoopDeps{frames: h.frames, seg: seg, pause: p, policy: policy, transcribe: func(pcm []float32) (string, error) { h.decoded = slices.Clone(pcm); return "retained", nil }}, h.events)
 		}
 	}()
 	t.Cleanup(func() { cancel(); <-h.done })
@@ -460,6 +467,7 @@ func TestCompletionPlaybackCapabilityAndRetainedGap(t *testing.T) {
 	}
 	at := time.Now()
 	parked := completionTestFrame(0, at, .1)
+	attempt.Render.Observe(at)
 	source := &playbackTestFrames{reads: make(chan audio.Frame, 2), retainResult: audio.Frame{CaptureGap: audio.CaptureGap{Reset: true, DiscardedSamples: 1600, OverflowSamples: 500, DeviceDiscontinuity: true}}}
 	reader.frames = source
 	if err := reader.command(command(playbackBind), func() error { return nil }); err != nil {

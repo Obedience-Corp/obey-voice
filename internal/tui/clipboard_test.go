@@ -190,7 +190,7 @@ func cmdEmitsQuit(cmd tea.Cmd) bool {
 		return false
 	}
 	switch msg := cmd().(type) {
-	case tea.QuitMsg:
+	case tea.QuitMsg, quitMsg:
 		return true
 	case tea.BatchMsg:
 		for _, sub := range msg {

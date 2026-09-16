@@ -74,10 +74,14 @@ type App struct {
 	workers        workersModel
 
 	// Conversation runtime wiring, set by Run before the program starts.
-	builder  RuntimeBuilder
-	runCtx   context.Context
-	wg       *sync.WaitGroup
-	progress *eventBridge
+	builder RuntimeBuilder
+	runCtx  context.Context
+	// runCancel ends in-flight turns and builders. Quit calls it from the
+	// update loop so shutdown starts before tea.Program.Run returns; run()
+	// calls it again, which is a no-op.
+	runCancel context.CancelFunc
+	wg        *sync.WaitGroup
+	progress  *eventBridge
 	// slot owns the built runtime for shutdown cleanup even when a ready
 	// message is dropped because the user quit mid-build.
 	slot *runtimeSlot[*ConversationRuntime]
@@ -197,6 +201,10 @@ type startPipelineMsg struct {
 
 // quitMsg signals the app should exit.
 type quitMsg struct{}
+
+func quitCmd() tea.Cmd {
+	return func() tea.Msg { return quitMsg{} }
+}
 
 // returnToMenuMsg ends the current session through the normal teardown path.
 // run reopens the launcher after the session is saved and devices are released.

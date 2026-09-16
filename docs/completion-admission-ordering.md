@@ -71,6 +71,12 @@ That disposition also applies on failure after rendering. A failure before any
 render preserves the original listening state. Commands target the original
 token and attempt; cleanup cannot affect a replacement session.
 
+Releasing parked input for a qualified interruption or near-miss starts a fresh
+listen-timeout window. Generation and playback can outlast the ordinary start
+timeout; parked silence must not expire the session before unread speech arrives.
+When playback finishes after rendering but before the first frame parks, the
+same atomic pre-roll retention applies to the unread ring without a parked frame.
+
 Unqualified playback-period audio is **not accepted by the ordinary barge policy**;
 it is not classified as proven echo. This resolves the earlier design's stronger
 requirement for a proven user-only interval by matching established product
