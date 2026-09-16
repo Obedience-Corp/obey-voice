@@ -441,3 +441,64 @@ just test acoustic-startup CONFIG SUITE_DIR
 completion deadline. Both retain the ordinary production interruption and exact
 transcript checks. Older fixture directories without `startup-short.wav` remain
 loadable; the startup recipe requires both scenarios before opening devices.
+
+### Physical mute and provider recovery
+
+Newly prepared suites include `mute.yaml` and `failure.yaml`:
+
+```sh
+just test acoustic-boundaries /absolute/config.yaml /absolute/suite
+```
+
+Both play the known question into the selected microphone twice. `mute` requires
+one textual response with no speaker playback/reference while muted, then one
+fresh, nondegraded response with completed physical playback after unmuting.
+`failure` injects a labeled transport error at `ThinkStream` after real STT; it
+requires one public brain error and the production degraded recovery reply, then
+restores the configured provider for a healthy fresh turn. This is controlled
+failure injection, not evidence of an actual remote outage. Neither scenario
+contains pending background work; work-delivery mute remains a separate control.
+
+Each retains `boundary.json` plus per-phase metrics, microphone/raw processed
+WAVs, exact stimulus, ordered frontend trace, public events and work snapshots.
+Silence, wrong or duplicate input, missing/duplicate response, unexpected
+interruption, false audible delivery, degraded recovery of the fresh turn and
+unhealthy capture fail. A successful build alone does not pass these controls.
+
+### Repeated physical control timing
+
+Use the same prebuilt suite binary for every attempt:
+
+```sh
+just test acoustic-control-population /absolute/config.yaml /absolute/suite completion /absolute/new-completion-population
+just test acoustic-control-population /absolute/config.yaml /absolute/suite interruption /absolute/new-interruption-population
+```
+
+Each population runs three excluded warmups and 30 measured controls sequentially
+in fresh child processes. The output directory must be new and its parent must
+exist. No attempt is retried or replaced. A failure stops collection and keeps
+its artifacts; an incomplete or failed population has no passing quantiles.
+The manifest hashes the executable, scenario, config and input fixtures. Every
+attempt checks those hashes and retains its exact command, child log, timestamps,
+report hashes, resolved provider profile and negotiated device identities/rates.
+Configuration or device drift fails the population. Model cache coldness is not
+inferred from a fresh process or the warmup label.
+
+`summary.json` reports nearest-rank p50/p95 in nanoseconds, excluding warmups.
+Completion `pause` measures the call to `PauseForCompletion` through acknowledgement;
+`completion` measures the entire `RunBackgroundTurn`, including inference,
+synthesis and playback. These are not the UI dispatch or result-ready host-only
+targets. Interruption `detection_to_stopped` is the production detector-to-stop
+duration. `stimulus_to_interrupt` and `stimulus_to_stopped` are the same post-stop
+event observation relative to the independent stimulus player start; they are
+not two independently measured timestamps or proof of acoustic onset. The 50ms
+contract allowance is a regression comparison against a comparable baseline,
+not an absolute stimulus-to-stop threshold. These populations do not replace the
+separate 30-turn baseline/worker reply-latency comparison.
+
+The low-level mode is `-control-population NEW_OUTPUT` with `-scenario`,
+`-fixture-config`, optional `-stimulus-device`, `-population-warmups` (default3),
+`-population-samples` (minimum30), and `-population-timeout` (default3m per child).
+Put provider settings in the pinned config; this mode rejects provider CLI
+overrides instead of silently discarding them. Interrupting the parent cancels
+and joins the owned child, retaining the incomplete attempt.
