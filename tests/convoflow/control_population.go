@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
@@ -105,7 +106,15 @@ func runControlPopulationWith(ctx context.Context, o controlPopulationOptions, c
 		return errors.New("control population: turn ID must be a single path component")
 	}
 	inputs := make(map[string]string)
-	for _, path := range []string{o.Binary, o.Scenario, o.Config, turn.WAV, turn.InterruptWAV} {
+	paths := []string{o.Binary, o.Scenario, o.Config, turn.WAV, turn.InterruptWAV}
+	if turn.Op == "acoustic_interrupt" {
+		metadata := strings.TrimSuffix(turn.WAV, filepath.Ext(turn.WAV)) + ".json"
+		if _, err := readAcousticMetadata(metadata); err != nil {
+			return err
+		}
+		paths = append(paths, metadata)
+	}
+	for _, path := range paths {
 		if path == "" {
 			continue
 		}
@@ -309,7 +318,7 @@ func readControlSample(root string, scn *Scenario, sample *controlPopulationSamp
 	if sample.Profile.TTSProvider == "" || sample.Profile.silent() || sample.Profile.LiveProvider == "" {
 		return errors.New("missing live/voice profile")
 	}
-	voice, err := readControlVoice(filepath.Join(run, "events.jsonl"), sample.Profile.TTSProvider, sample.Artifacts)
+	voice, err := readControlVoice(filepath.Join(run, "events.jsonl"), sample.Profile.TTSProvider, scn.Turns[0].Op, sample.Artifacts)
 	if err != nil {
 		return err
 	}
@@ -324,6 +333,13 @@ func readControlSample(root string, scn *Scenario, sample *controlPopulationSamp
 		}
 		if r.Error != "" || r.StimulusError != "" || !r.StimulusCompleted || !r.ProductionInterrupted || r.InitialTranscript == "" || r.Expected != turn.ExpectedTranscript || normalizeAcousticText(r.Transcript) != normalizeAcousticText(turn.ExpectedTranscript) {
 			return errors.New("interruption control did not retain the expected speech and production interruption")
+		}
+		initialExpected, err := readAcousticMetadata(strings.TrimSuffix(turn.WAV, filepath.Ext(turn.WAV)) + ".json")
+		if err != nil {
+			return err
+		}
+		if normalizeAcousticText(r.InitialTranscript) != normalizeAcousticText(initialExpected) {
+			return errors.New("interruption initial transcript does not match pinned fixture metadata")
 		}
 		if r.ResponseStarted.IsZero() || r.StimulusStarted.IsZero() || !r.StimulusEnded.After(r.StimulusStarted) || r.InterruptedAfter <= 0 || r.PlaybackStoppedAfter < r.InterruptedAfter || r.DetectionToStop <= 0 || r.PlaybackStoppedAfter != r.InterruptedAfter {
 			return errors.New("invalid interruption timing ordering")
@@ -374,7 +390,7 @@ func compareControlIdentity(a, b controlPopulationSample) error {
 
 // Provider configuration alone cannot exclude degraded fallback audio. Keep the
 // production terminal metrics as the actual engine identity for this population.
-func readControlVoice(path, configured string, hashes map[string]string) (controlVoiceIdentity, error) {
+func readControlVoice(path, configured, operation string, hashes map[string]string) (controlVoiceIdentity, error) {
 	var voice controlVoiceIdentity
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -408,10 +424,17 @@ func readControlVoice(path, configured string, hashes map[string]string) (contro
 			return voice, errors.New("degraded/fallback/stalled synthesis cannot enter control population")
 		}
 		if m.AudibleSink != "local_speaker" {
+			if operation != "acoustic_completion" || m.Outcome != "yielded_for_completion" || m.Interrupted {
+				return voice, errors.New("unexpected nonvoiced terminal outcome in control")
+			}
 			continue
 		}
 		if m.TTSProvider == "" || m.TTSProvider != configured || m.PlaybackStartElapsed <= 0 || (m.Outcome != "completed" && m.Outcome != "interrupted") {
 			return voice, errors.New("actual voice engine/playback outcome does not match configured physical control")
+		}
+		wantInterrupted := operation == "acoustic_interrupt" && voiced == 0
+		if m.Interrupted != wantInterrupted || (m.Outcome == "interrupted") != wantInterrupted {
+			return voice, errors.New("terminal voice outcome disagrees with physical control phase")
 		}
 		actual := controlVoiceIdentity{m.TTSProvider, m.TTSTier, m.TTSPlace}
 		if voiced > 0 && actual != voice {

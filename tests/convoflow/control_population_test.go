@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -238,6 +239,62 @@ func TestControlPopulationRejectsFallbackAndCrackle(t *testing.T) {
 			}
 			if s := readPopulationSummary(t, o.Output); s.Measured != 0 || s.Timings != nil {
 				t.Fatal("failed voice entered quantiles")
+			}
+		})
+	}
+}
+
+func TestControlPopulationInterruptRequiresCorrectInitialSpeech(t *testing.T) {
+	for _, wrong := range []bool{false, true} {
+		t.Run(fmt.Sprint(wrong), func(t *testing.T) {
+			o := populationFixture(t)
+			wav := filepath.Join(filepath.Dir(o.Config), "fixture.wav")
+			data := []byte("name: interruption\ninput: speech\ncapture: {microphone: true, audio: true, speakers: true}\nturns:\n - id: interruption\n   op: acoustic_interrupt\n   wav: " + wav + "\n   interrupt_wav: " + wav + "\n   expected_transcript: What is two plus two?\n")
+			if err := os.WriteFile(o.Scenario, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeControlJSON(strings.TrimSuffix(wav, ".wav")+".json", map[string]string{"text": "Count from one to one hundred."}); err != nil {
+				t.Fatal(err)
+			}
+			child := func(ctx context.Context, _ string, args []string, _ string) error {
+				run := filepath.Join(args[len(args)-1], "interruption-sample")
+				dir := filepath.Join(run, "acoustic", "interruption")
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					return err
+				}
+				if err := writeControlJSON(filepath.Join(run, "metrics.json"), metricsFile{Scenario: "interruption", StopReason: "completed", Turns: 1}); err != nil {
+					return err
+				}
+				p, err := yaml.Marshal(runProfile{LiveProvider: "ollama", TTSProvider: "kokoro"})
+				if err != nil {
+					return err
+				}
+				if err := os.WriteFile(filepath.Join(run, "config.resolved.yaml"), p, 0600); err != nil {
+					return err
+				}
+				log, err := openEventLog(filepath.Join(run, "events.jsonl"))
+				if err != nil {
+					return err
+				}
+				log.add(events.TurnMetrics{Outcome: "interrupted", Interrupted: true, AudibleSink: "local_speaker", TTSProvider: "kokoro", PlaybackStartElapsed: time.Second})
+				log.add(events.TurnMetrics{Outcome: "completed", AudibleSink: "local_speaker", TTSProvider: "kokoro", PlaybackStartElapsed: time.Second})
+				if err := log.Close(); err != nil {
+					return err
+				}
+				d := audio.NegotiatedDevice{Name: "Selected", IdentityKnown: true, SampleRate: 48000, Channels: 1, ClientSampleRate: 16000, ClientChannels: 1}
+				start := time.Now()
+				r := interruptionReport{InitialTranscript: "Count from one to one hundred.", Expected: "What is two plus two?", Transcript: "What is two plus two?", ProductionInterrupted: true, StimulusCompleted: true, ResponseStarted: start, StimulusStarted: start.Add(time.Second), StimulusEnded: start.Add(2 * time.Second), InterruptedAfter: time.Second, PlaybackStoppedAfter: time.Second, DetectionToStop: time.Microsecond, NegotiatedCapture: d, NegotiatedResponse: d, NegotiatedStimulus: d}
+				if wrong {
+					r.InitialTranscript = "What country is this?"
+				}
+				return writeControlJSON(filepath.Join(dir, "interruption.json"), r)
+			}
+			err := runControlPopulationWith(context.Background(), o, child)
+			if wrong && err == nil {
+				t.Fatal("changed initial question passed")
+			}
+			if !wrong && err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
