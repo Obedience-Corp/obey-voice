@@ -3,10 +3,25 @@ package stt
 import (
 	"context"
 	"errors"
+	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 var ErrCompletionPauseUnsupported = errors.New("STT adapter cannot yield capture for completion")
+
+var ErrCompletionPlaybackUnsupported = errors.New("STT adapter cannot retain capture across completion playback")
+
+// CompletionPlaybackCapture keeps ordinary interruption qualification in the
+// pipeline while the existing STT owner parks rendered-period input. Binding
+// precedes generation; confirmation and finish match both token and attempt.
+type CompletionPlaybackCapture interface {
+	CompletionCapture
+	BindCompletionPlayback(context.Context, PauseToken, audio.PlaybackAttempt, time.Duration) error
+	ConfirmCompletionPlayback(context.Context, PauseToken, string) error
+	FinishCompletionPlayback(context.Context, PauseToken, string, bool) error
+}
 
 // PauseDecision describes the result of asking the capture owner to yield an
 // idle completion. A denial is a normal race, not an STT failure: the owner

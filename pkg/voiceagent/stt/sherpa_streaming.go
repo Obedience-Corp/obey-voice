@@ -74,10 +74,11 @@ func NewSherpaStreamingSTT(cfg *config.Config, capture audioSource, vad *audio.V
 func (s *SherpaStreamingSTT) Start(ctx context.Context) (Session, error) {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	session := &sherpaSession{
-		cancel: cancel,
-		events: make(chan Event, 16),
-		done:   make(chan struct{}),
-		pause:  newPauseController("stt"),
+		cancel:   cancel,
+		events:   make(chan Event, 16),
+		done:     make(chan struct{}),
+		pause:    newPauseController("stt"),
+		playback: true,
 	}
 
 	finite := sourceKind(s.capture) != audio.SourceLive

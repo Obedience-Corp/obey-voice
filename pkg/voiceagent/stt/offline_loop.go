@@ -66,6 +66,13 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	// The capture front-end's gain moves while it adapts, so the floor is read
 	// per iteration rather than fixed at session start.
 	floor := func() float64 { return speechFloor(inputGain(deps.frames)) }
+	reader := completionFrameReader{owner: deps.pause, frames: deps.frames}
+	resetPlaybackInput := func() error {
+		deps.seg.Reset()
+		track.reset()
+		gate = noiseGate{}
+		return nil
+	}
 
 	// finalize collects buffered segments and transcribes them. It returns true
 	// when the session is resolved (final transcript, timeout, or failure). When
@@ -128,7 +135,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			return
 		}
 
-		read := readLoopFrame(ctx, deps.frames)
+		read := reader.read(ctx, track.detected, resetPlaybackInput)
 		if read.err != nil {
 			sendEvent(ctx, events, Failure{Err: read.err})
 			return

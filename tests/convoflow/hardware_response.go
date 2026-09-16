@@ -265,6 +265,26 @@ func (s *responseCaptureSource) ReadFrame(ctx context.Context) (audio.Frame, err
 
 func (s *responseCaptureSource) InputGain() float64 { return s.gain.InputGain() }
 
+func (s *responseCaptureSource) CanRetainForNextListen() bool {
+	return audio.NewFinalizable(s.FrameSource).CanRetainForNextListen()
+}
+
+// Preserve the real source's atomic retention through this measurement wrapper.
+// Parked samples were already counted on read; retaining them is not a new read.
+func (s *responseCaptureSource) RetainForNextListen(parked audio.Frame, keep time.Duration) (audio.Frame, error) {
+	frame, err := audio.NewFinalizable(s.FrameSource).RetainForNextListen(parked, keep)
+	if err != nil {
+		return frame, err
+	}
+	if frame.CaptureGap.DeviceDiscontinuity {
+		return frame, errors.New("acoustic response: capture device changed generation during playback")
+	}
+	// This operation is the explicit unaccepted-playback handoff. Keep its
+	// historical overflow separate from any subsequent listening loss.
+	s.playbackOverflow += frame.CaptureGap.OverflowSamples
+	return frame, nil
+}
+
 // runEchoOnlyResponse keeps the evidence/cleanup contract testable without
 // models or devices. Only the known initial stimulus is played.
 func runEchoOnlyResponse(ctx context.Context, bus *events.Bus, run func(context.Context) (string, error), play func(context.Context) error, readSamples func() int64, report *acousticResponseReport) error {

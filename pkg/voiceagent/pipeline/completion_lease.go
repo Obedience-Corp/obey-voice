@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -22,7 +23,7 @@ func (p *Pipeline) BackgroundCaptureReady() bool {
 
 // withCompletionLease binds generation and all PCM segments to the same
 // revocable attempt. Worker callbacks never invoke this host-only operation.
-func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Context, work.CompletionLease, []work.ResultView) error) error {
+func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Context, work.CompletionLease, []work.ResultView) error) (resultErr error) {
 	c := p.WorkCoordinator()
 	if c == nil || p.HasCapturedInput() || p.OutputMuted() {
 		return nil
@@ -88,7 +89,19 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 		}
 	}(attemptCtx)
 	defer func() { close(done); <-joined }()
-	attemptCtx = audio.WithPlaybackAttempt(attemptCtx, audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease, Render: &audio.FirstRenderBoundary{}})
+	attempt := audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease, Render: &audio.FirstRenderBoundary{}}
+	attemptCtx = audio.WithPlaybackAttempt(attemptCtx, attempt)
+	attemptCtx, capture, err := p.bindCompletionPlayback(attemptCtx, attempt)
+	if errors.Is(err, stt.ErrCompletionPlaybackUnsupported) {
+		p.reportCaptureDeferral("the STT source cannot retain input across completion playback")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if capture != nil {
+		defer func() { resultErr = errors.Join(resultErr, capture.finish(attemptCtx)) }()
+	}
 	if !lease.Valid() || p.HasCapturedInput() {
 		return context.Canceled
 	}

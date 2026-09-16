@@ -3,6 +3,7 @@ package audio
 import (
 	"context"
 	"sync/atomic"
+	"time"
 )
 
 // Finalizable wraps a live FrameSource so a caller can end the utterance being
@@ -31,6 +32,30 @@ func (f *Finalizable) InputGain() float64 {
 		return reporter.InputGain()
 	}
 	return 1
+}
+
+// CanRetainForNextListen reports the wrapped source's optional retention
+// capability without changing its pending finalization or audio position.
+func (f *Finalizable) CanRetainForNextListen() bool {
+	if f == nil {
+		return false
+	}
+	if _, ok := f.src.(nextListenRetainer); !ok {
+		return false
+	}
+	if capability, ok := f.src.(interface{ CanRetainForNextListen() bool }); ok {
+		return capability.CanRetainForNextListen()
+	}
+	return true
+}
+
+// RetainForNextListen forwards atomic parked-frame/ring retention. It does not
+// clear a pending Finalize or silently fall back to discarding only one side.
+func (f *Finalizable) RetainForNextListen(parked Frame, keep time.Duration) (Frame, error) {
+	if !f.CanRetainForNextListen() {
+		return Frame{}, ErrRetentionUnsupported
+	}
+	return f.src.(nextListenRetainer).RetainForNextListen(parked, keep)
 }
 
 // Finalize asks for the current utterance to end. The next ReadFrame returns a

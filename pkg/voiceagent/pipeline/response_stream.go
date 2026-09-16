@@ -63,6 +63,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// a separate product decision (F3.4) and stays disarmed here.
 	var armAt atomic.Int64
 	var ctrl *interruptController
+	captureOwner := completionCaptureFromContext(ctx)
 
 	if allowBargeIn {
 		ctrl = p.newInterruptController()
@@ -79,7 +80,63 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 			cancel()
 			<-bargeDone
+			// An outer failure can win the select against a qualified request.
+			// Preserve that input even when this response is already ending.
+			if !interrupted {
+				select {
+				case <-bargeIn:
+					p.keepCapture.Store(true)
+					if captureOwner != nil {
+						captureOwner.retain = true
+					}
+				default:
+				}
+			}
+			// Failure/cancellation uses the same pause-speech retention as
+			// a normal finish; it does not itself qualify microphone input.
+			if !interrupted && ctrl.sawPauseSpeechWithin(bargeInNearMissWindow) {
+				p.keepCapture.Store(true)
+				if captureOwner != nil {
+					captureOwner.retain = true
+				}
+			}
 		}()
+	}
+
+	interrupt := func(req interruptRequest) error {
+		if interrupted {
+			return nil
+		}
+		interrupted = true
+		metrics.interrupted = true
+		metrics.markBargeIn(req.At)
+		turn.to(TurnInterrupted)
+		if metrics.delivery != nil {
+			if c := p.WorkCoordinator(); c != nil {
+				_ = c.RevokeCompletionLease(metrics.delivery.lease)
+			}
+		}
+		p.softCancelTTS("barge-in")
+		cancel()
+		if p.Player != nil {
+			p.Player.Stop()
+		}
+		stoppedAfter := time.Since(req.At)
+		// Stop the speaker before waiting for the capture-owner boundary.
+		// The qualified request still authorizes retention after revoking the
+		// output fence cancels this response. Keep cleanup scoped to the original
+		// capture token and bounded independently of that cancellation.
+		captureErr := captureOwner.confirm(context.WithoutCancel(ctx))
+		if captureErr != nil {
+			p.emit(events.Error{Stage: "capture", Message: captureErr.Error()})
+		}
+		if cancelTurn != nil {
+			cancelTurn()
+		}
+		sincePlayback := metrics.sincePlaybackStart(req.At)
+		p.emitResponse(metrics, events.SpeakingInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback, DetectionToPlaybackStop: stoppedAfter})
+		p.emitResponse(metrics, events.TurnInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
+		return captureErr
 	}
 
 	playbackEvents := make(chan playbackEvent, voiceQueueDepth*2)
@@ -278,32 +335,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			return strings.TrimSpace(fullResponse.String()), interrupted, errPlaybackStalled
 
 		case req := <-bargeIn:
-			if interrupted {
-				continue
+			if err := interrupt(req); err != nil {
+				return strings.TrimSpace(fullResponse.String()), interrupted, err
 			}
-			interrupted = true
-			if metrics.delivery != nil {
-				if c := p.WorkCoordinator(); c != nil {
-					_ = c.RevokeCompletionLease(metrics.delivery.lease)
-				}
-			}
-			metrics.interrupted = true
-			metrics.markBargeIn(req.At)
-			turn.to(TurnInterrupted)
-			// Send the session's actual active request ID without waiting on the
-			// synthesis lock. Stage B workers can stop mid-synthesis; Stage A
-			// exits through the canceled context and is restarted by the provider.
-			p.softCancelTTS("barge-in")
-			cancel()
-			if cancelTurn != nil {
-				cancelTurn()
-			}
-			if p.Player != nil {
-				p.Player.Stop()
-			}
-			sincePlayback := metrics.sincePlaybackStart(req.At)
-			p.emitResponse(metrics, events.SpeakingInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback, DetectionToPlaybackStop: time.Since(req.At)})
-			p.emitResponse(metrics, events.TurnInterrupted{Reason: req.Reason, SincePlaybackStart: sincePlayback})
 
 		case result, ok := <-modelDone:
 			if !ok {
@@ -401,12 +435,24 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if bargeDone != nil {
 			<-bargeDone
 		}
+		// A qualified request can race the final playback event. Joining the
+		// watcher closes that race before the completion can publish delivery.
+		select {
+		case req := <-bargeIn:
+			if err := interrupt(req); err != nil {
+				return strings.TrimSpace(fullResponse.String()), interrupted, err
+			}
+		default:
+		}
 		// Near-miss retention (F3.3): the watcher heard pause speech that never
 		// reached the trip threshold. The utterance is in the capture ring
 		// buffer — keep it so the next listen transcribes it instead of
 		// Reset()ing it away.
-		if ctrl != nil && ctrl.sawPauseSpeechWithin(bargeInNearMissWindow) {
+		if !interrupted && ctrl != nil && ctrl.sawPauseSpeechWithin(bargeInNearMissWindow) {
 			p.keepCapture.Store(true)
+			if captureOwner != nil {
+				captureOwner.retain = true
+			}
 		}
 		p.resetEchoState()
 	}
