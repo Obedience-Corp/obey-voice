@@ -143,15 +143,20 @@ acoustic-pair CONFIG SUITE_DIR:
     "$suite/bin/convoflow" -compare "${baseline[0]},${worker[0]}" > "$pair/comparison.json"
     cat "$pair/comparison.json"
 
-# Completion handoff and production barge-in using the prepared fixtures.
+# Echo-only response, completion handoff and production barge-in controls.
 [no-cd]
 acoustic-controls CONFIG SUITE_DIR:
     #!/usr/bin/env bash
     set -euo pipefail
     suite="{{SUITE_DIR}}"
-    for scenario in completion interruption; do
+    for scenario in response completion interruption; do
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/controls"
     done
+
+# Ordinary response echo-only control, then a bounded next listen with no stimulus.
+[no-cd]
+acoustic-response CONFIG SUITE_DIR STIMULUS_DEVICE="":
+    "{{SUITE_DIR}}/bin/convoflow" -scenario "{{SUITE_DIR}}/scenarios/response.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "{{SUITE_DIR}}/runs/response"
 
 # Run both immediate-onset controls with the prepared binary and explicit config.
 [no-cd]
