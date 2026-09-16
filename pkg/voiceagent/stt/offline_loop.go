@@ -49,6 +49,7 @@ type offlineLoopDeps struct {
 // iterations where the source has no frame ready — so the start timeout and
 // the utterance cap are enforced even when a live source stalls mid-utterance.
 func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Event) {
+	transcribe := observedTranscribe(ctx, deps.transcribe)
 	if deps.pause != nil {
 		defer deps.pause.stop()
 	}
@@ -102,7 +103,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 		}
 
 		if len(samples) >= minSpeechSamples && audibleSpeechAbove(samples, floor()) {
-			text, err := deps.transcribe(samples)
+			text, err := transcribe(samples)
 			if err != nil {
 				sendEvent(ctx, events, Failure{Err: err})
 				return true
@@ -143,7 +144,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 				// its PCM and count the rejected tail as silence below; the
 				// endpoint policy must decide when the utterance is complete.
 				deps.seg.Reset()
-			} else if track.observe(d.voice, frameDur(read.frame)) {
+			} else if track.observe(d.speech(track.detected), frameDur(read.frame)) {
 				if !emitPhase("hearing") {
 					return
 				}

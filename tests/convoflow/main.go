@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -32,6 +33,12 @@ func main() {
 func runMain(args []string) int {
 	fs := flag.NewFlagSet("convoflow", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	population := fs.String("control-population", "", "repeat one physical completion/interruption scenario into NEW_OUTPUTDIR")
+	populationRuntime := fs.String("population-runtime", "", "JSON map of named absolute runtime asset paths to pin during a control population")
+	compareControls := fs.String("compare-control-populations", "", "compare baseline,worker interruption population directories")
+	populationSamples := fs.Int("population-samples", 30, "measured physical controls (minimum 30)")
+	populationWarmups := fs.Int("population-warmups", 3, "initial excluded controls; does not establish model coldness")
+	populationTimeout := fs.Duration("population-timeout", 3*time.Minute, "maximum duration per child control")
 	scenarioPath := fs.String("scenario", "", "scenario YAML (required)")
 	analyzeDir := fs.String("analyze", "", "rescore an existing run directory")
 	compare := fs.String("compare", "", "compare two latency report JSON files separated by comma")
@@ -49,8 +56,47 @@ func runMain(args []string) int {
 	selfTest := fs.Bool("self-test", false, "run with a fake runner (no models)")
 	gate := fs.Bool("gate", false, "gate mode: refuse the stub worker (set by `just convoflow gate`)")
 	speakers := fs.Bool("speakers", false, "tee recorded PCM to real speakers")
+	stimulusDevice := fs.String("stimulus-device", "", "explicit playback device for acoustic fixture stimulus only")
 	if err := fs.Parse(args); err != nil {
 		return 1
+	}
+	if *population != "" {
+		if *selfTest || *compare != "" || *compareControls != "" || *prepareSuite != "" || *analyzeDir != "" || *runsDir != "" || *liveProvider != "" || *liveModel != "" || *workerProvider != "" || *workerModel != "" || *workerHost != "" || *ollamaHost != "" || *personaDir != "" || *gate || *speakers {
+			fmt.Fprintln(os.Stderr, "convoflow: control population accepts only scenario, fixture config, stimulus device and population flags; put provider settings in the pinned config")
+			return 1
+		}
+		binary, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		err = runControlPopulation(ctx, controlPopulationOptions{Output: *population, Scenario: *scenarioPath, Config: *fixtureConfig, Stimulus: *stimulusDevice, Binary: binary, RuntimeManifest: *populationRuntime, Samples: *populationSamples, Warmups: *populationWarmups, Timeout: *populationTimeout})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "convoflow: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if *compareControls != "" {
+		parts := strings.Split(*compareControls, ",")
+		if len(parts) != 2 {
+			fmt.Fprintln(os.Stderr, "convoflow: control comparison requires baseline,worker directories")
+			return 2
+		}
+		report, err := compareControlPopulations(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+		data, marshalErr := json.MarshalIndent(report, "", "  ")
+		if marshalErr != nil {
+			fmt.Fprintln(os.Stderr, marshalErr)
+			return 1
+		}
+		fmt.Println(string(data))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	}
 	if *compare != "" {
 		parts := strings.Split(*compare, ",")
@@ -92,6 +138,7 @@ func runMain(args []string) int {
 
 	k := knobs{
 		liveProvider:     *liveProvider,
+		stimulusDevice:   *stimulusDevice,
 		liveModel:        *liveModel,
 		workerProvider:   *workerProvider,
 		workerModel:      *workerModel,

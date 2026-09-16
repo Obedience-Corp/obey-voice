@@ -24,11 +24,55 @@ type Frame struct {
 	Samples    []float32
 	SampleRate int
 	Channels   int
+	// StartedAt is the source's start-time estimate, if available. Live capture
+	// derives it from callback arrival minus sample duration, not an ADC clock.
+	// It retains that estimate through buffering; zero means unknown.
 	StartedAt  time.Time
 	Duration   time.Duration
 	Sequence   int64
 	SourceKind SourceKind
 	Final      bool
+	// CaptureSpans preserves callback boundaries within this frame. Sources
+	// without capture ordering metadata leave it nil.
+	CaptureSpans []CaptureSpan
+	CaptureGap   CaptureGap
+}
+
+// CaptureSpan describes a contiguous part of one capture callback. Offsets count
+// samples in one Capture instance for its lifetime, including across resets and
+// device reopen. They are not comparable between Capture instances or with a
+// playback device's independent sample counter.
+type CaptureSpan struct {
+	SampleOffset     uint64
+	SampleCount      int
+	DeviceGeneration uint64 // device-open attempt; 0 means unknown
+	// CallbackAt is observed at callback entry, before conversion/frontend work.
+	// EstimatedStart subtracts callback duration and advances when a span is
+	// sliced. Neither is a hardware timestamp or proof of acoustic alignment.
+	// Both remain zero for PCM written without callback timing metadata.
+	CallbackAt     time.Time
+	EstimatedStart time.Time
+	// DeviceDiscontinuity marks the first callback of a changed device
+	// generation. The intervening physical loss has unknown sample count.
+	DeviceDiscontinuity bool
+}
+
+// CaptureGap reports known loss on the frame delivery path. ReadFrame reports
+// unread ring loss; SubscribeFrames reports its own subscription loss. These
+// counters are independent: a ring reset does not discard subscription frames.
+// Intentional retention/reset is separate from capacity overflow. It describes
+// known buffered samples only, not an estimate of missing hardware callbacks.
+type CaptureGap struct {
+	OverflowSamples  uint64
+	DiscardedSamples uint64
+	Reset            bool
+	// Subscription fields count only callbacks dropped by this subscriber's
+	// full channel since its previous delivered frame. Unknown device downtime
+	// is not assigned a sample count. A lost generation transition is latched
+	// here without rewriting the delivered callback's original CaptureSpan.
+	SubscriptionDroppedSamples      uint64
+	SubscriptionDroppedCallbacks    uint64
+	SubscriptionDeviceDiscontinuity bool
 }
 
 // Empty reports whether the frame carries no samples.

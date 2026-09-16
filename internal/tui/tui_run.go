@@ -4,14 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+// processForceExit ends a wedged TUI process after quit. The CLI signal path
+// uses the same 130 status. Tests replace this so they do not kill the suite.
+var processForceExit = os.Exit
+
+// processForceQuitAfter caps remaining teardown after the session is saved.
+// Same budget as drainTimeout / cmd.forceQuitTimeout.
+var processForceQuitAfter = drainTimeout
 
 // Run starts the launcher and live conversation. Returning to the menu drains
 // and saves the session before opening a fresh launcher in the same process.
@@ -71,6 +81,7 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	app.meetingSweep = sweepMeetingRoutesCmd(cfg)
 	app.startInConversation = startInConversation
 	app.runCtx = ctx
+	app.runCancel = cancel
 	app.wg = &sync.WaitGroup{}
 	app.progress = newEventBridge(16)
 	app.slot = newConversationSlot()
@@ -114,40 +125,38 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	// unaffected either way.
 	m, runErr := program(app)
 	final, _ := m.(App)
-	if final.remote.server != nil {
-		final.remote.stopAndWait(remoteStopTimeout)
-	} else {
-		app.remote.stopAndWait(remoteStopTimeout)
+
+	// Flush the chat before bounding remaining teardown so a wedged TTS, STT,
+	// or talk-helper close cannot discard it. Prefer the slot: it still holds
+	// a runtime if build finished after quit and the ready message never
+	// reached Update.
+	if final.slot != nil {
+		final.slot.persist()
+	} else if app.slot != nil {
+		app.slot.persist()
 	}
-	// The talk-key helper holds a system-wide key; it must not outlive the
-	// conversation that owned it. Quit only asked it to leave — waiting is
-	// this side's job. final is the model the program ran, so it is the copy
-	// that holds the helper; app is the pre-run copy and cleans up nothing
-	// here, but it costs nothing and covers the day App becomes a pointer
-	// model. When the assertion above fails outright, the cancel below kills
-	// the helper's process group and closes the endpoint with runCtx.
-	final.stopTalkHotkey()
-	app.stopTalkHotkey()
+	// Meeting recorder may still be open if the program quit mid-session
+	// without a meetingDoneMsg (e.g. outer Quit). Idempotent when already
+	// closed. This writes the bundle trailer that a bare Cleanup does not.
+	if err := final.stopMeetingRuntime(); err != nil {
+		final.fatalErr = errors.Join(final.fatalErr, err)
+	}
 
-	// Stop the in-flight turn, drain it, then tear the pipeline down — the
-	// same order app.Run's defer chain guarantees on the non-TTY path.
-	cancel()
-	waitTimeout(app.wg, drainTimeout)
+	// Returning to the menu must finish cleanup so the next launcher does not
+	// inherit a hot mic or loaded model. Process quit matches the CLI: a
+	// blocked shutdown cannot leave the process ignoring the user's exit.
+	disarm := func() {}
+	if !final.returnToMenu {
+		disarm = armProcessForceQuit()
+	}
+	defer disarm()
 
-	// Prefer the slot: it still holds a runtime if build finished after quit
-	// and the ready message never reached Update. final.runtime is only set
-	// when Update applied runtimeReadyMsg.
+	waitQuitHelpers(final, app, cancel)
+
 	if final.slot != nil {
 		final.slot.cleanup()
 	} else if app.slot != nil {
 		app.slot.cleanup()
-	}
-
-	// Meeting recorder may still be open if the program quit mid-session
-	// without a meetingDoneMsg (e.g. outer Quit). Idempotent when already closed.
-	// This runs first: it writes the bundle trailer that a bare Cleanup does not.
-	if err := final.stopMeetingRuntime(); err != nil {
-		final.fatalErr = errors.Join(final.fatalErr, err)
 	}
 
 	// Then the slot, for the recorder that finished building after the quit
@@ -163,4 +172,59 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 		return false, fmt.Errorf("TUI error: %w", runErr)
 	}
 	return final.returnToMenu, final.fatalErr
+}
+
+func armProcessForceQuit() func() {
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		timer := time.NewTimer(processForceQuitAfter)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			processForceExit(130)
+		case <-done:
+		}
+	}()
+	return func() {
+		once.Do(func() { close(done) })
+	}
+}
+
+// waitQuitHelpers asks remote serve, the talk helper, and in-flight turns to
+// leave, then waits once. Sequential stop timeouts used to stack on every
+// quit (remote + hotkey + drain).
+func waitQuitHelpers(final, app App, cancel context.CancelFunc) {
+	if cancel != nil {
+		cancel()
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if final.remote.server != nil {
+			final.remote.stopAndWait(remoteStopTimeout)
+		} else {
+			app.remote.stopAndWait(remoteStopTimeout)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// The talk-key helper holds a system-wide key; it must not outlive
+		// the conversation that owned it. Quit only asked it to leave —
+		// waiting is this side's job. final is the model the program ran;
+		// app is the pre-run copy and cleans up nothing here, but it covers
+		// the day App becomes a pointer model.
+		final.stopTalkHotkey()
+		app.stopTalkHotkey()
+	}()
+	if app.wg != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			app.wg.Wait()
+		}()
+	}
+	waitTimeout(&wg, drainTimeout)
 }

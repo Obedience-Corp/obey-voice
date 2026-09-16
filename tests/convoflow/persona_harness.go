@@ -37,6 +37,10 @@ func loadFixtureConfig(path string) (*config.Config, error) {
 	if spec, ok := config.SpecFor("max_history"); ok {
 		v.SetDefault(spec.Key, spec.Default)
 	}
+	// Omission means unity, as in production. Explicit zero must remain mute.
+	if spec, ok := config.SpecFor("playback_volume"); ok {
+		v.SetDefault(spec.Key, spec.Default)
+	}
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read fixture config %s: %w", path, err)

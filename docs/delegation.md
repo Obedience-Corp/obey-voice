@@ -219,10 +219,10 @@ and assume the microphone is free.
 Remote A2A targets, worker continuation/input-required UX, and recovery of voice
 tickets after process restart remain outside this first managed integration.
 Obey's durable results remain available independently of this process. Automated microphone/provider validation is still required for the acoustic acceptance
-gate; use the default system devices in a fresh isolated process and retain device
-identity, negotiated rates, measured signal correlation and transcription. Unit tests
-exercise scripted capture/playback and the real CLI process boundary, not an actual
-paid worker.
+gate; use explicitly recorded physical microphone and speaker selections in a
+fresh isolated process and retain device identities, negotiated rates, measured
+signal correlation and transcription. Unit tests exercise scripted capture/playback
+and the real CLI process boundary, not an actual paid worker.
 
 The original seed's one-tool restriction is revised: explicit cancellation and
 cached status need model-callable controls. All three names already belong to
@@ -304,7 +304,11 @@ The conversation inbox remains opt-in (`voice_work_enabled` defaults to `false`)
 while automated acoustic acceptance is pending. Deterministic tests and a recorded-audio
 run do not establish physical microphone behavior or interruption latency; the gate requires
 measured speaker-to-microphone signal correlation, known-phrase transcription and 30
-comparable baseline/worker turns using the default system devices.
+comparable baseline/worker turns using the same recorded device configuration.
+Tests may explicitly select working system audio devices without changing OS
+defaults. Automated signal, transcript and timing assertions are the acceptance
+method; human listening is not required. Results apply only to the tested devices,
+audio settings and provider configuration, not every microphone or speaker setup.
 The capture owner now supports a frame-boundary completion handoff; hosts whose
 adapter cannot acknowledge it defer delivery explicitly. The legacy path's
 listen-timeout boundary is not the scheduler guarantee for the new inbox.

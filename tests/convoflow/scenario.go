@@ -35,6 +35,7 @@ type Scenario struct {
 		Microphone bool `yaml:"microphone"`
 		Audio      bool `yaml:"audio"`
 		Speakers   bool `yaml:"speakers"`
+		STTDecodes bool `yaml:"stt_decodes"` // explicit offline decoder evidence; excludes timing populations
 	} `yaml:"capture"`
 	Turns   []Turn          `yaml:"turns"`
 	Expect  []Expectation   `yaml:"expect"`
@@ -64,21 +65,23 @@ type scenarioWorker struct {
 }
 
 type Turn struct {
-	LatencyIteration   int           `yaml:"latency_iteration"`
-	LatencyWarmup      bool          `yaml:"latency_warmup"`
-	InterruptAfter     duration      `yaml:"interrupt_after"`
-	ID                 string        `yaml:"id"`
-	User               string        `yaml:"user"`
-	Timeout            duration      `yaml:"timeout"`
-	Duration           duration      `yaml:"duration"`
-	Wait               waitKind      `yaml:"wait"`
-	Expect             []Expectation `yaml:"expect"`
-	WAV                string        `yaml:"wav"`
-	InterruptWAV       string        `yaml:"interrupt_wav"`
-	ExpectedTranscript string        `yaml:"expected_transcript"`
-	Op                 string        `yaml:"op"`
-	Persona            string        `yaml:"persona"`
-	ExpectError        string        `yaml:"expect_error"`
+	LatencyIteration       int           `yaml:"latency_iteration"`
+	LatencyWarmup          bool          `yaml:"latency_warmup"`
+	InterruptAfter         duration      `yaml:"interrupt_after"`
+	StimulusDelay          *duration     `yaml:"stimulus_delay"`
+	StimulusCompleteWithin *duration     `yaml:"stimulus_complete_within"`
+	ID                     string        `yaml:"id"`
+	User                   string        `yaml:"user"`
+	Timeout                duration      `yaml:"timeout"`
+	Duration               duration      `yaml:"duration"`
+	Wait                   waitKind      `yaml:"wait"`
+	Expect                 []Expectation `yaml:"expect"`
+	WAV                    string        `yaml:"wav"`
+	InterruptWAV           string        `yaml:"interrupt_wav"`
+	ExpectedTranscript     string        `yaml:"expected_transcript"`
+	Op                     string        `yaml:"op"`
+	Persona                string        `yaml:"persona"`
+	ExpectError            string        `yaml:"expect_error"`
 }
 
 type Expectation struct {
@@ -120,6 +123,22 @@ type Expectation struct {
 }
 
 type duration struct{ time.Duration }
+
+// interruptionStimulusDelay keeps omission distinct from an explicit zero.
+func (t Turn) interruptionStimulusDelay() time.Duration {
+	if t.StimulusDelay == nil {
+		return 900 * time.Millisecond
+	}
+	return t.StimulusDelay.Duration
+}
+
+func (t Turn) interruptionStimulusOptions() interruptionStimulusOptions {
+	options := interruptionStimulusOptions{delay: t.interruptionStimulusDelay()}
+	if t.StimulusCompleteWithin != nil {
+		options.completeWithin = t.StimulusCompleteWithin.Duration
+	}
+	return options
+}
 
 func (d *duration) UnmarshalYAML(node *yaml.Node) error {
 	var s string
@@ -172,8 +191,14 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 	if scn.Capture.Microphone && (scn.Input != "speech" || !scn.Capture.Speakers) {
 		return nil, fmt.Errorf("load %s: microphone capture requires speech input and capture.speakers", name)
 	}
+	if scn.Capture.STTDecodes && (!scn.Capture.Microphone || scn.LatencyCondition != "") {
+		return nil, fmt.Errorf("load %s: stt_decodes requires ordinary microphone turns outside latency populations", name)
+	}
 	for i := range scn.Turns {
 		t := &scn.Turns[i]
+		if scn.Capture.STTDecodes && (t.Op != "" || t.WAV == "" || t.InterruptAfter.Duration != 0 || t.LatencyIteration != 0 || t.LatencyWarmup) {
+			return nil, fmt.Errorf("load %s: stt_decodes turn %q requires an ordinary untimed WAV", name, t.ID)
+		}
 		if scn.Capture.Microphone && t.WAV != "" && strings.TrimSpace(t.ExpectedTranscript) == "" {
 			return nil, fmt.Errorf("load %s: microphone turn %q requires expected_transcript", name, t.ID)
 		}
@@ -183,13 +208,19 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		if scn.Input == "speech" && t.User != "" && t.Op == "" && t.WAV == "" {
 			return nil, fmt.Errorf("load %s: speech turn %q requires WAV", name, t.ID)
 		}
-		if t.WAV != "" && (scn.Input != "speech" || (t.Op != "" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion") || t.InterruptAfter.Duration != 0) {
+		if t.WAV != "" && (scn.Input != "speech" || (t.Op != "" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" && t.Op != "acoustic_completion_mute" && t.Op != "acoustic_completion_speech" && t.Op != "acoustic_response" && t.Op != "acoustic_mute" && t.Op != "acoustic_failure") || t.InterruptAfter.Duration != 0) {
 			return nil, fmt.Errorf("load %s: WAV turn requires speech input without control operation", name)
 		}
 		if t.InterruptAfter.Duration < 0 || (t.InterruptAfter.Duration > 0 && (t.User == "" || t.Op != "")) {
 			return nil, fmt.Errorf("load %s: turn %q: interrupt_after requires a user turn and positive duration", name, t.ID)
 		}
-		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" {
+		if t.StimulusDelay != nil && (t.StimulusDelay.Duration < 0 || t.Op != "acoustic_interrupt") {
+			return nil, fmt.Errorf("load %s: turn %q: stimulus_delay requires acoustic_interrupt and a nonnegative duration", name, t.ID)
+		}
+		if t.StimulusCompleteWithin != nil && (t.StimulusCompleteWithin.Duration <= 0 || t.Op != "acoustic_interrupt") {
+			return nil, fmt.Errorf("load %s: turn %q: stimulus_complete_within requires acoustic_interrupt and a positive duration", name, t.ID)
+		}
+		if t.Op != "" && t.Op != "select_persona" && t.Op != "run_background" && t.Op != "quiet_gap" && t.Op != "compact" && t.Op != "start_latency_worker" && t.Op != "stop_latency_worker" && t.Op != "acoustic_interrupt" && t.Op != "acoustic_completion" && t.Op != "acoustic_completion_mute" && t.Op != "acoustic_completion_speech" && t.Op != "acoustic_response" && t.Op != "acoustic_mute" && t.Op != "acoustic_failure" {
 			return nil, fmt.Errorf("load %s: turn %q: unknown op %q", name, t.ID, t.Op)
 		}
 		if t.Op == "acoustic_interrupt" && (!scn.Capture.Microphone || t.WAV == "" || t.InterruptWAV == "" || t.ExpectedTranscript == "") {
@@ -197,6 +228,15 @@ func loadScenarioReader(name string, r io.Reader) (*Scenario, error) {
 		}
 		if t.Op == "acoustic_completion" && (!scn.Capture.Microphone || t.WAV == "" || t.ExpectedTranscript == "") {
 			return nil, fmt.Errorf("load %s: acoustic_completion needs physical capture, fixture WAV, and expected transcript", name)
+		}
+		if (t.Op == "acoustic_completion_mute" || t.Op == "acoustic_completion_speech") && (!scn.Capture.Microphone || t.WAV == "" || strings.TrimSpace(t.ExpectedTranscript) == "" || t.User != "" || t.Duration.Duration != 0 || scn.LatencyCondition != "" || scn.TTS.Provider == "none") {
+			return nil, fmt.Errorf("load %s: completion boundary needs physical speech fixture, expected transcript, real TTS and no latency/user/duration override", name)
+		}
+		if (t.Op == "acoustic_mute" || t.Op == "acoustic_failure") && (!scn.Capture.Microphone || t.WAV == "" || strings.TrimSpace(t.ExpectedTranscript) == "" || t.User != "" || t.Duration.Duration != 0 || scn.LatencyCondition != "" || scn.TTS.Provider == "none") {
+			return nil, fmt.Errorf("load %s: acoustic mute/failure needs physical speech fixture, expected transcript, real TTS and no latency/user/duration override", name)
+		}
+		if t.Op == "acoustic_response" && (!scn.Capture.Microphone || t.WAV == "" || t.ExpectedTranscript == "" || t.Duration.Duration <= 0) {
+			return nil, fmt.Errorf("load %s: acoustic_response needs physical capture, fixture WAV, expected transcript, and positive next-listen duration", name)
 		}
 		if t.InterruptWAV != "" && t.Op != "acoustic_interrupt" {
 			return nil, fmt.Errorf("load %s: interrupt_wav requires acoustic_interrupt", name)

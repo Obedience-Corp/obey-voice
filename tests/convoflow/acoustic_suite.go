@@ -90,12 +90,38 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 	manifest := struct {
 		Fixtures []acousticFixture `json:"fixtures"`
 	}{append(fixtures, acousticFixture{Path: counting, Text: countingText, SHA256: hex.EncodeToString(countingHash[:])})}
+	var short *acousticFixture
+	shortPath := filepath.Join(fixtureDir, "startup-short.wav")
+	if _, err := os.Stat(shortPath); err == nil {
+		text, err := readAcousticMetadata(filepath.Join(fixtureDir, "startup-short.json"))
+		if err != nil {
+			return fmt.Errorf("startup-short fixture: %w", err)
+		}
+		if text != "Wait." {
+			return fmt.Errorf("startup-short fixture: expected metadata text %q, got %q", "Wait.", text)
+		}
+		if _, _, err := audio.ReadWAVFloat32(shortPath); err != nil {
+			return fmt.Errorf("startup-short fixture: %w", err)
+		}
+		data, err := os.ReadFile(shortPath)
+		if err != nil {
+			return fmt.Errorf("startup-short fixture: %w", err)
+		}
+		hash := sha256.Sum256(data)
+		short = &acousticFixture{Path: shortPath, Text: text, SHA256: hex.EncodeToString(hash[:])}
+		manifest.Fixtures = append(manifest.Fixtures, *short)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("startup-short fixture: %w", err)
+	}
 	var generated []struct {
 		name string
 		data []byte
 	}
-	write := func(name, condition string, turns []map[string]any) error {
+	write := func(name, condition string, turns []map[string]any, decoderEvidence ...bool) error {
 		doc := map[string]any{"name": name, "description": "Generated repeatable acoustic latency suite", "input": "speech", "latency_condition": condition, "duration": "30m", "capture": map[string]any{"microphone": true, "audio": true, "speakers": true}, "turns": turns}
+		if len(decoderEvidence) > 0 && decoderEvidence[0] {
+			doc["capture"].(map[string]any)["stt_decodes"] = true
+		}
 		if condition == "worker" {
 			doc["worker"] = map[string]any{"sustained_load": true}
 		}
@@ -140,11 +166,60 @@ func prepareAcousticSuite(outputDir, fixtureDir string) error {
 	if err := write("completion", "", []map[string]any{{"id": "completion", "op": "acoustic_completion", "timeout": "120s", "wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text}}); err != nil {
 		return err
 	}
+	for _, boundary := range []string{"completion-mute", "completion-speech"} {
+		op := "acoustic_completion_mute"
+		if boundary == "completion-speech" {
+			op = "acoustic_completion_speech"
+		}
+		if err := write(boundary, "", []map[string]any{{"id": boundary, "op": op, "timeout": "180s", "wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text}}); err != nil {
+			return err
+		}
+	}
+	for _, boundary := range []string{"mute", "failure"} {
+		if err := write(boundary, "", []map[string]any{{"id": boundary, "op": "acoustic_" + boundary, "timeout": "180s", "wav": fixtures[0].Path, "expected_transcript": fixtures[0].Text}}); err != nil {
+			return err
+		}
+	}
+	if err := write("response", "", []map[string]any{{"id": "response", "op": "acoustic_response", "timeout": "180s", "duration": "3s", "wav": counting, "expected_transcript": countingText}}); err != nil {
+		return err
+	}
 	if err := write("interruption", "", []map[string]any{{"id": "interruption", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text}}); err != nil {
 		return err
 	}
+	if err := write("interruption-worker", "worker", []map[string]any{
+		{"id": "interruption-start", "op": "start_latency_worker", "timeout": "30s", "user": "report one short local worker result"},
+		{"id": "interruption", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text},
+		{"id": "interruption-stop", "op": "stop_latency_worker", "timeout": "30s"},
+	}); err != nil {
+		return err
+	}
+	if err := write("startup-full", "", []map[string]any{{"id": "startup-full", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text, "stimulus_delay": "0s"}}); err != nil {
+		return err
+	}
+	if short != nil {
+		calibrationTurns := []map[string]any{
+			{"id": "calibration-full", "timeout": "120s", "wav": fixtures[1].Path, "expected_transcript": fixtures[1].Text},
+			{"id": "calibration-short", "timeout": "120s", "wav": short.Path, "expected_transcript": short.Text},
+		}
+		if err := write("calibration", "", calibrationTurns); err != nil {
+			return err
+		}
+		if err := write("calibration-decodes", "", calibrationTurns, true); err != nil {
+			return err
+		}
+		if err := write("startup-short", "", []map[string]any{{"id": "startup-short", "op": "acoustic_interrupt", "timeout": "120s", "wav": counting, "interrupt_wav": short.Path, "expected_transcript": short.Text, "stimulus_delay": "0s", "stimulus_complete_within": "600ms"}}); err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(outputDir, 0o700); err != nil {
 		return err
+	}
+	if short == nil {
+		for _, name := range []string{"startup-short", "calibration", "calibration-decodes"} {
+			if err := os.Remove(filepath.Join(outputDir, name+".yaml")); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove stale %s scenario: %w", name, err)
+			}
+		}
 	}
 	b, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

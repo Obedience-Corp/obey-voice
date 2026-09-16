@@ -62,7 +62,11 @@ type ConversationRuntime struct {
 	// session config on the Bubble Tea thread without exposing mutable selector
 	// state to the event bridge.
 	SelectionConfig func() *config.Config
-	Cleanup         func() // tears down pipeline resources and saves the session
+	// Persist flushes the session while the pipeline is still alive. run()
+	// calls it before the process-quit timer so a wedged TTS/STT close cannot
+	// discard the chat.
+	Persist func()
+	Cleanup func() // tears down pipeline resources and saves the session
 }
 
 // PersonaBindingError identifies a startup failure caused by an unavailable
@@ -210,6 +214,8 @@ func buildMeeting(build MeetingBuilder, ctx context.Context, feed *eventBridge, 
 type runtimeSlot[T comparable] struct {
 	mu sync.Mutex
 	rt T
+	// persistFn flushes durable state without releasing devices or models.
+	persistFn func(T)
 	// release tears the runtime down. Held as a function so one slot serves
 	// both runtimes, which share the shape but not a type.
 	release func(T)
@@ -217,11 +223,18 @@ type runtimeSlot[T comparable] struct {
 
 // newConversationSlot owns a ConversationRuntime's teardown.
 func newConversationSlot() *runtimeSlot[*ConversationRuntime] {
-	return &runtimeSlot[*ConversationRuntime]{release: func(rt *ConversationRuntime) {
-		if rt.Cleanup != nil {
-			rt.Cleanup()
-		}
-	}}
+	return &runtimeSlot[*ConversationRuntime]{
+		persistFn: func(rt *ConversationRuntime) {
+			if rt.Persist != nil {
+				rt.Persist()
+			}
+		},
+		release: func(rt *ConversationRuntime) {
+			if rt.Cleanup != nil {
+				rt.Cleanup()
+			}
+		},
+	}
 }
 
 // newMeetingSlot owns a MeetingRuntime's teardown.
@@ -245,6 +258,19 @@ func newMeetingSlot() *runtimeSlot[*MeetingRuntime] {
 			rt.Cleanup()
 		}
 	}}
+}
+
+func (s *runtimeSlot[T]) persist() {
+	if s == nil {
+		return
+	}
+	var zero T
+	s.mu.Lock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt != zero && s.persistFn != nil {
+		s.persistFn(rt)
+	}
 }
 
 func (s *runtimeSlot[T]) store(rt T) {

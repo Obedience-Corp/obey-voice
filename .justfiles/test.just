@@ -121,6 +121,7 @@ acoustic-prepare MODELS_DIR SUITE_DIR PROFILE="full":
     for i in 0 1 2 3; do
         "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1 -text "${texts[$i]}" -out "$suite/fixtures/${names[$i]}.wav"
     done
+    "$suite/bin/golden-tts" -models-dir "{{MODELS_DIR}}" -voice af_heart -speed 1.25 -text "Wait." -out "$suite/fixtures/startup-short.wav"
     "$suite/bin/convoflow" -prepare-acoustic-suite "$suite/scenarios" -fixture-dir "$suite/fixtures"
     printf '%s\n' "$profile" > "$suite/bin/fixture-profile.txt"
     shasum -a 256 "$suite/bin/convoflow" > "$suite/binary.sha256"
@@ -142,14 +143,56 @@ acoustic-pair CONFIG SUITE_DIR:
     "$suite/bin/convoflow" -compare "${baseline[0]},${worker[0]}" > "$pair/comparison.json"
     cat "$pair/comparison.json"
 
-# Completion handoff and production barge-in using the prepared fixtures.
+# Echo-only response, completion handoff and production barge-in controls.
 [no-cd]
 acoustic-controls CONFIG SUITE_DIR:
     #!/usr/bin/env bash
     set -euo pipefail
     suite="{{SUITE_DIR}}"
-    for scenario in completion interruption; do
+    for scenario in response completion interruption; do
         "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/controls"
+    done
+
+# Ordinary response echo-only control, then a bounded next listen with no stimulus.
+[no-cd]
+acoustic-response CONFIG SUITE_DIR STIMULUS_DEVICE="":
+    "{{SUITE_DIR}}/bin/convoflow" -scenario "{{SUITE_DIR}}/scenarios/response.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "{{SUITE_DIR}}/runs/response"
+
+# One near-only full-question/short-word calibration; no synthesis or retries.
+[no-cd]
+acoustic-calibrate CONFIG SUITE_DIR STIMULUS_DEVICE="" DECODE_INPUTS="false":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    scenario=calibration
+    case "{{DECODE_INPUTS}}" in
+        false) ;;
+        true) scenario=calibration-decodes ;;
+        *) echo "error: DECODE_INPUTS must be true or false" >&2; exit 2 ;;
+    esac
+    if [[ ! -f "$suite/scenarios/$scenario.yaml" ]]; then
+        echo "error: missing $scenario.yaml; prepare a suite with startup-short.wav and matching Wait. metadata using just test acoustic-prepare MODELS_DIR NEW_SUITE, or regenerate scenarios from complete retained fixtures" >&2
+        exit 2
+    fi
+    mkdir -p "$suite/runs/calibration"
+    attempt="$(mktemp -d "$suite/runs/calibration/attempt.XXXXXX")"
+    trap 'echo "Calibration artifacts: $attempt"' EXIT
+    "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$attempt"
+
+# Run both immediate-onset controls with the prepared binary and explicit config.
+[no-cd]
+acoustic-startup CONFIG SUITE_DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in startup-full startup-short; do
+        if [[ ! -f "$suite/scenarios/$scenario.yaml" ]]; then
+            echo "error: missing $scenario.yaml; run just test acoustic-prepare MODELS_DIR '$suite' to prepare startup controls" >&2
+            exit 2
+        fi
+    done
+    for scenario in startup-full startup-short; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -runs-dir "$suite/runs/startup"
     done
 
 # One physical turn with the explicitly configured TTS provider (e.g. native Qwen).
@@ -164,6 +207,7 @@ acoustic-vad ARTIFACT CONFIG ARM STIMULUS:
     OBEY_VOICE_VAD_CAPTURE="{{ARTIFACT}}" OBEY_VOICE_VAD_CONFIG="{{CONFIG}}" OBEY_VOICE_VAD_ARM_OFFSET="{{ARM}}" OBEY_VOICE_VAD_STIMULUS_OFFSET="{{STIMULUS}}" go test ./tests/convoflow -run '^TestReplaySavedBargeVAD$' -count=1 -v
 
 # Replay saved ordered capture/reference operations through the current frontend.
+# RUN_DIR may be a legacy run root or a direct acoustic artifact directory.
 # Reports detector behavior; does not replace the physical interruption gate.
 [no-cd]
 acoustic-reprocess RUN_DIR CONFIG:
@@ -173,7 +217,18 @@ acoustic-reprocess RUN_DIR CONFIG:
 # Successful execution is diagnostic, not an acoustic acceptance pass.
 [no-cd]
 acoustic-transcribe MODELS_DIR WAV MODEL="tdt-0.6b-v2":
-    OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+    env -u OBEY_VOICE_DECODE_F32LE OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_WAV="{{WAV}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+
+# Replay exact 16kHz mono float32 decoder input without WAV quantization.
+[no-cd]
+acoustic-transcribe-exact MODELS_DIR PCM MODEL="tdt-0.6b-v2":
+    env -u OBEY_VOICE_DECODE_WAV OBEY_VOICE_DECODE_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_DECODE_F32LE="{{PCM}}" OBEY_VOICE_DECODE_MODEL="{{MODEL}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestDecodeSavedParakeetWAV$' -count=1 -v
+
+# Replay processed WAV through production STT admission, endpointing and decoding.
+# GAIN describes amplification already applied; OUTPUT_DIR must be a new directory.
+[no-cd]
+acoustic-stt MODELS_DIR WAV OUTPUT_DIR GAIN="1" CHUNK_SAMPLES="1600":
+    OBEY_VOICE_STT_REPLAY_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_STT_REPLAY_WAV="{{WAV}}" OBEY_VOICE_STT_REPLAY_OUTPUT_DIR="{{OUTPUT_DIR}}" OBEY_VOICE_STT_REPLAY_GAIN="{{GAIN}}" OBEY_VOICE_STT_REPLAY_CHUNK_SAMPLES="{{CHUNK_SAMPLES}}" go test -tags=integration ./pkg/voiceagent/stt -run '^TestReplaySavedSTTLoop$' -count=1 -v
 
 # Real Bubble Tea/pipeline host boundaries with controlled STT, 30 samples each.
 # Hardware capture, inference and spoken acknowledgement are separate gates.
@@ -185,3 +240,42 @@ work-host-timing:
 [no-cd]
 vad-reset MODELS_DIR FIXTURE:
     OBEY_VOICE_VAD_RESET_MODELS_DIR="{{MODELS_DIR}}" OBEY_VOICE_VAD_RESET_FIXTURE="{{FIXTURE}}" go test -race ./pkg/voiceagent/audio -run '^TestVADClearRestartsNativeTimeline$' -count=1 -v
+
+# Repeated physical completion or interruption controls, using the existing pinned
+# binary. NEW_OUTPUT must not exist; failures stop and retain the population.
+[no-cd]
+acoustic-control-population CONFIG SUITE_DIR SCENARIO NEW_OUTPUT STIMULUS_DEVICE="":
+    "{{SUITE_DIR}}/bin/convoflow" -control-population "{{NEW_OUTPUT}}" -scenario "{{SUITE_DIR}}/scenarios/{{SCENARIO}}.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+
+# Ordinary muted input/unmute and injected provider error/recovery, with real
+# microphone and speaker evidence. These do not simulate a remote outage.
+[no-cd]
+acoustic-boundaries CONFIG SUITE_DIR STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in mute failure; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$suite/runs/boundaries"
+    done
+
+# Pending recorded result held while muted, then real microphone speech revoking
+# completion generation. Retains source provenance, scoped receipts and no replay.
+[no-cd]
+acoustic-completion-boundaries CONFIG SUITE_DIR STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    for scenario in completion-mute completion-speech; do
+        "$suite/bin/convoflow" -scenario "$suite/scenarios/$scenario.yaml" -fixture-config "{{CONFIG}}" -stimulus-device "{{STIMULUS_DEVICE}}" -runs-dir "$suite/runs/completion-boundaries"
+    done
+
+# A new directory per condition; no retry/replacement of failed observations.
+acoustic-interruption-pair CONFIG SUITE_DIR RUNTIME_MANIFEST NEW_OUTPUT STIMULUS_DEVICE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    suite="{{SUITE_DIR}}"
+    output="{{NEW_OUTPUT}}"
+    mkdir "$output"
+    "$suite/bin/convoflow" -control-population "$output/baseline" -scenario "$suite/scenarios/interruption.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+    "$suite/bin/convoflow" -control-population "$output/worker" -scenario "$suite/scenarios/interruption-worker.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
+    "$suite/bin/convoflow" -compare-control-populations "$output/baseline,$output/worker" > "$output/comparison.json"

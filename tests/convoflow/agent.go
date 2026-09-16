@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -158,6 +159,7 @@ type liveRunner struct {
 	worker         *observing
 	workerProvider brain.Provider
 	player         *recordingPlayer
+	stimulusDevice string
 	persona        *personaRuntime
 	observations   []*observing
 	workerFactory  func(*config.Config) (brain.Provider, error)
@@ -176,7 +178,7 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 	}
 	live, liveObs := observeProvider(liveInner)
 	configSnapshot := *cfg
-	r := &liveRunner{cfg: &configSnapshot, live: liveObs, liveProvider: live, player: player, observations: []*observing{liveObs}}
+	r := &liveRunner{cfg: &configSnapshot, live: liveObs, liveProvider: live, player: player, stimulusDevice: k.stimulusDevice, observations: []*observing{liveObs}}
 
 	var workerInner brain.Provider
 	if k.workerIsStub() {
@@ -223,6 +225,7 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 		r.tts = set
 		opts.TTS = set.Primary
 		opts.TTSFallback = set.Fallback
+		configureResponseVolume(player, cfg)
 		opts.Player = player
 	}
 
@@ -242,6 +245,14 @@ func newLiveRunner(ctx context.Context, cfg *config.Config, k knobs, bus *events
 	}
 	agent.OnRoute = rec.route
 	return r, nil
+}
+
+// configureResponseVolume reaches the physical response sink behind the WAV
+// recorder. Acoustic fixture players are independent and stay at unity.
+func configureResponseVolume(player *recordingPlayer, cfg *config.Config) {
+	if player != nil {
+		playback.ApplyEngineVolume(player.real, config.PlaybackVolumeOf(cfg))
+	}
 }
 
 func (r *liveRunner) close() {

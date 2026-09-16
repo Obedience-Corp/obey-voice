@@ -88,7 +88,7 @@ func (p *Pipeline) withCompletionLease(ctx context.Context, run func(context.Con
 		}
 	}(attemptCtx)
 	defer func() { close(done); <-joined }()
-	attemptCtx = audio.WithPlaybackAttempt(attemptCtx, audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease})
+	attemptCtx = audio.WithPlaybackAttempt(attemptCtx, audio.PlaybackAttempt{ID: lease.AttemptID, CaptureEpoch: lease.CaptureEpoch, Fence: lease, Render: &audio.FirstRenderBoundary{}})
 	if !lease.Valid() || p.HasCapturedInput() {
 		return context.Canceled
 	}

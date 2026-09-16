@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -74,6 +75,15 @@ const defaultScenarioWall = 5 * time.Minute
 
 func (e *engine) run(ctx context.Context) (runErr error) {
 	defer func() {
+		if e.latencyWorkerID != "" {
+			if loader, ok := e.runner.(interface {
+				stopLatencyWorker(context.Context, string) error
+			}); ok {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				runErr = errors.Join(runErr, loader.stopLatencyWorker(cleanupCtx, e.latencyWorkerID))
+				cancel()
+			}
+		}
 		runErr = errors.Join(runErr, e.closeAll())
 		if p, ok := e.runner.(personaRunner); ok {
 			runErr = errors.Join(runErr, p.writePersonaArtifacts(e.runDir), p.validatePersonaRun())
@@ -213,14 +223,44 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 		} else if turn.ExpectError != "" {
 			return fmt.Errorf("turn %s: expected selection error containing %q", turn.ID, turn.ExpectError)
 		}
+	} else if turn.Op == "acoustic_mute" || turn.Op == "acoustic_failure" {
+		probe, ok := e.runner.(interface {
+			runAcousticBoundary(context.Context, string, string, string, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support acoustic boundary")
+		}
+		if err := probe.runAcousticBoundary(turnCtx, turn.Op, turn.WAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
+			return err
+		}
+	} else if turn.Op == "acoustic_response" {
+		probe, ok := e.runner.(interface {
+			runAcousticResponse(context.Context, string, string, string, time.Duration) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support acoustic response")
+		}
+		if err := probe.runAcousticResponse(turnCtx, turn.WAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID), turn.Duration.Duration); err != nil {
+			return err
+		}
 	} else if turn.Op == "acoustic_interrupt" {
 		probe, ok := e.runner.(interface {
-			runAcousticInterruption(context.Context, string, string, string, string) error
+			runAcousticInterruption(context.Context, string, string, string, string, interruptionStimulusOptions) error
 		})
 		if !ok {
 			return fmt.Errorf("runner does not support acoustic interruption")
 		}
-		if err := probe.runAcousticInterruption(turnCtx, turn.WAV, turn.InterruptWAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
+		if err := probe.runAcousticInterruption(turnCtx, turn.WAV, turn.InterruptWAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID), turn.interruptionStimulusOptions()); err != nil {
+			return err
+		}
+	} else if turn.Op == "acoustic_completion_mute" || turn.Op == "acoustic_completion_speech" {
+		probe, ok := e.runner.(interface {
+			runAcousticCompletionBoundary(context.Context, string, string, string, string) error
+		})
+		if !ok {
+			return fmt.Errorf("runner does not support completion boundaries")
+		}
+		if err := probe.runAcousticCompletionBoundary(turnCtx, turn.Op, turn.WAV, turn.ExpectedTranscript, filepath.Join(e.runDir, "acoustic", turn.ID)); err != nil {
 			return err
 		}
 	} else if turn.Op == "acoustic_completion" {
@@ -292,8 +332,21 @@ func (e *engine) runTurn(ctx context.Context, i int, turn Turn) (runErr error) {
 			return fmt.Errorf("runner does not support physical microphone input")
 		}
 		artifactDir := filepath.Join(e.runDir, "acoustic", fmt.Sprintf("%02d-%s", i+1, turn.ID))
-		if err := acoustic.runAcoustic(turnCtx, turn.WAV, turn.ExpectedTranscript, artifactDir); err != nil {
-			return err
+		var decoder *decodeRecorder
+		if e.scn.Capture.STTDecodes {
+			var err error
+			decoder, err = newDecodeRecorder(filepath.Join(artifactDir, "stt-decodes"))
+			if err != nil {
+				return err
+			}
+			turnCtx = stt.WithDecodeObserver(turnCtx, decoder.observe)
+		}
+		runErr := acoustic.runAcoustic(turnCtx, turn.WAV, turn.ExpectedTranscript, artifactDir)
+		if decoder != nil {
+			runErr = errors.Join(runErr, decoder.verify())
+		}
+		if runErr != nil {
+			return runErr
 		}
 	} else if turn.WAV != "" {
 		replay, ok := e.runner.(interface {

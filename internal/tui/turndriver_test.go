@@ -535,8 +535,8 @@ func TestSpokenExitPhraseQuits(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("no quit cmd returned")
 	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatal("exit did not produce tea.QuitMsg")
+	if _, ok := cmd().(quitMsg); !ok {
+		t.Fatal("exit did not produce quitMsg")
 	}
 }
 
@@ -722,6 +722,13 @@ func (h *voiceFailureTerminalHarness) Init() tea.Cmd {
 }
 
 func (h *voiceFailureTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Bubble Tea may already have queued a retry tick while the third response
+	// error is crossing the event bridge. The proof observes that third retry
+	// was scheduled, but must not execute a fourth fixture turn while waiting
+	// for the third error to render.
+	if _, ok := msg.(voiceRetryMsg); ok && h.completed >= 3 && !h.wantFallback {
+		return h, nil
+	}
 	var cmd tea.Cmd
 	h.model, cmd = h.model.Update(msg)
 	if _, ok := msg.(voiceTurnDoneMsg); ok {

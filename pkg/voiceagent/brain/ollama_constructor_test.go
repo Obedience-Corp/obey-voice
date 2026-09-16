@@ -12,10 +12,17 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
 func ollamaConstructorConfig(t *testing.T, host string) *config.Config {
 	t.Helper()
+	// The loader's contract includes ~/.agents/skills. Point that root at an
+	// empty temporary directory so this fixture's one configured skill is the
+	// only catalog entry and the embedding response has matching cardinality.
+	fakeHome := t.TempDir()
+	restoreHome := skills.SetUserHomeDirForTest(func() (string, error) { return fakeHome, nil })
+	t.Cleanup(restoreHome)
 	skillDir := filepath.Join(t.TempDir(), "skills")
 	if err := os.MkdirAll(filepath.Join(skillDir, "demo"), 0o755); err != nil {
 		t.Fatal(err)
