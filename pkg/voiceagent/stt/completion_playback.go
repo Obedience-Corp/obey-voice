@@ -140,15 +140,28 @@ func (r *completionFrameReader) command(command *playbackCommand, reset func() e
 		p.captured = true
 		// The pipeline revokes the completion lease after this acknowledgement.
 		// Releasing the park must not await another capture callback.
+		if p.paused {
+			// Generation/playback time is not part of the resumed listen
+			// budget. Both loops consume this before endpoint evaluation.
+			p.resumed = true
+		}
 		p.paused = false
 		r.checking = true
 	}
 	if command.kind == playbackFinish {
-		if !r.accepted && !p.captured && r.parked != nil {
+		_, rendered := r.binding.attempt.Render.FirstRender()
+		if !r.accepted && !p.captured && rendered {
+			// Finish may arrive before the next source poll parks a frame.
+			// The unread ring still contains playback PCM in that case; an
+			// empty parked frame asks the source to retain only its ring tail.
+			var parked audio.Frame
+			if r.parked != nil {
+				parked = *r.parked
+			}
 			// The owner loop serializes these operations. Do not hold the
 			// shared pause mutex across source work or native recognizer reset.
 			p.mu.Unlock()
-			frame, err := r.frames.(completionRetainer).RetainForNextListen(*r.parked, r.binding.preRoll)
+			frame, err := r.frames.(completionRetainer).RetainForNextListen(parked, r.binding.preRoll)
 			if err == nil {
 				err = reset()
 			}
