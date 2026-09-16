@@ -22,6 +22,10 @@ import (
 )
 
 type acousticReport struct {
+	// Nonzero only when a control scores a stimulus excerpt of a longer trace.
+	CaptureExcerptStart     int                    `json:"capture_excerpt_start_sample,omitempty"`
+	StimulusStarted         time.Time              `json:"stimulus_started,omitempty"`
+	StimulusCompleted       time.Time              `json:"stimulus_completed,omitempty"`
 	CaptureReadSamples      int64                  `json:"capture_read_samples,omitempty"`
 	NonzeroReferenceSamples int                    `json:"nonzero_reference_samples,omitempty"`
 	Stimulus                string                 `json:"stimulus"`
