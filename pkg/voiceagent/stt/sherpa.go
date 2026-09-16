@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 
@@ -24,10 +25,30 @@ type SherpaOfflineSTT struct {
 }
 
 type sherpaSession struct {
-	cancel context.CancelFunc
-	events chan Event
-	done   chan struct{}
-	pause  *pauseController
+	cancel   context.CancelFunc
+	events   chan Event
+	done     chan struct{}
+	pause    *pauseController
+	playback bool
+}
+
+func (s *sherpaSession) BindCompletionPlayback(ctx context.Context, token PauseToken, attempt audio.PlaybackAttempt, preRoll time.Duration) error {
+	if !s.playback || s.pause == nil {
+		return ErrCompletionPlaybackUnsupported
+	}
+	return s.pause.playbackCommand(ctx, &playbackCommand{kind: playbackBind, token: token, attempt: attempt, preRoll: preRoll})
+}
+func (s *sherpaSession) ConfirmCompletionPlayback(ctx context.Context, token PauseToken, attemptID string) error {
+	if !s.playback || s.pause == nil {
+		return ErrCompletionPlaybackUnsupported
+	}
+	return s.pause.playbackCommand(ctx, &playbackCommand{kind: playbackConfirm, token: token, attempt: audio.PlaybackAttempt{ID: attemptID}})
+}
+func (s *sherpaSession) FinishCompletionPlayback(ctx context.Context, token PauseToken, attemptID string, retain bool) error {
+	if !s.playback || s.pause == nil {
+		return ErrCompletionPlaybackUnsupported
+	}
+	return s.pause.playbackCommand(ctx, &playbackCommand{kind: playbackFinish, token: token, attempt: audio.PlaybackAttempt{ID: attemptID}, retain: retain})
 }
 
 func (s *sherpaSession) Events() <-chan Event {
@@ -119,10 +140,11 @@ func NewSherpaOfflineSTT(cfg *config.Config, capture audioSource, vad *audio.VAD
 func (s *SherpaOfflineSTT) Start(ctx context.Context) (Session, error) {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	session := &sherpaSession{
-		cancel: cancel,
-		events: make(chan Event, 8),
-		done:   make(chan struct{}),
-		pause:  newPauseController("stt"),
+		cancel:   cancel,
+		events:   make(chan Event, 8),
+		done:     make(chan struct{}),
+		pause:    newPauseController("stt"),
+		playback: true,
 	}
 
 	finite := sourceKind(s.capture) != audio.SourceLive

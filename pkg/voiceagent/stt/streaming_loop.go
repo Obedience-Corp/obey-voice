@@ -60,6 +60,19 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 	// The capture front-end's gain moves while it adapts, so the floor is read
 	// per iteration rather than fixed at session start.
 	floor := func() float64 { return speechFloor(inputGain(deps.frames)) }
+	reader := completionFrameReader{owner: deps.pause, frames: deps.frames}
+	resetPlaybackInput := func() error {
+		deps.seg.Reset()
+		if err := deps.rec.Reset(); err != nil {
+			return err
+		}
+		track.reset()
+		gate = noiseGate{}
+		transcribing = false
+		lastPartial = ""
+		heard.reset()
+		return nil
+	}
 
 	// resetListening discards a rejected or false-positive utterance and opens a
 	// fresh listening window. It returns false when the loop should stop.
@@ -82,7 +95,7 @@ func runStreamingLoop(ctx context.Context, deps streamingLoopDeps, events chan<-
 			return
 		}
 
-		read := readLoopFrame(ctx, deps.frames)
+		read := reader.read(ctx, track.detected, resetPlaybackInput)
 		if read.err != nil {
 			sendEvent(ctx, events, Failure{Err: read.err})
 			return

@@ -113,12 +113,6 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 		return 0, err
 	}
 
-	if err := p.startPlaybackDevice(openedChannels, device.Start); err != nil {
-		device.Uninit()
-		_ = ctx.Uninit()
-		ctx.Free()
-		return 0, err
-	}
 	deviceRate := int(device.SampleRate())
 	if deviceRate <= 0 {
 		deviceRate = openedRate
@@ -126,6 +120,12 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	deviceChannels := int(device.PlaybackChannels())
 	if deviceChannels <= 0 {
 		deviceChannels = openedChannels
+	}
+	if err := p.startPlaybackDevice(deviceRate, deviceChannels, device.Start); err != nil {
+		device.Uninit()
+		_ = ctx.Uninit()
+		ctx.Free()
+		return 0, err
 	}
 	var debug *playerDebugRecorder
 	if debugRoot != "" {
@@ -135,6 +135,7 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 			device.Uninit()
 			_ = ctx.Uninit()
 			ctx.Free()
+			p.clearPlaybackFormat()
 			return 0, fmt.Errorf("start audio debug capture: %w", err)
 		}
 	}
@@ -149,8 +150,7 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 	p.channels = deviceChannels
 	p.debug = debug
 	p.mu.Unlock()
-	// The negotiated rate sets the reference offset; a front-end registered
-	// before the device existed has been holding a zero delay until now.
+	// Refresh the initial offset using the period observed during device start.
 	p.applyReferenceDelay()
 	return deviceRate, nil
 }
@@ -158,19 +158,35 @@ func (p *Player) ensureDevice(sampleRate int) (int, error) {
 // startPlaybackDevice publishes callback state before starting miniaudio and
 // never holds p.mu across start. Device.Start primes the playback buffer by
 // invoking onData synchronously on some backends; holding p.mu here would
-// deadlock that callback before Start can return.
-func (p *Player) startPlaybackDevice(openedChannels int, start func() error) error {
+// deadlock that callback before Start can return. The rate must be published
+// alongside channels so priming silence advances AEC at the negotiated clock,
+// rather than the ingress's fallback 16kHz clock.
+func (p *Player) startPlaybackDevice(deviceRate, deviceChannels int, start func() error) error {
 	p.mu.Lock()
-	p.channels = openedChannels
+	p.sampleRate = deviceRate
+	p.channels = deviceChannels
 	p.mu.Unlock()
+	p.applyReferenceDelay()
 
 	if err := start(); err != nil {
-		p.mu.Lock()
-		p.channels = 0
-		p.mu.Unlock()
+		p.clearPlaybackFormat()
 		return err
 	}
 	return nil
+}
+
+// clearPlaybackFormat rolls back a failed open after native callbacks stop.
+// A retry must not inherit that device's format, observed period or AEC hint.
+func (p *Player) clearPlaybackFormat() {
+	p.mu.Lock()
+	p.sampleRate = 0
+	p.channels = 0
+	frontend := p.frontend
+	p.mu.Unlock()
+	p.observedPeriodFrames.Store(0)
+	if delayer, ok := frontend.(audio.ReferenceDelayer); ok {
+		delayer.SetReferenceDelay(0)
+	}
 }
 
 // openPlaybackDevice tries client layouts/rates in an order tuned for Studio

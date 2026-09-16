@@ -320,3 +320,42 @@ func TestAcousticResponseScenarioAndEngineForwardKnownFixture(t *testing.T) {
 		}
 	}
 }
+
+type responseRetentionFrames struct {
+	responseTestFrames
+	parked audio.Frame
+	keep   time.Duration
+}
+
+func (s *responseRetentionFrames) RetainForNextListen(frame audio.Frame, keep time.Duration) (audio.Frame, error) {
+	s.parked, s.keep = frame, keep
+	return frame, nil
+}
+
+func TestCompletionResponseCaptureForwardsRetentionWithoutCountingTwice(t *testing.T) {
+	frames := &responseRetentionFrames{}
+	source := &responseCaptureSource{FrameSource: frames, gain: frames}
+	wrapped := audio.NewFinalizable(source)
+	if !wrapped.CanRetainForNextListen() {
+		t.Fatal("measurement wrapper hid capture retention")
+	}
+	parked := audio.Frame{Samples: []float32{.2, .3}, CaptureGap: audio.CaptureGap{OverflowSamples: 50, Reset: true, DiscardedSamples: 100}}
+	got, err := wrapped.RetainForNextListen(parked, 300*time.Millisecond)
+	if err != nil || len(got.Samples) != 2 || got.Samples[0] != .2 || frames.keep != 300*time.Millisecond || len(frames.parked.Samples) != 2 {
+		t.Fatalf("forwarded retention = %+v, %v; source=%+v", got, err, frames)
+	}
+	if source.readSamples.Load() != 0 || source.playbackOverflow != 50 || got.CaptureGap != parked.CaptureGap {
+		t.Fatal("retention changed read count or lost gap evidence")
+	}
+	parked.CaptureGap.DeviceDiscontinuity = true
+	if _, err := wrapped.RetainForNextListen(parked, 300*time.Millisecond); err == nil {
+		t.Fatal("physical control accepted a device discontinuity")
+	}
+	unsupported := audio.NewFinalizable(&responseCaptureSource{FrameSource: &responseTestFrames{}})
+	if unsupported.CanRetainForNextListen() {
+		t.Fatal("measurement wrapper invented a source capability")
+	}
+	if _, err := unsupported.RetainForNextListen(audio.Frame{}, time.Second); !errors.Is(err, audio.ErrRetentionUnsupported) {
+		t.Fatalf("unsupported retention = %v", err)
+	}
+}

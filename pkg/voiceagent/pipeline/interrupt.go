@@ -115,10 +115,11 @@ func (e *interruptSourceEvidence) observe(frame audio.Frame, typed bool) {
 	e.Gap.OverflowSamples += gap.OverflowSamples
 	e.Gap.DiscardedSamples += gap.DiscardedSamples
 	e.Gap.Reset = e.Gap.Reset || gap.Reset
+	e.Gap.DeviceDiscontinuity = e.Gap.DeviceDiscontinuity || gap.DeviceDiscontinuity
 	e.Gap.SubscriptionDroppedSamples += gap.SubscriptionDroppedSamples
 	e.Gap.SubscriptionDroppedCallbacks += gap.SubscriptionDroppedCallbacks
 	e.Gap.SubscriptionDeviceDiscontinuity = e.Gap.SubscriptionDeviceDiscontinuity || gap.SubscriptionDeviceDiscontinuity
-	e.DeviceDiscontinuity = e.DeviceDiscontinuity || gap.SubscriptionDeviceDiscontinuity
+	e.DeviceDiscontinuity = e.DeviceDiscontinuity || gap.DeviceDiscontinuity || gap.SubscriptionDeviceDiscontinuity
 	known := typed && frame.Sequence > 0 && len(frame.Samples) > 0 && len(frame.CaptureSpans) > 0
 	remaining := len(frame.Samples)
 	var nextOffset, generation uint64

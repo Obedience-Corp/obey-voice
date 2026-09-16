@@ -26,22 +26,26 @@ type pauseResponse struct {
 // therefore observes the same detector/segment state as endpointing and cannot
 // race a frame that has already crossed that boundary.
 type pauseController struct {
-	mu       sync.Mutex
-	coord    *work.Coordinator
-	pending  *pauseRequest
-	paused   bool
-	permit   work.CapturePermit
-	epoch    uint64
-	ownerID  string
-	token    PauseToken
-	captured bool
-	active   bool
-	stopped  bool
-	resumed  bool
+	mu                sync.Mutex
+	coord             *work.Coordinator
+	pending           *pauseRequest
+	paused            bool
+	permit            work.CapturePermit
+	epoch             uint64
+	ownerID           string
+	token             PauseToken
+	captured          bool
+	active            bool
+	stopped           bool
+	resumed           bool
+	playbackBound     bool
+	playbackAttemptID string
+	playbackCommands  chan *playbackCommand
+	done              chan struct{}
 }
 
 func newPauseController(ownerID string) *pauseController {
-	return &pauseController{ownerID: ownerID}
+	return &pauseController{ownerID: ownerID, playbackCommands: make(chan *playbackCommand, 1), done: make(chan struct{})}
 }
 
 func (p *pauseController) BindCompletionCoordinator(c *work.Coordinator) {
@@ -147,6 +151,9 @@ func (p *pauseController) resume(ctx context.Context, token PauseToken) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.playbackBound {
+		return errors.New("stt: completion playback must finish before capture resumes")
+	}
 	if p.token != token || (!p.paused && !p.captured) {
 		return fmt.Errorf("stt: stale completion pause token")
 	}
@@ -207,6 +214,8 @@ func (p *pauseController) stop() {
 		return
 	}
 	p.stopped = true
+	p.playbackBound = false
+	close(p.done)
 	if p.paused && p.coord != nil {
 		_ = p.coord.RevokeCapturePermit(p.permit)
 	}

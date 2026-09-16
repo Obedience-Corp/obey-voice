@@ -66,6 +66,9 @@ type CaptureGap struct {
 	OverflowSamples  uint64
 	DiscardedSamples uint64
 	Reset            bool
+	// DeviceDiscontinuity preserves unknown physical loss when retention removes
+	// the callback span that originally carried a device-generation transition.
+	DeviceDiscontinuity bool
 	// Subscription fields count only callbacks dropped by this subscriber's
 	// full channel since its previous delivered frame. Unknown device downtime
 	// is not assigned a sample count. A lost generation transition is latched

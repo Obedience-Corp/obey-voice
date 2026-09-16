@@ -65,7 +65,8 @@ func NewParakeetSTT(cfg *config.Config, capture audioSource, vad *audio.VAD) (*P
 // Start begins a VAD-gated utterance-final session over the shared offline loop.
 func (s *ParakeetSTT) Start(ctx context.Context) (Session, error) {
 	sessionCtx, cancel := context.WithCancel(ctx)
-	session := &sherpaSession{cancel: cancel, events: make(chan Event, 8), done: make(chan struct{}), pause: newPauseController("stt")}
+	preview, _ := ctx.Value(livePreviewKey{}).(bool)
+	session := &sherpaSession{cancel: cancel, events: make(chan Event, 8), done: make(chan struct{}), pause: newPauseController("stt"), playback: !preview}
 
 	finite := sourceKind(s.capture) != audio.SourceLive
 	deps := offlineLoopDeps{
@@ -79,7 +80,7 @@ func (s *ParakeetSTT) Start(ctx context.Context) (Session, error) {
 		defer close(session.done)
 		defer close(session.events)
 		deps.pause = session.pause
-		if preview, _ := ctx.Value(livePreviewKey{}).(bool); preview {
+		if preview {
 			runPreviewLoop(sessionCtx, deps, session.events)
 		} else {
 			runOfflineLoop(sessionCtx, deps, session.events)
