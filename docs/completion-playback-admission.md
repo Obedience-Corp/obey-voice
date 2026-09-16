@@ -1,7 +1,9 @@
 # Completion playback admission — revised implementation decision
 
 Status: ordinary-policy parity selected for the authorized implementation in
-`vw0001-completion-owner`, based on PR198 (`e55a78af`). This revision supersedes
+`vw0001-completion-owner`. This document selects the policy based on the sample
+013 mismatch recorded below. PR198 (`e55a78af`) is the implementation's stack
+base and adds decoder-input evidence; it does not change admission. This revision supersedes
 the earlier unresolved terminal-policy proposal below. It does not mark physical
 acceptance or the festival complete.
 
@@ -98,8 +100,10 @@ The decisive output is one source-positioned table of candidate onset/end, permi
 
 [PR197](https://github.com/Obedience-Corp/obey-voice/pull/197),4090d824, delivers callback-positioned capture subscriptions, accumulated loss evidence in interruption requests and a first valid device-buffer write observation. Admission behavior remains unchanged; these are prerequisites for the interfaces above.
 
-## Required regressions and gate
+## Required regressions and gate — current selected policy
 
-Use production offline/streaming loops with `barrierFrames`, a real coordinator/lease, fake detector and exact PCM assertions. Preserve the existing one-frame thinking-phase revocation test. Add playback-bound cases: one neural/gate-positive frame cannot revoke or seed a resumed transcript without confirmation; valid confirmation promotes the complete source interval once; pre-render frames read late remain exact; boundary-spanning input is not discarded; stale token/generation confirmations do nothing; no-start and canceled-start retain ordinary input. Exercise natural completion, cancellation, capacity exhaustion, and unknown candidate disposition only after that policy is selected. Include sink-write boundary versus queued/event-delayed playback tests.
+Use production offline/streaming loops with barriers, a real coordinator/lease, fake detector and exact PCM assertions. Preserve the existing one-frame thinking-phase revocation test. A wholly post-render parked frame cannot reach VAD/decoder or independently revoke the permit. Qualified ordinary barge resumes the parked frame and unread interval exactly once, including input before qualification. Natural completion and cancellation preserve recent near-miss speech; otherwise they reset STT and atomically retain configured pre-roll, including when playback finishes before the first frame parks. No-render failure preserves ordinary input. Accepted input resumes with a fresh listen-start timeout, even after long playback and a parked silence frame.
 
-Then rerun PR194's exact pre-generation physical controls and fresh serial completion echo-only controls. Synthetic checks cannot prove echo rejection. Implementation remains authorized, but source coverage and unknown disposition still need complete safe behavior; passing both retention and echo gates is required for a completion claim.
+Pre-render frames read late remain exact; boundary-spanning or unknown-position input stays ordinary. Stale token/attempt commands cannot mutate the current binding. Actual loss, discontinuity or generation changes in accepted input fail explicitly. Cover retention failure, cleanup cancellation, finalization before cleanup, and sink-write boundaries versus queued/event-delayed playback. These cases exercise the selected ordinary barge / near-miss / reset-and-pre-roll policy, not the superseded confirmation/quarantine proposal.
+
+Then rerun PR194's exact pre-generation physical controls and fresh serial completion echo-only controls. Synthetic checks cannot prove echo rejection. Implementation remains authorized under the selected policy; passing both retention and echo gates is required for a completion claim.
