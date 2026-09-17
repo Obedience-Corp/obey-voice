@@ -32,6 +32,19 @@ var _ Provider = (*contractProvider)(nil)
 var _ RequestProvider = (*contractProvider)(nil)
 var _ CapabilityProvider = (*contractProvider)(nil)
 
+func TestRendersVocalTags(t *testing.T) {
+	if RendersVocalTags(nil) {
+		t.Fatal("nil provider must not advertise vocal tags")
+	}
+	if RendersVocalTags(&contractProvider{}) {
+		t.Fatal("zero capabilities must not advertise vocal tags")
+	}
+	p := &contractProvider{cap: ProviderCapabilities{SupportsVocalTags: true}}
+	if !RendersVocalTags(p) {
+		t.Fatal("SupportsVocalTags true must render tags")
+	}
+}
+
 func TestCapabilityProviderContractReportsModesAndStatus(t *testing.T) {
 	p := &contractProvider{
 		available: true,

@@ -43,6 +43,7 @@ func (q *Qwen3TTS) Capabilities() tts.ProviderCapabilities {
 		SupportsCancellation:   true,
 		SupportsReferenceAudio: q.native && !q.remote, // native stage A accepts ref_wav; the LAN wire does not carry it
 		SupportsSpeed:          false,
+		SupportsVocalTags:      true,
 	}
 	if !q.managed && !q.native {
 		return caps

@@ -6,10 +6,11 @@ import (
 	"unicode"
 )
 
-// vocalKind is a non-speech beat in a reply. The model writes [moan]; TTS
-// hears the onomatopoeia Qwen actually renders as a human sound in the
-// current throat (clone or preset). Square-bracket markup never reaches
-// the synthesiser and never reaches the transcript.
+// vocalKind is a non-speech beat in a reply. The model writes [moan].
+// Engines that advertise SupportsVocalTags (Qwen3-TTS) hear the onomatopoeia
+// as a human sound in the current throat. Kokoro and Audio8 do not, so the
+// tags are stripped and never synthesized. Square-bracket markup never
+// reaches the transcript.
 //
 // Official Qwen3-TTS has no <laugh> token. It does keep paralinguistics in
 // the codec, so "Haha!", "Haaaah…", "Hahh…" come out as a laugh / moan /

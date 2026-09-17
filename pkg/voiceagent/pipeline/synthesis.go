@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -94,6 +95,9 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 
 	synthStarted := time.Now()
 	stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, sentence, stickFallback)
+	if errors.Is(err, errNothingToSpeak) {
+		return segmentSynthesisOutcome{}
+	}
 	if err != nil {
 		if ctx.Err() == nil {
 			p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
@@ -225,30 +229,22 @@ func (p *Pipeline) synthesizeWithFallbackObserved(ctx context.Context, text stri
 		return nil, false, synthesisObservation{warmState: events.WarmStateUnknown}, errors.New("TTS provider is not configured")
 	}
 	if stickFallback != nil && *stickFallback && p.canUseFallback(ctx, primary, fallback) {
-		observation := p.observeProvider(fallback)
-		observation.synthStarted = time.Now()
-		fallbackStream, fallbackErr := fallback.Synthesize(ctx, text)
-		if fallbackErr != nil {
-			return nil, true, observation, fmt.Errorf("kokoro fallback (sticky): %w", fallbackErr)
-		}
-		return fallbackStream, true, observation, nil
+		stream, observation, err := p.synthesizePrepared(ctx, fallback, text)
+		return stream, true, observation, err
 	}
-	primaryObservation := p.observeProvider(primary)
-	primaryObservation.synthStarted = time.Now()
-	stream, err := primary.Synthesize(ctx, text)
+	stream, primaryObservation, err := p.synthesizePrepared(ctx, primary, text)
 	if err == nil {
-		p.boundPrimarySilence(stream, len(text))
+		p.boundPrimarySilence(stream, len(prepareSpeechForTTS(text, primary, p.vocals)))
 		return stream, false, primaryObservation, nil
 	}
-	if !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(err) {
-		primaryObservation.exclusions = []string{fmt.Sprintf("primary synthesis failed: %v", err)}
+	if errors.Is(err, errNothingToSpeak) || !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(err) {
+		if !errors.Is(err, errNothingToSpeak) {
+			primaryObservation.exclusions = []string{fmt.Sprintf("primary synthesis failed: %v", err)}
+		}
 		return nil, false, primaryObservation, err
 	}
 	p.emit(events.Error{Stage: events.StageTTSFallback, Message: ttsFallbackMessage("primary TTS failed", err, stickFallback != nil)})
-	fallbackObservation := p.observeProvider(fallback)
-	fallbackObservation.synthStarted = time.Now()
-	fallbackObservation.exclusions = []string{fmt.Sprintf("primary synthesis failed: %v", err)}
-	fallbackStream, fallbackErr := fallback.Synthesize(ctx, text)
+	fallbackStream, fallbackObservation, fallbackErr := p.synthesizePrepared(ctx, fallback, text)
 	if fallbackErr != nil {
 		return nil, true, fallbackObservation, fmt.Errorf("primary TTS: %v; Kokoro fallback: %w", err, fallbackErr)
 	}
@@ -256,6 +252,20 @@ func (p *Pipeline) synthesizeWithFallbackObserved(ctx context.Context, text stri
 		*stickFallback = true
 	}
 	return fallbackStream, true, fallbackObservation, nil
+}
+
+func (p *Pipeline) synthesizePrepared(ctx context.Context, provider tts.Provider, sentence string) (*audio.PCMStream, synthesisObservation, error) {
+	observation := p.observeProvider(provider)
+	prepared := prepareSpeechForTTS(sentence, provider, p.vocals)
+	if strings.TrimSpace(prepared) == "" {
+		return nil, observation, errNothingToSpeak
+	}
+	observation.synthStarted = time.Now()
+	stream, err := provider.Synthesize(ctx, prepared)
+	if err != nil {
+		return nil, observation, err
+	}
+	return stream, observation, nil
 }
 
 func (p *Pipeline) observeProvider(provider tts.Provider) synthesisObservation {
@@ -296,9 +306,13 @@ func (p *Pipeline) playFallbackObserved(ctx context.Context, text string, primar
 	}
 	p.emit(events.Error{Stage: events.StageTTSFallback, Message: ttsFallbackMessage("primary playback TTS failed", primaryErr, stickFallback != nil)})
 	fallbackObservation := p.observeProvider(fallback)
+	prepared := prepareSpeechForTTS(text, fallback, p.vocals)
+	if strings.TrimSpace(prepared) == "" {
+		return nil, true, fallbackObservation, errNothingToSpeak
+	}
 	fallbackObservation.synthStarted = time.Now()
 	fallbackObservation.exclusions = []string{fmt.Sprintf("primary playback failed: %v", primaryErr)}
-	stream, err := fallback.Synthesize(ctx, text)
+	stream, err := fallback.Synthesize(ctx, prepared)
 	if err != nil {
 		return nil, true, fallbackObservation, fmt.Errorf("primary playback TTS: %v; Kokoro fallback: %w", primaryErr, err)
 	}

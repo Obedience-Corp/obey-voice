@@ -44,6 +44,10 @@ type ProviderCapabilities struct {
 	SupportsCancellation   bool
 	SupportsReferenceAudio bool
 	SupportsSpeed          bool
+	// SupportsVocalTags is true when the engine renders paralinguistic
+	// markup ([sigh], [laugh], …) as a human sound in the current voice.
+	// Kokoro does not; Qwen3-TTS does via onomatopoeia in the codec.
+	SupportsVocalTags bool
 }
 
 // ProviderStatus reports readiness without requiring callers to parse an
@@ -138,6 +142,14 @@ func (e *ProviderError) Unwrap() []error {
 func IsProviderErrorKind(err error, kind ProviderErrorKind) bool {
 	var providerErr *ProviderError
 	return errors.As(err, &providerErr) && providerErr.Kind == kind
+}
+
+// RendersVocalTags reports whether provider will turn [sigh]/[laugh] markup
+// into a sound rather than reading the spelling. Providers that do not
+// implement CapabilityProvider are treated as not supporting it.
+func RendersVocalTags(provider Provider) bool {
+	capabilities, ok := provider.(CapabilityProvider)
+	return ok && capabilities.Capabilities().SupportsVocalTags
 }
 
 // ValidateRequest checks provider-neutral request fields against a discovered

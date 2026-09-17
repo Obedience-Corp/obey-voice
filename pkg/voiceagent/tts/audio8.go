@@ -773,6 +773,7 @@ func (a *Audio8TTS) Capabilities() ProviderCapabilities {
 		ModelReady:        a.Available(),
 		SampleRates:       []int{a.man.SampleRate},
 		SupportsStreaming: true,
+		SupportsVocalTags: false,
 		// Reference audio is the model's native conditioning path. It is
 		// supported only when the export carries the registration package -
 		// the encoder is an optional part of the snapshot, and without it

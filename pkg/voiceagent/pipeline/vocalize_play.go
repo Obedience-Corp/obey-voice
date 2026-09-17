@@ -7,7 +7,12 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
+
+// errNothingToSpeak is a tag-only beat on an engine that cannot vocalize it.
+// Callers skip the segment instead of sending empty text or Kokoro-spelling.
+var errNothingToSpeak = errors.New("nothing to synthesize")
 
 // EnableVocals installs the optional recorded-sound bank. Empty dir is fine:
 // [moan]/[laugh] expand to onomatopoeia and go through the live TTS throat.
@@ -57,20 +62,28 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 
 func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
 	parts := splitVocalizations(sentence)
-	// Recorded WAVs (persona sounds/) splice in. Otherwise expand tags to the
-	// onomatopoeia Qwen vocalizes in this speaker — one take, same throat.
+	// Recorded WAVs (persona sounds/) splice in on any engine. Otherwise
+	// tags become onomatopoeia only for a provider that can vocalize them.
 	if p.vocals != nil && p.vocals.allSoundsRecorded(parts) {
 		return p.renderVocalizedObserved(ctx, parts, stickFallback)
 	}
-	pick := firstVocalPhrase
-	if p.vocals != nil {
-		pick = p.vocals.nextPhrase
+	return p.synthesizeWithFallbackObserved(ctx, sentence, stickFallback)
+}
+
+// prepareSpeechForTTS is the text one provider should hear. Qwen gets the
+// onomatopoeia; Kokoro and other engines get the tags stripped.
+func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
+	if !hasVocalTag(sentence) {
+		return sentence
 	}
-	text := expandVocalTags(sentence, pick)
-	if text == "" {
-		return nil, false, synthesisObservation{warmState: events.WarmStateUnknown}, errors.New("nothing to synthesize")
+	if tts.RendersVocalTags(provider) {
+		pick := firstVocalPhrase
+		if vocals != nil {
+			pick = vocals.nextPhrase
+		}
+		return expandVocalTags(sentence, pick)
 	}
-	return p.synthesizeWithFallbackObserved(ctx, text, stickFallback)
+	return stripVocalTags(sentence)
 }
 
 // renderVocalizedObserved stitches sound clips and synthesized speech into one stream
