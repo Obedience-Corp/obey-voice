@@ -426,7 +426,7 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 		return Frame{}, err
 	}
 	samples, spans, gap := c.buf.readCapture(ChunkSize)
-	c.discardRaw(len(samples))
+	c.discardAligned(len(samples))
 	if samples == nil {
 		// A failed reopen is reported by recoverIfStalled and retried on the
 		// next stall window, so it must not end the STT session: the loop keeps
@@ -544,6 +544,13 @@ func (c *Capture) SnapshotStartupWindows(keep time.Duration) (raw, residual []fl
 	if keep > 0 {
 		n = min(n, int(keep*SampleRate/time.Second))
 	}
+	if len(resAll) > 0 {
+		n = min(n, len(resAll))
+	}
+	if len(primAll) > 0 {
+		n = min(n, len(primAll))
+	}
+	n = alignedKeepSamples(n)
 	if n <= 0 {
 		return nil, nil
 	}
@@ -580,27 +587,43 @@ func (c *Capture) Newest(n int) []float32 {
 }
 
 // ReplaceUnread clears processed capture and writes samples as the next listen.
+// Raw and preserve rings are replaced with the same PCM so later ReadFrame
+// discards stay aligned with what STT reads.
 func (c *Capture) ReplaceUnread(samples []float32) {
 	if c == nil || c.buf == nil {
 		return
 	}
 	c.ingestMu.Lock()
 	defer c.ingestMu.Unlock()
-	c.buf.Clear()
+	replaceRing(c.buf, samples)
+	replaceRing(c.raw, samples)
+	replaceRing(c.preserve, samples)
+}
+
+func replaceRing(rb *RingBuffer, samples []float32) {
+	if rb == nil {
+		return
+	}
+	rb.Clear()
 	if len(samples) > 0 {
-		c.buf.Write(samples)
+		rb.Write(samples)
 	}
 }
 
-func (c *Capture) discardRaw(n int) {
-	if c.raw == nil || n <= 0 {
+func (c *Capture) discardAligned(n int) {
+	discardRing(c.raw, n)
+	discardRing(c.preserve, n)
+}
+
+func discardRing(rb *RingBuffer, n int) {
+	if rb == nil || n <= 0 {
 		return
 	}
-	if c.raw.Available() >= n {
-		_ = c.raw.Read(n)
+	if rb.Available() >= n {
+		_ = rb.Read(n)
 		return
 	}
-	c.raw.Clear()
+	rb.Clear()
 }
 
 // SetFrontend installs an audio front-end for live capture processing.

@@ -52,11 +52,17 @@ func (f *startupPreserveFrontend) ProcessCapture(samples []float32) []float32 {
 		return samples
 	}
 	preserved := f.preserve.ProcessCapture(slices.Clone(samples))
+	residual := preserved
+	if r, ok := f.preserve.(aecResidualReporter); ok {
+		if res := r.LastAECResidual(); len(res) == len(preserved) {
+			residual = res
+		}
+	}
 	primary := f.primary.ProcessCapture(samples)
-	use := frameRMS(preserved) > StartupPreserveMinRMS && frameRMS(preserved) > startupPreserveRatio*frameRMS(primary)
+	use := frameRMS(residual) > StartupPreserveMinRMS && frameRMS(residual) > startupPreserveRatio*frameRMS(primary)
 	f.mu.Lock()
 	f.usePreserve = use
-	f.lastResidual = slices.Clone(preserved)
+	f.lastResidual = slices.Clone(residual)
 	f.mu.Unlock()
 	return primary
 }
@@ -130,11 +136,12 @@ func (f *startupPreserveFrontend) Close() error {
 }
 
 var (
-	_ Frontend         = (*startupPreserveFrontend)(nil)
-	_ ReferenceDelayer = (*startupPreserveFrontend)(nil)
-	_ GainReporter     = (*startupPreserveFrontend)(nil)
-	_ NearEndReporter  = (*startupPreserveFrontend)(nil)
-	_ ResidualReporter = (*startupPreserveFrontend)(nil)
+	_ Frontend            = (*startupPreserveFrontend)(nil)
+	_ ReferenceDelayer    = (*startupPreserveFrontend)(nil)
+	_ GainReporter        = (*startupPreserveFrontend)(nil)
+	_ NearEndReporter     = (*startupPreserveFrontend)(nil)
+	_ ResidualReporter    = (*startupPreserveFrontend)(nil)
+	_ aecResidualReporter = (*VoiceFrontend)(nil)
 )
 
 // NearEndReporter is optionally implemented by front-ends that can distinguish
@@ -146,6 +153,11 @@ type NearEndReporter interface {
 // ResidualReporter exposes the parallel near-end residual for startup STT.
 type ResidualReporter interface {
 	LastResidual() []float32
+}
+
+// aecResidualReporter is the NLMS error before the preserve path's NS/AGC.
+type aecResidualReporter interface {
+	LastAECResidual() []float32
 }
 
 // CropNearEndResidual keeps the first NearEnd hop of residual plus a bounded
@@ -178,6 +190,20 @@ func CropNearEndResidual(residual, primary []float32) []float32 {
 	return slices.Clone(residual[start:end])
 }
 
+// alignedKeepSamples trims a keep window to whole NearEnd hops counted from
+// the newest sample, matching live callback decisions. A short remainder is
+// left unaligned so a 200ms crop is not discarded.
+func alignedKeepSamples(n int) int {
+	if n < nearEndHop {
+		return n
+	}
+	aligned := n - n%nearEndHop
+	if aligned < nearEndMinKeep {
+		return n
+	}
+	return aligned
+}
+
 // NormalizeSpeechRMS scales a NearEnd crop to the front-end target RMS so
 // STT audibility (which divides by live AGC gain) still admits it.
 func NormalizeSpeechRMS(samples []float32) []float32 {
@@ -193,5 +219,39 @@ func NormalizeSpeechRMS(samples []float32) []float32 {
 	for i, s := range samples {
 		out[i] = s * g
 	}
+	return out
+}
+
+// PadToCaptureFrames extends a crop to a whole ReadFrame so STT does not
+// mix the last Wait samples with later live APM in one chunk.
+func PadToCaptureFrames(samples []float32) []float32 {
+	if len(samples) == 0 {
+		return nil
+	}
+	n := len(samples)
+	if rem := n % ChunkSize; rem != 0 {
+		n += ChunkSize - rem
+	}
+	if n == len(samples) {
+		return slices.Clone(samples)
+	}
+	out := make([]float32, n)
+	copy(out, samples)
+	return out
+}
+
+// startupDecoderSilence is longer than the production VAD silence timeout
+// (1.2s) so STT finalizes the NearEnd crop without the live APM tail.
+const startupDecoderSilence = ChunkSize * 14 // 1.4s
+
+// PadStartupListen aligns the crop to ReadFrame and appends trailing silence
+// so the next listen ends on Wait instead of later echo.
+func PadStartupListen(samples []float32) []float32 {
+	aligned := PadToCaptureFrames(samples)
+	if len(aligned) == 0 {
+		return nil
+	}
+	out := make([]float32, len(aligned)+startupDecoderSilence)
+	copy(out, aligned)
 	return out
 }

@@ -251,6 +251,113 @@ func TestInterruptControllerStartupShortQualifiesAtArmFence(t *testing.T) {
 	}
 }
 
+func TestInterruptControllerStartupShortQualifiesAfterSilenceBeforeFence(t *testing.T) {
+	capture := newFakeCapture()
+	vad := &fakeVAD{}
+	playing := &alwaysPlaying{}
+	playing.playing.Store(true)
+	c := newTestController(capture, vad, playing, bargeInMinSpeechChunks)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var armAt atomic.Int64
+	armAt.Store(time.Now().Add(time.Hour).UnixNano())
+	out := c.watch(ctx, &armAt)
+	for range bargeInStartupMinChunks {
+		capture.Publish([]float32{0.9, 0.9})
+		time.Sleep(5 * time.Millisecond)
+	}
+	for range 4 {
+		capture.Publish([]float32{0.0, 0.0})
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case <-out:
+		t.Fatal("short startup speech emitted before the arm fence")
+	case <-time.After(80 * time.Millisecond):
+	}
+	armAt.Store(time.Now().Add(-time.Second).UnixNano())
+	capture.Publish([]float32{0.0, 0.0})
+	select {
+	case req := <-out:
+		if !req.Source.DuringArm {
+			t.Fatal("short startup speech was not marked DuringArm")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("short command that ended inside the fence did not qualify at the fence")
+	}
+}
+
+func TestInterruptControllerStartupShortNearEndHopQualifiesAfterSilence(t *testing.T) {
+	capture := &nearEndCapture{fakeCapture: newFakeCapture()}
+	vad := &fakeVAD{}
+	playing := &alwaysPlaying{}
+	playing.playing.Store(true)
+	c := newTestController(capture, vad, playing, bargeInMinSpeechChunks)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var armAt atomic.Int64
+	armAt.Store(time.Now().Add(time.Hour).UnixNano())
+	out := c.watch(ctx, &armAt)
+	capture.nearEnd.Store(true)
+	capture.Publish([]float32{0.0, 0.0})
+	time.Sleep(5 * time.Millisecond)
+	capture.nearEnd.Store(false)
+	for range 4 {
+		capture.Publish([]float32{0.0, 0.0})
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case <-out:
+		t.Fatal("NearEnd hop emitted before the arm fence")
+	case <-time.After(80 * time.Millisecond):
+	}
+	armAt.Store(time.Now().Add(-time.Second).UnixNano())
+	capture.Publish([]float32{0.0, 0.0})
+	select {
+	case req := <-out:
+		if !req.Source.DuringArm {
+			t.Fatal("NearEnd hop was not marked DuringArm")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("single NearEnd hop that ended inside the fence did not qualify")
+	}
+}
+
+func TestInterruptControllerStartupShortBelowMinChunksDoesNotQualifyAfterSilence(t *testing.T) {
+	capture := newFakeCapture()
+	vad := &fakeVAD{}
+	playing := &alwaysPlaying{}
+	playing.playing.Store(true)
+	c := newTestController(capture, vad, playing, bargeInMinSpeechChunks)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var armAt atomic.Int64
+	armAt.Store(time.Now().Add(time.Hour).UnixNano())
+	out := c.watch(ctx, &armAt)
+	for range bargeInStartupMinChunks - 1 {
+		capture.Publish([]float32{0.9, 0.9})
+		time.Sleep(5 * time.Millisecond)
+	}
+	for range 4 {
+		capture.Publish([]float32{0.0, 0.0})
+		time.Sleep(5 * time.Millisecond)
+	}
+	armAt.Store(time.Now().Add(-time.Second).UnixNano())
+	capture.Publish([]float32{0.0, 0.0})
+	select {
+	case <-out:
+		t.Fatal("below-min arm speech qualified after silence")
+	case <-time.After(120 * time.Millisecond):
+	}
+}
+
+type nearEndCapture struct {
+	*fakeCapture
+	nearEnd atomic.Bool
+}
+
+func (c *nearEndCapture) NearEnd() bool { return c.nearEnd.Load() }
+
 func TestInterruptControllerFiresOnPauseSpeech(t *testing.T) {
 	// The B3 core regression: once armed, speech during a playback pause
 	// (queue-drain gap, model pause between segments) must trip barge-in even
