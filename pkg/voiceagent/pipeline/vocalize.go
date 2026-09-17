@@ -1,73 +1,41 @@
 package pipeline
 
 import (
-	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 // vocalKind is a non-speech beat in a reply. The model writes [moan].
-// Engines that advertise SupportsVocalTags (Qwen3-TTS) hear the onomatopoeia
-// as a human sound in the current throat. Kokoro and Audio8 do not, so the
-// tags are stripped and never synthesized. Square-bracket markup never
-// reaches the transcript.
-//
-// Official Qwen3-TTS has no <laugh> token. It does keep paralinguistics in
-// the codec, so "Haha!", "Haaaah…", "Hahh…" come out as a laugh / moan /
-// sigh in that speaker — the same trick the 1.7B instruct path uses.
+// Engines opt in with SupportsVocalTags. Qwen rewrites tags to codec
+// onomatopoeia via VocalTagRewriter. A future engine can pass tags through
+// or map them to its own syntax. Kokoro and Audio8 omit the flag, so tags
+// are stripped. Square-bracket markup never reaches the transcript.
 const vocalSampleRate = 24000
 
 const (
-	vocalMoan    = "moan"
-	vocalGasp    = "gasp"
-	vocalLaugh   = "laugh"
-	vocalSigh    = "sigh"
-	vocalWhimper = "whimper"
-	vocalKiss    = "kiss"
+	vocalMoan    = tts.VocalMoan
+	vocalGasp    = tts.VocalGasp
+	vocalLaugh   = tts.VocalLaugh
+	vocalSigh    = tts.VocalSigh
+	vocalWhimper = tts.VocalWhimper
+	vocalKiss    = tts.VocalKiss
 )
 
-var vocalAlias = map[string]string{
-	"moan":     vocalMoan,
-	"moans":    vocalMoan,
-	"ahh":      vocalMoan,
-	"ahhs":     vocalMoan,
-	"mmm":      vocalMoan,
-	"gasp":     vocalGasp,
-	"gasps":    vocalGasp,
-	"laugh":    vocalLaugh,
-	"laughs":   vocalLaugh,
-	"haha":     vocalLaugh,
-	"sigh":     vocalSigh,
-	"sighs":    vocalSigh,
-	"whimper":  vocalWhimper,
-	"whimpers": vocalWhimper,
-	"kiss":     vocalKiss,
-	"kisses":   vocalKiss,
-}
-
-// vocalTagRE matches [moan], [gasp], [laugh], … including common aliases.
-var vocalTagRE = regexp.MustCompile(`(?i)\[(moans?|gasps?|laughs?|sighs?|whimpers?|kiss(?:es)?|ahhs?|mmm|haha)\]`)
+var vocalPhrases = tts.OnomatopoeiaPhrases
 
 type vocalPart struct {
 	sound string // empty = speech
 	text  string
 }
 
-func hasVocalTag(s string) bool {
-	return vocalTagRE.MatchString(s)
-}
+func hasVocalTag(s string) bool { return tts.HasVocalTag(s) }
 
-func canonicalVocal(raw string) string {
-	return vocalAlias[strings.ToLower(strings.TrimSpace(raw))]
-}
+func stripVocalTags(s string) string { return tts.StripVocalTags(s) }
 
-// stripVocalTags removes sound markup from text bound for the transcript.
-func stripVocalTags(s string) string {
-	if s == "" || !hasVocalTag(s) {
-		return s
-	}
-	s = vocalTagRE.ReplaceAllString(s, " ")
-	return strings.Join(strings.Fields(s), " ")
+func expandVocalTags(s string, pick func(kind string) string) string {
+	return tts.ExpandOnomatopoeiaVocalTags(s, pick)
 }
 
 // splitVocalizations cuts a reply into speech and sound parts, in order.
@@ -77,7 +45,7 @@ func splitVocalizations(s string) []vocalPart {
 	if s == "" {
 		return nil
 	}
-	locs := vocalTagRE.FindAllStringSubmatchIndex(s, -1)
+	locs := tts.VocalTagRE.FindAllStringSubmatchIndex(s, -1)
 	if len(locs) == 0 {
 		return []vocalPart{{text: s}}
 	}
@@ -89,7 +57,7 @@ func splitVocalizations(s string) []vocalPart {
 				parts = append(parts, vocalPart{text: text})
 			}
 		}
-		kind := canonicalVocal(s[loc[2]:loc[3]])
+		kind := tts.CanonicalVocal(s[loc[2]:loc[3]])
 		if kind != "" {
 			parts = append(parts, vocalPart{sound: kind})
 		}
@@ -118,49 +86,4 @@ func vocalPartsHaveSound(parts []vocalPart) bool {
 		}
 	}
 	return false
-}
-
-// vocalPhrases are what Qwen3-TTS renders as the sound, in the active voice.
-// Leading "h" adds breath. These are not English words to be read out —
-// they are the onomatopoeia the model was trained to vocalize.
-var vocalPhrases = map[string][]string{
-	vocalMoan:    {"Haaaah...", "Nnngh...", "Ahhn..."},
-	vocalGasp:    {"Hah!", "Haah!"},
-	vocalLaugh:   {"Haha!", "Haha haha."},
-	vocalSigh:    {"Hahh...", "Haaah."},
-	vocalWhimper: {"Nngh...", "Mmh..."},
-	// kiss is recognized so [kiss] can be stripped, not spoken. Qwen just
-	// says the word; there is no onomatopoeia that comes out as a kiss.
-}
-
-func firstVocalPhrase(kind string) string {
-	phrases := vocalPhrases[kind]
-	if len(phrases) == 0 {
-		return ""
-	}
-	return phrases[0]
-}
-
-// expandVocalTags rewrites [moan] / [laugh] / … into the onomatopoeia the
-// synthesiser should speak, so one TTS call produces the sound in the same
-// throat as the surrounding words. pick chooses a variant; nil uses the first.
-func expandVocalTags(s string, pick func(kind string) string) string {
-	if s == "" || !hasVocalTag(s) {
-		return s
-	}
-	if pick == nil {
-		pick = firstVocalPhrase
-	}
-	return strings.TrimSpace(vocalTagRE.ReplaceAllStringFunc(s, func(tag string) string {
-		m := vocalTagRE.FindStringSubmatch(tag)
-		if len(m) < 2 {
-			return ""
-		}
-		kind := canonicalVocal(m[1])
-		phrase := pick(kind)
-		if phrase == "" {
-			return ""
-		}
-		return phrase
-	}))
 }

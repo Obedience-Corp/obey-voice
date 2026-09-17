@@ -110,6 +110,13 @@ func (q *Qwen3TTS) Capabilities() tts.ProviderCapabilities {
 	return caps
 }
 
+// RewriteVocalTags maps [sigh]/[laugh] to the onomatopoeia this codec
+// vocalizes. Other engines implement VocalTagRewriter with their own mapping,
+// or omit it to receive the tags unchanged.
+func (q *Qwen3TTS) RewriteVocalTags(s string) string {
+	return tts.ExpandOnomatopoeiaVocalTags(s, nil)
+}
+
 func (q *Qwen3TTS) Status() tts.ProviderStatus {
 	available := q.Available()
 	detail := "external native CLI and model configured"

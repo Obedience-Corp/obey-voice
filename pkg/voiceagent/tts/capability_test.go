@@ -45,6 +45,16 @@ func TestRendersVocalTags(t *testing.T) {
 	}
 }
 
+func TestExpandOnomatopoeiaVocalTags(t *testing.T) {
+	got := ExpandOnomatopoeiaVocalTags("[sigh] hello", nil)
+	if strings.Contains(strings.ToLower(got), "[sigh]") {
+		t.Fatalf("markup leaked: %q", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Fatalf("speech dropped: %q", got)
+	}
+}
+
 func TestCapabilityProviderContractReportsModesAndStatus(t *testing.T) {
 	p := &contractProvider{
 		available: true,

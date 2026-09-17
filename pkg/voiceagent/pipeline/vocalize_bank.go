@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 type vocalClip struct {
@@ -80,7 +81,7 @@ func vocalKindFromFilename(name string) string {
 	base := strings.TrimSuffix(strings.ToLower(name), ".wav")
 	base = strings.Split(base, "-")[0]
 	base = strings.Split(base, "_")[0]
-	return vocalAlias[base]
+	return tts.CanonicalVocal(base)
 }
 
 func (b *vocalBank) pick(kind string) (vocalClip, bool) {

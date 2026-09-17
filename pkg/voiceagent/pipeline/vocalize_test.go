@@ -81,7 +81,7 @@ func TestExpandVocalTagsUsesHumanOnomatopoeia(t *testing.T) {
 }
 
 func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
-	ttsProvider := &fakeTTS{vocalTags: true}
+	ttsProvider := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
 	player := newFakePlayer(time.Millisecond)
 	defer player.Close()
 	p := &Pipeline{
@@ -120,8 +120,9 @@ func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
 }
 
 func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
-	qwen := &fakeTTS{vocalTags: true}
+	qwen := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
 	kokoro := &fakeTTS{}
+	native := &fakeTTS{vocalTags: true}
 	in := "[sigh] hello there."
 	got := prepareSpeechForTTS(in, qwen, nil)
 	if strings.Contains(strings.ToLower(got), "[sigh]") {
@@ -146,6 +147,9 @@ func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
 	}
 	if got := prepareSpeechForTTS("[sigh]", kokoro, nil); got != "" {
 		t.Errorf("Kokoro tag-only = %q, want empty", got)
+	}
+	if got := prepareSpeechForTTS(in, native, nil); got != in {
+		t.Errorf("native-tag engine = %q, want tags passed through", got)
 	}
 }
 
@@ -192,6 +196,12 @@ func TestRunTurnSkipsTagOnlyWhenEngineCannotRenderThem(t *testing.T) {
 	if texts := ttsProvider.Texts(); len(texts) != 0 {
 		t.Errorf("tag-only beat on Kokoro must not call TTS, got %v", texts)
 	}
+}
+
+type qwenLikeTTS struct{ fakeTTS }
+
+func (q *qwenLikeTTS) RewriteVocalTags(s string) string {
+	return expandVocalTags(s, nil)
 }
 
 func TestFallbackKokoroDoesNotReceiveQwenOnomatopoeia(t *testing.T) {

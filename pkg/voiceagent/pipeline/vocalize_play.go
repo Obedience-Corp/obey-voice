@@ -70,20 +70,23 @@ func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, 
 	return p.synthesizeWithFallbackObserved(ctx, sentence, stickFallback)
 }
 
-// prepareSpeechForTTS is the text one provider should hear. Qwen gets the
-// onomatopoeia; Kokoro and other engines get the tags stripped.
-func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
+// prepareSpeechForTTS is the text one provider should hear.
+//
+//   - No vocal-tag support: tags are stripped (Kokoro, Audio8, unknown engines).
+//   - SupportsVocalTags + VocalTagRewriter: the engine's own mapping (Qwen
+//     onomatopoeia today; another engine can map to <sigh> or similar).
+//   - SupportsVocalTags only: tags are passed through unchanged.
+func prepareSpeechForTTS(sentence string, provider tts.Provider, _ *vocalBank) string {
 	if !hasVocalTag(sentence) {
 		return sentence
 	}
-	if tts.RendersVocalTags(provider) {
-		pick := firstVocalPhrase
-		if vocals != nil {
-			pick = vocals.nextPhrase
-		}
-		return expandVocalTags(sentence, pick)
+	if !tts.RendersVocalTags(provider) {
+		return stripVocalTags(sentence)
 	}
-	return stripVocalTags(sentence)
+	if rewriter, ok := provider.(tts.VocalTagRewriter); ok {
+		return rewriter.RewriteVocalTags(sentence)
+	}
+	return sentence
 }
 
 // renderVocalizedObserved stitches sound clips and synthesized speech into one stream
