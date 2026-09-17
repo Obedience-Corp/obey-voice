@@ -35,6 +35,46 @@ func TestCaptureReplaceUnreadWithRawRestoresPreFrontendPCM(t *testing.T) {
 	}
 }
 
+type residualFrontend struct {
+	primary, residual []float32
+}
+
+func (f residualFrontend) ProcessCapture(samples []float32) []float32 {
+	return f.primary
+}
+
+func (residualFrontend) PushPlaybackReference([]float32) {}
+
+func (residualFrontend) Close() error { return nil }
+
+func (f residualFrontend) LastResidual() []float32 { return f.residual }
+
+func TestCaptureSnapshotStartupWindowsCropsNearEndResidual(t *testing.T) {
+	c := NewCapture()
+	primary := make([]float32, 12*960)
+	residual := make([]float32, 12*960)
+	for i := range primary {
+		primary[i] = 0.002
+	}
+	for i := 3 * 960; i < 4*960; i++ {
+		residual[i] = 0.04
+	}
+	c.SetFrontend(residualFrontend{primary: make([]float32, 960), residual: make([]float32, 960)})
+	at := time.Now()
+	for i := range 12 {
+		c.SetFrontend(residualFrontend{primary: primary[i*960 : (i+1)*960], residual: residual[i*960 : (i+1)*960]})
+		c.ingestCapture(make([]float32, 960), at.Add(time.Duration(i)*60*time.Millisecond), 1)
+	}
+	raw, crop := c.SnapshotStartupWindows(0)
+	if len(raw) != 12*960 {
+		t.Fatalf("raw len=%d", len(raw))
+	}
+	want := CropNearEndResidual(residual, primary)
+	if !slices.Equal(crop, want) {
+		t.Fatalf("residual crop len=%d want %d", len(crop), len(want))
+	}
+}
+
 func TestCaptureSubscriptionFramesMatchCallbackAndRingPositions(t *testing.T) {
 	c := NewCapture()
 	id, frames := c.SubscribeFrames(3)

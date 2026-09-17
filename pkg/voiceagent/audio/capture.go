@@ -41,6 +41,7 @@ type Capture struct {
 	device           *malgo.Device
 	buf              *RingBuffer
 	raw              *RingBuffer // pre-frontend PCM, aligned with unread buf samples
+	preserve         *RingBuffer // NLMS residual, aligned with unread buf samples
 	frontend         Frontend
 	active           bool          // the caller wants capture running
 	running          bool          // a device is open
@@ -50,6 +51,7 @@ type Capture struct {
 	callbackSeq      int64
 	nextSub          int
 	frameSeq         atomic.Int64
+	ingested         atomic.Uint64
 	deviceGeneration atomic.Uint64
 	deviceName       string
 	actualDeviceName string
@@ -106,6 +108,7 @@ func NewCaptureWithDevice(deviceName string) *Capture {
 	c := &Capture{
 		buf:        NewRingBuffer(ring),
 		raw:        NewRingBuffer(ring),
+		preserve:   NewRingBuffer(ring),
 		subs:       make(map[int]chan []float32),
 		frameSubs:  make(map[int]*captureFrameSubscription),
 		deviceName: deviceName,
@@ -295,11 +298,21 @@ func (c *Capture) openMalgoDevice() error {
 func (c *Capture) ingestCapture(samples []float32, callbackAt time.Time, generation uint64) {
 	c.ingestMu.Lock()
 	defer c.ingestMu.Unlock()
+	c.ingested.Add(uint64(len(samples)))
 	if c.raw != nil {
 		c.raw.writeCapture(slices.Clone(samples), callbackAt, generation)
 	}
 	if c.frontend != nil {
 		samples = c.frontend.ProcessCapture(samples)
+	}
+	if c.preserve != nil {
+		residual := samples
+		if r, ok := c.frontend.(ResidualReporter); ok {
+			if res := r.LastResidual(); len(res) == len(samples) {
+				residual = res
+			}
+		}
+		c.preserve.Write(slices.Clone(residual))
 	}
 	span := c.buf.writeCapture(samples, callbackAt, generation)
 	c.publish(samples)
@@ -454,6 +467,9 @@ func (c *Capture) Reset() {
 	if c.raw != nil {
 		c.raw.Clear()
 	}
+	if c.preserve != nil {
+		c.preserve.Clear()
+	}
 }
 
 // ResetKeeping discards stale audio while retaining at most the newest
@@ -465,12 +481,18 @@ func (c *Capture) ResetKeeping(duration time.Duration) {
 		if c.raw != nil {
 			c.raw.Clear()
 		}
+		if c.preserve != nil {
+			c.preserve.Clear()
+		}
 		return
 	}
 	samples := int(duration * SampleRate / time.Second)
 	c.buf.KeepLast(samples)
 	if c.raw != nil {
 		c.raw.KeepLast(samples)
+	}
+	if c.preserve != nil {
+		c.preserve.KeepLast(samples)
 	}
 }
 
@@ -498,6 +520,76 @@ func (c *Capture) ReplaceUnreadWithRaw(keep time.Duration) {
 	}
 	c.buf.Clear()
 	c.buf.Write(raw[len(raw)-n:])
+}
+
+// SnapshotStartupWindows copies the bounded unread raw tail and the cropped
+// NLMS NearEnd residual. Residual is nil when no NearEnd hop exists.
+func (c *Capture) SnapshotStartupWindows(keep time.Duration) (raw, residual []float32) {
+	if c == nil {
+		return nil, nil
+	}
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
+	var rawAll, resAll, primAll []float32
+	if c.raw != nil {
+		rawAll = c.raw.snapshotUnread()
+	}
+	if c.preserve != nil {
+		resAll = c.preserve.snapshotUnread()
+	}
+	if c.buf != nil {
+		primAll = c.buf.snapshotUnread()
+	}
+	n := len(rawAll)
+	if keep > 0 {
+		n = min(n, int(keep*SampleRate/time.Second))
+	}
+	if n <= 0 {
+		return nil, nil
+	}
+	raw = slices.Clone(rawAll[len(rawAll)-n:])
+	if len(resAll) >= n && len(primAll) >= n {
+		residual = CropNearEndResidual(resAll[len(resAll)-n:], primAll[len(primAll)-n:])
+	}
+	return raw, residual
+}
+
+// Ingested is the number of capture samples written since Start.
+func (c *Capture) Ingested() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.ingested.Load()
+}
+
+// Newest copies the newest n processed samples still unread.
+func (c *Capture) Newest(n int) []float32 {
+	if c == nil || c.buf == nil || n <= 0 {
+		return nil
+	}
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
+	all := c.buf.snapshotUnread()
+	if n > len(all) {
+		n = len(all)
+	}
+	if n <= 0 {
+		return nil
+	}
+	return slices.Clone(all[len(all)-n:])
+}
+
+// ReplaceUnread clears processed capture and writes samples as the next listen.
+func (c *Capture) ReplaceUnread(samples []float32) {
+	if c == nil || c.buf == nil {
+		return
+	}
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
+	c.buf.Clear()
+	if len(samples) > 0 {
+		c.buf.Write(samples)
+	}
 }
 
 func (c *Capture) discardRaw(n int) {

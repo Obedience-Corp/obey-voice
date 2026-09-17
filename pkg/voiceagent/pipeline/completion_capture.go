@@ -116,6 +116,9 @@ func (p *Pipeline) startCaptureSession(ctx context.Context) (stt.Session, uint64
 	if p.Capture != nil && !preserve && !prepared {
 		p.Capture.Reset()
 	}
+	if preserve {
+		p.applyStartupAdmission(ctx)
+	}
 	// A prepared scope was already trimmed at the response boundary. Keep
 	// everything captured since then, including speech during classification.
 
