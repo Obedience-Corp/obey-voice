@@ -1,6 +1,9 @@
 package audio
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 type rmsFrontend struct{ gain float64 }
 
@@ -28,6 +31,40 @@ func TestStartupPreserveUsesNLMSWhenPrimaryOverSuppresses(t *testing.T) {
 	}
 	if !f.NearEnd() {
 		t.Fatal("expected NearEnd when NLMS residual dominates APM")
+	}
+}
+
+type gatedPreserveFrontend struct {
+	aec, out []float32
+}
+
+func (f gatedPreserveFrontend) ProcessCapture([]float32) []float32 { return slices.Clone(f.out) }
+
+func (gatedPreserveFrontend) PushPlaybackReference([]float32) {}
+
+func (gatedPreserveFrontend) Close() error { return nil }
+
+func (f gatedPreserveFrontend) LastAECResidual() []float32 { return slices.Clone(f.aec) }
+
+func TestStartupPreserveUsesAECResidualWhenNSGates(t *testing.T) {
+	aec := make([]float32, 960)
+	gated := make([]float32, 960)
+	for i := range aec {
+		aec[i] = 0.04
+		gated[i] = 0.002
+	}
+	f := newStartupPreserveFrontend(rmsFrontend{gain: 0.05}, gatedPreserveFrontend{aec: aec, out: gated})
+	speech := make([]float32, 960)
+	for i := range speech {
+		speech[i] = 0.04
+	}
+	_ = f.ProcessCapture(speech)
+	if !f.NearEnd() {
+		t.Fatal("duplex NS on the preserve path hid the NearEnd hop")
+	}
+	got := f.LastResidual()
+	if frameRMS(got) < StartupPreserveMinRMS {
+		t.Fatalf("LastResidual RMS %.4f is the gated NS output", frameRMS(got))
 	}
 }
 
@@ -91,6 +128,43 @@ func TestNormalizeSpeechRMSRaisesQuietCrop(t *testing.T) {
 	got := NormalizeSpeechRMS(in)
 	if frameRMS(got) < 0.07 || frameRMS(got) > 0.09 {
 		t.Fatalf("normalized RMS %.4f, want ~0.08", frameRMS(got))
+	}
+}
+
+func TestAlignedKeepSamplesTrimsToHopFromNewest(t *testing.T) {
+	if got := alignedKeepSamples(12000); got != 11520 {
+		t.Fatalf("aligned keep=%d, want 11520", got)
+	}
+	if got := alignedKeepSamples(nearEndMinKeep - 1); got != nearEndMinKeep-1 {
+		t.Fatalf("short keep=%d", got)
+	}
+}
+
+func TestPadToCaptureFramesDoesNotMixPartialLastChunk(t *testing.T) {
+	in := make([]float32, 4000)
+	for i := range in {
+		in[i] = 0.04
+	}
+	got := PadToCaptureFrames(in)
+	if len(got) != 4800 {
+		t.Fatalf("padded len=%d, want 4800", len(got))
+	}
+	if got[3999] != 0.04 || got[4000] != 0 {
+		t.Fatal("pad overwrote the crop or left the tail non-silent")
+	}
+}
+
+func TestPadStartupListenAppendsTrailingSilence(t *testing.T) {
+	in := make([]float32, 4800)
+	for i := range in {
+		in[i] = 0.04
+	}
+	got := PadStartupListen(in)
+	if len(got) != 4800+startupDecoderSilence {
+		t.Fatalf("listen pad len=%d", len(got))
+	}
+	if got[4799] != 0.04 || got[4800] != 0 || got[len(got)-1] != 0 {
+		t.Fatal("startup listen pad did not keep the crop followed by silence")
 	}
 }
 

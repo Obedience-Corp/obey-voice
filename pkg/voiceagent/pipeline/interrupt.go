@@ -33,7 +33,9 @@ const (
 	bargeInMinSpeechChunks = 6
 	// bargeInStartupMinChunks is enough neural callbacks inside the emission
 	// fence to keep a short "wait"/"stop" that AEC rendered inaudible.
-	// Echo-only APM residuals in that window do not reach this count.
+	// Echo-only APM residuals in that window do not reach this count. A
+	// NearEnd hop during the fence also qualifies; that verdict latches
+	// through silence until the fence lifts so a 526ms Wait is not erased.
 	bargeInStartupMinChunks = 3
 	// bargeInBufferSize is the capture subscription depth for the controller.
 	bargeInBufferSize = 8
@@ -283,6 +285,8 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 		segmentQueued := false
 		pendingAdmit := false
 		collectedDuringArm := false
+		nearEndDuringArm := false
+		startupQualified := false
 		var gapStart time.Time
 		var source interruptSourceEvidence
 		emit := func(duringArm bool, frame audio.Frame) bool {
@@ -324,6 +328,8 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				segmentQueued = false
 				pendingAdmit = false
 				collectedDuringArm = false
+				nearEndDuringArm = false
+				startupQualified = false
 				c.vad.Clear()
 				continue
 			}
@@ -357,6 +363,7 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 			if !armed {
 				if n, ok := c.capture.(interface{ NearEnd() bool }); ok && n.NearEnd() {
 					speech = true
+					nearEndDuringArm = true
 				}
 			}
 			if speech {
@@ -388,8 +395,11 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 			queued := c.vad.IsSpeechDetected()
 			completed := queued && !segmentQueued
 			segmentQueued = queued
-			startupReady := collectedDuringArm && consecutiveSpeech >= bargeInStartupMinChunks
-			admit := (audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)) || startupReady
+			startupReady := collectedDuringArm && (consecutiveSpeech >= bargeInStartupMinChunks || nearEndDuringArm)
+			if startupReady {
+				startupQualified = true
+			}
+			admit := (audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)) || startupReady || startupQualified
 			if completed {
 				// Consume evaluated native segments, including quiet rejected
 				// ones, so later completions can use their own speech run.

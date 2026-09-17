@@ -386,10 +386,17 @@ func (p *Pipeline) applyStartupAdmission(ctx context.Context) {
 	}
 	waitStartupContinuation(ctx, cap, adm.ingestedAt)
 	post := newestSince(cap, adm.ingestedAt)
-	if len(post) == 0 || tailHasSpeech(post) {
+	if len(post) == 0 || tailHasSpeech(continuationTail(post)) {
 		return
 	}
-	cap.ReplaceUnread(audio.NormalizeSpeechRMS(adm.residual))
+	cap.ReplaceUnread(audio.PadStartupListen(audio.NormalizeSpeechRMS(adm.residual)))
+}
+
+func continuationTail(samples []float32) []float32 {
+	if len(samples) <= startupContinuationSamples {
+		return samples
+	}
+	return samples[len(samples)-startupContinuationSamples:]
 }
 
 func newestSince(cap startupAdmissionCapture, ingestedAt uint64) []float32 {

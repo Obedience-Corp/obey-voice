@@ -2,6 +2,7 @@ package audio
 
 import (
 	"math"
+	"slices"
 	"sync"
 )
 
@@ -52,6 +53,7 @@ type VoiceFrontend struct {
 	agc      automaticGainControl
 	refs     sampleQueue
 	refTail  int // remaining capture samples of acoustic tail
+	lastAEC  []float32
 }
 
 // NewVoiceFrontend creates the default local audio front-end.
@@ -89,6 +91,7 @@ func (f *VoiceFrontend) ProcessCapture(samples []float32) []float32 {
 		echoFree := f.aec.Process(clean, refs[i])
 		out[i] = float32(echoFree)
 	}
+	f.lastAEC = slices.Clone(out)
 
 	// Actual playback reference and its bounded acoustic tail select residual
 	// echo suppression. Idle capture keeps the measured room-noise floor;
@@ -96,6 +99,17 @@ func (f *VoiceFrontend) ProcessCapture(samples []float32) []float32 {
 	f.ns.Process(out, f.refTail > 0)
 	f.agc.Process(out)
 	return out
+}
+
+// LastAECResidual is the NLMS error before duplex NS/AGC. Startup NearEnd
+// and the Wait crop use this; the capture stream remains the primary output.
+func (f *VoiceFrontend) LastAECResidual() []float32 {
+	if f == nil {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.lastAEC)
 }
 
 // InputGain implements GainReporter: the multiplier the AGC stage is currently
