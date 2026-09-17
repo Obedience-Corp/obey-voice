@@ -11,11 +11,13 @@ import (
 )
 
 const (
-	// bargeInArmDelay holds off interrupt detection after the turn's first
+	// bargeInArmDelay holds off interrupt *emission* after the turn's first
 	// playback starts so the echo of Obey Voice's own first words doesn't trip
-	// barge-in. Keep this short enough that "stop" / "wait" still interrupt
-	// promptly once armed; AEC reference timing (not a long speech threshold)
-	// is what suppresses self-echo.
+	// barge-in. Detector state is still collected during that window so a short
+	// command that finishes inside it can qualify once the fence lifts. Keep
+	// this short enough that "stop" / "wait" still interrupt promptly once
+	// armed; AEC reference timing (not a long speech threshold) is what
+	// suppresses self-echo.
 	//
 	// The delay applies once per turn (see applyPlaybackEvent), not once per
 	// sentence: re-arming on every playback start left sentences shorter than
@@ -29,6 +31,10 @@ const (
 	// 10ms or 60ms). Neural speech must also pass STT's audibility check; quiet
 	// residual echo can sustain neural votes without containing audible speech.
 	bargeInMinSpeechChunks = 6
+	// bargeInStartupMinChunks is enough neural callbacks inside the emission
+	// fence to keep a short "wait"/"stop" that AEC rendered inaudible.
+	// Echo-only APM residuals in that window do not reach this count.
+	bargeInStartupMinChunks = 3
 	// bargeInBufferSize is the capture subscription depth for the controller.
 	bargeInBufferSize = 8
 	// bargeInPauseTailGuardDefault skips capture chunks for a short window
@@ -99,6 +105,9 @@ type interruptSourceEvidence struct {
 	UnknownObserved     bool
 	Gap                 audio.CaptureGap
 	DeviceDiscontinuity bool
+	// DuringArm is true when audible neural speech was collected after the
+	// turn's first playback started and before the emission fence elapsed.
+	DuringArm bool
 }
 
 // frameCaptureMonitor is optional: remote and legacy capture monitors keep
@@ -272,8 +281,22 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 		consecutiveSpeech := 0
 		var audibility stt.SpeechAudibility
 		segmentQueued := false
+		pendingAdmit := false
+		collectedDuringArm := false
 		var gapStart time.Time
 		var source interruptSourceEvidence
+		emit := func(duringArm bool, frame audio.Frame) bool {
+			if !c.allowsInterrupt() {
+				return false
+			}
+			source.DuringArm = duringArm
+			source.CallbackSpans = slices.Clone(frame.CaptureSpans)
+			select {
+			case out <- interruptRequest{Reason: "barge_in", At: time.Now(), Source: source}:
+			default:
+			}
+			return true
+		}
 		for {
 			var frame audio.Frame
 			var ok bool
@@ -290,18 +313,27 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 			samples := frame.Samples
 			source.observe(frame, hasFrames)
 
-			// Unarmed: the turn's first playback hasn't happened (armAt
-			// zero — thinking-phase barge-in is a separate product call,
-			// F3.4) or we're still inside the once-per-turn arm delay.
-			// Reset so residual echo never accumulates toward a trip.
+			// Thinking-phase barge-in is a separate product call (F3.4).
+			// Once the turn's first playback has armed the clock, collect
+			// detector state during the remaining emission fence so a short
+			// command that ends inside that window is not erased.
 			at := armAt.Load()
-			if at == 0 || time.Now().UnixNano() < at {
+			if at == 0 {
 				consecutiveSpeech = 0
 				audibility.Reset()
 				segmentQueued = false
+				pendingAdmit = false
+				collectedDuringArm = false
 				c.vad.Clear()
 				continue
 			}
+			armed := time.Now().UnixNano() >= at
+			if armed && pendingAdmit {
+				if emit(collectedDuringArm, frame) {
+					return
+				}
+			}
+			pendingAdmit = false
 
 			// Armed for the rest of the turn. Playback pauses no longer
 			// disarm (WI-dc9e33 B3): an utterance spanning a queue-drain
@@ -322,16 +354,26 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 
 			c.vad.AcceptWaveform(samples)
 			speech := c.vad.IsSpeech()
+			if !armed {
+				if n, ok := c.capture.(interface{ NearEnd() bool }); ok && n.NearEnd() {
+					speech = true
+				}
+			}
 			if speech {
 				gain := 1.0
-				if reporter, ok := c.capture.(audio.GainReporter); ok {
-					gain = reporter.InputGain()
+				if armed {
+					if reporter, ok := c.capture.(audio.GainReporter); ok {
+						gain = reporter.InputGain()
+					}
 				}
 				audibility.Observe(samples, gain)
 				// Begin qualification at first audibility, then count softer
 				// neural continuation too. Keep the current audibility check
 				// below: starting the count is not a permanent audible verdict.
-				if consecutiveSpeech > 0 || audibility.Audible() {
+				if !armed {
+					collectedDuringArm = true
+					consecutiveSpeech++
+				} else if consecutiveSpeech > 0 || audibility.Audible() {
 					consecutiveSpeech++
 				}
 				if audibility.Audible() && !gapStart.IsZero() {
@@ -346,7 +388,8 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 			queued := c.vad.IsSpeechDetected()
 			completed := queued && !segmentQueued
 			segmentQueued = queued
-			admit := audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)
+			startupReady := collectedDuringArm && consecutiveSpeech >= bargeInStartupMinChunks
+			admit := (audibility.Audible() && (completed || consecutiveSpeech >= c.minSpeech)) || startupReady
 			if completed {
 				// Consume evaluated native segments, including quiet rejected
 				// ones, so later completions can use their own speech run.
@@ -363,23 +406,14 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				audibility.Reset()
 			}
 
+			if !armed {
+				pendingAdmit = admit
+				continue
+			}
 			if admit {
-				if !c.allowsInterrupt() {
-					// Confident non-enrolled speaker under
-					// barge_in_speakers=enrolled_only: withhold this
-					// trip but keep watching — the streak is left
-					// alone, so an enrolled speaker joining a moment
-					// later still trips immediately, and the same
-					// stranger continuing to talk is re-checked on
-					// every subsequent chunk.
-					continue
+				if emit(collectedDuringArm, frame) {
+					return
 				}
-				source.CallbackSpans = slices.Clone(frame.CaptureSpans)
-				select {
-				case out <- interruptRequest{Reason: "barge_in", At: time.Now(), Source: source}:
-				default:
-				}
-				return
 			}
 		}
 	}()

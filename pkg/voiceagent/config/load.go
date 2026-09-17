@@ -101,5 +101,6 @@ func loadLocked() (*Config, error) {
 	cfg.ToolCommandTimeout = ClampToolCommandTimeout(cfg.ToolCommandTimeout)
 	cfg.OllamaNumBatch = ClampOllamaNumBatch(cfg.OllamaNumBatch, cfg.OllamaNumCtx)
 	resolveVoiceFrontendMigration(v, &cfg)
+	resolveBargeInVADThresholdMigration(v, &cfg)
 	return &cfg, nil
 }

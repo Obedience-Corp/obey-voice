@@ -42,6 +42,12 @@ type CaptureRetention interface {
 	ResetKeeping(time.Duration)
 }
 
+// rawCaptureRetention is optional: local capture can replace unread
+// processed PCM with the aligned pre-frontend tail after a startup barge-in.
+type rawCaptureRetention interface {
+	ReplaceUnreadWithRaw(time.Duration)
+}
+
 // VoiceDetector decides when the user is speaking.
 //
 // Four methods, and each has a caller: AcceptWaveform feeds it, IsSpeech gates
@@ -320,6 +326,23 @@ func (p *Pipeline) resetEchoState() {
 
 func (p *Pipeline) capturePreRoll() time.Duration {
 	return max(0, min(p.CapturePreRoll, 2*time.Second))
+}
+
+func (p *Pipeline) retainInterruptedCapture(req interruptRequest, sincePlayback time.Duration) {
+	p.keepCapture.Store(true)
+	if !req.Source.DuringArm {
+		return
+	}
+	keep := sincePlayback + 150*time.Millisecond
+	if keep < 400*time.Millisecond {
+		keep = 400 * time.Millisecond
+	}
+	if keep > 3*time.Second {
+		keep = 3 * time.Second
+	}
+	if raw, ok := p.Capture.(rawCaptureRetention); ok {
+		raw.ReplaceUnreadWithRaw(keep)
+	}
 }
 
 // prepareNextListen trims already buffered audio to the configured onset

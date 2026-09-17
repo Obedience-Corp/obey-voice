@@ -7,6 +7,34 @@ import (
 	"time"
 )
 
+type zeroingFrontend struct{}
+
+func (zeroingFrontend) ProcessCapture(samples []float32) []float32 {
+	return make([]float32, len(samples))
+}
+
+func (zeroingFrontend) PushPlaybackReference([]float32) {}
+
+func (zeroingFrontend) Close() error { return nil }
+
+func TestCaptureReplaceUnreadWithRawRestoresPreFrontendPCM(t *testing.T) {
+	c := NewCapture()
+	c.SetFrontend(zeroingFrontend{})
+	pcm := make([]float32, ChunkSize)
+	for i := range pcm {
+		pcm[i] = 0.25
+	}
+	c.ingestCapture(pcm, time.Now(), 1)
+	c.ReplaceUnreadWithRaw(0)
+	got, err := c.ReadFrame(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Samples, pcm) {
+		t.Fatalf("unread PCM after raw swap = %v, want pre-frontend samples", got.Samples[:4])
+	}
+}
+
 func TestCaptureSubscriptionFramesMatchCallbackAndRingPositions(t *testing.T) {
 	c := NewCapture()
 	id, frames := c.SubscribeFrames(3)

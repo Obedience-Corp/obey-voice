@@ -124,7 +124,7 @@ func voiceKeys() []KeySpec {
 		{
 			Key: "barge_in_vad_threshold", Type: TypeFloat, Default: DefaultBargeInVADThreshold, Min: num(MinBargeInVADThreshold), Max: num(MaxBargeInVADThreshold),
 			Group: GroupVoice, Title: "Barge-in speech confidence",
-			Help: "How sure the barge-in detector must be that mic audio is real speech before cutting her off. Lower it toward 0.6 once voice_frontend=webrtc is doing the echo cancellation.",
+			Help: "How sure the barge-in detector must be that mic audio is real speech before cutting her off. voice_frontend=webrtc defaults to 0.6; nlms/off stay at 0.85 unless you set this.",
 		},
 		{
 			Key: "barge_in_tail_guard_ms", Type: TypeInt, Default: DefaultBargeInTailGuardMS, Unit: "ms", Min: num(MinBargeInTailGuardMS), Max: num(MaxBargeInTailGuardMS),

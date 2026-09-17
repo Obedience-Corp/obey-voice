@@ -157,6 +157,23 @@ func (rb *RingBuffer) Available() int {
 	return rb.available()
 }
 
+// snapshotUnread copies unread PCM without consuming it.
+func (rb *RingBuffer) snapshotUnread() []float32 {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	n := rb.available()
+	if n == 0 {
+		return nil
+	}
+	out := make([]float32, n)
+	tail := rb.tail
+	for i := range n {
+		out[i] = rb.data[tail]
+		tail = (tail + 1) % rb.size
+	}
+	return out
+}
+
 func (rb *RingBuffer) available() int {
 	if rb.full {
 		return rb.size

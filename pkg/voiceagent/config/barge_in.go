@@ -1,6 +1,10 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/spf13/viper"
+)
 
 // Barge-in tuning (S2, workflow/design/obey-voice-barge-in). Both values
 // gate the same interruptController the barge-in VAD feeds: how confident it
@@ -18,8 +22,12 @@ const (
 	// tuned on the S2 hardware session becomes the webrtc-mode default in
 	// S4).
 	DefaultBargeInVADThreshold = 0.85
-	MinBargeInVADThreshold     = 0.3
-	MaxBargeInVADThreshold     = 0.95
+	// WebRTCBargeInVADThreshold is the unset webrtc default. APM already
+	// rejects echo-only playback at this confidence; 0.85 erased short
+	// startup commands whose processed residual still passed 0.6.
+	WebRTCBargeInVADThreshold = 0.6
+	MinBargeInVADThreshold    = 0.3
+	MaxBargeInVADThreshold    = 0.95
 
 	// DefaultBargeInTailGuardMS matches the constant interrupt.go used
 	// before this became configurable.
@@ -37,9 +45,28 @@ func BargeInVADThresholdOf(cfg *Config) float64 {
 		return DefaultBargeInVADThreshold
 	}
 	if cfg.BargeInVADThreshold < MinBargeInVADThreshold || cfg.BargeInVADThreshold > MaxBargeInVADThreshold {
+		if VoiceFrontendOf(cfg) == VoiceFrontendWebRTC {
+			return WebRTCBargeInVADThreshold
+		}
 		return DefaultBargeInVADThreshold
 	}
 	return cfg.BargeInVADThreshold
+}
+
+// resolveBargeInVADThresholdMigration applies the webrtc 0.6 default when the
+// user did not set barge_in_vad_threshold. Viper's schema default is still
+// 0.85 (nlms/off), and IsSet cannot distinguish that from an explicit value.
+func resolveBargeInVADThresholdMigration(vp *viper.Viper, cfg *Config) {
+	if VoiceFrontendOf(cfg) != VoiceFrontendWebRTC {
+		return
+	}
+	if vp.InConfig("barge_in_vad_threshold") {
+		return
+	}
+	if _, _, ok := envValueFor("barge_in_vad_threshold"); ok {
+		return
+	}
+	cfg.BargeInVADThreshold = WebRTCBargeInVADThreshold
 }
 
 // BargeInTailGuardMSOf clamps cfg's configured tail-guard window (ms) to the

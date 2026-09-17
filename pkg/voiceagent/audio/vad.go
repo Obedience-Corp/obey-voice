@@ -46,6 +46,7 @@ func NewVAD(cfg *config.Config) (*VAD, error) {
 // speech duration keeps the capture VAD's own tuning from bleeding into
 // barge-in.
 func NewBargeInVAD(cfg *config.Config) (*VAD, error) {
+	// webrtc's unset default is 0.6; see config.WebRTCBargeInVADThreshold.
 	threshold := float32(config.BargeInVADThresholdOf(cfg))
 	return newVAD(cfg, threshold, vadMinSpeechDuration)
 }

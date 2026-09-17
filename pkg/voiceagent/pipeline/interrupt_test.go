@@ -126,7 +126,7 @@ func TestInterruptControllerHonorsArmDelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Not yet armed: armAt is far in the future, so speech is ignored.
+	// Emission is fenced until armAt; detector state is still collected.
 	var armAt atomic.Int64
 	armAt.Store(time.Now().Add(time.Hour).UnixNano())
 	out := c.watch(ctx, &armAt)
@@ -177,6 +177,77 @@ func TestInterruptControllerUnarmedBeforeFirstPlayback(t *testing.T) {
 	case <-out:
 		t.Fatal("controller fired before the turn's first playback armed it")
 	case <-time.After(80 * time.Millisecond):
+	}
+}
+
+func TestInterruptControllerCollectsSpeechDuringArmDelay(t *testing.T) {
+	capture := newFakeCapture()
+	vad := &fakeVAD{}
+	playing := &alwaysPlaying{}
+	playing.playing.Store(true)
+
+	c := newTestController(capture, vad, playing, 3)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var armAt atomic.Int64
+	armAt.Store(time.Now().Add(time.Hour).UnixNano())
+	out := c.watch(ctx, &armAt)
+
+	for range 4 {
+		capture.Publish([]float32{0.9, 0.9})
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case <-out:
+		t.Fatal("controller emitted during the arm fence")
+	case <-time.After(80 * time.Millisecond):
+	}
+
+	armAt.Store(time.Now().Add(-time.Second).UnixNano())
+	capture.Publish([]float32{0.0, 0.0})
+	select {
+	case req := <-out:
+		if req.Reason != "barge_in" {
+			t.Fatalf("interruptRequest.Reason = %q, want barge_in", req.Reason)
+		}
+		if !req.Source.DuringArm {
+			t.Fatal("startup collection did not mark DuringArm")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("collected arm-window speech did not qualify after the fence")
+	}
+}
+
+func TestInterruptControllerStartupShortQualifiesAtArmFence(t *testing.T) {
+	capture := newFakeCapture()
+	vad := &fakeVAD{}
+	playing := &alwaysPlaying{}
+	playing.playing.Store(true)
+	c := newTestController(capture, vad, playing, bargeInMinSpeechChunks)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var armAt atomic.Int64
+	armAt.Store(time.Now().Add(time.Hour).UnixNano())
+	out := c.watch(ctx, &armAt)
+	for range bargeInStartupMinChunks {
+		capture.Publish([]float32{0.9, 0.9})
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case <-out:
+		t.Fatal("short startup speech emitted before the arm fence")
+	case <-time.After(80 * time.Millisecond):
+	}
+	armAt.Store(time.Now().Add(-time.Second).UnixNano())
+	capture.Publish([]float32{0.0, 0.0})
+	select {
+	case req := <-out:
+		if !req.Source.DuringArm {
+			t.Fatal("short startup speech was not marked DuringArm")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("short startup speech did not qualify at the arm fence")
 	}
 }
 

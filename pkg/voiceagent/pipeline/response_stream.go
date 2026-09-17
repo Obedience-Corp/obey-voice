@@ -84,8 +84,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// Preserve that input even when this response is already ending.
 			if !interrupted {
 				select {
-				case <-bargeIn:
-					p.keepCapture.Store(true)
+				case req := <-bargeIn:
+					p.retainInterruptedCapture(req, metrics.sincePlaybackStart(req.At))
 					if captureOwner != nil {
 						captureOwner.retain = true
 					}
@@ -109,6 +109,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		}
 		interrupted = true
 		metrics.interrupted = true
+		p.retainInterruptedCapture(req, metrics.sincePlaybackStart(req.At))
 		metrics.markBargeIn(req.At)
 		turn.to(TurnInterrupted)
 		if metrics.delivery != nil {
