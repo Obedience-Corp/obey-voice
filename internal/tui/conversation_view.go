@@ -253,6 +253,12 @@ func (m conversationModel) View() string {
 	if m.showThink {
 		footerLeft += " " + chipStyle.Render("think")
 	}
+	switch m.recordMode() {
+	case "talk":
+		footerLeft += " " + chipStyle.Render("rec")
+	case "lab":
+		footerLeft += " " + chipStyle.Render("lab")
+	}
 	if m.liveSpeakerStatsKnown {
 		footerLeft += " " + renderLiveSpeakerFooterNamed(m.liveSpeakerStats, m.displaySpeakerLabel(m.liveSpeakerStats.LastLabel))
 	}
@@ -277,7 +283,7 @@ func (m conversationModel) View() string {
 	case m.width >= lipgloss.Width(footerLeft)+lipgloss.Width(footerHelp)+4:
 		footerText += strings.Repeat(" ", m.width-lipgloss.Width(footerLeft)-lipgloss.Width(footerHelp)) + dimStyle.Render(footerHelp)
 	case m.width >= 60:
-		compact := "  ·  ^G mic  ^O audio  ^T switch  ^K think"
+		compact := "  ·  ^G mic  ^O audio  ^T switch  ^K think  ^R rec"
 		footerText += dimStyle.Render(compact)
 	default:
 		footerText += dimStyle.Render("  ^G  ^O  ^T  ^K")

@@ -220,157 +220,7 @@ func newWriter(path string, capacity int) (*Writer, error) {
 // once-per-turn metrics record instead, so a long reply still costs one line. agent_delta is recorded but non-durable
 // under back-pressure so terminal user/agent/error/metrics lines win.
 func (w *Writer) Attach(bus *events.Bus) {
-	events.Subscribe(bus, func(e events.UserInput) {
-		w.enqueue(record{Type: "user", Text: e.Text})
-	})
-	// agent_delta is ResponseDelta (speakable) only. ThinkingDelta is operator-facing
-	// and must not be recorded as agent_delta.
-	events.Subscribe(bus, func(e events.ResponseDelta) {
-		w.enqueue(record{Type: "agent_delta", Text: e.Text})
-	})
-	events.Subscribe(bus, func(e events.ResponseReady) {
-		w.enqueue(record{Type: "agent", Text: e.Response, Degraded: e.Degraded, Interrupted: e.Interrupted})
-	})
-	events.Subscribe(bus, func(e events.ToolCallStarted) {
-		var scope *work.WorkScope
-		if e.WorkScope.Valid() {
-			s := e.WorkScope
-			scope = &s
-		}
-		w.enqueue(record{Type: "tool_call", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID, Summary: e.Summary, WorkScope: scope})
-	})
-	events.Subscribe(bus, func(e events.ToolCallFinished) {
-		status := string(e.OutcomeStatus())
-		var exitCode, httpStatus *int
-		var signal, reason, inputSummary, outputRef string
-		var outputBytes int64
-		var truncated bool
-		elapsed := e.ResultElapsed()
-		if o := e.Outcome; o != nil {
-			exitCode, httpStatus = o.ExitCode, o.HTTPStatus
-			signal, reason, inputSummary, outputRef = o.Signal, o.Reason, o.InputSummary, o.OutputRef
-			outputBytes, truncated = o.OutputBytes, o.Truncated
-		}
-		var scope *work.WorkScope
-		if e.WorkScope.Valid() {
-			s := e.WorkScope
-			scope = &s
-		}
-		w.enqueue(record{
-			Type: "tool_result", Name: e.Name, ID: e.ID, Kind: e.Kind, JobID: e.JobID,
-			WorkScope: scope,
-			Preview:   e.ResultPreview(), Message: e.ResultReason(), IsError: status == string(events.ToolOutcomeFailed) || status == string(events.ToolOutcomeTimedOut) || status == string(events.ToolOutcomeCanceled), ElapsedS: elapsed.Seconds(),
-			Status: status, ExitCode: exitCode, HTTPStatus: httpStatus, Signal: signal, Reason: reason,
-			InputSummary: inputSummary, OutputRef: outputRef, OutputBytes: outputBytes, Truncated: truncated,
-		})
-	})
-	events.Subscribe(bus, func(e events.WorkStateChanged) {
-		w.enqueue(record{Type: "work_state_changed", Work: &e.Snapshot})
-	})
-	events.Subscribe(bus, func(e events.WorkerUsageRecorded) { w.enqueue(record{Type: "worker.usage", WorkerUsage: &e}) })
-	events.Subscribe(bus, func(e events.WorkerLimitReached) { w.enqueue(record{Type: "worker.limit_reached", WorkerLimit: &e}) })
-	events.Subscribe(bus, func(e events.WorkerChargeState) { w.enqueue(record{Type: "worker.charge", WorkerCharge: &e}) })
-	events.Subscribe(bus, func(e events.RouteDecided) {
-		w.enqueue(record{Type: "route.decided", WorkScope: &e.Scope, Kind: e.Kind, Tier: e.Tier, ReasonCode: e.ReasonCode, State: e.State, JobID: e.JobID, Text: e.Task, Message: e.Message})
-	})
-	events.Subscribe(bus, func(e events.WorkDelivery) {
-		w.enqueue(record{Type: "work_delivery", Delivery: &e})
-	})
-	events.Subscribe(bus, func(e events.JobQueued) {
-		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "queued"})
-	})
-	events.Subscribe(bus, func(e events.JobStarted) {
-		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "started"})
-	})
-	events.Subscribe(bus, func(e events.JobFinished) {
-		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "finished", ElapsedS: e.Elapsed.Seconds()})
-	})
-	events.Subscribe(bus, func(e events.JobFailed) {
-		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "failed", Message: e.Err, IsError: true, ElapsedS: e.Elapsed.Seconds()})
-	})
-	events.Subscribe(bus, func(e events.JobAborted) {
-		w.enqueue(record{Type: "job", Name: e.ID, Text: e.Task, State: "aborted", Reason: e.Reason, ElapsedS: e.Elapsed.Seconds()})
-	})
-	events.Subscribe(bus, func(e events.Error) {
-		w.enqueue(record{Type: "error", Stage: e.Stage, Message: e.Message})
-	})
-	events.Subscribe(bus, func(e events.Info) {
-		w.enqueue(record{Type: "info", Message: e.Message})
-	})
-	events.Subscribe(bus, func(e events.SpeechDiagnostic) {
-		w.enqueue(record{
-			Type: "speech_diagnostic", Message: e.Message, Symptom: e.Symptom,
-			Cause: e.Cause, Confidence: e.Confidence, Provider: e.Provider,
-			Scope: e.Scope, ActionCode: e.ActionCode, DedupeKey: e.DedupeKey,
-			EngineRTF: e.EngineRTF, GapS: e.Gap.Seconds(), SampleCount: e.SampleCount,
-			AudioSeconds: e.AudioSeconds, Exclusions: append([]string(nil), e.Exclusions...),
-		})
-	})
-	events.Subscribe(bus, func(e events.STTPhase) {
-		w.enqueue(record{Type: "stt", Phase: e.Phase})
-	})
-	events.Subscribe(bus, func(events.ThinkingStarted) {
-		w.enqueue(record{Type: "thinking"})
-	})
-	events.Subscribe(bus, func(e events.SpeakingStarted) {
-		w.enqueue(record{Type: "speaking", State: "started", Text: previewText(e.Text, summaryPreviewMax)})
-	})
-	events.Subscribe(bus, func(e events.SpeakingComplete) {
-		w.enqueue(record{Type: "speaking", State: "complete", Interrupted: e.Interrupted, SpokeS: e.Elapsed.Seconds()})
-	})
-	events.Subscribe(bus, func(e events.SpeakingInterrupted) {
-		w.enqueue(record{Type: "speaking", State: "interrupted", Reason: e.Reason})
-	})
-	events.Subscribe(bus, func(e events.TurnInterrupted) {
-		w.enqueue(record{Type: "turn_interrupted", Reason: e.Reason})
-	})
-	events.Subscribe(bus, func(e events.TurnMetrics) {
-		w.enqueue(record{
-			Type:           "metrics",
-			Outcome:        e.Outcome,
-			Degraded:       e.Degraded,
-			Interrupted:    e.Interrupted,
-			STTFinalS:      e.STTFinalElapsed.Seconds(),
-			ModelFirstS:    e.FirstModelChunkElapsed.Seconds(),
-			ModelS:         e.ModelCompleteElapsed.Seconds(),
-			VoiceS:         e.FirstAudioReadyElapsed.Seconds(),
-			PlaybackStartS: e.PlaybackStartElapsed.Seconds(),
-			SpokeS:         e.PlaybackCompleteElapsed.Seconds(),
-			BargeInS:       e.BargeInElapsed.Seconds(),
-			LeakLines:      e.ToolLeakLines,
-
-			TTSProvider:        e.TTSProvider,
-			TTSTier:            e.TTSTier,
-			TTSPlace:           e.TTSPlace,
-			TTSStreaming:       e.TTSWorkerStreaming,
-			TTSWarm:            e.TTSWarm,
-			TTSFallbacks:       e.TTSFallbacks,
-			FirstAudioGraceS:   e.FirstAudioGrace.Seconds(),
-			StallWatchdogFired: e.StallWatchdogFired,
-			DeadAirS:           e.DeadAirElapsed.Seconds(),
-			Underruns:          e.Underruns,
-			Segments:           segmentRecords(e.Segments),
-		})
-	})
-	events.Subscribe(bus, func(e events.VoiceGateStripped) {
-		w.enqueue(record{Type: "voice_gate", LeakLines: e.Lines})
-	})
-	events.Subscribe(bus, func(e events.TokenUsage) {
-		w.enqueue(record{Type: "tokens", Prefill: e.Prefill, Gen: e.Gen})
-	})
-	events.Subscribe(bus, func(e events.SessionWarning) {
-		w.enqueue(record{Type: "session_warning", Prefill: e.PromptTokens, Threshold: e.Threshold})
-	})
-	events.Subscribe(bus, func(e events.ConversationCompacted) {
-		w.enqueue(record{
-			Type:        "compacted",
-			TurnsBefore: e.TurnsBefore,
-			Summary:     previewText(e.Summary, summaryPreviewMax),
-		})
-	})
-	events.Subscribe(bus, func(events.ConversationCleared) {
-		w.enqueue(record{Type: "cleared"})
-	})
+	w.AttachAll(bus)
 }
 
 // segmentRecords converts the turn's segment metrics to their wire form.
@@ -564,6 +414,14 @@ func (w *Writer) Close() error {
 		err = w.f.Close()
 	})
 	return err
+}
+
+// Dropped is the count of records discarded under back-pressure.
+func (w *Writer) Dropped() int64 {
+	if w == nil {
+		return 0
+	}
+	return w.dropped.Load()
 }
 
 func previewText(s string, max int) string {

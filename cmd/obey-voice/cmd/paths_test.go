@@ -59,7 +59,7 @@ func TestPathsJSONContract(t *testing.T) {
 	wantKeys := []string{
 		"schema_version", "app_slug", "install_root", "config_file",
 		"serve_dir", "cache_dir", "models_dir", "sessions_dir",
-		"meetings_dir", "personas_dir", "prompts_dir", "skills_dir",
+		"captures_dir", "meetings_dir", "personas_dir", "prompts_dir", "skills_dir",
 		"work_dir", "work_dir_source", "work_dir_source_detail", "campaign",
 	}
 	for _, k := range wantKeys {

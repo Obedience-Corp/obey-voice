@@ -23,6 +23,22 @@ disposable `$HOME`, then applies the termcast-style 20fps/960px palette pass.
 
 Still frames: `demos/frames/launcher.png`, `demos/frames/chat-tools.png`
 
+## conversation-record.gif — /record talk seals a capture bundle
+
+Full Bubble Tea conversation UI:
+
+1. **Chat** — start a conversation (`-t -n`, no live mic)
+2. **`/record talk`** — footer `rec` chip, bundle under `captures/`
+3. **Admit error** — scripted `veronica` collision (WI-051146) lands in Activity
+4. **`/record off`** — seals `events.jsonl` + `manifest.json`
+5. **Shell** — `find captures` and `rg ambiguous events.jsonl`
+
+`OBEY_VOICE_DEMO_CAPTURE=1` emits the admit error on the live bus. No live model.
+
+```bash
+just demo-conversation-record
+```
+
 ## think-blocks.gif — show thinking in the thread
 
 Full Bubble Tea conversation UI with a scripted thinking turn (no live model):

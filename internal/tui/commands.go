@@ -25,6 +25,7 @@ const (
 	commandAudio
 	commandActivity
 	commandThink
+	commandRecord
 	commandSettings
 	commandPersonas
 	commandWorkers
@@ -58,6 +59,7 @@ var slashCommands = []slashCommand{
 	{id: commandAudio, name: "/audio", usage: "/audio", description: "Toggle voice output", aliases: []string{"/speaker"}},
 	{id: commandActivity, name: "/activity", usage: "/activity", description: "Switch between chat and activity", aliases: []string{"/timeline"}},
 	{id: commandThink, name: "/think", usage: "/think [on|off]", description: "Show or hide model thinking in the thread", aliases: []string{"/thinking"}},
+	{id: commandRecord, name: "/record", usage: "/record [off|talk|lab]", description: "Record this conversation for content (talk) or audio debug (lab)"},
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
 	{id: commandPersonas, name: "/personas", usage: "/personas", description: "Browse, select, create, or edit personas"},
 	{id: commandWork, name: "/work", usage: "/work [job|all|cancel job|dismiss job|speak job|replay job|logs]", description: "Inspect work and control result delivery"},
@@ -168,7 +170,7 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		m.commandError("persona selection in progress")
 		return nil
 	}
-	if command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && len(args) > 0 {
+	if command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && command.id != commandRecord && len(args) > 0 {
 		m.commandError(fmt.Sprintf("%s does not take arguments", command.name))
 		return m.resumeListening()
 	}
@@ -210,6 +212,9 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		return m.resumeListening()
 	case commandThink:
 		m.configureThink(args)
+		return m.resumeListening()
+	case commandRecord:
+		m.configureRecord(args)
 		return m.resumeListening()
 	case commandSettings:
 		return func() tea.Msg { return switchScreenMsg(screenSettings) }

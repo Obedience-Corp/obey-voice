@@ -316,6 +316,7 @@ func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
 		a.fatalErr = errors.Join(a.fatalErr, err)
 	}
 	a.conversation.cancelSelection()
+	a.conversation.stopCapture()
 	if a.conversation.turnCancel != nil {
 		a.conversation.turnCancel()
 	}

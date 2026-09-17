@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/capture"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
@@ -155,6 +156,7 @@ type conversationModel struct {
 	followActivity        bool
 	startedAt             time.Time
 	sessionID             string
+	capture               *capture.Session
 	inputDevice           string
 	outputDevice          string
 	voiceFailures         int
