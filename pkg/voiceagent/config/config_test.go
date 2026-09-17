@@ -194,6 +194,42 @@ func TestBargeInVADThresholdOfClampsOutOfRange(t *testing.T) {
 	if got := BargeInVADThresholdOf(nil); got != DefaultBargeInVADThreshold {
 		t.Errorf("BargeInVADThresholdOf(nil) = %v, want %v", got, DefaultBargeInVADThreshold)
 	}
+	webrtc := &Config{VoiceFrontend: VoiceFrontendWebRTC}
+	if got := BargeInVADThresholdOf(webrtc); got != WebRTCBargeInVADThreshold {
+		t.Errorf("BargeInVADThresholdOf(webrtc unset) = %v, want %v", got, WebRTCBargeInVADThreshold)
+	}
+}
+
+func TestWebRTCBargeInVADThresholdDefaultsUnlessExplicit(t *testing.T) {
+	resetViper(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("voice_frontend: webrtc\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	orig := configFile
+	configFile = path
+	t.Cleanup(func() { configFile = orig })
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if got := BargeInVADThresholdOf(cfg); got != WebRTCBargeInVADThreshold {
+		t.Errorf("webrtc unset barge-in threshold = %v, want %v", got, WebRTCBargeInVADThreshold)
+	}
+
+	resetViper(t)
+	if err := os.WriteFile(path, []byte("voice_frontend: webrtc\nbarge_in_vad_threshold: 0.85\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() explicit error: %v", err)
+	}
+	if got := BargeInVADThresholdOf(cfg); got != DefaultBargeInVADThreshold {
+		t.Errorf("explicit webrtc barge-in threshold = %v, want %v", got, DefaultBargeInVADThreshold)
+	}
 }
 
 // TestBargeInTailGuardMSOfClampsOutOfRange mirrors the threshold's posture

@@ -42,6 +42,32 @@ type CaptureRetention interface {
 	ResetKeeping(time.Duration)
 }
 
+// rawCaptureRetention is optional: local capture can replace unread
+// processed PCM with the aligned pre-frontend tail after a startup barge-in.
+type rawCaptureRetention interface {
+	ReplaceUnreadWithRaw(time.Duration)
+}
+
+// startupAdmissionCapture snapshots and replaces unread capture for the
+// DuringArm decoder window. Optional so remote/test sources stay unchanged.
+type startupAdmissionCapture interface {
+	SnapshotStartupWindows(time.Duration) (raw, residual []float32)
+	Ingested() uint64
+	Newest(int) []float32
+	ReplaceUnread([]float32)
+}
+
+type startupAdmission struct {
+	residual   []float32
+	ingestedAt uint64
+}
+
+const (
+	startupContinuationWait    = 400 * time.Millisecond
+	startupContinuationSamples = 6400 // 400ms at 16kHz; APM starts passing the rest of a full question ~200ms after Stop
+	startupContinuationPoll    = 10 * time.Millisecond
+)
+
 // VoiceDetector decides when the user is speaking.
 //
 // Four methods, and each has a caller: AcceptWaveform feeds it, IsSpeech gates
@@ -195,6 +221,7 @@ type Pipeline struct {
 	// never tripped — where the buffered audio is the user mid-utterance.
 	keepCapture     atomic.Bool
 	preparedCapture atomic.Bool
+	startup         atomic.Pointer[startupAdmission]
 	// CapturePreRoll bounds audio retained across a successful response
 	// boundary. It is wired from config.vad_pre_roll_ms.
 	CapturePreRoll            time.Duration
@@ -321,6 +348,93 @@ func (p *Pipeline) resetEchoState() {
 func (p *Pipeline) capturePreRoll() time.Duration {
 	return max(0, min(p.CapturePreRoll, 2*time.Second))
 }
+
+func (p *Pipeline) retainInterruptedCapture(req interruptRequest, sincePlayback time.Duration) {
+	p.keepCapture.Store(true)
+	if !req.Source.DuringArm {
+		return
+	}
+	keep := sincePlayback + 150*time.Millisecond
+	if keep < 400*time.Millisecond {
+		keep = 400 * time.Millisecond
+	}
+	if keep > 3*time.Second {
+		keep = 3 * time.Second
+	}
+	cap, ok := p.Capture.(startupAdmissionCapture)
+	if !ok {
+		if raw, ok := p.Capture.(rawCaptureRetention); ok {
+			raw.ReplaceUnreadWithRaw(keep)
+		}
+		return
+	}
+	_, residual := cap.SnapshotStartupWindows(keep)
+	p.startup.Store(&startupAdmission{residual: residual, ingestedAt: cap.Ingested()})
+	if raw, ok := p.Capture.(rawCaptureRetention); ok {
+		raw.ReplaceUnreadWithRaw(keep)
+	}
+}
+
+func (p *Pipeline) applyStartupAdmission(ctx context.Context) {
+	adm := p.startup.Swap(nil)
+	if adm == nil || len(adm.residual) == 0 {
+		return
+	}
+	cap, ok := p.Capture.(startupAdmissionCapture)
+	if !ok {
+		return
+	}
+	waitStartupContinuation(ctx, cap, adm.ingestedAt)
+	post := newestSince(cap, adm.ingestedAt)
+	if len(post) == 0 || tailHasSpeech(post) {
+		return
+	}
+	cap.ReplaceUnread(audio.NormalizeSpeechRMS(adm.residual))
+}
+
+func newestSince(cap startupAdmissionCapture, ingestedAt uint64) []float32 {
+	n := cap.Ingested() - ingestedAt
+	if cap.Ingested() < ingestedAt || n == 0 {
+		return nil
+	}
+	if n > uint64(^uint(0)>>1) {
+		n = uint64(^uint(0) >> 1)
+	}
+	return cap.Newest(int(n))
+}
+
+func waitStartupContinuation(ctx context.Context, cap startupAdmissionCapture, ingestedAt uint64) {
+	need := ingestedAt + uint64(startupContinuationSamples)
+	if cap.Ingested() >= need {
+		return
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, startupContinuationWait)
+	defer cancel()
+	ticker := time.NewTicker(startupContinuationPoll)
+	defer ticker.Stop()
+	for cap.Ingested() < need {
+		select {
+		case <-waitCtx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func tailHasSpeech(samples []float32) bool {
+	if len(samples) == 0 {
+		return false
+	}
+	for i := 0; i < len(samples); i += nearEndHopSamples {
+		end := min(i+nearEndHopSamples, len(samples))
+		if audio.FrameRMS(samples[i:end]) > audio.StartupPreserveMinRMS {
+			return true
+		}
+	}
+	return false
+}
+
+const nearEndHopSamples = 960
 
 // prepareNextListen trims already buffered audio to the configured onset
 // window and marks it as a prepared listen scope. This is distinct from

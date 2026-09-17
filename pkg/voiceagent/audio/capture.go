@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,6 +40,8 @@ type Capture struct {
 	ctx              *malgo.AllocatedContext
 	device           *malgo.Device
 	buf              *RingBuffer
+	raw              *RingBuffer // pre-frontend PCM, aligned with unread buf samples
+	preserve         *RingBuffer // NLMS residual, aligned with unread buf samples
 	frontend         Frontend
 	active           bool          // the caller wants capture running
 	running          bool          // a device is open
@@ -48,6 +51,7 @@ type Capture struct {
 	callbackSeq      int64
 	nextSub          int
 	frameSeq         atomic.Int64
+	ingested         atomic.Uint64
 	deviceGeneration atomic.Uint64
 	deviceName       string
 	actualDeviceName string
@@ -100,8 +104,11 @@ func NewCapture() *Capture {
 // NewCaptureWithDevice creates a capture routed to deviceName. An empty name
 // follows the operating-system default.
 func NewCaptureWithDevice(deviceName string) *Capture {
+	ring := SampleRate * 30 // 30 seconds
 	c := &Capture{
-		buf:        NewRingBuffer(SampleRate * 30), // 30 seconds buffer
+		buf:        NewRingBuffer(ring),
+		raw:        NewRingBuffer(ring),
+		preserve:   NewRingBuffer(ring),
 		subs:       make(map[int]chan []float32),
 		frameSubs:  make(map[int]*captureFrameSubscription),
 		deviceName: deviceName,
@@ -291,8 +298,21 @@ func (c *Capture) openMalgoDevice() error {
 func (c *Capture) ingestCapture(samples []float32, callbackAt time.Time, generation uint64) {
 	c.ingestMu.Lock()
 	defer c.ingestMu.Unlock()
+	c.ingested.Add(uint64(len(samples)))
+	if c.raw != nil {
+		c.raw.writeCapture(slices.Clone(samples), callbackAt, generation)
+	}
 	if c.frontend != nil {
 		samples = c.frontend.ProcessCapture(samples)
+	}
+	if c.preserve != nil {
+		residual := samples
+		if r, ok := c.frontend.(ResidualReporter); ok {
+			if res := r.LastResidual(); len(res) == len(samples) {
+				residual = res
+			}
+		}
+		c.preserve.Write(slices.Clone(residual))
 	}
 	span := c.buf.writeCapture(samples, callbackAt, generation)
 	c.publish(samples)
@@ -406,6 +426,7 @@ func (c *Capture) ReadFrame(ctx context.Context) (Frame, error) {
 		return Frame{}, err
 	}
 	samples, spans, gap := c.buf.readCapture(ChunkSize)
+	c.discardRaw(len(samples))
 	if samples == nil {
 		// A failed reopen is reported by recoverIfStalled and retried on the
 		// next stall window, so it must not end the STT session: the loop keeps
@@ -443,6 +464,12 @@ func (c *Capture) Reset() {
 	// atomically instead; a stale tail must not become the first frame of the
 	// next listening scope.
 	c.buf.Clear()
+	if c.raw != nil {
+		c.raw.Clear()
+	}
+	if c.preserve != nil {
+		c.preserve.Clear()
+	}
 }
 
 // ResetKeeping discards stale audio while retaining at most the newest
@@ -451,10 +478,129 @@ func (c *Capture) Reset() {
 func (c *Capture) ResetKeeping(duration time.Duration) {
 	if duration <= 0 {
 		c.buf.Clear()
+		if c.raw != nil {
+			c.raw.Clear()
+		}
+		if c.preserve != nil {
+			c.preserve.Clear()
+		}
 		return
 	}
 	samples := int(duration * SampleRate / time.Second)
 	c.buf.KeepLast(samples)
+	if c.raw != nil {
+		c.raw.KeepLast(samples)
+	}
+	if c.preserve != nil {
+		c.preserve.KeepLast(samples)
+	}
+}
+
+// ReplaceUnreadWithRaw swaps unread processed capture for pre-frontend PCM.
+// keep bounds the retained tail so thinking-phase audio is not transcribed as
+// the interrupting phrase. keep<=0 retains the aligned unread tail.
+func (c *Capture) ReplaceUnreadWithRaw(keep time.Duration) {
+	if c == nil || c.raw == nil || c.buf == nil {
+		return
+	}
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
+	raw := c.raw.snapshotUnread()
+	if len(raw) == 0 {
+		return
+	}
+	n := len(raw)
+	if keep > 0 {
+		n = min(n, int(keep*SampleRate/time.Second))
+	} else {
+		n = min(n, c.buf.Available())
+	}
+	if n <= 0 {
+		return
+	}
+	c.buf.Clear()
+	c.buf.Write(raw[len(raw)-n:])
+}
+
+// SnapshotStartupWindows copies the bounded unread raw tail and the cropped
+// NLMS NearEnd residual. Residual is nil when no NearEnd hop exists.
+func (c *Capture) SnapshotStartupWindows(keep time.Duration) (raw, residual []float32) {
+	if c == nil {
+		return nil, nil
+	}
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
+	var rawAll, resAll, primAll []float32
+	if c.raw != nil {
+		rawAll = c.raw.snapshotUnread()
+	}
+	if c.preserve != nil {
+		resAll = c.preserve.snapshotUnread()
+	}
+	if c.buf != nil {
+		primAll = c.buf.snapshotUnread()
+	}
+	n := len(rawAll)
+	if keep > 0 {
+		n = min(n, int(keep*SampleRate/time.Second))
+	}
+	if n <= 0 {
+		return nil, nil
+	}
+	raw = slices.Clone(rawAll[len(rawAll)-n:])
+	if len(resAll) >= n && len(primAll) >= n {
+		residual = CropNearEndResidual(resAll[len(resAll)-n:], primAll[len(primAll)-n:])
+	}
+	return raw, residual
+}
+
+// Ingested is the number of capture samples written since Start.
+func (c *Capture) Ingested() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.ingested.Load()
+}
+
+// Newest copies the newest n processed samples still unread.
+func (c *Capture) Newest(n int) []float32 {
+	if c == nil || c.buf == nil || n <= 0 {
+		return nil
+	}
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
+	all := c.buf.snapshotUnread()
+	if n > len(all) {
+		n = len(all)
+	}
+	if n <= 0 {
+		return nil
+	}
+	return slices.Clone(all[len(all)-n:])
+}
+
+// ReplaceUnread clears processed capture and writes samples as the next listen.
+func (c *Capture) ReplaceUnread(samples []float32) {
+	if c == nil || c.buf == nil {
+		return
+	}
+	c.ingestMu.Lock()
+	defer c.ingestMu.Unlock()
+	c.buf.Clear()
+	if len(samples) > 0 {
+		c.buf.Write(samples)
+	}
+}
+
+func (c *Capture) discardRaw(n int) {
+	if c.raw == nil || n <= 0 {
+		return
+	}
+	if c.raw.Available() >= n {
+		_ = c.raw.Read(n)
+		return
+	}
+	c.raw.Clear()
 }
 
 // SetFrontend installs an audio front-end for live capture processing.
@@ -476,6 +622,17 @@ func (c *Capture) InputGain() float64 {
 		return g.InputGain()
 	}
 	return 1
+}
+
+// NearEnd reports the installed front-end's near-end preserve flag.
+func (c *Capture) NearEnd() bool {
+	c.mu.Lock()
+	frontend := c.frontend
+	c.mu.Unlock()
+	if n, ok := frontend.(NearEndReporter); ok {
+		return n.NearEnd()
+	}
+	return false
 }
 
 // Subscribe registers a non-blocking listener for live capture chunks.

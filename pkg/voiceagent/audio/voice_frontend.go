@@ -377,6 +377,10 @@ func (q *sampleQueue) pop(n int) []float64 {
 	return out
 }
 
+// FrameRMS is the RMS of a capture callback, used by barge-in to recognize
+// NLMS-preserved startup speech without waiting for Silero.
+func FrameRMS(samples []float32) float64 { return frameRMS(samples) }
+
 func frameRMS(samples []float32) float64 {
 	if len(samples) == 0 {
 		return 0

@@ -462,7 +462,11 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 func newVoiceFrontend(front string, cfg *config.Config) (audio.Frontend, error) {
 	switch front {
 	case config.VoiceFrontendWebRTC:
-		return apmfrontend.New(config.VoiceFrontendNSLevelOf(cfg))
+		primary, err := apmfrontend.New(config.VoiceFrontendNSLevelOf(cfg))
+		if err != nil {
+			return nil, err
+		}
+		return audio.NewStartupPreserveFrontend(primary), nil
 	case config.VoiceFrontendNLMS:
 		return audio.NewVoiceFrontend(), nil
 	default:
