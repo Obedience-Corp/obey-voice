@@ -35,6 +35,11 @@ func SessionsDir() string {
 	return filepath.Join(configDir, "sessions")
 }
 
+// CapturesDir returns the TUI conversation-capture directory.
+func CapturesDir() string {
+	return filepath.Join(configDir, "captures")
+}
+
 // MeetingsDir returns the meeting transcripts directory.
 // Honors meeting.dir when set; otherwise <configDir>/meetings.
 func MeetingsDir() string {

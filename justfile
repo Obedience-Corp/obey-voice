@@ -88,6 +88,17 @@ demo-settings-sidebar: build
 
 # Conversation TUI: live thinking, then Ctrl+K to keep it in the thread.
 # Scripts bus events (no live mic/model). Unsets NO_COLOR so VHS paints color.
+# Conversation TUI: /record talk seals events.jsonl (scripted admit error).
+demo-conversation-record: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/conversation-record.tape
+    just _optimize-demo-gif demos/conversation-record.gif
+    ls -lh demos/conversation-record.gif
+
 demo-think-blocks: build
     #!/usr/bin/env bash
     set -euo pipefail

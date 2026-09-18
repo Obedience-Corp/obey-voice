@@ -157,6 +157,7 @@ session is saved before the menu opens; choose **Continue** to resume it or
 | Mouse wheel / trackpad, `Page Up` / `Page Down` | Scroll the transcript or focused activity feed |
 | `Ctrl+T` | Focus/unfocus the activity timeline |
 | `Ctrl+K` | Show or hide model thinking blocks in the thread (`/think`) |
+| `Ctrl+R` | Start or stop Talk recording (`/record talk` / `/record off`). Lab is `/record lab`. Vim mode keeps Ctrl+R as redo. |
 | `Ctrl+Y` | Copy the last assistant reply to the clipboard |
 | `Ctrl+C` (empty composer, after a reply) | Copy the last assistant reply; press again within ~1.5s to quit (`/quit` also exits) |
 | `Ctrl+G` | Pause/resume voice input (capture may stay armed; listening stops) |
@@ -167,6 +168,7 @@ session is saved before the menu opens; choose **Continue** to resume it or
 | `/copy` | Copy the last assistant reply |
 | `/copy all` | Copy the full plain-text conversation |
 | `/think` | Show or hide model thinking in the thread (`/think on`, `/think off`) |
+| `/record` | Record this conversation: `/record talk` (events + mix later), `/record lab` (plus playback debug dumps), `/record off` to seal. Bundles land in `captures/` (`obey-voice captures`, `obey-voice paths --json`). |
 
 ### Talk key
 

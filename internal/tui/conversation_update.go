@@ -176,6 +176,11 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		case "ctrl+k":
 			m.toggleShowThink()
 			return m, nil
+		case "ctrl+r":
+			if !m.vim.enabled {
+				m.toggleRecordTalk()
+				return m, nil
+			}
 		case "esc":
 			if m.vim.mode == vimVisual {
 				m.enterVimNormal()

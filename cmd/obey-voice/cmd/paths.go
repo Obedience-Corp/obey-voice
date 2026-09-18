@@ -30,6 +30,7 @@ type pathsReport struct {
 	CacheDir      string `json:"cache_dir"`
 	ModelsDir     string `json:"models_dir"`
 	SessionsDir   string `json:"sessions_dir"`
+	CapturesDir   string `json:"captures_dir"`
 	MeetingsDir   string `json:"meetings_dir"`
 	PersonasDir   string `json:"personas_dir"`
 	PromptsDir    string `json:"prompts_dir"`
@@ -101,6 +102,7 @@ func collectPaths() pathsReport {
 		CacheDir:      config.DefaultCacheDir(),
 		ModelsDir:     config.ModelsDir(),
 		SessionsDir:   config.SessionsDir(),
+		CapturesDir:   config.CapturesDir(),
 		MeetingsDir:   config.MeetingsDir(),
 		PersonasDir:   config.PersonasDir(),
 		PromptsDir:    config.PromptsDir(),
@@ -134,6 +136,7 @@ func runPaths(cmd *cobra.Command, report pathsReport, asJSON bool) error {
 		{"Cache", report.CacheDir},
 		{"Models", report.ModelsDir},
 		{"Sessions", report.SessionsDir},
+		{"Captures", report.CapturesDir},
 		{"Meetings", report.MeetingsDir},
 		{"Personas", report.PersonasDir},
 		{"Prompts", report.PromptsDir},
