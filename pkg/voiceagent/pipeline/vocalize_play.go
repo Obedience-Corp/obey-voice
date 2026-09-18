@@ -14,9 +14,8 @@ import (
 // Callers skip the segment instead of sending empty text or Kokoro-spelling.
 var errNothingToSpeak = errors.New("nothing to synthesize")
 
-// EnableVocals installs the optional recorded-sound bank. Empty dir is fine:
-// stage tags are stripped so CustomVoice does not read "[mouth]" aloud.
-// WAV files in dir (moan.wav, laugh.wav, …) replace a kind with a recording.
+// EnableVocals is kept for phrase rotation on engines that opt into vocal
+// tags. Recorded WAVs are not mixed with TTS — they do not match the mouth.
 func (p *Pipeline) EnableVocals(dir string) {
 	p.vocals = newVocalBank(dir)
 }
@@ -61,12 +60,9 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 }
 
 func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
-	parts := splitVocalizations(sentence)
-	// Recorded WAVs splice in on any engine. Otherwise stage tags are
-	// stripped unless the provider actually renders them.
-	if p.vocals != nil && p.vocals.allSoundsRecorded(parts) {
-		return p.renderVocalizedObserved(ctx, parts, stickFallback)
-	}
+	// Recorded clips do not match the live TTS voice, so they are never
+	// spliced. Stage tags are stripped (or rewritten only if the engine
+	// actually renders them).
 	return p.synthesizeWithFallbackObserved(ctx, sentence, stickFallback)
 }
 

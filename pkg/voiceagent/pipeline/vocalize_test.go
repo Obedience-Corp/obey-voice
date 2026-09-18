@@ -208,6 +208,9 @@ func TestRunTurnUnknownTagDoesNotDropRecordedLaugh(t *testing.T) {
 	if strings.Contains(strings.ToLower(joined), "mouth") {
 		t.Errorf("TTS saw mouth: %v", ttsProvider.Texts())
 	}
+	if strings.Contains(strings.ToLower(joined), "laugh") || strings.Contains(joined, "Haha") {
+		t.Errorf("recorded/onomatopoeia laugh must not be mixed in: %v", ttsProvider.Texts())
+	}
 	if !strings.Contains(joined, "hello") {
 		t.Errorf("TTS missed hello: %v", ttsProvider.Texts())
 	}

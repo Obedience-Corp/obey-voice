@@ -8,8 +8,9 @@ import (
 )
 
 // vocalKind is a non-speech beat in a reply. The model writes [moan].
-// Default TTS strips stage tags and splices persona sounds/*.wav when
-// present. Engines opt in with SupportsVocalTags if they can render tags.
+// Default TTS strips stage tags. Recorded clips are not spliced — they
+// do not match the live TTS voice. Engines opt in with SupportsVocalTags
+// if they can render tags.
 const vocalSampleRate = 24000
 
 const (
