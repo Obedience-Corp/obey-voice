@@ -8,10 +8,9 @@ import (
 )
 
 // vocalKind is a non-speech beat in a reply. The model writes [moan].
-// Engines opt in with SupportsVocalTags. Qwen rewrites only tags that have
-// a working codec spelling (laugh, sigh, hmm, ahh, mmm, huff). Moan/whimper/
-// gasp/kiss are stripped: "Nnngh"/"Ahhn" come out as a spoken syllable, not
-// a moan. Kokoro and Audio8 omit the flag, so every tag is stripped.
+// Default TTS strips stage tags. Recorded clips are not spliced — they
+// do not match the live TTS voice. Engines opt in with SupportsVocalTags
+// if they can render tags.
 const vocalSampleRate = 24000
 
 const (

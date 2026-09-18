@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -171,6 +172,70 @@ func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
 	}
 	if got := prepareSpeechForTTS(in, native, nil); got != in {
 		t.Errorf("native-tag engine = %q, want tags passed through", got)
+	}
+	if got := prepareSpeechForTTS("[mouth] hello there.", qwen, nil); got != "hello there." {
+		t.Errorf("Qwen must not speak [mouth], got %q", got)
+	}
+	if got := prepareSpeechForTTS("[mouth] hello there.", kokoro, nil); got != "hello there." {
+		t.Errorf("Kokoro must not speak [mouth], got %q", got)
+	}
+}
+
+func TestRunTurnUnknownTagDoesNotDropRecordedLaugh(t *testing.T) {
+	dir := t.TempDir()
+	samples := make([]float32, 2400)
+	for i := range samples {
+		samples[i] = 0.1
+	}
+	if err := audio.WriteWAVFloat32(filepath.Join(dir, "laugh.wav"), vocalSampleRate, samples); err != nil {
+		t.Fatal(err)
+	}
+	ttsProvider := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hello"},
+		Brain:  &fakeBrain{chunks: []string{"[mouth] [laugh] hello"}},
+		TTS:    ttsProvider,
+		Player: player,
+		Events: events.NewBus(),
+	}
+	p.EnableVocals(dir)
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	joined := strings.Join(ttsProvider.Texts(), " ")
+	if strings.Contains(strings.ToLower(joined), "mouth") {
+		t.Errorf("TTS saw mouth: %v", ttsProvider.Texts())
+	}
+	if strings.Contains(strings.ToLower(joined), "laugh") || strings.Contains(joined, "Haha") {
+		t.Errorf("recorded/onomatopoeia laugh must not be mixed in: %v", ttsProvider.Texts())
+	}
+	if !strings.Contains(joined, "hello") {
+		t.Errorf("TTS missed hello: %v", ttsProvider.Texts())
+	}
+}
+
+func TestRunTurnMouthTagIsNotSpoken(t *testing.T) {
+	ttsProvider := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hello"},
+		Brain:  &fakeBrain{chunks: []string{"[mouth] hello there."}},
+		TTS:    ttsProvider,
+		Player: player,
+		Events: events.NewBus(),
+	}
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	joined := strings.Join(ttsProvider.Texts(), " ")
+	if strings.Contains(strings.ToLower(joined), "mouth") {
+		t.Errorf("TTS spoke the stage tag: %v", ttsProvider.Texts())
+	}
+	if !strings.Contains(joined, "hello there.") {
+		t.Errorf("TTS missed the speech: %v", ttsProvider.Texts())
 	}
 }
 

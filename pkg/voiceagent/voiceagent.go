@@ -292,8 +292,8 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		p.EnableBackchannel(ctx)
 	}
 
-	// Non-speech tags ([moan], [laugh], …) expand to onomatopoeia in the live
-	// TTS throat. WAVs in the persona sounds/ dir overlay a kind when present.
+	// Stage tags are stripped. Recorded persona clips are not spliced into
+	// TTS — they do not match the live mouth.
 	if !opts.Silent {
 		sounds := filepath.Join(config.ConfigDir(), "personas", cfg.ActivePersona, "sounds")
 		p.EnableVocals(sounds)

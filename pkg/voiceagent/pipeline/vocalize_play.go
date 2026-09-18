@@ -14,9 +14,8 @@ import (
 // Callers skip the segment instead of sending empty text or Kokoro-spelling.
 var errNothingToSpeak = errors.New("nothing to synthesize")
 
-// EnableVocals installs the optional recorded-sound bank. Empty dir is fine:
-// [moan]/[laugh] expand to onomatopoeia and go through the live TTS throat.
-// WAV files in dir (moan.wav, gasp.wav, …) replace a kind with a recording.
+// EnableVocals is kept for phrase rotation on engines that opt into vocal
+// tags. Recorded WAVs are not mixed with TTS — they do not match the mouth.
 func (p *Pipeline) EnableVocals(dir string) {
 	p.vocals = newVocalBank(dir)
 }
@@ -61,20 +60,16 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 }
 
 func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
-	parts := splitVocalizations(sentence)
-	// Recorded WAVs (persona sounds/) splice in on any engine. Otherwise
-	// tags become onomatopoeia only for a provider that can vocalize them.
-	if p.vocals != nil && p.vocals.allSoundsRecorded(parts) {
-		return p.renderVocalizedObserved(ctx, parts, stickFallback)
-	}
+	// Recorded clips do not match the live TTS voice, so they are never
+	// spliced. Stage tags are stripped (or rewritten only if the engine
+	// actually renders them).
 	return p.synthesizeWithFallbackObserved(ctx, sentence, stickFallback)
 }
 
 // prepareSpeechForTTS is the text one provider should hear.
 //
-//   - No vocal-tag support: tags are stripped (Kokoro, Audio8, unknown engines).
-//   - SupportsVocalTags + VocalTagRewriter: the engine's own mapping (Qwen
-//     onomatopoeia today; another engine can map to <sigh> or similar).
+//   - Default: stage tags are stripped (CustomVoice reads them as words).
+//   - SupportsVocalTags + VocalTagRewriter: the engine's own mapping.
 //   - SupportsVocalTags only: tags are passed through unchanged.
 func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
 	if !hasVocalTag(sentence) {
@@ -112,11 +107,14 @@ func (p *Pipeline) renderVocalizedObserved(ctx context.Context, parts []vocalPar
 			chunks = append(chunks, clip.samples)
 			continue
 		}
-		text := strings.TrimSpace(part.text)
+		text := strings.TrimSpace(stripVocalTags(part.text))
 		if text == "" {
 			continue
 		}
 		stream, fb, partObservation, err := p.synthesizeWithFallbackObserved(ctx, text, stickFallback)
+		if errors.Is(err, errNothingToSpeak) {
+			continue
+		}
 		if err != nil {
 			return nil, fb, partObservation, err
 		}
