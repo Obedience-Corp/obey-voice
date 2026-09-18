@@ -40,8 +40,12 @@ func stripVocalTags(s string) string { return tts.StripVocalTags(s) }
 // cheap proof that the period was the tag's and not a sentence's, so this is
 // where it goes — trimSpeechResidue downstream can only judge the front of the
 // utterance. A run of punctuation ("[sigh]...") is a pause and is kept.
+//
+// The spans come from StageTagRE, not the sound-bank list: #208 made every
+// bracket stage direction unspeakable, so "[mouth] [laugh] hello" has to lose
+// both, not only the one the bank happens to name.
 func stripSpokenVocalTags(s string) string {
-	spans := tts.VocalTagRE.FindAllStringIndex(s, -1)
+	spans := tts.StageTagRE.FindAllStringIndex(s, -1)
 	if len(spans) == 0 {
 		return stripVocalTags(s)
 	}

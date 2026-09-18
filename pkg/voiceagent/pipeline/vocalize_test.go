@@ -409,6 +409,10 @@ func TestStripSpokenVocalTagsTakesTheOrphanPunctuation(t *testing.T) {
 		"[laugh]. The build finished.": "The build finished.",
 		"[sigh]... I guess so.":        "... I guess so.",
 		"Nothing to strip here.":       "Nothing to strip here.",
+		// #208: a bracket the sound bank never listed is still unspeakable,
+		// and it still leaves its orphan behind.
+		"[mouth] [laugh] hello": "hello",
+		"Okay. [mouth]. Good.":  "Okay. Good.",
 	}
 	for in, want := range cases {
 		if got := stripSpokenVocalTags(in); got != want {
