@@ -21,13 +21,50 @@ func (w *Writer) Handle(e events.Event) {
 	w.enqueue(r)
 }
 
-// AttachAll is a detachable Attach for /record. High-rate types never reach
-// encodeEvent; --transcript-log uses typed Attach so they never reach Handle.
+// AttachAll is a detachable Attach for /record. Typed subscriptions only —
+// AudioLevel / TranscriptPartial never enter Handle (PR #207 review).
 func (w *Writer) AttachAll(bus *events.Bus) func() {
 	if w == nil || bus == nil {
 		return func() {}
 	}
-	return bus.SubscribeAll(w.Handle)
+	unsub := []func(){
+		events.SubscribeDetachable(bus, func(e events.UserInput) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ResponseDelta) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ResponseReady) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ToolCallStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ToolCallFinished) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkStateChanged) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkerUsageRecorded) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkerLimitReached) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkerChargeState) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.RouteDecided) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkDelivery) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobQueued) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobFinished) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobFailed) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobAborted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.Error) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.Info) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeechDiagnostic) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.STTPhase) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ThinkingStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeakingStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeakingComplete) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeakingInterrupted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.TurnInterrupted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.TurnMetrics) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.VoiceGateStripped) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.TokenUsage) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SessionWarning) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ConversationCompacted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ConversationCleared) { w.Handle(e) }),
+	}
+	return func() {
+		for i := len(unsub) - 1; i >= 0; i-- {
+			unsub[i]()
+		}
+	}
 }
 
 // recordedEventTypes is the durable/harness set Attach subscribes to.

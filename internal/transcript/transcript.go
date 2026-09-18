@@ -220,42 +220,8 @@ func newWriter(path string, capacity int) (*Writer, error) {
 // once-per-turn metrics record instead, so a long reply still costs one line. agent_delta is recorded but non-durable
 // under back-pressure so terminal user/agent/error/metrics lines win.
 func (w *Writer) Attach(bus *events.Bus) {
-	if bus == nil {
-		return
-	}
-	// Typed subscriptions so AudioLevel / TranscriptPartial never enter the
-	// writer. --transcript-log is process-lifetime; /record uses AttachAll.
-	events.Subscribe(bus, func(e events.UserInput) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ResponseDelta) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ResponseReady) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ToolCallStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ToolCallFinished) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkStateChanged) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkerUsageRecorded) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkerLimitReached) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkerChargeState) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.RouteDecided) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkDelivery) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobQueued) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobFinished) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobFailed) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobAborted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.Error) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.Info) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeechDiagnostic) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.STTPhase) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ThinkingStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeakingStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeakingComplete) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeakingInterrupted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.TurnInterrupted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.TurnMetrics) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.VoiceGateStripped) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.TokenUsage) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SessionWarning) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ConversationCompacted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ConversationCleared) { w.Handle(e) })
+	// Process-lifetime (--transcript-log). /record uses AttachAll so it can detach.
+	w.AttachAll(bus)
 }
 
 // segmentRecords converts the turn's segment metrics to their wire form.

@@ -355,6 +355,26 @@ func TestAttachSkipsMeterTicks(t *testing.T) {
 	}
 }
 
+func TestAttachAllDoesNotSubscribeAll(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	all := 0
+	bus.SubscribeAll(func(events.Event) { all++ })
+	unsub := w.AttachAll(bus)
+	defer unsub()
+	bus.Emit(events.AudioLevel{Source: "output", Level: 0.5})
+	if all != 1 {
+		t.Fatalf("AttachAll must not SubscribeAll; AudioLevel hit %d all-handlers, want 1", all)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAttachAllSkipsMeterTicks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "transcript.jsonl")
 	w, err := NewWriter(path)
