@@ -85,24 +85,28 @@ func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBa
 // trimSpeechResidue drops the orphan punctuation a rendered-away tag leaves
 // behind. "[laugh]. The build finished." strips to ". The build finished." on
 // an engine with no vocal tags, and that leading period is read aloud as "dot"
-// — or, once beats merge, turned into a comma. Only runs when such a token is
-// actually there, so ordinary text keeps its whitespace.
+// — or, once beats merge, turned into a comma. A lone "..." is a pause the
+// engine should keep, so only single-character orphans go. Only runs when such
+// a token is actually there, so ordinary text keeps its whitespace.
 func trimSpeechResidue(s string) string {
 	const residue = ".!?;:,"
+	orphan := func(field string) bool {
+		return len(field) == 1 && strings.Trim(field, residue) == ""
+	}
 	fields := strings.Fields(s)
-	orphan := false
+	found := false
 	for _, field := range fields {
-		if strings.Trim(field, residue) == "" {
-			orphan = true
+		if orphan(field) {
+			found = true
 			break
 		}
 	}
-	if !orphan {
+	if !found {
 		return s
 	}
 	kept := make([]string, 0, len(fields))
 	for _, field := range fields {
-		if strings.Trim(field, residue) == "" {
+		if orphan(field) {
 			continue
 		}
 		kept = append(kept, field)

@@ -345,3 +345,17 @@ type failingTTS struct {
 func (f *failingTTS) Synthesize(context.Context, string) (*audio.PCMStream, error) {
 	return nil, f.err
 }
+
+func TestTrimSpeechResidueKeepsPauses(t *testing.T) {
+	cases := map[string]string{
+		". The build finished.":      "The build finished.",
+		"Well ... I guess so.":       "Well ... I guess so.",
+		"Wait , what ... happened ?": "Wait what ... happened",
+		"Nothing to trim here.":      "Nothing to trim here.",
+	}
+	for in, want := range cases {
+		if got := trimSpeechResidue(in); got != want {
+			t.Errorf("trimSpeechResidue(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
