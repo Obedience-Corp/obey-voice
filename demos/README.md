@@ -57,6 +57,8 @@ is a session toggle (`/think` is the slash-command twin).
 just demo-think-blocks
 ```
 
+Still frames: `demos/frames/think-live.png`, `demos/frames/think-hidden.png`, `demos/frames/think-shown.png`
+
 ## workers.gif — background job manager with pretty JSON
 
 Full Bubble Tea workers screen:
@@ -87,8 +89,6 @@ just demo-launcher-notice
 ```
 
 Still frame: `demos/frames/launcher-notice.png`
-
-Still frames: `demos/frames/think-live.png`, `demos/frames/think-hidden.png`, `demos/frames/think-shown.png`
 
 ## voice-meter.gif — compact voice EQ (listen / hear / speak)
 

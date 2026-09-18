@@ -15,6 +15,9 @@ func TestFormatNoticePrettyPrintsJSON(t *testing.T) {
 	if !strings.Contains(plain, "Meeting notes routed to camp:JobSearch") {
 		t.Fatalf("title missing:\n%s", plain)
 	}
+	if !strings.HasPrefix(strings.TrimLeft(plain, "\n"), "  Meeting notes") {
+		t.Fatalf("missing gutter:\n%s", plain)
+	}
 	if strings.Count(plain, "\n") < 2 || !strings.Contains(plain, `"campaign_root"`) {
 		t.Fatalf("JSON not indented:\n%s", plain)
 	}
@@ -61,6 +64,9 @@ func TestShortenHomeIsPathBounded(t *testing.T) {
 	}
 	if got := shortenHome(home + "-work" + string(filepath.Separator) + "x"); strings.Contains(got, "~") {
 		t.Fatalf("replaced a prefix of a longer name: %q", got)
+	}
+	if got := shortenHome("/opt" + home + string(filepath.Separator) + "x"); strings.Contains(got, "~") {
+		t.Fatalf("replaced a non-boundary substring: %q", got)
 	}
 	want := "~" + string(filepath.Separator) + "Dev"
 	if got := shortenHome(filepath.Join(home, "Dev")); got != want {

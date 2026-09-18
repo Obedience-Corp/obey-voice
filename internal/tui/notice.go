@@ -24,18 +24,19 @@ func formatNotice(text string, width int, isErr bool) string {
 		if title == "" {
 			title = "Notice"
 		}
-		var body string
-		if pretty, ok := indentJSON(ansi.Strip(rest)); ok {
-			body = ansi.Hardwrap(colorJSON(pretty), max(1, width), true)
-		} else {
-			body = wrapWorkerPlain(rest, width)
+		stripped := ansi.Strip(rest)
+		pretty, ok := indentJSON(stripped)
+		if !ok {
+			pretty = prettyJSONPrefix(stripped)
 		}
-		return style.Render(compactWorkerText(title)) + "\n" + body
+		body := ansi.Hardwrap(colorJSON(pretty), max(1, width-2), true)
+		return padNotice(style.Render(compactWorkerText(title)) + "\n" + body)
 	}
 	if title, path, ok := splitNoticePath(text); ok {
 		base := filepath.Base(path)
 		dir := ellipsizePath(filepath.Dir(path), max(1, width))
 		var b strings.Builder
+		b.WriteString("  ")
 		b.WriteString(style.Render(compactWorkerText(title)))
 		b.WriteByte('\n')
 		b.WriteString(normalStyle.Render("  " + base))
@@ -45,7 +46,21 @@ func formatNotice(text string, width int, isErr bool) string {
 		}
 		return b.String()
 	}
-	return wrapStyled(style, text, width)
+	return padNotice(wrapStyled(style, text, max(1, width-2)))
+}
+
+func padNotice(s string) string {
+	if s == "" {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "  ") {
+			continue
+		}
+		lines[i] = "  " + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func formatNoticeCompact(text string, width int, isErr bool) string {
@@ -100,7 +115,9 @@ func shortenHome(s string) string {
 		}
 		b.WriteString(s[:i])
 		rest := s[i+len(home):]
-		if rest == "" || strings.HasPrefix(rest, string(filepath.Separator)) {
+		leftOK := i == 0 || os.IsPathSeparator(s[i-1])
+		rightOK := rest == "" || strings.HasPrefix(rest, string(filepath.Separator))
+		if leftOK && rightOK {
 			b.WriteByte('~')
 			s = rest
 			continue

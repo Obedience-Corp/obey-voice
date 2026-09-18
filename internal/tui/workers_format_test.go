@@ -79,6 +79,26 @@ func TestColorJSONKeysAfterBraceInString(t *testing.T) {
 	}
 }
 
+func TestFormatWorkerPayloadIndentsTruncatedJSON(t *testing.T) {
+	activity := `searched 1 time (1 unknown) · {"query":"Denver CO current temperature today","results":[{"title":"AccuWeather"`
+	got := stripANSI(formatWorkerPayload(activity, 80))
+	if !strings.Contains(got, "searched 1 time") {
+		t.Fatalf("prefix missing:\n%s", got)
+	}
+	if !strings.Contains(got, "\n  \"query\"") {
+		t.Fatalf("truncated JSON was not indented:\n%s", got)
+	}
+	m := newWorkers(&config.Config{}, &testWorkers{items: []pipeline.WorkerInfo{{
+		ID: "job-1", Task: "weather", State: "running", Activity: activity,
+	}}})
+	m.width, m.height, m.cursor = 100, 28, 2
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	detail := stripANSI(m.View())
+	if !strings.Contains(detail, "\n  \"query\"") && !strings.Contains(detail, "\n  \"query\":") {
+		t.Fatalf("detail still one compact line:\n%s", detail)
+	}
+}
+
 func TestWrapWorkerPlainStripsANSI(t *testing.T) {
 	got := wrapWorkerPlain("hi\x1b[31mred", 40)
 	if strings.Contains(got, "\x1b[") {

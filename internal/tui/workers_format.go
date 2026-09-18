@@ -132,6 +132,81 @@ func indentJSON(raw string) (string, bool) {
 	return strings.TrimRight(buf.String(), "\n"), true
 }
 
+// prettyJSONPrefix lays out a compact JSON prefix without requiring a complete
+// value, so a 240-rune tool preview still gets keys on their own lines.
+func prettyJSONPrefix(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	depth := 0
+	inStr := false
+	esc := false
+	needIndent := false
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if inStr {
+			b.WriteByte(c)
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case ' ', '\n', '\t', '\r':
+			continue
+		case '"':
+			if needIndent {
+				writeJSONIndent(&b, depth)
+				needIndent = false
+			}
+			inStr = true
+			b.WriteByte(c)
+		case '{', '[':
+			if needIndent {
+				writeJSONIndent(&b, depth)
+				needIndent = false
+			}
+			b.WriteByte(c)
+			depth++
+			needIndent = true
+		case '}', ']':
+			depth = max(0, depth-1)
+			writeJSONIndent(&b, depth)
+			b.WriteByte(c)
+			needIndent = false
+		case ',':
+			b.WriteByte(c)
+			needIndent = true
+		case ':':
+			b.WriteString(": ")
+		default:
+			if needIndent {
+				writeJSONIndent(&b, depth)
+				needIndent = false
+			}
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+func writeJSONIndent(b *strings.Builder, depth int) {
+	b.WriteByte('\n')
+	for range depth {
+		b.WriteString("  ")
+	}
+}
+
 func formatWorkerPayload(raw string, width int) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -142,12 +217,12 @@ func formatWorkerPayload(raw string, width int) string {
 	if !found {
 		return wrapWorkerPlain(raw, width)
 	}
-	var body string
-	if pretty, ok := indentJSON(ansi.Strip(rest)); ok {
-		body = ansi.Hardwrap(colorJSON(pretty), width, true)
-	} else {
-		body = wrapWorkerPlain(rest, width)
+	stripped := ansi.Strip(rest)
+	pretty, ok := indentJSON(stripped)
+	if !ok {
+		pretty = prettyJSONPrefix(stripped)
 	}
+	body := ansi.Hardwrap(colorJSON(pretty), width, true)
 	if prefix == "" {
 		return body
 	}
