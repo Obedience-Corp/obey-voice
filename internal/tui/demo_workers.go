@@ -9,6 +9,18 @@ import (
 )
 
 const demoWorkersEnv = "OBEY_VOICE_DEMO_WORKERS"
+const demoLauncherNoticeEnv = "OBEY_VOICE_DEMO_LAUNCHER_NOTICE"
+
+func demoLauncherNotice() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(demoLauncherNoticeEnv))) {
+	case "route", "json", "1", "true", "yes", "on":
+		return `Meeting notes routed to camp:JobSearch: {"campaign_root":"/Users/lancerogers/Dev/JobSearch","generated_at":"2026-09-18T17:19:25.557803Z"}`
+	case "speakers", "path":
+		return "Speaker labels updated: 7 speakers · /Users/lancerogers/.obey/agents/voice/festival-voice/meetings/recruiter-call-eyong-20260918-110210.meeting/.samantha/speaker-analysis.json"
+	default:
+		return ""
+	}
+}
 
 func demoWorkersEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(demoWorkersEnv))) {

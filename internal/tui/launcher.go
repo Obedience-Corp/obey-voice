@@ -175,6 +175,9 @@ func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved .
 			action: actionQuit,
 		},
 	)
+	if notice := demoLauncherNotice(); notice != "" {
+		m.banner = notice
+	}
 	return m
 }
 
@@ -502,11 +505,7 @@ func (m launcherModel) fullView(width int) string {
 	b.WriteString("\n\n")
 
 	if m.banner != "" {
-		style := statusStyle
-		if m.bannerErr {
-			style = errorStyle
-		}
-		b.WriteString(ansi.Truncate(style.Render("  "+m.banner), width, "…"))
+		b.WriteString(formatNotice(m.banner, width, m.bannerErr))
 		b.WriteString("\n\n")
 	}
 
@@ -573,11 +572,7 @@ func (m launcherModel) compactView(width int) string {
 	b.WriteString(ansi.Truncate(headerStyle.Render("  OBEY VOICE"), width, "…"))
 	b.WriteString("\n")
 	if m.banner != "" {
-		style := statusStyle
-		if m.bannerErr {
-			style = errorStyle
-		}
-		b.WriteString(ansi.Truncate(style.Render("  "+m.banner), width, "…"))
+		b.WriteString(formatNoticeCompact(m.banner, width, m.bannerErr))
 		b.WriteString("\n")
 	}
 

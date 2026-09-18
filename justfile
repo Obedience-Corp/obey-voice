@@ -109,6 +109,17 @@ demo-think-blocks: build
     just _optimize-demo-gif demos/think-blocks.gif
     ls -lh demos/think-blocks.gif
 
+demo-launcher-notice: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/launcher-notice.tape
+    just _optimize-demo-gif demos/launcher-notice.gif
+    ls -lh demos/launcher-notice.gif demos/frames/launcher-notice.png
+
 demo-workers: build
     #!/usr/bin/env bash
     set -euo pipefail
