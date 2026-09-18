@@ -174,6 +174,9 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		if a.runtime != nil && a.runtime.Pipeline != nil {
 			controller = a.runtime.Pipeline
 		}
+		if demoWorkersEnabled() {
+			controller = demoWorkers(controller)
+		}
 		a.workers = newWorkers(a.cfg, controller)
 		a.workers.returnScreen = prev
 		a.workers.width, a.workers.height = a.width, a.height

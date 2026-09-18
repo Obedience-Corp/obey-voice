@@ -64,7 +64,7 @@ func TestWorkersTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !interactive {
-		for _, want := range []string{"Review campaign changes", "ollama / test-local", "Allow background workers:", "Stop requested", "Termination: unknown"} {
+		for _, want := range []string{"Review campaign changes", "ollama / test-local", "Allow background workers:", "Stop requested", "Termination", "unknown"} {
 			if !strings.Contains(stripANSI(output.String()), want) {
 				t.Fatalf("renderer missing %q:\n%s", want, stripANSI(output.String()))
 			}

@@ -57,6 +57,22 @@ is a session toggle (`/think` is the slash-command twin).
 just demo-think-blocks
 ```
 
+## workers.gif — background job manager with pretty JSON
+
+Full Bubble Tea workers screen:
+
+1. **Launcher → Workers**
+2. **List** — running job with activity *summary* (not a JSON dump)
+3. **Detail** — indented, syntax-colored tool JSON
+
+`OBEY_VOICE_DEMO_WORKERS=1` injects a fixture search job. No live model.
+
+```bash
+just demo-workers
+```
+
+Still frame: `demos/frames/workers-detail.png`
+
 Still frames: `demos/frames/think-live.png`, `demos/frames/think-hidden.png`, `demos/frames/think-shown.png`
 
 ## voice-meter.gif — compact voice EQ (listen / hear / speak)

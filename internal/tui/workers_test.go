@@ -210,7 +210,7 @@ func TestWorkersDetailsStopControlsAndStableSelection(t *testing.T) {
 	if m.detailID != "a" || m.cursor != 3 {
 		t.Fatal("refresh changed selected identity")
 	}
-	if view := stripANSI(m.View()); !strings.Contains(view, "partial output") || !strings.Contains(view, "Termination: unknown") {
+	if view := stripANSI(m.View()); !strings.Contains(view, "partial output") || !strings.Contains(view, "Termination") || !strings.Contains(view, "unknown") {
 		t.Fatal("terminal output or uncertainty missing")
 	}
 	m = workersKey(m, "s")
@@ -251,6 +251,35 @@ func TestWorkersRenderingAndFooterAreBounded(t *testing.T) {
 		if strings.Contains(footer, "long task") || !strings.Contains(footer, "/workers") || !strings.Contains(footer, "/menu") {
 			t.Fatalf("footer at %d: %s", width, footer)
 		}
+	}
+}
+
+func TestWorkersPrettyPrintsJSONActivity(t *testing.T) {
+	activity := `searched 1 time (1 unknown) · {"query":"Denver CO","results":[{"title":"AccuWeather","ok":true,"temp":48}]}`
+	m := newWorkers(&config.Config{}, &testWorkers{items: []pipeline.WorkerInfo{{
+		ID: "job-1", Task: "weather in denver", State: "running",
+		Provider: "ollama", Model: "qwen3.8", Activity: activity,
+	}}})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
+	list := stripANSI(m.View())
+	if strings.Contains(list, `"query"`) || strings.Contains(list, "AccuWeather") {
+		t.Fatalf("list dumped JSON:\n%s", list)
+	}
+	if !strings.Contains(list, "searched 1 time") {
+		t.Fatalf("list lost activity summary:\n%s", list)
+	}
+	m.cursor = 2
+	m = workersKey(m, " ")
+	detail := m.View()
+	plain := stripANSI(detail)
+	if !strings.Contains(plain, `"query"`) || !strings.Contains(plain, "Denver CO") {
+		t.Fatalf("detail missing pretty JSON:\n%s", plain)
+	}
+	if !strings.Contains(plain, "\n  \"query\"") && !strings.Contains(plain, "\n  \"query\":") {
+		t.Fatalf("JSON was not indented:\n%s", plain)
+	}
+	if !strings.Contains(detail, "\x1b[") {
+		t.Fatal("pretty JSON has no color")
 	}
 }
 

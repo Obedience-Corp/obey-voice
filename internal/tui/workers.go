@@ -82,24 +82,8 @@ func (m *workersModel) refreshDetail() {
 		if item.ID != m.detailID {
 			continue
 		}
-		text := fmt.Sprintf("%s\n\n%s · %s · %s\nID: %s\n", item.Task, item.State, workerProvider(item), roundSeconds(item.Elapsed), item.ID)
-		if item.Activity != "" {
-			text += "\nActivity: " + item.Activity + "\n"
-		}
-		if item.Result != "" {
-			text += "\nOutput:\n" + item.Result + "\n"
-		}
-		if item.Err != "" {
-			text += "\nError: " + item.Err + "\n"
-		}
-		if item.Termination != "" {
-			text += "\nTermination: " + item.Termination + "\n"
-		}
-		if item.Active() && item.Result == "" {
-			text += "\nOutput will appear when the worker finishes."
-		}
 		offset := m.detail.YOffset
-		m.detail.SetContent(ansi.Hardwrap(safeWorkerText(text), m.detail.Width, true))
+		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width))
 		m.detail.SetYOffset(offset)
 		return
 	}
@@ -334,8 +318,8 @@ func (m workersModel) View() string {
 		for _, item := range m.items {
 			labels = append(labels, item.Task+" · "+item.State)
 			detail := workerProvider(item) + " · " + roundSeconds(item.Elapsed)
-			if item.Activity != "" {
-				detail += " · " + item.Activity
+			if summary := workerActivitySummary(item.Activity); summary != "" {
+				detail += " · " + summary
 			}
 			details = append(details, detail)
 		}
