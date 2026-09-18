@@ -13,16 +13,11 @@ import (
 
 // orderGate keeps playback in admission order while synthesis runs out of it.
 //
-// A worker that finished index k+1 early parks here holding its own stream
-// rather than parking the stream in a shared ready map: PlayStream owns a
-// stream once invoked, so a map would need a second owner for the same buffer.
-// Parked workers are bounded by the worker count, and the loop's pending gate
-// still bounds queued work.
+// PlayStream owns a stream once invoked, so a worker that finished early parks
+// here holding its own stream until the handoff.
 //
-// Releases arrive out of order — a segment with nothing to speak returns
-// before a slower one ahead of it — so next only advances across a contiguous
-// run of released indices. Waiting on "k-1 released" alone would let k+1 pass
-// a still-synthesizing k.
+// next advances only across a contiguous run of released indices: a skip — a
+// segment with nothing to speak — can finish before a slower index ahead of it.
 type orderGate struct {
 	mu       sync.Mutex
 	next     int
@@ -48,7 +43,10 @@ func (g *orderGate) await(ctx context.Context, index int) error {
 		open, advanced := g.next >= index, g.advanced
 		g.mu.Unlock()
 		if open {
-			return nil
+			// The predecessor's release and a cancel land in the same window
+			// on a parked worker. Turn cancel does not stop the player, so a
+			// canceled turn hands nothing over even with the gate open.
+			return ctx.Err()
 		}
 		select {
 		case <-ctx.Done():
@@ -90,9 +88,7 @@ func (g *orderGate) done(index int) {
 //
 // It is read when a segment starts synthesizing, so above one worker a sibling
 // already in flight on the primary keeps its own result — the latch binds every
-// index that starts after the switch, not one that raced it. Unreachable while
-// providers answer Concurrency() == 1; a real worker pool has to decide whether
-// a wasted re-synthesis is worth one fewer voice change.
+// index that starts after the switch, not one that raced it.
 type fallbackLatch struct{ stuck atomic.Bool }
 
 func (f *fallbackLatch) latched() bool { return f != nil && f.stuck.Load() }

@@ -142,9 +142,8 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 		return segmentSynthesisOutcome{}
 	}
 
-	// The stream is ready; wait for this index's turn to hand off. Parking
-	// here rather than at PlayStream keeps the backchannel stop and the
-	// first-real-audio stamp below in playback order too.
+	// await sits above the CAS so the backchannel stop and the first-real-audio
+	// stamp below follow playback order, not finish order.
 	if err := gate.await(ctx, index); err != nil {
 		// Barged in or canceled while parked: nothing above the playing index
 		// is handed off, and the stream's producer must not be left blocked.

@@ -43,6 +43,9 @@ type lookaheadFakeTTS struct {
 	// fails names a segment this engine refuses, so a fallback test does not
 	// depend on which worker reached the provider first.
 	fails map[string]bool
+	// hold blocks a segment after its completion is recorded and before its
+	// worker reaches the gate, so a test can place a cancel in that window.
+	hold map[string]chan struct{}
 
 	mu        sync.Mutex
 	started   []string
@@ -83,6 +86,9 @@ func (f *lookaheadFakeTTS) Synthesize(ctx context.Context, text string) (*audio.
 	f.streams[stream] = text
 	f.completed = append(f.completed, text)
 	f.mu.Unlock()
+	if hold := f.hold[word]; hold != nil {
+		<-hold
+	}
 	return stream, nil
 }
 
@@ -289,7 +295,7 @@ func TestNothingToSpeakDoesNotWedgeTheGate(t *testing.T) {
 
 // Cancellation (turn cancel, or the barge-in that cancels the same context)
 // drops everything above the index already handed to the player: a parked
-// worker releases its index and hands nothing off.
+// worker releases its index, hands nothing off, and the turn ends.
 func TestCancelDropsSegmentsAboveThePlayingOne(t *testing.T) {
 	provider := &lookaheadFakeTTS{
 		concurrency: 2,
@@ -312,9 +318,12 @@ func TestCancelDropsSegmentsAboveThePlayingOne(t *testing.T) {
 		returned <- err
 	}()
 
+	// Cancel only once index 1 is really parked: its synthesis has completed
+	// while index 0, the only thing the listener has, is still inside
+	// PlayStream.
+	segments := lookaheadSegments()
 	waitForCond(t, func() bool {
-		_, completed := provider.snapshot()
-		return len(completed) >= 1 && len(player.Played()) >= 1
+		return completedSegment(provider, "Bravo") && equalStrings(player.Played(), segments[:1])
 	}, 3*time.Second, "index 1 never finished synthesizing behind a blocked index 0")
 
 	p.softCancelTTS("test cancel")
@@ -325,11 +334,80 @@ func TestCancelDropsSegmentsAboveThePlayingOne(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the turn did not end after cancellation — a parked worker wedged it")
 	}
-	if got := player.Played(); len(got) != 1 || !strings.HasPrefix(got[0], "Alpha") {
+	if got := player.Played(); !equalStrings(got, segments[:1]) {
 		t.Fatalf("PlayStream calls = %q, want only the index that was already playing", got)
 	}
 	if provider.cancels.Load() == 0 {
 		t.Fatal("SoftCancel never reached the provider")
+	}
+}
+
+// Cancel outranks an open gate. Index 0's release and the cancel are one
+// window on a parked worker, and turn cancel does not stop the player, so a
+// stream handed over after the cancel is audible. Driving the workers directly
+// pins the order the turn can only race: cancel, then index 0 releases, then
+// index 1 reaches the gate.
+func TestCancelBeatsAnOpenGateForAParkedSegment(t *testing.T) {
+	release := make(chan struct{})
+	provider := &lookaheadFakeTTS{
+		concurrency: 2,
+		// Index 0 sits inside PlayStream on a stream that never becomes ready,
+		// so it releases the gate only when the cancel unblocks WaitReady.
+		readyDelay: map[string]time.Duration{"Alpha": 10 * time.Second},
+		// Index 1 finishes synthesizing but reaches the gate when this test
+		// says so: after the cancel, with the gate already open.
+		hold: map[string]chan struct{}{"Bravo": release},
+	}
+	player := newOrderingPlayer(provider, time.Millisecond)
+	defer player.Close()
+
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+	gate := newOrderGate()
+	out := make(chan playbackEvent, 8)
+	var audioStarted atomic.Bool
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	segments := lookaheadSegments()[:2]
+	done := make(chan segmentSynthesisOutcome, len(segments))
+	for i, sentence := range segments {
+		now := time.Now()
+		work := synthWork{sentence: sentence, index: i, textReady: now, queuedAt: now}
+		go func() {
+			done <- p.synthesizeSegmentObserved(ctx, make(chan struct{}), work, gate, &audioStarted, out, nil)
+		}()
+	}
+
+	waitForCond(t, func() bool {
+		return completedSegment(provider, "Bravo") && equalStrings(player.Played(), segments[:1])
+	}, 3*time.Second, "index 1 never finished synthesizing behind a blocked index 0")
+
+	cancel()
+	awaitOutcome(t, done, "index 0 never returned after cancellation")
+	close(release)
+	awaitOutcome(t, done, "index 1 never returned after cancellation")
+
+	if got := player.Played(); !equalStrings(got, segments[:1]) {
+		t.Fatalf("PlayStream calls = %q, want only the index that was already playing", got)
+	}
+}
+
+func completedSegment(provider *lookaheadFakeTTS, word string) bool {
+	_, completed := provider.snapshot()
+	for _, text := range completed {
+		if strings.HasPrefix(text, word) {
+			return true
+		}
+	}
+	return false
+}
+
+func awaitOutcome(t *testing.T, done <-chan segmentSynthesisOutcome, msg string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal(msg)
 	}
 }
 
@@ -445,6 +523,47 @@ func TestOrderGateAwaitReturnsOnCancel(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("await(1) ignored cancellation; the turn would hang on a parked worker")
 	}
+}
+
+// A release that lands with — or before — the cancel must not open the gate for
+// a canceled turn: nothing above the playing index is handed to the player.
+func TestOrderGateAwaitReportsCancelOnAnOpenGate(t *testing.T) {
+	t.Run("released before the worker arrives", func(t *testing.T) {
+		gate := newOrderGate()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		gate.done(0)
+		if err := gate.await(ctx, 1); !errors.Is(err, context.Canceled) {
+			t.Fatalf("await(1) = %v, want context.Canceled", err)
+		}
+	})
+
+	// The release races the parked worker's wake. The turn is canceled before
+	// await is ever called, so context.Canceled is the only correct answer
+	// whichever wake wins.
+	t.Run("released while the worker is parked", func(t *testing.T) {
+		for i := range 200 {
+			gate := newOrderGate()
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			parked := make(chan struct{})
+			released := make(chan error, 1)
+			go func() {
+				close(parked)
+				released <- gate.await(ctx, 1)
+			}()
+			<-parked
+			gate.done(0)
+			select {
+			case err := <-released:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("await(1) = %v on iteration %d, want context.Canceled", err, i)
+				}
+			case <-time.After(time.Second):
+				t.Fatalf("await(1) never returned on iteration %d", i)
+			}
+		}
+	})
 }
 
 // A nil gate is the single-segment path (synthesizeSegment, text mode): one
