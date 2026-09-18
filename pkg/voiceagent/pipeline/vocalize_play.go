@@ -60,24 +60,29 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 	return stream
 }
 
-func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
+func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool, joinBeats bool) (*audio.PCMStream, bool, synthesisObservation, error) {
 	// Recorded clips do not match the live TTS voice, so they are never
 	// spliced. Stage tags are stripped (or rewritten only if the engine
 	// actually renders them).
-	return p.synthesizeWithFallbackObserved(ctx, sentence, stickFallback)
+	return p.synthesizeWithFallbackObserved(ctx, sentence, stickFallback, joinBeats)
 }
 
 // prepareSpeechForTTS is the text one provider should hear: its vocal tags,
-// then its join mode.
+// then, for a group the turn loop assembled around a held beat, its join mode.
 //
-// A provider that re-splits sentence punctuation inside one call gets the
-// group's short beats merged textually (joinShortBeats); one that carries
-// prosody across the request gets the sentences as written. The rewrite lives
-// here so it follows the engine that actually speaks, fallback included, and
-// never reaches the transcript.
-func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
+// joinBeats is the loop's decision, not a property of the text: only a group
+// it built from a short beat plus the sentence that beat belongs to may have
+// its punctuation rewritten (joinShortBeats), and then only on a provider that
+// re-splits sentences inside one call. Everything else — a whole text-mode
+// reply, a status announcement, a filler, narration, fallback text — is spoken
+// as written. Rewriting every string a non-joining engine speaks turned a
+// 600-character reply into run-on speech.
+//
+// The rewrite lives here so it follows the engine that actually speaks,
+// fallback included, and never reaches the transcript.
+func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank, joinBeats bool) string {
 	spoken := trimSpeechResidue(renderVocalTagsFor(sentence, provider, vocals))
-	if tts.JoinsSentencesOf(provider) {
+	if !joinBeats || tts.JoinsSentencesOf(provider) {
 		return spoken
 	}
 	return joinShortBeats(spoken)
@@ -155,7 +160,9 @@ func (p *Pipeline) renderVocalizedObserved(ctx context.Context, parts []vocalPar
 		if text == "" {
 			continue
 		}
-		stream, fb, partObservation, err := p.synthesizeWithFallbackObserved(ctx, text, stickFallback)
+		// Each part is the prose between two sounds, already split at the
+		// boundaries a beat join would have merged across.
+		stream, fb, partObservation, err := p.synthesizeWithFallbackObserved(ctx, text, stickFallback, false)
 		if errors.Is(err, errNothingToSpeak) {
 			continue
 		}

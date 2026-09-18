@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -379,6 +380,56 @@ func TestQuestionBeatIsNotTextuallyJoined(t *testing.T) {
 	request := speakScript(t, &groupingFakeTTS{joins: true}, "Really? ", "You what?")
 	if len(request) != 1 {
 		t.Fatalf("request join calls = %q, want one request over both", request)
+	}
+}
+
+// A group of full sentences is grouped to save per-call overhead, not to be
+// re-read as one sentence. Only a group the loop held a short beat for is
+// rewritten, so two ordinary sentences keep their period even on an engine
+// that re-splits them.
+func TestGroupWithoutAShortBeatKeepsItsPunctuation(t *testing.T) {
+	const (
+		opening = "The release build finished on main a few minutes ago."
+		second  = "Every unit test passed on the first attempt."
+		third   = "The linter came back clean across the tree."
+	)
+	calls := speakScript(t, &groupingFakeTTS{}, opening+" ", second+" ", third)
+	if len(calls) != 2 {
+		t.Fatalf("Synthesize calls = %q, want the opening then the two grouped sentences", calls)
+	}
+	if want := second + " " + third; calls[1] != want {
+		t.Fatalf("synthesized %q, want %q", calls[1], want)
+	}
+}
+
+// The fallback re-prepares the group's text, so it must be given the same
+// decision the primary synthesis was given: a group the loop joined stays one
+// contour when Kokoro picks it up mid-turn, and a group it did not join keeps
+// its sentence punctuation there too.
+func TestFallbackCarriesTheLoopsJoinDecision(t *testing.T) {
+	const group = "Wait. Wait, you what?"
+	for _, tc := range []struct {
+		name      string
+		joinBeats bool
+		want      string
+	}{
+		{name: "joined group stays joined", joinBeats: true, want: "Wait, wait, you what?"},
+		{name: "unjoined group is spoken as written", joinBeats: false, want: group},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fallback := &groupingFakeTTS{}
+			p := &Pipeline{TTS: &groupingFakeTTS{}, TTSFallback: fallback, Player: &fallbackBoundaryPlayer{}, Events: events.NewBus()}
+			now := time.Now()
+			outcome := p.synthesizeSegmentObserved(context.Background(), make(chan struct{}), synthWork{
+				sentence: group, textReady: now, queuedAt: now, joinBeats: tc.joinBeats,
+			}, 0, new(atomic.Bool), make(chan playbackEvent, 2), nil)
+			if !outcome.enqueued {
+				t.Fatalf("outcome = %+v, want the fallback playback enqueued", outcome)
+			}
+			if got := fallback.Texts(); len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("fallback spoke %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

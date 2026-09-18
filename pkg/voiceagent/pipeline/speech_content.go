@@ -158,12 +158,35 @@ func endsInQuestion(s string) bool {
 	return strings.HasSuffix(trimmed, "?")
 }
 
+// joinableBeatGroup reports a group the turn loop assembled around a held
+// short beat: an interjection ahead of the sentence it belongs to. Only such a
+// group is rewritten by joinShortBeats. A whole text-mode reply, a status
+// announcement and a group of full sentences are spoken as written, however
+// short one of their sentences happens to be. A tag-only segment carries no
+// prose of its own, so it is not a beat.
+func joinableBeatGroup(group []string) bool {
+	if len(group) < 2 {
+		return false
+	}
+	for _, sentence := range group[:len(group)-1] {
+		if tagOnlySegment(sentence) {
+			continue
+		}
+		if speakableChars(sentence) < shortBeatChars {
+			return true
+		}
+	}
+	return false
+}
+
 // joinShortBeats merges a group's interjections into the sentence that follows
 // them, for an engine that re-splits sentence punctuation inside one call.
 // sherpa's Kokoro frontend starts a new entry at . ! ? ; and runs the model
 // once per entry, so "Wait. Wait, you what?" is two contours however it is
 // requested; with the beat's period rewritten to a comma it is one.
 //
+// The caller decides whether a string is such a group (joinableBeatGroup); on
+// any other text this rewrite is damage, so it is never applied speculatively.
 // Only a beat under shortBeatChars is rewritten. Longer sentences are grouped
 // to save per-call overhead, not to change how they are read, so they are
 // spoken as written.
@@ -177,7 +200,9 @@ func joinShortBeats(group string) string {
 		if speakableChars(beat) >= shortBeatChars || endsInQuestion(beat) {
 			continue
 		}
-		if !hasPronounceableContent(beat) {
+		// A beat with nothing pronounceable after it has nothing to merge
+		// into: softening its period would only drop the boundary.
+		if !hasPronounceableContent(beat) || !hasPronounceableContent(sentences[i+1]) {
 			continue
 		}
 		softened, ok := softenBeatEnd(beat)

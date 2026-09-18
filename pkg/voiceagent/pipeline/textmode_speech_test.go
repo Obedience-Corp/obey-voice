@@ -53,11 +53,22 @@ func TestTextModeSpeaksTheSameAsProgressive(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			progressive := speechFor(t, tc.chunks, false)
 			typed := speechFor(t, tc.chunks, true)
-			if progressive != typed {
+			if !saysTheSame(progressive, typed) {
 				t.Errorf("paths disagree:\n  progressive: %q\n  text mode:   %q", progressive, typed)
 			}
 		})
 	}
+}
+
+// saysTheSame compares two spoken strings up to the beat join and nothing
+// else. On an engine that re-splits sentence punctuation the progressive path
+// may merge a held short beat into the sentence it belongs to — a group only
+// the turn loop can assemble, and one text mode never has, since it
+// synthesizes the whole reply as a single string. Every other difference,
+// markdown and fillers included, still fails the comparison.
+func saysTheSame(a, b string) bool {
+	beatJoined := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, ",", ".")) }
+	return beatJoined(a) == beatJoined(b)
 }
 
 // TestTextModeDropsFillerOnlyAndMarkdown pins the two concrete regressions,
@@ -79,6 +90,23 @@ func TestTextModeDropsFillerOnlyAndMarkdown(t *testing.T) {
 			t.Errorf("text mode still speaks markdown: %q", got)
 		}
 	})
+}
+
+// TestTextModeSpeaksSentencePunctuationAsWritten is the heard defect: text
+// mode synthesizes the whole reply as one string, and the beat join was being
+// applied to every string a non-joining engine (Kokoro) was handed. A reply
+// with a short sentence in it came back as run-on speech — "It passed," in
+// place of "It passed." — with nothing the turn loop had actually grouped.
+func TestTextModeSpeaksSentencePunctuationAsWritten(t *testing.T) {
+	const reply = "The build finished on main. It passed. Tests are green across the board. Nice."
+
+	got := speechFor(t, []string{reply}, true)
+	if got != reply {
+		t.Fatalf("text mode spoke %q, want the reply as written %q", got, reply)
+	}
+	if strings.Contains(got, "passed,") {
+		t.Errorf("a short sentence was merged into its follower: %q", got)
+	}
 }
 
 // TestSpeakableFromResponseNeedsSegmentGranularity guards the shortcut a future

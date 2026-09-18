@@ -213,6 +213,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			return
 		}
 		text := strings.Join(voiceBatch, " ")
+		// The loop, not the text, decides whether this group may be rewritten
+		// into one contour: it is the only place that knows the group was
+		// assembled by holding a short beat for the sentence it belongs to.
+		joinBeats := grouping.textualJoin && joinableBeatGroup(voiceBatch)
 		if !watchdogArmed {
 			watchdogArmed = true
 			// Sized from the flushed group, not the first admitted segment:
@@ -232,7 +236,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			metrics.delivery.queued++
 		}
 		queuedAt := time.Now()
-		synthQueue <- synthWork{sentence: text, textReady: batchTextReady, queuedAt: queuedAt}
+		synthQueue <- synthWork{sentence: text, textReady: batchTextReady, queuedAt: queuedAt, joinBeats: joinBeats}
 		voiceBatch = voiceBatch[:0]
 		batchTextReady = time.Time{}
 		batchBreak = false

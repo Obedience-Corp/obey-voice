@@ -146,7 +146,7 @@ func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
 	kokoro := &fakeTTS{}
 	native := &fakeTTS{vocalTags: true}
 	in := "[sigh] hello there."
-	got := prepareSpeechForTTS(in, qwen, nil)
+	got := prepareSpeechForTTS(in, qwen, nil, false)
 	if strings.Contains(strings.ToLower(got), "[sigh]") {
 		t.Errorf("Qwen still saw markup: %q", got)
 	}
@@ -163,20 +163,20 @@ func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
 	if !found {
 		t.Errorf("Qwen should get sigh onomatopoeia, got %q", got)
 	}
-	got = prepareSpeechForTTS(in, kokoro, nil)
+	got = prepareSpeechForTTS(in, kokoro, nil, false)
 	if got != "hello there." {
 		t.Errorf("Kokoro = %q, want stripped speech only", got)
 	}
-	if got := prepareSpeechForTTS("[sigh]", kokoro, nil); got != "" {
+	if got := prepareSpeechForTTS("[sigh]", kokoro, nil, false); got != "" {
 		t.Errorf("Kokoro tag-only = %q, want empty", got)
 	}
-	if got := prepareSpeechForTTS(in, native, nil); got != in {
+	if got := prepareSpeechForTTS(in, native, nil, false); got != in {
 		t.Errorf("native-tag engine = %q, want tags passed through", got)
 	}
-	if got := prepareSpeechForTTS("[mouth] hello there.", qwen, nil); got != "hello there." {
+	if got := prepareSpeechForTTS("[mouth] hello there.", qwen, nil, false); got != "hello there." {
 		t.Errorf("Qwen must not speak [mouth], got %q", got)
 	}
-	if got := prepareSpeechForTTS("[mouth] hello there.", kokoro, nil); got != "hello there." {
+	if got := prepareSpeechForTTS("[mouth] hello there.", kokoro, nil, false); got != "hello there." {
 		t.Errorf("Kokoro must not speak [mouth], got %q", got)
 	}
 }
@@ -239,12 +239,33 @@ func TestRunTurnMouthTagIsNotSpoken(t *testing.T) {
 	}
 }
 
+// The textual join is the caller's decision. A non-joining engine speaks the
+// text it was handed unless the turn loop says this string is a group it
+// assembled around a held beat — otherwise every announcement and every whole
+// text-mode reply gets its sentence periods rewritten into commas.
+func TestPrepareSpeechForTTSJoinsOnlyWhenTheLoopSaysSo(t *testing.T) {
+	kokoro := &fakeTTS{}
+	const group = "Wait. Wait, you what?"
+
+	if got := prepareSpeechForTTS(group, kokoro, nil, false); got != group {
+		t.Errorf("prepareSpeechForTTS(joinBeats=false) = %q, want the text as written", got)
+	}
+	if got, want := prepareSpeechForTTS(group, kokoro, nil, true), "Wait, wait, you what?"; got != want {
+		t.Errorf("prepareSpeechForTTS(joinBeats=true) = %q, want %q", got, want)
+	}
+
+	const reply = "The build finished on main. It passed. Tests are green across the board."
+	if got := prepareSpeechForTTS(reply, kokoro, nil, false); got != reply {
+		t.Errorf("a whole reply was rewritten: %q", got)
+	}
+}
+
 func TestPrepareSpeechForTTSRotatesOnomatopoeiaWhenBankPresent(t *testing.T) {
 	qwen := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
 	bank := newVocalBank("")
 	seen := map[string]bool{}
 	for range 40 {
-		got := prepareSpeechForTTS("[sigh] hi", qwen, bank)
+		got := prepareSpeechForTTS("[sigh] hi", qwen, bank, false)
 		for _, phrase := range vocalPhrases[vocalSigh] {
 			if strings.Contains(got, phrase) {
 				seen[phrase] = true
@@ -396,7 +417,7 @@ func TestPrepareSpeechForTTSRemovesTheOrphanATagLeaves(t *testing.T) {
 		"[sigh]... I guess so.":        "... I guess so.",
 	}
 	for in, want := range cases {
-		if got := prepareSpeechForTTS(in, stripping, nil); got != want {
+		if got := prepareSpeechForTTS(in, stripping, nil, false); got != want {
 			t.Errorf("prepareSpeechForTTS(%q) = %q, want %q", in, got, want)
 		}
 	}
