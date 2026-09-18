@@ -782,11 +782,6 @@ func (a *Audio8TTS) Capabilities() ProviderCapabilities {
 	}
 }
 
-// JoinsSentences is false until measured otherwise: nothing here has shown
-// that one request over two sentences produces one contour, and the textual
-// join costs an engine that would have joined the request nothing.
-func (a *Audio8TTS) JoinsSentences() bool { return false }
-
 var _ Provider = (*Audio8TTS)(nil)
 var _ RequestProvider = (*Audio8TTS)(nil)
 

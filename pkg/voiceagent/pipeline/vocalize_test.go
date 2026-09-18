@@ -244,7 +244,7 @@ func TestRunTurnMouthTagIsNotSpoken(t *testing.T) {
 // assembled around a held beat — otherwise every announcement and every whole
 // text-mode reply gets its sentence periods rewritten into commas.
 func TestPrepareSpeechForTTSJoinsOnlyWhenTheLoopSaysSo(t *testing.T) {
-	kokoro := &fakeTTS{}
+	kokoro := &kokoroLikeTTS{}
 	const group = "Wait. Wait, you what?"
 
 	if got := prepareSpeechForTTS(group, kokoro, nil, false); got != group {
@@ -257,6 +257,12 @@ func TestPrepareSpeechForTTSJoinsOnlyWhenTheLoopSaysSo(t *testing.T) {
 	const reply = "The build finished on main. It passed. Tests are green across the board."
 	if got := prepareSpeechForTTS(reply, kokoro, nil, false); got != reply {
 		t.Errorf("a whole reply was rewritten: %q", got)
+	}
+
+	// The residue trim is wired here, not only unit-tested: a stripped tag
+	// leaves a leading "." that the engine reads aloud as "dot".
+	if got, want := prepareSpeechForTTS(". The build finished.", kokoro, nil, false), "The build finished."; got != want {
+		t.Errorf("prepareSpeechForTTS left the orphan punctuation: %q, want %q", got, want)
 	}
 }
 
@@ -330,6 +336,14 @@ func (q *qwenLikeTTS) RewriteVocalTags(s string, pick func(kind string) string) 
 
 // Qwen carries prosody across a request, so its text is never rewritten.
 func (q *qwenLikeTTS) JoinsSentences() bool { return true }
+
+// kokoroLikeTTS is the engine the textual join exists for: sherpa re-splits on
+// sentence punctuation inside one call, so a merged beat has to be rewritten.
+// It declares the answer because the default is now the request join — an
+// engine nobody measured speaks its text as written.
+type kokoroLikeTTS struct{ fakeTTS }
+
+func (k *kokoroLikeTTS) JoinsSentences() bool { return false }
 
 func TestFallbackKokoroDoesNotReceiveQwenOnomatopoeia(t *testing.T) {
 	primary := &failingTTS{err: &tts.ProviderError{Kind: tts.ProviderErrorWorker, Err: errors.New("worker down")}}

@@ -59,11 +59,14 @@ func (q *Qwen3TTS) SpeechWarmState() string {
 	return "cold"
 }
 
-// SegmentRamp is 1.0: in-pipeline RTF is 1.83 at 0.6b and 2.2-2.6 at 1.7b
-// (tts-bench), so a segment already costs more to synthesize than the one
-// before it takes to play. Segments must not grow; the silence this engine
-// owes the listener is a throughput problem, not a chunking one.
-func (q *Qwen3TTS) SegmentRamp() float64 { return 1.0 }
+// SegmentRamp is 1/1.83: in-pipeline RTF is 1.83 at 0.6b (tts-bench), and the
+// ramp is the no-gap bound RTF x audio(k+1) <= audio(k), so it is 1/RTF like
+// every other engine's — not 1.0. Synthesis here already costs more than the
+// audio it produces, so the next segment has to be a little over half the one
+// playing or the listener hears the difference. 1.7b is worse (2.2-2.6); the
+// tier that is slower than its own ramp is a throughput problem, not a
+// chunking one.
+func (q *Qwen3TTS) SegmentRamp() float64 { return 0.55 }
 
 // JoinsSentences is true. Decoding is autoregressive over the whole request,
 // so a second sentence in the same call is conditioned on the first and the

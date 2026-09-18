@@ -1338,7 +1338,9 @@ func TestVoiceBatchingCountsAudibleSegments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ttsProvider := &fakeTTS{delay: time.Millisecond}
+			// A Kokoro-like engine: the merged beat is rewritten into one
+			// sentence, which is the only way that merge is audible there.
+			ttsProvider := &kokoroLikeTTS{fakeTTS: fakeTTS{delay: time.Millisecond}}
 			player := newFakePlayer(2 * time.Millisecond)
 			defer player.Close()
 

@@ -167,6 +167,9 @@ type SegmentRamp interface{ SegmentRamp() float64 }
 // request actually produces one contour. Engines that re-split the text on
 // sentence punctuation inside the call (Kokoro via sherpa) answer false: there
 // the sentences must be joined textually instead, by rewriting the punctuation.
+//
+// Only an engine measured to re-split declares it. Absence means a request
+// join, so an unmeasured engine speaks its text as written (JoinsSentencesOf).
 type SentenceJoiner interface{ JoinsSentences() bool }
 
 // DefaultSegmentRamp applies to a provider that does not declare a ramp: no
@@ -184,12 +187,14 @@ func SegmentRampOf(p Provider) float64 {
 }
 
 // JoinsSentencesOf reports whether a request join carries prosody across a
-// sentence boundary on this provider. Absence is false: an engine that has not
-// been measured gets the textual join, which is a no-op on an engine that
-// would have joined the request anyway.
+// sentence boundary on this provider. Absence is true: rewriting punctuation is
+// a change to what the engine is asked to say, and doing that to an engine
+// nobody has measured is the more damaging guess — it turned a status line into
+// "Stopped, dropped 1 queued job." The textual join is opt-in by declaring
+// false, which only a re-splitting frontend (Kokoro via sherpa) does.
 func JoinsSentencesOf(p Provider) bool {
 	j, ok := p.(SentenceJoiner)
-	return ok && j.JoinsSentences()
+	return !ok || j.JoinsSentences()
 }
 
 // SoftCanceler is optionally implemented by warm-worker TTS providers.
