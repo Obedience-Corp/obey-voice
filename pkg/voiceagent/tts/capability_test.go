@@ -32,6 +32,32 @@ var _ Provider = (*contractProvider)(nil)
 var _ RequestProvider = (*contractProvider)(nil)
 var _ CapabilityProvider = (*contractProvider)(nil)
 
+func TestRendersVocalTags(t *testing.T) {
+	if RendersVocalTags(nil) {
+		t.Fatal("nil provider must not advertise vocal tags")
+	}
+	if RendersVocalTags(&contractProvider{}) {
+		t.Fatal("zero capabilities must not advertise vocal tags")
+	}
+	p := &contractProvider{cap: ProviderCapabilities{SupportsVocalTags: true}}
+	if !RendersVocalTags(p) {
+		t.Fatal("SupportsVocalTags true must render tags")
+	}
+}
+
+func TestExpandOnomatopoeiaVocalTags(t *testing.T) {
+	got := ExpandOnomatopoeiaVocalTags("[sigh] hello", nil)
+	if strings.Contains(strings.ToLower(got), "[sigh]") {
+		t.Fatalf("markup leaked: %q", got)
+	}
+	if !strings.Contains(got, "hello") {
+		t.Fatalf("speech dropped: %q", got)
+	}
+	if got := ExpandOnomatopoeiaVocalTags("[moan] hello", nil); got != "hello" {
+		t.Fatalf("moan must strip, got %q", got)
+	}
+}
+
 func TestCapabilityProviderContractReportsModesAndStatus(t *testing.T) {
 	p := &contractProvider{
 		available: true,

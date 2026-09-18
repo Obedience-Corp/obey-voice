@@ -326,6 +326,7 @@ func (k *KokoroTTS) Capabilities() ProviderCapabilities {
 		SupportsCancellation:   true,
 		SupportsReferenceAudio: false,
 		SupportsSpeed:          true,
+		SupportsVocalTags:      false,
 	}
 }
 

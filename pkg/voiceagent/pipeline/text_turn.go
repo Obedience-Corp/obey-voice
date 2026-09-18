@@ -205,6 +205,10 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 		synthStarted := time.Now()
 		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil)
+		if errors.Is(err, errNothingToSpeak) {
+			p.completeTextTurn(turn, metrics, response)
+			return nil
+		}
 		if err != nil {
 			// Voice is best-effort in text mode: the text response still
 			// completed, so the turn is completed (degraded), not failed.

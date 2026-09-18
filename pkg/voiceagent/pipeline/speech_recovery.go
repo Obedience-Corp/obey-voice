@@ -96,6 +96,9 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	}
 	synthStarted := time.Now()
 	stream, usedFallback, observation, err := p.synthesizeWithFallbackObserved(ctx, sentence, nil)
+	if errors.Is(err, errNothingToSpeak) {
+		return
+	}
 	if err != nil {
 		p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
 		return
@@ -139,6 +142,9 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 
 	synthStarted := time.Now()
 	stream, usedFallback, observation, err := p.synthesizeWithFallbackObserved(ctx, sentence, nil)
+	if errors.Is(err, errNothingToSpeak) {
+		return nil
+	}
 	if err != nil {
 		p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
 		return err

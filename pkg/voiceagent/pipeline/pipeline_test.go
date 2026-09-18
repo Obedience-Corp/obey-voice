@@ -694,6 +694,7 @@ type fakeTTS struct {
 	delay     time.Duration
 	callTimes []time.Time
 	texts     []string
+	vocalTags bool
 }
 
 func (f *fakeTTS) Synthesize(ctx context.Context, text string) (*audio.PCMStream, error) {
@@ -734,6 +735,18 @@ func (f *fakeTTS) Available() bool { return true }
 
 func (f *fakeTTS) ListVoices(locale, gender string) []tts.Voice {
 	return nil
+}
+
+func (f *fakeTTS) Capabilities() tts.ProviderCapabilities {
+	return tts.ProviderCapabilities{
+		Provider:          "fake",
+		ModelReady:        true,
+		SupportsVocalTags: f.vocalTags,
+	}
+}
+
+func (f *fakeTTS) Status() tts.ProviderStatus {
+	return tts.ProviderStatus{Provider: "fake", Available: true, ModelReady: true}
 }
 
 func (f *fakeTTS) CallTimes() []time.Time {

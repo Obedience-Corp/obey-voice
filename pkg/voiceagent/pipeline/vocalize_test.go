@@ -2,11 +2,14 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
 func TestSplitVocalizations(t *testing.T) {
@@ -19,7 +22,7 @@ func TestSplitVocalizations(t *testing.T) {
 		{"[moan] that's it, baby.", []vocalPart{{sound: vocalMoan}, {text: "that's it, baby."}}},
 		{"Come here. [gasp] Don't stop.", []vocalPart{{text: "Come here."}, {sound: vocalGasp}, {text: "Don't stop."}}},
 		{"[laugh] [moan] more", []vocalPart{{sound: vocalLaugh}, {sound: vocalMoan}, {text: "more"}}},
-		{"[AHH] yes", []vocalPart{{sound: vocalMoan}, {text: "yes"}}},
+		{"[AHH] yes", []vocalPart{{sound: vocalAhh}, {text: "yes"}}},
 		{"", nil},
 	}
 	for _, tt := range tests {
@@ -49,25 +52,21 @@ func TestStripVocalTags(t *testing.T) {
 }
 
 func TestExpandVocalTagsUsesHumanOnomatopoeia(t *testing.T) {
-	got := expandVocalTags("[moan] that's it, baby.", nil)
-	if strings.Contains(strings.ToLower(got), "[moan]") {
+	got := expandVocalTags("[laugh] that's it, baby.", nil)
+	if strings.Contains(strings.ToLower(got), "[laugh]") {
 		t.Errorf("markup leaked into TTS text: %q", got)
 	}
 	if !strings.Contains(got, "that's it, baby.") {
 		t.Errorf("speech dropped: %q", got)
 	}
-	found := false
-	for _, phrase := range vocalPhrases[vocalMoan] {
-		if strings.Contains(got, phrase) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected a moan onomatopoeia in %q, want one of %v", got, vocalPhrases[vocalMoan])
-	}
 	if expandVocalTags("[laugh]", nil) != vocalPhrases[vocalLaugh][0] {
 		t.Errorf("tag-only laugh = %q", expandVocalTags("[laugh]", nil))
+	}
+	if got := expandVocalTags("[moan] that's it, baby.", nil); got != "that's it, baby." {
+		t.Errorf("moan has no working spelling and must strip, got %q", got)
+	}
+	if got := expandVocalTags("[moan]", nil); got != "" {
+		t.Errorf("tag-only moan must not send Nnngh/Ahhn, got %q", got)
 	}
 	if !hasVocalTag("[kiss] come here.") {
 		t.Fatal("[kiss] must match so it can be stripped; kisses? does not match kiss")
@@ -78,7 +77,46 @@ func TestExpandVocalTagsUsesHumanOnomatopoeia(t *testing.T) {
 }
 
 func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
-	ttsProvider := &fakeTTS{}
+	ttsProvider := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hello"},
+		Brain:  &fakeBrain{chunks: []string{"[laugh] that's it, baby."}},
+		TTS:    ttsProvider,
+		Player: player,
+		Events: events.NewBus(),
+	}
+	p.EnableVocals("")
+
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	texts := ttsProvider.Texts()
+	joined := strings.Join(texts, " ")
+	if strings.Contains(strings.ToLower(joined), "[laugh]") {
+		t.Errorf("TTS received markup: %v", texts)
+	}
+	if !strings.Contains(joined, "that's it, baby.") {
+		t.Errorf("TTS missed the speech: %v", texts)
+	}
+	found := false
+	for _, phrase := range vocalPhrases[vocalLaugh] {
+		if strings.Contains(joined, phrase) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("TTS should receive a laugh onomatopoeia in the same take, got %v", texts)
+	}
+	if len(texts) != 1 {
+		t.Errorf("want one TTS take so the laugh is in her voice with the sentence, got %v", texts)
+	}
+}
+
+func TestRunTurnMoanTagIsStrippedNotSpoken(t *testing.T) {
+	ttsProvider := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
 	player := newFakePlayer(time.Millisecond)
 	defer player.Close()
 	p := &Pipeline{
@@ -88,30 +126,154 @@ func TestRunTurnMoanTagDoesNotSendMarkupToTTS(t *testing.T) {
 		Player: player,
 		Events: events.NewBus(),
 	}
-	p.EnableVocals("")
-
-	if _, err := p.RunTurn(context.Background()); err != nil {
+	if _, err := p.RunTurn(t.Context()); err != nil {
 		t.Fatalf("RunTurn() error = %v", err)
 	}
-	texts := ttsProvider.Texts()
-	joined := strings.Join(texts, " ")
-	if strings.Contains(strings.ToLower(joined), "moan") {
-		t.Errorf("TTS received markup: %v", texts)
+	joined := strings.Join(ttsProvider.Texts(), " ")
+	for _, bad := range []string{"moan", "Nnngh", "Ahhn", "Haaaah", "ming"} {
+		if strings.Contains(joined, bad) {
+			t.Errorf("moan spelling leaked to TTS (%q) in %q", bad, joined)
+		}
 	}
 	if !strings.Contains(joined, "that's it, baby.") {
-		t.Errorf("TTS missed the speech: %v", texts)
+		t.Errorf("TTS missed the speech: %v", ttsProvider.Texts())
+	}
+}
+
+func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
+	qwen := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
+	kokoro := &fakeTTS{}
+	native := &fakeTTS{vocalTags: true}
+	in := "[sigh] hello there."
+	got := prepareSpeechForTTS(in, qwen, nil)
+	if strings.Contains(strings.ToLower(got), "[sigh]") {
+		t.Errorf("Qwen still saw markup: %q", got)
+	}
+	if !strings.Contains(got, "hello there.") {
+		t.Errorf("Qwen dropped speech: %q", got)
 	}
 	found := false
-	for _, phrase := range vocalPhrases[vocalMoan] {
-		if strings.Contains(joined, phrase) {
+	for _, phrase := range vocalPhrases[vocalSigh] {
+		if strings.Contains(got, phrase) {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("TTS should receive a moan onomatopoeia in the same take, got %v", texts)
+		t.Errorf("Qwen should get sigh onomatopoeia, got %q", got)
 	}
-	if len(texts) != 1 {
-		t.Errorf("want one TTS take so the moan is in her voice with the sentence, got %v", texts)
+	got = prepareSpeechForTTS(in, kokoro, nil)
+	if got != "hello there." {
+		t.Errorf("Kokoro = %q, want stripped speech only", got)
 	}
+	if got := prepareSpeechForTTS("[sigh]", kokoro, nil); got != "" {
+		t.Errorf("Kokoro tag-only = %q, want empty", got)
+	}
+	if got := prepareSpeechForTTS(in, native, nil); got != in {
+		t.Errorf("native-tag engine = %q, want tags passed through", got)
+	}
+}
+
+func TestPrepareSpeechForTTSRotatesOnomatopoeiaWhenBankPresent(t *testing.T) {
+	qwen := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
+	bank := newVocalBank("")
+	seen := map[string]bool{}
+	for range 40 {
+		got := prepareSpeechForTTS("[sigh] hi", qwen, bank)
+		for _, phrase := range vocalPhrases[vocalSigh] {
+			if strings.Contains(got, phrase) {
+				seen[phrase] = true
+			}
+		}
+	}
+	if len(seen) < 2 {
+		t.Fatalf("vocal bank should rotate sigh phrases, got %v", seen)
+	}
+}
+
+func TestRunTurnStripsVocalTagsWhenEngineCannotRenderThem(t *testing.T) {
+	ttsProvider := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hello"},
+		Brain:  &fakeBrain{chunks: []string{"[sigh] that's it, baby."}},
+		TTS:    ttsProvider,
+		Player: player,
+		Events: events.NewBus(),
+	}
+	p.EnableVocals("")
+
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	texts := ttsProvider.Texts()
+	joined := strings.Join(texts, " ")
+	if strings.Contains(strings.ToLower(joined), "sigh") || strings.Contains(joined, "Hahh") || strings.Contains(joined, "Haaah") {
+		t.Errorf("unsupported engine received vocalization: %v", texts)
+	}
+	if !strings.Contains(joined, "that's it, baby.") {
+		t.Errorf("TTS missed the speech: %v", texts)
+	}
+}
+
+func TestRunTurnSkipsTagOnlyWhenEngineCannotRenderThem(t *testing.T) {
+	ttsProvider := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:    &fakeSTT{text: "hello"},
+		Brain:  &fakeBrain{chunks: []string{"[sigh]"}},
+		TTS:    ttsProvider,
+		Player: player,
+		Events: events.NewBus(),
+	}
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if texts := ttsProvider.Texts(); len(texts) != 0 {
+		t.Errorf("tag-only beat on Kokoro must not call TTS, got %v", texts)
+	}
+}
+
+type qwenLikeTTS struct{ fakeTTS }
+
+func (q *qwenLikeTTS) RewriteVocalTags(s string, pick func(kind string) string) string {
+	return expandVocalTags(s, pick)
+}
+
+func TestFallbackKokoroDoesNotReceiveQwenOnomatopoeia(t *testing.T) {
+	primary := &failingTTS{err: &tts.ProviderError{Kind: tts.ProviderErrorWorker, Err: errors.New("worker down")}}
+	primary.vocalTags = true
+	fallback := &fakeTTS{}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{
+		STT:         &fakeSTT{text: "hello"},
+		Brain:       &fakeBrain{chunks: []string{"[laugh] nice."}},
+		TTS:         primary,
+		TTSFallback: fallback,
+		Player:      player,
+		Events:      events.NewBus(),
+	}
+	if _, err := p.RunTurn(t.Context()); err != nil {
+		t.Fatalf("RunTurn() error = %v", err)
+	}
+	if got := strings.Join(fallback.Texts(), " "); got != "nice." {
+		t.Errorf("Kokoro fallback = %q, want stripped speech", got)
+	}
+	for _, phrase := range vocalPhrases[vocalLaugh] {
+		if strings.Contains(strings.Join(fallback.Texts(), " "), phrase) {
+			t.Errorf("fallback received Qwen onomatopoeia %q in %v", phrase, fallback.Texts())
+		}
+	}
+}
+
+type failingTTS struct {
+	fakeTTS
+	err error
+}
+
+func (f *failingTTS) Synthesize(context.Context, string) (*audio.PCMStream, error) {
+	return nil, f.err
 }
