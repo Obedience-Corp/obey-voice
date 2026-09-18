@@ -381,3 +381,23 @@ func TestStripSpokenVocalTagsTakesTheOrphanPunctuation(t *testing.T) {
 		}
 	}
 }
+
+// B3: an engine that cannot vocalize a tag gets the tag's orphan punctuation
+// removed where the tag was, not only at the front of the utterance. A merged
+// group puts tags mid-text, and plain stripVocalTags leaves "Okay. . Good."
+// for the engine to read the bare period aloud as "dot".
+func TestPrepareSpeechForTTSRemovesTheOrphanATagLeaves(t *testing.T) {
+	// Strips tags (no SupportsVocalTags) and joins sentences, so the result is
+	// the rendering and nothing else.
+	stripping := &qwenLikeTTS{}
+	cases := map[string]string{
+		"[laugh]. The build finished.": "The build finished.",
+		"Okay. [laugh]. Good.":         "Okay. Good.",
+		"[sigh]... I guess so.":        "... I guess so.",
+	}
+	for in, want := range cases {
+		if got := prepareSpeechForTTS(in, stripping, nil); got != want {
+			t.Errorf("prepareSpeechForTTS(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

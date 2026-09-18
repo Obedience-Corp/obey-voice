@@ -178,8 +178,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// synthesis — but an interjection ("Wait.") is not an opening, it is the
 	// front half of one, and sending it alone buys the listener two prosody
 	// samples where they expect one. After the opening the listener is no
-	// longer waiting, so groups fill to laterFloorChars, bounded by the
-	// ceiling and by the provider's ramp (see speech_content.go).
+	// longer waiting, so groups fill to laterFloorChars — lowered to the
+	// provider's ramp, bounded by the ceiling (see speech_content.go).
 	//
 	// This lives here rather than in brain.ChunkSentencesRaw because only this
 	// loop knows which segments become audio — the voice gate below suppresses
@@ -309,10 +309,11 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if metrics.firstAdmit.IsZero() {
 			metrics.firstAdmit = now
 		}
-		// A blank line before this sentence, or a group that would outgrow
-		// what may follow what is playing, ends the held group before this
-		// sentence joins it.
-		if paragraphStart || grouping.exceedsLimit(voiceBatch, speakable, lastGroupChars) {
+		// A blank line before this sentence, or a group that would outgrow the
+		// ceiling, ends the held group before this sentence joins it. Both
+		// yield to a held tag-only tail, which has no prose of its own and has
+		// to ride into this sentence — the rule ready() already applies.
+		if (paragraphStart && !heldTagTail(voiceBatch)) || exceedsCeiling(voiceBatch, speakable) {
 			flushVoiceBatch()
 		}
 		voiceBatch = append(voiceBatch, speakable)
@@ -478,6 +479,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			select {
 			case sentence, ok := <-sentenceCh:
 				takeSentence(sentence, ok)
+				// The take can route to nothing — a duplicate, a gated line, a
+				// muted turn — and then nothing re-arms the timer this round
+				// consumed, so the held group waits for the next token or end
+				// of stream instead of the deadline it had already reached.
+				if len(voiceBatch) > 0 {
+					armIdle()
+				}
 				continue
 			default:
 			}

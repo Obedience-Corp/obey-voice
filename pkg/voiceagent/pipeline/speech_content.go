@@ -15,9 +15,10 @@ const voiceQueueDepth = 2
 
 // Segment grouping: how much text goes into one synthesis call.
 //
-// A group is whole sentences, and it may only outgrow the group playing while
-// it synthesizes by the provider's SegmentRamp, because faster growth is heard
-// as a gap (RTF measurements in docs/benchmarks).
+// A group is whole sentences. The provider's SegmentRamp lowers the size a
+// group aims for, because a group that outgrows the one playing while it
+// synthesizes is heard as a gap (RTF measurements in docs/benchmarks). The
+// ramp is a target and nothing more; the ceiling is the only hard bound.
 const (
 	// shortBeatChars is the length below which a sentence is an interjection.
 	// "Wait." and "Hm." are one thought with whatever follows them, and a
@@ -61,7 +62,7 @@ func (g segmentGrouping) ready(group []string, paragraphBreak bool, lastChars in
 	// A tag with no prose ([gasp]) never closes a group: it rides with the
 	// next sentence, or with the group before it at end of stream. The idle
 	// timer does not override this — a tag spoken alone is the defect.
-	if tagOnlySegment(group[len(group)-1]) {
+	if heldTagTail(group) {
 		return false
 	}
 	if forced || paragraphBreak {
@@ -82,33 +83,47 @@ func (g segmentGrouping) ready(group []string, paragraphBreak bool, lastChars in
 }
 
 // flushTarget is the size ready() wants before a group goes out: the floor,
-// lowered to the ramp. The opening has no ramp to measure against and is only
-// held while it is an interjection, so its target is the beat threshold.
+// lowered to the provider's ramp. It is a target and nothing else — the
+// sentence that crosses it is spoken with the group, so a group may overshoot
+// by one sentence. The opening has no ramp to measure against and is only held
+// while it is an interjection, so its target is the beat threshold.
 func (g segmentGrouping) flushTarget(lastChars int) int {
 	if lastChars == 0 {
 		return shortBeatChars
 	}
 	target := laterFloorChars
-	if limit := g.limit(lastChars); limit < target {
-		target = limit
+	if g.ramp > 0 {
+		if ramped := int(g.ramp * float64(lastChars)); ramped < target {
+			target = ramped
+		}
 	}
 	return target
 }
 
-// exceedsLimit reports that appending next would push the held group past what
-// it may grow to, so the group goes out first and next opens a new one. The
-// limit is a bound, not only a target: without the veto a group held under the
-// floor plus one long follower was synthesized as a single call past both the
-// ramp and the ceiling. Where ramp is 1.0 the limit equals the target, so
-// later groups are one sentence unless that sentence is a beat — which is what
-// a ramp of 1.0 asks for. A group ending in a tag-only beat is never vetoed:
-// the tag has to ride forward.
-func (g segmentGrouping) exceedsLimit(group []string, next string, lastChars int) bool {
-	if len(group) == 0 || tagOnlySegment(group[len(group)-1]) {
+// exceedsCeiling reports that appending next would push the held group past
+// segmentCeilingChars, so the group goes out first and next opens a new one.
+//
+// The ceiling is the only veto. Vetoing on the ramp as well left a group that
+// could neither flush (still under the target) nor grow (already over the
+// veto), so after a short opening every later group was one sentence and the
+// ratchet never let them recover. It also split a held beat from the sentence
+// it belongs to; under the ceiling alone, "Wait." plus a 120-char follower is
+// one call. An empty group is never vetoed — a single sentence over the
+// ceiling still goes alone — and neither is one ending in a tag-only beat,
+// which has no prose of its own and has to ride forward.
+func exceedsCeiling(group []string, next string) bool {
+	if len(group) == 0 || heldTagTail(group) {
 		return false
 	}
-	joined := speakableChars(strings.Join(group, " ")) + 1 + speakableChars(next)
-	return joined > g.limit(lastChars)
+	return speakableChars(strings.Join(group, " "))+1+speakableChars(next) > segmentCeilingChars
+}
+
+// heldTagTail reports a group whose last admitted segment is a tag with no
+// prose. Nothing may flush the group out from under it — not the ceiling, not
+// a paragraph break, not the idle timer: the tag rides into the next sentence,
+// or into the group before it at end of stream.
+func heldTagTail(group []string) bool {
+	return len(group) > 0 && tagOnlySegment(group[len(group)-1])
 }
 
 // allShortBeats reports a group that is still nothing but interjections.
@@ -121,19 +136,6 @@ func allShortBeats(group []string) bool {
 		}
 	}
 	return true
-}
-
-// limit is the longest this group may be: the ceiling, lowered to the ramp
-// when the group before it was short. The ramp caps growth even below the
-// floor.
-func (g segmentGrouping) limit(lastChars int) int {
-	limit := segmentCeilingChars
-	if g.ramp > 0 && lastChars > 0 {
-		if ramped := int(g.ramp * float64(lastChars)); ramped < limit {
-			limit = ramped
-		}
-	}
-	return limit
 }
 
 // speakableChars is a segment's length as the listener hears it: vocal tags

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -266,17 +267,21 @@ func TestParagraphBreakEndsTheGroup(t *testing.T) {
 	})
 }
 
-// The ramp caps how much longer one group may be than the one playing while it
-// synthesizes; without it a group grows to the floor and the listener hears the
-// gap (RTF measurements in docs/benchmarks).
-func TestSegmentRampCapsGrowthBelowTheFloor(t *testing.T) {
+// The ramp lowers the size a group aims for below the floor, so a group does
+// not outgrow the one playing while it synthesizes and leave the listener in
+// the gap (RTF measurements in docs/benchmarks).
+func TestSegmentRampLowersTheTargetBelowTheFloor(t *testing.T) {
 	script := []string{
 		"The build failed on the main branch today. ",
-		"Alpha is another line. ", "Bravo is another line. ", "Delta is another line. ",
-		"Gamma is another line. ", "Sigma is another line.",
+		"Alpha kept the deploy queue moving along without any trouble today. ",
+		"Bravo kept the deploy queue moving along without any trouble today. ",
+		"Delta kept the deploy queue moving along without any trouble today. ",
+		"Gamma kept the deploy queue moving along without any trouble today. ",
+		"Sigma kept the deploy queue moving along without any trouble today.",
 	}
-	// 42-char opening: 1.5 caps the next group at 63 chars, under the 80-char
-	// floor; 4.0 caps it at 168, so the floor decides instead.
+	// 42-char opening and 67-char sentences: 1.5 targets 63 chars, so one
+	// sentence already clears it; 4.0 targets 168, lowered to the 80-char
+	// floor, so the group waits for a second sentence.
 	capped := speakScript(t, &groupingFakeTTS{ramp: 1.5}, script...)
 	roomy := speakScript(t, &groupingFakeTTS{ramp: 4.0}, script...)
 
@@ -450,25 +455,159 @@ func TestOpeningHoldsConsecutiveShortBeats(t *testing.T) {
 	}
 }
 
-// The limit is a veto, not only a target: a group held under it plus a long
-// follower would otherwise be synthesized as one call past what the listener
-// can wait out.
-func TestGroupFlushesBeforeItWouldOutgrowItsLimit(t *testing.T) {
-	const long = "The deploy pipeline rebuilt every container image from scratch because the cache key changed when the base image was bumped last night."
+// The ceiling is the veto: a held group plus a follower it cannot fit goes out
+// first, so the player never has to wait out a whole paragraph as one call.
+func TestGroupFlushesBeforeItWouldOutgrowTheCeiling(t *testing.T) {
+	// 215 chars: alone it fits under the ceiling, behind the held beat it does
+	// not.
+	const huge = "The deploy pipeline rebuilt every container image from scratch because the cache key changed when the base image was bumped last night, and the registry mirror had to repopulate every layer before the rollout began."
 	provider := &groupingFakeTTS{ramp: 1.5, joins: true}
 	calls := speakScript(t, provider,
 		"The build failed on the main branch today. ",
-		"Alpha is another line. ",
-		long+" ",
+		"Wait. ",
+		huge+" ",
 		"Sigma is another line.",
 	)
 	for i, call := range calls {
-		if strings.Contains(call, "Alpha is another line.") && strings.Contains(call, long) {
-			t.Fatalf("call %d = %q, want the held group flushed before the long follower", i, call)
+		if strings.Contains(call, "Wait.") && strings.Contains(call, huge) {
+			t.Fatalf("call %d = %q, want the held beat flushed before the follower it cannot fit", i, call)
 		}
-		if len(call) > segmentCeilingChars {
-			t.Errorf("call %d is %d chars, over the %d ceiling", i, len(call), segmentCeilingChars)
+		if speakableChars(call) > segmentCeilingChars {
+			t.Errorf("call %d is %d chars, over the %d ceiling", i, speakableChars(call), segmentCeilingChars)
 		}
+	}
+}
+
+// One sentence longer than the ceiling still goes alone: the veto never fires
+// on an empty group, because splitting a sentence is not a thing grouping does.
+func TestASentenceOverTheCeilingGoesAlone(t *testing.T) {
+	const over = "The deploy pipeline rebuilt every container image from scratch because the cache key changed when the base image was bumped last night, and the registry mirror had to repopulate every layer before the rollout could begin again this morning."
+	calls := speakScript(t, &groupingFakeTTS{ramp: 1.5, joins: true},
+		"The build failed on the main branch today. ", over)
+	if len(calls) != 2 || calls[1] != over {
+		t.Fatalf("Synthesize calls = %q, want the long sentence as its own call", calls)
+	}
+}
+
+// Grouping has to grow. The ramp used to veto the append as well as set the
+// target, so a group could neither flush (still under the target) nor take its
+// follower (already over the veto): after a short opening every later group was
+// one sentence, and each short group ratcheted the next one shorter.
+func TestGroupsGrowAfterAShortOpening(t *testing.T) {
+	// A 42-char opening and six 41-char sentences: at ramp 1.5 the first later
+	// group targets 63 chars, which one sentence cannot reach.
+	script := []string{
+		"The build failed on the main branch today. ",
+		"Alpha kept the deploy queue moving along. ",
+		"Bravo kept the deploy queue moving along. ",
+		"Delta kept the deploy queue moving along. ",
+		"Gamma kept the deploy queue moving along. ",
+		"Sigma kept the deploy queue moving along. ",
+		"Omega kept the deploy queue moving along.",
+	}
+	for _, ramp := range []float64{1.0, 1.5} {
+		t.Run(fmt.Sprintf("ramp %.1f", ramp), func(t *testing.T) {
+			calls := speakScript(t, &groupingFakeTTS{ramp: ramp}, script...)
+			if len(calls) > 4 {
+				t.Fatalf("Synthesize calls = %d %q, want at most 4: the groups never grew", len(calls), calls)
+			}
+			if len(calls) < 2 {
+				t.Fatalf("Synthesize calls = %q, want the opening and at least one group after it", calls)
+			}
+			if got := len(splitSentences(calls[1])); got != 2 {
+				t.Errorf("second group = %d sentences (%q), want 2", got, calls[1])
+			}
+			// The ramp lowers the target a group aims for; it does not cap the
+			// sentence that crosses it, so a later group still reaches the
+			// size of the one before it.
+			if speakableChars(calls[1]) < speakableChars(calls[0]) {
+				t.Errorf("second group = %d chars, want at least the opening's %d",
+					speakableChars(calls[1]), speakableChars(calls[0]))
+			}
+		})
+	}
+}
+
+// The veto also split a held beat from the sentence it belongs to: under the
+// ramp "Wait." plus a long follower was over the limit, so the beat went out
+// alone — the two-contour defect the merge exists to prevent.
+func TestHeldBeatRidesWithALongFollower(t *testing.T) {
+	const long = "The deploy pipeline rebuilt every container image from scratch because the cache key changed when the base image was bumped."
+	for _, ramp := range []float64{1.0, 1.5} {
+		t.Run(fmt.Sprintf("ramp %.1f", ramp), func(t *testing.T) {
+			calls := speakScript(t, &groupingFakeTTS{ramp: ramp, joins: true},
+				"The build failed on the main branch today. ", "Wait. ", long)
+			if len(calls) != 2 {
+				t.Fatalf("Synthesize calls = %q, want the opening then the beat with its follower", calls)
+			}
+			if !strings.Contains(calls[1], "Wait.") || !strings.Contains(calls[1], long) {
+				t.Fatalf("second call = %q, want the beat and its sentence in one", calls[1])
+			}
+		})
+	}
+}
+
+// A paragraph break used to bypass the tag-only rule: "[laugh]." before a blank
+// line was flushed as its own synthesis, which is a tag spoken alone.
+func TestParagraphBreakDoesNotStrandATagOnlyTail(t *testing.T) {
+	provider := &groupingFakeTTS{fakeTTS: fakeTTS{vocalTags: true}, joins: true}
+	calls := speakScript(t, provider, "[laugh].\n\nThe build finished successfully now.")
+	if len(calls) != 1 {
+		t.Fatalf("Synthesize calls = %q, want the tag carried into the new paragraph", calls)
+	}
+	if !strings.Contains(calls[0], "[laugh]") || !strings.Contains(calls[0], "The build finished successfully now.") {
+		t.Fatalf("synthesized %q, want the tag on the sentence it belongs to", calls[0])
+	}
+}
+
+// The idle branch takes a sentence at the deadline, and that take can route to
+// nothing — a duplicate the turn already spoke, a gated line, a muted turn.
+// The timer it consumed has to be re-armed there, or the held group waits for
+// the next token or end of stream instead of the deadline it had reached.
+// Repeated because a run can take the follower through the loop's main sentence
+// case and never reach the branch.
+func TestIdleFlushRearmsWhenTheTakeRoutesToNothing(t *testing.T) {
+	const opening = "The build failed on the main branch today. "
+	for i := range 8 {
+		t.Run(fmt.Sprintf("run %d", i), func(t *testing.T) {
+			provider := &groupingFakeTTS{joins: true}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), idleFlush: time.Nanosecond}
+
+			in := make(chan string)
+			done := make(chan brain.StreamResult, 1)
+			var spoke bool
+			go func() {
+				defer close(in)
+				defer close(done)
+				in <- opening
+				// The duplicate rides in the beat's chunk so it is the segment
+				// waiting when the idle deadline arrives, and admission drops
+				// it. Then the brain goes quiet: only the timer can speak.
+				in <- "Wait. " + opening
+				deadline := time.Now().Add(500 * time.Millisecond)
+				for time.Now().Before(deadline) {
+					if len(provider.Texts()) > 1 {
+						spoke = true
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+				done <- brain.StreamResult{}
+			}()
+
+			metrics := newTurnMetrics()
+			turn := p.newTurnConductor(metrics)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if _, _, err := p.streamResponse(ctx, cancel, &brain.Stream{Chunks: in, Done: done}, false, metrics, turn, nil); err != nil {
+				t.Fatalf("streamResponse: %v", err)
+			}
+			if !spoke {
+				t.Fatalf("the held beat waited for end of stream, not the idle timer: %q", provider.Texts())
+			}
+		})
 	}
 }
 
