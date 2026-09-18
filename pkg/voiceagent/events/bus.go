@@ -11,7 +11,7 @@ type Handler func(Event)
 // Bus is a simple typed pub/sub event bus safe for concurrent use.
 type Bus struct {
 	mu          sync.RWMutex
-	handlers    map[reflect.Type][]Handler
+	handlers    map[reflect.Type][]allEntry
 	allHandlers []allEntry
 	observers   []allEntry
 	nextAllID   int
@@ -47,20 +47,43 @@ type allEntry struct {
 // NewBus creates a new event bus.
 func NewBus() *Bus {
 	return &Bus{
-		handlers: make(map[reflect.Type][]Handler),
+		handlers: make(map[reflect.Type][]allEntry),
 	}
 }
 
 // Subscribe registers a handler for events of a specific type.
 // The handler will be called for any event matching the registered type.
 func Subscribe[T Event](b *Bus, handler func(T)) {
+	_ = SubscribeDetachable(b, handler)
+}
+
+// SubscribeDetachable is Subscribe with a remove function. /record uses this
+// so AudioLevel never enters a SubscribeAll handler.
+func SubscribeDetachable[T Event](b *Bus, handler func(T)) func() {
+	if b == nil {
+		return func() {}
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	t := reflect.TypeFor[T]()
-	b.handlers[t] = append(b.handlers[t], func(e Event) {
-		handler(e.(T))
+	id := b.nextAllID
+	b.nextAllID++
+	b.handlers[t] = append(b.handlers[t], allEntry{
+		id: id,
+		h:  func(e Event) { handler(e.(T)) },
 	})
+	return func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		hs := b.handlers[t]
+		for i, e := range hs {
+			if e.id == id {
+				b.handlers[t] = append(hs[:i], hs[i+1:]...)
+				return
+			}
+		}
+	}
 }
 
 // SubscribeAll registers a handler invoked for every event regardless of
@@ -97,7 +120,9 @@ func (b *Bus) Emit(event Event) {
 	for _, e := range b.observers {
 		handlers = append(handlers, e.h)
 	}
-	handlers = append(handlers, b.handlers[t]...)
+	for _, e := range b.handlers[t] {
+		handlers = append(handlers, e.h)
+	}
 	for _, e := range b.allHandlers {
 		handlers = append(handlers, e.h)
 	}

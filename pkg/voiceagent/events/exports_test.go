@@ -72,6 +72,21 @@ func TestSubscribeAllRemoveDetaches(t *testing.T) {
 	}
 }
 
+func TestSubscribeDetachableRemovesHandler(t *testing.T) {
+	bus := NewBus()
+	count := 0
+	remove := SubscribeDetachable(bus, func(Info) { count++ })
+
+	bus.Emit(Info{Message: "one"})
+	remove()
+	bus.Emit(Info{Message: "two"})
+	remove()
+
+	if count != 1 {
+		t.Fatalf("typed handler ran %d times after removal, want 1", count)
+	}
+}
+
 func TestSubscribeAllDoesNotDisturbTypedSubscribers(t *testing.T) {
 	bus := NewBus()
 	var order []string
