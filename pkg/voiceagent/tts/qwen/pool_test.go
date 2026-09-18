@@ -295,6 +295,50 @@ func TestDeleteTearsDownEveryWorker(t *testing.T) {
 	if h.q.Available() {
 		t.Error("provider is still available after Delete")
 	}
+	h.q.Delete()
+	for i, session := range h.started() {
+		if got := session.closed.Load(); got != 1 {
+			t.Errorf("worker %d closed %d times after a second Delete, want 1", i, got)
+		}
+	}
+}
+
+// A pool that cannot start is a provider the caller never receives, so the
+// engines that did come up have no other owner: startPool closes them itself.
+// Slot 0's failure is the fatal one, so the sibling is brought up first to put
+// the pool in exactly that state.
+func TestFailedPoolStartClosesTheWorkersThatCameUp(t *testing.T) {
+	h := newPoolHarness(t, 2)
+	if err := h.q.startSlot(context.Background(), h.q.pool[1]); err != nil {
+		t.Fatalf("startSlot: %v", err)
+	}
+	survivor := h.started()[0]
+	h.q.startSpeech = func(context.Context) (qwenSpeechSession, error) {
+		return nil, errors.New("worker did not start")
+	}
+
+	if err := h.q.startPool(context.Background()); err == nil {
+		t.Fatal("startPool reported success with a dead first engine")
+	}
+	if got := survivor.closed.Load(); got != 1 {
+		t.Fatalf("the engine that came up was closed %d times, want 1: a failed start leaves its qwen3-tts-worker running", got)
+	}
+	for i, slot := range h.q.pool {
+		if slot.live() != nil {
+			t.Errorf("slot %d still holds a session after a failed start", i)
+		}
+	}
+	if got := h.q.readyWorkers(); got != 0 {
+		t.Errorf("readyWorkers = %d after a failed start, want 0", got)
+	}
+	if h.q.Available() {
+		t.Error("provider reports available after a failed start")
+	}
+	// Shutdown after a failed start must not close the same worker twice.
+	h.q.Delete()
+	if got := survivor.closed.Load(); got != 1 {
+		t.Fatalf("worker closed %d times after Delete, want 1", got)
+	}
 }
 
 // A dead worker is one slot's problem. Taking the pool down with it would turn

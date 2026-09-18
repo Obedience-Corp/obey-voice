@@ -274,7 +274,7 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 		// startup could have paid.
 		q.pool = newSpeechPool(config.QwenTTSWorkersOf(cfg))
 		if err := q.startPool(context.Background()); err != nil {
-			q.alive.Store(false)
+			// startPool has already closed whatever came up.
 			return nil, fmt.Errorf("qwen3-tts: %w", err)
 		}
 	} else if managed {

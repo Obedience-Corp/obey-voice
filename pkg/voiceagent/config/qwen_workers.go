@@ -5,8 +5,8 @@ package config
 // second concurrent segment waits on it; a second subprocess is the only way
 // to raise throughput without changing the engine.
 //
-// The default is 1 and stays 1 until the D8 measurement says two workers on
-// one GPU are worth their memory: see docs/benchmarks/README.md.
+// The count is clamped to 1..4 because every worker loads its own copy of the
+// model onto the same GPU.
 const (
 	DefaultQwenTTSWorkers = 1
 	MinQwenTTSWorkers     = 1

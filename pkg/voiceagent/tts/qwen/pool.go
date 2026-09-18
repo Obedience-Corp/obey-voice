@@ -74,7 +74,7 @@ func (q *Qwen3TTS) primarySlot() *speechSlot { return q.pool[0] }
 func (q *Qwen3TTS) acquireSlot() *speechSlot {
 	pool := q.pool
 	if len(pool) == 1 {
-		// One engine: exactly the single mutex this provider always took.
+		// Nothing to choose between, so skip the TryLock scan entirely.
 		pool[0].mu.Lock()
 		return pool[0]
 	}
@@ -104,6 +104,10 @@ func (q *Qwen3TTS) acquireSlot() *speechSlot {
 // not start is unusable, but a pool that comes up one worker short still
 // speaks — the empty slot opens on its first request, the same path a
 // restarted worker takes.
+//
+// On the fatal path it tears the pool down and marks the provider dead: the
+// caller gets an error instead of a provider, so nothing else is left owning
+// the sibling workers that did come up.
 func (q *Qwen3TTS) startPool(ctx context.Context) error {
 	pool := q.pool
 	errs := make([]error, len(pool))
@@ -116,7 +120,12 @@ func (q *Qwen3TTS) startPool(ctx context.Context) error {
 		}()
 	}
 	wg.Wait()
-	return errs[0]
+	if errs[0] != nil {
+		q.alive.Store(false)
+		q.closePool()
+		return errs[0]
+	}
+	return nil
 }
 
 // startSlot opens one session and publishes it on the slot.
