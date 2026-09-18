@@ -58,7 +58,7 @@ func TestObserveStreamNilThinkingDoesNotSpin(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	chunks, done := p.observeStream(ctx, stream, metrics)
+	chunks, _, done := p.observeStream(ctx, stream, metrics)
 	got := collect(t, chunks)
 	select {
 	case <-done:
@@ -87,7 +87,7 @@ func TestObserveStreamThinkingClosedBeforeChunks(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	out, done := p.observeStream(ctx, stream, metrics)
+	out, _, done := p.observeStream(ctx, stream, metrics)
 	got := collect(t, out)
 	select {
 	case <-done:
@@ -116,7 +116,7 @@ func TestObserveStreamDrainsBufferedThinkingAfterChunksClose(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	out, done := p.observeStream(ctx, stream, metrics)
+	out, _, done := p.observeStream(ctx, stream, metrics)
 	_ = collect(t, out)
 	select {
 	case <-done:
@@ -135,7 +135,7 @@ func TestObserveStreamBothNilExitsImmediately(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	out, done := p.observeStream(ctx, stream, metrics)
+	out, _, done := p.observeStream(ctx, stream, metrics)
 	_ = collect(t, out)
 	select {
 	case <-done:
@@ -245,7 +245,7 @@ func TestObserveStreamForwardsChunksAndMarksFirstChunk(t *testing.T) {
 	metrics := newTurnMetrics()
 	stream := scriptedStream(context.Background(), []string{"Hello ", "there. ", "How are you?"}, nil)
 
-	chunks, _ := p.observeStream(context.Background(), stream, metrics)
+	chunks, _, _ := p.observeStream(context.Background(), stream, metrics)
 	got := collect(t, chunks)
 
 	want := []string{"Hello ", "there. ", "How are you?"}
@@ -279,7 +279,7 @@ func TestObserveStreamEmitsResponseDeltaPerChunk(t *testing.T) {
 	metrics := newTurnMetrics()
 	stream := scriptedStream(context.Background(), []string{"Hel", "lo ", "world."}, nil)
 
-	chunks, _ := p.observeStream(context.Background(), stream, metrics)
+	chunks, _, _ := p.observeStream(context.Background(), stream, metrics)
 	_ = collect(t, chunks) // drain so the observer runs to completion
 
 	want := []string{"Hel", "lo ", "world."}
@@ -441,7 +441,7 @@ func TestObserveStreamClosesOnStreamCompletion(t *testing.T) {
 	metrics := newTurnMetrics()
 	stream := scriptedStream(context.Background(), []string{"done."}, nil)
 
-	out, _ := p.observeStream(context.Background(), stream, metrics)
+	out, _, _ := p.observeStream(context.Background(), stream, metrics)
 	_ = collect(t, out) // drain to completion
 
 	// A second receive on a drained, closed channel must not block.
@@ -462,7 +462,7 @@ func TestObserveStreamModelErrorClosesObserver(t *testing.T) {
 	metrics := newTurnMetrics()
 	stream := scriptedStream(context.Background(), []string{"partial"}, context.DeadlineExceeded)
 
-	chunks, _ := p.observeStream(context.Background(), stream, metrics)
+	chunks, _, _ := p.observeStream(context.Background(), stream, metrics)
 	got := collect(t, chunks)
 	if len(got) != 1 || got[0] != "partial" {
 		t.Fatalf("observeStream forwarded %v, want [partial] before the model error", got)
@@ -480,7 +480,7 @@ func TestObserveStreamCancellationClosesPromptly(t *testing.T) {
 	for i := range manyChunks {
 		manyChunks[i] = "x"
 	}
-	out, _ := p.observeStream(ctx, scriptedStream(ctx, manyChunks, nil), metrics)
+	out, _, _ := p.observeStream(ctx, scriptedStream(ctx, manyChunks, nil), metrics)
 
 	cancel()
 
@@ -503,7 +503,7 @@ func TestSegmentStageProducesSentencesWithoutPlayback(t *testing.T) {
 	metrics := newTurnMetrics()
 	stream := scriptedStream(context.Background(), []string{"First sentence. Second one! ", "Third?"}, nil)
 
-	chunks, _ := p.observeStream(context.Background(), stream, metrics)
+	chunks, _, _ := p.observeStream(context.Background(), stream, metrics)
 	sentences := collect(t, brain.ChunkSentences(chunks))
 
 	// The segment stage emits one sentence per chunk; batching for prosody
@@ -546,7 +546,7 @@ func TestSegmentStageFlushesTrailingPartialSentence(t *testing.T) {
 	metrics := newTurnMetrics()
 	stream := scriptedStream(context.Background(), []string{"a trailing ", "thought with no period"}, nil)
 
-	chunks, _ := p.observeStream(context.Background(), stream, metrics)
+	chunks, _, _ := p.observeStream(context.Background(), stream, metrics)
 	sentences := collect(t, brain.ChunkSentences(chunks))
 
 	if len(sentences) != 1 || sentences[0] != "a trailing thought with no period" {

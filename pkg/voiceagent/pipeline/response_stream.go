@@ -29,7 +29,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// Two narrow upstream stages feed the turn loop: the model observer forwards
 	// brain chunks (stamping first-chunk metrics), then the segmenter turns that
 	// chunk stream into voice-ready sentences. Both are testable in isolation.
-	streamedChunks, observeDone := p.observeStream(streamCtx, stream, metrics)
+	streamedChunks, tokenTick, observeDone := p.observeStream(streamCtx, stream, metrics)
 	// Join the observer before returning: it stamps firstModelChunk, which the
 	// caller reads via snapshot() in finish(). Cancel first so the goroutine
 	// unblocks, then wait for it to exit. cancel is idempotent — the barge-in and
@@ -158,7 +158,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// barge-in and playback events while a sentence is being generated —
 	// PlayStream cannot return until the TTS engine has produced audio, and
 	// Kokoro generates a whole BATCH per uncancellable cgo call, holding its
-	// provider mutex for the duration (see openingBatchSegments). One worker
+	// provider mutex for the duration (see the grouping policy below). One worker
 	// (not one goroutine per sentence) preserves playback order. Backpressure is
 	// unchanged: the pending gate keeps at most voiceQueueDepth sentences
 	// outstanding, so the buffered handoff below never blocks.
@@ -172,36 +172,66 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	closeSynthQueue := func() { synthQueueOnce.Do(func() { close(synthQueue) }) }
 	defer closeSynthQueue()
 
-	// Adaptive batching: the first segment that will actually be heard goes out
-	// alone, and later segments are synthesized two at a time.
+	// Segment grouping: one thought is one synthesis call.
 	//
 	// The opening stays short because time-to-first-audio waits on it finishing
-	// synthesis. After that the listener is no longer waiting, and a chunk
-	// boundary is not free: each batch is an independent synthesis call, so
-	// prosody resets at every boundary and the player concatenates raw buffers.
-	// Batching lets the synthesiser carry intonation across a sentence boundary.
+	// synthesis — but an interjection ("Wait.") is not an opening, it is the
+	// front half of one, and sending it alone buys the listener two prosody
+	// samples where they expect one. After the opening the listener is no
+	// longer waiting, so groups fill to laterFloorChars, bounded by the
+	// ceiling and by the provider's ramp (see speech_content.go).
 	//
 	// This lives here rather than in brain.ChunkSentencesRaw because only this
 	// loop knows which segments become audio — the voice gate below suppresses
 	// tool output and code fences, and cleaning can empty a segment. Counting
 	// emitted chunks instead of audible ones spent the opening's budget on
-	// silence whenever a reply began with a suppressed tool line.
+	// silence whenever a reply began with a suppressed tool line. The provider
+	// is only reachable here too.
+	primaryVoice, _ := p.responseTTS(ctx)
+	grouping := groupingFor(primaryVoice)
 	var voiceBatch []string
 	var batchTextReady time.Time
-	openingSpoken := false
+	var batchBreak bool
+	lastGroupChars := 0
+	// idle fires when a complete sentence has been buffered and the brain has
+	// gone quiet: a tool call or a long pause must not hold speech hostage.
+	// Stopped until a segment is buffered; Stop/Reset never leave a stale value
+	// on the channel (Go 1.23 timers), so the loop's case cannot fire unarmed.
+	idle := time.NewTimer(idleFlushAfter)
+	idle.Stop()
+	defer idle.Stop()
+	armIdle := func() { idle.Reset(idleFlushAfter) }
+	stopIdle := func() { idle.Stop() }
 	flushVoiceBatch := func() {
 		if len(voiceBatch) == 0 {
 			return
+		}
+		text := strings.Join(voiceBatch, " ")
+		if !watchdogArmed {
+			watchdogArmed = true
+			// Sized from the flushed group, not the first admitted segment:
+			// a merged opening is longer than the beat that started it and
+			// would otherwise run under a one-sentence grace. Arm before the
+			// handoff so a hung WaitReady is visible.
+			stallTimeout := p.stallTimeout(len(text))
+			metrics.firstAudioGrace = stallTimeout
+			metrics.ttsEngine = p.ttsIdentity()
+			metrics.sinkAtArm = p.sinkKind()
+			metrics.audibleSink = metrics.sinkAtArm
+			p.warnNoSinkSynth(metrics.sinkAtArm)
+			go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(text), metrics.sinkAtArm == audio.SinkNone)
 		}
 		pending++
 		if metrics.delivery != nil {
 			metrics.delivery.queued++
 		}
 		queuedAt := time.Now()
-		synthQueue <- synthWork{sentence: strings.Join(voiceBatch, " "), textReady: batchTextReady, queuedAt: queuedAt}
+		synthQueue <- synthWork{sentence: text, textReady: batchTextReady, queuedAt: queuedAt}
 		voiceBatch = voiceBatch[:0]
 		batchTextReady = time.Time{}
-		openingSpoken = true
+		batchBreak = false
+		lastGroupChars = speakableChars(text)
+		stopIdle()
 	}
 	// routeSegment sends one think-filtered segment to the transcript and, if it
 	// survives gating and cleaning, to the voice batch. The end-of-stream think
@@ -267,31 +297,20 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if metrics.firstAdmit.IsZero() {
 			metrics.firstAdmit = now
 		}
-		if !watchdogArmed {
-			watchdogArmed = true
-			// The budget is sized to the segment the listener is actually
-			// waiting on. openingBatchSegments is 1, so this speakable is
-			// that segment. Arm before PlayStream so hung WaitReady is visible.
-			stallTimeout := p.stallTimeout(len(speakable))
-			metrics.firstAudioGrace = stallTimeout
-			metrics.ttsEngine = p.ttsIdentity()
-			metrics.sinkAtArm = p.sinkKind()
-			metrics.audibleSink = metrics.sinkAtArm
-			p.warnNoSinkSynth(metrics.sinkAtArm)
-			go p.watchPlaybackStall(streamCtx, &audioStarted, cancel, stalled, stallTimeout, len(speakable), metrics.sinkAtArm == audio.SinkNone)
-		}
-
 		voiceBatch = append(voiceBatch, speakable)
 		if batchTextReady.IsZero() {
 			batchTextReady = now
 		}
-		target := laterBatchSegments
-		if !openingSpoken {
-			target = openingBatchSegments
+		// A blank line ends the group. Read from the raw segment: cleaning
+		// runs TrimSpace and does not preserve it.
+		if strings.Contains(text, "\n\n") {
+			batchBreak = true
 		}
-		if len(voiceBatch) >= target {
+		if grouping.ready(voiceBatch, batchBreak, lastGroupChars) {
 			flushVoiceBatch()
+			return
 		}
+		armIdle()
 	}
 	go func() {
 		// Segments are numbered in playback order by the single ordered synth
@@ -339,6 +358,35 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			if err := interrupt(req); err != nil {
 				return strings.TrimSpace(fullResponse.String()), interrupted, err
 			}
+
+		case _, ok := <-tokenTick:
+			// A token means the sentence after the buffered one is still
+			// coming. Restart the countdown rather than flush into it. Niled
+			// on close: a closed channel would deliver forever and spin.
+			if !ok {
+				tokenTick = nil
+				continue
+			}
+			if len(voiceBatch) > 0 {
+				armIdle()
+			} else {
+				stopIdle()
+			}
+
+		case <-idle.C:
+			// Only complete sentences are ever buffered — the segmenter holds
+			// a partial until its punctuation arrives — so a non-empty batch
+			// is safe to speak. The pending gate is load-bearing: the handoff
+			// below blocks on synthQueue, and blocking inside this select
+			// wedges the turn.
+			if len(voiceBatch) == 0 || interrupted {
+				continue
+			}
+			if pending >= voiceQueueDepth {
+				armIdle()
+				continue
+			}
+			flushVoiceBatch()
 
 		case result, ok := <-modelDone:
 			if !ok {
@@ -475,12 +523,22 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 // The returned done channel closes once the goroutine has fully exited, so a
 // caller can join it before reading metrics (it stamps firstModelChunk) and
 // avoid racing snapshot() on an early return.
-func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metrics *turnMetrics) (<-chan string, <-chan struct{}) {
+//
+// The second channel ticks once per reply token. The turn loop's idle flush
+// needs to know the brain is still producing, and it cannot see that from
+// stream.Chunks: this stage is the sole consumer, and what reaches the loop is
+// whole sentences. The send is non-blocking into a cap-1 channel, so a loop
+// busy elsewhere loses ticks instead of stalling the observer. Thinking tokens
+// deliberately do not tick — a reply already segmented has nothing to wait for
+// while the model reasons.
+func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metrics *turnMetrics) (<-chan string, <-chan struct{}, <-chan struct{}) {
 	out := make(chan string, 8)
+	ticks := make(chan struct{}, 1)
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
+		defer close(ticks)
 		defer close(out)
 		chunks, thinking := stream.Chunks, stream.Thinking
 		stampToken := func(now time.Time) {
@@ -520,6 +578,10 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 					continue
 				}
 				p.bumpBrainDeadline()
+				select {
+				case ticks <- struct{}{}:
+				default:
+				}
 				now := time.Now()
 				stampToken(now)
 				if metrics.firstSpeakable.IsZero() && strings.TrimSpace(c) != "" {
@@ -538,7 +600,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 		}
 	}()
 
-	return out, done
+	return out, ticks, done
 }
 
 // collectTextStream drains a brain stream to completion for the text-input
@@ -547,7 +609,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 // It waits on stream.Done for the terminal error so a failed stream surfaces
 // even after partial chunks were displayed.
 func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, metrics *turnMetrics) (string, string, error) {
-	out, done := p.observeStream(ctx, stream, metrics)
+	out, _, done := p.observeStream(ctx, stream, metrics)
 
 	var b strings.Builder
 	for chunk := range out {

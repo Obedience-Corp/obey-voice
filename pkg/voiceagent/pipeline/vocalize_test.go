@@ -307,6 +307,9 @@ func (q *qwenLikeTTS) RewriteVocalTags(s string, pick func(kind string) string) 
 	return expandVocalTags(s, pick)
 }
 
+// Qwen carries prosody across a request, so its text is never rewritten.
+func (q *qwenLikeTTS) JoinsSentences() bool { return true }
+
 func TestFallbackKokoroDoesNotReceiveQwenOnomatopoeia(t *testing.T) {
 	primary := &failingTTS{err: &tts.ProviderError{Kind: tts.ProviderErrorWorker, Err: errors.New("worker down")}}
 	primary.vocalTags = true

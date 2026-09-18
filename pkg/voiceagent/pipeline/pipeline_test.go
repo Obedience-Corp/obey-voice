@@ -16,10 +16,25 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
+// standaloneSentences are equal-length sentences that each reach the grouping
+// flush target on their own, so a test needing N synthesis calls gets N. Every
+// sentence is 30 characters: above shortBeatChars, and never shorter than the
+// group before it, which is what the ramp measures against.
+var standaloneSentences = []string{
+	"Alpha sentence is long enough.",
+	"Bravo sentence is long enough.",
+	"Delta sentence is long enough.",
+	"Gamma sentence is long enough.",
+	"Sigma sentence is long enough.",
+	"Tango sentence is long enough.",
+}
+
 func TestRunTurnOverlapsSynthesisWithPlayback(t *testing.T) {
 	bus := events.NewBus()
 	sttProvider := &fakeSTT{text: "hello"}
-	brainProvider := &fakeBrain{chunks: []string{"First sentence. Second sentence."}}
+	// Two sentences long enough to be two groups: a sentence under
+	// shortBeatChars waits for its follower, which is one call, not two.
+	brainProvider := &fakeBrain{chunks: []string{"The first sentence is here now. The second sentence follows it."}}
 	ttsProvider := &fakeTTS{
 		delay: time.Millisecond * 20,
 	}
@@ -164,11 +179,11 @@ func TestRunTurnDrainsFullPlaybackQueue(t *testing.T) {
 	// loop must apply backpressure without blocking — a regression guard for
 	// the slotSem deadlock that hung voice mode once the queue was full.
 	//
-	// Count SEGMENTS, not sentences. They are 1:1 only while laterBatchSegments
-	// is 1 (D009); re-enabling batching would cut five segments to three and this
-	// test would still pass while no longer filling the queue, which is the only
-	// thing it guards.
-	brainProvider := &fakeBrain{chunks: []string{"One. Two. Three. Four. Five."}}
+	// Count SEGMENTS, not sentences. Grouping makes them 1:1 only when every
+	// sentence reaches the flush target on its own; five interjections are one
+	// group and this test would still pass while no longer filling the queue,
+	// which is the only thing it guards.
+	brainProvider := &fakeBrain{chunks: []string{strings.Join(standaloneSentences[:5], " ")}}
 	ttsProvider := &fakeTTS{delay: 5 * time.Millisecond}
 	player := newFakePlayer(60 * time.Millisecond)
 	defer player.Close()
@@ -1074,7 +1089,7 @@ func TestRunTurnBargeInServicedDuringSynthesis(t *testing.T) {
 
 	p := &Pipeline{
 		STT:        &fakeSTT{text: "hello"},
-		Brain:      &fakeBrain{chunks: []string{"First sentence. Second sentence."}},
+		Brain:      &fakeBrain{chunks: []string{strings.Join(standaloneSentences[:2], " ")}},
 		TTS:        ttsProvider,
 		Player:     player,
 		Capture:    capture,
@@ -1270,18 +1285,17 @@ func TestRecoverTurnPlaybackStallDoesNotApologize(t *testing.T) {
 	}
 }
 
-// Batching counts segments the listener will actually HEAR, not chunks the
+// Grouping counts segments the listener will actually HEAR, not chunks the
 // segmenter emitted.
 //
-// This was a real defect while laterBatchSegments was 2: batching lived in
-// brain.ChunkSentencesRaw, which cannot see the voice gate, so a reply opening
-// with a suppressed tool line spent its one-sentence budget on silence and the
-// first audible segment was a two-sentence synthesis.
+// This was a real defect while batching lived in brain.ChunkSentencesRaw,
+// which cannot see the voice gate: a reply opening with a suppressed tool line
+// spent its one-sentence budget on silence and the first audible segment was a
+// two-sentence synthesis.
 //
-// D009 has since set laterBatchSegments to 1, which makes batching an identity
-// today. These cases still earn their place: they pin the accounting (audible
-// segments, no unpronounceable residue, nothing dropped at end of stream) that
-// has to hold the moment a faster synthesiser lets batching switch back on.
+// These cases pin the accounting — audible segments, no unpronounceable
+// residue, nothing dropped at end of stream — now that grouping decides the
+// shape rather than a fixed count.
 func TestVoiceBatchingCountsAudibleSegments(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1292,28 +1306,33 @@ func TestVoiceBatchingCountsAudibleSegments(t *testing.T) {
 			// The opener is suppressed by toolRegionRE, so the first AUDIBLE
 			// sentence must still go out alone.
 			name:  "suppressed tool opener does not spend the budget",
-			reply: "I called the search tool. Here is what I found. There are three results. That is all.",
-			want:  []string{"Here is what I found.", "There are three results.", "That is all."},
+			reply: "I called the search tool. Here is the whole answer now. There are three results here. That is all of them.",
+			want:  []string{"Here is the whole answer now.", "There are three results here.", "That is all of them."},
 		},
 		{
 			// "Umm." cleans to a bare "." — unpronounceable, and previously it
 			// both reached TTS and got glued onto the next real sentence.
 			name:  "filler residue is neither spoken nor batched onto real speech",
-			reply: "Umm. Let me think about this. Here is the answer. Done.",
-			want:  []string{"Let me think about this.", "Here is the answer.", "Done."},
+			reply: "Umm. Let me think about this one. Here is the answer for you now. Done with all of that.",
+			want:  []string{"Let me think about this one.", "Here is the answer for you now.", "Done with all of that."},
 		},
 		{
-			name:  "an ordinary reply is one segment per sentence",
-			reply: "First. Second. Third. Fourth. Fifth.",
-			want:  []string{"First.", "Second.", "Third.", "Fourth.", "Fifth."},
+			name:  "a sentence that reaches the target is its own segment",
+			reply: strings.Join(standaloneSentences[:5], " "),
+			want:  standaloneSentences[:5],
 		},
 		{
-			// A partial batch at end of stream must still be spoken, or the last
-			// sentence of a reply is silently dropped. This matters again the
-			// moment laterBatchSegments goes above 1.
+			// A half-full group at end of stream must still be spoken, or the
+			// last sentence of a reply is silently dropped.
 			name:  "the final sentence is flushed, not dropped",
-			reply: "First. Second. Third. Fourth.",
-			want:  []string{"First.", "Second.", "Third.", "Fourth."},
+			reply: strings.Join(standaloneSentences[:4], " "),
+			want:  standaloneSentences[:4],
+		},
+		{
+			// The interjection merge: neither beat is a synthesis of its own.
+			name:  "short beats become one group",
+			reply: "Wait. Wait, you what?",
+			want:  []string{"Wait, wait, you what?"},
 		},
 	}
 

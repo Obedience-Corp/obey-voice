@@ -153,6 +153,45 @@ type SegmentGracer interface {
 	FirstAudioGraceForChars(chars int) time.Duration
 }
 
+// SegmentRamp is how much longer one segment may be than the one before it
+// before the listener hears silence. 1.0 means no growth.
+//
+// Depth-2 serial pipelining synthesizes segment k+1 while segment k plays, so
+// no gap requires RTF x audio(k+1) <= audio(k). The constant is 1/RTF from a
+// dated measurement, NOT 1/FirstAudioGraceForChars' RTF ceiling: those
+// ceilings are worst cases for a stall watchdog and would forbid growth on the
+// one engine that affords it.
+type SegmentRamp interface{ SegmentRamp() float64 }
+
+// SentenceJoiner reports whether handing a provider two sentences in one
+// request actually produces one contour. Engines that re-split the text on
+// sentence punctuation inside the call (Kokoro via sherpa) answer false: there
+// the sentences must be joined textually instead, by rewriting the punctuation.
+type SentenceJoiner interface{ JoinsSentences() bool }
+
+// DefaultSegmentRamp applies to a provider that does not declare a ramp: no
+// growth, which is the safe reading for an engine whose RTF is unknown.
+const DefaultSegmentRamp = 1.0
+
+// SegmentRampOf reports the provider's ramp, or DefaultSegmentRamp.
+func SegmentRampOf(p Provider) float64 {
+	if r, ok := p.(SegmentRamp); ok {
+		if ramp := r.SegmentRamp(); ramp > 0 {
+			return ramp
+		}
+	}
+	return DefaultSegmentRamp
+}
+
+// JoinsSentencesOf reports whether a request join carries prosody across a
+// sentence boundary on this provider. Absence is false: an engine that has not
+// been measured gets the textual join, which is a no-op on an engine that
+// would have joined the request anyway.
+func JoinsSentencesOf(p Provider) bool {
+	j, ok := p.(SentenceJoiner)
+	return ok && j.JoinsSentences()
+}
+
 // SoftCanceler is optionally implemented by warm-worker TTS providers.
 // Pipeline barge-in and turn cancel should SoftCancel the in-flight request
 // without killing the worker process (reload cost).

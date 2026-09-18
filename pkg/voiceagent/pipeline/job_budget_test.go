@@ -154,7 +154,9 @@ func TestUserCancelDropsQueuedJobsInTheSameLine(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 	got := h.spoken()
-	if strings.Count(got, "Stopped") != 1 || strings.Count(got, "Dropped 1 queued job.") != 1 {
+	// Case-insensitive on the second clause: an engine that re-splits sentence
+	// punctuation gets the short "Stopped." merged into it as one contour.
+	if strings.Count(got, "Stopped") != 1 || strings.Count(strings.ToLower(got), "dropped 1 queued job.") != 1 {
 		t.Fatalf("spoken = %q, want one stop line naming the dropped job", got)
 	}
 	if h.agency.jobs.Active() {

@@ -78,8 +78,15 @@ func (s *softCancelTTS) SoftCancel(string) error {
 }
 
 // TestProgressiveTTSSegmentsFeedWorker proves multi-sentence brain streams
-// become multiple TTS.Synthesize calls (one segment each), and the first
-// segment is handed off before the brain stream completes.
+// become multiple TTS.Synthesize calls, and the first one is handed off before
+// the brain stream completes.
+//
+// The assertion is the bounded invariant (D10), not a fixed shape: a
+// multi-sentence reply is never one synthesis, every synthesis is within the
+// ceiling, and the first one is the first sentence the listener heard — so
+// time-to-first-audio still waits on one sentence. How the sentences between
+// those bounds are grouped is the grouping policy's business, and pinning six
+// single-sentence calls here made that policy untestable.
 func TestProgressiveTTSSegmentsFeedWorker(t *testing.T) {
 	firstCall := make(chan struct{})
 	holdFirst := make(chan struct{})
@@ -141,24 +148,19 @@ func TestProgressiveTTSSegmentsFeedWorker(t *testing.T) {
 	}
 
 	calls := provider.Calls()
-	// One sentence per synthesis call (laterBatchSegments = 1, D009). Asserting
-	// the whole shape, not just a lower bound: a count alone cannot distinguish
-	// this from "the opening, then the entire rest of the reply".
-	want := []string{
-		"Hello there.",
-		"Second sentence is ready.",
-		"Third continues the thought.",
-		"Fourth keeps going.",
-		"Fifth is still here.",
-		"Sixth finishes the reply.",
+	if len(calls) < 2 {
+		t.Fatalf("Synthesize calls = %q, want a six-sentence reply split into more than one", calls)
 	}
-	if len(calls) != len(want) {
-		t.Fatalf("Synthesize calls = %q, want %q", calls, want)
+	if calls[0] != "Hello there." {
+		t.Errorf("first synthesis = %q, want the first heard sentence alone", calls[0])
 	}
-	for i := range want {
-		if calls[i] != want[i] {
-			t.Errorf("segment %d = %q, want %q", i, calls[i], want[i])
+	for i, call := range calls {
+		if len(call) > segmentCeilingChars {
+			t.Errorf("segment %d is %d chars (%q), over the %d ceiling", i, len(call), call, segmentCeilingChars)
 		}
+	}
+	if spoken := strings.Join(calls, " "); !strings.Contains(spoken, "Sixth finishes the reply.") {
+		t.Errorf("synthesized text = %q, want every sentence spoken", spoken)
 	}
 	if metrics.firstSegment.IsZero() {
 		t.Fatal("firstSegment metric not stamped")

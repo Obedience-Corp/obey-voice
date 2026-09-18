@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -131,8 +132,42 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		StallWatchdogFired:      m.stallWatchdogFired,
 		DeadAirElapsed:          m.deadAir,
 		Underruns:               m.underruns,
+		SegmentCount:            len(m.segments),
+		MedianSegmentChars:      medianSegmentChars(m.segments),
+		ShortBoundaries:         shortSegmentBoundaries(m.segments),
 		Segments:                append([]events.SegmentMetric(nil), m.segments...),
 	}
+}
+
+// medianSegmentChars is the middle segment length of the turn. The median, not
+// the mean: one paragraph-length segment must not hide a reply chopped into
+// interjections.
+func medianSegmentChars(segments []events.SegmentMetric) int {
+	if len(segments) == 0 {
+		return 0
+	}
+	chars := make([]int, len(segments))
+	for i, segment := range segments {
+		chars[i] = segment.Chars
+	}
+	sort.Ints(chars)
+	mid := len(chars) / 2
+	if len(chars)%2 == 1 {
+		return chars[mid]
+	}
+	return (chars[mid-1] + chars[mid]) / 2
+}
+
+// shortSegmentBoundaries counts the prosody resets that followed a segment too
+// short to stand on its own.
+func shortSegmentBoundaries(segments []events.SegmentMetric) int {
+	short := 0
+	for k := 1; k < len(segments); k++ {
+		if segments[k-1].Chars < laterFloorChars {
+			short++
+		}
+	}
+	return short
 }
 
 // recordSegment appends one finished segment's synthesis cost. Called only

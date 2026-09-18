@@ -66,12 +66,56 @@ func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, 
 	return p.synthesizeWithFallbackObserved(ctx, sentence, stickFallback)
 }
 
-// prepareSpeechForTTS is the text one provider should hear.
+// prepareSpeechForTTS is the text one provider should hear: its vocal tags,
+// then its join mode.
+//
+// A provider that re-splits sentence punctuation inside one call gets the
+// group's short beats merged textually (joinShortBeats); one that carries
+// prosody across the request gets the sentences as written. The rewrite lives
+// here so it follows the engine that actually speaks, fallback included, and
+// never reaches the transcript.
+func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
+	spoken := trimSpeechResidue(renderVocalTagsFor(sentence, provider, vocals))
+	if tts.JoinsSentencesOf(provider) {
+		return spoken
+	}
+	return joinShortBeats(spoken)
+}
+
+// trimSpeechResidue drops the orphan punctuation a rendered-away tag leaves
+// behind. "[laugh]. The build finished." strips to ". The build finished." on
+// an engine with no vocal tags, and that leading period is read aloud as "dot"
+// — or, once beats merge, turned into a comma. Only runs when such a token is
+// actually there, so ordinary text keeps its whitespace.
+func trimSpeechResidue(s string) string {
+	const residue = ".!?;:,"
+	fields := strings.Fields(s)
+	orphan := false
+	for _, field := range fields {
+		if strings.Trim(field, residue) == "" {
+			orphan = true
+			break
+		}
+	}
+	if !orphan {
+		return s
+	}
+	kept := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if strings.Trim(field, residue) == "" {
+			continue
+		}
+		kept = append(kept, field)
+	}
+	return strings.Join(kept, " ")
+}
+
+// renderVocalTagsFor resolves [tag] markup for one engine.
 //
 //   - Default: stage tags are stripped (CustomVoice reads them as words).
 //   - SupportsVocalTags + VocalTagRewriter: the engine's own mapping.
 //   - SupportsVocalTags only: tags are passed through unchanged.
-func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
+func renderVocalTagsFor(sentence string, provider tts.Provider, vocals *vocalBank) string {
 	if !hasVocalTag(sentence) {
 		return sentence
 	}
