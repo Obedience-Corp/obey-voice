@@ -88,7 +88,10 @@ func (g *orderGate) done(index int) {
 //
 // It is read when a segment starts synthesizing, so above one worker a sibling
 // already in flight on the primary keeps its own result — the latch binds every
-// index that starts after the switch, not one that raced it.
+// index that starts after the switch, not one that raced it. Reachable from
+// qwen_tts_workers > 1, and the trade stands: re-synthesizing a segment that is
+// already most of the way through the engine costs a longer silence than the
+// one voice change it would save.
 type fallbackLatch struct{ stuck atomic.Bool }
 
 func (f *fallbackLatch) latched() bool { return f != nil && f.stuck.Load() }

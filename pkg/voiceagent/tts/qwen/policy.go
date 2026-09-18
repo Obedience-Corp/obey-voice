@@ -43,8 +43,11 @@ func (q *Qwen3TTS) WorkerStreaming() bool {
 	return streamRequestedOn(q.liveSession())
 }
 
-// SpeechWarm reports only a current session that completed a prior request.
-func (q *Qwen3TTS) SpeechWarm() bool { return q.hasLiveSession() && q.speechCompleted.Load() }
+// SpeechWarm reports only current sessions that completed a prior request. A
+// pool is warm when every engine is: the next segment may land on any of them,
+// and one that still has to start or still has to pay its first request is a
+// cold segment waiting to happen.
+func (q *Qwen3TTS) SpeechWarm() bool { return q.hasLiveSession() && q.poolCompleted() }
 
 func (q *Qwen3TTS) SpeechWarmState() string {
 	if q == nil || (!q.native && !q.managed) {
@@ -53,7 +56,7 @@ func (q *Qwen3TTS) SpeechWarmState() string {
 	if !q.hasLiveSession() {
 		return "cold"
 	}
-	if q.speechCompleted.Load() {
+	if q.poolCompleted() {
 		return "warm"
 	}
 	return "cold"
@@ -73,10 +76,19 @@ func (q *Qwen3TTS) SegmentRamp() float64 { return 0.55 }
 // per-request fixed cost is paid once. Punctuation stays as written.
 func (q *Qwen3TTS) JoinsSentences() bool { return true }
 
-// Concurrency is 1: one worker subprocess holds sessionMu for a whole request,
-// so a second caller only waits on that mutex. A pool of workers is the
-// qwen_tts_workers experiment, gated on measured throughput.
-func (q *Qwen3TTS) Concurrency() int { return 1 }
+// Concurrency is how many worker subprocesses this provider owns
+// (qwen_tts_workers, default 1). One worker holds its session mutex for a
+// whole request, so the count is engine instances and never goroutines.
+//
+// Only the local native pool answers above 1: managed Python is a single
+// legacy session, and a LAN worker's parallelism is the speech host's
+// decision rather than this client's.
+func (q *Qwen3TTS) Concurrency() int {
+	if q == nil || !q.native || q.remote || len(q.pool) == 0 {
+		return 1
+	}
+	return len(q.pool)
+}
 
 // WholeSentencePlayback is supported by Qwen's stream=false policy (including
 // workers that do not advertise incremental PCM). The diagnostic uses this as
@@ -122,14 +134,18 @@ func (q *Qwen3TTS) workerTier() string {
 	return reporter.Tier()
 }
 
-// liveSession reads the current speech transport, which a worker restart
-// replaces under the caller.
+// liveSession reads a current speech transport, which a worker restart
+// replaces under the caller. Any live engine answers the questions that are
+// about the transport itself — presets, tier, whether chunks are requested —
+// because every engine in a pool is started from the same configuration.
 func (q *Qwen3TTS) liveSession() qwenSpeechSession {
 	if q == nil {
 		return nil
 	}
-	if ref := q.speechRef.Load(); ref != nil && *ref != nil {
-		return *ref
+	for _, slot := range q.pool {
+		if session := slot.live(); session != nil {
+			return session
+		}
 	}
 	return nil
 }

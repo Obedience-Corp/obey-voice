@@ -294,6 +294,10 @@
       "value": "",
       "source": "default"
     },
+    "qwen_tts_workers": {
+      "value": 1,
+      "source": "default"
+    },
     "remote_tools_enabled": {
       "value": false,
       "source": "default"

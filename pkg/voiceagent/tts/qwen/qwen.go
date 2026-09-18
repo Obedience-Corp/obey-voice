@@ -113,13 +113,16 @@ type Qwen3TTS struct {
 	native              bool // native qwen3-tts-worker protocol (product path)
 	workerScript        string
 	startupTimeout      time.Duration
-	sessionMu           sync.Mutex
-	session             *managedQwenSession // legacy tests only; product never sets managed
-	speech              qwenSpeechSession
-	speechRef           atomic.Pointer[qwenSpeechSession]
-	// A live session is not warm evidence until it has completed a prior
-	// request on that same session.
-	speechCompleted atomic.Bool
+	// sessionMu guards the managed Python session only. Native engines are
+	// serialized by their own slot mutex, one per worker.
+	sessionMu sync.Mutex
+	session   *managedQwenSession // legacy tests only; product never sets managed
+	// pool is this provider's engine instances: one worker subprocess each,
+	// each with its own mutex and its own warm evidence (see pool.go). Local
+	// native runs qwen_tts_workers of them; every other transport runs one.
+	pool []*speechSlot
+	// dispatch is the round-robin cursor acquireSlot scans from.
+	dispatch atomic.Uint32
 	// startSpeech opens the transport this provider speaks through: the local
 	// child process, or a speech-serve connection when tts_place is lan.
 	startSpeech func(context.Context) (qwenSpeechSession, error)
@@ -265,14 +268,15 @@ func NewQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 		q.startSpeech = func(ctx context.Context) (qwenSpeechSession, error) {
 			return startNativeQwenSession(ctx, binaryPath, model, q.modelTier, startupTimeout, q.backendHint)
 		}
-		session, err := q.startSpeech(context.Background())
-		if err != nil {
+		// Local native is the only transport that runs a pool. Each worker
+		// loads the model at start, so the count is fixed here rather than
+		// grown on demand: a segment must never wait out a cold start that
+		// startup could have paid.
+		q.pool = newSpeechPool(config.QwenTTSWorkersOf(cfg))
+		if err := q.startPool(context.Background()); err != nil {
 			q.alive.Store(false)
 			return nil, fmt.Errorf("qwen3-tts: %w", err)
 		}
-		q.applyStreamPolicy(session)
-		q.speech = session
-		q.speechRef.Store(&session)
 	} else if managed {
 		session, err := startManagedQwenSession(binaryPath, workerScript, model, startupTimeout)
 		if err != nil {
@@ -291,7 +295,7 @@ func newQwen3TTS(binary, model string, timeout time.Duration, command qwenComman
 	if command == nil {
 		command = exec.CommandContext
 	}
-	return &Qwen3TTS{binary: binary, model: model, timeout: timeout, command: command}
+	return &Qwen3TTS{binary: binary, model: model, timeout: timeout, command: command, pool: newSpeechPool(1)}
 }
 
 // ProviderName identifies this provider in latency artifacts.
@@ -305,7 +309,7 @@ func (q *Qwen3TTS) Available() bool { return q.alive.Load() }
 func (q *Qwen3TTS) Delete() {
 	q.alive.Store(false)
 	q.sessionMu.Lock()
-	defer q.sessionMu.Unlock()
 	q.discardManagedSessionLocked()
-	q.discardSpeechSessionLocked()
+	q.sessionMu.Unlock()
+	q.closePool()
 }

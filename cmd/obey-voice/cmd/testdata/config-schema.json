@@ -1921,6 +1921,23 @@
       "editable": true
     },
     {
+      "key": "qwen_tts_workers",
+      "type": "int",
+      "default": 1,
+      "allows_empty": false,
+      "group": "models",
+      "title": "Qwen speech workers",
+      "help": "How many Qwen worker programs run at once. Each one loads its own copy of the model and speaks one piece of a reply, so more of them costs memory. 1 unless a measurement says otherwise.",
+      "unit": "workers",
+      "min": 1,
+      "max": 4,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "QWEN_TTS_WORKERS",
+      "editable": true
+    },
+    {
       "key": "sherpa_streaming_model",
       "type": "string",
       "default": "en-2023-06-26",

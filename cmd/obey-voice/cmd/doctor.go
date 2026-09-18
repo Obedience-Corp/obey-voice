@@ -90,6 +90,9 @@ func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPat
 	// Whether that speech is played chunk by chunk. Read-only: it reports the
 	// policy, and never starts a worker to ask.
 	diags = append(diags, config.DiagnoseQwenStreaming(cfg, modelsDir)...)
+	// And how many engines produce it. Read-only for the same reason: the row
+	// reports the configured pool, never a started worker.
+	diags = append(diags, config.DiagnoseQwenWorkers(cfg, modelsDir)...)
 
 	if voiceChecker != nil {
 		parent := cmd.Context()

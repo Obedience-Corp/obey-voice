@@ -49,6 +49,7 @@ func setDefaults(v *viper.Viper) {
 	// Chunk playback follows the measurements, not a preference: auto streams
 	// only where synthesis was measured faster than realtime (tts_stream.go).
 	v.SetDefault("qwen_tts_stream", QwenStreamAuto)
+	v.SetDefault("qwen_tts_workers", DefaultQwenTTSWorkers)
 	// Empty → published platform release from qwen3-tts-native (see internal/qwen DefaultNativeRelease).
 	v.SetDefault("qwen_tts_native_url", "")
 	v.SetDefault("qwen_tts_native_sha256", "")

@@ -72,9 +72,10 @@ func TestNewQwen3TTSPlace(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			q.sessionMu.Lock()
-			err = q.ensureSpeechSessionLocked(ctx)
-			q.sessionMu.Unlock()
+			slot := q.primarySlot()
+			slot.mu.Lock()
+			err = q.ensureSpeechSessionLocked(ctx, slot)
+			slot.mu.Unlock()
 			if err != nil {
 				t.Fatalf("ensureSpeechSessionLocked: %v", err)
 			}

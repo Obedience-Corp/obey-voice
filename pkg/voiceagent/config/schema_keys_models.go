@@ -252,6 +252,12 @@ func modelKeys() []KeySpec {
 			Help: "Whether Qwen starts speaking on its first chunk instead of the finished sentence. Auto only does it where that was measured not to stutter.",
 		},
 		{
+			Key: "qwen_tts_workers", Type: TypeInt, Default: DefaultQwenTTSWorkers, Unit: "workers",
+			Min: num(MinQwenTTSWorkers), Max: num(MaxQwenTTSWorkers),
+			Group: GroupModels, Title: "Qwen speech workers",
+			Help: "How many Qwen worker programs run at once. Each one loads its own copy of the model and speaks one piece of a reply, so more of them costs memory. 1 unless a measurement says otherwise.",
+		},
+		{
 			Key: "qwen_tts_native_url", Type: TypeString, Default: "",
 			Group: GroupModels, Title: "Qwen package URL",
 			Help: "Where the Qwen package is fetched from. Empty uses the release Obey Voice pins.",
