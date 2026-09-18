@@ -73,6 +73,21 @@ just demo-workers
 
 Still frame: `demos/frames/workers-detail.png`
 
+## launcher-notice.gif — meeting-route banner with pretty JSON
+
+Launcher after notes route to camp:
+
+1. Title `Meeting notes routed to camp:JobSearch`
+2. Indented JSON (`campaign_root`, `generated_at`) instead of one wrapping line
+
+`OBEY_VOICE_DEMO_LAUNCHER_NOTICE=route` injects the fixture. `=path` is the speaker-labels variant.
+
+```bash
+just demo-launcher-notice
+```
+
+Still frame: `demos/frames/launcher-notice.png`
+
 Still frames: `demos/frames/think-live.png`, `demos/frames/think-hidden.png`, `demos/frames/think-shown.png`
 
 ## voice-meter.gif — compact voice EQ (listen / hear / speak)

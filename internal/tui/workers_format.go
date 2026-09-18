@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -80,17 +79,19 @@ func compactWorkerText(s string) string {
 }
 
 func workerActivitySummary(activity string) string {
-	prefix, _, ok := splitJSONPayload(activity)
-	if ok && prefix != "" {
+	prefix, _, found := splitJSONLead(activity)
+	if !found {
+		return compactWorkerText(activity)
+	}
+	if prefix != "" {
 		return compactWorkerText(prefix)
 	}
-	if ok {
-		return "JSON payload"
-	}
-	return compactWorkerText(activity)
+	return "JSON payload"
 }
 
-func splitJSONPayload(s string) (prefix, pretty string, ok bool) {
+// splitJSONLead cuts at the first JSON object/array opener. The remainder
+// need not be valid JSON: production Activity is a 240-rune tool preview.
+func splitJSONLead(s string) (prefix, rest string, ok bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return "", "", false
@@ -99,16 +100,24 @@ func splitJSONPayload(s string) (prefix, pretty string, ok bool) {
 		if r != '{' && r != '[' {
 			continue
 		}
-		pretty, ok = indentJSON(s[i:])
-		if !ok {
-			continue
-		}
 		prefix = strings.TrimSpace(s[:i])
 		prefix = strings.TrimSpace(strings.TrimSuffix(prefix, "·"))
 		prefix = strings.TrimSpace(strings.TrimSuffix(prefix, "-"))
-		return prefix, pretty, true
+		return prefix, s[i:], true
 	}
 	return "", "", false
+}
+
+func splitJSONPayload(s string) (prefix, pretty string, ok bool) {
+	prefix, rest, found := splitJSONLead(s)
+	if !found {
+		return "", "", false
+	}
+	pretty, ok = indentJSON(rest)
+	if !ok {
+		return "", "", false
+	}
+	return prefix, pretty, true
 }
 
 func indentJSON(raw string) (string, bool) {
@@ -116,15 +125,8 @@ func indentJSON(raw string) (string, bool) {
 	if raw == "" || (raw[0] != '{' && raw[0] != '[') {
 		return "", false
 	}
-	var value any
-	if err := json.Unmarshal([]byte(raw), &value); err != nil {
-		return "", false
-	}
 	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(value); err != nil {
+	if err := json.Indent(&buf, []byte(raw), "", "  "); err != nil {
 		return "", false
 	}
 	return strings.TrimRight(buf.String(), "\n"), true
@@ -135,47 +137,38 @@ func formatWorkerPayload(raw string, width int) string {
 	if raw == "" {
 		return ""
 	}
-	prefix, pretty, ok := splitJSONPayload(raw)
-	if !ok {
+	width = max(1, width)
+	prefix, rest, found := splitJSONLead(raw)
+	if !found {
 		return wrapWorkerPlain(raw, width)
 	}
-	body := colorJSON(pretty)
-	if prefix == "" {
-		return ansi.Hardwrap(body, max(1, width), true)
+	var body string
+	if pretty, ok := indentJSON(ansi.Strip(rest)); ok {
+		body = ansi.Hardwrap(colorJSON(pretty), width, true)
+	} else {
+		body = wrapWorkerPlain(rest, width)
 	}
-	head := dimStyle.Render(compactWorkerText(prefix))
-	return head + "\n" + ansi.Hardwrap(body, max(1, width), true)
+	if prefix == "" {
+		return body
+	}
+	return dimStyle.Render(compactWorkerText(prefix)) + "\n" + body
 }
 
 func wrapWorkerPlain(text string, width int) string {
-	return ansi.Hardwrap(sanitizeWorkerDisplay(text), max(1, width), true)
-}
-
-func sanitizeWorkerDisplay(text string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\n' || r == '\t' || r == 0x1b:
-			return r
-		case r < 32 || r == 127:
-			return -1
-		default:
-			return r
-		}
-	}, text)
+	return ansi.Hardwrap(safeWorkerText(text), max(1, width), true)
 }
 
 func colorJSON(pretty string) string {
 	var b strings.Builder
+	inObject := []bool{}
 	expectKey := false
-	depth := 0
 	i := 0
 	for i < len(pretty) {
 		r, size := utf8.DecodeRuneInString(pretty[i:])
 		switch {
 		case r == '"':
 			str, next := jsonStringAt(pretty, i)
-			rest := strings.TrimLeftFunc(pretty[next:], unicode.IsSpace)
-			if expectKey && strings.HasPrefix(rest, ":") {
+			if expectKey {
 				b.WriteString(jsonKeyStyle.Render(str))
 			} else {
 				b.WriteString(jsonStringStyle.Render(str))
@@ -183,19 +176,27 @@ func colorJSON(pretty string) string {
 			i = next
 			continue
 		case r == '{':
-			depth++
+			inObject = append(inObject, true)
 			expectKey = true
 			b.WriteString(jsonPunctStyle.Render("{"))
 		case r == '[':
-			depth++
+			inObject = append(inObject, false)
 			expectKey = false
 			b.WriteString(jsonPunctStyle.Render("["))
-		case r == '}' || r == ']':
-			depth = max(0, depth-1)
+		case r == '}':
+			if n := len(inObject); n > 0 {
+				inObject = inObject[:n-1]
+			}
 			expectKey = false
-			b.WriteString(jsonPunctStyle.Render(string(r)))
+			b.WriteString(jsonPunctStyle.Render("}"))
+		case r == ']':
+			if n := len(inObject); n > 0 {
+				inObject = inObject[:n-1]
+			}
+			expectKey = false
+			b.WriteString(jsonPunctStyle.Render("]"))
 		case r == ',':
-			expectKey = depth > 0 && lastNonSpaceIsObjectComma(pretty, i)
+			expectKey = len(inObject) > 0 && inObject[len(inObject)-1]
 			b.WriteString(jsonPunctStyle.Render(","))
 		case r == ':':
 			expectKey = false
@@ -260,32 +261,6 @@ func jsonNumberAt(s string, i int) (string, int) {
 		j++
 	}
 	return s[i:j], j
-}
-
-func lastNonSpaceIsObjectComma(s string, comma int) bool {
-	// After a comma, the next string is a key only inside an object.
-	// Walk backward past space to find the comma's container: if the last
-	// opener without a closer is '{', this comma separates object fields.
-	depthObj, depthArr := 0, 0
-	for i := comma - 1; i >= 0; i-- {
-		switch s[i] {
-		case '}':
-			depthObj++
-		case ']':
-			depthArr++
-		case '{':
-			if depthObj == 0 && depthArr == 0 {
-				return true
-			}
-			depthObj--
-		case '[':
-			if depthObj == 0 && depthArr == 0 {
-				return false
-			}
-			depthArr--
-		}
-	}
-	return false
 }
 
 var (

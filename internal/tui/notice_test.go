@@ -54,6 +54,20 @@ func TestFormatNoticeCompactDropsJSONBody(t *testing.T) {
 	}
 }
 
+func TestShortenHomeIsPathBounded(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := shortenHome(home + "-work" + string(filepath.Separator) + "x"); strings.Contains(got, "~") {
+		t.Fatalf("replaced a prefix of a longer name: %q", got)
+	}
+	want := "~" + string(filepath.Separator) + "Dev"
+	if got := shortenHome(filepath.Join(home, "Dev")); got != want {
+		t.Fatalf("path prefix = %q, want %q", got, want)
+	}
+}
+
 func TestLauncherBannerRendersPrettyJSON(t *testing.T) {
 	m := newLauncher(&config.Config{BrainProvider: "ollama"}, nil)
 	m.width, m.height = 100, 28

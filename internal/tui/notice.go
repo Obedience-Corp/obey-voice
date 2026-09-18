@@ -19,12 +19,17 @@ func formatNotice(text string, width int, isErr bool) string {
 	if isErr {
 		style = errorStyle
 	}
-	if prefix, pretty, ok := splitJSONPayload(text); ok {
+	if prefix, rest, found := splitJSONLead(text); found {
 		title := prefix
 		if title == "" {
 			title = "Notice"
 		}
-		body := ansi.Hardwrap(colorJSON(shortenHome(pretty)), max(1, width), true)
+		var body string
+		if pretty, ok := indentJSON(ansi.Strip(rest)); ok {
+			body = ansi.Hardwrap(colorJSON(pretty), max(1, width), true)
+		} else {
+			body = wrapWorkerPlain(rest, width)
+		}
 		return style.Render(compactWorkerText(title)) + "\n" + body
 	}
 	if title, path, ok := splitNoticePath(text); ok {
@@ -45,7 +50,7 @@ func formatNotice(text string, width int, isErr bool) string {
 
 func formatNoticeCompact(text string, width int, isErr bool) string {
 	text = strings.TrimSpace(text)
-	if prefix, _, ok := splitJSONPayload(text); ok && prefix != "" {
+	if prefix, _, found := splitJSONLead(text); found && prefix != "" {
 		text = prefix
 	} else if title, path, ok := splitNoticePath(text); ok {
 		text = title + " · " + filepath.Base(path)
@@ -86,7 +91,23 @@ func shortenHome(s string) string {
 	if err != nil || home == "" {
 		return s
 	}
-	return strings.ReplaceAll(s, home, "~")
+	var b strings.Builder
+	for {
+		i := strings.Index(s, home)
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		b.WriteString(s[:i])
+		rest := s[i+len(home):]
+		if rest == "" || strings.HasPrefix(rest, string(filepath.Separator)) {
+			b.WriteByte('~')
+			s = rest
+			continue
+		}
+		b.WriteString(home)
+		s = rest
+	}
 }
 
 func ellipsizePath(path string, width int) string {
@@ -119,5 +140,5 @@ func ellipsizePath(path string, width int) string {
 }
 
 func wrapStyled(style lipgloss.Style, text string, width int) string {
-	return ansi.Hardwrap(style.Render(shortenHome(text)), max(1, width), true)
+	return ansi.Hardwrap(style.Render(safeWorkerText(shortenHome(text))), max(1, width), true)
 }
