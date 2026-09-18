@@ -20,8 +20,9 @@ import (
 //
 // which needs a realtime factor above roughly 2.3x. Measured on an M4 Max in
 // 2026-08 it was **1.32x**, so batching opened an 804 ms silence immediately
-// after the opening sentence — see festival decision D009, which set
-// laterBatchSegments back to 1 because of this number.
+// after the opening sentence (festival decision D009). Grouping now sizes
+// segments by the provider's SegmentRamp instead of a fixed count, and this
+// measurement is where Kokoro's 1.5 comes from.
 //
 // Re-run this after any TTS change (phase 009's bake-off especially): a
 // synthesiser above ~2.3x makes cross-sentence batching viable, and this is the
@@ -90,7 +91,7 @@ func TestKokoroRealtimeFactor(t *testing.T) {
 		two.synth, one.audio, gap)
 	if gap > 0 {
 		t.Logf("BATCHING WOULD STALL: %.0f ms of silence after the opening sentence. "+
-			"This is why laterBatchSegments is 1 (D009).", gap*1000)
+			"Lower KokoroTTS.SegmentRamp until it does not.", gap*1000)
 	} else {
 		t.Logf("Batching is viable on this machine: %.0f ms of headroom. Revisit D009.", -gap*1000)
 	}
