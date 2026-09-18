@@ -169,8 +169,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	//
 	// The worker count is the provider's concurrency, which counts engine
 	// instances and not goroutines: extra goroutines against a one-instance
-	// engine only queue on that mutex and buy nothing, which is why every
-	// engine here answers 1 today. Order is kept by the gate, not by the
+	// engine only queue on that mutex and buy nothing. Kokoro answers 1; a
+	// local native Qwen pool answers qwen_tts_workers. Order is kept by the gate, not by the
 	// worker count — each job carries the index the listener hears it at and
 	// parks until the index before it has been handed off. Backpressure is
 	// unchanged: the pending gate keeps at most lookaheadDepth sentences
