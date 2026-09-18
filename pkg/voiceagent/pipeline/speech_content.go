@@ -15,13 +15,9 @@ const voiceQueueDepth = 2
 
 // Segment grouping: how much text goes into one synthesis call.
 //
-// A group is whole sentences, never a fragment. The old fixed count (D009,
-// one sentence per call) is superseded: it was set after a two-sentence second
-// segment needed 1.989 s to synthesize while a 1.185 s opening played, leaving
-// 804 ms of silence. That is a growth-rate problem, not an argument for one
-// sentence forever — the group now grows only as fast as the provider's
-// SegmentRamp allows, and a sentence too short to stand alone waits for the
-// next one instead of buying its own prosody sample.
+// A group is whole sentences, and it may only outgrow the group playing while
+// it synthesizes by the provider's SegmentRamp, because faster growth is heard
+// as a gap (RTF measurements in docs/benchmarks).
 const (
 	// shortBeatChars is the length below which a sentence is an interjection.
 	// "Wait." and "Hm." are one thought with whatever follows them, and a
@@ -56,40 +52,80 @@ func groupingFor(provider tts.Provider) segmentGrouping {
 // ready reports whether the buffered group should be synthesized now. group is
 // the complete sentences admitted so far, paragraphBreak marks a blank line
 // after the last of them, and lastChars is the size of the group before this
-// one (0 while the opening is still buffered).
-func (g segmentGrouping) ready(group []string, paragraphBreak bool, lastChars int) bool {
+// one (0 while the opening is still buffered). forced is the idle timer (D4):
+// a group that has waited out the brain goes even though it is under target.
+func (g segmentGrouping) ready(group []string, paragraphBreak bool, lastChars int, forced bool) bool {
 	if len(group) == 0 {
 		return false
 	}
 	// A tag with no prose ([gasp]) never closes a group: it rides with the
-	// next sentence, or with the group before it at end of stream.
+	// next sentence, or with the group before it at end of stream. The idle
+	// timer does not override this — a tag spoken alone is the defect.
 	if tagOnlySegment(group[len(group)-1]) {
 		return false
 	}
-	if paragraphBreak {
+	if forced || paragraphBreak {
 		return true
 	}
-	chars := speakableChars(strings.Join(group, " "))
-	if len(group) == 1 && chars < shortBeatChars {
-		// The interjection merge. It waits for its follower, the idle timer or
-		// end of stream — unless the merge would have to be textual and the
-		// beat ends in "?", which no rewrite can carry into the next sentence.
-		return g.textualJoin && endsInQuestion(group[0])
+	if allShortBeats(group) {
+		// The interjection merge. Beats wait for a sentence that is not one,
+		// the idle timer or end of stream — unless the merge would have to be
+		// textual and the last beat ends in "?", which no rewrite can carry
+		// into the next sentence.
+		return g.textualJoin && endsInQuestion(group[len(group)-1])
 	}
 	if lastChars == 0 {
-		// Opening: the first sentence alone, or the beat plus its follower.
+		// Opening: closed by the first admitted sentence that is not a beat.
 		return true
+	}
+	return speakableChars(strings.Join(group, " ")) >= g.flushTarget(lastChars)
+}
+
+// flushTarget is the size ready() wants before a group goes out: the floor,
+// lowered to the ramp. The opening has no ramp to measure against and is only
+// held while it is an interjection, so its target is the beat threshold.
+func (g segmentGrouping) flushTarget(lastChars int) int {
+	if lastChars == 0 {
+		return shortBeatChars
 	}
 	target := laterFloorChars
 	if limit := g.limit(lastChars); limit < target {
 		target = limit
 	}
-	return chars >= target
+	return target
+}
+
+// exceedsLimit reports that appending next would push the held group past what
+// it may grow to, so the group goes out first and next opens a new one. The
+// limit is a bound, not only a target: without the veto a group held under the
+// floor plus one long follower was synthesized as a single call past both the
+// ramp and the ceiling. Where ramp is 1.0 the limit equals the target, so
+// later groups are one sentence unless that sentence is a beat — which is what
+// a ramp of 1.0 asks for. A group ending in a tag-only beat is never vetoed:
+// the tag has to ride forward.
+func (g segmentGrouping) exceedsLimit(group []string, next string, lastChars int) bool {
+	if len(group) == 0 || tagOnlySegment(group[len(group)-1]) {
+		return false
+	}
+	joined := speakableChars(strings.Join(group, " ")) + 1 + speakableChars(next)
+	return joined > g.limit(lastChars)
+}
+
+// allShortBeats reports a group that is still nothing but interjections.
+// "Wait. No." is not a finished opening, so it keeps waiting for the sentence
+// those beats belong to.
+func allShortBeats(group []string) bool {
+	for _, sentence := range group {
+		if speakableChars(sentence) >= shortBeatChars {
+			return false
+		}
+	}
+	return true
 }
 
 // limit is the longest this group may be: the ceiling, lowered to the ramp
 // when the group before it was short. The ramp caps growth even below the
-// floor — a group that outgrows what is playing is exactly the 804 ms gap.
+// floor.
 func (g segmentGrouping) limit(lastChars int) int {
 	limit := segmentCeilingChars
 	if g.ramp > 0 && lastChars > 0 {
@@ -107,7 +143,8 @@ func speakableChars(s string) int {
 }
 
 // tagOnlySegment reports a segment admitted only because it carries a sound —
-// admit() lets these through with no speakable prose (see admission.go).
+// SpeechProjection.admit lets these through with no speakable prose (see
+// speech_projection.go).
 func tagOnlySegment(s string) bool {
 	return hasVocalTag(s) && !speakableSegment(stripVocalTags(s))
 }
@@ -281,4 +318,13 @@ func hasPronounceableContent(s string) bool {
 		}
 	}
 	return false
+}
+
+// idleFlushDelay is how long a buffered group waits for a follower once brain
+// tokens stop arriving.
+func (p *Pipeline) idleFlushDelay() time.Duration {
+	if p != nil && p.idleFlush > 0 {
+		return p.idleFlush
+	}
+	return idleFlushAfter
 }

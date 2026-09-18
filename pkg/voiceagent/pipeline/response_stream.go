@@ -187,8 +187,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// emitted chunks instead of audible ones spent the opening's budget on
 	// silence whenever a reply began with a suppressed tool line. The provider
 	// is only reachable here too.
-	primaryVoice, _ := p.responseTTS(ctx)
+	primaryVoice, fallbackVoice := p.responseTTS(ctx)
 	grouping := groupingFor(primaryVoice)
+	// Grouping follows the engine that speaks. Once a segment falls back, the
+	// rest of the turn is synthesized by the fallback, so its join mode and
+	// ramp decide the remaining flushes — holding a "?" beat for a request
+	// join Kokoro re-splits anyway is the defect this avoids.
+	var spokeFallback bool
 	var voiceBatch []string
 	var batchTextReady time.Time
 	var batchBreak bool
@@ -197,10 +202,11 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// gone quiet: a tool call or a long pause must not hold speech hostage.
 	// Stopped until a segment is buffered; Stop/Reset never leave a stale value
 	// on the channel (Go 1.23 timers), so the loop's case cannot fire unarmed.
-	idle := time.NewTimer(idleFlushAfter)
+	idleAfter := p.idleFlushDelay()
+	idle := time.NewTimer(idleAfter)
 	idle.Stop()
 	defer idle.Stop()
-	armIdle := func() { idle.Reset(idleFlushAfter) }
+	armIdle := func() { idle.Reset(idleAfter) }
 	stopIdle := func() { idle.Stop() }
 	flushVoiceBatch := func() {
 		if len(voiceBatch) == 0 {
@@ -230,6 +236,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		voiceBatch = voiceBatch[:0]
 		batchTextReady = time.Time{}
 		batchBreak = false
+		// The target this group was measured against, kept beside the segment
+		// so a short boundary is read against the policy that flushed it
+		// rather than a floor the ramp never allowed it to reach.
+		metrics.noteFlushTarget(grouping.flushTarget(lastGroupChars))
 		lastGroupChars = speakableChars(text)
 		stopIdle()
 	}
@@ -237,7 +247,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// survives gating and cleaning, to the voice batch. The end-of-stream think
 	// flush enters here too, so both entry points share one copy of the
 	// transcript and speakability rules instead of drifting apart.
-	routeSegment := func(text string) {
+	// paragraphStart marks a segment the chunker emitted behind a blank line;
+	// it ends the held group before this sentence joins it.
+	routeSegment := func(text string, paragraphStart bool) {
 		if text == "" {
 			return
 		}
@@ -297,21 +309,95 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if metrics.firstAdmit.IsZero() {
 			metrics.firstAdmit = now
 		}
+		// A blank line before this sentence, or a group that would outgrow
+		// what may follow what is playing, ends the held group before this
+		// sentence joins it.
+		if paragraphStart || grouping.exceedsLimit(voiceBatch, speakable, lastGroupChars) {
+			flushVoiceBatch()
+		}
 		voiceBatch = append(voiceBatch, speakable)
 		if batchTextReady.IsZero() {
 			batchTextReady = now
 		}
-		// A blank line ends the group. Read from the raw segment: cleaning
-		// runs TrimSpace and does not preserve it.
+		// A blank line inside the segment ends the group after it. Read from
+		// the raw segment: cleaning runs TrimSpace and does not preserve it.
 		if strings.Contains(text, "\n\n") {
 			batchBreak = true
 		}
-		if grouping.ready(voiceBatch, batchBreak, lastGroupChars) {
+		// At most one handoff per segment: the intake gate guarantees a single
+		// free queue slot, and a blocking send inside the loop wedges the
+		// turn. A group that cannot go now goes on the idle timer.
+		if grouping.ready(voiceBatch, batchBreak, lastGroupChars, false) && pending < voiceQueueDepth {
 			flushVoiceBatch()
 			return
 		}
 		armIdle()
 	}
+
+	// drainToken takes a pending tick without blocking. A tick delivered in the
+	// same round as the idle timer means the brain is still producing, so the
+	// countdown restarts instead of the group going out into its own follower.
+	drainToken := func() bool {
+		select {
+		case _, ok := <-tokenTick:
+			if !ok {
+				tokenTick = nil
+				return false
+			}
+			return true
+		default:
+			return false
+		}
+	}
+
+	// takeSentence applies one segment from the segmenter, end-of-stream close
+	// included. The idle case calls it too: a follower that arrived in the same
+	// round as the timer must win, or the beat the timer was holding is spoken
+	// without it.
+	takeSentence := func(sentence string, ok bool) {
+		if !ok {
+			sentences = nil
+			// Drain the think filter: Feed holds a trailing "<" in case it
+			// opens a think tag, and at end of stream nothing more can
+			// arrive to disambiguate it — the same end-of-stream Flush the
+			// label stripper does in brain.go.
+			//
+			// This cannot change what is spoken today: the hold is only ever
+			// a prefix of a tag, so the one value Flush releases is a lone
+			// "<", which speakableSegment rejects anyway. It routes rather
+			// than drops so that if the hold ever carries content, the loop
+			// judges it by the same predicate as every other segment.
+			routeSegment(proj.flushThink(), false)
+			// A half-full batch is still a real segment: flush it before
+			// closing, or the last sentence of every odd-length reply is
+			// silently never spoken.
+			if !interrupted {
+				flushVoiceBatch()
+			}
+			closeSynthQueue() // no more handoffs; let the worker exit
+			return
+		}
+
+		paragraphStart := strings.HasPrefix(sentence, brain.ParagraphMark)
+		sentence = strings.TrimSpace(sentence)
+		if sentence == "" {
+			return
+		}
+
+		// Think blocks come off before anything else reads the segment.
+		// They look like speech (letters, periods) so the gate would read
+		// them aloud, and the same filtered text feeds the transcript — so
+		// the model never reads its own reasoning back out of conversation
+		// history on the next turn, paying its tokens every turn after.
+		// A tag still on Chunks after the brain split is a leak: strip it
+		// and tell the operator, but do not stall the turn.
+		if textclean.ContainsThinkTag(sentence) {
+			metrics.thinkLeak++
+			p.emit(events.Error{Stage: "think", Message: "think markup leaked onto the speech bus"})
+		}
+		routeSegment(proj.filterThink(sentence), paragraphStart)
+	}
+
 	go func() {
 		// Segments are numbered in playback order by the single ordered synth
 		// worker, so the index is the position a listener hears.
@@ -382,7 +468,28 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			if len(voiceBatch) == 0 || interrupted {
 				continue
 			}
+			// select gives no priority, so the timer can win a round against
+			// the token or the follower the group is waiting for. Take those
+			// first; only a brain that has actually gone quiet flushes here.
+			if drainToken() {
+				armIdle()
+				continue
+			}
+			select {
+			case sentence, ok := <-sentenceCh:
+				takeSentence(sentence, ok)
+				continue
+			default:
+			}
 			if pending >= voiceQueueDepth {
+				armIdle()
+				continue
+			}
+			// D4: a group that waited out the brain goes even under target, so
+			// a tool call or a think pause cannot hold speech hostage. The one
+			// thing the timer does not force is a tag-only tail, which has no
+			// prose of its own and rides with the next sentence.
+			if !grouping.ready(voiceBatch, batchBreak, lastGroupChars, true) {
 				armIdle()
 				continue
 			}
@@ -421,48 +528,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 
 		case sentence, ok := <-sentenceCh:
-			if !ok {
-				sentences = nil
-				// Drain the think filter: Feed holds a trailing "<" in case it
-				// opens a think tag, and at end of stream nothing more can
-				// arrive to disambiguate it — the same end-of-stream Flush the
-				// label stripper does in brain.go.
-				//
-				// This cannot change what is spoken today: the hold is only ever
-				// a prefix of a tag, so the one value Flush releases is a lone
-				// "<", which speakableSegment rejects anyway. It routes rather
-				// than drops so that if the hold ever carries content, the loop
-				// judges it by the same predicate as every other segment.
-				routeSegment(proj.flushThink())
-				// A half-full batch is still a real segment: flush it before
-				// closing, or the last sentence of every odd-length reply is
-				// silently never spoken.
-				if !interrupted {
-					flushVoiceBatch()
-				}
-				closeSynthQueue() // no more handoffs; let the worker exit
-				continue
-			}
-
-			sentence = strings.TrimSpace(sentence)
-			if sentence == "" {
-				continue
-			}
-
-			// Think blocks come off before anything else reads the segment.
-			// They look like speech (letters, periods) so the gate would read
-			// them aloud, and the same filtered text feeds the transcript — so
-			// the model never reads its own reasoning back out of conversation
-			// history on the next turn, paying its tokens every turn after.
-			// A tag still on Chunks after the brain split is a leak: strip it
-			// and tell the operator, but do not stall the turn.
-			if textclean.ContainsThinkTag(sentence) {
-				metrics.thinkLeak++
-				p.emit(events.Error{Stage: "think", Message: "think markup leaked onto the speech bus"})
-			}
-			routeSegment(proj.filterThink(sentence))
+			takeSentence(sentence, ok)
 
 		case event := <-playbackEvents:
+			if event.fallback && !spokeFallback && fallbackVoice != nil {
+				spokeFallback = true
+				grouping = groupingFor(fallbackVoice)
+			}
 			if interrupted && event.kind == playbackStarted && p.Player != nil {
 				// A synthesis that raced the barge-in finished after Stop();
 				// stop the late playback immediately.

@@ -346,16 +346,38 @@ func (f *failingTTS) Synthesize(context.Context, string) (*audio.PCMStream, erro
 	return nil, f.err
 }
 
+// Only the orphan a stripped tag leaves at the front goes. Punctuation further
+// in is the speaker's: a spaced " , " is a pause and a trailing "?" is the
+// sentence type the engine reads as a contour.
 func TestTrimSpeechResidueKeepsPauses(t *testing.T) {
 	cases := map[string]string{
 		". The build finished.":      "The build finished.",
+		". . Still finished.":        "Still finished.",
 		"Well ... I guess so.":       "Well ... I guess so.",
-		"Wait , what ... happened ?": "Wait what ... happened",
+		"Wait , what ... happened ?": "Wait , what ... happened ?",
 		"Nothing to trim here.":      "Nothing to trim here.",
+		".":                          "",
 	}
 	for in, want := range cases {
 		if got := trimSpeechResidue(in); got != want {
 			t.Errorf("trimSpeechResidue(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The orphan a tag leaves mid-utterance is removed where the tag was, because
+// only there is that period known to be the tag's. Merged groups put tags
+// inside the text, not only at its front.
+func TestStripSpokenVocalTagsTakesTheOrphanPunctuation(t *testing.T) {
+	cases := map[string]string{
+		"Okay. [laugh]. Good.":         "Okay. Good.",
+		"[laugh]. The build finished.": "The build finished.",
+		"[sigh]... I guess so.":        "... I guess so.",
+		"Nothing to strip here.":       "Nothing to strip here.",
+	}
+	for in, want := range cases {
+		if got := stripSpokenVocalTags(in); got != want {
+			t.Errorf("stripSpokenVocalTags(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

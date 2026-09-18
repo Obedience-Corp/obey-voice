@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -82,36 +83,31 @@ func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBa
 	return joinShortBeats(spoken)
 }
 
-// trimSpeechResidue drops the orphan punctuation a rendered-away tag leaves
-// behind. "[laugh]. The build finished." strips to ". The build finished." on
-// an engine with no vocal tags, and that leading period is read aloud as "dot"
-// — or, once beats merge, turned into a comma. A lone "..." is a pause the
-// engine should keep, so only single-character orphans go. Only runs when such
-// a token is actually there, so ordinary text keeps its whitespace.
+// trimSpeechResidue drops the orphan punctuation a rendered-away tag leaves at
+// the front of an utterance: ". The build finished." is read aloud as "dot".
+// Only leading tokens go. Punctuation further in is the speaker's — a spaced
+// " , " is a pause and a trailing "?" is the sentence's type, which the engine
+// reads as a contour, so dropping those turned every spaced question into a
+// statement. Orphans a tag left mid-utterance are removed at the strip site
+// instead (stripSpokenVocalTags), which knows the tag was there.
 func trimSpeechResidue(s string) string {
-	const residue = ".!?;:,"
-	orphan := func(field string) bool {
-		return len(field) == 1 && strings.Trim(field, residue) == ""
-	}
-	fields := strings.Fields(s)
-	found := false
-	for _, field := range fields {
-		if orphan(field) {
-			found = true
-			break
-		}
-	}
-	if !found {
+	rest := strings.TrimLeftFunc(s, unicode.IsSpace)
+	if !leadingSpeechOrphan(rest) {
 		return s
 	}
-	kept := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if orphan(field) {
-			continue
-		}
-		kept = append(kept, field)
+	for leadingSpeechOrphan(rest) {
+		rest = strings.TrimLeftFunc(rest[1:], unicode.IsSpace)
 	}
-	return strings.Join(kept, " ")
+	return rest
+}
+
+// leadingSpeechOrphan reports a one-character punctuation token at the front of
+// s. "..." is a pause, not an orphan.
+func leadingSpeechOrphan(s string) bool {
+	if s == "" || !strings.ContainsAny(s[:1], ".!?;:,") {
+		return false
+	}
+	return len(s) == 1 || unicode.IsSpace(rune(s[1]))
 }
 
 // renderVocalTagsFor resolves [tag] markup for one engine.
@@ -124,7 +120,7 @@ func renderVocalTagsFor(sentence string, provider tts.Provider, vocals *vocalBan
 		return sentence
 	}
 	if !tts.RendersVocalTags(provider) {
-		return stripVocalTags(sentence)
+		return stripSpokenVocalTags(sentence)
 	}
 	if rewriter, ok := provider.(tts.VocalTagRewriter); ok {
 		var pick func(kind string) string

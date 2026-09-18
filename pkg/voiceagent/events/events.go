@@ -171,8 +171,11 @@ type TurnMetrics struct {
 	// change moves and what dead air is usually explained by.
 	//
 	// ShortBoundaries counts boundaries whose preceding segment was under the
-	// grouping floor — a prosody reset the listener did not need. The opening
-	// is deliberately short, so 1 is the healthy reading, not 0.
+	// target its group was flushed against — a prosody reset the listener did
+	// not need. That target is the grouping floor only when the provider's
+	// ramp lets a group reach it; at ramp 1.0 it is the previous group's
+	// length, so 0 is the healthy reading and 1 is healthy only where groups
+	// are allowed to grow to the floor.
 	SegmentCount       int
 	MedianSegmentChars int
 	ShortBoundaries    int

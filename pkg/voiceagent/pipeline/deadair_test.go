@@ -168,7 +168,7 @@ func TestKokoroTurnStillPublishesGapMetrics(t *testing.T) {
 	m.ttsEngine.provider = "kokoro"
 	m.deadAir = 6 * time.Second
 	m.underruns = 1
-	m.segments = []events.SegmentMetric{{PlayElapsed: 6 * time.Second, Underruns: 1}}
+	m.segments = []segmentRecord{{SegmentMetric: events.SegmentMetric{PlayElapsed: 6 * time.Second, Underruns: 1}}}
 	p.newTurnConductor(m).finish(TurnCompleted)
 
 	if len(metrics) != 1 || metrics[0].DeadAirElapsed != m.deadAir || metrics[0].Underruns != 1 || len(metrics[0].Segments) != 1 {

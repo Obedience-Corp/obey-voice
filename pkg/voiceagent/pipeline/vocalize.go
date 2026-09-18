@@ -34,6 +34,33 @@ func hasVocalTag(s string) bool { return tts.HasVocalTag(s) }
 
 func stripVocalTags(s string) string { return tts.StripVocalTags(s) }
 
+// stripSpokenVocalTags removes tags an engine cannot vocalize along with the
+// punctuation glued to them: "[laugh]. The build finished." must not leave a
+// bare "." for the engine to read as "dot". The tag's position is the only
+// cheap proof that the period was the tag's and not a sentence's, so this is
+// where it goes — trimSpeechResidue downstream can only judge the front of the
+// utterance. A run of punctuation ("[sigh]...") is a pause and is kept.
+func stripSpokenVocalTags(s string) string {
+	spans := tts.VocalTagRE.FindAllStringIndex(s, -1)
+	if len(spans) == 0 {
+		return stripVocalTags(s)
+	}
+	var b strings.Builder
+	last := 0
+	for _, span := range spans {
+		b.WriteString(s[last:span[0]])
+		b.WriteString(" ")
+		end := span[1]
+		if end < len(s) && strings.ContainsAny(s[end:end+1], ".!?;:,") &&
+			(end+1 == len(s) || !strings.ContainsAny(s[end+1:end+2], ".!?;:,")) {
+			end++
+		}
+		last = end
+	}
+	b.WriteString(s[last:])
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
 func expandVocalTags(s string, pick func(kind string) string) string {
 	return tts.ExpandOnomatopoeiaVocalTags(s, pick)
 }

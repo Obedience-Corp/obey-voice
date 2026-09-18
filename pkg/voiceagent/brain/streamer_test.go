@@ -1,6 +1,9 @@
 package brain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestChunkSentencesKeepsInitialismsIntact(t *testing.T) {
 	tests := []struct {
@@ -159,5 +162,70 @@ func TestChunkSentencesSegmentation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The blank line between two paragraphs is a boundary the listener hears, and
+// the only one punctuation does not carry. TrimSpace used to erase it before
+// the speech pipeline could read it, so a paragraph break never ended a
+// sentence group. Cleaned output still has no marks.
+func TestChunkSentencesRawKeepsParagraphBreaks(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{
+			"blank line marks the segment after it",
+			[]string{"Short line.\n\nNext para. "},
+			[]string{"Short line.", "\n\nNext para."},
+		},
+		{
+			"break split across stream chunks",
+			[]string{"Short line.\n", "\nNext para. "},
+			[]string{"Short line.", "\n\nNext para."},
+		},
+		{
+			"trailing paragraph with no terminator",
+			[]string{"Short line.\n\nNo period here"},
+			[]string{"Short line.", "\n\nNo period here"},
+		},
+		{
+			"a single newline is not a paragraph",
+			[]string{"Short line.\nNext line. "},
+			[]string{"Short line.", "Next line."},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := make(chan string, len(tt.in))
+			for _, chunk := range tt.in {
+				in <- chunk
+			}
+			close(in)
+
+			var got []string
+			for chunk := range ChunkSentencesRaw(in) {
+				got = append(got, chunk)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d chunks %q, want %d %q", len(got), got, len(tt.want), tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("got[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+
+	in := make(chan string, 1)
+	in <- "Short line.\n\nNext para. "
+	close(in)
+	for chunk := range ChunkSentences(in) {
+		if strings.TrimSpace(chunk) != chunk {
+			t.Errorf("cleaned chunk = %q, want the mark cleaned away", chunk)
+		}
 	}
 }

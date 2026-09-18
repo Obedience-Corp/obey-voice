@@ -61,7 +61,12 @@ type turnMetrics struct {
 	toolLeakLines int
 	// segments accumulates per-segment synthesis cost in playback order.
 	// Written only from the turn loop goroutine, in applyPlaybackEvent.
-	segments        []events.SegmentMetric
+	segments []segmentRecord
+	// flushTargets is the grouping target each group was flushed against, in
+	// flush order — which is playback index order, since the synth worker
+	// numbers work in the order it was queued. Written by the turn loop at
+	// flush time, read back by recordSegment.
+	flushTargets    []int
 	gaps            map[int]gapObservation
 	segmentWarmSeen bool
 	// ttsFallbacks counts segments the Kokoro fallback spoke after the
@@ -135,14 +140,50 @@ func (m *turnMetrics) snapshot() events.TurnMetrics {
 		SegmentCount:            len(m.segments),
 		MedianSegmentChars:      medianSegmentChars(m.segments),
 		ShortBoundaries:         shortSegmentBoundaries(m.segments),
-		Segments:                append([]events.SegmentMetric(nil), m.segments...),
+		Segments:                segmentMetrics(m.segments),
 	}
+}
+
+// segmentRecord is one segment's reported metric plus the grouping context
+// only the turn can supply: the flush target ready() measured that group
+// against. The target is not published — it is policy state, not a cost — but
+// without it a boundary cannot be read as short or expected.
+type segmentRecord struct {
+	events.SegmentMetric
+	flushTarget int
+}
+
+func segmentMetrics(records []segmentRecord) []events.SegmentMetric {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]events.SegmentMetric, len(records))
+	for i, record := range records {
+		out[i] = record.SegmentMetric
+	}
+	return out
+}
+
+// noteFlushTarget records the target the group being handed off was measured
+// against. Called once per flush, from the turn loop goroutine.
+func (m *turnMetrics) noteFlushTarget(target int) {
+	if m == nil {
+		return
+	}
+	m.flushTargets = append(m.flushTargets, target)
+}
+
+func (m *turnMetrics) flushTargetAt(index int) int {
+	if index < 0 || index >= len(m.flushTargets) {
+		return 0
+	}
+	return m.flushTargets[index]
 }
 
 // medianSegmentChars is the middle segment length of the turn. The median, not
 // the mean: one paragraph-length segment must not hide a reply chopped into
 // interjections.
-func medianSegmentChars(segments []events.SegmentMetric) int {
+func medianSegmentChars(segments []segmentRecord) int {
 	if len(segments) == 0 {
 		return 0
 	}
@@ -159,11 +200,14 @@ func medianSegmentChars(segments []events.SegmentMetric) int {
 }
 
 // shortSegmentBoundaries counts the prosody resets that followed a segment too
-// short to stand on its own.
-func shortSegmentBoundaries(segments []events.SegmentMetric) int {
+// short to stand on its own — measured against the target that group was
+// flushed against, not the floor. Under a ramp of 1.0 the target is the size
+// of the group before it, so a healthy turn never reaches the floor and
+// counting against the floor reported every boundary as short.
+func shortSegmentBoundaries(segments []segmentRecord) int {
 	short := 0
 	for k := 1; k < len(segments); k++ {
-		if segments[k-1].Chars < laterFloorChars {
+		if segments[k-1].Chars < segments[k-1].flushTarget {
 			short++
 		}
 	}
@@ -190,34 +234,37 @@ func (m *turnMetrics) recordSegment(event playbackEvent) {
 	if segmentError == "" && event.result.Err != nil {
 		segmentError = event.result.Err.Error()
 	}
-	m.segments = append(m.segments, events.SegmentMetric{
-		Index:                  event.index,
-		Chars:                  len(event.sentence),
-		EngineElapsed:          event.engineElapsed,
-		SynthElapsed:           event.synthElapsed,
-		AudioSeconds:           event.result.AudioSeconds,
-		PlayElapsed:            event.playElapsed,
-		Fallback:               event.fallback,
-		Interrupted:            event.result.Interrupted,
-		Underruns:              event.result.Underruns,
-		Provider:               event.engine.provider,
-		Tier:                   event.engine.tier,
-		Place:                  event.engine.place,
-		WorkerStreaming:        event.engine.workerStreaming,
-		TextReadyElapsed:       m.elapsed(event.textReady),
-		WarmState:              event.warmState,
-		Error:                  segmentError,
-		Exclusions:             append([]string(nil), event.exclusions...),
-		WholeSentencePlayback:  event.wholeSentence,
-		Gaps:                   append([]events.SpeechGap(nil), gap.gaps...),
-		GapElapsed:             gap.elapsed,
-		GapCause:               gap.cause,
-		SynthQueuedElapsed:     m.elapsed(event.queuedAt),
-		SynthStartedElapsed:    m.elapsed(event.synthStarted),
-		SynthFirstPCMElapsed:   m.elapsed(event.synthFirstPCM),
-		SynthEndedElapsed:      m.elapsed(event.synthEnded),
-		PlaybackStartedElapsed: m.elapsed(event.playStarted),
-		PlaybackEndedElapsed:   m.elapsed(event.playEnded),
+	m.segments = append(m.segments, segmentRecord{
+		flushTarget: m.flushTargetAt(event.index),
+		SegmentMetric: events.SegmentMetric{
+			Index:                  event.index,
+			Chars:                  len(event.sentence),
+			EngineElapsed:          event.engineElapsed,
+			SynthElapsed:           event.synthElapsed,
+			AudioSeconds:           event.result.AudioSeconds,
+			PlayElapsed:            event.playElapsed,
+			Fallback:               event.fallback,
+			Interrupted:            event.result.Interrupted,
+			Underruns:              event.result.Underruns,
+			Provider:               event.engine.provider,
+			Tier:                   event.engine.tier,
+			Place:                  event.engine.place,
+			WorkerStreaming:        event.engine.workerStreaming,
+			TextReadyElapsed:       m.elapsed(event.textReady),
+			WarmState:              event.warmState,
+			Error:                  segmentError,
+			Exclusions:             append([]string(nil), event.exclusions...),
+			WholeSentencePlayback:  event.wholeSentence,
+			Gaps:                   append([]events.SpeechGap(nil), gap.gaps...),
+			GapElapsed:             gap.elapsed,
+			GapCause:               gap.cause,
+			SynthQueuedElapsed:     m.elapsed(event.queuedAt),
+			SynthStartedElapsed:    m.elapsed(event.synthStarted),
+			SynthFirstPCMElapsed:   m.elapsed(event.synthFirstPCM),
+			SynthEndedElapsed:      m.elapsed(event.synthEnded),
+			PlaybackStartedElapsed: m.elapsed(event.playStarted),
+			PlaybackEndedElapsed:   m.elapsed(event.playEnded),
+		},
 	})
 	if !m.segmentWarmSeen {
 		m.ttsWarm.Store(event.warmState == events.WarmStateWarm)

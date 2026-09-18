@@ -303,9 +303,7 @@ func (k *KokoroTTS) FirstAudioGraceForChars(chars int) time.Duration {
 
 // SegmentRamp is 1/0.64: Kokoro's median engine RTF was 0.64 on an M4 Max
 // (tts-bench, 2026-09-18), so a segment may be half again as long as the one
-// playing while it synthesizes. The 804 ms gap that reverted two-sentence
-// batching was a 1.185 s opening followed by a segment needing 1.989 s —
-// growth of 2.5x where 1.5x was the limit.
+// playing while it synthesizes.
 func (k *KokoroTTS) SegmentRamp() float64 { return 1.5 }
 
 // JoinsSentences is false. sherpa's Kokoro frontend starts a new token entry
