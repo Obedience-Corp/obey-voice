@@ -244,9 +244,9 @@ func brainKeys() []KeySpec {
 			Help: "Where Ollama is running. Point it at another machine to answer from there.",
 		},
 		{
-			Key: "ollama_num_ctx", Type: TypeInt, Default: 8192, Unit: "tokens", Min: num(0), Max: num(131072),
-			Group: GroupBrain, Title: "Context window",
-			Help: "How much conversation the local model sees. 0 uses the server's own size, which silently drops the oldest turns.",
+			Key: "ollama_num_ctx", Type: TypeInt, Default: 32768, Unit: "tokens", Min: num(0), Max: num(131072),
+			Group: GroupBrain, Title: "Conversation memory",
+			Help: "How much of this conversation the talk model sees (8k / 16k / 32k). 32k is a real session. 0 uses the server's size and can drop the persona from the top.",
 		},
 		{
 			Key: "ollama_num_batch", Type: TypeInt, Default: 128, Unit: "tokens", Min: num(0), Max: num(4096),
@@ -279,9 +279,9 @@ func brainKeys() []KeySpec {
 			Help: "Tells the model your user name, host and OS so it can answer questions about this machine.",
 		},
 		{
-			Key: "max_history", Type: TypeInt, Default: 10, Min: num(1), Max: num(100),
+			Key: "max_history", Type: TypeInt, Default: 40, Min: num(1), Max: num(100),
 			Group: GroupBrain, Title: "Remembered turns",
-			Help: "How many past exchanges she carries into the next answer. More context costs latency.",
+			Help: "Turn-count backstop for compact. The token window is what actually limits a long chat.",
 		},
 		{
 			Key: "continuity_integrity_enabled", Type: TypeBool, Default: true,
@@ -291,9 +291,10 @@ func brainKeys() []KeySpec {
 		{Key: "continuity_projection_enabled", Type: TypeBool, Default: true, Group: GroupBrain, Title: "Compact tool results", Help: "Bound model-visible Ollama tool results to 2048 bytes. Disabling restores raw output."},
 		{Key: "continuity_archive_enabled", Type: TypeBool, Default: true, Group: GroupBrain, Title: "Context archive", Help: "Retain bounded tool output and evicted notes in session memory."},
 		{Key: "continuity_soft_limit_ratio", Type: TypeFloat, Default: 0.80, Min: num(0), Max: num(0.9), Group: GroupBrain, Title: "Context compact threshold", Help: "Prompt estimate fraction that triggers compaction. Zero disables the budget trigger."},
-		{Key: "continuity_compact_filler", Type: TypeBool, Default: true, Group: GroupBrain, Title: "Speak before compacting", Help: "Say a brief filler before automatic conversation compaction."},
+		{Key: "continuity_compact_filler", Type: TypeBool, Default: false, Group: GroupBrain, Title: "Speak before compacting", Help: "Say a brief filler before automatic conversation compaction. Off by default; the TUI meter is the signal."},
 		{Key: "continuity_recovery_max", Type: TypeInt, Default: 2, Min: num(0), Max: num(2), Group: GroupBrain, Title: "Continuation attempts", Help: "Maximum continuation requests after a truncated Ollama response. Zero disables recovery."},
-		{Key: "continuity_num_ctx_ceil", Type: TypeInt, Default: 8192, Min: num(8192), Max: num(32768), Group: GroupBrain, Title: "Adaptive context ceiling", Help: "Opt in to session context expansion up to 16384 or 32768 after budget pressure."},
+		{Key: "continuity_num_ctx_ceil", Type: TypeInt, Default: 32768, Min: num(8192), Max: num(32768), Group: GroupBrain, Title: "Conversation memory ceiling", Help: "Highest talk window under pressure. Keep equal to conversation memory unless you start smaller and want it to grow."},
+		{Key: "voice_worker_num_ctx", Type: TypeInt, Default: 8192, Unit: "tokens", Min: num(0), Max: num(32768), Group: GroupBrain, Title: "Worker memory", Help: "Context window for background jobs. Jobs stay at 8k so they do not steal the talk conversation."},
 	}
 }
 

@@ -86,7 +86,7 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	}
 	ctx, cancel := p.withBrainTimeout(ctx)
 	defer cancel()
-	p.emit(events.Info{Message: "Compacting conversation."})
+	p.emit(events.Info{Message: "compact: starting"})
 	if filler, ok := p.Brain.(interface{ ContinuityCompactFiller() bool }); ok && filler.ContinuityCompactFiller() && metrics != nil && turn != nil {
 		p.speakBestEffort(ctx, "Give me a moment to gather my notes.", metrics, turn)
 		turn.to(TurnThinking)
@@ -94,7 +94,30 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return p.CompactConversation(ctx)
+	if prep, ok := p.Brain.(interface{ PrepareCompact(string) }); ok {
+		prep.PrepareCompact(p.compactionInstruction())
+	}
+	history = p.Brain.History()
+	if view, ok := p.Brain.(brain.ContextHistoryProvider); ok {
+		history = view.ContextHistory()
+	}
+	stillCount := p.AutoCompactAfter > 0 && len(history) > p.AutoCompactAfter
+	stillBudget := false
+	if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok {
+		stillBudget = budget.NeedsContinuityCompact(input)
+	}
+	if !stillCount && !stillBudget {
+		p.emit(events.Info{Message: "compact: trimmed"})
+		return nil
+	}
+	if err := p.CompactConversation(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		p.emit(events.Info{Message: "compact: skipped (" + err.Error() + ")"})
+		return nil
+	}
+	return nil
 }
 
 func (p *Pipeline) CompactConversation(ctx context.Context) error {
@@ -116,6 +139,9 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	tail := compactTail(tailSource)
 	if p.OnCompactBackup != nil {
 		p.OnCompactBackup(before)
+	}
+	if prep, ok := p.Brain.(interface{ PrepareCompact(string) }); ok {
+		prep.PrepareCompact(p.compactionInstruction())
 	}
 
 	ctx, cancel := p.withBrainTimeout(ctx)

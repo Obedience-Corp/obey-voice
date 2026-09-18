@@ -76,8 +76,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 			turn.finish(TurnInterrupted)
 			return err
 		}
-		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
-		return nil
+		p.emit(events.Info{Message: "compact: skipped (" + err.Error() + ")"})
 	}
 	p.emitResponse(metrics, events.ThinkingStarted{})
 	thinkingStarted := metrics.tEOU()

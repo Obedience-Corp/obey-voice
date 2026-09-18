@@ -94,6 +94,17 @@ func TestWorkerBrainConfigGrokModelPin(t *testing.T) {
 	}
 }
 
+func TestWorkerBrainConfigKeepsJobWindowAt8k(t *testing.T) {
+	cfg := &Config{OllamaNumCtx: 32768, ContinuityNumCtxCeil: 32768}
+	got := WorkerBrainConfig(cfg)
+	if got.OllamaNumCtx != 8192 || got.ContinuityNumCtxCeil != 8192 {
+		t.Fatalf("worker window = %d/%d, want 8192/8192", got.OllamaNumCtx, got.ContinuityNumCtxCeil)
+	}
+	if cfg.OllamaNumCtx != 32768 {
+		t.Fatal("live window must stay 32768")
+	}
+}
+
 func TestWorkerBrainConfigMarksTheWorker(t *testing.T) {
 	cfg := &Config{BrainProvider: "ollama"}
 	if !WorkerBrainConfig(cfg).IsWorker {

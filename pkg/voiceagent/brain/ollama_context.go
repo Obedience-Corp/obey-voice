@@ -22,6 +22,12 @@ const toolResultTruncationMarker = "... (truncated to fit context)"
 // The in-flight user query is pinned. Mid-loop tool results are shrunk
 // instead of dropped, because Ollama 0.32.14 + qwen3.8 500s when
 // truncation leaves no plain user message (ollama#17778).
+// PrepareCompact trims history so a summarize turn can fit. Same rules as
+// ensureContextBudget, with the compact instruction counted in the estimate.
+func (o *OllamaBrain) PrepareCompact(compactPrompt string) {
+	o.ensureContextBudget(compactPrompt)
+}
+
 func (o *OllamaBrain) ensureContextBudget(skillCtx string) {
 	if o.cfg == nil {
 		return

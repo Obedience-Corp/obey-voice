@@ -113,8 +113,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 			turn.finish(TurnInterrupted)
 			return original, err
 		}
-		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
-		return original, nil
+		p.emit(events.Info{Message: "compact: skipped (" + err.Error() + ")"})
 	}
 	p.emitResponse(metrics, events.ThinkingStarted{})
 

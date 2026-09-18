@@ -75,7 +75,7 @@
       "source": "default"
     },
     "continuity_compact_filler": {
-      "value": true,
+      "value": false,
       "source": "default"
     },
     "continuity_integrity_enabled": {
@@ -83,7 +83,7 @@
       "source": "default"
     },
     "continuity_num_ctx_ceil": {
-      "value": 8192,
+      "value": 32768,
       "source": "default"
     },
     "continuity_projection_enabled": {
@@ -151,7 +151,7 @@
       "source": "default"
     },
     "max_history": {
-      "value": 10,
+      "value": 40,
       "source": "default"
     },
     "meeting.dir": {
@@ -207,7 +207,7 @@
       "source": "default"
     },
     "ollama_num_ctx": {
-      "value": 8192,
+      "value": 32768,
       "source": "default"
     },
     "ollama_think": {
@@ -564,6 +564,10 @@
     },
     "voice_worker_model": {
       "value": "",
+      "source": "default"
+    },
+    "voice_worker_num_ctx": {
+      "value": 8192,
       "source": "default"
     },
     "voice_worker_ollama_host": {

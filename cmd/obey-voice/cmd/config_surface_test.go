@@ -125,7 +125,7 @@ func TestConfigGetJSONSourcesAreCorrect(t *testing.T) {
 		wantSource string
 		wantValue  any
 	}{
-		{"max_history", config.SourceDefault, float64(10)},
+		{"max_history", config.SourceDefault, float64(40)},
 		{"vad_silence_duration", config.SourceFile, 0.8},
 		{"ollama_model", config.SourceEnv, "qwen2.5:14b"},
 	}

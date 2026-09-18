@@ -379,7 +379,7 @@ func TestSetKeyFileNoopDoesNotWriteOrBackup(t *testing.T) {
 
 	// A key absent from the file whose new value equals the default is also a
 	// no-op: the effective value does not change.
-	result, err = SetKeyFile("max_history", "10")
+	result, err = SetKeyFile("max_history", "40")
 	if err != nil {
 		t.Fatalf("SetKeyFile: %v", err)
 	}
@@ -497,8 +497,8 @@ func TestSetKeyFileReportsOldValueAndRestart(t *testing.T) {
 
 	// A key absent from the file reports the schema default as old_value.
 	result = mustSet(t, "max_history", "20")
-	if result.OldValue != 10 {
-		t.Errorf("old_value = %v, want the default 10", result.OldValue)
+	if result.OldValue != 40 {
+		t.Errorf("old_value = %v, want the default 40", result.OldValue)
 	}
 
 	// tts_provider is the one voice key proven not to need a restart.

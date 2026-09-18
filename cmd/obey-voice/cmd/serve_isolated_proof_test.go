@@ -400,7 +400,7 @@ func TestIsolatedServeConfigRetainsDefaultHistory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("brain_provider: ollama\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if cfg := isolatedServeConfig(t, root); cfg.MaxHistory != 10 {
+	if cfg := isolatedServeConfig(t, root); cfg.MaxHistory != 40 {
 		t.Fatalf("max_history=%d, want normal history retention", cfg.MaxHistory)
 	}
 }
