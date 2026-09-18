@@ -56,6 +56,9 @@ func TestExpandOnomatopoeiaVocalTags(t *testing.T) {
 	if got := ExpandOnomatopoeiaVocalTags("[moan] hello", nil); got != "hello" {
 		t.Fatalf("moan must strip, got %q", got)
 	}
+	if got := ExpandOnomatopoeiaVocalTags("[mouth] hello", nil); got != "hello" {
+		t.Fatalf("unknown stage tag must strip, got %q", got)
+	}
 }
 
 func TestCapabilityProviderContractReportsModesAndStatus(t *testing.T) {

@@ -15,8 +15,8 @@ import (
 var errNothingToSpeak = errors.New("nothing to synthesize")
 
 // EnableVocals installs the optional recorded-sound bank. Empty dir is fine:
-// [moan]/[laugh] expand to onomatopoeia and go through the live TTS throat.
-// WAV files in dir (moan.wav, gasp.wav, …) replace a kind with a recording.
+// stage tags are stripped so CustomVoice does not read "[mouth]" aloud.
+// WAV files in dir (moan.wav, laugh.wav, …) replace a kind with a recording.
 func (p *Pipeline) EnableVocals(dir string) {
 	p.vocals = newVocalBank(dir)
 }
@@ -62,8 +62,8 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 
 func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
 	parts := splitVocalizations(sentence)
-	// Recorded WAVs (persona sounds/) splice in on any engine. Otherwise
-	// tags become onomatopoeia only for a provider that can vocalize them.
+	// Recorded WAVs splice in on any engine. Otherwise stage tags are
+	// stripped unless the provider actually renders them.
 	if p.vocals != nil && p.vocals.allSoundsRecorded(parts) {
 		return p.renderVocalizedObserved(ctx, parts, stickFallback)
 	}

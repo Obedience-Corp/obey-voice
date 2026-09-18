@@ -43,9 +43,12 @@ var vocalAlias = map[string]string{
 	"ugh":      VocalHuff,
 }
 
-// VocalTagRE matches recognized sound tags, including kinds we strip because
-// the codec cannot vocalize them (moan, whimper, kiss, gasp).
+// VocalTagRE matches known sound-bank kinds. Used to splice persona WAVs.
 var VocalTagRE = regexp.MustCompile(`(?i)\[(moans?|gasps?|laughs?|sighs?|whimpers?|kiss(?:es)?|ahhs?|mmm|haha|hmms?|relief|huff|ugh)\]`)
+
+// StageTagRE matches LLM stage directions, including ones we never listed
+// ([mouth], [clears throat]). CustomVoice speaks these as words if they leak.
+var StageTagRE = regexp.MustCompile(`(?i)\[[A-Za-z][^\[\]]{0,40}\]`)
 
 // OnomatopoeiaPhrases are spellings Qwen3-TTS actually renders as a sound
 // (aspirated onomatopoeia, leading h for breath). Empty means the tag is
@@ -75,9 +78,9 @@ type VocalTagRewriter interface {
 	RewriteVocalTags(s string, pick func(kind string) string) string
 }
 
-// HasVocalTag reports whether s contains a recognized sound tag.
+// HasVocalTag reports whether s contains a stage-direction tag, known or not.
 func HasVocalTag(s string) bool {
-	return VocalTagRE.MatchString(s)
+	return StageTagRE.MatchString(s)
 }
 
 // CanonicalVocal maps a tag body (sigh, sighs, haha, …) to a vocal kind.
@@ -88,10 +91,10 @@ func CanonicalVocal(raw string) string {
 // StripVocalTags removes sound markup from text bound for the transcript or
 // for an engine that cannot vocalize the tags.
 func StripVocalTags(s string) string {
-	if s == "" || !HasVocalTag(s) {
+	if s == "" || !StageTagRE.MatchString(s) {
 		return s
 	}
-	s = VocalTagRE.ReplaceAllString(s, " ")
+	s = StageTagRE.ReplaceAllString(s, " ")
 	return strings.Join(strings.Fields(s), " ")
 }
 
@@ -105,7 +108,7 @@ func ExpandOnomatopoeiaVocalTags(s string, pick func(kind string) string) string
 	if pick == nil {
 		pick = firstOnomatopoeiaPhrase
 	}
-	return strings.TrimSpace(VocalTagRE.ReplaceAllStringFunc(s, func(tag string) string {
+	s = VocalTagRE.ReplaceAllStringFunc(s, func(tag string) string {
 		m := VocalTagRE.FindStringSubmatch(tag)
 		if len(m) < 2 {
 			return ""
@@ -116,7 +119,9 @@ func ExpandOnomatopoeiaVocalTags(s string, pick func(kind string) string) string
 			return ""
 		}
 		return phrase
-	}))
+	})
+	// Unknown directions ([mouth]) must not remain for the synthesizer to read.
+	return StripVocalTags(strings.TrimSpace(s))
 }
 
 func firstOnomatopoeiaPhrase(kind string) string {

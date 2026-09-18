@@ -43,7 +43,7 @@ func (q *Qwen3TTS) Capabilities() tts.ProviderCapabilities {
 		SupportsCancellation:   true,
 		SupportsReferenceAudio: q.native && !q.remote, // native stage A accepts ref_wav; the LAN wire does not carry it
 		SupportsSpeed:          false,
-		SupportsVocalTags:      true,
+		SupportsVocalTags:      false,
 	}
 	if !q.managed && !q.native {
 		return caps
@@ -110,11 +110,12 @@ func (q *Qwen3TTS) Capabilities() tts.ProviderCapabilities {
 	return caps
 }
 
-// RewriteVocalTags maps [sigh]/[laugh] to the onomatopoeia this codec
-// vocalizes. Other engines implement VocalTagRewriter with their own mapping,
-// or omit it to receive the tags unchanged.
+// RewriteVocalTags drops stage directions. Veronica/CustomVoice does not
+// vocalize [sigh]/[mouth]; it reads them as words. A future engine that
+// actually renders tags can opt in with SupportsVocalTags.
 func (q *Qwen3TTS) RewriteVocalTags(s string, pick func(kind string) string) string {
-	return tts.ExpandOnomatopoeiaVocalTags(s, pick)
+	_ = pick
+	return tts.StripVocalTags(s)
 }
 
 func (q *Qwen3TTS) Status() tts.ProviderStatus {
