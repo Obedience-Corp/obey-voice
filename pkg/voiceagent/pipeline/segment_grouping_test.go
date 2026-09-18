@@ -384,9 +384,10 @@ func TestQuestionBeatIsNotTextuallyJoined(t *testing.T) {
 }
 
 // A group of full sentences is grouped to save per-call overhead, not to be
-// re-read as one sentence. Only a group the loop held a short beat for is
-// rewritten, so two ordinary sentences keep their period even on an engine
-// that re-splits them.
+// re-read as one sentence. The loop asks for the join on every group a
+// re-splitting engine speaks, so what keeps two ordinary sentences apart is
+// joinShortBeats itself: it rewrites a beat and nothing else. Both halves are
+// pinned — the group as the turn produces it, and the rewrite in isolation.
 func TestGroupWithoutAShortBeatKeepsItsPunctuation(t *testing.T) {
 	const (
 		opening = "The release build finished on main a few minutes ago."
@@ -397,8 +398,68 @@ func TestGroupWithoutAShortBeatKeepsItsPunctuation(t *testing.T) {
 	if len(calls) != 2 {
 		t.Fatalf("Synthesize calls = %q, want the opening then the two grouped sentences", calls)
 	}
-	if want := second + " " + third; calls[1] != want {
+	want := second + " " + third
+	if calls[1] != want {
 		t.Fatalf("synthesized %q, want %q", calls[1], want)
+	}
+	if got := joinShortBeats(want); got != want {
+		t.Fatalf("joinShortBeats(%q) = %q, want the two sentences unchanged", want, got)
+	}
+}
+
+// The two deadlines are product values, measured: 400 ms is how long a held
+// opening beat may wait for the sentence it belongs to before it is heard as
+// late, and 350 ms is how long a complete sentence waits for a follower once
+// the brain goes quiet. Changing either is a product decision, not a tuning
+// detail, so the numbers are pinned here.
+func TestGroupingDeadlinesAreTheMeasuredValues(t *testing.T) {
+	if openingHoldAfter != 400*time.Millisecond {
+		t.Errorf("openingHoldAfter = %v, want 400ms", openingHoldAfter)
+	}
+	if idleFlushAfter != 350*time.Millisecond {
+		t.Errorf("idleFlushAfter = %v, want 350ms", idleFlushAfter)
+	}
+}
+
+// The opening's deadline forces a held beat out, but not a tag with no prose:
+// "[gasp]" spoken alone is the defect the hold must not create. The guard is
+// ready()'s, and the deadline case has to consult it rather than flush.
+func TestOpeningHoldDoesNotSpeakATagAlone(t *testing.T) {
+	provider := &groupingFakeTTS{fakeTTS: fakeTTS{vocalTags: true}, joins: true}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	// Only the opening hold can fire: the idle timer is pushed out of reach so
+	// a flush here is the deadline case's doing and nothing else's.
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), idleFlush: time.Minute, openingHold: time.Millisecond}
+
+	chunks := make(chan string)
+	done := make(chan brain.StreamResult, 1)
+	go func() {
+		defer close(chunks)
+		defer close(done)
+		chunks <- "[gasp]. "
+		time.Sleep(200 * time.Millisecond)
+		if got := provider.Texts(); len(got) != 0 {
+			t.Errorf("Synthesize calls = %q, want the sound held for a sentence", got)
+		}
+		chunks <- "Really?"
+		done <- brain.StreamResult{}
+	}()
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, _, err := p.streamResponse(ctx, cancel, &brain.Stream{Chunks: chunks, Done: done}, false, metrics, turn, nil); err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+
+	got := provider.Texts()
+	if len(got) != 1 {
+		t.Fatalf("Synthesize calls = %q, want the tag carried into the sentence", got)
+	}
+	if !strings.Contains(got[0], "[gasp]") || !strings.Contains(got[0], "Really?") {
+		t.Fatalf("synthesized %q, want the tag and the sentence together", got[0])
 	}
 }
 
@@ -452,6 +513,8 @@ func TestJoinShortBeats(t *testing.T) {
 		{name: "a package path is not a beat", in: "Run go test ./... Then check.", want: "Run go test ./... Then check."},
 		// An acronym and a PR number are not the start of a clause.
 		{name: "an acronym follower keeps its capitals", in: "Hm. NASA called.", want: "Hm, NASA called."},
+		// "i went home" is a spelling mistake the engine reads as a word.
+		{name: "a one-letter follower keeps its capital", in: "Hm. I went home.", want: "Hm, I went home."},
 		{name: "an initialism follower keeps its capitals", in: "Oh. PR 210 is ready.", want: "Oh, PR 210 is ready."},
 		{name: "initials are not beats", in: "J. R. R. Tolkien wrote it.", want: "J. R. R. Tolkien wrote it."},
 		// The period after a list number is numbering, not a pause.

@@ -197,6 +197,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	var voiceBatch []string
 	var batchTextReady time.Time
 	var batchBreak bool
+	// routed reports that the last takeSentence admitted a segment, so a timer
+	// case that took one in its own round knows its deadline decision is stale.
+	var routed bool
 	lastGroupChars := 0
 	// idle fires when a complete sentence has been buffered and the brain has
 	// gone quiet: a tool call or a long pause must not hold speech hostage.
@@ -225,9 +228,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		}
 		text := strings.Join(voiceBatch, " ")
 		// The loop, not the text, decides whether this group may be rewritten
-		// into one contour: it is the only place that knows the group was
-		// assembled by holding a short beat for the sentence it belongs to.
-		joinBeats := grouping.textualJoin && joinableBeatGroup(voiceBatch)
+		// into one contour: it is the only place that knows the text is a group
+		// it assembled itself rather than a whole reply. joinShortBeats leaves
+		// everything but a held beat alone, so no further condition is needed.
+		joinBeats := grouping.textualJoin
 		if !watchdogArmed {
 			watchdogArmed = true
 			// Sized from the flushed group, not the first admitted segment:
@@ -265,6 +269,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// segment, and the marker released at end of stream, which has already
 	// been gated, cleaned and recorded.
 	admitToGroup := func(speakable string, paragraphStart, breakAfter bool) {
+		routed = true
 		turn.to(TurnSpeaking)
 		now := time.Now()
 		if metrics.firstSegment.IsZero() {
@@ -507,17 +512,28 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 
 		case <-hold.C:
-			// The opening's deadline. Only an opening group can have armed it,
-			// and nothing has flushed yet, so the queue has room by
-			// construction. A follower ready in this same round still merges —
-			// the deadline bounds the wait, it does not race the sentence.
+			// The opening's deadline. A follower ready in this same round still
+			// merges — the deadline bounds the wait, it does not race the
+			// sentence. The handoff below cannot block the turn: the queue is
+			// checked first and the deadline is re-armed when it is full.
 			if len(voiceBatch) == 0 || interrupted {
 				continue
 			}
+			routed = false
 			select {
 			case sentence, ok := <-sentenceCh:
 				takeSentence(sentence, ok)
+				// The follower the beat was held for arrived in this round and
+				// made its own flush decision; the deadline it beat does not
+				// then force the group out from under it.
+				if routed {
+					continue
+				}
 			default:
+			}
+			if pending >= voiceQueueDepth {
+				armHold()
+				continue
 			}
 			// forced, so the group goes even though it is still all beats. The
 			// one thing the deadline does not force is a tag-only tail.

@@ -67,11 +67,11 @@ func TestTextModeSpeaksTheSameAsProgressive(t *testing.T) {
 // else. On an engine that re-splits sentence punctuation the progressive path
 // may merge a held short beat into the sentence it belongs to — a group only
 // the turn loop can assemble, and one text mode never has, since it
-// synthesizes the whole reply as a single string. Every other difference,
-// markdown and fillers included, still fails the comparison.
-func saysTheSame(a, b string) bool {
-	beatJoined := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, ",", ".")) }
-	return beatJoined(a) == beatJoined(b)
+// synthesizes the whole reply as a single string. So the one allowance is
+// exactly that rewrite, applied to the typed text; every other difference,
+// markdown, fillers and markers included, still fails the comparison.
+func saysTheSame(progressive, typed string) bool {
+	return progressive == typed || progressive == joinShortBeats(typed)
 }
 
 // TestTextModeDropsFillerOnlyAndMarkdown pins the two concrete regressions,
