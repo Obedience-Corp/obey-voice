@@ -204,6 +204,12 @@ type EngineStats struct {
 	// its time.
 	Segments              int      `json:"segments"`
 	MedianSegmentsPerTurn *float64 `json:"median_segments_per_turn"`
+	// The rest of the turn's chunking shape, reported beside the latency
+	// figures because a grouping change moves these first: the median of the
+	// per-turn median segment length, and every boundary whose preceding
+	// segment was under the flush target the policy was aiming for.
+	MedianSegmentChars    *float64 `json:"median_segment_chars"`
+	ShortBoundaries       int      `json:"short_boundaries"`
 	MedianSegmentEngineMS *float64 `json:"median_segment_engine_ms"`
 	MedianSegmentSynthMS  *float64 `json:"median_segment_synth_ms"`
 	// MedianSegmentQueueMS is the wait behind earlier playback. It is
@@ -361,7 +367,7 @@ func StatsFor(runs []rawResult) EngineStats {
 	graces := make(map[float64]struct{})
 
 	var synthStage, firstChunkToAudio, modelCompleteToAudio, playbackStart []float64
-	var segmentsPerTurn, segEngine, segSynth, segQueue, segAudio, segRTF, firstSegRTF []float64
+	var segmentsPerTurn, segmentChars, segEngine, segSynth, segQueue, segAudio, segRTF, firstSegRTF []float64
 	var deadAir, deadAirShare []float64
 
 	for _, r := range runs {
@@ -425,6 +431,12 @@ func StatsFor(runs []rawResult) EngineStats {
 		}
 
 		segmentsPerTurn = append(segmentsPerTurn, float64(len(r.Metrics.Segments)))
+		// Zero is "not reported" for a record written before the shape
+		// existed, not a turn whose segments were empty.
+		if r.Metrics.MedianSegmentChars > 0 {
+			segmentChars = append(segmentChars, float64(r.Metrics.MedianSegmentChars))
+		}
+		stats.ShortBoundaries += r.Metrics.ShortBoundaries
 		for _, seg := range r.Metrics.Segments {
 			if seg.Fallback {
 				stats.SegmentsFallback++
@@ -472,6 +484,7 @@ func StatsFor(runs []rawResult) EngineStats {
 	stats.MedianDeadAirShare = roundPtr(percentile(deadAirShare, 50), 4)
 	stats.P90PlaybackStartMS = roundPtr(percentile(playbackStart, 90), 1)
 	stats.MedianSegmentsPerTurn = roundPtr(percentile(segmentsPerTurn, 50), 1)
+	stats.MedianSegmentChars = roundPtr(percentile(segmentChars, 50), 1)
 	stats.MedianSegmentEngineMS = roundPtr(percentile(segEngine, 50), 1)
 	stats.MedianSegmentSynthMS = roundPtr(percentile(segSynth, 50), 1)
 	stats.MedianSegmentQueueMS = roundPtr(percentile(segQueue, 50), 1)

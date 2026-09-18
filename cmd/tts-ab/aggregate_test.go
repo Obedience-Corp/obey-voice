@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -57,6 +58,49 @@ func TestRawMetricsReadsTheSegmentShape(t *testing.T) {
 	if m.SegmentCount != 4 || m.MedianSegmentChars != 96 || m.ShortBoundaries != 1 {
 		t.Fatalf("segment shape = %d/%d/%d, want 4/96/1",
 			m.SegmentCount, m.MedianSegmentChars, m.ShortBoundaries)
+	}
+}
+
+// Decoding the shape is not reporting it: the artifact is what a grouping A/B
+// is read off, so the three chunking figures have to appear in the engine's
+// column under stable keys.
+func TestStatsForReportsTheChunkingShape(t *testing.T) {
+	short := turn("kokoro", "", 2, seg(0, time.Second, 1), seg(1, time.Second, 1))
+	short.Metrics.MedianSegmentChars, short.Metrics.ShortBoundaries = 80, 1
+	long := turn("kokoro", "", 3, seg(0, time.Second, 1))
+	long.Metrics.MedianSegmentChars, long.Metrics.ShortBoundaries = 120, 2
+
+	stats := StatsFor([]rawResult{short, long})
+	if got := value(t, stats.MedianSegmentChars); got != 100 {
+		t.Errorf("MedianSegmentChars = %v, want 100 (the median of 80 and 120)", got)
+	}
+	if stats.ShortBoundaries != 3 {
+		t.Errorf("ShortBoundaries = %d, want 3 (the total across both turns)", stats.ShortBoundaries)
+	}
+	if got := value(t, stats.MedianSegmentsPerTurn); got != 1.5 {
+		t.Errorf("MedianSegmentsPerTurn = %v, want 1.5", got)
+	}
+
+	encoded, err := json.Marshal(stats)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, key := range []string{`"median_segments_per_turn":1.5`, `"median_segment_chars":100`, `"short_boundaries":3`} {
+		if !strings.Contains(string(encoded), key) {
+			t.Errorf("artifact column is missing %s: %s", key, encoded)
+		}
+	}
+}
+
+// A record written before the shape existed carries zeros, and a zero median
+// is not a measurement of 0 characters.
+func TestStatsForOmitsAnUnreportedSegmentShape(t *testing.T) {
+	stats := StatsFor([]rawResult{turn("kokoro", "", 2, seg(0, time.Second, 1))})
+	if stats.MedianSegmentChars != nil {
+		t.Errorf("MedianSegmentChars = %v, want null", *stats.MedianSegmentChars)
+	}
+	if stats.ShortBoundaries != 0 {
+		t.Errorf("ShortBoundaries = %d, want 0", stats.ShortBoundaries)
 	}
 }
 

@@ -962,36 +962,77 @@ func TestStallBudgetIsSizedFromTheFlushedGroup(t *testing.T) {
 
 // A list marker is a segment to the chunker and dead air to the listener: the
 // talk-path bench caught "1." and "2." each spoken alone with 500-800 ms of
-// silence behind them. They stay in the transcript, where numbering reads.
-func TestEnumeratorSegmentsAreNotSpoken(t *testing.T) {
-	for _, joins := range []bool{false, true} {
-		t.Run(fmt.Sprintf("joins %v", joins), func(t *testing.T) {
-			provider := &groupingFakeTTS{joins: joins}
-			calls, transcript := runScript(t, provider, "Here is my routine. 1. Wake up at six. 2. Stretch.")
-			for i, call := range calls {
-				for _, marker := range []string{"1.", "2."} {
-					if strings.Contains(call, marker) {
-						t.Errorf("call %d = %q, want the %q marker dropped from speech", i, call, marker)
+// silence behind them. A marker another sentence follows is numbering, whether
+// it opens the reply or arrives mid-way. It stays in the transcript, where the
+// numbering reads.
+func TestListMarkersAreNotSpoken(t *testing.T) {
+	for _, reply := range []string{
+		"Here is my routine. 1. Wake up at six. 2. Stretch.",
+		"1. Wake up at six. 2. Stretch. 3. Coffee.",
+	} {
+		for _, joins := range []bool{false, true} {
+			t.Run(fmt.Sprintf("joins %v %.20s", joins, reply), func(t *testing.T) {
+				provider := &groupingFakeTTS{joins: joins}
+				calls, transcript := runScript(t, provider, reply)
+				for i, call := range calls {
+					for _, marker := range []string{"1.", "2."} {
+						if strings.Contains(call, marker) {
+							t.Errorf("call %d = %q, want the %q marker dropped from speech", i, call, marker)
+						}
+					}
+					if strings.HasPrefix(strings.TrimSpace(call), ",") {
+						t.Errorf("call %d = %q, want no residue where the marker was", i, call)
 					}
 				}
-				if strings.HasPrefix(strings.TrimSpace(call), ",") {
-					t.Errorf("call %d = %q, want no residue where the marker was", i, call)
+				if !strings.Contains(strings.Join(calls, " "), "Wake up at six") {
+					t.Errorf("Synthesize calls = %q, want the item's prose spoken", calls)
 				}
+				for _, marker := range []string{"1.", "2."} {
+					if !strings.Contains(transcript, marker) {
+						t.Errorf("transcript = %q, want the %q marker kept", transcript, marker)
+					}
+				}
+			})
+		}
+	}
+}
+
+// A marker nothing follows is the answer, not numbering: "Let me check. 4."
+// loses the answer if the marker is dropped on sight. The hold is what tells
+// them apart, so the number is spoken with the lead-in it belongs to.
+func TestAMarkerNothingFollowsIsSpoken(t *testing.T) {
+	for _, reply := range []string{
+		"Let me check. 4.",
+		"The count came back. 100.",
+	} {
+		t.Run(reply, func(t *testing.T) {
+			calls, transcript := runScript(t, &groupingFakeTTS{joins: true}, reply)
+			if got := strings.Join(calls, " "); got != reply {
+				t.Fatalf("spoke %q, want %q — the trailing number is the reply", got, reply)
 			}
-			for _, marker := range []string{"1.", "2."} {
-				if !strings.Contains(transcript, marker) {
-					t.Errorf("transcript = %q, want the %q marker kept", transcript, marker)
-				}
+			if transcript != reply {
+				t.Errorf("transcript = %q, want %q", transcript, reply)
 			}
 		})
 	}
 }
 
-// A standalone numeric reply is an answer, not a marker: "4." to "what is two
-// plus two" has to be spoken. Only a marker that follows speech is dropped.
+// A standalone numeric reply is an answer too: "4." to "what is two plus two"
+// has to be spoken, and it is the whole turn.
 func TestALoneNumericReplyIsStillSpoken(t *testing.T) {
 	calls := speakScript(t, &groupingFakeTTS{joins: true}, "4.")
 	if len(calls) != 1 || calls[0] != "4." {
 		t.Fatalf("Synthesize calls = %q, want the numeric answer spoken", calls)
+	}
+}
+
+// Initials are segments of their own to the chunker, and a single-letter rule
+// deletes a name: "J. R. Tolkien" came back as "Tolkien". Only numbers and
+// bullets are markers.
+func TestInitialsAreNotMarkers(t *testing.T) {
+	const reply = "His name is long. J. R. Tolkien wrote it."
+	calls := speakScript(t, &groupingFakeTTS{joins: true}, reply)
+	if got := strings.Join(calls, " "); got != reply {
+		t.Fatalf("spoke %q, want %q — the initials are part of the name", got, reply)
 	}
 }

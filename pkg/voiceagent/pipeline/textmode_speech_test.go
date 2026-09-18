@@ -48,6 +48,9 @@ func TestTextModeSpeaksTheSameAsProgressive(t *testing.T) {
 		{"markdown and a stripped filler", []string{"Here is **bold** text. Umm, and a second thought."}},
 		{"plain reply", []string{"The capital of France is Paris. It has about two million people."}},
 		{"voiced filler leading real content", []string{"Hmm, that is a good question. The answer is yes."}},
+		// The marker rule runs segment by segment on one path and over the
+		// whole reply on the other, so a list is where they drift apart.
+		{"a numbered list", []string{"1. Wake up at six. 2. Stretch. 3. Coffee."}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,6 +128,26 @@ func TestSpeakableFromResponseNeedsSegmentGranularity(t *testing.T) {
 	}
 	if strings.HasPrefix(got, "Hmm.") {
 		t.Errorf("leading filler survived segmentation: %q", got)
+	}
+}
+
+// The deferred marker rule, applied to a whole reply instead of segment by
+// segment: a marker another sentence follows is a list's numbering, a marker
+// nothing follows is the answer, and initials are neither.
+func TestTextModeDefersTheMarkerDecision(t *testing.T) {
+	for _, tc := range []struct{ name, reply, want string }{
+		{"a trailing number is the answer", "Let me check. 4.", "Let me check. 4."},
+		{"a trailing count is the answer", "The count came back. 100.", "The count came back. 100."},
+		{"a lone number is the whole reply", "4.", "4."},
+		{"initials are not markers", "His name is long. J. R. Tolkien wrote it.", "His name is long. J. R. Tolkien wrote it."},
+		{"list numbering is dropped", "1. Wake up at six. 2. Stretch. 3. Coffee.", "Wake up at six. Stretch. Coffee."},
+		{"numbering after a lead-in is dropped", "Here is my routine. 1. Wake up at six. 2. Stretch.", "Here is my routine. Wake up at six. Stretch."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := speakableFromResponse(tc.reply); got != tc.want {
+				t.Errorf("speakableFromResponse(%q) = %q, want %q", tc.reply, got, tc.want)
+			}
+		})
 	}
 }
 

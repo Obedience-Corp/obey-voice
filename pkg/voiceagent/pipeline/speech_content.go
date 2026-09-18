@@ -170,18 +170,25 @@ func allShortBeats(group []string) bool {
 	return true
 }
 
-// enumeratorRE matches a segment that is only a list marker: "1.", "(2)",
-// "a)", and the bullets a model writes on their own line.
-var enumeratorRE = regexp.MustCompile(`^(?:\(?\d{1,3}[.)]|[A-Za-z][.)]|[-*•–])$`)
+// markerRE matches a segment that is only a list marker: "1.", "(2)", and the
+// bullets a model writes on their own line. Numbers and bullets only — a
+// single letter is an initial ("J. R. Tolkien") far more often than it is a
+// lettered list, and dropping it deletes a name.
+var markerRE = regexp.MustCompile(`^(?:\(?\d{1,3}[.)]|[-*•–—])$`)
 
-// enumeratorOnlySegment reports a segment with no words in it — the number or
+// markerOnlySegment reports a segment with no words in it — the number or
 // bullet that opens a list item. The chunker ends a sentence at "1." and the
 // item's prose becomes the next segment, so speaking the marker costs a whole
 // synthesis call for two characters and leaves the item stranded behind it
 // (measured on the talk path: "1." and "2." spoken alone, 500-800 ms of dead
-// air each). It stays in the transcript, where the numbering is readable.
-func enumeratorOnlySegment(s string) bool {
-	return enumeratorRE.MatchString(strings.TrimSpace(s))
+// air each).
+//
+// Nothing in the segment itself says whether it is numbering or an answer, so
+// neither path decides on sight: a marker is held, dropped when speech follows
+// it, and spoken when nothing does ("Let me check. 4."). Both paths keep it in
+// the transcript either way, where the numbering is readable.
+func markerOnlySegment(s string) bool {
+	return markerRE.MatchString(strings.TrimSpace(s))
 }
 
 // speakableChars is a segment's length as the listener hears it: vocal tags
@@ -430,6 +437,12 @@ func speakableFromResponse(gated string) string {
 				continue
 			}
 			seen[cleaned] = struct{}{}
+			// The same deferred marker rule the turn loop applies segment by
+			// segment: a marker another sentence follows was a list's
+			// numbering, a marker nothing follows was the answer.
+			if n := len(kept); n > 0 && markerOnlySegment(kept[n-1]) {
+				kept = kept[:n-1]
+			}
 			kept = append(kept, cleaned)
 		}
 	}

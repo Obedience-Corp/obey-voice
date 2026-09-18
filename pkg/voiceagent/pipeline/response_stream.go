@@ -259,6 +259,56 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		stopIdle()
 		stopHold()
 	}
+	// admitToGroup puts one admitted segment into the held group and hands the
+	// group off when the flush policy says so. paragraphStart is a blank line
+	// before this segment, breakAfter one inside it. Two callers: every routed
+	// segment, and the marker released at end of stream, which has already
+	// been gated, cleaned and recorded.
+	admitToGroup := func(speakable string, paragraphStart, breakAfter bool) {
+		turn.to(TurnSpeaking)
+		now := time.Now()
+		if metrics.firstSegment.IsZero() {
+			metrics.firstSegment = now
+		}
+		if metrics.firstAdmit.IsZero() {
+			metrics.firstAdmit = now
+		}
+		// A blank line before this sentence, a group that would outgrow the
+		// ceiling, or a sentence that overshoots the group before it, ends the
+		// held group before this sentence joins it. All three yield to a held
+		// tag-only tail, which has no prose of its own and has to ride into
+		// this sentence — the rule ready() already applies. The break itself is
+		// deliberately dropped when the tail is a tag: a paragraph boundary is
+		// worth less than not speaking a sound on its own.
+		if (paragraphStart && !heldTagTail(voiceBatch)) ||
+			grouping.exceedsCeiling(voiceBatch, speakable) ||
+			grouping.overshoots(voiceBatch, speakable, lastGroupChars) {
+			flushVoiceBatch()
+		}
+		// Read after the veto: a flush just above makes this segment the first
+		// of its group, and the opening's deadline starts from the segment that
+		// opens it.
+		openingGroup := lastGroupChars == 0 && len(voiceBatch) == 0
+		voiceBatch = append(voiceBatch, speakable)
+		if batchTextReady.IsZero() {
+			batchTextReady = now
+		}
+		if breakAfter {
+			batchBreak = true
+		}
+		// At most one handoff per segment: the intake gate guarantees a single
+		// free queue slot, and a blocking send inside the loop wedges the
+		// turn. A group that cannot go now goes on the idle timer.
+		if grouping.ready(voiceBatch, batchBreak, lastGroupChars, false) && pending < voiceQueueDepth {
+			flushVoiceBatch()
+			return
+		}
+		if openingGroup {
+			armHold()
+		}
+		armIdle()
+	}
+
 	// routeSegment sends one think-filtered segment to the transcript and, if it
 	// survives gating and cleaning, to the voice batch. The end-of-stream think
 	// flush enters here too, so both entry points share one copy of the
@@ -310,57 +360,17 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		speakable, admission := proj.admit(voiceText)
 		if admission != speechAdmitted {
 			// Duplicate prose is already represented by an earlier queued
-			// segment. Its actual playback receipt still governs delivery.
-			if metrics.delivery != nil && admission != speechAlreadyAdmitted && strings.TrimSpace(text) != "" {
+			// segment, and a held marker is not lost — it is spoken at end of
+			// stream unless speech follows it. Neither is a skipped delivery.
+			if metrics.delivery != nil && admission == speechNotSpeakable && strings.TrimSpace(text) != "" {
 				metrics.delivery.skipped = true
 			}
 			return
 		}
 
-		turn.to(TurnSpeaking)
-		now := time.Now()
-		if metrics.firstSegment.IsZero() {
-			metrics.firstSegment = now
-		}
-		if metrics.firstAdmit.IsZero() {
-			metrics.firstAdmit = now
-		}
-		// A blank line before this sentence, a group that would outgrow the
-		// ceiling, or a sentence that overshoots the group before it, ends the
-		// held group before this sentence joins it. All three yield to a held
-		// tag-only tail, which has no prose of its own and has to ride into
-		// this sentence — the rule ready() already applies. The break itself is
-		// deliberately dropped when the tail is a tag: a paragraph boundary is
-		// worth less than not speaking a sound on its own.
-		if (paragraphStart && !heldTagTail(voiceBatch)) ||
-			grouping.exceedsCeiling(voiceBatch, speakable) ||
-			grouping.overshoots(voiceBatch, speakable, lastGroupChars) {
-			flushVoiceBatch()
-		}
-		// Read after the veto: a flush just above makes this segment the first
-		// of its group, and the opening's deadline starts from the segment that
-		// opens it.
-		openingGroup := lastGroupChars == 0 && len(voiceBatch) == 0
-		voiceBatch = append(voiceBatch, speakable)
-		if batchTextReady.IsZero() {
-			batchTextReady = now
-		}
 		// A blank line inside the segment ends the group after it. Read from
 		// the raw segment: cleaning runs TrimSpace and does not preserve it.
-		if strings.Contains(text, "\n\n") {
-			batchBreak = true
-		}
-		// At most one handoff per segment: the intake gate guarantees a single
-		// free queue slot, and a blocking send inside the loop wedges the
-		// turn. A group that cannot go now goes on the idle timer.
-		if grouping.ready(voiceBatch, batchBreak, lastGroupChars, false) && pending < voiceQueueDepth {
-			flushVoiceBatch()
-			return
-		}
-		if openingGroup {
-			armHold()
-		}
-		armIdle()
+		admitToGroup(speakable, paragraphStart, strings.Contains(text, "\n\n"))
 	}
 
 	// drainToken takes a pending tick without blocking. A tick delivered in the
@@ -397,6 +407,11 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// than drops so that if the hold ever carries content, the loop
 			// judges it by the same predicate as every other segment.
 			routeSegment(proj.flushThink(), false)
+			// Nothing followed the marker the projection was holding, so it
+			// was the reply, not a list's numbering: "Let me check. 4."
+			if marker := proj.releaseMarker(); marker != "" && !interrupted {
+				admitToGroup(marker, false, false)
+			}
 			// A half-full batch is still a real segment: flush it before
 			// closing, or the last sentence of every odd-length reply is
 			// silently never spoken. This is the one handoff that may block
