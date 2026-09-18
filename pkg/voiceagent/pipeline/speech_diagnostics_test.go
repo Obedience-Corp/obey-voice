@@ -71,7 +71,7 @@ func TestFallbackSegmentRecordsActualProviderIdentity(t *testing.T) {
 	defer stop()
 	out := make(chan playbackEvent, 2)
 	loopDone := make(chan struct{})
-	if !p.synthesizeSegment(context.Background(), loopDone, "fallback sentence", 0, new(atomic.Bool), out, new(bool)) {
+	if !p.synthesizeSegment(context.Background(), loopDone, "fallback sentence", 0, new(atomic.Bool), out, new(fallbackLatch)) {
 		t.Fatal("synthesizeSegment returned false")
 	}
 	first := <-out

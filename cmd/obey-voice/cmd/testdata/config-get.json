@@ -466,6 +466,10 @@
       "value": 200,
       "source": "default"
     },
+    "tts_lookahead": {
+      "value": 2,
+      "source": "default"
+    },
     "tts_place": {
       "value": "local",
       "source": "default"

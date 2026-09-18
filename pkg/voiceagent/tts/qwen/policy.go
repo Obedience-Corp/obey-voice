@@ -73,6 +73,11 @@ func (q *Qwen3TTS) SegmentRamp() float64 { return 0.55 }
 // per-request fixed cost is paid once. Punctuation stays as written.
 func (q *Qwen3TTS) JoinsSentences() bool { return true }
 
+// Concurrency is 1: one worker subprocess holds sessionMu for a whole request,
+// so a second caller only waits on that mutex. A pool of workers is the
+// qwen_tts_workers experiment, gated on measured throughput.
+func (q *Qwen3TTS) Concurrency() int { return 1 }
+
 // WholeSentencePlayback is supported by Qwen's stream=false policy (including
 // workers that do not advertise incremental PCM). The diagnostic uses this as
 // a capability fact and never treats it as a promise of faster speech.

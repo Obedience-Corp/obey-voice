@@ -112,6 +112,7 @@ when you select it.
 | `tts_worker_token` | empty | `OBEY_SPEECH_TOKEN` | Shared secret the speech worker requires. **Required** whenever `tts_place: lan` — a missing token is refused at validation, not at connect time. `config get` reports only whether it is set |
 | `tts_lan_strict` | `false` | | Refuse to start a conversation when the speech worker is unreachable, instead of speaking with Kokoro here |
 | `tts_lan_timeout_ms` | `200` | | Dial and handshake budget for the speech worker. It never bounds the worker's model load |
+| `tts_lookahead` | `2` (1–8) | `TTS_LOOKAHEAD` | How many admitted speech segments a reply may hold ahead of the one playing. `2` is one segment playing while the next is synthesized, which is what the pipeline has always done. It is raised to the speech engine's own concurrency when that is higher; every shipped engine synthesizes one request at a time, so raising it alone buys nothing |
 | `speech_speed` | `0.95` | | Playback speed |
 | `playback_volume` | `1` | | Linear playback gain. `1` is unchanged; `0` is silent; values up to `4` boost a quiet speaker. Settings → Audio has a slider; takes effect immediately |
 | `qwen_tts_binary` | empty | `QWEN_TTS_BINARY` | Empty uses the native package worker under `models_dir/qwen3-tts`; set with `qwen_tts_model` for an explicit external worker |

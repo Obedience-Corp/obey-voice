@@ -57,6 +57,9 @@ type Config struct {
 	// TTSLanTimeoutMS bounds the dial and handshake, never the worker's model
 	// load, which is seconds on a cold speech-serve.
 	TTSLanTimeoutMS int `mapstructure:"tts_lan_timeout_ms"`
+	// TTSLookahead is how many speech segments a reply may have queued but not
+	// yet played. See tts_lookahead.go TTSLookaheadOf.
+	TTSLookahead int `mapstructure:"tts_lookahead"`
 
 	// STT
 	STTProvider string `mapstructure:"stt_provider"`

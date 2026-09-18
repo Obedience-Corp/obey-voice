@@ -61,6 +61,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tts_worker_token", "")
 	v.SetDefault("tts_lan_strict", false)
 	v.SetDefault("tts_lan_timeout_ms", DefaultTTSLanTimeoutMS)
+	v.SetDefault("tts_lookahead", DefaultTTSLookahead)
 
 	v.SetDefault("stt_provider", "sherpa-parakeet")
 	v.SetDefault("input_device", "")

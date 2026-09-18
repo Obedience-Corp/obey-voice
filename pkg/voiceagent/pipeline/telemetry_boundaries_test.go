@@ -184,8 +184,8 @@ func TestFailedSynthesisRetainsAttemptTelemetryWithoutPlayback(t *testing.T) {
 	queued := time.Now()
 	time.Sleep(time.Millisecond)
 	outcome := p.synthesizeSegmentObserved(context.Background(), make(chan struct{}), synthWork{
-		sentence: "failed sentence", textReady: queued, queuedAt: queued,
-	}, 4, new(atomic.Bool), make(chan playbackEvent, 1), nil)
+		sentence: "failed sentence", index: 4, textReady: queued, queuedAt: queued,
+	}, nil, new(atomic.Bool), make(chan playbackEvent, 1), nil)
 	if outcome.enqueued || outcome.failure == nil {
 		t.Fatalf("outcome = %+v, want failed not-enqueued telemetry", outcome)
 	}
