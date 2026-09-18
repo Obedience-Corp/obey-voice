@@ -51,6 +51,12 @@ func TestTextModeSpeaksTheSameAsProgressive(t *testing.T) {
 		// The marker rule runs segment by segment on one path and over the
 		// whole reply on the other, so a list is where they drift apart.
 		{"a numbered list", []string{"1. Wake up at six. 2. Stretch. 3. Coffee."}},
+		// A list whose items repeat: the drop has to run before the duplicate
+		// check on both paths, or text mode keeps the second marker after its
+		// item is dropped as a repeat and speaks a number alone.
+		{"a numbered list that repeats itself", []string{"1. Yes. 2. Yes."}},
+		// Two markers in a row are one answer, and nothing follows them.
+		{"two trailing markers", []string{"The codes are. 1. 2."}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -142,6 +148,9 @@ func TestTextModeDefersTheMarkerDecision(t *testing.T) {
 		{"initials are not markers", "His name is long. J. R. Tolkien wrote it.", "His name is long. J. R. Tolkien wrote it."},
 		{"list numbering is dropped", "1. Wake up at six. 2. Stretch. 3. Coffee.", "Wake up at six. Stretch. Coffee."},
 		{"numbering after a lead-in is dropped", "Here is my routine. 1. Wake up at six. 2. Stretch.", "Here is my routine. Wake up at six. Stretch."},
+		{"a repeated item still drops its marker", "1. Yes. 2. Yes.", "Yes."},
+		{"two trailing markers are one answer", "The codes are. 1. 2.", "The codes are. 1. 2."},
+		{"two markers speech follows are numbering", "Here is the list. 1. 2. Coffee.", "Here is the list. Coffee."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := speakableFromResponse(tc.reply); got != tc.want {

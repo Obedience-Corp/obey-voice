@@ -797,6 +797,10 @@ type fakePlayer struct {
 	queue      []*playbackRequest
 	finishedAt []time.Time
 	stopCount  int
+	// outstanding is how many playbacks have been handed over and not yet
+	// reported finished — the turn loop's pending count as the player sees it.
+	outstanding    int
+	maxOutstanding int
 }
 
 type playbackRequest struct {
@@ -831,6 +835,8 @@ func (p *fakePlayer) PlayStream(ctx context.Context, stream *audio.PCMStream) (*
 
 	p.mu.Lock()
 	p.queue = append(p.queue, req)
+	p.outstanding++
+	p.maxOutstanding = max(p.maxOutstanding, p.outstanding)
 	p.mu.Unlock()
 	p.signal()
 
@@ -849,6 +855,9 @@ func (p *fakePlayer) Stop() {
 		close(active.stop)
 	}
 	for _, req := range queued {
+		p.mu.Lock()
+		p.outstanding--
+		p.mu.Unlock()
 		req.done <- audio.PlaybackResult{Interrupted: true}
 		close(req.done)
 	}
@@ -870,6 +879,14 @@ func (p *fakePlayer) FinishedTimes() []time.Time {
 	out := make([]time.Time, len(p.finishedAt))
 	copy(out, p.finishedAt)
 	return out
+}
+
+// MaxOutstanding is the most playbacks that were ever handed over and not yet
+// finished: the high-water mark of the turn loop's pending count.
+func (p *fakePlayer) MaxOutstanding() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.maxOutstanding
 }
 
 func (p *fakePlayer) StopCount() int {
@@ -924,6 +941,7 @@ func (p *fakePlayer) loop() {
 			p.active = nil
 		}
 		p.finishedAt = append(p.finishedAt, time.Now())
+		p.outstanding--
 		p.mu.Unlock()
 
 		// Publish completion only after the fake's observable state is settled.

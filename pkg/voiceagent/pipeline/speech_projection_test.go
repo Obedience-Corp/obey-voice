@@ -134,6 +134,20 @@ func TestSpeechProjectionDefersTheMarkerDecision(t *testing.T) {
 		}
 	})
 
+	t.Run("two markers nothing follows are one answer", func(t *testing.T) {
+		heard := speakAll(NewSpeechProjection(), "The codes are.", "1.", "2.")
+		if len(heard) != 2 || heard[1] != "1. 2." {
+			t.Fatalf("spoke %q, want both numbers released together", heard)
+		}
+	})
+
+	t.Run("speech after two markers drops both", func(t *testing.T) {
+		heard := speakAll(NewSpeechProjection(), "Here is the list.", "1.", "2.", "Coffee and a long walk.")
+		if len(heard) != 2 || heard[1] != "Coffee and a long walk." {
+			t.Fatalf("spoke %q, want the item without either marker", heard)
+		}
+	})
+
 	t.Run("initials are not markers", func(t *testing.T) {
 		heard := speakAll(NewSpeechProjection(), "His name is long.", "J.", "R.", "Tolkien wrote it.")
 		if len(heard) != 4 {

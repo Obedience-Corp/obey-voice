@@ -48,10 +48,13 @@ type SpeechProjection struct {
 	think  textclean.ThinkFilter
 	gate   voiceGate
 	spoken map[string]struct{}
-	// pendingMarker holds a segment that is only a list marker. Nothing in it
-	// tells numbering from an answer, so the decision waits for what follows:
-	// a segment admitted after it drops it, and end of stream speaks it.
-	pendingMarker string
+	// pendingMarkers holds the segments that are only list markers. Nothing in
+	// one tells numbering from an answer, so the decision waits for what
+	// follows: a segment admitted after them drops them all, and end of stream
+	// speaks them. They are held as a list because a model writes two in a row
+	// ("The codes are. 1. 2."), and each spoken alone is a synthesis call for
+	// two characters.
+	pendingMarkers []string
 }
 
 // NewSpeechProjection starts a projection for one turn.
@@ -69,13 +72,13 @@ func (p *SpeechProjection) Speak(segment string) SpokenSegment {
 }
 
 // Flush releases what the think filter still holds at end of stream and judges
-// it by the same rules, the way the turn loop's final routeSegment does. A
-// marker still held when nothing followed it is spoken here, as the turn loop
-// speaks it.
+// it by the same rules, the way the turn loop's final routeSegment does. The
+// markers still held when nothing followed them are spoken here, as the turn
+// loop speaks them.
 func (p *SpeechProjection) Flush() SpokenSegment {
 	seg := p.project(p.flushThink())
 	if seg.Speakable == "" {
-		seg.Speakable = p.releaseMarker()
+		seg.Speakable = p.releaseMarkers()
 	}
 	return seg
 }
@@ -119,7 +122,7 @@ const (
 	speechAdmitted
 	speechAlreadyAdmitted
 	// speechMarkerHeld is a list marker whose fate is not decided yet: it is
-	// neither spoken now nor lost. releaseMarker speaks it at end of stream,
+	// neither spoken now nor lost. releaseMarkers speaks it at end of stream,
 	// and the next admitted segment drops it.
 	speechMarkerHeld
 )
@@ -139,11 +142,13 @@ func (p *SpeechProjection) admit(voiceText string) (string, speechAdmissionStatu
 	// listener, but "4." on its own is an answer to a question. Hold it: the
 	// segment after it decides, and the transcript keeps it either way.
 	if !hasVocalTag(speakable) && markerOnlySegment(speakable) {
-		p.pendingMarker = speakable
+		p.pendingMarkers = append(p.pendingMarkers, speakable)
 		return "", speechMarkerHeld
 	}
-	// Speech followed the marker, so it was numbering.
-	p.pendingMarker = ""
+	// Speech followed the markers, so they were numbering. Dropped before the
+	// duplicate check below: restated prose still answers the marker in front
+	// of it, and leaving the hold set speaks a number nothing belongs to.
+	p.pendingMarkers = nil
 	// Sound-only beats ([moan]) may repeat in one turn on purpose. Restated
 	// prose after a phantom tool still drops.
 	if speakableSegment(stripVocalTags(speakable)) {
@@ -155,13 +160,14 @@ func (p *SpeechProjection) admit(voiceText string) (string, speechAdmissionStatu
 	return speakable, speechAdmitted
 }
 
-// releaseMarker hands back a marker nothing followed — the reply was the
-// number — and clears the hold. Empty when none is held.
-func (p *SpeechProjection) releaseMarker() string {
-	marker := p.pendingMarker
-	p.pendingMarker = ""
-	if marker != "" {
-		p.spoken[marker] = struct{}{}
+// releaseMarkers hands back the markers nothing followed — the reply was the
+// number — and clears the hold. Empty when none is held. Joined, because two
+// markers in a row are one answer and one synthesis call.
+func (p *SpeechProjection) releaseMarkers() string {
+	if len(p.pendingMarkers) == 0 {
+		return ""
 	}
-	return marker
+	markers := strings.Join(p.pendingMarkers, " ")
+	p.pendingMarkers = nil
+	return markers
 }

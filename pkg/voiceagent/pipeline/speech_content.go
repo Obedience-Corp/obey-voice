@@ -170,23 +170,25 @@ func allShortBeats(group []string) bool {
 	return true
 }
 
-// markerRE matches a segment that is only a list marker: "1.", "(2)", and the
-// bullets a model writes on their own line. Numbers and bullets only — a
-// single letter is an initial ("J. R. Tolkien") far more often than it is a
-// lettered list, and dropping it deletes a name.
-var markerRE = regexp.MustCompile(`^(?:\(?\d{1,3}[.)]|[-*•–—])$`)
+// markerRE matches a segment that is only a list marker: "1." and nothing
+// else. Numbers only, and only with a period — a single letter is an initial
+// ("J. R. Tolkien") far more often than it is a lettered list, and dropping it
+// deletes a name. A bullet never reaches here (it has nothing pronounceable,
+// so speakableSegment rejects it first) and the chunker does not end a
+// sentence at "1)", so neither form is written down as one.
+var markerRE = regexp.MustCompile(`^\d{1,3}\.$`)
 
-// markerOnlySegment reports a segment with no words in it — the number or
-// bullet that opens a list item. The chunker ends a sentence at "1." and the
-// item's prose becomes the next segment, so speaking the marker costs a whole
-// synthesis call for two characters and leaves the item stranded behind it
+// markerOnlySegment reports a segment with no words in it — the number that
+// opens a list item. The chunker ends a sentence at "1." and the item's prose
+// becomes the next segment, so speaking the marker costs a whole synthesis
+// call for two characters and leaves the item stranded behind it
 // (measured on the talk path: "1." and "2." spoken alone, 500-800 ms of dead
 // air each).
 //
 // Nothing in the segment itself says whether it is numbering or an answer, so
-// neither path decides on sight: a marker is held, dropped when speech follows
-// it, and spoken when nothing does ("Let me check. 4."). Both paths keep it in
-// the transcript either way, where the numbering is readable.
+// neither path decides on sight: markers are held, dropped when speech follows
+// them, and spoken when nothing does ("Let me check. 4."). Both paths keep them
+// in the transcript either way, where the numbering is readable.
 func markerOnlySegment(s string) bool {
 	return markerRE.MatchString(strings.TrimSpace(s))
 }
@@ -349,21 +351,38 @@ func lowerFirstLetter(s string) string {
 	return s
 }
 
-// shoutedWord reports an all-caps word ("NASA", "PR") or a single capital
-// letter, which is a pronoun or an initial ("I went home.", "J. R. Tolkien")
-// and never the start of a clause that may be lowercased.
+// shoutedWord reports a word the beat join may not lowercase: an all-caps word
+// ("NASA", "PR"), the pronoun "I" in every form it is written ("I", "I'm"), and
+// an initial, which carries its period ("J. R. Tolkien"). A bare "A" is none of
+// those — it is the article, and "Hm. A dog ran by." reads as one phrase.
 func shoutedWord(word string) bool {
 	letters := 0
+	var single rune
 	for _, r := range word {
 		if !unicode.IsLetter(r) {
 			continue
 		}
 		if unicode.IsLower(r) {
-			return false
+			return contractedPronoun(word)
 		}
+		single = r
 		letters++
 	}
+	if letters == 1 && single != 'I' {
+		return strings.ContainsRune(word, '.')
+	}
 	return letters >= 1
+}
+
+// contractedPronoun reports "I'm", "I'll", "I've", "I'd" and their curly-quote
+// forms: the pronoun with a lowercase tail, not a word that may be lowercased.
+func contractedPronoun(word string) bool {
+	r, size := utf8.DecodeRuneInString(word)
+	if r != 'I' {
+		return false
+	}
+	next, _ := utf8.DecodeRuneInString(word[size:])
+	return next == '\'' || next == '’'
 }
 
 // speakableSegment reports whether a cleaned segment earns a place in the
@@ -409,19 +428,28 @@ func speakableFromResponse(gated string) string {
 	var kept []string
 	seen := make(map[string]struct{})
 	for segment := range brain.ChunkSentencesRaw(input) {
-		if cleaned := brain.CleanForVoice(segment); speakableSegment(cleaned) {
-			if _, dup := seen[cleaned]; dup {
-				continue
-			}
-			seen[cleaned] = struct{}{}
-			// The same deferred marker rule the turn loop applies segment by
-			// segment: a marker another sentence follows was a list's
-			// numbering, a marker nothing follows was the answer.
-			if n := len(kept); n > 0 && markerOnlySegment(kept[n-1]) {
-				kept = kept[:n-1]
-			}
-			kept = append(kept, cleaned)
+		cleaned := brain.CleanForVoice(segment)
+		if !speakableSegment(cleaned) {
+			continue
 		}
+		// The same deferred marker rule the turn loop applies segment by
+		// segment, in the same order: markers wait for what follows them, and
+		// speech after them was the list's item. The drop runs before the
+		// duplicate check because admit clears the hold before its own — "1.
+		// Yes. 2. Yes." otherwise kept the second marker, whose follower was
+		// dropped as a repeat, and spoke a number the talk path never says.
+		if markerOnlySegment(cleaned) {
+			kept = append(kept, cleaned)
+			continue
+		}
+		for len(kept) > 0 && markerOnlySegment(kept[len(kept)-1]) {
+			kept = kept[:len(kept)-1]
+		}
+		if _, dup := seen[cleaned]; dup {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		kept = append(kept, cleaned)
 	}
 	return strings.Join(kept, " ")
 }

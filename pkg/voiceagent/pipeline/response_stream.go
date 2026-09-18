@@ -263,12 +263,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		stopIdle()
 		stopHold()
 	}
-	// admitToGroup puts one admitted segment into the held group and hands the
-	// group off when the flush policy says so. paragraphStart is a blank line
-	// before this segment, breakAfter one inside it. Two callers: every routed
-	// segment, and the marker released at end of stream, which has already
-	// been gated, cleaned and recorded.
-	admitToGroup := func(speakable string, paragraphStart, breakAfter bool) {
+	// noteAdmission stamps what the turn's first admitted speech is measured
+	// from, for either way a segment joins the held group.
+	noteAdmission := func() time.Time {
 		routed = true
 		turn.to(TurnSpeaking)
 		now := time.Now()
@@ -278,6 +275,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if metrics.firstAdmit.IsZero() {
 			metrics.firstAdmit = now
 		}
+		return now
+	}
+	// admitToGroup puts one admitted segment into the held group and hands the
+	// group off when the flush policy says so. paragraphStart is a blank line
+	// before this segment, breakAfter one inside it.
+	admitToGroup := func(speakable string, paragraphStart, breakAfter bool) {
+		now := noteAdmission()
 		// A blank line before this sentence, a group that would outgrow the
 		// ceiling, or a sentence that overshoots the group before it, ends the
 		// held group before this sentence joins it. All three yield to a held
@@ -312,6 +316,20 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			armHold()
 		}
 		armIdle()
+	}
+
+	// admitMarkerTail puts the markers released at end of stream into the held
+	// group with no policy in front of them. They are four characters at most,
+	// so they never earn a group of their own and no veto may fire here: a
+	// flush would be a second blocking send on a queue the loop has stopped
+	// servicing, and the final flush below already speaks them. An empty batch
+	// — a reply that was only the number — makes them the batch.
+	admitMarkerTail := func(markers string) {
+		now := noteAdmission()
+		voiceBatch = append(voiceBatch, markers)
+		if batchTextReady.IsZero() {
+			batchTextReady = now
+		}
 	}
 
 	// routeSegment sends one think-filtered segment to the transcript and, if it
@@ -412,10 +430,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// than drops so that if the hold ever carries content, the loop
 			// judges it by the same predicate as every other segment.
 			routeSegment(proj.flushThink(), false)
-			// Nothing followed the marker the projection was holding, so it
-			// was the reply, not a list's numbering: "Let me check. 4."
-			if marker := proj.releaseMarker(); marker != "" && !interrupted {
-				admitToGroup(marker, false, false)
+			// Nothing followed the markers the projection was holding, so they
+			// were the reply, not a list's numbering: "Let me check. 4."
+			if markers := proj.releaseMarkers(); markers != "" && !interrupted {
+				admitMarkerTail(markers)
 			}
 			// A half-full batch is still a real segment: flush it before
 			// closing, or the last sentence of every odd-length reply is
@@ -525,12 +543,22 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				takeSentence(sentence, ok)
 				// The follower the beat was held for arrived in this round and
 				// made its own flush decision; the deadline it beat does not
-				// then force the group out from under it.
+				// then force the group out from under it. It does have to be
+				// re-armed: this timer fires once, and the merged group is
+				// still the opening, which nothing else bounds — the follower
+				// merges, openingGroup is false, and the beat that was 41 ms
+				// from being spoken waited 844 ms for end of stream.
 				if routed {
+					if len(voiceBatch) > 0 {
+						armHold()
+					}
 					continue
 				}
 			default:
 			}
+			// Defensive, and the reason there is no test: the opening is the
+			// turn's first flush, so pending is still 0 at this deadline
+			// today. Re-arm rather than block the loop on a full queue.
 			if pending >= voiceQueueDepth {
 				armHold()
 				continue

@@ -515,6 +515,17 @@ func TestJoinShortBeats(t *testing.T) {
 		{name: "an acronym follower keeps its capitals", in: "Hm. NASA called.", want: "Hm, NASA called."},
 		// "i went home" is a spelling mistake the engine reads as a word.
 		{name: "a one-letter follower keeps its capital", in: "Hm. I went home.", want: "Hm, I went home."},
+		// The pronoun is still the pronoun with a contraction on it, straight
+		// or curly: "i'm home" is the same spelling mistake.
+		{name: "a contracted pronoun keeps its capital", in: "Hm. I'm home.", want: "Hm, I'm home."},
+		{name: "I'll keeps its capital", in: "Hm. I'll go now.", want: "Hm, I'll go now."},
+		{name: "I've keeps its capital", in: "Hm. I've seen it.", want: "Hm, I've seen it."},
+		{name: "I'd keeps its capital", in: "Hm. I'd rather not.", want: "Hm, I'd rather not."},
+		{name: "a curly contraction keeps its capital", in: "Hm. I\u2019m home.", want: "Hm, I\u2019m home."},
+		// The article is not a pronoun and not an initial: the single-letter
+		// rule is about "I", and "Hm, a dog ran by." is the phrase.
+		{name: "an article follower is lowercased", in: "Hm. A dog ran by.", want: "Hm, a dog ran by."},
+		{name: "an initial follower keeps its capital", in: "Hm. J. R. Tolkien wrote it.", want: "Hm, J. R. Tolkien wrote it."},
 		{name: "an initialism follower keeps its capitals", in: "Oh. PR 210 is ready.", want: "Oh, PR 210 is ready."},
 		{name: "initials are not beats", in: "J. R. R. Tolkien wrote it.", want: "J. R. R. Tolkien wrote it."},
 		// The period after a list number is numbering, not a pause.
@@ -1098,4 +1109,228 @@ func TestInitialsAreNotMarkers(t *testing.T) {
 	if got := strings.Join(calls, " "); got != reply {
 		t.Fatalf("spoke %q, want %q — the initials are part of the name", got, reply)
 	}
+}
+
+// holdRaceTTS blocks the turn loop inside routeSegment's readiness check, once
+// and on demand, so a test can hold the loop while the opening deadline expires
+// and the follower it is holding for is segmented and waiting. Nothing else
+// makes that round reachable: an idle loop takes the follower the instant it is
+// segmented, and a follower sent at the deadline loses to the timer, so the
+// branch under test is a coin flip the test has to keep flipping.
+type holdRaceTTS struct {
+	groupingFakeTTS
+	armed atomic.Bool
+	block chan struct{}
+}
+
+func (h *holdRaceTTS) Available() bool {
+	if h.armed.CompareAndSwap(true, false) {
+		<-h.block
+	}
+	return true
+}
+
+// The opening deadline fires once. When the follower it was holding for is
+// ready in the deadline's own round, the loop merges it and leaves the deadline
+// behind: the merged group is still the opening, and nothing else bounds it —
+// openingGroup is false for a batch that already holds the beat, and a token
+// only re-arms the idle timer. Measured on the talk path: 844 ms to the first
+// synthesis where the window is 41 ms, in 2 runs of 12.
+//
+// Repeated because which of the two ready cases the loop takes is a coin flip,
+// the way the two idle deadline tests above are repeated.
+func TestOpeningHoldRearmsAfterItMergesAFollower(t *testing.T) {
+	const (
+		hold     = 30 * time.Millisecond
+		tickGap  = hold / 8
+		tickRuns = 40
+	)
+	for run := range 8 {
+		t.Run(fmt.Sprintf("run %d", run), func(t *testing.T) {
+			provider := &holdRaceTTS{groupingFakeTTS: groupingFakeTTS{joins: true}, block: make(chan struct{})}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			// Only the opening deadline can speak: the idle timer is an hour
+			// out of reach.
+			p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), openingHold: hold, idleFlush: time.Hour}
+
+			var released time.Time
+			var atTickEnd []string
+			speakPaced(t, p, func(chunks chan<- string) {
+				chunks <- "Hm. "
+				// Admitted, and the deadline armed with it.
+				time.Sleep(hold / 6)
+				provider.armed.Store(true)
+				// A filler is dropped before admission but still runs the
+				// readiness check, so the loop stops here with the beat held.
+				chunks <- "Hmm. "
+				time.Sleep(2 * hold)
+				// Segmented and waiting on a loop that is not reading yet: at
+				// the release the deadline and the follower are both ready.
+				chunks <- "No. "
+				time.Sleep(hold / 6)
+				released = time.Now()
+				close(provider.block)
+				// Tokens that never complete a sentence. They re-arm the idle
+				// timer and nothing else, so a deadline that was consumed and
+				// not re-armed leaves the beats unspoken until this ends.
+				for range tickRuns {
+					time.Sleep(tickGap)
+					chunks <- "still narrating a tool call "
+				}
+				atTickEnd = provider.Texts()
+				chunks <- "And here the sentence ends."
+			})
+			if len(atTickEnd) == 0 {
+				t.Fatalf("nothing spoken in %v of tokens: the deadline that merged the follower was never re-armed",
+					tickRuns*tickGap)
+			}
+			// One window at most: the deadline the follower beat re-arms, and
+			// the group goes out on it. The slack is scheduling, not a window.
+			if elapsed := provider.CallTimes()[0].Sub(released); elapsed > 3*hold {
+				t.Errorf("first synthesis %v after the follower was ready, want at most one %v window", elapsed, hold)
+			}
+		})
+	}
+}
+
+// The deadline's own take can route to nothing — a line this turn already
+// spoke, a gated line, a muted turn — and then the group it was holding has to
+// go out on this deadline, not on the next one: the stale "a follower merged"
+// flag is what would hold it for another window, and only end of stream is
+// left to bound it after that.
+//
+// Repeated for the same reason as the test above: the loop takes the deadline
+// or the sentence, and which one is a coin flip.
+func TestOpeningHoldFlushesWhenItsTakeRoutesToNothing(t *testing.T) {
+	const hold = 40 * time.Millisecond
+	for run := range 8 {
+		t.Run(fmt.Sprintf("run %d", run), func(t *testing.T) {
+			provider := &holdRaceTTS{groupingFakeTTS: groupingFakeTTS{joins: true}, block: make(chan struct{})}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), openingHold: hold, idleFlush: time.Hour}
+
+			var released time.Time
+			speakPaced(t, p, func(chunks chan<- string) {
+				chunks <- "Hm. "
+				time.Sleep(hold / 6)
+				provider.armed.Store(true)
+				chunks <- "Hmm. "
+				time.Sleep(2 * hold)
+				// The line the turn already spoke: admission drops it, so the
+				// deadline that takes it has nothing to wait for.
+				chunks <- "Hm. "
+				time.Sleep(hold / 6)
+				released = time.Now()
+				close(provider.block)
+				time.Sleep(2 * hold)
+				chunks <- "And here the sentence ends."
+			})
+			calls, times := provider.Texts(), provider.CallTimes()
+			if len(calls) == 0 {
+				t.Fatal("nothing was spoken: the deadline never flushed the beat it was holding")
+			}
+			if calls[0] != "Hm." {
+				t.Fatalf("first synthesis = %q, want the held beat", calls[0])
+			}
+			if elapsed := times[0].Sub(released); elapsed > hold/2 {
+				t.Errorf("beat spoken %v after its deadline's take was rejected, want this deadline and not the next (%v later)", elapsed, hold)
+			}
+		})
+	}
+}
+
+// The markers released at end of stream join the group that is already held:
+// "4." is two characters, it never earns a synthesis call of its own, and the
+// release runs where the loop has stopped servicing the queue — so a veto
+// there would flush one group and then block a second time on the final
+// handoff. The slow player keeps the tail held, which is the case that
+// separates riding along from being spoken alone.
+func TestReleasedMarkerRidesWithTheHeldGroup(t *testing.T) {
+	// 219 chars: behind the held sentence it breaks the ceiling, and with "4."
+	// appended it breaks it again.
+	const tail = "The deploy pipeline rebuilt every container image from scratch because the cache key changed when the base image was bumped last night, and the registry mirror had to repopulate every layer before the rollout began again."
+	provider := &groupingFakeTTS{joins: true}
+	player := newFakePlayer(50 * time.Millisecond)
+	defer player.Close()
+	// Only the policy and end of stream may flush, so the timers cannot speak
+	// the tail before the marker reaches it.
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), idleFlush: time.Hour, openingHold: time.Hour}
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	script := []string{
+		"The build failed on the main branch today. ",
+		"Alpha kept the deploy queue moving along. ",
+		"Bravo kept the deploy queue moving along. ",
+		"Delta kept the deploy queue moving along. ",
+		tail + " ",
+		"4.",
+	}
+	if _, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, script, nil), false, metrics, turn, nil); err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+
+	calls := provider.Texts()
+	var spoke int
+	for i, call := range calls {
+		if !strings.Contains(call, "4.") {
+			continue
+		}
+		spoke++
+		if !strings.Contains(call, tail) {
+			t.Fatalf("call %d = %q, want the number spoken with the sentence it was held behind", i, call)
+		}
+	}
+	if spoke != 1 {
+		t.Fatalf("Synthesize calls = %q, want the number in exactly one call", calls)
+	}
+	// The end-of-stream handoff is the one the loop makes with the intake gate
+	// closed; a veto on the release makes a second, and the queue runs one
+	// group deeper than the turn is allowed to hold.
+	if got := player.MaxOutstanding(); got > voiceQueueDepth+1 {
+		t.Errorf("playbacks outstanding peaked at %d, want at most %d", got, voiceQueueDepth+1)
+	}
+}
+
+// Two markers in a row are one answer: "The codes are. 1. 2." holds both and
+// speaks them together, and speech after them drops every one.
+func TestConsecutiveMarkersAreOneAnswer(t *testing.T) {
+	t.Run("nothing follows them", func(t *testing.T) {
+		const reply = "The codes are. 1. 2."
+		calls, transcript := runScript(t, &groupingFakeTTS{joins: true}, reply)
+		if got := strings.Join(calls, " "); got != reply {
+			t.Fatalf("spoke %q, want %q — the numbers are the reply", got, reply)
+		}
+		for i, call := range calls {
+			if strings.Contains(call, "1.") != strings.Contains(call, "2.") {
+				t.Fatalf("call %d = %q, want both numbers in one call", i, call)
+			}
+		}
+		if transcript != reply {
+			t.Errorf("transcript = %q, want %q", transcript, reply)
+		}
+	})
+
+	t.Run("speech follows them", func(t *testing.T) {
+		calls, transcript := runScript(t, &groupingFakeTTS{joins: true}, "Here is the list. 1. 2. Coffee and a long walk.")
+		for i, call := range calls {
+			for _, marker := range []string{"1.", "2."} {
+				if strings.Contains(call, marker) {
+					t.Errorf("call %d = %q, want the %q marker dropped from speech", i, call, marker)
+				}
+			}
+		}
+		if !strings.Contains(strings.Join(calls, " "), "Coffee and a long walk.") {
+			t.Errorf("Synthesize calls = %q, want the item's prose spoken", calls)
+		}
+		for _, marker := range []string{"1.", "2."} {
+			if !strings.Contains(transcript, marker) {
+				t.Errorf("transcript = %q, want the %q marker kept", transcript, marker)
+			}
+		}
+	})
 }
