@@ -13,14 +13,15 @@ const (
 	VocalSigh    = "sigh"
 	VocalWhimper = "whimper"
 	VocalKiss    = "kiss"
+	VocalHmm     = "hmm"
+	VocalAhh     = "ahh"
+	VocalMmm     = "mmm"
+	VocalHuff    = "huff"
 )
 
 var vocalAlias = map[string]string{
 	"moan":     VocalMoan,
 	"moans":    VocalMoan,
-	"ahh":      VocalMoan,
-	"ahhs":     VocalMoan,
-	"mmm":      VocalMoan,
 	"gasp":     VocalGasp,
 	"gasps":    VocalGasp,
 	"laugh":    VocalLaugh,
@@ -32,20 +33,35 @@ var vocalAlias = map[string]string{
 	"whimpers": VocalWhimper,
 	"kiss":     VocalKiss,
 	"kisses":   VocalKiss,
+	"hmm":      VocalHmm,
+	"hmms":     VocalHmm,
+	"ahh":      VocalAhh,
+	"ahhs":     VocalAhh,
+	"relief":   VocalAhh,
+	"mmm":      VocalMmm,
+	"huff":     VocalHuff,
+	"ugh":      VocalHuff,
 }
 
-// VocalTagRE matches [moan], [gasp], [laugh], … including common aliases.
-var VocalTagRE = regexp.MustCompile(`(?i)\[(moans?|gasps?|laughs?|sighs?|whimpers?|kiss(?:es)?|ahhs?|mmm|haha)\]`)
+// VocalTagRE matches recognized sound tags, including kinds we strip because
+// the codec cannot vocalize them (moan, whimper, kiss, gasp).
+var VocalTagRE = regexp.MustCompile(`(?i)\[(moans?|gasps?|laughs?|sighs?|whimpers?|kiss(?:es)?|ahhs?|mmm|haha|hmms?|relief|huff|ugh)\]`)
 
-// OnomatopoeiaPhrases are what Qwen3-TTS renders as the sound in the active
-// voice. Leading "h" adds breath. These are not English words to be read out.
+// OnomatopoeiaPhrases are spellings Qwen3-TTS actually renders as a sound
+// (aspirated onomatopoeia, leading h for breath). Empty means the tag is
+// recognized so it can be stripped — do not send it to TTS.
+//
+// Moan/whimper/gasp/kiss have no working spelling: "Nnngh"/"Ahhn" come out as
+// a spoken syllable (often "ming"), not a moan. Laugh and sigh are the ones
+// that land as sounds in English CustomVoice.
 var OnomatopoeiaPhrases = map[string][]string{
-	VocalMoan:    {"Haaaah...", "Nnngh...", "Ahhn..."},
-	VocalGasp:    {"Hah!", "Haah!"},
-	VocalLaugh:   {"Haha!", "Haha haha."},
-	VocalSigh:    {"Hahh...", "Haaah."},
-	VocalWhimper: {"Nngh...", "Mmh..."},
-	// kiss is recognized so [kiss] can be stripped, not spoken.
+	VocalLaugh: {"Haha!", "Haha haha."},
+	VocalSigh:  {"Hahh...", "Hah..."},
+	VocalHmm:   {"Hmmm..."},
+	VocalAhh:   {"Haaa..."},
+	VocalMmm:   {"Hmmm..."},
+	VocalHuff:  {"Huff."},
+	// VocalMoan, VocalWhimper, VocalGasp, VocalKiss: no phrase — strip.
 }
 
 // VocalTagRewriter converts [sigh]/[laugh] markup into the form this engine
@@ -79,9 +95,9 @@ func StripVocalTags(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// ExpandOnomatopoeiaVocalTags rewrites [moan]/[laugh]/… into the Qwen codec
-// spellings. pick chooses a variant; nil uses the first. Engines that need a
-// different mapping implement VocalTagRewriter instead of calling this.
+// ExpandOnomatopoeiaVocalTags rewrites supported tags into Qwen codec
+// spellings. Unsupported kinds (moan, whimper, gasp, kiss) become nothing.
+// pick chooses a variant; nil uses the first.
 func ExpandOnomatopoeiaVocalTags(s string, pick func(kind string) string) string {
 	if s == "" || !HasVocalTag(s) {
 		return s

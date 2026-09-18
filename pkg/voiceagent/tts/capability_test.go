@@ -53,6 +53,9 @@ func TestExpandOnomatopoeiaVocalTags(t *testing.T) {
 	if !strings.Contains(got, "hello") {
 		t.Fatalf("speech dropped: %q", got)
 	}
+	if got := ExpandOnomatopoeiaVocalTags("[moan] hello", nil); got != "hello" {
+		t.Fatalf("moan must strip, got %q", got)
+	}
 }
 
 func TestCapabilityProviderContractReportsModesAndStatus(t *testing.T) {
