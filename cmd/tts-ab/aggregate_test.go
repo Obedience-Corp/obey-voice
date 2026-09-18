@@ -45,6 +45,21 @@ func value(t *testing.T, p *float64) float64 {
 	return *p
 }
 
+// The chunking shape is read off the same record as the latency numbers. A
+// grouping A/B moves these first, and a field the decoder does not name is
+// silently zero.
+func TestRawMetricsReadsTheSegmentShape(t *testing.T) {
+	const raw = `{"SegmentCount":4,"MedianSegmentChars":96,"ShortBoundaries":1,"Segments":[{"Index":0,"Chars":42}]}`
+	var m rawMetrics
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m.SegmentCount != 4 || m.MedianSegmentChars != 96 || m.ShortBoundaries != 1 {
+		t.Fatalf("segment shape = %d/%d/%d, want 4/96/1",
+			m.SegmentCount, m.MedianSegmentChars, m.ShortBoundaries)
+	}
+}
+
 func TestTurnsByEngineGroupsOnTheTierToo(t *testing.T) {
 	// 0.6b and 1.7b are different engines. Pooling them would describe
 	// neither: the same code measured 1.33x and 1.87x realtime.

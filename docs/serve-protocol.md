@@ -607,6 +607,9 @@ in `GET /v1/status`:
 | `ttfa_ms` | T_eou to first sample an audible sink accepted (`0` when `audible_sink` is `none`) |
 | `audible_sink` | `local_speaker` \| `stream_client` \| `none` |
 | `think_leak` | count of think tags that hit the speech filter after the brain split; must be 0 |
+| `segment_count` | synthesis calls this turn made |
+| `median_segment_chars` | middle segment length, so one long segment cannot hide a reply chopped into interjections |
+| `short_boundaries` | boundaries whose preceding segment was under the target its group was flushed against |
 
 `playback_complete_ms` is local-speaker Done only. It is `0` for `stream_client` and `none` — fanout drain is not playback.
 

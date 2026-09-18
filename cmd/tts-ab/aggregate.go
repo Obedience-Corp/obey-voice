@@ -33,21 +33,27 @@ type rawResult struct {
 // rawMetrics reads events.TurnMetrics, which carries no json tags — its keys
 // are Go field names, and its durations marshal as int64 nanoseconds.
 type rawMetrics struct {
-	Interrupted             bool         `json:"Interrupted"`
-	FirstModelChunkElapsed  int64        `json:"FirstModelChunkElapsed"`
-	ModelCompleteElapsed    int64        `json:"ModelCompleteElapsed"`
-	FirstSegmentElapsed     int64        `json:"FirstSegmentElapsed"`
-	FirstAudioReadyElapsed  int64        `json:"FirstAudioReadyElapsed"`
-	PlaybackStartElapsed    int64        `json:"PlaybackStartElapsed"`
-	PlaybackCompleteElapsed int64        `json:"PlaybackCompleteElapsed"`
-	AudibleSink             string       `json:"AudibleSink"`
-	TTSProvider             string       `json:"TTSProvider"`
-	TTSTier                 string       `json:"TTSTier"`
-	TTSFallbacks            int          `json:"TTSFallbacks"`
-	FirstAudioGrace         int64        `json:"FirstAudioGrace"`
-	StallWatchdogFired      bool         `json:"StallWatchdogFired"`
-	DeadAirElapsed          int64        `json:"DeadAirElapsed"`
-	Segments                []rawSegment `json:"Segments"`
+	Interrupted             bool   `json:"Interrupted"`
+	FirstModelChunkElapsed  int64  `json:"FirstModelChunkElapsed"`
+	ModelCompleteElapsed    int64  `json:"ModelCompleteElapsed"`
+	FirstSegmentElapsed     int64  `json:"FirstSegmentElapsed"`
+	FirstAudioReadyElapsed  int64  `json:"FirstAudioReadyElapsed"`
+	PlaybackStartElapsed    int64  `json:"PlaybackStartElapsed"`
+	PlaybackCompleteElapsed int64  `json:"PlaybackCompleteElapsed"`
+	AudibleSink             string `json:"AudibleSink"`
+	TTSProvider             string `json:"TTSProvider"`
+	TTSTier                 string `json:"TTSTier"`
+	TTSFallbacks            int    `json:"TTSFallbacks"`
+	FirstAudioGrace         int64  `json:"FirstAudioGrace"`
+	StallWatchdogFired      bool   `json:"StallWatchdogFired"`
+	DeadAirElapsed          int64  `json:"DeadAirElapsed"`
+	// The turn's chunking shape. An A/B that changes grouping moves these
+	// before it moves a latency number, and Segments alone does not say what
+	// the policy was aiming for.
+	SegmentCount       int          `json:"SegmentCount"`
+	MedianSegmentChars int          `json:"MedianSegmentChars"`
+	ShortBoundaries    int          `json:"ShortBoundaries"`
+	Segments           []rawSegment `json:"Segments"`
 }
 
 type rawSegment struct {
