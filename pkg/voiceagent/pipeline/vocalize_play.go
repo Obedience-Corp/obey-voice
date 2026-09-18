@@ -72,9 +72,8 @@ func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, 
 
 // prepareSpeechForTTS is the text one provider should hear.
 //
-//   - No vocal-tag support: tags are stripped (Kokoro, Audio8, unknown engines).
-//   - SupportsVocalTags + VocalTagRewriter: the engine's own mapping (Qwen
-//     onomatopoeia today; another engine can map to <sigh> or similar).
+//   - Default: stage tags are stripped (CustomVoice reads them as words).
+//   - SupportsVocalTags + VocalTagRewriter: the engine's own mapping.
 //   - SupportsVocalTags only: tags are passed through unchanged.
 func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
 	if !hasVocalTag(sentence) {
@@ -112,11 +111,14 @@ func (p *Pipeline) renderVocalizedObserved(ctx context.Context, parts []vocalPar
 			chunks = append(chunks, clip.samples)
 			continue
 		}
-		text := strings.TrimSpace(part.text)
+		text := strings.TrimSpace(stripVocalTags(part.text))
 		if text == "" {
 			continue
 		}
 		stream, fb, partObservation, err := p.synthesizeWithFallbackObserved(ctx, text, stickFallback)
+		if errors.Is(err, errNothingToSpeak) {
+			continue
+		}
 		if err != nil {
 			return nil, fb, partObservation, err
 		}

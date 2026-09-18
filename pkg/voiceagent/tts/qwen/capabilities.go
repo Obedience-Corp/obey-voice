@@ -110,9 +110,7 @@ func (q *Qwen3TTS) Capabilities() tts.ProviderCapabilities {
 	return caps
 }
 
-// RewriteVocalTags drops stage directions. Veronica/CustomVoice does not
-// vocalize [sigh]/[mouth]; it reads them as words. A future engine that
-// actually renders tags can opt in with SupportsVocalTags.
+// RewriteVocalTags strips bracket tags; this codec reads them as words.
 func (q *Qwen3TTS) RewriteVocalTags(s string, pick func(kind string) string) string {
 	_ = pick
 	return tts.StripVocalTags(s)

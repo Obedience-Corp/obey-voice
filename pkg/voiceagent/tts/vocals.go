@@ -69,11 +69,8 @@ var OnomatopoeiaPhrases = map[string][]string{
 
 // VocalTagRewriter converts [sigh]/[laugh] markup into the form this engine
 // synthesizes. Optional. pick, when non-nil, chooses among variants of a
-// kind (pipeline passes the vocal bank's rotator). Qwen rewrites to
-// onomatopoeia. An engine that understands the tags natively can return s
-// unchanged, or map them to its own syntax, and may ignore pick. Providers
-// that omit this interface and advertise SupportsVocalTags receive the tags
-// as written.
+// kind. Engines that omit this interface and advertise SupportsVocalTags
+// receive the tags as written; otherwise tags are stripped.
 type VocalTagRewriter interface {
 	RewriteVocalTags(s string, pick func(kind string) string) string
 }
@@ -120,7 +117,6 @@ func ExpandOnomatopoeiaVocalTags(s string, pick func(kind string) string) string
 		}
 		return phrase
 	})
-	// Unknown directions ([mouth]) must not remain for the synthesizer to read.
 	return StripVocalTags(strings.TrimSpace(s))
 }
 

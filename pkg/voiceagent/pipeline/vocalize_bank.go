@@ -18,9 +18,8 @@ type vocalClip struct {
 	rate    int
 }
 
-// vocalBank holds optional recorded sounds. Empty means [moan]/[laugh] expand
-// to onomatopoeia and go through live TTS in the current throat. WAV files in
-// dir overlay a kind when present.
+// vocalBank holds optional recorded sounds. Empty means stage tags are
+// stripped. WAV files in dir overlay a kind when present.
 type vocalBank struct {
 	mu         sync.Mutex
 	clips      map[string][]vocalClip
