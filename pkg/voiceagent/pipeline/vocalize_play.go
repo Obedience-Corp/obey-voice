@@ -76,7 +76,7 @@ func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, 
 //   - SupportsVocalTags + VocalTagRewriter: the engine's own mapping (Qwen
 //     onomatopoeia today; another engine can map to <sigh> or similar).
 //   - SupportsVocalTags only: tags are passed through unchanged.
-func prepareSpeechForTTS(sentence string, provider tts.Provider, _ *vocalBank) string {
+func prepareSpeechForTTS(sentence string, provider tts.Provider, vocals *vocalBank) string {
 	if !hasVocalTag(sentence) {
 		return sentence
 	}
@@ -84,7 +84,11 @@ func prepareSpeechForTTS(sentence string, provider tts.Provider, _ *vocalBank) s
 		return stripVocalTags(sentence)
 	}
 	if rewriter, ok := provider.(tts.VocalTagRewriter); ok {
-		return rewriter.RewriteVocalTags(sentence)
+		var pick func(kind string) string
+		if vocals != nil {
+			pick = vocals.nextPhrase
+		}
+		return rewriter.RewriteVocalTags(sentence, pick)
 	}
 	return sentence
 }

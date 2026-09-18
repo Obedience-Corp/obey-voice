@@ -153,6 +153,23 @@ func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
 	}
 }
 
+func TestPrepareSpeechForTTSRotatesOnomatopoeiaWhenBankPresent(t *testing.T) {
+	qwen := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
+	bank := newVocalBank("")
+	seen := map[string]bool{}
+	for range 40 {
+		got := prepareSpeechForTTS("[moan] hi", qwen, bank)
+		for _, phrase := range vocalPhrases[vocalMoan] {
+			if strings.Contains(got, phrase) {
+				seen[phrase] = true
+			}
+		}
+	}
+	if len(seen) < 2 {
+		t.Fatalf("vocal bank should rotate moan phrases, got %v", seen)
+	}
+}
+
 func TestRunTurnStripsVocalTagsWhenEngineCannotRenderThem(t *testing.T) {
 	ttsProvider := &fakeTTS{}
 	player := newFakePlayer(time.Millisecond)
@@ -200,8 +217,8 @@ func TestRunTurnSkipsTagOnlyWhenEngineCannotRenderThem(t *testing.T) {
 
 type qwenLikeTTS struct{ fakeTTS }
 
-func (q *qwenLikeTTS) RewriteVocalTags(s string) string {
-	return expandVocalTags(s, nil)
+func (q *qwenLikeTTS) RewriteVocalTags(s string, pick func(kind string) string) string {
+	return expandVocalTags(s, pick)
 }
 
 func TestFallbackKokoroDoesNotReceiveQwenOnomatopoeia(t *testing.T) {
