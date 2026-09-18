@@ -48,6 +48,10 @@ type SpeechProjection struct {
 	think  textclean.ThinkFilter
 	gate   voiceGate
 	spoken map[string]struct{}
+	// admitted marks that this turn has already sent speech to the queue. A
+	// bare "4." is the answer when it is the reply and a list marker when it
+	// follows one, and nothing in the segment itself tells them apart.
+	admitted bool
 }
 
 // NewSpeechProjection starts a projection for one turn.
@@ -121,6 +125,13 @@ func (p *SpeechProjection) admit(voiceText string) (string, speechAdmissionStatu
 	if !speakableSegment(speakable) && !hasVocalTag(speakable) {
 		return "", speechNotSpeakable
 	}
+	// A list marker is a whole segment to the chunker and two characters to the
+	// listener. Dropping it here and not in the transcript is deliberate: the
+	// numbering is worth reading and not worth a synthesis call. Only after the
+	// turn has spoken, because "4." on its own is an answer to a question.
+	if p.admitted && !hasVocalTag(speakable) && enumeratorOnlySegment(speakable) {
+		return "", speechNotSpeakable
+	}
 	// Sound-only beats ([moan]) may repeat in one turn on purpose. Restated
 	// prose after a phantom tool still drops.
 	if speakableSegment(stripVocalTags(speakable)) {
@@ -129,5 +140,6 @@ func (p *SpeechProjection) admit(voiceText string) (string, speechAdmissionStatu
 		}
 		p.spoken[speakable] = struct{}{}
 	}
+	p.admitted = true
 	return speakable, speechAdmitted
 }

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -34,6 +35,14 @@ const (
 	// idleFlushAfter is how long a complete buffered sentence waits for a
 	// follower once brain tokens stop arriving.
 	idleFlushAfter = 350 * time.Millisecond
+	// openingHoldAfter bounds how long a held opening beat waits for the
+	// sentence it belongs to. It is absolute — measured from the beat's
+	// admission, never extended by a token — because the idle timer alone lets
+	// the beat wait out its own follower: a 99-char follower kept "Wait." silent
+	// for 0.97 s, a narrated tool block for 2 s. At ~100 chars/s the window
+	// admits followers up to ~40 chars, which is the interjection case; past
+	// that the beat speaks alone, two contours like main and at most 0.4 s late.
+	openingHoldAfter = 400 * time.Millisecond
 )
 
 // segmentGrouping is the flush policy for one turn: the provider's ramp, and
@@ -103,25 +112,48 @@ func (g segmentGrouping) flushTarget(lastChars int) int {
 // exceedsCeiling reports that appending next would push the held group past
 // segmentCeilingChars, so the group goes out first and next opens a new one.
 //
-// The ceiling is the only veto. Vetoing on the ramp as well left a group that
-// could neither flush (still under the target) nor grow (already over the
-// veto), so after a short opening every later group was one sentence and the
-// ratchet never let them recover. It also split a held beat from the sentence
-// it belongs to; under the ceiling alone, "Wait." plus a 120-char follower is
-// one call. An empty group is never vetoed — a single sentence over the
-// ceiling still goes alone — and neither is one ending in a tag-only beat,
-// which has no prose of its own and has to ride forward.
-func exceedsCeiling(group []string, next string) bool {
+// Vetoing on the ramp target as well left a group that could neither flush
+// (still under the target) nor grow (already over the veto), so after a short
+// opening every later group was one sentence and the ratchet never let them
+// recover. It also split a held beat from the sentence it belongs to; under
+// the ceiling alone, "Wait." plus a 120-char follower is one call. An empty
+// group is never vetoed — a single sentence over the ceiling still goes alone
+// — and neither is one ending in a tag-only beat, which has no prose of its
+// own and has to ride forward. overshoots is the one other veto.
+func (g segmentGrouping) exceedsCeiling(group []string, next string) bool {
 	if len(group) == 0 || heldTagTail(group) {
 		return false
 	}
 	return speakableChars(strings.Join(group, " "))+1+speakableChars(next) > segmentCeilingChars
 }
 
+// overshoots reports a single sentence so much longer than the group before it
+// that the held group should go out first and let it start a new one.
+//
+// The listener hears a group that outgrows the one playing as a gap, and one
+// long sentence cannot be split — but it can be kept from dragging a finished
+// group along with it. Bounded to a non-empty group of real sentences: an
+// empty group has nothing to protect, a tag-only tail has no prose of its own,
+// and a held beat is the interjection merge, whose whole point is to ride with
+// the sentence it belongs to however long that sentence is.
+func (g segmentGrouping) overshoots(group []string, next string, lastChars int) bool {
+	if len(group) == 0 || lastChars <= 0 || g.ramp <= 0 {
+		return false
+	}
+	if heldTagTail(group) || allShortBeats(group) {
+		return false
+	}
+	return float64(speakableChars(next)) > g.ramp*float64(lastChars)
+}
+
 // heldTagTail reports a group whose last admitted segment is a tag with no
-// prose. Nothing may flush the group out from under it — not the ceiling, not
-// a paragraph break, not the idle timer: the tag rides into the next sentence,
-// or into the group before it at end of stream.
+// prose. No policy flushes the group out from under it — not the ceiling, not
+// a paragraph break, not the idle timer, not the opening hold: the tag rides
+// into the next sentence, or into the group before it at end of stream.
+//
+// End of stream is the exception, because it is not a policy: whatever is
+// buffered is spoken. A tag that opened the group and never got a sentence is
+// flushed alone there — the reply was nothing but the sound (D5).
 func heldTagTail(group []string) bool {
 	return len(group) > 0 && tagOnlySegment(group[len(group)-1])
 }
@@ -136,6 +168,20 @@ func allShortBeats(group []string) bool {
 		}
 	}
 	return true
+}
+
+// enumeratorRE matches a segment that is only a list marker: "1.", "(2)",
+// "a)", and the bullets a model writes on their own line.
+var enumeratorRE = regexp.MustCompile(`^(?:\(?\d{1,3}[.)]|[A-Za-z][.)]|[-*•–])$`)
+
+// enumeratorOnlySegment reports a segment with no words in it — the number or
+// bullet that opens a list item. The chunker ends a sentence at "1." and the
+// item's prose becomes the next segment, so speaking the marker costs a whole
+// synthesis call for two characters and leaves the item stranded behind it
+// (measured on the talk path: "1." and "2." spoken alone, 500-800 ms of dead
+// air each). It stays in the transcript, where the numbering is readable.
+func enumeratorOnlySegment(s string) bool {
+	return enumeratorRE.MatchString(strings.TrimSpace(s))
 }
 
 // speakableChars is a segment's length as the listener hears it: vocal tags
@@ -205,6 +251,12 @@ func joinShortBeats(group string) string {
 		if !hasPronounceableContent(beat) || !hasPronounceableContent(sentences[i+1]) {
 			continue
 		}
+		// "Step 1." and "J." are a label and an initial, not interjections.
+		// Their period is numbering or an abbreviation, and a comma there
+		// reads the list item as part of the sentence after it.
+		if endsInLabel(beat) {
+			continue
+		}
 		softened, ok := softenBeatEnd(beat)
 		if !ok {
 			continue
@@ -238,7 +290,8 @@ func splitSentences(s string) []string {
 
 // softenBeatEnd turns a beat's terminal "." or "!" into a comma, keeping any
 // closing quote that rode with it. Reports false when the beat ends in
-// something else, which is left alone.
+// something else, and when that "." is the end of an ellipsis: "Wait..." is a
+// pause the engine reads, and "./..." is a Go package path.
 func softenBeatEnd(s string) (string, bool) {
 	trimmed := strings.TrimRight(s, " ")
 	end := len(trimmed)
@@ -256,6 +309,11 @@ func softenBeatEnd(s string) (string, bool) {
 	if r != '.' && r != '!' {
 		return s, false
 	}
+	if r == '.' {
+		if prev, _ := utf8.DecodeLastRuneInString(trimmed[:end-size]); prev == '.' {
+			return s, false
+		}
+	}
 	return trimmed[:end-size] + "," + trimmed[end:], true
 }
 
@@ -263,7 +321,36 @@ func singleWordBeat(s string) bool {
 	return len(strings.Fields(strings.TrimSpace(stripVocalTags(s)))) == 1
 }
 
+// endsInLabel reports a beat whose last word before the terminal punctuation is
+// a bare numeral or a single letter: "Step 1.", "See figure 2.", "J.". The
+// period is numbering or an abbreviation, not the end of a thought.
+func endsInLabel(s string) bool {
+	fields := strings.Fields(strings.TrimSpace(stripVocalTags(s)))
+	if len(fields) == 0 {
+		return false
+	}
+	word := strings.TrimRight(fields[len(fields)-1], ".!?)\"'”’")
+	if word == "" {
+		return false
+	}
+	if len([]rune(word)) == 1 && unicode.IsLetter([]rune(word)[0]) {
+		return true
+	}
+	for _, r := range word {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// lowerFirstLetter lowercases a follower pulled down by a one-word beat. An
+// acronym and an initial keep their capitals: "Hm, NASA called." is the
+// name, "nASA" is a spelling mistake the engine reads letter by letter.
 func lowerFirstLetter(s string) string {
+	if fields := strings.Fields(strings.TrimSpace(s)); len(fields) > 0 && shoutedWord(fields[0]) {
+		return s
+	}
 	for i, r := range s {
 		if !unicode.IsLetter(r) {
 			continue
@@ -274,6 +361,25 @@ func lowerFirstLetter(s string) string {
 		return s[:i] + string(unicode.ToLower(r)) + s[i+utf8.RuneLen(r):]
 	}
 	return s
+}
+
+// shoutedWord reports an all-caps word of at least two letters ("NASA", "PR")
+// or a single letter used as an initial ("J.").
+func shoutedWord(word string) bool {
+	if initial := strings.TrimRight(word, "."); len(initial) != len(word) && len([]rune(initial)) == 1 {
+		return true
+	}
+	letters := 0
+	for _, r := range word {
+		if !unicode.IsLetter(r) {
+			continue
+		}
+		if unicode.IsLower(r) {
+			return false
+		}
+		letters++
+	}
+	return letters >= 2
 }
 
 // speakableSegment reports whether a cleaned segment earns a place in the
@@ -354,4 +460,13 @@ func (p *Pipeline) idleFlushDelay() time.Duration {
 		return p.idleFlush
 	}
 	return idleFlushAfter
+}
+
+// openingHoldDelay is the opening group's absolute deadline, measured from the
+// admission of its first segment. Unlike idleFlushDelay no token extends it.
+func (p *Pipeline) openingHoldDelay() time.Duration {
+	if p != nil && p.openingHold > 0 {
+		return p.openingHold
+	}
+	return openingHoldAfter
 }

@@ -446,6 +446,17 @@ func TestJoinShortBeats(t *testing.T) {
 		{name: "sentences above the beat are spoken as written", in: "The build failed on main. It failed again.", want: "The build failed on main. It failed again."},
 		{name: "abbreviations are not boundaries", in: "Dr. Smith is here.", want: "Dr. Smith is here."},
 		{name: "a lone sentence is untouched", in: "Hm.", want: "Hm."},
+		// An ellipsis is a pause the engine reads, and "./..." is a package
+		// path: neither terminal "." is a beat's period.
+		{name: "an ellipsis beat keeps its pause", in: "Wait... Okay then.", want: "Wait... Okay then."},
+		{name: "a package path is not a beat", in: "Run go test ./... Then check.", want: "Run go test ./... Then check."},
+		// An acronym and a PR number are not the start of a clause.
+		{name: "an acronym follower keeps its capitals", in: "Hm. NASA called.", want: "Hm, NASA called."},
+		{name: "an initialism follower keeps its capitals", in: "Oh. PR 210 is ready.", want: "Oh, PR 210 is ready."},
+		{name: "initials are not beats", in: "J. R. R. Tolkien wrote it.", want: "J. R. R. Tolkien wrote it."},
+		// The period after a list number is numbering, not a pause.
+		{name: "a numbered step is not a beat", in: "Step 1. Open the file.", want: "Step 1. Open the file."},
+		{name: "a figure reference is not a beat", in: "See figure 2. The graph rises.", want: "See figure 2. The graph rises."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := joinShortBeats(tc.in); got != tc.want {
@@ -723,3 +734,264 @@ func (joinErrorTTS) Synthesize(context.Context, string) (*audio.PCMStream, error
 func (joinErrorTTS) Available() bool                       { return true }
 func (joinErrorTTS) ListVoices(string, string) []tts.Voice { return nil }
 func (joinErrorTTS) JoinsSentences() bool                  { return true }
+
+// speakPaced runs one turn over chunks the caller feeds by hand, so a case can
+// put real time between them and read what has been synthesized so far.
+func speakPaced(t *testing.T, p *Pipeline, feed func(chunks chan<- string)) {
+	t.Helper()
+	in := make(chan string)
+	done := make(chan brain.StreamResult, 1)
+	go func() {
+		defer close(in)
+		defer close(done)
+		feed(in)
+		done <- brain.StreamResult{}
+	}()
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if _, _, err := p.streamResponse(ctx, cancel, &brain.Stream{Chunks: in, Done: done}, false, metrics, turn, nil); err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+}
+
+// heldOpening builds a turn whose opening deadline is short and whose idle
+// timer is effectively disabled, so only the opening hold can flush.
+func heldOpening(t *testing.T, provider *groupingFakeTTS, hold time.Duration) *Pipeline {
+	t.Helper()
+	player := newFakePlayer(time.Millisecond)
+	t.Cleanup(func() { _ = player.Close() })
+	return &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), openingHold: hold, idleFlush: time.Hour}
+}
+
+// The opening hold is an absolute deadline, not another idle timer. Every token
+// re-arms the idle timer, so a held beat used to wait out however long its own
+// follower took to stream: 0.97 s for a 99-char follower, 2 s across a narrated
+// tool block. The beat now waits at most openingHold and then speaks alone.
+func TestOpeningHoldIsAbsolute(t *testing.T) {
+	t.Run("a follower inside the window still merges", func(t *testing.T) {
+		provider := &groupingFakeTTS{joins: true}
+		p := heldOpening(t, provider, 400*time.Millisecond)
+		speakPaced(t, p, func(chunks chan<- string) {
+			chunks <- "Wait. "
+			time.Sleep(20 * time.Millisecond)
+			chunks <- "Wait, you what? "
+		})
+		if calls := provider.Texts(); len(calls) != 1 {
+			t.Fatalf("Synthesize calls = %q, want the follower merged inside the window", calls)
+		}
+	})
+
+	t.Run("tokens do not extend it", func(t *testing.T) {
+		const hold = 60 * time.Millisecond
+		provider := &groupingFakeTTS{joins: true}
+		p := heldOpening(t, provider, hold)
+		var atDeadline []string
+		speakPaced(t, p, func(chunks chan<- string) {
+			chunks <- "Wait. "
+			// Five windows of tokens that never complete a sentence: the
+			// brain is producing, and the beat must not wait for it.
+			for range 10 {
+				time.Sleep(hold / 2)
+				chunks <- "still narrating a tool call "
+			}
+			atDeadline = provider.Texts()
+			chunks <- "and here it ends."
+		})
+		if len(atDeadline) != 1 || atDeadline[0] != "Wait." {
+			t.Fatalf("Synthesize calls after 5 windows of tokens = %q, want the beat spoken alone at the deadline", atDeadline)
+		}
+	})
+
+	t.Run("a follower after the window is its own group", func(t *testing.T) {
+		const hold = 60 * time.Millisecond
+		provider := &groupingFakeTTS{joins: true}
+		p := heldOpening(t, provider, hold)
+		speakPaced(t, p, func(chunks chan<- string) {
+			chunks <- "Wait. "
+			time.Sleep(2 * hold)
+			chunks <- "Wait, you what? "
+		})
+		calls := provider.Texts()
+		if len(calls) != 2 || calls[0] != "Wait." {
+			t.Fatalf("Synthesize calls = %q, want the beat alone then its late follower", calls)
+		}
+	})
+
+	t.Run("a normal opening does not wait for it", func(t *testing.T) {
+		const opening = "The build failed on the main branch today."
+		provider := &groupingFakeTTS{joins: true}
+		p := heldOpening(t, provider, time.Hour)
+		speakPaced(t, p, func(chunks chan<- string) {
+			chunks <- opening + " "
+			deadline := time.Now().Add(2 * time.Second)
+			for time.Now().Before(deadline) {
+				if len(provider.Texts()) > 0 {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			chunks <- "Alpha kept the deploy queue moving along."
+		})
+		calls := provider.Texts()
+		if len(calls) < 1 || calls[0] != opening {
+			t.Fatalf("Synthesize calls = %q, want the opening spoken at its period", calls)
+		}
+	})
+
+	t.Run("later groups keep the idle timer", func(t *testing.T) {
+		const idle = 150 * time.Millisecond
+		provider := &groupingFakeTTS{joins: true}
+		player := newFakePlayer(time.Millisecond)
+		defer player.Close()
+		// A hold short enough that a group armed with it would have gone out
+		// long before the ticks stop. Only the opening arms it.
+		p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(),
+			openingHold: 20 * time.Millisecond, idleFlush: idle}
+		var whileTicking []string
+		speakPaced(t, p, func(chunks chan<- string) {
+			chunks <- "The build failed on the main branch today. "
+			chunks <- "Alpha kept the deploy queue moving along. "
+			for range 10 {
+				time.Sleep(idle / 5)
+				chunks <- "narrating "
+			}
+			whileTicking = provider.Texts()
+			time.Sleep(3 * idle)
+		})
+		if len(whileTicking) != 1 {
+			t.Fatalf("Synthesize calls while tokens kept arriving = %q, want only the opening", whileTicking)
+		}
+		if calls := provider.Texts(); len(calls) < 2 {
+			t.Fatalf("Synthesize calls = %q, want the held group flushed once the brain went quiet", calls)
+		}
+	})
+}
+
+// A single sentence far longer than the group before it does not drag a
+// finished group along with it: the held group goes out first, and the long
+// sentence starts its own. The ceiling veto stays for the other direction.
+func TestLongSentenceDoesNotDragTheHeldGroupWithIt(t *testing.T) {
+	const (
+		opening = "Main branch build is dead."
+		held    = "Alpha kept the deploy queue moving on."
+		long    = "The deploy pipeline rebuilt every container image from scratch because the cache key changed when the base image was bumped last night, and the mirror repopulated each layer now."
+	)
+	// 26-char opening at ramp 1.5 targets 39, so the 38-char sentence is still
+	// held; the 178-char one overshoots it but the two would fit the ceiling.
+	if speakableChars(held)+1+speakableChars(long) > segmentCeilingChars {
+		t.Fatalf("case is not about the overshoot: %d chars would also break the ceiling",
+			speakableChars(held)+1+speakableChars(long))
+	}
+	calls := speakScript(t, &groupingFakeTTS{ramp: 1.5, joins: true}, opening+" ", held+" ", long)
+	if len(calls) != 3 {
+		t.Fatalf("Synthesize calls = %q, want the opening, the held sentence, then the long one", calls)
+	}
+	if calls[1] != held || calls[2] != long {
+		t.Fatalf("Synthesize calls = %q, want %q then %q", calls, held, long)
+	}
+}
+
+// A group flushed under the target it was measured against is a short
+// boundary, and the metric has to say so: a paragraph break can force one out
+// at 11 chars when the opening wanted 25.
+func TestShortBoundariesCountsAForcedFlush(t *testing.T) {
+	provider := &groupingFakeTTS{joins: true}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	script := []string{
+		"Short line.\n\nThe build failed on the main branch today. ",
+		"Alpha kept the deploy queue moving along.",
+	}
+	if _, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, script, nil), false, metrics, turn, nil); err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+
+	snap := metrics.snapshot()
+	if snap.SegmentCount < 2 {
+		t.Fatalf("SegmentCount = %d, want the paragraph split: %+v", snap.SegmentCount, snap.Segments)
+	}
+	if snap.ShortBoundaries != 1 {
+		t.Fatalf("ShortBoundaries = %d, want 1 for the 11-char paragraph: %+v", snap.ShortBoundaries, snap.Segments)
+	}
+}
+
+// charGraceTTS sizes its first-audio budget from the segment it is asked for,
+// the way Qwen does, so a test can read which text the watchdog was armed for.
+type charGraceTTS struct {
+	groupingFakeTTS
+}
+
+func (c *charGraceTTS) FirstAudioGraceForChars(chars int) time.Duration {
+	return defaultPlaybackStallTimeout + time.Duration(chars)*time.Second
+}
+
+// The stall budget is sized from the group that was flushed, not the first
+// segment admitted to it. A merged opening is longer than the beat that opened
+// it, and a budget sized from "Wait." cuts off the synthesis of the sentence it
+// was merged with.
+func TestStallBudgetIsSizedFromTheFlushedGroup(t *testing.T) {
+	provider := &charGraceTTS{groupingFakeTTS: groupingFakeTTS{joins: true}}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, _, err := p.streamResponse(ctx, cancel, scriptedStream(ctx, []string{"Wait. ", "Wait, you what?"}, nil), false, metrics, turn, nil); err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+
+	const group = "Wait. Wait, you what?"
+	want := provider.FirstAudioGraceForChars(len(group))
+	if metrics.firstAudioGrace != want {
+		t.Fatalf("firstAudioGrace = %v, want %v — the budget for the %d-char group, not the %d-char beat that opened it",
+			metrics.firstAudioGrace, want, len(group), len("Wait."))
+	}
+}
+
+// A list marker is a segment to the chunker and dead air to the listener: the
+// talk-path bench caught "1." and "2." each spoken alone with 500-800 ms of
+// silence behind them. They stay in the transcript, where numbering reads.
+func TestEnumeratorSegmentsAreNotSpoken(t *testing.T) {
+	for _, joins := range []bool{false, true} {
+		t.Run(fmt.Sprintf("joins %v", joins), func(t *testing.T) {
+			provider := &groupingFakeTTS{joins: joins}
+			calls, transcript := runScript(t, provider, "Here is my routine. 1. Wake up at six. 2. Stretch.")
+			for i, call := range calls {
+				for _, marker := range []string{"1.", "2."} {
+					if strings.Contains(call, marker) {
+						t.Errorf("call %d = %q, want the %q marker dropped from speech", i, call, marker)
+					}
+				}
+				if strings.HasPrefix(strings.TrimSpace(call), ",") {
+					t.Errorf("call %d = %q, want no residue where the marker was", i, call)
+				}
+			}
+			for _, marker := range []string{"1.", "2."} {
+				if !strings.Contains(transcript, marker) {
+					t.Errorf("transcript = %q, want the %q marker kept", transcript, marker)
+				}
+			}
+		})
+	}
+}
+
+// A standalone numeric reply is an answer, not a marker: "4." to "what is two
+// plus two" has to be spoken. Only a marker that follows speech is dropped.
+func TestALoneNumericReplyIsStillSpoken(t *testing.T) {
+	calls := speakScript(t, &groupingFakeTTS{joins: true}, "4.")
+	if len(calls) != 1 || calls[0] != "4." {
+		t.Fatalf("Synthesize calls = %q, want the numeric answer spoken", calls)
+	}
+}

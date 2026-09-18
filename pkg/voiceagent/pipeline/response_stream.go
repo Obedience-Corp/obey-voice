@@ -208,6 +208,17 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	defer idle.Stop()
 	armIdle := func() { idle.Reset(idleAfter) }
 	stopIdle := func() { idle.Stop() }
+	// hold is the opening group's absolute deadline. The idle timer cannot
+	// bound the opening on its own: every token re-arms it, so a held beat
+	// waits out however long its own follower takes to stream. This one is set
+	// once, when the opening's first segment is admitted, and no token extends
+	// it — a follower that lands inside the window still merges.
+	holdAfter := p.openingHoldDelay()
+	hold := time.NewTimer(holdAfter)
+	hold.Stop()
+	defer hold.Stop()
+	armHold := func() { hold.Reset(holdAfter) }
+	stopHold := func() { hold.Stop() }
 	flushVoiceBatch := func() {
 		if len(voiceBatch) == 0 {
 			return
@@ -246,6 +257,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		metrics.noteFlushTarget(grouping.flushTarget(lastGroupChars))
 		lastGroupChars = speakableChars(text)
 		stopIdle()
+		stopHold()
 	}
 	// routeSegment sends one think-filtered segment to the transcript and, if it
 	// survives gating and cleaning, to the voice batch. The end-of-stream think
@@ -313,13 +325,22 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if metrics.firstAdmit.IsZero() {
 			metrics.firstAdmit = now
 		}
-		// A blank line before this sentence, or a group that would outgrow the
-		// ceiling, ends the held group before this sentence joins it. Both
-		// yield to a held tag-only tail, which has no prose of its own and has
-		// to ride into this sentence — the rule ready() already applies.
-		if (paragraphStart && !heldTagTail(voiceBatch)) || exceedsCeiling(voiceBatch, speakable) {
+		// A blank line before this sentence, a group that would outgrow the
+		// ceiling, or a sentence that overshoots the group before it, ends the
+		// held group before this sentence joins it. All three yield to a held
+		// tag-only tail, which has no prose of its own and has to ride into
+		// this sentence — the rule ready() already applies. The break itself is
+		// deliberately dropped when the tail is a tag: a paragraph boundary is
+		// worth less than not speaking a sound on its own.
+		if (paragraphStart && !heldTagTail(voiceBatch)) ||
+			grouping.exceedsCeiling(voiceBatch, speakable) ||
+			grouping.overshoots(voiceBatch, speakable, lastGroupChars) {
 			flushVoiceBatch()
 		}
+		// Read after the veto: a flush just above makes this segment the first
+		// of its group, and the opening's deadline starts from the segment that
+		// opens it.
+		openingGroup := lastGroupChars == 0 && len(voiceBatch) == 0
 		voiceBatch = append(voiceBatch, speakable)
 		if batchTextReady.IsZero() {
 			batchTextReady = now
@@ -335,6 +356,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		if grouping.ready(voiceBatch, batchBreak, lastGroupChars, false) && pending < voiceQueueDepth {
 			flushVoiceBatch()
 			return
+		}
+		if openingGroup {
+			armHold()
 		}
 		armIdle()
 	}
@@ -375,7 +399,10 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			routeSegment(proj.flushThink(), false)
 			// A half-full batch is still a real segment: flush it before
 			// closing, or the last sentence of every odd-length reply is
-			// silently never spoken.
+			// silently never spoken. This is the one handoff that may block
+			// on synthQueue instead of yielding to the select: at most
+			// voiceQueueDepth groups are outstanding, the worker is draining
+			// them, and nothing else is left to admit.
 			if !interrupted {
 				flushVoiceBatch()
 			}
@@ -463,6 +490,26 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			} else {
 				stopIdle()
 			}
+
+		case <-hold.C:
+			// The opening's deadline. Only an opening group can have armed it,
+			// and nothing has flushed yet, so the queue has room by
+			// construction. A follower ready in this same round still merges —
+			// the deadline bounds the wait, it does not race the sentence.
+			if len(voiceBatch) == 0 || interrupted {
+				continue
+			}
+			select {
+			case sentence, ok := <-sentenceCh:
+				takeSentence(sentence, ok)
+			default:
+			}
+			// forced, so the group goes even though it is still all beats. The
+			// one thing the deadline does not force is a tag-only tail.
+			if !grouping.ready(voiceBatch, batchBreak, lastGroupChars, true) {
+				continue
+			}
+			flushVoiceBatch()
 
 		case <-idle.C:
 			// Only complete sentences are ever buffered — the segmenter holds

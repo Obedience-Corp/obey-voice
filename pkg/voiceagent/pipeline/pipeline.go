@@ -177,6 +177,10 @@ type Pipeline struct {
 	// so grouping cases do not run at the product's 350 ms.
 	idleFlush time.Duration
 
+	// openingHold overrides the opening group's absolute deadline. Zero uses
+	// openingHoldAfter; tests set it so a held beat does not wait 400 ms.
+	openingHold time.Duration
+
 	// BrainTurnTimeout bounds ThinkStream (model + tools) per turn. Zero uses
 	// defaultBrainTurnTimeout; negative disables the bound. The bound is idle
 	// time: tokens and tool activity reset it, so a long tool loop does not
