@@ -11,6 +11,9 @@ func (w *Writer) Handle(e events.Event) {
 	if w == nil || e == nil {
 		return
 	}
+	if !recordedEventTypes[events.EventType(e)] {
+		return
+	}
 	r, ok := encodeEvent(e)
 	if !ok {
 		return
@@ -18,13 +21,49 @@ func (w *Writer) Handle(e events.Event) {
 	w.enqueue(r)
 }
 
-// AttachAll is a detachable Attach. Capture start/stop uses this so
-// /record off does not leak handlers.
+// AttachAll is a detachable Attach for /record. High-rate types never reach
+// encodeEvent; --transcript-log uses typed Attach so they never reach Handle.
 func (w *Writer) AttachAll(bus *events.Bus) func() {
 	if w == nil || bus == nil {
 		return func() {}
 	}
 	return bus.SubscribeAll(w.Handle)
+}
+
+// recordedEventTypes is the durable/harness set Attach subscribes to.
+// AttachAll uses the same names so AudioLevel ticks skip encodeEvent.
+var recordedEventTypes = map[string]bool{
+	"user_input":             true,
+	"response_delta":         true,
+	"response_ready":         true,
+	"tool_call_started":      true,
+	"tool_call_finished":     true,
+	"work_state_changed":     true,
+	"worker.usage":           true,
+	"worker.limit_reached":   true,
+	"worker.charge":          true,
+	"route.decided":          true,
+	"work_delivery":          true,
+	"job_queued":             true,
+	"job_started":            true,
+	"job_finished":           true,
+	"job_failed":             true,
+	"job_aborted":            true,
+	"error":                  true,
+	"info":                   true,
+	"speech_diagnostic":      true,
+	"stt_phase":              true,
+	"thinking_started":       true,
+	"speaking_started":       true,
+	"speaking_complete":      true,
+	"speaking_interrupted":   true,
+	"turn_interrupted":       true,
+	"turn_metrics":           true,
+	"voice_gate_stripped":    true,
+	"token_usage":            true,
+	"session_warning":        true,
+	"conversation_compacted": true,
+	"conversation_cleared":   true,
 }
 
 func encodeEvent(e events.Event) (record, bool) {

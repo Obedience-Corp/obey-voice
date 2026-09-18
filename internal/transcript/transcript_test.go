@@ -333,6 +333,50 @@ func TestFitTranscriptQueueDropsNonDurableFirst(t *testing.T) {
 	}
 }
 
+func TestAttachSkipsMeterTicks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	w.Attach(bus)
+	for i := 0; i < 50; i++ {
+		bus.Emit(events.AudioLevel{Source: "input", Level: 0.4})
+		bus.Emit(events.TranscriptPartial{Text: "par"})
+	}
+	bus.Emit(events.UserInput{Text: "hello"})
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recs := readRecords(t, path)
+	if len(recs) != 2 || recs[1].Type != "user" {
+		t.Fatalf("records = %+v, want header+user (no audio_level)", recs)
+	}
+}
+
+func TestAttachAllSkipsMeterTicks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	unsub := w.AttachAll(bus)
+	defer unsub()
+	for i := 0; i < 50; i++ {
+		bus.Emit(events.AudioLevel{Source: "output", Level: 0.9})
+	}
+	bus.Emit(events.Error{Stage: "admit", Message: "admit response: boom"})
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recs := readRecords(t, path)
+	if len(recs) != 2 || recs[1].Type != "error" {
+		t.Fatalf("records = %+v, want header+error", recs)
+	}
+}
+
 func readRawRecords(t *testing.T, path string) []map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)
