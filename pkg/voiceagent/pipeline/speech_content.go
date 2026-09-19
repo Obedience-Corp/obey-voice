@@ -242,6 +242,10 @@ func joinShortBeats(group string) string {
 		// "Step 1." and "J." are a label and an initial, not interjections.
 		// Their period is numbering or an abbreviation, and a comma there
 		// reads the list item as part of the sentence after it.
+		// A released list marker is the answer, not a continuation.
+		if markerOnlySegment(sentences[i+1]) {
+			continue
+		}
 		if endsInLabel(beat) {
 			continue
 		}

@@ -463,6 +463,53 @@ func TestOpeningHoldDoesNotSpeakATagAlone(t *testing.T) {
 	}
 }
 
+// A tag that opens the turn waits for prose, but the beat that arrives behind
+// it is still bounded by the opening deadline: the hold re-arms after the tag
+// case, so the merged group is spoken before the token stream ends.
+func TestOpeningHoldStillBoundsABeatBehindATag(t *testing.T) {
+	provider := &groupingFakeTTS{fakeTTS: fakeTTS{vocalTags: true}, joins: true}
+	player := newFakePlayer(time.Millisecond)
+	defer player.Close()
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus(), idleFlush: time.Minute, openingHold: 5 * time.Millisecond}
+
+	chunks := make(chan string)
+	done := make(chan brain.StreamResult, 1)
+	var spokenDuringTokens bool
+	go func() {
+		defer close(chunks)
+		defer close(done)
+		chunks <- "[gasp]. "
+		time.Sleep(30 * time.Millisecond)
+		chunks <- "Hm. "
+		// A follower that never completes: only the deadline can speak "Hm."
+		deadline := time.Now().Add(250 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			chunks <- "and "
+			time.Sleep(5 * time.Millisecond)
+			if len(provider.Texts()) > 0 {
+				spokenDuringTokens = true
+			}
+		}
+		chunks <- "then it kept going."
+		done <- brain.StreamResult{}
+	}()
+
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, _, err := p.streamResponse(ctx, cancel, &brain.Stream{Chunks: chunks, Done: done}, false, metrics, turn, nil); err != nil {
+		t.Fatalf("streamResponse: %v", err)
+	}
+	got := provider.Texts()
+	if !spokenDuringTokens {
+		t.Fatalf("Synthesize calls = %q, want the beat behind the tag spoken at the deadline, not at end of stream", got)
+	}
+	if len(got) < 1 || !strings.Contains(got[0], "[gasp]") || !strings.Contains(got[0], "Hm") {
+		t.Fatalf("synthesized %q, want the tag and the beat together first", got)
+	}
+}
+
 // The fallback re-prepares the group's text, so it must be given the same
 // decision the primary synthesis was given: a group the loop joined stays one
 // contour when Kokoro picks it up mid-turn, and a group it did not join keeps
@@ -513,6 +560,10 @@ func TestJoinShortBeats(t *testing.T) {
 		{name: "a package path is not a beat", in: "Run go test ./... Then check.", want: "Run go test ./... Then check."},
 		// An acronym and a PR number are not the start of a clause.
 		{name: "an acronym follower keeps its capitals", in: "Hm. NASA called.", want: "Hm, NASA called."},
+		// A released list marker is the answer; the beat before it is not a
+		// clause that runs into it.
+		{name: "a marker follower is left alone", in: "Let me check. 4.", want: "Let me check. 4."},
+		{name: "two markers ride as written", in: "The codes are. 1. 2.", want: "The codes are. 1. 2."},
 		// "i went home" is a spelling mistake the engine reads as a word.
 		{name: "a one-letter follower keeps its capital", in: "Hm. I went home.", want: "Hm, I went home."},
 		// The pronoun is still the pronoun with a contraction on it, straight
@@ -1291,6 +1342,11 @@ func TestReleasedMarkerRidesWithTheHeldGroup(t *testing.T) {
 	// The end-of-stream handoff is the one the loop makes with the intake gate
 	// closed; a veto on the release makes a second, and the queue runs one
 	// group deeper than the turn is allowed to hold.
+	// One handoff at end of stream: the released marker rides in the tail's
+	// group, so the turn makes exactly as many calls as it has groups.
+	if len(calls) != 4 {
+		t.Errorf("Synthesize calls = %d %q, want 4 (three groups and the tail carrying the marker)", len(calls), calls)
+	}
 	if got := player.MaxOutstanding(); got > voiceQueueDepth+1 {
 		t.Errorf("playbacks outstanding peaked at %d, want at most %d", got, voiceQueueDepth+1)
 	}

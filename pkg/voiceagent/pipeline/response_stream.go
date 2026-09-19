@@ -549,7 +549,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				// merges, openingGroup is false, and the beat that was 41 ms
 				// from being spoken waited 844 ms for end of stream.
 				if routed {
-					if len(voiceBatch) > 0 {
+					if lastGroupChars == 0 && len(voiceBatch) > 0 {
 						armHold()
 					}
 					continue
@@ -566,6 +566,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// forced, so the group goes even though it is still all beats. The
 			// one thing the deadline does not force is a tag-only tail.
 			if !grouping.ready(voiceBatch, batchBreak, lastGroupChars, true) {
+				// A tag-only tail waits for prose; the deadline still bounds
+				// the beat that arrives behind it.
+				armHold()
 				continue
 			}
 			flushVoiceBatch()
