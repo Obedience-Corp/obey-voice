@@ -125,7 +125,7 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 		})
 	}
 	var liveSpeaker appTUI.LiveSpeakerController
-	liveSpeaker, stopLive = prepareMeetingLiveSpeaker(ctx, &cfgCopy, capture, progress)
+	liveSpeaker, stopLive = prepareMeetingLiveSpeaker(ctx, &cfgCopy, capture)
 
 	out := cmd.OutOrStdout()
 	useTUI := useMeetingRecordTUI(opts)
@@ -146,6 +146,9 @@ func runMeetingRecord(cmd *cobra.Command, opts meetingOptions) error {
 			LiveSpeaker:   liveSpeaker,
 		})
 	} else {
+		if liveSpeaker != nil {
+			liveSpeaker.SetEnabled(true)
+		}
 		var sinks []listen.Sink
 		sinks = append(sinks, writer)
 		if opts.JSON {
@@ -420,7 +423,7 @@ func meetingRuntimeBuilder() appTUI.MeetingBuilder {
 				Status: string(meeting.AnalysisError), Error: speakerSetupErr.Error(),
 			})
 		}
-		liveSpeaker, stopLive := prepareMeetingLiveSpeaker(ctx, cfg, capture, progress)
+		liveSpeaker, stopLive := prepareMeetingLiveSpeaker(ctx, cfg, capture)
 		runtimeCleanup := cleanup
 		// Two-stage teardown: capture resources (mic, STT, live labels) release
 		// at stop so the next screen can use the device, while the speaker
@@ -470,21 +473,17 @@ func prepareMeetingLiveSpeaker(
 	ctx context.Context,
 	cfg *config.Config,
 	capture *audio.Capture,
-	progress appTUI.BuildProgress,
 ) (appTUI.LiveSpeakerController, func()) {
 	sp := speaker.FromAppConfig(cfg)
 	if !sp.MeetingLiveActive() || capture == nil {
 		return nil, nil
 	}
-	progress.Stage("Preparing speaker identification")
 	// Reuse chat's live builder so meeting labels share the embedding model
 	// and /speakers-class startup path (assets ensured on first enable).
+	// Do not SetEnabled here: TitaNet load pins a handheld long enough that
+	// the waiting screen freezes on "Preparing speaker identification".
+	// beginRecording / CLI Init enable once the recorder is on screen.
 	controller, stop, _ := prepareLiveSpeaker(ctx, cfg, capture)
-	if controller == nil {
-		return nil, stop
-	}
-	// Meeting session wants labels immediately when live is configured on.
-	controller.SetEnabled(true)
 	return controller, stop
 }
 
@@ -494,8 +493,8 @@ func prepareMeetingSpeakers(ctx context.Context, cfg *config.Config, capture *au
 		return nil, nil
 	}
 	// Download weights here (progress ticks). Do not load pyannote/TitaNet on
-	// this goroutine: NewSherpaEngine can sit for minutes on a handheld with
-	// no UI, which looks like a hang on "Preparing speaker identification".
+	// this goroutine: NewSherpaEngine can sit for minutes on a handheld, and
+	// live TitaNet is started after the recorder screen is up.
 	progress.Stage("Checking speaker models")
 	if err := config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedSpeaker: true}, progress.Downloading); err != nil {
 		return nil, fmt.Errorf("prepare speaker models: %w", err)

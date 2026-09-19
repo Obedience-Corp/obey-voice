@@ -300,7 +300,6 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if p.Capture != nil {
 			captureSrc = p.Capture
 		}
-		progress.Stage("Preparing speaker identification")
 		liveSpeaker, stopLive, liveDetail := prepareLiveSpeaker(ctx, cfg, captureSrc)
 		if liveDetail != "" {
 			bus.Emit(events.Info{Message: liveDetail})

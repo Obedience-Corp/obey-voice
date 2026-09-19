@@ -204,6 +204,32 @@ func TestPrepareMeetingSpeakersDefersSherpaEngine(t *testing.T) {
 	}
 }
 
+// Live TitaNet must not start on the meeting builder goroutine: SetEnabled
+// kicks off native load, and on a handheld that freeze sits on
+// "Preparing speaker identification" after the weights have already landed.
+func TestPrepareMeetingLiveSpeakerDoesNotEnableEngine(t *testing.T) {
+	source, err := os.ReadFile("meeting_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	const marker = "func prepareMeetingLiveSpeaker"
+	idx := strings.Index(text, marker)
+	if idx < 0 {
+		t.Fatal("prepareMeetingLiveSpeaker not found")
+	}
+	fn := text[idx:]
+	if next := strings.Index(fn[len(marker):], "\nfunc "); next >= 0 {
+		fn = fn[:len(marker)+next]
+	}
+	if strings.Contains(fn, "SetEnabled(") {
+		t.Fatal("prepareMeetingLiveSpeaker must not SetEnabled; the recorder screen starts TitaNet after the splash")
+	}
+	if strings.Contains(fn, "Stage(") {
+		t.Fatal("live enable is not a builder stage; TitaNet starts after the splash")
+	}
+}
+
 // Deferring the engine must not defer the model-path check with it: a typo in
 // speaker.models.segmentation removes the managed asset from the manifest, so
 // EnsureRuntimeAssets sees nothing to verify and nothing else looks at the path.

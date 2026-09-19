@@ -122,6 +122,38 @@ func TestLazyLiveEnableBuildsOnDemand(t *testing.T) {
 	}
 }
 
+// SetEnabled used to hold the controller lock across go startEngine(), so a
+// native load that ran immediately starved Stats and the session builder.
+func TestLazyLiveStatsDuringBlockedBuild(t *testing.T) {
+	inBuild := make(chan struct{})
+	release := make(chan struct{})
+	l := NewLazyLive(context.Background(), liveOnConfig(), newStubCapture(), func() (Engine, error) {
+		close(inBuild)
+		<-release
+		return &FakeEngine{}, nil
+	}, "")
+	defer func() { _ = l.Close() }()
+
+	l.SetEnabled(true)
+	select {
+	case <-inBuild:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine builder did not start")
+	}
+
+	done := make(chan LiveStats, 1)
+	go func() { done <- l.Stats() }()
+	select {
+	case stats := <-done:
+		if stats.Status != LiveRunning {
+			t.Fatalf("status during build = %q, want %q", stats.Status, LiveRunning)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stats blocked while the engine was loading")
+	}
+	close(release)
+}
+
 // TestLazyLiveBuildFailureReportsReason keeps a failed model load explainable
 // instead of a silent nothing-happens.
 func TestLazyLiveBuildFailureReportsReason(t *testing.T) {
