@@ -204,7 +204,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.emitResponse(metrics, events.GeneratingVoice{Sentence: speakable})
 
 		synthStarted := time.Now()
-		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil)
+		// The whole reply is one string here: no group was assembled from a
+		// held beat, so its sentence punctuation is spoken as written.
+		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil, false)
 		if errors.Is(err, errNothingToSpeak) {
 			p.completeTextTurn(turn, metrics, response)
 			return nil
@@ -249,7 +251,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 			if !usedFallback {
 				var fallbackObservation synthesisObservation
 				var fallbackUsed bool
-				playback, fallbackUsed, fallbackObservation, err = p.playFallbackObserved(ctx, speakable, err, nil)
+				playback, fallbackUsed, fallbackObservation, err = p.playFallbackObserved(ctx, speakable, err, nil, false)
 				if fallbackUsed {
 					usedFallback = true
 					observation = fallbackObservation

@@ -135,6 +135,19 @@ func TestTurnMetricsClockKeysArePresentAtZero(t *testing.T) {
 	}
 }
 
+// The turn's chunking shape rides the same envelope as its latency, so a
+// remote bench can read a grouping change without the per-segment array.
+func TestTurnMetricsEnvelopeCarriesSegmentShape(t *testing.T) {
+	env := encodeEvent(events.TurnMetrics{SegmentCount: 4, MedianSegmentChars: 96, ShortBoundaries: 1})
+	for key, want := range map[string]any{
+		"segment_count": 4, "median_segment_chars": 96, "short_boundaries": 1,
+	} {
+		if env[key] != want {
+			t.Errorf("turn_metrics %q = %v, want %v", key, env[key], want)
+		}
+	}
+}
+
 func TestSpeechDiagnosticEnvelopeCarriesAttribution(t *testing.T) {
 	env := encodeEvent(events.SpeechDiagnostic{
 		Symptom: "synthesis_starvation", Cause: "synthesis", Confidence: "high",

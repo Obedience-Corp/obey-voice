@@ -154,6 +154,8 @@ func TestUserCancelDropsQueuedJobsInTheSameLine(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 	got := h.spoken()
+	// An announcement is not a group the turn loop assembled, so it reaches
+	// TTS as written: no beat join rewrites "Stopped." into "Stopped, dropped".
 	if strings.Count(got, "Stopped") != 1 || strings.Count(got, "Dropped 1 queued job.") != 1 {
 		t.Fatalf("spoken = %q, want one stop line naming the dropped job", got)
 	}

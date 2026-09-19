@@ -70,7 +70,7 @@ func ChunkSentencesRaw(input <-chan string) <-chan string {
 				if idx < 0 {
 					break
 				}
-				sentence := strings.TrimSpace(text[:idx+1])
+				sentence := trimSegment(text[:idx+1])
 				if sentence != "" {
 					sentences = append(sentences, sentence)
 				}
@@ -86,7 +86,7 @@ func ChunkSentencesRaw(input <-chan string) <-chan string {
 		}
 
 		// Flush remaining sentences + any trailing text.
-		remaining := strings.TrimSpace(buf.String())
+		remaining := trimSegment(buf.String())
 		if remaining != "" {
 			sentences = append(sentences, remaining)
 		}
@@ -96,6 +96,27 @@ func ChunkSentencesRaw(input <-chan string) <-chan string {
 	}()
 
 	return out
+}
+
+// ParagraphMark is the blank line a segment carries when a paragraph ended
+// before it. It is the one boundary a listener hears that punctuation does not
+// carry, and TrimSpace here used to erase it: the speech pipeline only ever saw
+// a blank line that fell inside a segment, never between two sentences.
+const ParagraphMark = "\n\n"
+
+// trimSegment trims one emitted segment, keeping a leading ParagraphMark when
+// the text before it was a blank line. Consumers that clean for voice or for
+// the transcript TrimSpace again and never see it.
+func trimSegment(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return ""
+	}
+	lead := s[:len(s)-len(strings.TrimLeft(s, " \t\r\n"))]
+	if strings.Count(lead, "\n") >= 2 {
+		return ParagraphMark + trimmed
+	}
+	return trimmed
 }
 
 // findSentenceEnd returns the index of the first sentence-ending punctuation

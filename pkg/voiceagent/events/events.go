@@ -165,6 +165,20 @@ type TurnMetrics struct {
 	// resumes never goes idle by that definition, so before this counter a
 	// stuttering streamed reply and a clean one produced identical metrics.
 	Underruns int
+	// SegmentCount, MedianSegmentChars and ShortBoundaries are the shape of
+	// the reply the grouping policy produced. Segments below carries the
+	// costs; these three carry how the text was cut, which is what a chunking
+	// change moves and what dead air is usually explained by.
+	//
+	// ShortBoundaries counts boundaries whose preceding segment was under the
+	// target its group was flushed against — a prosody reset the listener did
+	// not need. That target is the grouping floor only when the provider's
+	// ramp lets a group reach it; at ramp 1.0 it is the previous group's
+	// length, so 0 is the healthy reading and 1 is healthy only where groups
+	// are allowed to grow to the floor.
+	SegmentCount       int
+	MedianSegmentChars int
+	ShortBoundaries    int
 	// Segments carries per-segment synthesis cost in playback order. The turn
 	// milestones above only ever describe the first segment; everything after
 	// it — where a long reply spends its time — is here.

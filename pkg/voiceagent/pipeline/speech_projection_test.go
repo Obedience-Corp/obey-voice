@@ -115,3 +115,43 @@ func TestSpeechProjectionMatchesTheTurnLoopRules(t *testing.T) {
 		}
 	})
 }
+
+// The projection defers the marker decision exactly as the turn loop does, so
+// a harness that replays it measures what the listener hears: numbering is
+// dropped, and a marker nothing followed is spoken at the flush.
+func TestSpeechProjectionDefersTheMarkerDecision(t *testing.T) {
+	t.Run("a marker speech follows is numbering", func(t *testing.T) {
+		heard := speakAll(NewSpeechProjection(), "1.", "Wake up at six.", "2.", "Stretch.")
+		if len(heard) != 2 || heard[0] != "Wake up at six." || heard[1] != "Stretch." {
+			t.Fatalf("spoke %q, want the two items without their markers", heard)
+		}
+	})
+
+	t.Run("a marker nothing follows is the answer", func(t *testing.T) {
+		heard := speakAll(NewSpeechProjection(), "Let me check.", "4.")
+		if len(heard) != 2 || heard[1] != "4." {
+			t.Fatalf("spoke %q, want the number at the end of the stream", heard)
+		}
+	})
+
+	t.Run("two markers nothing follows are one answer", func(t *testing.T) {
+		heard := speakAll(NewSpeechProjection(), "The codes are.", "1.", "2.")
+		if len(heard) != 2 || heard[1] != "1. 2." {
+			t.Fatalf("spoke %q, want both numbers released together", heard)
+		}
+	})
+
+	t.Run("speech after two markers drops both", func(t *testing.T) {
+		heard := speakAll(NewSpeechProjection(), "Here is the list.", "1.", "2.", "Coffee and a long walk.")
+		if len(heard) != 2 || heard[1] != "Coffee and a long walk." {
+			t.Fatalf("spoke %q, want the item without either marker", heard)
+		}
+	})
+
+	t.Run("initials are not markers", func(t *testing.T) {
+		heard := speakAll(NewSpeechProjection(), "His name is long.", "J.", "R.", "Tolkien wrote it.")
+		if len(heard) != 4 {
+			t.Fatalf("spoke %q, want the initials kept", heard)
+		}
+	})
+}

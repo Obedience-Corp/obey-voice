@@ -77,6 +77,11 @@ func encodeEvent(e events.Event) map[string]any {
 		env["stall_watchdog_fired"] = e.StallWatchdogFired
 		env["dead_air_ms"] = ms(e.DeadAirElapsed)
 		env["underruns"] = e.Underruns
+		// The turn's chunking shape, so a grouping change can be read off a
+		// remote run without replaying the per-segment array.
+		env["segment_count"] = e.SegmentCount
+		env["median_segment_chars"] = e.MedianSegmentChars
+		env["short_boundaries"] = e.ShortBoundaries
 		if len(e.Segments) > 0 {
 			segments := make([]map[string]any, 0, len(e.Segments))
 			for _, seg := range e.Segments {

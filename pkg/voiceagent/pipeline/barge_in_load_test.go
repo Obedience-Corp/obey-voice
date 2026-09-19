@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,12 +35,11 @@ func TestBargeInResponsiveUnderSynthAndQueueLoad(t *testing.T) {
 	vad := &fakeVAD{}
 
 	p := &Pipeline{
-		STT:   &fakeSTT{text: "hello"},
-		Brain: &fakeBrain{chunks: []string{"One. Two. Three. Four. Five. Six. Seven. Eight. Nine. Ten. Eleven. Twelve. Thirteen."}},
-		// Thirteen sentences yields seven SEGMENTS: the turn loop speaks the
-		// opening alone and batches two thereafter. Seven sentences used to mean
-		// seven segments; leaving it there would have halved the load this test
-		// puts on the queue without failing.
+		STT: &fakeSTT{text: "hello"},
+		// Count SEGMENTS, not sentences: a reply of interjections is one group,
+		// and the queue this test exists to saturate would never fill. Each of
+		// these reaches the flush target on its own.
+		Brain:      &fakeBrain{chunks: []string{strings.Join(standaloneSentences, " ")}},
 		TTS:        &fakeTTS{delay: 30 * time.Millisecond},
 		Player:     player,
 		Capture:    capture,
@@ -128,8 +128,10 @@ func TestRunTurnBargeInDuringPlaybackPause(t *testing.T) {
 	capture := newFakeCapture()
 
 	p := &Pipeline{
-		STT:        &fakeSTT{text: "hello"},
-		Brain:      &fakeBrain{chunks: []string{"One. Two."}},
+		STT: &fakeSTT{text: "hello"},
+		// Two sentences that each reach the flush target, so there are two
+		// playbacks with a gap between them to talk into.
+		Brain:      &fakeBrain{chunks: []string{strings.Join(standaloneSentences[:2], " ")}},
 		TTS:        &fakeTTS{delay: 1500 * time.Millisecond},
 		Player:     player,
 		Capture:    capture,

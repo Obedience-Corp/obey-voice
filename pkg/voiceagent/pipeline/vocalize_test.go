@@ -146,7 +146,7 @@ func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
 	kokoro := &fakeTTS{}
 	native := &fakeTTS{vocalTags: true}
 	in := "[sigh] hello there."
-	got := prepareSpeechForTTS(in, qwen, nil)
+	got := prepareSpeechForTTS(in, qwen, nil, false)
 	if strings.Contains(strings.ToLower(got), "[sigh]") {
 		t.Errorf("Qwen still saw markup: %q", got)
 	}
@@ -163,20 +163,20 @@ func TestPrepareSpeechForTTSDependsOnEngine(t *testing.T) {
 	if !found {
 		t.Errorf("Qwen should get sigh onomatopoeia, got %q", got)
 	}
-	got = prepareSpeechForTTS(in, kokoro, nil)
+	got = prepareSpeechForTTS(in, kokoro, nil, false)
 	if got != "hello there." {
 		t.Errorf("Kokoro = %q, want stripped speech only", got)
 	}
-	if got := prepareSpeechForTTS("[sigh]", kokoro, nil); got != "" {
+	if got := prepareSpeechForTTS("[sigh]", kokoro, nil, false); got != "" {
 		t.Errorf("Kokoro tag-only = %q, want empty", got)
 	}
-	if got := prepareSpeechForTTS(in, native, nil); got != in {
+	if got := prepareSpeechForTTS(in, native, nil, false); got != in {
 		t.Errorf("native-tag engine = %q, want tags passed through", got)
 	}
-	if got := prepareSpeechForTTS("[mouth] hello there.", qwen, nil); got != "hello there." {
+	if got := prepareSpeechForTTS("[mouth] hello there.", qwen, nil, false); got != "hello there." {
 		t.Errorf("Qwen must not speak [mouth], got %q", got)
 	}
-	if got := prepareSpeechForTTS("[mouth] hello there.", kokoro, nil); got != "hello there." {
+	if got := prepareSpeechForTTS("[mouth] hello there.", kokoro, nil, false); got != "hello there." {
 		t.Errorf("Kokoro must not speak [mouth], got %q", got)
 	}
 }
@@ -239,12 +239,39 @@ func TestRunTurnMouthTagIsNotSpoken(t *testing.T) {
 	}
 }
 
+// The textual join is the caller's decision. A non-joining engine speaks the
+// text it was handed unless the turn loop says this string is a group it
+// assembled around a held beat — otherwise every announcement and every whole
+// text-mode reply gets its sentence periods rewritten into commas.
+func TestPrepareSpeechForTTSJoinsOnlyWhenTheLoopSaysSo(t *testing.T) {
+	kokoro := &kokoroLikeTTS{}
+	const group = "Wait. Wait, you what?"
+
+	if got := prepareSpeechForTTS(group, kokoro, nil, false); got != group {
+		t.Errorf("prepareSpeechForTTS(joinBeats=false) = %q, want the text as written", got)
+	}
+	if got, want := prepareSpeechForTTS(group, kokoro, nil, true), "Wait, wait, you what?"; got != want {
+		t.Errorf("prepareSpeechForTTS(joinBeats=true) = %q, want %q", got, want)
+	}
+
+	const reply = "The build finished on main. It passed. Tests are green across the board."
+	if got := prepareSpeechForTTS(reply, kokoro, nil, false); got != reply {
+		t.Errorf("a whole reply was rewritten: %q", got)
+	}
+
+	// The residue trim is wired here, not only unit-tested: a stripped tag
+	// leaves a leading "." that the engine reads aloud as "dot".
+	if got, want := prepareSpeechForTTS(". The build finished.", kokoro, nil, false), "The build finished."; got != want {
+		t.Errorf("prepareSpeechForTTS left the orphan punctuation: %q, want %q", got, want)
+	}
+}
+
 func TestPrepareSpeechForTTSRotatesOnomatopoeiaWhenBankPresent(t *testing.T) {
 	qwen := &qwenLikeTTS{fakeTTS: fakeTTS{vocalTags: true}}
 	bank := newVocalBank("")
 	seen := map[string]bool{}
 	for range 40 {
-		got := prepareSpeechForTTS("[sigh] hi", qwen, bank)
+		got := prepareSpeechForTTS("[sigh] hi", qwen, bank, false)
 		for _, phrase := range vocalPhrases[vocalSigh] {
 			if strings.Contains(got, phrase) {
 				seen[phrase] = true
@@ -307,6 +334,17 @@ func (q *qwenLikeTTS) RewriteVocalTags(s string, pick func(kind string) string) 
 	return expandVocalTags(s, pick)
 }
 
+// Qwen carries prosody across a request, so its text is never rewritten.
+func (q *qwenLikeTTS) JoinsSentences() bool { return true }
+
+// kokoroLikeTTS is the engine the textual join exists for: sherpa re-splits on
+// sentence punctuation inside one call, so a merged beat has to be rewritten.
+// It declares the answer because the default is now the request join — an
+// engine nobody measured speaks its text as written.
+type kokoroLikeTTS struct{ fakeTTS }
+
+func (k *kokoroLikeTTS) JoinsSentences() bool { return false }
+
 func TestFallbackKokoroDoesNotReceiveQwenOnomatopoeia(t *testing.T) {
 	primary := &failingTTS{err: &tts.ProviderError{Kind: tts.ProviderErrorWorker, Err: errors.New("worker down")}}
 	primary.vocalTags = true
@@ -341,4 +379,64 @@ type failingTTS struct {
 
 func (f *failingTTS) Synthesize(context.Context, string) (*audio.PCMStream, error) {
 	return nil, f.err
+}
+
+// Only the orphan a stripped tag leaves at the front goes. Punctuation further
+// in is the speaker's: a spaced " , " is a pause and a trailing "?" is the
+// sentence type the engine reads as a contour.
+func TestTrimSpeechResidueKeepsPauses(t *testing.T) {
+	cases := map[string]string{
+		". The build finished.":      "The build finished.",
+		". . Still finished.":        "Still finished.",
+		"Well ... I guess so.":       "Well ... I guess so.",
+		"Wait , what ... happened ?": "Wait , what ... happened ?",
+		"Nothing to trim here.":      "Nothing to trim here.",
+		".":                          "",
+	}
+	for in, want := range cases {
+		if got := trimSpeechResidue(in); got != want {
+			t.Errorf("trimSpeechResidue(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The orphan a tag leaves mid-utterance is removed where the tag was, because
+// only there is that period known to be the tag's. Merged groups put tags
+// inside the text, not only at its front.
+func TestStripSpokenVocalTagsTakesTheOrphanPunctuation(t *testing.T) {
+	cases := map[string]string{
+		"Okay. [laugh]. Good.":         "Okay. Good.",
+		"[laugh]. The build finished.": "The build finished.",
+		"[sigh]... I guess so.":        "... I guess so.",
+		"Nothing to strip here.":       "Nothing to strip here.",
+		// #208: a bracket the sound bank never listed is still unspeakable,
+		// and it still leaves its orphan behind.
+		"[mouth] [laugh] hello": "hello",
+		"Okay. [mouth]. Good.":  "Okay. Good.",
+	}
+	for in, want := range cases {
+		if got := stripSpokenVocalTags(in); got != want {
+			t.Errorf("stripSpokenVocalTags(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// B3: an engine that cannot vocalize a tag gets the tag's orphan punctuation
+// removed where the tag was, not only at the front of the utterance. A merged
+// group puts tags mid-text, and plain stripVocalTags leaves "Okay. . Good."
+// for the engine to read the bare period aloud as "dot".
+func TestPrepareSpeechForTTSRemovesTheOrphanATagLeaves(t *testing.T) {
+	// Strips tags (no SupportsVocalTags) and joins sentences, so the result is
+	// the rendering and nothing else.
+	stripping := &qwenLikeTTS{}
+	cases := map[string]string{
+		"[laugh]. The build finished.": "The build finished.",
+		"Okay. [laugh]. Good.":         "Okay. Good.",
+		"[sigh]... I guess so.":        "... I guess so.",
+	}
+	for in, want := range cases {
+		if got := prepareSpeechForTTS(in, stripping, nil, false); got != want {
+			t.Errorf("prepareSpeechForTTS(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

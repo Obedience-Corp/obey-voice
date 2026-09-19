@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,7 +74,7 @@ func TestRunTurnCancellationUnderFullQueueReturnsPromptly(t *testing.T) {
 
 	p := &Pipeline{
 		STT:    &fakeSTT{text: "hello"},
-		Brain:  &fakeBrain{chunks: []string{"One. Two. Three. Four. Five. Six."}},
+		Brain:  &fakeBrain{chunks: []string{strings.Join(standaloneSentences, " ")}},
 		TTS:    ttsProvider,
 		Player: player,
 		Events: bus,
@@ -89,10 +90,10 @@ func TestRunTurnCancellationUnderFullQueueReturnsPromptly(t *testing.T) {
 	// Wait until the playback queue is full (voiceQueueDepth segments synthesized
 	// and enqueued), then cancel.
 	//
-	// Count SEGMENTS, not sentences: they are 1:1 only while laterBatchSegments
-	// is 1 (D009). If batching is ever re-enabled, raise this input to keep the
-	// segment count, or the queue silently stops filling and this guard stops
-	// guarding.
+	// Count SEGMENTS, not sentences: grouping makes them 1:1 only for sentences
+	// that reach the flush target alone. Keep the reply above the segment count
+	// this guard needs, or the queue silently stops filling and it stops
+	// guarding anything.
 	waitForCond(t, func() bool { return len(ttsProvider.CallTimes()) >= voiceQueueDepth },
 		2*time.Second, "playback queue did not fill")
 	cancel()
@@ -128,7 +129,7 @@ func TestRunTurnBargeInUnderFullQueueReturnsPromptly(t *testing.T) {
 
 	p := &Pipeline{
 		STT:        &fakeSTT{text: "hello"},
-		Brain:      &fakeBrain{chunks: []string{"One. Two. Three. Four. Five. Six."}},
+		Brain:      &fakeBrain{chunks: []string{strings.Join(standaloneSentences, " ")}},
 		TTS:        &fakeTTS{delay: time.Millisecond},
 		Player:     player,
 		Capture:    capture,

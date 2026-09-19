@@ -59,6 +59,20 @@ func (q *Qwen3TTS) SpeechWarmState() string {
 	return "cold"
 }
 
+// SegmentRamp is 1/1.83: in-pipeline RTF is 1.83 at 0.6b (tts-bench), and the
+// ramp is the no-gap bound RTF x audio(k+1) <= audio(k), so it is 1/RTF like
+// every other engine's — not 1.0. Synthesis here already costs more than the
+// audio it produces, so the next segment has to be a little over half the one
+// playing or the listener hears the difference. 1.7b is worse (2.2-2.6); the
+// tier that is slower than its own ramp is a throughput problem, not a
+// chunking one.
+func (q *Qwen3TTS) SegmentRamp() float64 { return 0.55 }
+
+// JoinsSentences is true. Decoding is autoregressive over the whole request,
+// so a second sentence in the same call is conditioned on the first and the
+// per-request fixed cost is paid once. Punctuation stays as written.
+func (q *Qwen3TTS) JoinsSentences() bool { return true }
+
 // WholeSentencePlayback is supported by Qwen's stream=false policy (including
 // workers that do not advertise incremental PCM). The diagnostic uses this as
 // a capability fact and never treats it as a promise of faster speech.

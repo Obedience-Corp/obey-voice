@@ -19,11 +19,11 @@ All paths below are in [`pkg/voiceagent/pipeline`](../pkg/voiceagent/pipeline).
 | `turn_deadline.go` | Model/tool idle deadlines and activity-based deadline extension |
 | `turn_metrics.go` | Timing snapshots, segment accounting, audible-sink identity and first-audio stamps |
 | `turn_conductor.go` | Terminal turn transitions, metrics publication and keep-up advice |
-| `response_stream.go` | Stream coordination, response collection and model-stream observation |
+| `response_stream.go` | Stream coordination, segment grouping and the idle flush, response collection and model-stream observation |
 | `synthesis.go` | Segment synthesis, fallback eligibility, silence bounds and stream disposal |
 | `playback.go` | Playback events, lifecycle observation and synthesis/playback timing stamps |
 | `speech_recovery.go` | Recovery text, best-effort speech and standalone announcements |
-| `speech_content.go` | Speakable-content filtering and voice batching constants |
+| `speech_content.go` | Speakable-content filtering, the segment-grouping policy and the textual sentence join |
 | `brain_hooks.go` | Model/tool/usage hooks, route context and event translation |
 | `compaction.go` | Turn preparation and conversation compaction |
 
@@ -122,6 +122,10 @@ Two consequences worth knowing before moving anything else:
 - `SpeechCharsPerSecond` and `TypicalSegmentChars` are exported from `provider.go`. They sit
   beside the `SegmentGracer` interface because every provider implementing it needs them, and
   providers no longer share a package.
+- `SegmentRamp` and `SentenceJoiner` are optional capabilities in the same file. They describe
+  how fast segments may grow and whether a request join carries prosody; the pipeline reads them
+  through `SegmentRampOf` / `JoinsSentencesOf`, which supply the defaults for a provider that
+  declares neither.
 - `NewAudio8Provider` owns Audio8's model-directory assembly. The selector used to know that
   layout; now only the package that owns Audio8 does.
 

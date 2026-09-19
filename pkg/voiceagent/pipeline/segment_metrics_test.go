@@ -37,9 +37,9 @@ func TestTurnMetricsRecordEverySegment(t *testing.T) {
 
 	chunks := make(chan string, 3)
 	done := make(chan brain.StreamResult, 1)
-	chunks <- "First sentence here. "
-	chunks <- "Second sentence follows. "
-	chunks <- "Third one closes it."
+	chunks <- standaloneSentences[0] + " "
+	chunks <- standaloneSentences[1] + " "
+	chunks <- standaloneSentences[2]
 	close(chunks)
 	done <- brain.StreamResult{}
 	close(done)
