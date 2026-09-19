@@ -122,8 +122,7 @@ func TestLazyLiveEnableBuildsOnDemand(t *testing.T) {
 	}
 }
 
-// SetEnabled used to hold the controller lock across go startEngine(), so a
-// native load that ran immediately starved Stats and the session builder.
+// Stats is polled from the TUI, so it must answer while a build is in flight.
 func TestLazyLiveStatsDuringBlockedBuild(t *testing.T) {
 	inBuild := make(chan struct{})
 	release := make(chan struct{})

@@ -6,10 +6,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -68,9 +68,8 @@ func TestLiveSpeakerFirstEnableEnsuresManagedEmbedding(t *testing.T) {
 	defer func() { _ = engine.Close() }()
 }
 
-// Meeting config on by default. The live builder used to copy that flag and
-// re-verify pyannote on first enable, which is what froze the meeting splash
-// after those weights had already downloaded.
+// Meeting diarization is on by default; the live ensure must still ask for
+// TitaNet only.
 func TestLiveSpeakerEngineBuilderDoesNotPullMeetingSegmentation(t *testing.T) {
 	cfg := &config.Config{ModelsDir: t.TempDir()}
 	cfg.Speaker.Enabled = true
@@ -108,21 +107,16 @@ func TestLiveSpeakerEngineBuilderDoesNotPullMeetingSegmentation(t *testing.T) {
 }
 
 func TestPrepareLiveSpeakerDoesNotEnableOnBuild(t *testing.T) {
-	source, err := os.ReadFile("live_speaker.go")
-	if err != nil {
-		t.Fatal(err)
+	cfg := &config.Config{ModelsDir: t.TempDir()}
+	cfg.Speaker.Enabled = true
+	cfg.Speaker.Live.Enabled = true
+
+	controller, stop, detail := prepareLiveSpeaker(t.Context(), cfg, audio.NewCapture())
+	defer stop()
+	if detail == "" {
+		t.Fatal("detail is empty, want the configured-on path")
 	}
-	text := string(source)
-	const marker = "func prepareLiveSpeaker"
-	idx := strings.Index(text, marker)
-	if idx < 0 {
-		t.Fatal("prepareLiveSpeaker not found")
-	}
-	fn := text[idx:]
-	if next := strings.Index(fn[len(marker):], "\nfunc "); next >= 0 {
-		fn = fn[:len(marker)+next]
-	}
-	if strings.Contains(fn, "SetEnabled(") {
-		t.Fatal("prepareLiveSpeaker must not SetEnabled; the session screen starts TitaNet after the splash")
+	if got := controller.Stats().Status; got != speaker.LiveDisabled {
+		t.Fatalf("status after build = %q, want %q until the session screen enables it", got, speaker.LiveDisabled)
 	}
 }
