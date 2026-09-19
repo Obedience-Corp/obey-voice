@@ -270,6 +270,23 @@
       "editable": true
     },
     {
+      "key": "tts_lookahead",
+      "type": "int",
+      "default": 2,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Speech lookahead",
+      "help": "How many pieces of a reply may be prepared ahead of the one being spoken. 2 keeps one playing and one being made. Higher only helps an engine that can make more than one at a time.",
+      "unit": "segments",
+      "min": 1,
+      "max": 8,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "TTS_LOOKAHEAD",
+      "editable": true
+    },
+    {
       "key": "tts_place",
       "type": "enum",
       "default": "local",

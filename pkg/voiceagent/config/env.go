@@ -17,6 +17,7 @@ var envBindings = map[string]string{
 	"tts_voice":                   "TTS_VOICE",
 	"audio8_voice":                "AUDIO8_VOICE",
 	"tts_worker_token":            "OBEY_SPEECH_TOKEN",
+	"tts_lookahead":               "TTS_LOOKAHEAD",
 	"qwen_tts_binary":             "QWEN_TTS_BINARY",
 	"qwen_tts_model":              "QWEN_TTS_MODEL",
 	"qwen_tts_timeout":            "QWEN_TTS_TIMEOUT",

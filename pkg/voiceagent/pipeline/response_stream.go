@@ -140,7 +140,14 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		return captureErr
 	}
 
-	playbackEvents := make(chan playbackEvent, voiceQueueDepth*2)
+	// The primary provider decides both how many segments may be outstanding
+	// (its concurrency) and how they are grouped, so resolve it once up front:
+	// the queue, the pending gate and the playback channel are all sized from
+	// the answer.
+	primaryVoice, fallbackVoice := p.responseTTS(ctx)
+	lookaheadDepth, synthWorkers := p.lookahead(primaryVoice)
+
+	playbackEvents := make(chan playbackEvent, lookaheadDepth*2)
 	modelDone := stream.Done
 	modelFinished := false
 
@@ -154,20 +161,28 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// worker (native qwen3-tts-worker or Kokoro) without waiting for the full
 	// brain reply. That is the product progressive path for long replies.
 	//
-	// Synthesis runs on a single ordered worker so this loop keeps servicing
-	// barge-in and playback events while a sentence is being generated —
-	// PlayStream cannot return until the TTS engine has produced audio, and
-	// Kokoro generates a whole BATCH per uncancellable cgo call, holding its
-	// provider mutex for the duration (see the grouping policy below). One worker
-	// (not one goroutine per sentence) preserves playback order. Backpressure is
-	// unchanged: the pending gate keeps at most voiceQueueDepth sentences
+	// Synthesis runs off this loop so it keeps servicing barge-in and playback
+	// events while a sentence is being generated — PlayStream cannot return
+	// until the TTS engine has produced audio, and Kokoro generates a whole
+	// BATCH per uncancellable cgo call, holding its provider mutex for the
+	// duration (see the grouping policy below).
+	//
+	// The worker count is the provider's concurrency, which counts engine
+	// instances and not goroutines: extra goroutines against a one-instance
+	// engine only queue on that mutex and buy nothing, which is why every
+	// engine here answers 1 today. Order is kept by the gate, not by the
+	// worker count — each job carries the index the listener hears it at and
+	// parks until the index before it has been handed off. Backpressure is
+	// unchanged: the pending gate keeps at most lookaheadDepth sentences
 	// outstanding, so the buffered handoff below never blocks.
 	//
-	// stickFallback is turn-scoped: once any sentence falls back to Kokoro,
-	// remaining sentences stay on Kokoro so a flaky Qwen worker cannot flip
-	// mid-reply between persona voice and the fallback voice.
-	var stickFallback bool
-	synthQueue := make(chan synthWork, voiceQueueDepth)
+	// stickFallback is turn-scoped and shared across the workers: once any
+	// sentence falls back to Kokoro, remaining sentences stay on Kokoro so a
+	// flaky Qwen worker cannot flip mid-reply between persona voice and the
+	// fallback voice.
+	var stickFallback fallbackLatch
+	gate := newOrderGate()
+	synthQueue := make(chan synthWork, lookaheadDepth)
 	var synthQueueOnce sync.Once
 	closeSynthQueue := func() { synthQueueOnce.Do(func() { close(synthQueue) }) }
 	defer closeSynthQueue()
@@ -187,7 +202,6 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// emitted chunks instead of audible ones spent the opening's budget on
 	// silence whenever a reply began with a suppressed tool line. The provider
 	// is only reachable here too.
-	primaryVoice, fallbackVoice := p.responseTTS(ctx)
 	grouping := groupingFor(primaryVoice)
 	// Grouping follows the engine that speaks. Once a segment falls back, the
 	// rest of the turn is synthesized by the fallback, so its join mode and
@@ -201,6 +215,9 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 	// case that took one in its own round knows its deadline decision is stale.
 	var routed bool
 	lastGroupChars := 0
+	// Segments are numbered here, in admission order, so an index is fixed
+	// before any worker sees the job.
+	nextIndex := 0
 	// idle fires when a complete sentence has been buffered and the brain has
 	// gone quiet: a tool call or a long pause must not hold speech hostage.
 	// Stopped until a segment is buffered; Stop/Reset never leave a stale value
@@ -251,7 +268,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			metrics.delivery.queued++
 		}
 		queuedAt := time.Now()
-		synthQueue <- synthWork{sentence: text, textReady: batchTextReady, queuedAt: queuedAt, joinBeats: joinBeats}
+		synthQueue <- synthWork{sentence: text, index: nextIndex, textReady: batchTextReady, queuedAt: queuedAt, joinBeats: joinBeats}
+		nextIndex++
 		voiceBatch = voiceBatch[:0]
 		batchTextReady = time.Time{}
 		batchBreak = false
@@ -308,7 +326,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		// At most one handoff per segment: the intake gate guarantees a single
 		// free queue slot, and a blocking send inside the loop wedges the
 		// turn. A group that cannot go now goes on the idle timer.
-		if grouping.ready(voiceBatch, batchBreak, lastGroupChars, false) && pending < voiceQueueDepth {
+		if grouping.ready(voiceBatch, batchBreak, lastGroupChars, false) && pending < lookaheadDepth {
 			flushVoiceBatch()
 			return
 		}
@@ -439,7 +457,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// closing, or the last sentence of every odd-length reply is
 			// silently never spoken. This is the one handoff that may block
 			// on synthQueue instead of yielding to the select: at most
-			// voiceQueueDepth groups are outstanding, the worker is draining
+			// lookaheadDepth groups are outstanding, the workers are draining
 			// them, and nothing else is left to admit.
 			if !interrupted {
 				flushVoiceBatch()
@@ -468,31 +486,29 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 		routeSegment(proj.filterThink(sentence), paragraphStart)
 	}
 
-	go func() {
-		// Segments are numbered in playback order by the single ordered synth
-		// worker, so the index is the position a listener hears.
-		index := 0
-		for work := range synthQueue {
-			outcome := p.synthesizeSegmentObserved(streamCtx, loopDone, work, index, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued)
-			if !outcome.enqueued {
-				// No playback was enqueued: release the pending slot so the
-				// loop's accounting and the intake gate stay correct.
-				if outcome.failure != nil {
-					sendPlaybackEvent(loopDone, playbackEvents, *outcome.failure)
-				} else {
-					sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: work.sentence, index: index})
+	for i := 0; i < synthWorkers; i++ {
+		go func() {
+			for work := range synthQueue {
+				outcome := p.synthesizeSegmentObserved(streamCtx, loopDone, work, gate, &audioStarted, playbackEvents, &stickFallback, &realAudioQueued)
+				if !outcome.enqueued {
+					// No playback was enqueued: release the pending slot so the
+					// loop's accounting and the intake gate stay correct.
+					if outcome.failure != nil {
+						sendPlaybackEvent(loopDone, playbackEvents, *outcome.failure)
+					} else {
+						sendPlaybackEvent(loopDone, playbackEvents, playbackEvent{kind: playbackNotEnqueued, sentence: work.sentence, index: work.index})
+					}
 				}
 			}
-			index++
-		}
-	}()
+		}()
+	}
 
 	for sentences != nil || pending > 0 || modelDone != nil {
 		// Pause sentence intake while the playback queue is full so the loop
 		// always returns to select and can drain playbackEvents. Blocking here
 		// to acquire a slot would deadlock the turn once the queue fills.
 		var sentenceCh <-chan string
-		if pending < voiceQueueDepth {
+		if pending < lookaheadDepth {
 			sentenceCh = sentences
 		}
 
@@ -559,7 +575,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			// Defensive, and the reason there is no test: the opening is the
 			// turn's first flush, so pending is still 0 at this deadline
 			// today. Re-arm rather than block the loop on a full queue.
-			if pending >= voiceQueueDepth {
+			if pending >= lookaheadDepth {
 				armHold()
 				continue
 			}
@@ -602,7 +618,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 				continue
 			default:
 			}
-			if pending >= voiceQueueDepth {
+			if pending >= lookaheadDepth {
 				armIdle()
 				continue
 			}

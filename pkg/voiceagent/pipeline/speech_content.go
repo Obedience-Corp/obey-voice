@@ -12,6 +12,9 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
+// voiceQueueDepth is the compiled default for tts_lookahead: one segment
+// playing while the next is synthesized. Pipeline.TTSLookahead overrides it,
+// and the provider's concurrency raises it (see lookahead()).
 const voiceQueueDepth = 2
 
 // Segment grouping: how much text goes into one synthesis call.

@@ -530,7 +530,7 @@ func TestFallbackCarriesTheLoopsJoinDecision(t *testing.T) {
 			now := time.Now()
 			outcome := p.synthesizeSegmentObserved(context.Background(), make(chan struct{}), synthWork{
 				sentence: group, textReady: now, queuedAt: now, joinBeats: tc.joinBeats,
-			}, 0, new(atomic.Bool), make(chan playbackEvent, 2), nil)
+			}, nil, new(atomic.Bool), make(chan playbackEvent, 2), nil)
 			if !outcome.enqueued {
 				t.Fatalf("outcome = %+v, want the fallback playback enqueued", outcome)
 			}

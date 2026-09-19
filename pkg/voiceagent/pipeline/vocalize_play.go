@@ -60,7 +60,7 @@ func pcmStreamFromSamples(ctx context.Context, samples []float32, rate int) *aud
 	return stream
 }
 
-func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *bool, joinBeats bool) (*audio.PCMStream, bool, synthesisObservation, error) {
+func (p *Pipeline) synthUtteranceObserved(ctx context.Context, sentence string, stickFallback *fallbackLatch, joinBeats bool) (*audio.PCMStream, bool, synthesisObservation, error) {
 	// Recorded clips do not match the live TTS voice, so they are never
 	// spliced. Stage tags are stripped (or rewritten only if the engine
 	// actually renders them).
@@ -140,7 +140,7 @@ func renderVocalTagsFor(sentence string, provider tts.Provider, vocals *vocalBan
 // renderVocalizedObserved stitches sound clips and synthesized speech into one stream
 // so a reply like "[moan] that's it" is a moan then words, not the word "moan".
 
-func (p *Pipeline) renderVocalizedObserved(ctx context.Context, parts []vocalPart, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
+func (p *Pipeline) renderVocalizedObserved(ctx context.Context, parts []vocalPart, stickFallback *fallbackLatch) (*audio.PCMStream, bool, synthesisObservation, error) {
 	var chunks [][]float32
 	usedFallback := false
 	observation := synthesisObservation{warmState: events.WarmStateUnknown}

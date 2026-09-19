@@ -40,6 +40,11 @@ func voiceKeys() []KeySpec {
 			Help: "How long to wait for the speech computer to answer a connection. It does not bound the model load on a cold host.",
 		},
 		{
+			Key: "tts_lookahead", Type: TypeInt, Default: DefaultTTSLookahead, Unit: "segments", Min: num(MinTTSLookahead), Max: num(MaxTTSLookahead),
+			Group: GroupVoice, Title: "Speech lookahead",
+			Help: "How many pieces of a reply may be prepared ahead of the one being spoken. 2 keeps one playing and one being made. Higher only helps an engine that can make more than one at a time.",
+		},
+		{
 			Key: "tts_voice", Type: TypeEnum, Default: DefaultKokoroVoice, Enum: kokoroVoiceEnum(),
 			Group: GroupVoice, Title: "Kokoro voice",
 			Help:               "The voice Kokoro speaks in. Qwen ignores this and uses its own preset.",

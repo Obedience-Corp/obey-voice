@@ -197,9 +197,37 @@ func JoinsSentencesOf(p Provider) bool {
 	return !ok || j.JoinsSentences()
 }
 
+// ConcurrentProvider is how many synthesis requests a provider runs at once.
+//
+// It counts engine instances, not goroutines. Kokoro holds its provider mutex
+// across an uncancellable cgo Generate, and a Qwen worker holds its session
+// mutex for a whole native request, so extra callers against one instance only
+// queue on that mutex. A provider answers more than 1 when it actually has
+// more than one engine behind it.
+type ConcurrentProvider interface{ Concurrency() int }
+
+// DefaultConcurrency applies to a provider that declares none: one request at
+// a time, which is what every engine here does today.
+const DefaultConcurrency = 1
+
+// ConcurrencyOf reports the provider's concurrency, or DefaultConcurrency.
+// A non-positive answer is treated as absent rather than as "never synthesize".
+func ConcurrencyOf(p Provider) int {
+	if c, ok := p.(ConcurrentProvider); ok {
+		if n := c.Concurrency(); n > 0 {
+			return n
+		}
+	}
+	return DefaultConcurrency
+}
+
 // SoftCanceler is optionally implemented by warm-worker TTS providers.
 // Pipeline barge-in and turn cancel should SoftCancel the in-flight request
 // without killing the worker process (reload cost).
+//
+// The argument is a reason, not a request id: Qwen discards it entirely, so a
+// cancel is fan-out to whatever that provider has in flight. Per-index cancel
+// is the job context, not this call.
 type SoftCanceler interface {
 	SoftCancel(requestID string) error
 }

@@ -113,7 +113,7 @@ func TestPlayFallbackRescuesAStalledPrimary(t *testing.T) {
 
 	p := &Pipeline{TTS: &graceTTS{grace: time.Second}, TTSFallback: fallback, Player: player}
 
-	var stick bool
+	var stick fallbackLatch
 	stalled := fmt.Errorf("segment: %w", audio.ErrStreamStalled)
 	playback, usedFallback, err := p.playFallback(ctx, "the sentence that stalled", stalled, &stick)
 	if err != nil {
@@ -125,7 +125,7 @@ func TestPlayFallbackRescuesAStalledPrimary(t *testing.T) {
 	if playback == nil {
 		t.Fatal("playFallback() returned no playback handle")
 	}
-	if !stick {
+	if !stick.latched() {
 		t.Fatal("stickFallback did not latch; the rest of the reply would flip between voices")
 	}
 	if got := fallback.Texts(); len(got) != 1 || got[0] != "the sentence that stalled" {
