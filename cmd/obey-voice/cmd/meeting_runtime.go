@@ -480,9 +480,7 @@ func prepareMeetingLiveSpeaker(
 	}
 	// Reuse chat's live builder so meeting labels share the embedding model
 	// and /speakers-class startup path (assets ensured on first enable).
-	// Do not SetEnabled here: TitaNet load pins a handheld long enough that
-	// the waiting screen freezes on "Preparing speaker identification".
-	// beginRecording / CLI Init enable once the recorder is on screen.
+	// beginRecording / CLI Init enable it once the recorder is on screen.
 	controller, stop, _ := prepareLiveSpeaker(ctx, cfg, capture)
 	return controller, stop
 }

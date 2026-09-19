@@ -143,11 +143,11 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	m.recoverWork(time.Now(), true)
 	cmds = append(cmds, m.workProjectionPollCmd())
 	if deps.liveSpeaker != nil {
-		m.liveSpeakerStats = deps.liveSpeaker.Stats()
-		m.liveSpeakerStatsKnown = true
 		if speaker.FromAppConfig(m.cfg).LiveActive() {
 			deps.liveSpeaker.SetEnabled(true)
 		}
+		m.liveSpeakerStats = deps.liveSpeaker.Stats()
+		m.liveSpeakerStatsKnown = true
 		cmds = append(cmds, liveSpeakerStatsCmd(deps.liveSpeaker))
 	}
 	// Scripted meter for VHS/termcast demos — skips real mic/TTS turns.

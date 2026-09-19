@@ -13,15 +13,11 @@ import (
 
 // prepareLiveSpeaker builds the live speaker controller for a conversation.
 //
-// The engine is loaded lazily and is not switched on here. SetEnabled is called
-// from the session screen after the waiting splash (chat startConversation,
-// meeting beginRecording / CLI Init). Enabling on this builder goroutine used
-// to pin every core in TitaNet CGO, so the splash sat on "Preparing speaker
-// identification" with no progress — the handheld hang this type exists to
-// avoid. Config that does not enable live still gets a working controller so
-// /speakers on can turn labels on mid-session. Only a runtime that cannot feed
-// audio at all (--text, no capture) is permanently unavailable; detail explains
-// that on the event bus.
+// The engine is loaded lazily and is not switched on here; the session screen
+// calls SetEnabled once it is up. Config that does not enable live still gets a
+// working controller so /speakers on can turn labels on mid-session. Only a
+// runtime that cannot feed audio at all (--text, no capture) is permanently
+// unavailable; detail explains that on the event bus.
 //
 // stop tears the chain down in order (feed, adapter, analyzer/engine) and is
 // safe to call when no engine was ever built.
@@ -124,10 +120,8 @@ func liveSpeakerEngineBuilder(
 	}
 	assetCfg.Speaker.Enabled = true
 	assetCfg.Speaker.Live.Enabled = true
-	// Live identification is TitaNet only. Copying the session config would
-	// keep speaker.meeting.enabled and make the first enable re-verify (or
-	// download) pyannote — the same freeze the meeting splash already showed
-	// after those weights landed. Meeting diarization ensures its own assets.
+	// Live identification is TitaNet only; meeting diarization ensures its
+	// own pyannote assets.
 	assetCfg.Speaker.Meeting.Enabled = false
 
 	return func() (speaker.Engine, error) {

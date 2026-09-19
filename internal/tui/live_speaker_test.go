@@ -87,6 +87,9 @@ func TestStartConversationEnablesLiveSpeakerWhenConfigured(t *testing.T) {
 	if len(fake.enabled) == 0 || !fake.enabled[len(fake.enabled)-1] {
 		t.Fatalf("enabled = %v, want live speaker to start after the splash", fake.enabled)
 	}
+	if m.liveSpeakerStats.Status != speaker.LiveRunning {
+		t.Fatalf("first paint status = %v, want %v", m.liveSpeakerStats.Status, speaker.LiveRunning)
+	}
 }
 
 func TestStartConversationLeavesLiveSpeakerOffWhenConfiguredOff(t *testing.T) {
