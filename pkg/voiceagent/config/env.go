@@ -30,6 +30,7 @@ var envBindings = map[string]string{
 	"qwen_tts_consent":            "QWEN_TTS_CONSENT",
 	"qwen_tts_model_tier":         "QWEN_TTS_MODEL_TIER",
 	"qwen_tts_stream":             "QWEN_TTS_STREAM",
+	"qwen_tts_workers":            "QWEN_TTS_WORKERS",
 	"qwen_tts_native_url":         "QWEN_TTS_NATIVE_URL",
 	"qwen_tts_native_sha256":      "QWEN_TTS_NATIVE_SHA256",
 	"output_device":               "OUTPUT_DEVICE",

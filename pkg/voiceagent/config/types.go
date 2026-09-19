@@ -37,6 +37,9 @@ type Config struct {
 	// QwenTTSStream decides whether a Stage B worker's PCM chunks are played as
 	// they arrive (auto / on / off). See tts_stream.go.
 	QwenTTSStream string `mapstructure:"qwen_tts_stream"`
+	// QwenTTSWorkers is how many native worker subprocesses synthesize at
+	// once. See qwen_workers.go QwenTTSWorkersOf.
+	QwenTTSWorkers int `mapstructure:"qwen_tts_workers"`
 	// QwenTTSNativeURL is the release tarball (https://… or file://…/…tar.gz) for models ensure.
 	QwenTTSNativeURL string `mapstructure:"qwen_tts_native_url"`
 	// QwenTTSNativeSHA256 is the optional sha256 of that compressed tarball.

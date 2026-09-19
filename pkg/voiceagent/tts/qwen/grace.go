@@ -73,8 +73,12 @@ func (q *Qwen3TTS) FirstAudioGraceForChars(chars int) time.Duration {
 // on the restart path got the warm budget (often the 8s floor) while actually
 // paying a full ~11s startup. That would let the stall watchdog cancel the
 // self-healing restart it exists to protect.
+// A pool answers true only when every worker is up. A segment dispatched to
+// the one slot that still has to launch pays the full cold start, so charging
+// the allowance for the whole pool is the direction that cannot cancel a
+// healthy turn.
 func (q *Qwen3TTS) hasLiveSession() bool {
-	return q.liveSession() != nil
+	return q.poolLive()
 }
 
 // capByTimeout bounds a computed grace by the configured synthesis timeout,

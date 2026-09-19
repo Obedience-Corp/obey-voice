@@ -311,9 +311,7 @@ func TestProviderStreamPolicyFollowsPlaceAndBackend(t *testing.T) {
 			if got := session.StreamRequested(); got != tc.want {
 				t.Fatalf("StreamRequested = %v, want %v", got, tc.want)
 			}
-			q.speech = session
-			var live qwenSpeechSession = session
-			q.speechRef.Store(&live)
+			q.primarySlot().adopt(session)
 			if got := q.WorkerStreaming(); got != tc.want {
 				t.Fatalf("WorkerStreaming = %v, want %v: the metric must describe what the wire does", got, tc.want)
 			}
@@ -389,7 +387,7 @@ func TestLocalWorkerStreamsOnlyOnACUDAPackage(t *testing.T) {
 			// An explicit binary has no install manifest; the backend is what
 			// the installed package would have reported.
 			q.backendHint = tc.backend
-			q.applyStreamPolicy(q.speech)
+			q.applyStreamPolicy(q.primarySlot().session)
 
 			if got := q.WorkerStreaming(); got != tc.want {
 				t.Fatalf("WorkerStreaming = %v, want %v for a %s package", got, tc.want, tc.backend)
@@ -655,10 +653,8 @@ func TestNativeReconnectDowngradesWarmEvidenceToCold(t *testing.T) {
 	q.alive.Store(true)
 	dead := &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}, fail: true}
 	live := &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}}
-	q.speech = dead
-	var current qwenSpeechSession = dead
-	q.speechRef.Store(&current)
-	q.speechCompleted.Store(true)
+	q.primarySlot().adopt(dead)
+	q.primarySlot().completed.Store(true)
 	q.startSpeech = func(context.Context) (qwenSpeechSession, error) { return live, nil }
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -674,7 +670,7 @@ func TestNativeReconnectDowngradesWarmEvidenceToCold(t *testing.T) {
 	if got := stream.SynthesisWarmState(); got != "cold" {
 		t.Fatalf("restarted request state = %q, want cold", got)
 	}
-	if !q.speechCompleted.Load() {
+	if !q.primarySlot().completed.Load() {
 		t.Fatal("successful replacement request did not publish current-session success")
 	}
 	stream.Close()
@@ -684,9 +680,7 @@ func TestNativeCanceledRequestDoesNotPublishSuccessEvidence(t *testing.T) {
 	q := newQwen3TTS("", "", time.Minute, nil)
 	q.native = true
 	q.alive.Store(true)
-	q.speech = &stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}, fail: true}
-	current := q.speech
-	q.speechRef.Store(&current)
+	q.primarySlot().adopt(&stubSpeechSession{speechSession: &speechSession{label: nativeWorkerLabel}, fail: true})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -694,7 +688,7 @@ func TestNativeCanceledRequestDoesNotPublishSuccessEvidence(t *testing.T) {
 	if err := q.synthesizeNativeStream(ctx, tts.SynthesisRequest{Text: "hi"}, stream); err == nil {
 		t.Fatal("canceled request unexpectedly succeeded")
 	}
-	if q.speechCompleted.Load() {
+	if q.primarySlot().completed.Load() {
 		t.Fatal("canceled request published success evidence")
 	}
 	if got := stream.SynthesisWarmState(); got != "cold" {

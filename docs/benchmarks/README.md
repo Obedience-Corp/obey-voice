@@ -223,6 +223,87 @@ Engines are grouped by what the pipeline **reported**, not by what
 Kokoro is a Kokoro measurement; `requested_as` preserves the substitution, and
 `tts-ab` warns on it rather than averaging it in.
 
+### Qwen worker count: 1 vs 2
+
+`qwen_tts_workers` runs more than one `bin/qwen3-tts-worker` subprocess behind
+the one provider. Qwen's in-pipeline RTF is 1.83 at 0.6b, and the ramp rule
+says a segment must be shorter than the previous one divided by the RTF, so no
+chunking policy removes its dead air — throughput has to rise instead. Whether
+a second worker raises it on one Metal GPU is unknown: autoregressive decode at
+batch 1 usually leaves headroom, but two copies of the model and a 27B brain
+compete for the same memory.
+
+**The default is 1 and stays 1 until this run says otherwise.** Nothing below
+has been run.
+
+Measure in an isolated HOME so the real install is never edited, pointing
+`models_dir` at the real cache so nothing re-downloads:
+
+```bash
+just build
+rig="$(mktemp -d)"
+root="$rig/.obey/agents/voice/festival-voice"
+mkdir -p "$root"
+cp "$HOME/.obey/agents/voice/festival-voice/config.yaml" "$root/config.yaml"
+HOME="$rig" ./bin/obey-voice config set models_dir "$HOME/.cache/festival-voice/models"
+
+# Leg A: one worker
+HOME="$rig" ./bin/obey-voice config set qwen_tts_workers 1
+HOME="$rig" BENCH_TTS_RAW=docs/benchmarks/.w1-workers1.json just bench tts "qwen3-tts:0.6b"
+
+# Leg B: two workers, same commit, same session, same fixtures
+HOME="$rig" ./bin/obey-voice config set qwen_tts_workers 2
+HOME="$rig" BENCH_TTS_RAW=docs/benchmarks/.w1-workers2.json just bench tts "qwen3-tts:0.6b"
+```
+
+Then repeat both legs with the 27B brain unloaded (`ollama ps` to see what is
+resident, `ollama stop <model>` to unload — reversible, and never `ollama rm`),
+which is what separates the engine's own scaling from memory pressure.
+
+Sample worker memory **during** each leg, from a second terminal:
+
+```bash
+while :; do
+  pgrep -f qwen3-tts-worker | xargs -I{} ps -o pid=,rss=,comm= -p {}
+  vm_stat | awk '/Pages free/ {print "free pages:", $3}'
+  sleep 2
+done
+```
+
+`ps` RSS counts mmapped GGUF pages that two workers may share, so it is an
+upper bound on what a second worker actually costs. `vmmap --summary <pid>`
+reports the dirty/private split, which is the number that settles whether two
+workers fit; report both, and report what was measured rather than a
+prediction.
+
+`cmd/tts-ab` keys a comparison on the engine label, and both legs are
+`qwen3-tts:0.6b`, so a 1-vs-2 A/B collides on the same engine string. Report
+the two raw tables side by side (`print_tts_table` output, or the fields below
+read off the raw JSON with `jq`) and say that is why; do not invent a worker
+field the tool does not have.
+
+Per leg, from the raw JSON:
+
+| Quantity | Source |
+|---|---|
+| aggregate RTF | median of `Segments[].EngineElapsed / AudioSeconds`, plus total audio seconds over total wall time |
+| dead air | `DeadAirElapsed` per turn |
+| underruns | `Underruns` per turn |
+| fallbacks / stalls | `TTSFallbacks`, `StallWatchdogFired` |
+| resident memory | sampled RSS of **each** `qwen3-tts-worker`, the `vmmap` private split, and system free memory |
+
+The ship gate (D8). All three must hold, with the 27B brain resident, before
+the default may move off 1:
+
+| Gate | Threshold |
+|---|---|
+| Aggregate throughput | 2 workers ≥ **1.4×** 1 worker |
+| Underruns | **no increase** over the 1-worker leg |
+| Resident memory | both workers inside the box's budget, brain resident |
+
+Below any of them, `qwen_tts_workers` stays 1 and is documented as an
+experiment.
+
 ### Measuring a real conversation
 
 Fixtures will not reproduce a specific slow turn — the reply text is what

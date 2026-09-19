@@ -2,6 +2,7 @@ package qwen
 
 import (
 	"context"
+	"fmt"
 	tts "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"strings"
 
@@ -52,9 +53,13 @@ func (q *Qwen3TTS) Capabilities() tts.ProviderCapabilities {
 	defer q.sessionMu.Unlock()
 	registry := managedqwen.SelectableVoices()
 	voiceNames := make([]string, 0, len(registry))
+	// Presets come off a live engine without taking its mutex: every worker in
+	// a pool handshakes the same package, and blocking this behind a synthesis
+	// would stall the settings UI for the length of a sentence.
+	native := q.liveSession()
 	switch {
-	case q.native && q.speech != nil && len(q.speech.Presets()) > 0:
-		voiceNames = append(voiceNames, q.speech.Presets()...)
+	case q.native && native != nil && len(native.Presets()) > 0:
+		voiceNames = append(voiceNames, native.Presets()...)
 	case q.managed && q.session != nil && len(q.session.voices) > 0:
 		voiceNames = append(voiceNames, q.session.voices...)
 	case q.native && !q.remote:
@@ -129,14 +134,17 @@ func (q *Qwen3TTS) Status() tts.ProviderStatus {
 	if !available {
 		detail = "provider is closed"
 	} else if q.native {
-		q.sessionMu.Lock()
-		workerReady := q.speech != nil
-		q.sessionMu.Unlock()
-		if !workerReady {
+		ready, workers := q.readyWorkers(), len(q.pool)
+		switch {
+		case ready == workers && workers > 1:
+			detail = fmt.Sprintf("%d native qwen3-tts-worker warm sessions ready", workers)
+		case ready == workers:
+		case q.remote:
+			detail = "speech worker " + q.remoteAddr + " disconnected; it will redial on the next request"
+		case workers > 1:
+			detail = fmt.Sprintf("%d of %d native workers stopped; each restarts on its next request", workers-ready, workers)
+		default:
 			detail = "native worker stopped; it will restart on the next request"
-			if q.remote {
-				detail = "speech worker " + q.remoteAddr + " disconnected; it will redial on the next request"
-			}
 		}
 	} else if q.managed {
 		q.sessionMu.Lock()
