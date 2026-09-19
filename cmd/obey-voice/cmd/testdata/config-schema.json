@@ -97,7 +97,7 @@
       "allows_empty": false,
       "group": "voice",
       "title": "Barge-in speech confidence",
-      "help": "How sure the barge-in detector must be that mic audio is real speech before cutting her off. Lower it toward 0.6 once voice_frontend=webrtc is doing the echo cancellation.",
+      "help": "How sure the barge-in detector must be that mic audio is real speech before cutting her off. voice_frontend=webrtc defaults to 0.6; nlms/off stay at 0.85 unless you set this.",
       "min": 0.3,
       "max": 0.95,
       "restart_required": true,
