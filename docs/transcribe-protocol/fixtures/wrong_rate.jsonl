@@ -1,0 +1,1 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-wrong-rate","seq":0,"type":"failed","code":"input_format_mismatch","message":"{{INPUT}} is 48000 Hz, the request declares 16000 Hz","retryable":false}
