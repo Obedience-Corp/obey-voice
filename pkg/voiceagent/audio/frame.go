@@ -108,10 +108,12 @@ type FrameSource interface {
 	Close() error
 }
 
-// The live capture and finite fixture sources satisfy the contract.
+// The live capture, the finite fixture and the finite file sources satisfy the
+// contract.
 var (
 	_ FrameSource = (*Capture)(nil)
 	_ FrameSource = (*FixtureSource)(nil)
+	_ FrameSource = (*WAVFileSource)(nil)
 )
 
 // SamplesDuration returns the wall-time a chunk of n mono samples represents at
