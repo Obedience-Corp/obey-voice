@@ -16,7 +16,22 @@ const (
 	// The binding forwards a zero value straight to C, so set it explicitly
 	// rather than relying on the model's default.
 	vadWindowSize = 512
+	// vadBufferSeconds is the detector's internal audio buffer. A segment can
+	// never be longer than what the buffer holds.
+	vadBufferSeconds = 30
 )
+
+// vadParams are the per-detector knobs newVAD forwards to sherpa. Zero values
+// are forwarded as they are, which is what the native default means.
+type vadParams struct {
+	threshold  float32
+	minSpeech  float32
+	minSilence float32
+	// maxSpeech raises the detector's threshold once a segment runs longer
+	// than this many seconds, which splits continuous speech. Zero leaves the
+	// native default, which is what the live capture paths use.
+	maxSpeech float32
+}
 
 // VAD wraps sherpa-onnx Silero voice activity detection.
 type VAD struct {
@@ -34,7 +49,7 @@ func NewVAD(cfg *config.Config) (*VAD, error) {
 	if cfg.VADMinSpeechDuration > 0 {
 		minSpeech = float32(cfg.VADMinSpeechDuration)
 	}
-	return newVAD(cfg, threshold, minSpeech)
+	return newVAD(cfg, vadParams{threshold: threshold, minSpeech: minSpeech, minSilence: float32(cfg.VADSilenceDuration)})
 }
 
 // NewBargeInVAD creates a VAD tuned for interrupt detection, stricter by
@@ -48,18 +63,19 @@ func NewVAD(cfg *config.Config) (*VAD, error) {
 func NewBargeInVAD(cfg *config.Config) (*VAD, error) {
 	// webrtc's unset default is 0.6; see config.WebRTCBargeInVADThreshold.
 	threshold := float32(config.BargeInVADThresholdOf(cfg))
-	return newVAD(cfg, threshold, vadMinSpeechDuration)
+	return newVAD(cfg, vadParams{threshold: threshold, minSpeech: vadMinSpeechDuration, minSilence: float32(cfg.VADSilenceDuration)})
 }
 
-func newVAD(cfg *config.Config, threshold, minSpeech float32) (*VAD, error) {
+func newVAD(cfg *config.Config, params vadParams) (*VAD, error) {
 	modelPath := filepath.Join(config.ModelsDirFrom(cfg), "silero_vad.onnx")
 
 	sileroConfig := sherpa.SileroVadModelConfig{
 		Model:              modelPath,
-		MinSpeechDuration:  minSpeech,
-		MinSilenceDuration: float32(cfg.VADSilenceDuration),
-		Threshold:          threshold,
+		MinSpeechDuration:  params.minSpeech,
+		MinSilenceDuration: params.minSilence,
+		Threshold:          params.threshold,
 		WindowSize:         vadWindowSize,
+		MaxSpeechDuration:  params.maxSpeech,
 	}
 
 	vadConfig := sherpa.VadModelConfig{
@@ -67,7 +83,7 @@ func newVAD(cfg *config.Config, threshold, minSpeech float32) (*VAD, error) {
 		SampleRate: SampleRate,
 	}
 
-	detector := sherpa.NewVoiceActivityDetector(&vadConfig, 30) // 30s buffer
+	detector := sherpa.NewVoiceActivityDetector(&vadConfig, vadBufferSeconds)
 	if detector == nil {
 		return nil, fmt.Errorf("failed to create VAD detector (model: %s)", modelPath)
 	}

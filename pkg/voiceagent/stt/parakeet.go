@@ -103,6 +103,16 @@ func (s *ParakeetSTT) transcribe(samples []float32) (string, error) {
 	return normalizeTranscript(strings.TrimSpace(stream.GetResult().Text)), nil
 }
 
+// DecodeSegment decodes one finite span of speech. It is the SegmentDecoder
+// seam: no session, no VAD, no capture, so a file runner can drive the same
+// recognizer the live loop uses.
+func (s *ParakeetSTT) DecodeSegment(ctx context.Context, samples []float32) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return s.transcribe(samples)
+}
+
 // Available returns true if the recognizer loaded.
 func (s *ParakeetSTT) Available() bool { return s.recognizer != nil }
 
