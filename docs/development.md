@@ -52,7 +52,7 @@ installed (`obey-voice models ensure`, once available), run the smoke plan:
 
 ```bash
 # Deterministic, no models needed:
-go test ./pkg/voiceagent/stt ./pkg/voiceagent/endpoint ./pkg/voiceagent/audio
+go test ./pkg/voiceagent/stt ./pkg/voiceagent/endpoint ./pkg/voiceagent/audio ./pkg/voiceagent/transcription
 
 # Pipeline flow with stubbed stages (no models, no network):
 go test -tags integration ./tests/voiceflow      # turn state machine + barge-in
@@ -61,6 +61,32 @@ go test -tags integration ./tests/voiceflow      # turn state machine + barge-in
 just qwen-live                                   # real native Qwen voices + cancel/restart WAVs
 obey-voice listen                                  # manual: speak a short command
 ```
+
+### File transcription checks (opt-in, require local models)
+
+`pkg/voiceagent/transcription` runs on fakes in the default lane: the runner, the
+span math and the WAV reader have no model or device dependency. Three checks do
+need the installed models and are gated behind their own variables, so a machine
+without them still passes the suite.
+
+| Check | Variable | What it proves |
+|---|---|---|
+| `TestFileVADKeepsOffsetsAbsoluteAcrossTheBuffer` and `TestFileVADSplitsLongSpeechIntoAdjacentSpans` (`pkg/voiceagent/audio`) | `OBEY_VOICE_FILE_VAD_MODELS_DIR` | Native VAD span starts stay absolute past the 30 s detector buffer and across a forced split |
+| `TestRunPlacesRealSpeechOnTheFileTimeline` (`pkg/voiceagent/transcription`) | `OBEY_VOICE_TRANSCRIBE_MODELS_DIR` | Two real utterances land within 500 ms of their known positions in the file |
+| `TestT3bTranscribeFixture` (`cmd/obey-voice/cmd`) | `T3B_FIXTURE`, `T3B_OUT` | The existing legacy meeting replay still transcribes the fixture through `newReplaySource` and `replayTranscribe`, and dumps the records for comparison |
+
+```bash
+# Deterministic, no models needed:
+go test -race ./pkg/voiceagent/transcription ./pkg/voiceagent/audio ./pkg/voiceagent/stt
+
+# Real models, pointed at the installed directory:
+OBEY_VOICE_TRANSCRIBE_MODELS_DIR="$(obey-voice paths --json | jq -r .models_dir)" \
+  go test ./pkg/voiceagent/transcription -run TestRunPlacesRealSpeechOnTheFileTimeline -v
+```
+
+`just test pkg` only reaches `./internal/`, so run the transcription package by
+path. The two-hour bounded-memory proof in `pkg/voiceagent/audio` is skipped
+under `-short`.
 
 ### Conversation flow gate (opt-in, local Ollama live + worker)
 
