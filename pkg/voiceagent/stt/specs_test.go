@@ -1,6 +1,8 @@
 package stt
 
 import (
+	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -23,6 +25,8 @@ func TestSpecForNormalized(t *testing.T) {
 				UsesEndpoint:   false,
 				SupportsEOF:    true,
 				RequiresVAD:    true,
+				SegmentDecode:  true,
+				Timing:         []string{TimingUtterance},
 				RecommendedUse: "reliable utterance-final Whisper transcription (previous default)",
 			},
 			wantOK: true,
@@ -37,6 +41,7 @@ func TestSpecForNormalized(t *testing.T) {
 				UsesEndpoint:   true,
 				SupportsEOF:    true,
 				RequiresVAD:    true,
+				SegmentDecode:  false,
 				RecommendedUse: "live partial transcripts with recognizer endpointing",
 			},
 			wantOK: true,
@@ -51,6 +56,8 @@ func TestSpecForNormalized(t *testing.T) {
 				UsesEndpoint:   false,
 				SupportsEOF:    true,
 				RequiresVAD:    true,
+				SegmentDecode:  true,
+				Timing:         []string{TimingUtterance},
 				RecommendedUse: "utterance-final transcription via external whisper.cpp CLI",
 			},
 			wantOK: true,
@@ -74,12 +81,12 @@ func TestSpecForNormalized(t *testing.T) {
 				t.Fatalf("SpecForNormalized(%+v) ok = %v, want %v", tt.norm, ok, tt.wantOK)
 			}
 			if !tt.wantOK {
-				if got != (Spec{}) {
+				if !reflect.DeepEqual(got, Spec{}) {
 					t.Errorf("SpecForNormalized(%+v) on unsupported = %+v, want zero value", tt.norm, got)
 				}
 				return
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("SpecForNormalized(%+v) = %+v, want %+v", tt.norm, got, tt.want)
 			}
 		})
@@ -137,5 +144,42 @@ func TestEveryListedProviderHasSpec(t *testing.T) {
 				t.Errorf("SpecForNormalized(%+v) ok = false, want spec for listed provider %q", norm, provider.Name)
 			}
 		})
+	}
+}
+
+// TestSpecTimingMatchesTheDecoderFactory keeps the capability table and the
+// decoder factory from drifting apart: a provider that says it can decode a
+// segment must be one the factory will build, and it must report the timing
+// granularity it produces.
+func TestSpecTimingMatchesTheDecoderFactory(t *testing.T) {
+	for _, spec := range specTable {
+		t.Run(spec.Provider+"-"+spec.Mode, func(t *testing.T) {
+			norm := config.NormalizedSTT{Provider: spec.Provider, Mode: spec.Mode}
+			if got := segmentDecodeSupported(norm); got != spec.SegmentDecode {
+				t.Fatalf("segmentDecodeSupported = %v but the spec says %v", got, spec.SegmentDecode)
+			}
+			if spec.SegmentDecode != slices.Contains(spec.Timing, TimingUtterance) {
+				t.Fatalf("SegmentDecode = %v but Timing = %v", spec.SegmentDecode, spec.Timing)
+			}
+			if slices.Contains(spec.Timing, TimingWord) {
+				t.Fatal("no shipped provider returns word boundaries; Timing must not advertise them")
+			}
+		})
+	}
+}
+
+// TestSpecTimingIsNotSharedWithCallers proves a caller cannot edit the table
+// through the slice it is handed.
+func TestSpecTimingIsNotSharedWithCallers(t *testing.T) {
+	norm := config.NormalizedSTT{Provider: config.STTProviderParakeet, Mode: config.STTModeOffline}
+	spec, ok := SpecForNormalized(norm)
+	if !ok {
+		t.Fatal("no spec for the default provider")
+	}
+	spec.Timing[0] = "tampered"
+
+	again, _ := SpecForNormalized(norm)
+	if again.Timing[0] != TimingUtterance {
+		t.Fatalf("the spec table was edited through a returned slice: %v", again.Timing)
 	}
 }

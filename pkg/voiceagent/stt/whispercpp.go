@@ -124,6 +124,12 @@ func whisperCPPLanguage(language string) string {
 	return strings.ToLower(parts[0])
 }
 
+// DecodeSegment decodes one finite span of speech through the CLI. It is the
+// SegmentDecoder seam onto the same call the live loop makes.
+func (w *WhisperCPPSTT) DecodeSegment(ctx context.Context, samples []float32) (string, error) {
+	return w.transcribe(ctx, samples)
+}
+
 // Available returns true if whisper.cpp is ready.
 func (w *WhisperCPPSTT) Available() bool {
 	_, err := os.Stat(w.modelPath)

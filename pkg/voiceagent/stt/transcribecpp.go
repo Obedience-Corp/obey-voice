@@ -133,6 +133,12 @@ func (t *TranscribeCPPSTT) transcribe(ctx context.Context, samples []float32) (s
 	return normalizeTranscript(strings.TrimSpace(string(data))), nil
 }
 
+// DecodeSegment decodes one finite span of speech through the CLI. It is the
+// SegmentDecoder seam onto the same call the live loop makes.
+func (t *TranscribeCPPSTT) DecodeSegment(ctx context.Context, samples []float32) (string, error) {
+	return t.transcribe(ctx, samples)
+}
+
 // Available returns true if the CLI and the GGUF are still in place.
 func (t *TranscribeCPPSTT) Available() bool {
 	_, err := os.Stat(t.modelPath)
