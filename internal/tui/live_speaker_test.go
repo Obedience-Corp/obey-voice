@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -72,6 +74,30 @@ func TestLiveSpeakerStatusLabelsCoverSafeStates(t *testing.T) {
 		if got := liveSpeakerStatusLabel(tc.status); got != tc.want {
 			t.Errorf("status %q = %q, want %q", tc.status, got, tc.want)
 		}
+	}
+}
+
+func TestStartConversationEnablesLiveSpeakerWhenConfigured(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	m.cfg = &config.Config{}
+	m.cfg.Speaker.Enabled = true
+	m.cfg.Speaker.Live.Enabled = true
+	fake := &tuiLiveSpeakerFake{}
+	m.startConversation(conversationDeps{liveSpeaker: fake, bus: events.NewBus(), ctx: context.Background()})
+	if len(fake.enabled) == 0 || !fake.enabled[len(fake.enabled)-1] {
+		t.Fatalf("enabled = %v, want live speaker to start after the splash", fake.enabled)
+	}
+	if m.liveSpeakerStats.Status != speaker.LiveRunning {
+		t.Fatalf("first paint status = %v, want %v", m.liveSpeakerStats.Status, speaker.LiveRunning)
+	}
+}
+
+func TestStartConversationLeavesLiveSpeakerOffWhenConfiguredOff(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	fake := &tuiLiveSpeakerFake{}
+	m.startConversation(conversationDeps{liveSpeaker: fake, bus: events.NewBus(), ctx: context.Background()})
+	if len(fake.enabled) != 0 {
+		t.Fatalf("enabled = %v, config was off so the engine must stay unloaded", fake.enabled)
 	}
 }
 

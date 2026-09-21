@@ -204,6 +204,21 @@ func TestPrepareMeetingSpeakersDefersSherpaEngine(t *testing.T) {
 	}
 }
 
+func TestPrepareMeetingLiveSpeakerDoesNotEnableEngine(t *testing.T) {
+	cfg := &config.Config{ModelsDir: t.TempDir()}
+	cfg.Speaker.Enabled = true
+	cfg.Speaker.Meeting.Live = true
+
+	controller, stop := prepareMeetingLiveSpeaker(t.Context(), cfg, audio.NewCapture())
+	if controller == nil {
+		t.Fatal("controller is nil with speaker.meeting.live on")
+	}
+	defer stop()
+	if got := controller.Stats().Status; got != speaker.LiveDisabled {
+		t.Fatalf("status after build = %q, want %q until the recorder screen enables it", got, speaker.LiveDisabled)
+	}
+}
+
 // Deferring the engine must not defer the model-path check with it: a typo in
 // speaker.models.segmentation removes the managed asset from the manifest, so
 // EnsureRuntimeAssets sees nothing to verify and nothing else looks at the path.

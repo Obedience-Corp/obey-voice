@@ -122,6 +122,37 @@ func TestLazyLiveEnableBuildsOnDemand(t *testing.T) {
 	}
 }
 
+// Stats is polled from the TUI, so it must answer while a build is in flight.
+func TestLazyLiveStatsDuringBlockedBuild(t *testing.T) {
+	inBuild := make(chan struct{})
+	release := make(chan struct{})
+	l := NewLazyLive(context.Background(), liveOnConfig(), newStubCapture(), func() (Engine, error) {
+		close(inBuild)
+		<-release
+		return &FakeEngine{}, nil
+	}, "")
+	defer func() { _ = l.Close() }()
+
+	l.SetEnabled(true)
+	select {
+	case <-inBuild:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine builder did not start")
+	}
+
+	done := make(chan LiveStats, 1)
+	go func() { done <- l.Stats() }()
+	select {
+	case stats := <-done:
+		if stats.Status != LiveRunning {
+			t.Fatalf("status during build = %q, want %q", stats.Status, LiveRunning)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stats blocked while the engine was loading")
+	}
+	close(release)
+}
+
 // TestLazyLiveBuildFailureReportsReason keeps a failed model load explainable
 // instead of a silent nothing-happens.
 func TestLazyLiveBuildFailureReportsReason(t *testing.T) {
