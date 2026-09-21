@@ -333,7 +333,7 @@ func TestRunKeepsAnEOFSpanInsideTheCeiledFileDuration(t *testing.T) {
 		t.Errorf("segment spans [%d,%d), which is not a forward interval", seg.StartUS, seg.EndUS)
 	}
 	if seg.EndUS > summary.DurationUS {
-		t.Errorf("segment ends at %d, past Summary.DurationUS %d (the C1 floor/ceil gap)", seg.EndUS, summary.DurationUS)
+		t.Errorf("segment ends at %d, past Summary.DurationUS %d (segment end versus file duration)", seg.EndUS, summary.DurationUS)
 	}
 	if seg.EndUS != ceiled {
 		t.Errorf("EOF span EndUS = %d, want the ceiled duration %d", seg.EndUS, ceiled)

@@ -57,12 +57,10 @@ func PreRollRingSamples(maxSpeech, minSilence, preRoll time.Duration, rate int) 
 	return int(total.Seconds() * float64(rate))
 }
 
-// NewFileSpanDetector builds the span detector for one file run. It is the only
-// place D002's ring sizing lives: opts are the options the file detector was
-// built with, resolved so a zero field reads as the default the detector
-// actually applies, and preRoll is vad_pre_roll_ms from config. Every caller
-// that transcribes a file goes through here, so the command and the meeting
-// replay cannot size the ring differently.
+// NewFileSpanDetector builds the span detector for one file run. opts are the
+// options the file detector was built with, resolved so a zero field reads as
+// the default the detector actually applies, and preRoll is vad_pre_roll_ms
+// from config. The retained audio ring is sized from those resolved values.
 func NewFileSpanDetector(vad vadDetector, opts audio.FileVADOptions, preRoll time.Duration) SpanDetector {
 	if preRoll < 0 {
 		preRoll = 0

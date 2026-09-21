@@ -13,17 +13,17 @@ import (
 
 const (
 	// DefaultMinSpeechSamples is the shortest span worth decoding, 0.3 s at
-	// 16 kHz. It matches minSpeechSamples in the live offline loop
-	// (pkg/voiceagent/stt/offline_loop.go:12), which is unexported.
+	// 16 kHz. It matches minSpeechSamples in the live offline loop, which is
+	// unexported.
 	DefaultMinSpeechSamples = 4800
 
 	// DefaultSpeechFloor is the RMS below which a span is room tone rather than
-	// a talker. It matches minSpeechRMS (pkg/voiceagent/stt/loop_common.go:30).
-	// A file source applies no gain, so the pre-gain number is used directly.
+	// a talker. It matches minSpeechRMS. A file source applies no gain, so the
+	// pre-gain number is used directly.
 	DefaultSpeechFloor = 0.002
 
 	// audibleWindow is the 100 ms stretch judged for a talker, matching
-	// audibleWindow (pkg/voiceagent/stt/loop_common.go:83).
+	// audibleWindow in the live loop.
 	audibleWindow = 1600
 
 	// progressInterval is how much consumed audio separates two progress
@@ -136,7 +136,7 @@ func (r *runner) readAll(ctx context.Context) error {
 		case err == nil:
 		case errors.Is(err, audio.ErrSourceClosed):
 			// The source is already closed, so there is no more audio. The live
-			// loops treat this as end of input too (stt/loop_common.go:256).
+			// loops treat this as end of input too (readLoopFrame).
 			return nil
 		case errors.Is(err, audio.ErrNoFrameReady):
 			return &Error{Code: CodeInternal, Err: errors.New("transcription: finite source reported no frame ready; it must end with a final frame")}
@@ -283,9 +283,9 @@ func cancellation(ctx context.Context, err error) error {
 }
 
 // audibleAbove reports whether any 100 ms window of a span is loud enough to be
-// a talker. It is the finite-buffer equivalent of audibleSpeechAbove
-// (pkg/voiceagent/stt/loop_common.go:94), which is unexported and streams; a
-// span is already in memory, so its windows are simply walked.
+// a talker. It is the finite-buffer equivalent of audibleSpeechAbove, which is
+// unexported and streams; a span is already in memory, so its windows are
+// simply walked.
 func audibleAbove(samples []float32, floor float64) bool {
 	for start := 0; start < len(samples); start += audibleWindow {
 		end := min(start+audibleWindow, len(samples))

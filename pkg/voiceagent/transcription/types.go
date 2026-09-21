@@ -10,10 +10,8 @@ import (
 
 // TimingUtterance is the only timing granularity this runner produces: one
 // timed segment per detected speech span. Word timing needs a decoder that
-// reports it, which no shipped provider does. stt declares the same string for
-// its capability table and phase 004's protocol package declares it again for
-// the wire; the three cannot share one constant without an import that D004
-// forbids, so they are kept equal by having the same value written out.
+// reports it, which no shipped provider does. The value is "utterance" and
+// must match stt.TimingUtterance.
 const TimingUtterance = "utterance"
 
 // Stable failure codes. They are the subset of the wire's code list that the
@@ -122,9 +120,8 @@ const (
 
 // Summary is the terminal event and the value Run returns. It is emitted once,
 // as the last event, and returned with the same contents. A caller mapping
-// events to a wire protocol writes its terminal line exactly once, from one of
-// the two: the transcribe command in phase 004 writes it from Run's return
-// value and its sink ignores the Summary event.
+// events to a wire protocol writes its terminal line exactly once, from either
+// the emitted event or the returned value.
 type Summary struct {
 	DurationUS   int64
 	SegmentCount int

@@ -46,9 +46,8 @@ func TestRunPlacesRealSpeechOnTheFileTimeline(t *testing.T) {
 	// 3 s silence, speech, 2 s silence, the same speech again. The first
 	// start stays at 3 s. The second is derived from 3 s + the resampled
 	// clip + 2 s because N2 is 24 kHz Kokoro speech (~1.289 s after
-	// resample to 16 kHz), not the 1.5 s 16 kHz voiceflow fixture the
-	// task named. SamplesToMicros converts that sample index so the
-	// expected offset matches the runner's integer timeline.
+	// resample to 16 kHz). SamplesToMicros converts that sample index so
+	// the expected offset matches the runner's integer timeline.
 	const (
 		leadSamples = 3 * audio.SampleRate
 		gapSamples  = 2 * audio.SampleRate

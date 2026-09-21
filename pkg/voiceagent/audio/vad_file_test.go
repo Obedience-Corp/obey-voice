@@ -80,8 +80,8 @@ func TestFileVADParams(t *testing.T) {
 }
 
 // TestFileVADOptionsResolved pins the values a caller sizing a buffer reads.
-// The span detector in task 02 sizes its ring from these, so a zero option and
-// the detector's own default have to be the same number.
+// The span detector sizes its ring from these, so a zero option and the
+// detector's own default have to be the same number.
 func TestFileVADOptionsResolved(t *testing.T) {
 	got := FileVADOptions{}.Resolved()
 	if got.MinSilence != defaultFileMinSilence || got.MaxSpeech != defaultFileMaxSpeech {
