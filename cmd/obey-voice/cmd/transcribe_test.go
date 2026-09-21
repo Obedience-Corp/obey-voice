@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
@@ -315,6 +317,7 @@ func fakeTranscribeDeps(t *testing.T, counts *transcribeDepsCounts) transcribeDe
 			return transcription.Summary{DurationUS: 3200000, SegmentCount: 1, Outcome: transcription.OutcomeSpeech}, nil
 		},
 		newContext: func() (context.Context, context.CancelFunc) { return context.WithCancel(context.Background()) },
+		diagnose:   func(*config.Config, string) []config.Diagnostic { return nil },
 	}
 }
 
@@ -609,4 +612,164 @@ func TestTranscribeCancellationAfterAFailureKeepsOneTerminalEvent(t *testing.T) 
 	if terminals != 1 {
 		t.Fatalf("stream has %d terminal events:\n%s", terminals, res.stdout)
 	}
+}
+
+func TestTranscribeCapabilitiesMarksTheSelectedProvider(t *testing.T) {
+	var counts transcribeDepsCounts
+	deps := fakeTranscribeDeps(t, &counts)
+	cfg, err := deps.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := buildTranscribeCapabilities(deps, cfg)
+
+	var selected []string
+	for _, p := range doc.Providers {
+		if p.Selected {
+			selected = append(selected, p.Name+"/"+p.Mode)
+		}
+	}
+	if len(selected) != 1 || selected[0] != "parakeet/offline" {
+		t.Fatalf("selected providers = %v, want exactly parakeet/offline", selected)
+	}
+	if !doc.Readiness.Ready {
+		t.Errorf("readiness = %+v, want ready with every asset installed", doc.Readiness)
+	}
+	if doc.DownloadRequired {
+		t.Error("download_required is true with every asset installed")
+	}
+	for _, p := range doc.Providers {
+		for _, timing := range p.Timing {
+			if timing == protocol.TimingWord {
+				t.Errorf("%s/%s advertises word timing, which no provider implements", p.Name, p.Mode)
+			}
+		}
+	}
+}
+
+func TestTranscribeCapabilitiesReportsMissingAssets(t *testing.T) {
+	var counts transcribeDepsCounts
+	deps := fakeTranscribeDeps(t, &counts)
+	deps.manifest = func(*config.Config) (config.AssetManifest, error) {
+		return config.AssetManifest{Schema: "obey-voice.assets.v1", Assets: []config.Asset{config.VADAsset()}}, nil
+	}
+	cfg, _ := deps.loadConfig()
+	doc := buildTranscribeCapabilities(deps, cfg)
+
+	if doc.Readiness.Ready || !doc.DownloadRequired {
+		t.Fatalf("readiness = %+v, download_required = %v", doc.Readiness, doc.DownloadRequired)
+	}
+	if len(doc.Readiness.Missing) != 1 || doc.Readiness.Missing[0] != "silero_vad.onnx" {
+		t.Errorf("missing = %v", doc.Readiness.Missing)
+	}
+}
+
+func TestTranscribeCapabilitiesKeepsOnlyActionableDiagnostics(t *testing.T) {
+	var counts transcribeDepsCounts
+	deps := fakeTranscribeDeps(t, &counts)
+	deps.diagnose = func(*config.Config, string) []config.Diagnostic {
+		return []config.Diagnostic{
+			{Name: "brain-provider", Severity: config.SeverityError, Detail: "ollama_model is not configured"},
+			{Name: "stt-provider", Severity: config.SeverityError, Detail: "unsupported stt_provider"},
+			{Name: "stt-language", Severity: config.SeverityOK, Detail: "en-US"},
+			{Name: "asset:vad.silero.v1", Severity: config.SeverityWarn, Detail: "silero_vad.onnx missing"},
+		}
+	}
+	cfg, _ := deps.loadConfig()
+	doc := buildTranscribeCapabilities(deps, cfg)
+
+	var names []string
+	for _, d := range doc.Diagnostics {
+		names = append(names, d.Name)
+	}
+	want := "stt-provider,asset:vad.silero.v1"
+	if strings.Join(names, ",") != want {
+		t.Fatalf("diagnostics = %v, want %s: brain rows and ok rows are dropped", names, want)
+	}
+}
+
+// TestTranscribeCapabilitiesKeySet locks the machine-readable shape a client
+// parses. Additions extend wantKeys; a rename or removal bumps the schema.
+func TestTranscribeCapabilitiesKeySet(t *testing.T) {
+	var counts transcribeDepsCounts
+	deps := fakeTranscribeDeps(t, &counts)
+
+	cmd := newTranscribeCmd(deps)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"capabilities", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("capabilities --json: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("capabilities --json is not valid JSON: %v\n%s", err, out.String())
+	}
+	wantKeys := []string{"schema", "protocols", "formats", "timing", "providers", "readiness", "download_required", "diagnostics"}
+	for _, k := range wantKeys {
+		if _, ok := got[k]; !ok {
+			t.Errorf("capabilities --json missing key %q", k)
+		}
+	}
+	if len(got) != len(wantKeys) {
+		t.Errorf("capabilities --json has %d keys, want %d — additions must extend wantKeys, renames must bump the schema:\n%s", len(got), len(wantKeys), out.String())
+	}
+	if got["schema"] != protocol.CapabilitiesSchema {
+		t.Errorf("schema = %v, want %s", got["schema"], protocol.CapabilitiesSchema)
+	}
+	if counts.decoders != 0 || counts.detectors != 0 || counts.runs != 0 {
+		t.Errorf("capabilities constructed %d decoders, %d detectors and ran %d jobs; it must construct nothing",
+			counts.decoders, counts.detectors, counts.runs)
+	}
+}
+
+func TestTranscribeCapabilitiesHumanTableNamesTheBlockers(t *testing.T) {
+	var counts transcribeDepsCounts
+	deps := fakeTranscribeDeps(t, &counts)
+	deps.manifest = func(*config.Config) (config.AssetManifest, error) {
+		return config.AssetManifest{Schema: "obey-voice.assets.v1", Assets: []config.Asset{config.VADAsset()}}, nil
+	}
+
+	cmd := newTranscribeCmd(deps)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"capabilities"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("capabilities: %v", err)
+	}
+
+	for _, want := range []string{
+		"Transcribe capabilities",
+		protocol.Protocol,
+		protocol.FormatWAVPCMS16LE,
+		"parakeet/offline",
+		"Not ready",
+		"models ensure",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("table does not mention %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// TestTranscribeIsRegisteredWithCapabilities keeps the subcommand reachable.
+func TestTranscribeIsRegisteredWithCapabilities(t *testing.T) {
+	var found *cobra.Command
+	for _, c := range rootCmd.Commands() {
+		if c.Name() == "transcribe" {
+			found = c
+		}
+	}
+	if found == nil {
+		t.Fatal("transcribe is not registered on the root command")
+	}
+	for _, c := range found.Commands() {
+		if c.Name() == "capabilities" {
+			return
+		}
+	}
+	t.Fatal("transcribe has no capabilities subcommand")
 }

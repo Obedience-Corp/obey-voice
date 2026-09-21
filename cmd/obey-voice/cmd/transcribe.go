@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -44,6 +45,7 @@ type transcribeDeps struct {
 	newDetector func(cfg *config.Config) (transcription.SpanDetector, func(), error)
 	run         func(ctx context.Context, req transcription.Request, deps transcription.Deps) (transcription.Summary, error)
 	newContext  func() (context.Context, context.CancelFunc)
+	diagnose    func(cfg *config.Config, modelsDir string) []config.Diagnostic
 }
 
 // fileVADSilence is how much silence closes an utterance in a file. It is
@@ -77,6 +79,9 @@ func defaultTranscribeDeps() transcribeDeps {
 		},
 		run:        transcription.Run,
 		newContext: signalContext,
+		diagnose: func(cfg *config.Config, modelsDir string) []config.Diagnostic {
+			return config.Diagnose(cfg, modelsDir, exec.LookPath)
+		},
 	}
 }
 
@@ -107,6 +112,7 @@ the serve WebSocket. See docs/transcribe-protocol.md.`,
 	f := cmd.Flags()
 	f.StringVar(&opts.request, "request", "", "Absolute path to the obey-transcript/v1 request JSON")
 	f.BoolVar(&opts.jsonl, "jsonl", false, "Stream obey-transcript/v1 events as JSONL on stdout")
+	cmd.AddCommand(newTranscribeCapabilitiesCmd(deps))
 	return cmd
 }
 
