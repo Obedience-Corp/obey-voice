@@ -101,16 +101,22 @@ func TestEncoderSeqAcrossAllSixTypes(t *testing.T) {
 func TestEncoderRefusesAfterEachTerminal(t *testing.T) {
 	cases := []struct {
 		name string
+		prep []Event
 		ev   Event
 	}{
-		{"completed", NewCompleted(1000, 0, OutcomeNoSpeech)},
-		{"failed", NewFailed(CodeInternal, "boom", false)},
-		{"cancelled", NewCancelled()},
+		{"completed", []Event{NewAccepted("parakeet", "m", "r", TimingUtterance)}, NewCompleted(1000, 0, OutcomeNoSpeech)},
+		{"failed", nil, NewFailed(CodeInternal, "boom", false)},
+		{"cancelled", nil, NewCancelled()},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			enc := NewEncoder(&buf, "job")
+			for _, ev := range tc.prep {
+				if err := enc.Encode(ev); err != nil {
+					t.Fatalf("Encode(%s): %v", ev.Type(), err)
+				}
+			}
 			if err := enc.Encode(tc.ev); err != nil {
 				t.Fatalf("Encode(%s): %v", tc.ev.Type(), err)
 			}
@@ -120,8 +126,8 @@ func TestEncoderRefusesAfterEachTerminal(t *testing.T) {
 			if err := enc.Encode(NewProgress(0, 1)); !errors.Is(err, ErrAfterTerminal) {
 				t.Fatalf("Encode after terminal = %v, want ErrAfterTerminal", err)
 			}
-			if n := strings.Count(buf.String(), "\n"); n != 1 {
-				t.Fatalf("wrote %d lines, want 1:\n%s", n, buf.String())
+			if n := strings.Count(buf.String(), "\n"); n != 1+len(tc.prep) {
+				t.Fatalf("wrote %d lines, want %d:\n%s", n, 1+len(tc.prep), buf.String())
 			}
 		})
 	}
@@ -264,6 +270,11 @@ func TestEncoderFenceBeforeNilValidation(t *testing.T) {
 			t.Run(term.Type(), func(t *testing.T) {
 				var buf bytes.Buffer
 				enc := NewEncoder(&buf, "job")
+				if term.Type() == TypeCompleted {
+					if err := enc.Encode(NewAccepted("parakeet", "m", "r", TimingUtterance)); err != nil {
+						t.Fatalf("Encode(accepted): %v", err)
+					}
+				}
 				if err := enc.Encode(term); err != nil {
 					t.Fatalf("Encode(%s): %v", term.Type(), err)
 				}
@@ -275,8 +286,12 @@ func TestEncoderFenceBeforeNilValidation(t *testing.T) {
 				if !enc.Terminal() {
 					t.Fatal("Terminal() = false, want true")
 				}
-				if n := strings.Count(buf.String(), "\n"); n != 1 {
-					t.Fatalf("wrote %d lines, want 1:\n%s", n, buf.String())
+				wantLines := 1
+				if term.Type() == TypeCompleted {
+					wantLines = 2
+				}
+				if n := strings.Count(buf.String(), "\n"); n != wantLines {
+					t.Fatalf("wrote %d lines, want %d:\n%s", n, wantLines, buf.String())
 				}
 			})
 		}
@@ -369,29 +384,33 @@ func TestEncoderOverflowSubstituteCannotFit(t *testing.T) {
 
 func TestEncoderLineCapExactBoundary(t *testing.T) {
 	const jobID = "job"
-	emptyLine := marshalEventLine(t, NewSegment("s1", 0, 1, "", TimingUtterance), jobID, 0)
+	emptyLine := marshalEventLine(t, NewSegment("s1", 0, 1, "", TimingUtterance), jobID, 1)
 	textLen := MaxLineBytes - 1 - len(emptyLine)
 	if textLen < 1 {
 		t.Fatalf("empty segment JSON is %d bytes; cannot grow to the %d byte cap", len(emptyLine)+1, MaxLineBytes)
 	}
 	exactText := strings.Repeat("a", textLen)
-	exactLine := marshalEventLine(t, NewSegment("s1", 0, 1, exactText, TimingUtterance), jobID, 0)
+	exactLine := marshalEventLine(t, NewSegment("s1", 0, 1, exactText, TimingUtterance), jobID, 1)
 	if got := len(exactLine) + 1; got != MaxLineBytes {
 		t.Fatalf("derived exact line is %d bytes including newline, want %d", got, MaxLineBytes)
 	}
 
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf, jobID)
+	if err := enc.Encode(NewAccepted("parakeet", "m", "r", TimingUtterance)); err != nil {
+		t.Fatalf("Encode(accepted): %v", err)
+	}
+	before := buf.Len()
 	if err := enc.Encode(NewSegment("s1", 0, 1, exactText, TimingUtterance)); err != nil {
 		t.Fatalf("Encode exact cap: %v", err)
 	}
-	if buf.Len() != MaxLineBytes {
-		t.Fatalf("wrote %d bytes, want %d", buf.Len(), MaxLineBytes)
+	if buf.Len()-before != MaxLineBytes {
+		t.Fatalf("segment line is %d bytes, want %d", buf.Len()-before, MaxLineBytes)
 	}
 	if enc.Terminal() {
 		t.Fatal("Terminal() = true after exact-cap segment")
 	}
-	gotLine, ok := strings.CutSuffix(buf.String(), "\n")
+	gotLine, ok := strings.CutSuffix(buf.String()[before:], "\n")
 	if !ok {
 		t.Fatal("exact-cap output is not newline-terminated")
 	}
@@ -492,18 +511,24 @@ func TestEncoderWriterFailures(t *testing.T) {
 func TestEncoderInvalidUTF8SegmentText(t *testing.T) {
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf, "job")
+	if err := enc.Encode(NewAccepted("parakeet", "m", "r", TimingUtterance)); err != nil {
+		t.Fatalf("Encode(accepted): %v", err)
+	}
 	if err := enc.Encode(NewSegment("s1", 0, 1, "pre\xffpost", TimingUtterance)); err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
 	if !utf8.Valid(buf.Bytes()) {
 		t.Fatalf("JSONL is not valid UTF-8: %q", buf.Bytes())
 	}
-	line, ok := strings.CutSuffix(buf.String(), "\n")
-	if !ok {
-		t.Fatal("output is not newline-terminated")
+	raw := strings.TrimSuffix(buf.String(), "\n")
+	lines := strings.Split(raw, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("wrote %d lines, want 2:\n%s", len(lines), buf.String())
 	}
-	if !json.Valid([]byte(line)) {
-		t.Fatalf("JSONL line is not valid JSON: %q", line)
+	for i, line := range lines {
+		if !json.Valid([]byte(line)) {
+			t.Fatalf("JSONL line %d is not valid JSON: %q", i, line)
+		}
 	}
 }
 
@@ -779,7 +804,7 @@ func TestDecoderTerminalLifecycle(t *testing.T) {
 	}{
 		{"empty stream", "", 0, ErrNoTerminal, "", false},
 		{"accepted only", encodeJSONL(t, "job", NewAccepted("parakeet", "m", "r", TimingUtterance)), 1, ErrNoTerminal, "", false},
-		{"after completed", encodeJSONL(t, "job", NewCompleted(0, 0, OutcomeNoSpeech)), 1, io.EOF, TypeCompleted, true},
+		{"after completed", encodeJSONL(t, "job", NewAccepted("parakeet", "m", "r", TimingUtterance), NewCompleted(0, 0, OutcomeNoSpeech)), 2, io.EOF, TypeCompleted, true},
 		{"after failed", encodeJSONL(t, "job", NewFailed(CodeInternal, "boom", false)), 1, io.EOF, TypeFailed, false},
 		{"after cancelled", cancelled, 1, io.EOF, TypeCancelled, false},
 		{"event after terminal", cancelled + encodeJSONL(t, "job", NewCancelled()), 1, ErrAfterTerminal, TypeCancelled, false},
@@ -1105,6 +1130,7 @@ func TestDecoderCompletedSemantics(t *testing.T) {
 }
 
 func TestDecoderProgressSemantics(t *testing.T) {
+	accepted := NewAccepted("parakeet", "m", "r", TimingUtterance)
 	cases := []struct {
 		name    string
 		ev      Event
@@ -1120,11 +1146,11 @@ func TestDecoderProgressSemantics(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			events := []Event{tc.ev}
-			wantN := 0
+			events := []Event{accepted, tc.ev}
+			wantN := 1
 			if tc.wantErr == "" {
 				events = append(events, NewCancelled())
-				wantN = 2
+				wantN = 3
 			}
 			got, _, err := decodeStream(t, "job", encodeJSONL(t, "job", events...))
 			requireDecoded(t, got, err, wantN, tc.wantErr)

@@ -74,8 +74,10 @@ else
 fi
 
 # Rules: the protocol string, the job ID, seq consecutive from 0, sane
-# intervals, and exactly one terminal event.
+# intervals, exactly one accepted before progress/segment/completed, and
+# exactly one terminal event. failed or cancelled may open the stream.
 expect_seq=0
+accepted=""
 terminal=""
 segments=0
 last_start=-1
@@ -93,7 +95,24 @@ while IFS= read -r line; do
 	fi
 	type=$(printf '%s\n' "$line" | jq -r '.type')
 	case $type in
+	accepted)
+		if [ -n "$accepted" ]; then
+			echo "client: a second accepted event" >&2
+			exit 65
+		fi
+		accepted=1
+		;;
+	progress)
+		if [ -z "$accepted" ]; then
+			echo "client: progress event before accepted" >&2
+			exit 65
+		fi
+		;;
 	segment)
+		if [ -z "$accepted" ]; then
+			echo "client: segment event before accepted" >&2
+			exit 65
+		fi
 		start=$(printf '%s\n' "$line" | jq -r '.start_us')
 		end=$(printf '%s\n' "$line" | jq -r '.end_us')
 		if [ "$start" -lt 0 ] || [ "$end" -le "$start" ] || [ "$start" -lt "$last_start" ]; then
@@ -103,7 +122,14 @@ while IFS= read -r line; do
 		last_start=$start
 		segments=$((segments + 1))
 		;;
-	completed | failed | cancelled)
+	completed)
+		if [ -z "$accepted" ]; then
+			echo "client: completed event before accepted" >&2
+			exit 65
+		fi
+		terminal=$type
+		;;
+	failed | cancelled)
 		terminal=$type
 		;;
 	esac

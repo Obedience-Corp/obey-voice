@@ -92,8 +92,13 @@ would silently drop a segment, so v1 will not add another.
 
 ### accepted
 
-Always first. It reports the backend that was resolved, never the preference
-string the request sent.
+Always first, except when the job fails or is cancelled before a backend is
+resolved. In that case `failed` or `cancelled` may be the first (`seq` 0)
+event. There is at most one `accepted`. `progress`, `segment` and `completed`
+never appear without a prior `accepted`.
+
+It reports the backend that was resolved, never the preference string the
+request sent.
 
 ```json
 {"protocol":"obey-transcript/v1","job_id":"conformance-eof-speech","seq":0,"type":"accepted","provider":"parakeet","model_id":"tdt-0.6b-v2","model_revision":"157c157b","timing":"utterance"}
@@ -197,7 +202,9 @@ A client must:
 3. **Reject a stream that breaks the envelope rules:** a `protocol` that is not
    `obey-transcript/v1`, a `job_id` that is not the one submitted, a `seq` that
    is not the next one, a segment with `end_us <= start_us`, a segment that
-   starts before the previous one, or any event after the terminal event.
+   starts before the previous one, a `progress`, `segment` or `completed`
+   before `accepted`, a second `accepted`, or any event after the terminal
+   event. `failed` or `cancelled` at `seq` 0 is a preflight exception.
 4. **Require both a terminal `completed` event and exit status 0** before
    treating a transcript as finished. EOF without a terminal event is a
    failure. `completed` followed by a nonzero exit is a failure.

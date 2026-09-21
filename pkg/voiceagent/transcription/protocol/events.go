@@ -31,9 +31,11 @@ const MaxLineBytes = 1 << 20
 // Client-side stream errors. They describe a stream a reader refuses, not a
 // job failure, so they carry no wire code.
 var (
-	ErrNoTerminal    = errors.New("protocol: stream ended without a terminal event")
-	ErrLineTooLong   = errors.New("protocol: event line is over the line cap")
-	ErrAfterTerminal = errors.New("protocol: event after the terminal event")
+	ErrNoTerminal        = errors.New("protocol: stream ended without a terminal event")
+	ErrLineTooLong       = errors.New("protocol: event line is over the line cap")
+	ErrAfterTerminal     = errors.New("protocol: event after the terminal event")
+	ErrBeforeAccepted    = errors.New("protocol: event before accepted")
+	ErrDuplicateAccepted = errors.New("protocol: a second accepted event")
 )
 
 // envelope is the four fields every event carries. It is unexported and
@@ -233,12 +235,15 @@ func nilEvent(ev Event) bool {
 }
 
 // Encoder writes the event stream. It stamps the protocol string, job ID and
-// sequence number, allows exactly one terminal event, and holds the line cap.
+// sequence number, requires exactly one accepted before progress, segment and
+// completed, allows exactly one terminal event, and holds the line cap.
+// failed and cancelled may be written without a prior accepted.
 //
 // A write that emits any bytes and then fails fences the encoder: later
 // Encode calls return that error and do not write again. An overflow whose
 // substitute also cannot fit fences the same way without writing. Terminal
-// reports only a terminal event that was fully written.
+// reports only a terminal event that was fully written. accepted is recorded
+// only after that line is fully written.
 //
 // One goroutine at a time: the command writes events from the runner's
 // goroutine and nothing else writes to stdout.
@@ -246,6 +251,7 @@ type Encoder struct {
 	w        io.Writer
 	jobID    string
 	seq      int64
+	accepted bool
 	terminal bool
 	writeErr error
 }
@@ -266,6 +272,10 @@ func (e *Encoder) Terminal() bool { return e.terminal }
 // terminal event. If even that substitute cannot fit, Encode returns the
 // *Error, fences later writes with it, and leaves Terminal false because
 // nothing was written.
+//
+// The accepted-before-progress/segment/completed rule is applied to the event
+// that would be written, after overflow substitution, so an oversized first
+// event can still become a seq-0 failed.
 func (e *Encoder) Encode(ev Event) error {
 	if e.writeErr != nil {
 		return e.writeErr
@@ -299,10 +309,17 @@ func (e *Encoder) Encode(ev Event) error {
 		}
 	}
 
+	if err := e.checkOrder(ev.Type()); err != nil {
+		return err
+	}
+
 	if err := e.writeLine(line, ev.Type()); err != nil {
 		return err
 	}
 	e.seq++
+	if ev.Type() == TypeAccepted {
+		e.accepted = true
+	}
 	if IsTerminal(ev.Type()) {
 		e.terminal = true
 	}
@@ -310,6 +327,31 @@ func (e *Encoder) Encode(ev Event) error {
 		return overflow
 	}
 	return nil
+}
+
+func (e *Encoder) checkOrder(kind string) error {
+	return checkAcceptedOrder(e.accepted, kind)
+}
+
+func checkAcceptedOrder(accepted bool, kind string) error {
+	if kind == TypeAccepted {
+		if accepted {
+			return ErrDuplicateAccepted
+		}
+		return nil
+	}
+	if !accepted && requiresAccepted(kind) {
+		return fmt.Errorf("%w: %s", ErrBeforeAccepted, kind)
+	}
+	return nil
+}
+
+func requiresAccepted(kind string) bool {
+	switch kind {
+	case TypeProgress, TypeSegment, TypeCompleted:
+		return true
+	}
+	return false
 }
 
 func (e *Encoder) boundedFailed(message string) (Event, []byte, error) {
@@ -353,11 +395,14 @@ func (e *Encoder) marshal(ev Event) ([]byte, error) {
 
 // Decoder reads an event stream and enforces the client rules: the protocol
 // string, the job ID, sequence numbers consecutive from 0, sane segment
-// intervals, at most one terminal event, and the line cap.
+// intervals, exactly one accepted before progress, segment and completed, at
+// most one terminal event, and the line cap. failed and cancelled may open
+// the stream.
 type Decoder struct {
 	r         *bufio.Reader
 	jobID     string
 	next      int64
+	accepted  bool
 	terminal  string
 	lastStart int64
 	maxEndUS  int64
@@ -434,6 +479,9 @@ func (d *Decoder) Next() (Event, error) {
 		d.jobID = head.JobID
 	}
 	d.next++
+	if ev.Type() == TypeAccepted {
+		d.accepted = true
+	}
 	if IsTerminal(ev.Type()) {
 		d.terminal = ev.Type()
 	}
@@ -491,10 +539,13 @@ func decodeEvent(kind string, line []byte) (Event, error) {
 	return ev, nil
 }
 
-// check enforces the rules that need stream state: intervals inside a segment,
-// segment order, and a duration that covers every segment. It mutates decoder
-// segment state only after the event itself is valid.
+// check enforces the rules that need stream state: accepted order, intervals
+// inside a segment, segment order, and a duration that covers every segment.
+// It mutates decoder segment state only after the event itself is valid.
 func (d *Decoder) check(ev Event) error {
+	if err := checkAcceptedOrder(d.accepted, ev.Type()); err != nil {
+		return err
+	}
 	switch e := ev.(type) {
 	case *Segment:
 		switch {
