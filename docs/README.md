@@ -22,6 +22,7 @@ Everything else lives here.
 | Page | Topic |
 |------|--------|
 | [Serve protocol](serve-protocol.md) | Remote serve HTTPS + WebSocket contract |
+| [Transcribe protocol](transcribe-protocol.md) | `obey-transcript/v1`: transcribing a file from another program |
 | [Speech worker](speech-serve.md) | Offloading speech to another computer (`speech-serve`) |
 | [Qwen3-TTS spike](qwen3-tts-spike.md) | Native Qwen3-TTS product path (worker + GGUF) |
 | [AEC probe](aec-probe.md) | AEC / voice-frontend probe notes |

@@ -62,6 +62,32 @@ just qwen-live                                   # real native Qwen voices + can
 obey-voice listen                                  # manual: speak a short command
 ```
 
+### File transcription (opt-in, require local models)
+
+`obey-voice transcribe` is covered without models by command-level tests with
+injected dependencies and by process-level tests that run the real binary with
+an isolated `HOME` and an empty `MODELS_DIR`. Two checks need real models; the
+SIGINT test is env-gated:
+
+```bash
+# Interrupt a real run and measure the time to exit 130 and a cancelled event:
+OBEY_VOICE_TRANSCRIBE_MODELS_DIR="$HOME/.cache/festival-voice/models" \
+OBEY_VOICE_TRANSCRIBE_LONG_WAV=/absolute/path/to/60s-16k-mono.wav \
+  go test ./cmd/obey-voice/cmd -run TestTranscribeProcessCancellation -count=1 -v
+
+# The independent shell client against the configured model (read-only; no downloads):
+docs/transcribe-protocol/client-example.sh /absolute/path/to/speech.wav
+```
+
+Regenerate the conformance goldens after a deliberate protocol change:
+
+```bash
+go test ./cmd/obey-voice/cmd -run TestTranscribeConformanceFixtures -update-transcribe-golden
+```
+
+and copy them into `docs/transcribe-protocol/fixtures/`, which other clients
+read.
+
 ### File transcription checks (opt-in, require local models)
 
 `pkg/voiceagent/transcription` runs on fakes in the default lane: the runner, the

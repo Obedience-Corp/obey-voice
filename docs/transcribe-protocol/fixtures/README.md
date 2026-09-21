@@ -5,7 +5,7 @@ They are generated, not hand-written: the source is
 `cmd/obey-voice/cmd/testdata/transcribe/golden/`, produced by
 `go test ./cmd/obey-voice/cmd -run TestTranscribeConformanceFixtures -update-transcribe-golden`.
 
-**Source commit:** `8aff191ac8955dc466d2c9c4eac40c1c2d32bdf0` (`transcribe-command` HEAD when these files were copied here). That commit contains the `obey-voice transcribe` command these streams were recorded against (the command itself landed in `a525016adeb60d34858f003ef5c8532660c7bc71`). The JSONL bytes were copied from `cmd/obey-voice/cmd/testdata/transcribe/golden/` in this worktree; they are not in `8aff191a` itself until that testdata is committed.
+**Source commit:** `d529faf183292caf01c837060f6ed7bafaa6c624`. That commit contains both the command behavior recorded here and the source golden files under `cmd/obey-voice/cmd/testdata/transcribe/golden/`.
 
 `{{INPUT}}` and `{{MODELS_DIR}}` stand in for absolute paths, which differ on
 every machine. A consumer substitutes its own.

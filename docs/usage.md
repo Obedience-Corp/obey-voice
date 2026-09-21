@@ -88,6 +88,8 @@ obey-voice doctor                         # Diagnose config, assets, and binarie
 obey-voice models status                  # Which model assets are installed vs missing
 obey-voice models clean --unused --dry-run # Review what would be deleted, and what is kept
 obey-voice models clean --unused --yes    # Delete the reviewed list (--plan when scripted)
+obey-voice transcribe --request job.json --jsonl   # Transcribe a finished WAV to timed JSONL
+obey-voice transcribe capabilities --json # What this install can transcribe (read-only)
 obey-voice prompts list                   # List embedded and user prompt documents
 obey-voice prompts show persona           # Show an assembled prompt document
 obey-voice render notes.txt --out a.wav   # Batch-render a document to audio
@@ -107,6 +109,21 @@ saved default persona cannot be disabled, and ambiguity among enabled names or
 aliases remains an error. In `/personas`, select a row and press **x** to toggle
 its state. Inactive rows remain editable and show an `[inactive]` badge. Choose
 another saved default or conversation responder before disabling that persona.
+
+### Transcribing a recording
+
+`obey-voice transcribe` turns a finished 16 kHz mono WAV into timed utterances
+on stdout, one JSON object per line, for another program to consume. It starts
+no conversation, opens no microphone and downloads nothing.
+
+```bash
+obey-voice transcribe capabilities            # is this machine ready
+obey-voice transcribe --request job.json --jsonl
+```
+
+The request document, the events, the failure codes and the client rules are in
+[the protocol reference](transcribe-protocol.md). Keepshot uses it to write
+`.txt` and `.vtt` sidecars beside a recording.
 
 ## TUI controls
 

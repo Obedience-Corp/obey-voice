@@ -1,5 +1,10 @@
 # Ask transcription protocol
 
+> This is live transcription of one spoken turn over the serve WebSocket. To
+> transcribe a finished audio file from another program, see
+> [obey-transcript/v1](transcribe-protocol.md), which is a separate contract
+> with timed utterances and its own CLI.
+
 Ask captures without starting an agent turn. The client sends these WebSocket controls in order:
 
 1. `{"type":"transcribe_start","id":"<unique recording ID>"}`
