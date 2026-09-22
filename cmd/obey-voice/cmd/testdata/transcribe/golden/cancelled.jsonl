@@ -1,0 +1,3 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-cancelled","seq":0,"type":"accepted","provider":"parakeet","model_id":"tdt-0.6b-v2","model_revision":"157c157b","timing":"utterance"}
+{"protocol":"obey-transcript/v1","job_id":"conformance-cancelled","seq":1,"type":"segment","segment_id":"s1","start_us":0,"end_us":1500000,"text":"Only this much was decoded.","timing":"utterance","final":true}
+{"protocol":"obey-transcript/v1","job_id":"conformance-cancelled","seq":2,"type":"cancelled"}

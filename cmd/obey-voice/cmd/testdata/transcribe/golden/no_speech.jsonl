@@ -1,0 +1,2 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-no-speech","seq":0,"type":"accepted","provider":"parakeet","model_id":"tdt-0.6b-v2","model_revision":"157c157b","timing":"utterance"}
+{"protocol":"obey-transcript/v1","job_id":"conformance-no-speech","seq":1,"type":"completed","duration_us":30000000,"segment_count":0,"outcome":"no_speech"}

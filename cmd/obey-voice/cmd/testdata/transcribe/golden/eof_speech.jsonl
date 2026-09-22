@@ -1,0 +1,5 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-eof-speech","seq":0,"type":"accepted","provider":"parakeet","model_id":"tdt-0.6b-v2","model_revision":"157c157b","timing":"utterance"}
+{"protocol":"obey-transcript/v1","job_id":"conformance-eof-speech","seq":1,"type":"segment","segment_id":"s1","start_us":800000,"end_us":2400000,"text":"Here is the recording.","timing":"utterance","final":true}
+{"protocol":"obey-transcript/v1","job_id":"conformance-eof-speech","seq":2,"type":"progress","consumed_us":5000000,"duration_us":6300000}
+{"protocol":"obey-transcript/v1","job_id":"conformance-eof-speech","seq":3,"type":"segment","segment_id":"s2","start_us":5100000,"end_us":6300000,"text":"Trailing words at the very end.","timing":"utterance","final":true}
+{"protocol":"obey-transcript/v1","job_id":"conformance-eof-speech","seq":4,"type":"completed","duration_us":6300000,"segment_count":2,"outcome":"speech"}

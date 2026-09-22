@@ -1,0 +1,1 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-stereo","seq":0,"type":"failed","code":"input_format_mismatch","message":"{{INPUT}} has 2 channel(s), the request declares 1","retryable":false}

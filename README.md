@@ -66,6 +66,7 @@ obey-voice serve --tailscale
 |---------|------------|
 | Turn an EPUB, PDF, Markdown, or URL into audio | `obey-voice render book.epub --out-dir out/book` · [narration](docs/narration.md) |
 | Record a meeting (STT only, speaker labels) | `obey-voice meeting record` · [meetings](docs/meetings.md) |
+| Transcribe a recording from another program | `obey-voice transcribe --request job.json --jsonl` · [protocol](docs/transcribe-protocol.md) |
 | Switch prompt + model + voice as one agent | `obey-voice persona use veronica` · [personas](docs/usage.md#personas-voice-agents) |
 | Inspect or change a setting | `obey-voice config` · [configuration](docs/configuration.md) |
 
@@ -93,6 +94,7 @@ Models download on first use into `models_dir`, and `just install` runs `models 
 | [Configuration](docs/configuration.md) | `config.yaml`, Agent Skills |
 | [Development](docs/development.md) | Build, tests, models, benchmarks |
 | [Serve protocol](docs/serve-protocol.md) | HTTPS + WebSocket contract |
+| [Transcribe protocol](docs/transcribe-protocol.md) | `obey-transcript/v1` file transcription contract |
 | [Speech worker](docs/speech-serve.md) | Speech on another computer (`speech-serve`) |
 | [ADRs](docs/adr/) | Architecture decisions |
 
