@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	buildutil "github.com/Obedience-Corp/build-util"
 )
@@ -19,6 +20,7 @@ func main() {
 		BinaryName:         "obey-voice",
 		MainPath:           "./cmd/obey-voice",
 		SectionName:        "Obey Voice",
+		TestTimeout:        2 * time.Minute,
 		IntegrationTestDir: "tests/integration",
 		IntegrationBuildEnv: func() []string {
 			// CGO_ENABLED=0 for CLI/config integration tests.
