@@ -83,46 +83,6 @@ func vocalKindFromFilename(name string) string {
 	return tts.CanonicalVocal(base)
 }
 
-func (b *vocalBank) pick(kind string) (vocalClip, bool) {
-	if b == nil {
-		return vocalClip{}, false
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	clips := b.clips[kind]
-	switch len(clips) {
-	case 0:
-		return vocalClip{}, false
-	case 1:
-		b.last[kind] = 0
-		return clips[0], true
-	}
-	idx := b.rnd.Intn(len(clips))
-	if idx == b.last[kind] {
-		idx = (idx + 1) % len(clips)
-	}
-	b.last[kind] = idx
-	return clips[idx], true
-}
-
-func (b *vocalBank) hasRecorded(kind string) bool {
-	if b == nil {
-		return false
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.clips[kind]) > 0
-}
-
-func (b *vocalBank) allSoundsRecorded(parts []vocalPart) bool {
-	for _, p := range parts {
-		if p.sound != "" && !b.hasRecorded(p.sound) {
-			return false
-		}
-	}
-	return vocalPartsHaveSound(parts)
-}
-
 func (b *vocalBank) nextPhrase(kind string) string {
 	phrases := vocalPhrases[kind]
 	if len(phrases) == 0 {
@@ -161,39 +121,6 @@ func resampleLinear(in []float32, from, to int) []float32 {
 		}
 		frac := float32(src - float64(j))
 		out[i] = in[j]*(1-frac) + in[j+1]*frac
-	}
-	return out
-}
-
-func crossfadeConcat(chunks [][]float32, rate int) []float32 {
-	if len(chunks) == 0 {
-		return nil
-	}
-	fade := rate * 5 / 1000 // 5 ms
-	if fade < 1 {
-		fade = 1
-	}
-	var out []float32
-	for _, chunk := range chunks {
-		if len(chunk) == 0 {
-			continue
-		}
-		if len(out) == 0 {
-			out = append(out, chunk...)
-			continue
-		}
-		n := fade
-		if n > len(out) {
-			n = len(out)
-		}
-		if n > len(chunk) {
-			n = len(chunk)
-		}
-		for i := 0; i < n; i++ {
-			a := float32(i) / float32(n)
-			out[len(out)-n+i] = out[len(out)-n+i]*(1-a) + chunk[i]*a
-		}
-		out = append(out, chunk[n:]...)
 	}
 	return out
 }

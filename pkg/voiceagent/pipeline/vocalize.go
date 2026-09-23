@@ -109,12 +109,3 @@ func trimSpeech(s string) string {
 	})
 	return strings.TrimSpace(s)
 }
-
-func vocalPartsHaveSound(parts []vocalPart) bool {
-	for _, p := range parts {
-		if p.sound != "" {
-			return true
-		}
-	}
-	return false
-}

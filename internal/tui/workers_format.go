@@ -174,7 +174,6 @@ func prettyJSONPrefix(raw string) string {
 		case '{', '[':
 			if needIndent {
 				writeJSONIndent(&b, depth)
-				needIndent = false
 			}
 			b.WriteByte(c)
 			depth++
