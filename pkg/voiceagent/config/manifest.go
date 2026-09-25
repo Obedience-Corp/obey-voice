@@ -20,11 +20,12 @@ const (
 // GitHub digests, so those sha256 values are pinned from the downloaded release
 // bytes and guarded by manifest tests.
 const (
-	sileroVADURL                    = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
-	sileroVADSHA256                 = "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
-	sileroVADSize                   = 643854
-	kokoroArchiveURL                = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
-	kokoroArchiveSHA256             = "c133d26353d776da730870dac7da07dbfc9a5e3bc80cc5e8e83ab6e823be7046"
+	sileroVADURL     = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+	sileroVADSHA256  = "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+	sileroVADSize    = 643854
+	kokoroArchiveURL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
+	// GitHub asset 549865473, republished 2026-09-08; verified against its release digest.
+	kokoroArchiveSHA256             = "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298"
 	speakerSegmentationURL          = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
 	speakerSegmentationSHA256       = "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488"
 	speakerEmbeddingURL             = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx"

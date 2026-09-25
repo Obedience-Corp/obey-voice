@@ -165,7 +165,7 @@ func copyBodyVerified(dst io.Writer, body io.Reader, total int64, name, sha256He
 	if sha256Hex != "" {
 		got := hex.EncodeToString(hasher.Sum(nil))
 		if !strings.EqualFold(got, sha256Hex) {
-			return written, fmt.Errorf("download %s: checksum mismatch, got %s want %s (if upstream republished this file, update samantha or install the model manually into the models dir)", name, got, sha256Hex)
+			return written, fmt.Errorf("download %s: checksum mismatch, got %s want %s (if upstream republished this file, update obey-voice or install the model manually into the models dir)", name, got, sha256Hex)
 		}
 	}
 	return written, nil
