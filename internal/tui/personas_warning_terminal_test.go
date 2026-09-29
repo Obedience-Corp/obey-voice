@@ -27,6 +27,8 @@ func TestPersonasTerminalRetainsHealthySwitchAndRepairWarning(t *testing.T) {
 	if err := os.WriteFile(path, []byte("schema: [broken\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	config.Set("brain_provider", "ollama")
+	config.Set("ollama_model", "terminal-model:8b")
 	model := newPersonas(&config.Config{ActivePersona: "samantha"})
 	model.width, model.height = 100, 24
 	var selected string
@@ -40,7 +42,7 @@ func TestPersonasTerminalRetainsHealthySwitchAndRepairWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := stripANSI(terminal.String())
-	for _, want := range []string{"Samantha", "Unavailable: broken", "repair persona.yaml", "Active persona:"} {
+	for _, want := range []string{"terminal-model:8b", "LLM provider", "LLM model", "Samantha", "Unavailable: broken", "repair persona.yaml", "Active persona:"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("missing %q from terminal:\n%s", want, rendered)
 		}

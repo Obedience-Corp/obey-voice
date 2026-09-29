@@ -19,7 +19,7 @@ func (m personasModel) View() string {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("  Personas"))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(ansi.Truncate("  Switch agents · create/edit system prompts the brain actually loads", width, "…")))
+	b.WriteString(dimStyle.Render(ansi.Truncate("  Choose who responds · compare models and voices", width, "…")))
 	b.WriteString("\n")
 	if m.height == 0 || m.height >= 10 {
 		b.WriteString(dimStyle.Render(strings.Repeat("─", max(width, 1))))
@@ -34,13 +34,13 @@ func (m personasModel) View() string {
 			b.WriteString("\n")
 		}
 	} else {
-		listRows := m.visibleRows()
+		listRows := m.listBodyRows()
 		lines := m.listLines(listRows)
 		if m.confirmDeleteID != "" {
 			lines = m.confirmDeleteLines(listRows)
 		}
 		for _, line := range lines {
-			b.WriteString(line)
+			b.WriteString(ansi.Truncate(line, width, "…"))
 			b.WriteString("\n")
 		}
 	}
@@ -66,35 +66,13 @@ func (m personasModel) View() string {
 	case m.confirmDeleteID != "":
 		help = "  y delete permanently • any other key cancels"
 	}
+	if m.formMode == "" && m.confirmDeleteID == "" && m.screenHeight() >= 16 {
+		b.WriteString(dimStyle.Render(ansi.Truncate("  ↑/↓ navigate · enter switch · m model · e edit", width, "…")))
+		b.WriteString("\n")
+		help = "  n create · x enable/disable · d delete · esc back"
+	}
 	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
 	return b.String()
-}
-
-func (m personasModel) listLines(listRows int) []string {
-	if m.loadErr != "" {
-		return padPersonasLines([]string{"  error loading personas: " + m.loadErr}, listRows)
-	}
-	active := ""
-	if m.cfg != nil {
-		active = persona.ActiveID(m.cfg)
-	}
-	total := m.listLen()
-	start := m.offset
-	end := min(start+listRows, total)
-	lines := make([]string, 0, listRows)
-	for i := start; i < end; i++ {
-		if i == len(m.items) {
-			lines = append(lines, m.row(i, personasCreateLabel))
-			continue
-		}
-		p := m.items[i]
-		mark := ""
-		if p != nil && p.ID == active {
-			mark = " ✓"
-		}
-		lines = append(lines, m.row(i, personaListLabel(p)+mark))
-	}
-	return padPersonasLines(lines, listRows)
 }
 
 // formBoxWidth is the outer width of the form's field boxes, leaving a
@@ -258,20 +236,6 @@ func (m personasModel) stackLines() []string {
 		row(formRowVoice, "Voice", "‹ "+voiceLabel+" ›"),
 		row(formRowTier, "Tier", tierValue),
 	}
-}
-
-func (m personasModel) row(i int, label string) string {
-	width := m.width
-	if width <= 0 {
-		width = 80
-	}
-	prefix := "  "
-	style := dimStyle
-	if i == m.cursor {
-		prefix = "▸ "
-		style = selectedStyle
-	}
-	return style.Render(ansi.Truncate(prefix+label, width, "…"))
 }
 
 func padPersonasLines(lines []string, n int) []string {
