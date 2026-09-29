@@ -29,10 +29,13 @@ type personasModel struct {
 	cursor       int
 	offset       int
 
-	items       []*persona.Profile
-	loadErr     string
-	loadWarning string
-	message     string
+	items        []*persona.Profile
+	loadErr      string
+	loadWarning  string
+	stacks       map[string]personaListStack
+	defaultsErr  string
+	loadDefaults func() (*config.Config, error)
+	message      string
 
 	// formMode: "" | "create" | "edit"
 	formMode string
@@ -100,6 +103,7 @@ type personasModel struct {
 func newPersonas(cfg *config.Config) personasModel {
 	m := personasModel{
 		cfg:           cfg,
+		loadDefaults:  config.LoadRaw,
 		usePersona:    persona.Use,
 		createPersona: persona.CreateAndUseWithOpts,
 		savePrompt:    persona.UpdateSystemPrompt,
@@ -148,46 +152,6 @@ func newPersonaCreateInput() textinput.Model {
 	return ti
 }
 
-// personaListLabel formats one row for the Personas list.
-func personaListLabel(p *persona.Profile) string {
-	if p == nil {
-		return ""
-	}
-	label := p.DisplayName
-	if label == "" {
-		label = p.ID
-	}
-	if p.ID != "" && p.DisplayName != "" && !strings.EqualFold(p.DisplayName, p.ID) {
-		label = fmt.Sprintf("%s (%s)", p.DisplayName, p.ID)
-	}
-	if p.Inactive {
-		label += " [inactive]"
-	}
-	detail := strings.TrimSpace(p.TTS.Provider)
-	if v := strings.TrimSpace(p.TTS.Voice); v != "" {
-		if detail != "" {
-			detail += " · " + v
-		} else {
-			detail = v
-		}
-	}
-	// The built-in default is worth naming in the list: it pins nothing, so
-	// without this its row is the only one with no voice to show for itself.
-	// Both halves matter — the id alone would badge a user's own persona that
-	// happens to be named obey as shipped content.
-	if p.Builtin && p.ID == persona.DefaultID {
-		if detail != "" {
-			detail = "built-in default · " + detail
-		} else {
-			detail = "built-in default"
-		}
-	}
-	if detail != "" {
-		label += " — " + detail
-	}
-	return label
-}
-
 func (m *personasModel) reload() {
 	m.loadErr, m.loadWarning = "", ""
 	var items []*persona.Profile
@@ -211,6 +175,7 @@ func (m *personasModel) reload() {
 		return
 	}
 	m.items = items
+	m.reloadStacks()
 }
 
 func (m personasModel) listLen() int {
@@ -233,18 +198,11 @@ func (m *personasModel) ensureVisible() {
 }
 
 func (m personasModel) visibleRows() int {
-	h := m.height
-	if h <= 0 {
-		h = 24
+	rows := m.listBodyRows() - 1 // column headings
+	if detail := m.personaDetailLines(); len(detail) > 0 {
+		rows -= len(detail) + 1
 	}
-	warningRows := 0
-	if m.loadWarning != "" {
-		warningRows = 1
-	}
-	if h < 10 {
-		return max(h-2-warningRows, 1)
-	}
-	return max(h-6-warningRows, 1)
+	return max(rows/m.personaRowHeight(), 1)
 }
 
 func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
