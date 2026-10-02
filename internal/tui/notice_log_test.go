@@ -181,6 +181,42 @@ func TestNoticeLogCapsAtTwenty(t *testing.T) {
 	}
 }
 
+func TestNoticeBrowserFitsShortTerminal(t *testing.T) {
+	m := newLauncher(&config.Config{BrainProvider: "ollama"}, nil)
+	m.width, m.height = 60, 8
+	for i := range 12 {
+		m = m.withBanner(fmt.Sprintf("Meeting saved: /tmp/meetings/note-%02d.meeting", i), false)
+	}
+	m = m.withBanner(routeJSON, false)
+	m.noticesOpen = true
+	m.noticeCursor = 0
+
+	view := stripANSI(m.View())
+	if got := len(strings.Split(view, "\n")); got > m.height {
+		t.Fatalf("short launcher rendered %d lines:\n%s", got, view)
+	}
+	for _, want := range []string{"Meeting notes filed to camp:JobSearch", "test-20261002-121", "enter copy note", "esc/q back"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("short view missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "note-00.meeting") {
+		t.Fatalf("off-window row still rendered:\n%s", view)
+	}
+
+	m.noticeCursor = len(m.notices) - 1
+	low := stripANSI(m.View())
+	if got := len(strings.Split(low, "\n")); got > m.height {
+		t.Fatalf("scrolled launcher rendered %d lines:\n%s", got, low)
+	}
+	if !strings.Contains(low, "note-00.meeting") || !strings.Contains(low, "esc/q back") || !strings.Contains(low, "12–13 / 13") {
+		t.Fatalf("scrolled selection left the screen:\n%s", low)
+	}
+	if strings.Contains(low, "note-11.meeting") {
+		t.Fatalf("window did not follow the cursor:\n%s", low)
+	}
+}
+
 func TestParseNoticeSentences(t *testing.T) {
 	recovered := parseNotice("Recovered pending meeting route — Meeting notes routed to camp:JobSearch: /tmp/note.md", false, time.Time{})
 	if recovered.line != "Recovered a meeting" || recovered.copyLabel != "path" || recovered.copyText != "/tmp/note.md" {

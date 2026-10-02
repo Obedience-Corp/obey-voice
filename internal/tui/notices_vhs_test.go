@@ -61,6 +61,28 @@ func TestLauncherNoticeVHS(t *testing.T) {
 	if gif.Size() < 1000 {
 		t.Fatalf("gif size = %d", gif.Size())
 	}
+
+	short := exec.Command("vhs", "demos/launcher-notice-short.tape")
+	short.Env = vhs.Env
+	shortOut, err := short.CombinedOutput()
+	if err != nil {
+		t.Fatalf("short vhs: %v\n%s", err, shortOut)
+	}
+	top := mustRead(t, filepath.Join(root, "demos", "frames", "launcher-notice-short.png"))
+	scrolled := mustRead(t, filepath.Join(root, "demos", "frames", "launcher-notice-short-scrolled.png"))
+	if len(top) < 1000 || len(scrolled) < 1000 {
+		t.Fatalf("short frames too small: top=%d scrolled=%d", len(top), len(scrolled))
+	}
+	if bytes.Equal(top, scrolled) {
+		t.Fatal("scrolling the short notice list did not change the frame")
+	}
+	shortGif, err := os.Stat(filepath.Join(root, "demos", "launcher-notice-short.gif"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shortGif.Size() < 1000 {
+		t.Fatalf("short gif size = %d", shortGif.Size())
+	}
 }
 
 func moduleRoot(t *testing.T) string {

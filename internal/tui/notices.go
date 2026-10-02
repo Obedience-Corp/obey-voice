@@ -104,19 +104,55 @@ func (m launcherModel) noticeRail(width int) string {
 	return "  " + style.Render(body) + key + count
 }
 
-func (m launcherModel) noticeBrowser(width int) string {
+// noticeBrowser renders the session log. maxLines is the number of content
+// lines that fit under the chrome already drawn; 0 means the terminal height
+// is unknown and the whole log is shown. The selected row and the footer stay
+// inside that budget, and the list windows around the cursor.
+func (m launcherModel) noticeBrowser(width, maxLines int) string {
 	if width <= 2 || len(m.notices) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString(headerStyle.Render(ansi.Truncate("  Notices", width, "…")))
-	b.WriteString("\n\n")
+	if m.noticeCursor < 0 || m.noticeCursor >= len(m.notices) {
+		m.noticeCursor = 0
+	}
+	rows := m.noticeRows(width)
+	cursor := m.noticeCursor
+	details := m.noticeDetailLines(width, m.notices[cursor])
+	plan := planNoticeLayout(maxLines, cursor, len(rows), len(details))
+	header := "  Notices"
+	switch shown := plan.end - plan.start; {
+	case shown == 1 && shown < len(rows):
+		header = fmt.Sprintf("  Notices  %d / %d", plan.start+1, len(rows))
+	case shown < len(rows):
+		header = fmt.Sprintf("  Notices  %d–%d / %d", plan.start+1, plan.end, len(rows))
+	}
+	var lines []string
+	if plan.header {
+		lines = append(lines, headerStyle.Render(ansi.Truncate(header, width, "…")))
+		if plan.gapAfterHeader {
+			lines = append(lines, "")
+		}
+	}
+	lines = append(lines, rows[plan.start:plan.end]...)
+	if plan.gapBeforeDetail {
+		lines = append(lines, "")
+	}
+	lines = append(lines, details[:plan.detailN]...)
+	if plan.gapBeforeFooter {
+		lines = append(lines, "")
+	}
+	lines = append(lines, m.noticeFooter(width, m.notices[cursor]))
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func (m launcherModel) noticeRows(width int) []string {
 	barW := width - 2
 	if barW > 74 {
 		barW = 74
 	}
 	sel := lipgloss.NewStyle().Bold(true).Foreground(colorBg).Background(colorAccent).Width(barW)
 	idle := normalStyle.Width(barW)
+	rows := make([]string, len(m.notices))
 	for i, n := range m.notices {
 		label := n.line
 		when := ""
@@ -136,22 +172,25 @@ func (m launcherModel) noticeBrowser(width int) string {
 			gap = 1
 		}
 		row := " " + label + strings.Repeat(" ", gap) + when
-		if i == m.noticeCursor {
-			b.WriteString(sel.Render(row))
-		} else if n.err {
-			b.WriteString(lipgloss.NewStyle().Foreground(colorError).Width(barW).Render(row))
-		} else {
-			b.WriteString(idle.Render(row))
+		switch {
+		case i == m.noticeCursor:
+			rows[i] = sel.Render(row)
+		case n.err:
+			rows[i] = lipgloss.NewStyle().Foreground(colorError).Width(barW).Render(row)
+		default:
+			rows[i] = idle.Render(row)
 		}
-		b.WriteString("\n")
 	}
-	b.WriteString("\n")
-	cur := m.notices[min(m.noticeCursor, len(m.notices)-1)]
+	return rows
+}
+
+func (m launcherModel) noticeDetailLines(width int, cur launcherNotice) []string {
 	rule := colorStatus
 	if cur.err {
 		rule = colorError
 	}
 	ruleStyle := lipgloss.NewStyle().Foreground(rule)
+	lines := make([]string, 0, len(cur.detail))
 	for _, d := range cur.detail {
 		textStyle := normalStyle
 		switch {
@@ -160,16 +199,20 @@ func (m launcherModel) noticeBrowser(width int) string {
 		case d.dim:
 			textStyle = dimStyle
 		}
-		b.WriteString("  ")
-		b.WriteString(ruleStyle.Render("│"))
-		b.WriteString(" ")
+		var line strings.Builder
+		line.WriteString("  ")
+		line.WriteString(ruleStyle.Render("│"))
+		line.WriteString(" ")
 		if d.label != "" {
-			b.WriteString(dimStyle.Render(fmt.Sprintf("%-12s", d.label)))
+			line.WriteString(dimStyle.Render(fmt.Sprintf("%-12s", d.label)))
 		}
-		b.WriteString(textStyle.Render(ansi.Truncate(d.text, max(1, width-18), "…")))
-		b.WriteString("\n")
+		line.WriteString(textStyle.Render(ansi.Truncate(d.text, max(1, width-18), "…")))
+		lines = append(lines, line.String())
 	}
-	b.WriteString("\n")
+	return lines
+}
+
+func (m launcherModel) noticeFooter(width int, cur launcherNotice) string {
 	help := "  ↑/↓ choose   esc/q back"
 	if cur.copyLabel != "" {
 		help = "  ↑/↓ choose   enter copy " + cur.copyLabel + "   esc/q back"
@@ -177,9 +220,101 @@ func (m launcherModel) noticeBrowser(width int) string {
 	if m.noticeFlash != "" {
 		help += "   " + m.noticeFlash
 	}
-	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
-	b.WriteString("\n")
-	return b.String()
+	return dimStyle.Render(ansi.Truncate(help, width, "…"))
+}
+
+// noticePlan is which slice of the log fits in the rows under the launcher chrome.
+type noticePlan struct {
+	header          bool
+	gapAfterHeader  bool
+	start, end      int
+	gapBeforeDetail bool
+	detailN         int
+	gapBeforeFooter bool
+}
+
+// planNoticeLayout keeps the cursor row and the footer, then spends leftover
+// rows on detail, the header, neighboring rows, and finally the blank gaps.
+func planNoticeLayout(maxLines, cursor, rowCount, detailCount int) noticePlan {
+	if rowCount <= 0 {
+		return noticePlan{}
+	}
+	if cursor < 0 || cursor >= rowCount {
+		cursor = 0
+	}
+	if maxLines <= 0 {
+		maxLines = rowCount + detailCount + 6
+	}
+	header := true
+	listN := rowCount
+	detailN := detailCount
+	gapHeader, gapDetail, gapFooter := true, detailCount > 0, true
+	shrink := func() bool {
+		switch {
+		case gapFooter:
+			gapFooter = false
+		case gapHeader:
+			gapHeader = false
+		case gapDetail:
+			gapDetail = false
+		case listN > 1:
+			listN--
+		case header:
+			header = false
+		case detailN > 0:
+			detailN--
+		default:
+			return false
+		}
+		return true
+	}
+	for {
+		gaps := 0
+		if header && gapHeader {
+			gaps++
+		}
+		if detailN > 0 && gapDetail {
+			gaps++
+		}
+		if gapFooter {
+			gaps++
+		}
+		headerN := 0
+		if header {
+			headerN = 1
+		}
+		if headerN+listN+detailN+1+gaps <= maxLines {
+			break
+		}
+		if !shrink() {
+			break
+		}
+	}
+	if !header {
+		gapHeader = false
+	}
+	if detailN == 0 {
+		gapDetail = false
+	}
+	start, end := noticeWindow(rowCount, cursor, listN)
+	return noticePlan{header, gapHeader, start, end, gapDetail, detailN, gapFooter}
+}
+
+func noticeWindow(n, cursor, visible int) (int, int) {
+	if visible >= n {
+		return 0, n
+	}
+	if visible < 1 {
+		visible = 1
+	}
+	start := cursor - (visible-1)/2
+	if start < 0 {
+		start = 0
+	}
+	if start+visible > n {
+		start = n - visible
+	}
+	return start, start + visible
 }
 
 func (m launcherModel) updateNotices(msg tea.KeyMsg) (launcherModel, tea.Cmd) {

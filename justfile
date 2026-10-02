@@ -117,8 +117,10 @@ demo-launcher-notice: build
         CLICOLOR_FORCE=1 FORCE_COLOR=1 \
         TERM=xterm-256color COLORTERM=truecolor \
         vhs demos/launcher-notice.tape
+    vhs demos/launcher-notice-short.tape
     just _optimize-demo-gif demos/launcher-notice.gif
-    ls -lh demos/launcher-notice.gif demos/frames/launcher-notice.png demos/frames/launcher-notice-open.png
+    just _optimize-demo-gif demos/launcher-notice-short.gif
+    ls -lh demos/launcher-notice.gif demos/launcher-notice-short.gif demos/frames/launcher-notice.png demos/frames/launcher-notice-open.png demos/frames/launcher-notice-short.png demos/frames/launcher-notice-short-scrolled.png
 
 demo-workers: build
     #!/usr/bin/env bash

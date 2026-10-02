@@ -91,6 +91,8 @@ just demo-launcher-notice
 
 Still frames: `demos/frames/launcher-notice.png`, `demos/frames/launcher-notice-open.png`
 
+`demos/launcher-notice-short.gif` is the same screen at a short terminal height. `OBEY_VOICE_DEMO_LAUNCHER_NOTICE=scroll` seeds 13 notices, and the list windows so the selected detail and the copy line stay on screen. Stills: `demos/frames/launcher-notice-short.png`, `demos/frames/launcher-notice-short-scrolled.png`.
+
 The same tape is the opt-in integration test. It is not part of `go test ./...`:
 
 ```bash

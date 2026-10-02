@@ -543,8 +543,7 @@ func (m launcherModel) fullView(width int) string {
 		b.WriteString("\n\n")
 	}
 	if m.noticesOpen {
-		b.WriteString(m.noticeBrowser(width))
-		return b.String()
+		return m.finishNoticeView(b.String(), width)
 	}
 
 	// Menu width
@@ -617,8 +616,7 @@ func (m launcherModel) compactView(width int) string {
 		b.WriteString("\n")
 	}
 	if m.noticesOpen {
-		b.WriteString(m.noticeBrowser(width))
-		return b.String()
+		return m.finishNoticeView(b.String(), width)
 	}
 
 	items, cursor := m.visibleItems()
@@ -645,6 +643,19 @@ func (m launcherModel) compactView(width int) string {
 	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
 	b.WriteString("\n")
 	return b.String()
+}
+
+// finishNoticeView appends a notice browser that fits the lines still free
+// in the terminal. A trailing newline on prefix counts as a used line.
+func (m launcherModel) finishNoticeView(prefix string, width int) string {
+	maxLines := 0
+	if m.height > 0 {
+		maxLines = m.height - 1 - strings.Count(prefix, "\n")
+		if maxLines < 1 {
+			maxLines = 1
+		}
+	}
+	return prefix + m.noticeBrowser(width, maxLines)
 }
 
 func (m launcherModel) activeModel() string {
