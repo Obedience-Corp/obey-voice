@@ -11,6 +11,10 @@ manifest := repo / "testdata/corpus/manifest.json"
 default:
     @just --list --justfile {{source_file()}}
 
+[doc('Replay labeled addressee cases against baseline or optional decision providers (lab only)')]
+decision *ARGS:
+    @cd "{{repo}}" && go run ./scripts/decision_bench {{ARGS}}
+
 [doc('Measure and diff against the committed baseline (fails on >10% regression)')]
 diff:
     @{{repo}}/scripts/bench.sh diff
