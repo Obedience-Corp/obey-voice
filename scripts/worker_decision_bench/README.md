@@ -6,8 +6,9 @@ decision started alongside the resolver. A ready, valid work proposal skips
 `ThinkStream`. If it is late, unavailable or uncertain, routing continues
 immediately. The command is a lab tool; it does not enable a voice feature.
 
-The baseline and candidate run in alternating order for each case, with three
-rotated passes by default. Separate decision and baseline warmups must succeed
+The baseline and candidate reverse order for each case on successive passes,
+with four rotated passes by default. An even pass count balances which mode
+runs first for every case. Separate decision and baseline warmups must succeed
 before measurement. The new output file contains the corpus/question hashes,
 settings, warmups and every observation, including failures. A loopback proxy
 counts actual Ollama `/api/chat` requests, including retries. `first_text_ms`
@@ -42,3 +43,9 @@ ends that observation and cannot authorize a fast route. Exact control phrases,
 live host policy changes, interruption, real worker admission and audio require
 separate pipeline verification. The held-out corpus and results for WI-fb8f26
 are retained in its campaign work item, outside the source repository.
+
+Use `-admission-only` to isolate concurrent decision inference from speaking
+prompt/cache changes. Both modes still call the real addressee resolver; no
+proposal is adopted and no speaking model request is issued. Its manifest
+explicitly marks that narrower scope. Use `-start-rep N` with a fresh output file
+to extend a retained comparison; do not overwrite or silently merge raw runs.

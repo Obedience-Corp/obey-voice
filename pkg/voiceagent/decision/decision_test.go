@@ -231,3 +231,32 @@ func TestCompletedDecisionSurvivesItsBudgetButNotParentCancellation(t *testing.T
 		t.Fatal("off started speculation")
 	}
 }
+
+func TestPendingOwnsInputSnapshot(t *testing.T) {
+	release := make(chan struct{})
+	seen := make(chan WorkInput, 1)
+	policy := WorkPolicy{Evaluator: evaluatorFunc(func(ctx context.Context, request Request) (Response, error) {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return Response{}, ctx.Err()
+		}
+		seen <- request.State.(WorkInput)
+		return certain(Simple), nil
+	})}
+	in := sampleInput()
+	in.Conversation = []Message{{Role: "user", Text: "An earlier request"}}
+	pending := policy.Start(t.Context(), in, time.Second)
+	defer pending.Close()
+	in.EnabledTiers[0] = Complex
+	in.Conversation[0].Text = "A different conversation"
+	close(release)
+	select {
+	case got := <-seen:
+		if got.EnabledTiers[0] != Simple || got.Conversation[0].Text != "An earlier request" {
+			t.Fatalf("provider observed caller's later mutation: %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("provider did not finish")
+	}
+}

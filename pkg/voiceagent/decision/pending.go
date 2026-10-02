@@ -31,6 +31,7 @@ func (p WorkPolicy) Start(ctx context.Context, in WorkInput, budget time.Duratio
 	in.EnabledTiers = slices.Clone(in.EnabledTiers)
 	in.Conversation = slices.Clone(in.Conversation)
 	go func() {
+		defer cancel()
 		start := time.Now()
 		proposal, err := p.Decide(decisionCtx, in)
 		pending.done <- WorkResult{Proposal: proposal, Err: err, Elapsed: time.Since(start)}

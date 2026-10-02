@@ -91,7 +91,7 @@ func speak(ctx context.Context, b *brain.OllamaBrain, in decision.WorkInput, s *
 	return result.Err
 }
 
-func replay(ctx context.Context, b *brain.OllamaBrain, p decision.WorkPolicy, calls *atomic.Int64, c replayCase, mode string, rep int, budget time.Duration) sample {
+func replay(ctx context.Context, b *brain.OllamaBrain, p decision.WorkPolicy, calls *atomic.Int64, c replayCase, mode string, rep int, budget time.Duration, admissionOnly bool) sample {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	var history []brain.Turn
@@ -129,9 +129,11 @@ func replay(ctx context.Context, b *brain.OllamaBrain, p decision.WorkPolicy, ca
 				s.DecisionError = result.Err.Error()
 			}
 		}
-		if s.Ready && result.Err == nil && result.Proposal.Accepted {
+		// Admission-only is a diagnostic control: no speaking prompt or
+		// response can alter the cache or next observation's model residency.
+		if !admissionOnly && s.Ready && result.Err == nil && result.Proposal.Accepted {
 			s.Route, s.Tier = "spawn", string(result.Proposal.Tier)
-		} else {
+		} else if !admissionOnly {
 			beforeSpeak := calls.Load()
 			err = speak(ctx, b, c.Input, &s, start)
 			s.SpeakingCalls = calls.Load() - beforeSpeak
@@ -144,11 +146,45 @@ func replay(ctx context.Context, b *brain.OllamaBrain, p decision.WorkPolicy, ca
 	gotWork := s.Route == "spawn" || s.Route == "narrate"
 	s.Correct = err == nil && gotWork == c.WantWork && (!gotWork || s.Tier == string(c.WantTier))
 	s.AcceptedError = s.Proposal.Accepted && !s.Correct
+	if admissionOnly {
+		s.Correct, s.AcceptedError = err == nil, false
+	}
 	return s
 }
 
 func admittedHere(address brain.Addressee) bool {
 	return address.Kind == "none" || (address.Kind == "address" && address.Name == "Samantha" && !address.Bare)
+}
+
+func comparisonModes(caseIndex, rep int) []string {
+	modes := []string{"baseline", "overlap"}
+	if (caseIndex+rep)%2 == 1 {
+		slices.Reverse(modes)
+	}
+	return modes
+}
+
+func localProxy(base *url.URL, calls *atomic.Int64) *httptest.Server {
+	proxy := httputil.NewSingleHostReverseProxy(base)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	proxy.Transport = transport
+	proxy.ModifyResponse = func(response *http.Response) error {
+		if response.StatusCode >= 300 && response.StatusCode < 400 {
+			return errors.New("local Ollama replay refused an HTTP redirect")
+		}
+		return nil
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" && r.URL.Path != "/api/tags" {
+			http.Error(w, "lab endpoint denied", http.StatusForbidden)
+			return
+		}
+		if r.URL.Path == "/api/chat" {
+			calls.Add(1)
+		}
+		proxy.ServeHTTP(w, r)
+	}))
 }
 
 func run() error {
@@ -157,10 +193,12 @@ func run() error {
 	host := flag.String("ollama-host", "http://127.0.0.1:11434", "local Ollama origin")
 	model := flag.String("model", "qwen3.8:latest", "installed speaking model")
 	endpoint := flag.String("endpoint", "http://127.0.0.1:18763/v1/systemone", "local decision endpoint")
-	reps := flag.Int("reps", 3, "rotated paired passes")
+	reps := flag.Int("reps", 4, "rotated paired passes (even counts balance each case's order)")
+	startRep := flag.Int("start-rep", 0, "first pass index when extending a retained comparison")
 	budget := flag.Duration("budget", 750*time.Millisecond, "decision inference budget; never a route wait")
+	admissionOnly := flag.Bool("admission-only", false, "isolate addressee contention; no speaking calls or route adoption")
 	flag.Parse()
-	if *casePath == "" || *out == "" || *reps < 1 || *budget <= 0 {
+	if *casePath == "" || *out == "" || *reps < 1 || *startRep < 0 || *budget <= 0 {
 		return errors.New("cases, out and positive reps/budget required")
 	}
 	base, err := url.Parse(*host)
@@ -207,20 +245,7 @@ func run() error {
 	// Count actual /api/chat requests, including retries, rather than treating
 	// a ThinkStream invocation or usage callback as proof of one model call.
 	var calls atomic.Int64
-	proxy := httputil.NewSingleHostReverseProxy(base)
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	proxy.Transport = transport
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/chat" && r.URL.Path != "/api/tags" {
-			http.Error(w, "lab endpoint denied", http.StatusForbidden)
-			return
-		}
-		if r.URL.Path == "/api/chat" {
-			calls.Add(1)
-		}
-		proxy.ServeHTTP(w, r)
-	}))
+	server := localProxy(base, &calls)
 	defer server.Close()
 	tmp, err := os.MkdirTemp("", "worker-decision-bench-")
 	if err != nil {
@@ -233,7 +258,11 @@ func run() error {
 	}
 	hash := b.FreezePersonaPrompt()
 	questions, _ := json.Marshal(decision.WorkRequest(decision.WorkInput{}).Questions)
-	if err = emit(map[string]any{"type": "manifest", "created_at": time.Now().UTC(), "cases_sha256": fmt.Sprintf("%x", sha256.Sum256(raw)), "questions_sha256": fmt.Sprintf("%x", sha256.Sum256(questions)), "persona_hash": hash, "model": *model, "endpoint": *endpoint, "reps": *reps, "cases": len(cases), "budget_ms": budget.Milliseconds(), "num_ctx": 32768, "num_batch": 128, "dispatch": "route_only; no Agency or workers", "scope": "admission + route/text; no audio"}); err != nil {
+	scope := "admission + route/text; no audio"
+	if *admissionOnly {
+		scope = "admission only; no speaking calls, route adoption or audio"
+	}
+	if err = emit(map[string]any{"type": "manifest", "created_at": time.Now().UTC(), "cases_sha256": fmt.Sprintf("%x", sha256.Sum256(raw)), "questions_sha256": fmt.Sprintf("%x", sha256.Sum256(questions)), "persona_hash": hash, "model": *model, "endpoint": *endpoint, "reps": *reps, "start_rep": *startRep, "cases": len(cases), "budget_ms": budget.Milliseconds(), "num_ctx": 32768, "num_batch": 128, "dispatch": "route_only; no Agency or workers", "scope": scope}); err != nil {
 		return err
 	}
 	warm := replayCase{ID: "warmup", Input: decision.WorkInput{Text: "What is a compiler?", EnabledTiers: []decision.Tier{decision.Simple, decision.Medium, decision.Complex}}}
@@ -251,25 +280,22 @@ func run() error {
 	if we != nil {
 		return we
 	}
-	wsample := replay(ctx, b, policy, &calls, warm, "baseline", -1, *budget)
+	wsample := replay(ctx, b, policy, &calls, warm, "baseline", -1, *budget, *admissionOnly)
 	if err = emit(wsample); err != nil {
 		return err
 	}
 	if wsample.Error != "" {
 		return errors.New(wsample.Error)
 	}
-	for rep := 0; rep < *reps; rep++ {
+	for rep := *startRep; rep < *startRep+*reps; rep++ {
 		for i := range cases {
-			c := cases[(i+rep)%len(cases)]
-			modes := []string{"baseline", "overlap"}
-			if (i+rep)%2 == 1 {
-				slices.Reverse(modes)
-			}
-			for _, mode := range modes {
+			caseIndex := (i + rep) % len(cases)
+			c := cases[caseIndex]
+			for _, mode := range comparisonModes(caseIndex, rep) {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				s := replay(ctx, b, policy, &calls, c, mode, rep, *budget)
+				s := replay(ctx, b, policy, &calls, c, mode, rep, *budget, *admissionOnly)
 				if err = emit(s); err != nil {
 					return err
 				}

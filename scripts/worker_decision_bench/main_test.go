@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +17,28 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 )
+
+func TestOllamaReplayDoesNotFollowRedirects(t *testing.T) {
+	var escaped atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { escaped.Add(1) }))
+	defer target.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+	base, _ := url.Parse(origin.URL)
+	var calls atomic.Int64
+	proxy := localProxy(base, &calls)
+	defer proxy.Close()
+	response, err := http.Get(proxy.URL + "/api/chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway || escaped.Load() != 0 || calls.Load() != 1 {
+		t.Fatalf("status=%d escaped=%d calls=%d", response.StatusCode, escaped.Load(), calls.Load())
+	}
+}
 
 func TestAdmissionKeepsCurrentPersonaAndRejectsOtherTargets(t *testing.T) {
 	for _, tc := range []struct {
@@ -29,6 +53,31 @@ func TestAdmissionKeepsCurrentPersonaAndRejectsOtherTargets(t *testing.T) {
 	} {
 		if got := admittedHere(tc.address); got != tc.want {
 			t.Errorf("%+v admitted=%v", tc.address, got)
+		}
+	}
+}
+
+func TestPairedOrderReversesForEachCaseAcrossPasses(t *testing.T) {
+	// Corpus rotation must not accidentally cancel the order reversal for a
+	// case. Otherwise every comparison for that case gives one mode the warm
+	// prefix cache, and its apparent latency change is confounded by ordering.
+	const n = 22
+	previous := make(map[int]string)
+	for rep := 0; rep < 4; rep++ {
+		baselineFirst := 0
+		for i := 0; i < n; i++ {
+			index := (i + rep) % n
+			modes := comparisonModes(index, rep)
+			if modes[0] == previous[index] {
+				t.Fatalf("case %d kept the same order in rep %d", index, rep)
+			}
+			if modes[0] == "baseline" {
+				baselineFirst++
+			}
+			previous[index] = modes[0]
+		}
+		if baselineFirst != n/2 {
+			t.Fatalf("unbalanced pass %d: %d baseline-first pairs", rep, baselineFirst)
 		}
 	}
 }
