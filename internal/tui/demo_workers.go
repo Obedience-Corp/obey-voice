@@ -11,14 +11,17 @@ import (
 const demoWorkersEnv = "OBEY_VOICE_DEMO_WORKERS"
 const demoLauncherNoticeEnv = "OBEY_VOICE_DEMO_LAUNCHER_NOTICE"
 
-func demoLauncherNotice() string {
+func demoLauncherNotices() []string {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(demoLauncherNoticeEnv))) {
 	case "route", "json", "1", "true", "yes", "on":
-		return `Meeting notes routed to camp:JobSearch: {"campaign_root":"/Users/lancerogers/Dev/JobSearch","generated_at":"2026-09-18T17:19:25.557803Z"}`
+		return []string{
+			`Meeting saved: /Users/lancerogers/.obey/agents/voice/festival-voice/meetings/test-20261002-121718.meeting`,
+			`Meeting notes routed to camp:JobSearch: {"schema_version":"intent-meeting-import/v1alpha1","campaign_root":"/Users/lancerogers/Dev/JobSearch","generated_at":"2026-10-02T18:17:48Z","note":{"duration_seconds":44270,"id":"test-20261002-121748","path":"meetings/test-20261002-121748.md","transcript":"transcripts/test-20261002-121748.txt","speakers":1,"utterances":1,"updated_existing":false}}`,
+		}
 	case "speakers", "path":
-		return "Speaker labels updated: 7 speakers · /Users/lancerogers/.obey/agents/voice/festival-voice/meetings/recruiter-call-eyong-20260918-110210.meeting/.samantha/speaker-analysis.json"
+		return []string{"Speaker labels updated: 7 speakers · /Users/lancerogers/.obey/agents/voice/festival-voice/meetings/recruiter-call-eyong-20260918-110210.meeting/.samantha/speaker-analysis.json"}
 	default:
-		return ""
+		return nil
 	}
 }
 

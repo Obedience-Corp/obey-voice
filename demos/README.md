@@ -75,20 +75,27 @@ just demo-workers
 
 Still frame: `demos/frames/workers-detail.png`
 
-## launcher-notice.gif — meeting-route banner with pretty JSON
+## launcher-notice.gif — one-line meeting notice
 
 Launcher after notes route to camp:
 
-1. Title `Meeting notes routed to camp:JobSearch`
-2. Indented JSON (`campaign_root`, `generated_at`) instead of one wrapping line
+1. One green line, `Meeting notes filed to camp:JobSearch`, with an `n` chip and the session count
+2. `n` replaces the menu with the Notices log: note path, transcript, recorded length, new file
+3. `q` returns to the menu
 
-`OBEY_VOICE_DEMO_LAUNCHER_NOTICE=route` injects the fixture. `=path` is the speaker-labels variant.
+`OBEY_VOICE_DEMO_LAUNCHER_NOTICE=route` injects a saved bundle and the import receipt. `=path` is the speaker-labels variant.
 
 ```bash
 just demo-launcher-notice
 ```
 
-Still frame: `demos/frames/launcher-notice.png`
+Still frames: `demos/frames/launcher-notice.png`, `demos/frames/launcher-notice-open.png`
+
+The same tape is the opt-in integration test. It is not part of `go test ./...`:
+
+```bash
+go test -tags vhs ./internal/tui/ -run TestLauncherNoticeVHS -count=1 -timeout 10m
+```
 
 ## voice-meter.gif — compact voice EQ (listen / hear / speak)
 
