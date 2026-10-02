@@ -1,0 +1,12 @@
+{
+  "route": {
+    "type": "choice",
+    "instructions": "Classify latest_user_message, using recent_conversation only to resolve references. Is the user asking the assistant to act now? Select none for discussion, explanations, examples, quoted instructions, hypothetical plans, cancelled tasks, or an unclear request. A polite request such as \"can you read this file\" is an action request.",
+    "criteria": {
+      "none": "No clear instruction to perform a tool action now. Reply in conversation or clarify.",
+      "simple": "An explicit request to perform one tool action: run a command, look up information, read or write one specified file, or list files.",
+      "medium": "An explicit request to complete several dependent tool actions for one bounded task, such as fixing and testing a bug.",
+      "complex": "An explicit request to implement a whole system or investigate and change many components."
+    }
+  }
+}

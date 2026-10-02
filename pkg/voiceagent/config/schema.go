@@ -200,6 +200,7 @@ func schemaTable() []KeySpec {
 	var out []KeySpec
 	out = append(out, voiceKeys()...)
 	out = append(out, brainKeys()...)
+	out = append(out, decisionKeys()...)
 	out = append(out, speakerKeys()...)
 	out = append(out, meetingKeys()...)
 	out = append(out, toolKeys()...)

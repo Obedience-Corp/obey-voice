@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
@@ -89,6 +90,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		p.emit(events.UserInput{Text: text, Speaker: speakerID})
 	}
 	original := text
+	pendingDecision := p.startWorkDecision(ctx, text, decision.VoiceWork, isContinuation)
+	defer pendingDecision.close()
 	var admission ResponseAdmission
 	if isContinuation {
 		admission = continuation.admission
@@ -122,6 +125,10 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	// brain runs, so tool work never occupies the talking context window.
 	if kind, source, ok := classifyTurn(text, p.routeContext()); !isContinuation && ok && routeKindSkipsBrain(kind) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
+	}
+
+	if p.takeWorkDecision(ctx, pendingDecision, text, metrics) {
+		return original, p.completeRoutedTurn(ctx, turn, metrics, text, RouteSpawn, "decision")
 	}
 
 	// turnCtx scopes the whole turn so the playback watchdog can abort the brain

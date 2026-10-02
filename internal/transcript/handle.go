@@ -37,6 +37,7 @@ func (w *Writer) AttachAll(bus *events.Bus) func() {
 		events.SubscribeDetachable(bus, func(e events.WorkerUsageRecorded) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.WorkerLimitReached) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.WorkerChargeState) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.DecisionEvaluated) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.RouteDecided) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.WorkDelivery) { w.Handle(e) }),
 		events.SubscribeDetachable(bus, func(e events.JobQueued) { w.Handle(e) }),
@@ -80,6 +81,7 @@ var recordedEventTypes = map[string]bool{
 	"worker.limit_reached":   true,
 	"worker.charge":          true,
 	"route.decided":          true,
+	"decision.evaluated":     true,
 	"work_delivery":          true,
 	"job_queued":             true,
 	"job_started":            true,
@@ -152,6 +154,8 @@ func encodeEvent(e events.Event) (record, bool) {
 		return record{Type: "worker.limit_reached", WorkerLimit: &x}, true
 	case events.WorkerChargeState:
 		return record{Type: "worker.charge", WorkerCharge: &x}, true
+	case events.DecisionEvaluated:
+		return record{Type: "decision.evaluated", Decision: &x}, true
 	case events.RouteDecided:
 		return record{Type: "route.decided", WorkScope: &x.Scope, Kind: x.Kind, Tier: x.Tier, ReasonCode: x.ReasonCode, State: x.State, JobID: x.JobID, Text: x.Task, Message: x.Message}, true
 	case events.WorkDelivery:

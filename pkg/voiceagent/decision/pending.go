@@ -23,6 +23,10 @@ type Pending struct {
 }
 
 func (p WorkPolicy) Start(ctx context.Context, in WorkInput, budget time.Duration) *Pending {
+	return p.start(ctx, in, budget, func() {})
+}
+
+func (p WorkPolicy) start(ctx context.Context, in WorkInput, budget time.Duration, finished func()) *Pending {
 	if p.Evaluator == nil || ctx.Err() != nil || budget <= 0 || len(in.EnabledTiers) == 0 {
 		return nil
 	}
@@ -31,6 +35,7 @@ func (p WorkPolicy) Start(ctx context.Context, in WorkInput, budget time.Duratio
 	in.EnabledTiers = slices.Clone(in.EnabledTiers)
 	in.Conversation = slices.Clone(in.Conversation)
 	go func() {
+		defer finished()
 		defer cancel()
 		start := time.Now()
 		proposal, err := p.Decide(decisionCtx, in)

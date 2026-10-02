@@ -503,3 +503,32 @@ func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
 		t.Errorf("tool_result line missing elapsed_s: %v", raw[4])
 	}
 }
+
+func TestWriterRetainsOptionalDecisionDiagnostic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decision.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	detach := w.AttachAll(bus)
+	want := events.DecisionEvaluated{Point: "voice_work", Disposition: "proposed", Model: "local-fixture", Tier: "simple", Elapsed: 120 * time.Millisecond}
+	bus.Emit(want)
+	detach()
+	bus.Emit(events.DecisionEvaluated{Disposition: "must-not-record"})
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var found int
+	for _, r := range readRecords(t, path) {
+		if r.Type == "decision.evaluated" {
+			found++
+			if r.Decision == nil || *r.Decision != want || r.Text != "" || r.Preview != "" {
+				t.Fatalf("diagnostic=%+v", r)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("recorded %d diagnostics", found)
+	}
+}

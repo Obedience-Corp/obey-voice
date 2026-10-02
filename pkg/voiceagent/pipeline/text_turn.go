@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -55,6 +56,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.emit(events.UserInput{Text: input, Speaker: speakerID})
 	}
 	original := input
+	pendingDecision := p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
+	defer pendingDecision.close()
 	var admission ResponseAdmission
 	if isContinuation {
 		admission = continuation.admission
@@ -86,6 +89,10 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
 			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
+	}
+
+	if p.takeWorkDecision(ctx, pendingDecision, input, metrics) {
+		return p.completeRoutedTurn(ctx, turn, metrics, input, RouteSpawn, "decision")
 	}
 
 	requestCtx := ctx

@@ -161,6 +161,10 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		a.settings.liveSeeder = a.settingsLiveSeeder()
 		a.settings.onPlaybackVolume = a.applyPlaybackVolume
 		a.settings.onWorkersEnabled = a.applyWorkersEnabled
+		if a.runtime != nil && a.runtime.Pipeline != nil {
+			a.settings.onDecisionSettings = a.runtime.Pipeline.ConfigureDecisions
+			a.settings.decisionStatus = a.runtime.Pipeline.DecisionStatus
+		}
 		// Apply stored geometry immediately — Bubble Tea only re-emits
 		// WindowSize on actual resize, not on screen switches. Without
 		// this, the list falls back to a default height and 80-col width
@@ -168,7 +172,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		// WindowSizeMsg while settings is open.
 		a.settings.width, a.settings.height = a.width, a.height
 		a.settings.ensureCursorVisible()
-		return a, tea.Batch(a.settings.loadDevices(), pauseVoice)
+		return a, tea.Batch(a.settings.loadDevices(), pauseVoice, a.settings.pollDecisionStatus())
 	case screenWorkers:
 		var controller workerController
 		if a.runtime != nil && a.runtime.Pipeline != nil {

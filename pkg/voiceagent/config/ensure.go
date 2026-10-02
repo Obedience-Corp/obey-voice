@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decider"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -37,6 +38,18 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 	dir := ModelsDirFrom(cfg)
 	if err := ensureManifestProgress(ctx, manifest, dir, onProgress); err != nil {
 		return err
+	}
+	if req.NeedDecision && ManagedDecisions(cfg) {
+		if err := decider.EnsurePython(ctx, dir, func(stage string) {
+			if onProgress != nil {
+				onProgress(AssetProgress{Asset: "Local decision runtime", Phase: assetPhaseInstall})
+			}
+		}); err != nil {
+			return err
+		}
+		if onProgress != nil {
+			onProgress(AssetProgress{Asset: "Local decision runtime", Phase: assetPhaseDone, Pct: 100})
+		}
 	}
 	if req.NeedTTS && cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) {
 		if qwen.UseManaged(cfg.QwenTTSBinary, cfg.QwenTTSModel) {

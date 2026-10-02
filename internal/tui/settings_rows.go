@@ -102,7 +102,8 @@ func indexOf(options []string, value string) int {
 func (m settingsModel) sectionRows() []settingRow {
 	switch m.section {
 	case sectionBrain:
-		return append(m.providerRows(), m.modelRows()...)
+		rows := append(m.providerRows(), m.modelRows()...)
+		return append(rows, m.decisionRows()...)
 	case sectionWorker:
 		return m.workerRows()
 	case sectionTools:

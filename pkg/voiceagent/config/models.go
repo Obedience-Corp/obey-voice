@@ -24,10 +24,11 @@ type ModelArchive struct {
 
 // AssetRequest describes which runtime assets are needed for a command.
 type AssetRequest struct {
-	NeedSTT     bool
-	NeedTTS     bool
-	NeedVAD     bool
-	NeedSpeaker bool
+	NeedDecision bool
+	NeedSTT      bool
+	NeedTTS      bool
+	NeedVAD      bool
+	NeedSpeaker  bool
 }
 
 // AssetProgress is one progress tick for a single asset, reported by

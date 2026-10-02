@@ -1,0 +1,3269 @@
+{
+  "raw_sha256": "a6789c3192c5f44dd7e5103976d753b011a235bf8a059c8d2f10d54280e314bc",
+  "case_sha256": "eb89f5ae666766b0cf157ca96eb6b9443526ce2a660345f31b21209775283625",
+  "manifest": {
+    "binary_sha256": "25e4af0c2e2fd06b9ea7db397ef6f3f05c666114d791f04c8f2b7b39cb4a4814",
+    "budget_ms": 750,
+    "case_filter": "",
+    "cases": 24,
+    "cases_sha256": "eb89f5ae666766b0cf157ca96eb6b9443526ce2a660345f31b21209775283625",
+    "created_at": "2026-10-02T21:14:51.481644Z",
+    "decision_model_revision": "533964dae8be954c5b5e19fa4948e48408094c1e",
+    "model": "qwen3.8:latest",
+    "num_batch": 128,
+    "num_ctx": 32768,
+    "persona_hash": "3c1594495e13",
+    "question_sha256": "b5020f992400e80558cc48cc477f932c3a97f977d0d335a03d26dfa9177227dc",
+    "reps": 4,
+    "runtime_revision": "50d0be0d7cb43d2066965ce5fa7f3fe4e489a60f",
+    "scope": "post-STT voice pipeline; real local Ollama and Kokoro; controlled worker marker; software PCM sink, no physical audibility claim",
+    "thinking": false,
+    "type": "manifest"
+  },
+  "note": "Timing is final transcript to software PCM / controlled worker entry, not hardware audibility or full task execution. Repetitions are not independent cases. Runtime remains resident for both modes; baseline disables decision requests.",
+  "all": {
+    "pairs": 96,
+    "distinct_cases": 24,
+    "baseline": {
+      "correct": 77,
+      "errors": 0,
+      "missing_pcm": 3,
+      "worker_markers": 40,
+      "model_calls": 205,
+      "admission_calls": 96,
+      "admission_ms": {
+        "n": 96,
+        "mean": 1656.7108771354167,
+        "median": 1691.767229,
+        "p95": 2368.773459,
+        "min": 1144.841833,
+        "max": 2501.584375
+      },
+      "first_pcm_ms": {
+        "n": 93,
+        "mean": 5633.099223032258,
+        "median": 5402.865041,
+        "p95": 8979.278833,
+        "min": 2448.701834,
+        "max": 11061.197
+      },
+      "worker_start_ms": {
+        "n": 40,
+        "mean": 7331.53698635,
+        "median": 6513.624541499999,
+        "p95": 15197.053833,
+        "min": 4021.106458,
+        "max": 16122.208333
+      },
+      "elapsed_ms": {
+        "n": 96,
+        "mean": 8026.671044625,
+        "median": 7120.7462705,
+        "p95": 15883.326208,
+        "min": 2448.837125,
+        "max": 21776.717583
+      }
+    },
+    "optional": {
+      "correct": 80,
+      "errors": 0,
+      "missing_pcm": 4,
+      "worker_markers": 43,
+      "model_calls": 191,
+      "admission_calls": 96,
+      "admission_ms": {
+        "n": 96,
+        "mean": 1648.23899653125,
+        "median": 1690.2851455,
+        "p95": 2357.576584,
+        "min": 1142.717375,
+        "max": 2485.86425
+      },
+      "first_pcm_ms": {
+        "n": 92,
+        "mean": 5238.791476913044,
+        "median": 5192.9930415,
+        "p95": 7782.868584,
+        "min": 1432.455333,
+        "max": 11993.3655
+      },
+      "worker_start_ms": {
+        "n": 43,
+        "mean": 6700.300931139534,
+        "median": 6608.406916,
+        "p95": 12286.192083,
+        "min": 1153.01,
+        "max": 19246.961083
+      },
+      "elapsed_ms": {
+        "n": 96,
+        "mean": 7185.154572458333,
+        "median": 6891.180729,
+        "p95": 12962.623833,
+        "min": 1856.966666,
+        "max": 20404.569959
+      }
+    },
+    "optional_minus_baseline_ms": {
+      "admission_ms": {
+        "n": 96,
+        "mean": -8.471880604166664,
+        "median": -7.000583500000062,
+        "p95": 784.453166,
+        "min": -911.7912079999999,
+        "max": 915.076125
+      },
+      "first_pcm_ms": {
+        "n": 89,
+        "mean": -371.54621574157306,
+        "median": 27.30999999999949,
+        "p95": 2401.792458,
+        "min": -8128.702584000001,
+        "max": 6193.218
+      },
+      "worker_start_ms": {
+        "n": 33,
+        "mean": 287.1020215454544,
+        "median": 1349.7325009999995,
+        "p95": 5814.133792,
+        "min": -8265.720959,
+        "max": 6475.002208
+      },
+      "elapsed_ms": {
+        "n": 96,
+        "mean": -841.5164721666667,
+        "median": -724.0131670000001,
+        "p95": 5795.677291000001,
+        "min": -13597.101958000001,
+        "max": 11289.507709000001
+      }
+    }
+  },
+  "proposed": {
+    "pairs": 8,
+    "distinct_cases": 2,
+    "baseline": {
+      "correct": 2,
+      "errors": 0,
+      "missing_pcm": 1,
+      "worker_markers": 2,
+      "model_calls": 22,
+      "admission_calls": 8,
+      "admission_ms": {
+        "n": 8,
+        "mean": 1484.095026,
+        "median": 1476.660875,
+        "p95": 1825.782667,
+        "min": 1144.841833,
+        "max": 1825.782667
+      },
+      "first_pcm_ms": {
+        "n": 7,
+        "mean": 7951.183351142858,
+        "median": 7489.095125,
+        "p95": 10232.452042,
+        "min": 6040.024416,
+        "max": 10232.452042
+      },
+      "worker_start_ms": {
+        "n": 2,
+        "mean": 6060.098333,
+        "median": 6060.098333,
+        "p95": 6410.303375,
+        "min": 5709.893291,
+        "max": 6410.303375
+      },
+      "elapsed_ms": {
+        "n": 8,
+        "mean": 9204.73595825,
+        "median": 9217.471437,
+        "p95": 13424.082667,
+        "min": 6466.188583,
+        "max": 13424.082667
+      }
+    },
+    "optional": {
+      "correct": 8,
+      "errors": 0,
+      "missing_pcm": 0,
+      "worker_markers": 8,
+      "model_calls": 8,
+      "admission_calls": 8,
+      "admission_ms": {
+        "n": 8,
+        "mean": 1481.252890625,
+        "median": 1472.6685830000001,
+        "p95": 1823.088167,
+        "min": 1152.282084,
+        "max": 1823.088167
+      },
+      "first_pcm_ms": {
+        "n": 8,
+        "mean": 1770.07243225,
+        "median": 1780.0210835,
+        "p95": 2103.749458,
+        "min": 1432.455333,
+        "max": 2103.749458
+      },
+      "worker_start_ms": {
+        "n": 8,
+        "mean": 1482.29324475,
+        "median": 1473.915375,
+        "p95": 1823.966167,
+        "min": 1153.01,
+        "max": 1823.966167
+      },
+      "elapsed_ms": {
+        "n": 8,
+        "mean": 2192.63926025,
+        "median": 2202.375854,
+        "p95": 2527.265458,
+        "min": 1856.966666,
+        "max": 2527.265458
+      }
+    },
+    "optional_minus_baseline_ms": {
+      "admission_ms": {
+        "n": 8,
+        "mean": -2.842135374999998,
+        "median": -3.867020499999967,
+        "p95": 678.2463340000002,
+        "min": -668.063584,
+        "max": 678.2463340000002
+      },
+      "first_pcm_ms": {
+        "n": 7,
+        "mean": -6132.879904714286,
+        "median": -6002.287125,
+        "p95": -3966.790249,
+        "min": -8128.702584000001,
+        "max": -3966.790249
+      },
+      "worker_start_ms": {
+        "n": 2,
+        "mean": -4586.182958,
+        "median": -4586.182958,
+        "p95": -3920.9279160000006,
+        "min": -5251.438,
+        "max": -3920.9279160000006
+      },
+      "elapsed_ms": {
+        "n": 8,
+        "mean": -7012.096698,
+        "median": -7024.290291,
+        "p95": -3967.892833,
+        "min": -10920.608542,
+        "max": -3967.892833
+      }
+    }
+  },
+  "not_proposed": {
+    "pairs": 88,
+    "distinct_cases": 22,
+    "baseline": {
+      "correct": 75,
+      "errors": 0,
+      "missing_pcm": 2,
+      "worker_markers": 38,
+      "model_calls": 183,
+      "admission_calls": 88,
+      "admission_ms": {
+        "n": 88,
+        "mean": 1672.4032272386364,
+        "median": 1691.767229,
+        "p95": 2368.773459,
+        "min": 1145.702917,
+        "max": 2501.584375
+      },
+      "first_pcm_ms": {
+        "n": 86,
+        "mean": 5444.417956790698,
+        "median": 5359.149354,
+        "p95": 8351.92575,
+        "min": 2448.701834,
+        "max": 11061.197
+      },
+      "worker_start_ms": {
+        "n": 38,
+        "mean": 7398.454810210526,
+        "median": 6616.2515625,
+        "p95": 15547.504,
+        "min": 4021.106458,
+        "max": 16122.208333
+      },
+      "elapsed_ms": {
+        "n": 88,
+        "mean": 7919.5742342954545,
+        "median": 6984.2620835,
+        "p95": 15883.326208,
+        "min": 2448.837125,
+        "max": 21776.717583
+      }
+    },
+    "optional": {
+      "correct": 72,
+      "errors": 0,
+      "missing_pcm": 4,
+      "worker_markers": 35,
+      "model_calls": 183,
+      "admission_calls": 88,
+      "admission_ms": {
+        "n": 88,
+        "mean": 1663.4195516136363,
+        "median": 1690.2851455,
+        "p95": 2357.576584,
+        "min": 1142.717375,
+        "max": 2485.86425
+      },
+      "first_pcm_ms": {
+        "n": 84,
+        "mean": 5569.145671642857,
+        "median": 5589.929062499999,
+        "p95": 7782.868584,
+        "min": 2363.92225,
+        "max": 11993.3655
+      },
+      "worker_start_ms": {
+        "n": 35,
+        "mean": 7892.988402314286,
+        "median": 6835.051667,
+        "p95": 16603.029083,
+        "min": 4639.589792,
+        "max": 19246.961083
+      },
+      "elapsed_ms": {
+        "n": 88,
+        "mean": 7639.019600840909,
+        "median": 7103.154062,
+        "p95": 12962.623833,
+        "min": 2787.917458,
+        "max": 20404.569959
+      }
+    },
+    "optional_minus_baseline_ms": {
+      "admission_ms": {
+        "n": 88,
+        "mean": -8.983675624999997,
+        "median": -7.000583500000062,
+        "p95": 784.453166,
+        "min": -911.7912079999999,
+        "max": 915.076125
+      },
+      "first_pcm_ms": {
+        "n": 82,
+        "mean": 120.27495282926826,
+        "median": 404.95781199999965,
+        "p95": 2401.792458,
+        "min": -4310.789125,
+        "max": 6193.218
+      },
+      "worker_start_ms": {
+        "n": 31,
+        "mean": 601.507504096774,
+        "median": 1529.4187499999998,
+        "p95": 5814.133792,
+        "min": -8265.720959,
+        "max": 6475.002208
+      },
+      "elapsed_ms": {
+        "n": 88,
+        "mean": -280.55463345454547,
+        "median": 88.0342300000002,
+        "p95": 5795.677291000001,
+        "min": -13597.101958000001,
+        "max": 11289.507709000001
+      }
+    }
+  },
+  "conversation": {
+    "pairs": 44,
+    "distinct_cases": 11,
+    "baseline": {
+      "correct": 42,
+      "errors": 0,
+      "missing_pcm": 0,
+      "worker_markers": 2,
+      "model_calls": 92,
+      "admission_calls": 44,
+      "admission_ms": {
+        "n": 44,
+        "mean": 1672.5559734772728,
+        "median": 1684.3817915,
+        "p95": 2257.399417,
+        "min": 1165.643917,
+        "max": 2265.746667
+      },
+      "first_pcm_ms": {
+        "n": 44,
+        "mean": 4653.549486681818,
+        "median": 4334.806708,
+        "p95": 7774.906833,
+        "min": 2448.701834,
+        "max": 8553.672833
+      },
+      "worker_start_ms": {
+        "n": 2,
+        "mean": 10952.92,
+        "median": 10952.92,
+        "p95": 15547.504,
+        "min": 6358.336,
+        "max": 15547.504
+      },
+      "elapsed_ms": {
+        "n": 44,
+        "mean": 7812.062211113636,
+        "median": 6806.455458,
+        "p95": 16282.261959,
+        "min": 2448.837125,
+        "max": 21776.717583
+      }
+    },
+    "optional": {
+      "correct": 43,
+      "errors": 0,
+      "missing_pcm": 1,
+      "worker_markers": 1,
+      "model_calls": 92,
+      "admission_calls": 44,
+      "admission_ms": {
+        "n": 44,
+        "mean": 1663.8993447272728,
+        "median": 1686.9482914999999,
+        "p95": 2244.1625,
+        "min": 1154.183042,
+        "max": 2267.598292
+      },
+      "first_pcm_ms": {
+        "n": 43,
+        "mean": 4701.738185139535,
+        "median": 4549.710834,
+        "p95": 6916.526417,
+        "min": 2363.92225,
+        "max": 9064.101917
+      },
+      "worker_start_ms": {
+        "n": 1,
+        "mean": 9620.929666,
+        "median": 9620.929666,
+        "p95": 9620.929666,
+        "min": 9620.929666,
+        "max": 9620.929666
+      },
+      "elapsed_ms": {
+        "n": 44,
+        "mean": 7102.899664772727,
+        "median": 6891.180729,
+        "p95": 12924.721458,
+        "min": 2787.917458,
+        "max": 20404.569959
+      }
+    },
+    "optional_minus_baseline_ms": {
+      "admission_ms": {
+        "n": 44,
+        "mean": -8.656628749999992,
+        "median": -7.000583500000062,
+        "p95": 771.9994589999999,
+        "min": -889.4687920000001,
+        "max": 893.5680000000002
+      },
+      "first_pcm_ms": {
+        "n": 43,
+        "mean": 64.1698925581395,
+        "median": 386.5052079999996,
+        "p95": 1958.1836670000002,
+        "min": -3340.8892920000008,
+        "max": 3910.341792
+      },
+      "worker_start_ms": {
+        "n": 0
+      },
+      "elapsed_ms": {
+        "n": 44,
+        "mean": -709.1625463409092,
+        "median": -314.02735449999955,
+        "p95": 5225.828333,
+        "min": -13597.101958000001,
+        "max": 7612.953543
+      }
+    }
+  },
+  "correct_both": {
+    "pairs": 66,
+    "distinct_cases": 22,
+    "baseline": {
+      "correct": 66,
+      "errors": 0,
+      "missing_pcm": 0,
+      "worker_markers": 25,
+      "model_calls": 135,
+      "admission_calls": 66,
+      "admission_ms": {
+        "n": 66,
+        "mean": 1644.024976621212,
+        "median": 1591.641313,
+        "p95": 2265.746667,
+        "min": 1154.220458,
+        "max": 2501.584375
+      },
+      "first_pcm_ms": {
+        "n": 66,
+        "mean": 5063.896075030303,
+        "median": 4881.2951045,
+        "p95": 7774.906833,
+        "min": 2448.701834,
+        "max": 8979.278833
+      },
+      "worker_start_ms": {
+        "n": 25,
+        "mean": 6969.94110316,
+        "median": 6410.303375,
+        "p95": 13333.424542,
+        "min": 4021.106458,
+        "max": 15197.053833
+      },
+      "elapsed_ms": {
+        "n": 66,
+        "mean": 7691.7555901666665,
+        "median": 6878.2339995,
+        "p95": 14107.378292,
+        "min": 2448.837125,
+        "max": 21776.717583
+      }
+    },
+    "optional": {
+      "correct": 66,
+      "errors": 0,
+      "missing_pcm": 1,
+      "worker_markers": 25,
+      "model_calls": 133,
+      "admission_calls": 66,
+      "admission_ms": {
+        "n": 66,
+        "mean": 1677.9895940606061,
+        "median": 1780.274812,
+        "p95": 2267.598292,
+        "min": 1154.183042,
+        "max": 2485.86425
+      },
+      "first_pcm_ms": {
+        "n": 65,
+        "mean": 5201.790521215385,
+        "median": 5152.52625,
+        "p95": 7638.97775,
+        "min": 1442.260083,
+        "max": 9064.101917
+      },
+      "worker_start_ms": {
+        "n": 25,
+        "mean": 7012.8695416,
+        "median": 6630.370833,
+        "p95": 12286.192083,
+        "min": 1158.865375,
+        "max": 19246.961083
+      },
+      "elapsed_ms": {
+        "n": 66,
+        "mean": 7216.8684419090905,
+        "median": 6974.104979,
+        "p95": 12962.623833,
+        "min": 1862.293833,
+        "max": 20404.569959
+      }
+    },
+    "optional_minus_baseline_ms": {
+      "admission_ms": {
+        "n": 66,
+        "mean": 33.96461743939394,
+        "median": 608.3596035,
+        "p95": 779.7197079999999,
+        "min": -911.7912079999999,
+        "max": 893.5680000000002
+      },
+      "first_pcm_ms": {
+        "n": 65,
+        "mean": 142.15359630769225,
+        "median": 617.8538739999995,
+        "p95": 2389.0630009999995,
+        "min": -5290.885917,
+        "max": 3910.341792
+      },
+      "worker_start_ms": {
+        "n": 25,
+        "mean": 42.92843843999977,
+        "median": 1349.7325009999995,
+        "p95": 4278.779083,
+        "min": -8265.720959,
+        "max": 5814.133792
+      },
+      "elapsed_ms": {
+        "n": 66,
+        "mean": -474.8871482575758,
+        "median": 14.631125000000793,
+        "p95": 4144.255334,
+        "min": -13597.101958000001,
+        "max": 7612.953543
+      }
+    }
+  },
+  "dispositions": {
+    "abstain": 88,
+    "proposed": 8
+  },
+  "wrong_proposals": [],
+  "errors": [],
+  "by_case": {
+    "assent": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1475.8718645,
+          "median": 1474.9201455,
+          "p95": 1784.731125,
+          "min": 1168.916042,
+          "max": 1784.731125
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3147.843552,
+          "median": 3145.493791,
+          "p95": 3851.684792,
+          "min": 2448.701834,
+          "max": 3851.684792
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 3445.668302,
+          "median": 3530.1693750000004,
+          "p95": 4273.497333,
+          "min": 2448.837125,
+          "max": 4273.497333
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1465.55343725,
+          "median": 1467.549583,
+          "p95": 1772.931541,
+          "min": 1154.183042,
+          "max": 1772.931541
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3069.85455225,
+          "median": 3072.1533959999997,
+          "p95": 3771.189167,
+          "min": 2363.92225,
+          "max": 3771.189167
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 3458.1343335,
+          "median": 3267.0479585,
+          "p95": 4510.523959,
+          "min": 2787.917458,
+          "max": 4510.523959
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -10.31842725000007,
+          "median": -7.000583500000062,
+          "p95": 603.275541,
+          "min": -630.5480830000001,
+          "max": 603.275541
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -77.98899974999995,
+          "median": -73.34039499999994,
+          "p95": 1322.487333,
+          "min": -1487.762542,
+          "max": 1322.487333
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 12.466031499999758,
+          "median": -263.12141650000035,
+          "p95": 2061.686834,
+          "min": -1485.5798750000004,
+          "max": 2061.686834
+        }
+      }
+    },
+    "capability": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1552.49811475,
+          "median": 1549.5592915,
+          "p95": 1944.032709,
+          "min": 1166.841167,
+          "max": 1944.032709
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 4608.7688435,
+          "median": 3695.0475415,
+          "p95": 8553.672833,
+          "min": 2491.307458,
+          "max": 8553.672833
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8408.15287475,
+          "median": 8039.035416500001,
+          "p95": 10696.2765,
+          "min": 6858.264166,
+          "max": 10696.2765
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1540.93923975,
+          "median": 1539.9626250000001,
+          "p95": 1923.747875,
+          "min": 1160.083834,
+          "max": 1923.747875
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 4472.7761355,
+          "median": 4242.273354000001,
+          "p95": 6200.825125,
+          "min": 3205.732709,
+          "max": 6200.825125
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8868.33090625,
+          "median": 9113.5134375,
+          "p95": 9365.36225,
+          "min": 7880.9345,
+          "max": 9365.36225
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -11.558875,
+          "median": -10.915103499999987,
+          "p95": 756.906708,
+          "min": -781.312001,
+          "max": 756.906708
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -135.992708,
+          "median": 2.6791880000000674,
+          "p95": 1803.5185000000001,
+          "min": -2352.8477080000002,
+          "max": 1803.5185000000001
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 460.17803149999986,
+          "median": 507.88031299999966,
+          "p95": 2155.86575,
+          "min": -1330.9142499999998,
+          "max": 2155.86575
+        }
+      }
+    },
+    "context-approved": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 3,
+        "model_calls": 10,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 2031.61229175,
+          "median": 2030.275271,
+          "p95": 2501.584375,
+          "min": 1564.31425,
+          "max": 2501.584375
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 7942.16336425,
+          "median": 7114.1118955,
+          "p95": 11061.197,
+          "min": 6479.232666,
+          "max": 11061.197
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 6601.275249666666,
+          "median": 6361.524208,
+          "p95": 7298.549708,
+          "min": 6143.751833,
+          "max": 7298.549708
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8775.0904685,
+          "median": 7593.3275205,
+          "p95": 13015.503,
+          "min": 6898.203833,
+          "max": 13015.503
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 1,
+        "worker_markers": 3,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 2040.856625,
+          "median": 2043.8845415,
+          "p95": 2485.86425,
+          "min": 1589.793167,
+          "max": 2485.86425
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 6924.455389333333,
+          "median": 6750.407875,
+          "p95": 7782.868584,
+          "min": 6240.089709,
+          "max": 7782.868584
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 6607.5007086666665,
+          "median": 6413.552208,
+          "p95": 7493.484334,
+          "min": 5915.465584,
+          "max": 7493.484334
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 7625.41560425,
+          "median": 7711.737229,
+          "p95": 8408.863375,
+          "min": 6669.324584,
+          "max": 8408.863375
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": 9.244333250000068,
+          "median": 16.846208000000047,
+          "p95": 915.076125,
+          "min": -911.7912079999999,
+          "max": 915.076125
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": -1449.2412353333336,
+          "median": -1340.5704990000004,
+          "p95": 1303.635918,
+          "min": -4310.789125,
+          "max": 1303.635918
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": -16.675811500000236,
+          "median": -16.675811500000236,
+          "p95": 1349.7325009999995,
+          "min": -1383.084124,
+          "max": 1349.7325009999995
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -1149.6748642499997,
+          "median": -54.233540999999605,
+          "p95": 1349.9650840000013,
+          "min": -5840.197459000001,
+          "max": 1349.9650840000013
+        }
+      }
+    },
+    "context-withdrawn": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1818.00234375,
+          "median": 1818.882854,
+          "p95": 2260.213375,
+          "min": 1374.030292,
+          "max": 2260.213375
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3809.97814575,
+          "median": 3750.2811869999996,
+          "p95": 4726.435375,
+          "min": 3012.914834,
+          "max": 4726.435375
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 4254.4184065,
+          "median": 4176.023625,
+          "p95": 5397.431917,
+          "min": 3268.194459,
+          "max": 5397.431917
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1813.65685425,
+          "median": 1809.54925,
+          "p95": 2267.598292,
+          "min": 1367.930625,
+          "max": 2267.598292
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3783.23306275,
+          "median": 3812.424875,
+          "p95": 4767.296292,
+          "min": 2740.786209,
+          "max": 4767.296292
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 4511.2037915,
+          "median": 4426.501979,
+          "p95": 6152.781208,
+          "min": 3039.03,
+          "max": 6152.781208
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -4.345489499999928,
+          "median": -10.740582999999901,
+          "p95": 893.5680000000002,
+          "min": -889.4687920000001,
+          "max": 893.5680000000002
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -26.74508299999991,
+          "median": 62.14368800000034,
+          "p95": 1754.3814579999998,
+          "min": -1985.6491660000002,
+          "max": 1754.3814579999998
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 256.78538500000013,
+          "median": 478.2336869999999,
+          "p95": 2429.0760830000004,
+          "min": -2358.4019169999997,
+          "max": 2429.0760830000004
+        }
+      }
+    },
+    "example": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1552.05130225,
+          "median": 1550.6553125,
+          "p95": 1939.201209,
+          "min": 1167.693375,
+          "max": 1939.201209
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 4726.2229480000005,
+          "median": 4754.723271000001,
+          "p95": 6155.85325,
+          "min": 3239.592,
+          "max": 6155.85325
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6887.9467185,
+          "median": 6210.7255000000005,
+          "p95": 9401.958333,
+          "min": 5728.377541,
+          "max": 9401.958333
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1543.97378125,
+          "median": 1543.8694999999998,
+          "p95": 1928.693208,
+          "min": 1159.462917,
+          "max": 1928.693208
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5273.09145825,
+          "median": 4989.4818749999995,
+          "p95": 6579.263666,
+          "min": 4534.138417,
+          "max": 6579.263666
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 7055.4491355,
+          "median": 7369.796,
+          "p95": 8329.36375,
+          "min": 5152.840792,
+          "max": 8329.36375
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -8.077521000000047,
+          "median": -7.629416499999934,
+          "p95": 760.9998329999999,
+          "min": -778.0510840000002,
+          "max": 760.9998329999999
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 546.8685102499998,
+          "median": 404.95781199999965,
+          "p95": 1586.8455,
+          "min": -209.28708300000017,
+          "max": 1586.8455
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 167.50241699999992,
+          "median": 530.3767710000002,
+          "p95": 2285.952959,
+          "min": -2676.696833000001,
+          "max": 2285.952959
+        }
+      }
+    },
+    "explain": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1527.8957395,
+          "median": 1531.2141459999998,
+          "p95": 1882.058291,
+          "min": 1167.096375,
+          "max": 1882.058291
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5137.29989575,
+          "median": 5345.4123335,
+          "p95": 5676.671333,
+          "min": 4181.703583,
+          "max": 5676.671333
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 14186.503781250001,
+          "median": 13331.267542000001,
+          "p95": 17291.863625,
+          "min": 12791.616416,
+          "max": 17291.863625
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 1,
+        "worker_markers": 0,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1514.10473975,
+          "median": 1514.545979,
+          "p95": 1869.631459,
+          "min": 1157.695542,
+          "max": 1869.631459
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 5976.670819333333,
+          "median": 6009.9425,
+          "p95": 6845.802417,
+          "min": 5074.267541,
+          "max": 6845.802417
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 10206.6087605,
+          "median": 8634.9040415,
+          "p95": 20404.569959,
+          "min": 3152.057,
+          "max": 20404.569959
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -13.790999750000026,
+          "median": -16.668166999999926,
+          "p95": 702.5350839999999,
+          "min": -724.3627490000001,
+          "max": 702.5350839999999
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 907.1845693333331,
+          "median": 1495.7185829999999,
+          "p95": 1828.2389169999997,
+          "min": -602.4037920000001,
+          "max": 1828.2389169999997
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -3979.895020750001,
+          "median": -6837.567667000001,
+          "p95": 7612.953543,
+          "min": -9857.398292000002,
+          "max": 7612.953543
+        }
+      }
+    },
+    "greeting": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1924.4981874999999,
+          "median": 1922.5816875,
+          "p95": 2265.746667,
+          "min": 1587.082708,
+          "max": 2265.746667
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3567.7957815,
+          "median": 3643.6370835000002,
+          "p95": 4340.88325,
+          "min": 2643.025709,
+          "max": 4340.88325
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 4460.130656,
+          "median": 4298.7019995,
+          "p95": 6599.950125,
+          "min": 2643.1685,
+          "max": 6599.950125
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1917.59506225,
+          "median": 1921.8008955,
+          "p95": 2244.1625,
+          "min": 1582.615958,
+          "max": 2244.1625
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3673.5407395,
+          "median": 3633.3528750000005,
+          "p95": 4470.232958,
+          "min": 2957.22425,
+          "max": 4470.232958
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 3992.371031,
+          "median": 3901.5877915,
+          "p95": 5187.728291,
+          "min": 2978.58025,
+          "max": 5187.728291
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -6.90312524999996,
+          "median": -6.211687999999867,
+          "p95": 657.079792,
+          "min": -672.2689170000001,
+          "max": 657.079792
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 105.744958,
+          "median": -17.875645999999733,
+          "p95": 1827.2072489999996,
+          "min": -1368.4761250000001,
+          "max": 1827.2072489999996
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -467.759625,
+          "median": -397.11420799999996,
+          "p95": 2544.559791,
+          "min": -3621.3698750000003,
+          "max": 2544.559791
+        }
+      }
+    },
+    "hypothetical": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1769.4149165,
+          "median": 1768.8595415,
+          "p95": 2159.174875,
+          "min": 1380.765708,
+          "max": 2159.174875
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3890.3017600000003,
+          "median": 3850.7227285,
+          "p95": 4709.42575,
+          "min": 3150.335833,
+          "max": 4709.42575
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6076.2552185,
+          "median": 6357.8702705,
+          "p95": 6905.45975,
+          "min": 4683.820583,
+          "max": 6905.45975
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1755.933573,
+          "median": 1753.4967915,
+          "p95": 2148.945,
+          "min": 1367.795709,
+          "max": 2148.945
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3958.68317725,
+          "median": 3903.4918335,
+          "p95": 5228.523542,
+          "min": 2799.2255,
+          "max": 5228.523542
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6696.63529175,
+          "median": 6694.889833499999,
+          "p95": 8828.075917,
+          "min": 4568.685583,
+          "max": 8828.075917
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -13.481343499999923,
+          "median": -14.048853999999892,
+          "p95": 765.5515000000003,
+          "min": -791.3791660000002,
+          "max": 765.5515000000003
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 68.3814172499998,
+          "median": -137.57868700000017,
+          "p95": 2078.187709,
+          "min": -1529.5046660000003,
+          "max": 2078.187709
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 620.3800732500001,
+          "median": 261.6130629999998,
+          "p95": 4144.255334,
+          "min": -2185.9611669999995,
+          "max": 4144.255334
+        }
+      }
+    },
+    "large-audit": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1557.8951455000001,
+          "median": 1558.163083,
+          "p95": 1940.013208,
+          "min": 1175.241208,
+          "max": 1940.013208
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5459.49932275,
+          "median": 5407.2472915,
+          "p95": 6902.416833,
+          "min": 4121.085875,
+          "max": 6902.416833
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 7540.695073000001,
+          "median": 5864.2018335,
+          "p95": 13333.424542,
+          "min": 5100.952083,
+          "max": 13333.424542
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8278.9730205,
+          "median": 6625.428207999999,
+          "p95": 14018.511333,
+          "min": 5846.524333,
+          "max": 14018.511333
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 3,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1543.2696875000001,
+          "median": 1544.7964165,
+          "p95": 1931.95525,
+          "min": 1151.530667,
+          "max": 1931.95525
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5226.177781,
+          "median": 5001.1429165,
+          "p95": 6914.615625,
+          "min": 3987.809666,
+          "max": 6914.615625
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 7027.942638666667,
+          "median": 6630.370833,
+          "p95": 9385.7535,
+          "min": 5067.703583,
+          "max": 9385.7535
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 7009.70236425,
+          "median": 6558.6830415,
+          "p95": 10078.972708,
+          "min": 4842.470666,
+          "max": 10078.972708
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -14.62545799999998,
+          "median": -14.356228500000043,
+          "p95": 755.2537080000002,
+          "min": -785.043083,
+          "max": 755.2537080000002
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -233.32154174999982,
+          "median": 250.35789550000027,
+          "p95": 1480.6052090000003,
+          "min": -2914.607167,
+          "max": 1480.6052090000003
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": -819.1743753333334,
+          "median": 1529.4187499999998,
+          "p95": 4278.779083,
+          "min": -8265.720959,
+          "max": 4278.779083
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -1269.2706562500002,
+          "median": -532.4259164999999,
+          "p95": 4232.448374999999,
+          "min": -8244.679167,
+          "max": 4232.448374999999
+        }
+      }
+    },
+    "large-build": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1987.1794375,
+          "median": 1986.911417,
+          "p95": 2377.962291,
+          "min": 1596.932625,
+          "max": 2377.962291
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6039.4562605,
+          "median": 5596.146854500001,
+          "p95": 7602.58775,
+          "min": 5362.943583,
+          "max": 7602.58775
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 7286.0979275,
+          "median": 6394.7082505,
+          "p95": 11275.165459,
+          "min": 5079.80975,
+          "max": 11275.165459
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8022.46288575,
+          "median": 7167.8903334999995,
+          "p95": 11967.797959,
+          "min": 5786.272917,
+          "max": 11967.797959
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1968.731948,
+          "median": 1969.966,
+          "p95": 2357.576584,
+          "min": 1577.419208,
+          "max": 2357.576584
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 7933.93128125,
+          "median": 6881.0033335,
+          "p95": 11993.3655,
+          "min": 5980.352958,
+          "max": 11993.3655
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 7723.23626075,
+          "median": 6599.586229500001,
+          "p95": 11994.258167,
+          "min": 5699.514417,
+          "max": 11994.258167
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8443.390625,
+          "median": 7327.798166500001,
+          "p95": 12716.978042,
+          "min": 6400.988125,
+          "max": 12716.978042
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -18.44748949999996,
+          "median": -21.53983299999993,
+          "p95": 760.643959,
+          "min": -791.354251,
+          "max": 760.643959
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 1894.4750207499999,
+          "median": 1503.4584374999995,
+          "p95": 6193.218,
+          "min": -1622.2347919999993,
+          "max": 6193.218
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 437.1383332500002,
+          "median": 413.9491670000002,
+          "p95": 6475.002208,
+          "min": -5554.347209,
+          "max": 6475.002208
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 420.9277392500003,
+          "median": 408.2975204999998,
+          "p95": 6401.585167000001,
+          "min": -5534.4692509999995,
+          "max": 6401.585167000001
+        }
+      }
+    },
+    "large-migration": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 1,
+        "worker_markers": 3,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1977.0173335,
+          "median": 1979.066875,
+          "p95": 2375.56675,
+          "min": 1574.368834,
+          "max": 2375.56675
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 5575.040138666667,
+          "median": 4051.999042,
+          "p95": 8979.278833,
+          "min": 3693.842541,
+          "max": 8979.278833
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 13432.942944,
+          "median": 15197.053833,
+          "p95": 16122.208333,
+          "min": 8979.566666,
+          "max": 16122.208333
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 12088.09381225,
+          "median": 12774.311228999999,
+          "p95": 16809.324375,
+          "min": 5994.428416,
+          "max": 16809.324375
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 1,
+        "worker_markers": 3,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1976.11882275,
+          "median": 1976.073104,
+          "p95": 2370.271375,
+          "min": 1582.057708,
+          "max": 2370.271375
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 5590.4518333333335,
+          "median": 5700.813417,
+          "p95": 6416.206083,
+          "min": 4654.336,
+          "max": 6416.206083
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 16045.394083,
+          "median": 16603.029083,
+          "p95": 19246.961083,
+          "min": 12286.192083,
+          "max": 19246.961083
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 13990.57688525,
+          "median": 15123.279978999999,
+          "p95": 19940.060125,
+          "min": 5775.687458,
+          "max": 19940.060125
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -0.8985107499999572,
+          "median": -1.2614170000000513,
+          "p95": 784.453166,
+          "min": -785.5243749999997,
+          "max": 784.453166
+        },
+        "first_pcm_ms": {
+          "n": 2,
+          "mean": -457.12918749999994,
+          "median": -457.12918749999994,
+          "p95": 2364.207041,
+          "min": -3278.465416,
+          "max": 2364.207041
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": 3678.266333499999,
+          "median": 3678.266333499999,
+          "p95": 4049.9072499999984,
+          "min": 3306.6254169999993,
+          "max": 4049.9072499999984
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 1902.4830730000003,
+          "median": 3677.03075,
+          "p95": 11289.507709000001,
+          "min": -11033.636917,
+          "max": 11289.507709000001
+        }
+      }
+    },
+    "medium-change": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1556.1325725000002,
+          "median": 1555.7155830000002,
+          "p95": 1944.835041,
+          "min": 1168.264083,
+          "max": 1944.835041
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6523.78860425,
+          "median": 6458.6702295,
+          "p95": 7409.55075,
+          "min": 5768.263208,
+          "max": 7409.55075
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 6234.1995205,
+          "median": 6179.694833,
+          "p95": 7078.4055,
+          "min": 5499.002916,
+          "max": 7078.4055
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6960.906,
+          "median": 6902.8758125,
+          "p95": 7829.548625,
+          "min": 6208.32375,
+          "max": 7829.548625
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1541.0572395,
+          "median": 1540.307375,
+          "p95": 1924.127166,
+          "min": 1159.487042,
+          "max": 1924.127166
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6749.263729,
+          "median": 6999.5536665,
+          "p95": 7436.86075,
+          "min": 5561.086833,
+          "max": 7436.86075
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 7770.72531225,
+          "median": 7244.465604,
+          "p95": 11313.136708,
+          "min": 5280.833333,
+          "max": 11313.136708
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8482.955656,
+          "median": 7967.180208,
+          "p95": 12013.690333,
+          "min": 5983.771875,
+          "max": 12013.690333
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -15.075333,
+          "median": -15.408207999999945,
+          "p95": 755.863083,
+          "min": -785.3479990000001,
+          "max": 755.863083
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 225.47512474999985,
+          "median": 433.0617499999994,
+          "p95": 1607.8881660000006,
+          "min": -1572.111167,
+          "max": 1607.8881660000006
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 1536.52579175,
+          "median": 951.9804790000003,
+          "p95": 5814.133792,
+          "min": -1571.991583,
+          "max": 5814.133792
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 1522.0496560000001,
+          "median": 948.2440204999998,
+          "p95": 5763.533208000001,
+          "min": -1571.8226249999998,
+          "max": 5763.533208000001
+        }
+      }
+    },
+    "medium-compare": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1550.020729,
+          "median": 1550.5804585,
+          "p95": 1936.298833,
+          "min": 1162.623166,
+          "max": 1936.298833
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6488.06429175,
+          "median": 6580.0492085000005,
+          "p95": 7389.293709,
+          "min": 5402.865041,
+          "max": 7389.293709
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 6179.1505,
+          "median": 6282.664854000001,
+          "p95": 7075.491917,
+          "min": 5075.780375,
+          "max": 7075.491917
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6943.1435415,
+          "median": 7014.888958,
+          "p95": 7863.512917,
+          "min": 5879.283333,
+          "max": 7863.512917
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1544.056031,
+          "median": 1543.7654995,
+          "p95": 1932.281125,
+          "min": 1156.412,
+          "max": 1932.281125
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6245.00551075,
+          "median": 6341.0225835,
+          "p95": 7326.711209,
+          "min": 4971.265667,
+          "max": 7326.711209
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 5951.637417,
+          "median": 6056.847188,
+          "p95": 7053.2655,
+          "min": 4639.589792,
+          "max": 7053.2655
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6682.39265675,
+          "median": 6763.307146499999,
+          "p95": 7752.686667,
+          "min": 5450.269667,
+          "max": 7752.686667
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -5.964698000000055,
+          "median": -5.695500000000038,
+          "p95": 766.3093329999999,
+          "min": -778.7771250000001,
+          "max": 766.3093329999999
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -243.05878099999995,
+          "median": -146.5033954999999,
+          "p95": 1715.1073340000003,
+          "min": -2394.3356670000003,
+          "max": 1715.1073340000003
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": -227.51308300000028,
+          "median": -116.71074950000002,
+          "p95": 1759.2712919999994,
+          "min": -2435.9021250000005,
+          "max": 1759.2712919999994
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -260.7508847500003,
+          "median": -180.99410350000016,
+          "p95": 1663.9706259999994,
+          "min": -2344.985958,
+          "max": 1663.9706259999994
+        }
+      }
+    },
+    "medium-debug": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 2,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1553.8524790000001,
+          "median": 1556.7141040000001,
+          "p95": 1937.480667,
+          "min": 1164.501041,
+          "max": 1937.480667
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5749.77798925,
+          "median": 5598.5733955,
+          "p95": 7271.076083,
+          "min": 4530.889083,
+          "max": 7271.076083
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 8149.85301025,
+          "median": 8139.308020500001,
+          "p95": 9709.722125,
+          "min": 6611.073875,
+          "max": 9709.722125
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8879.40383275,
+          "median": 8859.0207495,
+          "p95": 10502.021666,
+          "min": 7297.552166,
+          "max": 10502.021666
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1545.2628125,
+          "median": 1546.2115835,
+          "p95": 1934.291791,
+          "min": 1154.336292,
+          "max": 1934.291791
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 7441.35673975,
+          "median": 7123.047167000001,
+          "p95": 9605.936833,
+          "min": 5913.395792,
+          "max": 9605.936833
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 9316.73583325,
+          "median": 9751.6304375,
+          "p95": 10545.475,
+          "min": 7218.207458,
+          "max": 10545.475
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 10031.974448,
+          "median": 10465.552562500001,
+          "p95": 11290.524334,
+          "min": 7906.268333,
+          "max": 11290.524334
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -8.589666499999964,
+          "median": -11.264249999999947,
+          "p95": 769.7907500000001,
+          "min": -781.6209160000001,
+          "max": 769.7907500000001
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 1691.5787505000003,
+          "median": 2006.9987090000004,
+          "p95": 2995.09475,
+          "min": -242.77716599999985,
+          "max": 2995.09475
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 1166.882823,
+          "median": 1591.2324374999998,
+          "p95": 3274.220875,
+          "min": -1789.154458,
+          "max": 3274.220875
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 1152.57061525,
+          "median": 1565.7656464999995,
+          "p95": 3324.034501,
+          "min": -1845.2833329999994,
+          "max": 3324.034501
+        }
+      }
+    },
+    "missing": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 2,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 2,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1694.711854,
+          "median": 1698.6679165,
+          "p95": 2008.100708,
+          "min": 1373.410875,
+          "max": 2008.100708
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6190.86165625,
+          "median": 5819.184646,
+          "p95": 8291.644292,
+          "min": 4833.433041,
+          "max": 8291.644292
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": 10952.92,
+          "median": 10952.92,
+          "p95": 15547.504,
+          "min": 6358.336,
+          "max": 15547.504
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 9207.177042,
+          "median": 7705.758562999999,
+          "p95": 16282.261959,
+          "min": 5134.929083,
+          "max": 16282.261959
+        }
+      },
+      "optional": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 1,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1689.2754895,
+          "median": 1689.296312,
+          "p95": 2003.814,
+          "min": 1374.695334,
+          "max": 2003.814
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5110.03262475,
+          "median": 4818.004208,
+          "p95": 6424.451958,
+          "min": 4379.670125,
+          "max": 6424.451958
+        },
+        "worker_start_ms": {
+          "n": 1,
+          "mean": 9620.929666,
+          "median": 9620.929666,
+          "p95": 9620.929666,
+          "min": 9620.929666,
+          "max": 9620.929666
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 9510.24494775,
+          "median": 9350.0241455,
+          "p95": 12924.721458,
+          "min": 6416.210042,
+          "max": 12924.721458
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -5.436364499999911,
+          "median": -9.371604499999876,
+          "p95": 630.403125,
+          "min": -633.4053739999999,
+          "max": 630.403125
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -1080.8290315000004,
+          "median": -417.12360450000006,
+          "p95": -148.17962500000067,
+          "min": -3340.8892920000008,
+          "max": -148.17962500000067
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 303.06790575000036,
+          "median": 2608.333249500001,
+          "p95": 5861.657041,
+          "min": -9866.051917,
+          "max": 5861.657041
+        }
+      }
+    },
+    "negated": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1546.345021,
+          "median": 1543.5674585000002,
+          "p95": 1932.60125,
+          "min": 1165.643917,
+          "max": 1932.60125
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5944.718291499999,
+          "median": 6137.6651875,
+          "p95": 7774.906833,
+          "min": 3728.635958,
+          "max": 7774.906833
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 14980.479771,
+          "median": 13396.944062999999,
+          "p95": 21776.717583,
+          "min": 11351.313375,
+          "max": 21776.717583
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1547.1897602499998,
+          "median": 1547.0776664999999,
+          "p95": 1933.02775,
+          "min": 1161.575958,
+          "max": 1933.02775
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 7369.5308545,
+          "median": 7277.7520835,
+          "p95": 9064.101917,
+          "min": 5858.517334,
+          "max": 9064.101917
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 11103.54641675,
+          "median": 10994.677062499999,
+          "p95": 14245.215917,
+          "min": 8179.615625,
+          "max": 14245.215917
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": 0.8447392499999182,
+          "median": -1.3264795000001186,
+          "p95": 767.3838329999999,
+          "min": -761.351917,
+          "max": 767.3838329999999
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 1424.8125630000002,
+          "median": 1594.7470005,
+          "p95": 3910.341792,
+          "min": -1400.5855409999995,
+          "max": 3910.341792
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -3876.9333542500003,
+          "median": -2402.2670005,
+          "p95": 2893.902542,
+          "min": -13597.101958000001,
+          "max": 2893.902542
+        }
+      }
+    },
+    "quoted": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1767.7303017499999,
+          "median": 1767.7757495,
+          "p95": 2155.167625,
+          "min": 1380.202083,
+          "max": 2155.167625
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5607.63713575,
+          "median": 6093.851125499999,
+          "p95": 7240.420959,
+          "min": 3002.425333,
+          "max": 7240.420959
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8025.39477075,
+          "median": 8164.2138749999995,
+          "p95": 9072.6095,
+          "min": 6700.541833,
+          "max": 9072.6095
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1760.8716252499999,
+          "median": 1761.8583129999997,
+          "p95": 2156.895834,
+          "min": 1362.874041,
+          "max": 2156.895834
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5568.88765625,
+          "median": 5613.406625,
+          "p95": 6900.7575,
+          "min": 4147.979875,
+          "max": 6900.7575
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 7502.061697749999,
+          "median": 7164.444396,
+          "p95": 8798.208791,
+          "min": 6881.149208,
+          "max": 8798.208791
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -6.858676500000058,
+          "median": -7.890811999999983,
+          "p95": 771.9994589999999,
+          "min": -783.6525410000002,
+          "max": 771.9994589999999
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -38.74947950000001,
+          "median": 489.6297494999999,
+          "p95": 1958.1836670000002,
+          "min": -3092.441084,
+          "max": 1958.1836670000002
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -523.3330730000005,
+          "median": -999.769479,
+          "p95": 2097.666957999999,
+          "min": -2191.4602920000007,
+          "max": 2097.666957999999
+        }
+      }
+    },
+    "small-git": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 3,
+        "model_calls": 9,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1558.290271,
+          "median": 1553.2455420000001,
+          "p95": 1955.810709,
+          "min": 1170.859291,
+          "max": 1955.810709
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6482.197229,
+          "median": 5916.6443125000005,
+          "p95": 9543.0835,
+          "min": 4552.416791,
+          "max": 9543.0835
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 5166.571875,
+          "median": 5073.101042,
+          "p95": 6197.988042,
+          "min": 4228.626541,
+          "max": 6197.988042
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 7922.30303125,
+          "median": 6338.5312085,
+          "p95": 14036.378542,
+          "min": 4975.771166,
+          "max": 14036.378542
+        }
+      },
+      "optional": {
+        "correct": 2,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 2,
+        "model_calls": 10,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1544.37568775,
+          "median": 1543.5502084999998,
+          "p95": 1931.902417,
+          "min": 1158.499917,
+          "max": 1931.902417
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 7315.990583,
+          "median": 7107.4016035,
+          "p95": 8173.162167,
+          "min": 6875.996958,
+          "max": 8173.162167
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": 6620.7715205,
+          "median": 6620.7715205,
+          "p95": 6633.136125,
+          "min": 6608.406916,
+          "max": 6633.136125
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 9381.21694775,
+          "median": 8764.0389375,
+          "p95": 12697.043083,
+          "min": 7299.746833,
+          "max": 12697.043083
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -13.914583250000021,
+          "median": -13.292061999999987,
+          "p95": 760.313208,
+          "min": -789.3874170000001,
+          "max": 760.313208
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 833.7933539999999,
+          "median": 1173.2575619999998,
+          "p95": 2358.5796250000003,
+          "min": -1369.9213330000002,
+          "max": 2358.5796250000003
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": 1969.907729,
+          "median": 1969.907729,
+          "p95": 2404.5095840000004,
+          "min": 1535.3058739999997,
+          "max": 2404.5095840000004
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 1458.9139165000001,
+          "median": 1968.6770000000001,
+          "p95": 5795.677291000001,
+          "min": -3897.3756250000006,
+          "max": 5795.677291000001
+        }
+      }
+    },
+    "small-list": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 0,
+        "errors": 0,
+        "missing_pcm": 1,
+        "worker_markers": 0,
+        "model_calls": 12,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1484.85883325,
+          "median": 1486.6134375000001,
+          "p95": 1821.366625,
+          "min": 1144.841833,
+          "max": 1821.366625
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 8584.810875000001,
+          "median": 8116.018833,
+          "p95": 10232.452042,
+          "min": 7405.96175,
+          "max": 10232.452042
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8887.13920825,
+          "median": 9217.471437,
+          "p95": 10232.693667,
+          "min": 6880.920292,
+          "max": 10232.693667
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 4,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1488.482771,
+          "median": 1489.2804165,
+          "p95": 1823.088167,
+          "min": 1152.282084,
+          "max": 1823.088167
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 1770.585552,
+          "median": 1773.0687085,
+          "p95": 2103.749458,
+          "min": 1432.455333,
+          "max": 2103.749458
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 1489.2586355,
+          "median": 1490.0291875,
+          "p95": 1823.966167,
+          "min": 1153.01,
+          "max": 1823.966167
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 2192.648604,
+          "median": 2193.181146,
+          "p95": 2527.265458,
+          "min": 1856.966666,
+          "max": 2527.265458
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": 3.623937749999982,
+          "median": 1.257874999999899,
+          "p95": 678.2463340000002,
+          "min": -666.266333,
+          "max": 678.2463340000002
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": -6701.51525,
+          "median": -6013.2669989999995,
+          "p95": -5962.576167,
+          "min": -8128.702584000001,
+          "max": -5962.576167
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -6694.49060425,
+          "median": -7024.290291,
+          "p95": -5023.9536259999995,
+          "min": -7705.428209,
+          "max": -5023.9536259999995
+        }
+      }
+    },
+    "small-python": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 2,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 2,
+        "model_calls": 10,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1483.33121875,
+          "median": 1476.660875,
+          "p95": 1825.782667,
+          "min": 1154.220458,
+          "max": 1825.782667
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 7475.96270825,
+          "median": 7111.1205625,
+          "p95": 9641.585292,
+          "min": 6040.024416,
+          "max": 9641.585292
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": 6060.098333,
+          "median": 6060.098333,
+          "p95": 6410.303375,
+          "min": 5709.893291,
+          "max": 6410.303375
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 9522.33270825,
+          "median": 9099.529791500001,
+          "p95": 13424.082667,
+          "min": 6466.188583,
+          "max": 13424.082667
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 4,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1474.02301025,
+          "median": 1472.6685830000001,
+          "p95": 1793.508708,
+          "min": 1157.246167,
+          "max": 1793.508708
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 1769.5593125,
+          "median": 1780.0210835,
+          "p95": 2075.935,
+          "min": 1442.260083,
+          "max": 2075.935
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 1475.3278540000001,
+          "median": 1473.915375,
+          "p95": 1795.654958,
+          "min": 1157.825708,
+          "max": 1795.654958
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 2192.6299165,
+          "median": 2202.375854,
+          "p95": 2503.474125,
+          "min": 1862.293833,
+          "max": 2503.474125
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -9.308208499999978,
+          "median": -3.867020499999967,
+          "p95": 638.564791,
+          "min": -668.063584,
+          "max": 638.564791
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -5706.40339575,
+          "median": -5646.586520999999,
+          "p95": -3966.790249,
+          "min": -7565.650292,
+          "max": -3966.790249
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": -4586.182958,
+          "median": -4586.182958,
+          "p95": -3920.9279160000006,
+          "min": -5251.438,
+          "max": -3920.9279160000006
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -7329.70279175,
+          "median": -7215.154896,
+          "p95": -3967.892833,
+          "min": -10920.608542,
+          "max": -3967.892833
+        }
+      }
+    },
+    "small-read": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 0,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1545.32688525,
+          "median": 1546.3486665,
+          "p95": 1925.966916,
+          "min": 1162.643292,
+          "max": 1925.966916
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6053.74134375,
+          "median": 6346.3840414999995,
+          "p95": 6423.114542,
+          "min": 5099.08275,
+          "max": 6423.114542
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6053.89460425,
+          "median": 6346.5326875,
+          "p95": 6423.274167,
+          "min": 5099.238875,
+          "max": 6423.274167
+        }
+      },
+      "optional": {
+        "correct": 0,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1531.164573,
+          "median": 1531.9893124999999,
+          "p95": 1905.538792,
+          "min": 1155.140875,
+          "max": 1905.538792
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5325.8446665,
+          "median": 5262.4484375,
+          "p95": 6586.389833,
+          "min": 4192.091958,
+          "max": 6586.389833
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 5325.98954175,
+          "median": 5262.589292000001,
+          "p95": 6586.536125,
+          "min": 4192.243458,
+          "max": 6586.536125
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -14.162312250000014,
+          "median": -14.359354000000053,
+          "p95": 742.8955000000001,
+          "min": -770.826041,
+          "max": 742.8955000000001
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -727.8966772499998,
+          "median": -673.5206669999998,
+          "p95": 559.0565000000006,
+          "min": -2123.6018750000003,
+          "max": 559.0565000000006
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -727.9050625,
+          "median": -673.5323960000001,
+          "p95": 559.0546670000003,
+          "min": -2123.610125,
+          "max": 559.0546670000003
+        }
+      }
+    },
+    "small-search": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 3,
+        "errors": 0,
+        "missing_pcm": 1,
+        "worker_markers": 3,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1519.8044375,
+          "median": 1522.880104,
+          "p95": 1887.754625,
+          "min": 1145.702917,
+          "max": 1887.754625
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 7129.597583,
+          "median": 7909.677458,
+          "p95": 8351.92575,
+          "min": 5127.189541,
+          "max": 8351.92575
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 6922.436152666667,
+          "median": 7909.984542,
+          "p95": 8014.401,
+          "min": 4842.922916,
+          "max": 8014.401
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 8338.4027085,
+          "median": 8692.5818755,
+          "p95": 10356.655083,
+          "min": 5611.792,
+          "max": 10356.655083
+        }
+      },
+      "optional": {
+        "correct": 2,
+        "errors": 0,
+        "missing_pcm": 1,
+        "worker_markers": 3,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1510.73070825,
+          "median": 1512.957875,
+          "p95": 1874.289708,
+          "min": 1142.717375,
+          "max": 1874.289708
+        },
+        "first_pcm_ms": {
+          "n": 3,
+          "mean": 6255.332513666666,
+          "median": 5880.7465,
+          "p95": 7269.465708,
+          "min": 5615.785333,
+          "max": 7269.465708
+        },
+        "worker_start_ms": {
+          "n": 3,
+          "mean": 6036.404277333333,
+          "median": 5880.980458,
+          "p95": 6938.819791,
+          "min": 5289.412583,
+          "max": 6938.819791
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6399.20807275,
+          "median": 6300.7675835,
+          "p95": 7779.532708,
+          "min": 5215.764416,
+          "max": 7779.532708
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -9.073729250000099,
+          "median": -8.33508350000011,
+          "p95": 719.9700829999999,
+          "min": -739.5948330000001,
+          "max": 719.9700829999999
+        },
+        "first_pcm_ms": {
+          "n": 2,
+          "mean": -1688.1760835000005,
+          "median": -1688.1760835000005,
+          "p95": -640.2117500000004,
+          "min": -2736.1404170000005,
+          "max": -640.2117500000004
+        },
+        "worker_start_ms": {
+          "n": 2,
+          "mean": -1848.076584,
+          "median": -1848.076584,
+          "p95": -971.1647510000003,
+          "min": -2724.9884169999996,
+          "max": -971.1647510000003
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -1939.19463575,
+          "median": -1785.2310630000002,
+          "p95": -396.0275840000004,
+          "min": -3790.2888329999996,
+          "max": -396.0275840000004
+        }
+      }
+    },
+    "small-write": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1557.6237085,
+          "median": 1556.415354,
+          "p95": 1954.592084,
+          "min": 1163.072042,
+          "max": 1954.592084
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 5598.77502075,
+          "median": 5595.033542,
+          "p95": 6906.462458,
+          "min": 4298.570541,
+          "max": 6906.462458
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 5326.44499975,
+          "median": 5321.025353999999,
+          "p95": 6642.622833,
+          "min": 4021.106458,
+          "max": 6642.622833
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6035.274927,
+          "median": 6016.7812085000005,
+          "p95": 7386.334958,
+          "min": 4721.202333,
+          "max": 7386.334958
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 4,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1546.71320825,
+          "median": 1546.2838124999998,
+          "p95": 1935.715333,
+          "min": 1158.569875,
+          "max": 1935.715333
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 6093.123520749999,
+          "median": 6155.508,
+          "p95": 6904.015542,
+          "min": 5157.462541,
+          "max": 6904.015542
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 5797.7642395,
+          "median": 5850.473728999999,
+          "p95": 6617.518292,
+          "min": 4872.591208,
+          "max": 6617.518292
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6553.71210425,
+          "median": 6601.8505835,
+          "p95": 7380.646292,
+          "min": 5630.500958,
+          "max": 7380.646292
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -10.910500250000041,
+          "median": -6.146124999999984,
+          "p95": 764.672458,
+          "min": -796.0222090000002,
+          "max": 764.672458
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 494.34849999999983,
+          "median": 552.9915004999998,
+          "p95": 2401.792458,
+          "min": -1530.3814590000002,
+          "max": 2401.792458
+        },
+        "worker_start_ms": {
+          "n": 4,
+          "mean": 471.3192397499997,
+          "median": 518.6090834999995,
+          "p95": 2391.6427919999996,
+          "min": -1543.5839999999998,
+          "max": 2391.6427919999996
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 518.4371772499999,
+          "median": 548.0819379999998,
+          "p95": 2454.5108330000003,
+          "min": -1476.9260000000004,
+          "max": 2454.5108330000003
+        }
+      }
+    },
+    "thinking": {
+      "pairs": 4,
+      "distinct_cases": 1,
+      "baseline": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1769.0960627499999,
+          "median": 1765.963271,
+          "p95": 2160.750375,
+          "min": 1383.707334,
+          "max": 2160.750375
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 4557.6163435,
+          "median": 4740.781812499999,
+          "p95": 5710.249583,
+          "min": 3038.652166,
+          "max": 5710.249583
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 6000.556781,
+          "median": 6121.1235,
+          "p95": 8386.219333,
+          "min": 3373.760791,
+          "max": 8386.219333
+        }
+      },
+      "optional": {
+        "correct": 4,
+        "errors": 0,
+        "missing_pcm": 0,
+        "worker_markers": 0,
+        "model_calls": 8,
+        "admission_calls": 4,
+        "admission_ms": {
+          "n": 4,
+          "mean": 1753.7992295000001,
+          "median": 1751.703792,
+          "p95": 2143.810792,
+          "min": 1367.978542,
+          "max": 2143.810792
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": 3781.55211475,
+          "median": 3797.3745415,
+          "p95": 4549.710834,
+          "min": 2981.748542,
+          "max": 4549.710834
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": 5227.3100002500005,
+          "median": 5255.009125500001,
+          "p95": 6917.207375,
+          "min": 3482.014375,
+          "max": 6917.207375
+        }
+      },
+      "optional_minus_baseline_ms": {
+        "admission_ms": {
+          "n": 4,
+          "mean": -15.296833249999906,
+          "median": -14.658582999999908,
+          "p95": 760.1034580000003,
+          "min": -791.9736250000001,
+          "max": 760.1034580000003
+        },
+        "first_pcm_ms": {
+          "n": 4,
+          "mean": -776.0642287499999,
+          "median": -996.9019165000002,
+          "p95": 1511.0586680000006,
+          "min": -2621.5117499999997,
+          "max": 1511.0586680000006
+        },
+        "worker_start_ms": {
+          "n": 0
+        },
+        "elapsed_ms": {
+          "n": 4,
+          "mean": -773.2467807499996,
+          "median": 53.67116699999997,
+          "p95": 1703.875501,
+          "min": -4904.204957999998,
+          "max": 1703.875501
+        }
+      }
+    }
+  }
+}
