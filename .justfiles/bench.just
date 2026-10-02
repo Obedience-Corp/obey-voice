@@ -15,6 +15,10 @@ default:
 decision *ARGS:
     @cd "{{repo}}" && go run ./scripts/decision_bench {{ARGS}}
 
+[doc('Compare local worker decisions with real admission and speaking-model routing (no workers or audio)')]
+worker-decision *ARGS:
+    @cd "{{repo}}" && go run ./scripts/worker_decision_bench {{ARGS}}
+
 [doc('Measure and diff against the committed baseline (fails on >10% regression)')]
 diff:
     @{{repo}}/scripts/bench.sh diff

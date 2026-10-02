@@ -1,0 +1,16 @@
+{
+  "work": {
+    "type": "noul",
+    "instructions": "Does the latest user message ask the assistant to carry out a task using tools now, such as checking the computer, reading or changing files, running tests, or implementing something?"
+  },
+  "tier": {
+    "type": "choice",
+    "instructions": "What level of worker effort does the latest requested task require?",
+    "criteria": {
+      "none": "Conversation, an explanation, a hypothetical or quoted request, or no concrete task to execute now.",
+      "simple": "One bounded tool action, such as checking a version, listing files, reading a file, or saving supplied text.",
+      "medium": "A few dependent steps on a bounded task, such as inspecting a file, making one change, and testing it.",
+      "complex": "Broad, multi-stage work across a system, several services, or a whole product."
+    }
+  }
+}
