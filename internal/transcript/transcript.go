@@ -36,6 +36,7 @@ const Version = 2
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
 type record struct {
+	Decision     *events.DecisionEvaluated   `json:"decision,omitempty"`
 	WorkerUsage  *events.WorkerUsageRecorded `json:"worker_usage,omitempty"`
 	WorkerLimit  *events.WorkerLimitReached  `json:"worker_limit,omitempty"`
 	WorkerCharge *events.WorkerChargeState   `json:"worker_charge,omitempty"`

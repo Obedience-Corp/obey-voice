@@ -694,6 +694,156 @@
       "editable": true
     },
     {
+      "key": "decision_budget_ms",
+      "type": "int",
+      "default": 750,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision deadline",
+      "help": "Cancel optional inference after this deadline. The conversation never waits for it.",
+      "unit": "ms",
+      "min": 25,
+      "max": 3000,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision shortcuts (experimental)",
+      "help": "Use ready decisions to skip some speaking-model calls; uncertain or late decisions fall back immediately.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_endpoint",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Decision server",
+      "help": "Optional external local /v1/systemone endpoint; must be loopback HTTP. Hosted providers use their official endpoints.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_local_model",
+      "type": "enum",
+      "default": "2b",
+      "enum": [
+        "2b",
+        "0.8b"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Local decision model",
+      "help": "2b is the tested route-choice candidate; 0.8b uses less memory and remains experimental.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Hosted decision model",
+      "help": "Explicit model name required for Jev or OpenAI; empty uses decider for local inference.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_policy",
+      "type": "enum",
+      "default": "route_choice",
+      "enum": [
+        "route_choice",
+        "intent_and_tier"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision questions",
+      "help": "Choose the frozen routing policy; intent_and_tier retains the original experiment for comparison.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_provider",
+      "type": "enum",
+      "default": "local",
+      "enum": [
+        "local",
+        "jev",
+        "openai"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision provider",
+      "help": "Local keeps inference on this computer. Jev and OpenAI send eligible messages and recent conversation to the selected service.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_runtime",
+      "type": "enum",
+      "default": "managed",
+      "enum": [
+        "managed",
+        "external"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Local decision runtime",
+      "help": "Managed installs and starts the local model. External uses an existing loopback server.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_text_work",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decide typed work",
+      "help": "Allow optional worker decisions during typed input admission.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_voice_work",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decide voice work",
+      "help": "Allow optional worker decisions during voice input admission.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "environment_context_enabled",
       "type": "bool",
       "default": true,
@@ -2306,6 +2456,20 @@
       "env": "ACTIVE_PERSONA",
       "editable": false,
       "managed_by": "persona use"
+    },
+    {
+      "key": "decision_api_key",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "hidden",
+      "title": "Decision API key",
+      "help": "Credential used only for an explicitly selected hosted decision provider.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true,
+      "secret": true
     },
     {
       "key": "persona",

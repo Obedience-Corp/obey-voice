@@ -227,6 +227,8 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		CapturePreRoll:              time.Duration(cfg.VADPreRollMS) * time.Millisecond,
 	}
 
+	cleanups = append(cleanups, bindDecisions(p, cfg))
+
 	// Brain — injected, or selected by config.
 	if opts.Brain != nil {
 		p.Brain = opts.Brain

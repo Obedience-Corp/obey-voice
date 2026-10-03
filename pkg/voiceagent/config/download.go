@@ -2,6 +2,7 @@ package config
 
 import (
 	"compress/bzip2"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -82,13 +83,9 @@ func (g *stallGuard) Close() error {
 	return g.rc.Close()
 }
 
-// downloadAndExtractArchive downloads a tar.bz2 and extracts to dir,
-// stripping the top-level directory prefix.
-// downloadAndExtractArchive downloads a tar.bz2 from url and extracts it into
-// dir. The archive is decompressed and handed to extractTarStream, which
-// extracts into a temp dir, verifies the check files, then atomically promotes
-// the result — so a partial or malicious archive never lands at dir. name labels
-// the asset in error messages.
+// downloadAndExtractArchive verifies a tar.bz2 or tar.gz download before
+// extracting it with the existing path checks and atomic promotion. The
+// compressed checksum is checked before any archive entry is installed.
 func downloadAndExtractArchive(ctx context.Context, dir, id, url, name string, checkFiles []string, sha256Hex string, onProgress func(bytes, total int64)) error {
 	resp, err := openDownload(ctx, url, name)
 	if err != nil {
@@ -99,7 +96,7 @@ func downloadAndExtractArchive(ctx context.Context, dir, id, url, name string, c
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("download %s: create target dir: %w", name, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".archive-*.tar.bz2.part")
+	tmp, err := os.CreateTemp(dir, ".archive-*.part")
 	if err != nil {
 		return fmt.Errorf("download %s: %w", name, err)
 	}
@@ -116,7 +113,16 @@ func downloadAndExtractArchive(ctx context.Context, dir, id, url, name string, c
 		return fmt.Errorf("extract %s: %w", name, err)
 	}
 
-	names, err := extractTarStream(bzip2.NewReader(tmp), dir, name, checkFiles)
+	var archive io.Reader = bzip2.NewReader(tmp)
+	if strings.HasSuffix(url, ".tar.gz") {
+		gz, err := gzip.NewReader(tmp)
+		if err != nil {
+			return fmt.Errorf("open gzip %s: %w", name, err)
+		}
+		defer gz.Close()
+		archive = gz
+	}
+	names, err := extractTarStream(archive, dir, name, checkFiles)
 	if err != nil {
 		return err
 	}

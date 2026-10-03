@@ -19,6 +19,10 @@ decision *ARGS:
 worker-decision *ARGS:
     @cd "{{repo}}" && go run ./scripts/worker_decision_bench {{ARGS}}
 
+[doc('Compare actual voice pipeline calls, first PCM and worker start; requires OBEY_DECISION_MODELS and a new OBEY_DECISION_OUT path')]
+decision-pipeline:
+    @cd "{{repo}}" && OBEY_DECISION_CASES="${OBEY_DECISION_CASES:-{{repo}}/testdata/decision/worker-routing.json}" OBEY_DECISION_LIVE=1 go test -tags integration ./pkg/voiceagent/pipeline -run '^TestDecisionLivePipelineReplay$' -count=1 -timeout=60m -v
+
 [doc('Measure and diff against the committed baseline (fails on >10% regression)')]
 diff:
     @{{repo}}/scripts/bench.sh diff

@@ -174,7 +174,18 @@ type Config struct {
 	TUIMouseEnabled bool `mapstructure:"tui_mouse_enabled"`
 
 	// Brain
-	BrainProvider string `mapstructure:"brain_provider"`
+	BrainProvider      string `mapstructure:"brain_provider"`
+	DecisionEnabled    bool   `mapstructure:"decision_enabled"`
+	DecisionVoiceWork  bool   `mapstructure:"decision_voice_work"`
+	DecisionTextWork   bool   `mapstructure:"decision_text_work"`
+	DecisionProvider   string `mapstructure:"decision_provider"`
+	DecisionRuntime    string `mapstructure:"decision_runtime"`
+	DecisionLocalModel string `mapstructure:"decision_local_model"`
+	DecisionEndpoint   string `mapstructure:"decision_endpoint"`
+	DecisionModel      string `mapstructure:"decision_model"`
+	DecisionAPIKey     string `mapstructure:"decision_api_key"`
+	DecisionBudgetMS   int    `mapstructure:"decision_budget_ms"`
+	DecisionPolicy     string `mapstructure:"decision_policy"`
 	// VoiceWorkEnabled keeps background outcomes with the conversation. This
 	// experimental loop is opt-in; paid tiers require saved advisory uncapped consent.
 	VoiceWorkEnabled bool `mapstructure:"voice_work_enabled"`

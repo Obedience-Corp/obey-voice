@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/usage"
@@ -81,8 +82,10 @@ type settingsModel struct {
 	saveConfig      func(string, any) error
 	// onPlaybackVolume applies gain to the live conversation player. Nil when
 	// Settings is open without a running pipeline (launcher).
-	onPlaybackVolume func(float64)
-	onWorkersEnabled func(bool)
+	onPlaybackVolume   func(float64)
+	onWorkersEnabled   func(bool)
+	onDecisionSettings func(*config.Config)
+	decisionStatus     func() decision.RuntimeStatus
 	// lookPath resolves external binaries for the recognizer rows; nil uses
 	// exec.LookPath. Tests inject a fake so a picker never depends on what
 	// happens to be installed on the machine running them.
@@ -553,6 +556,9 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		if m.preview.applyDone(msg) && msg.message != "" {
 			m.message = msg.message
 		}
+
+	case decisionStatusTickMsg:
+		return m, m.pollDecisionStatus()
 
 	case qwenInstallDoneMsg:
 		m.qwenInstalling = false

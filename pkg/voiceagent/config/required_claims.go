@@ -18,6 +18,11 @@ func configReferencedClaims(cfg *Config, modelsDir string) ([]assetClaim, error)
 		return nil, err
 	}
 	claims := append(stt, ttsConfigClaims(cfg, modelsDir)...)
+	// Keep a configured local decision installation across disable/enable and
+	// provider changes, including an interrupted managed install.
+	if cfg.DecisionLocalModel != "" || cfg.DecisionRuntime == "managed" {
+		claims = append(claims, pathClaim(filepath.Join(modelsDir, "decider"), "configured local decision runtime"))
+	}
 	// Registered audio8 voices are claimed whatever provider is selected, which
 	// the export beside them deliberately is not. The asymmetry is the point:
 	// the export is a gigabyte-and-a-half that can be fetched again from the

@@ -26,6 +26,8 @@ const (
 	editWorkerReference
 	editWorkerLimit
 	editWorkerPolicy
+	editDecision
+	editDecisionKey
 )
 
 // settingsEditor is a one-line value editor for settings a list cannot express
@@ -37,6 +39,7 @@ type settingsEditor struct {
 	label       string
 	workerTier  string
 	workerField string
+	decisionKey string
 	input       textinput.Model
 }
 
@@ -47,9 +50,12 @@ func (m *settingsModel) beginEdit(kind settingsEditKind, label, initial string) 
 	input.Width = 48
 	input.SetValue(initial)
 	input.CursorEnd()
-	if kind == editWorkerToken {
+	if kind == editWorkerToken || kind == editDecisionKey {
 		input.EchoMode = textinput.EchoPassword
 		input.Placeholder = "paste the token from speech-serve"
+		if kind == editDecisionKey {
+			input.Placeholder = "paste the selected provider's API key"
+		}
 	}
 	if kind == editTalkHotkey {
 		input.Placeholder = talkhotkey.DefaultComboFor(runtime.GOOS) + " (default); e.g. ctrl+alt+t, f13"
@@ -75,6 +81,12 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		return m, nil
 	case "enter":
 		kind, value := m.edit.kind, m.edit.input.Value()
+		if kind == editDecision || kind == editDecisionKey {
+			key := m.edit.decisionKey
+			m.cancelEdit()
+			cmd := m.commitDecisionEdit(key, value)
+			return m, cmd
+		}
 		if kind == editSpeakerEnrollName {
 			return m.commitSpeakerEnrollName(value)
 		}

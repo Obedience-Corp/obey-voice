@@ -9,6 +9,8 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -104,6 +106,13 @@ type Pipeline struct {
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
+	// Decisions is off by default. The host configures independent points; a
+	// ready proposal still passes the ordinary worker admission policy.
+	Decisions decision.Controller
+	// ConfigureDecisions changes optional settings without replacing a brain or
+	// interrupting admitted work. The owning runtime performs setup in the background.
+	ConfigureDecisions func(*config.Config)
+	DecisionStatus     func() decision.RuntimeStatus
 	// RouteHandoff classifies an intentional handoff without changing selection.
 	// The pipeline commits the proposal after joining the speech interrupt watch.
 	// It never invokes this callback for background or degraded work.

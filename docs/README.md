@@ -26,6 +26,7 @@ Everything else lives here.
 | [Speech worker](speech-serve.md) | Offloading speech to another computer (`speech-serve`) |
 | [Qwen3-TTS spike](qwen3-tts-spike.md) | Native Qwen3-TTS product path (worker + GGUF) |
 | [AEC probe](aec-probe.md) | AEC / voice-frontend probe notes |
+| [Optional decision routing](decision-routing.md) | Local setup, independent controls, pipeline diagrams and latency replay |
 | [ADRs](adr/) | Architecture decision records |
 | [Benchmarks](benchmarks/README.md) | Committed latency measurements |
 | [Prompts](prompts/P3-README.md) | Prompt fixtures |

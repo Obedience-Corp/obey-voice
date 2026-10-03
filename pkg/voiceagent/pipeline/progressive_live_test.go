@@ -12,7 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 )
 
 // TestLiveProgressiveNativeConversation is opt-in conversation smoke:
@@ -46,7 +46,7 @@ func TestLiveProgressiveNativeConversation(t *testing.T) {
 		cfg.QwenTTSModel = m
 	}
 
-	provider, cleanup, err := tts.NewProvider(cfg)
+	provider, cleanup, err := providers.NewProvider(cfg)
 	if err != nil {
 		t.Fatalf("NewProvider: %v (install native package or set QWEN_WORKER/QWEN_MODELS)", err)
 	}

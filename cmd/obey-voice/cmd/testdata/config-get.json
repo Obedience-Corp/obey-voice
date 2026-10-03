@@ -102,6 +102,50 @@
       "value": "",
       "source": "default"
     },
+    "decision_api_key": {
+      "value": "",
+      "source": "default"
+    },
+    "decision_budget_ms": {
+      "value": 750,
+      "source": "default"
+    },
+    "decision_enabled": {
+      "value": false,
+      "source": "default"
+    },
+    "decision_endpoint": {
+      "value": "",
+      "source": "default"
+    },
+    "decision_local_model": {
+      "value": "2b",
+      "source": "default"
+    },
+    "decision_model": {
+      "value": "",
+      "source": "default"
+    },
+    "decision_policy": {
+      "value": "route_choice",
+      "source": "default"
+    },
+    "decision_provider": {
+      "value": "local",
+      "source": "default"
+    },
+    "decision_runtime": {
+      "value": "managed",
+      "source": "default"
+    },
+    "decision_text_work": {
+      "value": true,
+      "source": "default"
+    },
+    "decision_voice_work": {
+      "value": true,
+      "source": "default"
+    },
     "delegation_binary": {
       "value": "obey",
       "source": "default"

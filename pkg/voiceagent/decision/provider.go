@@ -31,6 +31,14 @@ type Response struct {
 	// Raw is for explicit local replay capture. Product diagnostics should log
 	// only the decision point, model, disposition and elapsed time.
 	Raw json.RawMessage `json:"-"`
+	// Structured is set only by the OpenAI adapter after strict validation.
+	// It is a categorical model answer, not a calibrated probability.
+	Structured *StructuredRoute `json:"-"`
+}
+
+type StructuredRoute struct {
+	Action string `json:"action"`
+	Tier   Tier   `json:"tier"`
 }
 
 type Evaluator interface {

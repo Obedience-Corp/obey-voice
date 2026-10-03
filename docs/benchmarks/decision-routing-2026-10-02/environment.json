@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-10-02T21:29:17.795467+00:00",
+  "ollama": {
+    "version": "0.32.14"
+  },
+  "model": [
+    {
+      "name": "qwen3.8:latest",
+      "model": "qwen3.8:latest",
+      "modified_at": "2026-08-15T20:54:10.884456795-06:00",
+      "size": 17741872154,
+      "digest": "22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643",
+      "details": {
+        "parent_model": "qwen3.8:27b-q4_K_M",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "27.3B",
+        "quantization_level": "Q4_K_M",
+        "context_length": 262144,
+        "embedding_length": 5120
+      },
+      "capabilities": [
+        "completion",
+        "tools",
+        "thinking",
+        "vision"
+      ]
+    }
+  ],
+  "machine": "Apple M4 Max",
+  "memory_bytes": 137438953472,
+  "os": "26.5"
+}

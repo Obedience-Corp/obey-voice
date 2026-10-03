@@ -203,7 +203,7 @@ func run() error {
 	}
 	base, err := url.Parse(*host)
 	if err != nil || base.Scheme != "http" || base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") || !net.ParseIP(base.Hostname()).IsLoopback() {
-		return errors.New("Ollama must use a literal loopback HTTP origin")
+		return errors.New("ollama must use a literal loopback HTTP origin")
 	}
 	raw, err := os.ReadFile(*casePath)
 	if err != nil {
