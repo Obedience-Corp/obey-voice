@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -62,9 +63,16 @@ type launcherModel struct {
 	items     []launcherItem
 	width     int
 	height    int
-	// banner is a one-shot status line (e.g. meeting close error after return).
-	banner    string
-	bannerErr bool
+	// banner is the latest raw status string. The rail shows one parsed line;
+	// older outcomes stay in notices for this process only.
+	banner       string
+	bannerErr    bool
+	notices      []launcherNotice
+	noticeSeq    int
+	noticeCursor int
+	noticesOpen  bool
+	progressLine string
+	noticeFlash  string
 
 	// Inline submenu (persona picker / meeting split); nil = main menu.
 	submenu       []launcherItem
@@ -90,11 +98,23 @@ func (m launcherModel) forgetResumeCandidate() launcherModel {
 	return m
 }
 
-// withBanner returns a copy carrying a status banner shown above the menu.
+// withBanner stores the raw status and folds it into the one-line rail.
+// Progress replaces the rail without entering the session log. An empty
+// string leaves the log alone.
 func (m launcherModel) withBanner(text string, isErr bool) launcherModel {
 	m.banner = strings.TrimSpace(text)
 	m.bannerErr = isErr
-	return m
+	if m.banner == "" {
+		return m
+	}
+	n := parseNotice(m.banner, isErr, time.Now())
+	if n.progress {
+		m.progressLine = n.line
+		return m
+	}
+	m.progressLine = ""
+	m.noticeFlash = ""
+	return m.pushNotice(n)
 }
 
 func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved ...[]session.Session) launcherModel {
@@ -175,8 +195,8 @@ func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved .
 			action: actionQuit,
 		},
 	)
-	if notice := demoLauncherNotice(); notice != "" {
-		m.banner = notice
+	for _, notice := range demoLauncherNotices() {
+		m = m.withBanner(notice, false)
 	}
 	return m
 }
@@ -186,9 +206,17 @@ func (m launcherModel) Update(msg tea.Msg) (launcherModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 
+	case noticeCopiedMsg:
+		m.noticeFlash = "copied"
+		if msg.err != nil {
+			m.noticeFlash = "copy failed"
+		}
 	case tea.KeyMsg:
 		if m.submenu != nil {
 			return m.updateSubmenu(msg)
+		}
+		if m.noticesOpen {
+			return m.updateNotices(msg)
 		}
 		switch msg.String() {
 		case "up", "k":
@@ -224,6 +252,12 @@ func (m launcherModel) Update(msg tea.Msg) (launcherModel, tea.Cmd) {
 				return m, func() tea.Msg { return switchScreenMsg(screenSettings) }
 			case actionQuit:
 				return m, func() tea.Msg { return quitMsg{} }
+			}
+		case "n":
+			if len(m.notices) > 0 {
+				m.noticesOpen = true
+				m.noticeCursor = 0
+				m.noticeFlash = ""
 			}
 		case "q":
 			return m, func() tea.Msg { return quitMsg{} }
@@ -504,9 +538,12 @@ func (m launcherModel) fullView(width int) string {
 	b.WriteString(ansi.Truncate(chips, width, "…"))
 	b.WriteString("\n\n")
 
-	if m.banner != "" {
-		b.WriteString(formatNotice(m.banner, width, m.bannerErr))
+	if rail := m.noticeRail(width); rail != "" {
+		b.WriteString(rail)
 		b.WriteString("\n\n")
+	}
+	if m.noticesOpen {
+		return m.finishNoticeView(b.String(), width)
 	}
 
 	// Menu width
@@ -558,8 +595,11 @@ func (m launcherModel) fullView(width int) string {
 	}
 
 	help := "  ↑/↓ navigate   enter select   q quit"
-	if m.submenu != nil {
+	switch {
+	case m.submenu != nil:
 		help = "  ↑/↓ navigate   enter select   esc back"
+	case len(m.notices) > 0:
+		help = "  ↑/↓ navigate   enter select   n notices   q quit"
 	}
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
@@ -571,9 +611,12 @@ func (m launcherModel) compactView(width int) string {
 	var b strings.Builder
 	b.WriteString(ansi.Truncate(headerStyle.Render("  OBEY VOICE"), width, "…"))
 	b.WriteString("\n")
-	if m.banner != "" {
-		b.WriteString(formatNoticeCompact(m.banner, width, m.bannerErr))
+	if rail := m.noticeRail(width); rail != "" {
+		b.WriteString(rail)
 		b.WriteString("\n")
+	}
+	if m.noticesOpen {
+		return m.finishNoticeView(b.String(), width)
 	}
 
 	items, cursor := m.visibleItems()
@@ -593,9 +636,26 @@ func (m launcherModel) compactView(width int) string {
 			b.WriteString(ansi.Truncate(dimStyle.Render("   "+item.label), width, "…") + "\n")
 		}
 	}
-	b.WriteString(dimStyle.Render(ansi.Truncate("  ↑/↓ · enter · q", width, "…")))
+	help := "  ↑/↓ · enter · q"
+	if len(m.notices) > 0 {
+		help = "  ↑/↓ · enter · n · q"
+	}
+	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
 	b.WriteString("\n")
 	return b.String()
+}
+
+// finishNoticeView appends a notice browser that fits the lines still free
+// in the terminal. A trailing newline on prefix counts as a used line.
+func (m launcherModel) finishNoticeView(prefix string, width int) string {
+	maxLines := 0
+	if m.height > 0 {
+		maxLines = m.height - 1 - strings.Count(prefix, "\n")
+		if maxLines < 1 {
+			maxLines = 1
+		}
+	}
+	return prefix + m.noticeBrowser(width, maxLines)
 }
 
 func (m launcherModel) activeModel() string {

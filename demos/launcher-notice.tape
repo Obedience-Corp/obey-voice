@@ -1,6 +1,7 @@
-# Launcher notice — pretty JSON instead of one wrapping status line.
+# Launcher notice — one line on the rail, n opens the session log.
 #
-# OBEY_VOICE_DEMO_LAUNCHER_NOTICE=route injects a fixture banner.
+# OBEY_VOICE_DEMO_LAUNCHER_NOTICE=route injects a saved bundle, then a
+# camp import receipt. q inside Notices returns to the menu.
 # From repo root after `just build`:
 #   just demo-launcher-notice
 
@@ -41,6 +42,12 @@ Sleep 5s
 Show
 Sleep 3s
 Screenshot demos/frames/launcher-notice.png
+Sleep 500ms
+Type "n"
 Sleep 1s
+Screenshot demos/frames/launcher-notice-open.png
+Sleep 500ms
+Type "q"
+Sleep 400ms
 Type "q"
 Sleep 300ms

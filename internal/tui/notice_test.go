@@ -74,15 +74,16 @@ func TestShortenHomeIsPathBounded(t *testing.T) {
 	}
 }
 
-func TestLauncherBannerRendersPrettyJSON(t *testing.T) {
+func TestLauncherBannerRendersOneLine(t *testing.T) {
 	m := newLauncher(&config.Config{BrainProvider: "ollama"}, nil)
 	m.width, m.height = 100, 28
-	m = m.withBanner(`Meeting notes routed to camp:JobSearch: {"campaign_root":"/tmp/JobSearch"}`, false)
+	m = m.withBanner(`Meeting notes routed to camp:JobSearch: {"schema_version":"intent-meeting-import/v1alpha1","campaign_root":"/tmp/JobSearch","note":{"path":"meetings/today.md"}}`, false)
 	plain := stripANSI(m.View())
-	if !strings.Contains(plain, `"campaign_root"`) || !strings.Contains(plain, "Meeting notes routed") {
-		t.Fatalf("launcher banner:\n%s", plain)
+	head := strings.Split(plain, "New conversation")[0]
+	if !strings.Contains(head, "Meeting notes filed to camp:JobSearch") {
+		t.Fatalf("launcher rail:\n%s", plain)
 	}
-	if strings.Contains(strings.Split(plain, "New conversation")[0], `{"campaign_root"`) {
-		t.Fatal("raw JSON object still on one title line")
+	if strings.Contains(head, "campaign_root") || strings.Contains(head, "schema_version") || strings.Contains(head, "{") {
+		t.Fatalf("rail still shows the receipt:\n%s", head)
 	}
 }
