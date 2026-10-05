@@ -94,7 +94,7 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 		name      string
 		input     string
 		configure func(*selectorTestFixture)
-		ctx       func(context.Context) context.Context
+		ctx       func(context.Context) (context.Context, context.CancelFunc)
 		want      admission.FailureCategory
 	}{
 		{
@@ -105,7 +105,7 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 					return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierUnavailable, errors.New("transport unavailable"))
 				})
 			},
-			ctx:  func(ctx context.Context) context.Context { return ctx },
+			ctx:  func(ctx context.Context) (context.Context, context.CancelFunc) { return ctx, nil },
 			want: admission.FailureClassifierUnavailable,
 		},
 		{
@@ -116,7 +116,7 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 					return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, context.DeadlineExceeded)
 				})
 			},
-			ctx:  func(ctx context.Context) context.Context { return ctx },
+			ctx:  func(ctx context.Context) (context.Context, context.CancelFunc) { return ctx, nil },
 			want: admission.FailureClassifierLocalTimeout,
 		},
 		{
@@ -127,7 +127,7 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 					return brain.Addressee{Kind: "invalid"}, nil
 				})
 			},
-			ctx:  func(ctx context.Context) context.Context { return ctx },
+			ctx:  func(ctx context.Context) (context.Context, context.CancelFunc) { return ctx, nil },
 			want: admission.FailureClassifierInvalidOutput,
 		},
 		{
@@ -138,17 +138,17 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 					return brain.Addressee{Kind: "address", Name: "Ghost"}, nil
 				})
 			},
-			ctx:  func(ctx context.Context) context.Context { return ctx },
+			ctx:  func(ctx context.Context) (context.Context, context.CancelFunc) { return ctx, nil },
 			want: admission.FailureIdentityRefusal,
 		},
 		{
 			name:      "parent canceled",
 			input:     "What do you think Santa",
 			configure: func(*selectorTestFixture) {},
-			ctx: func(ctx context.Context) context.Context {
+			ctx: func(ctx context.Context) (context.Context, context.CancelFunc) {
 				cctx, cancel := context.WithCancel(ctx)
 				cancel()
-				return cctx
+				return cctx, nil
 			},
 			want: admission.FailureParentCancellation,
 		},
@@ -156,9 +156,9 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 			name:      "parent deadline",
 			input:     "What do you think Santa",
 			configure: func(*selectorTestFixture) {},
-			ctx: func(ctx context.Context) context.Context {
-				dctx, _ := context.WithDeadline(ctx, time.Now().Add(-time.Second))
-				return dctx
+			ctx: func(ctx context.Context) (context.Context, context.CancelFunc) {
+				dctx, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+				return dctx, cancel
 			},
 			want: admission.FailureParentCancellation,
 		},
@@ -166,7 +166,10 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 			tc.configure(f)
-			ctx := tc.ctx(t.Context())
+			ctx, cancel := tc.ctx(t.Context())
+			if cancel != nil {
+				defer cancel()
+			}
 			_, err := f.selector.Route(ctx, tc.input, false)
 			var failure *admission.Failure
 			if !errors.As(err, &failure) || failure.Category != tc.want {

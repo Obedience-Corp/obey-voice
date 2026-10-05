@@ -668,6 +668,70 @@ func TestAdmissionFailureNoticeShowsCategoryAndOriginalInput(t *testing.T) {
 	}
 }
 
+func TestAdmissionFailureManualResubmissionDispatchesTypedTurn(t *testing.T) {
+	runner := &fakeTurnRunner{voiceQueue: []voiceScript{
+		{text: "Santa what do you think", err: admissionFailure(admission.FailureClassifierUnavailable, "classifier offline")},
+		{block: true},
+	}}
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	m := sizedConversation(t, 80, 24)
+	m.startConversation(conversationDeps{runner: runner, bus: bus, voice: true, ctx: context.Background()})
+
+	first := m.dispatchVoiceTurn()
+	m, retryTick := m.Update(first())
+	if retryTick == nil {
+		t.Fatal("response-stage refusal did not schedule a retry")
+	}
+	m, retryDispatch := m.Update(voiceRetryMsg{})
+	if retryDispatch == nil {
+		t.Fatal("voice retry message did not resume listening")
+	}
+	voiceDone := make(chan tea.Msg, 1)
+	go func() { voiceDone <- retryDispatch() }()
+
+	resubmitted := "Santa what do you think"
+	m, cmd := typeAndEnter(m, resubmitted)
+	if cmd != nil {
+		t.Fatal("manual retry should wait for the canceled listening turn")
+	}
+	if m.turnState != turnVoiceCanceling || m.pendingText != resubmitted {
+		t.Fatalf("turn state=%d pending=%q", m.turnState, m.pendingText)
+	}
+
+	var canceled tea.Msg
+	select {
+	case canceled = <-voiceDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("manual retry did not cancel the in-flight listening turn")
+	}
+	m, cmd = m.Update(canceled)
+	if cmd == nil {
+		t.Fatal("cancel drain did not dispatch the typed retry")
+	}
+	if m.turnState != turnTextRunning {
+		t.Fatalf("turnState=%d want text running", m.turnState)
+	}
+	if done := cmd(); done == nil {
+		t.Fatal("typed retry cmd returned nil")
+	}
+	if got := runner.texts(); len(got) != 1 || got[0] != resubmitted {
+		t.Fatalf("typed retries=%v", got)
+	}
+
+	foundNotice := false
+	for _, info := range infos {
+		if strings.Contains(info, "Resubmit this request manually") &&
+			strings.Contains(info, `Original input: "Santa what do you think"`) {
+			foundNotice = true
+		}
+	}
+	if !foundNotice {
+		t.Fatalf("manual retry notice missing in terminal path: %v", infos)
+	}
+}
+
 func TestAdmissionFailureNoticeRetiredByClearSuppressesLateCallbacks(t *testing.T) {
 	runner := &fakeTurnRunner{}
 	bus := events.NewBus()

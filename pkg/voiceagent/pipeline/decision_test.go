@@ -21,7 +21,7 @@ import (
 )
 
 func TestOptionalDecisionCrossesPipelineAndWorkerAdmission(t *testing.T) {
-	for _, mode := range []string{"text", "voice", "off", "late", "failure", "unavailable", "settings", "disable", "history", "persona", "conversation", "rewritten", "background", "control", "continuation", "host-closed", "cancelled"} {
+	for _, mode := range []string{"text", "voice", "off", "early", "late", "error", "unavailable", "settings", "disable", "history", "persona", "conversation", "rewritten", "background", "control", "continuation", "host-closed", "cancelled"} {
 		t.Run(mode, func(t *testing.T) {
 			var modelCalls, decisionCalls, workers atomic.Int32
 			liveServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +46,7 @@ func TestOptionalDecisionCrossesPipelineAndWorkerAdmission(t *testing.T) {
 					}
 					return
 				}
-				if mode == "failure" {
+				if mode == "error" {
 					w.WriteHeader(503)
 					return
 				}
@@ -161,7 +161,7 @@ func TestOptionalDecisionCrossesPipelineAndWorkerAdmission(t *testing.T) {
 			if (mode == "host-closed" || mode == "cancelled") && modelCalls.Load() != 0 {
 				t.Fatalf("rejected turn made %d speaking calls", modelCalls.Load())
 			}
-			accepted := mode == "text" || mode == "voice"
+			accepted := mode == "text" || mode == "voice" || mode == "early"
 			if accepted {
 				deadline := time.Now().Add(time.Second)
 				for workers.Load() == 0 && time.Now().Before(deadline) {

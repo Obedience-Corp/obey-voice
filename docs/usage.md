@@ -444,6 +444,16 @@ gaps, microphone pause/resume or editing. Use the Talk persona control or TUI
 `/personas` for explicit selection. `/speakers` still manages human speaker
 labels; it does not choose the responding persona.
 
+Exact persona controls are intentionally narrow and whole-input only:
+
+- direct name/alias (`Santa`, `Santa.`)
+- one greeting filler plus name/alias (`Hey Santa`)
+- explicit switch form (`switch to Santa`)
+
+Quoted names (for example `"Santa"`), multi-target phrases (`Santa and Jarvis`)
+and substantive tails (`switch to Santa and tell me a story`) stay semantic and
+use normal addressee inference.
+
 Incidental mentions such as `Santa is a persona` do not select Santa. Unknown
 explicit targets, ambiguous addressed names and failed prompt/model/voice preparation
 leave the old responder selected and report an error. A shared alias or generated
