@@ -128,7 +128,7 @@ func startsWithQuote(text string) bool {
 
 func isQuoteRune(r rune) bool {
 	switch r {
-	case '"', '\u201c', '\u201d', '\u00ab', '\u00bb', '\u300c', '\u300d', '\uff02':
+	case '"', '\'', '`', '\u2018', '\u2019', '\u201c', '\u201d', '\u00ab', '\u00bb', '\u300c', '\u300d', '\uff02':
 		return true
 	default:
 		return false

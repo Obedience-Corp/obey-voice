@@ -171,6 +171,7 @@ func TestRosterResolveExactControlRecognizesOnlyWholeInputControls(t *testing.T)
 		{name: "greeting", text: "Hey Santa", wantKind: ExactControlValid, wantID: "santa", wantReason: ReasonBareName},
 		{name: "switch", text: "switch to Santa", wantKind: ExactControlValid, wantID: "santa", wantReason: ReasonExplicitSwitch},
 		{name: "quoted is excluded", text: `"Santa"`, wantKind: ExactControlNone},
+		{name: "single-quoted switch target is semantic", text: "switch to 'Santa'", wantKind: ExactControlNone},
 		{name: "substantive vocative tail", text: "Santa, tell me a story", wantKind: ExactControlNone},
 		{name: "switch with substantive tail", text: "switch to Santa and tell me a story", wantKind: ExactControlNone},
 		{name: "unknown bare is semantic", text: "Unknown", wantKind: ExactControlNone},
