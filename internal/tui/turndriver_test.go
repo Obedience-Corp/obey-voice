@@ -11,7 +11,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 // fakeTurnRunner scripts RunTurn results in order; a blockNext entry parks
@@ -118,6 +120,12 @@ func startedConversation(t *testing.T, runner *fakeTurnRunner, voice bool) (conv
 func typeAndEnter(m conversationModel, text string) (conversationModel, tea.Cmd) {
 	m.input.SetValue(text)
 	return m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+}
+
+func admissionFailure(category admission.FailureCategory, detail string) error {
+	return &pipeline.AdmissionError{
+		Err: admission.WrapFailure(category, "route", errors.New(detail)),
+	}
 }
 
 func TestVoiceTurnCompletesAndRedispatches(t *testing.T) {
@@ -625,6 +633,84 @@ func TestVoiceErrorSurfacesOnBus(t *testing.T) {
 	m.Update(voiceTurnDoneMsg{err: errors.New("transient stt hiccup")})
 	if len(errMsgs) != 1 || !strings.Contains(errMsgs[0], "transient stt hiccup") {
 		t.Fatalf("voice failure not emitted as events.Error: %v", errMsgs)
+	}
+}
+
+func TestAdmissionFailureNoticeShowsCategoryAndOriginalInput(t *testing.T) {
+	runner := &fakeTurnRunner{}
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	m := sizedConversation(t, 80, 24)
+	m.startConversation(conversationDeps{runner: runner, bus: bus, voice: true, ctx: context.Background()})
+	m.handleEvent(events.UserInput{Text: "Santa what do you think"})
+
+	m, _ = m.Update(voiceTurnDoneMsg{
+		text:        "Santa what do you think",
+		err:         admissionFailure(admission.FailureClassifierLocalTimeout, "classifier timed out"),
+		noticeEpoch: m.noticeEpoch,
+	})
+
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Santa what do you think") {
+		t.Fatalf("original input missing from transcript:\n%s", view)
+	}
+	found := false
+	for _, info := range infos {
+		if strings.Contains(info, "classifier timeout") &&
+			strings.Contains(info, "Resubmit this request manually") &&
+			strings.Contains(info, `Original input: "Santa what do you think"`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("manual retry notice missing or incomplete: %v", infos)
+	}
+}
+
+func TestAdmissionFailureNoticeRetiredByClearSuppressesLateCallbacks(t *testing.T) {
+	runner := &fakeTurnRunner{}
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	m := sizedConversation(t, 80, 24)
+	m.startConversation(conversationDeps{runner: runner, bus: bus, voice: true, ctx: context.Background()})
+	staleEpoch := m.noticeEpoch
+	m.handleEvent(events.ConversationCleared{})
+
+	m, _ = m.Update(voiceTurnDoneMsg{
+		text:        "Santa what do you think",
+		err:         admissionFailure(admission.FailureClassifierUnavailable, "offline"),
+		noticeEpoch: staleEpoch,
+	})
+
+	for _, info := range infos {
+		if strings.Contains(info, "Resubmit this request manually") {
+			t.Fatalf("late callback resurrected retired notice: %v", infos)
+		}
+	}
+}
+
+func TestAdmissionFailureNoticeRetiredBySessionRestartSuppressesLateCallbacks(t *testing.T) {
+	runner := &fakeTurnRunner{}
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	m := sizedConversation(t, 80, 24)
+	m.startConversation(conversationDeps{runner: runner, bus: bus, voice: true, ctx: context.Background(), sessionID: "first"})
+	staleEpoch := m.noticeEpoch
+	m.startConversation(conversationDeps{runner: runner, bus: bus, voice: true, ctx: context.Background(), sessionID: "restored"})
+
+	m, _ = m.Update(voiceTurnDoneMsg{
+		text:        "Santa what do you think",
+		err:         admissionFailure(admission.FailureClassifierUnavailable, "offline"),
+		noticeEpoch: staleEpoch,
+	})
+
+	for _, info := range infos {
+		if strings.Contains(info, "Resubmit this request manually") {
+			t.Fatalf("restored session accepted stale notice callback: %v", infos)
+		}
 	}
 }
 

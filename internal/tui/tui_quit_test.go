@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -9,7 +10,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
 func TestQuitCancelsRunContext(t *testing.T) {
@@ -87,5 +91,32 @@ func TestProcessQuitForceExitsWedgedCleanup(t *testing.T) {
 	}
 	if got := exited.Load(); got != 130 {
 		t.Fatalf("force exit = %d, want 130", got)
+	}
+}
+
+func TestQuitRetiresAdmissionRetryNotices(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	bus := events.NewBus()
+	var infos []string
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
+	conv := sizedConversation(t, 80, 24)
+	conv.startConversation(conversationDeps{runner: &fakeTurnRunner{}, bus: bus, voice: true, ctx: ctx})
+	staleEpoch := conv.noticeEpoch
+
+	app := App{cfg: &config.Config{}, runCtx: ctx, runCancel: cancel, screen: screenConversation, conversation: conv}
+	model, _ := app.Update(quitMsg{})
+	next := model.(App)
+	next.conversation, _ = next.conversation.Update(voiceTurnDoneMsg{
+		text: "Santa what do you think",
+		err: &pipeline.AdmissionError{
+			Err: admission.WrapFailure(admission.FailureClassifierUnavailable, "route", errors.New("offline")),
+		},
+		noticeEpoch: staleEpoch,
+	})
+
+	for _, info := range infos {
+		if strings.Contains(info, "Resubmit this request manually") {
+			t.Fatalf("shutdown accepted stale notice callback: %v", infos)
+		}
 	}
 }

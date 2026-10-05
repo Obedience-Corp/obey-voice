@@ -101,7 +101,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		ctx, admission, err = p.admitInput(ctx, text, false, metrics)
 		if err != nil {
 			turn.finish(TurnFailed)
-			return original, fmt.Errorf("admit response: %w", err)
+			return original, wrapAdmissionError(err)
 		}
 	}
 	if !isContinuation && admission.LocalReply != "" {

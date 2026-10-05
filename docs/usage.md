@@ -451,6 +451,11 @@ short name (for example, `Veronica` and `Veronica Hype`) does not block ordinary
 follow-ups or requests addressed to another persona. Use a unique full name or
 `/personas` when a spoken name is ambiguous. Response errors after speech was
 recognized keep voice input enabled; only repeated input failures switch to text.
+Classifier routing failures now add a manual-retry notice in chat/activity and
+recordings: resubmit the request as new input, or use exact persona control first
+(`switch to Santa`, then the question). The original user input remains visible
+in the current session. Obey Voice does not auto-replay failed inputs and does
+not keep a failed-turn retry queue.
 Shared-history projection
 is currently verified for Ollama. An unsupported provider is refused rather
 than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices

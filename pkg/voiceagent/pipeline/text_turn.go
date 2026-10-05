@@ -67,7 +67,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		ctx, admission, err = p.admitInput(ctx, input, background, metrics)
 		if err != nil {
 			turn.finish(TurnFailed)
-			return fmt.Errorf("admit response: %w", err)
+			return wrapAdmissionError(err)
 		}
 	}
 	if !isContinuation && admission.LocalReply != "" {

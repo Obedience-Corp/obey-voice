@@ -49,12 +49,15 @@ const (
 )
 
 type voiceTurnDoneMsg struct {
-	text string
-	err  error
+	text        string
+	err         error
+	noticeEpoch uint64
 }
 
 type textTurnDoneMsg struct {
-	err error
+	input       string
+	err         error
+	noticeEpoch uint64
 }
 
 type compactDoneMsg struct {
@@ -98,6 +101,7 @@ type conversationDeps struct {
 // first turn. The returned Cmd must be handed to the program.
 func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 	m.deps = deps
+	m.retireAdmissionRetryNotices()
 	m.workPollGeneration++
 	m.backgroundPauseGeneration++
 	m.pendingPause = false
@@ -256,6 +260,7 @@ func (m *conversationModel) dispatchVoiceTurn() tea.Cmd {
 	if wg != nil {
 		wg.Add(1)
 	}
+	noticeEpoch := m.noticeEpoch
 	return func() tea.Msg {
 		if wg != nil {
 			defer wg.Done()
@@ -264,10 +269,10 @@ func (m *conversationModel) dispatchVoiceTurn() tea.Cmd {
 		// A Cmd can execute after shutdown began (cancel happens before the
 		// runtime waits on wg); never enter the pipeline on a dead context.
 		if ctx.Err() != nil {
-			return voiceTurnDoneMsg{err: ctx.Err()}
+			return voiceTurnDoneMsg{err: ctx.Err(), noticeEpoch: noticeEpoch}
 		}
 		text, err := runner.RunTurn(ctx)
-		return voiceTurnDoneMsg{text: text, err: err}
+		return voiceTurnDoneMsg{text: text, err: err, noticeEpoch: noticeEpoch}
 	}
 }
 
@@ -280,16 +285,32 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 	if wg != nil {
 		wg.Add(1)
 	}
+	noticeEpoch := m.noticeEpoch
 	return func() tea.Msg {
 		if wg != nil {
 			defer wg.Done()
 		}
 		defer cancel()
 		if ctx.Err() != nil {
-			return textTurnDoneMsg{err: ctx.Err()}
+			return textTurnDoneMsg{input: text, err: ctx.Err(), noticeEpoch: noticeEpoch}
 		}
-		return textTurnDoneMsg{err: runner.RunTurnTextMode(ctx, text)}
+		return textTurnDoneMsg{input: text, err: runner.RunTurnTextMode(ctx, text), noticeEpoch: noticeEpoch}
 	}
+}
+
+func (m *conversationModel) retireAdmissionRetryNotices() {
+	m.noticeEpoch++
+}
+
+func (m *conversationModel) emitAdmissionRetryNotice(err error, originalInput string, epoch uint64) {
+	if epoch != 0 && epoch != m.noticeEpoch {
+		return
+	}
+	notice, ok := app.BuildAdmissionRetryNotice(err, originalInput)
+	if !ok {
+		return
+	}
+	m.emit(events.Info{Message: notice.Message})
 }
 
 // resumeListening restarts the background voice turn when nothing else owns
@@ -675,6 +696,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 			m.voiceFailures = 0
 			m.voiceEnabled = false
 			m.emit(events.Error{Message: msg.err.Error()})
+			m.emitAdmissionRetryNotice(msg.err, msg.text, msg.noticeEpoch)
 			m.emit(events.Info{Message: "Voice input keeps failing — switching to text. Type /voice to switch back."})
 			return m.resumeListening()
 		default: // app.VoiceRetry
@@ -682,6 +704,7 @@ func (m *conversationModel) handleVoiceTurnDone(msg voiceTurnDoneMsg) tea.Cmd {
 				m.voiceFailures++
 			}
 			m.emit(events.Error{Message: msg.err.Error()})
+			m.emitAdmissionRetryNotice(msg.err, msg.text, msg.noticeEpoch)
 			return tea.Tick(app.RetryBackoff, func(time.Time) tea.Msg { return voiceRetryMsg{} })
 		}
 	}
@@ -764,6 +787,7 @@ func (m *conversationModel) handleTextTurnDone(msg textTurnDoneMsg) tea.Cmd {
 
 	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
 		m.emit(events.Error{Message: msg.err.Error()})
+		m.emitAdmissionRetryNotice(msg.err, msg.input, msg.noticeEpoch)
 	}
 	return m.reconcileBackground()
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -257,5 +258,122 @@ func TestPendingWorkDecisionDoesNotDispatchOnLocalReply(t *testing.T) {
 	}
 	if p.Decisions.InFlight() {
 		t.Fatal("decision remained in-flight after local reply return")
+	}
+}
+
+type failedInputReuseEvaluator struct {
+	mu         sync.Mutex
+	calls      int
+	firstReady chan struct{}
+}
+
+func (e *failedInputReuseEvaluator) Evaluate(ctx context.Context, _ decision.Request) (decision.Response, error) {
+	e.mu.Lock()
+	e.calls++
+	call := e.calls
+	e.mu.Unlock()
+	if call == 1 {
+		close(e.firstReady)
+		one := 1.0
+		return decision.Response{
+			Answers: map[string]decision.Answer{
+				"work": {Noul: &one},
+				"tier": {
+					Choice:        "simple",
+					Confidence:    &one,
+					Probabilities: map[string]float64{"none": 0, "simple": 1, "medium": 0, "complex": 0},
+				},
+			},
+		}, nil
+	}
+	<-ctx.Done()
+	return decision.Response{}, ctx.Err()
+}
+
+type countedDecisionBrain struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (b *countedDecisionBrain) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
+	b.mu.Lock()
+	b.calls++
+	b.mu.Unlock()
+	chunks := make(chan string, 1)
+	done := make(chan brain.StreamResult, 1)
+	chunks <- "fallback answer"
+	close(chunks)
+	done <- brain.StreamResult{}
+	close(done)
+	return &brain.Stream{Chunks: chunks, Done: done}, nil
+}
+
+func (*countedDecisionBrain) ThinkFull(context.Context, string, brain.StreamOptions) (string, error) {
+	return "fallback answer", nil
+}
+func (*countedDecisionBrain) ClearHistory()            {}
+func (*countedDecisionBrain) History() []brain.Turn    { return nil }
+func (*countedDecisionBrain) LoadHistory([]brain.Turn) {}
+
+func (b *countedDecisionBrain) Calls() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.calls
+}
+
+func TestFailedInputDecisionProposalIsNotReused(t *testing.T) {
+	cfg := tierTestConfig()
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	brainProvider := &countedDecisionBrain{}
+	p := &Pipeline{Brain: brainProvider, Events: events.NewBus()}
+	p.SetOutputMuted(true)
+	if err := p.BeginConversationIdentity("failed-decision-reuse"); err != nil {
+		t.Fatal(err)
+	}
+	a := NewAgency(p, jobs, nil, cfg, nil)
+	a.Wire()
+	var workers atomic.Int32
+	a.planFactory = func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error) {
+		workers.Add(1)
+		return &lifecycleWorker{reply: "done"}, nil
+	}
+	evaluator := &failedInputReuseEvaluator{firstReady: make(chan struct{})}
+	p.Decisions.Configure(decision.Options{
+		Policy:   decision.WorkPolicy{Evaluator: evaluator},
+		Budget:   time.Second,
+		TextWork: true,
+	})
+	defer p.Decisions.Close()
+
+	turn := 0
+	p.AdmitInput = func(context.Context, string, bool) (ResponseAdmission, error) {
+		turn++
+		if turn == 1 {
+			select {
+			case <-evaluator.firstReady:
+			case <-time.After(time.Second):
+				t.Fatal("first decision did not complete before admission failure")
+			}
+			return ResponseAdmission{}, errors.New("admission failed")
+		}
+		return ResponseAdmission{Request: "manual retry"}, nil
+	}
+
+	if err := p.RunTurnTextMode(t.Context(), "first request"); err == nil {
+		t.Fatal("first turn should fail admission")
+	}
+	if workers.Load() != 0 {
+		t.Fatalf("failed turn dispatched worker job: workers=%d", workers.Load())
+	}
+
+	if err := p.RunTurnTextMode(t.Context(), "manual retry"); err != nil {
+		t.Fatalf("retry turn failed: %v", err)
+	}
+	if workers.Load() != 0 {
+		t.Fatalf("stale decision proposal was reused: workers=%d", workers.Load())
+	}
+	if calls := brainProvider.Calls(); calls != 1 {
+		t.Fatalf("brain fallback calls=%d want 1", calls)
 	}
 }

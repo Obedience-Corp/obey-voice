@@ -3,10 +3,12 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/ollama/ollama/api"
 )
 
@@ -49,10 +51,13 @@ A third-person mention, quotation, hypothetical, comparison, or a request to tal
 Use the addressed name or alias from participants. If the addressed name is shared, preserve that shared name and choose ambiguous; never choose an arbitrary participant. If a clear target is unavailable, return address with that target's name. With no clear change of addressee, return none and an empty name. For multiple simultaneous addressees with no clear single next responder, return ambiguous. Never infer a different identity merely because someone is called a name.
 Bare is true only for a user's greeting/name or switch request containing no substantive question; it is always false for an agent. Return only the JSON object.`
 
+var addresseeResolveTimeout = 15 * time.Second
+
 // ResolveAddressee is private, bounded, tools-free inference. It uses the
 // installed responder model without adding classifier input/output to history.
 func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) (Addressee, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	parentCtx := ctx
+	ctx, cancel := context.WithTimeout(parentCtx, addresseeResolveTimeout)
 	defer cancel()
 	payload, err := json.Marshal(req)
 	if err != nil {
@@ -75,26 +80,36 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 	var raw strings.Builder
 	err = o.client.Chat(ctx, request, func(r api.ChatResponse) error { raw.WriteString(r.Message.Content); return nil })
 	if err != nil {
-		return Addressee{}, fmt.Errorf("resolve conversation addressee: %w", err)
+		wrapped := fmt.Errorf("resolve conversation addressee: %w", err)
+		if parentErr := parentCtx.Err(); parentErr != nil {
+			return Addressee{}, fmt.Errorf("resolve conversation addressee: %w", errors.Join(parentErr, err))
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, wrapped)
+		}
+		return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierUnavailable, wrapped)
 	}
 	var result Addressee
 	if err := json.Unmarshal([]byte(raw.String()), &result); err != nil {
-		return Addressee{}, fmt.Errorf("invalid addressee decision: %w", err)
+		return Addressee{}, admission.WrapClassifierFailure(
+			admission.ClassifierInvalidOutput,
+			fmt.Errorf("invalid addressee decision: %w", err),
+		)
 	}
 	result.Name = strings.TrimSpace(result.Name)
 	switch result.Kind {
 	case "none":
 		if result.Name != "" || result.Bare {
-			return Addressee{}, fmt.Errorf("invalid no-address decision")
+			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, errors.New("invalid no-address decision"))
 		}
 	case "address":
 		if result.Name == "" {
-			return Addressee{}, fmt.Errorf("empty addressee")
+			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, errors.New("empty addressee"))
 		}
 	case "ambiguous":
 		result.Bare = false
 	default:
-		return Addressee{}, fmt.Errorf("invalid addressee kind %q", result.Kind)
+		return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, fmt.Errorf("invalid addressee kind %q", result.Kind))
 	}
 	if req.Account == "agent" {
 		result.Bare = false

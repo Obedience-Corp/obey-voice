@@ -3,12 +3,14 @@ package personaruntime
 import (
 	"context"
 	"errors"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -84,6 +86,183 @@ func TestSemanticCollisionStillFailsClosed(t *testing.T) {
 	var ambiguous *summon.AmbiguousTargetError
 	if !errors.As(err, &ambiguous) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		input     string
+		configure func(*selectorTestFixture)
+		ctx       func(context.Context) context.Context
+		want      admission.FailureCategory
+	}{
+		{
+			name:  "classifier unavailable",
+			input: "What do you think Santa",
+			configure: func(f *selectorTestFixture) {
+				f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+					return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierUnavailable, errors.New("transport unavailable"))
+				})
+			},
+			ctx:  func(ctx context.Context) context.Context { return ctx },
+			want: admission.FailureClassifierUnavailable,
+		},
+		{
+			name:  "classifier local timeout",
+			input: "What do you think Santa",
+			configure: func(f *selectorTestFixture) {
+				f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+					return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierLocalTimeout, context.DeadlineExceeded)
+				})
+			},
+			ctx:  func(ctx context.Context) context.Context { return ctx },
+			want: admission.FailureClassifierLocalTimeout,
+		},
+		{
+			name:  "invalid classifier output",
+			input: "What do you think Santa",
+			configure: func(f *selectorTestFixture) {
+				f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+					return brain.Addressee{Kind: "invalid"}, nil
+				})
+			},
+			ctx:  func(ctx context.Context) context.Context { return ctx },
+			want: admission.FailureClassifierInvalidOutput,
+		},
+		{
+			name:  "identity refusal on unknown target",
+			input: "What do you think Santa",
+			configure: func(f *selectorTestFixture) {
+				f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+					return brain.Addressee{Kind: "address", Name: "Ghost"}, nil
+				})
+			},
+			ctx:  func(ctx context.Context) context.Context { return ctx },
+			want: admission.FailureIdentityRefusal,
+		},
+		{
+			name:      "parent canceled",
+			input:     "What do you think Santa",
+			configure: func(*selectorTestFixture) {},
+			ctx: func(ctx context.Context) context.Context {
+				cctx, cancel := context.WithCancel(ctx)
+				cancel()
+				return cctx
+			},
+			want: admission.FailureParentCancellation,
+		},
+		{
+			name:      "parent deadline",
+			input:     "What do you think Santa",
+			configure: func(*selectorTestFixture) {},
+			ctx: func(ctx context.Context) context.Context {
+				dctx, _ := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+				return dctx
+			},
+			want: admission.FailureParentCancellation,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+			tc.configure(f)
+			ctx := tc.ctx(t.Context())
+			_, err := f.selector.Route(ctx, tc.input, false)
+			var failure *admission.Failure
+			if !errors.As(err, &failure) || failure.Category != tc.want {
+				t.Fatalf("err=%v failure=%+v want=%s", err, failure, tc.want)
+			}
+		})
+	}
+}
+
+func TestSemanticRoutingStaleCatalogClassifiedAsIdentityRefusal(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+	if err := os.RemoveAll(f.catalog.Dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.catalog.Dir, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.selector.Route(t.Context(), "What do you think Santa", false)
+	var failure *admission.Failure
+	if !errors.As(err, &failure) || failure.Category != admission.FailureIdentityRefusal {
+		t.Fatalf("err=%v failure=%+v", err, failure)
+	}
+}
+
+func TestSemanticRoutingSelectionFailureClassifiedAsIdentityRefusal(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		return brain.Addressee{Kind: "address", Name: "Santa"}, nil
+	})
+	f.selector.opts.NewBrain = func(context.Context, *config.Config) (brain.Provider, error) {
+		return nil, errors.New("brain unavailable")
+	}
+	_, err := f.selector.Route(t.Context(), "What do you think Santa", false)
+	var failure *admission.Failure
+	if !errors.As(err, &failure) || failure.Category != admission.FailureIdentityRefusal {
+		t.Fatalf("err=%v failure=%+v", err, failure)
+	}
+}
+
+func TestRouteHandoffCatalogFailureClassifiedAsIdentityRefusal(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
+	if err := os.RemoveAll(f.catalog.Dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.catalog.Dir, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response := brain.Turn{
+		Role:               "assistant",
+		Content:            "What do you think, Santa?",
+		PersonaID:          f.selector.Snapshot().PersonaID,
+		PersonaDisplayName: f.selector.Snapshot().DisplayName,
+	}
+	_, accepted, err := f.selector.RouteHandoff(t.Context(), response, nil)
+	var failure *admission.Failure
+	if accepted || !errors.As(err, &failure) || failure.Category != admission.FailureIdentityRefusal {
+		t.Fatalf("accepted=%v err=%v failure=%+v", accepted, err, failure)
+	}
+}
+
+func TestManualRetryAfterClassifierFailureUsesCurrentRoster(t *testing.T) {
+	jarvis := testProfile("jarvis", "Jarvis", "jarvis")
+	santa := testProfile("santa", "Santa", "santa")
+	f := newSelectorTestFixture(t, jarvis, santa)
+	defer f.close(t)
+
+	calls := 0
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		calls++
+		switch calls {
+		case 1:
+			return brain.Addressee{}, admission.WrapClassifierFailure(admission.ClassifierUnavailable, errors.New("classifier offline"))
+		case 2:
+			return brain.Addressee{Kind: "address", Name: "Saint Nick"}, nil
+		default:
+			return brain.Addressee{Kind: "none"}, nil
+		}
+	})
+
+	_, err := f.selector.Route(t.Context(), "What do you think Santa?", false)
+	var failure *admission.Failure
+	if !errors.As(err, &failure) || failure.Category != admission.FailureClassifierUnavailable {
+		t.Fatalf("first route err=%v failure=%+v", err, failure)
+	}
+
+	// Simulate a roster change before the user's manual retry. The second route
+	// must read the current roster, not reuse stale failure-era state.
+	santa.DisplayName = "Saint Nick"
+	writeTestProfile(t, f.catalog.Dir, santa)
+
+	admitted, err := f.selector.Route(t.Context(), "What do you think Saint Nick?", false)
+	if err != nil {
+		t.Fatalf("retry route err=%v", err)
+	}
+	if admitted.Envelope.PersonaID != "santa" || admitted.Request != "What do you think Saint Nick?" {
+		t.Fatalf("retry admission=%+v", admitted)
 	}
 }
 
