@@ -2,9 +2,11 @@ package personaruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -14,11 +16,24 @@ import (
 // selected responder; the audio front end owns echo prevention independently.
 func (s *Selector) Route(ctx context.Context, input string, background bool) (pipeline.ResponseAdmission, error) {
 	admitted := pipeline.ResponseAdmission{Request: input}
+	if err := ctx.Err(); err != nil {
+		return admitted, err
+	}
 	bare := false
 	if !background {
 		roster, participants, err := s.conversationRoster()
 		if err != nil {
 			return admitted, err
+		}
+		exact := roster.ResolveExactControl(input)
+		switch exact.Kind {
+		case summon.ExactControlValid:
+			return s.routeExactControl(ctx, input, exact)
+		case summon.ExactControlInvalid:
+			if exact.Err != nil {
+				return admitted, exact.Err
+			}
+			return admitted, errors.New("invalid exact identity control")
 		}
 		address, err := s.resolveAddress(ctx, input, "user", "Unknown", roster, participants)
 		if err != nil {

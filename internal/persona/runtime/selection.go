@@ -138,6 +138,10 @@ func (s *Selector) Select(ctx context.Context, id, reason string) (events.Person
 }
 
 func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (events.PersonaSelection, error) {
+	return s.selectAtBoundaryWithCommitCheck(ctx, id, reason, nil)
+}
+
+func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reason string, preCommit func(context.Context) error) (events.PersonaSelection, error) {
 	if s.closed {
 		return events.PersonaSelection{}, errors.New("persona selection is closed")
 	}
@@ -299,6 +303,11 @@ func (s *Selector) selectAtBoundary(ctx context.Context, id, reason string) (eve
 			return nil
 		},
 		Commit: func(ctx context.Context) error {
+			if preCommit != nil {
+				if err := preCommit(ctx); err != nil {
+					return err
+				}
+			}
 			if unchanged {
 				if reason != "response_boundary" {
 					s.opts.UseDefaults = false

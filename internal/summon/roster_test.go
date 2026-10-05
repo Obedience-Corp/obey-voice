@@ -155,3 +155,96 @@ func TestRosterKeepsNameLeadingDescriptions(t *testing.T) {
 		}
 	}
 }
+
+func TestRosterResolveExactControlRecognizesOnlyWholeInputControls(t *testing.T) {
+	r := testRoster(t)
+	tests := []struct {
+		name       string
+		text       string
+		wantKind   ExactControlKind
+		wantID     string
+		wantReason string
+		wantErr    any
+	}{
+		{name: "bare", text: "Santa", wantKind: ExactControlValid, wantID: "santa", wantReason: ReasonBareName},
+		{name: "bare with punctuation", text: " Santa... ", wantKind: ExactControlValid, wantID: "santa", wantReason: ReasonBareName},
+		{name: "greeting", text: "Hey Santa", wantKind: ExactControlValid, wantID: "santa", wantReason: ReasonBareName},
+		{name: "switch", text: "switch to Santa", wantKind: ExactControlValid, wantID: "santa", wantReason: ReasonExplicitSwitch},
+		{name: "quoted is excluded", text: `"Santa"`, wantKind: ExactControlNone},
+		{name: "substantive vocative tail", text: "Santa, tell me a story", wantKind: ExactControlNone},
+		{name: "switch with substantive tail", text: "switch to Santa and tell me a story", wantKind: ExactControlNone},
+		{name: "unknown bare is semantic", text: "Unknown", wantKind: ExactControlNone},
+		{name: "unknown switch refuses", text: "switch to Unknown", wantKind: ExactControlInvalid, wantErr: (*UnknownTargetError)(nil)},
+		{name: "unknown switch with substantive tail is semantic", text: "switch to Unknown and tell me a story", wantKind: ExactControlNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := r.ResolveExactControl(tt.text)
+			if got.Kind != tt.wantKind {
+				t.Fatalf("ResolveExactControl(%q).Kind = %v, want %v", tt.text, got.Kind, tt.wantKind)
+			}
+			if got.Address.PersonaID != tt.wantID || (tt.wantReason != "" && got.Address.Reason != tt.wantReason) {
+				t.Fatalf("ResolveExactControl(%q) address = %+v", tt.text, got.Address)
+			}
+			if tt.wantErr == nil {
+				if got.Err != nil {
+					t.Fatalf("ResolveExactControl(%q) err = %v", tt.text, got.Err)
+				}
+				return
+			}
+			switch tt.wantErr.(type) {
+			case *UnknownTargetError:
+				var unknown *UnknownTargetError
+				if !errors.As(got.Err, &unknown) {
+					t.Fatalf("ResolveExactControl(%q) err = %v, want unknown target", tt.text, got.Err)
+				}
+			default:
+				t.Fatalf("test bug: unsupported expected error type %T", tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRosterResolveExactControlAliasPrecedenceAndAmbiguity(t *testing.T) {
+	r, err := NewRoster([]Identity{
+		{ID: "santa", DisplayName: "Santa"},
+		{ID: "helper", DisplayName: "Helper", Aliases: []string{"Hey Santa", "switch to Santa"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for text, want := range map[string]string{
+		"Hey Santa":       "helper",
+		"switch to Santa": "helper",
+	} {
+		got := r.ResolveExactControl(text)
+		if got.Kind != ExactControlValid || got.Address.PersonaID != want || got.Err != nil {
+			t.Fatalf("ResolveExactControl(%q) = %+v, want helper alias winner", text, got)
+		}
+	}
+
+	ambiguous, err := NewRoster([]Identity{
+		{ID: "santa", DisplayName: "Santa"},
+		{ID: "helper-a", DisplayName: "Helper A", Aliases: []string{"Hey Santa"}},
+		{ID: "helper-b", DisplayName: "Helper B", Aliases: []string{"Hey Santa"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ambiguous.ResolveExactControl("Hey Santa")
+	var collision *AmbiguousTargetError
+	if got.Kind != ExactControlInvalid || !errors.As(got.Err, &collision) {
+		t.Fatalf("ambiguous alias result = %+v, want exact invalid ambiguity", got)
+	}
+}
+
+func TestRosterResolveExactControlSupportsUnicodeFullNames(t *testing.T) {
+	r, err := NewRoster([]Identity{{ID: "north", DisplayName: "Sánta North"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := r.ResolveExactControl("Sánta North.")
+	if got.Kind != ExactControlValid || got.Address.PersonaID != "north" || got.Err != nil {
+		t.Fatalf("unicode exact control = %+v", got)
+	}
+}

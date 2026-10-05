@@ -114,6 +114,46 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 	}
 }
 
+func (s *Selector) routeExactControl(ctx context.Context, input string, exact summon.ExactControl) (pipeline.ResponseAdmission, error) {
+	admitted := pipeline.ResponseAdmission{Request: input}
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
+	var participants []brain.GroupParticipant
+	selected, err := s.selectAtBoundaryWithCommitCheck(ctx, exact.Address.PersonaID, exact.Address.Reason, func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		roster, refreshedParticipants, err := s.conversationRoster()
+		if err != nil {
+			return err
+		}
+		revalidated := roster.ResolveExactControl(input)
+		switch revalidated.Kind {
+		case summon.ExactControlValid:
+			if revalidated.Address.PersonaID != exact.Address.PersonaID {
+				return fmt.Errorf("exact identity control changed target while preparing")
+			}
+		case summon.ExactControlInvalid:
+			if revalidated.Err != nil {
+				return revalidated.Err
+			}
+			return fmt.Errorf("exact identity control became invalid")
+		default:
+			return fmt.Errorf("exact identity control no longer matches current roster")
+		}
+		participants = refreshedParticipants
+		return nil
+	})
+	if err != nil {
+		return admitted, err
+	}
+	s.setGroupParticipants(participants)
+	admitted.Request = ""
+	admitted.LocalReply = selected.DisplayName + " here."
+	admitted.Envelope = responseEnvelope(selected)
+	return admitted, nil
+}
+
 // RouteHandoff classifies a delivered response without loading or selecting a
 // persona. The pipeline may discard the proposal when user speech arrives.
 func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {

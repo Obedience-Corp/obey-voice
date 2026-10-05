@@ -187,3 +187,75 @@ func TestOptionalDecisionCrossesPipelineAndWorkerAdmission(t *testing.T) {
 		})
 	}
 }
+
+func TestPendingWorkDecisionDoesNotDispatchOnLocalReply(t *testing.T) {
+	var workers atomic.Int32
+	entered := make(chan struct{})
+	decisionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		close(entered)
+		one := 1.0
+		_ = json.NewEncoder(w).Encode(decision.Response{
+			Answers: map[string]decision.Answer{
+				"work": {Noul: &one},
+				"tier": {Choice: "simple", Confidence: &one, Probabilities: map[string]float64{"none": 0, "simple": 1, "medium": 0, "complex": 0}},
+			},
+		})
+	}))
+	defer decisionServer.Close()
+
+	cfg := tierTestConfig()
+	jobs := job.NewTable(t.Context())
+	defer jobs.Close()
+	brainProvider := &continuityHistoryBrain{
+		fakeBrain: &fakeBrain{},
+		snapshot:  brain.ContinuitySnapshot{},
+	}
+	p := &Pipeline{Brain: brainProvider, Events: events.NewBus()}
+	p.SetOutputMuted(true)
+	if err := p.BeginConversationIdentity("local-reply-decision"); err != nil {
+		t.Fatal(err)
+	}
+	a := NewAgency(p, jobs, nil, cfg, nil)
+	a.Wire()
+	a.planFactory = func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error) {
+		workers.Add(1)
+		return &lifecycleWorker{reply: "done"}, nil
+	}
+	provider, err := decision.NewSystemOne(decision.SystemOneConfig{Provider: "local", Endpoint: decisionServer.URL + "/v1/systemone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Decisions.Configure(decision.Options{
+		Policy:   decision.WorkPolicy{Evaluator: provider},
+		Budget:   time.Second,
+		TextWork: true,
+	})
+	defer p.Decisions.Close()
+	p.AdmitInput = func(context.Context, string, bool) (ResponseAdmission, error) {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("decision did not start before local reply admission")
+		}
+		return ResponseAdmission{
+			Request:    "",
+			LocalReply: "Santa here.",
+			Envelope:   events.ResponseEnvelope{ResponseID: "ack-1", PersonaID: "santa", DisplayName: "Santa"},
+		}, nil
+	}
+
+	if err := p.RunTurnTextMode(context.Background(), "please inspect the source tree"); err != nil {
+		t.Fatal(err)
+	}
+	if workers.Load() != 0 || len(jobs.Status()) != 0 {
+		t.Fatalf("local reply dispatched worker work: workers=%d jobs=%d", workers.Load(), len(jobs.Status()))
+	}
+	deadline := time.Now().Add(time.Second)
+	for p.Decisions.InFlight() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if p.Decisions.InFlight() {
+		t.Fatal("decision remained in-flight after local reply return")
+	}
+}
