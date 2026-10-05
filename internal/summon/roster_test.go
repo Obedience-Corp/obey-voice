@@ -176,6 +176,7 @@ func TestRosterResolveExactControlRecognizesOnlyWholeInputControls(t *testing.T)
 		{name: "switch with substantive tail", text: "switch to Santa and tell me a story", wantKind: ExactControlNone},
 		{name: "unknown bare is semantic", text: "Unknown", wantKind: ExactControlNone},
 		{name: "unknown switch refuses", text: "switch to Unknown", wantKind: ExactControlInvalid, wantErr: (*UnknownTargetError)(nil)},
+		{name: "unknown switch with punctuation refuses", text: "switch to Unknown!", wantKind: ExactControlInvalid, wantErr: (*UnknownTargetError)(nil)},
 		{name: "unknown switch with substantive tail is semantic", text: "switch to Unknown and tell me a story", wantKind: ExactControlNone},
 	}
 	for _, tt := range tests {
@@ -236,6 +237,87 @@ func TestRosterResolveExactControlAliasPrecedenceAndAmbiguity(t *testing.T) {
 	var collision *AmbiguousTargetError
 	if got.Kind != ExactControlInvalid || !errors.As(got.Err, &collision) {
 		t.Fatalf("ambiguous alias result = %+v, want exact invalid ambiguity", got)
+	}
+}
+
+func TestRosterResolveExactControlPunctuatedAliasPrecedenceAndAmbiguity(t *testing.T) {
+	cases := []struct {
+		name  string
+		alias string
+	}{
+		{name: "direct punctuation", alias: "Santa!"},
+		{name: "greeting punctuation", alias: "Hey Santa!"},
+		{name: "switch punctuation", alias: "switch to Santa!"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := NewRoster([]Identity{
+				{ID: "santa", DisplayName: "Santa"},
+				{ID: "helper", DisplayName: "Helper", Aliases: []string{tc.alias}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := r.ResolveExactControl(tc.alias)
+			if got.Kind != ExactControlValid || got.Address.PersonaID != "helper" || got.Address.Reason != ReasonBareName || got.Err != nil {
+				t.Fatalf("precedence ResolveExactControl(%q) = %+v", tc.alias, got)
+			}
+
+			ambiguous, err := NewRoster([]Identity{
+				{ID: "santa", DisplayName: "Santa"},
+				{ID: "helper-a", DisplayName: "Helper A", Aliases: []string{tc.alias}},
+				{ID: "helper-b", DisplayName: "Helper B", Aliases: []string{tc.alias}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = ambiguous.ResolveExactControl(tc.alias)
+			var collision *AmbiguousTargetError
+			if got.Kind != ExactControlInvalid || !errors.As(got.Err, &collision) || got.Address.PersonaID != "" || got.Address.Remainder != tc.alias || got.Address.Reason != ReasonAmbiguousTarget {
+				t.Fatalf("ambiguity ResolveExactControl(%q) = %+v", tc.alias, got)
+			}
+		})
+	}
+}
+
+func TestRosterResolveExactControlCoordinatorPunctuatedAliasOnly(t *testing.T) {
+	r, err := NewRoster([]Identity{
+		{ID: "santa", DisplayName: "Santa"},
+		{ID: "helper", DisplayName: "Helper", Aliases: []string{"Santa!"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for text, wantReason := range map[string]string{
+		"Santa!":           ReasonBareName,
+		"Hey Santa!":       ReasonBareName,
+		"switch to Santa!": ReasonExplicitSwitch,
+	} {
+		got := r.ResolveExactControl(text)
+		if got.Kind != ExactControlValid || got.Address.PersonaID != "helper" || got.Address.Reason != wantReason || got.Address.Remainder != "" || got.Err != nil {
+			t.Fatalf("ResolveExactControl(%q) = %+v, want helper exact control", text, got)
+		}
+	}
+}
+
+func TestRosterResolveExactControlCoordinatorPunctuatedAliasAmbiguityRefusal(t *testing.T) {
+	r, err := NewRoster([]Identity{
+		{ID: "santa", DisplayName: "Santa"},
+		{ID: "helper-a", DisplayName: "Helper A", Aliases: []string{"Santa!"}},
+		{ID: "helper-b", DisplayName: "Helper B", Aliases: []string{"Santa!"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+		got := r.ResolveExactControl(text)
+		var collision *AmbiguousTargetError
+		if got.Kind != ExactControlInvalid || !errors.As(got.Err, &collision) {
+			t.Fatalf("ResolveExactControl(%q) = %+v, want exact invalid ambiguity", text, got)
+		}
+		if got.Address.PersonaID != "" || got.Address.Remainder != text || got.Address.Reason != ReasonAmbiguousTarget {
+			t.Fatalf("ResolveExactControl(%q) address = %+v", text, got.Address)
+		}
 	}
 }
 

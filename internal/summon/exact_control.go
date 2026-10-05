@@ -30,22 +30,49 @@ func (r *Roster) ResolveExactControl(text string) ExactControl {
 	if r == nil {
 		return ExactControl{Kind: ExactControlNone}
 	}
-	core, ok := normalizeExactControlInput(text)
-	if !ok || startsWithQuote(core) {
+	literal, ok := normalizeExactControlInput(text)
+	if !ok || startsWithQuote(literal) {
 		return ExactControl{Kind: ExactControlNone}
 	}
 
 	// A literal configured public name/alias wins over grammar parsing.
-	if matched := r.matchWholeIdentity(text, core, ReasonBareName); matched.Kind != ExactControlNone {
+	if matched := r.matchWholeIdentity(text, literal, ReasonBareName); matched.Kind != ExactControlNone {
 		return matched
 	}
 
-	if target, ok := cutExactGreeting(core); ok && !startsWithQuote(target) {
-		if matched := r.matchWholeIdentity(text, target, ReasonBareName); matched.Kind != ExactControlNone {
+	deferredUnknown := ExactControl{Kind: ExactControlNone}
+	if matched := r.matchExactGreetingOrSwitch(text, literal); matched.Kind != ExactControlNone {
+		if isUnknownExactControl(matched) {
+			deferredUnknown = matched
+		} else {
 			return matched
 		}
 	}
 
+	if stripped := stripExactControlTerminalPunctuation(literal); stripped != literal {
+		// Preserve literal whole-input precedence even on the fallback pass.
+		if matched := r.matchWholeIdentity(text, stripped, ReasonBareName); matched.Kind != ExactControlNone {
+			return matched
+		}
+		if matched := r.matchExactGreetingOrSwitch(text, stripped); matched.Kind != ExactControlNone {
+			return matched
+		}
+	}
+	if deferredUnknown.Kind != ExactControlNone {
+		return deferredUnknown
+	}
+	return ExactControl{Kind: ExactControlNone}
+}
+
+func (r *Roster) matchExactGreetingOrSwitch(original, core string) ExactControl {
+	if core == "" {
+		return ExactControl{Kind: ExactControlNone}
+	}
+	if target, ok := cutExactGreeting(core); ok && !startsWithQuote(target) {
+		if matched := r.matchWholeIdentity(original, target, ReasonBareName); matched.Kind != ExactControlNone {
+			return matched
+		}
+	}
 	switchTarget, switched := cutExactSwitch(core)
 	if !switched || switchTarget == "" || startsWithQuote(switchTarget) {
 		return ExactControl{Kind: ExactControlNone}
@@ -54,11 +81,11 @@ func (r *Roster) ResolveExactControl(text string) ExactControl {
 		if strings.TrimSpace(remainder) != "" {
 			return ExactControl{Kind: ExactControlNone}
 		}
-		address, err := r.address(entry, text, "", ReasonExplicitSwitch, true)
+		address, err := r.address(entry, original, "", ReasonExplicitSwitch, true)
 		if err != nil {
 			return ExactControl{
 				Kind:    ExactControlInvalid,
-				Address: Address{Remainder: text, Reason: ReasonAmbiguousTarget},
+				Address: Address{Remainder: original, Reason: ReasonAmbiguousTarget},
 				Err:     err,
 			}
 		}
@@ -74,9 +101,17 @@ func (r *Roster) ResolveExactControl(text string) ExactControl {
 	}
 	return ExactControl{
 		Kind:    ExactControlInvalid,
-		Address: Address{Remainder: text, Reason: ReasonUnknownTarget},
+		Address: Address{Remainder: original, Reason: ReasonUnknownTarget},
 		Err:     &UnknownTargetError{Target: strings.TrimSpace(switchTarget)},
 	}
+}
+
+func isUnknownExactControl(matched ExactControl) bool {
+	if matched.Kind != ExactControlInvalid || matched.Err == nil {
+		return false
+	}
+	_, ok := matched.Err.(*UnknownTargetError)
+	return ok
 }
 
 func (r *Roster) matchWholeIdentity(original, normalized string, reason string) ExactControl {
@@ -101,8 +136,13 @@ func (r *Roster) matchWholeIdentity(original, normalized string, reason string) 
 
 func normalizeExactControlInput(text string) (string, bool) {
 	core := strings.TrimSpace(text)
+	return core, core != ""
+}
+
+func stripExactControlTerminalPunctuation(text string) string {
+	core := text
 	if core == "" {
-		return "", false
+		return ""
 	}
 	end := len(core)
 	for end > 0 {
@@ -114,7 +154,7 @@ func normalizeExactControlInput(text string) (string, bool) {
 		break
 	}
 	core = strings.TrimSpace(core[:end])
-	return core, core != ""
+	return core
 }
 
 func startsWithQuote(text string) bool {

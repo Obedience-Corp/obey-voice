@@ -495,6 +495,46 @@ func TestExactControlAliasWinsOverGreetingAndSwitchGrammar(t *testing.T) {
 	}
 }
 
+func TestExactControlPunctuatedAliasPreventsWrongPersonaSelection(t *testing.T) {
+	obey := testProfile("obey", "Obey", "obey")
+	santa := testProfile("santa", "Santa", "santa")
+	helper := testProfile("helper", "Helper", "helper")
+	helper.Aliases = []string{"Santa!", "Hey Santa!", "switch to Santa!"}
+	f := newSelectorTestFixture(t, obey, santa, helper)
+	defer f.close(t)
+	calls := 0
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		calls++
+		return brain.Addressee{}, errors.New("classifier should not run for exact controls")
+	})
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+		got, err := f.selector.Route(t.Context(), input, false)
+		if err != nil || got.Envelope.PersonaID != "helper" || got.LocalReply != "Helper here." || calls != 0 {
+			t.Fatalf("input=%q admission=%+v calls=%d err=%v", input, got, calls, err)
+		}
+	}
+}
+
+func TestExactControlCoordinatorPunctuatedAliasOnlySelectsHelper(t *testing.T) {
+	obey := testProfile("obey", "Obey", "obey")
+	santa := testProfile("santa", "Santa", "santa")
+	helper := testProfile("helper", "Helper", "helper")
+	helper.Aliases = []string{"Santa!"}
+	f := newSelectorTestFixture(t, obey, santa, helper)
+	defer f.close(t)
+	calls := 0
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		calls++
+		return brain.Addressee{}, errors.New("classifier should not run for exact controls")
+	})
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+		got, err := f.selector.Route(t.Context(), input, false)
+		if err != nil || got.Envelope.PersonaID != "helper" || got.LocalReply != "Helper here." || got.Request != "" || calls != 0 {
+			t.Fatalf("input=%q admission=%+v calls=%d err=%v", input, got, calls, err)
+		}
+	}
+}
+
 func TestExactControlFullInputAmbiguityRefusesWithoutGrammarFallback(t *testing.T) {
 	obey := testProfile("obey", "Obey", "obey")
 	santa := testProfile("santa", "Santa", "santa")
@@ -514,6 +554,85 @@ func TestExactControlFullInputAmbiguityRefusesWithoutGrammarFallback(t *testing.
 	var ambiguous *summon.AmbiguousTargetError
 	if !errors.As(err, &ambiguous) || calls != 0 || f.selector.Snapshot() != before {
 		t.Fatalf("err=%v calls=%d snapshot=%+v before=%+v", err, calls, f.selector.Snapshot(), before)
+	}
+}
+
+func TestExactControlCoordinatorPunctuatedAliasOnlyAmbiguityRefusesWithoutSideEffects(t *testing.T) {
+	obey := testProfile("obey", "Obey", "obey")
+	santa := testProfile("santa", "Santa", "santa")
+	helperA := testProfile("helper-a", "Helper A", "helper-a")
+	helperA.Aliases = []string{"Santa!"}
+	helperB := testProfile("helper-b", "Helper B", "helper-b")
+	helperB.Aliases = []string{"Santa!"}
+	f := newSelectorTestFixture(t, obey, santa, helperA, helperB)
+	defer f.close(t)
+	before := f.selector.Snapshot()
+	savedBefore, err := f.store.Load(f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		calls++
+		return brain.Addressee{Kind: "address", Name: "Santa"}, nil
+	})
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+		admitted, err := f.selector.Route(t.Context(), input, false)
+		var ambiguous *summon.AmbiguousTargetError
+		if !errors.As(err, &ambiguous) {
+			t.Fatalf("input=%q err=%v", input, err)
+		}
+		if admitted.Request != input || admitted.Envelope.PersonaID != "" || admitted.LocalReply != "" {
+			t.Fatalf("input=%q admitted=%+v", input, admitted)
+		}
+		if calls != 0 || f.selector.Snapshot() != before || f.pipeline.Brain != f.old {
+			t.Fatalf("input=%q calls=%d snapshot=%+v before=%+v", input, calls, f.selector.Snapshot(), before)
+		}
+		savedAfter, loadErr := f.store.Load(f.session.ID)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		if savedAfter.SelectedPersonaID != savedBefore.SelectedPersonaID || savedAfter.SelectedPersonaPromptHash != savedBefore.SelectedPersonaPromptHash || !reflect.DeepEqual(savedAfter.Turns, savedBefore.Turns) {
+			t.Fatalf("input=%q persistence changed: before=%+v after=%+v", input, savedBefore, savedAfter)
+		}
+	}
+}
+
+func TestExactControlPunctuatedAliasAmbiguityRefusesWithoutSideEffects(t *testing.T) {
+	obey := testProfile("obey", "Obey", "obey")
+	santa := testProfile("santa", "Santa", "santa")
+	helperA := testProfile("helper-a", "Helper A", "helper-a")
+	helperA.Aliases = []string{"Santa!", "Hey Santa!", "switch to Santa!"}
+	helperB := testProfile("helper-b", "Helper B", "helper-b")
+	helperB.Aliases = []string{"Santa!", "Hey Santa!", "switch to Santa!"}
+	f := newSelectorTestFixture(t, obey, santa, helperA, helperB)
+	defer f.close(t)
+	before := f.selector.Snapshot()
+	savedBefore, err := f.store.Load(f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+		calls++
+		return brain.Addressee{Kind: "address", Name: "Santa"}, nil
+	})
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+		_, err := f.selector.Route(t.Context(), input, false)
+		var ambiguous *summon.AmbiguousTargetError
+		if !errors.As(err, &ambiguous) {
+			t.Fatalf("input=%q err=%v", input, err)
+		}
+		if calls != 0 || f.selector.Snapshot() != before || f.pipeline.Brain != f.old {
+			t.Fatalf("input=%q calls=%d snapshot=%+v before=%+v", input, calls, f.selector.Snapshot(), before)
+		}
+		savedAfter, loadErr := f.store.Load(f.session.ID)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		if savedAfter.SelectedPersonaID != savedBefore.SelectedPersonaID || savedAfter.SelectedPersonaPromptHash != savedBefore.SelectedPersonaPromptHash || !reflect.DeepEqual(savedAfter.Turns, savedBefore.Turns) {
+			t.Fatalf("input=%q persistence changed: before=%+v after=%+v", input, savedBefore, savedAfter)
+		}
 	}
 }
 
@@ -543,16 +662,18 @@ func TestExactControlNegativeCasesStillInvokeResolver(t *testing.T) {
 func TestExactControlInvalidSwitchRefusesWithoutResolver(t *testing.T) {
 	f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 	defer f.close(t)
-	before := f.selector.Snapshot()
-	calls := 0
-	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
-		calls++
-		return brain.Addressee{Kind: "none"}, nil
-	})
-	_, err := f.selector.Route(t.Context(), "switch to Unknown", false)
-	var unknown *summon.UnknownTargetError
-	if !errors.As(err, &unknown) || calls != 0 || f.selector.Snapshot() != before {
-		t.Fatalf("err=%v calls=%d snapshot=%+v before=%+v", err, calls, f.selector.Snapshot(), before)
+	for _, input := range []string{"switch to Unknown", "switch to Unknown!"} {
+		before := f.selector.Snapshot()
+		calls := 0
+		f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+			calls++
+			return brain.Addressee{Kind: "none"}, nil
+		})
+		_, err := f.selector.Route(t.Context(), input, false)
+		var unknown *summon.UnknownTargetError
+		if !errors.As(err, &unknown) || calls != 0 || f.selector.Snapshot() != before {
+			t.Fatalf("input=%q err=%v calls=%d snapshot=%+v before=%+v", input, err, calls, f.selector.Snapshot(), before)
+		}
 	}
 }
 
