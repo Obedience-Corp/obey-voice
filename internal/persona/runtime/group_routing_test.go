@@ -507,7 +507,7 @@ func TestExactControlPunctuatedAliasPreventsWrongPersonaSelection(t *testing.T) 
 		calls++
 		return brain.Addressee{}, errors.New("classifier should not run for exact controls")
 	})
-	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!", "Santa!!", "Hey Santa!!", "switch to Santa!!"} {
 		got, err := f.selector.Route(t.Context(), input, false)
 		if err != nil || got.Envelope.PersonaID != "helper" || got.LocalReply != "Helper here." || calls != 0 {
 			t.Fatalf("input=%q admission=%+v calls=%d err=%v", input, got, calls, err)
@@ -527,7 +527,7 @@ func TestExactControlCoordinatorPunctuatedAliasOnlySelectsHelper(t *testing.T) {
 		calls++
 		return brain.Addressee{}, errors.New("classifier should not run for exact controls")
 	})
-	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!", "Santa!!", "Santa!?", "Santa!\u2026", "Hey Santa!!", "switch to Santa!!"} {
 		got, err := f.selector.Route(t.Context(), input, false)
 		if err != nil || got.Envelope.PersonaID != "helper" || got.LocalReply != "Helper here." || got.Request != "" || calls != 0 {
 			t.Fatalf("input=%q admission=%+v calls=%d err=%v", input, got, calls, err)
@@ -576,7 +576,7 @@ func TestExactControlCoordinatorPunctuatedAliasOnlyAmbiguityRefusesWithoutSideEf
 		calls++
 		return brain.Addressee{Kind: "address", Name: "Santa"}, nil
 	})
-	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!", "Santa!!", "Santa!?", "Santa!\u2026", "Hey Santa!!", "switch to Santa!!"} {
 		admitted, err := f.selector.Route(t.Context(), input, false)
 		var ambiguous *summon.AmbiguousTargetError
 		if !errors.As(err, &ambiguous) {
@@ -617,7 +617,7 @@ func TestExactControlPunctuatedAliasAmbiguityRefusesWithoutSideEffects(t *testin
 		calls++
 		return brain.Addressee{Kind: "address", Name: "Santa"}, nil
 	})
-	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!"} {
+	for _, input := range []string{"Santa!", "Hey Santa!", "switch to Santa!", "Santa!!", "Hey Santa!!", "switch to Santa!!"} {
 		_, err := f.selector.Route(t.Context(), input, false)
 		var ambiguous *summon.AmbiguousTargetError
 		if !errors.As(err, &ambiguous) {

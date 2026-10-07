@@ -35,28 +35,26 @@ func (r *Roster) ResolveExactControl(text string) ExactControl {
 		return ExactControl{Kind: ExactControlNone}
 	}
 
-	// A literal configured public name/alias wins over grammar parsing.
-	if matched := r.matchWholeIdentity(text, literal, ReasonBareName); matched.Kind != ExactControlNone {
-		return matched
-	}
-
+	// Try the configured spelling first, then peel one terminal mark at a time.
+	// Santa!! must still see the alias Santa! before it falls through to Santa.
 	deferredUnknown := ExactControl{Kind: ExactControlNone}
-	if matched := r.matchExactGreetingOrSwitch(text, literal); matched.Kind != ExactControlNone {
-		if isUnknownExactControl(matched) {
-			deferredUnknown = matched
-		} else {
+	candidate := literal
+	for {
+		if matched := r.matchWholeIdentity(text, candidate, ReasonBareName); matched.Kind != ExactControlNone {
 			return matched
 		}
-	}
-
-	if stripped := stripExactControlTerminalPunctuation(literal); stripped != literal {
-		// Preserve literal whole-input precedence even on the fallback pass.
-		if matched := r.matchWholeIdentity(text, stripped, ReasonBareName); matched.Kind != ExactControlNone {
-			return matched
+		if matched := r.matchExactGreetingOrSwitch(text, candidate); matched.Kind != ExactControlNone {
+			if isUnknownExactControl(matched) {
+				deferredUnknown = matched
+			} else {
+				return matched
+			}
 		}
-		if matched := r.matchExactGreetingOrSwitch(text, stripped); matched.Kind != ExactControlNone {
-			return matched
+		next, peeled := stripOneExactControlTerminalMark(candidate)
+		if !peeled {
+			break
 		}
+		candidate = next
 	}
 	if deferredUnknown.Kind != ExactControlNone {
 		return deferredUnknown
@@ -139,22 +137,23 @@ func normalizeExactControlInput(text string) (string, bool) {
 	return core, core != ""
 }
 
-func stripExactControlTerminalPunctuation(text string) string {
-	core := text
-	if core == "" {
-		return ""
+// stripOneExactControlTerminalMark removes a single trailing punctuation mark.
+// Spaces around that mark are trimmed. The caller retries identity matching
+// so a shorter form is tried only after the longer configured spelling misses.
+func stripOneExactControlTerminalMark(text string) (string, bool) {
+	trimmed := strings.TrimRightFunc(text, unicode.IsSpace)
+	if trimmed == "" {
+		return text, false
 	}
-	end := len(core)
-	for end > 0 {
-		r, size := utf8.DecodeLastRuneInString(core[:end])
-		if unicode.IsSpace(r) || isTerminalControlPunctuation(r) {
-			end -= size
-			continue
-		}
-		break
+	r, size := utf8.DecodeLastRuneInString(trimmed)
+	if !isTerminalControlPunctuation(r) {
+		return text, false
 	}
-	core = strings.TrimSpace(core[:end])
-	return core
+	next := strings.TrimSpace(trimmed[:len(trimmed)-size])
+	if next == "" || next == text {
+		return text, false
+	}
+	return next, true
 }
 
 func startsWithQuote(text string) bool {
