@@ -262,6 +262,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.ConversationCleared:
+		m.retireAdmissionRetryNotices()
 		m.workActivity = false
 		m.workFilter = ""
 		m.clearTranscript()

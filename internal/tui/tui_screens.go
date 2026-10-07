@@ -324,6 +324,7 @@ func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
 	}
 	a.conversation.cancelSelection()
 	a.conversation.stopCapture()
+	a.conversation.retireAdmissionRetryNotices()
 	if a.conversation.turnCancel != nil {
 		a.conversation.turnCancel()
 	}

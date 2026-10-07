@@ -56,7 +56,11 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 		if account == "agent" {
 			return summon.Address{Remainder: text}, nil
 		}
-		return roster.Resolve(text)
+		address, err := roster.Resolve(text)
+		if err != nil {
+			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
+		}
+		return address, nil
 	}
 	request := brain.AddressRequest{Participants: participants, Current: s.Snapshot().DisplayName, Speaker: speaker, Account: account, Text: text}
 	turns := s.opts.Pipeline.Brain.History()
@@ -85,10 +89,10 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 	slices.Reverse(request.Conversation)
 	decision, err := resolver.ResolveAddressee(ctx, request)
 	if err != nil {
-		return summon.Address{}, err
+		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return summon.Address{}, err
+		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
 	}
 	switch decision.Kind {
 	case "none":
@@ -97,21 +101,68 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 		// Lookup preserves the existing precise collision error when possible.
 		if _, err := roster.Lookup(decision.Name); err != nil {
 			if _, ok := err.(*summon.AmbiguousTargetError); ok {
-				return summon.Address{}, err
+				return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
 			}
 		}
-		return summon.Address{}, fmt.Errorf("conversation addressee is ambiguous; address one persona by a unique name")
+		return summon.Address{}, wrapIdentityRefusalFailure(
+			ctx,
+			"resolve_addressee",
+			fmt.Errorf("conversation addressee is ambiguous; address one persona by a unique name"),
+		)
 	case "address":
 		address, err := roster.Lookup(decision.Name)
 		if err != nil {
-			return summon.Address{}, err
+			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
 		}
 		// Keep the user's words exactly, including the name at any position.
 		address.Remainder, address.Bare = text, decision.Bare && account == "user"
 		return address, nil
 	default:
-		return summon.Address{}, fmt.Errorf("invalid conversation addressee decision %q", decision.Kind)
+		return summon.Address{}, wrapInvalidClassifierOutput(
+			"resolve_addressee",
+			fmt.Errorf("invalid conversation addressee decision %q", decision.Kind),
+		)
 	}
+}
+
+func (s *Selector) routeExactControl(ctx context.Context, input string, exact summon.ExactControl) (pipeline.ResponseAdmission, error) {
+	admitted := pipeline.ResponseAdmission{Request: input}
+	s.transitionMu.Lock()
+	defer s.transitionMu.Unlock()
+	var participants []brain.GroupParticipant
+	selected, err := s.selectAtBoundaryWithCommitCheck(ctx, exact.Address.PersonaID, exact.Address.Reason, func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		roster, refreshedParticipants, err := s.conversationRoster()
+		if err != nil {
+			return err
+		}
+		revalidated := roster.ResolveExactControl(input)
+		switch revalidated.Kind {
+		case summon.ExactControlValid:
+			if revalidated.Address.PersonaID != exact.Address.PersonaID {
+				return fmt.Errorf("exact identity control changed target while preparing")
+			}
+		case summon.ExactControlInvalid:
+			if revalidated.Err != nil {
+				return revalidated.Err
+			}
+			return fmt.Errorf("exact identity control became invalid")
+		default:
+			return fmt.Errorf("exact identity control no longer matches current roster")
+		}
+		participants = refreshedParticipants
+		return nil
+	})
+	if err != nil {
+		return admitted, wrapIdentityRefusalFailure(ctx, "route_exact_control", err)
+	}
+	s.setGroupParticipants(participants)
+	admitted.Request = ""
+	admitted.LocalReply = selected.DisplayName + " here."
+	admitted.Envelope = responseEnvelope(selected)
+	return admitted, nil
 }
 
 // RouteHandoff classifies a delivered response without loading or selecting a
@@ -123,14 +174,17 @@ func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visite
 	}
 	roster, participants, err := s.conversationRoster()
 	if err != nil {
-		return proposal, false, err
+		return proposal, false, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 	}
 	if len(participants) < 2 {
 		return proposal, false, nil
 	}
 	address, err := s.resolveAddress(ctx, response.Content, "agent", response.PersonaDisplayName, roster, participants)
 	if err != nil {
-		return proposal, false, err
+		if isIdentityRefusal(err) {
+			return proposal, false, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
+		}
+		return proposal, false, classifyAdmissionFailure(ctx, "route_handoff", err)
 	}
 	if address.PersonaID == "" || address.PersonaID == response.PersonaID || slices.Contains(visited, address.PersonaID) {
 		return proposal, false, nil
@@ -147,11 +201,11 @@ func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visite
 		// profile reload may follow a successful selection and strand its target.
 		_, participants, err := s.conversationRoster()
 		if err != nil {
-			return pipeline.ResponseAdmission{}, err
+			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 		}
 		selected, err := s.selectAtBoundary(ctx, address.PersonaID, "agent-handoff")
 		if err != nil {
-			return pipeline.ResponseAdmission{}, err
+			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 		}
 		s.setGroupParticipants(participants)
 		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected)}, nil
