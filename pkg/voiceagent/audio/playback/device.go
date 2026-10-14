@@ -192,9 +192,11 @@ func (p *Player) clearPlaybackFormat() {
 // openPlaybackDevice tries client layouts/rates in an order tuned for Studio
 // Display Speakers and similar multi-channel CoreAudio devices:
 //
-//  1. stereo @ TTS rate (no Obey Voice resample; CoreAudio converts rate)
-//  2. stereo @ 44.1 kHz (device clock; linear resample from 24 kHz)
-//  3. stereo @ preferred/native rate from enumeration
+//  1. stereo @ 44.1 kHz when the device advertises more than two channels
+//     (linear resample of the whole utterance; CoreAudio must not convert
+//     24 kHz on an 8-channel display — that path crackles)
+//  2. otherwise stereo @ TTS rate (no in-process resample)
+//  3. stereo @ 44.1 kHz, then any other enumerated rate except 48 kHz
 //  4. stereo @ 48 kHz last (exact 2× path was harsher on the affected machine)
 //  5. advertised multi-channel layout at the rate that worked for stereo
 //
@@ -208,7 +210,7 @@ func openPlaybackDevice(
 	preferredRate uint32,
 	onData func([]byte, []byte, uint32),
 ) (*malgo.Device, int, int, error) {
-	rateCandidates := playbackRateCandidates(sourceRate, preferredRate)
+	rateCandidates := playbackRateCandidates(sourceRate, preferredRate, nativeChannels)
 	channelCandidates := []uint32{channels}
 	if nativeChannels > 2 && nativeChannels != channels {
 		channelCandidates = append(channelCandidates, nativeChannels)
@@ -238,10 +240,15 @@ func openPlaybackDevice(
 }
 
 // playbackRateCandidates orders sample rates to try when opening the device.
-// Prefer the TTS rate (no in-process resample), then 44.1 kHz (common Apple
-// clock). 48 kHz is last: exact 2× upsampling still sounded worse on the
-// affected Studio Display than 44.1 with linear conversion.
-func playbackRateCandidates(sourceRate int, preferredRate uint32) []uint32 {
+//
+// A stereo or mono device opens at the TTS rate first so CoreAudio is not
+// asked to resample a clock the client already matches. A device that only
+// advertises multi-channel layouts (Studio Display Speakers: 8 ch at
+// 44.1/48 kHz) still accepts a 24 kHz stereo client, then converts in
+// CoreAudio, and that conversion crackles. Those devices open at 44.1 kHz
+// so the utterance is linear-resampled once before the callback. 48 kHz
+// stays last on every device: the exact 2× path was harsher than 44.1.
+func playbackRateCandidates(sourceRate int, preferredRate uint32, nativeChannels uint32) []uint32 {
 	seen := map[uint32]bool{}
 	var out []uint32
 	add := func(r uint32) {
@@ -250,6 +257,17 @@ func playbackRateCandidates(sourceRate int, preferredRate uint32) []uint32 {
 		}
 		seen[r] = true
 		out = append(out, r)
+	}
+	if nativeChannels > 2 {
+		add(44100)
+		if preferredRate != 0 && preferredRate != 48000 && preferredRate != uint32(sourceRate) {
+			add(preferredRate)
+		}
+		add(48000)
+		if sourceRate > 0 {
+			add(uint32(sourceRate))
+		}
+		return out
 	}
 	if sourceRate > 0 {
 		add(uint32(sourceRate))

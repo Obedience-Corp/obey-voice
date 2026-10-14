@@ -32,6 +32,13 @@ func TestHardwareNamedDeviceInitialization(t *testing.T) {
 	if _, err := player.ensureDevice(24_000); err != nil {
 		t.Fatalf("initialize named playback device %q: %v", deviceName, err)
 	}
+	neg := player.NegotiatedDevice()
+	t.Logf("opened %q at %d Hz, %d ch", neg.Name, neg.SampleRate, neg.Channels)
+	// Studio Display Speakers accept a 24 kHz client and then convert in
+	// CoreAudio, which crackles. The open order must land on 44.1 kHz.
+	if strings.Contains(neg.Name, "Studio Display") && neg.SampleRate == 24_000 {
+		t.Fatalf("Studio Display opened at 24 kHz; CoreAudio rate conversion crackles on this device")
+	}
 }
 
 // TestHardwarePlayStreamNoSoftwareCrackle is an opt-in integration test that
