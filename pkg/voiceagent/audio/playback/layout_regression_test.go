@@ -48,12 +48,11 @@ func TestStudioDisplayClientLayoutIsStereo(t *testing.T) {
 	}
 }
 
-// TestPlaybackRateCandidatesPreferTTSThen44100 pins open order for a stereo
-// or mono device: try TTS rate first (no in-process resample), then 44.1,
-// and only then 48 kHz. Multi-channel displays are covered separately; they
-// must not take the 24 kHz client path.
+// TestPlaybackRateCandidatesPreferTTSThen44100 pins open order after the
+// 48 kHz path made crackle worse on Studio Display: try TTS rate first (no
+// in-process resample), then 44.1, and only then 48 kHz.
 func TestPlaybackRateCandidatesPreferTTSThen44100(t *testing.T) {
-	got := playbackRateCandidates(24_000, 48_000, 2)
+	got := playbackRateCandidates(24_000, 48_000)
 	if len(got) < 3 {
 		t.Fatalf("candidates = %v, want at least [24000, 44100, 48000]", got)
 	}
@@ -75,32 +74,6 @@ func TestPlaybackRateCandidatesPreferTTSThen44100(t *testing.T) {
 	}
 	if idx44 < 0 || idx48 < 0 || idx48 < idx44 {
 		t.Fatalf("candidates = %v, want 44100 before 48000", got)
-	}
-}
-
-// TestStudioDisplaySkipsCoreAudioRateConversion pins the 8-channel display
-// order. Kokoro is 24 kHz. Opening that rate on Studio Display Speakers lets
-// CoreAudio convert the clock and the speech crackles. 44.1 kHz is first so
-// the whole utterance is linear-resampled once; 24 kHz is only a last resort
-// if the device refuses the other clocks. 48 kHz stays behind 44.1.
-func TestStudioDisplaySkipsCoreAudioRateConversion(t *testing.T) {
-	got := playbackRateCandidates(24_000, 48_000, 8)
-	if len(got) < 3 || got[0] != 44_100 {
-		t.Fatalf("candidates = %v, want 44100 first", got)
-	}
-	idx24, idx44, idx48 := -1, -1, -1
-	for i, r := range got {
-		switch r {
-		case 24000:
-			idx24 = i
-		case 44100:
-			idx44 = i
-		case 48000:
-			idx48 = i
-		}
-	}
-	if idx44 < 0 || idx48 < 0 || idx24 < 0 || idx48 < idx44 || idx24 < idx48 {
-		t.Fatalf("candidates = %v, want 44100, then 48000, then 24000", got)
 	}
 }
 

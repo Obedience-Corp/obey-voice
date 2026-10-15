@@ -76,8 +76,8 @@ func erleThroughFrontend(t *testing.T, refDelay, echoLag int) float64 {
 }
 
 // The shipping configuration must cancel at the latency the player actually
-// creates, on every rate it will actually open. Stereo devices try the TTS
-// rate first, so 24kHz is the common case, not 48kHz — and the same
+// creates, on every rate it will actually open. playbackRateCandidates tries
+// the TTS rate first, so 24kHz is the common case, not 48kHz — and the same
 // 3x512-frame ring is 64ms of output latency there against 32ms at 48kHz,
 // while referenceDelaySamples under-counts by design. A suite that only
 // covered 48kHz stayed green while the preferred path cancelled ~1dB.
@@ -146,7 +146,7 @@ func TestEchoCancellerTapsCoverWorstRateResidual(t *testing.T) {
 // of rate alignment fixes. This is what shipped before SetReferenceDelay
 // existed.
 //
-// Measured at 24kHz — the rate a stereo device opens at — because the
+// Measured at 24kHz — the rate playbackRateCandidates prefers — because the
 // tap window alone now covers the 48kHz profile: 768 taps span 48ms, more than
 // that ring's 32ms + driver lag, so an uncompensated 48kHz run scores ~7dB and
 // proves nothing. At 24kHz the ring is 64ms and the offset is still the only
