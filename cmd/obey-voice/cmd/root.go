@@ -202,6 +202,12 @@ func bindSession(cfg *config.Config, personaID string) (*persona.SessionBinding,
 // progress and the mic goes hot here, not in the launcher (D2). A non-nil
 // resume session seeds both the brain history and the viewport.
 func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBuilder {
+	return conversationRuntimeBuilderFor(resumeSession, textMode, noVoice)
+}
+
+// Capture input/output choices per runtime, including reload closures. Desktop
+// hosts can build independent sessions without changing Cobra's global flags.
+func conversationRuntimeBuilderFor(resumeSession *session.Session, textMode, noVoice bool) appTUI.RuntimeBuilder {
 	return func(ctx context.Context, progress appTUI.BuildProgress, sessionID, personaID string) (*appTUI.ConversationRuntime, error) {
 		// CLI resume/continue seeds only the first chat. Later launcher choices
 		// must load their selected session, or start fresh for New conversation.
