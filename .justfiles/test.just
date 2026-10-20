@@ -18,3 +18,13 @@ bridge pattern=".":
 ui:
     just dist mac
     python3 scripts/ui-fixture.py
+
+# Isolated protocol replay app: live transcript, notes, errors, and routing receipts
+[macos]
+events:
+    just dist mac
+    python3 scripts/event-fixture.py
+
+# Real routing adapter with temporary config, bundle, and a fake camp importer
+routing:
+    python3 scripts/test-routing.py

@@ -33,3 +33,8 @@ check:
 # Compatibility entry point for the automated test suite
 test:
     just test all
+
+# Follow persistent desktop diagnostics; use --demo for preview runs
+[positional-arguments]
+logs *args:
+    python3 scripts/logs.py --follow "$@"

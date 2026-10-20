@@ -173,6 +173,10 @@ pub enum Purpose {
     Library,
     Book,
     Meetings,
+    Campaigns,
+    MeetingRoute,
+    MeetingNote(String),
+    MeetingPaused(bool),
     MeetingDocument,
     Task,
     Start,
@@ -195,6 +199,25 @@ pub fn display(v: &Value) -> String {
     }
 }
 
+/// Routing can fail with process exit status zero; the receipt is authoritative.
+pub fn route_receipt(value: &Value) -> Result<String, String> {
+    let detail = string(value, "detail");
+    let error = string(value, "error");
+    match value["outcome"].as_str() {
+        Some("routed" | "delegated") if error.is_empty() => Ok(format!(
+            "Notes filed to {}: {}",
+            string(value, "destination_id"),
+            detail
+        )),
+        Some("failed") => Err(format!(
+            "Meeting routing failed: {}",
+            if error.is_empty() { &detail } else { &error }
+        )),
+        Some("skipped") => Ok("Meeting routing skipped; notes remain local".into()),
+        _ => Err(format!("Meeting routing did not confirm delivery: {value}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +236,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.turns[0].name, "Previous");
+    }
+    #[test]
+    fn routing_receipt_detects_failure_even_after_successful_process_exit() {
+        assert!(
+            route_receipt(&serde_json::json!({"outcome":"failed","error":"camp not found"}))
+                .unwrap_err()
+                .contains("camp not found")
+        );
+        assert!(route_receipt(&serde_json::json!({"outcome":"routed","destination_id":"camp:test","detail":"notes/meetings/test.md"})).unwrap().contains("notes/meetings/test.md"));
+        assert!(route_receipt(&serde_json::json!({})).is_err());
     }
 }

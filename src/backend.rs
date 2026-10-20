@@ -40,13 +40,72 @@ pub struct Backend {
     bridge: Option<Arc<Mutex<Child>>>,
     ctx: eframe::egui::Context,
 }
+// Finder does not inherit the user's interactive shell PATH. Keep its entries
+// first, then add the standard user/Go/Homebrew installation locations.
+fn child_path() -> std::ffi::OsString {
+    if let Some(path) = std::env::var_os("OBEY_VOICE_TOOL_PATH") {
+        return path;
+    }
+    let mut paths: Vec<_> =
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
+    if let Some(home) = std::env::home_dir() {
+        for dir in [
+            home.join("go/bin"),
+            home.join(".local/bin"),
+            home.join(".cargo/bin"),
+        ] {
+            if !paths.contains(&dir) {
+                paths.push(dir);
+            }
+        }
+    }
+    for dir in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"] {
+        let dir = PathBuf::from(dir);
+        if !paths.contains(&dir) {
+            paths.push(dir);
+        }
+    }
+    std::env::join_paths(paths).unwrap_or_default()
+}
+
 fn spawn_command(path: &PathBuf, args: &[String]) -> std::io::Result<Child> {
-    let mut cmd = Command::new(path);
+    let search_path = child_path();
+    let executable = if path.components().count() == 1 {
+        std::env::split_paths(&search_path)
+            .map(|dir| dir.join(path))
+            .find(|candidate| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    candidate
+                        .metadata()
+                        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                }
+                #[cfg(not(unix))]
+                {
+                    candidate.is_file()
+                }
+            })
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!(
+                        "{} is not installed on the tool search path",
+                        path.display()
+                    ),
+                )
+            })?
+    } else {
+        path.clone()
+    };
+    let mut cmd = Command::new(executable);
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    cmd.env("NO_COLOR", "1").env("TERM", "dumb");
+    cmd.env("PATH", search_path)
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb");
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -86,6 +145,30 @@ fn finish_child(child: Arc<Mutex<Child>>, grace: Duration) {
     });
 }
 fn send(tx: &mpsc::Sender<Event>, ctx: &eframe::egui::Context, event: Event) {
+    use crate::diagnostics::{protocol_summary, record};
+    match &event {
+        Event::Bridge(generation, v) => record(
+            if v.get("error").is_some() || v["event"] == "error" {
+                "error"
+            } else {
+                "trace"
+            },
+            "engine.receive",
+            json!({"generation":generation,"message":protocol_summary(v)}),
+        ),
+        Event::Lost(generation, error) | Event::ProtocolWarning(generation, error) => record(
+            "error",
+            "engine.failure",
+            json!({"generation":generation,"message":error}),
+        ),
+        Event::Result { id, result } => record(
+            if result.is_err() { "error" } else { "info" },
+            "command.finish",
+            json!({"id":id,"error":result.as_ref().err()}),
+        ),
+        // Streamed stdout can include remote credentials. Only stderr is persisted separately.
+        Event::Log { .. } => {}
+    }
     let _ = tx.send(event);
     ctx.request_repaint();
 }
@@ -200,6 +283,11 @@ impl Backend {
         }
         self.generation += 1;
         let generation = self.generation;
+        crate::diagnostics::record(
+            "info",
+            "engine.spawn",
+            json!({"generation":generation,"executable":self.engine}),
+        );
         match spawn_command(&self.engine, &["--bridge".into()]) {
             Err(e) => send(
                 &self.tx,
@@ -213,6 +301,11 @@ impl Backend {
                 ),
             ),
             Ok(mut child) => {
+                crate::diagnostics::record(
+                    "info",
+                    "engine.started",
+                    json!({"generation":generation,"pid":child.id()}),
+                );
                 let mut stdin = child.stdin.take().unwrap();
                 let stdout = child.stdout.take().unwrap();
                 let stderr = child.stderr.take().unwrap();
@@ -246,6 +339,11 @@ impl Backend {
                 let ctx = self.ctx.clone();
                 thread::spawn(move || {
                     for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                        crate::diagnostics::record(
+                            "info",
+                            "engine.stderr",
+                            json!({"generation":generation,"message":line}),
+                        );
                         send(&tx, &ctx, Event::Log { id: 0, line });
                     }
                 });
@@ -266,6 +364,11 @@ impl Backend {
         self.connect();
     }
     pub fn request(&self, value: Value) {
+        crate::diagnostics::record(
+            "trace",
+            "engine.send",
+            json!({"generation":self.generation,"message":crate::diagnostics::protocol_summary(&value)}),
+        );
         if self
             .input
             .as_ref()
@@ -279,13 +382,30 @@ impl Backend {
         }
     }
     pub fn cli(&self, id: u64, args: Vec<String>, stream: bool) {
-        let engine = self.engine.clone();
+        let campaigns = args == ["--campaigns"];
+        let engine = if campaigns {
+            PathBuf::from("camp")
+        } else {
+            self.engine.clone()
+        };
+        let args = if campaigns {
+            vec!["list".into(), "--json".into()]
+        } else {
+            args
+        };
+        // Command names only: positional values can contain prompts and secrets.
+        crate::diagnostics::record(
+            "info",
+            "command.start",
+            json!({"id":id,"executable":engine,"command":args.first(),"subcommand":args.get(1).filter(|v| !v.starts_with('-'))}),
+        );
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
         let jobs = self.jobs.clone();
         let stopped = self.stopped.clone();
         let cancelled = self.cancelled.clone();
         thread::spawn(move || {
+            let started = Instant::now();
             let result = (|| -> Result<Value, String> {
                 if stopped.load(Ordering::Acquire) || cancelled.lock().unwrap().remove(&id) {
                     return Err("Cancelled".into());
@@ -312,6 +432,11 @@ impl Backend {
                             tail.push_str(&line);
                             tail.push('\n');
                         }
+                        crate::diagnostics::record(
+                            "info",
+                            "command.stderr",
+                            json!({"id":id,"message":line}),
+                        );
                         if stream {
                             send(&err_tx, &err_ctx, Event::Log { id, line });
                         }
@@ -350,7 +475,10 @@ impl Backend {
                     {
                         break status;
                     }
-                    if !stream && !timed_out && start.elapsed() > Duration::from_secs(60) {
+                    if !stream
+                        && !timed_out
+                        && start.elapsed() > Duration::from_secs(if campaigns { 3 } else { 60 })
+                    {
                         timed_out = true;
                         signal_child(&mut child.lock().unwrap());
                         finish_child(child.clone(), Duration::from_secs(2));
@@ -363,7 +491,12 @@ impl Backend {
                     .map_err(|_| "Output reader stopped")??;
                 let stderr = stderr_thread.join().unwrap_or_default();
                 if timed_out {
-                    return Err("The command timed out after 60 seconds".into());
+                    return Err(if campaigns {
+                        "Campaign discovery timed out after 3 seconds; check camp list --json"
+                    } else {
+                        "The command timed out after 60 seconds"
+                    }
+                    .into());
                 }
                 if !status.success() {
                     return Err((if stdout.trim().is_empty() {
@@ -373,8 +506,18 @@ impl Backend {
                     })
                     .to_string());
                 }
+                if campaigns {
+                    let payload = stdout.find('[').map(|i| &stdout[i..]).unwrap_or(&stdout);
+                    return serde_json::from_str(payload)
+                        .map_err(|e| format!("Cannot read campaign list: {e}"));
+                }
                 Ok(serde_json::from_str(&stdout).unwrap_or(Value::String(stdout)))
             })();
+            crate::diagnostics::record(
+                "info",
+                "command.duration",
+                json!({"id":id,"milliseconds":started.elapsed().as_millis()}),
+            );
             send(&tx, &ctx, Event::Result { id, result });
         });
     }
@@ -425,6 +568,43 @@ impl Drop for Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn named_tools_resolve_from_child_search_path() {
+        if std::env::var_os("OBEY_TOOL_TEST_CHILD").is_some() {
+            let output = spawn_command(&PathBuf::from("camp"), &[])
+                .unwrap()
+                .wait_with_output()
+                .unwrap();
+            assert!(output.status.success());
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap().trim(),
+                "isolated-camp"
+            );
+            return;
+        }
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("obey-tool-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let camp = dir.join("camp");
+        std::fs::write(&camp, "#!/bin/sh\necho isolated-camp\n").unwrap();
+        std::fs::set_permissions(&camp, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "backend::tests::named_tools_resolve_from_child_search_path"
+                ])
+                .env("OBEY_TOOL_TEST_CHILD", "1")
+                .env("PATH", "/usr/bin:/bin")
+                .env("OBEY_VOICE_TOOL_PATH", &dir)
+                .status()
+                .unwrap()
+                .success()
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn malformed_protocol_line_preserves_following_snapshots() {

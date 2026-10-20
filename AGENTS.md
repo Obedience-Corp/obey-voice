@@ -3,6 +3,7 @@
 Rust/egui native desktop UI with a Go JSONL bridge to the existing Obey Voice runtime.
 Keep speech, persona identity, sessions, worker policy, and meeting persistence owned by obey-voice.
 Do not reimplement those systems in Rust. Keep blocking work off egui's UI thread.
+Use `just logs` for persistent local diagnostics; `just test events` for isolated protocol UI replay and `just test routing` for disposable engine-to-camp routing checks.
 Use `just check` for the complete unattended lint/test/debug-build gate. Use `just test rust <filter>` or `just test bridge <pattern>` for focused checks.
 Keep recipes in the owning `.justfiles/` module (`dev`, `lint`, `test`, `dist`), with convenient root entry points.
 Use `just bundle` or `just bundle-release` for locally signed macOS bundles; these do not install or publish.

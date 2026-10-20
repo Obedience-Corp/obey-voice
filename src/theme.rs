@@ -49,6 +49,9 @@ pub fn selected(ui: &egui::Ui) -> Color32 {
 
 pub fn setup(cc: &eframe::CreationContext<'_>, dark: bool) {
     let ctx = &cc.egui_ctx;
+    // We update AppKit explicitly, without a second appearance change from winit.
+    #[cfg(target_os = "macos")]
+    ctx.options_mut(|o| o.sync_window_theme = false);
 
     // Use the locally installed system font, without redistributing Apple fonts.
     #[cfg(target_os = "macos")]
@@ -87,6 +90,10 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
     let c = palette(dark);
     ctx.style_mut_of(theme, |s| {
         let v = &mut s.visuals;
+        // egui's theme defaults use different coverage transfer functions.
+        // Changing TextOptions clears the glyph atlas and rerasterizes SFNS.
+        // Keep text rendering stable; only foreground/background colors change.
+        v.text_options = egui::Visuals::dark().text_options;
         v.override_text_color = Some(c.ink);
         v.panel_fill = Color32::TRANSPARENT;
         v.window_fill = if dark {
@@ -150,6 +157,14 @@ pub fn switch(ctx: &egui::Context, dark: bool) {
     apply(ctx, dark);
     ctx.request_discard("appearance changed; rebuild all panels with the new style");
     ctx.request_repaint();
+}
+
+pub fn dialog(dark: bool) -> egui::Frame {
+    glass(dark).inner_margin(28).fill(if dark {
+        Color32::from_rgba_unmultiplied(30, 35, 49, 248)
+    } else {
+        Color32::from_rgba_unmultiplied(247, 249, 255, 248)
+    })
 }
 
 pub fn glass(dark: bool) -> egui::Frame {
@@ -423,9 +438,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn theme_switch_reuses_warm_glyph_atlas() {
+        let ctx = egui::Context::default();
+        apply(&ctx, false);
+        let mut warm = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.label("Reusable text glyphs");
+        });
+        warm.textures_delta.clear();
+        for dark in [true, false, true, false] {
+            apply(&ctx, dark);
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.label("Reusable text glyphs");
+            });
+            let changed = !output.textures_delta.set.is_empty();
+            output.textures_delta.clear();
+            assert!(
+                !changed,
+                "switching themes must not rebuild/upload the font atlas"
+            );
+        }
+    }
+
+    #[test]
     fn theme_switch_discards_old_panel_colors_in_both_directions() {
         let ctx = egui::Context::default();
         apply(&ctx, false);
+        let text_options = ctx.global_style().visuals.text_options;
         let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(100., 100.));
         // Repeated switches exercise both newly initialized and cached themes.
         for dark in [true, false, true, false] {
@@ -438,6 +476,7 @@ mod tests {
                     switch(ui.ctx(), dark);
                     return;
                 }
+                assert_eq!(ui.visuals().text_options, text_options);
                 assert_eq!(ui.visuals().dark_mode, dark);
                 assert_eq!(ui.visuals().override_text_color, Some(palette(dark).ink));
                 ui.painter().rect_filled(rect, 0, palette(dark).surface);
