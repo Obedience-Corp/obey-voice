@@ -63,6 +63,17 @@ Managers retain the active conversation and pause voice admission. Leaving conve
 
 The desktop UI is Rust, using egui/eframe and wgpu (Metal on macOS). A supervised Go companion runs the **existing** Obey Voice conversation controller over private stdin/stdout JSONL. Speech, persona bindings, worker policy, meeting persistence, and session stores remain owned by Obey Voice. Local conversations do not start an HTTP server.
 
+`src/app.rs` owns application state and initialization. Its `app/` modules handle
+actions, engine events, preview data, and the window layout. Each workflow has a
+module under `screens/`; shared controls and dispatch stay in `screens.rs`.
+`backend/` separates command execution, process lifecycle, and bridge protocol
+handling. `theme/` separates drawing and native appearance from shared styling.
+
+Hand-maintained files have a 500-line maximum, including comments and blank lines.
+`just lint file-size` checks tracked and unignored new text files, and runs as part
+of `just check`. Generated dependency records are exempt. Split by responsibility
+instead of compressing code to meet the limit.
+
 The exported runtime adapter is introduced by [obey-voice #227](https://github.com/Obedience-Corp/obey-voice/pull/227). The pinned revision can be built before that PR is merged.
 
 ## Verification and previews

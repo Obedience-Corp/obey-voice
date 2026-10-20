@@ -5,7 +5,11 @@ default:
     @just --unsorted --list lint
 
 # Run every read-only code quality check
-all: justfiles fmt-check clippy go-vet
+all: justfiles file-size fmt-check clippy go-vet
+
+# Keep hand-maintained files below the repository's 500-line maximum
+file-size:
+    python3 scripts/check-file-size.py
 
 # Check Rust formatting without changing files
 fmt-check:
