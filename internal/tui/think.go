@@ -28,6 +28,8 @@ type chatItem struct {
 	thinkLabel bool
 	spoken     string
 	sys        string
+	// notice preserves unstyled local command output for native clients.
+	notice string
 	// workResultID marks a canonical background result projection. These
 	// entries can be cleared when the work scope changes or the result is
 	// dismissed without touching ordinary conversation history.

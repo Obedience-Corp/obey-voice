@@ -457,9 +457,11 @@ func (m *conversationModel) showCommandHelp(args []string) {
 func (m *conversationModel) commandNotice(message string) {
 	m.appendActivity("command", strings.Split(message, "\n")[0], 0)
 	m.appendTranscript(dimStyle.Render("  " + message))
+	m.items[len(m.items)-1].notice = message
 }
 
 func (m *conversationModel) commandError(message string) {
 	m.appendActivity("command", "error: "+message, 0)
 	m.appendTranscript(errorStyle.Render("  " + message))
+	m.items[len(m.items)-1].notice = message
 }
