@@ -90,8 +90,8 @@ func desktopTimer() tea.Cmd {
 }
 
 // StartDesktopController takes ownership of rt. Wait returns only after turns
-// are drained and Cleanup has run. publish must return promptly and never call
-// Send synchronously. No terminal escape sequences or terminal reads are used.
+// have received a bounded drain and Cleanup has run. publish must return
+// promptly and never call Send synchronously. No terminal escape sequences or terminal reads are used.
 func StartDesktopController(ctx context.Context, rt *ConversationRuntime, publish func(DesktopState)) *DesktopController {
 	ctx, cancel := context.WithCancel(ctx)
 	cfg := *rt.SessionCfg
@@ -112,9 +112,9 @@ func StartDesktopController(ctx context.Context, rt *ConversationRuntime, publis
 		}
 		_, _ = m.app.onQuit(quitMsg{})
 		cancel()
-		m.app.stopTalkHotkey()
-		m.app.wg.Wait()
+		// Save before waiting on hardware or helper teardown, as the TUI does.
 		rt.Persist()
+		waitQuitHelpers(m.app, model.app, cancel)
 		rt.Cleanup()
 		d.done <- err
 		close(d.done)
@@ -157,6 +157,15 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "manager":
 			target := screenPersonas
 			if action.Text == "settings" {
+				// The native settings form edits app defaults (config get/set),
+				// while the conversation retains its session binding. Capture
+				// the settings baseline from that same editing scope.
+				cfg, err := config.LoadRaw()
+				if err != nil {
+					c.setStatus(err.Error(), true)
+					break
+				}
+				m.app.cfg = cfg
 				target = screenSettings
 			}
 			if action.Text == "workers" {
@@ -166,7 +175,7 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.app, cmd = next.(App), nextCmd
 		case "return":
 			if m.app.screen == screenSettings {
-				if cfg, err := config.Load(); err == nil {
+				if cfg, err := config.LoadRaw(); err == nil {
 					m.app.cfg = cfg
 				} else {
 					c.setStatus(err.Error(), true)
@@ -176,6 +185,18 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				next, nextCmd := m.app.onSwitchScreen(switchScreenMsg(screenConversation))
 				m.app, cmd = next.(App), nextCmd
+			}
+		case "settings_refresh":
+			if m.app.screen == screenSettings {
+				cfg, err := config.LoadRaw()
+				if err != nil {
+					m.app.settings.message = err.Error()
+				} else {
+					// A successful native config save updates the editing
+					// snapshot without replacing the entry fingerprint.
+					m.app.settings.closePreview()
+					m.app.cfg, m.app.settings.cfg = cfg, cfg
+				}
 			}
 		case "enroll", "enroll_cancel", "enroll_remove", "preview", "preview_stop":
 			if m.app.screen != screenSettings {
@@ -197,15 +218,12 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enroll_remove":
 				s.removeVoice(action.Text)
 			case "preview":
-				if cfg, err := config.Load(); err == nil {
-					s.cfg = cfg
-				}
 				cmd = s.startSettingsPreview(tts.Voice{Name: action.Text})
 			case "preview_stop":
 				s.cancelPreview()
 			}
 		case "worker_reload":
-			cfg, err := config.Load()
+			cfg, err := config.LoadRaw()
 			if err != nil {
 				c.setStatus(err.Error(), true)
 				break

@@ -453,19 +453,13 @@ func (m *conversationModel) dispatchCompact() tea.Cmd {
 	m.setStatus("Compacting conversation", false)
 
 	compact, wg := m.deps.compact, m.deps.wg
-	if wg != nil {
-		wg.Add(1)
-	}
-	return func() tea.Msg {
-		if wg != nil {
-			defer wg.Done()
-		}
+	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		defer cancel()
 		if ctx.Err() != nil {
 			return compactDoneMsg{err: ctx.Err()}
 		}
 		return compactDoneMsg{err: compact(ctx)}
-	}
+	})
 }
 
 func (m *conversationModel) handleCompactDone(msg compactDoneMsg) tea.Cmd {

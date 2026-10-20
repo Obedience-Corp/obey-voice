@@ -255,14 +255,8 @@ func (m *conversationModel) dispatchVoiceTurn() tea.Cmd {
 	}
 
 	runner, wg := m.deps.runner, m.deps.wg
-	if wg != nil {
-		wg.Add(1)
-	}
 	noticeEpoch := m.noticeEpoch
-	return func() tea.Msg {
-		if wg != nil {
-			defer wg.Done()
-		}
+	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		defer cancel()
 		// A Cmd can execute after shutdown began (cancel happens before the
 		// runtime waits on wg); never enter the pipeline on a dead context.
@@ -271,7 +265,7 @@ func (m *conversationModel) dispatchVoiceTurn() tea.Cmd {
 		}
 		text, err := runner.RunTurn(ctx)
 		return voiceTurnDoneMsg{text: text, err: err, noticeEpoch: noticeEpoch}
-	}
+	})
 }
 
 func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
@@ -280,20 +274,14 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 	m.turnState = turnTextRunning
 
 	runner, wg := m.deps.runner, m.deps.wg
-	if wg != nil {
-		wg.Add(1)
-	}
 	noticeEpoch := m.noticeEpoch
-	return func() tea.Msg {
-		if wg != nil {
-			defer wg.Done()
-		}
+	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		defer cancel()
 		if ctx.Err() != nil {
 			return textTurnDoneMsg{input: text, err: ctx.Err(), noticeEpoch: noticeEpoch}
 		}
 		return textTurnDoneMsg{input: text, err: runner.RunTurnTextMode(ctx, text), noticeEpoch: noticeEpoch}
-	}
+	})
 }
 
 func (m *conversationModel) retireAdmissionRetryNotices() {

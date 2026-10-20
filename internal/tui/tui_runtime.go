@@ -28,9 +28,9 @@ func (a App) onSettingsDone(msg settingsDoneMsg) (tea.Model, tea.Cmd) {
 	a.screen = target
 	resumeVoice := target == screenConversation && a.settingsResumeVoice
 	a.settingsResumeVoice = false
-	// Unstick cancel/response state if turn-done msgs were dropped while
-	// Settings was active (conversation is not the focused screen).
-	a.conversation.recoverTurnState()
+	// App.delegate delivers turn completions while Settings is open. Keep
+	// the pending cancellation until its completion arrives; clearing it on
+	// a quick return can misclassify a paused voice turn as session shutdown.
 	voiceChanged := a.settingsVoiceState != voiceSettingsState(a.cfg)
 	a.settingsVoiceState = ""
 	if target == screenConversation && a.runtime != nil && a.runtime.Voice && a.cfg != nil &&
