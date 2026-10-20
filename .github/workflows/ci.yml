@@ -22,7 +22,7 @@ jobs:
         os:
           - macos-latest
           - ubuntu-latest
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted", "linux", "x64", "lance-arch"]') || matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -61,7 +61,7 @@ jobs:
         os:
           - macos-latest
           - ubuntu-latest
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted", "linux", "x64", "lance-arch"]') || matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -73,7 +73,7 @@ jobs:
 
   integration:
     name: Container integration (Linux)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -85,7 +85,7 @@ jobs:
 
   linux-artifact:
     name: Relocatable Linux artifact
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
         with:

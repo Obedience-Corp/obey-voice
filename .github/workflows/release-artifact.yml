@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   linux-artifact:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
         with:
