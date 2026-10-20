@@ -53,3 +53,8 @@ bundle-release:
 # Opt-in interactive UI test app with isolated config and mock model server
 ui-fixture:
     just test ui
+
+# Follow local desktop and voice-engine event logs
+[positional-arguments]
+logs *args:
+    just -- dev logs "$@"

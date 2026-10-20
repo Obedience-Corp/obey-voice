@@ -66,6 +66,14 @@ pub struct VoiceApp {
     pub meeting_paused: bool,
     pub meeting_note: String,
     pub meeting_lines: Vec<String>,
+    pub meeting_partial: String,
+    pub meeting_phase: String,
+    pub meeting_level: f32,
+    pub meeting_notes: Vec<String>,
+    pub campaigns: Vec<Value>,
+    pub campaign_error: Option<String>,
+    pub diagnostics_open: bool,
+    pub diagnostics_filter: String,
     pub meetings: Vec<Value>,
     pub meeting_result: Value,
     pub route_to: String,
@@ -142,6 +150,14 @@ impl VoiceApp {
             meeting_paused: false,
             meeting_note: String::new(),
             meeting_lines: vec![],
+            meeting_partial: String::new(),
+            meeting_phase: String::new(),
+            meeting_level: 0.,
+            meeting_notes: vec![],
+            campaigns: vec![],
+            campaign_error: None,
+            diagnostics_open: false,
+            diagnostics_filter: String::new(),
             meetings: vec![],
             meeting_result: Value::Null,
             route_to: String::new(),
@@ -231,6 +247,7 @@ impl VoiceApp {
                 .into();
             }
         }
+        crate::diagnostics::record("trace", "navigation", json!({"screen":target.title()}));
         self.screen = target;
         self.search.clear();
         match target {
@@ -244,7 +261,10 @@ impl VoiceApp {
                 self.request("worker_config_get", json!({}), Purpose::WorkerConfig);
             }
             Screen::Library => self.load_library(),
-            Screen::Meeting => self.command(&["meeting", "list", "--json"], Purpose::Meetings),
+            Screen::Meeting => {
+                self.command(&["meeting", "list", "--json"], Purpose::Meetings);
+                self.command(&["--campaigns"], Purpose::Campaigns);
+            }
             _ => {}
         }
     }
@@ -411,9 +431,22 @@ impl VoiceApp {
                         }
                         "progress" => self.status = v["data"].as_str().unwrap_or_default().into(),
                         "error" => self.error = Some(display(&v["data"])),
-                        "meeting_utterance" => self.meeting_lines.push(string(&v["data"], "Text")),
+                        "meeting_utterance" => {
+                            self.meeting_partial.clear();
+                            self.meeting_lines.push(format!(
+                                "{}  {}",
+                                string(&v["data"], "At"),
+                                string(&v["data"], "Text")
+                            ));
+                        }
                         "meeting_partial" => {
-                            self.status = v["data"].as_str().unwrap_or_default().into()
+                            self.meeting_partial = v["data"].as_str().unwrap_or_default().into()
+                        }
+                        "meeting_phase" => {
+                            self.meeting_phase = v["data"].as_str().unwrap_or_default().into()
+                        }
+                        "meeting_level" => {
+                            self.meeting_level = v["data"].as_f64().unwrap_or_default() as f32
                         }
                         "meeting_saved" => {
                             self.meeting_result = v["data"].clone();
@@ -450,7 +483,11 @@ impl VoiceApp {
                 ) {
                     self.starting = false;
                 }
-                self.error = Some(err);
+                if matches!(purpose, Purpose::Campaigns) {
+                    self.campaign_error = Some(err);
+                } else {
+                    self.error = Some(err);
+                }
                 return;
             }
         };
@@ -538,6 +575,44 @@ impl VoiceApp {
                 self.meeting_active = false;
                 self.meeting_result = v;
                 self.status = "Meeting saved".into();
+                self.command(&["meeting", "list", "--json"], Purpose::Meetings);
+            }
+            Purpose::Campaigns => {
+                self.campaigns = serde_json::from_value(v).unwrap_or_default();
+                self.campaign_error = None;
+            }
+            Purpose::MeetingPaused(paused) => {
+                self.meeting_paused = paused;
+                self.meeting_partial.clear();
+                self.meeting_level = 0.;
+            }
+            Purpose::MeetingNote(note) => {
+                if self.meeting_note == note {
+                    self.meeting_note.clear();
+                }
+                self.meeting_notes.push(note);
+            }
+            Purpose::MeetingRoute => {
+                crate::diagnostics::record(
+                    if v["outcome"] == "failed" {
+                        "error"
+                    } else {
+                        "info"
+                    },
+                    "meeting.route",
+                    v.clone(),
+                );
+                match route_receipt(&v) {
+                    Ok(message) => self.status = message,
+                    Err(error) => {
+                        self.status = "Meeting notes kept locally".into();
+                        self.error = Some(error);
+                    }
+                }
+                push_log(
+                    &mut self.logs,
+                    serde_json::to_string_pretty(&v).unwrap_or_default(),
+                );
                 self.command(&["meeting", "list", "--json"], Purpose::Meetings);
             }
             Purpose::Task => {
@@ -766,13 +841,8 @@ impl eframe::App for VoiceApp {
             crate::theme::switch(&ctx, self.dark);
             #[cfg(target_os = "macos")]
             crate::theme::native_appearance(_frame, self.dark);
-            if let Some(storage) = _frame.storage_mut() {
-                storage.set_string(
-                    "appearance",
-                    if self.dark { "dark" } else { "light" }.into(),
-                );
-                storage.flush();
-            }
+            // eframe saves this preference through App::save; never wait for disk here.
+            crate::diagnostics::record("info", "appearance", json!({"dark": self.dark}));
             return;
         }
         egui::CentralPanel::default()
@@ -850,12 +920,20 @@ impl eframe::App for VoiceApp {
                                 ..Default::default()
                             }))
                             .show(ui, |ui| {
-                                ui.label(RichText::new(&self.status).size(11.).color(muted(ui)));
+                                ui.horizontal(|ui| {
+                                    if ui.small_button("Diagnostics").clicked() {
+                                        self.diagnostics_open = true;
+                                    }
+                                    ui.label(
+                                        RichText::new(&self.status).size(11.).color(muted(ui)),
+                                    );
+                                });
                             });
                         self.render_screen(ui);
                     });
             });
         self.dialogs(&ctx);
+        self.diagnostics_dialog(&ctx);
         if self.starting || self.active || self.meeting_active {
             ctx.request_repaint_after(Duration::from_millis(100));
         }

@@ -79,3 +79,39 @@ just ui-fixture  # builds an isolated test app and runs a mock local model serve
 `just test ui` and `just ui-fixture` are equivalent macOS-only, interactive commands. They build the debug bundle and keep the mock server running until Ctrl+C. Real microphone/speaker and other hardware acceptance remain explicit manual checks; they are not part of `just check` or `just test`.
 
 Automated tests cover typed response persistence/resume, unavailable actions, invalid session paths, stale worker policy writes, empty Go collections, and immutable reply identity. Native-window checks cover appearance, configured personas, and the text workflow. Live microphone, speech output, meeting diarization, remote-device pairing, and audiobook rendering still require hardware/provider acceptance on your setup.
+
+### Debugging the desktop and voice engine
+
+Use **Diagnostics** in the page footer to inspect recent events, filter by error or
+request ID, and copy the log path or visible records. `just logs` follows the latest
+run in a terminal, including app restarts (`just logs --demo` for previews).
+
+On macOS, logs are in `~/Library/Logs/obey-voice-agent/`. Other platforms use
+`$XDG_STATE_HOME/obey-voice-agent` (default `~/.local/state`) or
+`%LOCALAPPDATA%/obey-voice-agent`. Set `OBEY_VOICE_LOG_DIR` to choose another directory.
+Each run writes JSONL with epoch-millisecond timestamps, request IDs, bridge
+generations, command durations, lifecycle events, engine stderr, state/activity
+summaries, and Rust warnings/errors. `OBEY_VOICE_TRACE_UI=1` additionally records
+eframe repaint scheduling for UI performance debugging.
+
+Writes happen off the UI thread. Each run retains a current 5 MiB segment and one
+previous segment; startup prunes older run files to keep eight before adding the
+new run. Recent records remain visible even if the log file cannot be written.
+The queue and viewer are bounded, and dropped records are counted. Protocol logs
+omit conversation text, prompts, config values, and reply bodies. Engine stderr
+is recorded as emitted, so review diagnostics before sharing them.
+
+Meeting capture shows live partial/final transcripts, microphone activity, and a
+separate note editor. Notes clear only after the engine acknowledges saving them.
+Saved meetings have a campaign picker and an optional configured destination ID.
+Delivery uses the existing engine router; failed receipts remain failures even
+when the command exits successfully. The app includes standard Go, user, and
+Homebrew executable directories for Finder launches. `OBEY_VOICE_TOOL_PATH`
+overrides that search path for custom installations or isolated tests.
+
+`just test events` builds an isolated protocol-replay app for startup failures,
+live transcript/notes, and routing receipts. It never opens audio devices or loads
+personal config. `just test routing` exercises the real engine router with a
+temporary meeting/config and a fake camp importer, verifying the saved document
+and failed-delivery receipt. The existing `just ui-fixture` remains the real engine
+text-conversation fixture. Hardware/provider acceptance is still manual.

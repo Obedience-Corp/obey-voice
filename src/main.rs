@@ -1,10 +1,12 @@
 mod app;
 mod backend;
+mod diagnostics;
 mod model;
 mod screens;
 mod theme;
 
 fn main() -> eframe::Result {
+    let _diagnostics = diagnostics::init();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1180.0, 800.0])
@@ -16,9 +18,17 @@ fn main() -> eframe::Result {
             .with_app_id("com.obedience.voice-agent"),
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "Obey Voice Agent",
         options,
         Box::new(|cc| Ok(Box::new(app::VoiceApp::new(cc)))),
-    )
+    );
+    if let Err(error) = &result {
+        diagnostics::record(
+            "error",
+            "desktop.failure",
+            serde_json::json!({"message":error.to_string()}),
+        );
+    }
+    result
 }

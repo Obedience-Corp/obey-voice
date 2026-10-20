@@ -1076,6 +1076,10 @@ impl VoiceApp {
                             .clicked()
                         {
                             self.meeting_lines.clear();
+                            self.meeting_partial.clear();
+                            self.meeting_notes.clear();
+                            self.meeting_level = 0.;
+                            self.meeting_phase = "Preparing microphone…".into();
                             self.meeting_result = Value::Null;
                             self.starting = true;
                             self.request(
@@ -1083,6 +1087,13 @@ impl VoiceApp {
                                 json!({"text":self.meeting_title}),
                                 Purpose::MeetingStart,
                             );
+                            if self.demo {
+                                self.starting = false;
+                                self.meeting_active = true;
+                                self.meeting_phase = "Preview · no microphone".into();
+                                self.meeting_lines = vec!["00:04  Let’s capture decisions as we go.".into()];
+                                self.meeting_partial = "We should start with…".into();
+                            }
                         }
                         if ui
                             .add_enabled(!self.starting, egui::Button::new("Resume last meeting"))
@@ -1099,63 +1110,57 @@ impl VoiceApp {
                 });
             } else {
                 card(ui, |ui| {
-                    ui.label(RichText::new(&self.meeting_title).size(22.));
-                    ui.label(
-                        RichText::new(if self.meeting_paused {
-                            "Paused"
-                        } else {
-                            "● Recording"
-                        })
-                        .color(accent(ui)),
-                    );
+                    ui.label(RichText::new(if self.meeting_title.is_empty() { "Meeting" } else { &self.meeting_title }).size(22.));
                     ui.horizontal(|ui| {
-                        if ui
-                            .button(if self.meeting_paused {
-                                "Resume"
-                            } else {
-                                "Pause"
-                            })
-                            .clicked()
-                        {
-                            self.request(
-                                if self.meeting_paused {
-                                    "meeting_resume"
-                                } else {
-                                    "meeting_pause"
-                                },
-                                json!({}),
-                                Purpose::Ignore,
-                            );
-                            self.meeting_paused = !self.meeting_paused;
-                        }
-                        if ui.button("★ Bookmark").clicked() {
-                            self.request(
-                                "meeting_bookmark",
-                                json!({"text":self.meeting_note}),
-                                Purpose::Ignore,
-                            );
-                        }
-                        if ui.button("Stop and review").clicked() {
-                            self.starting = true;
-                            self.request("meeting_stop", json!({}), Purpose::MeetingStop);
-                        }
+                        ui.label(RichText::new(if self.starting { "Saving meeting…" } else if self.meeting_paused { "Paused" } else { "● Recording" }).color(accent(ui)));
+                        if !self.meeting_paused { ui.label(&self.meeting_phase); }
+                        ui.add(egui::ProgressBar::new(self.meeting_level.clamp(0., 1.)).desired_width(100.).text("Mic"));
                     });
-                    field(ui, "Add a timestamped note", &mut self.meeting_note);
-                    if ui
-                        .add_enabled(
-                            !self.meeting_note.trim().is_empty(),
-                            egui::Button::new("Save note"),
-                        )
-                        .clicked()
-                    {
-                        let text = std::mem::take(&mut self.meeting_note);
-                        self.request("meeting_note", json!({"text":text}), Purpose::Ignore);
-                    }
+                    ui.add_enabled_ui(!self.starting, |ui| {
+                        ui.horizontal(|ui| {
+                            if ui.button(if self.meeting_paused { "Resume" } else { "Pause" }).clicked() {
+                                self.request(if self.meeting_paused { "meeting_resume" } else { "meeting_pause" }, json!({}), Purpose::MeetingPaused(!self.meeting_paused));
+                                if self.demo { self.meeting_paused = !self.meeting_paused; }
+                            }
+                            if ui.button("★ Bookmark").clicked() {
+                                self.request("meeting_bookmark", json!({"text":self.meeting_note}), Purpose::MeetingNote(format!("★ {}", self.meeting_note)));
+                            }
+                            if ui.button("Stop and review").clicked() {
+                                self.starting = !self.demo;
+                                self.request("meeting_stop", json!({}), Purpose::MeetingStop);
+                                if self.demo { self.meeting_active = false; }
+                            }
+                        });
+                    });
+                });
+                ui.add_space(12.);
+                ui.columns(2, |cols| {
+                    card(&mut cols[0], |ui| {
+                        ui.strong("Live transcript");
+                        egui::ScrollArea::vertical().id_salt("live_meeting_transcript").max_height(340.).stick_to_bottom(true).show(ui, |ui| {
+                            ui.set_min_height(180.);
+                            if self.meeting_lines.is_empty() && self.meeting_partial.is_empty() { ui.label(RichText::new("Listening. Your transcript will appear here as you speak.").color(muted(ui))); }
+                            for line in &self.meeting_lines { ui.add(egui::Label::new(line).wrap().selectable(true)); }
+                            if !self.meeting_partial.is_empty() { ui.label(RichText::new(&self.meeting_partial).italics().color(muted(ui))); }
+                        });
+                    });
+                    card(&mut cols[1], |ui| {
+                        ui.strong("Your notes");
+                        ui.label(RichText::new("Capture decisions, questions, and follow-ups.").small().color(muted(ui)));
+                        ui.add(egui::TextEdit::multiline(&mut self.meeting_note).hint_text("Add a timestamped note…").desired_rows(4).desired_width(f32::INFINITY));
+                        let pending = self.pending.values().any(|p| matches!(p, Purpose::MeetingNote(_)));
+                        if ui.add_enabled(!self.starting && !pending && !self.meeting_note.trim().is_empty(), egui::Button::new("Save note")).clicked() {
+                            let note = self.meeting_note.clone();
+                            self.request("meeting_note", json!({"text":note}), Purpose::MeetingNote(note.clone()));
+                            if self.demo { self.meeting_notes.push(note); self.meeting_note.clear(); }
+                        }
+                        egui::ScrollArea::vertical().id_salt("live_meeting_notes").max_height(180.).stick_to_bottom(true).show(ui, |ui| {
+                            for note in &self.meeting_notes { ui.add(egui::Label::new(format!("✓ {note}")).wrap().selectable(true)); }
+                        });
+                    });
                 });
             }
-            for line in &self.meeting_lines {
-                ui.label(line);
-            }
+            if self.meeting_active { return; }
             if !self.meeting_result.is_null() {
                 card(ui, |ui| {
                     ui.strong("Meeting saved");
@@ -1176,29 +1181,26 @@ impl VoiceApp {
                             );
                         }
                     }
-                    field(
-                        ui,
-                        "Route notes to destination (for example camp:My_Tools)",
-                        &mut self.route_to,
-                    );
-                    if ui
-                        .add_enabled(
-                            !self.route_to.trim().is_empty(),
-                            egui::Button::new("File meeting notes"),
-                        )
-                        .clicked()
-                    {
-                        self.start_task(
-                            "Route meeting",
-                            vec![
-                                "meeting".into(),
-                                "route".into(),
-                                self.meeting_path.clone(),
-                                "--to".into(),
-                                self.route_to.clone(),
-                                "--json".into(),
-                            ],
-                        );
+                    ui.label("File notes to a campaign");
+                    ui.horizontal(|ui| {
+                        egui::ComboBox::from_id_salt("meeting_campaign")
+                            .selected_text(if self.route_to.is_empty() { "Choose a destination" } else { &self.route_to })
+                            .show_ui(ui, |ui| {
+                                for campaign in &self.campaigns {
+                                    let name = string(campaign, "name");
+                                    if !name.is_empty() { ui.selectable_value(&mut self.route_to, format!("camp:{name}"), name); }
+                                }
+                            });
+                        if ui.button("Refresh destinations").clicked() { self.command(&["--campaigns"], Purpose::Campaigns); }
+                    });
+                    if let Some(error) = &self.campaign_error { ui.label(RichText::new(format!("Campaign discovery: {error}")).color(Color32::LIGHT_RED)); }
+                    ui.collapsing("Other destination", |ui| { field(ui, "Destination ID from your routing config", &mut self.route_to); });
+                    if ui.add_enabled(!self.route_to.trim().is_empty() && self.task.is_none(), egui::Button::new("File meeting notes")).clicked() {
+                        self.logs.clear();
+                        self.task_title = "Route meeting".into();
+                        let id = self.cli(vec!["meeting".into(), "route".into(), self.meeting_path.clone(), "--to".into(), self.route_to.clone(), "--json".into()], Purpose::MeetingRoute, false);
+                        if !self.demo { self.task = Some(id); }
+                        self.status = "Filing meeting notes…".into();
                     }
                 });
             }
@@ -1247,15 +1249,90 @@ impl VoiceApp {
                 }
             });
     }
+    pub fn diagnostics_dialog(&mut self, ctx: &egui::Context) {
+        if !self.diagnostics_open {
+            return;
+        }
+        let snapshot = crate::diagnostics::snapshot();
+        let modal = egui::Modal::new(egui::Id::unique("diagnostics"))
+            .frame(crate::theme::dialog(self.dark))
+            .show(ctx, |ui| {
+                ui.set_width((ctx.content_rect().width() - 100.).clamp(300., 820.));
+                ui.heading("Diagnostics");
+                ui.label("Desktop events, engine output, and command failures are saved locally.");
+                ui.add(
+                    egui::Label::new(RichText::new(snapshot.path.display().to_string()).small())
+                        .selectable(true),
+                );
+                if let Some(error) = &snapshot.error {
+                    ui.colored_label(Color32::LIGHT_RED, format!("Log file unavailable: {error}"));
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Copy log path").clicked() {
+                        ctx.copy_text(snapshot.path.display().to_string());
+                    }
+                    if ui.button("Copy visible logs").clicked() {
+                        ctx.copy_text(
+                            snapshot
+                                .lines
+                                .iter()
+                                .filter(|l| l.contains(&self.diagnostics_filter))
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                        );
+                    }
+                    if ui.button("Close").clicked() {
+                        self.diagnostics_open = false;
+                    }
+                });
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.diagnostics_filter)
+                        .hint_text("Filter by error, event, or request ID…")
+                        .desired_width(f32::INFINITY),
+                );
+                egui::ScrollArea::vertical()
+                    .max_height((ctx.content_rect().height() - 300.).max(150.))
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        for line in &snapshot.lines {
+                            if line.contains(&self.diagnostics_filter) {
+                                ui.add(
+                                    egui::Label::new(RichText::new(line).monospace().size(11.))
+                                        .wrap()
+                                        .selectable(true),
+                                );
+                            }
+                        }
+                    });
+            });
+        if modal.should_close() {
+            self.diagnostics_open = false;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
+    }
+
     pub fn dialogs(&mut self, ctx: &egui::Context) {
         if let Some(session) = self.new_session.clone() {
-            egui::Window::new("Choose your conversation")
-                .collapsible(false)
-                .resizable(false)
-                .default_width(450.)
+            let modal = egui::Modal::new(egui::Id::unique("start_conversation"))
+                .frame(crate::theme::dialog(self.dark))
+                .backdrop_color(Color32::from_black_alpha(85))
                 .show(ctx, |ui| {
-                    ui.label("Choose a persona or use the application defaults.");
+                    ui.set_width(420.);
+                    ui.label(
+                        RichText::new("NEW CONVERSATION")
+                            .size(11.)
+                            .color(accent(ui)),
+                    );
+                    ui.heading("Start a conversation");
+                    ui.label(
+                        RichText::new("Choose a persona, then make yourself heard.")
+                            .color(muted(ui)),
+                    );
+                    ui.add_space(12.);
+                    ui.label(RichText::new("Persona").strong());
                     egui::ComboBox::from_id_salt("start_persona")
+                        .width(ui.available_width())
                         .selected_text(if self.start_persona.is_empty() {
                             "Saved default"
                         } else {
@@ -1282,6 +1359,8 @@ impl VoiceApp {
                                 }
                             }
                         });
+                    ui.add_space(12.);
+                    ui.label(RichText::new("Voice & audio").strong());
                     let mut microphone = !self.text_only;
                     let mut spoken_replies = !self.silent;
                     ui.checkbox(&mut microphone, "Microphone input")
@@ -1290,16 +1369,32 @@ impl VoiceApp {
                         .on_hover_text("Turn off to read replies without audio.");
                     self.text_only = !microphone;
                     self.silent = !spoken_replies;
+                    ui.add_space(12.);
                     ui.horizontal(|ui| {
-                        if ui.button("Start conversation").clicked() {
+                        if ui
+                            .add_sized(
+                                [260., 42.],
+                                egui::Button::new(
+                                    RichText::new("Start conversation").color(Color32::WHITE),
+                                )
+                                .fill(Color32::from_rgb(66, 91, 199)),
+                            )
+                            .clicked()
+                        {
                             self.new_session = None;
                             self.begin_chat(session);
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui
+                            .add_sized([140., 42.], egui::Button::new("Cancel"))
+                            .clicked()
+                        {
                             self.new_session = None;
                         }
                     });
                 });
+            if modal.should_close() {
+                self.new_session = None;
+            }
         }
         if self.persona_form.open {
             let title = if self.persona_form.id.is_empty() {
