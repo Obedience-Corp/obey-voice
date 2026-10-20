@@ -195,6 +195,9 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// A successful native config save updates the editing
 					// snapshot without replacing the entry fingerprint.
 					m.app.settings.closePreview()
+					// The default player factory closes over the prior settings
+					// model; recreate it for changed device/volume settings.
+					m.app.settings.preview.newPreviewPlayer = nil
 					m.app.cfg, m.app.settings.cfg = cfg, cfg
 				}
 			}
