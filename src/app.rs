@@ -349,6 +349,11 @@ impl VoiceApp {
                 break;
             };
             match event {
+                Event::ProtocolWarning(generation, err) => {
+                    if generation == self.backend.generation {
+                        self.error = Some(err);
+                    }
+                }
                 Event::Lost(generation, err) => {
                     if generation != self.backend.generation {
                         continue;
@@ -476,6 +481,9 @@ impl VoiceApp {
                     .retain(|key, value| *value != display(&before[key]["value"]));
                 self.values = v["values"].clone();
                 self.settings_persona = v["persona"].clone();
+                if self.active && self.screen == Screen::Settings {
+                    self.request("settings_refresh", json!({}), Purpose::Ignore);
+                }
             }
             Purpose::SettingSave(key) => {
                 self.drafts.remove(&key);

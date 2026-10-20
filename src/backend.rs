@@ -25,6 +25,7 @@ pub enum Event {
         line: String,
     },
     Lost(u64, String),
+    ProtocolWarning(u64, String),
 }
 
 pub struct Backend {
@@ -89,6 +90,79 @@ fn send(tx: &mpsc::Sender<Event>, ctx: &eframe::egui::Context, event: Event) {
     ctx.request_repaint();
 }
 
+// A diagnostic line is recoverable: keep reading snapshots and leave the
+// conversation active. Only the process supervisor may report session death.
+fn read_protocol(
+    reader: impl BufRead,
+    generation: u64,
+    tx: &mpsc::Sender<Event>,
+    ctx: &eframe::egui::Context,
+) {
+    for line in reader.lines() {
+        let event = match line {
+            Ok(line) => match serde_json::from_str(&line) {
+                Ok(value) => Event::Bridge(generation, value),
+                Err(e) => {
+                    Event::ProtocolWarning(generation, format!("Invalid engine response: {e}"))
+                }
+            },
+            Err(e) => {
+                send(tx, ctx, Event::ProtocolWarning(generation, e.to_string()));
+                break;
+            }
+        };
+        send(tx, ctx, event);
+    }
+}
+
+fn supervise_bridge(
+    child: Arc<Mutex<Child>>,
+    failed: Arc<AtomicBool>,
+    generation: u64,
+    tx: &mpsc::Sender<Event>,
+    ctx: &eframe::egui::Context,
+) {
+    let mut stopping = None;
+    loop {
+        let mut process = child.lock().unwrap();
+        match process.try_wait() {
+            Ok(Some(status)) => {
+                send(
+                    tx,
+                    ctx,
+                    Event::Lost(
+                        generation,
+                        format!("Voice engine stopped ({status}). Return home and reconnect."),
+                    ),
+                );
+                return;
+            }
+            Err(e) => {
+                // Reap before marking the session dead, even on a wait error.
+                let _ = process.kill();
+                if process.wait().is_ok() {
+                    send(tx, ctx, Event::Lost(generation, e.to_string()));
+                    return;
+                }
+            }
+            Ok(None) => {}
+        }
+        if failed.load(Ordering::Acquire) && stopping.is_none() {
+            signal_child(&mut process);
+            stopping = Some(Instant::now());
+        }
+        if stopping.is_some_and(|start| start.elapsed() >= Duration::from_secs(12)) {
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(-(process.id() as i32), libc::SIGKILL);
+            }
+            let _ = process.kill();
+        }
+        drop(process);
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 impl Backend {
     pub fn new(ctx: eframe::egui::Context, demo: bool) -> Self {
         let (tx, events) = mpsc::channel();
@@ -142,45 +216,31 @@ impl Backend {
                 let mut stdin = child.stdin.take().unwrap();
                 let stdout = child.stdout.take().unwrap();
                 let stderr = child.stderr.take().unwrap();
+                let child = Arc::new(Mutex::new(child));
+                let failed = Arc::new(AtomicBool::new(false));
                 let (tx_input, rx_input) = mpsc::channel::<Value>();
                 self.input = Some(tx_input);
-                let tx = self.tx.clone();
-                let ctx = self.ctx.clone();
+                let writer_failed = failed.clone();
                 thread::spawn(move || {
                     for value in rx_input {
                         if writeln!(stdin, "{value}").is_err() {
+                            writer_failed.store(true, Ordering::Release);
                             break;
                         }
                     }
                 });
+                let tx = self.tx.clone();
+                let ctx = self.ctx.clone();
+                let reader_failed = failed.clone();
                 thread::spawn(move || {
-                    for line in BufReader::new(stdout).lines() {
-                        match line {
-                            Ok(line) => match serde_json::from_str(&line) {
-                                Ok(value) => send(&tx, &ctx, Event::Bridge(generation, value)),
-                                Err(e) => send(
-                                    &tx,
-                                    &ctx,
-                                    Event::Lost(
-                                        generation,
-                                        format!("Invalid engine response: {e}"),
-                                    ),
-                                ),
-                            },
-                            Err(e) => {
-                                send(&tx, &ctx, Event::Lost(generation, e.to_string()));
-                                break;
-                            }
-                        }
-                    }
-                    send(
-                        &tx,
-                        &ctx,
-                        Event::Lost(
-                            generation,
-                            "Voice engine stopped. Return home and reconnect.".into(),
-                        ),
-                    );
+                    read_protocol(BufReader::new(stdout), generation, &tx, &ctx);
+                    reader_failed.store(true, Ordering::Release);
+                });
+                let tx = self.tx.clone();
+                let ctx = self.ctx.clone();
+                let process = child.clone();
+                thread::spawn(move || {
+                    supervise_bridge(process, failed, generation, &tx, &ctx);
                 });
                 let tx = self.tx.clone();
                 let ctx = self.ctx.clone();
@@ -189,17 +249,20 @@ impl Backend {
                         send(&tx, &ctx, Event::Log { id: 0, line });
                     }
                 });
-                let child = Arc::new(Mutex::new(child));
                 self.bridge = Some(child);
             }
         }
     }
     pub fn reset(&mut self) {
-        self.input.take();
-        if let Some(child) = self.bridge.take() {
-            signal_child(&mut child.lock().unwrap());
-            finish_child(child, Duration::from_secs(5));
+        // Reconnect is available only after the supervisor has reaped the
+        // previous engine. Never interrupt a still-running session or save.
+        if let Some(child) = &self.bridge
+            && !matches!(child.lock().unwrap().try_wait(), Ok(Some(_)))
+        {
+            return;
         }
+        self.input.take();
+        self.bridge.take();
         self.connect();
     }
     pub fn request(&self, value: Value) {
@@ -211,7 +274,7 @@ impl Backend {
             send(
                 &self.tx,
                 &self.ctx,
-                Event::Lost(self.generation, "The voice engine is not connected".into()),
+                Event::ProtocolWarning(self.generation, "The voice engine is not connected".into()),
             );
         }
     }
@@ -356,5 +419,122 @@ impl Drop for Backend {
                 thread::sleep(Duration::from_millis(20));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_protocol_line_preserves_following_snapshots() {
+        let (tx, rx) = mpsc::channel();
+        let ctx = eframe::egui::Context::default();
+        read_protocol(
+            &b"{\"event\":\"state\",\"data\":{\"session_id\":\"same\"}}\nnative diagnostic\n{\"event\":\"state\",\"data\":{\"session_id\":\"same\",\"mic\":true}}\n"[..],
+            7, &tx, &ctx,
+        );
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(events.len(), 3);
+        assert!(matches!(&events[0], Event::Bridge(7, _)));
+        assert!(matches!(&events[1], Event::ProtocolWarning(7, _)));
+        assert!(matches!(&events[2], Event::Bridge(7, v) if v["data"]["mic"] == true));
+        assert!(!events.iter().any(|e| matches!(e, Event::Lost(..))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn noise_and_reconnect_do_not_interrupt_a_live_engine() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "obey-engine-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let script = root.join("engine");
+        std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' '{\"event\":\"ready\"}' 'native log noise' '{\"event\":\"state\",\"data\":{\"mic\":true}}'\nread request\nprintf '%s\\n' '{\"event\":\"saved\"}'\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut backend = Backend::new(eframe::egui::Context::default(), true);
+        backend.engine = script;
+        backend.connect();
+        let mut warning = false;
+        loop {
+            match backend.events.recv_timeout(Duration::from_secs(3)).unwrap() {
+                Event::ProtocolWarning(_, _) => warning = true,
+                Event::Bridge(_, v) if v["event"] == "state" => {
+                    assert_eq!(v["data"]["mic"], true);
+                    break;
+                }
+                Event::Lost(_, e) => panic!("lost a live engine: {e}"),
+                _ => {}
+            }
+        }
+        assert!(warning);
+        let generation = backend.generation;
+        backend.reset();
+        assert_eq!(backend.generation, generation);
+        assert!(
+            backend
+                .bridge
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .try_wait()
+                .unwrap()
+                .is_none()
+        );
+        backend.request(json!({"method":"stop"}));
+        let mut saved = false;
+        let mut exited = false;
+        while !saved || !exited {
+            match backend.events.recv_timeout(Duration::from_secs(3)).unwrap() {
+                Event::Bridge(_, v) if v["event"] == "saved" => saved = true,
+                Event::Lost(_, _) => exited = true,
+                _ => {}
+            }
+        }
+        drop(backend);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lost_waits_for_child_exit_after_protocol_eof() {
+        use std::os::unix::process::CommandExt;
+        // The process closes its protocol then takes time to finish persisting.
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "exec 1>&-; sleep 0.3"])
+            .stdout(Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let child = Arc::new(Mutex::new(child));
+        let (tx, rx) = mpsc::channel();
+        let ctx = eframe::egui::Context::default();
+        read_protocol(BufReader::new(stdout), 2, &tx, &ctx);
+        assert!(rx.try_recv().is_err());
+        assert!(child.lock().unwrap().try_wait().unwrap().is_none());
+        let monitor_child = child.clone();
+        let monitor = thread::spawn(move || {
+            supervise_bridge(
+                monitor_child,
+                Arc::new(AtomicBool::new(false)),
+                2,
+                &tx,
+                &ctx,
+            );
+        });
+        assert!(matches!(
+            rx.recv_timeout(Duration::from_secs(3)).unwrap(),
+            Event::Lost(2, _)
+        ));
+        assert!(child.lock().unwrap().try_wait().unwrap().is_some());
+        monitor.join().unwrap();
     }
 }

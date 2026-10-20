@@ -35,8 +35,17 @@ Remaining acceptance uncertainty:
 - No live microphone/speaker, speaker-enrollment capture, real meeting diarization, remote-device pairing, or audiobook render was run. Their controls delegate to the existing engine; hardware/provider acceptance remains necessary.
 - Native text editing uses platform editing shortcuts; terminal Vim-mode editing is not implemented in egui.
 - Structured prompt documents are preserved; their source document remains the editing surface.
-- macOS was exercised. Other platforms and signed/notarized distribution were not validated.
+- macOS was exercised. Windows bridge startup now fails closed because native stdout cannot yet be isolated; other platforms and signed/notarized distribution were not validated.
 
 Next executable acceptance: `just run`, start a voice conversation with a configured persona,
 exercise microphone pause/hold-to-talk/interrupt, then record and review a short meeting.
 Use `just ui-fixture` for any automated write checks; never create test personas or history in the personal install.
+
+PR review follow-up (2026-10-19):
+- Runtime #227: Settings uses the same app-default scope as config get/set, captures its entry fingerprint before edits, and refreshes the preview snapshot after a successful save. Session persona config stays bound to the conversation. A rapid Settings return retains pending voice cancellation until its completion.
+- Runtime #227: Persist runs before bounded helper/turn draining. Queued turn commands release their drain reservation when shutdown drops them; running commands retain theirs until completion.
+- Desktop #1: Invalid JSONL lines produce a warning while later snapshots continue. Only a reaped child (or failed spawn) reports engine loss. Reconnect cannot kill a live engine. Broken transport asks the child to stop and allows a 12-second grace period before forced termination.
+- Desktop #1: Windows rejects bridge startup before capture; Unix keeps its private JSONL descriptor and redirects OS fd 1 to diagnostics.
+- Regression coverage: actual controller startup cancellation, rapid Settings return with a different session voice, saved-settings refresh/reload, preview provider/device/rate isolation, dropped versus executing command drain ownership, process-level native stdout writes, malformed protocol recovery, live-engine reconnect protection, and exit ordering.
+- Verification after fixes: upstream full Go suite and build passed; focused controller/command tests passed with the race detector. Desktop `just check`, `just test`, `just build`, bundle generation and strict signature verification passed against upstream `5fd002a85e55`. The Windows guard/test cross-compiled; it was not executed on Windows.
+- Rebuilt native fixture: typed exchange, Settings return, save, resume, and app quit passed. Confirmed both turns on disk and no remaining fixture engine process. Live audio hardware remains untested.

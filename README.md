@@ -2,6 +2,8 @@
 
 A Rust/egui desktop workspace for Obey Voice. The macOS window uses native frosted glass, integrated window controls, and saved Light/Dark appearance. The app reads your existing Obey Voice personas, configuration, sessions, models, and library.
 
+Windows bridge startup is currently disabled: native library output cannot yet be safely isolated from its JSONL protocol. macOS is the validated platform.
+
 ## Build and run
 
 Requires Rust 1.95 (pinned by `rust-toolchain.toml`), Go 1.26.1+, a C compiler, and `just`. Authenticate Git access to the private Obedience-Corp dependencies first. Configure `GOPRIVATE` to include `github.com/Obedience-Corp/*` if it is not already configured.
