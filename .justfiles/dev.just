@@ -1,17 +1,35 @@
 set working-directory := '..'
 
+[private]
+default:
+    @just --unsorted --list dev
+
+# Build the shared Go voice companion
 bridge:
     mkdir -p bin
     cd bridge && go build -o ../bin/obey-voice-engine .
 
+# Build the companion and debug desktop app
 build: bridge
     cargo build --locked
 
-check:
-    cargo fmt --all -- --check
-    cargo clippy --locked --all-targets -- -D warnings
-    cd bridge && go vet ./...
+# Build the companion and optimized desktop app
+release: bridge
+    cargo build --locked --release
 
+# Run through Cargo so configured target directories are respected
+[positional-arguments]
+run *args: bridge
+    cargo run --locked -- "$@"
+
+# Visual preview only; never reads personal config or opens the microphone
+demo: bridge
+    cargo run --locked -- --demo
+
+# Compatibility entry point for the original lint-only development check
+check:
+    just lint all
+
+# Compatibility entry point for the automated test suite
 test:
-    cargo test --locked
-    cd bridge && go test -race ./...
+    just test all

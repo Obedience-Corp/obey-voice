@@ -49,3 +49,11 @@ PR review follow-up (2026-10-19):
 - Regression coverage: actual controller startup cancellation, rapid Settings return with a different session voice, saved-settings refresh/reload, preview provider/device/rate isolation, dropped versus executing command drain ownership, process-level native stdout writes, malformed protocol recovery, live-engine reconnect protection, and exit ordering.
 - Verification after fixes: upstream full Go suite and build passed; focused controller/command tests passed with the race detector. Desktop `just check`, `just test`, `just build`, bundle generation and strict signature verification passed against upstream `5fd002a85e55`. The Windows guard/test cross-compiled; it was not executed on Windows.
 - Rebuilt native fixture: typed exchange, Settings return, save, resume, and app quit passed. Confirmed both turns on disk and no remaining fixture engine process. Live audio hardware remains untested.
+
+Modular automation follow-up (2026-10-20):
+- Root `just` now lists documented commands. `dev`, `lint`, `test`, and `dist` modules own builds/runs, code checks, automated/interactive tests, and local macOS packaging respectively.
+- `just check` runs the full unattended lint/test/debug-build gate. `just test` and the original root entry points remain available. The UI fixture is explicitly opt-in; hardware acceptance remains manual.
+- Added optimized build/bundle commands and automatic bundle signature verification. Packaging remains local and ad-hoc signed; installation, publishing, and notarization are not performed.
+- Run arguments pass through as positional arguments. Runs use Cargo, and packaging discovers its target directory through metadata.
+- Validation: full `just check` passed. Command-routing probes passed for nested directories, quoted test filters, argument forwarding, default tests, failure propagation, release packaging, and fixture routing. Python syntax and Justfile formatting checks passed.
+- `CARGO_TARGET_DIR="$PWD/.artifacts/justfile-target" just bundle-release` built the optimized app outside the default target directory and passed strict bundle signature verification.
