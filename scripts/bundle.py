@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
 """Package locally built binaries as a macOS application (no publishing)."""
 import argparse
+import json
 import pathlib
 from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--release', action='store_true')
 parser.add_argument('--demo', action='store_true')
 args = parser.parse_args()
+if sys.platform != 'darwin':
+    parser.error('macOS app bundles must be built on macOS')
 root = pathlib.Path(__file__).resolve().parent.parent
+metadata = json.loads(subprocess.check_output(
+    ['cargo', 'metadata', '--locked', '--no-deps', '--format-version', '1'],
+    cwd=root, text=True))
+target_dir = Path(metadata['target_directory'])
 bundle = root / 'dist' / ('Obey Voice Demo.app' if args.demo else 'Obey Voice Agent.app')
 macos = bundle / 'Contents' / 'MacOS'
 macos.mkdir(parents=True, exist_ok=True)
-for source, name in [(root / 'target' / ('release' if args.release else 'debug') / 'obey-voice-agent', 'obey-voice-agent'), (root / 'bin' / 'obey-voice-engine', 'obey-voice-engine')]:
+for source, name in [(target_dir / ('release' if args.release else 'debug') / 'obey-voice-agent', 'obey-voice-agent'), (root / 'bin' / 'obey-voice-engine', 'obey-voice-engine')]:
     shutil.copy2(source, macos / name)
 # Include the runtime's native speech libraries and replace developer-machine
 # rpaths with the app's Frameworks directory.

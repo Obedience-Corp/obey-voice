@@ -19,9 +19,32 @@ For macOS:
 
 ```sh
 just bundle
+just bundle-release  # optimized Rust build
 ```
 
-Open `dist/Obey Voice Agent.app`. The bundle includes the companion and its native speech libraries and is ad-hoc signed for local use. Public distribution would require Developer ID signing and notarization.
+Open `dist/Obey Voice Agent.app`. Both commands replace this local bundle, include the companion and native speech libraries, and verify its ad-hoc signature. They do not install or publish the app. Public distribution would require Developer ID signing and notarization.
+
+## Development commands
+
+Run `just` for help, or `just --list --list-submodules` for every recipe. The root Justfile provides common entry points and delegates to focused modules under `.justfiles/`.
+
+| Module | Commands | Purpose |
+|--------|----------|---------|
+| `dev` | `bridge`, `build`, `release`, `run`, `demo` | Go companion, debug/optimized Rust builds, local runs |
+| `lint` | `all`, `justfiles`, `fmt-check`, `fmt`, `clippy`, `go-vet` | Read-only checks; `fmt` explicitly applies Rust formatting |
+| `test` | `all`, `rust [filter]`, `bridge [pattern]`, `ui` | Automated tests and an opt-in interactive fixture |
+| `dist` | `mac`, `mac-release`, `verify` | Local macOS packaging and signature verification |
+
+`just check` is the complete unattended gate: Justfile/Rust formatting, Clippy, Go vet, Rust tests, Go race tests, and a debug build. It does not launch the app, open audio devices, or run hardware acceptance. `just test` retains its original behavior and runs both automated suites.
+
+```sh
+just test rust malformed_protocol
+just test bridge 'TestProtocolOutput|TestDesktopTextRoundTrip'
+just build-release
+just dist verify
+```
+
+`just run` accepts app arguments, for example `just -- run --text-only --silent`. Runs use Cargo, and bundling reads Cargo metadata, so a configured `CARGO_TARGET_DIR` is respected. `just dev check` and `just dev test` remain available as compatibility entry points; the former retains its original lint-only behavior.
 
 ## Workflow
 
@@ -45,12 +68,14 @@ The exported runtime adapter is introduced by [obey-voice #227](https://github.c
 ## Verification and previews
 
 ```sh
-just check       # formatting, Clippy, Go vet
+just check       # lint, automated tests, and debug build
 just test        # Rust tests and isolated Go bridge tests with the race detector
 just demo        # sample data only; does not read your personas or use the mic
 just ui-fixture  # builds an isolated test app and runs a mock local model server
 ```
 
 `just demo` is only a visual preview. Use `just run` or the normal app bundle to load your actual personas. The UI fixture prints a separate test app path; open that app, choose application defaults, typed-only, and silent output, then exercise a conversation. Fixture state stays under the printed temporary directory. Stop the fixture server when finished.
+
+`just test ui` and `just ui-fixture` are equivalent macOS-only, interactive commands. They build the debug bundle and keep the mock server running until Ctrl+C. Real microphone/speaker and other hardware acceptance remain explicit manual checks; they are not part of `just check` or `just test`.
 
 Automated tests cover typed response persistence/resume, unavailable actions, invalid session paths, stale worker policy writes, empty Go collections, and immutable reply identity. Native-window checks cover appearance, configured personas, and the text workflow. Live microphone, speech output, meeting diarization, remote-device pairing, and audiobook rendering still require hardware/provider acceptance on your setup.
