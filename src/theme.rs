@@ -144,6 +144,14 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
     });
 }
 
+/// Rebuild the root Ui before presenting a theme change. Existing Uis keep
+/// their previous Arc<Style> even after the context's style changes.
+pub fn switch(ctx: &egui::Context, dark: bool) {
+    apply(ctx, dark);
+    ctx.request_discard("appearance changed; rebuild all panels with the new style");
+    ctx.request_repaint();
+}
+
 pub fn glass(dark: bool) -> egui::Frame {
     let c = palette(dark);
     egui::Frame::new()
@@ -406,6 +414,48 @@ pub fn native_appearance(window: &impl raw_window_handle::HasWindowHandle, dark:
                 NSAppearanceNameAqua
             });
             window.setAppearance(appearance.as_deref());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn theme_switch_discards_old_panel_colors_in_both_directions() {
+        let ctx = egui::Context::default();
+        apply(&ctx, false);
+        let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(100., 100.));
+        // Repeated switches exercise both newly initialized and cached themes.
+        for dark in [true, false, true, false] {
+            let mut pending = true;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                // Like the sidebar, this is drawn before the theme toggle.
+                ui.painter().rect_filled(rect, 0, card(ui));
+                if pending {
+                    pending = false;
+                    switch(ui.ctx(), dark);
+                    return;
+                }
+                assert_eq!(ui.visuals().dark_mode, dark);
+                assert_eq!(ui.visuals().override_text_color, Some(palette(dark).ink));
+                ui.painter().rect_filled(rect, 0, palette(dark).surface);
+            });
+            output.textures_delta.clear();
+            assert_eq!(output.platform_output.num_completed_passes, 2);
+            let fills: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| {
+                    if let egui::Shape::Rect(painted) = &shape.shape {
+                        (painted.rect == rect).then_some(painted.fill)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(fills, vec![palette(dark).card, palette(dark).surface]);
         }
     }
 }

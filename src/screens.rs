@@ -1282,8 +1282,14 @@ impl VoiceApp {
                                 }
                             }
                         });
-                    ui.checkbox(&mut self.text_only, "Text input only (no microphone)");
-                    ui.checkbox(&mut self.silent, "Text output only (no spoken responses)");
+                    let mut microphone = !self.text_only;
+                    let mut spoken_replies = !self.silent;
+                    ui.checkbox(&mut microphone, "Microphone input")
+                        .on_hover_text("Turn off to type your messages instead.");
+                    ui.checkbox(&mut spoken_replies, "Spoken replies")
+                        .on_hover_text("Turn off to read replies without audio.");
+                    self.text_only = !microphone;
+                    self.silent = !spoken_replies;
                     ui.horizontal(|ui| {
                         if ui.button("Start conversation").clicked() {
                             self.new_session = None;
