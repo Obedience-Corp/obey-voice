@@ -57,3 +57,9 @@ Modular automation follow-up (2026-10-20):
 - Run arguments pass through as positional arguments. Runs use Cargo, and packaging discovers its target directory through metadata.
 - Validation: full `just check` passed. Command-routing probes passed for nested directories, quoted test filters, argument forwarding, default tests, failure propagation, release packaging, and fixture routing. Python syntax and Justfile formatting checks passed.
 - `CARGO_TARGET_DIR="$PWD/.artifacts/justfile-target" just bundle-release` built the optimized app outside the default target directory and passed strict bundle signature verification.
+
+Appearance and conversation-controls follow-up (2026-10-20):
+- Theme changes now discard the partially drawn egui pass and rebuild the root UI with the selected style before presenting it. This avoids mixing new surface colors with the previous sidebar, card, and text styles. Native appearance and saved preference remain synchronized with the selection.
+- Conversation setup uses positive "Microphone input" and "Spoken replies" checkboxes, checked by default. Turning them off maps to the existing text-only/silent runtime flags; explicit CLI flags still determine initial state.
+- Verification: `just check` passed (fmt, Clippy, Go vet, six Rust tests, Go race tests, debug builds). The render-output regression exercises repeated switches in both directions and checks that only the selected palette is emitted for the test panels.
+- Rebuilt isolated native demo: both theme directions, checked audio defaults, independent toggling, and saved dark appearance after restart passed. No live audio hardware was exercised.

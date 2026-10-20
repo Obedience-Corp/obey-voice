@@ -663,6 +663,7 @@ impl eframe::App for VoiceApp {
                 self.show_think = !self.show_think;
             }
         }
+        let mut requested_dark = self.dark;
         crate::theme::backdrop(ui);
         egui::Panel::left("navigation")
             .exact_size(222.)
@@ -728,21 +729,8 @@ impl eframe::App for VoiceApp {
                 }
                 ui.add_space(12.);
                 ui.horizontal(|ui| {
-                    let previous = self.dark;
-                    ui.selectable_value(&mut self.dark, false, "Light");
-                    ui.selectable_value(&mut self.dark, true, "Dark");
-                    if previous != self.dark {
-                        crate::theme::apply(&ctx, self.dark);
-                        #[cfg(target_os = "macos")]
-                        crate::theme::native_appearance(_frame, self.dark);
-                        if let Some(storage) = _frame.storage_mut() {
-                            storage.set_string(
-                                "appearance",
-                                if self.dark { "dark" } else { "light" }.into(),
-                            );
-                            storage.flush();
-                        }
-                    }
+                    ui.selectable_value(&mut requested_dark, false, "Light");
+                    ui.selectable_value(&mut requested_dark, true, "Dark");
                 });
                 ui.add_space(10.);
                 ui.horizontal(|ui| {
@@ -773,6 +761,20 @@ impl eframe::App for VoiceApp {
                     self.error = None;
                 }
             });
+        if requested_dark != self.dark {
+            self.dark = requested_dark;
+            crate::theme::switch(&ctx, self.dark);
+            #[cfg(target_os = "macos")]
+            crate::theme::native_appearance(_frame, self.dark);
+            if let Some(storage) = _frame.storage_mut() {
+                storage.set_string(
+                    "appearance",
+                    if self.dark { "dark" } else { "light" }.into(),
+                );
+                storage.flush();
+            }
+            return;
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().inner_margin(egui::Margin {
                 left: 12,
