@@ -141,6 +141,12 @@ func (h *host) close(o *output) {
 }
 func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 	switch r.Method {
+	case "setup_status":
+		return setupStatus()
+	case "setup_save":
+		return saveSetup(setupPath(), r.Config)
+	case "setup_provider":
+		return setupProvider(ctx)
 	case "worker_config_get":
 		cfg, err := config.LoadRaw()
 		if err != nil {

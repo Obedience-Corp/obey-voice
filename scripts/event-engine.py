@@ -55,7 +55,9 @@ for line in sys.stdin:
     reply = {'id': request.get('id'), 'result': None}
     if method == 'shutdown':
         break
-    if method == 'sessions':
+    if method == 'setup_status':
+        reply['result'] = {'progress': {'version': 1, 'completed': True}, 'existing': True}
+    elif method == 'sessions':
         reply['result'] = []
     elif method == 'start':
         print('Fixture provider startup failed: model unavailable', file=sys.stderr, flush=True)

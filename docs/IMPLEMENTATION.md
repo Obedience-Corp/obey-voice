@@ -83,3 +83,27 @@ Branding and settings organization follow-up (2026-10-20):
 - Settings now follow the TUI section order with distinct Workers, Qwen, STT, Audio, and Meeting sections. Provider model selection follows the saved brain provider. Extra engine configuration stays accessible in Remote/Models/Advanced and global search; Claude session caps/warnings are grouped under Advanced with a provider-specific explanation. Field editing still uses the shared engine schema and config commands.
 - Verified real-engine isolated settings UI: Brain provider/model order, no Claude limits in normal Brain, global search locating the cap under Advanced, saved value 65000 on disk, reset removing the override, and Audio containing microphone/speaker/volume. Tests cover section routing, selected-provider filtering, hidden-key exclusion, and search reachability. No personal config or live audio devices were used.
 - Final gates: `just check` passed with 13 Rust tests plus Go race tests, lint, file-size checks, and debug builds. `just bundle` passed strict code-signature verification.
+
+First-run setup (2026-10-21, WI-a41e2c):
+- Created a campaign design work item and project link before implementation.
+- Added resumable Welcome/Brain/Speech/Audio/Try it flow, existing-config bypass,
+  explicit speech installation, provider checks, microphone-level and playback
+  confirmations, and a real test greeting before completion. Home and Settings
+  can reopen setup. A saved completion marker does not claim ongoing health.
+- Existing config schema/edit commands, model status/ensure, and conversation
+  controller remain authoritative. Go adds install-scoped atomic desktop progress
+  and a bounded Ollama inventory probe; CLI authentication is verified by the reply.
+- Failed/cancelled installs and failed provider turns cannot complete setup. Speech
+  assets respect audio choices; optional Qwen tiers do not block the selected tier.
+  Audio starts only on an explicit action. Leaving the test drains the controller.
+- Isolated native acceptance: blank install Welcome without config writes; save
+  server/model and verify on disk; quit/resume at Brain; text-only skips speech;
+  actual engine reply; finish, saved session/progress, and Home on relaunch.
+- Replay acceptance: missing models, download failure, cancellation, successful
+  retry, simulated input meter, provider failure and successful retry, and Finish
+  disabled until playback is confirmed. Inspected both light and dark rendering.
+- Fixture storage now isolates eframe appearance/window state as well as engine
+  config and logs. Fresh fixture and replay have modular just test recipes.
+- Hardware permission prompts, actual microphone/playback, and real provider CLI
+  account sign-in remain manual acceptance; no live audio or personal voice config
+  was used in these checks. Minimum-size window layout remains a manual check.

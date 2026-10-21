@@ -41,6 +41,12 @@ impl VoiceApp {
 
     fn settings_content(&mut self, ui: &mut egui::Ui) {
         ui.heading(layout::title(&self.group));
+        if ui
+            .add_enabled(!self.active, egui::Button::new("Run guided setup"))
+            .clicked()
+        {
+            self.open_setup();
+        }
         if self.group == "workers" && ui.button("Open worker policy and running jobs").clicked() {
             self.navigate(Screen::Workers);
         }

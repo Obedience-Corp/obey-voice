@@ -8,6 +8,7 @@ mod meeting;
 mod personas;
 mod remote;
 mod settings;
+mod setup;
 mod workers;
 
 use crate::app::VoiceApp;
@@ -50,6 +51,7 @@ fn combo(ui: &mut egui::Ui, id: &str, value: &mut String, options: &[&str]) {
 impl VoiceApp {
     pub fn render_screen(&mut self, ui: &mut egui::Ui) {
         match self.screen {
+            Screen::Setup => self.setup_screen(ui),
             Screen::Home => self.home(ui),
             Screen::Chat => self.chat(ui),
             Screen::Sessions => self.session_list(ui),

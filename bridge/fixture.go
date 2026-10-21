@@ -20,8 +20,8 @@ func init() {
 	if !filepath.IsAbs(dir) {
 		panic("desktop fixture requires an absolute OBEY_VOICE_TEST_CONFIG")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "config.yaml")); err != nil {
-		panic(err)
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		panic("desktop fixture requires an existing config directory")
 	}
 	config.SetConfigDirForTest(fixtureScope{}, dir)
 }

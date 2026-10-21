@@ -3,11 +3,16 @@ mod backend;
 mod diagnostics;
 mod model;
 mod screens;
+mod setup;
 mod theme;
 
 fn main() -> eframe::Result {
     let _diagnostics = diagnostics::init();
+    let fixture_root = std::env::var_os("OBEY_VOICE_TEST_CONFIG")
+        .or_else(|| std::env::var_os("OBEY_VOICE_EVENT_FIXTURE"));
     let options = eframe::NativeOptions {
+        persistence_path: fixture_root
+            .map(|root| std::path::PathBuf::from(root).join("desktop-ui.ron")),
         viewport: eframe::egui::ViewportBuilder::default()
             .with_icon(
                 eframe::icon_data::from_png_bytes(include_bytes!(

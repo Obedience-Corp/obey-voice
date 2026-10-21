@@ -21,6 +21,8 @@ impl VoiceApp {
                         continue;
                     }
                     self.connected = false;
+                    self.setup.busy = None;
+                    self.setup.invalidate();
                     self.starting = false;
                     self.active = false;
                     self.error = Some(err);
@@ -37,6 +39,12 @@ impl VoiceApp {
                             Some("pairing_code") => self.pairing = string(&v, "code"),
                             _ => {}
                         }
+                    }
+                    if self.task == Some(id)
+                        && let Ok(v) = serde_json::from_str::<Value>(&line)
+                        && v.get("phase").is_some()
+                    {
+                        self.setup.download = v;
                     }
                     if id == 0 {
                         push_log(&mut self.engine_logs, line);
@@ -62,7 +70,11 @@ impl VoiceApp {
                         "ready" => {
                             self.connected = true;
                             self.status = "Ready".into();
-                            self.refresh();
+                            self.setup_request(
+                                "setup_status",
+                                json!({}),
+                                crate::setup::Operation::Load,
+                            );
                         }
                         "state" => {
                             if (self.active || self.starting)
@@ -116,6 +128,13 @@ impl VoiceApp {
             self.remote_url.clear();
             self.pairing.clear();
         }
+        if let Purpose::Setup(operation) = purpose {
+            if self.setup.busy != Some(id) {
+                return;
+            }
+            self.complete_setup(operation, result);
+            return;
+        }
         let v = match result {
             Ok(v) => v,
             Err(err) => {
@@ -134,6 +153,7 @@ impl VoiceApp {
             }
         };
         match purpose {
+            Purpose::Setup(_) => unreachable!(),
             Purpose::Sessions => self.sessions = serde_json::from_value(v).unwrap_or_default(),
             Purpose::Personas => self.personas = serde_json::from_value(v).unwrap_or_default(),
             Purpose::Start => {
@@ -165,6 +185,7 @@ impl VoiceApp {
                 }
             }
             Purpose::SettingSave(key) => {
+                self.setup.invalidate();
                 self.drafts.remove(&key);
                 self.status = format!("Saved {key}");
                 self.command(&["config", "get", "--json"], Purpose::SettingsValues);

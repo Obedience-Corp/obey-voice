@@ -148,7 +148,7 @@ fn icon(p: &egui::Painter, c: Pos2, screen: Screen, color: Color32) {
                 egui::StrokeKind::Inside,
             );
         }
-        Screen::Settings => {
+        Screen::Settings | Screen::Setup => {
             p.circle_stroke(c, 7., s);
             p.circle_stroke(c, 2.5, s);
             for i in 0..8 {

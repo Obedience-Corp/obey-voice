@@ -8,6 +8,21 @@ use eframe::egui::RichText;
 impl VoiceApp {
     pub(super) fn home(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical().show(ui, |ui| {
+            if !self.demo {
+                card(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(if self.setup.progress.completed {
+                            "Need to check your setup?"
+                        } else {
+                            "Finish setup to check your provider, speech, and audio."
+                        });
+                        if ui.button("Set up Obey").clicked() {
+                            self.open_setup();
+                        }
+                    });
+                });
+                ui.add_space(12.);
+            }
             card(ui, |ui| {
                 let r = ui.available_rect_before_wrap();
                 if r.width() > 600. {
