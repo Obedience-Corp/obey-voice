@@ -23,6 +23,13 @@ target_dir = Path(metadata['target_directory'])
 bundle = root / 'dist' / ('Obey Voice Demo.app' if args.demo else 'Obey Voice Agent.app')
 macos = bundle / 'Contents' / 'MacOS'
 macos.mkdir(parents=True, exist_ok=True)
+resources = bundle / 'Contents' / 'Resources'
+resources.mkdir(exist_ok=True)
+subprocess.run([
+    'iconutil', '--convert', 'icns',
+    '--output', str(resources / 'AppIcon.icns'),
+    str(root / 'assets' / 'AppIcon.iconset'),
+], check=True)
 for source, name in [(target_dir / ('release' if args.release else 'debug') / 'obey-voice-agent', 'obey-voice-agent'), (root / 'bin' / 'obey-voice-engine', 'obey-voice-engine')]:
     shutil.copy2(source, macos / name)
 # Include the runtime's native speech libraries and replace developer-machine
@@ -63,6 +70,7 @@ subprocess.run(['install_name_tool', '-add_rpath', '@executable_path/../Framewor
 info = dict(CFBundleName='Obey Voice Demo' if args.demo else 'Obey Voice Agent', CFBundleDisplayName='Obey Voice Agent', CFBundleExecutable='obey-voice-agent', CFBundleIdentifier='com.obedience.voice-agent.demo' if args.demo else 'com.obedience.voice-agent', CFBundleVersion='1', CFBundleShortVersionString='0.1.0', CFBundlePackageType='APPL', LSMinimumSystemVersion='13.0', NSMicrophoneUsageDescription='Obey Voice uses your microphone for conversations, voice enrollment, and meeting recordings.', NSHighResolutionCapable=True)
 if args.demo:
     info['LSEnvironment'] = {'OBEY_VOICE_AGENT_DEMO': '1'}
+info['CFBundleIconFile'] = 'AppIcon.icns'
 with (bundle / 'Contents' / 'Info.plist').open('wb') as f:
     plistlib.dump(info, f)
 subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(bundle)], check=True)

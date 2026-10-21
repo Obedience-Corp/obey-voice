@@ -9,6 +9,12 @@ fn main() -> eframe::Result {
     let _diagnostics = diagnostics::init();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!(
+                    "../assets/AppIcon.iconset/icon_512x512.png"
+                ))
+                .expect("the bundled Obedience Corp icon must be a valid PNG"),
+            )
             .with_inner_size([1180.0, 800.0])
             .with_min_inner_size([820.0, 600.0])
             .with_transparent(true)

@@ -111,7 +111,7 @@ impl VoiceApp {
             schema: vec![],
             values: Value::Null,
             drafts: HashMap::new(),
-            group: "voice".into(),
+            group: "brain".into(),
             enroll_name: String::new(),
             enroll_owner: true,
             search: String::new(),
