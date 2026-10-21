@@ -1,36 +1,49 @@
+mod editor;
+mod layout;
+
 use super::{card, field};
 use crate::app::VoiceApp;
-use crate::model::{Purpose, display, string};
+use crate::model::{Purpose, Screen};
 use crate::theme::muted;
 use eframe::egui;
 use eframe::egui::RichText;
 
 impl VoiceApp {
     pub(super) fn settings(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            for group in [
-                "voice", "brain", "speakers", "meetings", "tools", "remote", "advanced", "models",
-            ] {
-                ui.selectable_value(&mut self.group, group.into(), group);
-            }
-            let mut extra: Vec<_> = self
-                .schema
-                .iter()
-                .map(|s| s.group.as_str())
-                .filter(|g| {
-                    ![
-                        "hidden", "voice", "brain", "speakers", "meetings", "tools", "remote",
-                        "advanced", "models",
-                    ]
-                    .contains(g)
-                })
-                .collect();
-            extra.sort_unstable();
-            extra.dedup();
-            for group in extra {
-                ui.selectable_value(&mut self.group, group.into(), group);
-            }
-        });
+        egui::Panel::left("settings_sections")
+            .exact_size(130.)
+            .resizable(false)
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("settings_sections_scroll")
+                    .show(ui, |ui| {
+                        for (index, &(id, title)) in layout::SECTIONS.iter().enumerate() {
+                            if index == 9 {
+                                ui.separator();
+                                ui.label("More settings");
+                            }
+                            if ui
+                                .selectable_value(&mut self.group, id.into(), title)
+                                .changed()
+                            {
+                                self.search.clear();
+                            }
+                        }
+                    });
+            });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                self.settings_content(ui);
+            });
+    }
+
+    fn settings_content(&mut self, ui: &mut egui::Ui) {
+        ui.heading(layout::title(&self.group));
+        if self.group == "workers" && ui.button("Open worker policy and running jobs").clicked() {
+            self.navigate(Screen::Workers);
+        }
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Find a setting…"));
             if ui.button("Reload").clicked() {
@@ -66,23 +79,12 @@ impl VoiceApp {
                 }
             });
         }
-        let keys: Vec<_> = self
-            .schema
-            .iter()
-            .filter(|s| {
-                s.group != "hidden"
-                    && if self.search.is_empty() {
-                        s.group == self.group
-                    } else {
-                        format!("{} {} {}", s.key, s.title, s.help)
-                            .to_lowercase()
-                            .contains(&self.search.to_lowercase())
-                    }
-            })
-            .cloned()
-            .collect();
+        let provider = self.values["brain_provider"]["value"]
+            .as_str()
+            .unwrap_or("ollama");
+        let keys = layout::visible_keys(&self.schema, &self.group, &self.search, provider);
         egui::ScrollArea::vertical()
-            .id_salt("settings_scroll")
+            .id_salt(("settings_scroll", &self.group, &self.search))
             .show(ui, |ui| {
                 if self.group == "speakers" && self.search.is_empty() {
                     card(ui, |ui| {
@@ -114,107 +116,17 @@ impl VoiceApp {
                         ui.label(&self.state.settings_message);
                     });
                 }
-                for spec in keys {
-                    ui.push_id(&spec.key, |ui| {
-                        card(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.strong(&spec.title);
-                                if spec.restart_required {
-                                    ui.label(
-                                        RichText::new("Next conversation").small().color(muted(ui)),
-                                    );
-                                }
-                            });
-                            ui.label(RichText::new(&spec.help).small().color(muted(ui)));
-                            let current = self.values[&spec.key]["value"].clone();
-                            let source = string(&self.values[&spec.key], "source");
-                            ui.label(
-                                RichText::new(format!("{} · {}", spec.key, source))
-                                    .monospace()
-                                    .small()
-                                    .color(muted(ui)),
-                            );
-                            if !spec.editable {
-                                ui.label(format!("Managed by {}", spec.managed_by));
-                                return;
-                            }
-                            let value = self.drafts.entry(spec.key.clone()).or_insert_with(|| {
-                                display(if current.is_null() {
-                                    &spec.default
-                                } else {
-                                    &current
-                                })
-                            });
-                            match spec.kind.as_str() {
-                                "bool" => {
-                                    let mut on = value == "true";
-                                    if ui.checkbox(&mut on, "Enabled").changed() {
-                                        *value = on.to_string();
-                                    }
-                                }
-                                "enum" => {
-                                    egui::ComboBox::from_id_salt("value")
-                                        .selected_text(if value.is_empty() {
-                                            "App default"
-                                        } else {
-                                            value.as_str()
-                                        })
-                                        .show_ui(ui, |ui| {
-                                            if spec.allows_empty {
-                                                ui.selectable_value(
-                                                    value,
-                                                    String::new(),
-                                                    "App default",
-                                                );
-                                            }
-                                            for choice in &spec.choices {
-                                                ui.selectable_value(value, choice.clone(), choice);
-                                            }
-                                        });
-                                }
-                                _ => {
-                                    ui.add(
-                                        egui::TextEdit::singleline(value)
-                                            .password(spec.secret)
-                                            .desired_width(f32::INFINITY),
-                                    );
-                                }
-                            }
-                            let saved = display(if current.is_null() {
-                                &spec.default
-                            } else {
-                                &current
-                            });
-                            let changed = *value != saved;
-                            let draft = value.clone();
-                            ui.horizontal(|ui| {
-                                if ui.add_enabled(changed, egui::Button::new("Save")).clicked() {
-                                    self.cli(
-                                        vec![
-                                            "config".into(),
-                                            "set".into(),
-                                            spec.key.clone(),
-                                            draft,
-                                            "--json".into(),
-                                        ],
-                                        Purpose::SettingSave(spec.key.clone()),
-                                        false,
-                                    );
-                                }
-                                if ui.button("Reset to default").clicked() {
-                                    self.cli(
-                                        vec![
-                                            "config".into(),
-                                            "unset".into(),
-                                            spec.key.clone(),
-                                            "--json".into(),
-                                        ],
-                                        Purpose::SettingSave(spec.key.clone()),
-                                        false,
-                                    );
-                                }
-                            });
-                        });
+                let claude: Vec<_> = keys.iter().filter(|s| self.search.is_empty() && self.group == "advanced" && s.key.starts_with("claude_")).cloned().collect();
+                for spec in keys.iter().filter(|s| !claude.iter().any(|c| c.key == s.key)) {
+                    if !self.search.is_empty() {
+                        ui.label(RichText::new(layout::title(layout::section(spec))).small().color(muted(ui)));
+                    }
+                    self.setting_editor(ui, spec);
+                }
+                if !claude.is_empty() {
+                    ui.collapsing("Claude session management", |ui| {
+                        ui.label("Only used by the Claude brain provider. These limits do not affect Ollama, Grok, or Cursor.");
+                        for spec in &claude { self.setting_editor(ui, spec); }
                     });
                 }
                 if self.group == "advanced" {

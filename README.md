@@ -76,6 +76,15 @@ instead of compressing code to meet the limit.
 
 The exported runtime adapter is introduced by [obey-voice #227](https://github.com/Obedience-Corp/obey-voice/pull/227). The pinned revision can be built before that PR is merged.
 
+Settings use the TUI’s section order: Brain, Workers, Tools, Voice, Qwen, STT,
+Speakers, Audio, and Meeting. Extra engine configuration remains under Remote,
+Models, and Advanced. Brain shows the saved provider’s model; global search also
+finds other providers’ settings. Claude session limits are under Advanced →
+Claude session management and only affect the Claude brain provider. The engine
+continues to own setting validation and persistence.
+
+The app icon uses the existing Obedience Corp mark; see [asset provenance](assets/README.md).
+
 ## Verification and previews
 
 ```sh
