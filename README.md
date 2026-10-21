@@ -85,6 +85,30 @@ continues to own setting validation and persistence.
 
 The app icon uses the existing Obedience Corp mark; see [asset provenance](assets/README.md).
 
+## First-time setup
+
+The first launch opens **Welcome → Brain → Speech → Audio → Try it**. Existing
+Obey Voice configuration is detected and retained; existing users can choose
+**Keep my setup and go to Home**. You can reopen setup from Home or Settings.
+
+Choose a provider and save its model/server choices, then check it. Ollama checks
+reachability and installed models; CLI providers check installation and use their
+existing login. Sign in through the provider's CLI before the final conversation.
+An active persona can override app defaults, and the test uses that same persona.
+
+Select microphone input and spoken replies independently. Model checks are
+read-only; installation starts only when selected, with download progress,
+cancellation, and retry. Turning both audio options off skips speech downloads and
+hardware. Starting the audio test explicitly opens the microphone when selected.
+The final greeting verifies a real provider reply; enabled audio also requires
+confirmation that the input meter responds and playback is audible.
+
+Setup saves its current step, audio choices, and completion/skip status in
+`desktop-setup.json` under the engine's config directory. It does not replace
+`config.yaml`. Unfinished setup resumes after restart; skipped setup remains
+available from Home. Completion means the test succeeded at that time, not a
+permanent health guarantee. **Engine connected** only reports the bridge connection.
+
 ## Verification and previews
 
 ```sh
@@ -92,6 +116,8 @@ just check       # lint, automated tests, and debug build
 just test        # Rust tests and isolated Go bridge tests with the race detector
 just demo        # sample data only; does not read your personas or use the mic
 just ui-fixture  # builds an isolated test app and runs a mock local model server
+just test setup # same real engine fixture, initially without config.yaml
+just test setup-replay # simulated audio, failed/cancelled downloads, provider retry
 ```
 
 `just demo` is only a visual preview. Use `just run` or the normal app bundle to load your actual personas. The UI fixture prints a separate test app path; open that app, choose application defaults, typed-only, and silent output, then exercise a conversation. Fixture state stays under the printed temporary directory. Stop the fixture server when finished.
@@ -135,3 +161,8 @@ personal config. `just test routing` exercises the real engine router with a
 temporary meeting/config and a fake camp importer, verifying the saved document
 and failed-delivery receipt. The existing `just ui-fixture` remains the real engine
 text-conversation fixture. Hardware/provider acceptance is still manual.
+
+The setup replay never opens hardware or contacts a model provider. Its first
+installation fails, its second waits for cancellation, and its third succeeds.
+Its first greeting fails and its second replies, allowing the completion gate to
+be checked. Fixture window/appearance preferences and logs are isolated too.

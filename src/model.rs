@@ -3,6 +3,7 @@ use serde_json::Value;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Screen {
+    Setup,
     Home,
     Chat,
     Sessions,
@@ -29,6 +30,7 @@ impl Screen {
     ];
     pub fn title(self) -> &'static str {
         match self {
+            Self::Setup => "Welcome to Obey",
             Self::Home => "Home",
             Self::Chat => "Conversation",
             Self::Sessions => "Sessions",
@@ -162,6 +164,7 @@ pub struct PersonaForm {
 }
 #[derive(Clone)]
 pub enum Purpose {
+    Setup(crate::setup::Operation),
     Sessions,
     Personas,
     PersonaLoad,

@@ -18,6 +18,7 @@ impl eframe::App for VoiceApp {
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll();
+        self.setup_observe();
         let ctx = ui.ctx().clone();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.screen.manager() && self.active {
             self.navigate(Screen::Chat);
@@ -69,8 +70,9 @@ impl eframe::App for VoiceApp {
                         ui.label(RichText::new("TOOLS").size(10.).color(muted(ui)));
                         ui.add_space(5.);
                     }
-                    let enabled =
-                        !self.starting && (!self.meeting_active || screen == Screen::Meeting);
+                    let enabled = !self.starting
+                        && self.screen != Screen::Setup
+                        && (!self.meeting_active || screen == Screen::Meeting);
                     let clicked = ui
                         .add_enabled_ui(enabled, |ui| {
                             crate::theme::nav(ui, screen, self.screen == screen)
@@ -90,7 +92,8 @@ impl eframe::App for VoiceApp {
                 if drag.drag_started() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                 }
-                let enabled = !self.starting && !self.meeting_active;
+                let enabled =
+                    !self.starting && !self.meeting_active && self.screen != Screen::Setup;
                 if ui
                     .add_enabled_ui(enabled, |ui| {
                         crate::theme::nav(ui, Screen::Settings, self.screen == Screen::Settings)
@@ -121,7 +124,7 @@ impl eframe::App for VoiceApp {
                         RichText::new(if self.demo {
                             "Preview mode"
                         } else if self.connected {
-                            "Voice engine connected"
+                            "Engine connected"
                         } else {
                             "Engine offline"
                         })
@@ -232,7 +235,8 @@ impl eframe::App for VoiceApp {
             });
         self.dialogs(&ctx);
         self.diagnostics_dialog(&ctx);
-        if self.starting || self.active || self.meeting_active {
+        // Keep setup status and native accessibility input responsive between async checks.
+        if self.starting || self.active || self.meeting_active || self.screen == Screen::Setup {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
     }

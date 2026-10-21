@@ -28,3 +28,15 @@ events:
 # Real routing adapter with temporary config, bundle, and a fake camp importer
 routing:
     python3 scripts/test-routing.py
+
+# Start native setup with no saved config; local test provider, no microphone automation
+[macos]
+setup:
+    just dist mac
+    python3 scripts/ui-fixture.py --fresh
+
+# Fake audio/downloads for failure, cancellation, and retry checks in the native UI
+[macos]
+setup-replay:
+    just dist mac
+    python3 scripts/event-fixture.py --setup

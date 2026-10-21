@@ -2,6 +2,7 @@
 mod actions;
 mod demo;
 mod events;
+mod setup;
 mod view;
 
 use crate::backend::Backend;
@@ -10,6 +11,7 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
 pub struct VoiceApp {
+    pub setup: crate::setup::Setup,
     pub backend: Backend,
     pub demo: bool,
     pub dark: bool,
@@ -94,11 +96,12 @@ impl VoiceApp {
         let demo = std::env::args().any(|a| a == "--demo")
             || std::env::var_os("OBEY_VOICE_AGENT_DEMO").is_some();
         let mut app = Self {
+            setup: crate::setup::Setup::default(),
             backend: Backend::new(ctx.clone(), demo),
             demo,
             dark,
             connected: demo,
-            screen: Screen::Home,
+            screen: if demo { Screen::Home } else { Screen::Setup },
             state: State::default(),
             active: false,
             starting: false,
