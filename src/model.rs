@@ -74,6 +74,8 @@ pub struct Enrollment {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct State {
+    pub work_dir: String,
+    pub work_dir_source: String,
     #[serde(deserialize_with = "nullable_vec")]
     pub notices: Vec<String>,
     #[serde(deserialize_with = "nullable_vec")]
@@ -151,6 +153,13 @@ pub struct KeySpec {
 }
 #[derive(Default)]
 pub struct PersonaForm {
+    pub save_error: String,
+    pub starting_directory: String,
+    pub original_directory: String,
+    pub directory_choices: Vec<Value>,
+    pub directory_notice: String,
+    pub directory_request: Option<u64>,
+    pub browse_request: Option<u64>,
     pub id: String,
     pub name: String,
     pub prompt: String,
@@ -168,6 +177,8 @@ pub enum Purpose {
     Sessions,
     Personas,
     PersonaLoad,
+    PersonaDirectories,
+    PersonaBrowse,
     SettingsSchema,
     WorkerConfig,
     SettingsValues,

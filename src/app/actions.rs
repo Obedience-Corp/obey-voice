@@ -196,6 +196,7 @@ impl VoiceApp {
         self.pairing.clear();
     }
     pub fn save_persona(&mut self) {
+        self.persona_form.save_error.clear();
         let f = &self.persona_form;
         if f.id.is_empty() {
             self.cli(
@@ -205,6 +206,8 @@ impl VoiceApp {
                     f.name.clone(),
                     "--prompt".into(),
                     f.prompt.clone(),
+                    "--starting-directory".into(),
+                    f.starting_directory.clone(),
                     "--no-activate".into(),
                     "--json".into(),
                 ],
@@ -231,13 +234,16 @@ impl VoiceApp {
             f.tier.clone(),
             "--json".into(),
         ];
+        if f.starting_directory != f.original_directory {
+            args.extend(["--starting-directory".into(), f.starting_directory.clone()]);
+        }
         if !f.structured && !f.prompt.is_empty() {
             args.extend(["--prompt".into(), f.prompt.clone()]);
         }
         self.cli(
             args,
             Purpose::Mutation(
-                "Persona saved; model and voice changes apply to the next conversation".into(),
+                "Persona saved; starting directory applies to new conversations".into(),
             ),
             false,
         );

@@ -114,11 +114,16 @@ impl VoiceApp {
                     ui.label("Qwen tier");
                     combo(ui, "tier", &mut f.tier, &["", "0.6b", "1.7b"]);
                 });
+                self.persona_directory_editor(ui);
+                let f = &mut self.persona_form;
                 if f.structured {
                     ui.label("This prompt has structured sections. Edit its source document to preserve that structure.");
                 } else {
                     ui.label("System prompt");
                     ui.add(egui::TextEdit::multiline(&mut f.prompt).desired_rows(8).desired_width(f32::INFINITY));
+                }
+                if !self.persona_form.save_error.is_empty() {
+                    ui.colored_label(Color32::from_rgb(180, 45, 45), &self.persona_form.save_error);
                 }
                 ui.horizontal(|ui| {
                     if ui.add_enabled(!self.persona_form.name.trim().is_empty(), egui::Button::new("Save persona")).clicked() { self.save_persona(); }

@@ -24,6 +24,7 @@ impl VoiceApp {
                     prompt: "You are {agent_name}, a voice assistant.".into(),
                     ..Default::default()
                 };
+                self.load_persona_directories();
             }
             if ui.button("Refresh").clicked() {
                 self.command(&["persona", "list", "--json"], Purpose::Personas);
