@@ -92,6 +92,9 @@ impl VoiceApp {
         egui::ScrollArea::vertical()
             .id_salt(("settings_scroll", &self.group, &self.search))
             .show(ui, |ui| {
+                if self.group == "advanced" || (!self.search.is_empty() && ["tray", "menu bar", "desktop", "quit"].iter().any(|word| self.search.to_lowercase().contains(word))) {
+                    card(ui, |ui| self.desktop_settings(ui));
+                }
                 if self.group == "speakers" && self.search.is_empty() {
                     card(ui, |ui| {
                         ui.strong("Voice registration");

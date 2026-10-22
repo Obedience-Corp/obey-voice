@@ -40,3 +40,8 @@ setup:
 setup-replay:
     just dist mac
     python3 scripts/event-fixture.py --setup
+
+# Compile and test Linux adapters in a disposable container (requires Docker)
+linux:
+    docker build -f scripts/linux-check.Dockerfile -t obey-voice-agent-linux-check .
+    docker run --rm -v "{{ justfile_directory() }}:/workspace:ro" -v obey-voice-agent-linux-target:/target -v obey-voice-agent-linux-cargo:/usr/local/cargo/registry obey-voice-agent-linux-check

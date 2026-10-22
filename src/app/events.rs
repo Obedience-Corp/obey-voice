@@ -25,6 +25,8 @@ impl VoiceApp {
                     self.setup.invalidate();
                     self.starting = false;
                     self.active = false;
+                    self.meeting_active = false;
+                    self.meeting_paused = false;
                     self.error = Some(err);
                 }
                 Event::Log { id, line } => {
