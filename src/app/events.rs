@@ -27,10 +27,17 @@ impl VoiceApp {
                     self.active = false;
                     self.meeting_active = false;
                     self.meeting_paused = false;
-                    // This engine can no longer acknowledge a pause/resume.
-                    // Keep independent CLI jobs, but release the tray transition.
-                    self.pending
-                        .retain(|_, purpose| !matches!(purpose, Purpose::MeetingPaused(_)));
+                    // This engine can no longer acknowledge meeting controls.
+                    // Keep independent CLI jobs, but release the tray transition
+                    // and allow the next engine's meeting to start and save.
+                    self.pending.retain(|_, purpose| {
+                        !matches!(
+                            purpose,
+                            Purpose::MeetingPaused(_)
+                                | Purpose::MeetingStart
+                                | Purpose::MeetingStop
+                        )
+                    });
                     self.error = Some(err);
                 }
                 Event::Log { id, line } => {
@@ -113,8 +120,7 @@ impl VoiceApp {
                             self.meeting_active = false;
                         }
                         "meeting_stop_requested" => {
-                            self.request("meeting_stop", json!({}), Purpose::MeetingStop);
-                            self.status = "Saving meeting…".into();
+                            self.stop_meeting();
                         }
                         _ => {}
                     }
@@ -233,11 +239,16 @@ impl VoiceApp {
             }
             Purpose::MeetingDocument => self.meeting_result = v,
             Purpose::MeetingStart => {
-                self.starting = false;
+                self.starting = self
+                    .pending
+                    .values()
+                    .any(|p| matches!(p, Purpose::MeetingStop));
                 self.meeting_active = true;
                 self.meeting_paused = false;
                 self.meeting_path = string(&v, "path");
-                self.status = "Recording meeting".into();
+                if !self.starting {
+                    self.status = "Recording meeting".into();
+                }
             }
             Purpose::MeetingStop => {
                 self.starting = false;
