@@ -3,6 +3,8 @@ mod actions;
 mod demo;
 mod events;
 mod resident;
+#[cfg(test)]
+mod resident_tests;
 mod setup;
 mod view;
 

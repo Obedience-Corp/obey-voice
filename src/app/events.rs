@@ -27,6 +27,10 @@ impl VoiceApp {
                     self.active = false;
                     self.meeting_active = false;
                     self.meeting_paused = false;
+                    // This engine can no longer acknowledge a pause/resume.
+                    // Keep independent CLI jobs, but release the tray transition.
+                    self.pending
+                        .retain(|_, purpose| !matches!(purpose, Purpose::MeetingPaused(_)));
                     self.error = Some(err);
                 }
                 Event::Log { id, line } => {
