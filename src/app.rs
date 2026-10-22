@@ -2,6 +2,9 @@
 mod actions;
 mod demo;
 mod events;
+mod resident;
+#[cfg(test)]
+mod resident_tests;
 mod setup;
 mod view;
 
@@ -11,6 +14,7 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
 pub struct VoiceApp {
+    pub resident: crate::tray::Resident,
     pub setup: crate::setup::Setup,
     pub backend: Backend,
     pub demo: bool,
@@ -96,6 +100,13 @@ impl VoiceApp {
         let demo = std::env::args().any(|a| a == "--demo")
             || std::env::var_os("OBEY_VOICE_AGENT_DEMO").is_some();
         let mut app = Self {
+            resident: crate::tray::Resident::new(
+                ctx.clone(),
+                cc.storage
+                    .and_then(|s| s.get_string("keep_in_tray"))
+                    .as_deref()
+                    != Some("false"),
+            ),
             setup: crate::setup::Setup::default(),
             backend: Backend::new(ctx.clone(), demo),
             demo,

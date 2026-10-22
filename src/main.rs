@@ -5,6 +5,7 @@ mod model;
 mod screens;
 mod setup;
 mod theme;
+mod tray;
 
 fn main() -> eframe::Result {
     let _diagnostics = diagnostics::init();

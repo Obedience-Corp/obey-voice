@@ -166,3 +166,30 @@ The setup replay never opens hardware or contacts a model provider. Its first
 installation fails, its second waits for cancellation, and its third succeeds.
 Its first greeting fails and its second replies, allowing the completion gate to
 be checked. Fixture window/appearance preferences and logs are isolated too.
+
+## Menu bar and Linux tray
+
+Obey keeps an Obedience Corp icon in the macOS menu bar or a Linux
+StatusNotifierItem-compatible panel. Click to show the existing window. On macOS,
+right-click for controls; on Linux use the panel's icon menu.
+
+The menu opens a new conversation or meeting setup, pauses/resumes the active
+microphone or meeting, stops and reviews a meeting, opens Settings/Diagnostics,
+and quits. Starting capture still requires the existing setup screen. Controls
+are disabled during setup and conflicting operations. Status text and colored
+badges reflect engine state: green microphone, red meeting, amber pause, orange
+attention. Active capture remains visible if an unrelated error occurs.
+
+With **Settings → Advanced → Keep in menu bar / tray** enabled (the default),
+closing hides the window and keeps any current recording running. **Quit Obey**
+(or Command-Q on macOS) exits through engine shutdown. Reopening from Finder or
+the Dock restores the existing macOS window. Turning the preference off removes
+the icon and restores normal close-to-quit behavior.
+
+Linux requires a running StatusNotifierItem host, not just a watcher service.
+Without one, closing quits normally; if the panel disappears while Obey is
+hidden, the window returns. Tray failures and activity transitions appear in
+Diagnostics and `just logs`. Linux builds require the D-Bus development package
+(`libdbus-1-dev` on Debian/Ubuntu). `just test linux` compiles/tests in Docker and
+exercises panel absence, return, and loss on a private D-Bus session. No login
+item or background service is installed.

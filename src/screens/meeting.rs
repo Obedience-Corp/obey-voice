@@ -64,16 +64,13 @@ impl VoiceApp {
                     ui.add_enabled_ui(!self.starting, |ui| {
                         ui.horizontal(|ui| {
                             if ui.button(if self.meeting_paused { "Resume" } else { "Pause" }).clicked() {
-                                self.request(if self.meeting_paused { "meeting_resume" } else { "meeting_pause" }, json!({}), Purpose::MeetingPaused(!self.meeting_paused));
-                                if self.demo { self.meeting_paused = !self.meeting_paused; }
+                                self.pause_meeting();
                             }
                             if ui.button("★ Bookmark").clicked() {
                                 self.request("meeting_bookmark", json!({"text":self.meeting_note}), Purpose::MeetingNote(format!("★ {}", self.meeting_note)));
                             }
                             if ui.button("Stop and review").clicked() {
-                                self.starting = !self.demo;
-                                self.request("meeting_stop", json!({}), Purpose::MeetingStop);
-                                if self.demo { self.meeting_active = false; }
+                                self.stop_meeting();
                             }
                         });
                     });

@@ -160,7 +160,7 @@ impl VoiceApp {
                     .collect::<Vec<_>>()
                     .join("\n\n"),
             ),
-            "/quit" | "/q" | "/exit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            "/quit" | "/q" | "/exit" => self.quit(ctx),
             _ => self.action("text", &text, false),
         }
     }

@@ -14,3 +14,12 @@ The Obedience Corp cyan/white mark on its dark background is shared with
 
 Keep the vector and PNG renditions in sync when the corporate mark changes.
 The build uses the checked-in PNGs and needs no SVG renderer or sibling checkout.
+
+## Menu bar and Linux panel
+
+`tray-template.svg` and `tray-color.svg` reuse the Corp logo paths without the
+square background, cropped for small status icons. The template uses black
+alpha artwork for macOS adaptive tinting; Linux uses cyan/white artwork.
+Generate the checked-in 32-pixel PNGs with `rsvg-convert -w 32 -h 32` and `-o`.
+The Rust tray artwork module adds live microphone, meeting, pause, and error
+badges. Native status text also reports these states.

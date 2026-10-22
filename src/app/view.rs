@@ -7,7 +7,13 @@ use serde_json::json;
 use std::time::Duration;
 
 impl eframe::App for VoiceApp {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll();
+        self.setup_observe();
+        self.resident_logic(ctx);
+    }
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        storage.set_string("keep_in_tray", self.resident.enabled.to_string());
         storage.set_string(
             "appearance",
             if self.dark { "dark" } else { "light" }.into(),
@@ -17,8 +23,6 @@ impl eframe::App for VoiceApp {
         [0.; 4]
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.poll();
-        self.setup_observe();
         let ctx = ui.ctx().clone();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.screen.manager() && self.active {
             self.navigate(Screen::Chat);
