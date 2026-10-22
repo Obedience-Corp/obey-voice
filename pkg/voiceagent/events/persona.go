@@ -5,6 +5,8 @@ import "context"
 // PersonaSelection is control state, separate from the identity of any reply
 // already queued for display or playback.
 type PersonaSelection struct {
+	WorkDir           string `json:"work_dir,omitempty"`
+	WorkDirSource     string `json:"work_dir_source,omitempty"`
 	SessionID         string `json:"session_id"`
 	ConversationEpoch string `json:"conversation_epoch"`
 	PersonaID         string `json:"persona_id"`

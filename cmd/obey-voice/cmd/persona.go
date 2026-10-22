@@ -21,6 +21,7 @@ func init() {
 func newPersonaCmd() *cobra.Command {
 	cmd := personaCmd()
 	cmd.AddCommand(personaListCmd())
+	cmd.AddCommand(personaDirectoriesCmd())
 	cmd.AddCommand(personaShowCmd())
 	cmd.AddCommand(personaUseCmd())
 	cmd.AddCommand(personaCreateCmd())
@@ -64,29 +65,31 @@ func personaListCmd() *cobra.Command {
 			}
 			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
 				type row struct {
-					ID          string `json:"id"`
-					DisplayName string `json:"display_name"`
-					Provider    string `json:"provider,omitempty"`
-					Voice       string `json:"voice,omitempty"`
-					Prompt      string `json:"prompt"`
-					Builtin     bool   `json:"builtin"`
-					Active      bool   `json:"active"`
-					Inactive    bool   `json:"inactive"`
-					Path        string `json:"path"`
+					StartingDirectory string `json:"starting_directory"`
+					ID                string `json:"id"`
+					DisplayName       string `json:"display_name"`
+					Provider          string `json:"provider,omitempty"`
+					Voice             string `json:"voice,omitempty"`
+					Prompt            string `json:"prompt"`
+					Builtin           bool   `json:"builtin"`
+					Active            bool   `json:"active"`
+					Inactive          bool   `json:"inactive"`
+					Path              string `json:"path"`
 				}
 				active := persona.ActiveID(cfg)
 				out := make([]row, 0, len(list))
 				for _, p := range list {
 					out = append(out, row{
-						ID:          p.ID,
-						DisplayName: p.DisplayName,
-						Provider:    p.TTS.Provider,
-						Voice:       p.TTS.Voice,
-						Prompt:      p.Prompts.Persona,
-						Builtin:     p.Builtin,
-						Active:      p.ID == active,
-						Inactive:    p.Inactive,
-						Path:        p.Path,
+						StartingDirectory: p.StartingDirectory,
+						ID:                p.ID,
+						DisplayName:       p.DisplayName,
+						Provider:          p.TTS.Provider,
+						Voice:             p.TTS.Voice,
+						Prompt:            p.Prompts.Persona,
+						Builtin:           p.Builtin,
+						Active:            p.ID == active,
+						Inactive:          p.Inactive,
+						Path:              p.Path,
 					})
 				}
 				enc := json.NewEncoder(cmd.OutOrStdout())
@@ -197,6 +200,7 @@ func printPersonaShow(cmd *cobra.Command, r *personaResultJSON) {
 	p := r.Persona
 	fmt.Fprintf(out, "\n  %s\n", titleStyle.Render("Persona: "+p.ID))
 	fmt.Fprintf(out, "  display_name    %s\n", p.DisplayName)
+	fmt.Fprintf(out, "  starting_directory %s\n", p.StartingDirectory)
 	fmt.Fprintf(out, "  builtin         %v\n", p.Builtin)
 	fmt.Fprintf(out, "  inactive        %v\n", p.Inactive)
 	fmt.Fprintf(out, "  active          %v\n", r.Active)

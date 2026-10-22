@@ -17,6 +17,9 @@ import (
 type workCheckpoint struct{ inner *worksession.Checkpoint }
 
 func bindWorkSession(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session, store *session.Store) (*workCheckpoint, error) {
+	if cfg != nil && sess != nil && cfg.WorkDirSource != "" {
+		sess.WorkDir, sess.WorkDirSource = cfg.WorkDir, cfg.WorkDirSource
+	}
 	inner, err := worksession.Bind(p, cfg, sess, store)
 	if err != nil || inner == nil {
 		return nil, err

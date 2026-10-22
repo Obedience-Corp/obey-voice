@@ -55,6 +55,8 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
+	WorkDir       string       `json:"work_dir,omitempty"`
+	WorkDirSource string       `json:"work_dir_source,omitempty"`
 	FormatVersion int          `json:"format_version,omitempty"`
 	ID            string       `json:"id"`
 	CreatedAt     time.Time    `json:"created_at"`

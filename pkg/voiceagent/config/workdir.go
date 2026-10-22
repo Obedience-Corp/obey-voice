@@ -77,6 +77,10 @@ func (i WorkDirInfo) rejectedSuffix() string {
 // have printed had it been accepted.
 func workDirSourcePhrase(source WorkDirSource, envVar string) string {
 	switch source {
+	case "persona":
+		return "the persona starting directory"
+	case "session":
+		return "the saved conversation directory"
 	case WorkDirSourceFlag:
 		return "the --work-dir flag"
 	case WorkDirSourceConfig:
@@ -160,6 +164,9 @@ func WorkDirFrom(cfg *Config) string {
 // resolution order and every guard are WorkDirFrom's — this is the one
 // implementation, and the plain form is the projection of it.
 func WorkDirInfoFrom(cfg *Config) WorkDirInfo {
+	if cfg != nil && cfg.WorkDirSource != "" && cfg.WorkDir != "" {
+		return WorkDirInfo{Dir: cfg.WorkDir, Source: WorkDirSource(cfg.WorkDirSource)}
+	}
 	candidate, source, envVar := workDirCandidate(cfg)
 	dir, err := existingDir(candidate)
 	if err != nil || dir == rootDir || sameDir(dir, executableDir()) {

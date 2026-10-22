@@ -60,7 +60,9 @@ var rootCmd = &cobra.Command{
 		// --log-file and `narrate <file>` against the caller's cwd. The two
 		// interactive surfaces (root's RunE and serve) enter the directory
 		// themselves, after pinning their own relative path flags.
-		resolvedWorkDir = config.WorkDirFrom(cfg)
+		workDirInfo := config.WorkDirInfoFrom(cfg)
+		resolvedWorkDir = workDirInfo.Dir
+		resolvedWorkDirSource = string(workDirInfo.Source)
 		debugDir := debugAudioDir
 		if debugDir == "auto" {
 			debugDir = filepath.Join(config.ConfigDir(), "debug", "audio")
@@ -208,6 +210,10 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 // Capture input/output choices per runtime, including reload closures. Desktop
 // hosts can build independent sessions without changing Cobra's global flags.
 func conversationRuntimeBuilderFor(resumeSession *session.Session, textMode, noVoice bool) appTUI.RuntimeBuilder {
+	return conversationRuntimeBuilderWithDirectory(resumeSession, textMode, noVoice, "")
+}
+
+func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, textMode, noVoice bool, directoryOverride string) appTUI.RuntimeBuilder {
 	return func(ctx context.Context, progress appTUI.BuildProgress, sessionID, personaID string) (*appTUI.ConversationRuntime, error) {
 		// CLI resume/continue seeds only the first chat. Later launcher choices
 		// must load their selected session, or start fresh for New conversation.
@@ -230,6 +236,9 @@ func conversationRuntimeBuilderFor(resumeSession *session.Session, textMode, noV
 			return nil, fmt.Errorf("reload config: %w", err)
 		}
 		stampWorkDir(cfg)
+		if err := resolveConversationDirectory(cfg, personaID, directoryOverride, sess); err != nil {
+			return nil, err
+		}
 		baseCfg := *cfg
 
 		// Resolve the initial responder before constructing capture/model work.
@@ -446,6 +455,7 @@ func conversationRuntimeBuilderFor(resumeSession *session.Session, textMode, noV
 				// so device/settings changes take effect without replacing the
 				// bound voice identity. Defaults sessions re-bind Settings, not
 				// the default persona's saved TTS.
+				reloaded.WorkDir, reloaded.WorkDirSource = rt.SessionCfg.WorkDir, rt.SessionCfg.WorkDirSource
 				rebound, err := bindSession(reloaded, reloadID)
 				if err != nil {
 					return fmt.Errorf("resolve session persona: %w", err)
@@ -545,7 +555,14 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 	// Same binding rule as the TUI runtime: the CLI conversation runs on an
 	// identity snapshot, not the live global overlay. --persona selects which
 	// identity, for this process only.
-	binding, err := persona.ResolveBinding(cfg, personaOverride)
+	bindID := personaOverride
+	if bindID == "" && resumeSession != nil {
+		bindID = resumeSession.SelectedPersonaID
+	}
+	if err := resolveConversationDirectory(cfg, bindID, "", resumeSession); err != nil {
+		return err
+	}
+	binding, err := persona.ResolveBinding(cfg, bindID)
 	if err != nil {
 		return fmt.Errorf("resolve persona: %w", err)
 	}
