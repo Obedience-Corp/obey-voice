@@ -5,6 +5,7 @@ mod dialogs;
 mod home;
 mod library;
 mod meeting;
+mod persona_directory;
 mod personas;
 mod remote;
 mod settings;

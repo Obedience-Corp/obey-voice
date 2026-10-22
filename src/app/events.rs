@@ -147,9 +147,21 @@ impl VoiceApp {
             self.complete_setup(operation, result);
             return;
         }
+        if matches!(
+            purpose,
+            Purpose::PersonaDirectories | Purpose::PersonaBrowse
+        ) {
+            self.complete_persona_directory(id, purpose, result);
+            return;
+        }
         let v = match result {
             Ok(v) => v,
             Err(err) => {
+                if self.persona_form.open
+                    && matches!(&purpose, Purpose::Mutation(label) if label.starts_with("Persona"))
+                {
+                    self.persona_form.save_error = err.clone();
+                }
                 if matches!(
                     purpose,
                     Purpose::Start | Purpose::Stop | Purpose::MeetingStart | Purpose::MeetingStop
@@ -165,7 +177,9 @@ impl VoiceApp {
             }
         };
         match purpose {
-            Purpose::Setup(_) => unreachable!(),
+            Purpose::Setup(_) | Purpose::PersonaDirectories | Purpose::PersonaBrowse => {
+                unreachable!()
+            }
             Purpose::Sessions => self.sessions = serde_json::from_value(v).unwrap_or_default(),
             Purpose::Personas => self.personas = serde_json::from_value(v).unwrap_or_default(),
             Purpose::Start => {
@@ -215,6 +229,8 @@ impl VoiceApp {
             Purpose::PersonaLoad => {
                 let p = &v["persona"];
                 self.persona_form = PersonaForm {
+                    starting_directory: string(p, "starting_directory"),
+                    original_directory: string(p, "starting_directory"),
                     id: string(p, "id"),
                     name: string(p, "display_name"),
                     brain: string(&p["brain"], "provider"),
@@ -225,7 +241,9 @@ impl VoiceApp {
                     prompt: string(&v["prompt"], "body"),
                     structured: v["prompt"]["structured"].as_bool().unwrap_or(false),
                     open: true,
+                    ..Default::default()
                 };
+                self.load_persona_directories();
             }
             Purpose::Library => {
                 self.library = v

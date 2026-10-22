@@ -1,5 +1,6 @@
 //! Engine connection and ownership; subprocess I/O stays off the UI thread.
 mod commands;
+mod directory;
 mod process;
 mod protocol;
 #[cfg(test)]

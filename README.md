@@ -193,3 +193,13 @@ Diagnostics and `just logs`. Linux builds require the D-Bus development package
 (`libdbus-1-dev` on Debian/Ubuntu). `just test linux` compiles/tests in Docker and
 exercises panel absence, return, and loss on a private D-Bus session. No login
 item or background service is installed.
+
+Persona settings support an optional starting directory, registered local camp
+selection, custom entry and Browse. Empty uses the app default. Changes apply
+to new conversations; the conversation header shows the saved directory that
+remains in use across responder changes and resume. Camp discovery uses the
+engine's `persona directories --json` command and stays optional. The Linux
+folder browser uses `zenity`; custom entry remains available if it is absent.
+
+This feature pins the engine change in
+[obey-voice #228](https://github.com/Obedience-Corp/obey-voice/pull/228).

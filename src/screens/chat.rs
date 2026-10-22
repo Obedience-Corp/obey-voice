@@ -18,6 +18,13 @@ impl VoiceApp {
             ui.label("Start or resume a conversation from Home.");
             return;
         }
+        if !self.state.work_dir.is_empty() {
+            ui.label(format!(
+                "Directory: {} ({})",
+                self.state.work_dir, self.state.work_dir_source
+            ))
+            .on_hover_text("This conversation keeps its directory when you switch personas.");
+        }
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(&self.state.name).strong().color(accent(ui)));
             ui.label(
