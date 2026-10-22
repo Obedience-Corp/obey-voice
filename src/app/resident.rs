@@ -108,8 +108,22 @@ impl VoiceApp {
         ctx.send_viewport_cmd(ViewportCommand::Close);
     }
     pub fn stop_meeting(&mut self) {
+        let stopping = self
+            .pending
+            .values()
+            .any(|p| matches!(p, Purpose::MeetingStop));
+        let opening = self
+            .pending
+            .values()
+            .any(|p| matches!(p, Purpose::MeetingStart));
+        // Capture errors and stop phrases can arrive before the start reply,
+        // or race a screen/tray stop. Submit one save for this meeting only.
+        if stopping || (!self.meeting_active && !opening) {
+            return;
+        }
         self.starting = !self.demo;
         self.request("meeting_stop", json!({}), Purpose::MeetingStop);
+        self.status = "Saving meeting…".into();
         if self.demo {
             self.meeting_active = false;
         }
