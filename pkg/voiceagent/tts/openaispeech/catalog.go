@@ -18,6 +18,7 @@ import (
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
@@ -32,7 +33,7 @@ const (
 // line: name, locale, gender, age, description), looked for under
 // models_dir/phonon. Names and descriptions in it apply to every runtime that
 // serves the same voice files, so it is merged into whatever catalog answered.
-const VoiceMetadataFile = "phonon/voices.jsonl"
+const VoiceMetadataFile = config.OpenAISpeechVoicesFile
 
 // ollamaVoicesIssue is the upstream change that lists Phonon's voices.
 const ollamaVoicesIssue = "ollama/ollama#19242"
