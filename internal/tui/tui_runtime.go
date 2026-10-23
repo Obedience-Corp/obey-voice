@@ -201,6 +201,7 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 		workSnapshot:  func() work.Snapshot { return msg.rt.Pipeline.WorkSnapshot() },
 		journalHealth: msg.rt.Pipeline.JournalHealth,
 		workScope:     func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
+		workers:       msg.rt.Pipeline.Workers,
 		workersSummary: func() string {
 			running, queued := 0, 0
 			for _, item := range msg.rt.Pipeline.Workers() {

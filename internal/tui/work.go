@@ -43,7 +43,7 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 	if v.State == work.JobQueued {
 		m.renderJobItem(id, " · queued")
 	} else if v.State == work.JobRunning {
-		m.renderJobItem(id, "")
+		m.renderJobItem(id, " · working")
 	}
 	m.refreshJobChip()
 }
@@ -82,7 +82,7 @@ func (m *conversationModel) jobStarted(e events.JobStarted) {
 	m.trackJob(e.ID, e.Task).running = true
 	m.appendActivity("job", "started "+e.Task, 0)
 	m.refreshJobChip()
-	m.renderJobItem(e.ID, "")
+	m.renderJobItem(e.ID, " · working")
 }
 
 func (m *conversationModel) jobFinished(e events.JobFinished) {
@@ -150,7 +150,7 @@ func (m *conversationModel) jobToolStarted(e events.ToolCallStarted) {
 	m.workTracker().Add(e)
 	m.noteJobTool(e.JobID, e.Name)
 	m.appendActivity("job", jobToolDetail(e.Name, e.Summary), 0)
-	m.renderJobItem(e.JobID, "")
+	m.renderJobItem(e.JobID, " · working")
 }
 
 func (m *conversationModel) jobToolFinished(e events.ToolCallFinished) {
@@ -163,7 +163,7 @@ func (m *conversationModel) jobToolFinished(e events.ToolCallFinished) {
 	m.workTracker().Finish(e)
 	m.noteJobTool(e.JobID, e.Name)
 	m.appendActivity("job", toolOutcomeDetail(e), e.ResultElapsed())
-	m.renderJobItem(e.JobID, "")
+	m.renderJobItem(e.JobID, " · working")
 }
 
 func (m *conversationModel) acceptWorkScope(scope work.WorkScope) bool {
@@ -256,7 +256,14 @@ func (m *conversationModel) noteJobTool(id, name string) {
 // reach for managed work: View prefers deps.workersSummary when it is set, and
 // that is the source which sees the runtime's managed jobs.
 func (m *conversationModel) refreshJobChip() {
-	running, queued := 0, 0
+	running, queued := m.jobCounts()
+	m.jobStatus = ""
+	if running+queued > 0 {
+		m.jobStatus = workersCountLabel(running, queued, m.cfg == nil || !m.cfg.VoiceWorkersDisabled)
+	}
+}
+
+func (m conversationModel) jobCounts() (running, queued int) {
 	for _, v := range m.jobs {
 		if v.terminal {
 			continue
@@ -267,10 +274,52 @@ func (m *conversationModel) refreshJobChip() {
 			queued++
 		}
 	}
-	m.jobStatus = ""
-	if running+queued > 0 {
-		m.jobStatus = workersCountLabel(running, queued, m.cfg == nil || !m.cfg.VoiceWorkersDisabled)
+	return running, queued
+}
+
+// activeWorkerCounts reads the live table when available. A conversation can
+// attach after a job started, before its lifecycle events reach this model.
+func (m conversationModel) activeWorkerCounts() (running, queued int) {
+	if m.deps.workers == nil {
+		return m.jobCounts()
 	}
+	for _, item := range m.deps.workers() {
+		if item.State == "queued" {
+			queued++
+		} else if item.Active() {
+			running++
+		}
+	}
+	return running, queued
+}
+
+// singleActiveWorkerID opens one job directly; with several jobs, the manager
+// list lets the user choose which thread to inspect.
+func (m conversationModel) singleActiveWorkerID() string {
+	id := ""
+	if m.deps.workers != nil {
+		for _, item := range m.deps.workers() {
+			if item.State != "queued" && !item.Active() {
+				continue
+			}
+			if id != "" {
+				return ""
+			}
+			id = item.ID
+		}
+		return id
+	}
+	for _, candidate := range m.jobOrder {
+		job := m.jobs[candidate]
+		if job == nil || job.terminal {
+			continue
+		}
+		if id != "" {
+			return ""
+		}
+		id = candidate
+	}
+	return id
 }
 
 // renderJobItem writes the job's single transcript item, appending it the first

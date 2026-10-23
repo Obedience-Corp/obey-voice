@@ -92,6 +92,20 @@ func (m *workersModel) refreshDetail() {
 	}
 }
 
+func (m *workersModel) openDetail(id string) {
+	for i, item := range m.items {
+		if item.ID != id {
+			continue
+		}
+		m.cursor = i + 2
+		m.ensureVisible()
+		m.detailID = id
+		m.detail.GotoTop()
+		m.refreshDetail()
+		return
+	}
+}
+
 func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:

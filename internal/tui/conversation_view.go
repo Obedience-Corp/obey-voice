@@ -18,6 +18,62 @@ func (m conversationModel) animStyles() anim.Styles {
 	return voiceAnimStyles()
 }
 
+// workCue stays visible after the spoken handoff finishes. The glyph advances
+// on the conversation tick even when the voice meter is idle.
+func (m conversationModel) workCue() string {
+	running, queued := m.activeWorkerCounts()
+	if running > 0 {
+		glyph := "●"
+		if !m.reducedMotion {
+			spin := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+			glyph = spin[m.voiceFrame%len(spin)]
+		}
+		if running == 1 {
+			return glyph + " Working"
+		}
+		return fmt.Sprintf("%s %d working", glyph, running)
+	}
+	if queued > 0 {
+		return fmt.Sprintf("◌ %d queued", queued)
+	}
+	return ""
+}
+
+// headerRight keeps work and live voice activity visible together. The cue is
+// the selectable part of the header; its key hint also works without a mouse.
+func (m conversationModel) headerRight() (right string, cueWidth int) {
+	cue := m.workCue()
+	if m.voiceMode != anim.ModeIdle {
+		if cue != "" {
+			work := thinkStyle.Render(cue+" · ^W") + "  "
+			right, cueWidth = work, lipgloss.Width(work)
+		}
+		right += anim.CompactMeter(m.voiceMode, m.voiceFrame, m.voiceLevel(), m.status, m.animStyles(), m.reducedMotion)
+		return right, cueWidth
+	}
+	if cue != "" && !m.statusErr {
+		right = thinkStyle.Render(cue + " · ^W")
+		return right, lipgloss.Width(right)
+	}
+	if m.status != "" {
+		style := statusStyle
+		if m.statusErr {
+			style = errorStyle
+		}
+		return style.Render(m.status), 0
+	}
+	return "", 0
+}
+
+func (m conversationModel) workCueHit(x, y int) bool {
+	if y != 0 || !m.ready || m.workCue() == "" {
+		return false
+	}
+	right, cueWidth := m.headerRight()
+	start := m.width - lipgloss.Width(right) - 1
+	return cueWidth > 0 && start >= 0 && x >= start && x < start+cueWidth
+}
+
 func (m conversationModel) voiceLevel() float64 {
 	switch m.voiceMode {
 	case anim.ModeHearing, anim.ModeListening, anim.ModeTranscribing:
@@ -200,23 +256,17 @@ func (m conversationModel) View() string {
 	if m.sessionID != "" {
 		left += "  " + dimStyle.Render(shortSessionID(m.sessionID))
 	}
-	right := ""
-	if m.voiceMode != anim.ModeIdle {
-		right = anim.CompactMeter(m.voiceMode, m.voiceFrame, m.voiceLevel(), m.status, styles, m.reducedMotion)
-	} else if m.status != "" {
-		style := statusStyle
-		if m.statusErr {
-			style = errorStyle
-		}
-		right = style.Render(m.status)
-	}
-	headerInner := left
+	right, _ := m.headerRight()
+	headerInner := ansi.Truncate(left, w, "…")
 	if right != "" {
-		pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
-		if pad < 1 {
-			pad = 1
+		rightWidth := lipgloss.Width(right)
+		if rightWidth >= w {
+			headerInner = ansi.Truncate(right, w, "…")
+		} else {
+			left = ansi.Truncate(left, max(0, w-rightWidth-2), "…")
+			pad := w - lipgloss.Width(left) - rightWidth - 1
+			headerInner = left + strings.Repeat(" ", pad) + right
 		}
-		headerInner = left + strings.Repeat(" ", pad) + right
 	}
 	header := ansi.Truncate(headerInner, w, "…")
 
@@ -249,7 +299,11 @@ func (m conversationModel) View() string {
 			outChip = lipgloss.NewStyle().Foreground(colorBg).Background(colorAgent).Bold(true).Padding(0, 1).Render("audio on")
 		}
 	}
-	footerLeft := "  " + micChip + " " + outChip
+	footerLeft := "  "
+	if cue := m.workCue(); cue != "" {
+		footerLeft += thinkStyle.Render(cue) + " "
+	}
+	footerLeft += micChip + " " + outChip
 	if m.journalIncomplete {
 		footerLeft += " " + chipMutedStyle.Render("Diagnostic history incomplete")
 	}

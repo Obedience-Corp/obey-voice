@@ -6,8 +6,11 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -106,6 +109,113 @@ func TestJobToolEventsLeaveTheLiveTurnAlone(t *testing.T) {
 	}})
 	if m.status != "Listening..." || len(m.items) != items+1 {
 		t.Errorf("finish changed status %q / thread %d, want both untouched", m.status, len(m.items))
+	}
+}
+
+func TestBackgroundWorkCueAnimatesUntilJobEnds(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m, _ = m.Update(busEventMsg{event: events.JobQueued{ID: "job-1", Task: "inspect files"}})
+	if cue := m.workCue(); cue != "◌ 1 queued" {
+		t.Fatalf("queued cue = %q", cue)
+	}
+	if m.voiceTicking {
+		t.Fatal("a queued job must not start the animation timer")
+	}
+
+	m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "inspect files"}})
+	if !m.voiceTicking || m.voiceMode != anim.ModeIdle {
+		t.Fatalf("running job should animate without changing voice mode: ticking=%v mode=%v", m.voiceTicking, m.voiceMode)
+	}
+	first := stripANSI(m.View())
+	if !strings.Contains(first, "⠋ Working") || !strings.Contains(first, "inspect files · working") {
+		t.Fatalf("running work cue missing from header/footer or job line:\n%s", first)
+	}
+	m, _ = m.Update(voiceTickMsg(time.Now()))
+	if cue := m.workCue(); cue != "⠙ Working" {
+		t.Fatalf("cue did not advance on tick: %q", cue)
+	}
+	if !strings.Contains(stripANSI(m.View()), "⠙ Working") {
+		t.Fatal("advanced work cue missing from view")
+	}
+
+	m, _ = m.Update(busEventMsg{event: events.JobFinished{ID: "job-1", Task: "inspect files"}})
+	if cue := m.workCue(); cue != "" {
+		t.Fatalf("finished job still has a work cue: %q", cue)
+	}
+	m, _ = m.Update(voiceTickMsg(time.Now()))
+	if m.voiceTicking {
+		t.Fatal("animation timer did not stop after the job finished")
+	}
+	if strings.Contains(stripANSI(m.View()), "Working") {
+		t.Fatal("finished job still looks active")
+	}
+}
+
+func TestBackgroundWorkCueRespectsReducedMotionAndLiveVoice(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.reducedMotion = true
+	m, _ = m.Update(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "inspect files"}})
+	if m.voiceTicking || m.workCue() != "● Working" {
+		t.Fatalf("reduced-motion work cue = %q, ticking=%v", m.workCue(), m.voiceTicking)
+	}
+	m.setVoiceMode(anim.ModeListening)
+	m.setStatus("Listening", false)
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "Listening") || !strings.Contains(view, "● Working") {
+		t.Fatalf("live voice or background cue missing:\n%s", view)
+	}
+}
+
+func TestLiveWorkerCueCoexistsWithListeningAndOpensItsThread(t *testing.T) {
+	m := sizedConversation(t, 120, 24)
+	m.deps.workers = func() []pipeline.WorkerInfo {
+		return []pipeline.WorkerInfo{{ID: "job-1", Task: "inspect files", State: "running"}}
+	}
+	m.setVoiceMode(anim.ModeListening)
+	m.setStatus("Listening", false)
+	view := stripANSI(m.View())
+	if !strings.Contains(strings.Split(view, "\n")[0], "⠋ Working · ^W") || !strings.Contains(strings.Split(view, "\n")[0], "Listening") {
+		t.Fatalf("header did not show work beside listening:\n%s", view)
+	}
+	var hitX int
+	for x := 0; x < m.width; x++ {
+		if m.workCueHit(x, 0) {
+			hitX = x
+			break
+		}
+	}
+	if hitX == 0 {
+		t.Fatal("work cue has no clickable header area")
+	}
+	m, cmd := m.Update(tea.MouseMsg{X: hitX, Y: 0, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if msg, ok := cmd().(openWorkerMsg); !ok || msg.jobID != "job-1" {
+		t.Fatalf("click navigation = %#v", msg)
+	}
+	m.input.SetValue("draft stays")
+	m.turnState = turnVoiceResponding
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	if msg, ok := cmd().(openWorkerMsg); !ok || msg.jobID != "job-1" {
+		t.Fatalf("keyboard navigation = %#v", msg)
+	}
+	if m.input.Value() != "draft stays" || m.turnState != turnVoiceResponding {
+		t.Fatal("opening worker thread changed the ongoing conversation")
+	}
+}
+
+func TestWorkCueOpensListForMultipleWorkers(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	m.deps.workers = func() []pipeline.WorkerInfo {
+		return []pipeline.WorkerInfo{
+			{ID: "job-1", State: "running"},
+			{ID: "job-2", State: "queued"},
+		}
+	}
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	if msg, ok := cmd().(openWorkerMsg); !ok || msg.jobID != "" {
+		t.Fatalf("multiple jobs should open the list, got %#v", msg)
+	}
+	if !strings.Contains(stripANSI(m.View()), "Working · ^W") {
+		t.Fatal("running work cue lost with a queued job")
 	}
 }
 

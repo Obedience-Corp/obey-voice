@@ -32,7 +32,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			return m, nil
 		}
 		m.recoverWork(time.Now(), false)
-		return m, m.workProjectionPollCmd()
+		return m, tea.Batch(m.workProjectionPollCmd(), m.ensureVoiceTick())
 
 	case startupTickMsg:
 		if !m.startup.tick() {
@@ -123,6 +123,10 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		return m, nil
 
 	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.workCueHit(msg.X, msg.Y) {
+			id := m.singleActiveWorkerID()
+			return m, func() tea.Msg { return openWorkerMsg{jobID: id} }
+		}
 		// The viewport already implements wheel acceleration and bounds. Route
 		// only vertical wheel events here so clicks and drags do not interfere
 		// with the always-focused composer.
@@ -173,6 +177,9 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			m.activityFocused = !m.activityFocused
 			m.refreshActivity()
 			return m, nil
+		case "ctrl+w":
+			id := m.singleActiveWorkerID()
+			return m, func() tea.Msg { return openWorkerMsg{jobID: id} }
 		case "ctrl+k":
 			m.toggleShowThink()
 			return m, nil
@@ -280,10 +287,11 @@ func (m *conversationModel) shouldAnimateVoice() bool {
 	if m.reducedMotion {
 		return false
 	}
-	return m.voiceMode != anim.ModeIdle
+	running, _ := m.activeWorkerCounts()
+	return m.voiceMode != anim.ModeIdle || running > 0
 }
 
-// ensureVoiceTick starts the animation loop once while a voice mode is active.
+// ensureVoiceTick starts the animation loop once while voice or background work is active.
 func (m *conversationModel) ensureVoiceTick() tea.Cmd {
 	if !m.shouldAnimateVoice() || m.voiceTicking {
 		return nil
