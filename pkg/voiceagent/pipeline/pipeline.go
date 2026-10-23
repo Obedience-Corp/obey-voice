@@ -234,7 +234,7 @@ type Pipeline struct {
 	// interrupt.go SpeakerVerdict / interruptController.allowsInterrupt.
 	BargeInSpeakerVerdict func() SpeakerVerdict
 	// BargeInSpeakerVerdictMaxAge bounds how old a BargeInSpeakerVerdict may
-	// be before the interrupt controller treats it as stale and fails open
+	// be before the interrupt controller treats it as stale and blocks interruption
 	// (~2x speaker.live.window_ms). Zero uses
 	// bargeInSpeakerVerdictMaxAgeDefault. See
 	// config.BargeInSpeakerVerdictMaxAgeOf.

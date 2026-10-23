@@ -8,7 +8,7 @@ import (
 
 // Barge-in speaker policy (S3, D7): who is allowed to interrupt playback.
 // enrolled_only fuses the live speaker analyzer's most recent window verdict
-// into the interrupt controller; anyone (the pre-S3 behavior) never consults
+// into the interrupt controller and requires a fresh enrolled match; anyone never consults
 // it. See pkg/voiceagent/pipeline/interrupt.go and
 // workflow/design/obey-voice-barge-in DECISIONS.md D7.
 const (
@@ -44,13 +44,8 @@ func BargeInSpeakersOf(cfg *Config) string {
 	return v
 }
 
-// ValidateBargeInSpeakers rejects an unrecognized barge_in_speakers value.
-// Deliberately strict even though the fail-open posture (D7) makes a wrong
-// value low-stakes in the "anyone" direction: a typo like "enrolled_onyl"
-// must not silently become the more permissive "anyone" without saying so —
-// that is the one direction fail-open must never be silent about. Called
-// both at startup (voiceagent.New, a hard failure) and by Diagnose (as an
-// error diagnostic), mirroring ValidateVoiceFrontend.
+// ValidateBargeInSpeakers rejects unrecognized policies rather than silently
+// downgrading a misspelled enrolled_only to anyone. Called at startup and doctor.
 func ValidateBargeInSpeakers(cfg *Config) error {
 	switch v := BargeInSpeakersOf(cfg); v {
 	case BargeInSpeakersAnyone, BargeInSpeakersEnrolledOnly:
@@ -64,7 +59,7 @@ func ValidateBargeInSpeakers(cfg *Config) error {
 // BargeInSpeakerVerdictMaxAgeOf is 2x the effective speaker.live window
 // (D7's staleness bound): a verdict older than this predates the current
 // utterance and the interrupt controller must treat it as no verdict at all
-// (fail open). Mirrors speaker.Config.Normalize()'s window_ms default
+// (block enrolled-only interruption). Mirrors speaker.Config.Normalize()'s window_ms default
 // without importing internal/speaker — see
 // bargeInSpeakerVerdictWindowMSDefault.
 func BargeInSpeakerVerdictMaxAgeOf(cfg *Config) time.Duration {

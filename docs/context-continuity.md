@@ -115,8 +115,9 @@ arguments, archive recall and continuation instructions; the estimate remains
 approximately four bytes per token and is not an exact model tokenizer.
 
 A truncated completion is marked incomplete in history. The same stream carries
-“Continuing.” followed by a tools-disabled continuation, after an attempted
-compact. At most two continuations run. Exhaustion produces “I lost my train of
+a tools-disabled continuation after an attempted compact, without a spoken
+recovery announcement. Trailing voice stage directions do not make a complete
+sentence count as truncated. At most two continuations run. Exhaustion produces “I lost my train of
 thought — can you repeat the last part?” and the pipeline marks the turn
 degraded. Cancellation stops recovery without another fallback utterance.
 

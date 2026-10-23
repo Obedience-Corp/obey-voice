@@ -139,7 +139,7 @@ func voiceKeys() []KeySpec {
 		{
 			Key: "barge_in_speakers", Type: TypeEnum, Default: BargeInSpeakersAnyone, Enum: bargeInSpeakersEnum(),
 			Group: GroupVoice, Title: "Who can interrupt",
-			Help: "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+			Help: "enrolled_only requires a fresh enrolled-voice match. Automatic voice interruptions are blocked while recognition is off, cold, stale, or unhealthy. Typing can still interrupt.",
 		},
 		{
 			Key: "talk_hotkey_enabled", Type: TypeBool, Default: true,

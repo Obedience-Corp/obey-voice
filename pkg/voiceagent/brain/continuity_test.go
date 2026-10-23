@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
 )
@@ -110,14 +111,23 @@ func TestContinuityRecoveryCompletesOrExplicitlyDegrades(t *testing.T) {
 			defer srv.Close()
 			base, _ := url.Parse(srv.URL)
 			o := &OllamaBrain{cfg: continuityConfig(), client: api.NewClient(base, http.DefaultClient), model: "m"}
+			var recoveries atomic.Int32
+			o.SetContinuitySink(func(e events.Event) {
+				if _, ok := e.(events.ContinuityRecovery); ok {
+					recoveries.Add(1)
+				}
+			})
 			stream, err := o.ThinkStream(t.Context(), "What next?", StreamOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
 			spoken, _ := drainStream(t, stream)
 			result := <-stream.Done
-			if !strings.Contains(spoken, "Continuing.") {
-				t.Fatalf("silent continuation: %q", spoken)
+			if recoveries.Load() != chats.Load()-1 {
+				t.Fatalf("recovery telemetry=%d requests=%d", recoveries.Load(), chats.Load())
+			}
+			if strings.Contains(spoken, "Continuing.") {
+				t.Fatalf("recovery announcement leaked into speech: %q", spoken)
 			}
 			if exhaust {
 				if chats.Load() != 3 || !result.Recovered || result.Err == nil || !strings.Contains(spoken, continuityFallback) {
@@ -330,6 +340,34 @@ func TestSessionRestoreClearsArchiveWhileCompactionPreservesIt(t *testing.T) {
 	for _, m := range o.buildMessages("") {
 		if strings.Contains(m.Content, "WI-private") {
 			t.Fatal("session A leaked into session B")
+		}
+	}
+}
+
+func TestCompleteTaggedAnswerDoesNotStartContinuation(t *testing.T) {
+	var chats atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chats.Add(1)
+		_, _ = io.WriteString(w, `{"message":{"role":"assistant","content":"All done. [sigh]"},"done":true,"done_reason":"stop","eval_count":12}`+"\n")
+	}))
+	defer srv.Close()
+	base, _ := url.Parse(srv.URL)
+	o := &OllamaBrain{cfg: continuityConfig(), client: api.NewClient(base, http.DefaultClient), model: "m"}
+	stream, err := o.ThinkStream(t.Context(), "Are we done?", StreamOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spoken, _ := drainStream(t, stream)
+	result := <-stream.Done
+	if result.Err != nil || result.Integrity.Truncated || result.Recovered || chats.Load() != 1 {
+		t.Fatalf("complete tagged answer retried: requests=%d result=%+v", chats.Load(), result)
+	}
+	if !strings.Contains(spoken, "All done.") || strings.Contains(spoken, "Continuing.") {
+		t.Fatalf("unexpected speech: %q", spoken)
+	}
+	for _, turn := range o.History() {
+		if strings.Contains(turn.Content, "[incomplete response]") {
+			t.Fatal("complete answer marked incomplete in history")
 		}
 	}
 }
