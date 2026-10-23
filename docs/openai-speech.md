@@ -35,25 +35,34 @@ gain dead air between sentences; pauses inside an utterance are kept.
 
 ## Install
 
-`obey-voice models ensure --tts` (and starting a conversation, which runs the
-same step) does this for `openai-speech`:
+`obey-voice models ensure --tts` does this for `openai-speech`. Starting a
+conversation runs steps 1 and 2 for the engine its persona speaks with, as do
+`voices` and `voices preview --ensure`; none of them fetch the catalog, so its
+host never delays speech:
 
 1. Ask the target what it is. A base URL ending in `/v1` whose root answers
    `GET /api/version` is Ollama. Ollama older than 0.40.9 is refused with that
    version named. A server that answers nothing is an error naming the URL and
-   `ollama serve`.
+   `ollama serve`; one that answers 401 or 403 is reported as a rejected
+   request naming `openai_speech_api_key`.
 2. On Ollama, pull the model when `GET /api/tags` does not list it (`phonon`
    matches `phonon:latest`, the way Ollama resolves it). The pull streams
    through `POST /api/pull`; layer bytes are summed into the same `download`
    progress ticks every other asset reports, then `verify`, `install` and
-   `done`. A model that is already there reports `skipped` and is not pulled
-   again.
+   `done`; the percentage never runs backwards when a layer is announced
+   late. A model that is already there reports `skipped` and is not pulled
+   again. A pull that goes 60 s without a line from Ollama is abandoned with
+   that said, not as a cancellation.
 3. Fetch `voices.jsonl` from
    [huggingface.co/gradium/phonon-voices](https://huggingface.co/gradium/phonon-voices)
    into `<models_dir>/phonon/voices.jsonl`, through a temp file renamed into
-   place, unless it is already there. It only describes voices, so a failed
-   fetch is a warning on stderr, not a failed install. A server that is not
-   Ollama gets this step only.
+   place, unless a valid one is already there. Valid means the first non-empty
+   line is a JSON voice entry with a `name`: an empty body or an HTML page (a
+   captive portal) is refused with the URL named, and such a file on disk
+   counts as not installed. The file only describes voices, so a failed fetch
+   is a warning on stderr and the asset closes as `skipped` with a `detail`
+   saying why, not a failed install. A server that is not Ollama gets this
+   step and step 1 only.
 
 `--json` streams these as NDJSON ticks with the assets `phonon (Ollama)` and
 `phonon/voices.jsonl`, the names `models status --json --tts` gives its rows
@@ -83,7 +92,7 @@ server that wants a bearer token.
 - One request is capped at 4,096 characters on Ollama. Longer text (`render`,
   audiobooks) is split at sentence boundaries and requested in order into the
   same stream.
-- Start-up runs the install step above, then proves the server answers
+- Start-up runs install steps 1 and 2 above, then proves the server answers
   `GET /v1/models` and, when it lists models, that the configured one is
   present. A server that is not there stops start-up with the URL and the
   `ollama serve` remedy; the conversation does not silently switch engines.
