@@ -49,7 +49,7 @@ Address means the speaker is talking TO a named agent or explicitly asking that 
 Select the immediate listener being asked to act. When the speaker addresses one agent and asks that agent to consult or ask another, select the agent being spoken to now. The other agent is a later handoff, not the current addressee. Do not skip the requested intermediary.
 A third-person mention, quotation, hypothetical, comparison, or a request to talk ABOUT an agent is not an address. An agent merely describing another agent does not hand over the floor. For an agent speaker, choose address only for a deliberate question or invitation for a different named agent to respond now.
 Use the addressed name or alias from participants. If the addressed name is shared, preserve that shared name and choose ambiguous; never choose an arbitrary participant. If a clear target is unavailable, return address with that target's name. With no clear change of addressee, return none and an empty name. For multiple simultaneous addressees with no clear single next responder, return ambiguous. Never infer a different identity merely because someone is called a name.
-Bare is true only for a user's greeting/name or switch request containing no substantive question; it is always false for an agent. Return only the JSON object.`
+Bare is true only when kind is address and a user greets a named agent or requests a switch with no substantive question. Bare is false for none, ambiguous, and every agent message. An ordinary greeting or question without a named addressee, such as "Hello" or "How's it going?", is {"kind":"none","name":"","bare":false}; the current responder should answer normally. Return only the JSON object.`
 
 var addresseeResolveTimeout = 15 * time.Second
 
@@ -99,9 +99,13 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 	result.Name = strings.TrimSpace(result.Name)
 	switch result.Kind {
 	case "none":
-		if result.Name != "" || result.Bare {
+		if result.Name != "" {
 			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, errors.New("invalid no-address decision"))
 		}
+		// Bare only controls acknowledgements for an addressed persona. A model
+		// may label an ordinary greeting bare; without a target it is still a
+		// full turn for the current responder, not an invalid identity decision.
+		result.Bare = false
 	case "address":
 		if result.Name == "" {
 			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, errors.New("empty addressee"))
