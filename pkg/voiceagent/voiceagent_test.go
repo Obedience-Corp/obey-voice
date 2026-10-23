@@ -600,3 +600,31 @@ func TestOptionsCaptureIsInstalledWithoutOpeningLocalDevice(t *testing.T) {
 		t.Fatal("Options.Capture was ignored")
 	}
 }
+
+func TestNewPreservesEnrolledOnlyWithoutLiveAnalyzer(t *testing.T) {
+	for _, policy := range []string{config.BargeInSpeakersAnyone, config.BargeInSpeakersEnrolledOnly} {
+		t.Run(policy, func(t *testing.T) {
+			agent, cleanup, err := New(t.Context(), Options{
+				Config: &config.Config{AgentName: "Test", BargeInSpeakers: policy},
+				Events: events.NewBus(), Brain: &stubBrain{}, TextOnly: true, Silent: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			verdict := agent.BargeInSpeakerVerdict
+			if policy == config.BargeInSpeakersAnyone {
+				if verdict != nil {
+					t.Fatal("anyone unexpectedly requires recognition")
+				}
+				return
+			}
+			if verdict == nil {
+				t.Fatal("enrolled_only silently downgraded to anyone")
+			}
+			if v := verdict(); v.Healthy || v.HasVerdict || v.Enrolled {
+				t.Fatalf("missing analyzer reported recognition: %+v", v)
+			}
+		})
+	}
+}

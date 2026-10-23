@@ -57,7 +57,7 @@ func TestTurnTraceReachesExistingLogWithoutConversationContent(t *testing.T) {
 func TestBargeInTraceCapturesDecisionAtQualification(t *testing.T) {
 	h := newAudibilityHarness(t, true)
 	h.control.speakerVerdict = func() SpeakerVerdict {
-		return SpeakerVerdict{Healthy: true, HasVerdict: true, At: time.Now().Add(-time.Minute)}
+		return SpeakerVerdict{Healthy: true, HasVerdict: true, Enrolled: true, At: time.Now()}
 	}
 	h.control.verdictMaxAge = time.Second
 	for range bargeInMinSpeechChunks {
@@ -66,10 +66,10 @@ func TestBargeInTraceCapturesDecisionAtQualification(t *testing.T) {
 	select {
 	case req := <-h.watch.requests:
 		d := req.Diagnostic
-		if d.SpeakerGate != "stale_fail_open" || !d.Audible || !d.Playing || d.NeuralChunks != bargeInMinSpeechChunks || d.DuringArm {
+		if d.SpeakerGate != "enrolled" || !d.Audible || !d.Playing || d.NeuralChunks != bargeInMinSpeechChunks || d.DuringArm {
 			t.Fatalf("missing actual qualifying evidence: %+v", d)
 		}
 	case <-h.ctx.Done():
-		t.Fatal("expected existing stale-verdict fail-open behavior")
+		t.Fatal("expected a fresh enrolled verdict to permit interruption")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 const (
@@ -47,7 +48,7 @@ func evaluateStreamIntegrity(in IntegrityInput) IntegrityResult {
 }
 
 func endsMidSentence(s string) bool {
-	s = strings.TrimSpace(s)
+	s = strings.TrimSpace(textclean.StripStageDirections(s))
 	if s == "" {
 		return false
 	}

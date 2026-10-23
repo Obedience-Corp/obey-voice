@@ -20,21 +20,21 @@ type interruptDiagnostic struct {
 	Playing          bool   `json:"playing"`
 }
 
-// Preserve the existing fail-open policy while naming which branch admitted
-// the interruption. Unknown-but-healthy is distinct from unavailable or stale.
+// Enrolled-only requires a fresh positive match. Missing recognition must not
+// admit playback echo as a human interruption. A nil source is anyone mode.
 func (c *interruptController) speakerDecision() (bool, string) {
 	if c.speakerVerdict == nil {
 		return true, "not_configured"
 	}
 	v := c.speakerVerdict()
 	if !v.Healthy {
-		return true, "unhealthy_fail_open"
+		return false, "unhealthy"
 	}
 	if !v.HasVerdict {
-		return true, "no_verdict_fail_open"
+		return false, "no_verdict"
 	}
-	if c.verdictMaxAge > 0 && time.Since(v.At) > c.verdictMaxAge {
-		return true, "stale_fail_open"
+	if v.At.IsZero() || (c.verdictMaxAge > 0 && time.Since(v.At) > c.verdictMaxAge) {
+		return false, "stale"
 	}
 	if v.Enrolled {
 		return true, "enrolled"

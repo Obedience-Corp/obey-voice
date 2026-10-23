@@ -53,9 +53,14 @@ Custom config roots and debug-audio runs place the log under their own directory
 `turn_trace` records capture/transcription phases, model/playback milestones,
 response/session identifiers, interruption reason and terminal outcome.
 `barge_in_decision` records the qualifying neural speech count, audibility,
-startup state and speaker-gate decision. For example, `stale_fail_open` means the
-enrolled-speaker policy had no fresh verdict and used its existing permissive
-fallback. These records contain no audio, transcript, model output or tool output.
+startup state and speaker-gate decision. With `barge_in_speakers=enrolled_only`,
+automatic interruption and pause-audio retention require a healthy, fresh enrolled
+match. Disabled, unavailable, unknown or stale recognition cannot admit playback
+as a new user turn through these paths. Enable live speakers and enroll your voice
+to use this policy; typed/manual interruption remains available. `anyone` retains
+its permissive behavior. Older logs showing `stale_fail_open` identify the previous
+fallback that allowed interruptions without a fresh speaker match. These records
+contain no audio, transcript, model output or tool output.
 They describe the detector's evidence, not a verified acoustic source.
 
 Older binaries do not write these trace records; installing an update cannot

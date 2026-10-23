@@ -9,7 +9,7 @@ import (
 
 // newVerdictController wires a controller like newTestController but with a
 // speaker verdict source, for the S3 (barge_in_speakers=enrolled_only)
-// fail-open matrix (D7, review #13/#14).
+// enrolled-speaker admission matrix.
 func newVerdictController(capture CaptureMonitor, vad VoiceDetector, playback playbackState, minSpeech int, verdict func() SpeakerVerdict, maxAge time.Duration) *interruptController {
 	c := newTestController(capture, vad, playback, minSpeech)
 	c.speakerVerdict = verdict
@@ -17,12 +17,9 @@ func newVerdictController(capture CaptureMonitor, vad VoiceDetector, playback pl
 	return c
 }
 
-// TestInterruptControllerSpeakerVerdictFailOpenMatrix drives the interrupt
-// controller with synthetic verdict streams covering every case D7 and
-// review #13/#14 specify: only a confident, current, non-enrolled verdict
-// blocks a trip. Every other case — including barge_in_speakers=anyone,
-// modeled here as a nil verdict source — fails open.
-func TestInterruptControllerSpeakerVerdictFailOpenMatrix(t *testing.T) {
+// Enrolled-only requires a fresh positive match; unavailable recognition must
+// not let playback echo interrupt the assistant.
+func TestInterruptControllerSpeakerVerdictMatrix(t *testing.T) {
 	const maxAge = 500 * time.Millisecond
 
 	tests := []struct {
@@ -50,25 +47,37 @@ func TestInterruptControllerSpeakerVerdictFailOpenMatrix(t *testing.T) {
 			wantTrip: false,
 		},
 		{
-			name: "unhealthy analyzer: fails open",
+			name: "unhealthy analyzer: blocked",
 			verdict: func() SpeakerVerdict {
 				return SpeakerVerdict{Healthy: false, HasVerdict: true, Enrolled: false, At: time.Now()}
 			},
-			wantTrip: true,
+			wantTrip: false,
 		},
 		{
-			name: "no verdict yet (cold start): fails open",
+			name: "no verdict yet (cold start): blocked",
 			verdict: func() SpeakerVerdict {
 				return SpeakerVerdict{Healthy: true, HasVerdict: false}
 			},
-			wantTrip: true,
+			wantTrip: false,
 		},
 		{
-			name: "stale verdict: fails open",
+			name: "stale verdict: blocked",
 			verdict: func() SpeakerVerdict {
 				return SpeakerVerdict{Healthy: true, HasVerdict: true, Enrolled: false, At: time.Now().Add(-time.Second)}
 			},
-			wantTrip: true,
+			wantTrip: false,
+		},
+		{
+			name: "stale enrolled verdict: blocked",
+			verdict: func() SpeakerVerdict {
+				return SpeakerVerdict{Healthy: true, HasVerdict: true, Enrolled: true, At: time.Now().Add(-time.Second)}
+			},
+		},
+		{
+			name: "unstamped enrolled verdict: blocked",
+			verdict: func() SpeakerVerdict {
+				return SpeakerVerdict{Healthy: true, HasVerdict: true, Enrolled: true}
+			},
 		},
 	}
 
@@ -102,7 +111,7 @@ func TestInterruptControllerSpeakerVerdictFailOpenMatrix(t *testing.T) {
 			}
 			select {
 			case <-out:
-				t.Fatal("controller fired, want it blocked by a confident non-enrolled verdict")
+				t.Fatal("controller fired, want it blocked without a fresh enrolled match")
 			case <-time.After(150 * time.Millisecond):
 			}
 		})
@@ -152,5 +161,33 @@ func TestInterruptControllerSpeakerVerdictRecoversAfterBlock(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("controller did not recover after the verdict turned enrolled")
+	}
+}
+
+func TestInterruptSpeakerPolicyAlsoGatesPauseRetention(t *testing.T) {
+	for _, state := range []string{"unknown", "stale", "unavailable", "enrolled"} {
+		t.Run(state, func(t *testing.T) {
+			h := newAudibilityHarness(t, false)
+			h.control.speakerVerdict = func() SpeakerVerdict {
+				v := SpeakerVerdict{Healthy: true, HasVerdict: true, Enrolled: true, At: time.Now()}
+				switch state {
+				case "unknown":
+					v.Enrolled = false
+				case "stale":
+					v.At = time.Now().Add(-time.Minute)
+				case "unavailable":
+					v.Healthy = false
+				}
+				return v
+			}
+			h.control.verdictMaxAge = time.Second
+			// Below the interruption threshold, but enough for near-miss retention.
+			h.feed(.018, true, false)
+			h.feed(.018, true, false)
+			h.finishWithoutTrip()
+			if got := h.control.sawPauseSpeechWithin(time.Second); got != (state == "enrolled") {
+				t.Fatalf("pause retained=%t for %s speaker", got, state)
+			}
+		})
 	}
 }

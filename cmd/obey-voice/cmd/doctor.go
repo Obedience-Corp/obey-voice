@@ -170,14 +170,9 @@ func personaQwenDiags(cfg *config.Config, modelsDir string) []config.Diagnostic 
 	return diags
 }
 
-// bargeInSpeakersDiags warns when barge_in_speakers=enrolled_only cannot
-// actually gate anything yet. The interrupt watcher's verdict source
-// (pipeline.SpeakerVerdict, see bargeInSpeakerVerdict) only blocks a trip on
-// a confident, enrolled-mismatch window — with live analysis off or nobody
-// enrolled it never produces one, so the gate fails open on every turn (D7's
-// documented posture, not a bug). Read-only: LoadEnrollment never creates the
-// store, unlike speakerEnrollmentDir's sibling OpenEnrollment used by
-// `speaker enroll`.
+// bargeInSpeakersDiags warns when enrolled_only cannot admit voice interruptions
+// because live recognition is disabled or no speaker is enrolled. Typed/manual
+// interruption remains available. Loading enrollment is read-only.
 func bargeInSpeakersDiags(cfg *config.Config) []config.Diagnostic {
 	return bargeInSpeakersDiagsNative(cfg)
 }

@@ -228,14 +228,9 @@ func (c *interruptController) enabled() bool {
 	return c.capture != nil && c.vad != nil && c.playback != nil
 }
 
-// allowsInterrupt reports whether the current speaker verdict permits a trip
-// (D7, review #13/#14). It fails open (true) whenever speakerVerdict is nil
-// (barge_in_speakers=anyone: never consulted), the analyzer is not
-// confidently healthy, no window verdict has arrived yet (cold start), or
-// the verdict is older than verdictMaxAge (stale — including a verdict whose
-// At was never stamped, since time.Since of a zero Time is always large).
-// Only a confident, current, non-enrolled verdict blocks (returns false) —
-// same posture as ownerVerifyGate: a privacy guard, not an auth boundary.
+// allowsInterrupt requires a healthy, fresh enrolled match when a speaker
+// verdict source is configured. Anyone mode leaves the source nil. The same
+// policy gates pause retention so rejected echo cannot seed the next turn.
 func (c *interruptController) allowsInterrupt() bool {
 	allowed, _ := c.speakerDecision()
 	return allowed
@@ -380,7 +375,7 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				} else if consecutiveSpeech > 0 || audibility.Audible() {
 					consecutiveSpeech++
 				}
-				if audibility.Audible() && !gapStart.IsZero() {
+				if audibility.Audible() && !gapStart.IsZero() && c.allowsInterrupt() {
 					c.lastPauseSpeech.Store(time.Now().UnixNano())
 				}
 			}

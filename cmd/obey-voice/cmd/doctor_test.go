@@ -174,7 +174,7 @@ func TestDoctorVoiceDevicesJSONIncludesDiagnostics(t *testing.T) {
 }
 
 // TestDoctorBargeInSpeakersGate covers the S3 doctor requirement: warn when
-// barge_in_speakers=enrolled_only cannot gate anything yet (speaker.live
+// barge_in_speakers=enrolled_only cannot admit voice interruptions yet (speaker.live
 // disabled, or nobody enrolled), and stay silent otherwise.
 func TestDoctorBargeInSpeakersGate(t *testing.T) {
 	t.Run("anyone: no diagnostic even with nothing enrolled", func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestDoctorBargeInSpeakersGate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the gate warning must not fail doctor: %v", err)
 		}
-		if !contains(out, "barge-in-speakers-gate") || !contains(out, "speaker.live is disabled") {
+		if !contains(out, "barge-in-speakers-gate") || !contains(out, "speaker.live is disabled") || !contains(out, "automatic voice interruptions are blocked") {
 			t.Errorf("expected a barge-in-speakers-gate warning about disabled live analysis:\n%s", out)
 		}
 	})
@@ -203,7 +203,7 @@ func TestDoctorBargeInSpeakersGate(t *testing.T) {
 		cfg.Speaker.Live.Enabled = true
 		cfg.Speaker.EnrollmentDir = dir
 		out, _ := runDoctorCmd(t, cfg, t.TempDir(), okLookPath, nil, false)
-		if !contains(out, "barge-in-speakers-gate") || !contains(out, "no speaker is enrolled") {
+		if !contains(out, "barge-in-speakers-gate") || !contains(out, "no speaker is enrolled") || !contains(out, "require a fresh enrolled-speaker match") {
 			t.Errorf("expected a barge-in-speakers-gate warning about nobody enrolled:\n%s", out)
 		}
 	})

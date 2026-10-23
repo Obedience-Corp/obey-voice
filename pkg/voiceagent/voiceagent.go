@@ -226,6 +226,12 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		CapturePreRoll:              time.Duration(cfg.VADPreRollMS) * time.Millisecond,
 	}
 
+	if config.BargeInSpeakersOf(cfg) == config.BargeInSpeakersEnrolledOnly {
+		// Hosts replace this with their live analyzer. Until then, unavailable
+		// recognition must not silently downgrade enrolled_only to anyone.
+		p.BargeInSpeakerVerdict = func() pipeline.SpeakerVerdict { return pipeline.SpeakerVerdict{} }
+	}
+
 	cleanups = append(cleanups, bindDecisions(p, cfg))
 
 	// Brain — injected, or selected by config.

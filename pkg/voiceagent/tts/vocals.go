@@ -3,6 +3,8 @@ package tts
 import (
 	"regexp"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 // Vocal kinds used in [sigh]/[laugh] markup and recorded sound banks.
@@ -48,7 +50,7 @@ var VocalTagRE = regexp.MustCompile(`(?i)\[(moans?|gasps?|laughs?|sighs?|whimper
 
 // StageTagRE matches LLM stage directions, including ones we never listed
 // ([mouth], [clears throat]). CustomVoice speaks these as words if they leak.
-var StageTagRE = regexp.MustCompile(`(?i)\[[A-Za-z][^\[\]]{0,40}\]`)
+var StageTagRE = textclean.StageTagRE
 
 // OnomatopoeiaPhrases are spellings Qwen3-TTS actually renders as a sound
 // (aspirated onomatopoeia, leading h for breath). Empty means the tag is
@@ -88,11 +90,7 @@ func CanonicalVocal(raw string) string {
 // StripVocalTags removes sound markup from text bound for the transcript or
 // for an engine that cannot vocalize the tags.
 func StripVocalTags(s string) string {
-	if s == "" || !StageTagRE.MatchString(s) {
-		return s
-	}
-	s = StageTagRE.ReplaceAllString(s, " ")
-	return strings.Join(strings.Fields(s), " ")
+	return textclean.StripStageDirections(s)
 }
 
 // ExpandOnomatopoeiaVocalTags rewrites supported tags into Qwen codec
