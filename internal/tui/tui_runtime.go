@@ -186,6 +186,10 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 	a.conversation.finishStartup()
 	a.conversation.setStatus("", false)
 	a.conversation.seedTranscript(msg.rt.Seed)
+	workers := msg.rt.Pipeline.Workers
+	if demoWorkCueEnabled() {
+		workers = demoWorkers(msg.rt.Pipeline).Workers
+	}
 	cmd := a.conversation.startConversation(conversationDeps{
 		runner: msg.rt.Pipeline,
 		bus:    msg.rt.Bus,
@@ -201,10 +205,10 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 		workSnapshot:  func() work.Snapshot { return msg.rt.Pipeline.WorkSnapshot() },
 		journalHealth: msg.rt.Pipeline.JournalHealth,
 		workScope:     func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
-		workers:       msg.rt.Pipeline.Workers,
+		workers:       workers,
 		workersSummary: func() string {
 			running, queued := 0, 0
-			for _, item := range msg.rt.Pipeline.Workers() {
+			for _, item := range workers() {
 				if item.State == "queued" {
 					queued++
 				} else if item.Active() {

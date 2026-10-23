@@ -25,7 +25,7 @@ func (m conversationModel) workCue() string {
 	if running > 0 {
 		glyph := "●"
 		if !m.reducedMotion {
-			spin := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+			spin := []string{"◐", "◓", "◑", "◒"}
 			glyph = spin[m.voiceFrame%len(spin)]
 		}
 		if running == 1 {

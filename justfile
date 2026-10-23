@@ -132,6 +132,19 @@ demo-workers: build
     just _optimize-demo-gif demos/workers.gif
     ls -lh demos/workers.gif demos/frames/workers-detail.png
 
+# Conversation: animated background work beside listening, then Ctrl+W detail.
+# Scripted bus events and a fixture worker; no mic or model required.
+demo-work-cue: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/work-cue.tape
+    just _optimize-demo-gif demos/work-cue.gif
+    ls -lh demos/work-cue.gif demos/frames/work-cue-*.png
+
 # Settings → Persona: list seeded agents and switch active persona.
 demo-persona-switch: build
     #!/usr/bin/env bash

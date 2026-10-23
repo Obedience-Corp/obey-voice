@@ -58,7 +58,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		}
 		return m, voiceTickCmd()
 
-	case demoVoiceAnimStartedMsg, demoThinkStartedMsg:
+	case demoVoiceAnimStartedMsg, demoThinkStartedMsg, demoWorkCueStartedMsg:
 		return m, m.ensureVoiceTick()
 
 	case busEventMsg:

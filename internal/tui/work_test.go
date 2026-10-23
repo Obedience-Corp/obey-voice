@@ -127,14 +127,14 @@ func TestBackgroundWorkCueAnimatesUntilJobEnds(t *testing.T) {
 		t.Fatalf("running job should animate without changing voice mode: ticking=%v mode=%v", m.voiceTicking, m.voiceMode)
 	}
 	first := stripANSI(m.View())
-	if !strings.Contains(first, "⠋ Working") || !strings.Contains(first, "inspect files · working") {
+	if !strings.Contains(first, "◐ Working") || !strings.Contains(first, "inspect files · working") {
 		t.Fatalf("running work cue missing from header/footer or job line:\n%s", first)
 	}
 	m, _ = m.Update(voiceTickMsg(time.Now()))
-	if cue := m.workCue(); cue != "⠙ Working" {
+	if cue := m.workCue(); cue != "◓ Working" {
 		t.Fatalf("cue did not advance on tick: %q", cue)
 	}
-	if !strings.Contains(stripANSI(m.View()), "⠙ Working") {
+	if !strings.Contains(stripANSI(m.View()), "◓ Working") {
 		t.Fatal("advanced work cue missing from view")
 	}
 
@@ -174,7 +174,7 @@ func TestLiveWorkerCueCoexistsWithListeningAndOpensItsThread(t *testing.T) {
 	m.setVoiceMode(anim.ModeListening)
 	m.setStatus("Listening", false)
 	view := stripANSI(m.View())
-	if !strings.Contains(strings.Split(view, "\n")[0], "⠋ Working · ^W") || !strings.Contains(strings.Split(view, "\n")[0], "Listening") {
+	if !strings.Contains(strings.Split(view, "\n")[0], "◐ Working · ^W") || !strings.Contains(strings.Split(view, "\n")[0], "Listening") {
 		t.Fatalf("header did not show work beside listening:\n%s", view)
 	}
 	var hitX int

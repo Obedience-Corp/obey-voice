@@ -74,10 +74,10 @@ func TestBackgroundWorkerAnimationRendersInTerminalBesideListening(t *testing.T)
 
 	program.Send(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "inspect files"}})
 	first := awaitVoiceAnimationSnapshot(t, harness.snapshots, "worker start", func(s voiceAnimationTerminalSnapshot) bool {
-		return strings.Contains(s.view, "⠋ Working · ^W")
+		return strings.Contains(s.view, "◐ Working · ^W")
 	})
 	awaitVoiceAnimationSnapshot(t, harness.snapshots, "worker animation tick", func(s voiceAnimationTerminalSnapshot) bool {
-		return s.frame > first.frame && strings.Contains(s.view, "⠙ Working · ^W")
+		return s.frame > first.frame && strings.Contains(s.view, "◓ Working · ^W")
 	})
 	program.Send(busEventMsg{event: events.STTPhase{Phase: "listening"}})
 	awaitVoiceAnimationSnapshot(t, harness.snapshots, "work beside listening", func(s voiceAnimationTerminalSnapshot) bool {

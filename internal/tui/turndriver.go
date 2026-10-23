@@ -155,6 +155,10 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		cmds = append(cmds, liveSpeakerStatsCmd(deps.liveSpeaker))
 	}
 	// Scripted meter for VHS/termcast demos — skips real mic/TTS turns.
+	if demoWorkCueEnabled() {
+		cmds = append(cmds, startDemoWorkCue(deps.bus), m.ensureVoiceTick())
+		return tea.Batch(cmds...)
+	}
 	if demoVoiceAnimEnabled() {
 		cmds = append(cmds, startDemoVoiceAnim(deps.bus), m.ensureVoiceTick())
 		return tea.Batch(cmds...)
