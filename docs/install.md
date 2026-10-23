@@ -71,6 +71,9 @@ cache. Set `OBEY_VOICE_SKIP_MODELS_ENSURE=1` to skip the model download (binary
 only). Qwen3-TTS is opt-in (`obey-voice models ensure --tts`): linux/amd64
 downloads the CPU package from `qwen3-tts-native` v0.1.1. It is slower than
 Kokoro on a handheld; NVIDIA boxes should point `qwen_tts_native_url` at a
-`linux-amd64-cuda` tarball when one is published.
+`linux-amd64-cuda` tarball when one is published. With
+`tts_provider: openai-speech`, `obey-voice models ensure --tts` pulls `phonon`
+into Ollama and fetches Phonon's voice catalog; see
+[OpenAI-compatible speech](openai-speech.md#install).
 
 See [Development](development.md) for test, lint, and model-asset commands.

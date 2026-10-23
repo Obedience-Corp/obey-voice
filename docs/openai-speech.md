@@ -3,8 +3,9 @@
 `tts_provider: openai-speech` speaks through any server that implements the
 OpenAI `POST /v1/audio/speech` endpoint and can stream raw PCM. It is an
 additional engine next to Kokoro, Qwen3-TTS and audio8; Kokoro remains the
-default. Nothing is downloaded or installed by obey-voice for this engine: the
-server owns the model.
+default. The server owns the model. When the server is Ollama, obey-voice
+installs it there and fetches Phonon's voice catalog file (see
+[Install](#install)).
 
 ## Phonon through Ollama
 
@@ -12,8 +13,8 @@ Ollama 0.40.9 and later serve [Gradium's Phonon](https://ollama.com/library/phon
 on Apple Silicon. Phonon 31M English is Apache 2.0 and 64 MB.
 
 ```bash
-ollama pull phonon
 obey-voice config set tts_provider openai-speech   # or Settings → Voice → Engine
+obey-voice models ensure --tts                     # pulls phonon into Ollama, fetches voices.jsonl
 ```
 
 The defaults already point at Ollama on this computer (`openai_speech_url`
@@ -32,6 +33,39 @@ Phonon pads every response with about half a second of trailing silence. The
 provider trims it (keeping 80 ms) so sentence-by-sentence playback does not
 gain dead air between sentences; pauses inside an utterance are kept.
 
+## Install
+
+`obey-voice models ensure --tts` (and starting a conversation, which runs the
+same step) does this for `openai-speech`:
+
+1. Ask the target what it is. A base URL ending in `/v1` whose root answers
+   `GET /api/version` is Ollama. Ollama older than 0.40.9 is refused with that
+   version named. A server that answers nothing is an error naming the URL and
+   `ollama serve`.
+2. On Ollama, pull the model when `GET /api/tags` does not list it (`phonon`
+   matches `phonon:latest`, the way Ollama resolves it). The pull streams
+   through `POST /api/pull`; layer bytes are summed into the same `download`
+   progress ticks every other asset reports, then `verify`, `install` and
+   `done`. A model that is already there reports `skipped` and is not pulled
+   again.
+3. Fetch `voices.jsonl` from
+   [huggingface.co/gradium/phonon-voices](https://huggingface.co/gradium/phonon-voices)
+   into `<models_dir>/phonon/voices.jsonl`, through a temp file renamed into
+   place, unless it is already there. It only describes voices, so a failed
+   fetch is a warning on stderr, not a failed install. A server that is not
+   Ollama gets this step only.
+
+`--json` streams these as NDJSON ticks with the assets `phonon (Ollama)` and
+`phonon/voices.jsonl`, the names `models status --json --tts` gives its rows
+`tts.openai-speech.model` and `tts.openai-speech.voices`. When the target is
+not Ollama, the model row is replaced by a `tts.openai-speech.server` row that
+says whether it answers. Status never fails because the server is down; the
+row says so. `models clean` keeps `<models_dir>/phonon` while the app or a
+persona speaks through openai-speech.
+
+`voices --json` and `voices preview` refuse with `assets_missing` when Ollama
+answers and the model is not pulled. A missing `voices.jsonl` blocks neither.
+
 ## Any other server
 
 Gradium's `ptts-openai-server` serves the same endpoint with Phonon's full voice
@@ -49,16 +83,20 @@ server that wants a bearer token.
 - One request is capped at 4,096 characters on Ollama. Longer text (`render`,
   audiobooks) is split at sentence boundaries and requested in order into the
   same stream.
-- Start-up proves the server answers `GET /v1/models` and, when it lists
-  models, that the configured one is present. A server that is not there is
-  reported as unavailable with the URL and the `ollama pull phonon` remedy; the
-  conversation does not silently switch engines.
+- Start-up runs the install step above, then proves the server answers
+  `GET /v1/models` and, when it lists models, that the configured one is
+  present. A server that is not there stops start-up with the URL and the
+  `ollama serve` remedy; the conversation does not silently switch engines.
 - An unknown voice surfaces the server's own message, which on Ollama names the
   voices it has. That is a request error and the turn fails rather than being
   spoken in the fallback voice. A server that is unreachable, answers 5xx,
   times out (408) or refuses the load (429) hands the sentence to
   `voice_fallback_provider` (Kokoro) when one is configured.
-- `doctor` reports the configured target offline; it does not probe the server.
+- `doctor` asks the target, in one probe bounded to 3 s: whether it answers,
+  the Ollama release, whether the model is pulled, whether that release lists
+  Phonon's voices in `/api/show`, and whether `voices.jsonl` is in
+  `models_dir`. Each row carries its remedy (`ollama serve`,
+  `obey-voice models ensure --tts`, or the Ollama release that lists voices).
 
 ## Voices and personas
 
@@ -79,9 +117,9 @@ When the target is Ollama and its release lists no voices, the JSON carries a
 the same text under the Voice row. A non-Ollama server with no catalog has no
 notice: one voice is simply what it has.
 
-Descriptions ride along from Gradium's catalog file. Place `voices.jsonl` from
-[huggingface.co/gradium/phonon-voices](https://huggingface.co/gradium/phonon-voices)
-at `<models_dir>/phonon/voices.jsonl` and every listed voice gains `locale`,
+Descriptions ride along from Gradium's catalog file, which
+`obey-voice models ensure --tts` puts at `<models_dir>/phonon/voices.jsonl`
+(placing it there by hand works too). Every listed voice gains `locale`,
 `gender`, `age` and `description`, matched by name in any case and with or
 without accents (the way Ollama matches the `voice` field). The catalog is
 ordered by locale, then name, so every surface shows one order; the
