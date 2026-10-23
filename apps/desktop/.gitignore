@@ -1,0 +1,11 @@
+/target/
+/bin/
+/dist/
+/bridge/go.work
+/bridge/go.work.sum
+/bridge/local.mod
+/bridge/local.sum
+/.artifacts/
+
+__pycache__/
+.DS_Store
