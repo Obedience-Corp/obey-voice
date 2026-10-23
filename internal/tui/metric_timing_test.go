@@ -32,3 +32,17 @@ func TestMetricsDisplayNormalizesOneOriginAndLabelsIt(t *testing.T) {
 		t.Fatalf("remote drain mislabeled: %s", line)
 	}
 }
+
+func TestMetricsDisplayDoesNotCallInterruptedPlaybackDone(t *testing.T) {
+	for _, outcome := range []string{"interrupted", "failed", "timed_out"} {
+		e := events.TurnMetrics{Outcome: outcome, AudibleSink: "local_speaker", PlaybackCompleteElapsed: 4600 * time.Millisecond}
+		line := formatTurnMetrics(e)
+		if strings.Contains(line, "playback done") || !strings.Contains(line, "playback stopped 4.6s") {
+			t.Fatalf("%s presented as successful playback: %s", outcome, line)
+		}
+	}
+	// Older senders may provide only Interrupted, or no playback timestamps.
+	if line := formatTurnMetrics(events.TurnMetrics{Interrupted: true}); line != "interrupted" {
+		t.Fatalf("missing durable interruption marker: %s", line)
+	}
+}

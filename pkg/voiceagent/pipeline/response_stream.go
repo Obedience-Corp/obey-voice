@@ -123,6 +123,7 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			p.Player.Stop()
 		}
 		stoppedAfter := time.Since(req.At)
+		traceInterrupt(req, metrics.response)
 		// Stop the speaker before waiting for the capture-owner boundary.
 		// The qualified request still authorizes retention after revoking the
 		// output fence cancels this response. Keep cleanup scoped to the original

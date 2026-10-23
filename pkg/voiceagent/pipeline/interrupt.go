@@ -90,9 +90,10 @@ type SpeakerVerdict struct {
 // interruptRequest is the typed barge-in signal the interrupt controller reports
 // to the turn runtime, which owns the decision to act on it.
 type interruptRequest struct {
-	Reason string
-	At     time.Time
-	Source interruptSourceEvidence
+	Reason     string
+	At         time.Time
+	Source     interruptSourceEvidence
+	Diagnostic interruptDiagnostic
 }
 
 // interruptSourceEvidence describes the callback that qualified a request,
@@ -236,17 +237,8 @@ func (c *interruptController) enabled() bool {
 // Only a confident, current, non-enrolled verdict blocks (returns false) —
 // same posture as ownerVerifyGate: a privacy guard, not an auth boundary.
 func (c *interruptController) allowsInterrupt() bool {
-	if c.speakerVerdict == nil {
-		return true
-	}
-	v := c.speakerVerdict()
-	if !v.Healthy || !v.HasVerdict {
-		return true
-	}
-	if c.verdictMaxAge > 0 && time.Since(v.At) > c.verdictMaxAge {
-		return true
-	}
-	return v.Enrolled
+	allowed, _ := c.speakerDecision()
+	return allowed
 }
 
 // watch subscribes to capture and reports one barge-in request once sustained
@@ -290,13 +282,18 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 		var gapStart time.Time
 		var source interruptSourceEvidence
 		emit := func(duringArm bool, frame audio.Frame) bool {
-			if !c.allowsInterrupt() {
+			allowed, gate := c.speakerDecision()
+			if !allowed {
 				return false
 			}
 			source.DuringArm = duringArm
 			source.CallbackSpans = slices.Clone(frame.CaptureSpans)
 			select {
-			case out <- interruptRequest{Reason: "barge_in", At: time.Now(), Source: source}:
+			case out <- interruptRequest{Reason: "barge_in", At: time.Now(), Source: source, Diagnostic: interruptDiagnostic{
+				SpeakerGate: gate, DuringArm: duringArm, NeuralChunks: consecutiveSpeech,
+				Audible: audibility.Audible(), StartupQualified: startupQualified,
+				NearEndDuringArm: nearEndDuringArm, Playing: c.playback.IsPlaying(),
+			}}:
 			default:
 			}
 			return true

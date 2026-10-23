@@ -10,6 +10,7 @@ import (
 )
 
 func (p *Pipeline) emit(event events.Event) {
+	tracePipelineEvent(event)
 	if p.Events != nil {
 		p.Events.Emit(event)
 	}
