@@ -148,6 +148,79 @@
       "editable": true
     },
     {
+      "key": "openai_speech_api_key",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API key",
+      "help": "Bearer token for a speech API that needs one. Ollama does not.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_API_KEY",
+      "editable": true,
+      "secret": true
+    },
+    {
+      "key": "openai_speech_model",
+      "type": "string",
+      "default": "phonon",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API model",
+      "help": "The model id the speech API synthesizes with. phonon on Ollama; `ollama pull phonon` installs it.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_MODEL",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_timeout",
+      "type": "int",
+      "default": 60,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Speech API timeout",
+      "help": "How long one speech request may take before it is abandoned.",
+      "unit": "s",
+      "min": 5,
+      "max": 600,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "openai_speech_url",
+      "type": "string",
+      "default": "http://localhost:11434/v1",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API address",
+      "help": "The OpenAI-compatible /v1 base the openai-speech engine talks to. Ollama serving Phonon is http://localhost:11434/v1.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_URL",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_voice",
+      "type": "string",
+      "default": "default",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API voice",
+      "help": "Which voice the speech API speaks in. Phonon on Ollama ships one, named default.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "OPENAI_SPEECH_VOICE",
+      "editable": true
+    },
+    {
       "key": "output_device",
       "type": "string",
       "default": "",
@@ -310,7 +383,8 @@
       "enum": [
         "kokoro",
         "qwen3-tts",
-        "audio8"
+        "audio8",
+        "openai-speech"
       ],
       "allows_empty": false,
       "group": "voice",
@@ -481,6 +555,7 @@
         "kokoro",
         "qwen3-tts",
         "audio8",
+        "openai-speech",
         "disabled"
       ],
       "allows_empty": false,

@@ -103,7 +103,12 @@ when you select it.
 | `calibredb_binary` | empty | `CALIBREDB_BINARY` | `calibredb` path; empty uses PATH then macOS app bundle / `/opt/calibre` |
 | `calibre_convert_binary` | empty | `CALIBRE_CONVERT_BINARY` | `ebook-convert` path used to convert MOBI/AZW-family books to EPUB |
 | `calibre_prefer_format` | `epub` | `CALIBRE_PREFER_FORMAT` | Preferred book format when resolving (`epub`, `pdf`, then convertible MOBI/AZW-family formats) |
-| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, or `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`) |
+| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`), or `openai-speech` (any OpenAI-compatible `/v1/audio/speech` server; Phonon via Ollama by default, see [OpenAI-compatible speech](openai-speech.md)) |
+| `openai_speech_url` | `http://localhost:11434/v1` | `OPENAI_SPEECH_URL` | Base URL of the speech API the `openai-speech` engine talks to |
+| `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | Model id the speech API synthesizes with (`ollama pull phonon`) |
+| `openai_speech_voice` | `default` | `OPENAI_SPEECH_VOICE` | Voice name on that server. Phonon on Ollama ships one, `default`; a server that lists `/v1/audio/voices` populates the pickers. Persona-overridable |
+| `openai_speech_api_key` | empty | `OPENAI_SPEECH_API_KEY` | Bearer token for a speech API that needs one. Ollama does not |
+| `openai_speech_timeout` | `60` | — | Seconds one speech request may take before it is abandoned |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |
 | `tts_voice` | `af_heart` | `TTS_VOICE` | Kokoro voice name |
 | `audio8_voice` | empty | `AUDIO8_VOICE` | Which Audio8 voice speaks. Empty uses the reference packaged with the export; otherwise a voice registered with `obey-voice voices register` (see [Audio8 voices](audio8-voices.md)). Not an enum: registered names are yours, so an unknown one is reported by the provider rather than by `config set`. Switching voices re-pays the ~1.0 s prefix prime |

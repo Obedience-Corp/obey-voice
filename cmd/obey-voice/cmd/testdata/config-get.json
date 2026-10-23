@@ -266,6 +266,26 @@
       "value": "auto",
       "source": "default"
     },
+    "openai_speech_api_key": {
+      "value": "",
+      "source": "default"
+    },
+    "openai_speech_model": {
+      "value": "phonon",
+      "source": "default"
+    },
+    "openai_speech_timeout": {
+      "value": 60,
+      "source": "default"
+    },
+    "openai_speech_url": {
+      "value": "http://localhost:11434/v1",
+      "source": "default"
+    },
+    "openai_speech_voice": {
+      "value": "default",
+      "source": "default"
+    },
     "output_device": {
       "value": "",
       "source": "default"

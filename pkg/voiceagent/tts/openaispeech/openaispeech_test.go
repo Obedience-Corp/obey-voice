@@ -1,0 +1,366 @@
+package openaispeech
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+)
+
+// fakeServer imitates Ollama's speech surface: GET /models, POST
+// /audio/speech streaming pcm in the chunk sizes the test chooses, a 400 that
+// names the voices for an unknown one, and no /audio/voices.
+type fakeServer struct {
+	t        *testing.T
+	models   []string
+	voices   []string
+	chunks   []int // byte sizes to flush per write; cycles
+	samples  int   // samples per request
+	mu       sync.Mutex
+	requests []speechRequest
+	voiceAPI []string // when non-nil, GET /audio/voices answers with these
+	hold     chan struct{}
+}
+
+func (f *fakeServer) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		type m struct {
+			ID string `json:"id"`
+		}
+		out := struct {
+			Data []m `json:"data"`
+		}{}
+		for _, id := range f.models {
+			out.Data = append(out.Data, m{ID: id})
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	mux.HandleFunc("/v1/audio/voices", func(w http.ResponseWriter, r *http.Request) {
+		if f.voiceAPI == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"voices": f.voiceAPI})
+	})
+	mux.HandleFunc("/v1/audio/speech", func(w http.ResponseWriter, r *http.Request) {
+		var req speechRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		f.mu.Lock()
+		f.requests = append(f.requests, req)
+		f.mu.Unlock()
+		known := false
+		for _, v := range f.voices {
+			if v == req.Voice {
+				known = true
+			}
+		}
+		if !known {
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"error":{"message":"voice \"` + req.Voice + `\" not found; available voices: ` + strings.Join(f.voices, ", ") + `","type":"invalid_request_error"}}`))
+			return
+		}
+		if f.hold != nil {
+			<-f.hold
+		}
+		w.Header().Set("Content-Type", "audio/pcm")
+		w.WriteHeader(200)
+		fl, _ := w.(http.Flusher)
+		body := make([]byte, f.samples*2)
+		for i := 0; i < f.samples; i++ {
+			binary.LittleEndian.PutUint16(body[2*i:], uint16(int16(i%2000-1000)))
+		}
+		ci := 0
+		for len(body) > 0 {
+			n := f.chunks[ci%len(f.chunks)]
+			ci++
+			if n > len(body) {
+				n = len(body)
+			}
+			if _, err := w.Write(body[:n]); err != nil {
+				return
+			}
+			if fl != nil {
+				fl.Flush()
+			}
+			body = body[n:]
+		}
+	})
+	return mux
+}
+
+func newFake(t *testing.T) (*fakeServer, *httptest.Server) {
+	t.Helper()
+	f := &fakeServer{t: t, models: []string{"phonon:latest", "dolphin-mistral:latest"}, voices: []string{"default"}, chunks: []int{4096, 4095, 1, 777}, samples: 24000}
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	return f, srv
+}
+
+func cfgFor(url string) *config.Config {
+	return &config.Config{TTSProvider: config.OpenAISpeechProviderName, OpenAISpeechURL: url + "/v1/", OpenAISpeechModel: "phonon", OpenAISpeechVoice: "default"}
+}
+
+func drain(t *testing.T, p *Provider, text string) ([]float32, error) {
+	t.Helper()
+	stream, err := p.Synthesize(context.Background(), text)
+	if err != nil {
+		return nil, err
+	}
+	var got []float32
+	for frame := range stream.Frames() {
+		got = append(got, frame...)
+	}
+	return got, stream.Err()
+}
+
+func TestSynthesizeStreamsPCM16WithOddChunks(t *testing.T) {
+	f, srv := newFake(t)
+	p, cleanup, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if !p.Available() || p.ProviderName() != "openai-speech" || p.ModelTier() != "phonon" {
+		t.Fatalf("provider state: %+v", p.Status())
+	}
+	got, err := drain(t, p, "Hello there. This is a test.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != f.samples {
+		t.Fatalf("decoded %d samples, want %d (odd chunk boundary lost a byte?)", len(got), f.samples)
+	}
+	// Sample i encodes i%2000-1000: spot-check that alignment survived the
+	// odd-length chunks the server flushed.
+	for _, i := range []int{0, 1, 2047, 2048, 4095, 4096, 23999} {
+		want := float32(int16(i%2000-1000)) / 32768
+		if got[i] != want {
+			t.Fatalf("sample %d = %v, want %v: byte alignment broke", i, got[i], want)
+		}
+	}
+	if len(f.requests) != 1 || f.requests[0].ResponseFormat != "pcm" || f.requests[0].Model != "phonon" || f.requests[0].Voice != "default" {
+		t.Fatalf("request = %+v", f.requests)
+	}
+	caps := p.Capabilities()
+	if !caps.SupportsStreaming || caps.SampleRates[0] != SampleRate || len(caps.Modes) != 1 || caps.Modes[0].Voices[0].Name != "default" {
+		t.Fatalf("caps = %+v", caps)
+	}
+}
+
+func TestUnknownVoiceSurfacesServerMessage(t *testing.T) {
+	_, srv := newFake(t)
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := p.SynthesizeRequest(context.Background(), tts.SynthesisRequest{Text: "hi", Voice: "nope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range result.Stream.Frames() {
+	}
+	err = result.Stream.Err()
+	if err == nil || !strings.Contains(err.Error(), "available voices: default") {
+		t.Fatalf("err = %v, want the server's voice list", err)
+	}
+}
+
+func TestLongTextIsSplitUnderTheCap(t *testing.T) {
+	f, srv := newFake(t)
+	f.samples = 100
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentence := strings.Repeat("word ", 199) + "end. " // 1000 chars
+	text := strings.Repeat(sentence, 5)                // 5000 chars
+	got, err := drain(t, p, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.requests) != 2 {
+		t.Fatalf("%d requests, want 2 for %d chars", len(f.requests), len(text))
+	}
+	for _, r := range f.requests {
+		if len(r.Input) > MaxInputChars || !strings.HasSuffix(strings.TrimSpace(r.Input), "end.") {
+			t.Fatalf("piece of %d chars does not end on a sentence: %q", len(r.Input), r.Input[len(r.Input)-20:])
+		}
+	}
+	if len(got) != 2*f.samples {
+		t.Fatalf("decoded %d samples, want %d", len(got), 2*f.samples)
+	}
+}
+
+func TestSplitForLimit(t *testing.T) {
+	if got := SplitForLimit("", 10); got != nil {
+		t.Fatal(got)
+	}
+	if got := SplitForLimit("short", 10); len(got) != 1 || got[0] != "short" {
+		t.Fatal(got)
+	}
+	got := SplitForLimit("One two. Three four! Five six? Seven", 12)
+	want := []string{"One two.", "Three four!", "Five six?", "Seven"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("got %q", got)
+	}
+	// No separators at all: a hard cut rather than an oversized request.
+	for _, piece := range SplitForLimit(strings.Repeat("x", 25), 10) {
+		if len(piece) > 10 {
+			t.Fatal(piece)
+		}
+	}
+}
+
+func TestEmptyAfterCleaningClosesWithoutRequest(t *testing.T) {
+	f, srv := newFake(t)
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := drain(t, p, "🎉")
+	if err != nil || len(got) != 0 || len(f.requests) != 0 {
+		t.Fatalf("got %d samples, %d requests, err %v", len(got), len(f.requests), err)
+	}
+}
+
+func TestUnreachableServerIsProviderUnavailable(t *testing.T) {
+	_, _, err := New(cfgFor("http://127.0.0.1:1"))
+	if !errors.Is(err, tts.ErrProviderUnavailable) || !strings.Contains(err.Error(), "127.0.0.1:1") || !strings.Contains(err.Error(), "ollama pull phonon") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestMissingModelNamesWhatTheServerHas(t *testing.T) {
+	f, srv := newFake(t)
+	f.models = []string{"dolphin-mistral:latest"}
+	_, _, err := New(cfgFor(srv.URL))
+	if err == nil || !strings.Contains(err.Error(), `"phonon"`) || !strings.Contains(err.Error(), "dolphin-mistral:latest") {
+		t.Fatalf("err = %v", err)
+	}
+	// A server that lists nothing (not a model registry) is not refused.
+	f.models = nil
+	if _, _, err := New(cfgFor(srv.URL)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVoiceCatalogFromServerWhenOffered(t *testing.T) {
+	f, srv := newFake(t)
+	f.voiceAPI = []string{"Freya", "Harper", "default"}
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := []string{}
+	for _, v := range p.ListVoices("", "") {
+		names = append(names, v.Name)
+	}
+	if strings.Join(names, ",") != "Freya,Harper,default" {
+		t.Fatalf("voices = %v", names)
+	}
+	for _, body := range []string{`["a","b"]`, `{"voices":[{"name":"a"},{"id":"b"}]}`, `{"data":[{"id":"a"},{"id":"b"}]}`} {
+		if got := voiceNames([]byte(body)); strings.Join(got, ",") != "a,b" {
+			t.Fatalf("voiceNames(%s) = %v", body, got)
+		}
+	}
+}
+
+func TestCancelMidBodyStopsTheStream(t *testing.T) {
+	f, srv := newFake(t)
+	f.hold = make(chan struct{})
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := p.Synthesize(ctx, "Waiting on the server.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	close(f.hold)
+	done := make(chan struct{})
+	go func() {
+		for range stream.Frames() {
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream never closed after cancel")
+	}
+	if !errors.Is(stream.Err(), context.Canceled) {
+		t.Fatalf("stream err = %v", stream.Err())
+	}
+}
+
+func TestGraceCoversAColdModelLoad(t *testing.T) {
+	p := &Provider{}
+	if g := p.FirstAudioGraceForChars(17); g < 5*time.Second {
+		t.Fatalf("short segment grace %v is below the measured 2.4 s reload", g)
+	}
+	if g := p.FirstAudioGraceForChars(100000); g != maxFirstAudioGrace {
+		t.Fatalf("grace %v not capped", g)
+	}
+	if p.FirstAudioGrace() != p.FirstAudioGraceForChars(tts.TypicalSegmentChars) {
+		t.Fatal("default grace must use the typical segment")
+	}
+}
+
+func TestDecodeCarriesOddByte(t *testing.T) {
+	// 3 samples delivered as 1+2+3 bytes: every split lands mid-sample.
+	raw := []byte{0x00, 0x01, 0x00, 0x02, 0x00, 0x03}
+	r := &chunkReader{data: raw, sizes: []int{1, 2, 3}}
+	ctx := context.Background()
+	stream := newTestStream(ctx)
+	if err := decodePCM16(r, stream); err != nil {
+		t.Fatal(err)
+	}
+	stream.Close()
+	var got []float32
+	for frame := range stream.Frames() {
+		got = append(got, frame...)
+	}
+	want := []float32{256.0 / 32768, 512.0 / 32768, 768.0 / 32768}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+type chunkReader struct {
+	data  []byte
+	sizes []int
+	i     int
+}
+
+func (c *chunkReader) Read(p []byte) (int, error) {
+	if len(c.data) == 0 {
+		return 0, io.EOF
+	}
+	n := c.sizes[c.i%len(c.sizes)]
+	c.i++
+	if n > len(c.data) {
+		n = len(c.data)
+	}
+	if n > len(p) {
+		n = len(p)
+	}
+	copy(p, c.data[:n])
+	c.data = c.data[n:]
+	return n, nil
+}

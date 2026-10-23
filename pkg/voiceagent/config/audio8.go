@@ -193,6 +193,11 @@ func TTSVoiceFor(cfg *Config, provider string) string {
 			return voice
 		}
 		return Audio8PackagedVoice
+	case OpenAISpeechProviderName:
+		if voice := strings.TrimSpace(cfg.OpenAISpeechVoice); voice != "" {
+			return voice
+		}
+		return DefaultOpenAISpeechVoice
 	default:
 		return strings.TrimSpace(cfg.TTSVoice)
 	}
@@ -210,8 +215,11 @@ func ConfiguredTTSVoice(cfg *Config, provider string) string {
 	if cfg == nil {
 		return ""
 	}
-	if normalizeTTSProviderName(provider) == Audio8ProviderName {
+	switch normalizeTTSProviderName(provider) {
+	case Audio8ProviderName:
 		return strings.TrimSpace(cfg.Audio8Voice)
+	case OpenAISpeechProviderName:
+		return strings.TrimSpace(cfg.OpenAISpeechVoice)
 	}
 	return TTSVoiceFor(cfg, provider)
 }
@@ -224,6 +232,8 @@ func TTSVoiceKeyFor(provider string) string {
 		return "qwen_tts_voice"
 	case Audio8ProviderName:
 		return "audio8_voice"
+	case OpenAISpeechProviderName:
+		return "openai_speech_voice"
 	default:
 		return "tts_voice"
 	}
@@ -241,6 +251,8 @@ func SetTTSVoiceFor(cfg *Config, provider, voice string) {
 		cfg.QwenTTSVoice = voice
 	case Audio8ProviderName:
 		cfg.Audio8Voice = voice
+	case OpenAISpeechProviderName:
+		cfg.OpenAISpeechVoice = voice
 	default:
 		cfg.TTSVoice = voice
 	}

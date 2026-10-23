@@ -133,6 +133,8 @@ func ttsProviderDetail(spec tts.ProviderSpec, cfg *config.Config) string {
 			return fmt.Sprintf("%s · %d registered", spec.Description, n)
 		}
 		return spec.Description
+	case config.OpenAISpeechProviderName:
+		return config.OpenAISpeechModel(cfg) + " at " + config.OpenAISpeechURL(cfg) + " · voice " + config.TTSVoiceFor(cfg, config.OpenAISpeechProviderName)
 	default:
 		return spec.Description
 	}

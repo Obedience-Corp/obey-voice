@@ -257,6 +257,14 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 			Severity: SeverityOK,
 			Detail:   "kokoro (" + KokoroPack() + ")",
 		})
+	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), OpenAISpeechProviderName) {
+		// Nothing to install: the server owns the model. doctor stays offline, so
+		// it reports the target; the provider proves reachability at start.
+		diags = append(diags, Diagnostic{
+			Name:     "tts-provider",
+			Severity: SeverityOK,
+			Detail:   OpenAISpeechProviderName + " (" + OpenAISpeechModel(cfg) + " at " + OpenAISpeechURL(cfg) + ", voice " + TTSVoiceFor(cfg, OpenAISpeechProviderName) + ")",
+		})
 	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), Audio8ProviderName) {
 		// audio8 is a real provider that obey-voice does not manage assets
 		// for, so it needs its own row: the unmanaged fallthrough below would
@@ -283,7 +291,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 			Name:        "tts-provider",
 			Severity:    SeverityWarn,
 			Detail:      fmt.Sprintf("tts_provider %q is not a known provider", cfg.TTSProvider),
-			Remediation: "set tts_provider=kokoro, tts_provider=qwen3-tts (with its native worker and model configured), or tts_provider=audio8 (with the Audio8 export installed)",
+			Remediation: "set tts_provider=kokoro, tts_provider=qwen3-tts (with its native worker and model configured), tts_provider=audio8 (with the Audio8 export installed), or tts_provider=openai-speech (Phonon via Ollama 0.40.9+)",
 		})
 	}
 
