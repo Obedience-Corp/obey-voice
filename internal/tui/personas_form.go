@@ -28,14 +28,20 @@ const (
 	formRowTTSProvider
 	formRowVoice
 	formRowTier
+	formRowDirectory
 	formRowPrompt
 	formRowCount
 )
 
-// isStackRow reports the rows ←/→ cycles: everything between Name and the
-// system prompt.
+// isStackRow reports the model & voice rows: everything between Name and the
+// starting directory.
 func isStackRow(row int) bool {
 	return row >= formRowBrainProvider && row <= formRowTier
+}
+
+// isCycleRow reports the rows ←/→ cycles: the stack rows and the directory.
+func isCycleRow(row int) bool {
+	return isStackRow(row) || row == formRowDirectory
 }
 
 // stackDefaultLabel is provider index 0: inherit the app-level default.
@@ -291,6 +297,7 @@ func (m *personasModel) resizeForm() {
 	// the row minus the label and chip — otherwise typing runs under the box
 	// border and the tail is truncated away.
 	m.brainModelInput.Width = max(inner-24, 10)
+	m.directoryInput.Width = max(inner-24, 10)
 	// With the editor open the other fields are not drawn, so it gets the body
 	// budget; on the form screen it is a two-line summary and only the boxes
 	// around it need the room.
@@ -347,8 +354,8 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 		m.setFormRow((m.formRow + 1) % formRowCount)
 		return m, nil
 	case key == "left", key == "right":
-		// Off the stack rows the arrows belong to the text field under them.
-		if isStackRow(m.formRow) {
+		// Off the cycling rows the arrows belong to the text field under them.
+		if isCycleRow(m.formRow) {
 			delta := 1
 			if key == "left" {
 				delta = -1
@@ -369,6 +376,8 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 		// Typing edits the model only under "(custom)"; the listed entries are
 		// select-only, like Voice and Tier.
 		m.brainModelInput, cmd = m.brainModelInput.Update(msg)
+	case m.formRow == formRowDirectory && m.directory.custom:
+		m.directoryInput, cmd = m.directoryInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -408,6 +417,7 @@ func (m personasModel) openPrompt() (personasModel, tea.Cmd) {
 	m.promptOpen = true
 	m.nameInput.Blur()
 	m.brainModelInput.Blur()
+	m.directoryInput.Blur()
 	// Ensure a usable draft: an empty prompt body gets the seed identity.
 	if strings.TrimSpace(m.promptTA.Value()) == "" {
 		if text := m.resolveSeedPrompt(); text != "" {
@@ -461,6 +471,8 @@ func (m *personasModel) cycleStackRow(delta int) {
 		m.cycleStackVoice(delta)
 	case formRowTier:
 		m.cycleStackTier(delta)
+	case formRowDirectory:
+		m.cycleDirectory(delta)
 	}
 }
 
@@ -493,11 +505,14 @@ func (m *personasModel) setFormRow(row int) {
 	m.formRow = row
 	m.nameInput.Blur()
 	m.brainModelInput.Blur()
+	m.directoryInput.Blur()
 	switch {
 	case row == formRowName:
 		m.nameInput.Focus()
 	case row == formRowBrainModel && m.brainModels.custom:
 		m.brainModelInput.Focus()
+	case row == formRowDirectory && m.directory.custom:
+		m.directoryInput.Focus()
 	}
 	// Row help is scoped to the active row: leaving the row that owns the
 	// typing keys puts the general help back.
@@ -528,6 +543,7 @@ func (m *personasModel) prefillStack(p *persona.Profile) {
 	// under it are chosen per form, never inherited from the last one.
 	m.brainModels.clearCustom()
 	m.prefillWorker(p)
+	m.prefillDirectory(p)
 	if p == nil {
 		m.brainProviderIdx = 0
 		m.ttsProviderIdx = 0
@@ -572,8 +588,10 @@ func (m *personasModel) cancelForm() {
 	m.formInitialPrompt = ""
 	m.prefillStack(nil)
 	m.brainModelInput.Blur()
-	// Abandon any in-flight model scan with the form it was opened for.
+	m.directoryInput.Blur()
+	// Abandon any in-flight scans with the form they were opened for.
 	m.resetBrainModels()
+	m.resetDirectories()
 }
 
 func (m *personasModel) resolveDefaultPrompt() string {
@@ -612,8 +630,8 @@ func (m *personasModel) beginCreate() tea.Cmd {
 	m.formInitialPrompt = m.promptTA.Value()
 	m.promptTA.Blur()
 	m.prefillStack(nil) // "(default)" = clone current globals at create time
-	// Scan providers in the background; the form is usable immediately.
-	return tea.Batch(textinput.Blink, m.loadBrainModels())
+	// Scan providers and camps in the background; the form is usable immediately.
+	return tea.Batch(textinput.Blink, m.loadDirectories(), m.loadBrainModels())
 }
 
 // beginEditAt opens the edit form for the persona under the cursor, landing on
@@ -642,7 +660,7 @@ func (m *personasModel) beginEditAt(row int) tea.Cmd {
 	if loadNote != "" {
 		m.message = loadNote
 	}
-	return tea.Batch(textinput.Blink, m.loadBrainModels())
+	return tea.Batch(textinput.Blink, m.loadDirectories(), m.loadBrainModels())
 }
 
 // loadEditPrompt loads the system prompt body for the editor without ever
@@ -728,6 +746,19 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 		m.message = "Enter a system prompt (this is the persona identity the brain loads) · enter opens the editor"
 		return m, nil
 	}
+	// The folder is checked before anything is written: a bad path must not
+	// leave a half-saved persona behind. An unchanged value is not re-checked so
+	// a persona whose folder vanished can still have its other fields edited.
+	directory := m.directoryValue()
+	if m.formMode == "create" || m.directoryChanged() {
+		normalized, err := config.ValidateStartingDirectory(directory)
+		if err != nil {
+			m.setFormRow(formRowDirectory)
+			m.message = fmt.Sprintf("%s: %v · ←/→ picks (default) or a camp", name, err)
+			return m, nil
+		}
+		directory = normalized
+	}
 
 	switch m.formMode {
 	case "create":
@@ -736,10 +767,11 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 			create = persona.CreateAndUseWithOpts
 		}
 		p, err := create(m.cfg, persona.CreateOpts{
-			DisplayName:  name,
-			SystemPrompt: prompt,
-			Brain:        m.formBrain(),
-			TTS:          m.formTTS(),
+			StartingDirectory: directory,
+			DisplayName:       name,
+			SystemPrompt:      prompt,
+			Brain:             m.formBrain(),
+			TTS:               m.formTTS(),
 		})
 		if err != nil {
 			m.message = fmt.Sprintf("Failed to create: %v", err)
@@ -756,6 +788,13 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 		m.ensureVisible()
 		m.message = fmt.Sprintf("Created %s (%s) · system prompt → prompts/persona/%s.yaml · restart chat to apply", p.DisplayName, p.ID, p.ID)
 	case "edit":
+		if m.directoryChanged() && m.saveDirectory != nil {
+			if _, err := m.saveDirectory(m.editID, directory); err != nil {
+				m.setFormRow(formRowDirectory)
+				m.message = fmt.Sprintf("Failed to save starting directory: %v", err)
+				return m, nil
+			}
+		}
 		if m.saveName != nil {
 			if _, err := m.saveName(m.editID, name); err != nil {
 				m.message = fmt.Sprintf("Failed to save name: %v", err)

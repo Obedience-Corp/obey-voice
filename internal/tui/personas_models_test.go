@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/persona/campdirs"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -36,13 +37,17 @@ func newPickerPersonas(t *testing.T, cfg *config.Config, p *persona.Profile) per
 		t.Error("discovery ran without the test asking for it")
 		return nil
 	}
+	m.directory.discover = func(context.Context) campdirs.Choices {
+		t.Error("camp discovery ran without the test asking for it")
+		return campdirs.Choices{}
+	}
 	m.reload()
 	m.width, m.height = 100, 30
 	return m
 }
 
 // personaScanCmd digs the model-scan command out of the batch beginEditAt /
-// beginCreate return (cursor blink first, scan last).
+// beginCreate return (cursor blink first, camp scan, model scan last).
 func personaScanCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 	t.Helper()
 	if cmd == nil {

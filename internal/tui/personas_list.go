@@ -235,6 +235,11 @@ func (m personasModel) personaDetailLines() []string {
 		value("LLM provider  ", s.provider, s.providerSource)
 		value("LLM model     ", s.model, s.modelSource)
 		value("Voice         ", s.voice, "")
+		directory := strings.TrimSpace(p.StartingDirectory)
+		if directory == "" {
+			directory = "(app default)"
+		}
+		value("Directory     ", directory, "")
 		if p.Builtin && p.ID == persona.DefaultID {
 			body = append(body, dimStyle.Render("built-in default"))
 		}

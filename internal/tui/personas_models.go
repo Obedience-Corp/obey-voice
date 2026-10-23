@@ -281,6 +281,8 @@ func (m personasModel) formRowHelp() string {
 		return "Voice · ←/→ pick · p preview"
 	case formRowTier:
 		return "Tier · qwen3-tts only"
+	case formRowDirectory:
+		return m.directoryRowHelp()
 	default:
 		return "System prompt · enter opens the editor · Tab inserts {variables}"
 	}

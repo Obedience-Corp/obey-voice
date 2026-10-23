@@ -1,50 +1,19 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/Obedience-Corp/obey-voice/internal/meeting"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/internal/persona/campdirs"
 	"github.com/spf13/cobra"
 )
 
-type personaDirectoryChoices struct {
-	Campaigns []meeting.Campaign `json:"campaigns"`
-	Notice    string             `json:"notice,omitempty"`
-}
+type personaDirectoryChoices = campdirs.Choices
 
 // Discovery failure is nonfatal: users can always enter a custom directory.
 func discoverPersonaDirectories(ctx context.Context, run meeting.Runner, look meeting.LookPath) personaDirectoryChoices {
-	result := personaDirectoryChoices{Campaigns: []meeting.Campaign{}}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	checkedRun := func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		data, err := run(ctx, name, args...)
-		if err == nil && !bytes.Contains(data, []byte("[")) {
-			err = fmt.Errorf("camp returned no JSON campaign list")
-		}
-		return data, err
-	}
-	camps, err := meeting.ListCampaigns(ctx, checkedRun, look)
-	if err != nil {
-		result.Notice = "Cannot load registered camps: " + err.Error()
-		return result
-	}
-	for _, c := range camps {
-		if c.Path == "" {
-			continue
-		}
-		path, err := config.ValidateStartingDirectory(c.Path)
-		if err != nil {
-			continue
-		}
-		c.Path = path
-		result.Campaigns = append(result.Campaigns, c)
-	}
-	return result
+	return campdirs.Discover(ctx, run, look)
 }
 
 func personaDirectoriesCmd() *cobra.Command {
