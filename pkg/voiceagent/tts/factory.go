@@ -24,6 +24,9 @@ var providerSpecs = []ProviderSpec{
 	// Settings marks the row via Audio8Installed, and NewProvider names the
 	// missing file — rather than by hiding the row.
 	{Name: "audio8", Description: "Audio8 DualAR ONNX (experimental · quality preview · packaged reference voice)"},
+	// The OpenAI-compatible speech endpoint. Phonon through Ollama is the
+	// default target; it needs nothing installed here beyond `ollama pull phonon`.
+	{Name: config.OpenAISpeechProviderName, Description: "OpenAI-compatible speech API (Phonon via Ollama by default · streams 24 kHz PCM)"},
 }
 
 // Providers returns the list of implemented TTS providers.
@@ -101,9 +104,29 @@ func StaticVoicesFor(cfg *config.Config, providerName, locale, gender string) ([
 			return staticAudio8Voices(locale, gender), nil
 		}
 		return audio8VoiceCatalog(config.ModelsDirFrom(cfg), locale, gender)
+	case config.OpenAISpeechProviderName:
+		return staticOpenAISpeechVoices(cfg), nil
 	default:
 		return nil, unsupportedProviderError(providerName)
 	}
+}
+
+// staticOpenAISpeechVoices is what can be known about the speech API's voices
+// without asking it: the configured voice, plus the one Phonon ships. The live
+// provider replaces this with GET /audio/voices when the server offers it.
+func staticOpenAISpeechVoices(cfg *config.Config) []Voice {
+	names := []string{config.TTSVoiceFor(cfg, config.OpenAISpeechProviderName), config.DefaultOpenAISpeechVoice}
+	out := make([]Voice, 0, len(names))
+	seen := map[string]bool{}
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[strings.ToLower(n)] {
+			continue
+		}
+		seen[strings.ToLower(n)] = true
+		out = append(out, Voice{Name: n, FriendlyName: n})
+	}
+	return out
 }
 
 func staticKokoroVoices(locale, gender string) []Voice {

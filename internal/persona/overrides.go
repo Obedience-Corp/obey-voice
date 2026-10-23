@@ -47,6 +47,8 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.QwenTTSVoice = v }},
 	{"audio8_voice", func(c *config.Config) string { return c.Audio8Voice },
 		func(c *config.Config, v string) { c.Audio8Voice = v }},
+	{"openai_speech_voice", func(c *config.Config) string { return c.OpenAISpeechVoice },
+		func(c *config.Config, v string) { c.OpenAISpeechVoice = v }},
 	{"qwen_tts_model_tier", func(c *config.Config) string { return c.QwenTTSModelTier },
 		func(c *config.Config, v string) { c.QwenTTSModelTier = v }},
 }

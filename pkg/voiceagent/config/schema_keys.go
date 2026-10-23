@@ -62,6 +62,34 @@ func voiceKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "openai_speech_url", Type: TypeString, Default: DefaultOpenAISpeechURL,
+			Group: GroupVoice, Title: "Speech API address",
+			Help: "The OpenAI-compatible /v1 base the openai-speech engine talks to. Ollama serving Phonon is http://localhost:11434/v1.",
+		},
+		{
+			Key: "openai_speech_model", Type: TypeString, Default: DefaultOpenAISpeechModel,
+			Group: GroupVoice, Title: "Speech API model",
+			Help: "The model id the speech API synthesizes with. phonon on Ollama; `ollama pull phonon` installs it.",
+		},
+		{
+			// A string, like audio8_voice: the valid set lives on the server, which
+			// names the voices it has when asked for one it lacks.
+			Key: "openai_speech_voice", Type: TypeString, Default: DefaultOpenAISpeechVoice,
+			Group: GroupVoice, Title: "Speech API voice",
+			Help:               "Which voice the speech API speaks in. Phonon on Ollama ships one, named default.",
+			PersonaOverridable: true,
+		},
+		{
+			Key: "openai_speech_api_key", Type: TypeString, Default: "", Secret: true,
+			Group: GroupVoice, Title: "Speech API key",
+			Help: "Bearer token for a speech API that needs one. Ollama does not.",
+		},
+		{
+			Key: "openai_speech_timeout", Type: TypeInt, Default: DefaultOpenAISpeechTimeout, Unit: "s", Min: num(5), Max: num(600),
+			Group: GroupVoice, Title: "Speech API timeout",
+			Help: "How long one speech request may take before it is abandoned.",
+		},
+		{
 			Key: "voice_fallback_provider", Type: TypeEnum, Default: "kokoro", Enum: ttsFallbackEnum(),
 			Group: GroupVoice, Title: "Fallback engine",
 			Help: "When the main engine is slow or fails, speak that sentence in this engine instead. disabled waits for the main engine (you hear Qwen, not Kokoro).",

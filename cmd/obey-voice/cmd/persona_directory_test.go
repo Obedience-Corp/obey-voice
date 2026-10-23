@@ -105,3 +105,17 @@ func TestPersonaDirectoryDiscovery(t *testing.T) {
 	}
 }
 func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+// openai-speech voices are the server's, so persona edit keeps the name as
+// typed instead of refusing everything but the configured voice and "default".
+func TestPersonaEditKeepsOpenAISpeechVoiceAsTyped(t *testing.T) {
+	personaEnv(t)
+	out, err := runPersona(t, "edit", "samantha", "--tts-provider", "openai-speech", "--voice", "Harper", "--json")
+	if err != nil {
+		t.Fatal(out, err)
+	}
+	p, err := persona.Load("samantha")
+	if err != nil || p.TTS.Provider != "openai-speech" || p.TTS.Voice != "Harper" {
+		t.Fatalf("%+v %v", p, err)
+	}
+}

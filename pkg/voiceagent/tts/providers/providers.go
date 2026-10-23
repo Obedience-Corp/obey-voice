@@ -14,6 +14,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/openaispeech"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/qwen"
 )
 
@@ -30,6 +31,12 @@ func NewProvider(cfg *config.Config) (tts.Provider, func(), error) {
 		return provider, provider.Delete, nil
 	case tts.Audio8ProviderName:
 		return tts.NewAudio8Provider(cfg)
+	case config.OpenAISpeechProviderName:
+		provider, cleanup, err := openaispeech.New(cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		return provider, cleanup, nil
 	default:
 		return nil, nil, tts.UnsupportedProvider(cfg.TTSProvider)
 	}

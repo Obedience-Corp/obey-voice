@@ -16,10 +16,16 @@ type Config struct {
 	DelegationTimeout         int    `mapstructure:"delegation_timeout"`
 
 	// TTS
-	TTSProvider           string  `mapstructure:"tts_provider"`
-	TTSFallbackProvider   string  `mapstructure:"voice_fallback_provider"`
-	TTSVoice              string  `mapstructure:"tts_voice"`
-	Audio8Voice           string  `mapstructure:"audio8_voice"`
+	TTSProvider         string `mapstructure:"tts_provider"`
+	TTSFallbackProvider string `mapstructure:"voice_fallback_provider"`
+	TTSVoice            string `mapstructure:"tts_voice"`
+	Audio8Voice         string `mapstructure:"audio8_voice"`
+	// OpenAI-compatible speech client (Phonon via Ollama by default); see openaispeech.go.
+	OpenAISpeechURL       string  `mapstructure:"openai_speech_url"`
+	OpenAISpeechModel     string  `mapstructure:"openai_speech_model"`
+	OpenAISpeechVoice     string  `mapstructure:"openai_speech_voice"`
+	OpenAISpeechAPIKey    string  `mapstructure:"openai_speech_api_key"`
+	OpenAISpeechTimeout   int     `mapstructure:"openai_speech_timeout"`
 	SpeechSpeed           float64 `mapstructure:"speech_speed"`
 	PlaybackVolume        float64 `mapstructure:"playback_volume"`
 	QwenTTSBinary         string  `mapstructure:"qwen_tts_binary"`

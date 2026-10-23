@@ -135,6 +135,16 @@ func stackVoiceCatalog(cfg *config.Config, provider string) []string {
 			out = append(out, v.Name)
 		}
 		return out
+	case config.OpenAISpeechProviderName:
+		voices, err := tts.StaticVoicesFor(cfg, config.OpenAISpeechProviderName, "", "")
+		if err != nil {
+			return nil
+		}
+		out := make([]string, 0, len(voices))
+		for _, v := range voices {
+			out = append(out, v.Name)
+		}
+		return out
 	default:
 		return nil
 	}
