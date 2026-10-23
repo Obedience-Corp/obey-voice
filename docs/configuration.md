@@ -106,7 +106,7 @@ when you select it.
 | `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`), or `openai-speech` (any OpenAI-compatible `/v1/audio/speech` server; Phonon via Ollama by default, see [OpenAI-compatible speech](openai-speech.md)) |
 | `openai_speech_url` | `http://localhost:11434/v1` | `OPENAI_SPEECH_URL` | Base URL of the speech API the `openai-speech` engine talks to |
 | `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | Model id the speech API synthesizes with (`ollama pull phonon`) |
-| `openai_speech_voice` | `default` | `OPENAI_SPEECH_VOICE` | Voice name on that server. Phonon on Ollama ships one, `default`; a server that lists `/v1/audio/voices` populates the pickers. Persona-overridable |
+| `openai_speech_voice` | `default` | `OPENAI_SPEECH_VOICE` | Voice name on that server. Phonon on Ollama ships one, `default`. The Settings and Personas pickers list the static catalog; a voice from a server with more is typed here and `obey-voice voices` lists what the server has. Persona-overridable |
 | `openai_speech_api_key` | empty | `OPENAI_SPEECH_API_KEY` | Bearer token for a speech API that needs one. Ollama does not |
 | `openai_speech_timeout` | `60` | — | Seconds one speech request may take before it is abandoned |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |

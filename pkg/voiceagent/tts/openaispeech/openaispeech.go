@@ -313,6 +313,9 @@ type tailTrimmer struct {
 	// written yet because the chunk ended first; silent chunks pay it down so
 	// the kept tail is the same length however the body was chunked.
 	owed int
+	// wrote records that something audible reached out, so finish can tell a
+	// trimmed pad from an answer that was silence all the way through.
+	wrote bool
 }
 
 func newTailTrimmer(out frameWriter) *tailTrimmer { return &tailTrimmer{out: out} }
@@ -341,14 +344,22 @@ func (t *tailTrimmer) Write(samples []float32) error {
 	emit := min(last+1+tailKeepSamples, len(all))
 	t.owed = tailKeepSamples - (emit - (last + 1))
 	t.held = append([]float32(nil), all[emit:]...)
+	t.wrote = true
 	return t.out.Write(all[:emit])
 }
 
 // finish drops the held tail: everything after the last audible sample plus
-// tailKeep has already been written.
+// tailKeep has already been written. An answer that never crossed the
+// threshold is played as up to tailKeep of silence instead: a stream with no
+// samples at all is a failed sentence to the player, and a silent reply is
+// not a failure.
 func (t *tailTrimmer) finish() error {
+	held := t.held
 	t.held, t.owed = nil, 0
-	return nil
+	if t.wrote || len(held) == 0 {
+		return nil
+	}
+	return t.out.Write(held[:min(len(held), tailKeepSamples)])
 }
 
 // decodePCM16 converts a 16-bit little-endian mono body into float32 frames.

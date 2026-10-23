@@ -355,14 +355,15 @@ func TestSplitForLimit(t *testing.T) {
 	}
 	// Multibyte text: the cap counts runes and a hard cut never lands inside
 	// one, so no piece carries U+FFFD after a JSON round trip.
+	// 13 is not a multiple of 3, so a byte cut would land inside a rune.
 	text := strings.Repeat("日本語のテキスト", 10) // 80 runes, 240 bytes, no separators
-	pieces := SplitForLimit(text, 12)
+	pieces := SplitForLimit(text, 13)
 	if len(pieces) != 7 {
-		t.Fatalf("%d pieces for 80 runes at 12 per piece", len(pieces))
+		t.Fatalf("%d pieces for 80 runes at 13 per piece", len(pieces))
 	}
 	var rejoined string
 	for _, piece := range pieces {
-		if !utf8.ValidString(piece) || utf8.RuneCountInString(piece) > 12 {
+		if !utf8.ValidString(piece) || utf8.RuneCountInString(piece) > 13 {
 			t.Fatalf("piece %q is not valid UTF-8 within the rune cap", piece)
 		}
 		b, _ := json.Marshal(piece)
@@ -600,12 +601,22 @@ func TestTailTrimmerDropsPadKeepsPauses(t *testing.T) {
 	if c.got[4000+100] != 0 || c.got[4000+SampleRate*300/1000+10] != 0.3 {
 		t.Fatal("mid-utterance pause was not preserved")
 	}
-	// All-silent input emits nothing.
+	// An all-silent answer plays as the kept tail, not as a stream with no
+	// samples, which the player would report as a failed sentence.
 	c2 := &collectWriter{}
 	tr2 := newTailTrimmer(c2)
-	_ = tr2.Write(silence(5000))
+	_ = tr2.Write(silence(3000))
+	_ = tr2.Write(silence(2000))
 	_ = tr2.finish()
-	if len(c2.got) != 0 {
-		t.Fatalf("silent input emitted %d samples", len(c2.got))
+	if len(c2.got) != tailKeepSamples {
+		t.Fatalf("silent input emitted %d samples, want %d", len(c2.got), tailKeepSamples)
+	}
+	// Shorter than the keep: whatever there was.
+	c3 := &collectWriter{}
+	tr3 := newTailTrimmer(c3)
+	_ = tr3.Write(silence(100))
+	_ = tr3.finish()
+	if len(c3.got) != 100 {
+		t.Fatalf("short silent input emitted %d samples, want 100", len(c3.got))
 	}
 }
