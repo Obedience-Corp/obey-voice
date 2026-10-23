@@ -177,6 +177,11 @@ func TestVoicesJSONCarriesCatalogSourceNoticeAndDescriptions(t *testing.T) {
 	if strings.Contains(out, `"age":""`) || strings.Contains(out, `"description":""`) {
 		t.Fatalf("empty descriptive keys emitted: %s", out)
 	}
+	// The human table prints the notice under the count.
+	table, err := runVoicesCmd(t, "--provider", config.OpenAISpeechProviderName)
+	if err != nil || !strings.Contains(table, "Ollama 0.40.9 lists no voices") {
+		t.Fatalf("table notice missing (err %v):\n%s", err, table)
+	}
 	// A provider with one catalog carries neither key.
 	stubVoiceStack(t, kokoroFake(), nil)
 	out, err = runVoicesCmd(t, "--json")

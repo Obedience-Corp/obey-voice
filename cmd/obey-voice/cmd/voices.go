@@ -287,6 +287,10 @@ func runVoicesTable(cmd *cobra.Command) error {
 		}
 		fmt.Fprintf(out, "  %s %s  %s\n", keyStyle.Render(fmt.Sprintf("%-16s", v.Name)), v.FriendlyName, dimStyle.Render(fmt.Sprintf("%s / %s", v.Gender, v.Locale))+active)
 	}
-	fmt.Fprintf(out, "\n  %s\n\n", dimStyle.Render(fmt.Sprintf("%d voices found.", len(voices))))
+	fmt.Fprintf(out, "\n  %s\n", dimStyle.Render(fmt.Sprintf("%d voices found.", len(voices))))
+	if notice := tts.CatalogNoticeOf(provider); notice != "" {
+		fmt.Fprintf(out, "  %s\n", dimStyle.Render(notice))
+	}
+	fmt.Fprintln(out)
 	return nil
 }
