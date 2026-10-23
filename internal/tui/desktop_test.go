@@ -127,7 +127,7 @@ func TestDesktopSettingsRoundTripDoesNotReloadSessionVoice(t *testing.T) {
 		default:
 		}
 	})
-	defer func() { cancel(); controller.Wait() }()
+	defer func() { cancel(); _ = controller.Wait() }()
 	controller.Send(DesktopAction{Kind: "manager", Text: "settings"})
 	controller.Send(DesktopAction{Kind: "return"})
 	// A slash-command notice proves both preceding actions reached Update.
