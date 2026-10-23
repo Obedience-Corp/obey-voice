@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -33,6 +34,7 @@ type fakeServer struct {
 	// holdAfterFirst blocks the body after the first flushed chunk, so a test
 	// can cancel while the decode loop is mid-stream.
 	holdAfterFirst chan struct{}
+	fail500        bool
 }
 
 func (f *fakeServer) handler() http.Handler {
@@ -76,8 +78,17 @@ func (f *fakeServer) handler() http.Handler {
 			_, _ = w.Write([]byte(`{"error":{"message":"voice \"` + req.Voice + `\" not found; available voices: ` + strings.Join(f.voices, ", ") + `","type":"invalid_request_error"}}`))
 			return
 		}
+		if f.fail500 {
+			w.WriteHeader(500)
+			_, _ = w.Write([]byte(`{"error":{"message":"runner crashed"}}`))
+			return
+		}
 		if f.hold != nil {
-			<-f.hold
+			select {
+			case <-f.hold:
+			case <-r.Context().Done():
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "audio/pcm")
 		w.WriteHeader(200)
@@ -187,6 +198,77 @@ func TestUnknownVoiceSurfacesServerMessage(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "available voices: default") {
 		t.Fatalf("err = %v, want the server's voice list", err)
 	}
+	// A 4xx is this request's fault: not something the Kokoro fallback should hide.
+	if !tts.IsProviderErrorKind(err, tts.ProviderErrorInput) {
+		t.Fatalf("400 must classify as input, got %v", err)
+	}
+}
+
+// The pipeline's fallback predicate only acts on typed ProviderErrors of kind
+// Unavailable, Worker or Malformed, and never on Canceled. Every failure path
+// here has to come out typed or the Kokoro fallback NewTTSSet built never runs.
+func TestFailuresAreTypedForTheFallbackPredicate(t *testing.T) {
+	_, _, err := New(cfgFor("http://127.0.0.1:1"))
+	if !tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) || !errors.Is(err, tts.ErrProviderUnavailable) {
+		t.Fatalf("connection refused at probe: %v", err)
+	}
+
+	_, srv := newFake(t)
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Server dies after construction: the request fails at the transport.
+	srv.Close()
+	got, err := drain(t, p, "Is anyone there?")
+	if len(got) != 0 || !tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) {
+		t.Fatalf("transport failure mid-conversation: samples=%d err=%v", len(got), err)
+	}
+
+	// 5xx is the server's fault.
+	f2, srv2 := newFake(t)
+	f2.fail500 = true
+	p2, _, err := New(cfgFor(srv2.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := drain(t, p2, "hello"); !tts.IsProviderErrorKind(err, tts.ProviderErrorUnavailable) {
+		t.Fatalf("500: %v", err)
+	}
+
+	// Per-request timeout is a worker fault (fallback), not a turn cancel.
+	f3, srv3 := newFake(t)
+	f3.hold = make(chan struct{})
+	defer close(f3.hold)
+	cfg3 := cfgFor(srv3.URL)
+	cfg3.OpenAISpeechTimeout = 1
+	p3, _, err := New(cfg3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := drain(t, p3, "slow"); !tts.IsProviderErrorKind(err, tts.ProviderErrorWorker) || !strings.Contains(err.Error(), "timed out after 1s") {
+		t.Fatalf("timeout: %v", err)
+	}
+
+	// Turn cancel is Canceled: the fallback must not speak over a cancelled turn.
+	f4, srv4 := newFake(t)
+	f4.hold = make(chan struct{})
+	p4, _, err := New(cfgFor(srv4.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := p4.Synthesize(ctx, "cancel me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	close(f4.hold)
+	for range stream.Frames() {
+	}
+	if !tts.IsProviderErrorKind(stream.Err(), tts.ProviderErrorCanceled) {
+		t.Fatalf("cancel: %v", stream.Err())
+	}
 }
 
 func TestLongTextIsSplitUnderTheCap(t *testing.T) {
@@ -232,6 +314,32 @@ func TestSplitForLimit(t *testing.T) {
 		if len(piece) > 10 {
 			t.Fatal(piece)
 		}
+	}
+	// Multibyte text: the cap counts runes and a hard cut never lands inside
+	// one, so no piece carries U+FFFD after a JSON round trip.
+	text := strings.Repeat("日本語のテキスト", 10) // 80 runes, 240 bytes, no separators
+	pieces := SplitForLimit(text, 12)
+	if len(pieces) != 7 {
+		t.Fatalf("%d pieces for 80 runes at 12 per piece", len(pieces))
+	}
+	var rejoined string
+	for _, piece := range pieces {
+		if !utf8.ValidString(piece) || utf8.RuneCountInString(piece) > 12 {
+			t.Fatalf("piece %q is not valid UTF-8 within the rune cap", piece)
+		}
+		b, _ := json.Marshal(piece)
+		if strings.Contains(string(b), "\\ufffd") || strings.ContainsRune(string(b), '\uFFFD') {
+			t.Fatalf("piece %q corrupted by JSON encoding", piece)
+		}
+		rejoined += piece
+	}
+	if rejoined != text {
+		t.Fatal("pieces do not rejoin to the original text")
+	}
+	// Sentence separators found by rune position, not byte position.
+	got = SplitForLimit("¡Hola! ¿Qué tal? Bien.", 10)
+	if strings.Join(got, "|") != "¡Hola!|¿Qué tal?|Bien." {
+		t.Fatalf("got %q", got)
 	}
 }
 

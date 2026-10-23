@@ -430,6 +430,13 @@ func ttsImplemented(name string) bool {
 // voices only exist inside a running worker (qwen3-tts) return no names, and
 // the caller then keeps the value as typed.
 func ttsVoiceCatalog(provider string) ([]string, error) {
+	// openai-speech voices live on the server; the static list is only the
+	// configured voice plus Phonon's default, so validating against it would
+	// refuse every other voice a ptts server offers. No catalog keeps the value
+	// as typed; the server names its voices if the name is wrong.
+	if strings.EqualFold(strings.TrimSpace(provider), config.OpenAISpeechProviderName) {
+		return nil, nil
+	}
 	// audio8's catalog is the packaged reference plus whatever is registered
 	// under models_dir, so this needs a config to find the store. A config that
 	// will not load is not a validation failure: fall back to the static

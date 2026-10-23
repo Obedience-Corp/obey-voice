@@ -36,12 +36,19 @@ cost is in the model or the prompt, not the runner.
 `flint` (40B MoE, coding agent) is a worker candidate, not conversational; not
 in this run. `nemotron-3.5-bolt` has no Apple Silicon support; excluded.
 
-## Gate (unchanged from B1)
+## Gate (the harness's, unchanged from B1)
 
-TTFT p95 under 1,000 ms in both conditions, worst turn under 15 s, zero
-timeouts, and the reply is speech: no leaked reasoning, no tool-call JSON, no
-numbered lists. Passing the gate is a precondition for being offered as a
-default, not a decision; quality stays Lance's call.
+Recorded in the artifact's `gate` block: TTFT p50 ≤ 2,000 ms, TTFT p95 ≤
+4,000 ms (nearest rank on n=15, read as worst observed), generation ≥ 25
+tok/s, worst turn ≤ 90 s, all four in both history conditions; plus the B1
+behavioral checks (no leaked reasoning, no tool-call JSON, speech-shaped
+replies). Passing is a precondition for being offered as a default, not a
+decision; quality stays Lance's call.
+
+*Correction before reading results:* the first draft of this file stated a
+tighter gate (p95 under 1 s, worst under 15 s) from memory. The harness's gate
+is the contract, so this section was aligned to it before the results were
+read.
 
 ## What this run cannot say
 

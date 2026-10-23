@@ -93,17 +93,17 @@ func (p *Provider) probe(ctx context.Context) error {
 	p.auth(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %s did not answer (%v); for Phonon start Ollama 0.40.9+ and run `ollama pull phonon`",
-			tts.ErrProviderUnavailable, p.base, unwrapNet(err))
+		return p.fail("probe", tts.ProviderErrorUnavailable,
+			fmt.Errorf("%s did not answer (%v); for Phonon start Ollama 0.40.9+ and run `ollama pull phonon`", p.base, unwrapNet(err)))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%w: %s/models returned %d: %s", tts.ErrProviderUnavailable, p.base, resp.StatusCode, errorMessage(body, resp.Status))
+		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("%s/models returned %d: %s", p.base, resp.StatusCode, errorMessage(body, resp.Status)))
 	}
 	if ids := modelIDs(body); len(ids) > 0 && !hasModel(ids, p.model) {
-		return fmt.Errorf("openai-speech: model %q is not served by %s (it offers %s); run `ollama pull %s` or set openai_speech_model",
-			p.model, p.base, strings.Join(ids, ", "), p.model)
+		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("model %q is not served by %s (it offers %s); run `ollama pull %s` or set openai_speech_model",
+			p.model, p.base, strings.Join(ids, ", "), p.model))
 	}
 	p.detail = p.model + " at " + p.base
 	p.voices = p.fetchVoices(ctx)
@@ -167,14 +167,14 @@ func (p *Provider) Synthesize(ctx context.Context, text string) (*audio.PCMStrea
 // decides the rate.
 func (p *Provider) SynthesizeRequest(ctx context.Context, req tts.SynthesisRequest) (tts.SynthesisResult, error) {
 	if !p.alive.Load() {
-		return tts.SynthesisResult{}, fmt.Errorf("%w: provider is closed", tts.ErrProviderUnavailable)
+		return tts.SynthesisResult{}, p.fail("synthesize", tts.ProviderErrorUnavailable, errors.New("provider is closed"))
 	}
 	voice := p.voice
 	if v := strings.TrimSpace(req.Voice); v != "" {
 		voice = v
 	}
 	if req.SampleRate != 0 && req.SampleRate != SampleRate {
-		return tts.SynthesisResult{}, fmt.Errorf("openai-speech cannot resample to %d Hz (native rate %d Hz)", req.SampleRate, SampleRate)
+		return tts.SynthesisResult{}, p.fail("synthesize", tts.ProviderErrorInput, fmt.Errorf("cannot resample to %d Hz (native rate %d Hz)", req.SampleRate, SampleRate))
 	}
 	stream := audio.NewPCMStream(ctx)
 	// Frames arrive while the server generates, so the player may start on the
@@ -224,6 +224,7 @@ type speechRequest struct {
 
 // speakInto makes one /audio/speech request and writes its PCM into stream.
 func (p *Provider) speakInto(ctx context.Context, stream *audio.PCMStream, text, voice string) error {
+	turnCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 	payload, err := json.Marshal(speechRequest{Model: p.model, Input: text, Voice: voice, ResponseFormat: "pcm"})
@@ -238,21 +239,47 @@ func (p *Provider) speakInto(ctx context.Context, stream *audio.PCMStream, text,
 	p.auth(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("%w: %s did not answer (%v)", tts.ErrProviderUnavailable, p.base, unwrapNet(err))
+		return p.classify(turnCtx, ctx, "request", fmt.Errorf("%s did not answer: %w", p.base, unwrapNet(err)))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return fmt.Errorf("openai-speech %s: %s", resp.Status, errorMessage(body, "no error body"))
+		// A 4xx is about this request (unknown voice, text too long) and must
+		// surface rather than be papered over by the fallback voice; a 5xx is
+		// the server, which is exactly what the fallback exists for.
+		kind := tts.ProviderErrorInput
+		if resp.StatusCode >= 500 {
+			kind = tts.ProviderErrorUnavailable
+		}
+		return p.fail("request", kind, fmt.Errorf("%s: %s", resp.Status, errorMessage(body, "no error body")))
 	}
 	trim := newTailTrimmer(stream)
 	if err := decodePCM16(resp.Body, trim); err != nil {
-		return err
+		return p.classify(turnCtx, ctx, "stream", err)
 	}
 	return trim.finish()
+}
+
+// fail builds the typed error the pipeline's fallback predicate reads. Kind
+// Unavailable also unwraps to tts.ErrProviderUnavailable for NewTTSSet.
+func (p *Provider) fail(op string, kind tts.ProviderErrorKind, err error) error {
+	return &tts.ProviderError{Provider: config.OpenAISpeechProviderName, Operation: op, Kind: kind, Err: err}
+}
+
+// classify sorts a transport or body failure: the turn being cancelled is
+// Canceled (no fallback), the per-request timeout is Worker (fallback), and
+// anything else is the server not answering (fallback). The stream's own
+// write error on a cancelled turn is the turn context's error, so it lands in
+// the first branch too.
+func (p *Provider) classify(turnCtx, reqCtx context.Context, op string, err error) error {
+	switch {
+	case turnCtx.Err() != nil:
+		return p.fail(op, tts.ProviderErrorCanceled, turnCtx.Err())
+	case errors.Is(reqCtx.Err(), context.DeadlineExceeded):
+		return p.fail(op, tts.ProviderErrorWorker, fmt.Errorf("timed out after %s: %w", p.timeout, err))
+	default:
+		return p.fail(op, tts.ProviderErrorUnavailable, err)
+	}
 }
 
 // Phonon pads every utterance with about half a second of silence (measured
@@ -351,39 +378,57 @@ func decodePCM16(r io.Reader, stream frameWriter) error {
 	}
 }
 
-// SplitForLimit cuts text into pieces of at most limit characters, preferring
-// sentence ends, then whitespace, and only then a hard cut.
+// SplitForLimit cuts text into pieces of at most limit characters (runes, so a
+// multibyte rune is never cut in half), preferring sentence ends, then
+// whitespace, and only then a hard cut.
 func SplitForLimit(text string, limit int) []string {
 	text = strings.TrimSpace(text)
-	if limit <= 0 || len(text) <= limit {
-		if text == "" {
-			return nil
-		}
+	if text == "" {
+		return nil
+	}
+	runes := []rune(text)
+	if limit <= 0 || len(runes) <= limit {
 		return []string{text}
 	}
 	var out []string
-	for len(text) > limit {
+	for len(runes) > limit {
+		window := runes[:limit]
 		cut := -1
-		window := text[:limit]
 		for _, sep := range []string{". ", "! ", "? ", "\n", "; ", ", ", " "} {
-			if i := strings.LastIndex(window, sep); i > 0 {
-				cut = i + len(sep)
+			if i := lastRuneIndex(window, []rune(sep)); i > 0 {
+				cut = i + len([]rune(sep))
 				break
 			}
 		}
 		if cut <= 0 {
 			cut = limit
 		}
-		piece := strings.TrimSpace(text[:cut])
-		if piece != "" {
+		if piece := strings.TrimSpace(string(runes[:cut])); piece != "" {
 			out = append(out, piece)
 		}
-		text = strings.TrimSpace(text[cut:])
+		runes = []rune(strings.TrimSpace(string(runes[cut:])))
 	}
-	if text != "" {
-		out = append(out, text)
+	if len(runes) > 0 {
+		out = append(out, string(runes))
 	}
 	return out
+}
+
+// lastRuneIndex is strings.LastIndex over rune slices.
+func lastRuneIndex(hay, needle []rune) int {
+	for i := len(hay) - len(needle); i >= 0; i-- {
+		match := true
+		for j := range needle {
+			if hay[i+j] != needle[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return i
+		}
+	}
+	return -1
 }
 
 // Available reports whether the provider has been constructed and not closed.

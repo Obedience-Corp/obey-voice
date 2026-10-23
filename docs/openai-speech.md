@@ -35,9 +35,9 @@ gain dead air between sentences; pauses inside an utterance are kept.
 ## Any other server
 
 Gradium's `ptts-openai-server` serves the same endpoint with Phonon's full voice
-catalog and `GET /v1/audio/voices`; point `openai_speech_url` at it and the voice
-pickers list what it offers. Set `openai_speech_api_key` for a server that wants
-a bearer token.
+catalog and `GET /v1/audio/voices`; point `openai_speech_url` at it and
+`obey-voice voices` lists what it offers. Set `openai_speech_api_key` for a
+server that wants a bearer token.
 
 ## Behavior
 
@@ -60,6 +60,15 @@ a bearer token.
 ## Voices and personas
 
 A persona may pin `tts_provider: openai-speech` and a voice; the voice lands in
-`openai_speech_voice`, never in Kokoro's `tts_voice`. The Personas form and
-Settings list the configured voice plus `default`; a server that publishes
-`/v1/audio/voices` replaces that list with its catalog at start.
+`openai_speech_voice`, never in Kokoro's `tts_voice`.
+
+The Settings and Personas pickers list the configured voice plus `default`.
+They do not ask the server: pickers in this app never construct a provider or
+touch the network. To see what a server actually offers, run
+`obey-voice voices` with `tts_provider: openai-speech`; it constructs the
+provider and lists the catalog the server published through
+`GET /v1/audio/voices` (Gradium's `ptts-openai-server` does, Ollama does not),
+or the configured voice when there is no such endpoint. Then set
+`openai_speech_voice` (or the persona's voice) to any listed name. An unknown
+name is reported by the server at the first synthesis, naming the voices it
+has. Wiring the live catalog into the pickers is a follow-up.

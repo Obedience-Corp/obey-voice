@@ -48,17 +48,17 @@ Run 2 added leading/trailing silence columns (samples under 0.002, about
 
 Run 3, after the provider's tail trimmer (holds sub-threshold samples, releases
 them when something audible follows, drops the rest at end of body beyond an
-80 ms keep). This is the committed artifact
-([json](P1-phonon-vs-kokoro-2026-10-23.json)):
+80 ms keep, the same length however the body was chunked). This is the committed
+artifact ([json](P1-phonon-vs-kokoro-2026-10-23.json)):
 
 | engine | case | first frame | synth | audio | realtime | lead | tail |
 |---|---|---:|---:|---:|---:|---:|---:|
-| kokoro (af_heart) | one sentence | 289.3 ms | 289.3 ms | 1186 ms | 4.1x | 63 ms | 41 ms |
-| | two sentences | 632.7 ms | 633.3 ms | 2749 ms | 4.3x | 63 ms | 78 ms |
-| | long reply | 2092.3 ms | 2093.0 ms | 9938 ms | 4.7x | 77 ms | 85 ms |
-| openai-speech (phonon, voice default) | one sentence | **3.7 ms** | 24.9 ms | 1317 ms | 53.0x | 0 ms | 73 ms |
-| | two sentences | **4.2 ms** | 44.0 ms | 3280 ms | 74.6x | 0 ms | 27 ms |
-| | long reply | **3.8 ms** | 117.7 ms | 10272 ms | 87.3x | 0 ms | 59 ms |
+| kokoro (af_heart) | one sentence | 286.6 ms | 287.1 ms | 1186 ms | 4.1x | 63 ms | 41 ms |
+| | two sentences | 630.5 ms | 631.0 ms | 2749 ms | 4.4x | 63 ms | 76 ms |
+| | long reply | 2066.5 ms | 2067.3 ms | 9943 ms | 4.8x | 77 ms | 85 ms |
+| openai-speech (phonon, voice default) | one sentence | **3.6 ms** | 24.5 ms | 1263 ms | 51.5x | 0 ms | 80 ms |
+| | two sentences | **4.1 ms** | 42.7 ms | 3253 ms | 76.1x | 0 ms | 80 ms |
+| | long reply | **3.9 ms** | 113.0 ms | 10373 ms | 91.8x | 0 ms | 80 ms |
 
 ## Reading the numbers
 
@@ -68,7 +68,7 @@ them when something audible follows, drops the rest at end of body beyond an
 - Phonon pads each response with roughly half a second of silence. Untrimmed,
   that lands between every two sentences in the pipeline's sentence-per-request
   flow, which is the dead-air failure D009 was about. The provider trims it;
-  after trimming, Phonon's one-sentence audio is 1.3 s against Kokoro's 1.2 s,
+  after trimming, Phonon's one-sentence audio is 1.26 s against Kokoro's 1.19 s,
   so the earlier "Phonon speaks more slowly" reading was wrong: it was the pad.
 - Kokoro measured 4.1x realtime here against 1.32x in N7 (2026-08-12) on the
   same machine with the earlier sherpa build. This run does not explain the gap
