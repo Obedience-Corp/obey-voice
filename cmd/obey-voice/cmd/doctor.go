@@ -87,6 +87,8 @@ func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPat
 	// registration, released at once.
 	diags = append(diags, talkHotkeyDiags(speechCtx, cfg)...)
 	diags = append(diags, config.DiagnoseSpeechPlace(speechCtx, cfg, speechProbe)...)
+	// openai-speech asks its server what it serves, bounded to a few seconds.
+	diags = append(diags, config.DiagnoseOpenAISpeech(speechCtx, cfg, modelsDir)...)
 	// Whether that speech is played chunk by chunk. Read-only: it reports the
 	// policy, and never starts a worker to ask.
 	diags = append(diags, config.DiagnoseQwenStreaming(cfg, modelsDir)...)
