@@ -35,6 +35,9 @@ type fakeServer struct {
 	// can cancel while the decode loop is mid-stream.
 	holdAfterFirst chan struct{}
 	fail500        bool
+	// failStatus, when non-zero, answers every speech request with that
+	// status and an OpenAI error envelope.
+	failStatus int
 }
 
 func (f *fakeServer) handler() http.Handler {
@@ -81,6 +84,11 @@ func (f *fakeServer) handler() http.Handler {
 		if f.fail500 {
 			w.WriteHeader(500)
 			_, _ = w.Write([]byte(`{"error":{"message":"runner crashed"}}`))
+			return
+		}
+		if f.failStatus != 0 {
+			w.WriteHeader(f.failStatus)
+			_, _ = w.Write([]byte(`{"error":{"message":"` + http.StatusText(f.failStatus) + `"}}`))
 			return
 		}
 		if f.hold != nil {
@@ -268,6 +276,36 @@ func TestFailuresAreTypedForTheFallbackPredicate(t *testing.T) {
 	}
 	if !tts.IsProviderErrorKind(stream.Err(), tts.ProviderErrorCanceled) {
 		t.Fatalf("cancel: %v", stream.Err())
+	}
+}
+
+// A server that times out (408) or refuses the load (429) is not answering
+// this request's content; shouldFallback must get a kind it acts on, or the
+// configured Kokoro fallback is bypassed and the turn fails. Permanent
+// request errors stay Input so a bad voice is reported, not spoken over.
+func TestTransientStatusesAreFallbackEligible(t *testing.T) {
+	cases := []struct {
+		status int
+		kind   tts.ProviderErrorKind
+	}{
+		{http.StatusRequestTimeout, tts.ProviderErrorWorker},
+		{http.StatusTooManyRequests, tts.ProviderErrorUnavailable},
+		{http.StatusServiceUnavailable, tts.ProviderErrorUnavailable},
+		{http.StatusNotFound, tts.ProviderErrorInput},
+		{http.StatusUnauthorized, tts.ProviderErrorInput},
+		{http.StatusUnprocessableEntity, tts.ProviderErrorInput},
+	}
+	for _, c := range cases {
+		f, srv := newFake(t)
+		f.failStatus = c.status
+		p, _, err := New(cfgFor(srv.URL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := drain(t, p, "hello")
+		if len(got) != 0 || !tts.IsProviderErrorKind(err, c.kind) || !strings.Contains(err.Error(), http.StatusText(c.status)) {
+			t.Errorf("%d: samples=%d kind want %s, err=%v", c.status, len(got), c.kind, err)
+		}
 	}
 }
 

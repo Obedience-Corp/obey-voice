@@ -244,20 +244,31 @@ func (p *Provider) speakInto(ctx context.Context, stream *audio.PCMStream, text,
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		// A 4xx is about this request (unknown voice, text too long) and must
-		// surface rather than be papered over by the fallback voice; a 5xx is
-		// the server, which is exactly what the fallback exists for.
-		kind := tts.ProviderErrorInput
-		if resp.StatusCode >= 500 {
-			kind = tts.ProviderErrorUnavailable
-		}
-		return p.fail("request", kind, fmt.Errorf("%s: %s", resp.Status, errorMessage(body, "no error body")))
+		return p.fail("request", statusKind(resp.StatusCode), fmt.Errorf("%s: %s", resp.Status, errorMessage(body, "no error body")))
 	}
 	trim := newTailTrimmer(stream)
 	if err := decodePCM16(resp.Body, trim); err != nil {
 		return p.classify(turnCtx, ctx, "stream", err)
 	}
 	return trim.finish()
+}
+
+// statusKind classifies a non-200 answer for the pipeline's fallback
+// predicate. A permanent 4xx (unknown voice, text too long) is about this
+// request and must surface rather than be papered over by the fallback voice.
+// A 408 is the server giving up on the request, a 429 is the server refusing
+// to take it right now, and any 5xx is the server itself: none of those is
+// something a retry with the same text would fix, and all are exactly what the
+// configured fallback exists for.
+func statusKind(status int) tts.ProviderErrorKind {
+	switch {
+	case status == http.StatusRequestTimeout:
+		return tts.ProviderErrorWorker
+	case status == http.StatusTooManyRequests, status >= 500:
+		return tts.ProviderErrorUnavailable
+	default:
+		return tts.ProviderErrorInput
+	}
 }
 
 // fail builds the typed error the pipeline's fallback predicate reads. Kind

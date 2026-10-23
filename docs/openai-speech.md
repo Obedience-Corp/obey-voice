@@ -54,7 +54,10 @@ server that wants a bearer token.
   reported as unavailable with the URL and the `ollama pull phonon` remedy; the
   conversation does not silently switch engines.
 - An unknown voice surfaces the server's own message, which on Ollama names the
-  voices it has.
+  voices it has. That is a request error and the turn fails rather than being
+  spoken in the fallback voice. A server that is unreachable, answers 5xx,
+  times out (408) or refuses the load (429) hands the sentence to
+  `voice_fallback_provider` (Kokoro) when one is configured.
 - `doctor` reports the configured target offline; it does not probe the server.
 
 ## Voices and personas
