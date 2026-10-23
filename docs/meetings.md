@@ -222,6 +222,22 @@ re-enrolls that name; `d` then `y` removes it. Transcripts already written keep
 the name; an open conversation keeps the old live label until it restarts.
 `/speakers name` is still session-local and is not a voiceprint.
 
+Enrollment opened from the launcher uses the selected microphone and the same
+configured voice front-end as live conversations. Earlier builds recorded raw
+audio from the launcher even when live recognition used noise suppression and
+gain processing. Existing profiles are preserved; re-enroll after updating if
+your profile was recorded through that launcher path. Changing the microphone
+or audio processing can also make a previously recorded voiceprint less useful.
+
+A healthy speaker analyzer means processing succeeded, not that an enrolled
+speaker matched. `unknown` means no enrolled name passed the match threshold.
+The live path evaluates overlapping windows (1.5 seconds by default), so a short
+reply with substantial surrounding silence supplies less voice evidence. Use
+`/speakers status` to check processed windows, queue drops and analyzer errors.
+Keep registration clips conversational, on the microphone used for chat, with
+no assistant playback in the background. Lowering the match threshold trades
+missed matches for mistaken matches; it is not an automatic repair.
+
 Changing `speaker.live.window_ms` restamps the enrollment recipe: embeddings
 recorded at the old window are no longer comparable, so the row says
 *(re-enroll to refresh)*, `obey-voice speaker list` marks the profile, and live
