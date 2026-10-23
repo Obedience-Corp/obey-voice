@@ -37,7 +37,12 @@ pub(super) fn section(spec: &KeySpec) -> &'static str {
     }
     if matches!(
         key,
-        "brain_provider" | "ollama_model" | "grok_model" | "cursor_model"
+        "brain_provider"
+            | "ollama_model"
+            | "grok_model"
+            | "cursor_model"
+            | "codex_model"
+            | "codex_reasoning_effort"
     ) || key.starts_with("decision_")
     {
         return "brain";
@@ -93,6 +98,7 @@ fn provider_model(key: &str) -> Option<&'static str> {
         "ollama_model" => Some("ollama"),
         "grok_model" => Some("grok"),
         "cursor_model" => Some("cursor"),
+        "codex_model" | "codex_reasoning_effort" => Some("codex"),
         _ => None,
     }
 }
@@ -124,9 +130,9 @@ fn priority(key: &str) -> usize {
         | "input_device"
         | "tts_place"
         | "user_display_name" => 0,
-        "ollama_model" | "grok_model" | "cursor_model" | "voice_worker_model" | "tts_voice"
-        | "qwen_tts_voice" | "audio8_voice" | "output_device" => 1,
-        "qwen_tts_language" | "playback_volume" => 2,
+        "ollama_model" | "grok_model" | "cursor_model" | "codex_model" | "voice_worker_model"
+        | "tts_voice" | "qwen_tts_voice" | "audio8_voice" | "output_device" => 1,
+        "codex_reasoning_effort" | "qwen_tts_language" | "playback_volume" => 2,
         _ => 100,
     }
 }
@@ -201,6 +207,8 @@ mod tests {
         let schema = vec![
             spec("claude_max_session_tokens", "brain"),
             spec("grok_model", "brain"),
+            spec("codex_model", "brain"),
+            spec("codex_reasoning_effort", "brain"),
             spec("ollama_model", "brain"),
             spec("brain_provider", "brain"),
             spec("decision_api_key", "hidden"),
@@ -219,5 +227,12 @@ mod tests {
             "grok_model"
         );
         assert!(visible_keys(&schema, "brain", "decision_api", "ollama").is_empty());
+        assert_eq!(
+            visible_keys(&schema, "brain", "", "codex")
+                .iter()
+                .map(|s| s.key.as_str())
+                .collect::<Vec<_>>(),
+            ["brain_provider", "codex_model", "codex_reasoning_effort"]
+        );
     }
 }
