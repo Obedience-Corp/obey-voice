@@ -415,7 +415,7 @@ func TestPullProgressNeverRunsBackwards(t *testing.T) {
 		`{"status":"success"}`,
 	)}
 	srv := fake.start(t)
-	target := OpenAISpeechTarget{Base: srv.URL + "/v1", Root: srv.URL, Model: "phonon", Ollama: true, Version: "0.40.9", Reachable: true}
+	target := OpenAISpeechTarget{Base: srv.URL + "/v1", Root: srv.URL, Model: "phonon", Ollama: true, Version: "0.40.9", Reachable: true, ModelsKnown: true}
 	log := &tickLog{}
 	if err := ensureOllamaModel(context.Background(), target, "", log.add); err != nil {
 		t.Fatal(err)
@@ -431,5 +431,36 @@ func TestPullProgressNeverRunsBackwards(t *testing.T) {
 	}
 	if len(pcts) < 4 || pcts[2] != 80 {
 		t.Fatalf("pcts = %v, want the late layer held at 80 rather than dropping to 40", pcts)
+	}
+}
+
+func TestAFailedListingIsNotAMissingModel(t *testing.T) {
+	// Ollama answers /api/version, but /api/tags 404s and /v1/models 500s:
+	// nothing proved phonon is absent, so nothing may be pulled.
+	fake := &fakeOllama{version: "0.40.9", modelsStatus: http.StatusInternalServerError}
+	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
+	_, hits := fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
+
+	err := installTTS(context.Background(), cfg, &tickLog{})
+	if err == nil || !strings.Contains(err.Error(), "could not check whether phonon is installed") || !strings.Contains(err.Error(), "/api/tags returned 404") || !strings.Contains(err.Error(), "/v1/models returned 500") {
+		t.Fatalf("err = %v", err)
+	}
+	if n := len(fake.pullBodies()); n != 0 {
+		t.Fatalf("pulled %d times on a listing that failed", n)
+	}
+	if *hits != 0 {
+		t.Fatal("fetched the catalog after the model check failed")
+	}
+
+	model := statusRows(t, cfg)[OpenAISpeechModelAssetID]
+	if model.Installed || !strings.HasPrefix(model.Detail, "unknown: could not check") || strings.Contains(model.Detail, "not pulled") {
+		t.Fatalf("model row = %+v, want unknown rather than missing", model)
+	}
+	got := diagByName(DiagnoseOpenAISpeech(context.Background(), cfg, ModelsDirFrom(cfg)))
+	if row := got["openai-speech-model"]; row.Severity != SeverityWarn || !strings.Contains(row.Detail, "could not check") {
+		t.Fatalf("doctor model row = %+v", row)
+	}
+	if _, ok := got["openai-speech-voices"]; ok {
+		t.Fatal("asked for the voices of a model nobody could find")
 	}
 }

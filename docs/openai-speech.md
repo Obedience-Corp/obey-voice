@@ -51,7 +51,10 @@ host never delays speech:
    progress ticks every other asset reports, then `verify`, `install` and
    `done`; the percentage never runs backwards when a layer is announced
    late. A model that is already there reports `skipped` and is not pulled
-   again. A pull that goes 60 s without a line from Ollama is abandoned with
+   again. Only a listing that answered can prove the model absent: when both
+   `/api/tags` and `/v1/models` fail, ensure stops with "could not check
+   whether phonon is installed" and the reasons, nothing is pulled, and
+   status reports the model as unknown rather than missing. A pull that goes 60 s without a line from Ollama is abandoned with
    that said, not as a cancellation.
 3. Fetch `voices.jsonl` from
    [huggingface.co/gradium/phonon-voices](https://huggingface.co/gradium/phonon-voices)

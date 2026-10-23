@@ -48,9 +48,12 @@ type OpenAISpeechTarget struct {
 	// why not.
 	Reachable bool
 	Err       error
-	// Models is what the server serves (Ollama's /api/tags, else /models);
-	// nil when it lists nothing.
+	// Models is what the server serves (Ollama's /api/tags, else /models).
+	// ModelsKnown is true only when a listing answered, so ModelListed is
+	// evidence either way; ListErr says why no listing did.
 	Models      []string
+	ModelsKnown bool
+	ListErr     error
 	ModelListed bool
 }
 
@@ -64,24 +67,41 @@ func ProbeOpenAISpeech(ctx context.Context, cfg *Config) OpenAISpeechTarget {
 		if version, err := OllamaVersion(ctx, root, key); err == nil {
 			t.Ollama, t.Version, t.Reachable = true, version, true
 			if names, err := ollamaTags(ctx, root, key); err == nil {
-				t.Models = names
+				t.Models, t.ModelsKnown = names, true
+			} else {
+				t.ListErr = err
 			}
 		}
 	}
-	if !t.Ollama || t.Models == nil {
-		ids, err := speechServerModels(ctx, t.Base, key)
+	if !t.ModelsKnown {
+		ids, listed, err := speechServerModels(ctx, t.Base, key)
 		switch {
+		case err == nil && listed:
+			t.Reachable, t.Models, t.ModelsKnown, t.ListErr = true, ids, true, nil
 		case err == nil:
 			t.Reachable = true
-			if t.Models == nil {
-				t.Models = ids
+			if t.ListErr == nil {
+				t.ListErr = fmt.Errorf("GET %s/models did not return a model list", t.Base)
 			}
 		case !t.Reachable:
 			t.Err = err
+		case t.ListErr == nil:
+			t.ListErr = err
+		default:
+			t.ListErr = fmt.Errorf("%w; %w", t.ListErr, err)
 		}
 	}
-	t.ModelListed = servesModel(t.Models, t.Model)
+	t.ModelListed = t.ModelsKnown && servesModel(t.Models, t.Model)
 	return t
+}
+
+// ListingProblem says why the model could not be checked.
+func (t OpenAISpeechTarget) ListingProblem() string {
+	where := t.Base
+	if t.Ollama {
+		where = "Ollama " + t.Version + " at " + t.Root
+	}
+	return fmt.Sprintf("could not check whether %s is installed in %s: %v", t.Model, where, t.ListErr)
 }
 
 // Problem says why an unreachable target cannot be used, with the remedy.
@@ -143,6 +163,8 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 		case t.TooOld():
 			row.Installed = false
 			row.Detail = fmt.Sprintf("Ollama %s at %s is older than %s, the first release that serves Phonon; update Ollama", t.Version, t.Root, MinPhononOllama)
+		case !t.ModelsKnown:
+			row.Detail = "unknown: " + t.ListingProblem()
 		case !t.ModelListed:
 			row.Detail = fmt.Sprintf("not pulled into Ollama %s at %s; run `obey-voice models ensure --tts`", t.Version, t.Root)
 		}
@@ -243,9 +265,9 @@ func ollamaTags(ctx context.Context, root, apiKey string) ([]string, error) {
 	return names, nil
 }
 
-// speechServerModels reads the ids GET <base>/models lists; nil when the body
-// is not a list.
-func speechServerModels(ctx context.Context, base, apiKey string) ([]string, error) {
+// speechServerModels reads the ids GET <base>/models lists. listed is false
+// when the server answered with something that is not a model list.
+func speechServerModels(ctx context.Context, base, apiKey string) (ids []string, listed bool, err error) {
 	var doc struct {
 		Data []struct {
 			ID string `json:"id"`
@@ -255,20 +277,20 @@ func speechServerModels(ctx context.Context, base, apiKey string) ([]string, err
 		var syntax *json.SyntaxError
 		var typeErr *json.UnmarshalTypeError
 		if errors.As(err, &syntax) || errors.As(err, &typeErr) {
-			return nil, nil
+			return nil, false, nil
 		}
-		return nil, err
+		return nil, false, err
 	}
-	if len(doc.Data) == 0 {
-		return nil, nil
+	if doc.Data == nil {
+		return nil, false, nil
 	}
-	ids := make([]string, 0, len(doc.Data))
+	ids = make([]string, 0, len(doc.Data))
 	for _, m := range doc.Data {
 		if m.ID != "" {
 			ids = append(ids, m.ID)
 		}
 	}
-	return ids, nil
+	return ids, true, nil
 }
 
 func speechServerJSON(ctx context.Context, method, url, apiKey string, body any, limit int64, out any) error {

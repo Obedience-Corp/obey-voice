@@ -47,7 +47,13 @@ func DiagnoseOpenAISpeech(ctx context.Context, cfg *Config, modelsDir string) []
 		diags = append(diags, Diagnostic{Name: "openai-speech-server", Severity: SeverityOK, Detail: t.Base + " answers GET /models"})
 	}
 
-	if t.Reachable && (t.Ollama || len(t.Models) > 0) {
+	switch {
+	case t.Ollama && !t.ModelsKnown:
+		diags = append(diags, Diagnostic{
+			Name: "openai-speech-model", Severity: SeverityWarn,
+			Detail: t.ListingProblem(),
+		})
+	case t.Reachable && (t.Ollama || len(t.Models) > 0):
 		if t.ModelListed {
 			diags = append(diags, Diagnostic{Name: "openai-speech-model", Severity: SeverityOK, Detail: fmt.Sprintf("%s served by %s", t.Model, t.Base)})
 		} else {

@@ -116,3 +116,16 @@ func TestVoicesGateBlocksOnlyOnTheModel(t *testing.T) {
 		t.Fatalf("missing with phonon pulled and no voices.jsonl = %v, want none", got)
 	}
 }
+
+func TestVoicesGateIgnoresAListingThatFailed(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"version":"0.40.9"}`) })
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	cfg := &config.Config{TTSProvider: config.OpenAISpeechProviderName, OpenAISpeechURL: srv.URL + "/v1", ModelsDir: t.TempDir()}
+	if got := missingTTSAssets(context.Background(), cfg); len(got) != 0 {
+		t.Fatalf("missing = %v, want none: an unknown listing is not a missing model", got)
+	}
+}

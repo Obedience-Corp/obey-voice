@@ -16,6 +16,8 @@ type fakeOllama struct {
 	version string
 	// tags is what /api/tags lists; nil answers 404.
 	tags []string
+	// modelsStatus, when set, is what /v1/models answers instead of the list.
+	modelsStatus int
 	// voices is /api/show's list; showStatus overrides the 200.
 	voices     []string
 	showStatus int
@@ -63,6 +65,10 @@ func (f *fakeOllama) start(t *testing.T) *httptest.Server {
 		_ = json.NewEncoder(w).Encode(map[string]any{"models": models})
 	})
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		if f.modelsStatus != 0 {
+			w.WriteHeader(f.modelsStatus)
+			return
+		}
 		data := []map[string]string{}
 		for _, n := range f.tags {
 			data = append(data, map[string]string{"id": n})

@@ -132,6 +132,11 @@ func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey st
 	if target.TooOld() {
 		return fmt.Errorf("openai-speech: Ollama %s at %s cannot serve %s; Phonon needs Ollama %s or later", target.Version, target.Root, target.Model, MinPhononOllama)
 	}
+	// Only a listing that answered proves the model is absent; a failed one
+	// must not turn into a pull.
+	if !target.ModelsKnown {
+		return fmt.Errorf("openai-speech: %s", target.ListingProblem())
+	}
 	if target.ModelListed {
 		emit(assetPhaseSkipped, 0, 0)
 		return nil

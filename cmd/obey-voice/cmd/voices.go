@@ -252,9 +252,9 @@ func missingTTSAssets(ctx context.Context, cfg *config.Config) []string {
 		}
 		ctx, cancel := context.WithTimeout(ctx, config.OpenAISpeechProbeTimeout)
 		defer cancel()
-		// A server that does not answer is not an install problem; building
-		// the provider reports it.
-		if t := config.ProbeOpenAISpeech(ctx, cfg); t.Ollama && !t.ModelListed {
+		// A server that does not answer, or a listing that failed, is not an
+		// install problem; building the provider reports it.
+		if t := config.ProbeOpenAISpeech(ctx, cfg); t.Ollama && t.ModelsKnown && !t.ModelListed {
 			missing = append(missing, config.OpenAISpeechModelAssetName(t.Model))
 		}
 	}
