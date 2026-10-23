@@ -46,9 +46,26 @@ type fakeServer struct {
 	ollamaVoices  []string
 	// showStatus, when non-zero, is the status /api/show answers with.
 	showStatus int
+	// requireAuth, when set, makes every route answer 401 unless the request
+	// carries this bearer token, the way a proxied Ollama does.
+	requireAuth string
 }
 
 func (f *fakeServer) handler() http.Handler {
+	if f.requireAuth != "" {
+		inner := f.routes()
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer "+f.requireAuth {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			inner.ServeHTTP(w, r)
+		})
+	}
+	return f.routes()
+}
+
+func (f *fakeServer) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
 		type m struct {

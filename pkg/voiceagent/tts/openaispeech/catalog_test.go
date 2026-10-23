@@ -166,3 +166,21 @@ func TestOllamaShowFailureCarriesNoNotice(t *testing.T) {
 		t.Fatalf("source %q notice %q", p.CatalogSource(), p.CatalogNotice())
 	}
 }
+
+// An Ollama behind an authenticating proxy: the catalog calls must carry the
+// same bearer token as synthesis, or the picker silently shows one voice.
+func TestOllamaCatalogCallsCarryTheAPIKey(t *testing.T) {
+	f, srv := newFake(t)
+	f.requireAuth = "secret"
+	f.ollamaVersion = "0.40.11"
+	f.ollamaVoices = []string{"Zoey", "default"}
+	cfg := cfgFor(srv.URL)
+	cfg.OpenAISpeechAPIKey = "secret"
+	p, _, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.CatalogSource() != CatalogOllama || names(p.ListVoices("", "")) != "default,Zoey" {
+		t.Fatalf("source %q voices %s", p.CatalogSource(), names(p.ListVoices("", "")))
+	}
+}

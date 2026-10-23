@@ -87,6 +87,7 @@ func (p *Provider) ollamaVersion(ctx context.Context, root string) (string, bool
 	if err != nil {
 		return "", false
 	}
+	p.auth(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return "", false
@@ -114,6 +115,7 @@ func (p *Provider) ollamaVoices(ctx context.Context, root string) (names []strin
 		return nil, false
 	}
 	req.Header.Set("Content-Type", "application/json")
+	p.auth(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, false
