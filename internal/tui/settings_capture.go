@@ -82,7 +82,7 @@ func openEnrollmentCaptureGraph(ctx context.Context, cfg *config.Config, capture
 	}
 	if err := capture.Start(ctx); err != nil {
 		release()
-		return nil, nil, fmt.Errorf("open microphone: %w", err)
+		return nil, nil, fmt.Errorf("%w: open microphone: %w", errNoMicrophone, err)
 	}
 	return capture, release, nil
 }

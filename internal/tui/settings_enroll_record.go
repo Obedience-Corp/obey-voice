@@ -120,7 +120,7 @@ func openEnrollCapture(captureFor func() (speaker.CaptureSource, func(), error))
 	}
 	capture, release, err := captureFor()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", errNoMicrophone, err)
+		return nil, nil, err
 	}
 	if release == nil {
 		release = func() {}
