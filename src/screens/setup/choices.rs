@@ -38,6 +38,7 @@ impl VoiceApp {
             "ollama" => &["ollama_host", "ollama_model"],
             "grok" => &["grok_model"],
             "cursor" => &["cursor_model"],
+            "codex" => &["codex_model", "codex_reasoning_effort"],
             _ => &[],
         };
         self.setup_fields(ui, fields);
