@@ -52,6 +52,14 @@ func (s scopeFlags) request(cfg *config.Config) config.AssetRequest {
 	return config.ScopedAssetRequest(cfg, config.AssetScope{STT: s.stt, TTS: s.tts, VAD: s.vad, Speaker: s.speaker, Decision: s.decision})
 }
 
+// ensureRequest is request for an explicit install, which alone also fetches
+// descriptive voice catalogs.
+func (s scopeFlags) ensureRequest(cfg *config.Config) config.AssetRequest {
+	req := s.request(cfg)
+	req.NeedVoiceCatalog = req.NeedTTS
+	return req
+}
+
 var modelsCmd = &cobra.Command{
 	Use:   "models",
 	Short: "Inspect and manage local model assets",
@@ -162,7 +170,7 @@ var modelsEnsureCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		req := modelsEnsureScope.request(cfg)
+		req := modelsEnsureScope.ensureRequest(cfg)
 
 		if modelsEnsureJSON {
 			return runModelsEnsureJSON(cmd, cfg, req, tier)

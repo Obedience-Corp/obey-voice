@@ -84,3 +84,15 @@ func TestOllamaReleaseComparisonIsNumeric(t *testing.T) {
 		}
 	}
 }
+
+func TestARejectedKeyIsNotAServerThatIsDown(t *testing.T) {
+	cfg := openAISpeechCfg(t, rejectingServer(t)+"/v1")
+	model := statusRows(t, cfg)[OpenAISpeechModelAssetID]
+	if model.Installed || !strings.Contains(model.Detail, "rejected the request (401): check openai_speech_api_key") || strings.Contains(model.Detail, "ollama serve") {
+		t.Fatalf("model row = %+v", model)
+	}
+	server := diagByName(DiagnoseOpenAISpeech(context.Background(), cfg, ModelsDirFrom(cfg)))["openai-speech-server"]
+	if server.Severity != SeverityError || server.Remediation != "check openai_speech_api_key" {
+		t.Fatalf("doctor row = %+v", server)
+	}
+}

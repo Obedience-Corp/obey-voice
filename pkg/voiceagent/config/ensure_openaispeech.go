@@ -10,28 +10,19 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
-// OpenAISpeechVoicesAsset is the voice catalog file as a downloadable asset. It
-// is not part of ManifestFor: a missing catalog must never block speech,
-// listing or preview.
-func OpenAISpeechVoicesAsset() Asset {
-	return Asset{
-		ID:       OpenAISpeechVoicesAssetID,
-		Provider: OpenAISpeechProviderName,
-		Kind:     AssetKindTTS,
-		Name:     OpenAISpeechVoicesFile,
-		Files:    []AssetFile{{Path: OpenAISpeechVoicesFile, URL: openAISpeechVoicesURL}},
-	}
-}
+// ollamaPullStallTimeout aborts a pull whose stream has gone quiet.
+var ollamaPullStallTimeout = downloadStallTimeout
 
 // ensureOpenAISpeechAssetsProgress pulls the configured model into Ollama when
-// the target is Ollama and lacks it, then fetches the voice catalog file. A
-// server that does not answer is an error naming it; a catalog that cannot be
-// fetched is a warning, because speech does not need it.
-func ensureOpenAISpeechAssetsProgress(ctx context.Context, cfg *Config, onProgress func(AssetProgress)) error {
+// the target is Ollama and lacks it, then, when req asks for it, fetches the
+// voice catalog file. A server that does not answer is an error naming it; a
+// catalog that cannot be fetched is a warning, because speech does not need it.
+func ensureOpenAISpeechAssetsProgress(ctx context.Context, cfg *Config, req AssetRequest, onProgress func(AssetProgress)) error {
 	probeCtx, cancel := context.WithTimeout(ctx, OpenAISpeechProbeTimeout)
 	target := ProbeOpenAISpeech(probeCtx, cfg)
 	cancel()
@@ -39,29 +30,104 @@ func ensureOpenAISpeechAssetsProgress(ctx context.Context, cfg *Config, onProgre
 		return err
 	}
 	if !target.Reachable {
-		return fmt.Errorf("openai-speech: %s", target.Unreachable())
+		return fmt.Errorf("openai-speech: %s", target.Problem())
 	}
 	if target.Ollama {
 		if err := ensureOllamaModel(ctx, target, openAISpeechAPIKey(cfg), onProgress); err != nil {
 			return err
 		}
 	}
-	manifest := AssetManifest{Schema: AssetSchema, Assets: []Asset{OpenAISpeechVoicesAsset()}}
-	if err := ensureManifestProgress(ctx, manifest, ModelsDirFrom(cfg), onProgress); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		fmt.Fprintf(os.Stderr, "warning: Phonon voice descriptions not installed: %v\n", err)
+	if !req.NeedVoiceCatalog {
+		return nil
 	}
+	return ensureOpenAISpeechCatalog(ctx, ModelsDirFrom(cfg), onProgress)
+}
+
+// ensureOpenAISpeechCatalog fetches voices.jsonl unless a valid one is in
+// place. A failed fetch closes the asset as skipped with the reason, so a
+// progress view does not wait on it forever.
+func ensureOpenAISpeechCatalog(ctx context.Context, modelsDir string, onProgress func(AssetProgress)) error {
+	name := OpenAISpeechVoicesFile
+	emit := func(p AssetProgress) {
+		if onProgress != nil {
+			onProgress(p)
+		}
+	}
+	path := filepath.Join(modelsDir, filepath.FromSlash(OpenAISpeechVoicesFile))
+	if checkVoicesCatalog(path) == nil {
+		emit(newAssetProgress(name, assetPhaseSkipped, 0, 0))
+		return nil
+	}
+	emit(newAssetProgress(name, assetPhaseStart, 0, 0))
+	url := openAISpeechVoicesURL
+	check := func(p string) error {
+		if err := checkVoicesCatalog(p); err != nil {
+			return fmt.Errorf("%s did not return a voice catalog: %w", url, err)
+		}
+		return nil
+	}
+	var lastBytes, lastTotal int64
+	err := downloadFileChecked(ctx, path, url, name, 0, "", check, func(bytes, total int64) {
+		lastBytes, lastTotal = bytes, total
+		emit(newAssetProgress(name, assetPhaseDownload, bytes, total))
+	})
+	if err == nil {
+		emit(newAssetProgress(name, assetPhaseVerify, lastBytes, lastTotal))
+		emit(newAssetProgress(name, assetPhaseDone, lastBytes, lastTotal))
+		return nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	fmt.Fprintf(os.Stderr, "warning: Phonon voice descriptions not installed: %v\n", err)
+	closing := newAssetProgress(name, assetPhaseSkipped, lastBytes, lastTotal)
+	closing.Detail = "not installed: " + err.Error()
+	emit(closing)
 	return nil
+}
+
+// checkVoicesCatalog accepts a file whose first non-empty line is a JSON
+// voice entry with a name. An empty body or a captive portal's HTML is not a
+// catalog, and must not count as installed.
+func checkVoicesCatalog(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var entry struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil || strings.TrimSpace(entry.Name) == "" {
+			return errors.New("its first line is not a JSON voice entry with a name")
+		}
+		return nil
+	}
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	return errors.New("it is empty")
 }
 
 func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey string, onProgress func(AssetProgress)) error {
 	name := OpenAISpeechModelAssetName(target.Model)
+	var shown float64
 	emit := func(phase string, bytes, total int64) {
-		if onProgress != nil {
-			onProgress(newAssetProgress(name, phase, bytes, total))
+		if onProgress == nil {
+			return
 		}
+		p := newAssetProgress(name, phase, bytes, total)
+		// A layer announced late grows the total; the bar must not run back.
+		p.Pct = max(p.Pct, shown)
+		shown = p.Pct
+		onProgress(p)
 	}
 	if target.TooOld() {
 		return fmt.Errorf("openai-speech: Ollama %s at %s cannot serve %s; Phonon needs Ollama %s or later", target.Version, target.Root, target.Model, MinPhononOllama)
@@ -109,10 +175,15 @@ func pullOllamaModel(ctx context.Context, root, model, apiKey string, emit func(
 	if err != nil {
 		return err
 	}
-	stall := &stallGuard{rc: resp.Body, timer: time.AfterFunc(downloadStallTimeout, cancel), cancel: cancel}
+	stall := &stallGuard{rc: resp.Body, timer: time.AfterFunc(ollamaPullStallTimeout, cancel), cancel: cancel, idle: ollamaPullStallTimeout}
 	defer stall.Close()
+	// The guard cancels only the request: the caller's ctx is still live.
+	stalled := func() bool { return ctx.Err() == nil && reqCtx.Err() != nil }
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(io.LimitReader(stall, 64<<10))
+		if stalled() {
+			return errPullStalled()
+		}
 		return fmt.Errorf("HTTP %s: %s", resp.Status, ollamaErrorText(data))
 	}
 
@@ -144,10 +215,17 @@ func pullOllamaModel(ctx context.Context, root, model, apiKey string, emit func(
 			return nil
 		}
 	}
+	if stalled() {
+		return errPullStalled()
+	}
 	if err := sc.Err(); err != nil {
 		return err
 	}
 	return errors.New("the pull ended before Ollama reported success")
+}
+
+func errPullStalled() error {
+	return fmt.Errorf("no progress from Ollama for %gs (is it online?)", ollamaPullStallTimeout.Seconds())
 }
 
 func ollamaErrorText(body []byte) string {

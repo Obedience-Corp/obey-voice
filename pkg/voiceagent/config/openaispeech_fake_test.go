@@ -158,3 +158,14 @@ func writeVoicesFile(t *testing.T, cfg *Config) {
 		t.Fatal(err)
 	}
 }
+
+// rejectingServer answers every request 401, the way an auth proxy in front
+// of Ollama does without the right key.
+func rejectingServer(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}

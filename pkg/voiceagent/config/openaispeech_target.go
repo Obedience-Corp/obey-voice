@@ -84,9 +84,33 @@ func ProbeOpenAISpeech(ctx context.Context, cfg *Config) OpenAISpeechTarget {
 	return t
 }
 
-// Unreachable describes a server that did not answer, with the remedy.
-func (t OpenAISpeechTarget) Unreachable() string {
+// Problem says why an unreachable target cannot be used, with the remedy.
+func (t OpenAISpeechTarget) Problem() string {
+	if code := t.RejectedCode(); code != 0 {
+		return fmt.Sprintf("%s rejected the request (%d): check openai_speech_api_key", t.Base, code)
+	}
 	return fmt.Sprintf("%s is not answering (%v); start Ollama with `ollama serve`, or point openai_speech_url at a running speech server", t.Base, t.Err)
+}
+
+// RejectedCode is 401 or 403 when the server answered but refused the
+// credentials, else 0.
+func (t OpenAISpeechTarget) RejectedCode() int {
+	var status *speechServerStatusError
+	if errors.As(t.Err, &status) && (status.Code == http.StatusUnauthorized || status.Code == http.StatusForbidden) {
+		return status.Code
+	}
+	return 0
+}
+
+// speechServerStatusError is a server that answered with something other
+// than 200.
+type speechServerStatusError struct {
+	Method, URL, Status string
+	Code                int
+}
+
+func (e *speechServerStatusError) Error() string {
+	return fmt.Sprintf("%s %s returned %s", e.Method, e.URL, e.Status)
 }
 
 // TooOld reports an Ollama release that cannot serve Phonon.
@@ -112,6 +136,9 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 			Provider: OpenAISpeechProviderName, Mode: "ollama", Kind: AssetKindTTS,
 			Installed: t.ModelListed,
 		}
+		if ollamaTagged(t.Model) == ollamaTagged(DefaultOpenAISpeechModel) {
+			row.License, row.Source = "Apache-2.0", "https://ollama.com/library/phonon"
+		}
 		switch {
 		case t.TooOld():
 			row.Installed = false
@@ -124,7 +151,7 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 		rows = append(rows, AssetStatus{
 			ID: OpenAISpeechModelAssetID, Name: OpenAISpeechModelAssetName(t.Model),
 			Provider: OpenAISpeechProviderName, Mode: "ollama", Kind: AssetKindTTS,
-			Detail: t.Unreachable(),
+			Detail: t.Problem(),
 		})
 	default:
 		row := AssetStatus{
@@ -132,7 +159,7 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 			Provider: OpenAISpeechProviderName, Kind: AssetKindTTS, Installed: t.Reachable,
 		}
 		if !t.Reachable {
-			row.Detail = t.Unreachable()
+			row.Detail = t.Problem()
 		}
 		rows = append(rows, row)
 	}
@@ -143,9 +170,17 @@ func openAISpeechVoicesStatus(modelsDir string) AssetStatus {
 	path := filepath.Join(modelsDir, filepath.FromSlash(OpenAISpeechVoicesFile))
 	row := AssetStatus{
 		ID: OpenAISpeechVoicesAssetID, Name: OpenAISpeechVoicesFile,
-		Provider: OpenAISpeechProviderName, Kind: AssetKindTTS, Installed: pathExists(path),
+		Provider: OpenAISpeechProviderName, Kind: AssetKindTTS,
+		License: "Apache-2.0", Source: "https://huggingface.co/gradium/phonon-voices",
 	}
-	if !row.Installed {
+	err := checkVoicesCatalog(path)
+	row.Installed = err == nil
+	switch {
+	case row.Installed:
+	case pathExists(path):
+		row.Missing = []string{path}
+		row.Detail = fmt.Sprintf("not a voice catalog (%v); run `obey-voice models ensure --tts`", err)
+	default:
 		row.Missing = []string{path}
 		row.Detail = "voice descriptions only; speech works without it"
 	}
@@ -259,7 +294,7 @@ func speechServerJSON(ctx context.Context, method, url, apiKey string, body any,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s %s returned %s", method, url, resp.Status)
+		return &speechServerStatusError{Method: method, URL: url, Status: resp.Status, Code: resp.StatusCode}
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(out)
 }

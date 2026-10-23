@@ -58,7 +58,7 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 		return nil
 	}
 	if req.NeedTTS && OpenAISpeechSelected(cfg) {
-		return ensureOpenAISpeechAssetsProgress(ctx, cfg, onProgress)
+		return ensureOpenAISpeechAssetsProgress(ctx, cfg, req, onProgress)
 	}
 	if req.NeedTTS && cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "kokoro") {
 		if err := sanitizeKokoroLexicons(dir); err != nil {

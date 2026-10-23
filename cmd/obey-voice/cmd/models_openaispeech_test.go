@@ -86,7 +86,7 @@ func TestModelsEnsureJSONSkipsAnInstalledPhonon(t *testing.T) {
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetContext(context.Background())
-	if err := runModelsEnsureJSON(cmd, cfg, scopeFlags{tts: true}.request(cfg), ""); err != nil {
+	if err := runModelsEnsureJSON(cmd, cfg, scopeFlags{tts: true}.ensureRequest(cfg), ""); err != nil {
 		t.Fatalf("ensure: %v\n%s", err, buf.String())
 	}
 	if pulls.Load() != 0 {

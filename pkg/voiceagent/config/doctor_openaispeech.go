@@ -23,6 +23,12 @@ func DiagnoseOpenAISpeech(ctx context.Context, cfg *Config, modelsDir string) []
 
 	var diags []Diagnostic
 	switch {
+	case t.RejectedCode() != 0:
+		diags = append(diags, Diagnostic{
+			Name: "openai-speech-server", Severity: SeverityError,
+			Detail:      fmt.Sprintf("%s rejected the request (%d)", t.Base, t.RejectedCode()),
+			Remediation: "check openai_speech_api_key",
+		})
 	case !t.Reachable:
 		diags = append(diags, Diagnostic{
 			Name: "openai-speech-server", Severity: SeverityError,
@@ -62,9 +68,16 @@ func DiagnoseOpenAISpeech(ctx context.Context, cfg *Config, modelsDir string) []
 	}
 
 	path := filepath.Join(modelsDir, filepath.FromSlash(OpenAISpeechVoicesFile))
-	if pathExists(path) {
+	switch err := checkVoicesCatalog(path); {
+	case err == nil:
 		diags = append(diags, Diagnostic{Name: "openai-speech-catalog-file", Severity: SeverityOK, Detail: path})
-	} else {
+	case pathExists(path):
+		diags = append(diags, Diagnostic{
+			Name: "openai-speech-catalog-file", Severity: SeverityWarn,
+			Detail:      fmt.Sprintf("%s is not a voice catalog (%v)", path, err),
+			Remediation: openAISpeechEnsureRemedy,
+		})
+	default:
 		diags = append(diags, Diagnostic{
 			Name: "openai-speech-catalog-file", Severity: SeverityWarn,
 			Detail:      path + " is missing; voices are listed without locale, gender or description",
