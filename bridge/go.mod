@@ -3,7 +3,7 @@ module github.com/Obedience-Corp/obey-voice-agent/bridge
 go 1.26.1
 
 require (
-	github.com/Obedience-Corp/obey-voice v0.2.1-0.20261023014543-3a78d338649c
+	github.com/Obedience-Corp/obey-voice v0.2.1-0.20261023022922-ebdf1eeed33c
 	golang.org/x/sys v0.47.0
 )
 
