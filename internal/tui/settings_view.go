@@ -163,18 +163,12 @@ func (m settingsModel) contentLines() []string {
 
 // lineViews draws the visible window of the section's lines.
 func (m settingsModel) lineViews() []string {
-	rows := m.sectionRows()
-	lines := linesFor(rows)
+	rows, lines := m.layout()
 	if len(lines) == 0 {
 		return nil
 	}
-	nameWidth := 0
-	for _, row := range rows {
-		if !row.expands() {
-			nameWidth = max(nameWidth, lipgloss.Width(row.name))
-		}
-	}
-	nameWidth = min(max(nameWidth, 12), 30) + 2
+	nameWidth := nameColumn(rows)
+	valueWidth := m.valueWidth(rows)
 	start, end := m.visibleRange(len(lines))
 	out := make([]string, 0, end-start)
 	for i := start; i < end; i++ {
@@ -186,8 +180,10 @@ func (m settingsModel) lineViews() []string {
 			out = append(out, m.headerLine(rows[l.row]))
 		case l.option >= 0:
 			out = append(out, m.optionLine(rows[l.row], l.option, i == m.cursor))
+		case l.wrap > 0:
+			out = append(out, m.wrapLine(rows[l.row], l.wrap, nameWidth, valueWidth))
 		default:
-			out = append(out, m.rowLine(rows[l.row], i == m.cursor, nameWidth))
+			out = append(out, m.rowLine(rows[l.row], i == m.cursor, nameWidth, valueWidth))
 		}
 	}
 	return out
@@ -223,8 +219,9 @@ func (m settingsModel) optionLine(row settingRow, idx int, focused bool) string 
 }
 
 // rowLine is a row that is its own value: name, then the value drawn so the
-// verb is legible before any key is pressed.
-func (m settingsModel) rowLine(row settingRow, focused bool, nameWidth int) string {
+// verb is legible before any key is pressed. A choice row whose options do
+// not fit valueWidth draws the first of its value lines; wrapLine the rest.
+func (m settingsModel) rowLine(row settingRow, focused bool, nameWidth, valueWidth int) string {
 	cursor := "  "
 	nameStyle := normalStyle
 	if row.kind == rowInfo || row.disabled {
@@ -239,28 +236,39 @@ func (m settingsModel) rowLine(row settingRow, focused bool, nameWidth int) stri
 		name = ansi.Truncate(name, nameWidth-2, "…")
 	}
 	pad := max(nameWidth-lipgloss.Width(name), 1)
-	lead := "  " + cursor + nameStyle.Render(name) + strings.Repeat(" ", pad)
-	value := m.rowValue(row)
-	if row.kind == rowChoice && !row.disabled {
-		value = choiceValue(row, m.contentWidth()-lipgloss.Width(lead))
+	values := row.valueLines(valueWidth)
+	if !row.isChoice() {
+		values = []string{m.rowValue(row)}
 	}
-	line := lead + value
-	if row.detail != "" && !row.disabled {
+	line := "  " + cursor + nameStyle.Render(name) + strings.Repeat(" ", pad) + values[0]
+	if row.detail != "" && !row.disabled && len(values) == 1 {
 		line += "  " + dimStyle.Render(row.detail)
 	}
 	return ansi.Truncate(line, m.contentWidth(), "…")
 }
 
-// rowValue is the value column: [current] among its few options for a
-// choice, ON/OFF for a toggle, a level with its keys for a slider, an
-// ellipsis where enter opens something.
+// wrapLine is a choice row's wrap-th continuation, under its first options;
+// the row's detail follows the last.
+func (m settingsModel) wrapLine(row settingRow, wrap, nameWidth, valueWidth int) string {
+	values := row.valueLines(valueWidth)
+	if wrap >= len(values) {
+		return ""
+	}
+	line := strings.Repeat(" ", 4+nameWidth) + values[wrap]
+	if row.detail != "" && wrap == len(values)-1 {
+		line += "  " + dimStyle.Render(row.detail)
+	}
+	return ansi.Truncate(line, m.contentWidth(), "…")
+}
+
+// rowValue is the value column of every row but an enabled choice row
+// (valueLines draws those): ON/OFF for a toggle, a level with its keys for a
+// slider, an ellipsis where enter opens something.
 func (m settingsModel) rowValue(row settingRow) string {
 	if row.disabled {
 		return dimStyle.Render("— " + row.reason)
 	}
 	switch row.kind {
-	case rowChoice:
-		return choiceValue(row, 0)
 	case rowPick, rowMenu:
 		return dimStyle.Render("nothing to choose from")
 	case rowToggle:
@@ -278,36 +286,45 @@ func (m settingsModel) rowValue(row settingRow) string {
 	return normalStyle.Render(row.value)
 }
 
-// choiceValue draws a choice row's options with [current] marked. When they
-// overflow width (> 0), leading options give way to "…" so the current one
-// stays on screen.
-func choiceValue(row settingRow, width int) string {
-	parts := make([]string, 0, len(row.options)+1)
-	if row.current < 0 && row.value != "" {
-		parts = append(parts, normalStyle.Render(row.value)+dimStyle.Render(" ·"))
+func (r settingRow) isChoice() bool { return r.kind == rowChoice && !r.disabled }
+
+// valueLines is a choice row's options with [current] marked, wrapped to
+// width (> 0) so every option stays on screen; any other row, or a choice
+// row that fits, is one line.
+func (r settingRow) valueLines(width int) []string {
+	if !r.isChoice() {
+		return []string{""}
 	}
-	for i, option := range row.options {
-		if i == row.current {
+	parts := make([]string, 0, len(r.options)+1)
+	if r.current < 0 && r.value != "" {
+		parts = append(parts, normalStyle.Render(r.value)+dimStyle.Render(" ·"))
+	}
+	for i, option := range r.options {
+		if i == r.current {
 			parts = append(parts, statusStyle.Render("["+option+"]"))
 		} else {
 			parts = append(parts, dimStyle.Render(" "+option+" "))
 		}
 	}
-	fits := func(from int) bool {
-		w := lipgloss.Width(strings.Join(parts[from:row.current+1], " "))
-		if from > 0 {
-			w += 2 // "… "
+	if width <= 0 || lipgloss.Width(strings.Join(parts, " ")) <= width {
+		return []string{strings.Join(parts, " ")}
+	}
+	var lines []string
+	line, used := "", 0
+	for _, part := range parts {
+		w := lipgloss.Width(part)
+		if used > 0 && used+1+w > width {
+			lines = append(lines, line)
+			line, used = "", 0
 		}
-		return w <= width
+		if used > 0 {
+			line += " "
+			used++
+		}
+		line += part
+		used += w
 	}
-	start := 0
-	for width > 0 && row.current >= 0 && start < row.current && !fits(start) {
-		start++
-	}
-	if start > 0 {
-		return dimStyle.Render("…") + " " + strings.Join(parts[start:], " ")
-	}
-	return strings.Join(parts, " ")
+	return append(lines, line)
 }
 
 // detailLine is what the focused line does and when a change applies — facts

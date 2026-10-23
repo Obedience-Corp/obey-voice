@@ -171,8 +171,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		// this, the list falls back to a default height and 80-col width
 		// even in a large terminal split. Live resizes still flow through
 		// WindowSizeMsg while settings is open.
-		a.settings.width, a.settings.height = a.width, a.height
-		a.settings.ensureCursorVisible()
+		a.settings.resize(a.width, a.height)
 		// Built before the return: the loaders mark a.settings as loading, and
 		// that must be in the a that is returned.
 		cmds := tea.Batch(a.settings.loadDevices(), a.settings.loadVoiceCatalog(), pauseVoice, a.settings.pollDecisionStatus())

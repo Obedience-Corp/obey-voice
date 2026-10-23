@@ -38,8 +38,8 @@ func recordSaves(m *settingsModel) map[string]any {
 // lineOf is the line of row key's option, or of the row itself when option
 // is -1; -1 when there is no such line.
 func lineOf(m settingsModel, key string, option int) int {
-	rows := m.sectionRows()
-	for i, l := range linesFor(rows) {
+	rows, lines := m.layout()
+	for i, l := range lines {
 		if l.focusable() && rows[l.row].key == key && l.option == option {
 			return i
 		}
@@ -49,9 +49,21 @@ func lineOf(m settingsModel, key string, option int) int {
 
 // lineOfRow is lineOf by row name, for rows that write no key.
 func lineOfRow(m settingsModel, name string, option int) int {
-	rows := m.sectionRows()
-	for i, l := range linesFor(rows) {
+	rows, lines := m.layout()
+	for i, l := range lines {
 		if l.focusable() && rows[l.row].name == name && l.option == option {
+			return i
+		}
+	}
+	return -1
+}
+
+// lineAtRow is the line of row index row itself, which is not its index once
+// a choice row above it wraps.
+func lineAtRow(m settingsModel, row int) int {
+	_, lines := m.layout()
+	for i, l := range lines {
+		if l.focusable() && l.row == row && l.option < 0 {
 			return i
 		}
 	}

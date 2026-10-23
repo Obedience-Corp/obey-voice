@@ -25,7 +25,7 @@ func (m *settingsModel) loadVoiceCatalog() tea.Cmd {
 // applyVoiceCatalog lands a fetch; a failure keeps the static list and the
 // Voice heading says why.
 func (m *settingsModel) applyVoiceCatalog(msg settingsVoicesMsg) {
-	m.keepVoiceFocus(func() {
+	m.keepFocus(func() {
 		if m.voices.apply(voiceCatalogResult(msg)) {
 			m.buildVoiceItems()
 		}
@@ -95,39 +95,6 @@ func (m settingsModel) voiceFilterRows() []settingRow {
 	}}
 }
 
-// keepVoiceFocus runs change, then puts the Voice section's cursor back on
-// the voice it rested on (or the ✓ voice when that one left the list): a
-// catalog landing reshapes the section under the cursor.
-func (m *settingsModel) keepVoiceFocus(change func()) {
-	if m.section != sectionVoice {
-		if !m.visited[sectionVoice] {
-			change()
-			return
-		}
-		section, cursor := m.section, m.cursor
-		m.section, m.cursor = sectionVoice, m.cursors[sectionVoice]
-		defer func() {
-			m.cursors[sectionVoice] = m.cursor
-			m.section, m.cursor = section, cursor
-		}()
-	} else {
-		defer m.ensureCursorVisible()
-	}
-	focused, onVoice := m.focusedVoice()
-	change()
-	if onVoice {
-		shown := m.shownVoiceItems()
-		at := voiceIndex(shown, focused)
-		if at < 0 {
-			at = voiceIndex(shown, m.activeVoice())
-		}
-		if line := m.voiceLine(at); line >= 0 {
-			m.cursor = line
-		}
-	}
-	m.clampCursor()
-}
-
 func voiceIndex(voices []tts.Voice, name string) int {
 	for i, v := range voices {
 		if strings.EqualFold(v.Name, name) {
@@ -155,8 +122,8 @@ func (m settingsModel) voiceLine(i int) int {
 	if i < 0 {
 		return -1
 	}
-	rows := m.sectionRows()
-	for n, l := range linesFor(rows) {
+	rows, lines := m.layout()
+	for n, l := range lines {
 		if l.focusable() && rows[l.row].name == "Voice" && l.option == i {
 			return n
 		}

@@ -250,7 +250,7 @@ func TestRegisterWithoutNameAsksForItFirst(t *testing.T) {
 	capture := newEnrollCapture()
 	m, _ := enrollTestSettings(t, capture)
 	m.cfg.UserDisplayName = ""
-	m.cursor = speakerRowRegister
+	m.cursor = lineAtRow(*m, speakerRowRegister)
 
 	cmd := m.selectCurrent()
 	if cmd == nil || m.edit.kind != editUserDisplayName {
@@ -283,7 +283,7 @@ func TestRemoveVoiceNeedsAConfirmation(t *testing.T) {
 		t.Fatal("setup did not leave an enrolled owner")
 	}
 
-	m.cursor = speakerRowRemove
+	m.cursor = lineAtRow(*m, speakerRowRemove)
 	m.selectCurrent()
 	if m.confirmRemoveVoice != "Lance" {
 		t.Fatalf("confirmRemoveVoice = %q, want Lance", m.confirmRemoveVoice)
@@ -344,7 +344,7 @@ func TestSpeakerRegisterRowsFollowTheStore(t *testing.T) {
 
 	// The Remove row is inert until something is registered.
 	m.enrolledOwnerOK = false
-	m.cursor = speakerRowRemove
+	m.cursor = lineAtRow(*m, speakerRowRemove)
 	m.selectCurrent()
 	if m.confirmRemoveVoice != "" {
 		t.Error("removing with nothing registered must not arm a confirmation")
@@ -461,7 +461,7 @@ func TestEnrollAnotherOpensNameEditorWithoutTouchingDisplayName(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("enroll another row missing after an owner is stored")
 	}
-	m.cursor = idx
+	m.cursor = lineAtRow(*m, idx)
 	if cmd := m.selectCurrent(); cmd == nil {
 		t.Fatal("enroll another must open the name editor")
 	}
@@ -481,7 +481,7 @@ func TestEnrollAnotherOpensNameEditorWithoutTouchingDisplayName(t *testing.T) {
 func TestEnrollAnotherRejectsInvalidAndOwnerNames(t *testing.T) {
 	m, _ := enrollTestSettings(t, newEnrollCapture())
 	seedEnrolledProfile(t, m, "Lance", "fake-rev-w1500")
-	m.cursor = speakerKindIndex(*m, speakerRowEnrollOther)
+	m.cursor = lineAtRow(*m, speakerKindIndex(*m, speakerRowEnrollOther))
 	m.selectCurrent()
 
 	kept := commitTyped(*m, "speaker-1")
@@ -594,7 +594,7 @@ func TestGuestRowReenrollAndRemove(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("Alex guest row missing")
 	}
-	m.cursor = idx
+	m.cursor = lineAtRow(*m, idx)
 	cmd := m.selectCurrent()
 	if cmd == nil || !m.enroll.active || m.enroll.name != "Alex" || m.enroll.claimOwner {
 		t.Fatalf("re-enroll session = %+v, want Alex guest", m.enroll)

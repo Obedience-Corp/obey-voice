@@ -499,8 +499,7 @@ func (m settingsModel) activeModel() string {
 func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.ensureCursorVisible()
+		m.resize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
 		if m.edit.kind != editNone {
@@ -704,12 +703,20 @@ func (m *settingsModel) visibleRange(total int) (int, int) {
 }
 
 // ensureCursorVisible scrolls the section so the cursor is on screen, with a
-// list's heading kept above its first option.
+// list's heading kept above its first option and a wrapped choice row's
+// options below it.
 func (m *settingsModel) ensureCursorVisible() {
 	visible := m.contentRows()
-	top := m.cursor
-	if lines := m.sectionLines(); top > 0 && top < len(lines) && lines[top-1].header {
+	lines := m.sectionLines()
+	top, bottom := m.cursor, m.cursor
+	if top > 0 && top < len(lines) && lines[top-1].header {
 		top--
+	}
+	for bottom >= 0 && bottom+1 < len(lines) && lines[bottom+1].wrap > 0 {
+		bottom++
+	}
+	if bottom >= m.offset+visible {
+		m.offset = bottom - visible + 1
 	}
 	if top < m.offset {
 		m.offset = top
@@ -834,6 +841,7 @@ func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
 		m.qwenInstallCancel = cancel
 		m.qwenInstalling = true
 		m.qwenInstallEvents = newEventBridge(16)
+		m.voiceLocale = ""
 		m.message = "Installing native Qwen3-TTS package (large download)…"
 		m.buildTTSItems()
 		m.buildQwenItems()

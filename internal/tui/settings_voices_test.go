@@ -109,6 +109,67 @@ func TestSettingsVoiceListReadsTheLiveOpenAISpeechCatalog(t *testing.T) {
 	}
 }
 
+// The catalog landing inserts the filter row and the live voices above
+// whatever line the cursor is on; the cursor stays on that line, so enter
+// does what the line said before the landing.
+func TestSettingsCatalogLandingKeepsTheCursorOffTheVoiceList(t *testing.T) {
+	m, cmd, _ := openaiSpeechSettings(t, "")
+	saved := recordSaves(&m)
+	m.cursor = lineOfRow(m, "Language", -1)
+	if m.cursor < 0 {
+		t.Fatal("no Language row below the voice list")
+	}
+	m, _ = m.Update(cmd())
+	if row, _, _ := m.focused(); row.name != "Language" {
+		t.Fatalf("after the landing the cursor is on %q, want Language", row.name)
+	}
+	m = pressSettingsKey(m, tea.KeyEnter)
+	if len(saved) != 0 {
+		t.Fatalf("enter on the Language row after the landing saved %v", saved)
+	}
+
+	// The same through the remembered cursor of a section that is not shown.
+	m2, cmd2, _ := openaiSpeechSettings(t, "")
+	saved2 := recordSaves(&m2)
+	m2.cursor = lineOfRow(m2, "Language", -1)
+	m2.gotoSection(sectionQwen)
+	m2, _ = m2.Update(cmd2())
+	m2.gotoSection(sectionVoice)
+	if row, _, _ := m2.focused(); row.name != "Language" {
+		t.Fatalf("returning to Voice after the landing lands on %q, want Language", row.name)
+	}
+	m2 = pressSettingsKey(m2, tea.KeyEnter)
+	if len(saved2) != 0 {
+		t.Fatalf("enter after returning saved %v", saved2)
+	}
+}
+
+// The fetch runs on its own goroutine while Update keeps writing the config;
+// it must read a copy. Run with -race.
+func TestSettingsCatalogFetchReadsItsOwnConfigCopy(t *testing.T) {
+	cfg := &config.Config{TTSProvider: config.OpenAISpeechProviderName}
+	m := newSettings(cfg, nil)
+	recordSaves(&m)
+	seen := make(chan *config.Config, 1)
+	m.voices.load = func(_ context.Context, got *config.Config, _ string) ([]tts.Voice, string, error) {
+		_ = got.OpenAISpeechVoice + got.TTSProvider + got.OpenAISpeechURL
+		seen <- got
+		return phononCatalog, "", nil
+	}
+	cmd := m.loadVoiceCatalog()
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	m.selectVoice(tts.Voice{Name: "Zoey"})
+	msg := <-done
+	if got := <-seen; got == cfg {
+		t.Fatal("the loader was handed the shared config")
+	}
+	m, _ = m.Update(msg)
+	if cfg.OpenAISpeechVoice != "Zoey" || m.voices.landed(config.OpenAISpeechProviderName) == nil {
+		t.Fatalf("voice %q, landed %v", cfg.OpenAISpeechVoice, m.voices.landed(config.OpenAISpeechProviderName) != nil)
+	}
+}
+
 func TestSettingsConfiguredVoiceTheCatalogMissesStaysListed(t *testing.T) {
 	m, cmd, _ := openaiSpeechSettings(t, "MyClone")
 	m, _ = m.Update(cmd())
@@ -279,29 +340,70 @@ func TestSettingsStaticEnginesNeverFetchAndKokoroFilters(t *testing.T) {
 	}
 }
 
-// A catalog with many languages overflows the filter row at 80 columns; the
-// current language stays on screen.
-func TestSettingsLanguageFilterKeepsTheCurrentLanguageOnScreen(t *testing.T) {
-	m, cmd, _ := openaiSpeechSettings(t, "")
-	m.width, m.height = 80, 40
-	_ = cmd
+// A catalog with many languages does not fit the filter row at 80 columns:
+// the options wrap under it, every one on screen, and ↑/↓ skip the wrapped
+// lines.
+func TestSettingsLanguageFilterWrapsSoEveryLanguageStaysOnScreen(t *testing.T) {
+	locales := []string{"de-de", "en-gb", "en-us", "es-es", "fr-fr", "it-it", "ja-jp", "ko-kr", "pt-br", "zh-cn"}
+	var voices []tts.Voice
+	for _, loc := range locales {
+		voices = append(voices, tts.Voice{Name: "v-" + loc, Locale: loc})
+	}
+	for _, width := range []int{70, 80} {
+		m, _, _ := openaiSpeechSettings(t, "")
+		m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
+		m, _ = m.Update(settingsVoicesMsg{seq: m.voices.seq, provider: config.OpenAISpeechProviderName, voices: voices})
+		m.cursor = lineOfRow(m, "Language filter", -1)
+		for i := 0; i < 5; i++ {
+			m = pressSettingsKey(m, tea.KeyEnter)
+		}
+		if m.voiceLocale != "fr-fr" {
+			t.Fatalf("width %d: five enters = %q", width, m.voiceLocale)
+		}
+		view := stripANSI(m.View())
+		if !strings.Contains(view, "[fr-fr]") {
+			t.Fatalf("width %d: current language cut on its row:\n%s", width, view)
+		}
+		for _, loc := range locales {
+			if !strings.Contains(view, " "+loc+" ") && !strings.Contains(view, "["+loc+"]") {
+				t.Fatalf("width %d: %s is not on screen:\n%s", width, loc, view)
+			}
+		}
+		lines := strings.Split(view, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "-de ") || strings.Contains(line, "-cn ") || strings.Contains(line, "fr-fr") {
+				if strings.HasSuffix(strings.TrimRight(line, " "), "…") {
+					t.Fatalf("width %d: a filter line was truncated: %q", width, line)
+				}
+			}
+		}
+		if len(lines) != 40 {
+			t.Fatalf("width %d: view is %d rows, want 40", width, len(lines))
+		}
+		m = pressSettingsKey(m, tea.KeyDown)
+		if name, ok := m.focusedVoice(); !ok || name != "v-fr-fr" {
+			t.Fatalf("width %d: ↓ from the filter landed on %q, want the first voice", width, name)
+		}
+	}
+}
+
+// A resize that changes how the filter wraps keeps the cursor on its voice.
+func TestSettingsResizeKeepsTheCursorOnItsLine(t *testing.T) {
 	var voices []tts.Voice
 	for _, loc := range []string{"de-de", "en-gb", "en-us", "es-es", "fr-fr", "it-it", "ja-jp", "ko-kr", "pt-br", "zh-cn"} {
 		voices = append(voices, tts.Voice{Name: "v-" + loc, Locale: loc})
 	}
+	m, _, _ := openaiSpeechSettings(t, "")
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
 	m, _ = m.Update(settingsVoicesMsg{seq: m.voices.seq, provider: config.OpenAISpeechProviderName, voices: voices})
-	m.cursor = lineOfRow(m, "Language filter", -1)
-	m = typeIntoSettings(m, "-")
-	if m.voiceLocale != "zh-cn" {
-		t.Fatalf("- from (all) = %q", m.voiceLocale)
+	m.cursor = m.voiceLine(voiceIndex(m.shownVoiceItems(), "v-ja-jp"))
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	if name, _ := m.focusedVoice(); name != "v-ja-jp" {
+		t.Fatalf("after narrowing the cursor is on %q, want v-ja-jp", name)
 	}
-	view := stripANSI(m.View())
-	if !strings.Contains(view, "[zh-cn]") || !strings.Contains(view, "Language filter  … ") {
-		t.Fatalf("current language not on its row:\n%s", view)
-	}
-	m = typeIntoSettings(m, "+")
-	if view := stripANSI(m.View()); !strings.Contains(view, "[(all)]") || strings.Contains(view, "Language filter  … ") {
-		t.Fatalf("(all) should draw from the start:\n%s", view)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
+	if name, _ := m.focusedVoice(); name != "v-ja-jp" {
+		t.Fatalf("after widening the cursor is on %q, want v-ja-jp", name)
 	}
 }
 

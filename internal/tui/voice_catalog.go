@@ -57,7 +57,8 @@ func liveVoiceCatalogProvider(provider string) bool {
 }
 
 // liveVoiceCatalog is the production loader: build the provider for cfg with
-// the TTS provider swapped in, list, and release it.
+// the TTS provider swapped in, list, and release it. cfg is the fetch's own
+// copy.
 func liveVoiceCatalog(ctx context.Context, cfg *config.Config, provider string) ([]tts.Voice, string, error) {
 	if cfg == nil {
 		return nil, "", errors.New("no config")
@@ -106,10 +107,17 @@ func (c *voiceCatalog) fetch(cfg *config.Config, provider string) func() voiceCa
 	c.seq = voiceCatalogSeq.Add(1)
 	c.loading, c.provider, c.voices, c.notice = true, provider, nil, ""
 	seq, load := c.seq, c.load
+	// The fetch runs off the Update goroutine, which keeps writing the shared
+	// config (a voice chosen while it runs); it reads a copy taken here.
+	var snapshot *config.Config
+	if cfg != nil {
+		copied := *cfg
+		snapshot = &copied
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), voiceCatalogTimeout)
 	c.cancel = cancel
 	return func() voiceCatalogResult {
-		voices, notice, err := load(ctx, cfg, provider)
+		voices, notice, err := load(ctx, snapshot, provider)
 		return voiceCatalogResult{seq: seq, provider: provider, voices: voices, notice: notice, err: err}
 	}
 }
@@ -179,10 +187,10 @@ func voiceLocalesOf(voices []tts.Voice) []string {
 	seen := map[string]bool{}
 	for _, v := range voices {
 		loc := strings.TrimSpace(v.Locale)
-		if loc == "" || seen[loc] {
+		if loc == "" || seen[strings.ToLower(loc)] {
 			continue
 		}
-		seen[loc] = true
+		seen[strings.ToLower(loc)] = true
 		out = append(out, loc)
 	}
 	sort.Strings(out[1:])
@@ -198,7 +206,8 @@ func voicesInLocale(voices []tts.Voice, locale, keep string) []tts.Voice {
 	}
 	out := make([]tts.Voice, 0, len(voices))
 	for _, v := range voices {
-		if v.Locale == "" || strings.EqualFold(v.Locale, locale) || (keep != "" && strings.EqualFold(v.Name, keep)) {
+		loc := strings.TrimSpace(v.Locale)
+		if loc == "" || strings.EqualFold(loc, locale) || (keep != "" && strings.EqualFold(v.Name, keep)) {
 			out = append(out, v)
 		}
 	}
