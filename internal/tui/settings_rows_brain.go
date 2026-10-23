@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -37,6 +38,8 @@ func (m settingsModel) modelRows() []settingRow {
 		key = "grok_model"
 	case "cursor":
 		key = "cursor_model"
+	case "codex":
+		key = "codex_model"
 	}
 	active := m.activeModel()
 	models := m.modelItems
@@ -51,4 +54,31 @@ func (m settingsModel) modelRows() []settingRow {
 		row.detail = "not routed for " + m.cfg.BrainProvider
 	}
 	return []settingRow{row}
+}
+
+func (m settingsModel) codexRows() []settingRow {
+	if m.cfg.BrainProvider != "codex" {
+		return nil
+	}
+	spec, _ := config.SpecFor("codex_reasoning_effort")
+	values := append([]string{""}, spec.Enum...)
+	labels := append([]string{"Codex default"}, spec.Enum...)
+	value := m.cfg.CodexReasoningEffort
+	if value == "" {
+		value = labels[0]
+	}
+	return []settingRow{{key: spec.Key, name: "Reasoning effort", kind: rowChoice, value: value, options: labels, current: indexOf(values, m.cfg.CodexReasoningEffort), applies: appliesNextConversation, help: spec.Help,
+		set: func(m *settingsModel, i int) tea.Cmd {
+			save := m.saveConfig
+			if save == nil {
+				save = config.SetAndSave
+			}
+			if err := save(spec.Key, values[i]); err != nil {
+				m.message = "Codex setting was not saved: " + err.Error()
+				return nil
+			}
+			m.cfg.CodexReasoningEffort = values[i]
+			m.message = "Codex reasoning saved; applies to the next conversation"
+			return nil
+		}}}
 }

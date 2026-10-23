@@ -66,6 +66,14 @@
       "value": 60000,
       "source": "default"
     },
+    "codex_model": {
+      "value": "",
+      "source": "default"
+    },
+    "codex_reasoning_effort": {
+      "value": "",
+      "source": "default"
+    },
     "compact_prompt": {
       "value": null,
       "source": "default"

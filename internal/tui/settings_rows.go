@@ -103,6 +103,7 @@ func (m settingsModel) sectionRows() []settingRow {
 	switch m.section {
 	case sectionBrain:
 		rows := append(m.providerRows(), m.modelRows()...)
+		rows = append(rows, m.codexRows()...)
 		return append(rows, m.decisionRows()...)
 	case sectionWorker:
 		return m.workerRows()

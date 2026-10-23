@@ -238,6 +238,18 @@ func brainKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "codex_model", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Codex model",
+			Help:               "The model used by Codex. Empty uses the Codex default. Requires Codex installed and signed in with codex login.",
+			PersonaOverridable: true,
+		},
+		{
+			Key: "codex_reasoning_effort", Type: TypeEnum, Default: "",
+			Enum:  []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"},
+			Group: GroupBrain, Title: "Codex reasoning effort",
+			Help: "How much reasoning Codex uses. Empty uses its default. Supported efforts depend on the selected model; higher effort can delay spoken replies.",
+		},
+		{
 			Key: "cursor_model", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Cursor model",
 			Help:               "The model cursor-agent is asked for. Empty uses the CLI's own default.",

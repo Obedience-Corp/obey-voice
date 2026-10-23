@@ -105,7 +105,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				unchanged = true
 				return nil
 			}
-			if cfg.BrainProvider != "ollama" {
+			if cfg.BrainProvider != "ollama" && cfg.BrainProvider != "codex" {
 				return fmt.Errorf("persona %q: provider %q has no verified shared history projection", id, cfg.BrainProvider)
 			}
 

@@ -53,6 +53,15 @@ func CLIWorkerCapabilities(provider string) config.WorkerCapabilities {
 		base.Usage = supported("brain OnWorkerUsage", "full result cost is reported; Grok streaming events expose no token/cost fields, which remain unknown")
 		base.ProcessExit = supported("context/CLI", "helper CLI process wait is observable; remote/descendant termination is not implied")
 		base.CancellationRequested = supported("context/CLI", "context cancellation requests termination of the CLI process")
+	case "codex":
+		base.Adapter, base.Version = "codex app-server", "v2 (tested 0.163.0)"
+		base.RequestBoundary = unsupported("one app-server turn can contain multiple model requests")
+		base.TurnBoundary = unsupported("one app-server turn can contain opaque model/tool iterations; no iteration ceiling")
+		base.RetryLimit = unsupported("no adapter retries; app-server internal retries remain opaque")
+		base.RuntimeLimit = supported("context/app-server", "cancellation interrupts the turn then kills and reaps the local process group")
+		base.Usage = supported("thread/tokenUsage/updated", "fresh thread cumulative tokens; resumed thread and monetary usage remain unknown")
+		base.ProcessExit = supported("exec.Wait", "local app-server exit is observed; remote work termination is not implied")
+		base.CancellationRequested = supported("turn/interrupt", "bounded interrupt RPC followed by local process cleanup")
 	case "managed", "delegation":
 		base.Adapter, base.Version = "obey delegation CLI", "schema v1"
 		base.RequestBoundary = supported("delegation runtime", "one admitted job; same idempotency key across at most three Start attempts")

@@ -672,6 +672,10 @@ func (m launcherModel) activeModel() string {
 		if m.cfg.CursorModel != "" {
 			return m.cfg.CursorModel
 		}
+	case "codex":
+		if m.cfg.CodexModel != "" {
+			return m.cfg.CodexModel
+		}
 	}
 	return "default"
 }
