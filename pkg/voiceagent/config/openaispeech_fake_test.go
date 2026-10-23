@@ -25,6 +25,14 @@ type fakeOllama struct {
 	mu        sync.Mutex
 	pulls     []map[string]any
 	notOllama bool
+	// auth is the Authorization header each path last carried.
+	auth map[string]string
+}
+
+func (f *fakeOllama) authOn(path string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.auth[path]
 }
 
 func (f *fakeOllama) pullBodies() []map[string]any {
@@ -84,7 +92,15 @@ func (f *fakeOllama) start(t *testing.T) *httptest.Server {
 		}
 		fmt.Fprintln(w, `{"status":"success"}`)
 	})
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		if f.auth == nil {
+			f.auth = map[string]string{}
+		}
+		f.auth[r.URL.Path] = r.Header.Get("Authorization")
+		f.mu.Unlock()
+		mux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(srv.Close)
 	return srv
 }

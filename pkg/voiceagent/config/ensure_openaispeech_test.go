@@ -288,3 +288,21 @@ func TestEnsureRuntimeAssetsLeavesOpenAISpeechAloneWithoutTTS(t *testing.T) {
 		t.Fatalf("pulled %d times with no TTS requested", n)
 	}
 }
+
+func TestOpenAISpeechSendsTheAPIKeyToOllama(t *testing.T) {
+	fake := &fakeOllama{version: "0.40.9", tags: []string{}, voices: []string{"Zoey"}}
+	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
+	cfg.OpenAISpeechAPIKey = "sk-test"
+	fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
+
+	if err := ensureTTS(context.Background(), cfg, &tickLog{}); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	fake.tags = []string{"phonon:latest"}
+	DiagnoseOpenAISpeech(context.Background(), cfg, ModelsDirFrom(cfg))
+	for _, path := range []string{"/api/version", "/api/tags", "/api/pull", "/api/show"} {
+		if got := fake.authOn(path); got != "Bearer sk-test" {
+			t.Errorf("%s Authorization = %q", path, got)
+		}
+	}
+}
