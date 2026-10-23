@@ -117,3 +117,29 @@ a custom-word hint. It does not measure physical microphone recognition.
 Timing values for model completion, first audio and playback are milestones
 from their named origin; do not add them as stage durations. The small local
 proof sample is not a latency guarantee.
+
+## Starting directories
+
+`obey-voice persona edit samantha --starting-directory ~/Dev/api` saves a local
+starting directory for new conversations. `--starting-directory ""` restores
+inheritance from the application working directory. Create accepts the same
+flag. List/show JSON includes `starting_directory`; shipped personas leave it
+empty. `persona directories --json` discovers registered local camps when
+`camp` is available; discovery failures return a notice without disabling
+custom paths.
+
+For a new conversation, explicit `--work-dir` / desktop API override wins,
+then `OBEY_VOICE_WORK_DIR` (legacy `WORK_DIR`), then the persona, then the app
+working-directory resolver. “Use defaults” skips the persona override. The
+resolved canonical path and source are saved with the conversation. Resume
+uses that saved directory; switching responders, clearing history or editing
+settings cannot move it. Older sessions acquire a directory on first resume.
+Remote paths refer to the engine host. A remote provider without shared
+persona selection cannot resume into a different directory in the same
+running server; it reports an error before changing the active conversation.
+
+A chosen directory must exist, be readable/searchable and not be filesystem
+root. Invalid choices fail before starting tools. A missing saved path blocks
+resume. Moving or unregistering a camp does not automatically redirect a
+persona: select its new local path. This is a tool starting location, not a
+filesystem sandbox or permission grant.

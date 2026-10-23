@@ -360,6 +360,8 @@ type Config struct {
 	// WorkDir is where the agent's file and shell tools start. It is a
 	// default, not a sandbox — tools may still reach absolute paths.
 	// Empty resolves through WorkDirFrom.
+	// WorkDirSource is runtime-only provenance; nonempty pins WorkDir to a conversation.
+	WorkDirSource   string `mapstructure:"-" json:"-"`
 	WorkDir         string `mapstructure:"work_dir"`
 	Language        string `mapstructure:"language"`
 	MaxHistory      int    `mapstructure:"max_history"`

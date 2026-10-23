@@ -41,6 +41,8 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
+	WorkDir         string                `json:"work_dir"`
+	WorkDirSource   string                `json:"work_dir_source"`
 	Notices         []string              `json:"notices"`
 	WorkResults     []string              `json:"work_results"`
 	SettingsMessage string                `json:"settings_message"`
@@ -271,6 +273,9 @@ func (m desktopModel) state() DesktopState {
 	state := DesktopState{SessionID: m.rt.SessionID, Name: c.agentName, Status: ansi.Strip(c.status), Error: c.statusErr, Mic: c.voiceEnabled,
 		VoiceAvailable: m.rt.Voice, Muted: c.outputMuted, Busy: c.turnState != turnIdle, Recording: c.recordMode(), Thinking: c.streamingThink,
 		Response: c.streamingAgent, InputLevel: c.inputLevel, OutputLevel: c.outputLevel, Workers: m.rt.Pipeline.Workers(), WorkersEnabled: m.rt.Pipeline.WorkersEnabled()}
+	if m.rt.SessionCfg != nil {
+		state.WorkDir, state.WorkDirSource = m.rt.SessionCfg.WorkDir, m.rt.SessionCfg.WorkDirSource
+	}
 	agentIndex := 0
 	for _, turn := range c.plainTurns {
 		out := DesktopTurn{Role: turn.role, Content: turn.text, Name: turn.speaker}

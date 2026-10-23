@@ -153,7 +153,7 @@ linux-artifact:
     smoke_root="$(mktemp -d)"
     trap 'rm -rf "$smoke_root"' EXIT
     tar -xzf "$tarball" -C "$smoke_root"
-    smoke_bin="$smoke_root/obey-voice-${platform}/samantha"
+    smoke_bin="$smoke_root/obey-voice-${platform}/obey-voice"
     smoke_lib="$smoke_root/obey-voice-${platform}/lib"
     env -u LD_LIBRARY_PATH "$smoke_bin" --version
     smoke_ldd="$(env -u LD_LIBRARY_PATH ldd "$smoke_bin")"

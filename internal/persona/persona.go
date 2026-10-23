@@ -46,16 +46,17 @@ var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 // no omitempty: a stable key set lets a decoder distinguish "inherit the app
 // default" (empty string) from "field absent".
 type Profile struct {
-	Schema      string     `yaml:"schema" json:"schema"`
-	ID          string     `yaml:"id" json:"id"`
-	DisplayName string     `yaml:"display_name" json:"display_name"`
-	Aliases     []string   `yaml:"aliases,omitempty" json:"aliases,omitempty"`
-	Builtin     bool       `yaml:"builtin,omitempty" json:"builtin"`
-	Inactive    bool       `yaml:"inactive,omitempty" json:"inactive"`
-	Brain       Brain      `yaml:"brain,omitempty" json:"brain"`
-	TTS         TTS        `yaml:"tts" json:"tts"`
-	Prompts     PromptRefs `yaml:"prompts" json:"prompts"`
-	Path        string     `yaml:"-" json:"path"` // absolute path of persona.yaml when loaded
+	StartingDirectory string     `yaml:"starting_directory,omitempty" json:"starting_directory"`
+	Schema            string     `yaml:"schema" json:"schema"`
+	ID                string     `yaml:"id" json:"id"`
+	DisplayName       string     `yaml:"display_name" json:"display_name"`
+	Aliases           []string   `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+	Builtin           bool       `yaml:"builtin,omitempty" json:"builtin"`
+	Inactive          bool       `yaml:"inactive,omitempty" json:"inactive"`
+	Brain             Brain      `yaml:"brain,omitempty" json:"brain"`
+	TTS               TTS        `yaml:"tts" json:"tts"`
+	Prompts           PromptRefs `yaml:"prompts" json:"prompts"`
+	Path              string     `yaml:"-" json:"path"` // absolute path of persona.yaml when loaded
 }
 
 // ErrInactive marks a profile that is present on disk but unavailable for

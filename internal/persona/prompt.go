@@ -14,8 +14,9 @@ import (
 
 // CreateOpts configures CreateAndUse / Create with optional system prompt text.
 type CreateOpts struct {
-	DisplayName  string
-	SystemPrompt string // when set, writes prompts/persona/<id>.yaml and points the profile at it
+	StartingDirectory string
+	DisplayName       string
+	SystemPrompt      string // when set, writes prompts/persona/<id>.yaml and points the profile at it
 	// Brain / TTS override the globals-clone Create seeds. Empty fields keep
 	// the clone, so "(default)" selections still snapshot today's defaults.
 	Brain Brain
@@ -26,9 +27,19 @@ type CreateOpts struct {
 // Create already seeds prompts/persona/<id>.yaml and binds prompts.persona to
 // the new id; a non-empty SystemPrompt overwrites that private document.
 func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
+	directory, err := config.ValidateStartingDirectory(opts.StartingDirectory)
+	if err != nil {
+		return nil, err
+	}
 	p, err := Create(cfg, opts.DisplayName)
 	if err != nil {
 		return nil, err
+	}
+	if directory != "" {
+		p.StartingDirectory = directory
+		if err := Write(p, false); err != nil {
+			return p, err
+		}
 	}
 	if stackOverridden(opts) {
 		if provider := strings.TrimSpace(opts.Brain.Provider); provider != "" {

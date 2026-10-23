@@ -18,6 +18,7 @@ type DesktopConversation = appTUI.ConversationRuntime
 
 // DesktopOptions selects one conversation without mutating saved preferences.
 type DesktopOptions struct {
+	WorkDir   string // explicit new-conversation override; saved sessions retain their directory
 	SessionID string
 	PersonaID string
 	TextOnly  bool
@@ -27,7 +28,7 @@ type DesktopOptions struct {
 // BuildDesktopConversation reuses the TUI's asset preparation, session binding,
 // work journal, speaker recognition, persona selection and persistence.
 func BuildDesktopConversation(ctx context.Context, opts DesktopOptions, progress func(string)) (*DesktopConversation, error) {
-	return conversationRuntimeBuilderFor(nil, opts.TextOnly, opts.Silent)(ctx, desktopProgress(progress), opts.SessionID, opts.PersonaID)
+	return conversationRuntimeBuilderWithDirectory(nil, opts.TextOnly, opts.Silent, opts.WorkDir)(ctx, desktopProgress(progress), opts.SessionID, opts.PersonaID)
 }
 
 type DesktopMeeting = appTUI.MeetingRuntime

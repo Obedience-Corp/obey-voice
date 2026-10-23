@@ -116,6 +116,10 @@
         "type": "string"
       },
       "description": "Additional names that select this persona in a conversation."
+    },
+    "starting_directory": {
+      "type": "string",
+      "description": "Optional local starting directory for new conversations. Empty inherits the app default."
     }
   }
 }

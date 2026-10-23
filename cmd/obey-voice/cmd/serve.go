@@ -141,7 +141,10 @@ remote_tools_enabled is set.`,
 		// exist is an error, not a silent fall back to home. Resolved after
 		// configureServeStdio, which has already opened a relative --log-file
 		// against the caller's cwd.
-		wd, err := config.ResolveWorkDirInfo(cfg, serveWorkDir)
+		if err := resolveConversationDirectory(cfg, servePersona, serveWorkDir, nil); err != nil {
+			return err
+		}
+		wd, err := config.ResolveWorkDirInfo(cfg, "")
 		if err != nil {
 			return err
 		}
@@ -329,6 +332,7 @@ func runServe(cfg *config.Config) error {
 		return fmt.Errorf("load base persona settings: %w", err)
 	}
 	base.WorkDir = serveCfg.WorkDir
+	base.WorkDirSource = serveCfg.WorkDirSource
 	base.VoiceToolsEnabled = serveCfg.VoiceToolsEnabled
 	switcher := &servePersonaSwitcher{base: base, cfg: &serveCfg, pipeline: p, tts: liveTTS, sessions: ref}
 	if _, supported := p.Brain.(brain.HistoryProjectionProvider); supported {
@@ -537,11 +541,12 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 				brainProvider = binding.BrainProvider
 			}
 			out = append(out, netapi.PersonaSummary{
-				ID:          id,
-				DisplayName: displayName,
-				Active:      id == active,
-				Builtin:     p.Builtin,
-				Inactive:    p.Inactive,
+				StartingDirectory: p.StartingDirectory,
+				ID:                id,
+				DisplayName:       displayName,
+				Active:            id == active,
+				Builtin:           p.Builtin,
+				Inactive:          p.Inactive,
 				Brain: netapi.PersonaBrain{
 					Provider: brainProvider,
 					Model:    brainModel,
@@ -726,6 +731,19 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	if s.selector != nil {
 		cfg = s.selector.Config()
 	}
+	next, err := session.Load(id)
+	if err != nil {
+		return err
+	}
+	cfg = cfg.Clone()
+	if err := resolveConversationDirectory(cfg, next.SelectedPersonaID, serveWorkDir, next); err != nil {
+		return err
+	}
+	// Providers without shared selection cannot replace a live brain safely.
+	// Validate before touching the old session; reopening serve can restore it.
+	if s.selector == nil && cfg.WorkDir != s.cfg.WorkDir {
+		return fmt.Errorf("resuming a different directory requires a provider with shared conversation selection")
+	}
 	if err := s.sessions.resume(s.pipeline, cfg, id); err != nil {
 		return err
 	}
@@ -736,8 +754,8 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	if s.selector == nil {
 		return nil
 	}
-	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash)
-	_, err := s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
+	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, config.WorkDirInfo{Dir: cfg.WorkDir, Source: config.WorkDirSource(cfg.WorkDirSource)})
+	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})
 	}
