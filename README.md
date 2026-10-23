@@ -6,7 +6,7 @@ Speech stays on your machine. The brain is Claude, Codex, Cursor, Ollama, or Gro
 
 It is also a group chat for agents. Put several personas in one conversation, each with its own voice, model and prompt, address whichever one you want by name, and let them hand the floor to each other.
 
-![Obey Voice TUI in color: launcher, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
+![Obey Voice TUI in color: animated launcher logo, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
 
 *Recorded from the real TUI with scripted voice activity; no live microphone or model required.*
 [Reproduce the demo](demos/README.md#readme-demo) with `just demo`.
