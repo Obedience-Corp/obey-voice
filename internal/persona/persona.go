@@ -444,8 +444,6 @@ func applyBrain(cfg *config.Config, b Brain) {
 		// recorded on the profile but not routed.
 	case "codex":
 		cfg.CodexModel = model
-		// claude has no app-level model key today; a persona model for it is
-		// recorded on the profile but not routed.
 	}
 }
 
