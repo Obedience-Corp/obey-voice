@@ -4,6 +4,8 @@ A local voice assistant that starts speaking before the model finishes the thoug
 
 Speech stays on your machine. The brain is Claude, Codex, Cursor, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
 
+It is also a group chat for agents. Put several personas in one conversation, each with its own voice, model and prompt, address whichever one you want by name, and let them hand the floor to each other.
+
 ![Obey Voice TUI in color: launcher, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
 
 *Recorded from the real TUI with scripted voice activity; no live microphone or model required.*
@@ -63,6 +65,18 @@ obey-voice serve --tailscale
 
 [Usage](docs/usage.md) has TUI keys, personas, remote HTTPS, and the full command list.
 
+## Group chat
+
+A persona is a complete voice agent: its own system prompt, brain model, voice, and optionally its own working folder. Four ship (Samantha, Jarvis, Veronica, Obey) and `+ Create persona…` in the TUI adds more. With Ollama as the brain, every enabled persona sits in the same conversation.
+
+Say a name anywhere in the sentence and that persona answers: "Jarvis, what do you think?" or "What do you think, Jarvis?" The local model classifies who you were talking to, so a mention, a quote, or a question *about* a persona does not change who responds. Whoever answered last keeps the floor for follow-ups.
+
+Agents pass the floor too. When one persona's reply asks another a question, that persona answers next in the same thread, in its own voice. Each of your turns allows at most three follow-on agent responses with no repeat responder, and your speech always takes priority, so a thread cannot run away.
+
+One transcript is shared. Each persona sees the others' replies as labeled context (`Jarvis agent:`, `Lance user:`). Switching never relabels earlier replies, and the same routing applies with `--text`. Addressing costs one extra, tools-free model call before each reply.
+
+Details: [shared conversations](docs/personas.md#shared-conversations) and [addressing and handing over the floor](docs/context-continuity.md#addressing-and-handing-over-the-floor).
+
 ## Also
 
 | Do this | Start here |
@@ -71,6 +85,7 @@ obey-voice serve --tailscale
 | Record a meeting (STT only, speaker labels) | `obey-voice meeting record` · [meetings](docs/meetings.md) |
 | Transcribe a recording from another program | `obey-voice transcribe --request job.json --jsonl` · [protocol](docs/transcribe-protocol.md) |
 | Switch prompt + model + voice as one agent | `obey-voice persona use veronica` · [personas](docs/personas.md) |
+| Record two personas talking, scripted or improvised from a brief | `obey-voice scene script.yaml --out-dir out/scene` · [scenes](docs/scene.md) |
 | Inspect or change a setting | `obey-voice config` · [configuration](docs/configuration.md) |
 
 ## Stack
@@ -92,6 +107,8 @@ Models download on first use into `models_dir`, and `just install` runs `models 
 | [docs/](docs/README.md) | Index |
 | [Install](docs/install.md) | Homebrew, Linux archive, source, requirements |
 | [Usage](docs/usage.md) | TUI, remote serve, commands, personas |
+| [Personas](docs/personas.md) | Voice agents, shared conversations, starting directories |
+| [Scenes](docs/scene.md) | Two-persona conversation recordings |
 | [Narration](docs/narration.md) | Render, audiobooks, Calibre, narrate pipeline |
 | [Meetings](docs/meetings.md) | Recorder, speaker labels, campaign routing |
 | [Configuration](docs/configuration.md) | `config.yaml`, Agent Skills |
