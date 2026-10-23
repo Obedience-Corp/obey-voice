@@ -4,7 +4,10 @@ A local voice assistant that starts speaking before the model finishes the thoug
 
 Speech stays on your machine. The brain is Claude, Cursor, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
 
-![Obey Voice conversation TUI](docs/images/tui.gif)
+![Obey Voice TUI in color: launcher, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
+
+*Recorded from the real TUI with scripted voice activity; no live microphone or model required.*
+[Reproduce the demo](demos/README.md#readme-demo) with `just demo`.
 
 ```text
 Mic → VAD → STT → Brain → Sentence chunker → TTS → Speaker

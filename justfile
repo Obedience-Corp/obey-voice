@@ -38,16 +38,15 @@ default:
 build:
     @{{BUILDTOOL}} build
 
-# Build and record the README demo from the real Bubble Tea TUI. The tape
-# writes a raw VHS GIF; the final pass matches termcast's compact, low-noise
-# terminal output and replaces it with the optimized artifact.
-demo: build
+# Color README walkthrough with disposable data and scripted voice activity.
+demo: demo-readme
+
+# Original live Ollama/tool-call recording (requires an installed local model).
+demo-tool-calls: build
     #!/usr/bin/env bash
     set -euo pipefail
     vhs demos/tool-calls.tape
     just _optimize-demo-gif demos/tool-calls.gif
-    mkdir -p docs/images
-    cp demos/tool-calls.gif docs/images/tui.gif
 
 # Voice meter animation demo (listening / hearing / speaking).
 # Matches festival/termcast tapes: shell-exported color env, raw VHS GIF.
