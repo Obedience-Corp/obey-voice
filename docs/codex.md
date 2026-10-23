@@ -45,6 +45,21 @@ the cached thread, and the next turn uses the working conversation context.
 Workers and transient summaries start independent threads. There is no automatic
 inference retry after a failed turn.
 
+Context has explicit limits. Native thread resume retains Codex's own context;
+a reset, restored session, persona switch, or transient summary uses Obey's
+working view: the last `max_history` user exchanges, with whole tool groups and
+any leading compaction summary. Replay preserves historical speaker/persona
+labels and tool call/result provenance. Unnamed historical assistants are not
+renamed to the current persona. Compaction changes that working view without
+replacing the durable transcript. Native tool details not represented in Obey's
+transcript are not reconstructed after a reset.
+
+Background workers start fresh with the existing task brief: up to eight recent
+conversation turns within the shared brief byte budget, the triggering utterance,
+and the configured persona, working directory and worker boundary. They do not
+inherit the entire native Codex thread. Worker completion data is supplied through
+the existing work-result context on the consuming turn.
+
 Tools-disabled and live route-only turns disable configured MCP servers, plugins,
 shell, web, apps, computer/browser and agent tools and use a read-only sandbox.
 Tools-enabled turns use a workspace-write sandbox rooted at the starting directory,

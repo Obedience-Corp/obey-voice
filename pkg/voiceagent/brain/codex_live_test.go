@@ -11,7 +11,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// Opt in explicitly. This spends two real inference turns using the installed
+// Opt in explicitly. This spends real inference turns using the installed
 // Codex login; it never records audio or changes personal Obey/Codex settings.
 func TestCodexLiveConversation(t *testing.T) {
 	if os.Getenv("OBEY_VOICE_CODEX_LIVE") != "1" {
@@ -26,7 +26,11 @@ func TestCodexLiveConversation(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	for i, input := range []string{"Remember the synthetic test phrase cobalt peach 731. Reply with that phrase only. Do not use tools.", "What synthetic test phrase did I ask you to remember? Reply with it only. Do not use tools."} {
+	for i, input := range []string{"Remember the synthetic test phrase cobalt peach 731. Reply with that phrase only. Do not use tools.", "What synthetic test phrase did I ask you to remember? Reply with it only. Do not use tools.", "Recall the synthetic test phrase from the historical conversation records. Reply with it only. Do not use tools."} {
+		if i == 2 {
+			// Exercise persisted-transcript replay, not only native thread resume.
+			c.LoadHistory(c.History())
+		}
 		started := time.Now()
 		stream, err := c.ThinkStream(ctx, input, StreamOptions{OmitTurnInstruction: true})
 		if err != nil {
@@ -48,8 +52,8 @@ func TestCodexLiveConversation(t *testing.T) {
 		}
 		t.Logf("turn=%d first_text=%s total=%s thread=%s", i+1, first, time.Since(started), c.SessionInfo().ID)
 	}
-	if len(c.History()) != 4 {
-		t.Fatal("two turns missing from canonical history")
+	if len(c.History()) != 6 {
+		t.Fatal("three turns missing from canonical history")
 	}
 }
 

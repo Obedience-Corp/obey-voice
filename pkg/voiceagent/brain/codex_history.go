@@ -2,6 +2,7 @@ package brain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -33,6 +34,7 @@ func (c *CodexBrain) LoadHistory(turns []Turn) {
 func (c *CodexBrain) ImportHistory(turns []Turn) error { c.LoadHistory(turns); return nil }
 func (c *CodexBrain) ContinuitySnapshot() ContinuitySnapshot {
 	s := c.snapshot
+	s.Archive = slices.Clone(s.Archive)
 	s.Canonical = c.History()
 	s.Working = c.ContextHistory()
 	return s
@@ -40,6 +42,7 @@ func (c *CodexBrain) ContinuitySnapshot() ContinuitySnapshot {
 func (c *CodexBrain) ImportContinuity(s ContinuitySnapshot) error {
 	c.LoadHistory(s.Canonical)
 	c.snapshot = s
+	c.snapshot.Archive = slices.Clone(s.Archive)
 	if s.Working != nil {
 		c.working = deepCopyTurns(s.Working)
 		c.trimWorking()
@@ -51,9 +54,37 @@ func (c *CodexBrain) appendTurn(t Turn) {
 	c.working = append(c.working, t)
 	c.trimWorking()
 }
+
+// ReseedContinuity changes only the model view. Compaction must not replace
+// the transcript that is persisted or transferred to another persona.
+func (c *CodexBrain) ReseedContinuity(turns []Turn) {
+	c.working = deepCopyTurns(turns)
+	c.sessionID = ""
+	c.trimWorking()
+}
 func (c *CodexBrain) trimWorking() {
-	if n := c.cfg.MaxHistory * 2; n > 0 && len(c.working) > n {
-		c.working = c.working[len(c.working)-n:]
+	if c.cfg.MaxHistory <= 0 {
+		return
+	}
+	users := 0
+	for i := len(c.working) - 1; i >= 0; i-- {
+		if c.working[i].Role != "user" {
+			continue
+		}
+		users++
+		if users == c.cfg.MaxHistory {
+			// Keep whole exchanges, including their tool calls/results and host
+			// continuations. Retain a leading shared compaction seed as well.
+			if i > 0 {
+				seed := c.working[0]
+				tail := deepCopyTurns(c.working[i:])
+				if seed.Role == "assistant" && seed.PersonaID == "" && seed.PersonaDisplayName == "" && len(seed.ToolCalls) == 0 {
+					tail = append(deepCopyTurns([]Turn{seed}), tail...)
+				}
+				c.working = tail
+			}
+			return
+		}
 	}
 }
 func (c *CodexBrain) AppendAssistantResponse(text string) error {
