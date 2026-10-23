@@ -28,3 +28,36 @@ on for qwen3-family models so chain-of-thought is not spoken. Explicit `false`
 on qwen3 dumps untagged CoT into Content, which can be spoken.
 
 See [Configuration](configuration.md) for the matching keys.
+
+## Speech stopped before the reply finished
+
+Press **Ctrl+T** in the active conversation to inspect Activity. An
+`interrupted: barge_in` entry means the microphone interruption detector stopped
+playback; it does not prove that a person spoke. Playback leaking back into the
+microphone can produce the same detector decision. Other stop/error entries help
+distinguish cancellation, playback failure and a stalled turn.
+
+The timing line keeps `interrupted`, `failed`, or `timed out` visible after
+listening resumes. An unsuccessful local playback is labeled `playback stopped`,
+not `playback done`. The displayed assistant text may be complete even when its
+audio was interrupted.
+
+The TUI writes low-rate lifecycle traces to its existing log, independently of
+experimental work journaling:
+
+```sh
+tail -f ~/.obey/agents/voice/festival-voice/logs/native-diagnostics.log
+```
+
+Custom config roots and debug-audio runs place the log under their own directory.
+`turn_trace` records capture/transcription phases, model/playback milestones,
+response/session identifiers, interruption reason and terminal outcome.
+`barge_in_decision` records the qualifying neural speech count, audibility,
+startup state and speaker-gate decision. For example, `stale_fail_open` means the
+enrolled-speaker policy had no fresh verdict and used its existing permissive
+fallback. These records contain no audio, transcript, model output or tool output.
+They describe the detector's evidence, not a verified acoustic source.
+
+Older binaries do not write these trace records; installing an update cannot
+reconstruct an earlier interruption. For a suspected feedback loop, headphones
+can isolate speaker playback from the microphone while investigating.

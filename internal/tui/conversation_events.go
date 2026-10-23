@@ -189,7 +189,9 @@ func (m *conversationModel) handleEvent(e events.Event) {
 
 	case events.SpeakingComplete:
 		label := "complete"
-		if e.AudibleSink == "none" {
+		if e.Interrupted {
+			label = "interrupted"
+		} else if e.AudibleSink == "none" {
 			label = "synth drain (no sink)"
 		} else if e.AudibleSink == "stream_client" {
 			label = "audible_tx done"

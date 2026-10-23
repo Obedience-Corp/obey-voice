@@ -83,10 +83,24 @@ func formatTurnMetrics(e events.TurnMetrics) string {
 		parts = append(parts, "first audio "+formatSeconds(ready))
 	}
 	if complete > 0 && e.AudibleSink != "none" && e.AudibleSink != "stream_client" {
-		parts = append(parts, "playback done "+formatSeconds(complete))
+		label := "playback done "
+		if e.Interrupted || e.Outcome == "interrupted" || e.Outcome == "failed" || e.Outcome == "timed_out" {
+			label = "playback stopped "
+		}
+		parts = append(parts, label+formatSeconds(complete))
 	}
 	if len(parts) > 0 {
 		parts = append([]string{origin}, parts...)
+	}
+	if len(parts) > 0 || e.Interrupted {
+		switch {
+		case e.Interrupted || e.Outcome == "interrupted":
+			parts = append(parts, "interrupted")
+		case e.Outcome == "failed":
+			parts = append(parts, "failed")
+		case e.Outcome == "timed_out":
+			parts = append(parts, "timed out")
+		}
 	}
 	if e.Degraded {
 		parts = append(parts, "degraded")
