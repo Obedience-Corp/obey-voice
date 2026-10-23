@@ -207,8 +207,24 @@ func (m personasModel) stackLines() []string {
 	ttsProvider := stackTTSProviders()[m.ttsProviderIdx]
 	voices := m.stackVoiceList()
 	voiceLabel := stackDefaultLabel
-	if idx := m.stackVoiceIndex(); idx >= 0 && idx < len(voices) {
-		voiceLabel = voices[idx]
+	voiceIdx := m.stackVoiceIndex()
+	if voiceIdx >= 0 && voiceIdx < len(voices) {
+		voiceLabel = voices[voiceIdx]
+	}
+	voiceValue := "‹ " + voiceLabel + " ›"
+	if n := len(voices) - 1; n > 8 && voiceIdx > 0 {
+		// Long catalogs (Kokoro's 54, Phonon's 37 per language) need a
+		// position so a user cycling with ←/→ knows where they are.
+		voiceValue += dimStyle.Render(fmt.Sprintf("  %d/%d", voiceIdx, n))
+	}
+	languageValue := dimStyle.Render("— (one language)")
+	if m.voiceLanguageUsable() {
+		locales := m.voiceLocales()
+		languageLabel := voiceLocaleAll
+		if idx := m.voiceLocaleIndex(); idx > 0 && idx < len(locales) {
+			languageLabel = locales[idx]
+		}
+		languageValue = "‹ " + languageLabel + " ›"
 	}
 	tierValue := dimStyle.Render("— (qwen3-tts only)")
 	if m.stackTierUsable() {
@@ -229,15 +245,30 @@ func (m personasModel) stackLines() []string {
 	if strings.EqualFold(m.effectiveStackWorkerProvider(), "claude") && strings.TrimSpace(m.workerModel) != "" {
 		workerModelRow += dimStyle.Render("  (model saved, not routed for claude yet)")
 	}
-	return []string{
+	lines := []string{
 		brainRow,
 		row(formRowBrainModel, "Brain model", m.stackModelRowValue()),
 		workerRow,
 		workerModelRow,
 		row(formRowTTSProvider, "TTS", "‹ "+ttsProvider+" ›"),
-		row(formRowVoice, "Voice", "‹ "+voiceLabel+" ›"),
+		row(formRowVoice, "Voice", voiceValue),
+		row(formRowVoiceLanguage, "Language", languageValue),
 		row(formRowTier, "Tier", tierValue),
 	}
+	if detail := strings.TrimSpace(m.voiceDetail()); detail != "" {
+		// Under the Voice row: what the catalog says about the pick, or why
+		// the catalog is short. Width-bounded so a description never wraps.
+		lines = insertAfter(lines, 5, "  "+dimStyle.Render(ansi.Truncate(detail, max(m.formInnerWidth()-4, 10), "…")))
+	}
+	return lines
+}
+
+// insertAfter inserts line after index i.
+func insertAfter(lines []string, i int, line string) []string {
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:i+1]...)
+	out = append(out, line)
+	return append(out, lines[i+1:]...)
 }
 
 func padPersonasLines(lines []string, n int) []string {

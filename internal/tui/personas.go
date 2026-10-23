@@ -80,6 +80,11 @@ type personasModel struct {
 	// offers registered camps and a (custom) field. See personas_directory.go.
 	directoryInput textinput.Model
 	directory      personaDirectoryPicker
+	// Voice row catalog for providers that have to be asked (openai-speech),
+	// and the Language row's filter over whichever catalog is showing.
+	// See personas_voices.go.
+	voices      personaVoiceCatalog
+	voiceLocale string
 
 	preview voicePreview
 
@@ -149,6 +154,7 @@ func newPersonas(cfg *config.Config) personasModel {
 	// The Directory row lists registered camps the same way Settings → Meeting
 	// finds route destinations: `camp list --json`, on form open, never here.
 	m.directory.discover = campdirs.DiscoverDefault
+	m.voices.load = liveVoiceCatalog
 	m.reload()
 	return m
 }
@@ -229,6 +235,9 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 
 	case personaDirectoriesMsg:
 		m.applyDirectories(msg)
+
+	case personaVoicesMsg:
+		m.applyVoiceCatalog(msg)
 
 	case voicePreviewDoneMsg:
 		if m.preview.applyDone(msg) && msg.message != "" {

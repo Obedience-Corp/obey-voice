@@ -27,6 +27,7 @@ const (
 	formRowWorkerModel
 	formRowTTSProvider
 	formRowVoice
+	formRowVoiceLanguage
 	formRowTier
 	formRowDirectory
 	formRowPrompt
@@ -159,8 +160,11 @@ func (m personasModel) stackVoiceList() []string {
 		// so the user still has a real catalog to pick from.
 		provider = strings.TrimSpace(m.cfg.TTSProvider)
 	}
+	_ = provider
 	out := []string{stackDefaultLabel}
-	out = append(out, stackVoiceCatalog(m.cfg, provider)...)
+	for _, v := range m.filteredVoiceEntries() {
+		out = append(out, v.Name)
+	}
 	if v := strings.TrimSpace(m.selectedVoice); v != "" {
 		found := false
 		for _, item := range out[1:] {
@@ -374,6 +378,11 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 			if m.formRow == formRowVoice {
 				m.preview.cancel()
 			}
+			if m.formRow == formRowTTSProvider {
+				// The voice catalog belongs to the provider; refetch when the
+				// new one has to be asked, drop live state when it does not.
+				return m, m.loadVoiceCatalog()
+			}
 			return m, nil
 		}
 	}
@@ -479,6 +488,8 @@ func (m *personasModel) cycleStackRow(delta int) {
 		m.clampSelectedTier()
 	case formRowVoice:
 		m.cycleStackVoice(delta)
+	case formRowVoiceLanguage:
+		m.cycleVoiceLocale(delta)
 	case formRowTier:
 		m.cycleStackTier(delta)
 	case formRowDirectory:
@@ -499,12 +510,19 @@ func (m *personasModel) clampSelectedVoice() {
 	if provider == "" && m.cfg != nil {
 		provider = strings.TrimSpace(m.cfg.TTSProvider)
 	}
-	for _, name := range stackVoiceCatalog(m.cfg, provider) {
-		if strings.EqualFold(name, v) {
+	_ = provider
+	for _, e := range m.voiceEntries() {
+		if strings.EqualFold(e.Name, v) {
 			// Canonicalize to the catalog spelling (e.g. Uncle_Fu vs uncle_fu).
-			m.selectedVoice = name
+			m.selectedVoice = e.Name
 			return
 		}
+	}
+	if liveVoiceCatalogProvider(m.effectiveStackTTSProvider()) && m.voices.voices != nil {
+		// A live catalog is the server's word, but a server may speak a voice
+		// it did not list (ptts loads any file in its folder). Keep a typed
+		// voice on this provider rather than silently reverting to default.
+		return
 	}
 	m.selectedVoice = ""
 }
@@ -641,7 +659,7 @@ func (m *personasModel) beginCreate() tea.Cmd {
 	m.promptTA.Blur()
 	m.prefillStack(nil) // "(default)" = clone current globals at create time
 	// Scan providers and camps in the background; the form is usable immediately.
-	return tea.Batch(textinput.Blink, m.loadDirectories(), m.loadBrainModels())
+	return tea.Batch(textinput.Blink, m.loadDirectories(), m.loadVoiceCatalog(), m.loadBrainModels())
 }
 
 // beginEditAt opens the edit form for the persona under the cursor, landing on
@@ -670,7 +688,7 @@ func (m *personasModel) beginEditAt(row int) tea.Cmd {
 	if loadNote != "" {
 		m.message = loadNote
 	}
-	return tea.Batch(textinput.Blink, m.loadDirectories(), m.loadBrainModels())
+	return tea.Batch(textinput.Blink, m.loadDirectories(), m.loadVoiceCatalog(), m.loadBrainModels())
 }
 
 // loadEditPrompt loads the system prompt body for the editor without ever
