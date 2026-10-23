@@ -99,6 +99,34 @@ OBEY_VOICE_LIVE_ADDRESS_MODEL='<installed-model>' go test -tags=integration \
   ./pkg/voiceagent/brain -run TestLiveGroupAddressee -count=1 -v
 ```
 
+## Repeated answers
+
+Live Ollama replies check for a narrow replay pattern: the new answer starts
+with the entire last completed answer from the same persona, at least 200
+characters long. A matching prefix is held before synthesis; a fresh response
+streams as soon as it diverges. Matching ignores whitespace but does not detect
+paraphrases or repeated passages later in an otherwise new response.
+
+Explicit repeat cues, requests of three words or fewer, and requests too long
+for the intent check preserve the original response. Otherwise a private,
+tools-free check of the latest message uses the selected model with a 30-second
+deadline. Only an `unrequested` decision triggers one tools-free regeneration.
+Uncertain or failed checks preserve the original output; a failed check emits
+an informational diagnostic. The classifier remains model-dependent, so this
+is a conservative mitigation rather than a guarantee against all repetition.
+
+Rejected attempts never enter speech, displayed replies, or canonical history.
+A second repeated attempt produces a short recovery message and a degraded
+outcome. Cancellation stops recovery without speaking another line. Background
+notifications, workers, internal summaries, and incomplete-answer continuations
+do not use this guard. Matching replies can take longer to reach first audio
+because they wait for the generation and intent check before being released.
+
+```sh
+OBEY_VOICE_LIVE_REPETITION_MODEL='<installed-model>' go test -tags=integration \
+  ./pkg/voiceagent/brain -run TestLiveRepetitionIntent -count=1 -v
+```
+
 ## Context budgets
 
 `read_skill` is special: its full instructions remain in the existing transient

@@ -27,6 +27,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	if !opts.Background && !opts.AgentContinuation {
 		o.appendUserInput(input, opts)
 	}
+	priorReply := o.previousReplyForRepetition(opts)
+	latestMessage := input
+	if opts.AgentContinuation && len(o.canonical) > 0 {
+		latestMessage = o.canonical[len(o.canonical)-1].Content
+	}
 	if !opts.Background && !opts.AgentContinuation {
 		o.receiveDelegationResults(opts)
 	}
@@ -67,6 +72,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		hadTools := false
 		recoveryAttempts := 0
 		var continuation string
+		repetitionRetry := false
+		repetitionAllowed := false
 
 		for i := 0; i < maxToolIterations; i++ {
 			var tools api.Tools
@@ -77,6 +84,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation)
 			if continuation != "" {
 				messages = append(messages, api.Message{Role: "user", Content: continuation})
+				tools = nil
+			}
+			if repetitionRetry {
+				messages = append(messages, api.Message{Role: "user", Content: repetitionRetryInstruction})
 				tools = nil
 			}
 			if budgetErr := o.messagesBudgetError(messages, tools); budgetErr != nil {
@@ -103,6 +114,23 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			strip := newLabelStripper(o.cfg.AgentName)
 			markers := new(historicalAssistantMarkerFilter)
 			var split textclean.ThinkFilter
+			gate := replyPrefixGate{}
+			if spoken.Len() == 0 && continuation == "" && !repetitionAllowed {
+				gate.prior = priorReply
+			}
+			var emitted strings.Builder
+			forward := func(text string) error {
+				if text == "" {
+					return nil
+				}
+				if err := sendChunk(ctx, out, text); err != nil {
+					return err
+				}
+				spoken.WriteString(text)
+				emitted.WriteString(text)
+				return nil
+			}
+			emitText := func(text string) error { return forward(gate.feed(text)) }
 
 			err := o.chat(ctx, req, func(resp api.ChatResponse) error {
 				fieldThink := resp.Message.Thinking
@@ -131,10 +159,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 						return nil
 					}
 					if emit != "" {
-						if err := sendChunk(ctx, out, emit); err != nil {
+						if err := emitText(emit); err != nil {
 							return err
 						}
-						spoken.WriteString(emit)
 					}
 				}
 				if len(resp.Message.ToolCalls) > 0 {
@@ -156,30 +183,24 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if heldSpeak != "" {
 				emit := strip.Feed(markers.Feed(heldSpeak))
 				if emit != "" && !restatementSkip(spoken.String(), textBuf.String()) {
-					if sendErr := sendChunk(ctx, out, emit); sendErr != nil && err == nil {
+					if sendErr := emitText(emit); sendErr != nil && err == nil {
 						err = sendErr
-					} else if sendErr == nil {
-						spoken.WriteString(emit)
 					}
 				}
 			}
 			if held := markers.Flush(); held != "" {
 				emit := strip.Feed(held)
 				if emit != "" && !restatementSkip(spoken.String(), textBuf.String()) {
-					if sendErr := sendChunk(ctx, out, emit); sendErr != nil && err == nil {
+					if sendErr := emitText(emit); sendErr != nil && err == nil {
 						err = sendErr
-					} else if sendErr == nil {
-						spoken.WriteString(emit)
 					}
 				}
 			}
 			// Anything the label check still holds is real reply text; release
 			// it whether the turn ends, errors, or loops into tools.
 			if held := strip.Flush(); held != "" && !restatementSkip(spoken.String(), textBuf.String()) {
-				if sendErr := sendChunk(ctx, out, held); sendErr != nil && err == nil {
+				if sendErr := emitText(held); sendErr != nil && err == nil {
 					err = sendErr
-				} else if sendErr == nil {
-					spoken.WriteString(held)
 				}
 			}
 			if opts.OnUsage != nil {
@@ -197,6 +218,34 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				opts.OnWorkerUsage(u)
 			}
+			if err == nil && gate.repeat {
+				if repetitionRetry {
+					if ctx.Err() != nil || forward(repetitionFallback) != nil {
+						done <- StreamResult{Err: ctx.Err()}
+						return
+					}
+					o.appendMessage(api.Message{Role: "assistant", Content: repetitionFallback}, opts.Identity)
+					o.trimHistory()
+					done <- StreamResult{Err: fmt.Errorf("response repeated after one retry"), Recovered: true}
+					return
+				}
+				decision, checkErr := o.repetitionIntent(ctx, latestMessage, opts)
+				if ctx.Err() != nil {
+					done <- StreamResult{Err: ctx.Err()}
+					return
+				}
+				if checkErr != nil {
+					o.emitContinuity(events.Info{Message: "repetition check unavailable; preserving response: " + checkErr.Error()})
+				} else if decision == "unrequested" {
+					repetitionRetry = true
+					o.emitContinuity(events.Info{Message: "repeated previous answer; retrying once before speech"})
+					continue
+				}
+				repetitionAllowed = true
+			}
+			if err == nil {
+				err = forward(gate.release())
+			}
 			if err != nil {
 				err = fmt.Errorf("ollama stream: %w", err)
 				// A dead context means shutdown or barge-in — no one is
@@ -210,7 +259,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				// Keep any partial streamed text: the user already saw/heard
 				// it, so the next turn's context must include it too.
 				reply := RecoveryReply
-				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, textBuf.String())); partial != "" {
+				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, emitted.String())); partial != "" {
 					reply = partial + "\n\n" + RecoveryReply
 				}
 				o.appendMessage(api.Message{Role: "assistant", Content: reply}, opts.Identity)
@@ -219,14 +268,14 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 
-			if continuation != "" && len(toolCalls) > 0 {
+			if (continuation != "" || repetitionRetry) && len(toolCalls) > 0 {
 				if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
 					done <- StreamResult{Err: err}
 					return
 				}
 				o.appendMessage(api.Message{Role: "assistant", Content: continuityFallback}, opts.Identity)
 				o.trimHistory()
-				done <- StreamResult{Err: fmt.Errorf("continuation returned tool calls"), Recovered: true}
+				done <- StreamResult{Err: fmt.Errorf("response recovery returned tool calls"), Recovered: true}
 				return
 			}
 
