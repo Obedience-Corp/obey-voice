@@ -190,6 +190,7 @@
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
+      "env": "OPENAI_SPEECH_TIMEOUT",
       "editable": true
     },
     {

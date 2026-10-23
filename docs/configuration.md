@@ -108,7 +108,7 @@ when you select it.
 | `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | Model id the speech API synthesizes with (`ollama pull phonon`) |
 | `openai_speech_voice` | `default` | `OPENAI_SPEECH_VOICE` | Voice name on that server. Phonon on Ollama ships one, `default`. The Settings and Personas pickers list the static catalog; a voice from a server with more is typed here and `obey-voice voices` lists what the server has. Persona-overridable |
 | `openai_speech_api_key` | empty | `OPENAI_SPEECH_API_KEY` | Bearer token for a speech API that needs one. Ollama does not |
-| `openai_speech_timeout` | `60` | — | Seconds one speech request may take before it is abandoned |
+| `openai_speech_timeout` | `60` | `OPENAI_SPEECH_TIMEOUT` | Seconds one speech request may take before it is abandoned |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |
 | `tts_voice` | `af_heart` | `TTS_VOICE` | Kokoro voice name |
 | `audio8_voice` | empty | `AUDIO8_VOICE` | Which Audio8 voice speaks. Empty uses the reference packaged with the export; otherwise a voice registered with `obey-voice voices register` (see [Audio8 voices](audio8-voices.md)). Not an enum: registered names are yours, so an unknown one is reported by the provider rather than by `config set`. Switching voices re-pays the ~1.0 s prefix prime |
