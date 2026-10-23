@@ -88,3 +88,12 @@ first-text/total timings. The UI fixture selects and persists reasoning effort i
 a disposable install; evidence is written under `/tmp/obey-codex-settings`.
 
 Protocol reference: [Codex App Server](https://learn.chatgpt.com/docs/app-server).
+
+Persona selection pins the persona document separately from the assembled
+workspace instructions. Ordinary turns keep the persona chosen at conversation
+startup. Explicit switches and settings/prompt reloads transfer the canonical
+transcript, compacted working view, and continuity archive to a fresh Codex
+thread; imported history invalidates the old thread without clearing continuity
+metadata. Saved-session restore deliberately resets the previous session state.
+The Codex test recipe includes the shared selector/pipeline path and verifies
+response identity on disk, persona switches, reloads, and restored replay.

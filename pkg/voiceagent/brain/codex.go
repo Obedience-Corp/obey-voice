@@ -14,14 +14,14 @@ import (
 // CodexBrain owns one conversation. Like other providers, its host serializes
 // history changes with turns; Fresh creates independent worker state.
 type CodexBrain struct {
-	client                                   codexRunner
-	cfg                                      *config.Config
-	systemPrompt, turnInstruction, sessionID string
-	personaReloader, turnReloader            *promptReloader
-	canonical, working                       []Turn
-	speakerNames                             SpeakerNames
-	snapshot                                 ContinuitySnapshot
-	sessionTools                             bool
+	client                                                  codexRunner
+	cfg                                                     *config.Config
+	personaPrompt, systemPrompt, turnInstruction, sessionID string
+	personaReloader, turnReloader                           *promptReloader
+	canonical, working                                      []Turn
+	speakerNames                                            SpeakerNames
+	snapshot                                                ContinuitySnapshot
+	sessionTools                                            bool
 }
 
 func init() {
@@ -47,7 +47,7 @@ func NewCodex(cfg *config.Config) (*CodexBrain, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &CodexBrain{client: client, cfg: cfg, turnInstruction: turn, personaReloader: newPromptReloader(prompts.KindPersona, cfg.Persona, persona, nil), turnReloader: newPromptReloader(prompts.KindTurn, cfg.TurnPrompt, turn, nil)}
+	c := &CodexBrain{client: client, cfg: cfg, personaPrompt: persona, turnInstruction: turn, personaReloader: newPromptReloader(prompts.KindPersona, cfg.Persona, persona, nil), turnReloader: newPromptReloader(prompts.KindTurn, cfg.TurnPrompt, turn, nil)}
 	c.systemPrompt = c.assembleSystem(persona)
 	return c, nil
 }
@@ -61,6 +61,7 @@ func (c *CodexBrain) refreshPrompts(warn func(string)) {
 			if next != c.systemPrompt {
 				c.sessionID = ""
 			}
+			c.personaPrompt = p
 			c.systemPrompt = next
 		} else if warn != nil {
 			warn(err.Error())

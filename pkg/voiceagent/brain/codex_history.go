@@ -9,11 +9,11 @@ import (
 
 func (c *CodexBrain) Fresh() Provider {
 	cfg := c.cfg.Clone()
-	return &CodexBrain{client: c.client, cfg: cfg, systemPrompt: c.systemPrompt, turnInstruction: c.turnInstruction, speakerNames: c.speakerNames}
+	return &CodexBrain{client: c.client, cfg: cfg, personaPrompt: c.personaPrompt, systemPrompt: c.systemPrompt, turnInstruction: c.turnInstruction, speakerNames: c.speakerNames}
 }
 func (c *CodexBrain) FreezePersonaPrompt() string {
 	c.personaReloader = nil
-	return shortPromptHash(c.systemPrompt)
+	return shortPromptHash(c.personaPrompt)
 }
 func (c *CodexBrain) SetSpeakerNames(names SpeakerNames) { c.speakerNames = names }
 func (c *CodexBrain) History() []Turn                    { return deepCopyTurns(c.canonical) }
@@ -31,7 +31,17 @@ func (c *CodexBrain) LoadHistory(turns []Turn) {
 	c.working = deepCopyTurns(turns)
 	c.trimWorking()
 }
-func (c *CodexBrain) ImportHistory(turns []Turn) error { c.LoadHistory(turns); return nil }
+
+// ImportHistory replaces the shared transcript projection without resetting
+// continuity metadata. An imported projection always invalidates the native
+// thread, whose cached history can no longer be assumed to match.
+func (c *CodexBrain) ImportHistory(turns []Turn) error {
+	c.canonical = deepCopyTurns(turns)
+	c.working = deepCopyTurns(turns)
+	c.sessionID = ""
+	c.trimWorking()
+	return nil
+}
 func (c *CodexBrain) ContinuitySnapshot() ContinuitySnapshot {
 	s := c.snapshot
 	s.Archive = slices.Clone(s.Archive)

@@ -283,7 +283,7 @@ acoustic-interruption-pair CONFIG SUITE_DIR RUNTIME_MANIFEST NEW_OUTPUT STIMULUS
 # Codex protocol, cancellation, history, worker routing and settings (no login).
 [no-cd]
 codex:
-    go test -race ./pkg/voiceagent/brain ./pkg/voiceagent/config ./internal/discovery ./internal/persona ./internal/tui -run 'Codex' -count=1
+    go test -race ./pkg/voiceagent/brain ./pkg/voiceagent/config ./internal/discovery ./internal/persona ./internal/persona/runtime ./internal/tui -run 'Codex' -count=1
 
 # Opt-in: real Codex login/inference, temporary workspace, no audio/config edits.
 [no-cd]
