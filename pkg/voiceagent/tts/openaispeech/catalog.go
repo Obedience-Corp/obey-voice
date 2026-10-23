@@ -58,8 +58,14 @@ func (p *Provider) catalogNames(ctx context.Context) (names []string, source, no
 	if !reachable {
 		return nil, CatalogConfigured, ""
 	}
-	if names, ok := p.ollamaVoices(ctx, root); ok {
+	names, answered := p.ollamaVoices(ctx, root)
+	switch {
+	case len(names) > 0:
 		return names, CatalogOllama, ""
+	case !answered:
+		// A failed or timed-out /api/show says nothing about the release;
+		// blaming it would send a user on a current Ollama to upgrade.
+		return nil, CatalogConfigured, ""
 	}
 	return nil, CatalogConfigured, fmt.Sprintf(
 		"Ollama %s lists no voices for %s; Phonon's voice catalog needs the Ollama release that carries %s, then `ollama pull %s` again",
@@ -98,9 +104,10 @@ func (p *Provider) ollamaVersion(ctx context.Context, root string) (string, bool
 	return doc.Version, true
 }
 
-// ollamaVoices reads the voices /api/show lists for the model. Releases
-// before the catalog change omit the field, which is "no voices" here.
-func (p *Provider) ollamaVoices(ctx context.Context, root string) ([]string, bool) {
+// ollamaVoices reads the voices /api/show lists for the model. answered is
+// false when the call failed or did not return 200; a 200 without the field
+// is a release before the catalog change, reported as no names and answered.
+func (p *Provider) ollamaVoices(ctx context.Context, root string) (names []string, answered bool) {
 	body, _ := json.Marshal(map[string]string{"model": p.model})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, root+"/api/show", bytes.NewReader(body))
 	if err != nil {
@@ -121,7 +128,7 @@ func (p *Provider) ollamaVoices(ctx context.Context, root string) ([]string, boo
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&doc); err != nil {
 		return nil, false
 	}
-	return doc.Voices, len(doc.Voices) > 0
+	return doc.Voices, true
 }
 
 // voiceMeta is one line of voices.jsonl.

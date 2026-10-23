@@ -152,3 +152,17 @@ func TestOllamaRootAndFold(t *testing.T) {
 		t.Fatalf("fold: %q %q %q", foldName("Lucía-Sol"), foldName("  ZOEY "), foldName("Maëlys"))
 	}
 }
+
+// A failing /api/show says nothing about the release: no upgrade notice.
+func TestOllamaShowFailureCarriesNoNotice(t *testing.T) {
+	f, srv := newFake(t)
+	f.ollamaVersion = "0.42.0"
+	f.showStatus = 500
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.CatalogSource() != CatalogConfigured || p.CatalogNotice() != "" {
+		t.Fatalf("source %q notice %q", p.CatalogSource(), p.CatalogNotice())
+	}
+}

@@ -518,7 +518,7 @@ func (m *personasModel) clampSelectedVoice() {
 			return
 		}
 	}
-	if liveVoiceCatalogProvider(m.effectiveStackTTSProvider()) && m.voices.voices != nil {
+	if live := m.effectiveStackTTSProvider(); liveVoiceCatalogProvider(live) && m.voices.provider == live && m.voices.voices != nil {
 		// A live catalog is the server's word, but a server may speak a voice
 		// it did not list (ptts loads any file in its folder). Keep a typed
 		// voice on this provider rather than silently reverting to default.
@@ -620,6 +620,7 @@ func (m *personasModel) cancelForm() {
 	// Abandon any in-flight scans with the form they were opened for.
 	m.resetBrainModels()
 	m.resetDirectories()
+	m.resetVoiceCatalog()
 }
 
 func (m *personasModel) resolveDefaultPrompt() string {

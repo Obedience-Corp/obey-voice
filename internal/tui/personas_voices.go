@@ -96,10 +96,7 @@ func (m *personasModel) loadVoiceCatalog() tea.Cmd {
 	m.cancelVoiceCatalog()
 	provider := m.effectiveStackTTSProvider()
 	if !liveVoiceCatalogProvider(provider) || m.voices.load == nil {
-		m.voices.loading = false
-		m.voices.provider = ""
-		m.voices.voices = nil
-		m.voices.notice = ""
+		m.resetVoiceCatalog()
 		return nil
 	}
 	if m.voices.provider == provider && !m.voices.loading && m.voices.voices != nil {
@@ -126,10 +123,21 @@ func (m *personasModel) cancelVoiceCatalog() {
 	}
 }
 
+// resetVoiceCatalog drops live state and retires any fetch in flight: the seq
+// bump means its message, cancelled or not, is ignored when it lands.
+func (m *personasModel) resetVoiceCatalog() {
+	m.cancelVoiceCatalog()
+	m.voices.seq++
+	m.voices.loading = false
+	m.voices.provider = ""
+	m.voices.voices = nil
+	m.voices.notice = ""
+}
+
 // applyVoiceCatalog lands a fetch. A failed fetch leaves the static list and
 // says why on the row; the persona can still be saved with a typed voice.
 func (m *personasModel) applyVoiceCatalog(msg personaVoicesMsg) {
-	if msg.seq != m.voices.seq {
+	if msg.seq != m.voices.seq || msg.provider != m.voices.provider || !m.voices.loading {
 		return
 	}
 	m.cancelVoiceCatalog()

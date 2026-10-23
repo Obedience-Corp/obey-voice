@@ -217,6 +217,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		// dropping the func on the floor.
 		a.personas.preview.close()
 		a.personas.cancelBrainModels()
+		a.personas.cancelVoiceCatalog()
 		a.personas = newPersonas(a.cfg)
 		a.personas.returnScreen = prev
 		if prev == screenConversation && a.runtime != nil {

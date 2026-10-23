@@ -222,3 +222,56 @@ func TestPersonaStaticProvidersNeverFetch(t *testing.T) {
 		t.Fatal("Kokoro's static catalog states locales")
 	}
 }
+
+// A fetch cancelled by moving the TTS row off openai-speech must not land on
+// the Kokoro form as an error, and a late success must not let a Kokoro voice
+// id ride back onto openai-speech.
+func TestPersonaLateCatalogMessagesAreIgnoredAfterAProviderChange(t *testing.T) {
+	m, _ := openaiSpeechForm(t, "")
+	staleSeq := m.voices.seq
+	m.setFormRow(formRowTTSProvider)
+	for providerAt(stackTTSProviders(), m.ttsProviderIdx) != "kokoro" {
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	}
+	// The cancelled fetch reports its cancellation.
+	m.applyVoiceCatalog(personaVoicesMsg{seq: staleSeq, provider: config.OpenAISpeechProviderName, err: context.Canceled})
+	if screen := strings.Join(m.stackLines(), "\n"); strings.Contains(screen, "unavailable") {
+		t.Fatalf("cancelled fetch surfaced on the Kokoro form:\n%s", screen)
+	}
+	// A success that beat the cancel lands too late as well.
+	m.applyVoiceCatalog(personaVoicesMsg{seq: staleSeq, provider: config.OpenAISpeechProviderName, voices: phononCatalog})
+	if m.voices.voices != nil {
+		t.Fatal("late success was applied to a form that left openai-speech")
+	}
+	// Pick a Kokoro voice and return: the voice is not in Phonon's catalog and
+	// must clear even while the new fetch is still in flight.
+	m.setFormRow(formRowVoice)
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	kokoroVoice := m.selectedVoice
+	if kokoroVoice == "" {
+		t.Fatal("no Kokoro voice picked")
+	}
+	m.setFormRow(formRowTTSProvider)
+	for providerAt(stackTTSProviders(), m.ttsProviderIdx) != config.OpenAISpeechProviderName {
+		m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyRight})
+	}
+	if m.selectedVoice != "" {
+		t.Fatalf("Kokoro voice %q survived the move to openai-speech", m.selectedVoice)
+	}
+}
+
+func TestPersonaFormCloseRetiresTheCatalogFetch(t *testing.T) {
+	m, _ := openaiSpeechForm(t, "")
+	seq := m.voices.seq
+	if !m.voices.loading {
+		t.Fatal("no fetch in flight on open")
+	}
+	m.cancelForm()
+	if m.voices.loading || m.voices.seq == seq {
+		t.Fatalf("cancelForm left the fetch live: loading=%v seq %d→%d", m.voices.loading, seq, m.voices.seq)
+	}
+	m.applyVoiceCatalog(personaVoicesMsg{seq: seq, provider: config.OpenAISpeechProviderName, voices: phononCatalog})
+	if m.voices.voices != nil {
+		t.Fatal("a retired fetch was applied after the form closed")
+	}
+}

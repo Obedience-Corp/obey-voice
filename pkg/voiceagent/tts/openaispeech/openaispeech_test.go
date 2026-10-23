@@ -44,6 +44,8 @@ type fakeServer struct {
 	// voices field (nil = a release without the field).
 	ollamaVersion string
 	ollamaVoices  []string
+	// showStatus, when non-zero, is the status /api/show answers with.
+	showStatus int
 }
 
 func (f *fakeServer) handler() http.Handler {
@@ -77,6 +79,10 @@ func (f *fakeServer) handler() http.Handler {
 	mux.HandleFunc("/api/show", func(w http.ResponseWriter, r *http.Request) {
 		if f.ollamaVersion == "" || r.Method != http.MethodPost {
 			http.NotFound(w, r)
+			return
+		}
+		if f.showStatus != 0 {
+			http.Error(w, "boom", f.showStatus)
 			return
 		}
 		var req struct {
