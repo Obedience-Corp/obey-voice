@@ -22,18 +22,13 @@ func NewWorkerProvider(cfg *config.Config) (Provider, error) {
 	workerCfg := config.WorkerBrainConfig(cfg)
 	name := strings.TrimSpace(strings.ToLower(workerCfg.BrainProvider))
 	if !workerProviderAllowed(name) {
-		return nil, fmt.Errorf("unsupported voice_worker_provider %q (allowed: ollama, grok, claude)", name)
+		return nil, fmt.Errorf("unsupported voice_worker_provider %q (allowed: %s)", name, strings.Join(config.WorkerProviders, ", "))
 	}
 	return NewProvider(workerCfg)
 }
 
 func workerProviderAllowed(name string) bool {
-	switch name {
-	case "ollama", "grok", "claude":
-		return true
-	default:
-		return false
-	}
+	return config.WorkerProviderAllowed(name)
 }
 
 // WorkerStreamOptions is the tool surface for background jobs: full assistant

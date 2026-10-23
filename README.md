@@ -2,7 +2,7 @@
 
 A local voice assistant that starts speaking before the model finishes the thought.
 
-Speech stays on your machine. The brain is Claude, Cursor, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
+Speech stays on your machine. The brain is Claude, Codex, Cursor, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
 
 ![Obey Voice TUI in color: launcher, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
 
@@ -77,7 +77,7 @@ obey-voice serve --tailscale
 
 | Layer | Default | Options |
 |-------|---------|---------|
-| Brain | Ollama | Claude CLI, Grok |
+| Brain | Ollama | Claude CLI, [Codex](docs/codex.md), Cursor, Grok |
 | STT | NVIDIA Parakeet TDT (sherpa-onnx) | Whisper (`sherpa`), Zipformer streaming, whisper.cpp |
 | TTS | Kokoro (sherpa-onnx) | native Qwen3-TTS |
 | VAD | Silero | |

@@ -534,6 +534,7 @@
       "default": "ollama",
       "enum": [
         "claude",
+        "codex",
         "cursor",
         "grok",
         "ollama"
@@ -541,7 +542,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Model provider",
-      "help": "Who answers. Ollama runs on this Mac; Claude, Cursor, and Grok call out to their CLIs.",
+      "help": "Who answers. Ollama runs on this Mac; Claude, Codex, Cursor, and Grok call out to their CLIs.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,
@@ -580,6 +581,44 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "CLAUDE_SESSION_WARN_TOKENS",
+      "editable": true
+    },
+    {
+      "key": "codex_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Codex model",
+      "help": "The model used by Codex. Empty uses the Codex default. Requires Codex installed and signed in with codex login.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "CODEX_MODEL",
+      "editable": true
+    },
+    {
+      "key": "codex_reasoning_effort",
+      "type": "enum",
+      "default": "",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Codex reasoning effort",
+      "help": "How much reasoning Codex uses. Empty uses its default. Supported efforts depend on the selected model; higher effort can delay spoken replies.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "CODEX_REASONING_EFFORT",
       "editable": true
     },
     {
@@ -1062,7 +1101,8 @@
       "enum": [
         "ollama",
         "grok",
-        "claude"
+        "claude",
+        "codex"
       ],
       "allows_empty": true,
       "group": "brain",
@@ -2275,6 +2315,7 @@
       "default": "ollama",
       "enum": [
         "claude",
+        "codex",
         "cursor",
         "grok",
         "ollama"

@@ -49,6 +49,8 @@ var envBindings = map[string]string{
 	"brain_provider":              "BRAIN_PROVIDER",
 	"grok_model":                  "GROK_MODEL",
 	"cursor_model":                "CURSOR_MODEL",
+	"codex_model":                 "CODEX_MODEL",
+	"codex_reasoning_effort":      "CODEX_REASONING_EFFORT",
 	"ollama_model":                "OLLAMA_MODEL",
 	"ollama_embedding_model":      "OLLAMA_EMBEDDING_MODEL",
 	"ollama_host":                 "OLLAMA_HOST",

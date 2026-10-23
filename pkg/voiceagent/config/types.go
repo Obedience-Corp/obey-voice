@@ -206,10 +206,12 @@ type Config struct {
 	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds; zero means no cap.
 	VoiceWorkerJobBudget int `mapstructure:"voice_worker_job_budget"`
 	// VoiceWorkerBoundary fences a spawned worker to the campaign it was launched in.
-	VoiceWorkerBoundary bool   `mapstructure:"voice_worker_boundary"`
-	GrokModel           string `mapstructure:"grok_model"`
-	CursorModel         string `mapstructure:"cursor_model"`
-	OllamaModel         string `mapstructure:"ollama_model"`
+	VoiceWorkerBoundary  bool   `mapstructure:"voice_worker_boundary"`
+	GrokModel            string `mapstructure:"grok_model"`
+	CursorModel          string `mapstructure:"cursor_model"`
+	CodexModel           string `mapstructure:"codex_model"`
+	CodexReasoningEffort string `mapstructure:"codex_reasoning_effort"`
+	OllamaModel          string `mapstructure:"ollama_model"`
 	// OllamaEmbeddingModel routes user prompts to relevant Agent Skills. Empty
 	// disables harness-side semantic activation and leaves model-driven
 	// read_skill available as a fallback.

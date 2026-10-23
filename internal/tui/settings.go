@@ -477,6 +477,10 @@ func (m settingsModel) activeModel() string {
 		if m.cfg.CursorModel != "" {
 			return m.cfg.CursorModel
 		}
+	case "codex":
+		if m.cfg.CodexModel != "" {
+			return m.cfg.CodexModel
+		}
 	}
 	return "default"
 }
@@ -784,6 +788,8 @@ func (m *settingsModel) selectModel(model string) tea.Cmd {
 		field, key = &m.cfg.GrokModel, "grok_model"
 	case "cursor":
 		field, key = &m.cfg.CursorModel, "cursor_model"
+	case "codex":
+		field, key = &m.cfg.CodexModel, "codex_model"
 	}
 	if field != nil {
 		if err := config.SetAndSave(key, model); err != nil {
