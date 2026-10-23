@@ -278,6 +278,10 @@
       "value": "obey",
       "source": "default"
     },
+    "persona_routing_timeout": {
+      "value": 120,
+      "source": "default"
+    },
     "phrase_time_limit": {
       "value": 30,
       "source": "default"

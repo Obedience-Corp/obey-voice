@@ -183,6 +183,11 @@ func brainKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "persona_routing_timeout", Type: TypeInt, Default: DefaultPersonaRoutingTimeout, Unit: "seconds", Min: num(1), Max: num(MaxPersonaRoutingTimeout),
+			Group: GroupBrain, Title: "Persona routing timeout",
+			Help: "How long to wait while deciding which persona should answer, including model startup. Lower this to report slow routing sooner.",
+		},
+		{
 			Key: "voice_work_enabled", Type: TypeBool, Default: false,
 			Group: GroupAdvanced, Title: "Experimental work inbox",
 			Help: "Keep background results with the conversation and save pending updates. Experimental; paid worker dispatch is unavailable.",

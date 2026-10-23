@@ -147,6 +147,7 @@ func setDefaults(v *viper.Viper) {
 	// with no ollama_model fails with an actionable message from NewOllama rather
 	// than silently routing to a cloud CLI.
 	v.SetDefault("brain_provider", "ollama")
+	v.SetDefault("persona_routing_timeout", DefaultPersonaRoutingTimeout)
 	for _, key := range decisionKeys() {
 		v.SetDefault(key.Key, key.Default)
 	}

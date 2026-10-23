@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/ollama/ollama/api"
 )
 
@@ -51,13 +51,11 @@ A third-person mention, quotation, hypothetical, comparison, or a request to tal
 Use the addressed name or alias from participants. If the addressed name is shared, preserve that shared name and choose ambiguous; never choose an arbitrary participant. If a clear target is unavailable, return address with that target's name. With no clear change of addressee, return none and an empty name. For multiple simultaneous addressees with no clear single next responder, return ambiguous. Never infer a different identity merely because someone is called a name.
 Bare is true only when kind is address and a user greets a named agent or requests a switch with no substantive question. Bare is false for none, ambiguous, and every agent message. An ordinary greeting or question without a named addressee, such as "Hello" or "How's it going?", is {"kind":"none","name":"","bare":false}; the current responder should answer normally. Return only the JSON object.`
 
-var addresseeResolveTimeout = 15 * time.Second
-
 // ResolveAddressee is private, bounded, tools-free inference. It uses the
 // installed responder model without adding classifier input/output to history.
 func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) (Addressee, error) {
 	parentCtx := ctx
-	ctx, cancel := context.WithTimeout(parentCtx, addresseeResolveTimeout)
+	ctx, cancel := context.WithTimeout(parentCtx, config.PersonaRoutingTimeoutOf(o.cfg))
 	defer cancel()
 	payload, err := json.Marshal(req)
 	if err != nil {

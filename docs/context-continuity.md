@@ -72,8 +72,10 @@ reported without silently choosing another persona.
 
 This private structured request uses the current Ollama model, public names and
 aliases, and up to eight recent conversational messages. It has no tools or
-conversation-history side effects and a 15-second deadline. It adds a model
-request before the reply; its latency depends on the installed model.
+conversation-history side effects. Its deadline is set by
+`persona_routing_timeout` (default 120 seconds), including model startup. Parent
+cancellation still stops the request. It adds a model request before the reply;
+its latency depends on the installed model.
 
 After a successfully completed response containing a persona name, the same
 classifier can recognize an
