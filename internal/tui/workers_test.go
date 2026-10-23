@@ -95,6 +95,37 @@ func TestWorkersReturnsToSameChatAndMuteState(t *testing.T) {
 	}
 }
 
+func TestWorkCueOpensSingleWorkerDetail(t *testing.T) {
+	t.Setenv(demoWorkersEnv, "1")
+	app := newApp(&config.Config{}, nil, nil)
+	app.screen = screenConversation
+	app.width, app.height = 100, 28
+	app.conversation = sizedConversation(t, 100, 28)
+	app.conversation.input.SetValue("unfinished draft")
+
+	model, _ := app.Update(openWorkerMsg{jobID: "job-1"})
+	app = model.(App)
+	if app.screen != screenWorkers || app.workers.detailID != "job-1" {
+		t.Fatalf("worker cue opened screen %v, detail %q", app.screen, app.workers.detailID)
+	}
+	if !strings.Contains(stripANSI(app.View()), "weather in denver") {
+		t.Fatal("selected worker detail is missing its task")
+	}
+	// The manager keeps its established detail → list → chat navigation.
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = model.(App)
+	if app.workers.detailID != "" || app.screen != screenWorkers {
+		t.Fatal("Esc did not return from detail to worker list")
+	}
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = model.(App)
+	model, _ = app.Update(cmd())
+	app = model.(App)
+	if app.screen != screenConversation || app.conversation.input.Value() != "unfinished draft" {
+		t.Fatal("return from worker details lost the conversation draft")
+	}
+}
+
 func TestWorkersKeepsBackgroundCompletionsAndBlocksTalkKey(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	conv, _ := startedConversation(t, &fakeTurnRunner{}, true)

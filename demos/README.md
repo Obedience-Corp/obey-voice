@@ -90,6 +90,20 @@ just demo-workers
 
 Still frame: `demos/frames/workers-detail.png`
 
+## work-cue.gif — background work during conversation
+
+The real conversation TUI shows an animated **Working** cue beside the
+listening meter while Jarvis answers a follow-up. `Ctrl+W` opens the running
+worker's detail. `OBEY_VOICE_DEMO_WORK_CUE=1` scripts bus events and uses the
+workers fixture, so recording needs no live microphone or model.
+
+```bash
+just demo-work-cue
+```
+
+Still frames: `demos/frames/work-cue-listening.png`,
+`demos/frames/work-cue-followup.png`, `demos/frames/work-cue-detail.png`
+
 ## launcher-notice.gif — one-line meeting notice
 
 Launcher after notes route to camp:

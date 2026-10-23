@@ -151,11 +151,17 @@ provider/model, elapsed time, activity and output. Press `s` to stop the
 selected task, or `x` then `y` to stop all running and queued tasks.
 `Esc` returns from details to the list, then to the same chat or menu.
 Voice input pauses while browsing and returns to its previous state.
+During a conversation, background work continues while you talk or type.
+The animated **Working** cue stays in the top-right header beside the voice
+meter and in the footer; queued work has a static cue. Click the header cue
+(with TUI mouse controls enabled) or press `Ctrl+W`. One active job opens its
+detail directly; several active jobs open the worker list. The cue clears when
+the job ends.
 
 **Allow background workers** (`t`) controls new jobs immediately and is saved
 for future chats. Turning it Off does not cancel already-running or queued
 tasks; use **Stop all** for that. The same toggle is in **Settings → Worker**.
-Task details report when termination is unconfirmed. The chat footer shows
+Task details report when termination is unconfirmed. The chat footer also shows
 compact counts and a `/workers` hint instead of the task and tool summary.
 
 `/help` lists every available command. `/settings` opens the TUI settings
@@ -173,6 +179,7 @@ session is saved before the menu opens; choose **Continue** to resume it or
 | `Ctrl+J` | Insert a newline in the draft |
 | Mouse wheel / trackpad, `Page Up` / `Page Down` | Scroll the transcript or focused activity feed |
 | `Ctrl+T` | Focus/unfocus the activity timeline |
+| `Ctrl+W` | Open the active worker detail, or choose from the worker list |
 | `Ctrl+K` | Show or hide model thinking blocks in the thread (`/think`) |
 | `Ctrl+R` | Start or stop Talk recording (`/record talk` / `/record off`). Lab is `/record lab`. Vim mode keeps Ctrl+R as redo. |
 | `Ctrl+Y` | Copy the last assistant reply to the clipboard |

@@ -14,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -73,6 +74,7 @@ type conversationDeps struct {
 	workSnapshot   func() work.Snapshot
 	journalHealth  func() events.WorkJournalHealth
 	workersSummary func() string
+	workers        func() []pipeline.WorkerInfo
 	// compact runs the pipeline's conversation compaction; nil when the
 	// runtime did not wire it (e.g. prompt resolution failed).
 	compact func(ctx context.Context) error
@@ -143,7 +145,7 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		m.appendActivity("output", deviceLabel(deps.outputDevice), 0)
 	}
 	m.recoverWork(time.Now(), true)
-	cmds = append(cmds, m.workProjectionPollCmd())
+	cmds = append(cmds, m.workProjectionPollCmd(), m.ensureVoiceTick())
 	if deps.liveSpeaker != nil {
 		if speaker.FromAppConfig(m.cfg).LiveActive() {
 			deps.liveSpeaker.SetEnabled(true)
@@ -153,6 +155,10 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		cmds = append(cmds, liveSpeakerStatsCmd(deps.liveSpeaker))
 	}
 	// Scripted meter for VHS/termcast demos — skips real mic/TTS turns.
+	if demoWorkCueEnabled() {
+		cmds = append(cmds, startDemoWorkCue(deps.bus), m.ensureVoiceTick())
+		return tea.Batch(cmds...)
+	}
 	if demoVoiceAnimEnabled() {
 		cmds = append(cmds, startDemoVoiceAnim(deps.bus), m.ensureVoiceTick())
 		return tea.Batch(cmds...)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 type voiceAnimationTerminalSnapshot struct {
@@ -33,7 +34,7 @@ func (h *voiceAnimationTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd)
 	model, cmd := h.app.Update(msg)
 	h.app = model.(App)
 	switch msg.(type) {
-	case voiceTickMsg, tea.KeyMsg, settingsDoneMsg:
+	case voiceTickMsg, tea.KeyMsg, settingsDoneMsg, busEventMsg:
 		select {
 		case h.snapshots <- voiceAnimationTerminalSnapshot{
 			screen:   h.app.screen,
@@ -46,6 +47,56 @@ func (h *voiceAnimationTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd)
 		}
 	}
 	return h, cmd
+}
+
+func TestBackgroundWorkerAnimationRendersInTerminalBesideListening(t *testing.T) {
+	app := newApp(&config.Config{}, nil, nil)
+	app.screen = screenConversation
+	app.width, app.height = 120, 24
+	app.conversation = sizedConversation(t, 120, 24)
+	harness := &voiceAnimationTerminalHarness{app: app, snapshots: make(chan voiceAnimationTerminalSnapshot, 64)}
+	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+	defer cancel()
+	var terminal strings.Builder
+	program := tea.NewProgram(harness, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(&terminal), tea.WithoutSignalHandler())
+	done := make(chan error, 1)
+	go func() { _, err := program.Run(); done <- err }()
+	stopped := false
+	defer func() {
+		if stopped {
+			return
+		}
+		program.Quit()
+		if err := <-done; err != nil {
+			t.Errorf("terminal shutdown: %v", err)
+		}
+	}()
+
+	program.Send(busEventMsg{event: events.JobStarted{ID: "job-1", Task: "inspect files"}})
+	first := awaitVoiceAnimationSnapshot(t, harness.snapshots, "worker start", func(s voiceAnimationTerminalSnapshot) bool {
+		return strings.Contains(s.view, "◐ Working · ^W")
+	})
+	awaitVoiceAnimationSnapshot(t, harness.snapshots, "worker animation tick", func(s voiceAnimationTerminalSnapshot) bool {
+		return s.frame > first.frame && strings.Contains(s.view, "◓ Working · ^W")
+	})
+	program.Send(busEventMsg{event: events.STTPhase{Phase: "listening"}})
+	awaitVoiceAnimationSnapshot(t, harness.snapshots, "work beside listening", func(s voiceAnimationTerminalSnapshot) bool {
+		header := strings.SplitN(s.view, "\n", 2)[0]
+		return strings.Contains(header, "Working · ^W") && strings.Contains(header, "Listening")
+	})
+	program.Send(busEventMsg{event: events.JobFinished{ID: "job-1", Task: "inspect files"}})
+	awaitVoiceAnimationSnapshot(t, harness.snapshots, "worker completion", func(s voiceAnimationTerminalSnapshot) bool {
+		return !strings.Contains(s.view, "Working · ^W") && strings.Contains(s.view, "Listening")
+	})
+	program.Quit()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	stopped = true
+	output := stripANSI(terminal.String())
+	if !strings.Contains(output, "Working · ^W") || !strings.Contains(output, "inspect files · done") {
+		t.Fatal("Bubble Tea terminal output omitted work or completion")
+	}
 }
 
 func (h *voiceAnimationTerminalHarness) View() string { return h.app.View() }

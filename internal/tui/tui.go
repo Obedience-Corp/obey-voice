@@ -172,6 +172,10 @@ func (a App) Init() tea.Cmd {
 // switchScreen is a message to change screens.
 type switchScreenMsg screen
 
+// openWorkerMsg enters the worker manager at a specific live job when there is
+// exactly one; an empty ID opens the list for the user to choose.
+type openWorkerMsg struct{ jobID string }
+
 // settingsDoneMsg returns from settings to the screen that opened it.
 type settingsDoneMsg struct{}
 
@@ -261,6 +265,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a = a.onWindowSize(msg)
 	case switchScreenMsg:
 		return a.onSwitchScreen(msg)
+	case openWorkerMsg:
+		model, cmd := a.onSwitchScreen(switchScreenMsg(screenWorkers))
+		app := model.(App)
+		app.workers.openDetail(msg.jobID)
+		return app, cmd
 	case openSettingsSectionMsg:
 		return a.onOpenSettingsSection(msg)
 	case startMeetingMsg:
