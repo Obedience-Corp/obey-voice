@@ -1,5 +1,20 @@
 # Demos
 
+## README demo
+
+`just demo` builds the current binary and records `demos/readme.tape` into
+`docs/images/tui.gif`: launcher → persona picker → listening/hearing/speaking
+activity and a reply. The real Bubble Tea TUI runs in a VHS terminal.
+
+The fixture uses a temporary home, a loopback model stub, and the existing
+scripted voice events. It needs no microphone, playback, downloaded models,
+credentials, or personal configuration. Voice activity is simulated; this is a
+UI walkthrough, not an inference or latency benchmark.
+
+Color is forced in both the recorder and child process, including when the
+calling shell sets `NO_COLOR`. The GIF uses the terminal palette and is optimized
+for the README. Requirements: `vhs`, `ffmpeg`, `python3`, and the normal build tools.
+
 ## tool-calls.gif — main Obey Voice TUI + live tool call
 
 Full Bubble Tea UI (not `--no-tui`):
@@ -15,7 +30,7 @@ palette-optimized 960px version; there is no fake shell transcript or static
 mock screen.
 
 ```bash
-just demo
+just demo-tool-calls
 ```
 
 The recipe builds `./bin/obey-voice`, runs `vhs demos/tool-calls.tape` against a

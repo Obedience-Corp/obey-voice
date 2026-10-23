@@ -2,7 +2,7 @@
 # This follows the termcast recording contract: real binary, real PTY, dark
 # branded terminal, hidden setup, and a short story that fits a README GIF.
 # From repo root after `just build`:
-#   just demo
+#   just demo-tool-calls
 
 Output demos/tool-calls.gif
 

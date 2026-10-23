@@ -34,3 +34,12 @@ demo-persona-model-view: build
     ffmpeg -y -loglevel error -ss 13 -i demos/persona-model-view.gif -frames:v 1 demos/frames/persona-model-claude.png
     ffmpeg -y -loglevel error -ss 18 -i demos/persona-model-view.gif -frames:v 1 demos/frames/persona-model-edit.png
     ls -lh demos/persona-model-view.gif
+
+# Record the README hero in color without user config, audio, or inference.
+demo-readme: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p docs/images
+    env -u NO_COLOR -u CLICOLOR CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor vhs demos/readme.tape
+    just _optimize-demo-gif docs/images/tui.gif
