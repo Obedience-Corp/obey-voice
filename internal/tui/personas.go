@@ -12,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/persona/campdirs"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
@@ -74,6 +75,11 @@ type personasModel struct {
 	// Model row picker: discovered models per provider + async scan state.
 	// See personas_models.go; brainModelInput stays the selected value.
 	brainModels personaModelPicker
+	// Starting directory row: the folder new conversations with this persona
+	// run file & shell tools in. directoryInput holds the path; the picker
+	// offers registered camps and a (custom) field. See personas_directory.go.
+	directoryInput textinput.Model
+	directory      personaDirectoryPicker
 
 	preview voicePreview
 
@@ -83,6 +89,7 @@ type personasModel struct {
 	savePrompt           func(id, systemPrompt string) (*persona.Profile, error)
 	saveName             func(id, displayName string) (*persona.Profile, error)
 	saveStack            func(id string, b persona.Brain, t persona.TTS) (*persona.Profile, error)
+	saveDirectory        func(id, directory string) (*persona.Profile, error)
 	deletePersona        func(*config.Config, string) (*persona.DeleteResult, error)
 	setInactive          func(*config.Config, string, bool) (*persona.Profile, error)
 	selectedPersona      func() string
@@ -109,6 +116,7 @@ func newPersonas(cfg *config.Config) personasModel {
 		savePrompt:    persona.UpdateSystemPrompt,
 		saveName:      persona.UpdateDisplayName,
 		saveStack:     persona.UpdateStack,
+		saveDirectory: persona.UpdateStartingDirectory,
 		deletePersona: persona.Delete,
 		setInactive:   persona.SetInactive,
 		loadPrompt:    persona.LoadSystemPrompt,
@@ -120,6 +128,7 @@ func newPersonas(cfg *config.Config) personasModel {
 		nameInput:            newPersonaCreateInput(),
 		promptTA:             newPromptEditor(),
 		brainModelInput:      newPersonaStackInput("empty = provider default"),
+		directoryInput:       newPersonaDirectoryInput(),
 		preview: voicePreview{
 			newPreviewPlayer: func() audio.Engine {
 				if cfg == nil {
@@ -137,6 +146,9 @@ func newPersonas(cfg *config.Config) personasModel {
 	// command on form open, never here: constructing the screen must not block
 	// on an ollama socket (and tests must not reach the network at all).
 	m.brainModels.discover = discovery.DiscoverProvidersContext
+	// The Directory row lists registered camps the same way Settings → Meeting
+	// finds route destinations: `camp list --json`, on form open, never here.
+	m.directory.discover = campdirs.DiscoverDefault
 	m.reload()
 	return m
 }
@@ -214,6 +226,9 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 
 	case personaModelsMsg:
 		m.applyBrainModels(msg)
+
+	case personaDirectoriesMsg:
+		m.applyDirectories(msg)
 
 	case voicePreviewDoneMsg:
 		if m.preview.applyDone(msg) && msg.message != "" {

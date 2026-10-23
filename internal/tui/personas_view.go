@@ -127,6 +127,7 @@ func (m personasModel) formLines() []string {
 		nameTitle += dimStyle.Render(" · id: " + slug)
 	}
 	stackTitle := headerStyle.Render("Model & voice") + dimStyle.Render(" · (default) inherits Settings")
+	directoryTitle := headerStyle.Render("Starting directory") + dimStyle.Render(" · (default) inherits app work_dir")
 	promptTitle := headerStyle.Render("System prompt") + dimStyle.Render(" · {agent_name} supported")
 
 	lines := []string{
@@ -135,6 +136,7 @@ func (m personasModel) formLines() []string {
 	}
 	lines = append(lines, formBox(nameTitle, []string{m.nameInput.View()}, boxW, m.formRow == formRowName)...)
 	lines = append(lines, formBox(stackTitle, m.stackLines(), boxW, isStackRow(m.formRow))...)
+	lines = append(lines, formBox(directoryTitle, m.directoryLines(), boxW, m.formRow == formRowDirectory)...)
 	lines = append(lines, formBox(promptTitle, m.promptSummaryLines(), boxW, m.formRow == formRowPrompt)...)
 	return lines
 }

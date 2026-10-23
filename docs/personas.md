@@ -26,8 +26,9 @@ name and voice keys stay consistent. The same removal from the shell is
 `obey-voice persona delete <id> --yes`.
 
 The create/edit form is one screen, not a wizard: Name, the Model & voice rows
-(Brain, Model, TTS, Voice, Tier), and the System prompt. `↑`/`↓` (or tab) move
-between rows, `←`/`→` change the provider, model or voice under the cursor, `p`
+(Brain, Model, TTS, Voice, Tier), the Starting directory, and the System prompt.
+`↑`/`↓` (or tab) move between rows, `←`/`→` change the provider, model, voice or
+directory under the cursor, `p`
 on the Voice row previews the selected voice (the same sample Settings uses;
 `(default)` plays the inherited Settings voice), and `ctrl+j` (also `alt+s`,
 `f2`, `ctrl+s`) saves from anywhere — so changing a persona's model or voice
@@ -120,13 +121,28 @@ proof sample is not a latency guarantee.
 
 ## Starting directories
 
-`obey-voice persona edit samantha --starting-directory ~/Dev/api` saves a local
-starting directory for new conversations. `--starting-directory ""` restores
-inheritance from the application working directory. Create accepts the same
-flag. List/show JSON includes `starting_directory`; shipped personas leave it
-empty. `persona directories --json` discovers registered local camps when
-`camp` is available; discovery failures return a notice without disabling
-custom paths.
+A persona may name the folder new conversations start in: file and shell
+tools, worker boundaries, skills and campaign context all use it. Empty
+inherits the application working directory, which is what shipped personas do.
+
+In the TUI form the Starting directory row cycles with `←`/`→` through
+`(default)`, every registered local camp (discovered with `camp list --json`
+when the `camp` CLI is installed, exactly as Settings → Meeting finds route
+destinations), and `(custom)`, which opens a text field for any folder (`~` is
+expanded). The line under the row shows the folder the choice resolves to. The
+folder is checked when the persona is saved, before anything is written: a
+missing folder or a file keeps the form open on the row and names the persona
+and path. A persona whose saved folder has since disappeared still opens and
+saves its other fields; the row says the folder is missing until `(default)` or
+another folder is chosen. When camp discovery fails or finds nothing, the row
+says so and `(custom)` stays available. The Personas list detail pane shows
+each persona's configured directory or `(app default)`.
+
+From the shell, `obey-voice persona edit samantha --starting-directory ~/Dev/api`
+saves the same value; `--starting-directory ""` restores inheritance. Create
+accepts the same flag. List/show JSON includes `starting_directory`.
+`persona directories --json` lists the registered local camps the form offers;
+discovery failures return a notice without disabling custom paths.
 
 For a new conversation, explicit `--work-dir` / desktop API override wins,
 then `OBEY_VOICE_WORK_DIR` (legacy `WORK_DIR`), then the persona, then the app
