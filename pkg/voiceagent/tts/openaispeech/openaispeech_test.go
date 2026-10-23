@@ -22,15 +22,16 @@ import (
 // /audio/speech streaming pcm in the chunk sizes the test chooses, a 400 that
 // names the voices for an unknown one, and no /audio/voices.
 type fakeServer struct {
-	t        *testing.T
-	models   []string
-	voices   []string
-	chunks   []int // byte sizes to flush per write; cycles
-	samples  int   // samples per request
-	mu       sync.Mutex
-	requests []speechRequest
-	voiceAPI []string // when non-nil, GET /audio/voices answers with these
-	hold     chan struct{}
+	t            *testing.T
+	models       []string
+	voices       []string
+	chunks       []int // byte sizes to flush per write; cycles
+	samples      int   // samples per request
+	mu           sync.Mutex
+	requests     []speechRequest
+	showRequests []string
+	voiceAPI     []string // when non-nil, GET /audio/voices answers with these
+	hold         chan struct{}
 	// holdAfterFirst blocks the body after the first flushed chunk, so a test
 	// can cancel while the decode loop is mid-stream.
 	holdAfterFirst chan struct{}
@@ -38,6 +39,11 @@ type fakeServer struct {
 	// failStatus, when non-zero, answers every speech request with that
 	// status and an OpenAI error envelope.
 	failStatus int
+	// ollamaVersion, when set, makes the fake answer GET /api/version and
+	// POST /api/show like Ollama; ollamaVoices is the show response's
+	// voices field (nil = a release without the field).
+	ollamaVersion string
+	ollamaVoices  []string
 }
 
 func (f *fakeServer) handler() http.Handler {
@@ -60,6 +66,31 @@ func (f *fakeServer) handler() http.Handler {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"voices": f.voiceAPI})
+	})
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		if f.ollamaVersion == "" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"version": f.ollamaVersion})
+	})
+	mux.HandleFunc("/api/show", func(w http.ResponseWriter, r *http.Request) {
+		if f.ollamaVersion == "" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		f.mu.Lock()
+		f.showRequests = append(f.showRequests, req.Model)
+		f.mu.Unlock()
+		out := map[string]any{"capabilities": []string{"speech"}}
+		if f.ollamaVoices != nil {
+			out["voices"] = f.ollamaVoices
+		}
+		_ = json.NewEncoder(w).Encode(out)
 	})
 	mux.HandleFunc("/v1/audio/speech", func(w http.ResponseWriter, r *http.Request) {
 		var req speechRequest
@@ -426,7 +457,8 @@ func TestVoiceCatalogFromServerWhenOffered(t *testing.T) {
 	for _, v := range p.ListVoices("", "") {
 		names = append(names, v.Name)
 	}
-	if strings.Join(names, ",") != "Freya,Harper,default" {
+	// Ordered by locale group then name so every surface shows one order.
+	if strings.Join(names, ",") != "default,Freya,Harper" {
 		t.Fatalf("voices = %v", names)
 	}
 	for _, body := range []string{`["a","b"]`, `{"voices":[{"name":"a"},{"id":"b"}]}`, `{"data":[{"id":"a"},{"id":"b"}]}`} {

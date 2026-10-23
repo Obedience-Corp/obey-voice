@@ -278,6 +278,28 @@ type Voice struct {
 	// Gender made `voices --gender male` drop every registered voice and
 	// `voices --json` emit "gender":"recording".
 	Kind string
+	// Age and Description come from a catalog that describes its voices
+	// (Gradium's voices.jsonl for Phonon: "Young Adult", "warm narrator…").
+	// Empty for catalogs that carry only names.
+	Age         string
+	Description string
+}
+
+// CatalogNoticer is optionally implemented by providers whose voice catalog
+// can be smaller than the engine's for a reason the user can act on: Ollama
+// below the release that lists Phonon's voices, a server that published no
+// catalog. The notice is shown next to the voice list; an empty string means
+// the catalog is what it should be.
+type CatalogNoticer interface {
+	CatalogNotice() string
+}
+
+// CatalogNoticeOf reports the provider's catalog notice, or "".
+func CatalogNoticeOf(p Provider) string {
+	if n, ok := p.(CatalogNoticer); ok {
+		return n.CatalogNotice()
+	}
+	return ""
 }
 
 // VoiceNames returns the ordered list of all kokoro voice names.

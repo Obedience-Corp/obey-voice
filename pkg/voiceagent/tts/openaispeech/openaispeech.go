@@ -49,9 +49,16 @@ type Provider struct {
 
 	alive  atomic.Bool
 	detail string
-	// voices is the server's catalog when it offers GET /audio/voices (the
-	// ptts server does; Ollama does not), else the configured voice.
+	// voices is the catalog: the server's GET /audio/voices when it offers
+	// one (the ptts server does), Ollama's /api/show voices when the target
+	// is Ollama and its release lists them, else the configured voice.
 	voices []tts.Voice
+	// catalogSource says which of those answered: "server", "ollama" or
+	// "configured". notice explains a "configured" answer the user can fix.
+	catalogSource string
+	notice        string
+	// modelsDir is where voices.jsonl, the descriptive catalog, is looked for.
+	modelsDir string
 }
 
 // New constructs the provider after proving the server answers and, when it
@@ -74,6 +81,9 @@ func New(cfg *config.Config) (*Provider, func(), error) {
 	}
 	if p.voice == "" {
 		p.voice = config.DefaultOpenAISpeechVoice
+	}
+	if cfg != nil {
+		p.modelsDir = config.ModelsDirFrom(cfg)
 	}
 	if err := p.probe(context.Background()); err != nil {
 		return nil, nil, err
@@ -106,7 +116,7 @@ func (p *Provider) probe(ctx context.Context) error {
 			p.model, p.base, strings.Join(ids, ", "), p.model))
 	}
 	p.detail = p.model + " at " + p.base
-	p.voices = p.fetchVoices(ctx)
+	p.loadCatalog(ctx)
 	return nil
 }
 
@@ -116,41 +126,25 @@ func (p *Provider) auth(req *http.Request) {
 	}
 }
 
-// fetchVoices asks for the catalog a ptts-style server publishes. Any failure,
-// including Ollama's 404, means the configured voice is the whole catalog.
-func (p *Provider) fetchVoices(ctx context.Context) []tts.Voice {
-	fallback := []tts.Voice{{Name: p.voice, FriendlyName: p.voice}}
+// fetchServerVoices asks for the catalog a ptts-style server publishes. Any
+// failure, including Ollama's 404, reports no catalog.
+func (p *Provider) fetchServerVoices(ctx context.Context) ([]string, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.base+"/audio/voices", nil)
 	if err != nil {
-		return fallback
+		return nil, false
 	}
 	p.auth(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return fallback
+		return nil, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fallback
+		return nil, false
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	names := voiceNames(body)
-	if len(names) == 0 {
-		return fallback
-	}
-	out := make([]tts.Voice, 0, len(names)+1)
-	seen := map[string]bool{}
-	for _, n := range names {
-		if n == "" || seen[strings.ToLower(n)] {
-			continue
-		}
-		seen[strings.ToLower(n)] = true
-		out = append(out, tts.Voice{Name: n, FriendlyName: n})
-	}
-	if !seen[strings.ToLower(p.voice)] {
-		out = append(out, tts.Voice{Name: p.voice, FriendlyName: p.voice})
-	}
-	return out
+	return names, len(names) > 0
 }
 
 // Synthesize streams PCM for text in the configured voice.
@@ -466,11 +460,19 @@ func (p *Provider) ProviderName() string { return config.OpenAISpeechProviderNam
 // measurement from another on this provider.
 func (p *Provider) ModelTier() string { return p.model }
 
-// ListVoices returns the server catalog when it published one, else the
-// configured voice. Filters apply only to voices that carry the attribute.
+// ListVoices returns the catalog loadCatalog assembled. Filters apply only to
+// voices that carry the attribute.
 func (p *Provider) ListVoices(locale, gender string) []tts.Voice {
 	return FilterVoices(p.voices, locale, gender)
 }
+
+// CatalogNotice explains a catalog that is only the configured voice when the
+// user can do something about it; "" otherwise.
+func (p *Provider) CatalogNotice() string { return p.notice }
+
+// CatalogSource is "server" (GET /audio/voices), "ollama" (/api/show voices)
+// or "configured" (nothing published; the configured voice stands alone).
+func (p *Provider) CatalogSource() string { return p.catalogSource }
 
 // FilterVoices applies the locale/gender filters the way Kokoro's catalog
 // does, skipping the check for voices that do not state the attribute.
