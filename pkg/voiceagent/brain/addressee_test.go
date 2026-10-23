@@ -25,6 +25,7 @@ func TestResolveAddresseePrivateAndValidated(t *testing.T) {
 	}{
 		{"address", `{"kind":"address","name":"Santa","bare":false}`, false, ""},
 		{"none", `{"kind":"none","name":"","bare":false}`, false, ""},
+		{"greeting without addressee", `{"kind":"none","name":"","bare":true}`, false, ""},
 		{"ambiguous", `{"kind":"ambiguous","name":"Santa","bare":false}`, false, ""},
 		{"malformed", `not json`, true, admission.ClassifierInvalidOutput},
 		{"unknown kind", `{"kind":"switch","name":"Santa","bare":false}`, true, admission.ClassifierInvalidOutput},
@@ -47,6 +48,9 @@ func TestResolveAddresseePrivateAndValidated(t *testing.T) {
 			result, err := o.ResolveAddressee(t.Context(), AddressRequest{Participants: []GroupParticipant{{Name: "Jarvis"}, {Name: "Santa"}}, Account: "user", Text: "What do you think Santa"})
 			if (err != nil) != tc.bad {
 				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if !tc.bad && result.Kind == "none" && result.Bare {
+				t.Fatal("no-address greeting must remain a full conversational turn")
 			}
 			if tc.kind != "" {
 				got, ok := admission.ClassifierFailureKindOf(err)
