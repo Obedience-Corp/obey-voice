@@ -11,13 +11,14 @@ import (
 // ManagedTTS reports whether cfg selects a TTS provider whose model assets
 // obey-voice manages (downloads, verifies, and diagnoses). It is the single
 // authority the asset resolver, installer, and doctor consult, so they cannot
-// drift when a provider or alias is added.
+// drift when a provider or alias is added. For openai-speech that is the model
+// pulled into Ollama and the voice catalog file, never a manifest asset.
 func ManagedTTS(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.TTSProvider)) {
-	case "kokoro", qwen.ProviderName:
+	case "kokoro", qwen.ProviderName, OpenAISpeechProviderName:
 		return true
 	default:
 		return false
