@@ -26,8 +26,10 @@ a six-second reply fully synthesized in 65 to 128 ms. The first request after
 Ollama unloads the idle model paid 2.4 s to reload it. For comparison,
 obey-voice's measured Kokoro synthesizes one sentence in about 900 ms
 (1.32x realtime; see `docs/benchmarks/N7-tts-bake-off-2026-08-12.md`). These
-are endpoint timings, not pipeline timings; `just bench tts "kokoro openai-speech"`
-measures the real seam.
+are endpoint timings. Through the real provider seam
+([P1](benchmarks/P1-phonon-vs-kokoro-2026-10-23.md), same day): Phonon's first
+PCM frame in 4 ms against Kokoro's 290 ms for one sentence, 78 to 92x realtime
+against 4.1 to 4.5x. `just bench tts "kokoro openai-speech"` measures full turns.
 
 ## Any other server
 
