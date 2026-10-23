@@ -26,14 +26,26 @@ name and voice keys stay consistent. The same removal from the shell is
 `obey-voice persona delete <id> --yes`.
 
 The create/edit form is one screen, not a wizard: Name, the Model & voice rows
-(Brain, Model, TTS, Voice, Tier), the Starting directory, and the System prompt.
-`↑`/`↓` (or tab) move between rows, `←`/`→` change the provider, model, voice or
-directory under the cursor, `p`
+(Brain, Model, TTS, Voice, Language, Tier), the Starting directory, and the
+System prompt. `↑`/`↓` (or tab) move between rows, `←`/`→` change the provider,
+model, voice, language or directory under the cursor, `p`
 on the Voice row previews the selected voice (the same sample Settings uses;
 `(default)` plays the inherited Settings voice), and `ctrl+j` (also `alt+s`,
 `f2`, `ctrl+s`) saves from anywhere — so changing a persona's model or voice
 never goes through the prompt editor. `esc` cancels, except while the prompt
 differs from what the form opened with; that is discarded explicitly with `:q`.
+
+The Voice row shows its position (`6/37`) once a catalog is longer than eight
+voices. The Language row narrows it to one locale when the catalog states
+locales (Kokoro's `en-us`/`en-gb`/…, Phonon's languages and `characters`); it
+is a filter for picking, not a saved setting, and a voice with no locale (the
+server's `default`) stays visible under every filter. For `openai-speech` the
+catalog is fetched from the configured server when the form opens or the TTS
+row lands on it; until it answers the row lists the configured voice plus
+`default` with a "fetching" note, and a server that lists nothing keeps that
+list with the reason under the row (see [openai-speech.md](openai-speech.md)).
+The dim line under the Voice row describes the pick when the catalog can
+(locale, gender, age, description).
 From the Personas list, `e` opens the form on the name and `m` opens it straight
 on Model & voice.
 

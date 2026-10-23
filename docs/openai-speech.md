@@ -65,13 +65,31 @@ server that wants a bearer token.
 A persona may pin `tts_provider: openai-speech` and a voice; the voice lands in
 `openai_speech_voice`, never in Kokoro's `tts_voice`.
 
-The Settings and Personas pickers list the configured voice plus `default`.
-They do not ask the server: pickers in this app never construct a provider or
-touch the network. To see what a server actually offers, run
-`obey-voice voices` with `tts_provider: openai-speech`; it constructs the
-provider and lists the catalog the server published through
-`GET /v1/audio/voices` (Gradium's `ptts-openai-server` does, Ollama does not),
-or the configured voice when there is no such endpoint. Then set
-`openai_speech_voice` (or the persona's voice) to any listed name. An unknown
-name is reported by the server at the first synthesis, naming the voices it
-has. Wiring the live catalog into the pickers is a follow-up.
+The catalog comes from the first of these that answers, and
+`obey-voice voices --json` reports which in its `catalog` field:
+
+| `catalog` | Where the names came from |
+|---|---|
+| `server` | `GET /v1/audio/voices`, which Gradium's `ptts-openai-server` publishes for the voice files it loaded |
+| `ollama` | Ollama's `/api/show` `voices` list, present from the release that carries [ollama/ollama#19242](https://github.com/ollama/ollama/pull/19242) (the English catalog baked into `phonon`) |
+| `configured` | Nothing was published: the configured voice plus `default` |
+
+When the target is Ollama and its release lists no voices, the JSON carries a
+`notice` naming the version and the upstream change; the Personas form shows
+the same text under the Voice row. A non-Ollama server with no catalog has no
+notice: one voice is simply what it has.
+
+Descriptions ride along from Gradium's catalog file. Place `voices.jsonl` from
+[huggingface.co/gradium/phonon-voices](https://huggingface.co/gradium/phonon-voices)
+at `<models_dir>/phonon/voices.jsonl` and every listed voice gains `locale`,
+`gender`, `age` and `description`, matched by name in any case and with or
+without accents (the way Ollama matches the `voice` field). The catalog is
+ordered by locale, then name, so every surface shows one order; the
+`--locale` and `--gender` filters apply to the merged attributes.
+
+The Personas form asks the server for this catalog when it opens on
+`openai-speech` (three HTTP calls, no model load) and offers a Language row to
+narrow it; a voice typed for a server that did not list it is kept. The
+Settings voice list still shows the configured voice plus `default`; wiring
+the live catalog into Settings is the next slice. An unknown name is reported
+by the server at the first synthesis, naming the voices it has.
