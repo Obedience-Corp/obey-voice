@@ -115,7 +115,16 @@ func (m settingsModel) qwenRows() []settingRow {
 }
 
 func voiceOptionLabel(v tts.Voice) string {
-	return fmt.Sprintf("%-16s %s / %s", v.Name, v.Gender, v.Locale)
+	var attrs []string
+	for _, s := range []string{v.Gender, v.Locale} {
+		if s = strings.TrimSpace(s); s != "" {
+			attrs = append(attrs, s)
+		}
+	}
+	if len(attrs) == 0 {
+		return v.Name
+	}
+	return fmt.Sprintf("%-16s %s", v.Name, strings.Join(attrs, " / "))
 }
 
 func (m settingsModel) voiceRows() []settingRow {
@@ -134,23 +143,30 @@ func (m settingsModel) voiceRows() []settingRow {
 	// The closures act on the list this row showed, not on whatever the
 	// model holds when the key lands: a Qwen install finishing while the
 	// picker is open rebuilds voiceItems underneath it.
-	voices := m.voiceItems
+	voices := m.shownVoiceItems()
 	options := make([]string, len(voices))
+	details := make([]string, len(voices))
 	current := -1
 	for i, v := range voices {
 		options[i] = voiceOptionLabel(v)
+		details[i] = voiceEntryDetail(v)
 		if strings.EqualFold(v.Name, active) {
 			current = i
 		}
 	}
-	row.options, row.current = options, current
+	row.options, row.current, row.details = options, current, details
 	row.value = active
 	if current >= 0 {
 		row.value = voices[current].Name
 	}
+	var notes []string
 	if m.preview.previewing != "" {
-		row.detail = "♫ playing " + m.preview.previewing + "…"
+		notes = append(notes, "♫ playing "+m.preview.previewing+"…")
 	}
+	if note := m.voices.note(provider); note != "" {
+		notes = append(notes, note)
+	}
+	row.detail = strings.Join(notes, " · ")
 	row.set = func(m *settingsModel, i int) tea.Cmd { return m.selectVoice(voices[i]) }
 	row.preview = func(m *settingsModel, i int) tea.Cmd {
 		if i < 0 || i >= len(voices) {

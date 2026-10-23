@@ -117,6 +117,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 	if a.screen == screenSettings {
 		a.settings.closePreview()
 		a.settings.cancelEnroll()
+		a.settings.voices.reset()
 	}
 	if a.screen == screenPersonas && target != screenPersonas {
 		a.personas.preview.close()
@@ -172,7 +173,10 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		// WindowSizeMsg while settings is open.
 		a.settings.width, a.settings.height = a.width, a.height
 		a.settings.ensureCursorVisible()
-		return a, tea.Batch(a.settings.loadDevices(), pauseVoice, a.settings.pollDecisionStatus())
+		// Built before the return: the loaders mark a.settings as loading, and
+		// that must be in the a that is returned.
+		cmds := tea.Batch(a.settings.loadDevices(), a.settings.loadVoiceCatalog(), pauseVoice, a.settings.pollDecisionStatus())
+		return a, cmds
 	case screenWorkers:
 		var controller workerController
 		if a.runtime != nil && a.runtime.Pipeline != nil {

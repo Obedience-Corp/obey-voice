@@ -239,7 +239,12 @@ func (m settingsModel) rowLine(row settingRow, focused bool, nameWidth int) stri
 		name = ansi.Truncate(name, nameWidth-2, "…")
 	}
 	pad := max(nameWidth-lipgloss.Width(name), 1)
-	line := "  " + cursor + nameStyle.Render(name) + strings.Repeat(" ", pad) + m.rowValue(row)
+	lead := "  " + cursor + nameStyle.Render(name) + strings.Repeat(" ", pad)
+	value := m.rowValue(row)
+	if row.kind == rowChoice && !row.disabled {
+		value = choiceValue(row, m.contentWidth()-lipgloss.Width(lead))
+	}
+	line := lead + value
 	if row.detail != "" && !row.disabled {
 		line += "  " + dimStyle.Render(row.detail)
 	}
@@ -255,18 +260,7 @@ func (m settingsModel) rowValue(row settingRow) string {
 	}
 	switch row.kind {
 	case rowChoice:
-		parts := make([]string, 0, len(row.options)+1)
-		if row.current < 0 && row.value != "" {
-			parts = append(parts, normalStyle.Render(row.value)+dimStyle.Render(" ·"))
-		}
-		for i, option := range row.options {
-			if i == row.current {
-				parts = append(parts, statusStyle.Render("["+option+"]"))
-			} else {
-				parts = append(parts, dimStyle.Render(" "+option+" "))
-			}
-		}
-		return strings.Join(parts, " ")
+		return choiceValue(row, 0)
 	case rowPick, rowMenu:
 		return dimStyle.Render("nothing to choose from")
 	case rowToggle:
@@ -284,10 +278,42 @@ func (m settingsModel) rowValue(row settingRow) string {
 	return normalStyle.Render(row.value)
 }
 
+// choiceValue draws a choice row's options with [current] marked. When they
+// overflow width (> 0), leading options give way to "…" so the current one
+// stays on screen.
+func choiceValue(row settingRow, width int) string {
+	parts := make([]string, 0, len(row.options)+1)
+	if row.current < 0 && row.value != "" {
+		parts = append(parts, normalStyle.Render(row.value)+dimStyle.Render(" ·"))
+	}
+	for i, option := range row.options {
+		if i == row.current {
+			parts = append(parts, statusStyle.Render("["+option+"]"))
+		} else {
+			parts = append(parts, dimStyle.Render(" "+option+" "))
+		}
+	}
+	fits := func(from int) bool {
+		w := lipgloss.Width(strings.Join(parts[from:row.current+1], " "))
+		if from > 0 {
+			w += 2 // "… "
+		}
+		return w <= width
+	}
+	start := 0
+	for width > 0 && row.current >= 0 && start < row.current && !fits(start) {
+		start++
+	}
+	if start > 0 {
+		return dimStyle.Render("…") + " " + strings.Join(parts[start:], " ")
+	}
+	return strings.Join(parts, " ")
+}
+
 // detailLine is what the focused line does and when a change applies — facts
 // that stay on screen, unlike a status message.
 func (m settingsModel) detailLine() string {
-	row, ok := m.focusedRow()
+	row, line, ok := m.focused()
 	if !ok {
 		return " "
 	}
@@ -295,8 +321,12 @@ func (m settingsModel) detailLine() string {
 		return "  " + warningStyle.Render(row.reason)
 	}
 	var parts []string
-	if row.help != "" {
-		parts = append(parts, row.help)
+	help := row.help
+	if line.option >= 0 && line.option < len(row.details) && row.details[line.option] != "" {
+		help = row.details[line.option]
+	}
+	if help != "" {
+		parts = append(parts, help)
 	}
 	if row.applies != "" {
 		parts = append(parts, row.applies)

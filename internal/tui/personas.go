@@ -83,7 +83,7 @@ type personasModel struct {
 	// Voice row catalog for providers that have to be asked (openai-speech),
 	// and the Language row's filter over whichever catalog is showing.
 	// See personas_voices.go.
-	voices      personaVoiceCatalog
+	voices      voiceCatalog
 	voiceLocale string
 
 	preview voicePreview
