@@ -59,7 +59,7 @@ var modelsCmd = &cobra.Command{
 
 var modelsStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show required and installed model assets (read-only, offline)",
+	Short: "Show required and installed model assets (read-only; never downloads)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -71,7 +71,7 @@ var modelsStatusCmd = &cobra.Command{
 
 // runModelsStatus resolves the asset manifest for cfg and req and reports each
 // asset's installed/missing state under modelsDir. It is read-only and never
-// downloads.
+// downloads; openai-speech asks its server what it serves.
 func runModelsStatus(cmd *cobra.Command, cfg *config.Config, modelsDir string, req config.AssetRequest, asJSON bool) error {
 	manifest, err := config.ManifestFor(cfg, req)
 	if err != nil {
@@ -79,6 +79,9 @@ func runModelsStatus(cmd *cobra.Command, cfg *config.Config, modelsDir string, r
 	}
 	statuses := manifest.Status(modelsDir)
 	requiredTier := ""
+	if req.NeedTTS && config.OpenAISpeechSelected(cfg) {
+		statuses = append(statuses, openAISpeechStatusRows(cmd.Context(), cfg, modelsDir)...)
+	}
 	if req.NeedTTS {
 		var qwenRows []config.AssetStatus
 		qwenRows, requiredTier = qwenStatusRows(cfg, modelsDir)
@@ -93,6 +96,17 @@ func runModelsStatus(cmd *cobra.Command, cfg *config.Config, modelsDir string, r
 	}
 	printModelStatuses(out, modelsDir, statuses, requiredTier)
 	return nil
+}
+
+// openAISpeechStatusRows probes the configured speech server, bounded so a
+// server that is down cannot stall status.
+func openAISpeechStatusRows(ctx context.Context, cfg *config.Config, modelsDir string) []config.AssetStatus {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, config.OpenAISpeechProbeTimeout)
+	defer cancel()
+	return config.OpenAISpeechAssetStatus(config.ProbeOpenAISpeech(ctx, cfg), modelsDir)
 }
 
 // printModelStatuses renders the human table. A Qwen tier row this

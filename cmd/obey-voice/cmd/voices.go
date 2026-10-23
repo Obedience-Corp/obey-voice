@@ -21,7 +21,7 @@ import (
 // the WAV path are exercised without a model on disk.
 type voiceStackDeps struct {
 	newProvider   func(*config.Config) (tts.Provider, func(), error)
-	missingAssets func(*config.Config) []string
+	missingAssets func(context.Context, *config.Config) []string
 	ensureAssets  func(context.Context, *config.Config, config.AssetRequest, func(string, float64)) error
 }
 
@@ -138,7 +138,7 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 		return buildVoicesJSON(cfg, voices, "static"), nil
 	}
 
-	if err := requireTTSAssets(cfg); err != nil {
+	if err := requireTTSAssets(cmd.Context(), cfg); err != nil {
 		// A fresh machine can still browse qwen3-tts's model-native presets
 		// before running `models ensure --tts`, even when --live asked for the
 		// installed package. Every other provider keeps the original
@@ -214,8 +214,8 @@ func voicesConfig(cmd *cobra.Command) (*config.Config, error) {
 // requireTTSAssets refuses rather than downloads. A voice picker opening or a
 // Preview button being pressed must not start a hundreds-of-megabyte fetch the
 // user never asked for; `obey-voice models ensure --tts` is the explicit path.
-func requireTTSAssets(cfg *config.Config) error {
-	missing := voiceStack.missingAssets(cfg)
+func requireTTSAssets(ctx context.Context, cfg *config.Config) error {
+	missing := voiceStack.missingAssets(ctx, cfg)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -226,8 +226,10 @@ func requireTTSAssets(cfg *config.Config) error {
 
 // missingTTSAssets names the not-yet-installed assets for cfg's TTS provider,
 // reading the manifest offline. It mirrors `obey-voice models status --tts`,
-// including the managed Qwen native package that lives outside the manifest.
-func missingTTSAssets(cfg *config.Config) []string {
+// including the managed Qwen native package that lives outside the manifest
+// and an openai-speech model Ollama has not pulled. Phonon's voices.jsonl is
+// metadata and never counts.
+func missingTTSAssets(ctx context.Context, cfg *config.Config) []string {
 	manifest, err := config.ManifestFor(cfg, config.AssetRequest{NeedTTS: true})
 	if err != nil {
 		return []string{err.Error()}
@@ -242,6 +244,18 @@ func missingTTSAssets(cfg *config.Config) []string {
 	if isQwenTTS(cfg.TTSProvider) && managedqwen.UseManaged(cfg.QwenTTSBinary, cfg.QwenTTSModel) {
 		if native := managedqwen.InspectNative(modelsDir, cfg.QwenTTSModelTier); !native.Installed {
 			missing = append(missing, "Qwen3-TTS native package")
+		}
+	}
+	if config.OpenAISpeechSelected(cfg) {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(ctx, config.OpenAISpeechProbeTimeout)
+		defer cancel()
+		// A server that does not answer is not an install problem; building
+		// the provider reports it.
+		if t := config.ProbeOpenAISpeech(ctx, cfg); t.Ollama && !t.ModelListed {
+			missing = append(missing, config.OpenAISpeechModelAssetName(t.Model))
 		}
 	}
 	return missing

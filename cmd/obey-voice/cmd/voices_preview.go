@@ -106,7 +106,7 @@ func renderVoicePreview(cmd *cobra.Command) (*voicePreviewJSON, error) {
 		if err := voiceStack.ensureAssets(cmd.Context(), cfg, config.AssetRequest{NeedTTS: true}, nil); err != nil {
 			return nil, fmt.Errorf("installing TTS assets: %w", err)
 		}
-	} else if err := requireTTSAssets(cfg); err != nil {
+	} else if err := requireTTSAssets(cmd.Context(), cfg); err != nil {
 		return nil, err
 	}
 
