@@ -302,6 +302,21 @@ func CatalogNoticeOf(p Provider) string {
 	return ""
 }
 
+// CatalogSourcer is optionally implemented by providers whose catalog can
+// come from more than one place; the answer names which one did ("server",
+// "ollama", "configured"). Absent means the provider has one catalog.
+type CatalogSourcer interface {
+	CatalogSource() string
+}
+
+// CatalogSourceOf reports the provider's catalog source, or "".
+func CatalogSourceOf(p Provider) string {
+	if c, ok := p.(CatalogSourcer); ok {
+		return c.CatalogSource()
+	}
+	return ""
+}
+
 // VoiceNames returns the ordered list of all kokoro voice names.
 func VoiceNames() []string {
 	// Copy to avoid mutation.

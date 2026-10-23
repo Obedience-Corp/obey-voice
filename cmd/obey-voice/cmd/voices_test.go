@@ -132,6 +132,62 @@ func TestVoicesJSONCatalog(t *testing.T) {
 	}
 }
 
+// describedFake is a provider that can say where its catalog came from and
+// why it is short, the way openai-speech does; voices --json has to carry
+// both so the pickers can show them.
+type describedFake struct {
+	*fakeTTS
+	source, notice string
+}
+
+func (d describedFake) CatalogSource() string { return d.source }
+func (d describedFake) CatalogNotice() string { return d.notice }
+
+func TestVoicesJSONCarriesCatalogSourceNoticeAndDescriptions(t *testing.T) {
+	personaEnv(t)
+	fake := &fakeTTS{voices: []tts.Voice{
+		{Name: "default", FriendlyName: "default"},
+		{Name: "Zoey", FriendlyName: "Zoey", Gender: "female", Locale: "en-us", Age: "Young Adult", Description: "Bright and warm."},
+	}, sampleRate: 24000, samples: 24000}
+	orig := voiceStack
+	voiceStack = voiceStackDeps{
+		newProvider: func(*config.Config) (tts.Provider, func(), error) {
+			return describedFake{fakeTTS: fake, source: "ollama", notice: "Ollama 0.40.9 lists no voices"}, nil, nil
+		},
+		missingAssets: func(*config.Config) []string { return nil },
+		ensureAssets:  voiceStack.ensureAssets,
+	}
+	t.Cleanup(func() { voiceStack = orig })
+
+	out, err := runVoicesCmd(t, "--json", "--provider", config.OpenAISpeechProviderName)
+	if err != nil {
+		t.Fatalf("voices --json error = %v (out %s)", err, out)
+	}
+	var got voicesJSON
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("decoding %q: %v", out, err)
+	}
+	if got.Provider != config.OpenAISpeechProviderName || got.Source != "provider" || got.Catalog != "ollama" || got.Notice != "Ollama 0.40.9 lists no voices" {
+		t.Fatalf("catalog = %+v", got)
+	}
+	if len(got.Voices) != 2 || got.Voices[1].Age != "Young Adult" || got.Voices[1].Description != "Bright and warm." || got.Voices[1].Locale != "en-us" {
+		t.Fatalf("voices = %+v", got.Voices)
+	}
+	// Name-only catalogs omit the descriptive keys rather than emitting "".
+	if strings.Contains(out, `"age":""`) || strings.Contains(out, `"description":""`) {
+		t.Fatalf("empty descriptive keys emitted: %s", out)
+	}
+	// A provider with one catalog carries neither key.
+	stubVoiceStack(t, kokoroFake(), nil)
+	out, err = runVoicesCmd(t, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, `"catalog"`) || strings.Contains(out, `"notice"`) {
+		t.Fatalf("kokoro output carries catalog keys: %s", out)
+	}
+}
+
 func TestVoicesJSONFilters(t *testing.T) {
 	personaEnv(t)
 	stubVoiceStack(t, kokoroFake(), nil)

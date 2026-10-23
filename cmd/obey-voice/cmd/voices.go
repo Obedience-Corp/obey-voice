@@ -40,8 +40,12 @@ type voiceJSON struct {
 	// Kind is where the voice came from, where the provider distinguishes:
 	// audio8 reports "recording" or "synthetic" for a registered voice.
 	// Omitted for the built-in catalogs rather than emitted empty.
-	Kind   string `json:"kind,omitempty"`
-	Active bool   `json:"active"`
+	Kind string `json:"kind,omitempty"`
+	// Age and Description come from a descriptive catalog (Phonon's
+	// voices.jsonl); omitted when the catalog carries only names.
+	Age         string `json:"age,omitempty"`
+	Description string `json:"description,omitempty"`
+	Active      bool   `json:"active"`
 }
 
 // voicesJSON is the body of `voices --json`: the catalog of one provider,
@@ -54,6 +58,12 @@ type voicesJSON struct {
 	// Languages lists qwen3-tts's supported synthesis languages (independent
 	// of which voice is selected); omitted for every other provider.
 	Languages []string `json:"languages,omitempty"`
+	// Catalog names where a live provider's catalog came from when it has a
+	// choice: openai-speech reports "server", "ollama" or "configured".
+	Catalog string `json:"catalog,omitempty"`
+	// Notice explains a catalog smaller than it could be, in words the user
+	// can act on (an Ollama release without voice lists). Omitted when empty.
+	Notice string `json:"notice,omitempty"`
 }
 
 func newVoicesCmd() *cobra.Command {
@@ -150,7 +160,10 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	return buildVoicesJSON(cfg, provider.ListVoices(locale, gender), "provider"), nil
+	out := buildVoicesJSON(cfg, provider.ListVoices(locale, gender), "provider")
+	out.Catalog = tts.CatalogSourceOf(provider)
+	out.Notice = tts.CatalogNoticeOf(provider)
+	return out, nil
 }
 
 // buildVoicesJSON assembles the voices --json body from an already-filtered
@@ -166,6 +179,8 @@ func buildVoicesJSON(cfg *config.Config, voices []tts.Voice, source string) *voi
 			Gender:       v.Gender,
 			Locale:       v.Locale,
 			Kind:         v.Kind,
+			Age:          v.Age,
+			Description:  v.Description,
 			Active:       strings.EqualFold(v.Name, active),
 		})
 	}
