@@ -986,6 +986,23 @@
       "editable": true
     },
     {
+      "key": "persona_routing_timeout",
+      "type": "int",
+      "default": 120,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Persona routing timeout",
+      "help": "How long to wait while deciding which persona should answer, including model startup. Lower this to report slow routing sooner.",
+      "unit": "seconds",
+      "min": 1,
+      "max": 300,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "PERSONA_ROUTING_TIMEOUT",
+      "editable": true
+    },
+    {
       "key": "voice_worker_boundary",
       "type": "bool",
       "default": true,

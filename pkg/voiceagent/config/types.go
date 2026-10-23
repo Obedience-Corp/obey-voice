@@ -174,6 +174,9 @@ type Config struct {
 	TUIMouseEnabled bool `mapstructure:"tui_mouse_enabled"`
 
 	// Brain
+	// PersonaRoutingTimeout bounds addressee inference, including model startup, in seconds.
+	PersonaRoutingTimeout int `mapstructure:"persona_routing_timeout"`
+
 	BrainProvider      string `mapstructure:"brain_provider"`
 	DecisionEnabled    bool   `mapstructure:"decision_enabled"`
 	DecisionVoiceWork  bool   `mapstructure:"decision_voice_work"`

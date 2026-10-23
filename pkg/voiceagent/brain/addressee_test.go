@@ -104,16 +104,12 @@ func TestResolveAddresseeTransportFailureClassification(t *testing.T) {
 }
 
 func TestResolveAddresseeLocalTimeoutClassification(t *testing.T) {
-	previous := addresseeResolveTimeout
-	addresseeResolveTimeout = 20 * time.Millisecond
-	t.Cleanup(func() { addresseeResolveTimeout = previous })
-
 	host, _ := url.Parse("http://localhost")
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})}
-	o := &OllamaBrain{client: api.NewClient(host, client), model: "test", cfg: &config.Config{OllamaNumCtx: 8192}}
+	o := &OllamaBrain{client: api.NewClient(host, client), model: "test", cfg: &config.Config{OllamaNumCtx: 8192, PersonaRoutingTimeout: 1}}
 	_, err := o.ResolveAddressee(t.Context(), AddressRequest{})
 	if got, ok := admission.ClassifierFailureKindOf(err); !ok || got != admission.ClassifierLocalTimeout {
 		t.Fatalf("kind=%q ok=%v err=%v", got, ok, err)

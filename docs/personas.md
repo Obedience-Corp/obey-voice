@@ -75,7 +75,12 @@ Classifier routing failures now add a manual-retry notice in chat/activity and
 recordings: resubmit the request as new input, or use exact persona control first
 (`switch to Santa`, then the question). The original user input remains visible
 in the current session. Obey Voice does not auto-replay failed inputs and does
-not keep a failed-turn retry queue.
+not keep a failed-turn retry queue. `persona_routing_timeout` defaults to 120
+seconds and accepts 1–300 seconds. Set it with
+`obey-voice config set persona_routing_timeout 90` for future conversations. This
+includes model queueing/loading as well as classification; a cold or busy model
+can exceed the former fixed 15-second limit before generating a decision. A
+shorter parent deadline or cancellation still stops the request immediately.
 Shared-history projection
 is currently verified for Ollama. An unsupported provider is refused rather
 than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices
