@@ -9,6 +9,9 @@ bin_dir := "bin"
 gobin := env_var_or_default("GOBIN", `go env GOPATH` + "/bin")
 
 # Modules
+[doc('Native desktop builds, checks, and isolated UI fixtures')]
+mod desktop '.justfiles/desktop.just'
+
 [doc('Testing (unit, integration, dashboard)')]
 mod test '.justfiles/test.just'
 

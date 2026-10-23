@@ -16,6 +16,7 @@ Everything else lives here.
 | [Audio8 voices](audio8-voices.md) | Registering reference voices for the audio8 provider, and the consent rules |
 | [OpenAI-compatible speech](openai-speech.md) | The `openai-speech` engine: Phonon through Ollama, or any `/v1/audio/speech` server |
 | [Configuration](configuration.md) | `config.yaml` keys, Agent Skills |
+| [Desktop development](desktop-development.md) | Native app, monorepo builds, CI and isolated UI fixtures |
 | [Development](development.md) | Build, tests, model assets, benchmarks |
 
 ## Reference
