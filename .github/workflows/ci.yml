@@ -15,20 +15,14 @@ concurrency:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-latest
-          - ubuntu-latest
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted", "linux", "x64", "lance-arch"]') || matrix.os }}
+    name: Test (Linux)
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Vet
         run: go vet ./...
       - name: Test
@@ -38,13 +32,13 @@ jobs:
   # (govet, ineffassign, unused — see .golangci.yml). errcheck and staticcheck
   # are staged in a follow-up once their cleanup lands.
   lint:
-    runs-on: macos-latest
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -54,20 +48,14 @@ jobs:
   # and this -race suite is its deterministic regression guard, so a failure
   # must fail the job rather than only warn.
   voiceflow:
-    name: Voiceflow (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-latest
-          - ubuntu-latest
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted", "linux", "x64", "lance-arch"]') || matrix.os }}
+    name: Voiceflow (Linux)
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Voiceflow
         run: go test -race -tags integration ./tests/voiceflow/... -count=1 -timeout 5m
 
@@ -79,7 +67,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Integration
         run: go run ./internal/buildutil integration
 
@@ -93,7 +81,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - uses: extractions/setup-just@v3
       - name: Install artifact tools
         run: sudo apt-get install --yes patchelf
