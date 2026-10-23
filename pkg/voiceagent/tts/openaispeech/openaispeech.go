@@ -248,13 +248,75 @@ func (p *Provider) speakInto(ctx context.Context, stream *audio.PCMStream, text,
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return fmt.Errorf("openai-speech %s: %s", resp.Status, errorMessage(body, "no error body"))
 	}
-	return decodePCM16(resp.Body, stream)
+	trim := newTailTrimmer(stream)
+	if err := decodePCM16(resp.Body, trim); err != nil {
+		return err
+	}
+	return trim.finish()
+}
+
+// Phonon pads every utterance with about half a second of silence (measured
+// 507-747 ms on 2026-10-23 against Kokoro's 41-85 ms). The pipeline requests
+// sentence by sentence, so that pad would land between every two sentences
+// as dead air. The trimmer holds back trailing sub-threshold samples, releases
+// them the moment something audible follows (so a pause inside a sentence is
+// kept), and drops whatever is still held at the end beyond tailKeep.
+const (
+	silenceThreshold = 0.002 // about -54 dBFS
+	tailKeepSamples  = SampleRate * 80 / 1000
+)
+
+type frameWriter interface{ Write([]float32) error }
+
+type tailTrimmer struct {
+	out  frameWriter
+	held []float32
+	// owed is how much of tailKeep after the last audible sample has not been
+	// written yet because the chunk ended first; silent chunks pay it down so
+	// the kept tail is the same length however the body was chunked.
+	owed int
+}
+
+func newTailTrimmer(out frameWriter) *tailTrimmer { return &tailTrimmer{out: out} }
+
+func (t *tailTrimmer) Write(samples []float32) error {
+	if len(samples) == 0 {
+		return nil
+	}
+	all := append(t.held, samples...)
+	last := -1
+	for i := len(all) - 1; i >= 0; i-- {
+		if all[i] > silenceThreshold || all[i] < -silenceThreshold {
+			last = i
+			break
+		}
+	}
+	if last < 0 {
+		emit := min(t.owed, len(all))
+		t.owed -= emit
+		t.held = append([]float32(nil), all[emit:]...)
+		if emit == 0 {
+			return nil
+		}
+		return t.out.Write(all[:emit])
+	}
+	emit := min(last+1+tailKeepSamples, len(all))
+	t.owed = tailKeepSamples - (emit - (last + 1))
+	t.held = append([]float32(nil), all[emit:]...)
+	return t.out.Write(all[:emit])
+}
+
+// finish drops the held tail: everything after the last audible sample plus
+// tailKeep has already been written.
+func (t *tailTrimmer) finish() error {
+	t.held, t.owed = nil, 0
+	return nil
 }
 
 // decodePCM16 converts a 16-bit little-endian mono body into float32 frames.
 // An odd trailing byte is carried into the next read: dropping it would shift
 // every later sample by one byte and turn speech into static.
-func decodePCM16(r io.Reader, stream *audio.PCMStream) error {
+func decodePCM16(r io.Reader, stream frameWriter) error {
 	const frameSamples = 2048
 	buf := make([]byte, frameSamples*2)
 	var carry []byte

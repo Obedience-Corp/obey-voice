@@ -30,6 +30,9 @@ type fakeServer struct {
 	requests []speechRequest
 	voiceAPI []string // when non-nil, GET /audio/voices answers with these
 	hold     chan struct{}
+	// holdAfterFirst blocks the body after the first flushed chunk, so a test
+	// can cancel while the decode loop is mid-stream.
+	holdAfterFirst chan struct{}
 }
 
 func (f *fakeServer) handler() http.Handler {
@@ -86,7 +89,6 @@ func (f *fakeServer) handler() http.Handler {
 		ci := 0
 		for len(body) > 0 {
 			n := f.chunks[ci%len(f.chunks)]
-			ci++
 			if n > len(body) {
 				n = len(body)
 			}
@@ -97,6 +99,14 @@ func (f *fakeServer) handler() http.Handler {
 				fl.Flush()
 			}
 			body = body[n:]
+			if ci == 0 && f.holdAfterFirst != nil {
+				select {
+				case <-f.holdAfterFirst:
+				case <-r.Context().Done():
+					return
+				}
+			}
+			ci++
 		}
 	})
 	return mux
@@ -309,6 +319,43 @@ func TestCancelMidBodyStopsTheStream(t *testing.T) {
 	}
 }
 
+func TestCancelMidBodyStopsTheDecodeLoop(t *testing.T) {
+	f, srv := newFake(t)
+	f.holdAfterFirst = make(chan struct{})
+	f.samples = 48000
+	p, _, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := p.Synthesize(ctx, "Half way through the body.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first chunk has to arrive before the cancel: that is what puts the
+	// provider inside decodePCM16 rather than inside client.Do.
+	first := <-stream.Frames()
+	if len(first) == 0 {
+		t.Fatal("no first frame")
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		for range stream.Frames() {
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream never closed after a mid-body cancel")
+	}
+	if !errors.Is(stream.Err(), context.Canceled) {
+		t.Fatalf("stream err = %v", stream.Err())
+	}
+	close(f.holdAfterFirst)
+}
+
 func TestGraceCoversAColdModelLoad(t *testing.T) {
 	p := &Provider{}
 	if g := p.FirstAudioGraceForChars(17); g < 5*time.Second {
@@ -363,4 +410,56 @@ func (c *chunkReader) Read(p []byte) (int, error) {
 	copy(p, c.data[:n])
 	c.data = c.data[n:]
 	return n, nil
+}
+
+type collectWriter struct{ got []float32 }
+
+func (c *collectWriter) Write(s []float32) error { c.got = append(c.got, s...); return nil }
+
+func TestTailTrimmerDropsPadKeepsPauses(t *testing.T) {
+	tone := func(n int) []float32 {
+		out := make([]float32, n)
+		for i := range out {
+			out[i] = 0.3
+		}
+		return out
+	}
+	silence := func(n int) []float32 { return make([]float32, n) }
+
+	// Speech, a 300 ms pause, speech, then a 700 ms Phonon pad, in uneven chunks.
+	var body []float32
+	body = append(body, tone(4000)...)
+	body = append(body, silence(SampleRate*300/1000)...)
+	body = append(body, tone(4000)...)
+	body = append(body, silence(SampleRate*700/1000)...)
+	c := &collectWriter{}
+	tr := newTailTrimmer(c)
+	for i, n := 0, 0; i < len(body); i += n {
+		n = 1500 + (i/1500%3)*700
+		if i+n > len(body) {
+			n = len(body) - i
+		}
+		if err := tr.Write(body[i : i+n]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tr.finish(); err != nil {
+		t.Fatal(err)
+	}
+	want := 4000 + SampleRate*300/1000 + 4000 + tailKeepSamples
+	if len(c.got) != want {
+		t.Fatalf("kept %d samples, want %d (speech + pause + speech + %d keep)", len(c.got), want, tailKeepSamples)
+	}
+	// The pause survived in place.
+	if c.got[4000+100] != 0 || c.got[4000+SampleRate*300/1000+10] != 0.3 {
+		t.Fatal("mid-utterance pause was not preserved")
+	}
+	// All-silent input emits nothing.
+	c2 := &collectWriter{}
+	tr2 := newTailTrimmer(c2)
+	_ = tr2.Write(silence(5000))
+	_ = tr2.finish()
+	if len(c2.got) != 0 {
+		t.Fatalf("silent input emitted %d samples", len(c2.got))
+	}
 }

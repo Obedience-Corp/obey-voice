@@ -41,7 +41,11 @@ func TestOpenAISpeechVsKokoroRealtime(t *testing.T) {
 		Engine, Case                   string
 		FirstFrameMS, SynthMS, AudioMS float64
 		RTF                            float64
-		Runs                           int
+		// LeadSilenceMS/TailSilenceMS count samples under silenceThreshold at
+		// the start and end of the utterance. A per-request pad that does not
+		// shrink with length is dead air between sentences, not pacing.
+		LeadSilenceMS, TailSilenceMS float64
+		Runs                         int
 	}
 	var rows []row
 	for _, engine := range []string{"kokoro", config.OpenAISpeechProviderName} {
@@ -62,7 +66,7 @@ func TestOpenAISpeechVsKokoroRealtime(t *testing.T) {
 		for _, tc := range cases {
 			const runs = 5
 			var firsts, synths []float64
-			var audioMS float64
+			var audioMS, leadMS, tailMS float64
 			for range runs {
 				start := time.Now()
 				stream, err := p.Synthesize(context.Background(), tc.text)
@@ -74,11 +78,13 @@ func TestOpenAISpeechVsKokoroRealtime(t *testing.T) {
 					t.Fatalf("%s %s: WaitReady: %v", engine, tc.name, err)
 				}
 				samples, first := 0, time.Duration(0)
+				var all []float32
 				for f := range stream.Frames() {
 					if samples == 0 {
 						first = time.Since(start)
 					}
 					samples += len(f)
+					all = append(all, f...)
 				}
 				if err := stream.Err(); err != nil {
 					t.Fatalf("%s %s: %v", engine, tc.name, err)
@@ -87,14 +93,17 @@ func TestOpenAISpeechVsKokoroRealtime(t *testing.T) {
 				firsts = append(firsts, float64(first)/1e6)
 				if rate > 0 {
 					audioMS = float64(samples) / float64(rate) * 1000
+					lead, tail := silenceEdges(all)
+					leadMS = float64(lead) / float64(rate) * 1000
+					tailMS = float64(tail) / float64(rate) * 1000
 				}
 			}
-			r := row{Engine: engine, Case: tc.name, FirstFrameMS: median(firsts), SynthMS: median(synths), AudioMS: audioMS, Runs: runs}
+			r := row{Engine: engine, Case: tc.name, FirstFrameMS: median(firsts), SynthMS: median(synths), AudioMS: audioMS, LeadSilenceMS: leadMS, TailSilenceMS: tailMS, Runs: runs}
 			if r.SynthMS > 0 {
 				r.RTF = r.AudioMS / r.SynthMS
 			}
 			rows = append(rows, r)
-			t.Logf("%-14s %-14s first frame %7.1f ms  synth %7.1f ms  audio %7.0f ms  %5.1fx realtime", engine, tc.name, r.FirstFrameMS, r.SynthMS, r.AudioMS, r.RTF)
+			t.Logf("%-14s %-14s first frame %7.1f ms  synth %7.1f ms  audio %7.0f ms  %5.1fx realtime  lead %4.0f ms  tail %4.0f ms", engine, tc.name, r.FirstFrameMS, r.SynthMS, r.AudioMS, r.RTF, r.LeadSilenceMS, r.TailSilenceMS)
 		}
 		if d, ok := p.(tts.Describer); ok {
 			t.Logf("%s model tier %q", engine, d.ModelTier())
@@ -108,6 +117,27 @@ func TestOpenAISpeechVsKokoroRealtime(t *testing.T) {
 		}
 		fmt.Println("wrote", out)
 	}
+}
+
+// silenceThreshold is about -54 dBFS: below room noise, above codec dither.
+const silenceThreshold = 0.002
+
+// silenceEdges counts the sub-threshold samples before the first and after the
+// last audible sample.
+func silenceEdges(samples []float32) (lead, tail int) {
+	first, last := -1, -1
+	for i, s := range samples {
+		if s > silenceThreshold || s < -silenceThreshold {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 {
+		return len(samples), 0
+	}
+	return first, len(samples) - 1 - last
 }
 
 func median(xs []float64) float64 {

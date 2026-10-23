@@ -20,16 +20,17 @@ The defaults already point at Ollama on this computer (`openai_speech_url`
 `http://localhost:11434/v1`, `openai_speech_model` `phonon`,
 `openai_speech_voice` `default`). Ollama exposes one Phonon voice, `default`.
 
-Measured on an M4 Max through Ollama's MLX runner (2026-10-23, `curl` against
-`/v1/audio/speech` with `response_format: pcm`): first byte in 4 to 15 ms warm,
-a six-second reply fully synthesized in 65 to 128 ms. The first request after
-Ollama unloads the idle model paid 2.4 s to reload it. For comparison,
-obey-voice's measured Kokoro synthesizes one sentence in about 900 ms
-(1.32x realtime; see `docs/benchmarks/N7-tts-bake-off-2026-08-12.md`). These
-are endpoint timings. Through the real provider seam
-([P1](benchmarks/P1-phonon-vs-kokoro-2026-10-23.md), same day): Phonon's first
-PCM frame in 4 ms against Kokoro's 290 ms for one sentence, 78 to 92x realtime
-against 4.1 to 4.5x. `just bench tts "kokoro openai-speech"` measures full turns.
+Measured on an M4 Max through Ollama's MLX runner, both engines through the
+real provider seam, no playback device
+([P1](benchmarks/P1-phonon-vs-kokoro-2026-10-23.md), 2026-10-23): Phonon's
+first PCM frame arrives in 4 ms against Kokoro's 290 ms for one sentence and
+2.1 s for a long reply; synthesis runs 53 to 87x realtime against Kokoro's 4.1
+to 4.7x. The first request after Ollama unloads the idle model paid 2.4 s to
+reload it. `just bench tts "kokoro openai-speech"` measures full turns.
+
+Phonon pads every response with about half a second of trailing silence. The
+provider trims it (keeping 80 ms) so sentence-by-sentence playback does not
+gain dead air between sentences; pauses inside an utterance are kept.
 
 ## Any other server
 

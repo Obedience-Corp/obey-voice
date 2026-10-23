@@ -22,6 +22,9 @@ engine commit on branch `phonon-openai-speech` (PR #239) · raw rows in
 
 ## Results
 
+Run 1, before the provider trimmed trailing silence (harness without silence
+columns; rows kept in git history of this file):
+
 | engine | case | first frame | synth | audio | realtime |
 |---|---|---:|---:|---:|---:|
 | kokoro (af_heart) | one sentence | 290.0 ms | 290.0 ms | 1186 ms | 4.1x |
@@ -31,17 +34,45 @@ engine commit on branch `phonon-openai-speech` (PR #239) · raw rows in
 | | two sentences | **4.1 ms** | 43.2 ms | 3680 ms | 85.2x |
 | | long reply | **4.0 ms** | 116.1 ms | 10720 ms | 92.3x |
 
+Run 2 added leading/trailing silence columns (samples under 0.002, about
+-54 dBFS) and found Phonon pads every utterance:
+
+| engine | case | audio | lead silence | tail silence |
+|---|---|---:|---:|---:|
+| kokoro | one sentence | 1186 ms | 63 ms | 41 ms |
+| kokoro | two sentences | 2749 ms | 63 ms | 76 ms |
+| kokoro | long reply | 9943 ms | 77 ms | 85 ms |
+| openai-speech | one sentence | 1920 ms | 0 ms | **747 ms** |
+| openai-speech | two sentences | 3680 ms | 0 ms | **516 ms** |
+| openai-speech | long reply | 10720 ms | 0 ms | **507 ms** |
+
+Run 3, after the provider's tail trimmer (holds sub-threshold samples, releases
+them when something audible follows, drops the rest at end of body beyond an
+80 ms keep). This is the committed artifact
+([json](P1-phonon-vs-kokoro-2026-10-23.json)):
+
+| engine | case | first frame | synth | audio | realtime | lead | tail |
+|---|---|---:|---:|---:|---:|---:|---:|
+| kokoro (af_heart) | one sentence | 289.3 ms | 289.3 ms | 1186 ms | 4.1x | 63 ms | 41 ms |
+| | two sentences | 632.7 ms | 633.3 ms | 2749 ms | 4.3x | 63 ms | 78 ms |
+| | long reply | 2092.3 ms | 2093.0 ms | 9938 ms | 4.7x | 77 ms | 85 ms |
+| openai-speech (phonon, voice default) | one sentence | **3.7 ms** | 24.9 ms | 1317 ms | 53.0x | 0 ms | 73 ms |
+| | two sentences | **4.2 ms** | 44.0 ms | 3280 ms | 74.6x | 0 ms | 27 ms |
+| | long reply | **3.8 ms** | 117.7 ms | 10272 ms | 87.3x | 0 ms | 59 ms |
+
 ## Reading the numbers
 
-- Kokoro's first frame is its whole synthesis: 290 ms for one sentence, 2.2 s
+- Kokoro's first frame is its whole synthesis: 290 ms for one sentence, 2.1 s
   for a long reply. Phonon's first frame is the HTTP round trip, 4 ms, and
   the whole utterance is done 20 to 50 times sooner.
-- Kokoro measured 4.1x realtime here against 1.32x in N7 (2026-08-12). The N7
-  figure was taken on the same machine with the earlier sherpa build; this run
-  does not explain the gap and should not be read as a Kokoro regression or
-  improvement claim. The Phonon rows are the point of this artifact.
-- Phonon speaks the same text more slowly (2.0 s vs 1.2 s for one sentence), so
-  per-sentence audio is longer. That is pacing, not a cost.
+- Phonon pads each response with roughly half a second of silence. Untrimmed,
+  that lands between every two sentences in the pipeline's sentence-per-request
+  flow, which is the dead-air failure D009 was about. The provider trims it;
+  after trimming, Phonon's one-sentence audio is 1.3 s against Kokoro's 1.2 s,
+  so the earlier "Phonon speaks more slowly" reading was wrong: it was the pad.
+- Kokoro measured 4.1x realtime here against 1.32x in N7 (2026-08-12) on the
+  same machine with the earlier sherpa build. This run does not explain the gap
+  and makes no Kokoro regression or improvement claim.
 - Cold start: Ollama unloads an idle model after a few minutes; the first
   request after that paid 2.4 s (endpoint probe, same day). The provider's
   first-audio grace floors at 5 s for that reason.
