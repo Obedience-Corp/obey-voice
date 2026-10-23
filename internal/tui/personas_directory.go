@@ -137,7 +137,9 @@ func (m personasModel) directoryList() []directoryChoice {
 		}
 		out = append(out, directoryChoice{label: label, path: c.Path})
 	}
-	if v := m.directoryValue(); v != "" && !m.directory.custom {
+	// The sticky entry stays while (custom) owns the row, so leaving (custom)
+	// returns to the saved folder instead of the nearest camp.
+	if v := m.directoryValue(); v != "" {
 		found := false
 		for _, item := range out[1:] {
 			if item.path == v {
@@ -185,7 +187,11 @@ func (m *personasModel) cycleDirectory(delta int) {
 	switch {
 	case custom:
 		m.directory.custom = true
-		m.directoryInput.SetValue(m.directory.customText)
+		// Entering from a listed folder keeps it in the field as the draft;
+		// only text typed under (custom) earlier replaces it.
+		if text := m.directory.customText; text != "" {
+			m.directoryInput.SetValue(text)
+		}
 		m.directoryInput.Focus()
 		m.directoryInput.CursorEnd()
 	default:

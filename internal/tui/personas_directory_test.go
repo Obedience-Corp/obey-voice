@@ -235,3 +235,25 @@ func TestPersonaListDetailShowsDirectory(t *testing.T) {
 		t.Fatalf("detail pane must say a persona inherits the app default:\n%s", view)
 	}
 }
+
+// Browsing the picker must not lose a saved folder that is not a camp: → onto
+// (custom) keeps it as the draft, ← comes back to it rather than to a camp.
+func TestPersonaFormDirectoryStickyPathSurvivesBrowsing(t *testing.T) {
+	saved := campDir(t)
+	camp := campDir(t)
+	m := directoryFormModel(t, &persona.Profile{ID: "ada", DisplayName: "Ada", StartingDirectory: saved}, []meeting.Campaign{{Name: "My_Tools", Path: camp}}, "")
+	if m.directoryIndex() != 2 || m.directoryValue() != saved {
+		t.Fatalf("saved non-camp folder must open selected as the sticky entry (idx=%d value=%q)", m.directoryIndex(), m.directoryValue())
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if !m.directory.custom || m.directoryValue() != saved {
+		t.Fatalf("→ onto (custom) must keep the saved folder as the draft (custom=%v value=%q)", m.directory.custom, m.directoryValue())
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.directory.custom || m.directoryValue() != saved || m.directoryIndex() != 2 {
+		t.Fatalf("← from (custom) must return to the saved folder, not a camp (custom=%v value=%q idx=%d)", m.directory.custom, m.directoryValue(), m.directoryIndex())
+	}
+	if m.directoryChanged() {
+		t.Fatal("browsing without choosing must not count as a change")
+	}
+}
