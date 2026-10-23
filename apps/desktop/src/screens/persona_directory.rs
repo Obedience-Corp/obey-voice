@@ -4,9 +4,13 @@ use eframe::egui;
 
 impl VoiceApp {
     pub(super) fn persona_directory_editor(&mut self, ui: &mut egui::Ui) {
-        ui.separator();
-        ui.label(egui::RichText::new("Starting directory").strong());
-        ui.label("Applies to new conversations. Existing conversations keep their directory.");
+        ui.label(
+            egui::RichText::new(
+                "Choose where new conversations work. Existing sessions keep their folder.",
+            )
+            .small()
+            .color(crate::theme::muted(ui)),
+        );
         let f = &mut self.persona_form;
         let label = if f.starting_directory.is_empty() {
             "App default".into()
@@ -31,7 +35,7 @@ impl VoiceApp {
             });
         ui.add(
             egui::TextEdit::singleline(&mut f.starting_directory)
-                .hint_text("App default, or enter a directory")
+                .hint_text("Use app default, or enter a folder path")
                 .desired_width(f32::INFINITY),
         );
         ui.horizontal(|ui| {
@@ -44,14 +48,28 @@ impl VoiceApp {
             {
                 self.browse_persona_directory();
             }
-            if ui.button("Refresh camps").clicked() {
+            if ui
+                .add_enabled(
+                    self.persona_form.directory_request.is_none(),
+                    egui::Button::new("Refresh campaigns"),
+                )
+                .clicked()
+            {
                 self.load_persona_directories();
+            }
+            if self.persona_form.directory_request.is_some() {
+                ui.spinner();
             }
         });
         if !self.persona_form.directory_notice.is_empty() {
-            ui.label(&self.persona_form.directory_notice);
-            ui.label("You can still enter a custom directory.");
+            ui.label(
+                egui::RichText::new(
+                    "Campaigns unavailable. You can still browse or enter a folder.",
+                )
+                .small()
+                .color(crate::theme::muted(ui)),
+            )
+            .on_hover_text(&self.persona_form.directory_notice);
         }
-        ui.separator();
     }
 }

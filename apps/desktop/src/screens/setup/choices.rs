@@ -127,12 +127,11 @@ impl VoiceApp {
             let provider = self.values["tts_provider"]["value"]
                 .as_str()
                 .unwrap_or("kokoro");
-            let voice = match provider {
-                "qwen3-tts" => "qwen_tts_voice",
-                "audio8" => "audio8_voice",
-                _ => "tts_voice",
-            };
-            self.setup_fields(ui, &[voice]);
+            let fields = crate::screens::provider_choices::speech_fields(provider);
+            if provider == "openai-speech" {
+                ui.label("The speech server owns the model. For local Phonon, run ollama pull phonon. The Try it step checks that the server can speak.");
+            }
+            self.setup_fields(ui, fields);
         }
     }
     pub(super) fn setup_fields(&mut self, ui: &mut egui::Ui, fields: &[&str]) {

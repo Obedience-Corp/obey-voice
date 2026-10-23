@@ -45,6 +45,20 @@ obey-voice doctor --voice-devices
 
 [Full install notes](docs/install.md) cover Homebrew caveats, the Linux archive, musl, and developer builds.
 
+## Desktop app
+
+The native Rust desktop app and Go companion live in [`apps/desktop`](apps/desktop).
+They share this checkout’s engine, personas, configuration, and session stores.
+
+```sh
+just desktop build    # Rust 1.95, Go, C compiler, just
+just desktop run
+just desktop bundle   # local macOS bundle, ad-hoc signed
+```
+
+[Desktop development](docs/desktop-development.md) covers checks, isolated UI
+fixtures, and the repository layout.
+
 ## Talk
 
 ```bash

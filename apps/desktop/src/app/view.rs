@@ -24,7 +24,11 @@ impl eframe::App for VoiceApp {
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.screen.manager() && self.active {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape))
+            && self.screen.manager()
+            && self.active
+            && !self.persona_form.open
+        {
             self.navigate(Screen::Chat);
         }
         if self.active && self.screen == Screen::Chat {

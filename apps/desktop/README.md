@@ -8,12 +8,18 @@ Windows bridge startup is currently disabled: native library output cannot yet b
 
 Requires Rust 1.95 (pinned by `rust-toolchain.toml`), Go 1.26.1+, a C compiler, and `just`. Authenticate Git access to the private Obedience-Corp dependencies first. Configure `GOPRIVATE` to include `github.com/Obedience-Corp/*` if it is not already configured.
 
+From the repository root:
+
 ```sh
-just build
-just run
+just desktop build
+just desktop run
+just desktop check
 ```
 
-The Go companion is built into `bin/obey-voice-engine`. The Rust UI finds it beside the desktop executable, then in the repository's `bin` directory. `OBEY_VOICE_ENGINE` can select an explicit companion path. The engine revision is pinned in `bridge/go.mod`; a sibling checkout is not required.
+The commands below run from `apps/desktop`; its local Justfile remains available.
+See [monorepo development](../../docs/desktop-development.md) for layout and CI.
+
+The Go companion is built into `bin/obey-voice-engine`. The Rust UI finds it beside the desktop executable, then in `apps/desktop/bin`. `OBEY_VOICE_ENGINE` can select an explicit companion path. The bridge uses the engine in this repository through `replace github.com/Obedience-Corp/obey-voice => ../../..` in `bridge/go.mod`. No engine revision update or sibling repository is needed. Keep the full checkout when building the app; copying only `apps/desktop` is not supported.
 
 For macOS:
 
@@ -74,7 +80,7 @@ Hand-maintained files have a 500-line maximum, including comments and blank line
 of `just check`. Generated dependency records are exempt. Split by responsibility
 instead of compressing code to meet the limit.
 
-The exported runtime adapter is introduced by [obey-voice #227](https://github.com/Obedience-Corp/obey-voice/pull/227). The pinned revision can be built before that PR is merged.
+The exported runtime adapter was introduced by [obey-voice #227](https://github.com/Obedience-Corp/obey-voice/pull/227). The bridge and engine are now tested together in this repository.
 
 Settings use the TUI’s section order: Brain, Workers, Tools, Voice, Qwen, STT,
 Speakers, Audio, and Meeting. Extra engine configuration remains under Remote,
@@ -201,5 +207,29 @@ remains in use across responder changes and resume. Camp discovery uses the
 engine's `persona directories --json` command and stays optional. The Linux
 folder browser uses `zenity`; custom entry remains available if it is absent.
 
-This feature pins the engine change in
+This feature uses the shared engine support introduced in
 [obey-voice #228](https://github.com/Obedience-Corp/obey-voice/pull/228).
+
+## Current engine features
+
+Persona brain and speech selectors read the engine configuration schema, including
+Codex, audio8, and openai-speech. The inherited App default option remains available;
+saved providers remain visible if discovery fails.
+
+Speech setup shows the openai-speech server URL, model, voice, API key and timeout.
+The server owns installation (for local Phonon, run `ollama pull phonon`). The final
+Try it step verifies generation and playback; an empty local model list does not
+prove server readiness.
+
+Conversation shows active and queued background work without replacing the main
+conversation status. Select the indicator to open one task directly or the worker
+list for multiple tasks. Stopping tasks stay visible until the engine finishes
+them; disabling new tasks does not hide existing work.
+
+`just test work` opens an isolated protocol replay for this indicator: start a
+typed/silent conversation, inspect the active and queued jobs, return to chat,
+and send `finish` to complete them. It never opens audio or reads personal config.
+
+The persona editor is a centered modal with Intelligence and Voice sections, an
+optional starting-folder section, and fixed save/cancel actions. Its form scrolls
+independently so the actions remain reachable in smaller windows.

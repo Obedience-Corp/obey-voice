@@ -130,8 +130,16 @@ fn priority(key: &str) -> usize {
         | "input_device"
         | "tts_place"
         | "user_display_name" => 0,
-        "ollama_model" | "grok_model" | "cursor_model" | "codex_model" | "voice_worker_model"
-        | "tts_voice" | "qwen_tts_voice" | "audio8_voice" | "output_device" => 1,
+        "ollama_model"
+        | "grok_model"
+        | "cursor_model"
+        | "codex_model"
+        | "voice_worker_model"
+        | "tts_voice"
+        | "qwen_tts_voice"
+        | "audio8_voice"
+        | "openai_speech_voice"
+        | "output_device" => 1,
         "codex_reasoning_effort" | "qwen_tts_language" | "playback_volume" => 2,
         _ => 100,
     }

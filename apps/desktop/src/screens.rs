@@ -6,10 +6,13 @@ mod home;
 mod library;
 mod meeting;
 mod persona_directory;
+mod persona_editor;
 mod personas;
+mod provider_choices;
 mod remote;
 mod settings;
 mod setup;
+mod work_cue;
 mod workers;
 
 use crate::app::VoiceApp;

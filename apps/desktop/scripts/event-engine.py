@@ -39,6 +39,15 @@ if '--bridge' not in sys.argv:
 
 event('ready', {'protocol': 1})
 recording = threading.Event()
+work_replay = os.environ.get('OBEY_VOICE_WORK_REPLAY') == '1'
+workers = [
+    {'ID': 'running-job', 'Task': 'Review desktop changes', 'State': 'running', 'Activity': 'Reading files'},
+    {'ID': 'queued-job', 'Task': 'Check documentation', 'State': 'queued'},
+]
+def work_state():
+    event('state', {'name': 'Fixture', 'session_id': 'work-replay',
+                   'status': 'Ready for typed input', 'workers': workers,
+                   'workers_enabled': False, 'recording': 'off'})
 def stream():
     event('meeting_phase', 'listening')
     event('meeting_level', 0.45)
@@ -59,6 +68,16 @@ for line in sys.stdin:
         reply['result'] = {'progress': {'version': 1, 'completed': True}, 'existing': True}
     elif method == 'sessions':
         reply['result'] = []
+    elif method == 'start' and work_replay:
+        reply['result'] = {'session_id': 'work-replay'}
+        emit(reply)
+        work_state()
+        continue
+    elif method == 'text' and work_replay:
+        if request.get('text') == 'finish':
+            for worker in workers:
+                worker['State'] = 'succeeded'
+        work_state()
     elif method == 'start':
         print('Fixture provider startup failed: model unavailable', file=sys.stderr, flush=True)
         reply['error'] = 'Fixture provider unavailable; inspect Diagnostics'

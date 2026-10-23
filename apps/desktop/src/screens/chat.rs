@@ -105,6 +105,7 @@ impl VoiceApp {
                 }),
             );
         });
+        self.work_cue(ui);
         let height = (ui.available_height() - 152.).max(100.);
         egui::ScrollArea::vertical()
             .id_salt(if self.activity { "activity" } else { "chat" })

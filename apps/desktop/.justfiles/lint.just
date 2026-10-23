@@ -5,7 +5,11 @@ default:
     @just --unsorted --list lint
 
 # Run every read-only code quality check
-all: justfiles file-size fmt-check clippy go-vet
+all: justfiles file-size engine-source fmt-check clippy go-vet
+
+# Direct and scripted bridge builds must use this checkout, even without a workspace
+engine-source:
+    python3 scripts/check-engine-source.py
 
 # Keep hand-maintained files below the repository's 500-line maximum
 file-size:

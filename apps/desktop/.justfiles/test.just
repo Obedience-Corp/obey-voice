@@ -25,6 +25,12 @@ events:
     just dist mac
     python3 scripts/event-fixture.py
 
+# Replay active/queued work, completion, and inspection without providers or audio
+[macos]
+work:
+    just dist mac
+    python3 scripts/event-fixture.py --work
+
 # Real routing adapter with temporary config, bundle, and a fake camp importer
 routing:
     python3 scripts/test-routing.py

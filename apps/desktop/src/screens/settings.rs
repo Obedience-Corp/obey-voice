@@ -118,7 +118,7 @@ impl VoiceApp {
                 if self.group == "voice" && self.active && self.search.is_empty() {
                     ui.horizontal(|ui| {
                         if ui.button("Preview saved voice").clicked() {
-                            let voice = self.values["voice"]["value"].as_str().unwrap_or_default().to_string();
+                            let voice = super::provider_choices::saved_voice(&self.values);
                             self.action("preview", &voice, false);
                         }
                         if ui.button("Stop preview").clicked() { self.action("preview_stop", "", false); }

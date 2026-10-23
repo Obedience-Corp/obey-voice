@@ -84,7 +84,10 @@ impl VoiceApp {
         self.search.clear();
         match target {
             Screen::Home | Screen::Sessions => self.refresh(),
-            Screen::Personas => self.command(&["persona", "list", "--json"], Purpose::Personas),
+            Screen::Personas => {
+                self.command(&["persona", "list", "--json"], Purpose::Personas);
+                self.command(&["config", "schema", "--json"], Purpose::SettingsSchema);
+            }
             Screen::Settings => {
                 self.command(&["config", "schema", "--json"], Purpose::SettingsSchema);
                 self.command(&["config", "get", "--json"], Purpose::SettingsValues);

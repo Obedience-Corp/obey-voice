@@ -1,11 +1,15 @@
-module github.com/Obedience-Corp/obey-voice-agent/bridge
+module github.com/Obedience-Corp/obey-voice/apps/desktop/bridge
 
 go 1.26.1
 
 require (
-	github.com/Obedience-Corp/obey-voice v0.2.1-0.20261023022922-ebdf1eeed33c
+	github.com/Obedience-Corp/obey-voice v0.0.0
 	golang.org/x/sys v0.47.0
 )
+
+// The desktop and engine are released from one checkout. This also applies to
+// direct Go commands, fixture builds, and GOWORK=off; no downloaded engine pin.
+replace github.com/Obedience-Corp/obey-voice => ../../..
 
 require (
 	charm.land/lipgloss/v2 v2.0.5 // indirect
