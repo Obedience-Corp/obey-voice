@@ -111,3 +111,56 @@ func TestServeResumeRestoresDirectoryBeforeResponderAndRejectsMissing(t *testing
 		t.Fatal("failed resume changed conversation")
 	}
 }
+
+func TestConversationDirectoryPersistsLaunchDefaultAcrossResume(t *testing.T) {
+	personaEnv(t)
+	t.Setenv("OBEY_VOICE_WORK_DIR", "")
+	t.Setenv("WORK_DIR", "")
+	launch, _ := filepath.EvalSymlinks(t.TempDir())
+	pinned, _ := filepath.EvalSymlinks(t.TempDir())
+	profile, err := persona.Load("samantha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.StartingDirectory = pinned
+	writePersona(t, profile)
+	writePersona(t, &persona.Profile{Schema: persona.Schema, ID: "obey", DisplayName: "Obey", Prompts: persona.PromptRefs{Persona: "obey"}})
+	cfg := &config.Config{WorkDir: launch, WorkDirSource: "launch-dir"}
+	if err := resolveConversationDirectory(cfg, "samantha", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := persona.ResolveBinding(cfg, "samantha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := persona.ResolveBinding(binding.Config(), "obey")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Config().WorkDir != launch {
+		t.Fatal("default persona inherited pinned directory")
+	}
+	saved := session.New("ollama", "test")
+	store := session.DefaultStore()
+	if err := store.SaveSelection(saved, nil, "obey", "Obey", "", next.Config().ConversationDirectories); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := &config.Config{WorkDir: t.TempDir()}
+	if err := resolveConversationDirectory(restarted, "obey", "", loaded); err != nil {
+		t.Fatal(err)
+	}
+	if restarted.WorkDir != launch {
+		t.Fatal("resume lost original launch directory")
+	}
+	resumed, err := persona.ResolveBinding(restarted, "samantha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Config().WorkDir != pinned {
+		t.Fatal("resume lost pinned persona directory")
+	}
+}

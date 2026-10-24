@@ -127,6 +127,13 @@ remote_tools_enabled is set.`,
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
+		// The agent's tools operate here. An explicit --work-dir that does not
+		// exist is an error, not a silent fall back to home. Resolved after
+		// configureServeStdio, which has already opened a relative --log-file
+		// against the caller's cwd.
+		if err := resolveConversationDirectory(cfg, servePersona, serveWorkDir, nil); err != nil {
+			return err
+		}
 		// --persona overrides the active persona for this process only.
 		// config.Load already applied the configured persona via the
 		// SetAfterLoad hook, so this simply re-binds to a different one.
@@ -136,13 +143,6 @@ remote_tools_enabled is set.`,
 				return fmt.Errorf("resolve persona: %w", err)
 			}
 			cfg = binding.Config()
-		}
-		// The agent's tools operate here. An explicit --work-dir that does not
-		// exist is an error, not a silent fall back to home. Resolved after
-		// configureServeStdio, which has already opened a relative --log-file
-		// against the caller's cwd.
-		if err := resolveConversationDirectory(cfg, servePersona, serveWorkDir, nil); err != nil {
-			return err
 		}
 		wd, err := config.ResolveWorkDirInfo(cfg, "")
 		if err != nil {
@@ -508,9 +508,8 @@ func runServe(cfg *config.Config) error {
 // The caller supplies the current selected binding snapshot so active reflects
 // session selection without consulting the configured default.
 //
-// Each row's stack is resolved through persona.ResolveBinding, the same call
-// that binds a conversation, so the list reports what a turn would actually
-// run with rather than a profile's inherit-me blanks.
+// Each row overlays the profile's settings without admitting a response.
+// A missing starting directory must not hide the catalog needed to repair it.
 func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error) {
 	return func() ([]netapi.PersonaSummary, error) {
 		profiles, issues, err := persona.ListWithIssues()
@@ -520,26 +519,11 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 		active := persona.ActiveID(cfg)
 		out := make([]netapi.PersonaSummary, 0, len(profiles))
 		for _, p := range profiles {
-			var binding *persona.SessionBinding
-			var snap *config.Config
-			if p.Inactive {
-				snap = cfg.Clone()
-				persona.Apply(snap, p)
-			} else {
-				var err error
-				binding, err = persona.ResolveBinding(cfg, p.ID)
-				if err != nil {
-					return nil, err
-				}
-				snap = binding.Config()
-			}
+			snap := cfg.Clone()
+			persona.Apply(snap, p)
 			id, displayName := p.ID, p.DisplayName
 			brainModel := persona.ModelForProvider(snap, snap.BrainProvider)
 			brainProvider := snap.BrainProvider
-			if binding != nil {
-				id, displayName, brainModel = binding.PersonaID, binding.DisplayName, binding.BrainModel
-				brainProvider = binding.BrainProvider
-			}
 			out = append(out, netapi.PersonaSummary{
 				StartingDirectory: p.StartingDirectory,
 				ID:                id,
@@ -624,7 +608,7 @@ func (s *servePersonaSwitcher) initialize() error {
 		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
-			return session.DefaultStore().SaveSelection(s.sessions.sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+			return session.DefaultStore().SaveSelection(s.sessions.sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 		},
 	}
 	if s.newBrain != nil {
@@ -667,7 +651,7 @@ func (s *servePersonaSwitcher) clear(ctx context.Context) error {
 		return nil
 	}
 	selected := s.selector.Snapshot()
-	s.selector.RestoreSession(s.sessions.id(), selected.PersonaID, selected.DisplayName, selected.PromptHash)
+	s.selector.RestoreSession(s.sessions.id(), selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 	_, err := s.selector.Select(ctx, selected.PersonaID, "clear")
 	return err
 }
@@ -754,7 +738,7 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	if s.selector == nil {
 		return nil
 	}
-	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, config.WorkDirInfo{Dir: cfg.WorkDir, Source: config.WorkDirSource(cfg.WorkDirSource)})
+	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
 	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})

@@ -55,16 +55,17 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
-	WorkDir       string       `json:"work_dir,omitempty"`
-	WorkDirSource string       `json:"work_dir_source,omitempty"`
-	FormatVersion int          `json:"format_version,omitempty"`
-	ID            string       `json:"id"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
-	Provider      string       `json:"provider"`
-	Model         string       `json:"model"`
-	Turns         []brain.Turn `json:"turns"`
-	Summary       string       `json:"summary"` // first user message, for display
+	Directories   *config.ConversationDirectories `json:"directories,omitempty"`
+	WorkDir       string                          `json:"work_dir,omitempty"`
+	WorkDirSource string                          `json:"work_dir_source,omitempty"`
+	FormatVersion int                             `json:"format_version,omitempty"`
+	ID            string                          `json:"id"`
+	CreatedAt     time.Time                       `json:"created_at"`
+	UpdatedAt     time.Time                       `json:"updated_at"`
+	Provider      string                          `json:"provider"`
+	Model         string                          `json:"model"`
+	Turns         []brain.Turn                    `json:"turns"`
+	Summary       string                          `json:"summary"` // first user message, for display
 	// Work is the canonical durable background-work snapshot. It is optional so
 	// sessions written before work persistence was introduced remain compatible.
 	Work                       *work.Snapshot `json:"work,omitempty"`
@@ -404,7 +405,7 @@ func (st *Store) injectWriteFailures(before, after error) {
 // SaveSelection atomically publishes the selected responder metadata while
 // retaining the newest durable work snapshot. On WriteCommittedError the
 // caller also receives the installed selection, with durability unconfirmed.
-func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string) error {
+func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string, directories ...*config.ConversationDirectories) error {
 	sessionWriteMu.Lock()
 	defer sessionWriteMu.Unlock()
 	current, err := loadFrom(st.dir, s.ID)
@@ -419,6 +420,12 @@ func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displa
 	candidate.SelectedPersonaID = personaID
 	candidate.SelectedPersonaDisplayName = displayName
 	candidate.SelectedPersonaPromptHash = promptHash
+	if len(directories) > 0 && directories[0] != nil {
+		candidate.Directories = directories[0].Clone()
+		if choice, ok := candidate.Directories.Personas[personaID]; ok {
+			candidate.WorkDir, candidate.WorkDirSource = choice.Dir, choice.Source
+		}
+	}
 	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
 		if WriteCommitted(err) {
 			*s = candidate
@@ -467,6 +474,8 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 		candidate.SelectedPersonaID = current.SelectedPersonaID
 		candidate.SelectedPersonaDisplayName = current.SelectedPersonaDisplayName
 		candidate.SelectedPersonaPromptHash = current.SelectedPersonaPromptHash
+		candidate.WorkDir, candidate.WorkDirSource = current.WorkDir, current.WorkDirSource
+		candidate.Directories = current.Directories.Clone()
 	}
 	if err == nil && current.Work != nil {
 		if s.Work != nil && s.Work.Scope != current.Work.Scope {

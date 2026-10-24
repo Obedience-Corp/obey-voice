@@ -66,6 +66,9 @@ func ResolveBinding(cfg *config.Config, id string) (*SessionBinding, error) {
 	snap := *cfg
 	fillDisplayNames(&snap)
 	Apply(&snap, p)
+	if err := config.BindPersonaDirectory(&snap, p.ID, p.StartingDirectory); err != nil {
+		return nil, err
+	}
 	return newBinding(p.ID, p.DisplayName, p.TTS, snap), nil
 }
 
@@ -79,6 +82,9 @@ func ResolveDefaultsBinding(cfg *config.Config) (*SessionBinding, error) {
 	}
 	snap := *cfg
 	fillDisplayNames(&snap)
+	if err := config.BindPersonaDirectory(&snap, DefaultID, ""); err != nil {
+		return nil, err
+	}
 	p, err := Load(DefaultID)
 	if err != nil {
 		if !isNotExist(err) {
