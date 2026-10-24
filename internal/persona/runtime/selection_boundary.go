@@ -214,6 +214,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				return fmt.Errorf("commit persona selection: %w", err)
 			}
 			installed = true
+			s.opts.Base.ConversationDirectories = cfg.ConversationDirectories.Clone()
 			if reason != "response_boundary" {
 				s.opts.UseDefaults = false
 			}

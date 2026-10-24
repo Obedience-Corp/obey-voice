@@ -138,8 +138,9 @@ proof sample is not a latency guarantee.
 
 ## Starting directories
 
-A persona may name the folder new conversations start in: file and shell
-tools, worker boundaries, skills and campaign context all use it. Empty
+A persona may name its own working folder within a shared conversation: file
+and shell tools, worker boundaries, skills and campaign context all use it.
+Conversation history stays shared across all participating personas. Empty
 inherits the application working directory, which is what shipped personas do.
 
 In the TUI form the Starting directory row cycles with `←`/`→` through
@@ -164,9 +165,17 @@ discovery failures return a notice without disabling custom paths.
 For a new conversation, explicit `--work-dir` / desktop API override wins,
 then `OBEY_VOICE_WORK_DIR` (legacy `WORK_DIR`), then the persona, then the app
 working-directory resolver. “Use defaults” skips the persona override. The
-resolved canonical path and source are saved with the conversation. Resume
-uses that saved directory; switching responders, clearing history or editing
-settings cannot move it. Older sessions acquire a directory on first resume.
+app default is retained separately from each persona’s resolved directory.
+Switching or addressing another responder uses that persona’s own directory
+for tools, project context, skills and background work. A persona set to
+`(default)` uses the original app directory, never the previous responder’s camp.
+
+Each persona’s canonical path and source are saved when it first participates
+in the conversation. Resume restores these choices; clearing history, editing
+settings or editing a profile does not move an already-bound persona. Start a
+new conversation to use an edited directory. Legacy sessions retain their saved
+directory for the saved responder; if that directory came from a persona, other
+responders inherit the current launch default until their own directory is bound.
 Remote paths refer to the engine host. A remote provider without shared
 persona selection cannot resume into a different directory in the same
 running server; it reports an error before changing the active conversation.

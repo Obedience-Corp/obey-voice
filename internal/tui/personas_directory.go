@@ -230,7 +230,7 @@ func (m personasModel) directoryRowHelp() string {
 	if m.directory.custom {
 		return "Type a folder path (~ allowed) · ←/→ leaves custom · must exist · empty = (default)"
 	}
-	return "Starting directory · new conversations run file & shell tools here · (default) inherits app work_dir"
+	return "Starting directory · this persona runs file & shell tools here · (default) inherits app work_dir"
 }
 
 // directoryNote explains the row when the camp list is not a list.
@@ -308,8 +308,14 @@ func (m personasModel) directoryDetail(width int) string {
 	case m.directory.custom && v == "":
 		return "type a folder · saved with the persona"
 	case v == "":
-		if m.cfg != nil && strings.TrimSpace(m.cfg.WorkDir) != "" {
-			return truncateLeft("app default · "+strings.TrimSpace(m.cfg.WorkDir), width)
+		if m.cfg != nil {
+			dir := m.cfg.WorkDir
+			if m.cfg.ConversationDirectories != nil {
+				dir = m.cfg.ConversationDirectories.Default.Dir
+			}
+			if strings.TrimSpace(dir) != "" {
+				return truncateLeft("app default · "+strings.TrimSpace(dir), width)
+			}
 		}
 		return "app default · the folder obey-voice is launched from"
 	}

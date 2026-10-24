@@ -73,6 +73,7 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	opts.Base = opts.Base.Clone()
 	opts.Base.WorkDir = opts.Initial.Config().WorkDir
 	opts.Base.WorkDirSource = opts.Initial.Config().WorkDirSource
+	opts.Base.ConversationDirectories = opts.Initial.Config().ConversationDirectories
 	if opts.NewBrain == nil {
 		opts.NewBrain = func(_ context.Context, cfg *config.Config) (brain.Provider, error) { return brain.NewProvider(cfg) }
 	}
@@ -124,7 +125,7 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 	digest := sha256.Sum256(encoded)
 	scope := s.opts.Pipeline.ConversationScope()
 	return events.PersonaSelection{
-		WorkDir: cfg.WorkDir, WorkDirSource: cfg.WorkDirSource,
+		WorkDir: cfg.WorkDir, WorkDirSource: cfg.WorkDirSource, Directories: cfg.ConversationDirectories.Clone(),
 		SessionID: s.opts.SessionID, ConversationEpoch: scope.ConversationEpoch,
 		PersonaID: b.PersonaID, DisplayName: b.DisplayName, PromptHash: hash, BindingHash: hex.EncodeToString(digest[:]),
 		Generation: generation, BrainProvider: b.BrainProvider, BrainModel: b.BrainModel,
@@ -182,6 +183,7 @@ func (s *Selector) Reload(ctx context.Context, base *config.Config) error {
 	previous := s.opts.Base
 	s.opts.Base = base.Clone()
 	s.opts.Base.WorkDir, s.opts.Base.WorkDirSource = previous.WorkDir, previous.WorkDirSource
+	s.opts.Base.ConversationDirectories = previous.ConversationDirectories.Clone()
 	if _, err := s.selectAtBoundary(ctx, s.Snapshot().PersonaID, "response_boundary"); err != nil {
 		s.opts.Base = previous
 		return err
@@ -228,15 +230,17 @@ func responseEnvelope(selected events.PersonaSelection) events.ResponseEnvelope 
 // It does not load history, start work, or select a fallback. Until Select
 // succeeds, the transcript remains readable but response admission is closed.
 // Like Select, this must run at the host's serialized lifecycle boundary.
-func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash string, directory ...config.WorkDirInfo) {
+func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash string, directories ...*config.ConversationDirectories) {
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	if s.closed {
 		return
 	}
-	if len(directory) > 0 {
-		s.opts.Base.WorkDir = directory[0].Dir
-		s.opts.Base.WorkDirSource = string(directory[0].Source)
+	if len(directories) > 0 && directories[0] != nil {
+		s.opts.Base.ConversationDirectories = directories[0].Clone()
+		if choice, ok := directories[0].Personas[personaID]; ok {
+			s.opts.Base.WorkDir, s.opts.Base.WorkDirSource = choice.Dir, choice.Source
+		}
 	}
 	s.generation++
 	s.opts.SessionID = sessionID
@@ -244,7 +248,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 	s.requiresSelection = true
 	s.mu.Lock()
 	s.selected = events.PersonaSelection{
-		WorkDir: s.opts.Base.WorkDir, WorkDirSource: s.opts.Base.WorkDirSource,
+		WorkDir: s.opts.Base.WorkDir, WorkDirSource: s.opts.Base.WorkDirSource, Directories: s.opts.Base.ConversationDirectories.Clone(),
 		SessionID: sessionID, ConversationEpoch: s.opts.Pipeline.ConversationScope().ConversationEpoch,
 		PersonaID: personaID, DisplayName: displayName, PromptHash: promptHash,
 		Revision: s.selected.Revision + 1, Generation: s.generation, Reason: "restore_requires_selection",

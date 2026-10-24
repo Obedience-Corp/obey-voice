@@ -23,6 +23,10 @@ import (
 // This exercises the actual Ollama projection and pipeline against controlled
 // HTTP. It proves request/storage attribution, not model recall or real audio.
 func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
+	t.Setenv("OBEY_VOICE_WORK_DIR", "")
+	t.Setenv("WORK_DIR", "")
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	pinned, _ := filepath.EvalSymlinks(t.TempDir())
 	var mu sync.Mutex
 	classifierCalls := 0
 	generationCalls := 0
@@ -80,19 +84,28 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		if len(request.Messages) > 0 && strings.Contains(request.Messages[0].Content, "You are Samantha.") {
 			name = "Samantha"
 		}
+		wantDir := root
+		if name == "Samantha" {
+			wantDir = pinned
+		}
+		if len(request.Messages) == 0 || !strings.Contains(request.Messages[0].Content, wantDir) {
+			t.Errorf("%s prompt missing its own directory %s", name, wantDir)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": "I am " + name + ". The code is cobalt."}, "done": true, "done_reason": "stop"})
 	}))
 	defer server.Close()
-	root := t.TempDir()
 	catalog := persona.Catalog{Dir: filepath.Join(root, "personas")}
 	promptDir := filepath.Join(root, "prompts")
 	for _, id := range []string{"samantha", "santa"} {
 		profile := testProfile(id, map[string]string{"samantha": "Samantha", "santa": "Santa"}[id], id)
 		profile.Brain.Model = ""
+		if id == "samantha" {
+			profile.StartingDirectory = pinned
+		}
 		writeTestProfile(t, catalog.Dir, profile)
 		writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
 	}
-	base := &config.Config{ActivePersona: "samantha", BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL, PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192}
+	base := &config.Config{ActivePersona: "samantha", BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL, PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192, EnvironmentContextEnabled: true}
 	binding, err := catalog.ResolveBinding(base, "samantha")
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +124,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	sess := session.New("ollama", "fixture:latest")
 	selector, err := NewSelector(SelectionOptions{Base: base, Catalog: catalog, Pipeline: p, SessionID: sess.ID, Initial: binding,
 		Persist: func(turns []brain.Turn, s events.PersonaSelection) error {
-			return store.SaveSelection(sess, turns, s.PersonaID, s.DisplayName, s.PromptHash)
+			return store.SaveSelection(sess, turns, s.PersonaID, s.DisplayName, s.PromptHash, s.Directories)
 		},
 	})
 	if err != nil {

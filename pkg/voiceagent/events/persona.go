@@ -1,25 +1,32 @@
 package events
 
-import "context"
+import (
+	"context"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+)
 
 // PersonaSelection is control state, separate from the identity of any reply
 // already queued for display or playback.
 type PersonaSelection struct {
-	WorkDir           string `json:"work_dir,omitempty"`
-	WorkDirSource     string `json:"work_dir_source,omitempty"`
-	SessionID         string `json:"session_id"`
-	ConversationEpoch string `json:"conversation_epoch"`
-	PersonaID         string `json:"persona_id"`
-	DisplayName       string `json:"display_name"`
-	PromptHash        string `json:"prompt_hash"`
-	BindingHash       string `json:"binding_hash"`
-	Revision          uint64 `json:"revision"`
-	Generation        uint64 `json:"generation"`
-	BrainProvider     string `json:"brain_provider"`
-	BrainModel        string `json:"brain_model"`
-	VoiceProvider     string `json:"voice_provider"`
-	Voice             string `json:"voice"`
-	Reason            string `json:"reason"`
+	// Directories is an immutable session snapshot. Consumers that need to
+	// change it must use Clone, as with binding-derived configuration.
+	Directories       *config.ConversationDirectories `json:"directories,omitempty"`
+	WorkDir           string                          `json:"work_dir,omitempty"`
+	WorkDirSource     string                          `json:"work_dir_source,omitempty"`
+	SessionID         string                          `json:"session_id"`
+	ConversationEpoch string                          `json:"conversation_epoch"`
+	PersonaID         string                          `json:"persona_id"`
+	DisplayName       string                          `json:"display_name"`
+	PromptHash        string                          `json:"prompt_hash"`
+	BindingHash       string                          `json:"binding_hash"`
+	Revision          uint64                          `json:"revision"`
+	Generation        uint64                          `json:"generation"`
+	BrainProvider     string                          `json:"brain_provider"`
+	BrainModel        string                          `json:"brain_model"`
+	VoiceProvider     string                          `json:"voice_provider"`
+	Voice             string                          `json:"voice"`
+	Reason            string                          `json:"reason"`
 }
 
 func (PersonaSelection) eventType() string { return "persona_selected" }

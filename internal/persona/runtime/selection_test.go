@@ -187,7 +187,7 @@ func newSelectorTestFixture(t *testing.T, profiles ...persona.Profile) *selector
 		return candidate, nil
 	}
 	persist := func(turns []brain.Turn, selected events.PersonaSelection) error {
-		return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+		return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 	}
 	selector, err := NewSelector(SelectionOptions{
 		Base: base, Catalog: catalog, Pipeline: p, SessionID: sess.ID, Initial: initial,

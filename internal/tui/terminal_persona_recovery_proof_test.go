@@ -134,9 +134,15 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 		}
 	})
 
-	root := t.TempDir()
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	pinned, _ := filepath.EvalSymlinks(t.TempDir())
+	t.Setenv("OBEY_VOICE_WORK_DIR", "")
+	t.Setenv("WORK_DIR", "")
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
 	for _, p := range []persona.Profile{pauseProofProfile("samantha", "Samantha"), pauseProofProfile("santa", "Santa")} {
+		if p.ID == "samantha" {
+			p.StartingDirectory = pinned
+		}
 		writePauseProofCatalog(t, config.ConfigDir(), p)
 	}
 
@@ -175,10 +181,15 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	selector, err := personaruntime.NewSelector(personaruntime.SelectionOptions{
 		Base: base, Catalog: catalog, Pipeline: p, SessionID: sess.ID, Initial: initial,
 		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-			return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+			return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 		},
-		NewBrain:  factory,
-		NewWorker: func(context.Context, *config.Config) (brain.Provider, error) { return nil, nil },
+		NewBrain: factory,
+		NewWorker: func(_ context.Context, cfg *config.Config) (brain.Provider, error) {
+			if cfg.WorkDir != root {
+				t.Errorf("Santa worker directory = %q, want %q", cfg.WorkDir, root)
+			}
+			return nil, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +207,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 		}
 	}
 	selectionBefore := selector.Snapshot()
+	if selectionBefore.WorkDir != pinned {
+		t.Fatalf("initial persona directory = %q, want %q", selectionBefore.WorkDir, pinned)
+	}
 
 	runner := &pauseTerminalRunner{
 		pipeline: p, voiceStarts: make(chan int, 8), voiceEnds: make(chan int, 8),
@@ -381,6 +395,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	selected := awaitTerminalSnapshot(t, h.updates, "Santa selection", func(s terminalPersonaSnapshot) bool {
 		return s.screen == screenPersonas && s.selection.PersonaID == "santa"
 	})
+	if selected.selection.WorkDir != root {
+		t.Fatalf("default persona inherited the pinned camp: %q, want %q", selected.selection.WorkDir, root)
+	}
 	if selected.voice || selected.selection.SessionID != selectionBefore.SessionID || selected.selection.ConversationEpoch != selectionBefore.ConversationEpoch || selected.agent != "Santa" {
 		t.Fatalf("Santa selection changed session or mic state: before=%+v after=%+v", selectionBefore, selected)
 	}
@@ -421,6 +438,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	loaded, err := store.Load(sess.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if loaded.WorkDir != root || loaded.Directories == nil || loaded.Directories.Personas["samantha"].Dir != pinned || loaded.Directories.Personas["santa"].Dir != root {
+		t.Fatalf("durable persona directories = %+v", loaded)
 	}
 	foundSamanthaSeed, foundSantaReply := false, false
 	for _, turn := range loaded.Turns {

@@ -48,7 +48,7 @@ func ValidateStartingDirectory(value string) (string, error) {
 }
 
 // ResolveSessionDirectory resolves once, before constructing conversation
-// resources. A saved directory always wins. No persona switch calls this.
+// resources. A saved directory always wins for its owning persona.
 func ResolveSessionDirectory(cfg *Config, override, personaDir, savedDir, savedSource string) (WorkDirInfo, error) {
 	if savedDir != "" && !filepath.IsAbs(savedDir) {
 		return WorkDirInfo{}, fmt.Errorf("saved conversation directory %q must be absolute", savedDir)

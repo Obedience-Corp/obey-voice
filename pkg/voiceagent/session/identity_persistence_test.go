@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -21,7 +22,8 @@ func TestStaleTurnSavePreservesSelectionWithoutWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale := *s
-	if err := store.SaveSelection(s, turns, "santa", "Santa", "p2"); err != nil {
+	directories := &config.ConversationDirectories{Default: config.ConversationDirectory{Dir: t.TempDir(), Source: "launch-dir"}, Personas: map[string]config.ConversationDirectory{"santa": {Dir: t.TempDir(), Source: "persona"}}}
+	if err := store.SaveSelection(s, turns, "santa", "Santa", "p2", directories); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Save(&stale, append(turns, brain.Turn{Role: "assistant", Content: "cobalt", PersonaID: "santa"})); err != nil {
@@ -30,6 +32,9 @@ func TestStaleTurnSavePreservesSelectionWithoutWork(t *testing.T) {
 	loaded, err := store.Load(s.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loaded.Directories, directories) || loaded.WorkDir != directories.Personas["santa"].Dir {
+		t.Fatalf("stale save regressed directories: %+v", loaded)
 	}
 	if loaded.SelectedPersonaID != "santa" || stale.SelectedPersonaID != "santa" || len(loaded.Turns) != 2 {
 		t.Fatalf("stale save regressed selection: %+v", loaded)

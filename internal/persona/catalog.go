@@ -82,5 +82,8 @@ func (c Catalog) ResolveBindingWithIssues(base *config.Config, id string) (*Sess
 	}
 	snap.PersonaDisplayNames = displayNames(profiles)
 	Apply(snap, p)
+	if err := config.BindPersonaDirectory(snap, p.ID, p.StartingDirectory); err != nil {
+		return nil, issues, err
+	}
 	return newBinding(p.ID, p.DisplayName, p.TTS, *snap), issues, nil
 }

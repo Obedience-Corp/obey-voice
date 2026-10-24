@@ -361,7 +361,7 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
 				UseDefaults: sessionBindID == appTUI.StartDefaultsID,
 				Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-					return session.DefaultStore().SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+					return session.DefaultStore().SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 				},
 				NewBrain: func(_ context.Context, next *config.Config) (brain.Provider, error) {
 					provider, err := brain.NewProvider(next)
