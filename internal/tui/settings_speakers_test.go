@@ -16,7 +16,7 @@ func newSpeakerSettings(t *testing.T, cfg *config.Config, row int) (*settingsMod
 	}
 	m := newSettings(cfg, nil)
 	m.section = sectionSpeakers
-	m.cursor = row
+	m.cursor = lineAtRow(m, row)
 	saved := map[string]any{}
 	m.saveConfig = func(key string, value any) error {
 		saved[key] = value

@@ -69,6 +69,12 @@ type settingsModel struct {
 	devicesLoading bool
 	deviceChecker  config.VoiceDeviceChecker
 
+	// voices is the live catalog behind voiceItems for an engine that has to
+	// be asked (openai-speech); voiceLocale is the Language filter over
+	// voiceItems, view state that is never saved. See settings_voices.go.
+	voices      voiceCatalog
+	voiceLocale string
+
 	// Meeting route discovery (camp list + config).
 	routeDests        []meeting.Destination
 	routeDestsLoading bool
@@ -156,6 +162,7 @@ func newSettings(cfg *config.Config, providers []discovery.ProviderInfo) setting
 		},
 		ensureTTSAssets:       ensure,
 		newTTSProvider:        ttsproviders.NewProvider,
+		voices:                voiceCatalog{load: liveVoiceCatalog},
 		saveConfig:            config.SetAndSave,
 		ensureQwen:            managedqwen.Ensure,
 		saveWorkers:           config.CommitVoiceWorkersCAS,
@@ -443,6 +450,10 @@ func (m *settingsModel) buildVoiceItems() {
 	if strings.EqualFold(activeTTSProvider(m.cfg), managedqwen.ProviderName) {
 		return
 	}
+	if live := m.voices.landed(activeTTSProvider(m.cfg)); live != nil {
+		m.voiceItems = withVoice(live, m.activeVoice())
+		return
+	}
 	// StaticVoicesFor, not StaticVoices: audio8's catalog is the packaged
 	// reference plus whatever this config's models_dir has registered.
 	voices, err := tts.StaticVoicesFor(m.cfg, m.cfg.TTSProvider, "", "")
@@ -488,8 +499,7 @@ func (m settingsModel) activeModel() string {
 func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.ensureCursorVisible()
+		m.resize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
 		if m.edit.kind != editNone {
@@ -560,6 +570,9 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		if m.preview.applyDone(msg) && msg.message != "" {
 			m.message = msg.message
 		}
+
+	case settingsVoicesMsg:
+		m.applyVoiceCatalog(msg)
 
 	case decisionStatusTickMsg:
 		return m, m.pollDecisionStatus()
@@ -690,12 +703,20 @@ func (m *settingsModel) visibleRange(total int) (int, int) {
 }
 
 // ensureCursorVisible scrolls the section so the cursor is on screen, with a
-// list's heading kept above its first option.
+// list's heading kept above its first option and a wrapped choice row's
+// options below it.
 func (m *settingsModel) ensureCursorVisible() {
 	visible := m.contentRows()
-	top := m.cursor
-	if lines := m.sectionLines(); top > 0 && top < len(lines) && lines[top-1].header {
+	lines := m.sectionLines()
+	top, bottom := m.cursor, m.cursor
+	if top > 0 && top < len(lines) && lines[top-1].header {
 		top--
+	}
+	for bottom >= 0 && bottom+1 < len(lines) && lines[bottom+1].wrap > 0 {
+		bottom++
+	}
+	if bottom >= m.offset+visible {
+		m.offset = bottom - visible + 1
 	}
 	if top < m.offset {
 		m.offset = top
@@ -820,6 +841,7 @@ func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
 		m.qwenInstallCancel = cancel
 		m.qwenInstalling = true
 		m.qwenInstallEvents = newEventBridge(16)
+		m.voiceLocale = ""
 		m.message = "Installing native Qwen3-TTS package (large download)…"
 		m.buildTTSItems()
 		m.buildQwenItems()
@@ -845,10 +867,14 @@ func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
 	m.cfg.TTSProvider = provider
 	m.buildTTSItems()
 	m.buildQwenItems()
+	// The voice list belongs to the engine: its live catalog is fetched or
+	// dropped, and the Language filter starts over.
+	m.voiceLocale = ""
+	fetch := m.loadVoiceCatalog()
 	m.buildVoiceItems()
 	m.buildLanguageItems()
 	m.message = fmt.Sprintf("Default TTS provider set to %s; applies immediately unless the persona has its own voice (edit under Personas)", provider)
-	return nil
+	return fetch
 }
 
 // selectVoice saves a voice as the global default; persona voices are edited
@@ -864,6 +890,8 @@ func (m *settingsModel) selectVoice(voice tts.Voice) tea.Cmd {
 		return nil
 	}
 	config.SetTTSVoiceFor(m.cfg, activeTTSProvider(m.cfg), voice.Name)
+	// The engine list names the default voice.
+	m.buildTTSItems()
 	m.message = fmt.Sprintf("Default voice set to %s · personas with their own voice keep it", voice.Name)
 	return nil
 }

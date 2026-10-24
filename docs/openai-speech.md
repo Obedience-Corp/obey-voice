@@ -89,7 +89,12 @@ ordered by locale, then name, so every surface shows one order; the
 
 The Personas form asks the server for this catalog when it opens on
 `openai-speech` (three HTTP calls, no model load) and offers a Language row to
-narrow it; a voice typed for a server that did not list it is kept. The
-Settings voice list still shows the configured voice plus `default`; wiring
-the live catalog into Settings is the next slice. An unknown name is reported
-by the server at the first synthesis, naming the voices it has.
+narrow it; a voice typed for a server that did not list it is kept. Settings →
+Voice asks the same way when Settings opens on `openai-speech` or the Engine
+list is switched to it. Until the answer lands, or when the server cannot be
+reached, the voice list is the configured voice plus `default`, and the Voice
+heading says why. A Language filter row above the list narrows it to one
+locale; voices that state no locale and the ✓ voice stay listed, and the
+filter is a view, not a saved setting. The highlighted voice's locale, gender,
+age and description show on the detail line. An unknown name is reported by
+the server at the first synthesis, naming the voices it has.

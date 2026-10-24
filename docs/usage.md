@@ -373,9 +373,14 @@ option under the cursor. Microphone and speaker devices are two lists in the
 **Audio** section with the current device marked ✓ and the volume slider below
 them (`+`/`-`). The **Voice** section lists the text-to-speech engines with
 each one's configured model context, then the voices of the active engine, then
-the language. Choosing an uninstalled **Qwen3-TTS** engine installs the native
-multi-tier package (worker binary + GGUF under `models_dir/qwen3-tts`) when a
-published platform tarball exists (macOS Apple Silicon Metal, or linux/amd64
+the language. When the voices state more than one locale, a **Language filter**
+row above them (`enter`/`+`/`-` step it) narrows the list to one; the ✓ voice
+always stays listed, and the filter is not saved. For `openai-speech` the
+voices come from the server's own catalog
+([Voices and personas](openai-speech.md#voices-and-personas)). Choosing an
+uninstalled **Qwen3-TTS** engine installs the native multi-tier package (worker
+binary + GGUF under `models_dir/qwen3-tts`) when a published platform tarball
+exists (macOS Apple Silicon Metal, or linux/amd64
 CPU) or `qwen_tts_native_url` is set; it is listed dim until then, so the
 download is a deliberate choice. After setup, the **Voice** list shows Qwen's
 nine CustomVoice-class preset speakers: `p` previews the one under the cursor,

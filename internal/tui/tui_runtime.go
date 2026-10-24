@@ -21,6 +21,7 @@ func (a App) onWorkerSettingsSaved(msg workerSettingsSavedMsg) (tea.Model, tea.C
 func (a App) onSettingsDone(msg settingsDoneMsg) (tea.Model, tea.Cmd) {
 	a.settings.closePreview()
 	a.settings.cancelEnroll()
+	a.settings.voices.reset()
 	target := a.settingsReturnScreen
 	if target == screenSettings {
 		target = screenLauncher
