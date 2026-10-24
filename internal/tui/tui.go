@@ -73,6 +73,9 @@ type App struct {
 	personas       personasModel
 	workers        workersModel
 
+	launcherTicking bool
+	launcherTickID  uint64
+
 	// Conversation runtime wiring, set by Run before the program starts.
 	builder RuntimeBuilder
 	runCtx  context.Context
@@ -228,6 +231,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if claim := next.mouseClaimCmd(from); claim != nil {
 		cmd = tea.Batch(cmd, claim)
 	}
+	if tick := next.syncLauncherAnimation(); tick != nil {
+		cmd = tea.Batch(cmd, tick)
+	}
 	return next, cmd
 }
 
@@ -253,6 +259,12 @@ func (a App) mouseClaimCmd(from screen) tea.Cmd {
 
 func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case launcherTickMsg:
+		if a.launcherTicking && msg.id == a.launcherTickID {
+			a.launcherTicking = false
+			a.launcher.logoFrame = (a.launcher.logoFrame + 1) % 3600
+		}
+		return a, nil
 	case tea.KeyMsg:
 		// A false third result means fall through to delegate; cmd is nil on
 		// every such path and would be dropped here if that ever changed.

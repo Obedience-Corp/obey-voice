@@ -57,12 +57,14 @@ type launcherItem struct {
 }
 
 type launcherModel struct {
-	cfg       *config.Config
-	providers []discovery.ProviderInfo
-	cursor    int
-	items     []launcherItem
-	width     int
-	height    int
+	cfg           *config.Config
+	providers     []discovery.ProviderInfo
+	cursor        int
+	items         []launcherItem
+	width         int
+	height        int
+	logoFrame     int
+	reducedMotion bool
 	// banner is the latest raw status string. The rail shows one parsed line;
 	// older outcomes stay in notices for this process only.
 	banner       string
@@ -119,9 +121,10 @@ func (m launcherModel) withBanner(text string, isErr bool) launcherModel {
 
 func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved ...[]session.Session) launcherModel {
 	m := launcherModel{
-		cfg:          cfg,
-		providers:    providers,
-		listPersonas: persona.List,
+		cfg:           cfg,
+		providers:     providers,
+		listPersonas:  persona.List,
+		reducedMotion: anim.ReducedMotion(),
 	}
 	var sessions []session.Session
 	if len(saved) > 0 {
@@ -471,11 +474,8 @@ func (m launcherModel) View() string {
 
 // brandPlate is the front door: the presence mark beside the wordmark.
 //
-// The mark is static here. This screen is where the app sits idle, and a
-// permanently animating front door would hold a redraw loop open for as long
-// as the program is running — the rest of the TUI stops ticking when nothing
-// is happening, and the launcher should not be the exception. The spec agrees:
-// the static PresenceMark is the onboarding/About form of the orb.
+// The rings turn gently while the launcher is visible. App owns the timer so
+// leaving the menu or shrinking away the mark stops the redraw loop.
 func (m launcherModel) brandPlate(width int) string {
 	wordmark := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("OBEY VOICE")
 	tag := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render("voice · speed · signal")
@@ -489,7 +489,7 @@ func (m launcherModel) brandPlate(width int) string {
 	if rows == 0 {
 		return plate
 	}
-	mark := strings.Join(anim.Orb(0, rows, orbStyles(), true), "\n")
+	mark := strings.Join(anim.Orb(m.logoFrame, rows, orbStyles(), m.reducedMotion), "\n")
 	return lipgloss.JoinHorizontal(lipgloss.Center, mark, "  ", plate)
 }
 

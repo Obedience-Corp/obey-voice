@@ -127,6 +127,10 @@ The request document, the events, the failure codes and the client rules are in
 
 ## TUI controls
 
+The launcher's logo rotates while the menu is visible and the terminal has
+room for it. Set `OBEY_VOICE_REDUCED_MOTION=1` for a still logo and reduced
+animation throughout the TUI.
+
 The launcher offers the most recent conversation first, a scrollable recent
 session list, an explicit new-conversation action, and a managed Tailscale
 remote server screen. The remote screen exposes the URL and single-use pairing code,

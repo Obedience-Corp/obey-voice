@@ -1,4 +1,4 @@
-# Real Bubble Tea launcher, persona picker, and scripted voice activity.
+# Real Bubble Tea animated launcher, persona picker, and scripted voice activity.
 # Run just demo. No live microphone, playback, models, or personal config.
 Output docs/images/tui.gif
 Set Shell "bash"
@@ -14,7 +14,7 @@ Hide
 Type "python3 demos/fixtures/readme.py" Enter
 Sleep 3s
 Show
-Sleep 2s
+Sleep 5s
 Enter
 Sleep 1s
 Enter
