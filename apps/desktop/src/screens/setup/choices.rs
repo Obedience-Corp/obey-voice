@@ -91,22 +91,21 @@ impl VoiceApp {
                     ui.label("No local speech models needed for this selection.");
                 }
                 for model in models {
-                    let optional = model["id"]
+                    let tier = model["id"]
                         .as_str()
                         .unwrap_or_default()
                         .starts_with("tts.qwen3.tier.");
-                    if optional {
+                    if tier {
                         continue;
                     }
-                    ui.label(format!(
-                        "{} · {}",
-                        display(&model["name"]),
-                        if model["installed"] == true {
-                            "Installed"
-                        } else {
-                            "Needs installation"
-                        }
-                    ));
+                    let state = if model["installed"] == true {
+                        "Installed"
+                    } else if model["optional"] == true {
+                        "Optional"
+                    } else {
+                        "Needs installation"
+                    };
+                    ui.label(format!("{} · {}", display(&model["name"]), state));
                     if let Some(detail) = model["detail"].as_str() {
                         ui.small(detail);
                     }
@@ -129,7 +128,7 @@ impl VoiceApp {
                 .unwrap_or("kokoro");
             let fields = crate::screens::provider_choices::speech_fields(provider);
             if provider == "openai-speech" {
-                ui.label("The speech server owns the model. For local Phonon, run ollama pull phonon. The Try it step checks that the server can speak.");
+                ui.label("The speech server owns the model. For local Phonon, Check speech models asks Ollama whether it is pulled and Install missing speech models pulls it. The Try it step checks that the server can speak.");
             }
             self.setup_fields(ui, fields);
         }

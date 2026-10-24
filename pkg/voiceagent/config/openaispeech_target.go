@@ -192,7 +192,7 @@ func openAISpeechVoicesStatus(modelsDir string) AssetStatus {
 	path := filepath.Join(modelsDir, filepath.FromSlash(OpenAISpeechVoicesFile))
 	row := AssetStatus{
 		ID: OpenAISpeechVoicesAssetID, Name: OpenAISpeechVoicesFile,
-		Provider: OpenAISpeechProviderName, Kind: AssetKindTTS,
+		Provider: OpenAISpeechProviderName, Kind: AssetKindTTS, Optional: true,
 		License: "Apache-2.0", Source: "https://huggingface.co/gradium/phonon-voices",
 	}
 	err := checkVoicesCatalog(path)

@@ -390,12 +390,12 @@ func TestModelsStatusCountsOnlyTheTierTheConfigWouldLoad(t *testing.T) {
 		{
 			name:     "a qwen user is asked for one tier, and offered the other",
 			provider: "qwen3-tts",
-			want:     "7 asset(s), 6 missing (plus 1 optional Qwen3-TTS tier(s) not installed).",
+			want:     "7 asset(s), 6 missing (plus 1 optional asset(s) not installed).",
 		},
 		{
 			name:     "a kokoro user is asked for neither",
 			provider: "kokoro",
-			want:     "7 asset(s), 5 missing (plus 2 optional Qwen3-TTS tier(s) not installed).",
+			want:     "7 asset(s), 5 missing (plus 2 optional asset(s) not installed).",
 		},
 	}
 	for _, tt := range tests {

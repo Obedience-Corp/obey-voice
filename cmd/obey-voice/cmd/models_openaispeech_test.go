@@ -67,13 +67,25 @@ func TestModelsStatusReportsPhononAndItsCatalog(t *testing.T) {
 	if model := byID[config.OpenAISpeechModelAssetID]; !model.Installed || model.Provider != config.OpenAISpeechProviderName {
 		t.Fatalf("model row = %+v", model)
 	}
-	if voices := byID[config.OpenAISpeechVoicesAssetID]; voices.Installed {
-		t.Fatalf("catalog row = %+v, want missing", voices)
+	if voices := byID[config.OpenAISpeechVoicesAssetID]; voices.Installed || !voices.Optional {
+		t.Fatalf("catalog row = %+v, want missing and optional", voices)
+	}
+	if !strings.Contains(out, `"optional": true`) {
+		t.Fatalf("status JSON does not carry optional:\n%s", out)
 	}
 
+	// The catalog file is listed, never counted: a Phonon user without it is
+	// not told their install is incomplete. The two Qwen tier rows every TTS
+	// status lists are the other optional rows.
 	human := runStatusScoped(t, cfg, scopeFlags{tts: true}, cfg.ModelsDir, false)
-	if !strings.Contains(human, "phonon (Ollama) (openai-speech/ollama) — installed") || !strings.Contains(human, "speech works without it") {
-		t.Fatalf("human status:\n%s", human)
+	for _, want := range []string{
+		"phonon (Ollama) (openai-speech/ollama) — installed",
+		"speech works without it",
+		"4 asset(s), 0 missing (plus 3 optional asset(s) not installed).",
+	} {
+		if !strings.Contains(human, want) {
+			t.Fatalf("human status lacks %q:\n%s", want, human)
+		}
 	}
 }
 

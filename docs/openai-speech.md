@@ -69,7 +69,11 @@ host never delays speech:
 
 `--json` streams these as NDJSON ticks with the assets `phonon (Ollama)` and
 `phonon/voices.jsonl`, the names `models status --json --tts` gives its rows
-`tts.openai-speech.model` and `tts.openai-speech.voices`. When the target is
+`tts.openai-speech.model` and `tts.openai-speech.voices`. The voices row
+carries `optional: true`: it is listed and `models ensure` fetches it, but the
+human summary and the desktop setup's Models step leave it out of the missing
+count, so a Phonon user without the catalog file is never held at an install
+step; `doctor` still notes the missing file as a warning. When the target is
 not Ollama, the model row is replaced by a `tts.openai-speech.server` row that
 says whether it answers. Status never fails because the server is down; the
 row says so. `models clean` keeps `<models_dir>/phonon` while the app or a

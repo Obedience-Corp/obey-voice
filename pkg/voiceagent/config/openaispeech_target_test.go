@@ -32,12 +32,12 @@ func TestOpenAISpeechStatusOnOllama(t *testing.T) {
 		t.Fatalf("Ollama target also reported a server row: %+v", rows)
 	}
 	catalog := rows[OpenAISpeechVoicesAssetID]
-	if catalog.Installed || len(catalog.Missing) != 1 || catalog.Missing[0] != voicesPath(cfg) {
+	if catalog.Installed || !catalog.Optional || len(catalog.Missing) != 1 || catalog.Missing[0] != voicesPath(cfg) {
 		t.Fatalf("catalog row before install = %+v", catalog)
 	}
 
 	writeVoicesFile(t, cfg)
-	if catalog := statusRows(t, cfg)[OpenAISpeechVoicesAssetID]; !catalog.Installed || catalog.Missing != nil {
+	if catalog := statusRows(t, cfg)[OpenAISpeechVoicesAssetID]; !catalog.Installed || !catalog.Optional || catalog.Missing != nil {
 		t.Fatalf("catalog row after install = %+v", catalog)
 	}
 

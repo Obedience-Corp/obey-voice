@@ -431,6 +431,9 @@ type AssetStatus struct {
 	Kind      AssetKind `json:"kind"`
 	Installed bool      `json:"installed"`
 	Missing   []string  `json:"missing,omitempty"`
+	// Optional marks install state a surface lists but never gates on: the
+	// asset improves the experience and its absence leaves speech working.
+	Optional bool `json:"optional,omitempty"`
 	// Detail is optional human state when Installed/Missing is not enough
 	// (e.g. legacy trees that ensure will not remove).
 	Detail string `json:"detail,omitempty"`

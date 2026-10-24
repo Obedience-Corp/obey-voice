@@ -113,19 +113,19 @@ func TestModelsStatusScoped(t *testing.T) {
 		{
 			name:    "tts excludes stt and vad",
 			scope:   scopeFlags{tts: true},
-			want:    []string{"kokoro-tts", "3 asset(s), 1 missing (plus 2 optional Qwen3-TTS tier(s) not installed)"},
+			want:    []string{"kokoro-tts", "3 asset(s), 1 missing (plus 2 optional asset(s) not installed)"},
 			exclude: []string{"silero_vad.onnx", "whisper-base.en"},
 		},
 		{
 			name:    "tts and vad union",
 			scope:   scopeFlags{tts: true, vad: true},
-			want:    []string{"kokoro-tts", "silero_vad.onnx", "4 asset(s), 2 missing (plus 2 optional Qwen3-TTS tier(s) not installed)"},
+			want:    []string{"kokoro-tts", "silero_vad.onnx", "4 asset(s), 2 missing (plus 2 optional asset(s) not installed)"},
 			exclude: []string{"whisper-base.en"},
 		},
 		{
 			name:  "no flags includes everything",
 			scope: scopeFlags{},
-			want:  []string{"kokoro-tts", "silero_vad.onnx", "whisper-base.en", "5 asset(s), 3 missing (plus 2 optional Qwen3-TTS tier(s) not installed)"},
+			want:  []string{"kokoro-tts", "silero_vad.onnx", "whisper-base.en", "5 asset(s), 3 missing (plus 2 optional asset(s) not installed)"},
 		},
 		{
 			name:    "stt only leaves the tier rows out entirely",
@@ -236,7 +236,7 @@ func TestModelsStatusListsMissingAssets(t *testing.T) {
 	dir := t.TempDir()
 
 	out := runStatus(t, fullCfg(), dir, false)
-	for _, want := range []string{"silero_vad.onnx", "kokoro-tts", "whisper-base.en", "missing", "5 asset(s), 3 missing (plus 2 optional Qwen3-TTS tier(s) not installed)"} {
+	for _, want := range []string{"silero_vad.onnx", "kokoro-tts", "whisper-base.en", "missing", "5 asset(s), 3 missing (plus 2 optional asset(s) not installed)"} {
 		if !contains(out, want) {
 			t.Errorf("status output missing %q:\n%s", want, out)
 		}

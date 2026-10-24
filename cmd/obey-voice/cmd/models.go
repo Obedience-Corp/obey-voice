@@ -118,10 +118,10 @@ func openAISpeechStatusRows(ctx context.Context, cfg *config.Config, modelsDir s
 }
 
 // printModelStatuses renders the human table. A Qwen tier row this
-// configuration would not load is listed but kept out of the missing count: it
-// is install state the Models screen asks for, not an asset this configuration
-// needs, and counting it would report an install as incomplete no matter what
-// the user installs.
+// configuration would not load, or an optional asset, is listed but kept out
+// of the missing count: it is install state the Models screen asks for, not an
+// asset this configuration needs, and counting it would report an install as
+// incomplete no matter what the user installs.
 func printModelStatuses(out io.Writer, modelsDir string, statuses []config.AssetStatus, requiredTier string) {
 	fmt.Fprintf(out, "\n  Model assets (models dir: %s)\n\n", modelsDir)
 	if len(statuses) == 0 {
@@ -151,7 +151,7 @@ func printModelStatuses(out io.Writer, modelsDir string, statuses []config.Asset
 		}
 	}
 	if offered > 0 {
-		fmt.Fprintf(out, "\n  %d asset(s), %d missing (plus %d optional Qwen3-TTS tier(s) not installed).\n\n",
+		fmt.Fprintf(out, "\n  %d asset(s), %d missing (plus %d optional asset(s) not installed).\n\n",
 			len(statuses), missing, offered)
 		return
 	}

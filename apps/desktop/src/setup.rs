@@ -72,11 +72,13 @@ impl Setup {
         self.models.as_ref().is_some_and(|items| {
             items.iter().all(|v| {
                 // The engine's native-package row covers the selected Qwen tier.
-                // Per-tier rows also advertise optional tiers; do not require those.
+                // Per-tier rows also advertise optional tiers; do not require those,
+                // nor a row the engine marks optional (Phonon's voice descriptions).
                 v["id"]
                     .as_str()
                     .unwrap_or_default()
                     .starts_with("tts.qwen3.tier.")
+                    || v["optional"] == true
                     || v["installed"] == true
             })
         })
@@ -185,6 +187,22 @@ mod tests {
             .as_mut()
             .unwrap()
             .push(json!({"id":"stt.whisper","installed":false}));
+        assert!(!s.models_ready());
+    }
+    #[test]
+    fn optional_voice_catalog_does_not_block_a_pulled_phonon() {
+        let mut s = Setup {
+            models: Some(vec![
+                json!({"id":"tts.openai-speech.model","installed":true}),
+                json!({"id":"tts.openai-speech.voices","installed":false,"optional":true}),
+            ]),
+            ..Default::default()
+        };
+        assert!(s.models_ready());
+        s.models
+            .as_mut()
+            .unwrap()
+            .push(json!({"id":"stt.parakeet","installed":false}));
         assert!(!s.models_ready());
     }
 }
