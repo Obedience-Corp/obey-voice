@@ -34,7 +34,7 @@ Step 1 (regenerating `transcripts.json` itself) additionally needs the local
 fixture WAV and installed STT/VAD models:
 
 ```sh
-T3B_FIXTURE=~/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav \
+T3B_FIXTURE=~/.cache/obey-voice/fixtures/meetings/product-marketing-meeting-90s.wav \
 T3B_OUT=$PWD/docs/benchmarks/t3b/transcripts.json \
 go test ./cmd/obey-voice/cmd/ -run TestT3bTranscribeFixture -count=1 -v
 ```
