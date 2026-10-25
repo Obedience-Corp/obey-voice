@@ -52,6 +52,14 @@ func (s scopeFlags) request(cfg *config.Config) config.AssetRequest {
 	return config.ScopedAssetRequest(cfg, config.AssetScope{STT: s.stt, TTS: s.tts, VAD: s.vad, Speaker: s.speaker, Decision: s.decision})
 }
 
+// ensureRequest is request for an explicit install, which alone also fetches
+// descriptive voice catalogs.
+func (s scopeFlags) ensureRequest(cfg *config.Config) config.AssetRequest {
+	req := s.request(cfg)
+	req.NeedVoiceCatalog = req.NeedTTS
+	return req
+}
+
 var modelsCmd = &cobra.Command{
 	Use:   "models",
 	Short: "Inspect and manage local model assets",
@@ -59,7 +67,7 @@ var modelsCmd = &cobra.Command{
 
 var modelsStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show required and installed model assets (read-only, offline)",
+	Short: "Show required and installed model assets (read-only; never downloads)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -71,7 +79,7 @@ var modelsStatusCmd = &cobra.Command{
 
 // runModelsStatus resolves the asset manifest for cfg and req and reports each
 // asset's installed/missing state under modelsDir. It is read-only and never
-// downloads.
+// downloads; openai-speech asks its server what it serves.
 func runModelsStatus(cmd *cobra.Command, cfg *config.Config, modelsDir string, req config.AssetRequest, asJSON bool) error {
 	manifest, err := config.ManifestFor(cfg, req)
 	if err != nil {
@@ -79,6 +87,9 @@ func runModelsStatus(cmd *cobra.Command, cfg *config.Config, modelsDir string, r
 	}
 	statuses := manifest.Status(modelsDir)
 	requiredTier := ""
+	if req.NeedTTS && config.OpenAISpeechSelected(cfg) {
+		statuses = append(statuses, openAISpeechStatusRows(cmd.Context(), cfg, modelsDir)...)
+	}
 	if req.NeedTTS {
 		var qwenRows []config.AssetStatus
 		qwenRows, requiredTier = qwenStatusRows(cfg, modelsDir)
@@ -95,11 +106,22 @@ func runModelsStatus(cmd *cobra.Command, cfg *config.Config, modelsDir string, r
 	return nil
 }
 
+// openAISpeechStatusRows probes the configured speech server, bounded so a
+// server that is down cannot stall status.
+func openAISpeechStatusRows(ctx context.Context, cfg *config.Config, modelsDir string) []config.AssetStatus {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, config.OpenAISpeechProbeTimeout)
+	defer cancel()
+	return config.OpenAISpeechAssetStatus(config.ProbeOpenAISpeech(ctx, cfg), modelsDir)
+}
+
 // printModelStatuses renders the human table. A Qwen tier row this
-// configuration would not load is listed but kept out of the missing count: it
-// is install state the Models screen asks for, not an asset this configuration
-// needs, and counting it would report an install as incomplete no matter what
-// the user installs.
+// configuration would not load, or an optional asset, is listed but kept out
+// of the missing count: it is install state the Models screen asks for, not an
+// asset this configuration needs, and counting it would report an install as
+// incomplete no matter what the user installs.
 func printModelStatuses(out io.Writer, modelsDir string, statuses []config.AssetStatus, requiredTier string) {
 	fmt.Fprintf(out, "\n  Model assets (models dir: %s)\n\n", modelsDir)
 	if len(statuses) == 0 {
@@ -129,7 +151,7 @@ func printModelStatuses(out io.Writer, modelsDir string, statuses []config.Asset
 		}
 	}
 	if offered > 0 {
-		fmt.Fprintf(out, "\n  %d asset(s), %d missing (plus %d optional Qwen3-TTS tier(s) not installed).\n\n",
+		fmt.Fprintf(out, "\n  %d asset(s), %d missing (plus %d optional asset(s) not installed).\n\n",
 			len(statuses), missing, offered)
 		return
 	}
@@ -148,7 +170,7 @@ var modelsEnsureCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		req := modelsEnsureScope.request(cfg)
+		req := modelsEnsureScope.ensureRequest(cfg)
 
 		if modelsEnsureJSON {
 			return runModelsEnsureJSON(cmd, cfg, req, tier)

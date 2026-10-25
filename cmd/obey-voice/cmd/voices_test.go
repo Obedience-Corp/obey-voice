@@ -70,7 +70,7 @@ func stubVoiceStack(t *testing.T, provider *fakeTTS, missing []string) *int {
 		newProvider: func(*config.Config) (tts.Provider, func(), error) {
 			return provider, nil, nil
 		},
-		missingAssets: func(*config.Config) []string { return missing },
+		missingAssets: func(context.Context, *config.Config) []string { return missing },
 		ensureAssets: func(context.Context, *config.Config, config.AssetRequest, func(string, float64)) error {
 			ensured++
 			return nil
@@ -154,8 +154,9 @@ func TestVoicesJSONCarriesCatalogSourceNoticeAndDescriptions(t *testing.T) {
 		newProvider: func(*config.Config) (tts.Provider, func(), error) {
 			return describedFake{fakeTTS: fake, source: "ollama", notice: "Ollama 0.40.9 lists no voices"}, nil, nil
 		},
-		missingAssets: func(*config.Config) []string { return nil },
-		ensureAssets:  voiceStack.ensureAssets,
+		missingAssets: func(context.Context, *config.Config) []string { return nil },
+		// The table path ensures assets, which for openai-speech asks the server.
+		ensureAssets: func(context.Context, *config.Config, config.AssetRequest, func(string, float64)) error { return nil },
 	}
 	t.Cleanup(func() { voiceStack = orig })
 

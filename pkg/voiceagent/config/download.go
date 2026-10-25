@@ -67,12 +67,18 @@ type stallGuard struct {
 	rc     io.ReadCloser
 	timer  *time.Timer
 	cancel context.CancelFunc
+	// idle overrides downloadStallTimeout when set.
+	idle time.Duration
 }
 
 func (g *stallGuard) Read(p []byte) (int, error) {
 	n, err := g.rc.Read(p)
 	if n > 0 {
-		g.timer.Reset(downloadStallTimeout)
+		idle := g.idle
+		if idle <= 0 {
+			idle = downloadStallTimeout
+		}
+		g.timer.Reset(idle)
 	}
 	return n, err
 }
@@ -183,6 +189,12 @@ func copyBodyVerified(dst io.Writer, body io.Reader, total int64, name, sha256He
 // partial or corrupt download never lands at path. file names the asset in
 // error messages.
 func downloadFile(ctx context.Context, path, url, file string, size int64, sha256Hex string, onProgress func(bytes, total int64)) error {
+	return downloadFileChecked(ctx, path, url, file, size, sha256Hex, nil, onProgress)
+}
+
+// downloadFileChecked is downloadFile with check run on the complete temp file
+// before it is renamed into place, for content that has no pinned checksum.
+func downloadFileChecked(ctx context.Context, path, url, file string, size int64, sha256Hex string, check func(path string) error, onProgress func(bytes, total int64)) error {
 	resp, err := openDownload(ctx, url, file)
 	if err != nil {
 		return err
@@ -217,6 +229,11 @@ func downloadFile(ctx context.Context, path, url, file string, size int64, sha25
 
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("download %s: close temp file: %w", file, err)
+	}
+	if check != nil {
+		if err := check(tmpName); err != nil {
+			return fmt.Errorf("download %s: %w", file, err)
+		}
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("download %s: finalize: %w", file, err)

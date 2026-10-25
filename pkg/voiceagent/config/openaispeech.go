@@ -16,6 +16,18 @@ const (
 	DefaultOpenAISpeechTimeout = 60
 )
 
+// OpenAISpeechVoicesFile is Gradium's descriptive voice catalog (name, locale,
+// gender, age, description per line), relative to models_dir.
+const OpenAISpeechVoicesFile = "phonon/voices.jsonl"
+
+// openAISpeechVoicesURL is where `models ensure` fetches that catalog.
+var openAISpeechVoicesURL = "https://huggingface.co/gradium/phonon-voices/resolve/main/voices.jsonl"
+
+// OpenAISpeechSelected reports whether cfg speaks through openai-speech.
+func OpenAISpeechSelected(cfg *Config) bool {
+	return cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), OpenAISpeechProviderName)
+}
+
 // OpenAISpeechURL is the configured base URL without a trailing slash, so
 // "/audio/speech" can be appended whether or not the user typed one.
 func OpenAISpeechURL(cfg *Config) string {

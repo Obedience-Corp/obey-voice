@@ -20,6 +20,7 @@ var envBindings = map[string]string{
 	"openai_speech_model":         "OPENAI_SPEECH_MODEL",
 	"openai_speech_voice":         "OPENAI_SPEECH_VOICE",
 	"openai_speech_api_key":       "OPENAI_SPEECH_API_KEY",
+	"openai_speech_timeout":       "OPENAI_SPEECH_TIMEOUT",
 	"tts_worker_token":            "OBEY_SPEECH_TOKEN",
 	"tts_lookahead":               "TTS_LOOKAHEAD",
 	"qwen_tts_binary":             "QWEN_TTS_BINARY",

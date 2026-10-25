@@ -29,6 +29,11 @@ type AssetRequest struct {
 	NeedTTS      bool
 	NeedVAD      bool
 	NeedSpeaker  bool
+	// NeedVoiceCatalog also fetches descriptive voice catalogs (openai-speech's
+	// voices.jsonl). Only an explicit install asks: the catalog never gates
+	// speech, so starting a conversation, listing voices or a preview must not
+	// wait on its host.
+	NeedVoiceCatalog bool
 }
 
 // AssetProgress is one progress tick for a single asset, reported by
@@ -41,6 +46,8 @@ type AssetProgress struct {
 	Bytes int64   `json:"bytes"`
 	Total int64   `json:"total"`
 	Pct   float64 `json:"pct"`
+	// Detail says why an asset closed as skipped without being installed.
+	Detail string `json:"detail,omitempty"`
 }
 
 const (

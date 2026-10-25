@@ -251,15 +251,15 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 				diags = append(diags, Diagnostic{Name: "qwen3-tts-model", Severity: SeverityOK, Detail: model})
 			}
 		}
-	} else if ManagedTTS(cfg) {
+	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "kokoro") {
 		diags = append(diags, Diagnostic{
 			Name:     "tts-provider",
 			Severity: SeverityOK,
 			Detail:   "kokoro (" + KokoroPack() + ")",
 		})
-	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), OpenAISpeechProviderName) {
-		// Nothing to install: the server owns the model. doctor stays offline, so
-		// it reports the target; the provider proves reachability at start.
+	} else if OpenAISpeechSelected(cfg) {
+		// Diagnose stays offline, so this row names the target;
+		// DiagnoseOpenAISpeech asks it.
 		diags = append(diags, Diagnostic{
 			Name:     "tts-provider",
 			Severity: SeverityOK,

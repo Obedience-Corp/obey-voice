@@ -110,6 +110,15 @@ func ttsConfigClaims(cfg *Config, modelsDir string) []assetClaim {
 		}
 		claims = append(claims, pathClaim(filepath.Join(modelsDir, Audio8Subdir), reason))
 	}
+	// models ensure writes Phonon's voice catalog under models_dir/phonon, and
+	// no manifest owns it.
+	if usesOpenAISpeech(cfg.TTSProvider) || usesOpenAISpeech(cfg.TTSFallbackProvider) {
+		reason := "tts_provider " + OpenAISpeechProviderName
+		if !usesOpenAISpeech(cfg.TTSProvider) {
+			reason = "voice_fallback_provider " + OpenAISpeechProviderName
+		}
+		claims = append(claims, pathClaim(filepath.Join(modelsDir, filepath.Dir(filepath.FromSlash(OpenAISpeechVoicesFile))), reason+" (voice catalog)"))
+	}
 	// An external qwen worker or model tree under the models dir is named by
 	// config alone; qwen.UseManaged treats both as a supported setup.
 	for _, named := range []struct{ key, value string }{
@@ -226,6 +235,10 @@ func qwenTier(cfg *Config) string {
 func usesKokoro(provider string) bool {
 	provider = strings.TrimSpace(provider)
 	return provider == "" || strings.EqualFold(provider, "kokoro")
+}
+
+func usesOpenAISpeech(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), OpenAISpeechProviderName)
 }
 
 // usesAudio8 has no empty-string case: kokoro is the default provider, audio8

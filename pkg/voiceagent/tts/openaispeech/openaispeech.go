@@ -112,7 +112,7 @@ func (p *Provider) probe(ctx context.Context) error {
 		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("%s/models returned %d: %s", p.base, resp.StatusCode, errorMessage(body, resp.Status)))
 	}
 	if ids := modelIDs(body); len(ids) > 0 && !hasModel(ids, p.model) {
-		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("model %q is not served by %s (it offers %s); run `ollama pull %s` or set openai_speech_model",
+		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("model %q is not served by %s (it offers %s); run `obey-voice models ensure --tts` (or `ollama pull %s`), or set openai_speech_model",
 			p.model, p.base, strings.Join(ids, ", "), p.model))
 	}
 	p.detail = p.model + " at " + p.base

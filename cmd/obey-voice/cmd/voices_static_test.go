@@ -63,7 +63,7 @@ func TestVoicesJSONQwenStaticFallbackWhenAssetsMissing(t *testing.T) {
 			newProviderCalled = true
 			return kokoroFake(), nil, nil
 		},
-		missingAssets: func(cfg *config.Config) []string {
+		missingAssets: func(_ context.Context, cfg *config.Config) []string {
 			if isQwenTTS(cfg.TTSProvider) {
 				return []string{"Qwen3-TTS native package"}
 			}
@@ -164,7 +164,7 @@ func TestVoicesJSONQwenListsPresetsWithoutConstructingProvider(t *testing.T) {
 			constructed++
 			return kokoroFake(), nil, nil
 		},
-		missingAssets: func(*config.Config) []string { return nil },
+		missingAssets: func(context.Context, *config.Config) []string { return nil },
 		ensureAssets: func(context.Context, *config.Config, config.AssetRequest, func(string, float64)) error {
 			t.Fatal("ensureAssets must never be called by voices --json")
 			return nil

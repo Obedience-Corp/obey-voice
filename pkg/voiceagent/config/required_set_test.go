@@ -134,6 +134,18 @@ func TestRequiredAssetPathsProtectsReferencedAssets(t *testing.T) {
 			wantCandidates: []string{"stale.bin"},
 		},
 		{
+			name: "a persona on openai-speech keeps the voice catalog models ensure wrote",
+			cfg:  liveCfg,
+			personas: []PersonaAssets{{ID: "ada", Cfg: func() *Config {
+				c := liveCfg()
+				c.TTSProvider = OpenAISpeechProviderName
+				return c
+			}()}},
+			install:        []string{filepath.FromSlash(OpenAISpeechVoicesFile), "stale.bin"},
+			keptReasons:    map[string]string{"phonon": "persona ada: tts_provider openai-speech (voice catalog)"},
+			wantCandidates: []string{"stale.bin"},
+		},
+		{
 			name:     "every tier in use is named",
 			cfg:      liveCfg,
 			personas: []PersonaAssets{qwenPersona("veronica", "0.6b"), qwenPersona("ada", "1.7b")},

@@ -218,7 +218,10 @@ obey-voice doctor               # diagnose config, assets, and external binaries
 
 `models status` and `doctor` are read-only and safe offline. Doctor validates
 the selected Claude/Grok CLI or Ollama configuration without making a network
-request, and exits non-zero on setup errors (a missing model asset remains a
+request. The exceptions are a speech server: with `tts_provider: openai-speech`
+both ask it what it serves (bounded to 3 s), and with `tts_place: lan` doctor
+dials the speech worker; a server that is down is reported, never a crash.
+Doctor exits non-zero on setup errors (a missing model asset remains a
 warning that points you to `models ensure`). Downloads are reliable by
 construction: each file is written to
 a temp file, size/checksum-verified when known, and atomically renamed; archives
