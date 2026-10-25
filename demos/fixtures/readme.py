@@ -37,7 +37,7 @@ def main():
     binary = Path('bin/obey-voice').resolve()
     with tempfile.TemporaryDirectory(prefix='obey-readme-') as temporary:
         demo_dir = Path(temporary)
-        config = demo_dir / '.obey/agents/voice/festival-voice'
+        config = demo_dir / '.obey/agents/voice/obey-voice'
         config.mkdir(parents=True)
         server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
         (config / 'config.yaml').write_text(f'''brain_provider: ollama

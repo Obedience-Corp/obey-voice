@@ -8,13 +8,13 @@
 # Default section is the two-speaker demo (4:00–5:30). WAV is stored in the shared
 # user cache (same scheme as scripts/fetch-meeting-fixture.sh):
 #
-#   ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings}
+#   ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/obey-voice/fixtures/meetings}
 #
 # YouTube Terms of Service apply; the clip is not committed to git.
 # Override URL/section with ZOOM_FIXTURE_URL / ZOOM_FIXTURE_SECTION.
 set -euo pipefail
 
-APP_SLUG="${APP_SLUG:-festival-voice}"
+APP_SLUG="${APP_SLUG:-obey-voice}"
 
 STEM="zoom-call"
 URL="${ZOOM_FIXTURE_URL:-https://www.youtube.com/watch?v=DQlWDqosj0E}"

@@ -13,7 +13,7 @@ import (
 
 // appDir is the config layout samantha resolves under a fresh $HOME
 // (config.DefaultConfigDir); the same layout demos/persona-switch.tape seeds.
-const appDir = ".obey/agents/voice/festival-voice"
+const appDir = ".obey/agents/voice/obey-voice"
 
 // seedInstance builds a disposable $HOME for one instance: config.yaml,
 // persona profile, and the persona prompt document.
@@ -68,7 +68,7 @@ func seedInstance(home string, s *Scenario, id string, inst *InstanceSpec) error
 	}
 
 	profile := map[string]any{
-		"schema":       "festival-voice.persona.v1",
+		"schema":       "obey-voice.persona.v1",
 		"id":           personaID,
 		"display_name": inst.Persona.DisplayName,
 		"brain": map[string]any{

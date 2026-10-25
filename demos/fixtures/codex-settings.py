@@ -14,7 +14,7 @@ def main():
     binary = Path('bin/obey-voice').resolve()
     with tempfile.TemporaryDirectory(prefix='obey-codex-settings-') as temporary:
         root = Path(temporary)
-        settings = root / '.obey/agents/voice/festival-voice/config.yaml'
+        settings = root / '.obey/agents/voice/obey-voice/config.yaml'
         settings.parent.mkdir(parents=True)
         settings.write_text('''brain_provider: codex
 codex_model: fixture-model

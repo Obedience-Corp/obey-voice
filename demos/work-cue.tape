@@ -22,8 +22,8 @@ Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export OBEY_VOICE_COLOR_PROFILE=ansi OBEY_VOICE_DEMO_WORK_CUE=1" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
 Type "export HOME=/tmp/obey-voice-work-cue-demo-$$" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<'EOF'" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
 Type "ollama_model: gemma4:26b" Enter

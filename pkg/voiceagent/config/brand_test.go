@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestAppSlugIsFestivalVoice(t *testing.T) {
-	if AppSlug != "festival-voice" {
-		t.Fatalf("AppSlug = %q, want festival-voice", AppSlug)
+func TestAppSlugIsObeyVoice(t *testing.T) {
+	if AppSlug != "obey-voice" {
+		t.Fatalf("AppSlug = %q, want obey-voice", AppSlug)
 	}
 }
 

@@ -25,9 +25,9 @@ Type "unset NO_COLOR; unset CLICOLOR; export CLICOLOR_FORCE=1 FORCE_COLOR=1" Ent
 Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export SAMANTHA_COLOR_PROFILE=ansi SAMANTHA_DEMO_MEETING=1 SAMANTHA_DEMO_MEETING_SPEAKERS=1" Enter
 Type "export HOME=/tmp/samantha-speakers-demo-$$" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions $HOME/.obey/agents/voice/festival-voice/meetings" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions $HOME/.obey/agents/voice/obey-voice/meetings" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<'EOF'" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
 Type "ollama_model: demo-model" Enter

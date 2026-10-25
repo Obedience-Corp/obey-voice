@@ -46,7 +46,7 @@ obey-voice serve --tailscale
 ```
 
 Binds the node’s Tailscale IPv4, prefers a cert via `tailscale cert` under
-`~/.obey/agents/voice/festival-voice/serve/tls/`, mutes the host speaker by default,
+`~/.obey/agents/voice/obey-voice/serve/tls/`, mutes the host speaker by default,
 and prints the MagicDNS URL (e.g. `https://mac.tailnet.ts.net:7262/`).
 
 If `tailscale cert` fails (or LAN self-signed is used), serve stays up in
@@ -143,7 +143,7 @@ stderr under `--banner-json`; diagnostics on stderr).
 | `?token=` query | **Only** `GET /v1/stream` (browser WebSocket cannot set headers) |
 | Pairing code | `POST /v1/pair` (public, rate-limited) |
 
-Primary token file: `~/.obey/agents/voice/festival-voice/serve/token` (0600).  
+Primary token file: `~/.obey/agents/voice/obey-voice/serve/token` (0600).
 Per-device tokens (D2): `…/serve/tokens/<id>.json` (0600 each).  
 Revoke all: `obey-voice serve --revoke-tokens` (primary + all devices).  
 Revoke one device: `DELETE /v1/devices/{id}`.
@@ -438,7 +438,7 @@ GET /v1/meetings?limit=200&since=2026-08-01T00:00:00Z
 ```
 
 ```json
-{"meetings_dir":"/Users/lance/.obey/agents/voice/festival-voice/meetings",
+{"meetings_dir":"/Users/lance/.obey/agents/voice/obey-voice/meetings",
  "count":42,"truncated":false,
  "meetings":[
    {"id":"weekly-sync-20260816-101500.meeting",

@@ -31,9 +31,9 @@ Env COLORFGBG "15;0"
 Hide
 
 # Isolated HOME: empty sessions → cursor on New conversation.
-Type "rm -rf /tmp/obey-voice-tui-demo-home && mkdir -p /tmp/obey-voice-tui-demo-home/.obey/agents/voice/festival-voice/sessions /tmp/obey-voice-tui-demo-home/.cache && ln -sfn /Users/$USER/.cache/festival-voice /tmp/obey-voice-tui-demo-home/.cache/festival-voice"
+Type "rm -rf /tmp/obey-voice-tui-demo-home && mkdir -p /tmp/obey-voice-tui-demo-home/.obey/agents/voice/obey-voice/sessions /tmp/obey-voice-tui-demo-home/.cache && ln -sfn /Users/$USER/.cache/obey-voice /tmp/obey-voice-tui-demo-home/.cache/obey-voice"
 Enter
-Type "cat > /tmp/obey-voice-tui-demo-home/.obey/agents/voice/festival-voice/config.yaml <<'EOF'"
+Type "cat > /tmp/obey-voice-tui-demo-home/.obey/agents/voice/obey-voice/config.yaml <<'EOF'"
 Enter
 Type "brain_provider: ollama"
 Enter

@@ -331,7 +331,7 @@ func TestLoadFileIDMismatch(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := []byte(`schema: festival-voice.persona.v1
+	body := []byte(`schema: obey-voice.persona.v1
 id: festival
 display_name: X
 prompts:

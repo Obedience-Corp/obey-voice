@@ -32,19 +32,19 @@ bin="$work/samantha"
 # in a fresh install seeds a persona from whatever the config said at the time —
 # capturing both fixtures under one HOME silently pinned the second one to the
 # first one's TTS provider.
-canonicalCache='/Users/lance/.cache/festival-voice'
+canonicalCache='/Users/lance/.cache/obey-voice'
 
 # capture <home> <fixture>  — run the command and normalize this run's paths to
 # a canonical home so the fixture is stable across machines.
 capture() {
 	HOME="$1" "$bin" models status --json --all |
-		sed -e "s#$1/.cache/festival-voice#$canonicalCache#g" >"$here/$2"
+		sed -e "s#$1/.cache/obey-voice#$canonicalCache#g" >"$here/$2"
 }
 
 # 1. The acceptance run's configuration: kokoro, nothing installed.
 kokoroHome="$work/home-kokoro"
-mkdir -p "$kokoroHome/.obey/agents/voice/festival-voice"
-printf 'tts_provider: kokoro\n' >"$kokoroHome/.obey/agents/voice/festival-voice/config.yaml"
+mkdir -p "$kokoroHome/.obey/agents/voice/obey-voice"
+printf 'tts_provider: kokoro\n' >"$kokoroHome/.obey/agents/voice/obey-voice/config.yaml"
 capture "$kokoroHome" models-status-kokoro-no-tiers.json
 
 # 2. qwen3-tts with a native package holding both tiers. InspectNative verifies
@@ -52,9 +52,9 @@ capture "$kokoroHome" models-status-kokoro-no-tiers.json
 # no hashing — so the digests below are placeholders, exactly as the real
 # manifest's are irrelevant to a status read).
 qwenHome="$work/home-qwen"
-mkdir -p "$qwenHome/.obey/agents/voice/festival-voice"
-printf 'tts_provider: qwen3-tts\n' >"$qwenHome/.obey/agents/voice/festival-voice/config.yaml"
-native="$qwenHome/.cache/festival-voice/models/qwen3-tts"
+mkdir -p "$qwenHome/.obey/agents/voice/obey-voice"
+printf 'tts_provider: qwen3-tts\n' >"$qwenHome/.obey/agents/voice/obey-voice/config.yaml"
+native="$qwenHome/.cache/obey-voice/models/qwen3-tts"
 mkdir -p "$native/bin" "$native/models/presets"
 printf '#!/bin/sh\nexit 0\n' >"$native/bin/qwen3-tts-worker"
 chmod +x "$native/bin/qwen3-tts-worker"

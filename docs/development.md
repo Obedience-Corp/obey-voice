@@ -71,7 +71,7 @@ SIGINT test is env-gated:
 
 ```bash
 # Interrupt a real run and measure the time to exit 130 and a cancelled event:
-OBEY_VOICE_TRANSCRIBE_MODELS_DIR="$HOME/.cache/festival-voice/models" \
+OBEY_VOICE_TRANSCRIBE_MODELS_DIR="$HOME/.cache/obey-voice/models" \
 OBEY_VOICE_TRANSCRIBE_LONG_WAV=/absolute/path/to/60s-16k-mono.wav \
   go test ./cmd/obey-voice/cmd -run TestTranscribeProcessCancellation -count=1 -v
 

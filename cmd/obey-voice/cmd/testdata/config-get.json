@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "config_file": "/Users/lance/.obey/agents/voice/festival-voice/config.yaml",
+  "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
   "values": {
     "active_persona": {
       "value": "ada",
@@ -227,7 +227,7 @@
       "source": "default"
     },
     "models_dir": {
-      "value": "/Users/lance/.cache/festival-voice/models",
+      "value": "/Users/lance/.cache/obey-voice/models",
       "source": "default"
     },
     "name_summon_aliases": {
@@ -679,7 +679,7 @@
       "source": "default"
     },
     "whispercpp_model_path": {
-      "value": "/Users/lance/.cache/festival-voice/models/whispercpp/ggml-base.en.bin",
+      "value": "/Users/lance/.cache/obey-voice/models/whispercpp/ggml-base.en.bin",
       "source": "default"
     },
     "work_dir": {

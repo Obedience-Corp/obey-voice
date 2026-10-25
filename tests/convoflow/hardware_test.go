@@ -278,7 +278,7 @@ func TestAcousticEnvelopeCorrelationSeparatesRecordedFixtures(t *testing.T) {
 		if err != nil {
 			t.Skip("home directory unavailable")
 		}
-		root = filepath.Join(home, ".cache", "festival-voice", "fixtures", "bench")
+		root = filepath.Join(home, ".cache", "obey-voice", "fixtures", "bench")
 	}
 	paths := make([][]float32, 3)
 	for i := range paths {

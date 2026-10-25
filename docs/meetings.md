@@ -289,7 +289,7 @@ obey-voice meeting record --resume last
 obey-voice meeting analyze meeting.wav --speakers 2
 ```
 
-Bundles default to `~/.obey/agents/voice/festival-voice/meetings/<slug>-<timestamp>.meeting/`.
+Bundles default to `~/.obey/agents/voice/obey-voice/meetings/<slug>-<timestamp>.meeting/`.
 Meeting routing accepts a `.meeting` bundle or its canonical `meeting.md`.
 `--json` also emits one JSON line per utterance plus a final summary on stdout.
 

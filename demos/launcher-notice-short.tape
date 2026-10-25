@@ -24,8 +24,8 @@ Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export OBEY_VOICE_COLOR_PROFILE=ansi OBEY_VOICE_DEMO_LAUNCHER_NOTICE=scroll" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
 Type "export HOME=/tmp/obey-voice-launcher-notice-short-$$" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<'EOF'" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_model: qwen3.8:latest" Enter
 Type "tts_provider: kokoro" Enter

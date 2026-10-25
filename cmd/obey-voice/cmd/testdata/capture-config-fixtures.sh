@@ -27,16 +27,16 @@ bin="$work/obey-voice"
 # install from the same directory, so the script and the test cannot end up
 # describing two different machines.
 export HOME="$work/home"
-root="$HOME/.obey/agents/voice/festival-voice"
+root="$HOME/.obey/agents/voice/obey-voice"
 mkdir -p "$root"
 cp -R "$here/fixture-install/." "$root/"
 
 # Two defaults (models_dir, whispercpp_model_path) live under the cache root
 # rather than the install root, so both have to be normalized or the fixtures
 # carry this run's mktemp path and churn on every re-capture.
-canonical='/Users/lance/.obey/agents/voice/festival-voice'
-canonicalCache='/Users/lance/.cache/festival-voice'
-normalize() { sed -e "s#$root#$canonical#g" -e "s#$HOME/.cache/festival-voice#$canonicalCache#g"; }
+canonical='/Users/lance/.obey/agents/voice/obey-voice'
+canonicalCache='/Users/lance/.cache/obey-voice'
+normalize() { sed -e "s#$root#$canonical#g" -e "s#$HOME/.cache/obey-voice#$canonicalCache#g"; }
 
 # env -i, because every config key has an environment binding: a capture that
 # inherited the operator's shell would freeze one of their exports into the

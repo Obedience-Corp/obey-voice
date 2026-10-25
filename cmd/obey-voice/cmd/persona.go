@@ -36,7 +36,7 @@ func personaCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "persona",
 		Short: "List and switch voice agent personas",
-		Long: `Manage voice agent personas (festival-voice multi-persona profiles).
+		Long: `Manage voice agent personas (obey-voice multi-persona profiles).
 
 Profiles live under:
   ~/.obey/agents/voice/<AppSlug>/personas/<id>/persona.yaml

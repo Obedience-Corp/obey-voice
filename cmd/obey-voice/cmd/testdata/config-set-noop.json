@@ -4,7 +4,7 @@
   "old_value": 0.9,
   "value": 0.9,
   "type": "float",
-  "config_file": "/Users/lance/.obey/agents/voice/festival-voice/config.yaml",
+  "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
   "changed": false,
   "restart_required": true
 }

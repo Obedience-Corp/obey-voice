@@ -9,7 +9,7 @@
 # Usage: cmd/obey-voice/cmd/testdata/capture-models-clean-fixture.sh
 #
 # The install root and the models dir are both under a throwaway HOME, so the
-# real ~/.obey and ~/.cache/festival-voice are never touched. The captured
+# real ~/.obey and ~/.cache/obey-voice are never touched. The captured
 # paths are then normalized to a canonical home so the fixture is stable across
 # machines; plan_id hashes models-dir-relative paths, so it survives that
 # rewrite unchanged.
@@ -24,8 +24,8 @@ bin="$work/samantha"
 (cd "$repo" && go build -o "$bin" ./cmd/obey-voice)
 
 export HOME="$work/home"
-root="$HOME/.obey/agents/voice/festival-voice"
-models="$HOME/.cache/festival-voice/models"
+root="$HOME/.obey/agents/voice/obey-voice"
+models="$HOME/.cache/obey-voice/models"
 mkdir -p "$root" "$models"
 
 # The 2026-08-17 machine: global TTS is kokoro, STT runs offline while a
@@ -48,7 +48,7 @@ YAML
 # does not select — the exact shape that made 6 GB look "unused".
 mkdir -p "$root/personas/ada" "$root/personas/veronica"
 cat >"$root/personas/ada/persona.yaml" <<'YAML'
-schema: festival-voice.persona.v1
+schema: obey-voice.persona.v1
 id: ada
 display_name: Ada
 tts:
@@ -58,7 +58,7 @@ prompts:
   persona: ada
 YAML
 cat >"$root/personas/veronica/persona.yaml" <<'YAML'
-schema: festival-voice.persona.v1
+schema: obey-voice.persona.v1
 id: veronica
 display_name: Veronica
 tts:
@@ -89,8 +89,8 @@ printf 'partial\n' >"$models/.extract-9f2a/model.onnx"
 printf 'old\n' >"$models/kokoro-v0.19/model.onnx"
 printf 'old\n' >"$models/kokoro-v0.19/voices.bin"
 
-canonicalCache='/Users/lance/.cache/festival-voice'
+canonicalCache='/Users/lance/.cache/obey-voice'
 "$bin" models clean --unused --dry-run --json |
-	sed -e "s#$HOME/.cache/festival-voice#$canonicalCache#g" >"$here/models-clean-dry-run.json"
+	sed -e "s#$HOME/.cache/obey-voice#$canonicalCache#g" >"$here/models-clean-dry-run.json"
 
 echo "captured into $here/models-clean-dry-run.json"

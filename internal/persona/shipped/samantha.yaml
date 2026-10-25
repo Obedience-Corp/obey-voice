@@ -1,5 +1,5 @@
-# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: samantha
 display_name: Samantha
 builtin: true
