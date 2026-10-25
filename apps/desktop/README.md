@@ -1,8 +1,58 @@
 # Obey Voice Agent
 
-A Rust/egui desktop workspace for Obey Voice. The macOS window uses native frosted glass, integrated window controls, and saved Light/Dark appearance. The app reads your existing Obey Voice personas, configuration, sessions, models, and library.
+A native window for talking to your agents, resuming conversations, managing
+personas, and choosing models and voices. The app uses the same configuration,
+personas, sessions, models, and library as the Obey Voice CLI.
 
-Windows bridge startup is currently disabled: native library output cannot yet be safely isolated from its JSONL protocol. macOS is the validated platform.
+![Home with recent conversations and quick access to personas and meetings](../../docs/images/desktop-home.png)
+
+## Install on macOS
+
+From a full checkout of the repository, with Rust 1.95, Go 1.26.1+, Python 3,
+Xcode Command Line Tools, and `just` installed:
+
+```sh
+just desktop install
+open "$HOME/Applications/Obey Voice Agent.app"
+```
+
+Source builds need authenticated Git access to the private Obedience-Corp Go
+modules; `GOPRIVATE` must include `github.com/Obedience-Corp/*`. The command
+builds an optimized app, includes its voice engine and native speech libraries,
+and verifies the local ad-hoc signature before installing into `~/Applications`.
+Quit the app before running the command again to update it. A different
+installation directory can be passed as an argument:
+
+```sh
+just desktop install "/path/to/Applications"
+```
+
+On first launch, guided setup helps you choose and check a brain provider,
+configure speech, and install required models. Existing CLI settings and
+personas are reused. Allow microphone access when starting a voice conversation;
+typed-only and silent modes are also available. Closing the window keeps the
+app in the menu bar by default; use **Quit Obey** to exit completely.
+
+This is a local source installation, ad-hoc signed rather than Developer ID
+signed and notarized. macOS is the validated desktop platform. Windows bridge
+startup is currently disabled because native library output cannot yet be
+safely isolated from its JSONL protocol. See the [full install guide](../../docs/install.md#desktop-app-macos).
+
+## Inside the app
+
+**Conversation** keeps the transcript, composer, voice controls, and activity
+within reach.
+
+![Conversation with sample messages and microphone, playback, and recording controls](../../docs/images/desktop-conversation.png)
+
+**Settings** groups the engine's options by task, including brain selection,
+voice, audio, workers, and model installation.
+
+![Settings showing brain provider and model options](../../docs/images/desktop-settings.png)
+
+These are screenshots of the real app in preview mode with sample data and
+engine defaults. No microphone, personal conversations, or credentials were
+used. Run `just desktop demo` from the repository root to explore the preview.
 
 ## Build and run
 
@@ -39,7 +89,7 @@ Run `just` for help, or `just --list --list-submodules` for every recipe. The ro
 | `dev` | `bridge`, `build`, `release`, `run`, `demo` | Go companion, debug/optimized Rust builds, local runs |
 | `lint` | `all`, `justfiles`, `fmt-check`, `fmt`, `clippy`, `go-vet` | Read-only checks; `fmt` explicitly applies Rust formatting |
 | `test` | `all`, `rust [filter]`, `bridge [pattern]`, `ui` | Automated tests and an opt-in interactive fixture |
-| `dist` | `mac`, `mac-release`, `verify` | Local macOS packaging and signature verification |
+| `dist` | `mac`, `mac-release`, `install [directory]`, `verify` | Local macOS packaging, installation, and signature verification |
 
 `just check` is the complete unattended gate: Justfile/Rust formatting, Clippy, Go vet, Rust tests, Go race tests, and a debug build. It does not launch the app, open audio devices, or run hardware acceptance. `just test` retains its original behavior and runs both automated suites.
 

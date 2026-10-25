@@ -18,6 +18,12 @@ mac-release:
     python3 scripts/bundle.py --release
     just dist verify
 
+# Build and install an optimized app in ~/Applications, or a chosen directory
+[macos]
+[positional-arguments]
+install directory="~/Applications": mac-release
+    python3 scripts/install.py --directory "$1"
+
 # Verify an existing local bundle without rebuilding it
 [macos]
 verify:

@@ -4,6 +4,25 @@ use crate::model::{Persona, Session, State, Turn};
 impl VoiceApp {
     pub(super) fn seed_demo(&mut self) {
         self.status = "Demo · no microphone or saved changes".into();
+        // The checked-in engine schema keeps preview controls representative
+        // without starting the bridge or reading the user's configuration.
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../cmd/obey-voice/cmd/testdata/config-schema.json"
+        ))
+        .expect("the engine schema fixture must be valid JSON");
+        self.schema = serde_json::from_value(schema["keys"].clone())
+            .expect("the engine schema fixture must contain settings");
+        self.values = serde_json::Value::Object(
+            self.schema
+                .iter()
+                .map(|spec| {
+                    (
+                        spec.key.clone(),
+                        serde_json::json!({"value": spec.default, "source": "default"}),
+                    )
+                })
+                .collect(),
+        );
         self.personas = vec![
             Persona {
                 id: "obey".into(),

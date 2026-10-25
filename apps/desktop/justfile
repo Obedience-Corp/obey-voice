@@ -12,7 +12,7 @@ mod lint '.justfiles/lint.just'
 [doc('Rust/Go tests and opt-in isolated UI fixture')]
 mod test '.justfiles/test.just'
 
-[doc('Local macOS bundles and signature verification')]
+[doc('Local macOS bundles, installation, and signature verification')]
 mod dist '.justfiles/dist.just'
 
 [private]
@@ -49,6 +49,12 @@ bundle:
 # Build and verify a local optimized macOS app bundle
 bundle-release:
     just dist mac-release
+
+# Build and install the optimized macOS app
+[macos]
+[positional-arguments]
+install directory="~/Applications":
+    just -- dist install "$1"
 
 # Opt-in interactive UI test app with isolated config and mock model server
 ui-fixture:
