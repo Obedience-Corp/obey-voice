@@ -16,6 +16,47 @@
 
 macOS users may need to grant microphone permission to the terminal app used to run Obey Voice.
 
+## Desktop app (macOS)
+
+The native desktop app is built from the same checkout as the CLI. Install
+Rust 1.95 (selected by `apps/desktop/rust-toolchain.toml`), Go 1.26.1+, Python 3,
+Xcode Command Line Tools, and `just`. Authenticate Git access to the private
+Obedience-Corp dependencies and ensure `GOPRIVATE` includes
+`github.com/Obedience-Corp/*`.
+
+From the repository root:
+
+```sh
+just desktop install
+open "$HOME/Applications/Obey Voice Agent.app"
+```
+
+`just desktop install` builds the release app, bundles its Go companion and
+native speech libraries, verifies its ad-hoc signature, and installs
+`~/Applications/Obey Voice Agent.app`. It does not launch the app or install
+models. Run it again to update an existing install after quitting the app.
+To install elsewhere, pass an existing or new directory you can write to:
+
+```sh
+just desktop install "/path/to/Applications"
+```
+
+The first-run guide checks your brain provider and walks through speech and
+model setup. Existing settings, personas, and sessions in
+`~/.obey/agents/voice/obey-voice` are reused, along with the model cache in
+`~/.cache/obey-voice`. Allow the app microphone access when prompted for a voice
+conversation. Typed-only and silent conversations are available from the start
+dialog. By default, closing the window leaves the app in the menu bar; choose
+**Quit Obey** to stop it before an update.
+
+The bundle is signed locally for development use. Developer ID signing and
+notarization are not part of this source-install recipe. The CLI's `just install`
+remains separate. `just desktop bundle` and `just desktop bundle-release` only
+create bundles in `apps/desktop/dist`; they do not install them.
+
+[Desktop screenshots and usage](../apps/desktop/README.md) ·
+[Desktop development](desktop-development.md)
+
 ## Linux amd64 archive
 
 Tagged releases include a relocatable `obey-voice-linux-amd64.tar.gz` for

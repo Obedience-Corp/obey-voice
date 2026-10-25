@@ -29,6 +29,12 @@ bundle:
 bundle-release:
     just bundle-release
 
+# Build and install the optimized macOS app in ~/Applications
+[macos]
+[positional-arguments]
+install directory="~/Applications":
+    just -- install "$1"
+
 # Forward focused checks or isolated fixture recipes, e.g. test bridge
 [positional-arguments]
 test *args:

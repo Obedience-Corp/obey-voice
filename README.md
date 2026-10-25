@@ -4,6 +4,8 @@ A local voice assistant that starts speaking before the model finishes the thoug
 
 Speech stays on your machine. The brain is Claude, Codex, Cursor, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
 
+Use the [desktop app](#desktop-app) or the terminal interface below.
+
 It is also a group chat for agents. Put several personas in one conversation, each with its own voice, model and prompt, address whichever one you want by name, and let them hand the floor to each other.
 
 ![Obey Voice TUI in color: animated launcher logo, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
@@ -45,21 +47,33 @@ obey-voice models ensure
 obey-voice doctor --voice-devices
 ```
 
-[Full install notes](docs/install.md) cover Homebrew caveats, the Linux archive, musl, and developer builds.
+[Full install notes](docs/install.md) cover the desktop app, Homebrew caveats, the Linux archive, musl, and developer builds.
 
 ## Desktop app
 
-The native Rust desktop app and Go companion live in [`apps/desktop`](apps/desktop).
-They share this checkout’s engine, personas, configuration, and session stores.
+Talk to your agents in a native window, resume conversations, manage personas,
+and configure models and voices. It shares the CLI's settings and session history.
+
+![Obey Voice desktop Home with recent conversations and workspace navigation](docs/images/desktop-home.png)
+
+*Real macOS app in sample-data preview mode.*
+
+From a full checkout on macOS (Rust 1.95, Go 1.26.1+, Python 3, Xcode Command Line
+Tools, and `just`, with access to the private Go dependencies):
 
 ```sh
-just desktop build    # Rust 1.95, Go, C compiler, just
-just desktop run
-just desktop bundle   # local macOS bundle, ad-hoc signed
+just desktop install
+open "$HOME/Applications/Obey Voice Agent.app"
 ```
 
-[Desktop development](docs/desktop-development.md) covers checks, isolated UI
-fixtures, and the repository layout.
+The command builds and installs an optimized, locally signed app in
+`~/Applications`. On first launch, follow guided setup to choose a brain and
+speech provider and install their models. Allow microphone access when you
+start a voice conversation. Quit the app before reinstalling.
+
+[Desktop screenshots and usage](apps/desktop/README.md) ·
+[Install details](docs/install.md#desktop-app-macos) ·
+[Development](docs/desktop-development.md)
 
 ## Talk
 
