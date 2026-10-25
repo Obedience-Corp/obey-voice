@@ -32,7 +32,7 @@ speaker pipeline and write a speaker-analysis JSON timeline.
 
 Example (YouTube multi-voice fixture, shared cache):
   just fetch-meeting-fixture
-  obey-voice meeting analyze ~/.cache/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav
+  obey-voice meeting analyze ~/.cache/obey-voice/fixtures/meetings/product-marketing-meeting-90s.wav
 
 Notes:
   - Uses whichever engine speaker.meeting.diarizer selects: the managed

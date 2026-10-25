@@ -3,7 +3,7 @@
 set -euo pipefail
 persona_demo_dir="$(mktemp -d "${TMPDIR:-/tmp}/obey-persona-models.XXXXXX")"
 trap 'rm -rf "$persona_demo_dir"' EXIT
-persona_demo_config="$persona_demo_dir/.obey/agents/voice/festival-voice"
+persona_demo_config="$persona_demo_dir/.obey/agents/voice/obey-voice"
 mkdir -p "$persona_demo_config/personas"
 cat > "$persona_demo_config/config.yaml" <<'YAML'
 brain_provider: ollama
@@ -21,7 +21,7 @@ write_persona() {
     local id="$1" name="$2" provider="$3" model="$4" voice="$5"
     mkdir -p "$persona_demo_config/personas/$id"
     cat > "$persona_demo_config/personas/$id/persona.yaml" <<YAML
-schema: festival-voice.persona.v1
+schema: obey-voice.persona.v1
 id: $id
 display_name: $name
 brain:

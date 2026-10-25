@@ -45,7 +45,7 @@
           "persona": {
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "description": "Id of a festival-voice.persona.v1 profile under the install's personas directory."
+            "description": "Id of a obey-voice.persona.v1 profile under the install's personas directory."
           },
           "display_name": {
             "type": "string",

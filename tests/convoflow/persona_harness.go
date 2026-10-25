@@ -436,7 +436,7 @@ func writeSelfTestFixture(root string) (string, string, error) {
 			return "", "", err
 		}
 		displayName := map[string]string{"samantha": "Samantha", "santa": "Santa"}[id]
-		profile := fmt.Sprintf("schema: festival-voice.persona.v1\nid: %s\ndisplay_name: %s\naliases: [%s]\nbrain:\n  provider: ollama\n  model: fake-%s\ntts:\n  provider: none\nprompts:\n  persona: %s\n", id, displayName, id, id, id)
+		profile := fmt.Sprintf("schema: obey-voice.persona.v1\nid: %s\ndisplay_name: %s\naliases: [%s]\nbrain:\n  provider: ollama\n  model: fake-%s\ntts:\n  provider: none\nprompts:\n  persona: %s\n", id, displayName, id, id, id)
 		if err := os.WriteFile(filepath.Join(personas, id, "persona.yaml"), []byte(profile), 0o600); err != nil {
 			return "", "", err
 		}

@@ -1,4 +1,4 @@
-schema: festival-voice.persona.v1
+schema: obey-voice.persona.v1
 id: ada
 display_name: Ada
 brain:

@@ -242,10 +242,10 @@ Measure in an isolated HOME so the real install is never edited, pointing
 ```bash
 just build
 rig="$(mktemp -d)"
-root="$rig/.obey/agents/voice/festival-voice"
+root="$rig/.obey/agents/voice/obey-voice"
 mkdir -p "$root"
-cp "$HOME/.obey/agents/voice/festival-voice/config.yaml" "$root/config.yaml"
-HOME="$rig" ./bin/obey-voice config set models_dir "$HOME/.cache/festival-voice/models"
+cp "$HOME/.obey/agents/voice/obey-voice/config.yaml" "$root/config.yaml"
+HOME="$rig" ./bin/obey-voice config set models_dir "$HOME/.cache/obey-voice/models"
 
 # Leg A: one worker
 HOME="$rig" ./bin/obey-voice config set qwen_tts_workers 1

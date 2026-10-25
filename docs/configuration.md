@@ -2,7 +2,7 @@
 
 [Back to README](../README.md)
 
-Config lives at `~/.obey/agents/voice/festival-voice/config.yaml`. Values can also be overridden with environment variables where listed.
+Config lives at `~/.obey/agents/voice/obey-voice/config.yaml`. Values can also be overridden with environment variables where listed.
 
 `obey-voice config set <key> <value>` rewrites only that key's line: comments,
 blank lines and key order survive, a timestamped `.bak` is kept (newest five),
@@ -43,7 +43,7 @@ machine-readable payload; `config set` and `config unset` exit 0 on success, 1
 when the operation fails (with an error `code` in the payload), and 2 when
 called with the wrong number of arguments.
 
-Persona **profiles** live under `~/.obey/agents/voice/festival-voice/personas/<id>/persona.yaml`.
+Persona **profiles** live under `~/.obey/agents/voice/obey-voice/personas/<id>/persona.yaml`.
 On load, the active profile overlays `agent_name`, the persona prompt name, and per-persona TTS
 (`tts.provider` + `tts.voice` → `tts_provider` and either `tts_voice` or `qwen_tts_voice`).
 Each persona can use any supported TTS backend and any voice for that backend.
@@ -145,7 +145,7 @@ when you select it.
 | `whisper_quantized` | `true` | | Prefer quantized Whisper models |
 | `whispercpp_binary` | `whisper-cli` | `WHISPERCPP_BINARY` | whisper.cpp CLI executable |
 | `whispercpp_model` | `base.en` | `WHISPERCPP_MODEL` | Downloadable whisper.cpp model name |
-| `whispercpp_model_path` | `~/.cache/festival-voice/models/whispercpp/ggml-base.en.bin` | `WHISPERCPP_MODEL_PATH` | whisper.cpp model path |
+| `whispercpp_model_path` | `~/.cache/obey-voice/models/whispercpp/ggml-base.en.bin` | `WHISPERCPP_MODEL_PATH` | whisper.cpp model path |
 | `transcribecpp_binary` | `transcribe-cli` | `TRANSCRIBECPP_BINARY` | transcribe.cpp CLI executable. A path is used as given; a bare name is looked up on `PATH`, then in the copy `models ensure` manages |
 | `transcribecpp_model` | `parakeet-tdt-0.6b-v2` | `TRANSCRIBECPP_MODEL` | GGUF the `transcribecpp` provider loads. This is upstream's full model slug, so it is spelled longer than `parakeet_model`'s `tdt-0.6b-v2` — not a typo |
 | `stt_custom_words` | *(empty)* | | Names and jargon the transcriber restores after decoding: `Samantha`; `Claude=clawed,cloud` names misheard forms that map to it exactly; `Ollama!` also catches near-misses when the word is rare (five or more letters and not an everyday word). Config file only, e.g. `["Samantha", "Claude=clawed,cloud", "Ollama!"]`. See [Custom words](#custom-words) |
@@ -173,11 +173,11 @@ when you select it.
 | `tui_mouse_enabled` | `false` | `TUI_MOUSE_ENABLED` | Claim the mouse so the wheel/trackpad is routed to the transcript viewport. Off by default so the terminal keeps click-drag selection and copy; turning it on means selecting needs a modifier (option/fn/shift). Either way `Page Up`/`Page Down` scroll, and with it off the wheel scrolls whenever the composer is empty. Applies on next enter/leave of conversation (Settings → Tools toggle or re-entry); no full process restart required for the TUI claim |
 | `agent_name` | `Obey` | | Display name |
 | `persona` | `obey` | `PERSONA` | Prompt document name for the interactive persona |
-| `prompts_dir` | empty | `PROMPTS_DIR` | Prompt document directory; defaults to `~/.obey/agents/voice/festival-voice/prompts` when unset |
+| `prompts_dir` | empty | `PROMPTS_DIR` | Prompt document directory; defaults to `~/.obey/agents/voice/obey-voice/prompts` when unset |
 | `skills_enabled` | `true` | `SKILLS_ENABLED` | Agent Skills (`SKILL.md`) discovery for Ollama. Default on; set `false` to disable. Discovers project/workspace/user skill frontmatter into the system prompt; not a pre-activation sandbox. Claude/Grok already discover skills via their CLIs. |
-| `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after project/workspace/user harness dirs); defaults to `~/.obey/agents/voice/festival-voice/skills` when unset. |
+| `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after project/workspace/user harness dirs); defaults to `~/.obey/agents/voice/obey-voice/skills` when unset. |
 | `work_dir` | empty | `OBEY_VOICE_WORK_DIR` | Directory the agent's file and shell tools start in. **A default, not a sandbox** — a tool may still reach an absolute path outside it. Empty uses the directory Obey Voice was launched from; the binary's own folder, `/`, and any path that is not an existing directory fall back to your home folder. `obey-voice serve --work-dir DIR` overrides it for one process, and an override that is not an existing directory is a startup error rather than a silent fallback. The bare `WORK_DIR` is still honored for compatibility but `OBEY_VOICE_WORK_DIR` wins when both are set — see [Where the working directory came from](#where-the-working-directory-came-from). |
-| `models_dir` | `~/.cache/festival-voice/models` | `MODELS_DIR` | Model download directory |
+| `models_dir` | `~/.cache/obey-voice/models` | `MODELS_DIR` | Model download directory |
 | `language` | `en-US` | | Recognition language |
 | `max_history` | `10` | | Saved conversation history length |
 | `listen_timeout` | `10` | | Listen timeout in seconds |
@@ -545,7 +545,7 @@ cross-client **`.agents/skills`** convention
 1. `<cwd>/.agents/skills/*/SKILL.md` — project skills (shared with Codex, VS Code, camp, …)
 2. `<nearest ancestor>/.agents/skills/*/SKILL.md` — workspace/project-root skills
 3. `~/.agents/skills/*/SKILL.md` — user skills
-4. `skills_dir` (default `~/.obey/agents/voice/festival-voice/skills`) — Obey Voice-only
+4. `skills_dir` (default `~/.obey/agents/voice/obey-voice/skills`) — Obey Voice-only
 
 Ollama does **not** scan `.claude/skills`; the Claude Code provider owns that
 path, and dual-scanning would duplicate skills when both trees are projected.
@@ -588,7 +588,7 @@ effect when the conversation runtime is re-entered or restarted.
 ~/.agents/skills/hello/SKILL.md
 
 # Obey Voice config root
-~/.obey/agents/voice/festival-voice/skills/hello/SKILL.md
+~/.obey/agents/voice/obey-voice/skills/hello/SKILL.md
 ```
 
 ```markdown

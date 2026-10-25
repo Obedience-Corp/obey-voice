@@ -248,7 +248,7 @@ demo-meeting-speakers: build
 # Download the multi-speaker YouTube meeting clip (first 90s only, 16 kHz mono).
 # Source: https://www.youtube.com/watch?v=lBVtvOpU80Q (~43 min full video — we
 # only pull 0:00–1:30). Stored in a shared user cache so worktrees reuse it:
-#   ${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings/
+#   ${XDG_CACHE_HOME:-$HOME/.cache}/obey-voice/fixtures/meetings/
 # Override with OBEY_VOICE_FIXTURE_CACHE=… or FORCE_FETCH=1 to re-download.
 fetch-meeting-fixture:
     #!/usr/bin/env bash
@@ -285,9 +285,9 @@ speakerflow:
         if [[ -n "${OBEY_VOICE_FIXTURE_CACHE:-}" ]]; then
             cache="${OBEY_VOICE_FIXTURE_CACHE}"
         elif [[ -n "${XDG_CACHE_HOME:-}" ]]; then
-            cache="${XDG_CACHE_HOME}/festival-voice/fixtures/meetings"
+            cache="${XDG_CACHE_HOME}/obey-voice/fixtures/meetings"
         else
-            cache="${HOME}/.cache/festival-voice/fixtures/meetings"
+            cache="${HOME}/.cache/obey-voice/fixtures/meetings"
         fi
         fixture="${cache}/product-marketing-meeting-90s.wav"
     fi

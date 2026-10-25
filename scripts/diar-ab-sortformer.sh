@@ -12,7 +12,7 @@
 #
 #      just fetch-meeting-fixture
 #
-#    Resolves to ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings}/
+#    Resolves to ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/obey-voice/fixtures/meetings}/
 #    product-marketing-meeting-90s.wav
 #      sha256 ed57895c81d4d5164be0ebace0cf4a71098a775caff143527d6d5d12b71816b7
 #
@@ -68,7 +68,7 @@ OUT="${OUT:-$repo_root/docs/benchmarks/T3-diar-ab-sortformer-${DATE}.json}"
 
 # ---- inputs -----------------------------------------------------------------
 
-APP_SLUG="${APP_SLUG:-festival-voice}"
+APP_SLUG="${APP_SLUG:-obey-voice}"
 if [[ -n "${OBEY_VOICE_FIXTURE_CACHE:-}" ]]; then
 	fixture_cache="$OBEY_VOICE_FIXTURE_CACHE"
 else
@@ -237,9 +237,9 @@ env = {
       "code_path": "internal/speaker.SherpaEngine.Diarize -> sherpa OfflineSpeakerDiarization",
       "model_revision": "pyannote-segmentation-3.0-int8+nemo-titanet-small",
       "models": [
-        {"file": "\${XDG_CACHE_HOME:-\$HOME/.cache}/festival-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx",
+        {"file": "\${XDG_CACHE_HOME:-\$HOME/.cache}/obey-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx",
          "sha256": sh("shasum", "-a", "256", "${SEG_MODEL}").split()[0] if os.path.exists("${SEG_MODEL}") else None},
-        {"file": "\${XDG_CACHE_HOME:-\$HOME/.cache}/festival-voice/models/speaker/nemo_en_titanet_small.onnx",
+        {"file": "\${XDG_CACHE_HOME:-\$HOME/.cache}/obey-voice/models/speaker/nemo_en_titanet_small.onnx",
          "sha256": sh("shasum", "-a", "256", "${EMB_MODEL}").split()[0] if os.path.exists("${EMB_MODEL}") else None},
       ],
       "backend": "cpu (hardcoded provider=cpu, threads=min(NumCPU,4)); clustering threshold hardcoded 0.9",
@@ -247,12 +247,12 @@ env = {
     "transcribecpp_runner": {
       "pin": "v0.2.2",
       "commit": "c6a9257cdf8e9c6918c0f8f876246db048a22103",
-      "cli": "\${XDG_CACHE_HOME:-\$HOME/.cache}/festival-voice/spikes/transcribecpp/src-v0.2.2/build/bin/transcribe-cli",
+      "cli": "\${XDG_CACHE_HOME:-\$HOME/.cache}/obey-voice/spikes/transcribecpp/src-v0.2.2/build/bin/transcribe-cli",
       "cli_sha256": sh("shasum", "-a", "256", "${TRANSCRIBE_CLI}").split()[0],
       "model": {
         "name": "diar_streaming_sortformer_4spk-v2.1",
         "quant": "Q8_0",
-        "file": "\${XDG_CACHE_HOME:-\$HOME/.cache}/festival-voice/spikes/transcribecpp/models/diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf",
+        "file": "\${XDG_CACHE_HOME:-\$HOME/.cache}/obey-voice/spikes/transcribecpp/models/diar_streaming_sortformer_4spk-v2.1-Q8_0.gguf",
         "sha256": sh("shasum", "-a", "256", "${SORTFORMER_MODEL}").split()[0],
         "source": "https://huggingface.co/handy-computer/diar_streaming_sortformer_4spk-v2.1-gguf",
         "license": "NVIDIA Open Model License",
@@ -264,7 +264,7 @@ env = {
     },
     "fixture": {
       "name": "product-marketing-meeting-90s.wav",
-      "resolved_path": "\${XDG_CACHE_HOME:-\$HOME/.cache}/festival-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
+      "resolved_path": "\${XDG_CACHE_HOME:-\$HOME/.cache}/obey-voice/fixtures/meetings/product-marketing-meeting-90s.wav",
       "sha256": sh("shasum", "-a", "256", "${FIXTURE}").split()[0],
       "bytes": os.path.getsize("${FIXTURE}"),
       "format": "pcm_s16le 16000 Hz mono",

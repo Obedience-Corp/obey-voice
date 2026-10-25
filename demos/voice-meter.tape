@@ -4,7 +4,7 @@
 #   Agent shells often export NO_COLOR=1. Unset it in-shell and force ANSI so
 #   lipgloss maps to the theme's bright 16 colors (cyan/yellow/magenta).
 #
-# Config path is ~/.obey/agents/voice/festival-voice (AppSlug). New conversation
+# Config path is ~/.obey/agents/voice/obey-voice (AppSlug). New conversation
 # opens the persona picker — confirm the seeded Samantha profile with a second
 # Enter. SAMANTHA_DEMO_VOICE_ANIM scripts the meter via bus events (no mic/TTS).
 #
@@ -32,8 +32,8 @@ Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export SAMANTHA_COLOR_PROFILE=ansi SAMANTHA_DEMO_VOICE_ANIM=1" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
 Type "export HOME=/tmp/samantha-voice-meter-demo-$$" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions $HOME/.obey/agents/voice/festival-voice/personas/samantha" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<'EOF'" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions $HOME/.obey/agents/voice/obey-voice/personas/samantha" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
 Type "ollama_model: gemma4:26b" Enter
@@ -43,8 +43,8 @@ Type "agent_name: Samantha" Enter
 Type "active_persona: samantha" Enter
 Type "persona: samantha" Enter
 Type "EOF" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/personas/samantha/persona.yaml <<'EOF'" Enter
-Type "schema: festival-voice.persona.v1" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/personas/samantha/persona.yaml <<'EOF'" Enter
+Type "schema: obey-voice.persona.v1" Enter
 Type "id: samantha" Enter
 Type "display_name: Samantha" Enter
 Type "builtin: true" Enter

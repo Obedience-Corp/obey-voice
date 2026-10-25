@@ -1,4 +1,4 @@
-// Package persona loads festival-voice persona profiles (multi-agent support).
+// Package persona loads obey-voice persona profiles (multi-agent support).
 //
 // Profiles live at:
 //
@@ -24,7 +24,7 @@ import (
 )
 
 // Schema identifies the persona profile document version.
-const Schema = "festival-voice.persona.v1"
+const Schema = "obey-voice.persona.v1"
 
 // DefaultID is the shipped default profile id: the persona a fresh install
 // talks to and the id every heal path prefers. Companions (samantha, veronica,
@@ -316,7 +316,7 @@ func Write(p *Profile, skipExisting bool) error {
 		return fmt.Errorf("encoding persona profile: %w", err)
 	}
 	// Prefer a stable header for humans.
-	header := "# yaml-language-server: $schema=festival-voice.persona.v1\n"
+	header := "# yaml-language-server: $schema=obey-voice.persona.v1\n"
 	body := append([]byte(header), data...)
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)

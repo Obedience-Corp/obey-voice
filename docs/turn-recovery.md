@@ -46,7 +46,7 @@ The TUI writes low-rate lifecycle traces to its existing log, independently of
 experimental work journaling:
 
 ```sh
-tail -f ~/.obey/agents/voice/festival-voice/logs/native-diagnostics.log
+tail -f ~/.obey/agents/voice/obey-voice/logs/native-diagnostics.log
 ```
 
 Custom config roots and debug-audio runs place the log under their own directory.

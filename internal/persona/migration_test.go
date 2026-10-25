@@ -54,8 +54,8 @@ func writeProfileFile(t *testing.T, dir, id, body string) string {
 
 // builtinObeyOnDisk is the obey profile as SeedBuiltins writes it: flagged
 // ours, pinning nothing.
-const builtinObeyOnDisk = `# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+const builtinObeyOnDisk = `# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: obey
 display_name: Obey
 builtin: true
@@ -64,8 +64,8 @@ prompts:
     persona: obey
 `
 
-const samanthaProfileOnDisk = `# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+const samanthaProfileOnDisk = `# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: samantha
 display_name: Samantha
 builtin: true
@@ -281,8 +281,8 @@ func TestFreshInstallSeedsJarvis(t *testing.T) {
 // user-authored profile at id veronica is not replaced by the shipped one.
 func TestSeedBuiltinsLeavesAUserVeronicaAlone(t *testing.T) {
 	dir := newInstall(t)
-	const private = `# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+	const private = `# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: veronica
 display_name: Veronica
 builtin: false
@@ -383,7 +383,7 @@ func TestExistingSamanthaInstallKeepsSamanthaAndGainsCompanions(t *testing.T) {
 func TestUndeclaredActivePersonaUsesTheShippedDefault(t *testing.T) {
 	dir := newInstall(t)
 	writeConfigFile(t, dir, "tts_provider: kokoro\n")
-	writeProfileFile(t, dir, "ada", "schema: festival-voice.persona.v1\nid: ada\ndisplay_name: Ada\nprompts:\n  persona: ada\n")
+	writeProfileFile(t, dir, "ada", "schema: obey-voice.persona.v1\nid: ada\ndisplay_name: Ada\nprompts:\n  persona: ada\n")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -453,7 +453,7 @@ func TestActivePersonaErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := newInstall(t)
-			writeProfileFile(t, dir, "ada", "schema: festival-voice.persona.v1\nid: ada\ndisplay_name: Ada\nprompts:\n  persona: ada\n")
+			writeProfileFile(t, dir, "ada", "schema: obey-voice.persona.v1\nid: ada\ndisplay_name: Ada\nprompts:\n  persona: ada\n")
 			writeConfigFile(t, dir, "active_persona: "+tt.activeValue+"\n")
 
 			_, err := config.Load()
@@ -562,7 +562,7 @@ func TestResolveActiveIDMatchesTheLoader(t *testing.T) {
 // is the provenance record every ownership decision reads, so a test that plants
 // one of these is planting a slot this code may not claim.
 func userProfile(id, display, provider, voice string) string {
-	return "schema: festival-voice.persona.v1\nid: " + id + "\ndisplay_name: " + display +
+	return "schema: obey-voice.persona.v1\nid: " + id + "\ndisplay_name: " + display +
 		"\ntts:\n    provider: " + provider + "\n    voice: " + voice +
 		"\nprompts:\n    persona: " + id + "\n"
 }
