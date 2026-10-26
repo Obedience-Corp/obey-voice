@@ -20,9 +20,8 @@ macOS users may need to grant microphone permission to the terminal app used to 
 
 The native desktop app is built from the same checkout as the CLI. Install
 Rust 1.95 (selected by `apps/desktop/rust-toolchain.toml`), Go 1.26.1+, Python 3,
-Xcode Command Line Tools, and `just`. Authenticate Git access to the private
-Obedience-Corp dependencies and ensure `GOPRIVATE` includes
-`github.com/Obedience-Corp/*`.
+Xcode Command Line Tools, and `just`. The Go dependencies are public; no
+private dependency access is required.
 
 From the repository root:
 
@@ -59,9 +58,10 @@ create bundles in `apps/desktop/dist`; they do not install them.
 
 ## Linux amd64 archive
 
-Tagged releases include a relocatable `obey-voice-linux-amd64.tar.gz` for
-x86_64 glibc Linux ([latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest)).
-It contains the Obey Voice executable and its sherpa-onnx /
+Release packaging produces a relocatable `obey-voice-linux-amd64.tar.gz` for
+x86_64 glibc Linux. No release is published yet; use the source install below
+until an archive is available on the [releases page](https://github.com/Obedience-Corp/obey-voice/releases).
+Once downloaded, the archive contains the Obey Voice executable and its sherpa-onnx /
 onnxruntime shared libraries; keep the executable and `lib/` directory
 together.
 
