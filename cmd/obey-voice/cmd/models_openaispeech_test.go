@@ -20,14 +20,14 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
-// phononOllama is an Ollama that reports version 0.40.9 and lists tags; any
+// phononOllama is an Ollama that reports version 0.40.11 and lists tags; any
 // pull is counted and answered with success.
 func phononOllama(t *testing.T, tags ...string) (*config.Config, *atomic.Int32) {
 	t.Helper()
 	var pulls atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"version":"0.40.9"}`)
+		fmt.Fprint(w, `{"version":"0.40.11"}`)
 	})
 	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) {
 		models := []map[string]string{}
@@ -36,6 +36,7 @@ func phononOllama(t *testing.T, tags ...string) (*config.Config, *atomic.Int32) 
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"models": models})
 	})
+	mux.HandleFunc("/api/show", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"voices":["default","Zoey"]}`) })
 	mux.HandleFunc("/api/pull", func(w http.ResponseWriter, _ *http.Request) {
 		pulls.Add(1)
 		fmt.Fprintln(w, `{"status":"success"}`)
@@ -131,7 +132,7 @@ func TestVoicesGateBlocksOnlyOnTheModel(t *testing.T) {
 
 func TestVoicesGateIgnoresAListingThatFailed(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"version":"0.40.9"}`) })
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"version":"0.40.11"}`) })
 	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
 	srv := httptest.NewServer(mux)
@@ -139,5 +140,45 @@ func TestVoicesGateIgnoresAListingThatFailed(t *testing.T) {
 	cfg := &config.Config{TTSProvider: config.OpenAISpeechProviderName, OpenAISpeechURL: srv.URL + "/v1", ModelsDir: t.TempDir()}
 	if got := missingTTSAssets(context.Background(), cfg); len(got) != 0 {
 		t.Fatalf("missing = %v, want none: an unknown listing is not a missing model", got)
+	}
+}
+
+func TestModelsEnsureJSONVerifiesPhononBeforeSuccess(t *testing.T) {
+	stubPersonas(t, nil, nil)
+	for _, readyAfterPull := range []bool{true, false} {
+		t.Run(fmt.Sprint(readyAfterPull), func(t *testing.T) {
+			var pulls atomic.Int32
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"version":"0.40.11"}`) })
+			mux.HandleFunc("/api/tags", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"models":[{"name":"phonon:latest"}]}`) })
+			mux.HandleFunc("/api/show", func(w http.ResponseWriter, _ *http.Request) {
+				if readyAfterPull && pulls.Load() > 0 {
+					fmt.Fprint(w, `{"voices":["default","Zoey"]}`)
+				} else {
+					fmt.Fprint(w, `{"voices":["default"]}`)
+				}
+			})
+			mux.HandleFunc("/api/pull", func(w http.ResponseWriter, _ *http.Request) {
+				pulls.Add(1)
+				fmt.Fprintln(w, `{"status":"success"}`)
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+			cfg := &config.Config{TTSProvider: config.OpenAISpeechProviderName, OpenAISpeechURL: srv.URL + "/v1", ModelsDir: t.TempDir()}
+			placeVoicesFile(t, cfg)
+			cmd := &cobra.Command{}
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetContext(context.Background())
+			err := runModelsEnsureJSON(cmd, cfg, scopeFlags{tts: true}.ensureRequest(cfg), "")
+			lines := decodeNDJSONLines(t, out.String())
+			last := lines[len(lines)-1]
+			if pulls.Load() != 1 || (err == nil) != readyAfterPull || last["done"] != readyAfterPull {
+				t.Fatalf("pulls=%d error=%v output=%s", pulls.Load(), err, out.String())
+			}
+			if !readyAfterPull && (last["asset"] != "phonon (Ollama)" || !strings.Contains(fmt.Sprint(last["error"]), "still lists no named voices")) {
+				t.Fatalf("failed verification not attributed to the model: %v", last)
+			}
+		})
 	}
 }

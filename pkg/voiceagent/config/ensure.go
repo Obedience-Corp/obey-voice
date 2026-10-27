@@ -60,6 +60,11 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 	if req.NeedTTS && OpenAISpeechSelected(cfg) {
 		return ensureOpenAISpeechAssetsProgress(ctx, cfg, req, onProgress)
 	}
+	if req.NeedVoiceCatalog && !req.NeedTTS {
+		// A descriptions-only request does not depend on a running speech
+		// server and must never pull its model or any persona's models.
+		return ensureOpenAISpeechCatalog(ctx, dir, onProgress)
+	}
 	if req.NeedTTS && cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "kokoro") {
 		if err := sanitizeKokoroLexicons(dir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not sanitize kokoro lexicons: %v\n", err)

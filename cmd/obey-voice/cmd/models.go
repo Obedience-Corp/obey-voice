@@ -17,11 +17,12 @@ import (
 )
 
 var (
-	modelsStatusJSON  bool
-	modelsStatusScope scopeFlags
-	modelsEnsureScope scopeFlags
-	modelsEnsureJSON  bool
-	modelsEnsureTier  string
+	modelsStatusJSON    bool
+	modelsStatusScope   scopeFlags
+	modelsEnsureScope   scopeFlags
+	modelsEnsureJSON    bool
+	modelsEnsureTier    string
+	modelsEnsureCatalog bool
 )
 
 // scopeFlags narrows a models command to specific asset kinds. Flags combine as
@@ -171,6 +172,9 @@ var modelsEnsureCmd = &cobra.Command{
 			return err
 		}
 		req := modelsEnsureScope.ensureRequest(cfg)
+		if modelsEnsureCatalog {
+			req = config.AssetRequest{NeedVoiceCatalog: true}
+		}
 
 		if modelsEnsureJSON {
 			return runModelsEnsureJSON(cmd, cfg, req, tier)
@@ -454,6 +458,10 @@ func init() {
 	modelsEnsureScope.register(modelsEnsureCmd)
 	modelsEnsureCmd.Flags().BoolVar(&modelsEnsureJSON, "json", false, "Stream NDJSON progress on stdout, one terminal summary line")
 	modelsEnsureCmd.Flags().StringVar(&modelsEnsureTier, "tier", "", "Install a Qwen3-TTS model tier (0.6b|1.7b) without writing config; requires --tts")
+	modelsEnsureCmd.Flags().BoolVar(&modelsEnsureCatalog, "voice-catalog", false, "Download only optional Phonon voice descriptions; never installs speech models")
+	for _, flag := range []string{"tts", "stt", "vad", "speaker", "decision", "all", "tier"} {
+		modelsEnsureCmd.MarkFlagsMutuallyExclusive("voice-catalog", flag)
+	}
 	modelsCmd.AddCommand(modelsStatusCmd)
 	modelsCmd.AddCommand(modelsEnsureCmd)
 	rootCmd.AddCommand(modelsCmd)

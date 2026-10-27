@@ -20,7 +20,7 @@ func statusRows(t *testing.T, cfg *Config) map[string]AssetStatus {
 }
 
 func TestOpenAISpeechStatusOnOllama(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", tags: []string{"phonon:latest", "qwen3.8:27b"}}
+	fake := &fakeOllama{version: "0.40.11", tags: []string{"phonon:latest", "qwen3.8:27b"}, voices: []string{"Zoey"}}
 	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 
 	rows := statusRows(t, cfg)

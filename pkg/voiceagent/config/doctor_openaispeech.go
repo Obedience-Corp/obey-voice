@@ -97,18 +97,21 @@ func DiagnoseOpenAISpeech(ctx context.Context, cfg *Config, modelsDir string) []
 // model's voices. Only a 200 without voices earns the upgrade note; a failed
 // request says it could not ask.
 func ollamaVoicesDiagnostic(ctx context.Context, t OpenAISpeechTarget, apiKey string) Diagnostic {
-	names, answered, err := OllamaShowVoices(ctx, t.Root, t.Model, apiKey)
+	names, answered, err := t.Voices, t.VoicesErr == nil, t.VoicesErr
+	if !t.usesPhononCatalog() {
+		names, answered, err = OllamaShowVoices(ctx, t.Root, t.Model, apiKey)
+	}
 	switch {
 	case !answered:
 		return Diagnostic{
 			Name: "openai-speech-voices", Severity: SeverityWarn,
 			Detail: fmt.Sprintf("could not read %s's voices from /api/show: %v", t.Model, err),
 		}
-	case len(names) == 0:
+	case t.usesPhononCatalog() && !HasNamedVoices(names):
 		return Diagnostic{
 			Name: "openai-speech-voices", Severity: SeverityWarn,
 			Detail:      fmt.Sprintf("Ollama %s lists no voices for %s; only the configured voice and default can be chosen", t.Version, t.Model),
-			Remediation: fmt.Sprintf("update to the Ollama release that carries %s, then `ollama pull %s`", OllamaVoicesChange, t.Model),
+			Remediation: PhononVoicesRemedy(t.Version),
 		}
 	default:
 		return Diagnostic{Name: "openai-speech-voices", Severity: SeverityOK, Detail: fmt.Sprintf("Ollama lists %d voices for %s", len(names), t.Model)}

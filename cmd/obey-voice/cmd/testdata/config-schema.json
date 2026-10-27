@@ -214,7 +214,7 @@
       "allows_empty": true,
       "group": "voice",
       "title": "Speech API voice",
-      "help": "Which voice the speech API speaks in. Choose default or a named voice from the server catalog.",
+      "help": "Which voice the speech API speaks in. Phonon on Ollama 0.40.11+ offers named voices after voice setup; default remains available.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,

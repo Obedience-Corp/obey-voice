@@ -76,7 +76,7 @@ func voiceKeys() []KeySpec {
 			// names the voices it has when asked for one it lacks.
 			Key: "openai_speech_voice", Type: TypeString, Default: DefaultOpenAISpeechVoice,
 			Group: GroupVoice, Title: "Speech API voice",
-			Help:               "Which voice the speech API speaks in. Choose default or a named voice from the server catalog.",
+			Help:               "Which voice the speech API speaks in. Phonon on Ollama 0.40.11+ offers named voices after voice setup; default remains available.",
 			PersonaOverridable: true,
 		},
 		{

@@ -19,8 +19,8 @@ import (
 var ollamaPullStallTimeout = downloadStallTimeout
 
 // ensureOpenAISpeechAssetsProgress pulls the configured model into Ollama when
-// the target is Ollama and lacks it, then, when req asks for it, fetches the
-// voice catalog file. A server that does not answer is an error naming it; a
+// the target is Ollama and lacks it. Explicit voice setup also refreshes the
+// official Phonon model when named voices are missing, then fetches metadata. A server that does not answer is an error naming it; a
 // catalog that cannot be fetched is a warning, because speech does not need it.
 func ensureOpenAISpeechAssetsProgress(ctx context.Context, cfg *Config, req AssetRequest, onProgress func(AssetProgress)) error {
 	probeCtx, cancel := context.WithTimeout(ctx, OpenAISpeechProbeTimeout)
@@ -33,7 +33,7 @@ func ensureOpenAISpeechAssetsProgress(ctx context.Context, cfg *Config, req Asse
 		return fmt.Errorf("openai-speech: %s", target.Problem())
 	}
 	if target.Ollama {
-		if err := ensureOllamaModel(ctx, target, openAISpeechAPIKey(cfg), onProgress); err != nil {
+		if err := ensureOllamaModel(ctx, target, openAISpeechAPIKey(cfg), req.NeedVoiceCatalog, onProgress); err != nil {
 			return err
 		}
 	}
@@ -116,7 +116,8 @@ func checkVoicesCatalog(path string) error {
 	return errors.New("it is empty")
 }
 
-func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey string, onProgress func(AssetProgress)) error {
+func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey string, requireVoices bool, onProgress func(AssetProgress)) error {
+	requireVoices = requireVoices && target.usesPhononCatalog()
 	name := OpenAISpeechModelAssetName(target.Model)
 	var shown float64
 	emit := func(phase string, bytes, total int64) {
@@ -137,16 +138,45 @@ func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey st
 	if !target.ModelsKnown {
 		return fmt.Errorf("openai-speech: %s", target.ListingProblem())
 	}
-	if target.ModelListed {
+	if requireVoices {
+		if target.VoicesErr != nil {
+			return fmt.Errorf("openai-speech: could not check Phonon's voices: %w", target.VoicesErr)
+		}
+		if !HasNamedVoices(target.Voices) && !ollamaAtLeast(target.Version, MinPhononVoicesOllama) {
+			return fmt.Errorf("openai-speech: Ollama %s at %s cannot list Phonon's named voices; %s", target.Version, target.Root, PhononVoicesRemedy(target.Version))
+		}
+	}
+	if target.ModelListed && (!requireVoices || HasNamedVoices(target.Voices)) {
 		emit(assetPhaseSkipped, 0, 0)
 		return nil
 	}
 	emit(assetPhaseStart, 0, 0)
-	if err := pullOllamaModel(ctx, target.Root, target.Model, apiKey, emit); err != nil {
+	// Do not announce completion until the refreshed model really lists voices.
+	var doneBytes, doneTotal int64
+	progress := func(phase string, bytes, total int64) {
+		if phase == assetPhaseDone && requireVoices {
+			doneBytes, doneTotal = bytes, total
+			return
+		}
+		emit(phase, bytes, total)
+	}
+	if err := pullOllamaModel(ctx, target.Root, target.Model, apiKey, progress); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
 		return fmt.Errorf("openai-speech: pull %s into Ollama at %s: %w", target.Model, target.Root, err)
+	}
+	if requireVoices {
+		probeCtx, cancel := context.WithTimeout(ctx, OpenAISpeechProbeTimeout)
+		defer cancel()
+		names, _, err := OllamaShowVoices(probeCtx, target.Root, target.Model, apiKey)
+		if err != nil {
+			return fmt.Errorf("openai-speech: verify Phonon's voices after download: %w", err)
+		}
+		if !HasNamedVoices(names) {
+			return fmt.Errorf("openai-speech: refreshed %s at %s but Ollama %s still lists no named voices; check the server's model registry and retry setup", target.Model, target.Root, target.Version)
+		}
+		emit(assetPhaseDone, doneBytes, doneTotal)
 	}
 	return nil
 }

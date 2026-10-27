@@ -71,7 +71,7 @@ func pullStream(lines ...string) func(http.ResponseWriter, *http.Request) {
 }
 
 func TestEnsureOpenAISpeechPullsAMissingModelThenTheCatalog(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", tags: []string{}, pull: pullStream(
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}, pull: pullStream(
 		`{"status":"pulling manifest"}`,
 		`{"status":"pulling sha256:aa","digest":"sha256:aa","total":100,"completed":0}`,
 		`{"status":"pulling sha256:aa","digest":"sha256:aa","total":100,"completed":60}`,
@@ -110,7 +110,7 @@ func TestEnsureOpenAISpeechPullsAMissingModelThenTheCatalog(t *testing.T) {
 }
 
 func TestEnsureOpenAISpeechSkipsWhatIsThere(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", tags: []string{"phonon:latest"}}
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{"phonon:latest"}}
 	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 	_, hits := fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
 	writeVoicesFile(t, cfg)
@@ -156,7 +156,7 @@ func TestEnsureOpenAISpeechCancellationLeavesNoPartialCatalog(t *testing.T) {
 	t.Run("mid pull", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		fake := &fakeOllama{version: "0.40.9", tags: []string{}, pull: func(w http.ResponseWriter, r *http.Request) {
+		fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}, pull: func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, `{"status":"pulling sha256:aa","digest":"sha256:aa","total":100,"completed":10}`)
 			w.(http.Flusher).Flush()
 			<-r.Context().Done()
@@ -180,7 +180,7 @@ func TestEnsureOpenAISpeechCancellationLeavesNoPartialCatalog(t *testing.T) {
 	t.Run("mid catalog download", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		fake := &fakeOllama{version: "0.40.9", tags: []string{"phonon:latest"}}
+		fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{"phonon:latest"}}
 		cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 		slow := newBlockingCatalog(t)
 
@@ -244,7 +244,7 @@ func TestEnsureOpenAISpeechFailures(t *testing.T) {
 		}
 	})
 	t.Run("an error line fails the pull", func(t *testing.T) {
-		fake := &fakeOllama{version: "0.40.9", tags: []string{}, pull: pullStream(
+		fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}, pull: pullStream(
 			`{"status":"pulling manifest"}`,
 			`{"error":"pull model manifest: file does not exist"}`,
 		)}
@@ -259,7 +259,7 @@ func TestEnsureOpenAISpeechFailures(t *testing.T) {
 		}
 	})
 	t.Run("a stream that ends without success fails", func(t *testing.T) {
-		fake := &fakeOllama{version: "0.40.9", tags: []string{}, pull: pullStream(`{"status":"pulling manifest"}`)}
+		fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}, pull: pullStream(`{"status":"pulling manifest"}`)}
 		err := installTTS(context.Background(), openAISpeechCfg(t, fake.start(t).URL+"/v1"), &tickLog{})
 		if err == nil || !strings.Contains(err.Error(), "before Ollama reported success") {
 			t.Fatalf("err = %v", err)
@@ -273,7 +273,7 @@ func TestEnsureOpenAISpeechFailures(t *testing.T) {
 		}
 	})
 	t.Run("a catalog that cannot be fetched closes as skipped with the reason", func(t *testing.T) {
-		fake := &fakeOllama{version: "0.40.9", tags: []string{"phonon:latest"}}
+		fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{"phonon:latest"}}
 		cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 		fakeCatalog(t, http.StatusInternalServerError, "")
 		log := &tickLog{}
@@ -299,7 +299,7 @@ func TestEnsureOpenAISpeechFailures(t *testing.T) {
 		orig := ollamaPullStallTimeout
 		ollamaPullStallTimeout = 50 * time.Millisecond
 		t.Cleanup(func() { ollamaPullStallTimeout = orig })
-		fake := &fakeOllama{version: "0.40.9", tags: []string{}, pull: func(w http.ResponseWriter, r *http.Request) {
+		fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}, pull: func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, `{"status":"pulling sha256:aa","digest":"sha256:aa","total":100,"completed":10}`)
 			w.(http.Flusher).Flush()
 			<-r.Context().Done()
@@ -312,7 +312,7 @@ func TestEnsureOpenAISpeechFailures(t *testing.T) {
 }
 
 func TestEnsureRuntimeAssetsLeavesOpenAISpeechAloneWithoutTTS(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", tags: []string{}}
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}}
 	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 	if err := EnsureRuntimeAssetsProgress(context.Background(), cfg, AssetRequest{}, nil); err != nil {
 		t.Fatal(err)
@@ -323,7 +323,7 @@ func TestEnsureRuntimeAssetsLeavesOpenAISpeechAloneWithoutTTS(t *testing.T) {
 }
 
 func TestOpenAISpeechSendsTheAPIKeyToOllama(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", tags: []string{}, voices: []string{"Zoey"}}
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}}
 	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 	cfg.OpenAISpeechAPIKey = "sk-test"
 	fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
@@ -341,7 +341,7 @@ func TestOpenAISpeechSendsTheAPIKeyToOllama(t *testing.T) {
 }
 
 func TestConversationStartNeverFetchesTheCatalog(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", tags: []string{}}
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{}}
 	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 	_, hits := fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
 
@@ -361,7 +361,7 @@ func TestConversationStartNeverFetchesTheCatalog(t *testing.T) {
 }
 
 func TestTheCatalogMustBeACatalog(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", tags: []string{"phonon:latest"}}
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, tags: []string{"phonon:latest"}}
 	t.Run("a captive portal page is refused and names the URL", func(t *testing.T) {
 		cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 		srv, _ := fakeCatalog(t, http.StatusOK, "<!doctype html><html><body>Sign in to the Wi-Fi</body></html>\n")
@@ -407,7 +407,7 @@ func TestTheCatalogMustBeACatalog(t *testing.T) {
 }
 
 func TestPullProgressNeverRunsBackwards(t *testing.T) {
-	fake := &fakeOllama{version: "0.40.9", pull: pullStream(
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, pull: pullStream(
 		`{"status":"pulling sha256:aa","digest":"sha256:aa","total":100,"completed":80}`,
 		`{"status":"pulling sha256:bb","digest":"sha256:bb","total":100,"completed":0}`,
 		`{"status":"pulling sha256:bb","digest":"sha256:bb","total":100,"completed":100}`,
@@ -417,7 +417,7 @@ func TestPullProgressNeverRunsBackwards(t *testing.T) {
 	srv := fake.start(t)
 	target := OpenAISpeechTarget{Base: srv.URL + "/v1", Root: srv.URL, Model: "phonon", Ollama: true, Version: "0.40.9", Reachable: true, ModelsKnown: true}
 	log := &tickLog{}
-	if err := ensureOllamaModel(context.Background(), target, "", log.add); err != nil {
+	if err := ensureOllamaModel(context.Background(), target, "", false, log.add); err != nil {
 		t.Fatal(err)
 	}
 	var pcts []float64
@@ -437,7 +437,7 @@ func TestPullProgressNeverRunsBackwards(t *testing.T) {
 func TestAFailedListingIsNotAMissingModel(t *testing.T) {
 	// Ollama answers /api/version, but /api/tags 404s and /v1/models 500s:
 	// nothing proved phonon is absent, so nothing may be pulled.
-	fake := &fakeOllama{version: "0.40.9", modelsStatus: http.StatusInternalServerError}
+	fake := &fakeOllama{version: "0.40.11", voices: []string{"Zoey"}, modelsStatus: http.StatusInternalServerError}
 	cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 	_, hits := fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
 
@@ -462,5 +462,50 @@ func TestAFailedListingIsNotAMissingModel(t *testing.T) {
 	}
 	if _, ok := got["openai-speech-voices"]; ok {
 		t.Fatal("asked for the voices of a model nobody could find")
+	}
+}
+
+// A descriptions-only install must work even if the speech server is offline
+// and a managed TTS provider has no model installed.
+func TestEnsureVoiceCatalogOnlyDoesNotPrepareSpeech(t *testing.T) {
+	cfg := openAISpeechCfg(t, closedURL(t)+"/v1")
+	cfg.TTSProvider = "qwen3-tts"
+	_, hits := fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
+	log := &tickLog{}
+	req := AssetRequest{NeedVoiceCatalog: true}
+	if err := EnsureRuntimeAssetsProgress(t.Context(), cfg, req, log.add); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(voicesPath(cfg))
+	if err != nil || string(data) != fakeVoicesJSONL {
+		t.Fatalf("catalog = %q, %v", data, err)
+	}
+	for _, tick := range log.ticks {
+		if tick.Asset != OpenAISpeechVoicesFile {
+			t.Fatalf("unrelated download: %+v", tick)
+		}
+	}
+	if err := EnsureRuntimeAssetsProgress(t.Context(), cfg, req, log.add); err != nil {
+		t.Fatal(err)
+	}
+	if *hits != 1 || log.last(OpenAISpeechVoicesFile).Phase != "skipped" {
+		t.Fatalf("installed catalog was fetched again: hits=%d", *hits)
+	}
+}
+
+func TestEnsureVoiceCatalogOnlyFailureRemainsOptional(t *testing.T) {
+	cfg := openAISpeechCfg(t, closedURL(t)+"/v1")
+	fakeCatalog(t, http.StatusNotFound, "not found")
+	log := &tickLog{}
+	if err := EnsureRuntimeAssetsProgress(t.Context(), cfg, AssetRequest{NeedVoiceCatalog: true}, log.add); err != nil {
+		t.Fatal(err)
+	}
+	row := openAISpeechVoicesStatus(cfg.ModelsDir)
+	if row.Installed || !row.Optional {
+		t.Fatalf("failed download changed optional status: %+v", row)
+	}
+	last := log.last(OpenAISpeechVoicesFile)
+	if last.Phase != "skipped" || !strings.Contains(last.Detail, "not installed") {
+		t.Fatalf("failure was not explained: %+v", last)
 	}
 }

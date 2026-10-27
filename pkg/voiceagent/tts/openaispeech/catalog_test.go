@@ -1,6 +1,7 @@
 package openaispeech
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,7 @@ func TestOllamaWithoutVoicesCarriesANotice(t *testing.T) {
 		t.Fatalf("source %q voices %s", p.CatalogSource(), names(p.ListVoices("", "")))
 	}
 	n := p.CatalogNotice()
-	if !strings.Contains(n, "0.40.9") || !strings.Contains(n, ollamaVoicesIssue) || !strings.Contains(n, "ollama pull phonon") {
+	if !strings.Contains(n, "0.40.9") || !strings.Contains(n, config.MinPhononVoicesOllama) || !strings.Contains(n, "models ensure --tts") {
 		t.Fatalf("notice = %q", n)
 	}
 }

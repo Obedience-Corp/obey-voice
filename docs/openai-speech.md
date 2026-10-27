@@ -9,8 +9,9 @@ installs it there and fetches Phonon's voice catalog file (see
 
 ## Phonon through Ollama
 
-Ollama 0.40.9 and later serve [Gradium's Phonon](https://ollama.com/library/phonon)
-on Apple Silicon. Phonon 31M English is Apache 2.0 and 64 MB.
+Ollama 0.40.11 and later provide [Phonon's named voices](https://docs.ollama.com/capabilities/speech)
+on Apple Silicon. The older 0.40.9 speech API still works with `default`.
+Phonon 31M English is Apache 2.0.
 
 ```bash
 obey-voice config set tts_provider openai-speech   # or Settings → Voice → Engine
@@ -19,11 +20,12 @@ obey-voice models ensure --tts                     # pulls phonon into Ollama, f
 
 The defaults already point at Ollama on this computer (`openai_speech_url`
 `http://localhost:11434/v1`, `openai_speech_model` `phonon`,
-`openai_speech_voice` `default`). Current Ollama/model releases can also expose named Phonon voices through
-`/api/show`. Obey Voice lists the voices your server actually reports. If it
-only lists `default`, update Ollama and pull `phonon` again before choosing a
-named voice. The shipped Phonon personas use Harper, Juniper, Edwin, and Zoey;
-all four were verified through Ollama 0.40.11.
+`openai_speech_voice` `default`). The current model includes named English
+voices alongside `default`, exposed through `/api/show`. The shipped Phonon
+personas use Harper, Juniper, Edwin, and Zoey; all four were verified through
+Ollama 0.40.11. Obey Voice lists the voices your server actually reports. If it
+only lists `default`, update Ollama if needed and run voice setup again as
+described below.
 
 Measured on an M4 Max through Ollama's MLX runner, both engines through the
 real provider seam, no playback device
@@ -39,10 +41,20 @@ gain dead air between sentences; pauses inside an utterance are kept.
 
 ## Install
 
-`obey-voice models ensure --tts` does this for `openai-speech`. Starting a
-conversation runs steps 1 and 2 for the engine its persona speaks with, as do
-`voices` and `voices preview --ensure`; none of them fetch the catalog, so its
-host never delays speech:
+`obey-voice models ensure --tts` and choosing `openai-speech` under Settings →
+Voice → Engine run this setup. Settings → Voice → **Install / refresh voices**
+runs it again for an existing installation, with progress and cancellation
+when Settings closes or another engine is selected. Opening Settings only
+reads the catalog.
+
+Ollama remains an external dependency: setup names the required version when
+the running server is too old; it does not replace or restart an external
+Ollama installation. After an Ollama update, run setup again.
+
+Starting a conversation, `voices`, and `voices preview --ensure` only ensure
+the model is present. They do not refresh installed models or fetch the
+descriptive catalog, so existing default-voice speech keeps working offline.
+Explicit setup performs these additional voice-readiness checks:
 
 1. Ask the target what it is. A base URL ending in `/v1` whose root answers
    `GET /api/version` is Ollama. Ollama older than 0.40.9 is refused with that
@@ -54,8 +66,14 @@ host never delays speech:
    through `POST /api/pull`; layer bytes are summed into the same `download`
    progress ticks every other asset reports, then `verify`, `install` and
    `done`; the percentage never runs backwards when a layer is announced
-   late. A model that is already there reports `skipped` and is not pulled
-   again. Only a listing that answered can prove the model absent: when both
+   late. For the official `phonon` / `phonon:latest` tag, setup also checks
+   `/api/show`. An installed model with no named voices is refreshed once on
+   Ollama 0.40.11+. An older runtime gets an update/restart message before any
+   download. A ready model reports `skipped`. Custom models and pinned tags
+   are never refreshed automatically. A failed voice-list request stops setup
+   rather than triggering a download. After a pull, setup verifies named
+   voices before reporting `done`; a still-empty catalog fails explicitly.
+   Only a listing that answered can prove the model absent: when both
    `/api/tags` and `/v1/models` fail, ensure stops with "could not check
    whether phonon is installed" and the reasons, nothing is pulled, and
    status reports the model as unknown rather than missing. A pull that goes 60 s without a line from Ollama is abandoned with
@@ -73,7 +91,10 @@ host never delays speech:
 
 `--json` streams these as NDJSON ticks with the assets `phonon (Ollama)` and
 `phonon/voices.jsonl`, the names `models status --json --tts` gives its rows
-`tts.openai-speech.model` and `tts.openai-speech.voices`. The voices row
+`tts.openai-speech.model` and `tts.openai-speech.voices`. For the official
+Phonon tag, the model row is ready only when named voices can be listed, so
+setup offers a repair even when an old model is already installed. The voices
+row
 carries `optional: true`: it is listed and `models ensure` fetches it, but the
 human summary and the desktop setup's Models step leave it out of the missing
 count, so a Phonon user without the catalog file is never held at an install
@@ -129,11 +150,12 @@ The catalog comes from the first of these that answers, and
 | `catalog` | Where the names came from |
 |---|---|
 | `server` | `GET /v1/audio/voices`, which Gradium's `ptts-openai-server` publishes for the voice files it loaded |
-| `ollama` | Ollama's `/api/show` `voices` list, present from the release that carries [ollama/ollama#19242](https://github.com/ollama/ollama/pull/19242) (the English catalog baked into `phonon`) |
+| `ollama` | Ollama's `/api/show` `voices` list, shipped in [Ollama 0.40.11](https://github.com/ollama/ollama/releases/tag/v0.40.11) (the English catalog baked into `phonon`) |
 | `configured` | Nothing was published: the configured voice plus `default` |
 
-When the target is Ollama and its release lists no voices, the JSON carries a
-`notice` naming the version and the upstream change; the Personas form shows
+When the target is the official Phonon model and no named voices are listed,
+the JSON carries a `notice` naming the required Ollama update or model refresh;
+the Personas form shows
 the same text under the Voice row. A non-Ollama server with no catalog has no
 notice: one voice is simply what it has.
 
@@ -156,3 +178,9 @@ locale; voices that state no locale and the ✓ voice stay listed, and the
 filter is a view, not a saved setting. The highlighted voice's locale, gender,
 age and description show on the detail line. An unknown name is reported by
 the server at the first synthesis, naming the voices it has.
+
+To download only the optional voice descriptions (without installing speech or
+persona models), run `obey-voice models ensure --voice-catalog`. Add `--json` for
+streamed progress. This works while the speech server is offline; a failed
+catalog fetch leaves speech readiness unchanged. Desktop setup offers the same
+operation as **Download voice descriptions**, independently of **Continue**.

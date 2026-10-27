@@ -47,6 +47,12 @@ setup-replay:
     just dist mac
     python3 scripts/event-fixture.py --setup
 
+# Optional descriptions: failed fetch, retry, and required-model readiness
+[macos]
+voice-catalog:
+    just dist mac
+    python3 scripts/event-fixture.py --voice-catalog
+
 # Compile and test Linux adapters in a disposable container (requires Docker)
 linux:
     docker build -f scripts/linux-check.Dockerfile -t obey-voice-agent-linux-check .
