@@ -3,6 +3,7 @@ package brain
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -70,12 +71,12 @@ func ChunkSentencesRaw(input <-chan string) <-chan string {
 				if idx < 0 {
 					break
 				}
-				sentence := trimSegment(text[:idx+1])
+				sentence := trimSegment(text[:idx])
 				if sentence != "" {
 					sentences = append(sentences, sentence)
 				}
 				buf.Reset()
-				buf.WriteString(text[idx+1:])
+				buf.WriteString(text[idx:])
 
 				// Emit batch when we have enough sentences.
 				if len(sentences) >= sentencesPerChunk {
@@ -119,13 +120,15 @@ func trimSegment(s string) string {
 	return trimmed
 }
 
-// findSentenceEnd returns the index of the first sentence-ending punctuation
+// findSentenceEnd returns the exclusive byte offset of the first sentence end
 // followed by a space or by a glued next sentence (closing quotes between the
 // punct and that follower ride with the sentence). Returns -1 if no boundary
 // found.
 func findSentenceEnd(text string) int {
 	runes := []rune(text)
-	for i, r := range runes {
+	i := -1
+	for offset, r := range text {
+		i++
 		if r == '.' || r == '?' || r == '!' {
 			// Check for abbreviations (e.g., "Mr.", "Dr.", "etc.")
 			if r == '.' && i > 0 && i < len(runes)-1 {
@@ -139,10 +142,12 @@ func findSentenceEnd(text string) int {
 			// the punct used to send `"Hello?` to TTS and a leftover `"` as
 			// the next segment — unmatched quotes, which Qwen3-TTS then
 			// treated as a quoted span and did not speak.
-			end := i
+			// String slices use byte offsets, while punctuation lookahead uses
+			// runes. Include all bytes of any closing quotes in the boundary.
+			end := offset + utf8.RuneLen(r)
 			j := i + 1
 			for j < len(runes) && textclean.IsSpeechQuote(runes[j]) {
-				end = j
+				end += utf8.RuneLen(runes[j])
 				j++
 			}
 
