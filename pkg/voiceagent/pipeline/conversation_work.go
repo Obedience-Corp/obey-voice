@@ -121,11 +121,17 @@ func (p *Pipeline) ClearConversation() error {
 	if p.Brain != nil {
 		p.Brain.ClearHistory()
 	}
+	if p.Agency != nil {
+		p.Agency.discardPendingSpeech()
+	}
 	return err
 }
 func (p *Pipeline) CloseWork() error {
 	if p != nil {
 		p.closeCompletionCapture()
+		if p.Agency != nil {
+			p.Agency.discardPendingSpeech()
+		}
 	}
 	if p == nil {
 		return nil

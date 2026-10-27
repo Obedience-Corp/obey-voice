@@ -128,7 +128,8 @@ func (p *Pipeline) speakStandalone(ctx context.Context, turn *turnConductor, met
 	if sentence != "" && metrics != nil && metrics.routedSpeech != nil {
 		*metrics.routedSpeech = append(*metrics.routedSpeech, sentence)
 	}
-	if sentence == "" || p.OutputMuted() || p.Player == nil || !p.ttsReady() {
+	primary, _ := p.responseTTS(ctx)
+	if sentence == "" || p.OutputMuted() || p.Player == nil || primary == nil || !primary.Available() {
 		return nil
 	}
 	if turn != nil {

@@ -9,12 +9,26 @@ import (
 )
 
 type workerOrigin struct {
-	Scope    work.WorkScope
-	Envelope events.ResponseEnvelope
+	Scope        work.WorkScope
+	Envelope     events.ResponseEnvelope
+	Voices       responseVoices
+	releaseVoice func()
 }
 type workerReply struct {
 	workerOrigin
 	Text string
+}
+
+func (a *Agency) discardPendingSpeech() {
+	a.mu.Lock()
+	pending := a.pending
+	a.pending = nil
+	a.mu.Unlock()
+	for _, item := range pending {
+		if item.releaseVoice != nil {
+			item.releaseVoice()
+		}
+	}
 }
 
 // Worker callbacks publish their own reply without borrowing the foreground

@@ -164,6 +164,60 @@ func TestLiveTTSManagerReplaceAndCloseIgnoresDrain(t *testing.T) {
 
 type transactionTTS struct{}
 
+type retainedTestTTS struct {
+	transactionTTS
+	name string
+}
+
+func TestLiveTTSManagerWaitsForWorkerVoiceAndQueuedSpeech(t *testing.T) {
+	old := &retainedTestTTS{name: "Obey"}
+	next := &retainedTestTTS{name: "Samantha"}
+	p := &pipeline.Pipeline{TTS: old}
+	m := &LiveTTSManager{RetireDelay: -1}
+	defer m.Close()
+	closed := make(chan struct{})
+	m.Adopt(&TTSSet{Primary: old, cleanups: []func(){func() { close(closed) }}})
+	releaseWorker := p.RetainTTS(old, nil)
+	if !m.ReplaceAndClose(p, &TTSSet{Primary: next}) {
+		t.Fatal("replace voice")
+	}
+	select {
+	case <-closed:
+		t.Fatal("worker's voice closed during persona switch")
+	default:
+	}
+	releaseSpeech := p.RetainTTS(old, nil)
+	releaseWorker()
+	select {
+	case <-closed:
+		t.Fatal("queued speech lost its voice")
+	default:
+	}
+	releaseSpeech()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("unused voice was not retired")
+	}
+}
+
+func TestLiveTTSManagerShutdownClosesRetainedWorkerVoice(t *testing.T) {
+	old := &retainedTestTTS{name: "Obey"}
+	p := &pipeline.Pipeline{TTS: old}
+	m := &LiveTTSManager{RetireDelay: -1}
+	closed := make(chan struct{})
+	m.Adopt(&TTSSet{Primary: old, cleanups: []func(){func() { close(closed) }}})
+	release := p.RetainTTS(old, nil)
+	defer release()
+	m.ReplaceAndClose(p, &TTSSet{Primary: &retainedTestTTS{name: "Samantha"}})
+	m.Close()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown left retained voice running")
+	}
+}
+
 func (transactionTTS) Synthesize(ctx context.Context, _ string) (*audio.PCMStream, error) {
 	stream := audio.NewPCMStream(ctx)
 	stream.Close()

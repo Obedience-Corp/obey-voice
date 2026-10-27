@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,63 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
+
+func TestWorkerSpeechKeepsOriginatingVoiceAfterPersonaSwitch(t *testing.T) {
+	for _, clear := range []bool{false, true} {
+		obey, samantha := &fakeTTS{}, &fakeTTS{}
+		player := newFakePlayer(time.Millisecond)
+		defer player.Close()
+		worker := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "The worker has finished checking the files."}
+		p := &Pipeline{TTS: obey, Player: player, Events: events.NewBus()}
+		if err := p.BeginConversationIdentity("voice-owner"); err != nil {
+			t.Fatal(err)
+		}
+		jobs := job.NewTable(t.Context())
+		defer jobs.Close()
+		a := NewAgency(p, jobs, worker, &config.Config{}, nil)
+		a.Wire()
+		p.incActiveTurn()
+		finished := make(chan struct{}, 1)
+		jobs.OnDone(func(id string, state job.State, result string, err error) {
+			a.onJobDone(id, state, result, err)
+			finished <- struct{}{}
+		})
+		var heardOwner string
+		events.Subscribe(p.Events, func(e events.SpeechSegmentReady) {
+			if e.Text == worker.reply && e.Envelope != nil {
+				heardOwner = e.Envelope.PersonaID
+			}
+		})
+		metrics := newTurnMetrics()
+		metrics.response = events.ResponseEnvelope{PersonaID: "obey", DisplayName: "Obey"}
+		a.handleSpawn(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{Kind: RouteSpawn, Transcript: "Check the files"})
+		<-worker.started
+		p.ReplaceTTS(samantha, nil)
+		close(worker.done)
+		select {
+		case <-finished:
+		case <-time.After(3 * time.Second):
+			t.Fatal("missing worker completion")
+		}
+		if clear {
+			if err := p.ClearConversation(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		p.decActiveTurn()
+		spoke := strings.Contains(strings.Join(obey.Texts(), " "), worker.reply)
+		if spoke == clear || len(samantha.Texts()) != 0 || (!clear && heardOwner != "obey") {
+			t.Fatalf("clear=%t: Obey=%q Samantha=%q owner=%q", clear, obey.Texts(), samantha.Texts(), heardOwner)
+		}
+		for _, released := range p.TTSRetentions(obey, nil) {
+			select {
+			case <-released:
+			case <-time.After(time.Second):
+				t.Fatal("voice lease leaked")
+			}
+		}
+	}
+}
 
 func TestLegacyWorkerReplyReachesConversationAndSavedHistory(t *testing.T) {
 	root := t.TempDir()

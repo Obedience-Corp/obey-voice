@@ -132,6 +132,7 @@ type Pipeline struct {
 	// Kokoro is constructed here when voice_fallback_provider=kokoro.
 	TTSFallback       tts.Provider
 	ttsMu             sync.RWMutex
+	ttsRetentions     map[*ttsRetention]struct{}
 	Player            audio.Engine
 	Capture           CaptureMonitor
 	VAD               VoiceDetector
@@ -297,7 +298,7 @@ func (p *Pipeline) OutputMuted() bool { return p.outputMuted.Load() }
 
 // ReplaceTTS atomically changes the providers used by subsequent synthesis
 // calls. Callers own provider cleanup and must keep retired providers alive
-// until any already-started utterance has drained.
+// until any already-started utterance has drained and TTSRetentions have released.
 func (p *Pipeline) ReplaceTTS(primary, fallback tts.Provider) {
 	p.ttsMu.Lock()
 	p.TTS = primary

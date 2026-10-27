@@ -111,9 +111,7 @@ func (a *Agency) EnableConversationWork(sessionID string, saved *work.Snapshot, 
 		}
 		a.ReplaceWorker(worker, cfg, workerErr)
 	}
-	a.mu.Lock()
-	a.pending = nil
-	a.mu.Unlock()
+	a.discardPendingSpeech()
 	a.workMu.Lock()
 	a.coordinator, a.workScope, a.workObserver = c, scope, observer
 	a.jobScopes = make(map[string]work.WorkScope)
