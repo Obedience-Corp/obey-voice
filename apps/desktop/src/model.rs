@@ -153,6 +153,9 @@ pub struct KeySpec {
 }
 #[derive(Default)]
 pub struct PersonaForm {
+    pub preview_request: Option<u64>,
+    pub preview_notice: String,
+    pub preview_error: bool,
     pub save_error: String,
     pub starting_directory: String,
     pub original_directory: String,
@@ -177,6 +180,7 @@ pub enum Purpose {
     Sessions,
     Personas,
     PersonaLoad,
+    PersonaPreview,
     PersonaDirectories,
     PersonaBrowse,
     SettingsSchema,

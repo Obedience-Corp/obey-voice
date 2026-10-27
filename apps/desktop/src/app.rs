@@ -3,6 +3,7 @@ mod actions;
 mod demo;
 mod events;
 mod persona_directory;
+mod persona_preview;
 mod resident;
 #[cfg(test)]
 mod resident_tests;

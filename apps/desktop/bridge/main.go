@@ -21,17 +21,18 @@ import (
 )
 
 type request struct {
-	Config    json.RawMessage `json:"config"`
-	Revision  int64           `json:"revision"`
-	ID        uint64          `json:"id"`
-	Method    string          `json:"method"`
-	Text      string          `json:"text"`
-	Enabled   bool            `json:"enabled"`
-	SessionID string          `json:"session_id"`
-	PersonaID string          `json:"persona_id"`
-	TextOnly  bool            `json:"text_only"`
-	Silent    bool            `json:"silent"`
-	Resume    string          `json:"resume"`
+	VoiceSelection engine.DesktopVoiceSelection `json:"voice_selection"`
+	Config         json.RawMessage              `json:"config"`
+	Revision       int64                        `json:"revision"`
+	ID             uint64                       `json:"id"`
+	Method         string                       `json:"method"`
+	Text           string                       `json:"text"`
+	Enabled        bool                         `json:"enabled"`
+	SessionID      string                       `json:"session_id"`
+	PersonaID      string                       `json:"persona_id"`
+	TextOnly       bool                         `json:"text_only"`
+	Silent         bool                         `json:"silent"`
+	Resume         string                       `json:"resume"`
 }
 type output struct {
 	mu  sync.Mutex
@@ -68,10 +69,12 @@ func main() {
 }
 
 type host struct {
-	controller  *engine.DesktopController
-	stateCancel context.CancelFunc
-	stateDone   chan struct{}
-	meeting     *meetingHost
+	preview      *voicePreview
+	previewVoice func(context.Context, engine.DesktopVoiceSelection) error
+	controller   *engine.DesktopController
+	stateCancel  context.CancelFunc
+	stateDone    chan struct{}
+	meeting      *meetingHost
 }
 
 func run(parent context.Context, input io.Reader, writer io.Writer) error {
@@ -121,6 +124,11 @@ func run(parent context.Context, input io.Reader, writer io.Writer) error {
 	}
 }
 func (h *host) close(o *output) {
+	h.stopPreview()
+	if h.preview != nil {
+		<-h.preview.done
+		h.preview = nil
+	}
 	if h.controller != nil {
 		h.controller.Send(engine.DesktopAction{Kind: "quit"})
 		if err := h.controller.Wait(); err != nil {
@@ -141,6 +149,12 @@ func (h *host) close(o *output) {
 }
 func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 	switch r.Method {
+	case "persona_preview":
+		h.startPreview(ctx, r, o)
+		return nil, nil
+	case "persona_preview_stop":
+		h.stopPreview()
+		return nil, nil
 	case "setup_status":
 		return setupStatus()
 	case "setup_save":
@@ -178,6 +192,7 @@ func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 		}
 		return nil, session.DefaultStore().Delete(r.SessionID)
 	case "start":
+		h.stopPreview()
 		if h.controller != nil || h.meeting != nil {
 			return nil, errors.New("End the current conversation or meeting first")
 		}
@@ -226,6 +241,7 @@ func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 		h.close(o)
 		return nil, nil
 	case "meeting_start":
+		h.stopPreview()
 		if h.controller != nil || h.meeting != nil {
 			return nil, errors.New("End the current conversation or meeting first")
 		}

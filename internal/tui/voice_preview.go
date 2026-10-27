@@ -4,14 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
-	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	ttsproviders "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts/providers"
 )
 
 // voicePreview is the one preview player Settings and the persona form share.
@@ -41,6 +41,8 @@ func (p *voicePreview) cancel() {
 		p.previewCancel()
 		p.previewCancel = nil
 	}
+	p.previewing = ""
+	p.previewID++ // Retire completions even when no replacement preview starts.
 	if p.previewPlayer != nil {
 		p.previewPlayer.Stop()
 	}
@@ -112,55 +114,74 @@ func playVoicePreview(
 	newTTS func(*config.Config) (tts.Provider, func(), error),
 ) tea.Cmd {
 	return func() tea.Msg {
-		quiet := voicePreviewDoneMsg{id: id, voice: voice.Name}
-		if ensure == nil {
-			ensure = func(ctx context.Context, cfg *config.Config, _ func(string, float64)) error {
-				return config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedTTS: true}, nil)
-			}
+		msg := voicePreviewDoneMsg{id: id, voice: voice.Name}
+		err := runVoicePreview(ctx, voice, player, cfg, ensure, newTTS)
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return msg
 		}
-		if err := ensure(ctx, cfg, nil); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return quiet
-			}
-			return voicePreviewDoneMsg{id: id, voice: voice.Name, message: fmt.Sprintf("Asset error: %v", err)}
-		}
-		if newTTS == nil {
-			newTTS = ttsproviders.NewProvider
-		}
-		ttsProvider, cleanup, err := newTTS(cfg)
 		if err != nil {
-			return voicePreviewDoneMsg{id: id, voice: voice.Name, message: fmt.Sprintf("TTS error: %v", err)}
+			msg.message = err.Error()
+		} else {
+			msg.message = fmt.Sprintf("Previewed %s", voice.Name)
 		}
-		if cleanup != nil {
-			defer cleanup()
-		}
-		stream, err := ttsProvider.Synthesize(ctx, tts.SpokenPreviewLine(voice.Name))
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return quiet
-			}
-			return voicePreviewDoneMsg{id: id, voice: voice.Name, message: fmt.Sprintf("Synthesize error: %v", err)}
-		}
-		playback, err := player.PlayStream(ctx, stream)
-		if err != nil {
-			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-				return quiet
-			}
-			return voicePreviewDoneMsg{id: id, voice: voice.Name, message: fmt.Sprintf("Playback error: %v", err)}
-		}
-		var result audio.PlaybackResult
-		select {
-		case <-ctx.Done():
-			<-playback.Done()
-			return quiet
-		case result = <-playback.Done():
-		}
-		if result.Interrupted || errors.Is(result.Err, context.Canceled) {
-			return quiet
-		}
-		if result.Err != nil {
-			return voicePreviewDoneMsg{id: id, voice: voice.Name, message: fmt.Sprintf("Playback error: %v", result.Err)}
-		}
-		return voicePreviewDoneMsg{id: id, voice: voice.Name, message: fmt.Sprintf("Previewed %s", voice.Name)}
+		return msg
 	}
+}
+
+// runVoicePreview is shared by terminal previews and the native app bridge.
+// The caller owns the player and must drain this call before closing it.
+func runVoicePreview(ctx context.Context, voice tts.Voice, player audio.Engine,
+	cfg *config.Config,
+	ensure func(context.Context, *config.Config, func(string, float64)) error,
+	newTTS func(*config.Config) (tts.Provider, func(), error),
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if ensure == nil {
+		ensure = func(ctx context.Context, cfg *config.Config, _ func(string, float64)) error {
+			return config.EnsureRuntimeAssets(ctx, cfg, config.AssetRequest{NeedTTS: true}, nil)
+		}
+	}
+	if err := ensure(ctx, cfg, nil); err != nil {
+		return fmt.Errorf("Asset error: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if newTTS == nil {
+		newTTS = ttsproviders.NewProvider
+	}
+	provider, cleanup, err := newTTS(cfg)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		return fmt.Errorf("TTS error: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	stream, err := provider.Synthesize(ctx, tts.SpokenPreviewLine(voice.Name))
+	if err != nil {
+		return fmt.Errorf("Synthesize error: %w", err)
+	}
+	playing, err := player.PlayStream(ctx, stream)
+	if err != nil {
+		return fmt.Errorf("Playback error: %w", err)
+	}
+	var result audio.PlaybackResult
+	select {
+	case <-ctx.Done():
+		<-playing.Done()
+		return ctx.Err()
+	case result = <-playing.Done():
+	}
+	if result.Interrupted {
+		return context.Canceled
+	}
+	if result.Err != nil {
+		return fmt.Errorf("Playback error: %w", result.Err)
+	}
+	return nil
 }

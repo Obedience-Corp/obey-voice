@@ -19,6 +19,12 @@ ui:
     just dist mac
     python3 scripts/ui-fixture.py
 
+# Isolated persona preview UI: test tones, failure/retry, and cancellation
+[macos]
+persona-preview:
+    just dist mac
+    python3 scripts/ui-fixture.py --voice-preview
+
 # Isolated protocol replay app: live transcript, notes, errors, and routing receipts
 [macos]
 events:

@@ -278,7 +278,7 @@ func (m personasModel) formRowHelp() string {
 	case formRowTTSProvider:
 		return "TTS provider · (default) inherits Settings"
 	case formRowVoice:
-		return "Voice · ←/→ pick · p preview"
+		return "Voice · ←/→ pick · p preview/stop"
 	case formRowVoiceLanguage:
 		if !m.voiceLanguageUsable() {
 			return "Language · this catalog has one"
