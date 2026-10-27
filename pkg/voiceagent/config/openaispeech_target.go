@@ -21,6 +21,9 @@ const OpenAISpeechProbeTimeout = 3 * time.Second
 // MinPhononOllama is the first Ollama release that serves Phonon.
 const MinPhononOllama = "0.40.9"
 
+// MinPhononVoicesOllama is the first release with Phonon's named voices.
+const MinPhononVoicesOllama = "0.40.11"
+
 // OllamaVoicesChange is the upstream change that makes Ollama list Phonon's
 // voices in /api/show.
 const OllamaVoicesChange = "ollama/ollama#19242"
@@ -55,6 +58,10 @@ type OpenAISpeechTarget struct {
 	ModelsKnown bool
 	ListErr     error
 	ModelListed bool
+	// Voice readiness is separate from speech readiness: old Phonon models
+	// can still speak with default while setup offers to refresh them.
+	Voices    []string
+	VoicesErr error
 }
 
 // ProbeOpenAISpeech asks the configured server what it is and what it serves.
@@ -92,7 +99,38 @@ func ProbeOpenAISpeech(ctx context.Context, cfg *Config) OpenAISpeechTarget {
 		}
 	}
 	t.ModelListed = t.ModelsKnown && servesModel(t.Models, t.Model)
+	if t.usesPhononCatalog() && t.ModelListed {
+		t.Voices, _, t.VoicesErr = OllamaShowVoices(ctx, t.Root, t.Model, key)
+	}
 	return t
+}
+
+// IsDefaultPhononModel scopes automatic refresh to the official default tag.
+// Custom models and pinned tags may intentionally offer only one voice.
+func IsDefaultPhononModel(model string) bool {
+	return ollamaTagged(model) == ollamaTagged(DefaultOpenAISpeechModel)
+}
+
+func (t OpenAISpeechTarget) usesPhononCatalog() bool {
+	return t.Ollama && IsDefaultPhononModel(t.Model)
+}
+
+// HasNamedVoices rejects empty/default-only catalogs, including blank names.
+func HasNamedVoices(names []string) bool {
+	for _, name := range names {
+		if name = strings.TrimSpace(name); name != "" && !strings.EqualFold(name, "default") {
+			return true
+		}
+	}
+	return false
+}
+
+// PhononVoicesRemedy is shared by setup, doctor and the live voice picker.
+func PhononVoicesRemedy(version string) string {
+	if !ollamaAtLeast(version, MinPhononVoicesOllama) {
+		return fmt.Sprintf("update and restart Ollama to %s or later, then run `obey-voice models ensure --tts`", MinPhononVoicesOllama)
+	}
+	return "refresh Phonon's voices in Settings → Voice → Install / refresh voices, or run `obey-voice models ensure --tts`"
 }
 
 // ListingProblem says why the model could not be checked.
@@ -167,6 +205,12 @@ func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStat
 			row.Detail = "unknown: " + t.ListingProblem()
 		case !t.ModelListed:
 			row.Detail = fmt.Sprintf("not pulled into Ollama %s at %s; run `obey-voice models ensure --tts`", t.Version, t.Root)
+		case t.usesPhononCatalog() && t.VoicesErr != nil:
+			row.Installed = false
+			row.Detail = fmt.Sprintf("could not check Phonon's voices: %v; retry setup", t.VoicesErr)
+		case t.usesPhononCatalog() && !HasNamedVoices(t.Voices):
+			row.Installed = false
+			row.Detail = "Phonon's named voices are not ready; " + PhononVoicesRemedy(t.Version)
 		}
 		rows = append(rows, row)
 	case t.Root != "" && !t.Reachable:
@@ -232,8 +276,8 @@ func OllamaVersion(ctx context.Context, root, apiKey string) (string, error) {
 }
 
 // OllamaShowVoices reads the voices /api/show lists for model. answered is
-// false when Ollama did not answer 200; true with no names is a release that
-// predates the voice catalog.
+// false when Ollama did not answer 200. An empty catalog may mean an old
+// runtime or an old model, so callers must consider the runtime version too.
 func OllamaShowVoices(ctx context.Context, root, model, apiKey string) (names []string, answered bool, err error) {
 	var doc struct {
 		Voices []string `json:"voices"`

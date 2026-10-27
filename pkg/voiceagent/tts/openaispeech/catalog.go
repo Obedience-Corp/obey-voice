@@ -35,9 +35,6 @@ const (
 // serves the same voice files, so it is merged into whatever catalog answered.
 const VoiceMetadataFile = config.OpenAISpeechVoicesFile
 
-// ollamaVoicesIssue is the upstream change that lists Phonon's voices.
-const ollamaVoicesIssue = "ollama/ollama#19242"
-
 // loadCatalog assembles p.voices in order of preference: the server's own
 // catalog, Ollama's voice list, the configured voice alone. It never fails:
 // a provider that can speak but cannot enumerate still speaks.
@@ -61,16 +58,19 @@ func (p *Provider) catalogNames(ctx context.Context) (names []string, source, no
 	}
 	names, answered := p.ollamaVoices(ctx, root)
 	switch {
-	case len(names) > 0:
+	case len(names) > 0 && (!config.IsDefaultPhononModel(p.model) || config.HasNamedVoices(names)):
 		return names, CatalogOllama, ""
 	case !answered:
 		// A failed or timed-out /api/show says nothing about the release;
 		// blaming it would send a user on a current Ollama to upgrade.
 		return nil, CatalogConfigured, ""
 	}
+	if !config.IsDefaultPhononModel(p.model) {
+		return nil, CatalogConfigured, ""
+	}
 	return nil, CatalogConfigured, fmt.Sprintf(
-		"Ollama %s lists no voices for %s; Phonon's voice catalog needs the Ollama release that carries %s, then `ollama pull %s` again",
-		version, p.model, ollamaVoicesIssue, p.model)
+		"Ollama %s lists no named voices for %s; %s",
+		version, p.model, config.PhononVoicesRemedy(version))
 }
 
 // ollamaRoot maps an OpenAI-compatible base URL onto the Ollama API root it

@@ -74,6 +74,7 @@ type settingsModel struct {
 	// voiceItems, view state that is never saved. See settings_voices.go.
 	voices      voiceCatalog
 	voiceLocale string
+	speechSetup speechSetup
 
 	// Meeting route discovery (camp list + config).
 	routeDests        []meeting.Destination
@@ -573,6 +574,9 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 
 	case settingsVoicesMsg:
 		m.applyVoiceCatalog(msg)
+	case speechSetupProgressMsg, speechSetupDoneMsg:
+		cmd := m.applySpeechSetup(msg)
+		return m, cmd
 
 	case decisionStatusTickMsg:
 		return m, m.pollDecisionStatus()
@@ -833,6 +837,7 @@ func (m settingsModel) ttsProviderInstalls(provider string) bool {
 // selectTTSProvider saves the TTS provider, installing the managed Qwen
 // package first when it is chosen and not yet on disk.
 func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
+	m.speechSetup.stop()
 	if m.ttsProviderInstalls(provider) {
 		if m.qwenInstalling {
 			return nil
@@ -874,6 +879,9 @@ func (m *settingsModel) selectTTSProvider(provider string) tea.Cmd {
 	m.buildVoiceItems()
 	m.buildLanguageItems()
 	m.message = fmt.Sprintf("Default TTS provider set to %s; applies immediately unless the persona has its own voice (edit under Personas)", provider)
+	if provider == config.OpenAISpeechProviderName {
+		return tea.Batch(fetch, m.startSpeechSetup())
+	}
 	return fetch
 }
 

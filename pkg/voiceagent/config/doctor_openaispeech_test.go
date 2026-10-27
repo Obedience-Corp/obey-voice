@@ -29,7 +29,7 @@ func TestDiagnoseOpenAISpeechNamesEachRemedy(t *testing.T) {
 		cfg := openAISpeechCfg(t, fake.start(t).URL+"/v1")
 		got := diagByName(DiagnoseOpenAISpeech(context.Background(), cfg, ModelsDirFrom(cfg)))
 		voices := got["openai-speech-voices"]
-		if voices.Severity != SeverityWarn || !strings.Contains(voices.Remediation, OllamaVoicesChange) {
+		if voices.Severity != SeverityWarn || !strings.Contains(voices.Remediation, MinPhononVoicesOllama) {
 			t.Fatalf("voices = %+v", voices)
 		}
 		file := got["openai-speech-catalog-file"]
