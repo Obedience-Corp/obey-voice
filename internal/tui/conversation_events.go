@@ -10,19 +10,23 @@ import (
 )
 
 func (m *conversationModel) setStatus(text string, isErr bool) {
+	previousRows := m.voicePanelHeight()
 	m.status = text
 	m.statusErr = isErr
+	if m.ready && previousRows != m.voicePanelHeight() {
+		m.reflow()
+	}
 }
 
 // setVoiceMode updates the animated meter state and reflows when the panel
-// appears or disappears so the viewport height stays correct.
+// changes height so the viewport stays within the terminal.
 func (m *conversationModel) setVoiceMode(mode anim.Mode) {
 	prev := m.voiceMode
 	m.voiceMode = mode
 	if mode == anim.ModeIdle {
 		m.inputLevel = 0
 	}
-	if (prev == anim.ModeIdle) != (mode == anim.ModeIdle) && m.ready {
+	if prev != mode && m.ready {
 		m.reflow()
 	}
 }

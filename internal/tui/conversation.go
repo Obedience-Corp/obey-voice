@@ -23,10 +23,6 @@ const conversationInputHeight = 3
 // voiceTickInterval drives the conversation meter animation (~10 fps).
 const voiceTickInterval = 100 * time.Millisecond
 
-// voicePanelRows is the vertical space reserved for the compact voice EQ strip
-// under the header (not a tall art panel).
-const voicePanelRows = 5
-
 // voiceTickMsg advances ambient voice animations.
 type voiceTickMsg time.Time
 

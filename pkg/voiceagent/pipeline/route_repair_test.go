@@ -8,9 +8,32 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
+
+func TestConversationAboutToolsDoesNotSpawnWorker(t *testing.T) {
+	const reply = "Your skills, your tools, your knowledge all help. You're more than just a tool."
+	for _, typed := range []bool{false, true} {
+		p := &Pipeline{Brain: &fakeBrain{chunks: []string{reply}}, STT: &fakeSTT{text: "what do you think?"}, Events: events.NewBus(), VoiceFailedRouteRepair: true}
+		jobs := job.NewTable(t.Context())
+		defer jobs.Close()
+		NewAgency(p, jobs, &fakeBrain{}, &config.Config{}, nil).Wire()
+		var final string
+		events.Subscribe(p.Events, func(e events.ResponseReady) { final = e.Response })
+		if typed {
+			if err := p.RunTurnTextMode(t.Context(), "what do you think?"); err != nil {
+				t.Fatal(err)
+			}
+		} else if _, err := p.RunTurn(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if len(jobs.Status()) != 0 || final != reply {
+			t.Fatalf("typed=%t: jobs=%+v, final=%q", typed, jobs.Status(), final)
+		}
+	}
+}
 
 func TestFailedPromiseRepairRoutesSpawnWithoutTTS(t *testing.T) {
 	const promise = "I am invoking the tool now to retrieve only those records."
