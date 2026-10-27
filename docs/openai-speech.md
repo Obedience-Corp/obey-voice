@@ -19,7 +19,11 @@ obey-voice models ensure --tts                     # pulls phonon into Ollama, f
 
 The defaults already point at Ollama on this computer (`openai_speech_url`
 `http://localhost:11434/v1`, `openai_speech_model` `phonon`,
-`openai_speech_voice` `default`). Ollama exposes one Phonon voice, `default`.
+`openai_speech_voice` `default`). Current Ollama/model releases can also expose named Phonon voices through
+`/api/show`. Obey Voice lists the voices your server actually reports. If it
+only lists `default`, update Ollama and pull `phonon` again before choosing a
+named voice. The shipped Phonon personas use Harper, Juniper, Edwin, and Zoey;
+all four were verified through Ollama 0.40.11.
 
 Measured on an M4 Max through Ollama's MLX runner, both engines through the
 real provider seam, no playback device

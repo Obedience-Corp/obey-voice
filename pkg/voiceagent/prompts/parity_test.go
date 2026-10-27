@@ -26,7 +26,7 @@ func TestVeronicaPersonaGolden(t *testing.T) {
 }
 
 // TestJarvisPersonaGolden pins the shipped Iron Man-inspired companion.
-// Reached by name, not Default(); Kokoro George is the matching voice.
+// Reached by name, not Default(); Phonon Edwin is the matching voice.
 func TestJarvisPersonaGolden(t *testing.T) {
 	got := resolveNamed(t, prompts.KindPersona, "jarvis", "TestAgent")
 	assertGolden(t, "testdata/persona.jarvis.golden", got)

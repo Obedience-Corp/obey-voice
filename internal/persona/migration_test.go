@@ -95,8 +95,7 @@ func loadIDs(t *testing.T) []string {
 func TestFreshInstallResolvesObey(t *testing.T) {
 	newInstall(t)
 
-	// Capture the app-level stack before any persona exists, so "obey pins
-	// nothing" can be checked against what the config would have said anyway.
+	// Capture Settings before the named Obey profile overlays its voice.
 	before, err := config.LoadWithoutHooks()
 	if err != nil {
 		t.Fatal(err)
@@ -124,17 +123,21 @@ func TestFreshInstallResolvesObey(t *testing.T) {
 	if !p.Builtin {
 		t.Error("obey profile is not marked builtin")
 	}
-	if p.Brain != (Brain{}) || p.TTS != (TTS{}) {
-		t.Errorf("obey pins a stack: brain %+v tts %+v — the default persona must inherit the app config", p.Brain, p.TTS)
+	if p.Brain != (Brain{}) || p.TTS != (TTS{Provider: "openai-speech", Voice: "Harper"}) {
+		t.Errorf("obey stack = %+v / %+v, want inherited brain and Phonon Harper", p.Brain, p.TTS)
 	}
-
-	// Inheriting means the app-level stack survives the overlay untouched.
-	if cfg.TTSProvider != before.TTSProvider || cfg.TTSVoice != before.TTSVoice ||
-		cfg.QwenTTSVoice != before.QwenTTSVoice || cfg.QwenTTSModelTier != before.QwenTTSModelTier ||
-		cfg.BrainProvider != before.BrainProvider || cfg.OllamaModel != before.OllamaModel {
-		t.Errorf("obey changed the app stack: tts %q/%q brain %q/%q, want %q/%q %q/%q",
-			cfg.TTSProvider, cfg.TTSVoice, cfg.BrainProvider, cfg.OllamaModel,
-			before.TTSProvider, before.TTSVoice, before.BrainProvider, before.OllamaModel)
+	if cfg.TTSProvider != "openai-speech" || cfg.OpenAISpeechVoice != "Harper" {
+		t.Errorf("obey TTS = %s/%s, want openai-speech/Harper", cfg.TTSProvider, cfg.OpenAISpeechVoice)
+	}
+	if cfg.BrainProvider != before.BrainProvider || cfg.OllamaModel != before.OllamaModel {
+		t.Fatal("the named default changed the Settings brain")
+	}
+	defaults, err := ResolveDefaultsBinding(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.Config().TTSProvider != before.TTSProvider || defaults.Config().TTSVoice != before.TTSVoice {
+		t.Fatal("Use defaults must keep Settings speech, even when Obey pins Phonon")
 	}
 
 	text, err := LoadSystemPrompt(cfg.Persona)
@@ -150,7 +153,7 @@ func TestFreshInstallResolvesObey(t *testing.T) {
 }
 
 // TestFreshInstallStillSeedsSamantha: she is an ordinary persona now, but she
-// still ships — a fresh install can switch to her without downloading anything.
+// still ships — a fresh install can select her before speech assets are installed.
 func TestFreshInstallStillSeedsSamantha(t *testing.T) {
 	newInstall(t)
 	cfg, err := config.Load()
@@ -165,8 +168,8 @@ func TestFreshInstallStillSeedsSamantha(t *testing.T) {
 	if p.DisplayName != "Samantha" || !p.Builtin {
 		t.Errorf("samantha profile = %+v, want display %q and builtin", p, "Samantha")
 	}
-	if p.TTS.Provider != "kokoro" || p.TTS.Voice != "af_heart" {
-		t.Errorf("samantha tts = %+v, want the catalog pin kokoro/af_heart", p.TTS)
+	if p.TTS.Provider != "openai-speech" || p.TTS.Voice != "Juniper" {
+		t.Errorf("samantha tts = %+v, want the catalog pin openai-speech/Juniper", p.TTS)
 	}
 
 	text, err := LoadSystemPrompt("samantha")
@@ -205,8 +208,8 @@ func TestFreshInstallSeedsVeronica(t *testing.T) {
 	if p.DisplayName != "Veronica" || !p.Builtin {
 		t.Errorf("veronica profile = %+v, want display %q and builtin", p, "Veronica")
 	}
-	if p.TTS.Provider != "qwen3-tts" || p.TTS.Voice != "VeronicaDesk" || p.TTS.Tier != "0.6b" {
-		t.Errorf("veronica tts = %+v, want qwen3-tts VeronicaDesk 0.6b", p.TTS)
+	if p.TTS.Provider != "openai-speech" || p.TTS.Voice != "Zoey" || p.TTS.Tier != "" {
+		t.Errorf("veronica tts = %+v, want openai-speech Zoey without a Qwen tier", p.TTS)
 	}
 	if p.Brain != (Brain{}) {
 		t.Errorf("veronica brain = %+v, want inherited", p.Brain)
@@ -226,13 +229,13 @@ func TestFreshInstallSeedsVeronica(t *testing.T) {
 	if cfg.ActivePersona != "veronica" || cfg.AgentName != "Veronica" || cfg.Persona != "veronica" {
 		t.Errorf("after Use(veronica): active %q name %q prompt %q", cfg.ActivePersona, cfg.AgentName, cfg.Persona)
 	}
-	if cfg.TTSProvider != "qwen3-tts" || cfg.QwenTTSVoice != "VeronicaDesk" || cfg.QwenTTSModelTier != "0.6b" {
-		t.Errorf("after Use(veronica): tts %q voice %q tier %q", cfg.TTSProvider, cfg.QwenTTSVoice, cfg.QwenTTSModelTier)
+	if cfg.TTSProvider != "openai-speech" || cfg.OpenAISpeechVoice != "Zoey" {
+		t.Errorf("after Use(veronica): tts %q voice %q tier %q", cfg.TTSProvider, cfg.OpenAISpeechVoice, cfg.QwenTTSModelTier)
 	}
 }
 
 // TestFreshInstallSeedsJarvis: he is a selectable companion, not the default.
-// A fresh install can switch to him without authoring a profile; Kokoro George
+// A fresh install can switch to him without authoring a profile; Phonon Edwin
 // is the matching voice.
 func TestFreshInstallSeedsJarvis(t *testing.T) {
 	newInstall(t)
@@ -251,8 +254,8 @@ func TestFreshInstallSeedsJarvis(t *testing.T) {
 	if p.DisplayName != "Jarvis" || !p.Builtin {
 		t.Errorf("jarvis profile = %+v, want display %q and builtin", p, "Jarvis")
 	}
-	if p.TTS.Provider != "kokoro" || p.TTS.Voice != "bm_george" {
-		t.Errorf("jarvis tts = %+v, want kokoro/bm_george", p.TTS)
+	if p.TTS.Provider != "openai-speech" || p.TTS.Voice != "Edwin" {
+		t.Errorf("jarvis tts = %+v, want openai-speech/Edwin", p.TTS)
 	}
 	if p.Brain != (Brain{}) {
 		t.Errorf("jarvis brain = %+v, want inherited", p.Brain)
@@ -272,8 +275,8 @@ func TestFreshInstallSeedsJarvis(t *testing.T) {
 	if cfg.ActivePersona != "jarvis" || cfg.AgentName != "Jarvis" || cfg.Persona != "jarvis" {
 		t.Errorf("after Use(jarvis): active %q name %q prompt %q", cfg.ActivePersona, cfg.AgentName, cfg.Persona)
 	}
-	if cfg.TTSProvider != "kokoro" || cfg.TTSVoice != "bm_george" {
-		t.Errorf("after Use(jarvis): tts %q voice %q", cfg.TTSProvider, cfg.TTSVoice)
+	if cfg.TTSProvider != "openai-speech" || cfg.OpenAISpeechVoice != "Edwin" {
+		t.Errorf("after Use(jarvis): tts %q voice %q", cfg.TTSProvider, cfg.OpenAISpeechVoice)
 	}
 }
 
@@ -467,55 +470,33 @@ func TestActivePersonaErrors(t *testing.T) {
 	}
 }
 
-// TestBuiltinsObeyInheritsAndCompanionsPinVoices pins catalog shape without
-// freezing the companion count. Adding shipped/<id>.yaml must not require
-// rewriting this test except to assert that companion's pins.
-func TestBuiltinsObeyInheritsAndCompanionsPinVoices(t *testing.T) {
-	cfg := &config.Config{
-		AgentName:     "Obey",
-		BrainProvider: "ollama",
-		OllamaModel:   "qwen3:14b",
-		TTSProvider:   "kokoro",
-		TTSVoice:      "af_sky",
-	}
+// Catalog pins belong to the shipped profiles, not the stack active at seed time.
+func TestBuiltinsInheritBrainsAndPinVoices(t *testing.T) {
+	cfg := &config.Config{AgentName: "Custom", BrainProvider: "ollama", OllamaModel: "custom", TTSProvider: "kokoro", TTSVoice: "af_sky"}
 	got := Builtins(cfg)
 	if len(got) == 0 || got[0].ID != DefaultID {
-		t.Fatalf("Builtins()[0] = %+v, want %q first", got, DefaultID)
+		t.Fatalf("Builtins() = %+v, want default first", got)
 	}
-	byID := map[string]*Profile{}
+	want := map[string]TTS{
+		"obey":     {Provider: "openai-speech", Voice: "Harper"},
+		"samantha": {Provider: "openai-speech", Voice: "Juniper"},
+		"veronica": {Provider: "openai-speech", Voice: "Zoey"},
+		"jarvis":   {Provider: "openai-speech", Voice: "Edwin"},
+		"santa":    {Provider: "kokoro", Voice: "am_santa"},
+	}
 	for _, p := range got {
-		byID[p.ID] = p
+		if p.Brain != (Brain{}) {
+			t.Errorf("%s pins brain %+v", p.ID, p.Brain)
+		}
+		if voice, ok := want[p.ID]; ok {
+			if p.TTS != voice {
+				t.Errorf("%s TTS = %+v, want %+v", p.ID, p.TTS, voice)
+			}
+			delete(want, p.ID)
+		}
 	}
-	obey := byID[DefaultID]
-	if obey.Brain != (Brain{}) || obey.TTS != (TTS{}) {
-		t.Errorf("obey pins %+v / %+v, want everything inherited", obey.Brain, obey.TTS)
-	}
-	samantha := byID["samantha"]
-	if samantha == nil {
-		t.Fatal("catalog missing samantha")
-	}
-	if samantha.TTS.Provider != "kokoro" || samantha.TTS.Voice != "af_heart" {
-		t.Errorf("samantha tts = %+v, want catalog pin kokoro/af_heart (not the live af_sky)", samantha.TTS)
-	}
-	veronica := byID["veronica"]
-	if veronica == nil {
-		t.Fatal("catalog missing veronica")
-	}
-	if veronica.TTS.Provider != "qwen3-tts" || veronica.TTS.Voice != "VeronicaDesk" || veronica.TTS.Tier != "0.6b" {
-		t.Errorf("veronica tts = %+v, want qwen3-tts VeronicaDesk 0.6b even on a kokoro install", veronica.TTS)
-	}
-	if veronica.Brain != (Brain{}) {
-		t.Errorf("veronica brain = %+v, want inherited", veronica.Brain)
-	}
-	jarvis := byID["jarvis"]
-	if jarvis == nil {
-		t.Fatal("catalog missing jarvis")
-	}
-	if jarvis.TTS.Provider != "kokoro" || jarvis.TTS.Voice != "bm_george" {
-		t.Errorf("jarvis tts = %+v, want catalog pin kokoro/bm_george (not the live af_sky)", jarvis.TTS)
-	}
-	if jarvis.Brain != (Brain{}) {
-		t.Errorf("jarvis brain = %+v, want inherited", jarvis.Brain)
+	if len(want) != 0 {
+		t.Errorf("missing shipped voices: %+v", want)
 	}
 }
 

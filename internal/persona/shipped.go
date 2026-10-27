@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"sync"
 
@@ -77,6 +78,7 @@ func shippedProfiles() []*Profile {
 	out := make([]*Profile, len(shippedAll))
 	for i, p := range shippedAll {
 		cp := *p
+		cp.Aliases = slices.Clone(p.Aliases)
 		out[i] = &cp
 	}
 	return out

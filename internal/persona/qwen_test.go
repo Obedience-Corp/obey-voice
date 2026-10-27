@@ -66,17 +66,20 @@ func TestCreateQwenVoiceRoundTrip(t *testing.T) {
 func TestSeedQwenDefaultsDoesNotPinKokoroVoice(t *testing.T) {
 	setConfigDir(t, t.TempDir())
 	cfg := &config.Config{TTSProvider: "qwen3-tts", TTSVoice: "af_heart"}
-	if err := EnsureAndApply(cfg); err != nil {
+	if err := SeedBuiltins(cfg); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Load(DefaultID)
+	binding, err := ResolveDefaultsBinding(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.TTS.Provider != "" || p.TTS.Voice != "" {
-		t.Fatalf("default persona pins TTS: %+v", p.TTS)
+	if binding.TTS.Provider != "" || binding.TTS.Voice != "" {
+		t.Fatalf("Use defaults pins TTS: %+v", binding.TTS)
 	}
-	if err := config.ValidateQwenTTSConfig(cfg); err != nil {
+	if got := binding.Config(); got.TTSProvider != "qwen3-tts" || got.TTSVoice != "af_heart" {
+		t.Fatalf("Use defaults changed Settings speech: %s/%s", got.TTSProvider, got.TTSVoice)
+	}
+	if err := config.ValidateQwenTTSConfig(binding.Config()); err != nil {
 		t.Fatalf("fresh Qwen config cannot speak: %v", err)
 	}
 }
