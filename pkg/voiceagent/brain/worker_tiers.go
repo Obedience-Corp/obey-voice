@@ -73,6 +73,9 @@ func ValidateWorkerPlan(ctx context.Context, plan *config.WorkerPlan) error {
 		return fmt.Errorf("worker assignment rejected: %w", err)
 	}
 	provider := strings.ToLower(strings.TrimSpace(plan.Assignment.Provider))
+	if provider == "cursor" && plan.Policy.ChargePolicy == "strict" {
+		return errors.New("Cursor is unavailable under strict worker policy: native tools cannot be mediated")
+	}
 	if config.WorkerProviderAllowed(provider) && provider != "ollama" {
 		return nil
 	}

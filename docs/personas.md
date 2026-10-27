@@ -77,6 +77,10 @@ The desktop persona editor and Settings use the same provider catalog as the
 TUI. Tiered CLI workers still require explicit billing/account settings and
 the existing paid-worker opt-in; selecting a provider does not enable paid work
 or give it spending limits its adapter cannot enforce.
+Cursor is unavailable for strict worker plans because its native tools cannot
+be restricted to the strict allowlist. Direct strict-budget calls are rejected
+before the CLI starts; ordinary legacy and explicitly uncapped advisory workers
+remain available.
 
 ### Shipped personas
 

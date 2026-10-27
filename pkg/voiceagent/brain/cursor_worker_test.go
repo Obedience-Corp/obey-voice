@@ -5,12 +5,59 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/cursor-agent-go/pkg/cursor"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
+
+func TestCursorStrictPlanRejectedBeforeProviderConstruction(t *testing.T) {
+	// Even a directly supplied plan must not bypass the config resolver's
+	// strict-policy rejection. No Cursor installation is needed for rejection.
+	t.Setenv("CURSOR_AGENT_BIN", filepath.Join(t.TempDir(), "missing-cursor"))
+	plan := &config.WorkerPlan{
+		Assignment: config.WorkerAssignment{Provider: "cursor", Model: "auto", Billing: config.WorkerBillingSubscription, AccountRef: strptr("default")},
+		Policy:     config.WorkerPolicy{ChargePolicy: "strict"},
+	}
+	if err := ValidateWorkerPlan(t.Context(), plan); err == nil || !strings.Contains(err.Error(), "strict worker policy") {
+		t.Fatalf("strict plan validation: %v", err)
+	}
+	if worker, err := NewPlannedWorker(t.Context(), &config.Config{}, plan); worker != nil || err == nil || !strings.Contains(err.Error(), "strict worker policy") {
+		t.Fatalf("strict plan construction: worker=%T err=%v", worker, err)
+	}
+}
+
+func TestCursorStrictBudgetNeverInvokesCLI(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, tools := range []bool{false, true} {
+			runner := &fakeCursorClient{}
+			b := newTestCursorBrain(runner)
+			b.sessionID = "existing-session"
+			b.history = []Turn{{Role: "user", Content: "existing history"}}
+			before := append([]Turn(nil), b.history...)
+			opts := WorkerStreamOptions(tools)
+			opts.WorkerBudget = NewWorkerBudget(BudgetLimits{StrictTools: true})
+			var err error
+			if streaming {
+				var stream *Stream
+				stream, err = b.ThinkStream(t.Context(), "inspect the files", opts)
+				if stream != nil {
+					t.Fatal("strict worker started a stream")
+				}
+			} else {
+				_, err = b.ThinkFull(t.Context(), "inspect the files", opts)
+			}
+			if !errors.Is(err, ErrWorkerBudgetExceeded) || len(runner.prompts) != 0 {
+				t.Fatalf("stream=%t tools=%t: error=%v CLI calls=%d", streaming, tools, err, len(runner.prompts))
+			}
+			if !reflect.DeepEqual(b.history, before) || b.sessionID != "existing-session" {
+				t.Fatal("strict rejection changed conversation state")
+			}
+		}
+	}
+}
 
 func TestEveryBrainCanBeAWorker(t *testing.T) {
 	for _, p := range Providers() {

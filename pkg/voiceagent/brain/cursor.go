@@ -138,6 +138,9 @@ func (c *CursorBrain) refreshPrompts(onWarn func(string)) {
 }
 
 func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts StreamOptions) (*Stream, error) {
+	if err := streamOpts.workerBudget().AllowTool("Cursor native tools"); err != nil {
+		return nil, err
+	}
 	c.refreshPrompts(streamOpts.OnPromptWarn)
 	c.history = append(c.history, Turn{Role: "user", Content: input, Speaker: streamOpts.Speaker, At: time.Now().UTC()})
 
@@ -190,6 +193,9 @@ func (c *CursorBrain) ThinkStream(ctx context.Context, input string, streamOpts 
 
 // ThinkFull sends input and waits for the complete response.
 func (c *CursorBrain) ThinkFull(ctx context.Context, input string, streamOpts StreamOptions) (string, error) {
+	if err := streamOpts.workerBudget().AllowTool("Cursor native tools"); err != nil {
+		return "", err
+	}
 	c.refreshPrompts(streamOpts.OnPromptWarn)
 	// Same append-then-roll-back contract as Claude: the prompt comes from
 	// history, and a turn that never answered must not leave its input behind.
