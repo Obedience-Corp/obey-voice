@@ -396,6 +396,11 @@ launcher and conversation header show the active TTS provider/model/mode/voice
 badge. An empty device config value follows the current operating-system
 default.
 
+The conversation header also shows the active persona's brain provider and
+model, for example `Obey  brain ollama · qwen3:8b`. It follows persona switches
+within the conversation. `default` means the provider chooses its own model;
+it does not identify a specific underlying model.
+
 The first Qwen installation is a large download on platforms that have a
 published package. It is isolated below `models_dir/qwen3-tts`, can be inspected
 with `obey-voice models status --tts`, and can also be installed

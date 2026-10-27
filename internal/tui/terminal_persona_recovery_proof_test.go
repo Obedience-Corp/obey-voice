@@ -372,6 +372,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	if returnedBeforeSwitch.sessionID != selectionBefore.SessionID || returnedBeforeSwitch.selection.ConversationEpoch != selectionBefore.ConversationEpoch {
 		t.Fatalf("manager cancel before switch changed session identity: before=%+v after=%+v", selectionBefore, returnedBeforeSwitch)
 	}
+	if header := strings.SplitN(returnedBeforeSwitch.view, "\n", 2)[0]; !strings.Contains(header, "brain ollama · samantha-fixture") {
+		t.Fatalf("terminal header missing initial persona model: %s", header)
+	}
 	if got := awaitPauseProof(t, runner.voiceStarts, "manager cancel before switch resume"); got != 5 {
 		t.Fatalf("manager cancel before switch resumed voice call = %d, want 5", got)
 	}
@@ -408,6 +411,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	})
 	if returned.sessionID != selectionBefore.SessionID || returned.selection.ConversationEpoch != selectionBefore.ConversationEpoch {
 		t.Fatalf("manager cancel changed session identity: before=%+v after=%+v", selectionBefore, returned)
+	}
+	if header := strings.SplitN(returned.view, "\n", 2)[0]; !strings.Contains(header, "brain ollama · santa-fixture") || strings.Contains(header, "samantha-fixture") {
+		t.Fatalf("terminal header did not follow the selected persona model: %s", header)
 	}
 	if got := awaitPauseProof(t, runner.voiceStarts, "manager cancel resume"); got != 6 {
 		t.Fatalf("manager cancel resumed voice call = %d, want 6", got)
