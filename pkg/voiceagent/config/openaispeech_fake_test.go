@@ -76,13 +76,16 @@ func (f *fakeOllama) start(t *testing.T) *httptest.Server {
 		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
 	})
 	mux.HandleFunc("/api/show", func(w http.ResponseWriter, r *http.Request) {
-		if f.showStatus != 0 {
-			w.WriteHeader(f.showStatus)
+		f.mu.Lock()
+		status, voices := f.showStatus, append([]string(nil), f.voices...)
+		f.mu.Unlock()
+		if status != 0 {
+			w.WriteHeader(status)
 			return
 		}
 		doc := map[string]any{"details": map[string]string{}}
-		if f.voices != nil {
-			doc["voices"] = f.voices
+		if voices != nil {
+			doc["voices"] = voices
 		}
 		_ = json.NewEncoder(w).Encode(doc)
 	})
