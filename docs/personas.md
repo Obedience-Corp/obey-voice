@@ -256,3 +256,15 @@ root. Invalid choices fail before starting tools. A missing saved path blocks
 resume. Moving or unregistering a camp does not automatically redirect a
 persona: select its new local path. This is a tool starting location, not a
 filesystem sandbox or permission grant.
+
+### Preview from the persona list
+
+In the TUI **Personas** menu, highlight a persona and press **p** to hear its
+voice. Press **p** again to stop. Moving to another row, editing, switching,
+or leaving the menu stops the sample. The create row does not play audio.
+
+In the desktop **Personas** list, click **Preview voice** on a card, then
+**Stop preview** to cancel. Starting another preview stops the previous one.
+These previews use the saved persona's speech provider, voice, and tier,
+including inherited Settings defaults. They do not activate, edit, or save the
+persona, and inactive personas can be previewed too.

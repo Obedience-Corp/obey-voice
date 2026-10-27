@@ -55,7 +55,7 @@ func (m personasModel) View() string {
 	} else {
 		b.WriteString("\n")
 	}
-	help := "  ↑/↓ • enter switch • x enable/disable • e edit • n create • m model • d delete • esc back"
+	help := "  ↑/↓ • enter switch • p preview/stop • x enable/disable • e edit • n create • m model • d delete • esc back"
 	switch {
 	case m.formMode != "" && m.promptOpen:
 		help = "  esc NORMAL • :w back to form • :wq save • ctrl+j save • :q discard"
@@ -67,7 +67,7 @@ func (m personasModel) View() string {
 		help = "  y delete permanently • any other key cancels"
 	}
 	if m.formMode == "" && m.confirmDeleteID == "" && m.screenHeight() >= 16 {
-		b.WriteString(dimStyle.Render(ansi.Truncate("  ↑/↓ navigate · enter switch · m model · e edit", width, "…")))
+		b.WriteString(dimStyle.Render(ansi.Truncate("  ↑/↓ navigate · enter switch · p preview/stop · m model · e edit", width, "…")))
 		b.WriteString("\n")
 		help = "  n create · x enable/disable · d delete · esc back"
 	}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"golang.org/x/sys/unix"
 
 	"github.com/Obedience-Corp/obey-voice/internal/netapi"
 	"github.com/Obedience-Corp/obey-voice/internal/ui"
@@ -198,7 +199,11 @@ func TestConfigureServeStdioLogFile(t *testing.T) {
 		// package variable, so fd 2 itself has to follow. The assertion writes
 		// to the descriptor rather than to os.Stderr because the test harness
 		// substitutes that variable; in a real serve they are the same file.
-		fmt.Fprintln(rawStderr(), "raw stderr line")
+		// Write the descriptor directly: an os.NewFile wrapper owns fd 2
+		// and its finalizer can close stderr during an unrelated test.
+		if _, err := unix.Write(unix.Stderr, []byte("raw stderr line\n")); err != nil {
+			t.Fatal(err)
+		}
 		restore()
 
 		if got := lipgloss.ColorProfile(); got != termenv.ANSI256 {
@@ -338,6 +343,7 @@ func TestServeLogFileIsLineOrientedForUIEvents(t *testing.T) {
 	} {
 		bus.Emit(event)
 	}
+	serveModelProgress("Kokoro", 0)
 	serveModelProgress("Kokoro", 50)
 	restore()
 
@@ -389,10 +395,4 @@ func TestConfigureServeStdioRestoresStderr(t *testing.T) {
 	if !os.SameFile(before, after) {
 		t.Fatalf("stderr = %v after restore, want the original %v", after.Name(), before.Name())
 	}
-}
-
-// rawStderr addresses file descriptor 2 itself, which is what every writer
-// that hardcodes os.Stderr resolves to in a real process.
-func rawStderr() *os.File {
-	return os.NewFile(uintptr(syscall.Stderr), "/dev/stderr")
 }

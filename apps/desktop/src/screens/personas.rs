@@ -19,6 +19,7 @@ impl VoiceApp {
         });
         ui.horizontal(|ui| {
             if ui.button("+ Create persona").clicked() {
+                self.stop_persona_preview();
                 self.persona_form = PersonaForm {
                     open: true,
                     prompt: "You are {agent_name}, a voice assistant.".into(),
@@ -27,6 +28,7 @@ impl VoiceApp {
                 self.load_persona_directories();
             }
             if ui.button("Refresh").clicked() {
+                self.stop_persona_preview();
                 self.command(&["persona", "list", "--json"], Purpose::Personas);
             }
         });
@@ -47,6 +49,21 @@ impl VoiceApp {
                             .color(muted(ui)),
                     );
                     ui.horizontal_wrapped(|ui| {
+                        let playing = self.persona_form.preview_persona == p.id
+                            && self.persona_form.preview_request.is_some();
+                        if ui
+                            .add_enabled(
+                                self.connected && !self.demo,
+                                egui::Button::new(if playing {
+                                    "Stop preview"
+                                } else {
+                                    "Preview voice"
+                                }),
+                            )
+                            .clicked()
+                        {
+                            self.preview_saved_persona(&p.id);
+                        }
                         if ui
                             .add_enabled(
                                 !p.inactive,
@@ -58,6 +75,7 @@ impl VoiceApp {
                             )
                             .clicked()
                         {
+                            self.stop_persona_preview();
                             if self.active {
                                 self.action("persona", &p.id, false);
                             } else {
@@ -74,6 +92,7 @@ impl VoiceApp {
                             }
                         }
                         if ui.button("Edit").clicked() {
+                            self.stop_persona_preview();
                             self.cli(
                                 vec![
                                     "persona".into(),
@@ -93,6 +112,7 @@ impl VoiceApp {
                             )
                             .clicked()
                         {
+                            self.stop_persona_preview();
                             self.cli(
                                 vec![
                                     "persona".into(),
@@ -108,6 +128,7 @@ impl VoiceApp {
                             .add_enabled(!p.builtin, egui::Button::new("Delete…"))
                             .clicked()
                         {
+                            self.stop_persona_preview();
                             self.confirm = Some((
                                 format!("Delete persona {} and its owned prompt?", p.display_name),
                                 vec![
@@ -120,6 +141,16 @@ impl VoiceApp {
                             ));
                         }
                     });
+                    if self.persona_form.preview_persona == p.id
+                        && !self.persona_form.preview_notice.is_empty()
+                    {
+                        let color = if self.persona_form.preview_error {
+                            egui::Color32::from_rgb(194, 74, 87)
+                        } else {
+                            muted(ui)
+                        };
+                        ui.colored_label(color, &self.persona_form.preview_notice);
+                    }
                 });
             }
         });
