@@ -464,3 +464,48 @@ func TestAFailedListingIsNotAMissingModel(t *testing.T) {
 		t.Fatal("asked for the voices of a model nobody could find")
 	}
 }
+
+// A descriptions-only install must work even if the speech server is offline
+// and a managed TTS provider has no model installed.
+func TestEnsureVoiceCatalogOnlyDoesNotPrepareSpeech(t *testing.T) {
+	cfg := openAISpeechCfg(t, closedURL(t)+"/v1")
+	cfg.TTSProvider = "qwen3-tts"
+	_, hits := fakeCatalog(t, http.StatusOK, fakeVoicesJSONL)
+	log := &tickLog{}
+	req := AssetRequest{NeedVoiceCatalog: true}
+	if err := EnsureRuntimeAssetsProgress(t.Context(), cfg, req, log.add); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(voicesPath(cfg))
+	if err != nil || string(data) != fakeVoicesJSONL {
+		t.Fatalf("catalog = %q, %v", data, err)
+	}
+	for _, tick := range log.ticks {
+		if tick.Asset != OpenAISpeechVoicesFile {
+			t.Fatalf("unrelated download: %+v", tick)
+		}
+	}
+	if err := EnsureRuntimeAssetsProgress(t.Context(), cfg, req, log.add); err != nil {
+		t.Fatal(err)
+	}
+	if *hits != 1 || log.last(OpenAISpeechVoicesFile).Phase != "skipped" {
+		t.Fatalf("installed catalog was fetched again: hits=%d", *hits)
+	}
+}
+
+func TestEnsureVoiceCatalogOnlyFailureRemainsOptional(t *testing.T) {
+	cfg := openAISpeechCfg(t, closedURL(t)+"/v1")
+	fakeCatalog(t, http.StatusNotFound, "not found")
+	log := &tickLog{}
+	if err := EnsureRuntimeAssetsProgress(t.Context(), cfg, AssetRequest{NeedVoiceCatalog: true}, log.add); err != nil {
+		t.Fatal(err)
+	}
+	row := openAISpeechVoicesStatus(cfg.ModelsDir)
+	if row.Installed || !row.Optional {
+		t.Fatalf("failed download changed optional status: %+v", row)
+	}
+	last := log.last(OpenAISpeechVoicesFile)
+	if last.Phase != "skipped" || !strings.Contains(last.Detail, "not installed") {
+		t.Fatalf("failure was not explained: %+v", last)
+	}
+}

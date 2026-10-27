@@ -116,6 +116,12 @@ impl VoiceApp {
                         self.setup_models(true);
                     }
                 }
+                if self.setup.voice_descriptions_missing() {
+                    ui.label("Voice descriptions are optional. You can download them now or continue without them.");
+                    if ui.button("Download voice descriptions").clicked() {
+                        self.setup_voice_descriptions();
+                    }
+                }
             }
         });
         if !self.setup.progress.text_only {

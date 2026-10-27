@@ -153,3 +153,44 @@ fn automatic_meeting_stop_is_single_flight_even_during_startup() {
         );
     }
 }
+
+#[test]
+fn optional_catalog_failure_and_cancel_preserve_setup_readiness() {
+    if std::env::var_os("OBEY_CATALOG_SETUP_TEST").is_none() {
+        assert!(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "app::resident_tests::optional_catalog_failure_and_cancel_preserve_setup_readiness",
+                ])
+                .env("OBEY_CATALOG_SETUP_TEST", "1")
+                .env("OBEY_VOICE_AGENT_DEMO", "1")
+                .status()
+                .unwrap()
+                .success()
+        );
+        return;
+    }
+
+    let cc = eframe::CreationContext::_new_kittest(Default::default());
+    let mut app = VoiceApp::new(&cc);
+    app.setup.models = Some(vec![
+        serde_json::json!({"id":"tts.openai-speech.model","installed":true}),
+        serde_json::json!({"id":"tts.openai-speech.voices","installed":false,"optional":true}),
+    ]);
+    for cancelled in [false, true] {
+        app.setup.busy = Some(42);
+        app.setup.download_cancelled = cancelled;
+        app.complete_setup(
+            crate::setup::Operation::Catalog,
+            Err("download stopped".into()),
+        );
+        assert!(app.setup.busy.is_none());
+        assert!(app.setup.models_ready());
+        assert!(app.setup.voice_descriptions_missing());
+        assert!(app.setup.error.is_none());
+    }
+    app.setup.models.as_mut().unwrap()[0]["installed"] = serde_json::json!(false);
+    app.complete_setup(crate::setup::Operation::Catalog, Err("offline".into()));
+    assert!(!app.setup.models_ready());
+}

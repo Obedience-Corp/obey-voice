@@ -21,7 +21,25 @@ progress = {'version': 1, 'step': 2, 'completed': False, 'deferred': False,
 
 if '--bridge' not in sys.argv:
     args = sys.argv[1:]
-    if args[:2] == ['models', 'status']:
+    with (root / 'commands.jsonl').open('a') as f:
+        f.write(json.dumps(args) + '\n')
+    if (root / 'optional-catalog').exists() and args[:2] == ['models', 'status']:
+        emit([{'id': 'tts.openai-speech.model', 'name': 'Phonon',
+               'installed': not (root / 'required-missing').exists()},
+              {'id': 'tts.openai-speech.voices', 'name': 'Voice descriptions',
+               'optional': True, 'installed': (root / 'voices.jsonl').exists(),
+               'detail': 'Voice descriptions only; speech works without them.'}])
+    elif '--voice-catalog' in args:
+        if (root / 'catalog-attempt').exists():
+            (root / 'voices.jsonl').write_text('{"name":"Zoey"}\n')
+            emit({'asset': 'phonon/voices.jsonl', 'phase': 'done', 'bytes': 16, 'total': 16, 'pct': 100})
+            emit({'done': True, 'installed': ['phonon/voices.jsonl'], 'skipped': []})
+        else:
+            (root / 'catalog-attempt').touch()
+            emit({'asset': 'phonon/voices.jsonl', 'phase': 'skipped', 'bytes': 0, 'total': 0, 'pct': 0,
+                  'detail': 'Not installed: fixture catalog server unavailable; speech still works.'})
+            emit({'done': True, 'installed': [], 'skipped': ['phonon/voices.jsonl']})
+    elif args[:2] == ['models', 'status']:
         emit([{'id': 'fixture.speech', 'name': 'Fixture speech model',
                'installed': (root / 'installed').exists()}])
     elif args[:2] == ['models', 'ensure']:

@@ -29,10 +29,11 @@ type AssetRequest struct {
 	NeedTTS      bool
 	NeedVAD      bool
 	NeedSpeaker  bool
-	// NeedVoiceCatalog verifies/refreshes Phonon's named voices and fetches
-	// descriptive catalogs (voices.jsonl). Only an explicit install asks: the catalog never gates
-	// speech, so starting a conversation, listing voices or a preview must not
-	// wait on its host.
+	// NeedVoiceCatalog fetches descriptive voice catalogs (voices.jsonl).
+	// With NeedTTS true, it also verifies/refreshes Phonon's named voices.
+	// With NeedTTS false, it fetches only metadata without contacting the runtime.
+	// Only an explicit install asks: the descriptive catalog never gates speech,
+	// so conversation startup, voice listing and previews never wait on its host.
 	NeedVoiceCatalog bool
 }
 
