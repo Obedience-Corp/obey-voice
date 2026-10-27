@@ -230,14 +230,19 @@ func renderAgentBubble(name, think, spoken string, showThink bool) string {
 	return agentBubbleStyle.Render(b.String())
 }
 
-// brainBadgeLabel prefers the admitted selection over startup configuration:
+// activeBrain prefers the admitted selection over startup configuration:
 // group routing and in-chat persona switches can replace the active brain.
-func (m conversationModel) brainBadgeLabel() string {
-	provider, model := strings.TrimSpace(m.selection.BrainProvider), strings.TrimSpace(m.selection.BrainModel)
+func (m conversationModel) activeBrain() (provider, model string) {
+	provider, model = strings.TrimSpace(m.selection.BrainProvider), strings.TrimSpace(m.selection.BrainModel)
 	if provider == "" && m.cfg != nil {
 		provider = strings.TrimSpace(m.cfg.BrainProvider)
 		model = persona.ModelForProvider(m.cfg, provider)
 	}
+	return provider, model
+}
+
+func (m conversationModel) brainBadgeLabel() string {
+	provider, model := m.activeBrain()
 	if provider == "" {
 		return ""
 	}

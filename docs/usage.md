@@ -396,7 +396,7 @@ launcher and conversation header show the active TTS provider/model/mode/voice
 badge. An empty device config value follows the current operating-system
 default.
 
-The conversation header also shows the active persona's brain provider and
+The TUI and desktop conversation headers also show the active persona's brain provider and
 model, for example `Obey  brain ollama · qwen3:8b`. It follows persona switches
 within the conversation. `default` means the provider chooses its own model;
 it does not identify a specific underlying model.

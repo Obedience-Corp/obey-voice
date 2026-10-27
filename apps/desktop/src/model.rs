@@ -86,6 +86,8 @@ pub struct State {
     pub speaker_names: Vec<String>,
     pub session_id: String,
     pub name: String,
+    pub brain_provider: String,
+    pub brain_model: String,
     pub status: String,
     pub error: bool,
     pub mic: bool,
@@ -104,6 +106,19 @@ pub struct State {
     #[serde(deserialize_with = "nullable_vec")]
     pub workers: Vec<Value>,
     pub workers_enabled: bool,
+}
+impl State {
+    pub fn brain_label(&self) -> Option<String> {
+        let provider = self.brain_provider.trim();
+        if provider.is_empty() {
+            return None;
+        }
+        let model = self.brain_model.trim();
+        Some(format!(
+            "Brain: {provider} · {}",
+            if model.is_empty() { "default" } else { model }
+        ))
+    }
 }
 fn nullable_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
@@ -239,6 +254,21 @@ pub fn route_receipt(value: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn active_brain_label_uses_snapshot_and_handles_older_engines() {
+        let s: State = serde_json::from_str(
+            r#"{"name":"Jarvis","brain_provider":"cursor","brain_model":"composer-2.5"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.brain_label().as_deref(),
+            Some("Brain: cursor · composer-2.5")
+        );
+        let s: State = serde_json::from_str(r#"{"brain_provider":"claude"}"#).unwrap();
+        assert_eq!(s.brain_label().as_deref(), Some("Brain: claude · default"));
+        let legacy: State = serde_json::from_str(r#"{"name":"Obey"}"#).unwrap();
+        assert_eq!(legacy.brain_label(), None);
+    }
     #[test]
     fn null_upstream_lists_are_empty() {
         let s: State =

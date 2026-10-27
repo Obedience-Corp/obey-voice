@@ -27,6 +27,11 @@ impl VoiceApp {
         }
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(&self.state.name).strong().color(accent(ui)));
+            if let Some(label) = self.state.brain_label() {
+                ui.label(label).on_hover_text(
+                    "Active persona's brain. Default means the provider chooses its model.",
+                );
+            }
             ui.label(
                 RichText::new(&self.state.session_id)
                     .small()
