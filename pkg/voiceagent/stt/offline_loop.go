@@ -34,11 +34,12 @@ type transcribeFunc func(samples []float32) (string, error)
 // offlineLoopDeps are the injected seams the offline STT loop drives. None of
 // them require cgo or model files at construction, so the loop is fully testable.
 type offlineLoopDeps struct {
-	frames     audio.FrameSource
-	seg        segmenter
-	policy     endpoint.Policy
-	transcribe transcribeFunc
-	pause      *pauseController
+	frames       audio.FrameSource
+	seg          segmenter
+	policy       endpoint.Policy
+	transcribe   transcribeFunc
+	acousticName func(context.Context, []float32) (string, error)
+	pause        *pauseController
 }
 
 // runOfflineLoop drives utterance-final STT over the typed frame contract and
@@ -116,7 +117,18 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 				return true
 			}
 			if text != "" {
-				sendEvent(ctx, events, FinalTranscript{Text: text})
+				var name string
+				if deps.acousticName != nil {
+					name, err = deps.acousticName(ctx, samples)
+					if err != nil {
+						sendEvent(ctx, events, Failure{Err: err})
+						return true
+					}
+				}
+				if ctx.Err() != nil {
+					return true
+				}
+				sendEvent(ctx, events, FinalTranscript{Text: text, AcousticName: name})
 				return true
 			}
 		}

@@ -609,9 +609,10 @@ func TestRunTurnBrainErrorEmitsSingleMetrics(t *testing.T) {
 }
 
 type fakeSTT struct {
-	text  string
-	err   error // emit a Failure event instead of a final transcript
-	stall bool  // leave the session open and silent until the context is canceled
+	acousticName string
+	text         string
+	err          error // emit a Failure event instead of a final transcript
+	stall        bool  // leave the session open and silent until the context is canceled
 }
 
 type fakeSTTSession struct {
@@ -631,7 +632,7 @@ func (f *fakeSTT) Start(ctx context.Context) (stt.Session, error) {
 	case f.err != nil:
 		eventsCh <- stt.Failure{Err: f.err}
 	default:
-		eventsCh <- stt.FinalTranscript{Text: f.text}
+		eventsCh <- stt.FinalTranscript{Text: f.text, AcousticName: f.acousticName}
 	}
 	close(eventsCh)
 	return &fakeSTTSession{events: eventsCh}, nil

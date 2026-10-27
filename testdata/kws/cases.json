@@ -1,0 +1,47 @@
+[
+  {
+    "file": "bare.wav",
+    "spoken": "Obey.",
+    "want_keyword": true
+  },
+  {
+    "file": "positive.wav",
+    "spoken": "Hey Obey, tell me the weather.",
+    "want_keyword": true
+  },
+  {
+    "file": "british.wav",
+    "spoken": "Obey, can you help me?",
+    "want_keyword": true
+  },
+  {
+    "file": "kokoro.wav",
+    "spoken": "Hey Obey, tell me the weather.",
+    "want_keyword": true
+  },
+  {
+    "file": "verb.wav",
+    "spoken": "You must obey the rules.",
+    "want_keyword": true
+  },
+  {
+    "file": "mention.wav",
+    "spoken": "Tell me about Obey.",
+    "want_keyword": true
+  },
+  {
+    "file": "negative.wav",
+    "spoken": "Okay, tell me the weather.",
+    "want_keyword": false
+  },
+  {
+    "file": "other-keyword.wav",
+    "spoken": "I will love you forever.",
+    "want_keyword": false
+  },
+  {
+    "file": "confusable.wav",
+    "spoken": "Oh baby, what a beautiful day.",
+    "want_keyword": false
+  }
+]

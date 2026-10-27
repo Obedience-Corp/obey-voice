@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/internal/summon"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -63,6 +64,9 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 		return address, nil
 	}
 	request := brain.AddressRequest{Participants: participants, Current: s.Snapshot().DisplayName, Speaker: speaker, Account: account, Text: text}
+	if account == "user" {
+		request.AcousticName = admission.AcousticName(ctx)
+	}
 	turns := s.opts.Pipeline.Brain.History()
 	// Latest assistant is already canonical on a handoff; keep it only in Text.
 	if account == "agent" && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" {

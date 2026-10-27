@@ -324,6 +324,9 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	// front-end is a false interrupt, but name summon without one is the agent
 	// answering itself in a loop, so the conversation refuses to install the
 	// gate at all and this row is the only place that says why.
+	if err := ValidateAcousticName(cfg); err != nil {
+		diags = append(diags, Diagnostic{Name: "acoustic-name-provider", Severity: SeverityError, Detail: err.Error(), Remediation: "set stt_provider to parakeet or disable acoustic_name_enabled"})
+	}
 	if NameSummonSelfTriggerRisk(cfg) {
 		diags = append(diags, Diagnostic{
 			Name:        "name-summon-echo",

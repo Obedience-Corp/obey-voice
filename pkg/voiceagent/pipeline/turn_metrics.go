@@ -36,6 +36,7 @@ type turnMetrics struct {
 	delivery           *completionPlayback
 	start              time.Time
 	sttFinal           time.Time
+	acousticName       string // current finalized voice input only; never reused across turns
 	firstModelChunk    time.Time
 	modelComplete      time.Time
 	firstSegment       time.Time

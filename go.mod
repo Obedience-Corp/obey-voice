@@ -15,7 +15,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/gen2brain/malgo v0.11.25
 	github.com/grandcat/zeroconf v1.0.0
-	github.com/k2-fsa/sherpa-onnx-go v1.13.4
+	github.com/k2-fsa/sherpa-onnx-go v1.13.8
 	github.com/lancekrogers/claude-code-go v1.4.0
 	github.com/lancekrogers/grok-go-sdk v0.2.1
 	github.com/mattn/go-isatty v0.0.24
@@ -74,9 +74,9 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.4 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.4 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.4 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.8 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.8 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.8 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect

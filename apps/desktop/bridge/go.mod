@@ -45,10 +45,10 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/k2-fsa/sherpa-onnx-go v1.13.4 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.4 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.4 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.4 // indirect
+	github.com/k2-fsa/sherpa-onnx-go v1.13.8 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.8 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.8 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.8 // indirect
 	github.com/lancekrogers/claude-code-go v1.4.0 // indirect
 	github.com/lancekrogers/grok-go-sdk v0.2.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect

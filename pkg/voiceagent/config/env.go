@@ -87,6 +87,7 @@ var envBindings = map[string]string{
 	"talk_hotkey_enabled":         "TALK_HOTKEY_ENABLED",
 	"talk_hotkey_mode":            "TALK_HOTKEY_MODE",
 	"talk_hotkey":                 "TALK_HOTKEY",
+	"acoustic_name_enabled":       "ACOUSTIC_NAME_ENABLED",
 	"name_summon_enabled":         "NAME_SUMMON_ENABLED",
 	"vad_threshold":               "VAD_THRESHOLD",
 	"vad_min_speech_duration":     "VAD_MIN_SPEECH_DURATION",

@@ -92,7 +92,9 @@ func (e PartialTranscript) sttEvent() string { return "partial_transcript" }
 
 // FinalTranscript reports the committed transcript for the turn.
 type FinalTranscript struct {
-	Text string
+	// AcousticName is independent keyword evidence from this utterance only.
+	AcousticName string
+	Text         string
 }
 
 func (e FinalTranscript) sttEvent() string { return "final_transcript" }

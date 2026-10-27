@@ -14,6 +14,20 @@
   ],
   "keys": [
     {
+      "key": "acoustic_name_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Acoustic Obey recognition (experimental)",
+      "help": "Adds an acoustic name hint to semantic conversation routing when Parakeet mishears Obey. Requires Parakeet and models ensure --stt; leaves the transcript unchanged. Not a wake gate. Edited in config.yaml.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "ACOUSTIC_NAME_ENABLED",
+      "editable": true
+    },
+    {
       "key": "audio8_voice",
       "type": "string",
       "default": "",

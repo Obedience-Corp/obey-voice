@@ -62,7 +62,7 @@ func TestWithCorrectionRewritesFinalTranscriptsOnly(t *testing.T) {
 	inner := &fakeSession{events: make(chan Event, 8)}
 	inner.events <- PartialTranscript{Text: "veronika"}
 	inner.events <- InputLevel{Level: 0.5}
-	inner.events <- FinalTranscript{Text: "tell veronika"}
+	inner.events <- FinalTranscript{Text: "tell veronika", AcousticName: "Obey"}
 	inner.events <- Timeout{}
 	inner.Close()
 
@@ -72,7 +72,7 @@ func TestWithCorrectionRewritesFinalTranscriptsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := collect(t, s)
-	want := []Event{PartialTranscript{Text: "veronika"}, InputLevel{Level: 0.5}, FinalTranscript{Text: "TELL VERONIKA"}, Timeout{}}
+	want := []Event{PartialTranscript{Text: "veronika"}, InputLevel{Level: 0.5}, FinalTranscript{Text: "TELL VERONIKA", AcousticName: "Obey"}, Timeout{}}
 	if len(got) != len(want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
