@@ -474,6 +474,7 @@ func (m *personasModel) cycleStackRow(delta int) {
 	case formRowWorkerProvider:
 		list := stackWorkerProviders()
 		m.workerProviderIdx = (m.workerProviderIdx + delta + len(list)) % len(list)
+		m.workerOllamaHost = ""
 		// The worker's model catalog is its provider's: drop a pin the new
 		// backend does not offer.
 		m.clampSelectedWorkerModel()

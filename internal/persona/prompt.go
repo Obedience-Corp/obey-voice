@@ -47,6 +47,11 @@ func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
 		} else if model := strings.TrimSpace(opts.Brain.Model); model != "" {
 			p.Brain.Model = model // model for the cloned provider
 		}
+		p.Brain.Worker = Worker{
+			Provider:   strings.TrimSpace(opts.Brain.Worker.Provider),
+			Model:      strings.TrimSpace(opts.Brain.Worker.Model),
+			OllamaHost: strings.TrimSpace(opts.Brain.Worker.OllamaHost),
+		}
 		if provider := strings.TrimSpace(opts.TTS.Provider); provider != "" {
 			p.TTS = TTS{Provider: provider, Voice: strings.TrimSpace(opts.TTS.Voice)}
 		} else if voice := strings.TrimSpace(opts.TTS.Voice); voice != "" {
@@ -73,7 +78,8 @@ func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
 // stackOverridden reports whether opts carries any explicit brain/TTS choice.
 func stackOverridden(opts CreateOpts) bool {
 	return strings.TrimSpace(opts.Brain.Provider) != "" || strings.TrimSpace(opts.Brain.Model) != "" ||
-		strings.TrimSpace(opts.TTS.Provider) != "" || strings.TrimSpace(opts.TTS.Voice) != ""
+		strings.TrimSpace(opts.TTS.Provider) != "" || strings.TrimSpace(opts.TTS.Voice) != "" ||
+		strings.TrimSpace(opts.Brain.Worker.Provider) != "" || strings.TrimSpace(opts.Brain.Worker.Model) != "" || strings.TrimSpace(opts.Brain.Worker.OllamaHost) != ""
 }
 
 // CreateAndUseWithOpts creates a persona (with optional system prompt) and activates it.

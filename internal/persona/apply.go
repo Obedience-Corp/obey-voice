@@ -257,6 +257,11 @@ func UpdateStack(id string, brain Brain, tts TTS) (*Profile, error) {
 	p.Brain = Brain{
 		Provider: strings.TrimSpace(brain.Provider),
 		Model:    strings.TrimSpace(brain.Model),
+		Worker: Worker{
+			Provider:   strings.TrimSpace(brain.Worker.Provider),
+			Model:      strings.TrimSpace(brain.Worker.Model),
+			OllamaHost: strings.TrimSpace(brain.Worker.OllamaHost),
+		},
 	}
 	p.TTS = TTS{
 		Provider: strings.TrimSpace(tts.Provider),

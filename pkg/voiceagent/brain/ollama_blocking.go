@@ -62,9 +62,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 	hadThinking := false
 	hadTools := false
+	routedChat := false
 	for i := 0; i < maxToolIterations; i++ {
 		var tools api.Tools
-		if opts.ToolsEnabled {
+		if opts.ToolsEnabled && !routedChat {
 			tools = sess.tools()
 		}
 
@@ -122,9 +123,21 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 
 		// Tool calls — execute and loop (skills stack on full CLI tools).
+		if routedChat && len(response.ToolCalls) > 0 {
+			return "", fmt.Errorf("chat answer returned unexpected tool calls")
+		}
 		if len(response.ToolCalls) > 0 {
 			hadTools = true
 			hadThinking = hadThinking || messageHadThinking(response)
+			if sess.routerPolicy == RouterToolsRouteOnly {
+				// The live classifier's tool preamble is planning, not an
+				// assistant reply to replay into later conversation context.
+				response.Content = ""
+				if hasRouteCall(response.ToolCalls) {
+					routedChat = true
+					skillCtx += "\n" + chatRouteAnswerInstruction
+				}
+			}
 			o.appendMessage(api.Message{
 				Role:      "assistant",
 				Content:   stripReplyConventions(o.cfg.AgentName, response.Content),

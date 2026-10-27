@@ -332,7 +332,7 @@ func (m workersModel) View() string {
 		for _, item := range m.items {
 			labels = append(labels, item.Task+" · "+item.State)
 			detail := workerProvider(item) + " · " + roundSeconds(item.Elapsed)
-			if summary := workerActivitySummary(item.Activity); summary != "" {
+			if summary := workerCurrentActivity(item); summary != "" {
 				detail += " · " + summary
 			}
 			details = append(details, detail)
@@ -346,7 +346,7 @@ func (m workersModel) View() string {
 			if i == m.cursor {
 				line = chipStyle.Render(line)
 			}
-			lines = append(lines, line, dimStyle.Render("    "+strings.Join(strings.Fields(safeWorkerText(details[i])), " ")))
+			lines = append(lines, line, dimStyle.Render(ansi.Truncate("    "+strings.Join(strings.Fields(safeWorkerText(details[i])), " "), w, "…")))
 		}
 		if len(m.items) == 0 {
 			lines = append(lines, "  No background tasks in this conversation.")
@@ -359,7 +359,7 @@ func (m workersModel) View() string {
 	lines = append(lines, "", statusStyle.Render("  "+safeWorkerText(message)))
 	help := "  ↑/↓ select · enter open · s stop task · x stop all · t toggle · esc back"
 	if m.detailID != "" {
-		help = "  ↑/↓ scroll · s stop task · x stop all · t toggle · esc list"
+		help = "  ↑/↓ scroll · home/end · s stop task · x stop all · t toggle · esc list"
 	}
 	lines = append(lines, dimStyle.Render(help))
 	for i, line := range lines {

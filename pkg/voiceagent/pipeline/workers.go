@@ -8,6 +8,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 // WorkerInfo is a read-only projection for worker controls. Ownership and
@@ -17,6 +18,7 @@ type WorkerInfo struct {
 	Activity, Result, Err, Termination string
 	Started, Ended                     time.Time
 	Elapsed                            time.Duration
+	Tools                              []workfold.Call
 }
 
 func (i WorkerInfo) Active() bool {
@@ -91,6 +93,7 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			Provider: item.Provider, Model: item.Model, Result: item.Result, Err: item.Err,
 			Started: item.Started, Ended: item.Ended, Elapsed: item.Elapsed()}
 		if a.work != nil {
+			info.Tools = a.work.Calls(item.ID)
 			if rows := a.work.Rows(item.ID); len(rows) > 0 {
 				latest := rows[len(rows)-1]
 				info.Activity = latest.String()

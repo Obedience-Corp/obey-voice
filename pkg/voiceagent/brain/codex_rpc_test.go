@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // The helper is a real subprocess speaking the wire protocol. No Codex login,
@@ -89,7 +91,7 @@ func TestCodexAppServerHelper(t *testing.T) {
 			notice("item/agentMessage/delta", map[string]string{"threadId": "thread-1", "turnId": "another-turn", "delta": "WRONG TURN"})
 			if tools || mode == "unexpected-tool" {
 				for _, method := range []string{"item/started", "item/completed"} {
-					notice(method, map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]string{"id": "tool-1", "type": "commandExecution", "status": "completed"}})
+					notice(method, map[string]any{"threadId": "thread-1", "turnId": "turn-1", "item": map[string]any{"id": "tool-1", "type": "commandExecution", "status": "completed", "command": "go test ./...", "cwd": "/fixture", "aggregatedOutput": "ok fixture", "exitCode": 0, "durationMs": 75}})
 				}
 			}
 			notice("item/agentMessage/delta", map[string]string{"threadId": "thread-1", "turnId": "turn-1", "delta": "Hello there."})
@@ -250,7 +252,17 @@ func TestCodexToolsTraceAndResumeUsage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	starts, ends := 0, 0
-	result, err := client.run(ctx, codexRequest{Cwd: t.TempDir(), ThreadID: "thread-1", Tools: true, Prompt: "work"}, func(string) error { return nil }, StreamOptions{OnToolStart: func(ToolCall) { starts++ }, OnToolEnd: func(ToolResult) { ends++ }})
+	result, err := client.run(ctx, codexRequest{Cwd: t.TempDir(), ThreadID: "thread-1", Tools: true, Prompt: "work"}, func(string) error { return nil }, StreamOptions{OnToolStart: func(call ToolCall) {
+		starts++
+		if call.Kind != KindExecute || !strings.Contains(call.Summary, "go test ./...") {
+			t.Errorf("missing command activity: %+v", call)
+		}
+	}, OnToolEnd: func(result ToolResult) {
+		ends++
+		if result.Preview != "ok fixture" || result.Outcome == nil || result.Outcome.Status != events.ToolOutcomeSucceeded || result.Elapsed != 75*time.Millisecond {
+			t.Errorf("missing command result: %+v", result)
+		}
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}

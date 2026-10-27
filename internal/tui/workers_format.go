@@ -3,7 +3,9 @@ package tui
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -15,7 +17,7 @@ import (
 func formatWorkerDetail(item pipeline.WorkerInfo, width int) string {
 	width = max(1, width)
 	var b strings.Builder
-	b.WriteString(normalStyle.Render(compactWorkerText(item.Task)))
+	b.WriteString(normalStyle.Render(wrapWorkerPlain(item.Task, width)))
 	b.WriteString("\n\n")
 	b.WriteString(workerStateStyle(item.State).Render(item.State))
 	b.WriteString("  ")
@@ -24,12 +26,39 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int) string {
 	b.WriteByte('\n')
 	b.WriteString(dimStyle.Render("ID  " + item.ID))
 	b.WriteByte('\n')
-	if item.Activity != "" {
+	if item.Activity != "" && len(item.Tools) == 0 {
 		b.WriteByte('\n')
 		b.WriteString(sectionStyle.Render("Activity"))
 		b.WriteByte('\n')
 		b.WriteString(formatWorkerPayload(item.Activity, width))
 		b.WriteByte('\n')
+	}
+	if len(item.Tools) > 0 {
+		b.WriteString("\n")
+		b.WriteString(sectionStyle.Render("Tool activity (newest first)"))
+		b.WriteByte('\n')
+		for i := len(item.Tools) - 1; i >= 0; i-- {
+			call := item.Tools[i]
+			elapsed := call.Elapsed
+			if call.Status == "running" && !call.Started.IsZero() {
+				elapsed = time.Since(call.Started)
+			}
+			b.WriteString(wrapWorkerPlain(fmt.Sprintf("%d. %s · %s · %s", i+1, call.Name, call.Status, roundSeconds(elapsed)), width))
+			b.WriteByte('\n')
+			if call.Summary != "" {
+				b.WriteString(wrapWorkerPlain(call.Summary, width))
+				b.WriteByte('\n')
+			}
+			if call.Preview != "" {
+				b.WriteString(formatWorkerPayload(call.Preview, width))
+				b.WriteByte('\n')
+			}
+			if call.Err != "" {
+				b.WriteString(errorStyle.Render(wrapWorkerPlain(call.Err, width)))
+				b.WriteByte('\n')
+			}
+			b.WriteByte('\n')
+		}
 	}
 	if item.Result != "" {
 		b.WriteByte('\n')
@@ -54,7 +83,7 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int) string {
 	}
 	if item.Active() && item.Result == "" {
 		b.WriteByte('\n')
-		b.WriteString(dimStyle.Render("Output will appear when the worker finishes."))
+		b.WriteString(dimStyle.Render(wrapWorkerPlain("Output will appear when the worker finishes.", width)))
 	}
 	return b.String()
 }
@@ -76,6 +105,22 @@ func workerStateStyle(state string) lipgloss.Style {
 
 func compactWorkerText(s string) string {
 	return strings.Join(strings.Fields(safeWorkerText(s)), " ")
+}
+
+func workerCurrentActivity(item pipeline.WorkerInfo) string {
+	for i := len(item.Tools) - 1; i >= 0; i-- {
+		call := item.Tools[i]
+		if call.Status == "running" {
+			return compactWorkerText(call.Name + " · " + call.Summary)
+		}
+	}
+	if len(item.Tools) > 0 && item.Active() {
+		return "Waiting for next worker update"
+	}
+	if item.Activity == "" && item.State == "running" {
+		return "Waiting for first tool activity"
+	}
+	return workerActivitySummary(item.Activity)
 }
 
 func workerActivitySummary(activity string) string {

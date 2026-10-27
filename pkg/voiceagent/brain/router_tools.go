@@ -21,6 +21,8 @@ const (
 	RouterToolsLegacy RouterToolsPolicy = "legacy"
 )
 
+const chatRouteAnswerInstruction = "Routing is complete for this turn: chat. Now answer the user directly in character. Do not call route again or describe your reasoning or routing decision."
+
 var unknownRouterToolsOnce sync.Once
 
 // NormalizeRouterToolsPolicy maps config values to a live-brain tool policy.
@@ -79,6 +81,15 @@ func LiveRouterDecision(policy RouterToolsPolicy, calls []api.ToolCall) string {
 		}
 	}
 	return ""
+}
+
+func hasRouteCall(calls []api.ToolCall) bool {
+	for _, call := range calls {
+		if strings.TrimSpace(call.Function.Name) == "route" {
+			return true
+		}
+	}
+	return false
 }
 
 func toolCallArg(call api.ToolCall, key string) string {

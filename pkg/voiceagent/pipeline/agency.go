@@ -369,7 +369,7 @@ func (a *Agency) narrateRow(jobID string, row workfold.Row) {
 // narrate is false for an abort: the cancel line or the budget line is all
 // an abort says.
 func (a *Agency) closeFold(jobID string, narrate bool) {
-	rows := a.work.Close(jobID)
+	rows := a.work.Seal(jobID)
 	if !narrate || len(rows) == 0 {
 		return
 	}

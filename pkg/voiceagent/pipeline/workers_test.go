@@ -57,6 +57,53 @@ func TestWorkersControlsManagedDelegationWithoutExperimentalInbox(t *testing.T) 
 	}
 }
 
+func TestWorkerDetailsSurviveCompletion(t *testing.T) {
+	p := &Pipeline{Events: events.NewBus()}
+	table := job.NewTable(t.Context())
+	t.Cleanup(table.AbortAll)
+	a := NewAgency(p, table, nil, &config.Config{}, nil)
+	a.Wire()
+	p.incActiveTurn() // Hold narration; this test inspects worker state only.
+	started, release := make(chan struct{}), make(chan struct{})
+	_, err := table.Start(t.Context(), job.Spec{Task: "Run checks", Provider: "codex", Model: "fixture-codex", Run: func(ctx context.Context) (string, error) {
+		start, end := a.foldingToolHooks(job.IDFromContext(ctx))
+		call := brain.ToolCall{ID: "check", Name: "commandExecution", Kind: brain.KindExecute, Summary: "go test ./..."}
+		start(call)
+		close(started)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+		end(brain.ToolResult{ToolCall: call, Outcome: &events.ToolOutcome{Status: events.ToolOutcomeFailed, Reason: "exit 1", OutputPreview: "test failed", Elapsed: time.Second}})
+		return "One check failed.", nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	items := p.Workers()
+	if len(items) != 1 || len(items[0].Tools) != 1 || items[0].Tools[0].Status != "running" || items[0].Tools[0].Summary != "go test ./..." || items[0].Provider != "codex" || items[0].Model != "fixture-codex" {
+		t.Fatalf("running worker = %+v", items)
+	}
+	items[0].Tools[0].Summary = "mutated snapshot"
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		items = p.Workers()
+		if len(items) == 1 && !items[0].Active() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("worker did not finish: %+v", items)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(items[0].Tools) != 1 || items[0].Tools[0].Status != "failed" || items[0].Tools[0].Preview != "test failed" || items[0].Tools[0].Summary != "go test ./..." || items[0].Result != "One check failed." {
+		t.Fatalf("completed worker = %+v", items)
+	}
+}
+
 func TestWorkersControlLegacyAndCanonicalAdmissions(t *testing.T) {
 	for _, canonical := range []bool{false, true} {
 		cfg := &config.Config{VoiceWorkerProvider: "ollama", VoiceWorkerModel: "original-model", VoiceWorkersDisabled: true}
