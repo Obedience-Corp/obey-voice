@@ -151,7 +151,7 @@ func TestContinuationRefusesRepeatedPersona(t *testing.T) {
 
 func TestContinuationSkipsDegradedResponses(t *testing.T) {
 	b := &continuationBrain{
-		chunks: []string{brain.RecoveryReply},
+		chunks: []string{"Partial answer."},
 		result: brain.StreamResult{Err: errors.New("provider failed"), Recovered: true},
 	}
 	p := &Pipeline{Brain: b, Events: events.NewBus()}

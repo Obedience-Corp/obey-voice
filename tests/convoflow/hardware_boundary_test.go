@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
@@ -23,10 +22,10 @@ func boundaryEmit(bus *events.Bus, phase string) {
 	degraded := phase == "failure"
 	sink := "local_speaker"
 	if degraded {
-		response = brain.RecoveryReply
+		response = ""
 		bus.Emit(events.Error{Stage: "brain", Message: acousticProviderFailure})
 	}
-	if phase == "muted" {
+	if phase == "muted" || phase == "failure" {
 		sink = "none"
 	} else {
 		bus.Emit(events.SpeakingStarted{AudibleSink: sink})
@@ -40,11 +39,11 @@ func TestAcousticBoundaryAcceptsActualMuteAndDegradedSemantics(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			bus := events.NewBus()
 			a := boundaryHealthyCapture()
-			if phase == "muted" {
+			if phase == "muted" || phase == "failure" {
 				a.NonzeroReferenceSamples = 0
 			}
 			r, e := observeBoundaryPhase(t.Context(), bus, phase, a.Transcript, func(context.Context) error { boundaryEmit(bus, phase); return nil }, func() (acousticReport, error) { return a, nil })
-			if e != nil || r.AudibleDeliveryCompleted != (phase != "muted") {
+			if e != nil || r.AudibleDeliveryCompleted != (phase == "recovered") {
 				t.Fatalf("report=%+v err=%v", r, e)
 			}
 		})
@@ -62,7 +61,7 @@ func TestAcousticBoundaryRejectsFalsePasses(t *testing.T) {
 			}
 			bus := events.NewBus()
 			a := boundaryHealthyCapture()
-			if phase == "muted" {
+			if phase == "muted" || phase == "failure" {
 				a.NonzeroReferenceSamples = 0
 			}
 			ctx, cancel := context.WithCancel(t.Context())
@@ -134,7 +133,7 @@ func TestAcousticBoundaryObservesProductionProviderFailure(t *testing.T) {
 	if _, err := p.RunTurn(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if failed.calls.Load() != 1 || len(errorsSeen) != 1 || errorsSeen[0].Stage != "brain" || len(responses) != 1 || responses[0].Response != brain.RecoveryReply || !responses[0].Degraded || len(metrics) != 1 || metrics[0].Outcome != "completed" || !metrics[0].Degraded {
+	if failed.calls.Load() != 1 || len(errorsSeen) != 1 || errorsSeen[0].Stage != "brain" || len(responses) != 1 || responses[0].Response != "" || !responses[0].Degraded || len(metrics) != 1 || metrics[0].Outcome != "completed" || !metrics[0].Degraded {
 		t.Fatalf("production failure facts: errors=%+v responses=%+v metrics=%+v calls=%d", errorsSeen, responses, metrics, failed.calls.Load())
 	}
 	p.Brain = original

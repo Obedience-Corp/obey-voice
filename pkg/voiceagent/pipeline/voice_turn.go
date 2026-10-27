@@ -201,7 +201,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 			// Model/tool stall — distinct from STT timed_out (no speech).
 			err = fmt.Errorf("model timed out before finishing a reply: %w", err)
 		}
-		// Speak on the parent ctx: turnCtx is dead after a deadline stall.
+		// Report the failure without attempting speech on the expired context.
 		p.recoverTurn(ctx, turn, metrics, fullResponse, err)
 		return original, nil
 	}

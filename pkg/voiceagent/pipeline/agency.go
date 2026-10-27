@@ -575,7 +575,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	// observer that reacts to the event should see the delivery it announces.
 	// Milestones lead the result — what the worker was doing when it stopped
 	// is not an afterthought to its answer.
-	a.closeFold(id, state != job.StateAborted && !a.workEnabled())
+	a.closeFold(id, state == job.StateDone && !a.workEnabled())
 	if c != nil {
 		status := work.OutcomeSucceeded
 		text := a.cleanSummary(result)
@@ -583,7 +583,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		startedAt, endedAt, terminalElapsed := a.jobTiming(id)
 		switch state {
 		case job.StateFailed:
-			status, text = work.OutcomeFailed, truncateJobTask(errorText(err, result))
+			status, text = work.OutcomeFailed, errorText(err, result)
 		case job.StateAborted:
 			status, text, termination = work.OutcomeCancelled, "Work was cancelled.", "unknown"
 			if errors.Is(err, job.ErrBudget) {
@@ -613,19 +613,16 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
-			msg = truncateJobTask(err.Error())
+			msg = err.Error()
 		}
-		a.enqueueSummary(id, msg)
 		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 	case job.StateAborted:
 		// A cancel was spoken once by handleAbort, in the turn that asked;
-		// saying it again here would be once per job. A budget stop is the
-		// one abort nobody asked for, so it speaks.
+		// saying it again here would be once per job. Budget failures are
+		// also reported as text instead of unsolicited speech.
 		reason := events.AbortCancelled
 		if errors.Is(err, job.ErrBudget) {
 			reason = events.AbortBudget
-			a.enqueueSummary(id, fmt.Sprintf("I stopped %s after %s. It ran past its budget.",
-				spokenTaskLabel(task), spokenDuration(elapsed)))
 		}
 		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
 	}

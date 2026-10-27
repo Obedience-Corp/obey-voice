@@ -427,7 +427,7 @@ func TestRunTurnBargeInCancelsBrainProducer(t *testing.T) {
 
 func TestRunTurnRecoversBrainStreamError(t *testing.T) {
 	// The recovery invariant (WI-c8884d P1): a hard brain error must close the
-	// turn with a user-visible recovery reply, not a silent error return that
+	// turn with a visible error, not an error return that
 	// callers count as a voice-input failure.
 	bus := events.NewBus()
 	var ready atomic.Value
@@ -455,8 +455,8 @@ func TestRunTurnRecoversBrainStreamError(t *testing.T) {
 	if !e.Degraded {
 		t.Fatalf("ResponseReady.Degraded = false, want true: %+v", e)
 	}
-	if !strings.Contains(e.Response, brain.RecoveryReply) {
-		t.Fatalf("ResponseReady.Response = %q, want recovery reply", e.Response)
+	if e.Response != "" {
+		t.Fatalf("ResponseReady.Response = %q, want no fabricated reply", e.Response)
 	}
 	ev, ok := errEvt.Load().(events.Error)
 	if !ok || !strings.Contains(ev.Message, "boom") {
@@ -464,9 +464,8 @@ func TestRunTurnRecoversBrainStreamError(t *testing.T) {
 	}
 }
 
-func TestRunTurnSpeaksRecoveryReply(t *testing.T) {
-	// Degraded turns still close the loop audibly: the recovery line goes
-	// through TTS so a hands-free user hears the failure instead of silence.
+func TestRunTurnDoesNotSpeakErrors(t *testing.T) {
+	// Even with speech enabled, provider failures must never start playback.
 	bus := events.NewBus()
 	var spoke atomic.Value
 	events.Subscribe(bus, func(e events.SpeakingStarted) { spoke.Store(e) })
@@ -483,16 +482,14 @@ func TestRunTurnSpeaksRecoveryReply(t *testing.T) {
 	if _, err := p.RunTurn(context.Background()); err != nil {
 		t.Fatalf("RunTurn() error = %v, want nil (recovered turn)", err)
 	}
-	e, ok := spoke.Load().(events.SpeakingStarted)
-	if !ok || e.Text != brain.RecoveryReply {
-		t.Fatalf("SpeakingStarted = %+v, want spoken recovery reply", e)
+	if e := spoke.Load(); e != nil {
+		t.Fatalf("error produced speech: %+v", e)
 	}
 }
 
 func TestRunTurnRecoveredBrainStreamCompletesDegraded(t *testing.T) {
-	// A brain that already streamed its own recovery line reports Recovered:
-	// the pipeline keeps the streamed text as the reply instead of stacking a
-	// second recovery message on top, and the failure still reaches activity.
+	// A provider can retain a partial reply while reporting a failure.
+	// Keep that genuine text and report the error separately.
 	bus := events.NewBus()
 	var ready atomic.Value
 	events.Subscribe(bus, func(e events.ResponseReady) { ready.Store(e) })
@@ -501,15 +498,15 @@ func TestRunTurnRecoveredBrainStreamCompletesDegraded(t *testing.T) {
 
 	p := &Pipeline{
 		STT:    &fakeSTT{text: "hello"},
-		Brain:  &fakeBrain{chunks: []string{brain.RecoveryReply}, streamErr: errors.New("boom"), recovered: true},
+		Brain:  &fakeBrain{chunks: []string{"Partial response."}, streamErr: errors.New("boom"), recovered: true},
 		Events: bus,
 	}
 	if _, err := p.RunTurn(context.Background()); err != nil {
 		t.Fatalf("RunTurn() error = %v, want nil (recovered turn)", err)
 	}
 	e, _ := ready.Load().(events.ResponseReady)
-	if !e.Degraded || e.Response != brain.RecoveryReply {
-		t.Fatalf("ResponseReady = %+v, want degraded reply equal to the streamed recovery line", e)
+	if !e.Degraded || e.Response != "Partial response." {
+		t.Fatalf("ResponseReady = %+v, want degraded reply equal to the genuine partial text", e)
 	}
 	ev, ok := errEvt.Load().(events.Error)
 	if !ok || !strings.Contains(ev.Message, "boom") {
@@ -1232,37 +1229,24 @@ func TestStopPlaybackStampsBargeInOnActiveTurn(t *testing.T) {
 	p.StopPlayback()
 }
 
-// recoverTurn must not append a second RecoveryReply when the ollama stream
-// layer already recovered out loud into the partial (WI-dc9e33 B1/F1.4).
-func TestRecoverTurnDoesNotDuplicateRecoveryReply(t *testing.T) {
-	bus := events.NewBus()
-	var got []string
-	events.Subscribe(bus, func(e events.ResponseReady) { got = append(got, e.Response) })
-
-	p := &Pipeline{Events: bus}
-	cases := []struct {
-		partial string
-		want    string
-	}{
-		{"", brain.RecoveryReply},
-		{"partial thought", "partial thought\n\n" + brain.RecoveryReply},
-		{"partial thought\n\n" + brain.RecoveryReply, "partial thought\n\n" + brain.RecoveryReply},
-	}
-	for _, tc := range cases {
-		metrics := newTurnMetrics()
-		turn := p.newTurnConductor(metrics)
-		p.recoverTurn(context.Background(), turn, metrics, tc.partial, errors.New("boom"))
-	}
-	if len(got) != len(cases) {
-		t.Fatalf("ResponseReady count = %d, want %d", len(got), len(cases))
-	}
-	for i, tc := range cases {
-		if got[i] != tc.want {
-			t.Fatalf("case %d: response = %q, want %q", i, got[i], tc.want)
-		}
-		if n := strings.Count(got[i], brain.RecoveryReply); n != 1 {
-			t.Fatalf("case %d: RecoveryReply appears %d times", i, n)
-		}
+// Error handling preserves partial model text without inventing speech.
+func TestRecoverTurnPreservesOnlyGeneratedText(t *testing.T) {
+	for _, partial := range []string{"", "Partial response.", "<think>private reasoning</think>Partial response."} {
+		t.Run(partial, func(t *testing.T) {
+			bus := events.NewBus()
+			var got events.ResponseReady
+			events.Subscribe(bus, func(e events.ResponseReady) { got = e })
+			p := &Pipeline{Events: bus}
+			metrics := newTurnMetrics()
+			p.recoverTurn(t.Context(), p.newTurnConductor(metrics), metrics, partial, errors.New("provider unavailable"))
+			want := "Partial response."
+			if partial == "" {
+				want = ""
+			}
+			if got.Response != want || !got.Degraded {
+				t.Fatalf("response=%+v want=%q", got, want)
+			}
+		})
 	}
 }
 
@@ -1278,7 +1262,7 @@ func TestRecoverTurnPlaybackStallDoesNotApologize(t *testing.T) {
 	}{
 		{"", ""},
 		{"Come closer and tell me.", "Come closer and tell me."},
-		{"Come closer.\n\n" + brain.RecoveryReply, "Come closer.\n\n" + brain.RecoveryReply},
+		{"Come closer.\n\n" + "I hit an error while working on that. Want me to try a simpler approach?", "Come closer.\n\n" + "I hit an error while working on that. Want me to try a simpler approach?"},
 		{"<think>plan a greeting</think>", ""},
 		{"<think>plan a greeting</think>\nHello there.", "Hello there."},
 	}
@@ -1294,11 +1278,11 @@ func TestRecoverTurnPlaybackStallDoesNotApologize(t *testing.T) {
 		if got[i] != tc.want {
 			t.Fatalf("case %d: response = %q, want %q", i, got[i], tc.want)
 		}
-		if tc.partial == "" && strings.Contains(got[i], brain.RecoveryReply) {
-			t.Fatalf("case %d: playback stall invented RecoveryReply: %q", i, got[i])
+		if tc.partial == "" && strings.Contains(got[i], "I hit an error while working on that. Want me to try a simpler approach?") {
+			t.Fatalf("case %d: playback stall invented oldRecoveryReply: %q", i, got[i])
 		}
-		if tc.partial != "" && !strings.Contains(tc.partial, brain.RecoveryReply) && strings.Contains(got[i], brain.RecoveryReply) {
-			t.Fatalf("case %d: playback stall appended RecoveryReply: %q", i, got[i])
+		if tc.partial != "" && !strings.Contains(tc.partial, "I hit an error while working on that. Want me to try a simpler approach?") && strings.Contains(got[i], "I hit an error while working on that. Want me to try a simpler approach?") {
+			t.Fatalf("case %d: playback stall appended oldRecoveryReply: %q", i, got[i])
 		}
 	}
 }

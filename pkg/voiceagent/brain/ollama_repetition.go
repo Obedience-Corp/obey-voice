@@ -11,8 +11,6 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-const repetitionFallback = "I got stuck repeating my previous answer. Please try that request again."
-
 const repetitionRetryInstruction = "Your previous attempt repeated your earlier answer instead of responding to the latest message. Answer the latest message freshly as your own persona, without copying the earlier answer or announcing this retry. Do not call tools."
 
 // Only a whole, substantial previous answer is a candidate. Short agreements,

@@ -412,4 +412,4 @@ Prompt, model, voice, and shared conversations are in [Personas](personas.md).
 
 ## Turn recovery and token usage
 
-Spoken recovery and Ollama token notes are in [Turn recovery](turn-recovery.md).
+Text-only error reporting and Ollama token notes are in [Turn recovery](turn-recovery.md).

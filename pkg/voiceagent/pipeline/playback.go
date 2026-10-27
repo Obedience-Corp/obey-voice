@@ -177,8 +177,8 @@ func (p *Pipeline) applyPlaybackEvent(event playbackEvent, metrics *turnMetrics,
 }
 
 // handlePlaybackLifecycle drives one utterance queued outside the turn loop —
-// today only the degraded turn's recovery line. Its segment is recorded like
-// any other: a degraded turn that spoke still paid for the synthesis, and a
+// for progress notices and routed replies. Its segment is recorded like
+// any other: a turn that spoke still paid for the synthesis, and a
 // metrics record showing zero segments beside audible speech is wrong.
 func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, observation synthesisObservation, playback *audio.Playback, metrics *turnMetrics) {
 	synthStarted := observation.synthStarted

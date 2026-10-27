@@ -178,7 +178,11 @@ impl VoiceApp {
                     for (i, notice) in self.state.notices.iter().enumerate() {
                         ui.push_id(("notice", i), |ui| {
                             card(ui, |ui| {
-                                ui.label(RichText::new(notice).color(muted(ui)));
+                                ui.add(
+                                    egui::Label::new(RichText::new(notice).color(muted(ui)))
+                                        .wrap()
+                                        .selectable(true),
+                                );
                             });
                         });
                     }

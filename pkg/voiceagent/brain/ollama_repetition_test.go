@@ -46,8 +46,8 @@ func TestRepeatedReplyRecovery(t *testing.T) {
 		{"uncertain repeat", gardenReply, `{"decision":"uncertain"}`, "", gardenReply, 2, false},
 		{"invalid classifier", gardenReply, `{}`, "", gardenReply, 2, false},
 		{"unavailable classifier", gardenReply, "http error", "", gardenReply, 2, false},
-		{"bounded retry", gardenReply, `{"decision":"unrequested"}`, gardenReply, repetitionFallback, 3, true},
-		{"retry provider failure", gardenReply, `{"decision":"unrequested"}`, "http error", RecoveryReply, 3, true},
+		{"bounded retry", gardenReply, `{"decision":"unrequested"}`, gardenReply, "", 3, true},
+		{"retry provider failure", gardenReply, `{"decision":"unrequested"}`, "http error", "", 3, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var requests []api.ChatRequest
@@ -97,7 +97,11 @@ func TestRepeatedReplyRecovery(t *testing.T) {
 				t.Fatalf("requests=%d want=%d", len(requests), tc.calls)
 			}
 			history := o.History()
-			if len(history) != 4 || history[3].Content != tc.want || history[3].ResponseID != "new" {
+			if tc.want == "" {
+				if len(history) != 3 {
+					t.Fatalf("failure invented assistant history: %+v", history)
+				}
+			} else if len(history) != 4 || history[3].Content != tc.want || history[3].ResponseID != "new" {
 				t.Fatalf("unexpected history: %+v", history)
 			}
 			if len(requests) > 1 {
@@ -157,7 +161,7 @@ func TestRepeatedReplyCancellationAndProviderErrorDoNotLeakHeldText(t *testing.T
 			got, _ := drainStream(t, stream)
 			result := <-stream.Done
 			if stage == "generation error" {
-				if got != RecoveryReply || !result.Recovered || result.Err == nil || o.History()[3].Content != RecoveryReply {
+				if got != "" || !result.Recovered || result.Err == nil || len(o.History()) != 3 {
 					t.Fatalf("got=%q result=%+v history=%+v", got, result, o.History())
 				}
 			} else if got != "" || !errors.Is(result.Err, context.Canceled) || len(o.History()) != 3 {

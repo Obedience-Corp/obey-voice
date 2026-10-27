@@ -162,7 +162,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = fmt.Errorf("model timed out before finishing a reply: %w", err)
 		}
-		// Speak on the parent ctx: brainCtx is dead after a deadline stall.
+		// Report a deadline failure without trying to speak on the expired context.
 		p.recoverTurn(ctx, turn, metrics, response, err)
 		return nil
 	}
