@@ -45,6 +45,11 @@ func AttachSpeakerNames(p Provider, names SpeakerNames) {
 func promptUserLine(t Turn, agentName string, names SpeakerNames) string {
 	switch t.Role {
 	case "samantha", "assistant":
+		if t.PersonaDisplayName != "" {
+			agentName = t.PersonaDisplayName
+		} else if t.PersonaID != "" {
+			agentName = t.PersonaID
+		}
 		if agentName == "" {
 			agentName = "Obey"
 		}

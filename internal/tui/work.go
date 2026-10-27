@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -86,7 +87,25 @@ func (m *conversationModel) jobStarted(e events.JobStarted) {
 }
 
 func (m *conversationModel) jobFinished(e events.JobFinished) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	if m.workerRepliesSeen[e.ID] {
+		return
+	}
+	if m.workerRepliesSeen == nil {
+		m.workerRepliesSeen = make(map[string]bool)
+	}
+	m.workerRepliesSeen[e.ID] = true
 	m.jobEnded(e.ID, "finished", " · done in "+roundSeconds(e.Elapsed), e.Elapsed)
+	if text := strings.TrimSpace(e.Summary); text != "" {
+		name := m.agentName
+		if e.Envelope != nil && e.Envelope.DisplayName != "" {
+			name = e.Envelope.DisplayName
+		}
+		m.rememberAssistant(text)
+		m.appendAgentTurn(chatItem{name: name, spoken: text})
+	}
 }
 
 func (m *conversationModel) jobFailed(e events.JobFailed) {
@@ -293,12 +312,13 @@ func (m conversationModel) activeWorkerCounts() (running, queued int) {
 	return running, queued
 }
 
-// singleActiveWorkerID opens one job directly; with several jobs, the manager
-// list lets the user choose which thread to inspect.
-func (m conversationModel) singleActiveWorkerID() string {
+// workerShortcutID opens the sole active worker, or the newest completed
+// worker when none are active. Several active workers open the manager list.
+func (m conversationModel) workerShortcutID() string {
 	id := ""
 	if m.deps.workers != nil {
-		for _, item := range m.deps.workers() {
+		items := m.deps.workers()
+		for _, item := range items {
 			if item.State != "queued" && !item.Active() {
 				continue
 			}
@@ -306,6 +326,9 @@ func (m conversationModel) singleActiveWorkerID() string {
 				return ""
 			}
 			id = item.ID
+		}
+		if id == "" && len(items) > 0 {
+			return items[0].ID
 		}
 		return id
 	}

@@ -25,6 +25,9 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int) string {
 	b.WriteString(dimStyle.Render("  " + roundSeconds(item.Elapsed)))
 	b.WriteByte('\n')
 	b.WriteString(dimStyle.Render("ID  " + item.ID))
+	if item.PersonaName != "" {
+		b.WriteString(dimStyle.Render(" · " + safeWorkerText(item.PersonaName)))
+	}
 	b.WriteByte('\n')
 	if item.Activity != "" && len(item.Tools) == 0 {
 		b.WriteByte('\n')
@@ -32,6 +35,34 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int) string {
 		b.WriteByte('\n')
 		b.WriteString(formatWorkerPayload(item.Activity, width))
 		b.WriteByte('\n')
+	}
+	if len(item.Thread) > 0 {
+		b.WriteString("\n")
+		b.WriteString(sectionStyle.Render("Worker thread"))
+		b.WriteByte('\n')
+		for _, turn := range item.Thread {
+			label := turn.Role
+			if label == "user" {
+				label = "Request"
+			}
+			if label == "assistant" {
+				label = "Worker"
+			}
+			if label == "tool" {
+				label = "Tool result"
+			}
+			b.WriteString(sectionStyle.Render(label))
+			b.WriteByte('\n')
+			if turn.Content != "" {
+				b.WriteString(wrapWorkerPlain(turn.Content, width))
+				b.WriteByte('\n')
+			}
+			for _, call := range turn.ToolCalls {
+				b.WriteString(wrapWorkerPlain(call.Name+" "+call.Arguments, width))
+				b.WriteByte('\n')
+			}
+			b.WriteByte('\n')
+		}
 	}
 	if len(item.Tools) > 0 {
 		b.WriteString("\n")

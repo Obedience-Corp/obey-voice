@@ -124,7 +124,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 
 	case tea.MouseMsg:
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.workCueHit(msg.X, msg.Y) {
-			id := m.singleActiveWorkerID()
+			id := m.workerShortcutID()
 			return m, func() tea.Msg { return openWorkerMsg{jobID: id} }
 		}
 		// The viewport already implements wheel acceleration and bounds. Route
@@ -178,7 +178,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			m.refreshActivity()
 			return m, nil
 		case "ctrl+w":
-			id := m.singleActiveWorkerID()
+			id := m.workerShortcutID()
 			return m, func() tea.Msg { return openWorkerMsg{jobID: id} }
 		case "ctrl+k":
 			m.toggleShowThink()

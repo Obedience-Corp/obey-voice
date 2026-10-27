@@ -23,6 +23,9 @@ type responseVoices struct{ primary, fallback tts.Provider }
 type responseVoicesKey struct{}
 
 func (p *Pipeline) admitInput(ctx context.Context, input string, background bool, metrics *turnMetrics) (context.Context, ResponseAdmission, error) {
+	if err := p.commitWorkerReplies(); err != nil {
+		return ctx, ResponseAdmission{}, err
+	}
 	admitted := ResponseAdmission{Request: input}
 	if p.AdmitInput != nil {
 		var err error

@@ -148,14 +148,15 @@ type conversationModel struct {
 	// panel open/close) shrinks height without adjusting YOffset, which
 	// falsely reports "scrolled up" and freezes auto-scroll for the rest of
 	// the session.
-	followChat     bool
-	followActivity bool
-	startedAt      time.Time
-	sessionID      string
-	capture        *capture.Session
-	inputDevice    string
-	outputDevice   string
-	voiceFailures  int
+	followChat        bool
+	followActivity    bool
+	startedAt         time.Time
+	sessionID         string
+	workerRepliesSeen map[string]bool
+	capture           *capture.Session
+	inputDevice       string
+	outputDevice      string
+	voiceFailures     int
 	// noticeEpoch retires admission manual-retry notices across clear/new-session/
 	// shutdown boundaries. Late turn callbacks carrying older epochs cannot
 	// re-emit retired guidance.

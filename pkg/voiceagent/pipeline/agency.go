@@ -44,6 +44,9 @@ type Agency struct {
 
 	mu             sync.Mutex
 	pending        []pendingDelivery
+	workerReplies  []workerReply
+	workerThreads  map[string][]brain.Turn
+	workerOrigins  map[string]workerOrigin
 	workerInitErr  error
 	workMu         sync.RWMutex
 	coordinator    *work.Coordinator
@@ -62,8 +65,10 @@ type Agency struct {
 // playback or a foreground turn can delay delivery, and a later completion
 // must not overwrite an earlier one.
 type pendingDelivery struct {
-	JobID string
-	Text  string
+	JobID        string
+	Text         string
+	origin       *workerOrigin
+	releaseVoice func()
 }
 
 // NewAgency constructs the spawn coordinator. worker may be nil when construction
@@ -81,6 +86,8 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		ack:            ack,
 		planFactory:    brain.NewPlannedWorker,
 		work:           workfold.New(),
+		workerThreads:  make(map[string][]brain.Turn),
+		workerOrigins:  make(map[string]workerOrigin),
 		workerInitErr:  workerErr,
 		jobScopes:      make(map[string]work.WorkScope),
 		managed:        make(map[*delegation.Runtime]struct{}),
@@ -202,10 +209,22 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
 	}
+	origin := workerOrigin{Scope: a.pipeline.ConversationScope()}
+	if metrics != nil {
+		origin.Envelope = metrics.response
+	}
+	origin.Envelope.ResponseID = newWorkID()
+	origin.Voices.primary, origin.Voices.fallback = a.pipeline.responseTTS(ctx)
+	origin.releaseVoice = a.pipeline.RetainTTS(origin.Voices.primary, origin.Voices.fallback)
 	_, err := a.jobs.Start(ctx, job.Spec{
 		RuntimeBudget: runtimeBudget,
 		ID:            jobID,
-		OnAccepted:    func(id string) { a.emitRouteDecision(d, "accepted", id, "") },
+		OnAccepted: func(id string) {
+			a.mu.Lock()
+			a.workerOrigins[id] = origin
+			a.mu.Unlock()
+			a.emitRouteDecision(d, "accepted", id, "")
+		},
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
@@ -215,6 +234,7 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		Run:      run,
 	})
 	if err != nil {
+		origin.releaseVoice()
 		a.emitRouteDecision(d, "rejected", jobID, err.Error())
 		if c, _ := a.workAuthority(); c != nil && key.JobID != "" {
 			_, _ = c.Publish(key, work.Outcome{Scope: key.Scope, JobID: key.JobID, Status: work.OutcomeFailed, Text: truncateJobTask(err.Error()), Termination: "known"})
@@ -298,7 +318,14 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		opts.WorkerBudget = budget
 		opts.OnWorkerUsage = a.workerUsageHook(job.IDFromContext(ctx), budget)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
-		return worker.ThinkFull(ctx, brief, opts)
+		id := job.IDFromContext(ctx)
+		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief}})
+		start, end := opts.OnToolStart, opts.OnToolEnd
+		opts.OnToolStart = func(call brain.ToolCall) { a.captureWorkerThread(id, worker); start(call) }
+		opts.OnToolEnd = func(result brain.ToolResult) { end(result); a.captureWorkerThread(id, worker) }
+		result, err := worker.ThinkFull(ctx, brief, opts)
+		a.captureWorkerThread(id, worker)
+		return result, err
 	}
 }
 
@@ -559,6 +586,12 @@ func (a *Agency) speakAck(ctx context.Context, turn *turnConductor, metrics *tur
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {
+	a.mu.Lock()
+	releaseVoice := a.workerOrigins[id].releaseVoice
+	a.mu.Unlock()
+	if releaseVoice != nil {
+		defer releaseVoice()
+	}
 	c, key, accepted := a.callbackKey(id)
 	if !accepted {
 		return
@@ -609,7 +642,8 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	switch state {
 	case job.StateDone:
 		a.enqueueSummary(id, a.cleanSummary(result))
-		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed})
+		origin := a.queueWorkerReply(id, result)
+		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed, Envelope: &origin.Envelope, Scope: origin.Scope})
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
@@ -661,7 +695,12 @@ func (a *Agency) enqueueSummary(id, text string) {
 		text = "That finished with nothing to report."
 	}
 	a.mu.Lock()
-	a.pending = append(a.pending, pendingDelivery{JobID: id, Text: text})
+	next := pendingDelivery{JobID: id, Text: text}
+	if origin, ok := a.workerOrigins[id]; ok {
+		next.origin = &origin
+		next.releaseVoice = a.pipeline.RetainTTS(origin.Voices.primary, origin.Voices.fallback)
+	}
+	a.pending = append(a.pending, next)
 	a.mu.Unlock()
 }
 
@@ -693,7 +732,23 @@ func (a *Agency) tryFlushPending() {
 		next := a.pending[0]
 		a.pending = a.pending[1:]
 		a.mu.Unlock()
-		if err := a.pipeline.speakStandalone(context.Background(), nil, nil, next.Text); err != nil {
+		ctx := context.Background()
+		var metrics *turnMetrics
+		if origin := next.origin; origin != nil {
+			if origin.Scope.Valid() && (origin.Scope != a.pipeline.ConversationScope() || a.pipeline.ConversationRetired()) {
+				next.releaseVoice()
+				continue
+			}
+			ctx = context.WithValue(events.WithResponse(ctx, origin.Envelope), responseVoicesKey{}, origin.Voices)
+			metrics = newTurnMetrics()
+			metrics.response = origin.Envelope
+			metrics.ttsEngine = ttsIdentityFor(origin.Voices.primary)
+		}
+		err := a.pipeline.speakStandalone(ctx, nil, metrics, next.Text)
+		if next.releaseVoice != nil {
+			next.releaseVoice()
+		}
+		if err != nil {
 			a.pipeline.emit(events.Info{Message: fmt.Sprintf("job %s summary speech failed: %v", next.JobID, err)})
 		}
 	}

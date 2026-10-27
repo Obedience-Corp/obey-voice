@@ -604,10 +604,12 @@ func (e JobStarted) eventType() string { return "job_started" }
 
 // JobFinished signals a worker job completed successfully.
 type JobFinished struct {
-	ID      string
-	Task    string
-	Summary string
-	Elapsed time.Duration
+	Envelope *ResponseEnvelope
+	Scope    work.WorkScope
+	ID       string
+	Task     string
+	Summary  string
+	Elapsed  time.Duration
 }
 
 func (e JobFinished) eventType() string { return "job_finished" }
