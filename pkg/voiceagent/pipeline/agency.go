@@ -44,6 +44,9 @@ type Agency struct {
 
 	mu             sync.Mutex
 	pending        []pendingDelivery
+	workerReplies  []workerReply
+	workerThreads  map[string][]brain.Turn
+	workerOrigins  map[string]workerOrigin
 	workerInitErr  error
 	workMu         sync.RWMutex
 	coordinator    *work.Coordinator
@@ -81,6 +84,8 @@ func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.
 		ack:            ack,
 		planFactory:    brain.NewPlannedWorker,
 		work:           workfold.New(),
+		workerThreads:  make(map[string][]brain.Turn),
+		workerOrigins:  make(map[string]workerOrigin),
 		workerInitErr:  workerErr,
 		jobScopes:      make(map[string]work.WorkScope),
 		managed:        make(map[*delegation.Runtime]struct{}),
@@ -202,10 +207,20 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
 	}
+	origin := workerOrigin{Scope: a.pipeline.ConversationScope()}
+	if metrics != nil {
+		origin.Envelope = metrics.response
+	}
+	origin.Envelope.ResponseID = newWorkID()
 	_, err := a.jobs.Start(ctx, job.Spec{
 		RuntimeBudget: runtimeBudget,
 		ID:            jobID,
-		OnAccepted:    func(id string) { a.emitRouteDecision(d, "accepted", id, "") },
+		OnAccepted: func(id string) {
+			a.mu.Lock()
+			a.workerOrigins[id] = origin
+			a.mu.Unlock()
+			a.emitRouteDecision(d, "accepted", id, "")
+		},
 		// Task is the label the user hears and sees; the brief is what the
 		// worker reads. They were the same string, which is why the worker
 		// only ever received one utterance.
@@ -298,7 +313,14 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		opts.WorkerBudget = budget
 		opts.OnWorkerUsage = a.workerUsageHook(job.IDFromContext(ctx), budget)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
-		return worker.ThinkFull(ctx, brief, opts)
+		id := job.IDFromContext(ctx)
+		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief}})
+		start, end := opts.OnToolStart, opts.OnToolEnd
+		opts.OnToolStart = func(call brain.ToolCall) { a.captureWorkerThread(id, worker); start(call) }
+		opts.OnToolEnd = func(result brain.ToolResult) { end(result); a.captureWorkerThread(id, worker) }
+		result, err := worker.ThinkFull(ctx, brief, opts)
+		a.captureWorkerThread(id, worker)
+		return result, err
 	}
 }
 
@@ -609,7 +631,8 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	switch state {
 	case job.StateDone:
 		a.enqueueSummary(id, a.cleanSummary(result))
-		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed})
+		origin := a.queueWorkerReply(id, result)
+		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed, Envelope: &origin.Envelope, Scope: origin.Scope})
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {

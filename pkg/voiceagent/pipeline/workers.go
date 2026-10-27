@@ -19,6 +19,8 @@ type WorkerInfo struct {
 	Started, Ended                     time.Time
 	Elapsed                            time.Duration
 	Tools                              []workfold.Call
+	Thread                             []brain.Turn
+	PersonaID, PersonaName             string
 }
 
 func (i WorkerInfo) Active() bool {
@@ -108,6 +110,14 @@ func (p *Pipeline) Workers() []WorkerInfo {
 				info.Termination = "confirmed (never started)"
 			}
 		}
+		a.mu.Lock()
+		info.Thread = copyWorkerThread(a.workerThreads[item.ID])
+		origin := a.workerOrigins[item.ID]
+		info.PersonaID, info.PersonaName = origin.Envelope.PersonaID, origin.Envelope.DisplayName
+		a.mu.Unlock()
+		if origin.Scope.Valid() && (origin.Scope != p.ConversationScope() || p.ConversationRetired()) {
+			continue
+		}
 		byID[item.ID] = info
 	}
 	a.workMu.RLock()
@@ -133,6 +143,13 @@ func (p *Pipeline) Workers() []WorkerInfo {
 	for _, item := range canonical.Jobs {
 		info := byID[item.Key.JobID]
 		info.ID, info.Task, info.Provider, info.Model = item.Key.JobID, item.Task, item.Provider, item.Model
+		// Terminal jobs no longer have a live callback scope, but their
+		// messages still belong to this conversation's canonical job.
+		a.mu.Lock()
+		info.Thread = copyWorkerThread(a.workerThreads[info.ID])
+		origin := a.workerOrigins[info.ID]
+		info.PersonaID, info.PersonaName = origin.Envelope.PersonaID, origin.Envelope.DisplayName
+		a.mu.Unlock()
 		if info.State != "stopping" {
 			info.State = string(item.State)
 		}

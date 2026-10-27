@@ -83,8 +83,12 @@ func (m *workersModel) refreshDetail() {
 			continue
 		}
 		offset := m.detail.YOffset
+		follow := len(item.Thread) > 0 && m.detail.AtBottom()
 		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width))
 		m.detail.SetYOffset(offset)
+		if follow {
+			m.detail.GotoBottom()
+		}
 		return
 	}
 	if m.detailID != "" {
