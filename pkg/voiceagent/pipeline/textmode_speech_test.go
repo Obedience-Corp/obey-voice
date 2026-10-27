@@ -5,9 +5,55 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
+
+func TestUnicodeReplySurvivesTranscriptAndSpeech(t *testing.T) {
+	const reply = "Oh, then the best demo is grounded in that workspace: ask, “What should I tackle next?” One agent checks festival priorities, another investigates the Doctor compatibility break in OB, and a third weighs the ready queue—then Samantha pulls their findings into one clear recommendation."
+	for _, typed := range []bool{false, true} {
+		name := "voice"
+		if typed {
+			name = "typed"
+		}
+		t.Run(name, func(t *testing.T) {
+			bus := events.NewBus()
+			var final string
+			events.Subscribe(bus, func(e events.ResponseReady) { final = e.Response })
+			voice := &fakeTTS{}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			var chunks []string
+			for _, r := range reply {
+				chunks = append(chunks, string(r))
+			}
+			p := &Pipeline{STT: &fakeSTT{text: "hello"}, Brain: &fakeBrain{chunks: chunks}, TTS: voice, Player: player, Events: bus}
+			if typed {
+				if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := p.RunTurn(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if final != reply {
+				t.Fatalf("transcript = %q, want %q", final, reply)
+			}
+			for _, text := range voice.Texts() {
+				if !utf8.ValidString(text) || strings.ContainsRune(text, '\uFFFD') {
+					t.Fatalf("malformed TTS input: %q", text)
+				}
+			}
+			// Qwen applies this preparation at its provider boundary. The
+			// quote must disappear there without losing the question mark.
+			got := textclean.PrepareSpokenText(strings.Join(voice.Texts(), " "))
+			if want := textclean.PrepareSpokenText(reply); got != want {
+				t.Fatalf("speech = %q, want %q", got, want)
+			}
+		})
+	}
+}
 
 // speechFor runs one turn and returns everything TTS was asked to say, joined
 // the way a listener would hear it. runner picks the path under test.

@@ -1,9 +1,47 @@
 package brain
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
+
+func TestChunkSentencesRawPreservesUnicode(t *testing.T) {
+	for _, tc := range []struct {
+		name, text string
+		want       []string
+	}{
+		{"curly quote", "Ask, “What should I tackle next?” One agent checks priorities.", []string{"Ask, “What should I tackle next?”", "One agent checks priorities."}},
+		{"accent and dash", "Café—déjà vu. Next thought.", []string{"Café—déjà vu.", "Next thought."}},
+		{"emoji", "Ready 🎉! Next thought.", []string{"Ready 🎉!", "Next thought."}},
+		{"non Latin", "「準備好了?」 Next thought.", []string{"「準備好了?」", "Next thought."}},
+		{"glued quote", "Ask “Ready?”Next thought.", []string{"Ask “Ready?”", "Next thought."}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Exercise every transport boundary, including within a UTF-8 rune.
+			for split := 0; split <= len(tc.text); split++ {
+				t.Run(fmt.Sprint(split), func(t *testing.T) {
+					in := make(chan string, 2)
+					in <- tc.text[:split]
+					in <- tc.text[split:]
+					close(in)
+					var got []string
+					for segment := range ChunkSentencesRaw(in) {
+						if !utf8.ValidString(segment) {
+							t.Fatalf("malformed segment: %q", segment)
+						}
+						got = append(got, segment)
+					}
+					if !slices.Equal(got, tc.want) {
+						t.Fatalf("segments = %q, want %q", got, tc.want)
+					}
+				})
+			}
+		})
+	}
+}
 
 func TestChunkSentencesKeepsInitialismsIntact(t *testing.T) {
 	tests := []struct {
