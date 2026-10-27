@@ -651,9 +651,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			}
 			if result.Err != nil && !interrupted {
 				if result.Recovered {
-					// The brain already streamed a spoken recovery reply
-					// through Chunks; let the turn drain and complete degraded
-					// while the failure lands in the activity feed.
+					// Drain genuine partial speech, complete degraded, and
+					// report the failure separately as text.
 					metrics.degraded = true
 					p.emit(events.Error{Stage: "brain", Message: result.Err.Error()})
 					logDegradedTurn("brain", result.Err)
@@ -832,15 +831,15 @@ func (p *Pipeline) collectTextStream(ctx context.Context, stream *brain.Stream, 
 		metrics.route.Tier, metrics.route.ReasonCode = res.RouteTier, res.RouteReasonCode
 		if res.Err != nil {
 			if res.Recovered {
-				// The streamed text already ends with the brain's recovery
-				// reply; keep it and surface the failure as activity detail.
+				// Preserve genuine partial text and report the failure
+				// separately; no recovery sentence is synthesized.
 				metrics.degraded = true
 				p.emit(events.Error{Stage: "brain", Message: res.Err.Error()})
 				logDegradedTurn("brain", res.Err)
 				return strings.TrimSpace(b.String()), res.Route, nil
 			}
 			// Return any partial text so the caller's recovery path can keep
-			// it in the transcript alongside the recovery reply.
+			// it in the transcript alongside a separate error notice.
 			return strings.TrimSpace(b.String()), res.Route, mapIdleDeadline(ctx, res.Err)
 		}
 		return strings.TrimSpace(b.String()), res.Route, nil

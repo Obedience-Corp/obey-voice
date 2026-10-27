@@ -707,11 +707,6 @@ func normalizePromptHistory(turns []Turn) []Turn {
 // line is never at the mercy of whatever the cleaning rules become.
 const fallbackResponse = "Hmm, I lost my train of thought for a second. What were you saying?"
 
-// RecoveryReply is spoken when a turn dies on a hard brain or tool error, so
-// the user always hears the loop close instead of silence. Shared with the
-// pipeline's degraded-turn path; the error detail goes to the activity feed.
-const RecoveryReply = "I hit an error while working on that. Want me to try a simpler approach?"
-
 // Vocal fillers fall into two tiers.
 //
 // voicedFillers reach TTS untouched. Deleting them threw away the beat of

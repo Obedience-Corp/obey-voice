@@ -283,7 +283,7 @@ func TestThinkStreamThinkingOnlyEmptyDoesNotFallback(t *testing.T) {
 	if !strings.Contains(thinking, "The user said hi") {
 		t.Fatalf("thinking = %q, want the field", thinking)
 	}
-	if strings.Contains(chunks, fallbackResponse) || strings.Contains(chunks, RecoveryReply) {
+	if strings.Contains(chunks, fallbackResponse) || strings.Contains(chunks, oldRecoveryReply) {
 		t.Fatalf("thinking-only empty streamed fallback %q", chunks)
 	}
 	if chunks != "" {
@@ -1764,10 +1764,9 @@ func ollamaErrorStub(t *testing.T) *api.Client {
 	return api.NewClient(base, http.DefaultClient)
 }
 
-func TestThinkStreamChatErrorStreamsRecoveryReply(t *testing.T) {
-	// The recovery invariant (WI-c8884d P1): a hard chat error must not end
-	// the stream silently — the recovery line streams to the caller, lands in
-	// history for the next turn, and the error surfaces as Recovered detail.
+func TestThinkStreamChatErrorReturnsDetailsWithoutSpeech(t *testing.T) {
+	// A transport failure reports details without synthesizing an assistant
+	// answer or polluting the next turn's history.
 	o := &OllamaBrain{client: ollamaErrorStub(t), model: "m", cfg: &config.Config{MaxHistory: 10}}
 
 	stream, err := o.ThinkStream(context.Background(), "do something hard", StreamOptions{})
@@ -1782,12 +1781,12 @@ func TestThinkStreamChatErrorStreamsRecoveryReply(t *testing.T) {
 	if res.Err == nil || !res.Recovered {
 		t.Fatalf("stream done = %+v, want a Recovered error result", res)
 	}
-	if joined := strings.Join(got, ""); !strings.Contains(joined, RecoveryReply) {
-		t.Fatalf("streamed chunks = %q, want recovery reply", joined)
+	if joined := strings.Join(got, ""); joined != "" {
+		t.Fatalf("streamed chunks = %q, want no synthetic speech", joined)
 	}
 	hist := o.History()
-	if len(hist) == 0 || hist[len(hist)-1].Content != RecoveryReply {
-		t.Fatalf("history tail = %+v, want assistant recovery reply recorded", hist)
+	if len(hist) != 1 || hist[0].Role != "user" {
+		t.Fatalf("history tail = %+v, want only the user request recorded", hist)
 	}
 }
 
@@ -1843,8 +1842,8 @@ func TestThinkStreamChatErrorKeepsPartialTextInHistory(t *testing.T) {
 	}
 	hist := o.History()
 	tail := hist[len(hist)-1]
-	if !strings.Contains(tail.Content, "Let me check that.") || !strings.Contains(tail.Content, RecoveryReply) {
-		t.Fatalf("history tail = %q, want partial text plus recovery reply", tail.Content)
+	if tail.Content != "Let me check that." {
+		t.Fatalf("history tail = %q, want only partial text", tail.Content)
 	}
 }
 

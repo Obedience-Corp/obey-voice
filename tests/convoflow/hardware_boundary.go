@@ -225,19 +225,19 @@ func validateBoundaryPhase(r *boundaryPhaseReport, expected string) error {
 		return errors.New("acoustic boundary: missing or duplicate response/terminal metrics")
 	}
 	response, m := r.Responses[0], r.Metrics[0]
-	if response.Interrupted || m.Interrupted || m.Outcome != "completed" || strings.TrimSpace(response.Response) == "" {
+	if response.Interrupted || m.Interrupted || m.Outcome != "completed" || (r.Name != "failure" && strings.TrimSpace(response.Response) == "") {
 		return errors.New("acoustic boundary: incomplete response")
 	}
 	if r.Name == "failure" {
-		if !response.Degraded || !m.Degraded || response.Response != brain.RecoveryReply || len(r.Errors) != 1 || r.Errors[0].Stage != "brain" || !strings.Contains(r.Errors[0].Message, acousticProviderFailure) {
+		if !response.Degraded || !m.Degraded || response.Response != "" || len(r.Errors) != 1 || r.Errors[0].Stage != "brain" || !strings.Contains(r.Errors[0].Message, acousticProviderFailure) {
 			return errors.New("acoustic boundary: provider failure not publicly reported as one degraded recovery")
 		}
 	} else if response.Degraded || m.Degraded || len(r.Errors) != 0 {
 		return errors.New("acoustic boundary: unexpected degradation/error")
 	}
-	if r.Name == "muted" {
+	if r.Name == "muted" || r.Name == "failure" {
 		if m.AudibleSink != "none" || r.PlaybackStarts != 0 || r.PlaybackCompletions != 0 || a.NonzeroReferenceSamples != 0 {
-			return errors.New("acoustic boundary: muted response rendered or claimed audible delivery")
+			return errors.New("acoustic boundary: silent response rendered or claimed audible delivery")
 		}
 		return nil
 	}

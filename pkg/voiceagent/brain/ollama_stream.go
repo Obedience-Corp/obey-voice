@@ -92,13 +92,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = nil
 			}
 			if budgetErr := o.messagesBudgetError(messages, tools); budgetErr != nil {
-				if ctx.Err() != nil || sendChunk(ctx, out, RecoveryReply) != nil {
-					done <- StreamResult{Err: budgetErr}
-					return
-				}
-				o.appendMessage(api.Message{Role: "assistant", Content: RecoveryReply}, opts.Identity)
-				o.trimHistory()
-				done <- StreamResult{Err: budgetErr, Recovered: true}
+				done <- StreamResult{Err: budgetErr, Recovered: ctx.Err() == nil}
 				return
 			}
 			req := o.newChatRequest(messages, tools)
@@ -255,13 +249,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			if err == nil && gate.repeat {
 				if repetitionRetry {
-					if ctx.Err() != nil || forward(repetitionFallback) != nil {
-						done <- StreamResult{Err: ctx.Err()}
-						return
-					}
-					o.appendMessage(api.Message{Role: "assistant", Content: repetitionFallback}, opts.Identity)
-					o.trimHistory()
-					done <- StreamResult{Err: fmt.Errorf("response repeated after one retry"), Recovered: true}
+					done <- StreamResult{Err: fmt.Errorf("response repeated after one retry"), Recovered: ctx.Err() == nil}
 					return
 				}
 				decision, checkErr := o.repetitionIntent(ctx, latestMessage, opts)
@@ -282,34 +270,17 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				err = forward(gate.release())
 			}
 			if err != nil {
-				err = fmt.Errorf("ollama stream: %w", err)
-				// A dead context means shutdown or barge-in — no one is
-				// listening for a recovery line. Otherwise close the loop out
-				// loud: stream the recovery reply, record it so the next turn
-				// has an assistant message, and surface err as detail only.
-				if ctx.Err() != nil || sendChunk(ctx, out, RecoveryReply) != nil {
-					done <- StreamResult{Err: err}
-					return
-				}
-				// Keep any partial streamed text: the user already saw/heard
-				// it, so the next turn's context must include it too.
-				reply := RecoveryReply
+				// Preserve only genuine text already sent to the user. Report
+				// failure separately, never as a synthetic assistant utterance.
 				if partial := strings.TrimSpace(stripReplyConventions(o.cfg.AgentName, emitted.String())); partial != "" {
-					reply = partial + "\n\n" + RecoveryReply
+					o.appendMessage(api.Message{Role: "assistant", Content: partial}, opts.Identity)
+					o.trimHistory()
 				}
-				o.appendMessage(api.Message{Role: "assistant", Content: reply}, opts.Identity)
-				o.trimHistory()
-				done <- StreamResult{Err: err, Recovered: true}
+				done <- StreamResult{Err: fmt.Errorf("ollama stream: %w", err), Recovered: ctx.Err() == nil}
 				return
 			}
 
 			if (continuation != "" || repetitionRetry || routedChat) && len(toolCalls) > 0 {
-				if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
-					done <- StreamResult{Err: err}
-					return
-				}
-				o.appendMessage(api.Message{Role: "assistant", Content: continuityFallback}, opts.Identity)
-				o.trimHistory()
 				done <- StreamResult{Err: fmt.Errorf("response recovery returned tool calls"), Recovered: true}
 				return
 			}
@@ -418,11 +389,6 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				o.appendMessage(api.Message{Role: "assistant", Content: "[incomplete response] " + recorded}, opts.Identity)
 				if recoveryAttempts >= min(o.cfg.ContinuityRecoveryMax, 2) {
-					if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
-						done <- StreamResult{Err: err}
-						return
-					}
-					o.appendMessage(api.Message{Role: "assistant", Content: continuityFallback}, opts.Identity)
 					o.trimHistory()
 					done <- StreamResult{Integrity: integrity, Err: fmt.Errorf("continuation attempts exhausted"), Recovered: true}
 					return

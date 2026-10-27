@@ -358,14 +358,16 @@ func TestPrepareFailureKeepsHistoryAndStopsIncomingRequest(t *testing.T) {
 	b := &continuityCompactBrain{compactBrain: compactBrain{history: compactHistory(), fullErr: errors.New("summary unavailable")}}
 	before := append([]brain.Turn(nil), b.history...)
 	var ready events.ResponseReady
+	var report events.Error
 	bus := events.NewBus()
 	events.Subscribe(bus, func(e events.ResponseReady) { ready = e })
+	events.Subscribe(bus, func(e events.Error) { report = e })
 	p := &Pipeline{Brain: b, CompactPrompt: "SUMMARIZE", Events: bus, AutoCompactAfter: 100}
 	if err := p.RunTurnTextMode(t.Context(), "follow up"); err != nil {
 		t.Fatal(err)
 	}
-	if b.streamCalls != 0 || !ready.Degraded || ready.Response == "" {
-		t.Fatalf("silent compact failure: streams=%d response=%+v", b.streamCalls, ready)
+	if b.streamCalls != 0 || !ready.Degraded || ready.Response != "" || !strings.Contains(report.Message, "summary unavailable") {
+		t.Fatalf("incorrect compact failure: streams=%d response=%+v", b.streamCalls, ready)
 	}
 	assertTurns(t, b.history, before, "failed prepare history")
 }

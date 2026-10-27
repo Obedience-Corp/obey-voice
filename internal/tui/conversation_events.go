@@ -163,8 +163,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	case events.GeneratingVoice:
 		m.appendActivity("voice", "synthesizing", 0)
 		m.setVoiceMode(anim.ModeSynthesizing)
-		// A degraded turn synthesizes its recovery line right after the Error
-		// event; the error status outranks voice-progress chatter (F1.2).
+		// An error status outranks any remaining voice-progress events.
 		if !m.statusErr {
 			m.setStatus("Synthesizing voice", false)
 		}
@@ -197,8 +196,8 @@ func (m *conversationModel) handleEvent(e events.Event) {
 			label = "audible_tx done"
 		}
 		m.appendActivity("output", label, e.Elapsed)
-		// A degraded turn speaks its recovery line after the Error event; the
-		// error status must survive that playback finishing. Still leave
+		// A partial reply may finish playing after an error; the error status
+		// must survive that playback finishing. Still leave
 		// ModeSpeaking so the EQ/label does not stay "Speaking" forever.
 		if m.statusErr {
 			m.setVoiceMode(anim.ModeError)
@@ -249,7 +248,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		if spoken != "" {
 			m.rememberAssistant(spoken)
 			m.appendAgentTurn(chatItem{name: name, think: thought, spoken: spoken})
-		} else if e.Interrupted {
+		} else if e.Interrupted || e.Degraded {
 			m.refreshContent()
 			m.applyFollow()
 		} else if thought != "" {
@@ -322,8 +321,11 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		if e.Stage != "" {
 			msg = "[" + e.Stage + "] " + e.Message
 		}
+		notice := "Error: " + msg
+		m.appendTranscript(errorStyle.Render("  " + notice))
+		m.items[len(m.items)-1].notice = notice
 		m.setVoiceMode(anim.ModeError)
-		m.setStatus("Error: "+msg, true)
+		m.setStatus(notice, true)
 
 	case events.Info:
 		m.appendActivity("info", e.Message, 0)

@@ -2,9 +2,16 @@
 
 [Back to README](../README.md)
 
-A hard tool or brain failure always ends with a spoken recovery reply ("I hit an
-error while working on that…") while the error detail goes to the activity feed;
-the turn is reported as `completed (degraded)` rather than dropped silently.
+Runtime errors are text-only. Chat shows an **Error** notice with the failing
+stage and the actual error message, and Activity keeps the same details. The
+notice stays in the conversation after the status changes. Desktop notices can
+be selected and copied.
+
+Failed turns preserve any reply already generated, but do not add an apology,
+synthesize an error announcement, or save a fabricated assistant answer. A turn
+can still be marked `completed (degraded)` so the conversation remains usable.
+Narration failures and automatic worker failure/budget notifications are also
+text-only; asking for job status still produces a normal spoken response.
 
 For Ollama, Activity records per-request `prefill N tok · gen M tok`. Prefill
 tracks the size of your new turn, not the whole transcript, and is bounded by

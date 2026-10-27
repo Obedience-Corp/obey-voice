@@ -109,7 +109,7 @@ func TestLiveRoutingPreambleIsNeverSpokenOnHandoffOrFailure(t *testing.T) {
 				t.Fatalf("planning spoken: %q", text)
 			}
 			if ending == "error" || ending == "incomplete" {
-				if text != RecoveryReply || result.Err == nil {
+				if text != "" || result.Err == nil {
 					t.Fatalf("missing recovery: %q %+v", text, result)
 				}
 			} else if text != "" || result.Route != ending {

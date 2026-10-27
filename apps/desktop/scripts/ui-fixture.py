@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 parser = argparse.ArgumentParser()
 parser.add_argument('--fresh', action='store_true', help='Start without config.yaml or setup progress')
 parser.add_argument('--voice-preview', action='store_true', help='Serve test tones for persona previews; voice broken fails, slow delays')
+parser.add_argument("--brain-error", action="store_true", help="Return a provider error for requests containing trigger failure")
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 fixture_root = pathlib.Path(tempfile.mkdtemp(prefix='obey-desktop-ui-'))
@@ -29,9 +30,9 @@ config_dir.mkdir(parents=True)
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
-    def respond(self, value):
+    def respond(self, value, status=200):
         body = json.dumps(value).encode() + b'\n'
-        self.send_response(200)
+        self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
@@ -58,6 +59,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(pcm)
             except (BrokenPipeError, ConnectionResetError):
                 pass
+            return
+        if args.brain_error and not request.get('format') and any(
+            m.get('role') == 'user' and 'trigger failure' in m.get('content', '').lower()
+            for m in request.get('messages', [])
+        ):
+            self.respond({'error': 'Fixture provider unavailable (503)'}, status=503)
             return
         content = 'The native desktop conversation is working.'
         if request.get('format'):

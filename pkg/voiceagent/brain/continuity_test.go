@@ -130,7 +130,7 @@ func TestContinuityRecoveryCompletesOrExplicitlyDegrades(t *testing.T) {
 				t.Fatalf("recovery announcement leaked into speech: %q", spoken)
 			}
 			if exhaust {
-				if chats.Load() != 3 || !result.Recovered || result.Err == nil || !strings.Contains(spoken, continuityFallback) {
+				if chats.Load() != 3 || !result.Recovered || result.Err == nil || strings.Contains(spoken, oldContinuityFallback) {
 					t.Fatalf("unbounded or silent failure: requests=%d result=%+v text=%q", chats.Load(), result, spoken)
 				}
 			} else if result.Err != nil || !strings.Contains(spoken, "context continuity.") || chats.Load() != 2 {
@@ -181,8 +181,8 @@ func TestUnsendablePromptNeverReachesServer(t *testing.T) {
 	}
 	spoken, _ := drainStream(t, stream)
 	res := <-stream.Done
-	if requests.Load() != 0 || !res.Recovered || res.Err == nil || !strings.Contains(spoken, RecoveryReply) {
-		t.Fatalf("unsafe send or silent error: %+v %q", res, spoken)
+	if requests.Load() != 0 || !res.Recovered || res.Err == nil || spoken != "" {
+		t.Fatalf("unsafe send or missing error: %+v %q", res, spoken)
 	}
 }
 
@@ -248,7 +248,7 @@ func TestCancelDuringContinuationCompactStopsWithoutFallback(t *testing.T) {
 	go func() { <-started; cancel() }()
 	spoken, _ := drainStream(t, stream)
 	result := <-stream.Done
-	if result.Err == nil || strings.Contains(spoken, continuityFallback) || strings.Contains(spoken, RecoveryReply) {
+	if result.Err == nil || strings.Contains(spoken, oldContinuityFallback) || strings.Contains(spoken, oldRecoveryReply) {
 		t.Fatalf("spoke after cancellation: %+v %q", result, spoken)
 	}
 }

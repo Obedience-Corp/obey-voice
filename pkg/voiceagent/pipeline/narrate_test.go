@@ -170,7 +170,7 @@ func TestStopReadingEndsNarrationMode(t *testing.T) {
 	}
 }
 
-func TestUnreadableNarrateSourceSpeaksError(t *testing.T) {
+func TestUnreadableNarrateSourceReportsErrorWithoutSpeech(t *testing.T) {
 	provider := &progressiveFakeTTS{}
 	player := newFakePlayer(time.Millisecond)
 	defer player.Close()
@@ -179,6 +179,8 @@ func TestUnreadableNarrateSourceSpeaksError(t *testing.T) {
 	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
 	agency := NewAgency(p, jobs, nil, &config.Config{}, nil)
 	agency.Wire()
+	var report events.Error
+	events.Subscribe(p.Events, func(e events.Error) { report = e })
 
 	ctx := context.Background()
 	metrics := newTurnMetrics()
@@ -189,12 +191,11 @@ func TestUnreadableNarrateSourceSpeaksError(t *testing.T) {
 		Source:     "test",
 	})
 
-	waitForTTS(t, provider, 1, 2*time.Second)
 	if agency.narrator.IsActive() {
 		t.Fatal("unreadable source left narration mode active")
 	}
-	if !strings.Contains(strings.ToLower(provider.Calls()[0]), "could not find") {
-		t.Fatalf("spoken error = %q", provider.Calls()[0])
+	if len(provider.Calls()) != 0 || !strings.Contains(report.Message, "No narration source") {
+		t.Fatalf("speech=%v report=%+v", provider.Calls(), report)
 	}
 }
 

@@ -12,8 +12,6 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-const continuityFallback = "I lost my train of thought — can you repeat the last part?"
-
 // AddContinuityNote is the projection boundary shared with worker briefs. Call
 // only while owning the provider conversation (as with History/LoadHistory).
 func (o *OllamaBrain) AddContinuityNote(raw string, p continuity.Provenance) string {
