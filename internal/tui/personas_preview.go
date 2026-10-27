@@ -15,7 +15,7 @@ import (
 // on a copy so previewing never changes the form, defaults, or active session.
 func personaPreviewConfig(base *config.Config, selection persona.TTS) (config.Config, tts.Voice, error) {
 	if base == nil {
-		return config.Config{}, tts.Voice{}, fmt.Errorf("No voice to preview")
+		return config.Config{}, tts.Voice{}, fmt.Errorf("no voice to preview")
 	}
 	if err := persona.ValidateTier(selection.Tier); err != nil {
 		return config.Config{}, tts.Voice{}, err
@@ -25,7 +25,7 @@ func personaPreviewConfig(base *config.Config, selection persona.TTS) (config.Co
 	cfg.TTSProvider = activeTTSProvider(&cfg)
 	voice := tts.Voice{Name: config.TTSVoiceFor(&cfg, cfg.TTSProvider)}
 	if voice.Name == "" {
-		return cfg, voice, fmt.Errorf("No voice to preview")
+		return cfg, voice, fmt.Errorf("no voice to preview")
 	}
 	applyPreviewVoice(&cfg, voice)
 	return cfg, voice, nil

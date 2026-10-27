@@ -12,6 +12,11 @@ Thanks for taking the time to improve Obey Voice.
 
 Voice-mode development requires local microphone and speaker access. Integration tests require Docker or a compatible container runtime.
 
+CI builds and smoke-tests the relocatable Linux archive on every PR and main
+push without uploading it to Actions storage. For downloadable Linux and macOS
+builds, run **Release Artifacts** manually on the desired branch; those downloads
+expire after seven days. Tag builds attach archives directly to the GitHub release.
+
 ## Pull Requests
 
 - Keep changes focused and describe the user-visible impact.

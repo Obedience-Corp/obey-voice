@@ -144,7 +144,7 @@ func runVoicePreview(ctx context.Context, voice tts.Voice, player audio.Engine,
 		}
 	}
 	if err := ensure(ctx, cfg, nil); err != nil {
-		return fmt.Errorf("Asset error: %w", err)
+		return fmt.Errorf("asset error: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -164,11 +164,11 @@ func runVoicePreview(ctx context.Context, voice tts.Voice, player audio.Engine,
 	}
 	stream, err := provider.Synthesize(ctx, tts.SpokenPreviewLine(voice.Name))
 	if err != nil {
-		return fmt.Errorf("Synthesize error: %w", err)
+		return fmt.Errorf("synthesize error: %w", err)
 	}
 	playing, err := player.PlayStream(ctx, stream)
 	if err != nil {
-		return fmt.Errorf("Playback error: %w", err)
+		return fmt.Errorf("playback error: %w", err)
 	}
 	var result audio.PlaybackResult
 	select {
@@ -181,7 +181,7 @@ func runVoicePreview(ctx context.Context, voice tts.Voice, player audio.Engine,
 		return context.Canceled
 	}
 	if result.Err != nil {
-		return fmt.Errorf("Playback error: %w", result.Err)
+		return fmt.Errorf("playback error: %w", result.Err)
 	}
 	return nil
 }

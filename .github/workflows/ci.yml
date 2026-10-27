@@ -106,8 +106,5 @@ jobs:
         run: sudo apt-get install --yes patchelf
       - name: Build and smoke-test artifact
         run: just release linux-artifact
-      - uses: actions/upload-artifact@v4
-        with:
-          name: obey-voice-linux-amd64
-          path: dist/obey-voice-linux-amd64.tar.gz
-          if-no-files-found: error
+      # Routine CI validates the archive without retaining a copy on every
+      # push. Use Release Artifacts when a downloadable build is needed.
