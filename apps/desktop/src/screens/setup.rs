@@ -184,8 +184,11 @@ impl VoiceApp {
                         total / 1e6
                     )),
                 );
-            } else {
+            } else if phase == "download" {
                 ui.label("Size not reported by the download server");
+            }
+            if let Some(detail) = p["detail"].as_str() {
+                ui.label(detail);
             }
         }
         if let Some(id) = self.task

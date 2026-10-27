@@ -77,6 +77,22 @@ impl VoiceApp {
             Operation::Start,
         );
     }
+    pub fn setup_voice_descriptions(&mut self) {
+        self.setup.error = None;
+        self.setup.download_cancelled = false;
+        self.setup.download = Value::Null;
+        self.logs.clear();
+        let id = self.cli(
+            ["models", "ensure", "--json", "--voice-catalog"]
+                .map(str::to_owned)
+                .to_vec(),
+            Purpose::Setup(Operation::Catalog),
+            true,
+        );
+        self.setup.busy = Some(id);
+        self.task = Some(id);
+        self.task_title = "Download voice descriptions".into();
+    }
     pub fn setup_send_test(&mut self) {
         self.setup.reply_baseline = self
             .state
@@ -113,6 +129,16 @@ impl VoiceApp {
     }
     pub(super) fn complete_setup(&mut self, operation: Operation, result: Result<Value, String>) {
         self.setup.busy = None;
+        if matches!(operation, Operation::Catalog)
+            && (self.setup.download_cancelled || result.is_err())
+        {
+            // Keep the last readiness result: optional download failure or
+            // cancellation does not change whether speech models are usable.
+            self.status =
+                "Voice descriptions were not downloaded. You can retry or continue without them."
+                    .into();
+            return;
+        }
         if matches!(operation, Operation::Install) && self.setup.download_cancelled {
             self.setup.error =
                 Some("Download cancelled. Check speech models to resume installation.".into());
@@ -172,7 +198,7 @@ impl VoiceApp {
                     ),
                 }
             }
-            Operation::Install => self.setup_models(false),
+            Operation::Install | Operation::Catalog => self.setup_models(false),
             Operation::Start => {
                 self.active = true;
                 self.starting = false;

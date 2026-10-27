@@ -152,3 +152,9 @@ locale; voices that state no locale and the ✓ voice stay listed, and the
 filter is a view, not a saved setting. The highlighted voice's locale, gender,
 age and description show on the detail line. An unknown name is reported by
 the server at the first synthesis, naming the voices it has.
+
+To download only the optional voice descriptions (without installing speech or
+persona models), run `obey-voice models ensure --voice-catalog`. Add `--json` for
+streamed progress. This works while the speech server is offline; a failed
+catalog fetch leaves speech readiness unchanged. Desktop setup offers the same
+operation as **Download voice descriptions**, independently of **Continue**.

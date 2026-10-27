@@ -31,6 +31,7 @@ pub enum Operation {
     Provider,
     Models,
     Install,
+    Catalog,
     Start,
     Stop,
     Finish,
@@ -87,6 +88,15 @@ impl Setup {
         self.reply_received
             && (self.progress.text_only || self.mic_confirmed)
             && (self.progress.silent || self.speaker_confirmed)
+    }
+    pub fn voice_descriptions_missing(&self) -> bool {
+        self.models.as_ref().is_some_and(|items| {
+            items.iter().any(|v| {
+                v["id"] == "tts.openai-speech.voices"
+                    && v["optional"] == true
+                    && v["installed"] != true
+            })
+        })
     }
     pub fn model_args(&self, action: &str) -> Option<Vec<String>> {
         if self.progress.text_only && self.progress.silent {
@@ -199,10 +209,15 @@ mod tests {
             ..Default::default()
         };
         assert!(s.models_ready());
+        assert!(s.voice_descriptions_missing());
         s.models
             .as_mut()
             .unwrap()
             .push(json!({"id":"stt.parakeet","installed":false}));
+        assert!(!s.models_ready());
+        assert!(s.voice_descriptions_missing());
+        s.models.as_mut().unwrap()[1]["installed"] = json!(true);
+        assert!(!s.voice_descriptions_missing());
         assert!(!s.models_ready());
     }
 }
