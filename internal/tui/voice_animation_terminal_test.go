@@ -84,6 +84,22 @@ func TestBackgroundWorkerAnimationRendersInTerminalBesideListening(t *testing.T)
 		header := strings.SplitN(s.view, "\n", 2)[0]
 		return strings.Contains(header, "Working · ^W") && strings.Contains(header, "Listening")
 	})
+	for _, step := range []struct {
+		event events.Event
+		label string
+	}{
+		{events.GeneratingVoice{Sentence: "Checking the files."}, "Synthesizing voice"},
+		{events.SpeakingStarted{}, "Speaking"},
+		{events.STTPhase{Phase: "listening"}, "Listening"},
+	} {
+		program.Send(busEventMsg{event: step.event})
+		snapshot := awaitVoiceAnimationSnapshot(t, harness.snapshots, step.label, func(s voiceAnimationTerminalSnapshot) bool {
+			return strings.Contains(strings.SplitN(s.view, "\n", 2)[0], step.label)
+		})
+		if rows := len(strings.Split(snapshot.view, "\n")); rows != app.height {
+			t.Fatalf("%s frame has %d rows in %d-row terminal", step.label, rows, app.height)
+		}
+	}
 	program.Send(busEventMsg{event: events.JobFinished{ID: "job-1", Task: "inspect files"}})
 	awaitVoiceAnimationSnapshot(t, harness.snapshots, "worker completion", func(s voiceAnimationTerminalSnapshot) bool {
 		return !strings.Contains(s.view, "Working · ^W") && strings.Contains(s.view, "Listening")

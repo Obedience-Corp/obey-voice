@@ -19,6 +19,28 @@ func (m conversationModel) animStyles() anim.Styles {
 	return voiceAnimStyles()
 }
 
+// Measure the same panel we draw: listening, speaking and reduced-motion
+// meters have different heights. A fixed allowance makes the terminal scroll
+// when speech starts and leaves stale rows behind when it stops.
+func (m conversationModel) voicePanel() string {
+	if m.voiceMode == anim.ModeIdle || m.height < 14 {
+		return ""
+	}
+	panel := anim.Stage(m.voiceMode, m.voiceFrame, m.voiceLevel(), m.width, m.status, m.animStyles(), m.reducedMotion)
+	available := m.height - conversationInputHeight - 6 - m.workStripReservedRows - m.commandPaletteRows() - 1
+	if lipgloss.Height(panel) > available {
+		return "" // Keep the composer and at least one transcript row visible.
+	}
+	return panel
+}
+
+func (m conversationModel) voicePanelHeight() int {
+	if panel := m.voicePanel(); panel != "" {
+		return lipgloss.Height(panel)
+	}
+	return 0
+}
+
 // workCue stays visible after the spoken handoff finishes. The glyph advances
 // on the conversation tick even when the voice meter is idle.
 func (m conversationModel) workCue() string {
@@ -267,7 +289,6 @@ func (m conversationModel) View() string {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	styles := m.animStyles()
 	w := max(m.width, 1)
 
 	// Put the active brain before speech details and navigation so it remains
@@ -299,12 +320,9 @@ func (m conversationModel) View() string {
 
 	rule := lipgloss.NewStyle().Foreground(m.inputBorderColor()).Render(strings.Repeat("─", w))
 
-	voiceStrip := ""
-	if m.voiceMode != anim.ModeIdle && m.height >= 14 {
-		voiceStrip = anim.Stage(m.voiceMode, m.voiceFrame, m.voiceLevel(), w, m.status, styles, m.reducedMotion)
-		if voiceStrip != "" {
-			voiceStrip += "\n"
-		}
+	voiceStrip := m.voicePanel()
+	if voiceStrip != "" {
+		voiceStrip += "\n"
 	}
 
 	// Capture stays armed while voice input is paused; wording must not claim
