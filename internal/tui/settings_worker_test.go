@@ -15,6 +15,7 @@ func workerTestProviders() []discovery.ProviderInfo {
 		{Name: "ollama", Available: true, Models: []string{"qwen3:8b", "qwen3:30b"}},
 		{Name: "grok", Available: true, Models: []string{"grok-4.6"}},
 		{Name: "claude", Available: true},
+		{Name: "codex", Available: true},
 		{Name: "cursor", Available: true, Models: []string{"auto"}},
 	}
 }
@@ -27,8 +28,7 @@ func newWorkerSettings(t *testing.T, cfg *config.Config) settingsModel {
 	return m
 }
 
-// Cursor can talk but cannot run a background job, so it must never be offered
-// as a worker — a row Apply cannot honour is worse than a missing row.
+// Every supported discovered brain can also be selected as a worker.
 func TestWorkerSectionOffersOnlyWorkerBackends(t *testing.T) {
 	m := newWorkerSettings(t, &config.Config{BrainProvider: "ollama"})
 	var got []string
@@ -37,8 +37,8 @@ func TestWorkerSectionOffersOnlyWorkerBackends(t *testing.T) {
 			got = append(got, item.value)
 		}
 	}
-	if strings.Join(got, ",") != "ollama,grok,claude" {
-		t.Fatalf("worker providers = %v, want ollama,grok,claude", got)
+	if strings.Join(got, ",") != "ollama,grok,claude,codex,cursor" {
+		t.Fatalf("worker providers = %v, want ollama,grok,claude,codex,cursor", got)
 	}
 }
 

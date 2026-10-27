@@ -111,7 +111,7 @@ func TestNewWorkerProviderAllowsDistinctSameHostOllama(t *testing.T) {
 
 func TestNewWorkerProviderUnsupported(t *testing.T) {
 	t.Parallel()
-	_, err := NewWorkerProvider(&config.Config{VoiceWorkerProvider: "cursor"})
+	_, err := NewWorkerProvider(&config.Config{VoiceWorkerProvider: "unknown"})
 	if err == nil {
 		t.Fatal("expected error for unsupported worker")
 	}

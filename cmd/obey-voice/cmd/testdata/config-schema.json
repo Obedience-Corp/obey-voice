@@ -1209,7 +1209,8 @@
         "ollama",
         "grok",
         "claude",
-        "codex"
+        "codex",
+        "cursor"
       ],
       "allows_empty": true,
       "group": "brain",

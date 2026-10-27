@@ -19,7 +19,7 @@ func supported(layer, evidence string) config.Capability {
 	return config.Capability{Supported: true, Layer: layer, Evidence: evidence}
 }
 
-// CLIWorkerCapabilities returns source-verified capabilities for the two CLI
+// CLIWorkerCapabilities returns source-verified capabilities for the CLI
 // adapters and managed delegation. It describes observable enforcement only;
 // it does not treat provider billing, nested CLI tools, or descendants as
 // visible merely because a parent process exists.
@@ -53,6 +53,14 @@ func CLIWorkerCapabilities(provider string) config.WorkerCapabilities {
 		base.Usage = supported("brain OnWorkerUsage", "full result cost is reported; Grok streaming events expose no token/cost fields, which remain unknown")
 		base.ProcessExit = supported("context/CLI", "helper CLI process wait is observable; remote/descendant termination is not implied")
 		base.CancellationRequested = supported("context/CLI", "context cancellation requests termination of the CLI process")
+	case "cursor":
+		base.Adapter, base.Version = "cursor-agent-go", "v0.0.0-20260903232116-1c77e507477f"
+		base.RequestBoundary = unsupported("one print-mode turn can contain opaque model and tool requests")
+		base.RetryLimit = unsupported("one stale-session retry; CLI internal retries are not bounded by this adapter")
+		base.RuntimeLimit = supported("context/CLI", "AskCtx passes context to exec.CommandContext and waits for the direct process")
+		base.Usage = unsupported("print-mode counters feed conversation usage, not the worker accounting callback")
+		base.ProcessExit = supported("exec.Run", "direct CLI exit is observed; descendant and remote termination are not implied")
+		base.CancellationRequested = supported("context/CLI", "context cancellation requests termination of the direct CLI process")
 	case "codex":
 		base.Adapter, base.Version = "codex app-server", "v2 (tested 0.163.0)"
 		base.RequestBoundary = unsupported("one app-server turn can contain multiple model requests")
