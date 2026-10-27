@@ -150,6 +150,52 @@ func TestLegacyWorkerReplyReachesConversationAndSavedHistory(t *testing.T) {
 	}
 }
 
+func TestAttributedWorkerReplyDoesNotBlockCLIProviderAdmission(t *testing.T) {
+	for name, provider := range map[string]brain.Provider{
+		"claude": &brain.Brain{}, "cursor": &brain.CursorBrain{}, "grok": &brain.GrokBrain{},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := &Pipeline{Brain: provider, Events: events.NewBus()}
+			if err := p.BeginConversationIdentity("cli-worker-reply"); err != nil {
+				t.Fatal(err)
+			}
+			jobs := job.NewTable(t.Context())
+			defer jobs.Close()
+			a := NewAgency(p, jobs, nil, &config.Config{}, nil)
+			a.Wire()
+			a.workerOrigins["job"] = workerOrigin{Scope: p.ConversationScope(), Envelope: events.ResponseEnvelope{PersonaID: "obey", DisplayName: "Obey", PromptHash: "frozen-prompt", ResponseID: "worker-response"}}
+			store := session.NewStore(t.TempDir())
+			saved := session.New(name, "fixture")
+			p.OnTurn = func() {
+				if err := store.Save(saved, provider.History()); err != nil {
+					t.Error(err)
+				}
+			}
+			a.onJobDone("job", job.StateDone, "The worker found three files.", nil)
+			for _, input := range []string{"What did Obey find?", "Thanks"} {
+				_, admitted, err := p.admitInput(t.Context(), input, false, newTurnMetrics())
+				if err != nil || admitted.Request != input {
+					t.Fatalf("input blocked: admission=%+v err=%v", admitted, err)
+				}
+			}
+			if p.hasWorkerReplies() || len(provider.History()) != 1 {
+				t.Fatal("reply remains queued or was duplicated")
+			}
+			loaded, err := store.Load(saved.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(loaded.Turns) != 1 {
+				t.Fatalf("saved turns: %+v", loaded.Turns)
+			}
+			turn := loaded.Turns[0]
+			if turn.Content != "The worker found three files." || turn.PersonaID != "obey" || turn.PersonaDisplayName != "Obey" || turn.PromptHash != "frozen-prompt" || turn.ResponseID != "worker-response" {
+				t.Fatalf("lost worker identity: %+v", turn)
+			}
+		})
+	}
+}
+
 func TestClearedConversationRejectsLateLegacyReply(t *testing.T) {
 	p := &Pipeline{Events: events.NewBus()}
 	if err := p.BeginConversationIdentity("same-session"); err != nil {
