@@ -134,6 +134,7 @@ func setDefaults(v *viper.Viper) {
 	// playback. Aliases are empty — the display name and its first word are
 	// already the wake words.
 	v.SetDefault("name_summon_enabled", false)
+	v.SetDefault("acoustic_name_enabled", false)
 	v.SetDefault("name_summon_aliases", []string{})
 
 	// Off by default so the terminal keeps its own click-drag selection, which

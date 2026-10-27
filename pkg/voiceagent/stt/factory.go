@@ -34,6 +34,9 @@ func Providers() []ProviderSpec {
 // When config yields custom words, the provider is wrapped so every final
 // transcript is corrected before it is emitted; see CustomWordsFromConfig.
 func NewProvider(cfg *config.Config, capture audioSource, vad *audio.VAD) (Provider, func(), error) {
+	if err := config.ValidateAcousticName(cfg); err != nil {
+		return nil, nil, err
+	}
 	provider, cleanup, err := newBaseProvider(cfg, capture, vad)
 	if err != nil {
 		return nil, nil, err

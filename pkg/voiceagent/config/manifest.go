@@ -180,6 +180,12 @@ func ManifestFor(cfg *Config, req AssetRequest) (AssetManifest, error) {
 	}
 
 	if req.NeedSTT {
+		if err := ValidateAcousticName(cfg); err != nil {
+			return AssetManifest{}, err
+		}
+		if cfg.AcousticNameEnabled {
+			m.Assets = append(m.Assets, AcousticNameAsset())
+		}
 		if _, ok := NormalizeSTT(cfg.STTProvider); ok {
 			norm, err := NormalizeSTTWithMode(cfg.STTProvider, cfg.STTMode)
 			if err != nil {

@@ -166,6 +166,9 @@ type Config struct {
 	// nothing until it is switched on. See internal/summon for the matching
 	// rules and name_summon.go for the front-end it depends on.
 	NameSummonEnabled bool `mapstructure:"name_summon_enabled"`
+	// AcousticNameEnabled adds experimental Obey keyword evidence to Parakeet
+	// conversation routing. It does not enable a wake gate or rewrite text.
+	AcousticNameEnabled bool `mapstructure:"acoustic_name_enabled"`
 	// NameSummonAliases are extra wake words beyond the persona display name
 	// and its first word. Config-file only: no Settings row, and no environment
 	// binding, for the same reason skills_disabled has none — a list is not

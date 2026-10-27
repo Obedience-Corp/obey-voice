@@ -190,6 +190,11 @@ func voiceKeys() []KeySpec {
 			Help: "With the mic open, only a turn that starts with the agent's name or an alias is answered; the talk key bypasses it. Needs the voice front-end on, so playback of the name cannot summon the agent.",
 		},
 		{
+			Key: "acoustic_name_enabled", Type: TypeBool, Default: false,
+			Group: GroupVoice, Title: "Acoustic Obey recognition (experimental)",
+			Help: "Adds an acoustic name hint to semantic conversation routing when Parakeet mishears Obey. Requires Parakeet and models ensure --stt; leaves the transcript unchanged. Not a wake gate. Edited in config.yaml.",
+		},
+		{
 			Key: "name_summon_aliases", Type: TypeStringList, Default: []string{},
 			Group: GroupVoice, Title: "Name summon aliases",
 			Help: "Extra wake words besides the agent's display name and its first word — \"computer\", say. Edited in config.yaml; Settings has no row for it.",

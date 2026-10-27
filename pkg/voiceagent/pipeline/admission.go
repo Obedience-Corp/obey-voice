@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	admissionpolicy "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -25,7 +26,13 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 	admitted := ResponseAdmission{Request: input}
 	if p.AdmitInput != nil {
 		var err error
-		admitted, err = p.AdmitInput(ctx, input, background)
+		name := ""
+		if !background {
+			name = metrics.acousticName
+		}
+		// Keep evidence scoped to this call, out of the returned context used
+		// for brain responses, agent handoffs, and continuations.
+		admitted, err = p.AdmitInput(admissionpolicy.WithAcousticName(ctx, name), input, background)
 		if err != nil {
 			return ctx, admitted, err
 		}

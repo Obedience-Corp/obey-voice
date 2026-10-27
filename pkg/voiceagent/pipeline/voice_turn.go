@@ -283,6 +283,7 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 				}
 			case stt.KindFinalTranscript:
 				metrics.sttFinal = time.Now()
+				metrics.acousticName = te.AcousticName
 				return te.Text, nil
 			case stt.KindYieldedForCompletion:
 				if event, ok := event.(stt.YieldedForCompletion); ok {

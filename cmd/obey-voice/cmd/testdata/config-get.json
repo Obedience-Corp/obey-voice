@@ -2,6 +2,10 @@
   "schema_version": 1,
   "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
   "values": {
+    "acoustic_name_enabled": {
+      "value": false,
+      "source": "default"
+    },
     "active_persona": {
       "value": "ada",
       "source": "file"

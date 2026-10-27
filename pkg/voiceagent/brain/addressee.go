@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -25,6 +26,7 @@ type AddressRequest struct {
 	Account      string             `json:"account"` // user or agent
 	Conversation []AddressMessage   `json:"conversation,omitempty"`
 	Text         string             `json:"text"`
+	AcousticName string             `json:"acoustic_name,omitempty"`
 }
 
 type AddressMessage struct {
@@ -51,9 +53,22 @@ A third-person mention, quotation, hypothetical, comparison, or a request to tal
 Use the addressed name or alias from participants. If the addressed name is shared, preserve that shared name and choose ambiguous; never choose an arbitrary participant. If a clear target is unavailable, return address with that target's name. With no clear change of addressee, return none and an empty name. For multiple simultaneous addressees with no clear single next responder, return ambiguous. Never infer a different identity merely because someone is called a name.
 Bare is true only when kind is address and a user greets a named agent or requests a switch with no substantive question. Bare is false for none, ambiguous, and every agent message. An ordinary greeting or question without a named addressee, such as "Hello" or "How's it going?", is {"kind":"none","name":"","bare":false}; the current responder should answer normally. Return only the JSON object.`
 
+const acousticNameInstruction = `For a user voice message, acoustic_name is an independent detector observation that the name may have been spoken even if text spells it differently or omits it. It is not proof of an address: the detector also hears ordinary verbs, quotations, and third-person mentions, and may be wrong. Use it to disambiguate a plausible spoken address in context; do not turn every match into an address. Never use it for agent messages. The text remains the original transcript.`
+
 // ResolveAddressee is private, bounded, tools-free inference. It uses the
 // installed responder model without adding classifier input/output to history.
 func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) (Addressee, error) {
+	// A correctly transcribed name needs no acoustic disambiguation. Repeating
+	// it as an extra hint can bias small classifiers toward false addresses.
+	if req.Account != "user" {
+		req.AcousticName = ""
+	}
+	for _, word := range strings.FieldsFunc(req.Text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
+		if strings.EqualFold(word, req.AcousticName) {
+			req.AcousticName = ""
+			break
+		}
+	}
 	parentCtx := ctx
 	ctx, cancel := context.WithTimeout(parentCtx, config.PersonaRoutingTimeoutOf(o.cfg))
 	defer cancel()
@@ -71,7 +86,11 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 		options = map[string]any{}
 	}
 	options["temperature"], options["seed"], options["num_predict"] = 0, 42, 128
-	request := &api.ChatRequest{Model: model, Messages: []api.Message{{Role: "system", Content: addresseeInstruction}, {Role: "user", Content: string(payload)}}, Format: format, Stream: &stream, Think: &api.ThinkValue{Value: false}, Options: options, KeepAlive: keepAlive}
+	instruction := addresseeInstruction
+	if req.AcousticName != "" {
+		instruction += "\n" + acousticNameInstruction
+	}
+	request := &api.ChatRequest{Model: model, Messages: []api.Message{{Role: "system", Content: instruction}, {Role: "user", Content: string(payload)}}, Format: format, Stream: &stream, Think: &api.ThinkValue{Value: false}, Options: options, KeepAlive: keepAlive}
 	if err := o.messagesBudgetError(request.Messages, nil); err != nil {
 		return Addressee{}, fmt.Errorf("addressee context: %w", err)
 	}
