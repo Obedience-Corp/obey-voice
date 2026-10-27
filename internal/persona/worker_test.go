@@ -101,3 +101,35 @@ func TestOverriddenKeysReportsTheWorker(t *testing.T) {
 		t.Fatalf("OverriddenKeys %v did not report %v", keys, want)
 	}
 }
+
+func TestWorkerSelectionSurvivesSaveReloadAndApply(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	if err := Write(&Profile{Schema: Schema, ID: "guide", DisplayName: "Guide", Prompts: PromptRefs{Persona: "guide"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []Worker{
+		{Provider: "codex", Model: "fixture-codex"},
+		{Provider: "ollama", Model: "fixture-local", OllamaHost: "http://worker:11434"},
+		{}, // Clearing the selection restores inheritance.
+	} {
+		if _, err := UpdateStack("guide", Brain{Provider: "ollama", Worker: want}, TTS{}); err != nil {
+			t.Fatal(err)
+		}
+		p, err := Load("guide")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.Brain.Worker != want {
+			t.Fatalf("saved worker = %+v, want %+v", p.Brain.Worker, want)
+		}
+		cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "global-worker"}
+		Apply(cfg, p)
+		if want.Provider == "" {
+			if cfg.VoiceWorkerModel != "global-worker" {
+				t.Fatal("cleared worker did not inherit")
+			}
+		} else if config.VoiceWorkerProviderOf(cfg) != want.Provider || cfg.VoiceWorkerModel != want.Model || cfg.VoiceWorkerOllamaHost != want.OllamaHost {
+			t.Fatalf("runtime worker = %s/%s/%s, want %+v", config.VoiceWorkerProviderOf(cfg), cfg.VoiceWorkerModel, cfg.VoiceWorkerOllamaHost, want)
+		}
+	}
+}

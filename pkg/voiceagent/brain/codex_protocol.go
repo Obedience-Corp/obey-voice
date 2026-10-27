@@ -29,15 +29,11 @@ type codexTurn struct {
 	} `json:"error"`
 }
 type codexNotice struct {
-	ThreadID string    `json:"threadId"`
-	TurnID   string    `json:"turnId"`
-	Delta    string    `json:"delta"`
-	Turn     codexTurn `json:"turn"`
-	Item     struct {
-		ID     string `json:"id"`
-		Type   string `json:"type"`
-		Status string `json:"status"`
-	} `json:"item"`
+	ThreadID   string          `json:"threadId"`
+	TurnID     string          `json:"turnId"`
+	Delta      string          `json:"delta"`
+	Turn       codexTurn       `json:"turn"`
+	Item       codexToolNotice `json:"item"`
 	TokenUsage struct {
 		Total struct {
 			InputTokens  *int `json:"inputTokens"`
@@ -153,7 +149,7 @@ func (client codexClient) run(ctx context.Context, req codexRequest, emit func(s
 			if !req.Tools {
 				return errors.New("codex attempted a tool during a tools-disabled turn")
 			}
-			call := ToolCall{ID: n.Item.ID, Name: n.Item.Type, Summary: "Codex " + n.Item.Type}
+			call := n.Item.call()
 			if m.Method == "item/started" {
 				toolStarts[call.ID] = time.Now()
 				if opts.OnToolStart != nil {
@@ -164,11 +160,8 @@ func (client codexClient) run(ctx context.Context, req codexRequest, emit func(s
 				if start, ok := toolStarts[call.ID]; ok {
 					elapsed = time.Since(start)
 				}
-				tr := ToolResult{ToolCall: call, Elapsed: elapsed}
-				if n.Item.Status == "failed" || n.Item.Status == "declined" {
-					tr.Err = "Codex tool " + n.Item.Status
-				}
-				opts.OnToolEnd(tr)
+				delete(toolStarts, call.ID)
+				opts.OnToolEnd(n.Item.result(elapsed))
 			}
 		case "turn/completed":
 			if n.Turn.ID != turnID {

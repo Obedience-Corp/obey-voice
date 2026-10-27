@@ -70,6 +70,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var spoken strings.Builder
 		hadThinking := false
 		hadTools := false
+		routedChat := false
 		recoveryAttempts := 0
 		var continuation string
 		repetitionRetry := false
@@ -77,7 +78,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 		for i := 0; i < maxToolIterations; i++ {
 			var tools api.Tools
-			if opts.ToolsEnabled {
+			if opts.ToolsEnabled && !routedChat {
 				tools = sess.tools()
 			}
 
@@ -111,6 +112,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			var toolCalls []api.ToolCall
 			var prefillTokens, genTokens int
 			var doneReason string
+			responseComplete := false
 			strip := newLabelStripper(o.cfg.AgentName)
 			markers := new(historicalAssistantMarkerFilter)
 			var split textclean.ThinkFilter
@@ -130,9 +132,22 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				emitted.WriteString(text)
 				return nil
 			}
-			emitText := func(text string) error { return forward(gate.feed(text)) }
+			// Until a live routing response finishes, its content might be
+			// untagged planning followed by a tool call. It cannot be taken
+			// back once spoken. Only this classification request is held;
+			// worker/tool-free responses retain incremental streaming.
+			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
+			var routeText []string
+			emitText := func(text string) error {
+				if routing {
+					routeText = append(routeText, text)
+					return nil
+				}
+				return forward(gate.feed(text))
+			}
 
 			err := o.chat(ctx, req, func(resp api.ChatResponse) error {
+				responseComplete = responseComplete || resp.Done
 				fieldThink := resp.Message.Thinking
 				if fieldThink != "" {
 					hadThinking = true
@@ -149,11 +164,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							return err
 						}
 					}
-					// Stream speakable content as it arrives, tools enabled or
-					// not, so the TUI renders token-by-token. Any preamble a
-					// tool-calling iteration emits streams too; the final answer
-					// continues the same reply after tools run — unless it is
-					// the same reply, which we swallow.
+					// emitText holds live routing content until its role is
+					// known; ordinary replies and worker preambles stream.
 					emit := strip.Feed(markers.Feed(speakable))
 					if restatementSkip(spoken.String(), textBuf.String()) {
 						return nil
@@ -173,6 +185,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				return nil
 			})
+			if err == nil && routing && !responseComplete {
+				err = fmt.Errorf("routing response ended before completion")
+			}
 			heldSpeak, heldThink := split.FlushSplit()
 			if heldThink != "" {
 				hadThinking = true
@@ -201,6 +216,26 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if held := strip.Flush(); held != "" && !restatementSkip(spoken.String(), textBuf.String()) {
 				if sendErr := emitText(held); sendErr != nil && err == nil {
 					err = sendErr
+				}
+			}
+			if routing {
+				if len(toolCalls) > 0 {
+					// Routing commentary belongs to the thinking surface,
+					// never the speech stream or canonical reply history.
+					textBuf.Reset()
+					if text := strings.Join(routeText, ""); text != "" {
+						hadThinking = true
+						if sendErr := sendChunk(ctx, thinking, text); sendErr != nil && err == nil {
+							err = sendErr
+						}
+					}
+				} else if err == nil {
+					for _, text := range routeText {
+						if sendErr := forward(gate.feed(text)); sendErr != nil {
+							err = sendErr
+							break
+						}
+					}
 				}
 			}
 			if opts.OnUsage != nil {
@@ -268,7 +303,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 
-			if (continuation != "" || repetitionRetry) && len(toolCalls) > 0 {
+			if (continuation != "" || repetitionRetry || routedChat) && len(toolCalls) > 0 {
 				if err := sendChunk(ctx, out, "\n\n"+continuityFallback); err != nil {
 					done <- StreamResult{Err: err}
 					return
@@ -306,6 +341,12 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					}
 					done <- StreamResult{Route: kind, RouteTier: tier, RouteReasonCode: reason}
 					return
+				}
+				if sess.routerPolicy == RouterToolsRouteOnly && hasRouteCall(toolCalls) {
+					// chat has been selected. The follow-up is the answer,
+					// so it needs neither another routing decision nor buffering.
+					routedChat = true
+					skillCtx += "\n" + chatRouteAnswerInstruction
 				}
 				// Add the assistant's tool-calling message to history.
 				o.appendMessage(api.Message{
