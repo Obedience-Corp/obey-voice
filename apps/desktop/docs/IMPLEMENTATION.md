@@ -93,9 +93,13 @@ First-run setup (2026-10-21, WI-a41e2c):
 - Existing config schema/edit commands, model status/ensure, and conversation
   controller remain authoritative. Go adds install-scoped atomic desktop progress
   and a bounded Ollama inventory probe; CLI authentication is verified by the reply.
-- Failed/cancelled installs and failed provider turns cannot complete setup. Speech
+- Failed/cancelled required installs and failed provider turns cannot complete setup. Speech
   assets respect audio choices; optional Qwen tiers and rows the engine marks
   `optional` (Phonon's voice descriptions) do not block the Models step.
+  Missing descriptions have a separate **Download voice descriptions** action,
+  using `models ensure --voice-catalog`; failure or cancellation keeps readiness.
+  `just test voice-catalog` creates an isolated replay for failure, retry and the
+  missing-required-model gate (fixture marker `required-missing`).
   Audio starts only on an explicit action. Leaving the test drains the controller.
 - Isolated native acceptance: blank install Welcome without config writes; save
   server/model and verify on disk; quit/resume at Brain; text-only skips speech;

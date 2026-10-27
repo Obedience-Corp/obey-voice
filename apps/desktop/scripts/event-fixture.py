@@ -11,11 +11,15 @@ import tempfile
 parser = argparse.ArgumentParser()
 mode = parser.add_mutually_exclusive_group()
 mode.add_argument('--setup', action='store_true', help='Replay setup download and provider recovery')
+mode.add_argument('--voice-catalog', action='store_true', help='Replay optional voice descriptions in setup')
 mode.add_argument('--work', action='store_true', help='Replay background worker snapshots')
 args = parser.parse_args()
+args.setup = args.setup or args.voice_catalog
 root = Path(__file__).resolve().parent.parent
 fixture = Path(tempfile.mkdtemp(prefix='obey-events-'))
 (fixture / '.fixture').touch()
+if args.voice_catalog:
+    (fixture / 'optional-catalog').touch()
 (fixture / 'bin').mkdir()
 camp = fixture / 'bin/camp'
 camp.write_text('#!/bin/sh\nprintf \'[{"name":"Fixture"},{"name":"Unavailable"}]\\n\'\n')

@@ -29,10 +29,11 @@ type AssetRequest struct {
 	NeedTTS      bool
 	NeedVAD      bool
 	NeedSpeaker  bool
-	// NeedVoiceCatalog also fetches descriptive voice catalogs (openai-speech's
+	// NeedVoiceCatalog fetches descriptive voice catalogs (openai-speech's
 	// voices.jsonl). Only an explicit install asks: the catalog never gates
 	// speech, so starting a conversation, listing voices or a preview must not
 	// wait on its host.
+	// With NeedTTS false, it fetches only metadata without contacting the runtime.
 	NeedVoiceCatalog bool
 }
 
