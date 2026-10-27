@@ -9,10 +9,33 @@ impl VoiceApp {
             self.persona_form.preview_notice = "Voice playback is unavailable in demo mode".into();
             return;
         }
+        self.persona_form.preview_persona.clear();
         let f = &self.persona_form;
         let args =
             json!({"voice_selection": {"provider": f.tts, "voice": f.voice, "tier": f.tier}});
         let id = self.request("persona_preview", args, Purpose::PersonaPreview);
+        self.persona_form.preview_request = Some(id);
+        self.persona_form.preview_notice = "Preparing and playing preview…".into();
+        self.persona_form.preview_error = false;
+    }
+
+    pub(crate) fn preview_saved_persona(&mut self, persona_id: &str) {
+        if self.persona_form.preview_persona == persona_id
+            && self.persona_form.preview_request.is_some()
+        {
+            self.stop_persona_preview();
+            return;
+        }
+        self.stop_persona_preview();
+        if self.demo || !self.connected {
+            return;
+        }
+        let id = self.request(
+            "persona_preview",
+            json!({"voice_selection": {"persona_id": persona_id}}),
+            Purpose::PersonaPreview,
+        );
+        self.persona_form.preview_persona = persona_id.into();
         self.persona_form.preview_request = Some(id);
         self.persona_form.preview_notice = "Preparing and playing preview…".into();
         self.persona_form.preview_error = false;
@@ -103,5 +126,20 @@ mod tests {
         assert_eq!(app.persona_form.preview_request, None);
         assert_eq!(app.persona_form.voice, "Uncle_Fu");
         assert!(app.persona_form.open);
+
+        // List preview events keep draft fields intact and remain tied to one card.
+        app.persona_form.open = false;
+        app.persona_form.preview_persona = "santa".into();
+        app.persona_form.preview_request = Some(11);
+        app.preview_saved_persona("santa");
+        assert_eq!(app.persona_form.preview_request, None);
+        app.persona_preview_done(&json!({"id":11,"message":"stale sample"}));
+        assert_eq!(app.persona_form.preview_notice, "Preview stopped");
+        app.persona_form.preview_request = Some(12);
+        app.persona_preview_done(&json!({"id":12,"message":"Preview finished"}));
+        assert_eq!(app.persona_form.preview_persona, "santa");
+        assert_eq!(app.persona_form.preview_notice, "Preview finished");
+        assert_eq!(app.persona_form.voice, "Uncle_Fu");
+        assert!(!app.persona_form.open);
     }
 }

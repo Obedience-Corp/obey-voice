@@ -153,6 +153,7 @@ pub struct KeySpec {
 }
 #[derive(Default)]
 pub struct PersonaForm {
+    pub preview_persona: String,
     pub preview_request: Option<u64>,
     pub preview_notice: String,
     pub preview_error: bool,

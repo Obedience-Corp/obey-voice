@@ -47,6 +47,27 @@ func TestPersonaPreviewTerminalCreateAndEdit(t *testing.T) {
 	}
 }
 
+func TestPersonaListPreviewTerminal(t *testing.T) {
+	m := listPreviewModel(t)
+	h := &personaPreviewTerminal{model: m}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	program := tea.NewProgram(h, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(&output), tea.WithoutSignalHandler())
+	if _, err := program.Run(); err != nil {
+		t.Fatal(err)
+	}
+	h.model.preview.close()
+	for _, want := range []string{"p preview/stop", "Previewed am_santa"} {
+		if !strings.Contains(stripANSI(output.String()), want) {
+			t.Fatalf("terminal missing %q: %s", want, stripANSI(output.String()))
+		}
+	}
+	if h.model.formMode != "" || h.model.cfg.ActivePersona != "samantha" {
+		t.Fatal("list preview changed selection")
+	}
+}
+
 type personaPreviewTerminal struct{ model personasModel }
 
 func (h *personaPreviewTerminal) Init() tea.Cmd {

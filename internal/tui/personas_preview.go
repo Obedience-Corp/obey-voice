@@ -31,8 +31,28 @@ func personaPreviewConfig(base *config.Config, selection persona.TTS) (config.Co
 	return cfg, voice, nil
 }
 
+func (m *personasModel) previewSelectedPersona() tea.Cmd {
+	if m.preview.previewing != "" {
+		m.preview.cancel()
+		m.message = "Preview stopped"
+		return nil
+	}
+	if m.loadErr != "" || m.cursor < 0 || m.cursor >= len(m.items) || m.items[m.cursor] == nil {
+		return nil
+	}
+	if m.listDefaults == nil {
+		m.message = "Settings unavailable; cannot preview voice"
+		return nil
+	}
+	return m.startVoicePreview(m.listDefaults, m.items[m.cursor].TTS)
+}
+
 func (m *personasModel) startPersonaPreview() tea.Cmd {
-	cfg, voice, err := personaPreviewConfig(m.cfg, m.formTTS())
+	return m.startVoicePreview(m.cfg, m.formTTS())
+}
+
+func (m *personasModel) startVoicePreview(base *config.Config, selection persona.TTS) tea.Cmd {
+	cfg, voice, err := personaPreviewConfig(base, selection)
 	if err != nil {
 		m.message = err.Error()
 		return nil

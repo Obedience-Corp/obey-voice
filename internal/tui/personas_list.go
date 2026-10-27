@@ -30,6 +30,7 @@ func (m *personasModel) reloadStacks() {
 		defaults = nil
 		m.defaultsErr = "Settings unavailable; inherited values cannot be resolved"
 	}
+	m.listDefaults = defaults
 	for _, p := range m.items {
 		if p == nil {
 			continue

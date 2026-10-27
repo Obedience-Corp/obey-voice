@@ -46,8 +46,7 @@ func TestPersonaPreviewWithoutConversationReplacementStopAndError(t *testing.T) 
 	if got, err := h.handle(t.Context(), request{Method: "ping"}, out); err != nil || got != "pong" {
 		t.Fatal("bridge blocked during preview")
 	}
-	draft.Voice = "Uncle_Fu"
-	start(2, draft)
+	start(2, engine.DesktopVoiceSelection{PersonaID: "santa"})
 	select {
 	case <-drained:
 	default:

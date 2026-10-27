@@ -35,6 +35,7 @@ type personasModel struct {
 	loadWarning  string
 	stacks       map[string]personaListStack
 	defaultsErr  string
+	listDefaults *config.Config
 	loadDefaults func() (*config.Config, error)
 	message      string
 
@@ -254,7 +255,17 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 		if m.confirmDeleteID != "" {
 			return m.updateDeleteConfirm(msg)
 		}
+		// A sample belongs to the highlighted row, not the next screen or row.
 		switch msg.String() {
+		case "up", "k", "down", "j", "enter", "n", "c", "e", "m", "d", "delete", "x", "esc", "q":
+			if m.preview.previewing != "" {
+				m.preview.cancel()
+				m.message = "Preview stopped"
+			}
+		}
+		switch msg.String() {
+		case "p":
+			return m, m.previewSelectedPersona()
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--

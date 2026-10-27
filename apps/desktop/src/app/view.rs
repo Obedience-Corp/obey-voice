@@ -244,7 +244,12 @@ impl eframe::App for VoiceApp {
         self.dialogs(&ctx);
         self.diagnostics_dialog(&ctx);
         // Keep setup status and native accessibility input responsive between async checks.
-        if self.starting || self.active || self.meeting_active || self.screen == Screen::Setup {
+        if self.starting
+            || self.active
+            || self.meeting_active
+            || self.screen == Screen::Setup
+            || self.persona_form.preview_request.is_some()
+        {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
