@@ -159,8 +159,8 @@ func TestCLI_AudiobookCreatePlan(t *testing.T) {
 func TestCLI_Doctor(t *testing.T) {
 	tc := GetSharedContainer(t)
 
-	// Select the offline-valid brain configuration so this test isolates model
-	// asset warnings. The default Claude provider intentionally fails doctor
+	// Select the offline-valid brain configuration so this test isolates speech
+	// diagnostics. The default Claude provider intentionally fails doctor
 	// when its required CLI is absent from this minimal container.
 	if _, err := tc.RunObeyVoice("config", "brain_provider", "ollama"); err != nil {
 		t.Fatalf("configure offline doctor brain provider: %v", err)
@@ -169,17 +169,36 @@ func TestCLI_Doctor(t *testing.T) {
 		t.Fatalf("configure offline doctor model: %v", err)
 	}
 
-	// The container has sherpa + kokoro configured but no model assets, so
-	// doctor must report missing assets as warnings — and exit 0, read-only,
-	// with no network — since warnings are not errors.
+	// Fresh Obey selects Phonon. The minimal container has no speech server,
+	// so doctor must fail with an actionable diagnostic rather than treating
+	// an unavailable service as a harmless missing-asset warning.
 	output, err := tc.RunObeyVoice("doctor")
+	if err == nil {
+		t.Fatalf("doctor should fail without the selected Phonon server, got: %s", output)
+	}
+	for _, want := range []string{"tts-provider: openai-speech", "voice Harper", "[FAIL] openai-speech-server:", "ollama serve"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Phonon doctor output should contain %q, got: %s", want, output)
+		}
+	}
+
+	// Santa explicitly selects Kokoro. In a separate CLI process doctor must
+	// honor that persisted selection and report absent local assets as warnings
+	// with exit 0, without probing the previously selected speech server.
+	if output, err := tc.RunObeyVoice("persona", "use", "santa"); err != nil {
+		t.Fatalf("select offline Kokoro persona: %v\n%s", err, output)
+	}
+	output, err = tc.RunObeyVoice("doctor")
 	if err != nil {
 		t.Fatalf("obey-voice doctor failed (warnings should exit 0): %v", err)
 	}
 
-	for _, want := range []string{"Obey Voice Doctor", "WARN", "models ensure"} {
+	for _, want := range []string{"Obey Voice Doctor", "tts-provider: kokoro", "[WARN] asset:tts.kokoro", "models ensure"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("doctor output should contain %q, got: %s", want, output)
 		}
+	}
+	if strings.Contains(output, "openai-speech-server") {
+		t.Errorf("Kokoro doctor should not diagnose the unselected Phonon server, got: %s", output)
 	}
 }

@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
+id: santa
+display_name: Santa
+builtin: true
+tts:
+    provider: kokoro
+    voice: am_santa
+prompts:
+    persona: santa

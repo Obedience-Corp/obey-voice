@@ -30,7 +30,7 @@ func TestShippedCatalogIsSelfContained(t *testing.T) {
 			t.Errorf("%s: no embedded persona prompt named %q: %v", p.ID, p.ID, err)
 		}
 	}
-	if !seen["samantha"] || !seen["veronica"] || !seen["jarvis"] {
-		t.Errorf("catalog = %v, want samantha, veronica, and jarvis among companions", ids)
+	if !seen["samantha"] || !seen["veronica"] || !seen["jarvis"] || !seen["santa"] {
+		t.Errorf("catalog = %v, want samantha, veronica, jarvis, and santa among companions", ids)
 	}
 }

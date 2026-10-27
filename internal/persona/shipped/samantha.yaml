@@ -4,7 +4,7 @@ id: samantha
 display_name: Samantha
 builtin: true
 tts:
-    provider: kokoro
-    voice: af_heart
+    provider: openai-speech
+    voice: Juniper
 prompts:
     persona: samantha

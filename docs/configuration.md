@@ -50,12 +50,14 @@ Each persona can use any supported TTS backend and any voice for that backend.
 Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 
 Shipped personas live in the catalog (`internal/persona/shipped/*.yaml` plus a
-matching `prompts/defaults/persona.<id>.yaml`). Adding a companion is those two
-files; there is no Go special case. **obey** is the default a fresh install
-talks to and pins nothing — no brain, no TTS — so it speaks with whatever the
-config above says. **samantha**, **veronica**, and **jarvis** are selectable
-companions (Kokoro Heart / VeronicaDesk / Kokoro George). None of them can be
-deleted.
+matching `pkg/voiceagent/prompts/defaults/persona.<id>.yaml`, with Obey's prompt
+in `persona.yaml`). Adding a companion requires those two files.
+**obey** is the startup persona on a fresh install. All shipped profiles inherit
+the application brain and pin distinct voices: Obey / Phonon Harper,
+Samantha / Phonon Juniper, Jarvis / Phonon Edwin, Veronica / Phonon Zoey, and
+Santa / Kokoro `am_santa`. **Use defaults** ignores the named Obey profile's
+brain and voice pins and uses Settings instead. Existing profiles are preserved;
+see [shipped personas](personas.md#shipped-personas) to adopt the new voices.
 
 On every load, empty catalog slots are filled and occupied slots are left
 alone. A fresh install starts on `obey`. An install that already named

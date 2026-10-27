@@ -37,4 +37,4 @@ prompt:
 metadata:
   id: jarvis-default
   version: 1
-  description: Shipped companion persona; Iron Man-inspired speech with Kokoro George.
+  description: Shipped companion persona; Iron Man-inspired speech with Phonon's Edwin voice through openai-speech.

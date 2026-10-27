@@ -84,11 +84,13 @@ obey-voice serve --tailscale
 
 ## Group chat
 
-A persona is a complete voice agent: its own system prompt, brain model, voice, and optionally its own working folder. Four ship (Samantha, Jarvis, Veronica, Obey) and `+ Create persona…` in the TUI adds more. With Ollama as the brain, every enabled persona sits in the same conversation.
+A persona is a complete voice agent: its own system prompt, brain model, voice, and optionally its own working folder. Five ship (Obey, Samantha, Jarvis, Veronica, Santa) and `+ Create persona…` in the TUI adds more. With Ollama as the brain, every enabled persona sits in the same conversation.
 
 Say a name anywhere in the sentence and that persona answers: "Jarvis, what do you think?" or "What do you think, Jarvis?" Whoever answered last keeps the floor for follow-ups. Everyone shares one transcript, with each person's and agent's replies labeled.
 
 Agents can pass the floor too. When one asks another a question, that persona answers in its own voice. Each of your turns allows at most three follow-on agent responses with no repeat responder, and your speech always takes priority.
+
+Defaults pair distinct Phonon voices with Obey, Samantha, Jarvis, and Veronica; Santa uses Kokoro `am_santa`. See [shipped personas](docs/personas.md#shipped-personas) for setup and updating existing profiles.
 
 Details: [shared conversations](docs/personas.md#shared-conversations) and [addressing and handing over the floor](docs/context-continuity.md#addressing-and-handing-over-the-floor).
 

@@ -57,6 +57,69 @@ in INSERT opens a dropdown of `{agent_name}`, `{user_name}`, `{date}`, and
 returns to the form; `:wq` (or normal-mode `enter`) saves the persona; `:q`
 discards the whole edit.
 
+### Shipped personas
+
+| Persona | Character | Speech provider | Voice |
+|---------|-----------|-----------------|-------|
+| Obey | Direct, practical assistant | `openai-speech` (Phonon) | `Harper` |
+| Samantha | Warm, curious conversational companion | `openai-speech` (Phonon) | `Juniper` |
+| Jarvis | Precise, dry British assistant | `openai-speech` (Phonon) | `Edwin` |
+| Veronica | Playful conversational companion | `openai-speech` (Phonon) | `Zoey` |
+| Santa | Warm storyteller with a practical workshop streak | `kokoro` | `am_santa` |
+
+All five inherit the application brain unless you set one on the profile.
+The named Obey profile pins Harper; **Use defaults** still takes its brain and
+speech settings from Settings, including a different engine or voice you chose.
+Santa is a selectable companion, not the startup persona.
+
+Phonon profiles use the configured `openai_speech_url` and
+`openai_speech_model`, which default to local Ollama and `phonon`. They require
+a server that serves these named voices. The catalog and synthesis were checked
+with Ollama 0.40.11; an older runtime or model that only offers `default` needs
+an update and a fresh `ollama pull phonon`. See
+[Phonon setup](openai-speech.md#phonon-through-ollama). Selecting a Phonon persona
+does not make a different configured speech server serve Phonon automatically.
+
+Missing profiles are added on load. Existing profiles and prompt overrides are
+never replaced, including your own persona named Santa. To adopt the new voices
+on existing profiles, use **Personas → Model & voice**, or:
+
+```bash
+obey-voice persona edit obey --tts-provider openai-speech --voice Harper
+obey-voice persona edit samantha --tts-provider openai-speech --voice Juniper
+obey-voice persona edit jarvis --tts-provider openai-speech --voice Edwin
+obey-voice persona edit veronica --tts-provider openai-speech --voice Zoey --tier ""
+obey-voice persona edit santa --tts-provider kokoro --voice am_santa
+```
+
+These commands change voice settings only. They keep each persona's name,
+brain, prompt, and working directory. Disable a companion you do not want in
+the group with `obey-voice persona disable <id>`.
+
+### Names and recognition
+
+The shipped Obey profile also answers to **Obi**, **Obie**, and **Oh bay**.
+These are explicit alternate addresses, not a broader fuzzy matcher: ordinary
+words such as "okay" and "obituary" do not become persona selections. A nickname
+shared by two personas is ambiguous; use a unique name or select from the UI.
+
+Existing Obey profiles keep their saved aliases. To add the same alternatives,
+edit `personas/obey/persona.yaml` under your config directory and add or extend:
+
+```yaml
+aliases:
+  - Obi
+  - Obie
+  - Oh bay
+```
+
+Use the spelling shown in the transcript when adding another observed
+misrecognition. Avoid common acknowledgements such as "okay" as aliases. The
+speech correction layer intentionally does not fuzzy-match short, common names
+like Obey. You can also change the spoken name in **Personas**, or with
+`obey-voice persona edit obey --display-name Obi`; the storage ID and saved
+conversation labels remain separate from the display name.
+
 ### Shared conversations
 
 With a supported local Ollama persona, address another configured persona to

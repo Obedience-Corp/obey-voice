@@ -20,8 +20,12 @@ obey-voice models ensure --tts                     # pulls phonon into Ollama, f
 
 The defaults already point at Ollama on this computer (`openai_speech_url`
 `http://localhost:11434/v1`, `openai_speech_model` `phonon`,
-`openai_speech_voice` `default`). The current model includes English voices
-such as Zoey, Easton and Freya, alongside `default`.
+`openai_speech_voice` `default`). The current model includes named English
+voices alongside `default`, exposed through `/api/show`. The shipped Phonon
+personas use Harper, Juniper, Edwin, and Zoey; all four were verified through
+Ollama 0.40.11. Obey Voice lists the voices your server actually reports. If it
+only lists `default`, update Ollama if needed and run voice setup again as
+described below.
 
 Measured on an M4 Max through Ollama's MLX runner, both engines through the
 real provider seam, no playback device

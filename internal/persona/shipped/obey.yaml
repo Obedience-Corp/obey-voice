@@ -2,7 +2,13 @@
 schema: obey-voice.persona.v1
 id: obey
 display_name: Obey
+aliases:
+    - Obi
+    - Obie
+    - Oh bay
 builtin: true
-tts: {}
+tts:
+    provider: openai-speech
+    voice: Harper
 prompts:
     persona: obey

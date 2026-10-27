@@ -4,8 +4,7 @@ id: veronica
 display_name: Veronica
 builtin: true
 tts:
-    provider: qwen3-tts
-    voice: VeronicaDesk
-    tier: 0.6b
+    provider: openai-speech
+    voice: Zoey
 prompts:
     persona: veronica
