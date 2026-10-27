@@ -50,6 +50,8 @@ type DesktopState struct {
 	SpeakerNames    []string              `json:"speaker_names"`
 	SessionID       string                `json:"session_id"`
 	Name            string                `json:"name"`
+	BrainProvider   string                `json:"brain_provider,omitempty"`
+	BrainModel      string                `json:"brain_model,omitempty"`
 	Status          string                `json:"status"`
 	Error           bool                  `json:"error"`
 	Mic             bool                  `json:"mic"`
@@ -273,6 +275,7 @@ func (m desktopModel) state() DesktopState {
 	state := DesktopState{SessionID: m.rt.SessionID, Name: c.agentName, Status: ansi.Strip(c.status), Error: c.statusErr, Mic: c.voiceEnabled,
 		VoiceAvailable: m.rt.Voice, Muted: c.outputMuted, Busy: c.turnState != turnIdle, Recording: c.recordMode(), Thinking: c.streamingThink,
 		Response: c.streamingAgent, InputLevel: c.inputLevel, OutputLevel: c.outputLevel, Workers: m.rt.Pipeline.Workers(), WorkersEnabled: m.rt.Pipeline.WorkersEnabled()}
+	state.BrainProvider, state.BrainModel = c.activeBrain()
 	if m.rt.SessionCfg != nil {
 		state.WorkDir, state.WorkDirSource = m.rt.SessionCfg.WorkDir, m.rt.SessionCfg.WorkDirSource
 	}
