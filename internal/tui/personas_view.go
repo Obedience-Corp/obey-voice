@@ -60,7 +60,7 @@ func (m personasModel) View() string {
 	case m.formMode != "" && m.promptOpen:
 		help = "  esc NORMAL • :w back to form • :wq save • ctrl+j save • :q discard"
 	case m.formMode != "" && m.formRow == formRowVoice:
-		help = "  ↑/↓ move • ←/→ change • p preview • enter edit prompt • ctrl+j save • esc cancel"
+		help = "  ↑/↓ move • ←/→ change • p preview/stop • enter edit prompt • ctrl+j save • esc cancel"
 	case m.formMode != "":
 		help = "  ↑/↓ move • ←/→ change • enter edit prompt • ctrl+j save • esc cancel"
 	case m.confirmDeleteID != "":
@@ -212,6 +212,11 @@ func (m personasModel) stackLines() []string {
 		voiceLabel = voices[voiceIdx]
 	}
 	voiceValue := "‹ " + voiceLabel + " ›"
+	if m.preview.previewing != "" {
+		voiceValue += dimStyle.Render("  [p stop] ♫ " + m.preview.previewing)
+	} else {
+		voiceValue += dimStyle.Render("  [p preview]")
+	}
 	if n := len(voices) - 1; n > 8 && voiceIdx > 0 {
 		// Long catalogs (Kokoro's 54, Phonon's 37 per language) need a
 		// position so a user cycling with ←/→ knows where they are.

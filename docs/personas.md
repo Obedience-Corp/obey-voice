@@ -29,11 +29,19 @@ The create/edit form is one screen, not a wizard: Name, the Model & voice rows
 (Brain, Model, TTS, Voice, Language, Tier), the Starting directory, and the
 System prompt. `↑`/`↓` (or tab) move between rows, `←`/`→` change the provider,
 model, voice, language or directory under the cursor, `p`
-on the Voice row previews the selected voice (the same sample Settings uses;
+on the Voice row previews the selected voice (press `p` again to stop;
+the same sample Settings uses;
 `(default)` plays the inherited Settings voice), and `ctrl+j` (also `alt+s`,
 `f2`, `ctrl+s`) saves from anywhere — so changing a persona's model or voice
 never goes through the prompt editor. `esc` cancels, except while the prompt
 differs from what the form opened with; that is discarded explicitly with `:q`.
+
+In the desktop app, **Create persona** and **Edit** both offer **Preview voice**
+beside the voice field. Preview uses the unsaved speech engine, voice, and Qwen
+model tier, with empty fields inheriting app settings. It works before starting
+a conversation and does not save or activate the persona. **Stop preview**,
+changing the speech selection, saving, or closing the form cancels playback.
+Preparation and playback failures appear in the form so you can adjust and retry.
 
 The Voice row shows its position (`6/37`) once a catalog is longer than eight
 voices. The Language row narrows it to one locale when the catalog states

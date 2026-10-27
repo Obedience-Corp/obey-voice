@@ -83,12 +83,18 @@ impl VoiceApp {
         if modal.should_close() {
             self.persona_form.open = false;
         }
+        if !self.persona_form.open {
+            self.stop_persona_preview();
+        }
     }
 
     fn persona_fields(&mut self, ui: &mut egui::Ui) {
         let brains = persona_choices(&self.schema, "brain_provider", &self.persona_form.brain);
         let speech = persona_choices(&self.schema, "tts_provider", &self.persona_form.tts);
+        let can_preview = self.connected && !self.demo;
         let f = &mut self.persona_form;
+        let previous_voice = (f.tts.clone(), f.voice.clone(), f.tier.clone());
+        let mut preview_clicked = false;
         ui.label(RichText::new("Name").strong());
         ui.add(
             egui::TextEdit::singleline(&mut f.name)
@@ -116,9 +122,37 @@ impl VoiceApp {
                         .hint_text("Use engine default")
                         .desired_width(f32::INFINITY),
                 );
-                if f.tts == "qwen3-tts" {
-                    label(ui, "Model tier");
+                if f.tts.is_empty() || f.tts == "qwen3-tts" {
+                    label(ui, "Qwen model tier");
                     super::combo(ui, "persona_tier", &mut f.tier, &["", "0.6b", "1.7b"]);
+                }
+                let previewing = f.preview_request.is_some();
+                ui.horizontal(|ui| {
+                    preview_clicked = ui
+                        .add_enabled(
+                            can_preview,
+                            egui::Button::new(if previewing {
+                                "Stop preview"
+                            } else {
+                                "Preview voice"
+                            }),
+                        )
+                        .on_hover_text("Hear this voice before saving the persona")
+                        .clicked();
+                    if previewing {
+                        ui.spinner();
+                    }
+                });
+                if !f.preview_notice.is_empty() {
+                    ui.label(
+                        RichText::new(&f.preview_notice)
+                            .small()
+                            .color(if f.preview_error {
+                                Color32::from_rgb(194, 74, 87)
+                            } else {
+                                muted(ui)
+                            }),
+                    );
                 }
             });
         });
@@ -140,6 +174,15 @@ impl VoiceApp {
         } else {
             "Custom folder"
         };
+        let voice_changed = previous_voice != (f.tts.clone(), f.voice.clone(), f.tier.clone());
+        if voice_changed {
+            self.stop_persona_preview();
+            self.persona_form.preview_notice.clear();
+            self.persona_form.preview_error = false;
+        }
+        if preview_clicked {
+            self.toggle_persona_preview();
+        }
         egui::CollapsingHeader::new(format!("Starting folder · {folder}"))
             .id_salt("persona_starting_folder")
             .show(ui, |ui| self.persona_directory_editor(ui));

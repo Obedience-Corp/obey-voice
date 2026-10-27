@@ -48,6 +48,7 @@ impl VoiceApp {
         if self.screen == target {
             return;
         }
+        self.stop_persona_preview();
         if self.remote.is_some() && target != Screen::Remote {
             self.stop_remote();
         }
@@ -199,6 +200,7 @@ impl VoiceApp {
         self.pairing.clear();
     }
     pub fn save_persona(&mut self) {
+        self.stop_persona_preview();
         self.persona_form.save_error.clear();
         let f = &self.persona_form;
         if f.id.is_empty() {

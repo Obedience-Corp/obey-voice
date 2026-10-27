@@ -52,6 +52,14 @@ replay for running/queued work. These fixtures never use personal voice config.
 Real microphone/playback, live provider authentication and hardware acceptance
 remain opt-in. See the [app guide](../apps/desktop/README.md) for other fixtures.
 
+For persona preview acceptance, run `just test persona-preview` from
+`apps/desktop`. In the test app, open Create persona or Edit and click Preview
+voice. The isolated speech endpoint returns a quiet test tone and records voice
+requests beside the temporary config directory. Voice `broken` returns an error;
+`slow` delays synthesis for cancellation checks. Verify Preview/Stop, retry,
+changing the draft, and closing the form before saving. Preview must leave the
+config and persona files unchanged; saving must persist the selected draft voice.
+
 ## Repository migration
 
 The initial import retains the original `Obedience-Corp/obey-voice-agent` history

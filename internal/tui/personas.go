@@ -140,7 +140,9 @@ func newPersonas(cfg *config.Config) personasModel {
 				if cfg == nil {
 					return playback.NewPlayer()
 				}
-				return playback.NewPlayerWithDevice(cfg.OutputDevice)
+				player := playback.NewPlayerWithDevice(cfg.OutputDevice)
+				player.SetVolume(config.PlaybackVolumeOf(cfg))
+				return player
 			},
 			ensure: func(ctx context.Context, c *config.Config, onProgress func(string, float64)) error {
 				return config.EnsureRuntimeAssets(ctx, c, config.AssetRequest{NeedTTS: true}, onProgress)

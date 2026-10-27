@@ -344,6 +344,11 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 	case isPersonaFormSaveKey(key):
 		return m.submitForm()
 	case key == "p" && m.formRow == formRowVoice:
+		if m.preview.previewing != "" {
+			m.preview.cancel()
+			m.message = "Preview stopped"
+			return m, nil
+		}
 		return m, m.startPersonaPreview()
 	case key == "esc":
 		// Only an untouched prompt may be abandoned by reflex; a real edit is
@@ -375,7 +380,7 @@ func (m personasModel) updateForm(msg tea.KeyMsg) (personasModel, tea.Cmd) {
 				delta = -1
 			}
 			m.cycleStackRow(delta)
-			if m.formRow == formRowVoice {
+			if m.formRow == formRowVoice || m.formRow == formRowTTSProvider || m.formRow == formRowTier {
 				m.preview.cancel()
 			}
 			if m.formRow == formRowTTSProvider {
@@ -735,28 +740,6 @@ func (m *personasModel) refreshPlaceholderValues() {
 		user = m.cfg.UserDisplayName
 	}
 	m.promptTA.SetPlaceholderValues(prompts.PlaceholderValues(name, prompts.PlaceholderEnv{UserName: user}))
-}
-
-func (m *personasModel) startPersonaPreview() tea.Cmd {
-	if m.cfg == nil {
-		m.message = "No voice to preview"
-		return nil
-	}
-	provider := m.effectiveStackTTSProvider()
-	name := strings.TrimSpace(m.selectedVoice)
-	if name == "" {
-		name = config.TTSVoiceFor(m.cfg, provider)
-	}
-	if name == "" {
-		m.message = "No voice to preview"
-		return nil
-	}
-	m.message = "playing"
-	cfg := *m.cfg
-	if provider != "" {
-		cfg.TTSProvider = provider
-	}
-	return m.preview.start(cfg, tts.Voice{Name: name})
 }
 
 func (m personasModel) submitForm() (personasModel, tea.Cmd) {

@@ -20,6 +20,7 @@ impl VoiceApp {
                     if generation != self.backend.generation {
                         continue;
                     }
+                    self.persona_preview_lost(&err);
                     self.connected = false;
                     self.setup.busy = None;
                     self.setup.invalidate();
@@ -96,6 +97,7 @@ impl VoiceApp {
                                 self.state = state;
                             }
                         }
+                        "persona_preview_done" => self.persona_preview_done(&v["data"]),
                         "progress" => self.status = v["data"].as_str().unwrap_or_default().into(),
                         "error" => self.error = Some(display(&v["data"])),
                         "meeting_utterance" => {
@@ -154,6 +156,10 @@ impl VoiceApp {
             self.complete_persona_directory(id, purpose, result);
             return;
         }
+        if matches!(purpose, Purpose::PersonaPreview) {
+            self.complete_persona_preview(id, result);
+            return;
+        }
         let v = match result {
             Ok(v) => v,
             Err(err) => {
@@ -177,7 +183,10 @@ impl VoiceApp {
             }
         };
         match purpose {
-            Purpose::Setup(_) | Purpose::PersonaDirectories | Purpose::PersonaBrowse => {
+            Purpose::Setup(_)
+            | Purpose::PersonaDirectories
+            | Purpose::PersonaBrowse
+            | Purpose::PersonaPreview => {
                 unreachable!()
             }
             Purpose::Sessions => self.sessions = serde_json::from_value(v).unwrap_or_default(),
@@ -227,6 +236,7 @@ impl VoiceApp {
                 self.refresh();
             }
             Purpose::PersonaLoad => {
+                self.stop_persona_preview();
                 let p = &v["persona"];
                 self.persona_form = PersonaForm {
                     starting_directory: string(p, "starting_directory"),
