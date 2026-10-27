@@ -203,7 +203,7 @@ type Config struct {
 	// work. This global preference is independent of the experimental inbox.
 	VoiceWorkersDisabled bool `mapstructure:"voice_workers_disabled"`
 
-	// VoiceWorkerProvider selects the async job worker brain (ollama/grok/claude).
+	// VoiceWorkerProvider selects the async job worker brain (any supported brain provider).
 	// Empty defaults to grok.
 	VoiceWorkerProvider string `mapstructure:"voice_worker_provider"`
 	// VoiceWorkerModel pins the worker model; empty inherits the provider default.

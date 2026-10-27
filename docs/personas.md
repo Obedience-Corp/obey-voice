@@ -65,6 +65,19 @@ in INSERT opens a dropdown of `{agent_name}`, `{user_name}`, `{date}`, and
 returns to the form; `:wq` (or normal-mode `enter`) saves the persona; `:q`
 discards the whole edit.
 
+### Worker brains
+
+Each persona's **Worker provider** can use any supported brain: Ollama, Claude,
+Codex, Cursor, or Grok. Worker model choices follow the selected provider's
+discovered models. Cursor requires `cursor-agent` installed and authenticated,
+just as it does when used for conversation. Its background jobs use separate
+conversation histories and CLI sessions.
+
+The desktop persona editor and Settings use the same provider catalog as the
+TUI. Tiered CLI workers still require explicit billing/account settings and
+the existing paid-worker opt-in; selecting a provider does not enable paid work
+or give it spending limits its adapter cannot enforce.
+
 ### Shipped personas
 
 | Persona | Character | Speech provider | Voice |

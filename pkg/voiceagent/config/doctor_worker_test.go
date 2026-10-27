@@ -78,7 +78,7 @@ func TestDiagnoseWorkerProvider(t *testing.T) {
 
 	t.Run("unsupported provider is error", func(t *testing.T) {
 		t.Parallel()
-		cfg := &Config{VoiceWorkerProvider: "cursor"}
+		cfg := &Config{VoiceWorkerProvider: "unknown"}
 		d := diagnoseWorkerProvider(cfg, look)
 		if d.Severity != SeverityError {
 			t.Fatalf("severity = %q, want error: %+v", d.Severity, d)

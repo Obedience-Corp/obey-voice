@@ -259,6 +259,17 @@ func (c *CursorBrain) dropSession() {
 	c.promptTokens = 0
 }
 
+// Fresh gives each background job its own history and CLI session. The SDK
+// client is safe to share; mutable conversation state is never copied.
+func (c *CursorBrain) Fresh() Provider {
+	return &CursorBrain{
+		client: c.client, cfg: c.cfg.Clone(),
+		systemPrompt: c.systemPrompt, turnInstruction: c.turnInstruction,
+		personaReloader: c.personaReloader, turnReloader: c.turnReloader,
+		speakerNames: c.speakerNames,
+	}
+}
+
 // askOptions builds the print-mode options shared by the streaming and
 // blocking paths. Tool execution is gated by voice_tools_enabled: disabled
 // uses ask mode (no edits); enabled leaves --mode unset so the CLI runs

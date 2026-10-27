@@ -63,8 +63,7 @@ func stackBrainProviders() []string {
 }
 
 // stackWorkerProviders lists the backends that can run this persona's async
-// jobs. It is the brain list narrowed to workers — cursor can talk but cannot
-// work, so offering it here would promise something Apply cannot deliver.
+// jobs. It shares the worker choices used by Settings and the desktop schema.
 func stackWorkerProviders() []string {
 	out := []string{stackDefaultLabel}
 	out = append(out, config.WorkerProviders...)
