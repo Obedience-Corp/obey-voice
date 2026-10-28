@@ -39,7 +39,7 @@ func loadSkillsCatalog(ctx context.Context, cfg *config.Config, workDir string) 
 	return catalog, nil
 }
 
-// refreshSystemPrompt re-reads persona and app YAML before a request. Reassembly
+// refreshSystemPrompt re-reads persona YAML before a request. Reassembly
 // remains deterministic: unchanged files produce the same system prefix, while
 // edits become visible without restarting the conversation.
 func (o *OllamaBrain) refreshSystemPrompt(onWarn func(message string)) {
@@ -53,7 +53,8 @@ func (o *OllamaBrain) refreshSystemPrompt(onWarn func(message string)) {
 	if changed {
 		o.systemPrompt = persona
 	}
-	// Re-render app YAML too; equal content preserves the provider's prefix cache.
+	// Equal content preserves the provider's prefix cache. Application YAML is
+	// resolved separately for relevant requests by buildMessagesForTurn.
 	o.setFullSystemPrompt(assembleSystemPrompt(o.systemPrompt, o.workDir, o.skills, o.turnInstruction, o.cfg))
 }
 
@@ -91,12 +92,18 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bool) []api.Message {
 	msgs := make([]api.Message, 0, len(o.history)+1)
 	system := o.fullSystemPrompt + o.conversationIdentityGuidance()
+	lastUser := lastUserIndex(o.history)
+	if !agentContinuation && lastUser >= 0 {
+		_, input := decodeOllamaUser(o.history[lastUser].Content)
+		if app := ApplicationRequestContext(o.cfg, providerOllama, input); app != "" {
+			system += "\n\n" + app
+		}
+	}
 	if agentContinuation {
 		system += "\n" + systemPrompt(o.cfg, "peer-reply", nil)
 	}
 	msgs = append(msgs, api.Message{Role: "system", Content: system})
 	recall := o.recallNotes()
-	lastUser := lastUserIndex(o.history)
 	for i, m := range o.history {
 		if i == lastUser && recall != "" {
 			msgs = append(msgs, recallMessages(recall)...)

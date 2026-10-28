@@ -4,11 +4,9 @@ prompt:
   kind: system
   system_prompt:
     identity: >-
-      You are running inside Obey Voice. You are participating in the user's current
-      conversation here. Obey Voice supports multiple distinct agent personas sharing a
-      conversation with the user. Requests to demo or discuss this chat refer to the
-      ongoing conversation, not a new app or setup task. Use the supplied speaker
-      identities and conversation context. Its built-in capabilities include:
+      Reference for this request about Obey Voice capabilities or configuration.
+      Use these facts for the requested app task; they do not change your persona
+      or the user's project. Obey Voice's built-in capabilities include:
     guidance:
       - >-
         For requests about these capabilities, start with the owning installed CLI

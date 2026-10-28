@@ -57,11 +57,11 @@ func TestSystemYAMLEditReachesNextBlockingAndStreamingRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.ThinkFull(t.Context(), "First question", StreamOptions{}); err != nil {
+	if _, err := b.ThinkFull(t.Context(), "How can Obey Voice create an audiobook?", StreamOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	writeApp("APP_EDIT_B")
-	stream, err := b.ThinkStream(t.Context(), "Next question", StreamOptions{})
+	stream, err := b.ThinkStream(t.Context(), "How can Obey Voice convert an EPUB?", StreamOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestSystemYAMLEditReachesNextBlockingAndStreamingRequests(t *testing.T) {
 	if result := <-stream.Done; result.Err != nil {
 		t.Fatal(result.Err)
 	}
-	if _, err := b.ThinkFull(t.Context(), "Same settings", StreamOptions{}); err != nil {
+	if _, err := b.ThinkFull(t.Context(), "Show Obey Voice settings", StreamOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()

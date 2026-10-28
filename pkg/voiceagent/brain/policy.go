@@ -14,8 +14,6 @@ type PromptElement string
 const (
 	// ElemPersona is the persona system prompt — who the agent is.
 	ElemPersona PromptElement = "persona"
-	// ElemApplication identifies the hosting app and its configuration interface.
-	ElemApplication PromptElement = "application"
 	// ElemEnvironment is machine grounding: user, working directory, host, OS.
 	ElemEnvironment PromptElement = "environment"
 	// ElemBoundary is a worker's fence: stay under this campaign root.
@@ -53,7 +51,7 @@ const (
 //
 // There are two exceptions today — see SkillMenuApplies and ToolSurfaceApplies.
 func SystemPromptPolicy(provider string, cfg *config.Config) []PromptElement {
-	elems := []PromptElement{ElemPersona, ElemApplication}
+	elems := []PromptElement{ElemPersona}
 	if environmentContextEnabled(cfg) {
 		elems = append(elems, ElemEnvironment)
 	}
@@ -139,13 +137,6 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 		switch elem {
 		case ElemPersona:
 			b.WriteString(in.Persona)
-		case ElemApplication:
-			b.WriteString("\n\n" + ApplicationContext(in.Cfg))
-			if !SkillMenuApplies(in.Provider) && applicationSkillEnabled(in.Cfg) {
-				// Native-tool providers own skill discovery, but need this app's
-				// shipped instructions even outside the project's checkout.
-				b.WriteString("\n\n" + skills.ApplicationInstructions())
-			}
 		case ElemEnvironment:
 			b.WriteString("\n")
 			env := Env{}

@@ -175,10 +175,14 @@ Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before
 enabling the launcher; Continue offers the saved chat.
 
-Every provider receives core Obey Voice capability context, even when skills
-are disabled: native audiobook/document audio, optional Calibre access, and
-configuration commands. The conversation reports whether Calibre is enabled;
-it does not assume an installed feature is ready to execute without inspection.
+Obey Voice capability guidance is added to the current request when it asks
+about this app's capabilities or configuration, or directly requests document
+conversion to audio. It is absent from persistent system prompts and unrelated
+requests, including requests to implement conversion in another project. The
+current input selects the guidance; earlier app questions do not keep it active
+across topic changes. Relevant requests receive core capability facts even when
+skills are disabled. Those facts include the current Calibre setting and require
+readiness checks before claiming a feature can execute.
 The embedded `obey-voice` skill supplies detailed app workflows. Listed group
 participants already exist; asking one to speak does not request creating it.
 Peer replies have tools disabled and their discussion of commands cannot
@@ -198,9 +202,9 @@ system documents are shown as templates, with runtime placeholders intact.
 `conversation-history` own conversation context; `addressee` and `acoustic-name`
 own private routing instructions. Metadata in each file names its runtime
 variables. Go supplies values such as the current persona, public roster and
-Calibre enablement. Edits take effect on the next request; invalid YAML or
+Calibre enablement. Edits take effect on the next relevant request; invalid YAML or
 unknown placeholders report a warning and use the packaged YAML. Unchanged
-templates preserve the system prefix, and prompt text stays out of canonical
+templates produce identical context, and prompt text stays out of canonical
 conversation history.
 
 Exact persona controls are intentionally narrow and whole-input only:

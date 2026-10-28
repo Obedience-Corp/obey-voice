@@ -11,7 +11,8 @@ func TestApplicationCapabilitiesReachProvidersWithoutSkills(t *testing.T) {
 	for _, provider := range []string{providerOllama, providerClaude, providerCursor, providerGrok, "codex"} {
 		for _, enabled := range []bool{false, true} {
 			cfg := &config.Config{CalibreEnabled: enabled}
-			prompt := AssembleSystemPrompt(SystemPromptInput{Provider: provider, Persona: "You are Venessa.", Cfg: cfg})
+			cfg.PromptsDir = t.TempDir()
+			prompt := ApplicationRequestContext(cfg, provider, "Can Obey Voice convert a Calibre ebook to audio?")
 			for _, capability := range []string{"audiobook create", "--from-library", "obey-voice render", "persona list/show/create/edit", "config get/schema/set"} {
 				if !strings.Contains(prompt, capability) {
 					t.Errorf("provider=%s skills off: missing %q", provider, capability)
@@ -25,5 +26,55 @@ func TestApplicationCapabilitiesReachProvidersWithoutSkills(t *testing.T) {
 				t.Errorf("provider=%s calibre=%v not reflected in prompt", provider, enabled)
 			}
 		}
+	}
+}
+
+func TestApplicationContextIsRequestSpecificAcrossProviders(t *testing.T) {
+	cfg := &config.Config{AgentName: "Venessa", PromptsDir: t.TempDir(), SkillsEnabled: true}
+	for _, provider := range []string{providerOllama, providerClaude, providerCursor, providerGrok, "codex"} {
+		t.Run(provider, func(t *testing.T) {
+			persistent := AssembleSystemPrompt(SystemPromptInput{Provider: provider, Persona: "You are Venessa.", Cfg: cfg})
+			if strings.Contains(persistent, "audiobook create") || strings.Contains(persistent, "calibre_enabled") {
+				t.Fatal("application instructions leaked into persistent system prompt")
+			}
+			history := []Turn{{Role: "user", Content: "Can Obey Voice create an audiobook?"}, {Role: "assistant", Content: "Yes."}}
+			project := func(input string, resumed bool) string {
+				turns := append(append([]Turn(nil), history...), Turn{Role: "user", Content: input})
+				session := ""
+				if resumed {
+					session = "existing-session"
+				}
+				switch provider {
+				case providerClaude:
+					b := &Brain{cfg: cfg, history: turns, sessionID: session}
+					return b.buildPrompt(true)
+				case providerCursor:
+					b := &CursorBrain{cfg: cfg, history: turns, sessionID: session}
+					return b.buildPrompt(true)
+				case providerGrok:
+					b := &GrokBrain{cfg: cfg, history: turns, sessionID: session}
+					return b.buildPrompt(true)
+				case "codex":
+					b := &CodexBrain{cfg: cfg, canonical: turns, sessionID: session}
+					return b.buildPrompt(input, StreamOptions{})
+				default:
+					b := &OllamaBrain{cfg: cfg}
+					b.LoadHistory(turns)
+					return b.buildMessages("")[0].Content
+				}
+			}
+			for _, resumed := range []bool{false, true} {
+				for _, input := range []string{"How do I configure Obey Voice?", "Can you convert a Calibre ebook to audio?"} {
+					if got := project(input, resumed); !strings.Contains(got, "Current Calibre setting: calibre_enabled=false") {
+						t.Fatalf("resumed=%v relevant input missing app context: %q", resumed, got)
+					}
+				}
+				for _, input := range []string{"Tell me a joke", "Help me configure PostgreSQL", "What audiobook did you enjoy?", "Write a poem about Obey Voice", "yes", "Build a PDF to audio service in my project", "Write a Python script to convert an EPUB to audio"} {
+					if got := project(input, resumed); strings.Contains(got, "calibre_enabled") || strings.Contains(got, "obey-voice audiobook create") {
+						t.Fatalf("resumed=%v unrelated input %q includes app context: %s", resumed, input, got)
+					}
+				}
+			}
+		})
 	}
 }
