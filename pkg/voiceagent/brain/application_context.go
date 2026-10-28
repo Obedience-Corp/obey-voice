@@ -17,7 +17,7 @@ func ApplicationContext(cfg *config.Config) string {
 var applicationName = regexp.MustCompile(`(?i)\bobey[- ]voice\b`)
 var applicationOperation = regexp.MustCompile(`(?i)\b(configure|configuration|settings|capabilities|features|support|supports|built-in|built in|how|can|create|convert|enable|disable|change|edit|set|setup|install|list|show|render|narrate|audiobook|calibre|persona|command|help)\b`)
 var documentAudioRequest = regexp.MustCompile(`(?i)\b(convert|render|create|make|narrate|read|generate|turn)\b`)
-var documentSource = regexp.MustCompile(`(?i)\b(ebook|epub|pdf|calibre)\b`)
+var documentSource = regexp.MustCompile(`(?i)\b(ebook|epub|pdf|calibre|markdown|html|text|url)\b|\.(md|txt|html?)\b|\bhttps?://`)
 var implementationRequest = regexp.MustCompile(`(?i)\b(implement|build|code|script|api|app|project|website|service)\b`)
 var audioOutput = regexp.MustCompile(`(?i)\b(audio|audiobook|aloud|speech)\b`)
 

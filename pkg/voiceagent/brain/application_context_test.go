@@ -64,12 +64,38 @@ func TestApplicationContextIsRequestSpecificAcrossProviders(t *testing.T) {
 				}
 			}
 			for _, resumed := range []bool{false, true} {
-				for _, input := range []string{"How do I configure Obey Voice?", "Can you convert a Calibre ebook to audio?"} {
+				for _, input := range []string{
+					"How do I configure Obey Voice?",
+					"Can you convert a Calibre ebook to audio?",
+					"Convert this Markdown file to audio",
+					"Render this HTML document as speech",
+					"Read this plain text aloud",
+					"Turn this URL into an audiobook",
+					"Read https://example.com/article aloud",
+					"Convert notes.md to audio",
+					"Render notes.txt as speech",
+					"Read article.html aloud",
+					"Read article.htm aloud",
+				} {
 					if got := project(input, resumed); !strings.Contains(got, "Current Calibre setting: calibre_enabled=false") {
 						t.Fatalf("resumed=%v relevant input missing app context: %q", resumed, got)
 					}
 				}
-				for _, input := range []string{"Tell me a joke", "Help me configure PostgreSQL", "What audiobook did you enjoy?", "Write a poem about Obey Voice", "yes", "Build a PDF to audio service in my project", "Write a Python script to convert an EPUB to audio"} {
+				for _, input := range []string{
+					"Tell me a joke",
+					"Help me configure PostgreSQL",
+					"What audiobook did you enjoy?",
+					"Write a poem about Obey Voice",
+					"yes",
+					"Build a PDF to audio service in my project",
+					"Write a Python script to convert an EPUB to audio",
+					"Implement Markdown to audio conversion in my project",
+					"Build an HTML to speech service",
+					"Write code to read text aloud",
+					"Create a URL to audiobook API",
+					"Write a script to read https://example.com/article aloud",
+					"Implement a notes.md to audio converter",
+				} {
 					if got := project(input, resumed); strings.Contains(got, "calibre_enabled") || strings.Contains(got, "obey-voice audiobook create") {
 						t.Fatalf("resumed=%v unrelated input %q includes app context: %s", resumed, input, got)
 					}
