@@ -17,7 +17,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 )
 
-func TestRoutedWorkerAcknowledgementSurvivesSessionReload(t *testing.T) {
+func TestRoutedWorkerRequestSurvivesSessionReloadWithoutSyntheticReply(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/tags" {
 			t.Errorf("routed acknowledgement called live model: %s", r.URL.Path)
@@ -66,19 +66,15 @@ func TestRoutedWorkerAcknowledgementSurvivesSessionReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Turns) != 4 {
-		t.Fatalf("reloaded routed history = %+v, want two complete exchanges", loaded.Turns)
+	if len(loaded.Turns) != 2 {
+		t.Fatalf("reloaded routed history = %+v, want two user requests without fabricated replies", loaded.Turns)
 	}
-	for i := range 2 {
-		user, ack := loaded.Turns[2*i], loaded.Turns[2*i+1]
+	for i, user := range loaded.Turns {
 		if user.Role != "user" || user.Content != original || user.RoutedInput != "Create a file called worker-proof.txt containing blue comet." {
 			t.Fatalf("original/routed input lost: %+v", user)
 		}
-		if ack.Role != "assistant" || ack.Content != defaultSpawnAck || ack.PersonaID != "samantha" || ack.PersonaDisplayName != "Samantha" || ack.ResponseID != fmt.Sprintf("response-%d", i+1) {
-			t.Fatalf("ack identity lost: %+v", ack)
-		}
-		if ready[i].Response != ack.Content || ready[i].Envelope == nil || ready[i].Envelope.ResponseID != ack.ResponseID {
-			t.Fatalf("wire/disk disagree: ready=%+v ack=%+v", ready[i], ack)
+		if ready[i].Response != "" || ready[i].Envelope == nil || ready[i].Envelope.ResponseID != fmt.Sprintf("response-%d", i+1) {
+			t.Fatalf("routed turn invented a reply or lost its identity: %+v", ready[i])
 		}
 	}
 	if !reflect.DeepEqual(loaded.Turns, b.History()) {
@@ -116,13 +112,13 @@ func TestRoutedReplyPreservesExistingModelToolExchange(t *testing.T) {
 	m := newTurnMetrics()
 	m.originalInput, m.historyAtAdmission = modelTurns[0].Content, len(before)
 	m.response = events.ResponseEnvelope{PersonaID: "samantha", DisplayName: "Samantha", ResponseID: "new"}
-	if err := p.appendRoutedHistory(m, "do the task", defaultSpawnAck); err != nil {
+	if err := p.appendRoutedHistory(m, "do the task", "The request was cancelled."); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.turns) != len(before)+len(modelTurns)+1 || !reflect.DeepEqual(b.turns[:len(before)+len(modelTurns)], append(before, modelTurns...)) {
 		t.Fatalf("model exchange changed or user duplicated: %+v", b.turns)
 	}
-	if got := b.turns[len(b.turns)-1]; got.Content != defaultSpawnAck || got.ResponseID != "new" {
+	if got := b.turns[len(b.turns)-1]; got.Content != "The request was cancelled." || got.ResponseID != "new" {
 		t.Fatalf("host reply = %+v", got)
 	}
 }

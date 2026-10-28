@@ -15,8 +15,8 @@ import (
 // touch the status line or the orb — otherwise a job running behind a live turn
 // hijacks both. State is kept per job: a spawn queued behind a running worker
 // is counted on the chip but never relabels it. The thread gets exactly one
-// item per job, rewritten in place as the fold grows, the same way the
-// streaming think block is rewritten.
+// item per job, rewritten in place as the fold grows. Per-call details stay
+// in that item so commands and failures are visible in chat as well as Ctrl-W.
 
 // jobView is what the chip and the job's thread item know about one queued
 // or running job.
@@ -36,6 +36,9 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 	}
 	job := m.trackJob(id, v.Task)
 	job.terminal = v.State == work.JobTerminal
+	if job.terminal {
+		m.workTracker().Seal(id)
+	}
 	job.origin = v.Origin
 	if v.Config != nil {
 		job.tier = v.Config["worker_tier"]
@@ -130,7 +133,7 @@ func (m *conversationModel) jobEnded(id, detail, suffix string, elapsed time.Dur
 	m.appendActivity("job", detail, elapsed)
 	// Reconcile missing end hooks before sealing the line. Unknown calls must
 	// remain visible and cannot be rendered as successful work.
-	rows := m.workTracker().Close(id)
+	rows := m.workTracker().Seal(id)
 	unknown := 0
 	for _, row := range rows {
 		unknown += row.Unknown
@@ -363,6 +366,7 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 		origin = " [" + job.origin + "]"
 	}
 	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
+	line += m.renderJobToolDetails(id)
 	idx, ok := m.jobItems[id]
 	if !ok || idx >= len(m.items) {
 		if m.jobItems == nil {
@@ -375,6 +379,26 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	m.items[idx] = chatItem{kind: chatItemSys, sys: line}
 	m.refreshContent()
 	m.applyFollow()
+}
+
+// renderJobToolDetails uses the already-redacted event projection. Keep the
+// same evidence when a canonical result replaces a provisional job entry.
+func (m *conversationModel) renderJobToolDetails(id string) string {
+	line := ""
+	for i, call := range m.workTracker().Calls(id) {
+		detail := fmt.Sprintf("    %d. %s · %s", i+1, compactWorkerText(call.Name), call.Status)
+		if call.Summary != "" {
+			detail += " · " + compactWorkerText(call.Summary)
+		}
+		line += "\n" + dimStyle.Render(detail)
+		if call.Preview != "" {
+			line += "\n" + dimStyle.Render("       "+compactWorkerText(call.Preview))
+		}
+		if call.Err != "" && call.Err != call.Preview {
+			line += "\n" + errorStyle.Render("       "+compactWorkerText(call.Err))
+		}
+	}
+	return line
 }
 
 // jobLabel is what the job's line says it did: the folded rows once there are
