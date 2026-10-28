@@ -18,6 +18,7 @@ type TraceContext struct {
 	ConversationEpoch string    `json:"conversation_epoch"`
 	MonoMS            *float64  `json:"mono_ms"`
 	TurnID            *string   `json:"turn_id"`
+	JobID             *string   `json:"job_id"`
 	ParentTurnID      *string   `json:"parent_turn_id"`
 	TurnStartMS       *float64  `json:"turn_start_ms"`
 	ResponseID        *string   `json:"response_id"`
@@ -284,4 +285,31 @@ func SourceWorkScope(event Event) (runtime, session, epoch string, ok bool) {
 		return "", "", "", false
 	}
 	return scope.RuntimeEpoch, scope.SessionID, scope.ConversationEpoch, scope.Valid()
+}
+
+// SourceJobID is typed producer-owned job identity, independent of span naming.
+func SourceJobID(event Event) string {
+	switch e := event.(type) {
+	case JobQueued:
+		return e.ID
+	case JobStarted:
+		return e.ID
+	case JobFinished:
+		return e.ID
+	case JobFailed:
+		return e.ID
+	case JobAborted:
+		return e.ID
+	case WorkerUsageRecorded:
+		return e.JobID
+	case WorkerLimitReached:
+		return e.JobID
+	case WorkerChargeState:
+		return e.JobID
+	case ToolCallStarted:
+		return e.JobID
+	case ToolCallFinished:
+		return e.JobID
+	}
+	return ""
 }

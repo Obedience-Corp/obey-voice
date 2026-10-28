@@ -203,16 +203,17 @@ type gap struct {
 // Close never panics with "send on closed channel". The writer goroutine alone
 // owns the file after Open.
 type Writer struct {
-	copyMu      sync.Mutex
-	capture     *CaptureOptions
-	queuedBytes int64
-	missing     []SequenceRange
-	skipped     atomic.Int64
-	written     atomic.Int64
-	synced      atomic.Int64
-	bytes       atomic.Int64
-	limited     atomic.Bool
-	closeErr    error
+	copyMu        sync.Mutex
+	capture       *CaptureOptions
+	queuedBytes   int64
+	missing       []SequenceRange
+	skipped       atomic.Int64
+	scopeExcluded atomic.Int64
+	written       atomic.Int64
+	synced        atomic.Int64
+	bytes         atomic.Int64
+	limited       atomic.Bool
+	closeErr      error
 
 	f           captureSink
 	ch          chan record
@@ -561,7 +562,7 @@ func (w *Writer) runCapture() {
 			flushBuffer()
 		case <-syncTick.C:
 			health := w.Health()
-			if lastExternalSeq != lastHealthSeq || health.Dropped != lastHealth.Dropped || health.Skipped != lastHealth.Skipped || health.WriteErrors != lastHealth.WriteErrors || health.Limited != lastHealth.Limited {
+			if lastExternalSeq != lastHealthSeq || health.Dropped != lastHealth.Dropped || health.Skipped != lastHealth.Skipped || health.ScopeExcluded != lastHealth.ScopeExcluded || health.WriteErrors != lastHealth.WriteErrors || health.Limited != lastHealth.Limited {
 				w.enqueue(record{Type: "capture_health", Health: &health})
 				lastHealth = health
 				lastHealthSeq = lastExternalSeq

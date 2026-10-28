@@ -25,9 +25,13 @@ func (w *Writer) Handle(e events.Event) {
 		if closed {
 			return
 		}
+		if captureScopeConflict(w.capture.Trace, e) {
+			w.scopeExcluded.Add(1)
+			return
+		}
 		if size, ok := boundedSize(reflect.ValueOf(e), 0); !ok {
 			w.skipped.Add(1)
-			w.enqueue(record{Type: "record_omitted", Trace: events.TraceOf(e), Message: "payload exceeds bounded copy budget", SizeEstimateBytes: size, OmittedType: events.EventType(e), SizeEstimateKind: sizeEstimateKind(size)})
+			w.enqueue(record{Type: "record_omitted", Trace: cloneDiagnosticTrace(events.TraceOf(e)), Message: "payload exceeds bounded copy budget", SizeEstimateBytes: size, OmittedType: events.EventType(e), SizeEstimateKind: sizeEstimateKind(size)})
 			return
 		}
 		e = copyBounded(reflect.ValueOf(e)).Interface().(events.Event)

@@ -2,8 +2,10 @@ package transcript
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -166,5 +168,67 @@ func TestCaptureBytePressureEvictsOnlyNecessaryNoise(t *testing.T) {
 	}
 	if foundNoise {
 		t.Fatal("byte pressure retained old noise over terminal")
+	}
+}
+
+func TestCaptureOversizedDiagnosticOwnsBoundedTrace(t *testing.T) {
+	w := captureTestWriter(&testSink{})
+	response, turn := "frozen-response", strings.Repeat("x", MaxRecordBytes*2)
+	trace := &events.TraceContext{RuntimeID: strings.Repeat("r", MaxRecordBytes*2), ResponseID: &response, TurnID: &turn}
+	w.Handle(events.UserInput{Trace: trace, Text: "small payload; huge source identity"})
+	response = "mutated"
+	record := <-w.ch
+	if record.Type != "record_omitted" || record.Trace == trace || record.Trace.RuntimeID != "" || record.Trace.TurnID != nil || record.Trace.ResponseID == nil || *record.Trace.ResponseID != "frozen-response" {
+		t.Fatal("omission retained oversized/mutable source identity")
+	}
+	if size, ok := boundedSize(reflect.ValueOf(record), 0); !ok || size > 64<<10 {
+		t.Fatal("diagnostic exceeded bounded reserve", size, ok)
+	}
+}
+
+func TestCaptureIdleScopeExclusionHealthDoesNotSelfRepeat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	writer, err := NewCaptureWriter(path, CaptureOptions{CaptureID: "health", Trace: events.TraceContext{RuntimeID: "current"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	waitHealth := func(excluded int64) int {
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			count, matched := 0, false
+			for _, line := range strings.Split(string(raw), "\n") {
+				var row struct {
+					Type   string `json:"type"`
+					Health Health `json:"health"`
+				}
+				if json.Unmarshal([]byte(line), &row) == nil && row.Type == "capture_health" {
+					count++
+					if row.Health.ScopeExcluded == excluded {
+						matched = true
+					}
+				}
+			}
+			if matched {
+				return count
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatal("periodic scope health unavailable", excluded)
+		return 0
+	}
+	first := waitHealth(0)
+	writer.Handle(events.Error{Trace: &events.TraceContext{RuntimeID: "old"}, Message: "excluded"})
+	second := waitHealth(1)
+	if second != first+1 {
+		t.Fatal("unexpected health emission count", first, second)
+	}
+	time.Sleep(1200 * time.Millisecond)
+	if again := waitHealth(1); again != second {
+		t.Fatal("health record recursively generated another", second, again)
 	}
 }

@@ -3,11 +3,15 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -186,5 +190,127 @@ func TestTracePipelineEmitSites(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type delayedTraceSTT struct {
+	*fakeSTT
+	entered, release chan struct{}
+}
+type delayedTraceSession struct {
+	events           chan stt.Event
+	entered, release chan struct{}
+}
+
+func (s *delayedTraceSession) Events() <-chan stt.Event { return s.events }
+func (s *delayedTraceSession) Close() error             { close(s.entered); <-s.release; return nil }
+func (p *delayedTraceSTT) Start(context.Context) (stt.Session, error) {
+	events := make(chan stt.Event, 1)
+	events <- stt.FinalTranscript{Text: "measured final input"}
+	close(events)
+	return &delayedTraceSession{events: events, entered: p.entered, release: p.release}, nil
+}
+func TestTraceFinalizedInputPrecedesCleanupEvenWhenCancelled(t *testing.T) {
+	for _, cancelDuringClose := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancelDuringClose), func(t *testing.T) {
+			provider := &delayedTraceSTT{fakeSTT: &fakeSTT{}, entered: make(chan struct{}), release: make(chan struct{})}
+			p := &Pipeline{STT: provider, Events: events.NewBus()}
+			if err := p.BeginConversationIdentity("finalized-input"); err != nil {
+				t.Fatal(err)
+			}
+			var end events.PipelineTrace
+			events.Subscribe(p.Events, func(event events.PipelineTrace) {
+				if event.Span.Stage == "stt" && event.Span.State == "end" {
+					end = event
+				}
+			})
+			metrics := newTurnMetrics()
+			turn := p.newTurnConductor(metrics)
+			ctx, cancel := context.WithCancel(events.WithTrace(context.Background(), metrics.trace))
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { _, err := p.transcribeTurn(ctx, metrics, turn); done <- err }()
+			<-provider.entered
+			if cancelDuringClose {
+				cancel()
+			}
+			<-time.After(25 * time.Millisecond)
+			close(provider.release)
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			timing := metrics.snapshot().Timing
+			if end.Span.Status != "completed" || end.Span.EndMS == nil || metrics.trace.TurnStartMS == nil || timing.Raw.FinalizedInputMS == nil {
+				t.Fatalf("final input evidence lost: %+v", end)
+			}
+			measured := *end.Span.EndMS - *metrics.trace.TurnStartMS
+			if math.Abs(measured-*timing.Raw.FinalizedInputMS) > .000001 {
+				t.Fatalf("cleanup changed reference: span %.6f final %.6f", measured, *timing.Raw.FinalizedInputMS)
+			}
+			if *end.Trace.MonoMS-*end.Span.EndMS < 20 {
+				t.Fatal("test did not exercise delayed cleanup")
+			}
+		})
+	}
+}
+
+func TestTraceJobLifecycleUsesTypedFrozenJobIdentity(t *testing.T) {
+	bus := events.NewBus()
+	jobs := job.NewTable(context.Background())
+	defer jobs.Close()
+	p := &Pipeline{Events: bus}
+	if err := p.BeginConversationIdentity("job-source"); err != nil {
+		t.Fatal(err)
+	}
+	agency := NewAgency(p, jobs, immediateHookWorker{}, &config.Config{}, nil)
+	agency.Wire()
+	var mu sync.Mutex
+	var observed []events.Event
+	done := make(chan struct{}, 1)
+	bus.SubscribeAll(func(event events.Event) {
+		mu.Lock()
+		observed = append(observed, event)
+		mu.Unlock()
+		if _, ok := event.(events.JobFinished); ok {
+			done <- struct{}{}
+		}
+	})
+	events.Subscribe(bus, func(event events.JobStarted) { agency.workerUsageHook(event.ID, nil)(brain.WorkerUsage{}) })
+	metrics := newTurnMetrics()
+	turn := p.newTurnConductor(metrics)
+	agency.HandleRoute(events.WithTrace(context.Background(), metrics.trace), turn, metrics, RouteDecision{Kind: RouteSpawn, Transcript: "list fixture files", Source: "test"})
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("job did not finish")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	jobID := ""
+	spans, usage, terminal, tools := 0, 0, 0, 0
+	for _, event := range observed {
+		trace := events.TraceOf(event)
+		if trace == nil || trace.JobID == nil {
+			continue
+		}
+		if jobID == "" {
+			jobID = *trace.JobID
+		}
+		if *trace.JobID != jobID || trace.RuntimeID != metrics.trace.RuntimeID || trace.SessionID != metrics.trace.SessionID || trace.ConversationEpoch != metrics.trace.ConversationEpoch || trace.ParentTurnID == nil || *trace.ParentTurnID != *metrics.trace.TurnID || trace.TurnID != nil || trace.ResponseID != nil || trace.PersonaID != nil || trace.TurnStartMS != nil || trace.MonoMS == nil {
+			t.Fatalf("job source ownership changed: %+v", trace)
+		}
+		switch event.(type) {
+		case events.PipelineTrace:
+			spans++
+		case events.WorkerUsageRecorded:
+			usage++
+		case events.JobFinished:
+			terminal++
+		case events.ToolCallStarted:
+			tools++
+		}
+	}
+	if jobID == "" || spans < 4 || usage != 1 || terminal != 1 || tools != 1 {
+		t.Fatalf("missing typed job evidence spans%d usage%d terminal%d tools%d", spans, usage, terminal, tools)
 	}
 }

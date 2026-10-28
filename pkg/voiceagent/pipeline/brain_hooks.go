@@ -13,6 +13,19 @@ import (
 func (p *Pipeline) emit(event events.Event) {
 	if events.TraceOf(event) == nil {
 		trace := p.sourceTrace(time.Now())
+		id := events.SourceJobID(event)
+		if id != "" {
+			if p.Agency != nil {
+				if frozen := p.Agency.jobTrace(id); frozen.RuntimeID != "" {
+					trace = frozen
+				}
+			}
+			trace.TurnID = nil
+			trace.TurnStartMS = nil
+			trace.ResponseID = nil
+			trace.PersonaID = nil
+			trace.JobID = &id
+		}
 		if runtime, session, epoch, ok := events.SourceWorkScope(event); ok {
 			if runtime != trace.RuntimeID {
 				trace = events.TraceContext{RuntimeID: runtime, SessionID: session, ConversationEpoch: epoch}
@@ -21,7 +34,10 @@ func (p *Pipeline) emit(event events.Event) {
 				trace.ConversationEpoch = epoch
 			}
 		}
-		event = events.AttributeTrace(event, trace)
+		if id != "" {
+			trace.JobID = &id
+		}
+		event = events.AttributeTrace(event, p.stampTrace(trace))
 	}
 	tracePipelineEvent(event)
 	if p.Events != nil {

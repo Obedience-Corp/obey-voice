@@ -28,6 +28,7 @@ type SequenceRange struct {
 }
 type Health struct {
 	Dropped         int64           `json:"dropped"`
+	ScopeExcluded   int64           `json:"scope_excluded"`
 	Skipped         int64           `json:"skipped"`
 	WriteErrors     int64           `json:"write_errors"`
 	QueuedBytes     int64           `json:"queued_bytes"`
@@ -54,7 +55,7 @@ func (w *Writer) Observe(bus *events.Bus) func() {
 func (w *Writer) Health() Health {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return Health{Dropped: w.dropped.Load(), Skipped: w.skipped.Load(), WriteErrors: w.writeErrors.Load(), QueuedBytes: w.queuedBytes, WrittenSequence: w.written.Load(), SyncedSequence: w.synced.Load(), Bytes: w.bytes.Load(), Limited: w.limited.Load(), Missing: append([]SequenceRange(nil), w.missing...)}
+	return Health{ScopeExcluded: w.scopeExcluded.Load(), Dropped: w.dropped.Load(), Skipped: w.skipped.Load(), WriteErrors: w.writeErrors.Load(), QueuedBytes: w.queuedBytes, WrittenSequence: w.written.Load(), SyncedSequence: w.synced.Load(), Bytes: w.bytes.Load(), Limited: w.limited.Load(), Missing: append([]SequenceRange(nil), w.missing...)}
 }
 func (w *Writer) lostLocked(seq int64) {
 	w.dropped.Add(1)

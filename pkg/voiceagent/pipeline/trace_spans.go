@@ -52,11 +52,18 @@ func traceID(trace events.TraceContext, stage string) string {
 	return newWorkID()
 }
 func (p *Pipeline) startTrace(ctx context.Context, stage string) func(string) {
+	finish := p.startTraceBoundary(ctx, stage)
+	return func(status string) { finish(status, time.Now()) }
+}
+
+// startTraceBoundary allows an operation's measured terminal boundary to remain
+// distinct from later cleanup or delivery of the observation.
+func (p *Pipeline) startTraceBoundary(ctx context.Context, stage string) func(string, time.Time) {
 	trace := events.TraceFromContext(ctx)
 	id := traceID(trace, stage)
 	start := time.Now()
 	p.traceSpan(trace, id, stage, "start", "running", start, time.Time{}, nil, nil)
-	return func(status string) { p.traceSpan(trace, id, stage, "end", status, start, time.Now(), nil, nil) }
+	return func(status string, end time.Time) { p.traceSpan(trace, id, stage, "end", status, start, end, nil, nil) }
 }
 func (p *Pipeline) tracePlayback(metrics *turnMetrics, event playbackEvent) {
 	trace := metrics.trace
@@ -107,12 +114,7 @@ func (a *Agency) traceJobBoundary(id, state string) {
 	a.mu.Lock()
 	origin := a.workerOrigins[id]
 	a.mu.Unlock()
-	trace := origin.Trace
-	trace.ParentTurnID = trace.TurnID
-	trace.TurnID = nil
-	trace.TurnStartMS = nil
-	trace.ResponseID = nil
-	trace.PersonaID = nil
+	trace := a.jobTrace(id)
 	if trace.RuntimeID == "" {
 		return
 	}

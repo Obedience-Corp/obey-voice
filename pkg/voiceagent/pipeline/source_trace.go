@@ -36,16 +36,7 @@ func responseTrace(trace events.TraceContext, e events.ResponseEnvelope) events.
 }
 
 func (a *Agency) emitJobTrace(id string, event events.Event) {
-	a.mu.Lock()
-	origin := a.workerOrigins[id]
-	a.mu.Unlock()
-	trace := origin.Trace
-	// Job identity is separate from its causal foreground invocation.
-	trace.TurnID = nil
-	trace.ParentTurnID = origin.Trace.TurnID
-	trace.ResponseID = nil
-	trace.PersonaID = nil
-	trace.TurnStartMS = nil
+	trace := a.jobTrace(id)
 	if trace.RuntimeID != "" {
 		event = events.AttributeTrace(event, a.pipeline.stampTrace(trace))
 	}
@@ -54,3 +45,20 @@ func (a *Agency) emitJobTrace(id string, event events.Event) {
 
 // CaptureTrace snapshots the runtime clock and session lane for recording headers.
 func (p *Pipeline) CaptureTrace() events.TraceContext { return p.sourceTrace(time.Now()) }
+
+func (a *Agency) jobTrace(id string) events.TraceContext {
+	a.mu.Lock()
+	origin := a.workerOrigins[id]
+	a.mu.Unlock()
+	trace := origin.Trace
+	if trace.TurnID != nil {
+		trace.ParentTurnID = trace.TurnID
+	}
+	trace.TurnID = nil
+	trace.TurnStartMS = nil
+	trace.ResponseID = nil
+	trace.PersonaID = nil
+	jobID := id
+	trace.JobID = &jobID
+	return trace
+}

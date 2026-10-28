@@ -17,3 +17,5 @@ d2e5a0d30f025e77bbc636ce0a47365f01ef71158e25e83f70da1d579f1b57f8  overlap-interr
 ```
 
 Implementation clarification: externally scoped legacy work can carry its own runtime identity without the source monotonic origin. Its additive trace retains that scope and uses null mono_ms, rather than inventing zero or borrowing the current runtime clock. New pipeline-owned traces always carry finite source offsets. The observer must retain raw inspection and label this timing unavailable.
+
+Integration adds `background-job.jsonl` as a seventh synthetic fixture. Its opaque span IDs deliberately do not encode job identity: normalized `trace.job_id` joins queue, worker, usage and terminal observations; parent_turn_id is causal and current turn/response remain null. Original six design fixtures above remain byte-identical. SHA256 `485dadf44795cdedd00be5d4eef988955e21009f70a37fa3ecfcb57332f381f6`.

@@ -243,17 +243,21 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 }
 
 func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, turn *turnConductor) (text string, err error) {
-	endTrace := p.startTrace(ctx, "stt")
+	endTrace := p.startTraceBoundary(ctx, "stt")
 	defer func() {
 		status := "unknown"
-		if ctx.Err() != nil {
+		if !metrics.sttFinal.IsZero() {
+			status = "completed"
+		} else if ctx.Err() != nil {
 			status = "cancelled"
 		} else if err != nil {
 			status = "failed"
-		} else if !metrics.sttFinal.IsZero() {
-			status = "completed"
 		}
-		endTrace(status)
+		boundary := time.Now()
+		if status == "completed" {
+			boundary = metrics.sttFinal
+		}
+		endTrace(status, boundary)
 	}()
 	if p.STT == nil {
 		return "", errors.New("STT provider is not configured")

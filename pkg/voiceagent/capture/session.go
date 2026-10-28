@@ -126,11 +126,11 @@ func Start(opts Options) (*Session, error) {
 	environment := map[string]string{"platform": runtime.GOOS, "architecture": runtime.GOARCH}
 	for k, v := range opts.Environment {
 		switch k {
-		case "brain_provider", "brain_model", "stt_provider", "stt_model", "tts_provider", "tts_model", "tts_tier", "build_version", "build_revision", "build_modified":
+		case "brain_provider", "brain_model", "stt_provider", "stt_mode", "stt_model", "tts_provider", "tts_model", "tts_tier", "build_version", "build_revision", "build_modified":
 		default:
 			continue
 		}
-		if len(environment) >= 12 {
+		if len(environment) >= 16 {
 			break
 		}
 		if len(k) <= 64 && len(v) <= 256 {

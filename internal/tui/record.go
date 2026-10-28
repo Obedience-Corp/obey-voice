@@ -37,7 +37,7 @@ func (m *conversationModel) configureRecord(args []string) {
 			return
 		}
 		h := m.capture.Health()
-		m.commandNotice(fmt.Sprintf("recording %s [%s] → %s (%d bytes; written seq %d, synced %d; dropped %d, omitted %d, errors %d)", cur, m.capture.ID(), m.capture.EventsPath(), h.Bytes, h.WrittenSequence, h.SyncedSequence, h.Dropped, h.Skipped, h.WriteErrors))
+		m.commandNotice(fmt.Sprintf("recording %s [%s] → %s (%d bytes; written seq %d, synced %d; dropped %d, omitted %d, scope excluded %d, errors %d)", cur, m.capture.ID(), m.capture.EventsPath(), h.Bytes, h.WrittenSequence, h.SyncedSequence, h.Dropped, h.Skipped, h.ScopeExcluded, h.WriteErrors))
 	case "off", "stop":
 		m.captureNextMode = ""
 		if m.capture == nil {
@@ -99,19 +99,10 @@ func (m *conversationModel) startCapture(mode string) {
 	if cfg := m.cfg; cfg != nil {
 		environment["brain_provider"] = cfg.BrainProvider
 		environment["brain_model"] = config.BrainModelFor(cfg, cfg.BrainProvider)
-		environment["stt_provider"] = cfg.STTProvider
+		environment["stt_provider"], environment["stt_mode"], environment["stt_model"] = captureSTTEnvironment(cfg)
 		environment["tts_provider"] = cfg.TTSProvider
 		environment["tts_tier"] = cfg.QwenTTSModelTier
-		switch cfg.STTProvider {
-		case "sherpa-parakeet":
-			environment["stt_model"] = cfg.ParakeetModel
-		case "whispercpp":
-			environment["stt_model"] = cfg.WhisperCPPModel
-		case "transcribecpp":
-			environment["stt_model"] = cfg.TranscribeCPPModel
-		default:
-			environment["stt_model"] = cfg.WhisperModel
-		}
+
 	}
 	if build, ok := debug.ReadBuildInfo(); ok {
 		environment["build_version"] = build.Main.Version
@@ -209,4 +200,37 @@ func (m *conversationModel) pollCapture() {
 			m.stopCapture()
 		}
 	}
+}
+
+// Match the provider factory's alias/default/mode resolution without mutating
+// user configuration. Invalid/unresolved model metadata remains unavailable.
+func captureSTTEnvironment(cfg *config.Config) (provider, mode, model string) {
+	norm, err := config.NormalizeSTTWithMode(cfg.STTProvider, cfg.STTMode)
+	if err != nil {
+		return "unresolved", "", ""
+	}
+	provider, mode = norm.Provider, norm.Mode
+	switch norm.Provider {
+	case config.STTProviderParakeet:
+		if asset, err := config.ParakeetModel(cfg.ParakeetModel); err == nil {
+			model = asset.Name
+		}
+	case config.STTProviderSherpa:
+		if mode == config.STTModeStreaming {
+			if asset, err := config.SherpaStreamingModel(cfg.SherpaStreamingModel); err == nil {
+				model = asset.Name
+			}
+		} else {
+			model, _ = config.SherpaOfflineWhisperModel(cfg.WhisperModel)
+		}
+	case config.STTProviderWhisperCPP:
+		if asset, err := config.WhisperCPPModelAsset(cfg.WhisperCPPModel); err == nil {
+			model = asset.Name
+		}
+	case config.STTProviderTranscribeCPP:
+		if asset, err := config.TranscribeCPPModel(cfg.TranscribeCPPModel); err == nil {
+			model = asset.Name
+		}
+	}
+	return provider, mode, model
 }

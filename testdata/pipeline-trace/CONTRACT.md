@@ -17,9 +17,10 @@ Keep top-level `type`, `ts` and `seq`. `ts` remains RFC3339Nano UTC observation 
 | `capture_id` | Nonempty unique ID for this recording; never reused on restart |
 | `runtime_id` | Existing `ConversationScope.RuntimeEpoch`; identifies the source monotonic clock domain |
 | `session_id`, `conversation_epoch` | Existing session and conversation identity, copied at source |
-| `mono_ms` | Finite number: source observation offset from the runtime's declared monotonic origin |
+| `mono_ms` | Finite number (or null for explicitly scoped legacy evidence without a retained source clock): source observation offset from the runtime's declared monotonic origin |
 | `turn_id` | String or null; diagnostic invocation ID allocated before STT, independent of response admission |
-| `parent_turn_id` | String or null; causal predecessor for a continuation invocation |
+| `parent_turn_id` | String or null; causal predecessor for a continuation invocation or source background job |
+| `job_id` | Existing typed source job ID or null; shared by worker queue/lifecycle, job terminal/usage and job tool events |
 | `turn_start_ms` | Finite number or null; runtime offset of that invocation's existing `turnMetrics.start` |
 | `response_id` | Existing admitted `ResponseEnvelope.ResponseID`, or null before admission / for unrelated background work |
 | `persona_id` | Frozen response persona, or null when no attributed response exists |
@@ -101,3 +102,5 @@ Implement a generic `file` transport using the existing `Transport` frame contra
 ## Performance gate
 
 Implementation must measure, not assume, the effect of adding tracing. Use the same synthetic event workload and isolated real TUI provider/config/input population with capture off/on; randomize alternating order, separate cold and warm runs, record sample counts and variation. Initial budgets: p95 observer callback <= 250 microseconds at 100 events/s including representative metrics payloads; sustained queue/storage memory within the caps; p95 software first-audio regression <= max(10 ms, 2% of baseline). These are design acceptance budgets, not results. If noise prevents a conclusion, collect sufficient paired evidence or report the gate unresolved. File-to-view freshness target is p95 <= 150 ms on a responsive local disk; it is distinct from voice latency.
+
+Integration clarification: background job traces freeze worker origin, retain causal parent_turn_id and typed job_id, and use null current turn_id/response_id/persona_id/turn_start_ms. Never parse a span ID to correlate jobs. Success STT end is actual FinalTranscript, independent of later cleanup/cancellation. Capture health scope_excluded counts explicit incompatible runtime/session/epoch callbacks intentionally outside this recording, separately from dropped/skipped queue/payload evidence. Unattributed legacy events remain explicitly unscoped.

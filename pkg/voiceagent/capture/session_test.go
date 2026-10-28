@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
 func TestStartStopRecordsErrorAndSeals(t *testing.T) {
@@ -160,5 +161,58 @@ func TestCaptureSealStalledSidecarsDoNotHoldStateLock(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestSuccessorCaptureRejectsOldScopeKeepsDelayedSameRuntime(t *testing.T) {
+	root := t.TempDir()
+	bus := events.NewBus()
+	old := events.TraceContext{RuntimeID: "old-runtime", SessionID: "old-session", ConversationEpoch: "old-epoch"}
+	first, err := Start(Options{Root: root, Bus: bus, Mode: ModeTalk, SessionID: old.SessionID, Trace: old})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Stop(nil); err != nil {
+		t.Fatal(err)
+	}
+	current := events.TraceContext{RuntimeID: "new-runtime", SessionID: "new-session", ConversationEpoch: "new-epoch"}
+	next, err := Start(Options{Root: root, Bus: bus, Mode: ModeTalk, SessionID: current.SessionID, Trace: current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, trace := range []events.TraceContext{old, {RuntimeID: current.RuntimeID, SessionID: "old-session", ConversationEpoch: current.ConversationEpoch}, {RuntimeID: current.RuntimeID, SessionID: current.SessionID, ConversationEpoch: "old-epoch"}} {
+		frozen := trace
+		bus.Emit(events.Error{Trace: &frozen, Stage: "late", Message: "excluded old scope"})
+	}
+	bus.Emit(events.WorkerUsageRecorded{Scope: work.WorkScope{RuntimeEpoch: old.RuntimeID, SessionID: old.SessionID, ConversationEpoch: old.ConversationEpoch}, JobID: "old-job"})
+	delayed := current
+	response := "same-runtime-old-response"
+	delayed.ResponseID = &response
+	bus.Emit(events.ResponseReady{Trace: &delayed, Response: "accepted delayed response"})
+	bus.Emit(events.Info{Message: "accepted unattributed legacy evidence"})
+	if err := next.Stop(nil); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(next.EventsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "excluded old scope") || strings.Contains(string(raw), "old-job") || !strings.Contains(string(raw), "accepted delayed response") || !strings.Contains(string(raw), "accepted unattributed legacy evidence") {
+		t.Fatal("successor scope policy violated", string(raw))
+	}
+	health := next.Health()
+	if health.ScopeExcluded != 4 || health.Dropped != 0 || health.Skipped != 0 {
+		t.Fatal("scope exclusion mislabeled queue/payload loss", health)
+	}
+	manifestRaw, err := os.ReadFile(filepath.Join(next.Dir(), "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Health.ScopeExcluded != 4 || manifest.Status != "sealed" {
+		t.Fatal("scope exclusion absent/mislabeled in persisted manifest", manifest)
 	}
 }
