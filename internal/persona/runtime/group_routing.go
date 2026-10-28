@@ -45,7 +45,13 @@ func (s *Selector) conversationRoster() (*summon.Roster, []brain.GroupParticipan
 }
 
 func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker string, roster *summon.Roster, participants []brain.GroupParticipant) (summon.Address, error) {
-	if account == "agent" && !roster.Mentions(text) {
+	acousticName := ""
+	if account == "user" {
+		acousticName = admission.AcousticName(ctx)
+	}
+	// No named agent means no selection to classify. This is a candidate
+	// check, not an intent grammar: named mentions still need semantic routing.
+	if !roster.Mentions(text) && acousticName == "" {
 		return summon.Address{Remainder: text}, nil
 	}
 	resolver := s.opts.AddressResolver
@@ -66,7 +72,7 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 	}
 	request := brain.AddressRequest{Participants: participants, Current: s.Snapshot().DisplayName, Speaker: speaker, Account: account, Text: text}
 	if account == "user" {
-		request.AcousticName = admission.AcousticName(ctx)
+		request.AcousticName = acousticName
 	}
 	turns := s.opts.Pipeline.Brain.History()
 	// Latest assistant is already canonical on a handoff; keep it only in Text.
@@ -121,10 +127,10 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 		address, err := roster.Lookup(decision.Name)
 		if err != nil {
 			var unknown *summon.UnknownTargetError
-			if errors.As(err, &unknown) && knownHumanAddressee(request, decision.Name) {
-				// A model may copy the human's name from an earlier reply.
-				// People are not unavailable personas. Preserve the selected
-				// responder; explicit controls were already validated by Route.
+			if errors.As(err, &unknown) {
+				// Semantic routing can choose only from the agent roster.
+				// An unlisted model/person/topic is conversation content, not
+				// a failed identity control. Exact controls were checked by Route.
 				return summon.Address{Remainder: text}, nil
 			}
 			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
@@ -153,7 +159,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 		if err != nil {
 			return err
 		}
-		revalidated := roster.ResolveExactControl(input)
+		revalidated := roster.ResolveForegroundControl(input)
 		switch revalidated.Kind {
 		case summon.ExactControlValid:
 			if revalidated.Address.PersonaID != exact.Address.PersonaID {

@@ -8,8 +8,16 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 )
 
-// minSpeechSamples is the minimum number of audio samples for valid speech (0.3s at 16kHz).
+// minSpeechSamples is the legacy fallback when no endpoint policy is supplied.
+// Production loops use the configured policy floor through minimumSpeechSamples.
 const minSpeechSamples = 4800
+
+func minimumSpeechSamples(policy endpoint.Policy) int {
+	if policy.MinSpeech <= 0 {
+		return minSpeechSamples
+	}
+	return max(audibleWindow, int(policy.MinSpeech.Seconds()*audio.SampleRate))
+}
 
 // noFramePoll is how long the loop waits before re-polling a live source that
 // has no audio buffered yet.
@@ -110,7 +118,7 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			samples = append(samples, seg...)
 		}
 
-		if len(samples) >= minSpeechSamples && audibleSpeechAbove(samples, floor()) {
+		if len(samples) >= minimumSpeechSamples(deps.policy) && audibleSpeechAbove(samples, floor()) {
 			text, err := transcribe(samples)
 			if err != nil {
 				sendEvent(ctx, events, Failure{Err: err})

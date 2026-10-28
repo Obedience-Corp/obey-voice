@@ -59,7 +59,7 @@ func runPreviewLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 	const preRoll = audio.SampleRate * 3 / 10
 	join := func(text string) string { return strings.TrimSpace(committed + " " + text) }
 	decode := func(samples []float32, finalPhrase bool) bool {
-		if len(samples) < minSpeechSamples || !loud.audible() {
+		if len(samples) < minimumSpeechSamples(deps.policy) || !loud.audible() {
 			return true
 		}
 		text, err := transcribe(samples)

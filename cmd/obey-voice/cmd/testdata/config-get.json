@@ -587,7 +587,7 @@
       "source": "default"
     },
     "vad_min_speech_duration": {
-      "value": 0.25,
+      "value": 0.1,
       "source": "default"
     },
     "vad_pre_roll_ms": {

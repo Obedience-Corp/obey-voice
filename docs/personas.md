@@ -177,8 +177,15 @@ Quoted names (for example `"Santa"`), multi-target phrases (`Santa and Jarvis`)
 and substantive tails (`switch to Santa and tell me a story`) stay semantic and
 use normal addressee inference.
 
-Incidental mentions such as `Santa is a persona` do not select Santa. Unknown
-explicit targets, ambiguous addressed names and failed prompt/model/voice preparation
+A leading punctuated address such as `Joker, ask Venessa what she thinks`
+also selects the named listener directly and preserves the full request. Joker
+takes the first turn and can then invite Venessa to answer. Instructions to
+“you and Venessa” to keep talking go to the current responder first.
+
+Incidental mentions such as `Santa is a persona` do not select Santa. Semantic
+routing can select only a configured agent name or alias; human names and topic
+names such as LFM3 stay with the current responder. Unknown exact `@id` or
+`switch to Name` controls, ambiguous agent names and failed prompt/model/voice preparation
 leave the old responder selected and report an error. A shared alias or generated
 short name (for example, `Veronica` and `Veronica Hype`) does not block ordinary
 follow-ups or requests addressed to another persona. Use a unique full name or

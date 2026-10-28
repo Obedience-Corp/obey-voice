@@ -131,12 +131,16 @@ func TestPolicyDecide(t *testing.T) {
 
 func TestFromConfigLiveVsFinite(t *testing.T) {
 	cfg := &config.Config{
-		VADSilenceDuration: 0.5,
-		ListenTimeout:      10,
-		PhraseTimeLimit:    30,
+		VADMinSpeechDuration: 0.1,
+		VADSilenceDuration:   0.5,
+		ListenTimeout:        10,
+		PhraseTimeLimit:      30,
 	}
 
 	live := FromConfig(cfg, false)
+	if live.MinSpeech != 100*time.Millisecond {
+		t.Fatalf("configured short-reply floor ignored: %v", live.MinSpeech)
+	}
 	if live.FinalizeOnEOF {
 		t.Error("live policy FinalizeOnEOF = true, want false")
 	}

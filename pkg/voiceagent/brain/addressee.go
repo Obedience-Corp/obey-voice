@@ -49,9 +49,9 @@ const addresseeInstruction = `Determine who is being addressed in the latest mes
 Return JSON with kind (none, address, ambiguous), name, and bare.
 Participants are the available AGENT personas. For account=user, speaker is the HUMAN talking to the assistant. Historical messages with account=user also belong to humans. A human's name in an assistant reply identifies who the assistant was talking to; it does not make that human an agent persona or the addressee of the next user turn. Never select a human as a persona unless that name is also explicitly listed among agent participants.
 Address means the speaker is talking TO a named agent or explicitly asking that agent to take the next turn. Names may appear anywhere, with or without punctuation, greetings, or wake phrases. Understand the sentence and recent conversation rather than matching an invocation phrase.
-Select the immediate listener being asked to act. When the speaker addresses one agent and asks that agent to consult or ask another, select the agent being spoken to now. The other agent is a later handoff, not the current addressee. Do not skip the requested intermediary.
+Select the immediate listener being asked to act. When the speaker addresses one agent and asks that agent to consult or ask another, select the agent being spoken to now. The other agent is a later handoff, not the current addressee. A user instruction for you and another agent to discuss something, keep talking, or consult each other is a coordination request to current_responder: that responder takes the first turn and can then address its peer. Do not mark it ambiguous merely because the requested task involves another agent. Do not skip the requested intermediary.
 A third-person mention, quotation, hypothetical, comparison, or a request to talk ABOUT an agent is not an address. An agent merely describing another agent does not hand over the floor. For an agent speaker, choose address only for a deliberate question or invitation for a different named agent to respond now.
-Use the addressed name or alias from participants. If the addressed name is shared, preserve that shared name and choose ambiguous; never choose an arbitrary participant. If the latest message clearly requests an unavailable agent, return address with that target's name. Do not invent an unavailable target by copying a human's name from earlier conversation. With no clear change of addressee, return none and an empty name. Ordinary follow-ups to the current responder keep that responder, even when its earlier reply greeted the human by name. For multiple simultaneous addressees with no clear single next responder, return ambiguous. Never infer a different identity merely because someone is called a name.
+Use the addressed name or alias from participants. If the addressed name is shared, preserve that shared name and choose ambiguous; never choose an arbitrary participant. Choose a name or alias ONLY from participants. Names of models, products, people, and other topics are not persona requests. A name absent from participants is never a selectable addressee: return none, leave name empty, and let the current responder handle the message. Explicit @id and switch commands are validated separately by the host. With no clear change of addressee, return none and an empty name. Ordinary follow-ups to the current responder keep that responder, even when its earlier reply greeted the human by name. For multiple simultaneous addressees with no clear single next responder, return ambiguous. Never infer a different identity merely because someone is called a name.
 Bare is true only when kind is address and a user greets a named agent or requests a switch with no substantive question. Bare is false for none, ambiguous, and every agent message. An ordinary greeting or question without a named addressee, such as "Hello" or "How's it going?", is {"kind":"none","name":"","bare":false}; the current responder should answer normally. Return only the JSON object.`
 
 const acousticNameInstruction = `For a user voice message, acoustic_name is an independent detector observation that the name may have been spoken even if text spells it differently or omits it. It is not proof of an address: the detector also hears ordinary verbs, quotations, and third-person mentions, and may be wrong. Use it to disambiguate a plausible spoken address in context; do not turn every match into an address. Never use it for agent messages. The text remains the original transcript.`
@@ -78,7 +78,11 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 		return Addressee{}, fmt.Errorf("encode addressee request: %w", err)
 	}
 	stream := false
-	format := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","enum":["none","address","ambiguous"]},"name":{"type":"string"},"bare":{"type":"boolean"}},"required":["kind","name","bare"],"additionalProperties":false}`)
+	names := addresseeNames(req.Participants)
+	format, err := addresseeFormat(names)
+	if err != nil {
+		return Addressee{}, fmt.Errorf("encode addressee schema: %w", err)
+	}
 	o.stateMu.Lock()
 	options := o.requestOptionsFor(o.contextHighWater)
 	model, keepAlive := o.model, o.keepAlive
@@ -127,6 +131,10 @@ func (o *OllamaBrain) ResolveAddressee(ctx context.Context, req AddressRequest) 
 	case "address":
 		if result.Name == "" {
 			return Addressee{}, admission.WrapClassifierFailure(admission.ClassifierInvalidOutput, errors.New("empty addressee"))
+		}
+		if !addresseeNameAllowed(result.Name, names) {
+			// Also enforce membership when a backend ignores the JSON schema.
+			return Addressee{Kind: "none"}, nil
 		}
 	case "ambiguous":
 		result.Bare = false

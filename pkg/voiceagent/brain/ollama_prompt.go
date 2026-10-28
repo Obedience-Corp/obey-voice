@@ -150,7 +150,7 @@ func (o *OllamaBrain) groupConversationGuidance() string {
 	if len(names) > 0 {
 		guidance += " The other available agents are listed here: " + strings.Join(names, ", ") + "."
 	}
-	return guidance + " Answer only as yourself. A deliberate direct question addressed to a named agent hands that agent the floor; a third-person reference does not. Do not speak labels, roster metadata, or internal role markers."
+	return guidance + " Answer only as yourself. When the user asks you to discuss something with another agent, take your turn and ask that agent a direct question by name so they can answer. A deliberate direct question addressed to a named agent hands that agent the floor; a third-person reference does not. Do not speak labels, roster metadata, or internal role markers."
 }
 
 func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart func(ToolCall), onEnd func(ToolResult)) string {
