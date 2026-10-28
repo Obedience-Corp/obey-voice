@@ -1,0 +1,223 @@
+[
+  {
+    "id": "returning_speaker",
+    "members": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "all",
+    "events": [
+      [
+        "check",
+        "p0",
+        "speak"
+      ],
+      [
+        "delivered",
+        "p0",
+        "response-a"
+      ],
+      [
+        "check",
+        "p1",
+        "speak"
+      ],
+      [
+        "delivered",
+        "p1",
+        "response-b"
+      ],
+      [
+        "select",
+        "p0",
+        "answer"
+      ],
+      [
+        "check",
+        "p0",
+        "speak"
+      ],
+      [
+        "delivered",
+        "p0",
+        "response-c"
+      ],
+      [
+        "yield"
+      ]
+    ],
+    "expect": {
+      "spoken": [
+        "p0",
+        "p1",
+        "p0"
+      ],
+      "uncovered": [],
+      "end": "yielded"
+    }
+  },
+  {
+    "id": "all_pass",
+    "members": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "all",
+    "events": [
+      [
+        "check",
+        "p0",
+        "pass"
+      ],
+      [
+        "check",
+        "p1",
+        "pass"
+      ]
+    ],
+    "expect": {
+      "spoken": [],
+      "uncovered": [],
+      "end": "no_contribution"
+    }
+  },
+  {
+    "id": "user_during_check",
+    "members": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "all",
+    "events": [
+      [
+        "interrupt"
+      ],
+      [
+        "late_result",
+        "p0",
+        "speak"
+      ]
+    ],
+    "expect": {
+      "spoken": [],
+      "uncovered": [
+        "p0",
+        "p1"
+      ],
+      "end": "interrupted"
+    }
+  },
+  {
+    "id": "roster_change_before_commit",
+    "members": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "all",
+    "events": [
+      [
+        "check",
+        "p0",
+        "speak"
+      ],
+      [
+        "invalidate",
+        "roster"
+      ],
+      [
+        "late_result",
+        "p0",
+        "speak"
+      ]
+    ],
+    "expect": {
+      "spoken": [],
+      "uncovered": [
+        "p0",
+        "p1"
+      ],
+      "end": "superseded"
+    }
+  },
+  {
+    "id": "open_one_only",
+    "members": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "relevant",
+    "mode": "open",
+    "events": [
+      [
+        "select",
+        "p1",
+        "correction"
+      ],
+      [
+        "check",
+        "p1",
+        "speak"
+      ],
+      [
+        "delivered",
+        "p1",
+        "response-a"
+      ]
+    ],
+    "expect": {
+      "spoken": [
+        "p1"
+      ],
+      "uncovered": [],
+      "end": "open_complete"
+    }
+  },
+  {
+    "id": "delivery_failure",
+    "members": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "all",
+    "events": [
+      [
+        "check",
+        "p0",
+        "speak"
+      ],
+      [
+        "failure",
+        "delivery"
+      ]
+    ],
+    "expect": {
+      "spoken": [],
+      "uncovered": [
+        "p0",
+        "p1"
+      ],
+      "end": "failed"
+    }
+  },
+  {
+    "id": "deadline",
+    "members": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "all",
+    "events": [
+      [
+        "expire"
+      ]
+    ],
+    "expect": {
+      "spoken": [],
+      "uncovered": [
+        "p0",
+        "p1"
+      ],
+      "end": "budget_exhausted"
+    }
+  }
+]

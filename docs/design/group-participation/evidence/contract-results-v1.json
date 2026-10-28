@@ -1,0 +1,590 @@
+{
+  "fixtures": {
+    "decision_schemas": 3,
+    "host_schemas": 3,
+    "valid_examples": 3,
+    "invalid_examples_rejected": 8,
+    "trace_witnesses": 7,
+    "fence_cases": 15
+  },
+  "probes": [
+    {
+      "model": "qwen3:8b",
+      "path": "evidence/local-probe.json",
+      "cases": [
+        {
+          "id": "everyone",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 1323.5
+        },
+        {
+          "id": "named_pair",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 621.06
+        },
+        {
+          "id": "excluded",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 620.59
+        },
+        {
+          "id": "anyone",
+          "valid": false,
+          "errors": [
+            "expected coverage=relevant"
+          ],
+          "wall_ms": 677.3
+        },
+        {
+          "id": "third_party",
+          "valid": false,
+          "errors": [
+            "expected kind=current",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 678.52
+        },
+        {
+          "id": "quotation",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 547.13
+        },
+        {
+          "id": "about",
+          "valid": false,
+          "errors": [
+            "expected kind=current",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 631.98
+        },
+        {
+          "id": "intermediary",
+          "valid": false,
+          "errors": [
+            "expected member_keys=['p0']"
+          ],
+          "wall_ms": 576.39
+        },
+        {
+          "id": "direct_tail",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 573.77
+        },
+        {
+          "id": "unknown",
+          "valid": false,
+          "errors": [
+            "AssertionError: unresolved explicit target",
+            "expected kind=clarify",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 693.4
+        },
+        {
+          "id": "unresolved_pair",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 606.15
+        },
+        {
+          "id": "contextual_pair",
+          "valid": false,
+          "errors": [
+            "AssertionError: direct needs one member",
+            "expected kind=group",
+            "expected coverage=all"
+          ],
+          "wall_ms": 670.15
+        },
+        {
+          "id": "heldout_plural",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 728.57
+        },
+        {
+          "id": "instruction_as_data",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 545.52
+        },
+        {
+          "id": "shared_alias",
+          "valid": false,
+          "errors": [
+            "expected kind=clarify",
+            "expected member_keys=[]"
+          ],
+          "wall_ms": 680.56
+        },
+        {
+          "id": "selected-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 664.47
+        },
+        {
+          "id": "selected-check-p0",
+          "valid": false,
+          "errors": [
+            "AssertionError: returning speaker needs a grounded purpose"
+          ],
+          "wall_ms": 965.92
+        },
+        {
+          "id": "shortlist-check-p0",
+          "valid": false,
+          "errors": [
+            "AssertionError: returning speaker needs a grounded purpose"
+          ],
+          "wall_ms": 504.72
+        },
+        {
+          "id": "shortlist-check-p2",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 535.54
+        },
+        {
+          "id": "shortlist-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 388.58
+        },
+        {
+          "id": "all-check-p0",
+          "valid": false,
+          "errors": [
+            "AssertionError: returning speaker needs a grounded purpose"
+          ],
+          "wall_ms": 595.54
+        },
+        {
+          "id": "all-check-p1",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 397.32
+        },
+        {
+          "id": "all-check-p2",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 544.6
+        },
+        {
+          "id": "all-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 393.96
+        },
+        {
+          "id": "no-eligible-yield",
+          "valid": false,
+          "errors": [
+            "AssertionError: ineligible selection"
+          ],
+          "wall_ms": 423.1
+        }
+      ],
+      "audience_exact": 8,
+      "audience_total": 15,
+      "accepted_decisions": 14
+    },
+    {
+      "model": "lfm3:1.7b",
+      "path": "evidence/local-probe-lfm3.json",
+      "cases": [
+        {
+          "id": "everyone",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 1562.82
+        },
+        {
+          "id": "named_pair",
+          "valid": false,
+          "errors": [
+            "AssertionError: missing invitation basis",
+            "expected member_keys=['p0', 'p1']"
+          ],
+          "wall_ms": 428.87
+        },
+        {
+          "id": "excluded",
+          "valid": false,
+          "errors": [
+            "expected member_keys=['p0', 'p1']"
+          ],
+          "wall_ms": 302.23
+        },
+        {
+          "id": "anyone",
+          "valid": false,
+          "errors": [
+            "expected coverage=relevant"
+          ],
+          "wall_ms": 337.65
+        },
+        {
+          "id": "third_party",
+          "valid": false,
+          "errors": [
+            "expected kind=current",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 336.04
+        },
+        {
+          "id": "quotation",
+          "valid": false,
+          "errors": [
+            "AssertionError: audience member cardinality",
+            "expected member_keys=[]"
+          ],
+          "wall_ms": 253.79
+        },
+        {
+          "id": "about",
+          "valid": false,
+          "errors": [
+            "expected kind=current",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 355.0
+        },
+        {
+          "id": "intermediary",
+          "valid": false,
+          "errors": [
+            "expected kind=direct",
+            "expected member_keys=['p0']",
+            "expected coverage=none"
+          ],
+          "wall_ms": 331.25
+        },
+        {
+          "id": "direct_tail",
+          "valid": false,
+          "errors": [
+            "expected kind=direct",
+            "expected member_keys=['p1']",
+            "expected coverage=none"
+          ],
+          "wall_ms": 331.83
+        },
+        {
+          "id": "unknown",
+          "valid": false,
+          "errors": [
+            "expected kind=clarify",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 337.39
+        },
+        {
+          "id": "unresolved_pair",
+          "valid": false,
+          "errors": [
+            "expected kind=clarify",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 332.17
+        },
+        {
+          "id": "contextual_pair",
+          "valid": false,
+          "errors": [
+            "expected member_keys=['p0', 'p1']"
+          ],
+          "wall_ms": 429.39
+        },
+        {
+          "id": "heldout_plural",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 367.09
+        },
+        {
+          "id": "instruction_as_data",
+          "valid": false,
+          "errors": [
+            "expected kind=current",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 307.53
+        },
+        {
+          "id": "shared_alias",
+          "valid": false,
+          "errors": [
+            "AssertionError: audience member cardinality",
+            "expected kind=clarify",
+            "expected member_keys=[]"
+          ],
+          "wall_ms": 347.26
+        },
+        {
+          "id": "selected-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 247.62
+        },
+        {
+          "id": "selected-check-p0",
+          "valid": false,
+          "errors": [
+            "AssertionError: empty contribution"
+          ],
+          "wall_ms": 874.25
+        },
+        {
+          "id": "shortlist-check-p0",
+          "valid": false,
+          "errors": [
+            "AssertionError: empty contribution"
+          ],
+          "wall_ms": 563.26
+        },
+        {
+          "id": "shortlist-check-p2",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 449.56
+        },
+        {
+          "id": "shortlist-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 269.25
+        },
+        {
+          "id": "all-check-p0",
+          "valid": false,
+          "errors": [
+            "AssertionError: empty contribution"
+          ],
+          "wall_ms": 465.19
+        },
+        {
+          "id": "all-check-p1",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 394.58
+        },
+        {
+          "id": "all-check-p2",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 376.47
+        },
+        {
+          "id": "all-select",
+          "valid": false,
+          "errors": [
+            "KeyError: 'decision'"
+          ],
+          "wall_ms": 1518.71
+        },
+        {
+          "id": "no-eligible-yield",
+          "valid": false,
+          "errors": [
+            "AssertionError: ineligible selection"
+          ],
+          "wall_ms": 241.84
+        }
+      ],
+      "audience_exact": 2,
+      "audience_total": 15,
+      "accepted_decisions": 7
+    },
+    {
+      "model": "qwen3.8:latest",
+      "path": "evidence/local-probe-qwen38.json",
+      "cases": [
+        {
+          "id": "everyone",
+          "valid": false,
+          "errors": [
+            "AssertionError: missing invitation basis"
+          ],
+          "wall_ms": 12012.0
+        },
+        {
+          "id": "named_pair",
+          "valid": false,
+          "errors": [
+            "AssertionError: missing invitation basis"
+          ],
+          "wall_ms": 3108.19
+        },
+        {
+          "id": "excluded",
+          "valid": false,
+          "errors": [
+            "AssertionError: missing invitation basis"
+          ],
+          "wall_ms": 3095.91
+        },
+        {
+          "id": "anyone",
+          "valid": false,
+          "errors": [
+            "AssertionError: missing invitation basis"
+          ],
+          "wall_ms": 3040.67
+        },
+        {
+          "id": "third_party",
+          "valid": false,
+          "errors": [
+            "AssertionError: missing invitation basis",
+            "expected kind=current",
+            "expected member_keys=[]",
+            "expected coverage=none"
+          ],
+          "wall_ms": 3310.97
+        },
+        {
+          "id": "quotation",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2860.46
+        },
+        {
+          "id": "about",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2823.78
+        },
+        {
+          "id": "intermediary",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3033.45
+        },
+        {
+          "id": "direct_tail",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2952.12
+        },
+        {
+          "id": "unknown",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3010.57
+        },
+        {
+          "id": "unresolved_pair",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2745.0
+        },
+        {
+          "id": "contextual_pair",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3111.25
+        },
+        {
+          "id": "heldout_plural",
+          "valid": false,
+          "errors": [
+            "AssertionError: missing invitation basis"
+          ],
+          "wall_ms": 3121.85
+        },
+        {
+          "id": "instruction_as_data",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2780.4
+        },
+        {
+          "id": "shared_alias",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2872.03
+        },
+        {
+          "id": "selected-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2151.99
+        },
+        {
+          "id": "selected-check-p0",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2546.03
+        },
+        {
+          "id": "shortlist-check-p0",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 724.47
+        },
+        {
+          "id": "shortlist-check-p2",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3828.71
+        },
+        {
+          "id": "shortlist-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2451.19
+        },
+        {
+          "id": "all-check-p0",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2524.38
+        },
+        {
+          "id": "all-check-p1",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2508.87
+        },
+        {
+          "id": "all-check-p2",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3912.73
+        },
+        {
+          "id": "all-select",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2479.75
+        },
+        {
+          "id": "no-eligible-yield",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2110.85
+        }
+      ],
+      "audience_exact": 14,
+      "audience_total": 15,
+      "accepted_decisions": 19
+    }
+  ]
+}

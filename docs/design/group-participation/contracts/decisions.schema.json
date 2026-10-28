@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:obey-voice:discussion-decisions:v1",
+  "$defs": {
+    "audience": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "current",
+            "direct",
+            "group",
+            "clarify"
+          ]
+        },
+        "member_keys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^p[0-7]$"
+          },
+          "maxItems": 8,
+          "uniqueItems": true
+        },
+        "coverage": {
+          "type": "string",
+          "enum": [
+            "none",
+            "all",
+            "relevant"
+          ]
+        },
+        "unresolved_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "maxItems": 8,
+          "uniqueItems": true
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "none",
+            "explicit",
+            "contextual",
+            "unknown",
+            "ambiguous"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "member_keys",
+        "coverage",
+        "unresolved_names",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "next": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "select",
+            "yield"
+          ]
+        },
+        "member_key": {
+          "type": "string",
+          "pattern": "^(p[0-7])?$"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "new_point",
+            "answer",
+            "correction",
+            "challenge",
+            "revision",
+            "no_contribution"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "member_key",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "participant": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "speak",
+            "pass"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "perspective",
+            "answer",
+            "correction",
+            "challenge",
+            "revision",
+            "clarify",
+            "agreement",
+            "no_contribution"
+          ]
+        },
+        "intent": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "maxItems": 2,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "kind",
+        "reason",
+        "intent",
+        "references"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/audience"
+    },
+    {
+      "$ref": "#/$defs/next"
+    },
+    {
+      "$ref": "#/$defs/participant"
+    }
+  ]
+}

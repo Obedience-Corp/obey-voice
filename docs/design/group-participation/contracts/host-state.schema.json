@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ticket": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "conversation_epoch": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "discussion_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "attempt_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "roster_hash": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "candidate_binding_hash": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "discussion_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "history_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "settings_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at_monotonic_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "session_id",
+        "conversation_epoch",
+        "discussion_id",
+        "attempt_id",
+        "roster_hash",
+        "candidate_binding_hash",
+        "discussion_revision",
+        "input_revision",
+        "history_revision",
+        "settings_revision",
+        "selection_generation",
+        "expires_at_monotonic_ms"
+      ],
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "session_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "conversation_epoch": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "discussion_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "discussion_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "admitting",
+            "choosing",
+            "checking",
+            "preparing",
+            "responding",
+            "ended"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "invited",
+            "open"
+          ]
+        },
+        "coverage": {
+          "type": "string",
+          "enum": [
+            "all",
+            "relevant"
+          ]
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^p[0-7]$"
+              },
+              "persona_id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "display_name": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "binding_hash": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "opportunity": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "passed",
+                  "delivered"
+                ]
+              },
+              "delivered_count": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2
+              }
+            },
+            "required": [
+              "key",
+              "persona_id",
+              "display_name",
+              "binding_hash",
+              "opportunity",
+              "delivered_count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "delivered_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12
+        },
+        "model_requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 48
+        },
+        "terminal_reason": {
+          "type": "string",
+          "enum": [
+            "",
+            "yielded",
+            "no_contribution",
+            "open_complete",
+            "refused",
+            "interrupted",
+            "superseded",
+            "budget_exhausted",
+            "failed",
+            "work_ready"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "session_id",
+        "conversation_epoch",
+        "discussion_id",
+        "discussion_revision",
+        "phase",
+        "mode",
+        "coverage",
+        "members",
+        "delivered_count",
+        "model_requests",
+        "terminal_reason"
+      ],
+      "additionalProperties": false
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "invited",
+            "open"
+          ]
+        },
+        "members": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "minItems": 1,
+              "maxItems": 8,
+              "uniqueItems": true
+            }
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "mode",
+        "members"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -30,6 +30,7 @@ Everything else lives here.
 | [AEC probe](aec-probe.md) | AEC / voice-frontend probe notes |
 | [Optional decision routing](decision-routing.md) | Local setup, independent controls, pipeline diagrams and latency replay |
 | [ADRs](adr/) | Architecture decision records |
+| [Group participation design](design/group-participation/README.md) | Proposed collective invitations, bounded agent dialogue, contracts and qualification evidence |
 | [Benchmarks](benchmarks/README.md) | Committed latency measurements |
 | [Prompts](prompts/P3-README.md) | Prompt fixtures |
 

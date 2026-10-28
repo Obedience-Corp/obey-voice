@@ -1,0 +1,25 @@
+{
+  "audience": {
+    "kind": "group",
+    "member_keys": [
+      "p0",
+      "p1"
+    ],
+    "coverage": "all",
+    "unresolved_names": [],
+    "reason": "explicit"
+  },
+  "next": {
+    "kind": "select",
+    "member_key": "p0",
+    "reason": "answer"
+  },
+  "participant": {
+    "kind": "speak",
+    "reason": "answer",
+    "intent": "Answer Samantha's question about testing the deployment dependency.",
+    "references": [
+      "response-b"
+    ]
+  }
+}

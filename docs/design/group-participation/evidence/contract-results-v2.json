@@ -1,0 +1,111 @@
+{
+  "fixtures": {
+    "decision_schemas": 3,
+    "host_schemas": 3,
+    "valid_examples": 3,
+    "invalid_examples_rejected": 8,
+    "trace_witnesses": 7,
+    "fence_cases": 15
+  },
+  "probes": [
+    {
+      "model": "qwen3.8:latest",
+      "path": "evidence/audience-qwen38-v2.json",
+      "cases": [
+        {
+          "id": "everyone",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3404.89
+        },
+        {
+          "id": "named_pair",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3480.33
+        },
+        {
+          "id": "excluded",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3344.16
+        },
+        {
+          "id": "anyone",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3439.0
+        },
+        {
+          "id": "third_party",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3052.43
+        },
+        {
+          "id": "quotation",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3016.41
+        },
+        {
+          "id": "about",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 2892.08
+        },
+        {
+          "id": "intermediary",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3061.07
+        },
+        {
+          "id": "direct_tail",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3057.54
+        },
+        {
+          "id": "unknown",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3308.8
+        },
+        {
+          "id": "unresolved_pair",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3266.55
+        },
+        {
+          "id": "contextual_pair",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3554.35
+        },
+        {
+          "id": "heldout_plural",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3460.54
+        },
+        {
+          "id": "instruction_as_data",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3110.28
+        },
+        {
+          "id": "shared_alias",
+          "valid": true,
+          "errors": [],
+          "wall_ms": 3211.69
+        }
+      ],
+      "audience_exact": 15,
+      "audience_total": 15,
+      "accepted_decisions": 15
+    }
+  ]
+}

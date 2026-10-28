@@ -1,0 +1,27 @@
+{
+  "ollama": {
+    "version": "0.40.12"
+  },
+  "models": [
+    {
+      "name": "lfm3:1.7b",
+      "digest": "2012d88e202f536a39ebaeef9576a04c84e9d061e5ad49ed1f2d3bd528cdb09f",
+      "size": 1681354921
+    },
+    {
+      "name": "qwen3.8:latest",
+      "digest": "22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643",
+      "size": 17741872154
+    },
+    {
+      "name": "qwen3:8b",
+      "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+      "size": 5225388164
+    }
+  ],
+  "engine_head": "e7df8bf574c4997f8d6b7cf45dc3e2aaa340ce06",
+  "apple_head": "77ad42ac4482ea54ea75511014b224587250797c",
+  "validator": "jsonschema 4.26.0",
+  "scope": "synthetic local text, no personal app config or device access",
+  "handoff_engine_head": "865a245de354158f8bebadaa83f26239a758a5c8"
+}

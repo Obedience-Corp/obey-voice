@@ -1,0 +1,356 @@
+{
+  "model": "qwen3.8:latest",
+  "prompt_version": 2,
+  "scope": "synthetic audience text-only",
+  "results": [
+    {
+      "id": "unseen-indirect-mention",
+      "point": "audience",
+      "payload": {
+        "participants": [
+          {
+            "key": "p0",
+            "name": "Jarvis",
+            "aliases": [],
+            "card": "Concise systems and implementation perspective."
+          },
+          {
+            "key": "p1",
+            "name": "Samantha",
+            "aliases": [],
+            "card": "Curious perspective on usability and communication."
+          },
+          {
+            "key": "p2",
+            "name": "Obey",
+            "aliases": [
+              "Obi"
+            ],
+            "card": "Practical tradeoffs and actionable recommendations."
+          }
+        ],
+        "current": "p0",
+        "history": [],
+        "explicit_recent_audience": [],
+        "latest": "Jarvis and Samantha told me the prototype was useful. Can you explain why?"
+      },
+      "done_reason": "stop",
+      "total_duration": 3053589875,
+      "load_duration": 5227000,
+      "prompt_eval_count": 491,
+      "prompt_eval_duration": 2258491000,
+      "eval_count": 43,
+      "eval_duration": 785791000,
+      "raw": "{\n  \"kind\": \"current\",\n  \"member_keys\": [],\n  \"coverage\": \"none\",\n  \"unresolved_names\": [],\n  \"reason\": \"none\"\n}",
+      "decision": {
+        "kind": "current",
+        "member_keys": [],
+        "coverage": "none",
+        "unresolved_names": [],
+        "reason": "none"
+      },
+      "wall_ms": 3065.91,
+      "expect": {
+        "kind": "current",
+        "member_keys": [],
+        "coverage": "none"
+      },
+      "matches": true
+    },
+    {
+      "id": "unseen-targeted-summary",
+      "point": "audience",
+      "payload": {
+        "participants": [
+          {
+            "key": "p0",
+            "name": "Jarvis",
+            "aliases": [],
+            "card": "Concise systems and implementation perspective."
+          },
+          {
+            "key": "p1",
+            "name": "Samantha",
+            "aliases": [],
+            "card": "Curious perspective on usability and communication."
+          },
+          {
+            "key": "p2",
+            "name": "Obey",
+            "aliases": [
+              "Obi"
+            ],
+            "card": "Practical tradeoffs and actionable recommendations."
+          }
+        ],
+        "current": "p0",
+        "history": [],
+        "explicit_recent_audience": [],
+        "latest": "Samantha, summarize everyone's opinions for me."
+      },
+      "done_reason": "stop",
+      "total_duration": 3296657666,
+      "load_duration": 2813625,
+      "prompt_eval_count": 486,
+      "prompt_eval_duration": 2240749000,
+      "eval_count": 52,
+      "eval_duration": 1049819000,
+      "raw": "{\n  \"kind\": \"direct\",\n  \"member_keys\": [\n    \"p1\"\n  ],\n  \"coverage\": \"none\",\n  \"unresolved_names\": [],\n  \"reason\": \"explicit\"\n}",
+      "decision": {
+        "kind": "direct",
+        "member_keys": [
+          "p1"
+        ],
+        "coverage": "none",
+        "unresolved_names": [],
+        "reason": "explicit"
+      },
+      "wall_ms": 3298.83,
+      "expect": {
+        "kind": "direct",
+        "member_keys": [
+          "p1"
+        ],
+        "coverage": "none"
+      },
+      "matches": true
+    },
+    {
+      "id": "unseen-subset-exclusion",
+      "point": "audience",
+      "payload": {
+        "participants": [
+          {
+            "key": "p0",
+            "name": "Jarvis",
+            "aliases": [],
+            "card": "Concise systems and implementation perspective."
+          },
+          {
+            "key": "p1",
+            "name": "Samantha",
+            "aliases": [],
+            "card": "Curious perspective on usability and communication."
+          },
+          {
+            "key": "p2",
+            "name": "Obey",
+            "aliases": [
+              "Obi"
+            ],
+            "card": "Practical tradeoffs and actionable recommendations."
+          }
+        ],
+        "current": "p0",
+        "history": [],
+        "explicit_recent_audience": [],
+        "latest": "Jarvis and Obey, give me your views; Samantha can sit this one out."
+      },
+      "done_reason": "stop",
+      "total_duration": 3504248250,
+      "load_duration": 29076333,
+      "prompt_eval_count": 493,
+      "prompt_eval_duration": 2238194000,
+      "eval_count": 58,
+      "eval_duration": 1232809000,
+      "raw": "{\n  \"kind\": \"group\",\n  \"member_keys\": [\n    \"p0\",\n    \"p2\"\n  ],\n  \"coverage\": \"all\",\n  \"unresolved_names\": [],\n  \"reason\": \"explicit\"\n}",
+      "decision": {
+        "kind": "group",
+        "member_keys": [
+          "p0",
+          "p2"
+        ],
+        "coverage": "all",
+        "unresolved_names": [],
+        "reason": "explicit"
+      },
+      "wall_ms": 3505.21,
+      "expect": {
+        "kind": "group",
+        "member_keys": [
+          "p0",
+          "p2"
+        ],
+        "coverage": "all"
+      },
+      "matches": true
+    },
+    {
+      "id": "unseen-third-party-question",
+      "point": "audience",
+      "payload": {
+        "participants": [
+          {
+            "key": "p0",
+            "name": "Jarvis",
+            "aliases": [],
+            "card": "Concise systems and implementation perspective."
+          },
+          {
+            "key": "p1",
+            "name": "Samantha",
+            "aliases": [],
+            "card": "Curious perspective on usability and communication."
+          },
+          {
+            "key": "p2",
+            "name": "Obey",
+            "aliases": [
+              "Obi"
+            ],
+            "card": "Practical tradeoffs and actionable recommendations."
+          }
+        ],
+        "current": "p0",
+        "history": [],
+        "explicit_recent_audience": [],
+        "latest": "Do we need everyone at the client to agree before shipping?"
+      },
+      "done_reason": "stop",
+      "total_duration": 3183053542,
+      "load_duration": 22130792,
+      "prompt_eval_count": 487,
+      "prompt_eval_duration": 2248195000,
+      "eval_count": 43,
+      "eval_duration": 908230000,
+      "raw": "{\n  \"kind\": \"current\",\n  \"member_keys\": [],\n  \"coverage\": \"none\",\n  \"unresolved_names\": [],\n  \"reason\": \"none\"\n}",
+      "decision": {
+        "kind": "current",
+        "member_keys": [],
+        "coverage": "none",
+        "unresolved_names": [],
+        "reason": "none"
+      },
+      "wall_ms": 3186.68,
+      "expect": {
+        "kind": "current",
+        "member_keys": [],
+        "coverage": "none"
+      },
+      "matches": true
+    },
+    {
+      "id": "unseen-each",
+      "point": "audience",
+      "payload": {
+        "participants": [
+          {
+            "key": "p0",
+            "name": "Jarvis",
+            "aliases": [],
+            "card": "Concise systems and implementation perspective."
+          },
+          {
+            "key": "p1",
+            "name": "Samantha",
+            "aliases": [],
+            "card": "Curious perspective on usability and communication."
+          },
+          {
+            "key": "p2",
+            "name": "Obey",
+            "aliases": [
+              "Obi"
+            ],
+            "card": "Practical tradeoffs and actionable recommendations."
+          }
+        ],
+        "current": "p0",
+        "history": [],
+        "explicit_recent_audience": [],
+        "latest": "Before I decide, I want a separate assessment from each of you."
+      },
+      "done_reason": "stop",
+      "total_duration": 3480312958,
+      "load_duration": 24230208,
+      "prompt_eval_count": 489,
+      "prompt_eval_duration": 2250975000,
+      "eval_count": 64,
+      "eval_duration": 1201784000,
+      "raw": "{\n  \"kind\": \"group\",\n  \"member_keys\": [\n    \"p0\",\n    \"p1\",\n    \"p2\"\n  ],\n  \"coverage\": \"all\",\n  \"unresolved_names\": [],\n  \"reason\": \"explicit\"\n}",
+      "decision": {
+        "kind": "group",
+        "member_keys": [
+          "p0",
+          "p1",
+          "p2"
+        ],
+        "coverage": "all",
+        "unresolved_names": [],
+        "reason": "explicit"
+      },
+      "wall_ms": 3482.1,
+      "expect": {
+        "kind": "group",
+        "member_keys": [
+          "p0",
+          "p1",
+          "p2"
+        ],
+        "coverage": "all"
+      },
+      "matches": true
+    },
+    {
+      "id": "unseen-anyone",
+      "point": "audience",
+      "payload": {
+        "participants": [
+          {
+            "key": "p0",
+            "name": "Jarvis",
+            "aliases": [],
+            "card": "Concise systems and implementation perspective."
+          },
+          {
+            "key": "p1",
+            "name": "Samantha",
+            "aliases": [],
+            "card": "Curious perspective on usability and communication."
+          },
+          {
+            "key": "p2",
+            "name": "Obey",
+            "aliases": [
+              "Obi"
+            ],
+            "card": "Practical tradeoffs and actionable recommendations."
+          }
+        ],
+        "current": "p0",
+        "history": [],
+        "explicit_recent_audience": [],
+        "latest": "Could one of you offer a useful counterpoint?"
+      },
+      "done_reason": "stop",
+      "total_duration": 4481077709,
+      "load_duration": 3735000,
+      "prompt_eval_count": 485,
+      "prompt_eval_duration": 2649971000,
+      "eval_count": 58,
+      "eval_duration": 1824492000,
+      "raw": "{\n  \"kind\": \"group\",\n  \"member_keys\": [\n    \"p1\",\n    \"p2\"\n  ],\n  \"coverage\": \"relevant\",\n  \"unresolved_names\": [],\n  \"reason\": \"explicit\"\n}",
+      "decision": {
+        "kind": "group",
+        "member_keys": [
+          "p1",
+          "p2"
+        ],
+        "coverage": "relevant",
+        "unresolved_names": [],
+        "reason": "explicit"
+      },
+      "wall_ms": 4481.68,
+      "expect": {
+        "kind": "group",
+        "member_keys": [
+          "p0",
+          "p1",
+          "p2"
+        ],
+        "coverage": "relevant"
+      },
+      "matches": false
+    }
+  ]
+}
