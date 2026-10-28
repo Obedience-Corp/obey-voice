@@ -35,7 +35,7 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 			}
 			return admitted, wrapIdentityRefusalFailure(ctx, "route", errors.New("invalid exact identity control"))
 		}
-		address, err := s.resolveAddress(ctx, input, "user", "Unknown", roster, participants)
+		address, err := s.resolveAddress(ctx, input, "user", s.humanSpeakerName(""), roster, participants)
 		if err != nil {
 			if isIdentityRefusal(err) {
 				return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
