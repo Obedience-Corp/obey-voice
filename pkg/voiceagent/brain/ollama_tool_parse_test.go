@@ -133,7 +133,7 @@ func TestOllamaMalformedToolRetryBoundaries(t *testing.T) {
 			host, _ := url.Parse(server.URL)
 			o := &OllamaBrain{client: api.NewClient(host, server.Client()), cfg: &config.Config{OllamaNumCtx: 8192}}
 			notices := 0
-			o.SetContinuitySink(func(events.Event) { notices++ })
+			o.SetInfoSink(func(events.Info) { notices++ })
 			req := o.newChatRequest([]api.Message{{Role: "user", Content: "inspect the library"}}, voiceAssistantTools(nil))
 			if mode == "no tools" {
 				req.Tools = nil

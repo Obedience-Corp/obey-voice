@@ -96,7 +96,7 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			return err
 		}
 		if parseRetryPending {
-			o.emitContinuity(events.Info{Message: "Ollama returned malformed tool-call syntax; retrying this generation once. No output or tool calls were delivered from the failed attempt."})
+			o.emitInfo(events.Info{Message: "Ollama returned malformed tool-call syntax; retrying this generation once. No output or tool calls were delivered from the failed attempt."})
 			parseRetryPending = false
 		}
 		var input, output int
