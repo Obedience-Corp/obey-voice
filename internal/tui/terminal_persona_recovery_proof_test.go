@@ -26,14 +26,15 @@ import (
 // Bubble Tea updates. The assertions consume snapshots instead of peeking at
 // App while the program's update goroutine is running.
 type terminalPersonaSnapshot struct {
-	screen     screen
-	voice      bool
-	input      string
-	agent      string
-	sessionID  string
-	selection  events.PersonaSelection
-	transcript []string
-	view       string
+	screen      screen
+	menuPending bool
+	voice       bool
+	input       string
+	agent       string
+	sessionID   string
+	selection   events.PersonaSelection
+	transcript  []string
+	view        string
 }
 
 // terminalPersonaApp is deliberately a thin test adapter around the owning
@@ -58,20 +59,21 @@ func (h *terminalPersonaApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.app = next
 	}
 	switch msg.(type) {
-	case tea.KeyMsg, switchScreenMsg, personaSelectionResultMsg, voiceTurnDoneMsg, textTurnDoneMsg, busEventMsg:
+	case menuReadyMsg, tea.KeyMsg, switchScreenMsg, personaSelectionResultMsg, voiceTurnDoneMsg, textTurnDoneMsg, busEventMsg:
 		selection := events.PersonaSelection{}
 		if h.app.runtime != nil && h.app.runtime.SelectionSnapshot != nil {
 			selection = h.app.runtime.SelectionSnapshot()
 		}
 		snapshot := terminalPersonaSnapshot{
-			screen:     h.app.screen,
-			voice:      h.app.conversation.voiceEnabled,
-			input:      h.app.conversation.input.Value(),
-			agent:      h.app.conversation.agentName,
-			sessionID:  h.app.conversation.sessionID,
-			selection:  selection,
-			transcript: append([]string(nil), h.app.conversation.transcript...),
-			view:       stripANSI(h.app.View()),
+			screen:      h.app.screen,
+			menuPending: h.app.returnToMenu,
+			voice:       h.app.conversation.voiceEnabled,
+			input:       h.app.conversation.input.Value(),
+			agent:       h.app.conversation.agentName,
+			sessionID:   h.app.conversation.sessionID,
+			selection:   selection,
+			transcript:  append([]string(nil), h.app.conversation.transcript...),
+			view:        stripANSI(h.app.View()),
 		}
 		select {
 		case h.updates <- snapshot:

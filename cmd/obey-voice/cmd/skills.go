@@ -40,7 +40,9 @@ func newSkillsCmd(loadConfig configLoader) *cobra.Command {
 .claude/skills is never scanned — Claude Code owns that path.
 
 Skills are an Ollama-only feature today: Claude and Grok run their own
-native tool and skill routing (see "provider_supported" in --json output).`,
+native tool and skill routing (see "provider_supported" in --json output).
+The shipped obey-voice configuration skill is also supplied directly to native
+providers, so every provider can explain and configure the hosting app.`,
 	}
 	cmd.AddCommand(newSkillsListCmd(loadConfig), newSkillsEnableCmd(loadConfig), newSkillsDisableCmd(loadConfig))
 	return cmd
@@ -91,7 +93,8 @@ func newSkillsListCmd(loadConfig configLoader) *cobra.Command {
 		Short: "List discovered skills across all four search roots",
 		Long: `List every Agent Skill discovered under the four search roots (project,
 workspace ancestor, user, and skills_dir), first-root-wins on duplicate
-names. Roots 1-2 resolve against the agent's working directory: the
+names. The embedded obey-voice configuration skill is the final fallback;
+filesystem skills can override it. Roots 1-2 resolve against the agent's working directory: the
 work_dir setting when one is set, otherwise the folder this command was
 run from. Pass --work-dir to ask what the agent would see from somewhere
 else.`,
@@ -114,7 +117,7 @@ else.`,
 			}
 			dirs := skills.DefaultSearchPaths(workDir, configured)
 
-			loader := skills.Loader{Dirs: dirs, Disabled: cfg.SkillsDisabled}
+			loader := skills.Loader{Dirs: dirs, Disabled: cfg.SkillsDisabled, Builtins: true}
 			discovered, err := loader.Discover(cmd.Context())
 			if err != nil {
 				return err
@@ -133,6 +136,7 @@ else.`,
 				}
 				roots = append(roots, row)
 			}
+			roots = append(roots, skillsRootRow{Path: skills.BuiltinRoot, Exists: true, Skills: 1})
 
 			providerSupported := brain.SkillMenuApplies(cfg.BrainProvider)
 			rows := make([]skillsRow, 0, len(discovered))
@@ -146,7 +150,7 @@ else.`,
 					Description: d.Description,
 					Path:        d.Dir,
 					Root:        d.Root,
-					Active:      cfg.SkillsEnabled && providerSupported && !d.Disabled,
+					Active:      cfg.SkillsEnabled && (providerSupported || d.Root == skills.BuiltinRoot) && !d.Disabled,
 					Disabled:    d.Disabled,
 					Shadowed:    shadowed,
 				})
@@ -262,7 +266,7 @@ func runSkillsToggle(cmd *cobra.Command, loadConfig configLoader, name string, d
 
 	// Discover (not Catalog) so an already-disabled name is still found —
 	// Catalog omits disabled skills, which would break idempotent re-disable.
-	discovered, err := (skills.Loader{Dirs: dirs}).Discover(cmd.Context())
+	discovered, err := (skills.Loader{Dirs: dirs, Builtins: true}).Discover(cmd.Context())
 	if err != nil {
 		return err
 	}
@@ -285,7 +289,7 @@ func runSkillsToggle(cmd *cobra.Command, loadConfig configLoader, name string, d
 	nameKey := strings.ToLower(strings.TrimSpace(name))
 	nowDisabled := slices.Contains(updated, nameKey)
 	providerSupported := brain.SkillMenuApplies(cfg.BrainProvider)
-	active := cfg.SkillsEnabled && providerSupported && !nowDisabled
+	active := cfg.SkillsEnabled && (providerSupported || nameKey == "obey-voice") && !nowDisabled
 
 	if jsonOut {
 		enc := json.NewEncoder(cmd.OutOrStdout())

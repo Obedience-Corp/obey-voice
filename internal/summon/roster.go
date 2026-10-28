@@ -73,13 +73,14 @@ type Roster struct {
 	names     []rosterName
 	byName    map[string]rosterName
 	ambiguous map[string][]string
+	byID      map[string]string
 }
 
 // NewRoster validates and builds a deterministic address table. Shared names,
 // including generated first words, are recorded as ambiguous. Resolve refuses
 // only an address using that name, keeping unrelated conversation available.
 func NewRoster(identities []Identity) (*Roster, error) {
-	roster := &Roster{byName: make(map[string]rosterName), ambiguous: make(map[string][]string)}
+	roster := &Roster{byName: make(map[string]rosterName), ambiguous: make(map[string][]string), byID: make(map[string]string)}
 	ids := make(map[string]struct{}, len(identities))
 	for i, identity := range identities {
 		id := strings.TrimSpace(identity.ID)
@@ -90,6 +91,7 @@ func NewRoster(identities []Identity) (*Roster, error) {
 			return nil, fmt.Errorf("duplicate identity ID %q", id)
 		}
 		ids[id] = struct{}{}
+		roster.byID[strings.ToLower(id)] = id
 
 		display := normalizeName(identity.DisplayName)
 		if display == "" {

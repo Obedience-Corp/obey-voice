@@ -134,6 +134,7 @@ type App struct {
 
 	quitting     bool
 	returnToMenu bool
+	menuDone     chan struct{}
 }
 
 // NewApp creates the TUI application.
@@ -213,8 +214,7 @@ func quitCmd() tea.Cmd {
 	return func() tea.Msg { return quitMsg{} }
 }
 
-// returnToMenuMsg ends the current session through the normal teardown path.
-// run reopens the launcher after the session is saved and devices are released.
+// returnToMenuMsg saves and drains the session inside the existing terminal UI.
 type returnToMenuMsg struct{}
 
 // Update wraps the screen dispatch so the mouse claim follows the active
@@ -258,7 +258,24 @@ func (a App) mouseClaimCmd(from screen) tea.Cmd {
 }
 
 func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if event, ok := msg.(busEventMsg); ok && event.source != nil && event.source != a.conversation.bridge {
+		return a, nil
+	}
+	if a.returnToMenu {
+		switch msg := msg.(type) {
+		case menuReadyMsg, tea.WindowSizeMsg, quitMsg:
+		case tea.KeyMsg:
+			key := msg.String()
+			if key != "ctrl+c" && key != "q" {
+				return a, nil
+			}
+		default:
+			return a, nil
+		}
+	}
 	switch msg := msg.(type) {
+	case menuReadyMsg:
+		return a.onMenuReady(msg)
 	case launcherTickMsg:
 		if a.launcherTicking && msg.id == a.launcherTickID {
 			a.launcherTicking = false

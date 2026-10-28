@@ -68,7 +68,7 @@ var slashCommands = []slashCommand{
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
 	{id: commandCopy, name: "/copy", usage: "/copy [all]", description: "Copy last reply (or full chat) to the clipboard", aliases: []string{"/yank"}},
 	{id: commandVim, name: "/vim", usage: "/vim [on|off|insert]", description: "Toggle modal Vim editing"},
-	{id: commandMenu, name: "/menu", usage: "/menu", description: "End this chat and return to the main menu", aliases: []string{"/back"}},
+	{id: commandMenu, name: "/menu", usage: "/menu", description: "Save this chat and return to the main menu", aliases: []string{"/back"}},
 	{id: commandQuit, name: "/quit", usage: "/quit", description: "Exit Obey Voice", aliases: []string{"/q", "/exit"}},
 }
 

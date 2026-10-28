@@ -117,10 +117,13 @@ func (a App) onStartPipeline(msg startPipelineMsg) (tea.Model, tea.Cmd) {
 	// The build takes seconds to minutes; the screen says so until it lands.
 	tick := a.conversation.beginStartup(msg.personaName)
 	return a, tea.Batch(tick, a.progress.wait(),
-		buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID))
+		trackedCommand(a.runCtx, a.wg, buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID)))
 }
 
 func (a App) onBuildStage(msg buildStageMsg) (tea.Model, tea.Cmd) {
+	if msg.owner != nil && msg.owner != a.progress {
+		return a, nil
+	}
 	// Whichever screen is waiting owns the stage; only one build runs at a
 	// time, and the meeting screen is entered before its build starts.
 	if a.screen == screenMeeting {
@@ -136,6 +139,9 @@ func (a App) onProgressClosed(msg progressClosedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
+	if msg.owner != nil && msg.owner != a.slot {
+		return a, nil
+	}
 	if msg.err != nil {
 		var bindingErr *PersonaBindingError
 		if !errors.As(msg.err, &bindingErr) {

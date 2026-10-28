@@ -181,6 +181,7 @@ type conversationModel struct {
 
 	commandQuery     string
 	commandSelection int
+	mentions         personaMentions
 	editor           editorBuffer
 	vim              vimState
 

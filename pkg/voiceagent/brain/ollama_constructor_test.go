@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -18,8 +19,8 @@ import (
 func ollamaConstructorConfig(t *testing.T, host string) *config.Config {
 	t.Helper()
 	// The loader's contract includes ~/.agents/skills. Point that root at an
-	// empty temporary directory so this fixture's one configured skill is the
-	// only catalog entry and the embedding response has matching cardinality.
+	// empty temporary directory so the catalog contains only the fixture
+	// and shipped skills; return one embedding per requested description.
 	fakeHome := t.TempDir()
 	restoreHome := skills.SetUserHomeDirForTest(func() (string, error) { return fakeHome, nil })
 	t.Cleanup(restoreHome)
@@ -57,7 +58,18 @@ func TestNewOllamaSlowProbeDoesNotConsumeEmbeddingBudget(t *testing.T) {
 		case "/api/embed":
 			close(embedStarted)
 			time.Sleep(6 * time.Second)
-			_, _ = io.WriteString(w, `{"embeddings":[[1,0]]}`)
+			var request struct {
+				Input []string `json:"input"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+				return
+			}
+			embeddings := make([][]float32, len(request.Input))
+			for i := range embeddings {
+				embeddings[i] = []float32{1, 0}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"embeddings": embeddings})
 		default:
 			http.NotFound(w, r)
 		}

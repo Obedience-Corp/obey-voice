@@ -62,6 +62,9 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		return m, m.ensureVoiceTick()
 
 	case busEventMsg:
+		if msg.source != nil && msg.source != m.bridge {
+			return m, nil
+		}
 		m.handleEvent(msg.event)
 		return m, tea.Batch(m.rearm(), m.ensureVoiceTick())
 
@@ -91,9 +94,15 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		}
 		return m, nil
 	case voiceTurnDoneMsg:
+		if msg.lifetime != nil && msg.lifetime != m.deps.ctx {
+			return m, nil
+		}
 		return m, tea.Batch(m.handleVoiceTurnDone(msg), m.ensureVoiceTick())
 
 	case textTurnDoneMsg:
+		if msg.lifetime != nil && msg.lifetime != m.deps.ctx {
+			return m, nil
+		}
 		return m, tea.Batch(m.handleTextTurnDone(msg), m.ensureVoiceTick())
 
 	case compactDoneMsg:

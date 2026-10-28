@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,17 +16,18 @@ import (
 // which pump to re-arm, and nothing else reads it — by the time the driver
 // sees the event, where it came from no longer matters.
 type talkHotkeyEventMsg struct {
+	lifetime    context.Context
 	ev          talkhotkey.Event
 	fromControl bool
 }
 
 // talkHotkeyExitedMsg reports the helper process ending; its event stream is
 // closed and no further keys will arrive.
-type talkHotkeyExitedMsg struct{}
+type talkHotkeyExitedMsg struct{ lifetime context.Context }
 
 // talkControlClosedMsg reports the control endpoint closing. The conversation
 // is unaffected: nothing was registered, so there is nothing to take back.
-type talkControlClosedMsg struct{}
+type talkControlClosedMsg struct{ lifetime context.Context }
 
 // startTalkHotkey opens the talk key for the conversation that just became
 // ready. Two paths, and both are optional: the control endpoint any shortcut
@@ -90,30 +92,32 @@ func (a *App) startTalkHelper(combo talkhotkey.Combo, mode talkhotkey.Mode) tea.
 // the program, whichever screen is showing.
 func (a *App) nextTalkHotkeyEvent() tea.Cmd {
 	client := a.hotkey
+	lifetime := a.runCtx
 	if client == nil {
 		return nil
 	}
 	return func() tea.Msg {
 		ev, ok := <-client.Events()
 		if !ok {
-			return talkHotkeyExitedMsg{}
+			return talkHotkeyExitedMsg{lifetime: lifetime}
 		}
-		return talkHotkeyEventMsg{ev: ev}
+		return talkHotkeyEventMsg{ev: ev, lifetime: lifetime}
 	}
 }
 
 // nextTalkControlEvent is the same pump for the control endpoint.
 func (a *App) nextTalkControlEvent() tea.Cmd {
 	control := a.control
+	lifetime := a.runCtx
 	if control == nil {
 		return nil
 	}
 	return func() tea.Msg {
 		ev, ok := <-control.Events()
 		if !ok {
-			return talkControlClosedMsg{}
+			return talkControlClosedMsg{lifetime: lifetime}
 		}
-		return talkHotkeyEventMsg{ev: ev, fromControl: true}
+		return talkHotkeyEventMsg{ev: ev, fromControl: true, lifetime: lifetime}
 	}
 }
 

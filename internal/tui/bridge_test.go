@@ -81,6 +81,7 @@ func TestBridgeDeliversSpeechDiagnosticToActivity(t *testing.T) {
 	bridge := newEventBridge(8)
 	bridge.attach(bus)
 	m := sizedConversation(t, 100, 24)
+	m.bridge = bridge
 
 	bus.Emit(events.SpeechDiagnostic{Symptom: "synthesis_starvation", Cause: "synthesis", Message: "Speech generation is falling behind playback."})
 	msg := (<-bridge.ch).(busEventMsg)
