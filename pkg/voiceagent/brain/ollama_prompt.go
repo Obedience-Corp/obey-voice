@@ -117,6 +117,13 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 		if m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
 			m.Role = "user"
 		}
+		// Keep the selected responder explicit beside the newest input. Small
+		// models otherwise continue the last quoted agent's voice even with a
+		// correct group roster in the leading system message. This stays on the
+		// request projection, never in canonical user text.
+		if ((i == lastUser && !agentContinuation) || (agentContinuation && i == len(o.history)-1)) && m.Role == "user" && o.groupModeEnabled() && o.cfg != nil {
+			m.Content += groupReplyInstruction(o.cfg.AgentName)
+		}
 		msgs = append(msgs, m)
 	}
 	return msgs
@@ -139,18 +146,11 @@ func (o *OllamaBrain) groupConversationGuidance() string {
 	if o.cfg != nil && strings.TrimSpace(o.cfg.AgentName) != "" {
 		own = strings.TrimSpace(o.cfg.AgentName)
 	}
-	roster := o.groupRoster()
-	names := make([]string, 0, len(roster))
-	for _, participant := range roster {
-		if name := strings.TrimSpace(participant.Name); name != "" {
-			names = append(names, name)
-		}
-	}
-	guidance := "\nThis is a group chat. You are " + own + "; the other named participants are distinct agents or users, not alternate names for you."
-	if len(names) > 0 {
-		guidance += " The other available agents are listed here: " + strings.Join(names, ", ") + "."
-	}
-	return guidance + " Answer only as yourself. A deliberate direct question addressed to a named agent hands that agent the floor; a third-person reference does not. Do not speak labels, roster metadata, or internal role markers."
+	o.stateMu.Lock()
+	roster := cloneGroupParticipants(o.groupParticipants)
+	speakers := append([]string(nil), o.groupSpeakers...)
+	o.stateMu.Unlock()
+	return groupConversationContext(own, roster, speakers)
 }
 
 func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart func(ToolCall), onEnd func(ToolResult)) string {
