@@ -147,11 +147,11 @@ type PromptRefs struct {
 
 // Validate checks structural invariants.
 func (p *Profile) Validate() error {
-	if !utf8.ValidString(p.ParticipationDescription) || utf8.RuneCountInString(p.ParticipationDescription) > 256 || len(p.ParticipationDescription) > 1024 {
-		return fmt.Errorf("participation description must be valid UTF-8 and at most 256 characters")
-	}
 	if p == nil {
 		return fmt.Errorf("persona profile: nil")
+	}
+	if !utf8.ValidString(p.ParticipationDescription) || utf8.RuneCountInString(p.ParticipationDescription) > 256 || len(p.ParticipationDescription) > 1024 {
+		return fmt.Errorf("participation description must be valid UTF-8 and at most 256 characters")
 	}
 	if p.Schema != Schema {
 		return fmt.Errorf("persona profile: schema %q, want %q", p.Schema, Schema)
