@@ -29,12 +29,14 @@ func runRootForPrompts(t *testing.T, promptDir string, args ...string) (string, 
 	config.Set("active_persona", "obey")
 	promptsListJSON = false
 	promptsShowJSON = false
+	promptsShowName = ""
 	t.Cleanup(func() {
 		config.Set("prompts_dir", "")
 		config.Set("persona", "obey")
 		config.Set("active_persona", "obey")
 		promptsListJSON = false
 		promptsShowJSON = false
+		promptsShowName = ""
 	})
 
 	var buf bytes.Buffer
@@ -98,6 +100,41 @@ func TestPromptsCommandsReportSeededDefaultsAsEmbedded(t *testing.T) {
 	}
 	if shown.Path != "" {
 		t.Errorf("show path = %q, want empty for seeded default", shown.Path)
+	}
+}
+
+func TestPromptsShowNamedSystemTemplateAndUserOverride(t *testing.T) {
+	dir := t.TempDir()
+	out, err := runRootForPrompts(t, dir, "prompts", "show", "system", "--name", "group-reply", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shown struct {
+		Name   string         `json:"name"`
+		Source prompts.Source `json:"source"`
+		Path   string         `json:"path"`
+		Text   string         `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(out), &shown); err != nil {
+		t.Fatal(err)
+	}
+	if shown.Name != "group-reply" || shown.Source != prompts.SourceEmbedded || !strings.Contains(shown.Text, "{agent_name}") {
+		t.Fatalf("named template=%+v", shown)
+	}
+	path := filepath.Join(dir, "system", "group-reply.yaml")
+	body := "schema: obey-voice.prompt.v1\nprompt:\n  name: group-reply\n  kind: system\n  system_prompt: 'Edited reply for {agent_name}'\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err = runRootForPrompts(t, dir, "prompts", "show", "system", "--name", "group-reply", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(out), &shown); err != nil {
+		t.Fatal(err)
+	}
+	if shown.Source != prompts.SourceUser || shown.Path != path || shown.Text != "Edited reply for {agent_name}" {
+		t.Fatalf("user template=%+v", shown)
 	}
 }
 

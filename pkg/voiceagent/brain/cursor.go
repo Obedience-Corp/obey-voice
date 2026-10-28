@@ -347,7 +347,7 @@ func (c *CursorBrain) buildPrompt(omitTurnInstruction bool, workResults ...[]Com
 		}
 	}
 
-	if group := c.groupContext.prompt(agentName, c.history); group != "" {
+	if group := c.groupContext.prompt(c.cfg, agentName, c.history); group != "" {
 		parts = append(parts, group, "")
 	}
 	last := c.history[len(c.history)-1]

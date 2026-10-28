@@ -17,9 +17,9 @@ func TestApplicationCapabilitiesReachProvidersWithoutSkills(t *testing.T) {
 					t.Errorf("provider=%s skills off: missing %q", provider, capability)
 				}
 			}
-			want := "Calibre integration is currently disabled"
+			want := "Current Calibre setting: calibre_enabled=false"
 			if enabled {
-				want = "Calibre integration is enabled"
+				want = "Current Calibre setting: calibre_enabled=true"
 			}
 			if !strings.Contains(prompt, want) {
 				t.Errorf("provider=%s calibre=%v not reflected in prompt", provider, enabled)

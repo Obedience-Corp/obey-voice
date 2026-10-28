@@ -11,6 +11,7 @@ import (
 
 // ThinkFull sends input and waits for the complete response.
 func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (answer string, resultErr error) {
+	o.refreshSystemPrompt(opts.OnPromptWarn)
 	ctx = opts.workerBudget().Context(ctx)
 	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
 	// A failed turn rolls back to this snapshot rather than truncating: the tool

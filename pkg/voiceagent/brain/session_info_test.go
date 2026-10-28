@@ -53,7 +53,7 @@ func TestSessionInfoPerProvider(t *testing.T) {
 				history:          []api.Message{{Role: "user", Content: "0123456789ab"}},
 			},
 			// System, stable attribution guidance, user content and message overhead.
-			want: SessionState{Kind: "chat", PromptTokens: (32 + len(historicalIdentityGuidance)) / 4, Turns: 1},
+			want: SessionState{Kind: "chat", PromptTokens: (32 + len((&OllamaBrain{}).conversationIdentityGuidance())) / 4, Turns: 1},
 		},
 	}
 	for _, tt := range tests {

@@ -625,7 +625,7 @@ func (b *Brain) buildPrompt(omitTurnInstruction bool, workResults ...[]Completio
 		}
 	}
 
-	if group := b.groupContext.prompt(agentName, b.history); group != "" {
+	if group := b.groupContext.prompt(b.cfg, agentName, b.history); group != "" {
 		parts = append(parts, group, "")
 	}
 	last := b.history[len(b.history)-1]

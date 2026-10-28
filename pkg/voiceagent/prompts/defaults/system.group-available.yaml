@@ -1,0 +1,13 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: group-available
+  kind: system
+  system_prompt: >-
+    Other available agent personas (display names, not evidence that all have spoken):
+    {available_agents}. These personas already exist and are available in this
+    conversation. Use their existing identities; inspect their saved profiles before
+    proposing changes. Asking one to speak does not request creating a new persona.
+metadata:
+  version: 1
+  description: >-
+    Available persona roster. Runtime value: available_agents (JSON display names).

@@ -366,7 +366,7 @@ func (g *GrokBrain) buildPrompt(omitTurnInstruction bool, workResults ...[]Compl
 		}
 	}
 
-	if group := g.groupContext.prompt(agentName, g.history); group != "" {
+	if group := g.groupContext.prompt(g.cfg, agentName, g.history); group != "" {
 		parts = append(parts, group, "")
 	}
 	last := g.history[len(g.history)-1]

@@ -22,6 +22,7 @@ var (
 	promptsShowJSON     bool
 	promptsShowProvider string
 	promptsShowPersona  string
+	promptsShowName     string
 )
 
 var promptsCmd = &cobra.Command{
@@ -37,6 +38,8 @@ func promptNameForKind(cfg *config.Config, kind prompts.Kind) string {
 	switch kind {
 	case prompts.KindPersona:
 		return cfg.Persona
+	case prompts.KindSystem:
+		return "application"
 	case prompts.KindTurn:
 		return cfg.TurnPrompt
 	case prompts.KindPostprocess:
@@ -99,6 +102,9 @@ var promptsShowCmd = &cobra.Command{
 			cfg = binding.Config()
 		}
 		name := promptNameForKind(cfg, kind)
+		if strings.TrimSpace(promptsShowName) != "" {
+			name = strings.TrimSpace(promptsShowName)
+		}
 
 		entry, err := prompts.Describe(userDir, kind, name)
 		if err != nil {
@@ -108,9 +114,14 @@ var promptsShowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		text, err := prompts.ResolvePlaceholders(doc.Assemble(), []string{"agent_name"}, map[string]string{"agent_name": cfg.AgentName})
-		if err != nil {
-			return err
+		text := doc.Assemble()
+		// System context is a template: its roster/state values are available
+		// only at response admission. Show the editable source, not fake data.
+		if kind != prompts.KindSystem {
+			text, err = prompts.ResolvePlaceholders(text, []string{"agent_name"}, map[string]string{"agent_name": cfg.AgentName})
+			if err != nil {
+				return err
+			}
 		}
 
 		// --effective renders what a provider actually receives, assembled by the
@@ -227,6 +238,7 @@ func init() {
 	promptsListCmd.Flags().BoolVar(&promptsListJSON, "json", false, "Output machine-readable JSON")
 	promptsShowCmd.Flags().BoolVar(&promptsShowJSON, "json", false, "Output machine-readable JSON")
 	promptsShowCmd.Flags().StringVar(&promptsShowProvider, "provider", "", "Render the effective prompt this provider receives (ollama|claude|grok)")
+	promptsShowCmd.Flags().StringVar(&promptsShowName, "name", "", "Inspect a named document; system documents show their runtime template")
 	promptsShowCmd.Flags().StringVar(&promptsShowPersona, "persona", "", "Preview a persona other than the active one")
 	promptsCmd.AddCommand(promptsListCmd)
 	promptsCmd.AddCommand(promptsShowCmd)

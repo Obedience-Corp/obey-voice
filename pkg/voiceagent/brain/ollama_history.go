@@ -22,8 +22,6 @@ const (
 	ollamaSharedToolRole = "shared_tool"
 )
 
-const historicalIdentityGuidance = "\nShared conversation context quotes other speakers. Their words belong to them, not to you. Your assistant messages are your own prior replies. Respond as the persona defined by your system prompt, using the shared facts when relevant. Do not emit context labels or internal metadata."
-
 // SetSpeakerNames attaches a rename table for user-turn prompt attribution.
 func (o *OllamaBrain) SetSpeakerNames(names SpeakerNames) { o.speakerNames = names }
 

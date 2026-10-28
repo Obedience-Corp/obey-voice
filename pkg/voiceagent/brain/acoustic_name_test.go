@@ -41,10 +41,10 @@ func TestAcousticHintDoesNotChangeDefaultOrAgentClassifierPrompt(t *testing.T) {
 			if sent.Text != tc.text || sent.AcousticName != tc.wantHint || input.AcousticName != tc.hint {
 				t.Fatalf("sent=%+v input=%+v", sent, input)
 			}
-			if tc.wantHint == "" && wire.Messages[0].Content != addresseeInstruction {
+			if tc.wantHint == "" && wire.Messages[0].Content != systemPrompt(o.cfg, "addressee", nil) {
 				t.Fatal("changed default classifier prompt")
 			}
-			if tc.wantHint != "" && !strings.Contains(wire.Messages[0].Content, acousticNameInstruction) {
+			if tc.wantHint != "" && !strings.Contains(wire.Messages[0].Content, systemPrompt(o.cfg, "acoustic-name", nil)) {
 				t.Fatal("missing evidence semantics")
 			}
 		})

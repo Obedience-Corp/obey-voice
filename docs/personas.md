@@ -185,6 +185,24 @@ Peer replies have tools disabled and their discussion of commands cannot
 activate the legacy spoken-promise worker fallback. They still use the normal
 speech output path.
 
+Application and conversation instructions use the same versioned YAML format
+as persona/turn prompts. Packaged sources live under
+`pkg/voiceagent/prompts/defaults/system*.yaml`; startup seeds editable copies
+under `<prompts_dir>/system/` without overwriting existing edits. Use
+`obey-voice prompts list` and
+`obey-voice prompts show system --name application` to inspect them. Named
+system documents are shown as templates, with runtime placeholders intact.
+
+`application.yaml` groups app capabilities into named sections. `group-chat`,
+`group-available`, `group-spoken`, `group-reply`, `peer-reply`, and
+`conversation-history` own conversation context; `addressee` and `acoustic-name`
+own private routing instructions. Metadata in each file names its runtime
+variables. Go supplies values such as the current persona, public roster and
+Calibre enablement. Edits take effect on the next request; invalid YAML or
+unknown placeholders report a warning and use the packaged YAML. Unchanged
+templates preserve the system prefix, and prompt text stays out of canonical
+conversation history.
+
 Exact persona controls are intentionally narrow and whole-input only:
 
 - direct name/alias (`Santa`, `Santa.`)
