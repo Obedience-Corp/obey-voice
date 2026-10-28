@@ -76,6 +76,7 @@ func (o *OllamaBrain) refreshGroupHistory(turns []Turn) {
 	}
 	o.stateMu.Lock()
 	o.groupHistory = foreign
+	o.groupSpeakers = groupAgentNames(turns)
 	o.stateMu.Unlock()
 }
 

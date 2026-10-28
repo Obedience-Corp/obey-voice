@@ -254,3 +254,14 @@ func TestBoundaryElementIsForFencedWorkersOnly(t *testing.T) {
 		t.Fatal("live prompt carries a boundary")
 	}
 }
+
+func TestApplicationGroundingExplainsCurrentConversationAcrossProviders(t *testing.T) {
+	for _, provider := range []string{"ollama", "claude", "cursor", "grok", "codex"} {
+		prompt := AssembleSystemPrompt(SystemPromptInput{Provider: provider, Persona: "You are Venessa.", Cfg: &config.Config{}})
+		for _, want := range []string{"user's current conversation", "multiple distinct agent personas", "ongoing conversation, not a new app or setup task"} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("%s lacks %q: %s", provider, want, prompt)
+			}
+		}
+	}
+}
