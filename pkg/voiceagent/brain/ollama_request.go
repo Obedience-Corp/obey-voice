@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/ollama/ollama/api"
 )
 
@@ -86,6 +87,9 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
 	budget := workerBudgetFromContext(ctx)
 	for {
+		if err := discussion.ReserveRequest(ctx); err != nil {
+			return err
+		}
 		if err := budget.AcquireRequest(ctx); err != nil {
 			return err
 		}

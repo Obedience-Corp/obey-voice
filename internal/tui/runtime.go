@@ -14,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
@@ -53,7 +54,9 @@ type ConversationRuntime struct {
 	// SelectPersona is the host-owned, serialized selection boundary. The TUI
 	// invokes it for an in-chat /personas choice; it never writes the global
 	// active-persona preference for that choice.
-	SelectPersona func(context.Context, string) (events.PersonaSelection, *config.Config, error)
+	SelectPersona    func(context.Context, string) (events.PersonaSelection, *config.Config, error)
+	Participation    func() discussion.Settings
+	SetParticipation func(context.Context, discussion.Settings) error
 	// SelectionSnapshot supplies the current session binding to the TUI when a
 	// manager is opened or a runtime is restored.
 	SelectionSnapshot func() events.PersonaSelection

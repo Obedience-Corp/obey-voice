@@ -52,6 +52,8 @@ var envBindings = map[string]string{
 	"transcribecpp_model":         "TRANSCRIBECPP_MODEL",
 	"models_dir":                  "MODELS_DIR",
 	"brain_provider":              "BRAIN_PROVIDER",
+	"group_participation_enabled": "GROUP_PARTICIPATION_ENABLED",
+	"group_participation_mode":    "GROUP_PARTICIPATION_MODE",
 	"persona_routing_timeout":     "PERSONA_ROUTING_TIMEOUT",
 	"grok_model":                  "GROK_MODEL",
 	"cursor_model":                "CURSOR_MODEL",

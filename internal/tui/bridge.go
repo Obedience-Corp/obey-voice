@@ -68,6 +68,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.TurnInterrupted](b, bus)
 	forward[events.ResponseReady](b, bus)
 	forward[events.PersonaSelection](b, bus)
+	forward[events.DiscussionUpdated](b, bus)
 	forward[events.ConversationCleared](b, bus)
 	forward[events.ConversationCompacted](b, bus)
 	forward[events.Error](b, bus)

@@ -15,6 +15,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
@@ -26,7 +27,10 @@ import (
 // that owner's normal session. It must not publish UI state itself.
 type SelectionOptions struct {
 	// AddressResolver overrides the current provider classifier (for alternate hosts/tests).
-	AddressResolver brain.AddresseeResolver
+	AddressResolver      brain.AddresseeResolver
+	DiscussionDecider    discussion.Decider
+	Participation        *discussion.Settings
+	PersistParticipation func(discussion.Settings) error
 	// UseDefaults preserves the launcher's Settings stack until an explicit
 	// persona selection; the default profile still supplies identity/prompt.
 	UseDefaults bool
@@ -46,14 +50,20 @@ type SelectionOptions struct {
 // does not schedule turns or own conversation/work lifetime. Hosts must call
 // Select in request order and serialize it with clear, restore, and shutdown.
 type Selector struct {
-	opts              SelectionOptions
-	transitionMu      sync.Mutex // joins publication before host resource cleanup
-	closed            bool
-	mu                sync.RWMutex // protects read-only snapshots; never held during I/O
-	selected          events.PersonaSelection
-	binding           *persona.SessionBinding
-	generation        uint64
-	requiresSelection bool // explicit restore may have no usable saved persona
+	recentAudience      []string
+	recentAudienceAt    int
+	recentAudienceScope work.WorkScope
+	groupMu             sync.Mutex
+	group               *groupRun
+	participation       discussion.Settings
+	opts                SelectionOptions
+	transitionMu        sync.Mutex // joins publication before host resource cleanup
+	closed              bool
+	mu                  sync.RWMutex // protects read-only snapshots; never held during I/O
+	selected            events.PersonaSelection
+	binding             *persona.SessionBinding
+	generation          uint64
+	requiresSelection   bool // explicit restore may have no usable saved persona
 }
 
 func NewSelector(opts SelectionOptions) (*Selector, error) {
@@ -87,7 +97,18 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 			return voiceagent.NewTTSSet(cfg)
 		}
 	}
-	s := &Selector{opts: opts, binding: opts.Initial}
+	settings := discussion.DefaultSettings()
+	if opts.Base.GroupParticipationMode != "" {
+		settings.Mode = opts.Base.GroupParticipationMode
+	}
+	if opts.Participation != nil {
+		settings = opts.Participation.Clone()
+	}
+	if err := settings.Validate(); err != nil {
+		return nil, err
+	}
+	opts.Pipeline.GroupParticipationEnabled = opts.Base.GroupParticipationEnabled
+	s := &Selector{opts: opts, binding: opts.Initial, participation: settings}
 	hash := freezer.FreezePersonaPrompt()
 	s.selected = s.snapshotFor(opts.Initial, hash, 0, "initial")
 	if err := opts.Persist(opts.Pipeline.Brain.History(), s.selected); err != nil {
@@ -136,6 +157,7 @@ func (s *Selector) snapshotFor(b *persona.SessionBinding, hash string, generatio
 // Select prepares all fallible resources before durable selection changes.
 // The host, not this method, supplies FIFO admission and turn exclusion.
 func (s *Selector) Select(ctx context.Context, id, reason string) (events.PersonaSelection, error) {
+	s.EndDiscussion("superseded")
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	return s.selectAtBoundary(ctx, id, reason)
@@ -175,6 +197,7 @@ func (s *Selector) warnPersistence(err error) {
 // Reload applies explicit Settings changes at the same serialized boundary.
 // Failure keeps the previous base for subsequent persona inheritance.
 func (s *Selector) Reload(ctx context.Context, base *config.Config) error {
+	s.EndDiscussion("superseded")
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	if base == nil {
@@ -231,6 +254,7 @@ func responseEnvelope(selected events.PersonaSelection) events.ResponseEnvelope 
 // succeeds, the transcript remains readable but response admission is closed.
 // Like Select, this must run at the host's serialized lifecycle boundary.
 func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash string, directories ...*config.ConversationDirectories) {
+	s.EndDiscussion("superseded")
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	if s.closed {
@@ -265,6 +289,7 @@ func (s *Selector) RestoreSession(sessionID, personaID, displayName, promptHash 
 // this final join also covers a filesystem commit outliving the turn timeout.
 // It does not close conversation resources or schedule turns itself.
 func (s *Selector) Close() {
+	s.EndDiscussion("superseded")
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	s.closed = true

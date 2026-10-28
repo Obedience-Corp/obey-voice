@@ -194,6 +194,14 @@
       "value": "",
       "source": "default"
     },
+    "group_participation_enabled": {
+      "value": false,
+      "source": "default"
+    },
+    "group_participation_mode": {
+      "value": "invited",
+      "source": "default"
+    },
     "input_device": {
       "value": "",
       "source": "default"

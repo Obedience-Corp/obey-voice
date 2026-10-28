@@ -297,3 +297,37 @@ In the desktop **Personas** list, click **Preview voice** on a card, then
 These previews use the saved persona's speech provider, voice, and tier,
 including inherited Settings defaults. They do not activate, edit, or save the
 persona, and inactive personas can be previewed too.
+
+## Group participation (experimental)
+
+With a local Ollama brain, enable `group_participation_enabled: true` in your
+configuration and start a new conversation. The default is disabled. Once enabled,
+requests such as “What does everyone think?” or “Jarvis and Samantha, discuss this”
+use semantic audience inference and offer the invited personas their own private
+chance to contribute. An agent can pass. Later replies can answer or challenge a
+specific earlier contribution, including returning to an earlier speaker.
+
+Use `/participation` in the conversation to inspect settings, or
+`/participation invited jarvis,samantha` to choose a subset. `all` includes enabled
+personas. Modes are `off`, `invited`, and `open`; open permits at most one useful
+addition after an ordinary completed reply. The desktop conversation and native
+Mac Talk view expose the same controls. Settings belong to the current saved
+conversation; resuming it does not resume autonomous speech.
+
+From another terminal, `obey-voice participation show` and
+`obey-voice participation set invited --members jarvis,samantha` control a running
+local TUI/desktop conversation through its authenticated control endpoint. Use the
+serve WebSocket control for a served conversation.
+
+Discussions support up to eight invited personas. Replies are brief, tools and
+workers are disabled for discussion contributions, and response, inference and time
+budgets end the exchange. New input, interruption, persona changes and conversation
+changes supersede pending contributions. There is no continuous idle polling.
+Private decisions stay out of the transcript. Voice continuations require audio
+accepted by an output sink; text conversations use completed text delivery.
+
+An optional `participation_description` in `persona.yaml` describes when a persona
+may have a useful perspective (at most 256 characters). Set it with
+`obey-voice persona edit <id> --participation-description "..."`. This short card
+helps candidate selection; each candidate still uses its own full persona prompt
+and model to decide whether to contribute and generate its reply.

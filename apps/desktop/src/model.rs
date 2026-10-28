@@ -74,6 +74,7 @@ pub struct Enrollment {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct State {
+    pub participation: Option<ParticipationSettings>,
     pub work_dir: String,
     pub work_dir_source: String,
     #[serde(deserialize_with = "nullable_vec")]
@@ -296,4 +297,11 @@ mod tests {
         assert!(route_receipt(&serde_json::json!({"outcome":"routed","destination_id":"camp:test","detail":"notes/meetings/test.md"})).unwrap().contains("notes/meetings/test.md"));
         assert!(route_receipt(&serde_json::json!({})).is_err());
     }
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ParticipationSettings {
+    pub mode: String,
+    pub members: Option<Vec<String>>,
 }

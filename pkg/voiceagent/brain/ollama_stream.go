@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/ollama/ollama/api"
@@ -23,8 +24,14 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		opts.Identity = &copied
 	}
 	o.refreshSystemPrompt(opts.OnPromptWarn)
-	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
-	if !opts.Background && !opts.AgentContinuation {
+	skillCtx := ""
+	if opts.Discussion == nil {
+		skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
+	} else {
+
+		opts.ToolsEnabled = false
+	}
+	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 		o.appendUserInput(input, opts)
 	}
 	priorReply := o.previousReplyForRepetition(opts)
@@ -32,7 +39,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	if opts.AgentContinuation && len(o.canonical) > 0 {
 		latestMessage = o.canonical[len(o.canonical)-1].Content
 	}
-	if !opts.Background && !opts.AgentContinuation {
+	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 		o.receiveDelegationResults(opts)
 	}
 	if opts.Background && !opts.AgentContinuation {
@@ -83,7 +90,20 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				tools = sess.tools()
 			}
 
-			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation)
+			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
+			if opts.Discussion != nil {
+				messages[0].Content += opts.Discussion.Prompt()
+				// A compacted working projection can contain only assistant summaries.
+				// Reuse the actual initiating request as a transient model input, without
+				// recording a second human turn or inventing an agent handoff.
+				hasUser := false
+				for _, m := range messages {
+					hasUser = hasUser || m.Role == "user"
+				}
+				if !hasUser {
+					messages = append(messages, api.Message{Role: "user", Content: opts.Discussion.Original})
+				}
+			}
 			if continuation != "" {
 				messages = append(messages, api.Message{Role: "user", Content: continuation})
 				tools = nil
@@ -100,6 +120,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 			req := o.newChatRequest(messages, tools)
+			if opts.Discussion != nil {
+				if req.Options == nil {
+					req.Options = map[string]any{}
+				}
+				req.Options["num_predict"] = discussion.MaxReplyTokens
+				req.Think = &api.ThinkValue{Value: false}
+			}
 			if err := o.applyOutputBudget(req, opts.workerBudget()); err != nil {
 				done <- StreamResult{Err: err}
 				return
@@ -119,9 +146,21 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				gate.prior = priorReply
 			}
 			var emitted strings.Builder
+			outputChecked := false
 			forward := func(text string) error {
+				if opts.Discussion != nil {
+					if err := opts.Discussion.State.Context().Err(); err != nil {
+						return err
+					}
+				}
 				if text == "" {
 					return nil
+				}
+				if !outputChecked && opts.Discussion != nil && opts.Discussion.BeforeOutput != nil {
+					if err := opts.Discussion.BeforeOutput(ctx); err != nil {
+						return err
+					}
+					outputChecked = true
 				}
 				if err := sendChunk(ctx, out, text); err != nil {
 					return err
@@ -253,6 +292,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				opts.OnWorkerUsage(u)
 			}
 			if err == nil && gate.repeat {
+				if opts.Discussion != nil {
+					done <- StreamResult{Err: fmt.Errorf("group reply repeated a prior answer"), Recovered: true}
+					return
+				}
 				if repetitionRetry {
 					done <- StreamResult{Err: fmt.Errorf("response repeated after one retry"), Recovered: ctx.Err() == nil}
 					return
@@ -285,6 +328,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 
+			if opts.Discussion != nil && len(toolCalls) > 0 {
+				done <- StreamResult{Err: fmt.Errorf("tools are disabled for group discussion"), Recovered: true}
+				return
+			}
 			if (continuation != "" || repetitionRetry || routedChat || finalAnswer) && len(toolCalls) > 0 {
 				done <- StreamResult{Err: fmt.Errorf("response recovery returned tool calls"), Recovered: true}
 				return
@@ -363,6 +410,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				done <- StreamResult{Err: fmt.Errorf("tool round limit reached: model returned an empty or incomplete final answer"), Recovered: ctx.Err() == nil}
 				return
 			}
+			if opts.Discussion != nil && !hasSpeakableContent(cleaned) {
+				done <- StreamResult{Err: fmt.Errorf("group reply was empty"), Recovered: true}
+				return
+			}
 			var response string
 			if fallbackEmptyContent(cleaned, hadTools, hadThinking) || hasSpeakableContent(cleaned) {
 				response, err = finalizeStreamedText(ctx, out, stripHistoricalAssistantMarkers(raw))
@@ -390,6 +441,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if integrity.Truncated {
 					o.emitContinuityTruncated(integrity)
 				}
+			}
+			if opts.Discussion != nil && (doneReason == "length" || integrity.Truncated) {
+				o.appendMessage(api.Message{Role: "assistant", Content: "[incomplete response] " + recorded}, opts.Identity)
+				done <- StreamResult{Integrity: integrity, Err: fmt.Errorf("group reply exceeded output budget"), Recovered: true}
+				return
 			}
 			if integrity.Truncated && o.cfg.ContinuityRecoveryMax > 0 {
 				if ctx.Err() != nil {
@@ -424,7 +480,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				continue
 			}
 			o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
-			if !opts.Background && !opts.AgentContinuation {
+			if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 				o.ackDelegationResults(req.Messages)
 			} else if opts.Background {
 				o.markBackgroundDelivered(req.Messages)

@@ -209,6 +209,8 @@ func voiceKeys() []KeySpec {
 
 func brainKeys() []KeySpec {
 	return []KeySpec{
+		{Key: "group_participation_enabled", Type: TypeBool, Default: false, Group: GroupBrain, Title: "Group participation (experimental)", Help: "Allow contextual group invitations on local Ollama. Requires a model that reliably distinguishes invitations from mentions. Applies to the next conversation."},
+		{Key: "group_participation_mode", Type: TypeEnum, Default: "invited", Enum: []string{"off", "invited", "open"}, Group: GroupBrain, Title: "Agent participation", Help: "Invited allows group discussion when asked. Open additionally allows one useful contribution after an ordinary reply. Applies to new conversations; /participation changes the current conversation."},
 		{
 			Key: "brain_provider", Type: TypeEnum, Default: "ollama", Enum: brainProviderEnum(),
 			Group: GroupBrain, Title: "Model provider",

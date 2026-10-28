@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,6 +42,7 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
+	Participation   *discussion.Settings  `json:"participation,omitempty"`
 	WorkDir         string                `json:"work_dir"`
 	WorkDirSource   string                `json:"work_dir_source"`
 	Notices         []string              `json:"notices"`
@@ -152,6 +154,8 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.turnCancel()
 			}
 			m.rt.Pipeline.StopPlayback()
+		case "participation":
+			cmd = c.runParticipationCommand(strings.Fields(action.Text))
 		case "persona":
 			if m.rt.SelectPersona == nil {
 				c.setStatus("This provider does not support live persona selection", true)
@@ -275,6 +279,10 @@ func (m desktopModel) state() DesktopState {
 	state := DesktopState{SessionID: m.rt.SessionID, Name: c.agentName, Status: ansi.Strip(c.status), Error: c.statusErr, Mic: c.voiceEnabled,
 		VoiceAvailable: m.rt.Voice, Muted: c.outputMuted, Busy: c.turnState != turnIdle, Recording: c.recordMode(), Thinking: c.streamingThink,
 		Response: c.streamingAgent, InputLevel: c.inputLevel, OutputLevel: c.outputLevel, Workers: m.rt.Pipeline.Workers(), WorkersEnabled: m.rt.Pipeline.WorkersEnabled()}
+	if m.rt.SessionCfg != nil && m.rt.SessionCfg.GroupParticipationEnabled && m.rt.Participation != nil {
+		settings := m.rt.Participation()
+		state.Participation = &settings
+	}
 	state.BrainProvider, state.BrainModel = c.activeBrain()
 	if m.rt.SessionCfg != nil {
 		state.WorkDir, state.WorkDirSource = m.rt.SessionCfg.WorkDir, m.rt.SessionCfg.WorkDirSource

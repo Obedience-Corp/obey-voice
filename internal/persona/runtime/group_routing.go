@@ -184,7 +184,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 
 // RouteHandoff classifies a delivered response without loading or selecting a
 // persona. The pipeline may discard the proposal when user speech arrives.
-func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {
+func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {
 	var proposal pipeline.HandoffProposal
 	if response.PersonaID == "" || response.PersonaID != s.Snapshot().PersonaID || strings.TrimSpace(response.Content) == "" {
 		return proposal, false, nil
@@ -228,4 +228,22 @@ func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visite
 		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected)}, nil
 	}
 	return proposal, true, nil
+}
+
+// RouteHandoff gives explicit handoffs priority over optional open participation.
+func (s *Selector) RouteHandoff(ctx context.Context, response brain.Turn, visited []string) (pipeline.HandoffProposal, bool, error) {
+	s.groupMu.Lock()
+	active := s.group != nil
+	s.groupMu.Unlock()
+	if active {
+		return s.nextDiscussion(ctx, response)
+	}
+	proposal, ok, err := s.routeNamedHandoff(ctx, response, visited)
+	if err != nil || ok {
+		return proposal, ok, err
+	}
+	if s.opts.Base.GroupParticipationEnabled && s.Participation().Mode == "open" && len(visited) == 1 {
+		return s.proposeOpen(ctx, response)
+	}
+	return proposal, false, nil
 }
