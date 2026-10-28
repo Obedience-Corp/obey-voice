@@ -2,6 +2,7 @@ package personaruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -78,6 +79,9 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 			continue
 		}
 		name, kind := "Unknown", "user"
+		if t.Role == "user" {
+			name = s.humanSpeakerName(t.Speaker)
+		}
 		if t.Role == "assistant" {
 			name, kind = strings.TrimSpace(t.PersonaDisplayName), "agent"
 			if name == "" {
@@ -116,6 +120,13 @@ func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker st
 	case "address":
 		address, err := roster.Lookup(decision.Name)
 		if err != nil {
+			var unknown *summon.UnknownTargetError
+			if errors.As(err, &unknown) && knownHumanAddressee(request, decision.Name) {
+				// A model may copy the human's name from an earlier reply.
+				// People are not unavailable personas. Preserve the selected
+				// responder; explicit controls were already validated by Route.
+				return summon.Address{Remainder: text}, nil
+			}
 			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", err)
 		}
 		// Keep the user's words exactly, including the name at any position.
