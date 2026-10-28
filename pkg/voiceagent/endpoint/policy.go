@@ -149,7 +149,7 @@ const defaultMinSpeech = 200 * time.Millisecond
 // source's end — not a clock — bounds it.
 func FromConfig(cfg *config.Config, finite bool) Policy {
 	p := Policy{
-		MinSpeech:    defaultMinSpeech,
+		MinSpeech:    secondsOr(cfg.VADMinSpeechDuration, defaultMinSpeech),
 		MinSilence:   secondsOr(cfg.VADSilenceDuration, 500*time.Millisecond),
 		MaxUtterance: secondsOr(float64(cfg.PhraseTimeLimit), 30*time.Second),
 		StartTimeout: secondsOr(float64(cfg.ListenTimeout), 10*time.Second),

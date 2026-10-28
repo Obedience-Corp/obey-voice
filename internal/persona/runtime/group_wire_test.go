@@ -135,7 +135,7 @@ func TestGroupHandoffWireAndDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	mu.Lock()
-	if classifierCalls != 3 || generationCalls != 2 {
+	if classifierCalls != 2 || generationCalls != 2 {
 		mu.Unlock()
 		t.Fatalf("initial handoff calls classifier=%d generation=%d", classifierCalls, generationCalls)
 	}
@@ -221,7 +221,7 @@ func TestGroupHandoffWireAndDisk(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if classifierCalls != 6 || generationCalls != 6 || len(answers) != generationCalls {
+	if classifierCalls != 5 || generationCalls != 6 || len(answers) != generationCalls {
 		t.Fatalf("wire call totals classifier=%d generation=%d answers=%d", classifierCalls, generationCalls, len(answers))
 	}
 }

@@ -67,8 +67,16 @@ its responder. Names may occur anywhere: both “Santa, what do you think?” an
 and recent conversation, not an invocation phrase list. Ordinary mentions,
 quotations, and questions about a persona leave the current responder selected.
 The user's original words remain unchanged in the transcript and model input.
-Unknown or ambiguous targets, unavailable personas, and classifier failures are
-reported without silently choosing another persona.
+Messages with no roster name and no acoustic name cue stay with the current
+responder without a classifier call. A leading punctuated address gives that
+listener the first turn, including requests to consult another persona.
+Semantic routing selects only configured agent names and aliases. Human names,
+model names such as LFM3, and other unlisted topics remain ordinary conversation
+for the selected responder. The structured output schema constrains target names
+to that roster; the host also ignores unlisted semantic targets if a backend
+ignores the schema. Unknown exact `@id` and `switch to Name` controls, ambiguous
+agent targets, unavailable configured personas, and classifier failures still
+report an error without silently selecting a replacement.
 
 This private structured request uses the current Ollama model, public names and
 aliases, and up to eight recent conversational messages. It has no tools or
