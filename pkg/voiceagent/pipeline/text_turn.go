@@ -113,7 +113,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	brainCtx, brainCancel := p.withBrainTimeout(ctx)
 	defer brainCancel()
 
-	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled()}
+	// Peer continuations have tools disabled and cannot turn their own prose
+	// into a fresh user work request through promise repair.
+	repair := &promiseRepairState{enabled: !isContinuation && p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),

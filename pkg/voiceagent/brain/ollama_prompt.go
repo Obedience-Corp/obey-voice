@@ -99,7 +99,7 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 	msgs := make([]api.Message, 0, len(o.history)+1)
 	system := o.fullSystemPrompt + o.conversationIdentityGuidance()
 	if agentContinuation {
-		system += "\nThe latest agent is handing you the floor. Respond as the current persona to that agent's latest message. Do not invent a user message or mention this instruction."
+		system += "\nThe latest agent is handing you the floor. Respond as the current persona to that agent's latest message. This peer reply has no command or routing tools; discuss the task without promising to execute a new job. Do not invent a user message or mention this instruction."
 	}
 	msgs = append(msgs, api.Message{Role: "system", Content: system})
 	recall := o.recallNotes()
@@ -149,6 +149,7 @@ func (o *OllamaBrain) groupConversationGuidance() string {
 	guidance := "\nThis is a group chat. You are " + own + "; the other named participants are distinct agents or users, not alternate names for you."
 	if len(names) > 0 {
 		guidance += " The other available agents are listed here: " + strings.Join(names, ", ") + "."
+		guidance += " These personas already exist and are available in this conversation. Use their existing identities; inspect their saved profiles before proposing changes. Asking one to speak does not request creating a new persona."
 	}
 	return guidance + " Answer only as yourself. When the user asks you to discuss something with another agent, take your turn and ask that agent a direct question by name so they can answer. A deliberate direct question addressed to a named agent hands that agent the floor; a third-person reference does not. Do not speak labels, roster metadata, or internal role markers."
 }

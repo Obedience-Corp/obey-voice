@@ -151,7 +151,9 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		metrics.delivery = &completionPlayback{lease: ordinary.lease}
 	}
 
-	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled()}
+	// Peer continuations have tools disabled and cannot turn their own prose
+	// into a fresh user work request through promise repair.
+	repair := &promiseRepairState{enabled: !isContinuation && p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),

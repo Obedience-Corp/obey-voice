@@ -167,6 +167,16 @@ Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before
 enabling the launcher; Continue offers the saved chat.
 
+Every provider receives core Obey Voice capability context, even when skills
+are disabled: native audiobook/document audio, optional Calibre access, and
+configuration commands. The conversation reports whether Calibre is enabled;
+it does not assume an installed feature is ready to execute without inspection.
+The embedded `obey-voice` skill supplies detailed app workflows. Listed group
+participants already exist; asking one to speak does not request creating it.
+Peer replies have tools disabled and their discussion of commands cannot
+activate the legacy spoken-promise worker fallback. They still use the normal
+speech output path.
+
 Exact persona controls are intentionally narrow and whole-input only:
 
 - direct name/alias (`Santa`, `Santa.`)

@@ -140,7 +140,7 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 		case ElemPersona:
 			b.WriteString(in.Persona)
 		case ElemApplication:
-			b.WriteString("\n\nYou are running inside Obey Voice, a voice assistant with configurable personas, models, and voices. Requests to configure Obey Voice refer to this app. Use the installed obey-voice CLI to inspect, make authorized configuration changes, and verify them; use a worker when the live tool surface only supports routing. Do not claim a change from conversation alone. Use the obey-voice skill when available for detailed configuration guidance.")
+			b.WriteString("\n\n" + ApplicationContext(in.Cfg))
 			if !SkillMenuApplies(in.Provider) && applicationSkillEnabled(in.Cfg) {
 				// Native-tool providers own skill discovery, but need this app's
 				// shipped instructions even outside the project's checkout.

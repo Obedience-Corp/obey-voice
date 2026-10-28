@@ -1,13 +1,21 @@
 ---
 name: obey-voice
-description: Help configure Obey Voice itself, including creating and editing personas, selecting brain models and voices, and diagnosing app settings. Use when a user asks this voice assistant to change or explain its own setup.
+description: "Use and configure Obey Voice itself: personas, brain models, voices, settings, Calibre library access, ebook-to-audio conversion, document narration and audiobooks. Use for questions or actions about this voice assistant's own capabilities and setup."
 ---
 
-# Obey Voice configuration
+# Obey Voice capabilities and configuration
 
 You are running inside Obey Voice, a voice assistant with a terminal UI and persistent persona profiles. The current persona is one profile in that app; “create a persona for Obey Voice” means configuring the app, not inventing a character named Obey Voice.
 
 Use the installed `obey-voice` CLI through your command tool. If the live conversation has only routing tools, send configuration actions to its worker. A chat response alone cannot create or change a profile. Ask for the persona's name or behavior when those are missing, then carry out the requested configuration when specified.
+
+## Use built-in audio and library features
+
+Obey Voice already creates audiobooks. Use `obey-voice audiobook create book.epub --out-dir out/book` (also digital PDF) for chapter/page WAVs plus a manifest; `--resume` skips unchanged completed sections. Inspect `audiobook create --help` for voices, formats and encoder requirements. `audiobook plan` and `audiobook review` prepare a production plan; the current `create` command renders the direct book input.
+
+For Calibre books, inspect `calibre_enabled` and use `library list`, `library search QUERY`, or `library show ID`. With Calibre installed and enabled, `audiobook create --from-library QUERY --out-dir DIR` selects the source; convertible MOBI/AZW-family formats use Calibre's `ebook-convert`. Ask for a book or output location only if missing. Use `render` for text, Markdown, HTML, URL articles and EPUB; inspect `narrate --help` for PDF cleanup/planning workflows. Verify the output files/manifest before saying audio was generated.
+
+Conversation participants already listed by the host are existing personas. Inspect them with `persona list/show` when a profile detail is needed; inviting Venessa or another participant to talk does not call for creating that persona. A separate skill is relevant only if its documented purpose matches the task.
 
 ## Inspect the installed interface
 
