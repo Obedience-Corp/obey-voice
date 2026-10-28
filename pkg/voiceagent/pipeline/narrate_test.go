@@ -226,18 +226,16 @@ func TestSpawnThenNarrateLongStory(t *testing.T) {
 		Source:     "test",
 	})
 
-	waitForTTS(t, provider, 1, 2*time.Second)
-	if !strings.Contains(strings.ToLower(provider.Calls()[0]), "working") {
-		t.Fatalf("spawn ack = %q", provider.Calls()[0])
-	}
-
 	<-worker.started
+	if calls := provider.Calls(); len(calls) != 0 {
+		t.Fatalf("story job invented an acknowledgement: %v", calls)
+	}
 	close(worker.done)
 
 	deadline := time.After(5 * time.Second)
 	for {
 		calls := provider.Calls()
-		if len(calls) >= 2 && strings.Contains(strings.Join(calls, " "), "Once upon a time") {
+		if len(calls) >= 1 && strings.Contains(strings.Join(calls, " "), "Once upon a time") {
 			break
 		}
 		select {

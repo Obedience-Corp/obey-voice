@@ -63,9 +63,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	hadThinking := false
 	hadTools := false
 	routedChat := false
-	for i := 0; i < maxToolIterations; i++ {
+	for i := 0; i <= maxToolIterations; i++ {
+		finalAnswer := i == maxToolIterations
 		var tools api.Tools
-		if opts.ToolsEnabled && !routedChat {
+		if opts.ToolsEnabled && !routedChat && !finalAnswer {
 			tools = sess.tools()
 		}
 
@@ -79,6 +80,12 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		if opts.OmitTurnInstruction {
 			messages = o.compactionMessages(skillCtx)
 		}
+		if finalAnswer {
+			messages = append(messages, api.Message{Role: "user", Content: toolLimitAnswerInstruction})
+		}
+		if err := o.messagesBudgetError(messages, tools); err != nil {
+			return "", err
+		}
 		req := o.newChatRequest(messages, tools)
 		stream := false
 		req.Stream = &stream
@@ -88,7 +95,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 		var response api.Message
 		var doneReason string
+		var responseComplete bool
 		err := o.chat(ctx, req, func(resp api.ChatResponse) error {
+			responseComplete = responseComplete || resp.Done
 			response = resp.Message
 			doneReason = resp.DoneReason
 			if opts.OnUsage != nil {
@@ -123,8 +132,8 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 
 		// Tool calls — execute and loop (skills stack on full CLI tools).
-		if routedChat && len(response.ToolCalls) > 0 {
-			return "", fmt.Errorf("chat answer returned unexpected tool calls")
+		if (routedChat || finalAnswer) && len(response.ToolCalls) > 0 {
+			return "", fmt.Errorf("tools-free answer returned unexpected tool calls")
 		}
 		if len(response.ToolCalls) > 0 {
 			hadTools = true
@@ -165,6 +174,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		// empty so /compact is not replaced by the recovery line.
 		raw := stripReplyConventions(o.cfg.AgentName, response.Content)
 		text := cleanForVoice(stripHistoricalAssistantMarkers(raw))
+		if finalAnswer && (!responseComplete || !hasSpeakableContent(text)) {
+			return "", fmt.Errorf("tool round limit reached: model returned no final answer")
+		}
 		if fallbackEmptyContent(text, hadTools, hadThinking) {
 			text = spokenOrFallback(text)
 		}
@@ -182,5 +194,5 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		return text, nil
 	}
 
-	return "I seem to be going in circles with my tools. Let me just answer directly.", nil
+	return "", fmt.Errorf("tool round limit reached without a final answer")
 }

@@ -160,7 +160,16 @@ The animated **Working** cue stays in the top-right header beside the voice
 meter and in the footer; queued work has a static cue. Click the header cue
 (with TUI mouse controls enabled) or press `Ctrl+W`. One active job opens its
 detail directly; several active jobs open the worker list. The cue clears when
-the job ends.
+the job ends. The chat's worker entry shows each tool's command or target,
+status, output preview and error, and retains those details after completion.
+`Ctrl+W` also opens the newest completed worker when none are active.
+
+Starting a worker updates its job status without inserting or speaking a canned
+"Working on it" reply. The worker's generated result arrives when ready. If an
+Ollama turn exhausts its ten tool rounds, it gets one final model request with
+tools disabled to answer from the collected results and explain any blockers.
+Existing request, runtime and token budgets still apply. A failed or empty final
+answer is reported as a failure rather than a successful result.
 
 **Allow background workers** (`t`) controls new jobs immediately and is saved
 for future chats. Turning it Off does not cancel already-running or queued

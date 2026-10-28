@@ -76,9 +76,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		repetitionRetry := false
 		repetitionAllowed := false
 
-		for i := 0; i < maxToolIterations; i++ {
+		for i := 0; i <= maxToolIterations; i++ {
+			finalAnswer := i == maxToolIterations
 			var tools api.Tools
-			if opts.ToolsEnabled && !routedChat {
+			if opts.ToolsEnabled && !routedChat && !finalAnswer {
 				tools = sess.tools()
 			}
 
@@ -90,6 +91,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			if repetitionRetry {
 				messages = append(messages, api.Message{Role: "user", Content: repetitionRetryInstruction})
 				tools = nil
+			}
+			if finalAnswer {
+				messages = append(messages, api.Message{Role: "user", Content: toolLimitAnswerInstruction})
 			}
 			if budgetErr := o.messagesBudgetError(messages, tools); budgetErr != nil {
 				done <- StreamResult{Err: budgetErr, Recovered: ctx.Err() == nil}
@@ -128,12 +132,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 			// Until a live routing response finishes, its content might be
 			// untagged planning followed by a tool call. It cannot be taken
-			// back once spoken. Only this classification request is held;
-			// worker/tool-free responses retain incremental streaming.
+			// back once spoken. The final tool-limit answer is also held until
+			// completion so a rejected or truncated recovery cannot reach speech.
+			// Ordinary worker/tool-free responses retain incremental streaming.
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 			var routeText []string
 			emitText := func(text string) error {
-				if routing {
+				if routing || finalAnswer {
 					routeText = append(routeText, text)
 					return nil
 				}
@@ -212,9 +217,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					err = sendErr
 				}
 			}
-			if routing {
+			if routing || finalAnswer {
 				if len(toolCalls) > 0 {
-					// Routing commentary belongs to the thinking surface,
+					// Tool preambles belong to the thinking surface,
 					// never the speech stream or canonical reply history.
 					textBuf.Reset()
 					if text := strings.Join(routeText, ""); text != "" {
@@ -223,7 +228,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							err = sendErr
 						}
 					}
-				} else if err == nil {
+				} else if err == nil && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
 					for _, text := range routeText {
 						if sendErr := forward(gate.feed(text)); sendErr != nil {
 							err = sendErr
@@ -280,7 +285,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return
 			}
 
-			if (continuation != "" || repetitionRetry || routedChat) && len(toolCalls) > 0 {
+			if (continuation != "" || repetitionRetry || routedChat || finalAnswer) && len(toolCalls) > 0 {
 				done <- StreamResult{Err: fmt.Errorf("response recovery returned tool calls"), Recovered: true}
 				return
 			}
@@ -354,6 +359,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// spoken recovery line.
 			raw := stripReplyConventions(o.cfg.AgentName, textBuf.String())
 			cleaned := cleanForVoice(stripHistoricalAssistantMarkers(raw))
+			if finalAnswer && (!responseComplete || doneReason == "length" || !hasSpeakableContent(cleaned)) {
+				done <- StreamResult{Err: fmt.Errorf("tool round limit reached: model returned an empty or incomplete final answer"), Recovered: ctx.Err() == nil}
+				return
+			}
 			var response string
 			if fallbackEmptyContent(cleaned, hadTools, hadThinking) || hasSpeakableContent(cleaned) {
 				response, err = finalizeStreamedText(ctx, out, stripHistoricalAssistantMarkers(raw))
@@ -425,16 +434,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			return
 		}
 
-		if err := sendChunk(ctx, out, "I seem to be going in circles with my tools. Let me just answer directly."); err != nil {
-			done <- StreamResult{Err: err}
-			return
-		}
-		o.appendMessage(api.Message{
-			Role:    "assistant",
-			Content: "I seem to be going in circles with my tools. Let me just answer directly.",
-		}, opts.Identity)
-		o.trimHistory()
-		done <- StreamResult{}
+		done <- StreamResult{Err: fmt.Errorf("tool round limit reached without a final answer"), Recovered: ctx.Err() == nil}
 	}()
 
 	return &Stream{Chunks: out, Thinking: thinking, Done: done}, nil

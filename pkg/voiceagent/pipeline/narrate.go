@@ -171,7 +171,6 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 }
 
 func (n *Narrator) startStoryJob(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
-	n.agency.speakAck(ctx, turn, metrics)
 	id, err := n.agency.jobs.Start(ctx, job.Spec{
 		Task: "write a long story",
 		Run:  n.storyWriterRun(),

@@ -143,7 +143,7 @@ func (m *conversationModel) renderWorkResult(v work.ResultView) string {
 	if len(meta) > 0 {
 		text += " · " + strings.Join(meta, " · ")
 	}
-	return dimStyle.Render(prefix + ": " + text)
+	return dimStyle.Render(prefix+": "+text) + m.renderJobToolDetails(v.Outcome.JobID)
 }
 
 func (m *conversationModel) clearWorkProjection() {

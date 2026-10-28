@@ -18,8 +18,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
-const defaultSpawnAck = "Working on it."
-
 // workNarrationMilestones is the voice_work_narration setting that speaks one
 // line per closed fold row. The default, status_only, speaks nothing until the
 // user asks what is happening.
@@ -35,7 +33,6 @@ type Agency struct {
 	jobs        *job.Table
 	worker      brain.Provider
 	cfg         *config.Config
-	ack         string
 	planFactory func(context.Context, *config.Config, *config.WorkerPlan) (brain.Provider, error)
 	narrator    *Narrator
 	// work folds a job's tool calls into rows: what "what's happening" answers
@@ -74,16 +71,11 @@ type pendingDelivery struct {
 // NewAgency constructs the spawn coordinator. worker may be nil when construction
 // failed; spawn will surface the error at job start.
 func NewAgency(p *Pipeline, jobs *job.Table, worker brain.Provider, cfg *config.Config, workerErr error) *Agency {
-	ack := defaultSpawnAck
-	if cfg != nil && strings.TrimSpace(cfg.ActivePersona) == "jarvis" {
-		ack = "Working on it, sir."
-	}
 	a := &Agency{
 		pipeline:       p,
 		jobs:           jobs,
 		worker:         worker,
 		cfg:            cloneConfig(cfg),
-		ack:            ack,
 		planFactory:    brain.NewPlannedWorker,
 		work:           workfold.New(),
 		workerThreads:  make(map[string][]brain.Turn),
@@ -242,7 +234,6 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 		a.pipeline.emit(events.Error{Stage: "job", Message: err.Error()})
 		return
 	}
-	a.speakAck(ctx, turn, metrics)
 }
 
 // onJobQueued runs inside Table.Start, so JobQueued precedes everything the
@@ -577,12 +568,6 @@ func plural(n int, unit string) string {
 		return "1 " + unit
 	}
 	return fmt.Sprintf("%d %ss", n, unit)
-}
-
-func (a *Agency) speakAck(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
-	if err := a.pipeline.speakStandalone(ctx, turn, metrics, a.ack); err != nil {
-		a.pipeline.emit(events.Info{Message: fmt.Sprintf("ack speech failed: %v", err)})
-	}
 }
 
 func (a *Agency) onJobDone(id string, state job.State, result string, err error) {

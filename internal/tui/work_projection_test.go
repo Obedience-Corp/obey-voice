@@ -143,3 +143,30 @@ func TestWorkProjectionRetainsCommunicatedResultAndShowsHoldReason(t *testing.T)
 		t.Fatalf("communicated result was duplicated or disappeared: %q", view)
 	}
 }
+
+func TestCanonicalResultRetainsToolEvidenceInChat(t *testing.T) {
+	for _, terminalFirst := range []bool{false, true} {
+		m := sizedConversation(t, 100, 32)
+		scope := projectionScope("runtime", "conversation")
+		m.deps.workScope = func() work.WorkScope { return scope }
+		m.handleEvent(events.JobStarted{ID: "job-1", Task: "Check project"})
+		m.handleEvent(events.ToolCallStarted{ID: "call-1", JobID: "job-1", Name: "run_command", Kind: "execute", Summary: "go test ./...", WorkScope: scope})
+		m.handleEvent(events.ToolCallFinished{ID: "call-1", JobID: "job-1", Name: "run_command", Kind: "execute", Err: "error: exit 1", Preview: "FAIL project", WorkScope: scope})
+		terminal := events.JobFailed{ID: "job-1", Err: "Worker could not finish"}
+		if terminalFirst {
+			m.handleEvent(terminal)
+		}
+		snapshot := projectionSnapshot(scope, work.Ready, false, "Worker could not finish")
+		snapshot.Pending[0].Outcome.Status = work.OutcomeFailed
+		m.handleEvent(events.WorkStateChanged{Snapshot: snapshot})
+		if !terminalFirst {
+			m.handleEvent(terminal)
+		}
+		text := stripANSI(strings.Join(m.transcript, "\n"))
+		for _, want := range []string{"go test ./...", "run_command", "FAIL project", "exit 1", "Worker could not finish"} {
+			if strings.Count(text, want) != 1 {
+				t.Fatalf("terminalFirst=%t: missing/duplicated %q: %s", terminalFirst, want, text)
+			}
+		}
+	}
+}
