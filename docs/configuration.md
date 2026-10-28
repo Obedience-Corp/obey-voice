@@ -548,6 +548,16 @@ cross-client **`.agents/skills`** convention
 2. `<nearest ancestor>/.agents/skills/*/SKILL.md` — workspace/project-root skills
 3. `~/.agents/skills/*/SKILL.md` — user skills
 4. `skills_dir` (default `~/.obey/agents/voice/obey-voice/skills`) — Obey Voice-only
+5. Embedded `obey-voice` skill — app and persona configuration guidance
+
+The shipped skill is available without a checkout or a skill installation. It
+explains the installed CLI's persona/config commands and requires reading back
+saved changes. Filesystem skills named `obey-voice` override this fallback for
+Ollama. Native-tool providers receive the shipped configuration instructions
+directly in their app context. `skills_enabled=false` or disabling `obey-voice`
+removes those detailed instructions; basic knowledge of the hosting app remains.
+Ask the assistant to create a persona or change its voice; it can inspect the
+CLI and perform requested changes through its worker/tools.
 
 Ollama does **not** scan `.claude/skills`; the Claude Code provider owns that
 path, and dual-scanning would duplicate skills when both trees are projected.

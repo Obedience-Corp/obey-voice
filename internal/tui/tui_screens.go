@@ -308,11 +308,11 @@ func (a App) onLibraryAudiobook(msg libraryAudiobookMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) onReturnToMenu(msg returnToMenuMsg) (tea.Model, tea.Cmd) {
-	a.returnToMenu = true
-	return a.update(quitMsg{})
+	return a.beginMenuTransition()
 }
 
 func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
+	a.returnToMenu = false
 	if a.screen == screenPickBook {
 		a.pickBook.cancelResolve()
 	}

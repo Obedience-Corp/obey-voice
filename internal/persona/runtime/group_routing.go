@@ -163,8 +163,10 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 		return admitted, wrapIdentityRefusalFailure(ctx, "route_exact_control", err)
 	}
 	s.setGroupParticipants(participants)
-	admitted.Request = ""
-	admitted.LocalReply = selected.DisplayName + " here."
+	admitted.Request = exact.Address.Remainder
+	if exact.Address.Bare {
+		admitted.LocalReply = selected.DisplayName + " here."
+	}
 	admitted.Envelope = responseEnvelope(selected)
 	return admitted, nil
 }

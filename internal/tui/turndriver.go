@@ -48,12 +48,14 @@ const (
 )
 
 type voiceTurnDoneMsg struct {
+	lifetime    context.Context
 	text        string
 	err         error
 	noticeEpoch uint64
 }
 
 type textTurnDoneMsg struct {
+	lifetime    context.Context
 	input       string
 	err         error
 	noticeEpoch uint64
@@ -262,15 +264,16 @@ func (m *conversationModel) dispatchVoiceTurn() tea.Cmd {
 
 	runner, wg := m.deps.runner, m.deps.wg
 	noticeEpoch := m.noticeEpoch
+	lifetime := m.deps.ctx
 	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		defer cancel()
 		// A Cmd can execute after shutdown began (cancel happens before the
 		// runtime waits on wg); never enter the pipeline on a dead context.
 		if ctx.Err() != nil {
-			return voiceTurnDoneMsg{err: ctx.Err(), noticeEpoch: noticeEpoch}
+			return voiceTurnDoneMsg{lifetime: lifetime, err: ctx.Err(), noticeEpoch: noticeEpoch}
 		}
 		text, err := runner.RunTurn(ctx)
-		return voiceTurnDoneMsg{text: text, err: err, noticeEpoch: noticeEpoch}
+		return voiceTurnDoneMsg{lifetime: lifetime, text: text, err: err, noticeEpoch: noticeEpoch}
 	})
 }
 
@@ -281,12 +284,13 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 
 	runner, wg := m.deps.runner, m.deps.wg
 	noticeEpoch := m.noticeEpoch
+	lifetime := m.deps.ctx
 	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		defer cancel()
 		if ctx.Err() != nil {
-			return textTurnDoneMsg{input: text, err: ctx.Err(), noticeEpoch: noticeEpoch}
+			return textTurnDoneMsg{lifetime: lifetime, input: text, err: ctx.Err(), noticeEpoch: noticeEpoch}
 		}
-		return textTurnDoneMsg{input: text, err: runner.RunTurnTextMode(ctx, text), noticeEpoch: noticeEpoch}
+		return textTurnDoneMsg{lifetime: lifetime, input: text, err: runner.RunTurnTextMode(ctx, text), noticeEpoch: noticeEpoch}
 	})
 }
 

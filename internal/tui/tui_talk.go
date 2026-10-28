@@ -69,6 +69,9 @@ func (a App) onPersonaSelectionResult(msg personaSelectionResultMsg) (tea.Model,
 }
 
 func (a App) onTalkHotkeyEvent(msg talkHotkeyEventMsg) (tea.Model, tea.Cmd) {
+	if msg.lifetime != nil && msg.lifetime != a.runCtx {
+		return a, nil
+	}
 	// Browsing personas or the workers manager pauses voice input. Keep
 	// draining the global key without allowing a press to reopen the mic
 	// behind either screen.
@@ -90,12 +93,18 @@ func (a App) onWorkProjectionPoll(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) onTalkHotkeyExited(msg talkHotkeyExitedMsg) (tea.Model, tea.Cmd) {
+	if msg.lifetime != nil && msg.lifetime != a.runCtx {
+		return a, nil
+	}
 	a.hotkey = nil
 	a.conversation.talkExited()
 	return a, nil
 }
 
 func (a App) onTalkControlClosed(msg talkControlClosedMsg) (tea.Model, tea.Cmd) {
+	if msg.lifetime != nil && msg.lifetime != a.runCtx {
+		return a, nil
+	}
 	// Nothing was registered, so the conversation loses no state: the
 	// endpoint simply stops answering.
 	a.control = nil

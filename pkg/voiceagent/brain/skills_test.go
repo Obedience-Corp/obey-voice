@@ -137,7 +137,7 @@ func TestLoadSkillsCatalogGated(t *testing.T) {
 		t.Fatalf("disabled: got %d skills, want 0", len(got))
 	}
 
-	// Enabled with empty project and only a missing configured dir: empty catalog.
+	// Enabled without filesystem skills still discovers the shipped app skill.
 	missingRoot := t.TempDir()
 	got, err = loadSkillsCatalog(context.Background(), &config.Config{
 		SkillsEnabled: true,
@@ -146,8 +146,8 @@ func TestLoadSkillsCatalogGated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing dir: %v", err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("missing dir: got %d skills, want 0", len(got))
+	if len(got) != 1 || got[0].Name != "obey-voice" {
+		t.Fatalf("missing dir: want built-in skill, got %v", got)
 	}
 
 	// Enabled with fixture as configured Obey Voice skills_dir.
@@ -159,7 +159,7 @@ func TestLoadSkillsCatalogGated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "hello" {
+	if len(got) != 2 || got[0].Name != "hello" {
 		t.Fatalf("fixture: got %#v, want hello skill", got)
 	}
 }
@@ -198,11 +198,11 @@ func TestLoadSkillsCatalogProjectOverridesSystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Catalog: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d skills, want 1", len(got))
+	if len(got) != 2 {
+		t.Fatalf("got %d skills, want project plus built-in", len(got))
 	}
-	if got[0].Description != "from project" {
-		t.Fatalf("description = %q, want project to win over system", got[0].Description)
+	if got[1].Name != "shared" || got[1].Description != "from project" {
+		t.Fatalf("skill = %+v, want project to win over system", got[1])
 	}
 }
 
@@ -231,7 +231,7 @@ func TestLoadSkillsCatalogIncludesAncestorAgentSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Catalog: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "workspace-context" {
+	if len(got) != 2 || got[1].Name != "workspace-context" {
 		t.Fatalf("got %#v, want workspace-context skill", got)
 	}
 }
@@ -259,8 +259,8 @@ func TestLoadSkillsCatalogIgnoresClaudeSkills(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Catalog: %v", err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("got %d skills from .claude/skills, want 0 (Claude harness owns that path)", len(got))
+	if len(got) != 1 || got[0].Name != "obey-voice" {
+		t.Fatalf("want only built-in skill, got %v", got)
 	}
 }
 
@@ -285,7 +285,7 @@ func TestLoadSkillsCatalogOmitsDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadSkillsCatalog: %v", err)
 	}
-	if len(catalog) != 1 || catalog[0].Name != "kept" {
+	if len(catalog) != 2 || catalog[0].Name != "kept" {
 		t.Fatalf("catalog = %v, want only the non-disabled skill", catalog)
 	}
 

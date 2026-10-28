@@ -25,7 +25,7 @@ func TestSystemPromptPolicyIsIdenticalAcrossProviders(t *testing.T) {
 	cfg := policyCfg()
 
 	// Everything except the documented provider-adaptive element.
-	shared := []PromptElement{ElemPersona, ElemEnvironment, ElemTurn}
+	shared := []PromptElement{ElemPersona, ElemApplication, ElemEnvironment, ElemTurn}
 
 	for _, provider := range []string{providerOllama, providerClaude, providerCursor, providerGrok} {
 		got := SystemPromptPolicy(provider, cfg)

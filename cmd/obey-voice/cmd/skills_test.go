@@ -29,7 +29,7 @@ func writeSkillFixture(t *testing.T, dir, name, desc string) {
 	}
 }
 
-func TestSkillsListJSONEmptyDiscoveryPrintsEmptySkillsArray(t *testing.T) {
+func TestSkillsListJSONEmptyDiscoveryIncludesBuiltin(t *testing.T) {
 	fakeHome := t.TempDir()
 	restore := skills.SetUserHomeDirForTest(func() (string, error) { return fakeHome, nil })
 	t.Cleanup(restore)
@@ -53,12 +53,8 @@ func TestSkillsListJSONEmptyDiscoveryPrintsEmptySkillsArray(t *testing.T) {
 	if env.Schema != skillsSchema {
 		t.Fatalf("schema = %q, want %q", env.Schema, skillsSchema)
 	}
-	if env.Skills == nil || len(env.Skills) != 0 {
-		t.Fatalf("skills = %v, want non-nil empty slice", env.Skills)
-	}
-	// Confirm the raw JSON says [] and not null.
-	if !strings.Contains(out.String(), `"skills": []`) {
-		t.Fatalf("output must contain an empty skills array literal, got: %s", out.String())
+	if len(env.Skills) != 1 || env.Skills[0].Name != "obey-voice" || env.Skills[0].Root != skills.BuiltinRoot {
+		t.Fatalf("skills = %v, want shipped app skill", env.Skills)
 	}
 	// Workspace-ancestor .agents/skills only appears as a distinct root when
 	// a real ancestor has one; in an isolated temp dir it collapses with the
@@ -67,7 +63,7 @@ func TestSkillsListJSONEmptyDiscoveryPrintsEmptySkillsArray(t *testing.T) {
 		t.Fatalf("roots = %v, want at least 3 entries (project, user, skills_dir)", env.Roots)
 	}
 	for _, r := range env.Roots {
-		if r.Exists {
+		if r.Exists && r.Path != skills.BuiltinRoot {
 			t.Errorf("root %q exists = true, want false (nothing was created)", r.Path)
 		}
 	}
@@ -120,7 +116,7 @@ func TestSkillsListJSONEnvelopeShape(t *testing.T) {
 	if env.SimilarityThreshold != 0.55 {
 		t.Errorf("similarity_threshold = %v, want 0.55", env.SimilarityThreshold)
 	}
-	if len(env.Skills) != 1 {
+	if len(env.Skills) != 2 {
 		t.Fatalf("skills = %v, want 1 entry", env.Skills)
 	}
 	row := env.Skills[0]
@@ -183,11 +179,11 @@ func TestSkillsListWorkDirFlagChangesRoots1And2(t *testing.T) {
 	}
 
 	envA := run(workA)
-	if len(envA.Skills) != 1 || envA.Skills[0].Name != "only-in-a" {
+	if len(envA.Skills) != 2 || envA.Skills[1].Name != "only-in-a" {
 		t.Fatalf("work dir A skills = %v, want only-in-a", envA.Skills)
 	}
 	envB := run(workB)
-	if len(envB.Skills) != 0 {
+	if len(envB.Skills) != 1 || envB.Skills[0].Name != "obey-voice" {
 		t.Fatalf("work dir B skills = %v, want none", envB.Skills)
 	}
 }
@@ -202,7 +198,7 @@ func TestSkillsListActiveFalseWhenSkillsDisabledGlobally(t *testing.T) {
 
 	cfg := &config.Config{SkillsEnabled: false, BrainProvider: "ollama", SkillsDir: filepath.Join(t.TempDir(), "missing")}
 	env := runSkillsList(t, cfg, workDir)
-	if len(env.Skills) != 1 {
+	if len(env.Skills) != 2 {
 		t.Fatalf("skills = %v, want 1 entry (discovery is independent of skills_enabled)", env.Skills)
 	}
 	if env.Skills[0].Active {
@@ -225,7 +221,7 @@ func TestSkillsListActiveFalseWhenDisabledByName(t *testing.T) {
 		SkillsDir:      filepath.Join(t.TempDir(), "missing"),
 	}
 	env := runSkillsList(t, cfg, workDir)
-	if len(env.Skills) != 1 {
+	if len(env.Skills) != 2 {
 		t.Fatalf("skills = %v, want 1 entry", env.Skills)
 	}
 	row := env.Skills[0]
@@ -251,7 +247,7 @@ func TestSkillsListActiveFalseForUnsupportedProvider(t *testing.T) {
 		if env.ProviderSupported {
 			t.Errorf("provider %q: provider_supported = true, want false", provider)
 		}
-		if len(env.Skills) != 1 || env.Skills[0].Active {
+		if len(env.Skills) != 2 || env.Skills[0].Active {
 			t.Errorf("provider %q: skills = %v, want discovered but not active", provider, env.Skills)
 		}
 	}
@@ -455,7 +451,7 @@ func TestSkillsListConfiguredWorkDirDrivesRoots1And2(t *testing.T) {
 	if !found {
 		t.Fatalf("work_dir did not drive root 1: %+v", env.Roots)
 	}
-	if len(env.Skills) != 1 || env.Skills[0].Name != "from-config" {
+	if len(env.Skills) != 2 || env.Skills[0].Name != "from-config" {
 		t.Fatalf("skills = %+v, want the one under work_dir", env.Skills)
 	}
 }

@@ -34,6 +34,9 @@ func (r *Roster) ResolveExactControl(text string) ExactControl {
 	if !ok || startsWithQuote(literal) {
 		return ExactControl{Kind: ExactControlNone}
 	}
+	if strings.HasPrefix(literal, "@") {
+		return r.resolveMention(literal)
+	}
 
 	// Try the configured spelling first, then peel one terminal mark at a time.
 	// Santa!! must still see the alias Santa! before it falls through to Santa.

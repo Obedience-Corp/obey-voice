@@ -596,6 +596,9 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	if !accepted {
 		return
 	}
+	if state == job.StateDone {
+		result = cleanWorkerReply(result)
+	}
 	if errors.Is(err, brain.ErrWorkerBudgetExceeded) || errors.Is(err, job.ErrBudget) || errors.Is(err, context.DeadlineExceeded) {
 		a.pipeline.emit(events.WorkerLimitReached{Scope: key.Scope, JobID: id, Message: errorText(err, "Worker limit reached"), Termination: "unknown"})
 	}

@@ -155,6 +155,18 @@ gaps, microphone pause/resume or editing. Use the Talk persona control or TUI
 `/personas` for explicit selection. `/speakers` still manages human speaker
 labels; it does not choose the responding persona.
 
+In the TUI, type a leading `@` to list enabled personas. Type part of a name,
+ID, or alias to fuzzy-filter the list; use Up/Down or Shift+Tab to choose and
+Tab to insert its canonical `@id`. Send `@joker What do you think?` to select
+Joker and deliver the question directly, without model-based addressee
+classification. A bare `@joker` selects that persona with an acknowledgement.
+Unknown IDs are refused; mentions in ordinary prose and email addresses do
+not select a persona.
+
+Use `/menu` (or `/back`) to save the current chat and return to the launcher
+inside the same terminal UI. The app drains the conversation runtime before
+enabling the launcher; Continue offers the saved chat.
+
 Exact persona controls are intentionally narrow and whole-input only:
 
 - direct name/alias (`Santa`, `Santa.`)

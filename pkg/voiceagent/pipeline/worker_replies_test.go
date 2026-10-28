@@ -21,7 +21,7 @@ func TestWorkerSpeechKeepsOriginatingVoiceAfterPersonaSwitch(t *testing.T) {
 		obey, samantha := &fakeTTS{}, &fakeTTS{}
 		player := newFakePlayer(time.Millisecond)
 		defer player.Close()
-		worker := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "The worker has finished checking the files."}
+		worker := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "The worker has finished checking the files.\n\n" + leakedWorkerHandoff}
 		p := &Pipeline{TTS: obey, Player: player, Events: events.NewBus()}
 		if err := p.BeginConversationIdentity("voice-owner"); err != nil {
 			t.Fatal(err)
@@ -38,7 +38,7 @@ func TestWorkerSpeechKeepsOriginatingVoiceAfterPersonaSwitch(t *testing.T) {
 		})
 		var heardOwner string
 		events.Subscribe(p.Events, func(e events.SpeechSegmentReady) {
-			if e.Text == worker.reply && e.Envelope != nil {
+			if e.Text == cleanWorkerReply(worker.reply) && e.Envelope != nil {
 				heardOwner = e.Envelope.PersonaID
 			}
 		})
@@ -59,7 +59,10 @@ func TestWorkerSpeechKeepsOriginatingVoiceAfterPersonaSwitch(t *testing.T) {
 			}
 		}
 		p.decActiveTurn()
-		spoke := strings.Contains(strings.Join(obey.Texts(), " "), worker.reply)
+		spoke := strings.Contains(strings.Join(obey.Texts(), " "), cleanWorkerReply(worker.reply))
+		if strings.Contains(strings.Join(obey.Texts(), " "), leakedWorkerHandoff) {
+			t.Fatal("worker handoff reached synthesis")
+		}
 		if spoke == clear || len(samantha.Texts()) != 0 || (!clear && heardOwner != "obey") {
 			t.Fatalf("clear=%t: Obey=%q Samantha=%q owner=%q", clear, obey.Texts(), samantha.Texts(), heardOwner)
 		}
@@ -86,7 +89,7 @@ func TestLegacyWorkerReplyReachesConversationAndSavedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "The fixture has three files."}
+	worker := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "The fixture has three files.\n\n" + leakedWorkerHandoff}
 	p := &Pipeline{Brain: live, Events: events.NewBus()}
 	p.SetOutputMuted(true)
 	if err := p.BeginConversationIdentity("worker-session"); err != nil {
@@ -118,7 +121,7 @@ func TestLegacyWorkerReplyReachesConversationAndSavedHistory(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("missing visible completion")
 	}
-	if e.Summary != worker.reply || e.Envelope == nil || e.Envelope.DisplayName != "Jarvis" || e.Envelope.ResponseID == "original-request" {
+	if e.Summary != "The fixture has three files." || e.Envelope == nil || e.Envelope.DisplayName != "Jarvis" || e.Envelope.ResponseID == "original-request" {
 		t.Fatalf("completion = %+v", e)
 	}
 	if len(live.History()) != 0 {
@@ -145,7 +148,7 @@ func TestLegacyWorkerReplyReachesConversationAndSavedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Turns) != 1 || loaded.Turns[0].Content != worker.reply || loaded.Turns[0].PersonaID != "jarvis" || loaded.Turns[0].ResponseID != e.Envelope.ResponseID {
+	if len(loaded.Turns) != 1 || loaded.Turns[0].Content != "The fixture has three files." || loaded.Turns[0].PersonaID != "jarvis" || loaded.Turns[0].ResponseID != e.Envelope.ResponseID {
 		t.Fatalf("saved thread = %+v", loaded.Turns)
 	}
 }
