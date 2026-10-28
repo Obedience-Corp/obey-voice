@@ -191,7 +191,7 @@ func TestGroupHandoffWireAndDisk(t *testing.T) {
 		t.Fatalf("canonical attribution=%+v", saved.Turns)
 	}
 	last := answers[1]
-	if !strings.Contains(last[0].Content, "latest agent is handing you the floor") || last[len(last)-1].Content != "Jarvis agent:\nSanta, what do you think about cobalt?" {
+	if !strings.Contains(last[0].Content, "latest agent is handing you the floor") || !strings.HasPrefix(last[len(last)-1].Content, "Jarvis agent:\nSanta, what do you think about cobalt?\n\n") || !strings.Contains(last[len(last)-1].Content, "the current responder is Santa") {
 		t.Fatalf("continuation context=%+v", last)
 	}
 	for _, m := range last {

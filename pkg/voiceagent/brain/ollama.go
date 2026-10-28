@@ -72,6 +72,7 @@ type OllamaBrain struct {
 	contextHighWater int
 	// speakerNames resolves stable speaker ids when building chat messages.
 	speakerNames      SpeakerNames
+	groupSpeakers     []string           // public names in imported shared history; guarded by stateMu
 	groupParticipants []GroupParticipant // guarded by stateMu
 	groupHistory      bool               // foreign canonical speakers; guarded by stateMu
 }
