@@ -499,11 +499,11 @@
     {
       "key": "vad_min_speech_duration",
       "type": "float",
-      "default": 0.25,
+      "default": 0.1,
       "allows_empty": false,
       "group": "voice",
       "title": "Shortest utterance",
-      "help": "Sound shorter than this is treated as noise, so a cough never starts a turn.",
+      "help": "Minimum speech duration. Lower values keep brief replies such as yes or no; audible-speech and noise checks still apply.",
       "unit": "seconds",
       "min": 0.05,
       "max": 2,

@@ -217,7 +217,7 @@ func TestExactControlPunctuatedAliasAmbiguityRefusesWithoutSideEffects(t *testin
 }
 
 func TestExactControlNegativeCasesStillInvokeResolver(t *testing.T) {
-	for _, input := range []string{`"Santa"`, "switch to Santa and tell me a story", "Santa, what do you think?"} {
+	for _, input := range []string{`"Santa"`, "switch to Santa and tell me a story"} {
 		t.Run(input, func(t *testing.T) {
 			f := newSelectorTestFixture(t, testProfile("jarvis", "Jarvis", "jarvis"), testProfile("santa", "Santa", "santa"))
 			defer f.close(t)

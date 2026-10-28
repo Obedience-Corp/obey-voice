@@ -28,7 +28,7 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 		if err != nil {
 			return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
 		}
-		exact := roster.ResolveExactControl(input)
+		exact := roster.ResolveForegroundControl(input)
 		switch exact.Kind {
 		case summon.ExactControlValid:
 			return s.routeExactControl(ctx, input, exact)

@@ -23,6 +23,28 @@ type ExactControl struct {
 	Err     error
 }
 
+// ResolveForegroundControl also honors a leading, punctuated direct address.
+// The named listener owns requests to consult another agent; semantic routing
+// must not skip that intermediary merely because a peer appears in the task.
+func (r *Roster) ResolveForegroundControl(text string) ExactControl {
+	matched := r.ResolveExactControl(text)
+	if matched.Kind != ExactControlNone || startsWithQuote(strings.TrimSpace(text)) {
+		return matched
+	}
+	address, err := r.Resolve(text)
+	if err != nil {
+		if address.Reason == ReasonAmbiguousTarget {
+			return ExactControl{Kind: ExactControlInvalid, Address: address, Err: err}
+		}
+		return matched
+	}
+	if address.PersonaID != "" && address.Reason == ReasonVocative {
+		address.Remainder = text
+		return ExactControl{Kind: ExactControlValid, Address: address}
+	}
+	return matched
+}
+
 // ResolveExactControl classifies whole-input identity controls only.
 // It returns one of three outcomes: not a control, valid control, or an
 // invalid/ambiguous control that must be refused.

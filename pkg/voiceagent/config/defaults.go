@@ -99,7 +99,7 @@ func setDefaults(v *viper.Viper) {
 	// Machine grounding (user, cwd, host, OS) reaches every provider by default.
 	v.SetDefault("environment_context_enabled", true)
 	v.SetDefault("vad_threshold", 0.6)
-	v.SetDefault("vad_min_speech_duration", 0.25)
+	v.SetDefault("vad_min_speech_duration", 0.1)
 	v.SetDefault("vad_pre_roll_ms", 300)
 	// Off by default: the frontend's noise suppressor over-suppresses normal-volume
 	// speech (gates it below the VAD threshold — see voice_frontend_test.go), which

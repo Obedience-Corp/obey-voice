@@ -165,7 +165,7 @@ when you select it.
 | `vad_enabled` | `true` | | Enable voice activity detection |
 | `vad_silence_duration` | `1.2` | | Seconds of silence before ending speech (raise to stop being cut off) |
 | `vad_threshold` | `0.6` | `VAD_THRESHOLD` | Speech-detection confidence (raise to ignore background noise) |
-| `vad_min_speech_duration` | `0.25` | `VAD_MIN_SPEECH_DURATION` | Minimum speech length in seconds (raise to ignore brief noises) |
+| `vad_min_speech_duration` | `0.1` | `VAD_MIN_SPEECH_DURATION` | Minimum speech length in seconds; keeps brief yes/no replies while audible-speech and noise checks still apply |
 | `voice_frontend_enabled` | `false` | `VOICE_FRONTEND_ENABLED` | Local AEC/NS/AGC on mic input (off by default: the noise suppressor currently over-suppresses normal-volume speech; enable only with barge-in) |
 | `talk_hotkey_enabled` | `true` | `TALK_HOTKEY_ENABLED` | A system-wide key that starts and ends one spoken turn from whatever app has focus. macOS (Carbon) and Windows (`RegisterHotKey`) register the combo themselves; everywhere else the conversation opens a private local endpoint and you bind your own shortcut tool to `obey-voice talk down` / `up` / `press`. The endpoint opens on every OS. `Ctrl+G` remains the mute |
 | `talk_hotkey_mode` | `hold` | `TALK_HOTKEY_MODE` | How a press maps onto a turn: `hold` (press to talk, release to send), `toggle` (tap to start, tap to send), or `automatic` (a tap toggles, a press longer than 300 ms behaves as a hold) |

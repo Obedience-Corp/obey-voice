@@ -130,9 +130,9 @@ func voiceKeys() []KeySpec {
 			Help: "How sure she must be that a sound is speech. Raise it in a noisy room; too high drops quiet talkers.",
 		},
 		{
-			Key: "vad_min_speech_duration", Type: TypeFloat, Default: 0.25, Unit: "seconds", Min: num(0.05), Max: num(2.0),
+			Key: "vad_min_speech_duration", Type: TypeFloat, Default: 0.1, Unit: "seconds", Min: num(0.05), Max: num(2.0),
 			Group: GroupVoice, Title: "Shortest utterance",
-			Help: "Sound shorter than this is treated as noise, so a cough never starts a turn.",
+			Help: "Minimum speech duration. Lower values keep brief replies such as yes or no; audible-speech and noise checks still apply.",
 		},
 		{
 			Key: "vad_pre_roll_ms", Type: TypeInt, Default: 300, Unit: "ms", Min: num(0), Max: num(2000),
