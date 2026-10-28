@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -133,6 +134,14 @@ func (m providerRecordTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.population != nil {
 			return m, nil
 		}
+		if m.app.runtime != nil {
+			if err := quietProviderOutput(m.app.runtime.Pipeline.Player, m.app.cfg.OutputDevice, false); err != nil {
+				*m.logErr = err
+				next, cmd := m.app.Update(quitMsg{})
+				m.app = next.(App)
+				return m, cmd
+			}
+		}
 		if m.app.runtime != nil && m.app.conversation.turnState == turnVoiceListening {
 			select {
 			case m.permit <- struct{}{}:
@@ -173,6 +182,23 @@ func (m providerRecordTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		row["configured_token_cap_possible"] = maxGenerated >= 64
 		row["degraded"] = capturedMetric.Degraded
 		row["interrupted"] = capturedMetric.Interrupted
+		quietErr := fmt.Errorf("native runtime unavailable")
+		if m.app.runtime != nil && m.app.runtime.Pipeline != nil {
+			quietErr = quietProviderOutput(m.app.runtime.Pipeline.Player, m.app.cfg.OutputDevice, true)
+		}
+		row["quiet_output_verified"] = quietErr == nil
+		if m.app.runtime != nil && m.app.runtime.Pipeline != nil {
+			if observer, ok := m.app.runtime.Pipeline.Player.(interface {
+				NegotiatedDevice() audio.NegotiatedDevice
+				Volume() float64
+			}); ok {
+				row["output_device"] = observer.NegotiatedDevice()
+				row["playback_gain"] = observer.Volume()
+			}
+		}
+		if quietErr != nil {
+			row["output_verification_error"] = quietErr.Error()
+		}
 		if done.err != nil {
 			row["error"] = done.err.Error()
 		}
@@ -185,7 +211,7 @@ func (m providerRecordTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if pop.Active && pop.Index < len(pop.Entries) {
 				row["population"] = pop.Entries[pop.Index]
 				pop.Observed++
-				valid := done.err == nil && capturedMetric.Outcome == "completed" && !capturedMetric.Degraded && !capturedMetric.Interrupted && capturedMetric.AudibleSink == "local_speaker" && capturedMetric.Timing.Origin == "finalized_input" && capturedMetric.Timing.Normalized.PlaybackStartMS != nil && len(counts) > 0 && maxGenerated < 64 && (m.app.conversation.capture != nil) == pop.Entries[pop.Index].Capture
+				valid := quietErr == nil && done.err == nil && capturedMetric.Outcome == "completed" && !capturedMetric.Degraded && !capturedMetric.Interrupted && capturedMetric.AudibleSink == "local_speaker" && capturedMetric.Timing.Origin == "finalized_input" && capturedMetric.Timing.Normalized.PlaybackStartMS != nil && len(counts) > 0 && maxGenerated < 64 && (m.app.conversation.capture != nil) == pop.Entries[pop.Index].Capture
 				row["population_valid"] = valid
 				if valid {
 					pop.Valid++
@@ -266,6 +292,24 @@ func TestRecordProviderTerminalHarness(t *testing.T) {
 	if cfg.BrainProvider != "ollama" || cfg.TTSProvider != "kokoro" {
 		t.Fatal("provider proof requires explicit local ollama/kokoro fixture config")
 	}
+	if cfg.OutputDevice == "" || config.PlaybackVolumeOf(cfg) != 0 {
+		t.Fatal("provider harness requires explicit output_device and playback_volume:0; no audible probes")
+	}
+	deviceCtx, deviceCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	names, deviceErr := audio.NewDeviceChecker().PlaybackDevices(deviceCtx)
+	deviceCancel()
+	if deviceErr != nil {
+		t.Fatal(deviceErr)
+	}
+	present := false
+	for _, name := range names {
+		if name == cfg.OutputDevice {
+			present = true
+		}
+	}
+	if !present {
+		t.Fatal("requested silent device unavailable; refusing default fallback")
+	}
 	cfg.VoiceWorkEnabled = os.Getenv("OBEY_VOICE_CAPTURE_PROVIDER_WORK") == "on"
 	cfg.BargeInEnabled = false // finite input has no physical capture/echo monitor
 	cfg.WorkDir = filepath.Join(root, "work")
@@ -310,6 +354,10 @@ func TestRecordProviderTerminalHarness(t *testing.T) {
 		})
 		agent, cleanup, err := voiceagent.New(ctx, voiceagent.Options{Config: effective, Events: bus, TextOnly: true, Stage: progress.Stage})
 		if err != nil {
+			return nil, err
+		}
+		if err := quietProviderOutput(agent.Player, effective.OutputDevice, false); err != nil {
+			cleanup()
 			return nil, err
 		}
 		failed := true

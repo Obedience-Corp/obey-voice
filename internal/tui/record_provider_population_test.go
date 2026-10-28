@@ -98,7 +98,7 @@ func writeProviderProvenance(root, cfgPath, wav string, cfg *config.Config) erro
 		return err
 	}
 	provider, mode, model := captureSTTEnvironment(cfg)
-	return writeProviderJSON(filepath.Join(root, "provider-provenance.json"), map[string]any{"binary_sha256": binaryHash, "source_revision": os.Getenv("OBEY_VOICE_CAPTURE_SOURCE_REVISION"), "go_version": runtime.Version(), "fixture_config_sha256": configHash, "wav_path": wav, "wav_sha256": wavHash, "input_kind": "realtime finite recorded acoustic fixture; no physical mic", "gate": "first cancellable fixture ReadFrame; STT.Start returns real session promptly; total turn/STT includes pre-release wait; see fixture_release rows", "brain_provider": cfg.BrainProvider, "brain_model": config.BrainModelFor(cfg, cfg.BrainProvider), "stt_provider": provider, "stt_mode": mode, "stt_model": model, "tts_provider": cfg.TTSProvider, "tts_voice": cfg.TTSVoice, "work_enabled": cfg.VoiceWorkEnabled, "output_boundary": "software local sink acceptance/Done; not calibrated acoustic onset"})
+	return writeProviderJSON(filepath.Join(root, "provider-provenance.json"), map[string]any{"binary_sha256": binaryHash, "requested_output_device": cfg.OutputDevice, "playback_gain": config.PlaybackVolumeOf(cfg), "silent_output": true, "source_revision": os.Getenv("OBEY_VOICE_CAPTURE_SOURCE_REVISION"), "go_version": runtime.Version(), "fixture_config_sha256": configHash, "wav_path": wav, "wav_sha256": wavHash, "input_kind": "realtime finite recorded acoustic fixture; no physical mic", "gate": "first cancellable fixture ReadFrame; STT.Start returns real session promptly; total turn/STT includes pre-release wait; see fixture_release rows", "brain_provider": cfg.BrainProvider, "brain_model": config.BrainModelFor(cfg, cfg.BrainProvider), "stt_provider": provider, "stt_mode": mode, "stt_model": model, "tts_provider": cfg.TTSProvider, "tts_voice": cfg.TTSVoice, "work_enabled": cfg.VoiceWorkEnabled, "output_boundary": "native virtual device with per-instance gain0; software acceptance/Done only, no acoustic/audible onset"})
 }
 func (m providerRecordTerminal) populationTick() (tea.Model, tea.Cmd) {
 	for {
@@ -116,6 +116,12 @@ drained:
 	pop := m.population
 	if pop == nil || !pop.Awaiting || m.app.runtime == nil {
 		return m, tea.Batch(commands...)
+	}
+	if err := quietProviderOutput(m.app.runtime.Pipeline.Player, m.app.cfg.OutputDevice, false); err != nil {
+		*m.logErr = err
+		next, cmd := m.app.Update(quitMsg{})
+		m.app = next.(App)
+		return m, cmd
 	}
 	conv := &m.app.conversation
 	if pop.Index >= len(pop.Entries) {
@@ -157,7 +163,7 @@ drained:
 		return m, tea.Batch(append(commands, conv.capturePollCmd())...)
 	}
 	m.app.runtime.Pipeline.Brain.ClearHistory()
-	conv.commandNotice(fmt.Sprintf("Stabilized capture benchmark · pair %d · warmup %v · capture %v", entry.Pair, entry.Warmup, entry.Capture))
+	conv.commandNotice(fmt.Sprintf("Quiet native-output benchmark · gain0 · pair %d · warmup %v · capture %v", entry.Pair, entry.Warmup, entry.Capture))
 	select {
 	case m.permit <- struct{}{}:
 		pop.Active = true
@@ -363,5 +369,71 @@ func TestCaptureFixtureGateRestartsRealtimeAtRelease(t *testing.T) {
 	}
 	if elapsed := time.Since(stamp.At); elapsed < chunk*3/2 {
 		t.Fatal("old pacing clock caused catch-up burst after gate", elapsed, chunk)
+	}
+}
+
+// Fail closed before releasing any PCM. Missing names never select the system
+// default; zero per-instance gain also prevents sound if another app monitors
+// the virtual sink. This never changes global audio routing/volume.
+func quietProviderOutput(engine audio.Engine, requested string, requireOpen bool) error {
+	if requested == "" {
+		return fmt.Errorf("quiet output requires explicit named device")
+	}
+	observer, ok := engine.(interface {
+		Volume() float64
+		NegotiatedDevice() audio.NegotiatedDevice
+	})
+	if !ok || observer.Volume() != 0 {
+		return fmt.Errorf("quiet output requires verified per-engine gain0")
+	}
+	device := observer.NegotiatedDevice()
+	if device.RequestedName != requested {
+		return fmt.Errorf("quiet output requested-device mismatch")
+	}
+	if requireOpen && !device.IdentityKnown {
+		return fmt.Errorf("quiet output device identity not negotiated")
+	}
+	if device.IdentityKnown && device.Name != requested {
+		return fmt.Errorf("quiet output negotiated-device mismatch")
+	}
+	return nil
+}
+
+type quietOutputStub struct {
+	*fakePreviewPlayer
+	gain   float64
+	device audio.NegotiatedDevice
+}
+
+func (s quietOutputStub) Volume() float64                          { return s.gain }
+func (s quietOutputStub) NegotiatedDevice() audio.NegotiatedDevice { return s.device }
+func TestCaptureQuietOutputFailsClosedWithoutOpeningHardware(t *testing.T) {
+	const virtual = "BlackHole 16ch"
+	base := quietOutputStub{fakePreviewPlayer: newFakePreviewPlayer(), device: audio.NegotiatedDevice{RequestedName: virtual, Name: virtual, IdentityKnown: true}}
+	if err := quietProviderOutput(base, virtual, true); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name      string
+		engine    quietOutputStub
+		requested string
+		open      bool
+	}{
+		{"default-name", base, "", false},
+		{"nonzero-gain", quietOutputStub{fakePreviewPlayer: base.fakePreviewPlayer, gain: 1, device: base.device}, virtual, false},
+		{"default-request", quietOutputStub{fakePreviewPlayer: base.fakePreviewPlayer, device: audio.NegotiatedDevice{Name: virtual, IdentityKnown: true}}, virtual, false},
+		{"wrong-negotiated", quietOutputStub{fakePreviewPlayer: base.fakePreviewPlayer, device: audio.NegotiatedDevice{RequestedName: virtual, Name: "physical speakers", IdentityKnown: true}}, virtual, true},
+		{"unverified-open", quietOutputStub{fakePreviewPlayer: base.fakePreviewPlayer, device: audio.NegotiatedDevice{RequestedName: virtual}}, virtual, true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if err := quietProviderOutput(test.engine, test.requested, test.open); err == nil {
+				t.Fatal("unsafe output accepted")
+			}
+		})
+	}
+	lazy := quietOutputStub{fakePreviewPlayer: base.fakePreviewPlayer, device: audio.NegotiatedDevice{RequestedName: virtual}}
+	if err := quietProviderOutput(lazy, virtual, false); err != nil {
+		t.Fatal("named lazy native output rejected before PCM", err)
 	}
 }
