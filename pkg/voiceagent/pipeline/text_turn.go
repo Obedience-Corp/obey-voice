@@ -42,7 +42,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		metrics.sttFinal = metrics.start
 	}
 	defer p.trackMetrics(metrics)()
-	turn := p.newTurnConductor(metrics)
+	turn := p.newTurnConductor(metrics, ctx)
+	ctx = events.WithTrace(ctx, metrics.trace)
 
 	turn.to(TurnThinking)
 	continuation, isContinuation := continuationFromContext(ctx)
@@ -53,7 +54,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	} else if background {
 		speakerID = ""
 	} else {
-		p.emit(events.UserInput{Text: input, Speaker: speakerID})
+		p.emitResponse(metrics, events.UserInput{Text: input, Speaker: speakerID})
 	}
 	original := input
 	pendingDecision := p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
@@ -124,8 +125,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		AgentContinuation: isContinuation,
 		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background && !isContinuation,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
-		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
-		OnToolEnd:         p.toolEndHook(),
+		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
+		OnToolEnd:         p.toolEndHook(ctx),
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
@@ -133,6 +134,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
 	}
+	metrics.modelRequest = time.Now()
+	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
 	stream, err := p.Brain.ThinkStream(brainCtx, input, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -213,6 +216,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		synthStarted := time.Now()
 		// The whole reply is one string here: no group was assembled from a
 		// held beat, so its sentence punctuation is spoken as written.
+		ctx = withSegmentTrace(ctx, 0)
 		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil, false)
 		if errors.Is(err, errNothingToSpeak) {
 			p.completeTextTurn(turn, metrics, response)

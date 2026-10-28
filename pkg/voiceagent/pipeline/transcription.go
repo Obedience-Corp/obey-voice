@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
@@ -13,7 +14,8 @@ func (p *Pipeline) RunTranscription(ctx context.Context) (string, error) {
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	metrics := newTurnMetrics()
-	turn := p.newTurnConductor(metrics)
+	turn := p.newTurnConductor(metrics, ctx)
+	ctx = events.WithTrace(ctx, metrics.trace)
 	turn.to(TurnListening)
 	// The requesting connection receives transcription_result as its terminal
 	// event; this is not a conversational turn and emits no TurnMetrics.

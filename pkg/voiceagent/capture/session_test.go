@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
@@ -77,5 +78,87 @@ func TestAttachAllDetaches(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(s.Dir(), "events.jsonl"))
 	if strings.Contains(string(raw), "after stop") {
 		t.Fatalf("wrote after detach:\n%s", raw)
+	}
+}
+
+func TestCaptureUniqueIdentityAndPermissions(t *testing.T) {
+	root := t.TempDir()
+	bus := events.NewBus()
+	a, err := Start(Options{Root: root, SessionID: "session", Mode: ModeTalk, Bus: bus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Start(Options{Root: root, SessionID: "session", Mode: ModeTalk, Bus: bus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Dir() == b.Dir() {
+		t.Fatal("same-second capture reused directory")
+	}
+	for _, s := range []*Session{a, b} {
+		if err := s.Stop(nil); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := os.ReadFile(filepath.Join(s.Dir(), "events.jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var header struct {
+			TraceSchema string `json:"trace_schema"`
+			Trace       struct {
+				CaptureID string `json:"capture_id"`
+			} `json:"trace"`
+		}
+		if err := json.Unmarshal([]byte(strings.SplitN(string(raw), "\n", 2)[0]), &header); err != nil {
+			t.Fatal(err)
+		}
+		if header.Trace.CaptureID == "" || header.Trace.CaptureID != s.manifest.CaptureID || header.TraceSchema != s.manifest.TraceSchema {
+			t.Fatal("header/manifest identity disagrees")
+		}
+		for _, name := range []string{"events.jsonl", "manifest.json", "transcript.json"} {
+			st, err := os.Stat(filepath.Join(s.Dir(), name))
+			if err != nil || st.Mode().Perm() != 0600 {
+				t.Fatalf("%s permission: %v %v", name, st, err)
+			}
+		}
+	}
+}
+
+func TestCaptureSealStalledSidecarsDoNotHoldStateLock(t *testing.T) {
+	for _, sidecar := range []string{"manifest", "transcript"} {
+		t.Run(sidecar, func(t *testing.T) {
+			s, err := Start(Options{Root: t.TempDir(), SessionID: "session", Mode: ModeTalk, Bus: events.NewBus()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			entered, release := make(chan struct{}), make(chan struct{})
+			if sidecar == "manifest" {
+				s.persistManifest = func(m Manifest) error { close(entered); <-release; return writeManifestValue(m) }
+			} else {
+				s.persistTurns = func(dir string, turns []Turn) error { close(entered); <-release; return writeTurns(dir, turns) }
+			}
+			done := s.SealAsync(nil)
+			<-entered
+			state := make(chan struct{})
+			go func() { _ = s.Dir(); _ = s.Mode(); _ = s.Health(); close(state) }()
+			select {
+			case <-state:
+			case <-time.After(time.Second):
+				close(release)
+				t.Fatal("sidecar I/O held state mutex")
+			}
+			raw, err := os.ReadFile(filepath.Join(s.Dir(), "manifest.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), "sealed_at") {
+				t.Fatal("stalled seal claimed persistence")
+			}
+			close(release)
+			<-done
+			if err := s.SealError(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

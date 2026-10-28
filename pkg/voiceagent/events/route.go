@@ -5,6 +5,8 @@ import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 // RouteDecided reports the host's accepted/rejected routing outcome. Provider,
 // account and model identity remain in the frozen job details.
 type RouteDecided struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Scope      work.WorkScope `json:"scope"`
 	Kind       string         `json:"kind"`
 	Tier       string         `json:"tier,omitempty"`

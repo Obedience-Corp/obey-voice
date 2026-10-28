@@ -368,7 +368,12 @@ func (m conversationModel) View() string {
 	}
 	switch m.recordMode() {
 	case "talk":
-		footerLeft += " " + chipStyle.Render("rec")
+		h := m.capture.Health()
+		label := "rec"
+		if h.Dropped > 0 || h.Skipped > 0 || h.WriteErrors > 0 || h.Limited {
+			label = fmt.Sprintf("rec ! lost:%d omitted:%d errors:%d", h.Dropped, h.Skipped, h.WriteErrors)
+		}
+		footerLeft += " " + chipStyle.Render(label)
 	case "lab":
 		footerLeft += " " + chipStyle.Render("lab")
 	}

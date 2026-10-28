@@ -5,9 +5,11 @@
 package transcript
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,16 +38,31 @@ const Version = 2
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
 type record struct {
-	Decision     *events.DecisionEvaluated   `json:"decision,omitempty"`
-	WorkerUsage  *events.WorkerUsageRecorded `json:"worker_usage,omitempty"`
-	WorkerLimit  *events.WorkerLimitReached  `json:"worker_limit,omitempty"`
-	WorkerCharge *events.WorkerChargeState   `json:"worker_charge,omitempty"`
-	Delivery     *events.WorkDelivery        `json:"delivery,omitempty"`
-	Work         *work.Snapshot              `json:"work,omitempty"`
-	WorkScope    *work.WorkScope             `json:"work_scope,omitempty"`
-	Type         string                      `json:"type"`
-	TS           string                      `json:"ts,omitempty"`
-	Seq          int64                       `json:"seq,omitempty"`
+	OmittedType       string `json:"omitted_type,omitempty"`
+	SizeEstimateKind  string `json:"size_estimate_kind,omitempty"`
+	SizeEstimateBytes int64  `json:"size_estimate_bytes,omitempty"`
+	size              int64
+	TraceSchema       string                      `json:"trace_schema,omitempty"`
+	ClockOrigin       string                      `json:"clock_origin,omitempty"`
+	ContentPolicy     string                      `json:"content_policy,omitempty"`
+	Cut               string                      `json:"cut,omitempty"`
+	Environment       map[string]string           `json:"environment,omitempty"`
+	Health            *Health                     `json:"health,omitempty"`
+	Trace             *events.TraceContext        `json:"trace,omitempty"`
+	Span              *events.TraceSpan           `json:"span,omitempty"`
+	Timing            *events.TurnTiming          `json:"timing,omitempty"`
+	AudibleSink       string                      `json:"audible_sink,omitempty"`
+	Envelope          *events.ResponseEnvelope    `json:"envelope,omitempty"`
+	Decision          *events.DecisionEvaluated   `json:"decision,omitempty"`
+	WorkerUsage       *events.WorkerUsageRecorded `json:"worker_usage,omitempty"`
+	WorkerLimit       *events.WorkerLimitReached  `json:"worker_limit,omitempty"`
+	WorkerCharge      *events.WorkerChargeState   `json:"worker_charge,omitempty"`
+	Delivery          *events.WorkDelivery        `json:"delivery,omitempty"`
+	Work              *work.Snapshot              `json:"work,omitempty"`
+	WorkScope         *work.WorkScope             `json:"work_scope,omitempty"`
+	Type              string                      `json:"type"`
+	TS                string                      `json:"ts,omitempty"`
+	Seq               int64                       `json:"seq,omitempty"`
 
 	V   int `json:"v,omitempty"`   // header
 	PID int `json:"pid,omitempty"` // header
@@ -186,7 +203,18 @@ type gap struct {
 // Close never panics with "send on closed channel". The writer goroutine alone
 // owns the file after Open.
 type Writer struct {
-	f           *os.File
+	copyMu      sync.Mutex
+	capture     *CaptureOptions
+	queuedBytes int64
+	missing     []SequenceRange
+	skipped     atomic.Int64
+	written     atomic.Int64
+	synced      atomic.Int64
+	bytes       atomic.Int64
+	limited     atomic.Bool
+	closeErr    error
+
+	f           captureSink
 	ch          chan record
 	done        chan struct{}
 	seq         atomic.Int64
@@ -204,14 +232,33 @@ func NewWriter(path string) (*Writer, error) {
 }
 
 func newWriter(path string, capacity int) (*Writer, error) {
+	return openWriter(path, capacity, nil)
+}
+
+func openWriter(path string, capacity int, opts *CaptureOptions) (*Writer, error) {
 	// Conversation content may include secrets; match diagnostics log perms.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if opts != nil {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_EXCL
+	}
+	f, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open transcript log: %w", err)
 	}
-	w := &Writer{f: f, ch: make(chan record, capacity), done: make(chan struct{})}
+	w := &Writer{capture: opts, f: f, ch: make(chan record, capacity), done: make(chan struct{})}
 	go w.run()
-	w.enqueue(record{Type: "header", V: Version, PID: os.Getpid()})
+	header := record{Type: "header", V: Version, PID: os.Getpid()}
+	if opts != nil {
+		trace := opts.Trace
+		trace.CaptureID = opts.CaptureID
+		header.Trace = &trace
+		header.TraceSchema = events.TraceSchema
+		header.ClockOrigin = "runtime_start"
+		header.ContentPolicy = opts.ContentPolicy
+		header.Cut = opts.Cut
+		header.Environment = opts.Environment
+	}
+	w.enqueue(header)
 	return w, nil
 }
 
@@ -284,7 +331,7 @@ func isDurableRecord(r record) bool {
 	switch r.Type {
 	case "header", "user", "agent", "error", "tool_call", "tool_result",
 		"metrics", "tokens", "session_warning", "compacted", "cleared",
-		"turn_interrupted", "work_state_changed", "work_delivery", "dropped":
+		"turn_interrupted", "work_state_changed", "work_delivery", "dropped", "trace_span", "capture_end", "capture_health", "record_omitted":
 		return true
 	default:
 		return false
@@ -297,18 +344,50 @@ func isDurableRecord(r record) bool {
 func (w *Writer) enqueue(r record) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.closed {
+	if w.closed || w.limited.Load() {
 		return
 	}
 	r.TS = time.Now().UTC().Format(time.RFC3339Nano)
 	r.Seq = w.seq.Add(1)
+	if w.capture != nil {
+		if r.Trace == nil {
+			trace := w.capture.Trace
+			trace.TurnID = nil
+			trace.ParentTurnID = nil
+			trace.ResponseID = nil
+			trace.PersonaID = nil
+			trace.TurnStartMS = nil
+			if !trace.Origin.IsZero() {
+				ms := float64(time.Since(trace.Origin)) / float64(time.Millisecond)
+				trace.MonoMS = &ms
+			}
+			r.Trace = &trace
+		}
+		trace := *r.Trace
+		if trace.RuntimeID == "" && trace.SessionID == "" && (r.Type == "capture_health" || r.Type == "capture_end") {
+			trace = w.capture.Trace
+		}
+		trace.CaptureID = w.capture.CaptureID
+		r.Trace = &trace
+		size, ok := boundedSize(reflect.ValueOf(r), 0)
+		if !ok {
+			w.skipped.Add(1)
+			r = record{Type: "record_omitted", TS: r.TS, Seq: r.Seq, Trace: r.Trace, Message: "payload exceeds bounded copy budget", SizeEstimateBytes: size, OmittedType: r.Type, SizeEstimateKind: sizeEstimateKind(size)}
+			size = 4096
+		}
+		r.size = size
 
-	select {
-	case w.ch <- r:
-		return
-	default:
+		w.queuedBytes += size
 	}
 
+	if w.capture == nil || w.queuedBytes <= MaxQueuedBytes-3*MaxRecordBytes-captureReserve {
+		select {
+		case w.ch <- r:
+			return
+		default:
+		}
+
+	}
 	// Channel full: prefer durable records over agent_delta / speaking / etc.
 	// Mirror the TUI bridge — drop oldest non-durable first, then oldest durable.
 	q := make([]record, 0, cap(w.ch)+1)
@@ -322,10 +401,27 @@ func (w *Writer) enqueue(r record) {
 	}
 drained:
 	q = append(q, r)
-	before := len(q)
-	q = fitTranscriptQueue(q, cap(w.ch))
-	if dropped := before - len(q); dropped > 0 {
-		w.dropped.Add(int64(dropped))
+	if w.capture == nil {
+		before := len(q)
+		q = fitTranscriptQueue(q, cap(w.ch))
+		w.dropped.Add(int64(before - len(q)))
+	} else {
+		for len(q) > cap(w.ch) || w.queuedBytes > MaxQueuedBytes-3*MaxRecordBytes-captureReserve {
+			if len(q) == 0 {
+				break
+			}
+			drop := 0
+			for i, m := range q {
+				if !isDurableRecord(m) {
+					drop = i
+					break
+				}
+			}
+			m := q[drop]
+			w.queuedBytes -= m.size
+			w.lostLocked(m.Seq)
+			q = append(q[:drop], q[drop+1:]...)
+		}
 	}
 	for _, m := range q {
 		select {
@@ -362,17 +458,116 @@ func fitTranscriptQueue(q []record, capacity int) []record {
 
 func (w *Writer) run() {
 	defer close(w.done)
-	for r := range w.ch {
-		w.write(r)
+	defer func() {
+		w.closeErr = w.f.Close()
+		if n := w.writeErrors.Load(); n > 0 {
+			w.closeErr = fmt.Errorf("transcript has %d write errors: %v", n, w.closeErr)
+		}
+	}()
+	if w.capture == nil {
+		for r := range w.ch {
+			w.write(r)
+		}
+		if n := w.dropped.Load(); n > 0 || w.writeErrors.Load() > 0 {
+			w.write(record{Type: "dropped", TS: time.Now().UTC().Format(time.RFC3339Nano), Seq: w.seq.Add(1), Dropped: n, WriteErrors: w.writeErrors.Load()})
+		}
+		return
 	}
-	if n := w.dropped.Load(); n > 0 || w.writeErrors.Load() > 0 {
-		w.write(record{
-			Type:        "dropped",
-			TS:          time.Now().UTC().Format(time.RFC3339Nano),
-			Seq:         w.seq.Add(1),
-			Dropped:     n,
-			WriteErrors: w.writeErrors.Load(),
-		})
+	w.runCapture()
+}
+
+func (w *Writer) runCapture() {
+	buffer := bufio.NewWriterSize(w.f, 64<<10)
+	flush := time.NewTicker(50 * time.Millisecond)
+	defer flush.Stop()
+	syncTick := time.NewTicker(time.Second)
+	defer syncTick.Stop()
+	lastHealth := Health{}
+	lastExternalSeq := int64(0)
+	lastHealthSeq := int64(0)
+	pendingWritten := int64(0)
+	flushBuffer := func() bool {
+		if err := buffer.Flush(); err != nil {
+			w.noteWriteError(err)
+			return false
+		}
+		w.written.Store(pendingWritten)
+		return true
+	}
+	lose := func(seq int64) { w.mu.Lock(); w.lostLocked(seq); w.mu.Unlock() }
+	appendRecord := func(r record, terminal bool) {
+		if r.Trace == nil {
+			trace := w.capture.Trace
+			trace.CaptureID = w.capture.CaptureID
+			r.Trace = &trace
+		}
+		data, err := json.Marshal(r)
+		if err != nil {
+			w.noteWriteError(err)
+			lose(r.Seq)
+			return
+		}
+		if len(data)+1 > MaxRecordBytes {
+			w.skipped.Add(1)
+			lose(r.Seq)
+			return
+		}
+		limit := MaxCaptureBytes - captureReserve
+		if terminal {
+			limit = MaxCaptureBytes
+		}
+		if w.bytes.Load()+int64(len(data)+1) > limit {
+			w.limited.Store(true)
+			lose(r.Seq)
+			w.stopAccepting()
+			return
+		}
+		n, err := buffer.Write(append(data, '\n'))
+		w.bytes.Add(int64(n))
+		if err != nil {
+			w.noteWriteError(err)
+			lose(r.Seq)
+			return
+		}
+		pendingWritten = r.Seq
+	}
+	syncFile := func() {
+		if !flushBuffer() {
+			return
+		}
+		if err := w.f.Sync(); err != nil {
+			w.noteWriteError(err)
+			return
+		}
+		w.synced.Store(w.written.Load())
+	}
+	for {
+		select {
+		case r, ok := <-w.ch:
+			if !ok {
+				health := w.Health()
+				appendRecord(record{Type: "capture_end", TS: time.Now().UTC().Format(time.RFC3339Nano), Seq: w.seq.Add(1), Health: &health, Status: captureEndStatus(health)}, true)
+				syncFile()
+				return
+			}
+			if r.Type != "capture_health" {
+				lastExternalSeq = r.Seq
+			}
+			appendRecord(r, false)
+			w.mu.Lock()
+			w.queuedBytes -= r.size
+			w.mu.Unlock()
+		case <-flush.C:
+			flushBuffer()
+		case <-syncTick.C:
+			health := w.Health()
+			if lastExternalSeq != lastHealthSeq || health.Dropped != lastHealth.Dropped || health.Skipped != lastHealth.Skipped || health.WriteErrors != lastHealth.WriteErrors || health.Limited != lastHealth.Limited {
+				w.enqueue(record{Type: "capture_health", Health: &health})
+				lastHealth = health
+				lastHealthSeq = lastExternalSeq
+			}
+			syncFile()
+		}
 	}
 }
 
@@ -405,18 +600,7 @@ func (w *Writer) noteWriteError(err error) {
 
 // Close stops accepting events, drains the queue, records drops, and closes
 // the file. Safe to call more than once.
-func (w *Writer) Close() error {
-	var err error
-	w.once.Do(func() {
-		w.mu.Lock()
-		w.closed = true
-		close(w.ch)
-		w.mu.Unlock()
-		<-w.done
-		err = w.f.Close()
-	})
-	return err
-}
+func (w *Writer) Close() error { w.stopAccepting(); <-w.done; return w.closeErr }
 
 // Dropped is the count of records discarded under back-pressure.
 func (w *Writer) Dropped() int64 {

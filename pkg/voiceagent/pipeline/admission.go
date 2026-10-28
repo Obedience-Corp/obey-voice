@@ -23,6 +23,14 @@ type responseVoices struct{ primary, fallback tts.Provider }
 type responseVoicesKey struct{}
 
 func (p *Pipeline) admitInput(ctx context.Context, input string, background bool, metrics *turnMetrics) (context.Context, ResponseAdmission, error) {
+	endTrace := p.startTrace(ctx, "admission")
+	traceStatus := "failed"
+	defer func() {
+		if ctx.Err() != nil {
+			traceStatus = "cancelled"
+		}
+		endTrace(traceStatus)
+	}()
 	if err := p.commitWorkerReplies(); err != nil {
 		return ctx, ResponseAdmission{}, err
 	}
@@ -40,12 +48,15 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 			return ctx, admitted, err
 		}
 	}
+	traceStatus = "completed"
 	return p.bindAdmission(ctx, input, admitted, metrics), admitted, nil
 }
 
 func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted ResponseAdmission, metrics *turnMetrics) context.Context {
 	metrics.response = admitted.Envelope
 	metrics.originalInput = input
+	metrics.trace = responseTrace(metrics.trace, admitted.Envelope)
+	ctx = events.WithTrace(ctx, metrics.trace)
 	if p.Brain != nil {
 		metrics.historyAtAdmission = len(p.Brain.History())
 	}
@@ -73,12 +84,18 @@ func (m *turnMetrics) responseIdentity() *brain.TurnIdentity {
 func (p *Pipeline) emitResponse(metrics *turnMetrics, event events.Event) {
 	if metrics != nil {
 		event = events.Attribute(event, metrics.response)
+		event = events.AttributeTrace(event, p.stampTrace(metrics.trace))
 	}
 	p.emit(event)
 }
 
 func (p *Pipeline) emitResponseContext(ctx context.Context, event events.Event) {
-	p.emit(events.Attribute(event, events.ResponseFromContext(ctx)))
+	event = events.Attribute(event, events.ResponseFromContext(ctx))
+	trace := events.TraceFromContext(ctx)
+	if trace.RuntimeID != "" {
+		event = events.AttributeTrace(event, p.stampTrace(trace))
+	}
+	p.emit(event)
 }
 
 func appendResponse(provider brain.Provider, response string, identity *brain.TurnIdentity) error {

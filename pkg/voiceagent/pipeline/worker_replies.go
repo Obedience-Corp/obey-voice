@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -9,10 +10,12 @@ import (
 )
 
 type workerOrigin struct {
-	Scope        work.WorkScope
-	Envelope     events.ResponseEnvelope
-	Voices       responseVoices
-	releaseVoice func()
+	Trace         events.TraceContext
+	traceQueuedAt time.Time
+	Scope         work.WorkScope
+	Envelope      events.ResponseEnvelope
+	Voices        responseVoices
+	releaseVoice  func()
 }
 type workerReply struct {
 	workerOrigin

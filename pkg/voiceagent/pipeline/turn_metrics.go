@@ -25,6 +25,7 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
+	trace events.TraceContext
 	// Host-routed turns may never call the brain. Retain their input boundary
 	// and intended reply independently of whether audio output is enabled.
 	originalInput      string
@@ -39,6 +40,8 @@ type turnMetrics struct {
 	acousticName       string // current finalized voice input only; never reused across turns
 	firstModelChunk    time.Time
 	modelComplete      time.Time
+	modelRequest       time.Time
+	modelOutcome       string
 	firstSegment       time.Time
 	firstAudioReady    time.Time
 	playbackStart      time.Time

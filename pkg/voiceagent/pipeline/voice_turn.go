@@ -26,7 +26,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	p.bindBrainInfo()
 	metrics := newTurnMetrics()
 	defer p.trackMetrics(metrics)()
-	turn := p.newTurnConductor(metrics)
+	turn := p.newTurnConductor(metrics, ctx)
+	ctx = events.WithTrace(ctx, metrics.trace)
 
 	continuation, isContinuation := continuationFromContext(ctx)
 	if !isContinuation && p.Player != nil {
@@ -87,7 +88,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		}
 	}
 	if !isContinuation {
-		p.emit(events.UserInput{Text: text, Speaker: speakerID})
+		p.emitResponse(metrics, events.UserInput{Text: text, Speaker: speakerID})
 	}
 	original := text
 	pendingDecision := p.startWorkDecision(ctx, text, decision.VoiceWork, isContinuation)
@@ -162,8 +163,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		Speaker:           speakerID,
 		ToolsEnabled:      !isContinuation && (p.VoiceToolsEnabled || p.workerTierAvailability() != nil),
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
-		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
-		OnToolEnd:         p.toolEndHook(),
+		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
+		OnToolEnd:         p.toolEndHook(ctx),
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
@@ -172,6 +173,8 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
 	}
 
+	metrics.modelRequest = time.Now()
+	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
 	brainStream, err := p.Brain.ThinkStream(requestCtx, text, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -239,7 +242,19 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	return original, nil
 }
 
-func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, turn *turnConductor) (string, error) {
+func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, turn *turnConductor) (text string, err error) {
+	endTrace := p.startTrace(ctx, "stt")
+	defer func() {
+		status := "unknown"
+		if ctx.Err() != nil {
+			status = "cancelled"
+		} else if err != nil {
+			status = "failed"
+		} else if !metrics.sttFinal.IsZero() {
+			status = "completed"
+		}
+		endTrace(status)
+	}()
 	if p.STT == nil {
 		return "", errors.New("STT provider is not configured")
 	}
@@ -273,7 +288,7 @@ func (p *Pipeline) transcribeTurn(ctx context.Context, metrics *turnMetrics, tur
 				if te.Phase == "transcribing" {
 					turn.to(TurnTranscribing)
 				}
-				p.emit(events.STTPhase{
+				p.emitResponse(metrics, events.STTPhase{
 					Phase:   te.Phase,
 					Elapsed: te.Elapsed,
 				})

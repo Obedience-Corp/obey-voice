@@ -116,6 +116,9 @@ func (a *Agency) EnableConversationWork(sessionID string, saved *work.Snapshot, 
 	a.coordinator, a.workScope, a.workObserver = c, scope, observer
 	a.jobScopes = make(map[string]work.WorkScope)
 	a.workMu.Unlock()
+	if a.pipeline != nil {
+		a.pipeline.adoptConversationScope(scope)
+	}
 	a.workChanged(c.Snapshot(scope))
 	return nil
 }
