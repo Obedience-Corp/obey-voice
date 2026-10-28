@@ -29,7 +29,7 @@ func TestHumanSpeakerCannotBecomePersonaOnFollowup(t *testing.T) {
 		// Reproduce the model's observed confusion, even with corrected context.
 		return brain.Addressee{Kind: "address", Name: " Lance ", Bare: true}, nil
 	})
-	input := "Let's talk about it a little bit. What do you think we should do?"
+	input := "Let's talk about it a little bit. Obey, what do you think we should do?"
 	got, err := f.selector.Route(t.Context(), input, false)
 	if err != nil || got.Envelope.PersonaID != "obey" || got.Request != input || got.LocalReply != "" {
 		t.Fatalf("followup=%+v err=%v", got, err)
@@ -50,12 +50,34 @@ func TestHumanIdentityDoesNotHideExplicitUnknownPersona(t *testing.T) {
 	f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
 		return brain.Addressee{Kind: "address", Name: "Ghost"}, nil
 	})
-	for _, input := range []string{"@lance hello", "switch to Lance", "Could Ghost answer?"} {
+	for _, input := range []string{"@lance hello", "switch to Lance", "@ghost hello"} {
 		_, err := f.selector.Route(t.Context(), input, false)
 		var unknown *summon.UnknownTargetError
 		if !errors.As(err, &unknown) {
 			t.Fatalf("%q: expected unknown persona refusal, got %v", input, err)
 		}
+	}
+}
+
+func TestTopicCannotBecomeAnUnavailablePersona(t *testing.T) {
+	f := newSelectorTestFixture(t, testProfile("obey", "Obey", "obey"))
+	defer f.close(t)
+	for _, tc := range []struct{ input, target string }{
+		{"Do you know if there's a uh uncensored LFM3 model?", "LFM3"},
+		{"Do you know if there's an uncensored LFM3 model?", "LFM3"},
+		{"What can Cloudflare do?", "Cloudflare"},
+		{"Is there an uncensored LFM3 model, Obey?", "LFM3"},
+		{"Could Ghost answer?", "Ghost"},
+	} {
+		t.Run(tc.target+tc.input, func(t *testing.T) {
+			f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
+				return brain.Addressee{Kind: "address", Name: tc.target}, nil
+			})
+			got, err := f.selector.Route(t.Context(), tc.input, false)
+			if err != nil || got.Envelope.PersonaID != "obey" || got.Request != tc.input || got.LocalReply != "" {
+				t.Fatalf("topic=%+v err=%v", got, err)
+			}
+		})
 	}
 }
 

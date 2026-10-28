@@ -135,7 +135,7 @@ func TestGroupHandoffWireAndDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	mu.Lock()
-	if classifierCalls != 3 || generationCalls != 2 {
+	if classifierCalls != 2 || generationCalls != 2 {
 		mu.Unlock()
 		t.Fatalf("initial handoff calls classifier=%d generation=%d", classifierCalls, generationCalls)
 	}
@@ -191,7 +191,7 @@ func TestGroupHandoffWireAndDisk(t *testing.T) {
 		t.Fatalf("canonical attribution=%+v", saved.Turns)
 	}
 	last := answers[1]
-	if !strings.Contains(last[0].Content, "latest agent is handing you the floor") || last[len(last)-1].Content != "Jarvis agent:\nSanta, what do you think about cobalt?" {
+	if !strings.Contains(last[0].Content, "latest agent is handing you the floor") || !strings.HasPrefix(last[len(last)-1].Content, "Jarvis agent:\nSanta, what do you think about cobalt?\n\n") || !strings.Contains(last[len(last)-1].Content, "the current responder is Santa") {
 		t.Fatalf("continuation context=%+v", last)
 	}
 	for _, m := range last {
@@ -221,7 +221,7 @@ func TestGroupHandoffWireAndDisk(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if classifierCalls != 6 || generationCalls != 6 || len(answers) != generationCalls {
+	if classifierCalls != 5 || generationCalls != 6 || len(answers) != generationCalls {
 		t.Fatalf("wire call totals classifier=%d generation=%d answers=%d", classifierCalls, generationCalls, len(answers))
 	}
 }

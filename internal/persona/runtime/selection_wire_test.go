@@ -156,7 +156,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	firstClassifier := classifierCalls - startClassifier
 	firstGeneration := generationCalls - startGeneration
 	mu.Unlock()
-	if firstClassifier != 1 || firstGeneration != 1 {
+	if firstClassifier != 0 || firstGeneration != 1 {
 		t.Fatalf("initial turn calls classifier=%d generation=%d", firstClassifier, firstGeneration)
 	}
 	beforeRefusal := selector.Snapshot()
@@ -164,7 +164,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		t.Fatal("unknown exact control unexpectedly succeeded")
 	}
 	mu.Lock()
-	if classifierCalls != startClassifier+1 || generationCalls != startGeneration+1 {
+	if classifierCalls != startClassifier || generationCalls != startGeneration+1 {
 		mu.Unlock()
 		t.Fatalf("refused exact control changed wire calls classifier=%d generation=%d", classifierCalls, generationCalls)
 	}
@@ -184,7 +184,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 		}
 		if i == 0 {
 			mu.Lock()
-			classifierDelta := classifierCalls - (startClassifier + 1)
+			classifierDelta := classifierCalls - startClassifier
 			generationDelta := generationCalls - (startGeneration + 1)
 			mu.Unlock()
 			if classifierDelta != 0 || generationDelta != 0 {
@@ -244,7 +244,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if classifierCalls != 6 {
+	if classifierCalls != 3 {
 		t.Fatalf("classifier calls=%d", classifierCalls)
 	}
 	if generationCalls != 7 || len(requests) != generationCalls {
@@ -253,7 +253,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	var routed []struct{ Role, Content string }
 	for _, req := range requests {
 		msgs := req.Messages
-		if len(msgs) > 0 && msgs[len(msgs)-1].Content == "Unknown user:\nSamantha and Santa, Samantha should answer this." {
+		if len(msgs) > 0 && strings.HasPrefix(msgs[len(msgs)-1].Content, "Unknown user:\nSamantha and Santa, Samantha should answer this.\n\n") && strings.Contains(msgs[len(msgs)-1].Content, "the current responder is Samantha") {
 			routed = msgs
 			break
 		}

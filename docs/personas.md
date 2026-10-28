@@ -155,6 +155,14 @@ gaps, microphone pause/resume or editing. Use the Talk persona control or TUI
 `/personas` for explicit selection. `/speakers` still manages human speaker
 labels; it does not choose the responding persona.
 
+Each responder receives context identifying this as the current Obey Voice
+conversation with you and the other personas. The prompt distinguishes agents
+whose replies are recorded in the shared thread from personas merely available
+to join. Switching personas retains the conversation; it does not ask the new
+responder to set up a different chat. Other agents' statements keep their own
+authorship, and an agent should respond only as itself. This context is supplied
+to Ollama and to new or resumed Claude, Cursor, Grok, and Codex sessions.
+
 In the TUI, type a leading `@` to list enabled personas. Type part of a name,
 ID, or alias to fuzzy-filter the list; use Up/Down or Shift+Tab to choose and
 Tab to insert its canonical `@id`. Send `@joker What do you think?` to select
@@ -177,8 +185,15 @@ Quoted names (for example `"Santa"`), multi-target phrases (`Santa and Jarvis`)
 and substantive tails (`switch to Santa and tell me a story`) stay semantic and
 use normal addressee inference.
 
-Incidental mentions such as `Santa is a persona` do not select Santa. Unknown
-explicit targets, ambiguous addressed names and failed prompt/model/voice preparation
+A leading punctuated address such as `Joker, ask Venessa what she thinks`
+also selects the named listener directly and preserves the full request. Joker
+takes the first turn and can then invite Venessa to answer. Instructions to
+“you and Venessa” to keep talking go to the current responder first.
+
+Incidental mentions such as `Santa is a persona` do not select Santa. Semantic
+routing can select only a configured agent name or alias; human names and topic
+names such as LFM3 stay with the current responder. Unknown exact `@id` or
+`switch to Name` controls, ambiguous agent names and failed prompt/model/voice preparation
 leave the old responder selected and report an error. A shared alias or generated
 short name (for example, `Veronica` and `Veronica Hype`) does not block ordinary
 follow-ups or requests addressed to another persona. Use a unique full name or

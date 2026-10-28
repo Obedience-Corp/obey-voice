@@ -53,7 +53,7 @@ func TestSemanticRoutingRefusesUncertainAndUnavailableTargets(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "mention in passing", decision: brain.Addressee{Kind: "none"}},
-		{name: "unknown", decision: brain.Addressee{Kind: "address", Name: "Charles"}, wantErr: true},
+		{name: "unlisted semantic target keeps current", decision: brain.Addressee{Kind: "address", Name: "Charles"}},
 		{name: "ambiguous", decision: brain.Addressee{Kind: "ambiguous", Name: "Santa"}, wantErr: true},
 		{name: "invalid", decision: brain.Addressee{Kind: "oops"}, wantErr: true},
 		{name: "failed", err: errors.New("classifier offline"), wantErr: true},
@@ -131,8 +131,8 @@ func TestSemanticRoutingClassifiesAdmissionFailures(t *testing.T) {
 			want: admission.FailureClassifierInvalidOutput,
 		},
 		{
-			name:  "identity refusal on unknown target",
-			input: "What do you think Santa",
+			name:  "identity refusal on explicit unknown target",
+			input: "@ghost what do you think?",
 			configure: func(f *selectorTestFixture) {
 				f.selector.opts.AddressResolver = addressResolverFunc(func(context.Context, brain.AddressRequest) (brain.Addressee, error) {
 					return brain.Addressee{Kind: "address", Name: "Ghost"}, nil
