@@ -253,7 +253,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	var routed []struct{ Role, Content string }
 	for _, req := range requests {
 		msgs := req.Messages
-		if len(msgs) > 0 && msgs[len(msgs)-1].Content == "Unknown user:\nSamantha and Santa, Samantha should answer this." {
+		if len(msgs) > 0 && strings.HasPrefix(msgs[len(msgs)-1].Content, "Unknown user:\nSamantha and Santa, Samantha should answer this.\n\n") && strings.Contains(msgs[len(msgs)-1].Content, "the current responder is Samantha") {
 			routed = msgs
 			break
 		}

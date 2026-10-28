@@ -155,6 +155,14 @@ gaps, microphone pause/resume or editing. Use the Talk persona control or TUI
 `/personas` for explicit selection. `/speakers` still manages human speaker
 labels; it does not choose the responding persona.
 
+Each responder receives context identifying this as the current Obey Voice
+conversation with you and the other personas. The prompt distinguishes agents
+whose replies are recorded in the shared thread from personas merely available
+to join. Switching personas retains the conversation; it does not ask the new
+responder to set up a different chat. Other agents' statements keep their own
+authorship, and an agent should respond only as itself. This context is supplied
+to Ollama and to new or resumed Claude, Cursor, Grok, and Codex sessions.
+
 In the TUI, type a leading `@` to list enabled personas. Type part of a name,
 ID, or alias to fuzzy-filter the list; use Up/Down or Shift+Tab to choose and
 Tab to insert its canonical `@id`. Send `@joker What do you think?` to select

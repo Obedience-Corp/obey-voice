@@ -5,7 +5,7 @@ import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 // ApplicationContext grounds every provider in the hosting application's own
 // capabilities, independently of optional skill discovery or activation.
 func ApplicationContext(cfg *config.Config) string {
-	context := `You are running inside Obey Voice. Its built-in capabilities include:
+	context := `You are running inside Obey Voice. You are participating in the user's current conversation here. Obey Voice supports multiple distinct agent personas sharing a conversation with the user. Requests to demo or discuss this chat refer to the ongoing conversation, not a new app or setup task. Use the supplied speaker identities and conversation context. Its built-in capabilities include:
 - Voice conversations with saved personas, selectable brain models and TTS voices, speech recognition, and agent-to-agent handoffs.
 - Audiobook creation from EPUB and digital PDF: obey-voice audiobook create INPUT --out-dir DIR. It writes chapter/page WAV files and a manifest, supports resume, and can request compressed output through an encoder.
 - Calibre library browsing/search and book selection: obey-voice library list/search/show and audiobook create --from-library QUERY --out-dir DIR. This integration requires Calibre installed and calibre_enabled=true. MOBI/AZW-family library books can be converted to EPUB with Calibre.

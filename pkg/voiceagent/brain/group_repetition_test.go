@@ -74,11 +74,11 @@ func TestGroupTurnsSeparateHistoryFromNewResponse(t *testing.T) {
 		}
 	}
 	first := requests[0].Messages
-	if last := first[len(first)-1]; last.Role != "user" || last.Content != "Jarvis agent:\nVeronica, which way should the bench face?" {
+	if last := first[len(first)-1]; last.Role != "user" || last.Content != "Jarvis agent:\nVeronica, which way should the bench face?"+groupReplyInstruction("Veronica") {
 		t.Fatalf("handoff lost latest agent: %+v", last)
 	}
 	second := requests[1].Messages
-	if last := second[len(second)-1]; last.Role != "user" || last.Content != "Unknown user:\nKeep the path clear." {
+	if last := second[len(second)-1]; last.Role != "user" || last.Content != "Unknown user:\nKeep the path clear."+groupReplyInstruction("Veronica") {
 		t.Fatalf("follow-up lost latest user: %+v", last)
 	}
 	if len(o.History()) != len(history)+3 {
