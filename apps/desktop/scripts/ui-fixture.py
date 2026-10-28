@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--fresh', action='store_true', help='Start without config.yaml or setup progress')
 parser.add_argument('--voice-preview', action='store_true', help='Serve test tones for persona previews; voice broken fails, slow delays')
 parser.add_argument("--brain-error", action="store_true", help="Return a provider error for requests containing trigger failure")
+parser.add_argument('--group-participation', action='store_true', help='Enable isolated participation controls and deterministic private decisions')
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 fixture_root = pathlib.Path(tempfile.mkdtemp(prefix='obey-desktop-ui-'))
@@ -68,7 +69,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         content = 'The native desktop conversation is working.'
         if request.get('format'):
-            content = json.dumps({'kind': 'none', 'name': '', 'bare': False})
+            if args.group_participation:
+                schema = request['format'].get('properties', {})
+                if 'member_keys' in schema:
+                    payload = json.loads(request['messages'][-1]['content'])
+                    content = json.dumps({'kind': 'group', 'member_keys': [p['key'] for p in payload['participants']], 'coverage': 'all', 'reason': 'explicit', 'unresolved_names': []})
+                elif 'intent' in schema:
+                    content = json.dumps({'kind': 'speak', 'reason': 'perspective', 'intent': 'Offer a useful view', 'references': []})
+                else:
+                    content = json.dumps({'kind': 'yield', 'member_key': '', 'reason': 'no_contribution'})
+            else:
+                content = json.dumps({'kind': 'none', 'name': '', 'bare': False})
         self.respond({'model': 'desktop-test', 'message': {'role': 'assistant', 'content': content}, 'done': True, 'done_reason': 'stop'})
 
 server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
@@ -82,6 +93,8 @@ voice_work_enabled: false
 voice_tools_enabled: false
 skills_enabled: false
 '''
+if args.group_participation:
+    fixture_config += 'group_participation_enabled: true\ngroup_participation_mode: invited\n'
 if args.voice_preview:
     fixture_config += f'tts_provider: openai-speech\nopenai_speech_url: http://127.0.0.1:{server.server_port}/v1\nopenai_speech_voice: fixture-tone\n'
 if not args.fresh:
@@ -100,6 +113,26 @@ plist_path = fixture_app / 'Contents/Info.plist'
 with plist_path.open('rb') as f:
     info = plistlib.load(f)
 info.update(CFBundleIdentifier='com.obedience.voice-agent.test', CFBundleName='Obey Voice Test', CFBundleDisplayName='Obey Voice Test')
+if args.group_participation:
+    launcher = fixture_app / 'Contents/MacOS/fixture-launcher'
+    # A Mach-O launcher also keeps resume text-only; LaunchServices does not
+    # reliably launch a shell script as CFBundleExecutable.
+    subprocess.run(['cc', '-x', 'c', '-', '-o', str(launcher)], input=r'''
+#include <mach-o/dyld.h>
+#include <string.h>
+#include <unistd.h>
+int main(void) {
+    char path[4096]; uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) != 0) return 1;
+    char *tail = strrchr(path, '/');
+    if (!tail || (size_t)(tail - path) + sizeof("/obey-voice-agent") > sizeof(path)) return 1;
+    strcpy(tail, "/obey-voice-agent");
+    char *args[] = {path, "--text-only", "--silent", NULL};
+    execv(path, args);
+    return 1;
+}
+''', text=True, check=True)
+    info['CFBundleExecutable'] = 'fixture-launcher'
 info['LSEnvironment'] = {'OBEY_VOICE_TEST_CONFIG': str(config_dir), 'OBEY_VOICE_LOG_DIR': str(fixture_root / 'logs')}
 with plist_path.open('wb') as f:
     plistlib.dump(info, f)

@@ -14,6 +14,13 @@ func setConfigDir(t *testing.T, dir string) {
 	config.SetConfigDirForTest(t, dir)
 }
 
+func TestValidateNilProfile(t *testing.T) {
+	var profile *Profile
+	if err := profile.Validate(); err == nil || err.Error() != "persona profile: nil" {
+		t.Fatalf("Validate() = %v, want persona profile: nil", err)
+	}
+}
+
 func TestValidateID(t *testing.T) {
 	for _, id := range []string{"samantha", "festival", "obey", "my-agent", "a1"} {
 		if err := ValidateID(id); err != nil {

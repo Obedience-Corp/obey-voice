@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
@@ -90,8 +91,11 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		p.emit(events.UserInput{Text: text, Speaker: speakerID})
 	}
 	original := text
-	pendingDecision := p.startWorkDecision(ctx, text, decision.VoiceWork, isContinuation)
-	defer pendingDecision.close()
+	var pendingDecision *decisionTurn
+	if !p.GroupParticipationEnabled {
+		pendingDecision = p.startWorkDecision(ctx, text, decision.VoiceWork, isContinuation)
+	}
+	defer func() { pendingDecision.close() }()
 	var admission ResponseAdmission
 	if isContinuation {
 		admission = continuation.admission
@@ -103,6 +107,18 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 			turn.finish(TurnFailed)
 			return original, wrapAdmissionError(err)
 		}
+	}
+	if admission.Skip {
+		turn.finish(TurnYielded)
+		return original, nil
+	}
+	if admission.Discussion != nil {
+		var stop func()
+		ctx, stop = discussion.Bind(ctx, admission.Discussion.State)
+		defer stop()
+	}
+	if p.GroupParticipationEnabled && admission.Discussion == nil {
+		pendingDecision = p.startWorkDecision(ctx, text, decision.VoiceWork, isContinuation)
 	}
 	if !isContinuation && admission.LocalReply != "" {
 		return original, p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
@@ -123,11 +139,11 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 
 	// Layer 1 — deterministic phrase and work-intent routing before the live
 	// brain runs, so tool work never occupies the talking context window.
-	if kind, source, ok := classifyTurn(text, p.routeContext()); !isContinuation && ok && routeKindSkipsBrain(kind) {
+	if kind, source, ok := classifyTurn(text, p.routeContext()); !isContinuation && admission.Discussion == nil && ok && routeKindSkipsBrain(kind) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, kind, source)
 	}
 
-	if p.takeWorkDecision(ctx, pendingDecision, text, metrics) {
+	if admission.Discussion == nil && p.takeWorkDecision(ctx, pendingDecision, text, metrics) {
 		return original, p.completeRoutedTurn(ctx, turn, metrics, text, RouteSpawn, "decision")
 	}
 
@@ -139,7 +155,7 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 	requestCtx := turnCtx
 	var ordinary *ordinaryCompletion
 	var leaseErr error
-	if !isContinuation {
+	if !isContinuation && admission.Discussion == nil {
 		requestCtx, ordinary, leaseErr = p.beginOrdinaryCompletion(turnCtx, text, speakerID)
 	}
 	if leaseErr != nil {
@@ -151,8 +167,9 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		metrics.delivery = &completionPlayback{lease: ordinary.lease}
 	}
 
-	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled()}
+	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled() && admission.Discussion == nil}
 	streamOpts := brain.StreamOptions{
+		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),
 		Identity:          metrics.responseIdentity(),
@@ -160,13 +177,17 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		AgentContinuation: isContinuation,
 		VoiceMode:         true,
 		Speaker:           speakerID,
-		ToolsEnabled:      !isContinuation && (p.VoiceToolsEnabled || p.workerTierAvailability() != nil),
+		ToolsEnabled:      admission.Discussion == nil && !isContinuation && (p.VoiceToolsEnabled || p.workerTierAvailability() != nil),
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
 		OnToolEnd:         p.toolEndHook(),
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
+	}
+	if admission.Discussion != nil {
+		streamOpts.WorkerTiers = nil
+		streamOpts.WorkerFacts = nil
 	}
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)

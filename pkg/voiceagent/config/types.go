@@ -184,7 +184,9 @@ type Config struct {
 
 	// Brain
 	// PersonaRoutingTimeout bounds addressee inference, including model startup, in seconds.
-	PersonaRoutingTimeout int `mapstructure:"persona_routing_timeout"`
+	PersonaRoutingTimeout     int    `mapstructure:"persona_routing_timeout"`
+	GroupParticipationEnabled bool   `mapstructure:"group_participation_enabled"`
+	GroupParticipationMode    string `mapstructure:"group_participation_mode"`
 
 	BrainProvider      string `mapstructure:"brain_provider"`
 	DecisionEnabled    bool   `mapstructure:"decision_enabled"`

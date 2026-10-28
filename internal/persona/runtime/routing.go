@@ -19,6 +19,9 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 	if err := ctx.Err(); err != nil {
 		return admitted, classifyAdmissionFailure(ctx, "route", err)
 	}
+	if !background {
+		s.EndDiscussion("superseded")
+	}
 	bare := false
 	if !background {
 		roster, participants, err := s.conversationRoster()
@@ -34,6 +37,9 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 				return admitted, wrapIdentityRefusalFailure(ctx, "route", exact.Err)
 			}
 			return admitted, wrapIdentityRefusalFailure(ctx, "route", errors.New("invalid exact identity control"))
+		}
+		if s.opts.Base.GroupParticipationEnabled {
+			return s.routeAudience(ctx, input)
 		}
 		address, err := s.resolveAddress(ctx, input, "user", s.humanSpeakerName(""), roster, participants)
 		if err != nil {

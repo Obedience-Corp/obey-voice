@@ -12,6 +12,7 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "participation_description": {"type":"string","maxLength":256,"description":"Optional public perspective description for group participation; not a permission or expertise claim."},
     "schema": {
       "const": "obey-voice.persona.v1"
     },

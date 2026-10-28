@@ -257,7 +257,14 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 			m.rememberUser(t.Content, m.displaySpeakerLabel(t.Speaker))
 			m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(t.Speaker), t.Content))
 		case "assistant":
-			item := agentItemFromStored(m.agentName, t.Content)
+			name := t.PersonaDisplayName
+			if name == "" {
+				name = t.PersonaID
+			}
+			if name == "" {
+				name = m.agentName
+			}
+			item := agentItemFromStored(name, t.Content)
 			if item.spoken != "" {
 				m.rememberAssistant(item.spoken)
 			}

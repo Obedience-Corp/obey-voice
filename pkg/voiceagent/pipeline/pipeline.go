@@ -116,7 +116,10 @@ type Pipeline struct {
 	// RouteHandoff classifies an intentional handoff without changing selection.
 	// The pipeline commits the proposal after joining the speech interrupt watch.
 	// It never invokes this callback for background or degraded work.
-	RouteHandoff func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
+	RouteHandoff              func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
+	EndDiscussion             func(string)
+	GroupParticipationEnabled bool
+	CompleteDiscussion        func(context.Context, brain.Turn) error
 	// The serialized host remembers omitted coverage until the next safe
 	// boundary, where one deterministic brief replaces a model retry.
 	completionFallback map[string]bool
@@ -281,6 +284,9 @@ func (p *Pipeline) currentSpeakerID() string {
 func (p *Pipeline) SetOutputMuted(muted bool) {
 	p.outputMuted.Store(muted)
 	if muted {
+		if p.EndDiscussion != nil {
+			p.EndDiscussion("muted")
+		}
 		if c := p.WorkCoordinator(); c != nil {
 			_ = c.RevokeBinding(c.Scope())
 		}
@@ -495,3 +501,6 @@ func (p *Pipeline) prepareNextListen() {
 func (p *Pipeline) clearPreparedCapture() {
 	p.preparedCapture.Store(false)
 }
+
+// CurrentSpeakerID is the finalized-input speaker snapshot used by admission owners.
+func (p *Pipeline) CurrentSpeakerID() string { return p.currentSpeakerID() }

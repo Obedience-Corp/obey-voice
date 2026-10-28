@@ -34,6 +34,7 @@ func (PersonaSelection) eventType() string { return "persona_selected" }
 // ResponseEnvelope is copied when a response is admitted. It follows text,
 // speech, and metrics through completion, independently of later selections.
 type ResponseEnvelope struct {
+	DiscussionID      string `json:"discussion_id,omitempty"`
 	SessionID         string `json:"session_id"`
 	ConversationEpoch string `json:"conversation_epoch"`
 	ResponseID        string `json:"response_id"`

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -56,8 +57,11 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.emit(events.UserInput{Text: input, Speaker: speakerID})
 	}
 	original := input
-	pendingDecision := p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
-	defer pendingDecision.close()
+	var pendingDecision *decisionTurn
+	if !p.GroupParticipationEnabled {
+		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
+	}
+	defer func() { pendingDecision.close() }()
 	var admission ResponseAdmission
 	if isContinuation {
 		admission = continuation.admission
@@ -69,6 +73,18 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 			turn.finish(TurnFailed)
 			return wrapAdmissionError(err)
 		}
+	}
+	if admission.Skip {
+		turn.finish(TurnYielded)
+		return nil
+	}
+	if admission.Discussion != nil {
+		var stop func()
+		ctx, stop = discussion.Bind(ctx, admission.Discussion.State)
+		defer stop()
+	}
+	if p.GroupParticipationEnabled && admission.Discussion == nil {
+		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
 	}
 	if !isContinuation && admission.LocalReply != "" {
 		return p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
@@ -85,19 +101,19 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	p.emitResponse(metrics, events.ThinkingStarted{})
 	thinkingStarted := metrics.tEOU()
 
-	if !background && !isContinuation {
+	if !background && !isContinuation && admission.Discussion == nil {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
 			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
 	}
 
-	if p.takeWorkDecision(ctx, pendingDecision, input, metrics) {
+	if admission.Discussion == nil && p.takeWorkDecision(ctx, pendingDecision, input, metrics) {
 		return p.completeRoutedTurn(ctx, turn, metrics, input, RouteSpawn, "decision")
 	}
 
 	requestCtx := ctx
 	var ordinary *ordinaryCompletion
-	if !isContinuation {
+	if !isContinuation && admission.Discussion == nil {
 		requestCtx, ordinary, _ = p.beginOrdinaryCompletion(ctx, input, speakerID)
 	}
 	if ordinary != nil {
@@ -113,8 +129,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	brainCtx, brainCancel := p.withBrainTimeout(ctx)
 	defer brainCancel()
 
-	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled()}
+	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled() && admission.Discussion == nil}
 	streamOpts := brain.StreamOptions{
+		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),
 		Identity:          metrics.responseIdentity(),
@@ -122,13 +139,17 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		Speaker:           speakerID,
 		Background:        background,
 		AgentContinuation: isContinuation,
-		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background && !isContinuation,
+		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background && !isContinuation && admission.Discussion == nil,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
 		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
 		OnToolEnd:         p.toolEndHook(),
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
+	}
+	if admission.Discussion != nil {
+		streamOpts.WorkerTiers = nil
+		streamOpts.WorkerFacts = nil
 	}
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)

@@ -1001,6 +1001,39 @@
       "editable": true
     },
     {
+      "key": "group_participation_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Group participation (experimental)",
+      "help": "Allow contextual group invitations on local Ollama. Requires a model that reliably distinguishes invitations from mentions. Applies to the next conversation.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "GROUP_PARTICIPATION_ENABLED",
+      "editable": true
+    },
+    {
+      "key": "group_participation_mode",
+      "type": "enum",
+      "default": "invited",
+      "enum": [
+        "off",
+        "invited",
+        "open"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Agent participation",
+      "help": "Invited allows group discussion when asked. Open additionally allows one useful contribution after an ordinary reply. Applies to new conversations; /participation changes the current conversation.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "GROUP_PARTICIPATION_MODE",
+      "editable": true
+    },
+    {
       "key": "max_history",
       "type": "int",
       "default": 10,

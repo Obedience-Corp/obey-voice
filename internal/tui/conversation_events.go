@@ -43,6 +43,13 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	switch e := e.(type) {
 	case events.RouteDecided:
 		m.routeDecided(e)
+	case events.DiscussionUpdated:
+		m.appendActivity("discussion", strings.TrimSpace(e.Phase+" "+e.Reason), 0)
+		if e.Phase != "ended" {
+			m.setStatus("Group: "+e.Phase, false)
+		} else {
+			m.setStatus("Group discussion ended", e.Reason == "failed")
+		}
 	case events.PersonaSelection:
 		m.applySelectionSnapshot(e)
 	case events.AudioLevel:

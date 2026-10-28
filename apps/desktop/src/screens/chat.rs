@@ -110,6 +110,7 @@ impl VoiceApp {
                 }),
             );
         });
+        self.participation_controls(ui);
         self.work_cue(ui);
         let height = (ui.available_height() - 152.).max(100.);
         egui::ScrollArea::vertical()
