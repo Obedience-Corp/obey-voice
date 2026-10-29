@@ -7,7 +7,7 @@ use std::time::Duration;
 impl Media {
     pub fn show(&mut self, ui: &mut egui::Ui, refs: &[Attachment], draft: bool) -> Vec<String> {
         let mut removed = Vec::new();
-        ui.horizontal_wrapped(|ui| {
+        let response = ui.horizontal_wrapped(|ui| {
             for attachment in refs {
                 if !self.cache.contains_key(&attachment.id) && self.jobs < 4 {
                     // Older turns keep an explicit reload action instead of thrashing
@@ -106,6 +106,13 @@ impl Media {
                 });
             }
         });
+        if draft {
+            let height = response.response.rect.height();
+            if (self.draft_height - height).abs() > 1. {
+                ui.ctx().request_repaint();
+            }
+            self.draft_height = height;
+        }
         removed
     }
 }

@@ -118,9 +118,9 @@ impl VoiceApp {
             - if self.state.attachments.is_empty() {
                 0.
             } else {
-                125.
+                self.media.draft_height.clamp(125., 180.) + 12.
             })
-        .max(100.);
+        .max(24.);
         egui::ScrollArea::vertical()
             .id_salt(if self.activity { "activity" } else { "chat" })
             .stick_to_bottom(true)
@@ -237,7 +237,16 @@ impl VoiceApp {
             });
         }
         let attachments = self.state.attachments.clone();
-        let removed = self.media.show(ui, &attachments, true);
+        let removed = if attachments.is_empty() {
+            Vec::new()
+        } else {
+            egui::ScrollArea::vertical()
+                .id_salt("draft-images")
+                .max_height(180.)
+                .auto_shrink([false, true])
+                .show(ui, |ui| self.media.show(ui, &attachments, true))
+                .inner
+        };
         for id in removed {
             self.action("attachment_remove", &id, false);
         }

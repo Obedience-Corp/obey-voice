@@ -29,6 +29,7 @@ pub(super) struct Cached {
 }
 pub struct Media {
     pub submitted: Option<String>,
+    pub draft_height: f32,
     pub paused: bool,
     pub(super) cache: HashMap<String, Cached>,
     pub(super) tx: mpsc::Sender<(String, Loaded)>,
@@ -42,6 +43,7 @@ impl Default for Media {
         let (tx, rx) = mpsc::channel();
         Self {
             submitted: None,
+            draft_height: 0.,
             paused: false,
             cache: HashMap::new(),
             tx,
