@@ -157,3 +157,61 @@ func TestMemorySettingsTerminalPersistence(t *testing.T) {
 		}
 	}
 }
+
+func TestOllamaThinkingSettingsTerminalPersistence(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	cfg, err := config.LoadWithoutHooks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.BrainProvider = "ollama"
+	m := newSettings(cfg, nil)
+	m.section, m.width, m.height = sectionBrain, 100, 35
+	h := &workerTerminalHarness{model: m, states: make(chan workerTerminalState, 1)}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	p := tea.NewProgram(h, tea.WithInput(nil), tea.WithOutput(h), tea.WithContext(ctx), tea.WithoutSignalHandler())
+	done := make(chan error, 1)
+	go func() { _, err := p.Run(); done <- err }()
+	defer func() {
+		p.Quit()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(time.Second):
+			t.Error("terminal did not stop")
+		}
+	}()
+	key := func(k tea.KeyType) workerTerminalState {
+		p.Send(tea.KeyMsg{Type: k})
+		select {
+		case state := <-h.states:
+			return state
+		case <-ctx.Done():
+			t.Fatal("settings key timed out")
+			return workerTerminalState{}
+		}
+	}
+	state := key(tea.KeyHome)
+	for i := 0; i < 100 && state.key != "ollama_think"; i++ {
+		state = key(tea.KeyDown)
+	}
+	if state.key != "ollama_think" {
+		t.Fatal("thinking setting unreachable")
+	}
+	for _, want := range []string{"false", "true", "low", "medium", "high", "max", "auto", "false"} {
+		state = key(tea.KeyEnter)
+		if !strings.Contains(state.message, "saved") {
+			t.Fatalf("save failed: %s", state.message)
+		}
+		loaded, err := config.LoadWithoutHooks()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.OllamaThink != want {
+			t.Fatalf("persisted %q, want %q", loaded.OllamaThink, want)
+		}
+	}
+}

@@ -7,6 +7,8 @@ prompt:
     to you. Your assistant messages are your own prior replies. Respond as the persona
     defined by your system prompt, using the shared facts when relevant. Do not emit
     context labels or internal metadata. The current assistant persona is {agent_name}.
+    That is your name, not the human user's name. User messages identify the human
+    speaker; preserve that identity and never address them by your own name.
 metadata:
   version: 1
   description: >-

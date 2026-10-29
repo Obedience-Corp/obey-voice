@@ -784,6 +784,14 @@ func recordingStub(t *testing.T, count *int, bodies *[][]byte) *api.Client {
 		*count++
 		body, _ := io.ReadAll(r.Body)
 		*bodies = append(*bodies, body)
+		var req api.ChatRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Error(err)
+		}
+		if hasTool(req.Tools, "route") {
+			_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"chat"}}}]},"done":true}`+"\n")
+			return
+		}
 		_, _ = io.WriteString(w, `{"model":"m","message":{"role":"assistant","content":"hi"},"done":true,"done_reason":"stop"}`+"\n")
 	}))
 	t.Cleanup(srv.Close)
