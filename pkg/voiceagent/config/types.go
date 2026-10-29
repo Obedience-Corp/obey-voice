@@ -236,6 +236,9 @@ type Config struct {
 	// falls back to the server's model default — which silently truncates
 	// long prompts from the top, eating the system prompt first.
 	OllamaNumCtx int `mapstructure:"ollama_num_ctx"`
+	// VoiceWorkerNumCtx is the worker Chat window. 0 means 8192 so jobs do
+	// not inherit the talk conversation size.
+	VoiceWorkerNumCtx int `mapstructure:"voice_worker_num_ctx"`
 	// OllamaNumBatch is how many prompt tokens Ollama reads per pass. Left
 	// unset, Ollama picks it mainly from the context window — 512 at or below
 	// 4096, 1024 above, 2048 above 32768 — downgrading toward 512 when the

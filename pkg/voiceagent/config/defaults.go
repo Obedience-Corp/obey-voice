@@ -175,7 +175,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ollama_embedding_model", "nomic-embed-text")
 	v.SetDefault("skills_similarity_threshold", 0.55)
 	v.SetDefault("ollama_host", "http://localhost:11434")
-	v.SetDefault("ollama_num_ctx", 8192)
+	v.SetDefault("ollama_num_ctx", 32768)
 	v.SetDefault("ollama_num_batch", 128)
 	v.SetDefault("ollama_keep_alive", "10m")
 	// auto: qwen3-family models get Think:true so CoT lands in Message.Thinking
@@ -203,10 +203,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("continuity_projection_enabled", true)
 	v.SetDefault("continuity_archive_enabled", true)
 	v.SetDefault("continuity_soft_limit_ratio", 0.80)
-	v.SetDefault("continuity_compact_filler", true)
+	v.SetDefault("continuity_compact_filler", false)
 	v.SetDefault("continuity_recovery_max", 2)
-	// Expansion remains opt-in until live voice/latency acceptance is recorded.
-	v.SetDefault("continuity_num_ctx_ceil", 8192)
+	// Talk is a conversation (32k). Workers stay on 8k via voice_worker_num_ctx.
+	v.SetDefault("continuity_num_ctx_ceil", 32768)
+	v.SetDefault("voice_worker_num_ctx", 8192)
 	v.SetDefault("tool_command_timeout", 30)
 	v.SetDefault("delegation_enabled", false)
 	v.SetDefault("delegation_binary", "obey")
@@ -237,7 +238,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("models_dir", DefaultModelsDir())
 
 	v.SetDefault("language", "en-US")
-	v.SetDefault("max_history", 10)
+	v.SetDefault("max_history", 40)
 	v.SetDefault("listen_timeout", 10)
 	v.SetDefault("phrase_time_limit", 30)
 

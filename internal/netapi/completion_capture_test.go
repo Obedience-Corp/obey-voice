@@ -69,8 +69,10 @@ func TestVoiceStartRevokesCompletionBeforeAdmission(t *testing.T) {
 	if !h.add(c) {
 		t.Fatal("failed to add test connection")
 	}
-	d := NewDispatcher(&scriptedRunner{}, events.NewBus(), nil, nil)
-	s := &Server{dispatcher: d, hub: h}
+	bus := events.NewBus()
+	d := NewDispatcher(&scriptedRunner{}, bus, nil, nil)
+	s := &Server{opts: Options{Bus: bus}, dispatcher: d, hub: h, voiceSilence: defaultVoiceSilence, voiceTurnMax: defaultVoiceTurnMax}
+	t.Cleanup(c.watch.disarm)
 	called := false
 	if err := s.startMicTurn(c, func(prepare func() bool) error {
 		called = true

@@ -61,8 +61,20 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.WhisperCPPModel != "base.en" {
 		t.Errorf("WhisperCPPModel = %q, want base.en", cfg.WhisperCPPModel)
 	}
-	if cfg.MaxHistory != 10 {
-		t.Errorf("MaxHistory = %d, want 10", cfg.MaxHistory)
+	if cfg.MaxHistory != 40 {
+		t.Errorf("MaxHistory = %d, want 40", cfg.MaxHistory)
+	}
+	if cfg.OllamaNumCtx != 32768 {
+		t.Errorf("OllamaNumCtx = %d, want 32768", cfg.OllamaNumCtx)
+	}
+	if cfg.ContinuityNumCtxCeil != 32768 {
+		t.Errorf("ContinuityNumCtxCeil = %d, want 32768", cfg.ContinuityNumCtxCeil)
+	}
+	if cfg.VoiceWorkerNumCtx != 8192 {
+		t.Errorf("VoiceWorkerNumCtx = %d, want 8192", cfg.VoiceWorkerNumCtx)
+	}
+	if cfg.ContinuityCompactFiller {
+		t.Error("ContinuityCompactFiller = true, want false")
 	}
 	if cfg.ClaudeMaxSessionTokens != 0 {
 		t.Errorf("ClaudeMaxSessionTokens = %d, want 0 (fuse is opt-in)", cfg.ClaudeMaxSessionTokens)

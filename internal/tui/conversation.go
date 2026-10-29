@@ -117,8 +117,12 @@ type conversationModel struct {
 	// first Ctrl+C must not remove the only non-slash exit forever).
 	lastIdleCopyAt time.Time
 
-	bridge      *eventBridge
-	lastMetrics events.TurnMetrics
+	bridge        *eventBridge
+	lastMetrics   events.TurnMetrics
+	contextBudget events.ContinuityBudget
+	contextKnown  bool
+	contextFill   float64
+	compactStage  string
 
 	deps       conversationDeps
 	turnState  turnState

@@ -48,6 +48,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 	case voiceTickMsg:
 		m.recoverWork(time.Time(msg), false)
 		m.voiceFrame++
+		m.advanceContextMeter()
 		// Decay mic energy so the meter settles when speech pauses.
 		m.inputLevel *= 0.82
 		if m.inputLevel < 0.02 {
@@ -302,7 +303,7 @@ func (m *conversationModel) shouldAnimateVoice() bool {
 		return false
 	}
 	running, _ := m.activeWorkerCounts()
-	return m.voiceMode != anim.ModeIdle || running > 0
+	return m.voiceMode != anim.ModeIdle || running > 0 || m.compactStage != "" || m.contextFill != m.contextTarget()
 }
 
 // ensureVoiceTick starts the animation loop once while voice or background work is active.

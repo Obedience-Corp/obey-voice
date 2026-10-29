@@ -164,18 +164,17 @@ degraded. Cancellation stops recovery without another fallback utterance.
 | `continuity_projection_enabled` | `true` | Project tool results; disabling restores raw tool history. |
 | `continuity_archive_enabled` | `true` | Keep bounded in-memory archive and cap ordinary hot history. |
 | `continuity_soft_limit_ratio` | `0.80` | Token-estimate compact threshold; `0` disables this trigger. |
-| `continuity_compact_filler` | `true` | Speak before automatic compaction. |
+| `continuity_compact_filler` | `false` | Speak before automatic compaction. |
 | `continuity_integrity_enabled` | `true` | Detect truncated completions. |
 | `continuity_recovery_max` | `2` | Bounded continuation attempts; `0` preserves detection-only behavior. |
-| `continuity_num_ctx_ceil` | `8192` | Opt-in adaptive context ceiling, at most `32768`. |
+| `continuity_num_ctx_ceil` | `32768` | Opt-in adaptive context ceiling, at most `32768`. |
 
-The warm default remains `ollama_num_ctx: 8192`. Expansion follows
-8192 → 16384 → 32768 under remaining pressure after older history is archived,
-or on the second continuation attempt. The expanded size remains the session
-high-water mark and is used by both chat and warmup. Explicit larger user
-settings are not reduced. The adaptive ceiling stays **8192 by default** until
-live voice, model memory use and latency acceptance are recorded; tests with a
-stub server do not establish hardware performance.
+The conversation window and adaptive ceiling default to `32768`. Existing
+explicit settings are preserved. With an 8k floor and a larger configured
+ceiling, expansion follows 8192 → 16384 → 32768 under remaining pressure after
+older history is archived, or on the second continuation attempt. The expanded
+size remains the session high-water mark for chat and warmup. These limits do
+not imply a measured latency or hardware-memory result.
 
 Worker integrations can call `AddDelegationNote(brief, jobID)` to use the same
 projection and archive boundary. This change does not start or cancel workers.
@@ -186,3 +185,26 @@ compaction filler/failure, continuation success/exhaustion/cancellation, and
 sticky chat/warmup options. Microphone/speaker incident replay, live model
 follow-up quality, RAM consumption and TTFT benchmarking require separate live
 acceptance; they are not implied by these deterministic tests.
+
+## Conversation memory and compaction display
+
+Ollama conversations default to a 32k window with a matching 32k ceiling and
+`max_history: 40` as its history setting. Workers use `voice_worker_num_ctx` (8k by
+default). Existing explicit window settings are preserved. Settings → Brain →
+Conversation memory offers 8k, 16k and 32k presets; selecting one writes the
+conversation window and ceiling together in one atomic config update. It takes
+effect in the next conversation.
+
+The conversation screen shows the estimated prompt size and effective window,
+including session-only expansion. The same row shows trim, summarize and reseed
+progress. Estimates are approximate; the meter performs no model requests.
+Compaction is silent by default. `continuity_compact_filler: true` retains the
+optional spoken notice.
+
+Automatic compaction budgets its summary instruction before requesting it. If
+summarization fails, complete old exchanges are archived and removed from the
+working projection until the next prompt is below the soft limit. The saved
+canonical transcript is preserved. The user turn then proceeds normally;
+compaction cannot keep retrying against the same oversized working history.
+Canceling the turn cancels compaction and clears its progress display. Explicit
+`/compact` still reports a failed summary instead of silently claiming success.

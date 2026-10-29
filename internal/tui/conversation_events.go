@@ -41,6 +41,18 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	}
 
 	switch e := e.(type) {
+	case events.ContinuityBudget:
+		m.handleContextBudget(e)
+	case events.CompactionProgress:
+		m.appendActivity("model", "compact "+e.Stage, e.Elapsed)
+		switch e.Stage {
+		case "trim", "summarize", "reseed":
+			m.compactStage = e.Stage
+		default:
+			m.compactStage = ""
+			m.contextFill = m.contextTarget()
+		}
+
 	case events.RouteDecided:
 		m.routeDecided(e)
 	case events.DiscussionUpdated:
@@ -274,6 +286,10 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.ConversationCleared:
+		m.contextKnown = false
+		m.contextBudget = events.ContinuityBudget{}
+		m.contextFill = 0
+		m.compactStage = ""
 		m.stopCapture()
 		m.retireAdmissionRetryNotices()
 		m.workActivity = false

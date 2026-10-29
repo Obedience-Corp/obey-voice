@@ -68,6 +68,9 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 		return
 	}
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return
+		}
 		p.emit(events.Error{Stage: "tts", Message: fmt.Sprintf("TTS: %v", err)})
 		return
 	}
@@ -83,6 +86,9 @@ func (p *Pipeline) speakBestEffort(ctx context.Context, sentence string, metrics
 	}
 	playback, err := p.Player.PlayStream(ctx, stream)
 	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return
+		}
 		p.emit(events.Error{Stage: "playback", Message: fmt.Sprintf("playback: %v", err)})
 		return
 	}

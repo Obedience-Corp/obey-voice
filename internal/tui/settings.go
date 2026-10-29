@@ -87,6 +87,7 @@ type settingsModel struct {
 	ensureTTSAssets func(ctx context.Context, cfg *config.Config, onProgress func(name string, pct float64)) error
 	newTTSProvider  func(*config.Config) (tts.Provider, func(), error)
 	saveConfig      func(string, any) error
+	saveMemory      func(int) error
 	// onPlaybackVolume applies gain to the live conversation player. Nil when
 	// Settings is open without a running pipeline (launcher).
 	onPlaybackVolume   func(float64)

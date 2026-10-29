@@ -52,7 +52,15 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 				Name:        "ollama-num-ctx",
 				Severity:    SeverityWarn,
 				Detail:      "ollama_num_ctx is 0 — Ollama uses the server model default (often 262k), risking high RAM and silent prompt truncation from the top",
-				Remediation: "set ollama_num_ctx explicitly (default 8192)",
+				Remediation: "set ollama_num_ctx explicitly (conversation default 32768)",
+			})
+		}
+		if cfg.OllamaNumCtx == 8192 && (cfg.ContinuityNumCtxCeil == 0 || cfg.ContinuityNumCtxCeil == 8192) {
+			diags = append(diags, Diagnostic{
+				Name:        "ollama-num-ctx-lab",
+				Severity:    SeverityWarn,
+				Detail:      "ollama_num_ctx is 8192 — the old lab window; a conversation defaults to 32768",
+				Remediation: "set ollama_num_ctx and continuity_num_ctx_ceil to 32768, or 8192/16384 if this machine is tight on RAM",
 			})
 		}
 	}

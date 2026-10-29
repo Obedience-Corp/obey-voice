@@ -86,7 +86,8 @@ when you select it.
 | `ollama_embedding_model` | `nomic-embed-text` | `OLLAMA_EMBEDDING_MODEL` | Ollama embedding model used to match each user prompt to relevant Agent Skills. Set empty to disable semantic routing and retain model-driven `read_skill` fallback. |
 | `skills_similarity_threshold` | `0.55` | `SKILLS_SIMILARITY_THRESHOLD` | Minimum cosine similarity for automatic skill activation. Tune when using an embedding model with a different score distribution. |
 | `ollama_host` | `http://localhost:11434` | `OLLAMA_HOST` | Ollama server URL |
-| `ollama_num_ctx` | `8192` | `OLLAMA_NUM_CTX` | Context window requested on every chat call. `0` uses the server model default, which silently truncates long prompts from the top (system prompt first). |
+| `ollama_num_ctx` | `32768` | `OLLAMA_NUM_CTX` | Talk conversation window. 32k is a real session; 8k is the old lab cap. `0` uses the server model default, which silently truncates long prompts from the top (system prompt first). |
+| `voice_worker_num_ctx` | `8192` | `VOICE_WORKER_NUM_CTX` | Worker job window. Jobs stay at 8k so they do not inherit talk size. |
 | `ollama_num_batch` | `128` | `OLLAMA_NUM_BATCH` | How many prompt tokens Ollama re-reads per pass. Unset, Ollama picks it mainly from the context window (512 at or below 4096, 1024 above, 2048 above 32768), downgrading toward 512 if the model's predicted VRAM will not fit — it weighs the model's memory footprint but not its architecture. Values above `ollama_num_ctx` are clamped to it at load. This is a prefix-**reuse** control, not a speed one: llama.cpp keeps its last reusable checkpoint about one batch back from the end of the prompt, so a smaller batch skips more of an unchanged conversation (14% skipped at 1024 vs 89% at 128 on `qwen3.8-uncensored:27b`, 4.4 s to 0.8 s) while reading brand-new prompts slightly slower. `0` restores Ollama's choice. See `docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md`. |
 | `ollama_keep_alive` | `10m` | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model resident between turns (Go duration; empty = server default). |
 | `ollama_think` | `auto` | `OLLAMA_THINK` | Ollama thinking/reasoning for models that support it (qwen3.x, …). `auto` turns thinking on for qwen3-family models so chain-of-thought lands in `Message.Thinking` instead of spoken Content. Explicit `false` is the leaky hatch: qwen3 then dumps untagged CoT into Content, which can be spoken and recovered as the `Obey:` line. Set `true` or `low`/`medium`/`high`/`max` to force thinking on any model. |
@@ -181,7 +182,7 @@ when you select it.
 | `work_dir` | empty | `OBEY_VOICE_WORK_DIR` | Directory the agent's file and shell tools start in. **A default, not a sandbox** — a tool may still reach an absolute path outside it. Empty uses the directory Obey Voice was launched from; the binary's own folder, `/`, and any path that is not an existing directory fall back to your home folder. `obey-voice serve --work-dir DIR` overrides it for one process, and an override that is not an existing directory is a startup error rather than a silent fallback. The bare `WORK_DIR` is still honored for compatibility but `OBEY_VOICE_WORK_DIR` wins when both are set — see [Where the working directory came from](#where-the-working-directory-came-from). |
 | `models_dir` | `~/.cache/obey-voice/models` | `MODELS_DIR` | Model download directory |
 | `language` | `en-US` | | Recognition language |
-| `max_history` | `10` | | Saved conversation history length |
+| `max_history` | `40` | | Saved conversation history length |
 | `listen_timeout` | `10` | | Listen timeout in seconds |
 | `phrase_time_limit` | `30` | | Maximum phrase length in seconds |
 

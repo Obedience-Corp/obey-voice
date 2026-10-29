@@ -326,9 +326,17 @@ func (b *continuityCompactBrain) NeedsContinuityCompact(input string) bool {
 	return true
 }
 func (b *continuityCompactBrain) ContinuityCompactFiller() bool { return true }
-func (b *continuityCompactBrain) ThinkStream(context.Context, string, brain.StreamOptions) (*brain.Stream, error) {
+func (b *continuityCompactBrain) ThinkStream(ctx context.Context, _ string, _ brain.StreamOptions) (*brain.Stream, error) {
 	b.streamCalls++
-	return nil, errors.New("unexpected stream")
+	out := make(chan string, 1)
+	done := make(chan brain.StreamResult, 1)
+	go func() {
+		defer close(out)
+		defer close(done)
+		out <- "ok"
+		done <- brain.StreamResult{}
+	}()
+	return &brain.Stream{Chunks: out, Done: done}, nil
 }
 
 func TestPrepareTurnTokenPressureSpeaksOnceBeforeCompact(t *testing.T) {
@@ -354,20 +362,30 @@ func TestPrepareTurnTokenPressureSpeaksOnceBeforeCompact(t *testing.T) {
 	}
 }
 
-func TestPrepareFailureKeepsHistoryAndStopsIncomingRequest(t *testing.T) {
+func TestPrepareFailureDoesNotSpeakRecoveryReply(t *testing.T) {
 	b := &continuityCompactBrain{compactBrain: compactBrain{history: compactHistory(), fullErr: errors.New("summary unavailable")}}
-	before := append([]brain.Turn(nil), b.history...)
 	var ready events.ResponseReady
-	var report events.Error
+	var infos []string
 	bus := events.NewBus()
 	events.Subscribe(bus, func(e events.ResponseReady) { ready = e })
-	events.Subscribe(bus, func(e events.Error) { report = e })
+	events.Subscribe(bus, func(e events.Info) { infos = append(infos, e.Message) })
 	p := &Pipeline{Brain: b, CompactPrompt: "SUMMARIZE", Events: bus, AutoCompactAfter: 100}
 	if err := p.RunTurnTextMode(t.Context(), "follow up"); err != nil {
 		t.Fatal(err)
 	}
-	if b.streamCalls != 0 || !ready.Degraded || ready.Response != "" || !strings.Contains(report.Message, "summary unavailable") {
-		t.Fatalf("incorrect compact failure: streams=%d response=%+v", b.streamCalls, ready)
+	if ready.Degraded {
+		t.Fatalf("compact failure must not RecoveryReply: %+v", ready)
 	}
-	assertTurns(t, b.history, before, "failed prepare history")
+	if b.streamCalls == 0 {
+		t.Fatal("user turn should still run after compact skip")
+	}
+	found := false
+	for _, m := range infos {
+		if strings.HasPrefix(m, "compact: skipped") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing compact skip info: %v", infos)
+	}
 }

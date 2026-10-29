@@ -15,7 +15,7 @@ text-only; asking for job status still produces a normal spoken response.
 
 For Ollama, Activity records per-request `prefill N tok · gen M tok`. Prefill
 tracks the size of your new turn, not the whole transcript, and is bounded by
-`ollama_num_ctx` (default `8192`). Startup warmup sends that same `num_ctx` —
+`ollama_num_ctx` (default `32768`; workers use `voice_worker_num_ctx`, default `8192`). Startup warmup sends that same `num_ctx` —
 omitting it lets Ollama allocate the model's full window (262k on qwen3/kimi)
 and a serve restart loop will pin a runner per spawn. `ollama_num_batch`
 (default `128`) decides how much of the prompt is re-read each turn. Ollama

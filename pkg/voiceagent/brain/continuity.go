@@ -12,6 +12,11 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
+// ErrPromptBudget is the hard refuse when a Chat request would exceed 90% of
+// num_ctx. Compact treats this as "trim and continue", not a user-facing
+// RecoveryReply.
+var ErrPromptBudget = errors.New("context exceeds safe prompt budget")
+
 // AddContinuityNote is the projection boundary shared with worker briefs. Call
 // only while owning the provider conversation (as with History/LoadHistory).
 func (o *OllamaBrain) AddContinuityNote(raw string, p continuity.Provenance) string {
@@ -144,7 +149,7 @@ func (o *OllamaBrain) messagesBudgetError(messages []api.Message, tools api.Tool
 	}
 	est := (bytes + 3) / 4
 	if est > o.effectiveNumCtx()*9/10 {
-		return fmt.Errorf("context exceeds safe prompt budget (%d estimated tokens, num_ctx=%d); shorten the input or compact the conversation", est, o.effectiveNumCtx())
+		return fmt.Errorf("%w (%d estimated tokens, num_ctx=%d); shorten the input or compact the conversation", ErrPromptBudget, est, o.effectiveNumCtx())
 	}
 	return nil
 }
@@ -273,4 +278,5 @@ func (o *OllamaBrain) ReseedContinuity(turns []Turn) {
 	// The synthetic summary is shared context, not a reply authored by the
 	// currently active persona. Keep the durable canonical transcript intact.
 	o.loadHistoryProjectionForPersona(turns, false, true)
+	o.maybeEmitContinuityBudget("")
 }

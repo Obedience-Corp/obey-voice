@@ -94,7 +94,11 @@ func (o *OllamaBrain) maybeEmitContinuityBudget(skillCtx string) {
 		return
 	}
 	est := o.estimateTokens(skillCtx)
-	soft := numCtx * continuitySoftLimitRatio / 100
+	ratio := o.cfg.ContinuitySoftLimitRatio
+	if ratio <= 0 {
+		ratio = float64(continuitySoftLimitRatio) / 100
+	}
+	soft := int(float64(numCtx) * min(ratio, .9))
 	hard := numCtx * 9 / 10
 	action := "ok"
 	switch {
