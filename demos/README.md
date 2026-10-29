@@ -1,5 +1,17 @@
 # Demos
 
+## chat-images.gif — image and GIF attachments
+
+`just demo-chat-images` records image-path paste, bitmap import, removable draft
+previews, GIF pause/play, sending two images, and thread scrolling in the real
+Bubble Tea conversation UI. Its test provider and images are deterministic;
+no microphone, audio, personal config, or external model is used.
+
+![Chat image attachments](chat-images.gif)
+
+See [chat images](../docs/chat-images.md) for controls, limits, and the isolated
+native desktop fixture. The reproducible source is `chat-images.tape`.
+
 ## context-meter.gif — live usage beside the composer
 
 `just demo-context-meter` records the real Bubble Tea app against a slow loopback

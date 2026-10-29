@@ -19,6 +19,9 @@ import (
 // and re-requests until the model produces a text response.
 func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts StreamOptions) (*Stream, error) {
 	ctx = opts.workerBudget().Context(ctx)
+	if err := o.prepareImageHistory(ctx, opts.Attachments); err != nil {
+		return nil, err
+	}
 	if opts.Identity != nil {
 		copied := *opts.Identity
 		opts.Identity = &copied
@@ -32,7 +35,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		opts.ToolsEnabled = false
 	}
 	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
-		o.appendUserInput(input, opts)
+		if err := o.appendUserInput(input, opts); err != nil {
+			return nil, err
+		}
 	}
 	priorReply := o.previousReplyForRepetition(opts)
 	latestMessage := input

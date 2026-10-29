@@ -21,6 +21,8 @@ import (
 )
 
 type request struct {
+	Paths          []string                     `json:"paths"`
+	Image          []byte                       `json:"image"`
 	VoiceSelection engine.DesktopVoiceSelection `json:"voice_selection"`
 	Config         json.RawMessage              `json:"config"`
 	Revision       int64                        `json:"revision"`
@@ -85,7 +87,7 @@ func run(parent context.Context, input io.Reader, writer io.Writer) error {
 	go func() {
 		defer close(incoming)
 		scan := bufio.NewScanner(input)
-		scan.Buffer(make([]byte, 4096), 4<<20)
+		scan.Buffer(make([]byte, 4096), 12<<20)
 		for scan.Scan() {
 			var r request
 			if err := json.Unmarshal(scan.Bytes(), &r); err != nil {
@@ -267,7 +269,7 @@ func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 		if h.controller == nil {
 			return nil, errors.New("Start a conversation first")
 		}
-		h.controller.Send(engine.DesktopAction{Kind: r.Method, Text: r.Text, Enabled: r.Enabled})
+		h.controller.Send(engine.DesktopAction{Kind: r.Method, Text: r.Text, Enabled: r.Enabled, Paths: r.Paths, Image: r.Image})
 		return nil, nil
 	}
 }

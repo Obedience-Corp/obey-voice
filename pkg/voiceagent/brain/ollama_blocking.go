@@ -18,6 +18,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	// history even after a failed or transient request.
 	defer func() { o.maybeEmitContinuityBudget("") }()
 	ctx = opts.workerBudget().Context(ctx)
+	if err := o.prepareImageHistory(ctx, opts.Attachments); err != nil {
+		return "", err
+	}
 	priorGroupReply := ""
 	if opts.Discussion != nil {
 		priorGroupReply = o.previousReplyForRepetition(opts)
@@ -52,7 +55,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}()
 	}
 	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
-		o.appendUserInput(input, opts)
+		if err := o.appendUserInput(input, opts); err != nil {
+			return "", err
+		}
 	}
 	if !opts.TransientHistory && !opts.AgentContinuation && opts.Discussion == nil {
 		o.receiveDelegationResults(opts)

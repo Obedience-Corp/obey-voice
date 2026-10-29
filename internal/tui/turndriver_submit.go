@@ -23,9 +23,18 @@ func (m *conversationModel) handleSubmit() tea.Cmd {
 	if m.deps.runner == nil {
 		return nil
 	}
+	if m.media.importing || m.media.validating {
+		return nil
+	}
+	if cmd, handled := m.mediaInputCommand(); handled {
+		return cmd
+	}
 	text := strings.TrimSpace(m.input.Value())
 	if text == "" {
-		return nil
+		if len(m.media.draft) == 0 {
+			return nil
+		}
+		text = "Attached image."
 	}
 	text = expandPaletteSelection(text, m.commandSelection)
 
@@ -38,6 +47,9 @@ func (m *conversationModel) handleSubmit() tea.Cmd {
 		return nil
 	}
 
+	if cmd, handled := m.prepareMediaSubmit(text); handled {
+		return cmd
+	}
 	switch m.turnState {
 	case turnIdle:
 		previous := m.input.Value()
@@ -131,6 +143,7 @@ func (m *conversationModel) keystrokeBargeIn(msg tea.KeyMsg) {
 // swallow the user's re-send of the same text. The drop is announced because the
 // draft was echoed and is never going to be answered.
 func (m *conversationModel) discardDraft(text string) {
+	m.restorePendingMedia()
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return

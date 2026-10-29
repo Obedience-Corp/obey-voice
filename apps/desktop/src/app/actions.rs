@@ -119,7 +119,20 @@ impl VoiceApp {
     }
     pub fn submit(&mut self, ctx: &egui::Context) {
         let text = self.composer.trim().to_owned();
-        if text.is_empty() {
+        if text.is_empty() && self.state.attachments.is_empty() {
+            return;
+        }
+        if super::media::image_path_paste(&text) {
+            self.action("attachment_paste", &text, false);
+            self.composer.clear();
+            return;
+        }
+        if !self.state.attachments.is_empty() && !text.starts_with('/') {
+            if self.state.attachment_busy || self.media.submitted.is_some() {
+                return;
+            }
+            self.media.submitted = Some(text.clone());
+            self.action("text", &text, false);
             return;
         }
         self.composer.clear();

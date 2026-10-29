@@ -110,9 +110,17 @@ impl VoiceApp {
                 }),
             );
         });
+        self.media_paste(ui);
         self.participation_controls(ui);
         self.work_cue(ui);
-        let height = (ui.available_height() - 152.).max(100.);
+        let height = (ui.available_height()
+            - 152.
+            - if self.state.attachments.is_empty() {
+                0.
+            } else {
+                self.media.draft_height.clamp(125., 180.) + 12.
+            })
+        .max(24.);
         egui::ScrollArea::vertical()
             .id_salt(if self.activity { "activity" } else { "chat" })
             .stick_to_bottom(true)
@@ -173,6 +181,7 @@ impl VoiceApp {
                                     ui.separator();
                                 }
                                 ui.add(egui::Label::new(&turn.content).wrap().selectable(true));
+                                self.media.show(ui, &turn.attachments, false);
                             });
                     }
                     for result in &self.state.work_results {
@@ -227,6 +236,20 @@ impl VoiceApp {
                 }
             });
         }
+        let attachments = self.state.attachments.clone();
+        let removed = if attachments.is_empty() {
+            Vec::new()
+        } else {
+            egui::ScrollArea::vertical()
+                .id_salt("draft-images")
+                .max_height(180.)
+                .auto_shrink([false, true])
+                .show(ui, |ui| self.media.show(ui, &attachments, true))
+                .inner
+        };
+        for id in removed {
+            self.action("attachment_remove", &id, false);
+        }
         let composer_id = ui.make_persistent_id("composer");
         let send_key = ui.memory(|m| m.has_focus(composer_id))
             && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
@@ -264,7 +287,10 @@ impl VoiceApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_enabled(
-                        !self.composer.trim().is_empty(),
+                        (!self.composer.trim().is_empty() || !self.state.attachments.is_empty())
+                            && self.media.jobs == 0
+                            && !self.state.attachment_busy
+                            && self.media.submitted.is_none(),
                         egui::Button::new("Send").fill(selected(ui)),
                     )
                     .clicked()

@@ -26,7 +26,7 @@ func (m conversationModel) voicePanel() string {
 		return ""
 	}
 	panel := anim.Stage(m.voiceMode, m.voiceFrame, m.voiceLevel(), m.width, m.status, m.animStyles(), m.reducedMotion)
-	available := m.height - conversationInputHeight - 6 - m.workStripReservedRows - m.commandPaletteRows() - 1
+	available := m.height - conversationInputHeight - 6 - m.workStripReservedRows - m.commandPaletteRows() - m.draftMediaHeight() - 1
 	if lipgloss.Height(panel) > available {
 		return "" // Keep the composer and at least one transcript row visible.
 	}
@@ -398,6 +398,9 @@ func (m conversationModel) View() string {
 		Padding(0, 1).
 		Render(m.input.View())
 
+	if media := m.draftMediaView(); media != "" {
+		inputBox = media + "\n" + inputBox
+	}
 	palette := m.renderCommandPalette()
 	if palette != "" {
 		content += "\n" + palette

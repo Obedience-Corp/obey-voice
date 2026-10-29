@@ -24,6 +24,7 @@ func (m *conversationModel) appendTranscript(lines ...string) {
 }
 
 func (m *conversationModel) clearTranscript() {
+	m.media = mediaState{}
 	m.transcript = nil
 	m.items = nil
 	m.jobItems = nil
@@ -163,6 +164,7 @@ func (m *conversationModel) echoUserTurn(text string) {
 	m.pendingUserEcho = text
 	m.rememberUser(text)
 	m.appendTranscript(renderUserTurn(text))
+	m.attachEchoMedia()
 }
 
 func (m *conversationModel) refreshContent() {
@@ -172,6 +174,9 @@ func (m *conversationModel) refreshContent() {
 	parts := make([]string, 0, len(m.items))
 	for _, it := range m.items {
 		if s := it.render(m.showThink); s != "" {
+			if len(it.attachments) > 0 {
+				s += "\n" + m.renderMedia(it.attachments, max(1, m.viewport.Width-4), 10)
+			}
 			parts = append(parts, s)
 		}
 	}
@@ -256,6 +261,12 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 		case "user":
 			m.rememberUser(t.Content, m.displaySpeakerLabel(t.Speaker))
 			m.appendTranscript(renderSpeakerUserTurn(m.displaySpeakerLabel(t.Speaker), t.Content))
+			if len(t.Attachments) > 0 {
+				m.items[len(m.items)-1].attachments = t.Attachments
+				if len(m.plainTurns) > 0 {
+					m.plainTurns[len(m.plainTurns)-1].attachments = t.Attachments
+				}
+			}
 		case "assistant":
 			name := t.PersonaDisplayName
 			if name == "" {

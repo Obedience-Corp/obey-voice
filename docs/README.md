@@ -10,6 +10,7 @@ Everything else lives here.
 |------|--------|
 | [Install](install.md) | Requirements, Homebrew, Linux archive, source builds |
 | [Usage](usage.md) | Local voice, remote access, commands, TUI, personas |
+| [Chat images](chat-images.md) | Image/GIF paste, previews, model support, and review recording |
 | [Narration](narration.md) | `render`, audiobooks, Calibre, narrate pipeline |
 | [Scenes](scene.md) | `scene`, scripted two-persona conversation audio |
 | [Meetings](meetings.md) | Meeting recorder, speaker labels, campaign routing |

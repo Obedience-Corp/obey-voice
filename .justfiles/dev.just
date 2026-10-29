@@ -52,3 +52,10 @@ demo-readme: build
     env -u NO_COLOR -u CLICOLOR CLICOLOR_FORCE=1 FORCE_COLOR=1 \
         TERM=xterm-256color COLORTERM=truecolor vhs demos/readme.tape
     just _optimize-demo-gif docs/images/tui.gif
+
+# Review image/GIF pasting and conversation display with a silent fixture provider.
+[no-cd]
+demo-chat-images:
+    mkdir -p bin demos/frames
+    go test -c -o bin/chat-media.test ./internal/tui
+    vhs demos/chat-images.tape

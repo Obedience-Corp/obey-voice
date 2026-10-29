@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
@@ -20,9 +21,10 @@ const (
 // text apart so Ctrl+K / /think can rebuild the bubble without touching
 // clipboard yank or model history.
 type chatItem struct {
-	kind  chatItemKind
-	name  string
-	think string
+	attachments []chatmedia.Ref
+	kind        chatItemKind
+	name        string
+	think       string
 	// thinkLabel paints the dim "thinking" marker when the stored text is
 	// tag-only markup with no inner body (session replay leftovers).
 	thinkLabel bool

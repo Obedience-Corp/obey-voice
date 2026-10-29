@@ -23,12 +23,19 @@ func (systemClipboard) WriteAll(text string) error {
 }
 
 type clipboardPasteMsg struct {
-	text string
-	err  error
+	text  string
+	image []byte
+	err   error
 }
 
 func readClipboard(backend clipboardBackend) tea.Cmd {
 	return func() tea.Msg {
+		if images, ok := backend.(interface{ ReadImage() ([]byte, error) }); ok {
+			data, err := images.ReadImage()
+			if err != nil || len(data) > 0 {
+				return clipboardPasteMsg{image: data, err: err}
+			}
+		}
 		text, err := backend.ReadAll()
 		return clipboardPasteMsg{text: text, err: err}
 	}

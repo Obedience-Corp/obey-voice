@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"math"
 	"os"
 	"os/exec"
@@ -94,6 +95,7 @@ func (u claudeUsage) prompt() int {
 
 // Turn represents a single conversation exchange.
 type Turn struct {
+	Attachments []chatmedia.Ref `json:"attachments,omitempty"`
 	// RoutedInput is the request sent to the model after a direct address was
 	// removed. Content retains the original finalized input for the transcript.
 	RoutedInput string `json:"routed_input,omitempty"`
