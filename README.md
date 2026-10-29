@@ -24,6 +24,9 @@ You can also use Claude Code, [Codex](docs/codex.md), Cursor, or Grok through th
 
 Choose the provider and model in **Settings → Brain**. For Ollama, start the local server and download a model first, then select it in Obey Voice. Each persona can override the application’s brain and voice settings. See [configuration](docs/configuration.md) and [personas](docs/personas.md).
 
+Use the [Obey daemon provider](docs/obey-daemon.md) to route conversations through
+`obey-go-sdk`, with daemon-configured providers, models, and tool permissions.
+
 ## Install
 
 The current install path is from source. Prebuilt app downloads are not published yet.
@@ -115,7 +118,7 @@ Speech starts as sentences arrive. The latency target is under 2 seconds from th
 
 | Layer | Default | Options |
 |-------|---------|---------|
-| Brain | Local models via Ollama | Claude Code, [Codex](docs/codex.md), Cursor, Grok |
+| Brain | Local models via Ollama | Claude Code, [Codex](docs/codex.md), Cursor, Grok, [Obey daemon](docs/obey-daemon.md) |
 | STT | NVIDIA Parakeet TDT (sherpa-onnx) | Whisper (`sherpa`), Zipformer streaming, whisper.cpp |
 | TTS | Kokoro (sherpa-onnx) | native Qwen3-TTS, [OpenAI-compatible speech servers](docs/openai-speech.md) |
 | VAD | Silero | |

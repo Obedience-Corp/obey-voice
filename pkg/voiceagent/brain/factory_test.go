@@ -65,13 +65,14 @@ func TestNewBatchProviderAcceptsImplementedProviders(t *testing.T) {
 		"cursor-agent CLI not found",
 		"grok CLI not found",
 		"codex CLI not found",
+		"obey CLI not found",
 	}
 	providers := []string{""}
 	for _, spec := range Providers() {
 		providers = append(providers, spec.Name)
 	}
 	for _, provider := range providers {
-		cfg := &config.Config{BrainProvider: provider}
+		cfg := &config.Config{BrainProvider: provider, ObeyProvider: "fixture", ObeyModel: "fixture", ObeyToolPolicy: "daemon"}
 
 		_, err := NewBatchProvider(cfg)
 		if err == nil {

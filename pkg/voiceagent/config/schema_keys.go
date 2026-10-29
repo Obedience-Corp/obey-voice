@@ -278,6 +278,32 @@ func brainKeys() []KeySpec {
 			PersonaOverridable: true,
 		},
 		{
+			Key: "obey_provider", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Daemon provider",
+			Help: "Provider name configured in the Obey daemon. Required when brain_provider is obey.",
+		},
+		{
+			Key: "obey_model", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Daemon model",
+			Help:               "Model served by the selected Obey daemon provider. Required when brain_provider is obey.",
+			PersonaOverridable: true,
+		},
+		{
+			Key: "obey_camp", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Daemon camp",
+			Help: "Obey camp name or ID. Empty lets the CLI infer it from the working directory; explicit camp enables live events on compatible daemons.",
+		},
+		{
+			Key: "obey_socket", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Daemon socket",
+			Help: "Obey daemon socket path. Empty uses the installed CLI configuration.",
+		},
+		{
+			Key: "obey_tool_policy", Type: TypeEnum, Default: "strict", Enum: []string{"strict", "daemon"},
+			Group: GroupBrain, Title: "Daemon tool policy",
+			Help: "Strict refuses tools-off turns because Obey has no universal tools-off control. Daemon delegates tool permissions to Obey, including conversational turns; discussion mode may still use tools.",
+		},
+		{
 			Key: "codex_model", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Codex model",
 			Help:               "The model used by Codex. Empty uses the Codex default. Requires Codex installed and signed in with codex login.",

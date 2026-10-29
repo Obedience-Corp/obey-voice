@@ -30,6 +30,9 @@ func (m settingsModel) providerRows() []settingRow {
 }
 
 func (m settingsModel) modelRows() []settingRow {
+	if m.cfg.BrainProvider == "obey" {
+		return m.obeyRows()
+	}
 	key := ""
 	switch m.cfg.BrainProvider {
 	case "ollama":

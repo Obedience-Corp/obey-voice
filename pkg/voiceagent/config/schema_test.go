@@ -269,7 +269,7 @@ func TestPersonaOverridableMatchesApplyRoutingTable(t *testing.T) {
 	// TestOverriddenKeysMatchesApply asserts the routing table agrees with Apply.
 	want := []string{
 		"active_persona", "agent_name", "audio8_voice", "brain_provider", "codex_model", "cursor_model", "grok_model",
-		"ollama_model", "openai_speech_voice", "persona", "qwen_tts_model_tier", "qwen_tts_voice",
+		"obey_model", "ollama_model", "openai_speech_voice", "persona", "qwen_tts_model_tier", "qwen_tts_voice",
 		"tts_provider", "tts_voice",
 		"voice_worker_model", "voice_worker_ollama_host", "voice_worker_provider",
 	}

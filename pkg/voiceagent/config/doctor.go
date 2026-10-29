@@ -583,6 +583,9 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 				Remediation: fmt.Sprintf("install the %s CLI and ensure %q is on PATH, or select another brain_provider", spec.CLIBinary, spec.CLIBinary),
 			}
 		}
+		if provider == "obey" && (strings.TrimSpace(cfg.ObeyProvider) == "" || strings.TrimSpace(cfg.ObeyModel) == "") {
+			return Diagnostic{Name: "brain-provider", Severity: SeverityError, Detail: "Obey requires obey_provider and obey_model", Remediation: "set both to a provider and model configured in your Obey daemon"}
+		}
 		return Diagnostic{
 			Name:     "brain-provider",
 			Severity: SeverityOK,
@@ -635,6 +638,9 @@ func diagnoseWorkerProvider(cfg *Config, lookPath func(string) (string, error)) 
 			Detail:      fmt.Sprintf("unsupported voice_worker_provider %q", cfg.VoiceWorkerProvider),
 			Remediation: "set voice_worker_provider to " + joinEnglish(WorkerProviders, "or"),
 		}
+	}
+	if provider == "obey" && (strings.TrimSpace(cfg.ObeyProvider) == "" || BrainModelFor(WorkerBrainConfig(cfg), "obey") == "") {
+		return Diagnostic{Name: "voice-worker-provider", Severity: SeverityWarn, Detail: "Obey worker requires a daemon provider and model", Remediation: "set obey_provider and voice_worker_model (or obey_model)"}
 	}
 	if spec, ok := lookupBrainProvider(provider); ok && spec.CLIBinary != "" {
 		path, err := lookPath(spec.CLIBinary)
