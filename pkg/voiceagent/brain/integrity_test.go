@@ -253,8 +253,8 @@ func TestContinuityBudgetEmittedOnTurn(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(budgets) != 1 {
-		t.Fatalf("budget events = %d, want 1", len(budgets))
+	if len(budgets) != 2 || budgets[1].EstTokens <= budgets[0].EstTokens {
+		t.Fatalf("want input and retained response budgets: %+v", budgets)
 	}
 	if budgets[0].NumCtx != 8192 {
 		t.Fatalf("NumCtx = %d, want 8192", budgets[0].NumCtx)
