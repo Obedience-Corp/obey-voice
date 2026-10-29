@@ -8,14 +8,15 @@ const CapabilitiesSchema = "obey-voice.transcribe-capabilities.v1"
 // protocol versions and formats are accepted, which provider is selected,
 // which models are installed, and whether anything must be installed first.
 type Capabilities struct {
-	Schema           string        `json:"schema"`
-	Protocols        []string      `json:"protocols"`
-	Formats          []Format      `json:"formats"`
-	Timing           []string      `json:"timing"`
-	Providers        []ProviderCap `json:"providers"`
-	Readiness        Readiness     `json:"readiness"`
-	DownloadRequired bool          `json:"download_required"`
-	Diagnostics      []Diagnostic  `json:"diagnostics"`
+	Schema           string          `json:"schema"`
+	Protocols        []string        `json:"protocols"`
+	Formats          []Format        `json:"formats"`
+	Timing           []string        `json:"timing"`
+	WordAnalysis     *WordCapability `json:"word_analysis,omitempty"`
+	Providers        []ProviderCap   `json:"providers"`
+	Readiness        Readiness       `json:"readiness"`
+	DownloadRequired bool            `json:"download_required"`
+	Diagnostics      []Diagnostic    `json:"diagnostics"`
 }
 
 // Format is one accepted input encoding and geometry.
@@ -78,3 +79,15 @@ func SupportedFormats() []Format {
 
 // SupportedTiming lists the timing granularities this build implements.
 func SupportedTiming() []string { return []string{TimingUtterance} }
+
+// WordCapability is negotiated separately: v1 remains utterance-only.
+type WordCapability struct {
+	Protocol       string `json:"protocol"`
+	Provider       string `json:"provider"`
+	Supported      bool   `json:"supported"`
+	TextPolicy     string `json:"text_policy"`
+	TimingMethod   string `json:"timing_method"`
+	TimingValidity string `json:"timing_validity"`
+	BatchQualified bool   `json:"batch_qualified"`
+	Reason         string `json:"reason,omitempty"`
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Event types.
@@ -74,10 +75,15 @@ type Event interface {
 // the request asked for.
 type Accepted struct {
 	envelope
-	Provider      string `json:"provider"`
-	ModelID       string `json:"model_id"`
-	ModelRevision string `json:"model_revision"`
-	Timing        string `json:"timing"`
+	Provider       string `json:"provider"`
+	ModelID        string `json:"model_id"`
+	ModelRevision  string `json:"model_revision"`
+	Timing         string `json:"timing"`
+	TextPolicy     string `json:"text_policy,omitempty"`
+	TimingMethod   string `json:"timing_method,omitempty"`
+	TimingValidity string `json:"timing_validity,omitempty"`
+	Language       string `json:"language,omitempty"`
+	Runtime        string `json:"runtime,omitempty"`
 }
 
 // NewAccepted builds the accepted event for a resolved decoder.
@@ -114,6 +120,7 @@ type Segment struct {
 	Text      string `json:"text"`
 	Timing    string `json:"timing"`
 	Final     bool   `json:"final"`
+	Words     []Word `json:"words,omitempty"`
 }
 
 // NewSegment builds a committed segment event.
@@ -248,6 +255,7 @@ func nilEvent(ev Event) bool {
 // One goroutine at a time: the command writes events from the runner's
 // goroutine and nothing else writes to stdout.
 type Encoder struct {
+	protocol string
 	w        io.Writer
 	jobID    string
 	seq      int64
@@ -258,7 +266,7 @@ type Encoder struct {
 
 // NewEncoder returns an encoder writing jobID's stream to w.
 func NewEncoder(w io.Writer, jobID string) *Encoder {
-	return &Encoder{w: w, jobID: jobID}
+	return &Encoder{w: w, jobID: jobID, protocol: Protocol}
 }
 
 // Terminal reports whether the terminal event has been written.
@@ -385,7 +393,7 @@ func (e *Encoder) writeLine(line []byte, kind string) error {
 }
 
 func (e *Encoder) marshal(ev Event) ([]byte, error) {
-	ev.stamp(Protocol, e.jobID, e.seq)
+	ev.stamp(e.protocol, e.jobID, e.seq)
 	line, err := json.Marshal(ev)
 	if err != nil {
 		return nil, fmt.Errorf("protocol: encode %s event: %w", ev.Type(), err)
@@ -399,14 +407,17 @@ func (e *Encoder) marshal(ev Event) ([]byte, error) {
 // most one terminal event, and the line cap. failed and cancelled may open
 // the stream.
 type Decoder struct {
-	r         *bufio.Reader
-	jobID     string
-	next      int64
-	accepted  bool
-	terminal  string
-	lastStart int64
-	maxEndUS  int64
-	segments  int
+	protocol    string
+	wordIDs     map[string]bool
+	lastWordEnd int64
+	r           *bufio.Reader
+	jobID       string
+	next        int64
+	accepted    bool
+	terminal    string
+	lastStart   int64
+	maxEndUS    int64
+	segments    int
 }
 
 // NewDecoder reads jobID's stream from r. An empty jobID adopts the ID the
@@ -420,8 +431,9 @@ func NewDecoder(r io.Reader, jobID string) *Decoder {
 	// NewReaderSize would reuse a *bufio.Reader whose buffer is already large
 	// enough and silently raise the cap; the wrapper forces our own buffer.
 	return &Decoder{
-		r:     bufio.NewReaderSize(struct{ io.Reader }{r}, MaxLineBytes),
-		jobID: jobID,
+		r:        bufio.NewReaderSize(struct{ io.Reader }{r}, MaxLineBytes),
+		jobID:    jobID,
+		protocol: Protocol,
 	}
 }
 
@@ -451,8 +463,8 @@ func (d *Decoder) Next() (Event, error) {
 	if err := json.Unmarshal(line, &head); err != nil {
 		return nil, fmt.Errorf("protocol: parse event: %w", err)
 	}
-	if head.Protocol != Protocol {
-		return nil, fmt.Errorf("protocol: event protocol %q is not %q", head.Protocol, Protocol)
+	if head.Protocol != d.protocol {
+		return nil, fmt.Errorf("protocol: event protocol %q is not %q", head.Protocol, d.protocol)
 	}
 	if head.JobID == "" {
 		return nil, errors.New("protocol: event has no job_id")
@@ -467,6 +479,23 @@ func (d *Decoder) Next() (Event, error) {
 		return nil, fmt.Errorf("protocol: event seq %d is not %d", *head.Seq, d.next)
 	}
 
+	// A zero start is valid, but an absent or null start is not evidence.
+	if d.protocol == WordProtocol && head.Kind == TypeSegment {
+		var measured struct {
+			Words []struct {
+				Start *int64 `json:"start_us"`
+				End   *int64 `json:"end_us"`
+			} `json:"words"`
+		}
+		if err := json.Unmarshal(line, &measured); err != nil {
+			return nil, err
+		}
+		for _, word := range measured.Words {
+			if word.Start == nil || word.End == nil {
+				return nil, errors.New("protocol: word lacks measured boundaries")
+			}
+		}
+	}
 	ev, err := decodeEvent(head.Kind, line)
 	if err != nil {
 		return nil, err
@@ -547,6 +576,10 @@ func (d *Decoder) check(ev Event) error {
 		return err
 	}
 	switch e := ev.(type) {
+	case *Accepted:
+		if d.protocol == WordProtocol && (e.Timing != TimingWord || e.TextPolicy != "verbatim" || e.TimingMethod == "" || e.TimingValidity != "estimated" || e.Provider == "" || e.ModelID == "" || e.ModelRevision == "" || e.Language == "" || e.Runtime == "") {
+			return errors.New("protocol: missing verbatim word provenance")
+		}
 	case *Segment:
 		switch {
 		case e.StartUS < 0:
@@ -560,7 +593,11 @@ func (d *Decoder) check(ev Event) error {
 		case !e.Final:
 			return fmt.Errorf("protocol: segment %s is not final", e.SegmentID)
 		}
-		if e.Timing != TimingUtterance {
+		if d.protocol == WordProtocol {
+			if err := d.checkWords(e); err != nil {
+				return err
+			}
+		} else if e.Timing != TimingUtterance {
 			return fmt.Errorf("protocol: segment timing %q is not %q", e.Timing, TimingUtterance)
 		}
 		d.lastStart = e.StartUS
@@ -610,3 +647,52 @@ func (d *Decoder) Terminal() string { return d.terminal }
 // Completed reports whether the stream ended in completed, which is half of
 // the success rule; the other half is a zero exit status.
 func (d *Decoder) Completed() bool { return d.terminal == TypeCompleted }
+
+// Word carries both measured boundaries on the source PCM timeline. Confidence
+// is intentionally absent until a provider supplies calibrated word confidence.
+type Word struct {
+	ID      string `json:"word_id"`
+	Text    string `json:"text"`
+	StartUS int64  `json:"start_us"`
+	EndUS   int64  `json:"end_us"`
+}
+
+// NewWordEncoder opts into v2. Existing callers remain v1.
+func NewWordEncoder(w io.Writer, jobID string) *Encoder {
+	e := NewEncoder(w, jobID)
+	e.protocol = WordProtocol
+	return e
+}
+
+// NewWordDecoder opts into strict v2 validation; it does not accept v1 timing.
+func NewWordDecoder(r io.Reader, jobID string) *Decoder {
+	d := NewDecoder(r, jobID)
+	d.protocol = WordProtocol
+	d.wordIDs = map[string]bool{}
+	return d
+}
+
+func (d *Decoder) checkWords(e *Segment) error {
+	if e.Timing != TimingWord || len(e.Words) == 0 {
+		return errors.New("protocol: word segment has no words or wrong timing")
+	}
+	text := make([]string, 0, len(e.Words))
+	last := max(e.StartUS, d.lastWordEnd)
+	ids := map[string]bool{}
+	for _, w := range e.Words {
+		if w.ID == "" || d.wordIDs[w.ID] || ids[w.ID] || strings.TrimSpace(w.Text) == "" || len(strings.Fields(w.Text)) != 1 || w.StartUS < last || w.EndUS <= w.StartUS || w.EndUS > e.EndUS {
+			return fmt.Errorf("protocol: invalid measured word %q", w.ID)
+		}
+		ids[w.ID] = true
+		last = w.EndUS
+		text = append(text, w.Text)
+	}
+	if strings.Join(text, " ") != strings.Join(strings.Fields(e.Text), " ") {
+		return errors.New("protocol: words disagree with verbatim segment")
+	}
+	for id := range ids {
+		d.wordIDs[id] = true
+	}
+	d.lastWordEnd = last
+	return nil
+}

@@ -248,7 +248,7 @@ func TestValidateRejections(t *testing.T) {
 		want string
 	}{
 		{"no protocol", mut(func(r *Request) { r.Protocol = "" }), CodeInvalidRequest, "protocol is required"},
-		{"next major version", mut(func(r *Request) { r.Protocol = "obey-transcript/v2" }), CodeUnsupportedProtocol, "major version 2"},
+		{"next major version", mut(func(r *Request) { r.Protocol = "obey-transcript/v3" }), CodeUnsupportedProtocol, "major version 3"},
 		{"another protocol", mut(func(r *Request) { r.Protocol = "whisper-json/v1" }), CodeUnsupportedProtocol, "is not \"obey-transcript/v1\""},
 		{"unversioned protocol", mut(func(r *Request) { r.Protocol = "obey-transcript" }), CodeUnsupportedProtocol, "is not \"obey-transcript/v1\""},
 		{"malformed minor", mut(func(r *Request) { r.Protocol = "obey-transcript/v1.x" }), CodeUnsupportedProtocol, "has an invalid version"},

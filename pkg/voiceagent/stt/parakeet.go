@@ -126,6 +126,37 @@ func (s *ParakeetSTT) DecodeSegment(ctx context.Context, samples []float32) (str
 	return s.transcribe(samples)
 }
 
+// DecodeWords bypasses conversational normalization and returns the native
+// token-duration evidence. The process owner can stop an in-flight native call.
+func (s *ParakeetSTT) DecodeWords(ctx context.Context, samples []float32) (string, []TimedWord, error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
+	stream := sherpa.NewOfflineStream(s.recognizer)
+	if stream == nil {
+		return "", nil, fmt.Errorf("create parakeet word stream")
+	}
+	defer sherpa.DeleteOfflineStream(stream)
+	stream.AcceptWaveform(audio.SampleRate, samples)
+	s.recognizer.Decode(stream)
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
+	result := stream.GetResult()
+	text := strings.TrimSpace(result.Text)
+	words, err := tokenWords(text, result.Tokens, result.Timestamps, result.Durations, len(samples))
+	if err != nil {
+		return "", nil, err
+	}
+	// Use the native token word breaks; sherpa's display text can remove a
+	// space before an apostrophe. No word/filler/name/number is rewritten.
+	parts := make([]string, len(words))
+	for i, word := range words {
+		parts[i] = word.Text
+	}
+	return strings.Join(parts, " "), words, nil
+}
+
 // Available returns true if the recognizer loaded.
 func (s *ParakeetSTT) Available() bool { return s.recognizer != nil }
 

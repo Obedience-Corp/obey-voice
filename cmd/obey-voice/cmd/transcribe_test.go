@@ -113,7 +113,7 @@ func TestTranscribeRequiresItsFlags(t *testing.T) {
 }
 
 func TestTranscribeReportsAnInvalidRequestAsAFailedEvent(t *testing.T) {
-	doc := `{"protocol":"obey-transcript/v2","job_id":"job-1","input":{"path":"/a.wav","format":"wav_pcm_s16le","sample_rate_hz":16000,"channels":1,"timeline_origin_us":0},"timing":"utterance"}`
+	doc := `{"protocol":"obey-transcript/v3","job_id":"job-1","input":{"path":"/a.wav","format":"wav_pcm_s16le","sample_rate_hz":16000,"channels":1,"timeline_origin_us":0},"timing":"utterance"}`
 	res := runTranscribeCommand(t, defaultTranscribeDeps(), "--request", writeRequest(t, doc), "--jsonl")
 
 	if res.exit != protocol.ExitInvalid {
@@ -707,7 +707,7 @@ func TestTranscribeCapabilitiesKeySet(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("capabilities --json is not valid JSON: %v\n%s", err, out.String())
 	}
-	wantKeys := []string{"schema", "protocols", "formats", "timing", "providers", "readiness", "download_required", "diagnostics"}
+	wantKeys := []string{"schema", "protocols", "formats", "timing", "providers", "readiness", "download_required", "diagnostics", "word_analysis"}
 	for _, k := range wantKeys {
 		if _, ok := got[k]; !ok {
 			t.Errorf("capabilities --json missing key %q", k)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"slices"
@@ -37,15 +38,16 @@ type transcribeSource interface {
 // Nothing here runs until RunE calls it, which is what lets the command tests
 // cover every path with no model on disk.
 type transcribeDeps struct {
-	loadConfig  func() (*config.Config, error)
-	manifest    func(cfg *config.Config) (config.AssetManifest, error)
-	modelsDir   func(cfg *config.Config) string
-	openSource  func(path string) (transcribeSource, error)
-	newDecoder  func(cfg *config.Config) (stt.SegmentDecoder, stt.DecoderInfo, func(), error)
-	newDetector func(cfg *config.Config) (transcription.SpanDetector, func(), error)
-	run         func(ctx context.Context, req transcription.Request, deps transcription.Deps) (transcription.Summary, error)
-	newContext  func() (context.Context, context.CancelFunc)
-	diagnose    func(cfg *config.Config, modelsDir string) []config.Diagnostic
+	loadConfig     func() (*config.Config, error)
+	manifest       func(cfg *config.Config) (config.AssetManifest, error)
+	modelsDir      func(cfg *config.Config) string
+	openSource     func(path string) (transcribeSource, error)
+	newWordDecoder func(cfg *config.Config) (stt.SegmentDecoder, stt.DecoderInfo, func(), error)
+	newDecoder     func(cfg *config.Config) (stt.SegmentDecoder, stt.DecoderInfo, func(), error)
+	newDetector    func(cfg *config.Config) (transcription.SpanDetector, func(), error)
+	run            func(ctx context.Context, req transcription.Request, deps transcription.Deps) (transcription.Summary, error)
+	newContext     func() (context.Context, context.CancelFunc)
+	diagnose       func(cfg *config.Config, modelsDir string) []config.Diagnostic
 }
 
 // fileVADSilence is how much silence closes an utterance in a file. It is
@@ -67,7 +69,8 @@ func defaultTranscribeDeps() transcribeDeps {
 		openSource: func(path string) (transcribeSource, error) {
 			return audio.NewWAVFileSource(path, audio.ChunkSize)
 		},
-		newDecoder: stt.NewSegmentDecoder,
+		newDecoder:     stt.NewSegmentDecoder,
+		newWordDecoder: stt.NewWordDecoder,
 		newDetector: func(cfg *config.Config) (transcription.SpanDetector, func(), error) {
 			opts := audio.FileVADOptions{MinSilence: fileVADSilence, MaxSpeech: fileVADMaxSpeech}
 			vad, err := audio.NewFileVAD(cfg, opts)
@@ -92,12 +95,33 @@ type transcribeOptions struct {
 
 func newTranscribeCmd(deps transcribeDeps) *cobra.Command {
 	var opts transcribeOptions
+	var speechConfig string
+	baseLoad := deps.loadConfig
+	deps.loadConfig = func() (*config.Config, error) {
+		if speechConfig != "" {
+			return config.LoadSpeechFile(speechConfig)
+		}
+		return baseLoad()
+	}
 	cmd := &cobra.Command{
-		Use:   "transcribe",
-		Short: "Transcribe a finished WAV and stream timed utterances as JSONL",
+		Use: "transcribe",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Name() == "setup" && speechConfig == "" {
+				return fmt.Errorf("transcribe setup requires --speech-config")
+			}
+			if speechConfig != "" {
+				return nil
+			}
+			if cmd.Root() == rootCmd {
+				return rootCmd.PersistentPreRunE(cmd, args)
+			}
+			return nil
+		},
+		Short: "Transcribe a finished WAV as timed utterances or verbatim words",
 		Long: `Transcribe a finished WAV and stream timed utterances as JSONL.
 
-The job is described by a request file speaking obey-transcript/v1, and the
+The job is described by a request file speaking obey-transcript/v1 (utterances)
+or obey-transcript/v2 (verbatim word estimates with Parakeet), and the
 answer is one JSON object per line on stdout: accepted, then a segment per
 utterance, then exactly one of completed, failed or cancelled. Diagnostics go
 to stderr. No microphone, agent turn, or download is involved.
@@ -109,20 +133,36 @@ the serve WebSocket. See docs/transcribe-protocol.md.`,
 			return runTranscribe(cmd, deps, opts)
 		},
 	}
+	cmd.PersistentFlags().StringVar(&speechConfig, "speech-config", "", "Absolute path to isolated obey-voice.speech-config/v1 JSON; ignores global settings")
 	f := cmd.Flags()
-	f.StringVar(&opts.request, "request", "", "Absolute path to the obey-transcript/v1 request JSON")
-	f.BoolVar(&opts.jsonl, "jsonl", false, "Stream obey-transcript/v1 events as JSONL on stdout")
+	f.StringVar(&opts.request, "request", "", "Absolute path to the obey-transcript/v1 or v2 request JSON")
+	f.BoolVar(&opts.jsonl, "jsonl", false, "Stream negotiated transcript events as JSONL on stdout")
 	cmd.AddCommand(newTranscribeCapabilitiesCmd(deps))
+	cmd.AddCommand(&cobra.Command{Use: "setup", Short: "Install missing speech assets into the explicit speech configuration", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if speechConfig == "" {
+				return fmt.Errorf("transcribe setup requires --speech-config")
+			}
+			cfg, err := deps.loadConfig()
+			if err != nil {
+				return err
+			}
+			ctx, cancel := deps.newContext()
+			defer cancel()
+			cmd.SetContext(ctx)
+			return runModelsEnsureJSON(cmd, cfg, config.AssetRequest{NeedSTT: true, NeedVAD: true}, "")
+		},
+	})
 	return cmd
 }
 
 func runTranscribe(cmd *cobra.Command, deps transcribeDeps, opts transcribeOptions) error {
 	cmd.SilenceUsage = true
 	if strings.TrimSpace(opts.request) == "" {
-		return usageError("transcribe needs --request <path to an obey-transcript/v1 request>")
+		return usageError("transcribe needs --request <path to an obey-transcript request>")
 	}
 	if !opts.jsonl {
-		return usageError("transcribe needs --jsonl: obey-transcript/v1 is the only output form")
+		return usageError("transcribe needs --jsonl: JSONL is the only output form")
 	}
 
 	logf := func(format string, args ...any) {
@@ -140,6 +180,9 @@ func runTranscribe(cmd *cobra.Command, deps transcribeDeps, opts transcribeOptio
 	var enc *protocol.Encoder
 	if id := strings.TrimSpace(req.JobID); id != "" {
 		enc = protocol.NewEncoder(cmd.OutOrStdout(), id)
+		if req.Protocol == protocol.WordProtocol {
+			enc = protocol.NewWordEncoder(cmd.OutOrStdout(), id)
+		}
 	}
 	if err := req.Validate(); err != nil {
 		return transcribeFailure(enc, err)
@@ -257,6 +300,10 @@ func runTranscribeJob(
 		return empty, err
 	}
 
+	if req.Timing == protocol.TimingWord && (norm.Provider != config.STTProviderParakeet || (cfg.ParakeetModel != "" && cfg.ParakeetModel != "tdt-0.6b-v2") || deps.newWordDecoder == nil) {
+		return empty, protocol.Errorf(protocol.CodeUnsupportedCapability, false, "configured provider does not support verbatim measured words")
+	}
+
 	// allow_model_download is false in v1, so this is a read of the filesystem
 	// and never an install. A missing asset is exit 3, not a download.
 	manifest, err := deps.manifest(cfg)
@@ -275,7 +322,11 @@ func runTranscribeJob(
 	sttCfg := *cfg
 	sttCfg.VADEnabled = true
 
-	decoder, info, closeDecoder, err := deps.newDecoder(&sttCfg)
+	build := deps.newDecoder
+	if req.Timing == protocol.TimingWord {
+		build = deps.newWordDecoder
+	}
+	decoder, info, closeDecoder, err := build(&sttCfg)
 	if err != nil {
 		return empty, decoderError(err)
 	}
@@ -283,20 +334,36 @@ func runTranscribeJob(
 		defer closeDecoder()
 	}
 
-	detector, closeDetector, err := deps.newDetector(&sttCfg)
-	if err != nil {
-		return empty, protocol.Errorf(protocol.CodeProviderUnavailable, false, "init file VAD: %v", err)
-	}
-	if closeDetector != nil {
-		defer closeDetector()
+	var detector transcription.SpanDetector
+	if req.Timing == protocol.TimingWord {
+		detector = transcription.NewWindowSpanDetector(audio.SampleRate)
+	} else {
+		var closeDetector func()
+		detector, closeDetector, err = deps.newDetector(&sttCfg)
+		if err != nil {
+			return empty, protocol.Errorf(protocol.CodeProviderUnavailable, false, "init file VAD: %v", err)
+		}
+		if closeDetector != nil {
+			defer closeDetector()
+		}
 	}
 
-	sink := &protocolSink{enc: enc, timing: req.Timing}
+	language := config.LanguageCode(cfg.Language)
+	if req.Language != "" {
+		language = config.LanguageCode(req.Language)
+	}
+	sink := &protocolSink{enc: enc, timing: req.Timing, language: language}
+	minSpeech, floor := 0, 0.0
+	if req.Timing == protocol.TimingWord {
+		// Do not silently discard short fillers or quiet detected speech.
+		minSpeech, floor = 1, math.SmallestNonzeroFloat64
+	}
 	return deps.run(ctx, transcription.Request{
 		JobID:    req.JobID,
 		Language: req.Language,
 		Timing:   req.Timing,
 	}, transcription.Deps{
+		MinSpeechSamples: minSpeech, SpeechFloor: floor,
 		Source:   src,
 		Detector: detector,
 		Decoder:  decoder,
@@ -310,8 +377,9 @@ func runTranscribeJob(
 // runner's goroutine and writes synchronously, so a slow consumer of stdout
 // backpressures the read loop instead of dropping audio.
 type protocolSink struct {
-	enc    *protocol.Encoder
-	timing string
+	enc      *protocol.Encoder
+	timing   string
+	language string
 }
 
 func (s *protocolSink) Emit(ctx context.Context, ev transcription.Event) error {
@@ -320,11 +388,20 @@ func (s *protocolSink) Emit(ctx context.Context, ev transcription.Event) error {
 	}
 	switch e := ev.(type) {
 	case transcription.Accepted:
-		return s.enc.Encode(protocol.NewAccepted(e.Provider, e.ModelID, e.ModelRevision, s.timing))
+		a := protocol.NewAccepted(e.Provider, e.ModelID, e.ModelRevision, s.timing)
+		if s.timing == protocol.TimingWord {
+			a.TextPolicy, a.TimingMethod, a.TimingValidity = "verbatim", stt.WordTimingMethod, "estimated"
+			a.Language, a.Runtime = s.language, "sherpa-onnx/1.13.8"
+		}
+		return s.enc.Encode(a)
 	case transcription.Progress:
 		return s.enc.Encode(protocol.NewProgress(e.ConsumedUS, e.DurationUS))
 	case transcription.Segment:
-		return s.enc.Encode(protocol.NewSegment(e.ID, e.StartUS, e.EndUS, e.Text, s.timing))
+		segment := protocol.NewSegment(e.ID, e.StartUS, e.EndUS, e.Text, s.timing)
+		for i, word := range e.Words {
+			segment.Words = append(segment.Words, protocol.Word{ID: fmt.Sprintf("%s-w%d", e.ID, i), Text: word.Text, StartUS: word.StartUS, EndUS: word.EndUS})
+		}
+		return s.enc.Encode(segment)
 	default:
 		return nil
 	}

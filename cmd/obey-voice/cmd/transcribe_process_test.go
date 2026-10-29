@@ -158,7 +158,7 @@ func TestTranscribeProcessModelFreeScenarios(t *testing.T) {
 	}{
 		{
 			name:    "unsupported protocol version",
-			request: writeProcessRequest(t, dir, "p-bad-version", good, map[string]any{"protocol": "obey-transcript/v2"}),
+			request: writeProcessRequest(t, dir, "p-bad-version", good, map[string]any{"protocol": "obey-transcript/v3"}),
 			jobID:   "p-bad-version",
 			exit:    protocol.ExitInvalid,
 			code:    protocol.CodeUnsupportedProtocol,
