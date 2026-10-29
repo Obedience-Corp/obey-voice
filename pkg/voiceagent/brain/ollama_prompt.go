@@ -155,6 +155,9 @@ func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onSta
 		return ""
 	}
 	matched, err := o.skillRouter.Match(ctx, input)
+	if err == nil && len(matched) > 0 {
+		matched, err = o.confirmSkillMatches(ctx, input, matched)
+	}
 	if err != nil {
 		if !o.skillRouterWarned {
 			fmt.Fprintf(os.Stderr, "obey-voice: semantic skill routing failed (%v); continuing with the Agent Skills catalog\n", err)
@@ -184,5 +187,5 @@ func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onSta
 			}
 		}
 	}
-	return ActivatedSkillContext(matched)
+	return activatedSkillContext(o.cfg, matched)
 }

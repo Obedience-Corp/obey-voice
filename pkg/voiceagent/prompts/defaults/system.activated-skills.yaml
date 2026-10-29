@@ -1,0 +1,13 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: activated-skills
+  kind: system
+  system_prompt: |-
+    <activated_skills>
+    Use these selected skills only for the user's actual task, without replacing
+    it with a different workflow. Relative paths are rooted at each skill directory.
+    {skills}
+    </activated_skills>
+metadata:
+  version: 1
+  description: 'Request-local skill instructions. Runtime value: skills.'

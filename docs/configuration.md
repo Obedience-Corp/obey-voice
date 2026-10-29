@@ -84,7 +84,7 @@ when you select it.
 | `cursor_model` | empty | `CURSOR_MODEL` | Model `cursor-agent` is asked for. Empty uses the CLI's own default. |
 | `grok_model` | empty | `GROK_MODEL` | Model the Grok CLI is asked for. Empty uses the CLI's own default. |
 | `ollama_embedding_model` | `nomic-embed-text` | `OLLAMA_EMBEDDING_MODEL` | Ollama embedding model used to match each user prompt to relevant Agent Skills. Set empty to disable semantic routing and retain model-driven `read_skill` fallback. |
-| `skills_similarity_threshold` | `0.55` | `SKILLS_SIMILARITY_THRESHOLD` | Minimum cosine similarity for automatic skill activation. Tune when using an embedding model with a different score distribution. |
+| `skills_similarity_threshold` | `0.55` | `SKILLS_SIMILARITY_THRESHOLD` | Minimum cosine similarity for skill candidates; applicability is confirmed before activation. Tune when using an embedding model with a different score distribution. |
 | `ollama_host` | `http://localhost:11434` | `OLLAMA_HOST` | Ollama server URL |
 | `ollama_num_ctx` | `32768` | `OLLAMA_NUM_CTX` | Talk conversation window. 32k is a real session; 8k is the old lab cap. `0` uses the server model default, which silently truncates long prompts from the top (system prompt first). |
 | `voice_worker_num_ctx` | `8192` | `VOICE_WORKER_NUM_CTX` | Worker job window. Jobs stay at 8k so they do not inherit talk size. |
@@ -571,15 +571,30 @@ Duplicate skill names resolve with **project first**. Ollama advertises each
 skill's name and description in the system prompt and offers a `read_skill` tool
 to load full instructions on demand (progressive disclosure).
 
-Obey Voice also performs harness-side semantic activation. At startup it batches
-each skill's name and description through `ollama_embedding_model` and caches
-the vectors. Before every turn it embeds the user prompt, selects the closest
-skills above the relevance threshold, and injects only those full `SKILL.md`
-bodies into an `<activated_skills>` block. This keeps Tier 1 discovery compact
-while making Tier 2 activation reliable for local models. Pull the default
-embedding model once with `ollama pull nomic-embed-text`. If the embedding model
-is unavailable, Obey Voice logs a warning and falls back to the catalog plus
-model-driven or explicit `read_skill`; the conversation still runs.
+Obey Voice also performs harness-side skill selection. At startup it batches
+skill names and descriptions through `ollama_embedding_model` and caches the
+vectors. On a user turn, the closest matches above `skills_similarity_threshold`
+are candidates, rather than instructions to activate them. A private, bounded
+model check confirms that their procedures apply to the actual request before
+full `SKILL.md` bodies enter the request's `<activated_skills>` block. Shared
+words such as "web" do not turn a weather lookup into a website audit or a
+Cloudflare setup task. Peer/group replies do not activate skills automatically.
+The check leaves conversation history unchanged and uses the existing request
+and output budget when one applies; it skips optional selection if doing so
+would consume the task's last request or output allowance.
+
+The selection instructions, activated-skill wrapper, and live/worker tool
+guidance are editable system YAML documents named `skill-selection`,
+`activated-skills`, `tool-surface-live` and `tool-surface-legacy` under
+`<prompts_dir>/system/`. Inspect one with
+`obey-voice prompts show system --name tool-surface-live`. Live Ollama conversations use `route` to delegate
+current-information questions such as today's weather to a worker, which has
+`web_search` and `fetch_url`; a dedicated weather tool is unnecessary.
+
+Pull the default embedding model once with `ollama pull nomic-embed-text`.
+If matching or confirmation is unavailable or invalid, automatic activation is
+skipped. The catalog and model-driven/explicit `read_skill` remain available,
+and the conversation continues.
 
 Optional frontmatter `allowed-tools` (Agent Skills experimental field) is
 retained as catalog metadata but does not restrict Obey Voice's Ollama runtime.

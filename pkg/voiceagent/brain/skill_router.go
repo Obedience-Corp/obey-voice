@@ -9,6 +9,7 @@ import (
 
 	"github.com/ollama/ollama/api"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
@@ -137,13 +138,13 @@ func cosineSimilarity(a, b []float32) float64 {
 // ActivatedSkillContext wraps automatically selected skill bodies separately
 // from the static catalog so the model can distinguish discovered metadata
 // from instructions activated for the current user prompt.
-func ActivatedSkillContext(matched []skills.Skill) string {
+func ActivatedSkillContext(matched []skills.Skill) string { return activatedSkillContext(nil, matched) }
+
+func activatedSkillContext(cfg *config.Config, matched []skills.Skill) string {
 	if len(matched) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n<activated_skills>\n")
-	b.WriteString("The harness selected these Agent Skills for the current user request. Follow their instructions. Relative paths are rooted at each skill directory.\n")
 	for _, skill := range matched {
 		body := strings.TrimSpace(skill.Body)
 		if len(body) > skillBodyMaxBytes {
@@ -151,6 +152,5 @@ func ActivatedSkillContext(matched []skills.Skill) string {
 		}
 		fmt.Fprintf(&b, "\n<skill name=%q directory=%q>\n%s\n</skill>\n", skill.Name, skill.Dir, body)
 	}
-	b.WriteString("</activated_skills>\n")
-	return b.String()
+	return "\n" + systemPrompt(cfg, "activated-skills", map[string]string{"skills": b.String()}) + "\n"
 }
