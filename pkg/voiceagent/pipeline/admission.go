@@ -20,10 +20,14 @@ type ResponseAdmission struct {
 	Request    string
 	LocalReply string
 	Envelope   events.ResponseEnvelope
+	// AgentMentionControl is a frozen roster lookup for this response's speech.
+	// Nil keeps all @mentions audible; only confirmed agent controls are silent.
+	AgentMentionControl func(target string) bool
 }
 
 type responseVoices struct{ primary, fallback tts.Provider }
 type responseVoicesKey struct{}
+type responseMentionsKey struct{}
 
 func (p *Pipeline) admitInput(ctx context.Context, input string, background bool, metrics *turnMetrics) (context.Context, ResponseAdmission, error) {
 	endTrace := p.startTrace(ctx, "admission")
@@ -68,8 +72,14 @@ func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted Res
 	}
 	primary, fallback := p.ttsProviders()
 	ctx = context.WithValue(events.WithResponse(ctx, admitted.Envelope), responseVoicesKey{}, responseVoices{primary, fallback})
+	ctx = context.WithValue(ctx, responseMentionsKey{}, admitted.AgentMentionControl)
 	p.bindBrainInfo()
 	return ctx
+}
+
+func responseMentionControl(ctx context.Context) func(string) bool {
+	lookup, _ := ctx.Value(responseMentionsKey{}).(func(string) bool)
+	return lookup
 }
 
 func (p *Pipeline) responseTTS(ctx context.Context) (tts.Provider, tts.Provider) {

@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// AgentMention identifies a standalone @name control in response text. Offsets
+// AgentMention identifies a standalone @name candidate in response text. Offsets
 // are bytes in the original text, so renderers can style it without rewriting it.
 type AgentMention struct {
 	Start, End int
@@ -16,8 +16,9 @@ type AgentMention struct {
 
 var agentMentionRE = regexp.MustCompile(`@[\p{L}\p{N}_][\p{L}\p{N}_-]*`)
 
-// AgentMentions recognizes @id and single-token @display-name controls. Email
-// addresses, URL paths, and directly quoted/code-wrapped tokens are not controls.
+// AgentMentions finds @id and single-token @display-name candidates. The caller
+// resolves them against its roster. Email addresses, URL paths, and directly
+// quoted/code-wrapped tokens are not candidates.
 func AgentMentions(text string) []AgentMention {
 	var mentions []AgentMention
 	for _, loc := range agentMentionRE.FindAllStringIndex(text, -1) {
@@ -46,10 +47,19 @@ func AgentMentions(text string) []AgentMention {
 	return mentions
 }
 
-// StripAgentMentions removes routing controls only from the speech projection.
-// Plain names in the message ("Hey Venessa!") remain spoken.
-func StripAgentMentions(text string) string {
-	mentions := AgentMentions(text)
+// StripAgentMentions removes only candidates confirmed by the response's frozen
+// roster lookup. With no lookup, all text remains spoken. Ordinary handles and
+// plain names in the message ("Hey Venessa!") remain spoken.
+func StripAgentMentions(text string, isControl func(string) bool) string {
+	if isControl == nil {
+		return text
+	}
+	var mentions []AgentMention
+	for _, mention := range AgentMentions(text) {
+		if isControl(mention.Target) {
+			mentions = append(mentions, mention)
+		}
+	}
 	if len(mentions) == 0 {
 		return text
 	}

@@ -158,6 +158,10 @@ func (s *Selector) proposeDiscussion(ctx context.Context, g *groupRun, initial b
 			if err := verify(commitCtx); err != nil {
 				return pipeline.ResponseAdmission{}, err
 			}
+			roster, _, err := s.conversationRoster()
+			if err != nil {
+				return pipeline.ResponseAdmission{}, err
+			}
 			selected, err := s.selectAtBoundaryWithCommitCheck(commitCtx, member.id, "group-discussion", verify)
 			if err != nil {
 				return pipeline.ResponseAdmission{}, err
@@ -184,7 +188,7 @@ func (s *Selector) proposeDiscussion(ctx context.Context, g *groupRun, initial b
 				}
 				return nil
 			}
-			return pipeline.ResponseAdmission{Envelope: envelope, Discussion: directive, Request: contextData.Original}, nil
+			return pipeline.ResponseAdmission{Envelope: envelope, Discussion: directive, Request: contextData.Original, AgentMentionControl: agentMentionControl(roster)}, nil
 		}
 		return proposal, true, nil
 	}
