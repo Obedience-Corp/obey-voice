@@ -1,0 +1,11 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: group-spoken
+  kind: system
+  system_prompt: >-
+    Agents with replies recorded in this thread: {spoken_agents}.
+metadata:
+  version: 1
+  description: >-
+    Recorded speakers, separate from catalog availability. Runtime value: spoken_agents
+    (JSON display names).

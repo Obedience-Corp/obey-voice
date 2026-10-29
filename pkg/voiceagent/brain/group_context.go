@@ -3,6 +3,8 @@ package brain
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // groupContext is supplied by the persona host on response admission. CLI
@@ -14,7 +16,7 @@ func (g *groupContext) SetGroupParticipants(participants []GroupParticipant) {
 	g.participants = cloneGroupParticipants(participants)
 }
 
-func (g *groupContext) prompt(own string, turns []Turn) string {
+func (g *groupContext) prompt(cfg *config.Config, own string, turns []Turn) string {
 	names := groupAgentNames(turns)
 	group := len(g.participants) > 1
 	for _, name := range names {
@@ -25,7 +27,7 @@ func (g *groupContext) prompt(own string, turns []Turn) string {
 	if !group {
 		return ""
 	}
-	return groupConversationContext(own, g.participants, names)
+	return groupConversationContext(cfg, own, g.participants, names)
 }
 
 // Catalog availability does not establish who has spoken. Only recorded public
@@ -51,32 +53,31 @@ func appendGroupName(names []string, name string) []string {
 	}
 	return append(names, name)
 }
-func groupConversationContext(own string, roster []GroupParticipant, spoken []string) string {
-	own = strings.TrimSpace(own)
-	if own == "" {
-		own = "the current persona"
+func groupConversationContext(cfg *config.Config, own string, roster []GroupParticipant, spoken []string) string {
+	if strings.TrimSpace(own) == "" {
+		own = currentAgentName(cfg)
 	}
-	text := "\nThis is a group chat already taking place inside Obey Voice, with the human user and independently configured agent personas. You are " + own + ". Each agent has its own identity and context; the supplied shared transcript records what others said. Their replies are not your own, and selecting you does not start a new conversation."
 	var available []string
 	for _, participant := range roster {
 		if !strings.EqualFold(strings.TrimSpace(participant.Name), own) {
 			available = appendGroupName(available, participant.Name)
 		}
 	}
+	values := map[string]string{"agent_name": own, "available_context": "", "spoken_context": ""}
 	if len(available) > 0 {
 		encoded, _ := json.Marshal(available)
-		text += " Other available agent personas (display names, not evidence that all have spoken): " + string(encoded) + "."
+		values["available_context"] = systemPrompt(cfg, "group-available", map[string]string{"available_agents": string(encoded)})
 	}
 	if len(spoken) > 0 {
 		encoded, _ := json.Marshal(spoken)
-		text += " Agents with replies recorded in this thread: " + string(encoded) + "."
+		values["spoken_context"] = systemPrompt(cfg, "group-spoken", map[string]string{"spoken_agents": string(encoded)})
 	}
-	return text + " Use this thread's context when the user says this chat, the group, or the other agents. A request to demonstrate the current conversation is a request to participate here; do not turn it into a setup or persona-creation task unless the user asks for that. Speech transcription may mishear names or multi-agent terminology; use the conversation and the user's later clarification instead of repeatedly correcting an earlier mishearing. Answer only as yourself. When the user asks you to discuss something with another agent, take your turn and ask that agent a direct question by name so they can answer. You may deliberately address a direct question to an available named agent to hand them the floor; a third-person mention does not do that. Do not fabricate another agent's reply or claim access to their private thoughts. Do not speak labels, roster metadata, or internal role markers."
+	return "\n" + systemPrompt(cfg, "group-chat", values)
 }
 
-func groupReplyInstruction(own string) string {
+func groupReplyInstruction(cfg *config.Config, own string) string {
 	if strings.TrimSpace(own) == "" {
 		return ""
 	}
-	return "\n\n[Host conversation context: the current responder is " + own + ". Give only " + own + "'s next reply in this existing group chat. Do not write another participant's lines or repeat speaker labels.]"
+	return "\n\n" + systemPrompt(cfg, "group-reply", map[string]string{"agent_name": own})
 }

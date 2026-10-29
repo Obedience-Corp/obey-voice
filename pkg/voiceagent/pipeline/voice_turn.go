@@ -167,7 +167,9 @@ func (p *Pipeline) runTurnOnce(ctx context.Context) (string, error) {
 		metrics.delivery = &completionPlayback{lease: ordinary.lease}
 	}
 
-	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled() && admission.Discussion == nil}
+	// Peer replies and group discussions have tools disabled; their prose
+	// cannot become a fresh user work request through promise repair.
+	repair := &promiseRepairState{enabled: !isContinuation && admission.Discussion == nil && p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
 		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),

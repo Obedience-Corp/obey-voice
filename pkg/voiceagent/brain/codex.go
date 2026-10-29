@@ -164,7 +164,12 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 }
 func (c *CodexBrain) buildPrompt(input string, opts StreamOptions) string {
 	var b strings.Builder
-	if group := c.groupContext.prompt(c.cfg.AgentName, c.canonical); group != "" {
+	if !opts.AgentContinuation {
+		if app := ApplicationRequestContext(c.cfg, "codex", input); app != "" {
+			b.WriteString(app + "\n\n")
+		}
+	}
+	if group := c.groupContext.prompt(c.cfg, c.cfg.AgentName, c.canonical); group != "" {
 		b.WriteString(group + "\n\n")
 	}
 	if c.sessionID == "" && len(c.working) > 0 {

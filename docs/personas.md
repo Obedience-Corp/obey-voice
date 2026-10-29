@@ -175,6 +175,38 @@ Use `/menu` (or `/back`) to save the current chat and return to the launcher
 inside the same terminal UI. The app drains the conversation runtime before
 enabling the launcher; Continue offers the saved chat.
 
+Obey Voice capability guidance is added to the current request when it asks
+about this app's capabilities or configuration, or directly requests document
+conversion to audio. It is absent from persistent system prompts and unrelated
+requests, including requests to implement conversion in another project. The
+current input selects the guidance; earlier app questions do not keep it active
+across topic changes. Relevant requests receive core capability facts even when
+skills are disabled. Those facts include the current Calibre setting and require
+readiness checks before claiming a feature can execute.
+The embedded `obey-voice` skill supplies detailed app workflows. Listed group
+participants already exist; asking one to speak does not request creating it.
+Peer replies have tools disabled and their discussion of commands cannot
+activate the legacy spoken-promise worker fallback. They still use the normal
+speech output path.
+
+Application and conversation instructions use the same versioned YAML format
+as persona/turn prompts. Packaged sources live under
+`pkg/voiceagent/prompts/defaults/system*.yaml`; startup seeds editable copies
+under `<prompts_dir>/system/` without overwriting existing edits. Use
+`obey-voice prompts list` and
+`obey-voice prompts show system --name application` to inspect them. Named
+system documents are shown as templates, with runtime placeholders intact.
+
+`application.yaml` groups app capabilities into named sections. `group-chat`,
+`group-available`, `group-spoken`, `group-reply`, `peer-reply`, and
+`conversation-history` own conversation context; `addressee` and `acoustic-name`
+own private routing instructions. Metadata in each file names its runtime
+variables. Go supplies values such as the current persona, public roster and
+Calibre enablement. Edits take effect on the next relevant request; invalid YAML or
+unknown placeholders report a warning and use the packaged YAML. Unchanged
+templates produce identical context, and prompt text stays out of canonical
+conversation history.
+
 Exact persona controls are intentionally narrow and whole-input only:
 
 - direct name/alias (`Santa`, `Santa.`)

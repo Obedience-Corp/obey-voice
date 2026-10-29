@@ -51,7 +51,7 @@ func TestOllamaGroupProjectionUsesCompactWireLabels(t *testing.T) {
 	if messages[4].Role != "user" || messages[4].Content != "Alex tool (lookup):\ncobalt" {
 		t.Fatalf("shared tool wire message = %+v", messages[4])
 	}
-	if messages[5].Content != "Unknown user:\nanyone there?"+groupReplyInstruction("Samantha") {
+	if messages[5].Content != "Unknown user:\nanyone there?"+groupReplyInstruction(nil, "Samantha") {
 		t.Fatalf("unknown user wire label = %q", messages[5].Content)
 	}
 }

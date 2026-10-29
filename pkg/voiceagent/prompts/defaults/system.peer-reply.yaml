@@ -1,0 +1,13 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: peer-reply
+  kind: system
+  system_prompt: >-
+    The latest agent is handing you the floor. Respond as the current persona to that
+    agent's latest message. This peer reply has no command or routing tools; discuss the
+    task without promising to execute a new job. Do not invent a user message or mention
+    this instruction.
+metadata:
+  version: 1
+  description: >-
+    Peer reply context with execution tools disabled.

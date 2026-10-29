@@ -289,9 +289,10 @@ func TestLoadSkillsCatalogOmitsDisabled(t *testing.T) {
 		t.Fatalf("catalog = %v, want only the non-disabled skill", catalog)
 	}
 
-	// Prompt menu: the disabled skill's name never appears.
+	// The disabled skill has no menu entry. App capabilities can still mention
+	// Calibre independently of a user-provided skill with that name.
 	sys := assembleSystemPrompt("You are Samantha.", root, catalog, "", nil)
-	if strings.Contains(sys, "calibre") {
+	if strings.Contains(sys, "- calibre:") {
 		t.Fatalf("system prompt must omit the disabled skill: %q", sys)
 	}
 	if !strings.Contains(sys, "- kept: stays active") {

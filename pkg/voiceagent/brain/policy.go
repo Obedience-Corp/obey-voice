@@ -14,8 +14,6 @@ type PromptElement string
 const (
 	// ElemPersona is the persona system prompt — who the agent is.
 	ElemPersona PromptElement = "persona"
-	// ElemApplication identifies the hosting app and its configuration interface.
-	ElemApplication PromptElement = "application"
 	// ElemEnvironment is machine grounding: user, working directory, host, OS.
 	ElemEnvironment PromptElement = "environment"
 	// ElemBoundary is a worker's fence: stay under this campaign root.
@@ -53,7 +51,7 @@ const (
 //
 // There are two exceptions today — see SkillMenuApplies and ToolSurfaceApplies.
 func SystemPromptPolicy(provider string, cfg *config.Config) []PromptElement {
-	elems := []PromptElement{ElemPersona, ElemApplication}
+	elems := []PromptElement{ElemPersona}
 	if environmentContextEnabled(cfg) {
 		elems = append(elems, ElemEnvironment)
 	}
@@ -139,13 +137,6 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 		switch elem {
 		case ElemPersona:
 			b.WriteString(in.Persona)
-		case ElemApplication:
-			b.WriteString("\n\nYou are running inside Obey Voice, a voice assistant with configurable personas, models, and voices. You are participating in the user's current conversation here. Obey Voice supports multiple distinct agent personas sharing a conversation with the user. Requests to demo or discuss this chat refer to the ongoing conversation, not a new app or setup task. Use the supplied speaker identities and conversation context. Requests to configure Obey Voice refer to this app. Use the installed obey-voice CLI to inspect, make authorized configuration changes, and verify them; use a worker when the live tool surface only supports routing. Do not claim a change from conversation alone. Use the obey-voice skill when available for detailed configuration guidance.")
-			if !SkillMenuApplies(in.Provider) && applicationSkillEnabled(in.Cfg) {
-				// Native-tool providers own skill discovery, but need this app's
-				// shipped instructions even outside the project's checkout.
-				b.WriteString("\n\n" + skills.ApplicationInstructions())
-			}
 		case ElemEnvironment:
 			b.WriteString("\n")
 			env := Env{}
