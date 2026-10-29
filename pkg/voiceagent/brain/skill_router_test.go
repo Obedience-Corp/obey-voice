@@ -95,7 +95,7 @@ func TestRouteSkillContextReportsAutomaticActivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := &OllamaBrain{skillRouter: router}
+	o := &OllamaBrain{skillRouter: router, client: skillSelectionClient(t, `{"relevant":true,"names":["campaign-navigation"]}`), model: "fixture"}
 	var start ToolCall
 	var end ToolResult
 	got := o.routeSkillContext(context.Background(), "navigate",

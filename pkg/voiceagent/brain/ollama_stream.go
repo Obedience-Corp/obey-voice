@@ -25,7 +25,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 	}
 	o.refreshSystemPrompt(opts.OnPromptWarn)
 	skillCtx := ""
-	if opts.Discussion == nil {
+	if opts.Discussion == nil && !opts.AgentContinuation {
 		skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
 	} else {
 

@@ -20,7 +20,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		priorGroupReply = o.previousReplyForRepetition(opts)
 	}
 	skillCtx := ""
-	if opts.Discussion == nil {
+	if opts.Discussion == nil && !opts.AgentContinuation {
 		skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
 	} else {
 
