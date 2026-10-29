@@ -58,6 +58,8 @@ func probeProvider(ctx context.Context, cfg *config.Config, name string) Provide
 		return discoverClaude()
 	case "cursor":
 		return discoverCursor(ctx)
+	case "obey":
+		return discoverObey(cfg)
 	case "codex":
 		return discoverCodex(ctx)
 	case "grok":

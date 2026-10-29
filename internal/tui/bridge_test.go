@@ -55,6 +55,39 @@ func TestBridgeForwardsRouteDecided(t *testing.T) {
 	}
 }
 
+func TestBridgeKeepsLatestContextAndTerminalProgressUnderFlood(t *testing.T) {
+	bus := events.NewBus()
+	b := newEventBridge(8)
+	b.attach(bus)
+	bus.Emit(events.UserInput{Text: "tell a story"})
+	for i := range 200 {
+		bus.Emit(events.ContinuityBudget{EstTokens: i, NumCtx: 8192})
+		bus.Emit(events.CompactionProgress{Stage: "summarize"})
+		bus.Emit(events.AudioLevel{Level: .5})
+	}
+	bus.Emit(events.ContinuityBudget{EstTokens: 1000, NumCtx: 8192})
+	bus.Emit(events.CompactionProgress{Stage: "complete"})
+	bus.Emit(events.ResponseReady{Response: "done"})
+	var user, response bool
+	var lastBudget events.ContinuityBudget
+	var stage string
+	for len(b.ch) > 0 {
+		switch e := (<-b.ch).(busEventMsg).event.(type) {
+		case events.UserInput:
+			user = true
+		case events.ResponseReady:
+			response = true
+		case events.ContinuityBudget:
+			lastBudget = e
+		case events.CompactionProgress:
+			stage = e.Stage
+		}
+	}
+	if !user || !response || lastBudget.EstTokens != 1000 || stage != "complete" {
+		t.Fatalf("lost transcript or final memory state: user=%v response=%v budget=%+v stage=%q", user, response, lastBudget, stage)
+	}
+}
+
 func TestBridgePreservesOrder(t *testing.T) {
 	bus := events.NewBus()
 	bridge := newEventBridge(64)

@@ -88,6 +88,9 @@ impl VoiceApp {
         let provider = self.values["brain_provider"]["value"]
             .as_str()
             .unwrap_or("ollama");
+        if self.group == "brain" && provider == "obey" && self.search.is_empty() {
+            card(ui, super::provider_choices::obey_route_notice);
+        }
         let keys = layout::visible_keys(&self.schema, &self.group, &self.search, provider);
         egui::ScrollArea::vertical()
             .id_salt(("settings_scroll", &self.group, &self.search))

@@ -57,6 +57,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		defer close(out)
 		defer close(thinking)
 		defer close(done)
+		// Publish retained context on every exit, after the response/tool history
+		// has been committed or trimmed, rather than waiting for another input.
+		defer func() { o.maybeEmitContinuityBudget("") }()
 
 		// Per-turn tool session: exposes skills through progressive disclosure.
 		sess := &toolSession{
@@ -184,7 +187,16 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				return forward(gate.feed(text))
 			}
 
+			promptEstimate := o.estimateTokens(skillCtx)
+			generatedBytes, lastBudget := 0, promptEstimate
 			err := o.chat(ctx, req, func(resp api.ChatResponse) error {
+				generatedBytes += len(resp.Message.Content) + len(resp.Message.Thinking)
+				estimate := promptEstimate + (generatedBytes+3)/4
+				// Bound telemetry volume while keeping long replies visibly live.
+				if estimate-lastBudget >= 64 {
+					o.emitContinuityBudget(estimate)
+					lastBudget = estimate
+				}
 				responseComplete = responseComplete || resp.Done
 				fieldThink := resp.Message.Thinking
 				if fieldThink != "" {

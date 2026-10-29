@@ -1,6 +1,21 @@
 use crate::model::KeySpec;
 use serde_json::Value;
 
+pub(super) fn obey_route_notice(ui: &mut eframe::egui::Ui) {
+    ui.strong("Obey → provider → model");
+    ui.label("Obey connects to providers configured in its daemon. Choose a provider ID there, then enter a model ID for that provider below.");
+    ui.label("This connection does not publish a model catalog. The choices for direct providers are separate from the daemon’s models.");
+    ui.small("Obey is optional. Other brain providers work without it. If you choose Obey, install its CLI and start its daemon first.");
+}
+
+// A stale Ollama readiness result must not become a model selector for Obey.
+pub(super) fn installed_model_key(provider: &str) -> Option<&'static str> {
+    match provider {
+        "ollama" => Some("ollama_model"),
+        _ => None,
+    }
+}
+
 pub(super) fn saved_voice(values: &Value) -> String {
     let provider = values["tts_provider"]["value"].as_str().unwrap_or("kokoro");
     let key = match provider {
@@ -90,5 +105,17 @@ mod tests {
         assert!(fields.contains(&"openai_speech_url"));
         assert!(!fields.contains(&"tts_voice"));
         assert!(speech_fields("unknown-provider").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod daemon_tests {
+    use super::*;
+
+    #[test]
+    fn daemon_selection_cannot_reuse_a_direct_ollama_catalog() {
+        assert_eq!(installed_model_key("ollama"), Some("ollama_model"));
+        assert_eq!(installed_model_key("obey"), None);
+        assert_eq!(installed_model_key("codex"), None);
     }
 }

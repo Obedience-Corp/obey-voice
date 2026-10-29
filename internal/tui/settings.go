@@ -494,6 +494,10 @@ func (m settingsModel) activeModel() string {
 		if m.cfg.MuseSparkModel != "" {
 			return m.cfg.MuseSparkModel
 		}
+	case "obey":
+		if m.cfg.ObeyModel != "" {
+			return m.cfg.ObeyModel
+		}
 	case "codex":
 		if m.cfg.CodexModel != "" {
 			return m.cfg.CodexModel
@@ -779,6 +783,9 @@ func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
 	}
 	if !m.providers[idx].Available {
 		m.message = fmt.Sprintf("%s is not available on this machine", m.providers[idx].Name)
+		if m.providers[idx].Name == "obey" {
+			m.message = "Obey is optional: install the obey CLI to use its daemon, or keep another provider selected"
+		}
 		return nil
 	}
 	// Mutate the live config only after the save succeeds, so a failed save
@@ -823,6 +830,8 @@ func (m *settingsModel) selectModel(model string) tea.Cmd {
 			model = ""
 		}
 		field, key = &m.cfg.MuseSparkModel, "muse_spark_model"
+	case "obey":
+		field, key = &m.cfg.ObeyModel, "obey_model"
 	case "codex":
 		field, key = &m.cfg.CodexModel, "codex_model"
 	}

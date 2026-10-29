@@ -628,12 +628,13 @@
         "cursor",
         "grok",
         "muse-spark",
+        "obey",
         "ollama"
       ],
       "allows_empty": false,
       "group": "brain",
       "title": "Model provider",
-      "help": "Who answers. Ollama runs on this Mac; Claude, Codex, Cursor, Grok, and Muse-spark call out to their CLIs.",
+      "help": "Who answers. Ollama runs on this Mac; Claude, Codex, Cursor, Grok, Muse-spark, and Obey call out to their CLIs.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,
@@ -1064,6 +1065,80 @@
       "editable": true
     },
     {
+      "key": "obey_camp",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Daemon camp",
+      "help": "Obey camp name or ID. Empty lets the CLI infer it from the working directory; explicit camp enables live events on compatible daemons.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OBEY_CAMP",
+      "editable": true
+    },
+    {
+      "key": "obey_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Daemon model",
+      "help": "Model served by the selected Obey daemon provider. Required when brain_provider is obey.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "OBEY_MODEL",
+      "editable": true
+    },
+    {
+      "key": "obey_provider",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Daemon provider",
+      "help": "Provider name configured in the Obey daemon. Required when brain_provider is obey.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OBEY_PROVIDER",
+      "editable": true
+    },
+    {
+      "key": "obey_socket",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Daemon socket",
+      "help": "Obey daemon socket path. Empty uses the installed CLI configuration.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OBEY_SOCKET",
+      "editable": true
+    },
+    {
+      "key": "obey_tool_policy",
+      "type": "enum",
+      "default": "strict",
+      "enum": [
+        "strict",
+        "daemon"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Daemon tool policy",
+      "help": "Strict refuses tools-off turns because Obey has no universal tools-off control. Daemon delegates tool permissions to Obey, including conversational turns; discussion mode may still use tools.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OBEY_TOOL_POLICY",
+      "editable": true
+    },
+    {
       "key": "ollama_host",
       "type": "string",
       "default": "http://localhost:11434",
@@ -1276,7 +1351,8 @@
         "claude",
         "codex",
         "cursor",
-        "muse-spark"
+        "muse-spark",
+        "obey"
       ],
       "allows_empty": true,
       "group": "brain",
@@ -2493,6 +2569,7 @@
         "cursor",
         "grok",
         "muse-spark",
+        "obey",
         "ollama"
       ],
       "allows_empty": false,

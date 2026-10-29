@@ -83,8 +83,8 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 }
 
 // chat issues a chat request with bounded recovery for malformed tool calls
-// before any response is delivered. Unsupported tools or thinking are disabled
-// on retry, with the degradation logged rather than silently dropping them.
+// before any response is delivered. Required routing tools return a compatibility
+// error when unsupported. Legacy tools and thinking retain their logged fallback.
 func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
 	budget := workerBudgetFromContext(ctx)
 	parseRetried := false
@@ -148,6 +148,15 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 			return err
 		}
 		budget.rejectedRequest()
+		if rejectedTools {
+			for _, tool := range req.Tools {
+				if tool.Function.Name == "route" {
+					// Routing is required to start a worker. A chat-only retry
+					// cannot fulfill the request and may invent a lookup result.
+					return fmt.Errorf("live model %q does not support tool calls; background workers and lookups require a tool-capable model in Settings > Brain: %w", o.model, err)
+				}
+			}
+		}
 		if err := budget.AcquireRetry(ctx); err != nil {
 			return err
 		}

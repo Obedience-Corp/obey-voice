@@ -447,6 +447,8 @@ func applyBrain(cfg *config.Config, b Brain) {
 		cfg.CursorModel = model
 	case "muse-spark":
 		cfg.MuseSparkModel = model
+	case "obey":
+		cfg.ObeyModel = model
 	case "codex":
 		cfg.CodexModel = model
 	}
@@ -492,6 +494,8 @@ func modelForProvider(cfg *config.Config, provider string) string {
 		return strings.TrimSpace(cfg.CursorModel)
 	case "muse-spark":
 		return strings.TrimSpace(cfg.MuseSparkModel)
+	case "obey":
+		return strings.TrimSpace(cfg.ObeyModel)
 	case "codex":
 		return strings.TrimSpace(cfg.CodexModel)
 	default:

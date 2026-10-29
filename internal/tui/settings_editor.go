@@ -17,6 +17,7 @@ type settingsEditKind int
 
 const (
 	editNone settingsEditKind = iota
+	editObey
 	editWorkerURL
 	editWorkerToken
 	editUserDisplayName
@@ -81,6 +82,12 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		return m, nil
 	case "enter":
 		kind, value := m.edit.kind, m.edit.input.Value()
+		if kind == editObey {
+			key := m.edit.decisionKey
+			m.cancelEdit()
+			m.commitObeyEdit(key, value)
+			return m, nil
+		}
 		if kind == editDecision || kind == editDecisionKey {
 			key := m.edit.decisionKey
 			m.cancelEdit()

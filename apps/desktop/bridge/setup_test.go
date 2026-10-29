@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -101,5 +102,38 @@ func TestSetupOllamaReadiness(t *testing.T) {
 	cancel()
 	if probeOllama(ctx, "http://127.0.0.1:1", "test").Severity == config.SeverityOK {
 		t.Fatal("offline provider passed")
+	}
+}
+
+func TestObeyOptionalDesktopSetup(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"models":[{"name":"fixture:latest"}]}`))
+	}))
+	defer server.Close()
+	for key, value := range map[string]string{"brain_provider": "ollama", "ollama_host": server.URL, "ollama_model": "fixture", "active_persona": ""} {
+		if err := config.SetAndSave(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := setupProvider(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.(providerCheck).Severity != config.SeverityOK {
+		t.Fatalf("Obey absence broke Ollama: %+v", result)
+	}
+	if err := config.SetAndSave("brain_provider", "obey"); err != nil {
+		t.Fatal(err)
+	}
+	result, err = setupProvider(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := result.(providerCheck)
+	if check.Severity != config.SeverityError || !strings.Contains(check.Detail, "obey CLI not found") || !strings.Contains(check.Remediation, "select another") {
+		t.Fatalf("missing optional CLI guidance: %+v", check)
 	}
 }

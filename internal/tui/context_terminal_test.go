@@ -14,18 +14,22 @@ import (
 )
 
 type contextTerminalHarness struct {
-	model  conversationModel
-	views  chan string
-	mu     sync.Mutex
-	output bytes.Buffer
+	model   conversationModel
+	views   chan string
+	budgets chan events.ContinuityBudget
+	mu      sync.Mutex
+	output  bytes.Buffer
 }
 
-func (h *contextTerminalHarness) Init() tea.Cmd { return nil }
+func (h *contextTerminalHarness) Init() tea.Cmd { return h.model.rearm() }
 func (h *contextTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m, cmd := h.model.Update(msg)
 	h.model = m
 	if _, ok := msg.(busEventMsg); ok {
 		h.views <- stripANSI(m.View())
+		if budget, ok := msg.(busEventMsg).event.(events.ContinuityBudget); ok && h.budgets != nil {
+			h.budgets <- budget
+		}
 	}
 	return h, cmd
 }
@@ -42,6 +46,11 @@ func TestContextMeterTerminalLifecycle(t *testing.T) {
 	h := &contextTerminalHarness{model: m, views: make(chan string, 4)}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
+	bus := events.NewBus()
+	m.bridge = newEventBridge(16)
+	m.bridge.attach(bus)
+	m.deps.ctx = ctx
+	h.model = m
 	p := tea.NewProgram(h, tea.WithInput(nil), tea.WithOutput(h), tea.WithContext(ctx), tea.WithoutSignalHandler())
 	done := make(chan error, 1)
 	go func() { _, err := p.Run(); done <- err }()
@@ -58,7 +67,7 @@ func TestContextMeterTerminalLifecycle(t *testing.T) {
 	}()
 	send := func(event events.Event, want string) {
 		t.Helper()
-		p.Send(busEventMsg{event: event})
+		bus.Emit(event)
 		select {
 		case view := <-h.views:
 			if !strings.Contains(view, want) {

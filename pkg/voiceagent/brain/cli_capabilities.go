@@ -79,6 +79,15 @@ func CLIWorkerCapabilities(provider string) config.WorkerCapabilities {
 		base.Usage = supported("thread/tokenUsage/updated", "fresh thread cumulative tokens; resumed thread and monetary usage remain unknown")
 		base.ProcessExit = supported("exec.Wait", "local app-server exit is observed; remote work termination is not implied")
 		base.CancellationRequested = supported("turn/interrupt", "bounded interrupt RPC followed by local process cleanup")
+	case "obey":
+		base.Adapter, base.Version = "obey-go-sdk", "v0.1.0"
+		base.RequestBoundary = unsupported("one daemon run can contain multiple provider requests")
+		base.TurnBoundary = unsupported("daemon tool iterations are not bounded by this adapter")
+		base.RetryLimit = unsupported("no adapter retries; daemon/provider retries remain opaque")
+		base.RuntimeLimit = supported("SDK context", "cancellation drains bounded CLI cleanup for the owned run")
+		base.Usage = supported("SDK Result.Usage", "complete token totals are reported; incomplete usage and monetary cost remain unknown")
+		base.ProcessExit = supported("SDK Result", "local CLI exit is observed; remote termination is not implied")
+		base.CancellationRequested = supported("SDK context", "cancellation requests cleanup of the owned run")
 	case "managed", "delegation":
 		base.Adapter, base.Version = "obey delegation CLI", "schema v1"
 		base.RequestBoundary = supported("delegation runtime", "one admitted job; same idempotency key across at most three Start attempts")
