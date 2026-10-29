@@ -154,6 +154,8 @@ func setDefaults(v *viper.Viper) {
 	// than silently routing to a cloud CLI.
 	v.SetDefault("brain_provider", "ollama")
 	v.SetDefault("persona_routing_timeout", DefaultPersonaRoutingTimeout)
+	v.SetDefault("group_participation_enabled", false)
+	v.SetDefault("group_participation_mode", "invited")
 	for _, key := range decisionKeys() {
 		v.SetDefault(key.Key, key.Default)
 	}

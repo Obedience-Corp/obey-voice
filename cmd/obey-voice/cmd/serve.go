@@ -23,6 +23,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
@@ -409,7 +410,17 @@ func runServe(cfg *config.Config) error {
 	// past it for a client that streams but never sends voice_end.
 	turnClocks := endpoint.FromConfig(cfg, false)
 
+	var setParticipation func(context.Context, discussion.Settings) error
+	if cfg.GroupParticipationEnabled && currentSessionSnapshot != nil {
+		setParticipation = func(ctx context.Context, settings discussion.Settings) error {
+			if err := switcher.initialize(); err != nil {
+				return err
+			}
+			return switcher.selector.SetParticipation(ctx, settings)
+		}
+	}
 	server := netapi.New(netapi.Options{
+		SetParticipation:  setParticipation,
 		SetPersonaContext: switcher.applyContext,
 		ListPersonas: func() ([]netapi.PersonaSummary, error) {
 			if switcher.selector != nil {
@@ -459,7 +470,7 @@ func runServe(cfg *config.Config) error {
 			// tells clients where it listens instead of leaving them to parse url.
 			allBinds := append([]string{listenAddr}, extras...)
 			if serveBannerJSON {
-				emitServeBannerJSON(listenAddr, allBinds, creds, netapi.CapabilitiesForSnapshot(currentSessionSnapshot != nil))
+				emitServeBannerJSON(listenAddr, allBinds, creds, netapi.CapabilitiesForParticipation(currentSessionSnapshot != nil, setParticipation != nil))
 			} else {
 				printServeBanner(listenAddr, creds, cfg)
 				if len(extras) > 0 {
@@ -605,6 +616,12 @@ func (s *servePersonaSwitcher) initialize() error {
 	}
 	opts := personaruntime.SelectionOptions{Base: base, Pipeline: s.pipeline, Voices: s.tts,
 		SessionID: s.sessions.id(), Initial: binding,
+		Participation: s.sessions.sess.Participation,
+		PersistParticipation: func(settings discussion.Settings) error {
+			s.sessions.mu.Lock()
+			defer s.sessions.mu.Unlock()
+			return session.DefaultStore().SaveParticipation(s.sessions.sess, settings)
+		},
 		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
@@ -622,6 +639,9 @@ func (s *servePersonaSwitcher) initialize() error {
 		return err
 	}
 	s.pipeline.AdmitInput = s.selector.Route
+	s.pipeline.RouteHandoff = s.selector.RouteHandoff
+	s.pipeline.EndDiscussion = s.selector.EndDiscussion
+	s.pipeline.CompleteDiscussion = s.selector.RecordDiscussionResponse
 	return nil
 }
 
@@ -699,7 +719,13 @@ func (s *servePersonaSwitcher) snapshot(ctx context.Context) (netapi.SessionSnap
 	if scope.ConversationEpoch == "" || selected.ConversationEpoch != scope.ConversationEpoch {
 		return netapi.SessionSnapshot{}, errors.New("session snapshot has mismatched conversation epoch")
 	}
+	var settings *discussion.Settings
+	if s.cfg.GroupParticipationEnabled {
+		copy := s.selector.Participation()
+		settings = &copy
+	}
 	return netapi.SessionSnapshot{
+		Participation: settings, Discussion: s.selector.DiscussionSnapshot(),
 		SessionID:         sessionID,
 		ConversationEpoch: scope.ConversationEpoch,
 		Selection:         selected,
@@ -737,6 +763,9 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	wireCompact(s.pipeline, cfg, s.sessions.sess, s.pipeline.Events)
 	if s.selector == nil {
 		return nil
+	}
+	if err := s.selector.RestoreParticipation(restored.Participation); err != nil {
+		return err
 	}
 	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
 	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")

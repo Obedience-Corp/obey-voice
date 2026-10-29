@@ -6,11 +6,13 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	Discussion *discussion.Directive
 	// WorkerBudget is the job-shared operational budget for this worker job.
 	WorkerBudget  *WorkerBudget
 	OnWorkerUsage func(WorkerUsage)

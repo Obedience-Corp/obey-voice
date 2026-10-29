@@ -650,3 +650,14 @@ or reinterpret those explicit singleton values.
 Existing saved `queued_workers: 1` remains an explicit one-job queue bound.
 Increase it in Workers Settings if desired; loading an older policy does not
 silently replace that saved value with a newer default.
+
+### Experimental group participation
+
+`group_participation_enabled` defaults to `false` and takes effect in a new
+conversation/runtime. It requires local Ollama inference.
+`group_participation_mode` sets a new conversation's initial mode: `invited`
+(default), `off`, or `open`. The corresponding environment variables are
+`GROUP_PARTICIPATION_ENABLED` and `GROUP_PARTICIPATION_MODE`.
+
+Conversation controls save mode and member changes with that session, without
+changing global defaults. See [Group participation](personas.md#group-participation-experimental).

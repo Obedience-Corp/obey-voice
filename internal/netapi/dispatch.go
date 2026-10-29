@@ -55,6 +55,7 @@ type personaResult struct {
 }
 
 type dispatchOp struct {
+	control           bool
 	transcribed       func(string, error)
 	kind              opKind
 	text              string
@@ -319,10 +320,14 @@ func (d *Dispatcher) apply(ctx context.Context, op dispatchOp) {
 			stop()
 		}
 		cancel()
-		op.personaDone <- personaResult{ack: ack, err: err}
 		if err == nil {
 			d.bumpStateRevision()
+			if op.control {
+				d.publishCurrentSnapshot(ctx)
+			}
 		}
+
+		op.personaDone <- personaResult{ack: ack, err: err}
 
 	case opSnapshot:
 		if op.waitCtx != nil {
@@ -593,4 +598,19 @@ type backgroundRunner interface {
 
 type backgroundPendingRunner interface {
 	BackgroundPending() bool
+}
+
+// Control applies a conversation control on the same serialized/cancellable boundary as selection.
+func (d *Dispatcher) Control(ctx context.Context, apply func(context.Context) error) error {
+	done := make(chan personaResult, 1)
+	op := dispatchOp{kind: opPersona, control: true, personaDone: done, waitCtx: ctx, setPersonaContext: func(ctx context.Context, _ string) (PersonaAck, error) { return PersonaAck{}, apply(ctx) }}
+	if err := d.enqueue(op); err != nil {
+		return err
+	}
+	select {
+	case result := <-done:
+		return result.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

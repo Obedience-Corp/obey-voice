@@ -111,6 +111,9 @@ func (p *Pipeline) ClearConversation() error {
 	if p == nil {
 		return fmt.Errorf("pipeline: nil pipeline")
 	}
+	if p.EndDiscussion != nil {
+		p.EndDiscussion("superseded")
+	}
 	p.closeCompletionCapture()
 	var err error
 	if p.Agency != nil && p.WorkSnapshot().Scope.Valid() {

@@ -14,6 +14,7 @@ import (
 	meetinglog "github.com/Obedience-Corp/obey-voice/internal/meeting/log"
 	"github.com/Obedience-Corp/obey-voice/internal/meeting/remote"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -42,7 +43,8 @@ type Options struct {
 	// SUBSEQUENT turns/sessions, never the one in flight. A session binds its
 	// identity for its whole life, so an ack claiming the current turn changed
 	// would be a lie the client acts on.
-	SetPersona func(id string) (PersonaAck, error)
+	SetPersona       func(id string) (PersonaAck, error)
+	SetParticipation func(context.Context, discussion.Settings) error
 	// SetPersonaContext is preferred by hosts with cancellable selection.
 	// It changes the responder within the existing conversation.
 	SetPersonaContext func(context.Context, string) (PersonaAck, error)
@@ -189,7 +191,7 @@ type Server struct {
 }
 
 func (s *Server) capabilities() map[string]bool {
-	return CapabilitiesForSnapshot(s.opts.CurrentSessionSnapshot != nil && s.dispatcher != nil)
+	return CapabilitiesForParticipation(s.opts.CurrentSessionSnapshot != nil && s.dispatcher != nil, s.opts.SetParticipation != nil)
 }
 
 func New(opts Options) *Server {

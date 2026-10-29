@@ -201,6 +201,9 @@ func printPersonaShow(cmd *cobra.Command, r *personaResultJSON) {
 	fmt.Fprintf(out, "\n  %s\n", titleStyle.Render("Persona: "+p.ID))
 	fmt.Fprintf(out, "  display_name    %s\n", p.DisplayName)
 	fmt.Fprintf(out, "  starting_directory %s\n", p.StartingDirectory)
+	if p.ParticipationDescription != "" {
+		fmt.Fprintf(out, "  participation_description %s\n", p.ParticipationDescription)
+	}
 	fmt.Fprintf(out, "  builtin         %v\n", p.Builtin)
 	fmt.Fprintf(out, "  inactive        %v\n", p.Inactive)
 	fmt.Fprintf(out, "  active          %v\n", r.Active)

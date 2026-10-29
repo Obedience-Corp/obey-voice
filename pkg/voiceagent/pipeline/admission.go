@@ -7,6 +7,7 @@ import (
 
 	admissionpolicy "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
@@ -14,6 +15,8 @@ import (
 // ResponseAdmission separates the finalized input from its routed request.
 // LocalReply uses normal speech stages without invoking a model.
 type ResponseAdmission struct {
+	Discussion *discussion.Directive
+	Skip       bool
 	Request    string
 	LocalReply string
 	Envelope   events.ResponseEnvelope
@@ -53,6 +56,9 @@ func (p *Pipeline) admitInput(ctx context.Context, input string, background bool
 }
 
 func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted ResponseAdmission, metrics *turnMetrics) context.Context {
+	if completion := completionFromContext(ctx); completion != nil {
+		completion.discussion = admitted.Discussion
+	}
 	metrics.response = admitted.Envelope
 	metrics.originalInput = input
 	metrics.trace = responseTrace(metrics.trace, admitted.Envelope)

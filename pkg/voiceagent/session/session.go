@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -55,6 +56,7 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
+	Participation *discussion.Settings            `json:"participation,omitempty"`
 	Directories   *config.ConversationDirectories `json:"directories,omitempty"`
 	WorkDir       string                          `json:"work_dir,omitempty"`
 	WorkDirSource string                          `json:"work_dir_source,omitempty"`
@@ -152,6 +154,13 @@ func saveSession(dir string, s *Session, turns []brain.Turn, snapshot *work.Snap
 
 func saveSessionWithFailures(dir string, s *Session, turns []brain.Turn, snapshot *work.Snapshot, beforeRename, afterRename error) error {
 	next := *s
+	if next.Participation != nil {
+		if err := next.Participation.Validate(); err != nil {
+			return err
+		}
+		copySettings := next.Participation.Clone()
+		next.Participation = &copySettings
+	}
 	if next.FormatVersion > CurrentFormatVersion {
 		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, next.FormatVersion)
 	}
@@ -659,5 +668,32 @@ func validateSessionID(id string) error {
 	if strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
 		return fmt.Errorf("session: invalid id %q", id)
 	}
+	return nil
+}
+
+// SaveParticipation updates only conversation settings, preserving current identity and work.
+func (st *Store) SaveParticipation(s *Session, settings discussion.Settings) error {
+	if err := settings.Validate(); err != nil {
+		return err
+	}
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
+	current, err := loadFrom(st.dir, s.ID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	candidate := *s
+	if err == nil {
+		candidate = *current
+	}
+	copied := settings.Clone()
+	candidate.Participation = &copied
+	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
+		if WriteCommitted(err) {
+			*s = candidate
+		}
+		return err
+	}
+	*s = candidate
 	return nil
 }

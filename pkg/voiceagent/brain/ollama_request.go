@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 )
@@ -89,6 +90,9 @@ func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.Cha
 	parseRetried := false
 	parseRetryPending := false
 	for {
+		if err := discussion.ReserveRequest(ctx); err != nil {
+			return err
+		}
 		if err := budget.AcquireRequest(ctx); err != nil {
 			return err
 		}
