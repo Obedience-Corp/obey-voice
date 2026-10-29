@@ -37,6 +37,8 @@ func TestToolOutcomeProductionTerminalProof(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/tags":
 			_, _ = io.WriteString(w, `{"models":[{"name":"proof"}]}`)
+		case "/api/show":
+			_, _ = io.WriteString(w, `{"capabilities":["completion","tools"],"details":{"family":"fixture"}}`)
 		case "/api/chat":
 			n := chats.Add(1)
 			var body struct {

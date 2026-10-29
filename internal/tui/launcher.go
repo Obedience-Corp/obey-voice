@@ -41,7 +41,7 @@ const (
 	actionMeetingSettings // Settings opened on the Meeting section
 )
 
-const defaultsPickerLabel = "Use defaults"
+const defaultsPickerLabel = "Obey (default)"
 
 type launcherItem struct {
 	label      string
@@ -327,9 +327,7 @@ func (m *launcherModel) closeSubmenu() {
 	m.submenuCursor = 0
 }
 
-// openPersonaPicker builds the New-conversation submenu. Use defaults is
-// always first — Settings models, providers, and voice — so starting a
-// session does not require hunting through personas. Named personas follow
+// openPersonaPicker starts with the complete saved Obey persona. Other personas follow
 // (the active one marked), then a create shortcut. A listing failure still
 // starts with those defaults rather than blocking the user.
 func (m launcherModel) openPersonaPicker() (launcherModel, tea.Cmd) {
@@ -347,14 +345,32 @@ func (m launcherModel) openPersonaPicker() (launcherModel, tea.Cmd) {
 	}
 	m.submenuTitle = "New conversation"
 	m.submenuCursor = 0
+	var defaultProfile *persona.Profile
+	for _, p := range profiles {
+		if p != nil && p.ID == persona.DefaultID {
+			defaultProfile = p
+			break
+		}
+	}
+	if defaultProfile == nil {
+		for _, p := range persona.Builtins(m.cfg) {
+			if p.ID == persona.DefaultID {
+				defaultProfile = p
+				break
+			}
+		}
+	}
 	m.submenu = []launcherItem{{
 		label:  defaultsPickerLabel,
-		hint:   m.defaultsHint(),
+		hint:   m.defaultsHint(defaultProfile),
 		glyph:  "★",
 		action: actionStartDefaults,
 	}}
+	if defaultProfile != nil && strings.TrimSpace(defaultProfile.DisplayName) != "" {
+		m.submenu[0].label = defaultProfile.DisplayName + " (default)"
+	}
 	for _, p := range profiles {
-		if p == nil || p.Inactive {
+		if p == nil || p.Inactive || p.ID == persona.DefaultID {
 			continue
 		}
 		label := p.DisplayName
@@ -383,14 +399,19 @@ func (m launcherModel) openPersonaPicker() (launcherModel, tea.Cmd) {
 	return m, nil
 }
 
-// defaultsHint names the Settings stack the first picker row will start with.
-func (m launcherModel) defaultsHint() string {
+// defaultsHint names the actual persona stack, including inherited Settings.
+func (m launcherModel) defaultsHint(profile *persona.Profile) string {
 	if m.cfg == nil {
-		return "Models, providers, and voice from Settings"
+		m.cfg = &config.Config{}
+	} else {
+		m.cfg = m.cfg.Clone()
+	}
+	if profile != nil {
+		persona.Apply(m.cfg, profile)
 	}
 	brain := strings.TrimSpace(m.cfg.BrainProvider)
 	model := m.activeModel()
-	line := "Settings"
+	line := "Saved persona"
 	if brain != "" {
 		if model != "" && model != "default" {
 			line += " · " + brain + " " + model
@@ -409,10 +430,9 @@ func (m launcherModel) defaultsHint() string {
 	return line
 }
 
-// startDefaultsMsg starts a conversation from Settings (models, providers,
-// voice) rather than a named persona overlay.
+// startDefaultsMsg starts the saved Obey persona, including its model and voice.
 func startDefaultsMsg() startPipelineMsg {
-	return startPipelineMsg{personaID: StartDefaultsID, personaName: "with defaults"}
+	return startPipelineMsg{personaID: StartDefaultsID, personaName: persona.DefaultDisplayName}
 }
 
 // openMeetingMenu splits Meeting into start vs settings (design §2.6).

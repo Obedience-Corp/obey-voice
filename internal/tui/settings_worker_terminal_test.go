@@ -70,7 +70,7 @@ func testWorkerSettingsTerminal(t *testing.T, provider string) {
 		t.Fatal(err)
 	}
 	cfg.VoiceWorkers = committed
-	m := newSettings(cfg, []discovery.ProviderInfo{{Name: provider, Available: true, Models: []string{oldModel, newModel}}})
+	m := newSettings(cfg, []discovery.ProviderInfo{{Name: provider, Available: true, Models: []string{oldModel, newModel}, WorkerModels: []string{oldModel, newModel}}})
 	m.section, m.width, m.height = sectionWorker, 120, 45
 	h := &workerTerminalHarness{model: m, states: make(chan workerTerminalState, 1), saved: make(chan *config.VoiceWorkers, 1)}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

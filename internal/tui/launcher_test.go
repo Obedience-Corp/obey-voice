@@ -235,8 +235,7 @@ func TestLauncherMeetingSplitsStartAndSettings(t *testing.T) {
 }
 
 func TestLauncherNewConversationOpensPersonaPicker(t *testing.T) {
-	// New conversation opens a picker: Use defaults is always first (Settings
-	// stack, no persona hunt), then named personas (active marked, not
+	// New conversation opens on the complete Obey persona, then other personas (active marked, not
 	// pre-selected), then create.
 	cfg := &config.Config{
 		ActivePersona: "bob",
@@ -270,20 +269,20 @@ func TestLauncherNewConversationOpensPersonaPicker(t *testing.T) {
 		if m.submenu[0].action != actionStartDefaults || m.submenu[0].label != defaultsPickerLabel {
 			t.Fatalf("first row = %+v, want Use defaults", m.submenu[0])
 		}
-		if !strings.Contains(m.submenu[0].hint, "Settings") || !strings.Contains(m.submenu[0].hint, "ollama") {
-			t.Fatalf("defaults hint = %q, want Settings stack", m.submenu[0].hint)
+		if !strings.Contains(m.submenu[0].hint, "Saved persona") || !strings.Contains(m.submenu[0].hint, "ollama") {
+			t.Fatalf("defaults hint = %q, want saved Obey stack with inherited brain", m.submenu[0].hint)
 		}
 		if m.submenu[2].glyph != "✓" || m.submenu[2].personaID != "bob" {
 			t.Fatalf("active persona row = %+v, want bob marked", m.submenu[2])
 		}
 
-		// Enter starts with Settings defaults (no named persona overlay).
+		// Enter starts the complete default Obey persona.
 		m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		start, ok := cmd().(startPipelineMsg)
 		if !ok || start.personaID != StartDefaultsID {
 			t.Fatalf("defaults start message = %#v", cmd())
 		}
-		if start.personaName != "with defaults" {
+		if start.personaName != persona.DefaultDisplayName {
 			t.Fatalf("defaults start name = %q", start.personaName)
 		}
 

@@ -21,6 +21,19 @@ type ProviderInfo struct {
 	Name      string
 	Available bool
 	Models    []string
+	// WorkerModels contains verified completion+tools models from the worker's
+	// Ollama endpoint. Nil means unavailable; an empty slice means none qualify.
+	WorkerModels []string
+}
+
+// ForWorkers preserves other providers' catalogs and restricts Ollama choices
+// to verified tool-capable models, including when its worker uses another host.
+func (p ProviderInfo) ForWorkers() ProviderInfo {
+	if strings.EqualFold(p.Name, "ollama") {
+		p.Available = p.WorkerModels != nil
+		p.Models = p.WorkerModels
+	}
+	return p
 }
 
 // probeTimeout caps each network/subprocess probe so a wedged provider cannot
@@ -127,26 +140,36 @@ func discoverGrok(parent context.Context) ProviderInfo {
 
 func discoverOllama(parent context.Context, cfg *config.Config) ProviderInfo {
 	info := ProviderInfo{Name: "ollama"}
-
-	base, err := url.Parse(cfg.OllamaHost)
-	if err != nil {
-		return info
-	}
-
-	client := api.NewClient(base, http.DefaultClient)
-
 	ctx, cancel := context.WithTimeout(parent, probeTimeout)
 	defer cancel()
-
-	resp, err := client.List(ctx)
-	if err != nil {
-		return info
+	workerHost := strings.TrimSpace(cfg.VoiceWorkerOllamaHost)
+	base, err := url.Parse(cfg.OllamaHost)
+	var names []string
+	if err == nil {
+		client := api.NewClient(base, http.DefaultClient)
+		if resp, listErr := client.List(ctx); listErr == nil {
+			info.Available = true
+			for _, m := range resp.Models {
+				names = append(names, m.Name)
+				info.Models = append(info.Models, strings.TrimSuffix(m.Name, ":latest"))
+			}
+			if workerHost == "" || workerHost == cfg.OllamaHost {
+				info.WorkerModels = ollamaWorkerModels(ctx, client, names)
+				return info
+			}
+		}
 	}
-
-	info.Available = true
-	for _, m := range resp.Models {
-		info.Models = append(info.Models, strings.TrimSuffix(m.Name, ":latest"))
+	if workerHost != "" && workerHost != cfg.OllamaHost {
+		if workerBase, parseErr := url.Parse(workerHost); parseErr == nil {
+			client := api.NewClient(workerBase, http.DefaultClient)
+			if resp, listErr := client.List(ctx); listErr == nil {
+				names = nil
+				for _, m := range resp.Models {
+					names = append(names, m.Name)
+				}
+				info.WorkerModels = ollamaWorkerModels(ctx, client, names)
+			}
+		}
 	}
-
 	return info
 }

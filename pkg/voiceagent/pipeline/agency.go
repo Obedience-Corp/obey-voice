@@ -304,6 +304,12 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 					return "", fmt.Errorf("validate local worker: %w", err)
 				}
 			}
+		} else if !tieredWorkers(cfg) {
+			if validator, ok := worker.(brain.WorkerToolValidator); ok {
+				if err := validator.ValidateWorkerTools(ctx); err != nil {
+					return "", fmt.Errorf("validate worker tools: %w", err)
+				}
+			}
 		}
 		a.bindWorkerAdmission(worker)
 		// Tiered admissions always run the full worker tool surface. The

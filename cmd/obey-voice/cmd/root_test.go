@@ -101,7 +101,7 @@ func TestLoadConfigForSessionDefaultsSkipsPersonaOverlay(t *testing.T) {
 	}
 }
 
-func TestBindSessionDefaultsIgnoresCustomDefaultPersonaTTS(t *testing.T) {
+func TestBindSessionDefaultsUsesSavedObeyBrainAndVoice(t *testing.T) {
 	dir := t.TempDir()
 	config.SetConfigDirForTest(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(""+
@@ -132,11 +132,11 @@ func TestBindSessionDefaultsIgnoresCustomDefaultPersonaTTS(t *testing.T) {
 		t.Fatalf("bindSession: %v", err)
 	}
 	got := binding.Config()
-	if got.BrainProvider != "grok" || got.GrokModel != "grok-build" {
-		t.Fatalf("defaults brain = %s/%s, want Settings grok", got.BrainProvider, got.GrokModel)
+	if got.BrainProvider != "ollama" || got.OllamaModel != "llama3" {
+		t.Fatalf("defaults brain = %s/%s, want saved Obey model", got.BrainProvider, got.OllamaModel)
 	}
-	if got.TTSProvider != "qwen3-tts" || got.QwenTTSVoice != "Vivian" {
-		t.Fatalf("defaults TTS = %s/%s, want Settings qwen3-tts/Vivian (not default persona af_bella)", got.TTSProvider, got.QwenTTSVoice)
+	if got.TTSProvider != "kokoro" || got.TTSVoice != "af_bella" {
+		t.Fatalf("defaults TTS = %s/%s, want saved Obey voice", got.TTSProvider, got.TTSVoice)
 	}
 	if binding.AgentName != "Obey" {
 		t.Fatalf("defaults identity = %q, want Obey", binding.AgentName)

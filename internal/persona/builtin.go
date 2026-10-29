@@ -31,8 +31,8 @@ func Owned(p *Profile) bool {
 // Builtins returns the shipped profiles, default first. The catalog is the
 // YAML under shipped/; this function does not special-case companions.
 //
-// Shipped personas inherit the app brain and pin distinct voices. "Use
-// defaults" keeps the Settings stack through ResolveDefaultsBinding instead.
+// Shipped personas inherit the app brain and pin distinct voices. Default chat
+// uses the saved Obey profile through ResolveDefaultsBinding.
 // Display names come from YAML, never from the active companion at seed time.
 func Builtins(cfg *config.Config) []*Profile {
 	_ = cfg

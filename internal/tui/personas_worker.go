@@ -7,6 +7,14 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
+func (m personasModel) workerModelCatalog() ([]string, bool) {
+	if !m.brainModels.loaded {
+		return nil, false
+	}
+	models, found := m.brainModels.workerByProvider[strings.ToLower(m.effectiveStackWorkerProvider())]
+	return models, found
+}
+
 // The Worker rows are the second half of choosing this persona's brain: the
 // model that runs the background job a spawn starts, with full tools and no
 // one watching it. They sit directly under the brain rows so the pair is read
@@ -27,13 +35,13 @@ func (m personasModel) effectiveStackWorkerProvider() string {
 }
 
 // stackWorkerModelList builds the Worker model row: (default) + the discovered
-// models for the effective worker provider, plus any current value the scan did
-// not list, so editing never drops a hand-written pin.
+// verified models for the effective worker provider. An incompatible saved
+// Ollama pin remains visible in its label, without becoming a selectable option.
 func (m personasModel) stackWorkerModelList() []string {
 	out := []string{stackDefaultLabel}
-	models, _ := m.brainModelCatalog(m.effectiveStackWorkerProvider())
+	models, known := m.workerModelCatalog()
 	out = append(out, models...)
-	if v := strings.TrimSpace(m.workerModel); v != "" {
+	if v := strings.TrimSpace(m.workerModel); v != "" && (!known || m.effectiveStackWorkerProvider() != "ollama") {
 		found := false
 		for _, item := range out[1:] {
 			if strings.EqualFold(item, v) {
@@ -80,7 +88,7 @@ func (m *personasModel) clampSelectedWorkerModel() {
 	if v == "" {
 		return
 	}
-	models, ok := m.brainModelCatalog(m.effectiveStackWorkerProvider())
+	models, ok := m.workerModelCatalog()
 	if !ok {
 		return
 	}
@@ -95,6 +103,9 @@ func (m *personasModel) clampSelectedWorkerModel() {
 // workerModelLabel is what the Worker model row shows.
 func (m personasModel) workerModelLabel() string {
 	if v := strings.TrimSpace(m.workerModel); v != "" {
+		if models, known := m.workerModelCatalog(); known && m.effectiveStackWorkerProvider() == "ollama" && indexOf(models, v) < 0 {
+			return v + " (tool support unavailable)"
+		}
 		return v
 	}
 	return stackDefaultLabel

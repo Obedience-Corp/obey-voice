@@ -42,8 +42,9 @@ type personaModelPicker struct {
 	// form closes, never mid-form.
 	customText string
 	// byProvider is lower-cased provider name → selectable models.
-	byProvider map[string][]string
-	cancel     context.CancelFunc
+	byProvider       map[string][]string
+	workerByProvider map[string][]string
+	cancel           context.CancelFunc
 }
 
 // personaModelsMsg carries an async provider scan back to the form.
@@ -67,9 +68,13 @@ func (m *personasModel) loadBrainModels() tea.Cmd {
 	m.brainModels.loaded = false
 	m.brainModels.err = ""
 	m.brainModels.byProvider = nil
+	m.brainModels.workerByProvider = nil
 
 	seq := m.brainModels.seq
-	cfg := m.cfg
+	cfg := m.cfg.Clone()
+	if m.workerOllamaHost != "" {
+		cfg.VoiceWorkerOllamaHost = m.workerOllamaHost
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.brainModels.cancel = cancel
 
@@ -101,6 +106,7 @@ func (m *personasModel) resetBrainModels() {
 	m.brainModels.loaded = false
 	m.brainModels.err = ""
 	m.brainModels.byProvider = nil
+	m.brainModels.workerByProvider = nil
 	m.brainModels.clearCustom()
 }
 
@@ -125,10 +131,13 @@ func (m *personasModel) applyBrainModels(msg personaModelsMsg) {
 		return
 	}
 	byProvider := make(map[string][]string, len(msg.providers))
+	workerByProvider := make(map[string][]string, len(msg.providers))
 	for _, p := range msg.providers {
 		byProvider[strings.ToLower(strings.TrimSpace(p.Name))] = selectableModels(p.Models)
+		workerByProvider[strings.ToLower(strings.TrimSpace(p.Name))] = selectableModels(p.ForWorkers().Models)
 	}
 	m.brainModels.byProvider = byProvider
+	m.brainModels.workerByProvider = workerByProvider
 	m.brainModels.loaded = true
 	m.brainModels.err = ""
 	// Canonicalize the prefilled model against the freshly discovered catalog

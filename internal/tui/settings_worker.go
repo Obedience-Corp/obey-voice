@@ -387,7 +387,7 @@ func (m settingsModel) workerProviderInfos() []discovery.ProviderInfo {
 	var out []discovery.ProviderInfo
 	for _, p := range m.providers {
 		if config.WorkerProviderAllowed(p.Name) {
-			out = append(out, p)
+			out = append(out, p.ForWorkers())
 		}
 	}
 	return out
@@ -482,6 +482,10 @@ func (m *settingsModel) setWorkerProvider(name string) {
 
 // setWorkerModel pins a model for the chosen worker; "default" clears the pin.
 func (m *settingsModel) setWorkerModel(model string) {
+	if model != "default" && indexOf(m.workerModelChoices(), model) < 0 {
+		m.message = "Worker model is unavailable or lacks verified tool support: " + model
+		return
+	}
 	save := m.saveConfig
 	if save == nil {
 		save = config.SetAndSave

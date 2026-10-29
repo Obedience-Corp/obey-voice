@@ -9,8 +9,9 @@ TTS provider/voice all belong to the persona rather than to global config. TUI
 empty inherits the app default — an empty `brain:` uses the app-level
 `brain_provider`/model, and an empty `tts:` uses the app-level TTS keys.
 
-Starting a new conversation opens a persona picker: **Use defaults** is always
-the first option (the models, providers, and voice from Settings). Named
+Starting a new conversation opens a persona picker: **Obey (default)** is always
+the first option and loads Obey's saved prompt, brain, worker and voice. Unset
+profile fields inherit Settings. Other named
 personas follow, with the active one marked, and `+ Create persona…` clones the
 current global stack into a new profile. Each admitted response snapshots its
 persona, prompt and voice. Switching changes subsequent responses without
@@ -93,8 +94,8 @@ remain available.
 | Santa | Warm storyteller with a practical workshop streak | `kokoro` | `am_santa` |
 
 All five inherit the application brain unless you set one on the profile.
-The named Obey profile pins Harper; **Use defaults** still takes its brain and
-speech settings from Settings, including a different engine or voice you chose.
+The shipped Obey profile pins Harper; **Obey (default)** uses the saved Obey
+profile, including any voice or model you have chosen for it.
 Santa is a selectable companion, not the startup persona.
 
 Phonon profiles use the configured `openai_speech_url` and
@@ -311,7 +312,7 @@ discovery failures return a notice without disabling custom paths.
 
 For a new conversation, explicit `--work-dir` / desktop API override wins,
 then `OBEY_VOICE_WORK_DIR` (legacy `WORK_DIR`), then the persona, then the app
-working-directory resolver. “Use defaults” skips the persona override. The
+working-directory resolver. **Obey (default)** honors Obey's directory too. The
 app default is retained separately from each persona’s resolved directory.
 Switching or addressing another responder uses that persona’s own directory
 for tools, project context, skills and background work. A persona set to

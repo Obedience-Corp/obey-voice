@@ -136,8 +136,8 @@ func TestFreshInstallResolvesObey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.Config().TTSProvider != before.TTSProvider || defaults.Config().TTSVoice != before.TTSVoice {
-		t.Fatal("Use defaults must keep Settings speech, even when Obey pins Phonon")
+	if defaults.Config().TTSProvider != "openai-speech" || defaults.Config().OpenAISpeechVoice != "Harper" {
+		t.Fatal("default chat must use the saved Obey speech stack")
 	}
 
 	text, err := LoadSystemPrompt(cfg.Persona)
