@@ -21,6 +21,15 @@ deps:
 watch:
     find . -name '*.go' | entr -r go run ./cmd/obey-voice
 
+# Live context growth and compaction in the real TUI, using a loopback fixture.
+demo-context-meter: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor vhs demos/context-meter.tape
+    just _optimize-demo-gif demos/context-meter.gif
+
 # Color recording of the real persona model list, using disposable Settings.
 demo-persona-model-view: build
     #!/usr/bin/env bash
