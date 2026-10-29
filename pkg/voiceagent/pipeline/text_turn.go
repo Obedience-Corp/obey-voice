@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -27,6 +28,9 @@ func (p *Pipeline) completeTextTurn(turn *turnConductor, metrics *turnMetrics, r
 
 // RunTurnTextMode runs a turn with text input instead of mic.
 func (p *Pipeline) RunTurnTextMode(ctx context.Context, input string) error {
+	if err := p.ValidateImages(ctx, chatmedia.Input(ctx)); err != nil {
+		return err
+	}
 	p.incActiveTurn()
 	defer p.decActiveTurn()
 	return p.runTextWithContinuations(ctx, input)
@@ -59,7 +63,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	}
 	original := input
 	var pendingDecision *decisionTurn
-	if !p.GroupParticipationEnabled {
+	if !p.GroupParticipationEnabled && len(chatmedia.Input(ctx)) == 0 {
 		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
 	}
 	defer func() { pendingDecision.close() }()
@@ -102,7 +106,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	p.emitResponse(metrics, events.ThinkingStarted{})
 	thinkingStarted := metrics.tEOU()
 
-	if !background && !isContinuation && admission.Discussion == nil {
+	if !background && !isContinuation && admission.Discussion == nil && len(chatmedia.Input(ctx)) == 0 {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
 			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
@@ -132,8 +136,9 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 
 	// Peer replies and group discussions have tools disabled; their prose
 	// cannot become a fresh user work request through promise repair.
-	repair := &promiseRepairState{enabled: !isContinuation && admission.Discussion == nil && p.failedRouteRepairEnabled()}
+	repair := &promiseRepairState{enabled: len(chatmedia.Input(ctx)) == 0 && !isContinuation && admission.Discussion == nil && p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
+		Attachments:       chatmedia.Input(ctx),
 		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),
@@ -149,6 +154,13 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
+	}
+	if len(streamOpts.Attachments) > 0 {
+		streamOpts.ToolsEnabled = false
+		streamOpts.WorkerTiers = nil
+	}
+	if isContinuation || background {
+		streamOpts.Attachments = nil
 	}
 	if admission.Discussion != nil {
 		streamOpts.WorkerTiers = nil

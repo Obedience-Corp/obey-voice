@@ -38,6 +38,8 @@ const (
 	commandVim
 	commandMenu
 	commandQuit
+	commandAttach
+	commandImage
 )
 
 type slashCommand struct {
@@ -73,6 +75,8 @@ var slashCommands = []slashCommand{
 	{id: commandVim, name: "/vim", usage: "/vim [on|off|insert]", description: "Toggle modal Vim editing"},
 	{id: commandMenu, name: "/menu", usage: "/menu", description: "Save this chat and return to the main menu", aliases: []string{"/back"}},
 	{id: commandQuit, name: "/quit", usage: "/quit", description: "Exit Obey Voice", aliases: []string{"/q", "/exit"}},
+	{id: commandAttach, name: "/attach", usage: "/attach /path/to/image", description: "Add a PNG, JPEG or GIF; F2 pauses, F3 opens, F4 removes"},
+	{id: commandImage, name: "/image", usage: "/image N", description: "Open thread image N (counting from one) in its full-size viewer"},
 }
 
 func commandToken(value string) string {

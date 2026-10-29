@@ -3,9 +3,9 @@ package tui
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func voiceTickCmd() tea.Cmd {
@@ -13,6 +13,10 @@ func voiceTickCmd() tea.Cmd {
 }
 
 func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.Cmd) {
+	if cmd, handled := m.updateMedia(msg); handled {
+		return m, cmd
+	}
+
 	// Schedule only after the returned state has captured its current scope and
 	// deadline, including snapshots recovered while voice animation is idle.
 	defer func() {
@@ -132,10 +136,21 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		m.liveSpeakerStatsKnown = true
 		return m, liveSpeakerStatsCmd(m.liveSpeaker)
 
+	case mediaOpenError:
+		if msg.err != nil {
+			m.commandError(msg.err.Error())
+		}
+		return m, nil
 	case clipboardPasteMsg:
 		if msg.err != nil {
 			m.commandError("paste failed: " + msg.err.Error())
 			return m, nil
+		}
+		if len(msg.image) > 0 {
+			return m, m.importMedia(nil, msg.image)
+		}
+		if paths, ok := chatmedia.Paths(msg.text); ok {
+			return m, m.importMedia(paths, nil)
 		}
 		m.insertClipboardText(msg.text)
 		return m, nil
@@ -164,10 +179,24 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			// nil runner. ctrl+c still quits (the app handles it above).
 			return m, nil
 		}
+		if msg.Paste {
+			if paths, ok := chatmedia.Paths(string(msg.Runes)); ok {
+				return m, m.importMedia(paths, nil)
+			}
+		}
 		m.syncEditorFromTextarea()
 		// Page keys scroll history. Editing keys stay with the always-focused
 		// composer so multiline drafting never needs a mode switch.
 		switch msg.String() {
+		case "f2":
+			m.media.paused = !m.media.paused
+			m.refreshContent()
+			return m, m.mediaCommand()
+		case "f3":
+			return m, m.openMedia()
+		case "f4":
+			m.removeMedia("")
+			return m, nil
 		case "ctrl+v", "ctrl+shift+v", "shift+insert":
 			return m, readClipboard(m.clipboard())
 		case "ctrl+y":

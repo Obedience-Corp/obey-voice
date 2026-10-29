@@ -5,17 +5,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/capture"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
 )
 
 const conversationInputHeight = 3
@@ -31,6 +31,7 @@ type voiceTickMsg time.Time
 // input line. It renders purely from injected state — turn dispatch and event
 // bus wiring are layered on by later slices.
 type conversationModel struct {
+	media             mediaState
 	agentName         string
 	cfg               *config.Config
 	selection         events.PersonaSelection
@@ -243,7 +244,8 @@ type activityEntry struct {
 
 // plainChatTurn is a clipboard-friendly transcript line without bubble styling.
 type plainChatTurn struct {
-	role    string // "user" or "assistant"
-	text    string
-	speaker string // optional display label for multi-speaker user turns
+	attachments []chatmedia.Ref
+	role        string // "user" or "assistant"
+	text        string
+	speaker     string // optional display label for multi-speaker user turns
 }

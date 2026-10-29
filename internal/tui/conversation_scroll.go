@@ -33,7 +33,7 @@ func (m *conversationModel) reflowAt(now time.Time) {
 	// the composer.
 	m.workStripReservedRows = m.workStripRows(now)
 	m.workStripRenderAt = now
-	chrome := 6 + m.workStripReservedRows
+	chrome := 6 + m.workStripReservedRows + m.draftMediaHeight()
 	chrome += m.voicePanelHeight() + m.contextMeterHeight()
 	vpHeight := max(m.height-inputHeight-chrome-m.commandPaletteRows(), 1)
 	if !m.ready {

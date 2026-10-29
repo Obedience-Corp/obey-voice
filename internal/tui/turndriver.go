@@ -6,16 +6,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/Obedience-Corp/obey-voice/internal/app"
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // brainSessionReporter adapts an optional brain.SessionReporter into the
@@ -148,7 +148,7 @@ func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
 		m.appendActivity("output", deviceLabel(deps.outputDevice), 0)
 	}
 	m.recoverWork(time.Now(), true)
-	cmds = append(cmds, m.workProjectionPollCmd(), m.ensureVoiceTick())
+	cmds = append(cmds, m.workProjectionPollCmd(), m.ensureVoiceTick(), m.mediaCommand())
 	if deps.liveSpeaker != nil {
 		if speaker.FromAppConfig(m.cfg).LiveActive() {
 			deps.liveSpeaker.SetEnabled(true)
@@ -284,6 +284,8 @@ func (m *conversationModel) dispatchVoiceTurn() tea.Cmd {
 }
 
 func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
+	refs := append([]chatmedia.Ref(nil), m.media.pending...)
+	m.media.pending = nil
 	ctx, cancel := context.WithCancel(m.deps.ctx)
 	m.turnCancel = cancel
 	m.turnState = turnTextRunning
@@ -296,7 +298,7 @@ func (m *conversationModel) dispatchTextTurn(text string) tea.Cmd {
 		if ctx.Err() != nil {
 			return textTurnDoneMsg{lifetime: lifetime, input: text, err: ctx.Err(), noticeEpoch: noticeEpoch}
 		}
-		return textTurnDoneMsg{lifetime: lifetime, input: text, err: runner.RunTurnTextMode(ctx, text), noticeEpoch: noticeEpoch}
+		return textTurnDoneMsg{lifetime: lifetime, input: text, err: runner.RunTurnTextMode(chatmedia.WithInput(ctx, refs), text), noticeEpoch: noticeEpoch}
 	})
 }
 

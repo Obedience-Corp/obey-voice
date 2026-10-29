@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
@@ -21,14 +22,17 @@ import (
 )
 
 type DesktopAction struct {
+	Paths      []string
+	Image      []byte
 	Kind, Text string
 	Enabled    bool
 }
 type DesktopTurn struct {
-	Role     string `json:"role"`
-	Content  string `json:"content"`
-	Name     string `json:"name"`
-	Thinking string `json:"thinking,omitempty"`
+	Attachments []desktopMedia `json:"attachments,omitempty"`
+	Role        string         `json:"role"`
+	Content     string         `json:"content"`
+	Name        string         `json:"name"`
+	Thinking    string         `json:"thinking,omitempty"`
 }
 type DesktopActivity struct {
 	Stage        string `json:"stage"`
@@ -43,6 +47,9 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
+	AttachmentError string                `json:"attachment_error"`
+	Attachments     []desktopMedia        `json:"attachments,omitempty"`
+	AttachmentBusy  bool                  `json:"attachment_busy"`
 	Participation   *discussion.Settings  `json:"participation,omitempty"`
 	WorkDir         string                `json:"work_dir"`
 	WorkDirSource   string                `json:"work_dir_source"`
@@ -135,6 +142,16 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if action, ok := msg.(DesktopAction); ok {
 		c := &m.app.conversation
 		switch action.Kind {
+		case "attachment_add":
+			cmd = c.importMedia(action.Paths, action.Image)
+		case "attachment_paste":
+			if paths, ok := chatmedia.Paths(action.Text); ok {
+				cmd = c.importMedia(paths, nil)
+			} else {
+				c.commandError("Paste a local PNG, JPEG or GIF file path")
+			}
+		case "attachment_remove":
+			c.removeMedia(action.Text)
 		case "text":
 			c.input.SetValue(action.Text)
 			cmd = c.handleSubmit()
@@ -289,8 +306,11 @@ func (m desktopModel) state() DesktopState {
 		state.WorkDir, state.WorkDirSource = m.rt.SessionCfg.WorkDir, m.rt.SessionCfg.WorkDirSource
 	}
 	agentIndex := 0
+	state.Attachments = desktopMediaRefs(c.media.draft)
+	state.AttachmentBusy = c.media.importing || c.media.validating
+	state.AttachmentError = c.media.err
 	for _, turn := range c.plainTurns {
-		out := DesktopTurn{Role: turn.role, Content: turn.text, Name: turn.speaker}
+		out := DesktopTurn{Role: turn.role, Content: turn.text, Name: turn.speaker, Attachments: desktopMediaRefs(turn.attachments)}
 		if turn.role == "assistant" {
 			for agentIndex < len(c.items) {
 				item := c.items[agentIndex]

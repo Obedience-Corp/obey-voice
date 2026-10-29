@@ -6,6 +6,7 @@ A test-only companion redirects the install root and fails closed without an
 explicit fixture path. The user's Obey config is never copied. Keep the process running while exercising the UI.
 """
 import argparse
+import os
 import json
 import math
 import pathlib
@@ -22,6 +23,7 @@ parser.add_argument('--fresh', action='store_true', help='Start without config.y
 parser.add_argument('--voice-preview', action='store_true', help='Serve test tones for persona previews; voice broken fails, slow delays')
 parser.add_argument("--brain-error", action="store_true", help="Return a provider error for requests containing trigger failure")
 parser.add_argument('--group-participation', action='store_true', help='Enable isolated participation controls and deterministic private decisions')
+parser.add_argument("--images", action="store_true", help="Enable isolated image/GIF import and vision request checks")
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
 fixture_root = pathlib.Path(tempfile.mkdtemp(prefix='obey-desktop-ui-'))
@@ -42,6 +44,12 @@ class Handler(BaseHTTPRequestHandler):
         self.respond({'models': [{'name': 'desktop-test', 'model': 'desktop-test'}]})
     def do_POST(self):
         request = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+        if args.images:
+            with (fixture_root / 'image-requests.jsonl').open('a') as log:
+                log.write(json.dumps(request) + '\n')
+            if self.path == '/api/show':
+                self.respond({'capabilities': ['completion', 'vision'], 'model_info': {}})
+                return
         if args.voice_preview and self.path == '/v1/audio/speech':
             with (fixture_root / 'preview-requests.jsonl').open('a') as log:
                 log.write(json.dumps(request) + '\n')
@@ -68,6 +76,8 @@ class Handler(BaseHTTPRequestHandler):
             self.respond({'error': 'Fixture provider unavailable (503)'}, status=503)
             return
         content = 'The native desktop conversation is working.'
+        if args.images and any(m.get('images') for m in request.get('messages', [])):
+            content = 'I received the attached image. The screenshot has colored blocks; GIF input uses its first frame.'
         if request.get('format'):
             if args.group_participation:
                 schema = request['format'].get('properties', {})
@@ -99,7 +109,10 @@ if args.voice_preview:
     fixture_config += f'tts_provider: openai-speech\nopenai_speech_url: http://127.0.0.1:{server.server_port}/v1\nopenai_speech_voice: fixture-tone\n'
 if not args.fresh:
     (config_dir / 'config.yaml').write_text(fixture_config)
-fixture_app = root / 'dist/Obey Voice Test.app'
+fixture_app = root / ('dist/Obey Voice Images Test.app' if args.images else 'dist/Obey Voice Test.app')
+if args.images:
+    env = dict(os.environ, OBEY_VOICE_MEDIA_FIXTURE_DIR=str(fixture_root))
+    subprocess.run(['go', 'test', './internal/testmedia', '-run', '^TestWriteFixtures$', '-count=1'], cwd=root.parent.parent, env=env, check=True)
 shutil.copytree(root / 'dist/Obey Voice Agent.app', fixture_app, dirs_exist_ok=True)
 subprocess.run(['go', 'build', '-tags', 'desktopfixture', '-o', str(fixture_app / 'Contents/MacOS/obey-voice-engine'), '.'], cwd=root / 'bridge', check=True)
 fixture_engine = fixture_app / 'Contents/MacOS/obey-voice-engine'
@@ -113,7 +126,9 @@ plist_path = fixture_app / 'Contents/Info.plist'
 with plist_path.open('rb') as f:
     info = plistlib.load(f)
 info.update(CFBundleIdentifier='com.obedience.voice-agent.test', CFBundleName='Obey Voice Test', CFBundleDisplayName='Obey Voice Test')
-if args.group_participation:
+if args.images:
+    info.update(CFBundleIdentifier='com.obedience.voice-agent.images-test', CFBundleName='Obey Voice Images Test', CFBundleDisplayName='Obey Voice Images Test')
+if args.group_participation or args.images:
     launcher = fixture_app / 'Contents/MacOS/fixture-launcher'
     # A Mach-O launcher also keeps resume text-only; LaunchServices does not
     # reliably launch a shell script as CFBundleExecutable.

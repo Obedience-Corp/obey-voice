@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
 	"github.com/ollama/ollama/api"
 )
@@ -351,7 +352,8 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 		if strings.TrimSpace(t.Speaker) != "" {
 			content = encodeOllamaUser(t.Speaker, content)
 		}
-		return api.Message{Role: "user", Content: content}
+		images, _ := loadImageData(t.Attachments) // Validated before a model request; assets are immutable.
+		return api.Message{Role: "user", Content: content, Images: images}
 	}
 	owner, name := strings.TrimSpace(t.PersonaID), strings.TrimSpace(t.PersonaDisplayName)
 	legacy := role == "assistant" && legacyHistoricalAssistantHeader.MatchString(t.Content)
@@ -449,6 +451,7 @@ func deepCopyTurns(in []Turn) []Turn {
 	out := make([]Turn, len(in))
 	copy(out, in)
 	for i := range out {
+		out[i].Attachments = append([]chatmedia.Ref(nil), in[i].Attachments...)
 		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
 	}
 	return out
@@ -500,7 +503,11 @@ func (o *OllamaBrain) appendProjectedToolResult(tc api.ToolCall, raw string, ide
 	o.history = append(o.history, o.projectTurn(t, o.canonical, len(o.canonical)-1, false))
 }
 
-func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) {
+func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
+	images, err := loadImageData(opts.Attachments)
+	if err != nil {
+		return err
+	}
 	o.appendMessage(api.Message{Role: "user", Content: encodeOllamaUser(opts.Speaker, input)}, nil)
 	if opts.OriginalInput != "" && opts.OriginalInput != input {
 		t := &o.canonical[len(o.canonical)-1]
@@ -510,6 +517,8 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) {
 			w.Content, w.RoutedInput = opts.OriginalInput, input
 		}
 	}
+	o.attachInputImages(opts.Attachments, images)
+	return nil
 }
 
 func toolResultMessage(tc api.ToolCall, result string) api.Message {

@@ -9,6 +9,7 @@ use std::time::Duration;
 impl eframe::App for VoiceApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll();
+        self.poll_media(ctx);
         self.setup_observe();
         self.resident_logic(ctx);
     }

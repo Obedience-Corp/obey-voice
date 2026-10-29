@@ -50,6 +50,8 @@ impl Screen {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Turn {
+    #[serde(deserialize_with = "nullable_vec")]
+    pub attachments: Vec<crate::app::media::Attachment>,
     pub role: String,
     pub content: String,
     pub name: String,
@@ -74,6 +76,10 @@ pub struct Enrollment {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct State {
+    #[serde(deserialize_with = "nullable_vec")]
+    pub attachments: Vec<crate::app::media::Attachment>,
+    pub attachment_busy: bool,
+    pub attachment_error: String,
     pub participation: Option<ParticipationSettings>,
     pub work_dir: String,
     pub work_dir_source: String,

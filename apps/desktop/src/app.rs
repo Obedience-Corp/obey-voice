@@ -2,6 +2,8 @@
 mod actions;
 mod demo;
 mod events;
+pub(crate) mod media;
+mod media_view;
 mod persona_directory;
 mod persona_preview;
 mod resident;
@@ -16,6 +18,7 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
 pub struct VoiceApp {
+    pub media: media::Media,
     pub resident: crate::tray::Resident,
     pub setup: crate::setup::Setup,
     pub backend: Backend,
@@ -102,6 +105,7 @@ impl VoiceApp {
         let demo = std::env::args().any(|a| a == "--demo")
             || std::env::var_os("OBEY_VOICE_AGENT_DEMO").is_some();
         let mut app = Self {
+            media: media::Media::default(),
             resident: crate::tray::Resident::new(
                 ctx.clone(),
                 cc.storage

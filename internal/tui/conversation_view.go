@@ -398,6 +398,9 @@ func (m conversationModel) View() string {
 		Padding(0, 1).
 		Render(m.input.View())
 
+	if media := m.draftMediaView(); media != "" {
+		inputBox = media + "\n" + inputBox
+	}
 	palette := m.renderCommandPalette()
 	if palette != "" {
 		content += "\n" + palette
