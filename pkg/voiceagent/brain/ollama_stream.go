@@ -90,6 +90,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var continuation string
 		repetitionRetry := false
 		repetitionAllowed := false
+		imageResultRetry := false
 
 		for i := 0; i <= maxToolIterations; i++ {
 			finalAnswer := i == maxToolIterations
@@ -99,6 +100,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 
 			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
+			if imageResultRetry {
+				messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
+			}
 			if opts.Discussion != nil {
 				messages[0].Content += opts.Discussion.Prompt()
 				// A compacted working projection can contain only assistant summaries.
@@ -183,9 +187,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// completion so a rejected or truncated recovery cannot reach speech.
 			// Ordinary worker/tool-free responses retain incremental streaming.
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
+			checkImageResult := routing || imageResultRetry
 			var routeText []string
 			emitText := func(text string) error {
-				if routing || finalAnswer {
+				if checkImageResult || finalAnswer {
 					routeText = append(routeText, text)
 					return nil
 				}
@@ -273,7 +278,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					err = sendErr
 				}
 			}
-			if routing || finalAnswer {
+			missingImageResult := checkImageResult && err == nil && len(toolCalls) == 0 && o.unsupportedImageResult(strings.Join(routeText, ""))
+			if checkImageResult || finalAnswer {
 				if len(toolCalls) > 0 {
 					// Tool preambles belong to the thinking surface,
 					// never the speech stream or canonical reply history.
@@ -284,7 +290,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							err = sendErr
 						}
 					}
-				} else if err == nil && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
+				} else if err == nil && !missingImageResult && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
 					for _, text := range routeText {
 						if sendErr := forward(gate.feed(text)); sendErr != nil {
 							err = sendErr
@@ -307,6 +313,15 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					u.OutputTokens = &out
 				}
 				opts.OnWorkerUsage(u)
+			}
+			if missingImageResult {
+				if imageResultRetry {
+					done <- StreamResult{Err: fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call"), Recovered: true}
+					return
+				}
+				imageResultRetry = true
+				o.emitInfo(events.Info{Message: "Image reply had no attachment; retrying once before delivery"})
+				continue
 			}
 			if err == nil && gate.repeat {
 				if opts.Discussion != nil {

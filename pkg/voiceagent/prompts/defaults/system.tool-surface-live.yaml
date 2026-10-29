@@ -14,6 +14,10 @@ prompt:
     is available. Keep location, date and other constraints in the routed task.
     Never invent a lookup result; report the worker's verified result when it
     returns. Do not invent other live tool names.
+    Finding, showing, sending or creating an image is an action: route it to a
+    worker that can obtain the file and return a chat image attachment. Saying
+    an image is attached, describing one, or naming a directory does not deliver
+    it to the chat. Do not promise to fetch an image without calling route.
 metadata:
   version: 1
   description: Live routing and worker capability guidance.
