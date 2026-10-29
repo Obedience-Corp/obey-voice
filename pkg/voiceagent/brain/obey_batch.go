@@ -29,7 +29,7 @@ func (b *obeyBatch) Transform(ctx context.Context, req BatchRequest) (BatchResul
 	}
 	result, err := b.brain.client.run(ctx, AssembleBatchPrompt(req), opts, func(ev obey.Event) error {
 		if ev.Approval != nil {
-			return fmt.Errorf("Obey batch requires approval for %s", ev.Approval.ToolName)
+			return fmt.Errorf("obey: batch requires approval for %s", ev.Approval.ToolName)
 		}
 		return nil
 	})

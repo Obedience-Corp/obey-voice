@@ -147,7 +147,7 @@ func (b *ObeyBrain) ThinkFull(ctx context.Context, input string, opts StreamOpti
 
 func (b *ObeyBrain) runOptions(tools bool) (*obey.RunOptions, error) {
 	if !tools && b.cfg.ObeyToolPolicy != "daemon" {
-		return nil, fmt.Errorf("Obey cannot enforce tools off: set obey_tool_policy to daemon to use daemon-managed permissions, or select another brain provider")
+		return nil, fmt.Errorf("obey: cannot enforce tools off: set obey_tool_policy to daemon to use daemon-managed permissions, or select another brain provider")
 	}
 	mode := "discussion"
 	if tools {
@@ -208,7 +208,7 @@ func (b *ObeyBrain) think(ctx context.Context, input string, opts StreamOptions,
 			delete(calls, result.CallID)
 		}
 		if ev.Approval != nil {
-			return fmt.Errorf("Obey requires approval for %s; resolve daemon permissions before retrying", ev.Approval.ToolName)
+			return fmt.Errorf("obey: requires approval for %s; resolve daemon permissions before retrying", ev.Approval.ToolName)
 		}
 		return nil
 	})
