@@ -5,7 +5,7 @@ import "encoding/json"
 // Replay is data, not native tool traffic. Preserve provenance across provider
 // switches without sending internal response IDs or attributing old assistants
 // to the currently selected persona.
-func codexHistoryRecord(t Turn, names SpeakerNames) string {
+func historyReplayRecord(t Turn, names SpeakerNames) string {
 	record := struct {
 		Role       string         `json:"role"`
 		Content    string         `json:"content"`

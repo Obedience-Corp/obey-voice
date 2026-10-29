@@ -26,7 +26,8 @@ type MuseSparkBrain struct {
 	cfg                                          *config.Config
 	personaPrompt, systemPrompt, turnInstruction string
 	personaReloader, turnReloader                *promptReloader
-	history                                      []Turn
+	canonical, working                           []Turn
+	snapshot                                     ContinuitySnapshot
 	speakerNames                                 SpeakerNames
 }
 
@@ -100,10 +101,10 @@ func museRunOptions(cfg *config.Config, tools bool) *muse.RunOptions {
 
 func (b *MuseSparkBrain) buildPrompt(input string, o StreamOptions) string {
 	parts := []string{b.systemPrompt}
-	for _, t := range b.history {
-		parts = append(parts, promptUserLine(t, b.agentName(), b.speakerNames))
+	for _, t := range b.working {
+		parts = append(parts, historyReplayRecord(t, b.speakerNames))
 	}
-	if group := b.groupContext.prompt(b.cfg, b.agentName(), b.history); group != "" {
+	if group := b.groupContext.prompt(b.cfg, b.agentName(), b.canonical); group != "" {
 		parts = append(parts, group)
 	}
 	if app := ApplicationRequestContext(b.cfg, "muse-spark", input); app != "" {
@@ -129,16 +130,13 @@ func (b *MuseSparkBrain) commit(input, response string, o StreamOptions) {
 		if o.OriginalInput != "" {
 			input = o.OriginalInput
 		}
-		b.history = append(b.history, Turn{Role: "user", Content: input, Speaker: o.Speaker, At: time.Now().UTC()})
+		b.appendTurn(Turn{Role: "user", Content: input, Speaker: o.Speaker, At: time.Now().UTC()})
 	}
 	identity := TurnIdentity{}
 	if o.Identity != nil {
 		identity = *o.Identity
 	}
-	b.history = append(b.history, attributedHostTurn(response, identity))
-	if b.cfg != nil && b.cfg.MaxHistory > 0 && len(b.history) > b.cfg.MaxHistory*2 {
-		b.history = b.history[len(b.history)-b.cfg.MaxHistory:]
-	}
+	b.appendTurn(attributedHostTurn(response, identity))
 }
 
 func (b *MuseSparkBrain) ThinkFull(ctx context.Context, input string, o StreamOptions) (string, error) {
@@ -271,27 +269,6 @@ func (b *MuseSparkBrain) ThinkStream(ctx context.Context, input string, o Stream
 		done <- StreamResult{}
 	}()
 	return &Stream{Chunks: out, Done: done}, nil
-}
-func (b *MuseSparkBrain) History() []Turn          { return append([]Turn(nil), b.history...) }
-func (b *MuseSparkBrain) LoadHistory(turns []Turn) { b.history = normalizePromptHistory(turns) }
-func (b *MuseSparkBrain) ClearHistory()            { b.history = nil }
-func (b *MuseSparkBrain) SessionInfo() SessionState {
-	return SessionState{Kind: SessionKindChat, Turns: len(b.history)}
-}
-func (b *MuseSparkBrain) Fresh() Provider {
-	return &MuseSparkBrain{client: b.client, cfg: b.cfg.Clone(), personaPrompt: b.personaPrompt, systemPrompt: b.systemPrompt, turnInstruction: b.turnInstruction,
-		personaReloader: b.personaReloader, turnReloader: b.turnReloader, speakerNames: b.speakerNames}
-}
-func (b *MuseSparkBrain) AppendAssistantResponse(text string) error {
-	return b.AppendAssistantResponseWithIdentity(text, TurnIdentity{})
-}
-func (b *MuseSparkBrain) AppendAssistantResponseWithIdentity(text string, identity TurnIdentity) error {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return fmt.Errorf("brain: empty assistant response")
-	}
-	b.history = append(b.history, attributedHostTurn(text, identity))
-	return nil
 }
 
 type museSparkBatch struct {

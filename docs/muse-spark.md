@@ -19,10 +19,14 @@ Reasoning, tool output, and task diagnostics never enter the speech stream.
 A failed, cancelled, or missing terminal result returns an error and leaves
 conversation history unchanged. Calls have no automatic retry.
 
-Obey Voice owns history and replays its retained conversation each turn; there
-is no native Muse session resume. Clear, load, transient compaction requests,
-and fresh worker jobs therefore cannot inherit a stale native session. Persona
-and turn prompts resolve again at each request boundary.
+Obey Voice keeps the complete transcript for persistence and replays a separate,
+bounded working view each turn. `max_history` limits that view by whole exchanges,
+without deleting earlier transcript turns. Compaction replaces only the working
+view with shared notes and a recent exchange; provider transfers preserve both
+views and continuity metadata. There is no native Muse session resume. Clear,
+load, transient compaction requests, and fresh worker jobs therefore cannot
+inherit a stale native session. Persona and turn prompts resolve again at each
+request boundary.
 
 Conversational turns, route-only turns, and batch text transformations use the
 empty preset with shell, write, web, reminders, and user-input dialogs disabled.
