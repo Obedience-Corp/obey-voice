@@ -723,7 +723,7 @@ type BackchannelStarted struct {
 func (e BackchannelStarted) eventType() string { return "backchannel_started" }
 
 // ContinuityBudget reports the estimated prompt size against soft/hard limits
-// before an Ollama turn (WI-b94dad observability).
+// before/during an Ollama turn and after its retained history changes.
 type ContinuityBudget struct {
 	EstTokens int
 	SoftLimit int

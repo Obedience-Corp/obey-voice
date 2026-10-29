@@ -86,14 +86,18 @@ func (o *OllamaBrain) continuityIntegrityEnabled() bool {
 }
 
 func (o *OllamaBrain) maybeEmitContinuityBudget(skillCtx string) {
-	if !o.continuityIntegrityEnabled() || o.cfg == nil {
+	o.emitContinuityBudget(o.estimateTokens(skillCtx))
+}
+
+// Budget display is independent of optional truncation detection/recovery.
+func (o *OllamaBrain) emitContinuityBudget(est int) {
+	if o.cfg == nil {
 		return
 	}
 	numCtx := o.effectiveNumCtx()
 	if numCtx <= 0 {
 		return
 	}
-	est := o.estimateTokens(skillCtx)
 	ratio := o.cfg.ContinuitySoftLimitRatio
 	if ratio <= 0 {
 		ratio = float64(continuitySoftLimitRatio) / 100

@@ -71,6 +71,8 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.DiscussionUpdated](b, bus)
 	forward[events.ConversationCleared](b, bus)
 	forward[events.ConversationCompacted](b, bus)
+	forward[events.ContinuityBudget](b, bus)
+	forward[events.CompactionProgress](b, bus)
 	forward[events.Error](b, bus)
 	forward[events.Info](b, bus)
 	forward[events.SpeechDiagnostic](b, bus)
@@ -100,6 +102,7 @@ func isDurableBridgeMsg(msg tea.Msg) bool {
 	}
 	switch be.event.(type) {
 	case events.UserInput, events.ResponseReady, events.PersonaSelection, events.ConversationCleared, events.Error,
+		events.ContinuityBudget, events.CompactionProgress,
 		events.ToolCallStarted, events.ToolCallFinished,
 		events.JobQueued, events.JobStarted, events.JobFinished, events.JobFailed, events.JobAborted:
 		return true
@@ -158,6 +161,27 @@ drained:
 func fitBridgeQueue(q []tea.Msg, capacity int) []tea.Msg {
 	if capacity <= 0 {
 		return nil
+	}
+	// Budgets and progress are replaceable state. Retain their latest values
+	// through chunk/audio floods without letting old samples evict transcript.
+	var budgetSeen, progressSeen bool
+	for i := len(q) - 1; i >= 0; i-- {
+		if msg, ok := q[i].(busEventMsg); ok {
+			var seen *bool
+			switch msg.event.(type) {
+			case events.ContinuityBudget:
+				seen = &budgetSeen
+			case events.CompactionProgress:
+				seen = &progressSeen
+			}
+			if seen != nil {
+				if *seen {
+					q = append(q[:i], q[i+1:]...)
+				} else {
+					*seen = true
+				}
+			}
+		}
 	}
 	for len(q) > capacity {
 		drop := -1
