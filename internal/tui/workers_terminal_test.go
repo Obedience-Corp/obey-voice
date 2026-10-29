@@ -135,7 +135,7 @@ func TestWorkerActivityTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	plain := stripANSI(output.String())
-	for _, want := range []string{"codex / fixture-model", "go test ./...", "Tool activity", "Worker thread", "running", "failed", "exit 1", "One check failed."} {
+	for _, want := range []string{"codex / fixture-model", "go test ./...", "Worker conversation", "› Request", "● Worker", "running", "failed", "exit 1", "One check failed."} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("terminal missing %q:\n%s", want, plain)
 		}

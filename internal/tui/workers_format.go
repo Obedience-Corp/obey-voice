@@ -3,9 +3,7 @@ package tui
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -13,111 +11,6 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
-
-func formatWorkerDetail(item pipeline.WorkerInfo, width int) string {
-	width = max(1, width)
-	var b strings.Builder
-	b.WriteString(normalStyle.Render(wrapWorkerPlain(item.Task, width)))
-	b.WriteString("\n\n")
-	b.WriteString(workerStateStyle(item.State).Render(item.State))
-	b.WriteString("  ")
-	b.WriteString(metaStyle.Render(workerProvider(item)))
-	b.WriteString(dimStyle.Render("  " + roundSeconds(item.Elapsed)))
-	b.WriteByte('\n')
-	b.WriteString(dimStyle.Render("ID  " + item.ID))
-	if item.PersonaName != "" {
-		b.WriteString(dimStyle.Render(" · " + safeWorkerText(item.PersonaName)))
-	}
-	b.WriteByte('\n')
-	if item.Activity != "" && len(item.Tools) == 0 {
-		b.WriteByte('\n')
-		b.WriteString(sectionStyle.Render("Activity"))
-		b.WriteByte('\n')
-		b.WriteString(formatWorkerPayload(item.Activity, width))
-		b.WriteByte('\n')
-	}
-	if len(item.Thread) > 0 {
-		b.WriteString("\n")
-		b.WriteString(sectionStyle.Render("Worker thread"))
-		b.WriteByte('\n')
-		for _, turn := range item.Thread {
-			label := turn.Role
-			if label == "user" {
-				label = "Request"
-			}
-			if label == "assistant" {
-				label = "Worker"
-			}
-			if label == "tool" {
-				label = "Tool result"
-			}
-			b.WriteString(sectionStyle.Render(label))
-			b.WriteByte('\n')
-			if turn.Content != "" {
-				b.WriteString(wrapWorkerPlain(turn.Content, width))
-				b.WriteByte('\n')
-			}
-			for _, call := range turn.ToolCalls {
-				b.WriteString(wrapWorkerPlain(call.Name+" "+call.Arguments, width))
-				b.WriteByte('\n')
-			}
-			b.WriteByte('\n')
-		}
-	}
-	if len(item.Tools) > 0 {
-		b.WriteString("\n")
-		b.WriteString(sectionStyle.Render("Tool activity (newest first)"))
-		b.WriteByte('\n')
-		for i := len(item.Tools) - 1; i >= 0; i-- {
-			call := item.Tools[i]
-			elapsed := call.Elapsed
-			if call.Status == "running" && !call.Started.IsZero() {
-				elapsed = time.Since(call.Started)
-			}
-			b.WriteString(wrapWorkerPlain(fmt.Sprintf("%d. %s · %s · %s", i+1, call.Name, call.Status, roundSeconds(elapsed)), width))
-			b.WriteByte('\n')
-			if call.Summary != "" {
-				b.WriteString(wrapWorkerPlain(call.Summary, width))
-				b.WriteByte('\n')
-			}
-			if call.Preview != "" {
-				b.WriteString(formatWorkerPayload(call.Preview, width))
-				b.WriteByte('\n')
-			}
-			if call.Err != "" {
-				b.WriteString(errorStyle.Render(wrapWorkerPlain(call.Err, width)))
-				b.WriteByte('\n')
-			}
-			b.WriteByte('\n')
-		}
-	}
-	if item.Result != "" {
-		b.WriteByte('\n')
-		b.WriteString(sectionStyle.Render("Output"))
-		b.WriteByte('\n')
-		b.WriteString(formatWorkerPayload(item.Result, width))
-		b.WriteByte('\n')
-	}
-	if item.Err != "" {
-		b.WriteByte('\n')
-		b.WriteString(sectionStyle.Render("Error"))
-		b.WriteByte('\n')
-		b.WriteString(errorStyle.Render(wrapWorkerPlain(item.Err, width)))
-		b.WriteByte('\n')
-	}
-	if item.Termination != "" {
-		b.WriteByte('\n')
-		b.WriteString(sectionStyle.Render("Termination"))
-		b.WriteByte('\n')
-		b.WriteString(dimStyle.Render(wrapWorkerPlain(item.Termination, width)))
-		b.WriteByte('\n')
-	}
-	if item.Active() && item.Result == "" {
-		b.WriteByte('\n')
-		b.WriteString(dimStyle.Render(wrapWorkerPlain("Output will appear when the worker finishes.", width)))
-	}
-	return b.String()
-}
 
 func workerStateStyle(state string) lipgloss.Style {
 	switch strings.ToLower(strings.TrimSpace(state)) {

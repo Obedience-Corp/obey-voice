@@ -12,7 +12,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 func (m conversationModel) animStyles() anim.Styles {
@@ -212,44 +211,6 @@ func formatActivityAt(d time.Duration) string {
 		return fmt.Sprintf("%d:%02d:%02d.%d", h, m, s, tenths)
 	}
 	return fmt.Sprintf("%2d:%02d.%d", m, s, tenths)
-}
-
-// renderUserTurn and renderAgentTurn paint finalized turns (ResponseReady and
-// session replay). Live streaming uses renderAgentBubble so think and speakable
-// stay on separate accumulators.
-func renderUserTurn(text string) string {
-	body := userStyle.Render("› You") + "\n" + normalStyle.Render(text)
-	return userBubbleStyle.Render(body)
-}
-
-func renderAgentTurn(name, text string) string {
-	think, spoken := textclean.SplitThink(text)
-	showThink := think != ""
-	// Tag-only leftover on ResponseReady / session replay: both halves empty
-	// means the stored text is think markup with no inner body. Paint the dim
-	// state rather than the raw tags. Live frames no longer call this function.
-	if !showThink && spoken == "" && strings.TrimSpace(text) != "" {
-		showThink = true
-	}
-	return renderAgentBubble(name, think, spoken, showThink)
-}
-
-func renderAgentBubble(name, think, spoken string, showThink bool) string {
-	var b strings.Builder
-	b.WriteString(agentStyle.Render("● " + name))
-	if showThink {
-		b.WriteByte('\n')
-		b.WriteString(thinkLabelStyle.Render("thinking"))
-		if think != "" {
-			b.WriteByte('\n')
-			b.WriteString(thinkBodyStyle.Render(think))
-		}
-	}
-	if spoken != "" {
-		b.WriteByte('\n')
-		b.WriteString(normalStyle.Render(spoken))
-	}
-	return agentBubbleStyle.Render(b.String())
 }
 
 // activeBrain prefers the admitted selection over startup configuration:
