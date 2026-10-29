@@ -13,6 +13,11 @@ import (
 
 // ConversationAudio names the playable mixed microphone/render timeline.
 const ConversationAudio = "conversation.wav"
+
+// RecordingSampleRate preserves the bandwidth of the supported 24/44.1/48 kHz
+// playback streams. The 16 kHz speech-recognition rate would alias rendered
+// speech above 8 kHz when using the streaming linear resampler.
+const RecordingSampleRate = 48000
 const maxAudioBytes = 1 << 30
 const maxAudioSamples = maxAudioBytes / 2
 
@@ -58,11 +63,11 @@ func startAudio(path string, start time.Time, sources audio.RecordingSources, in
 	if sources.User == nil && sources.Agents == nil {
 		return nil, nil
 	}
-	w, err := audio.NewWAVWriter(path, audio.SampleRate)
+	w, err := audio.NewWAVWriter(path, RecordingSampleRate)
 	if err != nil {
 		return nil, fmt.Errorf("create conversation audio: %w", err)
 	}
-	r := &audioRecorder{writer: w, start: start, done: make(chan struct{}), health: AudioManifest{File: ConversationAudio, Status: "recording", SampleRate: audio.SampleRate}}
+	r := &audioRecorder{writer: w, start: start, done: make(chan struct{}), health: AudioManifest{File: ConversationAudio, Status: "recording", SampleRate: RecordingSampleRate}}
 	r.inputEnabled.Store(inputEnabled)
 	var user, agents <-chan audio.Frame
 	if sources.User != nil {
@@ -103,15 +108,15 @@ func (r *audioRecorder) write(frame audio.Frame, track *AudioTrack, timeline *au
 		return
 	}
 	track.Frames++
-	offset := frame.StartedAt.Sub(r.start).Nanoseconds() * audio.SampleRate / int64(time.Second)
+	offset := frame.StartedAt.Sub(r.start).Nanoseconds() * RecordingSampleRate / int64(time.Second)
 	if frame.Sequence > 0 && frame.Sequence == timeline.sequence+1 && frame.SampleRate == timeline.rate && !frame.CaptureGap.DeviceDiscontinuity {
 		// Continuous source callbacks follow their sample clock, not scheduler jitter.
 		offset = timeline.nextOffset
 	} else {
 		timeline.resampler = audio.StreamResampler{}
 	}
-	timeline.resampler.Configure(frame.SampleRate, audio.SampleRate)
-	samples := make([]float32, int(math.Ceil(float64(len(frame.Samples))*audio.SampleRate/float64(frame.SampleRate)))+8)
+	timeline.resampler.Configure(frame.SampleRate, RecordingSampleRate)
+	samples := make([]float32, int(math.Ceil(float64(len(frame.Samples))*RecordingSampleRate/float64(frame.SampleRate)))+8)
 	samples = samples[:timeline.resampler.Resample(frame.Samples, samples)]
 	timeline.sequence, timeline.rate, timeline.nextOffset = frame.Sequence, frame.SampleRate, offset+int64(len(samples))
 	if offset < 0 {
@@ -151,7 +156,7 @@ func (r *audioRecorder) finish() (AudioManifest, error) {
 		return AudioManifest{Status: "unavailable"}, nil
 	}
 	<-r.done
-	count := max(int64(0), r.stop.Sub(r.start).Nanoseconds()*audio.SampleRate/int64(time.Second))
+	count := max(int64(0), r.stop.Sub(r.start).Nanoseconds()*RecordingSampleRate/int64(time.Second))
 	if count > maxAudioSamples {
 		count = maxAudioSamples
 		if r.err == nil {

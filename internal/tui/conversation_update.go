@@ -25,6 +25,11 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		}
 	}()
 	switch msg := msg.(type) {
+	case recordingOpenedMsg:
+		if msg.err != nil {
+			m.commandError("open recording: " + msg.err.Error())
+		}
+		return m, nil
 	case capturePollMsg:
 		m.capturePollScheduled = false
 		m.pollCapture()
@@ -141,6 +146,11 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		return m, nil
 
 	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			if dir := m.recordingHit(msg.X, msg.Y); dir != "" {
+				return m, m.openRecordingCmd(dir)
+			}
+		}
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.workCueHit(msg.X, msg.Y) {
 			id := m.workerShortcutID()
 			return m, func() tea.Msg { return openWorkerMsg{jobID: id} }

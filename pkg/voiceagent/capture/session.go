@@ -170,7 +170,7 @@ func Start(opts Options) (*Session, error) {
 	}
 	s.manifest.Audio = AudioManifest{Status: "unavailable"}
 	if s.audio != nil {
-		s.manifest.Audio = AudioManifest{File: ConversationAudio, Status: "recording", SampleRate: audio.SampleRate, User: AudioTrack{Available: opts.Audio.User != nil}, Agents: AudioTrack{Available: opts.Audio.Agents != nil}}
+		s.manifest.Audio = AudioManifest{File: ConversationAudio, Status: "recording", SampleRate: RecordingSampleRate, User: AudioTrack{Available: opts.Audio.User != nil}, Agents: AudioTrack{Available: opts.Audio.Agents != nil}}
 	}
 	if err := s.writeManifest(); err != nil {
 		_ = s.Stop(nil)

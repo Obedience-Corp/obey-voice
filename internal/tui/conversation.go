@@ -164,6 +164,9 @@ type conversationModel struct {
 	captureSealWarned    bool
 	capturePollScheduled bool
 	captureHealthLast    time.Time
+	lastRecordingDir     string
+	recordingTargets     map[string]string
+	openRecording        func(context.Context, string) error
 	inputDevice          string
 	outputDevice         string
 	voiceFailures        int

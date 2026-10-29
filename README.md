@@ -159,8 +159,11 @@ In a local terminal conversation, `/record talk` saves a playable
 `conversation.wav` containing both microphone input and agent playback, alongside
 events, source timing and conversation text. Microphone pause excludes input
 audio; interrupted speech includes only the PCM submitted for playback. Pauses
-and overlapping speech share one 16 kHz mono timeline. Recording notices include
-an **Open recording** terminal hyperlink to the capture folder. `/record` shows the capture ID, link and recording
+and overlapping speech share one 48 kHz mono timeline, preserving playback bandwidth.
+Recording notices include an **Open recording** link to the capture folder. With
+mouse reporting enabled, the TUI opens it on click; otherwise your terminal handles
+the hyperlink. `/record open` opens the latest capture even without terminal link
+support, including after recording stops. `/record` shows the capture ID, link and recording
 health. In terminals that support hyperlinks, use the terminal's link-opening
 gesture to open the folder. `Ctrl+R` toggles Talk recording outside Vim mode;
 `/record lab` includes the same conversation audio and additionally enables

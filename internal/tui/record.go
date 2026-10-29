@@ -2,15 +2,11 @@ package tui
 
 import (
 	"fmt"
-	"net/url"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/capture"
@@ -27,7 +23,7 @@ func (m *conversationModel) recordMode() string {
 
 func (m *conversationModel) configureRecord(args []string) {
 	if len(args) > 1 {
-		m.commandError("usage: /record [off|talk|lab]")
+		m.commandError("usage: /record [off|talk|lab|open]")
 		return
 	}
 	cur := m.recordMode()
@@ -42,7 +38,7 @@ func (m *conversationModel) configureRecord(args []string) {
 			return
 		}
 		h := m.capture.Health()
-		m.commandNotice(fmt.Sprintf("recording %s [%s] · %s (%d bytes; written seq %d, synced %d; dropped %d, omitted %d, scope excluded %d, errors %d)", cur, m.capture.ID(), recordingLink(m.capture.Dir()), h.Bytes, h.WrittenSequence, h.SyncedSequence, h.Dropped, h.Skipped, h.ScopeExcluded, h.WriteErrors))
+		m.commandNotice(fmt.Sprintf("recording %s [%s] · %s (%d bytes; written seq %d, synced %d; dropped %d, omitted %d, scope excluded %d, errors %d)", cur, m.capture.ID(), m.recordingLink(m.capture.Dir()), h.Bytes, h.WrittenSequence, h.SyncedSequence, h.Dropped, h.Skipped, h.ScopeExcluded, h.WriteErrors))
 	case "off", "stop":
 		m.captureNextMode = ""
 		if m.capture == nil {
@@ -61,7 +57,7 @@ func (m *conversationModel) configureRecord(args []string) {
 		}
 		m.stopCapture()
 	default:
-		m.commandError("usage: /record [off|talk|lab]")
+		m.commandError("usage: /record [off|talk|lab|open]")
 	}
 }
 
@@ -84,7 +80,7 @@ func (m *conversationModel) startCapture(mode string) {
 	}
 	if m.capture != nil {
 		if m.capture.Mode() == mode {
-			m.commandNotice(fmt.Sprintf("already recording %s · %s", mode, recordingLink(m.capture.Dir())))
+			m.commandNotice(fmt.Sprintf("already recording %s · %s", mode, m.recordingLink(m.capture.Dir())))
 			return
 		}
 		m.stopCapture()
@@ -142,7 +138,8 @@ func (m *conversationModel) startCapture(mode string) {
 		return
 	}
 	m.capture = s
-	notice := fmt.Sprintf("recording %s [%s] · %s", mode, s.ID(), recordingLink(s.Dir()))
+	m.lastRecordingDir = s.Dir()
+	notice := fmt.Sprintf("recording %s [%s] · %s", mode, s.ID(), m.recordingLink(s.Dir()))
 	if !s.AudioAvailable() {
 		notice += " · audio unavailable"
 	}
@@ -160,7 +157,7 @@ func (m *conversationModel) stopCapture() {
 	m.captureSealStarted = time.Now()
 	m.captureSealWarned = false
 	s.SealAsync(m.captureTurns())
-	m.commandNotice(fmt.Sprintf("sealing %s · %s", s.Mode(), recordingLink(s.Dir())))
+	m.commandNotice(fmt.Sprintf("sealing %s · %s", s.Mode(), m.recordingLink(s.Dir())))
 }
 
 func (m *conversationModel) captureTurns() []capture.Turn {
@@ -185,9 +182,9 @@ func (m *conversationModel) pollCapture() {
 		select {
 		case <-s.Done():
 			if err := s.SealError(); err != nil {
-				m.commandError("capture incomplete/unsealed: " + err.Error() + " · " + recordingLink(s.Dir()))
+				m.commandError("capture incomplete/unsealed: " + err.Error() + " · " + m.recordingLink(s.Dir()))
 			} else {
-				m.commandNotice("sealed " + s.Mode() + " · " + recordingLink(s.Dir()))
+				m.commandNotice("sealed " + s.Mode() + " · " + m.recordingLink(s.Dir()))
 			}
 			m.capturePending = nil
 			nextMode := m.captureNextMode
@@ -198,7 +195,7 @@ func (m *conversationModel) pollCapture() {
 		default:
 			if !m.captureSealWarned && time.Since(m.captureSealStarted) >= 2*time.Second {
 				m.captureSealWarned = true
-				m.commandError("capture incomplete/unsealed: drain exceeded 2 seconds · " + recordingLink(s.Dir()))
+				m.commandError("capture incomplete/unsealed: drain exceeded 2 seconds · " + m.recordingLink(s.Dir()))
 			}
 		}
 	}
@@ -211,12 +208,12 @@ func (m *conversationModel) pollCapture() {
 		}
 		h := s.Health()
 		if audioErr := s.AudioError(); audioErr != nil {
-			m.commandError("recording audio incomplete: " + audioErr.Error() + " · " + recordingLink(s.Dir()))
+			m.commandError("recording audio incomplete: " + audioErr.Error() + " · " + m.recordingLink(s.Dir()))
 			m.stopCapture()
 			return
 		}
 		if h.Limited || h.WriteErrors > 0 {
-			m.commandError("capture stopped/incomplete: storage limit or write error · " + recordingLink(s.Dir()))
+			m.commandError("capture stopped/incomplete: storage limit or write error · " + m.recordingLink(s.Dir()))
 			m.stopCapture()
 		}
 	}
@@ -253,16 +250,4 @@ func captureSTTEnvironment(cfg *config.Config) (provider, mode, model string) {
 		}
 	}
 	return provider, mode, model
-}
-
-// recordingLink opens the capture bundle, including its transcript, events and
-// any audio artifacts, without displaying its internal storage path.
-func recordingLink(dir string) string {
-	path, err := filepath.Abs(dir)
-	if err != nil {
-		return "Open recording (unavailable)"
-	}
-	target := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
-	label := lipgloss.NewStyle().Foreground(colorAccent).Underline(true).Render("Open recording")
-	return ansi.SetHyperlink(target) + label + ansi.ResetHyperlink()
 }
