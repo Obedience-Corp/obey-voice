@@ -1,12 +1,18 @@
 # Obey Voice
 
-A local voice assistant that starts speaking before the model finishes the thought.
+[![Go](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-555)](#install)
+[![Built with Festival](https://img.shields.io/badge/built%20with-Festival-7c3aed.svg)](https://github.com/Obedience-Corp/festival)
 
-Talk to local models through Ollama, or connect Claude Code, Codex, Cursor, or Grok. Replies are spoken sentence by sentence as they arrive. Interrupt it and it stops.
+**Fast, private, actually useful.**
 
-Use the native macOS app or the terminal. Give each persona its own voice, model, and prompt, then bring several into one conversation and address them by name.
+Voice chat with your AI agents, built around local models. Obey Voice is a voice agent experimentation lab with a native macOS app and a terminal interface.
 
-[Get started](#install) · [Choose your brain](#choose-your-brain) · [Group chat](#group-chat) · [Docs](docs/README.md)
+The goal is to keep speech recognition, conversation, turn-taking, routing, and speech synthesis on your own hardware, with optional third-party agent harnesses as the brain. One place to talk to your agents and experiment with how they listen, respond, and get work done.
+
+Talk to local models through Ollama, or connect providers such as Claude Code, Codex, Cursor, or Grok. Replies are spoken sentence by sentence as they arrive. Interrupt it and it stops. Give each persona its own voice, model, and prompt, then bring several into one conversation and address them by name.
+
+[Get started](#install) · [Explore the lab](#the-lab) · [Choose your brain](#choose-your-brain) · [Group chat](#group-chat) · [Docs](docs/README.md)
 
 ![Obey Voice desktop Home with recent conversations and workspace navigation](docs/images/desktop-home.png)
 
@@ -16,11 +22,29 @@ Use the native macOS app or the terminal. Give each persona its own voice, model
 
 *Real terminal interface with scripted voice activity.* [Reproduce the demo](demos/README.md#readme-demo) with `just demo`.
 
+## The lab
+
+Voice chat is the interface. The experiment is how useful it can become when you control the models and the harness around them: how quickly it answers, when it listens, which agent gets the turn, and when a request becomes background work.
+
+The repository includes tools to try those choices and inspect what happened:
+
+| Experiment | Start here |
+|------------|------------|
+| Swap speech and conversation models | [Stack](#stack) and [configuration](docs/configuration.md) |
+| Keep conversation local while delegating work to another model or provider | [Workers](docs/configuration.md) and [conversation scenarios](tests/convoflow/README.md) |
+| Give agents distinct voices and test how they share a conversation | [Group chat](#group-chat) and [personas](docs/personas.md) |
+| Compare response latency and speech behavior | [Benchmarks](docs/benchmarks/README.md) |
+| Inspect routing, interruptions, synthesis, and playback | [Pipeline inspection](#inspect-a-tui-conversation-pipeline) |
+
+This is an evolving lab, with working desktop and terminal interfaces. Model quality, latency, and hardware requirements vary with the configuration; the benchmarks and recordings make those tradeoffs inspectable.
+
 ## Choose your brain
 
 The brain is the model that answers you. Ollama is the default provider: run a local model on your own hardware, with local speech recognition and synthesis. Once the models are downloaded, the voice conversation can run locally without a paid AI subscription. Web tools and any remote providers you enable still use the network.
 
 You can also use Claude Code, [Codex](docs/codex.md), Cursor, Grok, or [Muse Spark](docs/muse-spark.md) through their installed CLIs and existing authentication. With a cloud-backed brain, conversation text goes to that provider. Speech recognition and synthesis run locally by default; remote speech is optional.
+
+The conversational brain and background workers can use different providers. Keep Ollama handling conversation and routing, and configure a worker for tasks that need another model or agent harness. Selecting a remote conversational brain sends that conversation to the provider; local speech alone does not make the whole session local. See [worker configuration](docs/configuration.md).
 
 Choose the provider and model in **Settings → Brain**. For Ollama, start the local server and download a model first, then select it in Obey Voice. Each persona can override the application’s brain and voice settings. See [configuration](docs/configuration.md) and [personas](docs/personas.md).
 
@@ -111,7 +135,9 @@ Details: [shared conversations](docs/personas.md#shared-conversations) and [addr
 ## Stack
 
 ```text
-Mic → Voice detection → Speech recognition → Brain → Sentence chunker → Speech synthesis → Speaker
+Mic → Voice detection → Speech recognition → Conversation / routing → Speech synthesis → Speaker
+                                                     ↕
+                                              Background workers
 ```
 
 Speech starts as sentences arrive. The latency target is under 2 seconds from the end of your utterance to first audio; actual timing depends on your hardware, model, and provider.
@@ -125,36 +151,6 @@ Speech starts as sentences arrive. The latency target is under 2 seconds from th
 | Audio | miniaudio / malgo | |
 
 Models download on first use into `models_dir`, and `just install` runs `models ensure` for the default Kokoro/STT/VAD stack. Qwen installs from TUI Settings or `obey-voice models ensure --tts` on macOS Apple Silicon (Metal) and linux/amd64 (CPU). The default speech stack and native Qwen3-TTS need no Python runtime.
-
-## Docs
-
-| Page | What's there |
-|------|----------------|
-| [docs/](docs/README.md) | Index |
-| [Install](docs/install.md) | Homebrew, Linux archive, source, requirements |
-| [Usage](docs/usage.md) | TUI, remote serve, commands, personas |
-| [Personas](docs/personas.md) | Voice agents, shared conversations, starting directories |
-| [Scenes](docs/scene.md) | Two-persona conversation recordings |
-| [Narration](docs/narration.md) | Render, audiobooks, Calibre, narrate pipeline |
-| [Meetings](docs/meetings.md) | Recorder, speaker labels, campaign routing |
-| [Configuration](docs/configuration.md) | `config.yaml`, Agent Skills |
-| [Development](docs/development.md) | Build, tests, models, benchmarks |
-| [Serve protocol](docs/serve-protocol.md) | HTTPS + WebSocket contract |
-| [Transcribe protocol](docs/transcribe-protocol.md) | `obey-transcript/v1` file transcription contract |
-| [Speech worker](docs/speech-serve.md) | Speech on another computer (`speech-serve`) |
-| [ADRs](docs/adr/) | Architecture decisions |
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidance. [Report a bug or request a feature](https://github.com/Obedience-Corp/obey-voice/issues). For bugs, include your OS, selected brain and speech providers, and relevant error output.
-
-## License
-
-Apache License 2.0. Copyright 2026 Obedience Corp. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
----
-
-Built by [Obedience Corp](https://obediencecorp.com) · [GitHub](https://github.com/Obedience-Corp)
 
 ## Inspect a TUI conversation pipeline
 
@@ -220,3 +216,39 @@ The source-owned [trace contract](testdata/pipeline-trace/CONTRACT.md) and
 identity and compatibility. Legacy metrics remain relative; unknown schema
 families/versions stay available as raw evidence. Playback timestamps mark
 software sink acceptance/completion, not calibrated sound at the listener.
+
+## Docs
+
+| Page | What's there |
+|------|----------------|
+| [docs/](docs/README.md) | Index |
+| [Install](docs/install.md) | Homebrew, Linux archive, source, requirements |
+| [Usage](docs/usage.md) | TUI, remote serve, commands, personas |
+| [Personas](docs/personas.md) | Voice agents, shared conversations, starting directories |
+| [Scenes](docs/scene.md) | Two-persona conversation recordings |
+| [Narration](docs/narration.md) | Render, audiobooks, Calibre, narrate pipeline |
+| [Meetings](docs/meetings.md) | Recorder, speaker labels, campaign routing |
+| [Configuration](docs/configuration.md) | `config.yaml`, Agent Skills |
+| [Benchmarks](docs/benchmarks/README.md) | Speech and brain latency measurements, comparison recipes |
+| [Conversation scenarios](tests/convoflow/README.md) | Local conversation and worker routing experiments |
+| [Development](docs/development.md) | Build, tests, models, benchmarks |
+| [Serve protocol](docs/serve-protocol.md) | HTTPS + WebSocket contract |
+| [Transcribe protocol](docs/transcribe-protocol.md) | `obey-transcript/v1` file transcription contract |
+| [Speech worker](docs/speech-serve.md) | Speech on another computer (`speech-serve`) |
+| [ADRs](docs/adr/) | Architecture decisions |
+
+## Built with Festival
+
+Obey Voice is built using [Festival](https://github.com/Obedience-Corp/festival), a planning and execution system for agent-assisted development. This lab is a working example of what that process can produce: a voice application, swappable model integrations, and tools to measure and debug the conversations. Festival is part of how the project is developed; you do not need it to run Obey Voice.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidance. [Report a bug or request a feature](https://github.com/Obedience-Corp/obey-voice/issues). For bugs, include your OS, selected brain and speech providers, and relevant error output.
+
+## License
+
+Apache License 2.0. Copyright 2026 Obedience Corp. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+---
+
+Built by [Obedience Corp](https://obediencecorp.com) · [GitHub](https://github.com/Obedience-Corp)
