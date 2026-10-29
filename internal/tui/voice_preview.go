@@ -162,7 +162,13 @@ func runVoicePreview(ctx context.Context, voice tts.Voice, player audio.Engine,
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // Stop synthesis before provider cleanup on a failed sample.
 	stream, err := provider.Synthesize(ctx, tts.SpokenPreviewLine(voice.Name))
+	if err != nil {
+		return fmt.Errorf("synthesize error: %w", err)
+	}
+	stream, err = completeVoicePreview(ctx, stream)
 	if err != nil {
 		return fmt.Errorf("synthesize error: %w", err)
 	}
