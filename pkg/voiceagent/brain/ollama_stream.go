@@ -86,6 +86,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		hadThinking := false
 		hadTools := false
 		routedChat := false
+		routeRetried := false
 		recoveryAttempts := 0
 		var continuation string
 		repetitionRetry := false
@@ -272,6 +273,16 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				if sendErr := emitText(held); sendErr != nil && err == nil {
 					err = sendErr
 				}
+			}
+
+			if err == nil && routing && len(toolCalls) == 0 {
+				if routeRetried {
+					done <- StreamResult{Err: fmt.Errorf("model did not select a route; no work was dispatched"), Recovered: true}
+					return
+				}
+				routeRetried = true
+				skillCtx += "\n" + missingRouteInstruction
+				continue
 			}
 			if routing || finalAnswer {
 				if len(toolCalls) > 0 {

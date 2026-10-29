@@ -30,6 +30,16 @@ func TestOptionalDecisionCrossesPipelineAndWorkerAdmission(t *testing.T) {
 					return
 				}
 				modelCalls.Add(1)
+				var req struct {
+					Tools []json.RawMessage `json:"tools"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Error(err)
+				}
+				if len(req.Tools) > 0 {
+					fmt.Fprint(w, `{"done":true,"message":{"role":"assistant","tool_calls":[{"function":{"name":"route","arguments":{"kind":"chat"}}}]}}`)
+					return
+				}
 				fmt.Fprint(w, `{"done":true,"message":{"role":"assistant","content":"Let us discuss it."}}`)
 			}))
 			defer liveServer.Close()
@@ -178,7 +188,11 @@ func TestOptionalDecisionCrossesPipelineAndWorkerAdmission(t *testing.T) {
 				if workers.Load() != 0 || len(jobs.Status()) != 0 {
 					t.Fatal("ineligible decision dispatched work")
 				}
-				if mode != "persona" && mode != "control" && mode != "cancelled" && mode != "host-closed" && modelCalls.Load() != 1 {
+				wantCalls := int32(2) // route(chat), then tools-free answer
+				if mode == "background" || mode == "continuation" {
+					wantCalls = 1
+				}
+				if mode != "persona" && mode != "control" && mode != "cancelled" && mode != "host-closed" && modelCalls.Load() != wantCalls {
 					t.Fatalf("fallback calls=%d", modelCalls.Load())
 				}
 			}

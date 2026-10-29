@@ -53,6 +53,11 @@ func (o *OllamaBrain) Complete(ctx context.Context, req CompletionRequest) (Comp
 	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &envelope); err != nil {
 		return CompletionEnvelope{}, fmt.Errorf("ollama completion: invalid envelope: %w", err)
 	}
+	// An unsolicited completion has no new question to answer. Only updates
+	// tied to canonical result IDs may reach speech.
+	if strings.TrimSpace(req.Input) == "" {
+		envelope.Answer = ""
+	}
 	if err := envelope.Validate(req); err != nil {
 		return CompletionEnvelope{}, err
 	}

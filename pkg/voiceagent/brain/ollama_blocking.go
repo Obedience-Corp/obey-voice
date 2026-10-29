@@ -85,6 +85,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	hadThinking := false
 	hadTools := false
 	routedChat := false
+	routeRetried := false
 	for i := 0; i <= maxToolIterations; i++ {
 		finalAnswer := i == maxToolIterations
 		var tools api.Tools
@@ -173,6 +174,14 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			return "", fmt.Errorf("ollama full response truncated")
 		}
 
+		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && len(response.ToolCalls) == 0 {
+			if routeRetried {
+				return "", fmt.Errorf("model did not select a route; no work was dispatched")
+			}
+			routeRetried = true
+			skillCtx += "\n" + missingRouteInstruction
+			continue
+		}
 		// Tool calls — execute and loop (skills stack on full CLI tools).
 		if (routedChat || finalAnswer) && len(response.ToolCalls) > 0 {
 			return "", fmt.Errorf("tools-free answer returned unexpected tool calls")

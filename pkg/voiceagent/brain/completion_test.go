@@ -21,7 +21,7 @@ func TestOllamaCompleteUsesPrivateStructuredRequest(t *testing.T) {
 		data, _ := io.ReadAll(r.Body)
 		body = string(data)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"message":{"content":"{\"answer\":\"Weather is back.\",\"updates\":[{\"result_id\":\"r1\",\"text\":\"72F\"}]}","prompt_eval_count":3,"eval_count":4},"done":true}`)
+		_, _ = io.WriteString(w, `{"message":{"content":"{\"answer\":\"I'll spin up a worker.\",\"updates\":[{\"result_id\":\"r1\",\"text\":\"72F\"}]}","prompt_eval_count":3,"eval_count":4},"done":true}`)
 	}))
 	defer server.Close()
 	endpoint, _ := url.Parse(server.URL)
@@ -32,7 +32,7 @@ func TestOllamaCompleteUsesPrivateStructuredRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if envelope.Answer != "Weather is back." || len(envelope.Updates) != 1 {
+	if envelope.Answer != "" || len(envelope.Updates) != 1 {
 		t.Fatalf("envelope=%+v", envelope)
 	}
 	if len(o.history) != before {
