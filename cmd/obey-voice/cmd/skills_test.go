@@ -58,9 +58,9 @@ func TestSkillsListJSONEmptyDiscoveryIncludesBuiltin(t *testing.T) {
 	}
 	// Workspace-ancestor .agents/skills only appears as a distinct root when
 	// a real ancestor has one; in an isolated temp dir it collapses with the
-	// project root, so 3-4 entries are both valid depending on environment.
+	// project root; the configured root and embedded fallback are also listed.
 	if len(env.Roots) < 3 {
-		t.Fatalf("roots = %v, want at least 3 entries (project, user, skills_dir)", env.Roots)
+		t.Fatalf("roots = %v, want at least 3 entries (project, skills_dir, built-in)", env.Roots)
 	}
 	for _, r := range env.Roots {
 		if r.Exists && r.Path != skills.BuiltinRoot {

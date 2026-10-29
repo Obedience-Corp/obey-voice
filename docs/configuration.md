@@ -176,8 +176,8 @@ when you select it.
 | `agent_name` | `Obey` | | Display name |
 | `persona` | `obey` | `PERSONA` | Prompt document name for the interactive persona |
 | `prompts_dir` | empty | `PROMPTS_DIR` | Prompt document directory; defaults to `~/.obey/agents/voice/obey-voice/prompts` when unset |
-| `skills_enabled` | `true` | `SKILLS_ENABLED` | Agent Skills (`SKILL.md`) discovery for Ollama. Default on; set `false` to disable. Discovers project/workspace/user skill frontmatter into the system prompt; not a pre-activation sandbox. Claude/Grok already discover skills via their CLIs. |
-| `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after project/workspace/user harness dirs); defaults to `~/.obey/agents/voice/obey-voice/skills` when unset. |
+| `skills_enabled` | `true` | `SKILLS_ENABLED` | Agent Skills (`SKILL.md`) discovery for Ollama. Default on; set `false` to disable. Discovers working-directory/project/workspace skill frontmatter into the system prompt; not a pre-activation sandbox. Claude/Grok already discover skills via their CLIs. |
+| `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after working-directory/project/workspace dirs); defaults to `~/.obey/agents/voice/obey-voice/skills` when unset. |
 | `work_dir` | empty | `OBEY_VOICE_WORK_DIR` | Directory the agent's file and shell tools start in. **A default, not a sandbox** — a tool may still reach an absolute path outside it. Empty uses the directory Obey Voice was launched from; the binary's own folder, `/`, and any path that is not an existing directory fall back to your home folder. `obey-voice serve --work-dir DIR` overrides it for one process, and an override that is not an existing directory is a startup error rather than a silent fallback. The bare `WORK_DIR` is still honored for compatibility but `OBEY_VOICE_WORK_DIR` wins when both are set — see [Where the working directory came from](#where-the-working-directory-came-from). |
 | `models_dir` | `~/.cache/obey-voice/models` | `MODELS_DIR` | Model download directory |
 | `language` | `en-US` | | Recognition language |
@@ -542,13 +542,18 @@ With `skills_enabled=true` (the product default unless explicitly disabled), the
 Ollama provider discovers Agent Skills via the
 cross-client **`.agents/skills`** convention
 ([agentskills.io](https://agentskills.io/client-implementation/adding-skills-support))
-— **project/workspace then user** — plus Obey Voice's own skills root:
+— **working directory and project/workspace** — plus Obey Voice's own skills root:
 
 1. `<cwd>/.agents/skills/*/SKILL.md` — project skills (shared with Codex, VS Code, camp, …)
 2. `<nearest ancestor>/.agents/skills/*/SKILL.md` — workspace/project-root skills
-3. `~/.agents/skills/*/SKILL.md` — user skills
-4. `skills_dir` (default `~/.obey/agents/voice/obey-voice/skills`) — Obey Voice-only
-5. Embedded `obey-voice` skill — app and persona configuration guidance
+3. `skills_dir` (default `~/.obey/agents/voice/obey-voice/skills`) — Obey Voice-only
+4. Embedded `obey-voice` skill — app and persona configuration guidance
+
+Shared global `~/.agents/skills` is not imported automatically. Ancestor
+discovery stops before the home directory, and launching from home does not
+activate its global skill collection. To deliberately include a shared folder,
+set `skills_dir` to that folder. Individual project skill symlinks remain
+supported.
 
 The shipped skill is available without a checkout or a skill installation. It
 explains the installed CLI's persona/config commands and requires reading back
@@ -590,14 +595,11 @@ when the brain provider is Ollama. Changes are persisted immediately and take
 effect when the conversation runtime is re-entered or restarted.
 
 ```text
-# project (cwd where samantha was started)
+# project (conversation working directory)
 ./.agents/skills/hello/SKILL.md
 
 # workspace/project root (nearest ancestor)
 <workspace>/.agents/skills/campaign-context/SKILL.md
-
-# user
-~/.agents/skills/hello/SKILL.md
 
 # Obey Voice config root
 ~/.obey/agents/voice/obey-voice/skills/hello/SKILL.md
