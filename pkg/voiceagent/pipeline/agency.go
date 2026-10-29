@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
@@ -197,6 +199,11 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if plan != nil {
 		run = a.plannedWorkerRun(spawnBrief(history, d.Transcript), jobCfg, plan)
 	}
+	refs := chatmedia.Input(ctx)
+	if len(refs) > 0 {
+		originalRun := run
+		run = func(jobCtx context.Context) (string, error) { return originalRun(chatmedia.WithInput(jobCtx, refs)) }
+	}
 	var runtimeBudget time.Duration
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
@@ -319,16 +326,24 @@ func (a *Agency) workerRunWithBudget(brief string, worker brain.Provider, cfg *c
 		if cfg != nil {
 			tools = cfg.VoiceToolsEnabled || tieredWorkers(cfg)
 		}
+		refs := chatmedia.Input(ctx)
+		if err := validateProviderImages(ctx, worker, refs); err != nil {
+			return "", err
+		}
 		opts := brain.WorkerStreamOptions(tools)
+		opts.Attachments = refs
 		opts.WorkerBudget = budget
 		opts.OnWorkerUsage = a.workerUsageHook(job.IDFromContext(ctx), budget)
 		opts.OnToolStart, opts.OnToolEnd = a.foldingToolHooks(job.IDFromContext(ctx))
 		id := job.IDFromContext(ctx)
-		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief}})
+		a.saveWorkerThread(id, []brain.Turn{{Role: "user", Content: brief, Attachments: refs}})
 		start, end := opts.OnToolStart, opts.OnToolEnd
 		opts.OnToolStart = func(call brain.ToolCall) { a.captureWorkerThread(id, worker); start(call) }
 		opts.OnToolEnd = func(result brain.ToolResult) { end(result); a.captureWorkerThread(id, worker) }
 		result, err := worker.ThinkFull(ctx, brief, opts)
+		if err == nil {
+			result, _ = finalizeProviderReply(worker, result, config.WorkDirFrom(cfg), func(message string) { a.pipeline.emit(events.Info{Message: message}) })
+		}
 		a.captureWorkerThread(id, worker)
 		return result, err
 	}
@@ -606,6 +621,10 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		return
 	}
 	task, elapsed := a.jobInfo(id)
+	refs := a.workerReplyMedia(id)
+	if state != job.StateDone {
+		refs = nil
+	}
 	// The fold closes and everything spoken is queued before the terminal
 	// event goes out: the queue is drained at the end of this function, and an
 	// observer that reacts to the event should see the delivery it announces.
@@ -629,7 +648,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		if errors.Is(err, brain.ErrWorkerBudgetExceeded) || errors.Is(err, job.ErrBudget) || errors.Is(err, context.DeadlineExceeded) {
 			termination = "unknown"
 		}
-		_, publishErr := c.Publish(key, work.Outcome{Scope: key.Scope, JobID: id, Status: status, Text: text, Termination: termination, StartedAt: startedAt, EndedAt: endedAt, Elapsed: terminalElapsed})
+		_, publishErr := c.Publish(key, work.Outcome{Scope: key.Scope, JobID: id, Status: status, Text: text, Attachments: refs, Termination: termination, StartedAt: startedAt, EndedAt: endedAt, Elapsed: terminalElapsed})
 		if publishErr != nil {
 			return
 		}
@@ -646,7 +665,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	case job.StateDone:
 		a.enqueueSummary(id, a.cleanSummary(result))
 		origin := a.queueWorkerReply(id, result)
-		a.emitJobTrace(id, events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed, Envelope: &origin.Envelope, Scope: origin.Scope})
+		a.emitJobTrace(id, events.JobFinished{ID: id, Task: task, Summary: result, Attachments: refs, Elapsed: elapsed, Envelope: &origin.Envelope, Scope: origin.Scope})
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {

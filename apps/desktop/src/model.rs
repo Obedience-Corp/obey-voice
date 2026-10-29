@@ -87,6 +87,9 @@ pub struct State {
     pub notices: Vec<String>,
     #[serde(deserialize_with = "nullable_vec")]
     pub work_results: Vec<String>,
+    pub worker_threads: std::collections::HashMap<String, Vec<Turn>>,
+    #[serde(default)]
+    pub work_result_images: Vec<Vec<crate::app::media::Attachment>>,
     pub settings_message: String,
     pub enrollment: Enrollment,
     #[serde(deserialize_with = "nullable_vec")]

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
@@ -14,9 +16,10 @@ import (
 // message order; observed calls supply outcomes without inferring success from
 // the presence of a tool result.
 type workerThreadEntry struct {
-	role, text string
-	at         time.Time
-	tool       *workerThreadTool
+	role, text  string
+	attachments []chatmedia.Ref
+	at          time.Time
+	tool        *workerThreadTool
 }
 
 type workerThreadTool struct {
@@ -39,8 +42,8 @@ func workerThreadEntries(item pipeline.WorkerInfo) []workerThreadEntry {
 	for _, turn := range item.Thread {
 		switch turn.Role {
 		case "user", "assistant":
-			if strings.TrimSpace(turn.Content) != "" {
-				entries = append(entries, workerThreadEntry{role: turn.Role, text: turn.Content, at: turn.At})
+			if strings.TrimSpace(turn.Content) != "" || len(turn.Attachments) > 0 {
+				entries = append(entries, workerThreadEntry{role: turn.Role, text: turn.Content, at: turn.At, attachments: turn.Attachments})
 			}
 			for _, call := range turn.ToolCalls {
 				tool := &workerThreadTool{call: workfold.Call{ID: call.ID, Name: call.Name, Status: "unknown"}, arguments: call.Arguments, order: -1}

@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"errors"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 )
 
@@ -19,17 +21,28 @@ func (p *Pipeline) ImageValidator() func(context.Context, []chatmedia.Ref) error
 	validator, ok := p.Brain.(interface {
 		ValidateImages(context.Context, []chatmedia.Ref) error
 	})
-	group := p.GroupParticipationEnabled
 	return func(ctx context.Context, refs []chatmedia.Ref) error {
 		if len(refs) == 0 {
 			return nil
 		}
-		if group {
-			return errors.New("image messages currently require a single-persona conversation; turn off group participation before sending")
-		}
 		if !ok {
-			return errors.New("image input is supported with vision-capable Ollama models; switch models before sending")
+			return errors.New("this provider does not support image input; choose a vision-capable Ollama model or Codex")
 		}
 		return validator.ValidateImages(ctx, refs)
 	}
+}
+
+// Validate retained user media after persona admission, on the serialized turn
+// goroutine. This also protects continuations and resumed group discussions.
+func (p *Pipeline) validateRetainedImages(ctx context.Context) error {
+	turns := p.Brain.History()
+	if working, ok := p.Brain.(brain.ContextHistoryProvider); ok {
+		turns = working.ContextHistory()
+	}
+	for _, turn := range turns {
+		if turn.Role == "user" && len(turn.Attachments) > 0 {
+			return p.ValidateImages(ctx, turn.Attachments)
+		}
+	}
+	return nil
 }

@@ -84,7 +84,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			return m, nil
 		}
 		m.handleEvent(msg.event)
-		return m, tea.Batch(m.rearm(), m.ensureVoiceTick())
+		return m, tea.Batch(m.rearm(), m.ensureVoiceTick(), m.mediaCommand())
 
 	case workStripExpiryMsg:
 		if msg.scope != m.workDisplay.snapshot.Scope ||

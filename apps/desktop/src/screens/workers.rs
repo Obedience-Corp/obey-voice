@@ -84,7 +84,19 @@ impl VoiceApp {
                     });
                     if self.selected_worker.as_ref() == Some(&id) {
                         ui.separator();
-                        ui.label(string(&w, "Result"));
+                        if let Some(turns) = self.state.worker_threads.get(&id) {
+                            for turn in turns {
+                                ui.strong(if turn.role == "user" {
+                                    "Request"
+                                } else {
+                                    "Worker"
+                                });
+                                ui.add(egui::Label::new(&turn.content).wrap().selectable(true));
+                                self.media.show(ui, &turn.attachments, false);
+                            }
+                        } else {
+                            ui.label(string(&w, "Result"));
+                        }
                         ui.colored_label(Color32::from_rgb(177, 57, 73), string(&w, "Err"));
                         ui.label(string(&w, "Termination"));
                     }

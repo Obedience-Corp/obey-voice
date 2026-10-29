@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
 )
@@ -107,7 +109,11 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 	if tools != c.sessionTools {
 		c.sessionID = ""
 	}
-	req := codexRequest{ThreadID: c.sessionID, Prompt: c.buildPrompt(input, opts), System: c.systemPrompt, Model: c.cfg.CodexModel, Effort: c.cfg.CodexReasoningEffort, Cwd: config.WorkDirFrom(c.cfg), Tools: tools, Ephemeral: opts.TransientHistory}
+	images, err := c.imageInputs(opts)
+	if err != nil {
+		return "", err
+	}
+	req := codexRequest{Images: images, ThreadID: c.sessionID, Prompt: c.buildPrompt(input, opts), System: c.systemPrompt, Model: c.cfg.CodexModel, Effort: c.cfg.CodexReasoningEffort, Cwd: config.WorkDirFrom(c.cfg), Tools: tools, Ephemeral: opts.TransientHistory}
 	var raw strings.Builder
 	strip := newLabelStripper(c.cfg.AgentName)
 	result, err := c.client.run(ctx, req, func(text string) error {
@@ -143,7 +149,7 @@ func (c *CodexBrain) think(ctx context.Context, input string, opts StreamOptions
 		return "", fmt.Errorf("codex completed without assistant text")
 	}
 	if !opts.AgentContinuation {
-		t := Turn{Role: "user", Content: input, Speaker: opts.Speaker, At: time.Now().UTC()}
+		t := Turn{Role: "user", Content: input, Speaker: opts.Speaker, At: time.Now().UTC(), Attachments: append([]chatmedia.Ref(nil), opts.Attachments...)}
 		if opts.OriginalInput != "" {
 			t.Content = opts.OriginalInput
 			t.RoutedInput = input

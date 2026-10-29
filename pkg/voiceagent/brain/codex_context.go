@@ -1,20 +1,25 @@
 package brain
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+)
 
 // Replay is data, not native tool traffic. Preserve provenance across provider
 // switches without sending internal response IDs or attributing old assistants
 // to the currently selected persona.
 func cliHistoryRecord(t Turn, names SpeakerNames) string {
 	record := struct {
-		Role       string         `json:"role"`
-		Content    string         `json:"content"`
-		Speaker    string         `json:"speaker,omitempty"`
-		Persona    string         `json:"persona,omitempty"`
-		ToolCalls  []TurnToolCall `json:"tool_calls,omitempty"`
-		ToolName   string         `json:"tool_name,omitempty"`
-		ToolCallID string         `json:"tool_call_id,omitempty"`
-	}{Role: t.Role, Content: t.Content, ToolCalls: t.ToolCalls, ToolName: t.ToolName, ToolCallID: t.ToolCallID}
+		Attachments []chatmedia.Ref `json:"attachments,omitempty"`
+		Role        string          `json:"role"`
+		Content     string          `json:"content"`
+		Speaker     string          `json:"speaker,omitempty"`
+		Persona     string          `json:"persona,omitempty"`
+		ToolCalls   []TurnToolCall  `json:"tool_calls,omitempty"`
+		ToolName    string          `json:"tool_name,omitempty"`
+		ToolCallID  string          `json:"tool_call_id,omitempty"`
+	}{Attachments: t.Attachments, Role: t.Role, Content: t.Content, ToolCalls: t.ToolCalls, ToolName: t.ToolName, ToolCallID: t.ToolCallID}
 	if t.Role == "user" {
 		record.Speaker = UserSpeakerLabel(t.Speaker, names)
 	}

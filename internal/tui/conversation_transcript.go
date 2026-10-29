@@ -276,8 +276,10 @@ func (m *conversationModel) seedTranscript(turns []brain.Turn) {
 				name = m.agentName
 			}
 			item := agentItemFromStored(name, t.Content)
+			item.attachments = t.Attachments
 			if item.spoken != "" {
 				m.rememberAssistant(item.spoken)
+				m.attachAssistantMedia(t.Attachments)
 			}
 			m.appendAgentTurn(item)
 		}

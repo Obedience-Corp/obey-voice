@@ -59,3 +59,10 @@ demo-chat-images:
     mkdir -p bin demos/frames
     go test -c -o bin/chat-media.test ./internal/tui
     vhs demos/chat-images.tape
+
+# Review worker image/GIF replies using the real TUI with silent fixtures.
+[no-cd]
+demo-agent-images:
+    mkdir -p bin demos/frames
+    go test -c -o bin/chat-media.test ./internal/tui
+    vhs demos/agent-images.tape

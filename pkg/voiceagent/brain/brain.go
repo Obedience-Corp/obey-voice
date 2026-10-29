@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"math"
 	"os"
 	"os/exec"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 
 	"github.com/lancekrogers/claude-code-go/pkg/claude"
 
@@ -763,6 +764,7 @@ func cleanForVoice(s string) string {
 	// the block in teaches the model its reasoning belongs in the reply and
 	// re-bills those tokens on every turn that follows.
 	s = textclean.StripThinkBlocks(s)
+	s = chatmedia.ProtectImageExamples(s)
 	s = fillerRE.ReplaceAllString(markdownReplacer.Replace(s), "")
 	// Emoji go here rather than at the synthesis boundary alone, for two reasons.
 	// The persona document bans them, so a reply containing one is already out of

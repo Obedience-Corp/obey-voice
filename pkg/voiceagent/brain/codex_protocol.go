@@ -10,6 +10,7 @@ import (
 )
 
 type codexRequest struct {
+	Images                                       []any
 	ThreadID, Prompt, System, Model, Effort, Cwd string
 	Tools, Ephemeral                             bool
 }
@@ -108,7 +109,7 @@ func (client codexClient) run(ctx context.Context, req codexRequest, emit func(s
 		return result, errors.New("codex returned an empty thread ID")
 	}
 	slog.Info("codex thread ready", "thread_id", result.ThreadID, "resumed", req.ThreadID != "", "tools", req.Tools)
-	params = map[string]any{"threadId": result.ThreadID, "input": []any{map[string]any{"type": "text", "text": req.Prompt}}}
+	params = map[string]any{"threadId": result.ThreadID, "input": append([]any{map[string]any{"type": "text", "text": req.Prompt}}, req.Images...)}
 	if req.Effort != "" {
 		params["effort"] = req.Effort
 	}

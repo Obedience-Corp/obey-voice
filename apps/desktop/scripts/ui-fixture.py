@@ -24,7 +24,9 @@ parser.add_argument('--voice-preview', action='store_true', help='Serve test ton
 parser.add_argument("--brain-error", action="store_true", help="Return a provider error for requests containing trigger failure")
 parser.add_argument('--group-participation', action='store_true', help='Enable isolated participation controls and deterministic private decisions')
 parser.add_argument("--images", action="store_true", help="Enable isolated image/GIF import and vision request checks")
+parser.add_argument("--agent-images", action="store_true", help="Return image/GIF files as agent attachments")
 args = parser.parse_args()
+args.images = args.images or args.agent_images
 root = pathlib.Path(__file__).resolve().parent.parent
 fixture_root = pathlib.Path(tempfile.mkdtemp(prefix='obey-desktop-ui-'))
 config_dir = fixture_root / 'config'
@@ -78,6 +80,8 @@ class Handler(BaseHTTPRequestHandler):
         content = 'The native desktop conversation is working.'
         if args.images and any(m.get('images') for m in request.get('messages', [])):
             content = 'I received the attached image. The screenshot has colored blocks; GIF input uses its first frame.'
+            if args.agent_images:
+                content += f'\n![Returned image](<{fixture_root / "Screenshot with spaces.png"}>)\n![Returned animation](<{fixture_root / "animation.gif"}>)'
         if request.get('format'):
             if args.group_participation:
                 schema = request['format'].get('properties', {})
@@ -93,7 +97,8 @@ class Handler(BaseHTTPRequestHandler):
         self.respond({'model': 'desktop-test', 'message': {'role': 'assistant', 'content': content}, 'done': True, 'done_reason': 'stop'})
 
 server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-fixture_config = f'''brain_provider: ollama
+fixture_config = f'''work_dir: {fixture_root}
+brain_provider: ollama
 ollama_host: http://127.0.0.1:{server.server_port}
 ollama_model: desktop-test
 vad_enabled: false
@@ -109,7 +114,7 @@ if args.voice_preview:
     fixture_config += f'tts_provider: openai-speech\nopenai_speech_url: http://127.0.0.1:{server.server_port}/v1\nopenai_speech_voice: fixture-tone\n'
 if not args.fresh:
     (config_dir / 'config.yaml').write_text(fixture_config)
-fixture_app = root / ('dist/Obey Voice Images Test.app' if args.images else 'dist/Obey Voice Test.app')
+fixture_app = root / ('dist/Obey Voice Agent Images Test.app' if args.agent_images else 'dist/Obey Voice Images Test.app' if args.images else 'dist/Obey Voice Test.app')
 if args.images:
     env = dict(os.environ, OBEY_VOICE_MEDIA_FIXTURE_DIR=str(fixture_root))
     subprocess.run(['go', 'test', './internal/testmedia', '-run', '^TestWriteFixtures$', '-count=1'], cwd=root.parent.parent, env=env, check=True)
@@ -128,6 +133,8 @@ with plist_path.open('rb') as f:
 info.update(CFBundleIdentifier='com.obedience.voice-agent.test', CFBundleName='Obey Voice Test', CFBundleDisplayName='Obey Voice Test')
 if args.images:
     info.update(CFBundleIdentifier='com.obedience.voice-agent.images-test', CFBundleName='Obey Voice Images Test', CFBundleDisplayName='Obey Voice Images Test')
+if args.agent_images:
+    info.update(CFBundleIdentifier='com.obedience.voice-agent.agent-images-test', CFBundleName='Obey Voice Agent Images Test', CFBundleDisplayName='Obey Voice Agent Images Test')
 if args.group_participation or args.images:
     launcher = fixture_app / 'Contents/MacOS/fixture-launcher'
     # A Mach-O launcher also keeps resume text-only; LaunchServices does not

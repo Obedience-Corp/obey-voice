@@ -57,6 +57,7 @@ func (m *conversationModel) workStateChanged(e events.WorkStateChanged) {
 		if idx, ok := m.workResultItems[id]; ok && idx < len(m.items) {
 			m.items[idx].sys = line
 			m.items[idx].workResultID = id
+			m.items[idx].attachments = result.Outcome.Attachments
 			continue
 		}
 		// Replace the provisional JobFinished line when lifecycle and canonical
@@ -66,13 +67,13 @@ func (m *conversationModel) workStateChanged(e events.WorkStateChanged) {
 			idx, ok = m.completedJobItems[result.Outcome.JobID]
 		}
 		if ok && idx < len(m.items) {
-			m.items[idx] = chatItem{kind: chatItemSys, sys: line, workResultID: id}
+			m.items[idx] = chatItem{kind: chatItemSys, sys: line, workResultID: id, attachments: result.Outcome.Attachments}
 			delete(m.jobItems, result.Outcome.JobID)
 			delete(m.completedJobItems, result.Outcome.JobID)
 			m.workResultItems[id] = idx
 		} else {
 			m.workResultItems[id] = len(m.items)
-			m.items = append(m.items, chatItem{kind: chatItemSys, sys: line, workResultID: id})
+			m.items = append(m.items, chatItem{kind: chatItemSys, sys: line, workResultID: id, attachments: result.Outcome.Attachments})
 		}
 		m.workResultJobs[result.Outcome.JobID] = id
 	}
@@ -81,6 +82,7 @@ func (m *conversationModel) workStateChanged(e events.WorkStateChanged) {
 			continue
 		}
 		if idx < len(m.items) && m.items[idx].workResultID == id {
+			m.items[idx].attachments = nil
 			m.items[idx].sys = ""
 			m.items[idx].workResultID = ""
 		}
@@ -149,6 +151,7 @@ func (m *conversationModel) renderWorkResult(v work.ResultView) string {
 func (m *conversationModel) clearWorkProjection() {
 	for id, idx := range m.workResultItems {
 		if idx < len(m.items) && m.items[idx].workResultID == id {
+			m.items[idx].attachments = nil
 			m.items[idx].sys = ""
 			m.items[idx].workResultID = ""
 		}
@@ -160,6 +163,7 @@ func (m *conversationModel) clearWorkProjection() {
 func (m *conversationModel) clearJobProjection() {
 	for id, idx := range m.jobItems {
 		if idx < len(m.items) {
+			m.items[idx].attachments = nil
 			m.items[idx].sys = ""
 		}
 		delete(m.jobItems, id)

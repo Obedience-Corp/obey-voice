@@ -1,8 +1,11 @@
 package pipeline
 
 import (
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -18,6 +21,7 @@ type workerOrigin struct {
 	releaseVoice  func()
 }
 type workerReply struct {
+	Attachments []chatmedia.Ref
 	workerOrigin
 	Text string
 }
@@ -38,11 +42,12 @@ func (a *Agency) discardPendingSpeech() {
 // response's streaming buffers. History mutations belong to the serialized
 // host, at admission or an idle background turn.
 func (a *Agency) queueWorkerReply(id, text string) workerOrigin {
+	refs := a.workerReplyMedia(id)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	origin := a.workerOrigins[id]
 	if strings.TrimSpace(text) != "" {
-		a.workerReplies = append(a.workerReplies, workerReply{workerOrigin: origin, Text: text})
+		a.workerReplies = append(a.workerReplies, workerReply{workerOrigin: origin, Text: text, Attachments: refs})
 	}
 	return origin
 }
@@ -79,7 +84,14 @@ func (p *Pipeline) commitWorkerReplies() error {
 		if e := reply.Envelope; e.PersonaID != "" {
 			identity = &brain.TurnIdentity{PersonaID: e.PersonaID, PersonaDisplayName: e.DisplayName, PromptHash: e.PromptHash, ResponseID: e.ResponseID}
 		}
-		if err := appendResponse(p.Brain, reply.Text, identity); err != nil {
+		var writeErr error
+		writer, supportsMedia := p.Brain.(brain.ReplyMediaWriter)
+		if len(reply.Attachments) > 0 && !supportsMedia {
+			writeErr = fmt.Errorf("provider cannot persist worker image replies")
+		} else {
+			writeErr = appendResponse(p.Brain, reply.Text, identity)
+		}
+		if err := writeErr; err != nil {
 			a.mu.Lock()
 			a.workerReplies = append(replies[i:], a.workerReplies...)
 			a.mu.Unlock()
@@ -87,6 +99,16 @@ func (p *Pipeline) commitWorkerReplies() error {
 			return err
 		}
 		committed = true
+		if len(reply.Attachments) > 0 {
+			if err := writer.SetReplyMedia(reply.Text, reply.Attachments); err != nil {
+				// The text was appended. Requeue only untouched replies to avoid duplicates.
+				a.mu.Lock()
+				a.workerReplies = append(replies[i+1:], a.workerReplies...)
+				a.mu.Unlock()
+				p.emit(events.Error{Stage: "worker result images", Message: err.Error()})
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -112,6 +134,7 @@ func (a *Agency) saveWorkerThread(id string, turns []brain.Turn) {
 func copyWorkerThread(turns []brain.Turn) []brain.Turn {
 	copy := append([]brain.Turn(nil), turns...)
 	for i := range copy {
+		copy[i].Attachments = append([]chatmedia.Ref(nil), turns[i].Attachments...)
 		copy[i].ToolCalls = append([]brain.TurnToolCall(nil), copy[i].ToolCalls...)
 	}
 	return copy

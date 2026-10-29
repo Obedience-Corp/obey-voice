@@ -47,37 +47,39 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
-	AttachmentError string                `json:"attachment_error"`
-	Attachments     []desktopMedia        `json:"attachments,omitempty"`
-	AttachmentBusy  bool                  `json:"attachment_busy"`
-	Participation   *discussion.Settings  `json:"participation,omitempty"`
-	WorkDir         string                `json:"work_dir"`
-	WorkDirSource   string                `json:"work_dir_source"`
-	Notices         []string              `json:"notices"`
-	WorkResults     []string              `json:"work_results"`
-	SettingsMessage string                `json:"settings_message"`
-	Enrollment      DesktopEnrollment     `json:"enrollment"`
-	SpeakerNames    []string              `json:"speaker_names"`
-	SessionID       string                `json:"session_id"`
-	Name            string                `json:"name"`
-	BrainProvider   string                `json:"brain_provider,omitempty"`
-	BrainModel      string                `json:"brain_model,omitempty"`
-	Status          string                `json:"status"`
-	Error           bool                  `json:"error"`
-	Mic             bool                  `json:"mic"`
-	VoiceAvailable  bool                  `json:"voice_available"`
-	Muted           bool                  `json:"muted"`
-	Busy            bool                  `json:"busy"`
-	Recording       string                `json:"recording"`
-	Partial         string                `json:"partial"`
-	Thinking        string                `json:"thinking"`
-	Response        string                `json:"response"`
-	InputLevel      float64               `json:"input_level"`
-	OutputLevel     float64               `json:"output_level"`
-	Turns           []DesktopTurn         `json:"turns"`
-	Activity        []DesktopActivity     `json:"activity"`
-	Workers         []pipeline.WorkerInfo `json:"workers"`
-	WorkersEnabled  bool                  `json:"workers_enabled"`
+	AttachmentError  string                   `json:"attachment_error"`
+	Attachments      []desktopMedia           `json:"attachments,omitempty"`
+	AttachmentBusy   bool                     `json:"attachment_busy"`
+	Participation    *discussion.Settings     `json:"participation,omitempty"`
+	WorkDir          string                   `json:"work_dir"`
+	WorkDirSource    string                   `json:"work_dir_source"`
+	Notices          []string                 `json:"notices"`
+	WorkerThreads    map[string][]DesktopTurn `json:"worker_threads,omitempty"`
+	WorkResultImages [][]desktopMedia         `json:"work_result_images,omitempty"`
+	WorkResults      []string                 `json:"work_results"`
+	SettingsMessage  string                   `json:"settings_message"`
+	Enrollment       DesktopEnrollment        `json:"enrollment"`
+	SpeakerNames     []string                 `json:"speaker_names"`
+	SessionID        string                   `json:"session_id"`
+	Name             string                   `json:"name"`
+	BrainProvider    string                   `json:"brain_provider,omitempty"`
+	BrainModel       string                   `json:"brain_model,omitempty"`
+	Status           string                   `json:"status"`
+	Error            bool                     `json:"error"`
+	Mic              bool                     `json:"mic"`
+	VoiceAvailable   bool                     `json:"voice_available"`
+	Muted            bool                     `json:"muted"`
+	Busy             bool                     `json:"busy"`
+	Recording        string                   `json:"recording"`
+	Partial          string                   `json:"partial"`
+	Thinking         string                   `json:"thinking"`
+	Response         string                   `json:"response"`
+	InputLevel       float64                  `json:"input_level"`
+	OutputLevel      float64                  `json:"output_level"`
+	Turns            []DesktopTurn            `json:"turns"`
+	Activity         []DesktopActivity        `json:"activity"`
+	Workers          []pipeline.WorkerInfo    `json:"workers"`
+	WorkersEnabled   bool                     `json:"workers_enabled"`
 }
 
 type DesktopController struct {
@@ -332,7 +334,9 @@ func (m desktopModel) state() DesktopState {
 	if len(state.Notices) > 20 {
 		state.Notices = state.Notices[len(state.Notices)-20:]
 	}
+	state.WorkerThreads = desktopWorkerThreads(state.Workers)
 	state.WorkResults = c.readableWorkResults()
+	state.WorkResultImages = c.workResultImages()
 	s := m.app.settings
 	state.SettingsMessage = ansi.Strip(s.message)
 	state.Enrollment = DesktopEnrollment{Active: s.enroll.active, Name: s.enroll.name, Clip: s.enroll.clip, Seconds: s.enroll.elapsed.Seconds(), Processing: s.enroll.enrolling}

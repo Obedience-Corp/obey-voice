@@ -306,7 +306,8 @@ func (p *Pipeline) completeAgentResponse(ctx context.Context, response string, m
 		return
 	}
 	identity := metrics.responseIdentity()
-	state.turn = brain.Turn{Role: "assistant", Content: response}
+	reply := p.finalizeMedia(metrics, response)
+	state.turn = brain.Turn{Role: "assistant", Content: reply.Response, Attachments: reply.Attachments}
 	if identity != nil {
 		state.turn.PersonaID = identity.PersonaID
 		state.turn.PersonaDisplayName = identity.PersonaDisplayName

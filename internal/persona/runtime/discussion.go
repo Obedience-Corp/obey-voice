@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -230,12 +232,12 @@ func (s *Selector) routeAudience(ctx context.Context, input string) (pipeline.Re
 		admitted.Envelope = responseEnvelope(selected)
 		return admitted, nil
 	case "clarify":
-		if err := s.recordGroupInput(input); err != nil {
+		if err := s.recordGroupInput(ctx, input); err != nil {
 			return admitted, err
 		}
 		return admitted, fmt.Errorf("group audience is %s (%s); name the intended agents", a.Reason, strings.Join(a.Unresolved, ", "))
 	}
-	if err := s.recordGroupInput(input); err != nil {
+	if err := s.recordGroupInput(ctx, input); err != nil {
 		return admitted, err
 	}
 	if s.Participation().Mode == "off" {
@@ -309,14 +311,14 @@ func clipDiscussion(text string) string {
 	}
 	return string(r)
 }
-func (s *Selector) recordGroupInput(input string) error {
+func (s *Selector) recordGroupInput(ctx context.Context, input string) error {
 	provider, ok := s.opts.Pipeline.Brain.(brain.ContinuityTransferProvider)
 	if !ok {
 		return errors.New("group discussion requires shared continuity")
 	}
 	before := provider.ContinuitySnapshot()
 	next := before
-	t := brain.Turn{Role: "user", Content: input, Speaker: s.opts.Pipeline.CurrentSpeakerID(), At: time.Now()}
+	t := brain.Turn{Role: "user", Content: input, Speaker: s.opts.Pipeline.CurrentSpeakerID(), At: time.Now(), Attachments: chatmedia.Input(ctx)}
 	next.Canonical = append(slices.Clone(before.Canonical), t)
 	working := before.Working
 	if working == nil {

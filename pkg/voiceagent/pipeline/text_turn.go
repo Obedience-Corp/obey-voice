@@ -88,13 +88,21 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		ctx, stop = discussion.Bind(ctx, admission.Discussion.State)
 		defer stop()
 	}
-	if p.GroupParticipationEnabled && admission.Discussion == nil {
+	if p.GroupParticipationEnabled && admission.Discussion == nil && len(chatmedia.Input(ctx)) == 0 {
 		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
 	}
 	if !isContinuation && admission.LocalReply != "" {
 		return p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
 	}
 	input = admission.Request
+	if err := p.validateRetainedImages(ctx); err != nil {
+		turn.finish(TurnFailed)
+		return err
+	}
+	if err := p.ValidateImages(ctx, chatmedia.Input(ctx)); err != nil {
+		turn.finish(TurnFailed)
+		return err
+	}
 	if err := p.prepareTurn(ctx, input, metrics, turn); err != nil {
 		if errors.Is(err, context.Canceled) {
 			turn.finish(TurnInterrupted)
@@ -155,10 +163,6 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
 	}
-	if len(streamOpts.Attachments) > 0 {
-		streamOpts.ToolsEnabled = false
-		streamOpts.WorkerTiers = nil
-	}
 	if isContinuation || background {
 		streamOpts.Attachments = nil
 	}
@@ -210,6 +214,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 	}
 
+	response = p.finalizeMedia(metrics, response).Response
 	metrics.modelComplete = time.Now()
 	p.emitResponse(metrics, events.ThinkingComplete{
 		Response: response,
