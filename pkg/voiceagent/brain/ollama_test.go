@@ -1507,22 +1507,26 @@ func TestEnsureContextBudgetShrinksSharedToolAndKeepsCurrentUser(t *testing.T) {
 }
 
 func TestEnsureContextBudgetFitsSmallNumCtx(t *testing.T) {
-	call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
-	o := &OllamaBrain{
-		cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 128},
-		fullSystemPrompt: "sys",
-		history: []api.Message{
-			{Role: "user", Content: "summarize my campaign"},
-			call,
-			{Role: "tool", Content: strings.Repeat("x", 8000), ToolName: "run_command"},
-		},
-	}
+	for _, user := range []string{"", "Lance"} {
+		t.Run("user="+user, func(t *testing.T) {
+			call := api.Message{Role: "assistant", Content: "", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "run_command"}}}}
+			o := &OllamaBrain{
+				cfg:              &config.Config{MaxHistory: 20, OllamaNumCtx: 128, UserDisplayName: user, PromptsDir: t.TempDir()},
+				fullSystemPrompt: "sys",
+				history: []api.Message{
+					{Role: "user", Content: "summarize my campaign"},
+					call,
+					{Role: "tool", Content: strings.Repeat("x", 8000), ToolName: "run_command"},
+				},
+			}
 
-	o.ensureContextBudget("")
-	if o.history[0].Role != "user" {
-		t.Fatalf("lost user query: %+v", rolesOf(o.history))
+			o.ensureContextBudget("")
+			if o.history[0].Role != "user" {
+				t.Fatalf("lost user query: %+v", rolesOf(o.history))
+			}
+			assertWithinContextBudget(t, o, "")
+		})
 	}
-	assertWithinContextBudget(t, o, "")
 }
 
 func TestEnsureContextBudgetFitsManyToolResults(t *testing.T) {
