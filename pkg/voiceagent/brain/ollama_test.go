@@ -875,20 +875,26 @@ func TestWarmupSendsNoToolsWhenVoiceToolsDisabled(t *testing.T) {
 	}
 }
 
-// A model that rejects tools must still get loaded: warmup takes the same
-// retry-without-tools path a live turn does, instead of a bare 400 that
-// leaves the first turn colder than the old "hi" did.
-func TestWarmupRetriesWithoutToolsWhenTheModelRejectsThem(t *testing.T) {
-	var withTools, withoutTools int
-	o := &OllamaBrain{
-		client:           ollamaStub(t, &withTools, &withoutTools),
-		model:            "m",
-		cfg:              &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: true},
-		fullSystemPrompt: "You are Samantha.",
-	}
-	o.Warmup(context.Background())
-	if withTools != 1 || withoutTools != 1 {
-		t.Fatalf("want the tools request then a retry without; got withTools=%d withoutTools=%d", withTools, withoutTools)
+// Warmup follows live compatibility handling. Required routing must not be
+// dropped; the legacy chat fallback still preloads a text-only model.
+func TestWarmupToolRejectionFollowsRoutingPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		policy RouterToolsPolicy
+		chats  int
+	}{{RouterToolsRouteOnly, 0}, {RouterToolsLegacy, 1}} {
+		t.Run(string(tc.policy), func(t *testing.T) {
+			var withTools, withoutTools int
+			o := &OllamaBrain{
+				client:           ollamaStub(t, &withTools, &withoutTools),
+				model:            "m",
+				cfg:              &config.Config{OllamaNumCtx: 8192, VoiceToolsEnabled: true, VoiceRouterTools: string(tc.policy)},
+				fullSystemPrompt: "You are Samantha.",
+			}
+			o.Warmup(context.Background())
+			if withTools != 1 || withoutTools != tc.chats {
+				t.Fatalf("requests: tools=%d chat=%d, want 1 / %d", withTools, withoutTools, tc.chats)
+			}
+		})
 	}
 }
 

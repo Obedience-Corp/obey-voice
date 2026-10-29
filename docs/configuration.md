@@ -80,7 +80,7 @@ when you select it.
 | `persona` | `obey` | `PERSONA` | Prompt document name for kind=persona (overlaid from active persona) |
 | `compact_prompt` | *(embedded default)* | `COMPACT_PROMPT` | Prompt document name for kind=compact — the `/compact` summarize-turn instruction |
 | `brain_provider` | `ollama` | `BRAIN_PROVIDER` | Brain backend: `ollama`, `claude`, `cursor`, or `grok` |
-| `ollama_model` | empty | `OLLAMA_MODEL` | Ollama model name |
+| `ollama_model` | empty | `OLLAMA_MODEL` | Ollama model name. Live worker routing requires a model with tool support; a model that rejects routing tools reports a compatibility error instead of silently answering without them. |
 | `cursor_model` | empty | `CURSOR_MODEL` | Model `cursor-agent` is asked for. Empty uses the CLI's own default. |
 | `grok_model` | empty | `GROK_MODEL` | Model the Grok CLI is asked for. Empty uses the CLI's own default. |
 | `ollama_embedding_model` | `nomic-embed-text` | `OLLAMA_EMBEDDING_MODEL` | Ollama embedding model used to match each user prompt to relevant Agent Skills. Set empty to disable semantic routing and retain model-driven `read_skill` fallback. |
