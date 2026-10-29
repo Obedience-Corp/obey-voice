@@ -71,7 +71,7 @@ func TestNewBatchProviderAcceptsImplementedProviders(t *testing.T) {
 		providers = append(providers, spec.Name)
 	}
 	for _, provider := range providers {
-		cfg := &config.Config{BrainProvider: provider}
+		cfg := &config.Config{BrainProvider: provider, ObeyProvider: "fixture", ObeyModel: "fixture", ObeyToolPolicy: "daemon"}
 
 		_, err := NewBatchProvider(cfg)
 		if err == nil {

@@ -38,6 +38,13 @@ impl VoiceApp {
             "ollama" => &["ollama_host", "ollama_model"],
             "grok" => &["grok_model"],
             "cursor" => &["cursor_model"],
+            "obey" => &[
+                "obey_provider",
+                "obey_model",
+                "obey_camp",
+                "obey_socket",
+                "obey_tool_policy",
+            ],
             "codex" => &["codex_model", "codex_reasoning_effort"],
             _ => &[],
         };

@@ -490,6 +490,10 @@ func (m settingsModel) activeModel() string {
 		if m.cfg.CursorModel != "" {
 			return m.cfg.CursorModel
 		}
+	case "obey":
+		if m.cfg.ObeyModel != "" {
+			return m.cfg.ObeyModel
+		}
 	case "codex":
 		if m.cfg.CodexModel != "" {
 			return m.cfg.CodexModel
@@ -814,6 +818,8 @@ func (m *settingsModel) selectModel(model string) tea.Cmd {
 		field, key = &m.cfg.GrokModel, "grok_model"
 	case "cursor":
 		field, key = &m.cfg.CursorModel, "cursor_model"
+	case "obey":
+		field, key = &m.cfg.ObeyModel, "obey_model"
 	case "codex":
 		field, key = &m.cfg.CodexModel, "codex_model"
 	}

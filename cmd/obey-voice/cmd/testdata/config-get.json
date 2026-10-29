@@ -250,6 +250,26 @@
       "value": false,
       "source": "default"
     },
+    "obey_camp": {
+      "value": "",
+      "source": "default"
+    },
+    "obey_model": {
+      "value": "",
+      "source": "default"
+    },
+    "obey_provider": {
+      "value": "",
+      "source": "default"
+    },
+    "obey_socket": {
+      "value": "",
+      "source": "default"
+    },
+    "obey_tool_policy": {
+      "value": "strict",
+      "source": "default"
+    },
     "ollama_embedding_model": {
       "value": "nomic-embed-text",
       "source": "default"

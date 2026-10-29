@@ -1,0 +1,10 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: daemon-continuation
+  kind: system
+  system_prompt: >-
+    Continue your response using the shared context. This is a host continuation,
+    not a new user message.
+metadata:
+  version: 1
+  description: Host continuation context for Obey daemon runs. No runtime placeholders.

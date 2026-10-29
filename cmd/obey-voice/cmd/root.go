@@ -164,6 +164,8 @@ func Execute() error {
 
 func modelName(cfg *config.Config) string {
 	switch cfg.BrainProvider {
+	case "obey":
+		return cfg.ObeyModel
 	case "claude":
 		return "claude"
 	case "grok":

@@ -41,6 +41,11 @@ pub(super) fn section(spec: &KeySpec) -> &'static str {
             | "ollama_model"
             | "grok_model"
             | "cursor_model"
+            | "obey_provider"
+            | "obey_model"
+            | "obey_camp"
+            | "obey_socket"
+            | "obey_tool_policy"
             | "codex_model"
             | "codex_reasoning_effort"
     ) || key.starts_with("decision_")
@@ -99,6 +104,9 @@ fn provider_model(key: &str) -> Option<&'static str> {
         "grok_model" => Some("grok"),
         "cursor_model" => Some("cursor"),
         "codex_model" | "codex_reasoning_effort" => Some("codex"),
+        "obey_provider" | "obey_model" | "obey_camp" | "obey_socket" | "obey_tool_policy" => {
+            Some("obey")
+        }
         _ => None,
     }
 }
@@ -133,6 +141,11 @@ fn priority(key: &str) -> usize {
         "ollama_model"
         | "grok_model"
         | "cursor_model"
+        | "obey_provider"
+        | "obey_model"
+        | "obey_camp"
+        | "obey_socket"
+        | "obey_tool_policy"
         | "codex_model"
         | "voice_worker_model"
         | "tts_voice"
