@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -10,6 +11,35 @@ import (
 )
 
 func (p *Pipeline) emit(event events.Event) {
+	if events.TraceOf(event) == nil {
+		trace := p.sourceTrace(time.Now())
+		id := events.SourceJobID(event)
+		if id != "" {
+			if p.Agency != nil {
+				if frozen := p.Agency.jobTrace(id); frozen.RuntimeID != "" {
+					trace = frozen
+				}
+			}
+			trace.TurnID = nil
+			trace.TurnStartMS = nil
+			trace.ResponseID = nil
+			trace.PersonaID = nil
+			trace.JobID = &id
+		}
+		if runtime, session, epoch, ok := events.SourceWorkScope(event); ok {
+			if runtime != trace.RuntimeID {
+				trace = events.TraceContext{RuntimeID: runtime, SessionID: session, ConversationEpoch: epoch}
+			} else {
+				trace.SessionID = session
+				trace.ConversationEpoch = epoch
+			}
+		}
+		if id != "" {
+			trace.JobID = &id
+		}
+		event = events.AttributeTrace(event, p.stampTrace(trace))
+	}
+	tracePipelineEvent(event)
 	if p.Events != nil {
 		p.Events.Emit(event)
 	}
@@ -25,15 +55,24 @@ func (p *Pipeline) bindBrainInfo() {
 }
 
 // toolStartHook emits ToolCallStarted for UI (stdout + TUI).
-func (p *Pipeline) toolStartHook() func(brain.ToolCall) {
+func (p *Pipeline) toolStartHook(contexts ...context.Context) func(brain.ToolCall) {
 	return func(call brain.ToolCall) {
 		p.bumpBrainDeadline()
-		p.emit(toolStartedEvent("", call))
+		e := toolStartedEvent("", call)
+		if len(contexts) > 0 {
+			ctx := contexts[0]
+			trace := events.TraceFromContext(ctx)
+			now := time.Now()
+			p.traceSpan(trace, traceID(trace, "tool:"+call.ID), "tool", "start", "running", now, time.Time{}, nil, nil)
+			p.emitResponseContext(ctx, e)
+		} else {
+			p.emit(e)
+		}
 	}
 }
 
-func (p *Pipeline) toolStartHookTracked(toolsFired *bool) func(brain.ToolCall) {
-	base := p.toolStartHook()
+func (p *Pipeline) toolStartHookTracked(toolsFired *bool, contexts ...context.Context) func(brain.ToolCall) {
+	base := p.toolStartHook(contexts...)
 	return func(call brain.ToolCall) {
 		if toolsFired != nil {
 			*toolsFired = true
@@ -148,10 +187,20 @@ func (p *Pipeline) completeRoutedTurn(ctx context.Context, turn *turnConductor, 
 }
 
 // toolEndHook emits ToolCallFinished for UI.
-func (p *Pipeline) toolEndHook() func(brain.ToolResult) {
+func (p *Pipeline) toolEndHook(contexts ...context.Context) func(brain.ToolResult) {
 	return func(res brain.ToolResult) {
 		p.bumpBrainDeadline()
-		p.emit(toolFinishedEvent("", res))
+		e := toolFinishedEvent("", res)
+		if len(contexts) > 0 {
+			ctx := contexts[0]
+			trace := events.TraceFromContext(ctx)
+			end := time.Now()
+			status := string(e.OutcomeStatus())
+			p.traceSpan(trace, traceID(trace, "tool:"+res.ID), "tool", "end", status, end.Add(-e.ResultElapsed()), end, nil, nil)
+			p.emitResponseContext(ctx, e)
+		} else {
+			p.emit(e)
+		}
 	}
 }
 

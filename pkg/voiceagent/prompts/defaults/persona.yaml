@@ -30,4 +30,4 @@ prompt:
 metadata:
   id: obey-default
   version: 1
-  description: Default persona shipped with Obey Voice; direct, unobtrusive, built for speech.
+  description: Default persona shipped with Obey Voice; direct, unobtrusive, with Phonon Harper.

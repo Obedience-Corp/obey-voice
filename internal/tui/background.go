@@ -111,17 +111,11 @@ func (m *conversationModel) dispatchBackground() tea.Cmd {
 	m.turnCancel = cancel
 	m.turnState = turnTextRunning
 	wg := m.deps.wg
-	if wg != nil {
-		wg.Add(1)
-	}
-	return func() tea.Msg {
-		if wg != nil {
-			defer wg.Done()
-		}
+	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		defer cancel()
 		if ctx.Err() != nil {
 			return textTurnDoneMsg{err: ctx.Err()}
 		}
 		return textTurnDoneMsg{err: runner.RunBackgroundTurn(ctx)}
-	}
+	})
 }

@@ -4,8 +4,8 @@
   "old_value": 0.8,
   "value": 0.9,
   "type": "float",
-  "config_file": "/Users/lance/.obey/agents/voice/festival-voice/config.yaml",
-  "backup": "/Users/lance/.obey/agents/voice/festival-voice/config.yaml.bak.20260817T031500.000000000Z",
+  "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
+  "backup": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml.bak.20260817T031500.000000000Z",
   "changed": true,
   "restart_required": true
 }

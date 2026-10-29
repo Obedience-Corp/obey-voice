@@ -1,0 +1,404 @@
+[
+  {
+    "id": "small-git",
+    "state": {
+      "latest_user_message": "Run git diff --stat in this project and tell me the output.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "simple"
+    }
+  },
+  {
+    "id": "small-python",
+    "state": {
+      "latest_user_message": "Please execute python3 --version.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "simple"
+    }
+  },
+  {
+    "id": "small-read",
+    "state": {
+      "latest_user_message": "Read the file README.md in the current directory.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "simple"
+    }
+  },
+  {
+    "id": "small-write",
+    "state": {
+      "latest_user_message": "Write the words cedar and rain to a new file called note.txt.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "simple"
+    }
+  },
+  {
+    "id": "small-search",
+    "state": {
+      "latest_user_message": "Find occurrences of EnableCache in this repository.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "simple"
+    }
+  },
+  {
+    "id": "small-list",
+    "state": {
+      "latest_user_message": "List the files in the scripts directory.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "simple"
+    }
+  },
+  {
+    "id": "medium-change",
+    "state": {
+      "latest_user_message": "Change the default port to 9020, update its documentation, and run the relevant tests.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "medium"
+    }
+  },
+  {
+    "id": "medium-compare",
+    "state": {
+      "latest_user_message": "Read both test reports, compare their failures, and save a summary to failures.md.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "medium"
+    }
+  },
+  {
+    "id": "medium-debug",
+    "state": {
+      "latest_user_message": "Reproduce the failing upload test, fix the cause, and verify the fix.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "medium"
+    }
+  },
+  {
+    "id": "large-build",
+    "state": {
+      "latest_user_message": "Implement a complete desktop note-taking app with search, sync, import, export, and automated tests.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "complex"
+    }
+  },
+  {
+    "id": "large-migration",
+    "state": {
+      "latest_user_message": "Migrate this application from its SQL database to a document store, update every affected component, and validate the migration.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "complex"
+    }
+  },
+  {
+    "id": "large-audit",
+    "state": {
+      "latest_user_message": "Audit the whole application for performance problems, implement the fixes, and measure the results.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "complex"
+    }
+  },
+  {
+    "id": "greeting",
+    "state": {
+      "latest_user_message": "Hey, nice to hear you again.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "explain",
+    "state": {
+      "latest_user_message": "Why does git sometimes report a detached HEAD?",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "hypothetical",
+    "state": {
+      "latest_user_message": "If I were to ask you to edit that file, would you make a backup?",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "quoted",
+    "state": {
+      "latest_user_message": "My teammate wrote \"run python3 --version\" in a message. What does that mean?",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "example",
+    "state": {
+      "latest_user_message": "Show me an example command for listing hidden files, without executing it.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "negated",
+    "state": {
+      "latest_user_message": "Do not write anything to disk. Just explain how configuration is loaded.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "capability",
+    "state": {
+      "latest_user_message": "What kinds of programming tasks can you help with?",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "missing",
+    "state": {
+      "latest_user_message": "Fix the thing we talked about.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "assent",
+    "state": {
+      "latest_user_message": "Sure, that sounds good.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "thinking",
+    "state": {
+      "latest_user_message": "I am considering adding an export button, but I have not decided yet.",
+      "recent_conversation": [],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  },
+  {
+    "id": "context-approved",
+    "state": {
+      "latest_user_message": "Yes, save it now.",
+      "recent_conversation": [
+        {
+          "role": "user",
+          "text": "The note should say Bring a raincoat and the address is packing.txt."
+        },
+        {
+          "role": "assistant",
+          "text": "Would you like me to save that note to packing.txt?"
+        }
+      ],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": true,
+      "tier": "simple"
+    }
+  },
+  {
+    "id": "context-withdrawn",
+    "state": {
+      "latest_user_message": "Actually, skip it. I changed my mind.",
+      "recent_conversation": [
+        {
+          "role": "user",
+          "text": "Save the sentence Bring a raincoat to packing.txt."
+        },
+        {
+          "role": "assistant",
+          "text": "Shall I save it now?"
+        }
+      ],
+      "enabled_worker_tiers": [
+        "simple",
+        "medium",
+        "complex"
+      ]
+    },
+    "want": {
+      "work": false,
+      "tier": "none"
+    }
+  }
+]

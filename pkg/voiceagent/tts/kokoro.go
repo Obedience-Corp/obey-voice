@@ -301,6 +301,17 @@ func (k *KokoroTTS) FirstAudioGraceForChars(chars int) time.Duration {
 	return grace
 }
 
+// SegmentRamp is 1/0.64: Kokoro's median engine RTF was 0.64 on an M4 Max
+// (tts-bench, 2026-09-18), so a segment may be half again as long as the one
+// playing while it synthesizes.
+func (k *KokoroTTS) SegmentRamp() float64 { return 1.5 }
+
+// JoinsSentences is false. sherpa's Kokoro frontend starts a new token entry
+// at . ! ? ; and runs the model once per entry with batch_size 1, so two
+// sentences in one Generate call are still two contours. Merging a short beat
+// here means rewriting its terminal punctuation, not joining the request.
+func (k *KokoroTTS) JoinsSentences() bool { return false }
+
 // ListVoices returns available Kokoro voices with optional filtering. It
 // delegates to StaticVoices so the live and static catalogs can never drift
 // (kokoro's voice list is compile-time data either way — nothing here reads

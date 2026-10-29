@@ -14,21 +14,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-latest
-          - ubuntu-latest
-    runs-on: ${{ matrix.os }}
+  desktop:
+    name: Desktop (Linux)
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95'
+          components: rustfmt, clippy
+      - uses: extractions/setup-just@v3
+      - name: Install desktop dependencies
+        run: sudo apt-get install --yes libdbus-1-dev libxkbcommon-dev pkg-config
+      - name: Desktop lint, tests, and build against this engine
+        run: just desktop check
+
+  test:
+    name: Test (Linux)
+    runs-on: [self-hosted, linux, x64, lance-arch]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
       - name: Vet
         run: go vet ./...
       - name: Test
@@ -38,13 +51,13 @@ jobs:
   # (govet, ineffassign, unused — see .golangci.yml). errcheck and staticcheck
   # are staged in a follow-up once their cleanup lands.
   lint:
-    runs-on: macos-latest
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -54,38 +67,32 @@ jobs:
   # and this -race suite is its deterministic regression guard, so a failure
   # must fail the job rather than only warn.
   voiceflow:
-    name: Voiceflow (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-latest
-          - ubuntu-latest
-    runs-on: ${{ matrix.os }}
+    name: Voiceflow (Linux)
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Voiceflow
         run: go test -race -tags integration ./tests/voiceflow/... -count=1 -timeout 5m
 
   integration:
     name: Container integration (Linux)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Integration
         run: go run ./internal/buildutil integration
 
   linux-artifact:
     name: Relocatable Linux artifact
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,14 +100,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - uses: extractions/setup-just@v3
       - name: Install artifact tools
         run: sudo apt-get install --yes patchelf
       - name: Build and smoke-test artifact
         run: just release linux-artifact
-      - uses: actions/upload-artifact@v4
-        with:
-          name: obey-voice-linux-amd64
-          path: dist/obey-voice-linux-amd64.tar.gz
-          if-no-files-found: error
+      # Routine CI validates the archive without retaining a copy on every
+      # push. Use Release Artifacts when a downloadable build is needed.

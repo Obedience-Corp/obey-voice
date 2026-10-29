@@ -1,0 +1,162 @@
+{
+  "counts": {
+    "10dB white noise": {
+      "hits": 3,
+      "misses": 3,
+      "false_matches": 0,
+      "correct_negatives": 3
+    },
+    "clean": {
+      "hits": 5,
+      "misses": 1,
+      "false_matches": 1,
+      "correct_negatives": 2
+    }
+  },
+  "results": [
+    {
+      "file": "bare.wav",
+      "spoken": "Obey.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey",
+      "detector_ms": 8.312
+    },
+    {
+      "file": "bare.wav",
+      "spoken": "Obey.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "",
+      "detector_ms": 6.306
+    },
+    {
+      "file": "positive.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey",
+      "detector_ms": 10.242
+    },
+    {
+      "file": "positive.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey",
+      "detector_ms": 11.067
+    },
+    {
+      "file": "british.wav",
+      "spoken": "Obey, can you help me?",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey",
+      "detector_ms": 6.931
+    },
+    {
+      "file": "british.wav",
+      "spoken": "Obey, can you help me?",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "",
+      "detector_ms": 19.182
+    },
+    {
+      "file": "kokoro.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey",
+      "detector_ms": 10.286
+    },
+    {
+      "file": "kokoro.wav",
+      "spoken": "Hey Obey, tell me the weather.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey",
+      "detector_ms": 10.016
+    },
+    {
+      "file": "verb.wav",
+      "spoken": "You must obey the rules.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "Obey",
+      "detector_ms": 9.898
+    },
+    {
+      "file": "verb.wav",
+      "spoken": "You must obey the rules.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "Obey",
+      "detector_ms": 9.43
+    },
+    {
+      "file": "mention.wav",
+      "spoken": "Tell me about Obey.",
+      "want_keyword": true,
+      "condition": "clean",
+      "keyword": "",
+      "detector_ms": 11.871
+    },
+    {
+      "file": "mention.wav",
+      "spoken": "Tell me about Obey.",
+      "want_keyword": true,
+      "condition": "10dB white noise",
+      "keyword": "",
+      "detector_ms": 13.5
+    },
+    {
+      "file": "negative.wav",
+      "spoken": "Okay, tell me the weather.",
+      "want_keyword": false,
+      "condition": "clean",
+      "keyword": "",
+      "detector_ms": 19.417
+    },
+    {
+      "file": "negative.wav",
+      "spoken": "Okay, tell me the weather.",
+      "want_keyword": false,
+      "condition": "10dB white noise",
+      "keyword": "",
+      "detector_ms": 19.325
+    },
+    {
+      "file": "other-keyword.wav",
+      "spoken": "I will love you forever.",
+      "want_keyword": false,
+      "condition": "clean",
+      "keyword": "",
+      "detector_ms": 12.426
+    },
+    {
+      "file": "other-keyword.wav",
+      "spoken": "I will love you forever.",
+      "want_keyword": false,
+      "condition": "10dB white noise",
+      "keyword": "",
+      "detector_ms": 12.243
+    },
+    {
+      "file": "confusable.wav",
+      "spoken": "Oh baby, what a beautiful day.",
+      "want_keyword": false,
+      "condition": "clean",
+      "keyword": "Obey",
+      "detector_ms": 10.183
+    },
+    {
+      "file": "confusable.wav",
+      "spoken": "Oh baby, what a beautiful day.",
+      "want_keyword": false,
+      "condition": "10dB white noise",
+      "keyword": "",
+      "detector_ms": 23.367
+    }
+  ]
+}

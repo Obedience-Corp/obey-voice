@@ -34,17 +34,18 @@ const (
 // error text rather than error values so it can round-trip through encoding;
 // consumers that need the original error keep using the source event structs.
 type TypedEvent struct {
-	Kind       EventKind
-	Text       string
-	Phase      string
-	Final      bool
-	ErrText    string
-	Confidence float64
-	Elapsed    time.Duration
-	Level      float64 // KindInputLevel only (0..1)
-	Scope      work.WorkScope
-	RequestID  string
-	Epoch      uint64
+	Kind         EventKind
+	Text         string
+	AcousticName string
+	Phase        string
+	Final        bool
+	ErrText      string
+	Confidence   float64
+	Elapsed      time.Duration
+	Level        float64 // KindInputLevel only (0..1)
+	Scope        work.WorkScope
+	RequestID    string
+	Epoch        uint64
 }
 
 // ToTyped converts any STT event into its TypedEvent envelope.
@@ -55,7 +56,7 @@ func ToTyped(ev Event) TypedEvent {
 	case PartialTranscript:
 		return TypedEvent{Kind: KindPartialTranscript, Text: e.Text}
 	case FinalTranscript:
-		return TypedEvent{Kind: KindFinalTranscript, Text: e.Text, Final: true}
+		return TypedEvent{Kind: KindFinalTranscript, Text: e.Text, Final: true, AcousticName: e.AcousticName}
 	case Timeout:
 		return TypedEvent{Kind: KindTimeout}
 	case Failure:

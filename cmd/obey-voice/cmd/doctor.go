@@ -87,9 +87,14 @@ func runDoctor(cmd *cobra.Command, cfg *config.Config, modelsDir string, lookPat
 	// registration, released at once.
 	diags = append(diags, talkHotkeyDiags(speechCtx, cfg)...)
 	diags = append(diags, config.DiagnoseSpeechPlace(speechCtx, cfg, speechProbe)...)
+	// openai-speech asks its server what it serves, bounded to a few seconds.
+	diags = append(diags, config.DiagnoseOpenAISpeech(speechCtx, cfg, modelsDir)...)
 	// Whether that speech is played chunk by chunk. Read-only: it reports the
 	// policy, and never starts a worker to ask.
 	diags = append(diags, config.DiagnoseQwenStreaming(cfg, modelsDir)...)
+	// And how many engines produce it. Read-only for the same reason: the row
+	// reports the configured pool, never a started worker.
+	diags = append(diags, config.DiagnoseQwenWorkers(cfg, modelsDir)...)
 
 	if voiceChecker != nil {
 		parent := cmd.Context()
@@ -167,14 +172,9 @@ func personaQwenDiags(cfg *config.Config, modelsDir string) []config.Diagnostic 
 	return diags
 }
 
-// bargeInSpeakersDiags warns when barge_in_speakers=enrolled_only cannot
-// actually gate anything yet. The interrupt watcher's verdict source
-// (pipeline.SpeakerVerdict, see bargeInSpeakerVerdict) only blocks a trip on
-// a confident, enrolled-mismatch window — with live analysis off or nobody
-// enrolled it never produces one, so the gate fails open on every turn (D7's
-// documented posture, not a bug). Read-only: LoadEnrollment never creates the
-// store, unlike speakerEnrollmentDir's sibling OpenEnrollment used by
-// `speaker enroll`.
+// bargeInSpeakersDiags warns when enrolled_only cannot admit voice interruptions
+// because live recognition is disabled or no speaker is enrolled. Typed/manual
+// interruption remains available. Loading enrollment is read-only.
 func bargeInSpeakersDiags(cfg *config.Config) []config.Diagnostic {
 	return bargeInSpeakersDiagsNative(cfg)
 }

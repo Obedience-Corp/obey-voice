@@ -21,7 +21,7 @@ func TestLiveParakeetSpeechAndSilence(t *testing.T) {
 	if fixture == "" || models == "" {
 		t.Skip("set OBEY_VOICE_LIVE_STT_FIXTURE and OBEY_VOICE_LIVE_STT_MODELS")
 	}
-	cfg := &config.Config{ModelsDir: models, ParakeetModel: config.DefaultParakeetModel, VADThreshold: .6, VADMinSpeechDuration: .25, VADSilenceDuration: .5, VADPreRollMS: 300, ListenTimeout: 10}
+	cfg := &config.Config{ModelsDir: models, ParakeetModel: config.DefaultParakeetModel, VADThreshold: .6, VADMinSpeechDuration: .1, VADSilenceDuration: .5, VADPreRollMS: 300, ListenTimeout: 10}
 	vad, err := audio.NewVAD(cfg)
 	if err != nil {
 		t.Fatal(err)

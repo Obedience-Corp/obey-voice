@@ -1,8 +1,14 @@
-# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: obey
 display_name: Obey
+aliases:
+    - Obi
+    - Obie
+    - Oh bay
 builtin: true
-tts: {}
+tts:
+    provider: openai-speech
+    voice: Harper
 prompts:
     persona: obey

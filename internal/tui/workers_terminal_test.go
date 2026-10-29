@@ -10,10 +10,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 // Runs the real App, worker table and Bubble Tea renderer without models, mic,
@@ -64,7 +66,7 @@ func TestWorkersTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !interactive {
-		for _, want := range []string{"Review campaign changes", "ollama / test-local", "Allow background workers:", "Stop requested", "Termination: unknown"} {
+		for _, want := range []string{"Review campaign changes", "ollama / test-local", "Allow background workers:", "Stop requested", "Termination", "unknown"} {
 			if !strings.Contains(stripANSI(output.String()), want) {
 				t.Fatalf("renderer missing %q:\n%s", want, stripANSI(output.String()))
 			}
@@ -116,3 +118,58 @@ func (h *workersTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return h, tea.Batch(cmd, next)
 }
 func (h *workersTerminal) View() string { return h.app.View() }
+
+// Render running activity, refresh it to a failure, and scroll to the final
+// result using the actual Bubble Tea event loop and terminal renderer.
+func TestWorkerActivityTerminal(t *testing.T) {
+	controller := &testWorkers{items: []pipeline.WorkerInfo{{ID: "fixture", Task: "Check the project", Provider: "codex", Model: "fixture-model", State: "running",
+		Thread: []brain.Turn{{Role: "user", Content: "Check the project"}, {Role: "assistant", Content: "I am checking the test suite."}},
+		Tools:  []workfold.Call{{Name: "commandExecution", Summary: "go test ./...", Status: "running"}}}}}
+	m := newWorkers(&config.Config{}, controller)
+	m.width, m.height, m.cursor = 88, 26, 2
+	h := &workerActivityTerminal{model: m, controller: controller}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithInput(nil), tea.WithOutput(&output), tea.WithoutSignalHandler()).Run(); err != nil {
+		t.Fatal(err)
+	}
+	plain := stripANSI(output.String())
+	for _, want := range []string{"codex / fixture-model", "go test ./...", "Tool activity", "Worker thread", "running", "failed", "exit 1", "One check failed."} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("terminal missing %q:\n%s", want, plain)
+		}
+	}
+}
+
+type workerActivityTerminal struct {
+	model      workersModel
+	controller *testWorkers
+}
+
+func (h *workerActivityTerminal) Init() tea.Cmd { return h.next(0) }
+func (h *workerActivityTerminal) next(n int) tea.Cmd {
+	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return workersTerminalStep(n) })
+}
+func (h *workerActivityTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step, ok := msg.(workersTerminalStep); ok {
+		switch step {
+		case 0:
+			h.model, _ = h.model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			h.model, _ = h.model.Update(tea.KeyMsg{Type: tea.KeyHome})
+		case 1:
+			item := &h.controller.items[0]
+			item.State, item.Result = "done", "One check failed."
+			item.Thread = append(item.Thread, brain.Turn{Role: "assistant", Content: item.Result})
+			item.Tools[0].Status, item.Tools[0].Err, item.Tools[0].Preview = "failed", "exit 1", "FAIL project checks"
+			h.model, _ = h.model.Update(workersTickMsg{h.model.token})
+		case 2:
+			h.model, _ = h.model.Update(tea.KeyMsg{Type: tea.KeyEnd})
+		default:
+			return h, tea.Quit
+		}
+		return h, h.next(int(step) + 1)
+	}
+	return h, nil
+}
+func (h *workerActivityTerminal) View() string { return h.model.View() }

@@ -23,6 +23,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
@@ -60,7 +61,9 @@ var rootCmd = &cobra.Command{
 		// --log-file and `narrate <file>` against the caller's cwd. The two
 		// interactive surfaces (root's RunE and serve) enter the directory
 		// themselves, after pinning their own relative path flags.
-		resolvedWorkDir = config.WorkDirFrom(cfg)
+		workDirInfo := config.WorkDirInfoFrom(cfg)
+		resolvedWorkDir = workDirInfo.Dir
+		resolvedWorkDirSource = string(workDirInfo.Source)
 		debugDir := debugAudioDir
 		if debugDir == "auto" {
 			debugDir = filepath.Join(config.ConfigDir(), "debug", "audio")
@@ -202,6 +205,16 @@ func bindSession(cfg *config.Config, personaID string) (*persona.SessionBinding,
 // progress and the mic goes hot here, not in the launcher (D2). A non-nil
 // resume session seeds both the brain history and the viewport.
 func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBuilder {
+	return conversationRuntimeBuilderFor(resumeSession, textMode, noVoice)
+}
+
+// Capture input/output choices per runtime, including reload closures. Desktop
+// hosts can build independent sessions without changing Cobra's global flags.
+func conversationRuntimeBuilderFor(resumeSession *session.Session, textMode, noVoice bool) appTUI.RuntimeBuilder {
+	return conversationRuntimeBuilderWithDirectory(resumeSession, textMode, noVoice, "")
+}
+
+func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, textMode, noVoice bool, directoryOverride string) appTUI.RuntimeBuilder {
 	return func(ctx context.Context, progress appTUI.BuildProgress, sessionID, personaID string) (*appTUI.ConversationRuntime, error) {
 		// CLI resume/continue seeds only the first chat. Later launcher choices
 		// must load their selected session, or start fresh for New conversation.
@@ -224,6 +237,9 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			return nil, fmt.Errorf("reload config: %w", err)
 		}
 		stampWorkDir(cfg)
+		if err := resolveConversationDirectory(cfg, personaID, directoryOverride, sess); err != nil {
+			return nil, err
+		}
 		baseCfg := *cfg
 
 		// Resolve the initial responder before constructing capture/model work.
@@ -300,7 +316,6 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 		if p.Capture != nil {
 			captureSrc = p.Capture
 		}
-		progress.Stage("Preparing speaker identification")
 		liveSpeaker, stopLive, liveDetail := prepareLiveSpeaker(ctx, cfg, captureSrc)
 		if liveDetail != "" {
 			bus.Emit(events.Info{Message: liveDetail})
@@ -317,14 +332,9 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			if liveCfg.LiveActive() && liveCfg.Live.Mode == speaker.LiveModeOwnerVerify {
 				p.SpeakerGate = ownerVerifyGate(liveSpeaker.Stats)
 			}
-			// barge_in_speakers=enrolled_only is a separate axis from
-			// speaker.live.mode (D7): wired regardless of mode, and even
-			// when speaker.live is currently disabled — a later /speakers
-			// on should not need a session restart to start gating. The
-			// verdict source itself fails open until live analysis is
-			// actually healthy and producing verdicts (see doctor's
-			// barge-in-speakers-gate warning for the disabled/unenrolled
-			// case).
+			// Wire even while live analysis is disabled so /speakers on can
+			// enable voice interruptions without restarting. Until healthy,
+			// enrolled_only blocks automatic interruptions; typed input works.
 			if config.BargeInSpeakersOf(cfg) == config.BargeInSpeakersEnrolledOnly {
 				p.BargeInSpeakerVerdict = bargeInSpeakerVerdict(liveSpeaker.Stats)
 			}
@@ -350,9 +360,13 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			}
 			selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
 				Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
-				UseDefaults: sessionBindID == appTUI.StartDefaultsID,
+				UseDefaults:   sessionBindID == appTUI.StartDefaultsID,
+				Participation: sess.Participation,
+				PersistParticipation: func(settings discussion.Settings) error {
+					return session.DefaultStore().SaveParticipation(sess, settings)
+				},
 				Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-					return session.DefaultStore().SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+					return session.DefaultStore().SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 				},
 				NewBrain: func(_ context.Context, next *config.Config) (brain.Provider, error) {
 					provider, err := brain.NewProvider(next)
@@ -374,6 +388,8 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 			}
 			p.AdmitInput = selector.Route
 			p.RouteHandoff = selector.RouteHandoff
+			p.EndDiscussion = selector.EndDiscussion
+			p.CompleteDiscussion = selector.RecordDiscussionResponse
 		}
 
 		p.OnTurn = func() {
@@ -441,6 +457,7 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				// so device/settings changes take effect without replacing the
 				// bound voice identity. Defaults sessions re-bind Settings, not
 				// the default persona's saved TTS.
+				reloaded.WorkDir, reloaded.WorkDirSource = rt.SessionCfg.WorkDir, rt.SessionCfg.WorkDirSource
 				rebound, err := bindSession(reloaded, reloadID)
 				if err != nil {
 					return fmt.Errorf("resolve session persona: %w", err)
@@ -503,6 +520,8 @@ func conversationRuntimeBuilder(resumeSession *session.Session) appTUI.RuntimeBu
 				selected, err := selector.Select(ctx, id, "ui")
 				return selected, selector.Config(), err
 			}
+			rt.Participation = selector.Participation
+			rt.SetParticipation = selector.SetParticipation
 			rt.SelectionSnapshot = selector.Snapshot
 			rt.SelectionConfig = selector.Config
 		}
@@ -540,7 +559,14 @@ func startPipeline(cfg *config.Config, resumeSession *session.Session) error {
 	// Same binding rule as the TUI runtime: the CLI conversation runs on an
 	// identity snapshot, not the live global overlay. --persona selects which
 	// identity, for this process only.
-	binding, err := persona.ResolveBinding(cfg, personaOverride)
+	bindID := personaOverride
+	if bindID == "" && resumeSession != nil {
+		bindID = resumeSession.SelectedPersonaID
+	}
+	if err := resolveConversationDirectory(cfg, bindID, "", resumeSession); err != nil {
+		return err
+	}
+	binding, err := persona.ResolveBinding(cfg, bindID)
 	if err != nil {
 		return fmt.Errorf("resolve persona: %w", err)
 	}

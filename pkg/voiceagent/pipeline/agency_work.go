@@ -49,6 +49,12 @@ func (a *Agency) callbackKey(id string) (*work.Coordinator, work.JobKey, bool) {
 	jobScope, exists := a.jobScopes[id]
 	a.workMu.RUnlock()
 	if c == nil {
+		a.mu.Lock()
+		origin := a.workerOrigins[id]
+		a.mu.Unlock()
+		if origin.Scope.Valid() && (origin.Scope != a.pipeline.ConversationScope() || a.pipeline.ConversationRetired()) {
+			return nil, work.JobKey{}, false
+		}
 		return nil, work.JobKey{}, true
 	}
 	return c, work.JobKey{Scope: jobScope, JobID: id}, exists && scope == jobScope && !c.Snapshot(scope).Retired
@@ -105,13 +111,14 @@ func (a *Agency) EnableConversationWork(sessionID string, saved *work.Snapshot, 
 		}
 		a.ReplaceWorker(worker, cfg, workerErr)
 	}
-	a.mu.Lock()
-	a.pending = nil
-	a.mu.Unlock()
+	a.discardPendingSpeech()
 	a.workMu.Lock()
 	a.coordinator, a.workScope, a.workObserver = c, scope, observer
 	a.jobScopes = make(map[string]work.WorkScope)
 	a.workMu.Unlock()
+	if a.pipeline != nil {
+		a.pipeline.adoptConversationScope(scope)
+	}
 	a.workChanged(c.Snapshot(scope))
 	return nil
 }

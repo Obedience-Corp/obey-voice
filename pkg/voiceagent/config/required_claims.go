@@ -18,6 +18,11 @@ func configReferencedClaims(cfg *Config, modelsDir string) ([]assetClaim, error)
 		return nil, err
 	}
 	claims := append(stt, ttsConfigClaims(cfg, modelsDir)...)
+	// Keep a configured local decision installation across disable/enable and
+	// provider changes, including an interrupted managed install.
+	if cfg.DecisionLocalModel != "" || cfg.DecisionRuntime == "managed" {
+		claims = append(claims, pathClaim(filepath.Join(modelsDir, "decider"), "configured local decision runtime"))
+	}
 	// Registered audio8 voices are claimed whatever provider is selected, which
 	// the export beside them deliberately is not. The asymmetry is the point:
 	// the export is a gigabyte-and-a-half that can be fetched again from the
@@ -104,6 +109,15 @@ func ttsConfigClaims(cfg *Config, modelsDir string) []assetClaim {
 			reason = "voice_fallback_provider audio8"
 		}
 		claims = append(claims, pathClaim(filepath.Join(modelsDir, Audio8Subdir), reason))
+	}
+	// models ensure writes Phonon's voice catalog under models_dir/phonon, and
+	// no manifest owns it.
+	if usesOpenAISpeech(cfg.TTSProvider) || usesOpenAISpeech(cfg.TTSFallbackProvider) {
+		reason := "tts_provider " + OpenAISpeechProviderName
+		if !usesOpenAISpeech(cfg.TTSProvider) {
+			reason = "voice_fallback_provider " + OpenAISpeechProviderName
+		}
+		claims = append(claims, pathClaim(filepath.Join(modelsDir, filepath.Dir(filepath.FromSlash(OpenAISpeechVoicesFile))), reason+" (voice catalog)"))
 	}
 	// An external qwen worker or model tree under the models dir is named by
 	// config alone; qwen.UseManaged treats both as a supported setup.
@@ -221,6 +235,10 @@ func qwenTier(cfg *Config) string {
 func usesKokoro(provider string) bool {
 	provider = strings.TrimSpace(provider)
 	return provider == "" || strings.EqualFold(provider, "kokoro")
+}
+
+func usesOpenAISpeech(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), OpenAISpeechProviderName)
 }
 
 // usesAudio8 has no empty-string case: kokoro is the default provider, audio8

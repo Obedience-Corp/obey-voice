@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
@@ -177,8 +176,8 @@ func TestTerminalTextModeBrainErrorRecoversWithSingleMetrics(t *testing.T) {
 		t.Fatalf("TurnMetrics = outcome %q degraded %v, want completed degraded", got, metrics.Degraded())
 	}
 	e, ok := ready.Load().(events.ResponseReady)
-	if !ok || !e.Degraded || !strings.Contains(e.Response, brain.RecoveryReply) {
-		t.Fatalf("ResponseReady = %+v, want degraded recovery reply", e)
+	if !ok || !e.Degraded || e.Response != "" {
+		t.Fatalf("ResponseReady = %+v, want degraded turn without fabricated reply", e)
 	}
 }
 

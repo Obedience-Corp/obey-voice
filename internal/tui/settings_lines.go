@@ -2,21 +2,25 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // A line is what the cursor rests on. A list row (pick, menu) contributes a
 // heading, one line per option and a blank after it; every other row is one
-// line. Headings and blanks are skipped by the cursor, so ↑/↓ only ever land
-// on something enter can act on.
+// line, except a choice row whose options wrap onto more. Headings, blanks
+// and wrapped options are skipped by the cursor, so ↑/↓ only ever land on
+// something enter can act on.
 type settingLine struct {
 	row int
 	// option indexes the row's options on a list, or is -1 for the row itself.
 	option int
 	header bool
 	blank  bool
+	// wrap > 0 is a choice row's wrap-th continuation: more of its options.
+	wrap int
 }
 
-func (l settingLine) focusable() bool { return !l.header && !l.blank }
+func (l settingLine) focusable() bool { return !l.header && !l.blank && l.wrap == 0 }
 
 // expands reports whether a row draws its options under a heading. A list
 // with nothing in it, or one that is disabled, draws as a single line that
@@ -25,7 +29,9 @@ func (r settingRow) expands() bool {
 	return (r.kind == rowPick || r.kind == rowMenu) && !r.disabled && len(r.options) > 0
 }
 
-func linesFor(rows []settingRow) []settingLine {
+// linesFor lays rows out with valueWidth cells for a row's value; a choice
+// row that needs more takes continuation lines.
+func linesFor(rows []settingRow, valueWidth int) []settingLine {
 	var lines []settingLine
 	blank := func(i int) {
 		if n := len(lines); n > 0 && !lines[n-1].blank {
@@ -35,6 +41,9 @@ func linesFor(rows []settingRow) []settingLine {
 	for i, row := range rows {
 		if !row.expands() {
 			lines = append(lines, settingLine{row: i, option: -1})
+			for w := 1; w < len(row.valueLines(valueWidth)); w++ {
+				lines = append(lines, settingLine{row: i, option: -1, wrap: w})
+			}
 			continue
 		}
 		blank(i)
@@ -50,12 +59,37 @@ func linesFor(rows []settingRow) []settingLine {
 	return lines
 }
 
-func (m settingsModel) sectionLines() []settingLine { return linesFor(m.sectionRows()) }
+// nameColumn is the width of the name column one-line rows share.
+func nameColumn(rows []settingRow) int {
+	width := 0
+	for _, row := range rows {
+		if !row.expands() {
+			width = max(width, lipgloss.Width(row.name))
+		}
+	}
+	return min(max(width, 12), 30) + 2
+}
+
+// valueWidth is the room a one-line row's value has: the content less the
+// margin, the cursor and the name column.
+func (m settingsModel) valueWidth(rows []settingRow) int {
+	return m.contentWidth() - 4 - nameColumn(rows)
+}
+
+// layout is the current section's rows and the lines they take at this width.
+func (m settingsModel) layout() ([]settingRow, []settingLine) {
+	rows := m.sectionRows()
+	return rows, linesFor(rows, m.valueWidth(rows))
+}
+
+func (m settingsModel) sectionLines() []settingLine {
+	_, lines := m.layout()
+	return lines
+}
 
 // focused is the row under the cursor and, on a list, which of its options.
 func (m settingsModel) focused() (settingRow, settingLine, bool) {
-	rows := m.sectionRows()
-	lines := linesFor(rows)
+	rows, lines := m.layout()
 	if m.cursor < 0 || m.cursor >= len(lines) || !lines[m.cursor].focusable() {
 		return settingRow{}, settingLine{}, false
 	}
@@ -119,8 +153,7 @@ func (m *settingsModel) clampCursor() {
 // with a list opens on that list's current option, so the value is marked
 // and on screen even when the list is long; anything else opens at the top.
 func (m settingsModel) homeCursor() int {
-	rows := m.sectionRows()
-	lines := linesFor(rows)
+	rows, lines := m.layout()
 	for i, l := range lines {
 		if !l.focusable() {
 			continue
@@ -136,6 +169,103 @@ func (m settingsModel) homeCursor() int {
 		return i
 	}
 	return 0
+}
+
+// lineAnchor is the line the cursor rests on, by what is drawn there rather
+// than by index: a catalog landing or a resize moves lines, not choices.
+type lineAnchor struct {
+	row    int
+	name   string
+	option int
+	// voice names the voice under the cursor: a landing catalog reorders the
+	// voice list, so its index is no anchor.
+	voice string
+}
+
+func (m settingsModel) anchor() (lineAnchor, bool) {
+	rows, lines := m.layout()
+	if m.cursor < 0 || m.cursor >= len(lines) || !lines[m.cursor].focusable() {
+		return lineAnchor{}, false
+	}
+	l := lines[m.cursor]
+	a := lineAnchor{row: l.row, name: rows[l.row].name, option: l.option}
+	if m.section == sectionVoice {
+		a.voice, _ = m.focusedVoice()
+	}
+	return a, true
+}
+
+// restore puts the cursor back on a's line: the same row, or the first of
+// that name when rows were added above it; a voice that left the list gives
+// way to the ✓ voice.
+func (m *settingsModel) restore(a lineAnchor) {
+	option := a.option
+	if a.voice != "" {
+		shown := m.shownVoiceItems()
+		if option = voiceIndex(shown, a.voice); option < 0 {
+			option = voiceIndex(shown, m.activeVoice())
+		}
+	}
+	rows, lines := m.layout()
+	found := -1
+	for i, l := range lines {
+		if !l.focusable() || rows[l.row].name != a.name || l.option != option {
+			continue
+		}
+		if l.row == a.row {
+			found = i
+			break
+		}
+		if found < 0 {
+			found = i
+		}
+	}
+	if found >= 0 {
+		m.cursor = found
+	}
+	m.clampCursor()
+}
+
+// keepFocus runs change, then puts every visited section's cursor back on
+// the line it rested on, the remembered ones included.
+func (m *settingsModel) keepFocus(change func()) {
+	anchors := map[settingsSection]lineAnchor{}
+	m.eachVisited(func() {
+		if a, ok := m.anchor(); ok {
+			anchors[m.section] = a
+		}
+	})
+	change()
+	m.eachVisited(func() {
+		if a, ok := anchors[m.section]; ok {
+			m.restore(a)
+		} else {
+			m.clampCursor()
+		}
+	})
+	m.ensureCursorVisible()
+}
+
+// eachVisited runs f with each visited section current and its cursor in
+// m.cursor, then returns to the section that was current.
+func (m *settingsModel) eachVisited(f func()) {
+	section := m.section
+	m.cursors[section] = m.cursor
+	for s := range settingsSectionCount {
+		if !m.visited[s] {
+			continue
+		}
+		m.section, m.cursor = s, m.cursors[s]
+		f()
+		m.cursors[s] = m.cursor
+	}
+	m.section, m.cursor = section, m.cursors[section]
+}
+
+// resize changes the geometry; a choice row may wrap differently at the new
+// width, so the cursors are kept on their lines.
+func (m *settingsModel) resize(width, height int) {
+	m.keepFocus(func() { m.width, m.height = width, height })
 }
 
 // ── the verbs ────────────────────────────────────────────────────────

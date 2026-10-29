@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/apmfrontend"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -223,8 +222,17 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		VoiceFailedRouteRepair:      cfg.VoiceFailedRouteRepair,
 		BargeInTailGuard:            config.BargeInTailGuardOf(cfg),
 		BargeInSpeakerVerdictMaxAge: config.BargeInSpeakerVerdictMaxAgeOf(cfg),
+		TTSLookahead:                config.TTSLookaheadOf(cfg),
 		CapturePreRoll:              time.Duration(cfg.VADPreRollMS) * time.Millisecond,
 	}
+
+	if config.BargeInSpeakersOf(cfg) == config.BargeInSpeakersEnrolledOnly {
+		// Hosts replace this with their live analyzer. Until then, unavailable
+		// recognition must not silently downgrade enrolled_only to anyone.
+		p.BargeInSpeakerVerdict = func() pipeline.SpeakerVerdict { return pipeline.SpeakerVerdict{} }
+	}
+
+	cleanups = append(cleanups, bindDecisions(p, cfg))
 
 	// Brain — injected, or selected by config.
 	if opts.Brain != nil {
@@ -292,8 +300,8 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		p.EnableBackchannel(ctx)
 	}
 
-	// Non-speech tags ([moan], [laugh], …) expand to onomatopoeia in the live
-	// TTS throat. WAVs in the persona sounds/ dir overlay a kind when present.
+	// Stage tags are stripped. Recorded persona clips are not spliced into
+	// TTS — they do not match the live mouth.
 	if !opts.Silent {
 		sounds := filepath.Join(config.ConfigDir(), "personas", cfg.ActivePersona, "sounds")
 		p.EnableVocals(sounds)
@@ -304,14 +312,7 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 		var frontend audio.Frontend
 		if opts.Capture == nil {
 			if front := config.VoiceFrontendOf(cfg); front != config.VoiceFrontendOff {
-				// A selection this build cannot honor (webrtc without the apm
-				// tag) is a hard startup error, never a silent fallback to
-				// nlms — see DECISIONS.md D5, config.ValidateVoiceFrontend.
-				if err := config.ValidateVoiceFrontend(cfg); err != nil {
-					cleanup()
-					return nil, nil, fmt.Errorf("voice front-end: %w", err)
-				}
-				built, err := newVoiceFrontend(front, cfg)
+				built, err := NewVoiceFrontend(cfg)
 				if err != nil {
 					cleanup()
 					return nil, nil, fmt.Errorf("init voice front-end: %w", err)
@@ -453,23 +454,4 @@ func New(ctx context.Context, opts Options) (*Agent, func(), error) {
 	cleanups = append(cleanups, func() { _ = agency.CloseWork() })
 
 	return &Agent{Pipeline: p}, cleanup, nil
-}
-
-// newVoiceFrontend constructs the front-end config.VoiceFrontendOf(cfg) named.
-// Callers are expected to have already handled off (no front-end at all) and
-// called config.ValidateVoiceFrontend(cfg) (webrtc without the apm tag is a
-// startup error, not something this function falls back from).
-func newVoiceFrontend(front string, cfg *config.Config) (audio.Frontend, error) {
-	switch front {
-	case config.VoiceFrontendWebRTC:
-		primary, err := apmfrontend.New(config.VoiceFrontendNSLevelOf(cfg))
-		if err != nil {
-			return nil, err
-		}
-		return audio.NewStartupPreserveFrontend(primary), nil
-	case config.VoiceFrontendNLMS:
-		return audio.NewVoiceFrontend(), nil
-	default:
-		return nil, fmt.Errorf("unsupported voice_frontend %q", front)
-	}
 }

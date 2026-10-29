@@ -1,0 +1,6 @@
+{
+  "protocol": "obey-transcript/v1",
+  "job_id": "conformance-stereo",
+  "input": {"path": "{{INPUT}}", "format": "wav_pcm_s16le", "sample_rate_hz": 16000, "channels": 1, "timeline_origin_us": 0},
+  "timing": "utterance"
+}

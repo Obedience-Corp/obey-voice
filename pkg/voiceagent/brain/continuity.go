@@ -12,8 +12,6 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-const continuityFallback = "I lost my train of thought — can you repeat the last part?"
-
 // ErrPromptBudget is the hard refuse when a Chat request would exceed 90% of
 // num_ctx. Compact treats this as "trim and continue", not a user-facing
 // RecoveryReply.
@@ -280,4 +278,5 @@ func (o *OllamaBrain) ReseedContinuity(turns []Turn) {
 	// The synthetic summary is shared context, not a reply authored by the
 	// currently active persona. Keep the durable canonical transcript intact.
 	o.loadHistoryProjectionForPersona(turns, false, true)
+	o.maybeEmitContinuityBudget("")
 }

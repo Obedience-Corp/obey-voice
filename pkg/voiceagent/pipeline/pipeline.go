@@ -9,6 +9,8 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
@@ -100,14 +102,25 @@ type Pipeline struct {
 	identityMu      sync.RWMutex
 	identityScope   work.WorkScope
 	identityRetired bool
+	traceOrigin     time.Time
 
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.
 	AdmitInput func(context.Context, string, bool) (ResponseAdmission, error)
+	// Decisions is off by default. The host configures independent points; a
+	// ready proposal still passes the ordinary worker admission policy.
+	Decisions decision.Controller
+	// ConfigureDecisions changes optional settings without replacing a brain or
+	// interrupting admitted work. The owning runtime performs setup in the background.
+	ConfigureDecisions func(*config.Config)
+	DecisionStatus     func() decision.RuntimeStatus
 	// RouteHandoff classifies an intentional handoff without changing selection.
 	// The pipeline commits the proposal after joining the speech interrupt watch.
 	// It never invokes this callback for background or degraded work.
-	RouteHandoff func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
+	RouteHandoff              func(context.Context, brain.Turn, []string) (HandoffProposal, bool, error)
+	EndDiscussion             func(string)
+	GroupParticipationEnabled bool
+	CompleteDiscussion        func(context.Context, brain.Turn) error
 	// The serialized host remembers omitted coverage until the next safe
 	// boundary, where one deterministic brief replaces a model retry.
 	completionFallback map[string]bool
@@ -123,6 +136,7 @@ type Pipeline struct {
 	// Kokoro is constructed here when voice_fallback_provider=kokoro.
 	TTSFallback       tts.Provider
 	ttsMu             sync.RWMutex
+	ttsRetentions     map[*ttsRetention]struct{}
 	Player            audio.Engine
 	Capture           CaptureMonitor
 	VAD               VoiceDetector
@@ -172,6 +186,21 @@ type Pipeline struct {
 	// provider's FirstAudioGrace when that is larger.
 	PlaybackStallTimeout time.Duration
 
+	// idleFlush overrides how long a buffered sentence group waits for a
+	// follower once brain tokens stop. Zero uses idleFlushAfter; tests set it
+	// so grouping cases do not run at the product's 350 ms.
+	idleFlush time.Duration
+
+	// openingHold overrides the opening group's absolute deadline. Zero uses
+	// openingHoldAfter; tests set it so a held beat does not wait 400 ms.
+	openingHold time.Duration
+
+	// TTSLookahead bounds how many admitted speech segments a turn may hold
+	// ahead of the one playing (config tts_lookahead). Zero uses the compiled
+	// default, same convention as PlaybackStallTimeout. See lookahead().
+	TTSLookahead     int
+	lookaheadClamped sync.Once
+
 	// BrainTurnTimeout bounds ThinkStream (model + tools) per turn. Zero uses
 	// defaultBrainTurnTimeout; negative disables the bound. The bound is idle
 	// time: tokens and tool activity reset it, so a long tool loop does not
@@ -210,7 +239,7 @@ type Pipeline struct {
 	// interrupt.go SpeakerVerdict / interruptController.allowsInterrupt.
 	BargeInSpeakerVerdict func() SpeakerVerdict
 	// BargeInSpeakerVerdictMaxAge bounds how old a BargeInSpeakerVerdict may
-	// be before the interrupt controller treats it as stale and fails open
+	// be before the interrupt controller treats it as stale and blocks interruption
 	// (~2x speaker.live.window_ms). Zero uses
 	// bargeInSpeakerVerdictMaxAgeDefault. See
 	// config.BargeInSpeakerVerdictMaxAgeOf.
@@ -256,6 +285,9 @@ func (p *Pipeline) currentSpeakerID() string {
 func (p *Pipeline) SetOutputMuted(muted bool) {
 	p.outputMuted.Store(muted)
 	if muted {
+		if p.EndDiscussion != nil {
+			p.EndDiscussion("muted")
+		}
 		if c := p.WorkCoordinator(); c != nil {
 			_ = c.RevokeBinding(c.Scope())
 		}
@@ -273,7 +305,7 @@ func (p *Pipeline) OutputMuted() bool { return p.outputMuted.Load() }
 
 // ReplaceTTS atomically changes the providers used by subsequent synthesis
 // calls. Callers own provider cleanup and must keep retired providers alive
-// until any already-started utterance has drained.
+// until any already-started utterance has drained and TTSRetentions have released.
 func (p *Pipeline) ReplaceTTS(primary, fallback tts.Provider) {
 	p.ttsMu.Lock()
 	p.TTS = primary
@@ -470,3 +502,6 @@ func (p *Pipeline) prepareNextListen() {
 func (p *Pipeline) clearPreparedCapture() {
 	p.preparedCapture.Store(false)
 }
+
+// CurrentSpeakerID is the finalized-input speaker snapshot used by admission owners.
+func (p *Pipeline) CurrentSpeakerID() string { return p.currentSpeakerID() }

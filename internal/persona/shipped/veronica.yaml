@@ -1,11 +1,10 @@
-# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: veronica
 display_name: Veronica
 builtin: true
 tts:
-    provider: qwen3-tts
-    voice: VeronicaDesk
-    tier: 0.6b
+    provider: openai-speech
+    voice: Zoey
 prompts:
     persona: veronica

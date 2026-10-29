@@ -95,6 +95,37 @@ func TestWorkersReturnsToSameChatAndMuteState(t *testing.T) {
 	}
 }
 
+func TestWorkCueOpensSingleWorkerDetail(t *testing.T) {
+	t.Setenv(demoWorkersEnv, "1")
+	app := newApp(&config.Config{}, nil, nil)
+	app.screen = screenConversation
+	app.width, app.height = 100, 28
+	app.conversation = sizedConversation(t, 100, 28)
+	app.conversation.input.SetValue("unfinished draft")
+
+	model, _ := app.Update(openWorkerMsg{jobID: "job-1"})
+	app = model.(App)
+	if app.screen != screenWorkers || app.workers.detailID != "job-1" {
+		t.Fatalf("worker cue opened screen %v, detail %q", app.screen, app.workers.detailID)
+	}
+	if !strings.Contains(stripANSI(app.View()), "weather in denver") {
+		t.Fatal("selected worker detail is missing its task")
+	}
+	// The manager keeps its established detail → list → chat navigation.
+	model, _ = app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = model.(App)
+	if app.workers.detailID != "" || app.screen != screenWorkers {
+		t.Fatal("Esc did not return from detail to worker list")
+	}
+	model, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	app = model.(App)
+	model, _ = app.Update(cmd())
+	app = model.(App)
+	if app.screen != screenConversation || app.conversation.input.Value() != "unfinished draft" {
+		t.Fatal("return from worker details lost the conversation draft")
+	}
+}
+
 func TestWorkersKeepsBackgroundCompletionsAndBlocksTalkKey(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	conv, _ := startedConversation(t, &fakeTurnRunner{}, true)
@@ -210,7 +241,7 @@ func TestWorkersDetailsStopControlsAndStableSelection(t *testing.T) {
 	if m.detailID != "a" || m.cursor != 3 {
 		t.Fatal("refresh changed selected identity")
 	}
-	if view := stripANSI(m.View()); !strings.Contains(view, "partial output") || !strings.Contains(view, "Termination: unknown") {
+	if view := stripANSI(m.View()); !strings.Contains(view, "partial output") || !strings.Contains(view, "Termination") || !strings.Contains(view, "unknown") {
 		t.Fatal("terminal output or uncertainty missing")
 	}
 	m = workersKey(m, "s")
@@ -251,6 +282,35 @@ func TestWorkersRenderingAndFooterAreBounded(t *testing.T) {
 		if strings.Contains(footer, "long task") || !strings.Contains(footer, "/workers") || !strings.Contains(footer, "/menu") {
 			t.Fatalf("footer at %d: %s", width, footer)
 		}
+	}
+}
+
+func TestWorkersPrettyPrintsJSONActivity(t *testing.T) {
+	activity := `searched 1 time (1 unknown) · {"query":"Denver CO","results":[{"title":"AccuWeather","ok":true,"temp":48}]}`
+	m := newWorkers(&config.Config{}, &testWorkers{items: []pipeline.WorkerInfo{{
+		ID: "job-1", Task: "weather in denver", State: "running",
+		Provider: "ollama", Model: "qwen3.8", Activity: activity,
+	}}})
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 28})
+	list := stripANSI(m.View())
+	if strings.Contains(list, `"query"`) || strings.Contains(list, "AccuWeather") {
+		t.Fatalf("list dumped JSON:\n%s", list)
+	}
+	if !strings.Contains(list, "searched 1 time") {
+		t.Fatalf("list lost activity summary:\n%s", list)
+	}
+	m.cursor = 2
+	m = workersKey(m, " ")
+	detail := m.View()
+	plain := stripANSI(detail)
+	if !strings.Contains(plain, `"query"`) || !strings.Contains(plain, "Denver CO") {
+		t.Fatalf("detail missing pretty JSON:\n%s", plain)
+	}
+	if !strings.Contains(plain, "\n  \"query\"") && !strings.Contains(plain, "\n  \"query\":") {
+		t.Fatalf("JSON was not indented:\n%s", plain)
+	}
+	if !strings.Contains(detail, "\x1b[") {
+		t.Fatal("pretty JSON has no color")
 	}
 }
 

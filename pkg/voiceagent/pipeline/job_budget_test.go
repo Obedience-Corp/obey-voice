@@ -11,18 +11,6 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
 )
 
-// waitUntil polls cond until it holds or the deadline passes.
-func waitUntil(t *testing.T, d time.Duration, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(d)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
 // budgetHarness is an Agency over a gated worker, with the bus tapped for
 // the job's abort and the worker's first tool call.
 type budgetHarness struct {
@@ -66,7 +54,7 @@ func (h *budgetHarness) spawn(task string) {
 
 func (h *budgetHarness) spoken() string { return strings.Join(h.tts.Calls(), " | ") }
 
-func TestBudgetStopSpeaksOnceAndNamesTheReason(t *testing.T) {
+func TestBudgetStopReportsReasonWithoutSpeech(t *testing.T) {
 	h := newBudgetHarness(t, job.WithBudget(60*time.Millisecond))
 	defer close(h.release)
 	h.spawn("list the files here")
@@ -80,11 +68,9 @@ func TestBudgetStopSpeaksOnceAndNamesTheReason(t *testing.T) {
 	if e.Reason != events.AbortBudget {
 		t.Fatalf("reason = %q, want %q", e.Reason, events.AbortBudget)
 	}
-	waitUntil(t, 2*time.Second, "the budget line to be spoken", func() bool {
-		return strings.Contains(h.spoken(), "ran past its budget")
-	})
-	if got := h.spoken(); strings.Count(got, "ran past its budget") != 1 {
-		t.Fatalf("spoken = %q, want the budget line exactly once", got)
+	h.agency.tryFlushPending()
+	if got := h.spoken(); strings.Contains(got, "ran past its budget") {
+		t.Fatalf("budget error was spoken: %q", got)
 	}
 }
 
@@ -154,6 +140,8 @@ func TestUserCancelDropsQueuedJobsInTheSameLine(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 	got := h.spoken()
+	// An announcement is not a group the turn loop assembled, so it reaches
+	// TTS as written: no beat join rewrites "Stopped." into "Stopped, dropped".
 	if strings.Count(got, "Stopped") != 1 || strings.Count(got, "Dropped 1 queued job.") != 1 {
 		t.Fatalf("spoken = %q, want one stop line naming the dropped job", got)
 	}

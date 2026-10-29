@@ -8,10 +8,9 @@ import (
 )
 
 // vocalKind is a non-speech beat in a reply. The model writes [moan].
-// Engines opt in with SupportsVocalTags. Qwen rewrites only tags that have
-// a working codec spelling (laugh, sigh, hmm, ahh, mmm, huff). Moan/whimper/
-// gasp/kiss are stripped: "Nnngh"/"Ahhn" come out as a spoken syllable, not
-// a moan. Kokoro and Audio8 omit the flag, so every tag is stripped.
+// Default TTS strips stage tags. Recorded clips are not spliced — they
+// do not match the live TTS voice. Engines opt in with SupportsVocalTags
+// if they can render tags.
 const vocalSampleRate = 24000
 
 const (
@@ -34,6 +33,37 @@ type vocalPart struct {
 func hasVocalTag(s string) bool { return tts.HasVocalTag(s) }
 
 func stripVocalTags(s string) string { return tts.StripVocalTags(s) }
+
+// stripSpokenVocalTags removes tags an engine cannot vocalize along with the
+// punctuation glued to them: "[laugh]. The build finished." must not leave a
+// bare "." for the engine to read as "dot". The tag's position is the only
+// cheap proof that the period was the tag's and not a sentence's, so this is
+// where it goes — trimSpeechResidue downstream can only judge the front of the
+// utterance. A run of punctuation ("[sigh]...") is a pause and is kept.
+//
+// The spans come from StageTagRE, not the sound-bank list: #208 made every
+// bracket stage direction unspeakable, so "[mouth] [laugh] hello" has to lose
+// both, not only the one the bank happens to name.
+func stripSpokenVocalTags(s string) string {
+	spans := tts.StageTagRE.FindAllStringIndex(s, -1)
+	if len(spans) == 0 {
+		return stripVocalTags(s)
+	}
+	var b strings.Builder
+	last := 0
+	for _, span := range spans {
+		b.WriteString(s[last:span[0]])
+		b.WriteString(" ")
+		end := span[1]
+		if end < len(s) && strings.ContainsAny(s[end:end+1], ".!?;:,") &&
+			(end+1 == len(s) || !strings.ContainsAny(s[end+1:end+2], ".!?;:,")) {
+			end++
+		}
+		last = end
+	}
+	b.WriteString(s[last:])
+	return strings.Join(strings.Fields(b.String()), " ")
+}
 
 func expandVocalTags(s string, pick func(kind string) string) string {
 	return tts.ExpandOnomatopoeiaVocalTags(s, pick)
@@ -78,13 +108,4 @@ func trimSpeech(s string) string {
 		return unicode.IsSpace(r) || r == ',' || r == ';' || r == '-' || r == '—'
 	})
 	return strings.TrimSpace(s)
-}
-
-func vocalPartsHaveSound(parts []vocalPart) bool {
-	for _, p := range parts {
-		if p.sound != "" {
-			return true
-		}
-	}
-	return false
 }

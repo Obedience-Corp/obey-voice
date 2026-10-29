@@ -1,0 +1,1 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-truncated","seq":0,"type":"failed","code":"input_format_mismatch","message":"{{INPUT}}: audio: wav chunk \"data\" declares 3200000 bytes but only 1600 remain","retryable":false}

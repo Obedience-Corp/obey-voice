@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decider"
 )
 
 // AssetSchema identifies the asset manifest schema version. Manifests written
@@ -20,11 +22,12 @@ const (
 // GitHub digests, so those sha256 values are pinned from the downloaded release
 // bytes and guarded by manifest tests.
 const (
-	sileroVADURL                    = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
-	sileroVADSHA256                 = "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
-	sileroVADSize                   = 643854
-	kokoroArchiveURL                = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
-	kokoroArchiveSHA256             = "c133d26353d776da730870dac7da07dbfc9a5e3bc80cc5e8e83ab6e823be7046"
+	sileroVADURL     = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+	sileroVADSHA256  = "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+	sileroVADSize    = 643854
+	kokoroArchiveURL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
+	// GitHub asset 549865473, republished 2026-09-08; verified against its release digest.
+	kokoroArchiveSHA256             = "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298"
 	speakerSegmentationURL          = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
 	speakerSegmentationSHA256       = "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488"
 	speakerEmbeddingURL             = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx"
@@ -42,10 +45,11 @@ func sherpaWhisperOfflineURL(model string) string {
 type AssetKind string
 
 const (
-	AssetKindVAD     AssetKind = "vad"
-	AssetKindSTT     AssetKind = "stt"
-	AssetKindTTS     AssetKind = "tts"
-	AssetKindSpeaker AssetKind = "speaker"
+	AssetKindVAD      AssetKind = "vad"
+	AssetKindSTT      AssetKind = "stt"
+	AssetKindTTS      AssetKind = "tts"
+	AssetKindSpeaker  AssetKind = "speaker"
+	AssetKindDecision AssetKind = "decision"
 )
 
 // AssetFile is one downloadable file belonging to an asset. Path is relative to
@@ -106,7 +110,7 @@ func (a Asset) Validate() error {
 		return fmt.Errorf("asset %q: missing provider", a.ID)
 	}
 	switch a.Kind {
-	case AssetKindVAD, AssetKindSTT, AssetKindTTS, AssetKindSpeaker:
+	case AssetKindVAD, AssetKindSTT, AssetKindTTS, AssetKindSpeaker, AssetKindDecision:
 	default:
 		return fmt.Errorf("asset %q: invalid kind %q", a.ID, a.Kind)
 	}
@@ -163,12 +167,25 @@ func (m AssetManifest) Validate() error {
 // error naming it.
 func ManifestFor(cfg *Config, req AssetRequest) (AssetManifest, error) {
 	m := AssetManifest{Schema: AssetSchema}
+	if req.NeedDecision && ManagedDecisions(cfg) {
+		assets, err := decisionAssets(cfg)
+		if err != nil {
+			return m, err
+		}
+		m.Assets = append(m.Assets, assets...)
+	}
 
 	if req.NeedVAD {
 		m.Assets = append(m.Assets, VADAsset())
 	}
 
 	if req.NeedSTT {
+		if err := ValidateAcousticName(cfg); err != nil {
+			return AssetManifest{}, err
+		}
+		if cfg.AcousticNameEnabled {
+			m.Assets = append(m.Assets, AcousticNameAsset())
+		}
 		if _, ok := NormalizeSTT(cfg.STTProvider); ok {
 			norm, err := NormalizeSTTWithMode(cfg.STTProvider, cfg.STTMode)
 			if err != nil {
@@ -378,10 +395,11 @@ func (m AssetManifest) ModelFiles() []ModelFile {
 
 // AssetScope selects which asset kinds a request should cover.
 type AssetScope struct {
-	STT     bool
-	TTS     bool
-	VAD     bool
-	Speaker bool
+	Decision bool
+	STT      bool
+	TTS      bool
+	VAD      bool
+	Speaker  bool
 }
 
 // ScopedAssetRequest returns the asset request for cfg narrowed to the kinds
@@ -396,17 +414,18 @@ func ScopedAssetRequest(cfg *Config, scope AssetScope) AssetRequest {
 	// mode error surfaces in ManifestFor instead of silently skipping assets.
 	_, sttOK := NormalizeSTT(cfg.STTProvider)
 	return AssetRequest{
-		NeedSTT:     scope.STT && sttOK,
-		NeedTTS:     scope.TTS && ManagedTTS(cfg),
-		NeedVAD:     scope.VAD && cfg.VADEnabled,
-		NeedSpeaker: scope.Speaker && cfg.Speaker.Enabled && (cfg.Speaker.Meeting.Enabled || cfg.Speaker.Live.Enabled),
+		NeedDecision: scope.Decision && ManagedDecisions(cfg),
+		NeedSTT:      scope.STT && sttOK,
+		NeedTTS:      scope.TTS && ManagedTTS(cfg),
+		NeedVAD:      scope.VAD && cfg.VADEnabled,
+		NeedSpeaker:  scope.Speaker && cfg.Speaker.Enabled && (cfg.Speaker.Meeting.Enabled || cfg.Speaker.Live.Enabled),
 	}
 }
 
 // DefaultAssetRequest returns the asset request the default setup/startup path
 // uses for cfg — the same provider selection EnsureModels applies.
 func DefaultAssetRequest(cfg *Config) AssetRequest {
-	return ScopedAssetRequest(cfg, AssetScope{STT: true, TTS: true, VAD: true, Speaker: true})
+	return ScopedAssetRequest(cfg, AssetScope{STT: true, TTS: true, VAD: true, Speaker: true, Decision: true})
 }
 
 // AssetStatus reports the on-disk installation state of one asset.
@@ -418,6 +437,9 @@ type AssetStatus struct {
 	Kind      AssetKind `json:"kind"`
 	Installed bool      `json:"installed"`
 	Missing   []string  `json:"missing,omitempty"`
+	// Optional marks install state a surface lists but never gates on: the
+	// asset improves the experience and its absence leaves speech working.
+	Optional bool `json:"optional,omitempty"`
 	// Detail is optional human state when Installed/Missing is not enough
 	// (e.g. legacy trees that ensure will not remove).
 	Detail string `json:"detail,omitempty"`
@@ -488,6 +510,15 @@ func (m AssetManifest) Status(modelsDir string) []AssetStatus {
 		st.Missing = a.installProblems(modelsDir)
 		st.Installed = len(st.Missing) == 0
 		out = append(out, st)
+		if a.ID == "decision.runtime.source" {
+			ready := decider.PythonReady(modelsDir)
+			runtime := AssetStatus{ID: "decision.runtime.environment", Name: "Private decision Python environment", Provider: "decider", Kind: AssetKindDecision, Installed: ready}
+			if !ready {
+				runtime.Missing = []string{decider.PythonPath(modelsDir)}
+				runtime.Detail = "run models ensure --decision to install the pinned environment"
+			}
+			out = append(out, runtime)
+		}
 	}
 	return out
 }

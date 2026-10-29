@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +23,13 @@ import (
 // This exercises the actual Ollama projection and pipeline against controlled
 // HTTP. It proves request/storage attribution, not model recall or real audio.
 func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
+	t.Setenv("OBEY_VOICE_WORK_DIR", "")
+	t.Setenv("WORK_DIR", "")
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	pinned, _ := filepath.EvalSymlinks(t.TempDir())
 	var mu sync.Mutex
+	classifierCalls := 0
+	generationCalls := 0
 	var requests []struct {
 		Messages []struct{ Role, Content string }
 		Format   json.RawMessage
@@ -46,6 +53,9 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 			return
 		}
 		if len(request.Format) > 0 {
+			mu.Lock()
+			classifierCalls++
+			mu.Unlock()
 			var input brain.AddressRequest
 			if err := json.Unmarshal([]byte(request.Messages[len(request.Messages)-1].Content), &input); err != nil {
 				t.Error(err)
@@ -53,9 +63,9 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 			}
 			decision := brain.Addressee{Kind: "none"}
 			switch input.Text {
-			case "Santa.":
-				decision = brain.Addressee{Kind: "address", Name: "Santa", Bare: true}
-			case "Samantha, what is it?":
+			case "Could Samantha answer what code we shared?":
+				decision = brain.Addressee{Kind: "address", Name: "Samantha"}
+			case "Samantha and Santa, Samantha should answer this.":
 				decision = brain.Addressee{Kind: "address", Name: "Samantha"}
 			}
 			raw, _ := json.Marshal(decision)
@@ -63,25 +73,39 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 			return
 		}
 		mu.Lock()
+		generationCalls++
 		requests = append(requests, request)
 		mu.Unlock()
+		if len(request.Messages) > 0 && strings.Contains(request.Messages[len(request.Messages)-1].Content, "Summarize the preserved facts briefly.") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": "Compact summary: the code is cobalt."}, "done": true, "done_reason": "stop"})
+			return
+		}
 		name := "Santa"
 		if len(request.Messages) > 0 && strings.Contains(request.Messages[0].Content, "You are Samantha.") {
 			name = "Samantha"
 		}
+		wantDir := root
+		if name == "Samantha" {
+			wantDir = pinned
+		}
+		if len(request.Messages) == 0 || !strings.Contains(request.Messages[0].Content, wantDir) {
+			t.Errorf("%s prompt missing its own directory %s", name, wantDir)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": "fixture:latest", "message": map[string]string{"role": "assistant", "content": "I am " + name + ". The code is cobalt."}, "done": true, "done_reason": "stop"})
 	}))
 	defer server.Close()
-	root := t.TempDir()
 	catalog := persona.Catalog{Dir: filepath.Join(root, "personas")}
 	promptDir := filepath.Join(root, "prompts")
 	for _, id := range []string{"samantha", "santa"} {
 		profile := testProfile(id, map[string]string{"samantha": "Samantha", "santa": "Santa"}[id], id)
 		profile.Brain.Model = ""
+		if id == "samantha" {
+			profile.StartingDirectory = pinned
+		}
 		writeTestProfile(t, catalog.Dir, profile)
 		writeTestPrompt(t, promptDir, id, "You are {agent_name}.")
 	}
-	base := &config.Config{ActivePersona: "samantha", BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL, PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192}
+	base := &config.Config{ActivePersona: "samantha", BrainProvider: "ollama", OllamaModel: "fixture:latest", OllamaHost: server.URL, PromptsDir: promptDir, WorkDir: root, MaxHistory: 20, OllamaNumCtx: 8192, EnvironmentContextEnabled: true}
 	binding, err := catalog.ResolveBinding(base, "samantha")
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +124,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	sess := session.New("ollama", "fixture:latest")
 	selector, err := NewSelector(SelectionOptions{Base: base, Catalog: catalog, Pipeline: p, SessionID: sess.ID, Initial: binding,
 		Persist: func(turns []brain.Turn, s events.PersonaSelection) error {
-			return store.SaveSelection(sess, turns, s.PersonaID, s.DisplayName, s.PromptHash)
+			return store.SaveSelection(sess, turns, s.PersonaID, s.DisplayName, s.PromptHash, s.Directories)
 		},
 	})
 	if err != nil {
@@ -122,51 +146,124 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	for i, input := range []string{"The code is cobalt.", "Santa.", "Can you recall the code?", "Samantha, what is it?"} {
+	mu.Lock()
+	startClassifier, startGeneration := classifierCalls, generationCalls
+	mu.Unlock()
+	if err := p.RunTurnTextMode(ctx, "The code is cobalt."); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	firstClassifier := classifierCalls - startClassifier
+	firstGeneration := generationCalls - startGeneration
+	mu.Unlock()
+	if firstClassifier != 0 || firstGeneration != 1 {
+		t.Fatalf("initial turn calls classifier=%d generation=%d", firstClassifier, firstGeneration)
+	}
+	beforeRefusal := selector.Snapshot()
+	if _, err := selector.Route(ctx, "switch to Unknown", false); err == nil {
+		t.Fatal("unknown exact control unexpectedly succeeded")
+	}
+	mu.Lock()
+	if classifierCalls != startClassifier || generationCalls != startGeneration+1 {
+		mu.Unlock()
+		t.Fatalf("refused exact control changed wire calls classifier=%d generation=%d", classifierCalls, generationCalls)
+	}
+	mu.Unlock()
+	if afterRefusal := selector.Snapshot(); !reflect.DeepEqual(afterRefusal, beforeRefusal) {
+		t.Fatalf("refused exact control changed selection: before=%+v after=%+v", beforeRefusal, afterRefusal)
+	}
+	for i, input := range []string{
+		"switch to Santa",
+		"Can you recall the code?",
+		"Could Samantha answer what code we shared?",
+		`"Santa"`,
+		"Samantha and Santa, Samantha should answer this.",
+	} {
 		if err := p.RunTurnTextMode(ctx, input); err != nil {
 			t.Fatal(err)
 		}
-		if i == 1 {
+		if i == 0 {
 			mu.Lock()
-			calls := len(requests)
+			classifierDelta := classifierCalls - startClassifier
+			generationDelta := generationCalls - (startGeneration + 1)
 			mu.Unlock()
-			if calls != 1 {
-				t.Fatalf("bare name called model: %d", calls)
+			if classifierDelta != 0 || generationDelta != 0 {
+				t.Fatalf("exact control used wire calls classifier=%d generation=%d", classifierDelta, generationDelta)
 			}
+		}
+	}
+	beforeCompact := p.Brain.History()
+	p.CompactPrompt = "Summarize the preserved facts briefly."
+	if err := p.CompactConversation(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
+		if got := canonical.CanonicalHistory(); !reflect.DeepEqual(got, beforeCompact) {
+			t.Fatalf("compaction changed canonical history: got=%+v want=%+v", got, beforeCompact)
 		}
 	}
 	loaded, err := store.Load(sess.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.SelectedPersonaID != "samantha" || len(loaded.Turns) != 8 {
+	if loaded.SelectedPersonaID != "samantha" || len(loaded.Turns) != 12 {
 		t.Fatalf("disk selection/history: %+v", loaded)
 	}
-	if len(identities) != 4 {
+	if len(identities) != 6 {
 		t.Fatalf("replies=%d", len(identities))
 	}
-	for i, want := range []string{"samantha", "santa", "santa", "samantha"} {
+	for i, want := range []string{"samantha", "santa", "santa", "samantha", "samantha", "samantha"} {
 		turn := loaded.Turns[i*2+1]
 		if identities[i].PersonaID != want || turn.PersonaID != want || identities[i].ResponseID != turn.ResponseID || turn.PromptHash == "" {
 			t.Fatalf("reply %d identity/disk mismatch: %+v / %+v", i, identities[i], turn)
 		}
 	}
-	lastInput := loaded.Turns[6]
-	if lastInput.Content != "Samantha, what is it?" || lastInput.RoutedInput != "" {
+	lastInput := loaded.Turns[10]
+	if lastInput.Content != "Samantha and Santa, Samantha should answer this." || lastInput.RoutedInput != "" {
 		t.Fatalf("original/routed input: %+v", lastInput)
+	}
+	for _, turn := range loaded.Turns {
+		if strings.Contains(turn.Content, "switch to Unknown") {
+			t.Fatalf("failed exact control persisted into canonical history: %+v", loaded.Turns)
+		}
+	}
+	p.Brain.LoadHistory(loaded.Turns)
+	selector.RestoreSession(sess.ID, loaded.SelectedPersonaID, loaded.SelectedPersonaDisplayName, loaded.SelectedPersonaPromptHash)
+	if _, err := selector.Select(ctx, loaded.SelectedPersonaID, "restore"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.RunTurnTextMode(ctx, "What code are we tracking now?"); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.Load(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.SelectedPersonaID != loaded.SelectedPersonaID || len(reloaded.Turns) != len(loaded.Turns)+2 {
+		t.Fatalf("reloaded session mismatch after restore: before=%+v after=%+v", loaded, reloaded)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(requests) != 3 {
-		t.Fatalf("model calls=%d", len(requests))
+	if classifierCalls != 3 {
+		t.Fatalf("classifier calls=%d", classifierCalls)
 	}
-	last := requests[2].Messages
-	if last[len(last)-1].Content != "Unknown user:\nSamantha, what is it?" {
-		t.Fatalf("routed request missing: %+v", last)
+	if generationCalls != 7 || len(requests) != generationCalls {
+		t.Fatalf("generation calls=%d requests=%d", generationCalls, len(requests))
+	}
+	var routed []struct{ Role, Content string }
+	for _, req := range requests {
+		msgs := req.Messages
+		if len(msgs) > 0 && strings.HasPrefix(msgs[len(msgs)-1].Content, "Unknown user:\nSamantha and Santa, Samantha should answer this.\n\n") && strings.Contains(msgs[len(msgs)-1].Content, "the current responder is Samantha") {
+			routed = msgs
+			break
+		}
+	}
+	if len(routed) == 0 {
+		t.Fatalf("routed request missing: %+v", requests)
 	}
 	found := false
 	own := false
-	for _, message := range last {
+	for _, message := range routed {
 		if message.Role != "assistant" && message.Role != "system" && strings.Contains(message.Content, "Santa") && strings.Contains(message.Content, "cobalt") {
 			found = true
 		}
@@ -182,7 +279,7 @@ func TestSelectorProductionPipelineWireAndDisk(t *testing.T) {
 			}
 		}
 	}
-	if !found || !own || !strings.Contains(last[0].Content, "You are Samantha.") {
-		t.Fatalf("Samantha's own thread/shared Santa context/current identity missing: %+v", last)
+	if !found || !own || !strings.Contains(routed[0].Content, "You are Samantha.") {
+		t.Fatalf("Samantha's own thread/shared Santa context/current identity missing: %+v", routed)
 	}
 }

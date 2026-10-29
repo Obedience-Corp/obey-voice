@@ -373,7 +373,7 @@ func TestPrepareFailureDoesNotSpeakRecoveryReply(t *testing.T) {
 	if err := p.RunTurnTextMode(t.Context(), "follow up"); err != nil {
 		t.Fatal(err)
 	}
-	if ready.Degraded || strings.Contains(ready.Response, brain.RecoveryReply) {
+	if ready.Degraded {
 		t.Fatalf("compact failure must not RecoveryReply: %+v", ready)
 	}
 	if b.streamCalls == 0 {

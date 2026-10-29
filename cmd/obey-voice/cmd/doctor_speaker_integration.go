@@ -15,7 +15,7 @@ func bargeInSpeakersDiagsNative(cfg *config.Config) []config.Diagnostic {
 		return []config.Diagnostic{{
 			Name:        "barge-in-speakers-gate",
 			Severity:    config.SeverityWarn,
-			Detail:      "barge_in_speakers=enrolled_only but speaker.live is disabled: the interrupt watcher never gets a verdict, so it fails open and anyone can interrupt",
+			Detail:      "barge_in_speakers=enrolled_only but speaker.live is disabled: automatic voice interruptions are blocked until live recognition is enabled",
 			Remediation: "enable speaker.enabled and speaker.live.enabled",
 		}}
 	}

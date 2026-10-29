@@ -6,7 +6,10 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,6 +31,9 @@ func TestConfigureCommandCancellationKillsProcessGroup(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start command: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	})
 
 	childLine, err := bufio.NewReader(stdout).ReadString('\n')
 	if err != nil {
@@ -51,7 +57,7 @@ func TestConfigureCommandCancellationKillsProcessGroup(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		err := syscall.Kill(childPID, 0)
-		if errors.Is(err, syscall.ESRCH) {
+		if errors.Is(err, syscall.ESRCH) || (err == nil && linuxZombie(childPID)) {
 			childPID = 0
 			return
 		}
@@ -63,4 +69,24 @@ func TestConfigureCommandCancellationKillsProcessGroup(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// A killed child may remain as a zombie until PID 1 reaps it, particularly in
+// containers. kill(pid, 0) still succeeds for that dead process. The cancellation
+// contract is that the descendant stops executing, not that init has reaped it.
+func linuxZombie(pid int) bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return false
+	}
+	for line := range strings.SplitSeq(string(status), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "State:" {
+			return fields[1] == "Z"
+		}
+	}
+	return false
 }

@@ -1,10 +1,10 @@
-# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: jarvis
 display_name: Jarvis
 builtin: true
 tts:
-    provider: kokoro
-    voice: bm_george
+    provider: openai-speech
+    voice: Edwin
 prompts:
     persona: jarvis

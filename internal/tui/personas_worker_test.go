@@ -129,3 +129,49 @@ func TestPersonaFormArrowsReachTheWorkerRows(t *testing.T) {
 		t.Fatalf("↓ from Worker = %d, want Worker model %d", m.formRow, formRowWorkerModel)
 	}
 }
+
+// Exercise the form's real create/edit writers, then read the YAML back and
+// resolve the runtime config. Stubbed save callbacks missed a dropped Worker.
+func TestPersonaWorkerFormPersistsCreationAndEdit(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	cfg := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "global-worker"}
+	m := newPersonas(cfg)
+	m.width, m.height = 100, 35
+	m.beginCreate()
+	m.nameInput.SetValue("Worker fixture")
+	m.promptTA.SetValue("You are a helpful guide.")
+	m.workerProviderIdx = providerIndex(stackWorkerProviders(), "codex")
+	m.workerModel = "fixture-codex"
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "" {
+		t.Fatalf("create failed: %s", m.message)
+	}
+	check := func(provider, model, host string) {
+		t.Helper()
+		p, err := persona.Load("worker-fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Brain.Worker; got.Provider != provider || got.Model != model || got.OllamaHost != host {
+			t.Fatalf("saved worker = %+v", got)
+		}
+		effective := &config.Config{BrainProvider: "ollama", VoiceWorkerProvider: "ollama", VoiceWorkerModel: "global-worker"}
+		persona.Apply(effective, p)
+		if config.VoiceWorkerProviderOf(effective) != provider || effective.VoiceWorkerModel != model {
+			t.Fatalf("runtime worker = %s/%s", config.VoiceWorkerProviderOf(effective), effective.VoiceWorkerModel)
+		}
+	}
+	check("codex", "fixture-codex", "")
+	m.beginEditAt(formRowWorkerProvider)
+	m.workerProviderIdx = providerIndex(stackWorkerProviders(), "ollama")
+	m.workerModel, m.workerOllamaHost = "fixture-local", "http://worker:11434"
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if m.formMode != "" {
+		t.Fatalf("edit failed: %s", m.message)
+	}
+	check("ollama", "fixture-local", "http://worker:11434")
+	m.beginEditAt(formRowName)
+	m.nameInput.SetValue("Renamed worker fixture")
+	m, _ = m.updateForm(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	check("ollama", "fixture-local", "http://worker:11434")
+}

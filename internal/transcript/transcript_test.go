@@ -355,6 +355,26 @@ func TestAttachSkipsMeterTicks(t *testing.T) {
 	}
 }
 
+func TestAttachAllDoesNotSubscribeAll(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	bus := events.NewBus()
+	all := 0
+	bus.SubscribeAll(func(events.Event) { all++ })
+	unsub := w.AttachAll(bus)
+	defer unsub()
+	bus.Emit(events.AudioLevel{Source: "output", Level: 0.5})
+	if all != 1 {
+		t.Fatalf("AttachAll must not SubscribeAll; AudioLevel hit %d all-handlers, want 1", all)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAttachAllSkipsMeterTicks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "transcript.jsonl")
 	w, err := NewWriter(path)
@@ -481,5 +501,34 @@ func TestWriterRecordsWorkerAttributionAndJobs(t *testing.T) {
 	}
 	if _, ok := raw[4]["elapsed_s"]; !ok {
 		t.Errorf("tool_result line missing elapsed_s: %v", raw[4])
+	}
+}
+
+func TestWriterRetainsOptionalDecisionDiagnostic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decision.jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := events.NewBus()
+	detach := w.AttachAll(bus)
+	want := events.DecisionEvaluated{Point: "voice_work", Disposition: "proposed", Model: "local-fixture", Tier: "simple", Elapsed: 120 * time.Millisecond}
+	bus.Emit(want)
+	detach()
+	bus.Emit(events.DecisionEvaluated{Disposition: "must-not-record"})
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var found int
+	for _, r := range readRecords(t, path) {
+		if r.Type == "decision.evaluated" {
+			found++
+			if r.Decision == nil || *r.Decision != want || r.Text != "" || r.Preview != "" {
+				t.Fatalf("diagnostic=%+v", r)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("recorded %d diagnostics", found)
 	}
 }

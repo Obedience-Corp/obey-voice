@@ -2,10 +2,13 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/ollama/ollama/api"
 )
 
@@ -79,26 +82,62 @@ func (o *OllamaBrain) requestOptionsFor(highWater int) map[string]any {
 	return opts
 }
 
-// chat issues a chat request, retrying once without tools if the model reports
-// it doesn't support them — so a non-tool model degrades to plain chat instead
-// of failing the turn. The degradation is logged so "tools silently vanished"
-// is never invisible.
+// chat issues a chat request with bounded recovery for malformed tool calls
+// before any response is delivered. Unsupported tools or thinking are disabled
+// on retry, with the degradation logged rather than silently dropping them.
 func (o *OllamaBrain) chat(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {
 	budget := workerBudgetFromContext(ctx)
+	parseRetried := false
+	parseRetryPending := false
 	for {
+		if err := discussion.ReserveRequest(ctx); err != nil {
+			return err
+		}
 		if err := budget.AcquireRequest(ctx); err != nil {
 			return err
 		}
 		if err := o.applyOutputBudget(req, budget); err != nil {
 			return err
 		}
+		if parseRetryPending {
+			o.emitInfo(events.Info{Message: "Ollama returned malformed tool-call syntax; retrying this generation once. No output or tool calls were delivered from the failed attempt."})
+			parseRetryPending = false
+		}
 		var input, output int
+		delivered := false
+		var callbackErr error
 		err := o.client.Chat(ctx, req, func(resp api.ChatResponse) error {
 			if resp.Done {
 				input, output = resp.Metrics.PromptEvalCount, resp.Metrics.EvalCount
 			}
-			return fn(resp)
+			delivered = delivered || resp.Message.Content != "" || resp.Message.Thinking != "" || len(resp.Message.ToolCalls) > 0 || resp.Done
+			callbackErr = fn(resp)
+			return callbackErr
 		})
+		if err != nil && callbackErr == nil && !delivered && !parseRetried && len(req.Tools) > 0 && modelMalformedToolCall(err) {
+			// A parse failure happens after generation, unlike an unsupported
+			// option rejection. Keep the attempt charged, including unknown
+			// token usage; capped budgets must not be bypassed by this repair.
+			budget.RecordUsage(input, output)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if limitErr := budget.Err(); limitErr != nil {
+				return limitErr
+			}
+			if retryErr := budget.AcquireRetry(ctx); retryErr != nil {
+				return retryErr
+			}
+			parseRetried = true
+			repaired := *req
+			repaired.Messages = append(append([]api.Message(nil), req.Messages...), api.Message{Role: "user", Content: toolParseRetryInstruction})
+			if budgetErr := o.messagesBudgetError(repaired.Messages, repaired.Tools); budgetErr != nil {
+				return budgetErr
+			}
+			req = &repaired
+			parseRetryPending = true
+			continue
+		}
 		rejectedTools := err != nil && req.Tools != nil && modelRejectedTools(err)
 		rejectedThink := err != nil && thinkEnabled(req.Think) && modelRejectedThink(err)
 		if !rejectedTools && !rejectedThink {
@@ -149,4 +188,23 @@ func modelRejectedThink(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "does not support think") || strings.Contains(msg, "does not support thinking")
+}
+
+// Keep this private to the request. It describes a failed generation, not a
+// user turn or an assistant reply to persist or speak.
+const toolParseRetryInstruction = "The previous generation was rejected because its tool-call syntax was malformed. No tools from that attempt ran. Try again with a valid call using the supplied tool definitions and correctly matched function and parameter delimiters, or answer directly if no tools are needed. Do not repeat malformed markup as conversational text."
+
+func modelMalformedToolCall(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Ollama returns a StatusError for an HTTP failure and a plain error for
+	// the same failure inside an NDJSON stream. Reject other HTTP statuses.
+	var status api.StatusError
+	if errors.As(err, &status) && status.StatusCode != 500 {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "xml syntax error") &&
+		strings.Contains(message, "function") && strings.Contains(message, "parameter")
 }

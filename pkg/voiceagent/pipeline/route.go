@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -193,25 +194,12 @@ func routeKindSkipsBrain(kind RouteKind) bool {
 	}
 }
 
-// isToolPromise detects spoken tool-intent prose with no structured tool_calls (D3).
-// Keep tight: tool/command/invoke/execute language, not casual "I shall have a think".
+// Promise repair requires an explicit first-person commitment to tool work.
+// Merely discussing tools, commands, or execution is ordinary conversation.
+var toolPromiseRE = regexp.MustCompile(`(?i)\bi(?: will| shall|'ll|’ll| am|'m|’m) (?:going to |now )?(?:(?:check|filter|inspect|review|search|gather)\b[^.!?;\n]{0,80} and )?(?:use|using|invoke|invoking|run|running|execute|executing|call|calling|compose|composing|prepare|preparing)\b[^.!?;\n]{0,160}\b(?:tool|tools|command|commands)\b`)
+
 func isToolPromise(text string) bool {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	if lower == "" {
-		return false
-	}
-	hasIntent := strings.Contains(lower, "tool") ||
-		strings.Contains(lower, "command") ||
-		strings.Contains(lower, "invoke") ||
-		strings.Contains(lower, "execut")
-	if !hasIntent {
-		return false
-	}
-	// Negative: casual phrasing without tool-work intent.
-	if strings.Contains(lower, "have a think") {
-		return false
-	}
-	return true
+	return toolPromiseRE.MatchString(text)
 }
 
 // promiseRepairState tracks Layer 3 failed-route repair during streamResponse.

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "config_file": "/Users/lance/.obey/agents/voice/festival-voice/config.yaml",
+  "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
   "groups": [
     "voice",
     "brain",
@@ -13,6 +13,20 @@
     "hidden"
   ],
   "keys": [
+    {
+      "key": "acoustic_name_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Acoustic Obey recognition (experimental)",
+      "help": "Adds an acoustic name hint to semantic conversation routing when Parakeet mishears Obey. Requires Parakeet and models ensure --stt; leaves the transcript unchanged. Not a wake gate. Edited in config.yaml.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "ACOUSTIC_NAME_ENABLED",
+      "editable": true
+    },
     {
       "key": "audio8_voice",
       "type": "string",
@@ -66,7 +80,7 @@
       "allows_empty": false,
       "group": "voice",
       "title": "Who can interrupt",
-      "help": "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+      "help": "enrolled_only requires a fresh enrolled-voice match. Automatic voice interruptions are blocked while recognition is off, cold, stale, or unhealthy. Typing can still interrupt.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,
@@ -145,6 +159,80 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "NAME_SUMMON_ENABLED",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_api_key",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API key",
+      "help": "Bearer token for a speech API that needs one. Ollama does not.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_API_KEY",
+      "editable": true,
+      "secret": true
+    },
+    {
+      "key": "openai_speech_model",
+      "type": "string",
+      "default": "phonon",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API model",
+      "help": "The model id the speech API synthesizes with. phonon on Ollama; `ollama pull phonon` installs it.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_MODEL",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_timeout",
+      "type": "int",
+      "default": 60,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Speech API timeout",
+      "help": "How long one speech request may take before it is abandoned.",
+      "unit": "s",
+      "min": 5,
+      "max": 600,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_TIMEOUT",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_url",
+      "type": "string",
+      "default": "http://localhost:11434/v1",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API address",
+      "help": "The OpenAI-compatible /v1 base the openai-speech engine talks to. Ollama serving Phonon is http://localhost:11434/v1.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_URL",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_voice",
+      "type": "string",
+      "default": "default",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Speech API voice",
+      "help": "Which voice the speech API speaks in. Phonon on Ollama 0.40.11+ offers named voices after voice setup; default remains available.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "OPENAI_SPEECH_VOICE",
       "editable": true
     },
     {
@@ -270,6 +358,23 @@
       "editable": true
     },
     {
+      "key": "tts_lookahead",
+      "type": "int",
+      "default": 2,
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Speech lookahead",
+      "help": "How many pieces of a reply may be prepared ahead of the one being spoken. 2 keeps one playing and one being made. Higher only helps an engine that can make more than one at a time.",
+      "unit": "segments",
+      "min": 1,
+      "max": 8,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "TTS_LOOKAHEAD",
+      "editable": true
+    },
+    {
       "key": "tts_place",
       "type": "enum",
       "default": "local",
@@ -293,7 +398,8 @@
       "enum": [
         "kokoro",
         "qwen3-tts",
-        "audio8"
+        "audio8",
+        "openai-speech"
       ],
       "allows_empty": false,
       "group": "voice",
@@ -393,11 +499,11 @@
     {
       "key": "vad_min_speech_duration",
       "type": "float",
-      "default": 0.25,
+      "default": 0.1,
       "allows_empty": false,
       "group": "voice",
       "title": "Shortest utterance",
-      "help": "Sound shorter than this is treated as noise, so a cough never starts a turn.",
+      "help": "Minimum speech duration. Lower values keep brief replies such as yes or no; audible-speech and noise checks still apply.",
       "unit": "seconds",
       "min": 0.05,
       "max": 2,
@@ -464,6 +570,7 @@
         "kokoro",
         "qwen3-tts",
         "audio8",
+        "openai-speech",
         "disabled"
       ],
       "allows_empty": false,
@@ -517,6 +624,7 @@
       "default": "ollama",
       "enum": [
         "claude",
+        "codex",
         "cursor",
         "grok",
         "ollama"
@@ -524,7 +632,7 @@
       "allows_empty": false,
       "group": "brain",
       "title": "Model provider",
-      "help": "Who answers. Ollama runs on this Mac; Claude, Cursor, and Grok call out to their CLIs.",
+      "help": "Who answers. Ollama runs on this Mac; Claude, Codex, Cursor, and Grok call out to their CLIs.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,
@@ -563,6 +671,44 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "CLAUDE_SESSION_WARN_TOKENS",
+      "editable": true
+    },
+    {
+      "key": "codex_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Codex model",
+      "help": "The model used by Codex. Empty uses the Codex default. Requires Codex installed and signed in with codex login.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "CODEX_MODEL",
+      "editable": true
+    },
+    {
+      "key": "codex_reasoning_effort",
+      "type": "enum",
+      "default": "",
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Codex reasoning effort",
+      "help": "How much reasoning Codex uses. Empty uses its default. Supported efforts depend on the selected model; higher effort can delay spoken replies.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "CODEX_REASONING_EFFORT",
       "editable": true
     },
     {
@@ -677,6 +823,156 @@
       "editable": true
     },
     {
+      "key": "decision_budget_ms",
+      "type": "int",
+      "default": 750,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision deadline",
+      "help": "Cancel optional inference after this deadline. The conversation never waits for it.",
+      "unit": "ms",
+      "min": 25,
+      "max": 3000,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision shortcuts (experimental)",
+      "help": "Use ready decisions to skip some speaking-model calls; uncertain or late decisions fall back immediately.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_endpoint",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Decision server",
+      "help": "Optional external local /v1/systemone endpoint; must be loopback HTTP. Hosted providers use their official endpoints.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_local_model",
+      "type": "enum",
+      "default": "2b",
+      "enum": [
+        "2b",
+        "0.8b"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Local decision model",
+      "help": "2b is the tested route-choice candidate; 0.8b uses less memory and remains experimental.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Hosted decision model",
+      "help": "Explicit model name required for Jev or OpenAI; empty uses decider for local inference.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_policy",
+      "type": "enum",
+      "default": "route_choice",
+      "enum": [
+        "route_choice",
+        "intent_and_tier"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision questions",
+      "help": "Choose the frozen routing policy; intent_and_tier retains the original experiment for comparison.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_provider",
+      "type": "enum",
+      "default": "local",
+      "enum": [
+        "local",
+        "jev",
+        "openai"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision provider",
+      "help": "Local keeps inference on this computer. Jev and OpenAI send eligible messages and recent conversation to the selected service.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_runtime",
+      "type": "enum",
+      "default": "managed",
+      "enum": [
+        "managed",
+        "external"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Local decision runtime",
+      "help": "Managed installs and starts the local model. External uses an existing loopback server.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_text_work",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decide typed work",
+      "help": "Allow optional worker decisions during typed input admission.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
+      "key": "decision_voice_work",
+      "type": "bool",
+      "default": true,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decide voice work",
+      "help": "Allow optional worker decisions during voice input admission.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "environment_context_enabled",
       "type": "bool",
       "default": true,
@@ -702,6 +998,39 @@
       "restart_verified": false,
       "persona_overridable": true,
       "env": "GROK_MODEL",
+      "editable": true
+    },
+    {
+      "key": "group_participation_enabled",
+      "type": "bool",
+      "default": false,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Group participation (experimental)",
+      "help": "Allow contextual group invitations on local Ollama. Requires a model that reliably distinguishes invitations from mentions. Applies to the next conversation.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "GROUP_PARTICIPATION_ENABLED",
+      "editable": true
+    },
+    {
+      "key": "group_participation_mode",
+      "type": "enum",
+      "default": "invited",
+      "enum": [
+        "off",
+        "invited",
+        "open"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Agent participation",
+      "help": "Invited allows group discussion when asked. Open additionally allows one useful contribution after an ordinary reply. Applies to new conversations; /participation changes the current conversation.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "GROUP_PARTICIPATION_MODE",
       "editable": true
     },
     {
@@ -819,6 +1148,23 @@
       "editable": true
     },
     {
+      "key": "persona_routing_timeout",
+      "type": "int",
+      "default": 120,
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Persona routing timeout",
+      "help": "How long to wait while deciding which persona should answer, including model startup. Lower this to report slow routing sooner.",
+      "unit": "seconds",
+      "min": 1,
+      "max": 300,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "PERSONA_ROUTING_TIMEOUT",
+      "editable": true
+    },
+    {
       "key": "voice_worker_boundary",
       "type": "bool",
       "default": true,
@@ -912,7 +1258,9 @@
       "enum": [
         "ollama",
         "grok",
-        "claude"
+        "claude",
+        "codex",
+        "cursor"
       ],
       "allows_empty": true,
       "group": "brain",
@@ -1651,7 +1999,7 @@
     {
       "key": "models_dir",
       "type": "string",
-      "default": "/Users/lance/.cache/festival-voice/models",
+      "default": "/Users/lance/.cache/obey-voice/models",
       "allows_empty": true,
       "group": "models",
       "title": "Models folder",
@@ -1921,6 +2269,23 @@
       "editable": true
     },
     {
+      "key": "qwen_tts_workers",
+      "type": "int",
+      "default": 1,
+      "allows_empty": false,
+      "group": "models",
+      "title": "Qwen speech workers",
+      "help": "How many Qwen worker programs run at once. Each one loads its own copy of the model and speaks one piece of a reply, so more of them costs memory. 1 unless a measurement says otherwise.",
+      "unit": "workers",
+      "min": 1,
+      "max": 4,
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "QWEN_TTS_WORKERS",
+      "editable": true
+    },
+    {
       "key": "sherpa_streaming_model",
       "type": "string",
       "default": "en-2023-06-26",
@@ -2108,6 +2473,7 @@
       "default": "ollama",
       "enum": [
         "claude",
+        "codex",
         "cursor",
         "grok",
         "ollama"
@@ -2264,7 +2630,7 @@
     {
       "key": "whispercpp_model_path",
       "type": "string",
-      "default": "/Users/lance/.cache/festival-voice/models/whispercpp/ggml-base.en.bin",
+      "default": "/Users/lance/.cache/obey-voice/models/whispercpp/ggml-base.en.bin",
       "allows_empty": true,
       "group": "models",
       "title": "whisper.cpp model file",
@@ -2289,6 +2655,20 @@
       "env": "ACTIVE_PERSONA",
       "editable": false,
       "managed_by": "persona use"
+    },
+    {
+      "key": "decision_api_key",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "hidden",
+      "title": "Decision API key",
+      "help": "Credential used only for an explicitly selected hosted decision provider.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true,
+      "secret": true
     },
     {
       "key": "persona",

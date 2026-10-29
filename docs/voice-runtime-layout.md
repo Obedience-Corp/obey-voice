@@ -19,11 +19,11 @@ All paths below are in [`pkg/voiceagent/pipeline`](../pkg/voiceagent/pipeline).
 | `turn_deadline.go` | Model/tool idle deadlines and activity-based deadline extension |
 | `turn_metrics.go` | Timing snapshots, segment accounting, audible-sink identity and first-audio stamps |
 | `turn_conductor.go` | Terminal turn transitions, metrics publication and keep-up advice |
-| `response_stream.go` | Stream coordination, response collection and model-stream observation |
+| `response_stream.go` | Stream coordination, segment grouping and the idle flush, response collection and model-stream observation |
 | `synthesis.go` | Segment synthesis, fallback eligibility, silence bounds and stream disposal |
 | `playback.go` | Playback events, lifecycle observation and synthesis/playback timing stamps |
 | `speech_recovery.go` | Recovery text, best-effort speech and standalone announcements |
-| `speech_content.go` | Speakable-content filtering and voice batching constants |
+| `speech_content.go` | Speakable-content filtering, the segment-grouping policy and the textual sentence join |
 | `brain_hooks.go` | Model/tool/usage hooks, route context and event translation |
 | `compaction.go` | Turn preparation and conversation compaction |
 
@@ -122,6 +122,10 @@ Two consequences worth knowing before moving anything else:
 - `SpeechCharsPerSecond` and `TypicalSegmentChars` are exported from `provider.go`. They sit
   beside the `SegmentGracer` interface because every provider implementing it needs them, and
   providers no longer share a package.
+- `SegmentRamp` and `SentenceJoiner` are optional capabilities in the same file. They describe
+  how fast segments may grow and whether a request join carries prosody; the pipeline reads them
+  through `SegmentRampOf` / `JoinsSentencesOf`, which supply the defaults for a provider that
+  declares neither.
 - `NewAudio8Provider` owns Audio8's model-directory assembly. The selector used to know that
   layout; now only the package that owns Audio8 does.
 
@@ -165,6 +169,54 @@ Six helpers are exported from `audio` because capture and playback genuinely sha
 `SelectDevice`, `ChoosePlaybackChannels`, `PlaybackDeviceDetails`, `PickPlaybackFormat`,
 `ResampleLinear` and `StreamResampler`. Reach for those before adding a second implementation
 on either side of the boundary.
+
+## File transcription
+
+Turning a finished recording into timed captions is its own package:
+[`pkg/voiceagent/transcription`](../pkg/voiceagent/transcription). It sits above
+`audio` and `stt` and imports both; neither imports it back, so the boundary is
+checked by the compiler. It is the reusable finite-audio core that a later
+command or adapter can call: a run reads audio, finds speech spans, decodes
+each one and reports it with the sample positions it came from. It holds no
+conversational behavior at all: no brain, no TTS, no routing, no history, no
+spoken stop commands, no conversational duration limits.
+
+| File | Responsibility |
+| --- | --- |
+| `doc.go` | The package comment: what this package is for, and the never-clear rule stated once |
+| `types.go` | The request, the injected dependencies, the closed event set, the outcome values and the typed `*Error` with its stable codes |
+| `timing.go` | Sample-to-microsecond conversion and the span interval invariant |
+| `spans.go` | `Span`, `SpanDetector`, the VAD adapter, the bounded pre-roll ring, and `NewFileSpanDetector`, the one constructor every file run uses |
+| `runner.go` | `Run`: the read loop, the min-speech and audibility gates, decode, segment emission, progress throttling and the end-of-file timeline check |
+
+Two rules hold this package together, and both are cheap to break by accident.
+
+**Never clear the detector while a file is in flight.** `audio.VAD.Clear()` calls
+the native `Reset()`, which zeroes the sample-offset origin, so every span start
+after a clear is measured from the wrong place. The live conversational loops
+reset between turns and are right to; this one runs one detector for one file
+from beginning to end. `audio.NewFileVAD` exists to make that configuration
+explicit rather than reusing `NewVAD` and hoping.
+
+**Count the audio three times and compare.** The runner keeps its own sample
+counter, the source reports `Position()`, and the detector reports `Fed()`. They
+must agree when the file ends. A disagreement means every caption after the
+divergence is wrong by that amount, so it fails the job instead of shipping
+plausible-looking times.
+
+A recognizer joins by implementing `stt.SegmentDecoder`: one exported
+`DecodeSegment` method delegating to the transcribe function it already has, one
+row in `stt`'s spec table declaring `SegmentDecode` and its `Timing` values, and
+one branch in `stt.NewSegmentDecoder`. There is no second model registry:
+selection, normalization, asset resolution and the correction chain are the same
+ones `stt.NewProvider` uses. A provider that cannot decode a finite span returns
+`stt.ErrSegmentDecodeUnsupported` rather than being absent.
+
+The import boundary is a test, not a convention: `boundary_test.go` asks
+`go list` what the package imports and fails if anything other than `audio` and
+`stt` appears. Note that `pkg/voiceagent/stt` imports `pkg/voiceagent/brain`
+itself, for the optional model-based transcript correction stage, so the
+transitive graph is not the place to look for that rule.
 
 ## Meeting log
 

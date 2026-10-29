@@ -36,15 +36,31 @@ const Version = 2
 // record is the flat wire form for every line. Zero fields are omitted, so
 // each type carries only its own keys.
 type record struct {
-	WorkerUsage  *events.WorkerUsageRecorded `json:"worker_usage,omitempty"`
-	WorkerLimit  *events.WorkerLimitReached  `json:"worker_limit,omitempty"`
-	WorkerCharge *events.WorkerChargeState   `json:"worker_charge,omitempty"`
-	Delivery     *events.WorkDelivery        `json:"delivery,omitempty"`
-	Work         *work.Snapshot              `json:"work,omitempty"`
-	WorkScope    *work.WorkScope             `json:"work_scope,omitempty"`
-	Type         string                      `json:"type"`
-	TS           string                      `json:"ts,omitempty"`
-	Seq          int64                       `json:"seq,omitempty"`
+	OmittedType       string `json:"omitted_type,omitempty"`
+	SizeEstimateKind  string `json:"size_estimate_kind,omitempty"`
+	SizeEstimateBytes int64  `json:"size_estimate_bytes,omitempty"`
+	size              int64
+	TraceSchema       string                      `json:"trace_schema,omitempty"`
+	ClockOrigin       string                      `json:"clock_origin,omitempty"`
+	ContentPolicy     string                      `json:"content_policy,omitempty"`
+	Cut               string                      `json:"cut,omitempty"`
+	Environment       map[string]string           `json:"environment,omitempty"`
+	Health            *Health                     `json:"health,omitempty"`
+	Trace             *events.TraceContext        `json:"trace,omitempty"`
+	Span              *events.TraceSpan           `json:"span,omitempty"`
+	Timing            *events.TurnTiming          `json:"timing,omitempty"`
+	AudibleSink       string                      `json:"audible_sink,omitempty"`
+	Envelope          *events.ResponseEnvelope    `json:"envelope,omitempty"`
+	Decision          *events.DecisionEvaluated   `json:"decision,omitempty"`
+	WorkerUsage       *events.WorkerUsageRecorded `json:"worker_usage,omitempty"`
+	WorkerLimit       *events.WorkerLimitReached  `json:"worker_limit,omitempty"`
+	WorkerCharge      *events.WorkerChargeState   `json:"worker_charge,omitempty"`
+	Delivery          *events.WorkDelivery        `json:"delivery,omitempty"`
+	Work              *work.Snapshot              `json:"work,omitempty"`
+	WorkScope         *work.WorkScope             `json:"work_scope,omitempty"`
+	Type              string                      `json:"type"`
+	TS                string                      `json:"ts,omitempty"`
+	Seq               int64                       `json:"seq,omitempty"`
 
 	V   int `json:"v,omitempty"`   // header
 	PID int `json:"pid,omitempty"` // header
@@ -185,7 +201,19 @@ type gap struct {
 // Close never panics with "send on closed channel". The writer goroutine alone
 // owns the file after Open.
 type Writer struct {
-	f           *os.File
+	copyMu        sync.Mutex
+	capture       *CaptureOptions
+	queuedBytes   int64
+	missing       []SequenceRange
+	skipped       atomic.Int64
+	scopeExcluded atomic.Int64
+	written       atomic.Int64
+	synced        atomic.Int64
+	bytes         atomic.Int64
+	limited       atomic.Bool
+	closeErr      error
+
+	f           captureSink
 	ch          chan record
 	done        chan struct{}
 	seq         atomic.Int64
@@ -203,14 +231,33 @@ func NewWriter(path string) (*Writer, error) {
 }
 
 func newWriter(path string, capacity int) (*Writer, error) {
+	return openWriter(path, capacity, nil)
+}
+
+func openWriter(path string, capacity int, opts *CaptureOptions) (*Writer, error) {
 	// Conversation content may include secrets; match diagnostics log perms.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if opts != nil {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_EXCL
+	}
+	f, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open transcript log: %w", err)
 	}
-	w := &Writer{f: f, ch: make(chan record, capacity), done: make(chan struct{})}
+	w := &Writer{capture: opts, f: f, ch: make(chan record, capacity), done: make(chan struct{})}
 	go w.run()
-	w.enqueue(record{Type: "header", V: Version, PID: os.Getpid()})
+	header := record{Type: "header", V: Version, PID: os.Getpid()}
+	if opts != nil {
+		trace := opts.Trace
+		trace.CaptureID = opts.CaptureID
+		header.Trace = &trace
+		header.TraceSchema = events.TraceSchema
+		header.ClockOrigin = "runtime_start"
+		header.ContentPolicy = opts.ContentPolicy
+		header.Cut = opts.Cut
+		header.Environment = opts.Environment
+	}
+	w.enqueue(header)
 	return w, nil
 }
 
@@ -220,42 +267,8 @@ func newWriter(path string, capacity int) (*Writer, error) {
 // once-per-turn metrics record instead, so a long reply still costs one line. agent_delta is recorded but non-durable
 // under back-pressure so terminal user/agent/error/metrics lines win.
 func (w *Writer) Attach(bus *events.Bus) {
-	if bus == nil {
-		return
-	}
-	// Typed subscriptions so AudioLevel / TranscriptPartial never enter the
-	// writer. --transcript-log is process-lifetime; /record uses AttachAll.
-	events.Subscribe(bus, func(e events.UserInput) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ResponseDelta) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ResponseReady) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ToolCallStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ToolCallFinished) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkStateChanged) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkerUsageRecorded) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkerLimitReached) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkerChargeState) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.RouteDecided) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.WorkDelivery) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobQueued) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobFinished) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobFailed) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.JobAborted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.Error) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.Info) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeechDiagnostic) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.STTPhase) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ThinkingStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeakingStarted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeakingComplete) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SpeakingInterrupted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.TurnInterrupted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.TurnMetrics) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.VoiceGateStripped) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.TokenUsage) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.SessionWarning) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ConversationCompacted) { w.Handle(e) })
-	events.Subscribe(bus, func(e events.ConversationCleared) { w.Handle(e) })
+	// Process-lifetime (--transcript-log). /record uses AttachAll so it can detach.
+	w.AttachAll(bus)
 }
 
 // segmentRecords converts the turn's segment metrics to their wire form.
@@ -311,102 +324,24 @@ func speechGaps(in []events.SpeechGap) []gap {
 	return out
 }
 
-// isDurableRecord reports terminal / harness-critical record types that must
-// outrank streaming noise under back-pressure (same idea as the TUI bridge).
-func isDurableRecord(r record) bool {
-	switch r.Type {
-	case "header", "user", "agent", "error", "tool_call", "tool_result",
-		"metrics", "tokens", "session_warning", "compacted", "cleared",
-		"turn_interrupted", "work_state_changed", "work_delivery", "dropped":
-		return true
-	default:
-		return false
-	}
-}
-
-// enqueue stamps and queues one record; it never blocks the emitting
-// goroutine. The bus outlives conversations, so post-Close events are dropped
-// silently rather than written to a closed file.
-func (w *Writer) enqueue(r record) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.closed {
-		return
-	}
-	r.TS = time.Now().UTC().Format(time.RFC3339Nano)
-	r.Seq = w.seq.Add(1)
-
-	select {
-	case w.ch <- r:
-		return
-	default:
-	}
-
-	// Channel full: prefer durable records over agent_delta / speaking / etc.
-	// Mirror the TUI bridge — drop oldest non-durable first, then oldest durable.
-	q := make([]record, 0, cap(w.ch)+1)
-	for {
-		select {
-		case m := <-w.ch:
-			q = append(q, m)
-		default:
-			goto drained
-		}
-	}
-drained:
-	q = append(q, r)
-	before := len(q)
-	q = fitTranscriptQueue(q, cap(w.ch))
-	if dropped := before - len(q); dropped > 0 {
-		w.dropped.Add(int64(dropped))
-	}
-	for _, m := range q {
-		select {
-		case w.ch <- m:
-		default:
-			// Should be impossible after fit; count rather than block.
-			w.dropped.Add(1)
-		}
-	}
-}
-
-// fitTranscriptQueue keeps at most capacity records, dropping oldest
-// non-durable first. If only durable events remain, the oldest durable drops.
-func fitTranscriptQueue(q []record, capacity int) []record {
-	if capacity <= 0 {
-		return nil
-	}
-	for len(q) > capacity {
-		drop := -1
-		for i, m := range q {
-			if !isDurableRecord(m) {
-				drop = i
-				break
-			}
-		}
-		if drop < 0 {
-			q = q[1:]
-			continue
-		}
-		q = append(q[:drop], q[drop+1:]...)
-	}
-	return q
-}
-
 func (w *Writer) run() {
 	defer close(w.done)
-	for r := range w.ch {
-		w.write(r)
+	defer func() {
+		w.closeErr = w.f.Close()
+		if n := w.writeErrors.Load(); n > 0 {
+			w.closeErr = fmt.Errorf("transcript has %d write errors: %v", n, w.closeErr)
+		}
+	}()
+	if w.capture == nil {
+		for r := range w.ch {
+			w.write(r)
+		}
+		if n := w.dropped.Load(); n > 0 || w.writeErrors.Load() > 0 {
+			w.write(record{Type: "dropped", TS: time.Now().UTC().Format(time.RFC3339Nano), Seq: w.seq.Add(1), Dropped: n, WriteErrors: w.writeErrors.Load()})
+		}
+		return
 	}
-	if n := w.dropped.Load(); n > 0 || w.writeErrors.Load() > 0 {
-		w.write(record{
-			Type:        "dropped",
-			TS:          time.Now().UTC().Format(time.RFC3339Nano),
-			Seq:         w.seq.Add(1),
-			Dropped:     n,
-			WriteErrors: w.writeErrors.Load(),
-		})
-	}
+	w.runCapture()
 }
 
 // write appends and fsyncs one line. Event rate is human-conversation scale,
@@ -438,18 +373,7 @@ func (w *Writer) noteWriteError(err error) {
 
 // Close stops accepting events, drains the queue, records drops, and closes
 // the file. Safe to call more than once.
-func (w *Writer) Close() error {
-	var err error
-	w.once.Do(func() {
-		w.mu.Lock()
-		w.closed = true
-		close(w.ch)
-		w.mu.Unlock()
-		<-w.done
-		err = w.f.Close()
-	})
-	return err
-}
+func (w *Writer) Close() error { w.stopAccepting(); <-w.done; return w.closeErr }
 
 // Dropped is the count of records discarded under back-pressure.
 func (w *Writer) Dropped() int64 {

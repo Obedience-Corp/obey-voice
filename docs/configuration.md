@@ -2,7 +2,7 @@
 
 [Back to README](../README.md)
 
-Config lives at `~/.obey/agents/voice/festival-voice/config.yaml`. Values can also be overridden with environment variables where listed.
+Config lives at `~/.obey/agents/voice/obey-voice/config.yaml`. Values can also be overridden with environment variables where listed.
 
 `obey-voice config set <key> <value>` rewrites only that key's line: comments,
 blank lines and key order survive, a timestamped `.bak` is kept (newest five),
@@ -43,19 +43,21 @@ machine-readable payload; `config set` and `config unset` exit 0 on success, 1
 when the operation fails (with an error `code` in the payload), and 2 when
 called with the wrong number of arguments.
 
-Persona **profiles** live under `~/.obey/agents/voice/festival-voice/personas/<id>/persona.yaml`.
+Persona **profiles** live under `~/.obey/agents/voice/obey-voice/personas/<id>/persona.yaml`.
 On load, the active profile overlays `agent_name`, the persona prompt name, and per-persona TTS
 (`tts.provider` + `tts.voice` → `tts_provider` and either `tts_voice` or `qwen_tts_voice`).
 Each persona can use any supported TTS backend and any voice for that backend.
 Prompt bodies stay in `prompts/` (see `obey-voice prompts`).
 
 Shipped personas live in the catalog (`internal/persona/shipped/*.yaml` plus a
-matching `prompts/defaults/persona.<id>.yaml`). Adding a companion is those two
-files; there is no Go special case. **obey** is the default a fresh install
-talks to and pins nothing — no brain, no TTS — so it speaks with whatever the
-config above says. **samantha**, **veronica**, and **jarvis** are selectable
-companions (Kokoro Heart / VeronicaDesk / Kokoro George). None of them can be
-deleted.
+matching `pkg/voiceagent/prompts/defaults/persona.<id>.yaml`, with Obey's prompt
+in `persona.yaml`). Adding a companion requires those two files.
+**obey** is the startup persona on a fresh install. All shipped profiles inherit
+the application brain and pin distinct voices: Obey / Phonon Harper,
+Samantha / Phonon Juniper, Jarvis / Phonon Edwin, Veronica / Phonon Zoey, and
+Santa / Kokoro `am_santa`. **Use defaults** ignores the named Obey profile's
+brain and voice pins and uses Settings instead. Existing profiles are preserved;
+see [shipped personas](personas.md#shipped-personas) to adopt the new voices.
 
 On every load, empty catalog slots are filled and occupied slots are left
 alone. A fresh install starts on `obey`. An install that already named
@@ -104,7 +106,12 @@ when you select it.
 | `calibredb_binary` | empty | `CALIBREDB_BINARY` | `calibredb` path; empty uses PATH then macOS app bundle / `/opt/calibre` |
 | `calibre_convert_binary` | empty | `CALIBRE_CONVERT_BINARY` | `ebook-convert` path used to convert MOBI/AZW-family books to EPUB |
 | `calibre_prefer_format` | `epub` | `CALIBRE_PREFER_FORMAT` | Preferred book format when resolving (`epub`, `pdf`, then convertible MOBI/AZW-family formats) |
-| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, or `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`) |
+| `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`), or `openai-speech` (any OpenAI-compatible `/v1/audio/speech` server; Phonon via Ollama by default, see [OpenAI-compatible speech](openai-speech.md)) |
+| `openai_speech_url` | `http://localhost:11434/v1` | `OPENAI_SPEECH_URL` | Base URL of the speech API the `openai-speech` engine talks to |
+| `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | Model id the speech API synthesizes with (`ollama pull phonon`) |
+| `openai_speech_voice` | `default` | `OPENAI_SPEECH_VOICE` | Voice name on that server. Phonon on Ollama 0.40.11+ offers named voices after setup; `default` remains available. Settings → Voice and the Personas form list the server's catalog when it publishes one (see [Voices and personas](openai-speech.md#voices-and-personas)); a name it does not list can still be set here and stays listed in both. `obey-voice voices` lists what the server has. Persona-overridable |
+| `openai_speech_api_key` | empty | `OPENAI_SPEECH_API_KEY` | Bearer token for a speech API that needs one. Ollama does not |
+| `openai_speech_timeout` | `60` | `OPENAI_SPEECH_TIMEOUT` | Seconds one speech request may take before it is abandoned |
 | `voice_fallback_provider` | `kokoro` | `VOICE_FALLBACK_PROVIDER` | One-sentence runtime fallback after the selected provider fails; set empty/disabled to turn it off |
 | `tts_voice` | `af_heart` | `TTS_VOICE` | Kokoro voice name |
 | `audio8_voice` | empty | `AUDIO8_VOICE` | Which Audio8 voice speaks. Empty uses the reference packaged with the export; otherwise a voice registered with `obey-voice voices register` (see [Audio8 voices](audio8-voices.md)). Not an enum: registered names are yours, so an unknown one is reported by the provider rather than by `config set`. Switching voices re-pays the ~1.0 s prefix prime |
@@ -113,6 +120,7 @@ when you select it.
 | `tts_worker_token` | empty | `OBEY_SPEECH_TOKEN` | Shared secret the speech worker requires. **Required** whenever `tts_place: lan` — a missing token is refused at validation, not at connect time. `config get` reports only whether it is set |
 | `tts_lan_strict` | `false` | | Refuse to start a conversation when the speech worker is unreachable, instead of speaking with Kokoro here |
 | `tts_lan_timeout_ms` | `200` | | Dial and handshake budget for the speech worker. It never bounds the worker's model load |
+| `tts_lookahead` | `2` (1–8) | `TTS_LOOKAHEAD` | How many admitted speech segments a reply may hold ahead of the one playing. `2` is one segment playing while the next is synthesized, which is what the pipeline has always done. It is raised to the speech engine's own concurrency when that is higher; every shipped engine synthesizes one request at a time, so raising it alone buys nothing |
 | `speech_speed` | `0.95` | | Playback speed |
 | `playback_volume` | `1` | | Linear playback gain. `1` is unchanged; `0` is silent; values up to `4` boost a quiet speaker. Settings → Audio has a slider; takes effect immediately |
 | `qwen_tts_binary` | empty | `QWEN_TTS_BINARY` | Empty uses the native package worker under `models_dir/qwen3-tts`; set with `qwen_tts_model` for an explicit external worker |
@@ -121,6 +129,7 @@ when you select it.
 | `qwen_tts_native_url` | platform release | `QWEN_TTS_NATIVE_URL` / `OBEY_VOICE_QWEN_NATIVE_URL` | Empty uses the published `qwen3-tts-native` release for this OS/arch; override for custom builds |
 | `qwen_tts_native_sha256` | platform release | `QWEN_TTS_NATIVE_SHA256` / `OBEY_VOICE_QWEN_NATIVE_SHA256` | Archive digest matching the default or configured URL |
 | `qwen_tts_stream` | `auto` | `QWEN_TTS_STREAM` | Whether Qwen's PCM chunks are played as they arrive instead of after the whole sentence. `auto` streams only where it was measured not to break up: `tts_place: lan`, or a local package whose `backend_hint` is `cuda`. `on` / `off` force it. A worker that cannot stream ignores all three. See [Chunk playback](#chunk-playback-qwen-stage-b) |
+| `qwen_tts_workers` | `1` (1–4) | `QWEN_TTS_WORKERS` | How many native Qwen worker subprocesses synthesize at once. Each one loads its own copy of the model at start, so this buys throughput with memory. Only the local native path honours it: a LAN worker's parallelism is the speech host's setting, and the managed Python path stays at one session. Above `1` it is an experiment — the default moves only when the run in [docs/benchmarks/README.md](benchmarks/README.md#qwen-worker-count-1-vs-2) clears its thresholds |
 | `qwen_tts_timeout` | `120` | `QWEN_TTS_TIMEOUT` | Per-request native/external worker timeout in seconds |
 | `qwen_tts_mode` | empty | `QWEN_TTS_MODE` | Product setup resolves empty to `customvoice` |
 | `qwen_tts_voice` | empty | `QWEN_TTS_VOICE` | CustomVoice preset (`Vivian`, `Serena`, …) or shipped clone (`Veronica`). Empty resolves to `Veronica`. **A clone voice cannot travel to a speech worker** — its throat is a recording on this computer — so under `tts_place: lan` that computer speaks in its own voice and Obey Voice warns at conversation start and in `doctor`. Pick a preset voice for LAN speech |
@@ -139,7 +148,7 @@ when you select it.
 | `whisper_quantized` | `true` | | Prefer quantized Whisper models |
 | `whispercpp_binary` | `whisper-cli` | `WHISPERCPP_BINARY` | whisper.cpp CLI executable |
 | `whispercpp_model` | `base.en` | `WHISPERCPP_MODEL` | Downloadable whisper.cpp model name |
-| `whispercpp_model_path` | `~/.cache/festival-voice/models/whispercpp/ggml-base.en.bin` | `WHISPERCPP_MODEL_PATH` | whisper.cpp model path |
+| `whispercpp_model_path` | `~/.cache/obey-voice/models/whispercpp/ggml-base.en.bin` | `WHISPERCPP_MODEL_PATH` | whisper.cpp model path |
 | `transcribecpp_binary` | `transcribe-cli` | `TRANSCRIBECPP_BINARY` | transcribe.cpp CLI executable. A path is used as given; a bare name is looked up on `PATH`, then in the copy `models ensure` manages |
 | `transcribecpp_model` | `parakeet-tdt-0.6b-v2` | `TRANSCRIBECPP_MODEL` | GGUF the `transcribecpp` provider loads. This is upstream's full model slug, so it is spelled longer than `parakeet_model`'s `tdt-0.6b-v2` — not a typo |
 | `stt_custom_words` | *(empty)* | | Names and jargon the transcriber restores after decoding: `Samantha`; `Claude=clawed,cloud` names misheard forms that map to it exactly; `Ollama!` also catches near-misses when the word is rare (five or more letters and not an everyday word). Config file only, e.g. `["Samantha", "Claude=clawed,cloud", "Ollama!"]`. See [Custom words](#custom-words) |
@@ -157,7 +166,7 @@ when you select it.
 | `vad_enabled` | `true` | | Enable voice activity detection |
 | `vad_silence_duration` | `1.2` | | Seconds of silence before ending speech (raise to stop being cut off) |
 | `vad_threshold` | `0.6` | `VAD_THRESHOLD` | Speech-detection confidence (raise to ignore background noise) |
-| `vad_min_speech_duration` | `0.25` | `VAD_MIN_SPEECH_DURATION` | Minimum speech length in seconds (raise to ignore brief noises) |
+| `vad_min_speech_duration` | `0.1` | `VAD_MIN_SPEECH_DURATION` | Minimum speech length in seconds; keeps brief yes/no replies while audible-speech and noise checks still apply |
 | `voice_frontend_enabled` | `false` | `VOICE_FRONTEND_ENABLED` | Local AEC/NS/AGC on mic input (off by default: the noise suppressor currently over-suppresses normal-volume speech; enable only with barge-in) |
 | `talk_hotkey_enabled` | `true` | `TALK_HOTKEY_ENABLED` | A system-wide key that starts and ends one spoken turn from whatever app has focus. macOS (Carbon) and Windows (`RegisterHotKey`) register the combo themselves; everywhere else the conversation opens a private local endpoint and you bind your own shortcut tool to `obey-voice talk down` / `up` / `press`. The endpoint opens on every OS. `Ctrl+G` remains the mute |
 | `talk_hotkey_mode` | `hold` | `TALK_HOTKEY_MODE` | How a press maps onto a turn: `hold` (press to talk, release to send), `toggle` (tap to start, tap to send), or `automatic` (a tap toggles, a press longer than 300 ms behaves as a hold) |
@@ -167,13 +176,13 @@ when you select it.
 | `tui_mouse_enabled` | `false` | `TUI_MOUSE_ENABLED` | Claim the mouse so the wheel/trackpad is routed to the transcript viewport. Off by default so the terminal keeps click-drag selection and copy; turning it on means selecting needs a modifier (option/fn/shift). Either way `Page Up`/`Page Down` scroll, and with it off the wheel scrolls whenever the composer is empty. Applies on next enter/leave of conversation (Settings → Tools toggle or re-entry); no full process restart required for the TUI claim |
 | `agent_name` | `Obey` | | Display name |
 | `persona` | `obey` | `PERSONA` | Prompt document name for the interactive persona |
-| `prompts_dir` | empty | `PROMPTS_DIR` | Prompt document directory; defaults to `~/.obey/agents/voice/festival-voice/prompts` when unset |
+| `prompts_dir` | empty | `PROMPTS_DIR` | Prompt document directory; defaults to `~/.obey/agents/voice/obey-voice/prompts` when unset |
 | `skills_enabled` | `true` | `SKILLS_ENABLED` | Agent Skills (`SKILL.md`) discovery for Ollama. Default on; set `false` to disable. Discovers project/workspace/user skill frontmatter into the system prompt; not a pre-activation sandbox. Claude/Grok already discover skills via their CLIs. |
-| `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after project/workspace/user harness dirs); defaults to `~/.obey/agents/voice/festival-voice/skills` when unset. |
+| `skills_dir` | empty | `SKILLS_DIR` | Extra Obey Voice skills root (after project/workspace/user harness dirs); defaults to `~/.obey/agents/voice/obey-voice/skills` when unset. |
 | `work_dir` | empty | `OBEY_VOICE_WORK_DIR` | Directory the agent's file and shell tools start in. **A default, not a sandbox** — a tool may still reach an absolute path outside it. Empty uses the directory Obey Voice was launched from; the binary's own folder, `/`, and any path that is not an existing directory fall back to your home folder. `obey-voice serve --work-dir DIR` overrides it for one process, and an override that is not an existing directory is a startup error rather than a silent fallback. The bare `WORK_DIR` is still honored for compatibility but `OBEY_VOICE_WORK_DIR` wins when both are set — see [Where the working directory came from](#where-the-working-directory-came-from). |
-| `models_dir` | `~/.cache/festival-voice/models` | `MODELS_DIR` | Model download directory |
+| `models_dir` | `~/.cache/obey-voice/models` | `MODELS_DIR` | Model download directory |
 | `language` | `en-US` | | Recognition language |
-| `max_history` | `10` | | Saved conversation history length |
+| `max_history` | `40` | | Saved conversation history length |
 | `listen_timeout` | `10` | | Listen timeout in seconds |
 | `phrase_time_limit` | `30` | | Maximum phrase length in seconds |
 
@@ -539,7 +548,17 @@ cross-client **`.agents/skills`** convention
 1. `<cwd>/.agents/skills/*/SKILL.md` — project skills (shared with Codex, VS Code, camp, …)
 2. `<nearest ancestor>/.agents/skills/*/SKILL.md` — workspace/project-root skills
 3. `~/.agents/skills/*/SKILL.md` — user skills
-4. `skills_dir` (default `~/.obey/agents/voice/festival-voice/skills`) — Obey Voice-only
+4. `skills_dir` (default `~/.obey/agents/voice/obey-voice/skills`) — Obey Voice-only
+5. Embedded `obey-voice` skill — app and persona configuration guidance
+
+The shipped skill is available without a checkout or a skill installation. It
+explains the installed CLI's persona/config commands and requires reading back
+saved changes. Filesystem skills named `obey-voice` override this fallback for
+Ollama. Native-tool providers receive the shipped configuration instructions
+directly in their app context. `skills_enabled=false` or disabling `obey-voice`
+removes those detailed instructions; basic knowledge of the hosting app remains.
+Ask the assistant to create a persona or change its voice; it can inspect the
+CLI and perform requested changes through its worker/tools.
 
 Ollama does **not** scan `.claude/skills`; the Claude Code provider owns that
 path, and dual-scanning would duplicate skills when both trees are projected.
@@ -582,7 +601,7 @@ effect when the conversation runtime is re-entered or restarted.
 ~/.agents/skills/hello/SKILL.md
 
 # Obey Voice config root
-~/.obey/agents/voice/festival-voice/skills/hello/SKILL.md
+~/.obey/agents/voice/obey-voice/skills/hello/SKILL.md
 ```
 
 ```markdown
@@ -632,3 +651,14 @@ or reinterpret those explicit singleton values.
 Existing saved `queued_workers: 1` remains an explicit one-job queue bound.
 Increase it in Workers Settings if desired; loading an older policy does not
 silently replace that saved value with a newer default.
+
+### Experimental group participation
+
+`group_participation_enabled` defaults to `false` and takes effect in a new
+conversation/runtime. It requires local Ollama inference.
+`group_participation_mode` sets a new conversation's initial mode: `invited`
+(default), `off`, or `open`. The corresponding environment variables are
+`GROUP_PARTICIPATION_ENABLED` and `GROUP_PARTICIPATION_MODE`.
+
+Conversation controls save mode and member changes with that session, without
+changing global defaults. See [Group participation](personas.md#group-participation-experimental).

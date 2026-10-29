@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decider"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
@@ -38,13 +39,33 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 	if err := ensureManifestProgress(ctx, manifest, dir, onProgress); err != nil {
 		return err
 	}
+	if req.NeedDecision && ManagedDecisions(cfg) {
+		if err := decider.EnsurePython(ctx, dir, func(stage string) {
+			if onProgress != nil {
+				onProgress(AssetProgress{Asset: "Local decision runtime", Phase: assetPhaseInstall})
+			}
+		}); err != nil {
+			return err
+		}
+		if onProgress != nil {
+			onProgress(AssetProgress{Asset: "Local decision runtime", Phase: assetPhaseDone, Pct: 100})
+		}
+	}
 	if req.NeedTTS && cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) {
 		if qwen.UseManaged(cfg.QwenTTSBinary, cfg.QwenTTSModel) {
 			return ensureQwenTTSAssetsProgress(ctx, cfg, onProgress)
 		}
 		return nil
 	}
-	if req.NeedTTS && ManagedTTS(cfg) {
+	if req.NeedTTS && OpenAISpeechSelected(cfg) {
+		return ensureOpenAISpeechAssetsProgress(ctx, cfg, req, onProgress)
+	}
+	if req.NeedVoiceCatalog && !req.NeedTTS {
+		// A descriptions-only request does not depend on a running speech
+		// server and must never pull its model or any persona's models.
+		return ensureOpenAISpeechCatalog(ctx, dir, onProgress)
+	}
+	if req.NeedTTS && cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "kokoro") {
 		if err := sanitizeKokoroLexicons(dir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not sanitize kokoro lexicons: %v\n", err)
 		}

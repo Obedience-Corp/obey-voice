@@ -22,10 +22,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-SPIKE="${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/spikes/transcribecpp"
+SPIKE="${XDG_CACHE_HOME:-$HOME/.cache}/obey-voice/spikes/transcribecpp"
 CLI="${TRANSCRIBECPP_CLI:-$SPIKE/src-v0.2.2/build/bin/transcribe-cli}"
 MODEL="${TRANSCRIBECPP_MODEL:-$SPIKE/models/parakeet-tdt-0.6b-v2-Q8_0.gguf}"
-FIXTURE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/stt-ab"
+FIXTURE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/obey-voice/fixtures/stt-ab"
 OUT="${STT_AB_OUT:-$SPIKE/run-$(date +%Y-%m-%d)}"
 ITERATIONS=3
 

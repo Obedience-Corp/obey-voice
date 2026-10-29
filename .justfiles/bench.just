@@ -11,6 +11,18 @@ manifest := repo / "testdata/corpus/manifest.json"
 default:
     @just --list --justfile {{source_file()}}
 
+[doc('Replay labeled addressee cases against baseline or optional decision providers (lab only)')]
+decision *ARGS:
+    @cd "{{repo}}" && go run ./scripts/decision_bench {{ARGS}}
+
+[doc('Compare local worker decisions with real admission and speaking-model routing (no workers or audio)')]
+worker-decision *ARGS:
+    @cd "{{repo}}" && go run ./scripts/worker_decision_bench {{ARGS}}
+
+[doc('Compare actual voice pipeline calls, first PCM and worker start; requires OBEY_DECISION_MODELS and a new OBEY_DECISION_OUT path')]
+decision-pipeline:
+    @cd "{{repo}}" && OBEY_DECISION_CASES="${OBEY_DECISION_CASES:-{{repo}}/testdata/decision/worker-routing.json}" OBEY_DECISION_LIVE=1 go test -tags integration ./pkg/voiceagent/pipeline -run '^TestDecisionLivePipelineReplay$' -count=1 -timeout=60m -v
+
 [doc('Measure and diff against the committed baseline (fails on >10% regression)')]
 diff:
     @{{repo}}/scripts/bench.sh diff
@@ -189,3 +201,7 @@ ttft *ARGS:
 [doc('Record what a client actually sends ollama. Point the client at it with OLLAMA_HOST=http://127.0.0.1:11500')]
 ttft-proxy out=(`printf '%s/ttft-proxy-capture.jsonl' "${TMPDIR:-/tmp}"`):
     @cd "{{repo}}" && go run ./scripts/ttft_probe -proxy 127.0.0.1:11500 -proxy-out "{{out}}"
+
+[doc('Report acoustic Obey hits/misses on labeled WAVs (no mic or playback); requires -model-dir')]
+kws *ARGS:
+    @cd "{{repo}}" && go run ./scripts/kws_bench {{ARGS}}

@@ -1,4 +1,4 @@
-// Package persona loads festival-voice persona profiles (multi-agent support).
+// Package persona loads obey-voice persona profiles (multi-agent support).
 //
 // Profiles live at:
 //
@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 
@@ -24,7 +25,7 @@ import (
 )
 
 // Schema identifies the persona profile document version.
-const Schema = "festival-voice.persona.v1"
+const Schema = "obey-voice.persona.v1"
 
 // DefaultID is the shipped default profile id: the persona a fresh install
 // talks to and the id every heal path prefers. Companions (samantha, veronica,
@@ -46,16 +47,18 @@ var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 // no omitempty: a stable key set lets a decoder distinguish "inherit the app
 // default" (empty string) from "field absent".
 type Profile struct {
-	Schema      string     `yaml:"schema" json:"schema"`
-	ID          string     `yaml:"id" json:"id"`
-	DisplayName string     `yaml:"display_name" json:"display_name"`
-	Aliases     []string   `yaml:"aliases,omitempty" json:"aliases,omitempty"`
-	Builtin     bool       `yaml:"builtin,omitempty" json:"builtin"`
-	Inactive    bool       `yaml:"inactive,omitempty" json:"inactive"`
-	Brain       Brain      `yaml:"brain,omitempty" json:"brain"`
-	TTS         TTS        `yaml:"tts" json:"tts"`
-	Prompts     PromptRefs `yaml:"prompts" json:"prompts"`
-	Path        string     `yaml:"-" json:"path"` // absolute path of persona.yaml when loaded
+	ParticipationDescription string     `yaml:"participation_description,omitempty" json:"participation_description,omitempty"`
+	StartingDirectory        string     `yaml:"starting_directory,omitempty" json:"starting_directory"`
+	Schema                   string     `yaml:"schema" json:"schema"`
+	ID                       string     `yaml:"id" json:"id"`
+	DisplayName              string     `yaml:"display_name" json:"display_name"`
+	Aliases                  []string   `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+	Builtin                  bool       `yaml:"builtin,omitempty" json:"builtin"`
+	Inactive                 bool       `yaml:"inactive,omitempty" json:"inactive"`
+	Brain                    Brain      `yaml:"brain,omitempty" json:"brain"`
+	TTS                      TTS        `yaml:"tts" json:"tts"`
+	Prompts                  PromptRefs `yaml:"prompts" json:"prompts"`
+	Path                     string     `yaml:"-" json:"path"` // absolute path of persona.yaml when loaded
 }
 
 // ErrInactive marks a profile that is present on disk but unavailable for
@@ -146,6 +149,9 @@ type PromptRefs struct {
 func (p *Profile) Validate() error {
 	if p == nil {
 		return fmt.Errorf("persona profile: nil")
+	}
+	if !utf8.ValidString(p.ParticipationDescription) || utf8.RuneCountInString(p.ParticipationDescription) > 256 || len(p.ParticipationDescription) > 1024 {
+		return fmt.Errorf("participation description must be valid UTF-8 and at most 256 characters")
 	}
 	if p.Schema != Schema {
 		return fmt.Errorf("persona profile: schema %q, want %q", p.Schema, Schema)
@@ -315,7 +321,7 @@ func Write(p *Profile, skipExisting bool) error {
 		return fmt.Errorf("encoding persona profile: %w", err)
 	}
 	// Prefer a stable header for humans.
-	header := "# yaml-language-server: $schema=festival-voice.persona.v1\n"
+	header := "# yaml-language-server: $schema=obey-voice.persona.v1\n"
 	body := append([]byte(header), data...)
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
@@ -441,6 +447,8 @@ func applyBrain(cfg *config.Config, b Brain) {
 		cfg.CursorModel = model
 		// claude has no app-level model key today; a persona model for it is
 		// recorded on the profile but not routed.
+	case "codex":
+		cfg.CodexModel = model
 	}
 }
 
@@ -482,6 +490,8 @@ func modelForProvider(cfg *config.Config, provider string) string {
 		return strings.TrimSpace(cfg.GrokModel)
 	case "cursor":
 		return strings.TrimSpace(cfg.CursorModel)
+	case "codex":
+		return strings.TrimSpace(cfg.CodexModel)
 	default:
 		return ""
 	}

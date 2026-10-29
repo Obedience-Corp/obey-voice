@@ -59,16 +59,10 @@ func run(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, start
 	})
 }
 
-// Each program owns one conversation lifetime. Reusing teardown between chats
-// keeps old turns, event pumps, and talk keys out of the next session.
+// One program owns the terminal; /menu drains the conversation inside it.
 func runPrograms(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, startInConversation bool, program func(App) (tea.Model, error)) error {
-	for {
-		back, err := runProgram(cfg, build, meeting, startInConversation, program)
-		if err != nil || !back {
-			return err
-		}
-		startInConversation = false
-	}
+	_, err := runProgram(cfg, build, meeting, startInConversation, program)
+	return err
 }
 
 func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder, startInConversation bool, program func(App) (tea.Model, error)) (bool, error) {
@@ -124,7 +118,18 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	// it on leaving, so the launcher, settings and meeting screens are
 	// unaffected either way.
 	m, runErr := program(app)
-	final, _ := m.(App)
+	final, ok := m.(App)
+	if !ok {
+		final = app
+	}
+	// Detach before any persistence/native teardown can block after the UI
+	// exits; draining itself runs later with the shared helper deadline.
+	final.conversation.stopCapture()
+	if final.menuDone != nil {
+		disarm := armProcessForceQuit()
+		<-final.menuDone
+		disarm()
+	}
 
 	// Flush the chat before bounding remaining teardown so a wedged TTS, STT,
 	// or talk-helper close cannot discard it. Prefer the slot: it still holds
@@ -151,7 +156,7 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	}
 	defer disarm()
 
-	waitQuitHelpers(final, app, cancel)
+	final.fatalErr = errors.Join(final.fatalErr, waitQuitHelpers(final, app, cancel))
 
 	if final.slot != nil {
 		final.slot.cleanup()
@@ -169,7 +174,7 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	}
 
 	if runErr != nil {
-		return false, fmt.Errorf("TUI error: %w", runErr)
+		return false, fmt.Errorf("TUI error: %w", errors.Join(runErr, final.fatalErr))
 	}
 	return final.returnToMenu, final.fatalErr
 }
@@ -198,11 +203,22 @@ func armProcessForceQuit() func() {
 // waitQuitHelpers asks remote serve, the talk helper, and in-flight turns to
 // leave, then waits once. Sequential stop timeouts used to stack on every
 // quit (remote + hotkey + drain).
-func waitQuitHelpers(final, app App, cancel context.CancelFunc) {
+func waitQuitHelpers(final, app App, cancel context.CancelFunc) error {
+	if final.runCancel != nil {
+		final.runCancel()
+	}
 	if cancel != nil {
 		cancel()
 	}
 	var wg sync.WaitGroup
+	captureDone := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ctx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stop()
+		captureDone <- final.conversation.waitCaptureSeal(ctx)
+	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -230,5 +246,15 @@ func waitQuitHelpers(final, app App, cancel context.CancelFunc) {
 			app.wg.Wait()
 		}()
 	}
+	if final.wg != nil && final.wg != app.wg {
+		wg.Add(1)
+		go func() { defer wg.Done(); final.wg.Wait() }()
+	}
 	waitTimeout(&wg, drainTimeout)
+	select {
+	case err := <-captureDone:
+		return err
+	default:
+		return fmt.Errorf("capture cleanup incomplete: helper drain deadline exceeded")
+	}
 }

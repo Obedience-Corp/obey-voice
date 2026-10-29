@@ -818,19 +818,19 @@ func TestErrorMessageReachesActivity(t *testing.T) {
 	}
 }
 
-// recoverTurn emits Error then ResponseReady then speaks; the error status
+// A partial reply may still drain after Error and ResponseReady; the error status
 // must survive until the next turn writes over it (WI-dc9e33 B1/F1.2).
 func TestErrorStatusSurvivesRecoverySequence(t *testing.T) {
 	m := sizedConversation(t, 80, 24)
 	m.ready = true
 
 	m.handleEvent(events.Error{Stage: "brain", Message: "boom"})
-	m.handleEvent(events.ResponseReady{Response: "I hit an error.", Degraded: true})
+	m.handleEvent(events.ResponseReady{Response: "Partial reply.", Degraded: true})
 	if !m.statusErr || !strings.Contains(m.status, "boom") {
 		t.Fatalf("status wiped by ResponseReady: %q err=%v", m.status, m.statusErr)
 	}
-	m.handleEvent(events.GeneratingVoice{Sentence: "I hit an error."})
-	m.handleEvent(events.SpeakingStarted{Text: "I hit an error."})
+	m.handleEvent(events.GeneratingVoice{Sentence: "Partial reply."})
+	m.handleEvent(events.SpeakingStarted{Text: "Partial reply."})
 	if m.voiceMode != anim.ModeSpeaking {
 		t.Fatalf("voiceMode during recovery speak = %v, want ModeSpeaking", m.voiceMode)
 	}

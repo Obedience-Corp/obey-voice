@@ -8,6 +8,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/delegation"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/workfold"
 )
 
 // WorkerInfo is a read-only projection for worker controls. Ownership and
@@ -17,6 +18,9 @@ type WorkerInfo struct {
 	Activity, Result, Err, Termination string
 	Started, Ended                     time.Time
 	Elapsed                            time.Duration
+	Tools                              []workfold.Call
+	Thread                             []brain.Turn
+	PersonaID, PersonaName             string
 }
 
 func (i WorkerInfo) Active() bool {
@@ -91,6 +95,7 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			Provider: item.Provider, Model: item.Model, Result: item.Result, Err: item.Err,
 			Started: item.Started, Ended: item.Ended, Elapsed: item.Elapsed()}
 		if a.work != nil {
+			info.Tools = a.work.Calls(item.ID)
 			if rows := a.work.Rows(item.ID); len(rows) > 0 {
 				latest := rows[len(rows)-1]
 				info.Activity = latest.String()
@@ -104,6 +109,14 @@ func (p *Pipeline) Workers() []WorkerInfo {
 			if item.Started.IsZero() {
 				info.Termination = "confirmed (never started)"
 			}
+		}
+		a.mu.Lock()
+		info.Thread = copyWorkerThread(a.workerThreads[item.ID])
+		origin := a.workerOrigins[item.ID]
+		info.PersonaID, info.PersonaName = origin.Envelope.PersonaID, origin.Envelope.DisplayName
+		a.mu.Unlock()
+		if origin.Scope.Valid() && (origin.Scope != p.ConversationScope() || p.ConversationRetired()) {
+			continue
 		}
 		byID[item.ID] = info
 	}
@@ -130,6 +143,13 @@ func (p *Pipeline) Workers() []WorkerInfo {
 	for _, item := range canonical.Jobs {
 		info := byID[item.Key.JobID]
 		info.ID, info.Task, info.Provider, info.Model = item.Key.JobID, item.Task, item.Provider, item.Model
+		// Terminal jobs no longer have a live callback scope, but their
+		// messages still belong to this conversation's canonical job.
+		a.mu.Lock()
+		info.Thread = copyWorkerThread(a.workerThreads[info.ID])
+		origin := a.workerOrigins[info.ID]
+		info.PersonaID, info.PersonaName = origin.Envelope.PersonaID, origin.Envelope.DisplayName
+		a.mu.Unlock()
 		if info.State != "stopping" {
 			info.State = string(item.State)
 		}

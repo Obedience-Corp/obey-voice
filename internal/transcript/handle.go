@@ -1,6 +1,8 @@
 package transcript
 
 import (
+	"reflect"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -14,25 +16,90 @@ func (w *Writer) Handle(e events.Event) {
 	if !recordedEventTypes[events.EventType(e)] {
 		return
 	}
+	if w.capture != nil {
+		w.copyMu.Lock()
+		defer w.copyMu.Unlock()
+		w.mu.Lock()
+		closed := w.closed || w.limited.Load()
+		w.mu.Unlock()
+		if closed {
+			return
+		}
+		if captureScopeConflict(w.capture.Trace, e) {
+			w.scopeExcluded.Add(1)
+			return
+		}
+		if size, ok := boundedSize(reflect.ValueOf(e), 0); !ok {
+			w.skipped.Add(1)
+			w.enqueue(record{Type: "record_omitted", Trace: cloneDiagnosticTrace(events.TraceOf(e)), Message: "payload exceeds bounded copy budget", SizeEstimateBytes: size, OmittedType: events.EventType(e), SizeEstimateKind: sizeEstimateKind(size)})
+			return
+		}
+		e = copyBounded(reflect.ValueOf(e)).Interface().(events.Event)
+	}
 	r, ok := encodeEvent(e)
 	if !ok {
 		return
 	}
+	r.Trace = events.TraceOf(e)
+	if w.capture != nil && r.Trace == nil {
+		if runtime, session, epoch, ok := events.SourceWorkScope(e); ok {
+			r.Trace = &events.TraceContext{RuntimeID: runtime, SessionID: session, ConversationEpoch: epoch}
+		}
+	}
 	w.enqueue(r)
 }
 
-// AttachAll is a detachable Attach for /record. High-rate types never reach
-// encodeEvent; --transcript-log uses typed Attach so they never reach Handle.
+// AttachAll is a detachable Attach for /record. Typed subscriptions only —
+// AudioLevel / TranscriptPartial never enter Handle (PR #207 review).
 func (w *Writer) AttachAll(bus *events.Bus) func() {
 	if w == nil || bus == nil {
 		return func() {}
 	}
-	return bus.SubscribeAll(w.Handle)
+	unsub := []func(){
+		events.SubscribeDetachable(bus, func(e events.UserInput) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ResponseDelta) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ResponseReady) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ToolCallStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ToolCallFinished) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkStateChanged) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkerUsageRecorded) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkerLimitReached) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkerChargeState) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.DecisionEvaluated) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.RouteDecided) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.WorkDelivery) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobQueued) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobFinished) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobFailed) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.JobAborted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.Error) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.Info) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeechDiagnostic) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.STTPhase) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ThinkingStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeakingStarted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeakingComplete) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SpeakingInterrupted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.TurnInterrupted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.TurnMetrics) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.VoiceGateStripped) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.TokenUsage) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.SessionWarning) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ConversationCompacted) { w.Handle(e) }),
+		events.SubscribeDetachable(bus, func(e events.ConversationCleared) { w.Handle(e) }),
+	}
+	return func() {
+		for i := len(unsub) - 1; i >= 0; i-- {
+			unsub[i]()
+		}
+	}
 }
 
 // recordedEventTypes is the durable/harness set Attach subscribes to.
 // AttachAll uses the same names so AudioLevel ticks skip encodeEvent.
 var recordedEventTypes = map[string]bool{
+	"pipeline_trace":         true,
 	"user_input":             true,
 	"response_delta":         true,
 	"response_ready":         true,
@@ -43,6 +110,7 @@ var recordedEventTypes = map[string]bool{
 	"worker.limit_reached":   true,
 	"worker.charge":          true,
 	"route.decided":          true,
+	"decision.evaluated":     true,
 	"work_delivery":          true,
 	"job_queued":             true,
 	"job_started":            true,
@@ -68,6 +136,8 @@ var recordedEventTypes = map[string]bool{
 
 func encodeEvent(e events.Event) (record, bool) {
 	switch x := e.(type) {
+	case events.PipelineTrace:
+		return record{Type: "trace_span", Span: &x.Span}, true
 	case events.UserInput:
 		return record{Type: "user", Text: x.Text}, true
 	case events.ResponseDelta:
@@ -115,20 +185,22 @@ func encodeEvent(e events.Event) (record, bool) {
 		return record{Type: "worker.limit_reached", WorkerLimit: &x}, true
 	case events.WorkerChargeState:
 		return record{Type: "worker.charge", WorkerCharge: &x}, true
+	case events.DecisionEvaluated:
+		return record{Type: "decision.evaluated", Decision: &x}, true
 	case events.RouteDecided:
 		return record{Type: "route.decided", WorkScope: &x.Scope, Kind: x.Kind, Tier: x.Tier, ReasonCode: x.ReasonCode, State: x.State, JobID: x.JobID, Text: x.Task, Message: x.Message}, true
 	case events.WorkDelivery:
 		return record{Type: "work_delivery", Delivery: &x}, true
 	case events.JobQueued:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "queued"}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "queued"}, true
 	case events.JobStarted:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "started"}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "started"}, true
 	case events.JobFinished:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds()}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds()}, true
 	case events.JobFailed:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "failed", Message: x.Err, IsError: true, ElapsedS: x.Elapsed.Seconds()}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "failed", Message: x.Err, IsError: true, ElapsedS: x.Elapsed.Seconds()}, true
 	case events.JobAborted:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "aborted", Reason: x.Reason, ElapsedS: x.Elapsed.Seconds()}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "aborted", Reason: x.Reason, ElapsedS: x.Elapsed.Seconds()}, true
 	case events.Error:
 		return record{Type: "error", Stage: x.Stage, Message: x.Message}, true
 	case events.Info:
@@ -155,7 +227,8 @@ func encodeEvent(e events.Event) (record, bool) {
 		return record{Type: "turn_interrupted", Reason: x.Reason}, true
 	case events.TurnMetrics:
 		return record{
-			Type:               "metrics",
+			Type:   "metrics",
+			Timing: x.Timing, AudibleSink: x.AudibleSink, Envelope: x.Envelope,
 			Outcome:            x.Outcome,
 			Degraded:           x.Degraded,
 			Interrupted:        x.Interrupted,

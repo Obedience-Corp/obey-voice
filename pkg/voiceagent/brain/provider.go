@@ -6,11 +6,13 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/continuity"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
+	Discussion *discussion.Directive
 	// WorkerBudget is the job-shared operational budget for this worker job.
 	WorkerBudget  *WorkerBudget
 	OnWorkerUsage func(WorkerUsage)
@@ -131,9 +133,9 @@ type IntegrityResult struct {
 // StreamResult reports the terminal outcome of a streamed response.
 type StreamResult struct {
 	Err error
-	// Recovered marks that Err was already converted into a spoken recovery
-	// reply streamed through Chunks (and recorded in history). Consumers must
-	// treat the turn as degraded-complete and surface Err as detail only.
+	// Recovered means any emitted partial text can drain normally despite Err.
+	// Consumers complete degraded and display the error separately. Providers
+	// must not inject synthetic error speech into Chunks.
 	Recovered bool
 	// Integrity is set when continuity_integrity_enabled and the provider
 	// detected a probable truncation. S5 owns audible recovery; S1 emits

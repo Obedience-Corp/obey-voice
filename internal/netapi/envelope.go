@@ -18,6 +18,12 @@ func encodeEvent(e events.Event) map[string]any {
 	}
 
 	switch e := e.(type) {
+	case events.DiscussionUpdated:
+		env["session_id"], env["conversation_epoch"] = e.SessionID, e.ConversationEpoch
+		env["discussion_id"], env["discussion_revision"] = e.ID, e.Revision
+		env["phase"], env["mode"] = e.Phase, e.Mode
+		env["members"], env["labels"], env["candidate"] = e.Members, e.Labels, e.Candidate
+		env["delivered_count"], env["uncovered"], env["terminal_reason"] = e.Delivered, e.Uncovered, e.Reason
 	case events.PersonaSelection:
 		env["selection"] = e
 	case events.STTPhase:
@@ -77,6 +83,11 @@ func encodeEvent(e events.Event) map[string]any {
 		env["stall_watchdog_fired"] = e.StallWatchdogFired
 		env["dead_air_ms"] = ms(e.DeadAirElapsed)
 		env["underruns"] = e.Underruns
+		// The turn's chunking shape, so a grouping change can be read off a
+		// remote run without replaying the per-segment array.
+		env["segment_count"] = e.SegmentCount
+		env["median_segment_chars"] = e.MedianSegmentChars
+		env["short_boundaries"] = e.ShortBoundaries
 		if len(e.Segments) > 0 {
 			segments := make([]map[string]any, 0, len(e.Segments))
 			for _, seg := range e.Segments {
@@ -247,13 +258,14 @@ func ms(d time.Duration) int64 { return d.Milliseconds() }
 
 // controlMessage is one client -> server message on /v1/stream.
 type controlMessage struct {
-	ID         string `json:"id,omitempty"` // transcribe_start: client request identity
-	Type       string `json:"type"`         // text_input | interrupt | clear_history | audio_output | voice_start | voice_end | audio_input | set_persona
-	Text       string `json:"text,omitempty"`
-	Mode       string `json:"mode,omitempty"`       // audio_output: "stream" | "local" | "off"
-	Binary     bool   `json:"binary,omitempty"`     // audio_output: TTS chunks as OVA1 binary frames
-	Data       string `json:"data,omitempty"`       // audio_input: base64 pcm_s16le mono @ 16 kHz
-	Name       string `json:"name,omitempty"`       // set_persona: persona id
-	RequestID  string `json:"request_id,omitempty"` // set_persona: optional response correlation
-	SampleRate int    `json:"sample_rate,omitempty"`
+	Members    json.RawMessage `json:"members"`
+	ID         string          `json:"id,omitempty"` // transcribe_start: client request identity
+	Type       string          `json:"type"`         // text_input | interrupt | clear_history | audio_output | voice_start | voice_end | audio_input | set_persona
+	Text       string          `json:"text,omitempty"`
+	Mode       string          `json:"mode,omitempty"`       // audio_output: "stream" | "local" | "off"
+	Binary     bool            `json:"binary,omitempty"`     // audio_output: TTS chunks as OVA1 binary frames
+	Data       string          `json:"data,omitempty"`       // audio_input: base64 pcm_s16le mono @ 16 kHz
+	Name       string          `json:"name,omitempty"`       // set_persona: persona id
+	RequestID  string          `json:"request_id,omitempty"` // set_persona: optional response correlation
+	SampleRate int             `json:"sample_rate,omitempty"`
 }

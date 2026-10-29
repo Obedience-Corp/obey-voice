@@ -21,6 +21,7 @@ func (a App) onWorkerSettingsSaved(msg workerSettingsSavedMsg) (tea.Model, tea.C
 func (a App) onSettingsDone(msg settingsDoneMsg) (tea.Model, tea.Cmd) {
 	a.settings.closePreview()
 	a.settings.cancelEnroll()
+	a.settings.voices.reset()
 	target := a.settingsReturnScreen
 	if target == screenSettings {
 		target = screenLauncher
@@ -28,9 +29,9 @@ func (a App) onSettingsDone(msg settingsDoneMsg) (tea.Model, tea.Cmd) {
 	a.screen = target
 	resumeVoice := target == screenConversation && a.settingsResumeVoice
 	a.settingsResumeVoice = false
-	// Unstick cancel/response state if turn-done msgs were dropped while
-	// Settings was active (conversation is not the focused screen).
-	a.conversation.recoverTurnState()
+	// App.delegate delivers turn completions while Settings is open. Keep
+	// the pending cancellation until its completion arrives; clearing it on
+	// a quick return can misclassify a paused voice turn as session shutdown.
 	voiceChanged := a.settingsVoiceState != voiceSettingsState(a.cfg)
 	a.settingsVoiceState = ""
 	if target == screenConversation && a.runtime != nil && a.runtime.Voice && a.cfg != nil &&
@@ -116,10 +117,13 @@ func (a App) onStartPipeline(msg startPipelineMsg) (tea.Model, tea.Cmd) {
 	// The build takes seconds to minutes; the screen says so until it lands.
 	tick := a.conversation.beginStartup(msg.personaName)
 	return a, tea.Batch(tick, a.progress.wait(),
-		buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID))
+		trackedCommand(a.runCtx, a.wg, buildRuntime(a.builder, a.runCtx, a.progress, a.slot, msg.sessionID, msg.personaID)))
 }
 
 func (a App) onBuildStage(msg buildStageMsg) (tea.Model, tea.Cmd) {
+	if msg.owner != nil && msg.owner != a.progress {
+		return a, nil
+	}
 	// Whichever screen is waiting owns the stage; only one build runs at a
 	// time, and the meeting screen is entered before its build starts.
 	if a.screen == screenMeeting {
@@ -135,6 +139,9 @@ func (a App) onProgressClosed(msg progressClosedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
+	if msg.owner != nil && msg.owner != a.slot {
+		return a, nil
+	}
 	if msg.err != nil {
 		var bindingErr *PersonaBindingError
 		if !errors.As(msg.err, &bindingErr) {
@@ -186,6 +193,10 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 	a.conversation.finishStartup()
 	a.conversation.setStatus("", false)
 	a.conversation.seedTranscript(msg.rt.Seed)
+	workers := msg.rt.Pipeline.Workers
+	if demoWorkCueEnabled() {
+		workers = demoWorkers(msg.rt.Pipeline).Workers
+	}
 	cmd := a.conversation.startConversation(conversationDeps{
 		runner: msg.rt.Pipeline,
 		bus:    msg.rt.Bus,
@@ -200,10 +211,11 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 		},
 		workSnapshot:  func() work.Snapshot { return msg.rt.Pipeline.WorkSnapshot() },
 		journalHealth: msg.rt.Pipeline.JournalHealth,
-		workScope:     func() work.WorkScope { return msg.rt.Pipeline.WorkSnapshot().Scope },
+		workScope:     msg.rt.Pipeline.ConversationScope,
+		workers:       workers,
 		workersSummary: func() string {
 			running, queued := 0, 0
-			for _, item := range msg.rt.Pipeline.Workers() {
+			for _, item := range workers() {
 				if item.State == "queued" {
 					queued++
 				} else if item.Active() {

@@ -23,8 +23,8 @@ Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export OBEY_VOICE_COLOR_PROFILE=ansi SAMANTHA_COLOR_PROFILE=ansi" Enter
 Type "export HOME=/tmp/obey-voice-persona-form-ux-demo-$$" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/personas/samantha $HOME/.obey/agents/voice/festival-voice/sessions" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<'EOF'" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/personas/samantha $HOME/.obey/agents/voice/obey-voice/sessions" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
 Type "ollama_model: demo-model" Enter
@@ -35,8 +35,8 @@ Type "agent_name: Samantha" Enter
 Type "active_persona: samantha" Enter
 Type "persona: samantha" Enter
 Type "EOF" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/personas/samantha/persona.yaml <<'EOF'" Enter
-Type "schema: festival-voice.persona.v1" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/personas/samantha/persona.yaml <<'EOF'" Enter
+Type "schema: obey-voice.persona.v1" Enter
 Type "id: samantha" Enter
 Type "display_name: Samantha" Enter
 Type "builtin: true" Enter

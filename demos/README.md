@@ -1,5 +1,20 @@
 # Demos
 
+## README demo
+
+`just demo` builds the current binary and records `demos/readme.tape` into
+`docs/images/tui.gif`: launcher → persona picker → listening/hearing/speaking
+activity and a reply. The real Bubble Tea TUI runs in a VHS terminal.
+
+The fixture uses a temporary home, a loopback model stub, and the existing
+scripted voice events. It needs no microphone, playback, downloaded models,
+credentials, or personal configuration. Voice activity is simulated; this is a
+UI walkthrough, not an inference or latency benchmark.
+
+Color is forced in both the recorder and child process, including when the
+calling shell sets `NO_COLOR`. The GIF uses the terminal palette and is optimized
+for the README. Requirements: `vhs`, `ffmpeg`, `python3`, and the normal build tools.
+
 ## tool-calls.gif — main Obey Voice TUI + live tool call
 
 Full Bubble Tea UI (not `--no-tui`):
@@ -15,7 +30,7 @@ palette-optimized 960px version; there is no fake shell transcript or static
 mock screen.
 
 ```bash
-just demo
+just demo-tool-calls
 ```
 
 The recipe builds `./bin/obey-voice`, runs `vhs demos/tool-calls.tape` against a
@@ -59,6 +74,60 @@ just demo-think-blocks
 
 Still frames: `demos/frames/think-live.png`, `demos/frames/think-hidden.png`, `demos/frames/think-shown.png`
 
+## workers.gif — background job manager with pretty JSON
+
+Full Bubble Tea workers screen:
+
+1. **Launcher → Workers**
+2. **List** — running job with activity *summary* (not a JSON dump)
+3. **Detail** — indented, syntax-colored tool JSON
+
+`OBEY_VOICE_DEMO_WORKERS=1` injects a fixture search job. No live model.
+
+```bash
+just demo-workers
+```
+
+Still frame: `demos/frames/workers-detail.png`
+
+## work-cue.gif — background work during conversation
+
+The real conversation TUI shows an animated **Working** cue beside the
+listening meter while Jarvis answers a follow-up. `Ctrl+W` opens the running
+worker's detail. `OBEY_VOICE_DEMO_WORK_CUE=1` scripts bus events and uses the
+workers fixture, so recording needs no live microphone or model.
+
+```bash
+just demo-work-cue
+```
+
+Still frames: `demos/frames/work-cue-listening.png`,
+`demos/frames/work-cue-followup.png`, `demos/frames/work-cue-detail.png`
+
+## launcher-notice.gif — one-line meeting notice
+
+Launcher after notes route to camp:
+
+1. One green line, `Meeting notes filed to camp:JobSearch`, with an `n` chip and the session count
+2. `n` replaces the menu with the Notices log: note path, transcript, recorded length, new file
+3. `q` returns to the menu
+
+`OBEY_VOICE_DEMO_LAUNCHER_NOTICE=route` injects a saved bundle and the import receipt. `=path` is the speaker-labels variant.
+
+```bash
+just demo-launcher-notice
+```
+
+Still frames: `demos/frames/launcher-notice.png`, `demos/frames/launcher-notice-open.png`
+
+`demos/launcher-notice-short.gif` is the same screen at a short terminal height. `OBEY_VOICE_DEMO_LAUNCHER_NOTICE=scroll` seeds 13 notices, and the list windows so the selected detail and the copy line stay on screen. Stills: `demos/frames/launcher-notice-short.png`, `demos/frames/launcher-notice-short-scrolled.png`.
+
+The same tape is the opt-in integration test. It is not part of `go test ./...`:
+
+```bash
+go test -tags vhs ./internal/tui/ -run TestLauncherNoticeVHS -count=1 -timeout 10m
+```
+
 ## voice-meter.gif — compact voice EQ (listen / hear / speak)
 
 Full Bubble Tea conversation UI with a calm equalizer strip (not flame art):
@@ -75,6 +144,25 @@ paints bright theme colors.
 ```bash
 just demo-voice-meter
 ```
+
+## persona-model-view.gif — persona LLM providers, models, and voices
+
+```bash
+just demo-persona-model-view
+```
+
+Records the real persona manager with a disposable catalog and Settings file.
+The list compares each persona's effective LLM provider/model and voice; the
+selected detail panel distinguishes persona overrides from inherited Settings.
+Claude explicitly shows `CLI default` because its saved persona model is not
+routed. The walkthrough also opens the existing model editor with `m`.
+
+The fixture does not use the installed user configuration, credentials, audio,
+or inference. Its Ollama endpoint is deliberately unavailable; the model editor
+therefore shows the saved model alongside the discovery status. Colors are
+forced in both VHS and the application process.
+
+![Persona model manager](persona-model-view.gif)
 
 ## persona-switch.gif — main menu Personas list / switch / create
 

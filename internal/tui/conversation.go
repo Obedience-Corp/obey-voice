@@ -23,10 +23,6 @@ const conversationInputHeight = 3
 // voiceTickInterval drives the conversation meter animation (~10 fps).
 const voiceTickInterval = 100 * time.Millisecond
 
-// voicePanelRows is the vertical space reserved for the compact voice EQ strip
-// under the header (not a tall art panel).
-const voicePanelRows = 5
-
 // voiceTickMsg advances ambient voice animations.
 type voiceTickMsg time.Time
 
@@ -121,8 +117,12 @@ type conversationModel struct {
 	// first Ctrl+C must not remove the only non-slash exit forever).
 	lastIdleCopyAt time.Time
 
-	bridge      *eventBridge
-	lastMetrics events.TurnMetrics
+	bridge        *eventBridge
+	lastMetrics   events.TurnMetrics
+	contextBudget events.ContinuityBudget
+	contextKnown  bool
+	contextFill   float64
+	compactStage  string
 
 	deps       conversationDeps
 	turnState  turnState
@@ -152,14 +152,25 @@ type conversationModel struct {
 	// panel open/close) shrinks height without adjusting YOffset, which
 	// falsely reports "scrolled up" and freezes auto-scroll for the rest of
 	// the session.
-	followChat            bool
-	followActivity        bool
-	startedAt             time.Time
-	sessionID             string
-	capture               *capture.Session
-	inputDevice           string
-	outputDevice          string
-	voiceFailures         int
+	followChat           bool
+	followActivity       bool
+	startedAt            time.Time
+	sessionID            string
+	workerRepliesSeen    map[string]bool
+	capture              *capture.Session
+	capturePending       captureSeal
+	captureNextMode      string
+	captureSealStarted   time.Time
+	captureSealWarned    bool
+	capturePollScheduled bool
+	captureHealthLast    time.Time
+	inputDevice          string
+	outputDevice         string
+	voiceFailures        int
+	// noticeEpoch retires admission manual-retry notices across clear/new-session/
+	// shutdown boundaries. Late turn callbacks carrying older epochs cannot
+	// re-emit retired guidance.
+	noticeEpoch           uint64
 	quitting              bool
 	liveSpeaker           LiveSpeakerController
 	liveSpeakerStats      speaker.LiveStats
@@ -180,6 +191,7 @@ type conversationModel struct {
 
 	commandQuery     string
 	commandSelection int
+	mentions         personaMentions
 	editor           editorBuffer
 	vim              vimState
 

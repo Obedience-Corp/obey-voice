@@ -182,3 +182,18 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 func TurnGoesInSystemPrompt(provider string) bool {
 	return normalizeProvider(provider) == providerOllama
 }
+
+func applicationSkillEnabled(cfg *config.Config) bool {
+	if cfg == nil {
+		return true
+	}
+	if !cfg.SkillsEnabled {
+		return false
+	}
+	for _, name := range cfg.SkillsDisabled {
+		if strings.EqualFold(strings.TrimSpace(name), "obey-voice") {
+			return false
+		}
+	}
+	return true
+}

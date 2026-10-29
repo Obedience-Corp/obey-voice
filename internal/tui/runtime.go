@@ -14,6 +14,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
@@ -21,8 +22,7 @@ import (
 
 // ConversationRuntime is a live pipeline prepared for the conversation
 // screen. The TUI owns its lifecycle from the moment the builder returns it:
-// Cleanup runs exactly once, after the program exits and in-flight turns
-// have drained.
+// Cleanup runs exactly once after in-flight turns drain on /menu or exit.
 type ConversationRuntime struct {
 	Pipeline *pipeline.Pipeline
 	Bus      *events.Bus
@@ -54,7 +54,9 @@ type ConversationRuntime struct {
 	// SelectPersona is the host-owned, serialized selection boundary. The TUI
 	// invokes it for an in-chat /personas choice; it never writes the global
 	// active-persona preference for that choice.
-	SelectPersona func(context.Context, string) (events.PersonaSelection, *config.Config, error)
+	SelectPersona    func(context.Context, string) (events.PersonaSelection, *config.Config, error)
+	Participation    func() discussion.Settings
+	SetParticipation func(context.Context, discussion.Settings) error
 	// SelectionSnapshot supplies the current session binding to the TUI when a
 	// manager is opened or a runtime is restored.
 	SelectionSnapshot func() events.PersonaSelection
@@ -285,6 +287,9 @@ func (s *runtimeSlot[T]) store(rt T) {
 }
 
 func (s *runtimeSlot[T]) cleanup() {
+	if s == nil {
+		return
+	}
 	var zero T
 	s.mu.Lock()
 	rt := s.rt
@@ -304,6 +309,7 @@ func (s *runtimeSlot[T]) free(rt T) {
 // buildStageMsg carries a build stage into the update loop.
 type buildStageMsg struct {
 	stage BuildStage
+	owner *eventBridge
 }
 
 // progressClosedMsg tells the update loop to stop draining the progress feed.
@@ -311,8 +317,9 @@ type progressClosedMsg struct{}
 
 // runtimeReadyMsg delivers the built runtime (or the fatal build error).
 type runtimeReadyMsg struct {
-	rt  *ConversationRuntime
-	err error
+	rt    *ConversationRuntime
+	err   error
+	owner *runtimeSlot[*ConversationRuntime]
 }
 
 type voiceReloadedMsg struct {
@@ -331,11 +338,11 @@ func reloadVoice(ctx context.Context, reload func(context.Context) error, resume
 func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, slot *runtimeSlot[*ConversationRuntime], sessionID, personaID string) tea.Cmd {
 	return func() tea.Msg {
 		rt, err := build(ctx, func(stage BuildStage) {
-			feed.send(buildStageMsg{stage: stage})
+			feed.send(buildStageMsg{stage: stage, owner: feed})
 		}, sessionID, personaID)
 		feed.send(progressClosedMsg{})
 		if err != nil {
-			return runtimeReadyMsg{err: err}
+			return runtimeReadyMsg{err: err, owner: slot}
 		}
 		if rt != nil && slot != nil {
 			// Claim ownership before returning so run() can always clean up,
@@ -343,10 +350,10 @@ func buildRuntime(build RuntimeBuilder, ctx context.Context, feed *eventBridge, 
 			slot.store(rt)
 			if ctx.Err() != nil {
 				slot.cleanup()
-				return runtimeReadyMsg{err: ctx.Err()}
+				return runtimeReadyMsg{err: ctx.Err(), owner: slot}
 			}
 		}
-		return runtimeReadyMsg{rt: rt, err: err}
+		return runtimeReadyMsg{rt: rt, err: err, owner: slot}
 	}
 }
 

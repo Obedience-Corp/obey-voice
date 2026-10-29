@@ -120,6 +120,7 @@ front end can offer "create" and "switch" as separate decisions.`,
 	}
 	cmd.Flags().String("prompt", "", "Custom system prompt body (writes prompts/persona/<id>.yaml)")
 	cmd.Flags().String("prompt-file", "", "Read the system prompt body from a file (UTF-8)")
+	cmd.Flags().String("starting-directory", "", "Starting directory for new conversations (empty inherits app default)")
 	cmd.Flags().Bool("no-activate", false, "Create without making the new persona active")
 	cmd.Flags().Bool("json", false, "Emit JSON")
 	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")
@@ -152,9 +153,15 @@ func createPersona(cmd *cobra.Command, args []string) (*personaCreateJSON, error
 	if err != nil {
 		return nil, err
 	}
+	rawDirectory, _ := cmd.Flags().GetString("starting-directory")
+	directory, err := config.ValidateStartingDirectory(rawDirectory)
+	if err != nil {
+		return nil, codedError("invalid_directory", "%v", err)
+	}
 	opts := persona.CreateOpts{
-		DisplayName:  strings.TrimSpace(strings.Join(args, " ")),
-		SystemPrompt: body,
+		StartingDirectory: directory,
+		DisplayName:       strings.TrimSpace(strings.Join(args, " ")),
+		SystemPrompt:      body,
 	}
 
 	noActivate, _ := cmd.Flags().GetBool("no-activate")

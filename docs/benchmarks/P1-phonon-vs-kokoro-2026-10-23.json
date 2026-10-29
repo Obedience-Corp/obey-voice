@@ -1,0 +1,68 @@
+[
+  {
+    "Engine": "kokoro",
+    "Case": "one sentence",
+    "FirstFrameMS": 286.631208,
+    "SynthMS": 287.08475,
+    "AudioMS": 1185.5416666666667,
+    "RTF": 4.129587749494415,
+    "LeadSilenceMS": 63.166666666666664,
+    "TailSilenceMS": 40.875,
+    "Runs": 5
+  },
+  {
+    "Engine": "kokoro",
+    "Case": "two sentences",
+    "FirstFrameMS": 630.513792,
+    "SynthMS": 630.995584,
+    "AudioMS": 2749.1666666666665,
+    "RTF": 4.356871484328274,
+    "LeadSilenceMS": 63.166666666666664,
+    "TailSilenceMS": 76.5,
+    "Runs": 5
+  },
+  {
+    "Engine": "kokoro",
+    "Case": "long reply",
+    "FirstFrameMS": 2066.521334,
+    "SynthMS": 2067.321667,
+    "AudioMS": 9942.916666666668,
+    "RTF": 4.80956438728539,
+    "LeadSilenceMS": 77.41666666666666,
+    "TailSilenceMS": 85.08333333333333,
+    "Runs": 5
+  },
+  {
+    "Engine": "openai-speech",
+    "Case": "one sentence",
+    "FirstFrameMS": 3.635,
+    "SynthMS": 24.535458,
+    "AudioMS": 1263.4583333333333,
+    "RTF": 51.495200673789476,
+    "LeadSilenceMS": 0.125,
+    "TailSilenceMS": 80,
+    "Runs": 5
+  },
+  {
+    "Engine": "openai-speech",
+    "Case": "two sentences",
+    "FirstFrameMS": 4.1205,
+    "SynthMS": 42.746541,
+    "AudioMS": 3252.75,
+    "RTF": 76.0938762273186,
+    "LeadSilenceMS": 0.125,
+    "TailSilenceMS": 80,
+    "Runs": 5
+  },
+  {
+    "Engine": "openai-speech",
+    "Case": "long reply",
+    "FirstFrameMS": 3.871291,
+    "SynthMS": 113.03675,
+    "AudioMS": 10372.75,
+    "RTF": 91.76440405443363,
+    "LeadSilenceMS": 0.08333333333333333,
+    "TailSilenceMS": 80,
+    "Runs": 5
+  }
+]

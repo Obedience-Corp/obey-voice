@@ -50,14 +50,27 @@ func (h *workerTerminalHarness) Write(p []byte) (int, error) {
 // Drive the production key handling and editor through a real Bubble Tea
 // event/render loop. Persistence is the production CAS writer in a temp home.
 func TestWorkerSettingsTerminalSaveAndCancel(t *testing.T) {
+	for _, provider := range []string{"ollama", "cursor"} {
+		t.Run(provider, func(t *testing.T) { testWorkerSettingsTerminal(t, provider) })
+	}
+}
+
+func testWorkerSettingsTerminal(t *testing.T, provider string) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	cfg := tieredSettingsFixture()
+	oldModel, newModel := "qwen3:8b", "qwen3:30b"
+	if provider == "cursor" {
+		oldModel, newModel = "auto", "composer-2.5"
+		account := "default"
+		cfg.VoiceWorkers.Tiers.Simple.Assignment = &config.WorkerAssignment{Provider: provider, Model: oldModel, Billing: config.WorkerBillingSubscription, AccountRef: &account}
+	}
+
 	committed, err := config.CommitVoiceWorkersCAS(cfg.VoiceWorkers, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg.VoiceWorkers = committed
-	m := newSettings(cfg, []discovery.ProviderInfo{{Name: "ollama", Available: true, Models: []string{"qwen3:8b", "qwen3:30b"}}})
+	m := newSettings(cfg, []discovery.ProviderInfo{{Name: provider, Available: true, Models: []string{oldModel, newModel}}})
 	m.section, m.width, m.height = sectionWorker, 120, 45
 	h := &workerTerminalHarness{model: m, states: make(chan workerTerminalState, 1), saved: make(chan *config.VoiceWorkers, 1)}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -103,7 +116,7 @@ func TestWorkerSettingsTerminalSaveAndCancel(t *testing.T) {
 		}
 		key(tea.KeyMsg{Type: tea.KeyCtrlA})
 		key(tea.KeyMsg{Type: tea.KeyCtrlK})
-		key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ollama/qwen3:30b")})
+		key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(provider + "/" + newModel)})
 		state = key(tea.KeyMsg{Type: tea.KeyEnter})
 		if state.editing || !strings.Contains(state.message, "updated") {
 			t.Fatalf("assignment editor: %+v", state)
@@ -118,7 +131,7 @@ func TestWorkerSettingsTerminalSaveAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.VoiceWorkers.Revision != 1 || loaded.VoiceWorkers.Tiers.Simple.Assignment.Model != "qwen3:8b" {
+	if loaded.VoiceWorkers.Revision != 1 || loaded.VoiceWorkers.Tiers.Simple.Assignment.Model != oldModel {
 		t.Fatal("terminal Cancel persisted a draft")
 	}
 	edit()
@@ -138,7 +151,7 @@ func TestWorkerSettingsTerminalSaveAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.VoiceWorkers.Revision != 2 || loaded.VoiceWorkers.Tiers.Simple.Assignment.Model != "qwen3:30b" {
+	if loaded.VoiceWorkers.Revision != 2 || loaded.VoiceWorkers.Tiers.Simple.Assignment.Model != newModel || loaded.VoiceWorkers.Tiers.Simple.Assignment.Provider != provider {
 		t.Fatal("terminal Save disagrees with persisted configuration")
 	}
 }

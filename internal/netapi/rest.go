@@ -22,8 +22,9 @@ type SessionSummary = wire.SessionSummary
 // field means "inherit the app default", and a list showing blanks would tell
 // a user nothing about what the agent will sound like.
 type PersonaSummary struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
+	StartingDirectory string `json:"starting_directory"`
+	ID                string `json:"id"`
+	DisplayName       string `json:"display_name"`
 	// Active is the runtime persona, which a set_persona can move without
 	// anything being persisted.
 	Active bool `json:"active"`

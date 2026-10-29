@@ -6,7 +6,7 @@
     "kind": "vad",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/festival-voice/models/silero_vad.onnx"
+      "/Users/lance/.cache/obey-voice/models/silero_vad.onnx"
     ]
   },
   {
@@ -17,10 +17,10 @@
     "kind": "stt",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/festival-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/encoder.int8.onnx",
-      "/Users/lance/.cache/festival-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/decoder.int8.onnx",
-      "/Users/lance/.cache/festival-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/joiner.int8.onnx",
-      "/Users/lance/.cache/festival-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/tokens.txt"
+      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/encoder.int8.onnx",
+      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/decoder.int8.onnx",
+      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/joiner.int8.onnx",
+      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/tokens.txt"
     ]
   },
   {
@@ -30,7 +30,7 @@
     "kind": "speaker",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/festival-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx"
+      "/Users/lance/.cache/obey-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx"
     ]
   },
   {
@@ -40,7 +40,7 @@
     "kind": "speaker",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/festival-voice/models/speaker/nemo_en_titanet_small.onnx"
+      "/Users/lance/.cache/obey-voice/models/speaker/nemo_en_titanet_small.onnx"
     ]
   },
   {

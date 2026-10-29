@@ -35,9 +35,9 @@ func discardPCMStream(stream *audio.PCMStream) {
 	}()
 }
 
-// synthesizeSegment is the synth scheduler stage, run on the ordered synth
-// worker: it announces the segment, synthesizes it, starts playback, and hands
-// the playback to the watcher goroutine, returning true when a playback was
+// synthesizeSegment is the synth scheduler stage, run on a synth worker: it
+// announces the segment, synthesizes it, starts playback, and hands the
+// playback to the watcher goroutine, returning true when a playback was
 // enqueued so the loop can track it as pending. TTS/playback failures surface as
 // Error events; failures after the turn context is canceled (cancel or barge-in)
 // are swallowed so teardown stays quiet. It never blocks on a full queue —
@@ -46,9 +46,12 @@ func discardPCMStream(stream *audio.PCMStream) {
 // stickFallback, when non-nil, is turn-scoped sticky Kokoro fallback: after the
 // first successful primary→fallback switch, later sentences skip the primary so
 // one reply cannot alternate persona voice and Kokoro.
-func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct{}, sentence string, index int, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *bool, realAudioQueued ...*atomic.Bool) bool {
+//
+// This single-segment form takes no gate: one segment is already in order.
+func (p *Pipeline) synthesizeSegment(ctx context.Context, loopDone <-chan struct{}, sentence string, index int, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *fallbackLatch, realAudioQueued ...*atomic.Bool) bool {
 	now := time.Now()
-	return p.synthesizeSegmentObserved(ctx, loopDone, synthWork{sentence: sentence, textReady: now, queuedAt: now}, index, audioStarted, out, stickFallback, realAudioQueued...).enqueued
+	work := synthWork{sentence: sentence, index: index, textReady: now, queuedAt: now}
+	return p.synthesizeSegmentObserved(ctx, loopDone, work, nil, audioStarted, out, stickFallback, realAudioQueued...).enqueued
 }
 
 type segmentSynthesisOutcome struct {
@@ -56,13 +59,23 @@ type segmentSynthesisOutcome struct {
 	failure  *playbackEvent
 }
 
+// synthWork is one admitted segment. index is its position in admission order
+// and is fixed the moment the loop queues it, so it cannot depend on which
+// worker picks the job up or on completion order.
 type synthWork struct {
 	sentence  string
+	index     int
 	textReady time.Time
 	queuedAt  time.Time
+	// joinBeats marks a group the turn loop assembled from a held short beat
+	// plus the sentence it belongs to. Only that group may have its sentence
+	// punctuation rewritten for an engine that re-splits it (see
+	// prepareSpeechForTTS); every other utterance is spoken as written.
+	joinBeats bool
 }
 
 type synthesisObservation struct {
+	attemptID     string
 	engine        ttsEngineIdentity
 	warmState     string
 	wholeSentence bool
@@ -73,8 +86,19 @@ type synthesisObservation struct {
 	synthStarted  time.Time
 }
 
-func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-chan struct{}, work synthWork, index int, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *bool, realAudioQueued ...*atomic.Bool) segmentSynthesisOutcome {
-	sentence := work.sentence
+func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-chan struct{}, work synthWork, gate *orderGate, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *fallbackLatch, realAudioQueued ...*atomic.Bool) segmentSynthesisOutcome {
+	sentence, index := work.sentence, work.index
+	ctx = withSegmentTrace(ctx, index)
+	trace := events.TraceFromContext(ctx)
+	queueID := traceID(trace, "queue") + ":" + fmt.Sprint(index)
+	queueStatus := "completed"
+	if ctx.Err() != nil || p.OutputMuted() {
+		queueStatus = "cancelled"
+	}
+	p.traceSpan(trace, queueID, "segment_queue", "end", queueStatus, work.queuedAt, time.Now(), &index, nil)
+	// Release this index before any return — error, skip, mute, cancel — or
+	// the segments behind it never reach the player.
+	defer gate.done(index)
 	if ctx.Err() != nil || p.OutputMuted() {
 		return segmentSynthesisOutcome{} // canceled while queued: drain without synthesizing
 	}
@@ -94,7 +118,7 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 	p.emitResponseContext(ctx, events.GeneratingVoice{Sentence: sentence})
 
 	synthStarted := time.Now()
-	stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, sentence, stickFallback)
+	stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, sentence, stickFallback, work.joinBeats)
 	if errors.Is(err, errNothingToSpeak) {
 		return segmentSynthesisOutcome{}
 	}
@@ -111,6 +135,21 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 		failure.fallback = usedFallback
 		return segmentSynthesisOutcome{failure: failure}
 	}
+	handedOff := false
+	defer func() {
+		if !handedOff && observation.attemptID != "" {
+			status := "cancelled"
+			end := time.Time{}
+			if stream != nil && !stream.ClosedAt().IsZero() {
+				end = stream.ClosedAt()
+				status = "completed"
+				if stream.Err() != nil {
+					status = "failed"
+				}
+			}
+			p.traceSpan(trace, observation.attemptID, "synthesis", "end", status, observation.synthStarted, end, &index, &observation.attemptID)
+		}
+	}()
 	if observation.synthStarted.IsZero() {
 		observation.synthStarted = synthStarted
 	}
@@ -127,6 +166,15 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 		return segmentSynthesisOutcome{}
 	}
 
+	// await sits above the CAS so the backchannel stop and the first-real-audio
+	// stamp below follow playback order, not finish order.
+	if err := gate.await(ctx, index); err != nil {
+		// Barged in or canceled while parked: nothing above the playing index
+		// is handed off, and the stream's producer must not be left blocked.
+		discardPCMStream(stream)
+		return segmentSynthesisOutcome{}
+	}
+
 	firstRealAudio := true
 	if len(realAudioQueued) > 0 && realAudioQueued[0] != nil {
 		firstRealAudio = realAudioQueued[0].CompareAndSwap(false, true)
@@ -136,9 +184,10 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 	}
 	playback, err := p.Player.PlayStream(ctx, stream)
 	if err != nil {
+		p.traceSpan(trace, observation.attemptID, "synthesis", "end", "failed", observation.synthStarted, time.Now(), &index, &observation.attemptID)
 		if !usedFallback {
 			var fallbackObservation synthesisObservation
-			playback, usedFallback, fallbackObservation, err = p.playFallbackObserved(ctx, sentence, err, stickFallback)
+			playback, usedFallback, fallbackObservation, err = p.playFallbackObserved(ctx, sentence, err, stickFallback, work.joinBeats)
 			if usedFallback {
 				observation = fallbackObservation
 			}
@@ -184,8 +233,11 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 		return segmentSynthesisOutcome{}
 	}
 
+	handedOff = true
+	frozenTrace := events.TraceFromContext(ctx)
 	go watchPlayback(loopDone, sentence, index, usedFallback, playbackObservation{
-		engine: observation.engine, textReady: work.textReady, queuedAt: work.queuedAt,
+		traceEvent: func(event playbackEvent) { p.tracePlayback(&turnMetrics{trace: frozenTrace}, event) },
+		attemptID:  observation.attemptID, engine: observation.engine, textReady: work.textReady, queuedAt: work.queuedAt,
 		synthStarted: synthStarted, stream: stream,
 		warmState: observation.warmState, wholeSentence: observation.wholeSentence,
 		exclusions: observation.exclusions,
@@ -195,7 +247,7 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 
 func synthesisFailureEvent(sentence string, index int, observation synthesisObservation, err error) *playbackEvent {
 	event := &playbackEvent{
-		kind: playbackNotEnqueued, sentence: sentence, index: index,
+		attemptID: observation.attemptID, kind: playbackNotEnqueued, sentence: sentence, index: index,
 		engine: observation.engine, textReady: observation.textReady,
 		queuedAt: observation.queuedAt, synthStarted: observation.synthStarted,
 		warmState: synthesisWarmState(observation.stream, observation.warmState), wholeSentence: observation.wholeSentence,
@@ -218,23 +270,23 @@ func synthesisFailureEvent(sentence string, index int, observation synthesisObse
 // stickFallback, when non-nil, latches true after the first successful switch so
 // later sentences in the same turn stay on Kokoro (one voice switch max per
 // reply, not uncle-fu / af_heart / uncle-fu thrashing).
-func (p *Pipeline) synthesizeWithFallback(ctx context.Context, text string, stickFallback *bool) (*audio.PCMStream, bool, error) {
-	stream, fallback, _, err := p.synthesizeWithFallbackObserved(ctx, text, stickFallback)
+func (p *Pipeline) synthesizeWithFallback(ctx context.Context, text string, stickFallback *fallbackLatch) (*audio.PCMStream, bool, error) {
+	stream, fallback, _, err := p.synthesizeWithFallbackObserved(ctx, text, stickFallback, false)
 	return stream, fallback, err
 }
 
-func (p *Pipeline) synthesizeWithFallbackObserved(ctx context.Context, text string, stickFallback *bool) (*audio.PCMStream, bool, synthesisObservation, error) {
+func (p *Pipeline) synthesizeWithFallbackObserved(ctx context.Context, text string, stickFallback *fallbackLatch, joinBeats bool) (*audio.PCMStream, bool, synthesisObservation, error) {
 	primary, fallback := p.responseTTS(ctx)
 	if primary == nil {
 		return nil, false, synthesisObservation{warmState: events.WarmStateUnknown}, errors.New("TTS provider is not configured")
 	}
-	if stickFallback != nil && *stickFallback && p.canUseFallback(ctx, primary, fallback) {
-		stream, observation, err := p.synthesizePrepared(ctx, fallback, text)
+	if stickFallback.latched() && p.canUseFallback(ctx, primary, fallback) {
+		stream, observation, err := p.synthesizePrepared(ctx, fallback, text, joinBeats)
 		return stream, true, observation, err
 	}
-	stream, primaryObservation, err := p.synthesizePrepared(ctx, primary, text)
+	stream, primaryObservation, err := p.synthesizePrepared(ctx, primary, text, joinBeats)
 	if err == nil {
-		p.boundPrimarySilence(stream, len(prepareSpeechForTTS(text, primary, p.vocals)))
+		p.boundPrimarySilence(stream, len(prepareSpeechForTTS(text, primary, p.vocals, joinBeats)))
 		return stream, false, primaryObservation, nil
 	}
 	if errors.Is(err, errNothingToSpeak) || !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(err) {
@@ -244,24 +296,29 @@ func (p *Pipeline) synthesizeWithFallbackObserved(ctx context.Context, text stri
 		return nil, false, primaryObservation, err
 	}
 	p.emit(events.Error{Stage: events.StageTTSFallback, Message: ttsFallbackMessage("primary TTS failed", err, stickFallback != nil)})
-	fallbackStream, fallbackObservation, fallbackErr := p.synthesizePrepared(ctx, fallback, text)
+	fallbackStream, fallbackObservation, fallbackErr := p.synthesizePrepared(ctx, fallback, text, joinBeats)
 	if fallbackErr != nil {
 		return nil, true, fallbackObservation, fmt.Errorf("primary TTS: %v; Kokoro fallback: %w", err, fallbackErr)
 	}
-	if stickFallback != nil {
-		*stickFallback = true
-	}
+	stickFallback.latch()
 	return fallbackStream, true, fallbackObservation, nil
 }
 
-func (p *Pipeline) synthesizePrepared(ctx context.Context, provider tts.Provider, sentence string) (*audio.PCMStream, synthesisObservation, error) {
+func (p *Pipeline) synthesizePrepared(ctx context.Context, provider tts.Provider, sentence string, joinBeats bool) (*audio.PCMStream, synthesisObservation, error) {
 	observation := p.observeProvider(provider)
-	prepared := prepareSpeechForTTS(sentence, provider, p.vocals)
+	prepared := prepareSpeechForTTS(sentence, provider, p.vocals, joinBeats)
 	if strings.TrimSpace(prepared) == "" {
 		return nil, observation, errNothingToSpeak
 	}
 	observation.synthStarted = time.Now()
+	observation.attemptID = newWorkID()
+	trace := events.TraceFromContext(ctx)
+	index := segmentTraceIndex(ctx)
+	p.traceSpan(trace, observation.attemptID, "synthesis", "start", "running", observation.synthStarted, time.Time{}, index, &observation.attemptID)
 	stream, err := provider.Synthesize(ctx, prepared)
+	if err != nil {
+		p.traceSpan(trace, observation.attemptID, "synthesis", "end", "failed", observation.synthStarted, time.Now(), index, &observation.attemptID)
+	}
 	if err != nil {
 		return nil, observation, err
 	}
@@ -294,32 +351,27 @@ func ttsFallbackMessage(prefix string, err error, sticky bool) string {
 // playFallback retries an error returned after Player takes ownership of the
 // primary stream. This covers file-oriented native workers whose failure is
 // reported when the stream becomes ready.
-func (p *Pipeline) playFallback(ctx context.Context, text string, primaryErr error, stickFallback *bool) (*audio.Playback, bool, error) {
-	playback, fallback, _, err := p.playFallbackObserved(ctx, text, primaryErr, stickFallback)
+func (p *Pipeline) playFallback(ctx context.Context, text string, primaryErr error, stickFallback *fallbackLatch) (*audio.Playback, bool, error) {
+	playback, fallback, _, err := p.playFallbackObserved(ctx, text, primaryErr, stickFallback, false)
 	return playback, fallback, err
 }
 
-func (p *Pipeline) playFallbackObserved(ctx context.Context, text string, primaryErr error, stickFallback *bool) (*audio.Playback, bool, synthesisObservation, error) {
+// playFallbackObserved re-prepares the utterance for the fallback engine, so it
+// carries the same joinBeats decision the primary synthesis was given: a group
+// the loop joined stays joined when the fallback speaks it mid-turn.
+func (p *Pipeline) playFallbackObserved(ctx context.Context, text string, primaryErr error, stickFallback *fallbackLatch, joinBeats bool) (*audio.Playback, bool, synthesisObservation, error) {
 	primary, fallback := p.responseTTS(ctx)
 	if !p.canUseFallback(ctx, primary, fallback) || !shouldFallback(primaryErr) {
 		return nil, false, p.observeProvider(primary), primaryErr
 	}
 	p.emit(events.Error{Stage: events.StageTTSFallback, Message: ttsFallbackMessage("primary playback TTS failed", primaryErr, stickFallback != nil)})
-	fallbackObservation := p.observeProvider(fallback)
-	prepared := prepareSpeechForTTS(text, fallback, p.vocals)
-	if strings.TrimSpace(prepared) == "" {
-		return nil, true, fallbackObservation, errNothingToSpeak
-	}
-	fallbackObservation.synthStarted = time.Now()
+	stream, fallbackObservation, err := p.synthesizePrepared(ctx, fallback, text, joinBeats)
 	fallbackObservation.exclusions = []string{fmt.Sprintf("primary playback failed: %v", primaryErr)}
-	stream, err := fallback.Synthesize(ctx, prepared)
 	if err != nil {
 		return nil, true, fallbackObservation, fmt.Errorf("primary playback TTS: %v; Kokoro fallback: %w", primaryErr, err)
 	}
 	fallbackObservation.stream = stream
-	if stickFallback != nil {
-		*stickFallback = true
-	}
+	stickFallback.latch()
 	playback, err := p.Player.PlayStream(ctx, stream)
 	return playback, true, fallbackObservation, err
 }

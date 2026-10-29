@@ -90,6 +90,7 @@ func (m conversationModel) currentLineLength() int {
 }
 
 func (m *conversationModel) syncComposer(previous string) {
+	m.syncMentions()
 	query := commandToken(m.input.Value())
 	if query != m.commandQuery {
 		m.commandQuery = query
@@ -106,6 +107,9 @@ func (m *conversationModel) syncComposer(previous string) {
 }
 
 func (m *conversationModel) handleCommandPaletteKey(msg tea.KeyMsg) (bool, tea.Cmd) {
+	if handled := m.handleMentionKey(msg); handled {
+		return true, nil
+	}
 	matches := matchingSlashCommands(m.input.Value())
 	if len(matches) == 0 {
 		return false, nil
@@ -132,6 +136,9 @@ func (m *conversationModel) handleCommandPaletteKey(msg tea.KeyMsg) (bool, tea.C
 }
 
 func (m conversationModel) commandPaletteRows() int {
+	if m.mentions.active {
+		return m.mentionPaletteRows()
+	}
 	matches := matchingSlashCommands(m.input.Value())
 	if len(matches) == 0 || m.height < 13 {
 		return 0
@@ -145,6 +152,9 @@ func (m conversationModel) commandPaletteRows() int {
 }
 
 func (m conversationModel) renderCommandPalette() string {
+	if m.mentions.active {
+		return m.renderMentionPalette()
+	}
 	rows := m.commandPaletteRows()
 	if rows == 0 {
 		return ""

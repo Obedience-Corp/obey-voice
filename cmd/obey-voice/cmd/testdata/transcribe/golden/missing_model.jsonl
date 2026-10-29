@@ -1,0 +1,1 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-missing-model","seq":0,"type":"failed","code":"model_missing","message":"model assets are not installed under {{MODELS_DIR}}: silero_vad.onnx; run `obey-voice models ensure`","retryable":false}

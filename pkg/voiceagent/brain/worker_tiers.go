@@ -23,7 +23,7 @@ type LocalWorkerCapabilities struct{}
 // trusted without contacting a provider.
 func (LocalWorkerCapabilities) ValidateWorkerAssignment(a config.WorkerAssignment) error {
 	provider := strings.ToLower(strings.TrimSpace(a.Provider))
-	if provider == "claude" || provider == "grok" {
+	if config.WorkerProviderAllowed(provider) && provider != "ollama" {
 		if a.EndpointRef != nil {
 			return errors.New("endpoint_ref is unsupported for CLI workers")
 		}
@@ -73,7 +73,10 @@ func ValidateWorkerPlan(ctx context.Context, plan *config.WorkerPlan) error {
 		return fmt.Errorf("worker assignment rejected: %w", err)
 	}
 	provider := strings.ToLower(strings.TrimSpace(plan.Assignment.Provider))
-	if provider == "claude" || provider == "grok" {
+	if provider == "cursor" && plan.Policy.ChargePolicy == "strict" {
+		return errors.New("cursor is unavailable under strict worker policy: native tools cannot be mediated")
+	}
+	if config.WorkerProviderAllowed(provider) && provider != "ollama" {
 		return nil
 	}
 	endpoint, _ := approvedLoopbackEndpoint(*plan.Assignment.EndpointRef)
@@ -132,17 +135,14 @@ func NewPlannedWorker(ctx context.Context, base *config.Config, plan *config.Wor
 		return nil, err
 	}
 	provider := strings.ToLower(strings.TrimSpace(plan.Assignment.Provider))
-	if provider == "claude" || provider == "grok" {
+	if config.WorkerProviderAllowed(provider) && provider != "ollama" {
 		cfg := base.Clone()
 		cfg.VoiceWorkerProvider = provider
 		cfg.VoiceWorkerModel = strings.TrimSpace(plan.Assignment.Model)
 		config.SetBrainModel(cfg, provider, cfg.VoiceWorkerModel)
 		workerCfg := config.WorkerBrainConfig(cfg)
 		workerCfg.DelegationEnabled = false
-		if provider == "claude" {
-			return New(workerCfg)
-		}
-		return NewGrok(workerCfg)
+		return NewProvider(workerCfg)
 	}
 	cfg := base.Clone()
 	a := plan.Assignment

@@ -34,7 +34,7 @@ func synthesizeBootstrapAudio(ctx context.Context, cfg *config.Config, voice, te
 	speak := *cfg
 	speak.TTSProvider = "kokoro"
 	speak.TTSVoice = canonical
-	if err := requireTTSAssets(&speak); err != nil {
+	if err := requireTTSAssets(ctx, &speak); err != nil {
 		return nil, 0, err
 	}
 	provider, cleanup, err := voiceStack.newProvider(&speak)

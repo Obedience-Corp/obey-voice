@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/persona/campdirs"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -23,6 +25,10 @@ func formScreenModel(t *testing.T) personasModel {
 	m.defaultPrompt = func() (string, error) { return "You are {agent_name}.", nil }
 	m.loadPromptForProfile = func(*persona.Profile) (string, error) {
 		return "You are {agent_name}.\nBe brief.\nBe kind.", nil
+	}
+	m.directory.discover = func(context.Context) campdirs.Choices {
+		t.Error("camp discovery ran without the test asking for it")
+		return campdirs.Choices{}
 	}
 	m.reload()
 	m.width, m.height = 88, 30

@@ -8,6 +8,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 	"strings"
+	"time"
 )
 
 // BeginConversationIdentity starts the host-owned identity for an ordinary
@@ -23,6 +24,7 @@ func (p *Pipeline) BeginConversationIdentity(sessionID string) error {
 	}
 	p.identityMu.Lock()
 	p.identityScope = work.WorkScope{SessionID: sessionID, RuntimeEpoch: newWorkID(), ConversationEpoch: newWorkID()}
+	p.traceOrigin = time.Now()
 	p.identityRetired = false
 	p.identityMu.Unlock()
 	return nil
@@ -62,6 +64,9 @@ func (p *Pipeline) ConversationRetired() bool {
 
 func (p *Pipeline) adoptConversationScope(scope work.WorkScope) {
 	p.identityMu.Lock()
+	if p.identityScope.RuntimeEpoch != scope.RuntimeEpoch {
+		p.traceOrigin = time.Now()
+	}
 	p.identityScope = scope
 	p.identityRetired = false
 	p.identityMu.Unlock()
@@ -106,6 +111,9 @@ func (p *Pipeline) ClearConversation() error {
 	if p == nil {
 		return fmt.Errorf("pipeline: nil pipeline")
 	}
+	if p.EndDiscussion != nil {
+		p.EndDiscussion("superseded")
+	}
 	p.closeCompletionCapture()
 	var err error
 	if p.Agency != nil && p.WorkSnapshot().Scope.Valid() {
@@ -121,11 +129,17 @@ func (p *Pipeline) ClearConversation() error {
 	if p.Brain != nil {
 		p.Brain.ClearHistory()
 	}
+	if p.Agency != nil {
+		p.Agency.discardPendingSpeech()
+	}
 	return err
 }
 func (p *Pipeline) CloseWork() error {
 	if p != nil {
 		p.closeCompletionCapture()
+		if p.Agency != nil {
+			p.Agency.discardPendingSpeech()
+		}
 	}
 	if p == nil {
 		return nil

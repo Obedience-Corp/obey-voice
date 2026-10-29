@@ -16,10 +16,25 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
 
+// standaloneSentences are equal-length sentences that each reach the grouping
+// flush target on their own, so a test needing N synthesis calls gets N. Every
+// sentence is 30 characters: above shortBeatChars, and never shorter than the
+// group before it, which is what the ramp measures against.
+var standaloneSentences = []string{
+	"Alpha sentence is long enough.",
+	"Bravo sentence is long enough.",
+	"Delta sentence is long enough.",
+	"Gamma sentence is long enough.",
+	"Sigma sentence is long enough.",
+	"Tango sentence is long enough.",
+}
+
 func TestRunTurnOverlapsSynthesisWithPlayback(t *testing.T) {
 	bus := events.NewBus()
 	sttProvider := &fakeSTT{text: "hello"}
-	brainProvider := &fakeBrain{chunks: []string{"First sentence. Second sentence."}}
+	// Two sentences long enough to be two groups: a sentence under
+	// shortBeatChars waits for its follower, which is one call, not two.
+	brainProvider := &fakeBrain{chunks: []string{"The first sentence is here now. The second sentence follows it."}}
 	ttsProvider := &fakeTTS{
 		delay: time.Millisecond * 20,
 	}
@@ -164,11 +179,11 @@ func TestRunTurnDrainsFullPlaybackQueue(t *testing.T) {
 	// loop must apply backpressure without blocking — a regression guard for
 	// the slotSem deadlock that hung voice mode once the queue was full.
 	//
-	// Count SEGMENTS, not sentences. They are 1:1 only while laterBatchSegments
-	// is 1 (D009); re-enabling batching would cut five segments to three and this
-	// test would still pass while no longer filling the queue, which is the only
-	// thing it guards.
-	brainProvider := &fakeBrain{chunks: []string{"One. Two. Three. Four. Five."}}
+	// Count SEGMENTS, not sentences. Grouping makes them 1:1 only when every
+	// sentence reaches the flush target on its own; five interjections are one
+	// group and this test would still pass while no longer filling the queue,
+	// which is the only thing it guards.
+	brainProvider := &fakeBrain{chunks: []string{strings.Join(standaloneSentences[:5], " ")}}
 	ttsProvider := &fakeTTS{delay: 5 * time.Millisecond}
 	player := newFakePlayer(60 * time.Millisecond)
 	defer player.Close()
@@ -412,7 +427,7 @@ func TestRunTurnBargeInCancelsBrainProducer(t *testing.T) {
 
 func TestRunTurnRecoversBrainStreamError(t *testing.T) {
 	// The recovery invariant (WI-c8884d P1): a hard brain error must close the
-	// turn with a user-visible recovery reply, not a silent error return that
+	// turn with a visible error, not an error return that
 	// callers count as a voice-input failure.
 	bus := events.NewBus()
 	var ready atomic.Value
@@ -440,8 +455,8 @@ func TestRunTurnRecoversBrainStreamError(t *testing.T) {
 	if !e.Degraded {
 		t.Fatalf("ResponseReady.Degraded = false, want true: %+v", e)
 	}
-	if !strings.Contains(e.Response, brain.RecoveryReply) {
-		t.Fatalf("ResponseReady.Response = %q, want recovery reply", e.Response)
+	if e.Response != "" {
+		t.Fatalf("ResponseReady.Response = %q, want no fabricated reply", e.Response)
 	}
 	ev, ok := errEvt.Load().(events.Error)
 	if !ok || !strings.Contains(ev.Message, "boom") {
@@ -449,9 +464,8 @@ func TestRunTurnRecoversBrainStreamError(t *testing.T) {
 	}
 }
 
-func TestRunTurnSpeaksRecoveryReply(t *testing.T) {
-	// Degraded turns still close the loop audibly: the recovery line goes
-	// through TTS so a hands-free user hears the failure instead of silence.
+func TestRunTurnDoesNotSpeakErrors(t *testing.T) {
+	// Even with speech enabled, provider failures must never start playback.
 	bus := events.NewBus()
 	var spoke atomic.Value
 	events.Subscribe(bus, func(e events.SpeakingStarted) { spoke.Store(e) })
@@ -468,16 +482,14 @@ func TestRunTurnSpeaksRecoveryReply(t *testing.T) {
 	if _, err := p.RunTurn(context.Background()); err != nil {
 		t.Fatalf("RunTurn() error = %v, want nil (recovered turn)", err)
 	}
-	e, ok := spoke.Load().(events.SpeakingStarted)
-	if !ok || e.Text != brain.RecoveryReply {
-		t.Fatalf("SpeakingStarted = %+v, want spoken recovery reply", e)
+	if e := spoke.Load(); e != nil {
+		t.Fatalf("error produced speech: %+v", e)
 	}
 }
 
 func TestRunTurnRecoveredBrainStreamCompletesDegraded(t *testing.T) {
-	// A brain that already streamed its own recovery line reports Recovered:
-	// the pipeline keeps the streamed text as the reply instead of stacking a
-	// second recovery message on top, and the failure still reaches activity.
+	// A provider can retain a partial reply while reporting a failure.
+	// Keep that genuine text and report the error separately.
 	bus := events.NewBus()
 	var ready atomic.Value
 	events.Subscribe(bus, func(e events.ResponseReady) { ready.Store(e) })
@@ -486,15 +498,15 @@ func TestRunTurnRecoveredBrainStreamCompletesDegraded(t *testing.T) {
 
 	p := &Pipeline{
 		STT:    &fakeSTT{text: "hello"},
-		Brain:  &fakeBrain{chunks: []string{brain.RecoveryReply}, streamErr: errors.New("boom"), recovered: true},
+		Brain:  &fakeBrain{chunks: []string{"Partial response."}, streamErr: errors.New("boom"), recovered: true},
 		Events: bus,
 	}
 	if _, err := p.RunTurn(context.Background()); err != nil {
 		t.Fatalf("RunTurn() error = %v, want nil (recovered turn)", err)
 	}
 	e, _ := ready.Load().(events.ResponseReady)
-	if !e.Degraded || e.Response != brain.RecoveryReply {
-		t.Fatalf("ResponseReady = %+v, want degraded reply equal to the streamed recovery line", e)
+	if !e.Degraded || e.Response != "Partial response." {
+		t.Fatalf("ResponseReady = %+v, want degraded reply equal to the genuine partial text", e)
 	}
 	ev, ok := errEvt.Load().(events.Error)
 	if !ok || !strings.Contains(ev.Message, "boom") {
@@ -594,9 +606,10 @@ func TestRunTurnBrainErrorEmitsSingleMetrics(t *testing.T) {
 }
 
 type fakeSTT struct {
-	text  string
-	err   error // emit a Failure event instead of a final transcript
-	stall bool  // leave the session open and silent until the context is canceled
+	acousticName string
+	text         string
+	err          error // emit a Failure event instead of a final transcript
+	stall        bool  // leave the session open and silent until the context is canceled
 }
 
 type fakeSTTSession struct {
@@ -616,7 +629,7 @@ func (f *fakeSTT) Start(ctx context.Context) (stt.Session, error) {
 	case f.err != nil:
 		eventsCh <- stt.Failure{Err: f.err}
 	default:
-		eventsCh <- stt.FinalTranscript{Text: f.text}
+		eventsCh <- stt.FinalTranscript{Text: f.text, AcousticName: f.acousticName}
 	}
 	close(eventsCh)
 	return &fakeSTTSession{events: eventsCh}, nil
@@ -782,6 +795,10 @@ type fakePlayer struct {
 	queue      []*playbackRequest
 	finishedAt []time.Time
 	stopCount  int
+	// outstanding is how many playbacks have been handed over and not yet
+	// reported finished — the turn loop's pending count as the player sees it.
+	outstanding    int
+	maxOutstanding int
 }
 
 type playbackRequest struct {
@@ -816,6 +833,8 @@ func (p *fakePlayer) PlayStream(ctx context.Context, stream *audio.PCMStream) (*
 
 	p.mu.Lock()
 	p.queue = append(p.queue, req)
+	p.outstanding++
+	p.maxOutstanding = max(p.maxOutstanding, p.outstanding)
 	p.mu.Unlock()
 	p.signal()
 
@@ -834,6 +853,9 @@ func (p *fakePlayer) Stop() {
 		close(active.stop)
 	}
 	for _, req := range queued {
+		p.mu.Lock()
+		p.outstanding--
+		p.mu.Unlock()
 		req.done <- audio.PlaybackResult{Interrupted: true}
 		close(req.done)
 	}
@@ -855,6 +877,14 @@ func (p *fakePlayer) FinishedTimes() []time.Time {
 	out := make([]time.Time, len(p.finishedAt))
 	copy(out, p.finishedAt)
 	return out
+}
+
+// MaxOutstanding is the most playbacks that were ever handed over and not yet
+// finished: the high-water mark of the turn loop's pending count.
+func (p *fakePlayer) MaxOutstanding() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.maxOutstanding
 }
 
 func (p *fakePlayer) StopCount() int {
@@ -909,6 +939,7 @@ func (p *fakePlayer) loop() {
 			p.active = nil
 		}
 		p.finishedAt = append(p.finishedAt, time.Now())
+		p.outstanding--
 		p.mu.Unlock()
 
 		// Publish completion only after the fake's observable state is settled.
@@ -1074,7 +1105,7 @@ func TestRunTurnBargeInServicedDuringSynthesis(t *testing.T) {
 
 	p := &Pipeline{
 		STT:        &fakeSTT{text: "hello"},
-		Brain:      &fakeBrain{chunks: []string{"First sentence. Second sentence."}},
+		Brain:      &fakeBrain{chunks: []string{strings.Join(standaloneSentences[:2], " ")}},
 		TTS:        ttsProvider,
 		Player:     player,
 		Capture:    capture,
@@ -1199,37 +1230,24 @@ func TestStopPlaybackStampsBargeInOnActiveTurn(t *testing.T) {
 	p.StopPlayback()
 }
 
-// recoverTurn must not append a second RecoveryReply when the ollama stream
-// layer already recovered out loud into the partial (WI-dc9e33 B1/F1.4).
-func TestRecoverTurnDoesNotDuplicateRecoveryReply(t *testing.T) {
-	bus := events.NewBus()
-	var got []string
-	events.Subscribe(bus, func(e events.ResponseReady) { got = append(got, e.Response) })
-
-	p := &Pipeline{Events: bus}
-	cases := []struct {
-		partial string
-		want    string
-	}{
-		{"", brain.RecoveryReply},
-		{"partial thought", "partial thought\n\n" + brain.RecoveryReply},
-		{"partial thought\n\n" + brain.RecoveryReply, "partial thought\n\n" + brain.RecoveryReply},
-	}
-	for _, tc := range cases {
-		metrics := newTurnMetrics()
-		turn := p.newTurnConductor(metrics)
-		p.recoverTurn(context.Background(), turn, metrics, tc.partial, errors.New("boom"))
-	}
-	if len(got) != len(cases) {
-		t.Fatalf("ResponseReady count = %d, want %d", len(got), len(cases))
-	}
-	for i, tc := range cases {
-		if got[i] != tc.want {
-			t.Fatalf("case %d: response = %q, want %q", i, got[i], tc.want)
-		}
-		if n := strings.Count(got[i], brain.RecoveryReply); n != 1 {
-			t.Fatalf("case %d: RecoveryReply appears %d times", i, n)
-		}
+// Error handling preserves partial model text without inventing speech.
+func TestRecoverTurnPreservesOnlyGeneratedText(t *testing.T) {
+	for _, partial := range []string{"", "Partial response.", "<think>private reasoning</think>Partial response."} {
+		t.Run(partial, func(t *testing.T) {
+			bus := events.NewBus()
+			var got events.ResponseReady
+			events.Subscribe(bus, func(e events.ResponseReady) { got = e })
+			p := &Pipeline{Events: bus}
+			metrics := newTurnMetrics()
+			p.recoverTurn(t.Context(), p.newTurnConductor(metrics), metrics, partial, errors.New("provider unavailable"))
+			want := "Partial response."
+			if partial == "" {
+				want = ""
+			}
+			if got.Response != want || !got.Degraded {
+				t.Fatalf("response=%+v want=%q", got, want)
+			}
+		})
 	}
 }
 
@@ -1245,7 +1263,7 @@ func TestRecoverTurnPlaybackStallDoesNotApologize(t *testing.T) {
 	}{
 		{"", ""},
 		{"Come closer and tell me.", "Come closer and tell me."},
-		{"Come closer.\n\n" + brain.RecoveryReply, "Come closer.\n\n" + brain.RecoveryReply},
+		{"Come closer.\n\n" + "I hit an error while working on that. Want me to try a simpler approach?", "Come closer.\n\n" + "I hit an error while working on that. Want me to try a simpler approach?"},
 		{"<think>plan a greeting</think>", ""},
 		{"<think>plan a greeting</think>\nHello there.", "Hello there."},
 	}
@@ -1261,27 +1279,26 @@ func TestRecoverTurnPlaybackStallDoesNotApologize(t *testing.T) {
 		if got[i] != tc.want {
 			t.Fatalf("case %d: response = %q, want %q", i, got[i], tc.want)
 		}
-		if tc.partial == "" && strings.Contains(got[i], brain.RecoveryReply) {
-			t.Fatalf("case %d: playback stall invented RecoveryReply: %q", i, got[i])
+		if tc.partial == "" && strings.Contains(got[i], "I hit an error while working on that. Want me to try a simpler approach?") {
+			t.Fatalf("case %d: playback stall invented oldRecoveryReply: %q", i, got[i])
 		}
-		if tc.partial != "" && !strings.Contains(tc.partial, brain.RecoveryReply) && strings.Contains(got[i], brain.RecoveryReply) {
-			t.Fatalf("case %d: playback stall appended RecoveryReply: %q", i, got[i])
+		if tc.partial != "" && !strings.Contains(tc.partial, "I hit an error while working on that. Want me to try a simpler approach?") && strings.Contains(got[i], "I hit an error while working on that. Want me to try a simpler approach?") {
+			t.Fatalf("case %d: playback stall appended oldRecoveryReply: %q", i, got[i])
 		}
 	}
 }
 
-// Batching counts segments the listener will actually HEAR, not chunks the
+// Grouping counts segments the listener will actually HEAR, not chunks the
 // segmenter emitted.
 //
-// This was a real defect while laterBatchSegments was 2: batching lived in
-// brain.ChunkSentencesRaw, which cannot see the voice gate, so a reply opening
-// with a suppressed tool line spent its one-sentence budget on silence and the
-// first audible segment was a two-sentence synthesis.
+// This was a real defect while batching lived in brain.ChunkSentencesRaw,
+// which cannot see the voice gate: a reply opening with a suppressed tool line
+// spent its one-sentence budget on silence and the first audible segment was a
+// two-sentence synthesis.
 //
-// D009 has since set laterBatchSegments to 1, which makes batching an identity
-// today. These cases still earn their place: they pin the accounting (audible
-// segments, no unpronounceable residue, nothing dropped at end of stream) that
-// has to hold the moment a faster synthesiser lets batching switch back on.
+// These cases pin the accounting — audible segments, no unpronounceable
+// residue, nothing dropped at end of stream — now that grouping decides the
+// shape rather than a fixed count.
 func TestVoiceBatchingCountsAudibleSegments(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1292,34 +1309,41 @@ func TestVoiceBatchingCountsAudibleSegments(t *testing.T) {
 			// The opener is suppressed by toolRegionRE, so the first AUDIBLE
 			// sentence must still go out alone.
 			name:  "suppressed tool opener does not spend the budget",
-			reply: "I called the search tool. Here is what I found. There are three results. That is all.",
-			want:  []string{"Here is what I found.", "There are three results.", "That is all."},
+			reply: "I called the search tool. Here is the whole answer now. There are three results here. That is all of them.",
+			want:  []string{"Here is the whole answer now.", "There are three results here.", "That is all of them."},
 		},
 		{
 			// "Umm." cleans to a bare "." — unpronounceable, and previously it
 			// both reached TTS and got glued onto the next real sentence.
 			name:  "filler residue is neither spoken nor batched onto real speech",
-			reply: "Umm. Let me think about this. Here is the answer. Done.",
-			want:  []string{"Let me think about this.", "Here is the answer.", "Done."},
+			reply: "Umm. Let me think about this one. Here is the answer for you now. Done with all of that.",
+			want:  []string{"Let me think about this one.", "Here is the answer for you now.", "Done with all of that."},
 		},
 		{
-			name:  "an ordinary reply is one segment per sentence",
-			reply: "First. Second. Third. Fourth. Fifth.",
-			want:  []string{"First.", "Second.", "Third.", "Fourth.", "Fifth."},
+			name:  "a sentence that reaches the target is its own segment",
+			reply: strings.Join(standaloneSentences[:5], " "),
+			want:  standaloneSentences[:5],
 		},
 		{
-			// A partial batch at end of stream must still be spoken, or the last
-			// sentence of a reply is silently dropped. This matters again the
-			// moment laterBatchSegments goes above 1.
+			// A half-full group at end of stream must still be spoken, or the
+			// last sentence of a reply is silently dropped.
 			name:  "the final sentence is flushed, not dropped",
-			reply: "First. Second. Third. Fourth.",
-			want:  []string{"First.", "Second.", "Third.", "Fourth."},
+			reply: strings.Join(standaloneSentences[:4], " "),
+			want:  standaloneSentences[:4],
+		},
+		{
+			// The interjection merge: neither beat is a synthesis of its own.
+			name:  "short beats become one group",
+			reply: "Wait. Wait, you what?",
+			want:  []string{"Wait, wait, you what?"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ttsProvider := &fakeTTS{delay: time.Millisecond}
+			// A Kokoro-like engine: the merged beat is rewritten into one
+			// sentence, which is the only way that merge is audible there.
+			ttsProvider := &kokoroLikeTTS{fakeTTS: fakeTTS{delay: time.Millisecond}}
 			player := newFakePlayer(2 * time.Millisecond)
 			defer player.Close()
 

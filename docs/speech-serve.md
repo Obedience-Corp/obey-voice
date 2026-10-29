@@ -26,7 +26,7 @@ obey-voice speech-serve
 ```
 
 The first run prints a token, once. Copy it — it is written to
-`~/.obey/agents/voice/festival-voice/speech/token` (mode 0600) and never printed
+`~/.obey/agents/voice/obey-voice/speech/token` (mode 0600) and never printed
 again. `OBEY_SPEECH_TOKEN` or `--token-file` override the file.
 
 The default bind is `127.0.0.1:7263`, which reaches nothing but that computer —

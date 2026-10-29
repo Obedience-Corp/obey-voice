@@ -16,11 +16,16 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 	// Schedule only after the returned state has captured its current scope and
 	// deadline, including snapshots recovered while voice animation is idle.
 	defer func() {
+		cmd = tea.Batch(cmd, next.capturePollCmd())
 		if expiry := next.scheduleWorkStripExpiry(); expiry != nil {
 			cmd = tea.Batch(cmd, expiry)
 		}
 	}()
 	switch msg := msg.(type) {
+	case capturePollMsg:
+		m.capturePollScheduled = false
+		m.pollCapture()
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.setSize(msg.Width, msg.Height)
 		return m, m.ensureVoiceTick()
@@ -32,7 +37,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			return m, nil
 		}
 		m.recoverWork(time.Now(), false)
-		return m, m.workProjectionPollCmd()
+		return m, tea.Batch(m.workProjectionPollCmd(), m.ensureVoiceTick())
 
 	case startupTickMsg:
 		if !m.startup.tick() {
@@ -43,6 +48,7 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 	case voiceTickMsg:
 		m.recoverWork(time.Time(msg), false)
 		m.voiceFrame++
+		m.advanceContextMeter()
 		// Decay mic energy so the meter settles when speech pauses.
 		m.inputLevel *= 0.82
 		if m.inputLevel < 0.02 {
@@ -58,10 +64,13 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		}
 		return m, voiceTickCmd()
 
-	case demoVoiceAnimStartedMsg, demoThinkStartedMsg:
+	case demoVoiceAnimStartedMsg, demoThinkStartedMsg, demoWorkCueStartedMsg:
 		return m, m.ensureVoiceTick()
 
 	case busEventMsg:
+		if msg.source != nil && msg.source != m.bridge {
+			return m, nil
+		}
 		m.handleEvent(msg.event)
 		return m, tea.Batch(m.rearm(), m.ensureVoiceTick())
 
@@ -91,9 +100,15 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		}
 		return m, nil
 	case voiceTurnDoneMsg:
+		if msg.lifetime != nil && msg.lifetime != m.deps.ctx {
+			return m, nil
+		}
 		return m, tea.Batch(m.handleVoiceTurnDone(msg), m.ensureVoiceTick())
 
 	case textTurnDoneMsg:
+		if msg.lifetime != nil && msg.lifetime != m.deps.ctx {
+			return m, nil
+		}
 		return m, tea.Batch(m.handleTextTurnDone(msg), m.ensureVoiceTick())
 
 	case compactDoneMsg:
@@ -123,6 +138,10 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		return m, nil
 
 	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && m.workCueHit(msg.X, msg.Y) {
+			id := m.workerShortcutID()
+			return m, func() tea.Msg { return openWorkerMsg{jobID: id} }
+		}
 		// The viewport already implements wheel acceleration and bounds. Route
 		// only vertical wheel events here so clicks and drags do not interfere
 		// with the always-focused composer.
@@ -173,6 +192,9 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 			m.activityFocused = !m.activityFocused
 			m.refreshActivity()
 			return m, nil
+		case "ctrl+w":
+			id := m.workerShortcutID()
+			return m, func() tea.Msg { return openWorkerMsg{jobID: id} }
 		case "ctrl+k":
 			m.toggleShowThink()
 			return m, nil
@@ -280,10 +302,11 @@ func (m *conversationModel) shouldAnimateVoice() bool {
 	if m.reducedMotion {
 		return false
 	}
-	return m.voiceMode != anim.ModeIdle
+	running, _ := m.activeWorkerCounts()
+	return m.voiceMode != anim.ModeIdle || running > 0 || m.compactStage != "" || m.contextFill != m.contextTarget()
 }
 
-// ensureVoiceTick starts the animation loop once while a voice mode is active.
+// ensureVoiceTick starts the animation loop once while voice or background work is active.
 func (m *conversationModel) ensureVoiceTick() tea.Cmd {
 	if !m.shouldAnimateVoice() || m.voiceTicking {
 		return nil

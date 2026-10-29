@@ -15,7 +15,8 @@ const defaultBridgeCapacity = 256
 
 // busEventMsg delivers one bus event into the Bubble Tea update loop.
 type busEventMsg struct {
-	event events.Event
+	event  events.Event
+	source *eventBridge
 }
 
 // eventBridge translates the bus's synchronous push model into Bubble Tea's
@@ -67,6 +68,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 	forward[events.TurnInterrupted](b, bus)
 	forward[events.ResponseReady](b, bus)
 	forward[events.PersonaSelection](b, bus)
+	forward[events.DiscussionUpdated](b, bus)
 	forward[events.ConversationCleared](b, bus)
 	forward[events.ConversationCompacted](b, bus)
 	forward[events.Error](b, bus)
@@ -87,7 +89,7 @@ func (b *eventBridge) attach(bus *events.Bus) {
 }
 
 func forward[T events.Event](b *eventBridge, bus *events.Bus) {
-	events.Subscribe(bus, func(e T) { b.send(busEventMsg{event: e}) })
+	events.Subscribe(bus, func(e T) { b.send(busEventMsg{event: e, source: b}) })
 }
 
 // isDurableBridgeMsg reports events the transcript must not lose under pressure.

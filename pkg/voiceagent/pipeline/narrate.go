@@ -120,17 +120,15 @@ func (n *Narrator) handleJobDone(id string, state job.State, result string, err 
 	if state != job.StateDone {
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
-			msg = truncateJobTask(err.Error())
+			msg = err.Error()
 		}
-		// Standalone speech reports synthesis/playback errors on the event bus.
-		_ = n.pipeline.speakStandalone(context.Background(), nil, nil, msg)
+		n.pipeline.emit(events.Error{Stage: "narrate", Message: msg})
 		return true
 	}
 
 	path := strings.TrimSpace(result)
 	if path == "" {
-		// Standalone speech reports synthesis/playback errors on the event bus.
-		_ = n.pipeline.speakStandalone(context.Background(), nil, nil, "That did not work.")
+		n.pipeline.emit(events.Error{Stage: "narrate", Message: "Story job completed without a narration source"})
 		return true
 	}
 	n.tryStartNarration(context.Background(), path)
@@ -161,8 +159,8 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 
 	source := resolveNarrateSource(d.Transcript, n.workDir())
 	if source == "" {
-		// Standalone speech reports synthesis/playback errors on the event bus.
-		_ = n.pipeline.speakStandalone(ctx, turn, metrics, "I could not find anything to read.")
+		metrics.degraded = true
+		n.pipeline.emit(events.Error{Stage: "narrate", Message: "No narration source found for the request"})
 		return
 	}
 
@@ -173,7 +171,6 @@ func (n *Narrator) handleStart(ctx context.Context, turn *turnConductor, metrics
 }
 
 func (n *Narrator) startStoryJob(ctx context.Context, turn *turnConductor, metrics *turnMetrics) {
-	n.agency.speakAck(ctx, turn, metrics)
 	id, err := n.agency.jobs.Start(ctx, job.Spec{
 		Task: "write a long story",
 		Run:  n.storyWriterRun(),
@@ -261,12 +258,11 @@ func (n *Narrator) canStartPlayback() bool {
 func (n *Narrator) startPlayback(ctx context.Context, source string) {
 	units, err := n.loadPlan(ctx, source)
 	if err != nil || len(units) == 0 {
-		msg := "I could not read that."
+		message := "Narration source contains no readable content"
 		if err != nil {
-			n.pipeline.emit(events.Error{Stage: "narrate", Message: err.Error()})
+			message = err.Error()
 		}
-		// Standalone speech reports synthesis/playback errors on the event bus.
-		_ = n.pipeline.speakStandalone(context.Background(), nil, nil, msg)
+		n.pipeline.emit(events.Error{Stage: "narrate", Message: message})
 		return
 	}
 

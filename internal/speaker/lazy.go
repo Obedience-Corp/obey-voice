@@ -92,27 +92,35 @@ func NewLazyLive(ctx context.Context, cfg Config, capture CaptureSource, build E
 // enable. It never blocks on the engine load.
 func (l *LazyLive) SetEnabled(enabled bool) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l.closed || l.status == LiveUnavailable {
+		l.mu.Unlock()
 		return
 	}
 	l.desired = enabled
 	if l.adapter != nil {
+		// Hold the lock across the already-built adapter so Close cannot
+		// teardown it concurrently with SetEnabled.
 		l.adapter.SetEnabled(enabled)
+		l.mu.Unlock()
 		return
 	}
 	if !enabled {
 		// A build already in flight keeps going; it will adopt desired=false
 		// when it lands, so the engine stays warm for the next enable.
 		l.status = LiveDisabled
+		l.mu.Unlock()
 		return
 	}
 	if l.building {
+		l.mu.Unlock()
 		return
 	}
 	l.building = true
 	l.status = LiveRunning
 	l.lastErr = ""
+	// Unlock before the build goroutine so Stats/Close are not stuck behind
+	// native load if CGO runs on this P before SetEnabled returns.
+	l.mu.Unlock()
 	go l.startEngine()
 }
 

@@ -14,6 +14,13 @@ func setConfigDir(t *testing.T, dir string) {
 	config.SetConfigDirForTest(t, dir)
 }
 
+func TestValidateNilProfile(t *testing.T) {
+	var profile *Profile
+	if err := profile.Validate(); err == nil || err.Error() != "persona profile: nil" {
+		t.Fatalf("Validate() = %v, want persona profile: nil", err)
+	}
+}
+
 func TestValidateID(t *testing.T) {
 	for _, id := range []string{"samantha", "festival", "obey", "my-agent", "a1"} {
 		if err := ValidateID(id); err != nil {
@@ -331,7 +338,7 @@ func TestLoadFileIDMismatch(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := []byte(`schema: festival-voice.persona.v1
+	body := []byte(`schema: obey-voice.persona.v1
 id: festival
 display_name: X
 prompts:

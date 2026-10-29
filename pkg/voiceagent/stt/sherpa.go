@@ -179,6 +179,15 @@ func (s *SherpaOfflineSTT) transcribe(samples []float32) (string, error) {
 	return normalizeTranscript(strings.TrimSpace(stream.GetResult().Text)), nil
 }
 
+// DecodeSegment decodes one finite span of speech. It is the SegmentDecoder
+// seam onto the same recognizer the live loop uses.
+func (s *SherpaOfflineSTT) DecodeSegment(ctx context.Context, samples []float32) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return s.transcribe(samples)
+}
+
 // Available returns true if the STT provider is ready.
 func (s *SherpaOfflineSTT) Available() bool {
 	return s.recognizer != nil

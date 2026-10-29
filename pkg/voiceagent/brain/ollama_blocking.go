@@ -3,16 +3,29 @@ package brain
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/ollama/ollama/api"
 )
 
 // ThinkFull sends input and waits for the complete response.
 func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOptions) (answer string, resultErr error) {
+	o.refreshSystemPrompt(opts.OnPromptWarn)
 	ctx = opts.workerBudget().Context(ctx)
-	skillCtx := o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
+	priorGroupReply := ""
+	if opts.Discussion != nil {
+		priorGroupReply = o.previousReplyForRepetition(opts)
+	}
+	skillCtx := ""
+	if opts.Discussion == nil {
+		skillCtx = o.routeSkillContext(ctx, input, opts.OnToolStart, opts.OnToolEnd)
+	} else {
+
+		opts.ToolsEnabled = false
+	}
 	// A failed turn rolls back to this snapshot rather than truncating: the tool
 	// loop appends assistant/tool turns and the context budget can trim the
 	// front, so length alone cannot describe the pre-call history. Unlike
@@ -35,10 +48,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			o.working = restoreWorking
 		}()
 	}
-	if !opts.Background && !opts.AgentContinuation {
+	if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil {
 		o.appendUserInput(input, opts)
 	}
-	if !opts.TransientHistory && !opts.AgentContinuation {
+	if !opts.TransientHistory && !opts.AgentContinuation && opts.Discussion == nil {
 		o.receiveDelegationResults(opts)
 	}
 	if opts.Background && !opts.AgentContinuation {
@@ -62,9 +75,11 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 
 	hadThinking := false
 	hadTools := false
-	for i := 0; i < maxToolIterations; i++ {
+	routedChat := false
+	for i := 0; i <= maxToolIterations; i++ {
+		finalAnswer := i == maxToolIterations
 		var tools api.Tools
-		if opts.ToolsEnabled {
+		if opts.ToolsEnabled && !routedChat && !finalAnswer {
 			tools = sess.tools()
 		}
 
@@ -74,20 +89,48 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			o.working = restoreWorking
 			return "", err
 		}
-		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation)
+		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
+		if opts.Discussion != nil {
+			messages[0].Content += opts.Discussion.Prompt()
+			// A compacted working projection can contain only assistant summaries.
+			// Reuse the actual initiating request as a transient model input, without
+			// recording a second human turn or inventing an agent handoff.
+			hasUser := false
+			for _, m := range messages {
+				hasUser = hasUser || m.Role == "user"
+			}
+			if !hasUser {
+				messages = append(messages, api.Message{Role: "user", Content: opts.Discussion.Original})
+			}
+		}
 		if opts.OmitTurnInstruction {
 			messages = o.compactionMessages(skillCtx)
+		}
+		if finalAnswer {
+			messages = append(messages, api.Message{Role: "user", Content: toolLimitAnswerInstruction})
+		}
+		if err := o.messagesBudgetError(messages, tools); err != nil {
+			return "", err
 		}
 		req := o.newChatRequest(messages, tools)
 		stream := false
 		req.Stream = &stream
+		if opts.Discussion != nil {
+			if req.Options == nil {
+				req.Options = map[string]any{}
+			}
+			req.Options["num_predict"] = discussion.MaxReplyTokens
+			req.Think = &api.ThinkValue{Value: false}
+		}
 		if err := o.applyOutputBudget(req, opts.workerBudget()); err != nil {
 			return "", err
 		}
 
 		var response api.Message
 		var doneReason string
+		var responseComplete bool
 		err := o.chat(ctx, req, func(resp api.ChatResponse) error {
+			responseComplete = responseComplete || resp.Done
 			response = resp.Message
 			doneReason = resp.DoneReason
 			if opts.OnUsage != nil {
@@ -122,9 +165,24 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 
 		// Tool calls — execute and loop (skills stack on full CLI tools).
+		if (routedChat || finalAnswer) && len(response.ToolCalls) > 0 {
+			return "", fmt.Errorf("tools-free answer returned unexpected tool calls")
+		}
+		if opts.Discussion != nil && len(response.ToolCalls) > 0 {
+			return "", fmt.Errorf("tools are disabled for group discussion")
+		}
 		if len(response.ToolCalls) > 0 {
 			hadTools = true
 			hadThinking = hadThinking || messageHadThinking(response)
+			if sess.routerPolicy == RouterToolsRouteOnly {
+				// The live classifier's tool preamble is planning, not an
+				// assistant reply to replay into later conversation context.
+				response.Content = ""
+				if hasRouteCall(response.ToolCalls) {
+					routedChat = true
+					skillCtx += "\n" + chatRouteAnswerInstruction
+				}
+			}
 			o.appendMessage(api.Message{
 				Role:      "assistant",
 				Content:   stripReplyConventions(o.cfg.AgentName, response.Content),
@@ -152,15 +210,29 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		// empty so /compact is not replaced by the recovery line.
 		raw := stripReplyConventions(o.cfg.AgentName, response.Content)
 		text := cleanForVoice(stripHistoricalAssistantMarkers(raw))
+		if finalAnswer && (!responseComplete || !hasSpeakableContent(text)) {
+			return "", fmt.Errorf("tool round limit reached: model returned no final answer")
+		}
+		if opts.Discussion != nil && !hasSpeakableContent(text) {
+			return "", fmt.Errorf("group reply was empty")
+		}
 		if fallbackEmptyContent(text, hadTools, hadThinking) {
 			text = spokenOrFallback(text)
+		}
+		if opts.Discussion != nil && priorGroupReply != "" && strings.HasPrefix(normalizeReplyPrefix(text), priorGroupReply) {
+			return "", fmt.Errorf("group reply repeated a prior answer")
 		}
 		recorded := text
 		if legacyHistoricalAssistantHeader.MatchString(raw) && hasSpeakableContent(text) {
 			recorded = raw
 		}
+		if opts.Discussion != nil && opts.Discussion.BeforeOutput != nil {
+			if err := opts.Discussion.BeforeOutput(ctx); err != nil {
+				return "", err
+			}
+		}
 		o.appendMessage(api.Message{Role: "assistant", Content: recorded}, opts.Identity)
-		if !opts.Background && !opts.AgentContinuation && !opts.TransientHistory {
+		if !opts.Background && !opts.AgentContinuation && opts.Discussion == nil && !opts.TransientHistory {
 			o.ackDelegationResults(req.Messages)
 		} else if opts.Background && !opts.TransientHistory {
 			o.markBackgroundDelivered(req.Messages)
@@ -169,5 +241,5 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		return text, nil
 	}
 
-	return "I seem to be going in circles with my tools. Let me just answer directly.", nil
+	return "", fmt.Errorf("tool round limit reached without a final answer")
 }

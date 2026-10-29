@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -14,8 +15,8 @@ import (
 // touch the status line or the orb — otherwise a job running behind a live turn
 // hijacks both. State is kept per job: a spawn queued behind a running worker
 // is counted on the chip but never relabels it. The thread gets exactly one
-// item per job, rewritten in place as the fold grows, the same way the
-// streaming think block is rewritten.
+// item per job, rewritten in place as the fold grows. Per-call details stay
+// in that item so commands and failures are visible in chat as well as Ctrl-W.
 
 // jobView is what the chip and the job's thread item know about one queued
 // or running job.
@@ -35,6 +36,9 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 	}
 	job := m.trackJob(id, v.Task)
 	job.terminal = v.State == work.JobTerminal
+	if job.terminal {
+		m.workTracker().Seal(id)
+	}
 	job.origin = v.Origin
 	if v.Config != nil {
 		job.tier = v.Config["worker_tier"]
@@ -43,7 +47,7 @@ func (m *conversationModel) canonicalJob(v work.JobView) {
 	if v.State == work.JobQueued {
 		m.renderJobItem(id, " · queued")
 	} else if v.State == work.JobRunning {
-		m.renderJobItem(id, "")
+		m.renderJobItem(id, " · working")
 	}
 	m.refreshJobChip()
 }
@@ -82,11 +86,29 @@ func (m *conversationModel) jobStarted(e events.JobStarted) {
 	m.trackJob(e.ID, e.Task).running = true
 	m.appendActivity("job", "started "+e.Task, 0)
 	m.refreshJobChip()
-	m.renderJobItem(e.ID, "")
+	m.renderJobItem(e.ID, " · working")
 }
 
 func (m *conversationModel) jobFinished(e events.JobFinished) {
+	if !m.acceptWorkScope(e.Scope) {
+		return
+	}
+	if m.workerRepliesSeen[e.ID] {
+		return
+	}
+	if m.workerRepliesSeen == nil {
+		m.workerRepliesSeen = make(map[string]bool)
+	}
+	m.workerRepliesSeen[e.ID] = true
 	m.jobEnded(e.ID, "finished", " · done in "+roundSeconds(e.Elapsed), e.Elapsed)
+	if text := strings.TrimSpace(e.Summary); text != "" {
+		name := m.agentName
+		if e.Envelope != nil && e.Envelope.DisplayName != "" {
+			name = e.Envelope.DisplayName
+		}
+		m.rememberAssistant(text)
+		m.appendAgentTurn(chatItem{name: name, spoken: text})
+	}
 }
 
 func (m *conversationModel) jobFailed(e events.JobFailed) {
@@ -111,7 +133,7 @@ func (m *conversationModel) jobEnded(id, detail, suffix string, elapsed time.Dur
 	m.appendActivity("job", detail, elapsed)
 	// Reconcile missing end hooks before sealing the line. Unknown calls must
 	// remain visible and cannot be rendered as successful work.
-	rows := m.workTracker().Close(id)
+	rows := m.workTracker().Seal(id)
 	unknown := 0
 	for _, row := range rows {
 		unknown += row.Unknown
@@ -150,7 +172,7 @@ func (m *conversationModel) jobToolStarted(e events.ToolCallStarted) {
 	m.workTracker().Add(e)
 	m.noteJobTool(e.JobID, e.Name)
 	m.appendActivity("job", jobToolDetail(e.Name, e.Summary), 0)
-	m.renderJobItem(e.JobID, "")
+	m.renderJobItem(e.JobID, " · working")
 }
 
 func (m *conversationModel) jobToolFinished(e events.ToolCallFinished) {
@@ -163,7 +185,7 @@ func (m *conversationModel) jobToolFinished(e events.ToolCallFinished) {
 	m.workTracker().Finish(e)
 	m.noteJobTool(e.JobID, e.Name)
 	m.appendActivity("job", toolOutcomeDetail(e), e.ResultElapsed())
-	m.renderJobItem(e.JobID, "")
+	m.renderJobItem(e.JobID, " · working")
 }
 
 func (m *conversationModel) acceptWorkScope(scope work.WorkScope) bool {
@@ -256,7 +278,14 @@ func (m *conversationModel) noteJobTool(id, name string) {
 // reach for managed work: View prefers deps.workersSummary when it is set, and
 // that is the source which sees the runtime's managed jobs.
 func (m *conversationModel) refreshJobChip() {
-	running, queued := 0, 0
+	running, queued := m.jobCounts()
+	m.jobStatus = ""
+	if running+queued > 0 {
+		m.jobStatus = workersCountLabel(running, queued, m.cfg == nil || !m.cfg.VoiceWorkersDisabled)
+	}
+}
+
+func (m conversationModel) jobCounts() (running, queued int) {
 	for _, v := range m.jobs {
 		if v.terminal {
 			continue
@@ -267,10 +296,56 @@ func (m *conversationModel) refreshJobChip() {
 			queued++
 		}
 	}
-	m.jobStatus = ""
-	if running+queued > 0 {
-		m.jobStatus = workersCountLabel(running, queued, m.cfg == nil || !m.cfg.VoiceWorkersDisabled)
+	return running, queued
+}
+
+// activeWorkerCounts reads the live table when available. A conversation can
+// attach after a job started, before its lifecycle events reach this model.
+func (m conversationModel) activeWorkerCounts() (running, queued int) {
+	if m.deps.workers == nil {
+		return m.jobCounts()
 	}
+	for _, item := range m.deps.workers() {
+		if item.State == "queued" {
+			queued++
+		} else if item.Active() {
+			running++
+		}
+	}
+	return running, queued
+}
+
+// workerShortcutID opens the sole active worker, or the newest completed
+// worker when none are active. Several active workers open the manager list.
+func (m conversationModel) workerShortcutID() string {
+	id := ""
+	if m.deps.workers != nil {
+		items := m.deps.workers()
+		for _, item := range items {
+			if item.State != "queued" && !item.Active() {
+				continue
+			}
+			if id != "" {
+				return ""
+			}
+			id = item.ID
+		}
+		if id == "" && len(items) > 0 {
+			return items[0].ID
+		}
+		return id
+	}
+	for _, candidate := range m.jobOrder {
+		job := m.jobs[candidate]
+		if job == nil || job.terminal {
+			continue
+		}
+		if id != "" {
+			return ""
+		}
+		id = candidate
+	}
+	return id
 }
 
 // renderJobItem writes the job's single transcript item, appending it the first
@@ -291,6 +366,7 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 		origin = " [" + job.origin + "]"
 	}
 	line := dimStyle.Render("  ⚙ " + id + origin + " · " + label + suffix)
+	line += m.renderJobToolDetails(id)
 	idx, ok := m.jobItems[id]
 	if !ok || idx >= len(m.items) {
 		if m.jobItems == nil {
@@ -303,6 +379,26 @@ func (m *conversationModel) renderJobItemLabel(id, label, suffix string) {
 	m.items[idx] = chatItem{kind: chatItemSys, sys: line}
 	m.refreshContent()
 	m.applyFollow()
+}
+
+// renderJobToolDetails uses the already-redacted event projection. Keep the
+// same evidence when a canonical result replaces a provisional job entry.
+func (m *conversationModel) renderJobToolDetails(id string) string {
+	line := ""
+	for i, call := range m.workTracker().Calls(id) {
+		detail := fmt.Sprintf("    %d. %s · %s", i+1, compactWorkerText(call.Name), call.Status)
+		if call.Summary != "" {
+			detail += " · " + compactWorkerText(call.Summary)
+		}
+		line += "\n" + dimStyle.Render(detail)
+		if call.Preview != "" {
+			line += "\n" + dimStyle.Render("       "+compactWorkerText(call.Preview))
+		}
+		if call.Err != "" && call.Err != call.Preview {
+			line += "\n" + errorStyle.Render("       "+compactWorkerText(call.Err))
+		}
+	}
+	return line
 }
 
 // jobLabel is what the job's line says it did: the folded rows once there are

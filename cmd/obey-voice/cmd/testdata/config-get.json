@@ -1,7 +1,11 @@
 {
   "schema_version": 1,
-  "config_file": "/Users/lance/.obey/agents/voice/festival-voice/config.yaml",
+  "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
   "values": {
+    "acoustic_name_enabled": {
+      "value": false,
+      "source": "default"
+    },
     "active_persona": {
       "value": "ada",
       "source": "file"
@@ -66,6 +70,14 @@
       "value": 60000,
       "source": "default"
     },
+    "codex_model": {
+      "value": "",
+      "source": "default"
+    },
+    "codex_reasoning_effort": {
+      "value": "",
+      "source": "default"
+    },
     "compact_prompt": {
       "value": null,
       "source": "default"
@@ -102,6 +114,50 @@
       "value": "",
       "source": "default"
     },
+    "decision_api_key": {
+      "value": "",
+      "source": "default"
+    },
+    "decision_budget_ms": {
+      "value": 750,
+      "source": "default"
+    },
+    "decision_enabled": {
+      "value": false,
+      "source": "default"
+    },
+    "decision_endpoint": {
+      "value": "",
+      "source": "default"
+    },
+    "decision_local_model": {
+      "value": "2b",
+      "source": "default"
+    },
+    "decision_model": {
+      "value": "",
+      "source": "default"
+    },
+    "decision_policy": {
+      "value": "route_choice",
+      "source": "default"
+    },
+    "decision_provider": {
+      "value": "local",
+      "source": "default"
+    },
+    "decision_runtime": {
+      "value": "managed",
+      "source": "default"
+    },
+    "decision_text_work": {
+      "value": true,
+      "source": "default"
+    },
+    "decision_voice_work": {
+      "value": true,
+      "source": "default"
+    },
     "delegation_binary": {
       "value": "obey",
       "source": "default"
@@ -136,6 +192,14 @@
     },
     "grok_model": {
       "value": "",
+      "source": "default"
+    },
+    "group_participation_enabled": {
+      "value": false,
+      "source": "default"
+    },
+    "group_participation_mode": {
+      "value": "invited",
       "source": "default"
     },
     "input_device": {
@@ -175,7 +239,7 @@
       "source": "default"
     },
     "models_dir": {
-      "value": "/Users/lance/.cache/festival-voice/models",
+      "value": "/Users/lance/.cache/obey-voice/models",
       "source": "default"
     },
     "name_summon_aliases": {
@@ -214,6 +278,26 @@
       "value": "auto",
       "source": "default"
     },
+    "openai_speech_api_key": {
+      "value": "",
+      "source": "default"
+    },
+    "openai_speech_model": {
+      "value": "phonon",
+      "source": "default"
+    },
+    "openai_speech_timeout": {
+      "value": 60,
+      "source": "default"
+    },
+    "openai_speech_url": {
+      "value": "http://localhost:11434/v1",
+      "source": "default"
+    },
+    "openai_speech_voice": {
+      "value": "default",
+      "source": "default"
+    },
     "output_device": {
       "value": "",
       "source": "default"
@@ -224,6 +308,10 @@
     },
     "persona": {
       "value": "obey",
+      "source": "default"
+    },
+    "persona_routing_timeout": {
+      "value": 120,
       "source": "default"
     },
     "phrase_time_limit": {
@@ -292,6 +380,10 @@
     },
     "qwen_tts_voice": {
       "value": "",
+      "source": "default"
+    },
+    "qwen_tts_workers": {
+      "value": 1,
       "source": "default"
     },
     "remote_tools_enabled": {
@@ -466,6 +558,10 @@
       "value": 200,
       "source": "default"
     },
+    "tts_lookahead": {
+      "value": 2,
+      "source": "default"
+    },
     "tts_place": {
       "value": "local",
       "source": "default"
@@ -499,7 +595,7 @@
       "source": "default"
     },
     "vad_min_speech_duration": {
-      "value": 0.25,
+      "value": 0.1,
       "source": "default"
     },
     "vad_pre_roll_ms": {
@@ -599,7 +695,7 @@
       "source": "default"
     },
     "whispercpp_model_path": {
-      "value": "/Users/lance/.cache/festival-voice/models/whispercpp/ggml-base.en.bin",
+      "value": "/Users/lance/.cache/obey-voice/models/whispercpp/ggml-base.en.bin",
       "source": "default"
     },
     "work_dir": {

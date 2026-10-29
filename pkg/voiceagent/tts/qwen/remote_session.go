@@ -65,8 +65,7 @@ func newRemoteQwen3TTS(cfg *config.Config) (*Qwen3TTS, error) {
 		return nil, err
 	}
 	q.applyStreamPolicy(session)
-	q.speech = session
-	q.speechRef.Store(&session)
+	q.primarySlot().adopt(session)
 	return q, nil
 }
 

@@ -12,6 +12,11 @@ Thanks for taking the time to improve Obey Voice.
 
 Voice-mode development requires local microphone and speaker access. Integration tests require Docker or a compatible container runtime.
 
+CI builds and smoke-tests the relocatable Linux archive on every PR and main
+push without uploading it to Actions storage. For downloadable Linux and macOS
+builds, run **Release Artifacts** manually on the desired branch; those downloads
+expire after seven days. Tag builds attach archives directly to the GitHub release.
+
 ## Pull Requests
 
 - Keep changes focused and describe the user-visible impact.
@@ -36,6 +41,17 @@ Reject PRs that:
 Offline HF→GGUF conversion in the **lab** (`qwen3-tts-native`) may use Python;
 that must not enter the Obey Voice process tree during synthesis. See
 `docs/adr/0002-no-managed-python-tts-runtime.md` and `docs/qwen3-tts-spike.md`.
+
+## Prompt maintenance
+
+Store model instructions in named YAML documents under
+`pkg/voiceagent/prompts/defaults/`, using the existing prompt schema and resolver.
+Keep Go code responsible for runtime data and assembly, rather than inline
+paragraphs of model instructions. Split independently editable concerns into
+named documents or structured YAML sections. Document runtime placeholders and
+verify user overrides, reload behavior, and malformed-edit fallback when changing
+the loading path. See `docs/personas.md` for local overrides and inspection.
+Agent Skills retain their standard `SKILL.md` format.
 
 ## Reporting Issues
 

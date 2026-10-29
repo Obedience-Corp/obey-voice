@@ -114,7 +114,7 @@ func (q *Qwen3TTS) synthesize(ctx context.Context, req tts.SynthesisRequest, str
 
 	q.streamWorkerWAV(ctx, outputPath, stream)
 	if stream.Err() == nil {
-		q.speechCompleted.Store(true)
+		q.primarySlot().completed.Store(true)
 	}
 }
 

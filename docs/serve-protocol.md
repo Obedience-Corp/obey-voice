@@ -46,7 +46,7 @@ obey-voice serve --tailscale
 ```
 
 Binds the node’s Tailscale IPv4, prefers a cert via `tailscale cert` under
-`~/.obey/agents/voice/festival-voice/serve/tls/`, mutes the host speaker by default,
+`~/.obey/agents/voice/obey-voice/serve/tls/`, mutes the host speaker by default,
 and prints the MagicDNS URL (e.g. `https://mac.tailnet.ts.net:7262/`).
 
 If `tailscale cert` fails (or LAN self-signed is used), serve stays up in
@@ -143,7 +143,7 @@ stderr under `--banner-json`; diagnostics on stderr).
 | `?token=` query | **Only** `GET /v1/stream` (browser WebSocket cannot set headers) |
 | Pairing code | `POST /v1/pair` (public, rate-limited) |
 
-Primary token file: `~/.obey/agents/voice/festival-voice/serve/token` (0600).  
+Primary token file: `~/.obey/agents/voice/obey-voice/serve/token` (0600).
 Per-device tokens (D2): `…/serve/tokens/<id>.json` (0600 each).  
 Revoke all: `obey-voice serve --revoke-tokens` (primary + all devices).  
 Revoke one device: `DELETE /v1/devices/{id}`.
@@ -438,7 +438,7 @@ GET /v1/meetings?limit=200&since=2026-08-01T00:00:00Z
 ```
 
 ```json
-{"meetings_dir":"/Users/lance/.obey/agents/voice/festival-voice/meetings",
+{"meetings_dir":"/Users/lance/.obey/agents/voice/obey-voice/meetings",
  "count":42,"truncated":false,
  "meetings":[
    {"id":"weekly-sync-20260816-101500.meeting",
@@ -607,6 +607,9 @@ in `GET /v1/status`:
 | `ttfa_ms` | T_eou to first sample an audible sink accepted (`0` when `audible_sink` is `none`) |
 | `audible_sink` | `local_speaker` \| `stream_client` \| `none` |
 | `think_leak` | count of think tags that hit the speech filter after the brain split; must be 0 |
+| `segment_count` | synthesis calls this turn made |
+| `median_segment_chars` | middle segment length, so one long segment cannot hide a reply chopped into interjections |
+| `short_boundaries` | boundaries whose preceding segment was under the target its group was flushed against |
 
 `playback_complete_ms` is local-speaker Done only. It is `0` for `stream_client` and `none` — fanout drain is not playback.
 
@@ -945,3 +948,28 @@ The route is **absent (404)** on a serve that did not wire persona resolution,
 the same way `/v1/meeting/*` is absent without meeting capture. Feature-detect
 by status rather than by `protocol_version`, which does not change for additive
 routes.
+
+### Optional group participation controls
+
+A server configured with experimental group participation advertises
+`group_participation_v1` and `open_interjections_v1`. Older/default servers omit
+these capabilities and do not expose the controls. `session_snapshot` optionally
+includes `participation` (`version: 1`, `mode`, `members`) and `discussion`.
+`members: null` means all enabled personas; an explicit subset contains one to
+eight unique persona IDs.
+
+Send `{"type":"set_participation","request_id":"unique-id","mode":"invited","members":["jarvis","samantha"]}`.
+`request_id`, `mode`, and `members` are required; use explicit JSON `null` to reset
+to all enabled personas. The update interrupts autonomous work and applies on the
+serialized conversation boundary. Success returns `participation_set` with the
+same request ID, authoritative `participation`, and `state_revision`. Failures use
+the existing correlated `error` frame. Wait for authoritative acknowledgment or a
+snapshot before treating a change as saved.
+
+`discussion_updated` carries `session_id`, `conversation_epoch`, `discussion_id`,
+`discussion_revision`, `phase`, `mode`, public persona `members`/`candidate`,
+`labels`, `delivered_count`, `uncovered`, and optional `terminal_reason`. Phases
+are `choosing`, `checking`, `preparing`, `responding`, and `ended`. These are private
+activity indicators and never transcript bubbles. Reject foreign session/epoch
+updates and older revisions. An attributed reply's `response_envelope` optionally
+includes `discussion_id`; persona identity remains immutable for each response.

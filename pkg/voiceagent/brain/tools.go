@@ -19,8 +19,11 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 )
 
-// maxToolIterations prevents infinite tool call loops.
+// maxToolIterations bounds tool rounds; one tools-free answer request follows.
 const maxToolIterations = 10
+
+// This is a transient instruction, never a fabricated assistant response.
+const toolLimitAnswerInstruction = "The tool round limit for this turn has been reached. No more tools are available. Answer the user's request now using the results already collected. State what was completed, what failed or remains unverified, and any concrete blocker. Do not claim unfinished work succeeded, promise to answer later, or describe tool-loop reasoning."
 
 // skillBodyMaxBytes caps read_skill output (same budget as read_file).
 const skillBodyMaxBytes = 32 * 1024
@@ -447,10 +450,10 @@ func liveRouterTools(availability ...*WorkerTierAvailability) api.Tools {
 		"source": {Type: api.PropertyType{"string"}, Description: "Optional URL or file path when kind is narrate."},
 		"goal":   {Type: api.PropertyType{"string"}, Description: "Optional summary of work when kind is spawn."},
 	}
-	description := "Classify this user turn. Use spawn when the user asks you to do something: search the web, look something up, read or write files, run commands, or build. Spawn starts a worker that has those tools. Use narrate for long reading. Otherwise chat."
+	description := "Classify this user turn. Use spawn only when fulfilling the request requires external actions: search the web, look something up, read or write files, run commands, or build. Use chat for conversation, advice, brainstorming, drafting an answer, and preferences or follow-up questions that can be answered from context. A request to suggest or describe a persona does not by itself require files or commands. Spawn starts a worker that has those tools. Use narrate for long reading. Otherwise chat."
 	if tiers != nil {
 		required = append(required, "tier")
-		description = "Classify this user turn using this effort rubric: simple for one bounded action, medium for a few dependent steps, complex for broad or multi-stage work. Choose the effort tier that fits the request; the host will reject unavailable tiers and never substitute another tier. Use spawn when the user asks you to do something; narrate for long reading; otherwise chat."
+		description = "Classify this user turn using this effort rubric: simple for one bounded action, medium for a few dependent steps, complex for broad or multi-stage work. Choose the effort tier that fits the request; the host will reject unavailable tiers and never substitute another tier. Use spawn only for work requiring external actions such as searches, files, or commands. Use chat for conversation, advice, brainstorming, drafting an answer, and preferences or follow-up questions answerable from context. A request to suggest or describe a persona does not by itself require files or commands. Use narrate for long reading."
 		properties["tier"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: fmt.Sprintf("Required effort tier. Availability now: simple=%t, medium=%t, complex=%t.", tiers.Simple, tiers.Medium, tiers.Complex), Enum: []any{"simple", "medium", "complex"}}
 		properties["reason_code"] = api.ToolProperty{Type: api.PropertyType{"string"}, Description: "Optional reason for the selected tier.", Enum: []any{"bounded_action", "dependent_steps", "broad_scope", "explicit_request"}}
 	}

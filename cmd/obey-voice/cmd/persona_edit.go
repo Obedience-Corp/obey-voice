@@ -40,6 +40,8 @@ with.`,
 		Args: cobra.ExactArgs(1),
 		RunE: runPersonaEdit,
 	}
+	cmd.Flags().String("participation-description", "", "Optional public perspective description for group discussion (up to 256 characters)")
+	cmd.Flags().String("starting-directory", "", "Starting directory for new conversations (empty inherits app default)")
 	cmd.Flags().String("display-name", "", "New display name (becomes agent_name when active)")
 	cmd.Flags().String("prompt", "", "Identity body text for the persona system prompt")
 	cmd.Flags().String("prompt-file", "", "Read the identity body text from a file (UTF-8)")
@@ -88,6 +90,14 @@ func applyPersonaEdit(cmd *cobra.Command, id string) (*personaResultJSON, error)
 	}
 
 	flags := cmd.Flags()
+	startingDirectory := p.StartingDirectory
+	if flags.Changed("starting-directory") {
+		value, _ := flags.GetString("starting-directory")
+		startingDirectory, err = config.ValidateStartingDirectory(value)
+		if err != nil {
+			return nil, codedError("invalid_directory", "persona %q: %v", p.ID, err)
+		}
+	}
 	brain, tts, stackPaths, err := mergePersonaStack(cmd, cfg, p)
 	if err != nil {
 		return nil, err
@@ -128,6 +138,26 @@ func applyPersonaEdit(cmd *cobra.Command, id string) (*personaResultJSON, error)
 	}
 
 	changed := []string{}
+	if flags.Changed("participation-description") {
+		value, _ := flags.GetString("participation-description")
+		copy := *p
+		copy.ParticipationDescription = value
+		if err := copy.Validate(); err != nil {
+			return nil, err
+		}
+		p.ParticipationDescription = value
+		if err := persona.Write(p, false); err != nil {
+			return nil, err
+		}
+		changed = append(changed, "participation_description")
+	}
+	if flags.Changed("starting-directory") && startingDirectory != p.StartingDirectory {
+		p.StartingDirectory = startingDirectory
+		if err := persona.Write(p, false); err != nil {
+			return nil, err
+		}
+		changed = append(changed, "starting_directory")
+	}
 	if displayName != strings.TrimSpace(p.DisplayName) {
 		if _, err := persona.UpdateDisplayName(p.ID, displayName); err != nil {
 			return nil, withChanged(err, changed)

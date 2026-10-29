@@ -198,7 +198,7 @@ func (r *liveRunner) importCanonicalHistory(path string) error {
 		return fmt.Errorf("history fixture import: %w", err)
 	}
 	selected := r.persona.selector.Snapshot()
-	if err := r.persona.store.SaveSelection(r.persona.session, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash); err != nil {
+	if err := r.persona.store.SaveSelection(r.persona.session, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories); err != nil {
 		return fmt.Errorf("history fixture persistence: %w", err)
 	}
 	return nil

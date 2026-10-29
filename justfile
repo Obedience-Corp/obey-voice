@@ -9,6 +9,9 @@ bin_dir := "bin"
 gobin := env_var_or_default("GOBIN", `go env GOPATH` + "/bin")
 
 # Modules
+[doc('Native desktop builds, checks, and isolated UI fixtures')]
+mod desktop '.justfiles/desktop.just'
+
 [doc('Testing (unit, integration, dashboard)')]
 mod test '.justfiles/test.just'
 
@@ -38,16 +41,15 @@ default:
 build:
     @{{BUILDTOOL}} build
 
-# Build and record the README demo from the real Bubble Tea TUI. The tape
-# writes a raw VHS GIF; the final pass matches termcast's compact, low-noise
-# terminal output and replaces it with the optimized artifact.
-demo: build
+# Color README walkthrough with disposable data and scripted voice activity.
+demo: demo-readme
+
+# Original live Ollama/tool-call recording (requires an installed local model).
+demo-tool-calls: build
     #!/usr/bin/env bash
     set -euo pipefail
     vhs demos/tool-calls.tape
     just _optimize-demo-gif demos/tool-calls.gif
-    mkdir -p docs/images
-    cp demos/tool-calls.gif docs/images/tui.gif
 
 # Voice meter animation demo (listening / hearing / speaking).
 # Matches festival/termcast tapes: shell-exported color env, raw VHS GIF.
@@ -108,6 +110,43 @@ demo-think-blocks: build
         vhs demos/think-blocks.tape
     just _optimize-demo-gif demos/think-blocks.gif
     ls -lh demos/think-blocks.gif
+
+demo-launcher-notice: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/launcher-notice.tape
+    vhs demos/launcher-notice-short.tape
+    just _optimize-demo-gif demos/launcher-notice.gif
+    just _optimize-demo-gif demos/launcher-notice-short.gif
+    ls -lh demos/launcher-notice.gif demos/launcher-notice-short.gif demos/frames/launcher-notice.png demos/frames/launcher-notice-open.png demos/frames/launcher-notice-short.png demos/frames/launcher-notice-short-scrolled.png
+
+demo-workers: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/workers.tape
+    just _optimize-demo-gif demos/workers.gif
+    ls -lh demos/workers.gif demos/frames/workers-detail.png
+
+# Conversation: animated background work beside listening, then Ctrl+W detail.
+# Scripted bus events and a fixture worker; no mic or model required.
+demo-work-cue: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p demos/frames
+    env -u NO_COLOR -u CLICOLOR \
+        CLICOLOR_FORCE=1 FORCE_COLOR=1 \
+        TERM=xterm-256color COLORTERM=truecolor \
+        vhs demos/work-cue.tape
+    just _optimize-demo-gif demos/work-cue.gif
+    ls -lh demos/work-cue.gif demos/frames/work-cue-*.png
 
 # Settings → Persona: list seeded agents and switch active persona.
 demo-persona-switch: build
@@ -209,7 +248,7 @@ demo-meeting-speakers: build
 # Download the multi-speaker YouTube meeting clip (first 90s only, 16 kHz mono).
 # Source: https://www.youtube.com/watch?v=lBVtvOpU80Q (~43 min full video — we
 # only pull 0:00–1:30). Stored in a shared user cache so worktrees reuse it:
-#   ${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings/
+#   ${XDG_CACHE_HOME:-$HOME/.cache}/obey-voice/fixtures/meetings/
 # Override with OBEY_VOICE_FIXTURE_CACHE=… or FORCE_FETCH=1 to re-download.
 fetch-meeting-fixture:
     #!/usr/bin/env bash
@@ -246,9 +285,9 @@ speakerflow:
         if [[ -n "${OBEY_VOICE_FIXTURE_CACHE:-}" ]]; then
             cache="${OBEY_VOICE_FIXTURE_CACHE}"
         elif [[ -n "${XDG_CACHE_HOME:-}" ]]; then
-            cache="${XDG_CACHE_HOME}/festival-voice/fixtures/meetings"
+            cache="${XDG_CACHE_HOME}/obey-voice/fixtures/meetings"
         else
-            cache="${HOME}/.cache/festival-voice/fixtures/meetings"
+            cache="${HOME}/.cache/obey-voice/fixtures/meetings"
         fi
         fixture="${cache}/product-marketing-meeting-90s.wav"
     fi

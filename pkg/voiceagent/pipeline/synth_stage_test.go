@@ -104,10 +104,10 @@ func TestStickyFallbackSkipsPrimaryAfterFirstSwitch(t *testing.T) {
 	fallback := &fakeTTS{}
 	p := &Pipeline{TTS: primary, TTSFallback: fallback, Events: events.NewBus()}
 
-	var stick bool
+	var stick fallbackLatch
 	stream, used, err := p.synthesizeWithFallback(context.Background(), "first", &stick)
-	if err != nil || !used || !stick {
-		t.Fatalf("first synthesizeWithFallback() used=%v stick=%v err=%v, want fallback + sticky latch", used, stick, err)
+	if err != nil || !used || !stick.latched() {
+		t.Fatalf("first synthesizeWithFallback() used=%v stick=%v err=%v, want fallback + sticky latch", used, stick.latched(), err)
 	}
 	for range stream.Frames() {
 	}
@@ -116,8 +116,8 @@ func TestStickyFallbackSkipsPrimaryAfterFirstSwitch(t *testing.T) {
 	}
 
 	stream, used, err = p.synthesizeWithFallback(context.Background(), "second", &stick)
-	if err != nil || !used || !stick {
-		t.Fatalf("second synthesizeWithFallback() used=%v stick=%v err=%v, want sticky fallback", used, stick, err)
+	if err != nil || !used || !stick.latched() {
+		t.Fatalf("second synthesizeWithFallback() used=%v stick=%v err=%v, want sticky fallback", used, stick.latched(), err)
 	}
 	for range stream.Frames() {
 	}

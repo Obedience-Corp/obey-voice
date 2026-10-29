@@ -32,22 +32,16 @@ func loadSkillsCatalog(ctx context.Context, cfg *config.Config, workDir string) 
 		configured = config.SkillsDir()
 	}
 	dirs := skills.DefaultSearchPaths(workDir, configured)
-	catalog, err := skills.Loader{Dirs: dirs, Disabled: cfg.SkillsDisabled}.Catalog(ctx)
+	catalog, err := skills.Loader{Dirs: dirs, Disabled: cfg.SkillsDisabled, Builtins: true}.Catalog(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading skills: %w", err)
 	}
 	return catalog, nil
 }
 
-// refreshSystemPrompt re-resolves the persona document and rebuilds the
-// assembled system prompt only if it changed.
-//
-// The rebuild is conditional for a concrete reason: buildMessages sends
-// fullSystemPrompt as the leading message, and ollama caches the prefix of a
-// conversation server-side. Emitting a different system prompt invalidates that
-// cache and re-processes the whole transcript. So an unchanged persona keeps the
-// exact same string, and a genuinely edited one pays the invalidation once —
-// which is correct, because the user did change what the model should see.
+// refreshSystemPrompt re-reads persona YAML before a request. Reassembly
+// remains deterministic: unchanged files produce the same system prefix, while
+// edits become visible without restarting the conversation.
 func (o *OllamaBrain) refreshSystemPrompt(onWarn func(message string)) {
 	if o.personaReloader == nil {
 		return
@@ -56,11 +50,12 @@ func (o *OllamaBrain) refreshSystemPrompt(onWarn func(message string)) {
 	if err != nil && onWarn != nil {
 		onWarn(err.Error())
 	}
-	if !changed {
-		return
+	if changed {
+		o.systemPrompt = persona
 	}
-	o.systemPrompt = persona
-	o.setFullSystemPrompt(assembleSystemPrompt(persona, o.workDir, o.skills, o.turnInstruction, o.cfg))
+	// Equal content preserves the provider's prefix cache. Application YAML is
+	// resolved separately for relevant requests by buildMessagesForTurn.
+	o.setFullSystemPrompt(assembleSystemPrompt(o.systemPrompt, o.workDir, o.skills, o.turnInstruction, o.cfg))
 }
 
 // setFullSystemPrompt publishes a rebuilt prompt to a Warmup that may be
@@ -71,9 +66,8 @@ func (o *OllamaBrain) setFullSystemPrompt(prompt string) {
 	o.stateMu.Unlock()
 }
 
-// assembleSystemPrompt builds the session-stable system prompt: persona
-// prompt, environment grounding, and the Tier-1 skills catalog. It runs once
-// per brain — the result must stay byte-identical across a session's requests.
+// assembleSystemPrompt combines the resolved persona, application YAML,
+// environment and skill catalog. Unchanged inputs yield byte-identical output.
 func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill, turn string, cfg *config.Config) string {
 	return AssembleSystemPrompt(SystemPromptInput{
 		Provider: providerOllama,
@@ -85,7 +79,7 @@ func assembleSystemPrompt(personaPrompt, workDir string, catalog []skills.Skill,
 	})
 }
 
-// buildMessages assembles one chat request: the frozen system prompt, the
+// buildMessages assembles one chat request: the resolved system prompt, the
 // full retained history (trimHistory owns the bound), and — when skills
 // activated for this turn — their context spliced onto the latest user
 // message. Splicing at the tail keeps every earlier token byte-identical
@@ -98,12 +92,18 @@ func (o *OllamaBrain) buildMessages(skillCtx string) []api.Message {
 func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bool) []api.Message {
 	msgs := make([]api.Message, 0, len(o.history)+1)
 	system := o.fullSystemPrompt + o.conversationIdentityGuidance()
+	lastUser := lastUserIndex(o.history)
+	if !agentContinuation && lastUser >= 0 {
+		_, input := decodeOllamaUser(o.history[lastUser].Content)
+		if app := ApplicationRequestContext(o.cfg, providerOllama, input); app != "" {
+			system += "\n\n" + app
+		}
+	}
 	if agentContinuation {
-		system += "\nThe latest agent is handing you the floor. Respond as the current persona to that agent's latest message. Do not invent a user message or mention this instruction."
+		system += "\n" + systemPrompt(o.cfg, "peer-reply", nil)
 	}
 	msgs = append(msgs, api.Message{Role: "system", Content: system})
 	recall := o.recallNotes()
-	lastUser := lastUserIndex(o.history)
 	for i, m := range o.history {
 		if i == lastUser && recall != "" {
 			msgs = append(msgs, recallMessages(recall)...)
@@ -117,6 +117,13 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 		if m.Role == ollamaSharedRole || m.Role == ollamaSharedToolRole {
 			m.Role = "user"
 		}
+		// Keep the selected responder explicit beside the newest input. Small
+		// models otherwise continue the last quoted agent's voice even with a
+		// correct group roster in the leading system message. This stays on the
+		// request projection, never in canonical user text.
+		if ((i == lastUser && !agentContinuation) || (agentContinuation && i == len(o.history)-1)) && m.Role == "user" && o.groupModeEnabled() && o.cfg != nil {
+			m.Content += groupReplyInstruction(o.cfg, o.cfg.AgentName)
+		}
 		msgs = append(msgs, m)
 	}
 	return msgs
@@ -124,10 +131,7 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 
 // Warmup and live requests must share the same stable identity prefix.
 func (o *OllamaBrain) conversationIdentityGuidance() string {
-	identity := historicalIdentityGuidance
-	if o.cfg != nil && o.cfg.AgentName != "" {
-		identity += " The current assistant persona is " + o.cfg.AgentName + "."
-	}
+	identity := "\n" + systemPrompt(o.cfg, "conversation-history", map[string]string{"agent_name": currentAgentName(o.cfg)})
 	if o.groupModeEnabled() {
 		identity += o.groupConversationGuidance()
 	}
@@ -139,18 +143,11 @@ func (o *OllamaBrain) groupConversationGuidance() string {
 	if o.cfg != nil && strings.TrimSpace(o.cfg.AgentName) != "" {
 		own = strings.TrimSpace(o.cfg.AgentName)
 	}
-	roster := o.groupRoster()
-	names := make([]string, 0, len(roster))
-	for _, participant := range roster {
-		if name := strings.TrimSpace(participant.Name); name != "" {
-			names = append(names, name)
-		}
-	}
-	guidance := "\nThis is a group chat. You are " + own + "; the other named participants are distinct agents or users, not alternate names for you."
-	if len(names) > 0 {
-		guidance += " The other available agents are listed here: " + strings.Join(names, ", ") + "."
-	}
-	return guidance + " Answer only as yourself. A deliberate direct question addressed to a named agent hands that agent the floor; a third-person reference does not. Do not speak labels, roster metadata, or internal role markers."
+	o.stateMu.Lock()
+	roster := cloneGroupParticipants(o.groupParticipants)
+	speakers := append([]string(nil), o.groupSpeakers...)
+	o.stateMu.Unlock()
+	return groupConversationContext(o.cfg, own, roster, speakers)
 }
 
 func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onStart func(ToolCall), onEnd func(ToolResult)) string {

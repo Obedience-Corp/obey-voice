@@ -30,6 +30,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tts_provider", "kokoro")
 	v.SetDefault("voice_fallback_provider", "kokoro")
 	v.SetDefault("tts_voice", DefaultKokoroVoice)
+	v.SetDefault("openai_speech_url", DefaultOpenAISpeechURL)
+	v.SetDefault("openai_speech_model", DefaultOpenAISpeechModel)
+	v.SetDefault("openai_speech_voice", DefaultOpenAISpeechVoice)
+	v.SetDefault("openai_speech_api_key", "")
+	v.SetDefault("openai_speech_timeout", DefaultOpenAISpeechTimeout)
 	v.SetDefault("audio8_voice", "")
 	v.SetDefault("speech_speed", 0.95)
 	v.SetDefault("playback_volume", DefaultPlaybackVolume)
@@ -49,6 +54,7 @@ func setDefaults(v *viper.Viper) {
 	// Chunk playback follows the measurements, not a preference: auto streams
 	// only where synthesis was measured faster than realtime (tts_stream.go).
 	v.SetDefault("qwen_tts_stream", QwenStreamAuto)
+	v.SetDefault("qwen_tts_workers", DefaultQwenTTSWorkers)
 	// Empty → published platform release from qwen3-tts-native (see internal/qwen DefaultNativeRelease).
 	v.SetDefault("qwen_tts_native_url", "")
 	v.SetDefault("qwen_tts_native_sha256", "")
@@ -61,6 +67,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("tts_worker_token", "")
 	v.SetDefault("tts_lan_strict", false)
 	v.SetDefault("tts_lan_timeout_ms", DefaultTTSLanTimeoutMS)
+	v.SetDefault("tts_lookahead", DefaultTTSLookahead)
 
 	v.SetDefault("stt_provider", "sherpa-parakeet")
 	v.SetDefault("input_device", "")
@@ -92,7 +99,7 @@ func setDefaults(v *viper.Viper) {
 	// Machine grounding (user, cwd, host, OS) reaches every provider by default.
 	v.SetDefault("environment_context_enabled", true)
 	v.SetDefault("vad_threshold", 0.6)
-	v.SetDefault("vad_min_speech_duration", 0.25)
+	v.SetDefault("vad_min_speech_duration", 0.1)
 	v.SetDefault("vad_pre_roll_ms", 300)
 	// Off by default: the frontend's noise suppressor over-suppresses normal-volume
 	// speech (gates it below the VAD threshold — see voice_frontend_test.go), which
@@ -127,6 +134,7 @@ func setDefaults(v *viper.Viper) {
 	// playback. Aliases are empty — the display name and its first word are
 	// already the wake words.
 	v.SetDefault("name_summon_enabled", false)
+	v.SetDefault("acoustic_name_enabled", false)
 	v.SetDefault("name_summon_aliases", []string{})
 
 	// Off by default so the terminal keeps its own click-drag selection, which
@@ -145,6 +153,12 @@ func setDefaults(v *viper.Viper) {
 	// with no ollama_model fails with an actionable message from NewOllama rather
 	// than silently routing to a cloud CLI.
 	v.SetDefault("brain_provider", "ollama")
+	v.SetDefault("persona_routing_timeout", DefaultPersonaRoutingTimeout)
+	v.SetDefault("group_participation_enabled", false)
+	v.SetDefault("group_participation_mode", "invited")
+	for _, key := range decisionKeys() {
+		v.SetDefault(key.Key, key.Default)
+	}
 	v.SetDefault("voice_work_enabled", false)
 	v.SetDefault("voice_workers_disabled", false)
 	v.SetDefault("voice_worker_provider", "")
@@ -155,6 +169,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_worker_boundary", true)
 	v.SetDefault("grok_model", "")
 	v.SetDefault("cursor_model", "")
+	v.SetDefault("codex_model", "")
+	v.SetDefault("codex_reasoning_effort", "")
 	v.SetDefault("ollama_model", "")
 	v.SetDefault("ollama_embedding_model", "nomic-embed-text")
 	v.SetDefault("skills_similarity_threshold", 0.55)

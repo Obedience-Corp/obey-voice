@@ -15,7 +15,7 @@ import (
 //
 // Note: models/fixtures use ~/.cache (not OS UserCacheDir) so Linux/macOS
 // share the same documented layout and migrations stay a simple rename.
-const AppSlug = "festival-voice"
+const AppSlug = "obey-voice"
 
 // DefaultConfigDir returns the default on-disk config root for this install.
 func DefaultConfigDir() string {

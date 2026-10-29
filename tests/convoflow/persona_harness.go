@@ -259,7 +259,7 @@ func configurePersonaWithFactory(r *liveRunner, base *config.Config, catalog per
 	}
 	sess := session.New(initial.BrainProvider, initial.BrainModel)
 	store := session.NewStore(filepath.Join(runDir, "sessions"))
-	if err := store.SaveSelection(sess, r.liveProvider.History(), initial.PersonaID, initial.DisplayName, ""); err != nil {
+	if err := store.SaveSelection(sess, r.liveProvider.History(), initial.PersonaID, initial.DisplayName, "", initial.Config().ConversationDirectories); err != nil {
 		return fmt.Errorf("save initial selection: %w", err)
 	}
 	rt := &personaRuntime{store: store, session: sess, sessionDir: filepath.Join(runDir, "sessions")}
@@ -281,7 +281,7 @@ func configurePersonaWithFactory(r *liveRunner, base *config.Config, catalog per
 		Base: base, Catalog: catalog, Pipeline: r.agent.Pipeline, Voices: r.voices,
 		SessionID: sess.ID, Initial: initial,
 		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-			return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+			return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 		},
 		NewBrain: func(ctx context.Context, cfg *config.Config) (brain.Provider, error) { return makeBrain(cfg) },
 		NewWorker: func(ctx context.Context, cfg *config.Config) (brain.Provider, error) {
@@ -436,7 +436,7 @@ func writeSelfTestFixture(root string) (string, string, error) {
 			return "", "", err
 		}
 		displayName := map[string]string{"samantha": "Samantha", "santa": "Santa"}[id]
-		profile := fmt.Sprintf("schema: festival-voice.persona.v1\nid: %s\ndisplay_name: %s\naliases: [%s]\nbrain:\n  provider: ollama\n  model: fake-%s\ntts:\n  provider: none\nprompts:\n  persona: %s\n", id, displayName, id, id, id)
+		profile := fmt.Sprintf("schema: obey-voice.persona.v1\nid: %s\ndisplay_name: %s\naliases: [%s]\nbrain:\n  provider: ollama\n  model: fake-%s\ntts:\n  provider: none\nprompts:\n  persona: %s\n", id, displayName, id, id, id)
 		if err := os.WriteFile(filepath.Join(personas, id, "persona.yaml"), []byte(profile), 0o600); err != nil {
 			return "", "", err
 		}

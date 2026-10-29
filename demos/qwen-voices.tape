@@ -26,9 +26,9 @@ Type "export TERM=xterm-256color COLORFGBG=15\;0 SAMANTHA_COLOR_PROFILE=ansi" En
 Type "export PATH=$PWD/bin:$PATH" Enter
 Type "export HOME=/tmp/samantha-qwen-voices-demo-$$" Enter
 Type "export MODELS=$HOME/.cache/samantha/models" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/festival-voice/sessions" Enter
+Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions" Enter
 Type "demos/fixtures/fake-qwen-native $MODELS" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<EOF" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<EOF" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
 Type "ollama_model: demo-model" Enter

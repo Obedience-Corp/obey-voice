@@ -73,6 +73,9 @@ type App struct {
 	personas       personasModel
 	workers        workersModel
 
+	launcherTicking bool
+	launcherTickID  uint64
+
 	// Conversation runtime wiring, set by Run before the program starts.
 	builder RuntimeBuilder
 	runCtx  context.Context
@@ -131,6 +134,7 @@ type App struct {
 
 	quitting     bool
 	returnToMenu bool
+	menuDone     chan struct{}
 }
 
 // NewApp creates the TUI application.
@@ -172,6 +176,10 @@ func (a App) Init() tea.Cmd {
 // switchScreen is a message to change screens.
 type switchScreenMsg screen
 
+// openWorkerMsg enters the worker manager at a specific live job when there is
+// exactly one; an empty ID opens the list for the user to choose.
+type openWorkerMsg struct{ jobID string }
+
 // settingsDoneMsg returns from settings to the screen that opened it.
 type settingsDoneMsg struct{}
 
@@ -206,8 +214,7 @@ func quitCmd() tea.Cmd {
 	return func() tea.Msg { return quitMsg{} }
 }
 
-// returnToMenuMsg ends the current session through the normal teardown path.
-// run reopens the launcher after the session is saved and devices are released.
+// returnToMenuMsg saves and drains the session inside the existing terminal UI.
 type returnToMenuMsg struct{}
 
 // Update wraps the screen dispatch so the mouse claim follows the active
@@ -223,6 +230,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if claim := next.mouseClaimCmd(from); claim != nil {
 		cmd = tea.Batch(cmd, claim)
+	}
+	if tick := next.syncLauncherAnimation(); tick != nil {
+		cmd = tea.Batch(cmd, tick)
 	}
 	return next, cmd
 }
@@ -248,7 +258,30 @@ func (a App) mouseClaimCmd(from screen) tea.Cmd {
 }
 
 func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if event, ok := msg.(busEventMsg); ok && event.source != nil && event.source != a.conversation.bridge {
+		return a, nil
+	}
+	if a.returnToMenu {
+		switch msg := msg.(type) {
+		case menuReadyMsg, tea.WindowSizeMsg, quitMsg:
+		case tea.KeyMsg:
+			key := msg.String()
+			if key != "ctrl+c" && key != "q" {
+				return a, nil
+			}
+		default:
+			return a, nil
+		}
+	}
 	switch msg := msg.(type) {
+	case menuReadyMsg:
+		return a.onMenuReady(msg)
+	case launcherTickMsg:
+		if a.launcherTicking && msg.id == a.launcherTickID {
+			a.launcherTicking = false
+			a.launcher.logoFrame = (a.launcher.logoFrame + 1) % 3600
+		}
+		return a, nil
 	case tea.KeyMsg:
 		// A false third result means fall through to delegate; cmd is nil on
 		// every such path and would be dropped here if that ever changed.
@@ -261,6 +294,11 @@ func (a App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a = a.onWindowSize(msg)
 	case switchScreenMsg:
 		return a.onSwitchScreen(msg)
+	case openWorkerMsg:
+		model, cmd := a.onSwitchScreen(switchScreenMsg(screenWorkers))
+		app := model.(App)
+		app.workers.openDetail(msg.jobID)
+		return app, cmd
 	case openSettingsSectionMsg:
 		return a.onOpenSettingsSection(msg)
 	case startMeetingMsg:

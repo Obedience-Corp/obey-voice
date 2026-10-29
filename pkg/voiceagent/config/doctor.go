@@ -259,11 +259,19 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 				diags = append(diags, Diagnostic{Name: "qwen3-tts-model", Severity: SeverityOK, Detail: model})
 			}
 		}
-	} else if ManagedTTS(cfg) {
+	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), "kokoro") {
 		diags = append(diags, Diagnostic{
 			Name:     "tts-provider",
 			Severity: SeverityOK,
 			Detail:   "kokoro (" + KokoroPack() + ")",
+		})
+	} else if OpenAISpeechSelected(cfg) {
+		// Diagnose stays offline, so this row names the target;
+		// DiagnoseOpenAISpeech asks it.
+		diags = append(diags, Diagnostic{
+			Name:     "tts-provider",
+			Severity: SeverityOK,
+			Detail:   OpenAISpeechProviderName + " (" + OpenAISpeechModel(cfg) + " at " + OpenAISpeechURL(cfg) + ", voice " + TTSVoiceFor(cfg, OpenAISpeechProviderName) + ")",
 		})
 	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), Audio8ProviderName) {
 		// audio8 is a real provider that obey-voice does not manage assets
@@ -291,7 +299,7 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 			Name:        "tts-provider",
 			Severity:    SeverityWarn,
 			Detail:      fmt.Sprintf("tts_provider %q is not a known provider", cfg.TTSProvider),
-			Remediation: "set tts_provider=kokoro, tts_provider=qwen3-tts (with its native worker and model configured), or tts_provider=audio8 (with the Audio8 export installed)",
+			Remediation: "set tts_provider=kokoro, tts_provider=qwen3-tts (with its native worker and model configured), tts_provider=audio8 (with the Audio8 export installed), or tts_provider=openai-speech (Phonon via Ollama 0.40.9+)",
 		})
 	}
 
@@ -324,6 +332,9 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	// front-end is a false interrupt, but name summon without one is the agent
 	// answering itself in a loop, so the conversation refuses to install the
 	// gate at all and this row is the only place that says why.
+	if err := ValidateAcousticName(cfg); err != nil {
+		diags = append(diags, Diagnostic{Name: "acoustic-name-provider", Severity: SeverityError, Detail: err.Error(), Remediation: "set stt_provider to parakeet or disable acoustic_name_enabled"})
+	}
 	if NameSummonSelfTriggerRisk(cfg) {
 		diags = append(diags, Diagnostic{
 			Name:        "name-summon-echo",
@@ -790,6 +801,69 @@ func DiagnoseQwenStreaming(cfg *Config, modelsDir string) []Diagnostic {
 	}
 	return []Diagnostic{{
 		Name:        "qwen3-tts-streaming",
+		Severity:    SeverityOK,
+		Detail:      detail,
+		Remediation: remediation,
+	}}
+}
+
+// DiagnoseQwenWorkers reports how many Qwen engines this configuration runs,
+// and whether the count is in effect.
+//
+// Like the streaming row it is a statement about configuration, not a live
+// probe: answering "is worker 2 up, and on which device" for certain would
+// mean starting one, and doctor never does. What it can say is what every
+// worker will be — the pool is started from one package, so the device and
+// tier below describe each of them — and whether the count is honoured here
+// at all.
+//
+// It exists because the cost is invisible otherwise. Each worker loads its own
+// copy of the model, so raising this is a memory decision as much as a speed
+// one, and above 1 it is an experiment until the benchmark in
+// docs/benchmarks/README.md says otherwise.
+func DiagnoseQwenWorkers(cfg *Config, modelsDir string) []Diagnostic {
+	if cfg == nil || !strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), qwen.ProviderName) {
+		return nil
+	}
+	workers := QwenTTSWorkersOf(cfg)
+	if configured := cfg.QwenTTSWorkers; configured != 0 && configured != workers {
+		return []Diagnostic{{
+			Name:        "qwen3-tts-workers",
+			Severity:    SeverityWarn,
+			Detail:      fmt.Sprintf("qwen_tts_workers=%d is outside %d-%d; running %d", configured, MinQwenTTSWorkers, MaxQwenTTSWorkers, workers),
+			Remediation: fmt.Sprintf("set qwen_tts_workers between %d and %d", MinQwenTTSWorkers, MaxQwenTTSWorkers),
+		}}
+	}
+
+	if TTSPlaceOf(cfg) == TTSPlaceLAN {
+		detail := fmt.Sprintf("%d configured, ignored: speech runs on another computer, and how many workers it runs is that host's setting", workers)
+		if workers == 1 {
+			detail = "not in effect: speech runs on another computer, and how many workers it runs is that host's setting"
+		}
+		return []Diagnostic{{Name: "qwen3-tts-workers", Severity: SeverityOK, Detail: detail}}
+	}
+
+	native := qwen.InspectNative(modelsDir, cfg.QwenTTSModelTier)
+	where := "device unreported by the installed package"
+	if backend := strings.TrimSpace(native.BackendHint); backend != "" {
+		where = backend
+	}
+	tier := qwen.NormalizeModelTier(cfg.QwenTTSModelTier)
+	detail := fmt.Sprintf("%d worker: one qwen3-tts-worker subprocess on %s, %s, loaded at start", workers, where, tier)
+	remediation := ""
+	if workers > 1 {
+		detail = fmt.Sprintf("%d workers: %d qwen3-tts-worker subprocesses on %s, each loading its own %s at start", workers, workers, where, tier)
+		remediation = "more than one worker is an experiment: it ships only on the throughput, underrun and memory thresholds in docs/benchmarks/README.md"
+	}
+	if !native.Installed {
+		detail += "; no package installed to run them"
+		// Both answers are owed when a pool is configured on a box with no
+		// package: install it, and do not trust more than one worker until it
+		// is measured. Replacing one with the other loses the gate.
+		remediation = strings.TrimPrefix(remediation+"; "+qwen.InstallRemediation(cfg.QwenTTSNativeURL), "; ")
+	}
+	return []Diagnostic{{
+		Name:        "qwen3-tts-workers",
 		Severity:    SeverityOK,
 		Detail:      detail,
 		Remediation: remediation,

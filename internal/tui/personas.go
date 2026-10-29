@@ -12,6 +12,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/persona/campdirs"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
@@ -29,10 +30,14 @@ type personasModel struct {
 	cursor       int
 	offset       int
 
-	items       []*persona.Profile
-	loadErr     string
-	loadWarning string
-	message     string
+	items        []*persona.Profile
+	loadErr      string
+	loadWarning  string
+	stacks       map[string]personaListStack
+	defaultsErr  string
+	listDefaults *config.Config
+	loadDefaults func() (*config.Config, error)
+	message      string
 
 	// formMode: "" | "create" | "edit"
 	formMode string
@@ -68,9 +73,20 @@ type personasModel struct {
 	// and works on a remote CLI is a decision, not a default.
 	workerProviderIdx int
 	workerModel       string
+	workerOllamaHost  string
 	// Model row picker: discovered models per provider + async scan state.
 	// See personas_models.go; brainModelInput stays the selected value.
 	brainModels personaModelPicker
+	// Starting directory row: the folder new conversations with this persona
+	// run file & shell tools in. directoryInput holds the path; the picker
+	// offers registered camps and a (custom) field. See personas_directory.go.
+	directoryInput textinput.Model
+	directory      personaDirectoryPicker
+	// Voice row catalog for providers that have to be asked (openai-speech),
+	// and the Language row's filter over whichever catalog is showing.
+	// See personas_voices.go.
+	voices      voiceCatalog
+	voiceLocale string
 
 	preview voicePreview
 
@@ -80,6 +96,7 @@ type personasModel struct {
 	savePrompt           func(id, systemPrompt string) (*persona.Profile, error)
 	saveName             func(id, displayName string) (*persona.Profile, error)
 	saveStack            func(id string, b persona.Brain, t persona.TTS) (*persona.Profile, error)
+	saveDirectory        func(id, directory string) (*persona.Profile, error)
 	deletePersona        func(*config.Config, string) (*persona.DeleteResult, error)
 	setInactive          func(*config.Config, string, bool) (*persona.Profile, error)
 	selectedPersona      func() string
@@ -100,11 +117,13 @@ type personasModel struct {
 func newPersonas(cfg *config.Config) personasModel {
 	m := personasModel{
 		cfg:           cfg,
+		loadDefaults:  config.LoadRaw,
 		usePersona:    persona.Use,
 		createPersona: persona.CreateAndUseWithOpts,
 		savePrompt:    persona.UpdateSystemPrompt,
 		saveName:      persona.UpdateDisplayName,
 		saveStack:     persona.UpdateStack,
+		saveDirectory: persona.UpdateStartingDirectory,
 		deletePersona: persona.Delete,
 		setInactive:   persona.SetInactive,
 		loadPrompt:    persona.LoadSystemPrompt,
@@ -116,12 +135,15 @@ func newPersonas(cfg *config.Config) personasModel {
 		nameInput:            newPersonaCreateInput(),
 		promptTA:             newPromptEditor(),
 		brainModelInput:      newPersonaStackInput("empty = provider default"),
+		directoryInput:       newPersonaDirectoryInput(),
 		preview: voicePreview{
 			newPreviewPlayer: func() audio.Engine {
 				if cfg == nil {
 					return playback.NewPlayer()
 				}
-				return playback.NewPlayerWithDevice(cfg.OutputDevice)
+				player := playback.NewPlayerWithDevice(cfg.OutputDevice)
+				player.SetVolume(config.PlaybackVolumeOf(cfg))
+				return player
 			},
 			ensure: func(ctx context.Context, c *config.Config, onProgress func(string, float64)) error {
 				return config.EnsureRuntimeAssets(ctx, c, config.AssetRequest{NeedTTS: true}, onProgress)
@@ -133,6 +155,10 @@ func newPersonas(cfg *config.Config) personasModel {
 	// command on form open, never here: constructing the screen must not block
 	// on an ollama socket (and tests must not reach the network at all).
 	m.brainModels.discover = discovery.DiscoverProvidersContext
+	// The Directory row lists registered camps the same way Settings → Meeting
+	// finds route destinations: `camp list --json`, on form open, never here.
+	m.directory.discover = campdirs.DiscoverDefault
+	m.voices.load = liveVoiceCatalog
 	m.reload()
 	return m
 }
@@ -146,46 +172,6 @@ func newPersonaCreateInput() textinput.Model {
 	ti.Width = 40
 	ti.Prompt = ""
 	return ti
-}
-
-// personaListLabel formats one row for the Personas list.
-func personaListLabel(p *persona.Profile) string {
-	if p == nil {
-		return ""
-	}
-	label := p.DisplayName
-	if label == "" {
-		label = p.ID
-	}
-	if p.ID != "" && p.DisplayName != "" && !strings.EqualFold(p.DisplayName, p.ID) {
-		label = fmt.Sprintf("%s (%s)", p.DisplayName, p.ID)
-	}
-	if p.Inactive {
-		label += " [inactive]"
-	}
-	detail := strings.TrimSpace(p.TTS.Provider)
-	if v := strings.TrimSpace(p.TTS.Voice); v != "" {
-		if detail != "" {
-			detail += " · " + v
-		} else {
-			detail = v
-		}
-	}
-	// The built-in default is worth naming in the list: it pins nothing, so
-	// without this its row is the only one with no voice to show for itself.
-	// Both halves matter — the id alone would badge a user's own persona that
-	// happens to be named obey as shipped content.
-	if p.Builtin && p.ID == persona.DefaultID {
-		if detail != "" {
-			detail = "built-in default · " + detail
-		} else {
-			detail = "built-in default"
-		}
-	}
-	if detail != "" {
-		label += " — " + detail
-	}
-	return label
 }
 
 func (m *personasModel) reload() {
@@ -211,6 +197,7 @@ func (m *personasModel) reload() {
 		return
 	}
 	m.items = items
+	m.reloadStacks()
 }
 
 func (m personasModel) listLen() int {
@@ -233,18 +220,11 @@ func (m *personasModel) ensureVisible() {
 }
 
 func (m personasModel) visibleRows() int {
-	h := m.height
-	if h <= 0 {
-		h = 24
+	rows := m.listBodyRows() - 1 // column headings
+	if detail := m.personaDetailLines(); len(detail) > 0 {
+		rows -= len(detail) + 1
 	}
-	warningRows := 0
-	if m.loadWarning != "" {
-		warningRows = 1
-	}
-	if h < 10 {
-		return max(h-2-warningRows, 1)
-	}
-	return max(h-6-warningRows, 1)
+	return max(rows/m.personaRowHeight(), 1)
 }
 
 func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
@@ -256,6 +236,12 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 
 	case personaModelsMsg:
 		m.applyBrainModels(msg)
+
+	case personaDirectoriesMsg:
+		m.applyDirectories(msg)
+
+	case personaVoicesMsg:
+		m.applyVoiceCatalog(msg)
 
 	case voicePreviewDoneMsg:
 		if m.preview.applyDone(msg) && msg.message != "" {
@@ -269,7 +255,17 @@ func (m personasModel) Update(msg tea.Msg) (personasModel, tea.Cmd) {
 		if m.confirmDeleteID != "" {
 			return m.updateDeleteConfirm(msg)
 		}
+		// A sample belongs to the highlighted row, not the next screen or row.
 		switch msg.String() {
+		case "up", "k", "down", "j", "enter", "n", "c", "e", "m", "d", "delete", "x", "esc", "q":
+			if m.preview.previewing != "" {
+				m.preview.cancel()
+				m.message = "Preview stopped"
+			}
+		}
+		switch msg.String() {
+		case "p":
+			return m, m.previewSelectedPersona()
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--

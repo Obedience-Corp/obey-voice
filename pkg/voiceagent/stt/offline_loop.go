@@ -8,8 +8,16 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 )
 
-// minSpeechSamples is the minimum number of audio samples for valid speech (0.3s at 16kHz).
+// minSpeechSamples is the legacy fallback when no endpoint policy is supplied.
+// Production loops use the configured policy floor through minimumSpeechSamples.
 const minSpeechSamples = 4800
+
+func minimumSpeechSamples(policy endpoint.Policy) int {
+	if policy.MinSpeech <= 0 {
+		return minSpeechSamples
+	}
+	return max(audibleWindow, int(policy.MinSpeech.Seconds()*audio.SampleRate))
+}
 
 // noFramePoll is how long the loop waits before re-polling a live source that
 // has no audio buffered yet.
@@ -34,11 +42,12 @@ type transcribeFunc func(samples []float32) (string, error)
 // offlineLoopDeps are the injected seams the offline STT loop drives. None of
 // them require cgo or model files at construction, so the loop is fully testable.
 type offlineLoopDeps struct {
-	frames     audio.FrameSource
-	seg        segmenter
-	policy     endpoint.Policy
-	transcribe transcribeFunc
-	pause      *pauseController
+	frames       audio.FrameSource
+	seg          segmenter
+	policy       endpoint.Policy
+	transcribe   transcribeFunc
+	acousticName func(context.Context, []float32) (string, error)
+	pause        *pauseController
 }
 
 // runOfflineLoop drives utterance-final STT over the typed frame contract and
@@ -109,14 +118,25 @@ func runOfflineLoop(ctx context.Context, deps offlineLoopDeps, events chan<- Eve
 			samples = append(samples, seg...)
 		}
 
-		if len(samples) >= minSpeechSamples && audibleSpeechAbove(samples, floor()) {
+		if len(samples) >= minimumSpeechSamples(deps.policy) && audibleSpeechAbove(samples, floor()) {
 			text, err := transcribe(samples)
 			if err != nil {
 				sendEvent(ctx, events, Failure{Err: err})
 				return true
 			}
 			if text != "" {
-				sendEvent(ctx, events, FinalTranscript{Text: text})
+				var name string
+				if deps.acousticName != nil {
+					name, err = deps.acousticName(ctx, samples)
+					if err != nil {
+						sendEvent(ctx, events, Failure{Err: err})
+						return true
+					}
+				}
+				if ctx.Err() != nil {
+					return true
+				}
+				sendEvent(ctx, events, FinalTranscript{Text: text, AcousticName: name})
 				return true
 			}
 		}

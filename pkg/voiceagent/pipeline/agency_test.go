@@ -38,58 +38,34 @@ func (w *slowWorker) ClearHistory()            {}
 func (w *slowWorker) History() []brain.Turn    { return nil }
 func (w *slowWorker) LoadHistory([]brain.Turn) {}
 
-func TestSpawnAckBeforeWorkerFinishes(t *testing.T) {
+func TestSpawnReportsRealJobWithoutCannedSpeech(t *testing.T) {
 	provider := &progressiveFakeTTS{}
 	player := newFakePlayer(time.Millisecond)
 	defer player.Close()
-
-	worker := &slowWorker{
-		started: make(chan struct{}),
-		done:    make(chan struct{}),
-		reply:   "plain result",
-	}
-	jobs := job.NewTable(context.Background())
-	p := &Pipeline{
-		TTS:    provider,
-		Player: player,
-		Events: events.NewBus(),
-	}
+	worker := &slowWorker{started: make(chan struct{}), done: make(chan struct{}), reply: "plain result"}
+	jobs := job.NewTable(t.Context())
+	t.Cleanup(jobs.Close)
+	p := &Pipeline{TTS: provider, Player: player, Events: events.NewBus()}
 	agency := NewAgency(p, jobs, worker, &config.Config{}, nil)
 	agency.Wire()
-
-	ctx := context.Background()
+	var accepted events.RouteDecided
+	events.Subscribe(p.Events, func(e events.RouteDecided) { accepted = e })
 	metrics := newTurnMetrics()
-	turn := p.newTurnConductor(metrics)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		agency.HandleRoute(ctx, turn, metrics, RouteDecision{
-			Kind:       RouteSpawn,
-			Transcript: "filter design work items",
-			Source:     "test",
-		})
-	}()
-
-	deadline := time.After(2 * time.Second)
-	for {
-		calls := provider.Calls()
-		if len(calls) > 0 {
-			if !strings.Contains(strings.ToLower(calls[0]), "working") {
-				t.Fatalf("first spoken line = %q, want ack", calls[0])
-			}
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("ack was not spoken before worker finished")
-		case <-time.After(10 * time.Millisecond):
-		}
+	agency.HandleRoute(t.Context(), p.newTurnConductor(metrics), metrics, RouteDecision{
+		Kind: RouteSpawn, Transcript: "filter design work items", Source: "test",
+	})
+	select {
+	case <-worker.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not start")
 	}
-
+	if accepted.State != "accepted" || accepted.JobID == "" || !jobs.Active() {
+		t.Fatalf("missing real admission: %+v", accepted)
+	}
+	if calls := provider.Calls(); len(calls) != 0 {
+		t.Fatalf("spawn invented speech before a worker result: %v", calls)
+	}
 	close(worker.done)
-	wg.Wait()
 }
 
 func TestWorkerMarkdownNotSpokenRaw(t *testing.T) {

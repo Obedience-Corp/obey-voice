@@ -16,10 +16,16 @@ type Config struct {
 	DelegationTimeout         int    `mapstructure:"delegation_timeout"`
 
 	// TTS
-	TTSProvider           string  `mapstructure:"tts_provider"`
-	TTSFallbackProvider   string  `mapstructure:"voice_fallback_provider"`
-	TTSVoice              string  `mapstructure:"tts_voice"`
-	Audio8Voice           string  `mapstructure:"audio8_voice"`
+	TTSProvider         string `mapstructure:"tts_provider"`
+	TTSFallbackProvider string `mapstructure:"voice_fallback_provider"`
+	TTSVoice            string `mapstructure:"tts_voice"`
+	Audio8Voice         string `mapstructure:"audio8_voice"`
+	// OpenAI-compatible speech client (Phonon via Ollama by default); see openaispeech.go.
+	OpenAISpeechURL       string  `mapstructure:"openai_speech_url"`
+	OpenAISpeechModel     string  `mapstructure:"openai_speech_model"`
+	OpenAISpeechVoice     string  `mapstructure:"openai_speech_voice"`
+	OpenAISpeechAPIKey    string  `mapstructure:"openai_speech_api_key"`
+	OpenAISpeechTimeout   int     `mapstructure:"openai_speech_timeout"`
 	SpeechSpeed           float64 `mapstructure:"speech_speed"`
 	PlaybackVolume        float64 `mapstructure:"playback_volume"`
 	QwenTTSBinary         string  `mapstructure:"qwen_tts_binary"`
@@ -37,6 +43,9 @@ type Config struct {
 	// QwenTTSStream decides whether a Stage B worker's PCM chunks are played as
 	// they arrive (auto / on / off). See tts_stream.go.
 	QwenTTSStream string `mapstructure:"qwen_tts_stream"`
+	// QwenTTSWorkers is how many native worker subprocesses synthesize at
+	// once. See qwen_workers.go QwenTTSWorkersOf.
+	QwenTTSWorkers int `mapstructure:"qwen_tts_workers"`
 	// QwenTTSNativeURL is the release tarball (https://… or file://…/…tar.gz) for models ensure.
 	QwenTTSNativeURL string `mapstructure:"qwen_tts_native_url"`
 	// QwenTTSNativeSHA256 is the optional sha256 of that compressed tarball.
@@ -57,6 +66,9 @@ type Config struct {
 	// TTSLanTimeoutMS bounds the dial and handshake, never the worker's model
 	// load, which is seconds on a cold speech-serve.
 	TTSLanTimeoutMS int `mapstructure:"tts_lan_timeout_ms"`
+	// TTSLookahead is how many speech segments a reply may have queued but not
+	// yet played. See tts_lookahead.go TTSLookaheadOf.
+	TTSLookahead int `mapstructure:"tts_lookahead"`
 
 	// STT
 	STTProvider string `mapstructure:"stt_provider"`
@@ -154,6 +166,9 @@ type Config struct {
 	// nothing until it is switched on. See internal/summon for the matching
 	// rules and name_summon.go for the front-end it depends on.
 	NameSummonEnabled bool `mapstructure:"name_summon_enabled"`
+	// AcousticNameEnabled adds experimental Obey keyword evidence to Parakeet
+	// conversation routing. It does not enable a wake gate or rewrite text.
+	AcousticNameEnabled bool `mapstructure:"acoustic_name_enabled"`
 	// NameSummonAliases are extra wake words beyond the persona display name
 	// and its first word. Config-file only: no Settings row, and no environment
 	// binding, for the same reason skills_disabled has none — a list is not
@@ -168,7 +183,23 @@ type Config struct {
 	TUIMouseEnabled bool `mapstructure:"tui_mouse_enabled"`
 
 	// Brain
-	BrainProvider string `mapstructure:"brain_provider"`
+	// PersonaRoutingTimeout bounds addressee inference, including model startup, in seconds.
+	PersonaRoutingTimeout     int    `mapstructure:"persona_routing_timeout"`
+	GroupParticipationEnabled bool   `mapstructure:"group_participation_enabled"`
+	GroupParticipationMode    string `mapstructure:"group_participation_mode"`
+
+	BrainProvider      string `mapstructure:"brain_provider"`
+	DecisionEnabled    bool   `mapstructure:"decision_enabled"`
+	DecisionVoiceWork  bool   `mapstructure:"decision_voice_work"`
+	DecisionTextWork   bool   `mapstructure:"decision_text_work"`
+	DecisionProvider   string `mapstructure:"decision_provider"`
+	DecisionRuntime    string `mapstructure:"decision_runtime"`
+	DecisionLocalModel string `mapstructure:"decision_local_model"`
+	DecisionEndpoint   string `mapstructure:"decision_endpoint"`
+	DecisionModel      string `mapstructure:"decision_model"`
+	DecisionAPIKey     string `mapstructure:"decision_api_key"`
+	DecisionBudgetMS   int    `mapstructure:"decision_budget_ms"`
+	DecisionPolicy     string `mapstructure:"decision_policy"`
 	// VoiceWorkEnabled keeps background outcomes with the conversation. This
 	// experimental loop is opt-in; paid tiers require saved advisory uncapped consent.
 	VoiceWorkEnabled bool `mapstructure:"voice_work_enabled"`
@@ -177,7 +208,7 @@ type Config struct {
 	// work. This global preference is independent of the experimental inbox.
 	VoiceWorkersDisabled bool `mapstructure:"voice_workers_disabled"`
 
-	// VoiceWorkerProvider selects the async job worker brain (ollama/grok/claude).
+	// VoiceWorkerProvider selects the async job worker brain (any supported brain provider).
 	// Empty defaults to grok.
 	VoiceWorkerProvider string `mapstructure:"voice_worker_provider"`
 	// VoiceWorkerModel pins the worker model; empty inherits the provider default.
@@ -189,10 +220,12 @@ type Config struct {
 	// VoiceWorkerJobBudget caps one spawned job's wall-clock seconds; zero means no cap.
 	VoiceWorkerJobBudget int `mapstructure:"voice_worker_job_budget"`
 	// VoiceWorkerBoundary fences a spawned worker to the campaign it was launched in.
-	VoiceWorkerBoundary bool   `mapstructure:"voice_worker_boundary"`
-	GrokModel           string `mapstructure:"grok_model"`
-	CursorModel         string `mapstructure:"cursor_model"`
-	OllamaModel         string `mapstructure:"ollama_model"`
+	VoiceWorkerBoundary  bool   `mapstructure:"voice_worker_boundary"`
+	GrokModel            string `mapstructure:"grok_model"`
+	CursorModel          string `mapstructure:"cursor_model"`
+	CodexModel           string `mapstructure:"codex_model"`
+	CodexReasoningEffort string `mapstructure:"codex_reasoning_effort"`
+	OllamaModel          string `mapstructure:"ollama_model"`
 	// OllamaEmbeddingModel routes user prompts to relevant Agent Skills. Empty
 	// disables harness-side semantic activation and leaves model-driven
 	// read_skill available as a fallback.
@@ -346,6 +379,10 @@ type Config struct {
 	// WorkDir is where the agent's file and shell tools start. It is a
 	// default, not a sandbox — tools may still reach absolute paths.
 	// Empty resolves through WorkDirFrom.
+	// ConversationDirectories retains the app default and each responder’s directory.
+	ConversationDirectories *ConversationDirectories `mapstructure:"-" json:"-"`
+	// WorkDirSource is runtime-only provenance for the current responder.
+	WorkDirSource   string `mapstructure:"-" json:"-"`
 	WorkDir         string `mapstructure:"work_dir"`
 	Language        string `mapstructure:"language"`
 	MaxHistory      int    `mapstructure:"max_history"`

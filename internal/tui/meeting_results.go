@@ -221,11 +221,15 @@ func (m meetingResultsModel) View() string {
 	footer := ansi.Truncate("  ↑/↓/pgup/pgdown review  •  enter/esc continue", w, "…")
 	routeLine := ""
 	if m.routeStatus != "" {
-		style := dimStyle
-		if m.routeErr {
+		n := parseNotice(m.routeStatus, m.routeErr, time.Time{})
+		style := statusStyle
+		switch {
+		case n.err || m.routeErr:
 			style = errorStyle
+		case n.progress:
+			style = warningStyle
 		}
-		routeLine = style.Render(ansi.Truncate("  "+m.routeStatus, w, "…")) + "\n"
+		routeLine = style.Render(ansi.Truncate("  "+n.line, w, "…")) + "\n"
 	}
 	analysisError := ""
 	if m.summary.SpeakerError != "" {

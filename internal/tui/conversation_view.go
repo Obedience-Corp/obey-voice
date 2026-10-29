@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	ansi "github.com/charmbracelet/x/ansi"
 
+	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
@@ -16,6 +17,84 @@ import (
 
 func (m conversationModel) animStyles() anim.Styles {
 	return voiceAnimStyles()
+}
+
+// Measure the same panel we draw: listening, speaking and reduced-motion
+// meters have different heights. A fixed allowance makes the terminal scroll
+// when speech starts and leaves stale rows behind when it stops.
+func (m conversationModel) voicePanel() string {
+	if m.voiceMode == anim.ModeIdle || m.height < 14 {
+		return ""
+	}
+	panel := anim.Stage(m.voiceMode, m.voiceFrame, m.voiceLevel(), m.width, m.status, m.animStyles(), m.reducedMotion)
+	available := m.height - conversationInputHeight - 6 - m.workStripReservedRows - m.commandPaletteRows() - m.contextMeterHeight() - 1
+	if lipgloss.Height(panel) > available {
+		return "" // Keep the composer and at least one transcript row visible.
+	}
+	return panel
+}
+
+func (m conversationModel) voicePanelHeight() int {
+	if panel := m.voicePanel(); panel != "" {
+		return lipgloss.Height(panel)
+	}
+	return 0
+}
+
+// workCue stays visible after the spoken handoff finishes. The glyph advances
+// on the conversation tick even when the voice meter is idle.
+func (m conversationModel) workCue() string {
+	running, queued := m.activeWorkerCounts()
+	if running > 0 {
+		glyph := "●"
+		if !m.reducedMotion {
+			spin := []string{"◐", "◓", "◑", "◒"}
+			glyph = spin[m.voiceFrame%len(spin)]
+		}
+		if running == 1 {
+			return glyph + " Working"
+		}
+		return fmt.Sprintf("%s %d working", glyph, running)
+	}
+	if queued > 0 {
+		return fmt.Sprintf("◌ %d queued", queued)
+	}
+	return ""
+}
+
+// headerRight keeps work and live voice activity visible together. The cue is
+// the selectable part of the header; its key hint also works without a mouse.
+func (m conversationModel) headerRight() (right string, cueWidth int) {
+	cue := m.workCue()
+	if m.voiceMode != anim.ModeIdle {
+		if cue != "" {
+			work := thinkStyle.Render(cue+" · ^W") + "  "
+			right, cueWidth = work, lipgloss.Width(work)
+		}
+		right += anim.CompactMeter(m.voiceMode, m.voiceFrame, m.voiceLevel(), m.status, m.animStyles(), m.reducedMotion)
+		return right, cueWidth
+	}
+	if cue != "" && !m.statusErr {
+		right = thinkStyle.Render(cue + " · ^W")
+		return right, lipgloss.Width(right)
+	}
+	if m.status != "" {
+		style := statusStyle
+		if m.statusErr {
+			style = errorStyle
+		}
+		return style.Render(m.status), 0
+	}
+	return "", 0
+}
+
+func (m conversationModel) workCueHit(x, y int) bool {
+	if y != 0 || !m.ready || m.workCue() == "" {
+		return false
+	}
+	right, cueWidth := m.headerRight()
+	start := m.width - lipgloss.Width(right) - 1
+	return cueWidth > 0 && start >= 0 && x >= start && x < start+cueWidth
 }
 
 func (m conversationModel) voiceLevel() float64 {
@@ -83,10 +162,24 @@ func formatTurnMetrics(e events.TurnMetrics) string {
 		parts = append(parts, "first audio "+formatSeconds(ready))
 	}
 	if complete > 0 && e.AudibleSink != "none" && e.AudibleSink != "stream_client" {
-		parts = append(parts, "playback done "+formatSeconds(complete))
+		label := "playback done "
+		if e.Interrupted || e.Outcome == "interrupted" || e.Outcome == "failed" || e.Outcome == "timed_out" {
+			label = "playback stopped "
+		}
+		parts = append(parts, label+formatSeconds(complete))
 	}
 	if len(parts) > 0 {
 		parts = append([]string{origin}, parts...)
+	}
+	if len(parts) > 0 || e.Interrupted {
+		switch {
+		case e.Interrupted || e.Outcome == "interrupted":
+			parts = append(parts, "interrupted")
+		case e.Outcome == "failed":
+			parts = append(parts, "failed")
+		case e.Outcome == "timed_out":
+			parts = append(parts, "timed out")
+		}
 	}
 	if e.Degraded {
 		parts = append(parts, "degraded")
@@ -159,6 +252,28 @@ func renderAgentBubble(name, think, spoken string, showThink bool) string {
 	return agentBubbleStyle.Render(b.String())
 }
 
+// activeBrain prefers the admitted selection over startup configuration:
+// group routing and in-chat persona switches can replace the active brain.
+func (m conversationModel) activeBrain() (provider, model string) {
+	provider, model = strings.TrimSpace(m.selection.BrainProvider), strings.TrimSpace(m.selection.BrainModel)
+	if provider == "" && m.cfg != nil {
+		provider = strings.TrimSpace(m.cfg.BrainProvider)
+		model = persona.ModelForProvider(m.cfg, provider)
+	}
+	return provider, model
+}
+
+func (m conversationModel) brainBadgeLabel() string {
+	provider, model := m.activeBrain()
+	if provider == "" {
+		return ""
+	}
+	if model == "" {
+		model = "default"
+	}
+	return "brain " + provider + " · " + model
+}
+
 func (m conversationModel) View() string {
 	if m.startup.active {
 		return m.startupView()
@@ -174,11 +289,14 @@ func (m conversationModel) View() string {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	styles := m.animStyles()
 	w := max(m.width, 1)
 
-	// Clean header: name, tabs, compact EQ chip.
+	// Put the active brain before speech details and navigation so it remains
+	// visible when the header has to truncate on a smaller terminal.
 	left := headerStyle.Render(m.agentName)
+	if badge := m.brainBadgeLabel(); badge != "" {
+		left += "  " + chipMutedStyle.Render(badge)
+	}
 	if badge := ttsBadgeLabel(m.cfg); badge != "" {
 		left += "  " + chipMutedStyle.Render(badge)
 	}
@@ -186,34 +304,25 @@ func (m conversationModel) View() string {
 	if m.sessionID != "" {
 		left += "  " + dimStyle.Render(shortSessionID(m.sessionID))
 	}
-	right := ""
-	if m.voiceMode != anim.ModeIdle {
-		right = anim.CompactMeter(m.voiceMode, m.voiceFrame, m.voiceLevel(), m.status, styles, m.reducedMotion)
-	} else if m.status != "" {
-		style := statusStyle
-		if m.statusErr {
-			style = errorStyle
-		}
-		right = style.Render(m.status)
-	}
-	headerInner := left
+	right, _ := m.headerRight()
+	headerInner := ansi.Truncate(left, w, "…")
 	if right != "" {
-		pad := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
-		if pad < 1 {
-			pad = 1
+		rightWidth := lipgloss.Width(right)
+		if rightWidth >= w {
+			headerInner = ansi.Truncate(right, w, "…")
+		} else {
+			left = ansi.Truncate(left, max(0, w-rightWidth-2), "…")
+			pad := w - lipgloss.Width(left) - rightWidth - 1
+			headerInner = left + strings.Repeat(" ", pad) + right
 		}
-		headerInner = left + strings.Repeat(" ", pad) + right
 	}
 	header := ansi.Truncate(headerInner, w, "…")
 
 	rule := lipgloss.NewStyle().Foreground(m.inputBorderColor()).Render(strings.Repeat("─", w))
 
-	voiceStrip := ""
-	if m.voiceMode != anim.ModeIdle && m.height >= 14 {
-		voiceStrip = anim.Stage(m.voiceMode, m.voiceFrame, m.voiceLevel(), w, m.status, styles, m.reducedMotion)
-		if voiceStrip != "" {
-			voiceStrip += "\n"
-		}
+	voiceStrip := m.voicePanel()
+	if voiceStrip != "" {
+		voiceStrip += "\n"
 	}
 
 	// Capture stays armed while voice input is paused; wording must not claim
@@ -235,7 +344,11 @@ func (m conversationModel) View() string {
 			outChip = lipgloss.NewStyle().Foreground(colorBg).Background(colorAgent).Bold(true).Padding(0, 1).Render("audio on")
 		}
 	}
-	footerLeft := "  " + micChip + " " + outChip
+	footerLeft := "  "
+	if cue := m.workCue(); cue != "" {
+		footerLeft += thinkStyle.Render(cue) + " "
+	}
+	footerLeft += micChip + " " + outChip
 	if m.journalIncomplete {
 		footerLeft += " " + chipMutedStyle.Render("Diagnostic history incomplete")
 	}
@@ -255,7 +368,12 @@ func (m conversationModel) View() string {
 	}
 	switch m.recordMode() {
 	case "talk":
-		footerLeft += " " + chipStyle.Render("rec")
+		h := m.capture.Health()
+		label := "rec"
+		if h.Dropped > 0 || h.Skipped > 0 || h.WriteErrors > 0 || h.Limited {
+			label = fmt.Sprintf("rec ! lost:%d omitted:%d errors:%d", h.Dropped, h.Skipped, h.WriteErrors)
+		}
+		footerLeft += " " + chipStyle.Render(label)
 	case "lab":
 		footerLeft += " " + chipStyle.Render("lab")
 	}
@@ -324,8 +442,11 @@ func (m conversationModel) View() string {
 		content += "\n" + palette
 	}
 
-	return header + "\n" + rule + "\n" +
-		voiceStrip +
+	contextStrip := ""
+	if row := m.contextMeter(); row != "" {
+		contextStrip = row + "\n"
+	}
+	return header + "\n" + rule + "\n" + voiceStrip + contextStrip +
 		content + "\n" +
 		m.renderWorkStrip(now) +
 		ansi.Truncate(inputLabel, w, "…") + "\n" +

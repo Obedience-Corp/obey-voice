@@ -165,6 +165,9 @@ var (
 			Bold(true).
 			Padding(0, 1)
 
+	metaStyle = lipgloss.NewStyle().
+			Foreground(colorUser)
+
 	// placeholderKnownStyle paints complete {agent_name}-style tokens in the
 	// persona prompt editor. Unknown {tokens} use the error color.
 	placeholderKnownStyle = lipgloss.NewStyle().

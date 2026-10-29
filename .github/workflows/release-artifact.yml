@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   linux-artifact:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, x64, lance-arch]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,17 +27,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - uses: extractions/setup-just@v3
       - name: Install artifact tools
         run: sudo apt-get install --yes patchelf
       - name: Build relocatable Linux amd64 artifact
         run: just release linux-artifact
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: obey-voice-linux-amd64
           path: dist/obey-voice-linux-amd64.tar.gz
           if-no-files-found: error
+          retention-days: 7
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -59,10 +61,12 @@ jobs:
       - name: Build relocatable macOS arm64 artifact
         run: just release macos-artifact
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: obey-voice-macos-arm64
           path: dist/obey-voice-macos-arm64.tar.gz
           if-no-files-found: error
+          retention-days: 7
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         env:

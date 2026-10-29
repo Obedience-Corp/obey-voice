@@ -122,9 +122,11 @@ queued job." when something never got to start. "Stop" on its own only
 silences speech; the job keeps running.
 
 Those events are folded for display: consecutive calls of one kind become a
-row, a kind change opens the next. The TUI keeps one thread line per job and
-rewrites it in place — `⚙ job-1 · read 3 files · ran 1 command`, sealed with
-`· done in 35s`, `· failed: …` or `· killed after 6m5s`. The `/workers`
+row, a kind change opens the next. The TUI keeps one transcript entry per job
+and rewrites its summary in place — `⚙ job-1 · read 3 files · ran 1 command`,
+sealed with `· done in 35s`, `· failed: …` or `· killed after 6m5s`. Below that
+summary, individual tools show their commands or targets, observed status,
+output previews and errors. These details remain after completion. The `/workers`
 manager shows each task's provider/model, elapsed time, activity and output.
 Without the TUI each row prints once as `[job-1]
 read 3 files`, when its kind gives way or the job ends. "What's happening"

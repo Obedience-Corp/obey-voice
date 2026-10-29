@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
 // settingsCaptureFor gives voice registration a microphone.
@@ -35,10 +38,7 @@ func (a App) settingsCaptureFor() func() (speaker.CaptureSource, func(), error) 
 		// Settings only exists inside Run, which has redirected file
 		// descriptor 2 into the diagnostics log for the life of the program.
 		capture.Logf = log.Printf
-		if err := capture.Start(context.Background()); err != nil {
-			return nil, nil, fmt.Errorf("open microphone: %w", err)
-		}
-		return capture, capture.Stop, nil
+		return openEnrollmentCaptureGraph(context.Background(), cfg, capture, voiceagent.NewVoiceFrontend)
 	}
 }
 
@@ -52,4 +52,37 @@ func (a App) settingsLiveSeeder() func() LiveSpeakerController {
 		}
 		return runtime.LiveSpeaker
 	}
+}
+
+// enrollmentCaptureDevice keeps launcher enrollment testable without opening
+// hardware. A running conversation bypasses this entirely and lends its graph.
+type enrollmentCaptureDevice interface {
+	speaker.CaptureSource
+	SetFrontend(audio.Frontend)
+	Start(context.Context) error
+	Stop()
+}
+
+func openEnrollmentCaptureGraph(ctx context.Context, cfg *config.Config, capture enrollmentCaptureDevice, build func(*config.Config) (audio.Frontend, error)) (speaker.CaptureSource, func(), error) {
+	frontend, err := build(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("enrollment voice front-end: %w", err)
+	}
+	if frontend != nil {
+		capture.SetFrontend(frontend)
+	}
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			capture.Stop()
+			if frontend != nil {
+				_ = frontend.Close()
+			}
+		})
+	}
+	if err := capture.Start(ctx); err != nil {
+		release()
+		return nil, nil, fmt.Errorf("%w: open microphone: %w", errNoMicrophone, err)
+	}
+	return capture, release, nil
 }

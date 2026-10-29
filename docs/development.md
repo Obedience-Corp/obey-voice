@@ -52,7 +52,7 @@ installed (`obey-voice models ensure`, once available), run the smoke plan:
 
 ```bash
 # Deterministic, no models needed:
-go test ./pkg/voiceagent/stt ./pkg/voiceagent/endpoint ./pkg/voiceagent/audio
+go test ./pkg/voiceagent/stt ./pkg/voiceagent/endpoint ./pkg/voiceagent/audio ./pkg/voiceagent/transcription
 
 # Pipeline flow with stubbed stages (no models, no network):
 go test -tags integration ./tests/voiceflow      # turn state machine + barge-in
@@ -61,6 +61,58 @@ go test -tags integration ./tests/voiceflow      # turn state machine + barge-in
 just qwen-live                                   # real native Qwen voices + cancel/restart WAVs
 obey-voice listen                                  # manual: speak a short command
 ```
+
+### File transcription (opt-in, require local models)
+
+`obey-voice transcribe` is covered without models by command-level tests with
+injected dependencies and by process-level tests that run the real binary with
+an isolated `HOME` and an empty `MODELS_DIR`. Two checks need real models; the
+SIGINT test is env-gated:
+
+```bash
+# Interrupt a real run and measure the time to exit 130 and a cancelled event:
+OBEY_VOICE_TRANSCRIBE_MODELS_DIR="$HOME/.cache/obey-voice/models" \
+OBEY_VOICE_TRANSCRIBE_LONG_WAV=/absolute/path/to/60s-16k-mono.wav \
+  go test ./cmd/obey-voice/cmd -run TestTranscribeProcessCancellation -count=1 -v
+
+# The independent shell client against the configured model (read-only; no downloads):
+docs/transcribe-protocol/client-example.sh /absolute/path/to/speech.wav
+```
+
+Regenerate the conformance goldens after a deliberate protocol change:
+
+```bash
+go test ./cmd/obey-voice/cmd -run TestTranscribeConformanceFixtures -update-transcribe-golden
+```
+
+and copy them into `docs/transcribe-protocol/fixtures/`, which other clients
+read.
+
+### File transcription checks (opt-in, require local models)
+
+`pkg/voiceagent/transcription` runs on fakes in the default lane: the runner, the
+span math and the WAV reader have no model or device dependency. Three checks do
+need the installed models and are gated behind their own variables, so a machine
+without them still passes the suite.
+
+| Check | Variable | What it proves |
+|---|---|---|
+| `TestFileVADKeepsOffsetsAbsoluteAcrossTheBuffer` and `TestFileVADSplitsLongSpeechIntoAdjacentSpans` (`pkg/voiceagent/audio`) | `OBEY_VOICE_FILE_VAD_MODELS_DIR` | Native VAD span starts stay absolute past the 30 s detector buffer and across a forced split |
+| `TestRunPlacesRealSpeechOnTheFileTimeline` (`pkg/voiceagent/transcription`) | `OBEY_VOICE_TRANSCRIBE_MODELS_DIR` | Two real utterances land within 500 ms of their known positions in the file |
+| `TestT3bTranscribeFixture` (`cmd/obey-voice/cmd`) | `T3B_FIXTURE`, `T3B_OUT` | The existing legacy meeting replay still transcribes the fixture through `newReplaySource` and `replayTranscribe`, and dumps the records for comparison |
+
+```bash
+# Deterministic, no models needed:
+go test -race ./pkg/voiceagent/transcription ./pkg/voiceagent/audio ./pkg/voiceagent/stt
+
+# Real models, pointed at the installed directory:
+OBEY_VOICE_TRANSCRIBE_MODELS_DIR="$(obey-voice paths --json | jq -r .models_dir)" \
+  go test ./pkg/voiceagent/transcription -run TestRunPlacesRealSpeechOnTheFileTimeline -v
+```
+
+`just test pkg` only reaches `./internal/`, so run the transcription package by
+path. The two-hour bounded-memory proof in `pkg/voiceagent/audio` is skipped
+under `-short`.
 
 ### Conversation flow gate (opt-in, local Ollama live + worker)
 
@@ -166,7 +218,10 @@ obey-voice doctor               # diagnose config, assets, and external binaries
 
 `models status` and `doctor` are read-only and safe offline. Doctor validates
 the selected Claude/Grok CLI or Ollama configuration without making a network
-request, and exits non-zero on setup errors (a missing model asset remains a
+request. The exceptions are a speech server: with `tts_provider: openai-speech`
+both ask it what it serves (bounded to 3 s), and with `tts_place: lan` doctor
+dials the speech worker; a server that is down is reported, never a crash.
+Doctor exits non-zero on setup errors (a missing model asset remains a
 warning that points you to `models ensure`). Downloads are reliable by
 construction: each file is written to
 a temp file, size/checksum-verified when known, and atomically renamed; archives

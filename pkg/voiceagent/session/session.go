@@ -16,6 +16,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -55,14 +56,18 @@ var ErrWorkScopeConflict = errors.New("session: work scope conflict")
 
 // Session represents a saved conversation.
 type Session struct {
-	FormatVersion int          `json:"format_version,omitempty"`
-	ID            string       `json:"id"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
-	Provider      string       `json:"provider"`
-	Model         string       `json:"model"`
-	Turns         []brain.Turn `json:"turns"`
-	Summary       string       `json:"summary"` // first user message, for display
+	Participation *discussion.Settings            `json:"participation,omitempty"`
+	Directories   *config.ConversationDirectories `json:"directories,omitempty"`
+	WorkDir       string                          `json:"work_dir,omitempty"`
+	WorkDirSource string                          `json:"work_dir_source,omitempty"`
+	FormatVersion int                             `json:"format_version,omitempty"`
+	ID            string                          `json:"id"`
+	CreatedAt     time.Time                       `json:"created_at"`
+	UpdatedAt     time.Time                       `json:"updated_at"`
+	Provider      string                          `json:"provider"`
+	Model         string                          `json:"model"`
+	Turns         []brain.Turn                    `json:"turns"`
+	Summary       string                          `json:"summary"` // first user message, for display
 	// Work is the canonical durable background-work snapshot. It is optional so
 	// sessions written before work persistence was introduced remain compatible.
 	Work                       *work.Snapshot `json:"work,omitempty"`
@@ -149,6 +154,13 @@ func saveSession(dir string, s *Session, turns []brain.Turn, snapshot *work.Snap
 
 func saveSessionWithFailures(dir string, s *Session, turns []brain.Turn, snapshot *work.Snapshot, beforeRename, afterRename error) error {
 	next := *s
+	if next.Participation != nil {
+		if err := next.Participation.Validate(); err != nil {
+			return err
+		}
+		copySettings := next.Participation.Clone()
+		next.Participation = &copySettings
+	}
 	if next.FormatVersion > CurrentFormatVersion {
 		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, next.FormatVersion)
 	}
@@ -402,7 +414,7 @@ func (st *Store) injectWriteFailures(before, after error) {
 // SaveSelection atomically publishes the selected responder metadata while
 // retaining the newest durable work snapshot. On WriteCommittedError the
 // caller also receives the installed selection, with durability unconfirmed.
-func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string) error {
+func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displayName, promptHash string, directories ...*config.ConversationDirectories) error {
 	sessionWriteMu.Lock()
 	defer sessionWriteMu.Unlock()
 	current, err := loadFrom(st.dir, s.ID)
@@ -417,6 +429,12 @@ func (st *Store) SaveSelection(s *Session, turns []brain.Turn, personaID, displa
 	candidate.SelectedPersonaID = personaID
 	candidate.SelectedPersonaDisplayName = displayName
 	candidate.SelectedPersonaPromptHash = promptHash
+	if len(directories) > 0 && directories[0] != nil {
+		candidate.Directories = directories[0].Clone()
+		if choice, ok := candidate.Directories.Personas[personaID]; ok {
+			candidate.WorkDir, candidate.WorkDirSource = choice.Dir, choice.Source
+		}
+	}
 	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
 		if WriteCommitted(err) {
 			*s = candidate
@@ -465,6 +483,8 @@ func (st *Store) Save(s *Session, turns []brain.Turn) error {
 		candidate.SelectedPersonaID = current.SelectedPersonaID
 		candidate.SelectedPersonaDisplayName = current.SelectedPersonaDisplayName
 		candidate.SelectedPersonaPromptHash = current.SelectedPersonaPromptHash
+		candidate.WorkDir, candidate.WorkDirSource = current.WorkDir, current.WorkDirSource
+		candidate.Directories = current.Directories.Clone()
 	}
 	if err == nil && current.Work != nil {
 		if s.Work != nil && s.Work.Scope != current.Work.Scope {
@@ -648,5 +668,32 @@ func validateSessionID(id string) error {
 	if strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
 		return fmt.Errorf("session: invalid id %q", id)
 	}
+	return nil
+}
+
+// SaveParticipation updates only conversation settings, preserving current identity and work.
+func (st *Store) SaveParticipation(s *Session, settings discussion.Settings) error {
+	if err := settings.Validate(); err != nil {
+		return err
+	}
+	sessionWriteMu.Lock()
+	defer sessionWriteMu.Unlock()
+	current, err := loadFrom(st.dir, s.ID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	candidate := *s
+	if err == nil {
+		candidate = *current
+	}
+	copied := settings.Clone()
+	candidate.Participation = &copied
+	if err := saveSessionWithFailures(st.dir, &candidate, candidate.Turns, candidate.Work, st.failBeforeRename, st.failAfterRename); err != nil {
+		if WriteCommitted(err) {
+			*s = candidate
+		}
+		return err
+	}
+	*s = candidate
 	return nil
 }

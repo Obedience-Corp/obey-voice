@@ -19,7 +19,7 @@ func TestUnselectedWorkerInheritsTheLiveBrain(t *testing.T) {
 		{"empty config", &Config{}, WorkerFallbackProvider},
 		{"inherits ollama", &Config{BrainProvider: "ollama"}, "ollama"},
 		{"inherits claude", &Config{BrainProvider: "claude"}, "claude"},
-		{"cursor cannot work, so it falls back", &Config{BrainProvider: "cursor"}, WorkerFallbackProvider},
+		{"inherits cursor", &Config{BrainProvider: "cursor"}, "cursor"},
 		{"an explicit choice wins", &Config{BrainProvider: "ollama", VoiceWorkerProvider: "grok"}, "grok"},
 	}
 	for _, tt := range tests {

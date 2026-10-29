@@ -24,10 +24,17 @@ type ModelArchive struct {
 
 // AssetRequest describes which runtime assets are needed for a command.
 type AssetRequest struct {
-	NeedSTT     bool
-	NeedTTS     bool
-	NeedVAD     bool
-	NeedSpeaker bool
+	NeedDecision bool
+	NeedSTT      bool
+	NeedTTS      bool
+	NeedVAD      bool
+	NeedSpeaker  bool
+	// NeedVoiceCatalog fetches descriptive voice catalogs (voices.jsonl).
+	// With NeedTTS true, it also verifies/refreshes Phonon's named voices.
+	// With NeedTTS false, it fetches only metadata without contacting the runtime.
+	// Only an explicit install asks: the descriptive catalog never gates speech,
+	// so conversation startup, voice listing and previews never wait on its host.
+	NeedVoiceCatalog bool
 }
 
 // AssetProgress is one progress tick for a single asset, reported by
@@ -40,6 +47,8 @@ type AssetProgress struct {
 	Bytes int64   `json:"bytes"`
 	Total int64   `json:"total"`
 	Pct   float64 `json:"pct"`
+	// Detail says why an asset closed as skipped without being installed.
+	Detail string `json:"detail,omitempty"`
 }
 
 const (

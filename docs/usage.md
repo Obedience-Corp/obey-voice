@@ -88,6 +88,8 @@ obey-voice doctor                         # Diagnose config, assets, and binarie
 obey-voice models status                  # Which model assets are installed vs missing
 obey-voice models clean --unused --dry-run # Review what would be deleted, and what is kept
 obey-voice models clean --unused --yes    # Delete the reviewed list (--plan when scripted)
+obey-voice transcribe --request job.json --jsonl   # Transcribe a finished WAV to timed JSONL
+obey-voice transcribe capabilities --json # What this install can transcribe (read-only)
 obey-voice prompts list                   # List embedded and user prompt documents
 obey-voice prompts show persona           # Show an assembled prompt document
 obey-voice render notes.txt --out a.wav   # Batch-render a document to audio
@@ -108,7 +110,26 @@ aliases remains an error. In `/personas`, select a row and press **x** to toggle
 its state. Inactive rows remain editable and show an `[inactive]` badge. Choose
 another saved default or conversation responder before disabling that persona.
 
+### Transcribing a recording
+
+`obey-voice transcribe` turns a finished 16 kHz mono WAV into timed utterances
+on stdout, one JSON object per line, for another program to consume. It starts
+no conversation, opens no microphone and downloads nothing.
+
+```bash
+obey-voice transcribe capabilities            # is this machine ready
+obey-voice transcribe --request job.json --jsonl
+```
+
+The request document, the events, the failure codes and the client rules are in
+[the protocol reference](transcribe-protocol.md). Keepshot uses it to write
+`.txt` and `.vtt` sidecars beside a recording.
+
 ## TUI controls
+
+The launcher's logo rotates while the menu is visible and the terminal has
+room for it. Set `OBEY_VOICE_REDUCED_MOTION=1` for a still logo and reduced
+animation throughout the TUI.
 
 The launcher offers the most recent conversation first, a scrollable recent
 session list, an explicit new-conversation action, and a managed Tailscale
@@ -134,11 +155,26 @@ provider/model, elapsed time, activity and output. Press `s` to stop the
 selected task, or `x` then `y` to stop all running and queued tasks.
 `Esc` returns from details to the list, then to the same chat or menu.
 Voice input pauses while browsing and returns to its previous state.
+During a conversation, background work continues while you talk or type.
+The animated **Working** cue stays in the top-right header beside the voice
+meter and in the footer; queued work has a static cue. Click the header cue
+(with TUI mouse controls enabled) or press `Ctrl+W`. One active job opens its
+detail directly; several active jobs open the worker list. The cue clears when
+the job ends. The chat's worker entry shows each tool's command or target,
+status, output preview and error, and retains those details after completion.
+`Ctrl+W` also opens the newest completed worker when none are active.
+
+Starting a worker updates its job status without inserting or speaking a canned
+"Working on it" reply. The worker's generated result arrives when ready. If an
+Ollama turn exhausts its ten tool rounds, it gets one final model request with
+tools disabled to answer from the collected results and explain any blockers.
+Existing request, runtime and token budgets still apply. A failed or empty final
+answer is reported as a failure rather than a successful result.
 
 **Allow background workers** (`t`) controls new jobs immediately and is saved
 for future chats. Turning it Off does not cancel already-running or queued
 tasks; use **Stop all** for that. The same toggle is in **Settings → Worker**.
-Task details report when termination is unconfirmed. The chat footer shows
+Task details report when termination is unconfirmed. The chat footer also shows
 compact counts and a `/workers` hint instead of the task and tool summary.
 
 `/help` lists every available command. `/settings` opens the TUI settings
@@ -156,6 +192,7 @@ session is saved before the menu opens; choose **Continue** to resume it or
 | `Ctrl+J` | Insert a newline in the draft |
 | Mouse wheel / trackpad, `Page Up` / `Page Down` | Scroll the transcript or focused activity feed |
 | `Ctrl+T` | Focus/unfocus the activity timeline |
+| `Ctrl+W` | Open the active worker detail, or choose from the worker list |
 | `Ctrl+K` | Show or hide model thinking blocks in the thread (`/think`) |
 | `Ctrl+R` | Start or stop Talk recording (`/record talk` / `/record off`). Lab is `/record lab`. Vim mode keeps Ctrl+R as redo. |
 | `Ctrl+Y` | Copy the last assistant reply to the clipboard |
@@ -349,9 +386,14 @@ option under the cursor. Microphone and speaker devices are two lists in the
 **Audio** section with the current device marked ✓ and the volume slider below
 them (`+`/`-`). The **Voice** section lists the text-to-speech engines with
 each one's configured model context, then the voices of the active engine, then
-the language. Choosing an uninstalled **Qwen3-TTS** engine installs the native
-multi-tier package (worker binary + GGUF under `models_dir/qwen3-tts`) when a
-published platform tarball exists (macOS Apple Silicon Metal, or linux/amd64
+the language. When the voices state more than one locale, a **Language filter**
+row above them (`enter`/`+`/`-` step it) narrows the list to one; the ✓ voice
+always stays listed, and the filter is not saved. For `openai-speech` the
+voices come from the server's own catalog
+([Voices and personas](openai-speech.md#voices-and-personas)). Choosing an
+uninstalled **Qwen3-TTS** engine installs the native multi-tier package (worker
+binary + GGUF under `models_dir/qwen3-tts`) when a published platform tarball
+exists (macOS Apple Silicon Metal, or linux/amd64
 CPU) or `qwen_tts_native_url` is set; it is listed dim until then, so the
 download is a deliberate choice. After setup, the **Voice** list shows Qwen's
 nine CustomVoice-class preset speakers: `p` previews the one under the cursor,
@@ -362,6 +404,11 @@ an already-running conversation; no Obey Voice restart is required. The
 launcher and conversation header show the active TTS provider/model/mode/voice
 badge. An empty device config value follows the current operating-system
 default.
+
+The TUI and desktop conversation headers also show the active persona's brain provider and
+model, for example `Obey  brain ollama · qwen3:8b`. It follows persona switches
+within the conversation. `default` means the provider chooses its own model;
+it does not identify a specific underlying model.
 
 The first Qwen installation is a large download on platforms that have a
 published package. It is isolated below `models_dir/qwen3-tts`, can be inspected
@@ -375,132 +422,8 @@ warm worker for the lifetime of the provider. Advanced users can set both
 
 ## Personas (voice agents)
 
-A persona is a complete voice agent: its system prompt, brain provider/model, and
-TTS provider/voice all belong to the persona rather than to global config. TUI
-**Settings** writes global defaults only; to change one agent, edit it under
-**Personas** (or its `personas/<id>/persona.yaml`). Any field a persona leaves
-empty inherits the app default — an empty `brain:` uses the app-level
-`brain_provider`/model, and an empty `tts:` uses the app-level TTS keys.
-
-Starting a new conversation opens a persona picker: **Use defaults** is always
-the first option (the models, providers, and voice from Settings). Named
-personas follow, with the active one marked, and `+ Create persona…` clones the
-current global stack into a new profile. Each admitted response snapshots its
-persona, prompt and voice. Switching changes subsequent responses without
-retargeting the reply already in flight or relabeling earlier replies. Profile
-edits are resolved at the next response boundary.
-
-In the Personas list, `d` deletes the persona under the cursor. It always asks
-first — only `y` confirms, any other key cancels — and it removes
-`personas/<id>/` plus the system prompt that persona owns, keeping a prompt
-document another persona points at. Built-ins and the last remaining persona
-are refused. Deleting the active persona activates another one so the agent
-name and voice keys stay consistent. The same removal from the shell is
-`obey-voice persona delete <id> --yes`.
-
-The create/edit form is one screen, not a wizard: Name, the Model & voice rows
-(Brain, Model, TTS, Voice, Tier), and the System prompt. `↑`/`↓` (or tab) move
-between rows, `←`/`→` change the provider, model or voice under the cursor, `p`
-on the Voice row previews the selected voice (the same sample Settings uses;
-`(default)` plays the inherited Settings voice), and `ctrl+j` (also `alt+s`,
-`f2`, `ctrl+s`) saves from anywhere — so changing a persona's model or voice
-never goes through the prompt editor. `esc` cancels, except while the prompt
-differs from what the form opened with; that is discarded explicitly with `:q`.
-From the Personas list, `e` opens the form on the name and `m` opens it straight
-on Model & voice.
-
-The System prompt row shows the document's opening line and its size; `enter`
-gives the vim editor the whole screen: `esc` for NORMAL; `i`/`a`/`o` to insert;
-`h`/`j`/`k`/`l`/`0`/`$`/`w`/`b`/`gg`/`G` to move; `x`/`D`/`dd` to delete; `tab`
-in INSERT opens a dropdown of `{agent_name}`, `{user_name}`, `{date}`, and
-`{os}` (type `{` first to filter); Enter inserts the token at the cursor; `:w`
-returns to the form; `:wq` (or normal-mode `enter`) saves the persona; `:q`
-discards the whole edit.
-
-### Shared conversations
-
-With a supported local Ollama persona, address another configured persona to
-select it: `Santa.` gives a short acknowledgement in Santa's voice; `Santa,
-what do you think?` selects Santa and answers the request. Santa remains the
-responder for ordinary follow-ups without another name, including after quiet
-gaps, microphone pause/resume or editing. Use the Talk persona control or TUI
-`/personas` for explicit selection. `/speakers` still manages human speaker
-labels; it does not choose the responding persona.
-
-Incidental mentions such as `Santa is a persona` do not select Santa. Unknown
-explicit targets, ambiguous addressed names and failed prompt/model/voice preparation
-leave the old responder selected and report an error. A shared alias or generated
-short name (for example, `Veronica` and `Veronica Hype`) does not block ordinary
-follow-ups or requests addressed to another persona. Use a unique full name or
-`/personas` when a spoken name is ambiguous. Response errors after speech was
-recognized keep voice input enabled; only repeated input failures switch to text.
-Shared-history projection
-is currently verified for Ollama. An unsupported provider is refused rather
-than silently replaced. The local acceptance uses Qwen3:8b and Kokoro voices
-`af_heart` and `am_michael`; it does not establish parity for every provider.
-
-Conversation identity and reconnect snapshots do not require
-`voice_work_enabled`. That setting remains a separate opt-in for experimental
-conversation-scoped work, with its existing provider/admission restrictions.
-Switching a responder never changes that setting. The internal selection flow
-is embedded and validated; editable persona profiles do not replace it.
-
-### Saved history and recovery
-
-The selected responder is saved with the session, separately from the default
-for future conversations. Use `obey-voice sessions list`,
-`obey-voice sessions show <id> --json`, and `obey-voice resume <id>` to inspect
-and resume existing conversations. Changing a profile's display name preserves
-old reply labels. If a saved profile is missing, the transcript remains readable
-but a valid explicit selection is required before another response.
-
-Session format2 retains canonical turns and immutable assistant identity.
-Older sessions remain readable; missing identity stays unknown, including old
-assistant-role names. A future unsupported format is refused. Compaction keeps
-the canonical transcript and a `<id>.pre-compact.json` backup while producing
-a bounded model context with complete tool groups and attributed source facts.
-A stored transcript alone does not prove a model received all of it: its
-configured history/context limits still govern the projection.
-
-Before downgrading, stop processes that write the session and preserve the raw
-session directory reported by `obey-voice paths --json`. Keep the original JSON
-and any pre-compaction backup; an older binary may discard fields it does not
-understand. The `sessions show --json` output is for inspection, not a raw-store
-restore format. Restore raw backups only with writers stopped and a compatible
-version. Clear starts a fresh conversation epoch; it is not persona selection.
-
-The speech-routing proof includes actual installed STT on recorded input:
-`Santa.` was normalized to `Santa` and still selected Santa, with and without
-a custom-word hint. It does not measure physical microphone recognition.
-Timing values for model completion, first audio and playback are milestones
-from their named origin; do not add them as stage durations. The small local
-proof sample is not a latency guarantee.
+Prompt, model, voice, and shared conversations are in [Personas](personas.md).
 
 ## Turn recovery and token usage
 
-A hard tool or brain failure always ends with a spoken recovery reply ("I hit an
-error while working on that…") while the error detail goes to the activity feed;
-the turn is reported as `completed (degraded)` rather than dropped silently.
-
-For Ollama, Activity records per-request `prefill N tok · gen M tok`. Prefill
-tracks the size of your new turn, not the whole transcript, and is bounded by
-`ollama_num_ctx` (default `32768` for talk; workers use `voice_worker_num_ctx` 8192). Startup warmup sends that same `num_ctx` —
-omitting it lets Ollama allocate the model's full window (262k on qwen3/kimi)
-and a serve restart loop will pin a runner per spawn. `ollama_num_batch`
-(default `128`) decides how much of the prompt is re-read each turn. Ollama
-otherwise derives it mainly from the context window — 512 at or below 4096, 1024
-above, 2048 above 32768, downgraded toward 512 if the model's predicted VRAM
-will not fit — and llama.cpp keeps its last reusable checkpoint about one batch back
-from the end of the prompt, so a large batch means a conversational turn reuses
-almost nothing and re-reads the persona and history from scratch. On
-`qwen3.8-uncensored:27b` that cost 4.3 s before every spoken word; `128` skips
-89 % of the prompt instead of 14 % and cut the median first token to 864 ms
-(`docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md`). Brand-new prompts read
-slightly slower, so this trades the tail for the median. `0` restores Ollama's
-own choice. `ollama_keep_alive`
-(default `10m`) keeps the
-model resident between turns; `ollama_think` (default `auto`) turns thinking
-on for qwen3-family models so chain-of-thought is not spoken. Explicit `false`
-on qwen3 dumps untagged CoT into Content, which can be spoken.
-
-See [Configuration](configuration.md) for the matching keys.
+Text-only error reporting and Ollama token notes are in [Turn recovery](turn-recovery.md).

@@ -6,7 +6,7 @@ import (
 )
 
 // WorkerProviders are the backends allowed for voice_worker_provider.
-var WorkerProviders = []string{"ollama", "grok", "claude"}
+var WorkerProviders = []string{"ollama", "grok", "claude", "codex", "cursor"}
 
 // WorkerFallbackProvider is where an unselected worker lands. It is the
 // last resort behind the live brain, not a default anyone is meant to reach:
@@ -23,7 +23,7 @@ func WorkerSelected(cfg *Config) bool {
 // VoiceWorkerProviderOf returns the worker brain. An unselected worker
 // inherits the live brain rather than reaching for a remote default: the
 // live model is already loaded, and local-first is the product. A live brain
-// that cannot be a worker (cursor) falls back to WorkerFallbackProvider.
+// that is not a supported provider falls back to WorkerFallbackProvider.
 func VoiceWorkerProviderOf(cfg *Config) string {
 	if cfg == nil {
 		return WorkerFallbackProvider
@@ -150,6 +150,8 @@ func BrainModelFor(cfg *Config, provider string) string {
 		return strings.TrimSpace(cfg.GrokModel)
 	case "cursor":
 		return strings.TrimSpace(cfg.CursorModel)
+	case "codex":
+		return strings.TrimSpace(cfg.CodexModel)
 	}
 	return ""
 }
@@ -167,5 +169,7 @@ func SetBrainModel(cfg *Config, provider, model string) {
 		cfg.GrokModel = model
 	case "cursor":
 		cfg.CursorModel = model
+	case "codex":
+		cfg.CodexModel = model
 	}
 }

@@ -1,0 +1,1 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-unsupported-language","seq":0,"type":"failed","code":"unsupported_capability","message":"language \"fr\" is not available: the configured model transcribes en","retryable":false}

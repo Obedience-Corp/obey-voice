@@ -14,8 +14,9 @@ import (
 
 // CreateOpts configures CreateAndUse / Create with optional system prompt text.
 type CreateOpts struct {
-	DisplayName  string
-	SystemPrompt string // when set, writes prompts/persona/<id>.yaml and points the profile at it
+	StartingDirectory string
+	DisplayName       string
+	SystemPrompt      string // when set, writes prompts/persona/<id>.yaml and points the profile at it
 	// Brain / TTS override the globals-clone Create seeds. Empty fields keep
 	// the clone, so "(default)" selections still snapshot today's defaults.
 	Brain Brain
@@ -26,15 +27,30 @@ type CreateOpts struct {
 // Create already seeds prompts/persona/<id>.yaml and binds prompts.persona to
 // the new id; a non-empty SystemPrompt overwrites that private document.
 func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
+	directory, err := config.ValidateStartingDirectory(opts.StartingDirectory)
+	if err != nil {
+		return nil, err
+	}
 	p, err := Create(cfg, opts.DisplayName)
 	if err != nil {
 		return nil, err
+	}
+	if directory != "" {
+		p.StartingDirectory = directory
+		if err := Write(p, false); err != nil {
+			return p, err
+		}
 	}
 	if stackOverridden(opts) {
 		if provider := strings.TrimSpace(opts.Brain.Provider); provider != "" {
 			p.Brain = Brain{Provider: provider, Model: strings.TrimSpace(opts.Brain.Model)}
 		} else if model := strings.TrimSpace(opts.Brain.Model); model != "" {
 			p.Brain.Model = model // model for the cloned provider
+		}
+		p.Brain.Worker = Worker{
+			Provider:   strings.TrimSpace(opts.Brain.Worker.Provider),
+			Model:      strings.TrimSpace(opts.Brain.Worker.Model),
+			OllamaHost: strings.TrimSpace(opts.Brain.Worker.OllamaHost),
 		}
 		if provider := strings.TrimSpace(opts.TTS.Provider); provider != "" {
 			p.TTS = TTS{Provider: provider, Voice: strings.TrimSpace(opts.TTS.Voice)}
@@ -62,7 +78,8 @@ func CreateWithOpts(cfg *config.Config, opts CreateOpts) (*Profile, error) {
 // stackOverridden reports whether opts carries any explicit brain/TTS choice.
 func stackOverridden(opts CreateOpts) bool {
 	return strings.TrimSpace(opts.Brain.Provider) != "" || strings.TrimSpace(opts.Brain.Model) != "" ||
-		strings.TrimSpace(opts.TTS.Provider) != "" || strings.TrimSpace(opts.TTS.Voice) != ""
+		strings.TrimSpace(opts.TTS.Provider) != "" || strings.TrimSpace(opts.TTS.Voice) != "" ||
+		strings.TrimSpace(opts.Brain.Worker.Provider) != "" || strings.TrimSpace(opts.Brain.Worker.Model) != "" || strings.TrimSpace(opts.Brain.Worker.OllamaHost) != ""
 }
 
 // CreateAndUseWithOpts creates a persona (with optional system prompt) and activates it.

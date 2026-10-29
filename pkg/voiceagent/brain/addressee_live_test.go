@@ -37,6 +37,7 @@ func TestLiveGroupAddressee(t *testing.T) {
 		{"What do you think about Santa?", "user", ""},
 		{`He said 'Hey Santa, what do you think?' yesterday.`, "user", ""},
 		{"Yeah", "user", ""},
+		{"Yeah, yeah, that's a very fun.", "user", ""},
 		{"Jarvis, how would you approach it?", "agent", "Jarvis"},
 		{"Jarvis gave me a useful answer earlier.", "agent", ""},
 		{"The user could ask Santa about it later.", "agent", ""},

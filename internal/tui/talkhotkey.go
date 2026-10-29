@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -15,17 +17,18 @@ import (
 // which pump to re-arm, and nothing else reads it — by the time the driver
 // sees the event, where it came from no longer matters.
 type talkHotkeyEventMsg struct {
+	lifetime    context.Context
 	ev          talkhotkey.Event
 	fromControl bool
 }
 
 // talkHotkeyExitedMsg reports the helper process ending; its event stream is
 // closed and no further keys will arrive.
-type talkHotkeyExitedMsg struct{}
+type talkHotkeyExitedMsg struct{ lifetime context.Context }
 
 // talkControlClosedMsg reports the control endpoint closing. The conversation
 // is unaffected: nothing was registered, so there is nothing to take back.
-type talkControlClosedMsg struct{}
+type talkControlClosedMsg struct{ lifetime context.Context }
 
 // startTalkHotkey opens the talk key for the conversation that just became
 // ready. Two paths, and both are optional: the control endpoint any shortcut
@@ -33,10 +36,13 @@ type talkControlClosedMsg struct{}
 // helper. A failure on either reports why in the conversation instead of
 // failing the session: Ctrl+G still works.
 func (a *App) startTalkHotkey() tea.Cmd {
-	if a.hotkey != nil || a.control != nil || a.runtime == nil || !a.runtime.Voice {
+	if a.hotkey != nil || a.control != nil || a.runtime == nil {
 		return nil
 	}
-	if !a.cfg.TalkHotkeyEnabled {
+	if !a.runtime.Voice && !a.cfg.GroupParticipationEnabled {
+		return nil
+	}
+	if !a.cfg.TalkHotkeyEnabled && !a.cfg.GroupParticipationEnabled {
 		return nil
 	}
 	mode := config.TalkHotkeyModeOf(a.cfg)
@@ -49,7 +55,7 @@ func (a *App) startTalkHotkey() tea.Cmd {
 		a.conversation.talkUnavailable(comboErr.Error())
 		return tea.Batch(cmds...)
 	}
-	if talkhotkey.Supported() {
+	if talkhotkey.Supported() && a.runtime.Voice && a.cfg.TalkHotkeyEnabled {
 		cmds = append(cmds, a.startTalkHelper(combo, mode))
 	}
 	return tea.Batch(cmds...)
@@ -61,6 +67,17 @@ func (a *App) startTalkControl(combo talkhotkey.Combo, mode talkhotkey.Mode) tea
 	if err != nil {
 		a.conversation.talkUnavailable("control endpoint: " + err.Error())
 		return nil
+	}
+	if a.runtime.Participation != nil && a.runtime.SetParticipation != nil {
+		rt := a.runtime
+		control.SetParticipationHandler(func(ctx context.Context, settings *discussion.Settings) (discussion.Settings, error) {
+			if settings != nil {
+				if err := rt.SetParticipation(ctx, *settings); err != nil {
+					return discussion.Settings{}, err
+				}
+			}
+			return rt.Participation(), nil
+		})
 	}
 	a.control = control
 	a.conversation.attachTalkControl(control.Address(), combo, mode)
@@ -90,30 +107,32 @@ func (a *App) startTalkHelper(combo talkhotkey.Combo, mode talkhotkey.Mode) tea.
 // the program, whichever screen is showing.
 func (a *App) nextTalkHotkeyEvent() tea.Cmd {
 	client := a.hotkey
+	lifetime := a.runCtx
 	if client == nil {
 		return nil
 	}
 	return func() tea.Msg {
 		ev, ok := <-client.Events()
 		if !ok {
-			return talkHotkeyExitedMsg{}
+			return talkHotkeyExitedMsg{lifetime: lifetime}
 		}
-		return talkHotkeyEventMsg{ev: ev}
+		return talkHotkeyEventMsg{ev: ev, lifetime: lifetime}
 	}
 }
 
 // nextTalkControlEvent is the same pump for the control endpoint.
 func (a *App) nextTalkControlEvent() tea.Cmd {
 	control := a.control
+	lifetime := a.runCtx
 	if control == nil {
 		return nil
 	}
 	return func() tea.Msg {
 		ev, ok := <-control.Events()
 		if !ok {
-			return talkControlClosedMsg{}
+			return talkControlClosedMsg{lifetime: lifetime}
 		}
-		return talkHotkeyEventMsg{ev: ev, fromControl: true}
+		return talkHotkeyEventMsg{ev: ev, fromControl: true, lifetime: lifetime}
 	}
 }
 

@@ -2,50 +2,72 @@
 
 A local voice assistant that starts speaking before the model finishes the thought.
 
-Speech stays on your machine. The brain is Claude, Cursor, Ollama, or Grok. Replies are split into sentences and spoken as soon as each one is ready. Interrupt it and it stops.
+Talk to local models through Ollama, or connect Claude Code, Codex, Cursor, or Grok. Replies are spoken sentence by sentence as they arrive. Interrupt it and it stops.
 
-![Obey Voice conversation TUI](docs/images/tui.gif)
+Use the native macOS app or the terminal. Give each persona its own voice, model, and prompt, then bring several into one conversation and address them by name.
 
-```text
-Mic → VAD → STT → Brain → Sentence chunker → TTS → Speaker
-```
+[Get started](#install) · [Choose your brain](#choose-your-brain) · [Group chat](#group-chat) · [Docs](docs/README.md)
 
-Target: under 2 seconds from the end of your utterance to first audio.
+![Obey Voice desktop Home with recent conversations and workspace navigation](docs/images/desktop-home.png)
+
+*Native macOS app with sample conversations.*
+
+![Obey Voice TUI in color: animated launcher logo, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
+
+*Real terminal interface with scripted voice activity.* [Reproduce the demo](demos/README.md#readme-demo) with `just demo`.
+
+## Choose your brain
+
+The brain is the model that answers you. Ollama is the default provider: run a local model on your own hardware, with local speech recognition and synthesis. Once the models are downloaded, the voice conversation can run locally without a paid AI subscription. Web tools and any remote providers you enable still use the network.
+
+You can also use Claude Code, [Codex](docs/codex.md), Cursor, or Grok through their installed CLIs and existing authentication. With a cloud-backed brain, conversation text goes to that provider. Speech recognition and synthesis run locally by default; remote speech is optional.
+
+Choose the provider and model in **Settings → Brain**. For Ollama, start the local server and download a model first, then select it in Obey Voice. Each persona can override the application’s brain and voice settings. See [configuration](docs/configuration.md) and [personas](docs/personas.md).
 
 ## Install
 
-**macOS / Linux from source** (Go 1.26+, [just](https://github.com/casey/just), a C compiler):
+The current install path is from source. Prebuilt app downloads are not published yet.
+
+Start with a checkout:
 
 ```bash
-just install          # binary into $GOBIN, then default STT/TTS/VAD assets (`models ensure`)
+git clone https://github.com/Obedience-Corp/obey-voice.git
+cd obey-voice
 ```
 
-Grant the terminal microphone access under System Settings → Privacy & Security → Microphone.
+### Desktop app
 
-**Linux (x86_64 glibc)**
+On macOS, install Rust 1.95, Go 1.26.1+, Python 3, Xcode Command Line Tools, and [just](https://github.com/casey/just), then run:
 
-Download `obey-voice-linux-amd64.tar.gz` from the [latest release](https://github.com/Obedience-Corp/obey-voice/releases/latest), then:
-
-```bash
-tar -xzf obey-voice-linux-amd64.tar.gz
-mkdir -p ~/.local/opt ~/.local/bin
-mv obey-voice-linux-amd64 ~/.local/opt/obey-voice
-ln -s ~/.local/opt/obey-voice/obey-voice ~/.local/bin/obey-voice
+```sh
+just desktop install
+open "$HOME/Applications/Obey Voice Agent.app"
 ```
 
-Keep the binary next to `lib/`. Ubuntu 24.04 is the compatibility floor. Then:
+The command builds and installs an optimized, locally signed app in `~/Applications`. On first launch, follow guided setup to choose a brain and speech provider and install their models. Allow microphone access when you start a voice conversation. Quit the app before reinstalling.
+
+The app shares the CLI's settings, personas, and session history.
+
+[Desktop screenshots and usage](apps/desktop/README.md) · [Install details](docs/install.md#desktop-app-macos) · [Development](docs/desktop-development.md)
+
+### Terminal (macOS / Linux)
+
+Requires Go 1.26.1+, `just`, and a C compiler. From the repository root:
 
 ```bash
-obey-voice models ensure
+just install          # install the CLI and default speech models
 obey-voice doctor --voice-devices
+obey-voice            # open the launcher
 ```
 
-[Full install notes](docs/install.md) cover Homebrew caveats, the Linux archive, musl, and developer builds.
+Ensure your Go binary directory (`$GOBIN`, or `$(go env GOPATH)/bin` by default) is on `PATH`. On macOS, grant the terminal microphone access under System Settings → Privacy & Security → Microphone. Choose your brain and model in **Settings → Brain** before starting a conversation.
+
+Linux release packaging targets x86_64 glibc with Ubuntu 24.04 as the compatibility floor. [Full install notes](docs/install.md) cover archive layout, Homebrew caveats, musl, and developer builds. Check [releases](https://github.com/Obedience-Corp/obey-voice/releases) for published artifacts.
 
 ## Talk
 
 ```bash
-obey-voice            # launcher → voice TUI
+obey-voice              # launcher → voice TUI
 obey-voice --text       # type, it speaks
 obey-voice --no-voice   # speak, it prints
 ```
@@ -60,26 +82,46 @@ obey-voice serve --tailscale
 
 [Usage](docs/usage.md) has TUI keys, personas, remote HTTPS, and the full command list.
 
-## Also
+## Group chat
+
+A persona is a complete voice agent: its own system prompt, brain model, voice, and optionally its own working folder. Five ship (Obey, Samantha, Jarvis, Veronica, Santa) and `+ Create persona…` in the TUI adds more. With Ollama as the brain, every enabled persona sits in the same conversation.
+
+Say a name anywhere in the sentence and that persona answers: "Jarvis, what do you think?" or "What do you think, Jarvis?" Whoever answered last keeps the floor for follow-ups. Everyone shares one transcript, with each person's and agent's replies labeled.
+
+Agents can pass the floor too. When one asks another a question, that persona answers in its own voice. Each of your turns allows at most three follow-on agent responses with no repeat responder, and your speech always takes priority.
+
+Defaults pair distinct Phonon voices with Obey, Samantha, Jarvis, and Veronica; Santa uses Kokoro `am_santa`. See [shipped personas](docs/personas.md#shipped-personas) for setup and updating existing profiles.
+
+Details: [shared conversations](docs/personas.md#shared-conversations) and [addressing and handing over the floor](docs/context-continuity.md#addressing-and-handing-over-the-floor).
+
+## More ways to use it
 
 | Do this | Start here |
 |---------|------------|
 | Turn an EPUB, PDF, Markdown, or URL into audio | `obey-voice render book.epub --out-dir out/book` · [narration](docs/narration.md) |
 | Record a meeting (STT only, speaker labels) | `obey-voice meeting record` · [meetings](docs/meetings.md) |
-| Switch prompt + model + voice as one agent | `obey-voice persona use veronica` · [personas](docs/usage.md#personas-voice-agents) |
+| Transcribe a recording from another program | `obey-voice transcribe --request job.json --jsonl` · [protocol](docs/transcribe-protocol.md) |
+| Switch prompt + model + voice as one agent | `obey-voice persona use veronica` · [personas](docs/personas.md) |
+| Record two personas talking, scripted or improvised from a brief | `obey-voice scene script.yaml --out-dir out/scene` · [scenes](docs/scene.md) |
 | Inspect or change a setting | `obey-voice config` · [configuration](docs/configuration.md) |
 
 ## Stack
 
+```text
+Mic → Voice detection → Speech recognition → Brain → Sentence chunker → Speech synthesis → Speaker
+```
+
+Speech starts as sentences arrive. The latency target is under 2 seconds from the end of your utterance to first audio; actual timing depends on your hardware, model, and provider.
+
 | Layer | Default | Options |
 |-------|---------|---------|
-| Brain | Ollama | Claude CLI, Grok |
+| Brain | Local models via Ollama | Claude Code, [Codex](docs/codex.md), Cursor, Grok |
 | STT | NVIDIA Parakeet TDT (sherpa-onnx) | Whisper (`sherpa`), Zipformer streaming, whisper.cpp |
-| TTS | Kokoro (sherpa-onnx) | native Qwen3-TTS |
+| TTS | Kokoro (sherpa-onnx) | native Qwen3-TTS, [OpenAI-compatible speech servers](docs/openai-speech.md) |
 | VAD | Silero | |
 | Audio | miniaudio / malgo | |
 
-Models download on first use into `models_dir`, and `just install` runs `models ensure` for the default Kokoro/STT/VAD stack. Qwen installs from TUI Settings or `obey-voice models ensure --tts` on macOS Apple Silicon (Metal) and linux/amd64 (CPU). No product Python runtime.
+Models download on first use into `models_dir`, and `just install` runs `models ensure` for the default Kokoro/STT/VAD stack. Qwen installs from TUI Settings or `obey-voice models ensure --tts` on macOS Apple Silicon (Metal) and linux/amd64 (CPU). The default speech stack and native Qwen3-TTS need no Python runtime.
 
 ## Docs
 
@@ -88,13 +130,20 @@ Models download on first use into `models_dir`, and `just install` runs `models 
 | [docs/](docs/README.md) | Index |
 | [Install](docs/install.md) | Homebrew, Linux archive, source, requirements |
 | [Usage](docs/usage.md) | TUI, remote serve, commands, personas |
+| [Personas](docs/personas.md) | Voice agents, shared conversations, starting directories |
+| [Scenes](docs/scene.md) | Two-persona conversation recordings |
 | [Narration](docs/narration.md) | Render, audiobooks, Calibre, narrate pipeline |
 | [Meetings](docs/meetings.md) | Recorder, speaker labels, campaign routing |
 | [Configuration](docs/configuration.md) | `config.yaml`, Agent Skills |
 | [Development](docs/development.md) | Build, tests, models, benchmarks |
 | [Serve protocol](docs/serve-protocol.md) | HTTPS + WebSocket contract |
+| [Transcribe protocol](docs/transcribe-protocol.md) | `obey-transcript/v1` file transcription contract |
 | [Speech worker](docs/speech-serve.md) | Speech on another computer (`speech-serve`) |
 | [ADRs](docs/adr/) | Architecture decisions |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidance. [Report a bug or request a feature](https://github.com/Obedience-Corp/obey-voice/issues). For bugs, include your OS, selected brain and speech providers, and relevant error output.
 
 ## License
 
@@ -103,3 +152,34 @@ Apache License 2.0. Copyright 2026 Obedience Corp. See [LICENSE](LICENSE) and [N
 ---
 
 Built by [Obedience Corp](https://obediencecorp.com) · [GitHub](https://github.com/Obedience-Corp)
+
+## Inspect a TUI conversation pipeline
+
+In the terminal conversation, use `/record talk` to capture events, source timing
+and conversation text. `/record` shows the capture ID, exact `events.jsonl` path
+and recording health. `Ctrl+R` toggles Talk recording outside Vim mode;
+`/record lab` additionally enables existing audio debug artifacts. Capture files
+are local, private to your user, and opt-in. Use `/record off` to seal the bundle.
+Clear/new-runtime transitions detach recording; incomplete shutdowns remain
+explicitly incomplete.
+
+Open a second terminal with [agent-stream-dbg](https://github.com/Obedience-Corp/agent-stream-dbg):
+
+```sh
+agent-stream-dbg observe --dialect obey-voice --follow /absolute/capture/events.jsonl
+# Inspect the same saved capture after recording stops:
+agent-stream-dbg observe --dialect obey-voice /absolute/capture/events.jsonl
+```
+
+The viewer is passive: conversation/persona/work controls remain in Obey Voice.
+It shows measured STT, admission, model, synthesis attempts and software playback
+intervals, including overlaps, missing boundaries and interrupted stages. Select
+an older turn with `[` / `]`, return to latest with `Ctrl+F`, or inspect raw and
+normalized evidence with Enter. Background jobs retain their own typed job IDs
+and causal parent turn. Viewer exit does not stop the conversation.
+
+The source-owned [trace contract](testdata/pipeline-trace/CONTRACT.md) and
+[canonical fixtures](testdata/pipeline-trace/README.md) define nullable clocks,
+identity and compatibility. Legacy metrics remain relative; unknown schema
+families/versions stay available as raw evidence. Playback timestamps mark
+software sink acceptance/completion, not calibrated sound at the listener.

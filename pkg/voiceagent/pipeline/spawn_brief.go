@@ -132,6 +132,8 @@ func spawnBrief(history []brain.Turn, transcript string) string {
 	b.WriteString(" If the request is unclear, do the smallest useful thing and say what you did.")
 	b.WriteString(" Do not search for other work to do, and do not act on anything you find")
 	b.WriteString(" outside this request — a task not stated above is not your task.\n")
+	b.WriteString("\nYour final response is spoken directly to the user and saved in the conversation. ")
+	b.WriteString("Return the answer in your own voice, with no instructions for another assistant to rewrite or deliver it.\n")
 	return b.String()
 }
 

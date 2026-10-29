@@ -2,9 +2,11 @@ package personaruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
+	"github.com/Obedience-Corp/obey-voice/internal/summon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -14,26 +16,48 @@ import (
 // selected responder; the audio front end owns echo prevention independently.
 func (s *Selector) Route(ctx context.Context, input string, background bool) (pipeline.ResponseAdmission, error) {
 	admitted := pipeline.ResponseAdmission{Request: input}
+	if err := ctx.Err(); err != nil {
+		return admitted, classifyAdmissionFailure(ctx, "route", err)
+	}
+	if !background {
+		s.EndDiscussion("superseded")
+	}
 	bare := false
 	if !background {
 		roster, participants, err := s.conversationRoster()
 		if err != nil {
-			return admitted, err
+			return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
 		}
-		address, err := s.resolveAddress(ctx, input, "user", "Unknown", roster, participants)
+		exact := roster.ResolveForegroundControl(input)
+		switch exact.Kind {
+		case summon.ExactControlValid:
+			return s.routeExactControl(ctx, input, exact)
+		case summon.ExactControlInvalid:
+			if exact.Err != nil {
+				return admitted, wrapIdentityRefusalFailure(ctx, "route", exact.Err)
+			}
+			return admitted, wrapIdentityRefusalFailure(ctx, "route", errors.New("invalid exact identity control"))
+		}
+		if s.opts.Base.GroupParticipationEnabled {
+			return s.routeAudience(ctx, input)
+		}
+		address, err := s.resolveAddress(ctx, input, "user", s.humanSpeakerName(""), roster, participants)
 		if err != nil {
-			return admitted, err
+			if isIdentityRefusal(err) {
+				return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
+			}
+			return admitted, classifyAdmissionFailure(ctx, "route", err)
 		}
 		if address.PersonaID != "" {
 			if _, err := s.Select(ctx, address.PersonaID, address.Reason); err != nil {
-				return admitted, err
+				return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
 			}
 			admitted.Request, bare = address.Remainder, address.Bare
 		}
 	}
 	envelope, err := s.Admit(ctx)
 	if err != nil {
-		return admitted, err
+		return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
 	}
 	admitted.Envelope = envelope
 	if bare {

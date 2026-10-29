@@ -117,6 +117,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 	if a.screen == screenSettings {
 		a.settings.closePreview()
 		a.settings.cancelEnroll()
+		a.settings.voices.reset()
 	}
 	if a.screen == screenPersonas && target != screenPersonas {
 		a.personas.preview.close()
@@ -161,18 +162,27 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		a.settings.liveSeeder = a.settingsLiveSeeder()
 		a.settings.onPlaybackVolume = a.applyPlaybackVolume
 		a.settings.onWorkersEnabled = a.applyWorkersEnabled
+		if a.runtime != nil && a.runtime.Pipeline != nil {
+			a.settings.onDecisionSettings = a.runtime.Pipeline.ConfigureDecisions
+			a.settings.decisionStatus = a.runtime.Pipeline.DecisionStatus
+		}
 		// Apply stored geometry immediately — Bubble Tea only re-emits
 		// WindowSize on actual resize, not on screen switches. Without
 		// this, the list falls back to a default height and 80-col width
 		// even in a large terminal split. Live resizes still flow through
 		// WindowSizeMsg while settings is open.
-		a.settings.width, a.settings.height = a.width, a.height
-		a.settings.ensureCursorVisible()
-		return a, tea.Batch(a.settings.loadDevices(), pauseVoice)
+		a.settings.resize(a.width, a.height)
+		// Built before the return: the loaders mark a.settings as loading, and
+		// that must be in the a that is returned.
+		cmds := tea.Batch(a.settings.loadDevices(), a.settings.loadVoiceCatalog(), pauseVoice, a.settings.pollDecisionStatus())
+		return a, cmds
 	case screenWorkers:
 		var controller workerController
 		if a.runtime != nil && a.runtime.Pipeline != nil {
 			controller = a.runtime.Pipeline
+		}
+		if demoWorkersEnabled() || demoWorkCueEnabled() {
+			controller = demoWorkers(controller)
 		}
 		a.workers = newWorkers(a.cfg, controller)
 		a.workers.returnScreen = prev
@@ -210,6 +220,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		// dropping the func on the floor.
 		a.personas.preview.close()
 		a.personas.cancelBrainModels()
+		a.personas.cancelVoiceCatalog()
 		a.personas = newPersonas(a.cfg)
 		a.personas.returnScreen = prev
 		if prev == screenConversation && a.runtime != nil {
@@ -297,11 +308,11 @@ func (a App) onLibraryAudiobook(msg libraryAudiobookMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) onReturnToMenu(msg returnToMenuMsg) (tea.Model, tea.Cmd) {
-	a.returnToMenu = true
-	return a.update(quitMsg{})
+	return a.beginMenuTransition()
 }
 
 func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
+	a.returnToMenu = false
 	if a.screen == screenPickBook {
 		a.pickBook.cancelResolve()
 	}
@@ -317,6 +328,7 @@ func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
 	}
 	a.conversation.cancelSelection()
 	a.conversation.stopCapture()
+	a.conversation.retireAdmissionRetryNotices()
 	if a.conversation.turnCancel != nil {
 		a.conversation.turnCancel()
 	}
@@ -338,7 +350,7 @@ func (a App) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Conversation ticks belong to the conversation even while hidden.
 		// Dropping one leaves voiceTicking set but no timer scheduled.
 		// Meeting animation uses the separate meetingTickMsg lifecycle.
-		case voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
+		case capturePollMsg, voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
 			compactDoneMsg, backgroundReadyMsg, backgroundRecoveryMsg, backgroundPauseDoneMsg:
 			var convCmd tea.Cmd
 			a.conversation, convCmd = a.conversation.Update(msg)

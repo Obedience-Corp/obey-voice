@@ -1,0 +1,1 @@
+{"protocol":"obey-transcript/v1","job_id":"conformance-unsupported-timing","seq":0,"type":"failed","code":"unsupported_capability","message":"timing \"word\" is not implemented by any provider in this build","retryable":false}

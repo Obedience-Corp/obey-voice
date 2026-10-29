@@ -26,14 +26,15 @@ import (
 // Bubble Tea updates. The assertions consume snapshots instead of peeking at
 // App while the program's update goroutine is running.
 type terminalPersonaSnapshot struct {
-	screen     screen
-	voice      bool
-	input      string
-	agent      string
-	sessionID  string
-	selection  events.PersonaSelection
-	transcript []string
-	view       string
+	screen      screen
+	menuPending bool
+	voice       bool
+	input       string
+	agent       string
+	sessionID   string
+	selection   events.PersonaSelection
+	transcript  []string
+	view        string
 }
 
 // terminalPersonaApp is deliberately a thin test adapter around the owning
@@ -58,20 +59,21 @@ func (h *terminalPersonaApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.app = next
 	}
 	switch msg.(type) {
-	case tea.KeyMsg, switchScreenMsg, personaSelectionResultMsg, voiceTurnDoneMsg, textTurnDoneMsg, busEventMsg:
+	case menuReadyMsg, tea.KeyMsg, switchScreenMsg, personaSelectionResultMsg, voiceTurnDoneMsg, textTurnDoneMsg, busEventMsg:
 		selection := events.PersonaSelection{}
 		if h.app.runtime != nil && h.app.runtime.SelectionSnapshot != nil {
 			selection = h.app.runtime.SelectionSnapshot()
 		}
 		snapshot := terminalPersonaSnapshot{
-			screen:     h.app.screen,
-			voice:      h.app.conversation.voiceEnabled,
-			input:      h.app.conversation.input.Value(),
-			agent:      h.app.conversation.agentName,
-			sessionID:  h.app.conversation.sessionID,
-			selection:  selection,
-			transcript: append([]string(nil), h.app.conversation.transcript...),
-			view:       stripANSI(h.app.View()),
+			screen:      h.app.screen,
+			menuPending: h.app.returnToMenu,
+			voice:       h.app.conversation.voiceEnabled,
+			input:       h.app.conversation.input.Value(),
+			agent:       h.app.conversation.agentName,
+			sessionID:   h.app.conversation.sessionID,
+			selection:   selection,
+			transcript:  append([]string(nil), h.app.conversation.transcript...),
+			view:        stripANSI(h.app.View()),
 		}
 		select {
 		case h.updates <- snapshot:
@@ -134,9 +136,15 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 		}
 	})
 
-	root := t.TempDir()
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	pinned, _ := filepath.EvalSymlinks(t.TempDir())
+	t.Setenv("OBEY_VOICE_WORK_DIR", "")
+	t.Setenv("WORK_DIR", "")
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
 	for _, p := range []persona.Profile{pauseProofProfile("samantha", "Samantha"), pauseProofProfile("santa", "Santa")} {
+		if p.ID == "samantha" {
+			p.StartingDirectory = pinned
+		}
 		writePauseProofCatalog(t, config.ConfigDir(), p)
 	}
 
@@ -175,10 +183,15 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	selector, err := personaruntime.NewSelector(personaruntime.SelectionOptions{
 		Base: base, Catalog: catalog, Pipeline: p, SessionID: sess.ID, Initial: initial,
 		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
-			return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+			return store.SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 		},
-		NewBrain:  factory,
-		NewWorker: func(context.Context, *config.Config) (brain.Provider, error) { return nil, nil },
+		NewBrain: factory,
+		NewWorker: func(_ context.Context, cfg *config.Config) (brain.Provider, error) {
+			if cfg.WorkDir != root {
+				t.Errorf("Santa worker directory = %q, want %q", cfg.WorkDir, root)
+			}
+			return nil, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +209,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 		}
 	}
 	selectionBefore := selector.Snapshot()
+	if selectionBefore.WorkDir != pinned {
+		t.Fatalf("initial persona directory = %q, want %q", selectionBefore.WorkDir, pinned)
+	}
 
 	runner := &pauseTerminalRunner{
 		pipeline: p, voiceStarts: make(chan int, 8), voiceEnds: make(chan int, 8),
@@ -358,6 +374,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	if returnedBeforeSwitch.sessionID != selectionBefore.SessionID || returnedBeforeSwitch.selection.ConversationEpoch != selectionBefore.ConversationEpoch {
 		t.Fatalf("manager cancel before switch changed session identity: before=%+v after=%+v", selectionBefore, returnedBeforeSwitch)
 	}
+	if header := strings.SplitN(returnedBeforeSwitch.view, "\n", 2)[0]; !strings.Contains(header, "brain ollama · samantha-fixture") {
+		t.Fatalf("terminal header missing initial persona model: %s", header)
+	}
 	if got := awaitPauseProof(t, runner.voiceStarts, "manager cancel before switch resume"); got != 5 {
 		t.Fatalf("manager cancel before switch resumed voice call = %d, want 5", got)
 	}
@@ -381,6 +400,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	selected := awaitTerminalSnapshot(t, h.updates, "Santa selection", func(s terminalPersonaSnapshot) bool {
 		return s.screen == screenPersonas && s.selection.PersonaID == "santa"
 	})
+	if selected.selection.WorkDir != root {
+		t.Fatalf("default persona inherited the pinned camp: %q, want %q", selected.selection.WorkDir, root)
+	}
 	if selected.voice || selected.selection.SessionID != selectionBefore.SessionID || selected.selection.ConversationEpoch != selectionBefore.ConversationEpoch || selected.agent != "Santa" {
 		t.Fatalf("Santa selection changed session or mic state: before=%+v after=%+v", selectionBefore, selected)
 	}
@@ -391,6 +413,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	})
 	if returned.sessionID != selectionBefore.SessionID || returned.selection.ConversationEpoch != selectionBefore.ConversationEpoch {
 		t.Fatalf("manager cancel changed session identity: before=%+v after=%+v", selectionBefore, returned)
+	}
+	if header := strings.SplitN(returned.view, "\n", 2)[0]; !strings.Contains(header, "brain ollama · santa-fixture") || strings.Contains(header, "samantha-fixture") {
+		t.Fatalf("terminal header did not follow the selected persona model: %s", header)
 	}
 	if got := awaitPauseProof(t, runner.voiceStarts, "manager cancel resume"); got != 6 {
 		t.Fatalf("manager cancel resumed voice call = %d, want 6", got)
@@ -421,6 +446,9 @@ func TestTerminalPersonaRecoveryProof(t *testing.T) {
 	loaded, err := store.Load(sess.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if loaded.WorkDir != root || loaded.Directories == nil || loaded.Directories.Personas["samantha"].Dir != pinned || loaded.Directories.Personas["santa"].Dir != root {
+		t.Fatalf("durable persona directories = %+v", loaded)
 	}
 	foundSamanthaSeed, foundSantaReply := false, false
 	for _, turn := range loaded.Turns {

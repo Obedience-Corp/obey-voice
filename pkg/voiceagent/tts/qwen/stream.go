@@ -10,19 +10,24 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
 
-// synthesizeNativeStream serializes the product native worker and restarts once
-// on unexpected process/protocol failure (same policy as managed).
+// synthesizeNativeStream runs one request against a free engine and restarts
+// that engine once on unexpected process/protocol failure (same policy as
+// managed).
+//
+// The slot is the unit of serialization: one worker still takes one request at
+// a time, and a worker that dies takes only its own slot down — the rest of
+// the pool keeps serving.
 func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req tts.SynthesisRequest, stream *audio.PCMStream) error {
-	q.sessionMu.Lock()
-	defer q.sessionMu.Unlock()
+	slot := q.acquireSlot()
+	defer slot.mu.Unlock()
 
 	if !q.alive.Load() {
 		return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "synthesize", Kind: tts.ProviderErrorUnavailable, Err: errors.New("provider is closed")}
 	}
-	if err := q.ensureSpeechSessionLocked(ctx); err != nil {
+	if err := q.ensureSpeechSessionLocked(ctx, slot); err != nil {
 		return err
 	}
-	if q.speechCompleted.Load() {
+	if slot.completed.Load() {
 		stream.SetSynthesisWarmState("warm")
 	} else {
 		stream.SetSynthesisWarmState("cold")
@@ -31,14 +36,14 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req tts.Synthesis
 	// Declared before the first frame: the player reads it once, when it takes
 	// the segment. A session that is not streaming leaves it false, so the
 	// whole-utterance path is unchanged down to the byte.
-	stream.SetIncremental(streamRequestedOn(q.speech))
+	stream.SetIncremental(streamRequestedOn(slot.session))
 
-	err := q.speech.SynthesizeToStream(ctx, req, stream)
+	err := slot.session.SynthesizeToStream(ctx, req, stream)
 	if err == nil {
-		q.speechCompleted.Store(true)
+		slot.completed.Store(true)
 		return nil
 	}
-	q.discardSpeechSessionLocked()
+	q.discardSpeechSessionLocked(slot)
 	if ctx.Err() != nil || !managedWorkerRestartable(err) {
 		return err
 	}
@@ -55,19 +60,19 @@ func (q *Qwen3TTS) synthesizeNativeStream(ctx context.Context, req tts.Synthesis
 	if stream.Written() > 0 {
 		return fmt.Errorf("%s failed after %d samples were already playing: %w", q.speechLabel(), stream.Written(), err)
 	}
-	if restartErr := q.ensureSpeechSessionLocked(ctx); restartErr != nil {
+	if restartErr := q.ensureSpeechSessionLocked(ctx, slot); restartErr != nil {
 		return fmt.Errorf("%s failed (%v); reconnect failed: %w", q.speechLabel(), err, restartErr)
 	}
 	// The replacement worker answers the capability question for itself, so the
 	// stream has to be re-declared against it rather than left describing the
 	// session that just died. Nothing has been written yet (guarded above), so
 	// the player has not read the flag and a change here is still in time.
-	stream.SetIncremental(streamRequestedOn(q.speech))
-	if retryErr := q.speech.SynthesizeToStream(ctx, req, stream); retryErr != nil {
-		q.discardSpeechSessionLocked()
+	stream.SetIncremental(streamRequestedOn(slot.session))
+	if retryErr := slot.session.SynthesizeToStream(ctx, req, stream); retryErr != nil {
+		q.discardSpeechSessionLocked(slot)
 		return fmt.Errorf("%s failed after one reconnect: %w", q.speechLabel(), retryErr)
 	}
-	q.speechCompleted.Store(true)
+	slot.completed.Store(true)
 	return nil
 }
 
@@ -79,8 +84,10 @@ func (q *Qwen3TTS) speechLabel() string {
 	return "native worker"
 }
 
-func (q *Qwen3TTS) ensureSpeechSessionLocked(ctx context.Context) error {
-	if q.speech != nil {
+// ensureSpeechSessionLocked opens this slot's session if it has none. The
+// caller holds slot.mu, so only this engine is affected.
+func (q *Qwen3TTS) ensureSpeechSessionLocked(ctx context.Context, slot *speechSlot) error {
+	if slot.session != nil {
 		return nil
 	}
 	if q.startSpeech == nil {
@@ -94,19 +101,20 @@ func (q *Qwen3TTS) ensureSpeechSessionLocked(ctx context.Context) error {
 		return fmt.Errorf("start native worker: %w", err)
 	}
 	q.applyStreamPolicy(session)
-	q.speech = session
-	q.speechRef.Store(&session)
+	slot.adopt(session)
 	return nil
 }
 
-func (q *Qwen3TTS) discardSpeechSessionLocked() {
-	q.speechCompleted.Store(false)
-	if q.speech == nil {
+// discardSpeechSessionLocked closes this slot's worker and clears its warm
+// evidence. The other slots keep serving.
+func (q *Qwen3TTS) discardSpeechSessionLocked(slot *speechSlot) {
+	slot.completed.Store(false)
+	if slot.session == nil {
 		return
 	}
-	q.speechRef.Store(nil)
-	q.speech.Close()
-	q.speech = nil
+	slot.ref.Store(nil)
+	slot.session.Close()
+	slot.session = nil
 }
 
 // synthesizeManagedStream serializes access to the persistent model worker and
@@ -125,7 +133,7 @@ func (q *Qwen3TTS) synthesizeManagedStream(ctx context.Context, req tts.Synthesi
 	if err := q.ensureManagedSessionLocked(ctx); err != nil {
 		return err
 	}
-	if q.speechCompleted.Load() {
+	if q.primarySlot().completed.Load() {
 		stream.SetSynthesisWarmState("warm")
 	} else {
 		stream.SetSynthesisWarmState("cold")
@@ -133,7 +141,7 @@ func (q *Qwen3TTS) synthesizeManagedStream(ctx context.Context, req tts.Synthesi
 
 	err := q.session.SynthesizeToStream(ctx, req, stream)
 	if err == nil {
-		q.speechCompleted.Store(true)
+		q.primarySlot().completed.Store(true)
 		return nil
 	}
 	q.discardManagedSessionLocked()
@@ -149,7 +157,7 @@ func (q *Qwen3TTS) synthesizeManagedStream(ctx context.Context, req tts.Synthesi
 		q.discardManagedSessionLocked()
 		return fmt.Errorf("managed worker failed after one restart: %w", retryErr)
 	}
-	q.speechCompleted.Store(true)
+	q.primarySlot().completed.Store(true)
 	return nil
 }
 
@@ -170,7 +178,7 @@ func (q *Qwen3TTS) ensureManagedSessionLocked(ctx context.Context) error {
 }
 
 func (q *Qwen3TTS) discardManagedSessionLocked() {
-	q.speechCompleted.Store(false)
+	q.primarySlot().completed.Store(false)
 	if q.session == nil {
 		return
 	}

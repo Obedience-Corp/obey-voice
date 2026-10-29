@@ -21,10 +21,10 @@ Hide
 Type "unset NO_COLOR; unset CLICOLOR; export CLICOLOR_FORCE=1 FORCE_COLOR=1" Enter
 Type "export TERM=xterm-256color COLORFGBG=15\;0 OBEY_VOICE_COLOR_PROFILE=truecolor" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
-Type "rm -rf /tmp/obey-voice-settings-demo && mkdir -p /tmp/obey-voice-settings-demo/.obey/agents/voice/festival-voice/sessions" Enter
+Type "rm -rf /tmp/obey-voice-settings-demo && mkdir -p /tmp/obey-voice-settings-demo/.obey/agents/voice/obey-voice/sessions" Enter
 Type "export HOME=/tmp/obey-voice-settings-demo MODELS=/tmp/obey-voice-settings-demo/.cache/samantha/models" Enter
 Type "demos/fixtures/fake-qwen-native $MODELS" Enter
-Type "cat > $HOME/.obey/agents/voice/festival-voice/config.yaml <<EOF" Enter
+Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<EOF" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_host: http://localhost:11434" Enter
 Type "ollama_model: demo-model" Enter

@@ -1,0 +1,12 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: group-reply
+  kind: system
+  system_prompt: >-
+    [Host conversation context: the current responder is {agent_name}. Give only
+    {agent_name}'s next reply in this existing group chat. Do not write another
+    participant's lines or repeat speaker labels.]
+metadata:
+  version: 1
+  description: >-
+    Request-local identity reminder. Runtime value: agent_name.

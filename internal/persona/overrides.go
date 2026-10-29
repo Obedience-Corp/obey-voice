@@ -29,6 +29,8 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.OllamaModel = v }},
 	{"grok_model", func(c *config.Config) string { return c.GrokModel },
 		func(c *config.Config, v string) { c.GrokModel = v }},
+	{"codex_model", func(c *config.Config) string { return c.CodexModel },
+		func(c *config.Config, v string) { c.CodexModel = v }},
 	{"cursor_model", func(c *config.Config) string { return c.CursorModel },
 		func(c *config.Config, v string) { c.CursorModel = v }},
 	{"voice_worker_provider", func(c *config.Config) string { return c.VoiceWorkerProvider },
@@ -45,6 +47,8 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.QwenTTSVoice = v }},
 	{"audio8_voice", func(c *config.Config) string { return c.Audio8Voice },
 		func(c *config.Config, v string) { c.Audio8Voice = v }},
+	{"openai_speech_voice", func(c *config.Config) string { return c.OpenAISpeechVoice },
+		func(c *config.Config, v string) { c.OpenAISpeechVoice = v }},
 	{"qwen_tts_model_tier", func(c *config.Config) string { return c.QwenTTSModelTier },
 		func(c *config.Config, v string) { c.QwenTTSModelTier = v }},
 }

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
 const (
@@ -47,7 +48,7 @@ func evaluateStreamIntegrity(in IntegrityInput) IntegrityResult {
 }
 
 func endsMidSentence(s string) bool {
-	s = strings.TrimSpace(s)
+	s = strings.TrimSpace(textclean.StripStageDirections(s))
 	if s == "" {
 		return false
 	}
@@ -93,7 +94,11 @@ func (o *OllamaBrain) maybeEmitContinuityBudget(skillCtx string) {
 		return
 	}
 	est := o.estimateTokens(skillCtx)
-	soft := numCtx * continuitySoftLimitRatio / 100
+	ratio := o.cfg.ContinuitySoftLimitRatio
+	if ratio <= 0 {
+		ratio = float64(continuitySoftLimitRatio) / 100
+	}
+	soft := int(float64(numCtx) * min(ratio, .9))
 	hard := numCtx * 9 / 10
 	action := "ok"
 	switch {

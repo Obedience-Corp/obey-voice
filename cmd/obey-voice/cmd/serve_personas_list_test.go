@@ -162,3 +162,32 @@ func TestServePersonaListActiveFollowsRuntimeSwitch(t *testing.T) {
 		t.Fatalf("config.yaml changed — a runtime switch must not persist:\n%s", saved)
 	}
 }
+
+func TestServePersonaListKeepsMissingDirectoryAvailableForRepair(t *testing.T) {
+	personaEnv(t)
+	profile, err := persona.Load("samantha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.StartingDirectory = filepath.Join(t.TempDir(), "missing")
+	writePersona(t, profile)
+	cfg := &config.Config{ActivePersona: "samantha", WorkDir: t.TempDir()}
+	rows, err := servePersonaList(cfg)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findPersonaRow(t, rows, "samantha").StartingDirectory; got != profile.StartingDirectory {
+		t.Fatalf("repair path = %q", got)
+	}
+	if _, err := persona.ResolveBinding(cfg, "samantha"); err == nil {
+		t.Fatal("missing directory admitted as a responder")
+	}
+	// An explicit startup override wins before binding validates the persona.
+	override := t.TempDir()
+	if err := resolveConversationDirectory(cfg, "samantha", override, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := persona.ResolveBinding(cfg, "samantha"); err != nil {
+		t.Fatal(err)
+	}
+}

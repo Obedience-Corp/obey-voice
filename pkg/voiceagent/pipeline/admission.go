@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	admissionpolicy "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
@@ -13,6 +15,8 @@ import (
 // ResponseAdmission separates the finalized input from its routed request.
 // LocalReply uses normal speech stages without invoking a model.
 type ResponseAdmission struct {
+	Discussion *discussion.Directive
+	Skip       bool
 	Request    string
 	LocalReply string
 	Envelope   events.ResponseEnvelope
@@ -22,20 +26,43 @@ type responseVoices struct{ primary, fallback tts.Provider }
 type responseVoicesKey struct{}
 
 func (p *Pipeline) admitInput(ctx context.Context, input string, background bool, metrics *turnMetrics) (context.Context, ResponseAdmission, error) {
+	endTrace := p.startTrace(ctx, "admission")
+	traceStatus := "failed"
+	defer func() {
+		if ctx.Err() != nil {
+			traceStatus = "cancelled"
+		}
+		endTrace(traceStatus)
+	}()
+	if err := p.commitWorkerReplies(); err != nil {
+		return ctx, ResponseAdmission{}, err
+	}
 	admitted := ResponseAdmission{Request: input}
 	if p.AdmitInput != nil {
 		var err error
-		admitted, err = p.AdmitInput(ctx, input, background)
+		name := ""
+		if !background {
+			name = metrics.acousticName
+		}
+		// Keep evidence scoped to this call, out of the returned context used
+		// for brain responses, agent handoffs, and continuations.
+		admitted, err = p.AdmitInput(admissionpolicy.WithAcousticName(ctx, name), input, background)
 		if err != nil {
 			return ctx, admitted, err
 		}
 	}
+	traceStatus = "completed"
 	return p.bindAdmission(ctx, input, admitted, metrics), admitted, nil
 }
 
 func (p *Pipeline) bindAdmission(ctx context.Context, input string, admitted ResponseAdmission, metrics *turnMetrics) context.Context {
+	if completion := completionFromContext(ctx); completion != nil {
+		completion.discussion = admitted.Discussion
+	}
 	metrics.response = admitted.Envelope
 	metrics.originalInput = input
+	metrics.trace = responseTrace(metrics.trace, admitted.Envelope)
+	ctx = events.WithTrace(ctx, metrics.trace)
 	if p.Brain != nil {
 		metrics.historyAtAdmission = len(p.Brain.History())
 	}
@@ -63,12 +90,18 @@ func (m *turnMetrics) responseIdentity() *brain.TurnIdentity {
 func (p *Pipeline) emitResponse(metrics *turnMetrics, event events.Event) {
 	if metrics != nil {
 		event = events.Attribute(event, metrics.response)
+		event = events.AttributeTrace(event, p.stampTrace(metrics.trace))
 	}
 	p.emit(event)
 }
 
 func (p *Pipeline) emitResponseContext(ctx context.Context, event events.Event) {
-	p.emit(events.Attribute(event, events.ResponseFromContext(ctx)))
+	event = events.Attribute(event, events.ResponseFromContext(ctx))
+	trace := events.TraceFromContext(ctx)
+	if trace.RuntimeID != "" {
+		event = events.AttributeTrace(event, p.stampTrace(trace))
+	}
+	p.emit(event)
 }
 
 func appendResponse(provider brain.Provider, response string, identity *brain.TurnIdentity) error {

@@ -151,10 +151,14 @@ func missingHint(s config.AssetStatus, requiredTier string) string {
 	}
 }
 
-// offeredRow reports a Qwen tier row this configuration would not load. Such a
-// row is listed, because a front end reads tier install state from here, but it
-// is counted apart from the assets the configuration actually needs.
+// offeredRow reports a row counted apart from the assets the configuration
+// actually needs: a Qwen tier this configuration would not load, or an asset
+// marked optional (Phonon's voice descriptions). Both are listed, because a
+// front end reads install state from here, but neither is a gap.
 func offeredRow(s config.AssetStatus, requiredTier string) bool {
+	if s.Optional {
+		return true
+	}
 	tier, isTier := strings.CutPrefix(s.ID, qwenTierIDPrefix)
 	return isTier && tier != requiredTier
 }

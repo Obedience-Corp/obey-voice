@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decision"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -41,7 +43,8 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		metrics.sttFinal = metrics.start
 	}
 	defer p.trackMetrics(metrics)()
-	turn := p.newTurnConductor(metrics)
+	turn := p.newTurnConductor(metrics, ctx)
+	ctx = events.WithTrace(ctx, metrics.trace)
 
 	turn.to(TurnThinking)
 	continuation, isContinuation := continuationFromContext(ctx)
@@ -52,9 +55,14 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	} else if background {
 		speakerID = ""
 	} else {
-		p.emit(events.UserInput{Text: input, Speaker: speakerID})
+		p.emitResponse(metrics, events.UserInput{Text: input, Speaker: speakerID})
 	}
 	original := input
+	var pendingDecision *decisionTurn
+	if !p.GroupParticipationEnabled {
+		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
+	}
+	defer func() { pendingDecision.close() }()
 	var admission ResponseAdmission
 	if isContinuation {
 		admission = continuation.admission
@@ -64,8 +72,20 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		ctx, admission, err = p.admitInput(ctx, input, background, metrics)
 		if err != nil {
 			turn.finish(TurnFailed)
-			return fmt.Errorf("admit response: %w", err)
+			return wrapAdmissionError(err)
 		}
+	}
+	if admission.Skip {
+		turn.finish(TurnYielded)
+		return nil
+	}
+	if admission.Discussion != nil {
+		var stop func()
+		ctx, stop = discussion.Bind(ctx, admission.Discussion.State)
+		defer stop()
+	}
+	if p.GroupParticipationEnabled && admission.Discussion == nil {
+		pendingDecision = p.startWorkDecision(ctx, input, decision.TextWork, background || isContinuation)
 	}
 	if !isContinuation && admission.LocalReply != "" {
 		return p.completeLocalReply(ctx, original, admission.LocalReply, metrics, turn)
@@ -76,20 +96,25 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 			turn.finish(TurnInterrupted)
 			return err
 		}
-		p.emit(events.Info{Message: "compact: skipped (" + err.Error() + ")"})
+		p.recoverTurn(ctx, turn, metrics, "", fmt.Errorf("compact: %w", err))
+		return nil
 	}
 	p.emitResponse(metrics, events.ThinkingStarted{})
 	thinkingStarted := metrics.tEOU()
 
-	if !background && !isContinuation {
+	if !background && !isContinuation && admission.Discussion == nil {
 		if kind, source, ok := classifyTurn(input, p.routeContext()); ok && routeKindSkipsBrain(kind) {
 			return p.completeRoutedTurn(ctx, turn, metrics, input, kind, source)
 		}
 	}
 
+	if admission.Discussion == nil && p.takeWorkDecision(ctx, pendingDecision, input, metrics) {
+		return p.completeRoutedTurn(ctx, turn, metrics, input, RouteSpawn, "decision")
+	}
+
 	requestCtx := ctx
 	var ordinary *ordinaryCompletion
-	if !isContinuation {
+	if !isContinuation && admission.Discussion == nil {
 		requestCtx, ordinary, _ = p.beginOrdinaryCompletion(ctx, input, speakerID)
 	}
 	if ordinary != nil {
@@ -105,8 +130,11 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	brainCtx, brainCancel := p.withBrainTimeout(ctx)
 	defer brainCancel()
 
-	repair := &promiseRepairState{enabled: p.failedRouteRepairEnabled()}
+	// Peer replies and group discussions have tools disabled; their prose
+	// cannot become a fresh user work request through promise repair.
+	repair := &promiseRepairState{enabled: !isContinuation && admission.Discussion == nil && p.failedRouteRepairEnabled()}
 	streamOpts := brain.StreamOptions{
+		Discussion:        admission.Discussion,
 		WorkerTiers:       p.workerTierAvailability(),
 		WorkerFacts:       p.workerFacts(),
 		Identity:          metrics.responseIdentity(),
@@ -114,17 +142,23 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		Speaker:           speakerID,
 		Background:        background,
 		AgentContinuation: isContinuation,
-		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background && !isContinuation,
+		ToolsEnabled:      (p.VoiceToolsEnabled || p.workerTierAvailability() != nil) && !background && !isContinuation && admission.Discussion == nil,
 		RouterToolsPolicy: p.liveRouterToolsPolicy(),
-		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired),
-		OnToolEnd:         p.toolEndHook(),
+		OnToolStart:       p.toolStartHookTracked(&repair.toolsFired, ctx),
+		OnToolEnd:         p.toolEndHook(ctx),
 		OnUsage:           p.usageHook(),
 		OnSessionWarn:     p.sessionWarnHook(),
 		OnPromptWarn:      p.promptWarnHook(),
 	}
+	if admission.Discussion != nil {
+		streamOpts.WorkerTiers = nil
+		streamOpts.WorkerFacts = nil
+	}
 	if ordinary != nil {
 		streamOpts.WorkResults = append([]brain.CompletionResult(nil), ordinary.request.Results...)
 	}
+	metrics.modelRequest = time.Now()
+	p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
 	stream, err := p.Brain.ThinkStream(brainCtx, input, streamOpts)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -154,7 +188,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = fmt.Errorf("model timed out before finishing a reply: %w", err)
 		}
-		// Speak on the parent ctx: brainCtx is dead after a deadline stall.
+		// Report a deadline failure without trying to speak on the expired context.
 		p.recoverTurn(ctx, turn, metrics, response, err)
 		return nil
 	}
@@ -203,7 +237,10 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 		p.emitResponse(metrics, events.GeneratingVoice{Sentence: speakable})
 
 		synthStarted := time.Now()
-		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil)
+		// The whole reply is one string here: no group was assembled from a
+		// held beat, so its sentence punctuation is spoken as written.
+		ctx = withSegmentTrace(ctx, 0)
+		stream, usedFallback, observation, err := p.synthUtteranceObserved(ctx, speakable, nil, false)
 		if errors.Is(err, errNothingToSpeak) {
 			p.completeTextTurn(turn, metrics, response)
 			return nil
@@ -248,7 +285,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 			if !usedFallback {
 				var fallbackObservation synthesisObservation
 				var fallbackUsed bool
-				playback, fallbackUsed, fallbackObservation, err = p.playFallbackObserved(ctx, speakable, err, nil)
+				playback, fallbackUsed, fallbackObservation, err = p.playFallbackObserved(ctx, speakable, err, nil, false)
 				if fallbackUsed {
 					usedFallback = true
 					observation = fallbackObservation

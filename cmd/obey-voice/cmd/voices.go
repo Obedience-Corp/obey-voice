@@ -21,7 +21,7 @@ import (
 // the WAV path are exercised without a model on disk.
 type voiceStackDeps struct {
 	newProvider   func(*config.Config) (tts.Provider, func(), error)
-	missingAssets func(*config.Config) []string
+	missingAssets func(context.Context, *config.Config) []string
 	ensureAssets  func(context.Context, *config.Config, config.AssetRequest, func(string, float64)) error
 }
 
@@ -40,8 +40,12 @@ type voiceJSON struct {
 	// Kind is where the voice came from, where the provider distinguishes:
 	// audio8 reports "recording" or "synthetic" for a registered voice.
 	// Omitted for the built-in catalogs rather than emitted empty.
-	Kind   string `json:"kind,omitempty"`
-	Active bool   `json:"active"`
+	Kind string `json:"kind,omitempty"`
+	// Age and Description come from a descriptive catalog (Phonon's
+	// voices.jsonl); omitted when the catalog carries only names.
+	Age         string `json:"age,omitempty"`
+	Description string `json:"description,omitempty"`
+	Active      bool   `json:"active"`
 }
 
 // voicesJSON is the body of `voices --json`: the catalog of one provider,
@@ -54,6 +58,12 @@ type voicesJSON struct {
 	// Languages lists qwen3-tts's supported synthesis languages (independent
 	// of which voice is selected); omitted for every other provider.
 	Languages []string `json:"languages,omitempty"`
+	// Catalog names where a live provider's catalog came from when it has a
+	// choice: openai-speech reports "server", "ollama" or "configured".
+	Catalog string `json:"catalog,omitempty"`
+	// Notice explains a catalog smaller than it could be, in words the user
+	// can act on (an Ollama release without voice lists). Omitted when empty.
+	Notice string `json:"notice,omitempty"`
 }
 
 func newVoicesCmd() *cobra.Command {
@@ -128,7 +138,7 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 		return buildVoicesJSON(cfg, voices, "static"), nil
 	}
 
-	if err := requireTTSAssets(cfg); err != nil {
+	if err := requireTTSAssets(cmd.Context(), cfg); err != nil {
 		// A fresh machine can still browse qwen3-tts's model-native presets
 		// before running `models ensure --tts`, even when --live asked for the
 		// installed package. Every other provider keeps the original
@@ -150,7 +160,10 @@ func voicesCatalog(cmd *cobra.Command) (*voicesJSON, error) {
 	if cleanup != nil {
 		defer cleanup()
 	}
-	return buildVoicesJSON(cfg, provider.ListVoices(locale, gender), "provider"), nil
+	out := buildVoicesJSON(cfg, provider.ListVoices(locale, gender), "provider")
+	out.Catalog = tts.CatalogSourceOf(provider)
+	out.Notice = tts.CatalogNoticeOf(provider)
+	return out, nil
 }
 
 // buildVoicesJSON assembles the voices --json body from an already-filtered
@@ -166,6 +179,8 @@ func buildVoicesJSON(cfg *config.Config, voices []tts.Voice, source string) *voi
 			Gender:       v.Gender,
 			Locale:       v.Locale,
 			Kind:         v.Kind,
+			Age:          v.Age,
+			Description:  v.Description,
 			Active:       strings.EqualFold(v.Name, active),
 		})
 	}
@@ -199,8 +214,8 @@ func voicesConfig(cmd *cobra.Command) (*config.Config, error) {
 // requireTTSAssets refuses rather than downloads. A voice picker opening or a
 // Preview button being pressed must not start a hundreds-of-megabyte fetch the
 // user never asked for; `obey-voice models ensure --tts` is the explicit path.
-func requireTTSAssets(cfg *config.Config) error {
-	missing := voiceStack.missingAssets(cfg)
+func requireTTSAssets(ctx context.Context, cfg *config.Config) error {
+	missing := voiceStack.missingAssets(ctx, cfg)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -211,8 +226,10 @@ func requireTTSAssets(cfg *config.Config) error {
 
 // missingTTSAssets names the not-yet-installed assets for cfg's TTS provider,
 // reading the manifest offline. It mirrors `obey-voice models status --tts`,
-// including the managed Qwen native package that lives outside the manifest.
-func missingTTSAssets(cfg *config.Config) []string {
+// including the managed Qwen native package that lives outside the manifest
+// and an openai-speech model Ollama has not pulled. Phonon's voices.jsonl is
+// metadata and never counts.
+func missingTTSAssets(ctx context.Context, cfg *config.Config) []string {
 	manifest, err := config.ManifestFor(cfg, config.AssetRequest{NeedTTS: true})
 	if err != nil {
 		return []string{err.Error()}
@@ -227,6 +244,18 @@ func missingTTSAssets(cfg *config.Config) []string {
 	if isQwenTTS(cfg.TTSProvider) && managedqwen.UseManaged(cfg.QwenTTSBinary, cfg.QwenTTSModel) {
 		if native := managedqwen.InspectNative(modelsDir, cfg.QwenTTSModelTier); !native.Installed {
 			missing = append(missing, "Qwen3-TTS native package")
+		}
+	}
+	if config.OpenAISpeechSelected(cfg) {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(ctx, config.OpenAISpeechProbeTimeout)
+		defer cancel()
+		// A server that does not answer, or a listing that failed, is not an
+		// install problem; building the provider reports it.
+		if t := config.ProbeOpenAISpeech(ctx, cfg); t.Ollama && t.ModelsKnown && !t.ModelListed {
+			missing = append(missing, config.OpenAISpeechModelAssetName(t.Model))
 		}
 	}
 	return missing
@@ -272,6 +301,10 @@ func runVoicesTable(cmd *cobra.Command) error {
 		}
 		fmt.Fprintf(out, "  %s %s  %s\n", keyStyle.Render(fmt.Sprintf("%-16s", v.Name)), v.FriendlyName, dimStyle.Render(fmt.Sprintf("%s / %s", v.Gender, v.Locale))+active)
 	}
-	fmt.Fprintf(out, "\n  %s\n\n", dimStyle.Render(fmt.Sprintf("%d voices found.", len(voices))))
+	fmt.Fprintf(out, "\n  %s\n", dimStyle.Render(fmt.Sprintf("%d voices found.", len(voices))))
+	if notice := tts.CatalogNoticeOf(provider); notice != "" {
+		fmt.Fprintf(out, "  %s\n", dimStyle.Render(notice))
+	}
+	fmt.Fprintln(out)
 	return nil
 }

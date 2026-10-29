@@ -5,8 +5,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/Obedience-Corp/obey-voice/internal/tui/anim"
 )
 
 func (m *conversationModel) setSize(width, height int) {
@@ -36,9 +34,7 @@ func (m *conversationModel) reflowAt(now time.Time) {
 	m.workStripReservedRows = m.workStripRows(now)
 	m.workStripRenderAt = now
 	chrome := 6 + m.workStripReservedRows
-	if m.voiceMode != anim.ModeIdle && m.height >= 14 {
-		chrome += voicePanelRows
-	}
+	chrome += m.voicePanelHeight() + m.contextMeterHeight()
 	vpHeight := max(m.height-inputHeight-chrome-m.commandPaletteRows(), 1)
 	if !m.ready {
 		m.viewport = viewport.New(max(m.width, 1), vpHeight)

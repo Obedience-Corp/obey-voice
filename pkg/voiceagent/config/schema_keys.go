@@ -40,6 +40,11 @@ func voiceKeys() []KeySpec {
 			Help: "How long to wait for the speech computer to answer a connection. It does not bound the model load on a cold host.",
 		},
 		{
+			Key: "tts_lookahead", Type: TypeInt, Default: DefaultTTSLookahead, Unit: "segments", Min: num(MinTTSLookahead), Max: num(MaxTTSLookahead),
+			Group: GroupVoice, Title: "Speech lookahead",
+			Help: "How many pieces of a reply may be prepared ahead of the one being spoken. 2 keeps one playing and one being made. Higher only helps an engine that can make more than one at a time.",
+		},
+		{
 			Key: "tts_voice", Type: TypeEnum, Default: DefaultKokoroVoice, Enum: kokoroVoiceEnum(),
 			Group: GroupVoice, Title: "Kokoro voice",
 			Help:               "The voice Kokoro speaks in. Qwen ignores this and uses its own preset.",
@@ -55,6 +60,34 @@ func voiceKeys() []KeySpec {
 			Group: GroupVoice, Title: "Audio8 voice",
 			Help:               "Which registered Audio8 voice speaks. Empty uses the voice packaged with the export. Register more with `obey-voice voices register`.",
 			PersonaOverridable: true,
+		},
+		{
+			Key: "openai_speech_url", Type: TypeString, Default: DefaultOpenAISpeechURL,
+			Group: GroupVoice, Title: "Speech API address",
+			Help: "The OpenAI-compatible /v1 base the openai-speech engine talks to. Ollama serving Phonon is http://localhost:11434/v1.",
+		},
+		{
+			Key: "openai_speech_model", Type: TypeString, Default: DefaultOpenAISpeechModel,
+			Group: GroupVoice, Title: "Speech API model",
+			Help: "The model id the speech API synthesizes with. phonon on Ollama; `ollama pull phonon` installs it.",
+		},
+		{
+			// A string, like audio8_voice: the valid set lives on the server, which
+			// names the voices it has when asked for one it lacks.
+			Key: "openai_speech_voice", Type: TypeString, Default: DefaultOpenAISpeechVoice,
+			Group: GroupVoice, Title: "Speech API voice",
+			Help:               "Which voice the speech API speaks in. Phonon on Ollama 0.40.11+ offers named voices after voice setup; default remains available.",
+			PersonaOverridable: true,
+		},
+		{
+			Key: "openai_speech_api_key", Type: TypeString, Default: "", Secret: true,
+			Group: GroupVoice, Title: "Speech API key",
+			Help: "Bearer token for a speech API that needs one. Ollama does not.",
+		},
+		{
+			Key: "openai_speech_timeout", Type: TypeInt, Default: DefaultOpenAISpeechTimeout, Unit: "s", Min: num(5), Max: num(600),
+			Group: GroupVoice, Title: "Speech API timeout",
+			Help: "How long one speech request may take before it is abandoned.",
 		},
 		{
 			Key: "voice_fallback_provider", Type: TypeEnum, Default: "kokoro", Enum: ttsFallbackEnum(),
@@ -97,9 +130,9 @@ func voiceKeys() []KeySpec {
 			Help: "How sure she must be that a sound is speech. Raise it in a noisy room; too high drops quiet talkers.",
 		},
 		{
-			Key: "vad_min_speech_duration", Type: TypeFloat, Default: 0.25, Unit: "seconds", Min: num(0.05), Max: num(2.0),
+			Key: "vad_min_speech_duration", Type: TypeFloat, Default: 0.1, Unit: "seconds", Min: num(0.05), Max: num(2.0),
 			Group: GroupVoice, Title: "Shortest utterance",
-			Help: "Sound shorter than this is treated as noise, so a cough never starts a turn.",
+			Help: "Minimum speech duration. Lower values keep brief replies such as yes or no; audible-speech and noise checks still apply.",
 		},
 		{
 			Key: "vad_pre_roll_ms", Type: TypeInt, Default: 300, Unit: "ms", Min: num(0), Max: num(2000),
@@ -134,7 +167,7 @@ func voiceKeys() []KeySpec {
 		{
 			Key: "barge_in_speakers", Type: TypeEnum, Default: BargeInSpeakersAnyone, Enum: bargeInSpeakersEnum(),
 			Group: GroupVoice, Title: "Who can interrupt",
-			Help: "enrolled_only lets only an enrolled voice cut her off; it fails open (anyone can interrupt) whenever live speaker recognition is off, cold, or unhealthy — a privacy guard, not an auth boundary.",
+			Help: "enrolled_only requires a fresh enrolled-voice match. Automatic voice interruptions are blocked while recognition is off, cold, stale, or unhealthy. Typing can still interrupt.",
 		},
 		{
 			Key: "talk_hotkey_enabled", Type: TypeBool, Default: true,
@@ -157,6 +190,11 @@ func voiceKeys() []KeySpec {
 			Help: "With the mic open, only a turn that starts with the agent's name or an alias is answered; the talk key bypasses it. Needs the voice front-end on, so playback of the name cannot summon the agent.",
 		},
 		{
+			Key: "acoustic_name_enabled", Type: TypeBool, Default: false,
+			Group: GroupVoice, Title: "Acoustic Obey recognition (experimental)",
+			Help: "Adds an acoustic name hint to semantic conversation routing when Parakeet mishears Obey. Requires Parakeet and models ensure --stt; leaves the transcript unchanged. Not a wake gate. Edited in config.yaml.",
+		},
+		{
 			Key: "name_summon_aliases", Type: TypeStringList, Default: []string{},
 			Group: GroupVoice, Title: "Name summon aliases",
 			Help: "Extra wake words besides the agent's display name and its first word — \"computer\", say. Edited in config.yaml; Settings has no row for it.",
@@ -171,11 +209,18 @@ func voiceKeys() []KeySpec {
 
 func brainKeys() []KeySpec {
 	return []KeySpec{
+		{Key: "group_participation_enabled", Type: TypeBool, Default: false, Group: GroupBrain, Title: "Group participation (experimental)", Help: "Allow contextual group invitations on local Ollama. Requires a model that reliably distinguishes invitations from mentions. Applies to the next conversation."},
+		{Key: "group_participation_mode", Type: TypeEnum, Default: "invited", Enum: []string{"off", "invited", "open"}, Group: GroupBrain, Title: "Agent participation", Help: "Invited allows group discussion when asked. Open additionally allows one useful contribution after an ordinary reply. Applies to new conversations; /participation changes the current conversation."},
 		{
 			Key: "brain_provider", Type: TypeEnum, Default: "ollama", Enum: brainProviderEnum(),
 			Group: GroupBrain, Title: "Model provider",
 			Help:               brainProviderHelp(),
 			PersonaOverridable: true,
+		},
+		{
+			Key: "persona_routing_timeout", Type: TypeInt, Default: DefaultPersonaRoutingTimeout, Unit: "seconds", Min: num(1), Max: num(MaxPersonaRoutingTimeout),
+			Group: GroupBrain, Title: "Persona routing timeout",
+			Help: "How long to wait while deciding which persona should answer, including model startup. Lower this to report slow routing sooner.",
 		},
 		{
 			Key: "voice_work_enabled", Type: TypeBool, Default: false,
@@ -231,6 +276,18 @@ func brainKeys() []KeySpec {
 			Group: GroupBrain, Title: "Grok model",
 			Help:               "The model the Grok CLI is asked for. Empty uses the CLI's own default.",
 			PersonaOverridable: true,
+		},
+		{
+			Key: "codex_model", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Codex model",
+			Help:               "The model used by Codex. Empty uses the Codex default. Requires Codex installed and signed in with codex login.",
+			PersonaOverridable: true,
+		},
+		{
+			Key: "codex_reasoning_effort", Type: TypeEnum, Default: "",
+			Enum:  []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"},
+			Group: GroupBrain, Title: "Codex reasoning effort",
+			Help: "How much reasoning Codex uses. Empty uses its default. Supported efforts depend on the selected model; higher effort can delay spoken replies.",
 		},
 		{
 			Key: "cursor_model", Type: TypeString, Default: "",

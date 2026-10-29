@@ -19,7 +19,7 @@ func (m personasModel) View() string {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("  Personas"))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render(ansi.Truncate("  Switch agents · create/edit system prompts the brain actually loads", width, "…")))
+	b.WriteString(dimStyle.Render(ansi.Truncate("  Choose who responds · compare models and voices", width, "…")))
 	b.WriteString("\n")
 	if m.height == 0 || m.height >= 10 {
 		b.WriteString(dimStyle.Render(strings.Repeat("─", max(width, 1))))
@@ -34,13 +34,13 @@ func (m personasModel) View() string {
 			b.WriteString("\n")
 		}
 	} else {
-		listRows := m.visibleRows()
+		listRows := m.listBodyRows()
 		lines := m.listLines(listRows)
 		if m.confirmDeleteID != "" {
 			lines = m.confirmDeleteLines(listRows)
 		}
 		for _, line := range lines {
-			b.WriteString(line)
+			b.WriteString(ansi.Truncate(line, width, "…"))
 			b.WriteString("\n")
 		}
 	}
@@ -55,46 +55,24 @@ func (m personasModel) View() string {
 	} else {
 		b.WriteString("\n")
 	}
-	help := "  ↑/↓ • enter switch • x enable/disable • e edit • n create • m model • d delete • esc back"
+	help := "  ↑/↓ • enter switch • p preview/stop • x enable/disable • e edit • n create • m model • d delete • esc back"
 	switch {
 	case m.formMode != "" && m.promptOpen:
 		help = "  esc NORMAL • :w back to form • :wq save • ctrl+j save • :q discard"
 	case m.formMode != "" && m.formRow == formRowVoice:
-		help = "  ↑/↓ move • ←/→ change • p preview • enter edit prompt • ctrl+j save • esc cancel"
+		help = "  ↑/↓ move • ←/→ change • p preview/stop • enter edit prompt • ctrl+j save • esc cancel"
 	case m.formMode != "":
 		help = "  ↑/↓ move • ←/→ change • enter edit prompt • ctrl+j save • esc cancel"
 	case m.confirmDeleteID != "":
 		help = "  y delete permanently • any other key cancels"
 	}
+	if m.formMode == "" && m.confirmDeleteID == "" && m.screenHeight() >= 16 {
+		b.WriteString(dimStyle.Render(ansi.Truncate("  ↑/↓ navigate · enter switch · p preview/stop · m model · e edit", width, "…")))
+		b.WriteString("\n")
+		help = "  n create · x enable/disable · d delete · esc back"
+	}
 	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
 	return b.String()
-}
-
-func (m personasModel) listLines(listRows int) []string {
-	if m.loadErr != "" {
-		return padPersonasLines([]string{"  error loading personas: " + m.loadErr}, listRows)
-	}
-	active := ""
-	if m.cfg != nil {
-		active = persona.ActiveID(m.cfg)
-	}
-	total := m.listLen()
-	start := m.offset
-	end := min(start+listRows, total)
-	lines := make([]string, 0, listRows)
-	for i := start; i < end; i++ {
-		if i == len(m.items) {
-			lines = append(lines, m.row(i, personasCreateLabel))
-			continue
-		}
-		p := m.items[i]
-		mark := ""
-		if p != nil && p.ID == active {
-			mark = " ✓"
-		}
-		lines = append(lines, m.row(i, personaListLabel(p)+mark))
-	}
-	return padPersonasLines(lines, listRows)
 }
 
 // formBoxWidth is the outer width of the form's field boxes, leaving a
@@ -149,6 +127,7 @@ func (m personasModel) formLines() []string {
 		nameTitle += dimStyle.Render(" · id: " + slug)
 	}
 	stackTitle := headerStyle.Render("Model & voice") + dimStyle.Render(" · (default) inherits Settings")
+	directoryTitle := headerStyle.Render("Starting directory") + dimStyle.Render(" · (default) inherits app work_dir")
 	promptTitle := headerStyle.Render("System prompt") + dimStyle.Render(" · {agent_name} supported")
 
 	lines := []string{
@@ -157,6 +136,7 @@ func (m personasModel) formLines() []string {
 	}
 	lines = append(lines, formBox(nameTitle, []string{m.nameInput.View()}, boxW, m.formRow == formRowName)...)
 	lines = append(lines, formBox(stackTitle, m.stackLines(), boxW, isStackRow(m.formRow))...)
+	lines = append(lines, formBox(directoryTitle, m.directoryLines(), boxW, m.formRow == formRowDirectory)...)
 	lines = append(lines, formBox(promptTitle, m.promptSummaryLines(), boxW, m.formRow == formRowPrompt)...)
 	return lines
 }
@@ -227,8 +207,29 @@ func (m personasModel) stackLines() []string {
 	ttsProvider := stackTTSProviders()[m.ttsProviderIdx]
 	voices := m.stackVoiceList()
 	voiceLabel := stackDefaultLabel
-	if idx := m.stackVoiceIndex(); idx >= 0 && idx < len(voices) {
-		voiceLabel = voices[idx]
+	voiceIdx := m.stackVoiceIndex()
+	if voiceIdx >= 0 && voiceIdx < len(voices) {
+		voiceLabel = voices[voiceIdx]
+	}
+	voiceValue := "‹ " + voiceLabel + " ›"
+	if m.preview.previewing != "" {
+		voiceValue += dimStyle.Render("  [p stop] ♫ " + m.preview.previewing)
+	} else {
+		voiceValue += dimStyle.Render("  [p preview]")
+	}
+	if n := len(voices) - 1; n > 8 && voiceIdx > 0 {
+		// Long catalogs (Kokoro's 54, Phonon's 37 per language) need a
+		// position so a user cycling with ←/→ knows where they are.
+		voiceValue += dimStyle.Render(fmt.Sprintf("  %d/%d", voiceIdx, n))
+	}
+	languageValue := dimStyle.Render("— (one language)")
+	if m.voiceLanguageUsable() {
+		locales := m.voiceLocales()
+		languageLabel := voiceLocaleAll
+		if idx := m.voiceLocaleIndex(); idx > 0 && idx < len(locales) {
+			languageLabel = locales[idx]
+		}
+		languageValue = "‹ " + languageLabel + " ›"
 	}
 	tierValue := dimStyle.Render("— (qwen3-tts only)")
 	if m.stackTierUsable() {
@@ -249,29 +250,30 @@ func (m personasModel) stackLines() []string {
 	if strings.EqualFold(m.effectiveStackWorkerProvider(), "claude") && strings.TrimSpace(m.workerModel) != "" {
 		workerModelRow += dimStyle.Render("  (model saved, not routed for claude yet)")
 	}
-	return []string{
+	lines := []string{
 		brainRow,
 		row(formRowBrainModel, "Brain model", m.stackModelRowValue()),
 		workerRow,
 		workerModelRow,
 		row(formRowTTSProvider, "TTS", "‹ "+ttsProvider+" ›"),
-		row(formRowVoice, "Voice", "‹ "+voiceLabel+" ›"),
+		row(formRowVoice, "Voice", voiceValue),
+		row(formRowVoiceLanguage, "Language", languageValue),
 		row(formRowTier, "Tier", tierValue),
 	}
+	if detail := strings.TrimSpace(m.voiceDetail()); detail != "" {
+		// Under the Voice row: what the catalog says about the pick, or why
+		// the catalog is short. Width-bounded so a description never wraps.
+		lines = insertAfter(lines, 5, "  "+dimStyle.Render(ansi.Truncate(detail, max(m.formInnerWidth()-4, 10), "…")))
+	}
+	return lines
 }
 
-func (m personasModel) row(i int, label string) string {
-	width := m.width
-	if width <= 0 {
-		width = 80
-	}
-	prefix := "  "
-	style := dimStyle
-	if i == m.cursor {
-		prefix = "▸ "
-		style = selectedStyle
-	}
-	return style.Render(ansi.Truncate(prefix+label, width, "…"))
+// insertAfter inserts line after index i.
+func insertAfter(lines []string, i int, line string) []string {
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:i+1]...)
+	out = append(out, line)
+	return append(out, lines[i+1:]...)
 }
 
 func padPersonasLines(lines []string, n int) []string {

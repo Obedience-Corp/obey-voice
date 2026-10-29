@@ -23,8 +23,10 @@ const MaxDescriptionRunes = 400
 // Loader discovers SKILL.md folders under one or more roots.
 // Prefer Dirs for multi-root harness discovery; Dir is a single-root shortcut.
 type Loader struct {
-	Dir  string
-	Dirs []string
+	// Builtins adds shipped skills after filesystem roots; user overrides win.
+	Builtins bool
+	Dir      string
+	Dirs     []string
 
 	// Disabled lists skill names the owner turned off (config key
 	// skills_disabled). Matching is case-insensitive on the trimmed name.
@@ -74,6 +76,18 @@ func (l Loader) Discover(ctx context.Context) ([]Discovered, error) {
 		}
 		if err := discoverDir(ctx, dir, byName); err != nil {
 			return nil, err
+		}
+	}
+	if l.Builtins {
+		skill, err := builtinObeyVoice()
+		if err != nil {
+			return nil, err
+		}
+		if existing, ok := byName[skill.Name]; ok {
+			existing.Shadowed = append(existing.Shadowed, skill.Dir)
+			byName[skill.Name] = existing
+		} else {
+			byName[skill.Name] = Discovered{Skill: skill, Root: BuiltinRoot}
 		}
 	}
 
@@ -203,7 +217,10 @@ func loadSkill(path string) (Skill, error) {
 	if err != nil {
 		return Skill{}, fmt.Errorf("reading skill file: %w", err)
 	}
+	return parseSkill(data, path)
+}
 
+func parseSkill(data []byte, path string) (Skill, error) {
 	fm, body, err := splitFrontmatter(data)
 	if err != nil {
 		return Skill{}, fmt.Errorf("%s: %w", path, err)

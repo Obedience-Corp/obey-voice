@@ -69,6 +69,9 @@ type settingRow struct {
 	// starts a download. They are still listed and can still be chosen; the
 	// row's help says what choosing one does.
 	muted []bool
+	// details says what is known about option idx (index-aligned, like
+	// muted); while that option is focused it stands in for the help.
+	details []string
 	// set applies option idx (pick, choice, menu). run performs the row's
 	// own verb (toggle, text, action, info). nudge moves a slider by delta
 	// steps. preview plays option idx without choosing it. Each takes the
@@ -102,13 +105,18 @@ func indexOf(options []string, value string) int {
 func (m settingsModel) sectionRows() []settingRow {
 	switch m.section {
 	case sectionBrain:
-		return append(m.providerRows(), m.modelRows()...)
+		rows := append(m.providerRows(), m.modelRows()...)
+		rows = append(rows, m.memoryRows()...)
+		rows = append(rows, m.codexRows()...)
+		return append(rows, m.decisionRows()...)
 	case sectionWorker:
 		return m.workerRows()
 	case sectionTools:
 		return m.toolRows()
 	case sectionVoice:
-		rows := append(m.ttsRows(), m.voiceRows()...)
+		rows := append(m.ttsRows(), m.voiceFilterRows()...)
+		rows = append(rows, m.voiceRows()...)
+		rows = append(rows, m.speechSetupRows()...)
 		return append(rows, m.languageRows()...)
 	case sectionQwen:
 		return m.qwenRows()

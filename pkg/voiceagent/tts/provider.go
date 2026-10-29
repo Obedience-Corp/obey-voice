@@ -153,9 +153,81 @@ type SegmentGracer interface {
 	FirstAudioGraceForChars(chars int) time.Duration
 }
 
+// SegmentRamp is how much longer one segment may be than the one before it
+// before the listener hears silence. 1.0 means no growth.
+//
+// Depth-2 serial pipelining synthesizes segment k+1 while segment k plays, so
+// no gap requires RTF x audio(k+1) <= audio(k). The constant is 1/RTF from a
+// dated measurement, NOT 1/FirstAudioGraceForChars' RTF ceiling: those
+// ceilings are worst cases for a stall watchdog and would forbid growth on the
+// one engine that affords it.
+type SegmentRamp interface{ SegmentRamp() float64 }
+
+// SentenceJoiner reports whether handing a provider two sentences in one
+// request actually produces one contour. Engines that re-split the text on
+// sentence punctuation inside the call (Kokoro via sherpa) answer false: there
+// the sentences must be joined textually instead, by rewriting the punctuation.
+//
+// Only an engine measured to re-split declares it. Absence means a request
+// join, so an unmeasured engine speaks its text as written (JoinsSentencesOf).
+type SentenceJoiner interface{ JoinsSentences() bool }
+
+// DefaultSegmentRamp applies to a provider that does not declare a ramp: no
+// growth, which is the safe reading for an engine whose RTF is unknown.
+const DefaultSegmentRamp = 1.0
+
+// SegmentRampOf reports the provider's ramp, or DefaultSegmentRamp.
+func SegmentRampOf(p Provider) float64 {
+	if r, ok := p.(SegmentRamp); ok {
+		if ramp := r.SegmentRamp(); ramp > 0 {
+			return ramp
+		}
+	}
+	return DefaultSegmentRamp
+}
+
+// JoinsSentencesOf reports whether a request join carries prosody across a
+// sentence boundary on this provider. Absence is true: rewriting punctuation is
+// a change to what the engine is asked to say, and doing that to an engine
+// nobody has measured is the more damaging guess — it turned a status line into
+// "Stopped, dropped 1 queued job." The textual join is opt-in by declaring
+// false, which only a re-splitting frontend (Kokoro via sherpa) does.
+func JoinsSentencesOf(p Provider) bool {
+	j, ok := p.(SentenceJoiner)
+	return !ok || j.JoinsSentences()
+}
+
+// ConcurrentProvider is how many synthesis requests a provider runs at once.
+//
+// It counts engine instances, not goroutines. Kokoro holds its provider mutex
+// across an uncancellable cgo Generate, and a Qwen worker holds its session
+// mutex for a whole native request, so extra callers against one instance only
+// queue on that mutex. A provider answers more than 1 when it actually has
+// more than one engine behind it.
+type ConcurrentProvider interface{ Concurrency() int }
+
+// DefaultConcurrency applies to a provider that declares none: one request at
+// a time, which is what every engine here does today.
+const DefaultConcurrency = 1
+
+// ConcurrencyOf reports the provider's concurrency, or DefaultConcurrency.
+// A non-positive answer is treated as absent rather than as "never synthesize".
+func ConcurrencyOf(p Provider) int {
+	if c, ok := p.(ConcurrentProvider); ok {
+		if n := c.Concurrency(); n > 0 {
+			return n
+		}
+	}
+	return DefaultConcurrency
+}
+
 // SoftCanceler is optionally implemented by warm-worker TTS providers.
 // Pipeline barge-in and turn cancel should SoftCancel the in-flight request
 // without killing the worker process (reload cost).
+//
+// The argument is a reason, not a request id: Qwen discards it entirely, so a
+// cancel is fan-out to whatever that provider has in flight. Per-index cancel
+// is the job context, not this call.
 type SoftCanceler interface {
 	SoftCancel(requestID string) error
 }
@@ -206,6 +278,43 @@ type Voice struct {
 	// Gender made `voices --gender male` drop every registered voice and
 	// `voices --json` emit "gender":"recording".
 	Kind string
+	// Age and Description come from a catalog that describes its voices
+	// (Gradium's voices.jsonl for Phonon: "Young Adult", "warm narrator…").
+	// Empty for catalogs that carry only names.
+	Age         string
+	Description string
+}
+
+// CatalogNoticer is optionally implemented by providers whose voice catalog
+// can be smaller than the engine's for a reason the user can act on: Ollama
+// below the release that lists Phonon's voices, a server that published no
+// catalog. The notice is shown next to the voice list; an empty string means
+// the catalog is what it should be.
+type CatalogNoticer interface {
+	CatalogNotice() string
+}
+
+// CatalogNoticeOf reports the provider's catalog notice, or "".
+func CatalogNoticeOf(p Provider) string {
+	if n, ok := p.(CatalogNoticer); ok {
+		return n.CatalogNotice()
+	}
+	return ""
+}
+
+// CatalogSourcer is optionally implemented by providers whose catalog can
+// come from more than one place; the answer names which one did ("server",
+// "ollama", "configured"). Absent means the provider has one catalog.
+type CatalogSourcer interface {
+	CatalogSource() string
+}
+
+// CatalogSourceOf reports the provider's catalog source, or "".
+func CatalogSourceOf(p Provider) string {
+	if c, ok := p.(CatalogSourcer); ok {
+		return c.CatalogSource()
+	}
+	return ""
 }
 
 // VoiceNames returns the ordered list of all kokoro voice names.

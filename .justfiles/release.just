@@ -92,10 +92,10 @@ linux-artifact:
     cp LICENSE "$stage/LICENSE"
     cp "$module_dir/LICENSE" "$licensedir/sherpa-onnx-go-linux-LICENSE"
 
-    # sherpa-onnx-go-linux v1.13.4 bundles ONNX Runtime 1.27.0 without its
+    # sherpa-onnx-go-linux v1.13.8 bundles ONNX Runtime 1.28.2 without its
     # redistribution files. Pin and verify the upstream license material, and
     # fail loudly if a future module update changes the bundled runtime.
-    onnxruntime_version="1.27.0"
+    onnxruntime_version="1.28.2"
     strings "$native_dir/libonnxruntime.so" | grep -Fx "$onnxruntime_version" >/dev/null || {
         echo "bundled ONNX Runtime version no longer matches license version $onnxruntime_version" >&2
         exit 1
@@ -153,7 +153,7 @@ linux-artifact:
     smoke_root="$(mktemp -d)"
     trap 'rm -rf "$smoke_root"' EXIT
     tar -xzf "$tarball" -C "$smoke_root"
-    smoke_bin="$smoke_root/obey-voice-${platform}/samantha"
+    smoke_bin="$smoke_root/obey-voice-${platform}/obey-voice"
     smoke_lib="$smoke_root/obey-voice-${platform}/lib"
     env -u LD_LIBRARY_PATH "$smoke_bin" --version
     smoke_ldd="$(env -u LD_LIBRARY_PATH ldd "$smoke_bin")"

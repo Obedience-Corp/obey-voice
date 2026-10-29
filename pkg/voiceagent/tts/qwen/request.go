@@ -14,16 +14,20 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
 
-// SoftCancel asks the warm worker to abandon the current request without
-// killing the process (stage A: between requests; stage B: mid-synth).
+// SoftCancel asks the warm workers to abandon what they are synthesizing
+// without killing the processes (stage A: between requests; stage B:
+// mid-synth).
+//
+// The request id is ignored and the cancel reaches every live worker. With a
+// pool that is the honest shape of it: barge-in ends the turn, and a segment
+// still being synthesized for that turn is waste whichever worker holds it.
+// Cancelling one index is the job's own context, not this call.
 func (q *Qwen3TTS) SoftCancel(_ string) error {
 	if q == nil || !q.alive.Load() {
 		return &tts.ProviderError{Provider: qwen3TTSProviderName, Operation: "cancel", Kind: tts.ProviderErrorUnavailable, Err: errors.New("provider is closed")}
 	}
 	if q.native {
-		if ref := q.speechRef.Load(); ref != nil && *ref != nil {
-			return (*ref).CancelActive()
-		}
+		return q.cancelActiveAll()
 	}
 	// Managed Python worker has no soft-cancel control message yet.
 	return nil

@@ -10,19 +10,23 @@ import (
 )
 
 func (m *conversationModel) setStatus(text string, isErr bool) {
+	previousRows := m.voicePanelHeight()
 	m.status = text
 	m.statusErr = isErr
+	if m.ready && previousRows != m.voicePanelHeight() {
+		m.reflow()
+	}
 }
 
 // setVoiceMode updates the animated meter state and reflows when the panel
-// appears or disappears so the viewport height stays correct.
+// changes height so the viewport stays within the terminal.
 func (m *conversationModel) setVoiceMode(mode anim.Mode) {
 	prev := m.voiceMode
 	m.voiceMode = mode
 	if mode == anim.ModeIdle {
 		m.inputLevel = 0
 	}
-	if (prev == anim.ModeIdle) != (mode == anim.ModeIdle) && m.ready {
+	if prev != mode && m.ready {
 		m.reflow()
 	}
 }
@@ -37,8 +41,27 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	}
 
 	switch e := e.(type) {
+	case events.ContinuityBudget:
+		m.handleContextBudget(e)
+	case events.CompactionProgress:
+		m.appendActivity("model", "compact "+e.Stage, e.Elapsed)
+		switch e.Stage {
+		case "trim", "summarize", "reseed":
+			m.compactStage = e.Stage
+		default:
+			m.compactStage = ""
+			m.contextFill = m.contextTarget()
+		}
+
 	case events.RouteDecided:
 		m.routeDecided(e)
+	case events.DiscussionUpdated:
+		m.appendActivity("discussion", strings.TrimSpace(e.Phase+" "+e.Reason), 0)
+		if e.Phase != "ended" {
+			m.setStatus("Group: "+e.Phase, false)
+		} else {
+			m.setStatus("Group discussion ended", e.Reason == "failed")
+		}
 	case events.PersonaSelection:
 		m.applySelectionSnapshot(e)
 	case events.AudioLevel:
@@ -163,8 +186,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 	case events.GeneratingVoice:
 		m.appendActivity("voice", "synthesizing", 0)
 		m.setVoiceMode(anim.ModeSynthesizing)
-		// A degraded turn synthesizes its recovery line right after the Error
-		// event; the error status outranks voice-progress chatter (F1.2).
+		// An error status outranks any remaining voice-progress events.
 		if !m.statusErr {
 			m.setStatus("Synthesizing voice", false)
 		}
@@ -189,14 +211,16 @@ func (m *conversationModel) handleEvent(e events.Event) {
 
 	case events.SpeakingComplete:
 		label := "complete"
-		if e.AudibleSink == "none" {
+		if e.Interrupted {
+			label = "interrupted"
+		} else if e.AudibleSink == "none" {
 			label = "synth drain (no sink)"
 		} else if e.AudibleSink == "stream_client" {
 			label = "audible_tx done"
 		}
 		m.appendActivity("output", label, e.Elapsed)
-		// A degraded turn speaks its recovery line after the Error event; the
-		// error status must survive that playback finishing. Still leave
+		// A partial reply may finish playing after an error; the error status
+		// must survive that playback finishing. Still leave
 		// ModeSpeaking so the EQ/label does not stay "Speaking" forever.
 		if m.statusErr {
 			m.setVoiceMode(anim.ModeError)
@@ -247,7 +271,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		if spoken != "" {
 			m.rememberAssistant(spoken)
 			m.appendAgentTurn(chatItem{name: name, think: thought, spoken: spoken})
-		} else if e.Interrupted {
+		} else if e.Interrupted || e.Degraded {
 			m.refreshContent()
 			m.applyFollow()
 		} else if thought != "" {
@@ -262,6 +286,12 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.ConversationCleared:
+		m.contextKnown = false
+		m.contextBudget = events.ContinuityBudget{}
+		m.contextFill = 0
+		m.compactStage = ""
+		m.stopCapture()
+		m.retireAdmissionRetryNotices()
 		m.workActivity = false
 		m.workFilter = ""
 		m.clearTranscript()
@@ -319,8 +349,11 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		if e.Stage != "" {
 			msg = "[" + e.Stage + "] " + e.Message
 		}
+		notice := "Error: " + msg
+		m.appendTranscript(errorStyle.Render("  " + notice))
+		m.items[len(m.items)-1].notice = notice
 		m.setVoiceMode(anim.ModeError)
-		m.setStatus("Error: "+msg, true)
+		m.setStatus(notice, true)
 
 	case events.Info:
 		m.appendActivity("info", e.Message, 0)

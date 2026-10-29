@@ -90,17 +90,11 @@ func (m *conversationModel) startNextPersonaSelection() tea.Cmd {
 	}
 	id := m.selectionQueue[0]
 	wg := m.deps.wg
-	if wg != nil {
-		wg.Add(1)
-	}
-	return func() tea.Msg {
-		if wg != nil {
-			defer wg.Done()
-		}
+	return trackedCommand(m.deps.ctx, wg, func() tea.Msg {
 		selection, cfg, err := callback(ctx, id)
 		return personaSelectionResultMsg{id: id, selection: selection, cfg: cfg, err: err,
 			runtime: runtime, sessionID: session, runtimeEpoch: epoch, requestSequence: request}
-	}
+	})
 }
 
 // finishPersonaSelection accepts only the result for the current runtime,

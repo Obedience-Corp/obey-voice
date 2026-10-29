@@ -203,6 +203,33 @@ func TestCloseReturnsRowsAndForgetsTheJob(t *testing.T) {
 	}
 }
 
+func TestCallDetailsRetainParallelActivityAndTerminalFacts(t *testing.T) {
+	tr := New()
+	tr.Add(events.ToolCallStarted{JobID: "job", ID: "one", Name: "run_command", Kind: "execute", Summary: "go test ./..."})
+	tr.Add(events.ToolCallStarted{JobID: "job", ID: "two", Name: "read_file", Kind: "read", Summary: "README.md"})
+	tr.Add(events.ToolCallStarted{JobID: "job", ID: "one", Name: "duplicate"})
+	tr.Finish(events.ToolCallFinished{JobID: "job", ID: "one", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeFailed, Reason: "exit 1", OutputPreview: "test failed", Elapsed: time.Second}})
+	calls := tr.Calls("job")
+	if len(calls) != 2 || calls[0].Status != "failed" || calls[0].Preview != "test failed" || calls[1].Status != "running" || calls[1].Summary != "README.md" {
+		t.Fatalf("calls = %+v", calls)
+	}
+	calls[1].Summary = "mutated snapshot"
+	tr.Seal("job")
+	tr.Add(events.ToolCallStarted{JobID: "job", ID: "late"})
+	tr.Finish(events.ToolCallFinished{JobID: "job", ID: "two", Outcome: &events.ToolOutcome{Status: events.ToolOutcomeSucceeded}})
+	calls = tr.Calls("job")
+	if len(calls) != 2 || calls[1].Status != "unknown" || calls[1].Err == "" || calls[1].Summary != "README.md" {
+		t.Fatalf("sealed calls = %+v", calls)
+	}
+	if rows := tr.Seal("job"); rows != nil {
+		t.Fatalf("sealed twice: %+v", rows)
+	}
+	tr.Close("job")
+	if len(tr.Calls("job")) != 0 {
+		t.Fatal("Close did not forget call details")
+	}
+}
+
 func TestConcurrentJobsDoNotRace(t *testing.T) {
 	tr := New()
 	var wg sync.WaitGroup

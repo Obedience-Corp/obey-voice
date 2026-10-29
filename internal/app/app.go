@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/admission"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
@@ -44,6 +45,9 @@ func ClassifyVoiceTurnFailure(err, ctxErr error, transcript string, consecutiveF
 	if errors.Is(err, context.Canceled) || ctxErr != nil {
 		return VoiceShutdown
 	}
+	if category, ok := admissionFailureCategory(err); ok && category == admission.FailureParentCancellation {
+		return VoiceShutdown
+	}
 	if strings.TrimSpace(transcript) != "" {
 		return VoiceRetry
 	}
@@ -51,6 +55,14 @@ func ClassifyVoiceTurnFailure(err, ctxErr error, transcript string, consecutiveF
 		return VoiceFallback
 	}
 	return VoiceRetry
+}
+
+func admissionFailureCategory(err error) (admission.FailureCategory, bool) {
+	var boundary *pipeline.AdmissionError
+	if !errors.As(err, &boundary) {
+		return "", false
+	}
+	return admission.FailureCategoryOf(err)
 }
 
 // IsResumeVoiceCommand matches the command that re-enables voice turns after
@@ -147,6 +159,9 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 					return nil
 				case VoiceFallback:
 					p.Events.Emit(events.Error{Message: err.Error()})
+					if notice, ok := BuildAdmissionRetryNotice(err, turnText); ok {
+						p.Events.Emit(events.Info{Message: notice.Message})
+					}
 					p.Events.Emit(events.Info{Message: "Voice input keeps failing — switching to text. Type /voice to switch back."})
 					textMode = true
 					voiceFailures = 0
@@ -156,6 +171,9 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 						voiceFailures++
 					}
 					p.Events.Emit(events.Error{Message: err.Error()})
+					if notice, ok := BuildAdmissionRetryNotice(err, turnText); ok {
+						p.Events.Emit(events.Info{Message: notice.Message})
+					}
 					select {
 					case <-ctx.Done():
 						return nil
@@ -203,6 +221,9 @@ func Run(ctx context.Context, p *pipeline.Pipeline, in io.Reader, textMode, noVo
 		if textMode {
 			if err := p.RunTurnTextMode(ctx, text); err != nil {
 				p.Events.Emit(events.Error{Message: err.Error()})
+				if notice, ok := BuildAdmissionRetryNotice(err, text); ok {
+					p.Events.Emit(events.Info{Message: notice.Message})
+				}
 			}
 		}
 	}

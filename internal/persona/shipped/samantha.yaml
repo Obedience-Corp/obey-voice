@@ -1,10 +1,10 @@
-# yaml-language-server: $schema=festival-voice.persona.v1
-schema: festival-voice.persona.v1
+# yaml-language-server: $schema=obey-voice.persona.v1
+schema: obey-voice.persona.v1
 id: samantha
 display_name: Samantha
 builtin: true
 tts:
-    provider: kokoro
-    voice: af_heart
+    provider: openai-speech
+    voice: Juniper
 prompts:
     persona: samantha

@@ -54,6 +54,14 @@ type Counts struct {
 	Active, Completed, Succeeded, Failed, Unknown int
 }
 
+// Call is a tool's observed activity, retained for the worker detail view.
+// Running is distinct from unknown: a missing finish never implies success.
+type Call struct {
+	ID, Name, Summary, Status, Preview, Err string
+	Started                                 time.Time
+	Elapsed                                 time.Duration
+}
+
 // phrasing is how a kind reads out loud: "read" + "3 files".
 type phrasing struct{ verb, one, many string }
 
@@ -123,7 +131,10 @@ type Tracker struct {
 
 // fold is one job's rows plus the bookkeeping to attribute a finish.
 type fold struct {
-	rows []Row
+	rows      []Row
+	calls     []Call
+	callIndex map[string]int
+	closed    bool
 	// open is the index of the row still accepting calls, or -1.
 	open int
 	// byCall maps a call id to the row it opened, so a finish lands on the
@@ -146,6 +157,9 @@ func (t *Tracker) Add(e events.ToolCallStarted) *Row {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	f := t.foldFor(e.JobID)
+	if f.closed {
+		return nil
+	}
 	if e.ID != "" {
 		if _, exists := f.byCall[e.ID]; exists || f.finished[e.ID] {
 			return nil
@@ -165,7 +179,9 @@ func (t *Tracker) Add(e events.ToolCallStarted) *Row {
 	}
 	if e.ID != "" {
 		f.byCall[e.ID] = f.open
+		f.callIndex[e.ID] = len(f.calls)
 	}
+	f.calls = append(f.calls, Call{ID: e.ID, Name: e.Name, Summary: e.Summary, Status: "running", Started: time.Now()})
 	return closed
 }
 
@@ -177,7 +193,7 @@ func (t *Tracker) Finish(e events.ToolCallFinished) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	f := t.jobs[e.JobID]
-	if f == nil {
+	if f == nil || f.closed {
 		return
 	}
 	idx, ok := f.byCall[e.ID]
@@ -205,11 +221,29 @@ func (t *Tracker) Finish(e events.ToolCallFinished) {
 	}
 	row.Count++
 	row.Elapsed += e.ResultElapsed()
+	if callIndex, ok := f.callIndex[e.ID]; ok {
+		call := &f.calls[callIndex]
+		call.Status = string(e.OutcomeStatus())
+		call.Preview, call.Err, call.Elapsed = e.ResultPreview(), e.ResultReason(), e.ResultElapsed()
+	}
 	if preview := e.ResultPreview(); preview != "" {
 		row.Last = preview
 	} else if reason := e.ResultReason(); reason != "" {
 		row.Last = reason
 	}
+}
+
+// Calls copies per-tool details in start order. Callers may freely modify them.
+func (t *Tracker) Calls(jobID string) []Call {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if f := t.jobs[jobID]; f != nil {
+		return append([]Call(nil), f.calls...)
+	}
+	return nil
 }
 
 // Rows copies the job's rows in order.
@@ -259,6 +293,16 @@ func (t *Tracker) Counts(jobID string) Counts {
 
 // Close ends the job's open row, returns every row, and forgets the job.
 func (t *Tracker) Close(jobID string) []Row {
+	return t.close(jobID, true)
+}
+
+// Seal reconciles a finished job once, retaining its rows and calls for
+// inspection alongside the job table's completed result. Late hooks are ignored.
+func (t *Tracker) Seal(jobID string) []Row {
+	return t.close(jobID, false)
+}
+
+func (t *Tracker) close(jobID string, forget bool) []Row {
 	if t == nil {
 		return nil
 	}
@@ -268,8 +312,21 @@ func (t *Tracker) Close(jobID string) []Row {
 	if f == nil {
 		return nil
 	}
-	delete(t.jobs, jobID)
+	if forget {
+		delete(t.jobs, jobID)
+	}
+	if f.closed {
+		return nil
+	}
+	f.closed = true
 	f.open = -1
+	for i := range f.calls {
+		if f.calls[i].Status == "running" {
+			f.calls[i].Status = string(events.ToolOutcomeUnknown)
+			f.calls[i].Err = "No terminal tool event received"
+			f.calls[i].Elapsed = time.Since(f.calls[i].Started)
+		}
+	}
 	if len(f.rows) == 0 {
 		return nil
 	}
@@ -292,7 +349,7 @@ func (t *Tracker) foldFor(jobID string) *fold {
 	}
 	f := t.jobs[jobID]
 	if f == nil {
-		f = &fold{open: -1, byCall: make(map[string]int), finished: make(map[string]bool)}
+		f = &fold{open: -1, byCall: make(map[string]int), finished: make(map[string]bool), callIndex: make(map[string]int)}
 		t.jobs[jobID] = f
 	}
 	return f

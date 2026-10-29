@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"io"
 	"net"
 	"os"
@@ -51,7 +52,7 @@ const (
 
 	// controlLineLimit caps one command line. Commands are a few bytes and the
 	// token line is 70; anything longer is not a shortcut tool.
-	controlLineLimit = 512
+	controlLineLimit = 2048
 )
 
 // controlIdleTimeout bounds the wait for a connection's first command and
@@ -68,11 +69,14 @@ var useControlTCP = runtime.GOOS == "windows"
 // Control is the conversation's side: a listener, the events its commands
 // produced, and the file it has to remove when it lets go.
 type Control struct {
-	listener net.Listener
-	events   chan Event
-	addr     string
-	token    string
-	cleanup  func()
+	requestCtx    context.Context
+	stopRequests  context.CancelFunc
+	participation func(context.Context, *discussion.Settings) (discussion.Settings, error)
+	listener      net.Listener
+	events        chan Event
+	addr          string
+	token         string
+	cleanup       func()
 
 	handlers sync.WaitGroup
 	accepted chan struct{}
@@ -190,7 +194,8 @@ func controlInfoAnswers(info controlInfoFile) bool {
 }
 
 func newControl(ctx context.Context, listener net.Listener, address, token string, cleanup func()) *Control {
-	control := &Control{
+	requestCtx, stopRequests := context.WithCancel(ctx)
+	control := &Control{requestCtx: requestCtx, stopRequests: stopRequests,
 		listener: listener,
 		events:   make(chan Event, eventBuffer),
 		addr:     address,
@@ -217,6 +222,9 @@ func (c *Control) Address() string { return c.addr }
 func (c *Control) Close() error {
 	var err error
 	c.once.Do(func() {
+		if c.stopRequests != nil {
+			c.stopRequests()
+		}
 		if c.stopCtx != nil {
 			c.stopCtx()
 		}
@@ -321,6 +329,9 @@ func (c *Control) serve(conn net.Conn) {
 // acknowledged, so a shortcut tool that checks the exit status of
 // `obey-voice talk` learns whether the turn actually moved.
 func (c *Control) dispatch(conn net.Conn, command string) error {
+	if payload, ok := strings.CutPrefix(command, "participation "); ok {
+		return c.dispatchParticipation(conn, payload)
+	}
 	events, ok := c.apply(command)
 	if !ok {
 		return writeReply(conn, "error: unknown command")

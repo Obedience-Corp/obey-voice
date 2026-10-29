@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -56,15 +57,24 @@ type launcherItem struct {
 }
 
 type launcherModel struct {
-	cfg       *config.Config
-	providers []discovery.ProviderInfo
-	cursor    int
-	items     []launcherItem
-	width     int
-	height    int
-	// banner is a one-shot status line (e.g. meeting close error after return).
-	banner    string
-	bannerErr bool
+	cfg           *config.Config
+	providers     []discovery.ProviderInfo
+	cursor        int
+	items         []launcherItem
+	width         int
+	height        int
+	logoFrame     int
+	reducedMotion bool
+	// banner is the latest raw status string. The rail shows one parsed line;
+	// older outcomes stay in notices for this process only.
+	banner       string
+	bannerErr    bool
+	notices      []launcherNotice
+	noticeSeq    int
+	noticeCursor int
+	noticesOpen  bool
+	progressLine string
+	noticeFlash  string
 
 	// Inline submenu (persona picker / meeting split); nil = main menu.
 	submenu       []launcherItem
@@ -90,18 +100,31 @@ func (m launcherModel) forgetResumeCandidate() launcherModel {
 	return m
 }
 
-// withBanner returns a copy carrying a status banner shown above the menu.
+// withBanner stores the raw status and folds it into the one-line rail.
+// Progress replaces the rail without entering the session log. An empty
+// string leaves the log alone.
 func (m launcherModel) withBanner(text string, isErr bool) launcherModel {
 	m.banner = strings.TrimSpace(text)
 	m.bannerErr = isErr
-	return m
+	if m.banner == "" {
+		return m
+	}
+	n := parseNotice(m.banner, isErr, time.Now())
+	if n.progress {
+		m.progressLine = n.line
+		return m
+	}
+	m.progressLine = ""
+	m.noticeFlash = ""
+	return m.pushNotice(n)
 }
 
 func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved ...[]session.Session) launcherModel {
 	m := launcherModel{
-		cfg:          cfg,
-		providers:    providers,
-		listPersonas: persona.List,
+		cfg:           cfg,
+		providers:     providers,
+		listPersonas:  persona.List,
+		reducedMotion: anim.ReducedMotion(),
 	}
 	var sessions []session.Session
 	if len(saved) > 0 {
@@ -175,6 +198,9 @@ func newLauncher(cfg *config.Config, providers []discovery.ProviderInfo, saved .
 			action: actionQuit,
 		},
 	)
+	for _, notice := range demoLauncherNotices() {
+		m = m.withBanner(notice, false)
+	}
 	return m
 }
 
@@ -183,9 +209,17 @@ func (m launcherModel) Update(msg tea.Msg) (launcherModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 
+	case noticeCopiedMsg:
+		m.noticeFlash = "copied"
+		if msg.err != nil {
+			m.noticeFlash = "copy failed"
+		}
 	case tea.KeyMsg:
 		if m.submenu != nil {
 			return m.updateSubmenu(msg)
+		}
+		if m.noticesOpen {
+			return m.updateNotices(msg)
 		}
 		switch msg.String() {
 		case "up", "k":
@@ -221,6 +255,12 @@ func (m launcherModel) Update(msg tea.Msg) (launcherModel, tea.Cmd) {
 				return m, func() tea.Msg { return switchScreenMsg(screenSettings) }
 			case actionQuit:
 				return m, func() tea.Msg { return quitMsg{} }
+			}
+		case "n":
+			if len(m.notices) > 0 {
+				m.noticesOpen = true
+				m.noticeCursor = 0
+				m.noticeFlash = ""
 			}
 		case "q":
 			return m, func() tea.Msg { return quitMsg{} }
@@ -434,11 +474,8 @@ func (m launcherModel) View() string {
 
 // brandPlate is the front door: the presence mark beside the wordmark.
 //
-// The mark is static here. This screen is where the app sits idle, and a
-// permanently animating front door would hold a redraw loop open for as long
-// as the program is running — the rest of the TUI stops ticking when nothing
-// is happening, and the launcher should not be the exception. The spec agrees:
-// the static PresenceMark is the onboarding/About form of the orb.
+// The rings turn gently while the launcher is visible. App owns the timer so
+// leaving the menu or shrinking away the mark stops the redraw loop.
 func (m launcherModel) brandPlate(width int) string {
 	wordmark := lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("OBEY VOICE")
 	tag := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render("voice · speed · signal")
@@ -452,7 +489,7 @@ func (m launcherModel) brandPlate(width int) string {
 	if rows == 0 {
 		return plate
 	}
-	mark := strings.Join(anim.Orb(0, rows, orbStyles(), true), "\n")
+	mark := strings.Join(anim.Orb(m.logoFrame, rows, orbStyles(), m.reducedMotion), "\n")
 	return lipgloss.JoinHorizontal(lipgloss.Center, mark, "  ", plate)
 }
 
@@ -501,13 +538,12 @@ func (m launcherModel) fullView(width int) string {
 	b.WriteString(ansi.Truncate(chips, width, "…"))
 	b.WriteString("\n\n")
 
-	if m.banner != "" {
-		style := statusStyle
-		if m.bannerErr {
-			style = errorStyle
-		}
-		b.WriteString(ansi.Truncate(style.Render("  "+m.banner), width, "…"))
+	if rail := m.noticeRail(width); rail != "" {
+		b.WriteString(rail)
 		b.WriteString("\n\n")
+	}
+	if m.noticesOpen {
+		return m.finishNoticeView(b.String(), width)
 	}
 
 	// Menu width
@@ -559,8 +595,11 @@ func (m launcherModel) fullView(width int) string {
 	}
 
 	help := "  ↑/↓ navigate   enter select   q quit"
-	if m.submenu != nil {
+	switch {
+	case m.submenu != nil:
 		help = "  ↑/↓ navigate   enter select   esc back"
+	case len(m.notices) > 0:
+		help = "  ↑/↓ navigate   enter select   n notices   q quit"
 	}
 	b.WriteString("\n")
 	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
@@ -572,13 +611,12 @@ func (m launcherModel) compactView(width int) string {
 	var b strings.Builder
 	b.WriteString(ansi.Truncate(headerStyle.Render("  OBEY VOICE"), width, "…"))
 	b.WriteString("\n")
-	if m.banner != "" {
-		style := statusStyle
-		if m.bannerErr {
-			style = errorStyle
-		}
-		b.WriteString(ansi.Truncate(style.Render("  "+m.banner), width, "…"))
+	if rail := m.noticeRail(width); rail != "" {
+		b.WriteString(rail)
 		b.WriteString("\n")
+	}
+	if m.noticesOpen {
+		return m.finishNoticeView(b.String(), width)
 	}
 
 	items, cursor := m.visibleItems()
@@ -598,9 +636,26 @@ func (m launcherModel) compactView(width int) string {
 			b.WriteString(ansi.Truncate(dimStyle.Render("   "+item.label), width, "…") + "\n")
 		}
 	}
-	b.WriteString(dimStyle.Render(ansi.Truncate("  ↑/↓ · enter · q", width, "…")))
+	help := "  ↑/↓ · enter · q"
+	if len(m.notices) > 0 {
+		help = "  ↑/↓ · enter · n · q"
+	}
+	b.WriteString(dimStyle.Render(ansi.Truncate(help, width, "…")))
 	b.WriteString("\n")
 	return b.String()
+}
+
+// finishNoticeView appends a notice browser that fits the lines still free
+// in the terminal. A trailing newline on prefix counts as a used line.
+func (m launcherModel) finishNoticeView(prefix string, width int) string {
+	maxLines := 0
+	if m.height > 0 {
+		maxLines = m.height - 1 - strings.Count(prefix, "\n")
+		if maxLines < 1 {
+			maxLines = 1
+		}
+	}
+	return prefix + m.noticeBrowser(width, maxLines)
 }
 
 func (m launcherModel) activeModel() string {
@@ -616,6 +671,10 @@ func (m launcherModel) activeModel() string {
 	case "cursor":
 		if m.cfg.CursorModel != "" {
 			return m.cfg.CursorModel
+		}
+	case "codex":
+		if m.cfg.CodexModel != "" {
+			return m.cfg.CodexModel
 		}
 	}
 	return "default"

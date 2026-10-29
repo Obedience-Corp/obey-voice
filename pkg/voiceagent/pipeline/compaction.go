@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
@@ -94,34 +95,15 @@ func (p *Pipeline) prepareTurn(ctx context.Context, input string, metrics *turnM
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if prep, ok := p.Brain.(interface{ PrepareCompact(string) }); ok {
-		prep.PrepareCompact(p.compactionInstruction())
-	}
-	history = p.Brain.History()
-	if view, ok := p.Brain.(brain.ContextHistoryProvider); ok {
-		history = view.ContextHistory()
-	}
-	stillCount := p.AutoCompactAfter > 0 && len(history) > p.AutoCompactAfter
-	stillBudget := false
-	if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok {
-		stillBudget = budget.NeedsContinuityCompact(input)
-	}
-	if !stillCount && !stillBudget {
-		p.emit(events.Info{Message: "compact: trimmed"})
-		return nil
-	}
-	if err := p.CompactConversation(ctx); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return err
-		}
-		p.emit(events.Info{Message: "compact: skipped (" + err.Error() + ")"})
-		return nil
-	}
-	return nil
+	return p.compactConversation(ctx, input, true)
 }
 
 func (p *Pipeline) CompactConversation(ctx context.Context) error {
-	if p.CompactPrompt == "" {
+	return p.compactConversation(ctx, "", false)
+}
+
+func (p *Pipeline) compactConversation(ctx context.Context, input string, automatic bool) (resultErr error) {
+	if p.Brain == nil || p.CompactPrompt == "" {
 		return errors.New("compact prompt not configured")
 	}
 	history := p.Brain.History()
@@ -129,8 +111,15 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	if turnsBefore < 2 {
 		return errors.New("nothing to compact yet")
 	}
-	// Snapshot before the summarize turn appends to history (History may
-	// alias the provider's live slice).
+	started := time.Now()
+	terminal := "failed"
+	stage := func(name string) { p.emit(events.CompactionProgress{Stage: name, Elapsed: time.Since(started)}) }
+	defer func() {
+		if errors.Is(resultErr, context.Canceled) || errors.Is(resultErr, context.DeadlineExceeded) {
+			terminal = "canceled"
+		}
+		stage(terminal)
+	}()
 	before := append([]brain.Turn(nil), history...)
 	tailSource := before
 	if canonical, ok := p.Brain.(brain.CanonicalHistoryProvider); ok {
@@ -140,33 +129,67 @@ func (p *Pipeline) CompactConversation(ctx context.Context) error {
 	if p.OnCompactBackup != nil {
 		p.OnCompactBackup(before)
 	}
+	stage("trim")
 	if prep, ok := p.Brain.(interface{ PrepareCompact(string) }); ok {
 		prep.PrepareCompact(p.compactionInstruction())
 	}
-
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if automatic {
+		working := p.Brain.History()
+		if view, ok := p.Brain.(brain.ContextHistoryProvider); ok {
+			working = view.ContextHistory()
+		}
+		pressure := false
+		if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok {
+			pressure = budget.NeedsContinuityCompact(input)
+		}
+		if !pressure && (p.AutoCompactAfter <= 0 || len(working) <= p.AutoCompactAfter) {
+			terminal = "complete"
+			p.emit(events.Info{Message: "compact: trimmed"})
+			return nil
+		}
+	}
 	ctx, cancel := p.withBrainTimeout(ctx)
 	defer cancel()
-	// OmitTurnInstruction: the compact briefing asks for a dense document, and
-	// the per-turn voice instruction ("2–3 sentences max") would otherwise land
-	// after it as the model's last word. Tools stay off — this turn only reads
-	// the conversation it already has.
+	// The dense briefing replaces voice instructions. Tools and durable-history
+	// writes stay off; only a successful summary can reseed the working context.
+	stage("summarize")
 	summary, err := p.Brain.ThinkFull(ctx, p.compactionInstruction(), brain.StreamOptions{OmitTurnInstruction: true, TransientHistory: true})
+	if err == nil && strings.TrimSpace(summary) == "" {
+		err = errors.New("empty summary")
+	}
 	if err != nil {
-		// Providers roll their own appended input back on failure, so history is
-		// already the pre-compact transcript here — no LoadHistory (it would
-		// drop a still-valid harness session and floor it to the seed).
+		if automatic && ctx.Err() == nil && !errors.Is(err, context.Canceled) {
+			if trim, ok := p.Brain.(interface{ TrimContinuity(string) }); ok {
+				stage("trim")
+				trim.TrimContinuity(input)
+			}
+			terminal = "skipped"
+			p.emit(events.Info{Message: "compact: skipped (" + err.Error() + ")"})
+			return nil
+		}
 		return fmt.Errorf("compact summarize turn: %w", err)
 	}
-
-	if strings.TrimSpace(summary) == "" {
-		return errors.New("compact summarize turn: empty summary")
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	stage("reseed")
 	seed := append([]brain.Turn{{Role: "assistant", Content: summary}}, tail...)
 	if reseed, ok := p.Brain.(interface{ ReseedContinuity([]brain.Turn) }); ok {
 		reseed.ReseedContinuity(seed)
 	} else {
 		p.Brain.LoadHistory(seed)
 	}
+	if automatic {
+		if budget, ok := p.Brain.(interface{ NeedsContinuityCompact(string) bool }); ok && budget.NeedsContinuityCompact(input) {
+			if trim, ok := p.Brain.(interface{ TrimContinuity(string) }); ok {
+				trim.TrimContinuity(input)
+			}
+		}
+	}
+	terminal = "complete"
 	p.emit(events.ConversationCompacted{TurnsBefore: turnsBefore, Summary: summary})
 	if p.OnTurn != nil {
 		p.OnTurn()

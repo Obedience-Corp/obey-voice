@@ -7,16 +7,16 @@
 # Only the first ~90 seconds are downloaded (not the full ~43 min video).
 # The WAV is stored in a *shared user cache* so every git worktree reuses it:
 #
-#   ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/festival-voice/fixtures/meetings}
+#   ${OBEY_VOICE_FIXTURE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/obey-voice/fixtures/meetings}
 #
-# App cache slug matches config.AppSlug (festival-voice). Override with
+# App cache slug matches config.AppSlug (obey-voice). Override with
 # OBEY_VOICE_FIXTURE_CACHE if needed.
 #
 # Requires: yt-dlp, ffmpeg
 set -euo pipefail
 
 # Keep in sync with internal/config.AppSlug.
-APP_SLUG="${APP_SLUG:-festival-voice}"
+APP_SLUG="${APP_SLUG:-obey-voice}"
 
 STEM="product-marketing-meeting-90s"
 URL="${MEETING_FIXTURE_URL:-https://www.youtube.com/watch?v=lBVtvOpU80Q}"

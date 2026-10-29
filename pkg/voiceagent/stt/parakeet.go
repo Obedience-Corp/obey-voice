@@ -12,6 +12,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/kws"
 )
 
 // ParakeetSTT implements utterance-final STT with an NVIDIA Parakeet TDT model
@@ -26,6 +27,7 @@ type ParakeetSTT struct {
 	vad        *audio.VAD
 	capture    audioSource
 	model      config.ParakeetAsset
+	acoustic   *kws.Obey
 }
 
 // NewParakeetSTT creates a Parakeet STT provider from the configured
@@ -59,7 +61,15 @@ func NewParakeetSTT(cfg *config.Config, capture audioSource, vad *audio.VAD) (*P
 	if recognizer == nil {
 		return nil, fmt.Errorf("failed to create parakeet recognizer (model: %s); run 'obey-voice models ensure'", model.Name)
 	}
-	return &ParakeetSTT{cfg: cfg, recognizer: recognizer, vad: vad, capture: capture, model: model}, nil
+	var acoustic *kws.Obey
+	if cfg.AcousticNameEnabled {
+		acoustic, err = kws.NewObey(filepath.Join(config.ModelsDirFrom(cfg), config.AcousticNameModelDir))
+		if err != nil {
+			sherpa.DeleteOfflineRecognizer(recognizer)
+			return nil, err
+		}
+	}
+	return &ParakeetSTT{cfg: cfg, recognizer: recognizer, vad: vad, capture: capture, model: model, acoustic: acoustic}, nil
 }
 
 // Start begins a VAD-gated utterance-final session over the shared offline loop.
@@ -74,6 +84,9 @@ func (s *ParakeetSTT) Start(ctx context.Context) (Session, error) {
 		seg:        newVADSegmenter(s.vad, preRollSamplesFromMS(s.cfg.VADPreRollMS)),
 		policy:     endpoint.FromConfig(s.cfg, finite),
 		transcribe: s.transcribe,
+	}
+	if s.acoustic != nil {
+		deps.acousticName = s.acoustic.Detect
 	}
 	go func() {
 		defer session.pause.stop()
@@ -103,11 +116,24 @@ func (s *ParakeetSTT) transcribe(samples []float32) (string, error) {
 	return normalizeTranscript(strings.TrimSpace(stream.GetResult().Text)), nil
 }
 
+// DecodeSegment decodes one finite span of speech. It is the SegmentDecoder
+// seam: no session, no VAD, no capture, so a file runner can drive the same
+// recognizer the live loop uses.
+func (s *ParakeetSTT) DecodeSegment(ctx context.Context, samples []float32) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return s.transcribe(samples)
+}
+
 // Available returns true if the recognizer loaded.
 func (s *ParakeetSTT) Available() bool { return s.recognizer != nil }
 
 // Delete frees the recognizer.
 func (s *ParakeetSTT) Delete() {
+	if s.acoustic != nil {
+		s.acoustic.Close()
+	}
 	if s.recognizer != nil {
 		sherpa.DeleteOfflineRecognizer(s.recognizer)
 		s.recognizer = nil

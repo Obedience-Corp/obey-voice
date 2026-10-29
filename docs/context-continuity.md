@@ -67,13 +67,23 @@ its responder. Names may occur anywhere: both “Santa, what do you think?” an
 and recent conversation, not an invocation phrase list. Ordinary mentions,
 quotations, and questions about a persona leave the current responder selected.
 The user's original words remain unchanged in the transcript and model input.
-Unknown or ambiguous targets, unavailable personas, and classifier failures are
-reported without silently choosing another persona.
+Messages with no roster name and no acoustic name cue stay with the current
+responder without a classifier call. A leading punctuated address gives that
+listener the first turn, including requests to consult another persona.
+Semantic routing selects only configured agent names and aliases. Human names,
+model names such as LFM3, and other unlisted topics remain ordinary conversation
+for the selected responder. The structured output schema constrains target names
+to that roster; the host also ignores unlisted semantic targets if a backend
+ignores the schema. Unknown exact `@id` and `switch to Name` controls, ambiguous
+agent targets, unavailable configured personas, and classifier failures still
+report an error without silently selecting a replacement.
 
 This private structured request uses the current Ollama model, public names and
 aliases, and up to eight recent conversational messages. It has no tools or
-conversation-history side effects and a 15-second deadline. It adds a model
-request before the reply; its latency depends on the installed model.
+conversation-history side effects. Its deadline is set by
+`persona_routing_timeout` (default 120 seconds), including model startup. Parent
+cancellation still stops the request. It adds a model request before the reply;
+its latency depends on the installed model.
 
 After a successfully completed response containing a persona name, the same
 classifier can recognize an
@@ -99,6 +109,34 @@ OBEY_VOICE_LIVE_ADDRESS_MODEL='<installed-model>' go test -tags=integration \
   ./pkg/voiceagent/brain -run TestLiveGroupAddressee -count=1 -v
 ```
 
+## Repeated answers
+
+Live Ollama replies check for a narrow replay pattern: the new answer starts
+with the entire last completed answer from the same persona, at least 200
+characters long. A matching prefix is held before synthesis; a fresh response
+streams as soon as it diverges. Matching ignores whitespace but does not detect
+paraphrases or repeated passages later in an otherwise new response.
+
+Explicit repeat cues, requests of three words or fewer, and requests too long
+for the intent check preserve the original response. Otherwise a private,
+tools-free check of the latest message uses the selected model with a 30-second
+deadline. Only an `unrequested` decision triggers one tools-free regeneration.
+Uncertain or failed checks preserve the original output; a failed check emits
+an informational diagnostic. The classifier remains model-dependent, so this
+is a conservative mitigation rather than a guarantee against all repetition.
+
+Rejected attempts never enter speech, displayed replies, or canonical history.
+A second repeated attempt produces a short recovery message and a degraded
+outcome. Cancellation stops recovery without speaking another line. Background
+notifications, workers, internal summaries, and incomplete-answer continuations
+do not use this guard. Matching replies can take longer to reach first audio
+because they wait for the generation and intent check before being released.
+
+```sh
+OBEY_VOICE_LIVE_REPETITION_MODEL='<installed-model>' go test -tags=integration \
+  ./pkg/voiceagent/brain -run TestLiveRepetitionIntent -count=1 -v
+```
+
 ## Context budgets
 
 `read_skill` is special: its full instructions remain in the existing transient
@@ -115,8 +153,9 @@ arguments, archive recall and continuation instructions; the estimate remains
 approximately four bytes per token and is not an exact model tokenizer.
 
 A truncated completion is marked incomplete in history. The same stream carries
-“Continuing.” followed by a tools-disabled continuation, after an attempted
-compact. At most two continuations run. Exhaustion produces “I lost my train of
+a tools-disabled continuation after an attempted compact, without a spoken
+recovery announcement. Trailing voice stage directions do not make a complete
+sentence count as truncated. At most two continuations run. Exhaustion produces “I lost my train of
 thought — can you repeat the last part?” and the pipeline marks the turn
 degraded. Cancellation stops recovery without another fallback utterance.
 
@@ -125,18 +164,17 @@ degraded. Cancellation stops recovery without another fallback utterance.
 | `continuity_projection_enabled` | `true` | Project tool results; disabling restores raw tool history. |
 | `continuity_archive_enabled` | `true` | Keep bounded in-memory archive and cap ordinary hot history. |
 | `continuity_soft_limit_ratio` | `0.80` | Token-estimate compact threshold; `0` disables this trigger. |
-| `continuity_compact_filler` | `true` | Speak before automatic compaction. |
+| `continuity_compact_filler` | `false` | Speak before automatic compaction. |
 | `continuity_integrity_enabled` | `true` | Detect truncated completions. |
 | `continuity_recovery_max` | `2` | Bounded continuation attempts; `0` preserves detection-only behavior. |
-| `continuity_num_ctx_ceil` | `8192` | Opt-in adaptive context ceiling, at most `32768`. |
+| `continuity_num_ctx_ceil` | `32768` | Opt-in adaptive context ceiling, at most `32768`. |
 
-The warm default remains `ollama_num_ctx: 8192`. Expansion follows
-8192 → 16384 → 32768 under remaining pressure after older history is archived,
-or on the second continuation attempt. The expanded size remains the session
-high-water mark and is used by both chat and warmup. Explicit larger user
-settings are not reduced. The adaptive ceiling stays **8192 by default** until
-live voice, model memory use and latency acceptance are recorded; tests with a
-stub server do not establish hardware performance.
+The conversation window and adaptive ceiling default to `32768`. Existing
+explicit settings are preserved. With an 8k floor and a larger configured
+ceiling, expansion follows 8192 → 16384 → 32768 under remaining pressure after
+older history is archived, or on the second continuation attempt. The expanded
+size remains the session high-water mark for chat and warmup. These limits do
+not imply a measured latency or hardware-memory result.
 
 Worker integrations can call `AddDelegationNote(brief, jobID)` to use the same
 projection and archive boundary. This change does not start or cancel workers.
@@ -147,3 +185,26 @@ compaction filler/failure, continuation success/exhaustion/cancellation, and
 sticky chat/warmup options. Microphone/speaker incident replay, live model
 follow-up quality, RAM consumption and TTFT benchmarking require separate live
 acceptance; they are not implied by these deterministic tests.
+
+## Conversation memory and compaction display
+
+Ollama conversations default to a 32k window with a matching 32k ceiling and
+`max_history: 40` as its history setting. Workers use `voice_worker_num_ctx` (8k by
+default). Existing explicit window settings are preserved. Settings → Brain →
+Conversation memory offers 8k, 16k and 32k presets; selecting one writes the
+conversation window and ceiling together in one atomic config update. It takes
+effect in the next conversation.
+
+The conversation screen shows the estimated prompt size and effective window,
+including session-only expansion. The same row shows trim, summarize and reseed
+progress. Estimates are approximate; the meter performs no model requests.
+Compaction is silent by default. `continuity_compact_filler: true` retains the
+optional spoken notice.
+
+Automatic compaction budgets its summary instruction before requesting it. If
+summarization fails, complete old exchanges are archived and removed from the
+working projection until the next prompt is below the soft limit. The saved
+canonical transcript is preserved. The user turn then proceeds normally;
+compaction cannot keep retrying against the same oversized working history.
+Canceling the turn cancels compaction and clears its progress display. Explicit
+`/compact` still reports a failed summary instead of silently claiming success.

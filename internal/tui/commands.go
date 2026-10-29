@@ -28,6 +28,7 @@ const (
 	commandRecord
 	commandSettings
 	commandPersonas
+	commandParticipation
 	commandWorkers
 	commandWork
 	commandVoice
@@ -61,6 +62,7 @@ var slashCommands = []slashCommand{
 	{id: commandThink, name: "/think", usage: "/think [on|off]", description: "Show or hide model thinking in the thread", aliases: []string{"/thinking"}},
 	{id: commandRecord, name: "/record", usage: "/record [off|talk|lab]", description: "Record this conversation for content (talk) or audio debug (lab)"},
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
+	{id: commandParticipation, name: "/participation", usage: "/participation [off|invited|open] [all|id,id]", description: "Show or change agent participation and conversation members"},
 	{id: commandPersonas, name: "/personas", usage: "/personas", description: "Browse, select, create, or edit personas"},
 	{id: commandWork, name: "/work", usage: "/work [job|all|cancel job|dismiss job|speak job|replay job|logs]", description: "Inspect work and control result delivery"},
 	{id: commandWorkers, name: "/workers", usage: "/workers", description: "View background tasks, stop work, or turn workers on/off"},
@@ -68,7 +70,7 @@ var slashCommands = []slashCommand{
 	{id: commandSpeakers, name: "/speakers", usage: "/speakers [on|off|status|name|names]", description: "Live speaker labels, renames, and status"},
 	{id: commandCopy, name: "/copy", usage: "/copy [all]", description: "Copy last reply (or full chat) to the clipboard", aliases: []string{"/yank"}},
 	{id: commandVim, name: "/vim", usage: "/vim [on|off|insert]", description: "Toggle modal Vim editing"},
-	{id: commandMenu, name: "/menu", usage: "/menu", description: "End this chat and return to the main menu", aliases: []string{"/back"}},
+	{id: commandMenu, name: "/menu", usage: "/menu", description: "Save this chat and return to the main menu", aliases: []string{"/back"}},
 	{id: commandQuit, name: "/quit", usage: "/quit", description: "Exit Obey Voice", aliases: []string{"/q", "/exit"}},
 }
 
@@ -170,7 +172,7 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		m.commandError("persona selection in progress")
 		return nil
 	}
-	if command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && command.id != commandRecord && len(args) > 0 {
+	if command.id != commandParticipation && command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && command.id != commandRecord && len(args) > 0 {
 		m.commandError(fmt.Sprintf("%s does not take arguments", command.name))
 		return m.resumeListening()
 	}
@@ -218,6 +220,8 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		return m.resumeListening()
 	case commandSettings:
 		return func() tea.Msg { return switchScreenMsg(screenSettings) }
+	case commandParticipation:
+		return m.runParticipationCommand(args)
 	case commandPersonas:
 		return func() tea.Msg { return switchScreenMsg(screenPersonas) }
 	case commandWork:
@@ -457,9 +461,11 @@ func (m *conversationModel) showCommandHelp(args []string) {
 func (m *conversationModel) commandNotice(message string) {
 	m.appendActivity("command", strings.Split(message, "\n")[0], 0)
 	m.appendTranscript(dimStyle.Render("  " + message))
+	m.items[len(m.items)-1].notice = message
 }
 
 func (m *conversationModel) commandError(message string) {
 	m.appendActivity("command", "error: "+message, 0)
 	m.appendTranscript(errorStyle.Render("  " + message))
+	m.items[len(m.items)-1].notice = message
 }

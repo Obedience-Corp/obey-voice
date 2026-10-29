@@ -360,6 +360,11 @@ func populateTTSMetadata(opts *render.Options, cfg *config.Config) {
 		}
 		return
 	}
+	if activeTTSProviderName(cfg.TTSProvider) == config.OpenAISpeechProviderName {
+		opts.TTSModel = config.OpenAISpeechModel(cfg)
+		opts.TTSVoice = config.TTSVoiceFor(cfg, cfg.TTSProvider)
+		return
+	}
 	opts.TTSModel = "managed"
 	opts.TTSVoice = config.TTSVoiceFor(cfg, cfg.TTSProvider)
 }
@@ -415,6 +420,11 @@ func synthIdentityFor(cfg *config.Config) string {
 		}
 		id += "/consent=" + strconv.FormatBool(cfg.QwenTTSConsent)
 		return id
+	}
+	if activeTTSProviderName(cfg.TTSProvider) == config.OpenAISpeechProviderName {
+		// Two servers or two models are two engines: a resume across either
+		// change must not splice their segments into one file.
+		id += "/model=" + config.OpenAISpeechModel(cfg) + "/url=" + config.OpenAISpeechURL(cfg)
 	}
 	// The voice belongs in the identity per provider: audio8 reads its own key,
 	// and leaving it out would give two different audio8 voices the same

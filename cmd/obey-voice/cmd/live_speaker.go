@@ -13,11 +13,11 @@ import (
 
 // prepareLiveSpeaker builds the live speaker controller for a conversation.
 //
-// The engine is loaded lazily: config that enables live analysis gets it
-// switched on here, and config that does not still gets a working controller so
-// /speakers on can turn labels on mid-session. Only a runtime that cannot feed
-// audio at all (--text, no capture) is permanently unavailable; detail explains
-// that on the event bus.
+// The engine is loaded lazily and is not switched on here; the session screen
+// calls SetEnabled once it is up. Config that does not enable live still gets a
+// working controller so /speakers on can turn labels on mid-session. Only a
+// runtime that cannot feed audio at all (--text, no capture) is permanently
+// unavailable; detail explains that on the event bus.
 //
 // stop tears the chain down in order (feed, adapter, analyzer/engine) and is
 // safe to call when no engine was ever built.
@@ -55,7 +55,6 @@ func prepareLiveSpeaker(
 		// Off by config, but reachable: no model is loaded until /speakers on.
 		return controller, stop, ""
 	}
-	controller.SetEnabled(true)
 	return controller, stop, "live speakers starting (enrolled names or unknown)"
 }
 
@@ -121,6 +120,9 @@ func liveSpeakerEngineBuilder(
 	}
 	assetCfg.Speaker.Enabled = true
 	assetCfg.Speaker.Live.Enabled = true
+	// Live identification is TitaNet only; meeting diarization ensures its
+	// own pyannote assets.
+	assetCfg.Speaker.Meeting.Enabled = false
 
 	return func() (speaker.Engine, error) {
 		if err := ensure(ctx, &assetCfg, config.AssetRequest{NeedSpeaker: true}, nil); err != nil {

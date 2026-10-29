@@ -82,29 +82,31 @@ func (m *workersModel) refreshDetail() {
 		if item.ID != m.detailID {
 			continue
 		}
-		text := fmt.Sprintf("%s\n\n%s · %s · %s\nID: %s\n", item.Task, item.State, workerProvider(item), roundSeconds(item.Elapsed), item.ID)
-		if item.Activity != "" {
-			text += "\nActivity: " + item.Activity + "\n"
-		}
-		if item.Result != "" {
-			text += "\nOutput:\n" + item.Result + "\n"
-		}
-		if item.Err != "" {
-			text += "\nError: " + item.Err + "\n"
-		}
-		if item.Termination != "" {
-			text += "\nTermination: " + item.Termination + "\n"
-		}
-		if item.Active() && item.Result == "" {
-			text += "\nOutput will appear when the worker finishes."
-		}
 		offset := m.detail.YOffset
-		m.detail.SetContent(ansi.Hardwrap(safeWorkerText(text), m.detail.Width, true))
+		follow := len(item.Thread) > 0 && m.detail.AtBottom()
+		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width))
 		m.detail.SetYOffset(offset)
+		if follow {
+			m.detail.GotoBottom()
+		}
 		return
 	}
 	if m.detailID != "" {
 		m.detail.SetContent("This task is no longer in the current conversation.")
+	}
+}
+
+func (m *workersModel) openDetail(id string) {
+	for i, item := range m.items {
+		if item.ID != id {
+			continue
+		}
+		m.cursor = i + 2
+		m.ensureVisible()
+		m.detailID = id
+		m.detail.GotoTop()
+		m.refreshDetail()
+		return
 	}
 }
 
@@ -334,8 +336,8 @@ func (m workersModel) View() string {
 		for _, item := range m.items {
 			labels = append(labels, item.Task+" · "+item.State)
 			detail := workerProvider(item) + " · " + roundSeconds(item.Elapsed)
-			if item.Activity != "" {
-				detail += " · " + item.Activity
+			if summary := workerCurrentActivity(item); summary != "" {
+				detail += " · " + summary
 			}
 			details = append(details, detail)
 		}
@@ -348,7 +350,7 @@ func (m workersModel) View() string {
 			if i == m.cursor {
 				line = chipStyle.Render(line)
 			}
-			lines = append(lines, line, dimStyle.Render("    "+strings.Join(strings.Fields(safeWorkerText(details[i])), " ")))
+			lines = append(lines, line, dimStyle.Render(ansi.Truncate("    "+strings.Join(strings.Fields(safeWorkerText(details[i])), " "), w, "…")))
 		}
 		if len(m.items) == 0 {
 			lines = append(lines, "  No background tasks in this conversation.")
@@ -361,7 +363,7 @@ func (m workersModel) View() string {
 	lines = append(lines, "", statusStyle.Render("  "+safeWorkerText(message)))
 	help := "  ↑/↓ select · enter open · s stop task · x stop all · t toggle · esc back"
 	if m.detailID != "" {
-		help = "  ↑/↓ scroll · s stop task · x stop all · t toggle · esc list"
+		help = "  ↑/↓ scroll · home/end · s stop task · x stop all · t toggle · esc list"
 	}
 	lines = append(lines, dimStyle.Render(help))
 	for i, line := range lines {

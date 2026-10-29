@@ -90,9 +90,10 @@ type SpeakerVerdict struct {
 // interruptRequest is the typed barge-in signal the interrupt controller reports
 // to the turn runtime, which owns the decision to act on it.
 type interruptRequest struct {
-	Reason string
-	At     time.Time
-	Source interruptSourceEvidence
+	Reason     string
+	At         time.Time
+	Source     interruptSourceEvidence
+	Diagnostic interruptDiagnostic
 }
 
 // interruptSourceEvidence describes the callback that qualified a request,
@@ -227,26 +228,12 @@ func (c *interruptController) enabled() bool {
 	return c.capture != nil && c.vad != nil && c.playback != nil
 }
 
-// allowsInterrupt reports whether the current speaker verdict permits a trip
-// (D7, review #13/#14). It fails open (true) whenever speakerVerdict is nil
-// (barge_in_speakers=anyone: never consulted), the analyzer is not
-// confidently healthy, no window verdict has arrived yet (cold start), or
-// the verdict is older than verdictMaxAge (stale — including a verdict whose
-// At was never stamped, since time.Since of a zero Time is always large).
-// Only a confident, current, non-enrolled verdict blocks (returns false) —
-// same posture as ownerVerifyGate: a privacy guard, not an auth boundary.
+// allowsInterrupt requires a healthy, fresh enrolled match when a speaker
+// verdict source is configured. Anyone mode leaves the source nil. The same
+// policy gates pause retention so rejected echo cannot seed the next turn.
 func (c *interruptController) allowsInterrupt() bool {
-	if c.speakerVerdict == nil {
-		return true
-	}
-	v := c.speakerVerdict()
-	if !v.Healthy || !v.HasVerdict {
-		return true
-	}
-	if c.verdictMaxAge > 0 && time.Since(v.At) > c.verdictMaxAge {
-		return true
-	}
-	return v.Enrolled
+	allowed, _ := c.speakerDecision()
+	return allowed
 }
 
 // watch subscribes to capture and reports one barge-in request once sustained
@@ -290,13 +277,18 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 		var gapStart time.Time
 		var source interruptSourceEvidence
 		emit := func(duringArm bool, frame audio.Frame) bool {
-			if !c.allowsInterrupt() {
+			allowed, gate := c.speakerDecision()
+			if !allowed {
 				return false
 			}
 			source.DuringArm = duringArm
 			source.CallbackSpans = slices.Clone(frame.CaptureSpans)
 			select {
-			case out <- interruptRequest{Reason: "barge_in", At: time.Now(), Source: source}:
+			case out <- interruptRequest{Reason: "barge_in", At: time.Now(), Source: source, Diagnostic: interruptDiagnostic{
+				SpeakerGate: gate, DuringArm: duringArm, NeuralChunks: consecutiveSpeech,
+				Audible: audibility.Audible(), StartupQualified: startupQualified,
+				NearEndDuringArm: nearEndDuringArm, Playing: c.playback.IsPlaying(),
+			}}:
 			default:
 			}
 			return true
@@ -383,7 +375,7 @@ func (c *interruptController) watchWithDone(ctx context.Context, armAt *atomic.I
 				} else if consecutiveSpeech > 0 || audibility.Audible() {
 					consecutiveSpeech++
 				}
-				if audibility.Audible() && !gapStart.IsZero() {
+				if audibility.Audible() && !gapStart.IsZero() && c.allowsInterrupt() {
 					c.lastPauseSpeech.Store(time.Now().UnixNano())
 				}
 			}

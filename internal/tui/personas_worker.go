@@ -103,8 +103,9 @@ func (m personasModel) workerModelLabel() string {
 // formWorker returns the stack step's worker selection ("" fields = inherit).
 func (m *personasModel) formWorker() persona.Worker {
 	return persona.Worker{
-		Provider: providerAt(stackWorkerProviders(), m.workerProviderIdx),
-		Model:    strings.TrimSpace(m.workerModel),
+		Provider:   providerAt(stackWorkerProviders(), m.workerProviderIdx),
+		Model:      strings.TrimSpace(m.workerModel),
+		OllamaHost: m.workerOllamaHost,
 	}
 }
 
@@ -113,8 +114,10 @@ func (m *personasModel) prefillWorker(p *persona.Profile) {
 	if p == nil {
 		m.workerProviderIdx = 0
 		m.workerModel = ""
+		m.workerOllamaHost = ""
 		return
 	}
 	m.workerProviderIdx = providerIndex(stackWorkerProviders(), p.Brain.Worker.Provider)
 	m.workerModel = strings.TrimSpace(p.Brain.Worker.Model)
+	m.workerOllamaHost = strings.TrimSpace(p.Brain.Worker.OllamaHost)
 }

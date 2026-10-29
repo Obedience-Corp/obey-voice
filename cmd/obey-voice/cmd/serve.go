@@ -23,6 +23,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/endpoint"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
@@ -127,6 +128,13 @@ remote_tools_enabled is set.`,
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
+		// The agent's tools operate here. An explicit --work-dir that does not
+		// exist is an error, not a silent fall back to home. Resolved after
+		// configureServeStdio, which has already opened a relative --log-file
+		// against the caller's cwd.
+		if err := resolveConversationDirectory(cfg, servePersona, serveWorkDir, nil); err != nil {
+			return err
+		}
 		// --persona overrides the active persona for this process only.
 		// config.Load already applied the configured persona via the
 		// SetAfterLoad hook, so this simply re-binds to a different one.
@@ -137,11 +145,7 @@ remote_tools_enabled is set.`,
 			}
 			cfg = binding.Config()
 		}
-		// The agent's tools operate here. An explicit --work-dir that does not
-		// exist is an error, not a silent fall back to home. Resolved after
-		// configureServeStdio, which has already opened a relative --log-file
-		// against the caller's cwd.
-		wd, err := config.ResolveWorkDirInfo(cfg, serveWorkDir)
+		wd, err := config.ResolveWorkDirInfo(cfg, "")
 		if err != nil {
 			return err
 		}
@@ -329,6 +333,7 @@ func runServe(cfg *config.Config) error {
 		return fmt.Errorf("load base persona settings: %w", err)
 	}
 	base.WorkDir = serveCfg.WorkDir
+	base.WorkDirSource = serveCfg.WorkDirSource
 	base.VoiceToolsEnabled = serveCfg.VoiceToolsEnabled
 	switcher := &servePersonaSwitcher{base: base, cfg: &serveCfg, pipeline: p, tts: liveTTS, sessions: ref}
 	if _, supported := p.Brain.(brain.HistoryProjectionProvider); supported {
@@ -405,7 +410,17 @@ func runServe(cfg *config.Config) error {
 	// past it for a client that streams but never sends voice_end.
 	turnClocks := endpoint.FromConfig(cfg, false)
 
+	var setParticipation func(context.Context, discussion.Settings) error
+	if cfg.GroupParticipationEnabled && currentSessionSnapshot != nil {
+		setParticipation = func(ctx context.Context, settings discussion.Settings) error {
+			if err := switcher.initialize(); err != nil {
+				return err
+			}
+			return switcher.selector.SetParticipation(ctx, settings)
+		}
+	}
 	server := netapi.New(netapi.Options{
+		SetParticipation:  setParticipation,
 		SetPersonaContext: switcher.applyContext,
 		ListPersonas: func() ([]netapi.PersonaSummary, error) {
 			if switcher.selector != nil {
@@ -455,7 +470,7 @@ func runServe(cfg *config.Config) error {
 			// tells clients where it listens instead of leaving them to parse url.
 			allBinds := append([]string{listenAddr}, extras...)
 			if serveBannerJSON {
-				emitServeBannerJSON(listenAddr, allBinds, creds, netapi.CapabilitiesForSnapshot(currentSessionSnapshot != nil))
+				emitServeBannerJSON(listenAddr, allBinds, creds, netapi.CapabilitiesForParticipation(currentSessionSnapshot != nil, setParticipation != nil))
 			} else {
 				printServeBanner(listenAddr, creds, cfg)
 				if len(extras) > 0 {
@@ -504,9 +519,8 @@ func runServe(cfg *config.Config) error {
 // The caller supplies the current selected binding snapshot so active reflects
 // session selection without consulting the configured default.
 //
-// Each row's stack is resolved through persona.ResolveBinding, the same call
-// that binds a conversation, so the list reports what a turn would actually
-// run with rather than a profile's inherit-me blanks.
+// Each row overlays the profile's settings without admitting a response.
+// A missing starting directory must not hide the catalog needed to repair it.
 func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error) {
 	return func() ([]netapi.PersonaSummary, error) {
 		profiles, issues, err := persona.ListWithIssues()
@@ -516,32 +530,18 @@ func servePersonaList(cfg *config.Config) func() ([]netapi.PersonaSummary, error
 		active := persona.ActiveID(cfg)
 		out := make([]netapi.PersonaSummary, 0, len(profiles))
 		for _, p := range profiles {
-			var binding *persona.SessionBinding
-			var snap *config.Config
-			if p.Inactive {
-				snap = cfg.Clone()
-				persona.Apply(snap, p)
-			} else {
-				var err error
-				binding, err = persona.ResolveBinding(cfg, p.ID)
-				if err != nil {
-					return nil, err
-				}
-				snap = binding.Config()
-			}
+			snap := cfg.Clone()
+			persona.Apply(snap, p)
 			id, displayName := p.ID, p.DisplayName
 			brainModel := persona.ModelForProvider(snap, snap.BrainProvider)
 			brainProvider := snap.BrainProvider
-			if binding != nil {
-				id, displayName, brainModel = binding.PersonaID, binding.DisplayName, binding.BrainModel
-				brainProvider = binding.BrainProvider
-			}
 			out = append(out, netapi.PersonaSummary{
-				ID:          id,
-				DisplayName: displayName,
-				Active:      id == active,
-				Builtin:     p.Builtin,
-				Inactive:    p.Inactive,
+				StartingDirectory: p.StartingDirectory,
+				ID:                id,
+				DisplayName:       displayName,
+				Active:            id == active,
+				Builtin:           p.Builtin,
+				Inactive:          p.Inactive,
 				Brain: netapi.PersonaBrain{
 					Provider: brainProvider,
 					Model:    brainModel,
@@ -616,10 +616,16 @@ func (s *servePersonaSwitcher) initialize() error {
 	}
 	opts := personaruntime.SelectionOptions{Base: base, Pipeline: s.pipeline, Voices: s.tts,
 		SessionID: s.sessions.id(), Initial: binding,
+		Participation: s.sessions.sess.Participation,
+		PersistParticipation: func(settings discussion.Settings) error {
+			s.sessions.mu.Lock()
+			defer s.sessions.mu.Unlock()
+			return session.DefaultStore().SaveParticipation(s.sessions.sess, settings)
+		},
 		Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
 			s.sessions.mu.Lock()
 			defer s.sessions.mu.Unlock()
-			return session.DefaultStore().SaveSelection(s.sessions.sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash)
+			return session.DefaultStore().SaveSelection(s.sessions.sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 		},
 	}
 	if s.newBrain != nil {
@@ -633,6 +639,9 @@ func (s *servePersonaSwitcher) initialize() error {
 		return err
 	}
 	s.pipeline.AdmitInput = s.selector.Route
+	s.pipeline.RouteHandoff = s.selector.RouteHandoff
+	s.pipeline.EndDiscussion = s.selector.EndDiscussion
+	s.pipeline.CompleteDiscussion = s.selector.RecordDiscussionResponse
 	return nil
 }
 
@@ -662,7 +671,7 @@ func (s *servePersonaSwitcher) clear(ctx context.Context) error {
 		return nil
 	}
 	selected := s.selector.Snapshot()
-	s.selector.RestoreSession(s.sessions.id(), selected.PersonaID, selected.DisplayName, selected.PromptHash)
+	s.selector.RestoreSession(s.sessions.id(), selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 	_, err := s.selector.Select(ctx, selected.PersonaID, "clear")
 	return err
 }
@@ -710,7 +719,13 @@ func (s *servePersonaSwitcher) snapshot(ctx context.Context) (netapi.SessionSnap
 	if scope.ConversationEpoch == "" || selected.ConversationEpoch != scope.ConversationEpoch {
 		return netapi.SessionSnapshot{}, errors.New("session snapshot has mismatched conversation epoch")
 	}
+	var settings *discussion.Settings
+	if s.cfg.GroupParticipationEnabled {
+		copy := s.selector.Participation()
+		settings = &copy
+	}
 	return netapi.SessionSnapshot{
+		Participation: settings, Discussion: s.selector.DiscussionSnapshot(),
 		SessionID:         sessionID,
 		ConversationEpoch: scope.ConversationEpoch,
 		Selection:         selected,
@@ -726,6 +741,19 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	if s.selector != nil {
 		cfg = s.selector.Config()
 	}
+	next, err := session.Load(id)
+	if err != nil {
+		return err
+	}
+	cfg = cfg.Clone()
+	if err := resolveConversationDirectory(cfg, next.SelectedPersonaID, serveWorkDir, next); err != nil {
+		return err
+	}
+	// Providers without shared selection cannot replace a live brain safely.
+	// Validate before touching the old session; reopening serve can restore it.
+	if s.selector == nil && cfg.WorkDir != s.cfg.WorkDir {
+		return fmt.Errorf("resuming a different directory requires a provider with shared conversation selection")
+	}
 	if err := s.sessions.resume(s.pipeline, cfg, id); err != nil {
 		return err
 	}
@@ -736,8 +764,11 @@ func (s *servePersonaSwitcher) resume(ctx context.Context, id string) error {
 	if s.selector == nil {
 		return nil
 	}
-	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash)
-	_, err := s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
+	if err := s.selector.RestoreParticipation(restored.Participation); err != nil {
+		return err
+	}
+	s.selector.RestoreSession(restored.ID, restored.SelectedPersonaID, restored.SelectedPersonaDisplayName, restored.SelectedPersonaPromptHash, cfg.ConversationDirectories)
+	_, err = s.selector.Select(ctx, restored.SelectedPersonaID, "resume")
 	if err != nil && s.pipeline.Events != nil {
 		s.pipeline.Events.Emit(events.Error{Stage: "persona", Message: fmt.Sprintf("Conversation restored; select a valid persona before continuing: %v", err)})
 	}

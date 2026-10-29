@@ -278,9 +278,16 @@ func (m personasModel) formRowHelp() string {
 	case formRowTTSProvider:
 		return "TTS provider · (default) inherits Settings"
 	case formRowVoice:
-		return "Voice · ←/→ pick · p preview"
+		return "Voice · ←/→ pick · p preview/stop"
+	case formRowVoiceLanguage:
+		if !m.voiceLanguageUsable() {
+			return "Language · this catalog has one"
+		}
+		return "Language · ←/→ narrows the Voice row · (all) shows every voice"
 	case formRowTier:
 		return "Tier · qwen3-tts only"
+	case formRowDirectory:
+		return m.directoryRowHelp()
 	default:
 		return "System prompt · enter opens the editor · Tab inserts {variables}"
 	}

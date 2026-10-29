@@ -279,3 +279,28 @@ acoustic-interruption-pair CONFIG SUITE_DIR RUNTIME_MANIFEST NEW_OUTPUT STIMULUS
     "$suite/bin/convoflow" -control-population "$output/baseline" -scenario "$suite/scenarios/interruption.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
     "$suite/bin/convoflow" -control-population "$output/worker" -scenario "$suite/scenarios/interruption-worker.yaml" -fixture-config "{{CONFIG}}" -population-runtime "{{RUNTIME_MANIFEST}}" -stimulus-device "{{STIMULUS_DEVICE}}"
     "$suite/bin/convoflow" -compare-control-populations "$output/baseline,$output/worker" > "$output/comparison.json"
+
+# Codex protocol, cancellation, history, worker routing and settings (no login).
+[no-cd]
+codex:
+    go test -race ./pkg/voiceagent/brain ./pkg/voiceagent/config ./internal/discovery ./internal/persona ./internal/persona/runtime ./internal/tui -run 'Codex' -count=1
+
+# Opt-in: real Codex login/inference, temporary workspace, no audio/config edits.
+[no-cd]
+codex-live:
+    OBEY_VOICE_CODEX_LIVE=1 go test ./pkg/voiceagent/brain -run '^TestCodexLive' -count=1 -v
+
+# Real TUI model/effort selection with disposable config and a metadata fixture.
+[no-cd]
+codex-ui:
+    mkdir -p /tmp/obey-codex-settings
+    vhs demos/codex-settings.tape
+
+# Actual TUI /record with a finite acoustic fixture and local providers. Fresh
+# ROOT isolates config/session/capture artifacts; no HOME override. F6 releases
+# one utterance when PAIRS=0. PAIRS>0 runs the predeclared paired population.
+[no-cd]
+capture-terminal root fixture_config wav work="off" pairs="0" seed="7007":
+    mkdir -p "{{root}}"
+    go test -c -o "{{root}}/terminal.test" ./internal/tui
+    OBEY_VOICE_CAPTURE_SOURCE_REVISION="$(git rev-parse HEAD)" OBEY_VOICE_CAPTURE_PROVIDER_ROOT="{{root}}" OBEY_VOICE_CAPTURE_PROVIDER_CONFIG="{{fixture_config}}" OBEY_VOICE_CAPTURE_PROVIDER_WAV="{{wav}}" OBEY_VOICE_CAPTURE_PROVIDER_WORK="{{work}}" OBEY_VOICE_CAPTURE_PROVIDER_PAIRS="{{pairs}}" OBEY_VOICE_CAPTURE_PROVIDER_SEED="{{seed}}" "{{root}}/terminal.test" -test.run '^TestRecordProviderTerminalHarness$' -test.v

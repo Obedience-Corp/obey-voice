@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -15,8 +16,10 @@ import (
 // at the serialized response boundary after pending user speech has priority.
 // A failed Commit must leave the previous selection intact.
 type HandoffProposal struct {
-	PersonaID string
-	Commit    func(context.Context) (ResponseAdmission, error)
+	DiscussionID string
+	OpenAddition bool
+	PersonaID    string
+	Commit       func(context.Context) (ResponseAdmission, error)
 }
 
 const maxAgentContinuations = 3
@@ -29,9 +32,12 @@ type continuationRequest struct {
 }
 
 type completionState struct {
-	voice bool
-	turn  brain.Turn
-	ok    bool
+	trace      events.TraceContext
+	owner      context.Context
+	discussion *discussion.Directive
+	voice      bool
+	turn       brain.Turn
+	ok         bool
 }
 
 func withCompletionState(ctx context.Context, state *completionState) context.Context {
@@ -83,7 +89,7 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 	classifyCtx, cancelClassify := context.WithCancel(ctx)
 	defer cancelClassify()
 	go func() {
-		proposal, accepted, err := p.RouteHandoff(classifyCtx, state.turn, append([]string(nil), visited...))
+		proposal, accepted, err := p.RouteHandoff(withCompletionState(classifyCtx, state), state.turn, append([]string(nil), visited...))
 		resultCh <- handoffResult{proposal: proposal, accepted: accepted, err: err}
 	}()
 
@@ -135,7 +141,8 @@ func (p *Pipeline) nextHandoff(ctx context.Context, state *completionState, visi
 		return ResponseAdmission{}, false, nil
 	}
 	proposal := result.proposal
-	if !result.accepted || proposal.Commit == nil || proposal.PersonaID == "" || personaAlreadyVisited(proposal.PersonaID, visited) || p.HasCapturedInput() {
+	groupProposal := proposal.DiscussionID != "" && ((state.discussion != nil && state.discussion.ID == proposal.DiscussionID) || proposal.OpenAddition)
+	if !result.accepted || proposal.Commit == nil || proposal.PersonaID == "" || (!groupProposal && personaAlreadyVisited(proposal.PersonaID, visited)) || (proposal.DiscussionID != "" && !groupProposal) || p.HasCapturedInput() {
 		return ResponseAdmission{}, false, nil
 	}
 	admission, err := proposal.Commit(ctx)
@@ -163,6 +170,18 @@ func personaAlreadyVisited(persona string, visited []string) bool {
 }
 
 func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error) {
+	var last *completionState
+	defer func() {
+		if p.EndDiscussion != nil {
+			reason := "yielded"
+			if ctx.Err() != nil {
+				reason = "interrupted"
+			} else if last != nil && last.discussion != nil && !last.ok {
+				reason = "failed"
+			}
+			p.EndDiscussion(reason)
+		}
+	}()
 	defer func() {
 		if ctx.Err() != nil {
 			p.clearPreparedCapture()
@@ -171,7 +190,8 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 	visited := make([]string, 0, maxAgentContinuations+1)
 	var firstInput string
 	for responseCount := 0; ; responseCount++ {
-		state := &completionState{voice: true}
+		state := &completionState{voice: true, owner: ctx}
+		last = state
 		turnCtx := withCompletionState(ctx, state)
 		var input string
 		var err error
@@ -182,10 +202,25 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 		if err != nil {
 			return firstInput, err
 		}
+		if state.ok && state.discussion != nil && p.CompleteDiscussion != nil {
+			if err := p.CompleteDiscussion(ctx, state.turn); err != nil {
+				return firstInput, err
+			}
+		}
 		if state.ok && state.turn.PersonaID != "" && responseCount == 0 {
 			visited = append(visited, state.turn.PersonaID)
 		}
-		if responseCount >= maxAgentContinuations {
+		if responseCount >= continuationLimit(state) {
+			if state.discussion != nil && p.EndDiscussion != nil {
+				snap := state.discussion.State.Snapshot()
+				reason := "budget_exhausted"
+				if snap.Mode == "open" {
+					reason = "open_complete"
+				} else if len(snap.Members) == 1 {
+					reason = "yielded"
+				}
+				p.EndDiscussion(reason)
+			}
 			return firstInput, nil
 		}
 		admission, accepted, err := p.nextHandoff(ctx, state, visited)
@@ -198,22 +233,50 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 		if admission.Envelope.PersonaID != "" {
 			visited = append(visited, admission.Envelope.PersonaID)
 		}
-		ctx = withContinuation(ctx, continuationRequest{admission: admission})
+		ctx = withContinuation(events.WithTrace(ctx, state.trace), continuationRequest{admission: admission})
 	}
 }
 
 func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) error {
+	var last *completionState
+	defer func() {
+		if p.EndDiscussion != nil {
+			reason := "yielded"
+			if ctx.Err() != nil {
+				reason = "interrupted"
+			} else if last != nil && last.discussion != nil && !last.ok {
+				reason = "failed"
+			}
+			p.EndDiscussion(reason)
+		}
+	}()
 	visited := make([]string, 0, maxAgentContinuations+1)
 	for responseCount := 0; ; responseCount++ {
-		state := new(completionState)
+		state := &completionState{owner: ctx}
+		last = state
 		turnCtx := withCompletionState(ctx, state)
 		if err := p.runTextTurn(turnCtx, input, false); err != nil {
 			return err
 		}
+		if state.ok && state.discussion != nil && p.CompleteDiscussion != nil {
+			if err := p.CompleteDiscussion(ctx, state.turn); err != nil {
+				return err
+			}
+		}
 		if state.ok && state.turn.PersonaID != "" && responseCount == 0 {
 			visited = append(visited, state.turn.PersonaID)
 		}
-		if responseCount >= maxAgentContinuations {
+		if responseCount >= continuationLimit(state) {
+			if state.discussion != nil && p.EndDiscussion != nil {
+				snap := state.discussion.State.Snapshot()
+				reason := "budget_exhausted"
+				if snap.Mode == "open" {
+					reason = "open_complete"
+				} else if len(snap.Members) == 1 {
+					reason = "yielded"
+				}
+				p.EndDiscussion(reason)
+			}
 			return nil
 		}
 		admission, accepted, err := p.nextHandoff(ctx, state, visited)
@@ -226,7 +289,7 @@ func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) e
 		if admission.Envelope.PersonaID != "" {
 			visited = append(visited, admission.Envelope.PersonaID)
 		}
-		ctx = withContinuation(ctx, continuationRequest{admission: admission})
+		ctx = withContinuation(events.WithTrace(ctx, state.trace), continuationRequest{admission: admission})
 		input = ""
 	}
 }
@@ -239,6 +302,9 @@ func (p *Pipeline) completeAgentResponse(ctx context.Context, response string, m
 	if state == nil || ctx.Err() != nil || interrupted || metrics == nil || metrics.degraded || strings.TrimSpace(response) == "" {
 		return
 	}
+	if state.voice && state.discussion != nil && metrics.ttfa.IsZero() {
+		return
+	}
 	identity := metrics.responseIdentity()
 	state.turn = brain.Turn{Role: "assistant", Content: response}
 	if identity != nil {
@@ -247,5 +313,25 @@ func (p *Pipeline) completeAgentResponse(ctx context.Context, response string, m
 		state.turn.PromptHash = identity.PromptHash
 		state.turn.ResponseID = identity.ResponseID
 	}
+	state.trace = metrics.trace
 	state.ok = true
+}
+
+func continuationLimit(state *completionState) int {
+	if state.discussion == nil {
+		return maxAgentContinuations
+	}
+	snap := state.discussion.State.Snapshot()
+	if snap.Mode == "open" || len(snap.Members) == 1 {
+		return 0
+	}
+	return min(discussion.MaxResponses, 2*len(snap.Members)) - 1
+}
+
+// ContinuationOwner survives cancellation of an individual private classifier.
+func ContinuationOwner(ctx context.Context) context.Context {
+	if state := completionFromContext(ctx); state != nil && state.owner != nil {
+		return state.owner
+	}
+	return ctx
 }

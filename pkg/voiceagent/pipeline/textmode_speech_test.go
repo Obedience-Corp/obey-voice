@@ -5,9 +5,55 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 )
+
+func TestUnicodeReplySurvivesTranscriptAndSpeech(t *testing.T) {
+	const reply = "Oh, then the best demo is grounded in that workspace: ask, “What should I tackle next?” One agent checks festival priorities, another investigates the Doctor compatibility break in OB, and a third weighs the ready queue—then Samantha pulls their findings into one clear recommendation."
+	for _, typed := range []bool{false, true} {
+		name := "voice"
+		if typed {
+			name = "typed"
+		}
+		t.Run(name, func(t *testing.T) {
+			bus := events.NewBus()
+			var final string
+			events.Subscribe(bus, func(e events.ResponseReady) { final = e.Response })
+			voice := &fakeTTS{}
+			player := newFakePlayer(time.Millisecond)
+			defer player.Close()
+			var chunks []string
+			for _, r := range reply {
+				chunks = append(chunks, string(r))
+			}
+			p := &Pipeline{STT: &fakeSTT{text: "hello"}, Brain: &fakeBrain{chunks: chunks}, TTS: voice, Player: player, Events: bus}
+			if typed {
+				if err := p.RunTurnTextMode(t.Context(), "hello"); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := p.RunTurn(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if final != reply {
+				t.Fatalf("transcript = %q, want %q", final, reply)
+			}
+			for _, text := range voice.Texts() {
+				if !utf8.ValidString(text) || strings.ContainsRune(text, '\uFFFD') {
+					t.Fatalf("malformed TTS input: %q", text)
+				}
+			}
+			// Qwen applies this preparation at its provider boundary. The
+			// quote must disappear there without losing the question mark.
+			got := textclean.PrepareSpokenText(strings.Join(voice.Texts(), " "))
+			if want := textclean.PrepareSpokenText(reply); got != want {
+				t.Fatalf("speech = %q, want %q", got, want)
+			}
+		})
+	}
+}
 
 // speechFor runs one turn and returns everything TTS was asked to say, joined
 // the way a listener would hear it. runner picks the path under test.
@@ -48,16 +94,36 @@ func TestTextModeSpeaksTheSameAsProgressive(t *testing.T) {
 		{"markdown and a stripped filler", []string{"Here is **bold** text. Umm, and a second thought."}},
 		{"plain reply", []string{"The capital of France is Paris. It has about two million people."}},
 		{"voiced filler leading real content", []string{"Hmm, that is a good question. The answer is yes."}},
+		// The marker rule runs segment by segment on one path and over the
+		// whole reply on the other, so a list is where they drift apart.
+		{"a numbered list", []string{"1. Wake up at six. 2. Stretch. 3. Coffee."}},
+		// A list whose items repeat: the drop has to run before the duplicate
+		// check on both paths, or text mode keeps the second marker after its
+		// item is dropped as a repeat and speaks a number alone.
+		{"a numbered list that repeats itself", []string{"1. Yes. 2. Yes."}},
+		// Two markers in a row are one answer, and nothing follows them.
+		{"two trailing markers", []string{"The codes are. 1. 2."}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			progressive := speechFor(t, tc.chunks, false)
 			typed := speechFor(t, tc.chunks, true)
-			if progressive != typed {
+			if !saysTheSame(progressive, typed) {
 				t.Errorf("paths disagree:\n  progressive: %q\n  text mode:   %q", progressive, typed)
 			}
 		})
 	}
+}
+
+// saysTheSame compares two spoken strings up to the beat join and nothing
+// else. On an engine that re-splits sentence punctuation the progressive path
+// may merge a held short beat into the sentence it belongs to — a group only
+// the turn loop can assemble, and one text mode never has, since it
+// synthesizes the whole reply as a single string. So the one allowance is
+// exactly that rewrite, applied to the typed text; every other difference,
+// markdown, fillers and markers included, still fails the comparison.
+func saysTheSame(progressive, typed string) bool {
+	return progressive == typed || progressive == joinShortBeats(typed)
 }
 
 // TestTextModeDropsFillerOnlyAndMarkdown pins the two concrete regressions,
@@ -81,6 +147,23 @@ func TestTextModeDropsFillerOnlyAndMarkdown(t *testing.T) {
 	})
 }
 
+// TestTextModeSpeaksSentencePunctuationAsWritten is the heard defect: text
+// mode synthesizes the whole reply as one string, and the beat join was being
+// applied to every string a non-joining engine (Kokoro) was handed. A reply
+// with a short sentence in it came back as run-on speech — "It passed," in
+// place of "It passed." — with nothing the turn loop had actually grouped.
+func TestTextModeSpeaksSentencePunctuationAsWritten(t *testing.T) {
+	const reply = "The build finished on main. It passed. Tests are green across the board. Nice."
+
+	got := speechFor(t, []string{reply}, true)
+	if got != reply {
+		t.Fatalf("text mode spoke %q, want the reply as written %q", got, reply)
+	}
+	if strings.Contains(got, "passed,") {
+		t.Errorf("a short sentence was merged into its follower: %q", got)
+	}
+}
+
 // TestSpeakableFromResponseNeedsSegmentGranularity guards the shortcut a future
 // reader will reach for: calling speakableSegment on the whole reply instead of
 // per segment. That looks equivalent and is not — the AND passes as soon as any
@@ -97,6 +180,29 @@ func TestSpeakableFromResponseNeedsSegmentGranularity(t *testing.T) {
 	}
 	if strings.HasPrefix(got, "Hmm.") {
 		t.Errorf("leading filler survived segmentation: %q", got)
+	}
+}
+
+// The deferred marker rule, applied to a whole reply instead of segment by
+// segment: a marker another sentence follows is a list's numbering, a marker
+// nothing follows is the answer, and initials are neither.
+func TestTextModeDefersTheMarkerDecision(t *testing.T) {
+	for _, tc := range []struct{ name, reply, want string }{
+		{"a trailing number is the answer", "Let me check. 4.", "Let me check. 4."},
+		{"a trailing count is the answer", "The count came back. 100.", "The count came back. 100."},
+		{"a lone number is the whole reply", "4.", "4."},
+		{"initials are not markers", "His name is long. J. R. Tolkien wrote it.", "His name is long. J. R. Tolkien wrote it."},
+		{"list numbering is dropped", "1. Wake up at six. 2. Stretch. 3. Coffee.", "Wake up at six. Stretch. Coffee."},
+		{"numbering after a lead-in is dropped", "Here is my routine. 1. Wake up at six. 2. Stretch.", "Here is my routine. Wake up at six. Stretch."},
+		{"a repeated item still drops its marker", "1. Yes. 2. Yes.", "Yes."},
+		{"two trailing markers are one answer", "The codes are. 1. 2.", "The codes are. 1. 2."},
+		{"two markers speech follows are numbering", "Here is the list. 1. 2. Coffee.", "Here is the list. Coffee."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := speakableFromResponse(tc.reply); got != tc.want {
+				t.Errorf("speakableFromResponse(%q) = %q, want %q", tc.reply, got, tc.want)
+			}
+		})
 	}
 }
 

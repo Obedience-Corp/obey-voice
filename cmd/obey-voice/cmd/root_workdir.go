@@ -14,6 +14,7 @@ import (
 // startup. Written once in PersistentPreRunE, before any command starts a
 // goroutine, and read-only afterwards.
 var resolvedWorkDir string
+var resolvedWorkDirSource string
 
 // stampWorkDir pins the process-resolved working directory onto a freshly
 // loaded config, so every brain the CLI builds grounds itself in the same
@@ -26,6 +27,7 @@ var resolvedWorkDir string
 func stampWorkDir(cfg *config.Config) {
 	if cfg != nil && resolvedWorkDir != "" {
 		cfg.WorkDir = resolvedWorkDir
+		cfg.WorkDirSource = resolvedWorkDirSource
 	}
 }
 

@@ -131,7 +131,8 @@ const defaultTTSRetireDelay = 120 * time.Second
 // Install swaps the pipeline onto the new set immediately and closes the
 // previous set after RetireDelay so a turn already synthesizing can finish
 // (Settings → ReloadVoice can land mid-turn). ReplaceAndClose is the
-// after-turn path (persona switch): no drain. Without either, every voice
+// after-turn path (persona switch): no timed drain. Both paths retain voices
+// still owned by workers or queued worker speech. Without either, every voice
 // change leaked another qwen3-tts-worker (4 GB for the 1.7b tier) until
 // serve exited.
 type LiveTTSManager struct {
@@ -187,7 +188,7 @@ func (m *LiveTTSManager) Install(p *pipeline.Pipeline, set *TTSSet) bool {
 }
 
 // ReplaceAndClose swaps the pipeline onto set and closes the previous set
-// immediately. Serve's persona switch runs after the current turn has
+// immediately unless a background worker still owns it. Serve's persona switch runs after the current turn has
 // finished, so there is no in-flight utterance to drain — holding a 4 GB
 // 1.7b worker for the ReloadVoice delay would be a leak with a timer.
 func (m *LiveTTSManager) ReplaceAndClose(p *pipeline.Pipeline, set *TTSSet) bool {
@@ -228,11 +229,7 @@ func (m *LiveTTSManager) CommitPrepared(p *pipeline.Pipeline, set *TTSSet, commi
 	retired, done := m.swapLocked(p, set)
 	delay := m.retireDelay()
 	m.mu.Unlock()
-	if delay <= 0 {
-		m.finishRetire(retired)
-	} else {
-		go m.retireAfter(retired, delay, done)
-	}
+	m.scheduleRetirement(p, retired, delay, done)
 	return nil
 }
 
@@ -253,11 +250,7 @@ func (m *LiveTTSManager) swap(p *pipeline.Pipeline, set *TTSSet, delay time.Dura
 	retired, done := m.swapLocked(p, set)
 	m.mu.Unlock()
 
-	if delay <= 0 {
-		m.finishRetire(retired)
-		return true
-	}
-	go m.retireAfter(retired, delay, done)
+	m.scheduleRetirement(p, retired, delay, done)
 	return true
 }
 
@@ -275,14 +268,38 @@ func (m *LiveTTSManager) swapLocked(p *pipeline.Pipeline, set *TTSSet) ([]*TTSSe
 	return retired, done
 }
 
-func (m *LiveTTSManager) retireAfter(sets []*TTSSet, delay time.Duration, done <-chan struct{}) {
+func (m *LiveTTSManager) scheduleRetirement(p *pipeline.Pipeline, sets []*TTSSet, delay time.Duration, done <-chan struct{}) {
+	for _, set := range sets {
+		if delay <= 0 && len(p.TTSRetentions(set.Primary, set.Fallback)) == 0 {
+			m.finishRetire([]*TTSSet{set})
+		} else {
+			go m.retireAfter(p, set, delay, done)
+		}
+	}
+}
+
+func (m *LiveTTSManager) retireAfter(p *pipeline.Pipeline, set *TTSSet, delay time.Duration, done <-chan struct{}) {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-		m.finishRetire(sets)
 	case <-done:
-		// Close() owns the sets.
+		return // Close() owns the sets.
+	}
+	for {
+		pending := p.TTSRetentions(set.Primary, set.Fallback)
+		if len(pending) == 0 {
+			m.finishRetire([]*TTSSet{set})
+			return
+		}
+		for _, released := range pending {
+			select {
+			case <-released:
+			case <-done:
+				return
+			}
+		}
+		// A finishing worker transfers ownership to its queued utterances.
 	}
 }
 
