@@ -61,7 +61,7 @@ var slashCommands = []slashCommand{
 	{id: commandAudio, name: "/audio", usage: "/audio", description: "Toggle voice output", aliases: []string{"/speaker"}},
 	{id: commandActivity, name: "/activity", usage: "/activity", description: "Switch between chat and activity", aliases: []string{"/timeline"}},
 	{id: commandThink, name: "/think", usage: "/think [on|off]", description: "Show or hide model thinking in the thread", aliases: []string{"/thinking"}},
-	{id: commandRecord, name: "/record", usage: "/record [off|talk|lab]", description: "Record this conversation for content (talk) or audio debug (lab)"},
+	{id: commandRecord, name: "/record", usage: "/record [off|talk|lab|open]", description: "Record this conversation or open its latest recording"},
 	{id: commandSettings, name: "/settings", usage: "/settings", description: "Open TUI settings"},
 	{id: commandParticipation, name: "/participation", usage: "/participation [off|invited|open] [all|id,id]", description: "Show or change agent participation and conversation members"},
 	{id: commandPersonas, name: "/personas", usage: "/personas", description: "Browse, select, create, or edit personas"},
@@ -217,6 +217,9 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		m.configureThink(args)
 		return m.resumeListening()
 	case commandRecord:
+		if len(args) == 1 && strings.EqualFold(args[0], "open") {
+			return tea.Batch(m.openRecordingCmd(m.lastRecordingDir), m.resumeListening())
+		}
 		m.configureRecord(args)
 		return m.resumeListening()
 	case commandSettings:

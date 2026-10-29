@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"math"
 	"os"
@@ -11,6 +12,47 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 )
+
+// A 10 kHz component is valid in the provider's 24 kHz PCM. Recording must
+// not fold it into a lower audible frequency by decimating to the STT rate.
+func TestRecordingPreservesPlaybackBandwidth(t *testing.T) {
+	const sourceRate, frequency, blocks, blockSize = 24000, 10000, 100, 512
+	path := filepath.Join(t.TempDir(), ConversationAudio)
+	start := time.Now()
+	var feed audio.RecordingFeed
+	r, err := startAudio(path, start, audio.RecordingSources{Agents: &feed}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for block := range blocks {
+		pcm := make([]byte, blockSize*2)
+		for i := range blockSize {
+			sample := int16(10000 * math.Sin(2*math.Pi*frequency*float64(block*blockSize+i)/sourceRate))
+			binary.LittleEndian.PutUint16(pcm[i*2:], uint16(sample))
+		}
+		feed.PublishS16(pcm, sourceRate, start.Add(time.Duration(block*blockSize)*time.Second/sourceRate))
+	}
+	r.detach(start.Add(time.Duration(blocks*blockSize) * time.Second / sourceRate))
+	if _, err := r.finish(); err != nil {
+		t.Fatal(err)
+	}
+	samples, rate, err := audio.ReadWAVFloat32(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Measure the saved signal itself, ignoring the short interpolation tail.
+	end := len(samples) - rate/100
+	crossings := 0
+	for i := 1; i < end; i++ {
+		if samples[i-1] <= 0 && samples[i] > 0 {
+			crossings++
+		}
+	}
+	measured := float64(crossings) * float64(rate) / float64(end)
+	if math.Abs(measured-frequency) > 10 {
+		t.Fatalf("saved 10 kHz playback as %.1f Hz at %d Hz sample rate", measured, rate)
+	}
+}
 
 func recordingFrame(at time.Time, rate int, duration time.Duration, value float32) audio.Frame {
 	samples := make([]float32, int(duration)*rate/int(time.Second))
@@ -45,14 +87,14 @@ func TestConversationWAVContainsBothSidesOnSharedTimeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rate != 16000 || len(got) != 16000 {
+	if rate != RecordingSampleRate || len(got) != RecordingSampleRate {
 		t.Fatalf("format %d Hz, %d samples", rate, len(got))
 	}
 	for _, tc := range []struct {
 		ms   int
 		want float32
 	}{{50, .1}, {150, 0}, {250, .2}, {350, .5}, {450, .3}, {650, 0}, {950, .4}} {
-		if value := got[tc.ms*16]; math.Abs(float64(value-tc.want)) > .001 {
+		if value := got[tc.ms*RecordingSampleRate/1000]; math.Abs(float64(value-tc.want)) > .001 {
 			t.Errorf("at %dms: %v, want %v", tc.ms, value, tc.want)
 		}
 	}
@@ -160,7 +202,7 @@ func TestAudioQueueLossCannotSealAsComplete(t *testing.T) {
 
 func TestRecordedTonePreservesPhaseAcrossJitteryCallbacks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ConversationAudio)
-	w, err := audio.NewWAVWriter(path, audio.SampleRate)
+	w, err := audio.NewWAVWriter(path, RecordingSampleRate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +231,7 @@ func TestRecordedTonePreservesPhaseAcrossJitteryCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := audio.ResampleLinear(all, rate, audio.SampleRate)
+	want := audio.ResampleLinear(all, rate, RecordingSampleRate)
 	for i := range min(len(got), len(want)) - 2 {
 		if math.Abs(float64(got[i]-want[i])) > .001 {
 			t.Fatalf("phase jump at sample %d: %v versus %v", i, got[i], want[i])
