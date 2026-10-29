@@ -31,11 +31,10 @@ func (o *OllamaBrain) warmupNumCtx(highWater int) int {
 // user's words. Best-effort: it caps generation at one token and ignores all
 // errors so it can never block or disrupt startup.
 //
-// The request goes through the same chat wrapper as a live turn, so a model
-// that rejects tools (kimi) or think is retried without them and still gets
-// loaded; a bare client call would 400 before the load and leave the first
-// turn colder than the old "hi" did. Warmup runs on its own goroutine while
-// startup may still be restoring a session and the first turn may already be
+// The request goes through the same chat wrapper as a live turn: unsupported
+// routing fails compatibility, while legacy tools and think retain their
+// fallback so a text-only model still loads in that mode. Warmup runs on its own
+// goroutine while startup may still be restoring a session and the first turn may already be
 // running, so the prompt, delegation runtime and context high-water mark it
 // reads are snapshotted under stateMu, which their writers also take.
 //
