@@ -70,7 +70,7 @@ func runProgram(cfg *config.Config, build RuntimeBuilder, meeting MeetingBuilder
 	defer cancel()
 
 	app := NewApp(cfg)
-	app.builder = build
+	app.builder = withDebugStream(build)
 	app.meetingBuilder = meeting
 	app.meetingSweep = sweepMeetingRoutesCmd(cfg)
 	app.startInConversation = startInConversation

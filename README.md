@@ -158,6 +158,30 @@ Built by [Obedience Corp](https://obediencecorp.com) · [GitHub](https://github.
 
 ## Inspect a TUI conversation pipeline
 
+Start a conversation normally, then run `agent-stream-dbg` in a second terminal.
+Choose **Live Obey Voice conversations** and select the current conversation.
+The debugger opens its shared Flow, App, Timeline, Events and Messages panes.
+Recording is optional. Both repositories need builds with live debugging support.
+
+The TUI publishes recent diagnostic events in memory through a read-only,
+authenticated loopback endpoint. Only private discovery metadata is written under
+`<config-dir>/debug/runtimes`; no transcript or audio recording is started.
+Slow/disconnected viewers cannot block the event bus. History is bounded to
+1,024 records / 4 MiB, with sequence gaps exposing eviction; source queue losses
+are reported separately. Clear/replacement closes the old feed and advertises a
+new identity (checked every 250ms); reopen that conversation in the debugger.
+Events during that transition may be excluded, so this feed is recent diagnostic
+history rather than a durable audit. Exit removes discovery metadata. The
+picker hides stale entries after a crash.
+
+Use `1`–`5` for panes, `s` for turn/worker/session scopes, `[` / `]` for adjacent
+turns, and `Ctrl+F` to follow latest. Enter expands Flow/App rows or opens source
+details; `r` inside details shows raw evidence. `q` closes the viewer without
+stopping the conversation. For a custom config location, press `c` in the live
+picker and select the Obey Voice config directory.
+
+### Save a conversation for later inspection
+
 In a local terminal conversation, `/record talk` saves a playable
 `conversation.wav` containing both microphone input and agent playback, alongside
 events, source timing and conversation text. Microphone pause excludes input
