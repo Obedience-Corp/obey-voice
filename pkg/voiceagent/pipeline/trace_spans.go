@@ -35,7 +35,7 @@ func (p *Pipeline) traceSpan(trace events.TraceContext, id, stage, state, status
 		status = "completed"
 	case "canceled", "aborted":
 		status = "cancelled"
-	case "yielded":
+	case "yielded", TurnYielded.String():
 		status = "skipped"
 	}
 	trace = p.stampTrace(trace)

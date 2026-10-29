@@ -184,6 +184,7 @@ func (m providerRecordTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		row["interrupted"] = capturedMetric.Interrupted
 		quietErr := fmt.Errorf("native runtime unavailable")
 		if m.app.runtime != nil && m.app.runtime.Pipeline != nil {
+			row["group_participation_enabled"] = m.app.runtime.Pipeline.GroupParticipationEnabled
 			quietErr = quietProviderOutput(m.app.runtime.Pipeline.Player, m.app.cfg.OutputDevice, true)
 		}
 		row["quiet_output_verified"] = quietErr == nil
