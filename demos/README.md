@@ -1,5 +1,16 @@
 # Demos
 
+## context-meter.gif — live usage beside the composer
+
+`just demo-context-meter` records the real Bubble Tea app against a slow loopback
+Ollama protocol fixture. A streamed story increases the context estimate during
+generation; the actual `/compact` action shows progress and reduces retained
+usage. The fixture uses a disposable home, an 8k window, and no microphone,
+playback, downloaded models, or credentials. This verifies the UI/event path;
+the scripted model response is not an inference or latency benchmark.
+
+![Live context meter](context-meter.gif)
+
 ## README demo
 
 `just demo` builds the current binary and records `demos/readme.tape` into

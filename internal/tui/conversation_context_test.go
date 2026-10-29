@@ -15,7 +15,7 @@ import (
 func TestContextMeterPressureProgressAndClear(t *testing.T) {
 	m := sizedConversation(t, 90, 24)
 	m.cfg = &config.Config{BrainProvider: "ollama", OllamaNumCtx: 32768}
-	if !strings.Contains(stripANSI(m.View()), "Context — / 32k") {
+	if !strings.Contains(stripANSI(m.View()), "Context waiting / 32k") {
 		t.Fatal("missing idle meter")
 	}
 	m.handleEvent(events.ContinuityBudget{EstTokens: 7424, NumCtx: 8192, SoftLimit: 6553, HardLimit: 7372})
@@ -53,6 +53,61 @@ func TestContextMeterPressureProgressAndClear(t *testing.T) {
 				t.Fatalf("line exceeds width %d", size[0])
 			}
 		}
+	}
+}
+
+func TestContextMeterLivesBesideComposerAcrossSizes(t *testing.T) {
+	for _, size := range [][2]int{{140, 40}, {90, 24}, {60, 14}, {40, 12}, {32, 8}, {20, 8}} {
+		m := sizedConversation(t, size[0], size[1])
+		m.cfg = &config.Config{BrainProvider: "ollama", OllamaNumCtx: 32768}
+		m.handleEvent(events.UserInput{Text: "Tell me a story."})
+		m.handleEvent(events.ResponseReady{Response: strings.Repeat("A long story. ", 60)})
+		m.handleEvent(events.ContinuityBudget{EstTokens: 8192, NumCtx: 32768})
+		view := stripANSI(m.View())
+		lines := strings.Split(view, "\n")
+		if lipgloss.Height(view) > size[1] {
+			t.Fatalf("view exceeds %v: %d", size, lipgloss.Height(view))
+		}
+		for i, line := range lines {
+			if lipgloss.Width(line) > size[0] {
+				t.Fatalf("line exceeds %v: %q", size, line)
+			}
+			if strings.Contains(line, "Context") {
+				if i+1 >= len(lines) || !strings.Contains(lines[i+1], "╭") || !strings.Contains(line, "25%") {
+					t.Fatalf("meter is not on composer label at %v:\n%s", size, view)
+				}
+			}
+		}
+		if size[0] >= 32 && strings.Count(view, "Context") != 1 {
+			t.Fatalf("missing/duplicate composer meter at %v:\n%s", size, view)
+		}
+	}
+}
+
+func TestContextMeterUnknownAndOverflow(t *testing.T) {
+	m := sizedConversation(t, 100, 24)
+	m.cfg = &config.Config{BrainProvider: "ollama", OllamaNumCtx: 32768}
+	if meter := stripANSI(m.contextMeter(60)); strings.Contains(meter, "[") || !strings.Contains(meter, "waiting") {
+		t.Fatalf("unknown usage looks measured: %q", meter)
+	}
+	m.handleContextBudget(events.ContinuityBudget{EstTokens: 400, NumCtx: 32768})
+	if meter := stripANSI(m.contextMeter(60)); !strings.Contains(meter, "╸") {
+		t.Fatalf("small nonzero usage looks empty: %q", meter)
+	}
+	m.contextKnown = false
+	m.contextBudget = events.ContinuityBudget{}
+	m.cfg.BrainProvider = "claude"
+	if meter := stripANSI(m.contextMeter(60)); meter != "Context unavailable" {
+		t.Fatalf("unsupported usage: %q", meter)
+	}
+	m.handleContextBudget(events.ContinuityBudget{EstTokens: 10000, NumCtx: 8192})
+	m.contextFill = 1.1 // Defensive clamp while transitioning between windows.
+	if meter := stripANSI(m.contextMeter(60)); !strings.Contains(meter, "122%") {
+		t.Fatalf("pressure hidden: %q", meter)
+	}
+	m.compactStage = "summarize"
+	if meter := stripANSI(m.contextMeter(18)); meter != "compact summarize" {
+		t.Fatalf("narrow meter hid compaction: %q", meter)
 	}
 }
 

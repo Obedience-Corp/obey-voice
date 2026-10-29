@@ -195,9 +195,15 @@ Conversation memory offers 8k, 16k and 32k presets; selecting one writes the
 conversation window and ceiling together in one atomic config update. It takes
 effect in the next conversation.
 
-The conversation screen shows the estimated prompt size and effective window,
-including session-only expansion. The same row shows trim, summarize and reseed
-progress. Estimates are approximate; the meter performs no model requests.
+The composer status row shows estimated context usage, effective window and
+percentage, including session-only expansion. Usage updates during long streamed
+replies and after each response, including full-response requests. The same row
+shows trim, summarize and reseed progress. A `~` marks approximate counts; the
+meter performs no model requests. Before the first usage event it says `waiting`
+without drawing an empty bar. Providers without usage telemetry show
+`Context unavailable`. Usage display remains enabled when optional truncation
+detection is disabled. Narrow terminals shorten the meter; below 32 columns it
+is hidden to preserve the input status.
 Compaction is silent by default. `continuity_compact_filler: true` retains the
 optional spoken notice.
 
