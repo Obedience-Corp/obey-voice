@@ -44,7 +44,27 @@ func (s *Selector) conversationRoster() (*summon.Roster, []brain.GroupParticipan
 	return roster, participants, err
 }
 
+// Keep the same immutable ID/name/alias resolution used by handoffs. Speech
+// cleanup must not treat an unrecognized handle as an agent control.
+func agentMentionControl(roster *summon.Roster) func(string) bool {
+	return func(target string) bool {
+		return roster.ResolveAgentMention("@"+target).Kind == summon.ExactControlValid
+	}
+}
+
 func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker string, roster *summon.Roster, participants []brain.GroupParticipant) (summon.Address, error) {
+	if err := ctx.Err(); err != nil {
+		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
+	}
+	if account == "agent" {
+		exact := roster.ResolveAgentMention(text)
+		switch exact.Kind {
+		case summon.ExactControlValid:
+			return exact.Address, nil
+		case summon.ExactControlInvalid:
+			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", exact.Err)
+		}
+	}
 	acousticName := ""
 	if account == "user" {
 		acousticName = admission.AcousticName(ctx)
@@ -174,6 +194,7 @@ func (s *Selector) routeExactControl(ctx context.Context, input string, exact su
 			return fmt.Errorf("exact identity control no longer matches current roster")
 		}
 		participants = refreshedParticipants
+		admitted.AgentMentionControl = agentMentionControl(roster)
 		return nil
 	})
 	if err != nil {
@@ -222,16 +243,22 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 		}
 		// Resolve the roster before durable publication. No fallible Admit or
 		// profile reload may follow a successful selection and strand its target.
-		_, participants, err := s.conversationRoster()
+		currentRoster, participants, err := s.conversationRoster()
 		if err != nil {
 			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
+		}
+		if address.Reason == "explicit-mention" {
+			exact := currentRoster.ResolveAgentMention(response.Content)
+			if exact.Kind != summon.ExactControlValid || exact.Address.PersonaID != address.PersonaID {
+				return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", fmt.Errorf("explicit agent mention changed target while preparing"))
+			}
 		}
 		selected, err := s.selectAtBoundary(ctx, address.PersonaID, "agent-handoff")
 		if err != nil {
 			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
 		}
 		s.setGroupParticipants(participants)
-		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected)}, nil
+		return pipeline.ResponseAdmission{Envelope: responseEnvelope(selected), AgentMentionControl: agentMentionControl(currentRoster)}, nil
 	}
 	return proposal, true, nil
 }

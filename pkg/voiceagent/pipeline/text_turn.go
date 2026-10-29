@@ -231,7 +231,7 @@ func (p *Pipeline) runTextTurn(ctx context.Context, input string, background boo
 	// say the same thing.
 	speakable := ""
 	if !p.OutputMuted() && p.Player != nil && p.ttsReady() {
-		speakable = speakableFromResponse(p.gateForSpeech(response, metrics))
+		speakable = speakableFromResponse(p.gateForSpeech(response, metrics), responseMentionControl(ctx))
 	}
 	if speakable != "" {
 		turn.to(TurnSpeaking)

@@ -174,7 +174,7 @@ func TestSpeakableFromResponseNeedsSegmentGranularity(t *testing.T) {
 	if !speakableSegment(glued) {
 		t.Fatal("precondition failed: the whole-reply predicate is expected to accept this string")
 	}
-	got := speakableFromResponse(glued)
+	got := speakableFromResponse(glued, nil)
 	if got == glued {
 		t.Errorf("speakableFromResponse returned the reply unchanged — segment filtering is not happening: %q", got)
 	}
@@ -199,7 +199,7 @@ func TestTextModeDefersTheMarkerDecision(t *testing.T) {
 		{"two markers speech follows are numbering", "Here is the list. 1. 2. Coffee.", "Here is the list. Coffee."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := speakableFromResponse(tc.reply); got != tc.want {
+			if got := speakableFromResponse(tc.reply, nil); got != tc.want {
 				t.Errorf("speakableFromResponse(%q) = %q, want %q", tc.reply, got, tc.want)
 			}
 		})
@@ -208,7 +208,7 @@ func TestTextModeDefersTheMarkerDecision(t *testing.T) {
 
 func TestSpeakableFromResponseEmptyInput(t *testing.T) {
 	for _, in := range []string{"", "   ", ".", "Hmm.", "\u200b"} {
-		if got := speakableFromResponse(in); got != "" {
+		if got := speakableFromResponse(in, nil); got != "" {
 			t.Errorf("speakableFromResponse(%q) = %q, want empty", in, got)
 		}
 	}

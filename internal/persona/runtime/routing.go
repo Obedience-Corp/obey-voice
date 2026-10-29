@@ -22,12 +22,13 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 	if !background {
 		s.EndDiscussion("superseded")
 	}
+	roster, participants, err := s.conversationRoster()
+	if err != nil {
+		return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
+	}
+	admitted.AgentMentionControl = agentMentionControl(roster)
 	bare := false
 	if !background {
-		roster, participants, err := s.conversationRoster()
-		if err != nil {
-			return admitted, wrapIdentityRefusalFailure(ctx, "route", err)
-		}
 		exact := roster.ResolveForegroundControl(input)
 		switch exact.Kind {
 		case summon.ExactControlValid:
@@ -39,7 +40,9 @@ func (s *Selector) Route(ctx context.Context, input string, background bool) (pi
 			return admitted, wrapIdentityRefusalFailure(ctx, "route", errors.New("invalid exact identity control"))
 		}
 		if s.opts.Base.GroupParticipationEnabled {
-			return s.routeAudience(ctx, input)
+			groupAdmission, err := s.routeAudience(ctx, input)
+			groupAdmission.AgentMentionControl = admitted.AgentMentionControl
+			return groupAdmission, err
 		}
 		address, err := s.resolveAddress(ctx, input, "user", s.humanSpeakerName(""), roster, participants)
 		if err != nil {

@@ -45,9 +45,10 @@ func (s SpokenSegment) Heard() bool { return s.Speakable != "" }
 // Keep one per turn. Every stage is stateful — the gate's regions and the think
 // filter's held prefix span segments, and repeat suppression is turn-scoped.
 type SpeechProjection struct {
-	think  textclean.ThinkFilter
-	gate   voiceGate
-	spoken map[string]struct{}
+	think               textclean.ThinkFilter
+	gate                voiceGate
+	spoken              map[string]struct{}
+	agentMentionControl func(string) bool
 	// pendingMarkers holds the segments that are only list markers. Nothing in
 	// one tells numbering from an answer, so the decision waits for what
 	// follows: a segment admitted after them drops them all, and end of stream
@@ -130,7 +131,7 @@ const (
 // admit reduces a gated segment to the text handed to the synthesizer,
 // distinguishing suppressed content from text already queued in this turn.
 func (p *SpeechProjection) admit(voiceText string) (string, speechAdmissionStatus) {
-	speakable := brain.CleanForVoice(voiceText)
+	speakable := brain.CleanForVoice(textclean.StripAgentMentions(voiceText, p.agentMentionControl))
 	// Not just != "": stripping a filler from "Umm." leaves a bare ".", which
 	// is non-empty, unpronounceable, and would be glued onto the front of a
 	// real sentence inside one synthesis call. A tag-only beat ([moan]) has no
