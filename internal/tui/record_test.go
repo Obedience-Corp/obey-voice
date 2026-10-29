@@ -1,13 +1,19 @@
 package tui
 
 import (
+	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/capture"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
@@ -93,5 +99,80 @@ func TestRecordStopsOnClearAndNewRuntime(t *testing.T) {
 				t.Fatal("completed seal retained pending writer")
 			}
 		})
+	}
+}
+
+func TestRecordingNoticesLinkToBundleWithoutShowingItsPath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Library #1 ? café")
+	config.SetConfigDirForTest(t, root)
+	m, _ := startedConversation(t, &fakeTurnRunner{}, false)
+	m.startCapture("talk")
+	recording := m.capture
+	t.Cleanup(func() { m.stopCapture(); <-recording.Done() })
+	target := (&url.URL{Scheme: "file", Path: filepath.ToSlash(recording.Dir())}).String()
+	check := func(stage string) {
+		t.Helper()
+		view := m.View()
+		if !strings.Contains(view, ansi.SetHyperlink(target)) || !strings.Contains(view, ansi.ResetHyperlink()) {
+			t.Fatalf("%s: rendered link missing its encoded target", stage)
+		}
+		item := m.items[len(m.items)-1]
+		plain := ansi.Strip(item.sys)
+		if !strings.Contains(plain, "Open recording") || strings.Contains(plain, root) || strings.Contains(plain, "file:") || strings.Contains(plain, "events.jsonl") {
+			t.Fatalf("%s: recording notice = %q", stage, plain)
+		}
+		if strings.Contains(item.notice, "\x1b") || strings.Contains(m.activity[len(m.activity)-1].detail, "\x1b") {
+			t.Fatalf("%s: terminal controls leaked into native notice or activity data", stage)
+		}
+	}
+	check("start")
+	m.configureRecord(nil)
+	check("status")
+	m.startCapture("talk")
+	check("already recording")
+	m.stopCapture()
+	check("sealing")
+	<-recording.Done()
+	m.pollCapture()
+	check("sealed")
+	if _, err := os.Stat(filepath.Join(recording.Dir(), "manifest.json")); err != nil {
+		t.Fatalf("linked recording bundle unavailable: %v", err)
+	}
+}
+
+type recordingRunner struct {
+	*fakeTurnRunner
+	sources audio.RecordingSources
+}
+
+func (r *recordingRunner) RecordingSources() audio.RecordingSources { return r.sources }
+
+func TestRecordingFollowsMicrophonePause(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	m, _ := startedConversation(t, &fakeTurnRunner{}, true)
+	var mic audio.RecordingFeed
+	m.deps.runner = &recordingRunner{fakeTurnRunner: &fakeTurnRunner{}, sources: audio.RecordingSources{User: &mic}}
+	m.startCapture("talk")
+	recording := m.capture
+	m.setInputMuted(true)
+	frame := audio.Frame{Samples: make([]float32, 1600), SampleRate: audio.SampleRate, Channels: 1, StartedAt: time.Now()}
+	mic.Publish(frame)
+	m.setInputMuted(false)
+	mic.Publish(frame)
+	m.stopCapture()
+	<-recording.Done()
+	if err := recording.SealError(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(recording.Dir(), "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest capture.Manifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Audio.User.Frames != 1 {
+		t.Fatalf("paused microphone was recorded: %+v", manifest.Audio.User)
 	}
 }

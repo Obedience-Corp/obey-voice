@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"time"
 )
@@ -61,4 +62,11 @@ func (a *Agency) jobTrace(id string) events.TraceContext {
 	jobID := id
 	trace.JobID = &jobID
 	return trace
+}
+
+// RecordingSources pins recording taps to this runtime's microphone and speaker.
+func (p *Pipeline) RecordingSources() audio.RecordingSources {
+	input, _ := p.Capture.(audio.RecordingSource)
+	output, _ := p.Player.(audio.RecordingSource)
+	return audio.RecordingSources{User: input, Agents: output}
 }

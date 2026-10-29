@@ -202,6 +202,11 @@ func (m *conversationModel) toggleInputMuted() tea.Cmd {
 // muting cancels that turn immediately; a response that already owns the
 // pipeline is allowed to finish and listening stays off.
 func (m *conversationModel) setInputMuted(muted bool) tea.Cmd {
+	defer func() {
+		if m.capture != nil {
+			m.capture.SetInputEnabled(m.voiceEnabled)
+		}
+	}()
 	if !m.deps.voice {
 		m.setStatus("Microphone unavailable", true)
 		return nil

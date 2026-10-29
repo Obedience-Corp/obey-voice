@@ -3,6 +3,7 @@ package playback
 import "time"
 
 func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
+	callbackAt := time.Now()
 	clearBytes(outputSamples)
 	p.observedPeriodFrames.Store(int32(frameCount))
 	hundredths := p.volumeHundredths.Load()
@@ -30,6 +31,7 @@ func (p *Player) onData(outputSamples, inputSamples []byte, frameCount uint32) {
 	writtenFrames := 0
 	active := false
 	defer func() {
+		p.recording.PublishS16(monoBuf, deviceRate, callbackAt)
 		if active && debug != nil {
 			debug.captureCallback(outputSamples, int(frameCount), writtenFrames)
 		}

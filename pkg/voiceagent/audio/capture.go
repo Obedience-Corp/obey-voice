@@ -34,6 +34,7 @@ const (
 // ever asking for it — and a reopen that fails must leave active set, or the
 // microphone is dead for the rest of the session with nothing left to retry it.
 type Capture struct {
+	recording        RecordingFeed
 	mu               sync.Mutex
 	ingestMu         sync.Mutex // serialize callback processing, ring assignment and publication
 	subsMu           sync.RWMutex
@@ -716,6 +717,7 @@ func (c *Capture) SubscribeFrames(buffer int) (int, <-chan Frame) {
 }
 
 func (c *Capture) publishFrame(samples []float32, span CaptureSpan, sequence int64) {
+	c.recording.Publish(Frame{Samples: samples, SampleRate: SampleRate, Channels: Channels, StartedAt: span.EstimatedStart, Duration: SamplesDuration(len(samples)), Sequence: sequence, SourceKind: SourceLive, CaptureGap: CaptureGap{DeviceDiscontinuity: span.DeviceDiscontinuity}})
 	// The write lock protects subscriber-local loss accounting as well as sends
 	// against Unsubscribe. All sends are nonblocking.
 	c.subsMu.Lock()
@@ -791,4 +793,8 @@ func bytesToFloat32(data []byte) []float32 {
 		samples[i] = float32(s) / float32(math.MaxInt16)
 	}
 	return samples
+}
+
+func (c *Capture) SubscribeRecording(buffer int, enabled func() bool) (<-chan Frame, func() RecordingStats) {
+	return c.recording.SubscribeRecording(buffer, enabled)
 }

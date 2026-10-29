@@ -52,7 +52,8 @@ const (
 
 // Player handles in-process audio playback through miniaudio.
 type Player struct {
-	mu sync.Mutex
+	recording audio.RecordingFeed
+	mu        sync.Mutex
 	// deviceMu serializes native device initialization and teardown. Never hold
 	// mu while calling malgo Start/Stop/Uninit: miniaudio may synchronously call
 	// onData, which also needs mu.
@@ -236,4 +237,8 @@ func (p *Player) Close() error {
 	}
 
 	return nil
+}
+
+func (p *Player) SubscribeRecording(buffer int, enabled func() bool) (<-chan audio.Frame, func() audio.RecordingStats) {
+	return p.recording.SubscribeRecording(buffer, enabled)
 }

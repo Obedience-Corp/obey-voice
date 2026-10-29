@@ -155,11 +155,18 @@ Built by [Obedience Corp](https://obediencecorp.com) · [GitHub](https://github.
 
 ## Inspect a TUI conversation pipeline
 
-In the terminal conversation, use `/record talk` to capture events, source timing
-and conversation text. `/record` shows the capture ID, exact `events.jsonl` path
-and recording health. `Ctrl+R` toggles Talk recording outside Vim mode;
-`/record lab` additionally enables existing audio debug artifacts. Capture files
-are local, private to your user, and opt-in. Use `/record off` to seal the bundle.
+In a local terminal conversation, `/record talk` saves a playable
+`conversation.wav` containing both microphone input and agent playback, alongside
+events, source timing and conversation text. Microphone pause excludes input
+audio; interrupted speech includes only the PCM submitted for playback. Pauses
+and overlapping speech share one 16 kHz mono timeline. Recording notices include
+an **Open recording** terminal hyperlink to the capture folder. `/record` shows the capture ID, link and recording
+health. In terminals that support hyperlinks, use the terminal's link-opening
+gesture to open the folder. `Ctrl+R` toggles Talk recording outside Vim mode;
+`/record lab` includes the same conversation audio and additionally enables
+existing audio debug artifacts. The manifest reports unavailable audio sources,
+queue loss and recording errors; failed audio leaves the bundle incomplete.
+Capture files are local, private to your user, and opt-in. Use `/record off` to seal the bundle.
 Clear/new-runtime transitions detach recording; incomplete shutdowns remain
 explicitly incomplete.
 
