@@ -166,3 +166,52 @@ func (w *WAVWriter) Close() error {
 	}
 	return err
 }
+
+// MixAt adds samples at a position on a mono timeline. Gaps are silent and
+// overlaps are summed with PCM16 saturation. Like Write, this runs on a disk
+// worker, never a device callback.
+func (w *WAVWriter) MixAt(samples []float32, offset int64) error {
+	if w == nil || w.closed {
+		return fmt.Errorf("wav: mix into closed writer")
+	}
+	if offset < 0 || offset+int64(len(samples)) > math.MaxUint32/2 {
+		return fmt.Errorf("wav: timeline exceeds PCM WAV limit")
+	}
+	if len(samples) == 0 {
+		return nil
+	}
+	buf := make([]byte, len(samples)*2)
+	if _, err := w.f.ReadAt(buf, wavHeaderSize+offset*2); err != nil && err != io.EOF {
+		return err
+	}
+	for i, s := range samples {
+		old := float64(int16(binary.LittleEndian.Uint16(buf[i*2:]))) / 32768
+		value := int16(clampFloat(old+float64(s), -1, 1) * math.MaxInt16)
+		binary.LittleEndian.PutUint16(buf[i*2:], uint16(value))
+	}
+	if _, err := w.f.WriteAt(buf, wavHeaderSize+offset*2); err != nil {
+		return err
+	}
+	if end := offset + int64(len(samples)); end > int64(w.sampleN) {
+		w.sampleN = uint32(end)
+	}
+	return w.patchSizes()
+}
+
+// SetSamples clips or pads the timeline to a recording's stop boundary.
+func (w *WAVWriter) SetSamples(samples int64) error {
+	if w == nil || w.closed {
+		return fmt.Errorf("wav: resize closed writer")
+	}
+	if samples < 0 || samples > math.MaxUint32/2 {
+		return fmt.Errorf("wav: timeline exceeds PCM WAV limit")
+	}
+	if err := w.f.Truncate(wavHeaderSize + samples*2); err != nil {
+		return err
+	}
+	w.sampleN = uint32(samples)
+	return w.patchSizes()
+}
+
+// Sync makes recording data durable before its bundle is marked sealed.
+func (w *WAVWriter) Sync() error { return w.f.Sync() }

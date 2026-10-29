@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/internal/speaker"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -459,13 +460,13 @@ func (m *conversationModel) showCommandHelp(args []string) {
 }
 
 func (m *conversationModel) commandNotice(message string) {
-	m.appendActivity("command", strings.Split(message, "\n")[0], 0)
+	m.appendActivity("command", strings.Split(ansi.Strip(message), "\n")[0], 0)
 	m.appendTranscript(dimStyle.Render("  " + message))
-	m.items[len(m.items)-1].notice = message
+	m.items[len(m.items)-1].notice = ansi.Strip(message)
 }
 
 func (m *conversationModel) commandError(message string) {
-	m.appendActivity("command", "error: "+message, 0)
+	m.appendActivity("command", "error: "+ansi.Strip(message), 0)
 	m.appendTranscript(errorStyle.Render("  " + message))
-	m.items[len(m.items)-1].notice = message
+	m.items[len(m.items)-1].notice = ansi.Strip(message)
 }

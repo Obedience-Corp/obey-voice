@@ -4,6 +4,7 @@ package capture
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,7 @@ type Turn struct {
 
 // Manifest is bundle metadata (obey-voice.capture/v1).
 type Manifest struct {
+	Audio                 AudioManifest     `json:"audio"`
 	RuntimeID             string            `json:"runtime_id"`
 	ConversationEpoch     string            `json:"conversation_epoch"`
 	CaptureID             string            `json:"capture_id"`
@@ -55,6 +57,8 @@ type Manifest struct {
 
 // Options configure Start.
 type Options struct {
+	Audio                 audio.RecordingSources
+	InputEnabled          bool
 	Trace                 events.TraceContext
 	Environment           map[string]string
 	Root                  string
@@ -69,6 +73,7 @@ type Options struct {
 
 // Session is one open capture bundle.
 type Session struct {
+	audio           *audioRecorder
 	persistManifest func(Manifest) error
 	persistTurns    func(string, []Turn) error
 	sealOnce        sync.Once
@@ -158,6 +163,15 @@ func Start(opts Options) (*Session, error) {
 		writer: w,
 	}
 	s.unsub = w.Observe(opts.Bus)
+	s.audio, err = startAudio(filepath.Join(dir, ConversationAudio), s.manifest.StartedAt, opts.Audio, opts.InputEnabled)
+	if err != nil {
+		_ = s.Stop(nil)
+		return nil, err
+	}
+	s.manifest.Audio = AudioManifest{Status: "unavailable"}
+	if s.audio != nil {
+		s.manifest.Audio = AudioManifest{File: ConversationAudio, Status: "recording", SampleRate: audio.SampleRate, User: AudioTrack{Available: opts.Audio.User != nil}, Agents: AudioTrack{Available: opts.Audio.Agents != nil}}
+	}
 	if err := s.writeManifest(); err != nil {
 		_ = s.Stop(nil)
 		return nil, err
@@ -216,11 +230,14 @@ func (s *Session) SealAsync(turns []Turn) <-chan struct{} {
 		}
 		w := s.writer
 		w.StopAccepting()
+		s.audio.detach(time.Now())
 		s.manifest.Status = "sealing"
 		s.mu.Unlock()
 		go func() {
 			defer close(s.sealDone)
 			err := w.Close()
+			audioHealth, audioErr := s.audio.finish()
+			err = errors.Join(err, audioErr)
 			health := w.Health()
 			if err == nil && health.WriteErrors > 0 {
 				err = fmt.Errorf("capture has %d write errors", health.WriteErrors)
@@ -232,6 +249,7 @@ func (s *Session) SealAsync(turns []Turn) <-chan struct{} {
 				err = s.persistTurns(s.manifest.Dir, turns)
 			}
 			s.mu.Lock()
+			s.manifest.Audio = audioHealth
 			s.manifest.Health = health
 			s.manifest.DroppedEvents = health.Dropped
 			s.manifest.Status = "incomplete"
@@ -339,3 +357,22 @@ func (s *Session) Matches(trace events.TraceContext) bool {
 
 func (s *Session) ID() string         { return s.manifest.CaptureID }
 func (s *Session) EventsPath() string { return filepath.Join(s.manifest.Dir, "events.jsonl") }
+
+// SetInputEnabled follows the UI microphone pause without stopping the shared
+// capture device. A muted microphone never contributes PCM to the recording.
+func (s *Session) SetInputEnabled(enabled bool) {
+	if s != nil && s.audio != nil {
+		s.audio.inputEnabled.Store(enabled)
+	}
+}
+
+func (s *Session) AudioAvailable() bool { return s != nil && s.audio != nil }
+func (s *Session) AudioError() error {
+	if s == nil || s.audio == nil {
+		return nil
+	}
+	if failure := s.audio.failure.Load(); failure != nil {
+		return failure.err
+	}
+	return nil
+}
