@@ -1,5 +1,7 @@
 # obey-transcript/v1
 
+For explicit Parakeet word estimates, see [obey-transcript/v2](word-transcription.md). The v1 request and event behavior below is preserved.
+
 Wire contract for transcribing a finished audio file. A caller writes a request
 document, runs `obey-voice transcribe`, and reads one JSON object per line from
 stdout. Any local tool in any language can be that caller: the contract is the
@@ -255,10 +257,9 @@ Starts round down: `start_us = floor(start_sample * 1000000 / 16000)`. Ends and
 the file duration round up, so a span that reaches the last sample equals the
 `duration_us` that `completed` reports.
 
-`word` is named by the schema and advertised by nobody: no shipped provider
-produces word alignments, and dividing an utterance by its word count would be
-an invention. A request asking for it is rejected with
-`unsupported_capability`. `none` is likewise rejected: v1 requires `utterance`.
+A v1 request for `word` timing still returns `unsupported_capability`.
+Parakeet word estimates require an explicit [v2 request](word-transcription.md).
+`none` is likewise rejected: v1 requires `utterance`.
 
 Timings are estimates from a speech detector and a recognizer. Treat them as
 accurate to a few hundred milliseconds, not to the sample.
@@ -273,8 +274,9 @@ The major version is the compatibility boundary. Within `v1`:
 - failure codes may be added, and a client that does not recognize one treats
   it as a runtime failure.
 
-A breaking change is `obey-transcript/v2`, and this build rejects it with
-`unsupported_protocol`.
+`obey-transcript/v2` is an explicit opt-in contract for raw word estimates.
+Unsupported major versions (for example v3) return `unsupported_protocol`;
+existing v1 clients are never silently upgraded.
 
 ## Recorded streams
 

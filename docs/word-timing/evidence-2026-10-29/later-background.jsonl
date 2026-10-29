@@ -1,0 +1,21 @@
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":0,"type":"accepted","provider":"parakeet","model_id":"tdt-0.6b-v2","model_revision":"157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad","timing":"word","text_policy":"verbatim","timing_method":"parakeet-tdt-token-duration","timing_validity":"estimated","language":"en","runtime":"sherpa-onnx/1.13.8"}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":1,"type":"progress","consumed_us":5000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":2,"type":"progress","consumed_us":10000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":3,"type":"progress","consumed_us":15000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":4,"type":"segment","segment_id":"s1","start_us":0,"end_us":19000000,"text":"And I think we've got to use","timing":"word","final":true,"words":[{"word_id":"s1-w0","text":"And","start_us":1040000,"end_us":1120000},{"word_id":"s1-w1","text":"I","start_us":1680000,"end_us":1760000},{"word_id":"s1-w2","text":"think","start_us":1920000,"end_us":2000000},{"word_id":"s1-w3","text":"we've","start_us":2000000,"end_us":2160000},{"word_id":"s1-w4","text":"got","start_us":2160000,"end_us":2240000},{"word_id":"s1-w5","text":"to","start_us":4320000,"end_us":4400000},{"word_id":"s1-w6","text":"use","start_us":9280000,"end_us":9360000}]}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":5,"type":"progress","consumed_us":20000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":6,"type":"progress","consumed_us":25000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":7,"type":"progress","consumed_us":30000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":8,"type":"progress","consumed_us":35000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":9,"type":"progress","consumed_us":40000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":10,"type":"progress","consumed_us":45000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":11,"type":"progress","consumed_us":50000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":12,"type":"progress","consumed_us":55000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":13,"type":"progress","consumed_us":60000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":14,"type":"progress","consumed_us":65000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":15,"type":"progress","consumed_us":70000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":16,"type":"progress","consumed_us":75000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":17,"type":"progress","consumed_us":80000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":18,"type":"progress","consumed_us":85000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":19,"type":"progress","consumed_us":90000000,"duration_us":90000000}
+{"protocol":"obey-transcript/v2","job_id":"later-background","seq":20,"type":"failed","code":"decode_failed","message":"transcription: decode span at sample 1223040: word \"is.\" has no measured interval","retryable":false}

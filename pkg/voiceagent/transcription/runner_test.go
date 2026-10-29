@@ -388,7 +388,7 @@ func TestRunEmitsTrailingSpeechFlushedAtEOF(t *testing.T) {
 		t.Fatalf("emitted %d segments, want 1", len(segments))
 	}
 	want := Segment{ID: "s1", StartUS: 1_000_000, EndUS: 2_000_000, Text: "last words"}
-	if segments[0] != want {
+	if !reflect.DeepEqual(segments[0], want) {
 		t.Errorf("segment = %+v, want %+v", segments[0], want)
 	}
 }

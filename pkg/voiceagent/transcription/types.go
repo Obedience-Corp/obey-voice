@@ -108,6 +108,7 @@ type Segment struct {
 	StartUS int64
 	EndUS   int64
 	Text    string
+	Words   []stt.TimedWord
 }
 
 // Outcome is how a finished run ended.
