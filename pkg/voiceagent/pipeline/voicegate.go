@@ -70,6 +70,7 @@ const regionLineCap = 50
 // It runs before brain.CleanForVoice, which strips the ``` markers a fenced
 // region is recognized by.
 type voiceGate struct {
+	inImage     bool
 	inFence     bool
 	inTool      bool
 	regionLines int
@@ -101,6 +102,12 @@ func (g *voiceGate) filter(text string) (string, int) {
 // suppress advances the region state for one line and reports whether it must
 // stay out of the voice channel.
 func (g *voiceGate) suppress(line string) bool {
+	// Image references may span sentence chunks (periods in filenames).
+	// Keep the whole reference out of speech until its closing delimiter.
+	if g.inImage || strings.Contains(line, "![") {
+		g.inImage = !strings.Contains(line, ")")
+		return true
+	}
 	// Fences toggle on the marker itself; an odd count opens or closes a
 	// region, an even count is an inline span. Either way the line is not
 	// spoken, so a one-line ``` snippet ``` cannot leak its body.

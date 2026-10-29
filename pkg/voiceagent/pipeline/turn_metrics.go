@@ -25,7 +25,8 @@ func (p *Pipeline) trackMetrics(m *turnMetrics) func() {
 }
 
 type turnMetrics struct {
-	trace events.TraceContext
+	mediaReply *events.ResponseReady
+	trace      events.TraceContext
 	// Host-routed turns may never call the brain. Retain their input boundary
 	// and intended reply independently of whether audio output is enabled.
 	originalInput      string

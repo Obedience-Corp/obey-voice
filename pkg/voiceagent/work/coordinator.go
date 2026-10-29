@@ -5,9 +5,12 @@ package work
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 )
 
 var (
@@ -77,6 +80,7 @@ const (
 
 // Outcome is immutable after Publish. Elapsed is frozen at publication.
 type Outcome struct {
+	Attachments      []chatmedia.Ref   `json:"attachments,omitempty"`
 	ResultID         string            `json:"result_id"`
 	Scope            WorkScope         `json:"scope"`
 	JobID            string            `json:"job_id"`
@@ -297,6 +301,7 @@ func (c *Coordinator) Publish(key JobKey, o Outcome) (ResultView, error) {
 		c.mu.Unlock()
 		return ResultView{}, ErrConflict
 	}
+	o.Attachments = append([]chatmedia.Ref(nil), o.Attachments...)
 	o.Origin, o.Provider, o.Model, o.Config = j.view.Origin, j.view.Provider, j.view.Model, cloneMap(j.view.Config)
 	if o.TerminalRevision == 0 {
 		if j.view.State == JobTerminal {
@@ -553,6 +558,7 @@ func (c *Coordinator) Restore(s Snapshot, destination WorkScope) error {
 				return ErrInvalid
 			}
 			o.Config = cloneMap(o.Config)
+			o.Attachments = append([]chatmedia.Ref(nil), o.Attachments...)
 			j.Outcome = &o
 		}
 		if j.State == JobQueued || j.State == JobRunning {
@@ -635,7 +641,7 @@ func validOutcomeStatus(s OutcomeStatus) bool {
 }
 
 func samePersistedOutcome(a, b Outcome) bool {
-	return a.ResultID == b.ResultID && a.Scope == b.Scope && a.JobID == b.JobID && a.TerminalRevision == b.TerminalRevision && a.Status == b.Status && a.Text == b.Text && a.Origin == b.Origin && a.Provider == b.Provider && a.Model == b.Model && mapsEqual(a.Config, b.Config) && a.SourceRef == b.SourceRef && a.Limitations == b.Limitations && a.Termination == b.Termination && a.StartedAt.Equal(b.StartedAt) && a.EndedAt.Equal(b.EndedAt) && a.Elapsed == b.Elapsed && a.PreviousSession == b.PreviousSession
+	return slices.Equal(a.Attachments, b.Attachments) && a.ResultID == b.ResultID && a.Scope == b.Scope && a.JobID == b.JobID && a.TerminalRevision == b.TerminalRevision && a.Status == b.Status && a.Text == b.Text && a.Origin == b.Origin && a.Provider == b.Provider && a.Model == b.Model && mapsEqual(a.Config, b.Config) && a.SourceRef == b.SourceRef && a.Limitations == b.Limitations && a.Termination == b.Termination && a.StartedAt.Equal(b.StartedAt) && a.EndedAt.Equal(b.EndedAt) && a.Elapsed == b.Elapsed && a.PreviousSession == b.PreviousSession
 }
 
 func (c *Coordinator) Retire(scope WorkScope) error {
@@ -717,6 +723,7 @@ func (c *Coordinator) snapshotLocked() Snapshot {
 		if jv.Outcome != nil {
 			o := *jv.Outcome
 			o.Config = cloneMap(o.Config)
+			o.Attachments = append([]chatmedia.Ref(nil), o.Attachments...)
 			jv.Outcome = &o
 		}
 		s.Jobs = append(s.Jobs, jv)
@@ -751,10 +758,14 @@ func cloneMap(m map[string]string) map[string]string {
 	}
 	return n
 }
-func ptrOutcome(o Outcome) *Outcome { return &o }
+func ptrOutcome(o Outcome) *Outcome {
+	o.Attachments = append([]chatmedia.Ref(nil), o.Attachments...)
+	return &o
+}
 func cloneResult(v ResultView) ResultView {
 	o := v.Outcome
 	o.Config = cloneMap(o.Config)
+	o.Attachments = append([]chatmedia.Ref(nil), o.Attachments...)
 	out := v
 	out.Outcome = o
 	if v.LastAttempt != nil {
@@ -764,7 +775,7 @@ func cloneResult(v ResultView) ResultView {
 	return out
 }
 func sameOutcome(a, b Outcome) bool {
-	if a.ResultID != b.ResultID || a.Scope != b.Scope || a.JobID != b.JobID || a.TerminalRevision != b.TerminalRevision || a.Status != b.Status || a.Text != b.Text || a.Origin != b.Origin || a.Provider != b.Provider || a.Model != b.Model || a.SourceRef != b.SourceRef || a.Limitations != b.Limitations || a.Termination != b.Termination || !mapsEqual(a.Config, b.Config) {
+	if !slices.Equal(a.Attachments, b.Attachments) || a.ResultID != b.ResultID || a.Scope != b.Scope || a.JobID != b.JobID || a.TerminalRevision != b.TerminalRevision || a.Status != b.Status || a.Text != b.Text || a.Origin != b.Origin || a.Provider != b.Provider || a.Model != b.Model || a.SourceRef != b.SourceRef || a.Limitations != b.Limitations || a.Termination != b.Termination || !mapsEqual(a.Config, b.Config) {
 		return false
 	}
 	if !b.StartedAt.IsZero() && a.StartedAt != b.StartedAt {

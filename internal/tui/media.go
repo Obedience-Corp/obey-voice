@@ -324,7 +324,7 @@ func desktopMediaRefs(refs []chatmedia.Ref) []desktopMedia {
 func mediaSummary(r chatmedia.Ref) string {
 	label := fmt.Sprintf("%s · %d×%d", safeWorkerText(r.Name), r.Width, r.Height)
 	if r.Frames > 1 {
-		label += " · GIF (first frame sent)"
+		label += " · GIF (model input: first frame)"
 	}
 	return label
 }
@@ -338,4 +338,25 @@ func (m *conversationModel) restorePendingMedia() {
 	m.media.pending = nil
 	m.media.approved = false
 	m.reflow()
+}
+
+func (m *conversationModel) attachAssistantMedia(refs []chatmedia.Ref) {
+	if len(m.plainTurns) > 0 {
+		m.plainTurns[len(m.plainTurns)-1].attachments = append([]chatmedia.Ref(nil), refs...)
+	}
+}
+
+func (m conversationModel) workResultImages() [][]desktopMedia {
+	var out [][]desktopMedia
+	seen := map[string]bool{}
+	for _, item := range m.items {
+		id := item.workResultID
+		if id != "" && !seen[id] {
+			seen[id] = true
+			if m.workResultText(id) != "" {
+				out = append(out, desktopMediaRefs(item.attachments))
+			}
+		}
+	}
+	return out
 }

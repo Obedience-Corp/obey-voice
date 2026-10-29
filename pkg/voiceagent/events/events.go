@@ -3,6 +3,8 @@ package events
 import (
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -540,7 +542,8 @@ func (e TurnInterrupted) eventType() string { return "turn_interrupted" }
 
 // ResponseReady carries the final display text.
 type ResponseReady struct {
-	Trace *TraceContext `json:"trace,omitempty"`
+	Attachments []chatmedia.Ref `json:"attachments,omitempty"`
+	Trace       *TraceContext   `json:"trace,omitempty"`
 
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
@@ -656,7 +659,8 @@ func (e JobStarted) eventType() string { return "job_started" }
 
 // JobFinished signals a worker job completed successfully.
 type JobFinished struct {
-	Trace *TraceContext `json:"trace,omitempty"`
+	Attachments []chatmedia.Ref `json:"attachments,omitempty"`
+	Trace       *TraceContext   `json:"trace,omitempty"`
 
 	Envelope *ResponseEnvelope
 	Scope    work.WorkScope

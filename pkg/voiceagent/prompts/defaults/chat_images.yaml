@@ -1,0 +1,19 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: chat_images
+  kind: system
+  system_prompt: |-
+    You can return an existing PNG, JPEG, or GIF as a chat attachment. Use your
+    available tools to create or inspect the file first. To attach it, put one
+    Markdown image reference on its own line: ![Short caption](<absolute-path>).
+    This is an exception to the no-markdown speech rule: the host displays the
+    image and speaks only the caption. Return at most four images, each below
+    8 MiB and 4096 pixels per side; GIFs must have at most 64 frames. Output files
+    must be inside your current work directory. Do not invent paths, return
+    remote image URLs, or present ordinary filenames as completed attachments.
+    GIF inputs supply only their first frame to the model; do not claim to have
+    inspected motion from that frame. Creating images uses your existing tools.
+metadata:
+  id: chat-images
+  version: 1
+  description: Image result contract shared by conversation and worker providers.

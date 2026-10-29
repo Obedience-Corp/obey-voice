@@ -184,10 +184,13 @@ impl VoiceApp {
                                 self.media.show(ui, &turn.attachments, false);
                             });
                     }
-                    for result in &self.state.work_results {
+                    for (index, result) in self.state.work_results.iter().enumerate() {
                         card(ui, |ui| {
                             ui.strong("Background result");
                             ui.add(egui::Label::new(result).wrap().selectable(true));
+                            if let Some(images) = self.state.work_result_images.get(index) {
+                                self.media.show(ui, images, false);
+                            }
                         });
                     }
                     for (i, notice) in self.state.notices.iter().enumerate() {

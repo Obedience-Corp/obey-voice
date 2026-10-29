@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/job"
@@ -21,6 +22,10 @@ const workerPolicyID = config.WorkerPolicyID
 func (a *Agency) paidWorkerRun(ctx context.Context, brief string, worker brain.Provider, cfg *config.Config, plan *config.WorkerPlan, requestID string) (string, error) {
 	if plan.Assignment.AccountRef == nil || !plan.AllowUncapped || plan.Policy.ChargePolicy != "advisory" || !plan.Policy.PaidEnabled {
 		return "", errors.New("paid worker lacks explicit advisory uncapped consent")
+	}
+	// Reject unsupported/missing media before recording a paid dispatch.
+	if err := validateProviderImages(ctx, worker, chatmedia.Input(ctx)); err != nil {
+		return "", err
 	}
 	a.emitChargeState(job.IDFromContext(ctx), requestID, "checking")
 	var ledger *usage.Ledger

@@ -88,6 +88,7 @@ func (m *turnMetrics) responseIdentity() *brain.TurnIdentity {
 }
 
 func (p *Pipeline) emitResponse(metrics *turnMetrics, event events.Event) {
+	event = p.replyMediaEvent(metrics, event)
 	if metrics != nil {
 		event = events.Attribute(event, metrics.response)
 		event = events.AttributeTrace(event, p.stampTrace(metrics.trace))

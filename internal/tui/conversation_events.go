@@ -270,7 +270,8 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 		if spoken != "" {
 			m.rememberAssistant(spoken)
-			m.appendAgentTurn(chatItem{name: name, think: thought, spoken: spoken})
+			m.attachAssistantMedia(e.Attachments)
+			m.appendAgentTurn(chatItem{name: name, think: thought, spoken: spoken, attachments: e.Attachments})
 		} else if e.Interrupted || e.Degraded {
 			m.refreshContent()
 			m.applyFollow()

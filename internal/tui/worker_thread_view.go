@@ -4,12 +4,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 )
 
-func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool) string {
+func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool, previews ...func([]chatmedia.Ref, int, int) string) string {
 	width = max(1, width)
 	var blocks []string
 	hasReply := false
@@ -22,6 +24,9 @@ func formatWorkerDetail(item pipeline.WorkerInfo, width int, expanded bool) stri
 		case entry.role == "assistant":
 			blocks = append(blocks, renderAgentTurnAtWidth("Worker", safeWorkerText(entry.text), max(1, width-agentBubbleStyle.GetHorizontalFrameSize())))
 			hasReply = true
+		}
+		if len(entry.attachments) > 0 && len(previews) > 0 {
+			blocks = append(blocks, previews[0](entry.attachments, width, 8))
 		}
 	}
 	if item.Activity != "" && len(item.Tools) == 0 {

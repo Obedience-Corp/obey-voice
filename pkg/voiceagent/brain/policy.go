@@ -24,6 +24,8 @@ const (
 	ElemTools PromptElement = "tools"
 	// ElemTurn is the per-reply voice instruction ("2-3 sentences, no markdown").
 	ElemTurn PromptElement = "turn"
+	// ElemImages defines durable image replies across provider adapters.
+	ElemImages PromptElement = "images"
 )
 
 // Provider names used by the prompt policy.
@@ -64,7 +66,7 @@ func SystemPromptPolicy(provider string, cfg *config.Config) []PromptElement {
 	if SkillMenuApplies(provider) {
 		elems = append(elems, ElemSkills)
 	}
-	elems = append(elems, ElemTurn)
+	elems = append(elems, ElemTurn, ElemImages)
 	return elems
 }
 
@@ -159,6 +161,8 @@ func AssembleSystemPrompt(in SystemPromptInput) string {
 			if sc := SkillContext(in.Skills); sc != "" {
 				b.WriteString(sc)
 			}
+		case ElemImages:
+			b.WriteString("\n\n" + systemPrompt(in.Cfg, "chat_images", nil))
 		case ElemTurn:
 			// Claude, Cursor, and Grok append the turn instruction to the user
 			// message instead, so that the meta-turn override (OmitTurnInstruction)

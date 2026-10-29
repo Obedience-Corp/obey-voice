@@ -33,6 +33,7 @@ type workersModel struct {
 	detailID, message             string
 	confirmAll                    bool
 	expandTools                   bool
+	media                         mediaState
 	detail                        viewport.Model
 	token                         *int
 }
@@ -85,7 +86,7 @@ func (m *workersModel) refreshDetail() {
 			continue
 		}
 		offset := m.detail.YOffset
-		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width, m.expandTools))
+		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width, m.expandTools, (conversationModel{media: m.media}).renderMedia))
 		m.detail.SetYOffset(offset)
 		if follow {
 			m.detail.GotoBottom()
@@ -113,6 +114,9 @@ func (m *workersModel) openDetail(id string) {
 }
 
 func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
+	if cmd, ok := m.updateWorkerMedia(msg); ok {
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -123,7 +127,7 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 			return m, nil
 		}
 		m.refresh()
-		return m, m.tick()
+		return m, tea.Batch(m.tick(), m.loadWorkerMedia())
 	case tea.KeyMsg:
 		if m.confirmAll {
 			m.confirmAll = false
@@ -180,6 +184,7 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 			default:
 				if m.cursor-2 < len(m.items) {
 					m.openDetail(m.items[m.cursor-2].ID)
+					return m, m.loadWorkerMedia()
 				}
 			}
 		case "up", "k":

@@ -83,7 +83,7 @@ impl Media {
                     }
                     ui.small(format!("{}×{}", attachment.width, attachment.height));
                     if attachment.frames > 1 {
-                        ui.small("GIF · first frame sent to model");
+                        ui.small("GIF · model input uses first frame");
                         if ui
                             .small_button(if self.paused {
                                 "Play GIFs"

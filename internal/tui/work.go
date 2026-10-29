@@ -107,7 +107,8 @@ func (m *conversationModel) jobFinished(e events.JobFinished) {
 			name = e.Envelope.DisplayName
 		}
 		m.rememberAssistant(text)
-		m.appendAgentTurn(chatItem{name: name, spoken: text})
+		m.attachAssistantMedia(e.Attachments)
+		m.appendAgentTurn(chatItem{name: name, spoken: text, attachments: e.Attachments})
 	}
 }
 

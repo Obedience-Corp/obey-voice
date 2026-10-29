@@ -46,7 +46,7 @@ func loadImageData(refs []chatmedia.Ref) ([]api.ImageData, error) {
 func (o *OllamaBrain) prepareImageHistory(ctx context.Context, refs []chatmedia.Ref) error {
 	if len(refs) == 0 {
 		for _, turn := range o.working {
-			if len(turn.Attachments) > 0 {
+			if turn.Role == "user" && len(turn.Attachments) > 0 {
 				refs = turn.Attachments
 				break
 			}
@@ -56,7 +56,7 @@ func (o *OllamaBrain) prepareImageHistory(ctx context.Context, refs []chatmedia.
 		return err
 	}
 	for i, t := range o.working {
-		if len(t.Attachments) == 0 {
+		if t.Role != "user" || len(t.Attachments) == 0 {
 			continue
 		}
 		images, err := loadImageData(t.Attachments)
