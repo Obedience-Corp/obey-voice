@@ -8,6 +8,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/internal/talkhotkey"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -35,10 +36,13 @@ type talkControlClosedMsg struct{ lifetime context.Context }
 // helper. A failure on either reports why in the conversation instead of
 // failing the session: Ctrl+G still works.
 func (a *App) startTalkHotkey() tea.Cmd {
-	if a.hotkey != nil || a.control != nil || a.runtime == nil || !a.runtime.Voice {
+	if a.hotkey != nil || a.control != nil || a.runtime == nil {
 		return nil
 	}
-	if !a.cfg.TalkHotkeyEnabled {
+	if !a.runtime.Voice && !a.cfg.GroupParticipationEnabled {
+		return nil
+	}
+	if !a.cfg.TalkHotkeyEnabled && !a.cfg.GroupParticipationEnabled {
 		return nil
 	}
 	mode := config.TalkHotkeyModeOf(a.cfg)
@@ -51,7 +55,7 @@ func (a *App) startTalkHotkey() tea.Cmd {
 		a.conversation.talkUnavailable(comboErr.Error())
 		return tea.Batch(cmds...)
 	}
-	if talkhotkey.Supported() {
+	if talkhotkey.Supported() && a.runtime.Voice && a.cfg.TalkHotkeyEnabled {
 		cmds = append(cmds, a.startTalkHelper(combo, mode))
 	}
 	return tea.Batch(cmds...)
@@ -63,6 +67,17 @@ func (a *App) startTalkControl(combo talkhotkey.Combo, mode talkhotkey.Mode) tea
 	if err != nil {
 		a.conversation.talkUnavailable("control endpoint: " + err.Error())
 		return nil
+	}
+	if a.runtime.Participation != nil && a.runtime.SetParticipation != nil {
+		rt := a.runtime
+		control.SetParticipationHandler(func(ctx context.Context, settings *discussion.Settings) (discussion.Settings, error) {
+			if settings != nil {
+				if err := rt.SetParticipation(ctx, *settings); err != nil {
+					return discussion.Settings{}, err
+				}
+			}
+			return rt.Participation(), nil
+		})
 	}
 	a.control = control
 	a.conversation.attachTalkControl(control.Address(), combo, mode)

@@ -142,3 +142,13 @@ type PairingCodeBanner struct {
 	Code      string `json:"code"`
 	ExpiresAt string `json:"expires_at"` // RFC3339
 }
+
+// CapabilitiesForParticipation advertises only installed host operations.
+func CapabilitiesForParticipation(snapshot, enabled bool) map[string]bool {
+	caps := CapabilitiesForSnapshot(snapshot)
+	if enabled && snapshot {
+		caps["group_participation_v1"] = true
+		caps["open_interjections_v1"] = true
+	}
+	return caps
+}

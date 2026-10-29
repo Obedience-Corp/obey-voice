@@ -553,6 +553,8 @@ func (s *Server) readControls(ctx context.Context, ws *websocket.Conn, conn *str
 			if err := s.endVoiceTurn(conn); err != nil {
 				s.sendError(conn, err.Error())
 			}
+		case "set_participation":
+			s.handleSetParticipation(ctx, conn, msg)
 		case "set_persona":
 			s.handleSetPersona(ctx, conn, msg.Name, msg.RequestID)
 		default:

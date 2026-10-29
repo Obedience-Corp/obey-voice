@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 )
 
@@ -13,6 +14,8 @@ import (
 // connects or a conversation boundary changes. Transcript is canonical
 // history; it is never reconstructed from events received by the hub.
 type SessionSnapshot struct {
+	Participation     *discussion.Settings    `json:"participation,omitempty"`
+	Discussion        *discussion.Snapshot    `json:"discussion,omitempty"`
 	SessionID         string                  `json:"session_id"`
 	ConversationEpoch string                  `json:"conversation_epoch"`
 	Selection         events.PersonaSelection `json:"selection"`
@@ -33,6 +36,8 @@ func marshalSessionSnapshot(snapshot SessionSnapshot) ([]byte, error) {
 	}
 	return json.Marshal(struct {
 		Type              string                  `json:"type"`
+		Participation     *discussion.Settings    `json:"participation,omitempty"`
+		Discussion        *discussion.Snapshot    `json:"discussion,omitempty"`
 		SessionID         string                  `json:"session_id"`
 		ConversationEpoch string                  `json:"conversation_epoch"`
 		Selection         events.PersonaSelection `json:"selection"`
@@ -40,6 +45,7 @@ func marshalSessionSnapshot(snapshot SessionSnapshot) ([]byte, error) {
 		StateRevision     uint64                  `json:"state_revision"`
 		Transcript        []brain.Turn            `json:"transcript"`
 	}{
+		Participation: snapshot.Participation, Discussion: snapshot.Discussion,
 		Type: "session_snapshot", SessionID: snapshot.SessionID,
 		ConversationEpoch: snapshot.ConversationEpoch, Selection: snapshot.Selection,
 		MicState: snapshot.MicState, StateRevision: snapshot.StateRevision,

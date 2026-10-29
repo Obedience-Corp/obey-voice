@@ -23,6 +23,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/prompts"
@@ -359,7 +360,11 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			}
 			selector, err = personaruntime.NewSelector(personaruntime.SelectionOptions{
 				Base: &baseCfg, Pipeline: p, Voices: voices, SessionID: sess.ID, Initial: binding,
-				UseDefaults: sessionBindID == appTUI.StartDefaultsID,
+				UseDefaults:   sessionBindID == appTUI.StartDefaultsID,
+				Participation: sess.Participation,
+				PersistParticipation: func(settings discussion.Settings) error {
+					return session.DefaultStore().SaveParticipation(sess, settings)
+				},
 				Persist: func(turns []brain.Turn, selected events.PersonaSelection) error {
 					return session.DefaultStore().SaveSelection(sess, turns, selected.PersonaID, selected.DisplayName, selected.PromptHash, selected.Directories)
 				},
@@ -383,6 +388,8 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 			}
 			p.AdmitInput = selector.Route
 			p.RouteHandoff = selector.RouteHandoff
+			p.EndDiscussion = selector.EndDiscussion
+			p.CompleteDiscussion = selector.RecordDiscussionResponse
 		}
 
 		p.OnTurn = func() {
@@ -513,6 +520,8 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				selected, err := selector.Select(ctx, id, "ui")
 				return selected, selector.Config(), err
 			}
+			rt.Participation = selector.Participation
+			rt.SetParticipation = selector.SetParticipation
 			rt.SelectionSnapshot = selector.Snapshot
 			rt.SelectionConfig = selector.Config
 		}

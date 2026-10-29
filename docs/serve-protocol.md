@@ -948,3 +948,28 @@ The route is **absent (404)** on a serve that did not wire persona resolution,
 the same way `/v1/meeting/*` is absent without meeting capture. Feature-detect
 by status rather than by `protocol_version`, which does not change for additive
 routes.
+
+### Optional group participation controls
+
+A server configured with experimental group participation advertises
+`group_participation_v1` and `open_interjections_v1`. Older/default servers omit
+these capabilities and do not expose the controls. `session_snapshot` optionally
+includes `participation` (`version: 1`, `mode`, `members`) and `discussion`.
+`members: null` means all enabled personas; an explicit subset contains one to
+eight unique persona IDs.
+
+Send `{"type":"set_participation","request_id":"unique-id","mode":"invited","members":["jarvis","samantha"]}`.
+`request_id`, `mode`, and `members` are required; use explicit JSON `null` to reset
+to all enabled personas. The update interrupts autonomous work and applies on the
+serialized conversation boundary. Success returns `participation_set` with the
+same request ID, authoritative `participation`, and `state_revision`. Failures use
+the existing correlated `error` frame. Wait for authoritative acknowledgment or a
+snapshot before treating a change as saved.
+
+`discussion_updated` carries `session_id`, `conversation_epoch`, `discussion_id`,
+`discussion_revision`, `phase`, `mode`, public persona `members`/`candidate`,
+`labels`, `delivered_count`, `uncovered`, and optional `terminal_reason`. Phases
+are `choosing`, `checking`, `preparing`, `responding`, and `ended`. These are private
+activity indicators and never transcript bubbles. Reject foreign session/epoch
+updates and older revisions. An attributed reply's `response_envelope` optionally
+includes `discussion_id`; persona identity remains immutable for each response.
