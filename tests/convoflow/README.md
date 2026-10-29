@@ -627,3 +627,38 @@ fastest measured baseline stop. Passing bounds every observed cross-condition
 difference; it does not guarantee future latency or measure speech-onset delay.
 Any failed attempt stops the population and retains its artifacts without passing
 quantiles, retries, or sample replacement.
+
+### Recording off/on terminal population
+
+`just test capture-terminal NEW_ROOT CONFIG WAV WORK PAIRS SEED` drives the
+actual terminal App with recorded WAV input through real VAD/STT and the configured
+brain/TTS. It requires an explicit named output device and playback gain zero;
+it fails before input release if native output identity or gain cannot be verified.
+Use a dedicated non-forwarding virtual sink. Do not change the system default or
+mute user audio. This measures software playback boundaries, not acoustic onset.
+
+Two predefined warmups precede seeded counterbalanced pairs. Each attempt resets
+conversation history behind the input gate; all observations, failures, effective
+configuration, binary/WAV hashes, device negotiation and capture IDs are retained.
+The same capture can span adjacent recording-on attempts. Failed or incomplete
+populations remain evidence and cannot silently supply replacement samples.
+
+After the population finishes, analyze it without starting providers:
+
+```sh
+go run ./tests/convoflow -capture-overhead POPULATION_ROOT
+```
+
+This comparison is distinct from the existing baseline-versus-worker comparison.
+It measures incremental recording cost on one instrumented binary using
+finalized-input to first native software playback. It reports nearest-rank off/on
+quantiles, paired deltas and a seeded pair-resampled bootstrap confidence interval.
+Passing requires both empirical p95 regression and its upper confidence bound to
+fit `max(10ms, 2% of recording-off p95)`. A noisy population remains inconclusive;
+retain it and predeclare any additional population before collecting more data.
+
+Provider diagnostics must accompany the numbers. In the OV0007 stabilized local
+recovery workload, reported token usage omits separate continuity-compaction
+requests. An observable response below a configured token cap does not prove those
+internal requests were uncapped or complete. Preserve that blind spot rather than
+attributing the whole delay to uncomplicated model inference.

@@ -6,6 +6,8 @@ import "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 // diagnostic projection; the coordinator and normal session checkpoint own
 // live and durable state respectively. Receiving this event is not delivery.
 type WorkStateChanged struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Snapshot work.Snapshot
 }
 
@@ -14,6 +16,8 @@ func (WorkStateChanged) eventType() string { return "work_state_changed" }
 // WorkDelivery records one host boundary. Result IDs refer to immutable
 // canonical outcomes; this diagnostic event itself grants no authority.
 type WorkDelivery struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Scope        work.WorkScope `json:"scope"`
 	AttemptID    string         `json:"attempt_id"`
 	TurnID       string         `json:"turn_id"`

@@ -102,6 +102,7 @@ type conversationDeps struct {
 // startConversation attaches the model to a live pipeline and kicks off the
 // first turn. The returned Cmd must be handed to the program.
 func (m *conversationModel) startConversation(deps conversationDeps) tea.Cmd {
+	m.stopCapture()
 	m.deps = deps
 	m.retireAdmissionRetryNotices()
 	m.workPollGeneration++

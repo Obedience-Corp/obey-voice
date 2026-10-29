@@ -1,5 +1,11 @@
 package pipeline
 
+import (
+	"context"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
+	"time"
+)
+
 // turnConductor bridges the turn state machine into the live pipeline: stages
 // report state transitions and it guarantees exactly one terminal TurnMetrics
 // emission per turn, regardless of which return path ends the turn.
@@ -10,7 +16,15 @@ type turnConductor struct {
 	finished bool
 }
 
-func (p *Pipeline) newTurnConductor(metrics *turnMetrics) *turnConductor {
+func (p *Pipeline) newTurnConductor(metrics *turnMetrics, parents ...context.Context) *turnConductor {
+	metrics.trace = responseTrace(p.sourceTrace(metrics.start), metrics.response)
+	id := newWorkID()
+	metrics.trace.TurnID = &id
+	metrics.trace.TurnStartMS = metrics.trace.MonoMS
+	if len(parents) > 0 {
+		metrics.trace.ParentTurnID = events.TraceFromContext(parents[0]).TurnID
+	}
+	p.traceSpan(metrics.trace, id, "turn", "start", "running", metrics.start, time.Time{}, nil, nil)
 	return &turnConductor{p: p, machine: newTurnMachine(), metrics: metrics}
 }
 
@@ -36,6 +50,17 @@ func (c *turnConductor) finish(terminal TurnState) {
 	}
 	m := c.metrics.snapshot()
 	m.Outcome = outcome.String()
-	c.p.emit(m)
+	c.p.traceSpan(c.metrics.trace, *c.metrics.trace.TurnID, "turn", "end", m.Outcome, c.metrics.start, time.Now(), nil, nil)
+	if !c.metrics.modelRequest.IsZero() {
+		status := c.metrics.modelOutcome
+		if status == "" {
+			status = m.Outcome
+		}
+		if !c.metrics.modelComplete.IsZero() && c.metrics.modelOutcome == "" {
+			status = "completed"
+		}
+		c.p.traceSpan(c.metrics.trace, traceID(c.metrics.trace, "model"), "model", "end", status, c.metrics.modelRequest, c.metrics.modelComplete, nil, nil)
+	}
+	c.p.emitResponse(c.metrics, m)
 	c.p.warnIfSynthesisCannotKeepUp(m)
 }

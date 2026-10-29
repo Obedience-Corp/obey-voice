@@ -269,6 +269,8 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			metrics.delivery.queued++
 		}
 		queuedAt := time.Now()
+		index := nextIndex
+		p.traceSpan(metrics.trace, traceID(metrics.trace, "queue")+":"+fmt.Sprint(index), "segment_queue", "start", "running", queuedAt, time.Time{}, &index, nil)
 		synthQueue <- synthWork{sentence: text, index: nextIndex, textReady: batchTextReady, queuedAt: queuedAt, joinBeats: joinBeats}
 		nextIndex++
 		voiceBatch = voiceBatch[:0]
@@ -641,6 +643,13 @@ func (p *Pipeline) streamResponse(ctx context.Context, cancelTurn context.Cancel
 			modelDone = nil
 			modelFinished = true
 			metrics.modelComplete = time.Now()
+			metrics.modelOutcome = "completed"
+			if result.Err != nil {
+				metrics.modelOutcome = "failed"
+				if interrupted {
+					metrics.modelOutcome = "cancelled"
+				}
+			}
 			p.emitResponse(metrics, events.ThinkingComplete{Elapsed: metrics.elapsed(metrics.modelComplete)})
 			if repair != nil && result.Route != "" {
 				metrics.route.Tier, metrics.route.ReasonCode = result.RouteTier, result.RouteReasonCode
@@ -753,6 +762,7 @@ func (p *Pipeline) observeStream(ctx context.Context, stream *brain.Stream, metr
 		stampToken := func(now time.Time) {
 			if metrics.firstModelChunk.IsZero() {
 				metrics.firstModelChunk = now
+				p.traceSpan(metrics.trace, traceID(metrics.trace, "first_model_chunk"), "first_model_chunk", "update", "completed", now, now, nil, nil)
 			}
 			if metrics.firstToken.IsZero() {
 				metrics.firstToken = now

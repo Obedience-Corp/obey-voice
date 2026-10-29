@@ -16,11 +16,16 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 	// Schedule only after the returned state has captured its current scope and
 	// deadline, including snapshots recovered while voice animation is idle.
 	defer func() {
+		cmd = tea.Batch(cmd, next.capturePollCmd())
 		if expiry := next.scheduleWorkStripExpiry(); expiry != nil {
 			cmd = tea.Batch(cmd, expiry)
 		}
 	}()
 	switch msg := msg.(type) {
+	case capturePollMsg:
+		m.capturePollScheduled = false
+		m.pollCapture()
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.setSize(msg.Width, msg.Height)
 		return m, m.ensureVoiceTick()

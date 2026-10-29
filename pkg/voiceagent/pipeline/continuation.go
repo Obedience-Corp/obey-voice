@@ -32,6 +32,7 @@ type continuationRequest struct {
 }
 
 type completionState struct {
+	trace      events.TraceContext
 	owner      context.Context
 	discussion *discussion.Directive
 	voice      bool
@@ -232,7 +233,7 @@ func (p *Pipeline) runVoiceWithContinuations(ctx context.Context) (string, error
 		if admission.Envelope.PersonaID != "" {
 			visited = append(visited, admission.Envelope.PersonaID)
 		}
-		ctx = withContinuation(ctx, continuationRequest{admission: admission})
+		ctx = withContinuation(events.WithTrace(ctx, state.trace), continuationRequest{admission: admission})
 	}
 }
 
@@ -288,7 +289,7 @@ func (p *Pipeline) runTextWithContinuations(ctx context.Context, input string) e
 		if admission.Envelope.PersonaID != "" {
 			visited = append(visited, admission.Envelope.PersonaID)
 		}
-		ctx = withContinuation(ctx, continuationRequest{admission: admission})
+		ctx = withContinuation(events.WithTrace(ctx, state.trace), continuationRequest{admission: admission})
 		input = ""
 	}
 }
@@ -312,6 +313,7 @@ func (p *Pipeline) completeAgentResponse(ctx context.Context, response string, m
 		state.turn.PromptHash = identity.PromptHash
 		state.turn.ResponseID = identity.ResponseID
 	}
+	state.trace = metrics.trace
 	state.ok = true
 }
 

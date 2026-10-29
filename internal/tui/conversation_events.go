@@ -274,6 +274,7 @@ func (m *conversationModel) handleEvent(e events.Event) {
 		}
 
 	case events.ConversationCleared:
+		m.stopCapture()
 		m.retireAdmissionRetryNotices()
 		m.workActivity = false
 		m.workFilter = ""

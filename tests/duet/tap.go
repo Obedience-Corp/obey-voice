@@ -85,7 +85,7 @@ func tailTap(ctx context.Context, instance, path string, out chan<- tapEvent) er
 	}
 }
 
-// tapHeaderReady reports whether the tap file exists with a valid v1 header.
+// tapHeaderReady reports whether the tap file exists with a supported v1/v2 header.
 func tapHeaderReady(path string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -96,7 +96,7 @@ func tapHeaderReady(path string) bool {
 		return false
 	}
 	var rec TapRecord
-	return json.Unmarshal(data[:i], &rec) == nil && rec.Type == "header" && rec.V == 1
+	return json.Unmarshal(data[:i], &rec) == nil && rec.Type == "header" && (rec.V == 1 || rec.V == 2)
 }
 
 // awaitConversation drives an instance from the TUI launcher into a live

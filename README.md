@@ -152,3 +152,34 @@ Apache License 2.0. Copyright 2026 Obedience Corp. See [LICENSE](LICENSE) and [N
 ---
 
 Built by [Obedience Corp](https://obediencecorp.com) · [GitHub](https://github.com/Obedience-Corp)
+
+## Inspect a TUI conversation pipeline
+
+In the terminal conversation, use `/record talk` to capture events, source timing
+and conversation text. `/record` shows the capture ID, exact `events.jsonl` path
+and recording health. `Ctrl+R` toggles Talk recording outside Vim mode;
+`/record lab` additionally enables existing audio debug artifacts. Capture files
+are local, private to your user, and opt-in. Use `/record off` to seal the bundle.
+Clear/new-runtime transitions detach recording; incomplete shutdowns remain
+explicitly incomplete.
+
+Open a second terminal with [agent-stream-dbg](https://github.com/Obedience-Corp/agent-stream-dbg):
+
+```sh
+agent-stream-dbg observe --dialect obey-voice --follow /absolute/capture/events.jsonl
+# Inspect the same saved capture after recording stops:
+agent-stream-dbg observe --dialect obey-voice /absolute/capture/events.jsonl
+```
+
+The viewer is passive: conversation/persona/work controls remain in Obey Voice.
+It shows measured STT, admission, model, synthesis attempts and software playback
+intervals, including overlaps, missing boundaries and interrupted stages. Select
+an older turn with `[` / `]`, return to latest with `Ctrl+F`, or inspect raw and
+normalized evidence with Enter. Background jobs retain their own typed job IDs
+and causal parent turn. Viewer exit does not stop the conversation.
+
+The source-owned [trace contract](testdata/pipeline-trace/CONTRACT.md) and
+[canonical fixtures](testdata/pipeline-trace/README.md) define nullable clocks,
+identity and compatibility. Legacy metrics remain relative; unknown schema
+families/versions stay available as raw evidence. Playback timestamps mark
+software sink acceptance/completion, not calibrated sound at the listener.

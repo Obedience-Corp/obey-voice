@@ -6,6 +6,8 @@ import "time"
 // conversation, credentials or raw model output. Proposed is not worker
 // admission: route.decided carries the host's accepted/rejected result.
 type DecisionEvaluated struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Point       string        `json:"point"`
 	Disposition string        `json:"disposition"`
 	Model       string        `json:"model,omitempty"`

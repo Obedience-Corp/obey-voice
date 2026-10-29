@@ -17,6 +17,8 @@ func EventType(e Event) string { return e.eventType() }
 
 // STTPhase reports a speech-to-text phase transition.
 type STTPhase struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Phase   string        // "listening", "hearing", "transcribing"
 	Elapsed time.Duration // time spent in previous phase (0 if starting)
 }
@@ -25,6 +27,8 @@ func (e STTPhase) eventType() string { return "stt_phase" }
 
 // UserInput carries the transcribed user text.
 type UserInput struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Text string
 	// Speaker is the stable live label for this turn (speaker-1) when live
 	// analysis attributed the utterance. Empty for text-only or unlabeled.
@@ -51,6 +55,8 @@ func (e AudioLevel) eventType() string { return "audio_level" }
 
 // ThinkingStarted signals Claude has begun processing.
 type ThinkingStarted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 }
 
@@ -58,6 +64,8 @@ func (e ThinkingStarted) eventType() string { return "thinking_started" }
 
 // ThinkingComplete signals Claude has finished.
 type ThinkingComplete struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Response     string
@@ -69,6 +77,8 @@ func (e ThinkingComplete) eventType() string { return "thinking_complete" }
 
 // TurnMetrics captures per-turn latency milestones for benchmarking.
 type TurnMetrics struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Timing *TurnTiming `json:"timing,omitempty"`
 
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
@@ -192,6 +202,8 @@ func (e TurnMetrics) eventType() string { return "turn_metrics" }
 // evidence supports a user-facing remedy. Message is intentionally concise
 // and does not imply that a setting was changed.
 type SpeechDiagnostic struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Symptom      string
 	Cause        string
 	Confidence   string
@@ -345,6 +357,8 @@ func (e TurnMetrics) SpeakingWindow() time.Duration {
 // With a warm prefix cache, Prefill should track the size of the new turn —
 // a prefill near the whole transcript means the cache was invalidated.
 type TokenUsage struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Prefill int
 	Gen     int
 }
@@ -355,6 +369,8 @@ func (e TokenUsage) eventType() string { return "token_usage" }
 // the configured warn threshold. Emitted at most once per underlying session;
 // nothing is dropped — this is visibility, not enforcement.
 type SessionWarning struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	PromptTokens int
 	Threshold    int
 }
@@ -365,6 +381,8 @@ func (e SessionWarning) eventType() string { return "session_warning" }
 // context with a summary. The TUI transcript is annotated, not cleared: the
 // scrollback stays, but the model now continues from the summary.
 type ConversationCompacted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	TurnsBefore int
 	Summary     string
 }
@@ -373,6 +391,8 @@ func (e ConversationCompacted) eventType() string { return "conversation_compact
 
 // ResponseStreamingStarted signals the first token on either brain channel.
 type ResponseStreamingStarted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Elapsed time.Duration
@@ -383,6 +403,8 @@ func (e ResponseStreamingStarted) eventType() string { return "response_streamin
 // ResponseSpeakableStarted is T_eou to the first non-whitespace Chunks byte.
 // Emitted only when that instant differs from the first token.
 type ResponseSpeakableStarted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Elapsed time.Duration
@@ -395,6 +417,8 @@ func (e ResponseSpeakableStarted) eventType() string { return "response_speakabl
 // and droppable under UI back-pressure; ResponseReady always follows with the
 // complete, canonical text.
 type ResponseDelta struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Text string
@@ -414,6 +438,8 @@ func (e ThinkingDelta) eventType() string { return "thinking_delta" }
 
 // SpeechSegmentReady signals a sentence is ready for voice synthesis.
 type SpeechSegmentReady struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Text string
@@ -426,6 +452,8 @@ func (e SpeechSegmentReady) eventType() string { return "speech_segment_ready" }
 
 // GeneratingVoice signals TTS generation has started.
 type GeneratingVoice struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Sentence string
@@ -435,6 +463,8 @@ func (e GeneratingVoice) eventType() string { return "generating_voice" }
 
 // VoiceGenerated signals TTS generation is complete.
 type VoiceGenerated struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Sentence string
@@ -450,6 +480,8 @@ func (e VoiceGenerated) eventType() string { return "voice_generated" }
 
 // SpeakingStarted signals audio playback has begun.
 type SpeakingStarted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Text        string
@@ -462,6 +494,8 @@ func (e SpeakingStarted) eventType() string { return "speaking_started" }
 
 // SpeakingComplete signals audio playback is done.
 type SpeakingComplete struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Elapsed     time.Duration
@@ -473,6 +507,8 @@ func (e SpeakingComplete) eventType() string { return "speaking_complete" }
 
 // SpeakingInterrupted signals playback was cut short.
 type SpeakingInterrupted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Reason string
@@ -490,6 +526,8 @@ func (e SpeakingInterrupted) eventType() string { return "speaking_interrupted" 
 
 // TurnInterrupted signals the active assistant turn was canceled.
 type TurnInterrupted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Reason string
@@ -502,6 +540,8 @@ func (e TurnInterrupted) eventType() string { return "turn_interrupted" }
 
 // ResponseReady carries the final display text.
 type ResponseReady struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope `json:"envelope,omitempty"`
 
 	Response    string
@@ -520,6 +560,8 @@ func (e ConversationCleared) eventType() string { return "conversation_cleared" 
 
 // Error carries an error message for display.
 type Error struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Stage   string
 	Message string
 }
@@ -540,6 +582,8 @@ const StageTTSFallback = "tts-fallback"
 
 // Info carries an informational message.
 type Info struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Message string
 }
 
@@ -554,6 +598,8 @@ func (e Info) eventType() string { return "info" }
 // line. Kind is the brain's ToolKind carried as a plain string — this package
 // is the shared vocabulary and must not depend on brain.
 type ToolCallStarted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	ID      string
 	JobID   string
 	Name    string
@@ -569,6 +615,8 @@ func (e ToolCallStarted) eventType() string { return "tool_call_started" }
 // ToolCallFinished signals a tool finished. Preview is a short result snippet
 // for status/transcript (truncated; never secrets by design of tool handlers).
 type ToolCallFinished struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	ID      string
 	JobID   string
 	Name    string
@@ -586,6 +634,8 @@ func (e ToolCallFinished) eventType() string { return "tool_call_finished" }
 // JobQueued signals the table accepted a worker job. It waits behind whatever
 // is running; JobStarted follows once it actually begins.
 type JobQueued struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	ID   string
 	Task string
 }
@@ -596,6 +646,8 @@ func (e JobQueued) eventType() string { return "job_queued" }
 // JobQueued and the previous job's terminal event, and precedes every tool
 // event the job produces.
 type JobStarted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	ID   string
 	Task string
 }
@@ -604,6 +656,8 @@ func (e JobStarted) eventType() string { return "job_started" }
 
 // JobFinished signals a worker job completed successfully.
 type JobFinished struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Envelope *ResponseEnvelope
 	Scope    work.WorkScope
 	ID       string
@@ -616,6 +670,8 @@ func (e JobFinished) eventType() string { return "job_finished" }
 
 // JobFailed signals a worker job ended with an error.
 type JobFailed struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	ID      string
 	Task    string
 	Err     string
@@ -629,6 +685,8 @@ func (e JobFailed) eventType() string { return "job_failed" }
 // how the abort becomes visible) or "budget" when it ran past the configured
 // job budget (spoken once, since nobody asked for that stop).
 type JobAborted struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	ID      string
 	Task    string
 	Elapsed time.Duration
@@ -647,6 +705,8 @@ func (e JobAborted) eventType() string { return "job_aborted" }
 // lines from a speech segment before TTS (WI-dc9e33 B4). The stripped text
 // still reaches the chat transcript — only the spoken channel is filtered.
 type VoiceGateStripped struct {
+	Trace *TraceContext `json:"trace,omitempty"`
+
 	Lines int
 }
 

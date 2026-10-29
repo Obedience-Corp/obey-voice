@@ -33,6 +33,7 @@ func main() {
 func runMain(args []string) int {
 	fs := flag.NewFlagSet("convoflow", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	captureOverhead := fs.String("capture-overhead", "", "analyze a predeclared terminal capture off/on paired population")
 	population := fs.String("control-population", "", "repeat one physical completion/interruption scenario into NEW_OUTPUTDIR")
 	populationRuntime := fs.String("population-runtime", "", "JSON map of named absolute runtime asset paths to pin during a control population")
 	compareControls := fs.String("compare-control-populations", "", "compare baseline,worker interruption population directories")
@@ -59,6 +60,24 @@ func runMain(args []string) int {
 	stimulusDevice := fs.String("stimulus-device", "", "explicit playback device for acoustic fixture stimulus only")
 	if err := fs.Parse(args); err != nil {
 		return 1
+	}
+	if *captureOverhead != "" {
+		if fs.NFlag() != 1 || fs.NArg() != 0 {
+			fmt.Fprintln(os.Stderr, "convoflow: capture overhead accepts only -capture-overhead POPULATION_DIR")
+			return 1
+		}
+		report, err := analyzeCaptureOverhead(*captureOverhead)
+		data, marshalErr := json.MarshalIndent(report, "", "  ")
+		if marshalErr != nil {
+			fmt.Fprintln(os.Stderr, marshalErr)
+			return 1
+		}
+		fmt.Println(string(data))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	}
 	if *population != "" {
 		if *selfTest || *compare != "" || *compareControls != "" || *prepareSuite != "" || *analyzeDir != "" || *runsDir != "" || *liveProvider != "" || *liveModel != "" || *workerProvider != "" || *workerModel != "" || *workerHost != "" || *ollamaHost != "" || *personaDir != "" || *gate || *speakers {

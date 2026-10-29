@@ -102,6 +102,7 @@ type Pipeline struct {
 	identityMu      sync.RWMutex
 	identityScope   work.WorkScope
 	identityRetired bool
+	traceOrigin     time.Time
 
 	// AdmitInput runs after finalized input and speaker validation, before
 	// compaction/model/speech. The host serializes it with selection controls.

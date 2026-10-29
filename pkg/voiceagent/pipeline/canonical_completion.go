@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
@@ -19,7 +20,8 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 	metrics := newTurnMetrics()
 	metrics.response = events.ResponseFromContext(ctx)
 	defer p.trackMetrics(metrics)()
-	turn := p.newTurnConductor(metrics)
+	turn := p.newTurnConductor(metrics, ctx)
+	ctx = events.WithTrace(ctx, metrics.trace)
 	turn.to(TurnThinking)
 	p.emitResponse(metrics, events.ThinkingStarted{})
 	c, provider := p.WorkCoordinator(), p.Brain
@@ -66,7 +68,14 @@ func (p *Pipeline) runCanonicalCompletion(ctx context.Context, lease work.Comple
 	} else {
 		generationCtx, cancel := context.WithTimeout(ctx, brain.CompletionDeadline)
 		var err error
+		metrics.modelRequest = time.Now()
+		p.traceSpan(metrics.trace, traceID(metrics.trace, "model"), "model", "start", "running", metrics.modelRequest, time.Time{}, nil, nil)
 		envelope, err = completion.Complete(generationCtx, req)
+		metrics.modelComplete = time.Now()
+		metrics.modelOutcome = "completed"
+		if err != nil {
+			metrics.modelOutcome = "failed"
+		}
 		deadlineErr := generationCtx.Err()
 		cancel()
 		if ctx.Err() != nil || !lease.Valid() {

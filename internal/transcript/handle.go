@@ -1,6 +1,8 @@
 package transcript
 
 import (
+	"reflect"
+
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
@@ -14,9 +16,35 @@ func (w *Writer) Handle(e events.Event) {
 	if !recordedEventTypes[events.EventType(e)] {
 		return
 	}
+	if w.capture != nil {
+		w.copyMu.Lock()
+		defer w.copyMu.Unlock()
+		w.mu.Lock()
+		closed := w.closed || w.limited.Load()
+		w.mu.Unlock()
+		if closed {
+			return
+		}
+		if captureScopeConflict(w.capture.Trace, e) {
+			w.scopeExcluded.Add(1)
+			return
+		}
+		if size, ok := boundedSize(reflect.ValueOf(e), 0); !ok {
+			w.skipped.Add(1)
+			w.enqueue(record{Type: "record_omitted", Trace: cloneDiagnosticTrace(events.TraceOf(e)), Message: "payload exceeds bounded copy budget", SizeEstimateBytes: size, OmittedType: events.EventType(e), SizeEstimateKind: sizeEstimateKind(size)})
+			return
+		}
+		e = copyBounded(reflect.ValueOf(e)).Interface().(events.Event)
+	}
 	r, ok := encodeEvent(e)
 	if !ok {
 		return
+	}
+	r.Trace = events.TraceOf(e)
+	if w.capture != nil && r.Trace == nil {
+		if runtime, session, epoch, ok := events.SourceWorkScope(e); ok {
+			r.Trace = &events.TraceContext{RuntimeID: runtime, SessionID: session, ConversationEpoch: epoch}
+		}
 	}
 	w.enqueue(r)
 }
@@ -71,6 +99,7 @@ func (w *Writer) AttachAll(bus *events.Bus) func() {
 // recordedEventTypes is the durable/harness set Attach subscribes to.
 // AttachAll uses the same names so AudioLevel ticks skip encodeEvent.
 var recordedEventTypes = map[string]bool{
+	"pipeline_trace":         true,
 	"user_input":             true,
 	"response_delta":         true,
 	"response_ready":         true,
@@ -107,6 +136,8 @@ var recordedEventTypes = map[string]bool{
 
 func encodeEvent(e events.Event) (record, bool) {
 	switch x := e.(type) {
+	case events.PipelineTrace:
+		return record{Type: "trace_span", Span: &x.Span}, true
 	case events.UserInput:
 		return record{Type: "user", Text: x.Text}, true
 	case events.ResponseDelta:
@@ -161,15 +192,15 @@ func encodeEvent(e events.Event) (record, bool) {
 	case events.WorkDelivery:
 		return record{Type: "work_delivery", Delivery: &x}, true
 	case events.JobQueued:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "queued"}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "queued"}, true
 	case events.JobStarted:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "started"}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "started"}, true
 	case events.JobFinished:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds()}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "finished", ElapsedS: x.Elapsed.Seconds()}, true
 	case events.JobFailed:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "failed", Message: x.Err, IsError: true, ElapsedS: x.Elapsed.Seconds()}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "failed", Message: x.Err, IsError: true, ElapsedS: x.Elapsed.Seconds()}, true
 	case events.JobAborted:
-		return record{Type: "job", Name: x.ID, Text: x.Task, State: "aborted", Reason: x.Reason, ElapsedS: x.Elapsed.Seconds()}, true
+		return record{Type: "job", JobID: x.ID, Name: x.ID, Text: x.Task, State: "aborted", Reason: x.Reason, ElapsedS: x.Elapsed.Seconds()}, true
 	case events.Error:
 		return record{Type: "error", Stage: x.Stage, Message: x.Message}, true
 	case events.Info:
@@ -196,7 +227,8 @@ func encodeEvent(e events.Event) (record, bool) {
 		return record{Type: "turn_interrupted", Reason: x.Reason}, true
 	case events.TurnMetrics:
 		return record{
-			Type:               "metrics",
+			Type:   "metrics",
+			Timing: x.Timing, AudibleSink: x.AudibleSink, Envelope: x.Envelope,
 			Outcome:            x.Outcome,
 			Degraded:           x.Degraded,
 			Interrupted:        x.Interrupted,

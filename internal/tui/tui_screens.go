@@ -350,7 +350,7 @@ func (a App) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Conversation ticks belong to the conversation even while hidden.
 		// Dropping one leaves voiceTicking set but no timer scheduled.
 		// Meeting animation uses the separate meetingTickMsg lifecycle.
-		case voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
+		case capturePollMsg, voiceTickMsg, voiceTurnDoneMsg, textTurnDoneMsg, voiceRetryMsg, busEventMsg,
 			compactDoneMsg, backgroundReadyMsg, backgroundRecoveryMsg, backgroundPauseDoneMsg:
 			var convCmd tea.Cmd
 			a.conversation, convCmd = a.conversation.Update(msg)

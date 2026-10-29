@@ -2,13 +2,17 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/session"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type menuReadyMsg struct{ done chan struct{} }
+type menuReadyMsg struct {
+	done       chan struct{}
+	captureErr error
+}
 
 // Keep the terminal program mounted while the old conversation drains. No
 // new runtime can start until its microphone, hotkey and workers are released.
@@ -24,9 +28,10 @@ func (a App) beginMenuTransition() (tea.Model, tea.Cmd) {
 	a.launcher = a.launcher.withBanner("Saving conversation…", false)
 	a.menuDone = make(chan struct{})
 	old := a
+	var captureErr error
 	go func() {
 		defer close(old.menuDone)
-		waitQuitHelpers(old, old, old.runCancel)
+		captureErr = waitQuitHelpers(old, old, old.runCancel)
 		if old.wg != nil {
 			old.wg.Wait()
 		}
@@ -36,7 +41,7 @@ func (a App) beginMenuTransition() (tea.Model, tea.Cmd) {
 	}()
 	return a, func() tea.Msg {
 		<-old.menuDone
-		return menuReadyMsg{done: old.menuDone}
+		return menuReadyMsg{done: old.menuDone, captureErr: captureErr}
 	}
 }
 
@@ -45,11 +50,18 @@ func (a App) onMenuReady(msg menuReadyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	next := newApp(a.cfg, a.providers, session.List())
+	next.conversation.capturePending = a.conversation.capturePending
+	next.conversation.captureSealStarted = a.conversation.captureSealStarted
+	next.conversation.captureSealWarned = a.conversation.captureSealWarned
+	next.fatalErr = errors.Join(a.fatalErr, msg.captureErr)
+	if msg.captureErr != nil {
+		next.launcher = next.launcher.withBanner(msg.captureErr.Error(), true)
+	}
 	next.builder, next.meetingBuilder = a.builder, a.meetingBuilder
 	next.runCtx, next.runCancel = context.WithCancel(context.Background())
 	next.wg = &sync.WaitGroup{}
 	next.progress = newEventBridge(16)
 	next.slot, next.meetingSlot = newConversationSlot(), newMeetingSlot()
 	next = next.onWindowSize(tea.WindowSizeMsg{Width: a.width, Height: a.height})
-	return next, nil
+	return next, next.conversation.capturePollCmd()
 }

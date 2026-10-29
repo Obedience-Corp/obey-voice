@@ -201,9 +201,10 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 	if plan != nil {
 		runtimeBudget = time.Duration(plan.Limits.RuntimeSeconds) * time.Second
 	}
-	origin := workerOrigin{Scope: a.pipeline.ConversationScope()}
+	origin := workerOrigin{Scope: a.pipeline.ConversationScope(), Trace: events.TraceFromContext(ctx)}
 	if metrics != nil {
 		origin.Envelope = metrics.response
+		origin.Trace = metrics.trace
 	}
 	origin.Envelope.ResponseID = newWorkID()
 	origin.Voices.primary, origin.Voices.fallback = a.pipeline.responseTTS(ctx)
@@ -242,11 +243,17 @@ func (a *Agency) handleSpawn(ctx context.Context, turn *turnConductor, metrics *
 // precedes this job's tool and terminal events. A spawn behind a running job
 // is therefore queued, not started, until that job is out of the way.
 func (a *Agency) onJobQueued(id, task string) {
+	a.mu.Lock()
+	origin := a.workerOrigins[id]
+	origin.traceQueuedAt = time.Now()
+	a.workerOrigins[id] = origin
+	a.mu.Unlock()
+	a.traceJobBoundary(id, "queued")
 	if a.workEnabled() {
 		// Register already published the canonical scoped admission.
 		return
 	}
-	a.pipeline.emit(events.JobQueued{ID: id, Task: task})
+	a.emitJobTrace(id, events.JobQueued{ID: id, Task: task})
 }
 
 func (a *Agency) onJobStarted(id, task string) {
@@ -254,11 +261,12 @@ func (a *Agency) onJobStarted(id, task string) {
 	if !accepted {
 		return
 	}
+	a.traceJobBoundary(id, "started")
 	if c != nil {
 		_ = c.Started(key)
 		return // The canonical snapshot carries the admitted scope.
 	}
-	a.pipeline.emit(events.JobStarted{ID: id, Task: task})
+	a.emitJobTrace(id, events.JobStarted{ID: id, Task: task})
 }
 
 // liveHistory is the talking brain's conversation, or nil when there is no
@@ -581,6 +589,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	if !accepted {
 		return
 	}
+	a.traceJobBoundary(id, string(state))
 	if state == job.StateDone {
 		result = cleanWorkerReply(result)
 	}
@@ -631,13 +640,13 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 	case job.StateDone:
 		a.enqueueSummary(id, a.cleanSummary(result))
 		origin := a.queueWorkerReply(id, result)
-		a.pipeline.emit(events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed, Envelope: &origin.Envelope, Scope: origin.Scope})
+		a.emitJobTrace(id, events.JobFinished{ID: id, Task: task, Summary: result, Elapsed: elapsed, Envelope: &origin.Envelope, Scope: origin.Scope})
 	case job.StateFailed:
 		msg := "That did not work."
 		if err != nil && strings.TrimSpace(err.Error()) != "" {
 			msg = err.Error()
 		}
-		a.pipeline.emit(events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
+		a.emitJobTrace(id, events.JobFailed{ID: id, Task: task, Err: msg, Elapsed: elapsed})
 	case job.StateAborted:
 		// A cancel was spoken once by handleAbort, in the turn that asked;
 		// saying it again here would be once per job. Budget failures are
@@ -646,7 +655,7 @@ func (a *Agency) onJobDone(id string, state job.State, result string, err error)
 		if errors.Is(err, job.ErrBudget) {
 			reason = events.AbortBudget
 		}
-		a.pipeline.emit(events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
+		a.emitJobTrace(id, events.JobAborted{ID: id, Task: task, Elapsed: elapsed, Reason: reason})
 	}
 	a.tryFlushPending()
 }

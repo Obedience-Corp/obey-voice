@@ -23,10 +23,13 @@ const (
 )
 
 type playbackEvent struct {
-	kind     playbackEventType
-	sentence string
-	index    int
-	fallback bool
+	synthError  string
+	traceStatus string
+	attemptID   string
+	kind        playbackEventType
+	sentence    string
+	index       int
+	fallback    bool
 	// engineElapsed is synthesis alone; synthElapsed also covers waiting
 	// behind whatever was already playing.
 	engineElapsed time.Duration
@@ -51,6 +54,8 @@ type playbackEvent struct {
 }
 
 type playbackObservation struct {
+	traceEvent    func(playbackEvent)
+	attemptID     string
 	engine        ttsEngineIdentity
 	textReady     time.Time
 	queuedAt      time.Time
@@ -194,10 +199,20 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 	// Index continues the turn's own numbering: recovery speech follows
 	// whatever the reply managed to say.
 	index := len(metrics.segments)
+	recordSegment := func(event playbackEvent) {
+		event.kind = playbackFinished
+		event.attemptID = observation.attemptID
+		if observation.stream != nil && observation.stream.Err() != nil {
+			event.synthError = observation.stream.Err().Error()
+		}
+		p.tracePlayback(metrics, event)
+		metrics.recordSegment(event)
+	}
 
 	select {
 	case <-playback.Started():
 		startedAt = time.Now()
+		p.tracePlayback(metrics, playbackEvent{kind: playbackStarted, index: index, attemptID: observation.attemptID, synthStarted: synthStarted, synthFirstPCM: firstPCMAt(observation.stream), synthEnded: synthesisEnd(observation.stream, audio.PlaybackResult{}), playStarted: startedAt})
 		synthElapsed = elapsedSince(synthStarted)
 		metrics.audibleSink = p.sinkKind()
 		if metrics.firstAudioReady.IsZero() {
@@ -236,7 +251,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 		if metrics.audibleSink == audio.SinkNone {
 			p.emit(events.Info{Message: "synth drain (no sink)"})
 		}
-		metrics.recordSegment(playbackEvent{
+		recordSegment(playbackEvent{
 			sentence:      sentence,
 			index:         index,
 			fallback:      fallback,
@@ -266,7 +281,7 @@ func (p *Pipeline) handlePlaybackLifecycle(sentence string, fallback bool, obser
 	if !startedAt.IsZero() {
 		elapsed = time.Since(startedAt)
 	}
-	metrics.recordSegment(playbackEvent{
+	recordSegment(playbackEvent{
 		sentence:      sentence,
 		index:         index,
 		fallback:      fallback,
@@ -324,6 +339,25 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 	queuedAt := observation.queuedAt
 	synthStarted := observation.synthStarted
 	var startedAt time.Time
+	terminal := false
+	send := func(event playbackEvent) bool {
+		if event.kind == playbackFinished {
+			terminal = true
+		}
+		if observation.stream != nil && observation.stream.Err() != nil {
+			event.synthError = observation.stream.Err().Error()
+		}
+		if observation.traceEvent != nil {
+			observation.traceEvent(event)
+		}
+		return sendPlaybackEvent(loopDone, out, event)
+	}
+	defer func() {
+		if !terminal && observation.traceEvent != nil {
+			observation.traceEvent(playbackEvent{kind: playbackFinished, index: index, attemptID: observation.attemptID, synthStarted: synthStarted, synthEnded: synthesisEnd(observation.stream, audio.PlaybackResult{}), playStarted: startedAt, traceStatus: "cancelled"})
+		}
+	}()
+
 	// synthElapsed is stamped on both terminal paths, not just the audible
 	// one: a segment whose playback finished without ever starting still cost
 	// its synthesis time, and dropping it would silently bias the aggregate
@@ -337,8 +371,8 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 		started.Store(true)
 		startedAt = time.Now()
 		synthElapsed = time.Since(synthStarted)
-		if !sendPlaybackEvent(loopDone, out, playbackEvent{
-			kind:          playbackStarted,
+		if !send(playbackEvent{
+			attemptID: observation.attemptID, kind: playbackStarted,
 			sentence:      sentence,
 			index:         index,
 			fallback:      fallback,
@@ -358,8 +392,8 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 			return
 		}
 	case result := <-playback.Done():
-		sendPlaybackEvent(loopDone, out, playbackEvent{
-			kind:          playbackFinished,
+		send(playbackEvent{
+			attemptID: observation.attemptID, kind: playbackFinished,
 			sentence:      sentence,
 			index:         index,
 			fallback:      fallback,
@@ -392,8 +426,8 @@ func watchPlayback(loopDone <-chan struct{}, sentence string, index int, fallbac
 		elapsed = time.Since(startedAt)
 	}
 
-	sendPlaybackEvent(loopDone, out, playbackEvent{
-		kind:          playbackFinished,
+	send(playbackEvent{
+		attemptID: observation.attemptID, kind: playbackFinished,
 		sentence:      sentence,
 		index:         index,
 		fallback:      fallback,

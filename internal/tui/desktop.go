@@ -5,6 +5,7 @@ package tui
 // voice admission, cancellation, hotkeys and background delivery stay here.
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -120,7 +121,7 @@ func StartDesktopController(ctx context.Context, rt *ConversationRuntime, publis
 		cancel()
 		// Save before waiting on hardware or helper teardown, as the TUI does.
 		rt.Persist()
-		waitQuitHelpers(m.app, model.app, cancel)
+		err = errors.Join(err, waitQuitHelpers(m.app, model.app, cancel))
 		rt.Cleanup()
 		d.done <- err
 		close(d.done)

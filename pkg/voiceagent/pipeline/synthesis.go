@@ -75,6 +75,7 @@ type synthWork struct {
 }
 
 type synthesisObservation struct {
+	attemptID     string
 	engine        ttsEngineIdentity
 	warmState     string
 	wholeSentence bool
@@ -87,6 +88,14 @@ type synthesisObservation struct {
 
 func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-chan struct{}, work synthWork, gate *orderGate, audioStarted *atomic.Bool, out chan<- playbackEvent, stickFallback *fallbackLatch, realAudioQueued ...*atomic.Bool) segmentSynthesisOutcome {
 	sentence, index := work.sentence, work.index
+	ctx = withSegmentTrace(ctx, index)
+	trace := events.TraceFromContext(ctx)
+	queueID := traceID(trace, "queue") + ":" + fmt.Sprint(index)
+	queueStatus := "completed"
+	if ctx.Err() != nil || p.OutputMuted() {
+		queueStatus = "cancelled"
+	}
+	p.traceSpan(trace, queueID, "segment_queue", "end", queueStatus, work.queuedAt, time.Now(), &index, nil)
 	// Release this index before any return — error, skip, mute, cancel — or
 	// the segments behind it never reach the player.
 	defer gate.done(index)
@@ -126,6 +135,21 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 		failure.fallback = usedFallback
 		return segmentSynthesisOutcome{failure: failure}
 	}
+	handedOff := false
+	defer func() {
+		if !handedOff && observation.attemptID != "" {
+			status := "cancelled"
+			end := time.Time{}
+			if stream != nil && !stream.ClosedAt().IsZero() {
+				end = stream.ClosedAt()
+				status = "completed"
+				if stream.Err() != nil {
+					status = "failed"
+				}
+			}
+			p.traceSpan(trace, observation.attemptID, "synthesis", "end", status, observation.synthStarted, end, &index, &observation.attemptID)
+		}
+	}()
 	if observation.synthStarted.IsZero() {
 		observation.synthStarted = synthStarted
 	}
@@ -160,6 +184,7 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 	}
 	playback, err := p.Player.PlayStream(ctx, stream)
 	if err != nil {
+		p.traceSpan(trace, observation.attemptID, "synthesis", "end", "failed", observation.synthStarted, time.Now(), &index, &observation.attemptID)
 		if !usedFallback {
 			var fallbackObservation synthesisObservation
 			playback, usedFallback, fallbackObservation, err = p.playFallbackObserved(ctx, sentence, err, stickFallback, work.joinBeats)
@@ -208,8 +233,11 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 		return segmentSynthesisOutcome{}
 	}
 
+	handedOff = true
+	frozenTrace := events.TraceFromContext(ctx)
 	go watchPlayback(loopDone, sentence, index, usedFallback, playbackObservation{
-		engine: observation.engine, textReady: work.textReady, queuedAt: work.queuedAt,
+		traceEvent: func(event playbackEvent) { p.tracePlayback(&turnMetrics{trace: frozenTrace}, event) },
+		attemptID:  observation.attemptID, engine: observation.engine, textReady: work.textReady, queuedAt: work.queuedAt,
 		synthStarted: synthStarted, stream: stream,
 		warmState: observation.warmState, wholeSentence: observation.wholeSentence,
 		exclusions: observation.exclusions,
@@ -219,7 +247,7 @@ func (p *Pipeline) synthesizeSegmentObserved(ctx context.Context, loopDone <-cha
 
 func synthesisFailureEvent(sentence string, index int, observation synthesisObservation, err error) *playbackEvent {
 	event := &playbackEvent{
-		kind: playbackNotEnqueued, sentence: sentence, index: index,
+		attemptID: observation.attemptID, kind: playbackNotEnqueued, sentence: sentence, index: index,
 		engine: observation.engine, textReady: observation.textReady,
 		queuedAt: observation.queuedAt, synthStarted: observation.synthStarted,
 		warmState: synthesisWarmState(observation.stream, observation.warmState), wholeSentence: observation.wholeSentence,
@@ -283,7 +311,14 @@ func (p *Pipeline) synthesizePrepared(ctx context.Context, provider tts.Provider
 		return nil, observation, errNothingToSpeak
 	}
 	observation.synthStarted = time.Now()
+	observation.attemptID = newWorkID()
+	trace := events.TraceFromContext(ctx)
+	index := segmentTraceIndex(ctx)
+	p.traceSpan(trace, observation.attemptID, "synthesis", "start", "running", observation.synthStarted, time.Time{}, index, &observation.attemptID)
 	stream, err := provider.Synthesize(ctx, prepared)
+	if err != nil {
+		p.traceSpan(trace, observation.attemptID, "synthesis", "end", "failed", observation.synthStarted, time.Now(), index, &observation.attemptID)
+	}
 	if err != nil {
 		return nil, observation, err
 	}
@@ -330,14 +365,8 @@ func (p *Pipeline) playFallbackObserved(ctx context.Context, text string, primar
 		return nil, false, p.observeProvider(primary), primaryErr
 	}
 	p.emit(events.Error{Stage: events.StageTTSFallback, Message: ttsFallbackMessage("primary playback TTS failed", primaryErr, stickFallback != nil)})
-	fallbackObservation := p.observeProvider(fallback)
-	prepared := prepareSpeechForTTS(text, fallback, p.vocals, joinBeats)
-	if strings.TrimSpace(prepared) == "" {
-		return nil, true, fallbackObservation, errNothingToSpeak
-	}
-	fallbackObservation.synthStarted = time.Now()
+	stream, fallbackObservation, err := p.synthesizePrepared(ctx, fallback, text, joinBeats)
 	fallbackObservation.exclusions = []string{fmt.Sprintf("primary playback failed: %v", primaryErr)}
-	stream, err := fallback.Synthesize(ctx, prepared)
 	if err != nil {
 		return nil, true, fallbackObservation, fmt.Errorf("primary playback TTS: %v; Kokoro fallback: %w", primaryErr, err)
 	}
