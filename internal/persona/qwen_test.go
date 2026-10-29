@@ -63,7 +63,7 @@ func TestCreateQwenVoiceRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSeedQwenDefaultsDoesNotPinKokoroVoice(t *testing.T) {
+func TestSeedQwenDefaultsUsesObeyVoiceWithoutChangingSettings(t *testing.T) {
 	setConfigDir(t, t.TempDir())
 	cfg := &config.Config{TTSProvider: "qwen3-tts", TTSVoice: "af_heart"}
 	if err := SeedBuiltins(cfg); err != nil {
@@ -73,11 +73,11 @@ func TestSeedQwenDefaultsDoesNotPinKokoroVoice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binding.TTS.Provider != "" || binding.TTS.Voice != "" {
-		t.Fatalf("Use defaults pins TTS: %+v", binding.TTS)
+	if binding.TTS.Provider != "openai-speech" || binding.TTS.Voice != "Harper" {
+		t.Fatalf("default did not select Obey speech: %+v", binding.TTS)
 	}
-	if got := binding.Config(); got.TTSProvider != "qwen3-tts" || got.TTSVoice != "af_heart" {
-		t.Fatalf("Use defaults changed Settings speech: %s/%s", got.TTSProvider, got.TTSVoice)
+	if cfg.TTSProvider != "qwen3-tts" || cfg.TTSVoice != "af_heart" {
+		t.Fatal("default selection mutated Settings")
 	}
 	if err := config.ValidateQwenTTSConfig(binding.Config()); err != nil {
 		t.Fatalf("fresh Qwen config cannot speak: %v", err)

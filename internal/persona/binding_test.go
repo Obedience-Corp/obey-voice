@@ -157,13 +157,13 @@ func TestResolveBindingCarriesPersonaBrain(t *testing.T) {
 	}
 }
 
-func TestResolveDefaultsBindingKeepsSettingsStack(t *testing.T) {
+func TestResolveDefaultsBindingUsesCompleteObeyProfile(t *testing.T) {
 	setConfigDir(t, t.TempDir())
 	p := &Profile{
 		Schema:      Schema,
 		ID:          DefaultID,
 		DisplayName: "Obey",
-		Brain:       Brain{Provider: "ollama", Model: "llama3"},
+		Brain:       Brain{Provider: "ollama", Model: "llama3", Worker: Worker{Provider: "codex", Model: "gpt-6-sol"}},
 		TTS:         TTS{Provider: "kokoro", Voice: "af_bella"},
 		Prompts:     PromptRefs{Persona: DefaultID},
 	}
@@ -185,15 +185,18 @@ func TestResolveDefaultsBindingKeepsSettingsStack(t *testing.T) {
 	if binding.PersonaID != DefaultID || binding.AgentName != "Obey" || binding.PromptRef != DefaultID {
 		t.Fatalf("defaults identity = %+v, want shipped name and prompt", binding)
 	}
-	if binding.TTS.Voice != "" || binding.TTS.Provider != "" {
-		t.Fatalf("defaults TTS = %+v, want inherit (empty), not the profile voice", binding.TTS)
+	if binding.TTS != p.TTS {
+		t.Fatalf("defaults TTS = %+v, want saved profile %+v", binding.TTS, p.TTS)
 	}
 	bcfg := binding.Config()
-	if bcfg.BrainProvider != "grok" || bcfg.GrokModel != "grok-build" {
-		t.Fatalf("defaults brain = %s/%s, want Settings grok/grok-build", bcfg.BrainProvider, bcfg.GrokModel)
+	if bcfg.BrainProvider != "ollama" || bcfg.OllamaModel != "llama3" {
+		t.Fatalf("defaults brain = %s/%s, want saved Obey model", bcfg.BrainProvider, bcfg.OllamaModel)
 	}
-	if bcfg.TTSProvider != "qwen3-tts" || bcfg.QwenTTSVoice != "Vivian" {
-		t.Fatalf("defaults TTS config = %s/%s, want Settings qwen3-tts/Vivian", bcfg.TTSProvider, bcfg.QwenTTSVoice)
+	if bcfg.VoiceWorkerProvider != "codex" || bcfg.VoiceWorkerModel != "gpt-6-sol" {
+		t.Fatalf("defaults lost Obey worker: %s/%s", bcfg.VoiceWorkerProvider, bcfg.VoiceWorkerModel)
+	}
+	if bcfg.TTSProvider != "kokoro" || bcfg.TTSVoice != "af_bella" {
+		t.Fatalf("defaults TTS config = %s/%s, want saved Obey voice", bcfg.TTSProvider, bcfg.TTSVoice)
 	}
 	if cfg.TTSProvider != "qwen3-tts" || cfg.BrainProvider != "grok" {
 		t.Fatalf("caller config mutated: %s/%s", cfg.TTSProvider, cfg.BrainProvider)

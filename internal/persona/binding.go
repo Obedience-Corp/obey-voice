@@ -62,7 +62,10 @@ func ResolveBinding(cfg *config.Config, id string) (*SessionBinding, error) {
 	if err := RequireEnabled(p); err != nil {
 		return nil, err
 	}
+	return bindProfile(cfg, p)
+}
 
+func bindProfile(cfg *config.Config, p *Profile) (*SessionBinding, error) {
 	snap := *cfg
 	fillDisplayNames(&snap)
 	Apply(&snap, p)
@@ -72,38 +75,32 @@ func ResolveBinding(cfg *config.Config, id string) (*SessionBinding, error) {
 	return newBinding(p.ID, p.DisplayName, p.TTS, snap), nil
 }
 
-// ResolveDefaultsBinding binds Settings routing and TTS (cfg should be
-// LoadRaw) to the shipped default persona's identity and prompt. Brain and
-// TTS on that profile are ignored: a customized default persona must not
-// steal the Settings stack when the TUI starts with "Use defaults".
+// ResolveDefaultsBinding starts the complete saved Obey persona. Settings fill
+// fields that the profile inherits, exactly as for any explicitly named persona.
+// The embedded profile covers a fresh install whose files have not been seeded.
 func ResolveDefaultsBinding(cfg *config.Config) (*SessionBinding, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("persona: config is nil")
-	}
-	snap := *cfg
-	fillDisplayNames(&snap)
-	if err := config.BindPersonaDirectory(&snap, DefaultID, ""); err != nil {
-		return nil, err
 	}
 	p, err := Load(DefaultID)
 	if err != nil {
 		if !isNotExist(err) {
 			return nil, err
 		}
-		if strings.TrimSpace(snap.AgentName) == "" {
-			snap.AgentName = DefaultDisplayName
+		for _, shipped := range Builtins(cfg) {
+			if shipped.ID == DefaultID {
+				p = shipped
+				break
+			}
 		}
-		if strings.TrimSpace(snap.Persona) == "" {
-			snap.Persona = DefaultID
+		if p == nil {
+			return nil, fmt.Errorf("default persona %q is unavailable", DefaultID)
 		}
-		snap.ActivePersona = DefaultID
-		return newBinding(DefaultID, DefaultDisplayName, TTS{}, snap), nil
 	}
 	if err := RequireEnabled(p); err != nil {
 		return nil, err
 	}
-	applyIdentity(&snap, p)
-	return newBinding(p.ID, p.DisplayName, TTS{}, snap), nil
+	return bindProfile(cfg, p)
 }
 
 func newBinding(id, display string, tts TTS, snap config.Config) *SessionBinding {

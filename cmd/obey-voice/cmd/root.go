@@ -188,15 +188,13 @@ func modelName(cfg *config.Config) string {
 	}
 }
 
-// loadConfigForSession reloads config for a conversation start. "Use defaults"
-// reads Settings without the active-persona overlay so the models and
-// providers from Settings actually take effect.
+// loadConfigForSession reads Settings before binding the selected persona.
 func loadConfigForSession(personaID string) (*config.Config, error) {
 	return config.LoadRaw()
 }
 
-// bindSession resolves the conversation identity for a start. StartDefaultsID
-// keeps Settings routing and TTS; named personas still overlay their stack.
+// bindSession resolves the full persona stack for a start, including Obey for
+// StartDefaultsID. Unset profile fields inherit Settings.
 func bindSession(cfg *config.Config, personaID string) (*persona.SessionBinding, error) {
 	if personaID == appTUI.StartDefaultsID {
 		return persona.ResolveDefaultsBinding(cfg)

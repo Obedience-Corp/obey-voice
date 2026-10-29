@@ -12,7 +12,7 @@ import (
 
 func workerTestProviders() []discovery.ProviderInfo {
 	return []discovery.ProviderInfo{
-		{Name: "ollama", Available: true, Models: []string{"qwen3:8b", "qwen3:30b"}},
+		{Name: "ollama", Available: true, Models: []string{"qwen3:8b", "qwen3:30b"}, WorkerModels: []string{"qwen3:8b", "qwen3:30b"}},
 		{Name: "grok", Available: true, Models: []string{"grok-4.6"}},
 		{Name: "claude", Available: true},
 		{Name: "codex", Available: true},

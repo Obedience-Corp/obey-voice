@@ -70,7 +70,7 @@ func fakeScan(models map[string][]string) []discovery.ProviderInfo {
 	out := make([]discovery.ProviderInfo, 0, len(names))
 	for _, name := range names {
 		list := models[name]
-		out = append(out, discovery.ProviderInfo{Name: name, Available: len(list) > 0, Models: list})
+		out = append(out, discovery.ProviderInfo{Name: name, Available: len(list) > 0, Models: list, WorkerModels: list})
 	}
 	return out
 }

@@ -51,7 +51,7 @@ func (m settingsModel) legacyWorkerRows() []settingRow {
 		key: "voice_worker_model", name: "Model", kind: rowPick,
 		value: m.activeWorkerModel(), options: models, current: -1,
 		applies: appliesNextConversation,
-		help:    "Pin a model for the worker, or leave it on the provider's default.",
+		help:    "Ollama lists verified tool-capable models only. Default clears the pin; inherited models are checked before running.",
 		set: func(m *settingsModel, i int) tea.Cmd {
 			m.setWorkerModel(models[i])
 			return nil
@@ -59,6 +59,9 @@ func (m settingsModel) legacyWorkerRows() []settingRow {
 	}
 	if config.WorkerSelected(m.cfg) {
 		model.current = indexOf(models, m.activeWorkerModel())
+	}
+	if active == "ollama" && m.activeWorkerModel() != "default" && model.current < 0 {
+		model.detail = "Saved model has no verified tool support; choose another worker model."
 	}
 	permission := settingRow{
 		key: "voice_workers_disabled", name: "Allow background workers", kind: rowToggle,

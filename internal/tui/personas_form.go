@@ -762,6 +762,11 @@ func (m personasModel) submitForm() (personasModel, tea.Cmd) {
 	// leave a half-saved persona behind. An unchanged value is not re-checked so
 	// a persona whose folder vanished can still have its other fields edited.
 	directory := m.directoryValue()
+	if models, known := m.workerModelCatalog(); known && m.effectiveStackWorkerProvider() == "ollama" && m.workerModel != "" && indexOf(models, m.workerModel) < 0 {
+		m.setFormRow(formRowWorkerModel)
+		m.message = "Choose an Ollama worker model with verified tool support"
+		return m, nil
+	}
 	if m.formMode == "create" || m.directoryChanged() {
 		normalized, err := config.ValidateStartingDirectory(directory)
 		if err != nil {

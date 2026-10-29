@@ -187,10 +187,8 @@ type settingsDoneMsg struct{}
 // section (e.g. the launcher's "Meeting settings" entry).
 type openSettingsSectionMsg struct{ section settingsSection }
 
-// StartDefaultsID is the New-conversation "Use defaults" signal. It is not a
-// persona profile id. The runtime builder loads Settings without a persona
-// overlay and binds the shipped default persona's identity and prompt, not
-// that profile's saved brain or TTS.
+// StartDefaultsID starts the complete saved default Obey persona. The sentinel
+// remains stable for existing launcher/desktop clients.
 const StartDefaultsID = ":defaults"
 
 // startPipelineMsg enters the conversation screen and builds the pipeline
@@ -198,7 +196,7 @@ const StartDefaultsID = ":defaults"
 type startPipelineMsg struct {
 	sessionID string
 	// personaID selects the session binding; empty = configured active persona.
-	// StartDefaultsID (launcher "Use defaults") starts from Settings instead.
+	// StartDefaultsID (launcher "Obey (default)") resolves the saved Obey profile.
 	// The persona picker (launcher "New conversation") sets this.
 	personaID string
 	// personaName labels the starting screen. The binding's real identity is

@@ -38,6 +38,29 @@ func TestValidateLegacyWorkerAcceptsLocalMetadata(t *testing.T) {
 	}
 }
 
+func TestOllamaWorkerRequiresToolsEvenWithoutTheWorkInbox(t *testing.T) {
+	for _, caps := range []string{`["completion"]`, `["embedding"]`, `[]`, `null`, `["completion","tools"]`} {
+		t.Run(caps, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/show" {
+					t.Errorf("validation invoked inference: %s", r.URL.Path)
+				}
+				fmt.Fprintf(w, `{"details":{"family":"fixture"},"capabilities":%s}`, caps)
+			}))
+			defer srv.Close()
+			u, _ := url.Parse(srv.URL)
+			o := &OllamaBrain{client: api.NewClient(u, http.DefaultClient), model: "fixture"}
+			wantOK := caps == `["completion","tools"]`
+			if err := o.ValidateWorkerTools(t.Context()); (err == nil) != wantOK {
+				t.Fatalf("capabilities %s: %v", caps, err)
+			}
+			if err := o.ValidateLegacyWorker(t.Context()); (err == nil) != wantOK {
+				t.Fatalf("legacy capabilities %s: %v", caps, err)
+			}
+		})
+	}
+}
+
 func TestValidateLegacyWorkerCloudAliasRejectedBeforeHTTP(t *testing.T) {
 	var called atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called.Store(true) }))

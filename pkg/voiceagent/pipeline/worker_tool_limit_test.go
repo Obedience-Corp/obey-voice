@@ -24,6 +24,10 @@ func TestOllamaWorkerLimitDeliversAnswerOrFailure(t *testing.T) {
 					_, _ = w.Write([]byte(`{"models":[{"name":"fixture"}]}`))
 					return
 				}
+				if r.URL.Path == "/api/show" {
+					_, _ = w.Write([]byte(`{"capabilities":["completion","tools"],"details":{"family":"fixture"}}`))
+					return
+				}
 				var req api.ChatRequest
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Error(err)

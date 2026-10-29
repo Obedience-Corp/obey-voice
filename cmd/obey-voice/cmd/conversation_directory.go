@@ -3,7 +3,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	appTUI "github.com/Obedience-Corp/obey-voice/internal/tui"
@@ -55,9 +57,9 @@ func resolveConversationDirectory(cfg *config.Config, personaID, override string
 	}
 	next.ConversationDirectories = state
 	var directory string
-	if _, pinned := state.Personas[personaID]; !pinned && !useDefaults {
+	if _, pinned := state.Personas[personaID]; !pinned {
 		profile, err := persona.Load(personaID)
-		if err != nil && saved == nil {
+		if err != nil && saved == nil && !(useDefaults && errors.Is(err, fs.ErrNotExist)) {
 			return fmt.Errorf("resolve persona directory: %w", err)
 		}
 		// Legacy transcripts with a removed persona remain readable; admission

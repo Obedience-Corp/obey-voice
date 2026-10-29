@@ -69,6 +69,23 @@ func TestConversationDirectoryStartResumeAndDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultChatHonorsObeyStartingDirectory(t *testing.T) {
+	personaEnv(t)
+	t.Setenv("OBEY_VOICE_WORK_DIR", "")
+	t.Setenv("WORK_DIR", "")
+	obeyDir, _ := filepath.EvalSymlinks(t.TempDir())
+	appDir, _ := filepath.EvalSymlinks(t.TempDir())
+	p := &persona.Profile{Schema: persona.Schema, ID: persona.DefaultID, DisplayName: "Obey", Prompts: persona.PromptRefs{Persona: persona.DefaultID}, StartingDirectory: obeyDir}
+	writePersona(t, p)
+	cfg := &config.Config{ActivePersona: "samantha", WorkDir: appDir}
+	if err := resolveConversationDirectory(cfg, appTUI.StartDefaultsID, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorkDir != obeyDir || cfg.WorkDirSource != "persona" || cfg.ConversationDirectories.Default.Dir != appDir {
+		t.Fatalf("default chat lost Obey's directory or rewrote app defaults: %+v", cfg.ConversationDirectories)
+	}
+}
+
 func TestServeResumeRestoresDirectoryBeforeResponderAndRejectsMissing(t *testing.T) {
 	config.SetConfigDirForTest(t, t.TempDir())
 	t.Setenv("OBEY_VOICE_WORK_DIR", "")

@@ -380,8 +380,7 @@ func Apply(cfg *config.Config, p *Profile) {
 }
 
 // applyIdentity copies name, prompt refs, and id onto cfg. Brain and TTS stay
-// with the caller — Use defaults needs the shipped identity without the
-// profile's saved stack.
+// with the caller; Apply adds the profile's saved model and voice afterward.
 func applyIdentity(cfg *config.Config, p *Profile) {
 	if name := strings.TrimSpace(p.DisplayName); name != "" {
 		cfg.AgentName = name
