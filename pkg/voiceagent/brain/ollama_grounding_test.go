@@ -29,7 +29,9 @@ func TestLiveRoutingDoesNotSpeakUnexecutedPromises(t *testing.T) {
 				if recoverRoute && calls == 2 {
 					msg.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: mustArgs(map[string]any{"kind": "spawn"})}}}
 				}
-				json.NewEncoder(w).Encode(api.ChatResponse{Message: msg, Done: true})
+				if err := json.NewEncoder(w).Encode(api.ChatResponse{Message: msg, Done: true}); err != nil {
+					t.Error(err)
+				}
 			}))
 			defer server.Close()
 			endpoint, _ := url.Parse(server.URL)

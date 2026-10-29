@@ -24,7 +24,7 @@ func TestRoutingPlanningCannotReplaceSpokenReply(t *testing.T) {
 	const planning = "The user is addressing me directly. I need to respond in character."
 	const reply = "Good evening. How can I help"
 	for _, route := range []bool{true, false} {
-		t.Run(map[bool]string{true: "route then answer", false: "direct answer"}[route], func(t *testing.T) {
+		t.Run(map[bool]string{true: "route then answer", false: "unrouted answer retries before speech"}[route], func(t *testing.T) {
 			requests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/api/tags" {
@@ -40,7 +40,7 @@ func TestRoutingPlanningCannotReplaceSpokenReply(t *testing.T) {
 				if requests == 1 && len(req.Tools) == 0 {
 					t.Error("first request lost routing tools")
 				}
-				if requests > 1 {
+				if (route && requests > 1) || (!route && requests > 2) {
 					if len(req.Tools) != 0 {
 						t.Error("chat answer offered routing tools again")
 					}
@@ -51,7 +51,7 @@ func TestRoutingPlanningCannotReplaceSpokenReply(t *testing.T) {
 					}
 				}
 				enc := json.NewEncoder(w)
-				if requests == 1 && route {
+				if (requests == 1 && route) || (requests == 2 && !route) {
 					for _, part := range []string{planning[:32], planning[32:]} {
 						_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: part}})
 					}
@@ -95,7 +95,7 @@ func TestRoutingPlanningCannotReplaceSpokenReply(t *testing.T) {
 			if route && thinking.String() != planning {
 				t.Errorf("thinking = %q", thinking.String())
 			}
-			wantRequests := 1
+			wantRequests := 3
 			if route {
 				wantRequests = 2
 			}
