@@ -130,7 +130,7 @@ const (
 // admit reduces a gated segment to the text handed to the synthesizer,
 // distinguishing suppressed content from text already queued in this turn.
 func (p *SpeechProjection) admit(voiceText string) (string, speechAdmissionStatus) {
-	speakable := brain.CleanForVoice(voiceText)
+	speakable := brain.CleanForVoice(textclean.StripAgentMentions(voiceText))
 	// Not just != "": stripping a filler from "Umm." leaves a bare ".", which
 	// is non-empty, unpronounceable, and would be glued onto the front of a
 	// real sentence inside one synthesis call. A tag-only beat ([moan]) has no

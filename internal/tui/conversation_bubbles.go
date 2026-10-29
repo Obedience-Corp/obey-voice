@@ -53,7 +53,19 @@ func renderAgentBubble(name, think, spoken string, showThink bool) string {
 	}
 	if spoken != "" {
 		b.WriteByte('\n')
-		b.WriteString(normalStyle.Render(spoken))
+		b.WriteString(renderAgentMentions(spoken))
 	}
 	return agentBubbleStyle.Render(b.String())
+}
+
+func renderAgentMentions(text string) string {
+	var b strings.Builder
+	last := 0
+	for _, mention := range textclean.AgentMentions(text) {
+		b.WriteString(text[last:mention.Start])
+		b.WriteString(placeholderKnownStyle.Render(text[mention.Start:mention.End]))
+		last = mention.End
+	}
+	b.WriteString(text[last:])
+	return normalStyle.Render(b.String())
 }

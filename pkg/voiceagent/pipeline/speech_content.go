@@ -435,7 +435,7 @@ func speakableFromResponse(gated string) string {
 	var kept []string
 	seen := make(map[string]struct{})
 	for segment := range brain.ChunkSentencesRaw(input) {
-		cleaned := brain.CleanForVoice(segment)
+		cleaned := brain.CleanForVoice(textclean.StripAgentMentions(segment))
 		if !speakableSegment(cleaned) {
 			continue
 		}

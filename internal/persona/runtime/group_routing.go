@@ -45,6 +45,18 @@ func (s *Selector) conversationRoster() (*summon.Roster, []brain.GroupParticipan
 }
 
 func (s *Selector) resolveAddress(ctx context.Context, text, account, speaker string, roster *summon.Roster, participants []brain.GroupParticipant) (summon.Address, error) {
+	if err := ctx.Err(); err != nil {
+		return summon.Address{}, classifyAdmissionFailure(ctx, "resolve_addressee", err)
+	}
+	if account == "agent" {
+		exact := roster.ResolveAgentMention(text)
+		switch exact.Kind {
+		case summon.ExactControlValid:
+			return exact.Address, nil
+		case summon.ExactControlInvalid:
+			return summon.Address{}, wrapIdentityRefusalFailure(ctx, "resolve_addressee", exact.Err)
+		}
+	}
 	acousticName := ""
 	if account == "user" {
 		acousticName = admission.AcousticName(ctx)
@@ -222,9 +234,15 @@ func (s *Selector) routeNamedHandoff(ctx context.Context, response brain.Turn, v
 		}
 		// Resolve the roster before durable publication. No fallible Admit or
 		// profile reload may follow a successful selection and strand its target.
-		_, participants, err := s.conversationRoster()
+		currentRoster, participants, err := s.conversationRoster()
 		if err != nil {
 			return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", err)
+		}
+		if address.Reason == "explicit-mention" {
+			exact := currentRoster.ResolveAgentMention(response.Content)
+			if exact.Kind != summon.ExactControlValid || exact.Address.PersonaID != address.PersonaID {
+				return pipeline.ResponseAdmission{}, wrapIdentityRefusalFailure(ctx, "route_handoff", fmt.Errorf("explicit agent mention changed target while preparing"))
+			}
 		}
 		selected, err := s.selectAtBoundary(ctx, address.PersonaID, "agent-handoff")
 		if err != nil {
