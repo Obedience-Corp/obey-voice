@@ -242,3 +242,11 @@ func TestOverridableKeysMatchTheSchema(t *testing.T) {
 		t.Errorf("persona_overridable in the schema = %v, routing table = %v", fromSchema, fromTable)
 	}
 }
+
+func TestMuseSparkModelOverride(t *testing.T) {
+	cfg := &config.Config{BrainProvider: "ollama", MuseSparkModel: "default-model"}
+	Apply(cfg, &Profile{ID: "muse", Brain: Brain{Provider: "muse-spark", Model: "chosen-model"}})
+	if cfg.BrainProvider != "muse-spark" || ModelForProvider(cfg, "muse-spark") != "chosen-model" {
+		t.Fatalf("config=%+v", cfg)
+	}
+}

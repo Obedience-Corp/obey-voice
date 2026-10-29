@@ -290,6 +290,12 @@ func brainKeys() []KeySpec {
 			Help: "How much reasoning Codex uses. Empty uses its default. Supported efforts depend on the selected model; higher effort can delay spoken replies.",
 		},
 		{
+			Key: "muse_spark_model", Type: TypeString, Default: "",
+			Group: GroupBrain, Title: "Muse Spark model",
+			Help:               "The model Muse is asked for. Empty uses the CLI default. Requires Muse installed and authenticated.",
+			PersonaOverridable: true,
+		},
+		{
 			Key: "cursor_model", Type: TypeString, Default: "",
 			Group: GroupBrain, Title: "Cursor model",
 			Help:               "The model cursor-agent is asked for. Empty uses the CLI's own default.",

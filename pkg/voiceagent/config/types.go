@@ -223,6 +223,7 @@ type Config struct {
 	VoiceWorkerBoundary  bool   `mapstructure:"voice_worker_boundary"`
 	GrokModel            string `mapstructure:"grok_model"`
 	CursorModel          string `mapstructure:"cursor_model"`
+	MuseSparkModel       string `mapstructure:"muse_spark_model"`
 	CodexModel           string `mapstructure:"codex_model"`
 	CodexReasoningEffort string `mapstructure:"codex_reasoning_effort"`
 	OllamaModel          string `mapstructure:"ollama_model"`

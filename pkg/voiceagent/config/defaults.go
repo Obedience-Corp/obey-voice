@@ -169,6 +169,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("voice_worker_boundary", true)
 	v.SetDefault("grok_model", "")
 	v.SetDefault("cursor_model", "")
+	v.SetDefault("muse_spark_model", "")
 	v.SetDefault("codex_model", "")
 	v.SetDefault("codex_reasoning_effort", "")
 	v.SetDefault("ollama_model", "")

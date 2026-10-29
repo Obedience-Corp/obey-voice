@@ -57,6 +57,7 @@ var envBindings = map[string]string{
 	"persona_routing_timeout":     "PERSONA_ROUTING_TIMEOUT",
 	"grok_model":                  "GROK_MODEL",
 	"cursor_model":                "CURSOR_MODEL",
+	"muse_spark_model":            "MUSE_SPARK_MODEL",
 	"codex_model":                 "CODEX_MODEL",
 	"codex_reasoning_effort":      "CODEX_REASONING_EFFORT",
 	"ollama_model":                "OLLAMA_MODEL",

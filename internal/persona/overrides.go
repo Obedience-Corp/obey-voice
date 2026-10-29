@@ -31,6 +31,8 @@ var personaRoutes = []struct {
 		func(c *config.Config, v string) { c.GrokModel = v }},
 	{"codex_model", func(c *config.Config) string { return c.CodexModel },
 		func(c *config.Config, v string) { c.CodexModel = v }},
+	{"muse_spark_model", func(c *config.Config) string { return c.MuseSparkModel },
+		func(c *config.Config, v string) { c.MuseSparkModel = v }},
 	{"cursor_model", func(c *config.Config) string { return c.CursorModel },
 		func(c *config.Config, v string) { c.CursorModel = v }},
 	{"voice_worker_provider", func(c *config.Config) string { return c.VoiceWorkerProvider },
