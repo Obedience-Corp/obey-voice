@@ -25,13 +25,14 @@ func SetUserHomeDirForTest(fn func() (string, error)) (restore func()) {
 // DefaultSearchPaths returns skill directories in precedence order (first match
 // wins for duplicate skill names).
 //
-// Follows the cross-client Agent Skills convention
-// (https://agentskills.io/client-implementation/adding-skills-support):
+// Discovery is scoped to the conversation's working directory. Shared user
+// skills are not imported implicitly, even when the working directory is home
+// or ancestor discovery reaches it. A user can explicitly select any directory
+// through configuredDir.
 //
 //  1. <workDir>/.agents/skills — project skills (Codex, VS Code, camp, …)
 //  2. nearest ancestor .agents/skills — workspace/project-root skills
-//  3. ~/.agents/skills         — user skills shared across tools
-//  4. configuredDir            — Obey Voice skills_dir (or its default under config)
+//  3. configuredDir — Obey Voice skills_dir (or its default under config)
 //
 // Ollama does not scan .claude/skills: that is Claude Code's native path and
 // is handled by the Claude provider harness. Scanning both would duplicate
@@ -55,14 +56,15 @@ func DefaultSearchPaths(workDir, configuredDir string) []string {
 		paths = append(paths, p)
 	}
 
+	home, _ := userHomeDir()
 	if strings.TrimSpace(workDir) != "" {
-		add(filepath.Join(workDir, ".agents", "skills"))
+		project := filepath.Join(workDir, ".agents", "skills")
+		if home == "" || !sameDirectory(project, filepath.Join(home, ".agents", "skills")) {
+			add(project)
+		}
 		if ancestor := ancestorAgentSkillsDir(workDir); ancestor != "" {
 			add(ancestor)
 		}
-	}
-	if home, err := userHomeDir(); err == nil {
-		add(filepath.Join(home, ".agents", "skills"))
 	}
 	add(configuredDir)
 	return paths
@@ -84,16 +86,41 @@ func ancestorAgentSkillsDir(workDir string) string {
 	if info, err := os.Stat(resolved); err == nil && !info.IsDir() {
 		resolved = filepath.Dir(resolved)
 	}
+	home, _ := userHomeDir()
 
 	for {
+		if sameDirectory(resolved, home) {
+			return ""
+		}
 		parent := filepath.Dir(resolved)
-		if parent == resolved {
+		if parent == resolved || sameDirectory(parent, home) {
 			return ""
 		}
 		candidate := filepath.Join(parent, ".agents", "skills")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
+			if home == "" || !sameDirectory(candidate, filepath.Join(home, ".agents", "skills")) {
+				return candidate
+			}
 		}
 		resolved = parent
 	}
+}
+
+// sameDirectory recognizes aliases without requiring the directory to exist.
+// This also prevents a project root symlink from re-importing shared skills.
+func sameDirectory(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	left, leftErr := filepath.Abs(a)
+	right, rightErr := filepath.Abs(b)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	if left == right {
+		return true
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }

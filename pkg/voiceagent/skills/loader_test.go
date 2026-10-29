@@ -458,7 +458,6 @@ func TestDefaultSearchPaths(t *testing.T) {
 	got := DefaultSearchPaths(work, configured)
 	want := []string{
 		filepath.Join(work, ".agents", "skills"),
-		filepath.Join(home, ".agents", "skills"),
 		filepath.Clean(configured),
 	}
 	if len(got) != len(want) {
@@ -477,9 +476,9 @@ func TestDefaultSearchPaths(t *testing.T) {
 		}
 	}
 
-	// Empty workDir still includes user + configured.
+	// Empty workDir includes only the configured app-owned root.
 	got = DefaultSearchPaths("", configured)
-	if len(got) != 2 || got[0] != filepath.Join(home, ".agents", "skills") || got[1] != filepath.Clean(configured) {
+	if len(got) != 1 || got[0] != filepath.Clean(configured) {
 		t.Fatalf("empty workDir paths = %v", got)
 	}
 }
@@ -504,7 +503,6 @@ func TestDefaultSearchPathsIncludesAncestorAgentSkills(t *testing.T) {
 	want := []string{
 		filepath.Join(workDir, ".agents", "skills"),
 		filepath.Join(campaignRoot, ".agents", "skills"),
-		filepath.Join(home, ".agents", "skills"),
 		configured,
 	}
 	if len(got) != len(want) {

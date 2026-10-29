@@ -22,21 +22,21 @@ import (
 const skillsSchema = "obey-voice.skills.v1"
 
 // newSkillsCmd builds the `obey-voice skills` command group: discovery listing
-// and per-skill enable/disable over the same four search roots the agent
-// itself scans.
+// and per-skill enable/disable over the same working-directory roots the agent scans.
 func newSkillsCmd(loadConfig configLoader) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skills",
 		Short: "Discover and manage Agent Skills (SKILL.md folders)",
-		Long: `Obey Voice loads Agent Skills from four search roots, in precedence order
+		Long: `Obey Voice loads Agent Skills from three filesystem search roots, in precedence order
 (first match wins when the same skill name appears in more than one root):
 
   1. <work-dir>/.agents/skills       — project skills
   2. nearest ancestor .agents/skills — workspace/project-root skills
-  3. ~/.agents/skills                — user skills shared across tools
-  4. skills_dir                      — Obey Voice's own skills root
+  3. skills_dir                      — Obey Voice's own skills root
                                         (default: <install_root>/skills)
 
+~/.agents/skills is not imported automatically, including when the working
+directory is home. Set skills_dir explicitly to use a shared skill directory.
 .claude/skills is never scanned — Claude Code owns that path.
 
 Skills are an Ollama-only feature today: Claude and Grok run their own
@@ -90,9 +90,9 @@ func newSkillsListCmd(loadConfig configLoader) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List discovered skills across all four search roots",
-		Long: `List every Agent Skill discovered under the four search roots (project,
-workspace ancestor, user, and skills_dir), first-root-wins on duplicate
+		Short: "List skills for the working directory",
+		Long: `List every Agent Skill discovered under the working-directory roots (project,
+workspace ancestor, and skills_dir), first-root-wins on duplicate
 names. The embedded obey-voice configuration skill is the final fallback;
 filesystem skills can override it. Roots 1-2 resolve against the agent's working directory: the
 work_dir setting when one is set, otherwise the folder this command was

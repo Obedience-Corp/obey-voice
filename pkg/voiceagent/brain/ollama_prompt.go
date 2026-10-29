@@ -12,9 +12,9 @@ import (
 )
 
 // loadSkillsCatalog returns the Agent Skills catalog when skills_enabled is
-// true; otherwise an empty catalog. Discovery follows the cross-client
-// .agents/skills convention (project, nearest workspace ancestor, then user)
-// and then checks the configured Obey Voice skills_dir. .claude/skills is
+// true; otherwise an empty catalog. Discovery uses the working directory and
+// nearest workspace ancestor, then the configured Obey Voice skills_dir.
+// Shared ~/.agents/skills is never imported implicitly. .claude/skills is
 // intentionally not scanned — Claude Code owns that path. Missing dirs yield
 // empty contributions, not errors.
 // SkillsCatalogFor exposes the loader the ollama brain uses, so the CLI preview

@@ -18,7 +18,7 @@ import (
 
 func ollamaConstructorConfig(t *testing.T, host string) *config.Config {
 	t.Helper()
-	// The loader's contract includes ~/.agents/skills. Point that root at an
+	// Give workspace discovery a deterministic home boundary and use an
 	// empty temporary directory so the catalog contains only the fixture
 	// and shipped skills; return one embedding per requested description.
 	fakeHome := t.TempDir()
