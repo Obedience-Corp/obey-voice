@@ -41,6 +41,8 @@ func (m settingsModel) modelRows() []settingRow {
 		key = "grok_model"
 	case "cursor":
 		key = "cursor_model"
+	case "muse-spark":
+		key = "muse_spark_model"
 	case "codex":
 		key = "codex_model"
 	}

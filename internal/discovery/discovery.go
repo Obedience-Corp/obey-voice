@@ -47,6 +47,13 @@ func DiscoverProvidersContext(ctx context.Context, cfg *config.Config) []Provide
 
 func probeProvider(ctx context.Context, cfg *config.Config, name string) ProviderInfo {
 	switch name {
+	case "muse-spark":
+		_, err := exec.LookPath("muse")
+		models := []string{"default"}
+		if cfg != nil && strings.TrimSpace(cfg.MuseSparkModel) != "" {
+			models = append(models, cfg.MuseSparkModel)
+		}
+		return ProviderInfo{Name: name, Available: err == nil, Models: models}
 	case "claude":
 		return discoverClaude()
 	case "cursor":

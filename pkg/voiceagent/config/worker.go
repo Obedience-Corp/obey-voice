@@ -6,7 +6,7 @@ import (
 )
 
 // WorkerProviders are the backends allowed for voice_worker_provider.
-var WorkerProviders = []string{"ollama", "grok", "claude", "codex", "cursor", "obey"}
+var WorkerProviders = []string{"ollama", "grok", "claude", "codex", "cursor", "muse-spark", "obey"}
 
 // WorkerFallbackProvider is where an unselected worker lands. It is the
 // last resort behind the live brain, not a default anyone is meant to reach:
@@ -150,6 +150,8 @@ func BrainModelFor(cfg *Config, provider string) string {
 		return strings.TrimSpace(cfg.GrokModel)
 	case "cursor":
 		return strings.TrimSpace(cfg.CursorModel)
+	case "muse-spark":
+		return strings.TrimSpace(cfg.MuseSparkModel)
 	case "obey":
 		return strings.TrimSpace(cfg.ObeyModel)
 	case "codex":
@@ -171,6 +173,8 @@ func SetBrainModel(cfg *Config, provider, model string) {
 		cfg.GrokModel = model
 	case "cursor":
 		cfg.CursorModel = model
+	case "muse-spark":
+		cfg.MuseSparkModel = model
 	case "obey":
 		cfg.ObeyModel = model
 	case "codex":

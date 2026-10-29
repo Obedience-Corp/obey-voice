@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	github.com/Obedience-Corp/build-util v0.1.0
 	github.com/Obedience-Corp/cursor-agent-go v0.0.0-20260903232116-1c77e507477f
+	github.com/Obedience-Corp/muse-spark-go v0.1.0
 	github.com/Obedience-Corp/obey-go-sdk v0.1.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbles v1.0.0

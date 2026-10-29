@@ -61,6 +61,15 @@ func CLIWorkerCapabilities(provider string) config.WorkerCapabilities {
 		base.Usage = unsupported("print-mode counters feed conversation usage, not the worker accounting callback")
 		base.ProcessExit = supported("exec.Run", "direct CLI exit is observed; descendant and remote termination are not implied")
 		base.CancellationRequested = supported("context/CLI", "context cancellation requests termination of the direct CLI process")
+	case "muse-spark":
+		base.Adapter, base.Version = "muse-spark-go", "v0.1.0"
+		base.RequestBoundary = unsupported("one exec run may include opaque model and native tool requests")
+		base.RetryLimit = unsupported("adapter does not retry; native internal retries are outside its control")
+		base.RuntimeLimit = supported("context/CLI", "RunPromptCtx and StreamPrompt cancel and wait for the owned process")
+		base.Usage = unsupported("adapter reports unknown worker usage; native usage is not aggregated")
+		base.ProcessExit = supported("exec.Wait", "owned CLI process exit is observed; descendants and remote work are not")
+		base.CancellationRequested = supported("context/CLI", "context cancellation terminates the owned CLI process")
+		base.ResumablePreemption = unsupported("adapter replays host history; native session resume is not used")
 	case "codex":
 		base.Adapter, base.Version = "codex app-server", "v2 (tested 0.163.0)"
 		base.RequestBoundary = unsupported("one app-server turn can contain multiple model requests")

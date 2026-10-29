@@ -178,6 +178,11 @@ func modelName(cfg *config.Config) string {
 			return cfg.CursorModel
 		}
 		return "cursor"
+	case "muse-spark":
+		if cfg.MuseSparkModel != "" {
+			return cfg.MuseSparkModel
+		}
+		return "muse-spark"
 	default:
 		return cfg.OllamaModel
 	}

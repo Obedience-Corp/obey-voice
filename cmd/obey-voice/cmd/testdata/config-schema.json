@@ -627,13 +627,14 @@
         "codex",
         "cursor",
         "grok",
+        "muse-spark",
         "obey",
         "ollama"
       ],
       "allows_empty": false,
       "group": "brain",
       "title": "Model provider",
-      "help": "Who answers. Ollama runs on this Mac; Claude, Codex, Cursor, Grok, and Obey call out to their CLIs.",
+      "help": "Who answers. Ollama runs on this Mac; Claude, Codex, Cursor, Grok, Muse-spark, and Obey call out to their CLIs.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": true,
@@ -1050,6 +1051,20 @@
       "editable": true
     },
     {
+      "key": "muse_spark_model",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "brain",
+      "title": "Muse Spark model",
+      "help": "The model Muse is asked for. Empty uses the CLI default. Requires Muse installed and authenticated.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": true,
+      "env": "MUSE_SPARK_MODEL",
+      "editable": true
+    },
+    {
       "key": "obey_camp",
       "type": "string",
       "default": "",
@@ -1336,6 +1351,7 @@
         "claude",
         "codex",
         "cursor",
+        "muse-spark",
         "obey"
       ],
       "allows_empty": true,
@@ -2552,6 +2568,7 @@
         "codex",
         "cursor",
         "grok",
+        "muse-spark",
         "obey",
         "ollama"
       ],

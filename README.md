@@ -20,7 +20,7 @@ Use the native macOS app or the terminal. Give each persona its own voice, model
 
 The brain is the model that answers you. Ollama is the default provider: run a local model on your own hardware, with local speech recognition and synthesis. Once the models are downloaded, the voice conversation can run locally without a paid AI subscription. Web tools and any remote providers you enable still use the network.
 
-You can also use Claude Code, [Codex](docs/codex.md), Cursor, or Grok through their installed CLIs and existing authentication. With a cloud-backed brain, conversation text goes to that provider. Speech recognition and synthesis run locally by default; remote speech is optional.
+You can also use Claude Code, [Codex](docs/codex.md), Cursor, Grok, or [Muse Spark](docs/muse-spark.md) through their installed CLIs and existing authentication. With a cloud-backed brain, conversation text goes to that provider. Speech recognition and synthesis run locally by default; remote speech is optional.
 
 Choose the provider and model in **Settings → Brain**. For Ollama, start the local server and download a model first, then select it in Obey Voice. Each persona can override the application’s brain and voice settings. See [configuration](docs/configuration.md) and [personas](docs/personas.md).
 

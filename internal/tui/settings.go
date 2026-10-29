@@ -490,6 +490,10 @@ func (m settingsModel) activeModel() string {
 		if m.cfg.CursorModel != "" {
 			return m.cfg.CursorModel
 		}
+	case "muse-spark":
+		if m.cfg.MuseSparkModel != "" {
+			return m.cfg.MuseSparkModel
+		}
 	case "obey":
 		if m.cfg.ObeyModel != "" {
 			return m.cfg.ObeyModel
@@ -821,6 +825,11 @@ func (m *settingsModel) selectModel(model string) tea.Cmd {
 		field, key = &m.cfg.GrokModel, "grok_model"
 	case "cursor":
 		field, key = &m.cfg.CursorModel, "cursor_model"
+	case "muse-spark":
+		if model == "default" {
+			model = ""
+		}
+		field, key = &m.cfg.MuseSparkModel, "muse_spark_model"
 	case "obey":
 		field, key = &m.cfg.ObeyModel, "obey_model"
 	case "codex":

@@ -64,6 +64,7 @@ func TestNewBatchProviderAcceptsImplementedProviders(t *testing.T) {
 		"claude CLI not found",
 		"cursor-agent CLI not found",
 		"grok CLI not found",
+		"muse CLI not found",
 		"codex CLI not found",
 		"obey CLI not found",
 	}

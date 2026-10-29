@@ -242,6 +242,10 @@
       "value": "/Users/lance/.cache/obey-voice/models",
       "source": "default"
     },
+    "muse_spark_model": {
+      "value": "",
+      "source": "default"
+    },
     "name_summon_aliases": {
       "value": [],
       "source": "default"
