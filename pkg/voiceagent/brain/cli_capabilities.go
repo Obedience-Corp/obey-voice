@@ -71,7 +71,7 @@ func CLIWorkerCapabilities(provider string) config.WorkerCapabilities {
 		base.ProcessExit = supported("exec.Wait", "local app-server exit is observed; remote work termination is not implied")
 		base.CancellationRequested = supported("turn/interrupt", "bounded interrupt RPC followed by local process cleanup")
 	case "obey":
-		base.Adapter, base.Version = "obey-go-sdk", "v0.0.0-20261029074905-8daec3f9cc95"
+		base.Adapter, base.Version = "obey-go-sdk", "v0.1.0"
 		base.RequestBoundary = unsupported("one daemon run can contain multiple provider requests")
 		base.TurnBoundary = unsupported("daemon tool iterations are not bounded by this adapter")
 		base.RetryLimit = unsupported("no adapter retries; daemon/provider retries remain opaque")

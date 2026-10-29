@@ -12,6 +12,9 @@ import (
 type obeyBatch struct{ brain *ObeyBrain }
 
 func newObeyBatch(cfg *config.Config) (*obeyBatch, error) {
+	if err := checkObeyInstalled(); err != nil {
+		return nil, err
+	}
 	if err := validateObeyConfig(cfg); err != nil {
 		return nil, err
 	}

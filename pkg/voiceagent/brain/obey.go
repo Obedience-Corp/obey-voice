@@ -23,7 +23,7 @@ type obeySDKRunner struct{ cfg *config.Config }
 func (r obeySDKRunner) run(ctx context.Context, prompt string, opts *obey.RunOptions, event func(obey.Event) error) (*obey.Result, error) {
 	client, err := obey.NewClientFromPath(obey.WithSocket(r.cfg.ObeySocket), obey.WithWorkingDirectory(config.WorkDirFrom(r.cfg)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("obey CLI not available; install Obey or select another brain provider: %w", err)
 	}
 	defer client.Close()
 	runCtx, cancel := context.WithCancel(ctx)
@@ -80,15 +80,21 @@ func validateObeyConfig(cfg *config.Config) error {
 	return nil
 }
 
+func checkObeyInstalled() error {
+	client, err := obey.NewClientFromPath()
+	if err != nil {
+		return fmt.Errorf("obey CLI not found on PATH; install Obey or select another brain provider: %w", err)
+	}
+	return client.Close()
+}
+
 func NewObey(cfg *config.Config) (*ObeyBrain, error) {
+	if err := checkObeyInstalled(); err != nil {
+		return nil, err
+	}
 	if err := validateObeyConfig(cfg); err != nil {
 		return nil, err
 	}
-	client, err := obey.NewClientFromPath()
-	if err != nil {
-		return nil, fmt.Errorf("obey CLI not found on PATH: %w", err)
-	}
-	_ = client.Close()
 	persona, err := personaSystemPrompt(cfg)
 	if err != nil {
 		return nil, err

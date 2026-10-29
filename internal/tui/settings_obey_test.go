@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -63,5 +64,28 @@ func TestObeySettingsTerminalPersistence(t *testing.T) {
 	}
 	if loaded.ObeyProvider != "fixture-provider" || loaded.ObeyModel != "fixture-model" || loaded.ObeyCamp != "fixture-camp" || loaded.ObeySocket != "/tmp/fixture.sock" || loaded.ObeyToolPolicy != "daemon" {
 		t.Fatal("terminal edits were not persisted")
+	}
+}
+
+func TestObeyOptionalUnavailableSelectionPreservesSavedProvider(t *testing.T) {
+	config.SetConfigDirForTest(t, t.TempDir())
+	if err := config.SetAndSave("brain_provider", "ollama"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.LoadWithoutHooks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newSettings(cfg, []discovery.ProviderInfo{{Name: "ollama", Available: true}, {Name: "obey", Available: false}})
+	m.selectProviderOption(1)
+	if m.cfg.BrainProvider != "ollama" || !strings.Contains(m.message, "optional") {
+		t.Fatalf("selection=%s message=%s", m.cfg.BrainProvider, m.message)
+	}
+	saved, err := config.LoadWithoutHooks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.BrainProvider != "ollama" {
+		t.Fatal("missing Obey replaced saved provider")
 	}
 }

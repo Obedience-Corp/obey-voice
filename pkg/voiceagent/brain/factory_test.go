@@ -65,6 +65,7 @@ func TestNewBatchProviderAcceptsImplementedProviders(t *testing.T) {
 		"cursor-agent CLI not found",
 		"grok CLI not found",
 		"codex CLI not found",
+		"obey CLI not found",
 	}
 	providers := []string{""}
 	for _, spec := range Providers() {

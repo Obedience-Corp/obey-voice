@@ -3,7 +3,11 @@
 Select `obey` as the brain provider to send conversations through
 [obey-go-sdk](https://github.com/Obedience-Corp/obey-go-sdk). Install the Obey CLI
 on `PATH`, start its daemon, and configure a provider and model in that daemon.
+The SDK dependency is pinned to the tagged `v0.1.0` release.
 Voice does not install or start the daemon or copy provider credentials.
+Obey is optional: other brain providers, discovery, and batch transforms work
+without its executable. Selecting an unavailable Obey backend gives installation
+or alternate-provider guidance; it does not silently switch to a different model.
 
 Configure the provider in Settings → Brain (terminal or desktop), or with:
 

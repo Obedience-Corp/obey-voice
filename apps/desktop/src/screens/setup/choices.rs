@@ -9,7 +9,7 @@ impl VoiceApp {
     pub(super) fn setup_brain(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
             ui.heading("Choose how Obey thinks");
-            ui.label("Ollama runs models on your computer or your own server. Other providers use their installed CLI and account.");
+            ui.label("Ollama runs models on your computer or your own server. Direct CLI providers use their installed CLI and account. Obey connects through its daemon to another provider.");
             ui.label("For a CLI provider, install it and sign in through its terminal command first. The test conversation checks that your account can reply.");
             if !self.settings_persona.is_null() {
                 ui.label("Your active persona can override these defaults. The check and test use that persona, just like a normal conversation.");
@@ -34,6 +34,10 @@ impl VoiceApp {
         let provider = self.values["brain_provider"]["value"]
             .as_str()
             .unwrap_or("ollama");
+        if provider == "obey" {
+            card(ui, super::super::provider_choices::obey_route_notice);
+        }
+        let model_key = super::super::provider_choices::installed_model_key(provider);
         let fields: &[&str] = match provider {
             "ollama" => &["ollama_host", "ollama_model"],
             "grok" => &["grok_model"],
@@ -49,12 +53,13 @@ impl VoiceApp {
             _ => &[],
         };
         self.setup_fields(ui, fields);
-        if let Some(models) = self
-            .setup
-            .provider
-            .as_ref()
-            .and_then(|p| p["models"].as_array())
-            .cloned()
+        if let Some(model_key) = model_key
+            && let Some(models) = self
+                .setup
+                .provider
+                .as_ref()
+                .and_then(|p| p["models"].as_array())
+                .cloned()
         {
             ui.collapsing("Models installed on this server", |ui| {
                 for model in models.iter().filter_map(|v| v.as_str()) {
@@ -63,11 +68,11 @@ impl VoiceApp {
                             vec![
                                 "config".into(),
                                 "set".into(),
-                                "ollama_model".into(),
+                                model_key.into(),
                                 model.into(),
                                 "--json".into(),
                             ],
-                            Purpose::SettingSave("ollama_model".into()),
+                            Purpose::SettingSave(model_key.into()),
                             false,
                         );
                     }

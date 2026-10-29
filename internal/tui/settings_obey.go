@@ -8,7 +8,13 @@ import (
 )
 
 func (m settingsModel) obeyRows() []settingRow {
-	var rows []settingRow
+	rows := []settingRow{{
+		name: "Obey routing", kind: rowInfo, value: "Obey → provider → model",
+		help: "Obey serves multiple providers. Enter the provider ID configured in your daemon, then a model ID for that provider. Obey is optional; other brain providers work without it.",
+	}, {
+		name: "Model selection", kind: rowInfo, value: "Enter an ID below",
+		help: "This connection does not publish a model catalog. Use the provider and model IDs configured in Obey; model lists from direct providers do not describe the daemon.",
+	}}
 	for _, key := range []string{"obey_provider", "obey_model", "obey_camp", "obey_socket", "obey_tool_policy"} {
 		spec, _ := config.SpecFor(key)
 		value := m.obeyValue(key)

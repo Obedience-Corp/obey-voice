@@ -573,9 +573,6 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 		provider = "ollama"
 	}
 
-	if provider == "obey" && (strings.TrimSpace(cfg.ObeyProvider) == "" || strings.TrimSpace(cfg.ObeyModel) == "") {
-		return Diagnostic{Name: "brain-provider", Severity: SeverityError, Detail: "Obey requires obey_provider and obey_model", Remediation: "set both to a provider and model configured in your Obey daemon"}
-	}
 	if spec, ok := lookupBrainProvider(provider); ok && spec.CLIBinary != "" {
 		path, err := lookPath(spec.CLIBinary)
 		if err != nil {
@@ -585,6 +582,9 @@ func diagnoseBrainProvider(cfg *Config, lookPath func(string) (string, error)) D
 				Detail:      fmt.Sprintf("%s CLI not found on PATH", spec.CLIBinary),
 				Remediation: fmt.Sprintf("install the %s CLI and ensure %q is on PATH, or select another brain_provider", spec.CLIBinary, spec.CLIBinary),
 			}
+		}
+		if provider == "obey" && (strings.TrimSpace(cfg.ObeyProvider) == "" || strings.TrimSpace(cfg.ObeyModel) == "") {
+			return Diagnostic{Name: "brain-provider", Severity: SeverityError, Detail: "Obey requires obey_provider and obey_model", Remediation: "set both to a provider and model configured in your Obey daemon"}
 		}
 		return Diagnostic{
 			Name:     "brain-provider",
