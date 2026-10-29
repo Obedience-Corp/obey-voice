@@ -217,7 +217,7 @@ func TestWorkersDetailsStopControlsAndStableSelection(t *testing.T) {
 	m := newWorkers(&config.Config{}, controller)
 	m.width, m.height, m.cursor = 100, 24, 2
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	for _, want := range []string{"inspect source", "ollama / local", "read 2 files", "Output will appear"} {
+	for _, want := range []string{"inspect source", "ollama / local", "read 2 files", "Working…"} {
 		if !strings.Contains(stripANSI(m.View()), want) {
 			t.Fatalf("detail missing %q", want)
 		}
@@ -286,6 +286,7 @@ func TestWorkersRenderingAndFooterAreBounded(t *testing.T) {
 }
 
 func TestWorkersPrettyPrintsJSONActivity(t *testing.T) {
+	workerTestColors(t)
 	activity := `searched 1 time (1 unknown) · {"query":"Denver CO","results":[{"title":"AccuWeather","ok":true,"temp":48}]}`
 	m := newWorkers(&config.Config{}, &testWorkers{items: []pipeline.WorkerInfo{{
 		ID: "job-1", Task: "weather in denver", State: "running",
@@ -301,12 +302,17 @@ func TestWorkersPrettyPrintsJSONActivity(t *testing.T) {
 	}
 	m.cursor = 2
 	m = workersKey(m, " ")
+	if strings.Contains(stripANSI(m.View()), `"query"`) {
+		t.Fatal("thread dumped payload without expanding details")
+	}
+	m = workersKey(m, "d")
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyHome})
 	detail := m.View()
 	plain := stripANSI(detail)
 	if !strings.Contains(plain, `"query"`) || !strings.Contains(plain, "Denver CO") {
 		t.Fatalf("detail missing pretty JSON:\n%s", plain)
 	}
-	if !strings.Contains(plain, "\n  \"query\"") && !strings.Contains(plain, "\n  \"query\":") {
+	if !strings.Contains(plain, "\n    \"query\"") && !strings.Contains(plain, "\n    \"query\":") {
 		t.Fatalf("JSON was not indented:\n%s", plain)
 	}
 	if !strings.Contains(detail, "\x1b[") {

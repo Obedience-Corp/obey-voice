@@ -32,6 +32,7 @@ type workersModel struct {
 	returnScreen                  screen
 	detailID, message             string
 	confirmAll                    bool
+	expandTools                   bool
 	detail                        viewport.Model
 	token                         *int
 }
@@ -77,14 +78,14 @@ func (m *workersModel) ensureVisible() {
 }
 
 func (m *workersModel) refreshDetail() {
+	follow := m.detail.AtBottom()
 	m.detail.Width, m.detail.Height = max(1, m.width-4), max(1, m.height-8)
 	for _, item := range m.items {
 		if item.ID != m.detailID {
 			continue
 		}
 		offset := m.detail.YOffset
-		follow := len(item.Thread) > 0 && m.detail.AtBottom()
-		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width))
+		m.detail.SetContent(formatWorkerDetail(item, m.detail.Width, m.expandTools))
 		m.detail.SetYOffset(offset)
 		if follow {
 			m.detail.GotoBottom()
@@ -104,8 +105,9 @@ func (m *workersModel) openDetail(id string) {
 		m.cursor = i + 2
 		m.ensureVisible()
 		m.detailID = id
-		m.detail.GotoTop()
+		m.expandTools = false
 		m.refreshDetail()
+		m.detail.GotoBottom()
 		return
 	}
 }
@@ -150,6 +152,22 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 			m.requestStopAll()
 		case "s":
 			m.stopSelected()
+		case "d":
+			if m.detailID != "" {
+				m.expandTools = !m.expandTools
+				m.refreshDetail()
+				return m, nil
+			}
+		case "home", "g":
+			if m.detailID != "" {
+				m.detail.GotoTop()
+				return m, nil
+			}
+		case "end", "G":
+			if m.detailID != "" {
+				m.detail.GotoBottom()
+				return m, nil
+			}
 		case "enter", " ":
 			if m.detailID != "" {
 				break
@@ -161,9 +179,7 @@ func (m workersModel) Update(msg tea.Msg) (workersModel, tea.Cmd) {
 				m.requestStopAll()
 			default:
 				if m.cursor-2 < len(m.items) {
-					m.detailID = m.items[m.cursor-2].ID
-					m.detail.GotoTop()
-					m.refreshDetail()
+					m.openDetail(m.items[m.cursor-2].ID)
 				}
 			}
 		case "up", "k":
@@ -327,10 +343,20 @@ func (m workersModel) View() string {
 		}
 	}
 	summary := strings.TrimSuffix(workersCountLabel(running, queued, !m.cfg.VoiceWorkersDisabled), " · /workers")
-	lines = append(lines, headerStyle.Render("  Workers"), dimStyle.Render("  "+summary+" · this conversation"), "")
 	if m.detailID != "" {
-		lines = append(lines, strings.Split(m.detail.View(), "\n")...)
+		meta := ""
+		for _, item := range m.items {
+			if item.ID == m.detailID {
+				meta = workerDetailMeta(item)
+				break
+			}
+		}
+		lines = append(lines, headerStyle.Render("  Worker conversation"), "  "+meta, "")
+		for _, line := range strings.Split(m.detail.View(), "\n") {
+			lines = append(lines, "  "+line)
+		}
 	} else {
+		lines = append(lines, headerStyle.Render("  Workers"), dimStyle.Render("  "+summary+" · this conversation"), "")
 		labels := []string{"Allow background workers: " + onOff(!m.cfg.VoiceWorkersDisabled), "Stop all active tasks"}
 		details := []string{"Off blocks new jobs; existing tasks may finish.", "Request cancellation for running and queued tasks."}
 		for _, item := range m.items {
@@ -363,7 +389,9 @@ func (m workersModel) View() string {
 	lines = append(lines, "", statusStyle.Render("  "+safeWorkerText(message)))
 	help := "  ↑/↓ select · enter open · s stop task · x stop all · t toggle · esc back"
 	if m.detailID != "" {
-		help = "  ↑/↓ scroll · home/end · s stop task · x stop all · t toggle · esc list"
+		scroll, controls := workerDetailHelp(w, m.expandTools)
+		lines = append(lines, dimStyle.Render(scroll))
+		help = controls
 	}
 	lines = append(lines, dimStyle.Render(help))
 	for i, line := range lines {

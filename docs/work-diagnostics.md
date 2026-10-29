@@ -131,6 +131,16 @@ clears the detail first, then returns to Chat. The composer draft is preserved.
 `/workers` remains the execution manager, including its background-work toggle
 and confirmed Stop all action.
 
+Open a task in `/workers` to read its conversation: the request and worker
+replies use the same bubbles as Chat, with tools in execution order. Press `d`
+to show or hide tool arguments and results. Tool failures remain visible when
+details are hidden; an unreported outcome is never treated as success.
+Home/End jump to the start/latest activity. Scrolling up pauses following;
+returning to the bottom resumes it. `s` stops the selected task, `x` requests
+Stop all (confirm with `y`), `t` toggles new workers, and Escape returns to the list.
+Messages appear as the provider's cached history updates at tool boundaries and
+completion; this view does not add token streaming or a worker message composer.
+
 The reserved Work strip stays above the composer while execution or delivery is
 outstanding. `updates` counts uncommunicated results and `new` counts result
 cards not yet visible in Chat or explicitly opened. Seeing a card does not

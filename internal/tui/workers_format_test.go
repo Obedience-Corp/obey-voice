@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/pipeline"
@@ -24,6 +25,7 @@ func TestSplitJSONPayloadFindsEmbeddedObject(t *testing.T) {
 }
 
 func TestColorJSONEmitsDistinctSpans(t *testing.T) {
+	workerTestColors(t)
 	colored := colorJSON("{\n  \"query\": \"Denver\",\n  \"temp\": 48,\n  \"ok\": true\n}")
 	if !strings.Contains(colored, "\x1b[") {
 		t.Fatal("expected SGR")
@@ -32,6 +34,14 @@ func TestColorJSONEmitsDistinctSpans(t *testing.T) {
 	if !strings.Contains(plain, `"query"`) || !strings.Contains(plain, "48") {
 		t.Fatalf("stripped = %q", plain)
 	}
+}
+
+func workerTestColors(t *testing.T) {
+	t.Helper()
+	previous := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	t.Setenv("OBEY_VOICE_COLOR_PROFILE", "truecolor")
+	forceTUIColorProfile()
 }
 
 func TestWorkerActivitySummaryDropsJSON(t *testing.T) {
@@ -93,8 +103,10 @@ func TestFormatWorkerPayloadIndentsTruncatedJSON(t *testing.T) {
 	}}})
 	m.width, m.height, m.cursor = 100, 28, 2
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = workersKey(m, "d")
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyHome})
 	detail := stripANSI(m.View())
-	if !strings.Contains(detail, "\n  \"query\"") && !strings.Contains(detail, "\n  \"query\":") {
+	if !strings.Contains(detail, "\n    \"query\"") && !strings.Contains(detail, "\n    \"query\":") {
 		t.Fatalf("detail still one compact line:\n%s", detail)
 	}
 }
