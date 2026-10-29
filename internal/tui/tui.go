@@ -196,7 +196,7 @@ const StartDefaultsID = ":defaults"
 type startPipelineMsg struct {
 	sessionID string
 	// personaID selects the session binding; empty = configured active persona.
-// StartDefaultsID (launcher "Obey (default)") resolves the saved Obey profile.
+	// StartDefaultsID (launcher "Obey (default)") resolves the saved Obey profile.
 	// The persona picker (launcher "New conversation") sets this.
 	personaID string
 	// personaName labels the starting screen. The binding's real identity is

@@ -25,7 +25,7 @@ type WorkerToolValidator interface {
 
 func (o *OllamaBrain) workerMetadata(ctx context.Context) (*api.ShowResponse, error) {
 	if ctx == nil {
-		return nil, fmt.Errorf("Ollama worker validation: nil context")
+		return nil, fmt.Errorf("ollama worker validation: nil context")
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -41,7 +41,7 @@ func (o *OllamaBrain) workerMetadata(ctx context.Context) (*api.ShowResponse, er
 
 func (o *OllamaBrain) validateWorkerTools(shown *api.ShowResponse) error {
 	if !hasCapability(shown.Capabilities, model.CapabilityCompletion) || !hasCapability(shown.Capabilities, model.CapabilityTools) {
-		return fmt.Errorf("Ollama worker model %q lacks completion or tool-calling support; choose a tool-capable worker model", o.model)
+		return fmt.Errorf("ollama worker model %q lacks completion or tool-calling support; choose a tool-capable worker model", o.model)
 	}
 	return nil
 }
