@@ -578,9 +578,10 @@ and output budget when one applies; it skips optional selection if doing so
 would consume the task's last request or output allowance.
 
 The selection instructions, activated-skill wrapper, and live/worker tool
-guidance are editable `system.skill-selection`, `system.activated-skills`, and
-`system.tool-surface-live`/`system.tool-surface-legacy` YAML documents under the
-normal prompts directory. Live Ollama conversations use `route` to delegate
+guidance are editable system YAML documents named `skill-selection`,
+`activated-skills`, `tool-surface-live` and `tool-surface-legacy` under
+`<prompts_dir>/system/`. Inspect one with
+`obey-voice prompts show system --name tool-surface-live`. Live Ollama conversations use `route` to delegate
 current-information questions such as today's weather to a worker, which has
 `web_search` and `fetch_url`; a dedicated weather tool is unnecessary.
 
