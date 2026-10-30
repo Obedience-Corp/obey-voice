@@ -80,6 +80,10 @@ type host struct {
 }
 
 func run(parent context.Context, input io.Reader, writer io.Writer) error {
+	return runWithCatalog(parent, input, writer, obeyCatalog)
+}
+
+func runWithCatalog(parent context.Context, input io.Reader, writer io.Writer, catalog func(context.Context, json.RawMessage) (any, error)) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	o := &output{enc: json.NewEncoder(writer)}
@@ -111,6 +115,11 @@ func run(parent context.Context, input io.Reader, writer io.Writer) error {
 	}()
 	h := &host{}
 	defer h.close(o)
+	var catalogs sync.WaitGroup
+	defer func() {
+		cancel()
+		catalogs.Wait()
+	}()
 	o.event("ready", map[string]any{"protocol": 1})
 	for {
 		select {
@@ -119,6 +128,16 @@ func run(parent context.Context, input io.Reader, writer io.Writer) error {
 		case r, ok := <-incoming:
 			if !ok {
 				return nil
+			}
+			if r.Method == "obey_catalog" {
+				// Discovery is read-only and may wait on an unavailable daemon.
+				// Keep live controls on the request loop and join canceled lookups
+				// before closing the bridge output.
+				catalogs.Go(func() {
+					result, err := catalog(ctx, r.Config)
+					o.reply(r, result, err)
+				})
+				continue
 			}
 			result, err := h.handle(ctx, r, o)
 			o.reply(r, result, err)
@@ -161,8 +180,6 @@ func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 		return setupStatus()
 	case "setup_save":
 		return saveSetup(setupPath(), r.Config)
-	case "obey_catalog":
-		return obeyCatalog(ctx, r.Config)
 	case "setup_provider":
 		return setupProvider(ctx)
 	case "worker_config_get":

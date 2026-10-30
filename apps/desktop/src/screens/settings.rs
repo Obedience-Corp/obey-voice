@@ -1,5 +1,7 @@
 mod editor;
 mod layout;
+#[cfg(test)]
+mod tests;
 
 use super::{card, field};
 use crate::app::VoiceApp;
@@ -89,14 +91,14 @@ impl VoiceApp {
             .as_str()
             .unwrap_or("ollama")
             .to_owned();
-        if self.group == "brain" && provider == "obey" && self.search.is_empty() {
-            card(ui, super::provider_choices::obey_route_notice);
-            self.obey_catalog_ui(ui);
-        }
         let keys = layout::visible_keys(&self.schema, &self.group, &self.search, &provider);
         egui::ScrollArea::vertical()
             .id_salt(("settings_scroll", &self.group, &self.search))
             .show(ui, |ui| {
+                if self.group == "brain" && provider == "obey" && self.search.is_empty() {
+                    card(ui, super::provider_choices::obey_route_notice);
+                    self.obey_catalog_ui(ui);
+                }
                 if self.group == "advanced" || (!self.search.is_empty() && ["tray", "menu bar", "desktop", "quit"].iter().any(|word| self.search.to_lowercase().contains(word))) {
                     card(ui, |ui| self.desktop_settings(ui));
                 }
