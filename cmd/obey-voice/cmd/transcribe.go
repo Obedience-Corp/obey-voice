@@ -138,6 +138,7 @@ the serve WebSocket. See docs/transcribe-protocol.md.`,
 	f.StringVar(&opts.request, "request", "", "Absolute path to the obey-transcript/v1 or v2 request JSON")
 	f.BoolVar(&opts.jsonl, "jsonl", false, "Stream negotiated transcript events as JSONL on stdout")
 	cmd.AddCommand(newTranscribeCapabilitiesCmd(deps))
+	cmd.AddCommand(newAudioJobCmd())
 	cmd.AddCommand(&cobra.Command{Use: "setup", Short: "Install missing speech assets into the explicit speech configuration", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if speechConfig == "" {

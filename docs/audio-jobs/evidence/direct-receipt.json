@@ -1,0 +1,813 @@
+{
+  "elapsed_seconds": 0.76138975,
+  "events": [
+    {
+      "event_id": "event_sv4zfwAoXdhSkxUoTkPfyWntva0l0654",
+      "item_id": "item_Ju24JFnMB9G9EWRFyDZQrD1UVBsIzkzp",
+      "previous_item_id": null,
+      "type": "input_audio_buffer.committed"
+    },
+    {
+      "event_id": "event_ttf4wwSva6cbkORLzDqS28ePnHdQ4qs3",
+      "item": {
+        "content": [
+          {
+            "type": "input_audio"
+          }
+        ],
+        "id": "item_Ju24JFnMB9G9EWRFyDZQrD1UVBsIzkzp",
+        "object": "realtime.item",
+        "role": "user",
+        "status": "completed",
+        "type": "message"
+      },
+      "previous_item_id": null,
+      "type": "conversation.item.added"
+    },
+    {
+      "event_id": "event_LcKWvjaK2R6c7ahBR9yWGROvI1sOsc1m",
+      "item": {
+        "content": [
+          {
+            "type": "input_audio"
+          }
+        ],
+        "id": "item_Ju24JFnMB9G9EWRFyDZQrD1UVBsIzkzp",
+        "object": "realtime.item",
+        "role": "user",
+        "status": "completed",
+        "type": "message"
+      },
+      "previous_item_id": null,
+      "type": "conversation.item.done"
+    },
+    {
+      "event_id": "event_y8Sjm54dvtxpbrKibwX7eYZHqya8Rgss",
+      "response": {
+        "id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+        "object": "realtime.response",
+        "output": [],
+        "output_modalities": [
+          "text",
+          "audio"
+        ],
+        "status": "in_progress"
+      },
+      "type": "response.created"
+    },
+    {
+      "event_id": "event_dwgzDjlLgrnyvCMGoMKrpud2yCqfrlAS",
+      "item": {
+        "content": [],
+        "id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+        "object": "realtime.item",
+        "role": "assistant",
+        "status": "in_progress",
+        "type": "message"
+      },
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_item.added"
+    },
+    {
+      "content_index": 0,
+      "event_id": "event_oDjaPxtqmvmuqJ4EjjUky6NpObJGOeRS",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "part": {
+        "text": "",
+        "type": "output_text"
+      },
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.content_part.added"
+    },
+    {
+      "content_index": 0,
+      "delta": "A",
+      "event_id": "event_ENe7jhjeX9MnzlTS81Ki4HlyvdMlEvAL",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " woman",
+      "event_id": "event_mBWMvEsfqDPQ6ckM8QQQUC9NuADvx3Eo",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " is",
+      "event_id": "event_jx8pBrxo7iGA4xBtF1T86QcOfllb3SRs",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " speaking",
+      "event_id": "event_GHmGcpyuDn1bFiE0ZFHQhWQnCcNnRTEZ",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " and",
+      "event_id": "event_xm0v88wgrCAiJAnOD40I4GT4ClZHdtss",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " then",
+      "event_id": "event_aWHA5SsUlG7J909aWl85yCKzUi8JrchA",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_w1gmnaoy4NjLJVEhlolhd2CXHiGJqzCv",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "part": {
+        "transcript": "",
+        "type": "output_audio"
+      },
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.content_part.added"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_oDm97KDlS8HiWBg5g2qbNHnYQNxSBrUq",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 2880,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_ffkXrbyKV9Nd1PMSh16fWCzgekMWdBsY",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_phLJ7QdQelfpwkUaK7Ad6t3PhER4rSLp",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_kucc1PXxA7Jqmwqu4ibafMwZDowvay5s",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_1tWy6NmxQ8st7KFKHUi5kLXcdNWsSwvn",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_AvfJ8Xy7Zl48J9HeHaIsi5YTo0VyEFzA",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_6QfaQVwPoIOz4ZH9obFGIHBYaaasuWyc",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_CAVvKsNYuUnoPRcLKM38QYQ3VUfWc7Qr",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_LMvRvXQGh2cHFSrB0TR8ZZ7AZvhLrHs6",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_3Y6zaWOg5wpBIxr0yAoD94qlfOctRBkw",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_UJhKe5l3KQLZce7KczHNAdkIJyp8Gjyz",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_Z6o0upgl6w5VYhgYJAQ2pjQTUpOvzSN8",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " a",
+      "event_id": "event_WdPRBykSDniFArFH5wnibz4G4z3teJTt",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " young",
+      "event_id": "event_hYTeBCJoaGJmYRFnTeH7kfXExgk3KBXu",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " woman",
+      "event_id": "event_K7pFu8WnqvAdSGrrSVY59tla27RhKpYc",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": " responds",
+      "event_id": "event_ibFzCXY8aSU2KEYJ9NeOy3v60ShNvuNg",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 0,
+      "delta": ".",
+      "event_id": "event_UcLFcUbXmOgmmZyNKrCsZ5HsapIgt7Ur",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_text.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_itEGCdMnCBBH2NnplvOYs3jN4YfFl41s",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_aeehAixgzkqhUqPjMA6sCNiwxff8w15X",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_xDzaD84cWIuYCJwicZw7M26UFHsiJcSr",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_iUuK1yJy8COBnpA0WliZCt6jeom0M4g5",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_J4CPfMGelRqCyMnGnsLfaWQvewYnD30d",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_6EUcoqktkdukHxXzXqaabUnBRf8YLgz3",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_EOMz2cZvo6N1aT2VpH5dTqNRfXXZVJPQ",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_IwLNjzj7SceUQGK0ULjXqrXSshwr9wfy",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_qu5CozTUjiL7Y0NYqEja0CJLL6YzZ1Xm",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_ORaP4IiN4LFF9VyB8lBy7SPYodEDqAZg",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_rr5cQm5EIDmKx3lcHg7hmAvSkTDlbbz5",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_KZ0FMaRuLyXSVcusm5XeqNnQCQAu8z9K",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_uKGyTNtJMfgVaYcQRygGcfA7pVoeqgp5",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_uD7WcI3AoFxiCkm7TUd53om8tmL2TmH9",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_YYMLKRMLP8V1CMYKM68VVW8SnUTXrPFg",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_7fpj3GexmxPDufLxLlAPvbRdTrhUOu6G",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_YaCcVBG5lqw4ojmYVOy2v5IDeNbxjI3v",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_19MZlcF4UrNPy8R6gPidoZ0foyqJKJwY",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_FkKaar1H04RB8MT0ZXBO04P5K9t1MqE3",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_Rscia8aKoOj7liG2btaOWrCdXOuAWFoC",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_XdOz4ZpmIdFa6CWUib8FBinZ9QN25QsN",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_TqOd0w8LBmETsEIB3KEsKXh26GsJfTVy",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_g2avAxoPKQPmbpUrFvuMVgkRc5XOvipj",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_sMTmPw3qrjXWN6NYdNrLaaDrn7iMpK5v",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_PJtG57JvObOIHs20I5ZSxCTBh2xCAMja",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_eIYIAm6AR6zGjyzaiH4L23znk3Bq0kjX",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_4qGL71XaybwOQOYlxAbGswHjJIrmtLip",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_l1qAWYrfkB4wMfAuKfttV28KyMmSFdQN",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_w3SboKjpi2aJS8Pqf2b2pZBsx5Fjciwn",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_o11IcHxJ7Jcui0L56NdKZXyjaNc2mLCy",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_A2hhpBkoPCNxQUp3S7baB9xepOtAzBU0",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_0NamzwPDZIHxtTbz3LD7sncupE9JyvFe",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_XVmSG9Fe9MoZN05reRcGJac9ueQfn5r3",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_mW5f7k00rdPkjY3h5gc2kaa7LfO6xxTE",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_gdTS9UFf7OFeQKNoQXAZdsWYl5dbeKzB",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_paBei7irf04KRZc4iviSqRCD5cgFmpzs",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 3840,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_U4tOdKB6v0Zc46JOCDsG6t5kPx3rqRBV",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "pcm_bytes": 960,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.delta"
+    },
+    {
+      "content_index": 0,
+      "event_id": "event_6OSaVkBDWqbAG431hHotG1ifFujWGIs1",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "text": "A woman is speaking and then a young woman responds.",
+      "type": "response.output_text.done"
+    },
+    {
+      "content_index": 0,
+      "event_id": "event_WDfQeiBua28MNVHsur8qQSFvUHMJKUMb",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "part": {
+        "text": "A woman is speaking and then a young woman responds.",
+        "type": "output_text"
+      },
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.content_part.done"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_mUcPWxxN6s9SBzLcg6WLBElaTlpVutNc",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_audio.done"
+    },
+    {
+      "content_index": 1,
+      "event_id": "event_sMWJnKLevTPqLR5ZCT3xZ6HeGNoUNdyF",
+      "item_id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+      "output_index": 0,
+      "part": {
+        "transcript": "",
+        "type": "output_audio"
+      },
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.content_part.done"
+    },
+    {
+      "event_id": "event_vvKHoi1G7KRPBspcaEpBkOHDmP1akMKU",
+      "item": {
+        "content": [
+          {
+            "text": "A woman is speaking and then a young woman responds.",
+            "type": "output_text"
+          },
+          {
+            "transcript": "",
+            "type": "output_audio"
+          }
+        ],
+        "id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+        "object": "realtime.item",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      },
+      "output_index": 0,
+      "response_id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+      "type": "response.output_item.done"
+    },
+    {
+      "event_id": "event_emTmpFlY5DIPtm7Hhc4zpGML6eTWYpIL",
+      "response": {
+        "id": "resp_ARW2llZ9FqLWXp7pQoigjC1ceKOR9DA9",
+        "object": "realtime.response",
+        "output": [
+          {
+            "content": [
+              {
+                "text": "A woman is speaking and then a young woman responds.",
+                "type": "output_text"
+              },
+              {
+                "transcript": "",
+                "type": "output_audio"
+              }
+            ],
+            "id": "item_QwiSfKSSLraGBge1ncoloaF5aJGocPPQ",
+            "object": "realtime.item",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "output_tokens": 62
+        }
+      },
+      "type": "response.done"
+    }
+  ],
+  "input_sample_rate": 16000,
+  "input_samples": 480000,
+  "input_seconds": 30,
+  "instructions": "Repeat all spoken words from the recording exactly as heard, using a female voice. Preserve every word, repetition, pause and the original duration. Do not answer the speakers or summarize. Respond with interleaved text and audio.",
+  "listener_test": false,
+  "model_sha256": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+  "output_sample_rate": 24000,
+  "output_samples": 92160,
+  "output_seconds": 3.84,
+  "output_sha256": "73edc8adba7fbb7a2e72903b633965c41419a0dedf8e73dee212071cdccb7935",
+  "projector_sha256": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+  "qualified_conversion": false,
+  "runtime_sha256": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+  "runtime_version": "version: 0.8.0-dev (build 11960, commit 8642541b2)\nbuilt with AppleClang 21.0.0.21000101 for Darwin arm64",
+  "session_created": {
+    "event_id": "event_2WOGMUqnfAfBm4Etlh7mCAvCakEeIvB9",
+    "session": {
+      "audio": {
+        "input": {
+          "format": {
+            "rate": 16000,
+            "type": "audio/pcm"
+          },
+          "turn_detection": null
+        },
+        "output": {
+          "format": {
+            "rate": 24000,
+            "type": "audio/pcm"
+          }
+        }
+      },
+      "id": "sess_Omd0uxRmnFXJgT1Kbx8ZyrPjARsgEtNS",
+      "instructions": "",
+      "max_output_tokens": "inf",
+      "model": "/tmp/wi-43b072-sol/gguf/model.gguf",
+      "object": "realtime.session",
+      "output_modalities": null,
+      "tool_choice": "auto",
+      "tools": [],
+      "type": "realtime"
+    },
+    "type": "session.created"
+  },
+  "session_updated": {
+    "event_id": "event_3ajmhegmJQ71iujFOK1sEW4NWjXhKn96",
+    "session": {
+      "audio": {
+        "input": {
+          "format": {
+            "rate": 16000,
+            "type": "audio/pcm"
+          },
+          "turn_detection": null
+        },
+        "output": {
+          "format": {
+            "rate": 24000,
+            "type": "audio/pcm"
+          }
+        }
+      },
+      "id": "sess_Omd0uxRmnFXJgT1Kbx8ZyrPjARsgEtNS",
+      "instructions": "Repeat all spoken words from the recording exactly as heard, using a female voice. Preserve every word, repetition, pause and the original duration. Do not answer the speakers or summarize. Respond with interleaved text and audio.",
+      "max_output_tokens": 4096,
+      "model": "/tmp/wi-43b072-sol/gguf/model.gguf",
+      "object": "realtime.session",
+      "output_modalities": [
+        "text",
+        "audio"
+      ],
+      "tool_choice": "none",
+      "tools": [],
+      "type": "realtime"
+    },
+    "type": "session.updated"
+  },
+  "source_origin_samples": 2080000,
+  "source_sha256": "d8bc1b161a501de8c7a3d40ae8c6c477adde6970c6aa8144ef53822ab09be597",
+  "text": "A woman is speaking and then a young woman responds.",
+  "transport": "direct_audio_to_audio"
+}

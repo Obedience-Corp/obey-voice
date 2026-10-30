@@ -1,0 +1,45 @@
+{
+  "protocol": "obey-audio-job/v1",
+  "job_id": "narration-fixture-1",
+  "task": "narration",
+  "source": {
+    "media_sha256": "59528cb4e3cb41e73a4574f76acbee119d9a1bc34b5c133aa5125c2f726a16be",
+    "clip_id": "ami-es2002a",
+    "range_id": "130-160",
+    "project_revision": "fixture-1"
+  },
+  "input": {
+    "path": "/tmp/wi-43b072-sol/source.wav",
+    "sha256": "d8bc1b161a501de8c7a3d40ae8c6c477adde6970c6aa8144ef53822ab09be597",
+    "sample_count": 480000,
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "channel_role": "microphone",
+    "source_origin_samples": 2080000
+  },
+  "runtime": {
+    "provider": "ollama",
+    "endpoint": "http://localhost:11434",
+    "model": "lfm3-audio:2b",
+    "voice": "female"
+  },
+  "runtime_version": "0.40.12",
+  "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+  "transport": "text_then_speech",
+  "script_sha256": "9932a85bf2b88e289ec0c47ea3b27008ea881282938f15df079db5ced40c751e",
+  "language": "en",
+  "duration_policy": "preserve_picture",
+  "source_windows": [
+    {
+      "start_sample": 2080000,
+      "end_sample": 2560000
+    }
+  ],
+  "output": {
+    "path": "audio.wav",
+    "sha256": "e13821dd367f7c63b640d1ba07ab5999acaeb8ce99764ef36b230c22b412a9e9",
+    "sample_rate_hz": 24000,
+    "channels": 1,
+    "sample_count": 130560
+  }
+}

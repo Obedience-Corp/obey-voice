@@ -1,0 +1,4 @@
+{"protocol":"obey-audio-job/v1","job_id":"narration-fixture-1","seq":0,"type":"accepted"}
+{"protocol":"obey-audio-job/v1","job_id":"narration-fixture-1","seq":1,"type":"progress","stage":"synthesis"}
+{"protocol":"obey-audio-job/v1","job_id":"narration-fixture-1","seq":2,"type":"artifact","manifest_path":"/tmp/wi-43b072-sol/audio-owned/narration-fixture-1/manifest.json"}
+{"protocol":"obey-audio-job/v1","job_id":"narration-fixture-1","seq":3,"type":"completed"}

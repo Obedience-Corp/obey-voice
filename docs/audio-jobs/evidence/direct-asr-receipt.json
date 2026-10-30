@@ -1,0 +1,37 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I just got the project announcement, but what the project is about? Designing a remote control. That's about it. And games and all. Did you get the same thing? So we're going to have an individual workshop and then we're going to talk about it. We'll repeat the process three times. And we're going to try to do like work over there."
+      }
+    }
+  ],
+  "created": 1793397459,
+  "model": "/tmp/wi-43b072-sol/gguf/model.gguf",
+  "system_fingerprint": "b11960-8642541b2",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 78,
+    "prompt_tokens": 395,
+    "total_tokens": 473,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "id": "chatcmpl-teDSTjFYjIw5NclNDQXBazJbBRrmmex7",
+  "timings": {
+    "cache_n": 0,
+    "prompt_n": 395,
+    "prompt_ms": 272.077,
+    "prompt_per_token_ms": 0.6888025316455696,
+    "prompt_per_second": 1451.7948962977393,
+    "predicted_n": 78,
+    "predicted_ms": 318.157,
+    "predicted_per_token_ms": 4.13190909090909,
+    "predicted_per_second": 242.01887747244288
+  },
+  "elapsed_seconds": 0.6237890840275213
+}

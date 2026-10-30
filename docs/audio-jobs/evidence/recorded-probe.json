@@ -1,0 +1,17 @@
+{
+  "transport": "chat_then_speech",
+  "model": "lfm3-audio:2b",
+  "source_sha256": "d8bc1b161a501de8c7a3d40ae8c6c477adde6970c6aa8144ef53822ab09be597",
+  "input_samples": 480000,
+  "input_seconds": 30,
+  "source_origin_samples": 2080000,
+  "prompt": "Repeat all spoken words from the recording exactly as heard. Preserve every word and repetition. Do not answer the speakers or summarize. Return only the words to be spoken.",
+  "chat_seconds": 0.6182308749994263,
+  "reply": "I just got the project announcement, but what the project is, is designing a remote control. That's about it. Engaging yours. Did you get the same thing? So we're going to have an individual work and then we can talk about it. We'll repeat the process three times. And we're going to try it through like four or whatever.",
+  "speech_seconds": 2.108224333031103,
+  "output_samples": 489600,
+  "output_seconds": 20.4,
+  "output_sha256": "d3479db6e61213847da350f2bb7c7ead45f7cb9ca8fa1232029a689834af79a1",
+  "qualified_conversion": false,
+  "note": "Experimental staged recording reproduction; no claim of direct conditioned speech or preserved prosody. No playback/listener test."
+}
