@@ -91,6 +91,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		var continuation string
 		repetitionRetry := false
 		repetitionAllowed := false
+		imageResultRetry := false
 
 		for i := 0; i <= maxToolIterations; i++ {
 			finalAnswer := i == maxToolIterations
@@ -100,6 +101,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			}
 
 			messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
+			if imageResultRetry {
+				messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
+			}
 			if opts.Discussion != nil {
 				messages[0].Content += opts.Discussion.Prompt()
 				// A compacted working projection can contain only assistant summaries.
@@ -182,11 +186,13 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// untagged planning followed by a tool call. It cannot be taken
 			// back once spoken. The final tool-limit answer is also held until
 			// completion so a rejected or truncated recovery cannot reach speech.
-			// Ordinary worker/tool-free responses retain incremental streaming.
+			// Post-chat answers to image requests also wait for claim validation.
+			// Ordinary chat and worker responses retain incremental streaming.
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
+			checkImageResult := routing || imageResultRetry || (routedChat && imageResultNoun.MatchString(input))
 			var routeText []string
 			emitText := func(text string) error {
-				if routing || finalAnswer {
+				if checkImageResult || finalAnswer {
 					routeText = append(routeText, text)
 					return nil
 				}
@@ -274,17 +280,9 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					err = sendErr
 				}
 			}
-
-			if err == nil && routing && len(toolCalls) == 0 {
-				if routeRetried {
-					done <- StreamResult{Err: fmt.Errorf("model did not select a route; no work was dispatched"), Recovered: true}
-					return
-				}
-				routeRetried = true
-				skillCtx += "\n" + missingRouteInstruction
-				continue
-			}
-			if routing || finalAnswer {
+			missingRoute := err == nil && routing && len(toolCalls) == 0
+			missingImageResult := checkImageResult && err == nil && len(toolCalls) == 0 && o.unsupportedImageResult(strings.Join(routeText, ""), input)
+			if checkImageResult || finalAnswer {
 				if len(toolCalls) > 0 {
 					// Tool preambles belong to the thinking surface,
 					// never the speech stream or canonical reply history.
@@ -295,7 +293,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							err = sendErr
 						}
 					}
-				} else if err == nil && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
+				} else if err == nil && !missingRoute && !missingImageResult && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
 					for _, text := range routeText {
 						if sendErr := forward(gate.feed(text)); sendErr != nil {
 							err = sendErr
@@ -318,6 +316,23 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					u.OutputTokens = &out
 				}
 				opts.OnWorkerUsage(u)
+			}
+			if missingRoute || missingImageResult {
+				if routeRetried || routedChat {
+					err := fmt.Errorf("model did not select a route; no work was dispatched")
+					if missingImageResult {
+						err = fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
+					}
+					done <- StreamResult{Err: err, Recovered: true}
+					return
+				}
+				routeRetried = true
+				imageResultRetry = missingImageResult
+				skillCtx += "\n" + missingRouteInstruction
+				if missingImageResult {
+					o.emitInfo(events.Info{Message: "Image reply had no attachment; retrying once before delivery"})
+				}
+				continue
 			}
 			if err == nil && gate.repeat {
 				if opts.Discussion != nil {
@@ -395,7 +410,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				if sess.routerPolicy == RouterToolsRouteOnly && hasRouteCall(toolCalls) {
 					// chat has been selected. The follow-up is the answer,
-					// so it needs neither another routing decision nor buffering.
+					// so it needs no further routing decision. Image requests
+					// still wait for claim validation before speech.
 					routedChat = true
 					skillCtx += "\n" + chatRouteAnswerInstruction
 				}

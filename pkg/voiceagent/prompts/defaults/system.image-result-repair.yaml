@@ -1,0 +1,16 @@
+schema: obey-voice.prompt.v1
+prompt:
+  name: image-result-repair
+  kind: system
+  system_prompt: |-
+    The previous attempt claimed or promised an image attachment but returned
+    neither a file reference nor a tool call. Nothing was delivered to the chat.
+    Fulfill the user's actual image request using the tools available on this
+    request. With route, call kind=spawn and select the required effort tier;
+    the worker must obtain the requested image file and return it as a standalone
+    ![Caption](<absolute-path>) reference. Do not substitute a description or a
+    directory name, and do not change the requested formats or quantity. If you
+    cannot obtain a real image, explain that plainly. Do not claim it is attached.
+metadata:
+  version: 1
+  description: One bounded correction for unsupported image delivery claims.

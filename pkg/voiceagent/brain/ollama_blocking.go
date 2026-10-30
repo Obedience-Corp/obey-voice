@@ -85,6 +85,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	hadThinking := false
 	hadTools := false
 	routedChat := false
+	imageResultRetry := false
 	routeRetried := false
 	for i := 0; i <= maxToolIterations; i++ {
 		finalAnswer := i == maxToolIterations
@@ -100,6 +101,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			return "", err
 		}
 		messages := o.buildMessagesForTurn(skillCtx, opts.AgentContinuation && opts.Discussion == nil)
+		if imageResultRetry {
+			messages[0].Content += "\n\n" + systemPrompt(o.cfg, "image-result-repair", nil)
+		}
 		if opts.Discussion != nil {
 			messages[0].Content += opts.Discussion.Prompt()
 			// A compacted working projection can contain only assistant summaries.
@@ -173,12 +177,19 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			o.working = restoreWorking
 			return "", fmt.Errorf("ollama full response truncated")
 		}
-
-		if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && len(response.ToolCalls) == 0 {
-			if routeRetried {
+		routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
+		missingRoute := routing && len(response.ToolCalls) == 0
+		checkImageResult := routing || imageResultRetry || (routedChat && imageResultNoun.MatchString(input))
+		missingImageResult := checkImageResult && len(response.ToolCalls) == 0 && o.unsupportedImageResult(response.Content, input)
+		if missingRoute || missingImageResult {
+			if routeRetried || routedChat {
+				if missingImageResult {
+					return "", fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
+				}
 				return "", fmt.Errorf("model did not select a route; no work was dispatched")
 			}
 			routeRetried = true
+			imageResultRetry = missingImageResult
 			skillCtx += "\n" + missingRouteInstruction
 			continue
 		}

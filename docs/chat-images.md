@@ -48,6 +48,21 @@ missing, invalid, out-of-directory, and remote images produce visible diagnostic
 Fenced examples and ordinary filenames do not import files. Paths are kept out of
 speech. Image generation remains the responsibility of the agent's available tools.
 
+Requests to find or create an image must reach a worker that can obtain the file.
+Saying "attached below" or naming a directory does not attach anything. The live
+Ollama router retries explicit image-delivery claims once if they contain neither
+a file reference nor a tool call. A repeated unsupported claim produces an error
+instead of entering speech and chat history. This shares the required routing
+step's single retry; an honest refusal selects `route(kind=chat)` before answering.
+The check uses the current request to recognize pronoun-only claims such as
+"I've attached them below" and also validates the answer after `route(kind=chat)`.
+An unsupported post-chat claim produces an error without another tool loop.
+Post-chat answers to image requests wait for completion before speech so rejected
+claims cannot leak through streaming; ordinary chat and workers retain incremental
+streaming. This is not
+a general verifier of everything a model says. Explicit file references still
+pass through the normal file validation above.
+
 Returned images also appear in worker threads and desktop background-result cards.
 A queued worker keeps the images from its originating request; cancelling foreground
 speech or switching personas does not retarget its images to a different conversation.
@@ -85,6 +100,18 @@ Run `just demo-agent-images` for the actual Bubble Tea UI with deterministic wor
 completion events. This recording proves display and interaction; separate local HTTP
 and app-server subprocess tests verify native image payloads, worker admission,
 returned-file import, session persistence, and group handoff.
+
+`go test ./internal/tui -run TestImageClaimRepairReachesTerminal` exercises an
+unsupported claim, its correction into a worker call, file import, and both PNG
+and GIF previews through the real pipeline and terminal loop with a local model
+stub. To check routing with an installed Ollama model and isolated history, run:
+
+```sh
+OBEY_VOICE_IMAGE_ROUTING_MODEL=lfm3:1.7b go test -tags=integration ./pkg/voiceagent/brain -run TestLiveImageRequestsRouteToWorker -count=1 -v
+```
+
+This opt-in check makes local model requests but does not execute worker tools.
+Set `OBEY_VOICE_IMAGE_ROUTING_TIERED=1` too to require an explicit worker tier.
 
 After `just bundle` in `apps/desktop`, run
 `python3 scripts/ui-fixture.py --agent-images` for a silent native app whose local
