@@ -1,11 +1,11 @@
-# Real Bubble Tea animated launcher, persona picker, and scripted voice activity.
+# Real Bubble Tea launcher, persona picker, and a shared three-persona conversation.
 # Run just demo. No live microphone, playback, models, or personal config.
 Output docs/images/tui.gif
 Set Shell "bash"
 Set FontFamily "JetBrainsMono Nerd Font"
 Set FontSize 18
 Set Width 1120
-Set Height 640
+Set Height 780
 Set Padding 18
 Set Framerate 20
 Set TypingSpeed 35ms
@@ -14,11 +14,23 @@ Hide
 Type "python3 demos/fixtures/readme.py" Enter
 Sleep 3s
 Show
+Sleep 2s
+Enter
+Sleep 2s
+Enter
+Sleep 3s
+Type "@obey Let's plan a weekend project."
+Enter
+Sleep 4s
+Type "@jarvis What would you measure?"
+Enter
 Sleep 5s
+Type "@veronica Keep us honest."
 Enter
-Sleep 1s
+Sleep 5s
+Type "@obey Can you see their ideas?"
 Enter
-Sleep 19s
+Sleep 7s
 Hide
 Ctrl+C
 Sleep 1s

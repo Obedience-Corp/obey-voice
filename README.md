@@ -29,8 +29,8 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/tui.gif" alt="Obey Voice TUI in color: animated launcher logo, persona selection, and listening, hearing, and speaking states" width="900"><br>
-  <em>Real terminal interface with scripted voice activity.</em><br>
+  <img src="docs/images/tui.gif" alt="Obey, Jarvis, and Veronica sharing one conversation in the Obey Voice terminal interface" width="900"><br>
+  <em>Three personas, one conversation. Real terminal UI with fixture replies.</em><br>
   <a href="demos/README.md#readme-demo">Reproduce the demo</a> with <code>just demo</code>.
 </p>
 
