@@ -59,8 +59,8 @@ create bundles in `apps/desktop/dist`; they do not install them.
 ## Linux amd64 archive
 
 Release packaging produces a relocatable `obey-voice-linux-amd64.tar.gz` for
-x86_64 glibc Linux. No release is published yet; use the source install below
-until an archive is available on the [releases page](https://github.com/Obedience-Corp/obey-voice/releases).
+x86_64 glibc Linux. Check the [releases page](https://github.com/Obedience-Corp/obey-voice/releases)
+for available archives.
 Once downloaded, the archive contains the Obey Voice executable and its sherpa-onnx /
 onnxruntime shared libraries; keep the executable and `lib/` directory
 together.
@@ -88,8 +88,8 @@ musl systems such as Alpine require a separate native build strategy.
 ## Homebrew (macOS)
 
 The public `lancekrogers/tap/samantha` formula tracks the frozen public
-`samantha` repo, not this engine. Until a private tap exists, install from
-source below. Grant your terminal microphone access under System Settings →
+`samantha` repo, not this engine. For Obey Voice, use the [source build](#from-source).
+Grant your terminal microphone access under System Settings →
 Privacy & Security → Microphone.
 
 ## From source

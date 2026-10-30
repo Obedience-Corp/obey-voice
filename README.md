@@ -34,7 +34,6 @@
   <a href="demos/README.md#readme-demo">Reproduce the demo</a> with <code>just demo</code>.
 </p>
 
-
 ---
 
 ## The lab
@@ -51,7 +50,7 @@ Keep conversation local and use another provider for background work, or choose 
 
 ## Install
 
-Build from source; prebuilt app downloads aren't published yet.
+See the [installation guide](docs/install.md) for app and terminal setup. To build from source, start with a checkout:
 
 ```bash
 git clone https://github.com/Obedience-Corp/obey-voice.git
@@ -83,7 +82,7 @@ Put your Go binary directory on `PATH` (`$GOBIN`, or `$(go env GOPATH)/bin`). On
 
 ## Group chat
 
-Give each persona a voice, model, and prompt. With Ollama, several can share a conversation. Say “Jarvis, what do you think?” to bring one in; the last speaker handles follow-ups. Agents can hand questions to each other, and you can interrupt at any time. [Set up personas](docs/personas.md).
+Give each persona a voice, model, and prompt. Personas using different brain providers can share the same conversation. Say “Jarvis, what do you think?” to bring one in; the last speaker handles follow-ups. Agents can hand questions to each other, and you can interrupt at any time. [Set up personas](docs/personas.md).
 
 ## Explore
 
