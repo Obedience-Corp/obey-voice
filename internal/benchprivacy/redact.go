@@ -48,7 +48,7 @@ func redact(value any, key string) any {
 		}
 	case string:
 		switch strings.ToLower(key) {
-		case "reply", "spoken", "error", "setup_error", "transcript", "response", "response_text":
+		case "reply", "spoken", "error", "setup_error", "transcript", "expected", "response", "response_text":
 			if v != "" {
 				return "[redacted raw text]"
 			}

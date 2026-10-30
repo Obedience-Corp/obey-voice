@@ -398,7 +398,9 @@ verification of qualitative conclusions in the historical reports.
 `scripts/brain_bench` and `scripts/bench.sh` now filter saved benchmark JSON through
 `internal/benchprivacy`. The shell benchmark requires Go as well as jq. The filter
 preserves JSON numeric lexemes, removes raw output fields, and substitutes local
-home/workspace paths and speech-worker addresses. A standalone filter is available:
+home/workspace paths and speech-worker addresses. Future shell benchmark artifacts
+also withhold both recognized and reference transcripts from recorded corpora;
+their precomputed scores remain. A standalone filter is available:
 
 ```sh
 go run ./scripts/bench_redact < private-benchmark.json > shared-benchmark.json
