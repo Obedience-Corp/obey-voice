@@ -67,6 +67,21 @@ func voiceKeys() []KeySpec {
 			Help: "The OpenAI-compatible /v1 base the openai-speech engine talks to. Ollama serving Phonon is http://localhost:11434/v1.",
 		},
 		{
+			Key: "openai_speech_runtime", Type: TypeEnum, Default: "auto", Enum: []string{"auto", "external", "native"},
+			Group: GroupVoice, Title: "Speech runtime",
+			Help: "Auto uses managed Phonon on Linux when no server/model was explicitly configured, and Ollama on macOS. External preserves the configured server; native owns a local Phonon process.",
+		},
+		{
+			Key: "openai_speech_backend", Type: TypeEnum, Default: "auto", Enum: []string{"auto", "cpu", "vulkan", "cuda", "metal"},
+			Group: GroupVoice, Title: "Native speech backend",
+			Help: "Device for managed native Phonon. Auto chooses CUDA on NVIDIA, Vulkan on supported Linux ICDs, otherwise CPU. An unavailable explicit device fails rather than silently falling back.",
+		},
+		{
+			Key: "openai_speech_native_binary", Type: TypeString, Default: "",
+			Group: GroupVoice, Title: "Native speech binary",
+			Help: "Optional absolute path to a compatible ptts-openai-server. Empty builds the pinned native runtime during model setup.",
+		},
+		{
 			Key: "openai_speech_model", Type: TypeString, Default: DefaultOpenAISpeechModel,
 			Group: GroupVoice, Title: "Speech API model",
 			Help: "The model id the speech API synthesizes with. phonon on Ollama; `ollama pull phonon` installs it.",

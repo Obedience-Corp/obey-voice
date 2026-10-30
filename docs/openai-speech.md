@@ -2,10 +2,64 @@
 
 `tts_provider: openai-speech` speaks through any server that implements the
 OpenAI `POST /v1/audio/speech` endpoint and can stream raw PCM. It is an
-additional engine next to Kokoro, Qwen3-TTS and audio8; Kokoro remains the
-default. The server owns the model. When the server is Ollama, obey-voice
+additional engine next to Kokoro, Qwen3-TTS and audio8. Kokoro is the compiled
+default; builtin Obey, Samantha, Jarvis and Veronica personas select Phonon.
+The server owns the model. When the server is Ollama, obey-voice
 installs it there and fetches Phonon's voice catalog file (see
 [Install](#install)).
+
+## Linux: managed native Phonon
+
+With `openai_speech_runtime: auto` (the default), an unconfigured Linux Phonon
+setup uses Gradium's native server. macOS continues using Ollama. Explicit
+speech URLs, models and API keys preserve the external-server path; the
+client's operating system does not determine a remote server's capabilities.
+
+For an existing OpenAI speech persona that previously tried local Ollama on
+Linux, opt into the native runtime:
+
+```sh
+obey-voice config set openai_speech_runtime native
+obey-voice models ensure --tts
+```
+
+Setup verifies and builds a pinned Rust source archive, then provisions pinned
+Phonon 31M English weights and the catalog's voice embeddings. On Arch, its
+build prerequisites are:
+
+```sh
+sudo pacman -S --needed rust base-devel opus lame
+```
+
+CUDA also needs the CUDA toolkit and working NVIDIA driver; a Vulkan device
+needs its Vulkan driver/loader. A toolkit installed outside the normal search
+paths can be selected with `CUDA_ROOT`/`CUDA_PATH`, its `bin` directory on
+`PATH`, and its shared libraries on `LD_LIBRARY_PATH`. The first source build
+can take several minutes and requires network access. Setup errors include
+the compiler/runtime's output; the Go executable can still be installed when
+voice setup is incomplete.
+
+`openai_speech_backend: auto` chooses CUDA when `/dev/nvidia0` exists, Vulkan
+for Radeon/Intel ICD installations, otherwise CPU. Override that selection
+with `cpu`, `vulkan` or `cuda`. The server receives an explicit device, and
+startup verifies its actual device banner; an unavailable GPU is an error
+rather than a silent CPU fallback. The native GPU path uses F32 weights;
+upstream q8 weights are CPU-only.
+
+Speech construction starts an owned server on a private loopback port and
+stops it with the provider. Conversation startup uses cached assets offline;
+explicit setup performs provisioning. `models status` and `doctor` inspect
+cached readiness without starting or downloading a runtime. They distinguish
+that cache check from the device verification performed at startup. All native
+assets live below `<models_dir>/phonon/native`; model cleaning protects that
+tree while an OpenAI speech provider/persona references it.
+
+The managed model is `gradium/phonon-31m-en`. Harper, Juniper, Edwin and Zoey
+remain their existing Phonon voices. Optional `openai_speech_native_binary`
+accepts an absolute path to a compatible native server instead of building one;
+model/catalog pins and readiness checks still apply. To use a custom model or
+an operator-managed server, select `openai_speech_runtime: external` and its
+URL/model. This also keeps Linux clients using a remote Mac Ollama server.
 
 ## Phonon through Ollama
 
@@ -47,14 +101,14 @@ runs it again for an existing installation, with progress and cancellation
 when Settings closes or another engine is selected. Opening Settings only
 reads the catalog.
 
-Ollama remains an external dependency: setup names the required version when
+On the external/Ollama path, Ollama remains an external dependency: setup names the required version when
 the running server is too old; it does not replace or restart an external
 Ollama installation. After an Ollama update, run setup again.
 
 Starting a conversation, `voices`, and `voices preview --ensure` only ensure
 the model is present. They do not refresh installed models or fetch the
 descriptive catalog, so existing default-voice speech keeps working offline.
-Explicit setup performs these additional voice-readiness checks:
+On that path, explicit setup performs these additional voice-readiness checks:
 
 1. Ask the target what it is. A base URL ending in `/v1` whose root answers
    `GET /api/version` is Ollama. Ollama older than 0.40.9 is refused with that

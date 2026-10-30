@@ -1,6 +1,13 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/phonon"
+)
 
 // OpenAISpeechProviderName is the tts_provider value for the OpenAI-compatible
 // speech client. Phonon served by Ollama is the default target; Gradium's
@@ -43,10 +50,75 @@ func OpenAISpeechURL(cfg *Config) string {
 
 // OpenAISpeechModel is the configured model id, defaulting to phonon.
 func OpenAISpeechModel(cfg *Config) string {
+	if NativePhononSelected(cfg) {
+		return phonon.Model
+	}
 	if cfg != nil {
 		if m := strings.TrimSpace(cfg.OpenAISpeechModel); m != "" {
 			return m
 		}
 	}
 	return DefaultOpenAISpeechModel
+}
+
+// Empty runtime preserves the legacy semantics of library Config literals.
+// Loaded application defaults explicitly select auto. Explicit endpoints and
+// models are never replaced merely because the client runs Linux.
+func NativePhononSelected(cfg *Config) bool {
+	return nativePhononFor(cfg, runtime.GOOS)
+}
+
+func nativePhononAssetName(backend string) string { return "Phonon native (" + backend + ")" }
+
+func nativePhononFor(cfg *Config, goos string) bool {
+	if cfg == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.OpenAISpeechRuntime)) {
+	case "native":
+		return true
+	case "auto":
+		return goos == "linux" && !cfg.OpenAISpeechExternal && strings.TrimSpace(cfg.OpenAISpeechAPIKey) == "" &&
+			(strings.TrimSpace(cfg.OpenAISpeechURL) == "" || strings.TrimRight(cfg.OpenAISpeechURL, "/") == DefaultOpenAISpeechURL) &&
+			(strings.TrimSpace(cfg.OpenAISpeechModel) == "" || IsDefaultPhononModel(cfg.OpenAISpeechModel))
+	}
+	return false
+}
+
+func NativePhononOptions(cfg *Config) (phonon.Options, error) {
+	if cfg == nil {
+		return phonon.Options{}, fmt.Errorf("native Phonon: nil configuration")
+	}
+	if model := strings.TrimSpace(cfg.OpenAISpeechModel); model != "" && !IsDefaultPhononModel(model) && model != phonon.Model {
+		return phonon.Options{}, fmt.Errorf("native Phonon manages %s; use openai_speech_runtime external for custom model %q", phonon.Model, model)
+	}
+	if url := strings.TrimRight(strings.TrimSpace(cfg.OpenAISpeechURL), "/"); url != "" && url != DefaultOpenAISpeechURL {
+		return phonon.Options{}, fmt.Errorf("native Phonon owns its local endpoint; use openai_speech_runtime external for openai_speech_url %q", url)
+	}
+	backend := strings.ToLower(strings.TrimSpace(cfg.OpenAISpeechBackend))
+	if backend == "" || backend == "auto" {
+		backend = phonon.DetectBackend()
+	}
+	binary := strings.TrimSpace(cfg.OpenAISpeechNativeBinary)
+	if binary != "" && !filepath.IsAbs(binary) {
+		return phonon.Options{}, fmt.Errorf("openai_speech_native_binary must be an absolute path")
+	}
+	dir, err := filepath.Abs(ModelsDirFrom(cfg))
+	if err != nil {
+		return phonon.Options{}, fmt.Errorf("native Phonon models directory: %w", err)
+	}
+	o := phonon.Options{ModelsDir: dir, Backend: backend, Binary: binary}
+	return o, phonon.Validate(o)
+}
+
+func ValidateOpenAISpeechRuntime(cfg *Config) error {
+	if cfg == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.OpenAISpeechRuntime)) {
+	case "", "auto", "external", "native":
+		return nil
+	default:
+		return fmt.Errorf("unsupported openai_speech_runtime %q; use auto, external or native", cfg.OpenAISpeechRuntime)
+	}
 }

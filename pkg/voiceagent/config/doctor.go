@@ -268,10 +268,17 @@ func Diagnose(cfg *Config, modelsDir string, lookPath func(string) (string, erro
 	} else if OpenAISpeechSelected(cfg) {
 		// Diagnose stays offline, so this row names the target;
 		// DiagnoseOpenAISpeech asks it.
+		target := OpenAISpeechURL(cfg)
+		if NativePhononSelected(cfg) {
+			target = "managed native Phonon"
+			if o, err := NativePhononOptions(cfg); err == nil {
+				target += " (" + o.Backend + ")"
+			}
+		}
 		diags = append(diags, Diagnostic{
 			Name:     "tts-provider",
 			Severity: SeverityOK,
-			Detail:   OpenAISpeechProviderName + " (" + OpenAISpeechModel(cfg) + " at " + OpenAISpeechURL(cfg) + ", voice " + TTSVoiceFor(cfg, OpenAISpeechProviderName) + ")",
+			Detail:   OpenAISpeechProviderName + " (" + OpenAISpeechModel(cfg) + " at " + target + ", voice " + TTSVoiceFor(cfg, OpenAISpeechProviderName) + ")",
 		})
 	} else if strings.EqualFold(strings.TrimSpace(cfg.TTSProvider), Audio8ProviderName) {
 		// audio8 is a real provider that obey-voice does not manage assets

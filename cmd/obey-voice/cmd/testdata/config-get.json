@@ -306,8 +306,20 @@
       "value": "",
       "source": "default"
     },
+    "openai_speech_backend": {
+      "value": "auto",
+      "source": "default"
+    },
     "openai_speech_model": {
       "value": "phonon",
+      "source": "default"
+    },
+    "openai_speech_native_binary": {
+      "value": "",
+      "source": "default"
+    },
+    "openai_speech_runtime": {
+      "value": "auto",
       "source": "default"
     },
     "openai_speech_timeout": {

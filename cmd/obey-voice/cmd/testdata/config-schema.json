@@ -177,6 +177,27 @@
       "secret": true
     },
     {
+      "key": "openai_speech_backend",
+      "type": "enum",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "cpu",
+        "vulkan",
+        "cuda",
+        "metal"
+      ],
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Native speech backend",
+      "help": "Device for managed native Phonon. Auto chooses CUDA on NVIDIA, Vulkan on supported Linux ICDs, otherwise CPU. An unavailable explicit device fails rather than silently falling back.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_BACKEND",
+      "editable": true
+    },
+    {
       "key": "openai_speech_model",
       "type": "string",
       "default": "phonon",
@@ -188,6 +209,39 @@
       "restart_verified": false,
       "persona_overridable": false,
       "env": "OPENAI_SPEECH_MODEL",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_native_binary",
+      "type": "string",
+      "default": "",
+      "allows_empty": true,
+      "group": "voice",
+      "title": "Native speech binary",
+      "help": "Optional absolute path to a compatible ptts-openai-server. Empty builds the pinned native runtime during model setup.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_NATIVE_BINARY",
+      "editable": true
+    },
+    {
+      "key": "openai_speech_runtime",
+      "type": "enum",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "external",
+        "native"
+      ],
+      "allows_empty": false,
+      "group": "voice",
+      "title": "Speech runtime",
+      "help": "Auto uses managed Phonon on Linux when no server/model was explicitly configured, and Ollama on macOS. External preserves the configured server; native owns a local Phonon process.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "env": "OPENAI_SPEECH_RUNTIME",
       "editable": true
     },
     {

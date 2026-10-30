@@ -113,8 +113,21 @@ only). Qwen3-TTS is opt-in (`obey-voice models ensure --tts`): linux/amd64
 downloads the CPU package from `qwen3-tts-native` v0.1.1. It is slower than
 Kokoro on a handheld; NVIDIA boxes should point `qwen_tts_native_url` at a
 `linux-amd64-cuda` tarball when one is published. With
-`tts_provider: openai-speech`, `obey-voice models ensure --tts` pulls `phonon`
-into Ollama and fetches Phonon's voice catalog; see
+`tts_provider: openai-speech`, `obey-voice models ensure --tts` prepares the
+selected native or external/Ollama runtime and Phonon's voice catalog; see
 [OpenAI-compatible speech](openai-speech.md#install).
 
 See [Development](development.md) for test, lint, and model-asset commands.
+
+## Linux Phonon speech setup
+
+Builtin Phonon personas use the managed native runtime on a fresh Linux setup.
+The first `obey-voice models ensure --tts` verifies/builds the pinned native
+server and prepares the model and named voices. On Arch, install the build
+prerequisites with `sudo pacman -S --needed rust base-devel opus lame`; CUDA
+also requires its toolkit and NVIDIA driver, and Vulkan requires its driver.
+Existing explicit speech endpoints remain unchanged. For an existing local
+Phonon/Ollama configuration on Linux, run `obey-voice config set openai_speech_runtime native` before
+running setup. macOS keeps its Ollama path. See
+[OpenAI-compatible speech](openai-speech.md#linux-managed-native-phonon) for
+backend selection, external servers, cached operation and setup failures.

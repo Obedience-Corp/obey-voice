@@ -107,8 +107,11 @@ when you select it.
 | `calibre_convert_binary` | empty | `CALIBRE_CONVERT_BINARY` | `ebook-convert` path used to convert MOBI/AZW-family books to EPUB |
 | `calibre_prefer_format` | `epub` | `CALIBRE_PREFER_FORMAT` | Preferred book format when resolving (`epub`, `pdf`, then convertible MOBI/AZW-family formats) |
 | `tts_provider` | `kokoro` | `TTS_PROVIDER` | TTS backend: `kokoro`, `qwen3-tts`, `audio8` (experimental quality preview; needs the Audio8 export under `models_dir/audio8-tts`), or `openai-speech` (any OpenAI-compatible `/v1/audio/speech` server; Phonon via Ollama by default, see [OpenAI-compatible speech](openai-speech.md)) |
-| `openai_speech_url` | `http://localhost:11434/v1` | `OPENAI_SPEECH_URL` | Base URL of the speech API the `openai-speech` engine talks to |
-| `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | Model id the speech API synthesizes with (`ollama pull phonon`) |
+| `openai_speech_runtime` | `auto` | `OPENAI_SPEECH_RUNTIME` | `auto` uses managed native Phonon for an unconfigured Linux endpoint and Ollama on macOS; `native` owns a local server; `external` preserves the configured server |
+| `openai_speech_backend` | `auto` | `OPENAI_SPEECH_BACKEND` | Native Phonon device: `auto`, `cpu`, `vulkan`, `cuda`, or `metal`; startup checks the actual device |
+| `openai_speech_native_binary` | empty | `OPENAI_SPEECH_NATIVE_BINARY` | Optional absolute path to a compatible native server; otherwise setup builds pinned source |
+| `openai_speech_url` | `http://localhost:11434/v1` | `OPENAI_SPEECH_URL` | External speech API base URL; explicit URLs/models prevent automatic native selection |
+| `openai_speech_model` | `phonon` | `OPENAI_SPEECH_MODEL` | External server's model ID (`phonon` on Ollama). The managed native runtime uses pinned `gradium/phonon-31m-en` |
 | `openai_speech_voice` | `default` | `OPENAI_SPEECH_VOICE` | Voice name on that server. Phonon on Ollama 0.40.11+ offers named voices after setup; `default` remains available. Settings → Voice and the Personas form list the server's catalog when it publishes one (see [Voices and personas](openai-speech.md#voices-and-personas)); a name it does not list can still be set here and stays listed in both. `obey-voice voices` lists what the server has. Persona-overridable |
 | `openai_speech_api_key` | empty | `OPENAI_SPEECH_API_KEY` | Bearer token for a speech API that needs one. Ollama does not |
 | `openai_speech_timeout` | `60` | `OPENAI_SPEECH_TIMEOUT` | Seconds one speech request may take before it is abandoned |

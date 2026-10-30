@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/phonon"
 )
 
 // ollamaPullStallTimeout aborts a pull whose stream has gone quiet.
@@ -23,6 +25,38 @@ var ollamaPullStallTimeout = downloadStallTimeout
 // official Phonon model when named voices are missing, then fetches metadata. A server that does not answer is an error naming it; a
 // catalog that cannot be fetched is a warning, because speech does not need it.
 func ensureOpenAISpeechAssetsProgress(ctx context.Context, cfg *Config, req AssetRequest, onProgress func(AssetProgress)) error {
+	if err := ValidateOpenAISpeechRuntime(cfg); err != nil {
+		return err
+	}
+	if NativePhononSelected(cfg) {
+		o, err := NativePhononOptions(cfg)
+		if err != nil {
+			return err
+		}
+		name := nativePhononAssetName(o.Backend)
+		emit := func(phase string) {
+			if onProgress != nil {
+				p := AssetProgress{Asset: name, Phase: phase}
+				if phase == assetPhaseDone || phase == assetPhaseSkipped {
+					p.Pct = 100
+				}
+				onProgress(p)
+			}
+		}
+		if phonon.Installed(o) {
+			emit(assetPhaseSkipped)
+		} else {
+			emit(assetPhaseStart)
+			if err := phonon.Ensure(ctx, o, func(string) { emit(assetPhaseInstall) }); err != nil {
+				return fmt.Errorf("openai-speech: %w", err)
+			}
+			emit(assetPhaseDone)
+		}
+		if req.NeedVoiceCatalog {
+			return ensureOpenAISpeechCatalog(ctx, ModelsDirFrom(cfg), onProgress)
+		}
+		return nil
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, OpenAISpeechProbeTimeout)
 	target := ProbeOpenAISpeech(probeCtx, cfg)
 	cancel()
@@ -163,6 +197,9 @@ func ensureOllamaModel(ctx context.Context, target OpenAISpeechTarget, apiKey st
 	if err := pullOllamaModel(ctx, target.Root, target.Model, apiKey, progress); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "requires mlx support") {
+			return fmt.Errorf("openai-speech: %s at %s requires an MLX-capable server; for local Phonon on Linux set openai_speech_runtime native and run `obey-voice models ensure --tts`, or set openai_speech_url to a compatible server: %w", target.Model, target.Root, err)
 		}
 		return fmt.Errorf("openai-speech: pull %s into Ollama at %s: %w", target.Model, target.Root, err)
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/internal/render/extractors"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/phonon"
 	managedqwen "github.com/Obedience-Corp/obey-voice/pkg/voiceagent/qwen"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
@@ -317,7 +318,6 @@ func newRenderSynth(ctx context.Context, opts *render.Options) (render.Synthesiz
 		voice:               config.TTSVoiceFor(cfg, cfg.TTSProvider),
 		speed:               cfg.SpeechSpeed,
 		mode:                tts.VoiceMode(cfg.QwenTTSMode),
-		qwenVoice:           cfg.QwenTTSVoice,
 		language:            cfg.QwenTTSLanguage,
 		instruction:         cfg.QwenTTSInstruction,
 		referenceAudio:      cfg.QwenTTSReferenceAudio,
@@ -425,6 +425,12 @@ func synthIdentityFor(cfg *config.Config) string {
 		// Two servers or two models are two engines: a resume across either
 		// change must not splice their segments into one file.
 		id += "/model=" + config.OpenAISpeechModel(cfg) + "/url=" + config.OpenAISpeechURL(cfg)
+		if config.NativePhononSelected(cfg) {
+			o, err := config.NativePhononOptions(cfg)
+			if err == nil {
+				id += "/native=" + phonon.SourceRevision + "/backend=" + o.Backend + "/model-revision=" + phonon.ModelRevision + "/voices=" + phonon.CatalogRevision + "/binary=" + o.Binary
+			}
+		}
 	}
 	// The voice belongs in the identity per provider: audio8 reads its own key,
 	// and leaving it out would give two different audio8 voices the same
@@ -603,7 +609,6 @@ type ttsSynth struct {
 	voice               string
 	speed               float64
 	mode                tts.VoiceMode
-	qwenVoice           string
 	language            string
 	instruction         string
 	referenceAudio      string
@@ -627,8 +632,10 @@ func (s *ttsSynth) SynthesizeRequest(ctx context.Context, req render.SynthesisRe
 	}
 	if rp, ok := s.provider.(tts.RequestProvider); ok {
 		result, err := rp.SynthesizeRequest(ctx, tts.SynthesisRequest{
-			Text:                req.Text,
-			Voice:               firstNonEmpty(s.qwenVoice, req.Voice),
+			Text: req.Text,
+			// req.Voice already belongs to the selected provider. A saved Qwen
+			// clone must never override an explicit Phonon or Kokoro voice.
+			Voice:               req.Voice,
 			Mode:                s.mode,
 			Language:            s.language,
 			Instruction:         s.instruction,

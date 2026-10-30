@@ -24,6 +24,7 @@ import (
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/phonon"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/textclean"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/tts"
 )
@@ -58,7 +59,9 @@ type Provider struct {
 	catalogSource string
 	notice        string
 	// modelsDir is where voices.jsonl, the descriptive catalog, is looked for.
-	modelsDir string
+	modelsDir  string
+	native     *phonon.Process
+	nativeSlot chan struct{}
 }
 
 // New constructs the provider after proving the server answers and, when it
@@ -66,7 +69,30 @@ type Provider struct {
 // there is tts.ErrProviderUnavailable so the caller can say so rather than
 // fail on the first sentence.
 func New(cfg *config.Config) (*Provider, func(), error) {
+	if err := config.ValidateOpenAISpeechRuntime(cfg); err != nil {
+		return nil, nil, err
+	}
+	var native *phonon.Process
+	if config.NativePhononSelected(cfg) {
+		o, err := config.NativePhononOptions(cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !phonon.Installed(o) {
+			return nil, nil, fmt.Errorf("native Phonon assets missing; run `obey-voice models ensure --tts`")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		native, err = phonon.Start(ctx, o, true)
+		cancel()
+		if err != nil {
+			return nil, nil, err
+		}
+		next := *cfg
+		next.OpenAISpeechRuntime, next.OpenAISpeechURL, next.OpenAISpeechModel = "external", native.URL, phonon.Model
+		cfg = &next
+	}
 	p := &Provider{
+		native:  native,
 		base:    config.OpenAISpeechURL(cfg),
 		model:   config.OpenAISpeechModel(cfg),
 		voice:   config.TTSVoiceFor(cfg, config.OpenAISpeechProviderName),
@@ -86,7 +112,14 @@ func New(cfg *config.Config) (*Provider, func(), error) {
 		p.modelsDir = config.ModelsDirFrom(cfg)
 	}
 	if err := p.probe(context.Background()); err != nil {
+		if native != nil {
+			native.Close()
+		}
 		return nil, nil, err
+	}
+	if native != nil {
+		p.nativeSlot = make(chan struct{}, 1)
+		p.detail += "; " + native.Device
 	}
 	p.alive.Store(true)
 	return p, p.Delete, nil
@@ -112,8 +145,8 @@ func (p *Provider) probe(ctx context.Context) error {
 		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("%s/models returned %d: %s", p.base, resp.StatusCode, errorMessage(body, resp.Status)))
 	}
 	if ids := modelIDs(body); len(ids) > 0 && !hasModel(ids, p.model) {
-		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("model %q is not served by %s (it offers %s); run `obey-voice models ensure --tts` (or `ollama pull %s`), or set openai_speech_model",
-			p.model, p.base, strings.Join(ids, ", "), p.model))
+		return p.fail("probe", tts.ProviderErrorUnavailable, fmt.Errorf("model %q is not served by %s (it offers %s); set openai_speech_model to an advertised model ID, or run setup for the selected server",
+			p.model, p.base, strings.Join(ids, ", ")))
 	}
 	p.detail = p.model + " at " + p.base
 	p.loadCatalog(ctx)
@@ -221,19 +254,45 @@ func (p *Provider) speakInto(ctx context.Context, stream *audio.PCMStream, text,
 	turnCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
+	if p.nativeSlot != nil {
+		select {
+		case p.nativeSlot <- struct{}{}:
+			defer func() { <-p.nativeSlot }()
+		case <-ctx.Done():
+			return p.classify(turnCtx, ctx, "queue", ctx.Err())
+		}
+	}
 	payload, err := json.Marshal(speechRequest{Model: p.model, Input: text, Voice: voice, ResponseFormat: "pcm"})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.base+"/audio/speech", bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	p.auth(req)
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return p.classify(turnCtx, ctx, "request", fmt.Errorf("%s did not answer: %w", p.base, unwrapNet(err)))
+	var resp *http.Response
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.base+"/audio/speech", bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		p.auth(req)
+		resp, err = p.client.Do(req)
+		if err != nil {
+			return p.classify(turnCtx, ctx, "request", fmt.Errorf("%s did not answer: %w", p.base, unwrapNet(err)))
+		}
+		// The owned server releases its generation slot just after the body
+		// ends (including disconnect). Retry only that pre-audio busy response,
+		// for at most one second. External-server 429 behavior is unchanged.
+		if p.nativeSlot == nil || resp.StatusCode != http.StatusTooManyRequests || attempt >= 20 {
+			break
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return p.classify(turnCtx, ctx, "queue", ctx.Err())
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -448,10 +507,15 @@ func lastRuneIndex(hay, needle []rune) int {
 }
 
 // Available reports whether the provider has been constructed and not closed.
-func (p *Provider) Available() bool { return p.alive.Load() }
+func (p *Provider) Available() bool { return p.alive.Load() && (p.native == nil || p.native.Running()) }
 
 // Delete closes the provider; later synthesis is refused.
-func (p *Provider) Delete() { p.alive.Store(false) }
+func (p *Provider) Delete() {
+	p.alive.Store(false)
+	if p.native != nil {
+		p.native.Close()
+	}
+}
 
 // ProviderName is the configured provider id.
 func (p *Provider) ProviderName() string { return config.OpenAISpeechProviderName }

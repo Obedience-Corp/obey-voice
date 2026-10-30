@@ -25,8 +25,8 @@ var providerSpecs = []ProviderSpec{
 	// missing file — rather than by hiding the row.
 	{Name: "audio8", Description: "Audio8 DualAR ONNX (experimental · quality preview · packaged reference voice)"},
 	// The OpenAI-compatible speech endpoint. Phonon through Ollama is the
-	// default target; it needs nothing installed here beyond `ollama pull phonon`.
-	{Name: config.OpenAISpeechProviderName, Description: "OpenAI-compatible speech API (Phonon via Ollama by default · streams 24 kHz PCM)"},
+	// default Mac target; Linux can own a native Phonon runtime instead.
+	{Name: config.OpenAISpeechProviderName, Description: "OpenAI-compatible speech API (native Phonon on Linux, Ollama on macOS · streams 24 kHz PCM)"},
 }
 
 // Providers returns the list of implemented TTS providers.

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/phonon"
 )
 
 // OpenAISpeechProbeTimeout bounds one read-only look at the speech server, so
@@ -40,8 +42,10 @@ var speechServerClient = &http.Client{}
 
 // OpenAISpeechTarget is what the configured speech server answered.
 type OpenAISpeechTarget struct {
-	Base  string
-	Model string
+	Native        bool
+	NativeBackend string
+	Base          string
+	Model         string
 	// Root is the Ollama API root under Base when Base has Ollama's /v1 shape.
 	Root string
 	// Ollama is true when GET <Root>/api/version answered.
@@ -68,6 +72,25 @@ type OpenAISpeechTarget struct {
 // It never fails: an unreachable server is a result, not an error.
 func ProbeOpenAISpeech(ctx context.Context, cfg *Config) OpenAISpeechTarget {
 	t := OpenAISpeechTarget{Base: OpenAISpeechURL(cfg), Model: OpenAISpeechModel(cfg)}
+	if err := ValidateOpenAISpeechRuntime(cfg); err != nil {
+		t.Err = err
+		return t
+	}
+	if NativePhononSelected(cfg) {
+		t.Native = true
+		o, err := NativePhononOptions(cfg)
+		t.NativeBackend = o.Backend
+		t.Base = nativePhononAssetName(o.Backend)
+		t.Err = err
+		if err == nil {
+			t.ModelsKnown, t.ModelListed = true, phonon.Installed(o)
+			t.Reachable = t.ModelListed
+			if !t.ModelListed {
+				t.Err = fmt.Errorf("native runtime/model/voices are not installed; run `obey-voice models ensure --tts`")
+			}
+		}
+		return t
+	}
 	key := openAISpeechAPIKey(cfg)
 	if root, ok := OllamaRootOf(t.Base); ok {
 		t.Root = root
@@ -188,6 +211,14 @@ func OpenAISpeechModelAssetName(model string) string {
 func OpenAISpeechAssetStatus(t OpenAISpeechTarget, modelsDir string) []AssetStatus {
 	var rows []AssetStatus
 	switch {
+	case t.Native:
+		row := AssetStatus{ID: OpenAISpeechModelAssetID, Name: t.Base, Provider: OpenAISpeechProviderName, Mode: t.NativeBackend, Kind: AssetKindTTS, Installed: t.ModelListed}
+		if t.Err != nil {
+			row.Detail = t.Err.Error()
+		} else {
+			row.Detail = "pinned native runtime, model and named voices cached; device verified when speech starts"
+		}
+		rows = append(rows, row)
 	case t.Ollama:
 		row := AssetStatus{
 			ID: OpenAISpeechModelAssetID, Name: OpenAISpeechModelAssetName(t.Model),
