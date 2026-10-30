@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parent.parent
 MAX_LINES = 500
 # Machine-generated dependency records must remain intact for reproducible builds.
 GENERATED = {"Cargo.lock", "bridge/go.sum"}
+# The standard AGPL text must remain verbatim, including its line breaks.
+VERBATIM_LEGAL = {"LICENSE"}
 
 
 def main():
@@ -17,7 +19,7 @@ def main():
     ).decode().split("\0")
     failures = []
     checked = 0
-    for name in sorted(set(paths) - GENERATED - {""}):
+    for name in sorted(set(paths) - GENERATED - VERBATIM_LEGAL - {""}):
         path = ROOT / name
         if not path.is_file() or path.is_symlink():
             continue

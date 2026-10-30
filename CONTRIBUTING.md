@@ -2,6 +2,11 @@
 
 Thanks for taking the time to improve Obey Voice.
 
+First-time contributors accept the [CLA](CLA.md) through CLA Assistant.
+It records acceptance and checks future PRs automatically. You retain ownership;
+the public project uses AGPL-3.0-only, and Obedience Corp also receives rights to
+use contributions in proprietary products.
+
 ## Development Setup
 
 1. Install Go 1.26+.
@@ -65,4 +70,21 @@ When filing a bug, include:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0, and you confirm you have the right to submit them under that license (Apache-2.0 §5).
+Obey Voice and contributions included in its public repository are licensed
+under **GNU AGPL version 3 only (`AGPL-3.0-only`)**. See [LICENSE](LICENSE).
+
+The [Contributor License Agreement](CLA.md) grants Obedience Corp additional
+rights to use contributions in proprietary products. Contributors keep ownership;
+those additional rights are not granted to all public users.
+
+### One-time CLA acceptance
+
+On your first PR, follow the CLA Assistant link and accept using your GitHub
+account. The check updates automatically. Later PRs reuse that acceptance;
+there is no signing comment, PDF, or maintainer acceptance checklist. A changed
+agreement requires acceptance of its new version.
+
+You must have authority to grant the rights in the agreement, including any
+necessary employer permission. Identify third-party material and its license.
+If ownership or your authority changes, tell the maintainers before contributing
+work that your existing agreement does not cover.
