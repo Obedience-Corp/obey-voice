@@ -16,6 +16,8 @@ import (
 
 func decisionField(cfg *config.Config, key string) any {
 	switch key {
+	case "models_dir":
+		return &cfg.ModelsDir
 	case "decision_enabled":
 		return &cfg.DecisionEnabled
 	case "decision_voice_work":
@@ -160,6 +162,7 @@ func (m settingsModel) decisionRows() []settingRow {
 			return decisionTestMsg{epoch: epoch, result: result, err: err}
 		}
 	}})
+	rows = append(rows, m.decisionSetupRows()...)
 	return append(rows, settingRow{key: "decision_status", name: "Decision runtime", kind: rowInfo, value: status, help: "Experimental shortcuts require enabled worker tiers. Late, uncertain or unavailable decisions use the ordinary brain."})
 }
 
@@ -180,6 +183,7 @@ func (m *settingsModel) saveDecision(key string, value any) tea.Cmd {
 	case *int:
 		*field = value.(int)
 	}
+	m.decisionSetup.stop()
 	m.decisionTestEpoch = nil
 	m.decisionTestRunning = false
 	m.message = "Decision setting saved; applies to the next conversation"

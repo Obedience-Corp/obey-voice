@@ -462,6 +462,7 @@ func init() {
 	for _, flag := range []string{"tts", "stt", "vad", "speaker", "decision", "all", "tier"} {
 		modelsEnsureCmd.MarkFlagsMutuallyExclusive("voice-catalog", flag)
 	}
+	modelsCmd.AddCommand(newDecisionSetupCmd())
 	modelsCmd.AddCommand(modelsStatusCmd)
 	modelsCmd.AddCommand(modelsEnsureCmd)
 	rootCmd.AddCommand(modelsCmd)

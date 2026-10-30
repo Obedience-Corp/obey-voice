@@ -30,6 +30,11 @@ func TestDecisionSettingsTerminalPersistenceAndIndependentPoints(t *testing.T) {
 	opened, _ := app.onSwitchScreen(switchScreenMsg(screenSettings))
 	m := opened.(App).settings
 	m.section, m.width, m.height = sectionBrain, 120, 40
+	installed := make(chan bool, 1)
+	m.decisionSetup.ensure = func(ctx context.Context, c *config.Config, r config.AssetRequest, _ func(config.AssetProgress)) error {
+		installed <- config.ManagedDecisions(c) && r.NeedDecision
+		return nil
+	}
 	h := &workerTerminalHarness{model: m, states: make(chan workerTerminalState, 1), decisionResults: make(chan string, 1)}
 	// The expanded scenario renders model/device choices and the test result in
 	// addition to the original switches. Bound individual acknowledgments below;
@@ -120,6 +125,21 @@ func TestDecisionSettingsTerminalPersistenceAndIndependentPoints(t *testing.T) {
 	if err != nil || loaded.DecisionEnabled || loaded.DecisionVoiceWork || !loaded.DecisionTextWork {
 		t.Fatal("disable changed independent point preferences")
 	}
+	navigate("decision_install")
+	key(tea.KeyMsg{Type: tea.KeyEnter})
+	select {
+	case valid := <-installed:
+		if !valid {
+			t.Fatal("wrong install scope")
+		}
+	case <-ctx.Done():
+		t.Fatal("install action did not run")
+	}
+	loaded, err = config.LoadWithoutHooks()
+	if err != nil || loaded.DecisionEnabled {
+		t.Fatal("installation enabled routing")
+	}
+
 }
 
 func TestDecisionSaveFailureDoesNotChangeRuntime(t *testing.T) {
