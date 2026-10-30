@@ -3,9 +3,11 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
@@ -13,6 +15,7 @@ import (
 var decisionSetupSeq atomic.Int64
 
 type decisionSetup struct {
+	report  string
 	seq     int64
 	running bool
 	cancel  context.CancelFunc
@@ -38,6 +41,7 @@ func (s *decisionSetup) stop() {
 	}
 	s.seq = decisionSetupSeq.Add(1)
 	s.cancel, s.events, s.running = nil, nil, false
+	s.report = ""
 }
 
 // Explicit setup runs off the UI thread and never enables routing.
@@ -88,10 +92,20 @@ func (m *settingsModel) applyDecisionSetup(msg tea.Msg) tea.Cmd {
 		}
 		s.stop()
 		if msg.err != nil {
-			m.message = fmt.Sprintf("Decision setup stopped (Install / repair to retry): %v", msg.err)
-			return nil
+			s.report = fmt.Sprintf("Decision setup stopped: %v\nChoose Install / repair to retry.", msg.err)
+		} else {
+			s.report = msg.report
 		}
-		m.message = msg.report
+		m.message = "Report in Brain settings · ↑/↓ to scroll"
+		if m.section == sectionBrain {
+			rows, lines := m.layout()
+			for i, line := range lines {
+				if rows[line.row].key == "decision_setup_report_0" {
+					m.cursor = i
+					break
+				}
+			}
+		}
 		return nil
 	}
 	return nil
@@ -116,6 +130,13 @@ func (m settingsModel) decisionSetupRows() []settingRow {
 			m.message = "Setup canceled; Install / repair resumes using verified files"
 			return nil
 		}})
+	}
+	if m.decisionSetup.report != "" {
+		// Each wrapped line is focusable so even reports taller than the viewport
+		// can be read using ordinary settings navigation. Reflow on every resize.
+		for i, line := range strings.Split(ansi.Hardwrap(m.decisionSetup.report, max(m.contentWidth()-4, 1), true), "\n") {
+			rows = append(rows, settingRow{key: fmt.Sprintf("decision_setup_report_%d", i), name: fmt.Sprintf("Setup report %d", i+1), kind: rowReport, value: line, help: "Verification report · ↑/↓ to scroll"})
+		}
 	}
 	return rows
 }

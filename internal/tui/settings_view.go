@@ -231,6 +231,9 @@ func (m settingsModel) rowLine(row settingRow, focused bool, nameWidth, valueWid
 		cursor = "▸ "
 		nameStyle = selectedStyle
 	}
+	if row.kind == rowReport {
+		return "  " + cursor + dimStyle.Render(row.value)
+	}
 	name := row.name
 	if lipgloss.Width(name) > nameWidth-1 {
 		name = ansi.Truncate(name, nameWidth-2, "…")
