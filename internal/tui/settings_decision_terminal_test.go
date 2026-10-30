@@ -31,7 +31,11 @@ func TestDecisionSettingsTerminalPersistenceAndIndependentPoints(t *testing.T) {
 	m := opened.(App).settings
 	m.section, m.width, m.height = sectionBrain, 120, 40
 	h := &workerTerminalHarness{model: m, states: make(chan workerTerminalState, 1), decisionResults: make(chan string, 1)}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	// The expanded scenario renders model/device choices and the test result in
+	// addition to the original switches. Bound individual acknowledgments below;
+	// a single five-second budget for every rendered frame is too tight under
+	// the full Linux race suite.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	p := tea.NewProgram(h, tea.WithInput(nil), tea.WithOutput(h), tea.WithContext(ctx), tea.WithoutSignalHandler())
 	done := make(chan error, 1)
@@ -49,11 +53,16 @@ func TestDecisionSettingsTerminalPersistenceAndIndependentPoints(t *testing.T) {
 	}()
 	key := func(msg tea.KeyMsg) workerTerminalState {
 		p.Send(msg)
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
 		select {
 		case state := <-h.states:
 			return state
 		case <-ctx.Done():
-			t.Fatal("key timed out")
+			t.Fatalf("terminal scenario deadline during key %s", msg.String())
+			return workerTerminalState{}
+		case <-timer.C:
+			t.Fatalf("terminal did not acknowledge key %s", msg.String())
 			return workerTerminalState{}
 		}
 	}
