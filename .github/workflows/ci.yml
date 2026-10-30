@@ -89,6 +89,13 @@ jobs:
           cache: false
       - name: Integration
         run: go run ./internal/buildutil integration
+      - name: Released Obey SDK integration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tests/obeydaemon/run.sh
+      - name: Summarize released-daemon evidence
+        if: always()
+        run: python3 tests/obeydaemon/summary.py
 
   linux-artifact:
     name: Relocatable Linux artifact

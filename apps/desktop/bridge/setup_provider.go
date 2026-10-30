@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Obedience-Corp/obey-voice/internal/discovery"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 )
 
@@ -36,6 +37,30 @@ func setupProvider(ctx context.Context) (any, error) {
 	}
 	if strings.EqualFold(cfg.BrainProvider, "ollama") {
 		check = probeOllama(ctx, cfg.OllamaHost, cfg.OllamaModel)
+	}
+
+	if strings.EqualFold(cfg.BrainProvider, "obey") && check.Severity != config.SeverityError {
+		route := discovery.DiscoverObeyRoute(ctx, cfg, false)
+		if route.Models != nil {
+			for _, model := range route.Models.Models {
+				check.Models = append(check.Models, model.ID)
+			}
+		}
+		if route.Problem != "" {
+			check.Severity = config.SeverityError
+			check.Detail = route.Problem
+		}
+		if route.Readiness != nil {
+			check.Detail = "Obey route requirements checked; a test reply verifies inference."
+			for _, result := range route.Readiness.Checks {
+				if result.State == "unsupported" || result.State == "unavailable" {
+					check.Severity = config.SeverityError
+					check.Detail = result.Code
+					check.Remediation = result.Remediation
+					break
+				}
+			}
+		}
 	}
 	return check, nil
 }

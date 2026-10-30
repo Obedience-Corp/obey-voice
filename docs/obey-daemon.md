@@ -3,7 +3,7 @@
 Select `obey` as the brain provider to send conversations through
 [obey-go-sdk](https://github.com/Obedience-Corp/obey-go-sdk). Install the Obey CLI
 on `PATH`, start its daemon, and configure a provider and model in that daemon.
-The SDK dependency is pinned to the tagged `v0.1.0` release.
+The SDK dependency is pinned to the tagged `v0.2.0` release.
 Voice does not install or start the daemon or copy provider credentials.
 Obey is optional: other brain providers, discovery, and batch transforms work
 without its executable. Selecting an unavailable Obey backend gives installation
@@ -20,12 +20,23 @@ obey-voice config set brain_provider obey
 ```
 
 `obey_provider` is the daemon's provider identifier, which can differ from
-Voice's direct provider names. `obey_model` is required; the SDK has no model
-catalog API, so enter the configured model ID. `obey_camp` may be a name or ID;
+Voice's direct provider names. With Obey 0.5.0+, Settings → Brain (terminal or desktop) automatically
+loads the selected daemon catalog. Select a daemon provider to load its models;
+**Load daemon catalog** retries a failed lookup. **Refresh daemon models** explicitly fetches a fresh selected-provider
+catalog. Manual provider/model fields remain available for older CLIs, an offline
+daemon or incomplete catalogs. Catalog reads preserve saved IDs and never run
+inference or create sessions. A changed route discards pending catalog results.
+`obey_model` is required for execution. `obey_camp` may be a name or ID;
 when empty, the CLI infers the camp from Voice's resolved working directory.
 `obey_socket` optionally selects a daemon socket. Empty uses the CLI default.
 The corresponding environment variables are `OBEY_PROVIDER`, `OBEY_MODEL`,
 `OBEY_CAMP`, `OBEY_SOCKET`, and `OBEY_TOOL_POLICY`.
+
+Readiness reports provider/model evidence and the selected permission policy.
+Unknown evidence remains unknown; a catalog entry does not guarantee inference.
+It does not validate the camp/working directory. Obey 0.5.0 remains final-only,
+and strict tools-off requirements appear as unsupported. Other backends never
+require an Obey catalog lookup.
 
 ## Tool policy
 
@@ -71,3 +82,11 @@ and cost stay unknown to worker accounting.
 cancellation, history, persona/worker routing, and persisted terminal settings.
 The transport fixture runs the actual pinned SDK against an isolated CLI
 executable. It does not establish live daemon/model or microphone acceptance.
+
+
+Run `just test obey` for a disposable, non-root integration against public Obey
+installed by Festival. It verifies typed provider/model discovery, socket scope,
+cancellation and old-CLI failure, strict refusal without inference/history changes,
+and one Voice response with one persisted STOPPED turn through the released SDK.
+CI runs the same check. It uses a deterministic loopback provider and no model
+credentials; it does not establish microphone or external model acceptance.
