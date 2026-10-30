@@ -23,3 +23,33 @@ WAV remains under the isolated root; its SHA is in the retained manifest.
 This proves the actual finite-job adapter's narration artifact path. It does not
 pass E03 audio transformation, task quality, signed installer, UI/timeline,
 project relocation or export acceptance. No subjective listening occurred.
+
+## Recorded reproduction trials (failed conversion qualification)
+
+Primary runtime references: [LiquidAI GGUF model card](https://huggingface.co/LiquidAI/LFM3-Audio-2B-GGUF/tree/02355c1a141e464a064f2ab2c276638dbcb7f38a),
+[llama.cpp b11960 realtime protocol](https://github.com/ggml-org/llama.cpp/blob/8642541b2/tools/server/README.md#realtime-conversation).
+The isolated model/projector files were explicitly downloaded into the proof
+root, SHA verified, and served by an owned b11960 process on127.0.0.1:18143.
+No global runtime, model, service or config was changed. Receipts pin hashes.
+
+- Ollama `chat_then_speech`: requested every recorded word without summarizing,
+  then synthesized the resulting words with the same model. Output20.4s for30s
+  input (−32%); not preserved recording timing or direct voice conversion.
+- llama.cpp `direct_audio_to_audio`: same recording with an explicit repeat all
+  words/pauses/duration instruction, acknowledged by session.updated. Initial
+  trial answered “A woman is speaking and then a young woman responds.” and
+  produced3.52s. The structured rerun/terminal status and observed formats are
+  retained separately in direct-receipt.json; neither trial qualifies conversion.
+- One same-GGUF text-only ASR control with documented “Perform ASR in English.”
+  returned the recording's spoken content (direct-asr-receipt.json), rather than
+  the direct-output trial's summary. This distinguishes input recognition from
+  failed recording reproduction; it does not establish exact word accuracy.
+
+Generated WAVs and both staged/direct receipts are retained for independent
+inspection. No listener, voice similarity, prosody, translation, multilingual,
+word alignment or avatar quality pass is claimed. Conversion remains unavailable.
+The probe harness checks pinned runtime/model/projector, nonempty/even PCM and
+completed response status before writing the direct WAV. Reproduce from the
+owning module with `AUDIO_JOB_PROOF_ROOT=/your/isolated/root go run
+./docs/audio-jobs/probe/direct_probe.go` after staging the documented assets and
+starting the owned server; it never opens a device or installs assets itself.
