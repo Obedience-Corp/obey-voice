@@ -212,7 +212,7 @@ the **incumbent** produced this chain:
 read_skill(camp-navigation) | run_command(cgo p)
 | run_command(eval "$(camp shell-init zsh)" && cgo p)
 | run_command(zsh -c 'eval "$(camp shell-init zsh)" && cgo p')
-| run_command(ls -1 /Users/lancerogers/Dev/AI/My_Tools/projects/)
+| run_command(ls -1 [redacted workspace path])
 ```
 
 Four shell executions on a live workstation from a geography question, and it

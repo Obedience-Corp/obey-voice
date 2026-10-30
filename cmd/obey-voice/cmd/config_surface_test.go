@@ -652,8 +652,8 @@ func copyFixtureTree(t *testing.T, src, dst string) {
 // canonical home it was captured under, so the live side is rewritten the same
 // way before anything is compared.
 const (
-	capturedInstallRoot = "/Users/lance/.obey/agents/voice/obey-voice"
-	capturedCacheRoot   = "/Users/lance/.cache/obey-voice"
+	capturedInstallRoot = "/home/demo/.obey/agents/voice/obey-voice"
+	capturedCacheRoot   = "/home/demo/.cache/obey-voice"
 	// `config set` names the backup it wrote, and the name carries the moment
 	// it was written. The script pins it so re-capturing does not churn the
 	// fixture; the same substitution has to happen here or every run differs.

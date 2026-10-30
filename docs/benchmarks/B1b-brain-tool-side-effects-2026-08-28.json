@@ -1,4 +1,5 @@
 {
+  "privacy_redaction": "Paths and raw reply/spoken/error/tool-argument strings redacted for sharing; measurements describe the original run. Text-level reproduction requires a new private run. Not a secret scan or rights clearance.",
   "id": "B1",
   "work_item": "WI-a981e4",
   "title": "Conversational brain model A/B through the real obey-voice brain seam",
@@ -13,7 +14,7 @@
     "seam": "brain.NewOllama(cfg).ThinkStream(ctx, input, StreamOptions{VoiceMode:true, ToolsEnabled:...})",
     "stop_between": true,
     "turn_timeout": "3m0s",
-    "workdir": "/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab"
+    "workdir": "/home/demo/[redacted-path]"
   },
   "provenance": {
     "branch": "bench/brain-latency-ab",
@@ -34,7 +35,7 @@
     "persona_brain_model": "qwen3.8:latest",
     "persona_brain_provider": "ollama",
     "persona_measured": "obey",
-    "source": "/Users/lancerogers/.obey/agents/voice/festival-voice/config.yaml"
+    "source": "/home/demo/[redacted-path]"
   },
   "effective_request_options": {
     "agent_name": "Obey",
@@ -317,10 +318,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "fetch_url(https://en.wikipedia.org/wiki/Capital_of_Australia)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 2499,
-              "reply": "This is a comprehensive overview of the history and geography of Canberra, the capital of Australia. Here's a summary of the main points:\n\n**Early History**\n\n*1827: The Yarralumla estate, now the site of the Governor-General's official residence, was established.\n* 1828: John Palmer employed Duncan Macfarlane to form the Jerrabomberra property.\n* 1845: The Anglican church of St John the Baptist was consecrated, and a school was established nearby.\n* 1911: An international design competition was launched to design the new capital city, with Walter Burley Griffin's plan winning the competition.\n\n**Capital City Development**\n\n* 1913: The Commonwealth government purchased the Yarralumla estate to provide an official residence for the Governor-General.\n* 1913-1927: Construction of the capital city began, with Griffin's plan being revised and implemented.\n* 1927: The Provisional Parliament House opened, and the Commonwealth parliament moved to Canberra.\n* 1927: The Governor-General's official residence, Government House, was completed.\n* 1930s-1940s: Development of the city slowed due to the Great Depression and World War II.\n\n**Post-War Development**\n\n* 1950s: Urban development in the city's suburbs, including Woden Valley, Belconnen, and Weston Creek.\n* 1957: The National Capital Development Commission (NCDC) was formed to oversee the city's development.\n* 1960s: The construction of the Lake Burley Griffin and the Parliamentary Triangle.\n* 1988: The ACT was granted full self-government by the Commonwealth Parliament.\n* 1989: The first election was held, and the Australian Labor Party formed the ACT's first government.\n\n**Geography and Climate**\n\n* Canberra is located near the Brindabella Ranges, approximately 150 km inland from the coast.\n* The city has an oceanic climate, with warm summers and cool winters.\n* The highest recorded temperature was 44.0 °C (111.2 °F) in 2020.\n* The lowest recorded minimum temperature was -10.0 °C (14.0 °F) in 1971.\n* The city gets 100.4 clear days annually and has an annual rainfall of 550 mm.\n\n**Other Features**\n\n* The Molonglo River, which flows through the city, was dammed to form Lake Burley Griffin.\n* The city's suburbs, including Gungahlin, Tuggeranong, and Woden Valley, have been developed since the 1950s.\n* The Canberra Centenary Column was unveiled in 2014 to celebrate the city's centenary year.\n\nThis summary provides a brief overview of the history, geography, and development of Canberra, the capital of Australia."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -337,10 +338,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 176,
-              "reply": "I'm good at helping you navigate and understand your campaign workspaces, managing project repositories, and working with work items, so feel free to ask me about those topics."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -357,10 +358,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 300,
-              "reply": "I think I have the right tool for the job. Let me try using the \"campaign-structure\" skill instead.A vector database is a type of database that uses a collection of dense vectors to store and retrieve data. It's like a big vector space where you can find the closest match to what you're looking for."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -377,17 +378,17 @@
               "skills_activated": 0,
               "tool_calls": 8,
               "tool_names": [
-                "read_skill(camp-structure)",
-                "list_files(Slides/Slide.pptx)",
-                "read_file(Slides/Slide.pptx)",
-                "run_command(open Slides/Slide.pptx)",
-                "read_skill(campaign-commit)",
-                "write_file(Email/Reply.txt)",
-                "list_files(Email/Reply.txt)",
-                "run_command(open Email/Reply.txt)"
+                "[redacted tool arguments]",
+                "[redacted tool arguments]",
+                "[redacted tool arguments]",
+                "[redacted tool arguments]",
+                "[redacted tool arguments]",
+                "[redacted tool arguments]",
+                "[redacted tool arguments]",
+                "[redacted tool arguments]"
               ],
               "reply_chars": 609,
-              "reply": "To get the best workflow order for your tasks, I would recommend doing your tasks in this order: review the pull request, reply to the email, and then prepare the slides.Reviewing the pull request first will help you understand any changes that might be related to your slides or email, and you can make any necessary adjustments before moving on. Next, responding to the email will allow you to get that out of the way and free up your mental energy for more focused work on your slides. Finally, preparing your slides will be the most focused task, and doing it last will help you stay in a productive flow."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -404,10 +405,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 513,
-              "reply": "It looks like I was supposed to format my response based on the output of a tool call, but I didn't receive one. Let me try that again.\n\nYou're deciding between a local model and a cloud model for voice. If you're looking for a more controlled environment and don't mind the potential latency, a local model might be the way to go. On the other hand, a cloud model can provide more flexibility and access to a wider range of resources, but you'll need to consider the potential impact on latency and availability."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P1",
@@ -424,10 +425,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "web_search(Australia capital)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 37,
-              "reply": "The capital of Australia is Canberra."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -444,10 +445,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 184,
-              "reply": "I'm good at helping with campaign workspaces and project management, such as navigating worktrees, managing project repositories, and understanding the overall structure of a campaign."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -464,10 +465,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 317,
-              "reply": "A vector database is a type of database that stores and indexes large amounts of data in a way that allows for efficient searching and retrieval of data that is similar to a given query. It's called a \"vector\" database because it uses vectors to represent the data, rather than traditional text-based representations."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -484,10 +485,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 444,
-              "reply": "To get started with task management, I'd suggest prioritizing the most critical task first. In your case, I'd recommend reviewing the pull request before the meeting. This will help you address any potential issues or concerns that might impact the discussion. The prep slides can be done next, ensuring you're well-prepared to present. The email reply can be done last, as it's less time-sensitive and can be done during the meeting if needed."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -504,10 +505,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 136,
-              "reply": "You'll need to activate the \"campaign-structure\" skill before proceeding. Let me do that for you. I'll call \"read_skill\" for that skill."
+              "reply": "[redacted raw text]"
             }
           ]
         },
@@ -572,10 +573,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "web_search(capital of Australia)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 37,
-              "reply": "The capital of Australia is Canberra."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -592,10 +593,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-navigation)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 618,
-              "reply": "The skills catalog is a useful tool for navigation and exploration within a campaign. It provides a list of shortcuts and concepts that can be used to navigate to different parts of the campaign, such as projects, festivals, and workflow directories. The catalog also includes fuzzy finding, which allows users to find projects or festivals by name or description. Additionally, the catalog provides information on how to use the `cgo` shell function, which is a primary navigation tool in Camp.\n\nOverall, the skills catalog is a valuable resource for users who want to efficiently navigate and manage their campaigns."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -612,10 +613,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 322,
-              "reply": "A vector database is a data structure that stores vectors, typically used for efficient nearest neighbor searches. In our context, it's likely being used for similarity search tasks, such as finding similar models or skills, by storing vector representations of the words in the skill descriptions and other relevant data."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -632,12 +633,12 @@
               "skills_activated": 0,
               "tool_calls": 3,
               "tool_names": [
-                "read_skill(camp-projects)",
-                "read_file(/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab/camp-projects.md)",
-                "list_files(/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab)"
+                "[redacted tool arguments]",
+                "[redacted tool arguments]",
+                "[redacted tool arguments]"
               ],
               "reply_chars": 339,
-              "reply": "It looks like the `camp-projects` skill directory does not exist yet. This is because I was supposed to run the `list_files` tool before trying to read the `camp-projects.md` file. Let me try that again.\n\n```\n{\"name\": \"list_files\", \"parameters\": {\"path\":\"/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab\"}}"
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -654,10 +655,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 491,
-              "reply": "Camp-structure is not a real skill for the voice agent. I made a mistake by suggesting it earlier.\n\nTo answer your question, you can use either a local model or a cloud model for voice, depending on your needs and preferences. Local models can be more responsive and have lower latency, but they require more computational resources and may not be as accurate. Cloud models can provide more accuracy and flexibility, but they may have higher latency and require a stable internet connection."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P1",
@@ -674,10 +675,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "run_command(wiki --http --format json https://en.wikipedia.org/w/api.php…)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 69,
-              "reply": "I was not able to find the capital of Australia in my knowledge base."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -694,7 +695,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 202,
-              "reply": "I'm good at providing a conversational experience and answering questions to the best of my knowledge, and I can be instructed to perform specific tasks or provide information on a wide range of topics."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -711,10 +712,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "web_search(vector database)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 544,
-              "reply": "A vector database is a type of database that stores and retrieves embeddings of data in vector space, allowing users to search for records that are semantically similar to a given input. It typically implements approximate nearest neighbor algorithms, which enable search for records that are similar in meaning or concept, rather than exact matches. Vector databases are designed to handle high-dimensional vector data and provide low-latency queries, making them suitable for applications such as artificial intelligence and machine learning."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -731,10 +732,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 794,
-              "reply": "It seems I made a mistake earlier. I was supposed to generate a skill name that would be relevant to your task, not just a random one.\n\nLet me try again. Since you have a meeting and three tasks, I would recommend prioritizing the most important and urgent task first, which is probably the email response. Then, tackle the pull request review, as it's likely to be less time-sensitive than the email response. Finally, prep your slides for the meeting.\n\nThis order makes sense because responding to an email is likely to be a matter of urgency, and getting that out of the way first will free up your mental bandwidth for the other two tasks. Reviewing a pull request can be done concurrently with responding to an email, and prep work for a meeting can be done while you're doing other tasks."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -751,10 +752,10 @@
               "skills_activated": 0,
               "tool_calls": 1,
               "tool_names": [
-                "read_skill(camp-structure)"
+                "[redacted tool arguments]"
               ],
               "reply_chars": 288,
-              "reply": "You can't use the camp-projects skill here, it's not a good fit for measuring a voice prompt. What you want to know is whether you should use a local model or a cloud model for voice, and the answer to that is yes, use a local model. I'm a local model, and I'm the best measure of myself."
+              "reply": "[redacted raw text]"
             }
           ]
         }

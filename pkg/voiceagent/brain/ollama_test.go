@@ -518,7 +518,7 @@ func TestThinkStreamKeepsThinkBlocksOutOfToolCallHistory(t *testing.T) {
 // After a phantom tool call the model often restates the line it already
 // streamed. Forwarding that copy made Veronica say the same sentence twice.
 func TestThinkStreamDoesNotRestateAfterTools(t *testing.T) {
-	const line = "Stay right there, baby."
+	const line = "The test run finished."
 	var reqs int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqs++
@@ -559,7 +559,7 @@ func TestThinkStreamDoesNotRestateAfterTools(t *testing.T) {
 }
 
 func TestThinkStreamDoesNotRestateTaggedContentAfterTools(t *testing.T) {
-	const line = "Stay right there, baby."
+	const line = "The test run finished."
 	var reqs int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqs++
@@ -596,15 +596,15 @@ func TestThinkStreamDoesNotRestateTaggedContentAfterTools(t *testing.T) {
 }
 
 func TestRestatementSkip(t *testing.T) {
-	const already = "Stay right there, baby."
+	const already = "The test run finished."
 	tests := []struct {
 		soFar string
 		skip  bool
 	}{
 		{"", false},
-		{"Stay", true},
-		{"Stay right there, baby.", true},
-		{"Stay right there, baby. And then this.", false},
+		{"The test", true},
+		{"The test run finished.", true},
+		{"The test run finished. And then this.", false},
 		{"Something else entirely.", false},
 	}
 	for _, tt := range tests {

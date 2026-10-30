@@ -304,7 +304,7 @@ measure() {
 		'{schema: "samantha.benchmark.v1",
 		  provenance: $provenance,
 		  thresholds: {playback_start_p50_ms: $target, regression_tolerance_pct: $tolerance},
-		  results: $results}' >"$envelope"
+		  results: $results}' | (cd "$REPO_ROOT" && go run ./scripts/bench_redact) >"$envelope"
 	echo "$envelope"
 }
 

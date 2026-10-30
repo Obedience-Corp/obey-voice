@@ -126,3 +126,12 @@ This is written to run on a live workstation against a live Ollama server.
 Response quality. Every reply is stored verbatim in the artifact so a human can
 read them, and that is the only quality signal here on purpose — a score would
 be theater. Whether a model is good to talk to is a judgment made in real use.
+
+## Sharing output
+
+Saved JSON is redacted by default: numerical measurements remain original, while
+raw replies, spoken text, diagnostics and tool arguments are withheld and local
+paths substituted. Counters describe pre-redaction text. No raw-output option is
+provided by this harness; use a separately reviewed private diagnostic run when
+text-level investigation is necessary. Console output remains private and must
+also be reviewed before sharing. See [sharing artifacts](../../docs/benchmarks/README.md#sharing-artifacts).

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
+  "config_file": "/home/demo/.obey/agents/voice/obey-voice/config.yaml",
   "groups": [
     "voice",
     "brain",
@@ -2167,7 +2167,7 @@
     {
       "key": "models_dir",
       "type": "string",
-      "default": "/Users/lance/.cache/obey-voice/models",
+      "default": "/home/demo/.cache/obey-voice/models",
       "allows_empty": true,
       "group": "models",
       "title": "Models folder",
@@ -2800,7 +2800,7 @@
     {
       "key": "whispercpp_model_path",
       "type": "string",
-      "default": "/Users/lance/.cache/obey-voice/models/whispercpp/ggml-base.en.bin",
+      "default": "/home/demo/.cache/obey-voice/models/whispercpp/ggml-base.en.bin",
       "allows_empty": true,
       "group": "models",
       "title": "whisper.cpp model file",

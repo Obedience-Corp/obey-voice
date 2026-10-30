@@ -24,18 +24,19 @@ Type "unset NO_COLOR; unset CLICOLOR; export CLICOLOR_FORCE=1 FORCE_COLOR=1" Ent
 Type "export TERM=xterm-256color COLORFGBG=15\;0" Enter
 Type "export OBEY_VOICE_COLOR_PROFILE=ansi OBEY_VOICE_DEMO_LAUNCHER_NOTICE=route" Enter
 Type "export PATH=$PWD/bin:$PATH" Enter
-Type "export HOME=/tmp/obey-voice-launcher-notice-$$" Enter
-Type "rm -rf $HOME && mkdir -p $HOME/.obey/agents/voice/obey-voice/sessions" Enter
-Type "cat > $HOME/.obey/agents/voice/obey-voice/config.yaml <<'EOF'" Enter
+Type "export OBEY_VOICE_DEMO_ROOT=$(mktemp -d /tmp/obey-voice-demo.XXXXXX)" Enter
+Type "mkdir -p $OBEY_VOICE_DEMO_ROOT/sessions" Enter
+Type "cat > $OBEY_VOICE_DEMO_ROOT/config.yaml <<'EOF'" Enter
 Type "brain_provider: ollama" Enter
 Type "ollama_model: qwen3.8:latest" Enter
 Type "tts_provider: kokoro" Enter
+Type "models_dir: /tmp/obey-voice-demo-models" Enter
 Type "agent_name: Samantha" Enter
 Type "active_persona: samantha" Enter
 Type "EOF" Enter
 Type "clear" Enter
 
-Type "./bin/obey-voice -t -n"
+Type "./bin/demo-terminal.test -test.run '^TestDemoTerminalHarness$'"
 Sleep 400ms
 Enter
 Sleep 5s
@@ -49,5 +50,8 @@ Screenshot demos/frames/launcher-notice-open.png
 Sleep 500ms
 Type "q"
 Sleep 400ms
+Hide
 Type "q"
 Sleep 300ms
+Hide
+Type "rm -rf -- $OBEY_VOICE_DEMO_ROOT" Enter

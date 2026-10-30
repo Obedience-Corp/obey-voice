@@ -34,7 +34,7 @@ var shippedVoices = []ShippedVoice{
 		Name:        "Veronica",
 		ID:          "veronica",
 		Language:    "English",
-		Description: "Booth throat. Intimate Imagine-clip clone.",
+		Description: "Booth reference voice. Source-clip clone.",
 		RefText:     "Just like that, feel the rhythm of my voice.",
 		wav:         veronicaRefWAV,
 	},

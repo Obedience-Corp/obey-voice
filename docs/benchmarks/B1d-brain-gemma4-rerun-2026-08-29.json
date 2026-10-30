@@ -1,4 +1,5 @@
 {
+  "privacy_redaction": "Paths and raw reply/spoken/error/tool-argument strings redacted for sharing; measurements describe the original run. Text-level reproduction requires a new private run. Not a secret scan or rights clearance.",
   "id": "B1",
   "work_item": "WI-a981e4",
   "title": "Conversational brain model A/B through the real obey-voice brain seam",
@@ -13,7 +14,7 @@
     "seam": "brain.NewOllama(cfg).ThinkStream(ctx, input, StreamOptions{VoiceMode:true, ToolsEnabled:...})",
     "stop_between": false,
     "turn_timeout": "3m0s",
-    "workdir": "/Users/lancerogers/Dev/AI/My_Tools/projects/worktrees/obey-voice/brain-latency-ab"
+    "workdir": "/home/demo/[redacted-path]"
   },
   "provenance": {
     "branch": "bench/brain-latency-ab",
@@ -34,7 +35,7 @@
     "persona_brain_model": "qwen3.8:latest",
     "persona_brain_provider": "ollama",
     "persona_measured": "obey",
-    "source": "/Users/lancerogers/.obey/agents/voice/festival-voice/config.yaml"
+    "source": "/home/demo/[redacted-path]"
   },
   "effective_request_options": {
     "agent_name": "Obey",
@@ -317,7 +318,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 88,
-              "reply": "The capital of Australia is Canberra. It is located in the Australian Capital Territory."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -334,7 +335,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 199,
-              "reply": "I'm great at helping you manage your projects, automate workflows, and navigate your entire development ecosystem. I can handle everything from running shell commands to organizing complex campaigns."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -351,7 +352,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 223,
-              "reply": "A vector database is a specialized type of database that stores information as mathematical vectors. This allows it to perform similarity searches, making it really great for things like recommendation engines or AI memory."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -368,7 +369,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 246,
-              "reply": "I'd suggest starting with the pull request while your focus is fresh, then moving to your slides since they likely need the most deep work. You can wrap things up by replying to emails once you're in a bit of a wind-down mode before your meeting."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -385,7 +386,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 207,
-              "reply": "It really depends on if you prioritize privacy and low latency or raw intelligence. Local models are great for speed and keeping things offline, but cloud models usually handle complex reasoning much better."
+              "reply": "[redacted raw text]"
             }
           ]
         },
@@ -450,7 +451,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 114,
-              "reply": "The capital of Australia is Canberra. It is a common question, but I am ready to start the benchmark when you are."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P2",
@@ -467,7 +468,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 115,
-              "reply": "I am good at executing structured workflows with high precision and reporting results without the bias of a person."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P3",
@@ -484,7 +485,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 393,
-              "reply": "A vector database stores pieces of information as numerical lists called embeddings, which represent the meaning of the data rather than just the literal text. When you ask a question, the database converts your query into a similar list of numbers and finds the entries that are mathematically closest to it. This allows for searching by concept or context rather than just matching keywords."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P4",
@@ -501,7 +502,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 345,
-              "reply": "Start with the pull request. It is the most cognitively heavy and requires the highest concentration to catch errors before they become your problem later. Then move to the slides while you still have the momentum from the review. Save the emails for last, since that is just a low-energy way to close out the session before your meeting starts."
+              "reply": "[redacted raw text]"
             },
             {
               "prompt": "P5",
@@ -518,7 +519,7 @@
               "skills_activated": 0,
               "tool_calls": 0,
               "reply_chars": 203,
-              "reply": "Local for privacy and no network jitter, cloud for raw intelligence and speed. If you have the hardware to keep a dense model resident without a delay, local is the superior experience for a voice agent."
+              "reply": "[redacted raw text]"
             }
           ]
         }
