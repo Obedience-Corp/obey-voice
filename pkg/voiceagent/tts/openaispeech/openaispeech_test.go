@@ -25,8 +25,9 @@ type fakeServer struct {
 	t            *testing.T
 	models       []string
 	voices       []string
-	chunks       []int // byte sizes to flush per write; cycles
-	samples      int   // samples per request
+	chunks       []int  // byte sizes to flush per write; cycles
+	samples      int    // samples per request
+	pcmBody      []byte // non-nil overrides generated PCM, including an empty body
 	mu           sync.Mutex
 	requests     []speechRequest
 	showRequests []string
@@ -159,6 +160,9 @@ func (f *fakeServer) routes() http.Handler {
 		for i := 0; i < f.samples; i++ {
 			binary.LittleEndian.PutUint16(body[2*i:], uint16(int16(i%2000-1000)))
 		}
+		if f.pcmBody != nil {
+			body = f.pcmBody
+		}
 		ci := 0
 		for len(body) > 0 {
 			n := f.chunks[ci%len(f.chunks)]
@@ -241,6 +245,60 @@ func TestSynthesizeStreamsPCM16WithOddChunks(t *testing.T) {
 	caps := p.Capabilities()
 	if !caps.SupportsStreaming || caps.SampleRates[0] != SampleRate || len(caps.Modes) != 1 || caps.Modes[0].Voices[0].Name != "default" {
 		t.Fatalf("caps = %+v", caps)
+	}
+}
+
+func TestSpeechPCMValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		body      []byte
+		malformed bool
+	}{
+		{"empty", []byte{}, true},
+		{"one byte", []byte{1}, true},
+		{"dangling byte after audio", []byte{0, 64, 1}, true},
+		{"silent sample", []byte{0, 0}, false},
+		{"quiet sample", []byte{1, 0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, srv := newFake(t)
+			f.pcmBody = tc.body
+			f.chunks = []int{1} // also exercise carry across reads
+			p, cleanup, err := New(cfgFor(srv.URL))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			got, err := drain(t, p, "Hello.")
+			if tc.malformed {
+				if !tts.IsProviderErrorKind(err, tts.ProviderErrorMalformed) {
+					t.Fatalf("want malformed output, got samples=%d err=%v", len(got), err)
+				}
+			} else if err != nil || len(got) != len(tc.body)/2 {
+				t.Fatalf("valid quiet PCM: samples=%d err=%v", len(got), err)
+			}
+		})
+	}
+}
+
+func TestParentDeadlineKeepsCancellationCause(t *testing.T) {
+	f, srv := newFake(t)
+	f.hold = make(chan struct{})
+	p, cleanup, err := New(cfgFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	stream, err := p.Synthesize(ctx, "Hello.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range stream.Frames() {
+	}
+	if !tts.IsProviderErrorKind(stream.Err(), tts.ProviderErrorCanceled) || !errors.Is(stream.Err(), context.DeadlineExceeded) {
+		t.Fatalf("parent deadline: %v", stream.Err())
 	}
 }
 
@@ -516,7 +574,7 @@ func TestCancelMidBodyStopsTheStream(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("stream never closed after cancel")
 	}
-	if !errors.Is(stream.Err(), context.Canceled) {
+	if !errors.Is(stream.Err(), context.Canceled) || !tts.IsProviderErrorKind(stream.Err(), tts.ProviderErrorCanceled) {
 		t.Fatalf("stream err = %v", stream.Err())
 	}
 }
@@ -552,7 +610,7 @@ func TestCancelMidBodyStopsTheDecodeLoop(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("stream never closed after a mid-body cancel")
 	}
-	if !errors.Is(stream.Err(), context.Canceled) {
+	if !errors.Is(stream.Err(), context.Canceled) || !tts.IsProviderErrorKind(stream.Err(), tts.ProviderErrorCanceled) {
 		t.Fatalf("stream err = %v", stream.Err())
 	}
 	close(f.holdAfterFirst)

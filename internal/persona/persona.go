@@ -56,6 +56,7 @@ type Profile struct {
 	Builtin                  bool       `yaml:"builtin,omitempty" json:"builtin"`
 	Inactive                 bool       `yaml:"inactive,omitempty" json:"inactive"`
 	Brain                    Brain      `yaml:"brain,omitempty" json:"brain"`
+	Audio                    *Audio     `yaml:"audio,omitempty" json:"audio,omitempty"`
 	TTS                      TTS        `yaml:"tts" json:"tts"`
 	Prompts                  PromptRefs `yaml:"prompts" json:"prompts"`
 	Path                     string     `yaml:"-" json:"path"` // absolute path of persona.yaml when loaded
@@ -73,6 +74,9 @@ func RequireEnabled(p *Profile) error {
 	}
 	if p.Inactive {
 		return fmt.Errorf("persona %q is inactive; run 'persona enable %s': %w", p.ID, p.ID, ErrInactive)
+	}
+	if p.Audio != nil && p.Audio.Mode == AudioNative {
+		return fmt.Errorf("persona %q: %w; select Standard mode until native input and transport are available", p.ID, ErrNativeAudioUnavailable)
 	}
 	return nil
 }
@@ -166,6 +170,9 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("persona profile %q: missing prompts.persona", p.ID)
 	}
 	if err := validateTier(p.TTS.Tier); err != nil {
+		return fmt.Errorf("persona profile %q: %w", p.ID, err)
+	}
+	if err := p.Audio.Validate(); err != nil {
 		return fmt.Errorf("persona profile %q: %w", p.ID, err)
 	}
 	return nil

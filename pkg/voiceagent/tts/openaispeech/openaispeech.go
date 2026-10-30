@@ -332,7 +332,8 @@ func (p *Provider) fail(op string, kind tts.ProviderErrorKind, err error) error 
 
 // classify sorts a transport or body failure: the turn being cancelled is
 // Canceled (no fallback), the per-request timeout is Worker (fallback), and
-// anything else is the server not answering (fallback). The stream's own
+// malformed PCM is Malformed, and anything else is the server not answering
+// (fallback). The stream's own
 // write error on a cancelled turn is the turn context's error, so it lands in
 // the first branch too.
 func (p *Provider) classify(turnCtx, reqCtx context.Context, op string, err error) error {
@@ -341,6 +342,8 @@ func (p *Provider) classify(turnCtx, reqCtx context.Context, op string, err erro
 		return p.fail(op, tts.ProviderErrorCanceled, turnCtx.Err())
 	case errors.Is(reqCtx.Err(), context.DeadlineExceeded):
 		return p.fail(op, tts.ProviderErrorWorker, fmt.Errorf("timed out after %s: %w", p.timeout, err))
+	case errors.Is(err, tts.ErrMalformedOutput):
+		return p.fail(op, tts.ProviderErrorMalformed, err)
 	default:
 		return p.fail(op, tts.ProviderErrorUnavailable, err)
 	}
@@ -417,11 +420,13 @@ func (t *tailTrimmer) finish() error {
 
 // decodePCM16 converts a 16-bit little-endian mono body into float32 frames.
 // An odd trailing byte is carried into the next read: dropping it would shift
-// every later sample by one byte and turn speech into static.
+// every later sample by one byte and turn speech into static. At EOF, an empty
+// body or an incomplete final sample is malformed, even after valid frames.
 func decodePCM16(r io.Reader, stream frameWriter) error {
 	const frameSamples = 2048
 	buf := make([]byte, frameSamples*2)
 	var carry []byte
+	decoded := false
 	for {
 		n, readErr := r.Read(buf)
 		if n > 0 {
@@ -435,6 +440,7 @@ func decodePCM16(r io.Reader, stream frameWriter) error {
 				data = data[:len(data)-1]
 			}
 			if len(data) > 0 {
+				decoded = true
 				samples := make([]float32, len(data)/2)
 				for i := range samples {
 					samples[i] = float32(int16(binary.LittleEndian.Uint16(data[2*i:]))) / 32768
@@ -446,6 +452,12 @@ func decodePCM16(r io.Reader, stream frameWriter) error {
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
+				if len(carry) != 0 {
+					return fmt.Errorf("%w: speech PCM ends with an incomplete sample", tts.ErrMalformedOutput)
+				}
+				if !decoded {
+					return fmt.Errorf("%w: speech response contains no PCM samples", tts.ErrMalformedOutput)
+				}
 				return nil
 			}
 			return readErr
