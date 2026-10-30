@@ -18,12 +18,14 @@ Everything else lives here.
 | [OpenAI-compatible speech](openai-speech.md) | The `openai-speech` engine: Phonon through Ollama, or any `/v1/audio/speech` server |
 | [Configuration](configuration.md) | `config.yaml` keys, Agent Skills |
 | [Desktop development](desktop-development.md) | Native app, monorepo builds, CI and isolated UI fixtures |
+| [Pipeline debugging](pipeline-debugging.md) | Live conversation inspection and saved captures |
 | [Development](development.md) | Build, tests, model assets, benchmarks |
 
 ## Reference
 
 | Page | Topic |
 |------|--------|
+| [Voice stack](voice-stack.md) | Conversation pipeline, speech models, and worker routing |
 | [Serve protocol](serve-protocol.md) | Remote serve HTTPS + WebSocket contract |
 | [Transcribe protocol](transcribe-protocol.md) | `obey-transcript/v1`: transcribing a file from another program |
 | [Speech worker](speech-serve.md) | Offloading speech to another computer (`speech-serve`) |
