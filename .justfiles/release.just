@@ -275,7 +275,7 @@ macos-artifact:
         printf '\n  ]\n}\n'
     } > "$stage/manifest.json"
 
-    tar -czf "$tarball" -C dist "obey-voice-${platform}"
+    COPYFILE_DISABLE=1 tar -czf "$tarball" -C dist "obey-voice-${platform}"
     echo
     echo "Artifact: $tarball"
     shasum -a 256 "$tarball"
