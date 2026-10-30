@@ -1,9 +1,11 @@
-# Obedience Corp Contributor License Agreement
+# Obey Voice Contribution Terms
 
 Version 1.0
 
-This agreement is between the contributor identified in the acceptance record
-("you") and Obedience Corp ("the Company") for contributions to Obey Voice.
+By intentionally submitting a Contribution to Obey Voice, you agree to these
+terms with Obedience Corp ("the Company"). No separate signature, signing
+comment, or registration is required. Read these terms before contributing;
+if you do not agree, do not submit a Contribution.
 
 You keep ownership of your contributions. The public project uses
 AGPL-3.0-only. This agreement also gives the Company permission to use and
@@ -14,11 +16,11 @@ public project those additional permissions.
 ## 1. Covered contributions
 
 A "Contribution" is original code, documentation, or other material you
-intentionally submit for inclusion in Obey Voice. Your acceptance covers your
-contributions in the pull request where you accept and your future contributions
-to this project under this agreement. You do not need to sign again for each
-pull request. It does not cover unrelated projects, someone else's work, or
-material you clearly identify as excluded before submission.
+intentionally submit for inclusion in Obey Voice through a pull request, patch,
+or another communication clearly offering that material for inclusion. These
+terms apply to each such submission. Merely using or forking the project,
+reporting a bug, or participating in a discussion is not a Contribution.
+Material clearly marked "Not a Contribution" is excluded.
 
 If you accept on behalf of an organization that owns the Contribution, "you"
 means that organization, and you must be authorized to make this agreement for it.
@@ -57,9 +59,8 @@ that recipient terminates when the claim is filed.
 You confirm that you own the Contribution or have permission from its owner to
 grant the rights in this agreement. If an employer or another organization owns
 rights in it, obtain that organization's authorization before contributing.
-Notify the maintainers before submitting work that your existing acceptance
-does not cover, such as work owned by a new employer. Obtain the necessary
-authorization or a separate acceptance from that owner.
+If you submit on behalf of an organization, identify it and confirm that you
+are authorized to grant these rights for its work.
 
 Identify any included third-party material and its source, license, and known
 restrictions. This agreement does not change third-party licenses or grant rights
@@ -71,7 +72,7 @@ inaccurate.
 Your Contribution, when included in the public Obey Voice project, is available
 under AGPL-3.0-only. The Company also receives the separate rights above. Public
 recipients receive the rights in the license under which their copy is supplied;
-they do not automatically receive the Company's additional CLA rights.
+they do not automatically receive the Company's additional rights under these terms.
 
 This agreement does not revoke rights already granted under an open-source
 license. It does not require the Company to accept your Contribution, use it,
@@ -83,14 +84,8 @@ Apart from the authority confirmations above, your Contribution is provided as
 is, without additional warranties of quality, fitness for a particular use, or
 non-infringement, to the extent the law permits.
 
-## 7. Acceptance and records
+## 7. Applicable version
 
-Accept this version explicitly using the process in [CONTRIBUTING.md](CONTRIBUTING.md#accepting-the-cla).
-The record must identify you, any organization you represent, the date of
-acceptance, and the revision of this agreement you accepted. Keep the original
-acceptance record for subsequent contributions; no per-PR signature is required. A PR checkbox, DCO
-sign-off, or submission alone is not acceptance of this agreement.
-
-A later version of this agreement requires a new acceptance; it does not
-automatically change an existing grant. Until you accept a new version, this
-version continues to govern the Contributions covered by your acceptance.
+The version of these terms published on the project's default branch when you
+submit a Contribution applies to that submission. Later changes do not
+retroactively change the rights granted for earlier Contributions.
