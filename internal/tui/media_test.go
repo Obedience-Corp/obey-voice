@@ -3,13 +3,16 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/internal/testmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type imageTurnRunner struct {
@@ -151,5 +154,84 @@ func TestCompactionRestoresUnsentImagesWithoutLeakingToNextTurn(t *testing.T) {
 	m.dispatchTextTurn("Different message")()
 	if len(r.images) != 0 {
 		t.Fatal("old image leaked into unrelated turn")
+	}
+}
+
+func TestMediaRejectedDraftShowsOneInlineError(t *testing.T) {
+	m, r := mediaTestModel(t)
+	r.validationErr = errors.New("model lfm3:1.7b does not support images; select a vision-capable Ollama model")
+	m.input.SetValue("Inspect this screenshot")
+	for range 4 {
+		cmd := m.handleSubmit()
+		if cmd == nil {
+			t.Fatal("missing validation")
+		}
+		m.updateMedia(cmd())
+	}
+	if len(m.items) != 0 || len(r.texts()) != 0 {
+		t.Fatal("rejected draft entered conversation")
+	}
+	if got := strings.Count(stripANSI(m.View()), "does not support images"); got != 1 {
+		t.Fatalf("error shown %d times", got)
+	}
+	if len(m.media.draft) != 1 || m.input.Value() != "Inspect this screenshot" {
+		t.Fatal("draft lost")
+	}
+	r.validationErr = nil
+	cmd, _ := m.updateMedia(m.handleSubmit()())
+	if cmd == nil {
+		t.Fatal("corrected recipient did not accept retry")
+	}
+	cmd()
+	if len(r.images) != 1 || m.media.err != "" {
+		t.Fatal("retry lost image or retained error")
+	}
+}
+
+func TestMediaStaleValidationDoesNotReportPreviousModelError(t *testing.T) {
+	m, r := mediaTestModel(t)
+	m.cfg.OllamaModel = "old"
+	r.validationErr = errors.New("old model does not support images")
+	cmd := m.handleSubmit()
+	result := cmd()
+	m.cfg.OllamaModel = "new"
+	m.updateMedia(result)
+	if m.media.err != "" || strings.Contains(stripANSI(m.View()), r.validationErr.Error()) {
+		t.Fatal("old model error shown after model switch")
+	}
+}
+
+func TestMediaRemovingRejectedAttachmentClearsError(t *testing.T) {
+	m, r := mediaTestModel(t)
+	r.validationErr = errors.New("model does not support images")
+	m.updateMedia(m.handleSubmit()())
+	m.removeMedia("")
+	if m.media.err != "" || len(m.media.draft) != 0 {
+		t.Fatal("removed draft retained error")
+	}
+}
+
+func TestMediaDraftFitsResizedTerminal(t *testing.T) {
+	for _, size := range [][2]int{{100, 40}, {40, 24}, {80, 16}} {
+		for _, count := range []int{1, 4} {
+			t.Run(fmt.Sprintf("%dx%d/%d", size[0], size[1], count), func(t *testing.T) {
+				m, _ := mediaTestModel(t)
+				ref := m.media.draft[0]
+				for len(m.media.draft) < count {
+					m.media.draft = append(m.media.draft, ref)
+				}
+				m.media.err = "model does not support images; select a vision-capable Ollama model"
+				m.setSize(size[0], size[1])
+				if got := lipgloss.Width(m.draftMediaView()); got > size[0] {
+					t.Fatalf("draft width %d exceeds terminal width %d", got, size[0])
+				}
+				if m.viewport.Height < 1 {
+					t.Fatal("draft hid the transcript")
+				}
+				if got := lipgloss.Height(m.View()); got > size[1] {
+					t.Fatalf("view height %d exceeds terminal height %d", got, size[1])
+				}
+			})
+		}
 	}
 }

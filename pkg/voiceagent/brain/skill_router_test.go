@@ -111,6 +111,9 @@ func TestRouteSkillContextReportsAutomaticActivation(t *testing.T) {
 	if start.ID == "" || end.ID != start.ID {
 		t.Fatalf("ids = %q / %q, want a shared non-empty id", start.ID, end.ID)
 	}
+	if end.Outcome == nil || end.Outcome.Status != "succeeded" {
+		t.Fatalf("successful activation lost outcome: %+v", end)
+	}
 	if !strings.Contains(end.Preview, "injected 1 skill(s): campaign-navigation") {
 		t.Fatalf("end hook = %+v", end)
 	}

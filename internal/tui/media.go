@@ -108,6 +108,7 @@ func (m *conversationModel) removeMedia(id string) {
 	for i, r := range m.media.draft {
 		if r.ID == id || id == "" && i == len(m.media.draft)-1 {
 			m.media.draft = append(m.media.draft[:i:i], m.media.draft[i+1:]...)
+			m.media.err = ""
 			break
 		}
 	}
@@ -130,6 +131,7 @@ func (m *conversationModel) prepareMediaSubmit(text string) (tea.Cmd, bool) {
 	m.initMedia()
 	m.media.err = ""
 	m.media.validating = true
+	m.reflow()
 	refs := append([]chatmedia.Ref(nil), m.media.draft...)
 	token := m.media.token
 	runner := m.deps.runner
@@ -276,11 +278,6 @@ func (m *conversationModel) updateMedia(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		m.media.validating = false
-		if v.err != nil {
-			m.media.err = v.err.Error()
-			m.commandError(v.err.Error())
-			return nil, true
-		}
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
 			text = "Attached image."
@@ -290,6 +287,14 @@ func (m *conversationModel) updateMedia(msg tea.Msg) (tea.Cmd, bool) {
 			m.commandError("Draft changed; send again when ready")
 			return nil, true
 		}
+		if v.err != nil {
+			// This is an unsent draft error, not a conversation event. Keep a
+			// single message beside the attachment even after repeated Enter.
+			m.media.err = v.err.Error()
+			m.reflow()
+			return nil, true
+		}
+		m.media.err = ""
 		m.media.approved = true
 		return m.handleSubmit(), true
 	}
