@@ -49,7 +49,7 @@ func main() {
 	if e != nil {
 		panic(e)
 	}
-	defer c.CloseNow()
+	defer func() { _ = c.CloseNow() }()
 	c.SetReadLimit(8 << 20)
 	read := func() map[string]any {
 		_, b, e := c.Read(ctx)
