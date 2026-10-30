@@ -40,8 +40,12 @@ const (
 )
 
 type settingsModel struct {
-	cfg       *config.Config
-	providers []discovery.ProviderInfo
+	cfg                *config.Config
+	providers          []discovery.ProviderInfo
+	obeyCatalog        *discovery.ObeyRoute
+	obeyCatalogSeq     int
+	obeyCatalogCancel  context.CancelFunc
+	obeyCatalogLoading bool
 
 	section settingsSection
 	cursor  int
@@ -508,6 +512,8 @@ func (m settingsModel) activeModel() string {
 
 func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case obeyCatalogMsg:
+		return m.receiveObeyCatalog(msg), nil
 	case tea.WindowSizeMsg:
 		m.resize(msg.Width, msg.Height)
 
@@ -566,6 +572,7 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		case "p":
 			cmd = m.previewRow()
 		case "esc", "q":
+			m.cancelObeyCatalog()
 			m.cancelPreview()
 			return m, func() tea.Msg { return settingsDoneMsg{} }
 		}
@@ -796,6 +803,9 @@ func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
 		m.message = fmt.Sprintf("Failed to save provider: %v", err)
 		return nil
 	}
+	m.cancelObeyCatalog()
+	m.obeyCatalog = nil
+	obeyCmd := m.loadObeyCatalogIfSelected()
 	m.buildModelItems()
 	m.buildToolItems()
 	m.buildWorkerItems()
@@ -809,9 +819,9 @@ func (m *settingsModel) selectProviderOption(idx int) tea.Cmd {
 	if !config.WorkerSelected(m.cfg) {
 		cmd := m.gotoSection(sectionWorker)
 		m.message = fmt.Sprintf("Provider set to %s · now choose the worker that runs background jobs", name)
-		return cmd
+		return tea.Batch(cmd, obeyCmd)
 	}
-	return nil
+	return obeyCmd
 }
 
 // selectModel saves a brain model for the current provider.

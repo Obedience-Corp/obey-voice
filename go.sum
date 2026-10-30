@@ -18,6 +18,8 @@ github.com/Obedience-Corp/muse-spark-go v0.1.0 h1:nB9xay/y3cRdyysksoelnyiU92aStM
 github.com/Obedience-Corp/muse-spark-go v0.1.0/go.mod h1:bUsJ1DLxOlfcMKHAD7U9Sg/nzPOnLtf5Vf3gVBxfPg8=
 github.com/Obedience-Corp/obey-go-sdk v0.1.0 h1:n4VxKHB/XSp6PKFNwzZUpjigSYE22oqgY9JBvTp5UKM=
 github.com/Obedience-Corp/obey-go-sdk v0.1.0/go.mod h1:RkYeYAhP+n9WjvejlSWV+6vor8Pj3O5iekxSh7G95tc=
+github.com/Obedience-Corp/obey-go-sdk v0.2.0 h1:MLO3xjp0ITxJyzizih1DP8FESsVtD+VZvCgg09Njo+8=
+github.com/Obedience-Corp/obey-go-sdk v0.2.0/go.mod h1:RkYeYAhP+n9WjvejlSWV+6vor8Pj3O5iekxSh7G95tc=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=

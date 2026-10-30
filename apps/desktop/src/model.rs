@@ -212,6 +212,7 @@ pub enum Purpose {
     SettingsSchema,
     WorkerConfig,
     SettingsValues,
+    ObeyCatalog(String),
     SettingSave(String),
     Mutation(String),
     Library,

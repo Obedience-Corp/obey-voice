@@ -116,6 +116,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 	}
 	if a.screen == screenSettings {
 		a.settings.closePreview()
+		a.settings.cancelObeyCatalog()
 		a.settings.cancelEnroll()
 		a.settings.voices.reset()
 	}
@@ -174,7 +175,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		a.settings.resize(a.width, a.height)
 		// Built before the return: the loaders mark a.settings as loading, and
 		// that must be in the a that is returned.
-		cmds := tea.Batch(a.settings.loadDevices(), a.settings.loadVoiceCatalog(), pauseVoice, a.settings.pollDecisionStatus())
+		cmds := tea.Batch(a.settings.loadDevices(), a.settings.loadVoiceCatalog(), a.settings.loadObeyCatalogIfSelected(), pauseVoice, a.settings.pollDecisionStatus())
 		return a, cmds
 	case screenWorkers:
 		var controller workerController

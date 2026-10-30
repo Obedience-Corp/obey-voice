@@ -304,3 +304,8 @@ capture-terminal root fixture_config wav work="off" pairs="0" seed="7007":
     mkdir -p "{{root}}"
     go test -c -o "{{root}}/terminal.test" ./internal/tui
     OBEY_VOICE_CAPTURE_SOURCE_REVISION="$(git rev-parse HEAD)" OBEY_VOICE_CAPTURE_PROVIDER_ROOT="{{root}}" OBEY_VOICE_CAPTURE_PROVIDER_CONFIG="{{fixture_config}}" OBEY_VOICE_CAPTURE_PROVIDER_WAV="{{wav}}" OBEY_VOICE_CAPTURE_PROVIDER_WORK="{{work}}" OBEY_VOICE_CAPTURE_PROVIDER_PAIRS="{{pairs}}" OBEY_VOICE_CAPTURE_PROVIDER_SEED="{{seed}}" "{{root}}/terminal.test" -test.run '^TestRecordProviderTerminalHarness$' -test.v
+
+# Optional-provider catalog, policy refusal and one real released-daemon Voice turn.
+[no-cd]
+obey:
+    bash tests/obeydaemon/run.sh

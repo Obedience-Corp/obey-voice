@@ -65,3 +65,6 @@ ttft-proxy-capture*.jsonl
 
 # go build ./tests/convoflow drops its binary here
 /convoflow
+
+# Disposable public-daemon integration evidence
+/.test-output/

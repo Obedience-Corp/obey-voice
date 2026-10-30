@@ -86,7 +86,8 @@ func (m settingsModel) updateEditor(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 			key := m.edit.decisionKey
 			m.cancelEdit()
 			m.commitObeyEdit(key, value)
-			return m, nil
+			cmd := m.loadObeyCatalogIfSelected()
+			return m, cmd
 		}
 		if kind == editDecision || kind == editDecisionKey {
 			key := m.edit.decisionKey

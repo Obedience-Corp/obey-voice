@@ -3,8 +3,8 @@ use serde_json::Value;
 
 pub(super) fn obey_route_notice(ui: &mut eframe::egui::Ui) {
     ui.strong("Obey → provider → model");
-    ui.label("Obey connects to providers configured in its daemon. Choose a provider ID there, then enter a model ID for that provider below.");
-    ui.label("This connection does not publish a model catalog. The choices for direct providers are separate from the daemon’s models.");
+    ui.label("Obey connects to providers configured in its daemon. Load its catalog to choose a provider and model, or enter IDs below.");
+    ui.label("Catalogs require Obey 0.5.0+. Keep manual IDs for older CLIs or incomplete catalogs. Strict tools-off requirements remain unsupported.");
     ui.small("Obey is optional. Other brain providers work without it. If you choose Obey, install its CLI and start its daemon first.");
 }
 

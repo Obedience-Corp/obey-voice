@@ -33,12 +33,14 @@ impl VoiceApp {
         self.setup_fields(ui, &["brain_provider"]);
         let provider = self.values["brain_provider"]["value"]
             .as_str()
-            .unwrap_or("ollama");
+            .unwrap_or("ollama")
+            .to_owned();
         if provider == "obey" {
             card(ui, super::super::provider_choices::obey_route_notice);
+            self.obey_catalog_ui(ui);
         }
-        let model_key = super::super::provider_choices::installed_model_key(provider);
-        let fields: &[&str] = match provider {
+        let model_key = super::super::provider_choices::installed_model_key(&provider);
+        let fields: &[&str] = match provider.as_str() {
             "ollama" => &["ollama_host", "ollama_model"],
             "grok" => &["grok_model"],
             "cursor" => &["cursor_model"],

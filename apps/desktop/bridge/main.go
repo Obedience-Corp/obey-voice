@@ -161,6 +161,8 @@ func (h *host) handle(ctx context.Context, r request, o *output) (any, error) {
 		return setupStatus()
 	case "setup_save":
 		return saveSetup(setupPath(), r.Config)
+	case "obey_catalog":
+		return obeyCatalog(ctx, r.Config)
 	case "setup_provider":
 		return setupProvider(ctx)
 	case "worker_config_get":

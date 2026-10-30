@@ -142,6 +142,10 @@ impl VoiceApp {
             self.remote_url.clear();
             self.pairing.clear();
         }
+        if let Purpose::ObeyCatalog(key) = &purpose {
+            self.complete_obey_catalog(id, key.clone(), result);
+            return;
+        }
         if let Purpose::Setup(operation) = purpose {
             if self.setup.busy != Some(id) {
                 return;
@@ -183,7 +187,8 @@ impl VoiceApp {
             }
         };
         match purpose {
-            Purpose::Setup(_)
+            Purpose::ObeyCatalog(_)
+            | Purpose::Setup(_)
             | Purpose::PersonaDirectories
             | Purpose::PersonaBrowse
             | Purpose::PersonaPreview => {
@@ -213,14 +218,30 @@ impl VoiceApp {
                 let before = &self.values;
                 self.drafts
                     .retain(|key, value| *value != display(&before[key]["value"]));
+                let route_before = self.obey_route_key();
                 self.values = v["values"].clone();
+                if route_before != self.obey_route_key()
+                    || self.values["brain_provider"]["value"] != "obey"
+                {
+                    self.obey_catalog = Value::Null;
+                    self.obey_catalog_request = None;
+                }
                 self.settings_persona = v["persona"].clone();
+                if self.values["brain_provider"]["value"] == "obey"
+                    && matches!(self.screen, Screen::Settings | Screen::Setup)
+                    && self.obey_catalog.is_null()
+                    && self.obey_catalog_request.is_none()
+                {
+                    self.load_obey_catalog(false);
+                }
                 if self.active && self.screen == Screen::Settings {
                     self.request("settings_refresh", json!({}), Purpose::Ignore);
                 }
             }
             Purpose::SettingSave(key) => {
                 self.setup.invalidate();
+                self.obey_catalog = Value::Null;
+                self.obey_catalog_request = None;
                 self.drafts.remove(&key);
                 self.status = format!("Saved {key}");
                 self.command(&["config", "get", "--json"], Purpose::SettingsValues);
