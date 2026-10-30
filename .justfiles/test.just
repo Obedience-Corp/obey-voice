@@ -309,3 +309,8 @@ capture-terminal root fixture_config wav work="off" pairs="0" seed="7007":
 [no-cd]
 obey:
     bash tests/obeydaemon/run.sh
+
+# Quiet finite audio-artifact validation and cancellation (no devices or models).
+[no-cd]
+audio-jobs:
+    go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'

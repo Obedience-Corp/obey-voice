@@ -69,6 +69,15 @@ type Provider struct {
 // there is tts.ErrProviderUnavailable so the caller can say so rather than
 // fail on the first sentence.
 func New(cfg *config.Config) (*Provider, func(), error) {
+	return NewWithContext(context.Background(), cfg, nil)
+}
+
+// NewWithContext lets finite callers bound setup and enforce endpoint ownership
+// through a dedicated HTTP client. A nil client preserves existing behavior.
+func NewWithContext(ctx context.Context, cfg *config.Config, client *http.Client) (*Provider, func(), error) {
+	if client == nil {
+		client = &http.Client{}
+	}
 	if err := config.ValidateOpenAISpeechRuntime(cfg); err != nil {
 		return nil, nil, err
 	}
@@ -81,7 +90,7 @@ func New(cfg *config.Config) (*Provider, func(), error) {
 		if !phonon.Installed(o) {
 			return nil, nil, fmt.Errorf("native Phonon assets missing; run `obey-voice models ensure --tts`")
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		native, err = phonon.Start(ctx, o, true)
 		cancel()
 		if err != nil {
@@ -97,7 +106,7 @@ func New(cfg *config.Config) (*Provider, func(), error) {
 		model:   config.OpenAISpeechModel(cfg),
 		voice:   config.TTSVoiceFor(cfg, config.OpenAISpeechProviderName),
 		timeout: time.Duration(config.DefaultOpenAISpeechTimeout) * time.Second,
-		client:  &http.Client{},
+		client:  client,
 	}
 	if cfg != nil {
 		p.apiKey = strings.TrimSpace(cfg.OpenAISpeechAPIKey)
@@ -111,7 +120,7 @@ func New(cfg *config.Config) (*Provider, func(), error) {
 	if cfg != nil {
 		p.modelsDir = config.ModelsDirFrom(cfg)
 	}
-	if err := p.probe(context.Background()); err != nil {
+	if err := p.probe(ctx); err != nil {
 		if native != nil {
 			native.Close()
 		}
