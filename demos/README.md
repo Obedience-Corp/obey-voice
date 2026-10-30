@@ -26,13 +26,21 @@ the scripted model response is not an inference or latency benchmark.
 ## README demo
 
 `just demo` builds the current binary and records `demos/readme.tape` into
-`docs/images/tui.gif`: launcher → persona picker → listening/hearing/speaking
-activity and a reply. The real Bubble Tea TUI runs in a VHS terminal.
+`docs/images/tui.gif`: launcher → persona picker → a conversation with Obey,
+Jarvis, and Veronica. Leading `@` mentions select each responder; Obey then
+picks up the other two agents' ideas from the shared thread.
 
-The fixture uses a temporary home, a loopback model stub, and the existing
-scripted voice events. It needs no microphone, playback, downloaded models,
-credentials, or personal configuration. Voice activity is simulated; this is a
-UI walkthrough, not an inference or latency benchmark.
+The real Bubble Tea TUI uses its normal routing, streaming, and session storage
+against a loopback provider with scripted replies. Each persona has a separate
+model ID and voice in a temporary home. No microphone, playback, downloaded
+models, credentials, or personal configuration are used. This silent UI demo
+does not measure speech quality or inference latency.
+
+The recipe checks that all four turns reached the expected model, that Obey
+received Jarvis and Veronica's earlier replies, and that the saved conversation
+retains each reply's persona. Evidence is written to the ignored
+`bin/readme-demo-evidence.json`; a missing or incomplete conversation fails the
+recipe before GIF optimization.
 
 Color is forced in both the recorder and child process, including when the
 calling shell sets `NO_COLOR`. The GIF uses the terminal palette and is optimized

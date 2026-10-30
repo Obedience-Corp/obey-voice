@@ -51,6 +51,7 @@ demo-readme: build
     mkdir -p docs/images
     env -u NO_COLOR -u CLICOLOR CLICOLOR_FORCE=1 FORCE_COLOR=1 \
         TERM=xterm-256color COLORTERM=truecolor vhs demos/readme.tape
+    python3 demos/fixtures/readme.py --verify
     just _optimize-demo-gif docs/images/tui.gif
 
 # Review image/GIF pasting and conversation display with a silent fixture provider.
