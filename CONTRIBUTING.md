@@ -24,7 +24,7 @@ expire after seven days. Tag builds attach archives directly to the GitHub relea
 - Run `just build` when touching build, install, or runtime startup behavior.
 - Include tests for behavior changes where practical.
 - Do not include local config, model files, binaries, credentials, or generated review notes.
-- Outside contributors must explicitly accept the [CLA](CLA.md) before their changes are merged. It lets Obedience Corp also use contributions in proprietary products; contributors keep ownership.
+- Outside contributors accept the [CLA](CLA.md) once before their first contribution is merged. It lets Obedience Corp also use contributions in proprietary products; contributors keep ownership.
 
 ### Agent / PR reject list (Qwen TTS)
 
@@ -77,14 +77,18 @@ Third-party material keeps its original license and must be identified.
 
 ### Accepting the CLA
 
-Read [CLA.md](CLA.md), then post the following as a comment on your pull request
+Accept once; the agreement covers your current and future contributions to this
+project. Returning contributors do not need to sign or repeat the statement on
+each PR.
+
+Read [CLA.md](CLA.md), then post the following as a comment on your first pull request
 from your own GitHub account. Replace the placeholders. Use the full commit SHA
 of the `CLA.md` revision you read, not a mutable branch name.
 
 ```text
 I have read and agree to the Obedience Corp Contributor License Agreement,
 version 1.0, in CLA.md at commit <full commit SHA>, for my contributions
-to this pull request, including my revisions before it is merged.
+to this pull request and my future contributions to Obey Voice.
 I understand that it permits Obedience Corp to use and sublicense my
 contributions in proprietary products without releasing their source code.
 I am accepting on my own behalf / on behalf of <organization's legal name>,
@@ -103,9 +107,15 @@ organization. Identify coauthors and third-party material so maintainers can
 verify all necessary rights. A DCO sign-off or checked template box alone is
 not CLA acceptance.
 
-Before merging, maintainers must verify company ownership or record the accepted
-CLA version, revision, covered PR, contributor identity, and authority for each
-outside contributor. For public acceptance, retain the comment permalink in the
-PR; for private acceptance, retain the record privately and note verification in
-the PR. Do not merge while required acceptance is missing. This is a manual
-maintainer check, not an automated GitHub check.
+Maintainers record the first acceptance with its version, revision, contributor
+identity, represented organization (if any), and comment permalink or private
+record reference. Reuse that record for later PRs; do not request another
+signature or a fresh ownership review for every contribution. Company-owned
+contributions do not require a separate CLA.
+
+Revisit acceptance if the contributor reports a change in ownership or authority,
+if a contribution includes work not covered by the record, or if new agreement
+terms require acceptance. Contributors must identify third-party material and
+notify maintainers when their existing authorization no longer covers the work.
+
+Acceptance tracking is currently manual. No automated CLA check is configured.

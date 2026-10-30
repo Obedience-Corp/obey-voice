@@ -14,11 +14,11 @@ public project those additional permissions.
 ## 1. Covered contributions
 
 A "Contribution" is original code, documentation, or other material you
-intentionally submit for inclusion in Obey Voice and identify in your acceptance
-record. Acceptance for a pull request covers your contributions in that pull
-request, including your subsequent revisions before it is merged. It does not
-cover unrelated projects, someone else's work, or material you clearly identify
-as excluded before submission.
+intentionally submit for inclusion in Obey Voice. Your acceptance covers your
+contributions in the pull request where you accept and your future contributions
+to this project under this agreement. You do not need to sign again for each
+pull request. It does not cover unrelated projects, someone else's work, or
+material you clearly identify as excluded before submission.
 
 If you accept on behalf of an organization that owns the Contribution, "you"
 means that organization, and you must be authorized to make this agreement for it.
@@ -56,7 +56,10 @@ that recipient terminates when the claim is filed.
 
 You confirm that you own the Contribution or have permission from its owner to
 grant the rights in this agreement. If an employer or another organization owns
-rights in it, obtain that organization's authorization before accepting.
+rights in it, obtain that organization's authorization before contributing.
+Notify the maintainers before submitting work that your existing acceptance
+does not cover, such as work owned by a new employer. Obtain the necessary
+authorization or a separate acceptance from that owner.
 
 Identify any included third-party material and its source, license, and known
 restrictions. This agreement does not change third-party licenses or grant rights
@@ -83,10 +86,11 @@ non-infringement, to the extent the law permits.
 ## 7. Acceptance and records
 
 Accept this version explicitly using the process in [CONTRIBUTING.md](CONTRIBUTING.md#accepting-the-cla).
-The record must identify you, any organization you represent, the covered pull
-request, and the revision of this agreement you accepted. A PR checkbox, DCO
+The record must identify you, any organization you represent, the date of
+acceptance, and the revision of this agreement you accepted. Keep the original
+acceptance record for subsequent contributions; no per-PR signature is required. A PR checkbox, DCO
 sign-off, or submission alone is not acceptance of this agreement.
 
 A later version of this agreement requires a new acceptance; it does not
-automatically change an existing grant. Your acceptance grants rights only for
-the Contributions it covers, not future unrelated pull requests.
+automatically change an existing grant. Until you accept a new version, this
+version continues to govern the Contributions covered by your acceptance.
