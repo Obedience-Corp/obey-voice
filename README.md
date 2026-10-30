@@ -94,7 +94,7 @@ Give each persona a voice, model, and prompt. Personas using different brain pro
 
 Built with [Festival](https://github.com/Obedience-Corp/festival), the planning and execution system I use to build with agents. You don't need Festival to run Obey Voice.
 
-[Contributing](CONTRIBUTING.md) · [Issues](https://github.com/Obedience-Corp/obey-voice/issues) · [AGPL-3.0-only license](LICENSE) · [Contribution terms](CONTRIBUTOR_TERMS.md) · [Notice](NOTICE)
+[Contributing](CONTRIBUTING.md) · [Issues](https://github.com/Obedience-Corp/obey-voice/issues) · [AGPL-3.0-only license](LICENSE) · [Contributor agreement](CLA.md) · [Notice](NOTICE)
 
 ---
 

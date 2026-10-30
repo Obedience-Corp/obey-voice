@@ -9,10 +9,9 @@
 
 ## Notes
 
-## Contribution terms
+## Contributor agreement
 
-By submitting this contribution, you agree to the [contribution terms](https://github.com/Obedience-Corp/obey-voice/blob/main/CONTRIBUTOR_TERMS.md).
-You retain ownership. The public project uses AGPL-3.0-only; Obedience Corp also
-receives rights to use and sublicense your contribution in proprietary products.
-You must have authority to grant these rights. Identify any third-party material
-and its license. No separate signature or signing comment is required.
+First contribution? Follow the CLA Assistant check to accept the [CLA](https://github.com/Obedience-Corp/obey-voice/blob/main/CLA.md)
+once. Future PRs are checked automatically. You retain ownership; the public
+project is AGPL-3.0-only, and the agreement also lets Obedience Corp use your
+contributions in proprietary products.

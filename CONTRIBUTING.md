@@ -2,10 +2,10 @@
 
 Thanks for taking the time to improve Obey Voice.
 
-By submitting a contribution, you agree to the [contribution terms](CONTRIBUTOR_TERMS.md).
-You keep ownership. Contributions are AGPL-3.0-only in the public project, and
-Obedience Corp also receives permission to use them in proprietary products.
-There is no separate signing step.
+First-time contributors accept the [CLA](CLA.md) through CLA Assistant.
+It records acceptance and checks future PRs automatically. You retain ownership;
+the public project uses AGPL-3.0-only, and Obedience Corp also receives rights to
+use contributions in proprietary products.
 
 ## Development Setup
 
@@ -73,12 +73,18 @@ When filing a bug, include:
 Obey Voice and contributions included in its public repository are licensed
 under **GNU AGPL version 3 only (`AGPL-3.0-only`)**. See [LICENSE](LICENSE).
 
-The [contribution terms](CONTRIBUTOR_TERMS.md) grant Obedience Corp additional
-rights to use, modify, distribute, and sublicense contributions, including in
-closed company products. Those additional rights are not granted to all public
-users. Contributors retain ownership and must have authority to grant these
-rights, including any necessary employer permission.
+The [Contributor License Agreement](CLA.md) grants Obedience Corp additional
+rights to use contributions in proprietary products. Contributors keep ownership;
+those additional rights are not granted to all public users.
 
-Identify third-party material and its original license. These terms cannot grant
-rights you do not hold or replace someone else's license. If you do not agree to
-the contribution terms, do not submit material for inclusion in the project.
+### One-time CLA acceptance
+
+On your first PR, follow the CLA Assistant link and accept using your GitHub
+account. The check updates automatically. Later PRs reuse that acceptance;
+there is no signing comment, PDF, or maintainer acceptance checklist. A changed
+agreement requires acceptance of its new version.
+
+You must have authority to grant the rights in the agreement, including any
+necessary employer permission. Identify third-party material and its license.
+If ownership or your authority changes, tell the maintainers before contributing
+work that your existing agreement does not cover.
