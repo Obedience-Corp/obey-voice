@@ -17,25 +17,43 @@ import (
 //go:embed requirements.txt
 var requirements string
 
+//go:embed liquid_server.py
+var liquidServer string
+
+//go:embed requirements-cuda.txt
+var cudaRequirements string
+
+const visionVersion = "0.29.2"
+const pillowVersion = "13.0.0"
+
 const pythonVersion = "3.13.3"
 const torchVersion = "2.14.1"
 
-func runtimeID() string {
-	digest := sha256.Sum256([]byte(RuntimeRevision + pythonVersion + torchVersion + requirements))
+func defaultDevice() string {
+	device, _ := DeviceFor(runtime.GOOS, runtime.GOARCH, "auto", false)
+	return device
+}
+func runtimeID() string { return runtimeIDFor("2b", defaultDevice()) }
+func runtimeIDFor(modelID, device string) string {
+	model, _ := ModelFor(modelID)
+	digest := sha256.Sum256([]byte(RuntimeRevision + pythonVersion + torchVersion + visionVersion + pillowVersion + requirements + cudaRequirements + liquidServer + model.Engine + device))
 	return fmt.Sprintf("runtime-%x", digest[:8])
 }
-
-func PythonPath(modelsDir string) string {
-	return filepath.Join(modelsDir, "decider", runtimeID(), "venv", "bin", "python")
+func PythonPath(modelsDir string) string { return PythonPathFor(modelsDir, "2b", defaultDevice()) }
+func PythonPathFor(modelsDir, model, device string) string {
+	return filepath.Join(modelsDir, "decider", runtimeIDFor(model, device), "venv", "bin", "python")
 }
-
-func PythonReady(modelsDir string) bool {
-	root := filepath.Join(modelsDir, "decider", runtimeID())
-	marker, err := os.ReadFile(filepath.Join(root, "installed"))
-	if err != nil || string(marker) != runtimeID() {
+func PythonReady(modelsDir string) bool { return PythonReadyFor(modelsDir, "2b", defaultDevice()) }
+func PythonReadyFor(modelsDir, model, device string) bool {
+	if _, err := ModelFor(model); err != nil {
 		return false
 	}
-	info, err := os.Stat(PythonPath(modelsDir))
+	root := filepath.Join(modelsDir, "decider", runtimeIDFor(model, device))
+	marker, err := os.ReadFile(filepath.Join(root, "installed"))
+	if err != nil || string(marker) != runtimeIDFor(model, device) {
+		return false
+	}
+	info, err := os.Stat(PythonPathFor(modelsDir, model, device))
 	return err == nil && !info.IsDir()
 }
 
@@ -43,6 +61,17 @@ func PythonReady(modelsDir string) bool {
 // changes the user's Python, shell profile or package installation. Downloads
 // are an explicit setup operation; normal inference invokes Python directly.
 func EnsurePython(ctx context.Context, modelsDir string, progress func(string)) error {
+	return EnsurePythonFor(ctx, modelsDir, "2b", defaultDevice(), progress)
+}
+func EnsurePythonFor(ctx context.Context, modelsDir, modelID, device string, progress func(string)) error {
+	model, err := ModelFor(modelID)
+	if err != nil {
+		return err
+	}
+	device, err = ResolveDevice(ctx, device)
+	if err != nil {
+		return err
+	}
 	absolute, err := filepath.Abs(modelsDir)
 	if err != nil {
 		return fmt.Errorf("resolve decision models directory: %w", err)
@@ -51,7 +80,7 @@ func EnsurePython(ctx context.Context, modelsDir string, progress func(string)) 
 	if _, _, err := UVAsset(runtime.GOOS, runtime.GOARCH); err != nil {
 		return err
 	}
-	root := filepath.Join(modelsDir, "decider", runtimeID())
+	root := filepath.Join(modelsDir, "decider", runtimeIDFor(modelID, device))
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return fmt.Errorf("create decision runtime: %w", err)
 	}
@@ -60,21 +89,23 @@ func EnsurePython(ctx context.Context, modelsDir string, progress func(string)) 
 		return err
 	}
 	defer release()
-	if PythonReady(modelsDir) {
+	if PythonReadyFor(modelsDir, modelID, device) {
 		return nil
 	}
-	source, err := os.Open(SourcePath(modelsDir))
-	if err != nil {
-		return fmt.Errorf("open decision runtime source: %w", err)
-	}
-	hash := sha256.New()
-	_, err = io.Copy(hash, source)
-	_ = source.Close()
-	if err != nil {
-		return fmt.Errorf("read decision runtime source: %w", err)
-	}
-	if fmt.Sprintf("%x", hash.Sum(nil)) != RuntimeSHA256 {
-		return fmt.Errorf("decision runtime source checksum mismatch")
+	if model.Engine == "decider" {
+		source, err := os.Open(SourcePath(modelsDir))
+		if err != nil {
+			return fmt.Errorf("open decision runtime source: %w", err)
+		}
+		hash := sha256.New()
+		_, err = io.Copy(hash, source)
+		_ = source.Close()
+		if err != nil {
+			return fmt.Errorf("read decision runtime source: %w", err)
+		}
+		if fmt.Sprintf("%x", hash.Sum(nil)) != RuntimeSHA256 {
+			return fmt.Errorf("decision runtime source checksum mismatch")
+		}
 	}
 	log, err := os.OpenFile(filepath.Join(root, "install.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
@@ -105,20 +136,37 @@ func EnsurePython(ctx context.Context, modelsDir string, progress func(string)) 
 	if err := run("Installing private Python", "venv", "--managed-python", "--python", pythonVersion, "--no-project", "--allow-existing", filepath.Join(root, "venv")); err != nil {
 		return err
 	}
-	python := PythonPath(modelsDir)
+	python := PythonPathFor(modelsDir, modelID, device)
 	if err := run("Installing decision dependencies", "pip", "install", "--python", python, "--no-deps", "--default-index", "https://pypi.org/simple", "-r", filepath.Join(root, "requirements.txt")); err != nil {
 		return err
 	}
 	index := "https://pypi.org/simple"
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && device != "cuda" {
 		index = "https://download.pytorch.org/whl/cpu"
 	}
-	if err := run("Installing local inference engine", "pip", "install", "--python", python, "--no-deps", "--default-index", index, "torch=="+torchVersion); err != nil {
+	if err := run("Installing local inference engine", "pip", "install", "--python", python, "--no-deps", "--default-index", index, "torch=="+torchVersion, "torchvision=="+visionVersion); err != nil {
+		return err
+	}
+	if err := run("Installing image dependencies", "pip", "install", "--python", python, "--no-deps", "--default-index", "https://pypi.org/simple", "pillow=="+pillowVersion); err != nil {
+		return err
+	}
+	if device == "cuda" {
+		cudaPath := filepath.Join(root, "requirements-cuda.txt")
+		if err := os.WriteFile(cudaPath, []byte(cudaRequirements), 0600); err != nil {
+			return err
+		}
+		if err := run("Installing CUDA dependencies", "pip", "install", "--python", python, "--no-deps", "--default-index", "https://pypi.org/simple", "-r", cudaPath); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "liquid_server.py"), []byte(liquidServer), 0600); err != nil {
 		return err
 	}
 	sourceURL := (&url.URL{Scheme: "file", Path: SourcePath(modelsDir)}).String()
-	if err := run("Installing decision server", "pip", "install", "--python", python, "--no-deps", "--no-build-isolation", "decider-ai[serve] @ "+sourceURL); err != nil {
-		return err
+	if model.Engine == "decider" {
+		if err := run("Installing decision server", "pip", "install", "--python", python, "--no-deps", "--no-build-isolation", "decider-ai[serve] @ "+sourceURL); err != nil {
+			return err
+		}
 	}
 	if err := run("Verifying decision environment", "pip", "check", "--python", python, "--offline"); err != nil {
 		return err
@@ -126,7 +174,7 @@ func EnsurePython(ctx context.Context, modelsDir string, progress func(string)) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(root, "installed"), []byte(runtimeID()), 0600)
+	return os.WriteFile(filepath.Join(root, "installed"), []byte(runtimeIDFor(modelID, device)), 0600)
 }
 
 // Optional local processes inherit no provider credentials or Python/uv user

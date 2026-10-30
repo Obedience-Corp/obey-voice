@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decider"
@@ -72,15 +73,18 @@ type AssetArchive struct {
 // files or a single archive — never both. CheckFiles are the paths, relative to
 // the target directory, that must exist for the asset to count as installed.
 type Asset struct {
-	ID         string        `json:"id"`
-	Provider   string        `json:"provider"`
-	Mode       string        `json:"mode,omitempty"`
-	Kind       AssetKind     `json:"kind"`
-	Name       string        `json:"name,omitempty"`       // human-friendly label for progress/diagnostics
-	TargetDir  string        `json:"target_dir,omitempty"` // relative to the models dir; empty = models dir root
-	Files      []AssetFile   `json:"files,omitempty"`
-	Archive    *AssetArchive `json:"archive,omitempty"`
-	CheckFiles []string      `json:"check_files,omitempty"` // relative to target dir; required for archives
+	decisionRuntime bool
+	decisionModel   string
+	decisionDevice  string
+	ID              string        `json:"id"`
+	Provider        string        `json:"provider"`
+	Mode            string        `json:"mode,omitempty"`
+	Kind            AssetKind     `json:"kind"`
+	Name            string        `json:"name,omitempty"`       // human-friendly label for progress/diagnostics
+	TargetDir       string        `json:"target_dir,omitempty"` // relative to the models dir; empty = models dir root
+	Files           []AssetFile   `json:"files,omitempty"`
+	Archive         *AssetArchive `json:"archive,omitempty"`
+	CheckFiles      []string      `json:"check_files,omitempty"` // relative to target dir; required for archives
 	// License and Source carry an attribution obligation that downloading the
 	// asset triggers. Set them together on any asset whose weights are not
 	// covered by this project's own license; both surface in models status and
@@ -510,11 +514,15 @@ func (m AssetManifest) Status(modelsDir string) []AssetStatus {
 		st.Missing = a.installProblems(modelsDir)
 		st.Installed = len(st.Missing) == 0
 		out = append(out, st)
-		if a.ID == "decision.runtime.source" {
-			ready := decider.PythonReady(modelsDir)
+		if a.decisionRuntime {
+			device, _ := decider.DeviceFor(runtime.GOOS, runtime.GOARCH, a.decisionDevice, false)
+			ready := decider.PythonReadyFor(modelsDir, a.decisionModel, device)
+			if (a.decisionDevice == "" || a.decisionDevice == "auto") && runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+				ready = ready || decider.PythonReadyFor(modelsDir, a.decisionModel, "cuda")
+			}
 			runtime := AssetStatus{ID: "decision.runtime.environment", Name: "Private decision Python environment", Provider: "decider", Kind: AssetKindDecision, Installed: ready}
 			if !ready {
-				runtime.Missing = []string{decider.PythonPath(modelsDir)}
+				runtime.Missing = []string{decider.PythonPathFor(modelsDir, a.decisionModel, device)}
 				runtime.Detail = "run models ensure --decision to install the pinned environment"
 			}
 			out = append(out, runtime)

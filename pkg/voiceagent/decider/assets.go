@@ -9,8 +9,8 @@ import (
 	"runtime"
 )
 
-const RuntimeRevision = "50d0be0d7cb43d2066965ce5fa7f3fe4e489a60f"
-const RuntimeSHA256 = "ffbd5320f584ef8b9579b0ced0d45f1eb3e27bf11c0f2c521cd623427cab1e6f"
+const RuntimeRevision = "91b6fa9b94ab6c4dc2c63d3b14d413243b4fffcc"
+const RuntimeSHA256 = "2e35b1566396c89e60b53bee4de734390a85ced4e85495f924062fcfa0d7a0d3"
 const UVVersion = "0.7.13"
 
 //go:embed models.json
@@ -22,9 +22,13 @@ type File struct {
 	SHA256 string `json:"sha256"`
 }
 type Model struct {
-	Repo     string `json:"repo"`
-	Revision string `json:"revision"`
-	Files    []File `json:"files"`
+	Name      string `json:"name"`
+	Engine    string `json:"engine"`
+	License   string `json:"license"`
+	MemoryGiB int    `json:"memory_gib"`
+	Repo      string `json:"repo"`
+	Revision  string `json:"revision"`
+	Files     []File `json:"files"`
 }
 
 func ModelFor(tier string) (Model, error) {

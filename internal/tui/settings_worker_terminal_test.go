@@ -19,11 +19,12 @@ type workerTerminalState struct {
 	message string
 }
 type workerTerminalHarness struct {
-	model  settingsModel
-	states chan workerTerminalState
-	saved  chan *config.VoiceWorkers
-	output sync.Mutex
-	text   bytes.Buffer
+	decisionResults chan string
+	model           settingsModel
+	states          chan workerTerminalState
+	saved           chan *config.VoiceWorkers
+	output          sync.Mutex
+	text            bytes.Buffer
 }
 
 func (h *workerTerminalHarness) Init() tea.Cmd { return nil }
@@ -34,6 +35,9 @@ func (h *workerTerminalHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m, cmd := h.model.Update(msg)
 	h.model = m
+	if _, ok := msg.(decisionTestMsg); ok && h.decisionResults != nil {
+		h.decisionResults <- m.message
+	}
 	if _, ok := msg.(tea.KeyMsg); ok {
 		row, _, _ := m.focused()
 		h.states <- workerTerminalState{key: row.key, editing: m.edit.kind != editNone, message: m.message}

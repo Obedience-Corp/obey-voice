@@ -31,6 +31,14 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 	// single tick instead of once.
 	onProgress = throttleDownloadTicks(onProgress)
 
+	device := ""
+	if req.NeedDecision && ManagedDecisions(cfg) {
+		var err error
+		device, err = decider.ResolveDevice(ctx, cfg.DecisionDevice)
+		if err != nil {
+			return err
+		}
+	}
 	manifest, err := ManifestFor(cfg, req)
 	if err != nil {
 		return err
@@ -40,7 +48,7 @@ func EnsureRuntimeAssetsProgress(ctx context.Context, cfg *Config, req AssetRequ
 		return err
 	}
 	if req.NeedDecision && ManagedDecisions(cfg) {
-		if err := decider.EnsurePython(ctx, dir, func(stage string) {
+		if err := decider.EnsurePythonFor(ctx, dir, cfg.DecisionLocalModel, device, func(stage string) {
 			if onProgress != nil {
 				onProgress(AssetProgress{Asset: "Local decision runtime", Phase: assetPhaseInstall})
 			}

@@ -18,6 +18,7 @@ import (
 func bindDecisions(p *pipeline.Pipeline, cfg *config.Config) func() {
 	manager := decision.NewManager(&p.Decisions)
 	p.DecisionStatus = manager.Status
+	p.TestDecisions = manager.Test
 	p.ConfigureDecisions = func(cfg *config.Config) {
 		// Off must not inspect credentials, create directories, probe a server or
 		// install anything. Both independent points off have the same behavior.
@@ -63,10 +64,16 @@ func prepareDecisions(ctx context.Context, cfg *config.Config) (decision.Evaluat
 		var owned io.Closer
 		switch cfg.DecisionRuntime {
 		case "", "managed":
+			cfg = cfg.Clone()
+			device, err := decider.ResolveDevice(ctx, cfg.DecisionDevice)
+			if err != nil {
+				return nil, nil, err
+			}
+			cfg.DecisionDevice = device
 			if err := config.EnsureRuntimeAssetsProgress(ctx, cfg, config.AssetRequest{NeedDecision: true}, nil); err != nil {
 				return nil, nil, fmt.Errorf("prepare local decisions: %w", err)
 			}
-			server, err := decider.Start(ctx, config.ModelsDirFrom(cfg), cfg.DecisionLocalModel)
+			server, err := decider.StartFor(ctx, config.ModelsDirFrom(cfg), cfg.DecisionLocalModel, cfg.DecisionDevice)
 			if err != nil {
 				return nil, nil, err
 			}

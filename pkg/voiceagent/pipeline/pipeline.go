@@ -114,6 +114,7 @@ type Pipeline struct {
 	// interrupting admitted work. The owning runtime performs setup in the background.
 	ConfigureDecisions func(*config.Config)
 	DecisionStatus     func() decision.RuntimeStatus
+	TestDecisions      func(context.Context) (decision.SmokeResult, error)
 	// RouteHandoff classifies an intentional handoff without changing selection.
 	// The pipeline commits the proposal after joining the speech interrupt watch.
 	// It never invokes this callback for background or degraded work.
