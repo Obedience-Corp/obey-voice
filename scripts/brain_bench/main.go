@@ -32,6 +32,7 @@ import (
 
 	"github.com/ollama/ollama/api"
 
+	"github.com/Obedience-Corp/obey-voice/internal/benchprivacy"
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -538,6 +539,10 @@ func run(personaID, modelsCSV string, reps, targetTok int, turnTimeout time.Dura
 	blob, err := json.MarshalIndent(art, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encoding artifact: %w", err)
+	}
+	blob, err = benchprivacy.JSON(blob)
+	if err != nil {
+		return fmt.Errorf("redacting artifact: %w", err)
 	}
 	if err := os.WriteFile(outPath, append(blob, '\n'), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", outPath, err)

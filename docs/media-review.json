@@ -1,0 +1,614 @@
+{
+  "policy": "No listed asset is cleared by this inventory. Retained private assets block public release until content and rights review is recorded.",
+  "assets": [
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_128x128.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_128x128@2x.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_16x16.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_16x16@2x.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_256x256.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_256x256@2x.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_32x32.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_32x32@2x.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_512x512.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/AppIcon.iconset/icon_512x512@2x.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/tray-color.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "apps/desktop/assets/tray-template.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/agent-images.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/chat-images.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/context-meter.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/conversation-record.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/agent-images-draft.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/agent-images-thread.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/chat-images-draft.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/chat-images-thread.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/chat-tools.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/launcher-notice-open.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "demos/frames/launcher-notice-short-scrolled.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "demos/frames/launcher-notice-short.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "demos/frames/launcher-notice.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "demos/frames/launcher.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/persona-model-claude.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/persona-model-edit.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/persona-model-inherited.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/persona-model-view.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/persona-variable-picker.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/persona-voice-preview.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/persona-voice-row.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/route-meeting-tab.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/route-settings.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/route-speaker-tab.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/think-hidden.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/think-live.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/think-shown.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/voice-eq.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/work-cue-detail.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/work-cue-followup.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/work-cue-listening.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/frames/workers-detail.png",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "demos/launcher-notice-short.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "demos/launcher-notice.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "demos/library.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/meeting-route-speaker.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/meeting-speakers.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/meeting.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/persona-create.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/persona-form-ux.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/persona-model-view.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/persona-switch.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/qwen-voices.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/settings-sidebar.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/think-blocks.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/tool-calls.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/voice-meter.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/work-cue.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "demos/workers.gif",
+      "source": "Application demonstration; content and source permissions require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "Regenerated from isolated synthetic fixtures; visual content review recorded in WI-3200c0"
+    },
+    {
+      "path": "docs/audio-jobs/evidence/direct-output.wav",
+      "source": "Finite audio job evidence; adjacent job receipts do not establish source rights",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/audio-jobs/evidence/recorded-staged-output.wav",
+      "source": "Finite audio job evidence; adjacent job receipts do not establish source rights",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/audio/golden/N2/after.wav",
+      "source": "Generated audio with adjacent provenance.json; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/audio/golden/N2/before.wav",
+      "source": "Generated audio with adjacent provenance.json; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/audio/golden/N3/after.wav",
+      "source": "Generated audio with adjacent provenance.json; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/audio/golden/N3/before.wav",
+      "source": "Generated audio with adjacent provenance.json; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/audio/golden/N6/after.wav",
+      "source": "Generated audio with adjacent provenance.json; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/audio/golden/N6/before.wav",
+      "source": "Generated audio with adjacent provenance.json; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/images/desktop-conversation.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/images/desktop-home.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/images/desktop-settings.png",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/images/tui.gif",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "pkg/voiceagent/qwen/voices/veronica/ref.wav",
+      "source": "Source-clip metadata in adjacent meta.json; redistribution and cloning rights unverified",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "pkg/voiceagent/qwen/voices/veronicadesk/ref.wav",
+      "source": "Source-clip metadata in adjacent meta.json; redistribution and cloning rights unverified",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/bare.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/british.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/confusable.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/kokoro.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/mention.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/negative.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/other-keyword.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/positive.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "testdata/kws/verb.wav",
+      "source": "Synthetic generation documented in testdata/kws/README.md; permissions still require review",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "tests/voiceflow/testdata/barge_in.wav",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "tests/voiceflow/testdata/utterance.wav",
+      "source": "Source and content not yet reviewed",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    },
+    {
+      "path": "docs/benchmarks/t3b/transcripts.json",
+      "source": "25 original meeting transcript records; source and redistribution rights unverified",
+      "disposition": "retained_private_pending_review",
+      "public_release": "blocked",
+      "content_review": "pending"
+    }
+  ]
+}

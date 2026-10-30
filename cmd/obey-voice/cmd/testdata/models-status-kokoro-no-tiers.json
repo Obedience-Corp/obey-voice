@@ -6,7 +6,7 @@
     "kind": "vad",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/obey-voice/models/silero_vad.onnx"
+      "/home/demo/.cache/obey-voice/models/silero_vad.onnx"
     ]
   },
   {
@@ -17,10 +17,10 @@
     "kind": "stt",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/encoder.int8.onnx",
-      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/decoder.int8.onnx",
-      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/joiner.int8.onnx",
-      "/Users/lance/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/tokens.txt"
+      "/home/demo/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/encoder.int8.onnx",
+      "/home/demo/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/decoder.int8.onnx",
+      "/home/demo/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/joiner.int8.onnx",
+      "/home/demo/.cache/obey-voice/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/tokens.txt"
     ]
   },
   {
@@ -30,10 +30,10 @@
     "kind": "tts",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/obey-voice/models/model.onnx",
-      "/Users/lance/.cache/obey-voice/models/voices.bin",
-      "/Users/lance/.cache/obey-voice/models/tokens.txt",
-      "/Users/lance/.cache/obey-voice/models/espeak-ng-data"
+      "/home/demo/.cache/obey-voice/models/model.onnx",
+      "/home/demo/.cache/obey-voice/models/voices.bin",
+      "/home/demo/.cache/obey-voice/models/tokens.txt",
+      "/home/demo/.cache/obey-voice/models/espeak-ng-data"
     ]
   },
   {
@@ -43,7 +43,7 @@
     "kind": "speaker",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/obey-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx"
+      "/home/demo/.cache/obey-voice/models/speaker/pyannote-segmentation-3.0/model.int8.onnx"
     ]
   },
   {
@@ -53,7 +53,7 @@
     "kind": "speaker",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/obey-voice/models/speaker/nemo_en_titanet_small.onnx"
+      "/home/demo/.cache/obey-voice/models/speaker/nemo_en_titanet_small.onnx"
     ]
   },
   {
@@ -64,7 +64,7 @@
     "kind": "tts",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/obey-voice/models/qwen3-tts"
+      "/home/demo/.cache/obey-voice/models/qwen3-tts"
     ]
   },
   {
@@ -75,7 +75,7 @@
     "kind": "tts",
     "installed": false,
     "missing": [
-      "/Users/lance/.cache/obey-voice/models/qwen3-tts"
+      "/home/demo/.cache/obey-voice/models/qwen3-tts"
     ],
     "detail": "not in the pinned release — set qwen_tts_native_url to a multi-tier tarball"
   }

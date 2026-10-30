@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "config_file": "/Users/lance/.obey/agents/voice/obey-voice/config.yaml",
+  "config_file": "/home/demo/.obey/agents/voice/obey-voice/config.yaml",
   "values": {
     "acoustic_name_enabled": {
       "value": false,
@@ -243,7 +243,7 @@
       "source": "default"
     },
     "models_dir": {
-      "value": "/Users/lance/.cache/obey-voice/models",
+      "value": "/home/demo/.cache/obey-voice/models",
       "source": "default"
     },
     "muse_spark_model": {
@@ -735,7 +735,7 @@
       "source": "default"
     },
     "whispercpp_model_path": {
-      "value": "/Users/lance/.cache/obey-voice/models/whispercpp/ggml-base.en.bin",
+      "value": "/home/demo/.cache/obey-voice/models/whispercpp/ggml-base.en.bin",
       "source": "default"
     },
     "work_dir": {

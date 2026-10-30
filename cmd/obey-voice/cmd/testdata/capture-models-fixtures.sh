@@ -32,7 +32,7 @@ bin="$work/samantha"
 # in a fresh install seeds a persona from whatever the config said at the time —
 # capturing both fixtures under one HOME silently pinned the second one to the
 # first one's TTS provider.
-canonicalCache='/Users/lance/.cache/obey-voice'
+canonicalCache='/home/demo/.cache/obey-voice'
 
 # capture <home> <fixture>  — run the command and normalize this run's paths to
 # a canonical home so the fixture is stable across machines.

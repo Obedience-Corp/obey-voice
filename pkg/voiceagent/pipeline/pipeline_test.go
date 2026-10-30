@@ -145,7 +145,7 @@ func TestRunTurnPreservesRecognizedTranscriptWhenAdmissionRefuses(t *testing.T) 
 
 // A tool loop that restates the spoken line must not queue it for TTS again.
 func TestRunTurnDoesNotSpeakRestatedSentence(t *testing.T) {
-	const line = "Stay right there, baby."
+	const line = "The test run finished."
 	bus := events.NewBus()
 	ttsProvider := &fakeTTS{}
 	player := newFakePlayer(time.Millisecond)

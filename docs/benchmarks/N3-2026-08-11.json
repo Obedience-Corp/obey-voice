@@ -1,4 +1,5 @@
 {
+  "privacy_redaction": "Local fixture paths replaced with synthetic paths; original measurements and transcript text retained. Rights review remains pending.",
   "schema": "samantha.benchmark.v1",
   "provenance": {
     "machine": "Mac16,9",
@@ -21,7 +22,7 @@
     {
       "mode": "voice",
       "iteration": 1,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-01.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-01.wav",
       "elapsed": 7453362084,
       "metrics": {
         "Outcome": "completed",
@@ -44,7 +45,7 @@
     {
       "mode": "voice",
       "iteration": 1,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-02.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-02.wav",
       "elapsed": 4352835125,
       "metrics": {
         "Outcome": "completed",
@@ -67,7 +68,7 @@
     {
       "mode": "voice",
       "iteration": 1,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-03.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-03.wav",
       "elapsed": 9860226792,
       "metrics": {
         "Outcome": "completed",
@@ -90,7 +91,7 @@
     {
       "mode": "voice",
       "iteration": 2,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-01.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-01.wav",
       "elapsed": 6215539917,
       "metrics": {
         "Outcome": "completed",
@@ -113,7 +114,7 @@
     {
       "mode": "voice",
       "iteration": 2,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-02.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-02.wav",
       "elapsed": 4423270375,
       "metrics": {
         "Outcome": "completed",
@@ -136,7 +137,7 @@
     {
       "mode": "voice",
       "iteration": 2,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-03.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-03.wav",
       "elapsed": 6141795583,
       "metrics": {
         "Outcome": "completed",
@@ -159,7 +160,7 @@
     {
       "mode": "voice",
       "iteration": 3,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-01.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-01.wav",
       "elapsed": 6125970417,
       "metrics": {
         "Outcome": "completed",
@@ -182,7 +183,7 @@
     {
       "mode": "voice",
       "iteration": 3,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-02.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-02.wav",
       "elapsed": 4424618500,
       "metrics": {
         "Outcome": "completed",
@@ -205,7 +206,7 @@
     {
       "mode": "voice",
       "iteration": 3,
-      "fixture": "/Users/lancerogers/.cache/festival-voice/fixtures/bench/synth-03.wav",
+      "fixture": "/home/demo/.cache/festival-voice/fixtures/bench/synth-03.wav",
       "elapsed": 5819802458,
       "metrics": {
         "Outcome": "completed",
