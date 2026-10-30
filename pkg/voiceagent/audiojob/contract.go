@@ -40,7 +40,13 @@ type Runtime struct {
 
 // Origin is the canonical outbound server origin. Validation admits an optional
 // root slash; retained request/config values stay exact for provenance matching.
-func (r Runtime) Origin() string { return strings.TrimSuffix(r.Endpoint, "/") }
+func (r Runtime) Origin() string {
+	endpoint, err := url.Parse(r.Endpoint)
+	if err != nil {
+		return ""
+	} // Config.Validate rejects malformed endpoints first.
+	return (&url.URL{Scheme: endpoint.Scheme, Host: endpoint.Host}).String()
+}
 
 type Limits struct {
 	TimeoutSeconds int   `json:"timeout_seconds"`

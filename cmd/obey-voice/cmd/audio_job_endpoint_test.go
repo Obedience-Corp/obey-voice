@@ -20,8 +20,8 @@ import (
 )
 
 func TestAudioJobCanonicalizesOutboundOriginAndPreservesProvenance(t *testing.T) {
-	for _, suffix := range []string{"", "/"} {
-		t.Run(map[string]string{"": "origin", "/": "root_slash"}[suffix], func(t *testing.T) {
+	for _, suffix := range []string{"", "/", "/?", "/#"} {
+		t.Run(map[string]string{"": "origin", "/": "root_slash", "/?": "empty_query", "/#": "empty_fragment"}[suffix], func(t *testing.T) {
 			var mu sync.Mutex
 			paths := map[string]int{}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
