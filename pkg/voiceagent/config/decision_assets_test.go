@@ -6,10 +6,12 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/decider"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -114,5 +116,48 @@ func TestGzipArchiveVerificationAndPathRejection(t *testing.T) {
 				t.Fatal("verified gzip missing install marker")
 			}
 		})
+	}
+}
+
+func TestDecisionCatalogDownloadsOnlySelectedWeightsAndRuntime(t *testing.T) {
+	for _, id := range decider.ModelIDs() {
+		cfg := &Config{DecisionEnabled: true, DecisionVoiceWork: true, DecisionLocalModel: id, DecisionDevice: "cpu"}
+		m, err := ManifestFor(cfg, AssetRequest{NeedDecision: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		model, _ := decider.ModelFor(id)
+		weights := 0
+		for _, a := range m.Assets {
+			if strings.HasPrefix(a.Source, "https://huggingface.co/") {
+				weights++
+				if a.Source != "https://huggingface.co/"+model.Repo || a.License != model.License {
+					t.Fatal("wrong model assets")
+				}
+			}
+			if model.Engine == "liquid" && a.ID == "decision.runtime.source" {
+				t.Fatal("Liquid downloads Decider source")
+			}
+		}
+		if weights != 1 {
+			t.Fatal("multiple weight sets selected")
+		}
+		root := t.TempDir()
+		states := m.Status(root)
+		found := false
+		for _, state := range states {
+			if state.ID == "decision.runtime.environment" {
+				found = true
+				if state.Installed || len(state.Missing) != 1 || state.Missing[0] != decider.PythonPathFor(root, id, "cpu") {
+					t.Fatal("status used wrong runtime profile")
+				}
+			}
+		}
+		if !found {
+			t.Fatal("missing environment status")
+		}
 	}
 }

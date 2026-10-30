@@ -71,7 +71,8 @@ The equivalent persisted configuration keys are:
 | `decision_text_work` | `true` | Typed worker routing |
 | `decision_provider` | `local` | `local`, `jev`, or `openai` |
 | `decision_runtime` | `managed` | Managed install or `external` local server |
-| `decision_local_model` | `2b` | Managed `2b` or `0.8b` model |
+| `decision_local_model` | `2b` | `2b`, `0.8b`, `decider-2b-v12`, `decider-4b-v3`, or `d1-3b` |
+| `decision_device` | `auto` | `auto`, `cpu`, `mps`, or `cuda`; managed local only |
 | `decision_endpoint` | empty | External loopback `/v1/systemone` URL |
 | `decision_model` | empty | Explicit hosted model ID |
 | `decision_api_key` | empty | Hosted credential (masked in settings) |
@@ -85,10 +86,32 @@ Python environment. Initial setup downloads public model/runtime dependencies.
 Subsequent inference runs locally with offline model loading and a private
 loopback listener. Setup does not alter the user's Python installation.
 
+The original `2b` and `0.8b` IDs keep their pinned weights. `2b` remains the
+default, and decision shortcuts remain off until enabled. New catalog entries
+are experimental alternatives, not automatic upgrades. Settings display download
+size, approximate memory requirements, and license. Liquid d1 uses the
+[LFM Open License](https://huggingface.co/LiquidAI/d1-3B/blob/main/LICENSE),
+which has commercial restrictions; the Decider entries use Apache-2.0.
+
+Auto chooses MPS on Apple Silicon, detected NVIDIA CUDA on Linux x86_64, and
+CPU otherwise. An explicit unavailable device fails with a diagnostic; it never
+silently changes model or selects a hosted provider. Managed macOS requires
+Apple Silicon and macOS 14 or later; Linux needs glibc 2.28 or later. Linux
+ARM64 uses CPU; managed CUDA on ARM64, Intel macOS, and Windows are not supported.
+Those systems can use an external compatible loopback server. Linux backend
+selection has fixture coverage; live hardware validation is on Apple Silicon.
+
 Managed setup pins model revisions, model/source/archive SHA-256 checksums,
-Python and dependency versions. It was exercised on Apple Silicon macOS. Linux
-amd64/arm64 installer selection uses CPU PyTorch but has not been verified on
-Linux hardware. Other platforms can use an external compatible loopback server.
+Python and dependency versions. Runtime environments are isolated by model
+family and compute device. Only the selected model is downloaded. Changing
+settings cancels prior setup/inference and returns to ordinary routing until
+the new runtime is ready.
+
+Once ready, **Test on this machine** runs one synthetic choice on the owned
+local runtime, with no conversation data or tools. It reports elapsed time
+against the configured deadline. This is a warm smoke test, not a routing
+accuracy benchmark or a guarantee that longer requests meet the deadline.
+Hosted and external runtimes cannot use this test action.
 
 Jev and OpenAI are explicit alternatives. Selecting either sends the bounded
 request and recent conversation to that service and may incur its API charges.

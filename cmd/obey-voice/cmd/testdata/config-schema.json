@@ -841,6 +841,25 @@
       "editable": true
     },
     {
+      "key": "decision_device",
+      "type": "enum",
+      "default": "auto",
+      "enum": [
+        "auto",
+        "cpu",
+        "mps",
+        "cuda"
+      ],
+      "allows_empty": false,
+      "group": "brain",
+      "title": "Decision compute device",
+      "help": "Auto uses Apple Silicon MPS, detected NVIDIA CUDA on Linux x86_64, otherwise CPU. Explicit devices never silently fall back.",
+      "restart_required": true,
+      "restart_verified": false,
+      "persona_overridable": false,
+      "editable": true
+    },
+    {
       "key": "decision_enabled",
       "type": "bool",
       "default": false,
@@ -872,12 +891,15 @@
       "default": "2b",
       "enum": [
         "2b",
-        "0.8b"
+        "0.8b",
+        "decider-2b-v12",
+        "decider-4b-v3",
+        "d1-3b"
       ],
       "allows_empty": false,
       "group": "brain",
       "title": "Local decision model",
-      "help": "2b is the tested route-choice candidate; 0.8b uses less memory and remains experimental.",
+      "help": "Choose a pinned local model. 2b preserves the qualified default; newer models are experimental. Only the selected model is downloaded.",
       "restart_required": true,
       "restart_verified": false,
       "persona_overridable": false,

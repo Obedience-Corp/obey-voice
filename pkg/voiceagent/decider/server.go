@@ -18,12 +18,16 @@ import (
 // Server owns exactly the process and loopback listener it starts. It never
 // probes or terminates another installation's server or claims a fixed port.
 type Server struct {
+	device   string
+	model    string
 	endpoint string
 	logPath  string
 	cancel   context.CancelFunc
 	done     chan struct{}
 	once     sync.Once
 }
+
+func (s *Server) RuntimeInfo() string { return s.model + " · " + s.device }
 
 func (s *Server) Endpoint() string      { return s.endpoint + "/v1/systemone" }
 func (s *Server) LogPath() string       { return s.logPath }
@@ -34,6 +38,17 @@ func (s *Server) Close() error          { s.once.Do(s.cancel); <-s.done; return 
 // The pre-bound listener is inherited by the child, eliminating a free-port
 // race and keeping transcript traffic away from unrelated local servers.
 func Start(ctx context.Context, modelsDir, tier string) (*Server, error) {
+	return StartFor(ctx, modelsDir, tier, defaultDevice())
+}
+func StartFor(ctx context.Context, modelsDir, tier, device string) (*Server, error) {
+	device, err := ResolveDevice(ctx, device)
+	if err != nil {
+		return nil, err
+	}
+	model, err := ModelFor(tier)
+	if err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -42,7 +57,7 @@ func Start(ctx context.Context, modelsDir, tier string) (*Server, error) {
 		return nil, fmt.Errorf("resolve decision models directory: %w", err)
 	}
 	modelsDir = absolute
-	if !PythonReady(modelsDir) {
+	if !PythonReadyFor(modelsDir, tier, device) {
 		return nil, fmt.Errorf("managed decision runtime is not installed")
 	}
 	modelDir, err := ModelDir(modelsDir, tier)
@@ -59,16 +74,20 @@ func Start(ctx context.Context, modelsDir, tier string) (*Server, error) {
 		return nil, fmt.Errorf("inherit decision listener: %w", err)
 	}
 	defer fd.Close()
-	log, err := os.CreateTemp(filepath.Join(modelsDir, "decider", runtimeID()), "server-*.log")
+	log, err := os.CreateTemp(filepath.Join(modelsDir, "decider", runtimeIDFor(tier, device)), "server-*.log")
 	if err != nil {
 		return nil, fmt.Errorf("open decision runtime log: %w", err)
 	}
 	processCtx, cancel := context.WithCancel(ctx)
-	s := &Server{endpoint: "http://" + listener.Addr().String(), logPath: log.Name(), cancel: cancel, done: make(chan struct{})}
-	cmd := exec.CommandContext(processCtx, PythonPath(modelsDir), "-m", "uvicorn", "decider.serve:app", "--fd", "3", "--no-access-log")
+	s := &Server{device: device, model: model.Name, endpoint: "http://" + listener.Addr().String(), logPath: log.Name(), cancel: cancel, done: make(chan struct{})}
+	module := "decider.serve:app"
+	if model.Engine == "liquid" {
+		module = "liquid_server:app"
+	}
+	cmd := exec.CommandContext(processCtx, PythonPathFor(modelsDir, tier, device), "-m", "uvicorn", module, "--fd", "3", "--no-access-log")
 	cmd.ExtraFiles = []*os.File{fd}
-	cmd.Dir = filepath.Join(modelsDir, "decider")
-	cmd.Env = append(cleanEnvironment(), "DECIDER_MODEL="+modelDir, "DECIDER_DEVICE=auto", "DECIDER_COMPILE=0", "DECIDER_FP8=0", "HF_HUB_OFFLINE=1", "TRANSFORMERS_OFFLINE=1", "HF_HOME="+filepath.Join(modelsDir, "decider", "hf"))
+	cmd.Dir = filepath.Join(modelsDir, "decider", runtimeIDFor(tier, device))
+	cmd.Env = append(cleanEnvironment(), "DECIDER_MODEL="+modelDir, "DECIDER_DEVICE="+device, "DECIDER_COMPILE=0", "DECIDER_FP8=0", "HF_HUB_OFFLINE=1", "TRANSFORMERS_OFFLINE=1", "HF_HOME="+filepath.Join(modelsDir, "decider", "hf"))
 	cmd.Stdout, cmd.Stderr = log, log
 	configureProcess(cmd)
 	if err := cmd.Start(); err != nil {
@@ -89,7 +108,7 @@ func Start(ctx context.Context, modelsDir, tier string) (*Server, error) {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		if healthy(readyCtx, client, s.endpoint, modelDir) {
+		if healthyDevice(readyCtx, client, s.endpoint, modelDir, device) {
 			break
 		}
 		select {
@@ -124,7 +143,7 @@ func Start(ctx context.Context, modelsDir, tier string) (*Server, error) {
 	return s, nil
 }
 
-func healthy(ctx context.Context, client *http.Client, endpoint, model string) bool {
+func healthyDevice(ctx context.Context, client *http.Client, endpoint, model, device string) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/health", nil)
 	if err != nil {
 		return false
@@ -138,8 +157,9 @@ func healthy(ctx context.Context, client *http.Client, endpoint, model string) b
 		return false
 	}
 	var health struct {
-		OK    bool   `json:"ok"`
-		Model string `json:"model"`
+		Device string `json:"device"`
+		OK     bool   `json:"ok"`
+		Model  string `json:"model"`
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&health) == nil && health.OK && health.Model == model
+	return json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&health) == nil && health.OK && health.Model == model && (health.Device == device || (device == "cuda" && health.Device == "cuda:0"))
 }

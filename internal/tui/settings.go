@@ -94,10 +94,13 @@ type settingsModel struct {
 	saveMemory      func(int) error
 	// onPlaybackVolume applies gain to the live conversation player. Nil when
 	// Settings is open without a running pipeline (launcher).
-	onPlaybackVolume   func(float64)
-	onWorkersEnabled   func(bool)
-	onDecisionSettings func(*config.Config)
-	decisionStatus     func() decision.RuntimeStatus
+	onPlaybackVolume    func(float64)
+	onWorkersEnabled    func(bool)
+	onDecisionSettings  func(*config.Config)
+	decisionStatus      func() decision.RuntimeStatus
+	testDecisions       func(context.Context) (decision.SmokeResult, error)
+	decisionTestRunning bool
+	decisionTestEpoch   *int
 	// lookPath resolves external binaries for the recognizer rows; nil uses
 	// exec.LookPath. Tests inject a fake so a picker never depends on what
 	// happens to be installed on the machine running them.
@@ -594,6 +597,20 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		cmd := m.applySpeechSetup(msg)
 		return m, cmd
 
+	case decisionTestMsg:
+		if msg.epoch == m.decisionTestEpoch {
+			m.decisionTestRunning = false
+			if msg.err != nil {
+				m.message = "Decision test: " + msg.err.Error()
+			} else {
+				speed := "within"
+				if msg.result.Elapsed > msg.result.Budget {
+					speed = "over"
+				}
+				m.message = fmt.Sprintf("%s: synthetic choice passed in %s (%s %s deadline). Not a routing benchmark.", msg.result.Runtime, msg.result.Elapsed.Round(time.Millisecond), speed, msg.result.Budget)
+			}
+		}
+		return m, nil
 	case decisionStatusTickMsg:
 		return m, m.pollDecisionStatus()
 

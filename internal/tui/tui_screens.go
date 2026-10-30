@@ -166,6 +166,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		if a.runtime != nil && a.runtime.Pipeline != nil {
 			a.settings.onDecisionSettings = a.runtime.Pipeline.ConfigureDecisions
 			a.settings.decisionStatus = a.runtime.Pipeline.DecisionStatus
+			a.settings.testDecisions = a.runtime.Pipeline.TestDecisions
 		}
 		// Apply stored geometry immediately — Bubble Tea only re-emits
 		// WindowSize on actual resize, not on screen switches. Without

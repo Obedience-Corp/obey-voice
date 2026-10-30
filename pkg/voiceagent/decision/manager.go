@@ -12,8 +12,9 @@ import (
 type Prepare func(context.Context) (Evaluator, io.Closer, error)
 
 type RuntimeStatus struct {
-	Phase string // off, preparing, ready, unavailable
-	Err   error
+	Detail string
+	Phase  string // off, preparing, ready, unavailable
+	Err    error
 }
 
 type preparation struct {
@@ -87,6 +88,9 @@ func (m *Manager) Configure(options Options, prepare Prepare) {
 		options.Policy.Evaluator = provider
 		m.controller.Configure(options)
 		m.status = RuntimeStatus{Phase: "ready"}
+		if info, ok := closer.(interface{ RuntimeInfo() string }); ok {
+			m.status.Detail = info.RuntimeInfo()
+		}
 		if watched, ok := closer.(interface{ Done() <-chan struct{} }); ok {
 			m.wg.Add(1)
 			go func() {

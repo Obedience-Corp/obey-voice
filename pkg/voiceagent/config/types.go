@@ -194,6 +194,7 @@ type Config struct {
 	DecisionTextWork   bool   `mapstructure:"decision_text_work"`
 	DecisionProvider   string `mapstructure:"decision_provider"`
 	DecisionRuntime    string `mapstructure:"decision_runtime"`
+	DecisionDevice     string `mapstructure:"decision_device"`
 	DecisionLocalModel string `mapstructure:"decision_local_model"`
 	DecisionEndpoint   string `mapstructure:"decision_endpoint"`
 	DecisionModel      string `mapstructure:"decision_model"`
