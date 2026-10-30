@@ -34,238 +34,68 @@
   <a href="demos/README.md#readme-demo">Reproduce the demo</a> with <code>just demo</code>.
 </p>
 
+
 ---
 
 ## The lab
 
-Voice chat is the interface. The experiment is how useful it can become when you control the models and the harness around them: how quickly it answers, when it listens, which agent gets the turn, and when a request becomes background work.
+I'm building Obey Voice to find out how useful voice agents can be when the conversation runs locally. The goal is fast, private voice chat that can get work done, with optional third-party agents for tasks that need them.
 
-The goal is to keep speech recognition, conversation, turn-taking, routing, and speech synthesis on your own hardware, with optional third-party agent harnesses as the brain. One place to talk to your agents and experiment with how they listen, respond, and get work done.
-
-Talk to local models through Ollama, or connect providers such as Claude Code, Codex, Cursor, or Grok. Replies are spoken sentence by sentence as they arrive. Interrupt it and it stops. Give each persona its own voice, model, and prompt, then bring several into one conversation and address them by name.
-
-The repository includes tools to try those choices and inspect what happened:
-
-| Experiment | Start here |
-|------------|------------|
-| Swap speech and conversation models | [Stack](#stack) and [configuration](docs/configuration.md) |
-| Keep conversation local while delegating work to another model or provider | [Workers](docs/configuration.md) and [conversation scenarios](tests/convoflow/README.md) |
-| Give agents distinct voices and test how they share a conversation | [Group chat](#group-chat) and [personas](docs/personas.md) |
-| Compare response latency and speech behavior | [Benchmarks](docs/benchmarks/README.md) |
-| Inspect routing, interruptions, synthesis, and playback | [Pipeline inspection](#inspect-a-tui-conversation-pipeline) |
-
-This is an evolving lab, with working desktop and terminal interfaces. Model quality, latency, and hardware requirements vary with the configuration; the benchmarks and recordings make those tradeoffs inspectable.
+It speaks as sentences arrive, stops when you interrupt, and lets you give each agent its own voice and personality. You can swap models, try different routing decisions, and measure what changes.
 
 ## Choose your brain
 
-The brain is the model that answers you. Ollama is the default provider: run a local model on your own hardware, with local speech recognition and synthesis. Once the models are downloaded, the voice conversation can run locally without a paid AI subscription. Web tools and any remote providers you enable still use the network.
+Ollama is the default. With local speech models, conversation and routing can run on your hardware after setup. You can also connect Claude Code, [Codex](docs/codex.md), Cursor, Grok, [Muse Spark](docs/muse-spark.md), or the [Obey daemon](docs/obey-daemon.md).
 
-You can also use Claude Code, [Codex](docs/codex.md), Cursor, Grok, or [Muse Spark](docs/muse-spark.md) through their installed CLIs and existing authentication. With a cloud-backed brain, conversation text goes to that provider. Speech recognition and synthesis run locally by default; remote speech is optional.
-
-The conversational brain and background workers can use different providers. Keep Ollama handling conversation and routing, and configure a worker for tasks that need another model or agent harness. Selecting a remote conversational brain sends that conversation to the provider; local speech alone does not make the whole session local. See [worker configuration](docs/configuration.md).
-
-Choose the provider and model in **Settings → Brain**. For Ollama, start the local server and download a model first, then select it in Obey Voice. Each persona can override the application’s brain and voice settings. See [configuration](docs/configuration.md) and [personas](docs/personas.md).
-
-Use the [Obey daemon provider](docs/obey-daemon.md) to route conversations through
-`obey-go-sdk`, with daemon-configured providers, models, and tool permissions.
+Keep conversation local and use another provider for background work, or choose a remote brain for the whole conversation. Remote providers receive the text you send them; web tools also use the network. Choose your model in **Settings → Brain**. [Provider and worker settings](docs/configuration.md).
 
 ## Install
 
-The current install path is from source. Prebuilt app downloads are not published yet.
-
-Start with a checkout:
+Build from source; prebuilt app downloads aren't published yet.
 
 ```bash
 git clone https://github.com/Obedience-Corp/obey-voice.git
 cd obey-voice
 ```
 
-### Desktop app
+### macOS app
 
-On macOS, install Rust 1.95, Go 1.26.1+, Python 3, Xcode Command Line Tools, and [just](https://github.com/casey/just), then run:
+Install Rust 1.95, Go 1.26.1+, Python 3, Xcode Command Line Tools, and [just](https://github.com/casey/just).
 
 ```sh
 just desktop install
 open "$HOME/Applications/Obey Voice Agent.app"
 ```
 
-The command builds and installs an optimized, locally signed app in `~/Applications`. On first launch, follow guided setup to choose a brain and speech provider and install their models. Allow microphone access when you start a voice conversation. Quit the app before reinstalling.
-
-The app shares the CLI's settings, personas, and session history.
-
-[Desktop screenshots and usage](apps/desktop/README.md) · [Install details](docs/install.md#desktop-app-macos) · [Development](docs/desktop-development.md)
+Follow first-launch setup to choose providers and download models. Allow microphone access when prompted. Quit the app before reinstalling. [Desktop install guide](docs/install.md#desktop-app-macos).
 
 ### Terminal (macOS / Linux)
 
-Requires Go 1.26.1+, `just`, and a C compiler. From the repository root:
+Requires Go 1.26.1+, `just`, and a C compiler.
 
 ```bash
-just install          # install the CLI and default speech models
+just install
 obey-voice doctor --voice-devices
-obey-voice            # open the launcher
+obey-voice
 ```
 
-Ensure your Go binary directory (`$GOBIN`, or `$(go env GOPATH)/bin` by default) is on `PATH`. On macOS, grant the terminal microphone access under System Settings → Privacy & Security → Microphone. Choose your brain and model in **Settings → Brain** before starting a conversation.
-
-Linux release packaging targets x86_64 glibc with Ubuntu 24.04 as the compatibility floor. [Full install notes](docs/install.md) cover archive layout, Homebrew caveats, musl, and developer builds. Check [releases](https://github.com/Obedience-Corp/obey-voice/releases) for published artifacts.
-
-## Talk
-
-```bash
-obey-voice              # launcher → voice TUI
-obey-voice --text       # type, it speaks
-obey-voice --no-voice   # speak, it prints
-```
-
-Need it on a phone? Open the TUI, choose **Use on another device**, pick Tailscale or same Wi-Fi, open the link.
-
-Headless:
-
-```bash
-obey-voice serve --tailscale
-```
-
-[Usage](docs/usage.md) has TUI keys, personas, remote HTTPS, and the full command list.
+Put your Go binary directory on `PATH` (`$GOBIN`, or `$(go env GOPATH)/bin`). On macOS, give your terminal microphone access. Choose a model in **Settings → Brain** before starting a conversation. [Full install guide](docs/install.md).
 
 ## Group chat
 
-A persona is a complete voice agent: its own system prompt, brain model, voice, and optionally its own working folder. Five ship (Obey, Samantha, Jarvis, Veronica, Santa) and `+ Create persona…` in the TUI adds more. With Ollama as the brain, every enabled persona sits in the same conversation.
+Give each persona a voice, model, and prompt. With Ollama, several can share a conversation. Say “Jarvis, what do you think?” to bring one in; the last speaker handles follow-ups. Agents can hand questions to each other, and you can interrupt at any time. [Set up personas](docs/personas.md).
 
-Say a name anywhere in the sentence and that persona answers: "Jarvis, what do you think?" or "What do you think, Jarvis?" Whoever answered last keeps the floor for follow-ups. Everyone shares one transcript, with each person's and agent's replies labeled.
+## Explore
 
-Agents can pass the floor too. When one asks another a question, that persona answers in its own voice. Each of your turns allows at most three follow-on agent responses with no repeat responder, and your speech always takes priority.
+- [Usage](docs/usage.md): text input, phone access, and terminal controls.
+- [Voice stack](docs/voice-stack.md): pipeline diagram and speech models.
+- [Benchmarks](docs/benchmarks/README.md) and [conversation scenarios](tests/convoflow/README.md): compare models, latency, and routing.
+- [Pipeline debugging](docs/pipeline-debugging.md): inspect live turns or replay recorded conversations.
+- [All docs](docs/README.md): meeting recording, narration, scenes, configuration, and development.
 
-Defaults pair distinct Phonon voices with Obey, Samantha, Jarvis, and Veronica; Santa uses Kokoro `am_santa`. See [shipped personas](docs/personas.md#shipped-personas) for setup and updating existing profiles.
+Built with [Festival](https://github.com/Obedience-Corp/festival), the planning and execution system I use to build with agents. You don't need Festival to run Obey Voice.
 
-Details: [shared conversations](docs/personas.md#shared-conversations) and [addressing and handing over the floor](docs/context-continuity.md#addressing-and-handing-over-the-floor).
-
-## More ways to use it
-
-| Do this | Start here |
-|---------|------------|
-| Turn an EPUB, PDF, Markdown, or URL into audio | `obey-voice render book.epub --out-dir out/book` · [narration](docs/narration.md) |
-| Record a meeting (STT only, speaker labels) | `obey-voice meeting record` · [meetings](docs/meetings.md) |
-| Transcribe a recording from another program | `obey-voice transcribe --request job.json --jsonl` · [protocol](docs/transcribe-protocol.md) |
-| Switch prompt + model + voice as one agent | `obey-voice persona use veronica` · [personas](docs/personas.md) |
-| Record two personas talking, scripted or improvised from a brief | `obey-voice scene script.yaml --out-dir out/scene` · [scenes](docs/scene.md) |
-| Inspect or change a setting | `obey-voice config` · [configuration](docs/configuration.md) |
-
-## Stack
-
-```text
-Mic → Voice detection → Speech recognition → Conversation / routing → Speech synthesis → Speaker
-                                                     ↕
-                                              Background workers
-```
-
-Speech starts as sentences arrive. The latency target is under 2 seconds from the end of your utterance to first audio; actual timing depends on your hardware, model, and provider.
-
-| Layer | Default | Options |
-|-------|---------|---------|
-| Brain | Local models via Ollama | Claude Code, [Codex](docs/codex.md), Cursor, Grok, [Obey daemon](docs/obey-daemon.md) |
-| STT | NVIDIA Parakeet TDT (sherpa-onnx) | Whisper (`sherpa`), Zipformer streaming, whisper.cpp |
-| TTS | Kokoro (sherpa-onnx) | native Qwen3-TTS, [OpenAI-compatible speech servers](docs/openai-speech.md) |
-| VAD | Silero | |
-| Audio | miniaudio / malgo | |
-
-Models download on first use into `models_dir`, and `just install` runs `models ensure` for the default Kokoro/STT/VAD stack. Qwen installs from TUI Settings or `obey-voice models ensure --tts` on macOS Apple Silicon (Metal) and linux/amd64 (CPU). The default speech stack and native Qwen3-TTS need no Python runtime.
-
-## Inspect a TUI conversation pipeline
-
-Start a conversation normally, then run `agent-stream-dbg` in a second terminal.
-Choose **Live Obey Voice conversations** and select the current conversation.
-The debugger opens its shared Flow, App, Timeline, Events and Messages panes.
-Recording is optional. Both repositories need builds with live debugging support.
-
-The TUI publishes recent diagnostic events in memory through a read-only,
-authenticated loopback endpoint. Only private discovery metadata is written under
-`<config-dir>/debug/runtimes`; no transcript or audio recording is started.
-Slow/disconnected viewers cannot block the event bus. History is bounded to
-1,024 records / 4 MiB, with sequence gaps exposing eviction; source queue losses
-are reported separately. Clear/replacement closes the old feed and advertises a
-new identity (checked every 250ms); reopen that conversation in the debugger.
-Events during that transition may be excluded, so this feed is recent diagnostic
-history rather than a durable audit. Exit removes discovery metadata. The
-picker hides stale entries after a crash.
-
-Use `1`–`5` for panes, `s` for turn/worker/session scopes, `[` / `]` for adjacent
-turns, and `Ctrl+F` to follow latest. Enter expands Flow/App rows or opens source
-details; `r` inside details shows raw evidence. `q` closes the viewer without
-stopping the conversation. For a custom config location, press `c` in the live
-picker and select the Obey Voice config directory.
-
-### Save a conversation for later inspection
-
-In a local terminal conversation, `/record talk` saves a playable
-`conversation.wav` containing both microphone input and agent playback, alongside
-events, source timing and conversation text. Microphone pause excludes input
-audio; interrupted speech includes only the PCM submitted for playback. Pauses
-and overlapping speech share one 48 kHz mono timeline, preserving playback bandwidth.
-Recording notices include an **Open recording** link to the capture folder. With
-mouse reporting enabled, the TUI opens it on click; otherwise your terminal handles
-the hyperlink. `/record open` opens the latest capture even without terminal link
-support, including after recording stops. `/record` shows the capture ID, link and recording
-health. In terminals that support hyperlinks, use the terminal's link-opening
-gesture to open the folder. `Ctrl+R` toggles Talk recording outside Vim mode;
-`/record lab` includes the same conversation audio and additionally enables
-existing audio debug artifacts. The manifest reports unavailable audio sources,
-queue loss and recording errors; failed audio leaves the bundle incomplete.
-Capture files are local, private to your user, and opt-in. Use `/record off` to seal the bundle.
-Clear/new-runtime transitions detach recording; incomplete shutdowns remain
-explicitly incomplete.
-
-Open a second terminal with [agent-stream-dbg](https://github.com/Obedience-Corp/agent-stream-dbg):
-
-```sh
-agent-stream-dbg observe --dialect obey-voice --follow /absolute/capture/events.jsonl
-# Inspect the same saved capture after recording stops:
-agent-stream-dbg observe --dialect obey-voice /absolute/capture/events.jsonl
-```
-
-The viewer is passive: conversation/persona/work controls remain in Obey Voice.
-It shows measured STT, admission, model, synthesis attempts and software playback
-intervals, including overlaps, missing boundaries and interrupted stages. Select
-an older turn with `[` / `]`, return to latest with `Ctrl+F`, or inspect raw and
-normalized evidence with Enter. Background jobs retain their own typed job IDs
-and causal parent turn. Viewer exit does not stop the conversation.
-
-The source-owned [trace contract](testdata/pipeline-trace/CONTRACT.md) and
-[canonical fixtures](testdata/pipeline-trace/README.md) define nullable clocks,
-identity and compatibility. Legacy metrics remain relative; unknown schema
-families/versions stay available as raw evidence. Playback timestamps mark
-software sink acceptance/completion, not calibrated sound at the listener.
-
-## Docs
-
-| Page | What's there |
-|------|----------------|
-| [docs/](docs/README.md) | Index |
-| [Install](docs/install.md) | Homebrew, Linux archive, source, requirements |
-| [Usage](docs/usage.md) | TUI, remote serve, commands, personas |
-| [Personas](docs/personas.md) | Voice agents, shared conversations, starting directories |
-| [Scenes](docs/scene.md) | Two-persona conversation recordings |
-| [Narration](docs/narration.md) | Render, audiobooks, Calibre, narrate pipeline |
-| [Meetings](docs/meetings.md) | Recorder, speaker labels, campaign routing |
-| [Configuration](docs/configuration.md) | `config.yaml`, Agent Skills |
-| [Benchmarks](docs/benchmarks/README.md) | Speech and brain latency measurements, comparison recipes |
-| [Conversation scenarios](tests/convoflow/README.md) | Local conversation and worker routing experiments |
-| [Development](docs/development.md) | Build, tests, models, benchmarks |
-| [Serve protocol](docs/serve-protocol.md) | HTTPS + WebSocket contract |
-| [Transcribe protocol](docs/transcribe-protocol.md) | `obey-transcript/v1` file transcription contract |
-| [Speech worker](docs/speech-serve.md) | Speech on another computer (`speech-serve`) |
-| [ADRs](docs/adr/) | Architecture decisions |
-
-## Built with Festival
-
-Obey Voice is built using [Festival](https://github.com/Obedience-Corp/festival), a planning and execution system for agent-assisted development. This lab is a working example of what that process can produce: a voice application, swappable model integrations, and tools to measure and debug the conversations. Festival is part of how the project is developed; you do not need it to run Obey Voice.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidance. [Report a bug or request a feature](https://github.com/Obedience-Corp/obey-voice/issues). For bugs, include your OS, selected brain and speech providers, and relevant error output.
-
-## License
-
-Apache License 2.0. Copyright 2026 Obedience Corp. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+[Contributing](CONTRIBUTING.md) · [Issues](https://github.com/Obedience-Corp/obey-voice/issues) · [Apache 2.0 license](LICENSE) · [Notice](NOTICE)
 
 ---
 
