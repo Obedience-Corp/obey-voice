@@ -1,30 +1,48 @@
-# Obey Voice
+<h1 align="center">Obey Voice</h1>
 
-[![Go](https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go&logoColor=white)](go.mod)
-[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-555)](#install)
-[![Built with Festival](https://img.shields.io/badge/built%20with-Festival-7c3aed.svg)](https://github.com/Obedience-Corp/festival)
+<p align="center">
+  <strong>Fast, private, actually useful.</strong><br>
+  Voice chat with your AI agents, built around local models.
+</p>
 
-**Fast, private, actually useful.**
+<p align="center">
+  <a href="go.mod"><img src="https://img.shields.io/badge/Go-1.26.1%2B-00ADD8?logo=go&amp;logoColor=white" alt="Go 1.26.1+"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-555" alt="Platforms: macOS and Linux"></a>
+  <a href="https://github.com/Obedience-Corp/festival"><img src="https://img.shields.io/badge/built%20with-Festival-7c3aed.svg" alt="Built with Festival"></a>
+</p>
 
-Voice chat with your AI agents, built around local models. Obey Voice is a voice agent experimentation lab with a native macOS app and a terminal interface.
+<p align="center">
+  A voice agent experimentation lab with a native macOS app and a terminal interface.
+</p>
 
-The goal is to keep speech recognition, conversation, turn-taking, routing, and speech synthesis on your own hardware, with optional third-party agent harnesses as the brain. One place to talk to your agents and experiment with how they listen, respond, and get work done.
+<p align="center">
+  <a href="#install">Get started</a> ·
+  <a href="#the-lab">Explore the lab</a> ·
+  <a href="#choose-your-brain">Choose your brain</a> ·
+  <a href="#group-chat">Group chat</a> ·
+  <a href="docs/README.md">Docs</a>
+</p>
 
-Talk to local models through Ollama, or connect providers such as Claude Code, Codex, Cursor, or Grok. Replies are spoken sentence by sentence as they arrive. Interrupt it and it stops. Give each persona its own voice, model, and prompt, then bring several into one conversation and address them by name.
+<p align="center">
+  <img src="docs/images/desktop-home.png" alt="Obey Voice desktop Home with recent conversations and workspace navigation" width="900"><br>
+  <em>Native macOS app with sample conversations.</em>
+</p>
 
-[Get started](#install) · [Explore the lab](#the-lab) · [Choose your brain](#choose-your-brain) · [Group chat](#group-chat) · [Docs](docs/README.md)
+<p align="center">
+  <img src="docs/images/tui.gif" alt="Obey Voice TUI in color: animated launcher logo, persona selection, and listening, hearing, and speaking states" width="900"><br>
+  <em>Real terminal interface with scripted voice activity.</em><br>
+  <a href="demos/README.md#readme-demo">Reproduce the demo</a> with <code>just demo</code>.
+</p>
 
-![Obey Voice desktop Home with recent conversations and workspace navigation](docs/images/desktop-home.png)
-
-*Native macOS app with sample conversations.*
-
-![Obey Voice TUI in color: animated launcher logo, persona selection, and listening, hearing, and speaking states](docs/images/tui.gif)
-
-*Real terminal interface with scripted voice activity.* [Reproduce the demo](demos/README.md#readme-demo) with `just demo`.
+---
 
 ## The lab
 
 Voice chat is the interface. The experiment is how useful it can become when you control the models and the harness around them: how quickly it answers, when it listens, which agent gets the turn, and when a request becomes background work.
+
+The goal is to keep speech recognition, conversation, turn-taking, routing, and speech synthesis on your own hardware, with optional third-party agent harnesses as the brain. One place to talk to your agents and experiment with how they listen, respond, and get work done.
+
+Talk to local models through Ollama, or connect providers such as Claude Code, Codex, Cursor, or Grok. Replies are spoken sentence by sentence as they arrive. Interrupt it and it stops. Give each persona its own voice, model, and prompt, then bring several into one conversation and address them by name.
 
 The repository includes tools to try those choices and inspect what happened:
 
@@ -251,4 +269,7 @@ Apache License 2.0. Copyright 2026 Obedience Corp. See [LICENSE](LICENSE) and [N
 
 ---
 
-Built by [Obedience Corp](https://obediencecorp.com) · [GitHub](https://github.com/Obedience-Corp)
+<p align="center">
+  Built by <a href="https://obediencecorp.com">Obedience Corp</a> ·
+  <a href="https://github.com/Obedience-Corp">GitHub</a>
+</p>
