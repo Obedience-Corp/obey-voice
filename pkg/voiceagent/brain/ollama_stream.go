@@ -86,6 +86,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 		hadThinking := false
 		hadTools := false
 		routedChat := false
+		routeRetried := false
 		recoveryAttempts := 0
 		var continuation string
 		repetitionRetry := false
@@ -278,6 +279,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 					err = sendErr
 				}
 			}
+			missingRoute := err == nil && routing && len(toolCalls) == 0
 			missingImageResult := checkImageResult && err == nil && len(toolCalls) == 0 && o.unsupportedImageResult(strings.Join(routeText, ""))
 			if checkImageResult || finalAnswer {
 				if len(toolCalls) > 0 {
@@ -290,7 +292,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 							err = sendErr
 						}
 					}
-				} else if err == nil && !missingImageResult && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
+				} else if err == nil && !missingRoute && !missingImageResult && (!finalAnswer || (responseComplete && doneReason != "length" && hasSpeakableContent(cleanForVoice(strings.Join(routeText, ""))))) {
 					for _, text := range routeText {
 						if sendErr := forward(gate.feed(text)); sendErr != nil {
 							err = sendErr
@@ -314,13 +316,21 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				opts.OnWorkerUsage(u)
 			}
-			if missingImageResult {
-				if imageResultRetry {
-					done <- StreamResult{Err: fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call"), Recovered: true}
+			if missingRoute || missingImageResult {
+				if routeRetried {
+					err := fmt.Errorf("model did not select a route; no work was dispatched")
+					if missingImageResult {
+						err = fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
+					}
+					done <- StreamResult{Err: err, Recovered: true}
 					return
 				}
-				imageResultRetry = true
-				o.emitInfo(events.Info{Message: "Image reply had no attachment; retrying once before delivery"})
+				routeRetried = true
+				imageResultRetry = missingImageResult
+				skillCtx += "\n" + missingRouteInstruction
+				if missingImageResult {
+					o.emitInfo(events.Info{Message: "Image reply had no attachment; retrying once before delivery"})
+				}
 				continue
 			}
 			if err == nil && gate.repeat {

@@ -1,1 +1,1 @@
-{"protocol":"obey-transcript/v1","job_id":"conformance-bad-version","seq":0,"type":"failed","code":"unsupported_protocol","message":"protocol major version 2 is not supported; this build speaks \"obey-transcript/v1\"","retryable":false}
+{"protocol":"obey-transcript/v1","job_id":"conformance-bad-version","seq":0,"type":"failed","code":"unsupported_protocol","message":"protocol major version 3 is not supported; this build speaks \"obey-transcript/v1\"","retryable":false}

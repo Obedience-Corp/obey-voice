@@ -246,6 +246,9 @@ func (a App) onRuntimeReady(msg runtimeReadyMsg) (tea.Model, tea.Cmd) {
 	if msg.rt.SelectionSnapshot != nil {
 		a.conversation.applySelectionSnapshot(msg.rt.SelectionSnapshot())
 	}
+	if msg.rt.debugError != nil {
+		a.conversation.commandError("Live debugger unavailable: " + msg.rt.debugError.Error())
+	}
 	a.installNameSummon(msg.rt)
 	return a, tea.Batch(cmd, a.startTalkHotkey())
 }

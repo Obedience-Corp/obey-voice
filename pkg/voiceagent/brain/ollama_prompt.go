@@ -132,6 +132,9 @@ func (o *OllamaBrain) buildMessagesForTurn(skillCtx string, agentContinuation bo
 // Warmup and live requests must share the same stable identity prefix.
 func (o *OllamaBrain) conversationIdentityGuidance() string {
 	identity := "\n" + systemPrompt(o.cfg, "conversation-history", map[string]string{"agent_name": currentAgentName(o.cfg)})
+	if o.cfg != nil && strings.TrimSpace(o.cfg.UserDisplayName) != "" {
+		identity += "\nConfigured human user: " + strings.TrimSpace(o.cfg.UserDisplayName) + "; a named message speaker takes precedence."
+	}
 	if o.groupModeEnabled() {
 		identity += o.groupConversationGuidance()
 	}

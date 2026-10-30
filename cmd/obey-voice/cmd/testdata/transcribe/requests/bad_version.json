@@ -1,5 +1,5 @@
 {
-  "protocol": "obey-transcript/v2",
+  "protocol": "obey-transcript/v3",
   "job_id": "conformance-bad-version",
   "input": {"path": "{{INPUT}}", "format": "wav_pcm_s16le", "sample_rate_hz": 16000, "channels": 1, "timeline_origin_us": 0},
   "timing": "utterance"

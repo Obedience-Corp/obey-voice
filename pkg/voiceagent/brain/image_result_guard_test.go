@@ -108,7 +108,13 @@ func TestImageClaimRepairIsBoundedAndAllowsHonestFailure(t *testing.T) {
 			if honest {
 				second = "I couldn't obtain the image, so nothing was attached."
 			}
-			o, requests := imageClaimBrain(t, []api.Message{{Role: "assistant", Content: missingDogImages}, {Role: "assistant", Content: second}})
+			replies := []api.Message{{Role: "assistant", Content: missingDogImages}}
+			if honest {
+				// Even an honest refusal must satisfy main's route-first contract.
+				replies = append(replies, api.Message{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: mustArgs(map[string]any{"kind": "chat"})}}}})
+			}
+			replies = append(replies, api.Message{Role: "assistant", Content: second})
+			o, requests := imageClaimBrain(t, replies)
 			opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly}
 			var reply string
 			var err error
@@ -122,7 +128,7 @@ func TestImageClaimRepairIsBoundedAndAllowsHonestFailure(t *testing.T) {
 			} else {
 				reply, err = o.ThinkFull(t.Context(), "Show me a dog image.", opts)
 			}
-			if len(*requests) != 2 {
+			if len(*requests) != len(replies) {
 				t.Fatalf("requests=%d", len(*requests))
 			}
 			if honest {
@@ -136,6 +142,35 @@ func TestImageClaimRepairIsBoundedAndAllowsHonestFailure(t *testing.T) {
 				if strings.Contains(turn.Content, missingDogImages) {
 					t.Fatal("rejected claim polluted history")
 				}
+			}
+		}
+	}
+}
+
+func TestImageAndMissingRouteShareOneRetry(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, imageFirst := range []bool{false, true} {
+			first, second := "I'll look that up.", missingDogImages
+			if imageFirst {
+				first, second = second, first
+			}
+			o, requests := imageClaimBrain(t, []api.Message{{Role: "assistant", Content: first}, {Role: "assistant", Content: second}})
+			usage := 0
+			opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly, OnUsage: func(int, int) { usage++ }}
+			var reply string
+			var err error
+			if streaming {
+				stream, startErr := o.ThinkStream(t.Context(), "Find an image.", opts)
+				if startErr != nil {
+					t.Fatal(startErr)
+				}
+				reply, _ = drainStream(t, stream)
+				err = (<-stream.Done).Err
+			} else {
+				reply, err = o.ThinkFull(t.Context(), "Find an image.", opts)
+			}
+			if err == nil || reply != "" || len(*requests) != 2 || usage != 2 {
+				t.Fatalf("streaming=%t imageFirst=%t reply=%q error=%v requests=%d usage=%d", streaming, imageFirst, reply, err, len(*requests), usage)
 			}
 		}
 	}

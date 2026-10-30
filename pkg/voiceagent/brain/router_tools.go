@@ -21,6 +21,8 @@ const (
 	RouterToolsLegacy RouterToolsPolicy = "legacy"
 )
 
+const missingRouteInstruction = "Select the route before answering. Call route with kind=spawn for actions, finding or attaching files, and external lookups; kind=chat for conversation; kind=narrate for reading aloud. Do not substitute a promise or claimed result for the tool call."
+
 const chatRouteAnswerInstruction = "Routing is complete for this turn: chat. Now answer the user directly in character. Do not call route again or describe your reasoning or routing decision."
 
 var unknownRouterToolsOnce sync.Once

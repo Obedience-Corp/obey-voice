@@ -90,7 +90,7 @@ when you select it.
 | `voice_worker_num_ctx` | `8192` | `VOICE_WORKER_NUM_CTX` | Worker job window. Jobs stay at 8k so they do not inherit talk size. |
 | `ollama_num_batch` | `128` | `OLLAMA_NUM_BATCH` | How many prompt tokens Ollama re-reads per pass. Unset, Ollama picks it mainly from the context window (512 at or below 4096, 1024 above, 2048 above 32768), downgrading toward 512 if the model's predicted VRAM will not fit — it weighs the model's memory footprint but not its architecture. Values above `ollama_num_ctx` are clamped to it at load. This is a prefix-**reuse** control, not a speed one: llama.cpp keeps its last reusable checkpoint about one batch back from the end of the prompt, so a smaller batch skips more of an unchanged conversation (14% skipped at 1024 vs 89% at 128 on `qwen3.8-uncensored:27b`, 4.4 s to 0.8 s) while reading brand-new prompts slightly slower. `0` restores Ollama's choice. See `docs/benchmarks/B2-qwen-ttft-mechanism-2026-08-28.md`. |
 | `ollama_keep_alive` | `10m` | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model resident between turns (Go duration; empty = server default). |
-| `ollama_think` | `auto` | `OLLAMA_THINK` | Ollama thinking/reasoning for models that support it (qwen3.x, …). `auto` turns thinking on for qwen3-family models so chain-of-thought lands in `Message.Thinking` instead of spoken Content. Explicit `false` is the leaky hatch: qwen3 then dumps untagged CoT into Content, which can be spoken and recovered as the `Obey:` line. Set `true` or `low`/`medium`/`high`/`max` to force thinking on any model. |
+| `ollama_think` | `auto` | `OLLAMA_THINK` | Model thinking: `auto` and `false` disable it; `true` enables it. `low`/`medium`/`high`/`max` depend on model support. Available in Settings → Brain → Thinking; applies to the next conversation. Ctrl+K only controls visibility. |
 | `claude_max_session_tokens` | `0` | `CLAUDE_MAX_SESSION_TOKENS` | Opt-in fuse: caps the prompt the `claude` CLI replays on `--resume`. Past it the brain starts a fresh CLI session from recent history. `0` (default) trusts the CLI session and resumes forever — recommended for interactive use; set a cap for unattended/serve setups. |
 | `claude_session_warn_tokens` | `60000` | `CLAUDE_SESSION_WARN_TOKENS` | Replayed-prompt size at which a visible warning appears (log + activity feed), once per CLI session. Nothing is dropped. `0` disables the warning. |
 | `voice_tools_enabled` | `true` | `VOICE_TOOLS_ENABLED` | Local tools (`list_files` / `read_file` / `write_file` / `run_command` / `web_search` / `fetch_url` for Ollama). Default on; set `false` to disable. Switching brain provider to Ollama also re-enables when the key was dumped false. Remote `obey-voice serve` still uses `remote_tools_enabled` (default off). |
@@ -679,3 +679,12 @@ conversation/runtime. It requires local Ollama inference.
 
 Conversation controls save mode and member changes with that session, without
 changing global defaults. See [Group participation](personas.md#group-participation-experimental).
+
+### Ollama thinking in the terminal
+
+In Settings → Brain → Thinking, select `false` to disable model thinking or
+`true` to enable it. `auto` currently resolves to off. The `low`, `medium`,
+`high`, and `max` levels are available for models that support those values.
+The selection saves `ollama_think` and applies to the next conversation.
+This controls generation; Ctrl+K and `/think` only show or hide thinking text
+in the conversation history.

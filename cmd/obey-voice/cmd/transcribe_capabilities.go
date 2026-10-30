@@ -101,7 +101,7 @@ func buildTranscribeCapabilities(deps transcribeDeps, cfg *config.Config) protoc
 	modelsDir := deps.modelsDir(cfg)
 	doc := protocol.Capabilities{
 		Schema:      protocol.CapabilitiesSchema,
-		Protocols:   []string{protocol.Protocol},
+		Protocols:   []string{protocol.Protocol, protocol.WordProtocol},
 		Formats:     protocol.SupportedFormats(),
 		Timing:      protocol.SupportedTiming(),
 		Providers:   []protocol.ProviderCap{},
@@ -110,6 +110,16 @@ func buildTranscribeCapabilities(deps transcribeDeps, cfg *config.Config) protoc
 	}
 
 	selected, selErr := config.NormalizeSTTWithMode(cfg.STTProvider, cfg.STTMode)
+	doc.WordAnalysis = &protocol.WordCapability{
+		Protocol: protocol.WordProtocol, Provider: selected.Provider,
+		Supported:  selErr == nil && selected.Provider == config.STTProviderParakeet && (cfg.ParakeetModel == "" || cfg.ParakeetModel == "tdt-0.6b-v2"),
+		TextPolicy: "verbatim", TimingMethod: stt.WordTimingMethod, TimingValidity: "estimated",
+		Reason: "Word edges are model estimates; review cuts. Batch safety is not qualified.",
+	}
+	if !doc.WordAnalysis.Supported {
+		doc.WordAnalysis.Reason = "Select parakeet in an isolated speech configuration for measured word estimates."
+	}
+
 	manifest, manifestErr := deps.manifest(cfg)
 	statuses := manifest.Status(modelsDir)
 	missing := missingAssets(statuses)

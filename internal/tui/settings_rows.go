@@ -108,6 +108,7 @@ func (m settingsModel) sectionRows() []settingRow {
 		rows := append(m.providerRows(), m.modelRows()...)
 		rows = append(rows, m.memoryRows()...)
 		rows = append(rows, m.codexRows()...)
+		rows = append(rows, m.ollamaThinkingRows()...)
 		return append(rows, m.decisionRows()...)
 	case sectionWorker:
 		return m.workerRows()

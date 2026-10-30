@@ -24,10 +24,11 @@ import (
 // screen. The TUI owns its lifecycle from the moment the builder returns it:
 // Cleanup runs exactly once after in-flight turns drain on /menu or exit.
 type ConversationRuntime struct {
-	Pipeline *pipeline.Pipeline
-	Bus      *events.Bus
-	Voice    bool // STT is configured; voice turns may run
-	Output   bool // TTS and playback are configured
+	debugError error
+	Pipeline   *pipeline.Pipeline
+	Bus        *events.Bus
+	Voice      bool // STT is configured; voice turns may run
+	Output     bool // TTS and playback are configured
 	// PersonaID and AgentName identify the session binding this runtime was
 	// built from. AgentName is updated on the Bubble Tea thread after a
 	// successful in-chat selection; finalized replies retain their envelope

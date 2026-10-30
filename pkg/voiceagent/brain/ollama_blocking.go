@@ -86,6 +86,7 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	hadTools := false
 	routedChat := false
 	imageResultRetry := false
+	routeRetried := false
 	for i := 0; i <= maxToolIterations; i++ {
 		finalAnswer := i == maxToolIterations
 		var tools api.Tools
@@ -176,14 +177,21 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 			o.working = restoreWorking
 			return "", fmt.Errorf("ollama full response truncated")
 		}
-		if (imageResultRetry || (sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0)) && len(response.ToolCalls) == 0 && o.unsupportedImageResult(response.Content) {
-			if imageResultRetry {
-				return "", fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
+		routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
+		missingRoute := routing && len(response.ToolCalls) == 0
+		missingImageResult := (imageResultRetry || routing) && len(response.ToolCalls) == 0 && o.unsupportedImageResult(response.Content)
+		if missingRoute || missingImageResult {
+			if routeRetried {
+				if missingImageResult {
+					return "", fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
+				}
+				return "", fmt.Errorf("model did not select a route; no work was dispatched")
 			}
-			imageResultRetry = true
+			routeRetried = true
+			imageResultRetry = missingImageResult
+			skillCtx += "\n" + missingRouteInstruction
 			continue
 		}
-
 		// Tool calls — execute and loop (skills stack on full CLI tools).
 		if (routedChat || finalAnswer) && len(response.ToolCalls) > 0 {
 			return "", fmt.Errorf("tools-free answer returned unexpected tool calls")

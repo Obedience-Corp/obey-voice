@@ -87,3 +87,33 @@ func (m settingsModel) codexRows() []settingRow {
 			return nil
 		}}}
 }
+
+// ollamaThinkingRows controls generation, independently of the transcript toggle.
+func (m settingsModel) ollamaThinkingRows() []settingRow {
+	if m.cfg.BrainProvider != "ollama" {
+		return nil
+	}
+	spec, _ := config.SpecFor("ollama_think")
+	values := spec.Enum
+	value := m.cfg.OllamaThink
+	if value == "" {
+		value = "auto"
+	}
+	return []settingRow{{key: spec.Key, name: "Thinking", kind: rowChoice,
+		value: value, options: values, current: indexOf(values, value),
+		applies: appliesNextConversation,
+		help:    "Model thinking: false = off, true = on; auto currently means off. Levels depend on model support. Separate from showing thinking in chat.",
+		set: func(m *settingsModel, i int) tea.Cmd {
+			save := m.saveConfig
+			if save == nil {
+				save = config.SetAndSave
+			}
+			if err := save(spec.Key, values[i]); err != nil {
+				m.message = "Thinking setting was not saved: " + err.Error()
+				return nil
+			}
+			m.cfg.OllamaThink = values[i]
+			m.message = "Ollama thinking saved; applies to the next conversation"
+			return nil
+		}}}
+}

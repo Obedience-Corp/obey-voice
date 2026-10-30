@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/stt"
 )
 
 const (
@@ -74,7 +75,11 @@ func newRunner(req Request, deps Deps) (*runner, error) {
 	if req.Timing == "" {
 		req.Timing = TimingUtterance
 	}
-	if req.Timing != TimingUtterance {
+	if req.Timing == stt.TimingWord {
+		if _, ok := deps.Decoder.(stt.WordDecoder); !ok {
+			return nil, &Error{Code: CodeUnsupportedCapability, Err: errors.New("decoder cannot return measured words")}
+		}
+	} else if req.Timing != TimingUtterance {
 		return nil, &Error{Code: CodeUnsupportedCapability, Err: fmt.Errorf("transcription: timing %q, only %q is produced", req.Timing, TimingUtterance)}
 	}
 	if deps.MinSpeechSamples <= 0 {
@@ -216,7 +221,14 @@ func (r *runner) handleSpan(ctx context.Context, span Span) error {
 		return nil
 	}
 
-	text, err := r.deps.Decoder.DecodeSegment(ctx, span.Samples)
+	var text string
+	var words []stt.TimedWord
+	var err error
+	if r.req.Timing == stt.TimingWord {
+		text, words, err = r.deps.Decoder.(stt.WordDecoder).DecodeWords(ctx, span.Samples)
+	} else {
+		text, err = r.deps.Decoder.DecodeSegment(ctx, span.Samples)
+	}
 	if err != nil {
 		if cancelled := cancellation(ctx, err); cancelled != nil {
 			return cancelled
@@ -233,8 +245,23 @@ func (r *runner) handleSpan(ctx context.Context, span Span) error {
 	if err != nil {
 		return &Error{Code: CodeInternal, Err: fmt.Errorf("transcription: time span at sample %d: %w", span.StartSample, err)}
 	}
+	if r.req.Timing == stt.TimingWord {
+		if len(words) == 0 {
+			return &Error{Code: CodeDecodeFailed, Err: errors.New("text without measured words")}
+		}
+		last := int64(0)
+		for i := range words {
+			w := &words[i]
+			if w.StartUS < last || w.EndUS <= w.StartUS || w.EndUS > endUS-startUS {
+				return &Error{Code: CodeDecodeFailed, Err: errors.New("invalid decoder word interval")}
+			}
+			last = w.EndUS
+			w.StartUS += startUS
+			w.EndUS += startUS
+		}
+	}
 	r.segments++
-	return r.emit(ctx, Segment{ID: fmt.Sprintf("s%d", r.segments), StartUS: startUS, EndUS: endUS, Text: text})
+	return r.emit(ctx, Segment{Words: words, ID: fmt.Sprintf("s%d", r.segments), StartUS: startUS, EndUS: endUS, Text: text})
 }
 
 // progress emits a progress event once per progressInterval of consumed audio.

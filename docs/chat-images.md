@@ -52,7 +52,9 @@ Requests to find or create an image must reach a worker that can obtain the file
 Saying "attached below" or naming a directory does not attach anything. The live
 Ollama router retries explicit image-delivery claims once if they contain neither
 a file reference nor a tool call. A repeated unsupported claim produces an error
-instead of entering speech and chat history. This check covers direct routing
+instead of entering speech and chat history. This shares the required routing
+step's single retry; an honest refusal selects `route(kind=chat)` before answering.
+This check covers direct routing
 replies; it is not a general verifier of everything a model says. Explicit file
 references still pass through the normal file validation above.
 

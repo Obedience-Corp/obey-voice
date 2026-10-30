@@ -104,3 +104,31 @@ Implement a generic `file` transport using the existing `Transport` frame contra
 Implementation must measure, not assume, the effect of adding tracing. Use the same synthetic event workload and isolated real TUI provider/config/input population with capture off/on; randomize alternating order, separate cold and warm runs, record sample counts and variation. Initial budgets: p95 observer callback <= 250 microseconds at 100 events/s including representative metrics payloads; sustained queue/storage memory within the caps; p95 software first-audio regression <= max(10 ms, 2% of baseline). These are design acceptance budgets, not results. If noise prevents a conclusion, collect sufficient paired evidence or report the gate unresolved. File-to-view freshness target is p95 <= 150 ms on a responsive local disk; it is distinct from voice latency.
 
 Integration clarification: background job traces freeze worker origin, retain causal parent_turn_id and typed job_id, and use null current turn_id/response_id/persona_id/turn_start_ms. Never parse a span ID to correlate jobs. Success STT end is actual FinalTranscript, independent of later cleanup/cancellation. Capture health scope_excluded counts explicit incompatible runtime/session/epoch callbacks intentionally outside this recording, separately from dropped/skipped queue/payload evidence. Unattributed legacy events remain explicitly unscoped.
+
+## Live TUI transport
+
+A running conversation also exports these records without starting a capture.
+Private `<config-dir>/debug/runtimes/<id>.json` descriptors use
+`obey-voice.debug/v1` and contain `id`, `runtime_id`, `session_id`, `agent_name`,
+`endpoint`, `token` and `started_at`. The endpoint binds `127.0.0.1` on an
+allocated port. Readers send `Authorization: Bearer <token>` to GET `/health`
+(identity confirmation, token omitted from response) and GET `/events` (SSE).
+Redirects and non-loopback endpoints are not part of this protocol. Browser
+Origin requests and all mutation methods are rejected; there is no control API.
+
+Each SSE `data` value is one unchanged trace/transcript JSON record. A reader
+gets a pinned header followed by retained recent records and new events.
+Header `content_policy` is `live`, `cut` is `recent_history`; `capture_id`
+identifies this feed instance, not an on-disk recording. There is no audio tap.
+The existing immutable, nonblocking writer queue feeds a 1,024-record / 4 MiB
+ring. Sequence gaps indicate omitted history; producer queue loss and scope
+exclusion use the existing health records. At most four readers attach; slow
+readers have bounded writes and never block the conversation event bus.
+
+A normal source close attempts an `ended` footer, then closes connections;
+readers must also handle EOF without a footer. Clearing/replacing the runtime
+removes its old descriptor and creates a new identity, checked every 250ms.
+Events in that transition may be excluded. Readers must explicitly reopen the
+new runtime instead of overlaying clock epochs. Crashes can leave stale
+metadata, so discovery confirms reachability and matching identity before
+showing a session. No event history is persisted by this live transport.

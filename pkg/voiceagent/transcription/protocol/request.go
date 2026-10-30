@@ -10,7 +10,8 @@ import (
 
 const (
 	// Protocol is the wire contract this package implements.
-	Protocol = "obey-transcript/v1"
+	Protocol     = "obey-transcript/v1"
+	WordProtocol = "obey-transcript/v2"
 	// ProtocolName and ProtocolMajor are Protocol split at the slash. A
 	// request may name a higher minor version (obey-transcript/v1.2): within a
 	// major version, fields are only ever added.
@@ -27,8 +28,7 @@ const (
 	// whatever stt_provider selects.
 	ProviderConfigured = "configured"
 
-	// Timing granularities named by the spec. Only TimingUtterance is
-	// implemented.
+	// v1 produces utterances; v2 explicitly opts into verbatim word estimates.
 	TimingUtterance = "utterance"
 	TimingWord      = "word"
 	TimingNone      = "none"
@@ -49,14 +49,15 @@ type Input struct {
 	TimelineOriginUS *int64 `json:"timeline_origin_us"`
 }
 
-// Request is the obey-transcript/v1 job document.
+// Request is a versioned finite transcription job document.
 type Request struct {
-	Protocol string `json:"protocol"`
-	JobID    string `json:"job_id"`
-	Input    Input  `json:"input"`
-	Provider string `json:"provider,omitempty"`
-	Language string `json:"language,omitempty"`
-	Timing   string `json:"timing"`
+	Protocol   string `json:"protocol"`
+	JobID      string `json:"job_id"`
+	Input      Input  `json:"input"`
+	Provider   string `json:"provider,omitempty"`
+	Language   string `json:"language,omitempty"`
+	Timing     string `json:"timing"`
+	TextPolicy string `json:"text_policy,omitempty"`
 	// Diarization and AllowModelDownload default to false when omitted.
 	Diarization        *bool `json:"diarization,omitempty"`
 	AllowModelDownload *bool `json:"allow_model_download,omitempty"`
@@ -90,10 +91,14 @@ func (r *Request) Validate() error {
 	if strings.TrimSpace(r.Protocol) == "" {
 		return required("protocol")
 	}
-	if err := checkProtocolVersion(r.Protocol); err != nil {
-		return err
+	if r.Protocol != WordProtocol {
+		if err := checkProtocolVersion(r.Protocol); err != nil {
+			return err
+		}
 	}
-
+	if r.Protocol == WordProtocol && (r.Timing != TimingWord || r.TextPolicy != "verbatim") {
+		return Errorf(CodeUnsupportedCapability, false, "v2 requires word timing and verbatim text_policy")
+	}
 	r.JobID = strings.TrimSpace(r.JobID)
 	if r.JobID == "" {
 		return required("job_id")
@@ -141,6 +146,9 @@ func (r *Request) Validate() error {
 	switch r.Timing {
 	case TimingUtterance:
 	case TimingWord:
+		if r.Protocol == WordProtocol {
+			break
+		}
 		return Errorf(CodeUnsupportedCapability, false,
 			"timing %q is not implemented by any provider in this build", TimingWord)
 	case TimingNone:
