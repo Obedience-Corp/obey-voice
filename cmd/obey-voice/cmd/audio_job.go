@@ -50,7 +50,7 @@ func newAudioJobCmd() *cobra.Command {
 			if voice == "" {
 				voice = "default"
 			}
-			cfg := &config.Config{TTSProvider: "openai-speech", OpenAISpeechRuntime: "external", OpenAISpeechURL: c.Runtime.Endpoint + "/v1", OpenAISpeechModel: c.Runtime.Model, OpenAISpeechVoice: voice, OpenAISpeechTimeout: r.Limits.TimeoutSeconds, ModelsDir: c.StorageRoot}
+			cfg := &config.Config{TTSProvider: "openai-speech", OpenAISpeechRuntime: "external", OpenAISpeechURL: c.Runtime.Origin() + "/v1", OpenAISpeechModel: c.Runtime.Model, OpenAISpeechVoice: voice, OpenAISpeechTimeout: r.Limits.TimeoutSeconds, ModelsDir: c.StorageRoot}
 			speech, closeSpeech, e := openaispeech.NewWithContext(ctx, cfg, localAudioHTTPClient())
 			if e != nil {
 				return e
@@ -75,7 +75,7 @@ func readAudioDocument(path string, out any) error {
 }
 func audioRuntimeProvenance(ctx context.Context, r audiojob.Runtime) (audiojob.Provenance, error) {
 	get := func(path string, out any) error {
-		req, e := http.NewRequestWithContext(ctx, http.MethodGet, r.Endpoint+path, nil)
+		req, e := http.NewRequestWithContext(ctx, http.MethodGet, r.Origin()+path, nil)
 		if e != nil {
 			return e
 		}

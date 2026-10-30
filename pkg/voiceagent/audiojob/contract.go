@@ -37,6 +37,11 @@ type Runtime struct {
 	Model    string `json:"model"`
 	Voice    string `json:"voice"`
 }
+
+// Origin is the canonical outbound server origin. Validation admits an optional
+// root slash; retained request/config values stay exact for provenance matching.
+func (r Runtime) Origin() string { return strings.TrimSuffix(r.Endpoint, "/") }
+
 type Limits struct {
 	TimeoutSeconds int   `json:"timeout_seconds"`
 	OutputBytes    int64 `json:"output_bytes"`
