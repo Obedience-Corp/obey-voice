@@ -2,7 +2,7 @@
 
 With local speech providers and Ollama, the conversation path runs on your hardware. Background workers can use a different model or provider. A remote brain or worker sends its requests to that provider.
 
-In an Ollama group chat, several personas share a transcript and take turns speaking. Each has its own prompt, model, and voice. The diagram shows three example personas; you choose the roster. An agent can hand the floor to another, and your interruption takes priority. [Persona setup](personas.md) · [Turn-taking and handoffs](context-continuity.md#addressing-and-handing-over-the-floor).
+Several personas can share a transcript and take turns speaking, including personas using different brain providers. Each has its own prompt, model, and voice. The diagram shows three example personas; you choose the roster. An agent can hand the floor to another, and your interruption takes priority. [Persona setup](personas.md) · [Turn-taking and handoffs](context-continuity.md#addressing-and-handing-over-the-floor).
 
 ```mermaid
 flowchart TD

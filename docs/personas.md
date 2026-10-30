@@ -148,6 +148,9 @@ conversation labels remain separate from the display name.
 
 ### Shared conversations
 
+Personas can share a conversation across brain providers. Each keeps its own
+prompt, model, and voice while receiving context from the shared thread.
+
 With a supported local Ollama persona, address another configured persona to
 select it: `Santa.` gives a short acknowledgement in Santa's voice; `Santa,
 what do you think?` selects Santa and answers the request. Santa remains the
