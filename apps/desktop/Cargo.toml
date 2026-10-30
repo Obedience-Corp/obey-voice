@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 description = "Native desktop interface for Obey Voice"
-license = "Apache-2.0"
+license = "AGPL-3.0-only"
 
 [dependencies]
 eframe = { version = "=0.37.0", default-features = false, features = ["accesskit", "persistence", "default_fonts", "wgpu", "wayland", "x11"] }

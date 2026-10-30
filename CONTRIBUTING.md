@@ -24,6 +24,7 @@ expire after seven days. Tag builds attach archives directly to the GitHub relea
 - Run `just build` when touching build, install, or runtime startup behavior.
 - Include tests for behavior changes where practical.
 - Do not include local config, model files, binaries, credentials, or generated review notes.
+- Outside contributors must explicitly accept the [CLA](CLA.md) before their changes are merged. It lets Obedience Corp also use contributions in proprietary products; contributors keep ownership.
 
 ### Agent / PR reject list (Qwen TTS)
 
@@ -65,4 +66,46 @@ When filing a bug, include:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0, and you confirm you have the right to submit them under that license (Apache-2.0 §5).
+Obey Voice and contributions included in its public repository are licensed
+under **GNU AGPL version 3 only (`AGPL-3.0-only`)**. See [LICENSE](LICENSE).
+
+Outside contributions also require the [Contributor License Agreement](CLA.md).
+You keep ownership; the CLA grants Obedience Corp additional rights to use,
+modify, distribute, and sublicense your contribution, including in closed
+company products. Those additional rights are not granted to all public users.
+Third-party material keeps its original license and must be identified.
+
+### Accepting the CLA
+
+Read [CLA.md](CLA.md), then post the following as a comment on your pull request
+from your own GitHub account. Replace the placeholders. Use the full commit SHA
+of the `CLA.md` revision you read, not a mutable branch name.
+
+```text
+I have read and agree to the Obedience Corp Contributor License Agreement,
+version 1.0, in CLA.md at commit <full commit SHA>, for my contributions
+to this pull request, including my revisions before it is merged.
+I understand that it permits Obedience Corp to use and sublicense my
+contributions in proprietary products without releasing their source code.
+I am accepting on my own behalf / on behalf of <organization's legal name>,
+and I am authorized to grant these rights.
+Signed: <your name>, GitHub @<username>, <YYYY-MM-DD>.
+```
+
+PR comments are public. If you need private acceptance, contact the repository
+owner through a private channel before signing; maintainers must retain that
+acceptance and reference its verification in the PR without publishing private
+details. Do not post addresses or other unnecessary personal information.
+
+Each outside contributor must accept for their own work. An authorized
+organization representative may accept for contributions owned by that
+organization. Identify coauthors and third-party material so maintainers can
+verify all necessary rights. A DCO sign-off or checked template box alone is
+not CLA acceptance.
+
+Before merging, maintainers must verify company ownership or record the accepted
+CLA version, revision, covered PR, contributor identity, and authority for each
+outside contributor. For public acceptance, retain the comment permalink in the
+PR; for private acceptance, retain the record privately and note verification in
+the PR. Do not merge while required acceptance is missing. This is a manual
+maintainer check, not an automated GitHub check.
