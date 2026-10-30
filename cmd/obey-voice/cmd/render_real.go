@@ -656,15 +656,6 @@ func (s *ttsSynth) SynthesizeRequest(ctx context.Context, req render.SynthesisRe
 	return drainPCMStream(ctx, stream, 0)
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func drainPCMStream(ctx context.Context, stream *audio.PCMStream, knownRate int) ([]float32, int, error) {
 	rate := knownRate
 	if rate == 0 {
