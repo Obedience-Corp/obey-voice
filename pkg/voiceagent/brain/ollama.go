@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +23,8 @@ import (
 
 // OllamaBrain implements Provider using the Ollama API with tool calling.
 type OllamaBrain struct {
+	audioResolver       utterance.Resolver
+	audioProjection     map[string][]byte
 	retiredDelegations  sync.WaitGroup
 	backgroundDelivered string
 	delegation          *delegation.Runtime
@@ -86,8 +89,31 @@ func NewOllama(cfg *config.Config) (*OllamaBrain, error) {
 // on a job goroutine. All catalog and optional skill work remains bounded by
 // the caller's cancellation and deadline.
 func newOllama(parent context.Context, cfg *config.Config) (*OllamaBrain, error) {
+	return newOllamaHTTP(parent, cfg, http.DefaultClient, &http.Client{Timeout: 10 * time.Second})
+}
+
+// NewNativeOllama binds all chat/catalog requests to the explicitly selected
+// native HTTP client. Standard constructors retain their current behavior.
+func NewNativeOllama(ctx context.Context, cfg *config.Config, client *http.Client, resolver utterance.Resolver) (*OllamaBrain, error) {
+	if cfg == nil || client == nil || resolver == nil {
+		return nil, errors.New("native Ollama requires HTTP client and audio resolver")
+	}
+	if err := nativeAuthentication(cfg.OllamaHost); err != nil {
+		return nil, err
+	}
+	brain, err := newOllamaHTTP(ctx, cfg, client, client)
+	if err != nil {
+		return nil, err
+	}
+	brain.SetAudioResolver(resolver)
+	return brain, nil
+}
+func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probeClient *http.Client) (*OllamaBrain, error) {
 	if parent == nil {
 		return nil, errors.New("nil context")
+	}
+	if err := parent.Err(); err != nil {
+		return nil, err
 	}
 	if cfg.OllamaModel == "" {
 		return nil, fmt.Errorf("ollama_model not configured — run: obey-voice config ollama_model <model>")
@@ -98,12 +124,12 @@ func newOllama(parent context.Context, cfg *config.Config) (*OllamaBrain, error)
 		return nil, fmt.Errorf("invalid ollama_host %q: %w", cfg.OllamaHost, err)
 	}
 
-	client := api.NewClient(base, http.DefaultClient)
+	client := api.NewClient(base, httpClient)
 
 	// Verify model exists. The probe uses its own timeout-bounded client so a
 	// reachable-but-hung host can't block startup; chat requests keep the
 	// untimed default client since generations can run long.
-	probe := api.NewClient(base, &http.Client{Timeout: 10 * time.Second})
+	probe := api.NewClient(base, probeClient)
 	probeCtx, cancel := context.WithTimeout(parent, 5*time.Second)
 	models, err := probe.List(probeCtx)
 	cancel()

@@ -17,6 +17,7 @@ import (
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/discussion"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/work"
 )
 
@@ -25,7 +26,8 @@ import (
 // a 404) without string-matching an error message.
 var ErrSessionNotFound = errors.New("session: not found")
 
-const CurrentFormatVersion = 2
+const CurrentFormatVersion = 3
+const StandardFormatVersion = 2
 
 var ErrUnsupportedSessionVersion = errors.New("session: unsupported future format version")
 
@@ -79,7 +81,7 @@ type Session struct {
 // New creates a new session with a generated ID.
 func New(provider, model string) *Session {
 	return &Session{
-		FormatVersion: CurrentFormatVersion,
+		FormatVersion: StandardFormatVersion,
 		ID:            generateID(),
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
@@ -109,7 +111,10 @@ func (s *Session) saveBackupTo(dir string, turns []brain.Turn) error {
 	}
 	// Copy so the backup never mutates the live session's Turns/UpdatedAt.
 	backup := *s
-	backup.FormatVersion = CurrentFormatVersion
+	backup.FormatVersion = requiredFormatVersion(s.FormatVersion, turns)
+	if err := validateAudioTurns(dir, s.ID, turns); err != nil {
+		return err
+	}
 	backup.Turns = normalizeTurns(turns)
 	backup.UpdatedAt = time.Now()
 	data, err := json.MarshalIndent(&backup, "", "  ")
@@ -164,7 +169,10 @@ func saveSessionWithFailures(dir string, s *Session, turns []brain.Turn, snapsho
 	if next.FormatVersion > CurrentFormatVersion {
 		return fmt.Errorf("%w: %d", ErrUnsupportedSessionVersion, next.FormatVersion)
 	}
-	next.FormatVersion = CurrentFormatVersion
+	next.FormatVersion = requiredFormatVersion(next.FormatVersion, turns)
+	if err := validateAudioTurns(dir, s.ID, turns); err != nil {
+		return err
+	}
 	next.Turns = normalizeTurns(turns)
 	next.UpdatedAt = time.Now()
 	if snapshot != nil {
@@ -252,6 +260,15 @@ func normalizeTurns(turns []brain.Turn) []brain.Turn {
 			t.Role = "assistant"
 		}
 		t.ToolCalls = append([]brain.TurnToolCall(nil), t.ToolCalls...)
+		if t.Utterance != nil {
+			copyInput := *t.Utterance
+			if t.Utterance.Audio != nil {
+				ref := *t.Utterance.Audio
+				copyInput.Audio = &ref
+			}
+			copyInput.Spans = append([]utterance.Span(nil), t.Utterance.Spans...)
+			t.Utterance = &copyInput
+		}
 		out[i] = t
 	}
 	return out
@@ -281,6 +298,12 @@ func loadFrom(dir, id string) (*Session, error) {
 	}
 	if s.FormatVersion == 0 {
 		s.FormatVersion = 1
+	}
+	if requiredFormatVersion(StandardFormatVersion, s.Turns) > StandardFormatVersion && s.FormatVersion < 3 {
+		return nil, errors.New("audio evidence requires session format 3")
+	}
+	if err := validateAudioMetadata(s.Turns); err != nil {
+		return nil, err
 	}
 	return &s, nil
 }

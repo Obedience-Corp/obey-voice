@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"time"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -13,8 +14,10 @@ import (
 
 // StreamOptions controls how a streamed brain response should behave.
 type StreamOptions struct {
-	Attachments []chatmedia.Ref
-	Discussion  *discussion.Directive
+	Utterance     *utterance.Finalized
+	AudioRetained bool
+	Attachments   []chatmedia.Ref
+	Discussion    *discussion.Directive
 	// WorkerBudget is the job-shared operational budget for this worker job.
 	WorkerBudget  *WorkerBudget
 	OnWorkerUsage func(WorkerUsage)

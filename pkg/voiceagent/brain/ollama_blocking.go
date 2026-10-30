@@ -18,6 +18,9 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 	// history even after a failed or transient request.
 	defer func() { o.maybeEmitContinuityBudget("") }()
 	ctx = opts.workerBudget().Context(ctx)
+	if err := o.prepareAudioHistory(ctx, opts); err != nil {
+		return "", err
+	}
 	if err := o.prepareImageHistory(ctx, opts.Attachments); err != nil {
 		return "", err
 	}

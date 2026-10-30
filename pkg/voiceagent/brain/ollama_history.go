@@ -2,6 +2,7 @@ package brain
 
 import (
 	"encoding/json"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 	"regexp"
 	"strings"
 	"time"
@@ -157,6 +158,7 @@ func (o *OllamaBrain) ClearHistory() {
 	o.resetDelegation()
 	o.archive = continuity.Store{}
 	o.history = nil
+	o.audioProjection = nil
 	o.canonical = nil
 	o.working = nil
 }
@@ -353,6 +355,15 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 			content = encodeOllamaUser(t.Speaker, content)
 		}
 		images, _ := loadImageData(t.Attachments) // Validated before a model request; assets are immutable.
+		if t.Utterance != nil && t.Utterance.Audio != nil {
+			if data := o.audioProjection[t.Utterance.Audio.ID]; data != nil {
+				images = []api.ImageData{data}
+				content = t.TypedInput
+			}
+			if len(images) == 0 && content == "" && t.Utterance.Transcript.State == utterance.Ready {
+				content = t.Utterance.Transcript.Text
+			}
+		}
 		return api.Message{Role: "user", Content: content, Images: images}
 	}
 	owner, name := strings.TrimSpace(t.PersonaID), strings.TrimSpace(t.PersonaDisplayName)
@@ -451,6 +462,7 @@ func deepCopyTurns(in []Turn) []Turn {
 	out := make([]Turn, len(in))
 	copy(out, in)
 	for i := range out {
+		out[i].Utterance = cloneUtterance(in[i].Utterance)
 		out[i].Attachments = append([]chatmedia.Ref(nil), in[i].Attachments...)
 		out[i].ToolCalls = append([]TurnToolCall(nil), in[i].ToolCalls...)
 	}
@@ -518,6 +530,22 @@ func (o *OllamaBrain) appendUserInput(input string, opts StreamOptions) error {
 		}
 	}
 	o.attachInputImages(opts.Attachments, images)
+	if opts.Utterance != nil {
+		last := len(o.canonical) - 1
+		o.canonical[last].TypedInput = input
+		o.working[len(o.working)-1].TypedInput = input
+		if input == "" && opts.Utterance.Transcript.State == utterance.Ready {
+			o.canonical[last].Content = opts.Utterance.Transcript.Text
+			o.working[len(o.working)-1].Content = opts.Utterance.Transcript.Text
+		}
+		o.canonical[last].Utterance = cloneUtterance(opts.Utterance)
+		o.canonical[last].AudioRetained = opts.AudioRetained
+		o.working[len(o.working)-1].Utterance = cloneUtterance(opts.Utterance)
+		o.working[len(o.working)-1].AudioRetained = opts.AudioRetained
+		if data := o.audioProjection[opts.Utterance.Audio.ID]; data != nil {
+			o.history[len(o.history)-1].Images = []api.ImageData{data}
+		}
+	}
 	return nil
 }
 
