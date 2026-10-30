@@ -31,6 +31,9 @@ fn short_window_scrolls_past_catalog_to_all_route_fields() {
         "obey_model",
         "obey_socket",
         "obey_tool_policy",
+        "decision_local_model",
+        "decision_device",
+        "models_dir",
     ];
     app.schema = fields
         .iter()
@@ -94,6 +97,13 @@ fn short_window_scrolls_past_catalog_to_all_route_fields() {
             seen.contains(&format!("saved-{key}")),
             "editor for {key} is clipped"
         );
+    }
+    for label in [
+        "Local decision model setup",
+        "Check installed model / verify",
+        "Install / repair selected model",
+    ] {
+        assert!(seen.contains(label), "setup control not reachable: {label}");
     }
     assert_eq!(app.values, saved, "scrolling must not change saved choices");
 }

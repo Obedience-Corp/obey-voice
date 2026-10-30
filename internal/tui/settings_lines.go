@@ -63,7 +63,7 @@ func linesFor(rows []settingRow, valueWidth int) []settingLine {
 func nameColumn(rows []settingRow) int {
 	width := 0
 	for _, row := range rows {
-		if !row.expands() {
+		if !row.expands() && row.kind != rowReport {
 			width = max(width, lipgloss.Width(row.name))
 		}
 	}

@@ -76,9 +76,10 @@ type settingsModel struct {
 	// voices is the live catalog behind voiceItems for an engine that has to
 	// be asked (openai-speech); voiceLocale is the Language filter over
 	// voiceItems, view state that is never saved. See settings_voices.go.
-	voices      voiceCatalog
-	voiceLocale string
-	speechSetup speechSetup
+	voices        voiceCatalog
+	voiceLocale   string
+	speechSetup   speechSetup
+	decisionSetup decisionSetup
 
 	// Meeting route discovery (camp list + config).
 	routeDests        []meeting.Destination
@@ -593,6 +594,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 
 	case settingsVoicesMsg:
 		m.applyVoiceCatalog(msg)
+	case decisionSetupProgressMsg, decisionSetupDoneMsg:
+		return m, m.applyDecisionSetup(msg)
 	case speechSetupProgressMsg, speechSetupDoneMsg:
 		cmd := m.applySpeechSetup(msg)
 		return m, cmd

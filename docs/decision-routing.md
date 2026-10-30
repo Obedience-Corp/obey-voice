@@ -173,3 +173,28 @@ frames reaching a software sink, not sound reaching a listener. Microphone/STT
 latency and full worker execution are outside this measurement. Retain failures
 and compare matching case/repetition pairs; a passing harness means data was
 collected, not that every request was routed correctly or that latency improved.
+
+## Install a model before enabling decisions
+
+In the TUI, open Settings → Brain, choose the local model and compute device,
+and set **Model storage / existing models** to your preferred model root (for
+example, a directory on a fast external drive). **Check installed model / verify**
+checks the selected pinned files without downloading. **Install / repair selected
+model** downloads missing files, reuses verified files, and repairs corrupt files.
+Progress appears in Settings; **Cancel model setup** stops setup. The same install
+button retries after cancellation or failure. Turn off live decision routing
+before running setup.
+
+In the desktop app, Settings → Brain → **Local decision model setup** provides
+model/device/storage choices and the same verify/install actions. Save each
+choice before installing. Progress, results and Cancel appear in the task panel.
+Stop an active conversation before setup. Check shows model size, approximate
+memory, license and installation state. Runtime dependencies require additional
+disk space beyond the listed model download.
+
+Both interfaces use the shared engine installer without enabling routing. The
+storage directory is shared with speech models. Selecting a directory does not
+move files: choose an existing Obey Voice model root to reuse its verified assets;
+arbitrary model formats are not imported. Existing files on another drive can
+remain there. The equivalent commands are `obey-voice models decision status`
+and `obey-voice models decision install`.

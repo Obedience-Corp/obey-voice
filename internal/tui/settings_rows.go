@@ -34,6 +34,7 @@ const (
 	rowAction
 	rowMenu
 	rowInfo
+	rowReport // One prewrapped, full-width read-only line; cursor scrolling keeps every line reachable.
 )
 
 // When a change takes effect, stated on the row as a fact.

@@ -1,3 +1,4 @@
+mod decision_setup;
 mod editor;
 mod layout;
 #[cfg(test)]
@@ -95,6 +96,7 @@ impl VoiceApp {
         egui::ScrollArea::vertical()
             .id_salt(("settings_scroll", &self.group, &self.search))
             .show(ui, |ui| {
+ if self.group=="brain" && self.search.is_empty() {self.decision_model_setup(ui);}
                 if self.group == "brain" && provider == "obey" && self.search.is_empty() {
                     card(ui, super::provider_choices::obey_route_notice);
                     self.obey_catalog_ui(ui);
