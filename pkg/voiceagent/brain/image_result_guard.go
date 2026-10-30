@@ -14,10 +14,12 @@ var imageResultQuotation = regexp.MustCompile("`[^`\\n]*`|\"[^\"\\n]*\"|“[^”
 var imageResultEarlier = regexp.MustCompile(`(?i)\b(?:earlier|above|previously|already|last (?:reply|message))\b`)
 
 // Only guard explicit image delivery claims/promises on the held live-router
-// response. This is not an intent router: the model must still select the tool
+// response and its post-chat answer. The current request grounds pronouns such
+// as "attached them" without treating unrelated attachment replies as images.
+// This is not an intent router: the model must still select the tool
 // and effort tier, and normal admission decides whether that work can run.
 // Existing image replies are evidence for follow-ups about earlier attachments.
-func (o *OllamaBrain) unsupportedImageResult(text string) bool {
+func (o *OllamaBrain) unsupportedImageResult(text, request string) bool {
 	if imageResultEarlier.MatchString(text) {
 		for _, turn := range o.canonical {
 			if (turn.Role == "assistant" || turn.Role == "samantha") && len(turn.Attachments) > 0 {
@@ -42,5 +44,5 @@ func (o *OllamaBrain) unsupportedImageResult(text string) bool {
 		}
 	}
 	text = imageResultQuotation.ReplaceAllString(strings.Join(prose, "\n"), "")
-	return imageResultNoun.MatchString(text) && (imageResultClaim.MatchString(text) || imageResultPromise.MatchString(text))
+	return (imageResultNoun.MatchString(text) || imageResultNoun.MatchString(request)) && (imageResultClaim.MatchString(text) || imageResultPromise.MatchString(text))
 }

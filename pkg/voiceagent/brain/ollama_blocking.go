@@ -179,9 +179,10 @@ func (o *OllamaBrain) ThinkFull(ctx context.Context, input string, opts StreamOp
 		}
 		routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
 		missingRoute := routing && len(response.ToolCalls) == 0
-		missingImageResult := (imageResultRetry || routing) && len(response.ToolCalls) == 0 && o.unsupportedImageResult(response.Content)
+		checkImageResult := routing || imageResultRetry || (routedChat && imageResultNoun.MatchString(input))
+		missingImageResult := checkImageResult && len(response.ToolCalls) == 0 && o.unsupportedImageResult(response.Content, input)
 		if missingRoute || missingImageResult {
-			if routeRetried {
+			if routeRetried || routedChat {
 				if missingImageResult {
 					return "", fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
 				}

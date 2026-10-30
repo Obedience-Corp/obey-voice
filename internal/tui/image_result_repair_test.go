@@ -26,6 +26,14 @@ import (
 // Exercise the actual router, bounded correction, worker admission, file import,
 // event delivery and Bubble Tea loop. Only model responses are fixtures.
 func TestImageClaimRepairReachesTerminal(t *testing.T) {
+	runImageClaimTerminal(t, false)
+}
+
+func TestPostChatImageClaimShowsTerminalError(t *testing.T) {
+	runImageClaimTerminal(t, true)
+}
+
+func runImageClaimTerminal(t *testing.T, postChat bool) {
 	root := t.TempDir()
 	config.SetConfigDirForTest(t, filepath.Join(root, "config"))
 	for name, data := range map[string][]byte{"result.png": testmedia.PNG(), "result.gif": testmedia.GIF()} {
@@ -33,7 +41,7 @@ func TestImageClaimRepairReachesTerminal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	const claim = "I found a dog PNG and GIF. I've attached them below."
+	const claim = "I’ve attached them below."
 	var liveCalls, workerCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -49,11 +57,16 @@ func TestImageClaimRepairReachesTerminal(t *testing.T) {
 			}
 			msg := api.Message{Role: "assistant"}
 			if req.Model == "live" {
-				if liveCalls.Add(1) == 1 {
+				first := liveCalls.Add(1) == 1
+				if first != postChat {
 					msg.Content = claim
 				} else {
 					var args api.ToolCallFunctionArguments
-					_ = json.Unmarshal([]byte(`{"kind":"spawn"}`), &args)
+					kind := "spawn"
+					if postChat {
+						kind = "chat"
+					}
+					_ = json.Unmarshal([]byte(`{"kind":"`+kind+`"}`), &args)
 					msg.ToolCalls = []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: args}}}
 				}
 			} else {
@@ -89,17 +102,25 @@ func TestImageClaimRepairReachesTerminal(t *testing.T) {
 	m.cfg = cfg
 	initial := m.startConversation(conversationDeps{runner: p, ctx: ctx, bus: bus})
 	m.input.SetValue("Find a PNG and GIF and show them in this chat.")
-	h := &imageRepairTerminal{model: m, initial: initial}
+	h := &imageRepairTerminal{model: m, initial: initial, stopOnError: postChat}
 	var output bytes.Buffer
 	if _, err := tea.NewProgram(h, tea.WithContext(ctx), tea.WithoutSignalHandler(), tea.WithInput(nil), tea.WithOutput(&output)).Run(); err != nil {
-		t.Fatalf("terminal did not receive images: %v\n%s", err, stripANSI(output.String()))
+		t.Fatalf("terminal did not receive the result: %v\n%s", err, stripANSI(output.String()))
 	}
-	if liveCalls.Load() != 2 || workerCalls.Load() != 1 {
+	wantWorkers := int32(1)
+	if postChat {
+		wantWorkers = 0
+	}
+	if liveCalls.Load() != 2 || workerCalls.Load() != wantWorkers {
 		t.Fatalf("model requests: live=%d worker=%d", liveCalls.Load(), workerCalls.Load())
 	}
 	h.model.viewport.GotoBottom()
 	view := stripANSI(h.model.viewport.View())
-	for _, name := range []string{"result.png", "result.gif"} {
+	want := []string{"result.png", "result.gif"}
+	if postChat {
+		want = []string{"no image was attached"}
+	}
+	for _, name := range want {
 		if !strings.Contains(view, name) {
 			t.Fatalf("missing %s preview: %s", name, view)
 		}
@@ -111,8 +132,9 @@ func TestImageClaimRepairReachesTerminal(t *testing.T) {
 
 type imageRepairProbe struct{}
 type imageRepairTerminal struct {
-	model   conversationModel
-	initial tea.Cmd
+	model       conversationModel
+	initial     tea.Cmd
+	stopOnError bool
 }
 
 func (h *imageRepairTerminal) Init() tea.Cmd {
@@ -123,6 +145,9 @@ func (h *imageRepairTerminal) probe() tea.Cmd {
 }
 func (h *imageRepairTerminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(imageRepairProbe); ok {
+		if h.stopOnError && strings.Contains(stripANSI(h.model.View()), "no image was attached") {
+			return h, tea.Quit
+		}
 		for _, item := range h.model.items {
 			if len(item.attachments) == 2 {
 				return h, tea.Quit

@@ -186,9 +186,10 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 			// untagged planning followed by a tool call. It cannot be taken
 			// back once spoken. The final tool-limit answer is also held until
 			// completion so a rejected or truncated recovery cannot reach speech.
-			// Ordinary worker/tool-free responses retain incremental streaming.
+			// Post-chat answers to image requests also wait for claim validation.
+			// Ordinary chat and worker responses retain incremental streaming.
 			routing := sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0
-			checkImageResult := routing || imageResultRetry
+			checkImageResult := routing || imageResultRetry || (routedChat && imageResultNoun.MatchString(input))
 			var routeText []string
 			emitText := func(text string) error {
 				if checkImageResult || finalAnswer {
@@ -280,7 +281,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 			}
 			missingRoute := err == nil && routing && len(toolCalls) == 0
-			missingImageResult := checkImageResult && err == nil && len(toolCalls) == 0 && o.unsupportedImageResult(strings.Join(routeText, ""))
+			missingImageResult := checkImageResult && err == nil && len(toolCalls) == 0 && o.unsupportedImageResult(strings.Join(routeText, ""), input)
 			if checkImageResult || finalAnswer {
 				if len(toolCalls) > 0 {
 					// Tool preambles belong to the thinking surface,
@@ -317,7 +318,7 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				opts.OnWorkerUsage(u)
 			}
 			if missingRoute || missingImageResult {
-				if routeRetried {
+				if routeRetried || routedChat {
 					err := fmt.Errorf("model did not select a route; no work was dispatched")
 					if missingImageResult {
 						err = fmt.Errorf("no image was attached: the model returned an image claim without a file or tool call")
@@ -409,7 +410,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				if sess.routerPolicy == RouterToolsRouteOnly && hasRouteCall(toolCalls) {
 					// chat has been selected. The follow-up is the answer,
-					// so it needs neither another routing decision nor buffering.
+					// so it needs no further routing decision. Image requests
+					// still wait for claim validation before speech.
 					routedChat = true
 					skillCtx += "\n" + chatRouteAnswerInstruction
 				}

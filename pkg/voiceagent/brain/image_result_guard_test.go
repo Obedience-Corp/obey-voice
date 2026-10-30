@@ -23,7 +23,7 @@ func TestUnsupportedImageResult(t *testing.T) {
 		"I'll get those PNG images attached and send them over.",
 		"I attached a PNG.\n```markdown\n![Example](</not-a-result.png>)\n```",
 	} {
-		if !o.unsupportedImageResult(text) {
+		if !o.unsupportedImageResult(text, "") {
 			t.Errorf("accepted missing image: %q", text)
 		}
 	}
@@ -37,15 +37,15 @@ func TestUnsupportedImageResult(t *testing.T) {
 		"> I attached a PNG.\nThat claim was wrong.",
 		"I attached the image.\n![Dog](</work/dog.png>)",
 	} {
-		if o.unsupportedImageResult(text) {
+		if o.unsupportedImageResult(text, "") {
 			t.Errorf("rejected ordinary or explicit reply: %q", text)
 		}
 	}
 	o.canonical = []Turn{{Role: "assistant", Attachments: []chatmedia.Ref{{ID: "existing"}}}}
-	if o.unsupportedImageResult("I attached a PNG earlier.") {
+	if o.unsupportedImageResult("I attached a PNG earlier.", "") {
 		t.Fatal("ignored existing attachment evidence")
 	}
-	if !o.unsupportedImageResult(missingDogImages) {
+	if !o.unsupportedImageResult(missingDogImages, "") {
 		t.Fatal("an earlier image excused a new unsupported attachment claim")
 	}
 }
@@ -76,7 +76,7 @@ func imageClaimBrain(t *testing.T, replies []api.Message) (*OllamaBrain, *[]api.
 
 func TestImageClaimRepairRoutesBeforeSpeechAndKeepsTier(t *testing.T) {
 	o, requests := imageClaimBrain(t, []api.Message{
-		{Role: "assistant", Content: missingDogImages},
+		{Role: "assistant", Content: "I’ve attached them below."},
 		{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: mustArgs(map[string]any{"kind": "spawn", "tier": "medium", "reason_code": "dependent_steps"})}}}},
 	})
 	usage := 0
@@ -172,6 +172,58 @@ func TestImageAndMissingRouteShareOneRetry(t *testing.T) {
 			if err == nil || reply != "" || len(*requests) != 2 || usage != 2 {
 				t.Fatalf("streaming=%t imageFirst=%t reply=%q error=%v requests=%d usage=%d", streaming, imageFirst, reply, err, len(*requests), usage)
 			}
+		}
+	}
+}
+
+func TestImageClaimAfterChatRoute(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, input, answer string
+			blocked             bool
+		}{
+			{"named image", "Show me a dog image.", "I attached a dog image.", true},
+			{"pronoun", "Find a PNG of a dog.", "I’ve attached them below.", true},
+			{"refusal", "Show me a dog image.", "I couldn't obtain it, so nothing was attached.", false},
+			{"explicit reference", "Show me a dog image.", "I attached it.\n![Dog](</work/dog.png>)", false},
+			{"unrelated attachment", "Where is the PDF?", "I’ve attached it below.", false},
+			{"quoted claim", "Explain this image caption.", "The phrase “I’ve attached them below” is not proof.", false},
+		} {
+			t.Run(tc.name+map[bool]string{false: "/blocking", true: "/streaming"}[streaming], func(t *testing.T) {
+				o, requests := imageClaimBrain(t, []api.Message{
+					{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "route", Arguments: mustArgs(map[string]any{"kind": "chat"})}}}},
+					{Role: "assistant", Content: tc.answer},
+				})
+				usage := 0
+				opts := StreamOptions{ToolsEnabled: true, RouterToolsPolicy: RouterToolsRouteOnly, OnUsage: func(int, int) { usage++ }}
+				var reply string
+				var err error
+				if streaming {
+					stream, startErr := o.ThinkStream(t.Context(), tc.input, opts)
+					if startErr != nil {
+						t.Fatal(startErr)
+					}
+					reply, _ = drainStream(t, stream)
+					err = (<-stream.Done).Err
+				} else {
+					reply, err = o.ThinkFull(t.Context(), tc.input, opts)
+				}
+				if len(*requests) != 2 || usage != 2 || len((*requests)[1].Tools) != 0 {
+					t.Fatalf("post-chat accounting: requests=%d usage=%d", len(*requests), usage)
+				}
+				if tc.blocked {
+					if err == nil || !strings.Contains(err.Error(), "no image was attached") || reply != "" {
+						t.Fatalf("unsupported claim escaped: reply=%q error=%v", reply, err)
+					}
+					for _, turn := range o.History() {
+						if strings.Contains(turn.Content, tc.answer) {
+							t.Fatal("unsupported claim entered history")
+						}
+					}
+				} else if err != nil || reply != tc.answer {
+					t.Fatalf("valid answer rejected: reply=%q error=%v", reply, err)
+				}
+			})
 		}
 	}
 }

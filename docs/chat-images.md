@@ -54,9 +54,14 @@ Ollama router retries explicit image-delivery claims once if they contain neithe
 a file reference nor a tool call. A repeated unsupported claim produces an error
 instead of entering speech and chat history. This shares the required routing
 step's single retry; an honest refusal selects `route(kind=chat)` before answering.
-This check covers direct routing
-replies; it is not a general verifier of everything a model says. Explicit file
-references still pass through the normal file validation above.
+The check uses the current request to recognize pronoun-only claims such as
+"I've attached them below" and also validates the answer after `route(kind=chat)`.
+An unsupported post-chat claim produces an error without another tool loop.
+Post-chat answers to image requests wait for completion before speech so rejected
+claims cannot leak through streaming; ordinary chat and workers retain incremental
+streaming. This is not
+a general verifier of everything a model says. Explicit file references still
+pass through the normal file validation above.
 
 Returned images also appear in worker threads and desktop background-result cards.
 A queued worker keeps the images from its originating request; cancelling foreground
