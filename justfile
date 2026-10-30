@@ -354,7 +354,7 @@ install: build
     else
         echo "Downloading default model assets (STT/TTS/VAD for this config)..."
         if ! "{{gobin}}/{{binary_name}}" models ensure; then
-            echo "Warning: model download failed. Run: {{binary_name}} models ensure"
+            echo "Binary installed; voice setup is incomplete. Resolve the model/runtime error above, then run: {{binary_name}} models ensure"
         fi
     fi
 

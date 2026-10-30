@@ -98,6 +98,9 @@ func loadLocked() (*Config, error) {
 		}
 	}
 	applyOllamaDefaults(&cfg, v, ollamaChosen(v))
+	_, _, speechURLEnv := envValueFor("openai_speech_url")
+	_, _, speechModelEnv := envValueFor("openai_speech_model")
+	cfg.OpenAISpeechExternal = v.InConfig("openai_speech_url") || v.InConfig("openai_speech_model") || speechURLEnv || speechModelEnv
 	cfg.ToolCommandTimeout = ClampToolCommandTimeout(cfg.ToolCommandTimeout)
 	cfg.OllamaNumBatch = ClampOllamaNumBatch(cfg.OllamaNumBatch, cfg.OllamaNumCtx)
 	resolveVoiceFrontendMigration(v, &cfg)

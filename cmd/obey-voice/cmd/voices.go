@@ -254,8 +254,12 @@ func missingTTSAssets(ctx context.Context, cfg *config.Config) []string {
 		defer cancel()
 		// A server that does not answer, or a listing that failed, is not an
 		// install problem; building the provider reports it.
-		if t := config.ProbeOpenAISpeech(ctx, cfg); t.Ollama && t.ModelsKnown && !t.ModelListed {
-			missing = append(missing, config.OpenAISpeechModelAssetName(t.Model))
+		if t := config.ProbeOpenAISpeech(ctx, cfg); (t.Ollama || t.Native) && t.ModelsKnown && !t.ModelListed {
+			if t.Native {
+				missing = append(missing, t.Base)
+			} else {
+				missing = append(missing, config.OpenAISpeechModelAssetName(t.Model))
+			}
 		}
 	}
 	return missing

@@ -169,17 +169,23 @@ func TestCLI_Doctor(t *testing.T) {
 		t.Fatalf("configure offline doctor model: %v", err)
 	}
 
-	// Fresh Obey selects Phonon. The minimal container has no speech server,
-	// so doctor must fail with an actionable diagnostic rather than treating
-	// an unavailable service as a harmless missing-asset warning.
+	// Fresh Linux Obey selects managed native Phonon. The minimal container
+	// has no cached runtime/model/voices, so doctor must report that missing
+	// setup without probing Ollama or trying to install the native runtime.
 	output, err := tc.RunObeyVoice("doctor")
 	if err == nil {
-		t.Fatalf("doctor should fail without the selected Phonon server, got: %s", output)
+		t.Fatalf("doctor should fail without the selected native Phonon assets, got: %s", output)
 	}
-	for _, want := range []string{"tts-provider: openai-speech", "voice Harper", "[FAIL] openai-speech-server:", "ollama serve"} {
+	for _, want := range []string{"tts-provider: openai-speech", "voice Harper", "[FAIL] openai-speech-native:", "native runtime/model/voices are not installed", "models ensure --tts"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("Phonon doctor output should contain %q, got: %s", want, output)
 		}
+	}
+	if strings.Contains(output, "openai-speech-server") {
+		t.Errorf("native Phonon doctor should not probe the external server, got: %s", output)
+	}
+	if _, code, err := tc.ExecCommand("test", "-d", "/root/.cache/obey-voice/models/phonon/native"); err != nil || code != 1 {
+		t.Fatalf("doctor must not create a native runtime install: exit %d, err %v", code, err)
 	}
 
 	// Santa explicitly selects Kokoro. In a separate CLI process doctor must
@@ -198,7 +204,43 @@ func TestCLI_Doctor(t *testing.T) {
 			t.Errorf("doctor output should contain %q, got: %s", want, output)
 		}
 	}
-	if strings.Contains(output, "openai-speech-server") {
-		t.Errorf("Kokoro doctor should not diagnose the unselected Phonon server, got: %s", output)
+	if strings.Contains(output, "openai-speech-server") || strings.Contains(output, "openai-speech-native") {
+		t.Errorf("Kokoro doctor should not diagnose the unselected Phonon runtime, got: %s", output)
+	}
+}
+
+func TestCLI_DoctorExternalSpeechServer(t *testing.T) {
+	for _, choice := range []struct {
+		name, key, value string
+	}{
+		{"external runtime", "openai_speech_runtime", "external"},
+		{"explicit endpoint with auto runtime", "openai_speech_url", "http://127.0.0.1:11434/v1"},
+	} {
+		t.Run(choice.name, func(t *testing.T) {
+			tc := GetSharedContainer(t)
+			for _, setting := range [][2]string{
+				{"brain_provider", "ollama"},
+				{"ollama_model", "integration-model"},
+				{choice.key, choice.value},
+			} {
+				if output, err := tc.RunObeyVoice("config", "set", setting[0], setting[1]); err != nil {
+					t.Fatalf("configure %s: %v\n%s", setting[0], err, output)
+				}
+			}
+			// A declared external runtime or endpoint must remain external on
+			// Linux, even though an unconfigured install uses native Phonon.
+			output, err := tc.RunObeyVoice("doctor")
+			if err == nil {
+				t.Fatalf("doctor should fail without the configured external server, got: %s", output)
+			}
+			for _, want := range []string{"tts-provider: openai-speech", "voice Harper", "[FAIL] openai-speech-server:", "ollama serve"} {
+				if !strings.Contains(output, want) {
+					t.Errorf("external doctor output should contain %q, got: %s", want, output)
+				}
+			}
+			if strings.Contains(output, "openai-speech-native") {
+				t.Errorf("external doctor should not diagnose a native runtime, got: %s", output)
+			}
+		})
 	}
 }

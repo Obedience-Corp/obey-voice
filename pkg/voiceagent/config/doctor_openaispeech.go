@@ -20,6 +20,13 @@ func DiagnoseOpenAISpeech(ctx context.Context, cfg *Config, modelsDir string) []
 	ctx, cancel := context.WithTimeout(ctx, OpenAISpeechProbeTimeout)
 	defer cancel()
 	t := ProbeOpenAISpeech(ctx, cfg)
+	if t.Native {
+		severity, detail := SeverityOK, "pinned Phonon runtime/model/voices cached for "+t.NativeBackend+"; actual device is checked at speech startup"
+		if t.Err != nil {
+			severity, detail = SeverityError, t.Err.Error()
+		}
+		return []Diagnostic{{Name: "openai-speech-native", Severity: severity, Detail: detail, Remediation: openAISpeechEnsureRemedy}}
+	}
 
 	var diags []Diagnostic
 	switch {
