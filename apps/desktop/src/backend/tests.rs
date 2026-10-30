@@ -58,19 +58,9 @@ fn malformed_protocol_line_preserves_following_snapshots() {
 #[cfg(unix)]
 #[test]
 fn noise_and_reconnect_do_not_interrupt_a_live_engine() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = std::env::temp_dir().join(format!(
-        "obey-engine-test-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir(&root).unwrap();
-    let script = root.join("engine");
-    std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' '{\"event\":\"ready\"}' 'native log noise' '{\"event\":\"state\",\"data\":{\"mic\":true}}'\nread request\nprintf '%s\\n' '{\"event\":\"saved\"}'\n").unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // Immutable checked-in executable: publishing a fresh writable script
+    // immediately before parallel exec can transiently fail with ETXTBSY.
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/noisy-engine.sh");
     let mut backend = Backend::new(eframe::egui::Context::default(), true);
     backend.engine = script;
     backend.connect();
@@ -112,7 +102,6 @@ fn noise_and_reconnect_do_not_interrupt_a_live_engine() {
         }
     }
     drop(backend);
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[cfg(unix)]
