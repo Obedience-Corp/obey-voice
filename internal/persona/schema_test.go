@@ -85,6 +85,9 @@ func assertObjectMatches(t *testing.T, path string, typ reflect.Type, obj schema
 			t.Errorf("%s: struct field %q has no schema property (schema has %v)", path, name, sortedKeys(obj.Properties))
 			continue
 		}
+		if fieldType.Kind() == reflect.Pointer {
+			fieldType = fieldType.Elem()
+		}
 		if fieldType.Kind() == reflect.Struct {
 			assertObjectMatches(t, path+"."+name, fieldType, prop)
 		}

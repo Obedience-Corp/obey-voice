@@ -9,6 +9,32 @@ TTS provider/voice all belong to the persona rather than to global config. TUI
 empty inherits the app default — an empty `brain:` uses the app-level
 `brain_provider`/model, and an empty `tts:` uses the app-level TTS keys.
 
+Profiles also accept an optional `audio` section for native audio implementation
+work. Existing profiles omit it and keep Standard behavior. Native activation
+is currently unavailable: a saved native draft is rejected before selection or
+preference writes until its production input and transport bindings exist.
+
+```yaml
+audio:
+  mode: standard              # standard (default) | native (not yet activatable)
+  provider: ollama            # native provider; default ollama
+  model: lfm3-audio:2b        # native model default
+  endpoint: http://localhost:11434 # omitted = effective ollama_host
+  voice: female              # omitted = runtime default
+  controls: standard         # standard | conversation
+  transcript: auto           # auto | required | off
+  retain_audio: false
+```
+
+Standard mode can retain these inactive settings without changing the saved
+brain, worker, STT or TTS choices. Native Standard controls require `auto` or
+`required` transcription. Native conversation controls permit all three
+transcript choices, but are incompatible with group participation; native mode
+also rejects acoustic name recognition. Endpoints must be HTTP(S) server origins
+or reverse-proxy prefixes without credentials, query strings, or `/api` or `/v1`
+suffixes. Schema validation and candidate configuration resolution do not prove
+model or voice support; capability checks and UI controls are still pending.
+
 Starting a new conversation opens a persona picker: **Obey (default)** is always
 the first option and loads Obey's saved prompt, brain, worker and voice. Unset
 profile fields inherit Settings. Other named
