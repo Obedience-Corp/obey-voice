@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"reflect"
 	"sync"
 
 	"github.com/Obedience-Corp/obey-voice/internal/persona"
@@ -33,18 +34,19 @@ type SelectionOptions struct {
 	PersistParticipation func(discussion.Settings) error
 	// UseDefaults preserves the launcher's Settings stack until an explicit
 	// persona selection; the default profile still supplies identity/prompt.
-	UseDefaults bool
-	Base        *config.Config
-	Catalog     persona.Catalog
-	Pipeline    *pipeline.Pipeline
-	Voices      *voiceagent.LiveTTSManager
-	SessionID   string
-	Initial     *persona.SessionBinding
-	Persist     func([]brain.Turn, events.PersonaSelection) error
-	NewBrain    func(context.Context, *config.Config) (brain.Provider, error)
-	NewWorker   func(context.Context, *config.Config) (brain.Provider, error)
-	NewVoice    func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
-	Native      *NativeSelectionHooks
+	UseDefaults   bool
+	Base          *config.Config
+	Catalog       persona.Catalog
+	Pipeline      *pipeline.Pipeline
+	Voices        *voiceagent.LiveTTSManager
+	SessionID     string
+	Initial       *persona.SessionBinding
+	Persist       func([]brain.Turn, events.PersonaSelection) error
+	NewBrain      func(context.Context, *config.Config) (brain.Provider, error)
+	NewWorker     func(context.Context, *config.Config) (brain.Provider, error)
+	NewVoice      func(context.Context, *config.Config) (*voiceagent.TTSSet, error)
+	Native        *NativeSelectionHooks
+	InitialNative *voiceagent.NativeCandidate
 }
 
 // Selector replaces response resources at the host's serialized boundary. It
@@ -120,6 +122,28 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
+	if opts.Initial.AudioConfig().Mode == persona.AudioNative {
+		candidate := opts.InitialNative
+		scope := opts.Pipeline.ConversationScope()
+		if opts.Native == nil || opts.Native.Authorize == nil || candidate == nil || candidate.Policy == nil || candidate.Policy.Lifetime == nil || opts.Voices == nil || !scope.Valid() || scope.SessionID != opts.SessionID || opts.Pipeline.Native != candidate.Policy || !sameProviderIdentity(opts.Pipeline.Brain, candidate.Brain) {
+			return nil, errors.New("native startup requires an authorized prepared binding and matching conversation owner")
+		}
+		if err := candidate.ValidatePrepared(candidate.Policy.Lifetime); err != nil {
+			return nil, err
+		}
+		if err := candidate.ValidateScope(scope); err != nil {
+			return nil, err
+		}
+		mode := opts.Initial.AudioConfig()
+		if err := candidate.ValidateBinding(opts.Initial.Config(), mode.Controls, mode.Transcript, mode.RetainAudio); err != nil {
+			return nil, err
+		}
+		if err := opts.Native.Authorize(candidate.Policy.Lifetime, opts.Initial, candidate); err != nil {
+			return nil, err
+		}
+	} else if opts.InitialNative != nil {
+		return nil, errors.New("prepared native startup does not match Standard selection")
+	}
 	opts.Pipeline.GroupParticipationEnabled = opts.Base.GroupParticipationEnabled
 	s := &Selector{opts: opts, binding: opts.Initial, participation: settings, bindingToken: rand.Text()}
 	hash := freezer.FreezePersonaPrompt()
@@ -130,7 +154,20 @@ func NewSelector(opts SelectionOptions) (*Selector, error) {
 		}
 		s.warnPersistence(err)
 	}
+	if opts.InitialNative != nil {
+		opts.InitialNative.TransferBrainOwnership()
+		opts.InitialNative.Policy.PublishCaption = s.captionPublisher(s.bindingToken, s.selected)
+		s.nativeCandidate = opts.InitialNative
+	}
 	return s, nil
+}
+
+func sameProviderIdentity(a, b brain.Provider) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	left, right := reflect.ValueOf(a), reflect.ValueOf(b)
+	return left.Type() == right.Type() && left.Comparable() && right.Comparable() && a == b
 }
 
 func (s *Selector) Snapshot() events.PersonaSelection {

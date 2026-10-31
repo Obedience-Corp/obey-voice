@@ -26,6 +26,7 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 	generation := s.generation
 	p := s.opts.Pipeline
 	oldBrain, scope := p.Brain, p.ConversationScope()
+	outgoingNative := s.nativeCandidate
 	if p.ConversationRetired() {
 		return events.PersonaSelection{}, errors.New("persona selection belongs to a closed conversation")
 	}
@@ -152,12 +153,29 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				}
 				native, err = prepareResource(ctx, func() (*voiceagent.NativeCandidate, error) {
 					return s.opts.Native.Prepare(ctx, cfg, binding.AudioConfig(), next, s.captionPublisher(token, next))
-				}, func(c *voiceagent.NativeCandidate) { _ = c.Close() })
+				}, func(c *voiceagent.NativeCandidate) {
+					if c != outgoingNative {
+						_ = c.Close()
+					}
+				})
 				if err != nil {
 					return err
 				}
+				if native != nil && native == outgoingNative {
+					native = nil
+					return errors.New("native preparation returned the live binding instead of a fresh candidate")
+				}
 				if native == nil || native.Brain == nil || native.Voice == nil || native.Policy == nil {
 					return errors.New("native candidate is incomplete")
+				}
+				if err := native.BindScope(scope); err != nil {
+					return err
+				}
+				if native.PreparedConfig() != nil {
+					mode := binding.AudioConfig()
+					if err := native.ValidateBinding(cfg, mode.Controls, mode.Transcript, mode.RetainAudio); err != nil {
+						return err
+					}
 				}
 				if s.opts.Native.Authorize == nil {
 					return ErrNativeUnqualified
@@ -273,6 +291,9 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 				return nil
 			}
 			if native != nil {
+				if err := native.ValidateScope(p.ConversationScope()); err != nil {
+					return err
+				}
 				if err := native.ValidatePrepared(ctx); err != nil {
 					return err
 				}
