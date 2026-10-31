@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/wav"
 	"github.com/ollama/ollama/api"
@@ -25,17 +27,17 @@ func (i NativeContextIdentity) pinnedLFM3() bool {
 func pinnedLFM3ContextBound(messages []api.Message, tools api.Tools) (int64, error) {
 	total := int64(len("<|startoftext|><|im_start|>assistant\n<think></think>"))
 	for _, message := range messages {
-		total += int64(len(message.Role) + len(message.Content) + len(message.Thinking))
+		total += nativeWireTextBytes(strings.ToLower(message.Role)) + nativeWireTextBytes(message.Content) + nativeWireTextBytes(message.Thinking)
 		total += int64(len("<|im_start|>\n<|im_end|>\n<think></think><tool_response>\n\n</tool_response>"))
 		for _, call := range message.ToolCalls {
-			total += int64(len("\n\n<tool_call>\n<function=>\n</function>\n</tool_call>") + len(call.Function.Name))
+			total += int64(len("\n\n<tool_call>\n<function=>\n</function>\n</tool_call>")) + nativeWireTextBytes(call.Function.Name)
 			for name, value := range call.Function.Arguments.All() {
 				encoded, err := pinnedLFM3JSONBound(value)
 				if err != nil {
 					return 0, fmt.Errorf("%w: native tool argument: %v", ErrAudioProjection, err)
 				}
 				// JSON string escaping/quotes only overcount the renderer's raw string.
-				total += int64(len(name)+len("<parameter=>\n\n</parameter>\n")) + encoded
+				total += nativeWireTextBytes(name) + int64(len("<parameter=>\n\n</parameter>\n")) + encoded
 			}
 		}
 		for _, recording := range message.Images {
@@ -73,4 +75,18 @@ func pinnedLFM3JSONBound(value any) (int64, error) {
 		return 0, err
 	}
 	return int64(len(encoded) + bytes.Count(encoded, []byte{','}) + bytes.Count(encoded, []byte{':'})), nil
+}
+
+// encoding/json replaces each invalid source byte with U+FFFD. Counting raw
+// string bytes (or collapsing invalid runs) can undercount the decoded renderer
+// input. Valid strings retain their original byte count without allocation.
+func nativeWireTextBytes(text string) int64 {
+	if utf8.ValidString(text) {
+		return int64(len(text))
+	}
+	var count int64
+	for _, r := range text {
+		count += int64(utf8.RuneLen(r))
+	}
+	return count
 }

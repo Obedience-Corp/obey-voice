@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -105,5 +106,51 @@ func TestPinnedContextCountsNestedJSONSeparatorsAndInsertedSystem(t *testing.T) 
 	bound, err = pinnedLFM3ContextBound(nil, minimal)
 	if err != nil || bound < int64(len(envelope(renderedMinimal))) {
 		t.Errorf("inserted system envelope omitted: bound=%d fixture=%d error=%v", bound, len(envelope(renderedMinimal)), err)
+	}
+}
+
+func TestPinnedContextBoundsDecodedInvalidUTF8WireFields(t *testing.T) {
+	// File/tool bytes can be converted directly to a string. JSON replaces
+	// every invalid byte, not an entire invalid run, before rendering.
+	invalid := strings.Repeat(string([]byte{0xff, 0xfe}), 100)
+	args := api.NewToolCallFunctionArguments()
+	args.Set(invalid, "value")
+	messages := []api.Message{{Role: "assistant", Content: invalid, Thinking: invalid, ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: invalid, Arguments: args}}}}}
+	encoded, err := json.Marshal(messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []api.Message
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(decoded[0].Content); got != 600 {
+		t.Fatalf("fixture did not replace each invalid byte: %d", got)
+	}
+	before, err := pinnedLFM3ContextBound(messages, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := pinnedLFM3ContextBound(decoded, nil)
+	if err != nil || before < after {
+		t.Fatalf("wire replacement exceeded admitted bytes: before=%d after=%d error=%v", before, after, err)
+	}
+	// JSON lowercases roles on decode; include a Unicode case whose encoding
+	// grows from two to three bytes rather than assuming ASCII roles here.
+	role := []api.Message{{Role: "Ⱥ"}}
+	encoded, err = json.Marshal(role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	before, err = pinnedLFM3ContextBound(role, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err = pinnedLFM3ContextBound(decoded, nil)
+	if err != nil || before < after {
+		t.Fatalf("wire role normalization exceeded bound: before=%d after=%d error=%v", before, after, err)
 	}
 }
