@@ -36,6 +36,26 @@ func (o *OllamaBrain) Complete(ctx context.Context, req CompletionRequest) (Comp
 		Messages: []api.Message{{Role: "system", Content: system + o.conversationIdentityGuidance()}, {Role: "user", Content: completionPrompt(req)}},
 		Tools:    nil, Stream: &stream, Format: format, Options: options, KeepAlive: keepAlive, Think: think,
 	}
+	if o.audioResolver != nil {
+		if o.cfg != nil {
+			if err := nativeAuthentication(o.cfg.OllamaHost); err != nil {
+				return CompletionEnvelope{}, err
+			}
+		}
+		contextMessages, err := o.nativeCompletionContext(ctx, req.Conversation)
+		if err != nil {
+			return CompletionEnvelope{}, err
+		}
+		private := req
+		private.Conversation = nil // The excerpt is represented once, including WAVs.
+		request.Messages = append([]api.Message{request.Messages[0]}, contextMessages...)
+		request.Messages = append(request.Messages, api.Message{Role: "user", Content: completionPrompt(private)})
+		truncate, shift := false, false
+		request.Truncate, request.Shift = &truncate, &shift
+		if err := o.nativeMessagesBudgetError(request.Messages, nil); err != nil {
+			return CompletionEnvelope{}, err
+		}
+	}
 	var raw string
 	var prefill, generated int
 	err := o.chat(ctx, request, func(response api.ChatResponse) error {

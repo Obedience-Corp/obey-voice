@@ -104,26 +104,7 @@ func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOption
 			}
 		}
 	}
-	projection := make(map[string][]byte)
-	used := 0
-	load := func(input *utterance.Finalized) ([]byte, error) {
-		if input == nil || input.Audio == nil {
-			return nil, utterance.ErrInvalidAudio
-		}
-		if data := projection[input.Audio.ID]; data != nil {
-			return data, nil
-		}
-		data, err := o.resolveAudioInput(ctx, input)
-		if err != nil {
-			return nil, err
-		}
-		if len(data) > chatmedia.SessionAudioBudget-used {
-			return nil, utterance.ErrBudgetExceeded
-		}
-		used += len(data)
-		projection[input.Audio.ID] = data
-		return data, nil
-	}
+	projection, load := o.audioProjectionLoader(ctx)
 	for i, turn := range o.working {
 		turn = o.effectiveTurn(turn)
 		if turn.Role != "user" || turn.Utterance == nil {
@@ -189,4 +170,38 @@ func ValidateNativeProjection(turns []Turn) error {
 		}
 	}
 	return nil
+}
+
+// Every request-private projection shares verification, deduplication and the
+// session byte bound, without borrowing or mutating another request's map.
+func (o *OllamaBrain) audioProjectionLoader(ctx context.Context) (map[string][]byte, func(*utterance.Finalized) ([]byte, error)) {
+	projection := make(map[string][]byte)
+	references := make(map[string]utterance.AudioRef)
+	used := 0
+	load := func(input *utterance.Finalized) ([]byte, error) {
+		if input == nil || input.Audio == nil {
+			return nil, utterance.ErrInvalidAudio
+		}
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		if data := projection[input.Audio.ID]; data != nil {
+			if references[input.Audio.ID] != *input.Audio {
+				return nil, utterance.ErrInvalidAudio
+			}
+			return data, nil
+		}
+		data, err := o.resolveAudioInput(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > chatmedia.SessionAudioBudget-used {
+			return nil, utterance.ErrBudgetExceeded
+		}
+		used += len(data)
+		projection[input.Audio.ID] = data
+		references[input.Audio.ID] = *input.Audio
+		return data, nil
+	}
+	return projection, load
 }
