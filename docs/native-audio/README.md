@@ -5,7 +5,7 @@ persona integration. The generic binding API remains guarded for unaware hosts.
 [Frontdoor verification](frontdoor.md) covers actual startup/default selection,
 restore/projection, native UI and the numeric-integrity correction.
 [Prepared bindings](activation.md) describes the transaction machinery. Existing
-Standard personas retain their providers and saved settings. Replay UX, broader
+Standard personas retain their providers and saved settings. Original replay/retry controls are delivered in [recording review](recording-review.md). Broader
 acceptance/quality and exact runtime context accounting remain open.
 
 The implementation shares the existing capture/VAD/endpoint/completion owner,
@@ -95,3 +95,5 @@ UI activation, fresh whole-project Standard checks and broader quality/physical
 listener gates remain explicit. No complete A01–A25 pass is claimed.
 
 Original recording replay and explicit transcript retry: [controls and evidence](recording-review.md).
+
+Typed/local/worker speech and Native recorded completion context: [delivery verification](completion-delivery.md).
