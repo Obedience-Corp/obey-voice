@@ -119,6 +119,10 @@
     "model/renderers/lfm3.go": {
       "sha256": "e0876af687725ac74c7f275ab0fba2c03ca364ad3870e71fef4bdf26ba7a5d7c",
       "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/model/renderers/lfm3.go"
+    },
+    "model/renderers/lfm2.go": {
+      "sha256": "c292f22ca9998c44527caf8587be19ace91f17ab32733055b265aab6fdb5097b",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/model/renderers/lfm2.go"
     }
   },
   "model_assets": {

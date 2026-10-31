@@ -75,3 +75,35 @@ func TestPinnedToolMarkupPressureRejectsBeforeHTTPWithoutHistoryLoss(t *testing.
 		t.Fatal("profile expanded32K cap")
 	}
 }
+
+func TestPinnedContextCountsNestedJSONSeparatorsAndInsertedSystem(t *testing.T) {
+	// The runtime renders this thousand-element value with999 separator spaces.
+	// Compact JSON alone undercounts by almost a thousand bytes.
+	values := make([]int, 1000)
+	args := api.NewToolCallFunctionArguments()
+	args.Set("nested", map[string]any{"values": values})
+	messages := []api.Message{{Role: "assistant", ToolCalls: []api.ToolCall{{Function: api.ToolCallFunction{Name: "nested", Arguments: args}}}}}
+	// Explicit fixtures follow the pinned renderer, including spaces emitted by
+	// lfm2JSON. They are independent of the admission counter's JSON helper.
+	renderedValue := `{"values": [` + strings.Repeat("0, ", 999) + `0]}`
+	renderedArgument := "<|startoftext|><|im_start|>assistant\n<tool_call>\n<function=nested>\n<parameter=nested>\n" + renderedValue + "\n</parameter>\n</function>\n</tool_call><|im_end|>\n<|im_start|>assistant\n<think></think>"
+	bound, err := pinnedLFM3ContextBound(messages, nil)
+	if err != nil || bound < int64(len(renderedArgument)) {
+		t.Errorf("nested parameter rendered bytes omitted: bound=%d fixture=%d error=%v", bound, len(renderedArgument), err)
+	}
+	tools := api.Tools{{Type: "function", Function: api.ToolFunction{Name: "nested", Parameters: api.ToolFunctionParameters{Type: "object", Defs: map[string]any{"values": values}}}}}
+	renderedSchema := `{"name": "nested", "parameters": {"type": "object", "$defs": ` + renderedValue + `, "properties": null}}`
+	envelope := func(schema string) string {
+		return "<|startoftext|><|im_start|>system\n<tools>\n" + schema + "\n</tools><|im_end|>\n<|im_start|>assistant\n<think></think>"
+	}
+	bound, err = pinnedLFM3ContextBound(nil, tools)
+	if err != nil || bound < int64(len(envelope(renderedSchema))) {
+		t.Errorf("nested schema rendered bytes omitted: bound=%d fixture=%d error=%v", bound, len(envelope(renderedSchema)), err)
+	}
+	minimal := api.Tools{{Type: "function", Function: api.ToolFunction{Name: "test"}}}
+	renderedMinimal := `{"name": "test", "parameters": {"type": "", "properties": null}}`
+	bound, err = pinnedLFM3ContextBound(nil, minimal)
+	if err != nil || bound < int64(len(envelope(renderedMinimal))) {
+		t.Errorf("inserted system envelope omitted: bound=%d fixture=%d error=%v", bound, len(envelope(renderedMinimal)), err)
+	}
+}

@@ -30,12 +30,12 @@ func pinnedLFM3ContextBound(messages []api.Message, tools api.Tools) (int64, err
 		for _, call := range message.ToolCalls {
 			total += int64(len("\n\n<tool_call>\n<function=>\n</function>\n</tool_call>") + len(call.Function.Name))
 			for name, value := range call.Function.Arguments.All() {
-				encoded, err := json.Marshal(value)
+				encoded, err := pinnedLFM3JSONBound(value)
 				if err != nil {
 					return 0, fmt.Errorf("%w: native tool argument: %v", ErrAudioProjection, err)
 				}
 				// JSON string escaping/quotes only overcount the renderer's raw string.
-				total += int64(len(name) + len(encoded) + len("<parameter=>\n\n</parameter>\n"))
+				total += int64(len(name)+len("<parameter=>\n\n</parameter>\n")) + encoded
 			}
 		}
 		for _, recording := range message.Images {
@@ -52,11 +52,25 @@ func pinnedLFM3ContextBound(messages []api.Message, tools api.Tools) (int64, err
 		}
 	}
 	if len(tools) > 0 {
-		encoded, err := json.Marshal(tools)
+		encoded, err := pinnedLFM3JSONBound(tools)
 		if err != nil {
 			return 0, fmt.Errorf("%w: native tools: %v", ErrAudioProjection, err)
 		}
-		total += int64(len(encoded) + len(tools) + len("\n\n<tools>\n\n</tools>"))
+		total += encoded + int64(len(tools)+len("\n\n<tools>\n\n</tools>"))
+		// Tools create a system turn even if the caller supplied none. Counting it
+		// when one already exists only overcounts.
+		total += int64(len("<|im_start|>system\n<|im_end|>\n"))
 	}
 	return total, nil
+}
+
+// lfm2JSON (also used by the LFM3 renderer) inserts separator spaces outside
+// quoted strings. Count every comma/colon, including those inside strings, as
+// an upper bound. Marshal's HTML escaping can only further overcount bytes.
+func pinnedLFM3JSONBound(value any) (int64, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(encoded) + bytes.Count(encoded, []byte{','}) + bytes.Count(encoded, []byte{':'})), nil
 }
