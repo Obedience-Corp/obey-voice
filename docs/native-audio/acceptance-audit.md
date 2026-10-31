@@ -39,3 +39,7 @@ Exact context accounting is still a real runtime limitation: the installed Ollam
 Physical microphone, echo, acoustically measured barge-in and device playback are expressly outside authorized fixture testing. The actual provider and factory receipts establish software behavior only. Experimental opt-in retains known arithmetic and unsolicited-action-claim limitations; Standard remains default. Editor task/voice/alignment quality and signed distribution are separately owned gates, not persona unit-test conclusions.
 
 The next executable accounting investigation is to pin the runtime's actual encoder/slot accounting or expose a trustworthy preflight count, then compare observed prompt consumption against complete request geometry at its true limit. Do not replace this with a guessed larger allowance or a perfect-answer criterion.
+
+### Pinned accounting follow-up
+
+The next investigation above now has [source-pinned and actual-runtime evidence](context-contract.md): the MLX backend expands complete audio before rejecting its hard model limit, explaining the earlier num_ctx observation. The reviewed identity selects exact audio geometry and explicit renderer/tool byte accounting while keeping the 32K client ceiling. Unknown identities remain estimates; this is scoped evidence, not a universal backend guarantee. Physical-device and editor quality/release limits are unchanged.

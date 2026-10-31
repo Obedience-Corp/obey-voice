@@ -25,6 +25,7 @@ import (
 type OllamaBrain struct {
 	inputTranscripts       sync.Map
 	audioResolver          utterance.Resolver
+	nativeContextIdentity  NativeContextIdentity
 	audioProjection        map[string][]byte
 	audioProjectionBlocked bool
 	retiredDelegations     sync.WaitGroup
@@ -96,7 +97,10 @@ func newOllama(parent context.Context, cfg *config.Config) (*OllamaBrain, error)
 
 // NewNativeOllama binds all chat/catalog requests to the explicitly selected
 // native HTTP client. Standard constructors retain their current behavior.
-func NewNativeOllama(ctx context.Context, cfg *config.Config, client *http.Client, resolver utterance.Resolver) (*OllamaBrain, error) {
+func NewNativeOllama(ctx context.Context, cfg *config.Config, client *http.Client, resolver utterance.Resolver, identity ...NativeContextIdentity) (*OllamaBrain, error) {
+	if len(identity) > 1 {
+		return nil, errors.New("native Ollama accepts one context identity")
+	}
 	if cfg == nil || client == nil || resolver == nil {
 		return nil, errors.New("native Ollama requires HTTP client and audio resolver")
 	}
@@ -108,6 +112,9 @@ func NewNativeOllama(ctx context.Context, cfg *config.Config, client *http.Clien
 		return nil, err
 	}
 	brain.SetAudioResolver(resolver)
+	if len(identity) == 1 {
+		brain.nativeContextIdentity = identity[0]
+	}
 	return brain, nil
 }
 func newOllamaHTTP(parent context.Context, cfg *config.Config, httpClient, probeClient *http.Client) (*OllamaBrain, error) {
