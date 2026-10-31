@@ -57,7 +57,11 @@ func runManagedFixture() {
 				w.WriteHeader(503)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": ManagedModel, "architecture": map[string]any{"output_modalities": []string{"text", "audio"}}}}})
+			input := []string{"text", "audio"}
+			if string(mode) == "no-audio-input" {
+				input = []string{"text"}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": ManagedModel, "architecture": map[string]any{"input_modalities": input, "output_modalities": []string{"text", "audio"}}}}})
 		case "/tts":
 			var req map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&req)

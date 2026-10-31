@@ -20,7 +20,7 @@ import (
 func newAudioJobCmd() *cobra.Command {
 	var configPath, requestPath string
 	var jsonl bool
-	cmd := &cobra.Command{Use: "audio-job", Short: "Generate a finite audio artifact from an explicit isolated request", Args: cobra.NoArgs,
+	cmd := &cobra.Command{Use: "audio-job", Short: "Create finite audio or text findings from an explicit isolated request", Args: cobra.NoArgs,
 		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cmd.SilenceUsage = true
@@ -52,6 +52,10 @@ func newAudioJobCmd() *cobra.Command {
 					return err
 				}
 				defer runtime.Close()
+				if r.Protocol == audiojob.TextProtocol {
+					_, err = audiojob.RunText(ctx, c, r, runtime, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
+					return err
+				}
 				_, err = audiojob.Run(ctx, c, r, runtime, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
 				return err
 			}
@@ -73,7 +77,7 @@ func newAudioJobCmd() *cobra.Command {
 			return e
 		}}
 	cmd.Flags().StringVar(&configPath, "audio-config", "", "Absolute isolated obey-voice.audio-config/v1 JSON")
-	cmd.Flags().StringVar(&requestPath, "request", "", "Absolute obey-audio-job/v1 request JSON")
+	cmd.Flags().StringVar(&requestPath, "request", "", "Absolute obey-audio-job/v1 narration or v2 audio-text request JSON")
 	cmd.Flags().BoolVar(&jsonl, "jsonl", false, "Write bounded job events as JSONL")
 	return cmd
 }
