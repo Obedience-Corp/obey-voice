@@ -97,3 +97,5 @@ listener gates remain explicit. No complete A01–A25 pass is claimed.
 Original recording replay and explicit transcript retry: [controls and evidence](recording-review.md).
 
 Typed/local/worker speech and Native recorded completion context: [delivery verification](completion-delivery.md).
+
+Actual invalid-voice and cancellation milestones: [local provider negatives](provider-negatives.md).
