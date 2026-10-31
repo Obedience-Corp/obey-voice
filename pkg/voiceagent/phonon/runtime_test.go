@@ -173,8 +173,11 @@ func TestReadinessCancellationKillsChild(t *testing.T) {
 		cancel()
 		// Also clean up a leaking child if the lifecycle assertion fails.
 		if child.PID != 0 {
-			if p, err := os.FindProcess(child.PID); err == nil && p.Signal(syscall.Signal(0)) == nil {
-				_ = p.Kill()
+			if p, err := os.FindProcess(child.PID); err == nil {
+				if p.Signal(syscall.Signal(0)) == nil {
+					_ = p.Kill()
+				}
+				_ = p.Release()
 			}
 		}
 		select {
@@ -200,8 +203,12 @@ func TestReadinessCancellationKillsChild(t *testing.T) {
 	if !errors.Is(startErr, context.Canceled) {
 		t.Fatalf("got %v, want context.Canceled", startErr)
 	}
-	if p, err := os.FindProcess(child.PID); err == nil && p.Signal(syscall.Signal(0)) == nil {
-		t.Fatal("cancelled child still exists or has not been reaped")
+	if p, err := os.FindProcess(child.PID); err == nil {
+		running := p.Signal(syscall.Signal(0)) == nil
+		_ = p.Release()
+		if running {
+			t.Fatal("cancelled child still exists or has not been reaped")
+		}
 	}
 	if conn, err := net.DialTimeout("tcp", child.Address, time.Second); err == nil {
 		conn.Close()
