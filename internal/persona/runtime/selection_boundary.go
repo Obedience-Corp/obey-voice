@@ -188,6 +188,15 @@ func (s *Selector) selectAtBoundaryWithCommitCheck(ctx context.Context, id, reas
 			if canonical, ok := oldBrain.(brain.CanonicalHistoryProvider); ok {
 				turns = canonical.CanonicalHistory()
 			}
+			if native != nil {
+				nativeView := turns
+				if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {
+					nativeView = source.ContinuitySnapshot().Working
+				}
+				if err := brain.ValidateNativeProjection(nativeView); err != nil {
+					return err
+				}
+			}
 			if native == nil && s.opts.Native != nil {
 				textView := turns
 				if source, ok := oldBrain.(brain.ContinuityTransferProvider); ok {

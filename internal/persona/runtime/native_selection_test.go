@@ -3,6 +3,7 @@ package personaruntime
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +183,23 @@ func TestNativeSelectionRequiresMatchingConversationEpochOwner(t *testing.T) {
 	}
 	if f.candidate != nil {
 		t.Fatal("mismatched scope ran candidate setup")
+	}
+	f.selector.Close()
+}
+
+func TestNativeSelectionPreservesPriorPersonaForUnsupportedImageContext(t *testing.T) {
+	f := newNativeSelectorFixture(t)
+	if err := f.old.ImportHistory([]brain.Turn{{Role: "user", Content: "inspect image", Attachments: []chatmedia.Ref{{ID: strings.Repeat("a", 64), Format: "png", Width: 1, Height: 1, Frames: 1}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.selector.Select(t.Context(), "native", "test"); !errors.Is(err, brain.ErrImageProjection) {
+		t.Fatal(err)
+	}
+	if f.pipeline.Brain != f.old || f.old.IsClosed() || f.pipeline.Native != nil {
+		t.Fatal("image projection failure changed selected persona")
+	}
+	if !f.candidate.Brain.(*selectorTestBrain).IsClosed() {
+		t.Fatal("unsupported context candidate leaked")
 	}
 	f.selector.Close()
 }

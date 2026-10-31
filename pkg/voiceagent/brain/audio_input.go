@@ -13,6 +13,8 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
+var ErrImageProjection = errors.New("retained images need a compatible persona or an explicit new context before native audio")
+
 var ErrAudioProjection = errors.New("audio-only history needs retained audio, a ready transcript or a valid summary")
 
 // AudioInput is an optional capability; ordinary providers retain text/image
@@ -75,6 +77,14 @@ func (o *OllamaBrain) resolveAudioInput(ctx context.Context, input *utterance.Fi
 }
 
 func (o *OllamaBrain) prepareAudioHistory(ctx context.Context, opts StreamOptions) error {
+	if o.audioResolver != nil {
+		if len(opts.Attachments) > 0 {
+			return ErrImageProjection
+		}
+		if err := ValidateNativeProjection(o.effectiveTurns(o.working)); err != nil {
+			return err
+		}
+	}
 	if o.audioResolver != nil && o.cfg != nil {
 		if err := nativeAuthentication(o.cfg.OllamaHost); err != nil {
 			return err
@@ -164,6 +174,18 @@ func ValidateTextProjection(turns []Turn) error {
 	for _, turn := range turns {
 		if turn.Utterance != nil && turn.Utterance.Transcript.State != utterance.Ready {
 			return ErrAudioProjection
+		}
+	}
+	return nil
+}
+
+// ValidateNativeProjection preserves image evidence instead of sending it
+// through LFM3's audio Images wire field. Explicit working summaries may be
+// projected, while canonical image metadata remains in the session evidence.
+func ValidateNativeProjection(turns []Turn) error {
+	for _, turn := range turns {
+		if len(turn.Attachments) > 0 {
+			return ErrImageProjection
 		}
 	}
 	return nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
@@ -182,5 +183,36 @@ func TestAudioOnlyHistoryIsNotSilentlyTrimmed(t *testing.T) {
 	}
 	if err := ValidateTextProjection(view); !errors.Is(err, ErrAudioProjection) {
 		t.Fatal("text compaction lost audio", err)
+	}
+}
+
+func TestNativeAudioRejectsRetainedAndNewImageProjectionBeforeHTTP(t *testing.T) {
+	for _, history := range []bool{false, true} {
+		t.Run(map[bool]string{false: "new typed image", true: "retained image"}[history], func(t *testing.T) {
+			calls := 0
+			responder := repetitionBrain(t, func(http.ResponseWriter, *http.Request) { calls++; t.Error("image reached audio-only model") })
+			responder.ClearHistory()
+			media := chatmedia.NewAudioSession()
+			defer media.Close()
+			responder.SetAudioResolver(media)
+			image := chatmedia.Ref{ID: strings.Repeat("a", 64), Format: "png", Width: 1, Height: 1, Frames: 1}
+			opts := StreamOptions{}
+			if history {
+				if err := responder.ImportHistory([]Turn{{Role: "user", Content: "inspect this image", Attachments: []chatmedia.Ref{image}}}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				opts.Attachments = []chatmedia.Ref{image}
+			}
+			if _, err := responder.ThinkFull(t.Context(), "question", opts); !errors.Is(err, ErrImageProjection) {
+				t.Fatal(err)
+			}
+			if calls != 0 {
+				t.Fatal("native model saw unsupported image")
+			}
+			if history && len(responder.CanonicalHistory()[0].Attachments) != 1 {
+				t.Fatal("image evidence was silently dropped")
+			}
+		})
 	}
 }
