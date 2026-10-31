@@ -10,8 +10,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/wav"
 )
 
 // CanonicalAudio accepts only bounded persona PCM16 input. It preserves every
@@ -49,7 +49,7 @@ func CanonicalAudio(data []byte) (utterance.AudioRef, []byte, error) {
 		}
 		pos = int(end + size%2)
 	}
-	format, err := audio.ReadWAVFormat(bytes.NewReader(data), int64(len(data)))
+	format, err := wav.ReadWAVFormat(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return utterance.AudioRef{}, nil, fmt.Errorf("inspect utterance WAV: %w: %w", utterance.ErrInvalidAudio, err)
 	}

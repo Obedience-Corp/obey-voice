@@ -32,10 +32,19 @@ audio. Audio-only context cannot be silently evicted or compacted as blank text.
 - `just test unit`, `just test voiceflow`, `just build`: whole-project gates.
 - `OBEY_NATIVE_AUDIO_FIXTURE="$PWD/pkg/voiceagent/nativeaudio/assets/setup.wav" go test ./pkg/voiceagent/nativeaudio -run '^TestLiveNativeProductionAdapters$' -count=1 -v`: explicitly selected installed local Ollama model, isolated temporary config and software drain. This checks adapters/scheduler, not complete profile activation or model quality. It does not install a model.
 
-The review correction was also tested from an exact staged tree separately from
-ongoing setup code: full pipeline race suite passed; changed-code lint reports
-zero new issues. Full brain lint has an unchanged receive errcheck finding at
-`legacy_validation_test.go:98`; do not describe that full command as passing.
+The committed checkpoint was tested from an exact archive, excluding ongoing
+candidate setup work. Native race suites, build, voiceflow and audio-crackle pass.
+The first whole-unit run reported 5,457/5,459 passing: the scene dependency guard
+failed and the TUI dashboard reported one unnamed failure. Raw TUI reruns pass;
+the initial failure is retained rather than described as a clean full-unit run.
+The confirmed scene regression was repaired by moving the shared WAV metadata
+reader into a dependency-free package, preserving the existing audio API. Scene,
+audio and chatmedia race suites then pass, as does changed-code lint.
+
+Full local lint remains failing on unchanged errcheck findings in
+`job/table_test.go:670` and `tts/qwen/native_session.go:220,223` (also present in
+main). The review correction separately passed the full pipeline race suite and
+changed-code lint. These results do not qualify activation or model quality.
 
 The diagnostic context probe accepts an explicit fresh output path:
 
