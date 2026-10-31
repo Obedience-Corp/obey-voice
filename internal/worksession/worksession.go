@@ -19,10 +19,11 @@ import (
 // for disk, and a delayed revision cannot overwrite a newer checkpoint. The
 // normal session file owns durable outcomes; transcript events are diagnostics.
 type Checkpoint struct {
-	pipeline *pipeline.Pipeline
-	store    *session.Store
-	session  *session.Session
-	scope    work.WorkScope // owned by run
+	pipeline  *pipeline.Pipeline
+	store     *session.Store
+	session   *session.Session
+	sessionID string         // immutable; Store.Save replaces the shared Session under its own lock
+	scope     work.WorkScope // owned by run
 
 	mu                      sync.Mutex
 	pending                 *checkpointRequest
@@ -78,7 +79,7 @@ func Bind(p *pipeline.Pipeline, cfg *config.Config, sess *session.Session, store
 			return nil, fmt.Errorf("acknowledge initial work checkpoint: %w", err)
 		}
 	}
-	w := &Checkpoint{pipeline: p, store: store, session: sess, scope: snapshot.Scope,
+	w := &Checkpoint{pipeline: p, store: store, session: sess, sessionID: snapshot.Scope.SessionID, scope: snapshot.Scope,
 		wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{})}
 	dir, err := store.WorkDir(sess.ID)
 	if err != nil {
@@ -107,7 +108,7 @@ func (w *Checkpoint) Submit(snapshot work.Snapshot) {
 }
 
 func (w *Checkpoint) enqueue(snapshot work.Snapshot, waitGeneration uint64) {
-	if w == nil || snapshot.Scope.SessionID != w.session.ID {
+	if w == nil || snapshot.Scope.SessionID != w.sessionID {
 		return
 	}
 	w.mu.Lock()
