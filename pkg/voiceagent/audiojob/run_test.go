@@ -52,7 +52,7 @@ func TestPublishExactSamplesAndIdentity(t *testing.T) {
 	c, r := fixture(t)
 	s := &synth{}
 	var events []Event
-	m, e := Run(context.Background(), c, r, s, Provenance{"0.40.12", strings.Repeat("a", 64)}, func(e Event) error { events = append(events, e); return nil })
+	m, e := Run(context.Background(), c, r, s, Provenance{RuntimeVersion: "0.40.12", ModelDigest: strings.Repeat("a", 64)}, func(e Event) error { events = append(events, e); return nil })
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -68,7 +68,7 @@ func TestPublishExactSamplesAndIdentity(t *testing.T) {
 	if _, e := os.Stat(filepath.Join(r.OutputDir, "audio.wav")); e != nil {
 		t.Fatal(e)
 	}
-	_, e = Run(context.Background(), c, r, s, Provenance{"version", strings.Repeat("a", 64)}, func(Event) error { return nil })
+	_, e = Run(context.Background(), c, r, s, Provenance{RuntimeVersion: "version", ModelDigest: strings.Repeat("a", 64)}, func(Event) error { return nil })
 	if e == nil || s.calls != 1 {
 		t.Fatal("existing job was overwritten")
 	}
@@ -83,7 +83,7 @@ func TestFailureAndCancellationDoNotPublish(t *testing.T) {
 				cancel()
 			}
 			s := &synth{fail: true}
-			_, e := Run(ctx, c, r, s, Provenance{"version", strings.Repeat("a", 64)}, func(Event) error { return nil })
+			_, e := Run(ctx, c, r, s, Provenance{RuntimeVersion: "version", ModelDigest: strings.Repeat("a", 64)}, func(Event) error { return nil })
 			if e == nil {
 				t.Fatal("accepted failed stream")
 			}
@@ -110,7 +110,7 @@ func TestRejectBeforeInference(t *testing.T) {
 			c, r := fixture(t)
 			change(&c, &r)
 			s := &synth{}
-			_, e := Run(context.Background(), c, r, s, Provenance{"version", strings.Repeat("a", 64)}, func(Event) error { return nil })
+			_, e := Run(context.Background(), c, r, s, Provenance{RuntimeVersion: "version", ModelDigest: strings.Repeat("a", 64)}, func(Event) error { return nil })
 			if e == nil || s.calls != 0 {
 				t.Fatalf("not rejected before inference: %v calls=%d", e, s.calls)
 			}
@@ -142,7 +142,7 @@ func TestTerminalClassifiesOriginalCause(t *testing.T) {
 				defer cancel()
 			}
 			var events []Event
-			_, err := Run(ctx, c, r, s, Provenance{"version", strings.Repeat("a", 64)}, func(e Event) error { events = append(events, e); return nil })
+			_, err := Run(ctx, c, r, s, Provenance{RuntimeVersion: "version", ModelDigest: strings.Repeat("a", 64)}, func(e Event) error { events = append(events, e); return nil })
 			if err == nil || len(events) == 0 {
 				t.Fatal("expected terminal failure")
 			}
@@ -166,7 +166,7 @@ func TestCancelOnArtifactNeverCompletesOrLeavesAsset(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var events []Event
-	_, e := Run(ctx, c, r, &synth{}, Provenance{"version", strings.Repeat("a", 64)}, func(e Event) error {
+	_, e := Run(ctx, c, r, &synth{}, Provenance{RuntimeVersion: "version", ModelDigest: strings.Repeat("a", 64)}, func(e Event) error {
 		events = append(events, e)
 		if e.Type == "artifact" {
 			cancel()

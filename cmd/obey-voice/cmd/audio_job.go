@@ -42,6 +42,19 @@ func newAudioJobCmd() *cobra.Command {
 			defer cancel()
 			ctx, cancel = context.WithTimeout(ctx, time.Duration(r.Limits.TimeoutSeconds)*time.Second)
 			defer cancel()
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			if err := r.Preflight(ctx, c); err != nil {
+				return err
+			}
+			if c.Managed != nil {
+				runtime, provenance, err := audiojob.StartManaged(ctx, c)
+				if err != nil {
+					return err
+				}
+				defer runtime.Close()
+				_, err = audiojob.Run(ctx, c, r, runtime, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
+				return err
+			}
 			provenance, e := audioRuntimeProvenance(ctx, c.Runtime)
 			if e != nil {
 				return e
@@ -56,7 +69,6 @@ func newAudioJobCmd() *cobra.Command {
 				return e
 			}
 			defer closeSpeech()
-			enc := json.NewEncoder(cmd.OutOrStdout())
 			_, e = audiojob.Run(ctx, c, r, speech, provenance, func(event audiojob.Event) error { return enc.Encode(event) })
 			return e
 		}}

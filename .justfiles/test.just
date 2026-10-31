@@ -314,3 +314,8 @@ obey:
 [no-cd]
 audio-jobs:
     go test -race ./pkg/voiceagent/audiojob ./cmd/obey-voice/cmd -run 'Test(Audio|LocalAudio|CancelOnArtifact|PublishExact|FailureAndCancellation|RejectBeforeInference|TerminalClassifies)'
+
+# Quiet finite-runtime lifecycle proof using explicit installed local assets.
+[no-cd]
+managed-audio-proof WORKER CONFIG REQUEST OUTPUT PROFILE:
+    python3 docs/audio-jobs/probe/managed_runtime.py --worker "{{WORKER}}" --config "{{CONFIG}}" --request "{{REQUEST}}" --output "{{OUTPUT}}" --sandbox-profile "{{PROFILE}}"

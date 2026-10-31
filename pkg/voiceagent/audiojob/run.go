@@ -19,7 +19,11 @@ import (
 type Synthesizer interface {
 	Synthesize(context.Context, string) (*audio.PCMStream, error)
 }
-type Provenance struct{ RuntimeVersion, ModelDigest string }
+type Provenance struct {
+	RuntimeVersion, ModelDigest    string
+	ProjectorDigest, RuntimeDigest string
+	Sampling                       *Sampling
+}
 type Event struct {
 	Protocol     string `json:"protocol"`
 	JobID        string `json:"job_id"`
@@ -28,6 +32,24 @@ type Event struct {
 	Stage        string `json:"stage,omitempty"`
 	ManifestPath string `json:"manifest_path,omitempty"`
 	Message      string `json:"message,omitempty"`
+}
+
+// Preflight checks source bytes and output ownership before a command loads a
+// model. Run repeats it at the artifact transaction boundary.
+func (r Request) Preflight(ctx context.Context, c Config) error {
+	if err := r.Validate(c); err != nil {
+		return err
+	}
+	if err := checkInput(ctx, r.Input); err != nil {
+		return err
+	}
+	if err := safeDirectory(c.StorageRoot, r.OutputDir); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(r.OutputDir); !os.IsNotExist(err) {
+		return fmt.Errorf("output directory already exists or is inaccessible")
+	}
+	return nil
 }
 
 // Run validates the input by streaming, drains all producer frames, and publishes
@@ -55,20 +77,17 @@ func Run(ctx context.Context, c Config, r Request, s Synthesizer, p Provenance, 
 	if err = r.Validate(c); err != nil {
 		return
 	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.Limits.TimeoutSeconds)*time.Second)
+	defer cancel()
+	if err = r.Preflight(ctx, c); err != nil {
+		return
+	}
 	if p.RuntimeVersion == "" || !HashValid(p.ModelDigest) {
 		err = fmt.Errorf("missing verified runtime/model provenance")
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.Limits.TimeoutSeconds)*time.Second)
-	defer cancel()
-	if err = checkInput(ctx, r.Input); err != nil {
-		return
-	}
-	if err = safeDirectory(c.StorageRoot, r.OutputDir); err != nil {
-		return
-	}
-	if _, e := os.Lstat(r.OutputDir); !os.IsNotExist(e) {
-		err = fmt.Errorf("output directory already exists or is inaccessible")
+	if c.Managed != nil && (p.RuntimeVersion != c.Managed.Version || p.ModelDigest != c.Managed.Model.SHA256 || p.ProjectorDigest != c.Managed.Projector.SHA256 || p.RuntimeDigest != c.Managed.Executable.SHA256 || p.Sampling == nil) {
+		err = fmt.Errorf("managed runtime provenance does not match the selected pack")
 		return
 	}
 	parent := filepath.Dir(r.OutputDir)
@@ -146,6 +165,7 @@ func Run(ctx context.Context, c Config, r Request, s Synthesizer, p Provenance, 
 	}
 	scriptHash := sha256.Sum256([]byte(r.Script))
 	manifest = Manifest{Protocol: Protocol, JobID: r.JobID, Task: r.Task, Source: r.Source, Input: r.Input, Runtime: r.Runtime, RuntimeVersion: p.RuntimeVersion, ModelDigest: p.ModelDigest, Transport: "text_then_speech", ScriptSHA256: hex.EncodeToString(scriptHash[:]), Language: r.Language, DurationPolicy: r.DurationPolicy, SourceWindows: []Window{{StartSample: r.Input.SourceOriginSamples, EndSample: r.Input.SourceOriginSamples + r.Input.SampleCount}}, Output: Output{Path: "audio.wav", SHA256: hash, SampleRate: 24000, Channels: 1, SampleCount: samples}}
+	manifest.ProjectorDigest, manifest.RuntimeDigest, manifest.Sampling = p.ProjectorDigest, p.RuntimeDigest, p.Sampling
 	data, e := json.MarshalIndent(manifest, "", "  ")
 	if e != nil {
 		err = e

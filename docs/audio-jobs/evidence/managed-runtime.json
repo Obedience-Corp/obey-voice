@@ -1,0 +1,138 @@
+{
+  "worker_sha256": "402cebed411da17eda086b7d1395052aea707c76b4bdf7a01d1a2d23f4b49fa7",
+  "source_unchanged": true,
+  "external_network_denied": true,
+  "loopback_allowed_for_owned_runtime": true,
+  "playback": false,
+  "listening_or_task_quality_qualified": false,
+  "results": [
+    {
+      "case": "complete",
+      "exit": 0,
+      "seconds": 1.9232082919916138,
+      "events": [
+        "accepted",
+        "progress",
+        "artifact",
+        "completed"
+      ],
+      "owned_group_before_stop": [],
+      "owned_processes_after_exit": [],
+      "stop_seconds": null,
+      "output_sha256": "72a0681c212cfa7b37e5d9b5d21673983a8d1ca9b1b6bcd91755bc0fc1290a77",
+      "samples": 111360,
+      "duration_seconds": 4.64,
+      "manifest": {
+        "protocol": "obey-audio-job/v1",
+        "job_id": "complete",
+        "task": "narration",
+        "source": {
+          "media_sha256": "59528cb4e3cb41e73a4574f76acbee119d9a1bc34b5c133aa5125c2f726a16be",
+          "clip_id": "ami-es2002a",
+          "range_id": "130-160",
+          "project_revision": "fixture-1"
+        },
+        "input": {
+          "path": "/tmp/wi-43b072-sol/source.wav",
+          "sha256": "d8bc1b161a501de8c7a3d40ae8c6c477adde6970c6aa8144ef53822ab09be597",
+          "sample_count": 480000,
+          "sample_rate_hz": 16000,
+          "channels": 1,
+          "channel_role": "microphone",
+          "source_origin_samples": 2080000
+        },
+        "runtime": {
+          "provider": "llama.cpp",
+          "endpoint": "",
+          "model": "lfm3-audio-2b",
+          "voice": "female"
+        },
+        "runtime_version": "b11960-8642541b2",
+        "model_digest": "9a773289bd321ed879cd3a76545f6aca506e403851a45fb315420aee45625be2",
+        "transport": "text_then_speech",
+        "script_sha256": "9932a85bf2b88e289ec0c47ea3b27008ea881282938f15df079db5ced40c751e",
+        "language": "en",
+        "duration_policy": "preserve_picture",
+        "source_windows": [
+          {
+            "start_sample": 2080000,
+            "end_sample": 2560000
+          }
+        ],
+        "output": {
+          "path": "audio.wav",
+          "sha256": "72a0681c212cfa7b37e5d9b5d21673983a8d1ca9b1b6bcd91755bc0fc1290a77",
+          "sample_rate_hz": 24000,
+          "channels": 1,
+          "sample_count": 111360
+        },
+        "projector_digest": "2b6648b1fd48af16aa0877b0592b144d15070783673e038a379fdbc51d40e365",
+        "runtime_digest": "3d81b7997317e5ffd13ed3ba32436658e0f4067172cea3674b4215b39d4635be",
+        "sampling": {
+          "seed": 42,
+          "max_audio_frames": 8192,
+          "repeat_penalty": 1.05
+        }
+      },
+      "incomplete_files_after_worker_exit": [],
+      "caller_retired_incomplete_files": true
+    },
+    {
+      "case": "cancel",
+      "exit": 1,
+      "seconds": 1.296016541076824,
+      "events": [
+        "accepted",
+        "progress",
+        "cancelled"
+      ],
+      "owned_group_before_stop": [
+        {
+          "pid": 7083,
+          "command": "/private/tmp/wi-43b072-supervisor-fixtures/owned-audio-worker"
+        },
+        {
+          "pid": 7127,
+          "command": "/tmp/wi-43b072-sol/llama-runtime/llama-b11960/llama-server"
+        }
+      ],
+      "owned_processes_after_exit": [],
+      "stop_seconds": 0.23600758309476078,
+      "incomplete_files_after_worker_exit": [],
+      "caller_retired_incomplete_files": true
+    },
+    {
+      "case": "forced",
+      "exit": -9,
+      "seconds": 1.3632815830642357,
+      "events": [
+        "accepted",
+        "progress"
+      ],
+      "owned_group_before_stop": [
+        {
+          "pid": 7171,
+          "command": "/private/tmp/wi-43b072-supervisor-fixtures/owned-audio-worker"
+        },
+        {
+          "pid": 7216,
+          "command": "/tmp/wi-43b072-sol/llama-runtime/llama-b11960/llama-server"
+        }
+      ],
+      "owned_processes_after_exit": [],
+      "stop_seconds": 0.32163983292412013,
+      "incomplete_files_after_worker_exit": [
+        "artifact.lock",
+        ".audio-runtime-3382315214",
+        ".audio-job-4139846241"
+      ],
+      "caller_retired_incomplete_files": true
+    }
+  ],
+  "network_negative_control": {
+    "external_address": "1.1.1.1:443",
+    "denied_errno": 1,
+    "loopback_connect": "allowed"
+  },
+  "implementation_worktree": "wi-43b072-editor-owned-runtime"
+}
