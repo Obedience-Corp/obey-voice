@@ -2,6 +2,7 @@ mod app;
 mod backend;
 mod diagnostics;
 mod model;
+mod persona_audio;
 mod screens;
 mod setup;
 mod theme;

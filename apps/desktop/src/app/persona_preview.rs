@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 impl VoiceApp {
     pub(super) fn start_persona_preview(&mut self) {
+        self.stop_persona_audio_check();
         self.stop_persona_preview();
         if self.demo {
             self.persona_form.preview_notice = "Voice playback is unavailable in demo mode".into();
