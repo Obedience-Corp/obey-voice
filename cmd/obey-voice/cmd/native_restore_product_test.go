@@ -34,7 +34,7 @@ func TestProductRestoreProjectionPreservesRecordingOrItsActualTranscript(t *test
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := personaEnv(t)
-			var calls atomic.Int32
+			var calls, explicitASR atomic.Int32
 			var mu sync.Mutex
 			var observedImages [][]byte
 			var observedText string
@@ -55,6 +55,9 @@ func TestProductRestoreProjectionPreservesRecordingOrItsActualTranscript(t *test
 				case "/v1/audio/speech":
 					w.Header().Set("Content-Type", "application/octet-stream")
 					_, _ = w.Write([]byte{0, 0, 1, 0})
+				case "/v1/audio/transcriptions":
+					explicitASR.Add(1)
+					fmt.Fprint(w, `{"text":"Recovered actual recording transcript"}`)
 				case "/api/chat":
 					var request struct {
 						Messages []struct {
@@ -149,13 +152,41 @@ func TestProductRestoreProjectionPreservesRecordingOrItsActualTranscript(t *test
 				t.Fatal(err)
 			}
 			mu.Lock()
-			defer mu.Unlock()
+
 			if test.mode == persona.AudioNative {
 				if len(observedImages) != 1 || !bytes.Equal(observedImages[0], wav) {
 					t.Fatal("Native restore changed or omitted recording", len(observedImages))
 				}
 			} else if len(observedImages) != 0 || !strings.Contains(observedText, "Typed instruction") || !strings.Contains(observedText, "Actual recording transcript") {
 				t.Fatal("Standard omitted the actual recording transcript", observedText)
+			}
+			mu.Unlock()
+			if test.mode == persona.AudioNative {
+				if explicitASR.Load() != 0 {
+					t.Fatal("automatic transcription ran despite off")
+				}
+				p.Audio.Mode = persona.AudioStandard
+				writePersona(t, p)
+				if _, _, err := rt.SelectPersona(t.Context(), "samantha"); !errors.Is(err, brain.ErrAudioProjection) {
+					t.Fatal("missing transcript did not preserve Native", err)
+				}
+				if rt.Pipeline.Native == nil {
+					t.Fatal("failed selection retired Native")
+				}
+				if err := rt.Pipeline.TranscribeRecording(t.Context(), input.ID, input.CaptureEpoch); err != nil {
+					t.Fatal(err)
+				}
+				if explicitASR.Load() != 1 {
+					t.Fatal("explicit retry did not run exactly once", explicitASR.Load())
+				}
+				if _, _, err := rt.SelectPersona(t.Context(), "samantha"); err != nil {
+					t.Fatal("explicit retry failed to repair projection", err)
+				}
+				rt.Persist()
+				repaired, err := session.Load(saved.ID)
+				if err != nil || repaired.Turns[0].Utterance.Transcript.Text != "Recovered actual recording transcript" {
+					t.Fatal("retry not saved", err)
+				}
 			}
 		})
 	}

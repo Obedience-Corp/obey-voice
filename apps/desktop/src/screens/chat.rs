@@ -1,8 +1,10 @@
 use super::card;
 use crate::app::VoiceApp;
+use crate::model::Purpose;
 use crate::theme::{accent, card as card_color, muted, selected};
 use eframe::egui;
 use eframe::egui::{Color32, RichText};
+use serde_json::json;
 
 impl VoiceApp {
     pub(super) fn chat(&mut self, ui: &mut egui::Ui) {
@@ -164,6 +166,7 @@ impl VoiceApp {
                                 .color(muted(ui)),
                         );
                     }
+                    let mut recording_action = None;
                     for turn in &self.state.turns {
                         let user = turn.role == "user";
                         let name = if turn.name.is_empty() {
@@ -190,7 +193,42 @@ impl VoiceApp {
                                 }
                                 ui.add(egui::Label::new(&turn.content).wrap().selectable(true));
                                 self.media.show(ui, &turn.attachments, false);
+                                if let Some(recording) = &turn.recording {
+                                    ui.horizontal_wrapped(|ui| {
+                                        let available = recording.available && !self.state.busy;
+                                        if ui
+                                            .add_enabled(
+                                                available,
+                                                egui::Button::new("Replay original"),
+                                            )
+                                            .clicked()
+                                        {
+                                            recording_action = Some((
+                                                "recording_replay",
+                                                format!("{} {}", recording.id, recording.epoch),
+                                            ));
+                                        }
+                                        if ui
+                                            .add_enabled(
+                                                available && self.state.audio_mode == "native",
+                                                egui::Button::new("Transcribe recording"),
+                                            )
+                                            .clicked()
+                                        {
+                                            recording_action = Some((
+                                                "recording_transcribe",
+                                                format!("{} {}", recording.id, recording.epoch),
+                                            ));
+                                        }
+                                        if !recording.available {
+                                            ui.small("Original recording unavailable");
+                                        }
+                                    });
+                                }
                             });
+                    }
+                    if let Some((method, text)) = recording_action {
+                        self.request(method, json!({"text":text}), Purpose::Ignore);
                     }
                     for (index, result) in self.state.work_results.iter().enumerate() {
                         card(ui, |ui| {

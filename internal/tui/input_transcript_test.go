@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/utterance"
 )
@@ -31,5 +32,28 @@ func TestAudioOnlyInputCaptionUpdatesOriginalRowAndRejectsWrongEpoch(t *testing.
 	}
 	if input.Transcript.State != utterance.Pending {
 		t.Fatal("UI mutated source event")
+	}
+}
+
+func TestLiveCaptionCrossesActualEventBridgeToOriginalRow(t *testing.T) {
+	m := sizedConversation(t, 80, 24)
+	input := &utterance.Finalized{ID: "retained", CaptureEpoch: 17, Transcript: utterance.Transcript{State: utterance.Disabled}}
+	m.seedTranscript([]brain.Turn{{Role: "user", Utterance: input}})
+	bus := events.NewBus()
+	bridge := newEventBridge(8)
+	bridge.attach(bus)
+	update := events.InputTranscriptUpdated{UtteranceID: input.ID, CaptureEpoch: input.CaptureEpoch, Transcript: utterance.Transcript{State: utterance.Ready, Text: "Explicit recording transcript."}}
+	bus.Emit(update)
+	select {
+	case msg := <-bridge.ch:
+		if !isDurableBridgeMsg(msg) {
+			t.Fatal("caption is droppable")
+		}
+		m.handleEvent(msg.(busEventMsg).event)
+	default:
+		t.Fatal("actual event bridge dropped live caption update")
+	}
+	if m.plainTurns[0].text != update.Transcript.Text || !strings.Contains(m.View(), update.Transcript.Text) {
+		t.Fatal("original row not updated", m.plainTurns)
 	}
 }

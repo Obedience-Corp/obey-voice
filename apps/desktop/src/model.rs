@@ -49,7 +49,15 @@ impl Screen {
 }
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
+pub struct Recording {
+    pub id: String,
+    pub epoch: u64,
+    pub available: bool,
+}
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct Turn {
+    pub recording: Option<Recording>,
     #[serde(deserialize_with = "nullable_vec")]
     pub attachments: Vec<crate::app::media::Attachment>,
     pub role: String,

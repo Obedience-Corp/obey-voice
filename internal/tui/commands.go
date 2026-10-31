@@ -40,6 +40,7 @@ const (
 	commandQuit
 	commandAttach
 	commandImage
+	commandInput
 )
 
 type slashCommand struct {
@@ -53,6 +54,7 @@ type slashCommand struct {
 // slashCommands is the single source of truth for command execution, help,
 // completion, and the dynamic command palette.
 var slashCommands = []slashCommand{
+	{id: commandInput, name: "/input", usage: "/input replay N | transcribe N", description: "Replay an original recording or explicitly retry its transcript"},
 	{id: commandHelp, name: "/help", usage: "/help [command]", description: "Show commands or help for one command", aliases: []string{"/?", "/commands"}},
 	{id: commandClear, name: "/clear", usage: "/clear", description: "Clear this conversation", aliases: []string{"/c"}},
 	{id: commandCompact, name: "/compact", usage: "/compact", description: "Summarize the conversation and continue from the summary"},
@@ -173,11 +175,15 @@ func sharedPrefixLen(a, b string) int {
 }
 
 func (m *conversationModel) executeSlashCommand(command slashCommand, args []string) tea.Cmd {
+	if m.reviewingRecording && (command.id == commandClear || command.id == commandCompact || command.id == commandSettings || command.id == commandPersonas || command.id == commandMenu) {
+		m.commandError("Stop recording review before changing this conversation")
+		return nil
+	}
 	if m.selectionPending() && (command.id == commandClear || command.id == commandCompact || command.id == commandSettings) {
 		m.commandError("persona selection in progress")
 		return nil
 	}
-	if command.id != commandParticipation && command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && command.id != commandRecord && len(args) > 0 {
+	if command.id != commandInput && command.id != commandParticipation && command.id != commandWork && command.id != commandHelp && command.id != commandVim && command.id != commandSpeakers && command.id != commandCopy && command.id != commandThink && command.id != commandRecord && len(args) > 0 {
 		m.commandError(fmt.Sprintf("%s does not take arguments", command.name))
 		return m.resumeListening()
 	}
@@ -195,6 +201,8 @@ func (m *conversationModel) executeSlashCommand(command slashCommand, args []str
 		}
 		m.emit(events.ConversationCleared{})
 		return m.resumeListening()
+	case commandInput:
+		return m.recordingCommand(args)
 	case commandCompact:
 		return m.requestCompact()
 	case commandSession:

@@ -123,6 +123,9 @@ func (m conversationModel) Update(msg tea.Msg) (next conversationModel, cmd tea.
 		}
 		return m, tea.Batch(m.handleTextTurnDone(msg), m.ensureVoiceTick())
 
+	case recordingDoneMsg:
+		return m, tea.Batch(m.finishRecording(msg), m.ensureVoiceTick())
+
 	case compactDoneMsg:
 		return m, tea.Batch(m.handleCompactDone(msg), m.ensureVoiceTick())
 

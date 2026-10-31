@@ -79,7 +79,10 @@ type conversationDeps struct {
 	workers        func() []pipeline.WorkerInfo
 	// compact runs the pipeline's conversation compaction; nil when the
 	// runtime did not wire it (e.g. prompt resolution failed).
-	compact func(ctx context.Context) error
+	compact             func(ctx context.Context) error
+	replayRecording     func(context.Context, string, uint64) error
+	transcribeRecording func(context.Context, string, uint64) error
+	recordingAvailable  func(string, uint64) bool
 	// brainSession reports the provider's live session state for /session;
 	// nil (or ok=false) when the provider does not expose one.
 	brainSession   func() (brain.SessionState, bool)
