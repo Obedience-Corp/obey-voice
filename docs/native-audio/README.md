@@ -37,9 +37,18 @@ ongoing setup code: full pipeline race suite passed; changed-code lint reports
 zero new issues. Full brain lint has an unchanged receive errcheck finding at
 `legacy_validation_test.go:98`; do not describe that full command as passing.
 
+The diagnostic context probe accepts an explicit fresh output path:
+
+```sh
+python3 docs/native-audio/evidence/context_accounting_probe.py --output /tmp/native-context-proof.json
+```
+
 ## Evidence and open gates
 
-[evidence](evidence/) preserves actual receipts, including failures. The synthetic
+[evidence](evidence/) preserves actual receipts, including failures. Local machine
+paths are redacted; measurements/hashes and synthetic generated replies remain
+unchanged. The fixture contains no user recording or project data; the stock
+persona-example claims stay visible for independent qualitative review. The synthetic
 fixture's canonical WAV is under `pkg/voiceagent/nativeaudio/assets/`; its provenance
 and both raw/canonical hashes are documented there.
 

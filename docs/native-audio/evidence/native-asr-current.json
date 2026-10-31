@@ -11,7 +11,7 @@
   "endpoint": "http://localhost:11434",
   "model": "lfm3-audio:2b",
   "qualification": false,
-  "source": "/Users/lancerogers/Dev/AI/My_Tools/workflow/design/obey-voice-native-audio-input/proof/artifacts/addition.wav",
+  "source": "<campaign>/workflow/design/obey-voice-native-audio-input/proof/artifacts/addition.wav",
   "source_sha256": "15ddd19f5d3a4fc5aaee759d3a1b5828baec6de633cd848069fc25cf32a3c2f9",
   "transcript": {
     "state": "ready",
@@ -24,5 +24,11 @@
     "version": "0.40.12"
   },
   "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
-  "meaning_quality_pass": null
+  "meaning_quality_pass": null,
+  "privacy_review": {
+    "fixture": "Synthetic arithmetic question; no user recordings or project content.",
+    "local_paths": "Machine-specific source path redacted where present.",
+    "measurements": "Hashes, timings, counts and generated reply text are unchanged.",
+    "reply_review": "Stock persona-example claims are retained so the failed qualitative result remains reviewable."
+  }
 }

@@ -32,5 +32,11 @@
   },
   "model_digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
   "meaning_quality_pass": false,
-  "quality_limitation": "Unrequested persona-example action claims after the correct arithmetic answer."
+  "quality_limitation": "Unrequested persona-example action claims after the correct arithmetic answer.",
+  "privacy_review": {
+    "fixture": "Synthetic arithmetic question; no user recordings or project content.",
+    "local_paths": "Machine-specific source path redacted where present.",
+    "measurements": "Hashes, timings, counts and generated reply text are unchanged.",
+    "reply_review": "Stock persona-example claims are retained so the failed qualitative result remains reviewable."
+  }
 }

@@ -55,5 +55,11 @@
       "reply": "9",
       "elapsed_seconds": 0.022
     }
-  ]
+  ],
+  "privacy_review": {
+    "fixture": "Synthetic arithmetic question; no user recordings or project content.",
+    "local_paths": "Machine-specific source path redacted where present.",
+    "measurements": "Hashes, timings, counts and generated reply text are unchanged.",
+    "reply_review": "Stock persona-example claims are retained so the failed qualitative result remains reviewable."
+  }
 }
