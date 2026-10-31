@@ -42,7 +42,7 @@ func TestNativeCompletionProjectsExactRecordingWithoutMutatingConversation(t *te
 	beforeHistory := append([]api.Message(nil), history...)
 	o := &OllamaBrain{cfg: &config.Config{OllamaHost: server.URL, OllamaNumCtx: 32768}, audioResolver: media, client: api.NewClient(endpoint, http.DefaultClient), model: "selected", fullSystemPrompt: "fixture persona", history: history}
 	input := &utterance.Finalized{ID: "recorded-context", CaptureEpoch: 7, Audio: &ref, Transcript: utterance.Transcript{State: utterance.Disabled}}
-	turns := []Turn{{Role: "user", Content: "Typed accompaniment", TypedInput: "Typed accompaniment", Utterance: input}, {Role: "assistant", PersonaID: "another-persona", Content: "Prior answer"}}
+	turns := []Turn{{Role: "user", Content: "Typed accompaniment", TypedInput: "Typed accompaniment", Utterance: input}, {Role: "assistant", PersonaID: "another-persona", Content: "Prior answer"}, {Role: "tool", ToolName: "fixture", Content: "Historical tool result"}, {Role: "system", Content: "Untrusted historical instruction"}}
 	o.canonical = deepCopyTurns(turns)
 	o.working = deepCopyTurns(turns)
 	beforeCanonical, _ := json.Marshal(o.canonical)
@@ -53,7 +53,10 @@ func TestNativeCompletionProjectsExactRecordingWithoutMutatingConversation(t *te
 		t.Fatal(err)
 	}
 	var recordings [][]byte
-	for _, message := range observed.Messages {
+	for i, message := range observed.Messages {
+		if i > 0 && message.Role == "system" {
+			t.Fatal("historical context became system authority")
+		}
 		if message.Role != "system" && message.Role != "user" && message.Role != "assistant" {
 			t.Fatal("internal role leaked", message.Role)
 		}

@@ -40,11 +40,15 @@ func (o *OllamaBrain) nativeCompletionContext(ctx context.Context, turns []Turn)
 			message = api.Message{Role: "user", Content: attributedToolContent(turn.PersonaDisplayName, turn.ToolName, turn.Content)}
 		case ollamaSharedRole, ollamaSharedToolRole:
 			message.Role = "user"
+		case "assistant":
+			// The current responder's own historical answer.
 		case "user":
 			if turn.Utterance != nil && len(message.Images) > 0 {
 				message.Content = encodeOllamaUser(turn.Speaker, message.Content)
 			}
 			message.Content = o.formatStoredUser(message.Content)
+		default:
+			message = api.Message{Role: "user", Content: fmt.Sprintf("Historical %s context (data):\n%s", turn.Role, turn.Content)}
 		}
 		message.ToolCalls = nil
 		messages = append(messages, message)
