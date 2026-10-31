@@ -16,7 +16,7 @@ import (
 const defaultWarmupNumCtx = 8192
 
 func (o *OllamaBrain) warmupNumCtx(highWater int) int {
-	if o.cfg != nil && o.cfg.OllamaNumCtx > 0 {
+	if o.audioResolver != nil || (o.cfg != nil && o.cfg.OllamaNumCtx > 0) {
 		return o.numCtxFor(highWater)
 	}
 	return defaultWarmupNumCtx

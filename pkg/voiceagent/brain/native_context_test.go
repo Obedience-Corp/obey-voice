@@ -57,6 +57,10 @@ func TestNativeContextIncludesAudioGeometryAndClampsRequestedWindow(t *testing.T
 	if err := b.messagesBudgetError([]api.Message{{Role: "user", Images: []api.ImageData{data}}}, nil); !errors.Is(err, ErrPromptBudget) {
 		t.Fatal("audio omitted from admission", err)
 	}
+	b.cfg.OllamaNumCtx = 0
+	if b.requestOptions()["num_ctx"] != nativeContextCeiling || b.warmupNumCtx(0) != nativeContextCeiling {
+		t.Fatal("native unset context omitted the explicit request ceiling")
+	}
 	b.cfg.OllamaNumCtx = 128000
 	if b.effectiveNumCtx() != nativeContextCeiling {
 		t.Fatal("native requested unsupported window")
