@@ -52,6 +52,10 @@ The diagnostic context probe accepts an explicit fresh output path:
 python3 docs/native-audio/evidence/context_accounting_probe.py --output /tmp/native-context-proof.json
 ```
 
+The [ordinary agent proof](ordinary-agent-proof.md) now covers two actual recorded
+inputs through constructor, selector/history and software speech, with verified
+zero forbidden-factory execution. Production UI integration remains separate.
+
 ## Evidence and open gates
 
 [evidence](evidence/) preserves actual receipts, including failures. Local machine
@@ -78,9 +82,11 @@ and both raw/canonical hashes are documented there.
   specifies hop 160 and encoder stride 8. Neither a text-only estimate nor one
   text/audio token difference qualifies exact audio history accounting.
 
-A20 therefore remains open pending verified audio/token geometry and server
-context behavior. A24 covers typed/local/completion native speech and scheduling;
-it is not a model-quality label. A06 still needs distinct real production-path
-fixture responses. Native selection/startup rollback, restart/replay/deletion,
+The context-budget discrepancy remains an open no-omission/resource-safety
+investigation. A20 specifically covers unavailable text/image projection: typed
+rejections now retain the previous binding; product Retry/New context actions
+remain to be integrated. A24 covers typed/local/completion native speech and
+scheduling, not model accuracy. A06 now has two distinct real production-path
+fixture responses in the ordinary-agent proof. Native selection/startup rollback, restart/replay/deletion,
 UI activation, fresh whole-project Standard checks and broader quality/physical
 listener gates remain explicit. No complete A01–A25 pass is claimed.
