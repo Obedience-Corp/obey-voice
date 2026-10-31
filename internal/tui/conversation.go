@@ -126,9 +126,10 @@ type conversationModel struct {
 	contextFill   float64
 	compactStage  string
 
-	deps       conversationDeps
-	turnState  turnState
-	turnCancel func()
+	deps               conversationDeps
+	reviewingRecording bool
+	turnState          turnState
+	turnCancel         func()
 	// canCancelVoice is true only while STT is still listening (before the
 	// final transcript). Updated synchronously from the bus handler on the
 	// pipeline goroutine so Enter cannot race the async bridge drain of

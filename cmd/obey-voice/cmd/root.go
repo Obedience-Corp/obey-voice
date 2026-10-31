@@ -558,6 +558,9 @@ func conversationRuntimeBuilderWithDirectory(resumeSession *session.Session, tex
 				}
 				return nil
 			},
+			ReplayRecording: func(ctx context.Context, id string, epoch uint64) error {
+				return recordings.replay(ctx, p, cfg.OutputDevice, id, epoch)
+			},
 			Persist: func() {
 				if err := sess.Save(p.Brain.History()); err != nil {
 					fmt.Fprintf(os.Stderr, "  warning: failed to save session %s: %v\n", sess.ID, err)

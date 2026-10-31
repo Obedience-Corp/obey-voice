@@ -12,6 +12,7 @@ import (
 	personaruntime "github.com/Obedience-Corp/obey-voice/internal/persona/runtime"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/audio/playback"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
@@ -155,4 +156,20 @@ func (h *conversationAudio) build(ctx context.Context, binding *persona.SessionB
 	}
 	agent.SetOutputMuted(silent)
 	return agent.Pipeline, cleanup, nil
+}
+
+// Replay opens a device only for the explicit original-recording action, even
+// in a silent conversation. It never creates a recognizer or speech provider.
+func (h *conversationAudio) replay(ctx context.Context, p *pipeline.Pipeline, device, id string, epoch uint64) error {
+	if !p.RecordingAvailable(id, epoch) {
+		return errors.New("original recording is unavailable")
+	}
+	player := p.Player
+	if player == nil {
+		owned := playback.NewPlayerWithDevice(device)
+		defer func() { _ = owned.Close() }()
+		player = owned
+	}
+	p.StopPlayback()
+	return p.ReplayRecording(ctx, id, epoch, player)
 }

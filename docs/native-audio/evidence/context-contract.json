@@ -1,0 +1,148 @@
+{
+  "runtime": {
+    "version": "0.40.12"
+  },
+  "model": "lfm3-audio:2b",
+  "digest": "19ff9eb6e621de5643e27d7a3d64e3fe62f9cd22d1471c9a34c01fb69b8e4f74",
+  "purpose": "Pinned source/observed token geometry and hard input rejection, synthetic software-only; no response quality claim",
+  "cases": [
+    {
+      "name": "samples_1",
+      "audio_tokens_from_pinned_source": 1,
+      "http_status": 200,
+      "prompt_eval_count": 23,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.021
+    },
+    {
+      "name": "samples_400",
+      "audio_tokens_from_pinned_source": 1,
+      "http_status": 200,
+      "prompt_eval_count": 23,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.016
+    },
+    {
+      "name": "samples_401",
+      "audio_tokens_from_pinned_source": 1,
+      "http_status": 200,
+      "prompt_eval_count": 23,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.015
+    },
+    {
+      "name": "samples_1520",
+      "audio_tokens_from_pinned_source": 1,
+      "http_status": 200,
+      "prompt_eval_count": 23,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.015
+    },
+    {
+      "name": "samples_1521",
+      "audio_tokens_from_pinned_source": 2,
+      "http_status": 200,
+      "prompt_eval_count": 24,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.016
+    },
+    {
+      "name": "samples_16000",
+      "audio_tokens_from_pinned_source": 13,
+      "http_status": 200,
+      "prompt_eval_count": 35,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.017
+    },
+    {
+      "name": "samples_480000",
+      "audio_tokens_from_pinned_source": 375,
+      "http_status": 200,
+      "prompt_eval_count": 397,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.043
+    },
+    {
+      "name": "two_recordings",
+      "audio_tokens_from_pinned_source": 15,
+      "http_status": 200,
+      "prompt_eval_count": 50,
+      "done": true,
+      "eval_count": 1,
+      "elapsed_seconds": 0.017
+    },
+    {
+      "name": "over_model_context",
+      "audio_tokens_from_pinned_source": null,
+      "http_status": 400,
+      "error": "{\"error\":\"input length (140012 tokens) exceeds the model's maximum context length (128000 tokens)\"}",
+      "elapsed_seconds": 0.081
+    },
+    {
+      "name": "over_model_context_with_recording",
+      "audio_tokens_from_pinned_source": 375,
+      "http_status": 400,
+      "error": "{\"error\":\"input length (140387 tokens) exceeds the model's maximum context length (128000 tokens)\"}",
+      "elapsed_seconds": 0.108
+    }
+  ],
+  "passed": true,
+  "source_commit": "f067033f9126993b6172bdfffa71a74ad693fda4",
+  "source_files": {
+    "mlxrunner/pipeline.go": {
+      "sha256": "21e6756dcaa9f25569e5c9e18dedb32a89ecdcbdad443d0e5d65c6bf2a84abec",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/mlxrunner/pipeline.go"
+    },
+    "mlxrunner/media.go": {
+      "sha256": "460ad6dabd8606aa4272b7c636d8efdbc0095fff3aa1cf0fb8b3bff601f9e2b2",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/mlxrunner/media.go"
+    },
+    "mlxrunner/model/lfm3/audio.go": {
+      "sha256": "41fb8fc98e92019fb70f026bed89c3853758108ce76b3eebbabedb2b3eb8f3c2",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/mlxrunner/model/lfm3/audio.go"
+    },
+    "mlxrunner/model/lfm3/lfm3audio/features.go": {
+      "sha256": "4cc11a2d87b68bc5002446bdb2775b45db106feedeb65243c3ae847cad683a27",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/mlxrunner/model/lfm3/lfm3audio/features.go"
+    },
+    "mlxrunner/model/lfm3/lfm3audio/config.go": {
+      "sha256": "e1b7ea998a9d698e7b8c399656f7fc734215a1346bf561cae7bcb5c2e0388e73",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/mlxrunner/model/lfm3/lfm3audio/config.go"
+    },
+    "model/renderers/lfm3.go": {
+      "sha256": "e0876af687725ac74c7f275ab0fba2c03ca364ad3870e71fef4bdf26ba7a5d7c",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/model/renderers/lfm3.go"
+    },
+    "model/renderers/lfm2.go": {
+      "sha256": "c292f22ca9998c44527caf8587be19ace91f17ab32733055b265aab6fdb5097b",
+      "url": "https://github.com/ollama/ollama/blob/f067033f9126993b6172bdfffa71a74ad693fda4/model/renderers/lfm2.go"
+    }
+  },
+  "model_assets": {
+    "tokenizer.json": {
+      "sha256": "41927bd314d17d7d7fadb44e10cd0919f7b71528d7741596d8cbd15c6945ec44"
+    },
+    "preprocessor_config.json": {
+      "sha256": "6c991f650c2ec718ffe752c78ac2af66b2085b05b25bff3b8fef57310cc100ee"
+    }
+  },
+  "installed_details": {
+    "parent_model": "",
+    "format": "safetensors",
+    "family": "lfm3_audio",
+    "families": null,
+    "parameter_size": "2.1B",
+    "quantization_level": "nvfp4",
+    "runner": "mlx"
+  },
+  "renderer": "lfm3-audio",
+  "model_context_length": 128000,
+  "client_context_ceiling": 32768
+}

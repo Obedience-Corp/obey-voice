@@ -351,6 +351,10 @@ func (o *OllamaBrain) activePersona() string {
 }
 
 func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned bool) api.Message {
+	return o.projectTurnWithAudio(t, all, index, sharedUnowned, o.audioProjection)
+}
+
+func (o *OllamaBrain) projectTurnWithAudio(t Turn, all []Turn, index int, sharedUnowned bool, projection map[string][]byte) api.Message {
 	t = o.effectiveTurn(t)
 	role := t.Role
 	if role == "samantha" {
@@ -366,7 +370,7 @@ func (o *OllamaBrain) projectTurn(t Turn, all []Turn, index int, sharedUnowned b
 		}
 		images, _ := loadImageData(t.Attachments) // Validated before a model request; assets are immutable.
 		if t.Utterance != nil && t.Utterance.Audio != nil {
-			if data := o.audioProjection[t.Utterance.Audio.ID]; data != nil {
+			if data := projection[t.Utterance.Audio.ID]; data != nil {
 				images = []api.ImageData{data}
 				content = t.TypedInput
 			}

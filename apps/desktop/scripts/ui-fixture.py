@@ -26,7 +26,9 @@ parser.add_argument("--brain-error", action="store_true", help="Return a provide
 parser.add_argument('--group-participation', action='store_true', help='Enable isolated participation controls and deterministic private decisions')
 parser.add_argument("--images", action="store_true", help="Enable isolated image/GIF import and vision request checks")
 parser.add_argument("--agent-images", action="store_true", help="Return image/GIF files as agent attachments")
+parser.add_argument("--recorded-input", action="store_true", help="Seed a retained synthetic input and replay through a software PCM sink")
 args = parser.parse_args()
+args.native_audio = args.native_audio or args.recorded_input
 args.images = args.images or args.agent_images
 root = pathlib.Path(__file__).resolve().parent.parent
 fixture_root = pathlib.Path(tempfile.mkdtemp(prefix='obey-desktop-ui-'))
@@ -46,12 +48,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if args.native_audio:
             if self.path == '/api/version': self.respond({'version': 'native-ui-fixture'}); return
-            if self.path == '/api/tags': self.respond({'models': [{'name': 'lfm3-audio:2b', 'digest': 'a' * 64}]}); return
+            if self.path == '/api/tags': self.respond({'models': [{'name': 'lfm3-audio:2b', 'digest': 'a' * 64}, {'name': 'qwen2.5:14b'}, {'name': 'desktop-test'}]}); return
             if self.path == '/v1/models': self.respond({'data': [{'id': 'lfm3-audio:2b'}]}); return
             if self.path == '/v1/audio/voices': self.send_error(404); return
         self.respond({'models': [{'name': 'desktop-test', 'model': 'desktop-test'}]})
     def do_POST(self):
-        request = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+        body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+        if args.native_audio and self.path == '/v1/audio/transcriptions':
+            with (fixture_root / 'native-requests.jsonl').open('a') as log:
+                log.write(json.dumps({'path': self.path, 'bytes': len(body)}) + '\n')
+            self.respond({'text': 'Explicit recording transcript.'}); return
+        request = json.loads(body)
         if args.native_audio:
             with (fixture_root / 'native-requests.jsonl').open('a') as log:
                 log.write(json.dumps({'path': self.path, 'request': request}) + '\n')
@@ -60,7 +67,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/v1/audio/speech':
                 self.send_response(200); self.send_header('Content-Type', 'application/octet-stream'); self.end_headers(); self.wfile.write(b'\x00\x00\x01\x00'); return
             if self.path == '/api/chat':
-                self.respond({'model': 'lfm3-audio:2b', 'message': {'role': 'assistant', 'content': 'Native fixture response.' if request.get('stream') else '15'}, 'done': True, 'done_reason': 'stop'}); return
+                model = request.get('model', 'lfm3-audio:2b')
+                response = 'Native fixture response.' if model.startswith('lfm3-audio') else 'Standard fixture response.'
+                self.respond({'model': model, 'message': {'role': 'assistant', 'content': response if request.get('stream') else '15'}, 'done': True, 'done_reason': 'stop'}); return
         if args.images:
             with (fixture_root / 'image-requests.jsonl').open('a') as log:
                 log.write(json.dumps(request) + '\n')
@@ -129,6 +138,8 @@ if args.voice_preview:
     fixture_config += f'tts_provider: openai-speech\nopenai_speech_url: http://127.0.0.1:{server.server_port}/v1\nopenai_speech_voice: fixture-tone\n'
 if not args.fresh:
     (config_dir / 'config.yaml').write_text(fixture_config)
+if args.recorded_input:
+    subprocess.run(['go', 'run', str(root / 'scripts/recording-fixture.go')], cwd=root.parent.parent, env=dict(os.environ, OBEY_VOICE_TEST_CONFIG=str(config_dir)), check=True)
 fixture_app = root / ('dist/Obey Voice Agent Images Test.app' if args.agent_images else 'dist/Obey Voice Images Test.app' if args.images else 'dist/Obey Voice Test.app')
 if args.images:
     env = dict(os.environ, OBEY_VOICE_MEDIA_FIXTURE_DIR=str(fixture_root))
@@ -170,7 +181,7 @@ int main(void) {
 }
 ''', text=True, check=True)
     info['CFBundleExecutable'] = 'fixture-launcher'
-info['LSEnvironment'] = {'OBEY_VOICE_TEST_CONFIG': str(config_dir), 'OBEY_VOICE_LOG_DIR': str(fixture_root / 'logs')}
+info['LSEnvironment'] = {'OBEY_VOICE_REPLAY_FIXTURE': '1' if args.recorded_input else '0', 'OBEY_VOICE_TEST_CONFIG': str(config_dir), 'OBEY_VOICE_LOG_DIR': str(fixture_root / 'logs')}
 with plist_path.open('wb') as f:
     plistlib.dump(info, f)
 subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(fixture_app)], check=True)

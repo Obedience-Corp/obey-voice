@@ -223,3 +223,42 @@ func TestSetupMetadataHonorsParentDeadline(t *testing.T) {
 		t.Fatal("metadata request did not close")
 	}
 }
+
+func TestSetupCacheSeparatesEndpointsAndRejectsChangedUnsupportedRoute(t *testing.T) {
+	first, second := newSetupFixture(t), newSetupFixture(t)
+	cache := NewSupportCache()
+	prepare := func(f *setupFixture) (SetupResult, error) {
+		t.Helper()
+		client, err := NewClient(f.server.URL, "chosen-model")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer client.Close()
+		_, closeSpeech, result, err := cache.Prepare(t.Context(), client, f.config(t), Requirements{ASR: true})
+		if closeSpeech != nil {
+			closeSpeech()
+		}
+		return result, err
+	}
+	if result, err := prepare(first); err != nil || !result.ProtocolReady || result.KnownCombination {
+		t.Fatalf("initial endpoint: result=%+v error=%v", result, err)
+	}
+	second.missingASR.Store(true)
+	result, err := prepare(second)
+	if err == nil || result.ProtocolReady || result.KnownCombination {
+		t.Fatalf("changed unsupported endpoint inherited support: result=%+v error=%v", result, err)
+	}
+	if second.asr.Load() != 1 || second.chat.Load() != 0 || second.speech.Load() != 0 {
+		t.Fatal("failed endpoint continued inference or skipped required ASR")
+	}
+	second.missingASR.Store(false)
+	if result, err := prepare(second); err != nil || !result.ProtocolReady || result.KnownCombination {
+		t.Fatalf("repaired endpoint reused another endpoint's evidence: result=%+v error=%v", result, err)
+	}
+	if result, err := prepare(first); err != nil || !result.ProtocolReady || !result.KnownCombination {
+		t.Fatalf("original endpoint lost independent support: result=%+v error=%v", result, err)
+	}
+	if first.asr.Load() != 2 || first.chat.Load() != 2 || first.speech.Load() != 2 || second.asr.Load() != 2 || second.chat.Load() != 1 || second.speech.Load() != 1 {
+		t.Fatal("cache altered quiet route revalidation counts")
+	}
+}

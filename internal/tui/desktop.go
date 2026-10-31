@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,12 +28,18 @@ type DesktopAction struct {
 	Kind, Text string
 	Enabled    bool
 }
+type DesktopRecording struct {
+	ID        string `json:"id"`
+	Epoch     uint64 `json:"epoch"`
+	Available bool   `json:"available"`
+}
 type DesktopTurn struct {
-	Attachments []desktopMedia `json:"attachments,omitempty"`
-	Role        string         `json:"role"`
-	Content     string         `json:"content"`
-	Name        string         `json:"name"`
-	Thinking    string         `json:"thinking,omitempty"`
+	Recording   *DesktopRecording `json:"recording,omitempty"`
+	Attachments []desktopMedia    `json:"attachments,omitempty"`
+	Role        string            `json:"role"`
+	Content     string            `json:"content"`
+	Name        string            `json:"name"`
+	Thinking    string            `json:"thinking,omitempty"`
 }
 type DesktopActivity struct {
 	Stage        string `json:"stage"`
@@ -47,6 +54,7 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
+	PersonaMessage   string                   `json:"persona_message,omitempty"`
 	AudioMode        string                   `json:"audio_mode,omitempty"`
 	AudioControls    string                   `json:"audio_controls,omitempty"`
 	AudioTranscript  string                   `json:"audio_transcript,omitempty"`
@@ -158,6 +166,22 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "attachment_remove":
 			c.removeMedia(action.Text)
+		case "recording_replay", "recording_transcribe":
+			parts := strings.Fields(action.Text)
+			if len(parts) != 2 {
+				c.commandError("Invalid recording identity")
+				break
+			}
+			epoch, err := strconv.ParseUint(parts[1], 10, 64)
+			if err != nil {
+				c.commandError("Invalid recording epoch")
+				break
+			}
+			kind := "replay"
+			if action.Kind == "recording_transcribe" {
+				kind = "transcribe"
+			}
+			cmd = c.requestRecording(kind, parts[0], epoch)
 		case "text":
 			c.input.SetValue(action.Text)
 			cmd = c.handleSubmit()
@@ -185,8 +209,13 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.setStatus("This provider does not support live persona selection", true)
 			} else {
 				cmd = c.enqueuePersonaSelection(action.Text)
+				m.app.personas.message = "Preparing persona…"
 			}
 		case "manager":
+			if c.reviewingRecording {
+				c.commandError("Stop recording review before opening a manager")
+				break
+			}
 			target := screenPersonas
 			if action.Text == "settings" {
 				// The native settings form edits app defaults (config get/set),
@@ -318,6 +347,9 @@ func (m desktopModel) state() DesktopState {
 	state.AttachmentError = c.media.err
 	for _, turn := range c.plainTurns {
 		out := DesktopTurn{Role: turn.role, Content: turn.text, Name: turn.speaker, Attachments: desktopMediaRefs(turn.attachments)}
+		if turn.input != nil && turn.input.Audio != nil {
+			out.Recording = &DesktopRecording{ID: turn.input.ID, Epoch: turn.input.CaptureEpoch, Available: m.rt.Pipeline.RecordingAvailable(turn.input.ID, turn.input.CaptureEpoch)}
+		}
 		if turn.role == "assistant" {
 			for agentIndex < len(c.items) {
 				item := c.items[agentIndex]
@@ -343,6 +375,7 @@ func (m desktopModel) state() DesktopState {
 	state.WorkResults = c.readableWorkResults()
 	state.WorkResultImages = c.workResultImages()
 	s := m.app.settings
+	state.PersonaMessage = ansi.Strip(m.app.personas.message)
 	state.SettingsMessage = ansi.Strip(s.message)
 	state.Enrollment = DesktopEnrollment{Active: s.enroll.active, Name: s.enroll.name, Clip: s.enroll.clip, Seconds: s.enroll.elapsed.Seconds(), Processing: s.enroll.enrolling}
 	for _, p := range s.enrolledProfiles {
