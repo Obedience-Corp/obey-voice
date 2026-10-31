@@ -55,6 +55,9 @@ func (p *Pipeline) PrepareInputReplacement(ctx context.Context, next InputBindin
 		return nil, err
 	}
 	p.captureBoundary = prepared
+	if p.audioMedia == nil && p.Native != nil {
+		p.audioMedia = p.Native.Media
+	}
 	session, startup, cancel := p.captureSession, p.captureStarting, p.captureCancel
 	p.captureGeneration++
 	p.captureSession = nil
@@ -134,6 +137,9 @@ func (r *PreparedInputReplacement) Publish() {
 		return
 	}
 	p.Input, p.STT, p.Native = r.next.Input, r.next.STT, r.next.Native
+	if r.next.Native != nil {
+		p.audioMedia = r.next.Native.Media
+	}
 	p.captureBoundary = nil
 }
 func (r *PreparedInputReplacement) Discard() {
@@ -182,6 +188,9 @@ func (r *PreparedInputReplacement) Stage(next InputBinding) error {
 	defer p.captureMu.Unlock()
 	if p.captureBoundary != r {
 		return ErrInputTransition
+	}
+	if next.Native != nil && p.audioMedia != nil && next.Native.Media != p.audioMedia {
+		return ErrAudioMediaOwner
 	}
 	r.next = next
 	return nil

@@ -48,6 +48,7 @@ impl VoiceApp {
                             );
                         }
                         self.persona_fields(ui);
+                        self.persona_audio_fields(ui);
                     });
 
                 ui.add_space(8.);
@@ -85,13 +86,14 @@ impl VoiceApp {
         }
         if !self.persona_form.open {
             self.stop_persona_preview();
+            self.stop_persona_audio_check();
         }
     }
 
     fn persona_fields(&mut self, ui: &mut egui::Ui) {
         let brains = persona_choices(&self.schema, "brain_provider", &self.persona_form.brain);
         let speech = persona_choices(&self.schema, "tts_provider", &self.persona_form.tts);
-        let can_preview = self.connected && !self.demo;
+        let can_preview = self.connected && !self.demo && !self.persona_form.audio.native();
         let f = &mut self.persona_form;
         let previous_voice = (f.tts.clone(), f.voice.clone(), f.tier.clone());
         let mut preview_clicked = false;

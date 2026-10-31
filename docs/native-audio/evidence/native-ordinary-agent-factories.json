@@ -1,0 +1,93 @@
+{
+  "checkout_revision": "375913ebdafdd2491766eb7ea97d238e379f10a6",
+  "coverage_sha256": "f99f91af87887871cbed2994b260a968eb85476a99f155c1c2969b596a2f43f2",
+  "factories": [
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/stt/factory.go",
+      "function": "NewProvider",
+      "instrumented_blocks": 5,
+      "source_sha256": "8824c413c1e6e197fdba337ed102d32dbf3c7be755525b67949a688875f69577"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/stt/parakeet.go",
+      "function": "NewParakeetSTT",
+      "instrumented_blocks": 11,
+      "source_sha256": "88e458258f09990254dec6320224b2c6a99d9b3d030dc41d98c82e39c782ef5a"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/stt/whispercpp.go",
+      "function": "NewWhisperCPPSTT",
+      "instrumented_blocks": 9,
+      "source_sha256": "4406af66415e87dd02788f53bd42ea306f850287823a2241942f412c0d56da32"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/stt/sherpa.go",
+      "function": "NewSherpaOfflineSTT",
+      "instrumented_blocks": 10,
+      "source_sha256": "4ddc9c2fe97ba71f2a4bf06a02515a3997daf38bc8343c767e5ce3e719321205"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/stt/sherpa_streaming.go",
+      "function": "NewSherpaStreamingSTT",
+      "instrumented_blocks": 7,
+      "source_sha256": "80a76baef886e3b45f24ebbb3a0bcc4b924d667e8bc7d9612dd7258939ffbd09"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/stt/transcribecpp.go",
+      "function": "NewTranscribeCPPSTT",
+      "instrumented_blocks": 11,
+      "source_sha256": "66d02d1cf030453775b514f475fcaa77618790d009a897fa0804fd2be4c71969"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/tts/providers/providers.go",
+      "function": "NewProvider",
+      "instrumented_blocks": 10,
+      "source_sha256": "964d64d0815502ad41ff41cd5a945bace6adb0843d6a2d49757baf6038040225"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/tts/factory.go",
+      "function": "NewKokoroProvider",
+      "instrumented_blocks": 3,
+      "source_sha256": "9ebcab7a9ada99a63a525451c9958bdf96be33694cc74222182a1f82289b71a9"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/tts/kokoro.go",
+      "function": "NewKokoroTTS",
+      "instrumented_blocks": 18,
+      "source_sha256": "e6bac342f8303d018a21410438d3669239cf4e9c7e31fe1e9a505e5091ac0f60"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/tts/qwen/qwen.go",
+      "function": "NewQwen3TTS",
+      "instrumented_blocks": 60,
+      "source_sha256": "aba89c2b6815957c2d05f50465934c8148938266f28d4d67906516145291ed95"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/phonon/install.go",
+      "function": "Ensure",
+      "instrumented_blocks": 24,
+      "source_sha256": "1b4d6cf188e4fea9dd53a3b204fb8f6104c9b0d3743569b053e523b5e6fa0a6e"
+    },
+    {
+      "executed_blocks": 0,
+      "file": "pkg/voiceagent/phonon/process.go",
+      "function": "Start",
+      "instrumented_blocks": 28,
+      "source_sha256": "72e7b2b6891bf29cf1695726c056341709cdf6617d31e7a975dd594780d406ba"
+    }
+  ],
+  "forbidden_factory_execution": false,
+  "meaning": "all instrumented statement counters in each actual constructor body are zero; no audible/device or general-quality claim",
+  "receipt_sha256": "db99ccd04dcef5f6af7b0c0dd43c02bb2b020f7e6146842b2c2c5dc8e6910aeb"
+}

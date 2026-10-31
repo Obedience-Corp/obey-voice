@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,14 +13,20 @@ import (
 )
 
 func TestObeySettingsTerminalPersistence(t *testing.T) {
+	for _, key := range []string{"OBEY_PROVIDER", "OBEY_MODEL", "OBEY_CAMP", "OBEY_SOCKET", "OBEY_TOOL_POLICY"} {
+		t.Setenv(key, "")
+	}
 	config.SetConfigDirForTest(t, t.TempDir())
 	cfg, err := config.LoadWithoutHooks()
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg.BrainProvider = "obey"
+	cfg.ObeySocket = filepath.Join(t.TempDir(), "unavailable.sock")
+	expectedSocket := filepath.Join(t.TempDir(), "selected.sock")
 	m := newSettings(cfg, nil)
 	m.section, m.width, m.height = sectionBrain, 110, 35
+	m.visited[sectionBrain] = true
 	h := &workerTerminalHarness{model: m, states: make(chan workerTerminalState, 1)}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -42,7 +49,7 @@ func TestObeySettingsTerminalPersistence(t *testing.T) {
 			return workerTerminalState{}
 		}
 	}
-	for _, field := range []struct{ key, value string }{{"obey_provider", "fixture-provider"}, {"obey_model", "fixture-model"}, {"obey_camp", "fixture-camp"}, {"obey_socket", "/tmp/fixture.sock"}, {"obey_tool_policy", "daemon"}} {
+	for _, field := range []struct{ key, value string }{{"obey_provider", "fixture-provider"}, {"obey_model", "fixture-model"}, {"obey_camp", "fixture-camp"}, {"obey_socket", expectedSocket}, {"obey_tool_policy", "daemon"}} {
 		state := send(tea.KeyMsg{Type: tea.KeyHome})
 		for i := 0; i < 100 && state.key != field.key; i++ {
 			state = send(tea.KeyMsg{Type: tea.KeyDown})
@@ -62,7 +69,7 @@ func TestObeySettingsTerminalPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.ObeyProvider != "fixture-provider" || loaded.ObeyModel != "fixture-model" || loaded.ObeyCamp != "fixture-camp" || loaded.ObeySocket != "/tmp/fixture.sock" || loaded.ObeyToolPolicy != "daemon" {
+	if loaded.ObeyProvider != "fixture-provider" || loaded.ObeyModel != "fixture-model" || loaded.ObeyCamp != "fixture-camp" || loaded.ObeySocket != expectedSocket || loaded.ObeyToolPolicy != "daemon" {
 		t.Fatal("terminal edits were not persisted")
 	}
 }

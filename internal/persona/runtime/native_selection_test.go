@@ -3,6 +3,7 @@ package personaruntime
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +183,62 @@ func TestNativeSelectionRequiresMatchingConversationEpochOwner(t *testing.T) {
 	}
 	if f.candidate != nil {
 		t.Fatal("mismatched scope ran candidate setup")
+	}
+	f.selector.Close()
+}
+
+func TestNativeSelectionPreservesPriorPersonaForUnsupportedImageContext(t *testing.T) {
+	f := newNativeSelectorFixture(t)
+	if err := f.old.ImportHistory([]brain.Turn{{Role: "user", Content: "inspect image", Attachments: []chatmedia.Ref{{ID: strings.Repeat("a", 64), Format: "png", Width: 1, Height: 1, Frames: 1}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.selector.Select(t.Context(), "native", "test"); !errors.Is(err, brain.ErrImageProjection) {
+		t.Fatal(err)
+	}
+	if f.pipeline.Brain != f.old || f.old.IsClosed() || f.pipeline.Native != nil {
+		t.Fatal("image projection failure changed selected persona")
+	}
+	if !f.candidate.Brain.(*selectorTestBrain).IsClosed() {
+		t.Fatal("unsupported context candidate leaked")
+	}
+	f.selector.Close()
+}
+
+func TestNativeStartupRejectsSameSessionStaleEpochBeforeAuthorizationOrPersistence(t *testing.T) {
+	f := newNativeSelectorFixture(t)
+	binding, _, err := f.catalog.ResolveCandidateBindingWithIssues(f.base, "native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := f.selector.opts.Native.Prepare(t.Context(), binding.Config(), binding.AudioConfig(), events.PersonaSelection{}, func(context.Context, func() error) error { return errors.New("not committed") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = candidate.Close() }()
+	oldScope := f.pipeline.ConversationScope()
+	if err := candidate.BindScope(oldScope); err != nil {
+		t.Fatal(err)
+	}
+	f.pipeline.Brain = candidate.Brain
+	f.pipeline.Native = candidate.Policy
+	if err := f.pipeline.BeginConversationIdentity(f.session.ID); err != nil {
+		t.Fatal(err)
+	}
+	opts := f.selector.opts
+	opts.Initial = binding
+	opts.InitialNative = candidate
+	opts.Persist = func([]brain.Turn, events.PersonaSelection) error {
+		t.Fatal("stale startup reached persistence")
+		return nil
+	}
+	hooks := *opts.Native
+	hooks.Authorize = func(context.Context, *persona.SessionBinding, *voiceagent.NativeCandidate) error {
+		t.Fatal("stale startup reached authorization")
+		return nil
+	}
+	opts.Native = &hooks
+	if _, err := NewSelector(opts); !errors.Is(err, voiceagent.ErrNativeBindingScope) {
+		t.Fatal(err)
 	}
 	f.selector.Close()
 }

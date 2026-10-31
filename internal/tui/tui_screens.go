@@ -122,6 +122,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 	}
 	if a.screen == screenPersonas && target != screenPersonas {
 		a.personas.preview.close()
+		a.personas.cancelAudioSetup()
 		a.personas.cancelBrainModels()
 		if target == screenConversation && a.personasResumeVoice {
 			pauseVoice = a.conversation.setInputMuted(false)
@@ -221,6 +222,7 @@ func (a App) onSwitchScreen(msg switchScreenMsg) (tea.Model, tea.Cmd) {
 		// outgoing one's in-flight model scan its cancel instead of
 		// dropping the func on the floor.
 		a.personas.preview.close()
+		a.personas.cancelAudioSetup()
 		a.personas.cancelBrainModels()
 		a.personas.cancelVoiceCatalog()
 		a.personas = newPersonas(a.cfg)
@@ -323,6 +325,7 @@ func (a App) onQuit(msg quitMsg) (tea.Model, tea.Cmd) {
 	}
 	a.settings.closePreview()
 	a.personas.preview.close()
+	a.personas.cancelAudioSetup()
 	a.settings.cancelEnroll()
 	a.remote.stop()
 	if err := a.stopMeetingRuntime(); err != nil {

@@ -17,7 +17,7 @@ func (s Store) AudioPath(ref utterance.AudioRef) string {
 	if ref.Validate() != nil || s.Dir == "" {
 		return ""
 	}
-	root, err := canonicalStoreRoot(s.Dir)
+	root, err := s.audioRoot()
 	if err != nil {
 		return ""
 	}

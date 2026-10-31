@@ -3,14 +3,16 @@ package session
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/brain"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/chatmedia"
 )
 
-func requiredFormatVersion(current int, turns []brain.Turn) int {
+func requiredFormatVersion(current int, turns []brain.Turn, selection ...*SelectionState) int {
 	version := max(current, StandardFormatVersion)
+	if len(selection) > 0 && selection[0] != nil && selection[0].AudioMode == "native" {
+		version = max(version, 3)
+	}
 	for _, turn := range turns {
 		if turn.Utterance != nil || turn.AudioRetained || turn.TypedInput != "" {
 			return max(version, 3)
@@ -25,7 +27,7 @@ func (st *Store) AudioMedia(id string) (chatmedia.Store, error) {
 	if err := validateSessionID(id); err != nil {
 		return chatmedia.Store{}, err
 	}
-	return chatmedia.Store{Dir: filepath.Join(st.dir, "media", id)}, nil
+	return (chatmedia.Store{Dir: st.dir}).OwnedSubdir("media", id)
 }
 func validateAudioMetadata(turns []brain.Turn) error {
 	for _, turn := range turns {
