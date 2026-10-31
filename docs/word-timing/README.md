@@ -32,6 +32,11 @@ population safety claim. Overlapping speakers and channel cross-talk can create
 hypotheses absent from the channel-A reference; the report counts overlap and
 these should be adjudicated by listeners before interpreting false positives.
 
+A later [identical-input LFM3 / Parakeet comparison](../audio-jobs/evidence/recognition-comparison.md)
+uses these same fixed excerpts and fresh paired inference on shared PCM windows.
+It measures text recognition only; it does not replace the timing results below
+or qualify either provider for automatic cuts.
+
 | Fixture | Result | Filler recall count | Filler precision count | Precision lower bound | Filler edges median / p95 ms |
 |---|---|---:|---:|---:|---:|
 | initial-filler | completed | 1/1 | 1/2 | 2.5% | 135 / 260 |

@@ -1,0 +1,1 @@
+{"schema":"obey-audio-findings/v1","task":"transcription","windows":[{"start_sample":10944000,"end_sample":11040000,"input_window_sha256":"745ea828de76d7c9049a20d4e5c7486779ae5c294e16105cdf73ce69b1fc13da","text":"That's one thing. It sometimes you can, or no, it is not to say.","usage":{"prompt_tokens":95,"completion_tokens":20}}]}
