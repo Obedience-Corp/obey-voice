@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/config"
+	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/events"
 	"github.com/Obedience-Corp/obey-voice/pkg/voiceagent/skills"
 	"github.com/ollama/ollama/api"
 )
@@ -186,7 +187,9 @@ func (o *OllamaBrain) routeSkillContext(ctx context.Context, input string, onSta
 			}
 			if onEnd != nil {
 				preview := fmt.Sprintf("injected %d skill(s): %s", len(names), strings.Join(names, ", "))
-				onEnd(ToolResult{ToolCall: call, Preview: preview})
+				onEnd(ToolResult{ToolCall: call, Preview: preview, Outcome: &events.ToolOutcome{
+					Status: events.ToolOutcomeSucceeded, InputSummary: call.Summary, OutputPreview: preview,
+				}})
 			}
 		}
 	}

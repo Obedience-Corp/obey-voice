@@ -214,6 +214,9 @@ func modelMalformedToolCall(err error) bool {
 		return false
 	}
 	message := strings.ToLower(err.Error())
+	// A truncated tool call has no closing tag to name in the error.
+	// Keep bare transport EOFs and unrelated server failures out of recovery.
 	return strings.Contains(message, "xml syntax error") &&
-		strings.Contains(message, "function") && strings.Contains(message, "parameter")
+		(strings.Contains(message, "unexpected eof") ||
+			strings.Contains(message, "function") && strings.Contains(message, "parameter"))
 }

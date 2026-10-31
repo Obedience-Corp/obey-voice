@@ -58,17 +58,39 @@ func (m conversationModel) draftMediaView() string {
 	if len(m.media.draft) == 0 {
 		return ""
 	}
+	var errorView string
+	if m.media.err != "" {
+		text := strings.Join(strings.Fields(safeWorkerText(m.media.err)), " ")
+		text = ansi.Truncate(text, max(1, m.width)*3, "…")
+		errorView = errorStyle.Render(ansi.Hardwrap(text, max(1, m.width), false))
+	}
+	inputHeight := conversationInputHeight
+	if m.height < 12 {
+		inputHeight = 1
+	}
+	errorRows := 0
+	if errorView != "" {
+		errorRows = lipgloss.Height(errorView)
+	}
 	var cards []string
-	w := max(8, min(26, (m.width-2)/len(m.media.draft)-2))
+	// Use available space for recognizable thumbnails; four rows reduced a
+	// portrait screenshot to only a handful of colored cells.
+	w := max(1, min(64, m.width/len(m.media.draft)-2))
+	// Leave room for chrome, labels, the editor, the error and a transcript row.
+	h := max(1, min(12, m.height/4, m.height-inputHeight-10-errorRows-m.workStripReservedRows))
 	for _, r := range m.media.draft {
-		cards = append(cards, lipgloss.NewStyle().Width(w+2).Render(m.renderMedia([]chatmedia.Ref{r}, w, 4)))
+		cards = append(cards, lipgloss.NewStyle().Width(w+2).Render(m.renderMedia([]chatmedia.Ref{r}, w, h)))
 	}
 	view := lipgloss.JoinHorizontal(lipgloss.Top, cards...)
 	hint := "F2 pause GIFs · F3 open original · F4 remove last image"
 	if m.media.paused {
 		hint = "F2 play GIFs · F3 open original · F4 remove last image"
 	}
-	return view + "\n" + dimStyle.Render(ansi.Truncate(hint, max(1, m.width), "…"))
+	view += "\n" + dimStyle.Render(ansi.Truncate(hint, max(1, m.width), "…"))
+	if errorView != "" {
+		view += "\n" + errorView
+	}
+	return view
 }
 func (m conversationModel) draftMediaHeight() int {
 	v := m.draftMediaView()

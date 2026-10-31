@@ -18,7 +18,7 @@ import (
 // A persistent parser failure must remain a visible error, without entering
 // synthesis or claiming to speak. Exercise the actual Ollama HTTP adapter.
 func TestOllamaMalformedToolFailureDoesNotStartSpeech(t *testing.T) {
-	const failure = "XML syntax error on line 12: element <function> closed by </parameter>"
+	const failure = "XML syntax error on line 25: unexpected EOF"
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {

@@ -17,7 +17,7 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-const malformedToolFixture = "XML syntax error on line 12: element <function> closed by </parameter>"
+const malformedToolFixture = "XML syntax error on line 25: unexpected EOF"
 
 func TestOllamaMalformedToolRecoveryExecutesOnce(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
@@ -178,5 +178,33 @@ func TestOllamaMalformedToolRetryBoundaries(t *testing.T) {
 				t.Fatal("retry mutated caller messages")
 			}
 		})
+	}
+}
+
+func TestModelMalformedToolCall(t *testing.T) {
+	for _, tc := range []struct {
+		message string
+		want    bool
+	}{
+		{malformedToolFixture, true},
+		{"XML syntax error on line 12: element <function> closed by </parameter>", true},
+		{"unexpected EOF", false},
+		{"model runner crashed", false},
+		{"XML syntax error on line 2: invalid character entity", false},
+	} {
+		t.Run(tc.message, func(t *testing.T) {
+			if got := modelMalformedToolCall(errors.New(tc.message)); got != tc.want {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			if got := modelMalformedToolCall(api.StatusError{StatusCode: 500, ErrorMessage: tc.message}); got != tc.want {
+				t.Fatalf("HTTP 500 got %v, want %v", got, tc.want)
+			}
+			if modelMalformedToolCall(api.StatusError{StatusCode: 400, ErrorMessage: tc.message}) {
+				t.Fatal("retried HTTP 400")
+			}
+		})
+	}
+	if modelMalformedToolCall(nil) {
+		t.Fatal("nil error classified as malformed")
 	}
 }

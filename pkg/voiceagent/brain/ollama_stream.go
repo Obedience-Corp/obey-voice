@@ -201,7 +201,11 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 
 			promptEstimate := o.estimateTokens(skillCtx)
 			generatedBytes, lastBudget := 0, promptEstimate
-			err := o.chat(ctx, req, func(resp api.ChatResponse) error {
+			chat := o.chat
+			if sess.routerPolicy == RouterToolsRouteOnly && len(tools) > 0 && routeRetried && !imageResultRetry {
+				chat = o.chatRouteRecovery
+			}
+			err := chat(ctx, req, func(resp api.ChatResponse) error {
 				generatedBytes += len(resp.Message.Content) + len(resp.Message.Thinking)
 				estimate := promptEstimate + (generatedBytes+3)/4
 				// Bound telemetry volume while keeping long replies visibly live.
@@ -328,8 +332,8 @@ func (o *OllamaBrain) ThinkStream(ctx context.Context, input string, opts Stream
 				}
 				routeRetried = true
 				imageResultRetry = missingImageResult
-				skillCtx += "\n" + missingRouteInstruction
 				if missingImageResult {
+					skillCtx += "\n" + missingRouteInstruction
 					o.emitInfo(events.Info{Message: "Image reply had no attachment; retrying once before delivery"})
 				}
 				continue

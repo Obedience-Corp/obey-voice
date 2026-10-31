@@ -51,7 +51,14 @@ func TestRoutingPlanningCannotReplaceSpokenReply(t *testing.T) {
 					}
 				}
 				enc := json.NewEncoder(w)
-				if (requests == 1 && route) || (requests == 2 && !route) {
+				if requests == 2 && !route {
+					if len(req.Format) == 0 || len(req.Tools) != 0 {
+						t.Error("missing-route retry must use constrained JSON")
+					}
+					_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: `{"kind":"chat"}`}, Done: true})
+					return
+				}
+				if requests == 1 && route {
 					for _, part := range []string{planning[:32], planning[32:]} {
 						_ = enc.Encode(api.ChatResponse{Message: api.Message{Role: "assistant", Content: part}})
 					}
