@@ -73,6 +73,11 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 		return fmt.Errorf("recover missing route: %w", err)
 	}
 	args, decodeErr := decodeRouteRecovery(response, route.Parameters)
+	if decodeErr != nil {
+		decodeErr = fmt.Errorf("%w (done=%t, reason=%q, generated_tokens=%d, reply_bytes=%d, thinking_bytes=%d, tool_calls=%d)",
+			decodeErr, response.Done, response.DoneReason, response.EvalCount,
+			len(response.Message.Content), len(response.Message.Thinking), len(response.Message.ToolCalls))
+	}
 	// Forward usage/completion metadata even for a rejected decision, but never
 	// expose the private JSON (or a server's unexpected prose) as speech.
 	response.Message = api.Message{Role: "assistant"}
@@ -90,8 +95,20 @@ func (o *OllamaBrain) chatRouteRecovery(ctx context.Context, original *api.ChatR
 
 func decodeRouteRecovery(response api.ChatResponse, schema api.ToolFunctionParameters) (api.ToolCallFunctionArguments, error) {
 	args := api.NewToolCallFunctionArguments()
-	if !response.Done || response.DoneReason == "length" || len(response.Message.ToolCalls) != 0 || len(response.Message.Content) > 4096 {
-		return args, errors.New("incomplete or invalid route decision")
+	switch {
+	case !response.Done:
+		return args, errors.New("route response ended without completion")
+	case response.DoneReason == "length":
+		return args, errors.New("route response exhausted its output budget")
+	case len(response.Message.ToolCalls) != 0:
+		return args, errors.New("route response returned tool calls instead of a JSON decision")
+	case len(response.Message.Content) > 4096:
+		return args, errors.New("route decision exceeded the response size limit")
+	case strings.TrimSpace(response.Message.Content) == "":
+		if strings.TrimSpace(response.Message.Thinking) != "" {
+			return args, errors.New("route response contained reasoning without a decision")
+		}
+		return args, errors.New("route response contained no decision")
 	}
 	var values map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(response.Message.Content), &values); err != nil {
