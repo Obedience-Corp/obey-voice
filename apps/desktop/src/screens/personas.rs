@@ -7,6 +7,13 @@ use eframe::egui::RichText;
 
 impl VoiceApp {
     pub(super) fn persona_list(&mut self, ui: &mut egui::Ui) {
+        if self.active && !self.state.persona_message.is_empty() {
+            ui.add(
+                egui::Label::new(&self.state.persona_message)
+                    .wrap()
+                    .selectable(true),
+            );
+        }
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(if self.active {

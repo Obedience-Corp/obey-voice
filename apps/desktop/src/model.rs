@@ -99,6 +99,7 @@ pub struct State {
     #[serde(default)]
     pub work_result_images: Vec<Vec<crate::app::media::Attachment>>,
     pub settings_message: String,
+    pub persona_message: String,
     pub enrollment: Enrollment,
     #[serde(deserialize_with = "nullable_vec")]
     pub speaker_names: Vec<String>,

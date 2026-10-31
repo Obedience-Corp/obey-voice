@@ -48,7 +48,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if args.native_audio:
             if self.path == '/api/version': self.respond({'version': 'native-ui-fixture'}); return
-            if self.path == '/api/tags': self.respond({'models': [{'name': 'lfm3-audio:2b', 'digest': 'a' * 64}]}); return
+            if self.path == '/api/tags': self.respond({'models': [{'name': 'lfm3-audio:2b', 'digest': 'a' * 64}, {'name': 'qwen2.5:14b'}, {'name': 'desktop-test'}]}); return
             if self.path == '/v1/models': self.respond({'data': [{'id': 'lfm3-audio:2b'}]}); return
             if self.path == '/v1/audio/voices': self.send_error(404); return
         self.respond({'models': [{'name': 'desktop-test', 'model': 'desktop-test'}]})
@@ -67,7 +67,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/v1/audio/speech':
                 self.send_response(200); self.send_header('Content-Type', 'application/octet-stream'); self.end_headers(); self.wfile.write(b'\x00\x00\x01\x00'); return
             if self.path == '/api/chat':
-                self.respond({'model': 'lfm3-audio:2b', 'message': {'role': 'assistant', 'content': 'Native fixture response.' if request.get('stream') else '15'}, 'done': True, 'done_reason': 'stop'}); return
+                model = request.get('model', 'lfm3-audio:2b')
+                response = 'Native fixture response.' if model.startswith('lfm3-audio') else 'Standard fixture response.'
+                self.respond({'model': model, 'message': {'role': 'assistant', 'content': response if request.get('stream') else '15'}, 'done': True, 'done_reason': 'stop'}); return
         if args.images:
             with (fixture_root / 'image-requests.jsonl').open('a') as log:
                 log.write(json.dumps(request) + '\n')

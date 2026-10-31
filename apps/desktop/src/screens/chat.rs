@@ -32,6 +32,9 @@ impl VoiceApp {
             if self.state.audio_mode == "native" {
                 ui.label("Native audio · experimental").on_hover_text(format!("{} controls · transcription {}. Responses can be inaccurate or claim actions that did not occur.", self.state.audio_controls, self.state.audio_transcript));
             }
+            if self.state.audio_mode == "standard" {
+                ui.label("Standard audio");
+            }
             if let Some(label) = self.state.brain_label() {
                 ui.label(label).on_hover_text(
                     "Active persona's brain. Default means the provider chooses its model.",

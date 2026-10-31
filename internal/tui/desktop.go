@@ -54,6 +54,7 @@ type DesktopEnrollment struct {
 	Processing bool    `json:"processing"`
 }
 type DesktopState struct {
+	PersonaMessage   string                   `json:"persona_message,omitempty"`
 	AudioMode        string                   `json:"audio_mode,omitempty"`
 	AudioControls    string                   `json:"audio_controls,omitempty"`
 	AudioTranscript  string                   `json:"audio_transcript,omitempty"`
@@ -208,6 +209,7 @@ func (m desktopModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.setStatus("This provider does not support live persona selection", true)
 			} else {
 				cmd = c.enqueuePersonaSelection(action.Text)
+				m.app.personas.message = "Preparing persona…"
 			}
 		case "manager":
 			if c.reviewingRecording {
@@ -373,6 +375,7 @@ func (m desktopModel) state() DesktopState {
 	state.WorkResults = c.readableWorkResults()
 	state.WorkResultImages = c.workResultImages()
 	s := m.app.settings
+	state.PersonaMessage = ansi.Strip(m.app.personas.message)
 	state.SettingsMessage = ansi.Strip(s.message)
 	state.Enrollment = DesktopEnrollment{Active: s.enroll.active, Name: s.enroll.name, Clip: s.enroll.clip, Seconds: s.enroll.elapsed.Seconds(), Processing: s.enroll.enrolling}
 	for _, p := range s.enrolledProfiles {
